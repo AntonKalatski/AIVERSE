@@ -8,8 +8,11 @@
 #include "ModelVisibility.h"
 #include "ModelLodTransition.h"
 #include "GpuIcbPolicy.h"
+#include "StaticModelCachePolicy.h"
+#include "StaticCrossModelBatchPolicy.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -18,6 +21,7 @@
 #include <unordered_map>
 #include <tuple>
 #include <functional>
+#include <limits>
 
 namespace aiverse::render {
 
@@ -45,7 +49,94 @@ std::string metalGraphSampler(int slot) {
     return slot < 16 ? ", sampler s"+std::to_string(slot)+" [[sampler("+std::to_string(slot)+")]]" : std::string();
 }
 
+std::array<double, 8> cpuMdiStageValues(
+    const ModelRenderStats::CpuMdiStageProfile& p) {
+    return {p.totalMs, p.selectionMs, p.groupingSortMs, p.candidateScanMs,
+            p.commandPackingMs, p.pipelineSetupMs, p.bufferUploadMs,
+            p.backendSubmitMs};
+}
+
 } // namespace
+
+void Renderer3D::recordCpuMdiStageSample(
+    size_t phase, const ModelRenderStats::CpuMdiStageProfile& before) {
+    if (phase >= cpuMdiRolling_.size() || !profiling_) return;
+    auto& history = cpuMdiRolling_[phase];
+    const auto start = cpuMdiStageValues(before);
+    const auto finish = cpuMdiStageValues(modelStats_.mdiCpuStages[phase]);
+    auto& target = history.samples[history.next];
+    for (size_t i = 0; i < target.size(); ++i)
+        target[i] = std::max(0.0, finish[i] - start[i]);
+    history.next = (history.next + 1) % history.samples.size();
+    history.count = std::min(history.count + 1, history.samples.size());
+}
+
+Renderer3D::CpuMdiRollingSummary Renderer3D::cpuMdiRollingSummary(
+    size_t phase) const {
+    CpuMdiRollingSummary result{};
+    if (phase >= cpuMdiRolling_.size()) return result;
+    const auto& history = cpuMdiRolling_[phase];
+    result.samples = history.count;
+    if (!result.samples) return result;
+    // Only the read-only UI/query path sorts a fixed stack scratch array.
+    // Nothing allocates, sorts or scans the ring while rendering a pass.
+    std::array<double, kCpuMdiRollingWindow> sorted{};
+    const size_t rank = ((95 * result.samples + 99) / 100) - 1; // nearest-rank P95
+    const size_t medianRank = ((50 * result.samples + 99) / 100) - 1; // nearest-rank P50
+    for (size_t metric = 0; metric < result.meanMs.size(); ++metric) {
+        double sum = 0.0;
+        for (size_t i = 0; i < result.samples; ++i) {
+            const double value = history.samples[i][metric];
+            sum += value;
+            sorted[i] = value;
+        }
+        std::sort(sorted.begin(), sorted.begin() + result.samples);
+        result.meanMs[metric] = sum / double(result.samples);
+        result.p50Ms[metric] = sorted[medianRank];
+        result.p95Ms[metric] = sorted[rank];
+    }
+    // Variance diagnosis runs on the same explicit summary/UI read as
+    // Stage 31's bounded sorting, never in the renderer hot loop. A high
+    // P95 only indicates intermittent CPU latency, not a regression.
+    result.hasBaseline = result.samples >= kCpuMdiSpikeMinSamples;
+    if (result.hasBaseline) {
+        for (size_t metric = 0; metric < result.spike.size(); ++metric) {
+            const double excess = result.p95Ms[metric] - result.meanMs[metric];
+            result.spike[metric] =
+                result.p95Ms[metric] >= kCpuMdiSpikeMinP95Ms &&
+                excess >= kCpuMdiSpikeMinExcessMs &&
+                result.p95Ms[metric] >=
+                    result.meanMs[metric] * kCpuMdiSpikeP95ToMeanRatio;
+            if (metric > 0 && result.spike[metric]) {
+                ++result.highlightedStages;
+                if (excess > result.dominantExcessMs) {
+                    result.dominantStage = int(metric);
+                    result.dominantExcessMs = excess;
+                }
+            }
+            // Independently identify stages that are consistently costly:
+            // P50 protects against isolated outliers lifting the mean.
+            // Index 0 is a whole-pass total and never attributed as a
+            // specific CPU MDI stage. Stage time share is only diagnostic;
+            // individual stages can overlap and must not be summed.
+            if (metric > 0 && result.meanMs[0] > 0.0) {
+                const double share = result.meanMs[metric] / result.meanMs[0];
+                result.sustained[metric] =
+                    result.p50Ms[metric] >= kCpuMdiSustainedMinMedianMs &&
+                    share >= kCpuMdiSustainedMinMeanShare;
+                if (result.sustained[metric]) {
+                    ++result.sustainedStages;
+                    if (result.p50Ms[metric] > result.dominantSustainedP50Ms) {
+                        result.dominantSustainedStage = int(metric);
+                        result.dominantSustainedP50Ms = result.p50Ms[metric];
+                        result.dominantSustainedShare = share;
+                    }
+                }
+            }
+        }
+    }
+    return result;
+}
 
 MaterialQuality Renderer3D::defaultMaterialQualityFor(const gfx::Device& dev, bool mobile) {
     if (const char* q = std::getenv("AIVERSE_MATERIALS")) { // testing override: low|medium|high
@@ -73,7 +164,84 @@ void Renderer3D::initModels() {
     setInstanceLimit(0);
 }
 
+
+void Renderer3D::clearIndirectLayoutCaches() {
+    // Call between render passes, never while drawModelIndirectBatch borrows
+    // entry.commands for its synchronous GPU upload/submission.
+    for (size_t phase = 0; phase < 5; ++phase) {
+        indirectLayoutsRetired_ += indirectLayoutCache_[phase].size();
+        std::vector<IndirectLayoutEntry>().swap(indirectLayoutCache_[phase]);
+        indirectLayoutCursor_[phase] = 0;
+    }
+}
+
+void Renderer3D::retireIndirectLayoutsFor(const Model* model) {
+    if (!model) return;
+    // Compare borrowed pointer identity only: never inspect an unloaded Model.
+    // A mixed-model indirect layout must be retired if ANY source unloads.
+    for (size_t phase = 0; phase < 5; ++phase) {
+        auto& entries = indirectLayoutCache_[phase];
+        const size_t before = entries.size();
+        entries.erase(std::remove_if(entries.begin(), entries.end(),
+            [model](const IndirectLayoutEntry& entry) {
+                return std::any_of(entry.signature.begin(), entry.signature.end(),
+                    [model](const IndirectLayoutItem& item) {
+                        return item.model == model;
+                    });
+            }), entries.end());
+        indirectLayoutsRetired_ += before - entries.size();
+        if (entries.size() != before) {
+            indirectLayoutCursor_[phase] = 0;
+            if (entries.size() * 2 < entries.capacity())
+                entries.shrink_to_fit();
+        }
+    }
+}
+
+void Renderer3D::maintainIndirectLayoutCaches() {
+    // No renderModels call is needed to age out a scene's old layouts:
+    // empty scenes and changed viewports also release inactive entries.
+    if (++indirectLayoutSceneEpoch_ == 0) {
+        clearIndirectLayoutCaches();
+        indirectLayoutSceneEpoch_ = 1;
+    }
+    if (indirectLayoutSceneEpoch_ <= kMdiLayoutIdleScenes) return;
+    const uint64_t cutoff = indirectLayoutSceneEpoch_ - kMdiLayoutIdleScenes;
+    for (size_t phase = 0; phase < 5; ++phase) {
+        auto& entries = indirectLayoutCache_[phase];
+        const size_t before = entries.size();
+        entries.erase(std::remove_if(entries.begin(), entries.end(),
+            [cutoff](const IndirectLayoutEntry& entry) {
+                return entry.lastUsedScene < cutoff;
+            }), entries.end());
+        indirectLayoutsRetired_ += before - entries.size();
+        if (entries.size() != before) {
+            indirectLayoutCursor_[phase] = 0;
+            if (entries.size() * 2 < entries.capacity())
+                entries.shrink_to_fit();
+        }
+    }
+}
+
+Renderer3D::IndirectLayoutCacheStats Renderer3D::indirectLayoutCacheStats() const {
+    IndirectLayoutCacheStats stats{};
+    stats.retired = indirectLayoutsRetired_;
+    for (const auto& entries : indirectLayoutCache_) {
+        stats.entries += entries.size();
+        stats.retainedBytes += entries.capacity() * sizeof(IndirectLayoutEntry);
+        for (const auto& entry : entries) {
+            stats.retainedBytes += entry.signature.capacity() * sizeof(IndirectLayoutItem);
+            stats.retainedBytes += entry.commands.capacity() *
+                sizeof(gfx::DrawIndexedIndirectCommand);
+        }
+    }
+    return stats;
+}
+
 void Renderer3D::shutdownModels() {
+    clearCpuMdiRollingHistory();
+    clearIndirectLayoutCaches();
+    std::vector<gfx::DrawIndexedIndirectCommand>().swap(indirectCommandScratch_);
     if (indirectCommands_.valid()) dev_->destroyBuffer(indirectCommands_);
     indirectCommands_ = {};
     modelError_.clear();
@@ -391,6 +559,146 @@ void Renderer3D::syncPersistentModels() {
             uint32_t(persistentScene_.capacity()), frame, viewProj_);
 }
 
+const Renderer3D::SharedMaterialEntry* Renderer3D::cachedSharedMaterialState(
+    const Model& model, const ModelDraw& draw,
+    const std::vector<Material>& materials) {
+    if (!draw.materialOwnerKey || !draw.materialOwnerRevision ||
+        !draw.staticPacketRevision || !draw.persistentId ||
+        !(draw.flags & kDrawStatic) || materials.empty())
+        return nullptr;
+    // Large unique/streamed material sets use exact per-packet validation.
+    // Cap owner count and the actual retained signature payload separately.
+    constexpr size_t kMaxMaterialEntries = 4096;
+    constexpr size_t kMaxMaterialBytes = 8u * 1024u * 1024u;
+    constexpr size_t kMaxMaterialsPerOwner = 512;
+    if (materials.size() > kMaxMaterialsPerOwner) return nullptr;
+    const MaterialOwnerKey key{&model, draw.materialOwnerKey};
+    auto it = staticMaterialOwners_.find(key);
+    if (it != staticMaterialOwners_.end()) {
+        SharedMaterialEntry& state = it->second;
+        if (state.ownerRevision == draw.materialOwnerRevision &&
+            state.modelMaterialRevision == model.materialRevision &&
+            state.geometryRevision == model.geometryRevision &&
+            state.count == materials.size()) {
+            state.seen = staticMaterialOwnerEpoch_;
+            ++sharedMaterialStateStats_.hits;
+            return &state;
+        }
+    }
+    ++sharedMaterialStateStats_.misses;
+    const size_t newBytes = materials.size() * sizeof(uint64_t);
+    const size_t replacedBytes = it == staticMaterialOwners_.end()
+        ? 0 : it->second.hashes.size() * sizeof(uint64_t);
+    if ((it == staticMaterialOwners_.end() &&
+         staticMaterialOwners_.size() >= kMaxMaterialEntries) ||
+        newBytes > kMaxMaterialBytes ||
+        newBytes > kMaxMaterialBytes - (staticMaterialOwnerBytes_ - replacedBytes))
+        return nullptr;
+    // Every new owner revision receives a different serial, so packets
+    // referencing an earlier signature can never accidentally hot-replay.
+    // The cache is effectively bounded far below the 64-bit wrap interval.
+    SharedMaterialEntry& state = staticMaterialOwners_[key];
+    state.hashes = staticPacketMaterialHashes(model, materials);
+    state.minVertexOffsetQuality = std::numeric_limits<int>::max();
+    for (const Material& material : materials)
+        if (material.shaderGraph &&
+            material.shaderGraph->outputs.count("vertexOffset"))
+            state.minVertexOffsetQuality = std::min(
+                state.minVertexOffsetQuality, int(material.shaderGraph->minQuality));
+    state.ownerRevision = draw.materialOwnerRevision;
+    state.modelMaterialRevision = model.materialRevision;
+    state.geometryRevision = model.geometryRevision;
+    state.count = materials.size();
+    state.seen = staticMaterialOwnerEpoch_;
+    // A wrap can only occur after 2^64 signature changes; treat it as
+    // a global packet invalidation rather than reusing an old serial.
+    if (++staticMaterialOwnerSerial_ == 0) {
+        staticRenderPackets_.clear();
+        staticRenderPacketBytes_ = 0;
+        staticMaterialOwnerSerial_ = 1;
+    }
+    state.serial = staticMaterialOwnerSerial_;
+    staticMaterialOwnerBytes_ = staticMaterialOwnerBytes_ - replacedBytes + newBytes;
+    return &state;
+}
+
+Renderer3D::CpuMdiPageEntry* Renderer3D::cpuMdiPageEntry(const Model& model) {
+    const auto page = model.geometryPoolPage;
+    if (!page || !model.vb.valid() || !model.ib.valid()) return nullptr;
+    const CpuMdiPageKey key{
+        page.get(), model.vb.id, model.ib.id, cpuMdiAdaptiveScope_};
+    auto it = cpuMdiPages_.find(key);
+    if (it != cpuMdiPages_.end()) {
+        // An allocator can recycle the raw pointer and even GPU handle IDs.
+        // A weak reference to the actual shared arena detects that case.
+        const auto retained = it->second.lifetime.lock();
+        if (retained == page) {
+            ++cpuMdiPageStats_.reused;
+            it->second.seen = cpuMdiPageEpoch_;
+            return &it->second;
+        }
+        cpuMdiPages_.erase(it);
+        ++cpuMdiPageStats_.evicted;
+    }
+    constexpr size_t kMaxTrackedPages = 256;
+    if (cpuMdiPages_.size() >= kMaxTrackedPages) {
+        // No tracked feedback means "allow original CPU MDI", not an unsafe
+        // inferred decision or a new unbounded allocation.
+        ++cpuMdiPageStats_.untracked;
+        return nullptr;
+    }
+    CpuMdiPageEntry entry{};
+    entry.lifetime = page;
+    entry.seen = cpuMdiPageEpoch_;
+    ++cpuMdiPageStats_.created;
+    return &cpuMdiPages_.emplace(key, std::move(entry)).first->second;
+}
+
+ModelStaticEligibility Renderer3D::cachedStaticModelEligibility(const Model& source) {
+    // Model* is a lookup key, not proof of identity or unchanged content.
+    // Revision, GPU allocation, public cardinalities and geometry attachment
+    // are checked on every hit; asset owners must invalidate before destruction.
+    auto it = staticModelEligibility_.find(&source);
+    if (it != staticModelEligibility_.end()) {
+        const auto& entry = it->second;
+        if (entry.geometryRevision == source.geometryRevision &&
+            entry.vb == source.vb.id && entry.ib == source.ib.id &&
+            entry.nodes == source.nodes.size() &&
+            entry.meshes == source.meshes.size() &&
+            entry.bindNodes == source.bindWorld.size() &&
+            entry.skins == source.skins.size() &&
+            entry.materials == source.materials.size() &&
+            entry.geometry == source.geometry.get()) {
+            it->second.seen = staticEligibilityEpoch_;
+            ++staticEligibilityStats_.hits;
+            return entry.eligibility;
+        }
+    }
+    ++staticEligibilityStats_.misses;
+    const ModelStaticEligibility result = classifyModelStaticEligibility(source);
+    // Retain the hottest assets without unbounded growth from procedural or
+    // streamed one-shot models. At capacity, unmatched models are evaluated
+    // directly until the next epoch sweep or an explicit asset invalidation.
+    constexpr size_t kMaximumModelEntries = 8192;
+    if (it != staticModelEligibility_.end() ||
+        staticModelEligibility_.size() < kMaximumModelEntries) {
+        StaticEligibilityEntry entry{};
+        entry.eligibility = result;
+        entry.geometryRevision = source.geometryRevision;
+        entry.seen = staticEligibilityEpoch_;
+        entry.vb = source.vb.id;
+        entry.ib = source.ib.id;
+        entry.nodes = source.nodes.size();
+        entry.meshes = source.meshes.size();
+        entry.bindNodes = source.bindWorld.size();
+        entry.skins = source.skins.size();
+        entry.materials = source.materials.size();
+        entry.geometry = source.geometry.get();
+        staticModelEligibility_[&source] = entry;
+    }
+    return result;
+}
+
 void Renderer3D::drawModel(const ModelDraw& d) {
     ProfileTimer timer(profiling_?&profile_.submitMs:nullptr);
     const Model* m = d.model;
@@ -402,13 +710,57 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         for (size_t i = 0; i < pose.size(); ++i) nodeWorld[i] = d.world * pose[i];
         capture_(d, nodeWorld);
     }
-    const auto* cache=d.staticCache;
-    if(cache&&(cache->model!=m||cache->transforms.size()!=m->nodes.size()||cache->primitiveOffsets.size()!=m->meshes.size()||std::memcmp(cache->world.m,d.world.m,sizeof d.world.m)!=0||d.nodeWorld||d.materials||d.nodeMaterial||d.pose||d.baked||!m->skins.empty()||!m->clips.empty()))cache=nullptr;
-    if(cache)++profile_.cachedModels;
-    // whole-model culling with the bind-pose bounds (padded: animation moves limbs outside them)
-    float3 c = (m->boundsMin + m->boundsMax) * 0.5f, e = (m->boundsMax - m->boundsMin) * 0.75f + float3{0.1f, 0.1f, 0.1f};
-    const auto& graphMaterials=d.materials && d.materials->size()>=m->materials.size()?*d.materials:m->materials;
-    const bool displaced=cache?cache->displaced:std::any_of(graphMaterials.begin(),graphMaterials.end(),[this](const Material& mat){return mat.shaderGraph && int(matQuality_)>=mat.shaderGraph->minQuality && mat.shaderGraph->outputs.count("vertexOffset");});
+    const auto& graphMaterials = d.materials && d.materials->size() >= m->materials.size()
+        ? *d.materials : m->materials;
+    // This lookup is entirely optional. Without explicit owner identity and
+    // owner revision, the original full material fingerprint path is used.
+    const SharedMaterialEntry* sharedMaterials =
+        staticRenderPacketsEnabled_ && d.model && d.persistentId
+            ? cachedSharedMaterialState(*m, d, graphMaterials) : nullptr;
+    const bool activeDisplacement = sharedMaterials
+        ? int(matQuality_) >= sharedMaterials->minVertexOffsetQuality
+        : std::any_of(
+            graphMaterials.begin(), graphMaterials.end(), [this](const Material& mat) {
+                return mat.shaderGraph && int(matQuality_) >= mat.shaderGraph->minQuality &&
+                       mat.shaderGraph->outputs.count("vertexOffset");
+            });
+    // Only the geometry-revision-dependent asset traits are memoized.
+    // Current draw flags, pose and displacement remain live per instance.
+    ModelStaticEligibility eligibility{};
+    if ((staticModelCacheEnabled_ || staticRenderPacketsEnabled_) &&
+        d.persistentId && (d.flags & kDrawStatic))
+        eligibility = cachedStaticModelEligibility(*m);
+    const StaticModelCache* cache = d.staticCache;
+    if (cache && !staticModelCacheGeometryCompatible(*cache, d, activeDisplacement))
+        cache = nullptr;
+    if (!cache && staticModelCacheEnabled_) {
+        if (staticModelCacheDrawCandidate(d, activeDisplacement, eligibility)) {
+            auto& entry = staticModelCaches_[d.persistentId];
+            const bool unchanged =
+                entry.vertexBuffer == m->vb.id &&
+                entry.indexBuffer == m->ib.id &&
+                entry.geometryRevision == m->geometryRevision &&
+                staticModelCacheGeometryCompatible(entry.cache, d, false);
+            if (!unchanged) {
+                entry.cache.prepare(*m, d.world);
+                entry.vertexBuffer = m->vb.id;
+                entry.indexBuffer = m->ib.id;
+                entry.geometryRevision = m->geometryRevision;
+                ++staticModelCacheStats_.rebuilds;
+            } else {
+                ++staticModelCacheStats_.hits;
+            }
+            entry.seen = staticModelCacheEpoch_;
+            cache = &entry.cache;
+        } else {
+            ++staticModelCacheStats_.declined;
+        }
+    }
+    if (cache) ++profile_.cachedModels;
+    // Whole-model culling continues to use the current camera / shadow frusta.
+    float3 c = (m->boundsMin + m->boundsMax) * 0.5f,
+           e = (m->boundsMax - m->boundsMin) * 0.75f + float3{0.1f, 0.1f, 0.1f};
+    const bool displaced = cache ? cache->displaced : activeDisplacement;
     const bool inView = displaced || (cache?modelBoxVisible(viewProj_,cache->min,cache->max):modelBoxVisible(viewProj_ * d.world, c - e, c + e));
     const bool inShadow = quality_ != ShadowQuality::Off && !(d.flags & kDrawNoCastShadow) && (d.tint.w >= 0.99f || (d.flags & kDrawKeepShadow)) && d.dissolve <= 0 &&
                           (displaced || (cache?modelBoxVisible(lightViewProj_,cache->min,cache->max):modelBoxVisible(lightViewProj_ * d.world, c - e, c + e)));
@@ -422,6 +774,141 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         const BakedSample& b = *d.baked;
         anim = {float(bakedRow(*m, b.clipA, b.timeA, b.loopA)), float(bakedRow(*m, b.clipB, b.timeB, b.loopB)), std::clamp(b.mix, 0.0f, 1.0f), 0};
     }
+    // Revision-aware immutable CPU packet replay. Material copies are
+    // checked by resolved GPU state and remapped by index, never by stale
+    // vector element pointers. Camera, sun shadow, LOD and depth remain live.
+    static const bool gpuPacketLod = [] {
+        const char* flag = std::getenv("AIVERSE_GPU_ICB_LOD");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
+    const bool packetEligible = staticRenderPacketsEnabled_ && !gpuPacketLod &&
+        staticRenderPacketDrawCandidate(d, activeDisplacement, bakedActive(),
+                                        lodDiagnosticsEnabled_, eligibility);
+    const size_t packetStart = modelItems_.size();
+    std::vector<int> packetSelectedMeshes;
+    bool packetHasFade = false;
+    // The selected-mesh vector is needed only if a packet is missing or
+    // invalidated. Never allocate it on a successful hot replay.
+    if (packetEligible) {
+        auto found = staticRenderPackets_.find(d.persistentId);
+        if (found != staticRenderPackets_.end()) {
+            StaticPacketEntry& packet = found->second;
+            const bool sameSource = packet.geometryRevision == m->geometryRevision &&
+                packet.materialRevision == m->materialRevision &&
+                packet.vertexBuffer == m->vb.id && packet.indexBuffer == m->ib.id &&
+                packet.selectedMeshes.size() == m->nodes.size() &&
+                packet.hasNodeMaterialOverride == (d.nodeMaterial != nullptr) &&
+                (!d.nodeMaterial || packet.nodeMaterialSnapshot == *d.nodeMaterial) &&
+                equivalentStaticRenderPacketDraw(packet.draw, d) &&
+                (sharedMaterials
+                    ? packet.sharedMaterialSerial == sharedMaterials->serial
+                    : (packet.sharedMaterialSerial == 0 &&
+                       staticPacketMaterialStateMatches(
+                           *m, mats, packet.materialsSnapshot, packet.materialHashes))) &&
+                std::all_of(packet.items.begin(), packet.items.end(),
+                    [m, &mats](const ModelItem& item) {
+                        return item.model == m && item.prim &&
+                            item.sourceNode >= 0 &&
+                            size_t(item.sourceNode) < m->nodes.size() &&
+                            item.materialIndex >= 0 &&
+                            size_t(item.materialIndex) < mats.size();
+                    });
+            if (sameSource) {
+                // Reuse a renderer-owned buffer instead of allocating on
+                // each cache hit across thousands of static entities.
+                auto& nodeStates = staticPacketNodeScratch_;
+                nodeStates.resize(m->nodes.size());
+                bool sameLods = true;
+                const bool opaque = d.tint.w >= .99f && d.dissolve <= 0 &&
+                    !transparentItem(d.flags) &&
+                    std::none_of(mats.begin(), mats.end(), [](const Material& mat) {
+                        return mat.alpha == AlphaMode::Blend || mat.transparent;
+                    });
+                const float fadeWidth = opaque && !m->geometry &&
+                    matQuality_ != MaterialQuality::Low ? modelLodFadeWidth_ : 0.0f;
+                for (int n : m->order) {
+                    const Node& node = m->nodes[size_t(n)];
+                    if (node.mesh < 0) continue;
+                    const MeshDef& mesh = m->meshes[size_t(node.mesh)];
+                    const mat4 xf = cache ? cache->transforms[size_t(n)]
+                                          : d.world * world[size_t(n)];
+                    auto& st = nodeStates[size_t(n)];
+                    st.inView = inView;
+                    st.inShadow = inShadow;
+                    if (modelCullingEnabled_) {
+                        st.inView = inView && modelBoxVisible(viewProj_ * xf,
+                                                              mesh.boundsMin, mesh.boundsMax);
+                        st.inShadow = inShadow && modelBoxVisible(lightViewProj_ * xf,
+                                                                   mesh.boundsMin, mesh.boundsMax);
+                    }
+                    ModelLodBlend lod{node.mesh};
+                    // Explicit variant/node-material selection disables normal
+                    // CPU LOD selection in the baseline model draw path too.
+                    if (modelLodEnabled_ && d.variant < 0 && !d.nodeMaterial &&
+                        !mesh.lods.empty()) {
+                        const float error = length(mesh.boundsMax - mesh.boundsMin);
+                        const bool z01 = dev_->info().clipDepthZeroToOne;
+                        const float cameraPixels = st.inView
+                            ? geometryErrorPixels(viewProj_ * xf, mesh.boundsMin,
+                                                  mesh.boundsMax, error,
+                                                  sceneW_, sceneH_, z01) : 0.0f;
+                        float pixels = cameraPixels;
+                        if (st.inShadow)
+                            pixels = std::max(pixels, geometryErrorPixels(
+                                lightViewProj_ * xf, mesh.boundsMin, mesh.boundsMax,
+                                error, shadowSize_, shadowSize_, z01));
+                        if (!st.inView && !st.inShadow)
+                            pixels = std::numeric_limits<float>::infinity();
+                        lod = selectModelLod(node.mesh, mesh.lods, pixels, fadeWidth);
+                    }
+                    st.mesh = lod.mesh;
+                    st.level = lod.level;
+                    st.transitioning = lod.incoming >= 0;
+                    if (st.transitioning ||
+                        st.mesh != packet.selectedMeshes[size_t(n)]) {
+                        sameLods = false;
+                        break;
+                    }
+                }
+                if (sameLods) {
+                    packet.seen = staticRenderPacketEpoch_;
+                    ++staticRenderPacketStats_.hits;
+                    size_t itemIndex = 0;
+                    for (int n : m->order) {
+                        const Node& node = m->nodes[size_t(n)];
+                        if (node.mesh < 0) continue;
+                        const auto& st = nodeStates[size_t(n)];
+                        ++modelStats_.nodes;
+                        ++modelStats_.lodNodes[std::min<size_t>(st.level, 3)];
+                        if (st.mesh != node.mesh) ++profile_.lodNodes;
+                        if (!st.inView && !st.inShadow && modelCullingEnabled_)
+                            ++modelStats_.culledNodes;
+                        while (itemIndex < packet.items.size() &&
+                               packet.items[itemIndex].sourceNode == n) {
+                            ModelItem item = packet.items[itemIndex++];
+                            // Index validation is completed before replay,
+                            // so no individual source draw can disappear here.
+                            item.mat = &mats[size_t(item.materialIndex)];
+                            item.paletteMaterials = item.materialRole == 2 ? &mats : nullptr;
+                            item.inView = item.shadowRole != 2 && st.inView;
+                            item.inShadow = st.inShadow && item.castShadow;
+                            const float3 center = item.world.transformPoint(
+                                (item.prim->boundsMin + item.prim->boundsMax) * 0.5f);
+                            item.depth = cam_.ortho
+                                ? dot(center - camPos_, normalize(cam_.target - camPos_))
+                                : length(center - camPos_);
+                            modelItems_.push_back(std::move(item));
+                        }
+                    }
+                    return;
+                }
+            }
+        }
+    } else if (staticRenderPacketsEnabled_) {
+        ++staticRenderPacketStats_.declined;
+    }
+    if (packetEligible)
+        packetSelectedMeshes.assign(m->nodes.size(), -1);
     for (int n : m->order) {
         const Node& node = m->nodes[size_t(n)];
         if (node.mesh < 0) continue;
@@ -486,6 +973,10 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             if(lodBlend.incoming>=0)++profile_.lodTransitionNodes;
             if (meshIndex != node.mesh) ++profile_.lodNodes;
         }
+        if (packetEligible) {
+            packetSelectedMeshes[size_t(n)] = meshIndex;
+            packetHasFade |= lodBlend.incoming >= 0;
+        }
         ++modelStats_.lodNodes[std::min<size_t>(level, 3)];
         if (lodDiagnosticsEnabled_ && nodeView) {
             ++modelStats_.cameraLodNodes[std::min<size_t>(level, 3)];
@@ -521,6 +1012,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             if (d.variant >= 0 && d.variant < int(p.variantMaterial.size()) && p.variantMaterial[size_t(d.variant)] >= 0) mi = p.variantMaterial[size_t(d.variant)];
             if (d.nodeMaterial && size_t(n) < d.nodeMaterial->size() && (*d.nodeMaterial)[size_t(n)] >= 0 && &mats == d.materials) mi = (*d.nodeMaterial)[size_t(n)];
             ModelItem it;
+            it.sourceNode = n;
             it.geometry = d.geometry;
             if(lodBlend.incoming>=0){it.lodThreshold=lodBlend.progress;it.lodInvert=(part==0);}
             it.firstIndex = p.firstIndex; it.indexCount = p.indexCount;
@@ -565,7 +1057,9 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             size_t pi = cache?cache->primitiveOffsets[size_t(meshIndex)]:0;
             if(!cache)for (int mesh = 0; mesh < meshIndex; ++mesh) pi += m->meshes[size_t(mesh)].primitives.size();
             it.geometryPrimitive = shadowRole == 2 || materialRole == 2 ? 0 : pi + size_t(&p - m->meshes[size_t(meshIndex)].primitives.data());
-            it.model = m; it.prim = &p; it.mat = &mats[size_t(std::clamp(mi, 0, int(mats.size()) - 1))];
+            const int materialIndex = std::clamp(mi, 0, int(mats.size()) - 1);
+            it.model = m; it.prim = &p; it.materialIndex = materialIndex;
+            it.mat = &mats[size_t(materialIndex)];
             it.tint = d.tint; it.team = d.team; it.flash = d.flash; it.flags = d.flags | (mats[size_t(std::clamp(mi, 0, int(mats.size()) - 1))].transparent ? uint32_t(kDrawTransparent) : 0u);
             it.dissolve = d.dissolve; it.teamGlow = d.teamGlow; it.outline = d.outline;
             it.rigid = rigid;
@@ -619,7 +1113,62 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         if (shadowBatch) addItem(drawMesh.shadowBatch, 2);
         }
     }
-
+    if (packetEligible) {
+        // Crossfade blends depend continuously on camera pixels, so never
+        // replay a stored packet across a transition. Frame falls back to
+        // ordinary drawModel even if the last stable LOD had a packet.
+        constexpr size_t kMaxPacketItems = 128;
+        constexpr size_t kMaxPacketBytes = 64u * 1024u * 1024u;
+        const size_t count = modelItems_.size() - packetStart;
+        const size_t newBytes = count * sizeof(ModelItem) +
+            (sharedMaterials ? 0 : mats.size() * (sizeof(Material) + sizeof(uint64_t))) +
+            packetSelectedMeshes.size() * sizeof(int) +
+            (d.nodeMaterial ? d.nodeMaterial->size() * sizeof(int) : 0);
+        auto old = staticRenderPackets_.find(d.persistentId);
+        const size_t replacedBytes = old == staticRenderPackets_.end()
+            ? 0 : staticPacketBytes(old->second);
+        if (!packetHasFade && count <= kMaxPacketItems &&
+            newBytes <= kMaxPacketBytes &&
+            newBytes <= kMaxPacketBytes - (staticRenderPacketBytes_ - replacedBytes)) {
+            StaticPacketEntry& packet = staticRenderPackets_[d.persistentId];
+            packet.draw = d;
+            packet.draw.staticCache = nullptr;
+            packet.draw.materials = nullptr; // don't retain caller-owned vector
+            packet.draw.nodeMaterial = nullptr;
+            packet.hasNodeMaterialOverride = d.nodeMaterial != nullptr;
+            if (d.nodeMaterial)
+                packet.nodeMaterialSnapshot = *d.nodeMaterial;
+            else
+                packet.nodeMaterialSnapshot.clear();
+            packet.geometryRevision = m->geometryRevision;
+            packet.materialRevision = m->materialRevision;
+            packet.sharedMaterialSerial = sharedMaterials ? sharedMaterials->serial : 0;
+            packet.vertexBuffer = m->vb.id;
+            packet.indexBuffer = m->ib.id;
+            packet.seen = staticRenderPacketEpoch_;
+            packet.items.assign(modelItems_.begin() + packetStart, modelItems_.end());
+            packet.selectedMeshes = std::move(packetSelectedMeshes);
+            if (sharedMaterials) {
+                // Fingerprints are shared across all objects with this owner.
+                // Free prior unversioned snapshot allocations on migration;
+                // clear() alone would retain capacity outside the 64 MiB cap.
+                std::vector<uint64_t>().swap(packet.materialHashes);
+                std::vector<Material>().swap(packet.materialsSnapshot);
+            } else {
+                packet.materialHashes = staticPacketMaterialHashes(*m, mats);
+                packet.materialsSnapshot = mats;
+            }
+            staticRenderPacketBytes_ = staticRenderPacketBytes_ - replacedBytes +
+                                       staticPacketBytes(packet);
+            ++staticRenderPacketStats_.rebuilds;
+        } else {
+            ++staticRenderPacketStats_.declined;
+            if (old != staticRenderPackets_.end()) {
+                staticRenderPacketBytes_ -= replacedBytes;
+                staticRenderPackets_.erase(old);
+            }
+        }
+    }
 }
 
 void Renderer3D::packModelInstance(const ModelItem& x, int phase,
@@ -671,8 +1220,10 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     // Each indirect instance can index the PBR factors for its own material
     // without changing geometry, textures or the per-model node transform.
     // Kept separate from the existing per-vertex mesh material palettes.
-    std::vector<const Material*> instanceMaterialSlots;
-    if (instancePalette) instanceMaterialSlots.reserve(std::min<size_t>(count, kMaxMaterialPalette));
+    // Palette has a fixed shader ABI of 64 entries. Stack storage avoids
+    // allocating and freeing one vector per indirect submission.
+    std::array<const Material*, kMaxMaterialPalette> instanceMaterialSlots{};
+    size_t instanceMaterialSlotCount = 0;
     if (!gpuInstances) {
         const uint32_t slots = instanced ? instanceLimit_ : 1u;
         instData_.assign(size_t(slots) * 36, 0.0f);
@@ -680,14 +1231,17 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
             const auto& part = modelItems_[items[i]];
             uint32_t materialSlot = 0;
             if (instancePalette) {
-                auto it = std::find(instanceMaterialSlots.begin(),
-                                    instanceMaterialSlots.end(), part.mat);
-                if (it == instanceMaterialSlots.end()) {
-                    // Preflight in drawModelIndirectBatch enforces this.
-                    if (instanceMaterialSlots.size() >= kMaxMaterialPalette) return false;
-                    materialSlot = uint32_t(instanceMaterialSlots.size());
-                    instanceMaterialSlots.push_back(part.mat);
-                } else materialSlot = uint32_t(it - instanceMaterialSlots.begin());
+                const auto last = instanceMaterialSlots.begin() + instanceMaterialSlotCount;
+                const auto found = std::find(instanceMaterialSlots.begin(), last, part.mat);
+                if (found == last) {
+                    // The independent preflight in drawModelIndirectBatch
+                    // already checked the same fixed 64-material limit.
+                    if (instanceMaterialSlotCount == kMaxMaterialPalette) return false;
+                    materialSlot = uint32_t(instanceMaterialSlotCount);
+                    instanceMaterialSlots[instanceMaterialSlotCount++] = part.mat;
+                } else {
+                    materialSlot = uint32_t(found - instanceMaterialSlots.begin());
+                }
             }
             packModelInstance(part, phase, callColour,
                               instData_.data() + size_t(i) * 36, materialSlot);
@@ -751,7 +1305,7 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     if (it.gi && (phase == 1 || phase == 2)) bindBakedGI(it);
     if (instancePalette) {
         float palette[kMaxMaterialPalette * 8] = {};
-        for (size_t i = 0; i < instanceMaterialSlots.size(); ++i) {
+        for (size_t i = 0; i < instanceMaterialSlotCount; ++i) {
             const auto& material = *instanceMaterialSlots[i];
             float* p = palette + i * 8;
             p[0] = material.baseColor.x; p[1] = material.baseColor.y;
@@ -805,8 +1359,20 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         }
         return true; // Bind shared state for one indirect multi-draw.
     }
-    dev_->drawIndexed(it.indexCount, it.firstIndex + it.model->gpuFirstIndex,
-                      int32_t(it.model->gpuBaseVertex), count);
+    // Only immutable, static pooled rigid Models use Vulkan-standard indexed
+    // vertexOffset semantics, matching the indirect command path. Other
+    // imported/posed/morphed RHI draws keep their legacy vertex-ID behavior.
+    const bool canonicalVulkan = dev_->info().backend == gfx::Backend::Vulkan &&
+        vulkanPooledMdiAddressingEnabled() && it.model->geometryPoolPage &&
+        (it.flags & kDrawStatic) && it.rigid && it.joints < 0 &&
+        it.morph < 0 && !it.baked && !it.mat->shaderGraph;
+    if (canonicalVulkan)
+        dev_->drawIndexedCanonical(it.indexCount,
+            it.firstIndex + it.model->gpuFirstIndex,
+            int32_t(it.model->gpuBaseVertex), count);
+    else
+        dev_->drawIndexed(it.indexCount, it.firstIndex + it.model->gpuFirstIndex,
+                          int32_t(it.model->gpuBaseVertex), count);
     lastItem_ = &it;
     modelStats_.triangles += uint64_t(it.indexCount / 3) * count;
     if (count > 1) { ++modelStats_.instancedDraws; modelStats_.drawnInstances += count; }
@@ -840,52 +1406,79 @@ static size_t indirectCommandThreshold() {
 bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, int phase,
                                         bool instancePalette) {
     if (count < 2 || !dev_->supportsMultiDrawIndirect()) return false;
+    const bool profileMdiCpu = profiling_ && !auxiliaryModelPass_ &&
+        (phase == 0 || (phase == 1 && geometryMainView_));
+    auto* cpuStages = profileMdiCpu ? &modelStats_.mdiCpuStages[size_t(phase)] : nullptr;
     if (instancePalette) {
-        // Shader U3 is fixed to 64 material entries. Never produce a batch
-        // that would index beyond that uniform array.
-        std::vector<const Material*> unique;
-        unique.reserve(std::min<size_t>(count, kMaxMaterialPalette));
+        // Fixed 64-entry shader palette: avoid transient heap allocations in
+        // this preflight, and preserve its exact material-pointer semantics.
+        std::array<const Material*, kMaxMaterialPalette> unique{};
+        size_t uniqueCount = 0;
         for (uint32_t n = 0; n < count; ++n) {
             const Material* m = modelItems_[items[n]].mat;
-            if (std::find(unique.begin(), unique.end(), m) != unique.end()) continue;
-            if (unique.size() == kMaxMaterialPalette) return false;
-            unique.push_back(m);
+            if (std::find(unique.begin(), unique.begin() + uniqueCount, m) !=
+                unique.begin() + uniqueCount) continue;
+            if (uniqueCount == kMaxMaterialPalette) return false;
+            unique[uniqueCount++] = m;
         }
     }
-    // The Vulkan direct-draw path applies gpuBaseVertex as a vertex-buffer offset,
-    // whereas indexed indirect applies vertexOffset to the fetched vertex index.
-    // Until both paths use the same shader-visible vertex addressing convention,
-    // indirect draws with nonzero base vertices would read the wrong geometry.
-    // Preserve correctness by falling back to regular indexed draws for these models.
+    // Vulkan's ordinary direct indexed draw uses a legacy VB binding offset
+    // and cannot match a nonzero indirect vertexOffset. For explicitly opted-in
+    // static pooled rigid items, drawModelBatch selects drawIndexedCanonical,
+    // giving both paths the same Vulkan vertex-index semantics. Other models
+    // keep the old safe fallback, including all nonpooled/deformed callers.
     if (dev_->info().backend == gfx::Backend::Vulkan) {
-        for (uint32_t n = 0; n < count; ++n)
-            if (modelItems_[items[n]].model->gpuBaseVertex != 0) return false;
+        for (uint32_t n = 0; n < count; ++n) {
+            const auto& part = modelItems_[items[n]];
+            if (!part.model->gpuBaseVertex) continue;
+            if (!vulkanPooledMdiAddressingEnabled() ||
+                !part.model->geometryPoolPage || !part.rigid ||
+                !(part.flags & kDrawStatic) || part.joints >= 0 ||
+                part.morph >= 0 || part.baked || !part.mat ||
+                part.mat->shaderGraph)
+                return false;
+        }
     }
+    // Start after preflight rejection checks: pack covers exact cache
+    // signature validation and building the ordered CPU indexed commands.
+    const auto packStart = cpuStages
+        ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    if (cpuStages) ++cpuStages->indirectAttempts;
     const bool traceIndirect = std::getenv("AIVERSE_ICB_PROFILE") != nullptr;
     const auto indirectStart = std::chrono::steady_clock::now();
     // Exact-signature validation makes this safe across changing visibility,
     // model reloads and mixed geometry pages. Static scenes reuse layouts
     // almost every frame; avoid rebuilding the command list each time.
-    // AIVERSE_MDI_LAYOUT_CACHE=off (or 0) restores the uncached path.
-    const char* cacheMode = std::getenv("AIVERSE_MDI_LAYOUT_CACHE");
-    const bool layoutCaching = !cacheMode ||
-        (std::strcmp(cacheMode, "off") != 0 && std::strcmp(cacheMode, "0") != 0);
-    auto& commands = indirectCommandScratch_;
-    commands.clear();
+    // Per-view policy was resolved at beginScene. Disable caching without
+    // disabling CPU MDI submission or mutating previously cached layouts.
+    const bool layoutCaching = mdiLayoutCacheEnabled_;
+    // A signature hit can use the already retained immutable command vector
+    // directly until this synchronous drawIndexedIndirect returns. It does not
+    // need a second CPU-to-CPU copy into indirectCommandScratch_.
     uint64_t triangles = 0;
     bool cacheHit = false;
     IndirectLayoutEntry* cacheEntry = nullptr;
-    if (layoutCaching) {
+    if (layoutCaching && count <= kMaxMdiCachedItems) {
         auto& entries = indirectLayoutCache_[size_t(phase)];
         const size_t cursor = indirectLayoutCursor_[size_t(phase)]++;
-        if (cursor == entries.size()) entries.emplace_back();
-        cacheEntry = &entries[cursor];
-        // Compare exact geometry signatures, not hashes: stale model pointers,
-        // mesh reloads and LOD changes must never reuse invalid commands.
+        if (cursor < kMaxMdiLayoutsPerPhase) {
+            if (cursor == entries.size()) entries.emplace_back();
+            cacheEntry = &entries[cursor];
+            cacheEntry->lastUsedScene = indirectLayoutSceneEpoch_;
+        }
+    }
+    if (layoutCaching && !cacheEntry)
+        ++modelStats_.mdiLayoutCacheBypassed;
+    if (cacheEntry) {
+        // Compare exact model, revision, GPU handles and primitive geometry.
+        // Unloaded assets are explicitly retired before pointers can recycle.
         cacheHit = cacheEntry->signature.size() == count;
         if (cacheHit) for (uint32_t n = 0; n < count; ++n) {
             const auto& part = modelItems_[items[n]];
-            const IndirectLayoutItem current{part.prim, part.indexCount, part.firstIndex,
+            const IndirectLayoutItem current{
+                part.model, part.model->geometryRevision,
+                part.model->vb.id, part.model->ib.id,
+                part.prim, part.indexCount, part.firstIndex,
                 part.model->gpuFirstIndex, uint32_t(part.model->gpuBaseVertex)};
             if (!(cacheEntry->signature[n] == current)) {
                 cacheHit = false;
@@ -893,7 +1486,6 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
             }
         }
         if (cacheHit) {
-            commands.assign(cacheEntry->commands.begin(), cacheEntry->commands.end());
             triangles = cacheEntry->triangles;
         }
         if (traceIndirect) {
@@ -907,16 +1499,18 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
         }
     }
     if (!cacheHit) {
-        if (commands.capacity() < count) commands.reserve(count);
+        auto& scratch = indirectCommandScratch_;
+        scratch.clear();
+        if (scratch.capacity() < count) scratch.reserve(count);
         // Consecutive instances of one primitive form ONE indirect command.
         // firstInstance selects per-object transform data.
         for (uint32_t n = 0; n < count;) {
             const auto& part = modelItems_[items[n]];
             uint32_t end = n + 1;
             while (end < count && modelItems_[items[end]].prim == part.prim) ++end;
-            commands.push_back({part.indexCount, end - n,
-                                part.firstIndex + part.model->gpuFirstIndex,
-                                int32_t(part.model->gpuBaseVertex), n});
+            scratch.push_back({part.indexCount, end - n,
+                               part.firstIndex + part.model->gpuFirstIndex,
+                               int32_t(part.model->gpuBaseVertex), n});
             triangles += uint64_t(part.indexCount / 3) * (end - n);
             n = end;
         }
@@ -925,39 +1519,90 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
             cacheEntry->signature.reserve(count);
             for (uint32_t n = 0; n < count; ++n) {
                 const auto& part = modelItems_[items[n]];
-                cacheEntry->signature.push_back({part.prim, part.indexCount, part.firstIndex,
+                cacheEntry->signature.push_back({
+                    part.model, part.model->geometryRevision,
+                    part.model->vb.id, part.model->ib.id,
+                    part.prim, part.indexCount, part.firstIndex,
                     part.model->gpuFirstIndex, uint32_t(part.model->gpuBaseVertex)});
             }
-            cacheEntry->commands = commands;
+            cacheEntry->commands = scratch;
             cacheEntry->triangles = triangles;
         }
     }
+    // Cache hits own a stable per-entry command vector; misses build only in
+    // reusable scratch. Do not mutate either source during GPU submission.
+    const auto& commands = cacheHit
+        ? cacheEntry->commands : indirectCommandScratch_;
     // Building CPU ICB commands on Metal has a measurable setup cost.
     // Avoid switching to indirect for tiny groups where indexed draws win.
     const size_t minimumCommands = dev_->info().backend == gfx::Backend::Metal ? indirectCommandThreshold() : 4u;
-    if (commands.size() < minimumCommands) return false;
+    if (commands.size() < minimumCommands) {
+        if (cpuStages) {
+            cpuStages->commandPackingMs += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - packStart).count();
+            ++cpuStages->underThreshold;
+        }
+        return false;
+    }
     const auto afterGrouping = std::chrono::steady_clock::now();
-    if (!drawModelBatch(items, count, phase, false, false, instancePalette))
+    if (cpuStages) {
+        cpuStages->commandPackingMs += std::chrono::duration<double, std::milli>(
+            afterGrouping - packStart).count();
+    }
+    if (!drawModelBatch(items, count, phase, false, false, instancePalette)) {
+        if (cpuStages) {
+            cpuStages->pipelineSetupMs += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - afterGrouping).count();
+            ++cpuStages->pipelineWarmups;
+        }
         return true; // pipeline warming: no fallback draw
+    }
     const auto afterPipeline = std::chrono::steady_clock::now();
-    if (!indirectCommands_.valid()) {
+    if (cpuStages) {
+        cpuStages->pipelineSetupMs += std::chrono::duration<double, std::milli>(
+            afterPipeline - afterGrouping).count();
+    }
+    const bool existingIndirectBuffer = indirectCommands_.valid();
+    if (!existingIndirectBuffer) {
         gfx::BufferDesc d;
         d.type = gfx::BufferType::Indirect;
         d.usage = gfx::Usage::Dynamic;
         d.snapshotUpdates = true;
+        // Every call writes a complete ordered command prefix and executes
+        // exactly commands.size() draws. No draw reads the previous tail.
+        // Backends still create isolated in-flight snapshots/versions.
+        d.discardOnUpdate = true;
         d.size = commands.size() * sizeof(commands[0]);
         d.data = commands.data();
         d.label = "model indexed indirect commands";
         indirectCommands_ = dev_->createBuffer(d);
     } else dev_->updateBuffer(indirectCommands_, commands.data(), commands.size() * sizeof(commands[0]));
     const auto afterUpload = std::chrono::steady_clock::now();
-    if (!indirectCommands_.valid() ||
-        !dev_->drawIndexedIndirect(indirectCommands_, 0, uint32_t(commands.size()))) {
+    if (cpuStages) {
+        cpuStages->bufferUploadMs += std::chrono::duration<double, std::milli>(
+            afterUpload - afterPipeline).count();
+    }
+    const bool indirectSubmitted = indirectCommands_.valid() &&
+        dev_->drawIndexedIndirect(indirectCommands_, 0, uint32_t(commands.size()));
+    if (!indirectSubmitted) {
+        if (cpuStages) {
+            cpuStages->backendSubmitMs += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - afterUpload).count();
+            ++cpuStages->backendFallbacks;
+        }
         for (uint32_t n = 0; n < count; ++n)
             drawModelBatch(items + n, 1, phase);
         return true;
     }
     const auto afterSubmit = std::chrono::steady_clock::now();
+    if (cpuStages) {
+        cpuStages->backendSubmitMs += std::chrono::duration<double, std::milli>(
+            afterSubmit - afterUpload).count();
+        ++cpuStages->submitted;
+    }
+    modelStats_.mdiIndirectCommandBytes +=
+        commands.size() * sizeof(gfx::DrawIndexedIndirectCommand);
+    if (existingIndirectBuffer) ++modelStats_.mdiIndirectPrefixOverwrites;
     if (traceIndirect) {
         static uint32_t samples = 0;
         static double sums[4] = {};
@@ -974,6 +1619,13 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
             for (double& v : sums) v = 0.0;
         }
     }
+    if (cacheHit) {
+        // Only count genuinely submitted draws. The old warm path copied
+        // this complete command vector into scratch before each upload.
+        ++modelStats_.mdiLayoutZeroCopySubmissions;
+        modelStats_.mdiLayoutCopyAvoidedBytes +=
+            commands.size() * sizeof(gfx::DrawIndexedIndirectCommand);
+    }
     // U2 / texture bindings come from items[0] for the whole indirect
     // submission. In per-instance palette mode the final command may use
     // different PBR factors, so pretending its state is still bound would
@@ -986,6 +1638,35 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     }
     ++modelStats_.multiDrawSubmissions;
     modelStats_.indirectCommands += commands.size();
+    // Count only *successful* mixed-Model CPU MDI submissions. All models
+    // must share the same GPU geometry page and retain their per-instance
+    // source geometry ranges; a same-model instanced batch is not cross-model.
+    if (staticCrossModelBatchesEnabled_ && phase <= 1 && count > 1) {
+        const Model* anchor = modelItems_[items[0]].model;
+        bool differentModels = false, compatiblePage = anchor != nullptr;
+        for (uint32_t n = 0; n < count && compatiblePage; ++n) {
+            const auto& part = modelItems_[items[n]];
+            if (!part.model || !part.rigid ||
+                !(part.flags & kDrawStatic) || !part.model->geometryPoolPage ||
+                part.joints >= 0 || part.morph >= 0 || part.baked ||
+                part.gi != 0 || part.materialRole || part.shadowRole ||
+                part.paletteMaterials || part.lodThreshold < 1.0f ||
+                part.lodInvert) {
+                compatiblePage = false;
+                break;
+            }
+            if (part.model != anchor) {
+                differentModels = true;
+                if (!staticCrossModelPageCompatible(*anchor, *part.model))
+                    compatiblePage = false;
+            }
+        }
+        if (differentModels && compatiblePage) {
+            ++modelStats_.staticCrossModelSubmissions;
+            modelStats_.staticCrossModelCommands += commands.size();
+            modelStats_.staticCrossModelItems += count;
+        }
+    }
     if (instancePalette) {
         ++modelStats_.mdiPaletteSubmissions;
         modelStats_.mdiPaletteCommands += commands.size();
@@ -1012,6 +1693,12 @@ void Renderer3D::prepareGpuModelDraws() {
     gpuModelSlots_.clear();
     gpuModelRecords_.clear();
 
+    // Feedback from the previous completed pass, sampled before counters reset.
+    // This is CPU submission feedback, not measured GPU busy-time.
+    static const bool autoBatch = [] {
+        const char* flag = std::getenv("AIVERSE_BATCH_AUTO");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
     static const bool enabled = [] {
         const char* flag = std::getenv("AIVERSE_GPU_AUTHORED_DRAWS");
         return flag && std::strcmp(flag, "1") == 0;
@@ -1060,7 +1747,7 @@ void Renderer3D::prepareGpuModelDraws() {
     static const bool adaptiveGpuIcb = [] {
         const char* flag = std::getenv("AIVERSE_GPU_ICB_ADAPTIVE");
         return flag && std::strcmp(flag, "1") == 0;
-    }();
+    }() || autoBatch;
     static const uint32_t minGpuIcbCommands = [] {
         const char* raw = std::getenv("AIVERSE_GPU_ICB_MIN_COMMANDS");
         if (!raw || !*raw) return 2u;
@@ -1070,8 +1757,13 @@ void Renderer3D::prepareGpuModelDraws() {
             ? uint32_t(value) : 2u;
     }();
     const uint32_t groupCapacity = std::max(2u, instanceLimit_);
-    const uint32_t effectiveMinimum = gpuIcbMinimumCommands(
-        gpuModelEligible_, minGpuIcbCommands, adaptiveGpuIcb);
+    const uint32_t effectiveMinimum = autoBatch
+        ? std::max(minGpuIcbCommands, gpuIcbAutoMinimum_)
+        : gpuIcbMinimumCommands(
+            gpuModelEligible_, minGpuIcbCommands, adaptiveGpuIcb);
+    // In auto mode avoid costly grouping/compute for small eligible workloads.
+    // Existing CPU MDI / instancing still handles every item.
+    if (autoBatch && gpuIcb && gpuModelEligible_ < effectiveMinimum) return;
     if (adaptiveGpuIcb && gpuIcb && modelInstancingEnabled_ &&
         dev_->supportsGpuEncodedIcb()) {
         // First eliminate impossible groups using only resource handles and
@@ -1312,24 +2004,25 @@ void Renderer3D::prepareGpuModelDraws() {
                 first = end; // leave these models for CPU instancing/MDI
                 continue;
             }
-            std::vector<uint32_t> sourceSlots;
-            sourceSlots.reserve(end - first);
+            gpuIcbSourceSlotsScratch_.clear();
+            gpuIcbSourceSlotsScratch_.reserve(end - first);
             for (size_t j = first; j < end; ++j)
-                sourceSlots.push_back(gpuModelSlots_[indices[j]]);
+                gpuIcbSourceSlotsScratch_.push_back(gpuModelSlots_[indices[j]]);
             ++gpuIcbCandidates_;
             // One contiguous GPU Instance record per command. The Metal vertex
             // shader fetches it by baseInstance, so no per-batch U0 upload is
             // necessary when binding the GPU_INSTANCE_BUFFER permutation.
-            std::vector<float> instanceRecords((end - first) * 36u, 0.0f);
+            gpuIcbInstancesScratch_.resize((end - first) * 36u);
+            std::fill(gpuIcbInstancesScratch_.begin(), gpuIcbInstancesScratch_.end(), 0.0f);
             for (size_t j = first; j < end; ++j)
                 packModelInstance(modelItems_[indices[j]], 1, {1, 1, 1, 1},
-                                  instanceRecords.data() + (j - first) * 36u);
+                                  gpuIcbInstancesScratch_.data() + (j - first) * 36u);
             const uint32_t token = dev_->prepareGpuEncodedIndexedIcb(
                 gpuModelCommands_.output(gpuModelFrame_, gpuModelSubmission_),
                 modelItems_[indices[first]].model->vb,
                 modelItems_[indices[first]].model->ib,
-                sourceSlots.data(), uint32_t(sourceSlots.size()),
-                instanceRecords.data(), instanceRecords.size() * sizeof(float));
+                gpuIcbSourceSlotsScratch_.data(), uint32_t(gpuIcbSourceSlotsScratch_.size()),
+                gpuIcbInstancesScratch_.data(), gpuIcbInstancesScratch_.size() * sizeof(float));
             if (token) {
                 ++gpuIcbPrepared_;
                 GpuEncodedBatch group;
@@ -1343,15 +2036,48 @@ void Renderer3D::prepareGpuModelDraws() {
     // A single command-encoder end creates the compute->render dependency
     // for all groups, instead of opening/closing one encoder per ICB batch.
     dev_->finishGpuEncodedIcbPreparation();
+    if (autoBatch) {
+        // Hysteresis: favour the CPU for sustained failed prepares and only
+        // probe GPU encoding again after workload grows. Never disable
+        // ordinary draw fallback or bypass material/geometry validation.
+        if (gpuIcbPrepared_ && !gpuIcbRejected_) {
+            gpuIcbAutoMisses_ = 0;
+            if (gpuIcbAutoMinimum_ > 64)
+                gpuIcbAutoMinimum_ = std::max(64u, gpuIcbAutoMinimum_ / 2u);
+        } else if (gpuIcbCandidates_) {
+            if (++gpuIcbAutoMisses_ >= 3) {
+                gpuIcbAutoMinimum_ = std::min(256u, gpuIcbAutoMinimum_ * 2u);
+                gpuIcbAutoMisses_ = 0;
+            }
+        }
+    }
 }
 
 void Renderer3D::renderModels(int phase) {
     if (modelItems_.empty()) return;
+    // Read the same dynamic indirect-buffer handle at both boundaries.
+    // Reflection and other auxiliary view replays are intentionally excluded
+    // from the main-camera opaque metric; phases 2..4 are not shadow/opaque.
+    // A buffer first created *during* this pass has no previous counters,
+    // so its initial versions and CPU creation-time copies belong here.
+    const bool sampleMdiTransfers = !auxiliaryModelPass_ &&
+        (phase == 0 || (phase == 1 && geometryMainView_));
+    const gfx::BufferHandle transferHandleBefore = sampleMdiTransfers
+        ? indirectCommands_ : gfx::BufferHandle{};
+    const gfx::BufferUpdateStats transferBefore = sampleMdiTransfers
+        ? indirectBufferUpdateStats() : gfx::BufferUpdateStats{};
     // A renderModels invocation is one independent visibility/ordering epoch.
     // Reset the per-phase cache cursor, but retain validated layouts across frames.
     indirectLayoutCursor_[size_t(phase)] = 0;
     const bool traceModelPass = std::getenv("AIVERSE_MODEL_BATCH_PROFILE") != nullptr;
+    const bool profileMdiCpu = profiling_ && sampleMdiTransfers;
+    auto* cpuStages = profileMdiCpu ? &modelStats_.mdiCpuStages[size_t(phase)] : nullptr;
+    // Stage 30 aggregates within beginScene. Snapshot before incrementing
+    // pass counters so each Stage 31 ring sample is an independent invocation.
+    const ModelRenderStats::CpuMdiStageProfile cpuBefore =
+        cpuStages ? *cpuStages : ModelRenderStats::CpuMdiStageProfile{};
     const auto passBegin = std::chrono::steady_clock::now();
+    if (cpuStages) ++cpuStages->passes;
     uint64_t mdiCandidates = 0, mdiAccepted = 0, mdiRejected = 0, mdiShort = 0;
     uint64_t submittedBatches = 0, submittedInstanced = 0, submittedItems = 0;
     double mdiScanMs = 0.0, mdiAttemptMs = 0.0, mdiAcceptedMs = 0.0, mdiRejectedMs = 0.0;
@@ -1392,8 +2118,19 @@ void Renderer3D::renderModels(int phase) {
         if (take) order_.push_back(i);
     }
     if(profiling_){auto now=std::chrono::steady_clock::now();profile_.selectMs[size_t(phase)]+=std::chrono::duration<double,std::milli>(now-started).count();started=now;}
-    if (order_.empty()) return;
     const auto afterSelect = std::chrono::steady_clock::now();
+    if (cpuStages) {
+        cpuStages->selectionMs += std::chrono::duration<double, std::milli>(
+            afterSelect - passBegin).count();
+    }
+    if (order_.empty()) {
+        if (cpuStages) {
+            cpuStages->totalMs += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - passBegin).count();
+            recordCpuMdiStageSample(size_t(phase), cpuBefore);
+        }
+        return;
+    }
     // Material identity is NOT a batching key. Editor/game code routinely
     // creates per-entity copies with identical GPU state. Each new material
     // must still pass the exact GPU-state comparison (hash is only a prefilter).
@@ -1526,17 +2263,212 @@ void Renderer3D::renderModels(int phase) {
         const char* flag = std::getenv("AIVERSE_ADAPTIVE_DRAW_GROUPS");
         return flag && std::strcmp(flag, "1") == 0;
     }();
-    const char* geometrySortSetting = std::getenv("AIVERSE_MDI_GEOMETRY_SORT");
-    const bool geometrySortRequested = geometrySortSetting &&
-        std::strcmp(geometrySortSetting, "1") == 0;
+    // Keep the independent material-palette sort rules. A renderer caller
+    // may opt into geometry sorting without touching process env flags.
+    const bool geometrySortRequested = mdiGeometrySortRequested_;
     const bool mdiGeometrySort = modelMultiDrawEnabled_ &&
         dev_->supportsMultiDrawIndirect() &&
         (!gpuAdaptiveInstancingFallback_ || groupAdaptive) &&
         phase <= 1 && (geometrySortRequested || paletteSort);
-    if (phase == 2) { // back to front
-        std::sort(order_.begin(), order_.end(), [&](uint32_t a, uint32_t b) { return modelItems_[a].depth > modelItems_[b].depth; });
-    } else {          // group by state so identical primitives end up next to each other (instancing)
+    // Opt-in specifically for opaque/shadow static rigid primitives from
+    // different source models resident in ONE GPU geometry page. Visibility,
+    // sun-shadow culling and per-node LOD were already calculated before the
+    // pass order is built. This only changes the safe opaque grouping order.
+    const char* crossSafe = std::getenv("AIVERSE_RENDER_SAFE");
+    const char* crossIndirect = std::getenv("AIVERSE_MULTI_DRAW_INDIRECT");
+    bool staticCrossModelSort = staticCrossModelBatchesEnabled_ &&
+        modelMultiDrawEnabled_ && dev_->supportsMultiDrawIndirect() &&
+        !gpuAdaptiveInstancingFallback_ && !gpuModelCommandsReady_ &&
+        geometryMainView_ && !auxiliaryModelPass_ && !drawCallDebug_ &&
+        phase <= 1 && !paletteSort &&
+        !(crossSafe && std::strcmp(crossSafe, "1") == 0) &&
+        !(crossIndirect && std::strcmp(crossIndirect, "off") == 0);
+    const auto eligibleStaticPage = [&](const ModelItem& item) {
+        return item.model && item.prim && item.mat &&
+            item.model->geometryPoolPage && !item.model->geometry &&
+            item.model->vb.valid() && item.model->ib.valid() &&
+            (item.flags & kDrawStatic) && item.rigid &&
+            !(item.flags & (kDrawTransparent | kDrawFadeDepth | kDrawActorReveal)) &&
+            item.tint.w >= .99f && item.dissolve <= 0 &&
+            !item.baked && item.joints < 0 && item.morph < 0 &&
+            item.gi == 0 && !item.materialRole && !item.shadowRole &&
+            !item.paletteMaterials && !item.gpuLodAvailable &&
+            item.lodThreshold >= 1.0f && !item.lodInvert &&
+            item.mat->alpha == AlphaMode::Opaque && !item.mat->transparent &&
+            !item.mat->shaderGraph &&
+            // The optional canonical direct indexed path matches Vulkan's
+            // nonzero indirect vertexOffset for immutable rigid pooled models.
+            // With the opt-in OFF, retain the exact old direct fallback.
+            (dev_->info().backend != gfx::Backend::Vulkan ||
+             item.model->gpuBaseVertex == 0 ||
+             vulkanPooledMdiAddressingEnabled());
+    };
+    // Page-aware preflight operates on *already visible* ModelItems. Only
+    // groups with distinct source Models AND enough unique primitives to
+    // meet the backend's indirect-command threshold trigger special sorting.
+    // Everything else retains the original material/primitive sort order.
+    // GPU-state materialGroup IDs were resolved with exact comparisons above.
+    // Workspace memory and group slots persist across shadow/main passes,
+    // but a beginPass epoch prevents leaking any visibility or stale pointer
+    // decisions from the preceding camera or model asset revision.
+    staticCrossPreflight_.clearModes();
+    if (staticCrossModelSort) {
+        const size_t threshold = dev_->info().backend == gfx::Backend::Metal
+            ? indirectCommandThreshold() : size_t{4};
+        if (order_.size() < threshold || size_t(instanceLimit_) < threshold) {
+            staticCrossModelSort = false;
+        } else {
+            auto& workspace = staticCrossPreflight_;
+            workspace.beginPass(modelItems_.size());
+            // A fixed open-addressed directory and bounded vector of groups
+            // replace the per-pass unordered_map/node allocations. The
+            // item->group index is retained only for this render pass, so
+            // the promotion scan does not repeat a material/page hash lookup.
+            bool budgetExceeded = false;
+            for (uint32_t itemIndex : order_) {
+                const ModelItem& item = modelItems_[itemIndex];
+                if (!eligibleStaticPage(item)) continue;
+                const StaticCrossModelPreflightKey key{
+                    item.model->geometryPoolPage.get(),
+                    materialGroup[itemIndex], item.flags,
+                    item.model->vb.id, item.model->ib.id};
+                const uint16_t groupIndex = workspace.findOrCreate(key);
+                if (groupIndex == StaticCrossModelPreflightWorkspace::kInvalidGroup) {
+                    budgetExceeded = true;
+                    break;
+                }
+                workspace.groups()[groupIndex].group.observe(
+                    item.model, item.prim, threshold);
+                workspace.rememberItem(itemIndex, groupIndex);
+            }
+            modelStats_.staticCrossModelPreflightGroups += workspace.groups().size();
+            size_t readyGroupsThisPass = 0;
+            if (!budgetExceeded) for (auto& record : workspace.groups()) {
+                auto& group = record.group;
+                group.ready = group.opportunity(threshold, instanceLimit_);
+                if (group.ready) {
+                    ++readyGroupsThisPass;
+                    ++modelStats_.staticCrossModelPreflightReady;
+                } else {
+                    ++modelStats_.staticCrossModelPreflightRejected;
+                }
+            }
+            if (budgetExceeded) {
+                modelStats_.staticCrossModelPreflightRejected += workspace.groups().size();
+                staticCrossModelSort = false;
+            } else if (readyGroupsThisPass == 0) {
+                staticCrossModelSort = false;
+            } else {
+                // Each live GPU page has its own shadow/opaque CPU cost.
+                // One decision per page, scene epoch and pass, regardless
+                // of how many material groups on that page qualified.
+                size_t permittedGroups = 0;
+                bool skippedThisPass = false, probedThisPass = false;
+                for (auto& record : workspace.groups()) {
+                    auto& group = record.group;
+                    if (!group.ready) continue;
+                    if (cpuMdiAdaptiveEnabled_) {
+                        CpuMdiPageEntry* entry = cpuMdiPageEntry(*group.firstModel);
+                        if (entry) {
+                            const size_t pass = size_t(phase);
+                            if (entry->decisionEpoch[pass] != cpuMdiPageEpoch_) {
+                                auto& feedback = entry->byPass[pass];
+                                const bool overBudget = feedback.samples >= 8 &&
+                                    feedback.avgUsPerCommand >
+                                        cpuMdiAdaptiveBudgetUs_;
+                                entry->permitted[pass] =
+                                    feedback.permit(cpuMdiAdaptiveBudgetUs_);
+                                entry->decisionEpoch[pass] = cpuMdiPageEpoch_;
+                                if (overBudget && entry->permitted[pass]) {
+                                    ++modelStats_.staticCrossModelAdaptiveProbeGroups;
+                                    probedThisPass = true;
+                                }
+                            }
+                            group.permitted = entry->permitted[pass];
+                        }
+                    }
+                    if (group.permitted) {
+                        ++permittedGroups;
+                    } else {
+                        ++modelStats_.staticCrossModelAdaptiveSkippedGroups;
+                        skippedThisPass = true;
+                    }
+                }
+                if (skippedThisPass)
+                    ++modelStats_.staticCrossModelAdaptiveSkippedPasses;
+                if (probedThisPass)
+                    ++modelStats_.staticCrossModelAdaptiveProbePasses;
+                // The group index was captured during this same visibility
+                // epoch. No second GPU-material/page hash lookup or redundant
+                // eligibleStaticPage call is needed when assigning draw modes.
+                workspace.activateModes(modelItems_.size());
+                for (uint32_t itemIndex : order_) {
+                    const uint16_t groupIndex = workspace.groupForItem(itemIndex);
+                    if (groupIndex == StaticCrossModelPreflightWorkspace::kInvalidGroup)
+                        continue;
+                    const auto& group = workspace.groups()[groupIndex].group;
+                    if (!group.ready) continue;
+                    const uint8_t mode = group.permitted ? 1u : 2u;
+                    workspace.rememberMode(itemIndex, mode);
+                    if (mode == 1u)
+                        ++modelStats_.staticCrossModelPreflightItems;
+                }
+                staticCrossModelSort = permittedGroups > 0;
+                if (staticCrossModelSort)
+                    modelStats_.staticCrossModelRankedGroups +=
+                        workspace.prepareSortRanks();
+            }
+        }
+    }
+    if (phase == 2) { // transparent: preserve original back-to-front order
         std::sort(order_.begin(), order_.end(), [&](uint32_t a, uint32_t b) {
+            return modelItems_[a].depth > modelItems_[b].depth;
+        });
+    } else {
+        // The existing static cross-model comparator puts all admitted items
+        // before ordinary items. Partition that same set once; then avoid
+        // comparing a candidate to every ordinary item during a global sort.
+        // mode 2 (adaptive fallback) always follows the legacy sorter.
+        auto ordinaryBegin = order_.begin();
+        if (staticCrossModelSort) {
+            ordinaryBegin = std::partition(order_.begin(), order_.end(),
+                [&](uint32_t index) {
+                    return staticCrossPreflight_.modeOf(index) == 1u;
+                });
+            const size_t permittedCount = size_t(ordinaryBegin - order_.begin());
+            const auto withinGroupLess = [&](uint32_t a, uint32_t b) {
+                const ModelItem &x = modelItems_[a], &y = modelItems_[b];
+                if (x.lmPage != y.lmPage) return x.lmPage < y.lmPage;
+                if (x.prim != y.prim)
+                    return std::less<const Primitive*>{}(x.prim, y.prim);
+                return a < b;
+            };
+            // For small candidate sets the counting pass and bucket scratch
+            // can cost more than one comparison sort; use a conservative
+            // CPU-only threshold without changing GPU MDI eligibility.
+            if (permittedCount >= 64u &&
+                staticCrossPreflight_.bucketizePermittedPrefix(
+                    order_, permittedCount, withinGroupLess)) {
+                modelStats_.staticCrossModelBucketedItems += permittedCount;
+                modelStats_.staticCrossModelBucketedGroups +=
+                    staticCrossPreflight_.rankedGroupCount();
+            } else {
+                // The earlier ranked comparator is the safe fallback for
+                // tiny groups or unexpected stale/missing rank records.
+                std::sort(order_.begin(), ordinaryBegin,
+                    [&](uint32_t a, uint32_t b) {
+                        const uint16_t ra =
+                            staticCrossPreflight_.sortRankForPermittedItem(a);
+                        const uint16_t rb =
+                            staticCrossPreflight_.sortRankForPermittedItem(b);
+                        if (ra != rb) return ra < rb;
+                        return withinGroupLess(a, b);
+                    });
+            }
+        }
+        // Non-admitted objects retain the exact legacy order: this includes
+        // per-page adaptive instancing, nonstatic, nonpooled and GI items.
+        std::sort(ordinaryBegin, order_.end(), [&](uint32_t a, uint32_t b) {
             const ModelItem &x = modelItems_[a], &y = modelItems_[b];
             if ((x.joints >= 0) != (y.joints >= 0)) return x.joints < y.joints;
             if (x.baked != y.baked) return x.baked < y.baked;
@@ -1562,8 +2494,17 @@ void Renderer3D::renderModels(int phase) {
             return a < b;
         });
     }
+    modelStats_.staticCrossModelPreflightWorkspaceBytes = std::max(
+        modelStats_.staticCrossModelPreflightWorkspaceBytes,
+        staticCrossPreflight_.retainedBytes());
     if(profiling_)profile_.sortMs[size_t(phase)]+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();
     const auto afterSort = std::chrono::steady_clock::now();
+    if (cpuStages) {
+        // Material-group resolution and preflight are included here, not
+        // just the final std::sort/order_ operation.
+        cpuStages->groupingSortMs += std::chrono::duration<double, std::milli>(
+            afterSort - afterSelect).count();
+    }
     ProfileTimer timer(profiling_?&profile_.drawMs[size_t(phase)]:nullptr);
     currentPipe_ = {};
     lastItem_ = nullptr;
@@ -1585,7 +2526,36 @@ void Renderer3D::renderModels(int phase) {
     // instancing for this frame (including shadow/opaque model submissions),
     // not the more expensive CPU MDI path. Existing A/B modes remain distinct.
 
-    const bool allowIndirect = modelMultiDrawEnabled_ &&
+    // AUTO is a three-path policy: when neither indirect encoder can
+    // amortize setup, use the ordinary direct/instancing renderer. This
+    // conservative admission gate is per pass, after visibility/culling,
+    // and never affects explicit manual batching modes.
+    static const bool autoBatchCpu = [] {
+        const char* flag = std::getenv("AIVERSE_BATCH_AUTO");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
+    static const size_t autoCpuMdiMinimum = [] {
+        const char* raw = std::getenv("AIVERSE_BATCH_AUTO_CPU_MIN_ITEMS");
+        if (!raw || !*raw) return size_t(64);
+        char* end = nullptr;
+        const long n = std::strtol(raw, &end, 10);
+        return end != raw && *end == '\0' && n >= 16 && n <= 4096
+            ? size_t(n) : size_t(64);
+    }();
+    // Learn only from unambiguous CPU-only passes. A successful GPU ICB
+    // in the opaque pass would contaminate a Direct-vs-MDI CPU comparison.
+    // Workloads below the conservative threshold keep the guaranteed direct
+    // path; larger buckets independently explore both CPU alternatives.
+    const bool autoCpuLearn = autoBatchCpu && phase <= 1 &&
+        !auxiliaryModelPass_ && geometryMainView_ &&
+        // GPU ICB covers opaque only; shadow CPU samples remain valid.
+        (phase == 0 || gpuEncodedBatches_.empty()) &&
+        modelMultiDrawEnabled_ &&
+        order_.size() >= autoCpuMdiMinimum;
+    const bool autoCpuPermit = !autoBatchCpu ||
+        (autoCpuLearn && autoCpuBatch_.useMdi(size_t(phase), order_.size()));
+    const uint64_t cpuMdiBefore = modelStats_.multiDrawSubmissions;
+    const bool allowIndirect = autoCpuPermit && modelMultiDrawEnabled_ &&
         (!gpuAdaptiveInstancingFallback_ || groupAdaptive) &&
         !(renderSafe && std::strcmp(renderSafe, "1") == 0) &&
         !(indirectToggle && std::strcmp(indirectToggle, "off") == 0) &&
@@ -1655,7 +2625,9 @@ void Renderer3D::renderModels(int phase) {
         // disabled GPU path still incurs compute+per-draw API overhead.
         static const bool adaptiveGpuIcbFallback = [] {
             const char* flag = std::getenv("AIVERSE_GPU_ICB_ADAPTIVE");
-            return flag && std::strcmp(flag, "1") == 0;
+            const char* autoFlag = std::getenv("AIVERSE_BATCH_AUTO");
+            return (flag && std::strcmp(flag, "1") == 0) ||
+                   (autoFlag && std::strcmp(autoFlag, "1") == 0);
         }();
         if (!adaptiveGpuIcbFallback &&
             phase == 1 && modelMultiDrawEnabled_ && geometryMainView_ &&
@@ -1683,9 +2655,17 @@ void Renderer3D::renderModels(int phase) {
         // Try MDI before conventional instancing, only when every command can
         // legally inherit the SAME uniforms/textures and rigid transform.
         // Draw-call colour mode uses one colour per indirect submission.
-        if (allowIndirect && order_.size() - i >= minIndirectCommands) {
+        // Adaptive fallback only changes the static pooled subgroup. Other
+        // ordinary MDI candidates (including dynamic and nonpooled models)
+        // retain their existing selection logic.
+        const bool preferInstancing = cpuMdiAdaptiveEnabled_ &&
+            staticCrossPreflight_.modeOf(order_[i]) == 2u;
+        if (allowIndirect && !preferInstancing &&
+            order_.size() - i >= minIndirectCommands) {
             ++modelStats_.mdiScans;
             const auto scanBegin = std::chrono::steady_clock::now();
+            bool cpuScanRecorded = false;
+            if (cpuStages) ++cpuStages->candidateScans;
             ++mdiCandidates;
             const uint32_t firstIndex = order_[i];
             const auto& first = modelItems_[firstIndex];
@@ -1693,13 +2673,20 @@ void Renderer3D::renderModels(int phase) {
                 first.gi == 0 && !first.materialRole && !first.shadowRole &&
                 !first.baked && first.joints < 0 && first.morph < 0 &&
                 !first.paletteMaterials && first.tint.w >= .99f;
+            const bool pooledStatic = staticCrossModelSort &&
+                staticCrossPreflight_.modeOf(firstIndex) == 1u;
             auto compatible = [&](uint32_t candidateIndex) {
                 const auto& y = modelItems_[candidateIndex];
                 // Each indirect command selects its own world/tint/team/etc
                 // through firstInstance into the shared instance uniform array.
                 // Pipeline, geometry buffers, textures and material uniforms
                 // must remain compatible across the entire command group.
-                return first.model->vb == y.model->vb &&
+                return (!pooledStatic ||
+                    (staticCrossPreflight_.modeOf(candidateIndex) == 1u &&
+                     eligibleStaticPage(y) &&
+                     (first.model == y.model ||
+                      staticCrossModelPageCompatible(*first.model, *y.model)))) &&
+                    first.model->vb == y.model->vb &&
                     first.model->ib == y.model->ib &&
                     !first.model->geometry && !y.model->geometry &&
                     first.gi == 0 && y.gi == 0 &&
@@ -1744,8 +2731,11 @@ void Renderer3D::renderModels(int phase) {
                     // Count consecutive primitive runs before allocating a command
                     // vector or preparing a pipeline. Repeated instances of one
                     // primitive are only ONE indirect command.
+                    const bool measureAdaptive = cpuMdiAdaptiveEnabled_ && pooledStatic;
                     size_t runs = 1;
-                    for (size_t k = i + 1; k < end && runs < minIndirectCommands; ++k)
+                    for (size_t k = i + 1;
+                         k < end && (measureAdaptive || runs < minIndirectCommands);
+                         ++k)
                         if (modelItems_[order_[k - 1]].prim != modelItems_[order_[k]].prim)
                             ++runs;
                     // With group-adaptive selection, reject MDI groups
@@ -1755,9 +2745,40 @@ void Renderer3D::renderModels(int phase) {
                         (!groupAdaptive || shouldUseCpuMultiDraw(
                             uint32_t(end - i), uint32_t(runs),
                             uint32_t(minIndirectCommands)))) {
+                        // The run search and threshold decision are selection
+                        // work, never part of indirect command packing time.
+                        if (cpuStages) {
+                            cpuStages->candidateScanMs += std::chrono::duration<double, std::milli>(
+                                std::chrono::steady_clock::now() - scanBegin).count();
+                            cpuScanRecorded = true;
+                        }
                         const auto attemptBegin = std::chrono::steady_clock::now();
+                        const uint64_t submissionsBefore =
+                            measureAdaptive ? modelStats_.multiDrawSubmissions : 0;
                         const bool accepted = drawModelIndirectBatch(
                             order_.data() + i, uint32_t(end - i), phase, paletteSort);
+                        if (measureAdaptive) {
+                            // CPU wall-clock includes compatible-run scan,
+                            // command packing, pipeline bindings and the GPU
+                            // submission API, not actual GPU elapsed time.
+                            // Failed submissions still teach the policy that
+                            // costly attempts should be avoided on most frames.
+                            const auto elapsedUs =
+                                std::chrono::duration<double, std::micro>(
+                                    std::chrono::steady_clock::now() - scanBegin).count();
+                            const bool submitted =
+                                modelStats_.multiDrawSubmissions > submissionsBefore;
+                            // The pass-wide aggregate is diagnostic only.
+                            // Admission is controlled by the source page's
+                            // own shadow/opaque EMA, never another page.
+                            cpuMdiAdaptive_[size_t(phase)].observe(
+                                elapsedUs, uint32_t(runs), submitted);
+                            if (CpuMdiPageEntry* entry =
+                                    cpuMdiPageEntry(*first.model))
+                                entry->byPass[size_t(phase)].observe(
+                                    elapsedUs, uint32_t(runs), submitted);
+                            ++modelStats_.staticCrossModelAdaptiveMeasuredAttempts;
+                        }
                         if (traceModelPass) {
                             const double elapsed = std::chrono::duration<double, std::milli>(
                                 std::chrono::steady_clock::now() - attemptBegin).count();
@@ -1794,6 +2815,10 @@ void Renderer3D::renderModels(int phase) {
                     ++modelStats_.mdiIneligibleDeform;
                 else ++modelStats_.mdiIneligibleAlpha;
             }
+            if (cpuStages && !cpuScanRecorded) {
+                cpuStages->candidateScanMs += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - scanBegin).count();
+            }
         }
         size_t j = i + 1;
         if (batchable(modelItems_[order_[i]]))
@@ -1804,6 +2829,40 @@ void Renderer3D::renderModels(int phase) {
         submittedInstanced += j - i > 1 ? 1u : 0u;
         submittedItems += j - i;
         i = j;
+    }
+    if (autoCpuLearn) {
+        // One sample per completed phase. Only credit MDI if the backend
+        // actually submitted it; otherwise fallbacks must not teach the
+        // scheduler that indirect encoding was the measured path.
+        const bool mdiSubmitted = modelStats_.multiDrawSubmissions > cpuMdiBefore;
+        if (!autoCpuPermit || mdiSubmitted) {
+            const double cpuMs = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - passBegin).count();
+            autoCpuBatch_.observe(size_t(phase), order_.size(),
+                                  autoCpuPermit, cpuMs);
+        }
+    }
+    if (cpuStages) {
+        cpuStages->totalMs += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - passBegin).count();
+        recordCpuMdiStageSample(size_t(phase), cpuBefore);
+    }
+    if (sampleMdiTransfers) {
+        const size_t pass = size_t(phase); // only 0 (shadow) or 1 (main opaque)
+        const gfx::BufferUpdateStats transferAfter = indirectBufferUpdateStats();
+        // A replaced buffer cannot be compared with the previous handle's
+        // lifetime stats. No GPU readback is needed for this identity guard.
+        if ((!transferHandleBefore.valid() ||
+             transferHandleBefore == indirectCommands_) &&
+            transferAfter.available) {
+            const auto delta = gfx::bufferUpdateCounterDelta(
+                transferBefore, transferAfter);
+            if (delta.available) {
+                gfx::accumulateBufferUpdateCounters(
+                    modelStats_.mdiBackendPassTransfers[pass], delta);
+                ++modelStats_.mdiBackendPassSamples[pass];
+            }
+        }
     }
     if (traceModelPass) {
         struct Totals {

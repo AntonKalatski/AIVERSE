@@ -192,6 +192,14 @@ struct Model {
     // from its GLB alone. The default still prepares compatible material/shadow batches.
     struct Batching {
         bool mergeRigid = false;
+        // Per-asset shared GPU geometry pool admission. Inherit uses the
+        // current global upload policy; Dedicated always uses separate VB/IB;
+        // AllowRigidLods opts in safe rigid LODs for only this Model.
+        // Backend/safe/size gates continue to take precedence.
+        enum class GeometryPoolPolicy : uint8_t {
+            Inherit = 0, Dedicated = 1, AllowRigidLods = 2
+        };
+        GeometryPoolPolicy geometryPoolPolicy = GeometryPoolPolicy::Inherit;
         // Generate missing LOD meshes during CPU preparation. Explicit
         // authored LOD chains always win; generated LODs never merge nodes.
         bool autoLod = true;
@@ -209,6 +217,22 @@ struct Model {
         std::string reason; // e.g. source already has LOD, unsupported model
     } autoLod;
     bool uploadPrepared = false;
+    // Monotonic content revision used by opt-in CPU caches. In-place changes to
+    // bind transforms, nodes or geometry must call markGeometryChanged().
+    // Material factors alone do not alter cached geometric transforms.
+    uint64_t geometryRevision = 1;
+    void markGeometryChanged() noexcept {
+        if (++geometryRevision == 0) ++geometryRevision;
+    }
+    // Explicit identity revision for the materials, texture bindings, and
+    // shader graphs belonging to this Model. Call after in-place edits or
+    // texture content updates that preserve GPU handle IDs. Needed only for
+    // the opt-in versioned material-owner cache; ordinary batching still
+    // validates live GPU state each draw.
+    uint64_t materialRevision = 1;
+    void markMaterialChanged() noexcept {
+        if (++materialRevision == 0) ++materialRevision;
+    }
     std::shared_ptr<GeometryData> geometry;
     std::string path;
     std::vector<Node> nodes;
@@ -229,6 +253,9 @@ struct Model {
     // An empty page means legacy dedicated per-model buffers.
     std::shared_ptr<GeometryPoolPage> geometryPoolPage;
     uint32_t gpuBaseVertex = 0, gpuFirstIndex = 0;
+    // Byte extents of the reserved rigid geometry page pair, retained after
+    // uploadModel releases CPU vertices/indices. Zero for dedicated models.
+    uint32_t gpuPoolVertexBytes = 0, gpuPoolIndexBytes = 0;
     float3 boundsMin, boundsMax;       // model space, bind pose (all meshes under their nodes)
     gfx::TextureHandle morphTex;       // RGBA32F deltas of every morphing primitive (2 texels per vertex and target)
     int morphTexWidth = 0;

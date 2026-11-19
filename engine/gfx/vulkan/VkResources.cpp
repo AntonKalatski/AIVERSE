@@ -142,7 +142,17 @@ bool VulkanDevice::createBufferObject(size_t size, VkBufferUsageFlags usage, boo
     vkGetBufferMemoryRequirements(device_, buf, &req);
     const VkMemoryPropertyFlags want = host ? VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
     if (!memory_.allocate(req, want, true, alloc)) { vkDestroyBuffer(device_, buf, nullptr); buf = VK_NULL_HANDLE; error_ = "out of GPU memory"; return false; }
-    vkBindBufferMemory(device_, buf, alloc.memory, alloc.offset);
+    // A successfully created VkBuffer is not usable unless its memory bind
+    // succeeds. Model uploaders must never observe an apparently valid handle
+    // whose storage is unbound.
+    const VkResult bound = vkBindBufferMemory(device_, buf, alloc.memory, alloc.offset);
+    if (bound != VK_SUCCESS) {
+        vkDestroyBuffer(device_, buf, nullptr);
+        buf = VK_NULL_HANDLE;
+        memory_.release(alloc);
+        error_ = "vkBindBufferMemory failed";
+        return false;
+    }
     return true;
 }
 
@@ -178,60 +188,111 @@ BufferHandle VulkanDevice::createBuffer(const BufferDesc& d) {
     VBuffer b;
     b.type = d.type; b.usage = d.usage; b.size = std::max<size_t>(d.size, 4);
     b.host = d.usage == Usage::Dynamic;
+    b.discardOnUpdate = d.discardOnUpdate;
+    if (b.type == BufferType::Indirect && b.host) {
+        b.transferStats.available = true;
+        b.transferStats.allocations = 1;
+    }
     VBuffer::Version v;
     if (!createBufferObject(b.size, bufferUsage(d.type), b.host, v.buffer, v.alloc)) return {};
     if (b.host) {
         b.shadow.assign(b.size, 0);
-        if (d.data) std::memcpy(b.shadow.data(), d.data, d.size);
+        if (d.data) {
+            std::memcpy(b.shadow.data(), d.data, d.size);
+            if (b.transferStats.available) b.transferStats.cpuShadowWriteBytes += d.size;
+        }
         std::memcpy(v.alloc.mapped, b.shadow.data(), b.size);
+        if (b.transferStats.available) b.transferStats.mappedWriteBytes += b.size;
     } else if (d.data) {
         VkBuffer src; VkDeviceSize off;
-        if (void* p = stagingWrite(d.size, src, off)) {
-            std::memcpy(p, d.data, d.size);
-            VkBufferCopy c{off, 0, d.size};
-            vkCmdCopyBuffer(transferCmd(), src, v.buffer, 1, &c);
+        void* staged = stagingWrite(d.size, src, off);
+        if (!staged) {
+            // Incomplete immutable uploads previously returned a valid RHI
+            // handle with uninitialized contents. This is especially unsafe
+            // for the fallback VB/IB pair after pooled uploads are rejected.
+            vkDestroyBuffer(device_, v.buffer, nullptr);
+            memory_.release(v.alloc);
+            error_ = "immutable buffer staging allocation failed";
+            return {};
         }
+        std::memcpy(staged, d.data, d.size);
+        VkBufferCopy c{off, 0, d.size};
+        vkCmdCopyBuffer(transferCmd(), src, v.buffer, 1, &c);
     }
     b.versions.push_back(v);
     return {buffers_.add(std::move(b))};
 }
 
-VBuffer::Version& VulkanDevice::writableVersion(VBuffer& b, bool keepContents) {
+VBuffer::Version* VulkanDevice::writableVersion(VBuffer& b, bool keepContents) {
     VBuffer::Version& cur = b.versions[size_t(b.current)];
-    if (cur.usedSerial < serial_ && cur.usedSerial <= completed_) return cur;   // the GPU is done with it, write in place
+    if (cur.usedSerial < serial_ && cur.usedSerial <= completed_) return &cur; // completed version
+    bool foundReusable = false;
     for (size_t i = 0; i < b.versions.size(); ++i) {
-        auto& v = b.versions[i];
-        if (int(i) != b.current && v.usedSerial <= completed_) { b.current = int(i); break; }
+        const auto& v = b.versions[i];
+        if (int(i) != b.current && v.usedSerial <= completed_) {
+            b.current = int(i);
+            foundReusable = true;
+            break;
+        }
     }
-    if (&b.versions[size_t(b.current)] == &cur) {
+    if (!foundReusable) {
         VBuffer::Version v;
-        if (!createBufferObject(b.size, bufferUsage(b.type), true, v.buffer, v.alloc)) return cur;
+        // An allocation failure must never fall back to the in-flight
+        // current version. Keep the previous serial/handle untouched.
+        if (!createBufferObject(b.size, bufferUsage(b.type), true, v.buffer, v.alloc))
+            return nullptr;
         b.versions.push_back(v);
         b.current = int(b.versions.size() - 1);
     }
     VBuffer::Version& next = b.versions[size_t(b.current)];
-    if (keepContents) std::memcpy(next.alloc.mapped, b.shadow.data(), b.size);
-    return next;
+    if (keepContents) {
+        std::memcpy(next.alloc.mapped, b.shadow.data(), b.size);
+        if (b.transferStats.available) {
+            b.transferStats.mappedWriteBytes += b.size;
+            b.transferStats.preservedBytes += b.size;
+        }
+    }
+    return &next;
 }
 
-void VulkanDevice::updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset) {
+void VulkanDevice::updateBuffer(BufferHandle h, const void* data,
+                                size_t size, size_t offset) {
+    (void)updateBufferChecked(h, data, size, offset);
+}
+
+bool VulkanDevice::updateSharedBufferChecked(BufferHandle h, const void* data,
+                                             size_t size, size_t offset) {
+    const VBuffer* b = buffers_.get(h.id);
+    if (!b || b->type != BufferType::Storage) return false;
+    return updateBufferChecked(h, data, size, offset);
+}
+
+bool VulkanDevice::updateBufferChecked(BufferHandle h, const void* data,
+                                       size_t size, size_t offset) {
     VBuffer* b = buffers_.get(h.id);
-    if (!b || size == 0) return;
+    if (!b || !data || size == 0 || offset > SIZE_MAX - size) return false;
     if (!b->host) {
-        if (offset + size > b->size) {   // growth makes it a host buffer (old contents are gone, as GL's glBufferData)
-            for (auto& v : b->versions) { VkBuffer buf = v.buffer; Allocation a = v.alloc; deferDestroy([this, buf, a]() mutable { vkDestroyBuffer(device_, buf, nullptr); memory_.release(a); }); }
+        if (offset + size > b->size) {   // immutable->dynamic growth
+            const size_t capacity = (offset + size) * 3 / 2;
+            VBuffer::Version v;
+            if (!createBufferObject(capacity, bufferUsage(b->type), true, v.buffer, v.alloc))
+                return false; // preserve existing immutable version on failure
+            for (auto& old : b->versions) {
+                VkBuffer buf = old.buffer; Allocation a = old.alloc;
+                deferDestroy([this, buf, a]() mutable {
+                    vkDestroyBuffer(device_, buf, nullptr); memory_.release(a);
+                });
+            }
             b->versions.clear();
             b->host = true;
-            b->size = (offset + size) * 3 / 2;
-            b->shadow.assign(b->size, 0);
-            VBuffer::Version v;
-            if (!createBufferObject(b->size, bufferUsage(b->type), true, v.buffer, v.alloc)) return;
+            b->size = capacity;
+            b->shadow.assign(capacity, 0);
             b->versions.push_back(v);
             b->current = 0;
         } else {   // immutable buffer: staged copy in queue order
             VkBuffer src; VkDeviceSize off;
             void* p = stagingWrite(size, src, off);
-            if (!p) return;
+            if (!p) return false;
             std::memcpy(p, data, size);
             VkCommandBuffer cb = transferCmd();
             VkBufferCopy c{off, offset, size};
@@ -240,26 +301,61 @@ void VulkanDevice::updateBuffer(BufferHandle h, const void* data, size_t size, s
             mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             mb.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_INDEX_READ_BIT;
             vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 1, &mb, 0, nullptr, 0, nullptr);
-            return;
+            return true;
         }
     }
-    if (offset + size > b->size) {   // grow: GL orphans the storage, keep the bytes anyway
-        b->size = (offset + size) * 3 / 2;
-        b->shadow.resize(b->size, 0);
-        for (auto& v : b->versions) { VkBuffer buf = v.buffer; Allocation a = v.alloc; deferDestroy([this, buf, a]() mutable { vkDestroyBuffer(device_, buf, nullptr); memory_.release(a); }); }
-        b->versions.clear();
+    if (offset + size > b->size) {   // grow: old GPU versions may still be in flight
+        const size_t capacity = (offset + size) * 3 / 2;
         VBuffer::Version v;
-        if (!createBufferObject(b->size, bufferUsage(b->type), true, v.buffer, v.alloc)) return;
+        // Stage the replacement before touching the old versions or shadow:
+        // failed growth preserves the prior drawable buffer and CPU mirror.
+        if (!createBufferObject(capacity, bufferUsage(b->type), true, v.buffer, v.alloc))
+            return false;
+        b->shadow.resize(capacity, 0);
+        std::memcpy(b->shadow.data() + offset, data, size);
+        const bool discardPrefix = b->discardOnUpdate && offset == 0;
+        if (discardPrefix)
+            std::memcpy(v.alloc.mapped, data, size);
+        else
+            std::memcpy(v.alloc.mapped, b->shadow.data(), capacity);
+        for (auto& old : b->versions) {
+            VkBuffer buf = old.buffer; Allocation a = old.alloc;
+            deferDestroy([this, buf, a]() mutable {
+                vkDestroyBuffer(device_, buf, nullptr); memory_.release(a);
+            });
+        }
+        b->versions.clear();
         b->versions.push_back(v);
         b->current = 0;
-        std::memcpy(b->shadow.data() + offset, data, size);
-        std::memcpy(v.alloc.mapped, b->shadow.data(), b->size);
-        return;
+        b->size = capacity;
+        if (b->transferStats.available) {
+            ++b->transferStats.updateCalls;
+            b->transferStats.requestedBytes += size;
+            b->transferStats.cpuShadowWriteBytes += size;
+            b->transferStats.mappedWriteBytes += discardPrefix ? size : capacity;
+            ++b->transferStats.allocations;
+        }
+        return true;
     }
+    // Select or allocate a GPU-fence-safe destination FIRST. Do not
+    // mutate the shadow or a version that is still in flight when a new
+    // version allocation fails. Preserved bytes use the previous shadow.
+    const bool whole = offset == 0 &&
+        (b->discardOnUpdate || size >= b->size);
+    const size_t versionCountBefore = b->versions.size();
+    VBuffer::Version* v = writableVersion(*b, !whole);
+    if (!v) return false;
     std::memcpy(b->shadow.data() + offset, data, size);
-    const bool whole = offset == 0 && size >= b->size;
-    VBuffer::Version& v = writableVersion(*b, !whole);
-    std::memcpy(static_cast<uint8_t*>(v.alloc.mapped) + offset, data, size);
+    if (b->transferStats.available) b->transferStats.cpuShadowWriteBytes += size;
+    std::memcpy(static_cast<uint8_t*>(v->alloc.mapped) + offset, data, size);
+    if (b->transferStats.available) {
+        ++b->transferStats.updateCalls;
+        b->transferStats.requestedBytes += size;
+        b->transferStats.mappedWriteBytes += size;
+        if (b->versions.size() > versionCountBefore) ++b->transferStats.allocations;
+        else ++b->transferStats.reused;
+    }
+    return true;
 }
 
 VkBuffer VulkanDevice::resolveBuffer(uint32_t id, uint64_t serialUse) {
@@ -268,6 +364,18 @@ VkBuffer VulkanDevice::resolveBuffer(uint32_t id, uint64_t serialUse) {
     auto& v = b->versions[size_t(b->current)];
     v.usedSerial = serialUse;
     return v.buffer;
+}
+
+BufferUpdateStats VulkanDevice::bufferUpdateStats(BufferHandle h) {
+    auto* b = buffers_.get(h.id);
+    if (!b || !b->transferStats.available) return {};
+    auto stats = b->transferStats;
+    // Allocation::size is the Vulkan suballocation span, not a claim of
+    // unique physical VRAM usage or a driver-specific residency metric.
+    for (const auto& v : b->versions)
+        stats.retainedBufferBytes += size_t(v.alloc.size);
+    stats.retainedCpuShadowBytes = b->shadow.capacity();
+    return stats;
 }
 
 void VulkanDevice::destroyBuffer(BufferHandle h) {
