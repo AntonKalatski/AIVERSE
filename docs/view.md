@@ -2146,3 +2146,64 @@ material library invalidation, pinned snapshots, animated parameters/source
 identity, stable graph generation on material-only rebuilds, and external
 graph source invalidation. **NOT RUN**: native compile, CTest, GPU visual
 parity, device-loss stress and sanitizer validation.
+
+## Stage 110 — shared dynamic appearance choices and FPS hot reload
+
+`engine/view/AppearanceChoiceAuthoring.h` resolves `materials` (`*` first,
+then named layers), `assign` (case-insensitive `*`/`?` node patterns with
+descendant inheritance, later rules overriding earlier assignments), and
+`variant` into a pure CPU `AppearanceChoicePlan`. No GPU call, gameplay
+state, renderer ownership or animation clock exists in that resolver. It
+retains the layering order, including the `replace` material flag. The
+legacy RTS `RtsView::configureChoice` now consumes this plan but keeps
+RTS team-tint decisions, dynamic stages, LOD, weapons, IK, sockets,
+procedural animation and texture upload in its compatibility adapter.
+
+`AppearanceAssetRegistry::Request::appearance` can now consume the
+same authored material/node/variant description as RTS. The registry
+applies named/wildcard layers and newly generated node-assigned
+materials inside its strict publication transaction, with copied
+material overrides and a preserved last-good snapshot. Explicit
+`materialOverrides`, `nodeMaterial` and `variant` request fields
+still support native host-provided overrides. A `modelRevision` from the
+host additionally rejects cached graph reuse when an imported model
+has been replaced at the same memory address. Invalidating the old
+Model source (its `Model::path`) also forces graph recompilation;
+the revision and invalidation mechanism **does not** own any GPU
+resource and must be driven before model eviction.
+
+The standalone FPS remote-character path now actually publishes the
+initial graph, materials, node assignments and variant via
+`AppearanceAssetRegistry`, and supplies those snapshot-owned values
+to its `render::ModelDraw`. Project-authored
+`fps.visual.materials`, `fps.visual.assign` and
+`fps.visual.variant` follow this shared policy, with optional
+`fps.visual.materialLibrary` for named material definitions.
+A non-empty `fps.visual.graphFile` is still validated to remain in
+the project. Its timestamp is polled every 30 frames: when changed,
+the registry invalidates the source and compiles the external
+AnimationGraph through the same generic service. Failed edits retain
+the last-good graph, last-good material snapshot and ECS playback
+state, and an error is logged. On successful graph replacement the
+existing FPS presentation ECS asset components receive the graph and
+restart their existing players; no second View/MotionWeave graph clock
+is introduced. The FPS network/authority simulation remains
+unaffected.
+
+**Lifetimes:** Keep `AppearanceAssetRegistry::Snapshot` alive through
+all synchronous draw submission; clear these snapshots before GPU
+model shutdown. Each FPS player still owns its presentation source
+identity independently of the registry's authoring key. Shader graph
+CPU validation is strict; GPU shader-program compilation and texture
+upload callbacks are still host responsibilities and not atomically
+reversible by the registry. The registry is not a filesystem watcher,
+and FPS currently polls `graphFile`, not arbitrary material JSON
+files. The RTS adapter remains responsible for material texture GPU
+residency, IK, graph runtime state, attachments, and LODs.
+
+Deferred `view_appearance_choice` validates shared named/all
+materials, descendants, extra node materials, snapshot packet values,
+model revision and model-source invalidation. Stage 109
+`view_appearance_registry` still covers last-good reload behavior.
+**Neither has been run**. Native CMake, CTest, sanitizer, GPU
+resource/device-loss and screenshot parity checks remain pending.
