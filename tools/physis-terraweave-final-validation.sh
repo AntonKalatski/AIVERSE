@@ -63,10 +63,21 @@ grep -Eq 'Test[[:space:]]*#[0-9]+: terraweave' \
   }
 
 echo '[4/4] Run the FULL unfiltered CTest suite ONE TIME'
-ctest --test-dir "$BUILD" --config Debug \
-  --no-tests=error --output-on-failure --parallel "$JOBS" \
-  --output-junit "$REPORT/ctest.xml" \
-  2>&1 | tee "$REPORT/ctest.log"
+# CTest normally holds individual test stdout until completion/failure.
+# Opt-in verbose mode forwards the new Place progress checkpoints live,
+# without changing its 5ms budget, scene, 4G clients or simulation ticks.
+if [[ "${AIVERSE_CTEST_VERBOSE:-0}" == "1" ]]; then
+  echo "CTest live verbose output enabled (AIVERSE_CTEST_VERBOSE=1)"
+  ctest --test-dir "$BUILD" --config Debug \
+    --no-tests=error --verbose --parallel "$JOBS" \
+    --output-junit "$REPORT/ctest.xml" \
+    2>&1 | tee "$REPORT/ctest.log"
+else
+  ctest --test-dir "$BUILD" --config Debug \
+    --no-tests=error --output-on-failure --parallel "$JOBS" \
+    --output-junit "$REPORT/ctest.xml" \
+    2>&1 | tee "$REPORT/ctest.log"
+fi
 
 df -h "$BUILD" | tee "$REPORT/disk-after.txt"
 printf 'PASS: ALL AIVERSE CTest selected by default, including PHYSIS/TerraWeave/Box3D\ncommit=%s\nlogs=%s\n' "$HEAD" "$REPORT" | tee -a "$REPORT/summary.txt"
