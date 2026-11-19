@@ -189,6 +189,36 @@ inline uint64_t claimForestLegacyNereidWaterEcs(
     return transferred;
 }
 
+// Game-authored NEREID outlet command for one body-tagged 4m location.
+// Ownership, wetness and the actual saved terrain sample must agree at
+// the completed ECS barrier. Topological OUTLET selection still belongs
+// to the native host (there is no imaginary automatic ocean export).
+inline uint64_t exportForestNereidMicroOutletEcs(
+        World& ecs,const TerraWeaveEcsAuthorityConfig& cfg,
+        ForestMicroKey key,uint64_t maximumUnits,uint64_t commandId) {
+    validateForestMicroKey(key);
+    const auto* old=ecs.resourceConst<ForestDeadwoodResource>();
+    const auto* authority=ecs.resourceConst<TerraWeaveAuthorityResource>();
+    if(!old || !authority)
+        throw std::logic_error("TerraWeave 4m outlet missing authoritative state");
+    if(!commandId)
+        throw std::invalid_argument("TerraWeave invalid 4m outlet command");
+    if(commandId<=old->lastOutflowCommandId)return 0;
+    const auto ground=materializeEcsTerrain(*authority,cfg);
+    const lib::nereid::WaterQueryIndex index(ecs);
+    const auto waterAt=makeNereidMicroWaterSampler(ground,index);
+    const auto wet=waterAt(key.x,key.z,key.bodyKey);
+    if(!wet.submerged || wet.bodyKey!=key.bodyKey)
+        throw std::invalid_argument("TerraWeave 4m outlet not current NEREID water");
+    ForestDeadwoodResource next=*old;
+    const uint64_t exported=exportForestMicroDissolvedNutrients(
+        next,key,maximumUnits,commandId);
+    World staged=ecs;
+    staged.setResource<ForestDeadwoodResource>(std::move(next));
+    ecs=std::move(staged);
+    return exported;
+}
+
 // A separate opt-in system (NOT installed alongside Stage68 coarse
 // system) uses the SAME canonical tick and World COW persistence.
 inline ForestMicroOutcome advanceForestMicroNutrientsEcs(
