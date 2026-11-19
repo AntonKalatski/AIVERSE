@@ -234,13 +234,15 @@ inline const char* kMotionBlur = R"(
         vec2 sampleUv = TUV(q);
         float sampleDepth = TEX2(sampleUv).r;
         float depthDelta = abs(sampleDepth - centerDepth);
-        float keep = 1.0 - smoothstep(p0.y > 0.0 ? 0.0015 : 0.0,
-                                      0.012, depthDelta);
+        float threshold = max(sun.x,0.0005);
+        float keep = 1.0 - smoothstep(threshold * 0.125,
+                                      threshold, depthDelta);
         accum += TEX0(sampleUv).rgb * keep;
         weight += keep;
     }
     vec3 sharp = TEX0(uv).rgb;
-    RETURN(vec4(mix(sharp,accum/max(weight,0.0001),p0.w),1.0));
+    vec3 blurred = weight > 0.0001 ? accum / weight : sharp;
+    RETURN(vec4(mix(sharp,blurred,p0.w),1.0));
 )";
 
 // FXAA (console-style, 5 taps + early out, 9 at most). px.xy = texel; p0.x = subpixel softening.
