@@ -2192,3 +2192,64 @@ read/write attachment feedback. Then add **true underwater ray
 segment clipping against NEREID water surface** for shallow scene
 depths, with independent quality gates. Continue to append actual
 handoff after every stage.
+
+## Stage 21B — submerged segment length when view ray crosses water surface
+
+**Branch:** `feature/nereid-water-core`, draft PR #23. This is a
+follow-up to Stage 21's already-existing optional per-pixel scene
+depth feature, not a duplicate feature branch or a merge.
+
+**Implementation commits:**
+- `ab6f4581192d9de69690316ed8824ddac02ab94c` —
+  `engine/render/PostFx.h`: signed `surfaceOffset` on the per-frame
+  and smoothed underwater structs, plus pure CPU
+  `postFxUnderwaterRayFraction(startDepth,endDepth)` reference policy.
+- `59b0cdbb08d80838fac7cd30a357c8dc568b1cdf` —
+  `engine/world/NereidPrismaBridge.h`: computes signed
+  `waterSurfaceY - cameraY` from NEREID's read-only camera view,
+  clamped in double precision before converting to float.
+- `fc4d7330040b51e54116950d18f28d8f8f5f876e` —
+  `engine/render/PostFx.cpp`: passes signed camera-to-water plane
+  offset in previously reserved `underwater2.w`. No new UBO fields,
+  render passes or texture samplers.
+- `6f068e37fbb997be98d14ababe9b194e34a027fc` —
+  `engine/render/PostFxShaders.h`: existing `PF_UNDERWATER_DEPTH`
+  shared GLSL/MSL shader variant now computes start and end signed
+  distances to the water plane and multiplies the reconstructed
+  camera-to-opaque ray distance by its immersed fraction. Fully
+  airborne segments have zero water length, fully submerged segments
+  retain their full length, and rays crossing the surface are split
+  by the linear intersection fraction.
+- `6cf3a35382f3d547aa7a425b36ab7b1f66a83921` —
+  `tests/ecs_nereid_renderer_contract_test.cpp`: CPU-policy
+  and shader-source contract tests for both crossing directions,
+  full immersion, airborne rays, NaN, and signed offset.
+
+### Integration behavior and limits
+
+The original `WorldScene::nereidUnderwaterAt` and
+`updateNereidPrismaUnderwater` API shape is unchanged. A camera
+near/above the surface can now see submerged opaque geometry through
+the water without applying underwater scattering to the part of the
+view ray in air. This improves Stage 21's medium/high depth path.
+
+The implementation uses **one horizontal water surface at the selected
+camera volume**, so it is not a generalized ray-volume intersection
+across multiple lakes, cave pools, waves, curved boundaries or
+sloping banks. Water/Prisma ownership remains unchanged. The Low
+quality or unavailable depth path retains the earlier no-depth
+approximation.
+
+**Actual verification:** GitHub source review and commits; CPU and
+shader-source tests authored. **NOT RUN / UNVERIFIED:** native C++
+compilation, CTest, GL/Metal shader compiler, GPU screenshots, mobile
+performance and FPS/RTS regression. Keep PR Draft until test results
+are recorded. Run the unified runner and render scenes that look
+across the surface in both directions, including close geometry,
+sky and intersecting volume priority cases.
+
+**Next stage:** prioritize real native compiler/graphics validation;
+then evaluate full camera-ray intersection with finite water
+footprints, per-pixel fog scatter quality and mobile metrics, without
+duplicating Prisma fullscreen passes. Append exact commits and
+actual test outcomes after each stage.
