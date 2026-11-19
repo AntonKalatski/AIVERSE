@@ -109,3 +109,32 @@ Stage 1; this stage supplies deterministic ECS ownership and lifecycle APIs.
 - The additive `CollisionStream` static collider ID namespace is still
   unresolved; do NOT attach two independent collision streams to one
   `SpatialWorld` or disable its existing guard to make tests green.
+
+
+## Stage 5 — multi-domain immutable prefab configs (2026-11-19)
+
+- `PrefabStaticDomainRegistry` in
+  `engine/scene/PrefabStaticDomainRegistry.h` composes one sealed catalog
+  per distinct `StaticRef<T>` type. Domain/persistence IDs are explicitly
+  stable and unique. Domain order is `std::map` sorted key order, never
+  import order or unordered hash-map iteration.
+- `addDomain<T>(domainKey,persistentSchemaId,catalog,Reject|Skip,version)`
+  runs during configuration. `seal()` freezes the domain registry.
+  `registerPersistence(sim)` and `bindWorld(sim.world())` run during
+  GameModule::setup; do not register the same StaticRef<T> separately.
+- Before creating per-entity StaticRefs, the callback preflights ALL domain
+  bindings and required prefab keys. A missing required domain causes
+  rejection, leaving the just-created Entity without partial static refs.
+  After successful preflight, attach 4-byte refs, then create ordinary
+  mutable instance components in an optional initializer.
+- `PrefabStaticCatalog<T>::canBindWorld` validates existing content
+  fingerprints without mutating ECS; registry bind preflights all domains
+  before inserting any. Content values remain immutable across Worlds.
+- New CTest: `ecs_static_scene_multidomain_test` tests 3 typed domains,
+  optional inventory, deterministic registration-order persistence,
+  rollback/scene unload and changed-alias rejection. Its native result is
+  **pending**. Previous Stage 4 seven-test suite passed but is not a
+  substitute for this new test.
+- Use `bash tools/ecs-static-scene-validate.sh build/static-scene extended 8`
+  after pulling branch in an isolated worktree. It logs every CMake
+  build and selected ECS/COW/FPS/RTS CTest result. See Stage 5 handoff.
