@@ -41,7 +41,91 @@ public:
     void draw(uint32_t,uint32_t) override{}
     void drawIndexed(uint32_t,uint32_t,int32_t,uint32_t) override{}
 };
+// CPU-only regressions for Stage 129-131 unique-owned Model cache leases.
+// These do not assert GPU completion: StubDevice has no in-flight work.
+static void verifyReadLeaseContracts() {
+    StubDevice dev;
+    render::ModelResourceCache cache;
+    cache.bindResourceDevice(dev);
+    auto model=std::make_unique<render::Model>();
+    model->path="models/hero.glb";
+    const render::Model* resident=cache.insertIfAbsent(
+        "models/hero.glb#geometry",std::move(model));
+    assert(resident);
+    assert(!cache.acquireModelRead("missing.glb"));
+    assert(!cache.acquireModelRead(static_cast<const render::Model*>(nullptr)));
+    render::Model foreign;
+    assert(!cache.acquireModelRead(&foreign));
+
+    auto narrow=cache.acquireModelRead(resident);
+    auto byKey=cache.acquireModelRead("models/hero.glb#geometry");
+    assert(narrow && narrow.get()==resident && byKey.get()==resident);
+    auto moved=std::move(narrow);
+    assert(!narrow && moved.get()==resident);
+    auto frame=cache.acquireFrameReadScope();
+    assert(frame.valid() && cache.activeModelReaders()==3);
+    const auto first=cache.modelReadSafetyStats();
+    assert(first.peakReaders>=3);
+
+    // A foreign thread MUST be rejected before it even reads models_.
+    bool threadDenied=false;
+    std::thread foreignLookup([&]{
+        try {auto candidate=cache.acquireModelRead("models/hero.glb#geometry");(void)candidate;}
+        catch(const std::logic_error&){threadDenied=true;}
+    });
+    foreignLookup.join();
+    assert(threadDenied);
+
+    unsigned callbacks=0;
+    auto detach=[&](const auto&){++callbacks;};
+    auto release=[&](const render::Model*){++callbacks;};
+    auto denied=[&](auto&& fn){
+        bool thrown=false;
+        try{fn();}
+        catch(const std::logic_error&){thrown=true;}
+        assert(thrown);
+    };
+    denied([&]{cache.replace(dev,"models/hero.glb#geometry",
+        std::make_unique<render::Model>(),release);});
+    denied([&]{cache.invalidateSources(dev,
+        std::vector<std::string>{"models/hero.glb"},detach);});
+    denied([&]{cache.trimUnused(dev,{},release);});
+    denied([&]{cache.shutdown(dev);});
+    assert(callbacks==0);
+    assert(cache.find("models/hero.glb#geometry")==resident);
+    assert(cache.activeModelReaders()==3);
+    assert(cache.modelReadSafetyStats().blockedMutations==4);
+    assert(cache.modelReadSafetyStats().peakReaders>=3);
+
+    frame.reset();
+    moved.reset();
+    byKey.reset();
+    assert(cache.activeModelReaders()==0);
+    cache.shutdown(dev); // no GPU buffers; empty/idle StubDevice
+    assert(cache.find("models/hero.glb#geometry")==nullptr);
+}
+static void verifyReadOwnerRebind() {
+    // The same CPU cache can be rebound on a DIFFERENT owner thread after
+    // successful shutdown. No real GPU backend is accessed concurrently.
+    StubDevice dev;
+    render::ModelResourceCache cache;
+    cache.bindResourceDevice(dev);
+    {auto frame=cache.acquireFrameReadScope();assert(frame);}
+    cache.shutdown(dev);
+    std::thread newOwner([&]{
+        cache.bindResourceDevice(dev);
+        auto frame=cache.acquireFrameReadScope();
+        assert(frame.valid());
+        frame.reset();
+        cache.shutdown(dev);
+    });
+    newOwner.join();
+    assert(cache.activeModelReaders()==0);
+}
+
 int main() {
+    verifyReadLeaseContracts();
+    verifyReadOwnerRebind();
     StubDevice device;
     render::ModelResourceCache cache;
     render::ModelResourceCache hosted; // embedded GameClient shares editor epoch
