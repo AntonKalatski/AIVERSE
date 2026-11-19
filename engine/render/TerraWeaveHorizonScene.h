@@ -471,7 +471,7 @@ public:
                 originZcm_=prepared->bake->originZcm;
                 clusters_=prepared->bake->clusters.size();
                 terrainQuads_=prepared->bake->terrainResolution*
-                              prepared->bake.terrainResolution;
+                              prepared->bake->terrainResolution;
                 runtime_.clusters=clusters_;
                 runtime_.atlasBytes=nextAtlasBytes;
                 runtime_.vertices=nextVertices;
