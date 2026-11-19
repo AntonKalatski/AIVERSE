@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <memory>
 #include <map>
 #include <cstring>
@@ -813,6 +814,146 @@ public:
         }];
         firstPass_ = true;
     }
+    // Dedicated GPU-hardware timestamp scope, never whole-command-buffer
+    // GPUEndTime minus GPUStartTime labeled as a viewport interval.
+    // A start and end sample are recorded in the SAME command buffer,
+    // resolved only after that command buffer reports GPU completion.
+    struct ScopedCommand {
+        uint64_t tag = 0;
+        id<MTLCommandBuffer> command = nil;
+        id<MTLCounterSampleBuffer> sample = nil;
+        MTLTimestamp cpuStart = 0, gpuStart = 0;
+        bool ended = false;
+    };
+    std::vector<ScopedCommand> scopedCommands_;
+    bool gpuScopeActive_ = false;
+    bool timestampScopeChecked_ = false;
+    id<MTLCounterSet> timestampCounterSet_ = nil;
+    // 1 = explicit blit-command samples, 2 = blit stage-boundary samples
+    int timestampScopeMode_ = 0;
+
+    bool encodeGpuScopeTimestamp(id<MTLCounterSampleBuffer> samples,
+                                 NSUInteger index) {
+        if (!cmd_ || enc_ || compute_ || gpuIcbEncoder_ || !samples)
+            return false;
+        if (timestampScopeMode_ == 1) {
+            id<MTLBlitCommandEncoder> blit = [cmd_ blitCommandEncoder];
+            if (!blit) return false;
+            [blit sampleCountersInBuffer:samples atSampleIndex:index withBarrier:YES];
+            [blit endEncoding];
+            return true;
+        }
+        if (timestampScopeMode_ == 2) {
+            MTLBlitPassDescriptor* descriptor=[MTLBlitPassDescriptor blitPassDescriptor];
+            auto* attachment=descriptor.sampleBufferAttachments[0];
+            attachment.sampleBuffer=samples;
+            attachment.startOfEncoderSampleIndex=index;
+            attachment.endOfEncoderSampleIndex=MTLCounterDontSample;
+            id<MTLBlitCommandEncoder> blit=[cmd_ blitCommandEncoderWithDescriptor:descriptor];
+            if (!blit) return false;
+            [blit endEncoding];
+            return true;
+        }
+        return false;
+    }
+    bool beginGpuScope(uint64_t tag) override {
+        if (!cmd_ || enc_ || compute_ || gpuIcbEncoder_ ||
+            gpuScopeActive_ || scopedCommands_.size()>=64 ||
+            !gpuHealthy_->load(std::memory_order_acquire))
+            return false;
+        if (@available(macOS 11.0, iOS 14.0, *)) {
+            if (!timestampScopeChecked_) {
+                timestampScopeChecked_=true;
+                // Do not create an unsupported counter buffer or assume a
+                // driver provides nanosecond timestamps on every GPU.
+                const bool blit=[device_ supportsCounterSampling:
+                    MTLCounterSamplingPointAtBlitBoundary];
+                const bool stage=[device_ supportsCounterSampling:
+                    MTLCounterSamplingPointAtStageBoundary];
+                if (blit || stage) {
+                    for (id<MTLCounterSet> entry in device_.counterSets) {
+                        if ([entry.name isEqualToString:MTLCommonCounterSetTimestamp]) {
+                            timestampCounterSet_=entry;
+                            timestampScopeMode_=blit ? 1 : 2;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!timestampCounterSet_ || !timestampScopeMode_) return false;
+            MTLCounterSampleBufferDescriptor* desc=
+                [[MTLCounterSampleBufferDescriptor alloc] init];
+            desc.counterSet=timestampCounterSet_;
+            desc.sampleCount=2;
+            desc.storageMode=MTLStorageModeShared;
+            desc.label=@"AIVERSE scoped GPU timestamps";
+            NSError* error=nil;
+            id<MTLCounterSampleBuffer> samples=
+                [device_ newCounterSampleBufferWithDescriptor:desc error:&error];
+            if (!samples) return false;
+            ScopedCommand entry;
+            entry.tag=tag;
+            entry.command=cmd_;
+            entry.sample=samples;
+            [device_ sampleTimestamps:&entry.cpuStart gpuTimestamp:&entry.gpuStart];
+            if (!entry.cpuStart || !entry.gpuStart ||
+                !encodeGpuScopeTimestamp(samples,0))
+                return false;
+            scopedCommands_.push_back(entry);
+            gpuScopeActive_=true;
+            return true;
+        }
+        return false;
+    }
+    void endGpuScope() override {
+        if (!gpuScopeActive_) return;
+        gpuScopeActive_=false;
+        if (scopedCommands_.empty()) return;
+        auto& entry=scopedCommands_.back();
+        // Encoder boundaries are a strict host contract: do not silently
+        // end someone else's render/compute pass to acquire a timestamp.
+        entry.ended=encodeGpuScopeTimestamp(entry.sample,1);
+    }
+    std::vector<GpuTiming> takeGpuScopeTimings() override {
+        std::vector<GpuTiming> result;
+        if (@available(macOS 11.0, iOS 14.0, *)) {
+            for (size_t i=0;i<scopedCommands_.size();) {
+                const auto& t=scopedCommands_[i];
+                const auto status=t.command.status;
+                if (status!=MTLCommandBufferStatusCompleted &&
+                    status!=MTLCommandBufferStatusError) {++i;continue;}
+                bool valid=false;
+                double elapsedMs=0.0;
+                if (t.ended && status==MTLCommandBufferStatusCompleted) {
+                    NSData* data=[t.sample resolveCounterRange:NSMakeRange(0,2)];
+                    if (data && data.length>=sizeof(MTLCounterResultTimestamp)*2) {
+                        const auto* samples=
+                            static_cast<const MTLCounterResultTimestamp*>(data.bytes);
+                        MTLTimestamp cpuEnd=0,gpuEnd=0;
+                        [device_ sampleTimestamps:&cpuEnd gpuTimestamp:&gpuEnd];
+                        if (samples[0].timestamp>0 && samples[1].timestamp>samples[0].timestamp &&
+                            samples[0].timestamp!=MTLCounterErrorValue &&
+                            samples[1].timestamp!=MTLCounterErrorValue &&
+                            gpuEnd>t.gpuStart && cpuEnd>t.cpuStart) {
+                            // GPU clock ticks may be frequency-scaled; use
+                            // TWO simultaneous CPU/GPU clock samples to
+                            // convert the measured GPU delta to CPU ns.
+                            const double ratio=double(cpuEnd-t.cpuStart)/
+                                               double(gpuEnd-t.gpuStart);
+                            elapsedMs=double(samples[1].timestamp-
+                                samples[0].timestamp)*ratio/1000000.0;
+                            valid=std::isfinite(elapsedMs) &&
+                                elapsedMs>0.0 && elapsedMs<=250.0;
+                        }
+                    }
+                }
+                result.push_back({t.tag,valid?elapsedMs:0.0,valid});
+                scopedCommands_.erase(scopedCommands_.begin()+i);
+            }
+        }
+        return result;
+    }
+
     struct TimedCommand { uint64_t tag; id<MTLCommandBuffer> command; };
     std::vector<TimedCommand> timedCommands_;
     bool timeGpuFrame(uint64_t tag) override {
@@ -836,6 +977,8 @@ public:
         finishGpuEncodedIcbPreparation();
         endCompute();
         if (enc_) { [enc_ endEncoding]; enc_ = nil; }
+        // Balanced even if a client omits its explicit endGpuScope.
+        if (gpuScopeActive_) endGpuScope();
         if (capture_ && drawable_ && captureDelay_-- <= 0 && !drawable_.texture.framebufferOnly) {
             // copy the finished frame into a shared buffer before presenting it
             const NSUInteger w = drawable_.texture.width, h = drawable_.texture.height, row = w * 4;
