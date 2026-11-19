@@ -1,5 +1,12 @@
 # TerraWeave — current agent handoff entry point
 
+> **QA/PR gate update:** [Stage70 PHYSIS CI trigger and Draft PR #53](qa-2026-11-20-stage70-physis-ci-trigger-handoff.md).
+> [CI run #44624069071](https://github.com/chromealex/AIVERSE/actions/runs/44624069071)
+> remained **QUEUED** at the last check. The PR is draft, and
+> compilation, full CTest, renderer and multi-owner world acceptance
+> are **NOT VERIFIED**.
+>
+
 > **New PHYSIS-current-main integration staging (2026-11-20):**
 > [Stage70 + PHYSIS main merge handoff](qa-2026-11-20-stage70-physis-main-merge-handoff.md).
 > Two-parent merge `97b4e165cae1ab74b907ba2b934665a530715432`
