@@ -146,9 +146,9 @@ bool GraphRuntime::initGraph(gfx::Device* dev,const Json& graph,
         reason_="SpectraFX graph compilation failed";
         return false;
     }
-    const bool canServeNamedOnGpu=options.gpuProgram &&
-        compiled.emitters.size()==1 &&
-        !compiled.emitters[0].particleProgram.isNull();
+    const bool canServeNamedOnGpu=compiled.emitters.size()==1 &&
+        ((options.gpuProgram && !compiled.emitters[0].particleProgram.isNull()) ||
+         (options.gpuMaterial && !compiled.emitters[0].shaderGraph.isNull()));
     if(!schema.empty() && !canServeNamedOnGpu &&
        options.preference==ComputePreference::RequireGpu) {
         reason_="runtime instance parameters need an enabled GPU VM program; RequireGpu rejected";
