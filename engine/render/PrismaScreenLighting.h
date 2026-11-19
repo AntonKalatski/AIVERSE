@@ -1,4 +1,5 @@
-// Optional screen-space diffuse bounce and temporal accumulation before HDR tone mapping.
+// Optional HDR screen-space diffuse bounce / volumetric lighting before Prisma tone mapping.
+// Owns legacy TAA only when canonical Prisma Temporal Resolve is NOT selected.
 #pragma once
 #include "Prisma.h"
 #include <algorithm>
@@ -30,11 +31,20 @@ public:
     RTSCamera jittered(RTSCamera camera, int w, int h);
     bool active() const override { return post_ && post_->active(); }
     bool linearScene() const override { return post_ && post_->linearScene(); }
-    bool temporalShadowResolve() const override { return running_; }
+    // Shadow PCSS temporal tap rotation is allowed only with this wrapper's
+    // actual legacy history path. Canonical temporal does not inherit it.
+    bool temporalShadowResolve() const override { return running_ && legacyTemporal_; }
     gfx::PassDesc scenePass(const gfx::PassDesc& out, int w, int h) override;
     void resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame& frame) override;
     bool running() const { return running_; }
-    int passCount() const { return running_?2+(diffuseBounce_?1:0)+(volumeRan_?1:0):0; }
+    // In lighting-only mode, no second temporal history, jitter or resolver
+    // is owned by this wrapper; Prisma performs the sole final resolve.
+    bool lightingOnly() const { return running_ && !legacyTemporal_; }
+    int passCount() const {
+        if (!running_) return 0;
+        const int lighting = (diffuseBounce_ ? 1 : 0) + (volumeRan_ ? 1 : 0);
+        return (legacyTemporal_ ? 2 : (lighting > 0 ? 1 : 0)) + lighting;
+    }
     const std::string& lastError() const { return error_; }
 private:
     void releaseTargets();
@@ -43,13 +53,13 @@ private:
     gfx::PassDesc scene_;
     gfx::TextureHandle bounce_, scatter_, history_[2], depth_;
     gfx::BufferHandle triangle_;
-    gfx::ShaderHandle shaders_[4];
-    gfx::PipelineHandle pipes_[4];
+    gfx::ShaderHandle shaders_[5];
+    gfx::PipelineHandle pipes_[5];
     VolumetricLight volume_;
     bool volumeRan_ = false;
     int w_ = 0, h_ = 0, current_ = 0, sequence_ = 0, frame_ = 0;
     bool diffuseBounce_ = true;
-    bool enabled_ = false, valid_ = false, running_ = false;
+    bool enabled_ = false, valid_ = false, running_ = false, legacyTemporal_ = false;
     mat4 previous_;
     float3 previousEye_;
     float2 jitter_{},previousJitter_{};
