@@ -298,12 +298,11 @@ class AttachmentAuthoringWindow final : public EditorWindow {
                         throw std::runtime_error("Child appearance: "+error);
                     it=imported.emplace(source,std::move(appearance)).first;
                 }
-                Imported::ChildRequest request;
-                request.appearance=it->second;
-                request.socketName=child.socket;
-                request.local=child.local;
-                request.childWorld=child.childWorld;
-                requested.push_back(std::move(request));
+                requested.push_back(Imported::childFromLayout(
+                    view::AttachmentLayoutItem{
+                        child.model,child.socket,child.enabled,
+                        child.local,child.childWorld},
+                    it->second));
             }
             if(!Imported::compile(staged->source,staged->provider->resources(),
                                   requested,staged->compiled,&error))
