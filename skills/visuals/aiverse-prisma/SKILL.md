@@ -604,6 +604,37 @@ or GPU runtime PASS. Continue from
 `docs/handoffs/prisma-stage-52.md` and keep Draft PR #26 untouched
 until explicit merge approval.
 
+## Stage 53 — read-only per-view postprocess execution matrix
+
+`Prisma::effectReport(stableViewId) const` and
+`Prisma::effectReportViewIds()` expose snapshots collected AFTER each
+camera's `resolve()`, so a Scene/Game/custom view cannot inherit another
+camera's last-run effects. `ViewEffectReport.sequence` is local to that
+camera, and `EffectExecution` distinguishes **authored**, **requested**
+(enabled/tier/opt-in), **pipelinePrepared** (cached RHI handle only),
+**encoded** (a contribution's GPU draw command submitted) and a
+human-readable fallback reason. Shader preparation is NOT execution;
+encoded is NOT a GPU fence/screenshot/pixel test. Effect rows cover the
+resolved profile including disabled and tier-skipped entries.
+
+The **PRISMA — Постобработка** editor window displays last-known
+snapshots grouped by stable camera ID; querying these snapshots MUST
+never compile programs, allocate render targets, poll GPU or block.
+`retireView()` and `retireUnregisteredViews()` drop orphaned snapshots;
+`setSettings()` / `shutdown()` clear stale diagnostics. A cached pointer
+returned by `effectReport` is invalid after owner mutations: copy what
+you need before another view resolve or profile change. Camera IDs must
+remain stable across live frames, never be inferred from render sizes.
+Do not confuse current `runtimeCapabilities().*LastFrame` (latest
+Prisma resolve overall) with the separate per-view effect snapshots.
+
+Stage 53: **18/18 GitHub source-presence/call-order/lifecycle checks
+only**; no native compiler, editor launch, CTest, GPU execution or
+image parity was run. See `docs/handoffs/prisma-stage-53.md`.
+Next functionality: independent Renderer3D object-motion camera cleanup
+and GPU-fenced deferred teardown of the historical PrismaScreenLighting
+adapter. Keep Draft PR #26, do not merge to main without authorization.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
