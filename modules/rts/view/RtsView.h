@@ -643,6 +643,22 @@ private:
         double lastSeenTime = -1;                 // previews keep their own clock
     };
 
+    // Short-lived, Model-pointer-free presentation clock handoff while a
+    // source/graph/visual LOD reimport destroys and rebuilds a TypeLook.
+    // Indexed by full entity generation ID, not genre-specific Model paths.
+    // The old Graph/Animator/pose/native solver state never escapes.
+    struct ReloadPlayback {
+        uint16_t type=0;
+        int choice=0;
+        uint64_t capturedFrame=0;
+        render::AnimationGraphInstance::PlaybackSnapshot graph;
+        float eventAge[render::kProcEvCount] = {};
+        float castAge=1e9f,deathAge=0.f,phase=0.f,yaw=0.f,speed=0.f;
+        render::float3 lastPos{};
+        bool dead=false;
+    };
+    void rememberReloadPlayback(uint64_t key,const EntityAnim& state);
+
     struct Tracer { SceneObject from, to; float age = 0; };
     std::vector<Tracer> tracers_;
     void drawTracers(render::Renderer3D& r, float dt, const MapGrid* grid = nullptr);
@@ -724,6 +740,7 @@ private:
     // Only entities first seen while variants stream need a stable choice override.
     std::unordered_map<uint64_t, std::pair<uint16_t, int>> streamingChoices_;
     std::unordered_map<uint64_t, EntityAnim> anims_;   // presentation only: iteration order never matters
+    std::unordered_map<uint64_t, ReloadPlayback> reloadPlayback_;
     EntityAnim ghostAnim_; // transient placement preview state; never shared across Views
     // Reused on the device-owning presentation thread. No global/static
     // scratch shared between Editor Scene, GameClient or native hosts.
