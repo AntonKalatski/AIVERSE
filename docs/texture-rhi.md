@@ -936,3 +936,82 @@ session, and validated texture/colour parity on every backend.
 The existing source texture fallback is intentional for
 correctness. Native build, CTest, GL shader compilation,
 Metal compilation and actual Vulkan/GPU tests have not been run.
+
+
+### Reduced source-texture fallback: actually saving GPU memory
+
+`engine/render/ModelVirtualTextureFallback.h` introduces an opt-in,
+pre-upload asset policy. Once a full-resolution source image has been
+packed into an **immutable** VT page archive, a compatible model base
+image may upload a much smaller regular `tex1` fallback rather than
+the original full-resolution RGBA8 texture. The regular model shader
+uses this small fallback until the virtual atlas has resident pages.
+No change is needed in `ModelShaders.h`'s physical sampling function.
+
+Use **before `render::uploadModel()`**, while the source RGBA8
+pixels remain in `Image::rgba` or `Image::sharedRgba`:
+
+```cpp
+#include "engine/render/ModelVirtualTextureFallback.h"
+// Or include TerraWeaveVirtualAtlasArchive.h for its Terra helper.
+
+render::VirtualFallbackSavings estimate;
+std::string reason;
+bool reduced = render::configureModelVirtualFallback(
+    model, sourceImageIndex, publishedArchive,
+    /*maxDimension=*/64, &estimate, &reason);
+if (!reduced) {
+    // Keep the normal full-resolution upload; do not silently degrade
+    // a material with alpha cutouts or shared non-base texture usage.
+}
+bool uploaded = render::uploadModel(dev, model);
+```
+
+For a Terra-generated model whose path begins with
+`terraweave/`, the corresponding convenience method is
+`configureTerraWeavePackedImageFallback(model,imageIndex,
+archive,64,&estimate,&reason)`.
+
+The policy verifies the VT archive's source dimensions, bounds
+the fallback resolution (4–1024 pixels on the longest edge),
+requires retained full RGBA8 input and forbids modification
+after a native GPU or shared-cache image upload. It rejects
+images reused as roughness, metal, normal, occlusion, emissive,
+team-mask or Shader Graph input. All materials referencing the
+same base image must be **opaque**, non-graph, alpha-independent
+and not use `TeamMode::BaseAlpha`. The caller must separately
+ensure dynamically supplied `ModelDraw::materials` overrides
+do not require the original image. The fallback texture is
+created as a standalone model-owned resource; it cannot poison
+`ModelTextureCache`'s full-resolution shared GPU entry.
+
+The fallback is downsampled by deterministic edge-clamped RGBA8
+2×2 box filtering until `max(width,height) <= maxDimension`.
+For example, a 2048×2048 RGBA8 base level is 16 MiB; a 64×64
+base is 16 KiB before any GPU-generated mip/driver overhead.
+The reported `VirtualFallbackSavings` is an **estimate of base
+level byte counts**, not measured GPU VRAM or overall residency.
+The full immutable source is in the disk VT archive; the GPU
+owns only the coarse fallback plus the bounded physical page
+atlas and page table (the latter are managed independently).
+
+If the backend rejects the smaller fallback texture,
+`uploadModel()` returns failure for the opted-in image and
+retains its CPU source, so a retry or explicit fallback policy
+change is possible. The non-VT image loading path is unchanged.
+`releaseModel()` destroys the model-owned coarse image like any
+other uploaded texture.
+
+**Important alpha limitation:** existing Terra Horizon forest
+cluster atlases and many Arbor impostors use `AlphaMode::Mask`
+for silhouette clipping. They are deliberately NOT downsampled
+by this stage: a coarse alpha mask would alter the visible
+silhouette in the scene and shadow passes. Supporting them
+without keeping full RGBA8 in VRAM requires a separate native
+full-resolution alpha-only mask or another equivalent coverage
+solution in every rendering pass. Until then the opaque-image
+optimization is intentionally conservative.
+
+Native builds, GPU allocation accounting and visual comparisons
+have not been run yet. Verify actual driver residency and
+alpha/LOD quality when the user's deferred test phase begins.
