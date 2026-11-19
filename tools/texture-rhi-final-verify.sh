@@ -137,6 +137,12 @@ for index in "${!gpu_tests[@]}"; do
   test_name="${gpu_tests[$index]}"
   run_logged "gpu-$test_name" ctest --test-dir "$GPU" --verbose \
     --output-on-failure --no-tests=error -R "^$test_name$"
+  # Some macOS NSApplication-hosted tests used to terminate with status 0
+  # even after a fixture check printed FAIL:. Reject all such false PASSes.
+  if grep -Eq '(^|[[:space:]])FAIL:' "$LOGS/gpu-$test_name.log"; then
+    echo "FAIL: $test_name printed a native test assertion error" >&2
+    exit 1
+  fi
   marker="${markers[$index]}"
   if [[ -n "$marker" ]] && ! grep -Fq "$marker" "$LOGS/gpu-$test_name.log"; then
     echo "FAIL: $test_name CTest lacked mandatory execution marker: $marker" >&2
