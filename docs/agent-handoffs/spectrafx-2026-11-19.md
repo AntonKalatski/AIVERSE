@@ -625,3 +625,14 @@ git merge origin/main
 - **Scope:** cleaning header/cpp warning exposure and source documentation only; no ECS/system/save version changes. Earlier Stage 34 and Stage 35 source changes remain committed intact, with handoffs. No tests or compilation were performed.
 - **Verification actually executed:** **NOT RUN**, by explicit user's instructions (all functions, then tests). GitHub accepted all changes; no C++ compile, CTest, editor/game smoke, screenshot, Mac Metal/Vulkan rendering or perf evidence. Route documentation is not proof of implementation correctness.
 - **Next feature priorities:** native Scene Editor GPU preview, pooled GPU particle storage across emitters, GPU collision/event feedback, LOD/quality controls, additional cross-genre host integration. Follow the mandatory per-stage handoff protocol; only after feature completion move to compiling and testing every implemented path.
+
+
+## 2026-11-19 — Stage 38: GPU ground-plane collision (unverified)
+
+- **Branch** `feature/spectrafx-generic-cue-queue`; at stage start main `d71c6d47e532b25fb816a8bb1f96c41e5275a165` was ancestor (0 behind, 92 ahead).
+- **Implementation SHAs:** `ac1ed124d4c3c8d56c6a4ff2beac9f22eb2e3630`, `fc0a572842baca02898a8db45048e8b93b8046bd`, `631afffb6adea240e35769c391d3235c246de657`, `d3da586f7b144f1f2ba664846d09f0d05a975b44`.
+- **Changed:** `engine/fx/SpectraFxComputeShaders.h`, `engine/fx/SpectraFxGpuEvolution.h`, `engine/fx/SpectraFxExecutionPolicy.h`, `engine/fx/SpectraFxGpuEmitterAsset.h`.
+- **API:** `SpectraFxGpuEnvironment` gains `collideGround` (off by default), `groundHeight`, `restitution`, `tangentRetention`; the Metal/GLSL compute shaders apply world-up Y plane collision and reflect downward vertical velocity, damping tangent velocity. GPU compute uniform block grows from 32 to 48 bytes and remains entirely within RHI uniform limits. JSON emitter assets accept optional `environment.groundCollision = {enabled,height,restitution,tangentRetention}`, with strict validation. Conservative execution policy gains `GroundPlaneCollision` flag; generic Collision/mesh/depth/terrain interactions still force CPU.
+- **Constraints:** flat Y plane only (not curved planets or actual sampled terrain), not a general GPU particle collision system; no gameplay physics or damage events are published, and no GPU->CPU feedback yet. This remains a presentation feature. Existing default assets without `groundCollision` keep prior motion.
+- **Tests actually performed:** **NOT RUN**. No local compiler, shaders, Metal/Vulkan GPU frame, native editor/GameClient, CTest or CI verified; the user's request is to finish functionality first. GitHub commits accepted, not evidence of collision correctness.
+- **Next:** append optional compact per-particle GPU event records and nonblocking readback path; preserve generation/session guards and never feed events into the authoritative ECS. Then add opt-in presentation callbacks.
