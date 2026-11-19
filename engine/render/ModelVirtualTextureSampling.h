@@ -69,7 +69,8 @@ static_assert(sizeof(ModelVirtualTextureUniforms) == 16);
 // GL33/GLES3/Vulkan remain limited to resource indices 0..15.
 inline bool supportsModelGraphSourceTextures(const gfx::Device& dev,
                                              size_t sources) {
-    return sources <= (dev.info().backend == gfx::Backend::Metal ? 4u : 3u);
+    return sources <= 4 &&
+           13 + int(sources) <= dev.maxFragmentTextureSlots();
 }
 inline bool modelGraphVirtualTextureSlots(const gfx::Device& dev,
                                           size_t sources,
@@ -78,8 +79,7 @@ inline bool modelGraphVirtualTextureSlots(const gfx::Device& dev,
     table = 0;
     if (!supportsModelGraphSourceTextures(dev, sources)) return false;
     const int next = 13+int(sources);
-    if (next+1 >= (dev.info().backend == gfx::Backend::Metal ? 32 : 16))
-        return false;
+    if (next+1 >= dev.maxFragmentTextureSlots()) return false;
     atlas = next;
     table = next+1;
     return true;
