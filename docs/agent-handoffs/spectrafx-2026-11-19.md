@@ -327,3 +327,22 @@ git switch feature/spectrafx-generic-cue-queue
 git pull --ff-only origin feature/spectrafx-generic-cue-queue
 git fetch origin main && git merge origin/main
 ```
+
+
+## 2026-11-19 — Stage 19: editor-only SpectraFX canvas layout persistence
+- **Branch:** `feature/spectrafx-generic-cue-queue`; `main` still at merged ancestor `d71c6d47e532b25fb816a8bb1f96c41e5275a165` at stage start.
+- **Code commits:** `6ed70a8b485d6126216b02b4d2b299cf924faa19`, `b8738ba8ba91264c541b55f1de4ef53d0e04c890`, `69a183c6cff7ec9b0154b7e090ece3920d2c9598`. Last two correct JSON line terminator and new-document layout dirty state; the final commit uses C++ escaped newline, not literal backslash+n JSON garbage.
+- **Changed file:** `apps/editor/windows/SpectraFxGraphWindow.cpp`. Saves positions/pan into `fx/graphs/<name>.layout.json` version 1, separately from canonical particle graph `<name>.vfx.json`. Reads the sidecar on load, bounds finite coordinates, gracefully discards corrupted optional metadata, tracks layout dirtiness during node dragging/panning, and writes the sidecar via a temp file rename. Does not change `compileSpectraGraph` schema or CPU ParticleSystem. Saving main graph invokes saving layout.
+- **Compatibility:** additive editor metadata, no ECS gameplay state/network/save format changes. Canonical FX assets remain loadable without a layout file.
+- **Tests actually run:** **NOT RUN**, explicitly deferred by user until all features are implemented. Native compile, CTest, editor UI, file IO, Metal rendering and CI all unverified. No production-ready claim.
+- **Limitations:** editor's graph and layout are two separate files, not transactionally committed together; an IO failure can save one but not the other. Layout metadata is not shared through `fx::SpectraGraphAssets`. Graph node id rename does not migrate layout positions automatically.
+- **Next:** embedded live ParticleSystem preview in SpectraFX editor using existing FxWindow render target patterns, then an opt-in RHI GPU particle path with CPU fallback; integrate host cue producer and perform native tests only after functional implementation.
+
+Pull-first:
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main && git merge origin/main
+```
