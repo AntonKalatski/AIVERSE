@@ -22,6 +22,7 @@
 #include <unordered_map>
 #include <vector>
 #include "../gfx/Gfx.h"
+#include "../render/GpuOwnedMemory.h"
 #include "FxEffect.h"
 
 namespace aiverse::render { class GpuResourceRetirement; }
@@ -163,6 +164,9 @@ public:
 
     void snapshot(std::vector<FxParticleInfo>& out) const;   // every live particle (current size and colour)
     const FxStats& stats() const { return stats_; }
+    // SpectraFX owns particle GPU vertex/index buffers and builtin atlas.
+    // Loader textures/meshes/ShaderGraph textures are borrowed: exclude.
+    render::GpuOwnedMemoryStats ownedGpuMemoryStats() const;
     void resetStats() { stats_.dropped = stats_.culled = 0; }
 
     // Built-in texture names (always available, no files): soft, spark, ring, smoke.
