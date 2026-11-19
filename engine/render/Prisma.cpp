@@ -948,21 +948,16 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         resetAutoExposure(viewId_);
     }
 
-    // ---- Stage 25: view-specific camera/object motion vectors and blur.
-    // Motion history stores matrices only (never prior gameplay/ECS values).
-    // Signed velocities require RGBA16F: no implicit RGBA8 quantization.
+    // ---- Stage 42: one camera/object velocity pass feeds both HDR temporal
+    // reconstruction and shutter blur. Temporal history is keyed by viewId,
+    // not shared by same-resolution Scene/Game cameras.
     Target src = scene;
     auto& motionView = motionViews_[viewId_];
     const bool previousValid = motionView.valid &&
         motionView.width == w && motionView.height == h;
-    // Typed producer descriptors are checked before GPU binding. Legacy
-    // no-metadata inputs are still accepted for backward compatibility.
-    // In either case the producer owns the GPU handle and its real format.
     const auto validInput = [&](const MotionTextureInput& input,
                                 gfx::PixelFormat required) {
         if (!input.validFor(w,h,required)) return false;
-        // Prefer actual live RHI metadata over the provider's declaration.
-        // This check never samples a texture or invokes GPU readback.
         gfx::TextureInfo actual{};
         return !dev.textureInfo(input.texture,actual) ||
             (actual.width == w && actual.height == h &&
@@ -973,84 +968,170 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     const bool validReactive = validInput(motionView.reactiveMask,
                                          gfx::PixelFormat::RGBA8);
     const PrismaEffect* motionEffect = find(PrismaType::MotionBlur);
+    const PrismaEffect* temporalEffect = find(PrismaType::TemporalResolve);
     const char* motionFlag = std::getenv("AIVERSE_PRISMA_MOTION_BLUR");
-    if (motionEffect && motionFlag && std::strcmp(motionFlag, "1") == 0 &&
-        hdrFrame_ && previousValid && motionEffect->get("intensity") > 0 &&
-        motionEffect->get("maxPixels") > 0 &&
-        program(kMotionVectors).valid() && program(kMotionBlur).valid()) {
-        const Target velocity = target(set, kMotionVelocity, w, h);
-        const Target blurred = target(set, kMotionColor, w, h);
-        const auto sceneDepth = depthFor(set, w, h);
-        const auto scratchDepth = depthFor(set, w, h, true);
-        if (velocity.tex.valid() && blurred.tex.valid() &&
-            scene.tex.valid() && sceneDepth.valid() && scratchDepth.valid()) {
+    const char* temporalFlag = std::getenv("AIVERSE_PRISMA_TEMPORAL");
+    const bool motionRequested = hdrFrame_ && motionEffect && motionFlag &&
+        std::strcmp(motionFlag,"1")==0 && motionEffect->get("intensity")>0 &&
+        motionEffect->get("maxPixels")>0;
+    const bool temporalRequested = hdrFrame_ && temporalEffect && temporalFlag &&
+        std::strcmp(temporalFlag,"1")==0 &&
+        temporalEffect->get("historyWeight")>0;
+    const gfx::TextureHandle sceneDepth = depthFor(set,w,h);
+    const gfx::TextureHandle scratchDepth = depthFor(set,w,h,true);
+    Target velocity;
+    if (previousValid && (motionRequested || temporalRequested) &&
+        scene.tex.valid() && sceneDepth.valid() && scratchDepth.valid() &&
+        program(kMotionVectors).valid()) {
+        velocity=target(set,kMotionVelocity,w,h);
+        if (velocity.tex.valid()) {
             MotionUniforms vectors{};
-            put(vectors.px, 1.0f / float(w), 1.0f / float(h), flip, 0);
-            put(vectors.p0, dev.info().clipDepthZeroToOne ? 1.0f : 0.0f,
-                validVelocity ? 1.0f : 0.0f, 0, 0);
-            const mat4 inverseViewProj = f.viewProj.inverse();
-            std::memcpy(vectors.inv0, inverseViewProj.m, sizeof inverseViewProj.m);
-            std::memcpy(vectors.prev0, motionView.previousViewProj.m,
+            put(vectors.px,1.0f/float(w),1.0f/float(h),flip,0);
+            put(vectors.p0,dev.info().clipDepthZeroToOne?1.0f:0.0f,
+                validVelocity?1.0f:0.0f,0,0);
+            const mat4 inverseViewProj=f.viewProj.inverse();
+            std::memcpy(vectors.inv0,inverseViewProj.m,sizeof inverseViewProj.m);
+            std::memcpy(vectors.prev0,motionView.previousViewProj.m,
                         sizeof motionView.previousViewProj.m);
-            // Explicit RHI pass, not Prisma::draw(), because the scene depth
-            // texture is simultaneously sampled: a different scratch depth
-            // attachment prevents read/write feedback.
-            auto raster = [&](const Target& output, gfx::PipelineHandle pipeline,
-                              const void* uniforms, size_t bytes,
-                              gfx::TextureHandle input0,
-                              gfx::TextureHandle input1,
-                              gfx::TextureHandle input2) {
-                gfx::PassDesc pass;
-                pass.colorTarget = output.tex;
-                pass.depthTarget = scratchDepth;
-                pass.clearColor[0] = pass.clearColor[1] = pass.clearColor[2] = 0;
-                pass.clearColor[3] = 1;
-                dev.beginPass(pass);
-                dev.setViewport({0, 0, w, h});
-                dev.setPipeline(pipeline);
-                dev.setVertexBuffer(triangle_);
-                dev.setUniforms(0, uniforms, bytes);
-                dev.setTexture(0, input0);
-                dev.setTexture(1, input1);
-                if (pipeline == pipes_[kMotionVectors] || pipeline == pipes_[kMotionBlur])
-                    dev.setTexture(2, input2);
-                if (pipeline == pipes_[kMotionBlur])
-                    dev.setTexture(3, validReactive
-                                      ? motionView.reactiveMask.texture : black_);
-                dev.draw(3);
-                dev.endPass();
-                ++stats_.passes;
-            };
-            raster(velocity, pipes_[kMotionVectors], &vectors, sizeof vectors,
-                   scene.tex, sceneDepth,
-                   validVelocity ? motionView.objectVelocity.texture : black_);
+            gfx::PassDesc pass{};
+            pass.colorTarget=velocity.tex;
+            pass.depthTarget=scratchDepth; // cannot bind sampled scene depth as attachment
+            pass.clearColor[0]=pass.clearColor[1]=pass.clearColor[2]=0;
+            pass.clearColor[3]=1;
+            dev.beginPass(pass);
+            dev.setViewport({0,0,w,h});
+            dev.setPipeline(pipes_[kMotionVectors]);
+            dev.setVertexBuffer(triangle_);
+            dev.setUniforms(0,&vectors,sizeof vectors);
+            dev.setTexture(0,scene.tex);
+            dev.setTexture(1,sceneDepth);
+            dev.setTexture(2,validVelocity?motionView.objectVelocity.texture:black_);
+            dev.draw(3);
+            dev.endPass();
+            ++stats_.passes;
+        }
+    }
+
+    bool temporalResolved=false;
+    if (temporalRequested && scene.tex.valid() && sceneDepth.valid() &&
+        scratchDepth.valid() && program(kTemporalResolve).valid()) {
+        auto& history=temporalViews_[viewId_];
+        if (history.width != w || history.height != h) {
+            for (auto& handle : history.history) retireTarget(handle);
+            history.width=w;history.height=h;
+            history.valid=false;history.current=0;
+        }
+        for (auto& handle : history.history) {
+            if (handle.valid()) continue;
+            gfx::TextureDesc desc{};
+            desc.width=w;desc.height=h;
+            desc.format=gfx::PixelFormat::RGBA16F;
+            desc.filter=gfx::Filter::Nearest;
+            desc.renderTarget=true;
+            desc.label="prisma temporal camera history";
+            handle=dev.createTexture(desc);
+        }
+        const int next=1-history.current;
+        const gfx::TextureHandle targetHistory=history.history[next];
+        const gfx::TextureHandle previousHistory=history.history[history.current];
+        if (targetHistory.valid() && previousHistory.valid()) {
+            MotionUniforms uniforms{};
+            put(uniforms.px,1.0f/float(w),1.0f/float(h),flip,0);
+            const bool useHistory=history.valid && previousValid && velocity.tex.valid();
+            put(uniforms.p0,
+                dev.info().clipDepthZeroToOne?1.0f:0.0f,
+                useHistory?1.0f:0.0f,
+                temporalEffect->get("historyWeight"),
+                temporalEffect->get("reactiveStrength"));
+            put(uniforms.sun,
+                temporalEffect->get("depthThreshold"),
+                temporalEffect->get("motionScale"),
+                validReactive?1.0f:0.0f,0);
+            const mat4 inverseViewProj=f.viewProj.inverse();
+            std::memcpy(uniforms.inv0,inverseViewProj.m,sizeof inverseViewProj.m);
+            std::memcpy(uniforms.prev0,motionView.previousViewProj.m,
+                        sizeof motionView.previousViewProj.m);
+            gfx::PassDesc pass{};
+            pass.colorTarget=targetHistory;
+            pass.depthTarget=scratchDepth;
+            pass.clearColor[0]=pass.clearColor[1]=pass.clearColor[2]=0;
+            pass.clearColor[3]=1;
+            dev.beginPass(pass);
+            dev.setViewport({0,0,w,h});
+            dev.setPipeline(pipes_[kTemporalResolve]);
+            dev.setVertexBuffer(triangle_);
+            dev.setUniforms(0,&uniforms,sizeof uniforms);
+            dev.setTexture(0,src.tex);
+            dev.setTexture(1,useHistory?previousHistory:black_);
+            dev.setTexture(2,velocity.tex.valid()?velocity.tex:black_);
+            dev.setTexture(3,sceneDepth);
+            dev.setTexture(4,validReactive?motionView.reactiveMask.texture:black_);
+            dev.draw(3);
+            dev.endPass();
+            ++stats_.passes;
+            history.current=next;
+            history.valid=true;
+            src={targetHistory,w,h,gfx::PixelFormat::RGBA16F};
+            temporalResolved=true;
+        } else history.valid=false;
+    } else {
+        // Release camera-owned HDR history if its effect is off or the
+        // viewport switched to an unsupported quality/format.
+        auto it=temporalViews_.find(viewId_);
+        if (it!=temporalViews_.end()) {
+            for(auto& handle:it->second.history)retireTarget(handle);
+            temporalViews_.erase(it);
+        }
+    }
+
+    // Motion blur samples the temporally stabilized scene when both options
+    // are enabled; unlike the previous implementation, velocity is built
+    // exactly once and never overwrites the temporal history.
+    if (motionRequested && previousValid && velocity.tex.valid() &&
+        sceneDepth.valid() && scratchDepth.valid() &&
+        program(kMotionBlur).valid()) {
+        const Target blurred=target(set,kMotionColor,w,h);
+        if (blurred.tex.valid()) {
             MotionBlurU blur{};
-            put(blur.px, 1.0f / float(w), 1.0f / float(h), flip, 0);
-            put(blur.p0, motionEffect->get("shutterScale"),
+            put(blur.px,1.0f/float(w),1.0f/float(h),flip,0);
+            put(blur.p0,motionEffect->get("shutterScale"),
                 motionEffect->get("maxPixels"),
-                motionEffect->get("samples"), motionEffect->get("intensity"));
-            put(blur.sun, motionEffect->get("depthThreshold"),
+                motionEffect->get("samples"),motionEffect->get("intensity"));
+            put(blur.sun,motionEffect->get("depthThreshold"),
                 motionEffect->get("reactiveStrength"),
                 motionEffect->get("velocityDilation"),
                 motionEffect->get("depthToleranceMeters"));
-            const bool linearDepth = motionEffect->get("linearDepth") > 0.5f &&
-                f.depthFar > f.depthNear + 0.001f &&
-                (f.orthographic || f.depthNear > 0.0f);
-            put(blur.depthInfo, f.depthNear, f.depthFar,
-                f.orthographic ? 1.0f : 0.0f, linearDepth ? 1.0f : 0.0f);
-            raster(blurred, pipes_[kMotionBlur], &blur, sizeof blur,
-                   scene.tex, velocity.tex, sceneDepth);
-            src = blurred;
+            const bool linearDepth=motionEffect->get("linearDepth")>0.5f &&
+                f.depthFar>f.depthNear+0.001f &&
+                (f.orthographic || f.depthNear>0.0f);
+            put(blur.depthInfo,f.depthNear,f.depthFar,
+                f.orthographic?1.0f:0.0f,linearDepth?1.0f:0.0f);
+            gfx::PassDesc pass{};
+            pass.colorTarget=blurred.tex;
+            pass.depthTarget=scratchDepth;
+            pass.clearColor[0]=pass.clearColor[1]=pass.clearColor[2]=0;
+            pass.clearColor[3]=1;
+            dev.beginPass(pass);
+            dev.setViewport({0,0,w,h});
+            dev.setPipeline(pipes_[kMotionBlur]);
+            dev.setVertexBuffer(triangle_);
+            dev.setUniforms(0,&blur,sizeof blur);
+            dev.setTexture(0,src.tex);
+            dev.setTexture(1,velocity.tex);
+            dev.setTexture(2,sceneDepth);
+            dev.setTexture(3,validReactive?motionView.reactiveMask.texture:black_);
+            dev.draw(3);
+            dev.endPass();
+            ++stats_.passes;
+            src=blurred;
         }
     }
-    // Snapshot once per rendered view. A cut invalidates the previous data,
-    // so the first subsequent frame presents sharp color and seeds history.
-    motionView.previousViewProj = f.viewProj;
-    motionView.width = w;
-    motionView.height = h;
-    motionView.valid = true;
-    motionView.objectVelocity = {};
-    motionView.reactiveMask = {};
+    // Seed motion history independently of the effect switches. A cut or
+    // resize makes the next temporal pass sharp, never a stale reprojection.
+    motionView.previousViewProj=f.viewProj;
+    motionView.width=w;motionView.height=h;motionView.valid=true;
+    motionView.objectVelocity={};
+    motionView.reactiveMask={};
 
     // ---- experimental depth of field: device-depth driven defocus
     // The scene depth texture must NEVER be attached for depth writes while
@@ -1666,7 +1747,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         pipe = composite(mask, graphData);
     }
     if (!pipe.valid()) pipe = composite(0);   // a broken variant still shows the scene
-    const PrismaEffect* finalAa = hdrFrame_ ? find(PrismaType::Fxaa) : nullptr;
+    // TAA and FXAA are mutually exclusive for the same HDR presentation.
+    const PrismaEffect* finalAa = hdrFrame_ && !temporalResolved ? find(PrismaType::Fxaa) : nullptr;
     bool aaAfter = finalAa && program(kFxaa).valid();
     gfx::PassDesc compositeOut = out;
     Target aaTarget;
