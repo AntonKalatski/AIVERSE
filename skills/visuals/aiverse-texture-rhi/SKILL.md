@@ -518,3 +518,22 @@ CI if it remains queued or cancelled.
   when wrapping changes. Test real GLSL/MSL periodic seams during the
   deferred validation phase. Python packer tests for these modes are
   not yet executed/added; do not claim real GPU fidelity.
+
+
+### Native runtime VT addressing propagation (Stage 10N)
+
+- For native C++ TerraWeave archives, set
+  `gfx::VirtualTextureArchivePackConfig::addressU/addressV` before
+  `gfx::VirtualTexturePageArchiveWriter::pack`. Both axes default to
+  `ClampToEdge`; choose `Repeat` or `MirrorRepeat` per source sampler.
+- Packconfig address modes affect edge gutters, odd-size mip filtering,
+  the immutable revision hash and the optional manifest fields. Do not
+  reuse the prior content revision after changing wrap modes.
+- `VirtualTextureArchiveVersion` carries these modes through
+  TerraWeave's active session into both single- and multi-domain model
+  sampling bindings; no separate per-model patch is needed.
+- The Python packer only writes a manifest: a project using its pages
+  must explicitly read/provide `addressU/V` to the typed version or
+  resolver. There is no automatic manifest-to-version reader.
+- `ClampToBorder` is unsupported and rejected. Native/GPU seam tests
+  remain deferred; do not treat source-only integration as certified.
