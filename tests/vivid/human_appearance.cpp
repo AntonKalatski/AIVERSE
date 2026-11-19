@@ -199,13 +199,21 @@ void test() {
                        "hair segment remained inside closed import collider");
             }
         auto translated=verts;
+        const auto beforeRoot=groom.guides().front().root;
         for(auto& v:translated)v.x+=0.25f;
         expect(groom.refitCollisionMesh(translated),
                "valid animated scalp proxy BVH refit rejected");
+        const auto afterRoot=groom.guides().front().root;
+        expect(std::fabs((afterRoot.x-beforeRoot.x)-0.25f)<0.0005f &&
+               std::fabs(afterRoot.y-beforeRoot.y)<0.0005f &&
+               std::fabs(afterRoot.z-beforeRoot.z)<0.0005f,
+               "barycentric groom attachment did not follow animated proxy");
         auto nonfinite=translated;
         nonfinite[0].x=std::numeric_limits<float>::quiet_NaN();
         expect(!groom.refitCollisionMesh(nonfinite)&&groom.hasCollisionMesh(),
                "nonfinite scalp refit destroyed last-good BVH");
+        expect(render::length(groom.guides().front().root-afterRoot)<0.0001f,
+               "failed scalp refit altered last-good root attachment");
         expect(groom.refitCollisionMesh(verts),
                "scalp proxy failed to restore original bind pose");
         groom.clearCollisionMesh();
