@@ -99,6 +99,29 @@ int main() {
               dev.lastDesc.mipLevels == 2, "cube array metadata to RHI");
         check(dev.mipUploads == 12, "each layer of second mip");
         dev.destroyTexture(h);
+
+        // The total decoded chain has 768 bytes at mip 0 and 192 at mip 1.
+        // An individual-mip cap would accept both; the aggregate budget
+        // must reject before creating any GPU texture or decoding any layer.
+        TestDevice budgetDevice;
+        render::TextureUploadOptions budgetOptions;
+        budgetOptions.maxCpuDecodedBytes = 959;
+        h = render::uploadKtx2Image(budgetDevice, image, budgetOptions, err);
+        check(!h.valid() && budgetDevice.created == 0 &&
+              err.find("chain exceeds") != std::string::npos,
+              "aggregate decoded mip-chain memory budget fails before GPU allocation");
+        budgetOptions.maxCpuDecodedBytes = 960;
+        h = render::uploadKtx2Image(budgetDevice, image, budgetOptions, err);
+        check(h.valid() && err.empty() && budgetDevice.created == 1 &&
+              budgetDevice.mipUploads == 12,
+              "exact byte budget admits a complete layered mip chain");
+        budgetDevice.destroyTexture(h);
+        budgetOptions.maxCpuDecodedBytes = 0;
+        h = render::uploadKtx2Image(budgetDevice, image, budgetOptions, err);
+        check(!h.valid() && budgetDevice.created == 1 &&
+              err.find("budget") != std::string::npos,
+              "zero byte budget disables CPU fallback");
+
         image = {};
         image.width=2; image.height=2; image.depth=2;
         image.levels.resize(1); image.levels[0].assign(32, 30);
