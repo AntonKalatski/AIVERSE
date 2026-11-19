@@ -2526,7 +2526,25 @@ void Renderer3D::renderModels(int phase) {
     // instancing for this frame (including shadow/opaque model submissions),
     // not the more expensive CPU MDI path. Existing A/B modes remain distinct.
 
-    const bool allowIndirect = modelMultiDrawEnabled_ &&
+    // AUTO is a three-path policy: when neither indirect encoder can
+    // amortize setup, use the ordinary direct/instancing renderer. This
+    // conservative admission gate is per pass, after visibility/culling,
+    // and never affects explicit manual batching modes.
+    static const bool autoBatchCpu = [] {
+        const char* flag = std::getenv("AIVERSE_BATCH_AUTO");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
+    static const size_t autoCpuMdiMinimum = [] {
+        const char* raw = std::getenv("AIVERSE_BATCH_AUTO_CPU_MIN_ITEMS");
+        if (!raw || !*raw) return size_t(64);
+        char* end = nullptr;
+        const long n = std::strtol(raw, &end, 10);
+        return end != raw && *end == '\0' && n >= 16 && n <= 4096
+            ? size_t(n) : size_t(64);
+    }();
+    const bool autoCpuMdiSmallPass = autoBatchCpu &&
+        phase <= 1 && order_.size() < autoCpuMdiMinimum;
+    const bool allowIndirect = !autoCpuMdiSmallPass && modelMultiDrawEnabled_ &&
         (!gpuAdaptiveInstancingFallback_ || groupAdaptive) &&
         !(renderSafe && std::strcmp(renderSafe, "1") == 0) &&
         !(indirectToggle && std::strcmp(indirectToggle, "off") == 0) &&
