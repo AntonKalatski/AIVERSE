@@ -658,6 +658,12 @@ private:
         int choice=0;
         uint64_t capturedFrame=0;
         render::AnimationGraphInstance::PlaybackSnapshot graph;
+        // Legacy clip-only actors can preserve one unblended base-layer
+        // phase by stable clip NAME, never by the previous Model's index.
+        std::string baseClip;
+        float basePhase=0.f;
+        bool baseLoop=true;
+        int baseKind=-1;
         float eventAge[render::kProcEvCount] = {};
         float castAge=1e9f,deathAge=0.f,phase=0.f,yaw=0.f,speed=0.f;
         render::float3 lastPos{};
