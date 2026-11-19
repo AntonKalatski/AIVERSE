@@ -7,6 +7,7 @@ on:
       - 'engine/render/Strata*.cpp'
       - 'engine/render/GeometryScene.*'
       - 'engine/render/GlobalGeometryPool.*'
+      - 'engine/render/Renderer3D.*'
       - 'tests/render/strata_*.cpp'
       - 'CMakeLists.txt'
       - '.github/workflows/strata-focused.yml'
@@ -48,7 +49,14 @@ jobs:
       - name: Test Strata contracts
         run: >
           ctest --test-dir build/strata-focused
-          -R '^strata_(builder|model_adapter|view|gpu_scene|gpu_culling|render_routing)
+          -R '^strata_(builder|model_adapter|view|gpu_scene|gpu_culling|render_routing)$'
           --output-on-failure
-
-          --output-on-failure
+      # Compile the real GPU fixtures on a native macOS runner.
+      # Do not launch an AppKit window in CI; compilation is not GPU parity.
+      - name: Compile real Metal parity fixtures (no GPU execution)
+        if: matrix.os == 'macos-15'
+        run: |
+          cmake -S . -B build/strata-focused -DAIVERSE_STRATA_METAL_GPU_TESTS=ON
+          cmake --build build/strata-focused --target \
+            aiverse_strata_metal_parity \
+            aiverse_strata_metal_raster_parity --parallel 4
