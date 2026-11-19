@@ -933,6 +933,9 @@ void Prisma::resetMotionHistory(uint64_t id) {
     view.reactiveMask = {};
     if (auto it = temporalViews_.find(id); it != temporalViews_.end())
         it->second.valid = false;
+    // A host-reported camera cut invalidates exposure as well as velocity:
+    // preserve its allocated 1x1 history but do not reuse old luminance.
+    resetAutoExposure(id);
 }
 void Prisma::resetMotionHistory() {
     for (auto& [id, view] : motionViews_) {
@@ -942,6 +945,7 @@ void Prisma::resetMotionHistory() {
         view.reactiveMask = {};
     }
     for (auto& [id, view] : temporalViews_) view.valid = false;
+    resetAutoExposure(); // all-camera cut/profile transition
 }
 
 void Prisma::resetAutoExposure() {
