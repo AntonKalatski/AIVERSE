@@ -35,7 +35,8 @@ inline void validateEcsAuthorityConfig(
 }
 
 struct TerraWeaveAuthorityResource {
-    uint32_t version=1;
+    uint32_t version=2;
+    uint64_t stateRevision=0; // includes ecology updates even without changing terrain
     std::string immutableRecipeId;
     EarthworksSnapshot earth;
     std::vector<AnchoredPlant> rooted;
@@ -44,7 +45,8 @@ struct TerraWeaveAuthorityResource {
 
 inline void io(Archive& a,TerraWeaveAuthorityResource& state){
     a(state.version);
-    if(!a.ok() || state.version!=1u){a.fail();return;}
+    if(!a.ok() || state.version!=2u){a.fail();return;}
+    a(state.stateRevision);
     save_detail::recipe(a,state.immutableRecipeId);
     a(state.earth.spacingCm,state.earth.bedrockCm,
       state.earth.revision);
@@ -69,7 +71,7 @@ inline EarthworksLayer materializeEcsTerrain(
         const TerraWeaveAuthorityResource& state,
         const TerraWeaveEcsAuthorityConfig& cfg){
     validateEcsAuthorityConfig(cfg);
-    if(state.version!=1u ||
+    if(state.version!=2u ||
        state.immutableRecipeId!=cfg.immutableRecipeId)
         throw std::invalid_argument("TerraWeave native ECS recipe mismatch");
     const TerrainSettings generated=cfg.generator;
@@ -85,7 +87,7 @@ inline void registerTerraWeaveAuthorityResource(
         Simulation& sim,const TerraWeaveEcsAuthorityConfig& cfg){
     const auto initial=initialTerraWeaveResource(cfg);
     sim.registerPersistentResource<TerraWeaveAuthorityResource>(
-        "terraweave.authority",1);
+        "terraweave.authority",2);
     sim.world().setResource<TerraWeaveAuthorityResource>(initial);
 }
 
@@ -129,6 +131,9 @@ excavateAuthoritativeEcs(World& world,
     result.rooted=roots.applyGroundChange(sample,result.earth,tick);
     TerraWeaveAuthorityResource updated=*old;
     updated.earth=ground.snapshot();
+    if(updated.stateRevision==UINT64_MAX)
+        throw std::overflow_error("TerraWeave ECS state revision overflow");
+    ++updated.stateRevision;
     updated.rooted=roots.snapshot();
     updated.grass=grass.snapshot();
     world.setResource<TerraWeaveAuthorityResource>(std::move(updated));
@@ -165,6 +170,9 @@ inline void addTerraWeaveAuthoritativeBankSystem(
             if(change.earth.vertices.empty())return;
             TerraWeaveAuthorityResource updated=*existing;
             updated.earth=ground.snapshot();
+    if(updated.stateRevision==UINT64_MAX)
+        throw std::overflow_error("TerraWeave ECS state revision overflow");
+    ++updated.stateRevision;
             updated.rooted=roots.snapshot();
             updated.grass=grass.snapshot();
             ecs.setResource<TerraWeaveAuthorityResource>(
