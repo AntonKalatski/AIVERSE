@@ -4,6 +4,21 @@ Read this file completely before changing anything. It is short on purpose. `REA
 short user-facing introduction (English, with translations `README.<lang>.md`, see §11),
 `docs/overview.md` the detailed overview; this file is the engineering contract.
 
+## LumaWeave mass dynamic direct lighting (experimental, 2026-11-19)
+
+Work only on `feature/lumaweave-massive-lighting` for this subsystem. The branch
+was created from `feature/hybrid-dynamic-gi` to REUSE the same GPU BVH and
+geometry-event contracts without duplicating a renderer-specific ray tracer.
+Read `docs/agent-handoffs/lumaweave-massive-lighting.md` before continuation.
+After each bounded stage commit code/tests, then a SEPARATE handoff commit with
+actual source SHA, APIs, tests observed/NOT RUN, limitations and next work.
+`LumaWeave` is DIRECT point/spot lighting and shadows only; the existing GI
+system provides INDIRECT bounce. Never sum duplicate direct terms from
+`LightSystem` or baked static sources; source registration does not enable draws.
+Keep the default `LightSystem`, baked GI, and experimental Metal ICB safety
+gates unchanged until native shader + performance/visual acceptance exists.
+Genres and ECS save/replay remain outside these presentation utilities.
+
 ## Hybrid global illumination (work in progress, 2026-11-19)
 
 Active GI implementation branch: `feature/hybrid-dynamic-gi`.
