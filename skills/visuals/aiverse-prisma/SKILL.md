@@ -1102,6 +1102,73 @@ remain **NOT RUN**. See
 limitations and the next step. Keep PR #26 Draft and
 do not merge into main without explicit user approval.
 
+## Stage 63 — reactive alpha-cutout / dissolve GPU silhouette and callback lifecycle
+
+`Renderer3D::renderCurrentFrameReactiveMask()` now prepares a
+separate rigid `objectMotionReactiveCutoutPipeline_` for
+`AlphaMode::Mask` and object-space `dissolve>0`.
+The `Renderer3DReactiveShaders.h` cutout GLSL and Metal
+variants reproduce material base-alpha/texture-alpha cutoff,
+standard KHR UV offset/scale/rotation, vertex alpha/AO
+rules, TeamMode::BaseAlpha / VertexAlpha overrides, the
+same 4×4 dithered LOD threshold and the ordinary
+rigid-model `modelNoise3` dissolve threshold (7 and 19
+cycles). Only surviving pixels write RGBA8 reactive R
+with borrowed sceneDepth sampled read-only. Renderer3D
+owns the separate scratch depth and the mask.
+
+Do NOT use this exact rigid shader for animated vertex
+deformation or custom Shader Graph vertex displacement.
+The animated/baked reactive coverage paths now replay
+the exact CURRENT-frame LOD dither via U1 / MSL buffer(2).
+Animated dissolve is conservative silhouette coverage:
+the reactive pass does NOT reproduce the deforming
+object-space noise and may mark pixels the color shader
+discarded. Animated material-specific cutout and
+actor-reveal aperture need their own future specialized
+path and real GPU validation; do not overclaim parity.
+
+Reactive provider readiness now depends on WHICH
+current scene source actually needs which pipeline:
+simple rigid, cutout/dissolve rigid, animated skin,
+animated baked, immediate MeshVertex water, or
+custom callback. Do not publish a valid looking,
+but empty mask solely because an unrelated GPU
+reactive shader happens to have compiled. Cutout
+shader/pipeline handles are owned exclusively by
+Renderer3D and destroyed at the host's GPU-idle
+shutdown point, just like existing reactive shaders;
+per-view target resize still uses GPU-fenced
+`queueObjectMotionTexture` rather than immediate
+texture destruction.
+
+Callback lifetime is strictly scene-scoped.
+Register using `addMotionReactiveDraw()` AFTER
+`beginScene()` and BEFORE `resolvePrisma()`.
+Callback must only encode draws into the already
+open RGBA8 reactive pass; it must not begin/end
+its own pass or access destroyed/external resources.
+It is not persisted to the next camera/frame.
+New `ObjectMotionStats.reactiveCallbacksDropped`
+counts callbacks lost because the post hook, scene
+depth or a suitable pass is unavailable; existing
+`reactiveCallbacks` counts invocations, not verified
+GPU draws. `cutoutReactiveDraws` and
+`dissolveReactiveDraws` count encoded attempts,
+not pixel coverage.
+
+**Actually performed:** readback from GitHub and
+51/51 static source/binding/lifetime assertions,
+plus lexical brace balance of the modified files.
+**NOT RUN:** actual C++ or Metal/GLSL compiler,
+CTest, GPU shader execution, visual parity,
+cross-camera callback/fence stress, performance,
+native Editor/GameClient or CI. Full handoff:
+`docs/handoffs/prisma-stage-63.md`. Keep
+Draft PR #26 unmerged until user explicitly
+approves merging main. Continue remaining bounded
+features, then enter the common native test phase.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
