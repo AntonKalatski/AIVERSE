@@ -100,6 +100,11 @@ PostFxQuality PostFx::defaultQualityFor(const gfx::Device& dev, bool mobile) {
 
 bool PostFx::init(gfx::Device& dev) {
     checkGpuDevice(dev);
+    // Legacy unleased tools keep their existing direct release policy;
+    // editor/clients with a host epoch fence-retire old postFX handles.
+    if(gpuDeviceLease_.device())
+        targetRetirement_=std::make_unique<OffscreenTargetRetirement>(
+            dev,gpuDeviceLease_);
     dev_ = &dev;
     const float tri[6] = {-1, -1, 3, -1, -1, 3};
     gfx::BufferDesc bd; bd.data = tri; bd.size = sizeof tri; bd.label = "postfx triangle";
@@ -110,7 +115,14 @@ bool PostFx::init(gfx::Device& dev) {
     return triangle_.valid();
 }
 
-void PostFx::release(gfx::TextureHandle& t) { if (t.valid() && dev_) {checkGpuDevice(*dev_); dev_->destroyTexture(t);} t = {}; }
+void PostFx::release(gfx::TextureHandle& t) {
+    if(t.valid() && dev_) {
+        checkGpuDevice(*dev_);
+        if(targetRetirement_)targetRetirement_->retire(t,{});
+        else dev_->destroyTexture(t);
+    }
+    t={};
+}
 
 void PostFx::shutdown() {
     if (!dev_) return;
@@ -124,6 +136,12 @@ void PostFx::shutdown() {
     luts_.clear();
     for(auto& [path,t]:graphTextures_)release(t);
     graphTextures_.clear();graphPaths_.clear();
+    release(black_);
+    // Queued textures may be sampled by previous postFX passes. Drain
+    // all retired targets with a proven full-device idle before releasing
+    // GPU programs and buffers or closing the Device epoch.
+    if(targetRetirement_ && !targetRetirement_->drain())
+        throw std::runtime_error("PostFx shutdown: GPU retirement barrier failed");
     for (int i = 0; i < kProgCount; ++i) {
         if (pipes_[i].valid()) dev_->destroyPipeline(pipes_[i]);
         if (shaders_[i].valid()) dev_->destroyShader(shaders_[i]);
@@ -133,8 +151,8 @@ void PostFx::shutdown() {
     composites_.clear();
     compositeFailed_.clear();
     if (triangle_.valid()) dev_->destroyBuffer(triangle_);
-    release(black_);
     triangle_ = {};
+    targetRetirement_.reset();
     underwater_ = {}; // never keep previous world's camera volume on reuse
     dev_ = nullptr;
 }
