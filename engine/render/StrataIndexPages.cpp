@@ -150,6 +150,15 @@ bool IndexResidency::updateIncremental(
             ++evicted;
         }
 
+    // An unknown serial cannot later be proven completed. Rather than
+    // leak permanently quarantined holes, preserve the current drawable
+    // frontier until the RHI starts reporting real frame serials.
+    if (frame == 0 && !newlyRetired.empty()) {
+        ++stats_.fenceReuseDeferrals;
+        stats_.deferredDemands += deferred + 1;
+        return true;
+    }
+
     struct Job {
         uint32_t primitive = 0, node = 0;
         Range range{};
