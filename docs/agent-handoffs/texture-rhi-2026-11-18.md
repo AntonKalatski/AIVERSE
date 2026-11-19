@@ -6535,3 +6535,31 @@ build, CTest and GPU testing NOT RUN per user request.
 Next: implement opt-in virtual page sampling in shared model
 materials (not just feedback), preserve original non-VT
 material fallback, then run backend-specific tests.
+
+
+## Stage 10E — main model shader virtual-page sampling and Terra active streamer (2026-11-19)
+
+**Source commits:**
+- `29cd56740358528db07bdf09e8a55629bc8d5017` — new `engine/render/ModelVirtualTextureSampling.h` with native GLSL/MSL program injection using canonical `gfx::kVirtualTextureGLSL/MSL`.
+- `ca845539e3f01f83960b03c270ad393a972f3a48` — new `Renderer3D::setModelVirtualTextureResolver`, `clearModelVirtualTextureResolver`, `resolveModelVirtualTexture`; private resolver storage in `engine/render/Renderer3D.h`.
+- `0b6b999af5efd750a1c669a211bed4973888e1ad` — built-in model shader VT permutation key and shader source construction (`engine/render/Renderer3DModels.cpp`).
+- `bb2906dcea6bd437f60f9b0693dc15e00179908d` — binds `tex13/tex14` and `U6` per material draw; heterogeneous VT instanced batches split, CPU MDI preflight rejects VT groups.
+- `9defcd9277aabaa436ece963d6576c28dd2c13f7` — disables existing GPU ICB model command path in scenes that actually contain VT materials, preventing unencoded atlas identities.
+- `b0eb4b0755284277a708966fe64e30d2851f8726` — Terra bridge uses identical mapping lookup for feedback and main material sampling, clears sampling callback at shutdown.
+- `42ba916e534d3375de441a344bfe01b714fc609c` — `connectTerraWeaveVirtualTextureSampling(renderer,feedback,session)` reads the active streamer generation/atlas/table and validates it against the material's archive mapping.
+- `22377145889e75322b29d4876a22bc15d13450e4` — prevents VT on per-vertex material-palette batches, which can address multiple materials.
+**Documentation commit:** `4516a4a9ae9cefecddf3a63f5b9e6a93485493d0`.
+**Branch:** `feature/texture-rhi-unification`; PR #21.
+
+**Architecture and API:**
+`ModelVirtualTextureBinding` contains two native `TextureHandle` values (`physicalAtlas`, `pageTable`), `layer` and `gutterPixels`. The renderer queries an opt-in `ModelVirtualTextureResolver(const Model&,const Material&,ModelVirtualTextureBinding&)` when selecting built-in material pipelines. Only valid resources enable a shader permutation. Shader injection replaces the regular base-colour `texture(tex1,v_uv)`/`tex1.sample(s1,in.uv)` with the canonical `aiverseSampleVirtual`/`aiverse_sample_virtual`, using physical RGBA8 2D-array page atlas and RGBA8 page table in slots 13/14 and U6=buffer(7) on Metal. The existing `tex1` stays as fallback for nonresident pages; importantly this is **real shader virtual-page sampling** but does NOT free the original source texture VRAM yet. Explicit shader graph, shadow, outline and GPU encoded paths are not virtualized. Graph uses overlapping slots 13+ so is intentionally excluded. Batching compares the external atlas/page-table binding; heterogeneous batches split, CPU indirect is rejected and GPU ICB path is disabled for VT scenes until command ABI supports per-command atlas identity. CPU path still uses normal shared model vertex deformation/instancing, alpha and LOD code.
+
+`TerraWeaveVirtualTextureFeedback::resolveMaterialMapping` is shared by the feedback shader and colour shader. `connectTerraWeaveVirtualTextureSampling` (defined in `TerraWeaveVirtualAtlasArchive.h`) installs a renderer resolver that checks `TerraWeaveVirtualAtlasSession::activeVersion()` and obtains `active()->physicalAtlas()` and `pageTableTexture()`; no stale handles are cached across Horizon revision promotion. The model/material page mapping must have matching tile counts, mip levels and layer. Terra's ordinary `Renderer3D::drawModel` submissions (trees, impostors, Horizon) now have an opt-in end-to-end sampling seam.
+
+**Owner lifecycle:** create `VirtualTextureFeedbackPass`, `TerraWeaveVirtualTextureFeedback`, `TerraWeaveVirtualAtlasSession`; attach feedback and call `connectTerraWeaveVirtualTextureSampling` after initialization; pack immutable source atlas into versioned page files, prepare/pump/promote active file streamer, register material virtual mappings, then render. On teardown clear renderer sampling/feedback resolver before destroying the bridge/session or renderer/device. Old GPU resource retirement remains fenced by the application.
+
+**Implementation limitations:** no tested GPU results; no Shader Graph VT, independent multi-domain atlas binding, source texture VRAM reclamation, GPU ICB per-command VT binding or real Terra Atlas archive provider automatically installed by Terra's separate branch. Cached material hashes in GPU ICB remain source-only, so the conservative CPU draw fallback is necessary. The bridge still lives only in the Texture RHI feature branch; Terra code itself lives in `feature/terraweave`. Transparent region crossfades and animated/custom vertex-displacement shader graphs remain to be addressed. Physical gutter sampling and colour-space behaviour need real GPU validation.
+
+**Actual verification:** GitHub source commits + documentation commit succeeded, inspected current `Renderer3DModels.cpp`, `ModelShaders.h`, `VirtualTextureSampling.h` and backend slot limits (GL only 0..15); **C++ native build NOT RUN; CTest NOT RUN; GLSL/MSL shader validation NOT RUN; Metal/GL/Vulkan GPU rendering NOT RUN** as requested (features before tests).
+
+**Next step:** preserve texture-memory advantages by supporting optional reduced fallback instead of full `tex1`, improve multi-domain Terra sampling with page atlas selection/indirection, restore fast GPU submission by encoding virtual material identity in the command/batch cache, and then run compile/GPU shader verification.
