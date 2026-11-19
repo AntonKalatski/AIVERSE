@@ -49,6 +49,8 @@ public:
         // internal backend copies; see Stage 15.4 handoff.
         uint64_t strataDeviceReservedIndexBytes=0;
         uint32_t strataDeviceIndexLeases=0, strataGlobalBudgetDeclined=0;
+        uint64_t strataDeviceFrameUploadedBytes=0;
+        uint64_t strataDeviceFrameUploadRemainingBytes=0;
         uint32_t strataSharedIoWorkers=0;
         uint64_t strataSharedIoQueuedJobs=0, strataSharedIoActiveJobs=0;
         uint64_t strataSharedCpuReadyBytes=0, strataSharedCpuReadyBudgetBytes=0;
@@ -116,6 +118,15 @@ public:
     }
     size_t strataGlobalIndexBudgetBytes() const {
         return strataGlobalIndexBudgetBytes_;
+    }
+    // Cross-world aggregate checked GPU page write cap on the same RHI
+    // device and frame serial. All concurrently loaded scenes must choose
+    // the same nonzero limit. Zero inherits an existing device policy.
+    void setStrataGlobalFrameUploadBudgetBytes(size_t bytes) {
+        strataGlobalFrameUploadBudgetBytes_=bytes;
+    }
+    size_t strataGlobalFrameUploadBudgetBytes() const {
+        return strataGlobalFrameUploadBudgetBytes_;
     }
     // Stage 15.2: Metal/Vulkan stable index pages with checked subrange
     // uploads and fence-retired slot reuse. GLES3/GL33 retain generation
@@ -245,6 +256,7 @@ private:
     size_t strataStreamingIndexBudgetBytes_=0;
     size_t strataStreamingSceneBudgetBytes_=0;
     size_t strataGlobalIndexBudgetBytes_=0;
+    size_t strataGlobalFrameUploadBudgetBytes_=0;
     bool strataIncrementalIndexStreamingEnabled_=false;
     size_t strataStreamingUploadBudgetBytes_=0;
     size_t strataStreamingFrameUploadBudgetBytes_=0;
