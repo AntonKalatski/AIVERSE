@@ -138,6 +138,27 @@ inline ForestNutrientCycleOutcome advanceForestNutrientCycleEcs(
     return report;
 }
 
+// Explicit authored river/outlet export. The native host verifies a real
+// NEREID outlet and assigns a strictly increasing command sequence for
+// deterministic replay. No water volume or flow state is mutated here.
+inline uint64_t exportForestDissolvedNutrientsEcs(
+        World& ecs,int64_t cellX,int64_t cellZ,
+        uint64_t maximumUnits,uint64_t commandId) {
+    const auto* previous=ecs.resourceConst<ForestDeadwoodResource>();
+    if(!previous)
+        throw std::logic_error("TerraWeave missing nutrient outflow resource");
+    if(!commandId)
+        throw std::invalid_argument("TerraWeave invalid nutrient outlet command");
+    if(commandId<=previous->lastOutflowCommandId)return 0;
+    ForestDeadwoodResource next=*previous;
+    const uint64_t exported=exportForestDissolvedNutrients(
+        next,cellX,cellZ,maximumUnits,commandId);
+    World staged=ecs;
+    staged.setResource<ForestDeadwoodResource>(std::move(next));
+    ecs=std::move(staged);
+    return exported;
+}
+
 inline void addTerraWeaveForestNutrientSystem(
         Simulation& sim,std::string name,
         TerraWeaveEcsAuthorityConfig cfg,
