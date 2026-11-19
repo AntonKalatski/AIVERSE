@@ -22,7 +22,9 @@ namespace aiverse::terraweave {
 struct ShorelineRasterSettings {
     RectCm area{};                       // half-open world cm; <= 16384 vertices
     int32_t splashHeightCm=100;          // 0..500: waves reach above the surface
-    int32_t maxWaterDepthCm=10000;       // 1..50000: bounded bank depth
+    int32_t maxWaterDepthCm=10000;       // 1..50000: bounded bank/bed depth
+    bool includeWetBedCells=false;       // opt-in whole riverbed/estuary carrier
+    int32_t minWetBedDepthCm=5;         // 0..5000cm for interior sediment
     uint32_t waveEnergyPermille=0;       // host PHYSIS/NEREID wave input
     uint32_t minContactPermille=50;      // 1..1000
     uint32_t maxBankCells=16384;
@@ -92,6 +94,8 @@ inline std::vector<AutoShorelineBank> discoverNereidShoreline(
        cfg.area.minZ>=cfg.area.maxZ ||
        cfg.splashHeightCm<0 || cfg.splashHeightCm>500 ||
        cfg.maxWaterDepthCm<1 || cfg.maxWaterDepthCm>50000 ||
+       cfg.minWetBedDepthCm<0 || cfg.minWetBedDepthCm>5000 ||
+       cfg.minWetBedDepthCm>cfg.maxWaterDepthCm ||
        cfg.waveEnergyPermille>1000 ||
        cfg.minContactPermille==0 || cfg.minContactPermille>1000 ||
        cfg.maxBankCells==0 || cfg.maxBankCells>16384)
@@ -158,6 +162,16 @@ inline std::vector<AutoShorelineBank> discoverNereidShoreline(
                 matchedWet=wet;
                 steepest=grade;
             }
+        }
+        if(!matchedWet && cfg.includeWetBedCells && at.wet) {
+            // Interior wet-bed cells carry NEREID sediment through broad
+            // rivers and estuaries. Without them transport can only follow
+            // the narrow outer shore and cannot form central sandbars.
+            const int64_t depth=shore_detail::cm(
+                at.sample.surfaceY)-at.heightCm;
+            if(depth>=cfg.minWetBedDepthCm &&
+               depth<=cfg.maxWaterDepthCm)
+                matchedWet=at;
         }
         if(!matchedWet)continue;
         const int64_t level=shore_detail::cm(
