@@ -12,6 +12,10 @@ struct HorizonWindShadowCachePolicy {
     // Excludes active region and outgoing crossfade (both keep their shadows).
     // Zero disables caching regions that would retain a wind CPU shadow.
     uint32_t maxCachedShadowBytes=16u*1024u*1024u;
+    // Stage38 opt-in: pack exact dormant vertex bytes losslessly.
+    // Re-entry restores the CPU shadow before existing GPU patch planning.
+    // Default false preserves Stage37 cache CPU/update characteristics.
+    bool compressCachedShadows=false;
 };
 
 inline void validateHorizonWindShadowCachePolicy(
