@@ -1130,11 +1130,40 @@ struct CreatorApp {
                             .toJson(lodPositions.size()).dump(2);
                         const auto directory=std::filesystem::absolute(
                             std::filesystem::path(importedManifest)).parent_path();
-                        const auto name="vivid-facial-lod-"+std::to_string(targetLodMesh);
-                        const auto mappingFile=directory/(name+".mapping.json");
+                        if(morphDirty)
+                            throw std::runtime_error("VIVID LOD: export edited source morphs before publishing package");
+                        if(authoredFacialLods.size()>=8 &&
+                           std::none_of(authoredFacialLods.begin(),authoredFacialLods.end(),
+                             [&](const AuthoredFacialLod& l){return l.targetMesh==targetLodMesh;}))
+                            throw std::runtime_error("VIVID LOD: maximum eight authored levels");
+                        const auto mappingJson=map.toJson().dump(2);
+                        // Content-addressed immutable files. A failure before
+                        // the final manifest rename leaves the old package
+                        // valid; unreferenced sidecars can be cleaned later.
+                        std::uint64_t digest=14695981039346656037ull;
+                        for(unsigned char c:mappingJson) {
+                            digest^=c;digest*=1099511628211ull;
+                        }
+                        for(unsigned char c:lodSidecar) {
+                            digest^=c;digest*=1099511628211ull;
+                        }
+                        const char hex[]="0123456789abcdef";
+                        std::string suffix(16,'0');
+                        for(int i=15;i>=0;--i) {
+                            suffix[std::size_t(i)]=hex[digest&15u];digest>>=4;
+                        }
+                        const auto name="vivid-facial-lod-"+
+                            std::to_string(targetLodMesh)+"-"+suffix;
+                        const auto mappingName=name+".mapping.json";
+                        const auto mappingFile=directory/mappingName;
                         const auto morphFile=directory/(name+".morphs.json");
-                        auto save=[&](const std::filesystem::path& file,
-                                      const std::string& contents) {
+                        auto publishImmutable=[&](const std::filesystem::path& file,
+                                                   const std::string& contents) {
+                            if(std::filesystem::exists(file)) {
+                                if(fileContents(file.string(),64ull*1024ull*1024ull)!=contents)
+                                    throw std::runtime_error("VIVID LOD: immutable filename collision");
+                                return;
+                            }
                             const auto tmp=std::filesystem::path(file.string()+".vivid.tmp");
                             {std::ofstream out(tmp,std::ios::binary|std::ios::trunc);
                              if(!out)throw std::runtime_error("VIVID LOD: cannot stage sidecar");
@@ -1145,15 +1174,35 @@ struct CreatorApp {
                             std::filesystem::rename(tmp,file,ec);
                             if(ec)throw std::runtime_error("VIVID LOD: sidecar rename failed: "+ec.message());
                         };
-                        save(mappingFile,map.toJson().dump(2));
-                        save(morphFile,lodSidecar);
+                        auto proposedPackage=importedPackage;
+                        const auto sourceName=sourceMesh.name;
+                        const auto targetName=targetMesh.name;
+                        const auto found=std::find_if(
+                            proposedPackage.facialLods.begin(),
+                            proposedPackage.facialLods.end(),
+                            [&](const HumanLodEntry& entry){return entry.meshName==targetName;});
+                        const HumanLodEntry entry{targetName,sourceName,mappingName};
+                        if(found==proposedPackage.facialLods.end())
+                            proposedPackage.facialLods.push_back(entry);
+                        else *found=entry;
+                        proposedPackage.validate();
+                        publishImmutable(mappingFile,mappingJson);
+                        publishImmutable(morphFile,lodSidecar);
+                        const auto packageText=proposedPackage.toJson().dump(2);
+                        const auto packageTmp=std::filesystem::path(importedManifest+".vivid.tmp");
+                        {std::ofstream out(packageTmp,std::ios::binary|std::ios::trunc);
+                         if(!out)throw std::runtime_error("VIVID LOD: cannot stage manifest");
+                         out.write(packageText.data(),std::streamsize(packageText.size()));
+                         out.flush();
+                         if(!out)throw std::runtime_error("VIVID LOD: manifest staging failed");}
+                        std::error_code manifestEc;
+                        std::filesystem::rename(packageTmp,importedManifest,manifestEc);
+                        if(manifestEc)throw std::runtime_error(
+                            "VIVID LOD: manifest publish failed: "+manifestEc.message());
+                        importedPackage=std::move(proposedPackage);
                         // Publish the full source/target CSR only at the next
                         // authoring rebuild, not by swapping a GPU stream
                         // during an active render pass.
-                        if(authoredFacialLods.size()>=8 &&
-                           std::none_of(authoredFacialLods.begin(),authoredFacialLods.end(),
-                             [&](const AuthoredFacialLod& l){return l.targetMesh==targetLodMesh;}))
-                            throw std::runtime_error("VIVID LOD: maximum eight authored levels");
                         AuthoredFacialLod layer{std::move(map),std::move(faceIndices),targetLodMesh};
                         auto existing=std::find_if(authoredFacialLods.begin(),authoredFacialLods.end(),
                             [&](const AuthoredFacialLod& l){return l.targetMesh==targetLodMesh;});
