@@ -6067,3 +6067,30 @@ Verification: GitHub commits succeeded. Native compilation,
 CTest, shader compiler and GPU tests NOT RUN per user request.
 Next: implement deforming-model feedback parity, then wire
 Terra's material producer and close RHI backend gaps.
+
+
+## Stage 9U — deformed ModelItem feedback draw integration point (2026-11-19)
+
+Source commit: 8bab34e667ca3b2cef3581c422c8492eb70478fd.
+Changed file: engine/render/Renderer3D.h.
+Added FeedbackDeformedModel carrying Model, Primitive, Material,
+world transform, joint and morph offsets, baked animation flag,
+animation parameters, LOD threshold/invert, index range, and
+read-only references to Renderer3D's per-frame jointData_ and
+morphData_. Added setVirtualTextureDeformedModelFeedback(
+FeedbackDeformedModelDraw) and matching clear. ModelItem
+feedback dispatch now delegates nonrigid/skinned/baked/morphed
+items to this callback when registered. The callback executes
+inside the existing feedback render pass and is responsible
+for setting its own deformation-aware pipeline, textures,
+uniforms, vertex/index buffers, material alpha/LOD discard,
+and issuing indexed draws. Without a callback, deformed
+items remain skipped. Clear model feedback also clears the
+deformed callback. This interface does NOT itself implement
+GPU skinning or morph feedback shaders.
+
+Verification: GitHub commit succeeded. Native compile,
+CTest, shader compilation and GPU tests NOT RUN as requested.
+Next: implement concrete skinning/baked/morph feedback vertex
+shader variants with matching ModelShaders ABI, wire Terra
+producers, then complete backend parity and test.
