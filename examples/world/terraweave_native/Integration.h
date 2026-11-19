@@ -11,6 +11,7 @@
 #include "engine/world/TerraWeaveShoreRecoveryEcs.h"
 #include "engine/world/TerraWeaveForestEcologyEcs.h"
 #include "engine/world/TerraWeaveForestHarvestEcs.h"
+#include "engine/world/TerraWeaveForestDeadwoodEcs.h"
 #include "engine/world/TerraWeaveFlowObstructionEcs.h"
 #include <functional>
 #include <optional>
@@ -40,7 +41,11 @@ inline void registerSystems(
         terraweave::ForestEcologySettings rootedForestSettings={},
         std::function<void(const terraweave::ForestEcologyEcsOutcome&)>
             onForestEcology={},
-        bool enableForestHarvest=false) {
+        bool enableForestHarvest=false,
+        bool enableForestDeadwood=false,
+        terraweave::ForestDeadwoodDecaySettings deadwoodSettings={},
+        std::function<void(const terraweave::ForestDeadwoodDecayOutcome&)>
+            onDeadwoodDecay={}) {
     lib::nereid::NativeWaterPipelineConfig water{};
     water.enableBankErosion=true;
     // Geometry and current state belong to NEREID, including polygon/
@@ -77,6 +82,8 @@ inline void registerSystems(
     // and present the resulting tombstones through the existing forest.
     if(enableForestHarvest)
         terraweave::registerTerraWeaveForestHarvestPersistence(sim);
+    if(enableForestDeadwood)
+        terraweave::registerTerraWeaveForestDeadwoodPersistence(sim);
     // NEREID calculates local bank erosion; transport then conserves
     // suspended sediment between same-water-body neighbouring banks.
     // TerraWeave applies already computed soil changes LAST.
@@ -117,6 +124,13 @@ inline void registerSystems(
             sim,"terraweave.forest_ecology",cfg,
             std::move(rootedForestSpecies),rootedForestSettings,{},
             std::move(onForestEcology));
+    // Stage67: natural deaths from Stage65 are seeded first, then this
+    // lower-frequency bounded decomposer returns nutrients and asks the
+    // external physics owner to remove fully rotted fallen bodies.
+    if(enableForestDeadwood)
+        terraweave::addTerraWeaveForestDeadwoodSystem(
+            sim,"terraweave.forest_deadwood",deadwoodSettings,
+            std::move(onDeadwoodDecay));
 }
 
 inline Entity addWaterBody(
