@@ -161,10 +161,33 @@ bool uploadModelToGeometryPool(gfx::Device& dev, Model& m) {
 }
 
 void releaseModelGeometryPool(gfx::Device& dev, Model& m) {
-    if (!m.geometryPoolPage) return;
-    if (m.geometryPoolPage.use_count() == 1)
-        dev.destroyBuffer(m.geometryPoolPage->buffer);
-    m.geometryPoolPage.reset();
+    // Upload, stats and model teardown share one ownership boundary.
+    // Without this lock, two last owners can both observe use_count()==2,
+    // reset concurrently and leave the GPU buffer permanently allocated.
+    gfx::BufferHandle orphan{};
+    {
+        std::lock_guard lock(poolMutex);
+        if (!m.geometryPoolPage) return;
+        const std::shared_ptr<GeometryPoolPage> page =
+            std::move(m.geometryPoolPage);
+        if (page.use_count() == 1) {
+            orphan = page->buffer;
+            const auto iter = pools.find(&dev);
+            if (iter != pools.end()) {
+                auto& pages = iter->second;
+                pages.erase(std::remove_if(pages.begin(), pages.end(),
+                    [&](const std::weak_ptr<GeometryPoolPage>& weak) {
+                        const auto alive = weak.lock();
+                        return !alive || alive.get() == page.get();
+                    }), pages.end());
+                if (pages.empty()) pools.erase(iter);
+            }
+        }
+    }
+    // Release GPU buffers outside the pool mutex. The expired weak entry
+    // has already been retired; a concurrent upload can never reuse it.
+    // RHI destroy is responsible for retaining in-flight GPU uses.
+    if (orphan.valid()) dev.destroyBuffer(orphan);
     m.gpuBaseVertex = m.gpuFirstIndex = 0;
 }
 } // namespace aiverse::render
