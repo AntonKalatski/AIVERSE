@@ -158,7 +158,8 @@ private:
         const auto* geometry=world_.tryGetConst<WaterGeometryComponent>(entity);
         if(!coversWaterBody(*body,geometry,position))return;
         const auto* field=world_.tryGetConst<WaterCurrentFieldComponent>(entity);
-        considerWaterCandidate(out,entity,*body,position,geometry,field);
+        const auto* vortices=world_.tryGetConst<WaterVortexFieldComponent>(entity);
+        considerWaterCandidate(out,entity,*body,position,geometry,field,vortices);
     }
     void visit(int index,Vec3 position,WaterSample& out) const {
         const auto& node=nodes_[size_t(index)];
