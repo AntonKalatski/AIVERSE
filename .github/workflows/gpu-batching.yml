@@ -1,5 +1,12 @@
 name: GPU batching focused regression
 
+# AIVERSE has many concurrent agent branches. Never queue dozens of
+# superseded raster checks for successive commits to the same PR.
+# The current head remains authoritative; unrelated PRs run independently.
+concurrency:
+  group: gpu-batching-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 on:
   pull_request:
     paths:
@@ -7,6 +14,7 @@ on:
       - 'engine/gfx/**'
       - 'apps/editor/windows/SceneWindow.cpp'
       - 'tests/render/model_batching_policy.cpp'
+      - 'tests/render/material_batches.cpp'
       - '.github/workflows/gpu-batching.yml'
   workflow_dispatch:
 
