@@ -407,3 +407,41 @@ spray is optional and never modifies a water ECS component. See
 
 **Verification:** implementation only; compilation, GPU visuals and
 tests deferred by explicit user direction.
+
+## Stage 29 — spatial river/rapids currents (features-first)
+
+Use `<aiverselib/water/NereidCurrentField.h>` and link
+`AIVERSE::lib_nereid_currents` in native projects. On a water-body
+Entity with an enabled `RiverSpline` `WaterGeometryComponent`,
+attach `WaterCurrentFieldComponent` with exactly one
+`WaterCurrentNode {downstream,lateral,shear}` per river point.
+Enable persistence using `NativeWaterPipelineConfig::enableCurrentField`.
+
+`waterCurrentAt(body,geometry,field,probePosition)` computes
+fixed-point local velocity: body base `flow`, interpolated
+downstream tangent speed, lateral side-bank velocity and signed
+cross-river shear, faded toward the banks. Existing reference and
+indexed NEREID samplers automatically pass the current field into
+`WaterSample.flow`; buoyancy/drag already consumes that same sample.
+There is no extra genre system and no PHYSIS dependency. Invalid or
+disabled fields fall back to `body.flow`.
+
+Read-only ECS water snapshots include the field. Native worlds
+using `WorldScene::setNereidSurfaces` therefore advect visual ripples
+by the same locally sampled current. Static authored rivers may use:
+```json
+{
+  "kind":"river","shape":"river","surfaceY":10,"bottomY":0,
+  "points":[[0,0,3],[20,0,4],[32,10,5]],
+  "currentField":{
+    "bankFade":0.25,
+    "nodes":[[2,0,0],[8,0.5,2],[4,-0.3,-1]]
+  }
+}
+```
+Do not confuse `WaterCurrentNode` with geometry vertices. Negative
+node speeds represent upstream or counterflow. Do not use this
+presentation bridge as authoritative fluid simulation; PHYSIS/Box3D
+and game movement retain ownership of integrators and gravity.
+No tests/compiles performed per user direction. Exact stage commits,
+limitations and next implementation are in `docs/nereid/HANDOFF.md`.
