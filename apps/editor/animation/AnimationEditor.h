@@ -103,6 +103,9 @@ public:
         if(dirty_){ImGui::SameLine();if(ImGui::Button(tr("discard").c_str())){doc_=saved_;dirty_=false;reset();}}
         std::string model=doc_.getStr("model");ImGui::SetNextItemWidth(220);if(ui::inputString(tr("model").c_str(),model)){remember();doc_.set("model",Json::string(model));}
         ImGui::SameLine();if(ImGui::Button(tr("reload").c_str()))release();
+        ImGui::SameLine();
+        if(ImGui::Button("Attachments"))
+            ed.focusWindow("animation_attachments");
         ImGui::SetNextItemWidth(180);if(ImGui::BeginCombo(tr("type").c_str(),target_.c_str())){for(const auto& t:ed.rules().types)if(ImGui::Selectable(t.id.c_str(),target_==t.id)){target_=t.id;auto path=t.view.getStr("model");if(!path.empty()){remember();doc_.set("model",Json::string(path));}}ImGui::EndCombo();}
         ImGui::SameLine();ImGui::BeginDisabled(!ready_||target_.empty());if(ImGui::Button(tr("apply").c_str())&&save(ed)){Json p=Json::object();p.set("name",Json::string(name_));p.set("target",Json::string(target_));check(ed.ws().call("animation_graph_apply",p));}ImGui::EndDisabled();
         ImGui::SetNextItemWidth(170);if(ImGui::BeginCombo(tr("scope").c_str(),scope_.empty()?tr("root").c_str():scope_.c_str())){if(ImGui::Selectable(tr("root").c_str(),scope_.empty())){scope_.clear();selected_.clear();}for(const auto& [name,g]:doc_["graphs"].members()){(void)g;if(ImGui::Selectable(name.c_str(),scope_==name)){scope_=name;selected_.clear();}}ImGui::EndCombo();}

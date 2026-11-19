@@ -3107,3 +3107,41 @@ Common native projects may use `engine/view/ImportedAttachmentAuthoring.h` to im
 The existing native `aiverse_modelview` application now integrates the generic `ImportedAttachmentAuthoring` API, rather than only leaving attachment authoring as an unused library helper. It can load a real static child Model on a named source socket through `--attach child.glb@SocketName`, read/write `--attachments-file file.json`, and manage the layout through an Attachments window (toggle, attach, detach, rebuild, save). Parent and child Models live in the SAME generic `ModelAssetProvider` cache. New authored configurations are compiled at the next Device-owner preframe boundary, preserving the previous compiled layout if a new imported child/socket is invalid. The parent Animator computes pose once; `ImportedAttachmentAuthoring::prepare(...,HostPrecomputed)` gets per-model CPU read leases, and `View::submitOne` draws its socket children without ticking another AnimationGraph.
 
 Note: **Detach** removes a child from the authored layout but leaves its Model resident in the provider cache until normal retirement/shutdown. Rebuild uses current cached Models; it does not re-read changed child file bytes, since proper source-file hot reimport must coordinate CPU and GPU barriers. AIVERSE Studio Modeling/AnimationEditor previews are still separate owners and have NOT been integrated. Source code and limitations: [Stage 154 handoff](agent-handoffs/animation-stage154-modelview-attachment-workflow-2026-11-19.md); user workflow: [ModelView attachments](modelview-attachments.md). Actual native compiler/CTest/Metal/GLES/Vulkan/visual parity/sanitizer/perf **NOT RUN**.
+
+
+
+## Stage 155 — Studio attachment editor with staged on-disk Model reimport
+
+The generic `ImportedAttachmentAuthoring` system is now used from a **real AIVERSE Studio attachment authoring window** (`apps/editor/windows/AttachmentAuthoringWindow.cpp`). The native window registers automatically with the Editor's window registry in the Look workspace. It can edit a project-relative parent Model and child Model/socket list, toggle/Detach entries, Load/Save JSON and explicitly **Reimport & Publish**. Modeling and AnimationGraph toolbars can open it via **Attachments**, without sharing their directly-owned GPU Model pointers or starting another animation evaluator.
+
+Each Studio publication first imports the entire source and child set into a new, separate `ModelAssetProvider`/ModelResourceCache bound to the current Editor GPU Device generation. This is a real file reread and compiled socket validation; failed import or socket validation retains the last-good published session. A **full GPU idle proof** is deliberately required before replacing the old provider and retiring its GPU handles. This is conservative **blocking** authoring; the existing provider and file-backed JSON metadata do NOT implement in-viewport 3D attachment visualization or deferred nonblocking hot reload yet. Nonproven GPU resources are deliberately held alive instead of freed; investigate with the eventual fence fault-injection tests.
+
+There is no gameplay/genre logic in the new shared code; the studio editor is only an asset host and the existing `AnimationGraphInstance` preview owners remain independent. Read [Stage 155 handoff](agent-handoffs/animation-stage155-studio-attachment-staged-reimport-2026-11-20.md) and [Studio attachment guide](studio-attachment-authoring.md). **NOT RUN:** CMake/compiler/CTest/current CI passing, actual Studio launch, Metal/GLES/Vulkan visuals, GPU-fence/sanitizer/crowd tests.
+
+
+## Stage 156: Studio offscreen animation attachment composition
+
+The Studio `MotionWeave — Attachments` tab now renders the real compiled
+source/child Models using its own `Viewport`, `Renderer3D`,
+`ImportedAttachmentAuthoring::prepare` and generic `aiverse::View::submitOne`.
+A transient preview pose is evaluated from the source Model's first imported
+clip (or bind pose) and submitted as `AnimationOwner::HostPrecomputed`,
+without registering another graph writer. Owner-thread parent/child
+`ModelReadLease` guards remain alive throughout the synchronous renderer
+pass. The source and child resources are NOT borrowed from other editor tabs.
+
+The Studio's prior ModelAssetProvider sessions are deferred on publication
+and released after a verified full-GPU-idle barrier at the retention limit or
+shutdown. This is a practical bounded ownership queue, NOT yet a
+per-provider async GPU token retirement solution. Source SHA list,
+limitations and test backlog: [Stage 156 handoff](agent-handoffs/animation-stage156-studio-attachment-preview-deferred-retirement-2026-11-20.md).
+**NOT RUN:** native CMake/CTest, GUI screenshots, Metal/Vulkan/GLES,
+GPU-fence failure injection, sanitizers and performance.
+
+
+
+## Stage 157 — ModelView atomic on-disk parent + child Model hot reload
+
+The native `aiverse_modelview` example can now re-read the **actual source and child Model files** into a newly owned ModelAssetProvider, re-create each old parent Animator against the new Model (matching clip by exact name and optionally preserving normalized phase), publish a fresh AppearanceAssetRegistry and compile all named attachment sockets before switching the visible Scene generation. Invalid Model import/GPU upload/retarget/bone/socket refuses the candidate and leaves prior live source+attachment draw layout unchanged. The generic View still consumes a precomputed pose with `AnimationOwner::HostPrecomputed`; it does not evaluate the same graph twice.
+
+The ModelView Attachments window has **Reload model files** (unlike cached-layout **Rebuild**) and optional **Watch source files**. CLI `--watch-model-files` polls parent/enabled child file modification times about once per second and schedules reload on the NEXT render-owner pre-Device-frame boundary. Old parent instances/Animators, appearance metadata and provider GPU resources are retained in a whole-generation queue until an explicit GPU-idle proof, capped by advisory 8 generations. On no GPU completion it intentionally quarantines GPU owners rather than freeing them; a true per-provider async GPU fence solution is still missing. See [Stage 157 handoff](agent-handoffs/animation-stage157-modelview-atomic-model-file-reimport-2026-11-20.md) and [ModelView guide](modelview-attachments.md). **NOT RUN:** native compile/CTest, real Metal/Vulkan/GLES rendering, file watcher/manual reload visual tests, sanitizer and high-crowd performance.
