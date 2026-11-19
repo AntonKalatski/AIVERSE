@@ -520,13 +520,16 @@ RTSCamera Prisma::jitteredCamera(RTSCamera camera, int width, int height) {
     const auto* effect = settings_.find(PrismaType::TemporalResolve);
     const char* temporal = std::getenv("AIVERSE_PRISMA_TEMPORAL");
     const char* jitter = std::getenv("AIVERSE_PRISMA_JITTER");
-    const bool eligible = enabled_ && settings_.enabled &&
+    bool eligible = enabled_ && settings_.enabled &&
         quality_ == PrismaQuality::High && hdrRequested() &&
         temporal && std::strcmp(temporal,"1") == 0 &&
         jitter && std::strcmp(jitter,"1") == 0 &&
         effect && effect->enabled && int(quality_) >= int(effect->minQuality) &&
         effect->get("historyWeight") > 0 && effect->get("jitterPixels") > 0 &&
         camera.jitter.x == 0 && camera.jitter.y == 0;
+    // Shader compilation can fail on a backend. Never jitter the scene
+    // if there is no temporal reconstruction shader to undo it.
+    if (eligible && !program(kTemporalResolve).valid()) eligible=false;
     if (!eligible) {
         if (auto it=temporalViews_.find(viewId_); it!=temporalViews_.end()) {
             if (it->second.jitterActive) it->second.valid=false;
