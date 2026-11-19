@@ -125,6 +125,14 @@ bool IndexResidency::updateIncremental(
         if (error) *error = "STRATA indexed page upload outside safe RHI epoch";
         return false;
     }
+    if(diskPages_){
+        std::vector<std::pair<uint32_t,uint32_t>> pending;
+        for(uint32_t p=0;p<wanted.size();++p)
+            for(uint32_t n=0;n<wanted[p].size();++n)
+                if(wanted[p][n] && !spans_[p][n].valid())
+                    pending.emplace_back(p,n);
+        diskPages_->retainRequested(pending);
+    }
     using Range = IncrementalStorage::Range;
     // Work against drafts: a failed upload MUST retain the live offsets and
     // old GPU renderable frontier, even if earlier fresh-slot writes succeeded.
