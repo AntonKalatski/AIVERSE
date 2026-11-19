@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "engine/render/TextureCache.h"
+#include "engine/render/GlobalGeometryPool.h"
 #include "ClientSplash.h"
 #include "GameClient.h"
 #include "StartPlayers.h"
@@ -1125,6 +1126,8 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             rendererMemory.liveTextureKnownBytes+
             rendererMemory.liveBufferKnownBytes,
             rendererMemory.pendingMotionKnownBytes);
+        prisma_.setExternalGeometryPoolGpuMemory(
+            render::geometryPoolStats(dev).allocatedBytes);
         // Presentation-only Halton jitter: gameplay aiming, viewport picking,
         // UI and input continue to use the original unjittered cam_.
         const auto [renderW,renderH]=prisma_.renderSizeForOutput(fbW(),fbH());
