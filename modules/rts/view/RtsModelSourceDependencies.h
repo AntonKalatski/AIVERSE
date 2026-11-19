@@ -146,6 +146,20 @@ private:
         };
         walk(root);
     }
+    void collectGraphFiles(const Json& value,size_t type) {
+        std::function<void(const Json&)> visit=[&](const Json& source) {
+            if(source.isObject()) {
+                for(const auto& [name,child]:source.members()) {
+                    if(name=="animationGraph" && child.isString())
+                        add(child.str(),ModelSourceKind::AnimationGraph,type);
+                    else visit(child);
+                }
+            } else if(source.isArray()) {
+                for(const auto& child:source.items())visit(child);
+            }
+        };
+        visit(value);
+    }
     void addType(size_t type,const Json& view) {
         discoverModelPaths(view,false,
             [](const std::string&){return false;},
@@ -155,8 +169,9 @@ private:
         const Json& streaming=view["streaming"];
         add(streaming.getStr("coarseModel"),ModelSourceKind::Model,type);
         add(streaming.getStr("detailModel"),ModelSourceKind::Model,type);
-        if(view["animationGraph"].isString())
-            add(view["animationGraph"].str(),ModelSourceKind::AnimationGraph,type);
+        // A variant may override the top-level graph with its own file.
+        // Index every authored graph path, without interpreting graph nodes.
+        collectGraphFiles(view,type);
         collectTextures(view,type);
         if(usesLibrary(view["materials"]) || usesLibrary(view["assign"]))
             libraryUsers_.insert(type);
