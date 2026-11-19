@@ -12,6 +12,7 @@
 #include "SpectraFxGpuImpactFeedback.h"
 #include "SpectraFxGpuBillboardRenderer.h"
 #include "SpectraFxGpuSpawnScheduler.h"
+#include "SpectraFxGpuLod.h"
 #include "ParticleSystem.h"
 
 namespace aiverse::fx {
@@ -27,6 +28,7 @@ public:
         SpectraFxGpuBillboardRenderer::Appearance appearance{};
         SpectraFxGpuEnvironment environment{};
         SpectraFxGpuSpawnSettings spawning{};
+        SpectraFxGpuLodSettings lod{};
         FxQuality quality=FxQuality::High;
         bool autoSpawnGpu=true;
     };
@@ -39,7 +41,7 @@ public:
         stop();
         // Configure before allocating GPU resources: failed settings do not
         // replace or partially initialize any backend.
-        if(!scheduler_.configure(config.spawning)) {
+        if(!scheduler_.configure(config.spawning) || !config.lod.validate()) {
             status_="Invalid SpectraFX GPU spawn settings";
             return false;
         }
@@ -103,7 +105,7 @@ public:
         if(!gpuActive() || suspended_) return false;
         if(config_.autoSpawnGpu) {
             const bool scheduled=scheduler_.tick(dt,origin_,direction_,
-                spectraFxSpawnQualityScale(config_.quality),
+                spectraFxSpawnQualityScale(config_.quality)*lodSpawnScale_,
                 [this](render::float3 pos,render::float3 vel,float life) {
                     return slots_.emit({pos,vel,0,life}).valid();
                 });
@@ -117,6 +119,14 @@ public:
         status_="GPU compute step failed; emitter suspended pending reset";
         suspended_=true;
         return false;
+    }
+
+    // Update only presentation LOD; the particle state and its clock still
+    // advance outside visibility to preserve safe expiry/recycling.
+    void updateLod(render::float3 cameraEye) {
+        const float distance=spectraFxDistance(cameraEye,origin_);
+        lodSpawnScale_=config_.lod.spawnScale(distance);
+        lodVisible_=config_.lod.visible(distance);
     }
 
     // Update attachment transform before the next GPU spawn tick.
@@ -140,6 +150,7 @@ public:
     // GPU only, inside the scene render pass after updateGpu completed.
     bool renderGpu(const render::mat4& viewProj,render::float3 cameraRight,
                    render::float3 cameraUp) {
+        if(gpuActive() && !suspended_ && !lodVisible_) return true;
         return gpuActive() && !suspended_ && rendererOwner_ &&
                rendererOwner_->draw(slots_.evolution(),viewProj,cameraRight,
                                     cameraUp,config_.appearance);
@@ -161,6 +172,8 @@ public:
         cpu_=nullptr;
         suspended_=false;
         scheduler_.reset();
+        lodSpawnScale_=1;
+        lodVisible_=true;
         backend_=SpectraFxExecutionBackend::Cpu;
     }
 
@@ -194,5 +207,7 @@ private:
     float3 origin_{},direction_{0,1,0};
     std::string status_;
     bool suspended_=false;
+    float lodSpawnScale_=1.0f;
+    bool lodVisible_=true;
 };
 } // namespace aiverse::fx
