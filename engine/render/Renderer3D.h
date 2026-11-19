@@ -565,6 +565,8 @@ private:
     std::map<uint64_t, ObjectMotionHistory> objectMotionViews_;
     gfx::ShaderHandle objectMotionShader_;
     gfx::PipelineHandle objectMotionPipeline_;
+    gfx::ShaderHandle objectMotionInstancedShader_;
+    gfx::PipelineHandle objectMotionInstancedPipeline_;
 
     // Material GPU-state equivalence is pass-independent within one scene.
     // Resolve each distinct (model, material) once for shadows, colour,
