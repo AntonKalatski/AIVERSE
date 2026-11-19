@@ -63,6 +63,7 @@ else
         aiverse_vivid_human_dna_tests \
         aiverse_vivid_human_rig_tests \
         aiverse_vivid_human_appearance_tests \
+        aiverse_vivid_human_import_tests \
         aiverse_vivid_human_creator_tests \
         aiverse_vivid_creator \
         aiverse_vivid_motionweave_tests \
