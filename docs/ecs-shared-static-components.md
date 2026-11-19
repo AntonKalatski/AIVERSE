@@ -214,9 +214,20 @@ systems merely for performance.
   checksum-equivalent read loops; prints memory payload estimates and
   median read times. Not a performance gate.
 
-The source has been added to GitHub, but native compilation and benchmark
-measurements **have not yet been run**. Keep it opt-in until the Mac Studio
-and CI tests finish and the FPS/RTS native integration/parity is validated.
+**Native verification (2026-11-19, Mac Studio, AppleClang 17, Release,
+commit `11568cd16`):** the targeted `ecs_shared_static_components_test`
+compiled and passed (**1/1**, 0.39 sec test, 0.40 sec total). On
+200,000 entities with 64 distinct 128-byte configurations, median CPU
+read microbenchmark timings were Ordinary **0.309 ms**, Shared **0.089 ms**,
+Static **0.096 ms**. Payload-only figures were 25,600,000 bytes vs
+808,192 bytes. This corresponds to approximately **3.47x/3.22x** faster
+read passes and **96.84% less** config/index payload in this *specific*
+high-reuse setup.
+
+These are not measurements of process RSS or whole-frame performance.
+Sparse Set and registry overhead, cold-cache cases, unique-value variation,
+writes/compaction, broader CTest, cross-platform and RTS/FPS save/replay
+parity remain unverified. Keep the feature opt-in until those pass.
 
 ```sh
 git fetch origin feature/ecs-shared-static-components
