@@ -1632,3 +1632,40 @@ according to their usual device lifetime.
 
 **Verification:** source inspection and commit, no native compiler,
 shader compiler or GPU tests run for this change.
+
+
+## Frame-scoped heterogeneous material resource identities — Stage 10V
+
+`engine/render/GpuMaterialResourceTable.h` adds a genre-neutral,
+header-only, **CPU staging** `render::GpuMaterialResourceTable` for
+future heterogeneous material/Metal ICB command resources. It
+is directly accessible from native game projects; no Lua runtime or
+genre dependency is required.
+
+`GpuMaterialResourceBinding` stores up to four ordinary Shader Graph
+source handles, optional full-resolution alpha coverage and an
+optional exact `ModelVirtualTextureBinding` (physical atlas and
+page-table handles, virtual layer, gutter and per-axis address modes).
+`table.beginFrame(frameSerial)` increments a table generation and
+invalidates stale resource tickets even when the caller begins another
+stage with the same frame serial. `table.intern(binding)` deduplicates
+only exact bindings after hash-bucket lookup. The table is bounded
+(default 4096, max constructor limit 65536), fails closed on invalid
+handles and returns a typed `GpuMaterialResourceTicket` containing
+frame serial, generation and index.
+
+`table.matches(ticket, current)` must be called before GPU execution,
+so archive promotion, source texture reloading, alpha mask or wrap
+changes cannot silently reuse the original descriptor identity.
+`table.resolve(ticket, out)` copies an immutable resource snapshot,
+never exposing unstable vector pointers. Neither the table nor its
+tickets hold GPU resources alive; fences and texture lifetime are
+still owned by the renderer. Call `reset()` on device/scene shutdown
+and invalidate any cached command snapshots.
+
+**This is NOT yet an executable heterogeneous Metal ICB GPU argument
+buffer.** The existing ICB path remains homogeneous with CPU fallback.
+The header establishes a bounded identity and validation contract
+before extending GPU-side per-command resource indices and the MSL
+material shader ABI. No native builds, CTest, GPU compilations or
+device tests have been run for this new header.
