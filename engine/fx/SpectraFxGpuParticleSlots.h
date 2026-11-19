@@ -46,7 +46,10 @@ public:
         }
         free_.pop_back();
         Slot& slot=slots_[index];
-        if(++slot.generation==0) ++slot.generation;
+        // Generation counter survives init()/shutdown() on this manager.
+        // No stale handle can alias a reset/recycled slot until uint32 wrap.
+        if(++nextGeneration_==0) ++nextGeneration_;
+        slot.generation=nextGeneration_;
         slot.active=true;slot.age=seed.age;slot.life=seed.lifetime;
         ++active_;++stats_.emitted;
         return {index,slot.generation};
@@ -103,6 +106,7 @@ private:
     std::vector<Slot> slots_;
     std::vector<uint32_t> free_;
     uint32_t active_=0;
+    uint32_t nextGeneration_=0;
     Stats stats_{};
 };
 } // namespace aiverse::fx
