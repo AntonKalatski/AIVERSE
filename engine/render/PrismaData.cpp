@@ -110,7 +110,9 @@ std::vector<PrismaTypeDef> buildCatalog() {
         num("motionScale", 0.04f, 0.0f, 0.25f, "history weight falloff per pixel of motion", "Подавление при движении"),
         num("reactiveStrength", 0.95f, 0.0f, 1.0f, "reject history on translucent/particle reactive coverage", "Подавление на прозрачности"),
         num("jitterPixels", 0.5f, 0.0f, 0.5f, "subpixel sample jitter amplitude; additionally requires AIVERSE_PRISMA_JITTER=1", "Субпиксельное смещение"),
-        num("historyConfidence", 0.65f, 0.0f, 1.0f, "reduce stale history near color/depth disagreements", "Проверка достоверности истории")}});
+        num("historyConfidence", 0.65f, 0.0f, 1.0f, "reduce stale history near color/depth disagreements", "Проверка достоверности истории"),
+        num("renderScale", 1.0f, 0.5f, 1.0f, "fraction of output width/height used for 3D render; AIVERSE_PRISMA_UPSCALE=1 required", "Масштаб 3D-рендера"),
+        num("reconstructionSharpness", 0.15f, 0.0f, 0.5f, "mild HDR current-sample reconstruction before temporal confidence blending", "Резкость реконструкции")}});
     c.push_back({T::ShaderGraph, "shaderGraph", "Shader Graph", "Custom bounded fragment graph.", C::Medium, PrismaQuality::Medium, {}});
     return c;
 }
