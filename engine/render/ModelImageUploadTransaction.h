@@ -36,7 +36,7 @@ public:
     void retire(gfx::Device& device,Batch&& images) noexcept {
         if(images.empty())return;
         try {
-            queue_.enqueue(std::move(images));
+            queue_.enqueueFrom(images);
         }catch(...) {
             // Allocation failure must never destroy a potentially in-flight
             // texture. If native idle cannot be proven, leak the orphan
