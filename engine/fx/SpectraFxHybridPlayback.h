@@ -372,6 +372,18 @@ public:
     size_t oneShotCount() const {return oneShots_.size()+pooledShots_.size();}
     size_t sharedPoolCount() const {return pools_.size();}
     uint32_t sharedPoolCapacity() const {return totalPoolCapacity_;}
+    // Approximate native RHI payload only. Driver overhead, pipeline state,
+    // transient staging and texture memory alignment are not accounted for.
+    uint64_t nominalGpuBytes() const {
+        uint64_t bytes=0;
+        for(const auto& entry:active_) bytes+=entry.second->nominalGpuBytes();
+        for(const auto& entry:oneShots_)
+            bytes+=entry.emitter->nominalGpuBytes();
+        for(const auto& entry:pools_)
+            bytes+=entry.second.arena->nominalGpuBytes();
+        return bytes;
+    }
+
     uint64_t usedGpuSlots() const {
         uint64_t total=totalPoolCapacity_;
         for(const auto& e:active_)
