@@ -155,6 +155,18 @@ public:
         return setLights(std::move(converted));
     }
 
+    // Called AFTER Renderer3D::lights.add() for the current scene and BEFORE
+    // the GI updateFrame/render pass. This copies the stable source descriptors,
+    // so no gameplay/ECS pointers escape into an asynchronous GPU submission.
+    // Spot cone and opt-in indirectMultiplier remain the source of truth.
+    bool syncRendererLights(const Renderer3D& renderer,uint32_t namespaceId,
+                            float3 focus={},
+                            GiLightOverflowPolicy policy=GiLightOverflowPolicy::Reject,
+                            GiLightBridge::Stats* stats=nullptr) {
+        return setAuthoredLights(renderer.lights.submittedLights(),
+                                namespaceId,focus,policy,stats);
+    }
+
     // Geometry, vegetation, material and weather publishers can use one
     // shared event accumulator. GPU invalidation preserves in-flight revision
     // safety; CPU invalidation additionally clears its old atlas coefficients.
