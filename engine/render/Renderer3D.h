@@ -916,7 +916,10 @@ private:
         gfx::TextureHandle alphaCoverage;
         bool usesVirtualTexture = false;
         bool perCommandVt = false; // Metal opt-in per-command fragment ABI
+        bool perCommandPbr = false; // exact per-command U2 and slots 1..6
         bool mixedVtResources = false; // actual different VT bindings
+        bool mixedPbrResources = false;
+        Material pbrPipelineSnapshot; // frozen pipeline-only safety contract
         std::vector<GpuMaterialResourceTicket> perCommandTickets;
         // CPU table snapshot validates each command before ICB execution. The Metal GPU ICB
         // still inherits homogeneous fragment resources per submission.
