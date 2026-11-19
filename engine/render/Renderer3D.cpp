@@ -49,6 +49,9 @@ bool Renderer3D::init(gfx::Device& dev) {
         throw std::logic_error("Renderer3D cannot reinitialize with pending GPU programs");
     programRetirement_=std::make_unique<GpuProgramRetirement>(
         dev,gpuDeviceLease_);
+    targetRetirement_=std::make_unique<OffscreenTargetRetirement>(
+        dev,gpuDeviceLease_);
+    lights.setTargetRetirement(targetRetirement_.get());
     dev_ = &dev;
     gfx::ShaderDesc ls; ls.glslVertex = shaders::kLitVS; ls.glslFragment = shaders::kLitFS; ls.msl = shaders::kLitMSL;
     ls.uniformSlots = 3; ls.textureSlots = 6; ls.label = "lit"; // U2/tex1/tex2: Lights (tex2 water reflection); tex3 height field, tex4/tex5 scene (trace)
@@ -107,25 +110,45 @@ bool Renderer3D::init(gfx::Device& dev) {
     return litPipe_.valid() && shadowPipe_.valid() && linePipe_.valid() && triPipe_.valid();
 }
 
+void Renderer3D::retireRenderTargets(gfx::TextureHandle color,
+                                     gfx::TextureHandle depth) {
+    if(!color.valid() && !depth.valid())return;
+    if(targetRetirement_)targetRetirement_->retire(color,depth);
+    else if(dev_) {
+        if(color.valid())dev_->destroyTexture(color);
+        if(depth.valid())dev_->destroyTexture(depth);
+    }
+}
+
 void Renderer3D::setShadowQuality(ShadowQuality q) {
-    quality_ = q;
-    if (!dev_) return;
-    int size = q == ShadowQuality::High ? highShadowSize_ : q == ShadowQuality::Medium ? 1536 : 1024;
-    if (q == ShadowQuality::Off) size = 0;
-    if (size == shadowSize_ && shadowMap_.valid()) return;
-    if (shadowMap_.valid()) dev_->destroyTexture(shadowMap_);
-    shadowMap_ = {};
-    shadowSize_ = size;
+    if(!dev_) {quality_=q;return;}
+    checkGpuDevice(*dev_);
+    int size=q==ShadowQuality::High?highShadowSize_:
+             q==ShadowQuality::Medium?1536:1024;
+    if(q==ShadowQuality::Off)size=0;
+    if(size==shadowSize_ && shadowMap_.valid()) {
+        quality_=q;return;
+    }
     gfx::TextureDesc td;
-    td.width = td.height = std::max(size, 16);
-    td.format = gfx::PixelFormat::Depth;
-    td.renderTarget = true; td.compare = false; td.filter = gfx::Filter::Nearest; // raw depth for PCSS blocker search
-    shadowMap_ = dev_->createTexture(td);
+    td.width=td.height=std::max(size,16);
+    td.format=gfx::PixelFormat::Depth;
+    td.renderTarget=true;
+    td.compare=false;
+    td.filter=gfx::Filter::Nearest;
+    auto replacement=dev_->createTexture(td);
+    if(!replacement.valid())return; // preserve previous valid shadow target
+    retireRenderTargets(shadowMap_);
+    shadowMap_=replacement;
+    shadowSize_=size;
+    quality_=q;
 }
 
 void Renderer3D::shutdown() {
     if (!dev_) return;
     checkGpuDevice(*dev_);
+    // Live renderer shaders and buffers also require a completed GPU frame.
+    if(!dev_->waitForResourceIdle())
+        throw std::runtime_error("Renderer3D shutdown: GPU idle barrier failed");
     // Successful full-device idle is required when shader cache generations
     // are still pending. Failed completion cannot silently discard them.
     if(programRetirement_ && !programRetirement_->drain())
@@ -141,10 +164,13 @@ void Renderer3D::shutdown() {
     persistentScene_ = {};
     shutdownModels();
     lights.shutdown();
+    lights.setTargetRetirement(nullptr);
     shutdownTrace();
-    dev_->destroyTexture(shadowMap_);
+    retireRenderTargets(shadowMap_);
+    shadowMap_={};
     dev_->destroyBuffer(lineVB_); dev_->destroyBuffer(triVB_);
-    if (sceneSelectionMask_.valid()) dev_->destroyTexture(sceneSelectionMask_);
+    retireRenderTargets(sceneSelectionMask_);
+    sceneSelectionMask_={};
     if (sceneSelectionTriangle_.valid()) dev_->destroyBuffer(sceneSelectionTriangle_);
     if (sceneSelectionPrimitiveMaskPipe_.valid())
         dev_->destroyPipeline(sceneSelectionPrimitiveMaskPipe_);
@@ -154,6 +180,10 @@ void Renderer3D::shutdown() {
         dev_->destroyShader(sceneSelectionEdgeShader_);
     for (auto p : {litPipe_, litBlendPipe_, shadowPipe_, linePipe_, triPipe_}) dev_->destroyPipeline(p);
     for (auto s : {litShader_, shadowShader_, colorShader_}) dev_->destroyShader(s);
+    if(targetRetirement_ && !targetRetirement_->drain())
+        throw std::runtime_error(
+            "Renderer3D shutdown: pending GPU render target completion");
+    targetRetirement_.reset();
     programRetirement_.reset();
     dev_ = nullptr;
 }
