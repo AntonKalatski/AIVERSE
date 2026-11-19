@@ -492,21 +492,23 @@ public:
                 // One shared VB/IB, multiple disjoint index ranges; each tile
                 // can see up to 16 waves near its own portion of the ocean.
                 for(const auto& tile:slot.gpu->tiles()) {
-                    std::array<render::float4,16> waves{};
-                    if(ripples)waves=ripples->shaderRipplesForTile(
+                    NereidRippleShaderPacket packet{};
+                    if(ripples)packet=ripples->shaderPacketForTile(
                         slot.source.id,worldOriginX,worldOriginZ,
                         tile.minX,tile.maxX,tile.minZ,tile.maxZ);
-                    slot.gpu->drawTile(renderer,transform,tile,waves);
+                    slot.gpu->drawTile(renderer,transform,tile,
+                                       packet.rings,packet.shapes);
                 }
             }else{
-                std::array<render::float4,16> waves{};
+                NereidRippleShaderPacket packet{};
                 if(ripples) {
                     const double targetX=observer_?observer_->x.toDouble():basis.originX;
                     const double targetZ=observer_?observer_->z.toDouble():basis.originZ;
-                    waves=ripples->shaderRipples(
+                    packet=ripples->shaderPacket(
                         slot.source.id,worldOriginX,worldOriginZ,targetX,targetZ);
                 }
-                slot.gpu->draw(renderer,transform,waves);
+                slot.gpu->draw(renderer,transform,
+                               packet.rings,packet.shapes);
             }
         }
     }
