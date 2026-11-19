@@ -56,24 +56,7 @@ public:
         }
         auto resolve = [this](const Model& model,
                               const Material& material, Mapping& mapping) {
-            if (!isTerraWeaveModel(model)) return false;
-            const auto it = pages_.find({&model, &material});
-            if (it != pages_.end()) {
-                mapping = it->second;
-                return true;
-            }
-            // TerraWeaveHorizonScene keeps resident models private. A
-            // read-only resolver can therefore assign their atlas pages
-            // directly during Renderer3D's normal ModelItem submission.
-            if (liveMapper_) {
-                Mapping candidate;
-                if (liveMapper_(model,material,candidate) &&
-                    validMapping(candidate)) {
-                    mapping = candidate;
-                    return true;
-                }
-            }
-            return false;
+            return resolveMaterialMapping(model,material,mapping);
         };
         if (!rigid_.connect(renderer, resolve) ||
             (includeDeformed && !deformed_.connect(renderer, resolve))) {
@@ -88,6 +71,29 @@ public:
     // Call before new Terra submissions each frame to prevent stale pointer
     // keys from region rebuilds, forest unload and editor asset hot-reload.
     void beginFrame() { pages_.clear(); }
+
+    // Exact mapping used by both feedback and main-frame VT sampling.
+    // Keep these in sync across atlas revisions and impostor overrides.
+    bool resolveMaterialMapping(const Model& model,
+                                const Material& material,
+                                Mapping& mapping) const {
+        mapping = {};
+        if (!isTerraWeaveModel(model)) return false;
+        const auto it=pages_.find({&model,&material});
+        if (it!=pages_.end()) {
+            mapping=it->second;
+            return validMapping(mapping);
+        }
+        if (liveMapper_) {
+            Mapping candidate;
+            if (liveMapper_(model,material,candidate) &&
+                validMapping(candidate)) {
+                mapping=candidate;
+                return true;
+            }
+        }
+        return false;
+    }
 
     // Optional live lookup for Terra's private/replaced Horizon region
     // models. Called while rendering on the device thread; MUST be a
@@ -170,7 +176,10 @@ public:
     // Always disconnect before destroying the Renderer3D or feedback pass.
     // Does not destroy the caller-owned pass or virtual texture streamer.
     void shutdown() {
-        if (renderer_) renderer_->clearVirtualTextureFeedback();
+        if (renderer_) {
+            renderer_->clearVirtualTextureFeedback();
+            renderer_->clearModelVirtualTextureResolver();
+        }
         deformed_.shutdown();
         rigid_.shutdown();
         pages_.clear();
