@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -51,7 +52,8 @@ public:
         uint64_t bytes=0;
         const auto accumulate=[&](const Resource& resource) {
             const auto amount=uint64_t(estimate(resource));
-            if(amount>UINT64_MAX-bytes)bytes=UINT64_MAX;
+            if(amount>std::numeric_limits<uint64_t>::max()-bytes)
+                bytes=std::numeric_limits<uint64_t>::max();
             else bytes+=amount;
         };
         for(const auto& resource:pending_)accumulate(resource);
