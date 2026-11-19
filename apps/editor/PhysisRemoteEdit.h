@@ -166,7 +166,7 @@ public:
         if(client_)client_->retry();
     }
     ::aiverse::net::Bytes saveOutstanding() const {
-        return client_?client_->exportOutstanding():::aiverse::net::Bytes{};
+        return client_ ? client_->exportOutstanding() : ::aiverse::net::Bytes{};
     }
     bool restoreOutstanding(const ::aiverse::net::Bytes& encoded,std::string* error=nullptr) {
         return client_ && client_->restoreOutstanding(encoded,error);
