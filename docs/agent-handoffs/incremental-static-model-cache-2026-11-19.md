@@ -1499,3 +1499,31 @@ GitHub source retrieval and readback, logged CI error extraction, exact in-file 
 ### Next exact step
 
 Check the latest CI job on this source+handoff SHA, particularly `Linux arm64 gcc` after the `-DNDEBUG` test-fix, `GPU batching focused regression` Ubuntu/macOS model-policy, and Metal CPU MDI/ICB parity. Fix any subsequent compiler errors in the same feature branch and append another stage handoff. When native source is accessible, compile and execute `aiverse_model_batching_policy_tests` and all four impacted ECS test executables in Release, then run real backend comparisons before removing PR #34 Draft status.
+
+
+---
+
+## Stage 52 — fix Mac model_batching_policy failure from unfinished synthetic Model fixtures (2026-11-19)
+
+**Repo / branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. **Source HEAD before stage:** `60a3e408cb4b5d208144db81d27fdeec0b229008`. **Code commits:** `ca8746a39744a74724270a016fc7de07175adf4b`, `400eb90b9e1bec8df4e22ea0982d415e9e56883f`. All modifications are to `tests/render/model_batching_policy.cpp`; engine renderer/policy implementation unchanged.
+
+### Grounded user test evidence
+
+The user supplied local Mac Studio `build-metal` command output showing `model_batching_policy` **FAILED** in ~0.66 sec at `CHECK(staticModelCacheCandidate(draw,false))`, source line 766. CTest also listed four `ecs_cow_snapshot_test`, `ecs_cow_exception_test`, `ecs_cow_parallel_test`, `ecs_guarded_parallel_test` entries as **NOT RUN**, with missing `aiverse_...` executables; the preceding `make: *** No rule to make target aiverse_ecs_cow_snapshot_test` means the current local CMake-generated build tree did not provide the requested target. `NOT RUN` is not a test failure and is not evidence of ECS logic regressions; the Mac build configuration must be regenerated. CMakeLists.txt on the current branch defines all four targets under `AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN` and registers them with CTest.
+
+### Root cause and precise changes
+
+The public `staticModelCacheCandidate` delegates to `classifyModelStaticEligibility` in `engine/render/ModelStaticEligibility.h`. This intentionally requires `m.bindWorld.size() == m.nodes.size()`, as real imported models already have `Model::finalize()` applied before rendering. The synthetic fixture with `persistentId=41`, `kDrawStatic` had one node/mesh but **never called finalize**, so `bindWorld` was empty. The packet fixture with `persistentId=42` suffered the same omission and would have failed next. Test code incorrectly asserted both were cache candidates without satisfying actual immutable-asset prerequisites.
+
+- First fixture now asserts `!staticModelCacheCandidate` **before** `finalize()`, calls `model.finalize()`, verifies bindWorld size and only then asserts eligibility and material override/pose/displacement checks.
+- Second fixture now asserts packet ineligible while `staticPacketRevision==0`, then also ineligible with revision 1 **before** finalize. After finalize, packet eligibility must become true.
+- The former fixture expected authored `model.clips` alone to invalidate immutable **bind-pose** static caching. Current policy explicitly permits models containing clips as long as this instance passes no `nodeWorld`, `pose` or `baked` active deformation. The expectation now requires candidate/geometry compatibility for an asset with a clip but no active pose, and excludes actual active `draw.pose`. Included `engine/render/Animation.h` for a complete `NodePose` type.
+- Other exclusions (runtimeMutable nodes, geometry clusters, active pose, missing persistent ID, no kDrawStatic, active displacement, world transform mismatch) remain asserted. No production eligibility was relaxed to fit an invalid fixture.
+
+### Actual verification and boundaries
+
+Connected GitHub source retrieval, read user-provided attached log, inspected `ModelStaticEligibility.h`, `StaticModelCachePolicy.h`, `Model::finalize()`, `ModelDraw` and CMake target definitions. Exact unique source modifications, two atomic code commits, and expected-SHA feature-branch fast-forwards completed. **Mac tests have not been rerun after this fix. Local Mac CMake/CTest was not executable from this agent's container. GitHub CI is not yet confirmed PASS for this HEAD.** Do not claim a test pass from these code edits.
+
+### Exact next user/CI action
+
+Avoid using stale `build-metal` targets: reconfigure it with `cmake -S . -B build-metal -DAIVERSE_BUILD_TESTS=ON` after fetching and switching to this branch, then explicitly build `aiverse_model_batching_policy_tests` and all four `aiverse_ecs_*_test` executables. Run `ctest --test-dir build-metal -R '^(model_batching_policy|ecs_cow_snapshot_test|ecs_cow_exception_test|ecs_cow_parallel_test|ecs_guarded_parallel_test)$' --output-on-failure`. If the existing CMakeCache has incompatible generator/dependencies, create a **separate** clean `build/batching-verify` tree, not a destructive reset of other agents' build output. Keep PR #34 Draft and all experiment flags OFF until native/GPU parity and CI succeed.

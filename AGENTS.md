@@ -1855,3 +1855,21 @@ compile failure (run 44540545468 / job 135617454000). These changes
 address the compilation blockers observed in that job, but the
 new head's CMake/CTest result is NOT YET VERIFIED. Keep preserving
 genre independence and the per-stage handoff protocol.
+
+
+## Stage 52 — Mac batching policy fixture correction
+
+Fix user-reported `model_batching_policy` failure (Mac test
+at original line 766): test fixtures must call `Model::finalize()`
+before expecting `classifyModelStaticEligibility` to accept them.
+An asset containing animation clips may still have a static,
+bind-pose instance; only actual instance animation (`pose`,
+`nodeWorld`, `baked`) or active displacement excludes it.
+Test both sides; do not weaken production cache eligibility.
+
+The 4 ECS CTest entries were **NOT RUN**, because requested
+executables were not built and `make` reported a missing target.
+Reconfigure `build-metal` with `-DAIVERSE_BUILD_TESTS=ON`
+and explicitly build their targets, or use a fresh independent
+build directory. All CTest/Mac/GPU outcomes after this stage
+remain unverified. PR #34 stays Draft, no experimental defaults.

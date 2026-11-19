@@ -1647,3 +1647,26 @@ geometry cannot recycle unproven GPU memory. This is correctness
 hardening, not new frame waits or a latency optimization.
 Device-loss recovery remains caller-owned. Native Vulkan
 fault injection/CTest has NOT RUN.
+
+
+### Mac Studio model_batching_policy synthetic fixture — Stage 52
+
+The local Mac CTest failure at `staticModelCacheCandidate(draw,false)`
+in `tests/render/model_batching_policy.cpp` was caused by test
+fixtures that had one node and mesh but no `Model::finalize()`.
+The actual static eligibility policy requires full `bindWorld`
+matrices for every node, matching normal imported model behavior.
+The tests now explicitly assert ineligibility for unfinished assets,
+finalize both synthetic models, then assert bind-pose cache/packet
+eligibility.
+
+The separate check for **authored clips only** is aligned to the
+documented engine contract: a Model may contain clips while a
+specific static instance still uses its bind pose. An actually
+supplied `draw.pose` or `nodeWorld` must disable static cache.
+No engine cache policy was relaxed. The four other Mac tests were
+NOT RUN because their executables did not exist in `build-metal`;
+the branch's CMakeLists.txt defines them under
+`AIVERSE_BUILD_TESTS=ON`. Reconfigure CMake and build targets
+before rerunning CTest. Neither Mac rerun nor real GPU validation
+has yet been reported.
