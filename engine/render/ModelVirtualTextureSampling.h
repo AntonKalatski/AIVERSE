@@ -115,7 +115,7 @@ inline bool injectModelVirtualTextureSampling(std::string& fragmentGLSL,
     const auto fragEntry=msl.find("fragment float4 fs_main(");
     const auto signature = fragEntry==std::string::npos ?
         std::string::npos : msl.find(parameterAnchor,fragEntry);
-    const auto bodyAnchor = ") {\n#if defined(AIVERSE_ICB_PBR)\n";
+    const std::string bodyAnchor = ") {\n#if defined(AIVERSE_ICB_PBR)\n";
     const auto body = signature==std::string::npos ?
         std::string::npos : msl.find(bodyAnchor,signature);
     const std::string ns = "using namespace metal;";
