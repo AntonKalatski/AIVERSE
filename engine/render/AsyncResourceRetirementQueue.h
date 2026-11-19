@@ -19,7 +19,7 @@ enum class RetirementDiagnosticKind : uint8_t {
     IdleFallbackFailed, RecoveredAfterIdle
 };
 // Observer-side metadata only; never used to authorize resource destruction.
-enum class RetirementResourceKind : uint8_t { Unknown, Model, Image };
+enum class RetirementResourceKind : uint8_t { Unknown, Model, Image, Target };
 struct RetirementDiagnosticEvent {
     RetirementDiagnosticKind kind=RetirementDiagnosticKind::Pending;
     uint64_t token=0;
