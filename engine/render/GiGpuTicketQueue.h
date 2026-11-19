@@ -66,11 +66,17 @@ public:
     size_t pending() const { return pending_.size(); }
     bool ready() const { return dev_ && fence_.valid(); }
 
+    // One batch at a time: the current GI compute backend reuses one job buffer
+    // and writes directly into one atlas; its storage is NOT safe to reuse
+    // until the preceding Metal command-buffer completion fence is confirmed.
+    // A future multi-batch backend needs per-submission job buffers/atlas lanes.
+    //
     // Critical conservative presentation policy: hide the dynamic overlay
     // if ANY probe is dirty or in flight; an obsolete frame is never presented
     // while the producer is recomputing geometry/light. Future clipmaps can
     // replace this with per-brick valid masks instead of hiding the whole volume.
-    bool safeToSample(const GiUpdateScheduler& scheduler) const {
+    template<class Scheduler>
+    bool safeToSample(const Scheduler& scheduler) const {
         return ready() && pending_.empty() &&
                scheduler.pending()==0 && scheduler.inFlight()==0;
     }
@@ -85,11 +91,12 @@ public:
         return backend.setLights(std::move(lights));
     }
 
-    Submission submit(GiGpuSmallScene& backend,GiUpdateScheduler& scheduler,
+    template<class Scheduler>
+    Submission submit(GiGpuSmallScene& backend,Scheduler& scheduler,
                       size_t probeBudget,float3 focus,uint32_t samples,
                       float traceDistance) {
         Submission result;
-        if (!ready() || !backend.ready() || !probeBudget || pending_.size()>=4 ||
+        if (!ready() || !backend.ready() || !probeBudget || !pending_.empty() ||
             backend.atlas().device()!=dev_)
             return result;
         const auto tickets=scheduler.claim(std::min(probeBudget,GiGpuSmallScene::kMaxJobs),
@@ -129,7 +136,8 @@ public:
         return false;
     }
 
-    PollStats poll(GiUpdateScheduler& scheduler) {
+    template<class Scheduler>
+    PollStats poll(Scheduler& scheduler) {
         PollStats stats;
         for(size_t i=0;i<pending_.size();) {
             auto& batch=pending_[i];
