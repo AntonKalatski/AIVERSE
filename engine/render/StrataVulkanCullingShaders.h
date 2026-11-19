@@ -19,6 +19,14 @@ struct Selected {
 };
 layout(std430,set=0,binding=2) buffer SelectedRanges {Selected records[];} ranges;
 layout(std430,set=0,binding=3) buffer Counters {uint c[4];} counts;
+struct IndexedCommand {
+    uint indexCount, instanceCount, firstIndex;
+    int vertexOffset;
+    uint firstInstance;
+};
+layout(std430,set=0,binding=4) buffer IndexedIndirect {
+    IndexedCommand draws[];
+} indirect;
 
 layout(push_constant) uniform Params {
     mat4 viewProjection;
@@ -174,8 +182,46 @@ void main(){
                 gpuFirstIndex+node.firstIndex,node.count,node.material);
             ranges.records[at].second=uvec4(id,primitiveID,
                 node.firstIndex,0u);
+            // One-source uniform/material/transform contract is checked by
+            // the (future) draw-route owner. The GPU only writes indices.
+            indirect.draws[at].indexCount=node.count;
+            indirect.draws[at].instanceCount=1u;
+            indirect.draws[at].firstIndex=gpuFirstIndex+node.firstIndex;
+            indirect.draws[at].vertexOffset=int(params.reserved);
+            indirect.draws[at].firstInstance=0u;
         }
     }
 }
 )GLSL";
+
+// A second GPU-only pass invalidates *all* GPU-authored commands on a
+// selection overflow or invalid metadata, without reading counters on CPU.
+// Each command slot is pre-zeroed; only produced records are potentially
+// nonzero. Submission remains opt-in until renderer material-state routing
+// and production image parity are proven.
+inline constexpr const char* kVulkanIndirectSafety=R"GLSL(#version 450
+layout(local_size_x=64,local_size_y=1,local_size_z=1) in;
+struct IndexedCommand {
+    uint indexCount, instanceCount, firstIndex;
+    int vertexOffset;
+    uint firstInstance;
+};
+layout(std430,set=0,binding=0) buffer Indirect {
+    IndexedCommand commands[];
+} indirect;
+layout(std430,set=0,binding=1) readonly buffer Counters {
+    uint produced, overflow, examined, invalid;
+} counters;
+layout(push_constant) uniform Params {
+    uint capacity;
+} settings;
+void main(){
+    const uint id=gl_GlobalInvocationID.x;
+    if(id>=settings.capacity)return;
+    if(counters.overflow!=0u || counters.invalid!=0u ||
+       counters.produced>settings.capacity)
+        indirect.commands[id].indexCount=0u;
+}
+)GLSL";
+
 } // namespace aiverse::render::strata
