@@ -1021,3 +1021,31 @@ for its models.
 **NOT RUN:** native C++ compiler/link, CTest, Graph lifecycle
 fault injection, GPU visual parity or sanitizers.
 [Stage 128 handoff](agent-handoffs/animation-stage128-native-model-lifetime-pins-2026-11-19.md).
+
+## Stage 129 — Model lifetime through one MotionWeave render transaction
+
+The MotionWeave graph still runs once per logical presentation
+source and only reads the borrowed source Model while its
+host owner guarantees lifetime. Cache-owned native Models
+now have a short-lived, owner-thread `ModelReadLease` (or
+`ModelCacheReadScope` for multi-model legacy scenes) that
+prevents `ModelResourceCache` from replacing/evicting CPU
+Model data during the joined animation evaluation and
+synchronous Renderer3D submission. A changed Model asset
+epoch still invalidates old graph/skeleton caches as in
+Stages 127/126; a Model read lease is NOT a substitute for
+source asset publication revisions.
+
+`PinnedAppearanceBatch` can now combine pinned appearance/
+graph snapshots with cache-issued move-only Model read
+leases from `addCacheOwned` / `pinCacheRelatedModel`, or
+genuine shared Model owners from Stage 128. After
+`validatedSpan`, complete View.update and View.submit
+before releasing all guards. Legacy RTS takes a coarse
+render-frame read scope after synchronous type loads.
+GPU resources retain their original fence-based owner;
+no animation update or gameplay writer was added.
+
+**NOT RUN:** CMake/compiler/CTest, FPS/RTS/editor visual
+validation, GPU Model fence failure-injection, sanitizers
+or crowd benchmarks. [Stage 129 handoff](agent-handoffs/animation-stage129-model-cache-read-leases-2026-11-19.md).
