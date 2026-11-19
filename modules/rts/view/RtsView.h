@@ -187,6 +187,11 @@ public:
     bool warmPipelines(render::Renderer3D& renderer, uint16_t type);
     void setStreamingTypes(bool enabled) { streamingTypes_ = enabled; }
     std::shared_ptr<render::ModelTextureCache> textureCache() const { return resources_.textures(); }
+    // Transitional native-host access to the independent resource owner.
+    // Borrowed Model* and materials must not outlive trim/shutdown/hot reload.
+    const view_adapter::RtsModelResourceCache& modelResources() const noexcept {
+        return resources_;
+    }
     // An independent, worker-safe reader enables CPU decoding off the render thread.
     void setAsyncReader(render::FileReader reader) { asyncReader_ = std::move(reader); }
     bool prepareType(uint16_t type, bool allVariants = false);
