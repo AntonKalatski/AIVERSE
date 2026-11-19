@@ -18,9 +18,10 @@ class RecordingComputeDevice final : public gfx::Device {
 public:
     gfx::DeviceInfo deviceInfo{gfx::Backend::Metal, true, false, "Strata test"};
     std::map<uint32_t, std::vector<uint8_t>> buffers;
-    gfx::BufferHandle bound[4]{};
+    gfx::BufferHandle bound[5]{};
     GpuSelectionUniforms lastUniforms{};
     std::string shaderText, error;
+    std::vector<std::string> shaderSources;
     uint32_t next = 1, computeCalls = 0, dispatchCount = 0;
     uint32_t drawCalls = 0;
     bool supported = true, active = false;
@@ -77,6 +78,7 @@ public:
                 !std::strstr(d.glsl, "void main()"))return {};
             shaderText=d.glsl;
         } else return {};
+        shaderSources.push_back(shaderText);
         ++computeCalls;
         return {next++};
     }
@@ -86,7 +88,7 @@ public:
         active = true; return true;
     }
     void setComputeBuffer(int index, gfx::BufferHandle h) override {
-        assert(active && index >= 0 && index < 4 && h.valid());
+        assert(active && index >= 0 && index < 5 && h.valid());
         bound[index] = h;
     }
     void setComputeUniforms(const void* data, size_t size) override {
@@ -309,9 +311,17 @@ int main() {
     GpuClusterCulling gpuVk;
     GpuSelectionSubmission vkResult;
     assert(gpuVk.dispatch(vk,{99},{ia,ib},referencePass,201,vkResult));
-    assert(vkResult.valid() && vk.dispatchCount==2);
-    assert(vk.shaderText.find("#version 450") != std::string::npos);
-    assert(vk.shaderText.find("gpuFirstIndex+node.firstIndex") != std::string::npos);
+    assert(vkResult.valid() && vkResult.gpuIndirectPrepared());
+    assert(vk.dispatchCount==2+16+16); // clear/select/safety GPU jobs
+    assert(vk.computeCalls==3);
+    assert(vk.buffers.at(vkResult.indirect.id).size()==
+           16*sizeof(gfx::DrawIndexedIndirectCommand));
+    assert(vk.shaderSources[0].find("gpuFirstIndex+node.firstIndex") !=
+           std::string::npos);
+    assert(vk.shaderSources[1].find("commands[id].indexCount=0u") !=
+           std::string::npos);
+    assert(vk.shaderSources[2].find("counters.overflow") !=
+           std::string::npos);
     GpuSelectionCounters vkCounters{};
     vkCounters.produced=2;
     std::memcpy(vk.buffers.at(vkResult.counters.id).data(),
