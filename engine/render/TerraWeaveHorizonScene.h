@@ -54,6 +54,9 @@ struct HorizonRuntimeStats {
     size_t gpuCacheEvictions=0; // LRU and stale-revision RHI retirements
     size_t gpuCachedWindShadowBytes=0; // inactive cached CPU wind shadow capacity
     size_t gpuWindShadowBudgetEvictions=0; // whole GPU entries retired for CPU budget
+    size_t gpuCachedCompressedWindShadows=0; // live inactive compressed entries
+    size_t gpuWindShadowCompressions=0; // successful CPU-only pack operations
+    size_t gpuWindShadowRestores=0; // exact CPU restoration on GPU cache hit
     size_t windOverlayPatchWrites=0, windOverlayPatchBytes=0;
     size_t windOverlayPatchRanges=0, windOverlayChangedClusters=0;
     size_t windOverlayFullRangeFallbacks=0, windOverlayNoopRevisions=0;
@@ -761,6 +764,10 @@ public:
         out.gpuCacheEvictions=gpuCache_.evictions();
         out.gpuCachedWindShadowBytes=gpuCache_.cachedWindShadowBytes();
         out.gpuWindShadowBudgetEvictions=gpuCache_.windShadowEvictions();
+        out.gpuCachedCompressedWindShadows=
+            gpuCache_.compressedWindShadowRegions();
+        out.gpuWindShadowCompressions=gpuCache_.windShadowCompressions();
+        out.gpuWindShadowRestores=gpuCache_.windShadowRestores();
         out.exactWindFieldActive=exactSpatialWindField_ && bool(windField_);
         out.windOverlayPending=bool(model_) &&
             !activeWindOverlay_.vertices.empty() &&
@@ -837,7 +844,8 @@ private:
             gpuCache_.retain(device,*transitionCell_,transitionRevision_,
                 std::move(transition_),settings_.maxCachedGpuRegions,
                 size_t(settings_.gpuCacheBudgetMiB)*1024u*1024u,
-                windShadowCachePolicy_.maxCachedShadowBytes);
+                windShadowCachePolicy_.maxCachedShadowBytes,
+                windShadowCachePolicy_.compressCachedShadows);
         else
             render::releaseModel(device,*transition_.model);
         transition_={};
@@ -906,7 +914,8 @@ private:
             }
             gpuCache_.retain(device,*activeCell_,activeRevision_,
                 std::move(previous),settings_.maxCachedGpuRegions,budget,
-                windShadowCachePolicy_.maxCachedShadowBytes);
+                windShadowCachePolicy_.maxCachedShadowBytes,
+                windShadowCachePolicy_.compressCachedShadows);
         } else if(previous.model)
             render::releaseModel(device,*previous.model);
     }
