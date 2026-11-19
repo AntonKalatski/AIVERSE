@@ -113,10 +113,9 @@ bool RenderTexture::stroke(const Stroke& s){
 }
 void RenderTexture::flush(){
  if(!dev_||(!clear_&&strokes_.empty()))return;
- gfx::PassDesc pass;pass.colorTarget=texture_;pass.clearColorEnabled=clear_;pass.clearDepthEnabled=false;
- std::copy(clearColor_.begin(),clearColor_.end(),pass.clearColor);dev_->beginPass(pass);dev_->setViewport({0,0,width_,height_});dev_->setScissor({});
- dev_->setPipeline(pipe_);
- // One upload for the batch; bounding quads limit fragment work to the brush footprint.
+ // Allocate the transient geometry BEFORE opening the GPU render pass.
+ // On OOM, keep all pending brush commands instead of drawing with an
+ // invalid vertex buffer or acknowledging a partial command batch.
  std::vector<float> verts;verts.reserve(strokes_.size()*12);
  const float aspect=float(width_)/height_;
  for(const auto& s:strokes_){
@@ -125,15 +124,34 @@ void RenderTexture::flush(){
   for(float v:{x0,y0,x1,y0,x1,y1,x0,y0,x1,y1,x0,y1})verts.push_back(v);
  }
  gfx::BufferHandle vertices;
- if(!verts.empty()){gfx::BufferDesc bd;bd.data=verts.data();bd.size=verts.size()*sizeof(float);vertices=dev_->createBuffer(bd);dev_->setVertexBuffer(vertices);}
- uint32_t first=0;
- for(const auto& s:strokes_){
-  struct {float ends[4],color[4],params[4];} u{{s.ax,s.ay,s.bx,s.by},{s.color[0],s.color[1],s.color[2],s.color[3]},
-   {s.radius,std::max(0.5f/height_,std::min(s.softness,s.radius)),dev_->info().renderTargetFlipY?-1.f:1.f,aspect}};
-  dev_->setUniforms(0,&u,sizeof(u));dev_->draw(6,first);first+=6;
+ if(!verts.empty()){
+  gfx::BufferDesc bd;bd.data=verts.data();bd.size=verts.size()*sizeof(float);
+  vertices=dev_->createBuffer(bd);
+  if(!vertices.valid())return;
  }
- dev_->endPass();if(vertices.valid())dev_->destroyBuffer(vertices);clear_=false;strokes_.clear();
+ gfx::PassDesc pass;pass.colorTarget=texture_;pass.clearColorEnabled=clear_;pass.clearDepthEnabled=false;
+ std::copy(clearColor_.begin(),clearColor_.end(),pass.clearColor);
+ // Even when an RHI throws, do not directly free a buffer that may have
+ // entered a command encoder: leave it with the GPU completion owner.
+ try {
+  dev_->beginPass(pass);dev_->setViewport({0,0,width_,height_});dev_->setScissor({});
+  dev_->setPipeline(pipe_);
+  if(vertices.valid())dev_->setVertexBuffer(vertices);
+  uint32_t first=0;
+  for(const auto& s:strokes_){
+   struct {float ends[4],color[4],params[4];} u{{s.ax,s.ay,s.bx,s.by},{s.color[0],s.color[1],s.color[2],s.color[3]},
+    {s.radius,std::max(0.5f/height_,std::min(s.softness,s.radius)),dev_->info().renderTargetFlipY?-1.f:1.f,aspect}};
+   dev_->setUniforms(0,&u,sizeof(u));dev_->draw(6,first);first+=6;
+  }
+  dev_->endPass();
+ }catch(...){
+  if(vertices.valid())retirement_->retire(vertices);
+  throw;
+ }
+ if(vertices.valid())retirement_->retire(vertices);
+ clear_=false;strokes_.clear();
 }
+
 bool RenderTexture::blit(gfx::TextureHandle source,float x,float y,float w,float h){
  if(!dev_||!source.valid()||source==texture_)return false;
  for(float v:{x,y,w,h})if(!std::isfinite(v))return false;
