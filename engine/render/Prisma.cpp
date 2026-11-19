@@ -2435,6 +2435,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         effectReport.autoExposureTextureSlot = compositeLayout.exposureSlot;
         effectReport.autoExposureHighlightRejection =
             autoEffect ? autoEffect->get("highlightRejection") : 0.0f;
+        effectReport.autoExposureFrozen = exposureFrozenThisFrame;
+        effectReport.autoExposureRegionMetered = exposureRegionMeteredThisFrame;
     }
     // TAA and FXAA are mutually exclusive for the same HDR presentation.
     const PrismaEffect* finalAa = hdrFrame_ && !temporalResolved ? find(PrismaType::Fxaa) : nullptr;
