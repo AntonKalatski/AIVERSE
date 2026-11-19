@@ -1964,3 +1964,65 @@ or standalone production migration.
 CMake/CTest, Apple Silicon Metal execution, screenshot/visual parity,
 native FPS/RTS host integration and performance have **NOT RUN**.
 This is committed source, not confirmed release readiness.
+
+
+## Stage 32 — pooled checkpoint readback admission and live telemetry
+
+GPU checkpoints are optional and **visual-only**. Stage 32 adds
+`SpectraCheckpointReadbackBudget.h`, a graphics-owner-thread limiter that
+reserves readback **bytes and chunk counts per GPU frame and across in-flight
+requests**. A request exceeding either bound returns `false`; no partial
+checkpoint is published. Per-emitter `ComputeStats` reports
+`checkpointBudgetDenied` and `checkpointBytesReturned` in addition to
+the existing completed/failed/request counters. The byte counter measures
+valid callback payload received on CPU; it is **not** a hardware bandwidth
+profile. The reservation remains held until callbacks complete or their
+closures are destroyed, including rejected partial enqueues.
+
+```cpp
+using namespace aiverse::spectra;
+auto limiter=std::make_shared<CheckpointReadbackBudget>(
+    CheckpointReadbackLimits{});
+GraphRuntimeOptions options;
+options.checkpointEveryFrames=15; // 0 disables automatic snapshots
+options.checkpointBudget=limiter;  // share across standalone GraphRuntime objects
+
+PoolWorldBudgets poolOptions;
+poolOptions.sharedCheckpointBudget=limiter;
+GpuPoolWorld pool;
+pool.init(device,poolOptions); // now every GPU group uses this same limiter
+
+// After any presentation frame / callback deliveries:
+const PoolCheckpointStats info=pool.checkpointStats();
+// info.pendingGroups / staleGroups / freshGroups / missingGroups
+// info.restoreEligibleGroups / budgetDenied / bytesReturned
+// info.budget.bytesInFlight / chunksInFlight / frameBytesReserved
+```
+
+If `sharedCheckpointBudget` is omitted, `GpuPoolWorld` creates one limiter
+for all its own GPU groups using `PoolWorldBudgets::checkpointReadback`.
+The default ceiling is 512 KiB and 16 chunks per frame; 1536 KiB and
+24 chunks in flight. The Metal RHI supports only 32 total in-flight ranged
+reads; the 24-chunk ceiling leaves a margin for VM diagnostics but does not
+guarantee admission when other readback clients are active. Multiple worlds
+on the **same** graphics device must pass the **same shared limiter** to
+enforce one device-wide budget; independent worlds otherwise enforce only
+their local bounds. Standalone `GraphRuntime` keeps its old independent
+behavior unless `GraphRuntimeOptions::checkpointBudget` is supplied.
+
+Pooled identical effects are grouped by complete serialized effect, GPU
+policy, and now checkpoint cadence. The pool rotates its per-frame GPU
+group submission start to prevent one permanently first group from consuming
+the entire shared checkpoint budget. This changes presentation-only dispatch
+ordering, not ECS simulation or authoritative gameplay.
+
+`PoolCheckpointStats` is computed on demand without GPU readback and
+includes successful callback payload counts plus freshness classification
+from `checkpointStatus()`. Budget metrics reflect the entire limiter
+when intentionally shared with other worlds. A fresh checkpoint is merely
+current at the last **submitted** GPU simulation revision and is not proof
+of completed GPU/CPU numerical parity, source continuity, or lossless recovery.
+No stale snapshot is imported automatically.
+
+**NOT RUN:** C++/Metal builds, CTest, device-loss injection, partial-enqueue
+fault simulation, multi-pool stress tests, or performance measurements.
