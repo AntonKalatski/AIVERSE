@@ -37,6 +37,7 @@
 #include "modules/rts/RtsModule.h"
 #include "modules/rts/fx/RtsFx.h"
 #include "modules/rts/view/RtsView.h"
+#include "modules/rts/view/RtsModelDemandScheduler.h"
 
 namespace aiverse::editor {
 
@@ -345,8 +346,7 @@ private:
     render::PostFx postFx_;
     game::RtsView view_;
     bool lazyEditorAssets_ = true;
-    std::vector<double> editorTypeLastUsed_;
-    double lastEditorTrim_ = 0.0;
+    game::view_adapter::RtsModelDemandScheduler modelDemand_;
     bool showPicker_ = false;
     bool resetLayout_ = false;
     bool layoutChecked_ = false;
