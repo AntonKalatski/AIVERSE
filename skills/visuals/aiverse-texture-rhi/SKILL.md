@@ -1199,3 +1199,43 @@ build `aiverse_metal_texture_gpu_test`, and run CTest
 is not GPU acceptance. Next: fragment shader page-table
 indirection and independent Shader Graph GPU ICB tests.
 
+
+## Stage 10BO — shader-visible disk-backed page-table indirection
+
+The opt-in macOS `metal_texture_gpu` fixture has a
+`VtAtlasFragmentProbe` that **actually renders** the live
+`VirtualTextureFileStreamer` atlas/page-table through the
+canonical `gfx::kVirtualTextureMSL`
+`aiverse_sample_virtual` helper. It uses real Metal
+`Device::createShader`/`createPipeline`,
+`beginRenderTargets`, `setTexture(0/1)`,
+`setUniforms(0)`, `draw(3)`, and asynchronous
+render-target `readTextureAsync` to check final RGBA8 pixels.
+
+The probe validates fallback `{18,79,181,255}` before any page,
+pinned coarse `{18,71,93,255}` after worker publication,
+preservation after failed disk lookup, fine override
+`{82,196,41,255}`, the unaffected coarse tile, and after
+LRU replacement both old fine address -> pinned coarse and new
+tile -> replacement `{220,44,16,255}`. Sampled float/UNORM
+uses only 1-LSB/channel tolerance; direct blit checks stay
+byte exact. All shader/pipeline/render/pass failures fail CTest.
+
+This is a test of the *real* virtual page-table indirection
+data path with the original production page streaming worker.
+No new shader page lookup is implemented inside production code.
+Source commit `32d69c8c6215ed470f9a1980bb212eb534eac1c5`.
+
+**Prior Stage 10BN:** native Apple M3 Ultra disk worker→Metal
+streaming PASS (1/1 CTest, 1.46 s). This does not verify the
+new shader sample extension. Stage 10BO is **NOT RUN** as of
+creation; test only after pulling into the isolated Mac worktree:
+```bash
+git pull --ff-only origin feature/texture-rhi-unification
+cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parallel 4
+ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
+```
+If PASS, next distinct hardware gate is Metal Shader Graph
+GPU ICB with heterogeneous source textures and correct
+per-command binding; cross-platform tests remain separate.
+
