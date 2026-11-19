@@ -2343,3 +2343,58 @@ echo "AUTO stress diagnostic exit=$?"
 ```
 
 Capture `stress AUTO cumulative:`, `stress MDI decisions:`, `stress MDI pass=`, `AUTO CPU learning`, `changed_channels` and exit code. Fix the proven blocker based on these counters; only then benchmark independent Direct/CPU MDI costs and investigate performance. Do not jump to 10k/100k before getting MDI candidate and successful submission evidence at 1k. Preserve previous handoffs; Draft PR #34 and all experimental defaults OFF.
+
+
+---
+
+## Stage 73 — 1k AUTO MDI gate trace after zero candidate scans (2026-11-19)
+
+**Repository/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. **Implementation commit:** `898e399c258940a5371c62f7abcac6ecc665c941` (`engine/render/Renderer3DModels.cpp`). This is opt-in diagnostics, NOT a policy/renderer optimization. New source has NOT been compiled or GPU-tested yet. Existing default flags unchanged.
+
+### User Mac Studio Stage 72 result (real native evidence)
+
+```text
+[100%] Built target aiverse_material_batches
+material palette CPU checks=35 result=passed
+stress requested_items=1024 authored_unique_primitives=1024 submitted_model_draws=1
+batch=0 shadow=1024 opaque=1024 total=2050 error=
+CPU render benchmark direct: samples=66 median_ms=0.9419 p95_ms=2.0494 min_ms=0.8527 max_ms=2.2230
+CPU render benchmark batched: samples=81 median_ms=1.4857 p95_ms=2.1783 min_ms=0.8451 max_ms=2.3081
+AUTO CPU learning phase=0 bucket=2 direct=100 0.71099ms mdi=0 0.00000ms opportunities=106
+AUTO CPU learning phase=1 bucket=2 direct=100 0.49155ms mdi=0 0.00000ms opportunities=106
+batch=1 shadow=1024 opaque=1024 total=2050 error=
+stress phase=auto model_draw_calls=2048 cpu_mdi_submissions=0 cpu_mdi_commands=0 gpu_icb_submissions=0 gpu_icb_commands=0
+stress AUTO cumulative: scans=0 attempts=0 submitted=0 short=0 below=0 ineligible=0 failed=0 geometryBreaks=0 materialBreaks=0 stateBreaks=0
+stress MDI decisions: scans=0 short=0 below=0 ineligible=0 failed=0 geometryBreaks=0 materialBreaks=0 stateBreaks=0
+stress MDI pass=0 scans=0 attempts=0 submitted=0 warmups=0 threshold=0 fallbacks=0 total=0.43042ms grouping=0.04288ms packing=0.00000ms pipeline=0.00000ms submit=0.00000ms
+stress MDI pass=1 scans=0 attempts=0 submitted=0 warmups=0 threshold=0 fallbacks=0 total=0.38896ms grouping=0.03183ms packing=0.00000ms pipeline=0.00000ms submit=0.00000ms
+changed_channels=0
+[metal-assets] libraries=0 sourceMisses=11 pipelines=15 pipelineFailures=0 archive=0 strict=0
+AUTO diagnostic exit=0
+```
+
+The fixture now truly renders 1,024 unique primitives per camera and shadow pass, and raster parity is PASS. The CPU median difference is +0.5438ms (+57.7%) for sequential Direct vs AUTO, **neither path has a CPU MDI submission**. No evidence yet that the indirect implementation itself is slower at 1k. The independent CPU learned policy records 106 opportunities but zero MDI samples, and all cumulative scan/attempt/rejection counters are **zero**. So the breakage occurs at the outer `allowIndirect` admission gate before geometry/material candidate testing. The current trace points at the gate but does NOT yet prove which condition is false.
+
+### Source inspection and new diagnostic
+
+`renderModels` evaluates `autoCpuPermit` from `autoCpuBatch_.useMdi` and then requires `modelMultiDrawEnabled_`, absence of `gpuAdaptiveInstancingFallback_` (unless groupAdaptive), absence of `AIVERSE_RENDER_SAFE=1` and `AIVERSE_MULTI_DRAW_INDIRECT=off`, backend `supportsMultiDrawIndirect()`, and a shadow/opaque phase. It also requires a sufficiently large remaining ordered group to scan. `AutoCpuBatchPolicy` alternates initial probes and periodically re-probes after 3 no-submission attempts. Because cumulative `mdiScans=0`, it cannot be justified to alter material equivalence or relax GPU pipeline guards.
+
+Added `AIVERSE_BATCH_AUTO_TRACE=1`: on up to 12 actual `autoCpuPermit` probes per phase, log a compact `[auto-cpu-gate]` line with phase, post-culling item count, scheduler permit, final allowed flag, modelMultiDraw state, adaptive GPU fallback state, group adaptive flag, safety/indirect env disable, backend capability, min command threshold, instance limit and GPU encoded group count. Trace is OFF by default, doesn't change admission or GPU state, and avoids per-item log spam. This is intended to identify the exact blocker before attempting a production fix.
+
+### Next Mac Studio execution
+
+```sh
+cd /Users/aleksandrfeer/Projects/AIVERSE || exit 1
+git fetch origin
+git switch perf/incremental-static-model-cache
+git pull --ff-only origin perf/incremental-static-model-cache
+cmake --build build/batching-gpu-verify --target aiverse_material_batches --parallel 8 || exit 1
+mkdir -p build/batching-gpu-verify/captures
+AIVERSE_BATCH_AUTO_TRACE=1 AIVERSE_PALETTE_TEST_CASE=auto_stress \
+ AIVERSE_BATCH_STRESS_ITEMS=1024 AIVERSE_BATCH_AUTO=1 AIVERSE_BATCH_CPU_TIMING=1 \
+ build/batching-gpu-verify/aiverse_material_batches \
+ unused.obj build/batching-gpu-verify/captures/auto-stress-gate-1k
+echo "AUTO gate exit=$?"
+```
+
+Require 35 CPU checks, `changed_channels=0`, exit 0, and inspect **all** `[auto-cpu-gate]` lines. If `allowed=0`, use the printed gate conditions to fix the specific blocker without bypassing compatibility/Metal safe paths. If `allowed=1` while scans remain zero, investigate `order_.size()-i >= minIndirectCommands` and any shadow/opaque early-return; add stage-level instrumentation as needed. Native build/Metal tests and potential performance improvement at Stage 73 are NOT YET VERIFIED. GPU timestamps/Vulkan/CI still pending. PR Draft, experimental flags OFF.
