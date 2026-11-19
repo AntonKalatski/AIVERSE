@@ -3,6 +3,7 @@
 #pragma once
 #include "AppearanceAuthoringService.h"
 #include "AppearanceChoiceAuthoring.h"
+#include "ModelPublicationEpoch.h"
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -70,6 +71,9 @@ public:
         std::string graphDefinition;
         std::string graphSource;
         std::vector<std::string> sources;
+        // Globally unique publication identity for the borrowed Model
+        // appearance, safe even when a Model address or registry is reused.
+        uint64_t modelPublicationGeneration=0;
 
         bool packet(const render::mat4& world, Object& out) const {
             AppearanceSpec spec;
@@ -85,7 +89,9 @@ public:
             spec.parameters=parameters;
             spec.sourceId=sourceId;
             spec.generation=generation;
-            return buildAppearancePacket(spec,world,out);
+            if(!buildAppearancePacket(spec,world,out))return false;
+            out.animationModelGeneration=modelPublicationGeneration;
+            return true;
         }
     };
 
@@ -225,6 +231,7 @@ public:
             }
 
             next->version=versionSerial_+1;
+            next->modelPublicationGeneration=ModelPublicationEpoch::next();
             // Commit only after every potentially throwing preparation step.
             assets_.insert_or_assign(key,std::move(next));
             ++versionSerial_;
@@ -262,6 +269,7 @@ public:
             const auto old=find(key);
             auto next=std::make_shared<Asset>(prepared);
             next->version=versionSerial_+1;
+            next->modelPublicationGeneration=ModelPublicationEpoch::next();
             if(next->graph) {
                 if(old && old->graph==next->graph &&
                    old->model==next->model &&
