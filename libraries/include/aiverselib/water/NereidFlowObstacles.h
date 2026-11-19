@@ -58,8 +58,13 @@ inline Vec3 deflectNereidFlow(
         1000u-obstruction.permeabilityPermille,1000)*influence;
     if(slowing<=0_fx)return incoming;
     const Fixed cross=incoming.x*dz-incoming.z*dx;
+    // A generated sourceKey is preserved across ECS entity recycling and
+    // copied into the visual-scene snapshot. Manual obstacles fall back to
+    // the authoritative generation-safe ECS entity ID.
+    const uint64_t tieId=obstruction.sourceKey ?
+        obstruction.sourceKey:stableEntityId;
     const bool positive=cross>0_fx ||
-        (cross==0_fx && ((stableEntityId^obstruction.sourceKey)&1u));
+        (cross==0_fx && (tieId&1u));
     const Fixed side=positive?1_fx:-1_fx;
     const Fixed diversion=Fixed::fromRatio(
         obstruction.deflectionPermille,1000)*slowing;
