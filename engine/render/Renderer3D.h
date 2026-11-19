@@ -23,6 +23,7 @@
 namespace aiverse::render {
 
 class GiDynamicProbeTexture;
+class GiClipmapValidityTexture;
 
 struct Mesh {
     gfx::BufferHandle vb, ib;
@@ -396,8 +397,9 @@ public:
     // textures currently fall back to their existing GI path.
     bool setDynamicGiOverlay(const GiDynamicProbeTexture* texture, float3 origin,
                              float spacing, int nx, int ny, int nz,
-                             int ringX = 0, int ringY = 0, int ringZ = 0);
-    void clearDynamicGiOverlay() { dynamicGiOverlay_ = nullptr; }
+                             int ringX = 0, int ringY = 0, int ringZ = 0,
+                             const GiClipmapValidityTexture* validity = nullptr);
+    void clearDynamicGiOverlay() { dynamicGiOverlay_ = nullptr; dynamicGiValidity_ = nullptr; }
     bool dynamicGiOverlayActive() const { return dynamicGiOverlay_ != nullptr; }
     void setBakedQuality(BakedQuality q);
     BakedQuality bakedQuality() const { return bakedQuality_; }
@@ -669,6 +671,7 @@ private:
     // baked lighting (Renderer3DBaked.cpp)
     const BakedLighting* baked_ = nullptr;
     const GiDynamicProbeTexture* dynamicGiOverlay_ = nullptr;
+    const GiClipmapValidityTexture* dynamicGiValidity_ = nullptr;
     float4 dynamicGiOrigin_{};
     float4 dynamicGiSize_{};
     float4 dynamicGiRing_{};
