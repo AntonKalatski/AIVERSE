@@ -369,6 +369,9 @@ public:
                         !item.prim || !item.mat || !item.indexCount ||
                         !item.model->vb.valid() || !item.model->ib.valid() ||
                         item.tint.w < 0.99f || item.dissolve > 0.0f ||
+                        item.mat->alpha != AlphaMode::Opaque ||
+                        item.mat->transparent || item.mat->baseColor.w < 0.99f ||
+                        item.lodThreshold < 1.0f ||
                         item.materialRole == 1 || item.shadowRole == 2)
                         continue;
                     device.setPipeline(feedbackModelPipeline_);
@@ -403,6 +406,7 @@ public:
         feedbackPass_ = nullptr;
         feedbackMeshPipeline_ = {};
         feedbackMeshBinder_ = {};
+        clearVirtualTextureModelFeedback();
     }
 
     // Extra shadow casters (sprites): run inside the sun shadow pass (only when shadows are on) with
