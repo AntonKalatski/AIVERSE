@@ -24,6 +24,9 @@ public:
         cascades_.setCascades(std::move(cascades));
     }
     size_t nereidCascadeCount()const{return cascades_.residentCount();}
+    template<class Fn> void forEachNereidCascade(Fn&& fn)const {
+        cascades_.forEachSource(std::forward<Fn>(fn));
+    }
     // Explicit presentation read barrier: consume one ECS tick of events.
     void ingestNereidInteractions(
         const std::vector<lib::nereid::WaterPresentationEvent>& events,
