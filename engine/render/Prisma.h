@@ -230,7 +230,8 @@ public:
     // programs, textures, or temporal histories are allocated by this query.
     struct RuntimeCapabilities {
         bool deviceHealthy=false, hdrFormatSupported=false;
-        bool hdrRequested=false, hdrEffectiveLastFrame=false;
+        bool hdrAuthoredRequested=false, hdrRequested=false;
+        bool hdrEffectiveLastFrame=false;
         bool temporalRequested=false, temporalPipelinePrepared=false;
         bool temporalResolvedLastFrame=false;
         bool jitterRequested=false, jitterAppliedLastFrame=false;
