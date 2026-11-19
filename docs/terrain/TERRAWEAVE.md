@@ -3013,3 +3013,61 @@ Once the relevant native client loads such a streamed world, it supplies actual 
 **Limitations/QA:** The bridge measures CPU **callback** duration, which may exclude platform event pump, swap/present wait, vsync and unrelated work outside the callback; GPU query timing covers backend-defined intervals and can be delayed, invalid or unsupported. For GL a timer started at the streamed world phase is not necessarily a whole-frame GPU cost. A consistently overloaded non-TerraWeave subsystem can still cause a global-quality downgrade. There is no proof that altering Horizon presentation quality improves that bottleneck until native profiling. The bridge intentionally falls back to CPU-only after eight frames rather than blocking the render thread. Device timing tags still belong to the device, not this world, so avoid competing consumers.
 
 **Verification performed:** GitHub inspection of `GameClient` streamed-world lifecycle, FPS native frame ownership, existing gfx device tagged timer APIs, GL and Metal backend timing behavior, and new code placement. Source commits exist, but CMake configure/build, C++ compilers, CTest, real Metal/GL/Vulkan runtime, GPU frame tag timing results, FPS/RTS native smoke tests and measured GPU/CPU frame improvements are **NOT RUN** (feature-first owner request). Later QA must validate CPU-only fallback, asynchronous paired GPU frames, out-of-order/missing/invalid device timing results, 8-frame timeout, map changes, match shutdown, unsupported GPU backend, 60 FPS threshold behavior, as well as conflicts with any other runtime device timer consumers. Keep PR #24 Draft.
+
+## Stage 42 — generic per-device GPU timing fan-out
+
+Stage41's RTS/FPS `HorizonFrameTimingBridge` previously drained the
+entire `gfx::Device::takeGpuTimings()` queue. This was incompatible
+with an editor benchmark or any future Prisma/SpectraFX/VFX timing
+consumer using the same graphics Device. Stage42 moves **all known
+non-backend GPU query consumers** to a shared, genre-independent RHI
+service: `gfx::Device::gpuTimingRouter()`, implemented in
+`engine/gfx/GpuTimingRouter.h` and described in
+`docs/render/GPU_TIMING_ROUTER.md`.
+
+The router registers an independent subscriber for each subsystem,
+assigns a private GPU raw query tag, maps it back to the consumer's
+original frame tag at asynchronous completion, and delivers results
+into isolated bounded subscriber queues. A subscriber's
+`take(subscriber)` cannot remove another subscriber's data.
+Only the router polls the backend's destructive
+`takeGpuTimings()`. Unsupported or busy backends can still reject
+a query; the Stage41 Horizon bridge retains its measured CPU fallback.
+
+For native games no new manifest key is required. Stage41's bridge now
+uses `device.gpuTimingRouter().subscribe/request/poll/take/cancel`
+and unsubscribes at RTS/FPS shutdown. It cancels its own metadata
+for a GPU frame that exceeded the Stage41 eight-frame timeout.
+Stage40's adaptive hysteresis and Stage39 profiles are unchanged;
+CPU/GPU measurements remain asynchronous and backend scoped.
+This is **not** an isolated Horizon GPU render-pass timer.
+
+The shared Device router also serves the editor Scene batching
+benchmark, RenderBench, GeometryBench and the instancing GPU
+validation preview. These consumers keep original tag semantics
+but no longer drain one another's completed GPU results. A
+subsystem may submit its own custom tag or obtain a new subscriber
+without creating a new graphics Device, render pass, shader or
+GPU buffer. Public limits: up to 32 subscribers, 64 pending GPU
+requests across subscribers, and 64 queued completed samples per
+subscriber. Rejected GPU requests should degrade gracefully to
+CPU-only timing or no timing; no synchronous fence waits are added.
+Every caller uses the graphics Device owner thread.
+
+**Important backend limit:** GL currently supports only one
+active `GL_TIME_ELAPSED` request per frame. Independent routing
+does not imply simultaneous exclusive GPU time measurements;
+a second request can fail. Metal may return the same whole
+command-buffer GPU duration under multiple subscribers' tags.
+Do not interpret these as the independent GPU costs of two
+rendering features or promise performance gains. Use actual
+backend device measurements and diagnostics before drawing
+conclusions.
+
+**Feature-first validation:** GitHub source read/writes verified;
+Clang/GCC, CTest, native editor/RTS/FPS/bench runs, Metal/GL/Vulkan
+concurrency and GPU timings **NOT RUN**. The independent testing agent
+must verify interleaved same-device subscribers, tag ownership,
+cancel/unsubscribe, queue overflow/rejection, GL busy fallback,
+Metal completion ordering, device recreation, and teardown.
+Keep PR #24 Draft. See Stage42 handoff.
