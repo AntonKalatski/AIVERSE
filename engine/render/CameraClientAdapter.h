@@ -47,6 +47,25 @@ public:
         return host_.render(++frame_,seconds,dt,
                             std::forward<SceneSubmit>(submit),renderOrigin);
     }
+    // Obtain a frame-scoped, non-owning handle for game UI or material binding.
+    // The caller MUST NOT destroy it, retain it over a target resize/release,
+    // or feed it back as its own camera's target (dependency cycle).
+    gfx::TextureHandle colorTarget(uint64_t assetKey) const {
+        const auto* pipeline=host_.pipeline();
+        return pipeline?pipeline->targets().color(assetKey):gfx::TextureHandle{};
+    }
+    gfx::TextureHandle depthTarget(uint64_t assetKey) const {
+        const auto* pipeline=host_.pipeline();
+        return pipeline?pipeline->targets().depth(assetKey):gfx::TextureHandle{};
+    }
+    bool targetInfo(uint64_t assetKey,int& width,int& height,bool& hdr) const {
+        const auto* pipeline=host_.pipeline();
+        if(!pipeline)return false;
+        const auto* target=pipeline->targets().find(assetKey);
+        if(!target||!target->ready)return false;
+        width=target->width;height=target->height;hdr=target->hdr;
+        return true;
+    }
     bool loaded()const{return loaded_;}
     CameraRuntimeHost& host(){return host_;}
     const CameraRuntimeHost& host()const{return host_;}
