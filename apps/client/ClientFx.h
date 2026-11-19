@@ -2,6 +2,11 @@
 // match each frame. Kept in its own file so the client only calls a handful of methods.
 #pragma once
 #include "engine/fx/ParticleSystem.h"
+#include "engine/fx/SpectraFxGpuRoutes.h"
+#include "engine/fx/SpectraFxSimulationBridge.h"
+#include <deque>
+#include <memory>
+#include <unordered_set>
 #include "engine/render/Renderer3D.h"
 #include "engine/render/TextureCache.h"
 #include "modules/rts/fx/RtsFx.h"
@@ -22,6 +27,11 @@ public:
                 int fbW, int fbH, float dt);
     // After update(), before Renderer3D::render(): lights carried by particles ("light" module).
     void addLights(render::LightSystem& lights);
+    // Opt-in SpectraFX GPU effects: call once before Renderer3D::beginScene,
+    // inside beginFrame and outside all GPU render/compute passes.
+    void prepareGpuFrame(float dt);
+    // Draw GPU-owned billboards in the still open scene pass, after render().
+    void renderGpu(const render::mat4& viewProj, const render::RTSCamera& camera);
     // After Renderer3D::render(): draws into the still open main pass.
     void render(const render::Lighting& lighting);
 
@@ -30,6 +40,18 @@ public:
     fx::ParticleSystem& particles() { return ps_; }
 
 private:
+    struct GpuEventInbox {
+        uint8_t viewer=0;
+        bool active=false;
+        std::unordered_set<uint16_t> permitted;
+        std::deque<fx::SpectraFxCue> pending;
+        uint64_t dropped=0;
+    };
+    gfx::Device* device_=nullptr;
+    fx::SpectraFxGpuRouteAsset::Routes gpuRoutes_;
+    std::unique_ptr<fx::SpectraFxGpuEmitterLibrary> gpuLibrary_;
+    std::unique_ptr<fx::SpectraFxHybridPlayback> gpuPlayback_;
+    std::shared_ptr<GpuEventInbox> gpuInbox_;
     fx::ParticleSystem ps_;
     game::RtsFx bridge_;
     render::TextureCache textures_;   // sprite textures of effects: the same loader (and atlas) as sprites
