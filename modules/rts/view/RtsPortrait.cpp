@@ -78,11 +78,15 @@ std::unique_ptr<Model> previewShape(int shape) {
 void Portrait::renderMaterial(RtsView& view, const Json& material, int shape, double time) {
     if (!dev_ || !color_.valid()) return;
     shape = shape == 1 ? 1 : 0;
-    if (!shapes_[shape]) {
-        shapes_[shape] = previewShape(shape);
-        uploadModel(*dev_, *shapes_[shape], true);
+    const std::string key = shape ? "shape:preview-box" : "shape:preview-sphere";
+    Model* resident = previewModels_.find(key);
+    if(!resident) {
+        auto generated=previewShape(shape);
+        if(!uploadModel(*dev_,*generated,true))return;
+        resident=previewModels_.insertIfAbsent(key,std::move(generated));
     }
-    Model& m = *shapes_[shape];
+    if(!resident)return;
+    Model& m=*resident;
     static UnitType previewType;   // warnings read "type 'material preview': ..."
     previewType.id = "material preview";
     mats_ = m.materials;
@@ -127,7 +131,9 @@ void Portrait::renderPose(const Model& model,const Pose& pose,float yaw) {
 
 void Portrait::shutdown() {
     if (!dev_) return;
-    for (auto& s : shapes_) if (s) { releaseModel(*dev_, *s); s.reset(); }
+    // Generic per-host cache owns all preview mesh GPU handles, and its
+    // shutdown waits for prior submitted commands before releasing them.
+    previewModels_.shutdown(*dev_);
     r3d_.shutdown();
     if (color_.valid()) dev_->destroyTexture(color_);
     if (depth_.valid()) dev_->destroyTexture(depth_);
