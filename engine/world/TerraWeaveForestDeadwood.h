@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <stdexcept>
@@ -268,6 +269,28 @@ inline bool seedForestDeadwood(
     return true;
 }
 
+// PHYSIS can supply this immutable climate from the authoritative tick.
+// No coupling to PHYSIS renderer/weather GPU buffers or wall clock.
+struct ForestDeadwoodClimate {
+    int32_t temperatureCentiC=2000; // 20 C neutral
+    uint32_t moisturePermille=700;  // 700/1000 neutral
+};
+using ForestDeadwoodClimateSampler=std::function<
+    ForestDeadwoodClimate(const ForestDeadwoodRecord&)>;
+
+inline uint32_t forestDecayClimateFactorPermille(
+        ForestDeadwoodClimate c) {
+    if(c.temperatureCentiC<-8000 || c.temperatureCentiC>7000 ||
+       c.moisturePermille>1000)
+        throw std::invalid_argument("TerraWeave invalid deadwood climate");
+    const int64_t warmth=std::clamp<int64_t>(
+        1000+(int64_t(c.temperatureCentiC)-2000)/25,150,1800);
+    const int64_t moisture=std::clamp<int64_t>(
+        1000+(int64_t(c.moisturePermille)-700)/2,300,1200);
+    return uint32_t(std::clamp<int64_t>(
+        (warmth*moisture+500)/1000,50,2200));
+}
+
 struct ForestDeadwoodDecaySettings {
     uint32_t intervalTicks=64;
     uint32_t maxLogsPerStep=256;
@@ -294,7 +317,8 @@ struct ForestDeadwoodDecayOutcome {
 // network resend or chunk streaming.
 inline ForestDeadwoodDecayOutcome advanceForestDeadwood(
         ForestDeadwoodResource& resource,uint64_t completedTick,
-        ForestDeadwoodDecaySettings settings={}) {
+        ForestDeadwoodDecaySettings settings={},
+        ForestDeadwoodClimateSampler climate={}) {
     validateForestDeadwoodDecaySettings(settings);
     validateForestDeadwoodResource(resource);
     if(resource.initialized && completedTick<resource.lastStepTick)
@@ -319,7 +343,14 @@ inline ForestDeadwoodDecayOutcome advanceForestDeadwood(
             throw std::length_error("TerraWeave deadwood catch-up limit");
         log.lastEvaluatedTick=completedTick;
         if(!log.remainingUnits)continue;
-        const uint64_t scaled=dt*log.rateUnitsPer1000Ticks+log.decayCarry;
+        // Stage68: sampled PHYSIS temperature/moisture adjusts only the
+        // rate, never the organic ledger. The pure integer callback sees
+        // the saved record from this completed authoritative ECS tick.
+        const uint32_t factor=forestDecayClimateFactorPermille(
+            climate?climate(log):ForestDeadwoodClimate{});
+        const uint64_t adjustedRate=
+            (uint64_t(log.rateUnitsPer1000Ticks)*factor+500)/1000;
+        const uint64_t scaled=dt*adjustedRate+log.decayCarry;
         const uint64_t lost=std::min<uint64_t>(
             log.remainingUnits,scaled/1000);
         log.decayCarry=uint16_t(scaled%1000);
