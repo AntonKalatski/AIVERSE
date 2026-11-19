@@ -855,8 +855,13 @@ void ComputeParticles::switchToCpu(const std::string& why) {
     stats_.recoveredOnFallback+=recovered;
     stats_.lostOnFallback+=owned>=recovered?owned-recovered:0u;
     reason_=why+(ok
-        ?(imported?"; restored particles from last complete GPU checkpoint"
-                  :"; CPU fallback active; latest GPU state unavailable/incompatible")
+        ?(imported?"; restored particles from current GPU checkpoint"
+                   :capture.complete && !capture.fresh
+                    ?"; CPU fallback: stale GPU checkpoint ("+
+                      std::to_string(capture.framesBehind)+" submissions behind); particles lost"
+                    :capture.unsentBirths
+                     ?"; CPU fallback: unsent GPU births; particles lost"
+                     :"; CPU fallback active; checkpoint missing/incompatible")
         :"; CPU fallback init failed");
     initialized_=ok;stats_.alive=recovered;stats_.gpuBytes=0;
     stats_.submittedSlots=0;
