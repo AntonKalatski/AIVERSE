@@ -775,6 +775,22 @@ bool GpuPoolWorld::importRecoveryManifest(
     return true;
 }
 
+bool GpuPoolWorld::exportFreshCheckpoint(
+    size_t groupIndex,std::vector<uint8_t>& bytes,
+    size_t maxBytes,std::string* error) const {
+    if(presentationBlocked() || !initialized_ ||
+       groupIndex>=gpuGroups_.size()) {
+        if(error)*error="SpectraFX checkpoint export needs a healthy active pool and valid group";
+        return false;
+    }
+    const auto& group=gpuGroups_[groupIndex];
+    if(!group.particles || !group.particles->gpuActive()) {
+        if(error)*error="SpectraFX checkpoint group has no Metal GPU simulation";
+        return false;
+    }
+    return group.particles->exportFreshCheckpoint(bytes,maxBytes,error);
+}
+
 PoolCheckpointStats GpuPoolWorld::checkpointStats() const {
     PoolCheckpointStats result;
     if(checkpointBudget_)result.budget=checkpointBudget_->stats();
