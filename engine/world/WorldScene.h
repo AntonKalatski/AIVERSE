@@ -11,6 +11,7 @@
 #include <cmath>
 #include <algorithm>
 #include "engine/world/TerraWeave.h"
+#include "engine/world/TerraWeaveVegetationSoil.h"
 #include "engine/world/TerraWeavePhenology.h"
 #include "engine/world/TerraWeaveWindField.h"
 #include "engine/world/TerraWeaveWindUploadPolicy.h"
