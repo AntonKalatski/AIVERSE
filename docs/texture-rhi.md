@@ -4130,3 +4130,49 @@ their own backend/device capabilities and performance
 measurements; they are not justified by a single
 Metal acceptance. Metal ICB remains experimental and
 **OFF by default** in production.
+
+### Stage 10CE — one-shot shell runner integrity repair
+
+While inspecting the pushed `tools/texture-rhi-final-verify.sh`
+after Stage 10CD, the first optional-test editing pass
+had accidentally introduced duplicated runner blocks and an
+unterminated regex. This corruption was caught by **remote
+GitHub source inspection before any user executed the script**.
+It is not a C++/Metal defect and does not alter the fixtures.
+
+**Fixed source commit:**
+`6a6bb9f2a18cb494a93d44eb232907c0df2ad8fe`.
+The runner was restored from its original clean commit
+`04e9612189b9e10e4a218bce326af405bc8ddd37`
+and the optional VT pack/feedback shader selector was
+reinserted as one complete bounded block. Post-write
+GitHub inspection confirms 142 lines and **exactly one**
+safe/full-engine block, native GPU build block and
+seven-test serial execution loop. CTest must see a
+successful fresh compile before any GPU marker can
+be accepted; the isolated final CMake cache remains
+independent from previous green test directories.
+
+**Source/API verification only:** the script has been
+checked for single-instance blocks and expected variable
+expansions after the correction. It has **not** been
+executed on the user's Mac. Native code compilation,
+GPU command execution and all one-shot test results
+remain pending. Run with `bash -n` first as an extra
+local syntax preflight, then invoke the whole suite:
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+bash -n tools/texture-rhi-final-verify.sh
+bash tools/texture-rhi-final-verify.sh --jobs 4
+# For the entire engine's nonexperimental tests as well:
+# bash tools/texture-rhi-final-verify.sh --jobs 4 --full-engine
+```
+
+The success record `build/texture-final-logs/acceptance.txt`
+is trustworthy only when the script exits zero and all
+required CTest logs contain real native GPU execution
+markers, not merely the previously seen test binaries.
