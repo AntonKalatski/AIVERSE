@@ -1012,3 +1012,27 @@ still depends on the host's complete GPU shutdown ordering.
 CMake registers `render_gpu_program_retirement`, but it
 and all prior deferred image/model/GPU fixtures remain
 unexecuted pending completion of feature work.
+
+## Stage 116 — shared graphics target ownership and failed GPU geometry
+
+Native animated Models, the Editor, FPS, RTS, NEREID and other
+presentation modules continue to share generic
+`RenderDeviceLifetime` and `OffscreenTargetRetirement` contracts.
+For `Renderer3D` the owner now also covers shadow maps, SSR scene
+colour/depth, selection masks, light-map/spot-shadow targets and
+planar reflections. A per-host owner pool is required: do not
+create another `RenderDeviceLifetime` for a borrowed `gfx::Device`.
+A `LightSystem` borrowed target owner is only valid while the
+containing Renderer3D still exists.
+
+On size/quality changes, allocate a complete replacement pair
+before retiring old handles. Failed allocations must not
+overwrite the live Model/renderer state with incomplete targets.
+Use `pendingTargetRetirements()` and
+`collectRetiredTargets()` at safe frame boundaries and require a
+proven successful full-device idle barrier at shutdown.
+
+The existing `uploadModel` failed GPU vertex/index buffer
+regression has been declared in `render_model_image_transaction`,
+but **not executed**. All Stage 116 code must be compiled,
+linked and GPU-validated before PR #22 is merged.
