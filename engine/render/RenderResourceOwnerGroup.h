@@ -8,12 +8,16 @@
 #pragma once
 #include "GlobalGeometryPool.h"
 #include "ModelResourceCache.h"
+#include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <set>
 #include <span>
+#include <stdexcept>
+#include <thread>
 #include <vector>
 
 namespace aiverse::render {
@@ -52,20 +56,91 @@ struct RenderResourceGroupStats {
 };
 
 class RenderResourceOwnerGroup final {
+    struct ScopedState;
 public:
-    // Register borrowed caches. Clearing or destroying the group does not
-    // shut down owners; owners must outlive snapshot().
+    // Scoped registration is the recommended path for GUI/native hosts.
+    // The returned lease never owns or extends a ModelResourceCache.
+    class ScopedRegistration final {
+        friend class RenderResourceOwnerGroup;
+    public:
+        ScopedRegistration()=default;
+        ScopedRegistration(const ScopedRegistration&)=delete;
+        ScopedRegistration& operator=(const ScopedRegistration&)=delete;
+        ScopedRegistration(ScopedRegistration&& other) noexcept
+            :state_(std::move(other.state_)),id_(std::exchange(other.id_,0)) {}
+        ScopedRegistration& operator=(ScopedRegistration&& other) noexcept {
+            if(this!=&other) {
+                reset();
+                state_=std::move(other.state_);
+                id_=std::exchange(other.id_,0);
+            }
+            return *this;
+        }
+        ~ScopedRegistration(){reset();}
+        void reset() noexcept {
+            if(!id_)return;
+            if(auto state=state_.lock()) {
+                if(std::this_thread::get_id()==state->thread && state->owner)
+                    state->owner->unregister(id_);
+                else if(state->owner)
+                    state->wrongThreadReleases.fetch_add(1,std::memory_order_relaxed);
+            }
+            id_=0;
+            state_.reset();
+        }
+        bool valid() const noexcept {return id_!=0 && !state_.expired();}
+    private:
+        ScopedRegistration(std::weak_ptr<ScopedState> state,uint64_t id)
+            :state_(std::move(state)),id_(id){}
+        std::weak_ptr<ScopedState> state_;
+        uint64_t id_=0;
+    };
+    RenderResourceOwnerGroup()
+        :ownerThread_(std::this_thread::get_id()),
+         scopedState_(std::make_shared<ScopedState>()) {
+        scopedState_->owner=this;
+        scopedState_->thread=ownerThread_;
+    }
+    RenderResourceOwnerGroup(const RenderResourceOwnerGroup&)=delete;
+    RenderResourceOwnerGroup& operator=(const RenderResourceOwnerGroup&)=delete;
+    RenderResourceOwnerGroup(RenderResourceOwnerGroup&&)=delete;
+    RenderResourceOwnerGroup& operator=(RenderResourceOwnerGroup&&)=delete;
+    ~RenderResourceOwnerGroup(){scopedState_->owner=nullptr;}
+
+    // Explicit binding: both the group and a cache are confined to one
+    // gfx Device and one caller thread. No new asset may be inserted on
+    // another device after an owner has been registered here.
+    ScopedRegistration registerScoped(gfx::Device& device,
+                                      const ModelResourceCache& cache) {
+        checkThread();
+        if(boundDevice_ && boundDevice_!=&device)
+            throw std::logic_error("RenderResourceOwnerGroup device mismatch");
+        cache.bindResourceDevice(device);
+        boundDevice_=&device;
+        const uint64_t id=nextRegistration_++;
+        owners_.push_back({&cache,cache.lifetimeToken(),&device,id});
+        return ScopedRegistration(scopedState_,id);
+    }
+
+    // Legacy CPU-only read access. For device snapshots, prefer the scoped
+    // device-bound registration above. This remains for old native tests.
     void add(const ModelResourceCache& cache) {
+        checkThread();
+        if(boundDevice_)cache.bindResourceDevice(*boundDevice_);
         for(const auto& entry:owners_)
             if(!entry.lifetime.expired() && entry.cache==&cache)return;
-        owners_.push_back({&cache,cache.lifetimeToken()});
+        owners_.push_back({&cache,cache.lifetimeToken(),boundDevice_,nextRegistration_++});
     }
-    void clear() noexcept {owners_.clear();}
-    size_t size() const noexcept {
+    void clear() {checkThread();owners_.clear();}
+    size_t size() const {
+        checkThread();
         size_t alive=0;
         for(const auto& entry:owners_)
             if(!entry.lifetime.expired())++alive;
         return alive;
+    }
+    size_t wrongThreadReleaseAttempts() const noexcept {
+        return scopedState_->wrongThreadReleases.load(std::memory_order_relaxed);
     }
 
     void setEstimatedBudgetBytes(uint64_t bytes) noexcept {budgetBytes_=bytes;}
@@ -80,6 +155,7 @@ public:
     // deterministic regression fixtures without constructing a gfx Device.
     // Geometry-page capacity requires the device-level snapshot() below.
     RenderResourceGroupStats snapshotOwners(bool gpuHealthy=true) const {
+        checkThread();
         RenderResourceGroupStats stats;
         stats.uniqueOwners=size();
         stats.expiredRegistrations=owners_.size()-stats.uniqueOwners;
@@ -136,6 +212,13 @@ public:
     // pages and backend health. No GPU submissions or fences are issued.
     // The input caches must belong to the supplied gfx Device.
     RenderResourceGroupStats snapshot(gfx::Device& device) const {
+        checkThread();
+        if(boundDevice_ && boundDevice_!=&device)
+            throw std::logic_error("RenderResourceOwnerGroup snapshot device mismatch");
+        for(const auto& entry:owners_)
+            if(!entry.lifetime.expired() && entry.device &&
+               entry.device!=&device)
+                throw std::logic_error("RenderResourceOwnerGroup mixed devices");
         auto stats=snapshotOwners(device.gpuHealthy());
         std::vector<const Model*> modelsForPool;
         for(const auto& entry:owners_) {
@@ -154,12 +237,32 @@ public:
         return stats;
     }
 private:
+    void checkThread() const {
+        if(std::this_thread::get_id()!=ownerThread_)
+            throw std::logic_error("RenderResourceOwnerGroup wrong owner thread");
+    }
+    void unregister(uint64_t id) {
+        checkThread();
+        owners_.erase(std::remove_if(owners_.begin(),owners_.end(),
+            [id](const Registration& entry){return entry.id==id;}),
+            owners_.end());
+    }
     struct Registration {
         const ModelResourceCache* cache=nullptr;
         std::weak_ptr<const void> lifetime;
+        const gfx::Device* device=nullptr;
+        uint64_t id=0;
+    };
+    struct ScopedState {
+        RenderResourceOwnerGroup* owner=nullptr;
+        std::thread::id thread;
+        std::atomic<size_t> wrongThreadReleases{0};
     };
     std::vector<Registration> owners_;
-    uint64_t budgetBytes_=0;
+    std::thread::id ownerThread_;
+    std::shared_ptr<ScopedState> scopedState_;
+    gfx::Device* boundDevice_=nullptr;
+    uint64_t nextRegistration_=1,budgetBytes_=0;
 };
 
 } // namespace aiverse::render
