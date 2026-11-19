@@ -13,6 +13,7 @@
 #include <memory>
 #include <optional>
 #include <future>
+#include <functional>
 #include <chrono>
 #include <utility>
 #include <stdexcept>
@@ -505,7 +506,8 @@ public:
     }
     void draw(render::Renderer3D& renderer,Cell origin,int cellSize,
               const NereidRippleField* ripples=nullptr,
-               const NereidVisualWindField* windField=nullptr)const {
+              const NereidVisualWindField* windField=nullptr,
+              std::function<Vec3(uint64_t,Vec3,Vec3)> transferFlow={})const {
         const double worldOriginX=double(origin.x)*double(cellSize);
         const double worldOriginZ=double(origin.z)*double(cellSize);
         const double worldOriginY=double(origin.y)*double(cellSize);
@@ -516,6 +518,39 @@ public:
                 float(basis.originX-worldOriginX),
                 float(basis.originY-worldOriginY),
                 float(basis.originZ-worldOriginZ)});
+            // Local current is sampled only when opt-in whitewater is
+            // enabled. This is presentation-only; no change to GPU
+            // geometry residency or the fixed ECS simulation.
+            const auto whitewaterAt=[&](double x,double z) {
+                const auto& style=slot.source.style;
+                if(style.rapidFoamStrength<=0.f)
+                    return render::float4{};
+                const auto fixed=[](double value) {
+                    const double bounded=std::clamp(value,-1e10,1e10);
+                    return Fixed::fromRaw(int64_t(std::llround(
+                        bounded*Fixed::kOne)));
+                };
+                const Vec3 position{
+                    fixed(x),
+                    slot.source.body.surfaceY-Fixed::fromRatio(1,10),
+                    fixed(z)};
+                const auto& source=slot.source;
+                const Vec3 ordinary=lib::nereid::waterCurrentWithVortices(
+                    source.body,source.useGeometry?&source.geometry:nullptr,
+                    source.useCurrentField?&source.currentField:nullptr,
+                    source.useVortices?&source.vortices:nullptr,position);
+                const Vec3 current=transferFlow?
+                    transferFlow(source.id,position,ordinary):ordinary;
+                const double vx=std::clamp(current.x.toDouble(),-1000.0,1000.0);
+                const double vz=std::clamp(current.z.toDouble(),-1000.0,1000.0);
+                const double speed=std::hypot(vx,vz);
+                const float intensity=std::clamp(
+                    float((speed-double(style.rapidFlowThreshold))*0.35)*
+                    style.rapidFoamStrength,0.f,1.f);
+                return render::float4{float(vx),float(vz),intensity,
+                                      style.rapidNoiseScale};
+            };
+
             if(!slot.gpu->tiles().empty()) {
                 // One shared VB/IB, multiple disjoint index ranges; each tile
                 // can see up to 16 waves near its own portion of the ocean.
@@ -527,8 +562,11 @@ public:
                     const render::float4 wind=windField?
                         windField->sample(tile.centerX,tile.centerZ).shaderUniform():
                         render::float4{};
+                    const auto whitewater=whitewaterAt(
+                        tile.centerX,tile.centerZ);
                     slot.gpu->drawTile(renderer,transform,tile,
-                                       packet.rings,packet.shapes,wind);
+                                       packet.rings,packet.shapes,wind,
+                                       whitewater);
                 }
             }else{
                 NereidRippleShaderPacket packet{};
@@ -543,8 +581,9 @@ public:
                 const render::float4 wind=windField?
                     windField->sample(windX,windZ).shaderUniform():
                     render::float4{};
+                const auto whitewater=whitewaterAt(windX,windZ);
                 slot.gpu->draw(renderer,transform,
-                               packet.rings,packet.shapes,wind);
+                               packet.rings,packet.shapes,wind,whitewater);
             }
         }
     }
