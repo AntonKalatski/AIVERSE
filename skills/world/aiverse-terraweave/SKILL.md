@@ -1354,3 +1354,13 @@ undo. **Not yet finished:** true Box3D fallen-tree rigid bodies,
 streaming terrain collision/navmesh patch/rebuild, GPU grass instancing,
 and voxel cave excavation. **No new native tests run** after Stage45/46.
 See \`docs/nereid/TERRAIN_EROSION.md\` and handoff for exact status.
+
+
+### Stages 47–56: Earthworks + NEREID + canonical ECS native integration (2026-11-19)
+
+- NEREID is authoritative for all water. `TerraWeaveEarthworks.h` has sparse transactional dig/fill, `NereidErosion.h` soil-specific fixed-point erosion/deposition. `TerraWeaveNereidErosionBridge.h` supports a standalone bounded bank sampler OR, when native ECS bank systems run, `TerraWeaveEcsBankBridge.h` commits NEREID's already computed `WaterBankErosionOutputComponent` without calculating water twice.
+- `TerraWeaveRootEvents.h` and `TerraWeaveVegetationSoil.h` give root exposure, stable once-only fall events and deterministic age/light/health. `TerraWeaveGrassCover.h` stores grass patches, never one ECS entity per blade. `TerraWeaveGrassRender.h` builds bounded combined foliage models through existing Renderer3D; exposed roots are lazy via the root model adapter.
+- `TerraWeaveTerrainPatch.h`, `TerraWeaveTerrainPatchRender.h`, `TerraWeaveBox3DTerrain.h` share one authored terrain triangle topology across RHI/SpatialWorld/optional Box3D. `TerraWeaveNavMeshBridge.h` updates existing `nav::Mesh`, and `TerraWeaveFallenNavigation.h` provides immutable fallen-body obstacle snapshots. A game must retire its old static ground collision/draw when replacing it.
+- `TerraWeavePersistence.h` writes a stable, validated versioned binary save with generator recipe ID; `TerraWeaveReplication.h` provides revision/tick-guarded change messages, **not** a socket protocol. `TerraWeaveEcsAuthority.h` is the canonical authoritative `Simulation::World` persistent resource (schema 2); `TerraWeaveNativeWorldBinding.h` reconstructs scene terrain/root/grass caches after rollback. `TerraWeaveNativeDriver.h` is the single opt-in per-frame publication barrier.
+- Complete usage is in `examples/world/terraweave_native/{Integration.h,README.md}`. Last handoffs: `docs/terrain/stage-53-persistence-ecs-handoff.md`, `stage-54-replication-handoff.md`, `stage-55-ecs-authority-binding-handoff.md`, `stage-56-native-example-handoff.md`.
+- **QA still pending for this new functional phase**: no native compiler/CTest or GPU/Box3D/editor integration pass was performed for Stages 44–56. Earlier 9/9 TerraWeave and 1/1 GPU timing router are from previous revisions. Keep PR #24 Draft. No voxel caves/undercuts yet; this is heightfield excavation. Preserve the one-authoritative-water-writer rule.
