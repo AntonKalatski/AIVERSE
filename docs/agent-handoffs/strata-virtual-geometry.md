@@ -2427,3 +2427,18 @@ raster/reflect/shadow on supported hardware; do not claim success
 until a real device log identifies the tested SHA.
 Stay on the feature branch: concurrent `main` render/CMake work is
 still divergent and must be integrated without forced updates.
+
+
+### Stage 15.3 post-review build isolation
+
+The disk archive writer also needs to be callable by standalone
+native editor/import tools without a full `Renderer3D` link.
+`CMakeLists.txt` commit
+`a3cc4297c26a2b44d8f3879628c64f6662131dd0`
+therefore moves `StrataDiskPages.cpp` into a separate
+`aiverse_strata_disk` STATIC target (PUBLIC dependency:
+`aiverse_strata_model_adapter`, native `Threads::Threads`).
+`aiverse_strata_portable` links the disk library PUBLIC, while
+GLES/GL33 still use the established non-disk runtime fallback.
+Offline importers should explicitly link `aiverse_strata_disk`.
+**Neither target has been compiled in this stage.**
