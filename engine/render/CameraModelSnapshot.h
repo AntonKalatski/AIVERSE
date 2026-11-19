@@ -27,15 +27,20 @@ class CameraModelSnapshot {
         const view::View* viewSource=nullptr;
     };
     std::vector<Entry> entries_;
+    std::vector<CameraGeometryCommand> geometry_;
     std::vector<PreparedEntry> prepared_;
     std::unordered_set<uint64_t> preparedDrawIds_;
     size_t dropped_=0,maximum_=100000;
 public:
     explicit CameraModelSnapshot(size_t maxPackets=100000):maximum_(maxPackets){}
-    void clear(){entries_.clear();prepared_.clear();preparedDrawIds_.clear();dropped_=0;}
+    void clear(){
+        entries_.clear();prepared_.clear();geometry_.clear();
+        preparedDrawIds_.clear();dropped_=0;
+    }
     size_t size()const{return entries_.size();}
     size_t dropped()const{return dropped_;}
     size_t preparedCount()const{return prepared_.size();}
+    size_t geometryCount()const{return geometry_.size();}
     void reserve(size_t count){entries_.reserve(count);}
     // RTS (or any native presentation adapter) may publish a BEFORE-LOD
     // object while its View owns the evaluated animation pose. The packet
@@ -80,12 +85,20 @@ public:
         if(entries_.size()>=maximum_){++dropped_;return;}
         entries_.push_back(copyDraw(source));
     }
+    void recordGeometry(const CameraGeometryCommand& command) {
+        if(geometry_.size()>=maximum_){++dropped_;return;}
+        geometry_.push_back(command);
+    }
     void beginCapture(Renderer3D& renderer) {
         clear();
         renderer.setModelPacketTap([this](const ModelDraw& draw){record(draw);});
+        renderer.setGeometryPacketTap([this](const CameraGeometryCommand& packet){
+            recordGeometry(packet);
+        });
     }
     void endCapture(Renderer3D& renderer) {
         renderer.setModelPacketTap({});
+        renderer.setGeometryPacketTap({});
     }
     class CaptureGuard {
         CameraModelSnapshot* snapshot_=nullptr;
@@ -131,6 +144,10 @@ public:
             fn(draw);
         }
     }
+    template<class Fn>
+    void forEachGeometry(Fn&& fn)const {
+        for(const auto& packet:geometry_)fn(packet);
+    }
     // The caller must first endCapture(), then beginScene() with each
     // secondary camera. Model/texture resources are borrowed from the host;
     // do not invalidate them until all camera submissions are complete.
@@ -142,6 +159,20 @@ public:
     // Prepared base objects select per-camera LOD, while legacy packets and
     // attachments from the main view remain in the finalized fallback stream.
     void submit(Renderer3D& renderer,uint64_t cameraScope=0)const {
+        forEachGeometry([&](const CameraGeometryCommand& packet) {
+            switch(packet.kind) {
+                case CameraGeometryCommand::Kind::Mesh:
+                    if(packet.mesh)renderer.drawMesh(*packet.mesh,packet.world,
+                        packet.tint,packet.flags,packet.specular,packet.emissive);
+                    break;
+                case CameraGeometryCommand::Kind::Line:
+                    renderer.line(packet.a,packet.b,packet.rgba);
+                    break;
+                case CameraGeometryCommand::Kind::Triangle:
+                    renderer.triangle(packet.a,packet.b,packet.c,packet.rgba);
+                    break;
+            }
+        });
         forEachFallback([&](const ModelDraw& d){renderer.drawModel(d);});
         forEachPrepared([&](const view::View& source,const view::Object& packet) {
             source.submitOne(renderer,packet,cameraScope);
