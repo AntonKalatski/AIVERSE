@@ -308,10 +308,11 @@ int main(){
     nativeImage.textureCache=native.textures();
     nativeModel->images.push_back(std::move(nativeImage));
     render::Model* nativePointer=nativeModel.get();
+    const std::string nativeKey=nativeModel->path;
     {
         render::ModelStagingTransaction tx(
             device,native,nativeRollback,epoch.lease());
-        assert(tx.stage(nativeModel->path,std::move(nativeModel))==nativePointer);
+        assert(tx.stage(nativeKey,std::move(nativeModel))==nativePointer);
         assert(!native.find("models/native.glb"));
         assert(native.textures()->gpuCount()==0);
         assert(tx.commit()==1);
