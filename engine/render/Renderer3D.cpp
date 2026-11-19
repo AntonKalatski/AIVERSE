@@ -140,9 +140,12 @@ void Renderer3D::shutdown() {
     if (objectMotionInstancedShader_.valid()) dev_->destroyShader(objectMotionInstancedShader_);
     if (objectMotionDeformedPipeline_.valid()) dev_->destroyPipeline(objectMotionDeformedPipeline_);
     if (objectMotionDeformedShader_.valid()) dev_->destroyShader(objectMotionDeformedShader_);
+    if (objectMotionBakedPipeline_.valid()) dev_->destroyPipeline(objectMotionBakedPipeline_);
+    if (objectMotionBakedShader_.valid()) dev_->destroyShader(objectMotionBakedShader_);
     objectMotionPipeline_ = {}; objectMotionShader_ = {};
     objectMotionInstancedPipeline_ = {}; objectMotionInstancedShader_ = {};
     objectMotionDeformedPipeline_ = {}; objectMotionDeformedShader_ = {};
+    objectMotionBakedPipeline_ = {}; objectMotionBakedShader_ = {};
     shutdownModels();
     lights.shutdown();
     shutdownTrace();
@@ -369,12 +372,16 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
             !it.inView || !it.model || !it.prim || !it.mat ||
             !it.model->vb.valid() || !it.model->ib.valid() ||
             it.model->geometry || it.indexCount == 0 ||
-            it.baked || it.mat->shaderGraph)
+            it.mat->shaderGraph)
             return false;
         const bool hasMorph = it.prim->morphTargets > 0 &&
                               it.model->morphTex.valid();
         const bool hasSkin = it.joints >= 0;
-        return (hasSkin || hasMorph) && it.tint.w >= 0.99f &&
+        // Baked skin and morph together need a separate mixed permutation.
+        const bool bakedEligible = it.baked && it.model->baked.tex.valid() &&
+            !hasMorph && it.prim->jointPalette.size() <= 80;
+        return (hasSkin || hasMorph || bakedEligible) &&
+            !(it.baked && !bakedEligible) && it.tint.w >= 0.99f &&
             it.dissolve <= 0.0f && it.materialRole != 1 &&
             it.shadowRole != 2 && it.mat->alpha == AlphaMode::Opaque &&
             !it.mat->transparent && !(it.flags & kDrawTransparent);
@@ -385,6 +392,8 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
         pose.world = it.world;
         pose.sourceModel = it.model;
         pose.hasSkin = it.joints >= 0;
+        pose.baked = it.baked;
+        pose.animation = it.anim;
         if (pose.hasSkin &&
             size_t(it.joints) + pose.joints.size() <= jointData_.size())
             std::memcpy(pose.joints.data(), jointData_.data() + it.joints,
@@ -519,6 +528,34 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
             objectMotionDeformedPipeline_ = dev_->createPipeline(pipeline);
         }
     }
+    if (!objectMotionBakedShader_.valid()) {
+        gfx::ShaderDesc shader;
+        shader.glslVertex = motion_shaders::kBakedVS;
+        shader.glslFragment = motion_shaders::kFS;
+        shader.msl = motion_shaders::kBakedMSL;
+        shader.textureSlots = 8; // texture 0 scene depth, texture 7 baked atlas
+        shader.uniformSlots = 5; // U0 current/previous transforms, U3 palette, U4 animation
+        shader.label = "prisma baked animation velocity";
+        objectMotionBakedShader_ = dev_->createShader(shader);
+        if (objectMotionBakedShader_.valid()) {
+            gfx::PipelineDesc pipeline;
+            pipeline.shader = objectMotionBakedShader_;
+            pipeline.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
+            pipeline.attrs[1] = {5, gfx::VertexFormat::UByte4,
+                                 uint32_t(offsetof(ModelVertex,joints))};
+            pipeline.attrs[2] = {6, gfx::VertexFormat::UByte4N,
+                                 uint32_t(offsetof(ModelVertex,weights))};
+            pipeline.attrCount = 3;
+            pipeline.stride = sizeof(ModelVertex);
+            pipeline.indexType = gfx::IndexType::UInt32;
+            pipeline.cull = gfx::CullMode::Back;
+            pipeline.depthTest = false;
+            pipeline.depthWrite = false;
+            pipeline.colorFormat = gfx::PixelFormat::RGBA16F;
+            pipeline.label = "prisma baked animation velocity";
+            objectMotionBakedPipeline_ = dev_->createPipeline(pipeline);
+        }
+    }
     if (history.target.valid() && history.depth.valid() &&
         objectMotionPipeline_.valid()) {
         struct MotionU {
@@ -618,7 +655,9 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                 if (prior == history.previousDeformed.end() ||
                     now == currentDeformed.end() ||
                     prior->second.hasSkin != now->second.hasSkin ||
-                    prior->second.sourceModel != now->second.sourceModel) continue;
+                    prior->second.baked != now->second.baked ||
+                    prior->second.sourceModel != now->second.sourceModel ||
+                    it.baked) continue;
                 const auto& cur = now->second;
                 const auto& prev = prior->second;
                 const mat4 currentMvp = viewProj_ * cur.world;
@@ -649,6 +688,53 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                                   prev.joints.size()*sizeof(float));
                 dev_->setUniforms(5,&mo,sizeof mo);
                 if (morph) dev_->setTexture(8,it.model->morphTex);
+                dev_->setVertexBuffer(it.model->vb);
+                dev_->setIndexBuffer(it.model->ib);
+                dev_->drawIndexed(it.indexCount,
+                    it.firstIndex + it.model->gpuFirstIndex,
+                    int32_t(it.model->gpuBaseVertex));
+            }
+        }
+        // Texture-baked animation: rows A/B and blend are independently
+        // sampled for current and previous pose. Keep this separate from
+        // CPU-palette skinning; no animation state is written back to ECS.
+        if (objectMotionBakedPipeline_.valid()) {
+            struct BakedMotionU {
+                float current[16], previous[16], params[4];
+            };
+            struct BakedAnimU {
+                float current[4], previous[4];
+            };
+            dev_->setPipeline(objectMotionBakedPipeline_);
+            for (const auto& it : modelItems_) {
+                if (!it.baked || !deformEligible(it)) continue;
+                const DeformKey key{it.motionPersistentId,it.motionNodeIndex,
+                                     it.geometryPrimitive};
+                const auto before = history.previousDeformed.find(key);
+                const auto now = currentDeformed.find(key);
+                if (before == history.previousDeformed.end() ||
+                    now == currentDeformed.end() ||
+                    before->second.sourceModel != now->second.sourceModel ||
+                    !before->second.baked) continue;
+                const mat4 currentMvp = viewProj_ * now->second.world;
+                const mat4 previousMvp = previousCamera * before->second.world;
+                BakedMotionU u{};
+                std::memcpy(u.current,currentMvp.m,sizeof u.current);
+                std::memcpy(u.previous,previousMvp.m,sizeof u.previous);
+                u.params[0] = float(w); u.params[1] = float(h);
+                float palette[80] = {};
+                for (size_t i=0;i<it.prim->jointPalette.size() && i<80;++i)
+                    palette[i] = float(it.prim->jointPalette[i]);
+                BakedAnimU anim{};
+                const auto& a = now->second.animation, b = before->second.animation;
+                anim.current[0]=a.x; anim.current[1]=a.y;
+                anim.current[2]=a.z; anim.current[3]=a.w;
+                anim.previous[0]=b.x; anim.previous[1]=b.y;
+                anim.previous[2]=b.z; anim.previous[3]=b.w;
+                dev_->setUniforms(0,&u,sizeof u);
+                dev_->setUniforms(3,palette,sizeof palette);
+                dev_->setUniforms(4,&anim,sizeof anim);
+                dev_->setTexture(7,it.model->baked.tex);
                 dev_->setVertexBuffer(it.model->vb);
                 dev_->setIndexBuffer(it.model->ib);
                 dev_->drawIndexed(it.indexCount,
