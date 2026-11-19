@@ -1,6 +1,7 @@
 #include "Renderer3D.h"
 #include "Shaders.h"
 #include "SelectionOutlineShaders.h"
+#include "Renderer3DMotionShaders.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -127,6 +128,14 @@ void Renderer3D::shutdown() {
     }
     persistentIds_.clear();
     persistentScene_ = {};
+    for (auto& [id, history] : objectMotionViews_) {
+        if (history.target.valid()) dev_->destroyTexture(history.target);
+        if (history.depth.valid()) dev_->destroyTexture(history.depth);
+    }
+    objectMotionViews_.clear();
+    if (objectMotionPipeline_.valid()) dev_->destroyPipeline(objectMotionPipeline_);
+    if (objectMotionShader_.valid()) dev_->destroyShader(objectMotionShader_);
+    objectMotionPipeline_ = {}; objectMotionShader_ = {};
     shutdownModels();
     lights.shutdown();
     shutdownTrace();
@@ -316,11 +325,143 @@ void Renderer3D::bindTraceTextures() {
     bindSceneTextures(4, 5);
 }
 
+void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
+    if (!post.wantsObjectMotionVectors() || !dev_) return;
+    uint64_t viewId = 0;
+    mat4 previousCamera;
+    const bool previousCameraValid =
+        post.objectMotionContext(viewId, previousCamera);
+    auto& history = objectMotionViews_[viewId];
+
+    // Collect current rigid-node transforms once, before any optional GPU pass.
+    // Stable (entity,node) pairs are the identity: repeated primitives and
+    // instancing batches cannot accidentally advance history multiple times.
+    using Key = std::pair<uint64_t, int>;
+    std::map<Key, mat4> current;
+    auto eligible = [](const ModelItem& it) {
+        return it.motionPersistentId != 0 && it.motionNodeIndex >= 0 &&
+            it.rigid && it.inView && it.tint.w >= 0.99f &&
+            it.dissolve <= 0.0f && it.joints < 0 && !it.baked &&
+            it.morph < 0 && it.materialRole != 1 && it.shadowRole != 2 &&
+            it.mat && it.mat->alpha == AlphaMode::Opaque &&
+            !it.mat->transparent && !(it.flags & kDrawTransparent) &&
+            it.model && !it.model->geometry && it.model->vb.valid() &&
+            it.model->ib.valid() && it.indexCount > 0;
+    };
+    for (const auto& it : modelItems_)
+        if (eligible(it))
+            current.try_emplace(Key{it.motionPersistentId,it.motionNodeIndex},
+                                it.world);
+
+    // A cut, first frame, or new viewport has no trustworthy previous state.
+    // Still prime the next frame. No velocity overlay is submitted this time.
+    if (!previousCameraValid) {
+        history.previous = std::move(current);
+        return;
+    }
+    const auto sceneDepth = post.objectMotionSceneDepth();
+    if (!sceneDepth.valid() || !dev_->supports(gfx::PixelFormat::RGBA16F)) {
+        history.previous = std::move(current);
+        return;
+    }
+
+    const int w = std::max(sceneW_,1), h = std::max(sceneH_,1);
+    if (history.width != w || history.height != h) {
+        if (history.target.valid()) dev_->destroyTexture(history.target);
+        if (history.depth.valid()) dev_->destroyTexture(history.depth);
+        history.target = {}; history.depth = {};
+        history.width = w; history.height = h;
+    }
+    if (!history.target.valid()) {
+        gfx::TextureDesc desc;
+        desc.width = w; desc.height = h;
+        desc.renderTarget = true;
+        desc.format = gfx::PixelFormat::RGBA16F;
+        desc.filter = gfx::Filter::Nearest;
+        desc.label = "prisma rigid motion velocity";
+        history.target = dev_->createTexture(desc);
+    }
+    if (!history.depth.valid()) {
+        gfx::TextureDesc desc;
+        desc.width = w; desc.height = h;
+        desc.renderTarget = true;
+        desc.format = gfx::PixelFormat::Depth;
+        desc.filter = gfx::Filter::Nearest;
+        desc.label = "prisma rigid motion scratch depth";
+        history.depth = dev_->createTexture(desc);
+    }
+    if (!objectMotionPipeline_.valid() && !objectMotionShader_.valid()) {
+        gfx::ShaderDesc shader;
+        shader.glslVertex = motion_shaders::kVS;
+        shader.glslFragment = motion_shaders::kFS;
+        shader.msl = motion_shaders::kMSL;
+        shader.textureSlots = 1; shader.uniformSlots = 1;
+        shader.label = "prisma rigid motion overlay";
+        objectMotionShader_ = dev_->createShader(shader);
+        if (objectMotionShader_.valid()) {
+            gfx::PipelineDesc pipeline;
+            pipeline.shader = objectMotionShader_;
+            pipeline.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
+            pipeline.attrCount = 1;
+            pipeline.stride = sizeof(ModelVertex);
+            pipeline.indexType = gfx::IndexType::UInt32;
+            pipeline.cull = gfx::CullMode::Back;
+            pipeline.depthTest = false;
+            pipeline.depthWrite = false;
+            pipeline.colorFormat = gfx::PixelFormat::RGBA16F;
+            pipeline.label = "prisma rigid motion overlay";
+            objectMotionPipeline_ = dev_->createPipeline(pipeline);
+        }
+    }
+    if (history.target.valid() && history.depth.valid() &&
+        objectMotionPipeline_.valid()) {
+        struct MotionU {
+            float current[16], previous[16], params[4];
+        };
+        gfx::PassDesc pass;
+        pass.colorTarget = history.target;
+        pass.depthTarget = history.depth; // NEVER sample and attach scene depth
+        pass.clearColor[0] = pass.clearColor[1] = 0.0f;
+        pass.clearColor[2] = pass.clearColor[3] = 0.0f; // B=0: no object
+        pass.clearColorEnabled = true;
+        pass.clearDepthEnabled = true;
+        dev_->beginPass(pass);
+        dev_->setViewport({0,0,w,h});
+        dev_->setPipeline(objectMotionPipeline_);
+        dev_->setTexture(0, sceneDepth);
+        for (const auto& it : modelItems_) {
+            if (!eligible(it)) continue;
+            const Key key{it.motionPersistentId,it.motionNodeIndex};
+            const auto previous = history.previous.find(key);
+            const mat4& prevWorld = previous != history.previous.end()
+                ? previous->second : it.world;
+            const mat4 currentMvp = viewProj_ * it.world;
+            const mat4 previousMvp = previousCamera * prevWorld;
+            MotionU uniforms{};
+            std::memcpy(uniforms.current,currentMvp.m,sizeof uniforms.current);
+            std::memcpy(uniforms.previous,previousMvp.m,sizeof uniforms.previous);
+            uniforms.params[0] = float(w);
+            uniforms.params[1] = float(h);
+            uniforms.params[2] = dev_->info().renderTargetFlipY ? 1.0f : 0.0f;
+            dev_->setUniforms(0,&uniforms,sizeof uniforms);
+            dev_->setVertexBuffer(it.model->vb);
+            dev_->setIndexBuffer(it.model->ib);
+            dev_->drawIndexed(it.indexCount,
+                it.firstIndex + it.model->gpuFirstIndex,
+                int32_t(it.model->gpuBaseVertex));
+        }
+        dev_->endPass();
+        post.acceptObjectMotionVectors(history.target);
+    }
+    history.previous = std::move(current);
+}
+
 void Renderer3D::resolvePrisma() {
     if (!post_) return;
     PostProcess* post = post_;
     post_ = nullptr;
     dev_->endPass();
+    renderObjectMotionVectors(*post);
     PostFrame f{viewProj_, camPos_, lighting, sceneW_ > 0 ? sceneW_ : dev_->framebufferWidth(), sceneH_ > 0 ? sceneH_ : dev_->framebufferHeight(),
                 quality_ != ShadowQuality::Off ? shadowMap_ : gfx::TextureHandle{}, lightViewProj_};
     post->resolve(*dev_, postOut_, f);
