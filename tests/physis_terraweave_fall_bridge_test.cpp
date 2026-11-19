@@ -1,6 +1,7 @@
 // Stage 87 optional REAL PHYSIS + TerraWeave + Box3D composition test.
 // CMake registers this ONLY after TerraWeave headers are present and physics
 // is enabled. It is not run on the PHYSIS-only branch.
+#include "engine/physis/PhysisIntegration.h"
 #include "engine/world/PhysisTerraWeaveFallBridge.h"
 #include <cmath>
 #include <iostream>
