@@ -979,3 +979,19 @@ be decoded or uploaded, the helper destroys the partially initialized GPU
 texture before returning invalid. The RHI synchronous source-byte copy
 contract is required. Actual C++/GPU tests of this refactor are NOT RUN.
 
+
+## Stage 10AZ — Metal 3D texture upload selector
+
+Native Metal `MTLTextureType3D` upload and subregion update require
+`replaceRegion:mipmapLevel:slice:withBytes:bytesPerRow:bytesPerImage:`
+(`slice:0`). Do not call a five-keyword selector with
+`bytesPerImage:` but no `slice:`; that selector does not exist.
+Keep `origin.z` and `depth` in `MTLRegionMake3D` for the selected
+volume subregion. `bytesPerImage` is the stride between source depth
+planes. Source fix `094bfe7c602fd57b8defa6bae2474a28cd04c3de`.
+
+Previous Mac Studio run passed 23/23 focused texture CTests; its
+`aiverse_editor` ObjC++ build failed on the two old selectors.
+The fix is source-only until rebuilt on macOS. Native Metal volume
+sampling/readback fidelity and GPU ICB pipeline checks are still needed.
+
