@@ -2635,7 +2635,15 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 if (!state.encoded) state.reason = "LUT missing/invalid or composite unavailable";
                 break;
             case PrismaType::AutoExposure:
-                if (requireHdrFlag("AIVERSE_PRISMA_AUTO_EXPOSURE")) {
+                if (manualSelected) {
+                    // Manual EV is a pre-tonemap scalar in the final HDR
+                    // composite. It does not require any AE pipelines or
+                    // 1x1 exposure texture and cannot run alongside AE.
+                    state.pipelinePrepared = pipe.valid();
+                    state.encoded = effectReport.manualExposureEncoded;
+                    if (!state.encoded)
+                        state.reason = "manual EV final HDR composite unavailable";
+                } else if (requireHdrFlag("AIVERSE_PRISMA_AUTO_EXPOSURE")) {
                     state.pipelinePrepared = pipes_[kExposureLog].valid() &&
                         pipes_[kExposureReduce].valid() && pipes_[kExposureAdapt].valid();
                     state.encoded = compositeEncoded && (mask & kPfAutoExposure) != 0;
