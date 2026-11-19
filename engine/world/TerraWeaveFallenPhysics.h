@@ -16,6 +16,10 @@
 
 namespace aiverse::terraweave {
 
+struct FallenRenderOriginCm {
+    int64_t x=0,y=0,z=0;
+};
+
 struct FallenPlantBodySpec {
     uint32_t heightCm=800;       // configure per species/model
     uint32_t radiusCm=24;
@@ -111,6 +115,10 @@ public:
             float(spec.modelScalePermille)*0.00001f;
         const float radius=float(spec.radiusCm)*
             float(spec.modelScalePermille)*0.00001f;
+        if(radius>100.f || height>10000.f ||
+           height<=2.f*radius)
+            throw std::out_of_range(
+                "TerraWeave falling plant exceeds Box3D body bounds");
         constexpr float kRadPerMilliDegree=0.000017453292519943295f;
         const float tilt=float(spec.initialTiltMilliDegrees)*
             kRadPerMilliDegree;
@@ -182,7 +190,7 @@ public:
     // grass/shrub cosmetic patches remain grouped independently.
     template<class Prototype>
     void submit(render::Renderer3D& renderer,
-                TerrainPatchRenderOriginCm origin,
+                FallenRenderOriginCm origin,
                 Prototype&& prototype)const {
         for(const auto& [id,item]:bodies_){
             if(!scene_.valid(item.body))continue;
