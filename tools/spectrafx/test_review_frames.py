@@ -34,9 +34,9 @@ class ReviewFramesTests(unittest.TestCase):
             fx_a = bytearray(base)
             fx_b = bytearray(base)
             for y in range(10, 22):
-                for x in range(16, 27):
+                for x in range(19, 30):
                     fx_a[(y * w + x) * 3] = 180
-                for x in range(9, 20):
+                for x in range(9, 18):
                     fx_b[(y * w + x) * 3] = 180
             sources = {
                 "baseline-a": base, "effect-a": bytes(fx_a),
@@ -47,10 +47,10 @@ class ReviewFramesTests(unittest.TestCase):
             for suffix, px in sources.items():
                 write_ppm(f"{prefix}-{suffix}.ppm", w, h, px)
             output = str(Path(d) / "report")
-            self.assertEqual(analyze(prefix, output, strict=False), 0)
+            self.assertEqual(analyze(prefix, output, strict=True), 0)
             report = json.loads(Path(output + ".json").read_text())
             self.assertEqual(len(NAMES), 7)
-            self.assertTrue(report["checks"]["camera_changes_screen_position"])
+            self.assertTrue(report["strict_pass"])
             self.assertEqual(report["metrics"]["reset"]["maximum_absolute_red_delta"], 0)
             sheet = load_ppm(output + ".ppm")
             self.assertEqual(sheet[:2], (4 * w + 5 * 4, 3 * h + 4 * 4))
