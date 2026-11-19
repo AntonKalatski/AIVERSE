@@ -44,7 +44,19 @@ inline bool validModelPoseRetarget(const render::Model& source,
             ++mapped;
         }
         const auto& dst=visual.nodes[i];
-        if(dst.parent>=int(i) || dst.parent< -1)return false;
+        if(dst.parent< -1 ||
+           (dst.parent>=0 && size_t(dst.parent)>=visual.nodes.size()))
+            return false;
+        // Model::nodes is stored in importer order, not necessarily
+        // parent-before-child. Validate cycles without assuming indices.
+        int parent=dst.parent;
+        for(size_t step=0;parent>=0;++step) {
+            if(step>=visual.nodes.size() || parent==int(i))return false;
+            parent=visual.nodes[size_t(parent)].parent;
+            if(parent< -1 ||
+               (parent>=0 && size_t(parent)>=visual.nodes.size()))
+                return false;
+        }
         if(sourceId>=0) {
             const auto& src=source.nodes[size_t(sourceId)];
             // An explicitly mapped visual child must not attach to an
