@@ -1,5 +1,8 @@
 #include "StrataStreamingCoordinator.h"
+#include <atomic>
 #include <condition_variable>
+#include <limits>
+#include <system_error>
 #include <deque>
 #include <map>
 #include <mutex>
@@ -10,12 +13,14 @@
 namespace aiverse::render::strata {
 namespace {
 struct GpuLedger {
-    uint64_t limit=0, bytes=0, serial=0;
+    uint64_t limit=0, bytes=0;
     std::map<uint64_t,uint64_t> leases;
 };
 std::mutex gpuMutex;
 std::map<gfx::Device*,GpuLedger> gpuLedgers;
+std::atomic<uint64_t> globalLeaseSerial{1};
 
+#if !defined(__EMSCRIPTEN__)
 class IoExecutor final {
 public:
     ~IoExecutor() {
@@ -124,6 +129,7 @@ private:
     bool stopping_=false,started_=false;
 };
 IoExecutor& io() {static IoExecutor executor;return executor;}
+#endif
 } // namespace
 
 bool configureDeviceIndexBudget(gfx::Device& device,uint64_t limitBytes) {
@@ -145,11 +151,11 @@ bool reserveDeviceIndexBytes(gfx::Device& device,uint64_t bytes,
     if(bytes>UINT64_MAX-ledger.bytes ||
        (ledger.limit && bytes>ledger.limit-ledger.bytes))
         return false;
-    if(ledger.serial==UINT64_MAX)return false;
-    uint64_t id=++ledger.serial;
-    while(ledger.leases.count(id) && ledger.serial<UINT64_MAX)
-        id=++ledger.serial;
-    if(ledger.leases.count(id))return false;
+    // Tokens never reuse an ID across ledger teardown/device address reuse.
+    // This prevents a stale double-release from releasing another world's
+    // newer reservation on the same device identity.
+    const uint64_t id=globalLeaseSerial.fetch_add(1,std::memory_order_relaxed);
+    if(!id || ledger.leases.count(id))return false;
     ledger.leases.emplace(id,bytes);
     ledger.bytes+=bytes;
     outToken=id;
@@ -178,6 +184,7 @@ DeviceIndexBudgetStats deviceIndexBudgetStats(gfx::Device& device) {
             uint32_t(it->second.leases.size())};
 }
 
+#if !defined(__EMSCRIPTEN__)
 bool configureSharedDiskIo(uint32_t workers,uint64_t readyLimitBytes) {
     return io().configure(workers,readyLimitBytes);
 }
@@ -190,4 +197,12 @@ bool acquireSharedDiskReady(size_t bytes,const std::atomic<bool>& cancelled) {
 }
 void releaseSharedDiskReady(size_t bytes) {io().release(bytes);}
 void wakeSharedDiskIo() {io().wake();}
+#else
+bool configureSharedDiskIo(uint32_t,uint64_t) {return false;}
+SharedDiskIoStats sharedDiskIoStats() {return {};}
+bool submitSharedDiskJob(std::function<void()>) {return false;}
+bool acquireSharedDiskReady(size_t,const std::atomic<bool>&) {return false;}
+void releaseSharedDiskReady(size_t) {}
+void wakeSharedDiskIo() {}
+#endif
 } // namespace aiverse::render::strata
