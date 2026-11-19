@@ -153,6 +153,15 @@ public:
     // for the entire scene; no CPU update is performed by this adapter.
     bool updateGpu(float dt) {
         if(!gpuActive() || suspended_) return false;
+        // A GPU error detected on an earlier completed frame is never
+        // replayed into this frame. Select the authored CPU visual path
+        // before touching GPU storage or issuing another compute command.
+        if(gpuDevice_ && !gpuDevice_->gpuHealthy()) {
+            if(switchToCpuFallback("RHI GPU unhealthy")) return true;
+            status_="RHI GPU unhealthy; no CPU fallback";
+            suspended_=true;
+            return false;
+        }
         if(config_.autoSpawnGpu && dt>0.0f) {
             const bool scheduled=scheduler_.tick(dt,origin_,direction_,
                 spectraFxSpawnQualityScale(config_.quality)*lodSpawnScale_*externalSpawnScale_,
@@ -170,7 +179,7 @@ public:
                 if(!sortCameraValid_ ||
                    !alphaSort_.prepare(slots_.evolution(),
                                        sortCameraEye_,sortCameraForward_)) {
-                    if(switchToCpuFallback()) return true;
+                    if(switchToCpuFallback("GPU alpha sort failed")) return true;
                     status_="GPU alpha sorting failed; fallback unavailable";
                     suspended_=true; // never draw an unsorted alpha frame
                     return false;
@@ -185,7 +194,8 @@ public:
                 impactFeedback_.request(*gpuDevice_,slots_);
             return true;
         }
-        status_="GPU compute step failed; emitter suspended pending reset";
+        if(switchToCpuFallback("GPU compute step failed")) return true;
+        status_="GPU compute step failed; no CPU fallback";
         suspended_=true;
         return false;
     }
@@ -278,6 +288,7 @@ public:
     SpectraFxExecutionBackend backend() const {return backend_;}
     const SpectraFxBackendDecision& decision() const {return decision_;}
     const Config& config() const {return config_;}
+    uint64_t gpuRuntimeFallbacks() const {return runtimeFallbacks_;}
     uint64_t gpuSortedFrames() const {return sortedFrames_;}
     uint64_t gpuCompactedFrames() const {return compactionFrames_;}
     uint64_t gpuCompactionFallbacks() const {return compactionFallbacks_;}
@@ -290,7 +301,7 @@ public:
     }
 
 private:
-    bool switchToCpuFallback() {
+    bool switchToCpuFallback(const char* reason) {
         if(!cpu_ || !config_.backend.allowCpuFallback ||
            config_.cpuEffect.empty()) return false;
         // The new CPU effect is prepared first. There is no intervening GPU
@@ -307,7 +318,8 @@ private:
         backend_=SpectraFxExecutionBackend::Cpu;
         cpuHandle_=h;
         suspended_=false;
-        status_="GPU alpha sort unavailable: switched to authored CPU effect";
+        ++runtimeFallbacks_;
+        status_=std::string(reason)+": switched to authored CPU effect";
         return true;
     }
     ParticleSystem* cpu_=nullptr;
@@ -330,6 +342,7 @@ private:
     float externalSpawnScale_=1.0f;
     bool lodVisible_=true;
     uint64_t sortedFrames_=0;
+    uint64_t runtimeFallbacks_=0;
     bool sortCameraValid_=false;
     render::float3 sortCameraEye_{},sortCameraForward_{};
     uint64_t compactionFrames_=0;
