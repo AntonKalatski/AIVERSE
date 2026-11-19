@@ -227,3 +227,27 @@ Next bounded stage:
    Preserve logs and exact tested SHA; fix any compiler/test failures before claiming tested.
 2. Add generation-aware geometry chunk sourcing (terrain tiles, vegetation tree proxies, buildings) with a deterministic index and host BVH rebuild/publishing. Only geometry that is actually in a rebuilt BVH affects ray visibility.
 3. Add scrolling/clipmap probe volumes for worlds larger than a single dense <=20,000-probe lattice, then a true GPU compute GI backend (Metal first, Vulkan/other backend fallbacks) plus per-frame GPU timing checks.
+
+
+## Stage 9 - 2026-11-19 - immutable chunked geometry BVH snapshots (source committed; NOT VERIFIED)
+
+Code commits:
+- 19ca1b3a4be81a987d84d8aed0e4becc6e46278b - engine/render/GiChunkedGeometry.h
+- e979be0dd7192f9f794f646b32caf0bcfea4de14 - tests/render/gi_chunked_geometry.cpp
+- 21fd0d3f631566ce74a7261b0abc8a6b2b6d7511 - CMakeLists.txt, gi_chunked_geometry in the standard ALL / CTest suite.
+
+API and architecture:
+- GiChunkedGeometryBuilder::replace(uint64_t stableId, vector<StaticShadowGeometry::Triangle> worldTriangles, vector<float3> albedos) builds a NEW StaticShadowGeometry BVH for that chunk only, rejecting nonfinite geometry, invalid surface IDs and unreasonable triangle counts before replacing the previous chunk. remove(id) removes the chunk; publish() builds a lightweight top-level AABB BVH over all active chunks.
+- GiChunkedGeometrySnapshot is immutable, owns std::shared_ptr<const StaticShadowGeometry> per chunk, provides distance(origin,direction,limit,normal,albedo,optional QueryStats) with closest-hit semantics identical to the existing StaticShadowGeometry reference, findChunk(id), chunkCount() and triangleCount(). Unchanged chunks retain the same triangle-BVH allocation across published snapshots. Old snapshots remain usable while an updated world snapshot is being published; there is no shared mutable BVH.
+- Top-level AABB hierarchy is rebuilt each publish (O(chunk count log chunk count), not an incremental top-level tree). This avoids re-BVHing all triangles on edits, but is not yet a sparse GPU proxy or SDF/voxel cache.
+
+Compatibility: This is a new optional presentation-only module. Existing StaticShadowGeometry, CPU GI, legacy baked lightmaps, AVGIC005, model shaders, ECS saves/network and renderer defaults remain unchanged. The GiDynamicProbeReference/Runtime still accept StaticShadowGeometry, not this new snapshot. **Do not claim chunked geometry is already integrated into the dynamic GI tracer**; that adapter is the next stage.
+
+Test added (source only): gi_chunked_geometry creates two overlapping hit candidates with different albedo, verifies nearest hit, per-chunk BVH pointer sharing after replacement, unchanged old snapshot results, deletion and bounded broad-phase chunk tests with forty irrelevant chunks, plus rejection of nonfinite vertices and negative colors without mutation. It uses always-on AIVERSE_TEST_CHECK.
+
+Validation ACTUALLY executed: source reads + successful GitHub file/commit operations only. **NOT RUN:** native C++ build, CTest, full ./run-tests.sh, GPU shader compilation, hardware timings. No compiler or runtime PASS may be inferred.
+
+Next exact step:
+1. Compile/run gi_chunked_geometry + gi_regional_geometry and all other gi_* CTests in native Debug and Release, repair any compile errors or logic failures, and record tested SHA + logs.
+2. Introduce a narrowly scoped ray-query adapter so GiDynamicProbeReference can consume GiChunkedGeometrySnapshot without changing the public static-geometry call sites. GiDynamicRuntime must retain snapshot ownership or mandate borrowed snapshot lifetime. Demonstrate a door/wall opening changed only one chunk BVH; unaffected probe texture values remain unchanged while local visibility/radiance updates.
+3. Only after regression/performance checks: incremental top-level tree refinements, clipmaps, and GPU tracing/compute with capability checks (Metal first). Keep O(chunks) CPU allocations and mesh ownership out of authoritative ECS simulation.
