@@ -38,6 +38,10 @@ struct ShoreErosionForcing {
     uint32_t waveEnergyPermille=0; // 0..1000, optional host PHYSIS forcing
     uint32_t wetContactPermille=0; // 0..1000, wet bank fraction
     uint32_t bankSlopePermille=0;  // 0..8000, rise/run
+    // Independent from tree/shrub ROOTS. Recovered grass cover, litter and
+    // biological crust shield the topsoil from surface shear/wave splash,
+    // but do NOT give grass physical anchor roots.
+    uint32_t surfaceShieldPermille=0; // 0..1000, stage64 opt-in
 };
 
 struct ShoreErosionSettings {
@@ -78,6 +82,7 @@ inline void validateShoreErosion(const ShoreErosionCell& cell,
        forcing.waveEnergyPermille>1000u ||
        forcing.wetContactPermille>1000u ||
        forcing.bankSlopePermille>8000u ||
+       forcing.surfaceShieldPermille>1000u ||
        settings.maxCutCmPerStep>100u ||
        settings.maxDepositCmPerStep>100u ||
        settings.ratePermille>10000u)
@@ -126,8 +131,9 @@ inline ShoreErosionResult erodeShore(const ShoreErosionCell& source,
         forcing.bankSlopePermille/80u;
     const uint64_t exposure=uint64_t(forcing.wetContactPermille)*
                             (1000u-source.rootBindingPermille);
-    const uint64_t rate=uint64_t(shock)*settings.ratePermille*exposure/
-                        10000000u; // milli-cm/second; no floating-point rate
+    const uint64_t rate=uint64_t(shock)*settings.ratePermille*exposure*
+                        (1000u-forcing.surfaceShieldPermille)/
+                        10000000000ull; // milli-cm/second, pure integer
     const uint64_t requested=rate*dtMs/1000u+
                              source.erosionCarryMilliCm;
     const uint32_t potential=uint32_t(std::min<uint64_t>(
