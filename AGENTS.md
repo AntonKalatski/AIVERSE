@@ -37,13 +37,20 @@ re-reading the entire chat or trusting unverifiable status claims.
 
 **Active Metal batching/performance work (2026-11-17):** Before changing the renderer, Scene viewport, GPU pooling, RTS scene building, or macOS frame loop, read [docs/metal-batching-agent-handoff.md](docs/metal-batching-agent-handoff.md), especially its latest continuation section. It records actual Apple Silicon 2×2/4×4 road-merge tests, CPU profile gains, draw-call visualisation limitations, required flags, the Metal ICB crash gate, and the pending incremental scene-cache work. Distinguish direct/indirect GPU submissions from scene objects and per-material primitives. Keep unsafe experimental ICB disabled by default.
 
-**Incremental static CPU render cache (2026-11-19, opt-in):** Engine renderer
-now has an experimental per-`persistentId` rigid transform cache via
-`AIVERSE_PERSISTENT_CPU_MODEL_CACHE=1`, independent of RTS/FPS. Read
+**Incremental static CPU render cache and packet replay (2026-11-19, opt-in):**
+Engine renderer has experimental per-`persistentId` rigid transform caching
+(`AIVERSE_PERSISTENT_CPU_MODEL_CACHE=1`) and an independent revisioned
+`ModelItem` packet replay mode (`AIVERSE_PERSISTENT_CPU_PACKETS=1`).
+Packet replay additionally requires explicit nonzero
+`ModelDraw::staticPacketRevision` advanced on caller-owned in-place
+appearance changes; no RTS/FPS host is enrolled by default. Read
 [docs/agent-handoffs/incremental-static-model-cache-2026-11-19.md](docs/agent-handoffs/incremental-static-model-cache-2026-11-19.md)
 before touching `Renderer3D::drawModel`, asset reload or static batching.
-Do not enable by default until Mac A/B + correctness; invalidate on in-place
-model/bind-transform mutations; camera culling/LOD/draw submissions remain per frame.
+Do not enable either mode by default until Mac A/B + correctness.
+Invalidate both caches on asset reload and call `Model::markGeometryChanged()`
+after in-place bind/geometry changes. Camera culling, depth, dynamic LOD and
+GPU draw submissions remain per-frame; static packets intentionally decline
+LOD/skin/morph/baked GI, mutable materials and other unsafe states.
 
 
 ## Genre-independent ECS mechanics contract (2026-11-18)
