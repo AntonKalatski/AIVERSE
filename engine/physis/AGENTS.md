@@ -684,3 +684,28 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   Handoff:
   `docs/agent-handoffs/physis-stage56-bounded-posix-journal-2026-11-19.md`.
 
+### Stage 57 — independent PHYSIS journal CI (2026-11-19)
+
+- Added a second, **independent** POSIX CMake entry point at
+  `tests/physis_journal_standalone/CMakeLists.txt`. It builds both
+  real production-header regressions without configuring the full
+  AIVERSE engine, ECS, net, editor, terrain, water or Box3D.
+- `.github/workflows/physis.yml` now has a separate Ubuntu/macOS
+  `physis-journal-standalone` job (configure, compile with strict
+  warnings, CTest, upload logs), alongside the unchanged
+  `physis-native` full integration matrix. The new CMake folder is
+  included in CI trigger paths.
+- **ACTUAL PASS**: local native Linux build USING THE EXACT new
+  CMake source (Git blob
+  `f4e60d18a2db0e8b40fb3d0f996a1cb31145d629`), GCC 14.2,
+  C++20 and -Wall -Wextra -Werror -pedantic: 2/2 CTests pass.
+  All four test/header blob SHAs match repository copies.
+- **NOT RUN**: complete root AIVERSE CMake/CTest, Mac runner,
+  integrated `physis_admin_journal` and `physis_remote_edit`.
+  GitHub Actions on PHYSIS were queued/cancelled when inspected;
+  no completed full-engine PASS. The repo also has an existing
+  PR #25 conflict with its feature base; user previously explicitly
+  requested only main ancestry (main is already included).
+- Handoff:
+  `docs/agent-handoffs/physis-stage57-standalone-ci-2026-11-19.md`.
+

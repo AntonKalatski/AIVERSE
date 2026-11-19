@@ -759,3 +759,21 @@ This does NOT establish a full engine or cross-platform test PASS.
 
 Handoff: `docs/agent-handoffs/physis-stage56-bounded-posix-journal-2026-11-19.md`.
 
+### Stage 57 — standalone PHYSIS journal CI entry point
+
+Run focused native journal tests without configuring the entire engine:
+
+```sh
+cmake -S tests/physis_journal_standalone -B build/physis-journal-standalone -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/physis-journal-standalone --parallel 2
+ctest --test-dir build/physis-journal-standalone --output-on-failure
+```
+
+The standalone CMake compiles real lock and raw POSIX I/O production
+headers from the repository, not mocks. The `physis.yml` Ubuntu/macOS
+workflow includes a separate job for these tests while retaining
+full `physis-native` checks. The exact CMake file and four source
+blobs passed a local Linux GCC 14.2 CMake/CTest 2/2. GitHub Actions
+runners were still queued; do NOT report Ubuntu/macOS CI as passed.
+See `docs/agent-handoffs/physis-stage57-standalone-ci-2026-11-19.md`.
+
