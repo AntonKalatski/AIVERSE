@@ -11578,3 +11578,188 @@ timings and memory separately; do not infer performance
 from CTest wall duration. Keep all experimental ICB
 flags OFF by default; do **not** merge Draft PR #21
 until cross-backend and stress gates succeed.
+
+## Stage 10CD — full production nonuniform VT ICB scene and one-shot verification (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Pre-existing observed native Apple M3 Ultra evidence:**
+Stage 10BT low-level 1/4-source Metal ICB ABI 1/1 PASS;
+Stage 10BV real Renderer3D 4-source Shader Graph ICB 1/1 PASS;
+Stage 10BX real dual disk VT+Shader Graph+ICB coarse/fine/LRU
+1/1 PASS; Stage 10CA missing-page and Repeat/MirrorRepeat
+independent expected-page GPU ICB oracle 1/1 PASS;
+Stage 10CC nonuniform-gutter canonical Metal VT bilinear
+absolute CPU oracle 136 samples (120 seam), max_delta=1
+and 1/1 PASS. **10BX/10CA logs predate the positive-gutter
+shared shader correction and are NOT post-fix regression
+evidence**. All these observations came from user logs,
+not GitHub Actions CI.
+
+**New code commits in this bounded Stage 10CD:**
+- `1c4a3be68f829775c5af4894c1e15f1d265a08e0`
+  adds `tests/render/metal_renderer_graph_vt_gutter_gpu.cpp`
+  (new production Renderer3D + actual compiled Shader Graph
+  with four connected source textures and VT, two independent
+  raw-disk VT streaming domains, 8×8 nonuniform physical
+  page images and one-pixel gutters from adjacent source
+  texels; five direct-vs-real-GPU-ICB image pairs).
+- `ed9a707e0f48102bd60c1b0640fd408cfb384325`
+  updates `CMakeLists.txt` with default-OFF
+  `AIVERSE_TEXTURE_METAL_GRAPH_VT_GUTTER_GPU_TESTS`;
+  executable `aiverse_metal_renderer_graph_vt_gutter_gpu_test`
+  and CTest `metal_renderer_graph_vt_gutter_gpu`.
+  It receives the exact explicit Metal ICB per-command
+  PBR, mixed graph, per-command VT and mixed VT flags
+  in its own isolated test process.
+- `04e9612189b9e10e4a218bce326af405bc8ddd37`
+  adds `tools/texture-rhi-final-verify.sh`, a complete
+  Mac-only fail-fast suite.
+- `86254fca82f0866005fbd2508872f7ca05ede7d4`
+  updates the suite to also run Python VT packing and
+  shader feedback syntax tests when CMake registered.
+- `2f8beaf3e5a3decfd7f461429d97c533354007bd`
+  updates `docs/texture-rhi.md` with architecture,
+  full command and exact proof limits.
+- `2cb703d48fc7957cabd36c4b9e405ed7de961a14`
+  updates `skills/visuals/aiverse-texture-rhi/SKILL.md`
+  for the next agent.
+- This **separate append-only handoff commit** records
+  real current status and precise next actions.
+
+**New full production ICB+gutter fixture architecture:**
+Uses the standard `Renderer3D::beginScene`, `drawModel`,
+`render`, `setGpuAuthoredDrawEnabled` and
+`GpuModelDrawStats`; no test-only render pipeline or
+special game ECS path. It compiles a version-1 Shader
+Graph from JSON using `render::graph::compile`.
+Four sampled graph source textures and the virtual
+sample contribute to actual pixel color. Two materials
+have independent source image handles and distinct
+VT physical atlas, GPU page-table and virtual layer.
+Their physical pages are **8×8** with a **6×6 interior**
+of deterministic nonuniform R/G/B source pixels and
+a one-texel gutter from adjacent source pixel
+coordinates on all four edges. The logical source
+size is 12×6 and the virtual domain contains
+two mip0 pages per material. Both disk streams publish
+their two pinned pages through real
+`VirtualTextureFileStreamer::pump` on the render
+thread. This uses existing production
+`ModelVirtualTextureSampling` and the corrected
+`gfx::kVirtualTextureMSL`, not duplicate shader math.
+
+For U=0.40,0.48,0.50,0.52,0.60 and V=0.40,
+the fixture captures ordinary and GPU ICB full
+RGBA8 frames and demands byte-close (≤2 LSB)
+complete-image parity and distinct material ROIs.
+Each actual GPU ICB must submit one mixed graph+VT
+group with at least two commands and no rejects
+or execution failures. In addition, an independently
+authored CPU **original logical-texel** bilinear
+source oracle predicts channel directions and
+the fractional color progress of the ROI for
+U=0.48,0.50,0.52 relative to two measured
+Renderer3D endpoint ROIs at U=0.40,0.60.
+This endpoint calibration accommodates scene's
+gamma/lighting transfer, while each prediction
+depends only on the original logical image and
+the authored UV (not the physical page table
+or shader inset). Intermediate screen RGB
+ROI error must be ≤3 display levels/channel,
+and the source/scene gradients must be nontrivial.
+The midpoint is sensitive to a half-texel
+virtual page seam misalignment. This is
+independent scene-level **metamorphic** validation,
+not a full absolute rendered RGB reference.
+Stage 10CC independently covers absolute Metal
+canonical bilinear RGBA8 values.
+
+**One-shot `tools/texture-rhi-final-verify.sh`:**
+expects isolated `feature/texture-rhi-unification`
+worktree on real macOS and current sources
+already pulled; accepts `--jobs N` (default 4)
+and optional `--full-engine`. It configures a
+safe OFF-by-default suite; builds/runs **21**
+portable texture/VT/shader-graph CTests plus
+conditional VT packing/shader compiler checks;
+with `--full-engine` it compiles and runs the
+whole nonexperimental AIVERSE CTest suite.
+Separately it configures a real Metal GPU suite
+with all seven GPU acceptance options enabled,
+builds ALL SEVEN target binaries before running
+any CTest, then runs the seven tests
+**sequentially in separate processes**.
+The gate includes 10BT (graph ABI), 10BV
+(graph Renderer3D), post-shader-fix 10BX
+(coarse/fine/LRU), post-fix 10CA (missing,
+wrap), 10CC (136-point absolute bilinear)
+and the new 10CD full guttered graph/ICB test.
+Each stage has strict CTest exit checking and
+explicit success-marker validation to prevent
+stale-binary/false-positive GPU claims.
+Logs at `build/texture-final-logs`;
+`acceptance.txt` with git SHA and
+`result=PASS` appears only when all pass.
+
+**Actual tests performed for Stage 10CD itself:**
+source/API review of proven scene fixture and
+reused production headers, connector-side CMake
+and shell script source registration checks
+only. The independent CPU logical gradient
+and screen reference was reasoned from
+actual source texel values; no new Mac
+C++ compilation, Metal MSL compilation,
+GPU execution, capture/readback, CTest or
+pixel-oracle success was observed.
+A temporary build container has no access
+to Mac Studio's Apple GPU; a remote GitHub
+file copy could not be downloaded due
+restricted network/DNS; no Linux/macOS
+build of the new fixture was performed.
+**Do not promote Stage 10CD or the one-shot
+suite to GPU PASS without the user's
+new native verification log.**
+
+**Next exact command in the isolated Mac Studio worktree**
+(not the primary checkout with unrelated unfinished rebase):
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+bash tools/texture-rhi-final-verify.sh --jobs 4
+# If the user also wants the whole default engine CTest suite:
+# bash tools/texture-rhi-final-verify.sh --jobs 4 --full-engine
+```
+
+**Pass/fail interpretation:** Require the shell command
+to exit 0 and produce
+`build/texture-final-logs/acceptance.txt`
+ending `result=PASS`, including the current
+feature SHA. Independently inspect 7 native GPU
+logs for actual hardware device banners,
+nonzero mixed graph and VT ICB counters,
+the 136-point absolute logical CPU oracle
+`max_delta<=2`, post-fix nonresident/coarse/
+fine/LRU/UV wrap regressions and the full new
+nonuniform scene success marker
+`PASS: production Renderer3D Shader Graph
+nonuniform guttered disk VT mixed Metal GPU
+ICB seam parity`. If the build/test fails,
+inspect the FIRST error, fix it in its own
+source commit and separately append a handoff.
+
+**Open platform/performance validation (not
+completed by a Metal one-shot):**
+Vulkan/GL/GLES/WebGL/mobile hardware shader
+and resource-slot parity; trilinear/anisotropic
+mip transitions with disparate residency;
+large streamed page churn and memory cap
+stress; representative GPU timestamps,
+real scene frame times and FPS. These
+are separate backend/device gates, not
+evidence of an immediate universal
+production-ready Metal ICB.
+PR #21 remains Draft; all experimental
+GPU ICB defaults remain OFF.
