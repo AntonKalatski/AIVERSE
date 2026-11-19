@@ -673,7 +673,15 @@ struct CreatorApp {
                 }
                 bool removedThisFrame=false;
                 if(ImGui::Button("Delete selected target")) {
+                    const std::string removedName=target.name;
                     if(morphDraft->removeTarget(std::size_t(morphTargetIndex))) {
+                        importedPackage.routes.erase(
+                            std::remove_if(importedPackage.routes.begin(),
+                                           importedPackage.routes.end(),
+                                [&](const ShapeRoute& route) {
+                                    return route.targetName==removedName;
+                                }),
+                            importedPackage.routes.end());
                         removedThisFrame=true;
                         morphTargetIndex=0;
                         morphDirty=true;pendingRebuild=true;
