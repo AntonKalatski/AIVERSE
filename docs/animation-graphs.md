@@ -1401,3 +1401,43 @@ visual parity, source reimport/LOD/retarget replay injection,
 sanitizers or benchmarking. This is a source-only implementation
 under the user-requested feature-first workflow. See
 [Stage 144 handoff](agent-handoffs/animation-stage144-named-playback-source-reload-2026-11-19.md).
+
+
+## Stage 145 — independent MotionWeave ECS asset epoch playback rebind
+
+The genre-neutral `MotionWeaveSourceBridge::sync` now records a copied
+`RigHierarchy` (exact node names and parent indices, no old borrowed
+Model pointers) for every presentation source. Changed/new sources
+share one immutable hierarchy snapshot per distinct Model publication
+within a sync. The copied rig metadata is removed with absent sources,
+`forget` and `clear`.
+
+A graph/Model publication change may transfer its named state and
+clip phases through `AnimationPlayerComponent::pendingPlayback` only
+when the logical source generation is unchanged, the old/new copied
+rigs match exactly and the previous graph player is valid. Across a
+Model publication-epoch change, **both epochs must be nonzero** and
+the new Model must be a DIFFERENT C++ object. Same-pointer in-place
+reimport cannot safely snapshot the old graph's potentially mutated
+clip data; it restarts, and changing epoch without recompiling the
+Graph is still rejected.
+
+A new ECS graph player is initialized from the new Model/Graph, then
+attempts optional portable playback restoration. Incompatible phase,
+recovery failure or exception leaves authored default clocks and
+discards the one-shot snapshot. Native rig/IK/contact state, old
+poses, montage events, gameplay root motion or other GPU handles
+never transfer; the independent presentation ECS still has exactly
+one writer, and the bridge itself does not evaluate animation.
+
+**Host CPU lifetime requirement:** the old Model/Graph must remain
+CPU-readable until `sync()` completes because old
+`AnimationGraphInstance::snapshotPlayback` reads the previous
+compiled Graph's clip names/durations. An asset already detached via
+`forget` cannot resume in this stage; a separate opt-in pre-retire
+snapshot API is planned for Stage 146.
+
+[Stage 145 handoff](agent-handoffs/animation-stage145-generic-ecs-source-epoch-playback-2026-11-19.md).
+**NOT RUN:** native compiler/CMake/CTest, current passing CI, GPU/driver
+Metal/Vulkan/GL, worker race/fence failure, visual parity, sanitizers
+or performance benchmarks. All tests remain deferred until feature freeze.
