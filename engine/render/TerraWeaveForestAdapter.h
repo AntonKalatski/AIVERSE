@@ -9,6 +9,7 @@
 #include "engine/render/TerraWeaveImpostorAtlas.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/world/TerraWeaveFlora.h"
+#include "engine/world/TerraWeavePhenology.h"
 #include <cmath>
 #include <cstdint>
 #include <map>
@@ -45,7 +46,20 @@ public:
         models_.emplace(profile.speciesId, std::move(model));
         billboardMaterials_.emplace(profile.speciesId, std::move(impostor.viewMaterials));
         billboards_.emplace(profile.speciesId, std::move(impostor.model));
+        evergreen_[profile.speciesId]=(profile.shape==CrownShape::Conifer);
+        if(phenology_!=CanopyPhenology{})rebuildPhenologyMaterials();
     }
+
+    // Update presentation materials once per season/environment revision,
+    // never once per tree. Call before recording renderer submissions.
+    // The same shared models, atlas images and per-species batching survive.
+    void setPhenology(CanopyPhenology value) {
+        validateCanopyPhenology(value);
+        if(value==phenology_)return;
+        phenology_=value;
+        rebuildPhenologyMaterials();
+    }
+    const CanopyPhenology& phenology() const {return phenology_;}
 
     size_t prototypeCount() const { return models_.size(); }
     render::Model* prototype(uint32_t speciesId) const {
@@ -135,7 +149,9 @@ public:
                 render::ModelDraw draw;
                 draw.model = model;
                 if (batch.lod == TreeLOD::Impostor) {
-                    const auto& variants = billboardMaterials_.at(batch.speciesId);
+                    const auto& variants = phenology_==CanopyPhenology{} ?
+                        billboardMaterials_.at(batch.speciesId) :
+                        seasonalBillboardMaterials_.at(batch.speciesId);
                     const uint32_t azimuth = camera
                         ? selectArborImpostorAzimuth(
                             instance.yawMilliDegrees, instance.xCm, instance.zCm,
@@ -143,6 +159,8 @@ public:
                             static_cast<uint32_t>(variants.size()))
                         : 0u;
                     draw.materials = &variants[azimuth]; // stable per-species override
+                } else if(phenology_!=CanopyPhenology{}) {
+                    draw.materials=&seasonalNearMaterials_.at(batch.speciesId);
                 }
                 draw.world = render::mat4::translate(relative) *
                              render::mat4::rotateY(yaw) *
@@ -180,6 +198,47 @@ public:
     }
 
 private:
+    void rebuildPhenologyMaterials() {
+        seasonalNearMaterials_.clear();
+        seasonalBillboardMaterials_.clear();
+        if(phenology_==CanopyPhenology{})return;
+        const auto tint=[this](render::Material& m,uint32_t coverage) {
+            m.baseColor.x=std::clamp(m.baseColor.x*
+                (float(phenology_.tintRPermille)*0.001f),0.0f,1.0f);
+            m.baseColor.y=std::clamp(m.baseColor.y*
+                (float(phenology_.tintGPermille)*0.001f),0.0f,1.0f);
+            m.baseColor.z=std::clamp(m.baseColor.z*
+                (float(phenology_.tintBPermille)*0.001f),0.0f,1.0f);
+            if(coverage<1000u){
+                m.baseColor.w*=float(coverage)*0.001f;
+                m.alpha=render::AlphaMode::Blend;
+                m.transparent=true;
+                m.castShadow=false; // do not cast fully opaque summer leaf shadows
+            }
+        };
+        for(const auto& [id,model]:models_) {
+            auto materials=model->materials;
+            if(materials.size()>1)
+                tint(materials[1],canopyCoverPermille(
+                    phenology_,evergreen_.at(id)));
+            seasonalNearMaterials_.emplace(id,std::move(materials));
+        }
+        // Impostors have a combined bark+foliage image in one material.
+        // Their fading therefore affects the entire billboard, unlike
+        // near geometry where bark remains opaque. No new GPU atlas.
+        for(const auto& [id,variants]:billboardMaterials_) {
+            auto seasonal=variants;
+            const uint32_t coverage=canopyCoverPermille(
+                phenology_,evergreen_.at(id));
+            for(auto& materials:seasonal)
+                if(!materials.empty())tint(materials[0],coverage);
+            seasonalBillboardMaterials_.emplace(id,std::move(seasonal));
+        }
+    }
+    CanopyPhenology phenology_{};
+    std::map<uint32_t,bool> evergreen_;
+    std::map<uint32_t,std::vector<render::Material>> seasonalNearMaterials_;
+    std::map<uint32_t,std::vector<std::vector<render::Material>>> seasonalBillboardMaterials_;
     std::map<uint32_t, std::unique_ptr<render::Model>> models_;
     std::map<uint32_t, std::unique_ptr<render::Model>> billboards_;
     // Lifetime of these vectors covers all queued ModelDraws until render().
