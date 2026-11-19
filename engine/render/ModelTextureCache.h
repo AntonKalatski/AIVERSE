@@ -14,6 +14,35 @@ public:
     // Read-only GPU lease lookup for speculative Model imports. Returns
     // false without allocating a GPU texture or mutating the shared cache.
     bool borrowResident(Image& image) const;
+
+    // Phase 1: prepare all GPU-cache nodes and shared-lease control blocks
+    // without altering resident GPU cache entries or Model ownership.
+    // Phase 2: commit moves preallocated map nodes and switches scratch
+    // Models to shared leases. Replaced dedicated duplicate textures are
+    // returned to the caller for normal GPU-fenced retirement.
+    class PreparedGpuPromotion final {
+        friend class ModelTextureCache;
+    public:
+        PreparedGpuPromotion(const PreparedGpuPromotion&)=delete;
+        PreparedGpuPromotion& operator=(const PreparedGpuPromotion&)=delete;
+        PreparedGpuPromotion(PreparedGpuPromotion&&)=default;
+        PreparedGpuPromotion& operator=(PreparedGpuPromotion&&)=default;
+        size_t newSharedTextures() const noexcept {return pending_.size();}
+        size_t bindings() const noexcept {return bindings_.size();}
+        // Caller MUST enqueue returned redundant GPU textures into a
+        // persistent rollback pool; never destroy them immediately.
+        std::vector<Image> commit();
+    private:
+        explicit PreparedGpuPromotion(ModelTextureCache& cache):cache_(&cache){}
+        struct Binding {Image* modelImage=nullptr; Image* sharedOwner=nullptr;};
+        ModelTextureCache* cache_=nullptr;
+        std::map<std::string,Image> pending_;
+        std::vector<Binding> bindings_;
+        std::vector<Image> redundant_;
+        bool committed_=false;
+    };
+    PreparedGpuPromotion prepareGpuPromotion(const std::vector<Model*>& models);
+
     void shutdown(gfx::Device& dev);
     void trim(gfx::Device& dev);
     // Render-thread source revision. Discards only its CPU decode; a new
@@ -57,6 +86,8 @@ private:
     std::map<std::string, Image> gpu_;
     // Render thread only: upload() and invalidateSource() use this map.
     std::map<std::string, uint64_t> sourceRevisions_;
+    // Must be identical for normal and speculative GPU ownership paths.
+    std::string gpuKey(const Image& image) const;
     size_t bytes_ = 0;
     std::atomic<size_t> decodedCount_{0};
     uint64_t clock_ = 0;
