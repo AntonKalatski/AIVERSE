@@ -85,6 +85,7 @@ public:
                             ed.lazyEditorAssetsEnabled() ? "по требованию" : "отключена");
         ui::section(ICON_REGIONS, "PRISMA · GPU resource retirement");
         const auto post = ed.prisma().retirementStats();
+        const auto memory = ed.prisma().memoryStats();
         const auto motion = ed.renderer().motionRetirementStats();
         const auto viewport = ed.viewportRetirement().stats(ed.device());
         const auto objects = ed.gpuResourceRetirement().stats(ed.device());
@@ -105,6 +106,39 @@ public:
                     double(post.graphLiveKnownBytes) / mib,
                     double(post.graphPendingKnownBytes) / mib,
                     post.graphUnknownTextures);
+        ImGui::Text("PRISMA GPU resident: %.2f MiB минимум / %zu текстур (%zu без размеров)",
+                    double(memory.liveKnownBytes) / mib,
+                    memory.liveTextures, memory.unknownTextures);
+        ImGui::Text("Кеши разрешений: %.2f MiB / %zu кешей (не используются %zu: %.2f MiB)",
+                    double(memory.sharedSizeKnownBytes) / mib, memory.activeSizeCaches,
+                    memory.unreferencedSizeCaches,
+                    double(memory.unreferencedSizeKnownBytes) / mib);
+        ImGui::Text("История камер: %.3f MiB  ·  LUT/graph input: %.2f MiB",
+                    double(memory.viewHistoryKnownBytes) / mib,
+                    double(memory.otherLiveKnownBytes) / mib);
+        if (ImGui::TreeNode("PRISMA: память по камерам (без двойного подсчёта)")) {
+            if (memory.views.empty())
+                ImGui::TextDisabled("Сейчас нет камер с активным постпроцессингом");
+            for (const auto& view : memory.views) {
+                const char* name = view.viewId == 1 ? "Scene" :
+                                   view.viewId == 2 ? "Game" : "Custom";
+                ImGui::BulletText("%s #%llu (%d x %d)  ·  своя история %.3f MiB",
+                    name, (unsigned long long)view.viewId,
+                    view.width, view.height,
+                    double(view.ownedHistoryKnownBytes) / mib);
+                ImGui::Indent();
+                ImGui::TextDisabled("Общий кеш размера: %.2f MiB / %zu текстур, совместно с %zu камерами",
+                    double(view.sharedKnownBytes) / mib,
+                    view.sharedTextures, view.sharedSizeViews);
+                ImGui::TextDisabled("RenderGraph: %.2f MiB live (%zu) + %.2f MiB pending (%zu); неизвестно: %zu",
+                    double(view.graphLiveKnownBytes) / mib, view.graphLiveTextures,
+                    double(view.graphPendingKnownBytes) / mib, view.graphPendingTextures,
+                    view.unknownTextures);
+                ImGui::Unindent();
+            }
+            ImGui::TextDisabled("Общие кеши приведены справочно и НЕ складываются по камерам.");
+            ImGui::TreePop();
+        }
         ImGui::Text("Viewport Scene / Game / FX: %zu fenced + %zu без fence",
                     viewport.fenced,viewport.unfenced);
         ImGui::Text("GPU FX/ShaderGraph: %zu pipeline, %zu shader, %zu buffers, %zu textures, %zu bundles",
@@ -127,7 +161,8 @@ public:
             ed.requestGpuRetirementFlush();
         ImGui::SameLine();
         ImGui::TextDisabled("в начале следующего кадра; может задержать отрисовку");
-        ImGui::TextDisabled("Оценка — только ожидающие ресурсы. Активные textures, mip-цепочки, драйвер и RenderGraph учитываются частично.");
+        ImGui::TextDisabled("Pending — удерживаемая память до GPU fence; resident — активные PRISMA ресурсы, НЕ прибавляйте к pending повторно.");
+        ImGui::TextDisabled("Оценки без mip, драйверной аллокации и вложенных ShaderGraph/Portrait bundle bytes; это НЕ полный VRAM.");
         if (ed.lazyEditorAssetsEnabled() && ImGui::Button("Освободить неиспользуемые модели"))
             ed.reclaimEditorAssets(true);
         ui::section(ICON_REGIONS, "Карта");
