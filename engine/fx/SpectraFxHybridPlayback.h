@@ -258,9 +258,24 @@ public:
     // Camera-aware update used by native clients. The no-camera overload
     // remains for standalone hosts and preserves LOD settings from last view.
     void updateGpu(float dt,render::float3 cameraEye) {
+        updateGpu(dt,cameraEye,{0,0,0});
+    }
+    // Sorted alpha requires both camera position AND forward direction.
+    // The two-argument legacy overload supplies no direction; such effects
+    // safely switch to their authored CPU fallback rather than guess depth.
+    void updateGpu(float dt,render::float3 cameraEye,
+                   render::float3 cameraForward) {
         lastCameraEye_=cameraEye;
-        for(auto& pair:active_) pair.second->updateLod(cameraEye);
-        for(auto& shot:oneShots_) shot.emitter->updateLod(cameraEye);
+        for(auto& pair:active_) {
+            pair.second->updateLod(cameraEye);
+            if(render::length(cameraForward)>1e-6f)
+                pair.second->setSortView(cameraEye,cameraForward);
+        }
+        for(auto& shot:oneShots_) {
+            shot.emitter->updateLod(cameraEye);
+            if(render::length(cameraForward)>1e-6f)
+                shot.emitter->setSortView(cameraEye,cameraForward);
+        }
         updateGpu(dt);
     }
 
