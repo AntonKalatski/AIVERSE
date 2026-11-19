@@ -135,21 +135,32 @@ bool vmEvaluate(device const VmPayload& vm,VmStatement s,Particle p,
     return true;
 }
 void vmRun(device const VmPayload& vm,uint stage,thread Particle& p,
-           VmParams params,thread VmAttributes& attrs,float dt) {
+           VmParams params,thread VmAttributes& attrs,float dt,
+           device atomic_uint* vmErrors) {
     if(vm.abiVersion!=1u || vm.statementCount>64u ||
-       vm.instructionCount>512u)return;
+       vm.instructionCount>512u) {
+        atomic_fetch_add_explicit(vmErrors,1u,memory_order_relaxed);
+        return;
+    }
     for(uint i=0u;i<vm.statementCount;++i) {
         const VmStatement s=vm.statements[i];
         if(s.stage!=stage)continue;
         float value=0.0f;
-        if(!vmEvaluate(vm,s,p,params,attrs,dt,value))continue;
+        if(!vmEvaluate(vm,s,p,params,attrs,dt,value)) {
+            atomic_fetch_add_explicit(vmErrors,1u,memory_order_relaxed);
+            continue;
+        }
         const float before=vmRead(s.target,p,params,attrs,dt);
         float next=value;
         if(s.action==1u)next=before+value;
         else if(s.action==2u)next=before+value*dt;
         else if(s.action==3u)next=before*value;
-        else if(s.action!=0u)continue;
+        else if(s.action!=0u) {
+            atomic_fetch_add_explicit(vmErrors,1u,memory_order_relaxed);
+            continue;
+        }
         if(isfinite(next) && fabs(next)<=1.0e7f)vmWrite(s.target,p,attrs,next);
+        else atomic_fetch_add_explicit(vmErrors,1u,memory_order_relaxed);
     }
 }
 uint packColor(float4 c) {
@@ -168,7 +179,8 @@ kernel void cs_main(uint2 gid [[thread_position_in_grid]],
                      constant Uniforms& u [[buffer(8)]],
                      device VmParams* stateParams [[buffer(9)]],
                      device const VmPayload* vmProgram [[buffer(10)]],
-                     device VmAttributes* stateAttributes [[buffer(11)]]) {
+                     device VmAttributes* stateAttributes [[buffer(11)]],
+                     device atomic_uint* vmErrors [[buffer(12)]]) {
     uint id=gid.x;
     if(u.meta.x==0u) {
         if(id>=u.meta.z)return;
@@ -177,7 +189,7 @@ kernel void cs_main(uint2 gid [[thread_position_in_grid]],
             Particle p=spawns[id];
             VmParams params=seedParams[id];
             VmAttributes attrs{}; // no leakage from recycled physical slot
-            vmRun(vmProgram[0],0u,p,params,attrs,0.0f);
+            vmRun(vmProgram[0],0u,p,params,attrs,0.0f,vmErrors);
             particles[slot]=p;
             stateParams[slot]=params;
             stateAttributes[slot]=attrs;
@@ -212,7 +224,7 @@ kernel void cs_main(uint2 gid [[thread_position_in_grid]],
         else {
             VmParams params=stateParams[id];
             VmAttributes attrs=stateAttributes[id];
-            vmRun(vmProgram[0],1u,p,params,attrs,dt);
+            vmRun(vmProgram[0],1u,p,params,attrs,dt,vmErrors);
             stateAttributes[id]=attrs;
         }
         particles[id]=p;
