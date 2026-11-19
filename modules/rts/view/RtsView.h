@@ -187,6 +187,29 @@ public:
         if (textureCache_) textureCache_->appendOwnedGpuMemory(counter);
         return counter.stats();
     }
+    // Asset-owner view includes model caches, terrain chunk/detail
+    // renderer, and planet renderer (all separate owners). An additive
+    // lower bound, not physical device VRAM. Draw-item borrowings excluded.
+    render::GpuOwnedMemoryStats ownedPresentationGpuMemoryStats(
+            const gfx::Device& device) const {
+        auto result=ownedModelGpuMemoryStats(device);
+        const auto merge=[&](const render::GpuOwnedMemoryStats& owner) {
+            result.textureKnownBytes=
+                render::GpuOwnedMemoryCounter::saturatingAdd(
+                    result.textureKnownBytes,owner.textureKnownBytes);
+            result.bufferKnownBytes=
+                render::GpuOwnedMemoryCounter::saturatingAdd(
+                    result.bufferKnownBytes,owner.bufferKnownBytes);
+            result.textures+=owner.textures;
+            result.buffers+=owner.buffers;
+            result.unknownTextures+=owner.unknownTextures;
+            result.unknownBuffers+=owner.unknownBuffers;
+            result.multiVersionBuffers+=owner.multiVersionBuffers;
+        };
+        if (hasTerrain_) merge(terrain_.ownedGpuMemoryStats());
+        if (planets_.active()) merge(planets_.ownedGpuMemoryStats());
+        return result;
+    }
     bool typeLoaded(uint16_t type) const { return type < loadedTypes_.size() && loadedTypes_[type]; }
     void loadType(uint16_t type);
     void trimTypes(const std::vector<bool>& keep, bool compact = false);
