@@ -1044,3 +1044,45 @@ under the feature-first workflow. Leave PR #24 Draft; append exact SHAs
 to `docs/terrain/AGENT_HANDOFF.md` and provide QA cases for budget=0,
 budget near one cluster, invalid settings, 4/8 sparse runs, dense
 fallback and active/outgoing aggregate accounting.
+
+## Stage 37 — CPU wind shadow residency for inactive Horizon GPU regions
+
+Use `engine/world/TerraWeaveWindShadowCachePolicy.h`:
+`HorizonWindShadowCachePolicy{maxCachedShadowBytes=16MiB}` with validated
+range [0,16MiB]. Set via
+`WorldScene::setVegetationHorizonWindShadowCachePolicy(policy)` or direct
+`TerraWeaveHorizonScene::setWindShadowCachePolicy(policy)`; query the
+matching getter. The policy affects **only inactive GPU LRU cache entries**.
+Active and outgoing fade overlays continue to be owned with their GPU
+models. It is independent of Stage36 `HorizonWindUploadPolicy`
+(the latter limits *GPU upload bandwidth per update*, not CPU cache).
+
+A per-region `HorizonForestWindOverlay` is the authoritative CPU reference
+to **already uploaded** PHYSIS/procedural RGB attributes. Do not clear its
+vertex or centre vectors while retaining the GPU model: partial RHI
+updates would compare against incorrect colours, and no generic device
+readback exists. `HorizonGpuRegionCache::trimWindShadowBytes` therefore
+releases the **whole oldest shadow-bearing cached GPU model** with its
+CPU overlay until the capacity sum fits, never touching the live active
+or outgoing model. `retain` takes a backward-compatible optional final
+CPU wind cache budget argument; `TerraWeaveHorizonScene::update` also
+trims the LRU after policy changes. Actual RHI release runs only on the
+device owner thread; setter merely stores a validated policy.
+
+On revisit of an evicted region, the existing worker/bake/archive +
+render-owner upload naturally restores the full model and synchronised
+CPU wind overlay. Do not claim an instant GPU cache hit or a GPU-only
+colour restoration in this case. Unaffected cached regions still use
+the normal fast `take` path. `HorizonRuntimeStats` adds
+`gpuCachedWindShadowBytes` (inactive shadow vector capacities) and
+`gpuWindShadowBudgetEvictions` (specific whole-region evictions); the
+general GPU cache evictions counter includes them. Do not count full
+CPU HorizonBake caches, active region or outgoing models as part of the
+inactive wind-shadow capacity.
+
+**Source code committed, native/Metal/GL/Vulkan tests NOT RUN** by
+owner request. Future tester checks budgets 0/small/16MiB, oldest LRU
+selection, no-forest entries, active/crossfade preservation, camera
+return path, source-generation changes and the Stage29 model fixture.
+Keep PR #24 Draft until full validation; every stage needs its own
+accurate handoff with implementation SHA and next step.
