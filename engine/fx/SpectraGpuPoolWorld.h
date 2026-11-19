@@ -46,6 +46,7 @@ struct PoolLoadSheddingPolicy {
     uint32_t reserveManualBursts=16;
     uint32_t estimatedParticleSoftLimit=0;
     size_t maxReadbackBytesInFlight=0;
+    uint32_t recoverBelowPercent=85; // [1,100] hysteresis; < threshold * percent/100
 };
 
 struct PoolWorldBudgets {
@@ -124,6 +125,8 @@ struct PoolWorldStats {
     uint64_t pressureSkipped=0; // additional dropped automatic births
     uint32_t continuousFrameBudget=0;
     bool pressureActive=false;
+    bool particlePressureLatched=false, readbackPressureLatched=false;
+    uint64_t pressureHeldFrames=0;
     uint32_t sourceCapacity=0;
     uint64_t selectiveKillRequests=0;
     uint32_t submittedBursts = 0, rejectedBursts = 0, frameBursts = 0;
@@ -308,6 +311,8 @@ private:
     // several GPU groups request checkpoint captures in the same cadence.
     size_t nextGroupStart_ = 0;
     size_t nextContinuousSource_ = 0; // rotate start to avoid slot-order starvation
+    bool particlePressureLatched_=false;
+    bool readbackPressureLatched_=false;
     bool initialized_ = false, frameOpen_ = false, stepped_ = false, drawn_ = false;
     std::string reason_;
 };
