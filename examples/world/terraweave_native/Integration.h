@@ -6,6 +6,7 @@
 #include "engine/world/TerraWeaveNativeDriver.h"
 #include "engine/world/TerraWeaveShorelineRaster.h"
 #include "engine/world/TerraWeaveSedimentEcs.h"
+#include "engine/world/TerraWeaveFlowObstructionEcs.h"
 #include <functional>
 #include <string>
 #include <utility>
@@ -33,12 +34,14 @@ inline void registerSystems(
     // between river/lake bodies; absent components add no runtime junctions.
     water.enableConfluences=true;
     water.enableCascades=true;
+    water.enableFlowObstructions=true;
     // This example gives bank cells explicit WaterProbe positions. A native
     // game that uses Transform-driven probes may choose true instead.
     water.probeFromTransform=false;
     lib::nereid::registerNativeWaterPipeline(sim,"nereid",water);
     terraweave::registerTerraWeaveBankVertexPersistence(sim);
     terraweave::registerAutoShorelineBankPersistence(sim);
+    terraweave::registerTerraWeaveObstructionPersistence(sim);
     terraweave::registerNereidSedimentEcsPersistence(sim);
     terraweave::registerTerraWeaveAuthorityResource(sim,cfg);
     // NEREID calculates local bank erosion; transport then conserves
