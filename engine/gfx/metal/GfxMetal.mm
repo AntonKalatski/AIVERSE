@@ -1102,14 +1102,17 @@ public:
     }
 
     bool supportsMultiDrawIndirect() const override {
-        // Both Metal ICB paths are deliberately opt-in. CPU Multi-Draw is
-        // independently testable without enabling GPU-authored commands.
-        // Historic AIVERSE_EXPERIMENTAL_METAL_ICB continues to enable the
-        // CPU path for old A/B scripts; neither flag is a production default.
+        // Independent opt-ins: explicit CPU MDI, legacy experimental ICB,
+        // or the renderer's opt-in three-way AUTO policy. AUTO needs to query
+        // CPU-MDI availability to train its CPU fallback; it must NOT enable
+        // compute-authored GPU ICB (supportsGpuEncodedIcb has stricter flags).
+        // No path is enabled for an ordinary non-AUTO production process.
         const char* cpu = std::getenv("AIVERSE_METAL_CPU_MDI");
         const char* experimental = std::getenv("AIVERSE_EXPERIMENTAL_METAL_ICB");
+        const char* autoBatch = std::getenv("AIVERSE_BATCH_AUTO");
         if (!(cpu && std::strcmp(cpu, "1") == 0) &&
-            !(experimental && std::strcmp(experimental, "1") == 0)) return false;
+            !(experimental && std::strcmp(experimental, "1") == 0) &&
+            !(autoBatch && std::strcmp(autoBatch, "1") == 0)) return false;
 #if TARGET_OS_IPHONE
         if (@available(iOS 14.0, *)) return [device_ supportsFamily:MTLGPUFamilyApple3];
 #else
