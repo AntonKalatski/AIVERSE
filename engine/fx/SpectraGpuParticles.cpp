@@ -152,6 +152,11 @@ bool ComputeParticles::initGpu() {
                                 "SpectraFX GPU VM live parameters");
     gpuVmPayload_=buffer(*device_,gfx::BufferType::Storage,sizeof(vmPayload),
                          &vmPayload,"SpectraFX GPU VM validated program");
+    std::vector<ProgramAttributes> initialAttributes(cap);
+    stateAttributes_=buffer(*device_,gfx::BufferType::Storage,
+                            cap*sizeof(ProgramAttributes),
+                            initialAttributes.data(),
+                            "SpectraFX GPU VM particle custom attributes");
     liveSlots_=buffer(*device_,gfx::BufferType::Storage,cap*sizeof(uint32_t),
                       nullptr,"SpectraFX GPU live-slot gather map");
     const uint32_t zero=0;
@@ -213,7 +218,7 @@ bool ComputeParticles::initGpu() {
     if(!states_.valid()||!seeds_.valid()||!slots_.valid()||!liveSlots_.valid()||
        !aliveCounter_.valid()||!gpuDrawArgs_.valid()||
        !seedProgramParams_.valid()||!stateProgramParams_.valid()||
-       !gpuVmPayload_.valid()||!vertices_.valid()||
+       !gpuVmPayload_.valid()||!stateAttributes_.valid()||!vertices_.valid()||
        !indices_.valid()||!texture_.valid()||!vertexShader_.valid()||!pipeline_.valid()) {
         reason_="GPU resource/pipeline allocation failed: "+device_->lastError();
         return false;
@@ -227,7 +232,8 @@ bool ComputeParticles::initGpu() {
     aliveSlots_.reserve(cap);
     stats_.gpuBytes=size_t(cap)*(sizeof(ParticleState)*2+2*sizeof(uint32_t)+4*sizeof(Vertex)+6*sizeof(uint16_t))
                     +size_t(n*n*4)+sizeof(zero)+sizeof(zeroArgs)
-                    +size_t(cap)*2*sizeof(ProgramParams)+sizeof(vmPayload);
+                    +size_t(cap)*2*sizeof(ProgramParams)+sizeof(vmPayload)
+                    +size_t(cap)*sizeof(ProgramAttributes);
     return true;
 }
 void ComputeParticles::releaseGpu() {
@@ -244,6 +250,7 @@ void ComputeParticles::releaseGpu() {
         if(seedProgramParams_.valid())device_->destroyBuffer(seedProgramParams_);
         if(stateProgramParams_.valid())device_->destroyBuffer(stateProgramParams_);
         if(gpuVmPayload_.valid())device_->destroyBuffer(gpuVmPayload_);
+        if(stateAttributes_.valid())device_->destroyBuffer(stateAttributes_);
         if(vertices_.valid())device_->destroyBuffer(vertices_);
         if(indices_.valid())device_->destroyBuffer(indices_);
         if(texture_.valid())device_->destroyTexture(texture_);
@@ -252,6 +259,7 @@ void ComputeParticles::releaseGpu() {
     vertices_={};indices_={};texture_={};liveSlots_={};
     aliveCounter_={};gpuDrawArgs_={};gpuIndirectActive_=false;
     seedProgramParams_={};stateProgramParams_={};gpuVmPayload_={};
+    stateAttributes_={};
     ages_.clear();freeSlots_.clear();pendingStates_.clear();pendingSlots_.clear();
     pendingProgramParams_.clear();programStateCache_.clear();cpuHandles_.clear();
     programParamsDirty_=false;
@@ -286,6 +294,9 @@ void ComputeParticles::clear() {
     programStateCache_.assign(cap,ProgramParams{});
     device_->updateBuffer(stateProgramParams_,programStateCache_.data(),
                           programStateCache_.size()*sizeof(ProgramParams));
+    const std::vector<ProgramAttributes> emptyAttributes(cap);
+    device_->updateBuffer(stateAttributes_,emptyAttributes.data(),
+                          emptyAttributes.size()*sizeof(ProgramAttributes));
     programParamsDirty_=false;
     ages_.assign(cap,-1.f);
     freeSlots_.clear();
@@ -448,6 +459,7 @@ bool ComputeParticles::step(float dt) {
     device_->setComputeBuffer(7,seedProgramParams_);
     device_->setComputeBuffer(9,stateProgramParams_);
     device_->setComputeBuffer(10,gpuVmPayload_);
+    device_->setComputeBuffer(11,stateAttributes_);
     Uniforms u{};
     u.gravityDt={desc_.gravityY,dt,desc_.drag,0};
     u.rightSize={right_.x,right_.y,right_.z,desc_.size};
