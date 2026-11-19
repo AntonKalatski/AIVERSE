@@ -142,6 +142,18 @@ triangle/terrain decode, SpatialWorld and streaming scheduler.
   scene worlds documentation.
 - `d0c9a728f931d289ea1d89b6e6cd411a601dd6a3` —
   ECS/static prefab integrated documentation.
+- `bdd7f3319ef3c28044a49679465b126e5c1be424` — initial Stage 7 handoff.
+- `aa44beb47965f32be06b7390fea918a626b37813` — capacity/invalid namespace range tests.
+- `0025b2781d3df18ad3f83021c3e618d31ddb7ddd` — agent skill instructions.
+- `8b0629c3e64359cacde7237b86a6d9ed888f67db` — Stage 6 handoff continuation.
+- `760c9094dca6162b13cfb7a067480e7526d47958` — direct cstdint header include.
+- `8dfb868a58022a0a930d8cf3305a744a98ad6ca4` — Stage 7 initial final handoff.
+- `097316389d312349fb07ddfa2182a9c47788034a` — optional collision layout v10 persistence binding.
+- `628c7f7c29dab5251fa9b61c915edd9bda642831` — native save, rollback and bad-layout rejection CTest.
+- `b0ee7d05fa19e2c3200a917dff582884cf0848c9` — collision layout persistence docs.
+- `7ed44f9d8c00425f8e254ad8918f63621a90bb82` — scoped agent persistence rule.
+- `f6b1f146d0cbf60da54b02163b3b4b21cc0502ee` — integrated docs note.
+
 - `bdd7f3319ef3c28044a49679465b126e5c1be424` —
   initial Stage 7 agent handoff.
 - `aa44beb47965f32be06b7390fea918a626b37813` —
@@ -157,6 +169,28 @@ The handoff itself is a later commit. Use `git rev-parse HEAD`
 after updating the Mac Studio worktree. No native Stage 7 result
 was observed, and no actual physical frame/latency benchmark
 was collected here.
+
+## Stage 7 collision layout persistence
+
+An optional new `engine/scene/SceneCollisionPersistence.h` implements
+`CollisionNamespaceBinding`, `registerCollisionNamespacePersistence`,
+`bindCollisionNamespaces` and `validateCollisionNamespaces`.
+Register and bind during GameModule::setup; only the layout's deterministic
+fingerprint enters the native v10 save/checksum, not lease/stream
+runtime state. Hosts must verify the same layout after restore before
+simulation resumes.
+
+The collision-bridge CTest now includes a true `Simulation` fixture
+and checks native v10 binary save/deserialize, checksum parity, COW
+rollback, and rejection of the same scene-instance names with different
+namespace capacities. These checks are in source but remain **unrun**
+until the final combined Mac Studio gate.
+
+Targeted `smoke` currently contains **15** CTests; `extended`
+contains **24**. The requested final `all` mode builds every default
+native target, executes the entire registered CTest suite once, and runs
+the 9 independent process RSS/CPU benchmark samples. Optional
+graphics/Metal configurations remain separate.
 
 ## Final one-shot test gate (Stage 5/6/7 together)
 
