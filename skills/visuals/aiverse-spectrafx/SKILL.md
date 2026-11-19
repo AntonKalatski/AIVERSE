@@ -615,6 +615,50 @@ VM Payload version 1. No native build, CTest, Metal shader compile,
 pixel verification or performance benchmark has run for this
 stage by user's explicit deferral. Keep a **separate Stage-26 handoff commit** and record NOT RUN, not PASS.
 
+## Opt-in GPU particle material shader graphs (Stage 27)
+
+The native Metal-only GPU sprite backend now consumes a strict
+subset of the **existing** `render::graph::compile(...,"particle")`
+material graph, not a new custom shader language. Opt in using
+`GraphRuntimeOptions::gpuMaterial=true` or
+`ComputeEmitterDesc::gpuMaterial=true`, independently of the
+`gpuProgram` and `gpuIndirect` flags.
+
+Place a valid `shaderGraph` object and optional four-source
+`graphInputs` array on a simple additive soft-sprite output.
+Allowed source names: age/lifetime/zero, attribute0..7, param0..7.
+CPU UID-derived `random` is **not** GPU-equivalent and is
+rejected; a default particleRandom graph node must have an
+explicit compatible graphInputs mapping. The GPU material
+compiler supports one `color` output, at most 32 bounded
+pure-fragment nodes, no external textures or vertex graph
+and only a restricted set of mathematical/colour ops.
+All other graphs use the exact original CPU effect,
+including its shaderGraph, graphInputs and particleProgram;
+`RequireGpu` must refuse unsupported content.
+
+GPU compute storage slot **13** contains four mapped source
+indices; the particle compute kernel writes their values to
+the preexisting quad vertex float4 at offset 24. Only a
+GPU material pipeline needs vertex attribute 3; default
+GPU particle sprite rendering continues using the unchanged
+three-attribute pipeline. Vertex size stays 40 bytes and
+persistent ParticleState stays 64 bytes.
+
+Use example
+`examples/spectrafx/gpu_vm_material_inputs_v2.vfx.json`
+to bind a named instance input to `attribute0` and
+multiply the base sprite colour by it in the particle
+shaderGraph. The graph compiler generates matching
+GLSL/MSL fragments from trusted templates; do not interpolate
+user-provided shader source.
+
+Native compile, CTest, actual Metal MSL, performance and
+CPU/GPU visual parity are NOT RUN by explicit user request.
+Do not mark the feature shipping-ready until these pass.
+After this bounded stage append a separate Stage-27 handoff
+to the canonical running handoff file.
+
 ## Boundaries and tests
 
 VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
