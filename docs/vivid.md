@@ -590,3 +590,10 @@ VIVID Creator now includes an imported sparse morph authoring panel. Numeric sou
 Creators may add/delete named corrective morph targets, bind one to any of the existing 52 ARKit semantic channels, adjust gains via the existing imported route UI, and save both morph sidecars and manifests. Deletion removes dangling mappings; target undo does not currently restore those mappings.
 
 **Actual native build/CTest/Metal screenshots NOT RUN** for these additions. The panel edits numeric offsets by vertex ID; this is not yet a viewport brush/cage sculpt, rig joint editor, authored facial LOD pipeline or real MetaHuman-quality DCC tooling. See `docs/agent-handoffs/vivid.md` Stages 6V–6W for exact commits and remaining work.
+
+
+## Stage 6X — imported facial sculpt falloff brush (2026-11-19)
+
+VIVID Creator's imported sparse morph editor now supports a source-space smooth falloff brush anchored to a selected original mesh vertex ID. A stroke applies position offsets to nearby source vertices, with bounded radius/intensity, recompiles the sparse morph once, supports undo/redo as one edit, and exports to the existing open version 1 morph JSON sidecar. Named corrective target creation/deletion and 52-channel ARKit route authoring are also available.
+
+This is **numeric/source-ID brush authoring**, not full 3D viewport picking, geodesic brush sculpting or topology-aware symmetry. The artist's original mesh stays unchanged. Stage 6V–6X source and new test assertions are committed, but **C++ build, CTest, Metal GUI and production asset verification have NOT RUN**. See `docs/agent-handoffs/vivid.md` for source commits and remaining work.
