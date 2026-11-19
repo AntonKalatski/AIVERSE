@@ -21,8 +21,10 @@ and run the full one-shot acceptance suite before integration.
 
 
 This document describes the source implementation in
-`feature/spectrafx-generic-cue-queue`. The GPU path is **experimental and
-not native-tested**. It is intentionally OFF unless a project authors
+`feature/spectrafx-generic-cue-queue`. The GPU path is **experimental and only partly hardware-tested**:
+Apple M3 Ultra Metal evolution/sort/compaction compute has a user-reported
+real 1/1 PASS, while the new billboard raster test, integrated RHI draw,
+GPU lifetime and editor visual QA remain unverified. It is intentionally OFF unless a project authors
 `fx/gpu/routes.json`. Existing `fx/fx.json` and CPU `ParticleSystem` are
 untouched.
 

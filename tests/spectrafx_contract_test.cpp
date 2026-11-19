@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 #include "engine/fx/SpectraFxGpuRoutes.h"
+#include "engine/fx/SpectraFxView.h"
 #include "engine/fx/SpectraFxCueInbox.h"
 #include "engine/fx/SpectraFxGpuLod.h"
 #include "engine/fx/SpectraFxGpuBudgetGovernor.h"
@@ -92,6 +93,28 @@ int main() {
            "old scene generation rejected");
     expect(!inbox.submit(play,false,inbox.epoch()),
            "visibility denial is honored");
+
+    // Camera roll/vertical viewpoint must remain usable without an RTS
+    // camera instance or any Editor/FPS module.
+    SpectraFxView arbitraryView;
+    arbitraryView.eye={0,10,0};
+    arbitraryView.forward={0,-1,0};
+    arbitraryView.right={1,0,0};
+    arbitraryView.up={0,0,-1};
+    arbitraryView.projectionYScale=1.75f;
+    arbitraryView.width=1920;
+    arbitraryView.height=1080;
+    expect(arbitraryView.valid(),"genre-neutral vertical cinematic view");
+    const auto verticalMatrix=render::mat4::lookAt(
+        arbitraryView.eye,{0,0,0},arbitraryView.up);
+    expect(verticalMatrix.at(0,0)>0.99f &&
+           verticalMatrix.at(1,2)<-0.99f,
+           "camera-defined up/right basis survives overhead lookAt");
+    arbitraryView.width=0;
+    expect(!arbitraryView.valid(),"zero-width view rejected");
+    arbitraryView.width=1920;
+    arbitraryView.projectionYScale=0;
+    expect(!arbitraryView.valid(),"invalid projection scale rejected");
 
     SpectraFxGpuLodSettings lod;
     lod.nearDistance=10;lod.farDistance=100;

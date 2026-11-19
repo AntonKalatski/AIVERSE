@@ -946,7 +946,9 @@ void ParticleSystem::setView(const SpectraFxView& view) {
     I.viewProj = view.viewProj;
     I.eye = view.eye;
     float3 f = render::normalize(view.forward);
-    float3 worldUp{0, 1, 0};
+    // Take camera up from the supplied view. A world-Y assumption breaks
+    // rolled/cinematic cameras and degenerates at a straight-down view.
+    float3 worldUp = view.up;
     if (I.haveSpace) { // particles live in their own space: the camera into it, the projection from it
         const mat4 inv = I.space.inverse();
         I.viewProj = view.viewProj * I.space;
