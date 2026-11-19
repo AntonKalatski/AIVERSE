@@ -17,6 +17,8 @@
 #include "../../engine/render/ImGuiLayer.h"
 #include "../../engine/render/ModelMerge.h"
 #include "../../engine/render/Renderer3D.h"
+#include "../../engine/render/ModelAssetProvider.h"
+#include "../../engine/view/View.h"
 #include "imgui.h"
 #include "Gallery.h"
 
@@ -51,6 +53,7 @@ struct Viewer {
     ShadowQuality shadowQuality=ShadowQuality::High;
     bool native = false;
     bool merge = true;   // static batching of parts that share a material (--no-merge: as authored)
+    bool providerMode=false; // --provider uses the genre-free owner for static raw files
     float seek = -1, height = 0, spacing = 2.2f, distance = 0, yawDeg = 25, pitchDeg = 32;
     float3 team{0.92f * 0.92f, 0.22f * 0.22f, 0.20f * 0.20f};
     MaterialQuality quality = MaterialQuality::High;
@@ -65,6 +68,7 @@ struct Viewer {
     ImGuiLayer gui;
     RTSCamera cam;
     std::map<std::string, std::unique_ptr<Model>> models;
+    ModelAssetProvider nativeModels; // independent source owner, not a game::RtsView
     std::map<std::string, std::string> mergeInfo;   // path -> "parts 47 -> 14" or why not merged
     std::vector<Instance> inst;
     std::vector<std::string> log;
@@ -108,10 +112,29 @@ struct Viewer {
                 return;
             }
         }
+        // The standalone native provider deliberately keeps source geometry
+        // untouched. Existing merged/animated comparisons retain their
+        // historic loader and all of its authoring/animation semantics.
+        if(providerMode)nativeModels.setReader(readFile);
         float x = -spacing * float(files.size() - 1) * 0.5f, maxH = 1;
         for (auto& [path, clip] : files) {
+            Model* resolved=nullptr;
+            if(providerMode && !merge && !baked &&
+               clip.empty() && clipAll.empty()) {
+                resolved=nativeModels.load(d,path);
+                if(resolved) {
+                    for(auto& mt:resolved->materials) {
+                        std::string n=mt.name;
+                        for(auto& ch:n)
+                            ch=char(std::tolower(static_cast<unsigned char>(ch)));
+                        if(n.find("team")!=std::string::npos &&
+                           mt.team==TeamMode::None)mt.team=TeamMode::Tint;
+                    }
+                    log.push_back(path+": generic native source provider");
+                }
+            }
             auto it = models.find(path);
-            if (it == models.end()) {
+            if(!resolved && it == models.end()) {
                 std::unique_ptr<Model> m;
                 try {
                     std::vector<std::string> warn;
@@ -143,7 +166,7 @@ struct Viewer {
                 it = models.emplace(path, std::move(m)).first;
             }
             Instance in;
-            in.model = it->second.get();
+            in.model = resolved ? resolved : it->second.get();
             in.path = path;
             if (in.model) {
                 Model& m = *in.model;
@@ -212,7 +235,9 @@ struct Viewer {
                 bs = {b.clipA, b.clipB, b.timeA, b.timeB, b.w, b.loopA, b.loopB};
                 md.baked = &bs;
             }
-            r3d.drawModel(md);
+            // Preserve the existing host's precomputed pose, materials,
+            // variant, team and world transform; do not tick MotionWeave twice.
+            ::aiverse::View::submitModel(r3d,md);
         }
         gfx::PassDesc pass;
         pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
@@ -265,6 +290,7 @@ struct Viewer {
 
     void shutdown() {
         for (auto& [p, m] : models) if (m) releaseModel(*dev, *m);
+        nativeModels.shutdown(*dev);
         if (gallery) gallery->shutdown(*dev);
         dev->destroyBuffer(ground.vb); dev->destroyBuffer(ground.ib);
         gui.shutdown();
@@ -312,6 +338,7 @@ int aiverseMain(int argc, char** argv) {
         else if (a == "--distance") v.distance = std::stof(next());
         else if (a == "--native") v.native = true;
         else if (a == "--no-merge") v.merge = false;
+        else if (a == "--provider") v.providerMode = true;
         else if (a == "--yaw") v.yawDeg = std::stof(next());
         else if (a == "--pitch") v.pitchDeg = std::stof(next());
         else if (a == "--quality") {
@@ -324,7 +351,7 @@ int aiverseMain(int argc, char** argv) {
         }
     }
     if (v.files.empty() && v.gameDir.empty()) {
-        std::printf("usage: aiverse_modelview model.glb [model2.gltf@Clip ...] [--clip C] [--time T] [--variant V] [--quality low|medium|high] [--no-merge]\n"
+        std::printf("usage: aiverse_modelview model.glb [model2.gltf@Clip ...] [--clip C] [--time T] [--variant V] [--quality low|medium|high] [--no-merge] [--provider]\n"
                     "       aiverse_modelview --game templates/<id> [--types a,b] [--start T] [--fixed-dt S]\n");
         return 1;
     }
