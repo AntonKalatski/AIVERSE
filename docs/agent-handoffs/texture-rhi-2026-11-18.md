@@ -6246,3 +6246,75 @@ Next: implement concrete feedback deformation for
 skinned/baked/morphed models, coordinate with Terra agent to
 hook custom feedback producers, and complete RHI backend
 compatibility checks before the test pass.
+
+
+## Stage 9Z — actual GPU-deformed model feedback (2026-11-19)
+
+Source commit: 627181287110429ea8add50a1357d47736bb7e34.
+Documentation commit: d031f53ba4cee0aa50ff8532463b64de388bb669.
+Files: engine/render/VirtualTextureDeformedFeedback.h (new),
+docs/texture-rhi.md (appended).
+
+Added a concrete `render::VirtualTextureDeformedModelFeedback`
+GPU adapter that registers with Renderer3D's
+`setVirtualTextureDeformedModelFeedback()` callback and submits
+deformed geometry through the existing VT feedback target.
+Unlike the prior stage's callback-only skeleton, the new
+`virtualTextureDeformedFeedbackSources()` builds complete RHI
+GLSL/MSL shaders by reusing the **same deformation functions**
+already authored in `ModelShaders.h` (`kModelShadowVS` and
+`kModelShadowMSL`, with their light VP changed to camera VP).
+The feedback fragment uses the existing packed page codec,
+automatic derivative mip, material alpha discard, and scene
+pixel-grid ordered LOD discard. U0/U1/U2/U3/U4 and tex1/7/8
+keep the main model shader's semantics. U6 is a dedicated
+five-vec4 VT page/policy/viewport uniform block.
+
+The adapter pre-creates six deformation shader variants:
+rigid-dynamic, skinned, baked, morph, skinned+morph and
+baked+morph; each has front-culling enabled/disabled variants
+for normal and double-sided materials. On draw it binds
+the selected pipeline, main frame U1 via `bindLitFrame()`,
+U0 per-instance transform+animation, U2 material base/UV,
+U6 virtual mapping and LOD policy; conditionally uploads
+U3 bone palette or baked joint index palette, U4 morph info,
+tex7 baked joint matrices and tex8 morph deltas; it binds
+tex1 for material alpha and emits the correct firstIndex+
+gpuFirstIndex / gpuBaseVertex draw. A per-instance resolver
+maps source model/material onto virtual pages. Non-VT
+materials emit zero page IDs while writing depth. Incomplete
+animation resources are conservatively skipped instead of
+drawing undeformed geometry.
+
+API: `VirtualTextureDeformedModelFeedback::initialize(dev,depth)`,
+`connect(renderer,VirtualTextureMaterialResolver)`,
+`disconnect()`, `shutdown()`. Usage is recorded in
+docs/texture-rhi.md. Install this alongside the rigid
+`VirtualTextureModelFeedback` adapter; activate the feedback
+pass via `Renderer3D::setVirtualTextureFeedback(&pass,{},{})`.
+Disconnect before renderer/device destruction; note the
+rigid adapter's clear method also clears deformed callback,
+so coordinate the teardown order.
+
+Limitations: not wired to any user project automatically;
+material-graph vertex displacement and extra shader-specific
+alpha semantics are not reproduced. No Terra producer yet.
+Deformation parity across Metal, GL33/GLES3 and Vulkan is not
+verified; the shader source reuse is intended to reduce this
+risk, not proof of parity. Multi-backend compilation and
+GPU feedback visibility tests remain for the test stage.
+
+Verification actually performed: fetched and inspected
+`ModelShaders.h`, `Renderer3DModels.cpp`,
+`Renderer3D::bindLitFrame()` and the RHI shader contract;
+GitHub source commit and docs commit succeeded.
+Native compilation NOT RUN; CTest NOT RUN; GPU rendering
+and GLSL/MSL validation NOT RUN, per user's functions-first
+request.
+
+Next: integrate position/UV feedback producer with the
+real Terra/terrain renderer without duplicating genre-specific
+code (be aware Terra is owned by a different agent),
+then address RHI shader/source compatibility and eventual
+GPU tests. Review model vertex-displacement graph parity
+before claiming full animated-model equivalence.
