@@ -3867,6 +3867,135 @@ profiler и CI. Описание коммитов и
 следующий этап — `docs/handoffs/prisma-stage-63.md`.
 
 
+
+## Stage 64 — precise animated reactive alpha/dissolve и Actor Reveal
+
+Stage 64 завершает bounded functionality пробела, найденного в
+Stage 63: animated skin/morph/baked reactive coverage раньше
+создавалась только как консервативный силуэт, без применения
+материального `AlphaMode::Mask`, object-space dissolve и
+локального `kDrawActorReveal` aperture. В новой реализации
+обычная velocity pipeline остаётся **без изменений**,
+а reactive path получает отдельный **GPU shader variant**.
+
+### Reactive-only vertex stage
+
+`Renderer3DReactiveShaders.h` теперь предоставляет две
+проверяемые функции генерации:
+`reactive_shaders::animatedVertexGlsl(source,baked)` и
+`reactive_shaders::animatedMsl(source,baked)`.
+Они принимают существующие `kDeformedVS/kDeformedMSL`
+или `kBakedVS/kBakedMSL`, подставляют UV
+(`ModelVertex` атрибут 2), vertex color/alpha
+(атрибут 4) и **current deformed object-space pose**,
+сохраняя прежние skin/morph/baked источники
+(атрибуты 5/6, U0/U3/U4/U5 и texture 7/8).
+Результирующие локальные текстовые варианты
+передаются в `createShader`; оригинальные
+motion shaders и velocity output остаются прежними.
+Если ожидаемый source anchor отсутствует, генератор
+возвращает пустую строку, а Renderer3D не
+создаёт невалидную реактивную pipeline.
+
+`kAnimatedFS` (GLSL) и создаваемый MSL fragment
+используют новый `ReactiveAnimatedU1`, 160 bytes:
+`lod[4],uv0[4],uv1[4],maskInfo[4],world[16],
+reveal[4],revealAxis[4]`. Он занимает
+обычный uniform slot 1 (Metal buffer 2), не
+мешает skin/baked deformation слоту U3/U4/U5.
+Шейдер по-прежнему рендерит только
+**current-frame RGBA8 reactive coverage**,
+не записывает скорость и не использует
+предыдущую кадровую историю. Depth
+сэмплируется из чужого `sceneDepth`, а
+writable attachment — renderer-private
+`history.depth`.
+
+Для animated объектов теперь точно воспроизводятся
+те же условия отсечения текущего кадра:
+4×4 LOD dither, UV offset/scale/rotation,
+материальный cutoff `baseTex alpha *
+baseColor alpha` (+ vertex alpha, если допустимо),
+и `modelNoise3(currentDeformedLocalPos * 7) * 0.7 +
+modelNoise3(currentDeformedLocalPos * 19) * 0.3`
+для dissolve. Настройки `TeamMode::BaseAlpha` и
+`TeamMode::VertexAlpha` не перемножают
+вершинную/текстурную alpha дважды; vertex
+occlusion/AO не трактуется как opacity.
+
+### Actor Reveal для rigid и animated
+
+`kDrawActorReveal` с активным
+`Renderer3D::actorReveal` теперь делает
+модель источником reactive coverage, даже
+если она полностью opaque и не имеет LOD
+fade/dissolve. Только главный camera pass
+(`geometryMainView_`) передаёт
+world-space actor center/radius, camera axis
+и view-dependent attenuation из той же
+`Renderer3DModels.cpp` формулы. Fragment
+shader повторяет aperture:
+`radial=length(delta-axis*depth)`,
+`radius=actorRadius*max(0.01,1-depth*axisScale)`,
+`coverage=(1-smoothstep(radius*.48,radius,radial))*
+smoothstep(.04,.24,depth)` и 4×4
+dither discard. В неактивном режиме
+`reveal.w=0` и этот путь не влияет
+на маску.
+
+Для rigid alpha/dissolve shader был расширен
+`ReactiveCutoutUniforms` с 144 до
+**240 bytes**, за счёт world matrix и
+reveal/axis в U0. GLSL и Metal получают
+current world position вершины. Для animated
+используется current deformed local position,
+преобразуемая через переданную `world`
+матрицу во fragment. Это не отдельный
+draw pass и не ECS-система: источником остаётся
+тот же current-frame reactive pass из Stage 62.
+
+В `Renderer3D::renderCurrentFrameReactiveMask`
+replay анимированных материалов теперь
+настраивает `ReactiveAnimatedU1`, отдельный
+baseTexture sampler slot 1 и вершинные
+атрибуты UV/color/skin. Параметры actor reveal,
+dissolve, alpha cutoff и LOD задаются
+по каждой `ModelItem`. Статистика
+`ObjectMotionStats.actorRevealReactiveDraws`
+дополняет существующие `cutoutReactiveDraws`,
+`dissolveReactiveDraws`, `lodReactiveDraws`.
+Это CPU-encoded draw counts, не подтверждение
+GPU-видимости. Ресурсы остаются за
+`Renderer3D`; existing GPU-fenced target
+retirement и stable per-`viewId` ownership
+не изменены.
+
+### Ограничения и проверка
+
+Поддерживается точная исходниковая формула
+обычных alpha/dissolve/reveal для rigid и
+animated моделей. Не заявляется per-pixel
+паритет с произвольными material Shader Graph,
+vertex displacement, кастомными transparent
+pipeline, GLES/Metal depth conventions или
+правильная многослойная прозрачность —
+их должны обеспечить отдельные реактивные
+providers или native GPU validation.
+GPU shader permutations ещё не
+скомпилированы и не выполнены на устройстве.
+
+**Фактически:** GitHub readback и
+**61/61 статических structural/source checks**;
+дополнительно 4/4 generator fixtures
+skin/baked × GLSL/MSL с ожидаемыми
+current-pose/UV/alpha output. **NOT RUN:**
+CMake/clang/Obj-C++, GLSL/MSL/SPIR-V compilation,
+CTest, editor/client, Metal/GL/GLES/Vulkan/WebGL,
+pixel/alpha parity, Actor Reveal cut screenshot,
+GPU fencing/memory pressure, benchmarks/CI.
+См. `docs/handoffs/prisma-stage-64.md`
+для точных коммитов и следующих действий.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
