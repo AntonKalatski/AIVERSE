@@ -263,4 +263,90 @@ fragment float4 fs_main(VOut in [[stage_in]],constant U0& u [[buffer(1)]],
     return float4(float2(s.x,1.0-s.y)-p,1.0,1.0);
 }
 )";
+
+// Baked clip motion: sample the SAME immutable animation atlas for previous
+// and current pose, with distinct clip rows/interpolation. The palette maps
+// primitive joint slots to global baked joint IDs as in ModelShaders.h.
+inline const char* kBakedVS = R"(
+layout(location=0) in vec3 a_pos;
+layout(location=5) in vec4 a_joints;
+layout(location=6) in vec4 a_weights;
+layout(std140) uniform U0 {
+    mat4 currentMvp;
+    mat4 previousMvp;
+    vec4 params;
+};
+layout(std140) uniform U3 { vec4 palette[20]; };
+layout(std140) uniform U4 { vec4 currentAnim; vec4 previousAnim; };
+uniform highp sampler2D tex7;
+out vec4 v_prevClip;
+vec4 bakedPoint(vec4 p, vec4 anim) {
+    vec4 weights = a_weights / max(dot(a_weights,vec4(1.0)),0.00001);
+    vec4 r0=vec4(0.0),r1=vec4(0.0),r2=vec4(0.0);
+    for(int k=0;k<4;++k){
+        if(weights[k]<=0.0)continue;
+        int slot=int(a_joints[k]+0.5);
+        int joint=int(palette[slot/4][slot%4]+0.5);
+        int ra=int(anim.x+0.5),rb=int(anim.y+0.5);
+        r0 += mix(texelFetch(tex7,ivec2(joint*3,ra),0),
+                  texelFetch(tex7,ivec2(joint*3,rb),0),anim.z)*weights[k];
+        r1 += mix(texelFetch(tex7,ivec2(joint*3+1,ra),0),
+                  texelFetch(tex7,ivec2(joint*3+1,rb),0),anim.z)*weights[k];
+        r2 += mix(texelFetch(tex7,ivec2(joint*3+2,ra),0),
+                  texelFetch(tex7,ivec2(joint*3+2,rb),0),anim.z)*weights[k];
+    }
+    return vec4(dot(r0,p),dot(r1,p),dot(r2,p),1.0);
+}
+void main() {
+    vec4 local=vec4(a_pos,1.0);
+    gl_Position=currentMvp*bakedPoint(local,currentAnim);
+    v_prevClip=previousMvp*bakedPoint(local,previousAnim);
+}
+)";
+inline const char* kBakedMSL = R"(
+#include <metal_stdlib>
+using namespace metal;
+struct U0 { float4x4 currentMvp;float4x4 previousMvp;float4 params; };
+struct Palette { float4 v[20]; };
+struct Anim { float4 current;float4 previous; };
+struct VIn {float3 pos [[attribute(0)]];uchar4 joints [[attribute(5)]];
+            float4 weights [[attribute(6)]];};
+struct VOut { float4 position [[position]];float4 previous; };
+float4 bakedPoint(float4 p,VIn in,float4 anim,
+                  constant Palette& palette,texture2d<float> tex7) {
+    float4 weights=in.weights/max(dot(in.weights,float4(1.0)),0.00001);
+    float4 r0=float4(0),r1=float4(0),r2=float4(0);
+    for(int k=0;k<4;++k){
+        if(weights[k]<=0.0)continue;
+        int slot=int(in.joints[k]);
+        int joint=int(palette.v[slot/4][slot%4]+0.5);
+        int ra=int(anim.x+0.5),rb=int(anim.y+0.5);
+        r0+=mix(tex7.read(uint2(joint*3,ra)),
+                tex7.read(uint2(joint*3,rb)),anim.z)*weights[k];
+        r1+=mix(tex7.read(uint2(joint*3+1,ra)),
+                tex7.read(uint2(joint*3+1,rb)),anim.z)*weights[k];
+        r2+=mix(tex7.read(uint2(joint*3+2,ra)),
+                tex7.read(uint2(joint*3+2,rb)),anim.z)*weights[k];
+    }
+    return float4(dot(r0,p),dot(r1,p),dot(r2,p),1.0);
+}
+vertex VOut vs_main(VIn in [[stage_in]],constant U0& u [[buffer(1)]],
+    constant Palette& palette [[buffer(4)]],
+    constant Anim& anim [[buffer(5)]],
+    texture2d<float> tex7 [[texture(7)]]) {
+    VOut o;
+    float4 local=float4(in.pos,1.0);
+    o.position=u.currentMvp*bakedPoint(local,in,anim.current,palette,tex7);
+    o.previous=u.previousMvp*bakedPoint(local,in,anim.previous,palette,tex7);
+    return o;
+}
+fragment float4 fs_main(VOut in [[stage_in]],constant U0& u [[buffer(1)]],
+    depth2d<float> tex0 [[texture(0)]],sampler tex0_s [[sampler(0)]]) {
+    float2 s=in.position.xy/u.params.xy;
+    if(in.position.z>tex0.sample(tex0_s,s)+0.0015 ||
+       in.previous.w<=0.00001) discard_fragment();
+    float2 prior=in.previous.xy/in.previous.w*0.5+0.5;
+    return float4(float2(s.x,1.0-s.y)-prior,1.0,1.0);
+}
+)";
 } // namespace aiverse::render::motion_shaders
