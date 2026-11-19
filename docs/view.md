@@ -2664,3 +2664,24 @@ was audited but not modified in Stage 119.
 
 **NOT RUN:** native build/CTest, sanitizers or graphics regressions.
 See [Stage 119 handoff](agent-handoffs/animation-stage119-playback-continuity-2026-11-19.md).
+
+## Stage 120 — generic GPU canvas retirement and host frame polling
+
+`render::CanvasGpuRetirement` provides device-generation-aware GPU
+fence retirement for temporary render canvas buffers, staging images,
+texture targets, shader and pipeline programs. This is independent
+of FPS/RTS and does not own a second renderer, Device epoch or
+MotionWeave clock. The legacy `RtsPaintLayers` adapter borrows the
+same pool for all canvases and cached meshes; Editor and GameClient
+poll that shared pool at safe pre-render frame boundaries.
+
+Canvas destruction and paint source changes no longer free GPU-visible
+handles immediately, and GPU mesh upload failures preserve last-good
+geometry. A standalone RenderTexture may create its own pool and
+drain on explicit shutdown; unsupported fence backends may use a
+single genuine idle barrier at collection. Error/fence/orphan metrics
+are visible in Editor Stats. NEREID, TerraWeave, Prisma and
+SpectraFX resource owners remain separate.
+
+**NOT RUN:** CMake, native C++ compilation, CTest, GPU validation or
+sanitizers. [Stage 120 handoff](agent-handoffs/animation-stage120-canvas-gpu-retirement-2026-11-19.md).
