@@ -364,15 +364,24 @@ struct App {
         if(client->snapshot().tick!=lastSnapshotTick){previousSnapshot=received;received=client->snapshot();lastSnapshotTick=received.tick;snapshotAge=0;}
         float interpolation=float(std::min(1.0,snapshotAge*config.snapshotRate));
         world::Cell origin=geometry.cell(actor.pos);
-        if(fxOriginValid && origin!=fxOrigin) fxScene.resetScene();
-        fxOrigin=origin;fxOriginValid=true;
+        bool fxOriginReady=true;
+        if(fxOriginValid && origin!=fxOrigin) {
+            if(!fxScene.resetScene()) fxOriginReady=false;
+        }
+        if(fxOriginReady) {
+            fxOrigin=origin;
+            fxOriginValid=true;
+        }
+        // If a reset could not safely run outside a GPU encoder, do not
+        // enqueue or render VFX in mismatched floating-origin coordinates.
+        // The next frame retries the reset before accepting new FX.
         Vec3 eye=actor.pos+Vec3{{},fps::stanceHeight(actor,config.motor)-Fixed::fromRatio(1,10),{}};
         auto localEye=visual(world::relativeTo(eye,origin,32));
         auto cameraLook=look;cameraLook.pitch+=float(actor.recoil.toDouble());
         auto cam=cameraLook.camera(localEye);
         if(aimHeld)cam.fovY=(weapon.range>=700_fx||(actor.attachments[actor.weaponIndex]&1))?0.28f:0.65f;
         audio::ListenerPose listener;auto globalEye=visual(eye);listener.pos[0]=globalEye.x;listener.pos[1]=globalEye.y;listener.pos[2]=globalEye.z;auto forward=render::normalize(cam.target-cam.eye());listener.forward[0]=forward.x;listener.forward[1]=forward.y;listener.forward[2]=forward.z;audio.setListener(listener);
-        if(fxScene.enabled()) {
+        if(fxOriginReady && fxScene.enabled()) {
             // FPS-specific visual cue ID 1: local weapon fired; opt-in only.
             for(uint32_t i=0;i<fxLocalShots;++i) {
                 fx::SpectraFxCue cue{};
@@ -385,10 +394,11 @@ struct App {
         }
         if(streamedScene)streamedScene->update(device,{&actor.pos,1});
         // GPU compute before opening any scene pass.
-        fxScene.prepareGpu(float(std::clamp(dt,0.0,0.1)),cam);
+        if(fxOriginReady) fxScene.prepareGpu(float(std::clamp(dt,0.0,0.1)),cam);
         renderer.beginScene(cam,device.framebufferWidth(),device.framebufferHeight());
-        fxScene.prepareCpu(float(std::clamp(dt,0.0,0.1)),cam,renderer.viewProj(),
-                           device.framebufferWidth(),device.framebufferHeight());
+        if(fxOriginReady)
+            fxScene.prepareCpu(float(std::clamp(dt,0.0,0.1)),cam,renderer.viewProj(),
+                               device.framebufferWidth(),device.framebufferHeight());
         if(streamedScene)streamedScene->draw(renderer,origin,32);
         staticGeometry.draw(renderer);
         chunks.update(actor.pos,2,2,[&](const auto& file,auto& data){return platform::readContentFile(projectRoot+"/"+file,data);});
@@ -426,7 +436,7 @@ struct App {
         fps::view::drawZoneWall(renderer,cube,client->snapshot().royale,actor.pos,origin,visual);
         for(const auto& c:client->snapshot().royale.crates)box(c,{1.2f,1.2f,1.2f},{0.95f,0.6f,0.1f,1});
         gfx::PassDesc pass;pass.clearColor[0]=0.2f;pass.clearColor[1]=0.28f;pass.clearColor[2]=0.36f;renderer.render(pass);
-        fxScene.render(renderer.lighting,renderer.viewProj(),cam);
+        if(fxOriginReady) fxScene.render(renderer.lighting,renderer.viewProj(),cam);
         ImGui::SetNextWindowPos({16,16});ImGui::SetNextWindowBgAlpha(0.65f);
         ImGui::Begin("##fps",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_AlwaysAutoResize|ImGuiWindowFlags_NoInputs);
         auto text=lang.tr("fps.status",i18n::Args().num("health",actor.health).num("ammo",actor.ammo).num("reserve",actor.reserve).num("tick",client->snapshot().tick));
