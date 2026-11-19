@@ -329,7 +329,61 @@ static void testStreamedPortable(gfx::Backend backend) {
     assert(dev.data_.empty());
 }
 
+// End-to-end CPU LOD model alias + stable Metal/Vulkan Storage/INDEX
+// page arena. The recording RHI checks the consumed index offsets; a
+// real hardware main/shadow/reflection parity run remains deferred.
+static void testIncrementalPortable(gfx::Backend backend) {
+    Recorder dev(backend,false);
+    Model source=makeModel();
+    const auto asset=makeAsset();
+    gfx::BufferDesc desc{};
+    desc.type=gfx::BufferType::Vertex;
+    desc.size=source.vertices.size()*sizeof(ModelVertex);
+    desc.data=source.vertices.data();
+    source.vb=dev.createBuffer(desc);
+    desc.type=gfx::BufferType::Index;
+    desc.size=source.indices.size()*sizeof(uint32_t);
+    desc.data=source.indices.data();
+    source.ib=dev.createBuffer(desc);
+    PortableSource staged;
+    std::string error;
+    assert(staged.stage(dev,source,asset,&error,48,true,24));
+    assert(staged.streamingEnabled());
+    assert(staged.residencyStats() && staged.residencyStats()->incremental);
+    const auto indexBuffer=staged.indexBuffer();
+    assert(staged.residencyStats()->arenaBytes==48);
+    assert(staged.residencyStats()->activeBytes==24);
+    PortablePassView fine{mat4::identity(),800,600,true,.01f};
+    Model alias;
+    assert(staged.prepareModel(mat4::identity(),{fine},false,alias,&error));
+    assert(alias.ib==indexBuffer);
+    assert(alias.meshes[0].primitives.size()==1);
+    std::vector<IndexDemand> demands;
+    assert(staged.collectResidencyDemands(mat4::identity(),{fine},false,demands));
+    assert(staged.updateResidency(demands,&error));
+    assert(staged.indexBuffer()==indexBuffer);
+    assert(staged.residencyStats()->activeBytes==48);
+    assert(staged.prepareModel(mat4::identity(),{fine},false,alias,&error));
+    assert(alias.ib==indexBuffer && alias.vb==source.vb);
+    assert(alias.meshes[0].primitives.size()==2);
+    assert(alias.meshes[0].primitives[0].firstIndex==6);
+    assert(alias.meshes[0].primitives[1].firstIndex==9);
+    assert(staged.updateResidency({},&error));
+    assert(staged.indexBuffer()==indexBuffer);
+    assert(staged.prepareModel(mat4::identity(),{fine},false,alias,&error));
+    assert(alias.meshes[0].primitives.size()==1);
+    assert(alias.meshes[0].primitives[0].firstIndex==0);
+    assert(dev.allocs==3); // source VB, source IB, one stable index arena
+    alias=Model{};
+    staged.shutdown(dev);
+    dev.destroyBuffer(source.vb);
+    dev.destroyBuffer(source.ib);
+    assert(dev.data_.empty());
+}
+
 int main(){
+    testIncrementalPortable(gfx::Backend::Metal);
+    testIncrementalPortable(gfx::Backend::Vulkan);
     testStreamedPortable(gfx::Backend::GLES3);
     testStreamedPortable(gfx::Backend::Vulkan);
     testLegacyClusteredSource(gfx::Backend::GLES3);
