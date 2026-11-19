@@ -10407,3 +10407,79 @@ ctest --test-dir build/texture-icb-gpu --verbose --output-on-failure \
 No additional engine/test source change was made for this isolation
 recommendation; native compile/GPU test remains NOT RUN.
 
+
+## Stage 10BR — 1/4-source GPU ICB Shader Graph resource ABI (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`; **PR #21 remains Draft**.
+Primary `/Users/aleksandrfeer/Projects/AIVERSE` worktree has
+an unrelated unfinished rebase; do not operate there. Use isolated
+`/Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819`.
+
+**Source commit:** `50969517f9fdd4a15b38103c378232459520d2a5`
+(`tests/render/metal_icb_graph_gpu.mm`).
+**Separate documentation commits:**
+`4a796624eef7075908eabeca5817f5cce6d721ae`
+(`docs/texture-rhi.md`; corrected malformed CTest command and
+duplicate trailing Markdown fence, documented expanded test) and
+`8b90d9e265a83147131ca2006d35dfe11ea114eb`
+(`skills/visuals/aiverse-texture-rhi/SKILL.md`).
+
+**Implemented changes / exact API:**
+- Retained the existing **default-OFF**, isolated macOS CMake
+  `AIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=ON` acceptance harness.
+  Production `gfx::Device`, `Renderer3D`, `ModelShaders.h`,
+  `GfxMetal.mm`, materials and scene formats are **unchanged**.
+- Parameterized the native fixture to execute both one-source
+  (`AIVERSE_SG_TEXTURE_COUNT 1`) and four-source
+  (`AIVERSE_SG_TEXTURE_COUNT 4`) graph variants, in sequence.
+  The 4-source MSL test adds graph textures 14, 15, 16 at Metal
+  fragment argument-buffer texture IDs 28, 30, 32 beside source
+  slot 13 at ID 26. Slot 16 uses constexpr repeat/linear
+  sampling; source textures are created with compatible metadata.
+- Each variant encodes **two actual GPU indexed commands** through
+  `Device::prepareGpuEncodedIndexedIcbWithPbrMaterials` and
+  `executeGpuEncodedIndexedIcb`. Different native source textures
+  and U2 factors produce distinguishable left/right RGBA8 pixels.
+  The existing one-source pixel oracle remains
+  `{90,0,160,255}` / `{100,140,0,255}`. The four-source
+  oracle is `{100,20,180,255}` / `{110,160,30,255}`.
+  All channels must match within 1 LSB; failures are nonzero exit.
+  Test fails if a GPU token is rejected or device is unsupported.
+- The ShaderDesc fragment texture-slot capacity is 14 for 1 source
+  and 17 for 4, matching the highest used slot 16.
+- No fallback CPU draw is used to manufacture a GPU-ICB PASS.
+  The fixture's minimal MSL is not the authored scene's production
+  Shader Graph compiler; the test checks backend resource ABI only.
+
+**Verification honestly performed:** fetched and inspected the
+production Metal GPU-encoded ICB preflight/execute, argument-buffer
+layout and graph source sampler contract via GitHub connector;
+source/docs/skill written and committed through the GitHub connector.
+Native CMake configure/build, Objective-C++, MSL compiler, CTest,
+Metal driver execution, readback pixels, screenshots and
+performance profiling for Stage 10BR were **NOT RUN** here.
+The last **observed** hardware result was Stage 10BP's separate
+Apple M3 Ultra virtual-texture fragment page-table 8/8 PASS
+(`metal_texture_gpu` 1/1 PASS, 2.47 s); that is not an ICB result.
+
+**Next action — actual Mac Studio isolated test, NOT primary tree:**
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+cmake -S . -B build/texture-icb-gpu -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_TEXTURE_METAL_GPU_TESTS=OFF -DAIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=ON
+cmake --build build/texture-icb-gpu --target aiverse_metal_texture_icb_graph_gpu_test --parallel 4
+ctest --test-dir build/texture-icb-gpu --verbose --output-on-failure --no-tests=error -R '^metal_texture_icb_graph_gpu$'
+```
+
+CTest passes experimental env flags solely for this process.
+If build or GPU fails, record the **first concrete compiler/MSL/Metal
+device/error/pixel diagnostic** and fix only the root cause in
+a separate source commit plus appended handoff. If both 1/4-source
+GPU pixel cases pass, separately test the real production
+Shader Graph material/compiler Renderer3D pipeline, then
+Vulkan/GL/mobile parity, filtering fidelity and performance.
+Do not merge PR #21 based on source-only changes or prior
+non-ICB hardware PASS.
+
