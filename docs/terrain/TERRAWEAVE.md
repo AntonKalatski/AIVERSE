@@ -2461,3 +2461,33 @@ The vertex shader's existing local displacement limit is still `kCanopyGpuWindMa
 **Limitations:** 8-bit packing introduces quantization, and field values are sampled at cluster centres (one sample for the two crossing cards), not at every leaf. Shader phase still uses presentation float math and is not bitwise cross-backend deterministic. The CPU shadow adds up to 2 MiB per resident GPU model and requires an RHI-compatible dynamic VB update; mobile backends that cannot update shared buffers stay in safe fallback. Cached models are only patched after activation, not while dormant. `gfx::Device::updateBuffer` has a void return and cannot report device loss at the callsite. Changing PHYSIS field *data* requires publishing a fresh immutable `shared_ptr<const ForestWindField>`; mutating a published shared field is unsupported. No built-in seasonal weather inference, game-network replication or exact turbulence is included.
 
 **Testing explicitly deferred at user request:** C++ compilation, GLSL+Metal shader compilation, CTest, GPU screenshots, direct PHYSIS/WorldScene run, frame-time measurements, device-loss handling and near/far switching have NOT been executed. Later QA must also migrate Stage29's old single-primitive impostor test assumptions and validate signed-grid samples at negative coordinates, empty/null field, exact zero velocity, quantization bounds, RHI update budget and cached-region restoration before shipping.
+
+## Stage 35 — sparse dirty-cluster GPU wind range updates
+
+**Functional source committed; compilation, CTest and GPU execution deferred by request.** Stage 34 introduced exact per-cluster spatial wind samples from the host's immutable PHYSIS/game `ForestWindField`, but transmitted the **entire** forest-card vertex range to the RHI whenever even one sampled cluster changed. Stage 35 keeps the same public world and Horizon APIs and GPU format, while replacing that coarse update with a bounded *sparse dirty-run* planner.
+
+### Dirty cluster selection and updates
+
+`engine/render/TerraWeaveHorizonWindPatch.h` now provides the pure C++ planner:
+
+```cpp
+std::optional<HorizonForestWindUploadPlan> planHorizonForestWindUpload(
+    std::span<const render::ModelVertex> oldVertices,
+    std::span<const render::ModelVertex> newVertices,
+    size_t maxRanges = 8,
+    uint32_t fullFallbackPercent = 70);
+```
+
+It compares only the **vertex colour attributes** of each eight-vertex forest cluster (two crossed cards), because weather updates never change position, normal, UV, indices, or material assignment. Adjacent dirty clusters are coalesced into one contiguous `HorizonForestWindUploadRange{firstVertex,vertexCount}`. With at most eight separate dirty runs and under 70% of clusters changed, only those ranges are transferred to the existing `render::Model::vb` by `gfx::Device::updateBuffer`; there is no GPU allocation, shader permutation or additional render pass.
+
+If more than eight disjoint runs are dirty, or at least 70% of clusters changed, the planner **falls back to one complete forest suffix upload**. The maximum resident CPU shadow is still 2 MiB per model and the scene's aggregate render-owner update budget remains **2 MiB per `update()` across both active and outgoing crossfade regions**. If the *chosen* sparse or full plan would exceed the remaining budget or `canUpdateSharedBuffers()` is false, all writes for that model are deferred and the old safe rendering mode remains. No RHI write occurs before every selected range has been validated; the CPU copy and field revision are committed only after the planned sequence of writes is issued. Like Stage34, the backend's `updateBuffer` returns void, so a mid-sequence device failure cannot be detected here; engine-level device-loss recovery is still required.
+
+**Important consequence:** a small changed area can now be updated even when the full forest suffix is **larger than the frame's remaining upload budget**. For example, after the active region has consumed some budget, an outgoing region with one modified cluster may still be refreshed through one 8-vertex write instead of being repeatedly deferred. The planner reports an empty plan when the new quantized RGB8 values equal the existing values; this advances the applied weather-field revision with **zero** GPU traffic. A field snapshot can therefore change with no visual or RHI cost if all cluster samples quantize identically.
+
+`HorizonForestWindPatchResult` now reports `ranges`, `changedClusters`, and `fullRangeFallback` alongside readiness and uploaded byte count. The existing runtime count `windOverlayPatchWrites` counts **region update batches**, not individual RHI calls; `windOverlayPatchBytes` continues recording actual summed bytes. Added `HorizonRuntimeStats::windOverlayPatchRanges`, `windOverlayChangedClusters`, `windOverlayFullRangeFallbacks`, and `windOverlayNoopRevisions` to distinguish range traffic, changed cluster groups, dense/fragmented fallback, and no-change field revisions.
+
+### Compatibility and boundaries
+
+The algorithm operates on the same already-uploaded Horizon forest primitive, signed world-centimetre PHYSIS sample centres and quantized RG8/B8+A8 wind metadata as Stage34. No changes to `WorldScene::setVegetationWindField`, `setVegetationHorizonExactWindField`, season policy, terrain height/near weld/clip geometry, shared atlas or TWH8 format. `HorizonGpuRegion` still owns its matching compact vertex shadow through LRU and crossfade. Camera ticks alone do not trigger vertex uploads. CPU work still visits/samples all resident clusters to detect which quantized colours changed; only the GPU transfer is sparse. A pathological checkerboard of changed clusters intentionally uses the full-range fallback rather than issuing hundreds of RHI updates.
+
+**Validation intentionally deferred:** source commits and source inspection only; the new planner and RHI code have not been compiled, CTest has not run, and no Metal/Vulkan/GL backend or PHYSIS integration screenshots/performance data have been obtained. A later tester must verify one dirty cluster, adjacent clusters, eight vs nine disjoint runs, the 70% threshold, negative world coordinates, identical quantized samples, reduced bandwidth, active/outgoing combined budgets, disabled buffer updates, old cached GPU-region reactivation, and full-fallback correctness before release. Stage29's outdated impostor tests also remain pending.
