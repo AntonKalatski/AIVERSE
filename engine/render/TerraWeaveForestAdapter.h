@@ -158,6 +158,12 @@ public:
                 const float scale = float(instance.scalePermille) * 0.001f;
                 render::ModelDraw draw;
                 draw.model = model;
+                const uint32_t canopyCover=canopyCoverPermille(
+                    phenology_,evergreen_.at(batch.speciesId));
+                // Both the branch model and the impostor use bark material 0
+                // and foliage material 1. Bare deciduous trees submit ONLY
+                // bark, eliminating invisible leaf draws in winter.
+                if(canopyCover==0u)draw.primitiveMaterialFilter=0;
                 if (batch.lod == TreeLOD::Impostor) {
                     const auto& variants = phenology_==CanopyPhenology{} ?
                         billboardMaterials_.at(batch.speciesId) :
@@ -248,15 +254,19 @@ private:
                     phenology_,evergreen_.at(id)));
             seasonalNearMaterials_.emplace(id,std::move(materials));
         }
-        // Impostors have a combined bark+foliage image in one material.
-        // Their fading therefore affects the entire billboard, unlike
-        // near geometry where bark remains opaque. No new GPU atlas.
+        // The impostor atlas now has two disjoint pages in ONE GPU image:
+        // bark material 0 is never tinted/faded, foliage material 1 is
+        // seasonally adjusted. Per-azimuth override vectors remain stable
+        // across frame submissions, with no per-instance materials.
         for(const auto& [id,variants]:billboardMaterials_) {
             auto seasonal=variants;
             const uint32_t coverage=canopyCoverPermille(
                 phenology_,evergreen_.at(id));
-            for(auto& materials:seasonal)
-                if(!materials.empty())tint(materials[0],coverage);
+            for(auto& materials:seasonal) {
+                if(materials.size()!=2)
+                    throw std::logic_error("TerraWeave impostor material slots");
+                tint(materials[1],coverage);
+            }
             seasonalBillboardMaterials_.emplace(id,std::move(seasonal));
         }
     }
