@@ -9,6 +9,7 @@
 #include "engine/world/TerraWeaveNereidFloodBridge.h"
 #include "engine/world/TerraWeaveFloodShorelineSystem.h"
 #include "engine/world/TerraWeaveShoreRecoveryEcs.h"
+#include "engine/world/TerraWeaveForestEcologyEcs.h"
 #include "engine/world/TerraWeaveFlowObstructionEcs.h"
 #include <functional>
 #include <optional>
@@ -32,7 +33,10 @@ inline void registerSystems(
         std::optional<terraweave::ShorelineRasterSettings>
             autoFloodShoreline=std::nullopt,
         bool enableEcologyRecovery=true,
-        terraweave::ShoreRecoverySettings recoverySettings={}) {
+        terraweave::ShoreRecoverySettings recoverySettings={},
+        std::vector<terraweave::ForestEcologySpecies>
+            rootedForestSpecies={},
+        terraweave::ForestEcologySettings rootedForestSettings={}) {
     lib::nereid::NativeWaterPipelineConfig water{};
     water.enableBankErosion=true;
     // Geometry and current state belong to NEREID, including polygon/
@@ -59,6 +63,11 @@ inline void registerSystems(
     terraweave::registerTerraWeaveAuthorityResource(sim,cfg);
     if(enableEcologyRecovery)
         terraweave::registerShoreRecoveryPersistence(sim);
+    // The rooted-plant ecology is opt-in PER SPECIES and tracks only
+    // the interactable subset of trees/shrubs, never the entire million-
+    // instance procedural forest or individual grass blades.
+    if(!rootedForestSpecies.empty())
+        terraweave::registerTerraWeaveForestEcologyPersistence(sim);
     // NEREID calculates local bank erosion; transport then conserves
     // suspended sediment between same-water-body neighbouring banks.
     // TerraWeave applies already computed soil changes LAST.
@@ -91,6 +100,13 @@ inline void registerSystems(
     if(enableEcologyRecovery)
         terraweave::addTerraWeaveShoreEcologySystem(
             sim,"terraweave.shore_ecology",cfg,recoverySettings);
+    // Rooted-plant mortality and recruitment are independent of grass
+    // restoration; create this fixed-period ECS stage only when species
+    // policies are explicitly authored by the game.
+    if(!rootedForestSpecies.empty())
+        terraweave::addTerraWeaveForestEcologySystem(
+            sim,"terraweave.forest_ecology",cfg,
+            std::move(rootedForestSpecies),rootedForestSettings);
 }
 
 inline Entity addWaterBody(
