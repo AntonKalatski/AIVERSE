@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <map>
+#include <utility>
 
 namespace aiverse::spectra {
 
