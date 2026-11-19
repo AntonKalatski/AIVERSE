@@ -8,6 +8,7 @@
 #include "engine/render/PersistentGpuSceneUpload.h"
 #include "engine/render/GpuSceneDrawCommands.h"
 #include "engine/render/GpuIcbPolicy.h"
+#include "engine/render/StaticModelCachePolicy.h"
 #include "engine/render/ModelShaders.h"
 #include <cstdlib>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "model batching check failed: %s at %d\n", #x, __LINE__); std::exit(1); } } while (0)
@@ -511,6 +512,55 @@ int main() {
         CHECK(chooseSceneBatchMode({12.100, 11.800, 11.900}, 3) == 1);
         CHECK(chooseSceneBatchMode({12.100, 12.020, 11.700}, 3) == 2);
         CHECK(chooseSceneBatchMode({12.100, 12.070, 10.000}, 2) == 0);
+    }
+
+    // CPU-side cross-frame rigid cache is deliberately narrower than an
+    // immediate ModelDraw: visibility and material overrides stay live.
+    {
+        Model model;
+        model.nodes.resize(1);
+        model.meshes.resize(1);
+        ModelDraw draw;
+        draw.model = &model;
+        draw.persistentId = 41;
+        draw.flags = kDrawStatic;
+        CHECK(staticModelCacheCandidate(draw, false));
+        draw.materials = &model.materials;
+        std::vector<int> nodeOverrides(1, -1);
+        draw.nodeMaterial = &nodeOverrides;
+        CHECK(staticModelCacheCandidate(draw, false));
+        CHECK(!staticModelCacheCandidate(draw, true));
+
+        StaticModelCache cache;
+        cache.model = &model;
+        cache.world = draw.world;
+        cache.transforms.resize(model.nodes.size());
+        cache.primitiveOffsets.resize(model.meshes.size());
+        CHECK(staticModelCacheGeometryCompatible(cache, draw, false));
+        CHECK(!staticModelCacheGeometryCompatible(cache, draw, true));
+        draw.world.m[12] += 2.0f;
+        CHECK(!staticModelCacheGeometryCompatible(cache, draw, false));
+        draw.world = cache.world;
+        draw.persistentId = 0;
+        CHECK(!staticModelCacheCandidate(draw, false));
+        draw.persistentId = 41;
+        draw.flags = 0;
+        CHECK(!staticModelCacheCandidate(draw, false));
+        draw.flags = kDrawStatic;
+        std::vector<mat4> animatedNodes(1);
+        draw.nodeWorld = &animatedNodes;
+        CHECK(!staticModelCacheCandidate(draw, false));
+        CHECK(!staticModelCacheGeometryCompatible(cache, draw, false));
+        draw.nodeWorld = nullptr;
+        model.nodes[0].runtimeMutable = true;
+        CHECK(!staticModelCacheCandidate(draw, false));
+        model.nodes[0].runtimeMutable = false;
+        model.clips.emplace_back();
+        CHECK(!staticModelCacheCandidate(draw, false));
+        CHECK(!staticModelCacheGeometryCompatible(cache, draw, false));
+        model.clips.clear();
+        model.geometry = std::make_shared<GeometryData>();
+        CHECK(!staticModelCacheCandidate(draw, false));
     }
 
     std::puts("engine model batching policy: PASS");
