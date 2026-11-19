@@ -22,6 +22,7 @@
 #include <deque>
 #include <functional>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 #include "engine/net/Conn.h"
@@ -81,6 +82,14 @@ struct Value {
     bool operator==(const Value&) const = default;
 };
 
+// Backport of the PHYSIS Stage100 replica hot path. A stack array of
+// field/value changes is applied in original field order with one
+// authoritative object/layout lookup and unchanged quantization.
+struct FieldUpdate {
+    int field = -1;
+    Value value{};
+};
+
 // ---------------------------------------------------------------- server
 struct ServerOptions {
     int tickRate = 60;              // Server::tick() calls per second (snapshot tick numbering)
@@ -124,6 +133,7 @@ public:
     // Stores the value as given (get() returns it); snapshots carry its quantized form, so a change below
     // the field's precision costs nothing. Unknown ids / fields are ignored.
     void set(ObjectId id, int field, const Value& v);
+    void setFields(ObjectId id, std::span<const FieldUpdate> updates);
     const Value& get(ObjectId id, int field) const;
     void setOwner(ObjectId id, uint8_t slot);               // 0 = nobody; the owner gets ownedState for prediction
     void setVisibleTo(ObjectId id, uint8_t slot, bool on);  // per-client override (hidden info); default: by interest
@@ -137,6 +147,9 @@ public:
     std::vector<uint8_t> clients() const;
     // Where the client looks from (its character, camera); several viewers per client are allowed.
     void setViewers(uint8_t slot, const std::vector<std::array<float, 3>>& points);
+    // Single-viewer variant retains setViewers' finite check without
+    // constructing the common one-element std::vector every tick.
+    void setViewer(uint8_t slot, std::array<float, 3> point);
     uint32_t rttMs(uint8_t slot) const;
 
     std::function<void(uint8_t slot)> onJoin, onLeave;
