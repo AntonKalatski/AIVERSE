@@ -122,6 +122,41 @@ public:
             capability.adaptiveRequested ? "requested" : "off");
         if (!capability.fallbackReason.empty())
             ImGui::TextDisabled("GPU fallback reason: %s",capability.fallbackReason.c_str());
+        if (ImGui::CollapsingHeader("Диагностика эффектов по камерам")) {
+            ImGui::TextDisabled("Encoded = отправлен draw, НЕ GPU completion или проверенные пиксели.");
+            const auto ids = pf.effectReportViewIds();
+            if (ids.empty()) ImGui::TextDisabled("Нет завершённых Prisma resolve для камер.");
+            for (const uint64_t id : ids) {
+                const auto* report = pf.effectReport(id);
+                if (!report) continue;
+                const std::string label = std::string("View ") + std::to_string(id) +
+                    " | resolve " + std::to_string(report->sequence) + "##prisma-view-" +
+                    std::to_string(id);
+                if (ImGui::TreeNode(label.c_str())) {
+                    ImGui::TextDisabled("%dx%d | tier %s | HDR %s | Scene %s",
+                        report->width, report->height,
+                        prismaQualityName(report->quality),
+                        report->hdr ? "yes" : "no",
+                        report->sceneReady ? "ready" : "unavailable");
+                    if (report->effects.empty())
+                        ImGui::TextDisabled("Для последнего кадра нет authored эффектов.");
+                    for (const auto& state : report->effects) {
+                        const auto& def = prismaType(state.type);
+                        ImGui::BulletText("%s | req %s | pipe %s | encoded %s",
+                            def.label,
+                            state.requested ? "yes" : "no",
+                            state.pipelinePrepared ? "ready" : "not ready",
+                            state.encoded ? "yes" : "no");
+                        if (!state.reason.empty()) {
+                            ImGui::Indent();
+                            ImGui::TextDisabled("Reason: %s", state.reason.c_str());
+                            ImGui::Unindent();
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+            }
+        }
         ImGui::TextDisabled("Jitter: отдельный opt-in AIVERSE_PRISMA_JITTER=1; без него обычный Temporal Resolve остаётся доступен.");
         ImGui::TextDisabled("GPU adaptive: %s  |  scale: %.3f  |  stable fallback: %s",
             pf.stats().adaptiveResolution ? "on" : "off",
