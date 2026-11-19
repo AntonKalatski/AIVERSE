@@ -8,6 +8,7 @@
 #include "ModelVisibility.h"
 #include "ModelLodTransition.h"
 #include "GpuIcbPolicy.h"
+#include "ModelVertexStreamOverride.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -549,7 +550,21 @@ void Renderer3D::drawModel(const ModelDraw& d) {
     ProfileTimer timer(profiling_?&profile_.submitMs:nullptr);
     const Model* m = d.model;
     if (!m || !m->vb.valid() || m->nodes.empty()) return;
-    recordPersistentModel(d);
+    const auto overrideStatus = modelVertexOverrideStatus(
+        *m, d.vertexOverride, d.vertexOverrideCount);
+    if (overrideStatus != ModelVertexOverrideStatus::Ready &&
+        overrideStatus != ModelVertexOverrideStatus::Disabled) {
+        // An invalid override must not silently draw stale/unmorphed geometry.
+        return;
+    }
+    const bool customVertexStream = overrideStatus == ModelVertexOverrideStatus::Ready;
+    // Initial acceptance gate: only dedicated, dynamic Metal source geometry.
+    // Never participate in shared/static/persistent GPU command generation.
+    if (customVertexStream &&
+        (dev_->info().backend != gfx::Backend::Metal ||
+         (d.flags & kDrawStatic) || !m->ib.valid() || d.baked))
+        return;
+    if (!customVertexStream) recordPersistentModel(d);
     if (capture_ && (d.flags & kDrawStatic)) {   // light baker: the static scene, every node in world space
         const auto& pose = d.nodeWorld && d.nodeWorld->size() == m->nodes.size() ? *d.nodeWorld : m->bindWorld;
         std::vector<mat4> nodeWorld(pose.size());
@@ -557,15 +572,16 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         capture_(d, nodeWorld);
     }
     const auto* cache=d.staticCache;
+    if(customVertexStream)cache=nullptr;
     if(cache&&(cache->model!=m||cache->transforms.size()!=m->nodes.size()||cache->primitiveOffsets.size()!=m->meshes.size()||std::memcmp(cache->world.m,d.world.m,sizeof d.world.m)!=0||d.nodeWorld||d.materials||d.nodeMaterial||d.pose||d.baked||!m->skins.empty()||!m->clips.empty()))cache=nullptr;
     if(cache)++profile_.cachedModels;
     // whole-model culling with the bind-pose bounds (padded: animation moves limbs outside them)
     float3 c = (m->boundsMin + m->boundsMax) * 0.5f, e = (m->boundsMax - m->boundsMin) * 0.75f + float3{0.1f, 0.1f, 0.1f};
     const auto& graphMaterials=d.materials && d.materials->size()>=m->materials.size()?*d.materials:m->materials;
     const bool displaced=cache?cache->displaced:std::any_of(graphMaterials.begin(),graphMaterials.end(),[this](const Material& mat){return mat.shaderGraph && int(matQuality_)>=mat.shaderGraph->minQuality && mat.shaderGraph->outputs.count("vertexOffset");});
-    const bool inView = displaced || (cache?modelBoxVisible(viewProj_,cache->min,cache->max):modelBoxVisible(viewProj_ * d.world, c - e, c + e));
+    const bool inView = customVertexStream || displaced || (cache?modelBoxVisible(viewProj_,cache->min,cache->max):modelBoxVisible(viewProj_ * d.world, c - e, c + e));
     const bool inShadow = quality_ != ShadowQuality::Off && !(d.flags & kDrawNoCastShadow) && (d.tint.w >= 0.99f || (d.flags & kDrawKeepShadow)) && d.dissolve <= 0 &&
-                          (displaced || (cache?modelBoxVisible(lightViewProj_,cache->min,cache->max):modelBoxVisible(lightViewProj_ * d.world, c - e, c + e)));
+                          (customVertexStream || displaced || (cache?modelBoxVisible(lightViewProj_,cache->min,cache->max):modelBoxVisible(lightViewProj_ * d.world, c - e, c + e)));
     if (!inView && !inShadow) return;
     const std::vector<mat4>& world = d.nodeWorld && d.nodeWorld->size() == m->nodes.size() ? *d.nodeWorld : m->bindWorld;
     const std::vector<Material>& mats = d.materials && d.materials->size() >= m->materials.size() ? *d.materials : m->materials;
@@ -581,7 +597,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         if (node.mesh < 0) continue;
         ++modelStats_.nodes;
         const MeshDef& baseMesh = m->meshes[size_t(node.mesh)];
-        const bool rigid = node.skin < 0 && !baseMesh.deformable && !displaced;
+        const bool rigid = node.skin < 0 && !baseMesh.deformable && !displaced && !customVertexStream;
         const mat4 nodeWorld = cache ? cache->transforms[size_t(n)] : d.world * world[size_t(n)];
         bool nodeView = inView, nodeShadow = inShadow;
         if (rigid && modelCullingEnabled_) {
@@ -594,7 +610,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         // Palette poses provide conservative current skin bounds. Baked-only draws keep
         // LOD0 until they supply pose bounds; bind bounds can underestimate a bent limb.
         const bool skinLod = node.skin >= 0 && !displaced && usePose && !canBake && d.nodeWorld && d.nodeWorld->size() == m->nodes.size();
-        const bool lodEligible = (rigid || skinLod) && !baseMesh.lods.empty() &&
+        const bool lodEligible = !customVertexStream && (rigid || skinLod) && !baseMesh.lods.empty() &&
                                  d.variant < 0 && !d.nodeMaterial;
         if (modelLodEnabled_ && lodEligible) {
             mat4 lodWorld = nodeWorld;
@@ -664,9 +680,9 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         for(int part=0;part<(lodBlend.incoming>=0?2:1);++part) {
         meshIndex=part?lodBlend.incoming:lodBlend.mesh;
         const MeshDef& drawMesh = m->meshes[size_t(meshIndex)];
-        const bool shadowBatch = !m->geometry && !d.nodeMaterial && d.variant < 0 && shadowBatchCompatible(drawMesh, mats);
+        const bool shadowBatch = !customVertexStream && !m->geometry && !d.nodeMaterial && d.variant < 0 && shadowBatchCompatible(drawMesh, mats);
         std::vector<const MaterialBatch*> colourBatches;
-        if (!m->geometry && !d.nodeMaterial && d.variant < 0 && d.tint.w >= .99f && !transparentItem(d.flags))
+        if (!customVertexStream && !m->geometry && !d.nodeMaterial && d.variant < 0 && d.tint.w >= .99f && !transparentItem(d.flags))
             for (const auto& batch : drawMesh.materialBatches)
                 if (materialBatchCompatible(drawMesh, batch, mats)) colourBatches.push_back(&batch);
         auto addItem = [&](const Primitive& p, uint8_t shadowRole, uint8_t materialRole = 0) {
@@ -720,6 +736,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             if(!cache)for (int mesh = 0; mesh < meshIndex; ++mesh) pi += m->meshes[size_t(mesh)].primitives.size();
             it.geometryPrimitive = shadowRole == 2 || materialRole == 2 ? 0 : pi + size_t(&p - m->meshes[size_t(meshIndex)].primitives.data());
             it.model = m; it.prim = &p; it.mat = &mats[size_t(std::clamp(mi, 0, int(mats.size()) - 1))];
+            it.vertexOverride = customVertexStream ? d.vertexOverride : gfx::BufferHandle{};
             it.tint = d.tint; it.team = d.team; it.flash = d.flash; it.flags = d.flags | (mats[size_t(std::clamp(mi, 0, int(mats.size()) - 1))].transparent ? uint32_t(kDrawTransparent) : 0u);
             it.dissolve = d.dissolve; it.teamGlow = d.teamGlow; it.outline = d.outline;
             it.rigid = rigid;
@@ -743,7 +760,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             } else {
                 it.world = cache?cache->transforms[size_t(n)]:d.world * world[size_t(n)];
             }
-            if (p.morphTargets > 0 && m->morphTex.valid()) {
+            if (!customVertexStream && p.morphTargets > 0 && m->morphTex.valid()) {
                 const float* w = usePose ? (*d.pose)[size_t(n)].w : node.weights;
                 bool any = false;
                 for (int k = 0; k < p.morphTargets; ++k) any |= w[k] != 0;
@@ -936,7 +953,7 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         mo[12] = float(it.model->morphTexWidth);
         dev_->setUniforms(4, mo, sizeof mo);
     }
-    dev_->setVertexBuffer(it.model->vb);
+    dev_->setVertexBuffer(it.vertexOverride.valid() ? it.vertexOverride : it.model->vb);
     dev_->setIndexBuffer(it.model->ib);
     if (!submit) {
         if (tracePreparation) {
@@ -1193,7 +1210,7 @@ void Renderer3D::prepareGpuModelDraws() {
             (it.flags & (kDrawTransparent | kDrawFadeDepth | kDrawActorReveal)) ||
             it.tint.w < .99f || it.mat->alpha != AlphaMode::Opaque ||
             it.mat->transparent || it.mat->shaderGraph ||
-            it.joints >= 0 || it.morph >= 0 || it.baked ||
+            it.joints >= 0 || it.morph >= 0 || it.baked || it.vertexOverride.valid() ||
             it.gi != 0 || it.materialRole || it.shadowRole || it.paletteMaterials ||
             // Current GPU compute only does frustum culling; do not bypass
             // the CPU occlusion pipeline for geometry requiring its tests.
@@ -1524,7 +1541,7 @@ void Renderer3D::renderModels(int phase) {
                     visible && (phase == 2) == blended;
         if (phase != 0 && it.tint.w <= 0.f) take = false;
         if (it.shadowRole == (phase == 0 ? 1 : 2)) take = false;   // batched parts cast through their shadow batch
-        if(take&&phase==0&&!it.mat->shaderGraph&&it.joints<0&&!it.baked&&it.morph<0)
+        if(take&&phase==0&&!it.mat->shaderGraph&&it.joints<0&&!it.baked&&it.morph<0&&!it.vertexOverride.valid())
             take=geometryBoxVisible(lightViewProj_*it.world,it.prim->boundsMin,it.prim->boundsMax);
         // Reflection has its own view, never consume main-view occlusion there.
         if (phase == 1 && !geometryMainView_) take = it.shadowRole != 2 && !blended && (it.mat->shaderGraph || geometryBoxVisible(viewProj_ * it.world, it.prim->boundsMin, it.prim->boundsMax));
@@ -1538,7 +1555,7 @@ void Renderer3D::renderModels(int phase) {
             if(top<=.055f)take=false;
         }
         if ((it.materialRole == 1 && phase == 1) || (it.materialRole == 2 && phase != 1)) take = false;
-        if (take && phase != 0 && geometryMainView_ && it.geometry.occlusion && !it.mat->shaderGraph && it.joints < 0 && !it.baked && it.morph < 0 && it.outline.w == 0 &&
+        if (take && phase != 0 && geometryMainView_ && it.geometry.occlusion && !it.vertexOverride.valid() && !it.mat->shaderGraph && it.joints < 0 && !it.baked && it.morph < 0 && it.outline.w == 0 &&
             geometryOcclusion_.hidden(viewProj_ * it.world, it.prim->boundsMin, it.prim->boundsMax)) {
             if (phase == 1 || phase == 2) ++geometryStats_.occluded;
             take = false;
@@ -1721,7 +1738,7 @@ void Renderer3D::renderModels(int phase) {
     ProfileTimer timer(profiling_?&profile_.drawMs[size_t(phase)]:nullptr);
     currentPipe_ = {};
     lastItem_ = nullptr;
-    auto batchable = [&](const ModelItem& x) { return modelInstancingEnabled_ && x.joints < 0 && x.morph < 0; };
+    auto batchable = [&](const ModelItem& x) { return modelInstancingEnabled_ && !x.vertexOverride.valid() && x.joints < 0 && x.morph < 0; };
     auto sameBatch = [&](uint32_t xIndex, uint32_t yIndex) {
         const ModelItem& x = modelItems_[xIndex];
         const ModelItem& y = modelItems_[yIndex];
@@ -1843,7 +1860,7 @@ void Renderer3D::renderModels(int phase) {
             ++mdiCandidates;
             const uint32_t firstIndex = order_[i];
             const auto& first = modelItems_[firstIndex];
-            const bool firstEligible = !first.model->geometry &&
+            const bool firstEligible = !first.vertexOverride.valid() && !first.model->geometry &&
                 first.gi == 0 && !first.materialRole && !first.shadowRole &&
                 !first.baked && first.joints < 0 && first.morph < 0 &&
                 !first.paletteMaterials && first.tint.w >= .99f;
@@ -1860,6 +1877,7 @@ void Renderer3D::renderModels(int phase) {
                     !first.materialRole && !y.materialRole &&
                     !first.shadowRole && !y.shadowRole &&
                     !first.baked && !y.baked &&
+                    !first.vertexOverride.valid() && !y.vertexOverride.valid() &&
                     first.joints < 0 && y.joints < 0 &&
                     first.morph < 0 && y.morph < 0 &&
                     !first.paletteMaterials && !y.paletteMaterials &&
@@ -2035,7 +2053,7 @@ void Renderer3D::drawGeometryBatch(const uint32_t* items, uint32_t count, int ph
     auto& it = modelItems_[items[0]];
     const bool shadow=phase==0;
     const bool selected=shadow?it.geometry.shadowClusters:(phase==1&&geometryMainView_&&it.geometry.clusters);
-    const bool eligible = count == 1 && selected && it.indexCount >= 6144 && !it.mat->shaderGraph && it.model->geometry &&
+    const bool eligible = count == 1 && !it.vertexOverride.valid() && selected && it.indexCount >= 6144 && !it.mat->shaderGraph && it.model->geometry &&
         it.joints < 0 && !it.baked && it.morph < 0 && it.outline.w == 0 && it.dissolve == 0;
     if (!eligible) { drawModelBatch(items,count,phase); return; }
     const auto& clusters = it.model->geometry->primitives[it.geometryPrimitive];
