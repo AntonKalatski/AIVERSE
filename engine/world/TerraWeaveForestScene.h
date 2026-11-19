@@ -14,6 +14,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -350,33 +351,84 @@ public:
         for (const auto& [key, patch] : patches_) {
             (void)key;
             for (const FoliageInstance& instance : patch) {
-                const ForestTreeIdentity id{instance.key,instance.speciesId};
-                if (removed_.contains(id)) continue;
-                const auto it=regrowth_.find(id);
-                if (it==regrowth_.end()) {
-                    placements.push_back(instance);
-                } else {
-                    const auto& growth=it->second;
-                    if (presentationTick_<growth.regrowAtTick)continue;
-                    FoliageInstance scaled=instance;
-                    uint32_t factor=1000;
-                    if (presentationTick_<growth.matureAtTick &&
-                        growth.matureAtTick>growth.regrowAtTick) {
-                        const uint64_t duration=growth.matureAtTick-growth.regrowAtTick;
-                        const uint64_t elapsed=presentationTick_-growth.regrowAtTick;
-                        factor=growth.initialScalePermille+static_cast<uint32_t>(
-                            elapsed*(1000u-growth.initialScalePermille)/duration);
-                    }
-                    scaled.scalePermille=std::max<uint32_t>(1u,
-                        uint32_t(uint64_t(instance.scalePermille)*factor/1000u));
-                    placements.push_back(scaled);
-                }
+                if(auto shown=presentationInstance(instance))
+                    placements.push_back(*shown);
             }
         }
         FloraView view = settings_.view;
         view.cameraXcm = observer_.x;
         view.cameraZcm = observer_.z;
         return buildFloraBatches(placements, view);
+    }
+
+
+    // Native gameplay selection without allocating per-tree ECS entities.
+    // Searches only resident CPU scatter patches, regardless of camera LOD.
+    // Hidden/removed trees are excluded; growing trees return visual scale.
+    // Equal-distance ties resolve by stable species ID and tree key.
+    std::optional<FoliageInstance> nearestTreeAt(
+            int64_t xCm,int64_t zCm,int32_t radiusCm=500) const {
+        validateQueryCenter(xCm,zCm);
+        if(radiusCm<=0 || radiusCm>10000000)
+            throw std::invalid_argument("TerraWeave tree query radius");
+        const int64_t radius=radiusCm;
+        const int64_t radiusSquared=radius*radius;
+        std::optional<FoliageInstance> best;
+        int64_t bestDist=radiusSquared;
+        for(const auto& [cell,patch]:patches_){
+            if(!patchOverlaps(cell,{xCm-radius,zCm-radius,
+                                    xCm+radius+1,zCm+radius+1}))continue;
+            for(const FoliageInstance& instance:patch) {
+                const int64_t dx=instance.xCm-xCm,dz=instance.zCm-zCm;
+                if(dx<-radius || dx>radius ||
+                   dz<-radius || dz>radius)continue;
+                const int64_t dist=dx*dx+dz*dz;
+                if(dist>bestDist)continue;
+                const auto shown=presentationInstance(instance);
+                if(!shown)continue;
+                if(!best || dist<bestDist ||
+                   (dist==bestDist &&
+                    ForestTreeIdentity{shown->key,shown->speciesId} <
+                    ForestTreeIdentity{best->key,best->speciesId})){
+                    best=*shown;
+                    bestDist=dist;
+                }
+            }
+        }
+        return best;
+    }
+
+    // Bounded rectangle query for construction/harvest gameplay. Results are
+    // sorted by stable species/key; an oversized match set throws instead of
+    // silently dropping arbitrary trees or producing unbounded allocations.
+    std::vector<FoliageInstance> treesInRect(
+            RectCm region,size_t maxResults=1024) const {
+        if(region.minX>=region.maxX || region.minZ>=region.maxZ ||
+           region.minX<-kWorldLimitCm || region.minZ<-kWorldLimitCm ||
+           region.maxX>kWorldLimitCm || region.maxZ>kWorldLimitCm)
+            throw std::invalid_argument("TerraWeave tree query rectangle");
+        if(maxResults==0 || maxResults>100000)
+            throw std::invalid_argument("TerraWeave tree query result budget");
+        std::vector<FoliageInstance> results;
+        for(const auto& [cell,patch]:patches_){
+            if(!patchOverlaps(cell,region))continue;
+            for(const FoliageInstance& instance:patch){
+                if(!region.contains(instance.xCm,instance.zCm))continue;
+                const auto shown=presentationInstance(instance);
+                if(!shown)continue;
+                if(results.size()==maxResults)
+                    throw std::length_error("TerraWeave tree query result overflow");
+                results.push_back(*shown);
+            }
+        }
+        std::sort(results.begin(),results.end(),
+            [](const FoliageInstance& a,const FoliageInstance& b){
+                if(a.speciesId!=b.speciesId)return a.speciesId<b.speciesId;
+                if(a.key!=b.key)return a.key<b.key;
+                if(a.xCm!=b.xCm)return a.xCm<b.xCm;
+                return a.zCm<b.zCm;
+            });
+        return results;
     }
 
     // Call on GPU-owning render thread AFTER all species are registered.
@@ -436,6 +488,38 @@ public:
     const ArborForestAdapter& adapter() const { return adapter_; }
 
 private:
+    static void validateQueryCenter(int64_t x,int64_t z){
+        if(x<-kWorldLimitCm || x>kWorldLimitCm ||
+           z<-kWorldLimitCm || z>kWorldLimitCm)
+            throw std::out_of_range("TerraWeave tree query world extent");
+    }
+    bool patchOverlaps(std::pair<int64_t,int64_t> cell,RectCm region) const {
+        const int64_t side=settings_.chunkSizeCm;
+        const int64_t minX=cell.first*side,minZ=cell.second*side;
+        return minX<region.maxX && minX+side>region.minX &&
+               minZ<region.maxZ && minZ+side>region.minZ;
+    }
+    std::optional<FoliageInstance> presentationInstance(
+            const FoliageInstance& instance) const {
+        const ForestTreeIdentity id{instance.key,instance.speciesId};
+        if(removed_.contains(id))return std::nullopt;
+        const auto it=regrowth_.find(id);
+        if(it==regrowth_.end())return instance;
+        const auto& growth=it->second;
+        if(presentationTick_<growth.regrowAtTick)return std::nullopt;
+        FoliageInstance scaled=instance;
+        uint32_t factor=1000;
+        if(presentationTick_<growth.matureAtTick &&
+           growth.matureAtTick>growth.regrowAtTick){
+            const uint64_t duration=growth.matureAtTick-growth.regrowAtTick;
+            const uint64_t elapsed=presentationTick_-growth.regrowAtTick;
+            factor=growth.initialScalePermille+static_cast<uint32_t>(
+                elapsed*(1000u-growth.initialScalePermille)/duration);
+        }
+        scaled.scalePermille=std::max<uint32_t>(1u,
+            uint32_t(uint64_t(instance.scalePermille)*factor/1000u));
+        return scaled;
+    }
     static void validateRegrowth(const ForestRegrowthSchedule& value) {
         constexpr uint64_t kMaxGrowthTicks=1000000000000ULL;
         if(!value.tree.speciesId ||
