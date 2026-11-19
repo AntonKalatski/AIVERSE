@@ -171,7 +171,9 @@ public:
         // deliberately skip skinned meshes, so plain primitive drawing
         // remains authoritative. Old appended batch index ranges may stay
         // in the immutable index stream but are no longer submitted.
-        for(auto& mesh:meshes) {
+        for(const auto& [key,unused]:sourceByPrimitive) {
+            (void)unused;
+            auto& mesh=meshes[key.mesh];
             mesh.shadowBatch={};
             mesh.materialBatches.clear();
             for(auto& p:mesh.primitives)p.shadowBatched=false;
