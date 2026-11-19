@@ -42,7 +42,8 @@ try {
         && m._aiverse_web_vt_completed() === 1
         && m._aiverse_web_vt_failures() === 0;
     }, null, { timeout: 30000 });
-    assert((await vt("stage")) === 4 && (await vt("gpu_reads")) === 3,
+    assert((await vt("stage")) === 5 && (await vt("gpu_reads")) === 3 &&
+      (await vt("shader_verified")) === 1,
       "production VT completes physical atlas and table GPU readback");
   }
   const initialFrames = await metric("frames");
@@ -135,7 +136,8 @@ try {
         return m && m._aiverse_web_vt_generation() === expected + 1
           && m._aiverse_web_vt_completed() === expected + 1
           && m._aiverse_web_vt_shutdowns() >= expected
-          && m._aiverse_web_vt_stage() === 4 && m._aiverse_web_vt_gpu_reads() === 3
+          && m._aiverse_web_vt_stage() === 5 && m._aiverse_web_vt_gpu_reads() === 3 &&
+          m._aiverse_web_vt_shader_verified() === 1
           && m._aiverse_web_vt_failures() === 0;
       }, cycle, { timeout: 30000 });
       assert((await vt("failures")) === 0,
@@ -146,7 +148,7 @@ try {
   }
   assert(errors.length === 0, "no page errors: " + errors.join("; "));
   console.log("PASS: AIVERSE WebGL2 context-loss suspension, device regeneration, browser texture-array readback");
-  if (verifyVT) console.log("PASS: production VirtualTextureStreamer atlas and indexed page-table GPU bytes validated after two context restores");
+  if (verifyVT) console.log("PASS: production VT atlas/table bytes and canonical shader sampling parity after two context restores");
 } finally {
   await browser.close();
 }
