@@ -61,6 +61,7 @@ struct CreatorApp {
     char recipeFile[512]="/tmp/aiverse-vivid-human.json";
     char manifestFile[512]="/tmp/aiverse-human-package.json";
     std::string importedManifest;
+    HumanImportManifest importedPackage;
     bool externalMode=false;
     bool commandLineAsset=false;
     std::string status;
@@ -165,6 +166,7 @@ struct CreatorApp {
             throw std::runtime_error("VIVID Creator: imported DNA invalid: "+error);
         syncDraft();
         importedManifest=path;
+        importedPackage=std::move(manifest);
         externalMode=true;
         pendingRebuild=true;
         status="Imported open human package: "+path;
@@ -217,7 +219,7 @@ struct CreatorApp {
             // data if DNA or shader-graph authoring fails.
             HumanPreviewAsset proposed;
             if(externalMode) {
-                const auto manifest=readManifest(importedManifest);
+                const auto& manifest=importedPackage;
                 auto imported=importHumanAsset(manifest,readerFor(importedManifest));
                 proposed.head=std::move(imported.model);
                 proposed.rig=imported.rig;
@@ -504,6 +506,39 @@ struct CreatorApp {
             externalMode=false;
             importedManifest.clear();
             pendingRebuild=true;
+        }
+        if(externalMode && ImGui::CollapsingHeader("Imported facial morph bindings")) {
+            ImGui::TextWrapped("Adjust gain for each imported ARKit channel -> shape route. "
+                               "The source target names and vertex data remain unchanged.");
+            for(std::size_t i=0;i<importedPackage.routes.size();++i) {
+                auto& route=importedPackage.routes[i];
+                ImGui::PushID(int(i));
+                ImGui::Text("%s -> %s",
+                    std::string(channelName(route.channel)).c_str(),
+                    route.targetName.c_str());
+                ImGui::SliderFloat("Gain",&route.gain,0.0f,4.0f,"%.2f");
+                if(ImGui::IsItemDeactivatedAfterEdit())pendingRebuild=true;
+                ImGui::PopID();
+            }
+            if(ImGui::Button("Save imported manifest")) {
+                try {
+                    importedPackage.validate();
+                    const auto data=importedPackage.toJson().dump(2);
+                    const std::filesystem::path destination(importedManifest);
+                    const auto staging=std::filesystem::path(importedManifest+".vivid.tmp");
+                    {
+                        std::ofstream out(staging,std::ios::binary|std::ios::trunc);
+                        if(!out)throw std::runtime_error("Manifest staging open failed");
+                        out.write(data.data(),std::streamsize(data.size()));
+                        out.flush();
+                        if(!out)throw std::runtime_error("Manifest staging write failed");
+                    }
+                    std::error_code ec;
+                    std::filesystem::rename(staging,destination,ec);
+                    if(ec)throw std::runtime_error("Manifest atomic replace failed: "+ec.message());
+                    status="Saved imported human manifest: "+importedManifest;
+                }catch(const std::exception& e){status=e.what();}
+            }
         }
         ImGui::TextWrapped("%s",externalMode ?
             "Imported head: edit material DNA, morph expressions and groom. "
