@@ -417,7 +417,28 @@ void main() {
 #endif
     col += amb * ao * base.rgb * pow(1.0 - ndv, 3.0) * 0.25;   // rim, keeps silhouettes readable from the RTS camera
     { col += diff * dd + (F0 + 0.15 * (1.0 - rough) * (1.0 - metallic)) * ds; }   // point lights + light reflections (Lights.h)
-    if (m_uv1.y > 0.5) col = m_light.w > 0.5 ? base.rgb * (m_uv1.z + m_uv1.w * clamp(dot(normalize(v_nrm), m_light.xyz), 0.0, 1.0)) : base.rgb;
+    // VIVID: opt-in multi-lobe approximation, shared by all model passes.
+    // PBR/unlit materials retain exactly their former paths (0 / 1).
+    if (m_uv1.y > 1.5 && m_uv1.y < 2.5) { // human skin
+        float scatter = clamp(m_uv1.z, 0.0, 1.0);
+        float wrapN = clamp((dot(n, L) + 0.45 * scatter) / (1.0 + 0.45 * scatter), 0.0, 1.0);
+        float transmitted = pow(max(dot(-n, L), 0.0), 3.0);
+        col += sun * sh * (base.rgb * max(wrapN - ndl, 0.0) * scatter * 0.65
+                         + base.rgb * vec3(0.65, 0.19, 0.12) * transmitted * scatter * 0.12);
+        col += sun * spec * sh * clamp(m_uv1.w, 0.0, 1.0) * 0.12;
+    } else if (m_uv1.y > 2.5 && m_uv1.y < 3.5) { // iris/cornea wet film
+        float tear = clamp(m_uv1.w, 0.0, 1.0);
+        float cornealGlint = pow(max(ndh, 0.0), 96.0) * (1.0 - rough);
+        col += sun * sh * vec3(cornealGlint) * (0.15 + 0.68 * tear);
+    } else if (m_uv1.y > 3.5 && m_uv1.y < 4.5) { // hair longitudinal lobe
+        vec3 strandT = normalize(v_tan.xyz);
+        float alignment = dot(strandT, H);
+        float ring = max(1.0 - alignment * alignment, 0.0);
+        float width = clamp(m_uv1.w, 0.0, 1.0);
+        float lobe = pow(ring, mix(16.0, 82.0, 1.0 - width));
+        col += sun * sh * base.rgb * lobe * clamp(m_uv1.z, 0.0, 1.0) * 0.85;
+    }
+    if (m_uv1.y > 0.5 && m_uv1.y < 1.5) col = m_light.w > 0.5 ? base.rgb * (m_uv1.z + m_uv1.w * clamp(dot(normalize(v_nrm), m_light.xyz), 0.0, 1.0)) : base.rgb;
     col += emis * (1.0 + nightGlow()) + v_team.a * vec3(1.0, 0.85, 0.7) + edge * vec3(1.0, 0.45, 0.12) * 3.0 + v_team.rgb * (v_draw.w * teamW);
     float dist = length(u_camPos.xyz - v_wpos);
     col = mix(col, rtsDecodeScene(u_fog.rgb), 1.0 - exp(-dist * u_fog.w));
@@ -885,7 +906,27 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
 #endif
     col += amb * ao * base.rgb * pow(1.0 - ndv, 3.0) * 0.25;
     { col += diff * dd + (F0 + 0.15 * (1.0 - rough) * (1.0 - metallic)) * ds; }
-    if (m.uv1.y > 0.5) col = m.light.w > 0.5 ? base.rgb * (m.uv1.z + m.uv1.w * clamp(dot(normalize(in.nrm), m.light.xyz), 0.0, 1.0)) : base.rgb;
+    // VIVID opt-in human BRDF lobes, matched to GLSL numerically.
+    if (m.uv1.y > 1.5 && m.uv1.y < 2.5) {
+        float scatter = clamp(m.uv1.z, 0.0, 1.0);
+        float wrapN = clamp((dot(n, L) + 0.45 * scatter) / (1.0 + 0.45 * scatter), 0.0, 1.0);
+        float transmitted = pow(max(dot(-n, L), 0.0), 3.0);
+        col += sun * sh * (base.rgb * max(wrapN - ndl, 0.0) * scatter * 0.65
+                         + base.rgb * float3(0.65, 0.19, 0.12) * transmitted * scatter * 0.12);
+        col += sun * spec * sh * clamp(m.uv1.w, 0.0, 1.0) * 0.12;
+    } else if (m.uv1.y > 2.5 && m.uv1.y < 3.5) {
+        float tear = clamp(m.uv1.w, 0.0, 1.0);
+        float cornealGlint = pow(max(ndh, 0.0), 96.0) * (1.0 - rough);
+        col += sun * sh * float3(cornealGlint) * (0.15 + 0.68 * tear);
+    } else if (m.uv1.y > 3.5 && m.uv1.y < 4.5) {
+        float3 strandT = normalize(in.tan.xyz);
+        float alignment = dot(strandT, H);
+        float ring = max(1.0 - alignment * alignment, 0.0);
+        float width = clamp(m.uv1.w, 0.0, 1.0);
+        float lobe = pow(ring, mix(16.0, 82.0, 1.0 - width));
+        col += sun * sh * base.rgb * lobe * clamp(m.uv1.z, 0.0, 1.0) * 0.85;
+    }
+    if (m.uv1.y > 0.5 && m.uv1.y < 1.5) col = m.light.w > 0.5 ? base.rgb * (m.uv1.z + m.uv1.w * clamp(dot(normalize(in.nrm), m.light.xyz), 0.0, 1.0)) : base.rgb;
     col += emis * (1.0 + lu.info.w) + in.team.a * float3(1.0, 0.85, 0.7) + edge * float3(1.0, 0.45, 0.12) * 3.0 + in.team.rgb * (in.draw.w * teamW);
     float dist = length(f.camPos.xyz - in.wpos);
     col = mix(col, rtsDecodeScene(f.fog.rgb), 1.0 - exp(-dist * f.fog.w));
