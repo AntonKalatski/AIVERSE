@@ -445,3 +445,33 @@ presentation bridge as authoritative fluid simulation; PHYSIS/Box3D
 and game movement retain ownership of integrators and gravity.
 No tests/compiles performed per user direction. Exact stage commits,
 limitations and next implementation are in `docs/nereid/HANDOFF.md`.
+
+## Stage 30 — directional stern wakes, preserving existing interaction saves
+
+The optional `WaterWakeDirectionComponent` is now a separate
+persisted actor ECS component: `direction` (normalized X/Z),
+`travelled` (metres since previous tick), and `sampledTick`.
+Attach it to actors which need directional wakes, alongside the
+existing `WaterInteraction*Component` set.
+`registerNereidInteractionPersistence(sim)` registers this extra
+optional component without modifying the v1
+`WaterInteractionOutputComponent` wire/save schema.
+
+For `SurfaceWake` events, `addWaterInteractionSystem` samples
+movement in deterministic `Fixed` from prior probe position,
+publishes optional direction, and the read-only presentation snapshot
+copies that direction only when the tick matches. Other contact
+events preserve their circular wave visuals.
+
+The Stage 23 `NereidRippleField` now creates aligned
+`NereidRippleShaderPacket {rings,shapes}` for the 16 closest
+events per water surface or spatial tile. The shared Renderer3D
+draw item and GLSL/MSL U0 have a second `vec4[16]`
+(`waterWakeShapes`) parallel to the original ripple array:
+X/Z is normalized heading, Z contains a transverse shape scale,
+W marks directional wakes. W=0 keeps the original radial ripple.
+The fragment shader produces a stern-biased elliptical wake and
+normal/foam response. No new textures, passes, physics integration
+or genre dependency. GPU shader validation remains deferred by
+explicit owner instruction. Exact file/commit list is in
+`docs/nereid/HANDOFF.md`.
