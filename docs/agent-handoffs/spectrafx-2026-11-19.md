@@ -346,3 +346,23 @@ git switch feature/spectrafx-generic-cue-queue
 git pull --ff-only origin feature/spectrafx-generic-cue-queue
 git fetch origin main && git merge origin/main
 ```
+
+
+## 2026-11-19 — Stage 20: embedded SpectraFX live CPU preview
+- **Branch:** `feature/spectrafx-generic-cue-queue`; current main had 0 missing commits at stage start (`d71c6d47e532b25fb816a8bb1f96c41e5275a165` merged).
+- **Implementation commit:** `0ceb6e2dcff376e729d3478a4dbb61689d217a07`.
+- **Affected file:** `apps/editor/windows/SpectraFxGraphWindow.cpp`.
+- **New functionality:** window initializes a private `fx::ParticleSystem`, `TextureCache`, `Viewport`, and `RTSCamera` following existing `FxWindow` conventions. Recompiles in-memory `fx::compileSpectraGraph(document_)` when the source JSON hash changes; defines a preview effect, plays/replays it, moves the camera with mouse drag/zoom and renders directly to an off-screen editor viewport with a reference grid. Adds manual Restart preview button. Texture/model file readers resolve against the current project; preview never writes gameplay ECS state or duplicates particle simulation logic.
+- **Compatibility/ownership:** private editor-only visual preview using existing CPU `ParticleSystem` and RHI. Not a new GPU compute pipeline; PRISMA stays separate. Existing `fx/graphs/<name>.vfx.json` schema unchanged.
+- **Actual tests:** **NOT RUN**. Native compilation, editor initialization, GPU device/render target behavior and visual correctness are unverified because user explicitly requested completing functionality before tests. Do not claim the preview is operational on macOS until native UI execution.
+- **Limitations and risks:** repeated editor preview render uses the shared renderer's scene/pass lifecycle; must validate with real Editor viewport ordering. Editor-only preview does not expose collision/death callback events, no GPU sim, no CPU-vs-GPU parity. The following test phase must inspect RT lifetime, device teardown, fps delta, and source hot-reload.
+- **Next:** integrate opt-in host cue routing with canonical graph playback; implement GPU capability-gated particle execution and editor GPU/CPU mode selection, then tests after feature completion.
+
+Pull-first:
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main && git merge origin/main
+```
