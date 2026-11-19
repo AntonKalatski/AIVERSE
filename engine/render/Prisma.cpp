@@ -1397,6 +1397,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                                          gfx::PixelFormat::RGBA16F);
     const bool validReactive = validInput(motionView.reactiveMask,
                                          gfx::PixelFormat::RGBA8);
+    stats_.reactiveUsed=validReactive;
     const PrismaEffect* motionEffect = find(PrismaType::MotionBlur);
     const PrismaEffect* temporalEffect = find(PrismaType::TemporalResolve);
     const char* motionFlag = std::getenv("AIVERSE_PRISMA_MOTION_BLUR");
