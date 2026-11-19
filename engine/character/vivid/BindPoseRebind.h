@@ -59,6 +59,7 @@ public:
         // Build hierarchy from parent links, independent of potentially
         // stale model.order. Fail closed for cycles / invalid parents.
         std::vector<mat4> world(model.nodes.size());
+        std::vector<mat4> originalWorld(model.nodes.size());
         std::vector<std::uint8_t> state(model.nodes.size());
         const auto solve=[&](auto&& self,std::size_t i)->void {
             if(state[i]==2)return;
@@ -67,15 +68,20 @@ public:
             state[i]=1;
             const auto& node=model.nodes[i];
             const auto local=mat4::trs(translated[i],node.r,node.s);
-            if(!nonsingular(local))
+            const auto oldLocal=mat4::trs(node.t,node.r,node.s);
+            if(!nonsingular(local) || !nonsingular(oldLocal))
                 throw std::invalid_argument("VIVID bind rebind: singular local matrix");
             if(node.parent>=0) {
                 if(std::size_t(node.parent)>=model.nodes.size())
                     throw std::invalid_argument("VIVID bind rebind: unknown parent");
                 self(self,std::size_t(node.parent));
                 world[i]=world[std::size_t(node.parent)]*local;
-            }else world[i]=local;
-            if(!nonsingular(world[i]))
+                originalWorld[i]=originalWorld[std::size_t(node.parent)]*oldLocal;
+            }else {
+                world[i]=local;
+                originalWorld[i]=oldLocal;
+            }
+            if(!nonsingular(world[i]) || !nonsingular(originalWorld[i]))
                 throw std::invalid_argument("VIVID bind rebind: singular world matrix");
             state[i]=2;
         };
@@ -94,7 +100,13 @@ public:
                 if(id<0||std::size_t(id)>=world.size() ||
                    !nonsingular(skin.inverseBind[j]))
                     throw std::invalid_argument("VIVID bind rebind: invalid skin joint");
-                matrices.push_back(world[std::size_t(id)].inverse());
+                // Preserve the original mesh binding frame, including
+                // glTF skin roots and non-identity mesh bind transforms:
+                // newJoint * newIB = oldJoint * oldIB.
+                matrices.push_back(
+                    world[std::size_t(id)].inverse() *
+                    originalWorld[std::size_t(id)] *
+                    skin.inverseBind[j]);
                 if(!finite(matrices.back()))
                     throw std::invalid_argument("VIVID bind rebind: invalid inverse bind");
             }
