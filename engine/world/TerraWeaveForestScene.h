@@ -131,6 +131,8 @@ public:
         // Validates profile before insertion and prepares shared geometry/
         // impostor atlas once per species, rather than once per tree.
         adapter_.addPrototype(profile, prototypeSeed);
+        adapter_.setRootProfile(profile.speciesId,
+            defaultRootProfile(placement.habit));
         species_.push_back(placement);
     }
 
@@ -295,6 +297,10 @@ public:
     size_t branchPoseBudgetBytes() const {
         return adapter_.branchPoseBudgetBytes();
     }
+    bool pendingRootUploads() const {return adapter_.pendingRootUploads();}
+    size_t generatedRootPrototypes()const {
+        return adapter_.generatedRootPrototypes();
+    }
     // Global, presentation-only canopy appearance. PHYSIS or a game calendar
     // may translate its weather/season state into this genre-free POD.
     // Material overrides are updated once; resident scatter and async
@@ -392,6 +398,7 @@ public:
                              state).second)
                 throw std::invalid_argument("TerraWeave duplicate root state");
         }
+        adapter_.setRootStates(states);
         rootStates_.swap(next);
     }
     std::optional<RootState> rootState(ForestTreeIdentity id)const {
@@ -608,6 +615,8 @@ private:
         const ForestTreeIdentity id{instance.key,instance.speciesId};
         if(removed_.contains(id))return std::nullopt;
         FoliageInstance scaled=instance;
+        if(const auto root=rootStates_.find(id);root!=rootStates_.end())
+            scaled.heightCm=root->second.plantedHeightCm;
         PlantEnvironment environment{
             instance.ageTicks,instance.matureTicks,instance.lifespanTicks,
             instance.lightPermille,instance.waterPermille,
