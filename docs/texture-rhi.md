@@ -1379,3 +1379,34 @@ Example: `python3 tools/virtual_texture_pack.py --layer grass.rgba
 
 **Execution:** only source review; Python unit tests, CLI fixture, C++ native
 build and GPU seam parity NOT RUN for this newly added behavior.
+
+
+## Native C++ archive addressing and Terra propagation (Stage 10N)
+
+`gfx::VirtualTextureArchivePackConfig` now has independent `addressU` and
+`addressV` (`gfx::SamplerAddressMode`), both defaulting to ClampToEdge.
+The native `VirtualTexturePageArchiveWriter` applies Repeat or MirrorRepeat
+while building gutters and odd-dimension mips just like the standalone
+Python packer. Explicit `ClampToBorder` is invalid: it would misrepresent
+the source border color in the current physical page shader.
+
+`VirtualTextureArchiveVersion` carries the addressing metadata through
+`TerraWeaveVirtualAtlasSession::prepare/promote`, and the single-domain
+`connectTerraWeaveVirtualTextureSampling` and multi-domain
+`TerraWeaveVirtualAtlasDomains::resolveSampling` both forward active
+version address modes to `ModelVirtualTextureBinding`.
+Archive content-hash and manifest include address mode changes, so
+one revision cannot silently reuse clamped bytes for repeating textures.
+Legacy clamp-only archive hashes/manifests retain their former layout.
+
+This automatic propagation applies to **C++ packed archives passed as
+typed `VirtualTextureArchiveVersion` values**, not to Python-generated
+manifest.json auto-loading. Projects using the standalone Python packer
+must still read `addressU/V` themselves and assign matching typed
+`VirtualTextureArchiveVersion` fields or binding modes explicitly.
+Source texture samplers must agree. A live active archive is never
+mutated; prepare a new immutable version and promote only after fallback
+page residency and GPU work safety gates.
+
+**Verification deferred:** C++ build, CTest, GPU page filtering and
+cross-backend sampler parity NOT RUN for this stage.
