@@ -1488,3 +1488,22 @@ Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. 
 - Reconcile Unknown against the restored World; confirm Applied only for matching revision and typed-field fingerprints. Safe requeue requires the exact original authenticated request and still-current expected revision. Do not claim cross-file exactly-once durability.
 - New source tests cover crashes before ECS commit and after ECS commit but before journal Applied flush. Native tests NOT RUN.
 - Stage handoff: `docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md`.
+
+## PHYSIS synchronized with canonical NEREID Water in main (2026-11-19)
+
+The two-parent merge `7c617d7fbc1a7ff7529e84a8e7e281f5f3298f0b` imported `main` at `d71c6d47e532b25fb816a8bb1f96c41e5275a165` INTO
+`feature/physis-nature-simulation`; **never merge PHYSIS into main
+without separate review**. The merge preserved the genre-independent
+PHYSIS ECS and imported canonical NEREID Water (components, surface,
+buoyancy, currents, confluence, scene, renderer bridges and tests).
+NEREID owns authoritative water bodies/flows/buoyancy; PHYSIS owns
+weather, wind, gravity, storms, wetness/snow/ice and hazards. For a
+native host using NEREID water authority, explicitly opt PHYSIS into
+`FloodMode::ExternalAuthority` to avoid double shallow-flood simulation.
+`engine/world/NereidPhysisWindBridge.h` is presentation-only; it never
+makes PHYSIS and NEREID share mutable authoritative state.
+Follow `docs/physis-nereid-terraweave-integration.md` and
+`docs/agent-handoffs/physis-stage72-main-nereid-merge-2026-11-19.md`.
+Previous PHYSIS/Box3D, Editor authoring and NEREID standalone test
+results do NOT establish a PASS for the new combined merge: run a
+new native cross-module compile/CTest and preserve the result.

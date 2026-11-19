@@ -953,3 +953,21 @@ No runtime C++ change this stage. Interactive Scene gizmos,
 Inspector Undo/Redo, visual overlays, admin connection, broad
 regressions and completed CI remain unverified. See
 `docs/agent-handoffs/physis-stage71-macos-gui-build-green-2026-11-19.md`.
+
+### Stage 72 — NEREID canonical water imported from main
+
+Current PHYSIS source branch includes NEREID water from main commit
+`d71c6d47e532b25fb816a8bb1f96c41e5275a165` via true merge `7c617d7fbc1a7ff7529e84a8e7e281f5f3298f0b`. This imports
+water ECS bodies, sampling/current/buoyancy, confluence and cascade
+systems, water renderer/scene bridges, NEREID tests and release-mode
+test safeguards while retaining PHYSIS climate/wind/storm/forces and
+editor features. `engine/world/NereidPhysisWindBridge.h` forwards
+read-only host-supplied PHYSIS wind into NEREID **presentation**, not
+authoritative water. With NEREID authority enabled, use
+`FloodMode::ExternalAuthority` so PHYSIS does not run its
+experimental shallow-flood solver in the same region. The host
+must explicitly install and schedule each ECS system; source
+merging is not an automatic runtime integration.
+GitHub static ancestry/CMake/catalog checks PASS, but no combined
+native build/CTest or Metal visual tests have run. Full details:
+`docs/agent-handoffs/physis-stage72-main-nereid-merge-2026-11-19.md`.

@@ -1010,3 +1010,32 @@ test -n "$APP" &&
 open "$APP"
 ```
 - Handoff: `docs/agent-handoffs/physis-stage71-macos-gui-build-green-2026-11-19.md`.
+
+### Stage 72 — actual main merge carries NEREID water (2026-11-19)
+
+- Source head merge: `7c617d7fbc1a7ff7529e84a8e7e281f5f3298f0b`, parents PHYSIS
+  `04f3fae2576edf92aeddfcd3ab3f6aab77d1d8e7` and main
+  `d71c6d47e532b25fb816a8bb1f96c41e5275a165`. Verified behind main 0 after merge.
+- Three-way file integration against common ancestor
+  `9ee6ff6fbf390bd45363bc92c838f492dfe92eee`:
+  97 independent main file changes imported, 12 overlapping paths
+  resolved. Merged CMake target registration, AGENTS roles and
+  generated skills catalog (220 unique ids). Retained advanced
+  PHYSIS SpectraFX files and selected the main VFX ECS regression
+  preventing unsigned particle-count underflow.
+- Canonical NEREID water APIs are now in the branch at
+  `libraries/include/aiverselib/water/`; renderer/scene integration
+  is at `engine/world/Nereid*.h`, `engine/render/Nereid*.h`.
+  `engine/world/NereidPhysisWindBridge.h` is visual only.
+  **No duplicate PHYSIS water authority**: use
+  `InstallOptions::floodMode=FloodMode::ExternalAuthority` when
+  NEREID water is canonical. The host controls installation and
+  deterministic scheduling.
+- GitHub static source checks PASS: two merge parents, main ancestry,
+  CMake NEREID and PHYSIS targets present once, skill JSON valid with
+  220 unique entries including PHYSIS + 6 NEREID skills.
+- **NOT RUN for the combined merge**: native C++ compile, CTest,
+  GPU/Metal water rendering, editor QA, network/remote admin integration.
+  Earlier individual subsystem CTests do not cover this merge.
+- Standalone handoff:
+  `docs/agent-handoffs/physis-stage72-main-nereid-merge-2026-11-19.md`.

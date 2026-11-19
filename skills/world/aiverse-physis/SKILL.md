@@ -1025,3 +1025,23 @@ Save observations/screenshots and then a new agent handoff. Do not
 mark full GUI, cross-platform CI or production admin security PASS.
 Handoff:
 `docs/agent-handoffs/physis-stage71-macos-gui-build-green-2026-11-19.md`.
+
+### Stage 72 — merge current main / NEREID into PHYSIS
+
+The PHYSIS branch now contains main NEREID water via true merge
+`7c617d7fbc1a7ff7529e84a8e7e281f5f3298f0b` with main `d71c6d47e532b25fb816a8bb1f96c41e5275a165` as second parent. Do NOT
+implement an independent water-body, buoyancy, river/current or water
+renderer in PHYSIS. Use canonical
+`<aiverselib/water/NereidWaterSystems.h>` and NEREID scene APIs
+from the current main. PHYSIS is authoritative ONLY for weather,
+wind, storms, gravity and environmental hazards. When the native
+host installs NEREID water authority, set PHYSIS flood mode to
+`FloodMode::ExternalAuthority`. The opt-in
+`engine/world/NereidPhysisWindBridge.h` consumes host-sampled wind
+for **visuals only**, not persistent water simulation.
+No automatic dataflow/precipitation-to-volume conversion is shipped.
+Static GitHub checks passed, actual combined native compiler/CTest
+are NOT RUN. Prior separate 24/24 PHYSIS, 2/2 editor authoring,
+NEREID 119/119 and GUI build are not a current-merge PASS.
+Handoff:
+`docs/agent-handoffs/physis-stage72-main-nereid-merge-2026-11-19.md`.
