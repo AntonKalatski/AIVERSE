@@ -4,7 +4,7 @@
 #pragma once
 #include "GiUpdateScheduler.h"
 #include "StaticDiffuseField.h"
-#include "StaticPointShadows.h"
+#include "GiTraceGeometry.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -52,7 +52,7 @@ public:
         sampleCount_ = samples;
         traceDistance_ = traceDistance;
         lights_.clear();
-        geometry_ = nullptr;
+        geometry_ = {};
         geometryRevision_ = 0;
     }
 
@@ -63,7 +63,14 @@ public:
 
     // A null BVH makes dynamic bounce zero, not "unchanged/stale".
     void setGeometry(const StaticShadowGeometry* geometry, uint64_t revision) {
+        setTraceGeometry(GiTraceGeometryView::fromStatic(geometry), revision);
+    }
+
+    // New chunk snapshots and old monolithic BVH both implement GiTraceGeometryView.
+    void setTraceGeometry(GiTraceGeometryView geometry, uint64_t revision) {
         if (geometry == geometry_ && revision == geometryRevision_) return;
+        if (bool(geometry.source) != bool(geometry.query))
+            throw std::invalid_argument("incomplete GI geometry view");
         geometry_ = geometry;
         geometryRevision_ = revision;
         // Light transport from the previous obstacle layout is now invalid.
@@ -82,6 +89,13 @@ public:
     size_t setGeometryRegion(const StaticShadowGeometry* geometry, uint64_t revision,
                              GiBounds changed, float influenceRadius = 0,
                              std::vector<uint32_t>* cleared = nullptr) {
+        return setTraceGeometryRegion(GiTraceGeometryView::fromStatic(geometry),
+                                      revision, changed, influenceRadius, cleared);
+    }
+
+    size_t setTraceGeometryRegion(GiTraceGeometryView geometry, uint64_t revision,
+                                  GiBounds changed, float influenceRadius = 0,
+                                  std::vector<uint32_t>* cleared = nullptr) {
         if (!geometry || !geometry_)
             throw std::logic_error("regional GI geometry requires both snapshots");
         if (geometry == geometry_ && revision == geometryRevision_) return 0;
@@ -89,7 +103,7 @@ public:
         for (const auto& source : lights_) radius = std::max(radius, traceDistance_ + source.radius);
         radius = std::max(radius, influenceRadius);
         std::vector<uint32_t> affected;
-        // A failed invalidation must not replace the previously valid BVH.
+        // A failed invalidation must not replace the previously valid ray-query snapshot.
         scheduler_.invalidate(changed, GiDirtyReason::Geometry, radius, &affected);
         geometry_ = geometry;
         geometryRevision_ = revision;
@@ -191,7 +205,7 @@ private:
             const auto dir = direction(i, sampleCount_);
             float3 normal{}, albedo{};
             ++stats.primaryRays;
-            const float distance = geometry_->distance(p, dir, traceDistance_, &normal, &albedo);
+            const float distance = geometry_.distance(p, dir, traceDistance_, &normal, &albedo);
             if (distance >= traceDistance_ || distance <= .05f || dot(normal,normal) < .5f)
                 continue;
             if (dot(normal, -dir) < 0) normal = -normal; // receiver side faces probe
@@ -208,7 +222,7 @@ private:
                 if (ndl == 0) continue;
                 // Static BVH is only a reference. Dynamic blockers require a new snapshot.
                 ++stats.visibilityRays;
-                if (geometry_->distance(surface, towardLight, d) < d - .03f) continue;
+                if (geometry_.distance(surface, towardLight, d) < d - .03f) continue;
                 float falloff = 1.0f - d2/(light.radius*light.radius);
                 falloff *= falloff;
                 const float strength = light.intensity * ndl * falloff / (1.0f + d2);
@@ -225,7 +239,7 @@ private:
     GiUpdateScheduler scheduler_;
     std::vector<GiDynamicCoefficient> coeffs_;
     std::vector<GiMovingLight> lights_;
-    const StaticShadowGeometry* geometry_ = nullptr;
+    GiTraceGeometryView geometry_{};
     uint64_t geometryRevision_ = 0;
     int sampleCount_ = 32;
     float traceDistance_ = 12;
