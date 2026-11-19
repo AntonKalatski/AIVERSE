@@ -213,15 +213,26 @@ bool Prisma::objectMotionContext(uint64_t& id, mat4& previous) const {
 void Prisma::acceptObjectMotionVectors(gfx::TextureHandle texture) {
     setObjectMotionVectors(viewId_, texture);
 }
-
+void Prisma::acceptObjectMotionVectors(MotionTextureInput input) {
+    setObjectMotionVectors(viewId_, input);
+}
 void Prisma::setObjectMotionVectors(uint64_t id, gfx::TextureHandle texture) {
-    motionViews_[id].objectVelocity = texture;
+    motionViews_[id].objectVelocity = MotionTextureInput::legacy(texture);
+}
+void Prisma::setObjectMotionVectors(uint64_t id, MotionTextureInput input) {
+    motionViews_[id].objectVelocity = input;
 }
 void Prisma::setMotionReactiveMask(uint64_t id, gfx::TextureHandle texture) {
-    motionViews_[id].reactiveMask = texture;
+    motionViews_[id].reactiveMask = MotionTextureInput::legacy(texture);
+}
+void Prisma::setMotionReactiveMask(uint64_t id, MotionTextureInput input) {
+    motionViews_[id].reactiveMask = input;
 }
 void Prisma::acceptMotionReactiveMask(gfx::TextureHandle texture) {
     setMotionReactiveMask(viewId_, texture);
+}
+void Prisma::acceptMotionReactiveMask(MotionTextureInput input) {
+    setMotionReactiveMask(viewId_, input);
 }
 void Prisma::resetMotionHistory(uint64_t id) {
     // Epoch is created even if the camera has not rendered before; this
@@ -627,6 +638,13 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     auto& motionView = motionViews_[viewId_];
     const bool previousValid = motionView.valid &&
         motionView.width == w && motionView.height == h;
+    // Typed producer descriptors are checked before GPU binding. Legacy
+    // no-metadata inputs are still accepted for backward compatibility.
+    // In either case the producer owns the GPU handle and its real format.
+    const bool validVelocity = motionView.objectVelocity.validFor(
+        w,h,gfx::PixelFormat::RGBA16F);
+    const bool validReactive = motionView.reactiveMask.validFor(
+        w,h,gfx::PixelFormat::RGBA8);
     const PrismaEffect* motionEffect = find(PrismaType::MotionBlur);
     const char* motionFlag = std::getenv("AIVERSE_PRISMA_MOTION_BLUR");
     if (motionEffect && motionFlag && std::strcmp(motionFlag, "1") == 0 &&
@@ -642,7 +660,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             MotionUniforms vectors{};
             put(vectors.px, 1.0f / float(w), 1.0f / float(h), flip, 0);
             put(vectors.p0, dev.info().clipDepthZeroToOne ? 1.0f : 0.0f,
-                motionView.objectVelocity.valid() ? 1.0f : 0.0f, 0, 0);
+                validVelocity ? 1.0f : 0.0f, 0, 0);
             const mat4 inverseViewProj = f.viewProj.inverse();
             std::memcpy(vectors.inv0, inverseViewProj.m, sizeof inverseViewProj.m);
             std::memcpy(vectors.prev0, motionView.previousViewProj.m,
@@ -670,15 +688,15 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 if (pipeline == pipes_[kMotionVectors] || pipeline == pipes_[kMotionBlur])
                     dev.setTexture(2, input2);
                 if (pipeline == pipes_[kMotionBlur])
-                    dev.setTexture(3, motionView.reactiveMask.valid()
-                                      ? motionView.reactiveMask : black_);
+                    dev.setTexture(3, validReactive
+                                      ? motionView.reactiveMask.texture : black_);
                 dev.draw(3);
                 dev.endPass();
                 ++stats_.passes;
             };
             raster(velocity, pipes_[kMotionVectors], &vectors, sizeof vectors,
                    scene.tex, sceneDepth,
-                   motionView.objectVelocity.valid() ? motionView.objectVelocity : black_);
+                   validVelocity ? motionView.objectVelocity.texture : black_);
             MotionBlurU blur{};
             put(blur.px, 1.0f / float(w), 1.0f / float(h), flip, 0);
             put(blur.p0, motionEffect->get("shutterScale"),
