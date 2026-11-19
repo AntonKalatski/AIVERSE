@@ -297,3 +297,36 @@ The new `kVividMeshStreamMSL` kernel incorrectly used `vertex` as a C++/Metal pa
 The real `tests/vivid/metal_rhi.mm` error path now emits `GpuMorphMeshStream::lastError()` and `gfx::Device::lastError()` when `initialize` fails, making any remaining shader compile or allocation error actionable instead of hiding the cause behind a generic assertion. Further MSL/API compiler behavior must be verified by the next macOS run; **this is a root-cause hypothesis supported by source inspection, not yet proof of a passing shader compile**.
 
 Run `aiverse_vivid_metal_rhi_tests` and `aiverse_vivid_metal_gpu_tests` on Mac again before changing `Renderer3D`. No changes were made to `MotionWeave`, `ModelVertex`, the general RHI or game save/network data.
+
+## Stage 5C — opt-in Renderer3D dynamic vertex-stream override (2026-11-19)
+
+**Source authored and committed; native build / renderer colour-shadow visual tests NOT RUN yet.** A production VIVID actor must not be enabled until compile and visual validation are green.
+
+The AIVERSE renderer now accepts **per-`ModelDraw` opt-in fields**, `vertexOverride` (`gfx::BufferHandle`) and `vertexOverrideCount` (`uint32_t`). They default to an invalid handle/zero, preserving the legacy path. Pass `GpuMorphMeshStream::vertexBuffer()` and `vertexCount()` only after VIVID compute submissions in the **same GPU frame before render passes**. The buffer must belong to the exact gfx device and remain alive through all shadow/colour/reflection/depth draws, GPU command completion and any captures.
+
+The header-only `engine/render/ModelVertexStreamOverride.h` policy validates that the stream is a full, model-relative **60-byte `ModelVertex`** array, long enough for all primitive vertex ranges, matches a retained CPU `model.vertices.size()` when that data exists, and is never used with pooled geometry, nonzero model base-vertex/index offsets or specialized geometry clusters. Invalid opt-ins are rejected; they never silently render the original unmorphed mesh.
+
+Initial acceptance is intentionally limited to **Metal**, dedicated **dynamic** `Model` buffers (no `kDrawStatic`, no `BakedSample`). Queued `ModelItem`s retain the custom handle. `drawModelBatch` binds the opt-in vertex stream in place of `model->vb` for ordinary draws. The same draw path handles shadow, opaque/transparent, reflection and other phases, preserving existing `ModelVertex` attribute layout, materials and MotionWeave-provided skin matrices.
+
+**Safety gates**: overridden models disable the legacy eight-slot GPU morph shader (avoids double deformation), cached rigid lookup, regular/GPU LOD selection, primitive material/shadow merging, rigid bounds culling and primitive occlusion, regular instance batching, MDI, GPU-authored/encoded ICB and geometry-cluster optimizations. Switching an existing persistent-ID object to a stream explicitly retires its stale static scene record. These are conservative early-stage restrictions; richer culling/LOD/batching is deferred to a separate measured stage.
+
+Example host-side integration (pseudo usage inside the same gfx frame):
+
+```cpp
+// MotionWeave remains sole owner of the animation pose and skeleton palette.
+// VIVID data was prepared before the draw; 60B stream contains morph only.
+deformer.dispatch(shapeWeights);
+meshStream.dispatch(deformer.outputBuffer(), deformer.vertexCount());
+
+render::ModelDraw draw;
+draw.model = &model;
+draw.nodeWorld = &motionWeavePose.matrices;
+draw.vertexOverride = meshStream.vertexBuffer();
+draw.vertexOverrideCount = static_cast<std::uint32_t>(meshStream.vertexCount());
+// renderer.drawModel(draw) queues this item; renderer renders model passes later
+// in the same GPU frame while both compute outputs remain alive.
+```
+
+New headless `vivid_vertex_override` test verifies public default-off behavior, valid/invalid stream sizes and shared-geometry offset exclusions. It does not render pixels or test real RHI state.
+
+**Still pending:** actual native compilation of merged Renderer3D on Mac, baseline regression, real scene and colour/shadow/LOD/culling screenshots, GPU fences/in-flight safe reuse, material/normal-map parity, visual bounds correctness, and performance benchmarks; no claim that VIVID characters render successfully yet.
