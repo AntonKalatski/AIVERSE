@@ -2056,6 +2056,16 @@ if(AIVERSE_BUILD_STRATA)
             aiverse_strata_gpu_culling aiverse_zstd_dec)
         add_test(NAME strata_gpu_culling COMMAND aiverse_strata_gpu_culling_tests)
     endif()
+    # The GPU parity runner opens a real macOS CAMetalLayer and compiles MSL at
+    # runtime. Keep it manual/opt-in: focused CPU/mocked CTests have no window.
+    option(AIVERSE_STRATA_METAL_GPU_TESTS "Build actual Strata Metal GPU parity runner" OFF)
+    if(AIVERSE_STRATA_METAL_GPU_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+        add_executable(aiverse_strata_metal_parity
+            tests/render/strata_metal_parity.cpp
+            $<TARGET_OBJECTS:aiverse_runtime>)
+        target_link_libraries(aiverse_strata_metal_parity PRIVATE
+            aiverse_runtime aiverse_strata_gpu_culling aiverse_strata_gpu_scene)
+    endif()
 endif()
 if(AIVERSE_RUNTIME_AUTOLOD)
     target_sources(aiverse_models PRIVATE engine/render/AutoLodRuntime.cpp)
