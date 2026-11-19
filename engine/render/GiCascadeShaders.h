@@ -114,5 +114,25 @@ static float3 dynamicGiCascadedAt(texture2d<float> nearAtlas,
     float4 coarse=giCascadeLayer(farAtlas,nearMask,false,farGi,p,n);
     return fine.rgb+(1.0f-fine.w)*coarse.rgb;
 }
+#if defined(DYNAMIC_GI_TRIPLE)
+// Metal-only permutation: tex16 has a texture resource, no extra sampler.
+// Middle and distant atlases MUST be fully fence-confirmed by the caller;
+// the fine R8 mask is checked per physical probe as before.
+static float3 dynamicGiTripleAt(texture2d<float> fineAtlas,
+                                texture2d<float> fineMask,
+                                texture2d<float> mediumAtlas,
+                                texture2d<float> distantAtlas,
+                                constant GiDynamicU& fineGi,
+                                constant GiDynamicU& mediumGi,
+                                constant GiDynamicU& distantGi,
+                                float3 p,float3 n) {
+    float4 fine=giCascadeLayer(fineAtlas,fineMask,true,fineGi,p,n);
+    float4 middle=giCascadeLayer(mediumAtlas,fineMask,false,mediumGi,p,n);
+    float4 distant=giCascadeLayer(distantAtlas,fineMask,false,distantGi,p,n);
+    float remaining=1.0f-fine.w;
+    return fine.rgb+remaining*middle.rgb+
+           remaining*(1.0f-middle.w)*distant.rgb;
+}
+#endif
 #endif
 )GI"
