@@ -59,6 +59,7 @@ struct HorizonRuntimeStats {
     size_t matchedAuthoredNearNormals=0;
     size_t continuousNearNormalSamples=0;
     size_t localFallbackNearNormalSamples=0;
+    bool nearNormalProvenanceAvailable=false;
     bool nearWeldSlopeFallback=false;
     bool transitioning=false;
     uint32_t transitionProgressPermille=1000;
@@ -363,6 +364,7 @@ public:
                     runtime_.matchedAuthoredNearNormals=prepared->clipStats.matchedAuthoredNearNormals;
                     runtime_.continuousNearNormalSamples=prepared->bake->continuousNearNormalSamples;
                     runtime_.localFallbackNearNormalSamples=prepared->bake->localFallbackNearNormalSamples;
+                    runtime_.nearNormalProvenanceAvailable=prepared->bake->nearNormalProvenanceAvailable;
                     runtime_.nearWeldSlopeFallback=prepared->clipStats.nearWeldSlopeFallback;
                     return true;
                 }
@@ -411,6 +413,7 @@ public:
                             runtime_.matchedAuthoredNearNormals=prepared->clipStats.matchedAuthoredNearNormals;
                     runtime_.continuousNearNormalSamples=prepared->bake->continuousNearNormalSamples;
                     runtime_.localFallbackNearNormalSamples=prepared->bake->localFallbackNearNormalSamples;
+                    runtime_.nearNormalProvenanceAvailable=prepared->bake->nearNormalProvenanceAvailable;
                             runtime_.nearWeldSlopeFallback=prepared->clipStats.nearWeldSlopeFallback;
                             runtime_.gpuUploadMs=std::chrono::duration<
                                 double,std::milli>(
@@ -475,6 +478,7 @@ public:
                 runtime_.matchedAuthoredNearNormals=prepared->clipStats.matchedAuthoredNearNormals;
                     runtime_.continuousNearNormalSamples=prepared->bake->continuousNearNormalSamples;
                     runtime_.localFallbackNearNormalSamples=prepared->bake->localFallbackNearNormalSamples;
+                    runtime_.nearNormalProvenanceAvailable=prepared->bake->nearNormalProvenanceAvailable;
                 runtime_.nearWeldSlopeFallback=prepared->clipStats.nearWeldSlopeFallback;
                 runtime_.cpuPrepareMs=prepared->cpuPrepareMs;
                 runtime_.gpuUploadMs=std::chrono::duration<double,std::milli>(
@@ -672,6 +676,7 @@ private:
         previous.matchedAuthoredNearNormals=runtime_.matchedAuthoredNearNormals;
         previous.continuousNearNormalSamples=runtime_.continuousNearNormalSamples;
         previous.localFallbackNearNormalSamples=runtime_.localFallbackNearNormalSamples;
+        previous.nearNormalProvenanceAvailable=runtime_.nearNormalProvenanceAvailable;
         previous.nearWeldSlopeFallback=runtime_.nearWeldSlopeFallback;
         previous.estimatedGpuBytes=estimateHorizonGpuResidencyBytes(
             previous.atlasBytes,previous.vertexCount,previous.triangleCount);
@@ -723,6 +728,7 @@ private:
         runtime_.matchedAuthoredNearNormals=region.matchedAuthoredNearNormals;
         runtime_.continuousNearNormalSamples=region.continuousNearNormalSamples;
         runtime_.localFallbackNearNormalSamples=region.localFallbackNearNormalSamples;
+        runtime_.nearNormalProvenanceAvailable=region.nearNormalProvenanceAvailable;
         runtime_.nearWeldSlopeFallback=region.nearWeldSlopeFallback;
         runtime_.gpuUploadMs=0;
         runtime_.atlasPatchRegions=0;
