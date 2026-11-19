@@ -7,6 +7,7 @@
 #pragma once
 #include "LumaWeaveNativeCoordinator.h"
 #include "GiGpuCascadeRuntime.h"
+#include "GiDynamicRuntime.h"
 #include <cstdint>
 #include <span>
 #include <utility>
@@ -27,6 +28,10 @@ struct LumaNativeViewInput {
     // cascade runtime and MUST have published its own geometry revision before
     // this frame. This does not make direct light the GI probe source.
     GiGpuCascadeRuntime* indirectGi=nullptr;
+    // Portable Vulkan, GLES3, GL33 and Metal CPU-traced L1 probe fallback.
+    // Initialize it explicitly with RGBA32F support and publish immutable
+    // GiTraceGeometryView externally. This is bounded, not full-world RT.
+    GiDynamicRuntime* indirectCpuGi=nullptr;
     size_t giProbeBudget=64;
     // Explicit opt-in: export only GI-eligible point lights (max 16) from
     // LumaWeave. False preserves externally authored GI lights unchanged.
@@ -38,8 +43,14 @@ struct LumaNativeViewInput {
     bool allowMobileFallback=true;
 };
 
+enum class LumaIndirectRoute : uint8_t {
+    Disabled=0, MetalCascades=1, CpuProbes=2
+};
+
 struct LumaNativeViewResult {
     LumaNativeFrameStats sources{};
+    LumaIndirectRoute indirectRoute=LumaIndirectRoute::Disabled;
+    GiRuntimeStats cpuGiFrame{};        // portable CPU probe trace/upload
     LumaWeaveScreenMetal::Completion priorGpuCompletion{};
     GiCascadeFrame giFrame{};           // submitted/dirty after point sync
     GiCascadeFrame giPollFrame{};       // previous GPU completions before sync
@@ -67,8 +78,9 @@ public:
     }
     bool shutdown(){
         if(!post_.shutdown())return false;
-        coordinator_.resetGiSourceSync();
+        resetGiSourceSync();
         lastGiRuntime_=nullptr;
+        lastCpuGiRuntime_=nullptr;
         lastGiSynchronization_=false;
         return true;
     }
@@ -76,7 +88,11 @@ public:
     LumaWeaveNativeCoordinator& coordinator(){return coordinator_;}
     // Explicitly call when an external host replaces/reinitializes the same
     // GiGpuCascadeRuntime object at the SAME address.
-    void resetGiSourceSync(){coordinator_.resetGiSourceSync();}
+    void resetGiSourceSync(){
+        coordinator_.resetGiSourceSync();
+        cpuGiSourceRevision_=0;
+        cpuGiSourcesPublished_=false;
+    }
 
     // Requires the host has ALREADY called device.beginFrame and completed
     // ECS/SpectraFX read barriers. One view at a time. The submitted callback
@@ -87,7 +103,8 @@ public:
                                SubmitScene&& submitScene) {
         if(!input.width || !input.height ||
            (input.sceneGeometry==nullptr)!=(input.geometryRevision==0) ||
-           (input.synchronizeGiPointSources && !input.indirectGi))
+           (input.synchronizeGiPointSources &&
+            !input.indirectGi && !input.indirectCpuGi))
             throw std::invalid_argument(
                 "LumaWeave frame requires nonzero view and coherent optional ray BVH revision");
         LumaNativeViewResult result;
@@ -96,10 +113,12 @@ public:
         // runtime may have zero lights despite an identical source revision;
         // republish on runtime identity change or when sync is re-enabled.
         if(lastGiRuntime_!=input.indirectGi ||
+           lastCpuGiRuntime_!=input.indirectCpuGi ||
            (input.synchronizeGiPointSources && !lastGiSynchronization_)) {
-            coordinator_.resetGiSourceSync();
+            resetGiSourceSync();
         }
         lastGiRuntime_=input.indirectGi;
+        lastCpuGiRuntime_=input.indirectCpuGi;
         lastGiSynchronization_=input.synchronizeGiPointSources;
         coordinator_.collectScene(input.authored,input.fxSystems,
                                   input.effectLights,input.areaLights);
@@ -116,9 +135,18 @@ public:
             input.sceneGeometry,input.geometryRevision,input.camera.target,
             input.visibleLightRadius,input.width,input.height,input.quality,
             input.allowMobileFallback);
-        if(input.indirectGi) {
-            result.giRequested=true;
+        // Prefer Metal GPU cascades when actually supported, otherwise use
+        // the explicitly initialized CPU-traced L1 probe overlay. Vulkan and
+        // GLES3 do not implement the gfx::Device compute ABI today; their
+        // normal path is raster direct + CPU GI, not a fake GPU dispatch.
+        result.giRequested=input.indirectGi || input.indirectCpuGi;
+        const bool gpuGi=device_.info().backend==gfx::Backend::Metal &&
+                         input.indirectGi && input.indirectGi->ready();
+        const bool cpuGi=!gpuGi && input.indirectCpuGi &&
+                         input.indirectCpuGi->ready();
+        if(gpuGi) {
             auto& gi=*input.indirectGi;
+            result.indirectRoute=LumaIndirectRoute::MetalCascades;
             // Poll actual Metal completion callbacks BEFORE attempting to
             // republish moving bounce lights. No old-light GI is displayed
             // while a newer source revision is waiting for a GPU fence.
@@ -127,11 +155,34 @@ public:
                 result.giSourceSync=coordinator_.syncGi(gi);
                 result.giDeferred=!result.giSourceSync.accepted;
             }
-            if(gi.ready() && !result.giDeferred) {
+            if(!result.giDeferred) {
                 result.giFrame=gi.updateFrame(input.giProbeBudget,
                                               input.camera.target);
                 result.giBound=gi.bindCascades(renderer_);
             }
+        } else if(cpuGi) {
+            auto& gi=*input.indirectCpuGi;
+            result.indirectRoute=LumaIndirectRoute::CpuProbes;
+            if(input.synchronizeGiPointSources) {
+                // The CPU transport has 64 moving-light capacity and accepts
+                // source snapshots synchronously. Exceptions (spots/overflow)
+                // fail closed BEFORE binding a previous atlas.
+                const auto revision=coordinator_.registry().revision();
+                const auto next=lumaGiPointSources(coordinator_.registry(),64);
+                result.giSourceSync.bouncedSources=next.size();
+                if(!cpuGiSourcesPublished_ || cpuGiSourceRevision_!=revision) {
+                    gi.setLights(next);
+                    cpuGiSourceRevision_=revision;
+                    cpuGiSourcesPublished_=true;
+                } else result.giSourceSync.unchanged=true;
+                result.giSourceSync.accepted=true;
+                result.giSourceSync.publishedSourceRevision=cpuGiSourceRevision_;
+            }
+            result.cpuGiFrame=gi.update(input.giProbeBudget,
+                                        input.camera.target);
+            result.giBound=gi.bind(renderer_);
+        } else if(result.giRequested) {
+            result.giDeferred=true;
         }
         std::forward<SubmitScene>(submitScene)(renderer_);
         renderer_.render(output,&coordinator_.activePost());
@@ -147,6 +198,9 @@ private:
     LumaWeavePostProcess post_;
     LumaWeaveNativeCoordinator coordinator_;
     GiGpuCascadeRuntime* lastGiRuntime_=nullptr; // borrowed, identity only
+    GiDynamicRuntime* lastCpuGiRuntime_=nullptr; // borrowed, identity only
+    uint64_t cpuGiSourceRevision_=0;
+    bool cpuGiSourcesPublished_=false;
     bool lastGiSynchronization_=false;
 };
 
