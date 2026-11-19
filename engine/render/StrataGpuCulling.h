@@ -7,6 +7,8 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <string>
 #include <vector>
 
 namespace aiverse::render::strata {
@@ -90,6 +92,32 @@ struct GpuSelectionSubmission {
     }
 };
 
+// Readback is explicitly diagnostic and never drives production draws.
+// Metal's asynchronous RHI readback is limited to 65536 bytes per request:
+// at most 2048 selected-cluster records may be inspected per submission.
+struct GpuSelectionReadback {
+    enum class Status : uint8_t {
+        Valid, Overflow, Invalid, ReadbackFailed
+    };
+    Status status = Status::ReadbackFailed;
+    GpuSelectionCounters counters{};
+    std::vector<GpuSelectedCluster> ranges;
+    bool valid() const { return status == Status::Valid; }
+};
+using GpuSelectionReadbackFn = std::function<void(GpuSelectionReadback)>;
+
+// Explicit CPU oracle comparison after a successful asynchronous readback.
+// The pooledFirstIndex must belong to the same source + model revision as
+// the metadata v2 dispatch. Rejects overflow/invalid results, mismatched
+// per-instance cluster LOD and malformed source/instance information.
+// GPU atomic compaction order does not matter; records are sorted by key.
+bool compareGpuSelection(const ModelAsset& source,
+                         const std::vector<GpuSceneInstance>& instances,
+                         const GpuPassConfig& pass,
+                         uint32_t pooledFirstIndex,
+                         const GpuSelectionReadback& gpu,
+                         std::string* error = nullptr);
+
 // One diagnostic selection dispatch per source and view; caller must retain
 // the source's staged metadata+pooled index leases until GPU completion.
 // No indirect command buffer is produced or consumed here.
@@ -103,6 +131,12 @@ public:
                   const std::vector<GpuSceneInstance>& instances,
                   const GpuPassConfig& config, uint64_t frameSerial,
                   GpuSelectionSubmission& out);
+    // Must be called during the same GPU frame, AFTER dispatch, OUTSIDE
+    // encoders. Callback arrives at a later Device::beginFrame on RHI thread.
+    // A failed scheduling call reports failure via the callback once.
+    bool requestReadback(gfx::Device& dev,
+                         const GpuSelectionSubmission& submission,
+                         GpuSelectionReadbackFn callback);
     void shutdown(gfx::Device& dev);
 private:
     struct Buffers {
