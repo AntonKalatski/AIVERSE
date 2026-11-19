@@ -12623,3 +12623,13 @@ bash tools/texture-rhi-final-verify.sh --jobs 4 --full-engine
 **Coverage boundary:** This is committed source only: no CPU compile/CTest, real GPU tests or performance measurements run. No measured speedup claim. Need validate overlapping changed page rectangles, history truncation, partial-vs-full byte equivalence, eviction and async cancellation, budget flush, staged multisubresource publication, and multi-backend rendering in the final one-shot suite.
 
 **Next:** add CPU reference-parity test fixtures and GPU native shader pixel oracles after remaining functionality, examine anisotropic/wrap gutter and memory limits, then run all CTests and native Metal verification as a separate final stage. PR #21 remains Draft; experimental ICB flags OFF.
+
+## Stage 10CR — explicit GPU zero initialization of indexed VT table (2026-11-19)
+
+**Source SHA:** `d64ba9ebe10587f982618e383ecceaffa91c86fc`. **Branch:** `feature/texture-rhi-unification`, PR #21 Draft.
+
+**Scope:** `VirtualTexturePageTable::createGpuTexture(Device&,bool explicitSliceInitialization=false)` now permits explicit indexed table initialization: allocate empty RGBA8 Texture2DArray storage and retain all CPU table rows marked dirty. Existing one-slice legacy callers retain the original data-pointer initialization behavior. In `VirtualTextureStreamer::initialize`, if `indexedMipTable=true`, the streamer runs `synchronizeTable()` before returning true, flushing all zero table slices through existing bounded `updateTextureRegion` dirty-row uploads. Any rejected upload or insufficient complete-row flush budget fails initialization and destroys both atlas and table; never exposes undefined shader mappings.
+
+**Test status:** Source committed via GitHub connector and reviewed at edit time. No native tests, CMake, GLSL/MSL compilation, framebuffer pixel or driver validation run for current SHA (user requested features first). This is a safety mechanism, not a confirmed GPU-fence/synchronization guarantee beyond Device::updateTextureRegion's existing contract.
+
+**Still needed:** native C++/Metal/GLSL compilation, real backend array layer/mip upload safety and GPU framebuffer oracles; CPU parity for incremental indexed table; sRGB/gutter/aniso quality; streaming churn/perf; whole-engine regression. Keep #21 Draft, no defaults changed except explicit opt-in indexed mode. Next agent should implement remaining quality safeguards and regression fixtures, then perform one final full-engine test pass.

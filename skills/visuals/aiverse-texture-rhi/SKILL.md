@@ -1927,3 +1927,7 @@ Include `engine/render/ModelVirtualTextureArchiveBinding.h` in the caller's mode
 ## Stage 10CQ — incremental virtual table refresh (SHA 6bfa3872)
 
 The page cache now exposes `mappingChangesSince(revision,out,maxKeys=128)`, backed by bounded 512-event history. Page-table `rebuild(cache)` skips unchanged revisions, refreshes only small changed mip-zero rectangles, and falls back to a full rebuild for large changes or truncated history. Still requires CPU reference oracle and GPU hardware tests; none have been run for this SHA. Keep release gates explicit.
+
+## Stage 10CR — indexed table GPU initialization (SHA d64ba9eb)
+
+`VirtualTexturePageTable::createGpuTexture(gpu,true)` allocates empty array slices and retains all dirty rows; `VirtualTextureStreamer::initialize` automatically runs bounded `synchronizeTable()` in indexed mode before exposing a valid texture. Legacy create defaults unchanged. A too-small `pageTableBytesPerFlush` (less than full width*4 row) causes fail-closed initialization. No tests run on this SHA, PR #21 Draft.
