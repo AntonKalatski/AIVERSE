@@ -142,6 +142,14 @@ public:
     void setView(const render::RTSCamera& cam, const render::mat4& viewProj, int fbW, int fbH);
     void update(float dt);
     void render(const FxFog& fog);
+    // Stage 31: optional presentation-only reactive coverage from the
+    // ALREADY uploaded current-frame particle geometry. Call after render()
+    // inside Renderer3D::addMotionReactiveDraw's open RGBA8 mask pass.
+    // No simulation, no GPU pass begin/end, no scene depth writes.
+    bool hasReactiveGeometry() const;
+    uint32_t renderReactive(gfx::Device& device,
+                            gfx::TextureHandle sceneDepth,
+                            int width, int height);
     // Lights of emitters with a "light" module (after update): appended to `out`, at most `maxLights`
     // in total (fewer on low tiers). Call between Renderer3D::beginScene and render.
     void collectLights(std::vector<FxPointLight>& out, int maxLights = 32) const;
