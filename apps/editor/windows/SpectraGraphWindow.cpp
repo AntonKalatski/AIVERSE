@@ -228,6 +228,33 @@ private:
         dirty_=false;drafts_.erase(project_);refreshNames(ed);
         message_="Сохранено: fx/graphs/"+name_+".vfx.json";
     }
+    void preview(Editor& ed,bool gpu) {
+        Json request=Json::object();
+        request.set("graph",doc_);
+        request.set("name",Json::string(name_));
+        request.set("gpu",Json::fromBool(gpu));
+        if(doc_.getInt("version")==2 && previewInstanceValues_.isObject()) {
+            spectra::InstanceParameterTable schema;
+            std::vector<std::string> diagnostics;
+            if(spectra::loadInstanceParameterTable(
+                   doc_["instanceParameters"],schema,diagnostics)) {
+                Json values=Json::object();
+                for(const auto& [name,definition]:schema) {
+                    const Json& candidate=previewInstanceValues_[name];
+                    if(candidate.isNumber() && spectra::checkInstanceParameterValue(
+                           definition,float(candidate.toDouble())))
+                        values.set(name,candidate);
+                }
+                request.set("instanceValues",std::move(values));
+            }
+        }
+        const auto result=ed.ws().call("fx_graph_preview",request);
+        if(checkResult(result)) {
+            message_=gpu?"Metal GPU preview queued (strict subset)."
+                        :"CPU preview in Scene.";
+            ed.focusWindow("scene");
+        }
+    }
     void toolbar(Editor& ed) {
         ImGui::SetNextItemWidth(175);
         ui::inputString("Имя##spectra_name",name_);
@@ -270,25 +297,9 @@ private:
         }
         ImGui::EndDisabled();ImGui::SameLine();
         ImGui::BeginDisabled(!valid_);
-        if(ImGui::Button("Предпросмотр")) {
-            Json p=Json::object();p.set("graph",doc_);p.set("name",Json::string(name_));
-            if(doc_.getInt("version")==2 && previewInstanceValues_.isObject()) {
-                spectra::InstanceParameterTable schema;
-                std::vector<std::string> diagnostics;
-                if(spectra::loadInstanceParameterTable(doc_["instanceParameters"],schema,diagnostics)) {
-                    Json values=Json::object();
-                    for(const auto& [name,definition]:schema) {
-                        const Json& candidate=previewInstanceValues_[name];
-                        if(candidate.isNumber() && spectra::checkInstanceParameterValue(
-                               definition,float(candidate.toDouble())))
-                            values.set(name,candidate);
-                    }
-                    p.set("instanceValues",std::move(values));
-                }
-            }
-            auto r=ed.ws().call("fx_graph_preview",p);
-            if(checkResult(r)){message_="Предпросмотр в окне Сцена.";ed.focusWindow("scene");}
-        }
+        if(ImGui::Button("Предпросмотр"))preview(ed,false);
+        ImGui::SameLine();
+        if(ImGui::Button("Metal GPU"))preview(ed,true);
         ImGui::EndDisabled();
         ImGui::SameLine();ImGui::TextDisabled("%s  v%lld (%d)",
             dirty_?"*":"",static_cast<long long>(doc_.getInt("version")),emitters_);
