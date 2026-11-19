@@ -269,14 +269,12 @@ struct CreatorApp {
     void loadExternal(const std::string& path) {
         auto manifest=readManifest(path);
         auto imported=importHumanAsset(manifest,readerFor(path));
-        std::string error;
-        if(!session.loadJson(imported.dna.toJson(),&error))
-            throw std::runtime_error("VIVID Creator: imported DNA invalid: "+error);
-        syncDraft();
-        morphSourceVertices=imported.sourceVertexCount;
+        // Validate the complete package, including every indexed LOD,
+        // before touching the live Creator session or morph state.
+        const auto sourceVertexCount=imported.sourceVertexCount;
         std::vector<MorphVec3> originalPositions;
-        originalPositions.reserve(morphSourceVertices);
-        for(std::size_t i=0;i<morphSourceVertices;++i) {
+        originalPositions.reserve(sourceVertexCount);
+        for(std::size_t i=0;i<sourceVertexCount;++i) {
             const auto& p=imported.model->vertices[i].pos;
             originalPositions.push_back({p.x,p.y,p.z});
         }
@@ -285,6 +283,11 @@ struct CreatorApp {
         const auto importedLods=readIndexedLods(
             manifest,*imported.model,path,originalPositions,
             imported.facialShapes);
+        std::string error;
+        if(!session.loadJson(imported.dna.toJson(),&error))
+            throw std::runtime_error("VIVID Creator: imported DNA invalid: "+error);
+        syncDraft();
+        morphSourceVertices=sourceVertexCount;
         morphSourcePositions=std::move(originalPositions);
         morphDraft=std::move(pendingMorph);
         morphTargetIndex=0;
