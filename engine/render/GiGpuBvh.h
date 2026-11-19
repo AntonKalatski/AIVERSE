@@ -62,6 +62,19 @@ public:
         return result;
     }
 
+    // Build a single chunk BLAS without re-reading any other chunk.
+    static GiGpuBvh fromPackedTriangles(std::vector<GiGpuBvhTri> packed) {
+        if (packed.size()>kMaxTriangles)
+            throw std::invalid_argument("GPU GI packed BVH triangle budget exceeded");
+        GiGpuBvh result;
+        result.triangles=std::move(packed);
+        if(!result.triangles.empty()) {
+            result.nodes.reserve(result.triangles.size()*2);
+            result.makeNode(0,uint32_t(result.triangles.size()),0);
+        }
+        return result;
+    }
+
     struct RayHit {
         float distance=0;
         float3 normal{},albedo{};
@@ -106,9 +119,10 @@ public:
                     }
                 }
             } else {
-                if (top+2>stack.size()) throw std::runtime_error("GPU GI BVH stack overflow");
+                const uint32_t children=node.meta[1]==UINT32_MAX?1u:2u;
+                if (top+children>stack.size()) throw std::runtime_error("GPU GI BVH stack overflow");
+                if (children==2u) stack[top++]=node.meta[1];
                 stack[top++]=node.meta[0];
-                stack[top++]=node.meta[1];
             }
         }
         return out;
