@@ -1111,7 +1111,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         // outside render passes and before the CPU/scene draw opens a pass.
         // No authored fx/gpu/routes.json => existing VFX behavior unchanged.
         fx_.prepareGpuFrame(screen_ == Screen::Playing || screen_ == Screen::Over
-                                ? float(std::clamp(dt,0.0,0.1)) : 0.0f);
+                                ? float(std::clamp(dt,0.0,0.1)) : 0.0f,cam_);
         r3d_.beginScene(cam_, fbW(), fbH());
         if (worldScene_ && !planet()) worldScene_->draw(r3d_, world::Cell{0, 0, 0}, 1);
         auto& gs = mod().state(*sim_);
