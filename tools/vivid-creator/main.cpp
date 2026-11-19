@@ -81,8 +81,12 @@ struct CreatorApp {
     int sculptMeshIndex=-1;
     int sourceLodMesh=-1,targetLodMesh=-1;
     float lodProjectionTolerance=0.02f;
-    MorphLodMapping activeLodMapping;
-    std::vector<std::uint32_t> activeLodSourceIndices;
+    struct AuthoredFacialLod {
+        MorphLodMapping mapping;
+        std::vector<std::uint32_t> sourceIndices;
+        int targetMesh=-1;
+    };
+    std::vector<AuthoredFacialLod> authoredFacialLods;
     bool lodGpuMorphEnabled=false;
     bool sculptPickArmed=false;
     int morphTargetIndex=0,morphVertexIndex=0;
@@ -221,8 +225,7 @@ struct CreatorApp {
         morphVertexIndex=0;
         morphEditOffset={};
         lodGpuMorphEnabled=false;
-        activeLodMapping={};
-        activeLodSourceIndices.clear();
+        authoredFacialLods.clear();
         sculptMeshIndex=-1;
         sculptPickArmed=false;
         morphDirty=false;
@@ -335,22 +338,23 @@ struct CreatorApp {
                 proposed.rig=imported.rig;
                 proposed.facialShapes=morphDraft
                     ? morphDraft->compile() : std::move(imported.facialShapes);
-                if(lodGpuMorphEnabled) {
-                    if(activeLodMapping.targetVertexIds.empty() ||
-                       activeLodSourceIndices.empty())
-                        throw std::runtime_error("VIVID GPU LOD: no baked vertex correspondence");
+                if(lodGpuMorphEnabled && !authoredFacialLods.empty()) {
                     std::vector<float3> sourcePositions;
                     sourcePositions.reserve(morphSourcePositions.size());
                     for(const auto& p:morphSourcePositions)
                         sourcePositions.push_back({p[0],p[1],p[2]});
-                    // Fingerprint validation is done against the original
-                    // pre-LOD source stream on every scene regeneration.
-                    const auto compact=activeLodMapping.transfer(
-                        proposed.facialShapes,sourcePositions,
-                        activeLodSourceIndices);
-                    proposed.facialShapes=MorphLodGpuAuthoring::combine(
-                        proposed.facialShapes,compact,
-                        activeLodMapping.targetVertexIds);
+                    std::vector<SparseMorphLibrary> compact;
+                    compact.reserve(authoredFacialLods.size());
+                    for(const auto& lod:authoredFacialLods)
+                        compact.push_back(lod.mapping.transfer(
+                            proposed.facialShapes,sourcePositions,lod.sourceIndices));
+                    std::vector<MorphLodGpuAuthoring::Layer> layers;
+                    layers.reserve(compact.size());
+                    for(std::size_t i=0;i<compact.size();++i)
+                        layers.push_back({&compact[i],
+                            authoredFacialLods[i].mapping.targetVertexIds});
+                    proposed.facialShapes=MorphLodGpuAuthoring::combineMany(
+                        proposed.facialShapes,layers);
                 }
                 proposed.facialBinding=FaceShapeBinding::compile(
                     proposed.facialShapes,manifest.routes);
@@ -914,12 +918,15 @@ struct CreatorApp {
                 meshCombo("Target face LOD mesh",targetLodMesh);
                 ImGui::SliderFloat("Projection tolerance",&lodProjectionTolerance,
                                    0.001f,0.2f,"%.3f");
-                if(!activeLodMapping.samples.empty()) {
+                if(!authoredFacialLods.empty()) {
                     if(ImGui::Checkbox("Publish LOD morphs to GPU actor",
                                        &lodGpuMorphEnabled))
                         pendingRebuild=true;
-                    ImGui::Text("Prepared LOD points: %zu",
-                                activeLodMapping.samples.size());
+                    ImGui::Text("Prepared facial LODs: %zu / 8",
+                                authoredFacialLods.size());
+                    for(const auto& lod:authoredFacialLods)
+                        ImGui::BulletText("Mesh %d: %zu vertices",
+                            lod.targetMesh,lod.mapping.samples.size());
                     ImGui::TextWrapped("Actor deforms both source and LOD "
                         "vertices in one full-model GPU stream; Renderer3D "
                         "chooses the authored mesh LOD.");
@@ -968,8 +975,16 @@ struct CreatorApp {
                         validIds.erase(std::unique(validIds.begin(),validIds.end()),validIds.end());
                         if(validIds!=restored.targetVertexIds)
                             throw std::runtime_error("VIVID LOD: target model vertex IDs changed");
-                        activeLodMapping=restored;
-                        activeLodSourceIndices=std::move(sourceIndices);
+                        if(authoredFacialLods.size()>=8 &&
+                           std::none_of(authoredFacialLods.begin(),authoredFacialLods.end(),
+                             [&](const AuthoredFacialLod& l){return l.targetMesh==targetLodMesh;}))
+                            throw std::runtime_error("VIVID LOD: maximum eight authored levels");
+                        AuthoredFacialLod layer{restored,std::move(sourceIndices),targetLodMesh};
+                        auto existing=std::find_if(authoredFacialLods.begin(),authoredFacialLods.end(),
+                            [&](const AuthoredFacialLod& l){return l.targetMesh==targetLodMesh;});
+                        if(existing==authoredFacialLods.end())
+                            authoredFacialLods.push_back(std::move(layer));
+                        else *existing=std::move(layer);
                         lodGpuMorphEnabled=true;
                         pendingRebuild=true;
                         status="VIVID LOD: validated mapping loaded for GPU actor";
@@ -1056,8 +1071,16 @@ struct CreatorApp {
                         // Publish the full source/target CSR only at the next
                         // authoring rebuild, not by swapping a GPU stream
                         // during an active render pass.
-                        activeLodMapping=std::move(map);
-                        activeLodSourceIndices=std::move(faceIndices);
+                        if(authoredFacialLods.size()>=8 &&
+                           std::none_of(authoredFacialLods.begin(),authoredFacialLods.end(),
+                             [&](const AuthoredFacialLod& l){return l.targetMesh==targetLodMesh;}))
+                            throw std::runtime_error("VIVID LOD: maximum eight authored levels");
+                        AuthoredFacialLod layer{std::move(map),std::move(faceIndices),targetLodMesh};
+                        auto existing=std::find_if(authoredFacialLods.begin(),authoredFacialLods.end(),
+                            [&](const AuthoredFacialLod& l){return l.targetMesh==targetLodMesh;});
+                        if(existing==authoredFacialLods.end())
+                            authoredFacialLods.push_back(std::move(layer));
+                        else *existing=std::move(layer);
                         lodGpuMorphEnabled=true;
                         pendingRebuild=true;
                         status="VIVID LOD: baked "+
