@@ -57,6 +57,15 @@ A model file containing authored animation clips can also use the rigid static
 bind-pose cache when its draw has no live pose/baked animation, its skin set
 is empty, the hierarchy has been finalized, and nodes are not runtime-mutable.
 Active animation is still uncached.
+The renderer now memoizes per-model static eligibility through
+`engine/render/ModelStaticEligibility.h`, keyed by geometryRevision and
+structural/GPU handles, with an 8192-entry cap and periodic expiry; this
+avoids rescanning rigid node and mesh flags per rendered instance.
+`StaticModelCachePolicy.h` still validates every draw's pose, static flag,
+material displacement, GPU material state, LOD and view state separately.
+In-place native changes to node/primitive eligibility must bump
+`Model::markGeometryChanged()`; asset unload must clear the model memo
+through `Renderer3D::invalidateModelCachesFor(model)`.
 `RtsView` opts eligible stationary scenery in at the host boundary, but no
 packet cache runs without the global experimental flag.
 
