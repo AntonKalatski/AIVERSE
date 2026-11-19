@@ -288,3 +288,34 @@ a water-surface shader displacement or real SpectraFX implementation.
 
 **Verification:** tests deliberately deferred; do not claim green.
 See `docs/nereid/HANDOFF.md` for exact stage commits/limits/next task.
+
+## Stage 25 — scaled water ripples and real SpectraFX cue adapter
+
+NEREID now supports **up to 16** radial normal/foam impulses per
+water-surface draw and **up to 256** recent visual ripples across the scene.
+Ripple selection uses the active scene observer, not the first vertex
+of a large polygon, and GPU data is stored on the per-draw item.
+The GLSL/Metal code adds impact foam over existing NEREID procedural
+wave normals. No extra shaders/RHI targets/textures are required.
+
+For real event-to-particle playback, include
+`engine/world/NereidSpectraFxBridge.h`, construct it from the native
+host's already initialized `aiverse::spectra::Runtime`, and supply
+graph names that SpectraFX has loaded/defined:
+```cpp
+world::NereidSpectraFxBridge splash(particles);
+splash.setCue(lib::nereid::WaterInteractionKind::Enter,
+              {"fx/water_splash",1.0f});
+splash.setCue(lib::nereid::WaterInteractionKind::SurfaceWake,
+              {"fx/water_wake",0.4f});
+auto events=lib::nereid::snapshotWaterInteractionEvents(
+    sim.world(),sim.tick());
+worldScene.ingestNereidInteractions(events,sim.tick(),
+    [&](const auto& event){splash.emit(event);});
+```
+The graph keys above are illustrative and must be defined by each native
+project; no built-in SpectraFX particle asset is assumed. Call
+`splash.reset()` on rollback/new scene to kill tracked one-shots.
+The adapter holds up to 256 handles and calls the actual
+`ParticleSystem::play` API. NEREID does not own particle ticking/rendering.
+**Tests remain deferred by explicit user direction.**
