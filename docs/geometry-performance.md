@@ -170,7 +170,8 @@ changed state invalidates the packet and uses the ordinary rendering path.
 This prevents stale Material pointers when a native caller reallocates
 its override vector. External texture writes that keep the *same* GPU handle
 and non-renderer state still require explicit owner revisions. The renderer
-checks all standard `ModelDraw` visual fields and world transform too.
+checks all standard `ModelDraw` visual fields and world transform too,
+plus per-node material assignment indices and the selected variant.
 
 CPU runtime LOD is supported for rigid models: a packet remembers the
 selected LOD mesh per node and re-selects the LOD against the **current**
@@ -179,10 +180,19 @@ chosen mesh differs, it rebuilds. When a transition is in progress (LOD
 crossfade), it bypasses packet reuse entirely so fade weights are always
 current. Experimental GPU-compute LOD remains on its existing uncached path.
 
-Eligibility still excludes node material overrides and material variants,
-skinned/morphed/animated models, runtime-mutable nodes, cluster geometry,
-vertex displacement, baked GI and active LOD diagnostics. No simulation
-state is cached or made genre-specific. The optional RTS view bridge marks
+Static per-node material overrides (`ModelDraw::nodeMaterial`) and
+`KHR_materials_variants` selections can now use packet replay. The current
+override index vector is compared by value against a stored copy before replay
+and is never retained by pointer; switching variant also invalidates the packet.
+These modes preserve baseline renderer behaviour: **per-node material overrides
+or an explicit variant disable distance-based CPU LOD selection** for that draw,
+while all geometry/material batch compatibility decisions remain unchanged.
+Snapshots are included in the bounded packet memory budget.
+
+Eligibility still excludes skinned/morphed/animated models,
+runtime-mutable nodes, cluster geometry, vertex displacement, baked GI
+and active LOD diagnostics. No simulation state is cached or made
+genre-specific. The optional RTS view bridge marks
 safe stationary scenery with a nonzero packet revision; this has **no**
 effect unless the global CPU packet flag is explicitly enabled.
 Native games can instead use `engine/render/EcsStaticModelRender.h`
