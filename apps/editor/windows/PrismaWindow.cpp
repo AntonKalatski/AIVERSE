@@ -147,11 +147,12 @@ public:
                         ImGui::TextDisabled("Для последнего кадра нет authored эффектов.");
                     for (const auto& state : report->effects) {
                         const auto& def = prismaType(state.type);
-                        ImGui::BulletText("%s | req %s | pipe %s | encoded %s",
+                        ImGui::BulletText("%s | req %s | pipe %s | encoded %s%s",
                             def.label,
                             state.requested ? "yes" : "no",
                             state.pipelinePrepared ? "ready" : "not ready",
-                            state.encoded ? "yes" : "no");
+                            state.encoded ? "yes" : "no",
+                            state.degraded ? " | degraded fallback" : "");
                         if (!state.reason.empty()) {
                             ImGui::Indent();
                             ImGui::TextDisabled("Reason: %s", state.reason.c_str());
@@ -297,6 +298,8 @@ private:
             edit(ed, scope, [&](Json& arr) { arr.at(i).set("minQuality", Json::string(prismaQualityName(PrismaQuality(mq + 1)))); });
         ui::help("На более низких уровнях эффект пропускается: так тяжёлые эффекты не попадают на слабые телефоны.");
         for (auto& w : warningsRu(e)) ui::toneText(ui::Tone::Warn, "%s", w.c_str());
+        if (d.type == PrismaType::DepthOfField)
+            ui::help("Старые focusDepth/focusRange: аппаратная глубина 0..1. Включите metricFocus для фокуса по расстоянию вдоль камеры (единицы мира); focusDistance/focusRangeMeters задают плоскость и диапазон, occlusionToleranceMeters ограничивает смешивание на границах объектов. Требуется AIVERSE_PRISMA_DOF=1 и HDR High. При некорректной near/far автоматически используется старый режим.");
         int off = 0;
         for (auto& p : d.params) {
             switch (p.kind) {
