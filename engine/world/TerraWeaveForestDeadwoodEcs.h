@@ -138,6 +138,11 @@ inline size_t seedFallenForestDeadwoodEventsEcs(
             });
         if(it!=next.logs.end() && it->id==id)continue;
         const AnchoredPlant& plant=*byId.at(id);
+        if(plant.anchor.xCm<-kWorldLimitCm ||
+           plant.anchor.xCm>kWorldLimitCm ||
+           plant.anchor.zCm<-kWorldLimitCm ||
+           plant.anchor.zCm>kWorldLimitCm)
+            throw std::out_of_range("TerraWeave fallen wood extent");
         const uint64_t units=deadwoodOrganicUnits(plant);
         if(totalUnits>UINT64_MAX-units)
             throw std::overflow_error("TerraWeave deadwood batch mass overflow");
