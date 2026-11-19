@@ -127,3 +127,6 @@ Metal/Vulkan/GLES visual tests, failure-injection or memory/crowd profiling.
 It is a committed source implementation, not a guarantee of live tested
 file watching or safe graphics retirement on every backend. See
 [Stage 157 handoff](agent-handoffs/animation-stage157-modelview-atomic-model-file-reimport-2026-11-20.md).
+
+
+A standalone `aiverse_modelview models/hero.glb --watch-model-files` invocation is also supported without any child attachments. It uses the same native provider-backed source reload, with an empty child socket layout.
