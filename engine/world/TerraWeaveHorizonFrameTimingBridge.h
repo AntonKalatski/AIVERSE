@@ -1,8 +1,6 @@
 // TerraWeave: host-side frame timing bridge for native RTS/FPS clients.
-// Uses AIVERSE's existing gfx::Device tagged asynchronous GPU timings and
-// measured CPU wall time. Never invents a GPU sample or stalls a frame.
-// Only register this bridge with a Device whose takeGpuTimings() collection
-// is not simultaneously owned by another benchmark/consumer.
+// Uses the shared gfx::Device GPU timing router and measured CPU wall time.
+// Never drains other subscribers' results, invents GPU data or stalls a frame.
 #pragma once
 #include "engine/world/WorldScene.h"
 #include "engine/gfx/Gfx.h"
@@ -29,12 +27,15 @@ public:
             return false;
         }
         if(capturing_)return false;
+        if(!subscriber_)
+            subscriber_=device.gpuTimingRouter().subscribe();
         collectGpu(device);
         deliver(*scene);
         ++frameId_;
         Frame pending;
         pending.id=frameId_;
-        pending.gpuRequested=device.timeGpuFrame(tag(frameId_));
+        pending.gpuRequested=subscriber_ &&
+            device.gpuTimingRouter().request(device,subscriber_,frameId_);
         frames_.push_back(pending);
         capturing_=true;
         return true;
@@ -63,6 +64,14 @@ public:
         capturing_=false;
     }
 
+    // Explicit teardown if the client is destroyed while the Device remains
+    // alive. The router discards only this bridge's outstanding requests.
+    void detach(gfx::Device& device) {
+        discard();
+        if(subscriber_)
+            device.gpuTimingRouter().unsubscribe(subscriber_);
+        subscriber_=0;
+    }
     uint64_t lastFrameId() const {return frameId_;}
     size_t pendingFrames() const {return frames_.size();}
     uint64_t deliveredGpuFrames() const {return deliveredGpuFrames_;}
@@ -74,24 +83,16 @@ private:
         uint32_t cpuUs=0,gpuUs=0;
         bool gpuRequested=false,gpuReady=false,cpuReady=false;
     };
-    static constexpr uint64_t kPrefix=0x7E41000000000000ull;
-    static constexpr uint64_t kIdMask=0x0000ffffffffffffull;
     static constexpr uint64_t kMaxGpuLagFrames=8;
-    static uint64_t tag(uint64_t id) {
-        return kPrefix|(id&kIdMask);
-    }
     void collectGpu(gfx::Device& device) {
-        bool waiting=false;
-        for(const auto& frame:frames_)
-            if(frame.gpuRequested && !frame.gpuReady){waiting=true;break;}
-        if(!waiting)return;
-        // This is a destructive device-level drain. Native game clients
-        // use one timing collector; other tools must coordinate if sharing
-        // the same Device with independent tagged benchmark consumers.
-        for(const auto& timing:device.takeGpuTimings()) {
-            if((timing.tag & ~kIdMask)!=kPrefix)continue;
+        auto& router=device.gpuTimingRouter();
+        // Only the router drains the Device; other subscribers keep their
+        // independent mailboxes even when this bridge polls first.
+        router.poll(device);
+        if(!subscriber_)return;
+        for(const auto& timing:router.take(subscriber_)) {
             for(auto& frame:frames_) {
-                if(tag(frame.id)!=timing.tag || !frame.gpuRequested ||
+                if(frame.id!=timing.tag || !frame.gpuRequested ||
                    frame.gpuReady)continue;
                 frame.gpuReady=true;
                 if(timing.valid && std::isfinite(timing.milliseconds) &&
@@ -123,6 +124,7 @@ private:
         }
     }
     uint64_t frameId_=0;
+    gfx::GpuTimingRouter::Subscriber subscriber_=0;
     bool capturing_=false;
     std::deque<Frame> frames_;
     uint64_t deliveredGpuFrames_=0,deliveredCpuOnlyFrames_=0;
