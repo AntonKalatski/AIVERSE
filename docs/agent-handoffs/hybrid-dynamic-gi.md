@@ -744,3 +744,15 @@ texture slots; exact Single/Validity/Dual/Metal Triple modes and GPU caps
 are enforced. Reuses the existing GiDynamicShaders/GiCascadeShaders ABI.
 This is not yet automatic GI receiving by all terrain/foliage shaders.
 Compiler, CTest, GPU pixel tests and full acceptance NOT RUN.
+
+
+## Stage 43 — 2026-11-20 — relocatable custom GI binding ABI (SOURCE; NOT RUN)
+
+See `docs/agent-handoffs/gi-stage43-custom-gi-remappable-atlas-2026-11-20.md`.
+Added generic texture-range admission, preflight queries, GLSL/MSL custom
+GI helper sources with two-pass identifier remapping, configurable
+Renderer3D GI binding slots, and `gi_custom_shader_remap` CTest source.
+Allows terrain/foliage/custom material layouts owning tex13..20 to
+request GI at tex21+ on capable Metal/Vulkan devices. Strict GLES3
+texture limitations keep fallback. Native build, CTest, shaders and GPU
+pixels NOT RUN. Continue Stage 44 real receiver integration.
