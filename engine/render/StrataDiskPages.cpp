@@ -126,6 +126,7 @@ struct DiskIndexPages::State {
     std::condition_variable cv;
     std::deque<Key> queue;
     std::set<Key> pending;
+    std::set<Key> desired;
     std::set<Key> failures;
     std::map<Key,std::vector<uint32_t>> pages;
     size_t readyLimit=0, queuedLimit=0, readyBytes=0;
@@ -292,14 +293,22 @@ bool DiskIndexPages::open(const std::string& path,const ModelAsset& asset,
                 key=state->queue.front();
                 state->queue.pop_front();
                 entry=state->entries.at(key);
+                if(!state->desired.count(key)){
+                    state->pending.erase(key);
+                    continue;
+                }
                 // Avoid reading an unbounded number of ready pages when
                 // the render thread cannot consume them this frame.
                 const size_t bytes=size_t(entry.count)*4u;
                 state->cv.wait(lock,[&]{
-                    return state->stop ||
+                    return state->stop || !state->desired.count(key) ||
                         bytes<=state->readyLimit-state->readyBytes;
                 });
                 if(state->stop)return;
+                if(!state->desired.count(key)){
+                    state->pending.erase(key);
+                    continue;
+                }
             }
             std::vector<uint32_t> data;
             const bool good=readPage(state->path,entry,data);
@@ -307,10 +316,12 @@ bool DiskIndexPages::open(const std::string& path,const ModelAsset& asset,
                 std::lock_guard lock(state->mutex);
                 state->pending.erase(key);
                 if(good){
-                    state->readyBytes+=data.size()*4u;
-                    state->pages[key]=std::move(data);
                     ++state->counters.completedReads;
                     state->counters.bytesRead+=uint64_t(entry.count)*4u;
+                    if(state->desired.count(key)){
+                        state->readyBytes+=data.size()*4u;
+                        state->pages[key]=std::move(data);
+                    }
                 }else{
                     state->failures.insert(key);
                     ++state->counters.failedReads;
@@ -347,13 +358,37 @@ bool DiskIndexPages::readRoot(uint32_t primitive,uint32_t node,
     return true;
 }
 
+void DiskIndexPages::retainRequested(
+        const std::vector<std::pair<uint32_t,uint32_t>>& wanted) {
+    if(!state_)return;
+    auto& s=*state_;
+    std::lock_guard lock(s.mutex);
+    s.desired={wanted.begin(),wanted.end()};
+    // An already running worker cannot be interrupted mid-read. Its output
+    // is discarded if the source is no longer in the desired set.
+    for(auto it=s.queue.begin();it!=s.queue.end();){
+        if(!s.desired.count(*it)){
+            s.pending.erase(*it);
+            it=s.queue.erase(it);
+        }else ++it;
+    }
+    for(auto it=s.pages.begin();it!=s.pages.end();){
+        if(!s.desired.count(it->first)){
+            s.readyBytes-=it->second.size()*4u;
+            it=s.pages.erase(it);
+        }else ++it;
+    }
+    s.cv.notify_all();
+}
+
 bool DiskIndexPages::request(uint32_t primitive,uint32_t node) {
     if(!state_)return false;
     auto& s=*state_;
     const Key key{primitive,node};
     std::lock_guard lock(s.mutex);
     const auto it=s.entries.find(key);
-    if(s.stop||it==s.entries.end()||s.failures.count(key))return false;
+    if(s.stop||it==s.entries.end()||s.failures.count(key)||
+       !s.desired.count(key))return false;
     if(s.pages.count(key)||s.pending.count(key))return true;
     if(s.pending.size()>=s.queuedLimit){
         ++s.counters.queueRefused;
