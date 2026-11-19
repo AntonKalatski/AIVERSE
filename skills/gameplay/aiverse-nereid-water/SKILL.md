@@ -680,3 +680,8 @@ After publishing the water-body ECS snapshot to WorldScene, call `scene.setNerei
 ## Stage 44 — JSON confluence authoring
 
 To author presentation-only confluence flow, include `"nereidConfluences":{"sources":[...]}` alongside `nereidWater.surfaces` in a WorldScene JSON manifest. Each source requires `id`, 2–4 `inletWaterIds`, `outletWaterId`, and `mouth:[x,y,z]`; optional `radius`, `blend`, `speedLimit`, `enabled`. All referenced `nereidWater.surfaces` MUST have explicit unique IDs, and the mouth must lie within all their X/Z footprints. The loader rejects unknown/duplicate/self IDs before scene construction. JSON links are stable visual IDs, not ECS Entity IDs; never manufacture fake Entity handles. Authoritative games still use `WaterConfluenceComponent` and `registerNereidConfluencePersistence`. See `docs/nereid/stage-44-confluence-manifest.md` for example, exact files, verification status and next step. **No native test/GLSL/MSL/GPU run has occurred.**
+
+
+## Stage 45 — authored confluence CPU test
+
+Run `ctest --test-dir build/ecs-test --output-on-failure -R '^ecs_nereid_confluence_contract_test$'` after configuring/building `aiverse_ecs_nereid_confluence_contract_test`. The fixture checks manifest references and errors, ECS reference/indexed water contact parity, snapshot scene flow, disabled junctions, and draw-only water resident upload key. ECS experimental shell CI also includes it. **The tests are authored but NOT RUN here**; do not claim PASS or merge until genuine native/CI verification is available. Full handoff `docs/nereid/stage-45-confluence-contract-tests.md`.

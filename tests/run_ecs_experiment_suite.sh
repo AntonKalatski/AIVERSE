@@ -90,6 +90,8 @@ done
 # Compile-only/CPU renderer marker test (no device or shader backend).
 compile_run ecs-nereid-renderer-contract -Ilibraries/include \
     tests/ecs_nereid_renderer_contract_test.cpp "${NEREID_CORE[@]}"
+compile_run ecs-nereid-confluence-contract -Ilibraries/include \
+    tests/ecs_nereid_confluence_contract_test.cpp "${NEREID_CORE[@]}"
 # Legacy bridge imports only from the editor-time RtsWater geometry code.
 # Presentation geometry must compile on both Linux and macOS independently of RHI.
 compile_run ecs-nereid-surface-mesh -Ilibraries/include \

@@ -334,3 +334,8 @@ NEREID source mesh revision depends only on body geometry, LOD and vertex tint f
 ## Stage 44 — explicit static JSON confluence source IDs
 
 `parseNereidConfluenceManifest(root,water.surfaces)` parses `nereidConfluences.sources` from a WorldScene JSON manifest. Each junction has a positive scene ID, 2–4 explicit inlet water source IDs, a distinct outlet water ID, a Fixed mouth position, radius, blend, speedLimit and optional enabled. It requires referenced water surfaces to have explicit IDs, and validates X/Z footprint coverage at the mouth. Scene links are NOT ECS Entity handles; the numeric `validWaterConfluenceFlowPolicy` is used by shared flow kernel and scene, whereas `validWaterConfluence` retains full authoritative ECS link validation. WorldScene construction supplies this manifest to its read-only `NereidConfluenceScene`, and later ECS snapshots may override it explicitly. No ECS schemas, scene GPU resources or hydraulic simulation added. Validation NOT RUN; see `docs/nereid/stage-44-confluence-manifest.md`.
+
+
+## Stage 45 — confluence and material residency regression coverage (authored)
+
+The new CPU-only `ecs_nereid_confluence_contract_test` covers JSON scene authoring and validation (Stage 44), reference/indexed ECS water confluence parity (Stage 41), ECS-to-scene Fixed current transfer (Stage 42), and draw-only vs vertex-baked material upload keys (Stage 43). It is included in CMake/CTest and experimental ECS shell runner. It does not exercise graphics devices, shaders, full persistence/rollback or unrelated genre integration. No test was actually run in the agent environment. See `docs/nereid/stage-45-confluence-contract-tests.md`.

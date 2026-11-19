@@ -1663,6 +1663,14 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         aiverse_engine AIVERSE::lib_nereid_water)
     add_test(NAME ecs_nereid_renderer_contract_test
         COMMAND aiverse_ecs_nereid_renderer_contract_test)
+    # NEREID stages 41-44: JSON links, reference/indexed/scene flow parity
+    # and shader-only water mesh upload identity (CPU-only).
+    add_executable(aiverse_ecs_nereid_confluence_contract_test
+        tests/ecs_nereid_confluence_contract_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_confluence_contract_test PRIVATE
+        aiverse_engine AIVERSE::lib_nereid_water)
+    add_test(NAME ecs_nereid_confluence_contract_test
+        COMMAND aiverse_ecs_nereid_confluence_contract_test)
     # Real NativeModule instantiated by RtsModule, exercising RtsSave and COW.
     add_executable(aiverse_ecs_native_rts_integration_test tests/ecs_native_rts_integration_test.cpp)
     target_link_libraries(aiverse_ecs_native_rts_integration_test PRIVATE aiverse_game)
