@@ -7502,3 +7502,60 @@ descriptor ABI if safe; retain homogeneous fallback in the meantime.
 During later test phase run real shader compilation, GPU screenshot
 parity and negative 16-slot checks on GL/Vulkan.
 
+
+
+## Stage 10T — explicit fragment texture slot budget (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / Draft #21.
+**Code commits:**
+- `383877a58e6e8430bb743b2612687c3ab81eba48` —
+  `engine/gfx/Gfx.h`: virtual read-only
+  `Device::maxFragmentTextureSlots()` (default 16).
+- `7647e8b408970a959fddb755ef8ee0b0988cc30c` —
+  `engine/gfx/metal/GfxMetal.mm`: Metal override returns 32
+  available fragment texture indices (samplers still 0..15).
+- `0137899195657d6c8e368f6c70d115d067aeac48` —
+  `engine/gfx/vulkan/VkDevice.h`: Vulkan override returns
+  `textureSlots_`, chosen from real descriptor limits.
+- `15ebba5c2034f988bc898f36045a6232042c03c9` —
+  `engine/render/ModelVirtualTextureSampling.h`: graph and
+  VT allocation checks now use queried RHI resource count.
+- `6852da8b5ffc82d18a905031edd9643ef49472e8` —
+  `engine/render/Renderer3DModels.cpp`: explicit Metal
+  extended slot opt-in additionally requires advertised
+  resource count >16.
+**Docs commits:**
+- `cb6a972472da96fa23e7b446afa665c0bbdda239` (`docs/texture-rhi.md`).
+- `e4589c6d3a7a653b49e4006adf97f1eed86b82f6` (`skills/visuals/aiverse-texture-rhi/SKILL.md`).
+
+**API:** `Device::maxFragmentTextureSlots()` supplies an RHI
+capability independent of genre; defaults to 16 on legacy GL,
+returns 32 on existing Metal backend, and resolves physical
+Vulkan descriptor capacity. It is a texture resource count,
+not a count of dynamic fragment samplers. Graph compilation
+remains generic while shader/per-draw binding uses the same
+capability-aware layout helper. Legacy Device mocks retain
+the 16-slot default, so source compatibility is preserved.
+
+**Source inspection:** re-fetched all five changed files and
+checked new method, backend overrides, resource layout guards.
+Code/doc GitHub commits confirmed. **C++ compiler NOT RUN,
+CTest NOT RUN, native MSL/GLSL/Vulkan shader validation NOT RUN,
+GPU execution NOT RUN**. PR remains Draft.
+
+**Risk:** Vulkan device reports limits of allocated descriptor
+table; Metal's physical device should be checked for practical
+per-stage resource limits on target hardware. Metal high-slot
+sampler source uses constexpr state; no per-draw sampler
+objects exist beyond index 15. Mixed Metal ICB command
+resource tables remain unimplemented. Follow-on work should
+never bypass capability checks.
+
+**Next concrete task:** design a descriptor-identity and bounded
+per-command Material Resource Table for experimental Metal
+ICB that can associate every draw command with its own
+VT atlas/table, U6 values and source texture references, without
+conflating historical homogeneous groups. Alternatively, add
+a separate opt-in graph texture-array table if resource
+capacities and source dimensions match. Keep safe legacy
+fallback and postpone release tests until feature completion.
