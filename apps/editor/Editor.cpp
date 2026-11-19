@@ -295,6 +295,14 @@ void Editor::reclaimEditorAssets(bool force) {
         keep[size_t(placeType)] = true;
     if (overlayPreviewType >= 0 && size_t(overlayPreviewType) < typeCount)
         keep[size_t(overlayPreviewType)] = true;
+    // Queue map/editor assets that were retained but are not yet resident.
+    // They load opportunistically after the active viewport's immediate
+    // interactive demand. Never enqueue the entire authored type catalog.
+    for(size_t i=0;i<typeCount;++i) {
+        if(keep[i] && !view_.typeLoaded(uint16_t(i)))
+            modelDemand_.touch(i,time_,
+                game::view_adapter::ModelDemandPriority::Background);
+    }
     // This only releases models no longer referenced by any kept TypeLook.
     // GPU work from their last use is older than the grace interval.
     view_.trimTypes(keep);
@@ -1191,6 +1199,16 @@ void Editor::frame(gfx::Device& dev, double dt) {
     time_ += dt;
     pollAgentLink();
     applyChanges();
+    // Background asset residency is paced on the editor thread. A single
+    // slow upload can overrun the advisory time budget, so also cap count.
+    // Interactive Inspector and viewport requests still load immediately.
+    if(lazyEditorAssets_ && !playing() && !clientPlaying() &&
+       !ws_.project.isFps()) {
+        modelDemand_.drainBudget(1.0,2,[&](size_t type){
+            if(type<rules().types.size() && !view_.typeLoaded(uint16_t(type)))
+                view_.loadType(uint16_t(type));
+        });
+    }
     // Sweep only after a substantial no-use interval, before new viewport
     // submission. Never unload while the editor's play simulation is active.
     reclaimEditorAssets();
