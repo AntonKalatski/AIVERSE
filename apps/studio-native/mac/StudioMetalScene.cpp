@@ -1,4 +1,5 @@
 #include "StudioMetalScene.h"
+#include "apps/editor/SceneRenderable.h"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -24,6 +25,32 @@ StudioMetalScene::~StudioMetalScene() {
         if (cube_.ib.valid()) device_->destroyBuffer(cube_.ib);
         renderer_.shutdown();
     }
+int StudioMetalScene::pick(float x, float y, float width, float height, const editor::MapData& map) const {
+    float3 origin{}, direction{};
+    if (!cameraInitialized_ || !camera_.screenRay(x,y,width,height,origin,direction)) return -1;
+    std::vector<editor::SceneRenderable> candidates;
+    const size_t limit = std::min(map.entities.size(),size_t(2000));
+    candidates.reserve(limit);
+    for (size_t i=0;i<limit;++i) {
+        const auto& e = map.entities[i];
+        if (!e.at.isNull()) continue; // planet not implemented
+        float terrainHeight=0;
+        const int gx=int(std::floor(e.x)),gz=int(std::floor(e.z));
+        if(map.inside(gx,gz)) {
+            const auto index=map.idx(gx,gz);
+            if(index<map.heights.size())terrainHeight+=map.heights[index]/16.0f;
+            if(index<map.levels.size())terrainHeight+=map.levels[index]*1.0f;
+        }
+        editor::SceneRenderable candidate;
+        candidate.entity=uint64_t(i)+1;
+        candidate.boundsMin={e.x-.55f, terrainHeight, e.z-.55f};
+        candidate.boundsMax={e.x+.55f, terrainHeight+1.2f,e.z+.55f};
+        candidate.pickable=true;
+        candidates.push_back(candidate);
+    }
+    const int index=editor::pickSceneRenderable(candidates,origin,direction);
+    return index<0 ? -1 : int(candidates[size_t(index)].entity-1);
+}
 }
 void StudioMetalScene::orbit(float dx, float dy) {
     camera_.yaw += dx * 0.007f;
@@ -32,7 +59,7 @@ void StudioMetalScene::orbit(float dx, float dy) {
 void StudioMetalScene::zoom(float wheel) {
     camera_.distance = std::clamp(camera_.distance * std::exp(-wheel * 0.035f), 2.0f, 100000.0f);
 }
-void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const editor::MapData& map) {
+void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const editor::MapData& map, int selectedIndex) {
     if (!device_ || framebufferWidth < 2 || framebufferHeight < 2) return;
     if (!cameraInitialized_ || lastMapWidth_ != map.w || lastMapHeight_ != map.h) {
         camera_.target = {map.w * .5f, 0.0f, map.h * .5f};
@@ -75,6 +102,16 @@ void StudioMetalScene::frame(int framebufferWidth, int framebufferHeight, const 
                              e.owner == 1 ? float4{.44f,.70f,.98f,1} :
                              e.owner == 2 ? float4{.94f,.52f,.42f,1} : float4{.83f,.76f,.48f,1};
         renderer_.drawMesh(cube_, mat4::translate(at) * mat4::scale({1,1.2f,1}), color, kDrawNoCastShadow);
+        if (int(i) == selectedIndex) {
+            const float3 lo{at.x - 0.65f,at.y - 0.72f,at.z - 0.65f};
+            const float3 hi{at.x + 0.65f,at.y + 0.72f,at.z + 0.65f};
+            const float3 p[8] = {
+                {lo.x,lo.y,lo.z}, {hi.x,lo.y,lo.z}, {hi.x,lo.y,hi.z}, {lo.x,lo.y,hi.z},
+                {lo.x,hi.y,lo.z}, {hi.x,hi.y,lo.z}, {hi.x,hi.y,hi.z}, {lo.x,hi.y,hi.z}
+            };
+            constexpr int edges[12][2] = {{0,1},{1,2},{2,3},{3,0}, {4,5},{5,6},{6,7},{7,4}, {0,4},{1,5},{2,6},{3,7}};
+            for (const auto& edge:edges) renderer_.line(p[edge[0]],p[edge[1]],rgba(255,192,63));
+        }
     }
     gfx::PassDesc pass;
     pass.clearColor[0] = 0.038f; pass.clearColor[1] = 0.064f;

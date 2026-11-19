@@ -17,5 +17,6 @@ int main() {
     assert(call(R"({"id":6,"method":"studio.save","params":{}})").has("error"));
     assert(call(R"({"id":7,"method":"studio.undo","params":{}})").has("error"));
     assert(call(R"({"id":8,"method":"studio.redo","params":{}})").has("error"));
+    assert(session.selectedEntityIndex() == -1);
     std::cout << "studio session contract PASS\n";
 }

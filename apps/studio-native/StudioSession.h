@@ -7,6 +7,8 @@ class StudioSession {
 public:
     explicit StudioSession(const std::string& engineRoot, const std::string& project = {});
     Json dispatch(const Json& request);
+    const editor::Workspace& workspace() const { return ws_; }
+    int selectedEntityIndex() const;
 private:
     Json snapshot() const;
     int indexFor(const std::string& id) const;

@@ -18,7 +18,10 @@
 #endif
 
 @class StudioHost;
-@interface StudioMetalView : NSView
+@interface StudioMetalView : NSView {
+    NSPoint press_;
+    BOOL dragged_;
+}
 @property(nonatomic, assign) StudioHost* host;
 @end
 
@@ -36,6 +39,7 @@
 - (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev;
 - (void)orbitX:(CGFloat)dx y:(CGFloat)dy;
 - (void)zoom:(CGFloat)amount;
+- (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 @end
 
 @implementation StudioMetalView
@@ -50,8 +54,20 @@
     }
     return self;
 }
-- (void)mouseDown:(NSEvent*)event { (void)event; [self.window makeFirstResponder:self]; }
-- (void)mouseDragged:(NSEvent*)event { [self.host orbitX:event.deltaX y:event.deltaY]; }
+- (void)mouseDown:(NSEvent*)event {
+    press_=[self convertPoint:event.locationInWindow fromView:nil];
+    dragged_=NO;
+    [self.window makeFirstResponder:self];
+}
+- (void)mouseDragged:(NSEvent*)event {
+    dragged_=YES;
+    [self.host orbitX:event.deltaX y:event.deltaY];
+}
+- (void)mouseUp:(NSEvent*)event {
+    const NSPoint point=[self convertPoint:event.locationInWindow fromView:nil];
+    if (!dragged_ && std::hypot(double(point.x-press_.x), double(point.y-press_.y)) < 5.0)
+        [self.host selectAtX:point.x y:point.y width:self.bounds.size.width height:self.bounds.size.height];
+}
 - (void)rightMouseDragged:(NSEvent*)event { [self.host orbitX:event.deltaX y:event.deltaY]; }
 - (void)scrollWheel:(NSEvent*)event {
     const CGFloat wheel = event.scrollingDeltaY * (event.hasPreciseScrollingDeltas ? 0.12 : 1.0);
@@ -115,7 +131,7 @@
         try {
             if (!preview_) preview_=std::make_unique<aiverse::studio::StudioMetalScene>((__bridge void*)viewport_.layer);
             // StudioSession/renderer are owned and called on the main thread.
-            preview_->frame(placement_.pixelsW, placement_.pixelsH, session_->workspace().map.data);
+            preview_->frame(placement_.pixelsW, placement_.pixelsH, session_->workspace().map.data, session_->selectedEntityIndex());
         } catch (const std::exception& e) {
             NSLog(@"AIVERSE native Scene failed: %s",e.what());
             viewport_.hidden=YES;
@@ -130,6 +146,19 @@
 }
 - (void)zoom:(CGFloat)amount {
     if (preview_ && std::isfinite(double(amount))) preview_->zoom(float(amount));
+}
+- (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height {
+    if (!preview_) return;
+    const int index=preview_->pick(float(x),float(y),float(width),float(height),session_->workspace().map.data);
+    aiverse::Json request=aiverse::Json::object();
+    request.set("id",aiverse::Json::number(int64_t(0)));
+    request.set("method",aiverse::Json::string("studio.select"));
+    aiverse::Json params=aiverse::Json::object();
+    if(index>=0) params.set("id",aiverse::Json::string("entity:"+std::to_string(index)));
+    else params.set("id",aiverse::Json());
+    request.set("params",std::move(params));
+    const aiverse::Json outcome=session_->dispatch(request);
+    if (!outcome.has("error")) [web_ evaluateJavaScript:@"window.__aiverseReceive && window.__aiverseReceive({event:'selection.changed'});" completionHandler:nil];
 }
 - (void)applyViewport:(const aiverse::Json&)params {
     aiverse::studio::ViewportRect rect;

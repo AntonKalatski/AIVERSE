@@ -13,7 +13,8 @@ public:
     ~StudioMetalScene();
     StudioMetalScene(const StudioMetalScene&) = delete;
     StudioMetalScene& operator=(const StudioMetalScene&) = delete;
-    void frame(int framebufferWidth, int framebufferHeight, const editor::MapData& map);
+    void frame(int framebufferWidth, int framebufferHeight, const editor::MapData& map, int selectedIndex);
+    int pick(float x, float y, float width, float height, const editor::MapData& map) const;
     void orbit(float dx, float dy);
     void zoom(float wheel);
 private:

@@ -88,6 +88,11 @@ Json StudioSession::snapshot() const {
     result.set("mode", str("edit"));
     return result;
 }
+int StudioSession::selectedEntityIndex() const {
+    if (selected_.empty()) return -1;
+    try { return indexFor(selected_); }
+    catch (const std::exception&) { return -1; }
+}
 Json StudioSession::dispatch(const Json& request) {
     Json reply = Json::object();
     reply.set("id", request["id"]);
