@@ -91,6 +91,14 @@ public:
     void flushCasters(gfx::Device& dev, const mat4& lightViewProj);   // inside the shadow pass
     size_t size() const { return quads_.size(); }
     uint32_t drawCalls() const { return drawCalls_; }
+    // GPU ownership is only the sprite batch's own dynamic/static/caster
+    // buffers; TextureRef, atlas pages and SpriteMesh are caller-owned.
+    GpuOwnedMemoryStats ownedGpuMemoryStats() const {
+        if (!dev_) return {};
+        GpuOwnedMemoryCounter counter(*dev_);
+        counter.buffer(vb_);counter.buffer(ib_);counter.buffer(casterVb_);
+        return counter.stats();
+    }
 
     // Static meshes: build once, draw every frame before the dynamic sprites.
     static void appendQuad(std::vector<SpriteVertex>& out, const TextureRef& tex, const float3 (&corners)[4], float4 uv, uint32_t color);
