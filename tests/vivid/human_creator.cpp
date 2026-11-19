@@ -1,6 +1,7 @@
 #include "engine/character/vivid/HumanCreatorSession.h"
 #include "engine/character/vivid/MorphAuthoring.h"
 #include "engine/character/vivid/ViewportSculptPick.h"
+#include "engine/character/vivid/MorphLodTransfer.h"
 #include "engine/character/vivid/HumanImport.h"
 #include <filesystem>
 #include <array>
@@ -136,6 +137,25 @@ void test() {
             "sculpt symmetry did not mirror horizontal displacement");
         req(sculpt.undo()&&sculpt.compile().deltas()==0,
             "symmetric brush did not undo as one transaction");
+    }
+    {
+        MorphTargetInput shape;
+        shape.name="eyeBlinkLeft";
+        MorphDelta delta;
+        delta.vertex=2;delta.position={0,0.1f,0};
+        shape.deltas.push_back(delta);
+        auto source=SparseMorphLibrary::compile(4,{shape});
+        const std::array<std::uint32_t,3> mapping{{0,2,3}};
+        auto lod=MorphLodTransfer::transfer(source,mapping);
+        req(lod.vertices()==3 && lod.targets()==1 && lod.deltas()==1 &&
+            lod.gpuDeltas()[0].vertex==1 &&
+            std::fabs(lod.gpuDeltas()[0].position[1]-0.1f)<1.e-6f,
+            "facial LOD source vertex mapping lost corrective delta");
+        bool rejected=false;
+        const std::array<std::uint32_t,1> bad{{100}};
+        try {(void)MorphLodTransfer::transfer(source,bad);}
+        catch(const std::invalid_argument&){rejected=true;}
+        req(rejected,"facial LOD accepted invalid original vertex ID");
     }
     std::filesystem::remove(file);
 }
