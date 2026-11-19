@@ -780,6 +780,12 @@ if(AIVERSE_BUILD_TESTS)
         PRIVATE aiverse_models AIVERSE::View aiverse_zstd_dec)
     add_test(NAME view_appearance_choice
         COMMAND aiverse_appearance_choice_tests)
+    add_executable(aiverse_appearance_prepared_tests
+        tests/view/appearance_prepared.cpp)
+    target_link_libraries(aiverse_appearance_prepared_tests
+        PRIVATE aiverse_models AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_appearance_prepared
+        COMMAND aiverse_appearance_prepared_tests)
 endif()
 if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_executable(aiverse_device_epoch_tests tests/render/device_epoch.cpp)
