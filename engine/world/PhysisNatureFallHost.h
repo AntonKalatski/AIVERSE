@@ -115,10 +115,13 @@ inline void io(Archive& a, NatureFallHostState& value) {
                 a.fail(); return;
             }
         }
+        std::set<NatureFallPlantId> activePlants;
         for (std::size_t i = 0; i < value.records.size(); ++i) {
-            if (!natureFallValid(value.records[i]) ||
+            const auto& item = value.records[i];
+            if (!natureFallValid(item) ||
                 (i && !natureFallRecordLess(
-                    value.records[i-1], value.records[i]))) {
+                    value.records[i-1], item)) ||
+                (item.active && !activePlants.insert(item.plant).second)) {
                 a.fail(); return;
             }
         }
@@ -159,6 +162,33 @@ inline bool bindNatureFallPlant(World& world, Entity entity,
             return a.entityPacked < id;
         });
     updated.bindings.insert(insertAt, NatureFallBinding{packed, plant});
+    if (updated.revision == UINT64_MAX)
+        throw std::overflow_error("nature fall host revision overflow");
+    ++updated.revision;
+    world.setResource<NatureFallHostState>(std::move(updated));
+    return true;
+}
+
+// Release a generation-safe association after a game object is removed or
+// a plant is replaced. Never detach an object with an active fall record:
+// the host must durably repair/transfer that record first.
+inline bool unbindNatureFallPlant(World& world, Entity entity) {
+    const auto* original = world.resourceConst<NatureFallHostState>();
+    if (!original) throw std::logic_error("nature fall host not installed");
+    const auto packed = entity.packed();
+    const auto it = std::lower_bound(original->bindings.begin(),
+        original->bindings.end(), packed,
+        [](const NatureFallBinding& a, std::uint64_t id) {
+            return a.entityPacked < id;
+        });
+    if (it == original->bindings.end() || it->entityPacked != packed)
+        return false;
+    for (const auto& event : original->records)
+        if (event.entityPacked == packed && event.active)
+            return false;
+    auto updated = *original;
+    updated.bindings.erase(updated.bindings.begin() +
+        std::ptrdiff_t(it - original->bindings.begin()));
     if (updated.revision == UINT64_MAX)
         throw std::overflow_error("nature fall host revision overflow");
     ++updated.revision;
@@ -258,6 +288,36 @@ inline bool retireNatureFall(World& world, Entity entity,
     ++updated.revision;
     world.setResource<NatureFallHostState>(std::move(updated));
     return true;
+}
+
+// The host may trim retired tombstones only AFTER its maximum rollback,
+// replay, replication and checkpoint horizon has passed. Never prune active
+// falls. Bounded work also protects large-world save sizes.
+inline std::size_t pruneNatureFallHistory(
+        World& world, std::uint64_t beforeTick,
+        std::size_t maxRemove = 256) {
+    if (maxRemove == 0 || maxRemove > 4096)
+        throw std::invalid_argument("nature fall prune budget 1..4096");
+    const auto* source = world.resourceConst<NatureFallHostState>();
+    if (!source) throw std::logic_error("nature fall host not installed");
+    auto staged = *source;
+    std::size_t removed = 0;
+    auto it = staged.records.begin();
+    while (it != staged.records.end() && removed < maxRemove) {
+        if (!it->active && it->climateTick < beforeTick) {
+            it = staged.records.erase(it);
+            ++removed;
+        } else {
+            ++it;
+        }
+    }
+    if (removed) {
+        if (staged.revision == UINT64_MAX)
+            throw std::overflow_error("nature fall host revision overflow");
+        ++staged.revision;
+        world.setResource<NatureFallHostState>(std::move(staged));
+    }
+    return removed;
 }
 
 } // namespace aiverse::world
