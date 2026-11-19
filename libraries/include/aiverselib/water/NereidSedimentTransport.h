@@ -9,6 +9,8 @@
 #include <cstdint>
 #include <limits>
 #include <map>
+#include <set>
+#include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -29,6 +31,12 @@ struct SedimentTransportSettings {
 struct SedimentTransfer {
     int64_t fromX=0,fromZ=0,toX=0,toZ=0;
     uint32_t amountCm=0;
+};
+// Directed and generation-safe NEREID confluence/cascade connection. A
+// downstream neighbour on a different body is accepted ONLY when NEREID
+// explicitly publishes inlet -> outlet linkage, never by spatial guesswork.
+struct SedimentWaterLink {
+    Entity inlet=kNullEntity,outlet=kNullEntity;
 };
 struct SedimentTransportStep {
     std::vector<SedimentTransportCell> cells; // sorted by grid (X,Z)
@@ -51,12 +59,23 @@ inline uint32_t absoluteFlowCmPerSec(Fixed flow){
 inline SedimentTransportStep advectSuspendedSediment(
         std::vector<SedimentTransportCell> input,
         int32_t gridSpacingCm,uint32_t dtMs,
-        SedimentTransportSettings settings={}) {
+        SedimentTransportSettings settings={},
+        std::span<const SedimentWaterLink> linkedBodies={}) {
     if(gridSpacingCm<10 || gridSpacingCm>10000 ||
        dtMs==0 || dtMs>1000 ||
        settings.maxTransferCmPerTick>1000u ||
        input.size()>16384u)
         throw std::invalid_argument("NEREID sediment transport limits");
+    if(linkedBodies.size()>1024u)
+        throw std::length_error("NEREID sediment water confluence link budget");
+    std::set<std::pair<uint64_t,uint64_t>> allowedLinks;
+    for(const auto& link:linkedBodies){
+        if(!link.inlet.valid() || !link.outlet.valid() ||
+           link.inlet==link.outlet)
+            throw std::invalid_argument("NEREID invalid sediment water linkage");
+        allowedLinks.insert({
+            link.inlet.packed(),link.outlet.packed()});
+    }
     // Canonical order is independent of ECS allocation / current job order.
     std::sort(input.begin(),input.end(),
         [](const auto& a,const auto& b){
@@ -98,9 +117,11 @@ inline SedimentTransportStep advectSuspendedSediment(
         if(found==lookup.end())continue;
         const size_t j=found->second;
         const auto& target=result.cells[j];
-        if(!target.waterBody.valid() ||
-           target.waterBody!=source.waterBody ||
-           !target.wetContactPermille)continue;
+        if(!target.waterBody.valid() || !target.wetContactPermille ||
+           (target.waterBody!=source.waterBody &&
+            !allowedLinks.contains({
+                source.waterBody.packed(),target.waterBody.packed()})))
+            continue;
 
         // Avoid integer "dead zones" at low flow (e.g. 1 cm/s at a
         // 100cm cell and 16ms tick). Keep sub-centimetre mass in MICRO-cm
