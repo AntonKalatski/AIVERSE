@@ -76,12 +76,12 @@ using PlaceClock = std::chrono::steady_clock;
 static void printPlaceLoadPhases(const SimPlace& sim) {
     const auto& stats=sim.server.stats();
     const auto& p=stats.phases;
-    std::printf("  [place progress] virtual %.1f s | server avg %.3f ms worst %.3f ms | clients %zu | bodies %zu\\n",
+    std::printf("  [place progress] virtual %.1f s | server avg %.3f ms worst %.3f ms | clients %zu | bodies %zu\n",
                 sim.seconds(),stats.tickMsAvg(),stats.tickMsWorst,
                 sim.clients.size(),sim.server.bodies().size());
     if(p.samples){
         const double d=double(p.samples);
-        std::printf("  [place phases] poll %.3f + players %.3f + Box3D %.3f + sync %.3f + broadcast %.3f ms/tick (%llu samples)\\n",
+        std::printf("  [place phases] poll %.3f + players %.3f + Box3D %.3f + sync %.3f + broadcast %.3f ms/tick (%llu samples)\n",
                     p.pollMs/d,p.playersMs/d,p.physicsMs/d,
                     p.syncMs/d,p.broadcastMs/d,
                     static_cast<unsigned long long>(p.samples));
@@ -120,7 +120,7 @@ TEST(sixteen_clients_over_4g_converge_predict_and_late_join) {
     double tickAvg = sim.server.stats().tickMsAvg(), tickWorst = sim.server.stats().tickMsWorst;
     sim.botsActive = false;
     sim.run(6);
-    std::printf("  [place wall] 30s virtual load + 6s convergence: %.1f s\\n",
+    std::printf("  [place wall] 30s virtual load + 6s convergence: %.1f s\n",
                 std::chrono::duration<double>(PlaceClock::now()-wallStart).count());
     bool ready = true;
     float worst = 0, meanAwake = 0;
