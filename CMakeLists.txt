@@ -122,6 +122,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             ecs_scene_hierarchy_test
             ecs_scene_hierarchy_simulation_test
             ecs_shared_static_components_test
+            ecs_prefab_static_catalog_test
             ecs_cow_snapshot_test
             ecs_cow_exception_test
             ecs_cow_parallel_test
