@@ -3095,6 +3095,91 @@ Metal/GL/GLES/WebGL/Vulkan GPU pixel/readback,
 скриншоты, profiling и CI. Следующему агенту читать
 `docs/handoffs/prisma-stage-56.md`.
 
+
+## Stage 57 — устойчивый HDR Auto Exposure и согласованный camera-cut reset
+
+`autoExposure` по-прежнему требует эффекта в postfx-профиле,
+эффективного HDR и переменной `AIVERSE_PRISMA_AUTO_EXPOSURE=1`.
+Измерение яркости остаётся в линейном scene-referred HDR до
+тонмаппинга и UI, а его отдельная 1×1 ping-pong history принадлежит
+**стабильному `viewId`**, независимо от размеров Scene/Game viewport.
+
+Новые необязательные параметры общего PrismaData-каталога:
+
+| Поле | Default | Диапазон | Значение |
+|---|---:|---:|---|
+| `highlightRejection` | 0 | 0..0.95 | Насколько уменьшать влияние очень ярких пикселей при измерении |
+| `highlightStartEV` | 3 | -10..16 | Порог начала снижения веса в log2(luminance), а НЕ camera exposure EV |
+| `highlightSoftnessEV` | 2 | 0.1..8 | Плавность перехода до максимального снижения веса в ступенях log2 |
+
+`highlightRejection=0` **по умолчанию** сохраняет прежний
+weighted log-luminance estimator и уже существующие
+`centerWeight`, `centerRadius`, `minMeterLogL`,
+`maxMeterLogL`, EV clamps и скорости адаптации. Это опциональный
+**soft highlight weighting**, не histogram/percentile metering.
+
+GPU shader `kExposureLog` вычисляет luminance каждого из четырёх
+семплов, ограничивает logL текущими `minMeterLogL/maxMeterLogL`,
+затем уменьшает базовый пространственный вес:
+`weight *= 1 - rejection * smoothstep(startEV, startEV+softnessEV, logL)`.
+Граница `rejection <= 0.95` гарантирует не менее 5% исходного
+веса даже для полностью яркого кадра и исключает нулевой
+знаменатель измерения. Пирамидальное уменьшение `kExposureReduce`
+по-прежнему отдельно переносит взвешенную сумму log2 luminance
+и сумму весов, а `kExposureAdapt` делит первое на второе
+перед вычислением EV. Нет скрытого GPU readback или CPU luminance pass.
+
+**Camera cut:** до Stage 57 обнаружение автоматического скачка
+камеры происходило после GPU-метеринга, поэтому первый кадр после
+телепорта мог смешиваться с прежней экспозицией. Теперь проверка
+`motionView.previousCameraPos`, finite и скачка свыше
+12 единиц мира выполняется в начале `Prisma::resolve`
+**до** Auto Exposure. Сброс одновременно инвалидирует
+velocity/temporal history и `resetAutoExposure(viewId_)`.
+Явные `resetMotionHistory(id)` / `resetMotionHistory()` также
+инвалидируют per-view/all-view exposure history без удаления GPU
+текстур. Первый адаптационный pass новой камеры использует
+`historyValid=false` и заново инициализируется от текущего
+измерения. Сброс не требует ожидания GPU и не путает
+две камеры одного разрешения.
+
+Цветовой порядок сохранён: weighted HDR metering измеряет
+`scene.tex`, 1×1 экспозиция применяется к HDR RGB в
+`PF_AUTO_EXPOSURE` внутри final composite, далее
+ColorGrade-authored `exposure` в HDR входит в pre-tonemap
+множитель `filt.z`, затем ACES/sRGB, пользовательские
+display-space grade/LUT и postfx Shader Graph.
+Это **два независимых авторских множителя**, а не два
+экземпляра алгоритма автоадаптации; GPU history исключительно
+одна per-view. Ресурсы Shader Graph (слоты 5..8) и
+Auto Exposure (8 или 9) продолжают соблюдать Stage 55 layout
+и fallback без Auto Exposure на неподдерживаемом pipeline.
+
+`Prisma::ViewEffectReport` теперь записывает
+`autoExposureHighlightRejection` **только** когда финально
+закодированный composite реально содержит Auto Exposure.
+Иначе поле остаётся нулевым, `autoExposureTextureSlot=-1`
+и Stage 53 per-effect status указывает отсутствие эффекта.
+Editor показывает величину и подсказки непосредственно в
+`PRISMA — Постобработка`; список эффектов и volume editor
+получают новые параметры автоматически через общий каталог.
+Старый `postfx` JSON, MCP, saved editor panel id и SpectraFX
+не затрагиваются. Параметры не влияют на authoritative ECS.
+
+**Ограничения:** не реализованы histogram percentile metering,
+тональная сегментация кожи/неба, AE metering masks и локальная
+экспозиция. Глобальный яркий фон всё ещё может влиять на общий
+результат (не меньше 5%). Настраивать `highlightStartEV` с учётом
+scene-referred **log2 яркости**, а не EV управления камерой.
+Качество цветовой динамики и GPU shader parity пока не проверены.
+
+**Проверка:** GitHub readback пяти исходников и **31/31
+source-only structural checks**. **NOT RUN:** CMake/clang,
+GLSL/MSL/Vulkan compiler, CTest, editor/client, Metal/GL/GLES/
+Vulkan/WebGL execution, pixel/temporal parity, perf, CI.
+См. `docs/handoffs/prisma-stage-57.md` для точных коммитов
+и следующего функционального этапа.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
