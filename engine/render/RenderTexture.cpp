@@ -113,8 +113,9 @@ bool RenderTexture::stroke(const Stroke& s){
  if(s.radius<=0||s.radius>4||s.softness<0||strokes_.size()>=8192)return false;
  strokes_.push_back(s);return true;
 }
-void RenderTexture::flush(){
- if(!dev_||(!clear_&&strokes_.empty()))return;
+bool RenderTexture::flushChecked(){
+ if(!dev_)return false;
+ if(!clear_&&strokes_.empty())return true;
  // Allocate the transient geometry BEFORE opening the GPU render pass.
  // On OOM, keep all pending brush commands instead of drawing with an
  // invalid vertex buffer or acknowledging a partial command batch.
@@ -129,7 +130,10 @@ void RenderTexture::flush(){
  if(!verts.empty()){
   gfx::BufferDesc bd;bd.data=verts.data();bd.size=verts.size()*sizeof(float);
   vertices=dev_->createBuffer(bd);
-  if(!vertices.valid())return;
+  if(!vertices.valid()){
+   ++submitStats_.failedBrushBuffers;
+   return false;
+  }
  }
  gfx::PassDesc pass;pass.colorTarget=texture_;pass.clearColorEnabled=clear_;pass.clearDepthEnabled=false;
  std::copy(clearColor_.begin(),clearColor_.end(),pass.clearColor);
@@ -152,18 +156,21 @@ void RenderTexture::flush(){
  }
  if(vertices.valid())retirement_->retire(vertices);
  clear_=false;strokes_.clear();
+ return true;
 }
 
 bool RenderTexture::blit(gfx::TextureHandle source,float x,float y,float w,float h){
  if(!dev_||!source.valid()||source==texture_)return false;
  for(float v:{x,y,w,h})if(!std::isfinite(v))return false;
  if(w<=0||h<=0)return false;
- flush();
- if(clear_||!strokes_.empty())return false; // unsuccessful brush upload
+ if(!flushChecked())return false; // preserve authored brush work on failed upload
  const float verts[]={x,y,x+w,y,x+w,y+h,x,y,x+w,y+h,x,y+h};
  gfx::BufferDesc bd;bd.data=verts;bd.size=sizeof(verts);
  auto vertices=dev_->createBuffer(bd);
- if(!vertices.valid())return false;
+ if(!vertices.valid()){
+  ++submitStats_.failedBlitBuffers;
+  return false;
+ }
  try{
   gfx::PassDesc pass;pass.colorTarget=texture_;pass.clearColorEnabled=false;pass.clearDepthEnabled=false;
   dev_->beginPass(pass);dev_->setViewport({0,0,width_,height_});dev_->setScissor({});dev_->setPipeline(blitPipe_);
@@ -190,7 +197,10 @@ bool RenderTexture::upload(int x,int y,int w,int h,const void* p,int pitch){
  gfx::TextureDesc td;td.width=w;td.height=h;td.data=bytes.data();
  td.label="canvas upload";
  auto source=dev_->createTexture(td);
- if(!source.valid())return false;
+ if(!source.valid()){
+  ++submitStats_.failedUploadTextures;
+  return false;
+ }
  bool applied=false;
  try{
   applied=blit(source,float(x)/width_,float(y)/height_,
