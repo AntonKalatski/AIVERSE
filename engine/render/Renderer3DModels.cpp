@@ -9,6 +9,7 @@
 #include "ModelLodTransition.h"
 #include "GpuIcbPolicy.h"
 #include "StaticModelCachePolicy.h"
+#include "StaticCrossModelBatchPolicy.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -1884,18 +1885,52 @@ void Renderer3D::renderModels(int phase) {
         dev_->supportsMultiDrawIndirect() &&
         (!gpuAdaptiveInstancingFallback_ || groupAdaptive) &&
         phase <= 1 && (geometrySortRequested || paletteSort);
+    // Opt-in specifically for opaque/shadow static rigid primitives from
+    // different source models resident in ONE GPU geometry page. Visibility,
+    // sun-shadow culling and per-node LOD were already calculated before the
+    // pass order is built. This only changes the safe opaque grouping order.
+    const char* crossSafe = std::getenv("AIVERSE_RENDER_SAFE");
+    const char* crossIndirect = std::getenv("AIVERSE_MULTI_DRAW_INDIRECT");
+    const bool staticCrossModelSort = staticCrossModelBatchesEnabled_ &&
+        modelMultiDrawEnabled_ && dev_->supportsMultiDrawIndirect() &&
+        !gpuAdaptiveInstancingFallback_ && !gpuModelCommandsReady_ &&
+        geometryMainView_ && !auxiliaryModelPass_ && !drawCallDebug_ &&
+        phase <= 1 &&
+        !(crossSafe && std::strcmp(crossSafe, "1") == 0) &&
+        !(crossIndirect && std::strcmp(crossIndirect, "off") == 0);
+    const auto eligibleStaticPage = [&](const ModelItem& item) {
+        return item.model && item.prim && item.mat &&
+            item.model->geometryPoolPage && !item.model->geometry &&
+            item.model->vb.valid() && item.model->ib.valid() &&
+            (item.flags & kDrawStatic) && item.rigid &&
+            !(item.flags & (kDrawTransparent | kDrawFadeDepth | kDrawActorReveal)) &&
+            item.tint.w >= .99f && item.dissolve <= 0 &&
+            !item.baked && item.joints < 0 && item.morph < 0 &&
+            item.gi == 0 && !item.materialRole && !item.shadowRole &&
+            !item.paletteMaterials && !item.gpuLodAvailable &&
+            item.lodThreshold >= 1.0f && !item.lodInvert &&
+            item.mat->alpha == AlphaMode::Opaque && !item.mat->transparent &&
+            !item.mat->shaderGraph &&
+            // Vulkan indirect draw semantics differ when a pooled model
+            // has a nonzero base vertex. Keep its original direct path.
+            (dev_->info().backend != gfx::Backend::Vulkan ||
+             item.model->gpuBaseVertex == 0);
+    };
     if (phase == 2) { // back to front
         std::sort(order_.begin(), order_.end(), [&](uint32_t a, uint32_t b) { return modelItems_[a].depth > modelItems_[b].depth; });
     } else {          // group by state so identical primitives end up next to each other (instancing)
         std::sort(order_.begin(), order_.end(), [&](uint32_t a, uint32_t b) {
             const ModelItem &x = modelItems_[a], &y = modelItems_[b];
+            const bool crossX = staticCrossModelSort && eligibleStaticPage(x);
+            const bool crossY = staticCrossModelSort && eligibleStaticPage(y);
+            if (crossX != crossY) return crossX; // group only safe static page items
             if ((x.joints >= 0) != (y.joints >= 0)) return x.joints < y.joints;
             if (x.baked != y.baked) return x.baked < y.baked;
             if (paletteSort && paletteGroup[a] != paletteGroup[b])
                 return paletteGroup[a] < paletteGroup[b];
             if (!paletteSort && materialGroup[a] != materialGroup[b])
                 return materialGroup[a] < materialGroup[b];
-            if (mdiGeometrySort) {
+            if (mdiGeometrySort || (crossX && crossY)) {
                 if (x.model->vb.id != y.model->vb.id) return x.model->vb.id < y.model->vb.id;
                 if (x.model->ib.id != y.model->ib.id) return x.model->ib.id < y.model->ib.id;
                 // Keep non-MDI-eligible material variants in their own runs.
@@ -2044,13 +2079,19 @@ void Renderer3D::renderModels(int phase) {
                 first.gi == 0 && !first.materialRole && !first.shadowRole &&
                 !first.baked && first.joints < 0 && first.morph < 0 &&
                 !first.paletteMaterials && first.tint.w >= .99f;
+            const bool pooledStatic = staticCrossModelSort &&
+                eligibleStaticPage(first);
             auto compatible = [&](uint32_t candidateIndex) {
                 const auto& y = modelItems_[candidateIndex];
                 // Each indirect command selects its own world/tint/team/etc
                 // through firstInstance into the shared instance uniform array.
                 // Pipeline, geometry buffers, textures and material uniforms
                 // must remain compatible across the entire command group.
-                return first.model->vb == y.model->vb &&
+                return (!pooledStatic ||
+                    (eligibleStaticPage(y) &&
+                     (first.model == y.model ||
+                      staticCrossModelPageCompatible(*first.model, *y.model)))) &&
+                    first.model->vb == y.model->vb &&
                     first.model->ib == y.model->ib &&
                     !first.model->geometry && !y.model->geometry &&
                     first.gi == 0 && y.gi == 0 &&
