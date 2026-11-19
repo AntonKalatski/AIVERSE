@@ -18,7 +18,7 @@ namespace aiverse::spectra {
 struct GpuCheckpointExportHeader {
     uint32_t magic=0x58465053u; // little-endian "SPFX"
     uint32_t version=1;
-    uint32_t headerBytes=sizeof(GpuCheckpointExportHeader);
+    uint32_t headerBytes=40; // exact version-1 header, asserted below
     uint32_t physicalSlots=0;
     uint64_t capturedRevision=0;
     uint64_t gpuFrameSerial=0;
