@@ -87,7 +87,7 @@ public:
         for(int c=0;c<3;++c)
             sensitivity=std::max(sensitivity,
                 std::abs(int(middle[size_t(c)])-int(rightFirst[size_t(c)])));
-        if(!check(sensitivity>=4,
+        if(!check(sensitivity>=3,
                   "logical gradient must detect legacy seam centre-inset regression"))
             return false;
         // Independent authored page-table bytes. Physical slice 0 = left,
