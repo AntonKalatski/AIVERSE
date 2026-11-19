@@ -140,6 +140,20 @@ if [[ "$GUI" -eq 1 ]]; then
         exit 1
     fi
 
+    # Check that changing Skin/Eye DNA affects actual 3D viewport pixels,
+    # not just Inspector text. Use a separate GUI run with the warm preset.
+    WARM_PPM="$LOGDIR/vivid-creator-warm.ppm"
+    run_logged creator-warm-preview env \
+        AIVERSE_VIVID_CREATOR_CAPTURE="$WARM_PPM" \
+        "$CREATOR" --smoke --preset warm
+    if [[ ! -s "$WARM_PPM" ]]; then
+        printf 'VIVID warm-skin Creator GPU screenshot missing.\n' >&2
+        exit 1
+    fi
+    run_logged creator-material-ab python3 \
+        "$ROOT/tools/vivid-creator/compare_ppm.py" \
+        "$CREATOR_PPM" "$WARM_PPM"
+
     # Exercise the OPEN external OBJ+manifest+named morph importer in a
     # real window. No bundled copyrighted scanned human assets required.
     IMPORT_PPM="$LOGDIR/vivid-imported-head.ppm"
@@ -165,6 +179,7 @@ fi
         printf 'Renderer3D colour/shadow/MotionWeave visual preview=PASS\n'
         printf 'Renderer3D shared GPU asset crowd preview=PASS\n'
         printf 'VIVID Creator skin/eye/groom interactive GUI GPU preview=PASS\n'
+        printf 'VIVID Creator neutral-vs-warm actual material pixel A/B=PASS\n'
         printf 'VIVID Creator external OBJ/DNA/morph import GUI preview=PASS\n'
     else
         printf 'Renderer3D visual preview=NOT RUN (--no-gui)\n'
