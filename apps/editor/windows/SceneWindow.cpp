@@ -66,6 +66,15 @@ public:
                 : sceneCrossModelMode_ == 2
                     ? Renderer3D::StaticCrossModelBatchMode::Forbid
                     : Renderer3D::StaticCrossModelBatchMode::Environment);
+        const auto policy = [](int index) {
+            return index == 1 ? Renderer3D::CpuMdiPolicyMode::Enable
+                : index == 2 ? Renderer3D::CpuMdiPolicyMode::Forbid
+                : Renderer3D::CpuMdiPolicyMode::Environment;
+        };
+        renderer.setCpuMdiAdaptiveMode(policy(sceneCpuMdiAdaptiveMode_));
+        renderer.setMdiLayoutCacheMode(policy(sceneMdiLayoutCacheMode_));
+        renderer.setMdiGeometrySortMode(policy(sceneMdiGeometrySortMode_));
+        renderer.setCpuMdiAdaptiveBudgetOverrideUs(sceneCpuMdiBudgetOverrideUs_);
         const bool measuredMode = benchmarkActive_ || autoBatchChoice_ >= 0;
         const int activeMode = benchmarkActive_ ? benchmarkMode_ : autoBatchChoice_;
         renderer.setModelInstancingEnabled(measuredMode ? true : sceneInstancing_);
@@ -181,6 +190,10 @@ public:
         renderer.setGpuAuthoredDrawEnabled(true);
         renderer.setStaticCrossModelBatchMode(
             Renderer3D::StaticCrossModelBatchMode::Environment);
+        renderer.setCpuMdiAdaptiveMode(Renderer3D::CpuMdiPolicyMode::Environment);
+        renderer.setMdiLayoutCacheMode(Renderer3D::CpuMdiPolicyMode::Environment);
+        renderer.setMdiGeometrySortMode(Renderer3D::CpuMdiPolicyMode::Environment);
+        renderer.setCpuMdiAdaptiveBudgetOverrideUs(0.0);
         renderer.setModelCullingEnabled(true);
         renderer.setModelLodEnabled(true);
         renderer.setModelLodFadeWidth(0.15f);
@@ -508,7 +521,26 @@ private:
                     "Inherit env (default OFF)\0Enable in Scene only\0Disable in Scene only\0"))
                 autoBatchChoice_ = -1;
             ImGui::TextDisabled("Experimental: requires shared pooled GPU geometry, supported CPU MDI and compatible static models.");
-            ImGui::TextDisabled("This Scene override is restored to the environment mode before Game renders.");
+            static constexpr const char* mdiPolicyModes =
+                "Inherit env\0Enable in Scene only\0Disable in Scene only\0";
+            ImGui::Combo("CPU MDI adaptive policy##scene",
+                &sceneCpuMdiAdaptiveMode_, mdiPolicyModes);
+            ImGui::Combo("MDI layout command cache##scene",
+                &sceneMdiLayoutCacheMode_, mdiPolicyModes);
+            ImGui::Combo("MDI geometry sort##scene",
+                &sceneMdiGeometrySortMode_, mdiPolicyModes);
+            ImGui::SetNextItemWidth(190.0f);
+            if (ImGui::SliderScalar("Adaptive budget (us / command)##scene",
+                    ImGuiDataType_Double, &sceneCpuMdiBudgetOverrideUs_,
+                    &kSceneCpuMdiBudgetMin_, &kSceneCpuMdiBudgetMax_, "%.0f") &&
+                sceneCpuMdiBudgetOverrideUs_ > 0.0 &&
+                sceneCpuMdiBudgetOverrideUs_ < 1.0)
+                sceneCpuMdiBudgetOverrideUs_ = 1.0;
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Inherit budget##scene"))
+                sceneCpuMdiBudgetOverrideUs_ = 0.0;
+            ImGui::TextDisabled("Adaptive needs static cross-model MDI; 0 us means inherit env budget (default 25).");
+            ImGui::TextDisabled("All overrides affect Scene only; Game inherits environment policy.");
             ImGui::Checkbox("Model culling", &sceneCulling_);
             ImGui::Checkbox("Auto-select fastest mode after benchmark", &autoBatchEnabled_);
             if (!autoBatchEnabled_) autoBatchChoice_ = -1;
@@ -1796,6 +1828,12 @@ private:
     // 0: follow process environment (OFF by default), 1: opt-in only for
     // Scene viewport, 2: force off for Scene viewport. Never persists to Game.
     int sceneCrossModelMode_ = 0;
+    int sceneCpuMdiAdaptiveMode_ = 0;
+    int sceneMdiLayoutCacheMode_ = 0;
+    int sceneMdiGeometrySortMode_ = 0;
+    double sceneCpuMdiBudgetOverrideUs_ = 0.0;
+    static constexpr double kSceneCpuMdiBudgetMin_ = 0.0;
+    static constexpr double kSceneCpuMdiBudgetMax_ = 1000.0;
     bool sceneLodEnabled_ = true;
     bool lodPopupVisible_ = false;
     float sceneLodFadeWidth_ = 0.15f;

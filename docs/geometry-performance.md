@@ -1214,3 +1214,32 @@ This is a **feature-only implementation**. Native build/CTest,
 Metal/Vulkan raster parity and performance A/B/A were not run under
 the user's explicit requirement to finish all batching functionality
 before starting tests.
+
+### Runtime CPU MDI policy controls per render view (feature continuation)
+
+The genre-independent `Renderer3D` exposes
+`CpuMdiPolicyMode { Environment, Enable, Forbid }` and independent
+`setCpuMdiAdaptiveMode`, `setMdiLayoutCacheMode` and
+`setMdiGeometrySortMode` setters and getters. These resolve on
+`beginScene()` to effective per-view state. When each remains
+`Environment`, the original `AIVERSE_CPU_MDI_ADAPTIVE=1`,
+`AIVERSE_MDI_LAYOUT_CACHE=off/0` (default cache ON) and
+`AIVERSE_MDI_GEOMETRY_SORT=1` flags have unchanged semantics.
+Adaptive CPU page feedback still requires effective static cross-model
+MDI enabled; the CPU MDI geometry sort keeps material palette ordering
+independent and never skips per-item material/geometry checks.
+
+`setCpuMdiAdaptiveBudgetOverrideUs(double)` accepts `0` to inherit
+`AIVERSE_CPU_MDI_MAX_US_PER_COMMAND` (default 25 µs per command),
+or a runtime budget from 1–1000 µs, inclusive. Invalid values
+are ignored; it affects admission feedback, not GPU time or global
+process settings. Studio Scene → Batching now provides the three
+matching Inherit/Enable/Disable modes and an adaptive budget slider.
+All policies are reset to `Environment`, budget 0, immediately after
+Scene rendering and before Game uses the shared renderer. Regular CPU
+MDI, Metal GPU-authored ICB, render-safe fallback and actual GPU
+snapshot/fence ownership remain unchanged.
+
+This is a feature-only implementation; **no native CMake, CTest,
+Metal/Vulkan raster, OOM stress or frame-time benchmark was run**.
+Keep experimental static cross-model batching default OFF.

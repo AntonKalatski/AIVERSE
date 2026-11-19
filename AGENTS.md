@@ -1549,3 +1549,19 @@ work for the Scene-only Enable mode, not just an environment flag.
 Do not auto-enable GPU ICB, change global geometry pooling or skip
 shader/material/VB/IB/LOD/indirect safety gates. Keep it genre-neutral.
 Add a separate feature-stage handoff; defer native tests per request.
+
+## Renderer-level CPU MDI policy controls (feature continuation)
+
+`Renderer3D::CpuMdiPolicyMode` (Environment/Enable/Forbid) configures
+adaptive page feedback, CPU indirect layout cache and geometry sorting
+*per renderer view* using `setCpuMdiAdaptiveMode`,
+`setMdiLayoutCacheMode`, `setMdiGeometrySortMode`. Resolve these at
+`beginScene()`, never per draw, preserving all process env defaults.
+The optional CPU adaptive budget uses
+`setCpuMdiAdaptiveBudgetOverrideUs(0)` to inherit env (default 25 µs),
+or a validated value in [1,1000] µs/command. Adaptive feedback requires
+effective static-cross-model batching and its own opt-in. Studio applies
+these controls only to the Scene view and restores Environment/0 before
+Game. Never globally toggle Metal GPU-encoded ICB, shared geometry
+pooling, scene shader/LOD or bypass GPU safety/fallback. No tests until
+all batching functions are finished, per current user instruction.

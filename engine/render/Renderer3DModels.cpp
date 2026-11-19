@@ -1428,10 +1428,9 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     // Exact-signature validation makes this safe across changing visibility,
     // model reloads and mixed geometry pages. Static scenes reuse layouts
     // almost every frame; avoid rebuilding the command list each time.
-    // AIVERSE_MDI_LAYOUT_CACHE=off (or 0) restores the uncached path.
-    const char* cacheMode = std::getenv("AIVERSE_MDI_LAYOUT_CACHE");
-    const bool layoutCaching = !cacheMode ||
-        (std::strcmp(cacheMode, "off") != 0 && std::strcmp(cacheMode, "0") != 0);
+    // Per-view policy was resolved at beginScene. Disable caching without
+    // disabling CPU MDI submission or mutating previously cached layouts.
+    const bool layoutCaching = mdiLayoutCacheEnabled_;
     // A signature hit can use the already retained immutable command vector
     // directly until this synchronous drawIndexedIndirect returns. It does not
     // need a second CPU-to-CPU copy into indirectCommandScratch_.
@@ -2216,9 +2215,9 @@ void Renderer3D::renderModels(int phase) {
         const char* flag = std::getenv("AIVERSE_ADAPTIVE_DRAW_GROUPS");
         return flag && std::strcmp(flag, "1") == 0;
     }();
-    const char* geometrySortSetting = std::getenv("AIVERSE_MDI_GEOMETRY_SORT");
-    const bool geometrySortRequested = geometrySortSetting &&
-        std::strcmp(geometrySortSetting, "1") == 0;
+    // Keep the independent material-palette sort rules. A renderer caller
+    // may opt into geometry sorting without touching process env flags.
+    const bool geometrySortRequested = mdiGeometrySortRequested_;
     const bool mdiGeometrySort = modelMultiDrawEnabled_ &&
         dev_->supportsMultiDrawIndirect() &&
         (!gpuAdaptiveInstancingFallback_ || groupAdaptive) &&

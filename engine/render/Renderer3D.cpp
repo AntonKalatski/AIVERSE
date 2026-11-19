@@ -249,6 +249,24 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
         staticCrossModelBatchMode_ == StaticCrossModelBatchMode::Enable ||
         (staticCrossModelBatchMode_ == StaticCrossModelBatchMode::Environment &&
          enableStaticCrossModelBatches);
+    // Every policy is resolved at the view/scene boundary, not from the
+    // inner draw loop. The defaults exactly preserve the old env semantics.
+    static const bool envLayoutCacheEnabled = [] {
+        const char* flag = std::getenv("AIVERSE_MDI_LAYOUT_CACHE");
+        return !flag || (std::strcmp(flag, "off") != 0 &&
+                         std::strcmp(flag, "0") != 0);
+    }();
+    static const bool envGeometrySortEnabled = [] {
+        const char* flag = std::getenv("AIVERSE_MDI_GEOMETRY_SORT");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
+    mdiLayoutCacheEnabled_ =
+        mdiLayoutCacheMode_ == CpuMdiPolicyMode::Enable ||
+        (mdiLayoutCacheMode_ == CpuMdiPolicyMode::Environment && envLayoutCacheEnabled);
+    mdiGeometrySortRequested_ =
+        mdiGeometrySortMode_ == CpuMdiPolicyMode::Enable ||
+        (mdiGeometrySortMode_ == CpuMdiPolicyMode::Environment &&
+         envGeometrySortEnabled);
     // Adaptive feedback affects only the Stage 17 static pooled sort, not
     // ordinary CPU MDI or the separate GPU-authored ICB path.
     static const bool enableCpuMdiAdaptive = [] {
@@ -264,9 +282,12 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
             std::isfinite(parsed) && parsed >= 1.0 && parsed <= 1000.0
             ? parsed : 25.0;
     }();
-    cpuMdiAdaptiveEnabled_ = enableCpuMdiAdaptive &&
-        staticCrossModelBatchesEnabled_;
-    cpuMdiAdaptiveBudgetUs_ = cpuMdiMaxUsPerCommand;
+    cpuMdiAdaptiveEnabled_ = staticCrossModelBatchesEnabled_ &&
+        (cpuMdiAdaptiveMode_ == CpuMdiPolicyMode::Enable ||
+         (cpuMdiAdaptiveMode_ == CpuMdiPolicyMode::Environment &&
+          enableCpuMdiAdaptive));
+    cpuMdiAdaptiveBudgetUs_ = cpuMdiAdaptiveBudgetOverrideUs_ > 0.0
+        ? cpuMdiAdaptiveBudgetOverrideUs_ : cpuMdiMaxUsPerCommand;
     cpuMdiPageStats_ = {};
     if (cpuMdiAdaptiveEnabled_) {
         ++cpuMdiPageEpoch_;

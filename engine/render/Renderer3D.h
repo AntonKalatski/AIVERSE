@@ -511,6 +511,30 @@ public:
     bool staticCrossModelBatchesEnabled() const {
         return staticCrossModelBatchesEnabled_;
     }
+    // Runtime CPU MDI policies shared by every genre/host. Environment
+    // preserves existing defaults and flags; Enabled/Forbid affect the
+    // renderer's next beginScene only, never global process settings.
+    enum class CpuMdiPolicyMode : uint8_t {
+        Environment = 0, Enable = 1, Forbid = 2
+    };
+    void setCpuMdiAdaptiveMode(CpuMdiPolicyMode mode) { cpuMdiAdaptiveMode_ = mode; }
+    void setMdiLayoutCacheMode(CpuMdiPolicyMode mode) { mdiLayoutCacheMode_ = mode; }
+    void setMdiGeometrySortMode(CpuMdiPolicyMode mode) { mdiGeometrySortMode_ = mode; }
+    CpuMdiPolicyMode cpuMdiAdaptiveMode() const { return cpuMdiAdaptiveMode_; }
+    CpuMdiPolicyMode mdiLayoutCacheMode() const { return mdiLayoutCacheMode_; }
+    CpuMdiPolicyMode mdiGeometrySortMode() const { return mdiGeometrySortMode_; }
+    bool mdiLayoutCacheEnabled() const { return mdiLayoutCacheEnabled_; }
+    bool mdiGeometrySortRequested() const { return mdiGeometrySortRequested_; }
+    // 0 means follow AIVERSE_CPU_MDI_MAX_US_PER_COMMAND, otherwise accept
+    // the same conservative [1,1000] microseconds-per-command range.
+    // This is an admission-policy budget, NOT a GPU timing guarantee.
+    void setCpuMdiAdaptiveBudgetOverrideUs(double us) {
+        if (us == 0.0 || (us >= 1.0 && us <= 1000.0))
+            cpuMdiAdaptiveBudgetOverrideUs_ = us;
+    }
+    double cpuMdiAdaptiveBudgetOverrideUs() const {
+        return cpuMdiAdaptiveBudgetOverrideUs_;
+    }
     // Independently control GPU-authored draws for 3-way Scene benchmarking.
     // The process-wide experimental environment flag remains mandatory.
     void setGpuAuthoredDrawEnabled(bool on) { gpuAuthoredDrawEnabled_ = on; }
@@ -834,6 +858,12 @@ private:
     bool staticCrossModelBatchesEnabled_ = false;
     StaticCrossModelBatchMode staticCrossModelBatchMode_ =
         StaticCrossModelBatchMode::Environment;
+    CpuMdiPolicyMode cpuMdiAdaptiveMode_ = CpuMdiPolicyMode::Environment;
+    CpuMdiPolicyMode mdiLayoutCacheMode_ = CpuMdiPolicyMode::Environment;
+    CpuMdiPolicyMode mdiGeometrySortMode_ = CpuMdiPolicyMode::Environment;
+    double cpuMdiAdaptiveBudgetOverrideUs_ = 0.0; // 0: env (default 25 us)
+    bool mdiLayoutCacheEnabled_ = true;
+    bool mdiGeometrySortRequested_ = false;
     // Per-renderer reusable hash directory, group storage and item mode map.
     // All records are invalidated at each independent render pass.
     StaticCrossModelPreflightWorkspace staticCrossPreflight_;
