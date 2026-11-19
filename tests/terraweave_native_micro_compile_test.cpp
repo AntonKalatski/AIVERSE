@@ -68,6 +68,34 @@ int main() {
     assert(!emptyRiver(0,std::numeric_limits<int64_t>::max(),0).submerged);
     assert(!emptyRiver(0,std::numeric_limits<int64_t>::min(),0).submerged);
     assert(!emptyRiver(-1,-1,0).submerged);
+    // Direct public helper calls must validate bounded search settings,
+    // a nonzero body ID and a present sampler, even without the native
+    // junction planner. Invalid requests must not invoke waterAt.
+    const Vec3 origin{};
+    bool rejectedSearch=false;
+    ForestNereidMicroJunctionSettings badSearch=mouthCfg;
+    badSearch.searchRadiusFineCells=std::numeric_limits<uint32_t>::max();
+    try { (void)nearestNereidMicroCell(
+        origin,1,neverQuery,badSearch); }
+    catch(const std::invalid_argument&){rejectedSearch=true;}
+    assert(rejectedSearch);
+    badSearch=mouthCfg;
+    badSearch.searchRadiusFineCells=0;
+    rejectedSearch=false;
+    try { (void)nearestNereidMicroCell(
+        origin,1,neverQuery,badSearch); }
+    catch(const std::invalid_argument&){rejectedSearch=true;}
+    assert(rejectedSearch);
+    rejectedSearch=false;
+    try { (void)nearestNereidMicroCell(
+        origin,0,neverQuery,mouthCfg); }
+    catch(const std::invalid_argument&){rejectedSearch=true;}
+    assert(rejectedSearch);
+    rejectedSearch=false;
+    try { (void)nearestNereidMicroCell(
+        origin,1,ForestMicroWaterSampler{},mouthCfg); }
+    catch(const std::invalid_argument&){rejectedSearch=true;}
+    assert(rejectedSearch);
     // Normal negative coordinates must still discover the nearest
     // correct body, with deterministic signed lattice floor.
     const ForestMicroWaterSampler wetNegative=[](int64_t x,int64_t z,
