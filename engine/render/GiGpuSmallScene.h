@@ -47,9 +47,12 @@ public:
         float traceDistance = 0;
         uint32_t nodes = 0;
         float pad1 = 0, pad2 = 0;
+        float4 sunDirectionIntensity{}; // xyz surface->sun, w intensity
+        float4 sunColorSkyIntensity{};  // rgb sun radiance, w sky intensity
+        float4 skyColor{};              // rgb sky radiance, w unused
     };
     static_assert(sizeof(GpuTri) == 64 && sizeof(GpuNode) == 48 && sizeof(GpuLamp) == 64 &&
-                  sizeof(GpuJob) == 16 && sizeof(Uniforms) == 32);
+                  sizeof(GpuJob) == 16 && sizeof(Uniforms) == 80);
 
     ~GiGpuSmallScene() { shutdown(); }
     GiGpuSmallScene() = default;
@@ -104,6 +107,7 @@ public:
         nodeCount_=0;
         lightCount_=0;
         geometryRevision_=0;
+        environment_={};
         lastTriangles_.clear();
         lastNodes_.clear();
         geometryUpload_={};
@@ -115,6 +119,15 @@ public:
     size_t triangleCount() const { return triangleCount_; }
     size_t nodeCount() const { return nodeCount_; }
     size_t lightCount() const { return lightCount_; }
+    const GiEnvironmentLight& environment() const { return environment_; }
+    // CPU state only: the next dispatch snapshots the parameters as uniforms.
+    // An in-flight GPU job keeps its old encoded values; the owning scheduler
+    // invalidates its tickets independently on a changed environment.
+    bool setEnvironment(GiEnvironmentLight value) {
+        if (!ready() || !value.valid()) return false;
+        environment_=value;
+        return true;
+    }
 
     // Publish only when a new scene geometry revision becomes visible.
     // This prototype CPU-builds a packed BVH for each bounded scene revision.
@@ -257,6 +270,16 @@ public:
         params.jobs=uint32_t(packed.size());
         params.samples=samples;
         params.traceDistance=traceDistance;
+        params.sunDirectionIntensity={environment_.sunDirection.x,
+                                     environment_.sunDirection.y,
+                                     environment_.sunDirection.z,
+                                     environment_.sunIntensity};
+        params.sunColorSkyIntensity={environment_.sunColor.x,
+                                     environment_.sunColor.y,
+                                     environment_.sunColor.z,
+                                     environment_.skyIntensity};
+        params.skyColor={environment_.skyColor.x,environment_.skyColor.y,
+                         environment_.skyColor.z,0};
         dev_->setComputeUniforms(&params,sizeof(params));
         dev_->dispatch(params.jobs);
         dev_->endCompute();
@@ -296,6 +319,7 @@ private:
     std::vector<GpuNode> lastNodes_;
     GeometryUploadStats geometryUpload_{};
     uint64_t geometryRevision_=0;
+    GiEnvironmentLight environment_{};
 };
 
 } // namespace aiverse::render
