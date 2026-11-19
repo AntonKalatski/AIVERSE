@@ -1274,3 +1274,35 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
   `docs/agent-handoffs/unified-test-runner.md` **after every stage**, in
   addition to the active feature handoff and existing agent update rules.
 
+## AIVERSE Stage 99 render resource lifetime — mandatory for all genres
+
+The generic per-host resource owner is
+`aiverse::render::ModelResourceCache` in
+`engine/render/ModelResourceCache.h` (with the optional
+`ModelPreparationService` CPU worker). Existing
+`game::view_adapter::RtsModelResourceCache` and
+`RtsModelPreparationService` are **compatibility aliases**, not
+separate implementations. New native project code must use the generic
+render headers; no RTS, FPS or editor types may enter the render owner.
+
+On a model replacement or hot reload, detach its MotionWeave graph
+sources, `AnimationAssetComponent`, borrowed model/material pointers
+and preview packets before the cache entry is invalidated. The cache
+queues old Models for deferred GPU release. A host must call
+`collectRetired(gfx::Device&)` at a known frame boundary **before**
+current-frame submissions reference released objects. This method
+uses `gfx::Device::waitForResourceIdle()`: `frameSerial()` is NOT a GPU
+completion proof. Never use guessed numbers of frames in flight for
+GPU lifetime management. If the barrier fails, retain resources and
+retry safely; on cache shutdown a failed barrier raises an exception
+and must be treated as a real failure, not ignored. Neither Vulkan
+nor Metal nor GL backend completion behaviour has been tested yet.
+`Editor::frame` and `GameClient::frame` have integrations; other
+hosts must provide their own safe frame boundary. Avoid adding
+unrelated raw GPU-release code in legacy RtsView.
+
+Keep the persistent Stage 99 handoff in
+`docs/agent-handoffs/animation-universal.md`, with exact commit IDs,
+changed files, actual tests (or **NOT RUN**) and the next specific
+stage. Do not merge to main based only on source inspection; native
+builds and GPU lifetime checks are still deferred by user instruction.
