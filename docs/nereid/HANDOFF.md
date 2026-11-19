@@ -2563,3 +2563,118 @@ impacts, per-tile multi-ripple field for large open water, and
 auto-mapping interaction event kinds to SpectraFX effects through
 an optional host adapter. Later add cascading water geometry.
 Update handoff after each phase; test only when user requests.
+
+## Stage 25 — observer-selected 16-wave normals, impact foam, SpectraFX playback
+
+**Branch:** `feature/nereid-water-core`, PR #23 Draft.
+**Starting head:** `d9c05c30ffd4edbfe6813ee15de040d5d24f31e0`.
+**Owner direction:** implement features before tests. No tests created/run.
+No merge of unrelated branches and no change to main.
+
+### Committed code
+
+- `dd5d9e0238767923cd4900236606f8f321a6a63a` —
+  `engine/render/Renderer3D.h`: per-draw NEREID ripple slots 4→16.
+- `53e91ee7dd56749d14f76df6ff9ff6004b689299` —
+  `engine/render/Renderer3D.cpp`: matching expanded U0 payload.
+- `9f2f9cd772bef2625b52946d497d2e0330cabeeb` —
+  `engine/render/Renderer3DReflect.cpp`: expanded reflection
+  U0 payload to match the main pass.
+- `dad2931b8c1c1cf4507b87399d6d929d04c0ce5b` —
+  `engine/render/Shaders.h`: GLSL/MSL U0 arrays and bounded
+  16-slot per-fragment ripple normal loops.
+- `cf4e58e90272ba34699068ca95aaf288a6c4635a` —
+  `engine/render/NereidWaterRenderer.h` forwards 16 entries.
+- `528647cedf7d6b23e752306e8c77b484f56055ac` —
+  `engine/render/NereidSurfaceResident.h` forwards same data
+  without recreating mesh residency.
+- `d88a269ad6cedbe783de1f93032cf91a037ccf83`,
+  `75af047d8df513b665c0268a14fff025e17afba1` —
+  `engine/world/NereidWaterScene.h`: 16-slot per-surface array;
+  use active observer's world X/Z to select nearby impulses rather
+  than the mesh's first vertex/body origin.
+- `fedd59d4323b7b28e68c3013c80bd5f97fcd509f` —
+  `engine/world/NereidRipples.h`: up to 16 nearest ring centers
+  per water ID, selected from up to 256 active scene ripples.
+- `525733cc229ef7249a7eb0cb3ae20db319fbab6e` —
+  `engine/render/Shaders.h`: per-pixel radial impact foam
+  blended into the water base colour in both GLSL and Metal,
+  after procedural normal synthesis.
+- `f9b1f8c05d60caaf6383ceeabbdb6d5616e76a4d`,
+  `aada509a188b6b2d134a8a81b688059f67edc193` —
+  NEW `engine/world/NereidSpectraFxBridge.h`: real optional
+  SpectraFX `ParticleSystem::play` adapter mapping event kinds
+  to user-defined graph names and bounded tracked one-shot handles.
+- `1f12a4a5ff55e2f2a40362d545336823359c2530` —
+  clarify source comment for 16-slot selection.
+- `35afeaf260b9e25ee2dd907f176284303c04fba6` —
+  `skills/gameplay/aiverse-nereid-water/SKILL.md`: new native
+  integration guidance for agents.
+
+### API / ownership
+
+No ECS schema changed. Stage 22 actor interaction output and Stage 23
+read-only ripple ingestion remain authoritative sources; water mesh
+and pulse visuals are presentation-only. For each visible water draw,
+NEREID selects at most sixteen events by distance from the active
+scene observer, filtered by packed water Entity ID. The renderer
+uploads up to sixteen `float4` ripple parameters (position X/Z
+relative to render origin, propagation radius, faded amplitude).
+The shared GLSL/MSL water fragment adjusts normal and applies local
+impact-foam tint on the radial ring. Existing shoreline foam,
+refraction, SSR, reflection and postprocessing remain separate.
+There are no extra RHI textures, buffers, full-screen passes or
+new genre dependencies.
+
+This extends the **shared Renderer3D U0 layout for all lit draws**,
+not only water. C++ main/reflection U0 layouts and GLSL/MSL U0
+declarations have all been updated. Other materials get zero-filled
+ripple slots by default. Device shader compilation across every
+supported RHI must be checked in the later testing phase.
+
+`NereidSpectraFxBridge` is optional, constructed from the native
+host's existing `spectra::Runtime&` (`fx::ParticleSystem`).
+`setCue(kind,{graph,scale})` defines per-event one-shot graph names;
+`emit(WaterPresentationEvent)` invokes the actual
+`particles.play(graph,position,{0,1,0},scale)` API;
+`reset()` kills the bridge's own tracked handles on rollback.
+A maximum of 256 recent handles are tracked; older ones are
+stopped rather than killing other SpectraFX users.
+Empty graph names do nothing. The host still owns loading/defining
+particle assets and calling ParticleSystem update/render.
+
+Example:
+```cpp
+world::NereidSpectraFxBridge fxBridge(particleSystem);
+fxBridge.setCue(lib::nereid::WaterInteractionKind::Enter,
+                {"fx/water_splash",1.f}); // host-defined asset key
+fxBridge.setCue(lib::nereid::WaterInteractionKind::SurfaceWake,
+                {"fx/water_wake",0.5f}); // host-defined asset key
+auto events=lib::nereid::snapshotWaterInteractionEvents(sim.world(),sim.tick());
+worldScene.ingestNereidInteractions(events,sim.tick(),
+    [&](const auto& e){ fxBridge.emit(e); });
+```
+
+### Verification / limitations / next feature
+
+**Actually done:** inspected existing source and SpectraFX public API,
+pushed implementation/skill/handoff via GitHub connector.
+**NOT DONE (by user request):** C++ compile, CTest, shader compilation,
+GPU screenshots, FPS/RTS regressions, runtime particle playback, and
+any new tests. All runtime effects remain unverified. PR stays Draft.
+
+Known limits: 16 shader pulses per water draw, 256 total visual
+pulses; selection is per *surface and observer*, not per tile,
+so waves far from the camera may be omitted on extremely large
+oceans. SpectraFX graphs are supplied by the host and are not
+created or automatically loaded in this stage. Impact foam uses
+a constant pale tint, not a per-event colour or physical bubble
+simulation. Material normal ripples do not alter the water ECS
+surface height, Box3D forces or volumetric fluid simulation.
+
+**Next features:** per-tile ripple selection or a bounded dynamic
+normal/foam texture for enormous water surfaces, more configurable
+foam styles, waterfall/cascade emitter geometry, and configurable
+flow-wake response. Only after functional completion perform native
+C++/GLSL/MSL and GPU visual verification. Always append another
+handoff after the next feature phase.
