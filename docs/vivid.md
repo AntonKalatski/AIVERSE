@@ -632,3 +632,12 @@ A versioned `MorphLodMapping` JSON sidecar now records the source mesh dimension
 ### Stage 7B source-identity safety update
 
 Cached `MorphLodMapping` now additionally requires a deterministic source geometry fingerprint calculated from original vertex float bits and source triangle indices; reusing a sidecar against changed geometry fails even when vertex and triangle counts happen to match. This is accidental mismatching protection, not a cryptographic guarantee. Earlier development sidecars without fingerprints must be regenerated. Native compilation and testing remain **NOT RUN**.
+
+
+## Stage 7C — BVH facial LOD bake authoring (2026-11-19)
+
+A new `MorphLodSurface::projectAccelerated` builds a median-split triangle BVH for nearest-source-surface mapping of independently decimated LOD vertices. It retains the same barycentric mapping structure and is cross-checked in authored source tests against the scalar reference, avoiding its quadratic eight-million-query limit. Model/triangle/vertex budgets still apply.
+
+VIVID Creator now has `Facial LOD surface bake` controls for choosing separate source/target model meshes, selecting the allowed projection distance and exporting `vivid-facial-lod.mapping.json` plus `vivid-facial-lod.morphs.json`. The mapping includes exact source fingerprint, barycentric references and sorted model-relative target vertex IDs. This is an **offline authoring/export path**; GPU actor LOD switching, correct per-LOD materials/skinning, one-transaction multi-file publication and topology-aware seam constraints are not yet complete.
+
+New C++ source and regression tests are committed but **not compiled or run**. Stage 7C detailed handoff and implementation commits are in `docs/agent-handoffs/vivid.md`.
