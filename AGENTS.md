@@ -1798,3 +1798,38 @@ uncompiled GPU/resource/animation source into main.
   Stage 113 code is unverified for compilation/runtime and
   PR #22 stays Draft. See the separate Stage 113 agent handoff
   for exact commits, unfinished work and next stage.
+
+### Animation/View Stage 114 — shared cache, GPU compiler and offscreen ownership
+
+- New speculative GPU texture misses (Model images and pending
+  material override images) are prepared together through
+  `ModelTextureCache::prepareGpuPromotion`. Only after the outer
+  appearance transaction succeeds may `commit()` publish shared
+  GPU owners. Immediately pass returned duplicate owned images to
+  `ModelImageRollbackPool::retire` for GPU-fenced destruction.
+- Do NOT retain `Image*` pointers into `Model::images` across
+  material append/reserve. The promotion plan identifies images by
+  **stable Model* + final image index**. Proposed material image
+  pointers are valid only until `ModelImageUploadTransaction`
+  commits or aborts. Avoid GPU cache publication inside CPU staging.
+- `Renderer3D::warmModelPipelinesChecked` distinguishes Ready,
+  Pending, Failed. GPU compiler failure must preserve the old
+  TypeLook/AnimationGraph; on Pending the editor watcher must retry
+  rather than acknowledge. GPU shader cache allocation is NOT an
+  all-or-nothing RHI transaction.
+- General native `ModelAssetProvider` sync and async publication
+  use `ModelStagingTransaction` with the same cache and GPU fence
+  ownership. A failed partial GPU model upload is NEVER directly
+  released without retirement completion. Keep a persistent rollback
+  pool and poll it at frame boundaries.
+- Editor Scene/Game offscreen color/depth targets are owned by a
+  shared `OffscreenTargetRetirement` queue via weak Viewport handles.
+  Resize and window destruction enqueue target pairs; the editor
+  drains with a proven GPU idle barrier before retiring its sole
+  gfx::Device epoch. The editor GPU diagnostic ring includes
+  `RetirementResourceKind::Target`.
+- All Stage 114 tests are **DEFERRED / NOT RUN** per user's
+  features-first instruction. Source commits are NOT proof of native
+  C++ compilation or Metal/Vulkan/GL correctness. Keep animation
+  PR #22 Draft and follow separate Stage 114 handoff for actual
+  validation, limitations and next task.
