@@ -32,6 +32,9 @@ public:
         size_t textures = 0, shaders = 0, bundles = 0;
         size_t fenced = 0, unfenced = 0;
         uint64_t knownPendingBytes = 0;  // optional, lower bound
+        size_t bundlesWithoutByteEstimate = 0; // ShaderGraph/Portrait owner archives
+        size_t texturesWithoutByteEstimate = 0;
+        size_t buffersWithoutByteEstimate = 0;
         uint64_t completedFence = 0;
         size_t abandonedHandles = 0, abandonedBundles = 0;
     };
@@ -146,10 +149,19 @@ public:
             switch (p.kind) {
                 case Kind::Pipeline: ++out.pipelines; break;
                 case Kind::Shader: ++out.shaders; break;
-                case Kind::Buffer: ++out.buffers; break;
-                case Kind::Texture: ++out.textures; break;
+                case Kind::Buffer:
+                    ++out.buffers;
+                    if (!p.knownBytes) ++out.buffersWithoutByteEstimate;
+                    break;
+                case Kind::Texture:
+                    ++out.textures;
+                    if (!p.knownBytes) ++out.texturesWithoutByteEstimate;
+                    break;
                 case Kind::Compute: ++out.computes; break;
-                case Kind::Bundle: ++out.bundles; break;
+                case Kind::Bundle:
+                    ++out.bundles;
+                    if (!p.knownBytes) ++out.bundlesWithoutByteEstimate;
+                    break;
             }
         }
         return out;
