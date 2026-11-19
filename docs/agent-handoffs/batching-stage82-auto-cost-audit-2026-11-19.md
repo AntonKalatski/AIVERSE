@@ -360,3 +360,80 @@ python3 /tmp/aiverse-stage88-analyze.py build/batching-stage82/stage86-trials 10
 ```
 
 Share `Mode-separated slow intervals` and/or regenerated `summary.csv`; this is the next evidence needed to decide whether to instrument Metal ICB CPU encode vs rendering preparation vs OS scheduling. Once mode-specific CPU costs are established, test any hypothesis in a targeted A/B, do not blindly change AUTO thresholds. Maintain per-stage handoff and preserve default-off feature flags.
+
+
+---
+
+## Stage 89 — owner validates mode-separated slow CPU episodes; opt-in Metal ICB slow-stage trace (2026-11-19)
+
+**Repository/branch:** `chromealex/AIVERSE` / `perf/auto-batch-cost-metrics-20261119`, **PR #39 Draft**.
+**Production code touched:** `engine/gfx/metal/GfxMetal.mm`, commit `a3347861a3c75dccf677c1f1bbdcf890cb0fc4ea`.
+**Agent documentation:** this section is in a separate subsequent commit.
+**Testing status:** owner's Stage 88 Python analysis ran successfully using the existing five Stage 86 CSVs. **New Metal C++/ObjC++ slow trace has not yet been compiled or executed on Mac Studio**. No GPU timestamps, Vulkan, full CTest, or CI results established for this stage.
+
+### Verified owner evidence (Stage 88 reanalysis)
+
+Five original CPU render() medians/p95, all ms:
+```text
+auto1  0.8063 / 1.7736   MDI 76/81
+mdi1   1.5965 / 1.9701   MDI 81/81
+auto2  0.8393 / 1.8285   MDI 80/81
+mdi2   0.8620 / 0.9219   MDI 81/81
+auto3  1.3900 / 1.8787   MDI 80/81
+```
+
+Actual `Mode-separated slow intervals` output from Mac:
+```text
+auto1: MDI 127..129 (3 frames), backend=0.9812ms, other_cpu=0.7001ms; Direct 136..138 (3 frames), other_cpu=1.2872ms
+mdi1:  MDI 165..172 (8 frames), backend=1.0469ms, other_cpu=0.6619ms; Direct -1..-1 (0 frames)
+auto2: MDI 173..177 (5 frames), backend=0.8694ms, other_cpu=0.7193ms; Direct 153..153 (1 frame), other_cpu=1.2445ms
+mdi2:  MDI -1..-1 (0 frames); Direct -1..-1 (0 frames)
+auto3: MDI 175..180 (6 frames), backend=0.9579ms, other_cpu=0.6678ms; Direct 153..153 (1 frame), other_cpu=1.2449ms
+```
+
+Interpretation: slow MDI-only episodes occur in both forced-MDI (mdi1) and AUTO. Two CPU backend submission sub-stage totals are significant (~0.87..1.05 ms median during longest slow MDI episodes), and other synchronous CPU work is significant (~0.66..0.72 ms). AUTO1 additionally has slow Direct-only frames. Therefore **not a pure policy-selection bug**; do not change AUTO EWMA or threshold on this evidence. CPU wall-time, not actual GPU duration/FPS; no OS scheduling or GPU-stall cause yet established. The analyzer's per-frame paired backend/other medians do not add linearly to the total CPU frame median.
+
+### Code implementation
+
+Previously `AIVERSE_ICB_PROFILE=1` reported averages across a large submission window, hiding individual slow submission stage breakdown. Added an **explicit opt-in** `AIVERSE_ICB_SLOW_TRACE=1` within the existing CPU Metal `drawIndexedIndirect` backend. After actual `executeCommandsInBuffer` submission, compute the same four measured CPU intervals already used by the aggregate trace:
+- `args`: validation/pool/PBR argument setup up to `afterArgs`
+- `alloc`: ICB reset + uniform snapshots through `afterAlloc`
+- `encode`: C++/Objective-C per-command ICB construction through `afterEncode`
+- `residency_execute`: resource declarations plus CPU-side `executeCommandsInBuffer` encoding, through `afterExecute`
+
+If total exceeds configurable `AIVERSE_ICB_SLOW_TRACE_MS` (default `0.15` ms, valid 0.01..100), print `[metal-icb-slow] frame=... slot=... commands=... total=... args=... alloc=... encode=... residency_execute=... threshold=... sample=.../24`. Log **at most 24 events per process**. No clock in the inner draw loop; the no-flag path has only a constant conditional and no per-command cost. This diagnostic does not change ICB buffer allocation, pipeline, encoder bindings, residency, synchronization, fallback, selection or GPU authoring. Logs can still perturb the immediately following frames; **do not use traced run as throughput proof**.
+
+### Next Mac Studio build and targeted validation
+
+Use the existing standalone worktree, but note it has previously been observed with an in-progress rebase. **Do not call `git switch` / `git reset --hard` / `rebase --abort` there.** Create a fresh **detached** dedicated worktree at the remote tip:
+
+```bash
+ROOT=/Users/aleksandrfeer/Projects/AIVERSE
+WT=/Users/aleksandrfeer/Projects/AIVERSE-batching-stage89
+git -C "$ROOT" fetch origin perf/auto-batch-cost-metrics-20261119 || exit 1
+git -C "$ROOT" worktree add --detach "$WT" origin/perf/auto-batch-cost-metrics-20261119 || exit 1
+cmake -S "$WT" -B "$WT/build/batching-stage89" -DAIVERSE_BUILD_HDR_TESTS=ON -DAIVERSE_BUILD_TESTS=OFF -DAIVERSE_BUILD_EDITOR=OFF -DCMAKE_BUILD_TYPE=Release || exit 1
+cmake --build "$WT/build/batching-stage89" --target aiverse_material_batches --parallel 8 || exit 1
+cd "$WT" || exit 1
+mkdir -p build/batching-stage89/captures
+set -o pipefail
+AIVERSE_PALETTE_TEST_CASE=auto_stress \
+AIVERSE_BATCH_STRESS_ITEMS=1024 \
+AIVERSE_BATCH_STRESS_POLICY=mdi \
+AIVERSE_METAL_CPU_MDI=1 \
+AIVERSE_BATCH_CPU_TIMING=1 \
+AIVERSE_BATCH_FRAME_TIMELINE=1 \
+AIVERSE_CAPTURE_SUCCESSFUL_MDI=1 \
+AIVERSE_ICB_SLOW_TRACE=1 \
+AIVERSE_ICB_SLOW_TRACE_MS=0.15 \
+build/batching-stage89/aiverse_material_batches unused.obj \
+  build/batching-stage89/captures/stage89-mdi-1k \
+  2>&1 | tee build/batching-stage89/stage89-mdi.log
+echo "Stage 89 exit=$?"
+```
+
+A single forced MDI run is a focused probe, not a five-trial performance comparison. Require existing `material palette CPU checks=38 result=passed`, `actual MDI pixel parity ... changed_channels=0`, final `changed_channels=0`, real `measured_mdi_frames=81`, expected CSV, and exit 0. `[metal-icb-slow]` lines may be absent if all submissions stay under 0.15ms. If absent and CPU slowdown does occur, lower the diagnostic threshold to 0.08ms and rerun only if appropriate. If slowdown is unobserved, do not claim backend fixed; compare against a healthy control run and repeat measurements. Capture log plus per-frame CSV.
+
+### Following stage
+
+Correlate specific expensive Metal ICB samples (frame, slot, draw count, four sub-stages) with frame CSV's `shadow_backend_ms` and `opaque_backend_ms`; identify whether slow time comes from actual encode loop, uniform/ICB allocations, or residency/command issuance. Distinguish slow *CPU* path from GPU runtime with independent native Metal command buffer / GPU timestamps when viable. Keep PR Draft and experiment flags OFF by default; no engine performance claim until repeatability.
