@@ -163,6 +163,21 @@ void vmRun(device const VmPayload& vm,uint stage,thread Particle& p,
         else atomic_fetch_add_explicit(vmErrors,1u,memory_order_relaxed);
     }
 }
+// Vertex shaderGraph sources are compile-time-validated on the CPU.
+// The dynamic GPU kernel only gathers sources; no authored source code here.
+float materialSource(uint code,Particle p,VmParams params,VmAttributes attrs) {
+    switch(code) {
+    case 0u:return p.positionAge.w;
+    case 1u:return p.velocityLife.w;
+    case 3u:return 0.0f;
+    default:
+        if(code>=4u && code<8u)return attrs.a0[code-4u];
+        if(code>=8u && code<12u)return attrs.a1[code-8u];
+        if(code>=12u && code<16u)return params.p0[code-12u];
+        if(code>=16u && code<20u)return params.p1[code-16u];
+        return 0.0f; // stable CPU UID random is intentionally GPU-ineligible
+    }
+}
 uint packColor(float4 c) {
     uint4 bytes=uint4(clamp(c,0.0f,1.0f)*255.0f+0.5f);
     return bytes.x | (bytes.y<<8) | (bytes.z<<16) | (bytes.w<<24);
@@ -180,7 +195,8 @@ kernel void cs_main(uint2 gid [[thread_position_in_grid]],
                      device VmParams* stateParams [[buffer(9)]],
                      device const VmPayload* vmProgram [[buffer(10)]],
                      device VmAttributes* stateAttributes [[buffer(11)]],
-                     device atomic_uint* vmErrors [[buffer(12)]]) {
+                     device atomic_uint* vmErrors [[buffer(12)]],
+                     device const uint* graphSources [[buffer(13)]]) {
     uint id=gid.x;
     if(u.meta.x==0u) {
         if(id>=u.meta.z)return;
@@ -254,6 +270,13 @@ kernel void cs_main(uint2 gid [[thread_position_in_grid]],
     float4 color=p.tint;
     color.a=active ? color.a*clamp(1.0f-p.positionAge.w/p.velocityLife.w,0.0f,1.0f) : 0.0f;
     uint rgba=packColor(color);
+    VmAttributes attributes=stateAttributes[slot];
+    VmParams sourceParams=stateParams[slot];
+    float4 graphData=float4(
+        materialSource(graphSources[0],p,sourceParams,attributes),
+        materialSource(graphSources[1],p,sourceParams,attributes),
+        materialSource(graphSources[2],p,sourceParams,attributes),
+        materialSource(graphSources[3],p,sourceParams,attributes));
     for(uint j=0;j<4u;++j) {
         float3 at=active?positions[j]:float3(0.0f);
         vertices[base+j].x=at.x;
@@ -262,10 +285,10 @@ kernel void cs_main(uint2 gid [[thread_position_in_grid]],
         vertices[base+j].u=uv[j].x;
         vertices[base+j].v=uv[j].y;
         vertices[base+j].rgba=rgba;
-        vertices[base+j].g0=0.0f;
-        vertices[base+j].g1=0.0f;
-        vertices[base+j].g2=0.0f;
-        vertices[base+j].g3=0.0f;
+        vertices[base+j].g0=graphData.x;
+        vertices[base+j].g1=graphData.y;
+        vertices[base+j].g2=graphData.z;
+        vertices[base+j].g3=graphData.w;
     }
 }
 )MSL";
