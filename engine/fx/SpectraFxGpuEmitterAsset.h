@@ -29,7 +29,7 @@ public:
                pair.first!="preference" && pair.first!="particles" &&
                pair.first!="allowCpuFallback" && pair.first!="quality" &&
                pair.first!="spawn" && pair.first!="appearance" &&
-               pair.first!="environment")
+               pair.first!="environment" && pair.first!="lod")
                 return fail("SpectraFX unknown GPU emitter field "+pair.first);
         SpectraFxHybridEmitter::Config next;
         if(!doc["cpuEffect"].isString() ||
@@ -136,6 +136,24 @@ public:
                    !floatField(ground,"tangentRetention",next.environment.tangentRetention))
                     return fail("invalid groundCollision configuration");
             }
+        }
+        const Json& lod=doc["lod"];
+        if(!lod.isNull()) {
+            if(!lod.isObject()) return fail("lod must be an object");
+            for(const auto& p:lod.members())
+                if(p.first!="near" && p.first!="far" &&
+                   p.first!="farSpawnScale" && p.first!="cullBeyondFar")
+                    return fail("unknown lod field "+p.first);
+            if(!floatField(lod,"near",next.lod.nearDistance) ||
+               !floatField(lod,"far",next.lod.farDistance) ||
+               !floatField(lod,"farSpawnScale",next.lod.farSpawnScale))
+                return fail("invalid GPU LOD distances/scaling");
+            if(lod.has("cullBeyondFar")) {
+                if(lod["cullBeyondFar"].type()!=Json::Type::Bool)
+                    return fail("lod.cullBeyondFar must be boolean");
+                next.lod.cullBeyondFar=lod["cullBeyondFar"].boolean();
+            }
+            if(!next.lod.validate()) return fail("invalid GPU LOD range");
         }
         // Perform the same bounds as the backend's public runtime contract.
         SpectraFxGpuSpawnScheduler validation;
