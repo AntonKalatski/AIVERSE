@@ -3,6 +3,7 @@
 #include <aiverselib/water/NereidCascadeFlow.h>
 #include <aiverselib/water/NereidConfluenceFlow.h>
 #include <aiverselib/water/NereidFlowObstacles.h>
+#include <aiverselib/water/NereidFloodRouting.h>
 #include "engine/sim/CommonComponents.h"
 #include "engine/sim/Simulation.h"
 #include <string>
@@ -49,7 +50,8 @@ inline WaterSample sampleWater(const World& world,Vec3 position) {
     applyWaterConfluenceFlow(world,position,sample);
     applyWaterCascadeFlow(world,position,sample);
     applyNereidFlowObstructions(world,position,sample);
-    return sample;
+    return applyNereidFloodSample(
+        world,world.resourceConst<WaterFloodResource>(),position,sample);
 }
 
 // Optional adapter to the existing shared world Transform, after locomotion/
