@@ -750,3 +750,18 @@ CI if it remains queued or cancelled.
   ICB preparation. Do not reinterpret HDR, depth or arbitrary
   compressed textures as VT page-table/physical resources.
   CPU fallback remains the safe path. GPU tests NOT RUN.
+
+
+### Experimental per-command opaque PBR pipeline grouping (Stage 10AB)
+
+- For experimental Metal ICB only, use
+  `equivalentGpuIcbPbrPipelineMaterial` and
+  `gpuIcbPbrPipelineHash` to classify built-in opaque, non-graph
+  materials. They keep flags that change shader/pipeline variants
+  equal, including normal-map presence. Do not use the hash alone to
+  authorize grouping or use this path for masked/transparent/graph
+  materials.
+- `GpuMaterialResourceBinding` can store `pbrEnabled`, six
+  source texture handles and 36 U2 floats. Exact resource tickets
+  include these values and must be checked again before ICB use.
+- This stage is CPU contract only; no GPU ABI or native tests run.
