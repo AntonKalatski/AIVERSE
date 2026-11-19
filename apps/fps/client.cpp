@@ -380,7 +380,7 @@ struct App {
                 cue.action=fx::SpectraFxCue::Action::Play;
                 cue.position=localEye+forward*0.8f;
                 cue.direction=forward;
-                fxScene.dispatch(cue);
+                fxScene.enqueueCue(std::move(cue),true,fxScene.cueEpoch());
             }
         }
         if(streamedScene)streamedScene->update(device,{&actor.pos,1});
