@@ -164,6 +164,8 @@ bool ComputeParticles::initGpu() {
     const gfx::DrawIndexedIndirectCommand zeroArgs{0,1,0,0,0};
     aliveCounter_=buffer(*device_,gfx::BufferType::Storage,sizeof(zero),
                          &zero,"SpectraFX GPU atomic alive count");
+    vmErrors_=buffer(*device_,gfx::BufferType::Storage,sizeof(zero),
+                     &zero,"SpectraFX GPU VM error counter");
     gpuDrawArgs_=buffer(*device_,gfx::BufferType::Storage,sizeof(zeroArgs),
                         &zeroArgs,"SpectraFX GPU authored draw args");
     vertices_=buffer(*device_,gfx::BufferType::Storage,
@@ -217,7 +219,7 @@ bool ComputeParticles::initGpu() {
         pipeline_=device_->createPipeline(pd);
     }
     if(!states_.valid()||!seeds_.valid()||!slots_.valid()||!liveSlots_.valid()||
-       !aliveCounter_.valid()||!gpuDrawArgs_.valid()||
+       !aliveCounter_.valid()||!gpuDrawArgs_.valid()||!vmErrors_.valid()||
        !seedProgramParams_.valid()||!stateProgramParams_.valid()||
        !gpuVmPayload_.valid()||!stateAttributes_.valid()||!vertices_.valid()||
        !indices_.valid()||!texture_.valid()||!vertexShader_.valid()||!pipeline_.valid()) {
@@ -232,7 +234,7 @@ bool ComputeParticles::initGpu() {
     pendingProgramParams_.reserve(cap);
     aliveSlots_.reserve(cap);
     stats_.gpuBytes=size_t(cap)*(sizeof(ParticleState)*2+2*sizeof(uint32_t)+4*sizeof(Vertex)+6*sizeof(uint16_t))
-                    +size_t(n*n*4)+sizeof(zero)+sizeof(zeroArgs)
+                    +size_t(n*n*4)+2*sizeof(zero)+sizeof(zeroArgs)
                     +size_t(cap)*2*sizeof(ProgramParams)+sizeof(vmPayload)
                     +size_t(cap)*sizeof(ProgramAttributes);
     return true;
@@ -248,6 +250,7 @@ void ComputeParticles::releaseGpu() {
         if(liveSlots_.valid())device_->destroyBuffer(liveSlots_);
         if(aliveCounter_.valid())device_->destroyBuffer(aliveCounter_);
         if(gpuDrawArgs_.valid())device_->destroyBuffer(gpuDrawArgs_);
+        if(vmErrors_.valid())device_->destroyBuffer(vmErrors_);
         if(seedProgramParams_.valid())device_->destroyBuffer(seedProgramParams_);
         if(stateProgramParams_.valid())device_->destroyBuffer(stateProgramParams_);
         if(gpuVmPayload_.valid())device_->destroyBuffer(gpuVmPayload_);
@@ -258,7 +261,7 @@ void ComputeParticles::releaseGpu() {
     }
     pipeline_={};vertexShader_={};compute_={};states_={};seeds_={};slots_={};
     vertices_={};indices_={};texture_={};liveSlots_={};
-    aliveCounter_={};gpuDrawArgs_={};gpuIndirectActive_=false;
+    aliveCounter_={};gpuDrawArgs_={};vmErrors_={};gpuIndirectActive_=false;
     seedProgramParams_={};stateProgramParams_={};gpuVmPayload_={};
     stateAttributes_={};
     ages_.clear();freeSlots_.clear();pendingStates_.clear();pendingSlots_.clear();
@@ -303,6 +306,7 @@ void ComputeParticles::clear() {
     freeSlots_.clear();
     for(uint32_t i=cap;i>0;--i)freeSlots_.push_back(i-1);
     stats_.alive=0;
+    stats_.gpuVmErrorsKnown=false;
     drawCount_=0;stats_.submittedSlots=0;
 }
 bool ComputeParticles::setProgramParameter(uint32_t slot,float value,
@@ -406,6 +410,7 @@ bool ComputeParticles::step(float dt) {
         return false;
     }
     const uint32_t count=uint32_t(pendingStates_.size());
+    stats_.gpuVmErrorsKnown=false;
     // Keep the physical state pool stable, but gather all surviving physical
     // slots into contiguous GPU vertices for a dense indexed draw. The CPU
     // knows lifetimes and slot ownership; it never reads GPU positions.
@@ -428,6 +433,8 @@ bool ComputeParticles::step(float dt) {
         reason_.clear();
         return true; // no live GPU particles, no compute work or draw
     }
+    const uint32_t resetVmErrors=0;
+    device_->updateBuffer(vmErrors_,&resetVmErrors,sizeof(resetVmErrors));
     if(programParamsDirty_) {
         device_->updateBuffer(stateProgramParams_,programStateCache_.data(),
                               programStateCache_.size()*sizeof(ProgramParams));
@@ -461,6 +468,7 @@ bool ComputeParticles::step(float dt) {
     device_->setComputeBuffer(9,stateProgramParams_);
     device_->setComputeBuffer(10,gpuVmPayload_);
     device_->setComputeBuffer(11,stateAttributes_);
+    device_->setComputeBuffer(12,vmErrors_);
     Uniforms u{};
     u.gravityDt={desc_.gravityY,dt,desc_.drag,0};
     u.rightSize={right_.x,right_.y,right_.z,desc_.size};
@@ -525,9 +533,23 @@ void ComputeParticles::draw(const fx::FxFog& fog) {
     }
     stats_.drawCalls=1;
 }
+bool ComputeParticles::readGpuVmErrors(uint32_t& count) {
+    stats_.gpuVmErrorsKnown=false;
+    if(!initialized_ || backend_!=ComputeBackend::Metal || !device_ ||
+       !vmErrors_.valid() || !device_->gpuHealthy() ||
+       !device_->canUpdateSharedBuffers())return false;
+    uint32_t observed=0;
+    if(!device_->readBuffer(vmErrors_,&observed,sizeof(observed)))return false;
+    count=observed;
+    stats_.gpuVmErrorsLastRead=observed;
+    stats_.gpuVmErrorsKnown=true;
+    return true;
+}
 void ComputeParticles::switchToCpu(const std::string& why) {
     ++stats_.gpuFallbacks;
-    stats_.lostOnFallback+=stats_.alive;
+    stats_.gpuVmErrorsKnown=false;
+    // Includes pending birth allocations, not just the last drawn survivors.
+    stats_.lostOnFallback+=uint32_t(ages_.size()-freeSlots_.size());
     releaseGpu();backend_=ComputeBackend::Cpu;
     const bool ok=initCpu();
     reason_=why+(ok?"; CPU fallback active; GPU-resident particles were discarded"
