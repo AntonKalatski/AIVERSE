@@ -41,18 +41,13 @@ inline void io(Archive& a,GrassPatch& p){
     a(p.key,p.bounds.minX,p.bounds.minZ,p.bounds.maxX,p.bounds.maxZ,
       p.maximumBlades,p.coveragePermille,p.environment,p.seed);
 }
-} // namespace aiverse::terraweave
-
-namespace aiverse::lib::nereid {
-inline void io(Archive& a,ShoreErosionCell& c){
-    a(c.soil,c.groundCm,c.bedrockCm,c.suspendedCm,
-      c.erosionCarryMilliCm,c.depositionCarryMilliCm,
-      c.rootBindingPermille);
+inline void io(Archive& a,NereidBankSampleState& p){
+    // Field-wise transfer: do not redefine ShoreErosionCell::io from
+    // NereidShorelineSystems.h (native water modules may include both).
+    a(p.vertex,p.soil.soil,p.soil.groundCm,p.soil.bedrockCm,
+      p.soil.suspendedCm,p.soil.erosionCarryMilliCm,
+      p.soil.depositionCarryMilliCm,p.soil.rootBindingPermille);
 }
-} // namespace aiverse::lib::nereid
-
-namespace aiverse::terraweave {
-inline void io(Archive& a,NereidBankSampleState& p){a(p.vertex,p.soil);}
 
 inline constexpr uint32_t kTerraWeaveSaveMagic=0x54575353u; // 'TWSS'
 inline constexpr uint32_t kTerraWeaveSaveVersion=1;
