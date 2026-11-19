@@ -136,6 +136,11 @@ public:
         if(it!=retirementTokens_.end() && it->second->load()==1)
             retirementTokens_.erase(it);
     }
+    void abandonRetirementTokenAfterIdle(uint64_t token) override {
+        // Only after a successful ordered queue-tail idle marker.
+        // The completion handler retains its own shared atomic reference.
+        retirementTokens_.erase(token);
+    }
     bool supports(PixelFormat f) const override {
         bool apple = false, bc = false;
 #if TARGET_OS_IPHONE
