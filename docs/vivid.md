@@ -533,3 +533,12 @@ This stage closes several source-level correctness gaps in the new human authori
 `HumanGroomRuntime` now retains scalp ellipsoid radii from the same `HumanDNA` parameters used to generate hair roots. Secondary-motion constraint projection excludes the DNA-proportional head shape rather than a hard-coded world-space sphere. A final contact projection closes the gap left by sequential strand-length correction. The `vivid_human_appearance` test now includes wind-driven scalp nonpenetration for multiple head widths and scales.
 
 **Source and regression authored, native build/CTest and GPU Creator preview NOT RUN yet.** This is a procedural ellipsoid collider and does not yet support exact collision with imported scalp meshes. See `docs/agent-handoffs/vivid.md` for implementation SHAs and validation instructions.
+
+
+## Stage 6H–6J — mesh collisions, bounded groom, eye DNA, Creator expression authoring (2026-11-19)
+
+The optional `HumanGroomRuntime::setCollisionMesh` accepts a bounded closed triangle mesh in groom-local coordinates and uses nearest-surface projection/odd ray parity to exclude interior hair points. `clearCollisionMesh` restores the DNA-scaled ellipsoid fallback. Verlet travel is capped per segment and collision velocity is damped to reduce extreme-frame penetration. This CPU reference path remains **O(strand points × triangle count)** and needs spatial acceleration, stable handling of non-manifold geometry, animated mesh support and validated attachment roots before production-scale use. The current Creator does not automatically install an imported scalp collision mesh.
+
+`HumanMaterials` now routes `scleraRedness` into actual sclera PBR pigment. The Creator exposes all 52 `Face.h` facial defaults for authoring and undoable DNA persistence; interactive jaw, blink and smile preview controls override their corresponding defaults. Existing Hair High/Med/Low is a groom presentation quality selector rather than mesh-LOD authoring.
+
+**Source authored; native macOS build, the newly extended `vivid_human_appearance` test, actual imported character GPU preview, and all-engine regressions NOT RUN** for these commits. The next validation is `bash tools/vivid-validate.sh --full` on an appropriate Mac, with logs appended to `docs/agent-handoffs/vivid.md`. True mesh sculpting, skinned scalp collision/BVH, production hair simulation, physically correct eye refraction and multilayer SSS are still outstanding.
