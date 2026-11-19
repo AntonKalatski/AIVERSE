@@ -17,6 +17,7 @@ Create `fx/gpu/flame_gpu.gpu.json`:
   "preference": "auto",
   "particles": 256,
   "allowCpuFallback": true,
+  "allowUnsortedAlpha": false,
   "quality": "medium",
   "lod": {
     "near": 20,
@@ -126,8 +127,12 @@ Without `sharedPool`, playback uses its existing dedicated
 CPU/GPU emitter behavior.
 
 Automatic shared grouping is currently restricted to **additive**
-billboards. Alpha-blended effects require back-to-front sorting and
-therefore fall back to the dedicated HybridEmitter path. GPU impact
+billboards. Alpha-blended effects require back-to-front sorting.
+Because GPU sorting is not yet implemented, alpha effects default to
+the existing sorted **CPU fallback**. An author can deliberately set
+`"allowUnsortedAlpha": true` in an emitter asset to use the older
+unsorted dedicated GPU alpha path for effects whose order is irrelevant,
+but this never enables automatic shared pooling for alpha. GPU impact
 readback/`impactEffect` also remains on dedicated emitters. If
 the pool cannot initialize, becomes incompatible or fills up, the
 existing dedicated path is attempted, retaining its authored CPU
@@ -246,7 +251,8 @@ retains that fallback. Source removal can preserve existing particles
 until expiry or kill them at a safe point.
 
 The GPU compaction uses atomics and is **unsorted**. Transparent alpha
-effects that need depth ordering still require the CPU fallback; this
+effects that need depth ordering use CPU unless explicitly opted into
+unsorted alpha; this
 is not general sorted GPU transparency, GPU-side collision meshes or
 global multi-material batching. Measure actual GPU cost and memory
 before enabling it in production.
