@@ -7,7 +7,9 @@
 #include <iterator>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
+#include <cmath>
 #include "../Editor.h"
 #include "../EditorUtil.h"
 #include "engine/fx/SpectraFX.h"
@@ -32,6 +34,7 @@ public:
             selected_=1;
             undo_.clear();redo_.clear();
             dirty_=false;
+            layout_.clear();pendingLink_.clear();
             refresh();
         }
     }
@@ -86,7 +89,7 @@ public:
         if(ImGui::Button("Undo")) {
             redo_.push_back(document_);
             document_=undo_.back();undo_.pop_back();
-            dirty_=true;selected_=-1;
+            dirty_=true;selected_=-1;pendingLink_.clear();
         }
         ImGui::EndDisabled();
         ImGui::SameLine();
@@ -101,6 +104,10 @@ public:
         if(ImGui::Button("Validate")) validate();
         if(!message_.empty()) ImGui::TextWrapped("%s",message_.c_str());
         ImGui::Separator();
+        ImGui::BeginChild("##spectrafx_canvas",ImVec2(0,300),ImGuiChildFlags_Borders,
+                          ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse);
+        drawCanvas();
+        ImGui::EndChild();
         ImGui::BeginChild("##spectrafx_nodes",ImVec2(230,0),ImGuiChildFlags_Borders);
         auto& nodes=document_.find("nodes")->itemsMut();
         for(size_t i=0;i<nodes.size();++i) {
@@ -206,6 +213,94 @@ private:
         g.set("outputs",std::move(outputs));
         return g;
     }
+    ImVec2 canvasNodePosition(const std::string& id,size_t index) {
+        const auto it=layout_.find(id);
+        if(it!=layout_.end()) return it->second;
+        const float x=20.0f+float(index % 4)*205.0f;
+        const float y=22.0f+float(index / 4)*118.0f;
+        return layout_[id]=ImVec2(x,y);
+    }
+    void drawCanvas() {
+        const ImVec2 origin=ImGui::GetCursorScreenPos();
+        const ImVec2 available=ImGui::GetContentRegionAvail();
+        auto* dl=ImGui::GetWindowDrawList();
+        const auto& nodes=document_["nodes"].items();
+        ImGui::InvisibleButton("##spectrafx_background",available);
+        if(ImGui::IsItemHovered() && ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
+            pan_.x+=ImGui::GetIO().MouseDelta.x;
+            pan_.y+=ImGui::GetIO().MouseDelta.y;
+        }
+        const ImU32 gridColor=ImGui::GetColorU32(ImGuiCol_Border,0.25f);
+        for(float x=std::fmod(pan_.x,32.0f);x<available.x;x+=32.0f)
+            dl->AddLine({origin.x+x,origin.y},{origin.x+x,origin.y+available.y},gridColor);
+        for(float y=std::fmod(pan_.y,32.0f);y<available.y;y+=32.0f)
+            dl->AddLine({origin.x,origin.y+y},{origin.x+available.x,origin.y+y},gridColor);
+        const auto position=[&](const std::string& id)->ImVec2 {
+            for(size_t i=0;i<nodes.size();++i)
+                if(nodes[i].getStr("id")==id) {
+                    const ImVec2 p=canvasNodePosition(id,i);
+                    return {origin.x+pan_.x+p.x,origin.y+pan_.y+p.y};
+                }
+            return origin;
+        };
+        const ImU32 wireColor=ImGui::GetColorU32(ImGuiCol_PlotLines);
+        for(const auto& link:document_["links"].items()) {
+            const ImVec2 a=position(link.getStr("from"));
+            const ImVec2 b=position(link.getStr("to"));
+            const ImVec2 start{a.x+168.0f,a.y+42.0f},end{b.x,b.y+42.0f};
+            dl->AddBezierCubic(start,{start.x+55,start.y},
+                               {end.x-55,end.y},end,wireColor,2.0f);
+        }
+        // Node titles drag only editor layout, not the canonical particle
+        // graph. Port clicks invoke the existing compiler-backed relink().
+        for(size_t i=0;i<nodes.size();++i) {
+            const std::string id=nodes[i].getStr("id");
+            const std::string type=nodes[i].getStr("type");
+            const ImVec2 p=position(id);
+            const ImVec2 end{p.x+168,p.y+70};
+            dl->AddRectFilled(p,end,ImGui::GetColorU32(ImGuiCol_FrameBg),6.0f);
+            dl->AddRect(p,end,ImGui::GetColorU32(selected_==int(i)?
+                     ImGuiCol_ButtonActive:ImGuiCol_Border),6.0f);
+            dl->AddText({p.x+9,p.y+9},ImGui::GetColorU32(ImGuiCol_Text),id.c_str());
+            dl->AddText({p.x+9,p.y+31},ImGui::GetColorU32(ImGuiCol_TextDisabled),type.c_str());
+            ImGui::PushID(int(i));
+            ImGui::SetCursorScreenPos(p);
+            ImGui::InvisibleButton("drag",ImVec2(146,24));
+            if(ImGui::IsItemClicked()) {
+                selected_=int(i);
+                propertiesText_=nodes[i]["properties"].dump(2);
+            }
+            if(ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+                ImVec2& np=layout_[id];
+                np.x+=ImGui::GetIO().MouseDelta.x;
+                np.y+=ImGui::GetIO().MouseDelta.y;
+            }
+            if(type!="Spawn") {
+                const ImVec2 input{p.x,p.y+42};
+                dl->AddCircleFilled(input,5,wireColor);
+                ImGui::SetCursorScreenPos({input.x-8,input.y-8});
+                ImGui::InvisibleButton("input",ImVec2(16,16));
+                if(ImGui::IsItemClicked() && !pendingLink_.empty()) {
+                    const std::string from=pendingLink_;
+                    pendingLink_.clear();
+                    if(from!=id) relink(id,from);
+                }
+            }
+            if(!isOutput(type)) {
+                const ImVec2 output{p.x+168,p.y+42};
+                dl->AddCircleFilled(output,5,wireColor);
+                ImGui::SetCursorScreenPos({output.x-8,output.y-8});
+                ImGui::InvisibleButton("output",ImVec2(16,16));
+                if(ImGui::IsItemClicked()) pendingLink_=id;
+            }
+            ImGui::PopID();
+        }
+        if(!pendingLink_.empty()) {
+            ImGui::SetCursorScreenPos({origin.x+8,origin.y+available.y-22});
+            ImGui::Text("Link from %s: click a destination input (Esc cancels)",pendingLink_.c_str());
+            if(ImGui::IsKeyPressed(ImGuiKey_Escape)) pendingLink_.clear();
+        }
+    }
     fs::path dir() const {return fs::path(project_)/"fx"/"graphs";}
     void refresh() {
         files_.clear();
@@ -240,6 +335,7 @@ private:
     }
     void create(const std::string& name) {
         current_=name;document_=defaultGraph();saved_=document_;
+        layout_.clear();pan_={};pendingLink_.clear();
         raw_=document_.dump(2);dirty_=true;selected_=1;
         propertiesText_=document_["nodes"][1]["properties"].dump(2);
         undo_.clear();redo_.clear();message_.clear();
@@ -253,6 +349,7 @@ private:
             std::string error;
             if(!compile(doc,error)) {message_=error;return;}
             current_=name;document_=saved_=std::move(doc);
+            layout_.clear();pan_={};pendingLink_.clear();
             raw_=document_.dump(2);dirty_=false;selected_=0;
             propertiesText_=document_["nodes"][0]["properties"].dump(2);
             undo_.clear();redo_.clear();message_.clear();
@@ -370,6 +467,9 @@ private:
     std::vector<Json> undo_,redo_;
     int selected_=-1;
     bool dirty_=false,createPending_=false;
+    std::unordered_map<std::string,ImVec2> layout_;
+    ImVec2 pan_{};
+    std::string pendingLink_;
 };
 
 AIVERSE_EDITOR_WINDOW(SpectraFxGraphWindow);
