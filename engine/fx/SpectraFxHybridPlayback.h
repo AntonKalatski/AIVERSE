@@ -529,6 +529,33 @@ public:
 
     size_t attached() const {return active_.size()+pooledActive_.size();}
     size_t oneShotCount() const {return oneShots_.size()+pooledShots_.size();}
+    struct BackendSnapshot {
+        size_t dedicatedGpu=0, dedicatedCpu=0, suspendedGpu=0;
+        size_t pooledSources=0, pooledGroups=0;
+        uint64_t activeGpuSlots=0, retiredGpuSlots=0;
+        uint64_t nominalGpuBytes=0;
+    };
+    // Read-only presentation diagnostics. Counts reflect live ownership,
+    // not confirmed GPU draw submissions or particle instance FPS.
+    BackendSnapshot backendSnapshot() const {
+        BackendSnapshot out;
+        auto classify=[&](const SpectraFxHybridEmitter& emitter) {
+            if(emitter.gpuActive()) {
+                ++out.dedicatedGpu;
+                if(emitter.suspended()) ++out.suspendedGpu;
+            } else if(emitter.cpuActive()) ++out.dedicatedCpu;
+            if(emitter.gpuResourcesHeld())
+                out.activeGpuSlots+=emitter.config().backend.particles;
+        };
+        for(const auto& entry:active_) classify(*entry.second);
+        for(const auto& shot:oneShots_) classify(*shot.emitter);
+        out.pooledSources=pooledActive_.size()+pooledShots_.size();
+        out.pooledGroups=pools_.size();
+        out.activeGpuSlots+=totalPoolCapacity_;
+        out.retiredGpuSlots=retiringGpuSlots_;
+        out.nominalGpuBytes=nominalGpuBytes();
+        return out;
+    }
     size_t sharedPoolCount() const {return pools_.size();}
     uint32_t sharedPoolCapacity() const {return totalPoolCapacity_;}
     // Includes both pools and dedicated emitters held for in-flight frames.
