@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cmath>
+#include <chrono>
 #include <memory>
 #include <map>
 #include <string>
@@ -49,6 +50,9 @@ public:
         uint64_t gpuBudgetCpuFallbacks=0,gpuBudgetRefusals=0;
         uint64_t unusedPoolsReleased=0;
         uint64_t sharedComputePrograms=0,sharedComputeFailures=0;
+        uint64_t cpuUpdateSamples=0,cpuDrawSamples=0;
+        uint64_t cpuUpdateEncodeUs=0,cpuDrawEncodeUs=0;
+        uint64_t cpuUpdatePeakUs=0,cpuDrawPeakUs=0;
     };
 
     SpectraFxHybridPlayback(gfx::Device& device,ParticleSystem& cpu,
@@ -66,6 +70,11 @@ public:
     void route(uint32_t cueId,Route value) {routes_[cueId]=std::move(value);}
     void unroute(uint32_t cueId) {routes_.erase(cueId);}
     void clearRoutes() {routes_.clear();}
+    // Disabled unless explicitly requested by a host/debugger.
+    // CPU wall time spent issuing commands, NOT asynchronous GPU time.
+    void setCpuEncodeProfiling(bool enabled) {cpuEncodeProfiling_=enabled;}
+    bool cpuEncodeProfiling() const {return cpuEncodeProfiling_;}
+
     // Project/host opt-in. Uses device's WHOLE-FRAME GPU time only as a
     // conservative spawn throttle, never as a claim about SpectraFX cost.
     bool configureGpuBudget(const SpectraFxGpuBudgetGovernor::Config& cfg) {
@@ -213,6 +222,7 @@ public:
     // The host separately updates the shared CPU ParticleSystem ONCE/frame.
     void updateGpu(float dt) {
         if(!std::isfinite(dt)||dt<0||dt>0.1f) {++stats_.failed;return;}
+        const auto encodeStart=cpuEncodeProfiling_?Clock::now():Clock::time_point{};
         // Metrics may be unavailable on mobile / Vulkan; the governor then
         // keeps its last known safe scale (1 by default).
         gpuGovernor_.observe(float(device_.gpuFrameMs()),dt);
@@ -279,6 +289,12 @@ public:
             }
             ++it;
         }
+        if(cpuEncodeProfiling_) {
+            const uint64_t us=elapsedMicros(encodeStart);
+            ++stats_.cpuUpdateSamples;
+            stats_.cpuUpdateEncodeUs+=us;
+            stats_.cpuUpdatePeakUs=std::max(stats_.cpuUpdatePeakUs,us);
+        }
     }
 
     // Camera-aware update used by native clients. The no-camera overload
@@ -309,6 +325,7 @@ public:
     // This submits only GPU-owned emitters, never duplicates CPU draws.
     void renderGpu(const render::mat4& viewProj,render::float3 cameraRight,
                    render::float3 cameraUp) {
+        const auto encodeStart=cpuEncodeProfiling_?Clock::now():Clock::time_point{};
         for(auto& pair:active_)
             drawGpu(*pair.second,viewProj,cameraRight,cameraUp);
         for(auto& shot:oneShots_)
@@ -319,6 +336,12 @@ public:
                pair.second.arena->aliveParticles()>0 &&
                !pair.second.arena->render(viewProj,cameraRight,cameraUp))
                 ++stats_.pooledFailures;
+        if(cpuEncodeProfiling_) {
+            const uint64_t us=elapsedMicros(encodeStart);
+            ++stats_.cpuDrawSamples;
+            stats_.cpuDrawEncodeUs+=us;
+            stats_.cpuDrawPeakUs=std::max(stats_.cpuDrawPeakUs,us);
+        }
     }
 
     // Called on the GPU owner/presentation thread after async readback
@@ -406,6 +429,12 @@ public:
     void resetStats() {stats_={};}
 
 private:
+    using Clock=std::chrono::steady_clock;
+    static uint64_t elapsedMicros(Clock::time_point started) {
+        const auto elapsed=std::chrono::duration_cast<std::chrono::microseconds>(
+            Clock::now()-started).count();
+        return elapsed>0 ? uint64_t(elapsed) : 0;
+    }
     struct OneShot {
         std::unique_ptr<SpectraFxHybridEmitter> emitter;
         float elapsed=0,duration=3;
@@ -563,6 +592,7 @@ private:
     uint32_t totalPoolCapacity_=0;
     uint64_t nextPoolTicket_=0;
     render::float3 lastCameraEye_{};
+    bool cpuEncodeProfiling_=false;
     SpectraFxGpuBudgetGovernor gpuGovernor_{};
     Stats stats_{};
 };
