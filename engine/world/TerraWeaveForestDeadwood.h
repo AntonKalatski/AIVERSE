@@ -31,26 +31,40 @@ struct ForestDeadwoodSoilCell {
     uint64_t availableUnits=0;
 };
 
+struct ForestDeadwoodWaterCell {
+    int64_t x=0,z=0; // dissolved nutrients; flow is NEREID-owned
+    uint64_t dissolvedUnits=0;
+};
+
 struct ForestDeadwoodResource {
     static constexpr size_t kMaxLogs=65536;
     static constexpr size_t kMaxSoilCells=65536;
+    static constexpr size_t kMaxWaterCells=65536;
     static constexpr int64_t kNutrientCellCm=3200;
-    uint32_t version=1;
+    uint32_t version=2;
     uint64_t revision=0;
     uint64_t cursor=0;
     uint64_t lastStepTick=0;
     bool initialized=false;
     uint64_t totalInitialUnits=0,totalRespiredUnits=0,
              totalExportedUnits=0;
+    // Stage68: v2 tracked sinks. Do not count transfer into the
+    // dissolved water reservoir as exported; it remains world-owned.
+    uint64_t totalAbsorbedUnits=0,totalRunoffExportUnits=0;
+    uint64_t totalLeachedUnits=0; // cumulative diagnostic, NOT a sink
+    uint64_t lastNutrientTick=0,soilCursor=0,waterCursor=0;
+    bool nutrientInitialized=false;
     std::vector<ForestDeadwoodRecord> logs; // strictly by species/key
     std::vector<ForestDeadwoodSoilCell> soil; // strictly by x,z
+    std::vector<ForestDeadwoodWaterCell> water; // sorted by x,z
 };
 
 inline void validateForestDeadwoodResource(
         const ForestDeadwoodResource& state) {
-    if(state.version!=1 || state.logs.size()>
+    if(state.version!=2 || state.logs.size()>
        ForestDeadwoodResource::kMaxLogs ||
-       state.soil.size()>ForestDeadwoodResource::kMaxSoilCells)
+       state.soil.size()>ForestDeadwoodResource::kMaxSoilCells ||
+       state.water.size()>ForestDeadwoodResource::kMaxWaterCells)
         throw std::invalid_argument("TerraWeave invalid deadwood resource");
     AnchoredPlantId prevId{};
     bool first=true;
@@ -78,6 +92,17 @@ inline void validateForestDeadwoodResource(
             throw std::invalid_argument("TerraWeave invalid nutrient cell");
         prevCell=key;first=false;
     }
+    prevCell={}; first=true;
+    for(const auto& cell:state.water) {
+        const auto key=std::pair{cell.x,cell.z};
+        if((!first && !(prevCell<key)) || !cell.dissolvedUnits ||
+           cell.x<-kWorldLimitCm/ForestDeadwoodResource::kNutrientCellCm-1 ||
+           cell.x> kWorldLimitCm/ForestDeadwoodResource::kNutrientCellCm+1 ||
+           cell.z<-kWorldLimitCm/ForestDeadwoodResource::kNutrientCellCm-1 ||
+           cell.z> kWorldLimitCm/ForestDeadwoodResource::kNutrientCellCm+1)
+            throw std::invalid_argument("TerraWeave invalid dissolved nutrient cell");
+        prevCell=key;first=false;
+    }
     // Reject impossible save/replay states BEFORE any resource publication:
     // no organic matter may silently appear or disappear in the ledger.
     uint64_t accounted=state.totalRespiredUnits;
@@ -87,8 +112,11 @@ inline void validateForestDeadwoodResource(
         accounted+=units;
     };
     add(state.totalExportedUnits);
+    add(state.totalAbsorbedUnits);
+    add(state.totalRunoffExportUnits);
     for(const auto& log:state.logs)add(log.remainingUnits);
     for(const auto& cell:state.soil)add(cell.availableUnits);
+    for(const auto& cell:state.water)add(cell.dissolvedUnits);
     if(accounted!=state.totalInitialUnits)
         throw std::invalid_argument("TerraWeave deadwood mass not conserved");
 }
@@ -102,10 +130,19 @@ inline void io(Archive& a,ForestDeadwoodRecord& r) {
 inline void io(Archive& a,ForestDeadwoodSoilCell& r) {
     a(r.x,r.z,r.availableUnits);
 }
+inline void io(Archive& a,ForestDeadwoodWaterCell& r) {
+    a(r.x,r.z,r.dissolvedUnits);
+}
 inline void io(Archive& a,ForestDeadwoodResource& s) {
-    a(s.version,s.revision,s.cursor,s.lastStepTick,s.initialized,
+    a(s.version);
+    if(!a.ok() || (s.version!=1u && s.version!=2u)){a.fail();return;}
+    const bool v2=s.version==2u;
+    a(s.revision,s.cursor,s.lastStepTick,s.initialized,
       s.totalInitialUnits,s.totalRespiredUnits,s.totalExportedUnits);
-    if(!a.ok() || s.version!=1u){a.fail();return;}
+    if(v2)
+        a(s.totalAbsorbedUnits,s.totalRunoffExportUnits,
+          s.totalLeachedUnits,s.lastNutrientTick,s.soilCursor,
+          s.waterCursor,s.nutrientInitialized);
     uint32_t n=a.count(s.logs.size(),76);
     if(!a.ok() || n>ForestDeadwoodResource::kMaxLogs){a.fail();return;}
     if(!a.writing())s.logs.assign(n,{});
@@ -114,6 +151,21 @@ inline void io(Archive& a,ForestDeadwoodResource& s) {
     if(!a.ok() || n>ForestDeadwoodResource::kMaxSoilCells){a.fail();return;}
     if(!a.writing())s.soil.assign(n,{});
     for(auto& v:s.soil)if(a.ok())a(v);
+    if(v2){
+        n=a.count(s.water.size(),24);
+        if(!a.ok() || n>ForestDeadwoodResource::kMaxWaterCells){a.fail();return;}
+        if(!a.writing())s.water.assign(n,{});
+        for(auto& v:s.water)if(a.ok())a(v);
+    }else if(!a.writing()){
+        // Legacy v1 nutrient pool is wholly in soil/wood. No mineral
+        // uptake or dissolved-water reservoir existed. Promote losslessly
+        // into v2 after reading the complete v1 layout.
+        s.version=2;
+        s.totalAbsorbedUnits=s.totalRunoffExportUnits=s.totalLeachedUnits=0;
+        s.lastNutrientTick=s.soilCursor=s.waterCursor=0;
+        s.nutrientInitialized=false;
+        s.water.clear();
+    }
     if(!a.writing() && a.ok()){
         try{validateForestDeadwoodResource(s);}
         catch(const std::exception&){a.fail();}
