@@ -1707,3 +1707,60 @@ a global/multi-world GPU memory manager and does not yet avoid
 whole-buffer repacking. The pure allocation policy is tested by
 authored but **unexecuted** regression fixtures. For commit references
 see Stage 15.1 in the agent handoff.
+
+
+## Stage 15.2 — Incremental GPU index pages on Metal and Vulkan
+
+The previous Stage 15 cache replaces a whole compact immutable index
+buffer whenever its resident node set changes. Stage 15.2 adds an
+**opt-in incremental mode** on Metal/Vulkan that owns one fixed-capacity
+`Storage`/INDEX-compatible RHI buffer and uploads only newly requested
+cluster-node index subranges into unused or GPU-fence-released slots.
+
+```cpp
+render::GeometryScene scene;
+scene.setStrataPortableRenderingEnabled(true);
+scene.setStrataStreamingIndexBudgetBytes(256 * 1024);
+scene.setStrataStreamingSceneBudgetBytes(8 * 1024 * 1024);
+scene.setStrataIncrementalIndexStreamingEnabled(true);  // NEW
+scene.setStrataStreamingUploadBudgetBytes(128 * 1024); // NEW, bytes/source/update
+scene.load(device, sceneJson, readFile);
+```
+
+Both options are configured **before** `load/loadPrepared`. The new
+mode is default OFF. If only scene budget is set, streaming is still
+enabled. GLES3/WebGL2 and GL33 automatically keep the existing safe
+immutable-generation fallback; no WebGL2 compute or base-vertex
+extension is required.
+
+Index allocation is per Strata cluster node, and all children of a
+parent are promoted as one complete group to avoid partially missing
+triangles. Demands from all source instances, main view, shadow and
+reflection are merged before any new Renderer3D draw submission.
+A parent remains usable while a group awaits its upload bandwidth
+budget or a completed GPU fence. Stable GPU index offsets and a
+stable RHI buffer handle avoid whole-buffer repacks for ordinary
+Metal/Vulkan page additions; evicted pages are quarantined until
+`completedFrameSerial()` confirms the retirement frame completed.
+The manager atomically exposes a new residency table only after
+every checked page write succeeds. If a write fails, old visible
+pages remain addressable. The original vertex and Legacy index
+buffers remain independently owned by `Model`.
+
+`IndexResidencyStats` adds `incremental`, `arenaBytes`,
+`uploadedBytes`, `uploadCalls`, `uploadBudgetDeferrals`
+and `fenceReuseDeferrals`. `GeometryScene::Stats` aggregates them.
+**Important:** `arenaBytes` is the full fixed Storage allocation,
+not only visible `activeBytes`. Vulkan may maintain extra safe GPU
+versions and a CPU shadow, so incremental API subrange uploads do not
+guarantee that the hardware copies only those bytes. This release
+does NOT yet provide SSD streaming, GPU sparse page binding,
+global cross-world budgets, page compaction or Vulkan compute LOD
+selection. An upload limit below one required sibling group will
+defer that group's refinement indefinitely until reconfigured.
+
+Stage 15.2 source and regression tests are committed, but **no
+Stage 15.2 compilation, native CTest or real-device parity has yet
+been performed**. See the Stage 15.2 entry in
+`docs/agent-handoffs/strata-virtual-geometry.md` for exact changed
+files, commits, failure cases and continuation.
