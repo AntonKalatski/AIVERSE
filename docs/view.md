@@ -780,3 +780,39 @@ work/publish callbacks without instantiating `RtsView`.
 The browser/Emscripten path retains its original synchronous/no-worker
 behaviour. **NOT RUN:** no CMake, compiler, CTest, sanitizer, Metal
 visuals or CI on this feature stage, by user request.
+
+## Reusable model streaming operations (Stage 92)
+
+`modules/rts/view/RtsModelStreaming.h` provides two host-agnostic
+model-loading building blocks: `discoverModelPaths(authored,geometry,
+alreadyCached,append)` traverses an authored JSON subtree in existing
+order (including model variants, LOD and attachments), and
+`prepareModelCpu(path,reader,textures,{geometry,animationBake})`
+performs model decoding, optional cluster preparation, optional
+animation-bake preparation and CPU upload staging. The latter returns
+a `RtsModelPreparationService::PreparedModel` with warnings; it does
+**not** issue GPU commands.
+
+`RtsModelResourceCache::publishPrepared(device,key,prepared)` runs
+synchronously on the render thread, skips replacing an asset already
+published by a synchronous loader, and uploads/inserts a prepared model
+(including the existing null-model failure cache semantics). The cache
+still owns the model/texture lifecycle, while
+`RtsModelPreparationService` owns the future and ordered queue.
+
+`RtsLook.cpp::prepareType` now composes these three operations.
+The RTS host retains policy decisions: which authored variants to
+request, geometry/skinning flags, warning routing, and when to poll
+or publish a result. Native hosts may reuse these functions and own
+a `RtsModelResourceCache` without constructing `RtsView`.
+The service remains serial (one in-flight CPU job per owner);
+browser/no-worker behaviour is unchanged.
+
+This moves the streaming **operations** out of the legacy class, but
+does not yet replace RtsView's rules-driven type choice and residency
+coordination. Material variant configuration and model hot-reload
+invalidations still require the owning host. No animation ECS,
+networking, save data, or renderer packet contract changed.
+
+**NOT RUN**: native build, CTest, sanitizer, GPU visual parity, CI,
+and cross-platform verification remain deferred per user instruction.
