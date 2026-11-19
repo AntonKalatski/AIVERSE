@@ -3,6 +3,9 @@
 #include "engine/render/PrismaGraphDispatch.h"
 #include "engine/render/PrismaGraphResourcePool.h"
 #include "engine/render/PrismaRhiExecutor.h"
+#include "engine/render/PrismaCompositeTextureLayout.h"
+#include "engine/render/Renderer3DMotionShaders.h"
+#include "engine/render/Renderer3DReactiveShaders.h"
 #include <cstdio>
 #include <string>
 #include <vector>
@@ -436,6 +439,65 @@ void bloomChainGraphContract() {
     }
 }
 }
+
+// Stage 66 compiler-backed GPU-free contract: the four reactive-only vertex
+// permutations must be constructible from current motion shader sources.
+// This is NOT a GLSL/MSL compiler or actual GPU visual test.
+void reactiveShaderVariantContract() {
+    using namespace aiverse::render;
+    for (const bool baked : {false, true}) {
+        const char* glslSource = baked ? motion_shaders::kBakedVS :
+                                        motion_shaders::kDeformedVS;
+        const char* mslSource = baked ? motion_shaders::kBakedMSL :
+                                       motion_shaders::kDeformedMSL;
+        const std::string glsl = reactive_shaders::animatedVertexGlsl(glslSource,baked);
+        const std::string msl = reactive_shaders::animatedMsl(mslSource,baked);
+        check(!glsl.empty(), baked ? "baked reactive GLSL source generated" :
+                                     "skinned reactive GLSL source generated");
+        check(!msl.empty(), baked ? "baked reactive MSL source generated" :
+                                   "skinned reactive MSL source generated");
+        check(glsl.find("v_reactiveObjectPos=reactivePose.xyz;") != std::string::npos &&
+              glsl.find("v_reactiveUv=a_uv;") != std::string::npos &&
+              glsl.find("v_reactiveAlpha=a_col.a;") != std::string::npos,
+              "reactive GLSL carries current-deformed position, UV and alpha");
+        check(msl.find("o.objectPos=reactivePose.xyz;") != std::string::npos &&
+              msl.find("o.uv=in.uv;o.alpha=in.col.a;") != std::string::npos,
+              "reactive MSL carries current-deformed position, UV and alpha");
+        check(glsl.find("v_prevClip=previousMvp*") != std::string::npos &&
+              msl.find("o.previous=u.previousMvp*") != std::string::npos,
+              "reactive-only generators retain motion source ABI");
+    }
+    const std::string fs = reactive_shaders::kAnimatedFS;
+    check(fs.find("reactiveAnimNoise3(v_reactiveObjectPos*7.0)") != std::string::npos,
+          "animated reactive shader includes deformed-space dissolve");
+    check(fs.find("reactiveReveal.w>0.0") != std::string::npos,
+          "animated reactive shader contains Actor Reveal aperture");
+    check(fs.find("alpha<reactiveMaskInfo.z") != std::string::npos,
+          "animated reactive shader honors material alpha cutoff");
+
+    check(reactive_shaders::animatedVertexGlsl("void main() {}",false).empty(),
+          "unknown GLSL source anchor rejected safely");
+    check(reactive_shaders::animatedMsl("invalid shader",true).empty(),
+          "unknown Metal source anchor rejected safely");
+}
+
+void compositeTextureLayoutContract() {
+    using Layout = aiverse::render::PrismaCompositeTextureLayout;
+    for (size_t n=0; n<=4; ++n) {
+        const auto withoutAE=Layout::plan(n,false);
+        const auto withAE=Layout::plan(n,true);
+        check(withoutAE.valid && withAE.valid,
+              "bounded ShaderGraph texture count admitted");
+        check(withAE.exposureSlot == (n==4 ? 9 : 8),
+              "AutoExposure moves to slot9 for fourth graph texture");
+        check(withAE.textureSlots == (n==4 ? 10 : 9),
+              "HDR exposure ShaderDesc sampler capacity follows graph");
+        check(withoutAE.textureSlots == 5 + int(n),
+              "no-AutoExposure variant does not allocate extra sampler");
+    }
+    check(!Layout::plan(5,true).valid && !Layout::plan(5,false).valid,
+          "fifth independent ShaderGraph texture rejected");
+}
 int main() {
     positive();
     hazards();
@@ -446,6 +508,8 @@ int main() {
     fxaaGraphContract();
     bloomPrefilterGraphContract();
     bloomChainGraphContract();
+    reactiveShaderVariantContract();
+    compositeTextureLayoutContract();
     std::printf("PRISMA RenderGraph: %d failures\n",errors);
     return errors ? 1 : 0;
 }
