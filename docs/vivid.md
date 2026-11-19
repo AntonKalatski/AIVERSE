@@ -364,3 +364,32 @@ First-time Metal model shader compilation can also leave zero submitted draws fo
 **Test status:** these modifications have not yet been compiled or visually run on the user's Mac. The earlier CTest 3/3 GPU/vertex-policy passes were on an earlier commit. The test-only preview requires a macOS GUI / Metal drawable and is not a CTest. The ordinary renderer path and MotionWeave ECS skeletal-pose ownership are unchanged.
 
 Run `aiverse_vivid_vertex_override_tests` and the GUI preview after pulling the new branch. Inspect three PPM files and the printed pixel differences; until they exist and both model pass counters become nonzero, do not declare this stage complete.
+
+## Stage 5F — per-character GPU stream isolation and frame ownership (2026-11-19)
+
+**Code committed; real Metal multi-actor test NOT RUN yet.** Stage 5E's real macOS visual preview **passed** on user-checked SHA `53e5f0cb069dff8d4c173001947ffce3b4791a98`: all three captured frames, real shadow and colour model submissions, 81,988 baseline-to-morph changed pixels, and 66,972 additional MotionWeave-pose changed pixels. User's selected CTests were 2/2 PASS. Handoff verification commit: `4dea755d192b70abe2501a63eba553d4230ffd06`.
+
+Next, VIVID gains **`AIVERSE::vivid_actor`**, a per-character GPU presentation helper (`GpuActorStream.h/.cpp`). It owns one `GpuMorphDeformer`, one `GpuMorphMeshStream` and one instance-local semantic morph weight vector. Each actor has **independent mutable GPU weight and output buffers**. It may refer to the same immutable authored `SparseMorphLibrary` and uploaded `render::Model` metadata as other actors, but each actor owns its own RHI allocations in this initial implementation. Sharing pipelines and immutable CSR uploads without compromising per-instance output ownership is a later optimization.
+
+Public workflow:
+
+```cpp
+vivid::GpuActorStream actor;
+actor.initialize(dev, model, sparseLibrary, modelVertexSpan);
+
+// Inside a platform-owned GPU frame, outside all render passes:
+motionweave::MotionWeave::update(presentationWorld, dt); // sole skeleton owner
+actor.dispatch(faceController.frame(), faceShapeBinding);
+
+render::ModelDraw draw;
+draw.model = &model;
+draw.nodeWorld = &presentationWorld.get<
+    motionweave::AnimationPoseComponent>(entity).matrices;
+if (actor.attach(draw)) renderer.drawModel(draw);
+```
+
+The `dispatch` contract requires an active **Metal** frame with a nonzero `gfx::Device::frameSerial()`. An actor permits **only one two-stage compute submission per frame**; repeated calls are rejected rather than overwriting memory already queued for draw calls. `attach(draw)` is transactional and only succeeds for exactly the same `render::Model` and a valid stream produced in the **current device frame**. This prevents accidental reuse of an old character's vertex stream after frame rollover or attaching to a different model. The renderer still validates full 60B vertex metadata and does not enable pooled/static/ICB paths. No new animation graph or scheduler was implemented: MotionWeave remains authoritative for body pose, skin palettes, IK and retargeting.
+
+At exceptional model unload or actor removal, the host must finish the GPU frame, then call `actor.shutdownAfterIdle()` **outside any active frame** before allowing the model and device to be destroyed. The method invokes `gfx::Device::waitForResourceIdle()` and returns false on failure without deliberately freeing GPU resources. This is **not a per-frame stall**; frame-to-frame updates simply reuse the actor's GPU allocations. `GpuMorphDeformer` and `GpuMorphMeshStream` still have ordinary destructors; a host must not destroy an actor or its device while GPU work is in flight. A scalable token-based nonblocking retirement queue for frequent dynamic despawns is future work.
+
+The existing real macOS `vivid_metal_rhi` test has been **extended (not yet executed on the new revision)** with two actors referencing the same model and morph library. It checks separate output handles, three frames of different face weights, CPU-vs-GPU vertex parity for both actors, preservation of immutable UV/colour/tangent-sign/skin weights, rejection of a duplicate per-frame dispatch, rejection of stale-frame and wrong-model attachments, and explicit idle teardown. The ordinary VIVID and MotionWeave tests and the previously passing real visual preview are **not automatically certified** after this new source change.
