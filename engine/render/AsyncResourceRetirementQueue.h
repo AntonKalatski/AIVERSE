@@ -18,10 +18,13 @@ enum class RetirementDiagnosticKind : uint8_t {
     Enqueued, TokenSubmitted, Pending, Completed, Failed,
     IdleFallbackFailed, RecoveredAfterIdle
 };
+// Observer-side metadata only; never used to authorize resource destruction.
+enum class RetirementResourceKind : uint8_t { Unknown, Model, Image };
 struct RetirementDiagnosticEvent {
     RetirementDiagnosticKind kind=RetirementDiagnosticKind::Pending;
     uint64_t token=0;
     size_t resources=0;
+    RetirementResourceKind resource=RetirementResourceKind::Unknown;
 };
 
 template<class Resource>
