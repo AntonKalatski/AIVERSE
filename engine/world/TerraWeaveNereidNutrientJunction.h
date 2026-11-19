@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <optional>
+#include <set>
 #include <stdexcept>
 #include <tuple>
 #include <utility>
@@ -134,21 +135,18 @@ nereidNutrientLinkedCells(
         world,terrain,water,source,sourceAnchor,settings);
     const auto targets=nereidNutrientCandidates(
         world,terrain,water,target,targetAnchor,settings);
-    // Small-stream cells are preferred near the actual junction mouth, not
-    // arbitrary nearby regions. 32m same-cell body overlaps are ambiguous:
-    // never invent two reservoirs in one existing water-cell record.
+    // Only distinct cells with an unambiguous NEREID body owner are
+    // eligible. Cache sets ONCE for each linked pair instead of repeated
+    // (potentially expensive) 4m water queries inside the candidate loop.
+    using Cell=std::pair<int64_t,int64_t>;
+    std::set<Cell> sourceCells,targetCells;
+    for(const auto& cell:sources)sourceCells.emplace(cell.x,cell.z);
+    for(const auto& cell:targets)targetCells.emplace(cell.x,cell.z);
     for(const auto& a:sources)
         for(const auto& b:targets)
             if((a.x!=b.x || a.z!=b.z) &&
-               // One dissolved pool is stored per 32m cell. A cell that
-               // also contains the opposite body is ambiguous, so do
-               // NOT debit it into another river: fail closed.
-               !nereidBodyTouchesNutrientCell(
-                   world,terrain,water,target,a.x,a.z,
-                   settings.samplesPerAxis) &&
-               !nereidBodyTouchesNutrientCell(
-                   world,terrain,water,source,b.x,b.z,
-                   settings.samplesPerAxis)){
+               !targetCells.contains({a.x,a.z}) &&
+               !sourceCells.contains({b.x,b.z})){
                 ForestNutrientJunctionLink link;
                 link.sourceX=a.x;link.sourceZ=a.z;
                 link.targetX=b.x;link.targetZ=b.z;
