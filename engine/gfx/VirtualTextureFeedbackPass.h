@@ -15,6 +15,27 @@
 
 namespace aiverse::gfx {
 
+// Compatible pipeline state for a feedback material draw. Callers retain
+// their own vertex layout, shader and culling policy; the feedback pass
+// always writes one unblended linear RGBA8 color attachment. No MSAA.
+// Depth testing is opt-in because this pass currently has no depth target;
+// enable it only after binding a matching depth attachment.
+inline PipelineDesc virtualTextureFeedbackPipelineDesc(
+    ShaderHandle shader, bool depthAttachment=false) {
+    PipelineDesc desc;
+    desc.shader = shader;
+    desc.colorFormat = PixelFormat::RGBA8;
+    desc.colorAttachmentCount = 1;
+    desc.sampleCount = 1;
+    desc.blend = BlendMode::Opaque;
+    desc.depthTest = depthAttachment;
+    desc.depthWrite = depthAttachment;
+    desc.colorWrite = true;
+    desc.depthOnly = false;
+    desc.label = "VirtualTextureFeedback";
+    return desc;
+}
+
 class VirtualTextureFeedbackPass {
 public:
     VirtualTextureFeedbackPass() = default;
