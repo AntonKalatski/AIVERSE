@@ -39,7 +39,9 @@ public:
     bool stroke(const Stroke& stroke);
     void flush();
     // Rectangular upload uses top-to-bottom logical UV rows (no backend-specific caller flip).
-    void upload(int x, int y, int w, int h, const void* rgba, int pitch);
+    // Returns false if staging or GPU blit allocation failed. Callers may
+    // retain CPU source bytes and retry on the following presentation frame.
+    bool upload(int x, int y, int w, int h, const void* rgba, int pitch);
     gfx::TextureHandle handle() const { return texture_; }
     int width() const { return width_; }
     int height() const { return height_; }
