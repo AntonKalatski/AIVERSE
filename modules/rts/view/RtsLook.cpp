@@ -915,12 +915,19 @@ Model* RtsView::loadModelCached(gfx::Device& dev, const UnitType& t, const std::
             std::vector<std::string> w;
             m = loadModel(path, read_, &w, resources_.textures());
             for (auto& s : w) warn(t, s);
+            if (!m)throw std::runtime_error("Model load failed: "+path);
             if (policy.clusters || policy.shadowClusters || policy.occluder) prepareGeometry(*m);
-            uploadModel(dev, *m);
+            if (!uploadModel(dev, *m))
+                throw std::runtime_error("Model GPU upload failed: "+path);
         } catch (const std::exception& e) {
             warn(t, e.what());
-            m.reset();
+            // Upload may have allocated geometry or earlier images before a
+            // later texture/morph allocation failed. Never call m.reset()
+            // while those handles may still be in flight on the GPU.
+            if(m)resources_.retireUnpublished(dev,m);
         }
+        // Preserve the existing failed-load tombstone (null Model) so this
+        // authored type can choose a safe fallback instead of a broken draw.
         return resources_.insertIfAbsent(key,std::move(m));
     }
     return it->second.get();
