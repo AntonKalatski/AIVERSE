@@ -95,6 +95,31 @@ public:
         [barrier waitUntilCompleted];
         return barrier.status==MTLCommandBufferStatusCompleted;
     }
+    uint64_t beginResourceRetirement() override {
+        // This marker is ordered after previously committed GPU work, but
+        // NOT after the current frame's uncommitted command buffer.
+        if(!queue_ || enc_ || compute_ || gpuIcbEncoder_ ||
+           !gpuHealthy_->load())return 0;
+        id<MTLCommandBuffer> marker=[queue_ commandBuffer];
+        if(!marker)return 0;
+        const auto state=std::make_shared<std::atomic<int>>(0);
+        const uint64_t token=nextRetirementToken_++;
+        retirementTokens_.emplace(token,state);
+        [marker addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+            state->store(completed.status==MTLCommandBufferStatusCompleted ? 1 : -1);
+        }];
+        [marker commit];
+        return token;
+    }
+    bool resourceRetirementComplete(uint64_t token) override {
+        const auto it=retirementTokens_.find(token);
+        return it!=retirementTokens_.end() && it->second->load()==1;
+    }
+    void endResourceRetirement(uint64_t token) override {
+        const auto it=retirementTokens_.find(token);
+        if(it!=retirementTokens_.end() && it->second->load()==1)
+            retirementTokens_.erase(it);
+    }
     bool supports(PixelFormat f) const override {
         bool apple = false, bc = false;
 #if TARGET_OS_IPHONE
@@ -1512,6 +1537,10 @@ private:
     id<MTLTexture> depth_;
     dispatch_semaphore_t frameSemaphore_;
     uint64_t frame_ = 0;
+    uint64_t nextRetirementToken_ = 1;
+    // Only the GPU callback modifies the atomic status. The token map is
+    // accessed exclusively on the Metal device owner thread.
+    std::map<uint64_t,std::shared_ptr<std::atomic<int>>> retirementTokens_;
     // Each frame slot is recycled only after its completion semaphore.
     // Each submission gets its own reusable resources to avoid overwriting
     // buffers referenced by earlier commands in the same frame.
