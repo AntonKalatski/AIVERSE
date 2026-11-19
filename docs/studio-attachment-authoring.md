@@ -78,3 +78,25 @@ The **Reimport & Publish** button queues the request; the next Studio
 window drawing, not inside the current ImGui button callback. This is still
 blocking once that update begins, and graphics Device-frame legality must be
 confirmed on Metal/Vulkan/GLES during the final native validation.
+
+
+## Stage 156: embedded 3D preview and deferred provider retirement
+
+The Studio attachment authoring tab now includes a **real offscreen 3D viewport**
+for the imported source Model and compiled child sockets. Drag the image to
+orbit the camera; when the source has a clip, preview the first imported clip
+with a Play control and phase slider. The viewport uses its own provider-owned
+source/child resource session, the existing Studio offscreen-target retirement
+queue, and a render-only `View` submission of a sampled pose. It never
+borrows another editor window's Model or evaluates a second AnimationGraph.
+
+Successful Reimport & Publish now swaps to an entirely staged provider session
+before GPU-idle retirement. Old provider owners stay alive in a **bounded
+deferred queue**; when 8 sessions are retained, a full-idle cleanup is
+attempted. GPU completion failure retains resource owners; shutdown requires
+a full idle proof. This avoids a mandatory GPU wait on EVERY authoring edit,
+but it is NOT fully nonblocking fence retirement, and multiple complete
+Models/textures can temporarily occupy VRAM. `ModelAssetProvider::shutdown`
+itself still waits for GPU idle. Preview and retirement have NOT yet been
+compiled or run on Metal, Vulkan or GLES; see
+[Stage 156 handoff](agent-handoffs/animation-stage156-studio-attachment-preview-deferred-retirement-2026-11-20.md).
