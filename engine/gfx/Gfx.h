@@ -530,6 +530,11 @@ class Device {
 public:
     virtual ~Device() = default;
     virtual const DeviceInfo& info() const = 0;
+    // Number of simultaneously addressable fragment texture *resources*
+    // via setTexture(), not dynamic sampler state objects. Legacy GL and
+    // portable Vulkan default to 16. Backends with larger binding tables
+    // override this (Metal textures 0..31, samplers only 0..15).
+    virtual int maxFragmentTextureSlots() const { return 16; }
 
     // Resources
     virtual BufferHandle createBuffer(const BufferDesc& d) = 0;
