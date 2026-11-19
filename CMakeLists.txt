@@ -2390,6 +2390,28 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos"
         COMMAND aiverse_metal_renderer_graph_vt_gutter_gpu_test)
     set_tests_properties(metal_renderer_graph_vt_gutter_gpu PROPERTIES
         LABELS "METAL;GPU;TEXTURE_RHI;EXPERIMENTAL_ICB;RENDERER3D;SHADER_GRAPH;VIRTUAL_TEXTURE;BILINEAR_ORACLE"
+        PASS_REGULAR_EXPRESSION "PASS: production Renderer3D Shader Graph nonuniform guttered disk VT mixed Metal GPU ICB seam parity"
+        FAIL_REGULAR_EXPRESSION "FAIL:"
         TIMEOUT 120
         ENVIRONMENT "AIVERSE_EXPERIMENTAL_METAL_ICB=1;AIVERSE_GPU_ENCODED_ICB=1;AIVERSE_GPU_AUTHORED_DRAWS=1;AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR=1;AIVERSE_EXPERIMENTAL_ICB_MIXED_PBR=1;AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT=1;AIVERSE_EXPERIMENTAL_ICB_MIXED_VT=1;AIVERSE_EXPERIMENTAL_ICB_SHADER_GRAPH=1;AIVERSE_GPU_ICB_ADAPTIVE=0;AIVERSE_ADAPTIVE_DRAW_GROUPS=0;AIVERSE_GPU_ICB_MIN_COMMANDS=2;AIVERSE_ICB_TRACE=1")
+endif()
+
+
+# The macOS application delegate can exit the process without returning
+# the test fixture's aiverseMain() status. Never mark a real native GPU
+# acceptance PASS when its log contains a failed runtime assertion.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    foreach(_texture_gpu_ctest IN ITEMS
+        metal_texture_gpu
+        metal_texture_icb_graph_gpu
+        metal_renderer_graph_icb_gpu
+        metal_renderer_graph_vt_icb_gpu
+        metal_renderer_graph_vt_seam_gpu
+        metal_vt_bilinear_gpu
+        metal_renderer_graph_vt_gutter_gpu)
+        if(TEST ${_texture_gpu_ctest})
+            set_tests_properties(${_texture_gpu_ctest} PROPERTIES
+                FAIL_REGULAR_EXPRESSION "FAIL:")
+        endif()
+    endforeach()
 endif()
