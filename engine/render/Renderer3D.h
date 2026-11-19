@@ -351,13 +351,21 @@ public:
     // Unique texture/buffer handles are counted once, including scene
     // capture aliases and per-view motion buffers; deferred motion is
     // reported separately. Excludes externally owned Model/Material assets,
-    // LightSystem, uploaded scene pools and PRISMA (never sum them twice).
+    // External Model/Material assets and PRISMA are always excluded;
+    // LightSystem, scene upload, culling and GPU-authored pools are included
+    // via their exclusive owner telemetry, never through borrowed aliases.
     struct ResidentMemoryStats {
         uint64_t liveTextureKnownBytes = 0;
         uint64_t liveBufferKnownBytes = 0;
         uint64_t sceneCaptureKnownBytes = 0;
         uint64_t objectMotionKnownBytes = 0;
         uint64_t pendingMotionKnownBytes = 0;
+        // Subowners not part of the direct Renderer3D handle list; each
+        // owns disjoint allocations and must not include borrowed assets.
+        uint64_t lightSystemKnownBytes = 0;
+        uint64_t persistentUploadKnownBytes = 0;
+        uint64_t persistentCullKnownBytes = 0;
+        uint64_t gpuAuthoredKnownBytes = 0;
         size_t liveTextures = 0, liveBuffers = 0;
         size_t unknownTextures = 0, unknownBuffers = 0;
         size_t multiVersionBuffers = 0;
