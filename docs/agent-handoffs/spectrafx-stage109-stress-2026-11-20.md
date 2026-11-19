@@ -56,3 +56,16 @@ The previous Stage 107 fixture asserted that the *final post-bloom* screen-cente
 ## Next tasks for subsequent agent
 
 Do **one strict native acceptance** with stress env variables and optional PPM captures as above, record exact SHA and output `spectrafx_retirement`, `alpha_views_first`, `prisma_hdr`, `spectrafx_metal_scene` and `metal_evidence`. For any failure, inspect actual compile/link/shader/pixel diagnostic and implement precise fixes with a new stage handoff. Visually inspect the saved PPM images (not received in this session), and perform interactive Editor Preview pause/step/orbit/hot-reload QA. For production readiness, review true Metal residency/driver leaks and frame pacing with Instruments, and verify Vulkan/GLES CPU fallback. Do not merge divergent `main` or any other agent branch without targeted conflict review.
+
+## User-reported full native verification — PASSED (2026-11-20)
+
+Stage 109 and all Stage 106–109 changes were subsequently accepted
+on Apple M3 Ultra at SHA
+`b06c6d0f4dc820455d9c7b25dc98aa33397adca7`:
+126/126 full CTests, 11/11 SpectraFX, 4/4 real MetalGPU, all 9/9
+acceptance stages exit 0 with no skipped stages. Extended real RHI
+stress: 512 frames x 256 particles, peak nominal payload 36 KiB,
+zero retired remaining and healthy GPU. Alpha index camera probe:
+51/229. PRISMA HDR/Bloom: enabled, 10 passes, 232 changed FX pixels.
+See Stage 110 handoff for full evidence; do not infer real VRAM
+residency or interactive Editor visual validation from these results.

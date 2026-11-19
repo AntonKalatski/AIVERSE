@@ -1,5 +1,21 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 110 — full native Stage 106–109 acceptance PASS on M3 Ultra
+
+**Validated source:** `b06c6d0f4dc820455d9c7b25dc98aa33397adca7`.
+User-provided real Darwin full acceptance: **9/9 stages exit 0**,
+**126/126 full CTest PASS**, **11/11 SpectraFX PASS**,
+**4/4 MetalGPU PASS**, `SKIP=0 MISSING=0 FAIL=0`.
+Native 512x256 RHI churn PASS, `retire_remaining=0 gpu_healthy=1`;
+opposite-view alpha sorted index samples `51/229`;
+PRISMA HDR/Bloom `prisma_hdr=1 passes=10 fx_pixels=232`,
+real Renderer3D `depth_center_delta=0`.
+Seven PPM files captured on user's Mac, **not yet visually inspected**.
+No production source changes in this documentation-only stage.
+See `docs/agent-handoffs/spectrafx-stage110-native-acceptance-2026-11-20.md`
+for exact logs, limitations and the next steps.
+
+
 ## Stage 109 — 2048 production GPU-owner retirements + optional Metal stress (NOT RUN)
 
 Code `a5bf5979a17019a2e8e4b4170922698e627d4a89` grows the
