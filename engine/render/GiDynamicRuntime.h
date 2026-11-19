@@ -167,10 +167,20 @@ public:
     // Caller MUST clearDynamicGiOverlay() on the renderer before shutdown/recreation
     // of this runtime or renderer, or before a different gfx::Device is installed.
     bool bind(Renderer3D& renderer) const {
-        // Avoid presenting ghost GI if the host has not yet flushed invalidated
-        // light/geometry texels. update(0, camera) is sufficient to flush them.
-        return ready() && !clearPending_ && pendingRegionalClear_.empty() &&
-               renderer.setDynamicGiOverlay(&atlas_,origin_,spacing_,nx_,ny_,nz_);
+        // A previous frame may have left this borrowed atlas bound in Renderer3D.
+        // Returning false alone would NOT prevent the old GI shader permutation
+        // from sampling stale radiance after the light/geometry revision changed.
+        if (!ready() || clearPending_ || !pendingRegionalClear_.empty()) {
+            renderer.clearDynamicGiOverlay();
+            return false;
+        }
+        // update(0, camera) flushes invalidated zero coefficients even when
+        // the host has paused the bounded ray-tracing update budget.
+        if (!renderer.setDynamicGiOverlay(&atlas_,origin_,spacing_,nx_,ny_,nz_)) {
+            renderer.clearDynamicGiOverlay();
+            return false;
+        }
+        return true;
     }
     void unbind(Renderer3D& renderer) const { renderer.clearDynamicGiOverlay(); }
 
