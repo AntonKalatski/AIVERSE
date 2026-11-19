@@ -2500,15 +2500,6 @@ if(AIVERSE_ENABLE_PHYSICS AND NOT EMSCRIPTEN)
     endif()
 endif()
 
-# VIVID Creator standalone app (same platform + RHI + ImGui renderer as
-# modelview). Does not alter the editor/runtime path of other genres.
-if(AIVERSE_BUILD_TESTS AND AIVERSE_DESKTOP)
-    add_executable(aiverse_vivid_creator apps/vivid_creator/main.cpp)
-    target_link_libraries(aiverse_vivid_creator PRIVATE
-        aiverse_runtime aiverse_vivid_human aiverse_vivid_actor aiverse_imgui)
-    target_compile_features(aiverse_vivid_creator PRIVATE cxx_std_20)
-endif()
-
 # VIVID stage 5D: real macOS scene/renderer visual acceptance preview.
 # GUI-driven, NOT a CTest (requires drawable, snapshots and actual shadows).
 # The runtime object library owns the platform entry point (aiverseMain).
