@@ -11,6 +11,7 @@
 #include <limits>
 #include <span>
 #include <map>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -29,7 +30,7 @@ public:
         std::size_t primitivesValidated=0;
     };
     bool set(std::uint32_t vertex,std::string joint,float weight) {
-        if(joint.empty()||joint.size()>128 ||
+        if(strokeStart_ || joint.empty()||joint.size()>128 ||
            joint.find_first_of("\n\r")!=std::string::npos ||
            !std::isfinite(weight)||weight<0||weight>1 ||
            (edits_.size()>=65536 && !edits_.count(vertex)))
@@ -40,17 +41,17 @@ public:
         return true;
     }
     bool erase(std::uint32_t vertex) {
-        if(!edits_.count(vertex))return false;
+        if(strokeStart_ || !edits_.count(vertex))return false;
         auto next=edits_;
         next.erase(vertex);
         publish(std::move(next));
         return true;
     }
-    void clear() {if(!edits_.empty())publish({});}
+    void clear() {if(!strokeStart_ && !edits_.empty())publish({});}
     bool canUndo() const noexcept {return !undo_.empty();}
     bool canRedo() const noexcept {return !redo_.empty();}
     bool undo() {
-        if(undo_.empty())return false;
+        if(strokeStart_ || undo_.empty())return false;
         if(redo_.size()==kHistory)redo_.erase(redo_.begin());
         redo_.push_back(std::move(edits_));
         edits_=std::move(undo_.back());
@@ -58,7 +59,7 @@ public:
         return true;
     }
     bool redo() {
-        if(redo_.empty())return false;
+        if(strokeStart_ || redo_.empty())return false;
         if(undo_.size()==kHistory)undo_.erase(undo_.begin());
         undo_.push_back(std::move(edits_));
         edits_=std::move(redo_.back());
@@ -66,6 +67,40 @@ public:
         return true;
     }
     const std::map<std::uint32_t,Edit>& edits() const noexcept {return edits_;}
+    // A drag gesture is one reversible history operation, regardless of
+    // how many ray hits were sampled. In-progress edits are used only by
+    // the editor and never applied to the uploaded Model until mouse-up.
+    bool beginStroke() {
+        if(strokeStart_)return false;
+        strokeStart_=edits_;
+        strokeChanged_=false;
+        return true;
+    }
+    bool strokeActive() const noexcept{return strokeStart_.has_value();}
+    bool endStroke(bool commit=true) {
+        if(!strokeStart_)return false;
+        const bool changed=strokeChanged_ && edits_!=*strokeStart_;
+        if(!commit) {
+            edits_=std::move(*strokeStart_);
+        }else if(changed) {
+            if(undo_.size()==kHistory)undo_.erase(undo_.begin());
+            undo_.push_back(std::move(*strokeStart_));
+            redo_.clear();
+        }
+        strokeStart_.reset();
+        strokeChanged_=false;
+        return commit&&changed;
+    }
+    bool strokeBrush(const render::Model& model,std::size_t meshIndex,
+                     std::uint32_t center,const std::string& joint,
+                     float target,float radius,float strength,bool mirrorX=false,
+               bool recordHistory=true) {
+        if(!strokeStart_)return false;
+        const bool result=brush(model,meshIndex,center,joint,
+                                target,radius,strength,mirrorX,false);
+        if(result)strokeChanged_=true;
+        return result;
+    }
 
     // Read the currently presented weight for one named node. The caller
     // supplies a skinned mesh owning the global source vertex. This is also
@@ -196,7 +231,10 @@ public:
             }
         }
         if(!changed)return false;
-        publish(std::move(next));
+        if(recordHistory) {
+            if(strokeStart_)return false;
+            publish(std::move(next));
+        }else edits_=std::move(next);
         return true;
     }
 
@@ -381,5 +419,7 @@ private:
     static constexpr std::size_t kHistory=32;
     std::map<std::uint32_t,Edit> edits_;
     std::vector<std::map<std::uint32_t,Edit>> undo_,redo_;
+    std::optional<std::map<std::uint32_t,Edit>> strokeStart_;
+    bool strokeChanged_=false;
 };
 } // namespace aiverse::vivid
