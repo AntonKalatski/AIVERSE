@@ -615,6 +615,7 @@ int aiverseMain(int argc, char** argv) {
     }
     if (v.files.empty() && v.gameDir.empty()) {
         std::printf("usage: aiverse_modelview model.glb [model2.gltf@Clip ...] [--clip C] [--time T] [--variant V] [--quality low|medium|high] [--no-merge] [--provider]\n"
+                    "       aiverse_modelview parent.glb@Walk --attach child.glb@Hand.R [--attachments-file file.json]\n"
                     "       aiverse_modelview --game templates/<id> [--types a,b] [--start T] [--fixed-dt S]\n");
         return 1;
     }
