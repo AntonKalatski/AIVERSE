@@ -1446,3 +1446,29 @@ their own revision.
 
 **Verification:** source commits only; C++ compilation and CPU/GPU
 integration tests NOT RUN.
+
+
+## TerraWeave archive-directory prepare (Stage 10P)
+
+`TerraWeaveVirtualAtlasSession::prepareFromArchiveDirectory(directory,
+physicalPages, maxBufferedPages, importedRevision, maxArchiveBytes,
+maxPages)` imports a trusted immutable archive using the bounded
+`gfx::loadVirtualTextureArchiveManifest` validator and then runs
+the existing candidate preparation path. A parse/metadata/disk error
+leaves any active/candidate resources unchanged and is available via
+`session.lastError()`; it does not promote an invalid archive.
+
+For multiple archives use
+`TerraWeaveVirtualAtlasDomains::prepareFromArchiveDirectory(domainId,
+directory, importedRevision, maxArchiveBytes, maxPages)`.
+Each domain retains its configured physical-page/CPU staging budgets.
+After success call the existing `pumpCandidate`, wait for fallback
+pages, `promote` and eventually retire old GPU resources **only after
+a real fence**. The model sampling resolver uses active-version wrap
+policy automatically; no manual U/V sampler reconstruction is needed
+for these imported archives. The original source tex1 fallback sampler
+must still match the source addressing.
+
+This is a *synchronous staging API*, not a GPU streaming/background
+filesystem mount. The source remains uncompiled and untested on native
+devices in this conversation.
