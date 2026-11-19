@@ -165,8 +165,11 @@ int aiverseMain(int argc, char** argv) {
         return models && after<before ? 0 : 1;
     }
     const std::string scenario = std::getenv("AIVERSE_PALETTE_TEST_CASE") ? std::getenv("AIVERSE_PALETTE_TEST_CASE") : "default";
-    auto model = scenario == "indirect" || scenario == "indirect_palette"
-        ? indirectFixture(scenario == "indirect_palette") : render::loadModel(argv[1],read);
+    // Cold-vs-warm packet screenshot parity uses the same self-contained
+    // varied-material 16-rigid-part fixture as the indirect palette test.
+    auto model = scenario == "indirect" || scenario == "indirect_palette" ||
+                 scenario == "static_packets"
+        ? indirectFixture(scenario != "indirect") : render::loadModel(argv[1],read);
     const std::string prefix = argv[2];
     const bool reflection=std::getenv("AIVERSE_SHADOW_TEST_REFLECTION")!=nullptr;
     render::Renderer3D renderer; render::Mesh floor; gfx::Device* device = nullptr;
@@ -205,12 +208,16 @@ int aiverseMain(int argc, char** argv) {
     cb.frame=[&](gfx::Device& d,double) {
         if(failed||finished||frame>40){platform::requestQuit();return;}
         const bool batch=frame>=15;
-        renderer.setModelMultiDrawEnabled((scenario != "indirect" &&
-                                            scenario != "indirect_palette") || batch);
-        for(size_t i=0;i<model->meshes.size();++i)
-            model->meshes[i].materialBatches=(batch && scenario != "indirect" &&
-                                               scenario != "indirect_palette")
-                ? batches[i] : std::vector<render::MaterialBatch>{};
+        renderer.setModelMultiDrawEnabled(scenario == "static_packets"
+            ? false : ((scenario != "indirect" &&
+                        scenario != "indirect_palette") || batch));
+        // Keep CPU packet primitive source pointers stable for the lifetime of
+        // the fixture. Other scenarios deliberately toggle material batches.
+        if (scenario != "static_packets")
+            for(size_t i=0;i<model->meshes.size();++i)
+                model->meshes[i].materialBatches=(batch && scenario != "indirect" &&
+                                                   scenario != "indirect_palette")
+                    ? batches[i] : std::vector<render::MaterialBatch>{};
         render::RTSCamera cam; cam.target={0,2,0};cam.distance=std::getenv("AIVERSE_SHADOW_TEST_DISTANCE")?float(std::atof(std::getenv("AIVERSE_SHADOW_TEST_DISTANCE"))):14;cam.pitch=.85f;cam.yaw=.45f;
         renderer.beginScene(cam,960,640);
         renderer.drawMesh(floor,{}, {.6f,.6f,.6f,1});
@@ -220,7 +227,14 @@ int aiverseMain(int argc, char** argv) {
         // puts static (or explicitly allowed rigid) instances into the
         // compute-generated ICB path. Without this flag a green test would
         // exercise CPU MDI only, regardless of AIVERSE_GPU_ENCODED_ICB.
-        if (scenario == "indirect") draw.flags |= render::kDrawStatic;
+        if (scenario == "indirect" || scenario == "static_packets")
+            draw.flags |= render::kDrawStatic;
+        if (scenario == "static_packets") {
+            draw.persistentId = 0x12345;
+            // Frames 0..14 are genuinely uncached; the second image is
+            // captured after 8 warm cache replays with identical geometry.
+            draw.staticPacketRevision = batch ? 1 : 0;
+        }
         const auto center=(model->boundsMin+model->boundsMax)*.5f;
         draw.world=render::mat4::scale({.25f,.25f,.25f})*render::mat4::translate({-center.x,-model->boundsMin.y,-center.z});
         if (scenario=="effects") {draw.dissolve=.18f;draw.outline={1,.2f,0,.025f};}
@@ -246,6 +260,16 @@ int aiverseMain(int argc, char** argv) {
             const auto& p=renderer.profile();
             std::printf("batch=%d shadow=%u opaque=%u total=%u error=%s\n",batch,p.draws[0],p.draws[1],renderer.drawCalls(),renderer.modelError().c_str());
             if(!batch){shadowBefore=p.draws[0];opaqueBefore=p.draws[1];}
+            else if (scenario == "static_packets") {
+                const auto stats = renderer.staticRenderPacketStats();
+                std::printf("static packet A/B: hits=%llu rebuilds=%llu declines=%llu bytes=%zu\n",
+                    (unsigned long long)stats.hits,
+                    (unsigned long long)stats.rebuilds,
+                    (unsigned long long)stats.declined,
+                    stats.retainedBytes);
+                if (!stats.hits || p.draws[0] != shadowBefore ||
+                    p.draws[1] != opaqueBefore) failed = true;
+            }
             else if (scenario == "indirect_palette") {
                 const bool supported = d.supportsMultiDrawIndirect();
                 const bool requested = std::getenv("AIVERSE_MDI_INSTANCE_PALETTE") &&
