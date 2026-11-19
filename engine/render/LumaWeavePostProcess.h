@@ -242,8 +242,8 @@ public:
     }
 
     bool wantsSurfaceReceiverPass() const override {
-        return frame_.eligible && !legacy_.count() &&
-               !legacy_.staticPointLightsActive() &&
+        return frame_.eligible && producer_.pbrAvailable() &&
+               !legacy_.count() && !legacy_.staticPointLightsActive() &&
                (quality_==LumaWeaveQuality::High ||
                 quality_==LumaWeaveQuality::Ultra) &&
                !(surface_.valid() && surfaceToken_==sceneToken_);
