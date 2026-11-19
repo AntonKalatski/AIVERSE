@@ -62,6 +62,9 @@ struct WaterSurfaceStyle {
     float depthTint=0.f; // deep-water tint contribution, 0..1
     float underwaterDistortion=0.f; // 0..1, compositor only
     float underwaterScattering=0.f; // 0..1, compositor only
+    float rapidFoamStrength=0.f; // 0..1, opt-in current-generated whitewater
+    float rapidFlowThreshold=3.f; // 0..100 m/s before foam begins
+    float rapidNoiseScale=1.f; // 0.1..8 visual breakup frequency
 };
 
 namespace water_mesh_detail {
