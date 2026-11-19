@@ -183,9 +183,11 @@ bool IndexResidency::updateIncremental(
     struct Job {
         uint32_t primitive = 0, node = 0;
         Range range{};
+        std::vector<uint32_t> diskIndices;
     };
     std::vector<Job> jobs;
-    uint64_t newBytes = 0, bandwidthDeferrals = 0, fenceDeferrals = 0;
+    uint64_t newBytes = 0, bandwidthDeferrals = 0;
+    uint64_t fenceDeferrals = 0, diskDeferrals = 0;
 
     // Allocate from completed holes or from never-touched tail space.
     // Used only on temporary drafts; a rejected whole sibling group rolls
@@ -231,6 +233,31 @@ bool IndexResidency::updateIncremental(
             }
             if (!allWanted) break;
             if (!bytes) continue;
+
+            // Disk page readiness is an independent constraint from GPU
+            // budget/slot availability. Queue all missing siblings, but do
+            // not block the renderer thread or expose an incomplete group.
+            std::map<uint32_t,std::vector<uint32_t>> payloads;
+            if(diskPages_){
+                bool readyGroup=true;
+                for(uint32_t child=0;child<parent.childCount;++child){
+                    const uint32_t id=parent.firstChild+child;
+                    if(next[p][id].valid())continue;
+                    std::vector<uint32_t> page;
+                    if(!diskPages_->ready(p,id,page)){
+                        (void)diskPages_->request(p,id);
+                        readyGroup=false;
+                    }else if(page.size()!=nodes[id].indexCount){
+                        if(error)*error="STRATA disk page index count mismatch";
+                        return false;
+                    }else payloads.emplace(id,std::move(page));
+                }
+                if(!readyGroup){
+                    ++diskDeferrals;
+                    break; // existing coarse parent remains drawable
+                }
+            }
+
             if (incremental_->uploadBudget &&
                 (bytes > incremental_->uploadBudget ||
                  newBytes > incremental_->uploadBudget - bytes)) {
@@ -250,7 +277,16 @@ bool IndexResidency::updateIncremental(
                     fits = false;
                     break;
                 }
-                group.push_back({p,id,range});
+                Job job{p,id,range,{}};
+                if(diskPages_){
+                    auto payload=payloads.find(id);
+                    if(payload==payloads.end()){
+                        if(error)*error="STRATA disk sibling payload disappeared";
+                        return false;
+                    }
+                    job.diskIndices=std::move(payload->second);
+                }
+                group.push_back(std::move(job));
             }
             if (!fits) {
                 ++fenceDeferrals;
@@ -274,8 +310,10 @@ bool IndexResidency::updateIncremental(
     for (const Job& job : jobs) {
         const auto& geometry = asset_->primitives[job.primitive].geometry;
         const auto& node = geometry.nodes[job.node];
+        const uint32_t* bytes=diskPages_ ? job.diskIndices.data()
+                                        : geometry.indices.data()+node.firstIndex;
         if (!device_->updateSharedBufferChecked(
-                buffer_, geometry.indices.data() + node.firstIndex,
+                buffer_, bytes,
                 size_t(node.indexCount) * sizeof(uint32_t),
                 size_t(job.range.first) * sizeof(uint32_t))) {
             ++stats_.failedUploads;
@@ -290,6 +328,11 @@ bool IndexResidency::updateIncremental(
     incremental_->retired = std::move(retired);
     incremental_->highWater = highWater;
     spans_ = std::move(next);
+    // Only after all GPU writes and the residency table are published can
+    // verified disk pages be removed from the bounded staging cache.
+    if(diskPages_)
+        for(const auto& job:jobs)
+            diskPages_->consume(job.primitive,job.node);
 
     uint64_t active = 0;
     uint32_t count = 0;
@@ -307,7 +350,16 @@ bool IndexResidency::updateIncremental(
     stats_.uploadCalls += jobs.size();
     stats_.uploadBudgetDeferrals += bandwidthDeferrals;
     stats_.fenceReuseDeferrals += fenceDeferrals;
-    stats_.deferredDemands += deferred + bandwidthDeferrals + fenceDeferrals;
+    stats_.deferredDemands += deferred + bandwidthDeferrals +
+                              fenceDeferrals + diskDeferrals;
+    if(diskPages_){
+        const auto disk=diskPages_->stats();
+        stats_.diskCompletedReads=disk.completedReads;
+        stats_.diskBytesRead=disk.bytesRead;
+        stats_.diskFailures=disk.failedReads;
+        stats_.diskPending=disk.queued;
+        stats_.diskReadyBytes=disk.readyBytes;
+    }
     // No generation increment: the exact GPU RHI buffer HANDLE is stable.
     // Vulkan may internally version the mapped storage for GPU safety.
     return true;
