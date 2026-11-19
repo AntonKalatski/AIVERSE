@@ -112,6 +112,13 @@ struct Stats {
     lib::animation::AnimationBudgetStats budget;
     size_t visible=0,drawable=0,animated=0;
 };
+// Submission diagnostics are not animation clocks or gameplay counters.
+// Values reset at each View::update / beginPreparedFrame, and count actual
+// submitted source poses during the following synchronous View draws.
+struct ModelRetargetStats {
+    uint64_t compiledUsed=0,compiledRejected=0;
+    uint64_t exactPoseReused=0,legacyValidated=0,bindPoseFallback=0;
+};
 class View final {
 public:
     explicit View(size_t animationWorkers=
@@ -147,6 +154,7 @@ public:
     // generic scene for characters, buildings, props and cinematics.
     Stats update(std::span<const Object> objects,float dt) {
         stats_={};
+        retargetStats_={};
         if(++frameStamp_==0) { frameStamp_=1; lodState_.clear(); }
         std::vector<lib::animation::AnimationSourceFrame> sources;
         sources.reserve(objects.size());
@@ -203,6 +211,7 @@ public:
     // Begin one host submission frame to prune stale LOD hysteresis IDs,
     // without invoking any ECS animation system or GPU command.
     void beginPreparedFrame() {
+        retargetStats_={};
         const uint64_t previous=frameStamp_;
         if(++frameStamp_==0) {frameStamp_=1;lodState_.clear();return;}
         for(auto it=lodState_.begin();it!=lodState_.end();) {
@@ -334,13 +343,16 @@ public:
                         retargetMatrices)) {
                     draw.pose=&retargetPose;
                     draw.nodeWorld=&retargetMatrices;
+                    ++retargetStats_.compiledUsed;
                 }else {
                     draw.pose=nullptr;
                     draw.nodeWorld=nullptr;
+                    ++retargetStats_.compiledRejected;
                 }
             }else if(compatibleModelPose(*rig,*draw.model)) {
                 draw.pose=sourcePose;
                 draw.nodeWorld=sourceMatrices;
+                ++retargetStats_.exactPoseReused;
             }else if(chosenLod && chosenLod->retarget &&
                      retargetModelPose(*rig,*draw.model,
                          std::span<const render::NodePose>(
@@ -351,15 +363,18 @@ public:
                 // plan; Stage 123 native clients should compile at publish.
                 draw.pose=&retargetPose;
                 draw.nodeWorld=&retargetMatrices;
+                ++retargetStats_.legacyValidated;
             }else {
                 // A mismatched source rig MUST NOT be applied to the
                 // visual Model. Keep the visual's own bind pose.
                 draw.pose=nullptr;
                 draw.nodeWorld=nullptr;
+                ++retargetStats_.bindPoseFallback;
             }
         }else if(draw.model && rig && draw.model!=rig) {
             draw.pose=nullptr;
             draw.nodeWorld=nullptr;
+            ++retargetStats_.bindPoseFallback;
         }
         if(draw.model) {
             if(!draw.persistentId)draw.persistentId=obj.id;
@@ -453,6 +468,7 @@ public:
     }
 
     const Stats& stats() const noexcept{return stats_;}
+    ModelRetargetStats modelRetargetStats() const noexcept{return retargetStats_;}
     void setBudgetPolicy(lib::animation::AnimationBudgetPolicy policy) {
         budgets_=policy;
     }
@@ -471,6 +487,7 @@ public:
         bridge_.clear(presentation_);
         lodState_.clear();
         stats_={};
+        retargetStats_={};
     }
 private:
     struct LodSelection {
@@ -496,6 +513,7 @@ private:
     lib::animation::AnimationBudgetPolicy budgets_;
     size_t workerCount_=0,minimumParallelActors_=16;
     Stats stats_;
+    mutable ModelRetargetStats retargetStats_;
     uint64_t frameStamp_=0;
     mutable std::unordered_map<uint64_t,LodSelection> lodState_;
     std::vector<Object> packetObjects_;
