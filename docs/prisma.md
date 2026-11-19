@@ -683,6 +683,62 @@ A GPU fence-completed retirement path is still required for robust
 target resizing and teardown while work is in flight. See
 `docs/handoffs/prisma-stage-26.md`.
 
+
+## Stage 27 — deformation-aware and instanced object motion vectors
+
+The optional HDR `motionBlur` path now contains two new
+`Renderer3D` velocity render variants, both active only with
+`AIVERSE_PRISMA_MOTION_BLUR=1`:
+
+**Rigid velocity instancing.** Geometry-equivalent visible opaque rigid
+`ModelItem` instances are grouped by source model pointer, first index
+and index count. A separate 16-instance GLSL/MSL pipeline consumes
+per-instance *current and previous* MVP matrices, submitting one
+`drawIndexed(..., instanceCount)` per compatible group (up to 16
+instances per group). The uniforms occupy at most 2064 bytes; a single
+item or missing batched pipeline still uses the Stage 26 singleton
+shader. Matching shader/geometry groups are presentation-only; the
+existing color draw batching is not altered.
+
+**Skinned and morph velocity.** Palette-skinned objects and morph-target
+primitives with a nonzero stable `persistentId` can produce actual
+deformed vertex velocities. The renderer snapshots the current joint
+palette and eight morph weights per
+`(persistentId, nodeIndex, geometryPrimitive)`, retaining the previous
+frame's values independently for each camera. A separate shader deforms
+each mesh vertex for **both** the current and previous pose, computes
+two clip positions and stores screen UV displacement. Current and
+previous U3/U4 blocks hold up to 80 joints (3 rows each); U5 contains
+the two 8-weight morph arrays and morph atlas parameters; tex8 reuses
+the existing morph delta texture. GPU skinning/morph math is kept
+separate from the deterministic simulation and is not a CPU-skinned
+mesh upload. A missing previous pose or changed source model identity
+causes the deformable primitive to skip object-velocity override rather
+than invent movement.
+
+**Depth-edge motion blur.** Motion Blur now samples the original
+scene depth at each color gather position and reduces contributions
+across large depth discontinuities. This protects foreground outlines
+against unrelated background colors, although the rejection threshold
+is based on non-linear hardware depth, so it is a conservative
+approximation, not physically exact depth-layer motion reconstruction.
+`Prisma::buildProgram` supports `depth2d<float>` for explicitly marked
+depth samplers on Metal while keeping GLSL sampler2D conventions.
+
+Eligibility remains intentionally conservative: visible, opaque
+non-displaced primitives with stable IDs. Baked animation (whose pose
+comes from clip textures), material ShaderGraph vertex displacement,
+transparent/masked models and custom geometry are not yet handled by
+the new deformed-velocity pipeline. Velocity target resize, first
+frame and camera cuts seed history rather than extrapolating invalid
+motion. Renderer3D owns lazy velocity shader/pipeline and target
+lifetime.
+
+**Verification deferred** by user request: native compilation,
+Metal/GL shader validation, visual comparison, CTest and GPU profiling
+have NOT RUN. Do not enable these experimental paths by default before
+they are validated. Details: `docs/handoffs/prisma-stage-27.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
