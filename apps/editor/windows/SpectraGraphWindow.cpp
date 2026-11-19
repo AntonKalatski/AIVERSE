@@ -1011,6 +1011,12 @@ private:
                 }
                 ImGui::Text("GPU groups: %u    Sources: %u",
                             ps.gpuGroups,ps.activeSources);
+                ImGui::Text("Automatic VFX: budget %u, pressure %s",
+                    ps.continuousFrameBudget,ps.pressureActive?"active":"off");
+                ImGui::Text("Continuous births dropped under pressure: %llu",
+                    static_cast<unsigned long long>(ps.pressureSkipped));
+                ImGui::Text("Source handles: %u / %u",
+                    ps.activeSources,ps.sourceCapacity);
                 if(cp.gpuDeviceHealthKnown) {
                     ImGui::Text("Metal health: %s",
                                 cp.gpuDeviceHealthy?"healthy":"UNHEALTHY");
@@ -1029,6 +1035,18 @@ private:
                             cp.freshGroups,cp.staleGroups,cp.missingGroups);
                 ImGui::Text("Pending: %u  Recoverable*: %u",
                             cp.pendingGroups,cp.restoreEligibleGroups);
+                ImGui::Text("Binary export ready: %u group(s)",
+                            cp.exportReadyGroups);
+                ImGui::BeginDisabled(cp.exportReadyGroups==0);
+                if(ImGui::Button("Save fresh GPU checkpoint")) {
+                    std::string fileOrReason;
+                    const bool ok=ed.saveFreshSpectraGpuCheckpoint(fileOrReason);
+                    message_=(ok?"GPU diagnostic saved: ":"GPU export unavailable: ")+
+                             fileOrReason;
+                }
+                ImGui::EndDisabled();
+                ImGui::TextDisabled("Only a complete current-revision GPU state; "
+                                    "no historical rewind or ECS save.");
                 ImGui::Text("Readbacks: %llu / %llu complete, %llu failed",
                             static_cast<unsigned long long>(cp.requests),
                             static_cast<unsigned long long>(cp.completed),
