@@ -220,6 +220,9 @@ public:
             onDetach(affected);
         }
         requireNoModelReaders("invalidateSources");
+        // Retirement diagnostics execute synchronously from enqueue().
+        // Keep them inside the same no-mutation scope as the detach hook.
+        ModelDetachCallbackScope retirementCallback(*this);
         for(const auto& item:affected) {
             const auto it=models_.find(item.key);
             if(it==models_.end())continue;
@@ -288,6 +291,9 @@ public:
                     onRelease(it->second.get());
                 }
                 requireNoModelReaders("replace");
+                // The enqueue diagnostic observer must not recursively
+                // modify this cache while the resident iterator is live.
+                ModelDetachCallbackScope retirementCallback(*this);
                 retired_.enqueue(std::move(it->second));
             }
             it->second=std::move(replacement);
@@ -330,6 +336,7 @@ public:
             // releasing scratch resources; otherwise they are orphaned.
             requireNoDetachCallback("retireUnpublished");
             bindResourceDevice(dev);
+            ModelDetachCallbackScope retirementCallback(*this);
             retired_.enqueueFrom(model);
         }catch(...) {
             ++stagingQueueFailures_;
@@ -360,18 +367,36 @@ public:
     uint64_t stagingQueueFailures() const noexcept{return stagingQueueFailures_;}
     uint64_t stagingOrphanModels() const noexcept{return stagingOrphanModels_;}
 
-    // Publish a CPU-prepared model on the render thread. A synchronous
-    // load may have installed this key while the worker ran; do not
-    // overwrite that resource or upload its duplicate.
+    // CPU preparation runs on workers; GPU upload and map admission happen
+    // only on the render owner. Reject a failed/partial upload instead of
+    // publishing unusable geometry or destroying GPU-visible scratch memory.
+    // A duplicate resident key returns false BEFORE upload; the caller's
+    // unuploaded PreparedModel may then be destroyed normally.
     template<class Prepared>
     bool publishPrepared(gfx::Device& dev,const std::string& key,
                          Prepared&& prepared) {
         requireNoDetachCallback("publishPrepared");
         bindResourceDevice(dev);
-        if(models_.count(key))return false; // in-flight worker results cannot be silently lost
-        if(prepared.model)render::uploadModel(dev,*prepared.model);
-        insertIfAbsent(key,std::move(prepared.model));
-        return true;
+        if(models_.count(key))return false;
+        try {
+            if(prepared.model && !render::uploadModel(dev,*prepared.model)) {
+                ++preparedUploadFailures_;
+                retireUnpublished(dev,prepared.model);
+                return false;
+            }
+            insertIfAbsent(key,std::move(prepared.model));
+            return true;
+        }catch(...) {
+            // A device or allocation exception may leave one GPU buffer
+            // created before another failed. Preserve every partial Model
+            // behind the same explicit GPU retirement barrier.
+            ++preparedUploadFailures_;
+            if(prepared.model)retireUnpublished(dev,prepared.model);
+            throw;
+        }
+    }
+    uint64_t preparedUploadFailures() const noexcept {
+        return preparedUploadFailures_;
     }
 
     // Returned references are valid only on the same owner thread while
@@ -425,6 +450,7 @@ public:
                     onRelease(it->second.get());
                 }
                 requireNoModelReaders("trimUnused");
+                ModelDetachCallbackScope retirementCallback(*this);
                 retired_.enqueue(std::move(it->second));
             }
             it=models_.erase(it);
@@ -558,6 +584,10 @@ public:
         bindResourceDevice(dev);
         if(retired_.empty())return true;
         const auto before=retired_.pending();
+        // GPU token diagnostics may synchronously call back into this host.
+        // They may inspect residency but must never publish, evict or poll
+        // retirement recursively while the queue owns live iterators.
+        ModelDetachCallbackScope retirementCallback(*this);
         const bool done=retired_.collect(
             [&]{return dev.beginResourceRetirement();},
             [&](uint64_t token){return dev.resourceRetirementComplete(token);},
@@ -605,6 +635,8 @@ public:
         ++generation_;
         // The successful barrier above makes every token safe to close,
         // including callbacks whose status notification is still queued.
+        // Also guard diagnostics emitted by the full-idle shutdown drain.
+        ModelDetachCallbackScope retirementCallback(*this);
         if(!retired_.drain([]{return true;},
             [&](uint64_t token) {
                 // A successful waitForResourceIdle already proved safety.
@@ -688,6 +720,7 @@ private:
 #endif
     uint64_t generation_=0;
     uint64_t stagingQueueFailures_=0,stagingOrphanModels_=0;
+    uint64_t preparedUploadFailures_=0;
     size_t retirementSoftLimit_=128;
     uint64_t estimatedByteLimit_=0; // optional; never claims exact VRAM usage
     ModelMap models_;
