@@ -12539,3 +12539,21 @@ git pull --ff-only origin feature/texture-rhi-unification
 bash -n tools/texture-rhi-final-verify.sh
 bash tools/texture-rhi-final-verify.sh --jobs 4 --full-engine
 ```
+
+## Stage 10CL — atomic streamed physical VT mip chains (2026-11-19)
+
+**Source SHA:** `ccb0d391522af5da9fa79e0c2206b3d56988ff13`.
+**Branch:** `feature/texture-rhi-unification`, **PR #21 Draft**, `main` untouched.
+
+**Implemented source:**
+- New `engine/gfx/VirtualTexturePhysicalMips.h`: `buildVirtualTexturePhysicalMips(base, baseBytes, side, levels, srgb, output)` builds RGBA8 per-physical-page mip chains, 2x2 linear-light and premultiplied-alpha reduction with clamp-to-edge at odd final texels and sRGB transfer when requested. Caller supplies guttered physical page; no automatic neighbor gutter synthesis.
+- `engine/gfx/VirtualTextureStreamer.h`: `VirtualTextureStreamConfig.physicalMipLevels` defaults to **1** to preserve existing callers. Atlas allocation honors explicit `mipLevels`, capped by `maxTextureMipLevels` and physical size <=4096.
+- `stageMipChain(key, vector<VirtualTextureMipView>, pin)`: accepts exact mip-count, exactly packed RGBA8 payloads per mip, snapshots every level into bounded existing `TextureStreamQueue`, pre-invalidates any LRU-evicted slot in GPU table, fails/cancels partial staging and abandons incomplete reservation.
+- Legacy `stage(key, baseRGBA, bytes, pin)` preserves one-mip behavior and automatically generates the complete physical mip chain when opt-in `physicalMipLevels>1`. The already-connected `VirtualTextureFileStreamer` uses this method, thus existing disk archive format continues to work and receives optional physical mip chains.
+- Batch tickets are tracked by generation and original root ticket. Page publication and completion callback only happen when *all* mip uploads report success; `cancel(rootTicket)` cancels every remaining queued mip and retires unpublished page; failure quarantines atlas. Ownership remains render-thread-only. `drain()` return value still counts **individual submitted GPU uploads**, not logical page completions.
+
+**Explicit limitations:** The first ticket only identifies the entire batch for `cancel`. Existing one-mip behavior is the default and old pixel results should remain unchanged. The generated mips are **physical-page-local**, not two-level virtual parent-child trilinear sampling: page table still resolves exactly one fallback mip. Anisotropic seam quality depends on gutter width; high LOD with narrow gutters can bleed, so do not claim finished anisotropic or cross-mip seam fidelity. Cross-backend native atlas mip allocation/update support is not proven. Check Metal/Vulkan/GL array update per selected mip and driver capability.
+
+**Verification:** GitHub source API fetch/anchor-based modification, blob-tree commit and branch ref update only. **No** compile, tests, GPU readbacks, CI or benchmark executed (user explicitly requested features first, tests after all features). Prior 21+7 Mac PASS belongs only to older SHA `7494f32d`.
+
+**Next:** implement optional second (coarser) resident page-table mapping and explicit virtual-mip trilinear shader APIs on GLSL/MSL, with strict publishing/invalidation order for both tables. No default behavior change. Then create device-GPU pixel oracle and whole-engine regression. Append handoff after stage.

@@ -1892,3 +1892,11 @@ ICB by default without deliberate release gating.
 - Existing implicit-derivative entrypoints remain in place. The new gradient variants are **opt-in source only** until native compiler/GPU tests verify them.
 - This is not automatic anisotropic/trilinear VT: current physical atlas has one mip per slice and page-table stores one nearest resident parent. Build explicit multi-mip/page transitions and real backend pixel tests in subsequent stages.
 - Stage 10CK handoff appended to `docs/agent-handoffs/texture-rhi-2026-11-18.md`. Latest actual Mac 21 portable + seven Metal GPU tests were on older `7494f32d`; full-engine, new GLSL/MSL compile, Vulkan, GL, GLES, WebGL and mobile tests still **NOT RUN** on new SHA. Keep PR #21 Draft and experimental GPU ICB disabled by default.
+
+## Stage 10CL — multi-mip physical page streaming (source SHA ccb0d391)
+
+- Set `VirtualTextureStreamConfig.physicalMipLevels` 1..full chain; defaults to **1**. The atlas is a Texture2DArray with actual mip allocations.
+- Existing `VirtualTextureStreamer::stage(key, rawGutteredRGBA8, bytes, pin)` computes physical mips with premultiplied-alpha RGBA reduction and sRGB decode/re-encode for `RGBA8_sRGB`, then queues them atomically for publication. For authored precomputed physical mip arrays, use `stageMipChain(key, std::vector<VirtualTextureMipView>, pin)` with the exact level count.
+- The ticket returned from either stage call identifies an entire mip batch for `cancel(rootTicket)`; all mips must finish before page table publication. `drain()` counts mip updates, callbacks count **completed virtual pages**.
+- Existing `VirtualTextureFileStreamer` and disk page archives remain base-level files and work without API changes, with optional mip generation at GPU staging.
+- Not yet compiled or GPU-tested. Still need second virtual-mip mapping, shader blend, real backend readbacks, and final full engine validation. No changes to `main`; PR #21 remains Draft.
