@@ -508,6 +508,37 @@ void initialRevisionProbe() {
     CHECK(client.remoteRevision()==1);
 }
 
+// A revision probe on an unhealthy journal must never mark the client
+// synchronized just because the ECS revision number is available.
+// The operator may explicitly probe again after a fresh healthy server.
+void revisionProbeStopsOnUnhealthyJournal() {
+    auto sim=make();
+    ServerGateway unhealthy;
+    unhealthy.suspendJournal();
+    RemoteClient client(99231);
+    CHECK(client.requestRevision());
+    auto [c,s]=net::makeLoopbackPair();
+    drive(client,unhealthy,*sim,*c,*s,0,800,false);
+    CHECK(!client.probingRevision());
+    CHECK(!client.hasRemoteRevision());
+    CHECK(client.status()==ClientStatus::Uncertain);
+    CHECK(client.receipt().result==Result::Unknown);
+    CHECK(journalRetrySuspended(client.receipt().detail));
+    CHECK(registry(*sim).revision==0);
+
+    // A fresh durable host can be probed explicitly. The previously
+    // indeterminate probe must not auto-retry or cause a phantom edit.
+    ServerGateway recovered;
+    CHECK(client.requestRevision());
+    drive(client,recovered,*sim,*c,*s,800,1600,false);
+    CHECK(!client.probingRevision());
+    CHECK(client.hasRemoteRevision());
+    CHECK(client.remoteRevision()==0);
+    CHECK(client.status()==ClientStatus::Idle);
+    CHECK(recovered.entries().empty());
+    CHECK(registry(*sim).revision==0);
+}
+
 void conflictAfterServerRestart() {
     auto sim=make();
     ServerGateway gateway;
@@ -540,6 +571,7 @@ int main() {
     editorBridge();
     latencyAndReorderSimulation();
     initialRevisionProbe();
+    revisionProbeStopsOnUnhealthyJournal();
     unhealthyJournalStopsAutomaticResubmit();
     manualRetryAfterJournalRecovery();
     ordinaryUnknownStillRetriesOriginal();
