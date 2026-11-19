@@ -1250,3 +1250,111 @@ Then validate lossy meshlet transitions, cracks and GPU-selected
 draw input under an **exclusive per-pass renderer gate**, with
 conservative Legacy fallback. Update this agent handoff
 after every bounded stage.
+
+
+---
+
+## Stage 12.1 verification handoff — owner-proven actual two-view Metal sun-shadow DEPTH parity PASS (2026-11-19)
+
+### Branch and scope
+Branch `feature/strata-virtual-geometry`, PR #35 Draft against `main`.
+This verification step modifies documentation only. No production
+`Renderer3D` submission or Strata geometry allocator changes.
+Main remains untouched. This step supersedes the 'Stage 12
+NOT RUN' prevalidation note above, rather than rewriting past
+history.
+
+### Actual Mac Studio output (not a prediction)
+
+The owner posted the full result of three real Metal GUI fixtures
+after building the Stage 12 target:
+
+1. `aiverse_strata_metal_parity`: all five actual Metal
+   compute cluster-selection/async-readback CPU-oracle fixtures
+   `PASS`; final
+   `[strata-metal] cases=5/5 status=PASSED`.
+2. `aiverse_strata_metal_raster_parity`: four requested colour
+   captures returned 1,920,000 bytes each; measured
+   `Legacy/Fine changed_channels=0` and
+   `Legacy/Coarse changed_channels=0`; main/sun-shadow renderer
+   submission and one-ModelDraw/shared-pool invariants PASS;
+   `[strata-raster] status=PASSED frames=44`.
+3. **New Stage 12**
+   `aiverse_strata_metal_depth_multiview_parity`:
+   - Eight RGBA captures (2 cameras × Empty/Legacy/Fine/Coarse)
+     returned 1,920,000 bytes each; eight real private
+     Metal `Depth32Float` shadow maps were GPU-blitted and
+     received (262,144 samples per map).
+   - View 0: `color_fine=0 color_coarse=0
+     depth_fine_bytes=0 depth_coarse_bytes=0`.
+   - View 1: `color_fine=0 color_coarse=0
+     depth_fine_bytes=0 depth_coarse_bytes=0`.
+   - View 0 shadow non-clear samples: **73,179**.
+     View 1 shadow non-clear samples: **34,765**.
+     This independently checks that raw depth was rendered,
+     not merely clear-only or equal by accident.
+   - Actual pass messages:
+     `PASS: two independent camera views`;
+     `PASS: exact main RGBA Legacy/Fine/Coarse parity in each view`;
+     `PASS: exact sun-shadow Depth32Float Legacy/Fine/Coarse parity`;
+     `PASS: nonconstant shadow content and exclusive model submission`.
+   - Final:
+     `[strata-depth] status=PASSED views=2 modes=4 frames=89`.
+     Metal:
+     `[metal-assets] libraries=0 sourceMisses=11 pipelines=16
+     pipelineFailures=0 archive=0 strict=0`.
+
+**Actual validation interpretation:** this is a native real-GPU test,
+not Mock-RHI, fake depth, or just a count of submitted draws.
+The original Metal renderer handled both main camera views and
+the sun shadow pass; real raw 32-bit floating-point depth samples
+were compared, byte-for-byte, between source and Strata
+test-only alias models on **lossless** cluster geometry.
+
+**Known limitation:** no tested checkout SHA was printed
+(`git rev-parse HEAD` absent), so do NOT assert the GPU
+log was executed against a specific source SHA, only the
+updated feature-branch snapshot supplied by the owner.
+
+### Docs changed and exact commits
+
+- `docs/strata.md`: `fb0f9bf53df0e37fdd1d345e990646f252afc549`;
+  updated actual GPU Stage 12 parity status.
+- `AGENTS.md`: `2ed169505fa7c94f553d73ec21afc0c0526ae2a4`;
+  updated agent-facing contract and actual run evidence.
+- This independent handoff is the last documentation-only
+  commit of the verification stage; no code edits required
+  following the successful hardware run.
+
+### Verified vs not verified
+
+**Verified by owner output:** focus native Strata CTest 6/6 on
+prior run; real Metal GPU culling 5/5, real main-camera A/B 0
+changed channels, two independent cameras and actual sun shadow
+raw Depth32Float strict parity; one original source pool and
+one ModelDraw per candidate test frame.
+
+**Still NOT verified:** actual planar reflection RTT colour output,
+different material groups and UV seam discontinuities,
+deliberately lossy LOD pixel-quality tolerances and mesh cracks,
+drawing from GPU-selected cluster command buffers as a
+production exclusive path, Hi-Z occlusion, streaming residency,
+Vulkan parity, sustained GPU speedups, frame-fence lifetime
+under scene unload, and mixed-world lifecycle.
+No default-on new renderer behavior and no merge to `main`.
+
+### Concrete next step for another agent
+Implement a dedicated **real Metal planar-reflection RTT**
+fixture through the same production `Renderer3D` reflection pass,
+with at least two cameras and multiple materials in the scene.
+Capture the actual reflection texture (NOT just the main screen
+or renderer counter), establish `Legacy != Empty` reflection
+baseline, and strict `Legacy==Strata Fine==Strata Coarse`
+when using the lossless stage hierarchy. Keep the original
+RHI shader/sampler states and `GlobalGeometryPool`; avoid
+adding a second Strata renderer or geometry pool.
+Then separately test genuinely simplified mesh LODs for
+cracks/edge error and GPU-selected cluster indirect submission.
+After each bounded implementation stage add an updated
+handoff with changed files, real test logs, commit SHA, PR
+state, limitations, and next step; never claim unrun tests.
