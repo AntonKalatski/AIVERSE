@@ -179,6 +179,17 @@ void check() {
         req(rejected && weighted.vertices[0].weights[0]==before.weights[0] &&
             weighted.vertices[0].joints[1]==before.joints[1],
             "invalid weight palette partially changed prepared mesh");
+        // Two primitives can share a global vertex only if the skin palette
+        // resolves every byte-coded slot identically.
+        weighted.meshes[0].primitives[0].jointPalette={0,1};
+        render::Primitive seam=weighted.meshes[0].primitives[0];
+        seam.jointPalette={1,0};
+        weighted.meshes[0].primitives.push_back(seam);
+        rejected=false;
+        try {(void)weights.apply(weighted);}
+        catch(const std::invalid_argument&){rejected=true;}
+        req(rejected && weighted.vertices[0].weights[0]==before.weights[0],
+            "shared seam with conflicting palettes was silently overwritten");
     }
     model.nodes.resize(2); // missing jaw and eyes must be legal for morph-only rigs
     const auto fallback=HumanRigBinding::compile(model,HumanDNA{}.rig);
