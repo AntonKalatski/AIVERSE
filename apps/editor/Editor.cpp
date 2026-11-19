@@ -150,6 +150,7 @@ void Editor::init(gfx::Device& dev) {
     });
     gameFx_.setGroundHeight([this](float x, float z) { return sim_ ? view_.heightAt(simModule()->state(*sim_).grid, x, z) : view_.heightAt(grid_, x, z); });
     gameFx_.setMeshLoader([this](const std::string& name, fx::FxMesh& out) { return fx::meshFromModelFile(name, projectReader(ws_.project.dir), out); });
+    gameFx_.setGpuDeviceLease(gpuDeviceLease());
     if (!gameFx_.init(&dev)) ws_.log("fx", gameFx_.lastError(), true);
     reloadFx();
     if (!opt_.openMap.empty()) openMap(opt_.openMap);
