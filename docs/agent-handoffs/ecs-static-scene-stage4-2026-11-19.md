@@ -78,6 +78,11 @@ Both original feature branches and `main` remain untouched.
   scene-scoped AGENTS instructions.
 - `2841622e2a6b2637769c842a0fb57cc1eae03cd5` —
   shared/static skill integration update.
+- `f9bdcaddb49353f4819f33a75f75c6bca0f7e4da` —
+  first Stage 4 handoff.
+- `e02d94aff234d5e49372f30acc63933712c3c843` —
+  static source review: add direct `SceneHierarchySystem.h` include
+  needed by the integration fixture's `installSceneHierarchy` call.
 
 The handoff itself follows these commits. Fetch the actual HEAD after
 pulling; never report compilation or CTest pass based on committed code.
