@@ -914,3 +914,36 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   production readiness until complete QA.
 - Standalone handoff:
   `docs/agent-handoffs/physis-stage65-macos-integration-fixes-2026-11-19.md`.
+
+### Stage 66 — fixed-point gravity expectation regression on macOS (2026-11-19)
+
+- User ran `bash tools/physis-validate-native.sh --full --jobs 4`
+  at commit `3a1c1536b904dcdc6174e2054ab6ed97ea20e0a2`
+  (AppleClang 17, macOS x86_64 reported by CMake):
+  **configure PASS, build PASS, native PHYSIS CTest 23/24 PASS**.
+  Only `physis_forces` failed, at
+  `tests/physis_forces_test.cpp:34` on direct equality
+  `sampled.gravityForce.y==Fixed::fromRatio(-981,10)`.
+  `physis_box3d`, journal, network, editor view and other
+  22 targets passed.
+- Root cause: Q47.16 `fromRatio(-981,100)` quantizes acceleration
+  to raw `-642908`; multiplying by mass 10 yields
+  raw `-6429080`, whereas independently quantizing
+  `fromRatio(-981,10)` gives raw `-6429082`.
+  Difference is exactly two Q47.16 raw units, **not** a physics error.
+- Source fix commit `2dda8ccfa242b14b327a01a0cd7ea7ca16ea4d90`
+  changes ONLY `tests/physis_forces_test.cpp`:
+  assert exact quantized `gravityAcceleration==gravity.baseline`,
+  exact deterministic `gravityForce==gravity.baseline * massKg`,
+  plus within-two-raw-units approximation to ideal -98.1 N.
+  No PHYSIS solver/API, Box3D adapter, ECS save, network, Water or
+  Terra changes.
+- **Verification:** full 24-target run is real macOS user-provided
+  build/CTest evidence BEFORE this test correction; revised test is
+  **NOT YET RUN** on macOS. Do not claim 24/24 until user reruns.
+  Suggested focused command:
+  `ctest --test-dir build/physis-validation-full --output-on-failure -R '^physis_forces$'`
+  AFTER compiling the changed target; use the full runner for a
+  complete 24/24 confirmation.
+- Handoff:
+  `docs/agent-handoffs/physis-stage66-fixed-gravity-rounding-2026-11-19.md`.

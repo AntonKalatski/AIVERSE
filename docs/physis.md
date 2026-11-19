@@ -871,3 +871,20 @@ No changes to wire format, saved ECS data, runtime Box3D or other
 agents' NEREID/TerraWeave source. Complete PHYSIS/physics/editor
 CI remains unverified. See stage handoff:
 `docs/agent-handoffs/physis-stage65-macos-integration-fixes-2026-11-19.md`.
+
+### Stage 66 — forces fixed-point rounding test correction
+
+Full PHYSIS runner on macOS AppleClang 17 at commit `3a1c1536`
+configured and built all selected targets (including Box3D) and
+passed **23 of 24** native CTests. Only `physis_forces` failed
+an over-strict expectation that multiplying quantized -9.81 m/s²
+by 10 kg must equal a separately quantized -98.1 N. The deterministic
+Q47.16 paths differ by **2 raw units** (~0.0000305 N).
+
+Commit `2dda8ccfa242b14b327a01a0cd7ea7ca16ea4d90`
+updates only the test to assert exact PHYSIS policy
+`gravityForce.y == gravity.baseline.y * body.massKg`
+and a bounded two-raw-unit error against ideal -98.1 N.
+No production changes. **The corrected test has not been rerun yet.**
+Handoff:
+`docs/agent-handoffs/physis-stage66-fixed-gravity-rounding-2026-11-19.md`.

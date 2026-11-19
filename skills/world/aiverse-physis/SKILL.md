@@ -926,3 +926,21 @@ bash tools/physis-validate-native.sh --full --jobs 4
 Inspect failures, keep PR #25 Draft, update handoff after each stage.
 Full detail in
 `docs/agent-handoffs/physis-stage65-macos-integration-fixes-2026-11-19.md`.
+
+### Stage 66 — deterministic gravity force test normalization
+
+The macOS full PHYSIS runner at `3a1c1536` built successfully and
+passed 23/24 native CTests. Only `physis_forces` failed because a
+test assumed `Fixed::fromRatio(-981,100) * 10` was bit-identical
+to `Fixed::fromRatio(-981,10)`. These Q47.16 rounding routes differ
+by exactly two LSBs; changing production force physics is NOT warranted.
+Commit `2dda8ccfa242b14b327a01a0cd7ea7ca16ea4d90` makes the
+test assert the actual `mass * quantized gravity` policy exactly
+and bounds physical error at two raw ticks.
+Revised native test is AUTHORED, NOT RUN.
+Run after pulling the PHYSIS branch:
+```sh
+bash tools/physis-validate-native.sh --full --jobs 4
+```
+Do not claim 24/24 without actual output. See
+`docs/agent-handoffs/physis-stage66-fixed-gravity-rounding-2026-11-19.md`.
