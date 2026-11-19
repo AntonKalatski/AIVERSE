@@ -129,6 +129,7 @@ public:
     bool waitForResourceIdle() override;
     uint64_t beginResourceRetirement() override;
     bool resourceRetirementComplete(uint64_t token) override;
+    ResourceRetirementStatus resourceRetirementStatus(uint64_t token) override;
     void endResourceRetirement(uint64_t token) override;
 
     void beginFrame(int framebufferWidth, int framebufferHeight) override;
