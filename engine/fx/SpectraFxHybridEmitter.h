@@ -159,7 +159,8 @@ public:
                 if(!sortCameraValid_ ||
                    !alphaSort_.prepare(slots_.evolution(),
                                        sortCameraEye_,sortCameraForward_)) {
-                    status_="GPU alpha sorting failed; emitter suspended";
+                    if(switchToCpuFallback()) return true;
+                    status_="GPU alpha sorting failed; fallback unavailable";
                     suspended_=true; // never draw an unsorted alpha frame
                     return false;
                 }
@@ -264,6 +265,26 @@ public:
     uint32_t gpuActiveParticles() const {return slots_.activeCount();}
 
 private:
+    bool switchToCpuFallback() {
+        if(!cpu_ || !config_.backend.allowCpuFallback ||
+           config_.cpuEffect.empty()) return false;
+        // The new CPU effect is prepared first. There is no intervening GPU
+        // update/render, so it never double-simulates the same frame.
+        const FxHandle h=cpu_->play(config_.cpuEffect,origin_,direction_);
+        if(!h.valid()) return false;
+        impactFeedback_.reset();
+        compaction_.release();
+        alphaSort_.release();
+        renderer_.release(); // shared renderer is borrowed, never released
+        rendererOwner_=nullptr;
+        slots_.shutdown();
+        gpuDevice_=nullptr;
+        backend_=SpectraFxExecutionBackend::Cpu;
+        cpuHandle_=h;
+        suspended_=false;
+        status_="GPU alpha sort unavailable: switched to authored CPU effect";
+        return true;
+    }
     ParticleSystem* cpu_=nullptr;
     FxHandle cpuHandle_{};
     Config config_{};
