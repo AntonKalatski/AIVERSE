@@ -101,6 +101,26 @@ public:
             unsigned(pf.stats().adaptiveViewPriority),
             pf.stats().adaptiveHistoryAdmissionRejected ?
                 "rejected by per-camera quota" : "allowed / not requested");
+        const auto capability=pf.runtimeCapabilities();
+        ImGui::TextDisabled("GPU capability: %s | HDR RGBA16F: %s | HDR requested: %s",
+            capability.deviceHealthy ? "ready" : "unavailable / disabled",
+            capability.hdrFormatSupported ? "supported" : "unsupported",
+            capability.hdrRequested ? "yes" : "no");
+        ImGui::TextDisabled("Temporal: requested %s, shader %s, last resolve %s",
+            capability.temporalRequested ? "yes" : "no",
+            capability.temporalPipelinePrepared ? "ready" : "not ready",
+            capability.temporalResolvedLastFrame ? "yes" : "no");
+        ImGui::TextDisabled("Subpixel: requested %s, applied %s | upscale: requested %s, resolved %s",
+            capability.jitterRequested ? "yes" : "no",
+            capability.jitterAppliedLastFrame ? "yes" : "no",
+            capability.upscaleRequested ? "yes" : "no",
+            capability.upscaleAppliedLastFrame ? "yes" : "no");
+        ImGui::TextDisabled("Motion vectors: %s | reactive last frame: %s | adaptive: %s",
+            capability.velocityPipelinePrepared ? "ready" : "unavailable",
+            capability.reactiveLastFrame ? "valid" : "not supplied",
+            capability.adaptiveRequested ? "requested" : "off");
+        if (!capability.fallbackReason.empty())
+            ImGui::TextDisabled("GPU fallback reason: %s",capability.fallbackReason.c_str());
         ImGui::TextDisabled("Jitter: отдельный opt-in AIVERSE_PRISMA_JITTER=1; без него обычный Temporal Resolve остаётся доступен.");
         ImGui::TextDisabled("GPU adaptive: %s  |  scale: %.3f  |  stable fallback: %s",
             pf.stats().adaptiveResolution ? "on" : "off",
