@@ -224,6 +224,21 @@ public:
         return true;
     }
 
+    // Resolve a STABLE authored child key to the current generation of an
+    // ECS Entity. Never serialize or cache the returned Entity across an
+    // asset reload: publication recreates child entities transactionally.
+    static Entity resolveChild(const World& presentation,
+                               const Instance& instance,
+                               const std::string& authoredId) {
+        if(authoredId.empty() || !valid(presentation,instance))
+            return kNullEntity;
+        for(size_t i=0;i<instance.children.size();++i) {
+            if(instance.document.attachments[i].id==authoredId)
+                return instance.children[i];
+        }
+        return kNullEntity;
+    }
+
     // The existing host Animator/Graph is the ONLY source of this pose.
     // A move-only Prepared keeps ModelReadLeases alive through the caller's
     // synchronous View/Renderer3D submission. No second Graph is started.
