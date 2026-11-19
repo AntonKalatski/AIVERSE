@@ -785,7 +785,7 @@ bool ComputeParticles::requestGpuCheckpoint(std::function<void(bool)> callback) 
        !device_->gpuHealthy() || !device_->canUpdateSharedBuffers() ||
        !readbackLifetime_ || asyncCheckpointPending_ || gpuResetDirty_ ||
        !states_.valid() || !stateProgramParams_.valid() ||
-       !stateAttributes_.valid() || ages_.empty() || gpuResetDirty_ ||
+       !stateAttributes_.valid() || ages_.empty() ||
        !pendingStates_.empty() || !pendingKillSlots_.empty() ||
         !killedSlotsAwaitingFrame_.empty())return false;
 
