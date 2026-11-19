@@ -44,6 +44,7 @@ public:
         geometry_ = nullptr;
         geometryRevision_ = 0;
         clearPending_ = false;
+        pendingRegionalClear_.clear();
         nx_=ny_=nz_=0;
     }
     bool ready() const { return atlas_.texture().valid(); }
@@ -61,6 +62,25 @@ public:
         geometryRevision_=revision;
         reference_.setGeometry(geometry,revision);
         clearPending_=true; // zero stale atlas before publishing fresh geometry results
+        pendingRegionalClear_.clear();
+    }
+
+    // Regional geometry edits reuse unaffected probe coefficients and GPU texels.
+    // Must be called with a REBUILT immutable geometry snapshot. The reference
+    // expands the dirty bounds by a conservative primary + light influence radius.
+    // With no prior geometry, call setGeometry() for an initial full reset instead.
+    size_t setGeometryRegion(const StaticShadowGeometry* geometry, uint64_t revision,
+                             GiBounds changed, float influenceRadius = 0) {
+        ensureReady();
+        if (geometry_ == geometry && geometryRevision_ == revision) return 0;
+        std::vector<uint32_t> cleared;
+        const size_t affected = reference_.setGeometryRegion(
+            geometry, revision, changed, influenceRadius, &cleared);
+        geometry_ = geometry;
+        geometryRevision_ = revision;
+        if (!clearPending_) pendingRegionalClear_.insert(
+            pendingRegionalClear_.end(), cleared.begin(), cleared.end());
+        return affected;
     }
 
     void setLights(std::vector<GiMovingLight> lights) {
@@ -87,6 +107,12 @@ public:
             // Geometry revision invalidates all previous transport; clear GPU ghosting once.
             result.upload = atlas_.uploadAll(reference_);
             clearPending_=false;
+            pendingRegionalClear_.clear();
+        } else if (!pendingRegionalClear_.empty()) {
+            // Remove invalid old bounce before the budgeted trace; other texels
+            // stay untouched. upload() deduplicates overlapping regional edits.
+            result.upload = atlas_.upload(reference_, std::move(pendingRegionalClear_));
+            pendingRegionalClear_.clear();
         }
         std::vector<uint32_t> changed;
         if (probeBudget > 0) {
@@ -124,6 +150,7 @@ private:
     const StaticShadowGeometry* geometry_=nullptr;
     uint64_t geometryRevision_=0;
     bool clearPending_=false;
+    std::vector<uint32_t> pendingRegionalClear_;
 };
 
 } // namespace aiverse::render
