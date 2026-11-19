@@ -98,6 +98,12 @@ static bool unitChecks() {
     }
     ok &= check(!autoPolicy.useMdi(0, 80)); // direct cheaper
     ok &= check(!autoPolicy.useMdi(1, 80)); // independent untrained phase
+    AutoCpuBatchPolicy stalled;
+    for (int i = 0; i < 3; ++i) stalled.recordNoSubmission(0, 1024);
+    ok &= check(!stalled.useMdi(0, 1024)); // no repeated unproductive MDI
+    for (int i = 0; i < 30; ++i) stalled.useMdi(0, 1024);
+    ok &= check(stalled.useMdi(0, 1024)); // periodic re-probe
+
     std::printf("material palette CPU checks=%d result=%s\n",checks,ok?"passed":"FAILED");
     return ok;
 }
