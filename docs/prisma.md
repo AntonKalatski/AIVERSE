@@ -3996,6 +3996,80 @@ GPU fencing/memory pressure, benchmarks/CI.
 См. `docs/handoffs/prisma-stage-64.md`
 для точных коммитов и следующих действий.
 
+
+## Stage 65 — закрытие каталога по исходникам и безопасные числовые параметры
+
+Stage 65 провёл source/API review **всех 19 PrismaType**:
+`PrismaData::buildCatalog` (полный набор),
+`prismaEffectWork` (оценки сложности),
+`Prisma::resolve` (actual dispatch и отдельные
+`EffectExecution` reports). **19/19** effect types
+все три уровня реализуют в коде. Scene/Game
+Editor и отдельный GameClient используют
+стабильные viewId=1/2/3, а GPU-fenced
+lifecycle/private histories не объединяют
+разные камеры одинаковых размеров.
+Это означает только **feature implementation
+coverage**, не пройденный GPU rendering.
+
+### Новое исправление: native и JSON numeric safety
+
+`parsePrismaEffect` теперь не принимает
+нечисловые RGB компоненты и не пропускает
+`NaN`/`Inf` через `std::clamp`.
+Значения Number/Color проверяются как finite
+`double`, ограничиваются по каталожному
+диапазону **до приведения к float**.
+При strict MCP validation ошибка становится
+`std::runtime_error`; в обычном режиме
+проблема добавляется в `issues`, а
+некорректный параметр (или полный RGB-triplet)
+остаётся исходным default. Корректные старые
+профили сохраняют поведение.
+
+Новый `sanitizePrismaSettings(PrismaSettings&)`
+в `PrismaData.h/cpp` — GPU-free нормализатор
+прямых native/ECS профилей: восстанавливает
+missing flattened values из default-каталога,
+отбрасывает лишние, заменяет non-finite
+на default, выполняет range clamps и
+нормализует boolean 0/1. Он вызывается
+в `Prisma::setSettings` до сохранения
+базовых настроек, а `PrismaVolumeStack::resolve`
+выполняет его на конечном смешанном
+camera profile. В обычных исходниках
+рендера эти гарантии не добавляют GPU
+пасс, шейдер или новые ресурсы.
+
+### Функциональный статус и следующие тесты
+
+Полный чеклист эффектов, интеграции,
+план единой сборки/CTest/GPU parity
+и acceptance conditions записаны в
+`docs/prisma-feature-closure-stage-65.md`.
+Там перечислены реальные зарегистрированные
+в CMake тесты `prisma_graph`, `prisma_volume`,
+`shader_graph`, `hdr_policy`, общий
+`aiverse_tests` и opt-in HDR backend fixtures.
+
+**Фактически выполнено:** GitHub source
+readback; 19/19 catalog/cost/runtime/
+diagnostics mappings, **36/36 структурных
+проверок** settings/volumes/hosts/test
+registration. **НЕ ВЫПОЛНЕНО:**
+CMake/clang/Obj-C++/GLSL/MSL/SPIR-V,
+CTest, Editor/GameClient, Metal/GL/GLES/
+Vulkan/WebGL, screenshots/pixel/alpha parity,
+multi-view GPU-fence stress, profiling/CI.
+Исходниковое закрытие каталога не
+разрешает мержить Draft PR #26.
+
+Следующему агенту читать
+`docs/handoffs/prisma-stage-65.md`;
+начать **единый реальный тестовый этап**
+после окончательного одобрения завершения
+функций, с записью фактических PASS/FAIL.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
