@@ -11,6 +11,7 @@
 #include <functional>
 #include <limits>
 #include <map>
+#include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -37,6 +38,7 @@ struct ForestNutrientCycleSettings {
     uint32_t maxLeachUnitsPerCell=64;
     uint32_t maxAdvectionUnitsPerCell=128;
     uint32_t minFlowCmPerSec=4;
+    uint32_t maxJunctionTransfersPerStep=64; // NEREID-authored edges only
 };
 inline void validateForestNutrientCycleSettings(
         const ForestNutrientCycleSettings& s) {
@@ -46,7 +48,9 @@ inline void validateForestNutrientCycleSettings(
        s.maxUptakeUnitsPerCell>100000 ||
        s.maxLeachUnitsPerCell>100000 ||
        s.maxAdvectionUnitsPerCell>100000 ||
-       s.minFlowCmPerSec>10000)
+       s.minFlowCmPerSec>10000 ||
+       !s.maxJunctionTransfersPerStep ||
+       s.maxJunctionTransfersPerStep>256)
         throw std::invalid_argument("TerraWeave invalid nutrient cycle settings");
 }
 inline void validateForestNutrientCellClimate(
@@ -59,16 +63,30 @@ inline void validateForestNutrientCellClimate(
         throw std::invalid_argument("TerraWeave invalid nutrient weather/water");
 }
 
+// One directed, verified topological link between distinct NEREID bodies.
+// Producer MUST validate its water-body ECS handles and wetted geometry at
+// the same completed ECS read barrier. 32m cells cannot disambiguate two
+// different water bodies IN THE SAME CELL; such links are omitted.
+struct ForestNutrientJunctionLink {
+    uint64_t linkKey=0; // unique, stable ECS junction/cascade ID + inlet slot
+    int64_t sourceX=0,sourceZ=0,targetX=0,targetZ=0;
+    uint64_t sourceBodyKey=0,targetBodyKey=0; // (packed Entity + 1)
+    uint32_t maxTransferUnits=32;
+};
+
 struct ForestNutrientCycleOutcome {
     size_t soilCellsProcessed=0,waterCellsProcessed=0;
     uint64_t absorbedUnits=0,leachedUnits=0,advectedUnits=0;
+    uint64_t junctionTransferredUnits=0;
+    uint32_t junctionLinksProcessed=0;
     uint64_t revision=0;
 };
 
 inline ForestNutrientCycleOutcome advanceForestNutrientCycle(
         ForestDeadwoodResource& resource,uint64_t completedTick,
         ForestNutrientCellSampler climate,
-        ForestNutrientCycleSettings settings={}) {
+        ForestNutrientCycleSettings settings={},
+        std::span<const ForestNutrientJunctionLink> junctions={}) {
     validateForestNutrientCycleSettings(settings);
     if(!climate)
         throw std::invalid_argument("TerraWeave nutrient cycle needs climate/water");
@@ -95,6 +113,24 @@ inline ForestNutrientCycleOutcome advanceForestNutrientCycle(
     // Snapshot BEFORE leaching: runoff released this tick cannot traverse
     // multiple grid cells in the same tick or depend on iteration order.
     const auto previousWater=next.water;
+    if(junctions.size()>256)
+        throw std::length_error("TerraWeave nutrient junction plan budget");
+    uint64_t lastLink=0;
+    for(const auto& link:junctions) {
+        const int64_t limit=kWorldLimitCm/
+            ForestDeadwoodResource::kNutrientCellCm;
+        if(!link.linkKey || link.linkKey<=lastLink ||
+           !link.sourceBodyKey || !link.targetBodyKey ||
+           link.sourceBodyKey==link.targetBodyKey ||
+           (link.sourceX==link.targetX && link.sourceZ==link.targetZ) ||
+           link.maxTransferUnits>100000 ||
+           link.sourceX<=-limit || link.sourceX>=limit ||
+           link.sourceZ<=-limit || link.sourceZ>=limit ||
+           link.targetX<=-limit || link.targetX>=limit ||
+           link.targetZ<=-limit || link.targetZ>=limit)
+            throw std::invalid_argument("TerraWeave invalid junction plan");
+        lastLink=link.linkKey;
+    }
 
     const size_t soilCount=next.soil.size();
     const size_t soilStart=soilCount?size_t(next.soilCursor%soilCount):0;
@@ -149,6 +185,10 @@ inline ForestNutrientCycleOutcome advanceForestNutrientCycle(
     next.soilCursor=next.soil.empty()?0:
         next.soilCursor%next.soil.size();
 
+    std::map<Cell,uint64_t> originalByCell;
+    for(const auto& cell:previousWater)
+        originalByCell.emplace(Cell{cell.x,cell.z},cell.dissolvedUnits);
+    std::map<Cell,uint64_t> debitedFromOriginal;
     const size_t waterCount=previousWater.size();
     const size_t waterStart=waterCount?size_t(next.waterCursor%waterCount):0;
     result.waterCellsProcessed=
@@ -194,10 +234,40 @@ inline ForestNutrientCycleOutcome advanceForestNutrientCycle(
         auto& dst=water[dest];
         checkedAdd(dst,move);
         src-=move;
+        checkedAdd(debitedFromOriginal[{source.x,source.z}],move);
         checkedAdd(result.advectedUnits,move);
     }
     next.waterCursor=waterCount?
         (waterStart+result.waterCellsProcessed)%waterCount:0;
+
+    // NEREID explicitly directed confluences/cascades: use ONLY original
+    // prior-tick dissolved mass not already spent by cardinal advection.
+    // All links read from this immutable snapshot and debit from the
+    // same per-cell budget; an upstream->junction->downstream chain cannot
+    // forward the same units twice during one simulation tick.
+    const size_t linksToRun=std::min<size_t>(
+        junctions.size(),settings.maxJunctionTransfersPerStep);
+    for(size_t i=0;i<linksToRun;++i) {
+        const auto& link=junctions[i];
+        ++result.junctionLinksProcessed;
+        const Cell source{link.sourceX,link.sourceZ};
+        const Cell target{link.targetX,link.targetZ};
+        const auto available=originalByCell.find(source);
+        if(available==originalByCell.end())continue;
+        const uint64_t spent=debitedFromOriginal[source];
+        if(spent>available->second)
+            throw std::logic_error("TerraWeave original nutrient overspent");
+        const uint64_t originalRemaining=available->second-spent;
+        const uint64_t moved=std::min({
+            originalRemaining,water[source],
+            uint64_t(link.maxTransferUnits)});
+        if(!moved)continue;
+        checkedAdd(water[target],moved);
+        water[source]-=moved;
+        checkedAdd(debitedFromOriginal[source],moved);
+        checkedAdd(result.junctionTransferredUnits,moved);
+        checkedAdd(result.advectedUnits,moved);
+    }
 
     next.water.clear();
     next.water.reserve(water.size());
