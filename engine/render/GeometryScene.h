@@ -43,6 +43,7 @@ public:
         uint32_t strataDiskArchiveSources=0, strataDiskArchiveDeclined=0;
         uint64_t strataDiskBytesRead=0, strataDiskReadFailures=0;
         uint64_t strataDiskPending=0, strataDiskReadyBytes=0;
+        uint64_t strataStreamingGpuTransferBytes=0;
     };
     void load(gfx::Device& dev, const Json& json, const FileReader& reader);
     // Procedural/offline callers may supply immutable CPU models instead of files.
