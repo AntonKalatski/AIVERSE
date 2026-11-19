@@ -1847,60 +1847,60 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         // composite input. The previous scene remains the stable fallback.
         if (fxaaInput.tex.valid() && fxaaOutput.tex.valid() &&
             depthFor(set, w, h).valid()) {
-        // Experimental Stage 14: only the SDR FXAA prepass uses the compiled
-        // RenderGraph, with the same pipeline/uniforms/inputs as the fixed path.
-        // Off by default; the fallback is kept for unsupported devices/errors.
-        bool graphDrawn = false;
-        const char* optIn = std::getenv("AIVERSE_PRISMA_GRAPH_FXAA");
-        if (optIn && std::strcmp(optIn, "1") == 0 && fxaaOutput.tex.valid()) {
-            const gfx::TextureHandle aaDepth = depthFor(set, w, h);
-            if (aaDepth.valid()) {
-                PrismaRenderGraph graph;
-                const auto input = graph.addResource({
-                    "scene-fxaa", PrismaGraphFormat::RGBA8,
-                    static_cast<uint32_t>(w), static_cast<uint32_t>(h), true});
-                const auto output = graph.addResource({
-                    "fxaa-output", PrismaGraphFormat::RGBA8,
-                    static_cast<uint32_t>(w), static_cast<uint32_t>(h), true});
-                PrismaGraphPass fxaa;
-                fxaa.name = "fxaa";
-                fxaa.reads = {input};
-                fxaa.writes = {output};
-                graph.addPass(std::move(fxaa));
-                const auto plan = graph.compile();
-                // No graph-managed targets for this first pass: both handles
-                // already exist in the same per-view Sized allocator.
-                if (!set.graphExecutor) set.graphExecutor = std::make_unique<PrismaRhiExecutor>(dev);
+            // Experimental Stage 14: only the SDR FXAA prepass uses the compiled
+            // RenderGraph, with the same pipeline/uniforms/inputs as the fixed path.
+            // Off by default; the fallback is kept for unsupported devices/errors.
+            bool graphDrawn = false;
+            const char* optIn = std::getenv("AIVERSE_PRISMA_GRAPH_FXAA");
+            if (optIn && std::strcmp(optIn, "1") == 0 && fxaaOutput.tex.valid()) {
+                const gfx::TextureHandle aaDepth = depthFor(set, w, h);
+                if (aaDepth.valid()) {
+                    PrismaRenderGraph graph;
+                    const auto input = graph.addResource({
+                        "scene-fxaa", PrismaGraphFormat::RGBA8,
+                        static_cast<uint32_t>(w), static_cast<uint32_t>(h), true});
+                    const auto output = graph.addResource({
+                        "fxaa-output", PrismaGraphFormat::RGBA8,
+                        static_cast<uint32_t>(w), static_cast<uint32_t>(h), true});
+                    PrismaGraphPass fxaa;
+                    fxaa.name = "fxaa";
+                    fxaa.reads = {input};
+                    fxaa.writes = {output};
+                    graph.addPass(std::move(fxaa));
+                    const auto plan = graph.compile();
+                    // No graph-managed targets for this first pass: both handles
+                    // already exist in the same per-view Sized allocator.
+                    if (!set.graphExecutor) set.graphExecutor = std::make_unique<PrismaRhiExecutor>(dev);
                     auto& executor = *set.graphExecutor;
-                std::vector<gfx::TextureHandle> external{fxaaInput.tex, fxaaOutput.tex};
-                const auto run = executor.execute(
-                    graph, plan, external,
-                    [&](gfx::Device& gpu, PrismaGraphId,
-                        const PrismaGraphDispatchView<gfx::TextureHandle>& view) {
-                        gpu.setViewport({0, 0, w, h});
-                        gpu.setPipeline(pipes_[kFxaa]);
-                        gpu.setVertexBuffer(triangle_);
-                        gpu.setUniforms(0, &u, sizeof u);
-                        gpu.setTexture(0, view.resource(input));
-                        gpu.draw(3);
-                        return true;
-                    },
-                    [](gfx::Device&, PrismaGraphId,
-                       const PrismaGraphDispatchView<gfx::TextureHandle>&) {
-                        return false; // FXAA is raster-only.
-                    },
-                    aaDepth);
-                graphDrawn = run.success;
-                if (graphDrawn) ++stats_.passes;
-                else if (error_.empty()) error_ = run.error;
+                    std::vector<gfx::TextureHandle> external{fxaaInput.tex, fxaaOutput.tex};
+                    const auto run = executor.execute(
+                        graph, plan, external,
+                        [&](gfx::Device& gpu, PrismaGraphId,
+                            const PrismaGraphDispatchView<gfx::TextureHandle>& view) {
+                            gpu.setViewport({0, 0, w, h});
+                            gpu.setPipeline(pipes_[kFxaa]);
+                            gpu.setVertexBuffer(triangle_);
+                            gpu.setUniforms(0, &u, sizeof u);
+                            gpu.setTexture(0, view.resource(input));
+                            gpu.draw(3);
+                            return true;
+                        },
+                        [](gfx::Device&, PrismaGraphId,
+                           const PrismaGraphDispatchView<gfx::TextureHandle>&) {
+                            return false; // FXAA is raster-only.
+                        },
+                        aaDepth);
+                    graphDrawn = run.success;
+                    if (graphDrawn) ++stats_.passes;
+                    else if (error_.empty()) error_ = run.error;
+                }
             }
-        }
-        if (!graphDrawn) {
-            const int before = stats_.passes;
-            draw(set, fxaaOutput, pipes_[kFxaa], &u, sizeof u, {{0, fxaaInput.tex}});
-            fxaaEncoded = stats_.passes > before;
-        } else fxaaEncoded = true;
-        if (fxaaEncoded) src = fxaaOutput;
+            if (!graphDrawn) {
+                const int before = stats_.passes;
+                draw(set, fxaaOutput, pipes_[kFxaa], &u, sizeof u, {{0, fxaaInput.tex}});
+                fxaaEncoded = stats_.passes > before;
+            } else fxaaEncoded = true;
+            if (fxaaEncoded) src = fxaaOutput;
         } // valid SDR FXAA attachments only
     }
 
