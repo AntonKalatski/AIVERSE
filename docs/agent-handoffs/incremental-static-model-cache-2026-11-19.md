@@ -1825,3 +1825,53 @@ GPU ICB benchmark exit=0
 6. Keep Draft PR #34 and all experimental flags OFF by default; do not enable optimizations on draw-call reduction alone.
 
 **Verification:** Owner successfully executed native CMake-built Metal fixture; assistant did not run local CMake, profile frame GPU time, or perform a new code test in this documentation-only stage.
+
+
+---
+
+## Stage 62 — independently selectable CPU MDI vs GPU ICB fixture (2026-11-19)
+
+**Branch:** `perf/incremental-static-model-cache`; Draft PR #34. **Implementation commit:** `f999394fc30a8f2cd6cca976055dfcd67cf15bd8`. **Changed file:** `tests/render/material_batches.cpp`. No renderer, RHI, production API or default optimizations modified.
+
+### API and design
+
+Opt-in environment `AIVERSE_BATCH_BENCH_MODE=cpu_mdi|gpu_icb` selects the batched half of the existing same-camera Direct→Batched Metal screenshot fixture. The default `legacy` preserves original behaviour. The Direct half explicitly disables GPU-authored submissions for both modes; `cpu_mdi` also disables GPU-authored draws in the batched half using the existing `Renderer3D::setGpuAuthoredDrawEnabled` view policy. The `gpu_icb` mode permits the GPU path and verifies nonzero GPU-encoded submissions/commands. The CPU mode asserts that GPU counters are zero and CPU MDI submissions are nonzero. Both modes retain existing A/B screenshot pixel equality validation and submission reduction checks. Invalid benchmark modes exit 2.
+
+Stage 60 optional `AIVERSE_BATCH_CPU_TIMING=1` now labels CPU samples as `direct`, `cpu_mdi` or `gpu_icb_mixed`; `gpu_icb_mixed` explicitly warns that the GPU-authored path can coexist with CPU MDI on other passes (the previously observed Mac test confirmed both). The samples cover only synchronous `renderer.render()`, six frames each; GPU timeline execution is not measured. This is a smoke regression, **not** a balanced multi-run A/B/A benchmark.
+
+### Verification performed and not performed
+
+GitHub connector accepted the source change; inspected renderer API and existing fixture code. **NOT RUN:** macOS compilation of Stage 62, CTest, new CPU MDI/GPU ICB modes, screenshot parity, full CI, Vulkan, CPU/GPU production-scene performance tests. Previous Stage 61 0.1651ms Direct vs 0.2484ms mixed batched median are confirmed owner measurements on an earlier binary and must not be ascribed to this change.
+
+### Exact Mac Studio steps
+
+```sh
+cd /Users/aleksandrfeer/Projects/AIVERSE || exit 1
+git fetch origin
+git switch perf/incremental-static-model-cache
+git pull --ff-only origin perf/incremental-static-model-cache
+cmake --build build/batching-gpu-verify --target aiverse_material_batches --parallel 8 || exit 1
+mkdir -p build/batching-gpu-verify/captures
+
+# CPU-encoded MDI only: GPU authored disabled by the fixture.
+AIVERSE_BATCH_CPU_TIMING=1 AIVERSE_BATCH_BENCH_MODE=cpu_mdi \
+AIVERSE_METAL_CPU_MDI=1 AIVERSE_METAL_MDI_MIN_COMMANDS=2 \
+AIVERSE_PALETTE_TEST_CASE=indirect \
+build/batching-gpu-verify/aiverse_material_batches unused.obj build/batching-gpu-verify/captures/cpu-mdi
+echo "cpu_mdi exit=$?"
+
+# Actual GPU-encoded Metal ICB. CPU MDI may still serve other passes.
+AIVERSE_BATCH_CPU_TIMING=1 AIVERSE_BATCH_BENCH_MODE=gpu_icb \
+AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTHORED_DRAWS=1 \
+AIVERSE_GPU_ENCODED_ICB=1 AIVERSE_GPU_ICB_RIGID=1 \
+AIVERSE_GPU_ICB_MIN_COMMANDS=2 AIVERSE_EXPECT_GPU_ICB=1 \
+AIVERSE_PALETTE_TEST_CASE=indirect \
+build/batching-gpu-verify/aiverse_material_batches unused.obj build/batching-gpu-verify/captures/gpu-icb
+echo "gpu_icb exit=$?"
+```
+
+Require **both** commands to exit 0, include `changed_channels=0`, and show the corresponding path-specific nonzero submission count. Report direct and indirect CPU medians/p95, draw counts, GPU ICB and CPU MDI commands separately. If either mode fails, inspect its isolation counters and refrain from performance conclusions.
+
+### Next steps
+
+Increase warmup/samples and rotate order A/B/A; isolate actual CPU cost stages from the existing `mdiCpuStages` metrics; implement independent GPU timestamp measurement on supported graphics APIs; then test 1k, 10k and 100k objects and representative game scenes. Default-off experimental policies and PR Draft remain unchanged.
