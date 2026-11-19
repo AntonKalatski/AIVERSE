@@ -2574,6 +2574,113 @@ view priority/thrashing performance experiments or CI.
 real structural inspection and the remaining functional coverage
 before the separate tests stage.
 
+## Stage 50 — external GPU owner memory integration and safe native-resolution TAA admission
+
+The project remains in **features-first implementation**, with native
+compilation and GPU testing deliberately deferred until the complete
+functional feature backlog has been closed. Stage 50 adds
+independently-owned SpectraFX, terrain/planet and streamed WorldScene
+GPU telemetry to the existing Prisma quality/known-memory budget.
+It also fixes a temporal allocation/fallback asymmetry from Stage 49.
+
+**SpectraFX:** `ParticleSystem::ownedGpuMemoryStats()` counts only
+its own particle vertex and index buffers and builtin RGBA atlas,
+using `GpuOwnedMemoryCounter` on the existing RHI metadata.
+Particle graph textures, imported effect sprites and custom meshes
+are **borrowed**, since they are supplied through loader callbacks
+and may be shared by a separate texture/mesh owner. The native
+`ClientFx::ownedGpuMemoryStats()` combines its private
+`ParticleSystem` inventory with its own independently resident
+`TextureCache` sprite/atlas pages. In the editor, the equivalent
+buffers and texture cache are enumerated independently through
+`gameFx_` and `fxTextures_` and added once; Prisma does
+not take ownership or retire them.
+
+**Terrain and planets:** `TerrainRenderer::ownedGpuMemoryStats()`
+reports all resident chunk/LOD VBO/IBOs, apron and water geometry,
+per-cell, dynamic, splat, vision, heightfield and detail
+normal/splat render textures, plus the owner-private terrain
+material/cliff `TextureCache`. The `TextureRef` objects bound
+by terrain shaders are aliases of those cache-owned handles and
+are not counted separately. `PlanetRenderer::ownedGpuMemoryStats()`
+similarly counts the planet chunks, per-body visibility and detail
+atlases, globe/atmosphere meshes, placeholders and its distinct
+material texture cache. `RtsView::ownedPresentationGpuMemoryStats`
+combines the unique Model/ModelTextureCache inventory from Stage 49
+with terrain and planets, **including allocations that remain live
+while the presentation is temporarily hidden**. This is an owner
+report, not a trigger for GPU eviction.
+
+**Streamed world:** `WorldScene::ownedGpuMemoryStats(device)`
+visits current resident chunks and passes each shared/unshared
+model through `appendModelOwnedGpuMemory` with one deduplicating
+counter. Multiple chunks referring to the same shared Model or
+GPU handle count it only once; GeometryPool pages are excluded
+and remain accounted through `GlobalGeometryPool`. The external
+`ModelTextureCache` can be supplied by another owner, e.g.
+GameClient passes `view_.textureCache()` to its streamed world.
+Therefore `WorldScene` deliberately does not enumerate that
+borrowed cache a second time.
+
+**Per-host integration:** Editor Scene/Game now combine
+`view_.ownedPresentationGpuMemoryStats(*dev_)`,
+`gameFx_.ownedGpuMemoryStats()` and the separate
+`fxTextures_.ownedGpuMemoryStats()` with saturated known-byte
+addition. Native GameClient adds the presentation view,
+`fx_.ownedGpuMemoryStats()` and optional resident
+`worldScene_->ownedGpuMemoryStats(dev)`. Both pass the result
+using the existing generic
+`setExternalPresentationAssetsGpuMemory` before
+`renderSizeForOutput`. Renderer3D/LightSystem/persistent
+GPU buffers and globally shared geometry page bytes remain
+supplied in their own disjoint host calls. The displayed
+`temporalResolve.maxPrismaMemoryMiB` value remains an
+**estimated lower-bound quality threshold, not physical
+device total VRAM, an allocator budget or a guaranteed peak**.
+
+**Native TAA safety:** Stage 49 introduced a per-camera
+`maxTemporalHistoryMiB` limit for two RGBA16F HDR histories,
+but only checked it after the temporal-upscaling flags were
+accepted. Stage 50 moves this admission test immediately
+after confirming an authored active HDR `temporalResolve`
+effect, *before* deciding whether to upscale or jitter.
+Thus a camera with Stage 42 native-resolution stabilization
+gets the same quota protection. A refused history is retired
+only via the existing GPU-fenced ownership policy; the camera
+remains native/full resolution and unjittered.
+
+For `AIVERSE_PRISMA_JITTER=1`, full native-resolution
+TAA now also preallocates and validates the two HDR history
+textures, native scene color/depth, motion velocity, internal
+and output scratch depth, and its fallback/composite pipelines
+through the existing Stage 45 `preflightUpscale(w,h,w,h)`.
+The preflight runs **before** `Renderer3D::beginScene`.
+A GPU preflight failure marks the view rejected and returns
+a stable unjittered camera; `Prisma::resolve` checks the same
+`preflightRejected` flag and cannot bypass the rejected
+allocation later in the frame. Failed preflight retries remain
+rate-limited. Native temporal stabilization without the jitter
+flag may still use the legacy Stage 42 non-jittered path.
+
+**Limitations:** RHI metadata cannot report all driver,
+Metal dynamic buffer generations, texture mips, compressed
+resource bytes, external scene owners, or separate processes'
+GPU allocations. The new world/terrain/planet/FX reports
+contain only handles that their owners create and maintain.
+They never imply permission to destroy a borrowed or in-flight
+resource. Metal/GL/GLES/Vulkan projection/origin, temporal
+reprojection and resource-failure behavior remain unverified
+by real hardware.
+
+**Actual verification:** connected GitHub source inspection,
+source readback, and 51/51 structural API/presence and ordering
+checks. **NOT RUN:** native C++/Objective-C++ build, shader
+compilation, CTest, real GPU operation, VRAM profiling,
+screenshot comparisons, CI. See
+`docs/handoffs/prisma-stage-50.md`; the next stage should
+continue functional closure and NOT start final tests until
+the user authorizes that phase.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
