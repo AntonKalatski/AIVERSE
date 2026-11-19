@@ -2017,6 +2017,91 @@ improvement or production-readiness is claimed until those tests.
 The exact source commits, APIs and next steps are recorded in
 `docs/handoffs/prisma-stage-43.md`.
 
+## Stage 44 — explicit internal render resolution and temporal upscaling
+
+Stage 44 extends the canonical opt-in `temporalResolve` / Halton TAA
+path with a true **internal 3D render resolution** that may differ from
+the **final output target**. It adds two catalog parameters to the
+existing `postfx.effects[{type:"temporalResolve"}]` payload:
+
+- `renderScale` (0.5..1, default **1**): fraction of the output width and
+  height used by 3D, depth and motion-vector passes. The chosen scale is
+  quantized to 1/16 steps; actual pixel counts are rounded, bounded to
+  32px minimum and require at least 64px output dimensions.
+- `reconstructionSharpness` (0..0.5, default **0.15**): mild color
+  reconstruction/sharpening within the compressed-HDR current-frame
+  neighborhood before confidence-weighted history accumulation.
+
+The feature is **disabled unless all three flags are explicitly set**:
+`AIVERSE_PRISMA_TEMPORAL=1`, `AIVERSE_PRISMA_JITTER=1` and
+`AIVERSE_PRISMA_UPSCALE=1`. An enabled `temporalResolve` authored in
+the normal game/map `postfx` catalog, HDR support, High quality,
+`historyWeight>0`, `jitterPixels>0` and `renderScale<1` are also
+required. Existing projects and low/medium/mobile quality tiers retain
+1:1 rendering by default.
+
+**Host call order:** after `setViewId(id)` and
+`applyCameraVolumes(stack,camera.eye())`, call
+`auto [renderW,renderH] = prisma.renderSizeForOutput(outputW,outputH)`
+and then `prisma.jitteredCamera(camera,renderW,renderH)`. Pass this
+camera and the smaller dimensions to `Renderer3D::beginScene` but
+give `Renderer3D::render` the unchanged **full-resolution** destination
+pass. Draw 3D and particle reactive/motion contributions at the smaller
+size. `Renderer3D::resolvePrisma` sends the current viewProjection and
+internal dimensions to Prisma, which reads final output dimensions from
+the RHI output texture, the host's per-view size declaration, or the
+swapchain framebuffer. Draw HUD, labels, picking/gizmos and UI using the
+original camera/full output dimensions. Both Editor Scene/Game and
+GameClient now use these calls.
+
+The main HDR path now performs shutter blur, DoF and other internal scene
+effects at the low render resolution; Bloom and sun-shaft buffers remain
+low-resolution inputs. The **temporal pass runs immediately before final
+color composite** and writes a `viewId`-private **output-resolution**
+RGBA16F history (RGB linear HDR, A prior hardware depth). Temporal
+samplers use separate reciprocal texel sizes: `inputPx` for current
+scene color/depth neighborhoods, `px` for output-history bilinear
+coordinates. Motion vectors remain current-minus-previous in normalized
+screen UV, so their coordinates do not require ad-hoc multiplication by
+the resolution ratio. The shader applies Stage 43 jitter correction,
+four individually depth-validated previous history taps, current
+luma/depth confidence, reactive coverage and bounded HDR sharpening.
+Final tonemap/composite and optional full-resolution UI remain output-size.
+HD/SDR FXAA is not layered over a successful HDR temporal resolve.
+
+Per-view history invalidates/retires on changes to output **or input**
+dimensions, camera cuts, projection changes or effect quality. Old
+targets go through the existing GPU-fence retirement rather than
+immediate destruction. `PrismaStats` reports `width,height` (internal),
+`outputWidth,outputHeight` (presentation) and
+`temporalUpscaled` (successful spatial/temporal resolution step), which
+are displayed in the Prisma editor window. `MemoryStats` already counts
+private temporal history bytes independently of size-shared scene
+buffers; when upscaling it counts the two **larger output histories**.
+
+**Fallback:** GPU output-history/depth allocation or temporal pipeline
+failure does not erase the source image: the final composite samples
+the internal-size scene across the full framebuffer (ordinary bilinear
+enlargement). If this happens after a jittered frame has begun,
+single-frame instability may still be visible; this path needs native
+runtime validation and potentially earlier allocation preflight.
+The previous optional `PrismaScreenLighting` temporal system is not
+automatically merged or compatible with simultaneous use.
+
+This is an experimental **fixed-resolution-ratio temporal upscaler**,
+not variable-rate dynamic resolution, FSR/DLSS/TSR equivalence, optical
+flow, a reactive-mask G-buffer for all translucent content, or proof of
+visual/performance quality. Source-level cost estimation is heuristic;
+actual GPU cost, bandwidth, ghosting and savings are unmeasured here.
+
+**Checks actually run:** GitHub source readback and 28/28 static call-site
+presence checks, including temporal-after-Bloom ordering, output-sized
+history/scratch target and Scene/Game/GameClient scaled beginScene.
+**NOT RUN:** CMake/C++/Metal/GLSL build, CTest, Metal/GL/GLES/Vulkan GPU
+execution, screenshot parity, memory, motion-vector/AA quality or
+performance profiling and CI. Stage-specific handoff:
+`docs/handoffs/prisma-stage-44.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
