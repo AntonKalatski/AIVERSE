@@ -2231,3 +2231,35 @@ but **unrun** tests and next steps are in
 Next: Stage 15.4 global multi-world CPU/GPU streaming coordination,
 then Vulkan compute GPU selection and crack-free lossy LOD. Append a
 new handoff after each bounded implementation stage.
+
+
+## STRATA Stage 15.4 — multi-world streaming continuation (2026-11-20)
+
+Read `docs/agent-handoffs/strata-virtual-geometry.md` Stage 15.4
+before editing indexed geometry, IO, GPU residency, scene load/unload
+or RHI buffer lifetime. Current branch:
+`feature/strata-virtual-geometry` (do NOT merge into main yet).
+
+- `StrataStreamingCoordinator.h/.cpp`: one Device-wide reserved
+  STRATA INDEX budget, a per-RHI-frame checked GPU transfer cap,
+  process-wide bounded shared native disk IO workers and verified
+  ready-page CPU cache. Settings/leases must be shared across ECS
+  worlds using the same gfx::Device; no FPS/RTS dependencies.
+- `DiskIndexPages` no longer starts one std::thread per archive.
+  Worker jobs reference-count their own archive State, never a
+  GeometryScene/ModelAsset; source close cancels pending jobs and
+  releases global cache budget.
+- `GeometryScene`: default-OFF, optional release of duplicate
+  staged `Asset::indices` only after archive fingerprint and pinned
+  GPU root admission, with all conflicting diagnostic/metadata paths
+  disabled. `planView` uses immutable logical index counts.
+- The shared index cap is NOT complete physical GPU VRAM including
+  Vulkan versions/in-flight buffers, and CPU release does NOT delete
+  original source Model geometry. Never claim those objectives met.
+- New/extended tests are authored but **NOT RUN**. Finish all
+  functionality before the owner's final native CMake/CTest and GPU
+  acceptance pass; record exact failures and tested commit SHA.
+
+Next functional target: Stage 16 actual Vulkan compute selected cluster
+visibility, followed by Stage 17 crack-free lossy LOD. Preserve one
+Renderer3D draw owner and Metal/Vulkan/GLES3 fallback semantics.
