@@ -76,6 +76,13 @@ static void verifyNamespaces() {
     AIVERSE_TEST_CHECK(aRange->valid() && bRange->valid());
     AIVERSE_TEST_CHECK(aRange->firstSlot==0 && bRange->firstSlot==1);
     AIVERSE_TEST_CHECK(catalog.reservedChunks()==2);
+    // The high 32-bit ID half contains exactly 32768 namespaces slots.
+    sc::SceneCollisionNamespaces capacity;
+    AIVERSE_TEST_CHECK(capacity.define("instances/full",32768));
+    AIVERSE_TEST_CHECK(!capacity.define("instances/overflow",1));
+    AIVERSE_TEST_CHECK(capacity.seal());
+    AIVERSE_TEST_CHECK(capacity.find("instances/full")->slotCount==32768);
+
     sc::SceneCollisionNamespaces reversed;
     AIVERSE_TEST_CHECK(reversed.define("instances/a",1));
     AIVERSE_TEST_CHECK(reversed.define("instances/b",1));
@@ -105,6 +112,20 @@ static void verifyNamespaces() {
         dataA,reader,space,aLease->range());
     auto b=std::make_unique<wd::CollisionStream>(
         dataB,reader,space,bLease->range());
+    // Explicit invalid range must fail before any async worker publishes.
+    bool invalidRejected=false;
+    try {
+        wd::CollisionStream invalid(
+            dataA,reader,space,wd::CollisionIdRange{32767,2});
+    } catch(const JsonError&) { invalidRejected=true; }
+    AIVERSE_TEST_CHECK(invalidRejected);
+    invalidRejected=false;
+    try {
+        wd::CollisionStream invalid(
+            dataA,reader,space,wd::CollisionIdRange{1,0});
+    } catch(const JsonError&) { invalidRejected=true; }
+    AIVERSE_TEST_CHECK(invalidRejected);
+
     untilReady(*a);
     untilReady(*b);
     AIVERSE_TEST_CHECK(space.colliders().size()==2);
