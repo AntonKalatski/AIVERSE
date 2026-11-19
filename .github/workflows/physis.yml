@@ -19,6 +19,12 @@ on:
       - '.github/workflows/physis.yml'
   workflow_dispatch:
 
+# Many source/doc pushes during PHYSIS development used to create hundreds
+# of queued jobs. Only the newest run for a given workflow/ref is actionable.
+concurrency:
+  group: physis-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   physis-native:
     name: PHYSIS CPU and optional Box3D (${{ matrix.os }})
