@@ -1,5 +1,6 @@
 #include "engine/character/vivid/HumanRig.h"
 #include "engine/character/vivid/RigAuthoring.h"
+#include "engine/character/vivid/BindPoseRebind.h"
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -72,6 +73,57 @@ void check() {
             "rig correction undo redo failed");
         req(!edits.apply(model,motion,motion),
             "rig correction modified immutable MotionWeave input");
+    }
+    {
+        render::Model rig;
+        render::Node root;
+        root.name="root";
+        rig.nodes.push_back(root);
+        render::Node head;
+        head.name="head";
+        head.parent=0;
+        head.mesh=0;
+        head.skin=0;
+        rig.nodes.push_back(head);
+        render::Skin skin;
+        skin.joints={1};
+        skin.inverseBind={render::mat4{}};
+        rig.skins.push_back(skin);
+        rig.vertices.resize(1);
+        rig.vertices[0].pos={1,0,0};
+        rig.vertices[0].weights[0]=255;
+        rig.indices={0,0,0};
+        render::MeshDef mesh;
+        render::Primitive primitive;
+        primitive.firstIndex=0;
+        primitive.indexCount=3;
+        primitive.firstVertex=0;
+        primitive.vertexCount=1;
+        primitive.jointPalette={0};
+        mesh.primitives.push_back(primitive);
+        rig.meshes.push_back(mesh);
+        RigAuthoring authoring;
+        req(authoring.setTranslation("head",{0,0.25f,0}),
+            "bind-pose translation authoring rejected");
+        const auto changed=BindPoseRebind::apply(rig,authoring);
+        req(changed.editedNodes==1 && changed.reboundSkins==1 &&
+            changed.influencedVertices==1,
+            "skin binding stage did not validate influenced vertex");
+        req(std::fabs(rig.nodes[1].t.y-0.25f)<1.e-6f &&
+            std::fabs(rig.skins[0].inverseBind[0].at(1,3)+0.25f)<1.e-6f,
+            "skin inverse bind was not recomputed from edited skeleton bind");
+        const auto neutral=(rig.bindWorld[1]*rig.skins[0].inverseBind[0])
+            .transformPoint(rig.vertices[0].pos);
+        req(std::fabs(neutral.x-1.0f)<1.e-6f &&
+            std::fabs(neutral.y)<1.e-6f,
+            "skin did not preserve neutral mesh after bind-pose change");
+        const auto last=rig.nodes[1].t.y;
+        rig.meshes[0].primitives[0].jointPalette={};
+        bool rejected=false;
+        try {(void)BindPoseRebind::apply(rig,authoring);}
+        catch(const std::invalid_argument&){rejected=true;}
+        req(rejected && rig.nodes[1].t.y==last,
+            "invalid skin palette partially modified skeleton");
     }
     model.nodes.resize(2); // missing jaw and eyes must be legal for morph-only rigs
     const auto fallback=HumanRigBinding::compile(model,HumanDNA{}.rig);
