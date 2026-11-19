@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -22,31 +23,29 @@ public:
     struct Route {
         std::string asset;
         bool enabled=true;
+        // One-shot presentation ownership, seconds (hard retire and release).
+        // The playing emitter may spawn particles until this deadline.
+        float oneShotSeconds=3.0f;
     };
     struct Stats {
         uint64_t played=0,moved=0,stopped=0,killed=0;
-        uint64_t missing=0,refused=0,failed=0;
+        uint64_t missing=0,refused=0,failed=0,oneShots=0,retired=0;
     };
 
     SpectraFxHybridPlayback(gfx::Device& device,ParticleSystem& cpu,
                             SpectraFxGpuEmitterLibrary& library)
         : device_(device),cpu_(cpu),library_(library) {}
 
-    // Explicit teardown before the RHI device/ParticleSystem is destroyed.
-    ~SpectraFxHybridPlayback()=default;
+    // Destruction should happen before the RHI Device and CPU ParticleSystem.
+    ~SpectraFxHybridPlayback() { reset(); }
 
     void route(uint32_t cueId,Route value) {routes_[cueId]=std::move(value);}
     void unroute(uint32_t cueId) {routes_.erase(cueId);}
     void clearRoutes() {routes_.clear();}
 
     bool dispatch(const SpectraFxCue& cue) {
-        if(cue.key==0) {
-            // One-shots need their own autonomous retirement policy. Refuse
-            // them rather than leaking GPU resources or arbitrary CPU handles.
-            ++stats_.refused;
-            return false;
-        }
         if(cue.action!=SpectraFxCue::Action::Play) {
+            if(!cue.key) {++stats_.refused;return false;}
             auto it=active_.find(cue.key);
             if(it==active_.end()) {++stats_.missing;return false;}
             if(cue.action==SpectraFxCue::Action::Move) {
@@ -59,30 +58,38 @@ public:
             else ++stats_.stopped;
             return true;
         }
-        auto route=routes_.find(cue.id);
+        const auto route=routes_.find(cue.id);
         if(route==routes_.end() || !route->second.enabled ||
            !SpectraFxGpuEmitterLibrary::validName(route->second.asset)) {
             ++stats_.missing;return false;
         }
+        const bool oneShot=cue.key==0;
+        if(oneShot && (!std::isfinite(route->second.oneShotSeconds) ||
+                       route->second.oneShotSeconds<=0 ||
+                       route->second.oneShotSeconds>60)) {
+            ++stats_.refused;return false;
+        }
+        if(active_.size()+oneShots_.size()>=kMaxEmitters &&
+           (oneShot || active_.find(cue.key)==active_.end())) {
+            ++stats_.refused;return false;
+        }
         const auto load=library_.load(route->second.asset);
         const auto* entry=library_.find(route->second.asset);
         if(!load.valid || !entry) {++stats_.failed;return false;}
-        // Construct replacement off-map; if it fails, preserve currently
-        // playing instance and its existing per-instance resources.
         auto next=std::make_unique<SpectraFxHybridEmitter>();
         if(!next->begin(device_,cpu_,entry->config,cue.position,cue.direction)) {
             ++stats_.failed;return false;
         }
-        auto old=active_.find(cue.key);
-        if(old==active_.end() && active_.size()>=kMaxEmitters) {
-            next->stop();
-            ++stats_.refused;
-            return false;
+        if(oneShot) {
+            oneShots_.push_back({std::move(next),0,route->second.oneShotSeconds});
+            ++stats_.oneShots;
+        } else {
+            auto it=active_.find(cue.key);
+            if(it!=active_.end()) {
+                it->second->stop();
+                it->second=std::move(next);
+            } else active_.emplace(cue.key,std::move(next));
         }
-        if(old!=active_.end()) {
-            old->second->stop();
-            old->second=std::move(next);
-        } else active_.emplace(cue.key,std::move(next));
         ++stats_.played;
         return true;
     }
@@ -95,9 +102,23 @@ public:
     // Call inside RHI beginFrame/endFrame, outside all render passes.
     // The host separately updates the shared CPU ParticleSystem ONCE/frame.
     void updateGpu(float dt) {
+        if(!std::isfinite(dt)||dt<0||dt>0.1f) {++stats_.failed;return;}
         for(auto& pair:active_)
-            if(pair.second->gpuActive() && !pair.second->suspended() &&
-               !pair.second->updateGpu(dt)) ++stats_.failed;
+            advanceGpu(*pair.second,dt);
+        for(size_t i=0;i<oneShots_.size();) {
+            auto& shot=oneShots_[i];
+            // Retire exactly once; GPU and CPU resources are bounded by the
+            // authored deadline, independent of whether particles remain.
+            if(shot.elapsed+dt>=shot.duration) {
+                shot.emitter->stop();
+                oneShots_.erase(oneShots_.begin()+std::ptrdiff_t(i));
+                ++stats_.retired;
+                continue;
+            }
+            advanceGpu(*shot.emitter,dt);
+            shot.elapsed+=dt;
+            ++i;
+        }
     }
 
     // Call during a compatible open render pass after the compute stage.
@@ -105,9 +126,9 @@ public:
     void renderGpu(const render::mat4& viewProj,render::float3 cameraRight,
                    render::float3 cameraUp) {
         for(auto& pair:active_)
-            if(pair.second->gpuActive() && !pair.second->suspended() &&
-               !pair.second->renderGpu(viewProj,cameraRight,cameraUp))
-                ++stats_.failed;
+            drawGpu(*pair.second,viewProj,cameraRight,cameraUp);
+        for(auto& shot:oneShots_)
+            drawGpu(*shot.emitter,viewProj,cameraRight,cameraUp);
     }
 
     // Rollback/scene unload: prevents stale generation-safe keys from
@@ -115,18 +136,36 @@ public:
     void reset() {
         for(auto& pair:active_) pair.second->stop();
         active_.clear();
+        for(auto& shot:oneShots_) shot.emitter->stop();
+        oneShots_.clear();
     }
 
     size_t attached() const {return active_.size();}
+    size_t oneShotCount() const {return oneShots_.size();}
     const Stats& stats() const {return stats_;}
     void resetStats() {stats_={};}
 
 private:
+    struct OneShot {
+        std::unique_ptr<SpectraFxHybridEmitter> emitter;
+        float elapsed=0,duration=3;
+    };
+    void advanceGpu(SpectraFxHybridEmitter& emitter,float dt) {
+        if(emitter.gpuActive()&&!emitter.suspended()&&!emitter.updateGpu(dt))
+            ++stats_.failed;
+    }
+    void drawGpu(SpectraFxHybridEmitter& emitter,
+                 const render::mat4& viewProj,render::float3 right,
+                 render::float3 up) {
+        if(emitter.gpuActive()&&!emitter.suspended()&&
+           !emitter.renderGpu(viewProj,right,up)) ++stats_.failed;
+    }
     gfx::Device& device_;
     ParticleSystem& cpu_;
     SpectraFxGpuEmitterLibrary& library_;
     std::unordered_map<uint32_t,Route> routes_;
     std::unordered_map<uint64_t,std::unique_ptr<SpectraFxHybridEmitter>> active_;
+    std::vector<OneShot> oneShots_;
     Stats stats_{};
 };
 
