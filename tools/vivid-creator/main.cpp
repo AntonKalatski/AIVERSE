@@ -211,6 +211,8 @@ struct CreatorApp {
         }
         if(!groom.setCollisionMesh(positions,indices))
             throw std::runtime_error("VIVID Creator: scalp proxy must be a closed nondegenerate mesh within the 16K/32K budget");
+        if(!groom.attachRootsToCollisionMesh())
+            throw std::runtime_error("VIVID Creator: could not attach groom roots to scalp proxy");
     }
     void regenerate() {
         if(!device)return;
