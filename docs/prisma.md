@@ -2746,11 +2746,10 @@ and an enabled authored Temporal Resolve, *without depending
 on lazy shader readiness*. `PrismaScreenLighting::jittered`
 delegates to the canonical `Prisma::jitteredCamera` and resets
 its own history in that case; its `scenePass` suppresses the
-legacy temporal pipeline. The legacy wrapper's optional
-bounce/volumetric passes are suppressed together with its
-temporal resolver for now; splitting those lighting passes
-into an independent composable effect is a later functional
-task, not a feature claimed to be finished.
+legacy temporal pipeline. Stage 52 now separates the optional diffuse-bounce and volumetric
+lighting passes from that legacy temporal resolver: when canonical
+Temporal Resolve is selected, only linear HDR lighting runs before
+the canonical resolve. No second TAA history or jitter is used.
 
 **Explicit camera lifecycle:** `Prisma::retireUnregisteredViews(
 const std::vector<uint64_t>& liveViewIds)` can be called by a
@@ -2777,6 +2776,56 @@ describe any of these as passed. Stage-specific architecture,
 commits, touched paths, limitations and next functional steps
 are in `docs/handoffs/prisma-stage-51.md`.
 PR #26 remains Draft and main is untouched.
+
+
+## Stage 52 — optional HDR lighting independent of legacy temporal accumulation
+
+`PrismaScreenLighting` is an optional `PostProcess` adapter around
+`Prisma`; do not copy its implementation to SpectraFX or run a second
+TAA owner. This stage separates its HDR scene-lighting passes from its
+historical temporal reconstruction.
+
+- When `canonicalTemporalRequested()` is true on HDR/High, the adapter
+  delegates `jittered()` to `Prisma::jitteredCamera` and resets legacy
+  history. Its bounce shader (screen-space approximate indirect diffuse)
+  and optional shadowed volumetric sun scattering still run on **linear
+  HDR SceneColor before `Prisma::resolve`**. The last auxiliary texture
+  is copied back to scene color through a dedicated shader that keeps
+  alpha untouched. Prisma then remains the sole temporal owner.
+- If canonical temporal is not selected and the adapter is enabled on
+  HDR/High, its old two-history TAA / Halton camera jitter is retained,
+  including the old opaque-alpha copy contract. The adapter's
+  `temporalShadowResolve()` is true **only** in this legacy mode, so
+  optional PCSS shadow sampling is not accidentally randomized without
+  the matching legacy history.
+- Auxiliary bounce, scatter, history and depth textures are created
+  lazily as requested. Canonical-only mode does **not** create the two
+  legacy history images or legacy depth attachment; existing allocations
+  from a prior mode remain cached rather than being destroyed on a mode
+  toggle while the GPU may still use them. Full resource teardown on
+  resize/shutdown is inherited from the old adapter and still needs
+  GPU-fence lifecycle validation.
+- A missing sun shadow suppresses volumetric scatter for that frame,
+  even if configured. Without a legacy temporal history the scatter
+  sample sequence has a stable phase to avoid animation noise when a
+  canonical temporal preflight fails. No GPU capability or visual
+  parity is inferred from these source changes.
+
+Public API: `PrismaScreenLighting::lightingOnly()` describes the
+adapter's current path; `running()`, `passCount()`,
+`temporalShadowResolve()`, `setDiffuseBounceEnabled()` and
+`setVolumetricLight()` retain compatible semantics, except that the
+temporal shadow flag no longer treats a non-temporal lighting-only
+pass as a temporal resolver. The two direct lighting shaders and the
+separate alpha-preserving copy are included in the adapter's MSL/GLSL
+pipeline set. Existing `postfx` JSON, editor/MCP names and UI-after-
+tone-map ordering are unchanged.
+
+Verification: 15/15 **source-presence and ordering checks** after
+GitHub readback. **NOT RUN:** clang/native CMake, unit/CTest, Metal/GL/
+Vulkan/GLES execution, GPU fences, HDR color/alpha pixel parity,
+screen-space bounce/volumetric screenshot tests and CI. Stage 52 code
+and precise continuation live in `docs/handoffs/prisma-stage-52.md`.
 
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
