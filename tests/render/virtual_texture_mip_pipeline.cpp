@@ -266,6 +266,59 @@ void streamingAndCancellation() {
     check(gpu.resources.empty(),"GPU atlas and table released once");
 }
 
+// Repeated partial uploads must never publish stale slices after cancellation
+// or LRU reuse. The pinned root remains the stable same-layer fallback.
+void repeatedCancellationAndLruReuse() {
+    MockDevice gpu;
+    VirtualTextureStreamer streamer(gpu,budget());
+    auto cfg=streamConfig();
+    cfg.physicalPages=2;
+    check(streamer.initialize(cfg),"reuse fixture initialized");
+    std::vector<uint8_t> page(8u*8u*4u,37);
+    const VirtualPageKey root{2,0,0,0};
+    const auto rootTicket=streamer.stage(root,page.data(),page.size(),true);
+    check(rootTicket.valid(),"pinned root staged");
+    for(int n=0;n<8 && !streamer.resolveExact(root).valid();++n)
+        streamer.drain();
+    check(streamer.resolveExact(root).valid(),"pinned root ready");
+    VirtualPageKey previous{0,0,0,0};
+    bool hasPrevious=false;
+    for(int iteration=0;iteration<96;++iteration) {
+        VirtualPageKey key{0,iteration%4,(iteration/4)%4,0};
+        page[0]=uint8_t(iteration);
+        auto ticket=streamer.stage(key,page.data(),page.size());
+        check(ticket.valid(),"detail page staged into reusable slice");
+        if(iteration%3==0) {
+            check(streamer.drain()==1,"first detail mip submitted");
+            check(!streamer.resolveExact(key).valid(),
+                  "partially transferred mip chain not visible");
+            check(streamer.cancel(ticket),"partially transferred batch cancelled");
+            check(!streamer.resolveExact(key).valid(),
+                  "cancelled detail cannot become resident");
+            check(streamer.encodedPageTableForMip(key.x,key.y,0,0)[2]==2,
+                  "cancelled detail resolves only coarse root");
+            hasPrevious=false;
+        } else {
+            for(int n=0;n<8 && !streamer.resolveExact(key).valid();++n)
+                streamer.drain();
+            check(streamer.resolveExact(key).valid(),"full mip chain published");
+            if(hasPrevious && !(previous==key)) {
+                check(!streamer.resolveExact(previous).valid(),
+                      "previous LRU slice was evicted before reuse");
+                check(streamer.encodedPageTableForMip(previous.x,previous.y,0,0)[2]==2,
+                      "evicted detail resolves pinned coarse root");
+            }
+            previous=key;
+            hasPrevious=true;
+        }
+        check(streamer.resolveExact(root).valid(),
+              "pinned root survives cancellation and LRU reuse");
+        check(streamer.ready(),"streamer remains usable after repeated reuse");
+    }
+    streamer.shutdown();
+    check(gpu.resources.empty(),"stress fixture GPU handles released");
+}
+
 void impossibleBudgets() {
     MockDevice gpu;
     auto limits=budget();
@@ -289,6 +342,7 @@ int main() {
         physicalMipKernel();
         indexedTableReference();
         streamingAndCancellation();
+        repeatedCancellationAndLruReuse();
         impossibleBudgets();
     } catch(const std::exception& e) {
         std::fprintf(stderr,"VirtualTextureMipPipeline FAIL: %s\n",e.what());
