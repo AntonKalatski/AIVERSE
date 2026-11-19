@@ -135,6 +135,8 @@ public:
 
     // Source-global presentation budget only; valid for all compatible
     // emitters in this arena. The physical GPU buffer capacity is unchanged.
+    void setGlobalQuality(FxQuality quality) {globalQuality_=quality;}
+    FxQuality globalQuality() const {return globalQuality_;}
     void setExternalSpawnScale(float scale) {
         if(std::isfinite(scale))
             externalSpawnScale_=std::clamp(scale,0.0f,1.0f);
@@ -154,7 +156,8 @@ public:
                 tracked.end());
             if(dt<=0) continue; // paused: no burst or new emissions
             const float distance=spectraFxDistance(cameraEye,emitter.position);
-            const float spawnScale=spectraFxSpawnQualityScale(emitter.config.quality) *
+            const float spawnScale=spectraFxSpawnQualityScale(
+                                   std::min(emitter.config.quality,globalQuality_)) *
                                    emitter.config.lod.spawnScale(distance) *
                                    externalSpawnScale_;
             const bool ok=emitter.scheduler.tick(
@@ -231,6 +234,7 @@ private:
     std::map<uint64_t,Emitter> emitters_;
     Stats stats_{};
     float externalSpawnScale_=1.0f;
+    FxQuality globalQuality_=FxQuality::High;
     std::string error_;
 };
 
