@@ -1,5 +1,18 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 101 — deterministic production HybridPlayback retire/reset test (NOT RUN)
+
+Code `50df70bd39cf8059c54e75389c81a1c6eb40a306` adds
+`spectrafx_retirement` CPU-side test with a controlled Metal-capable
+fake RHI exercising **production** keyed replacement, Stop,
+`resetPresentation` in-encoder rejection, three-serial deferred GPU
+release, 32 cycles of churn and exact resource-handle teardown.
+Standalone real MetalGPU fixture remains `spectrafx_metal_rhi`.
+**Stages 98–101 not yet compiled/native-tested**; last known green
+full acceptance Stage 97 only.
+Handoff: `docs/agent-handoffs/spectrafx-stage101-hybrid-retirement-2026-11-19.md`.
+
+
 ## Stage 100 — GPU impact callback lifetime (NOT RUN)
 
 **Code:** `dcd0d38481561c5e5fc85cb1e7881893e5d9ba69` and

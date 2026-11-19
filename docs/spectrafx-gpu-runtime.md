@@ -1,5 +1,18 @@
 # SpectraFX — opt-in GPU emitter playback in native AIVERSE projects
 
+## Stage 101 — production retirement policy regression (not yet executed)
+
+`spectrafx_retirement` is a new desktop CPU-side CTest using the real
+`SpectraFxHybridPlayback` with a deterministic fake Metal-capable RHI.
+Unlike the standalone Metal acceptance's external lifetime queue,
+this checks the production `resetPresentation`, keyed replacement,
+three-serial resource retirement, GPU slot-budget accounting and
+exact-once handle destruction through 32 scene-reset cycles.
+It **does not replace** the real Metal shaders/readback verification in
+`spectrafx_metal_rhi`. Neither new test has a recorded PASS yet.
+See the Stage 101 handoff.
+
+
 ## Stage 100 — async GPU impact lifetime contract
 
 When an emitter is retired or a live scene is reset,

@@ -8,7 +8,7 @@ description: Author and integrate AIVERSE SpectraFX visual effects: versioned gr
 **Canonical documentation:** `docs/spectrafx.md`.  
 **Exact stage history:** `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.  
 **Engineering rules:** `AGENTS.md`.
-**Latest handoff:** `docs/agent-handoffs/spectrafx-stage100-impact-retirement-2026-11-19.md`.
+**Latest handoff:** `docs/agent-handoffs/spectrafx-stage101-hybrid-retirement-2026-11-19.md`.
 
 ## Fast path (current supported capabilities)
 
@@ -65,3 +65,13 @@ Metal storage referenced by in-flight commands. Never call teardown
 The third MetalGPU test `spectrafx_metal_rhi` covers deferred callback
 invalidations and particle-generation rejection; run it before claiming
 native acceptance. Stage 98–100 tests have NOT RUN as of this handoff.
+
+
+## Stage 101: deterministic playback retirement
+
+The desktop `spectrafx_retirement` CTest exercises the real
+`SpectraFxHybridPlayback` resource accounting and deferred stop/reset
+through a controlled fake Metal RHI, while the separate
+`spectrafx_metal_rhi` checks actual Apple Metal GPU execution.
+These newly authored tests have not been run. Keep tested SHAs separate
+from Stage 97's verified 8/8 acceptance.
