@@ -143,6 +143,9 @@ inline std::unique_ptr<render::Model> makeArborBranchLodModel(
     foliage.roughness = 0.85f;
     foliage.doubleSided = true;
     foliage.alpha = render::AlphaMode::Opaque; // project can supply cutout texture
+    // Leaf vertex alpha carries GPU crown-wind height weight. Ignore it in
+    // fragment shading; the base RGB texture/material still controls opacity.
+    foliage.vertexColors=false;
     model->materials = {bark, foliage};
 
     for (size_t branch = 0; branch < tree.branches.size(); ++branch) {
@@ -165,6 +168,15 @@ inline std::unique_ptr<render::Model> makeArborBranchLodModel(
                 vertex.pos = {v.x * 0.01f, v.y * 0.01f, v.z * 0.01f};
                 vertex.nrm = {v.nx, v.ny, v.nz};
                 vertex.uv = {v.u, v.v};
+                if(v.material==1) {
+                    // Reusable, bounded source attribute; identical for
+                    // Full/Reduced/Minimal branch geometry and every season.
+                    const int64_t y=std::clamp<int64_t>(
+                        v.y,0,std::max<int32_t>(1,tree.heightCm));
+                    const uint32_t windWeight=static_cast<uint32_t>(
+                        y*255/std::max<int32_t>(1,tree.heightCm));
+                    vertex.color=(windWeight<<24)|0x00ffffffu;
+                }
                 model->vertices.push_back(vertex);
             }
             uint32_t barkIndices = 0;
