@@ -1408,6 +1408,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     effectReport.autoExposureBoxMetered = false;
     effectReport.reactiveInputSupplied = false;
     effectReport.reactiveInputAccepted = false;
+    effectReport.objectVelocityInputAccepted = false;
+    effectReport.reactiveWithoutObjectVelocity = false;
     effectReport.motionBlurReactiveEdgesEnabled = false;
     effectReport.effects.clear();
     if (!sceneReady_) {
@@ -1676,6 +1678,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                                          gfx::PixelFormat::RGBA8);
     effectReport.reactiveInputSupplied = motionView.reactiveMask.texture.valid();
     effectReport.reactiveInputAccepted = validReactive;
+    effectReport.objectVelocityInputAccepted = validVelocity;
+    effectReport.reactiveWithoutObjectVelocity = validReactive && !validVelocity;
     stats_.reactiveUsed=validReactive;
     bool motionBlurEncoded = false;
     bool depthOfFieldEncoded = false;
