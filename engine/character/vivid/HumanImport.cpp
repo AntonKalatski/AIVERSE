@@ -252,6 +252,7 @@ HumanImportedAsset importHumanAsset(const HumanImportManifest& m,
         throw std::runtime_error("VIVID import: model has no CPU vertices");
     fillMissingPrimitiveRanges(*out.model);
     const std::size_t importedVertices=out.model->vertices.size();
+    out.sourceVertexCount=importedVertices;
     // Input vertex IDs belong to the imported mesh, never a reordered
     // post-processing mesh. Tangents may be regenerated, positions must not
     // silently change or a morph can deform the wrong point.
