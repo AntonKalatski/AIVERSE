@@ -813,11 +813,11 @@ void gpuDiskBackedVirtualAtlas(Device& dev) {
     const auto coarseData=solid(4,4,{18,71,93,255});
     const auto fineData=solid(4,4,{82,196,41,255});
     const auto replacementData=solid(4,4,{220,44,16,255});
-    check(files.write(coarse,coarseData) &&
-          files.write(fine,fineData) &&
-          files.write(replacement,replacementData),
-          "temporary packed RGBA8 virtual page files written");
-    if (failures) return; // avoid a misleading disk->GPU PASS after fixture error
+    const bool fixturesWritten=files.write(coarse,coarseData) &&
+                               files.write(fine,fineData) &&
+                               files.write(replacement,replacementData);
+    check(fixturesWritten,"temporary packed RGBA8 virtual page files written");
+    if (!fixturesWritten) return; // do not claim disk-to-GPU success without source files
 
     VirtualTextureStreamConfig atlasCfg;
     atlasCfg.tilesX=atlasCfg.tilesY=4;
