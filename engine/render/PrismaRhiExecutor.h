@@ -74,15 +74,18 @@ public:
         size_t pendingTextures = 0;
         uint64_t liveKnownBytes = 0;
         uint64_t pendingKnownBytes = 0;
-        size_t unknownFormatsOrDimensions = 0;
+        size_t unknownFormatsOrDimensions = 0; // legacy total, includes both lifetime classes
+        size_t unknownLiveTextures = 0;
+        size_t unknownPendingTextures = 0;
     };
     GpuMemoryStats gpuMemoryStats() const {
         GpuMemoryStats out;
-        const auto bytesOf = [&](gfx::TextureHandle h) -> uint64_t {
+        const auto bytesOf = [&](gfx::TextureHandle h, size_t& unknown) -> uint64_t {
             gfx::TextureInfo info{};
             if (!device_.textureInfo(h,info) ||
                 info.width <= 0 || info.height <= 0) {
                 ++out.unknownFormatsOrDimensions;
+                ++unknown;
                 return 0;
             }
             uint64_t bpp = 4;
@@ -97,11 +100,11 @@ public:
         };
         for (const auto& e : pool_.entries()) {
             ++out.liveTextures;
-            out.liveKnownBytes += bytesOf(e.handle);
+            out.liveKnownBytes += bytesOf(e.handle, out.unknownLiveTextures);
         }
         for (const auto& p : retired_.pending()) {
             ++out.pendingTextures;
-            out.pendingKnownBytes += bytesOf(p.handle);
+            out.pendingKnownBytes += bytesOf(p.handle, out.unknownPendingTextures);
         }
         return out;
     }
