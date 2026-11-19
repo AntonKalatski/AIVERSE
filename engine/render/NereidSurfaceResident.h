@@ -197,18 +197,19 @@ public:
                   const lib::nereid::WaterTileRange& tile,
                   const std::array<float4,16>& ripples={},
                   const std::array<float4,16>& wakeShapes={},
-                  float4 wind={})const {
+                  float4 wind={},float4 hydraulics={})const {
         if(resident_ && tile.indexCount>0)
             drawNereidWaterSurface(renderer,mesh_,key_.style,transform,
                                    ripples,tile.firstIndex,tile.indexCount,
-                                   wakeShapes,wind);
+                                   wakeShapes,wind,hydraulics);
     }
     void draw(Renderer3D& renderer,const mat4& transform=mat4::identity(),
               const std::array<float4,16>& ripples={},
               const std::array<float4,16>& wakeShapes={},
-              float4 wind={}) const {
+              float4 wind={},float4 hydraulics={}) const {
         if(resident_)drawNereidWaterSurface(renderer,mesh_,key_.style,
-                                          transform,ripples,0,0,wakeShapes,wind);
+                                          transform,ripples,0,0,wakeShapes,
+                                          wind,hydraulics);
     }
     void release(gfx::Device& device) {
         releaseNereidWaterSurface(device,mesh_);
