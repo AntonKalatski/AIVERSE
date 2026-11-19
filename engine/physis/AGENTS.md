@@ -400,3 +400,34 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   permission/symlink, FIFO, inode mode/hardlink, competing lock and
   SIGKILL reacquisition checks. Full native AIVERSE/CTest NOT RUN.
 - Handoff: `docs/agent-handoffs/physis-stage46-lock-parent-integrity-2026-11-19.md`.
+
+### Stage 47 — monitor live journal lock ownership (2026-11-19)
+
+- POSIX `JournalProcessLock::valid()` rechecks that the still-published
+  lock pathname resolves to the same device/inode as the locked fd, that
+  the file remains regular, singly linked, same effective UID and
+  private, and that the parent pathname still names the original
+  trusted private directory. Successful `acquire()` alone is not enough.
+- `LoopbackAdminEndpoint::poll` and `afterTick` check `valid()`
+  before privileged operation; lost ownership calls
+  `ServerGateway::suspendJournal()`, which is sticky for this endpoint.
+  Every endpoint journal write also runs a `valid()` guard; do not
+  bypass this writer by directly calling uncoordinated `FileJournal`.
+  A lost live lock forbids new submissions and prevents positive
+  durability ACKs on status query.
+- A same-UID rename/unlink AFTER a check is still a TOCTOU risk:
+  regular filesystem path operations plus advisory flock do not give
+  distributed fencing, immutable namespace ownership or an atomic
+  World + journal checkpoint. Private server-controlled directory
+  ownership is mandatory for the full endpoint lifetime.
+- POSIX source fixtures `replacedLiveLockSuspendsAdmin` and
+  `liveParentPermissionChangeSuspendsAdmin` are registered in
+  `physis_admin_journal`, but integrated CMake/CTest are NOT RUN.
+- An isolated Linux GCC 14.2 C++20 smoke compiled the EXACT header
+  SHA `040fedb623d491428057542eee2f8fae6bcc2a28` using
+  `-Wall -Wextra -Werror -pedantic` and PASSED lock rename, parent
+  chmod drift, FIFO, symlink, hardlink, conflict and SIGKILL cases.
+  This is not a full engine test PASS. Windows `valid()` currently
+  checks only `held()`; handle identity/reparse/ACL still needs QA.
+- Handoff:
+  `docs/agent-handoffs/physis-stage47-live-lock-integrity-2026-11-19.md`.
