@@ -146,7 +146,17 @@ struct GpuIcbVirtualMaterial {
     bool hasPbr = false;
     std::array<TextureHandle,6> pbrTextures{};
     std::array<float,36> pbrU2{};
+    // Fragment-only Shader Graph source slots 13..16. Slot 16 uses
+    // a constexpr Metal sampler because dynamic sampler slots stop at 15.
+    uint32_t graphTextureCount = 0;
+    std::array<TextureHandle,4> graphTextures{};
     bool valid() const {
+        if (graphTextureCount>4 || (graphTextureCount && !hasPbr))
+            return false;
+        for(uint32_t i=0;i<graphTextureCount;++i)
+            if(!graphTextures[i].valid()) return false;
+        for(uint32_t i=graphTextureCount;i<4;++i)
+            if(graphTextures[i].valid()) return false;
         if (hasPbr) {
             for (const auto texture : pbrTextures)
                 if (!texture.valid()) return false;
@@ -180,9 +190,16 @@ struct GpuIcbVirtualMaterial {
 struct GpuIcbPbrMaterial {
     std::array<TextureHandle,6> textures{};
     std::array<float,36> u2{};
+    uint32_t graphTextureCount = 0;
+    std::array<TextureHandle,4> graphTextures{};
     bool valid() const {
         for (auto t : textures) if (!t.valid()) return false;
         for (float x : u2) if (!std::isfinite(x)) return false;
+        if (graphTextureCount>4) return false;
+        for(uint32_t i=0;i<graphTextureCount;++i)
+            if(!graphTextures[i].valid()) return false;
+        for(uint32_t i=graphTextureCount;i<4;++i)
+            if(graphTextures[i].valid()) return false;
         return true;
     }
 };
