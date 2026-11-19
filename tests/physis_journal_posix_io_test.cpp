@@ -98,7 +98,17 @@ int main() {
     CHECK(readback==std::vector<std::uint8_t>{77});
     CHECK(!io::write(dir,"receipts",data,"nonce-b",&reason));
     CHECK(::chmod(parent.c_str(),0700)==0);
+    struct stat priorReceipt{}, publishedReceipt{};
+    CHECK(::fstatat(dir,"receipts",&priorReceipt,AT_SYMLINK_NOFOLLOW)==0);
     CHECK(io::write(dir,"receipts",data,"nonce-c",&reason));
+    CHECK(::fstatat(dir,"receipts",&publishedReceipt,AT_SYMLINK_NOFOLLOW)==0);
+    CHECK(S_ISREG(publishedReceipt.st_mode));
+    CHECK(publishedReceipt.st_dev==priorReceipt.st_dev);
+    CHECK(publishedReceipt.st_ino!=priorReceipt.st_ino);
+    CHECK(publishedReceipt.st_nlink==1);
+    CHECK(publishedReceipt.st_uid==::geteuid());
+    CHECK((publishedReceipt.st_mode & 0077)==0);
+    CHECK(!fs::exists(parent/"receipts.next-nonce-c"));
     fs::rename(parent,moved);
     fs::create_directory(parent);
     CHECK(::chmod(parent.c_str(),0700)==0);
