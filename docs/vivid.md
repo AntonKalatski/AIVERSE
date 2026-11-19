@@ -553,3 +553,10 @@ Open v1 import manifests may specify `"scalpColliderMesh": "closed_head_proxy"`.
 Creator now also exposes imported facial ARKit channel-to-morph route gain sliders (0–4) and can atomically save edited manifests. The existing 52-channel DNA authoring and procedural groom LOD selectors remain available.
 
 **No new C++ build, CTest, Metal GUI acceptance or performance benchmarks have been run for these changes** (implementation-first request). Source includes newly authored regression assertions covering open-surface rejection, last-good preservation, scalp root relocation, manifest roundtrip and 30/120 Hz substep equivalence. These are not passing-test claims. Full photoreal MetaHuman-level character creation still requires additional artist-authored mesh sculpt/rig/LOD tools, realistic scanned assets, accurate skin/eye/hair optics and runtime GPU performance validation. See `docs/agent-handoffs/vivid.md` for implementation SHAs and the final validation gate.
+
+
+## Stage 6Q — animated groom root attachments (2026-11-19)
+
+An imported closed scalp collision mesh now supports stable per-guide source triangle/barycentric anchors. During a successful `refitCollisionMesh`, guide roots, their rest positions, live positions and previous positions follow the deformed local-space scalp triangles. Failed geometry/refit/attachment staging retains previously published triangle/BVH and guide data. Collider replacement and clear invalidate old triangle identifiers; callers must reattach roots after changing topology.
+
+This is a **CPU geometry API**, not yet automatic MotionWeave-to-skinned-scalp streaming. `VIVID Creator` currently attaches static import proxies at authoring time. No source changes from this stage have been natively built or tested on macOS; test assertions were added but not executed. See `docs/agent-handoffs/vivid.md` for exact commits and future integration gates.
