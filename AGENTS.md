@@ -90,6 +90,24 @@ through `Renderer3D::invalidateModelCachesFor(model)`.
 `RtsView` opts eligible stationary scenery in at the host boundary, but no
 packet cache runs without the global experimental flag.
 
+**Cross-model static CPU MDI (experimental, 2026-11-19):**
+`AIVERSE_STATIC_CROSS_MODEL_BATCHES=1` enables a separate, static-only
+cross-model sort in the existing CPU indexed-indirect batching path.
+The common `engine/render/StaticCrossModelBatchPolicy.h` requires distinct
+Models to share one `geometryPoolPage` AND identical GPU VB/IB handles.
+Only compatible rigid opaque/sun-shadow items (no active deformation, GI,
+shader graph, transparent/fade, actor reveal, material-batch roles or LOD
+crossfade) can be grouped after independent view/LOD/culling. Material GPU
+state, pipeline flags, base indices and per-instance transforms still use
+the existing exact checks and MDI command offsets. Do NOT group merely
+because two Models use the same texture or Material pointer; different
+GPU buffers need separate draws, not fake combined geometry. Vulkan pooled
+nonzero base vertices remain on the direct path. The option is independent
+of CPU packet caching, disabled by default and forbidden in safe/debug
+or reflection/auxiliary passes. Editor Scene → Batching reports submitted
+cross-model groups, commands and item counts. See `docs/geometry-performance.md`
+and the latest batching-agent handoff before editing these paths.
+
 `engine/render/EcsStaticModelRender.h` provides the **shared genre-independent
 ECS presentation adapter** using only integer asset/revision state in the ECS
 component and the existing `WorldTransform`; model resolution and namespaced
