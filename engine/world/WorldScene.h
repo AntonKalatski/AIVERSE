@@ -5,6 +5,8 @@
 #include "engine/world/NereidCascadeScene.h"
 #include "engine/world/NereidUnderwaterView.h"
 #include "engine/world/NereidRipples.h"
+#include <cmath>
+#include <algorithm>
 
 namespace aiverse::world {
 // CPU model decode/terrain tessellation in the worker; GPU publication on update's thread.
@@ -38,8 +40,17 @@ public:
                         std::forward<Callback>(onSpectraFxOrAudio));
     }
     void advanceNereidRipples(float deltaSeconds) {
-        ripples_.advance(deltaSeconds,[this](uint64_t waterId) {
-            return nereidWater_.currentForInteractionWater(waterId);
+        ripples_.advance(deltaSeconds,[this](uint64_t waterId,
+                                     double x,double y,double z) {
+            // Presentation-only coordinate quantization before an immutable
+            // fixed-point current lookup; never enters authoritative ECS.
+            auto fixed=[](double value) {
+                constexpr double limit=1e12;
+                const double safe=std::clamp(value,-limit,limit);
+                return Fixed::fromRaw(int64_t(std::llround(safe*Fixed::kOne)));
+            };
+            return nereidWater_.currentForInteractionWater(
+                waterId,{fixed(x),fixed(y),fixed(z)});
         });
     }
     const NereidRippleField& nereidRipples()const{return ripples_;}
