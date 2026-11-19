@@ -5,6 +5,7 @@
 #include "engine/world/TerraWeavePhenology.h"
 #include "engine/world/TerraWeaveWindField.h"
 #include "engine/world/TerraWeaveWindUploadPolicy.h"
+#include "engine/world/TerraWeaveWindShadowCachePolicy.h"
 
 namespace aiverse::terraweave { class TerraWeaveForestScene; class TerraWeaveHorizonScene; }
 namespace aiverse::world {
@@ -60,6 +61,14 @@ public:
     terraweave::HorizonWindUploadPolicy vegetationHorizonWindUploadPolicy() const {
         return vegetationHorizonWindUploadPolicy_;
     }
+    // Maximum CPU wind shadow capacity retained by inactive Horizon GPU
+    // LRU entries. An over-budget entry is fully evicted and later reloaded.
+    void setVegetationHorizonWindShadowCachePolicy(
+        terraweave::HorizonWindShadowCachePolicy policy);
+    terraweave::HorizonWindShadowCachePolicy
+    vegetationHorizonWindShadowCachePolicy() const {
+        return vegetationHorizonWindShadowCachePolicy_;
+    }
     const AsyncChunkStream::Status& status()const{return stream_->status();}
     // Optional genre-independent presentation forest. Native hosts may feed
     // a deterministic tick and schedule sparse harvest/regrowth without
@@ -104,6 +113,7 @@ private:
     bool vegetationHorizonSpatialWind_=true;
     bool vegetationHorizonExactWindField_=true;
     terraweave::HorizonWindUploadPolicy vegetationHorizonWindUploadPolicy_{};
+    terraweave::HorizonWindShadowCachePolicy vegetationHorizonWindShadowCachePolicy_{};
     float overhang_=0;                                        // "meshOverhang": units a mesh may reach past its chunk
     void releaseChunk(gfx::Device&,Prepared&);
     size_t uploadBytes_=16*1024*1024;
