@@ -480,6 +480,53 @@ Ordinary model MDI already supported limited mixed-model grouping via
 `AIVERSE_MDI_GEOMETRY_SORT=1`; this opt-in provides a narrower
 static-only sorting and shared-page contract rather than replacing it.
 
+### Page-aware static MDI preflight (Stage 18)
+
+Before doing the *additional* static cross-model sort, the renderer now
+preflights only ModelItems that already passed the regular per-pass
+visibility, shadow/occlusion and LOD selection. This avoids rearranging a
+scene's ordinary draw order when no useful mixed-model indirect group is
+possible.
+
+The preflight groups candidates by the exact tuple
+`(GeometryPoolPage*, materialGroup, drawFlags, GPU vertexBuffer, GPU indexBuffer)`.
+The material group is already resolved with full GPU-state equivalence, not
+raw material pointer identity. A group is **ready** only when it includes
+at least two distinct Model objects, at least the backend's minimum number
+of distinct primitive commands, and enough items to cover those commands
+within `Renderer3D::instanceLimit()`. On Metal this uses the existing
+`AIVERSE_METAL_MDI_MIN_COMMANDS` (2–32, default 16); other backends use
+the existing four-command threshold. The same primitive repeated many
+times counts as **one** potential indexed command, never as enough MDI
+work by itself.
+
+Unique primitives are held in a fixed array of 32 pointers per preflight
+group (no per-group dynamic vector allocation). A pass limits the preflight
+map to 2048 candidate groups: when this budget is exceeded, it leaves
+the original sort order in place rather than expanding memory/work
+without bound. Only items in preflight-ready groups are promoted into
+the additional cross-model sort. Geometry pages are kept separate within
+that order even if GPU handle numbers happen to match. Each sun-shadow
+and opaque pass decides independently; a ready group in the shadow pass
+does not imply one in the main view.
+
+Preflight is deliberately a **necessary-condition filter**, not a promise
+that MDI will submit. The existing indirect batch builder still verifies
+exact buffers, materials, pipeline/draw state, per-command offsets and the
+actual count of contiguous primitive runs; it falls back to ordinary
+instancing/direct draws where a real group is too small or incompatible.
+The cross-model sort remains disabled in transparency, reflection,
+auxiliary/debug, unsafe or unsupported GPU paths, and while
+`AIVERSE_MDI_INSTANCE_PALETTE` is active (the separate palette sorter
+already handles that experiment). The normal `AIVERSE_MDI_GEOMETRY_SORT`
+path remains independent.
+
+Scene → Batching now displays preflight groups, ready/rejected groups and
+selected items separately from successful mixed-model MDI submissions
+and commands. These counters should be measured alongside CPU
+`sortMs`, `drawMs`, backend draw calls and GPU frame time; a high
+number of ready groups alone does not establish a speedup.
+
 **Performance / testing:** Keep OFF by default until it is built,
 pixel-compared and benchmarked on Metal and other backends. Static page
 grouping does not promise fewer calls unless visible compatible meshes
