@@ -8081,3 +8081,36 @@ for *executed* mixed-PBR groups, then explore a non-VT
 per-command material ABI, only without weakening regular
 rendering paths. Defer cross-backend tests until feature closure
 as requested, but keep PR Draft.
+
+
+## Stage 10AE — mixed PBR ICB submission diagnostics (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`; Draft PR #21.
+**Implementation commits:** `a4c2ca202046234b70b57291713201ab4e55a709`
+(`engine/render/Renderer3D.h`) and
+`0175030e6a175d458879bd18cc19ef2f6e11ec93`
+(`engine/render/Renderer3DModels.cpp`) add two public
+`GpuModelDrawStats` counters:
+`perCommandPbrSubmissions` and `mixedPbrSubmissions`.
+Only groups whose GPU ICB execution function returned true
+increment these; mixed is set only if the group's per-command
+PBR source handles or U2 payload differ. They reset
+at frame draw preparation.
+
+**Documentation commits:** `198c047178db65a62939875009d6ba1ab8f74b21` in
+`docs/texture-rhi.md`, `7278101e4cbfd35015fea038d73c3532a6505ff8` in
+`skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Scope:** counts host-accepted GPU command submissions,
+not command-buffer completion or image equivalence; no
+new rendering path or pipeline relaxation in this stage.
+CPU fallback and all experimental flags stay as before.
+No RTS/FPS/ECS dependency.
+
+**Actual checks:** GitHub source edits and docs committed;
+read existing GPU ICB success point. **C++ build, CTest,
+Metal shader compile, actual GPU execution all NOT RUN**.
+
+**Remaining:** non-VT opaque PBR batching and Shader Graph
+material descriptor support are not yet implemented.
+Need real GPU captures/driver validation before any release.
