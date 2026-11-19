@@ -263,6 +263,7 @@ private:
     std::array<uint8_t,128> computeUniforms_{};
     size_t computeUniformSize_ = 0;
     bool computeImageWriting_ = false;
+    bool computeDispatchSucceeded_ = false;
     VTexture dummy_;          // bound to unset texture slots
     VTexture dummyDepth_;     // ... of compare samplers
     struct SamplerKey { uint32_t key; VkSampler sampler; };
