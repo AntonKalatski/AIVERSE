@@ -274,13 +274,37 @@ layout(location=6) in vec4 a_weights;
 layout(std140) uniform U0 {
     mat4 currentMvp;
     mat4 previousMvp;
-    vec4 params;
+    vec4 params; // params.z: hasMorph
 };
 layout(std140) uniform U3 { vec4 palette[20]; };
 layout(std140) uniform U4 { vec4 currentAnim; vec4 previousAnim; };
+layout(std140) uniform U5 {
+    vec4 currentMorph[2]; vec4 previousMorph[2];
+    vec4 morphInfo; vec4 morphInfo2;
+};
 uniform highp sampler2D tex7;
+uniform highp sampler2D tex8;
 out vec4 v_prevClip;
-vec4 bakedPoint(vec4 p, vec4 anim) {
+vec4 morphPoint(vec4 p, bool prior) {
+    if (params.z < 0.5) return p;
+    int vertex = gl_VertexID - int(morphInfo.y);
+    int count = int(morphInfo.z);
+    int targets = int(morphInfo.w);
+    int base = int(morphInfo.x);
+    int width = max(int(morphInfo2.x),1);
+    for (int k=0;k<8;++k) {
+        if (k>=targets) break;
+        float w = prior ? previousMorph[k/4][k%4] :
+                          currentMorph[k/4][k%4];
+        if (w==0.0) continue;
+        int index = base + (k*count+vertex)*2;
+        p.xyz += w*texelFetch(tex8,ivec2(index%width,index/width),0).xyz;
+    }
+    return p;
+}
+vec4 bakedPoint(vec4 p, vec4 anim, bool prior) {
+    // Match ModelShaders: morph targets are applied BEFORE baked skinning.
+    p=morphPoint(p,prior);
     vec4 weights = a_weights / max(dot(a_weights,vec4(1.0)),0.00001);
     vec4 r0=vec4(0.0),r1=vec4(0.0),r2=vec4(0.0);
     for(int k=0;k<4;++k){
@@ -299,8 +323,8 @@ vec4 bakedPoint(vec4 p, vec4 anim) {
 }
 void main() {
     vec4 local=vec4(a_pos,1.0);
-    gl_Position=currentMvp*bakedPoint(local,currentAnim);
-    v_prevClip=previousMvp*bakedPoint(local,previousAnim);
+    gl_Position=currentMvp*bakedPoint(local,currentAnim,false);
+    v_prevClip=previousMvp*bakedPoint(local,previousAnim,true);
 }
 )";
 inline const char* kBakedMSL = R"(
@@ -309,11 +333,34 @@ using namespace metal;
 struct U0 { float4x4 currentMvp;float4x4 previousMvp;float4 params; };
 struct Palette { float4 v[20]; };
 struct Anim { float4 current;float4 previous; };
+struct Morph {
+    float4 currentW[2];float4 previousW[2];float4 info;float4 info2;
+};
 struct VIn {float3 pos [[attribute(0)]];uchar4 joints [[attribute(5)]];
             float4 weights [[attribute(6)]];};
 struct VOut { float4 position [[position]];float4 previous; };
-float4 bakedPoint(float4 p,VIn in,float4 anim,
-                  constant Palette& palette,texture2d<float> tex7) {
+float4 morphPoint(float4 p,bool prior,constant U0& u,
+                  constant Morph& mo,texture2d<float> tex8,uint vid) {
+    if(u.params.z<0.5)return p;
+    int vertex=int(vid)-int(mo.info.y);
+    int count=int(mo.info.z);
+    int targets=int(mo.info.w);
+    int base=int(mo.info.x);
+    int width=max(int(mo.info2.x),1);
+    for(int k=0;k<8;++k) {
+        if(k>=targets)break;
+        float w=prior?mo.previousW[k/4][k%4]:mo.currentW[k/4][k%4];
+        if(w==0.0)continue;
+        int index=base+(k*count+vertex)*2;
+        p.xyz+=w*tex8.read(uint2(index%width,index/width)).xyz;
+    }
+    return p;
+}
+float4 bakedPoint(float4 p,VIn in,float4 anim,bool prior,
+                  constant U0& u,constant Palette& palette,
+                  constant Morph& mo,texture2d<float> tex7,
+                  texture2d<float> tex8,uint vid) {
+    p=morphPoint(p,prior,u,mo,tex8,vid);
     float4 weights=in.weights/max(dot(in.weights,float4(1.0)),0.00001);
     float4 r0=float4(0),r1=float4(0),r2=float4(0);
     for(int k=0;k<4;++k){
@@ -330,14 +377,19 @@ float4 bakedPoint(float4 p,VIn in,float4 anim,
     }
     return float4(dot(r0,p),dot(r1,p),dot(r2,p),1.0);
 }
-vertex VOut vs_main(VIn in [[stage_in]],constant U0& u [[buffer(1)]],
+vertex VOut vs_main(VIn in [[stage_in]],uint vid [[vertex_id]],
+    constant U0& u [[buffer(1)]],
     constant Palette& palette [[buffer(4)]],
     constant Anim& anim [[buffer(5)]],
-    texture2d<float> tex7 [[texture(7)]]) {
+    constant Morph& mo [[buffer(6)]],
+    texture2d<float> tex7 [[texture(7)]],
+    texture2d<float> tex8 [[texture(8)]]) {
     VOut o;
     float4 local=float4(in.pos,1.0);
-    o.position=u.currentMvp*bakedPoint(local,in,anim.current,palette,tex7);
-    o.previous=u.previousMvp*bakedPoint(local,in,anim.previous,palette,tex7);
+    o.position=u.currentMvp*bakedPoint(
+        local,in,anim.current,false,u,palette,mo,tex7,tex8,vid);
+    o.previous=u.previousMvp*bakedPoint(
+        local,in,anim.previous,true,u,palette,mo,tex7,tex8,vid);
     return o;
 }
 fragment float4 fs_main(VOut in [[stage_in]],constant U0& u [[buffer(1)]],
