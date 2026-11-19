@@ -208,6 +208,37 @@ public:
         sortCameraValid_=true;
     }
 
+    // Per-view preparation; MUST run after the once-per-frame GPU update
+    // and BEFORE the target's render pass opens. No spawn/age/compute step.
+    // Rebuilds depth ordering for each camera rather than reusing camera A's
+    // sort texture in camera B's offscreen pass.
+    bool prepareRenderView(render::float3 eye,render::float3 forward) {
+        if(!gpuActive() || suspended_) return true;
+        const auto finite=[](render::float3 value) {
+            return std::isfinite(value.x)&&std::isfinite(value.y)&&
+                   std::isfinite(value.z);
+        };
+        if(!finite(eye)||!finite(forward)||!gpuDevice_ ||
+           !gpuDevice_->canUpdateSharedBuffers()) return false;
+        updateLod(eye);
+        if(!config_.gpuSortAlpha || !lodVisible_ ||
+           slots_.activeCount()<=1) return true;
+        const float fLength=render::length(forward);
+        if(!std::isfinite(fLength)||fLength<=1e-6f) return false;
+        forward=forward*(1.0f/fLength);
+        setSortView(eye,forward);
+        if(!alphaSort_.prepare(slots_.evolution(),eye,forward)) {
+            // Preserve the existing strict sorted-alpha fallback policy.
+            // CPU takeover is attempted only from this outside-pass point.
+            if(switchToCpuFallback("GPU camera alpha sort failed")) return true;
+            status_="GPU camera alpha sorting failed; fallback unavailable";
+            suspended_=true;
+            return false;
+        }
+        ++sortedFrames_;
+        return true;
+    }
+
     // External GPU load governor only scales new visual spawns, never
     // existing particle state/lifetime, gameplay events or emitter transforms.
     void setGlobalQuality(FxQuality quality) {globalQuality_=quality;}

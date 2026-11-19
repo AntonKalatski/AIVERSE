@@ -66,11 +66,13 @@ struct CinemaCamera {
         camera,aiverse::render::mat4::identity(),1920,1080);
     host.prepareGpu(.016f,raw);
     host.prepareCpu(.016f,raw);
+    (void)host.prepareRenderView(raw);
     host.render(lighting,raw);
     particles.setView(raw);
     // Previous camera-shaped APIs remain source compatible.
     host.prepareGpu(.016f,camera);
     host.prepareCpu(.016f,camera,raw.viewProj,1920,1080);
+    (void)host.prepareRenderView(camera,raw.viewProj,1920,1080);
     host.render(lighting,raw.viewProj,camera);
     particles.setView(camera,raw.viewProj,1920,1080);
 }

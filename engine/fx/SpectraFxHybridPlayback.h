@@ -417,6 +417,28 @@ public:
         updateGpu(dt);
     }
 
+    // Reprepare view-dependent LOD and alpha sorting WITHOUT advancing
+    // simulation time. For multiple cameras: updateGpu(dt,firstEye,forward)
+    // once, then prepareRenderView for each offscreen pass separately.
+    // Invoke only outside any render/compute encoder, after prior pass ends.
+    bool prepareRenderView(render::float3 eye,render::float3 forward) {
+        bool ok=true;
+        for(auto& pair:active_) {
+            if(!pair.second->prepareRenderView(eye,forward)) {
+                ++stats_.failed;ok=false;
+            }
+        }
+        for(auto& shot:oneShots_) {
+            if(!shot.emitter->prepareRenderView(eye,forward)) {
+                ++stats_.failed;ok=false;
+            }
+        }
+        // Shared arenas are additive-only: their once-per-frame compute,
+        // compacted indirect buffers and output storage are reusable across
+        // cameras, with independent billboard matrix and axes at render().
+        return ok;
+    }
+
     // Call during a compatible open render pass after the compute stage.
     // This submits only GPU-owned emitters, never duplicates CPU draws.
     void renderGpu(const render::mat4& viewProj,render::float3 cameraRight,

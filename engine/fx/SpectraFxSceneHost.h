@@ -158,6 +158,27 @@ public:
         prepareCpu(dt,SpectraFxView::fromCamera(
             camera,viewProj,width,height));
     }
+    // Multi-camera / render-to-texture phase: call after prepareGpu(dt,first)
+    // and prepareCpu(dt,first) have advanced each subsystem exactly ONCE,
+    // and before each camera's colour/depth render pass begins. Call again
+    // between passes when switching to a different camera.
+    // This changes camera-dependent CPU culling/billboard basis and per-camera
+    // GPU alpha sorting but NEVER advances simulation/spawn/lifetime.
+    bool prepareRenderView(const SpectraFxView& view) {
+        if(!view.valid()) return false;
+        if(!enabled_) return true;
+        cpu_.setView(view);
+        return !playback_ || playback_->prepareRenderView(
+            view.eye,render::normalize(view.forward));
+    }
+    // Compatibility with any host camera, no genre dependency.
+    template<class Camera>
+    bool prepareRenderView(const Camera& camera,
+                           const render::mat4& viewProj,int width,int height) {
+        return prepareRenderView(SpectraFxView::fromCamera(
+            camera,viewProj,width,height));
+    }
+
     // With the main colour/depth pass open, after Renderer3D::render.
     void render(const render::Lighting& lighting,
                 const SpectraFxView& view) {
