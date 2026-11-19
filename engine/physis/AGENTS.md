@@ -278,3 +278,18 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   scenario. This is NOT a full AIVERSE CMake/CTest PASS; native repository
   build, macOS/Windows QA and the new integrated test are NOT RUN.
 - Stage handoff: `docs/agent-handoffs/physis-stage40-cross-process-journal-2026-11-19.md`.
+
+### Stage 41 — CI queue control and post-crash lock cleanup (2026-11-19)
+
+- In the `killedEndpointRecoversQueuedJournal` fixture, destroy the final
+  `LoopbackAdminEndpoint` before removing the temporary journal directory.
+  Deleting an active lock inode can silently defeat advisory protection:
+  never call `remove_all` on a live journal+lock directory.
+- `.github/workflows/physis.yml` now uses branch/ref-scoped concurrency
+  with `cancel-in-progress: true` to cancel superseded PHYSIS runs. C++ build
+  output is retained as `physis-build.log` through the existing artifact
+  upload even when the build fails. `set -o pipefail` preserves failure status.
+- At inspection time, 149 PHYSIS branch runs were queued, none had passed.
+  New CI runs for both macOS and Ubuntu were still queued. Do not claim
+  compilation, CTest or platform QA PASS until verified from job logs.
+- Handoff: `docs/agent-handoffs/physis-stage41-ci-validation-2026-11-19.md`.
