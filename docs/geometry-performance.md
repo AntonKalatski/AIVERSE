@@ -279,3 +279,46 @@ This is a visual + CPU policy regression, **not** a CPU/GPU throughput
 benchmark. The CI job and runtime screenshots must succeed before this
 experimental mode can be considered validated. Real RTS static scenes with
 LOD and dynamic material changes still need separate A/B/A.
+
+
+### Revision-memoized static model eligibility
+
+The optional static transform cache and persistent CPU packet renderer share a
+renderer-owned memo of **model-level** eligibility. This avoids repeatedly
+scanning the same rigid asset's node flags, skin references, primitive morph
+targets and mesh deformation flags for every building/prop instance.
+
+`engine/render/ModelStaticEligibility.h` implements a genre-neutral, CPU-only
+`classifyModelStaticEligibility(const Model&)`. Its output has two independent
+capabilities: `transforms` (safe to reuse bind-pose geometry transforms) and
+`packets` (safe to retain and replay rigid primitive/material packet templates).
+`StaticModelCachePolicy.h` then applies the normal **per-draw** gates to those
+traits: stable nonzero ID, `kDrawStatic`, no live pose/baked sample,
+active vertex displacement, baked lighting and inspector rules. Model metadata
+never overrides current per-instance eligibility.
+
+`Renderer3D::cachedStaticModelEligibility()` retains model traits across
+views/frames. Each lookup verifies the model's `geometryRevision`, GPU
+vertex/index buffer handles, counts of nodes/meshes/bind matrices/skins/materials,
+and geometry attachment before reusing a result. A mismatched signature
+forces fresh classification. The memo holds at most **8192 model entries**;
+new uncached assets are classified directly when full, and idle entries are
+pruned periodically. Full scene invalidation and
+`Renderer3D::invalidateModelCachesFor(model)` retire memo entries along with
+their transform and draw packets. This cache holds no GPU allocations.
+
+Native callers modifying node flags, skin state, morph targets or hierarchy
+**in place** without using standard import APIs must call
+`Model::markGeometryChanged()` before drawing, even when the vector size
+does not change. Before model destruction, call
+`invalidateModelCachesFor(model)`; raw `Model*` identity alone is not a
+lifetime guarantee. Renderer access must remain on its submission thread.
+The Scene → Batching panel reports model classification hits, misses, live
+entries and evictions.
+
+Both existing environment gates remain unchanged and OFF by default:
+`AIVERSE_PERSISTENT_CPU_MODEL_CACHE=1` for transform reuse, and
+`AIVERSE_PERSISTENT_CPU_PACKETS=1` for packet replay. The memo is only active
+with at least one of these paths. Camera/shadow frustum culling, LOD choices,
+per-draw appearance and material GPU state checks continue every frame. No
+GPU indirect submissions, shader output or simulation code is affected.
