@@ -149,10 +149,11 @@ public:
                         if (report->autoExposureTextureSlot >= 0) {
                             ImGui::TextDisabled("HDR highlight rejection: %.2f (0=legacy)",
                                 double(report->autoExposureHighlightRejection));
-                            ImGui::TextDisabled("Exposure: %s | circular region metered this frame: %s",
+                            ImGui::TextDisabled("Exposure: %s | region metered this frame: %s",
                                 report->autoExposureFrozen ? "frozen (history reused)" :
                                                              "adaptation encoded",
-                                report->autoExposureRegionMetered ? "yes" : "no");
+                                report->autoExposureRegionMetered ?
+                                    (report->autoExposureBoxMetered ? "rectangle" : "circle") : "no");
                         }
                     }
                     if (report->effects.empty())
@@ -313,7 +314,7 @@ private:
         if (d.type == PrismaType::DepthOfField)
             ui::help("Старые focusDepth/focusRange: аппаратная глубина 0..1. Включите metricFocus для фокуса по расстоянию вдоль камеры (единицы мира); focusDistance/focusRangeMeters задают плоскость и диапазон, occlusionToleranceMeters ограничивает смешивание на границах объектов. Требуется AIVERSE_PRISMA_DOF=1; стандартный minQuality — High, но его можно переопределить. При некорректной near/far автоматически используется старый режим.");
         if (d.type == PrismaType::AutoExposure)
-            ui::help("Ручной EV: включите manualExposure, задайте manualEV (-12..+12). Он заменяет Auto Exposure, применяется к линейному HDR ДО tonemapping и работает без AIVERSE_PRISMA_AUTO_EXPOSURE=1. В отличие от freezeExposure, ручной EV не требует предварительного замера. При выключении ручного режима история Auto Exposure инициализируется заново. Автоматика: HDR High + AIVERSE_PRISMA_AUTO_EXPOSURE=1; highlightRejection=0 сохраняет прежний замер, highlightStartEV/Softness задают подавление ярких выбросов. freezeExposure удерживает валидную 1x1 историю; camera cut делает новый замер. meterRegionEnabled включает круг с meterCenterX/Y, meterRadius/Feather и ненулевым meterOutsideWeight. Native-камеры могут переопределить режимы по viewId.");
+            ui::help("Ручной EV: включите manualExposure, задайте manualEV (-12..+12). Он заменяет Auto Exposure, применяется к линейному HDR ДО tonemapping и работает без AIVERSE_PRISMA_AUTO_EXPOSURE=1. В отличие от freezeExposure, ручной EV не требует предварительного замера. При выключении ручного режима история Auto Exposure инициализируется заново. Автоматика: HDR High + AIVERSE_PRISMA_AUTO_EXPOSURE=1; highlightRejection=0 сохраняет прежний замер, highlightStartEV/Softness задают подавление ярких выбросов. freezeExposure удерживает валидную 1x1 историю; camera cut делает новый замер. meterRegionEnabled включает круг с meterCenterX/Y, meterRadius/Feather и ненулевым meterOutsideWeight. meterBox переключает круг на прямоугольник, meterHalfWidth/Height задают его полуширину/полувысоту как доли размеров viewport. Native-камеры могут переопределить режимы по viewId.");
         int off = 0;
         for (auto& p : d.params) {
             switch (p.kind) {
