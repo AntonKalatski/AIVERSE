@@ -766,8 +766,8 @@ public:
 private:
     void refreshForestWindGpu(gfx::Device& device) {
         // Up to eight sparse dirty-cluster ranges per region, with a
-        // conservative full-forest-suffix fallback for fragmented/dense
-        // changes. The active and outgoing regions share one 2 MiB
+        // configurable full-forest-suffix fallback for fragmented/dense
+        // changes. Active and outgoing regions share one bounded host
         // render-owner update budget and retain their old safe shader
         // mode until the entire field revision is committed.
         size_t remaining=windUploadPolicy_.maxBytesPerUpdate;
