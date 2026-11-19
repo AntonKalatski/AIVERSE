@@ -60,6 +60,34 @@ public:
         renderer.setLodDebugTarget(lodTarget);
         renderer.setStudioDebugMode(studioDebugMode_);
         renderer.setProfiling(sceneProfiling_);
+        // Preserve the *actual previous* host configuration rather than
+        // assuming it always inherited the global environment. A game/native
+        // project may deliberately set nondefault CPU MDI policies before
+        // rendering the Studio Scene viewport.
+        const auto priorCpuMdiPolicy = renderer.cpuMdiPolicyOverrides();
+        auto sceneCpuMdiPolicy = priorCpuMdiPolicy;
+        sceneCpuMdiPolicy.crossModel = sceneCrossModelMode_ == 1
+            ? Renderer3D::StaticCrossModelBatchMode::Enable
+            : sceneCrossModelMode_ == 2
+                ? Renderer3D::StaticCrossModelBatchMode::Forbid
+                : Renderer3D::StaticCrossModelBatchMode::Environment;
+        const auto policy = [](int index) {
+            return index == 1 ? Renderer3D::CpuMdiPolicyMode::Enable
+                : index == 2 ? Renderer3D::CpuMdiPolicyMode::Forbid
+                : Renderer3D::CpuMdiPolicyMode::Environment;
+        };
+        sceneCpuMdiPolicy.adaptive = policy(sceneCpuMdiAdaptiveMode_);
+        sceneCpuMdiPolicy.layoutCache = policy(sceneMdiLayoutCacheMode_);
+        sceneCpuMdiPolicy.geometrySort = policy(sceneMdiGeometrySortMode_);
+        sceneCpuMdiPolicy.adaptiveBudgetUs = sceneCpuMdiBudgetOverrideUs_;
+        // One fixed view namespace, not a GPU resource or Entity ID.
+        sceneCpuMdiPolicy.adaptiveScope = kSceneCpuMdiAdaptiveScope_;
+        // Scoped policy changes cannot leak to other views, including when
+        // rendering exits early. The guard restores the previous host values.
+        {
+        Renderer3D::ScopedCpuMdiPolicyOverride sceneCpuMdiGuard(
+            renderer, sceneCpuMdiPolicy);
+        Renderer3D::ScopedModelRenderPolicyOverride sceneModelPolicyGuard(renderer);
         const bool measuredMode = benchmarkActive_ || autoBatchChoice_ >= 0;
         const int activeMode = benchmarkActive_ ? benchmarkMode_ : autoBatchChoice_;
         renderer.setModelInstancingEnabled(measuredMode ? true : sceneInstancing_);
@@ -166,16 +194,13 @@ public:
         // Renderer3D counters later in the editor frame.
         lastSceneLodStats_ = renderer.modelStats();
         lastSelectedLod_ = renderer.lodDebugSample();
+        } // Restore CPU MDI and model-render policies before Game can render.
         const auto afterRenderScene = std::chrono::steady_clock::now();
         // Changes are scoped to Scene; Game playback uses the normal renderer defaults.
         renderer.setStudioDebugMode(0);
         renderer.setProfiling(false);
-        renderer.setModelInstancingEnabled(true);
-        renderer.setModelMultiDrawEnabled(true);
-        renderer.setGpuAuthoredDrawEnabled(true);
-        renderer.setModelCullingEnabled(true);
-        renderer.setModelLodEnabled(true);
-        renderer.setModelLodFadeWidth(0.15f);
+        // The scoped model policy restores the prior host values instead
+        // of forcing Game/native clients back to default-true modes.
         renderer.setLodDebugTarget(0);
         renderer.setLodDiagnosticsEnabled(false);
         vp_.drawnFrame = ImGui::GetFrameCount();
@@ -485,6 +510,12 @@ private:
                 render::setGlobalGeometryPoolingEnabled(sceneGeometryPool_);
                 ed.reloadRules(); // reupload original models; never toggle existing GPU buffers in place
             }
+            if (ImGui::Checkbox("Rigid LOD geometry pooling (experimental)",
+                                &sceneRigidLodPooling_)) {
+                render::setRigidLodGeometryPoolingEnabled(sceneRigidLodPooling_);
+                ed.reloadRules(); // only asset upload can change geometry page membership
+            }
+            ImGui::TextDisabled("Allows immutable rigid LODs; skin/morph/clip models remain dedicated.");
             if (!mdiBackend) {
                 ImGui::EndDisabled();
                 ImGui::TextDisabled("Geometry Pool inactive: Multi-Draw Indirect is unavailable on this backend.");
@@ -495,6 +526,31 @@ private:
             if (ImGui::Checkbox("Multi-Draw Indirect", &sceneIndirect_))
                 autoBatchChoice_ = -1;
             ImGui::SameLine(); ImGui::TextDisabled(ed.renderer().modelMultiDrawSupported() ? "GPU supported" : "fallback");
+            if (ImGui::Combo("Static cross-model CPU MDI##scene",
+                    &sceneCrossModelMode_,
+                    "Inherit env (default OFF)\0Enable in Scene only\0Disable in Scene only\0"))
+                autoBatchChoice_ = -1;
+            ImGui::TextDisabled("Experimental: requires shared pooled GPU geometry, supported CPU MDI and compatible static models.");
+            static constexpr const char* mdiPolicyModes =
+                "Inherit env\0Enable in Scene only\0Disable in Scene only\0";
+            ImGui::Combo("CPU MDI adaptive policy##scene",
+                &sceneCpuMdiAdaptiveMode_, mdiPolicyModes);
+            ImGui::Combo("MDI layout command cache##scene",
+                &sceneMdiLayoutCacheMode_, mdiPolicyModes);
+            ImGui::Combo("MDI geometry sort##scene",
+                &sceneMdiGeometrySortMode_, mdiPolicyModes);
+            ImGui::SetNextItemWidth(190.0f);
+            if (ImGui::SliderScalar("Adaptive budget (us / command)##scene",
+                    ImGuiDataType_Double, &sceneCpuMdiBudgetOverrideUs_,
+                    &kSceneCpuMdiBudgetMin_, &kSceneCpuMdiBudgetMax_, "%.0f") &&
+                sceneCpuMdiBudgetOverrideUs_ > 0.0 &&
+                sceneCpuMdiBudgetOverrideUs_ < 1.0)
+                sceneCpuMdiBudgetOverrideUs_ = 1.0;
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Inherit budget##scene"))
+                sceneCpuMdiBudgetOverrideUs_ = 0.0;
+            ImGui::TextDisabled("Adaptive needs static cross-model MDI; 0 us means inherit env budget (default 25).");
+            ImGui::TextDisabled("All overrides affect Scene only; previous host policy is restored for Game.");
             ImGui::Checkbox("Model culling", &sceneCulling_);
             ImGui::Checkbox("Auto-select fastest mode after benchmark", &autoBatchEnabled_);
             if (!autoBatchEnabled_) autoBatchChoice_ = -1;
@@ -523,6 +579,15 @@ private:
                 ImGui::Text("Pool utilization: %.1f%% (%.1f MiB slack)", fill, slackMiB);
                 ImGui::TextDisabled("Pool memory excludes textures and dedicated model buffers.");
             }
+            // A retired pair is not necessarily safe to recycle: only the
+            // GPU's completed queue serial can advance it out of quarantine.
+            // These are upload/release statistics, not FPS or GPU timings.
+            ImGui::Text("Pooled geometry: %zu retired / %zu fence-ready pairs",
+                        geometryPool.retiredPairs, geometryPool.reusablePairs);
+            ImGui::Text("Recycled model uploads: %llu",
+                        (unsigned long long)geometryPool.recycledUploads);
+            ImGui::TextDisabled("Recycling needs AIVERSE_GEOMETRY_POOL_RECYCLE=1 (default OFF).");
+            ImGui::TextDisabled("GPU occupied bytes include retained ranges, not only live models.");
             const auto& profile = ed.renderer().profile();
             const auto& modelStats = ed.renderer().modelStats();
             const uint32_t totalSubmissions = ed.renderer().drawCalls();
@@ -617,6 +682,56 @@ private:
             ImGui::Text("Models: %u | Other tracked: %u",
                         modelSubmissions, otherSubmissions);
             ImGui::TextDisabled("Includes repeated geometry in shadow, reflection and colour passes.");
+            if (ImGui::TreeNode("Incremental static CPU model cache")) {
+                const auto staticCache = ed.renderer().staticModelCacheStats();
+                const char* flag = std::getenv("AIVERSE_PERSISTENT_CPU_MODEL_CACHE");
+                const bool enabled = flag && std::strcmp(flag, "1") == 0;
+                ImGui::Text("Status: %s (AIVERSE_PERSISTENT_CPU_MODEL_CACHE=1)",
+                            enabled ? "OPT-IN ACTIVE" : "OFF");
+                ImGui::Text("Hits: %llu | Rebuilds: %llu | Declined: %llu",
+                            (unsigned long long)staticCache.hits,
+                            (unsigned long long)staticCache.rebuilds,
+                            (unsigned long long)staticCache.declined);
+                ImGui::Text("Live entries: %zu | Evicted: %llu",
+                            staticCache.live,
+                            (unsigned long long)staticCache.evicted);
+                const auto modelEligibility = ed.renderer().staticEligibilityStats();
+                ImGui::Text("Model eligibility: %llu reused / %llu classified",
+                            (unsigned long long)modelEligibility.hits,
+                            (unsigned long long)modelEligibility.misses);
+                ImGui::Text("Eligibility entries: %zu | Evicted: %llu",
+                            modelEligibility.live,
+                            (unsigned long long)modelEligibility.evicted);
+                ImGui::TextDisabled("Static model traits follow geometryRevision; draw eligibility stays live.");
+                ImGui::TextDisabled("Caches bind transforms, not draw commands or camera-dependent LOD.");
+                ImGui::TextDisabled("Asset edits need cache invalidation; benchmark with the same view.");
+                ImGui::TreePop();
+            }
+            if (ImGui::TreeNode("Persistent rigid draw packets")) {
+                const auto packets = ed.renderer().staticRenderPacketStats();
+                const char* flag = std::getenv("AIVERSE_PERSISTENT_CPU_PACKETS");
+                const bool enabled = flag && std::strcmp(flag, "1") == 0;
+                ImGui::Text("Status: %s (AIVERSE_PERSISTENT_CPU_PACKETS=1)",
+                            enabled ? "OPT-IN ACTIVE" : "OFF");
+                ImGui::Text("Replayed: %llu | Rebuilt: %llu | Declined: %llu",
+                            (unsigned long long)packets.hits,
+                            (unsigned long long)packets.rebuilds,
+                            (unsigned long long)packets.declined);
+                ImGui::Text("Live packets: %zu | Evicted: %llu | Stored: %.2f MiB",
+                            packets.live, (unsigned long long)packets.evicted,
+                            double(packets.retainedBytes) / (1024.0 * 1024.0));
+                const auto materialMemo = ed.renderer().sharedMaterialStateStats();
+                ImGui::Text("Shared material state: %llu reused / %llu refreshed",
+                            (unsigned long long)materialMemo.hits,
+                            (unsigned long long)materialMemo.misses);
+                ImGui::Text("Material owners: %zu | Evicted: %llu | Stored: %.2f MiB",
+                            materialMemo.live, (unsigned long long)materialMemo.evicted,
+                            double(materialMemo.retainedBytes) / (1024.0 * 1024.0));
+                ImGui::TextDisabled("Shared material signature reuse needs owner ID and revision.");
+                ImGui::TextDisabled("Requires explicit nonzero ModelDraw::staticPacketRevision.");
+                ImGui::TextDisabled("Camera / shadow visibility and depth are still evaluated each frame.");
+                ImGui::TreePop();
+            }
             if (ImGui::TreeNode("Model pass breakdown")) {
                 static constexpr const char* phaseNames[5] = {
                     "Shadow", "Opaque (+ reflection)", "Blended",
@@ -638,6 +753,222 @@ private:
                 ImGui::Text("MDI submissions: %llu (%llu indexed commands)",
                     (unsigned long long)modelStats.multiDrawSubmissions,
                     (unsigned long long)modelStats.indirectCommands);
+                ImGui::Text("MDI exact-layout zero-copy: %llu submissions / %.1f KiB CPU copies avoided",
+                    (unsigned long long)modelStats.mdiLayoutZeroCopySubmissions,
+                    double(modelStats.mdiLayoutCopyAvoidedBytes) / 1024.0);
+                ImGui::Text("MDI RHI command payload: %.1f KiB / %llu discard-prefix updates",
+                    double(modelStats.mdiIndirectCommandBytes) / 1024.0,
+                    (unsigned long long)modelStats.mdiIndirectPrefixOverwrites);
+                ImGui::TextDisabled("CPU payload requested; backend may skip bytes with dirty snapshots.");
+                if (ImGui::TreeNode("CPU MDI stage timings")) {
+                    if (!sceneProfiling_) {
+                        ImGui::TextDisabled("Enable Profile Scene renderer above to collect timings.");
+                    } else {
+                        static constexpr const char* labels[] = {"Sun shadow", "Main opaque"};
+                        for (size_t phase = 0; phase < 2; ++phase) {
+                            const auto& cpu = modelStats.mdiCpuStages[phase];
+                            if (!cpu.passes) {
+                                ImGui::TextDisabled("%s: no timed model pass", labels[phase]);
+                                continue;
+                            }
+                            ImGui::Text("%s: %.3f ms total CPU (%llu passes)",
+                                labels[phase], cpu.totalMs,
+                                (unsigned long long)cpu.passes);
+                            ImGui::Text("  Selection %.3f | material grouping + sort %.3f | candidate scans %.3f ms",
+                                cpu.selectionMs, cpu.groupingSortMs, cpu.candidateScanMs);
+                            ImGui::Text("  Command packing %.3f | pipeline bind %.3f | buffer upload %.3f | backend call %.3f ms",
+                                cpu.commandPackingMs, cpu.pipelineSetupMs,
+                                cpu.bufferUploadMs, cpu.backendSubmitMs);
+                            ImGui::Text("  %llu candidates / %llu pack attempts / %llu GPU MDI submissions",
+                                (unsigned long long)cpu.candidateScans,
+                                (unsigned long long)cpu.indirectAttempts,
+                                (unsigned long long)cpu.submitted);
+                            ImGui::Text("  %llu pipeline warmups / %llu under threshold / %llu backend fallbacks",
+                                (unsigned long long)cpu.pipelineWarmups,
+                                (unsigned long long)cpu.underThreshold,
+                                (unsigned long long)cpu.backendFallbacks);
+                            const auto rolling = ed.renderer().cpuMdiRollingSummary(phase);
+                            if (rolling.samples) {
+                                ImGui::Text("  Rolling CPU mean / P50 / P95 (last %zu/%zu invocations):",
+                                    rolling.samples, ed.renderer().kCpuMdiRollingWindow);
+                                static constexpr const char* metrics[] = {
+                                    "Total model pass", "Selection", "Grouping + sort",
+                                    "Candidate scan", "Command packing", "Pipeline setup",
+                                    "Buffer upload", "Backend submit"
+                                };
+                                if (!rolling.hasBaseline) {
+                                    ImGui::TextDisabled("  Spike detection collecting baseline: %zu/%zu samples",
+                                        rolling.samples, ed.renderer().kCpuMdiSpikeMinSamples);
+                                } else if (rolling.dominantStage >= 0) {
+                                    const size_t dominant = size_t(rolling.dominantStage);
+                                    ImGui::TextColored(ImVec4(1.0f, 0.69f, 0.32f, 1.0f),
+                                        "  CPU P95 spike candidate: %s (%.3f ms above mean, %zu flagged stages)",
+                                        metrics[dominant], rolling.dominantExcessMs,
+                                        rolling.highlightedStages);
+                                } else if (rolling.spike[0]) {
+                                    ImGui::TextColored(ImVec4(1.0f, 0.69f, 0.32f, 1.0f),
+                                        "  Total model-pass CPU P95 varies; no individual MDI stage crossed the threshold.");
+                                } else {
+                                    ImGui::TextDisabled("  No P95 CPU spike candidates in the sampled stages.");
+                                }
+                                // Long-lived expensive stages and bursty P95
+                                // excursions are independent diagnoses. A row
+                                // may satisfy both, even for steady MDI work.
+                                if (rolling.hasBaseline) {
+                                    if (rolling.dominantSustainedStage >= 0) {
+                                        const size_t dominant =
+                                            size_t(rolling.dominantSustainedStage);
+                                        ImGui::TextColored(ImVec4(0.49f, 0.80f, 0.98f, 1.0f),
+                                            "  Sustained CPU cost candidate: %s (P50 %.3f ms, %.0f%% of pass mean; %zu stages)",
+                                            metrics[dominant],
+                                            rolling.dominantSustainedP50Ms,
+                                            100.0 * rolling.dominantSustainedShare,
+                                            rolling.sustainedStages);
+                                    } else {
+                                        ImGui::TextDisabled(
+                                            "  No sustained CPU stage cost above the heuristic thresholds.");
+                                    }
+                                }
+                                for (size_t metric = 0; metric < rolling.meanMs.size(); ++metric) {
+                                    const bool spiking = rolling.spike[metric];
+                                    const bool steady = rolling.sustained[metric];
+                                    if (spiking || steady) {
+                                        const ImVec4 color = spiking
+                                            ? ImVec4(1.0f, 0.69f, 0.32f, 1.0f)
+                                            : ImVec4(0.49f, 0.80f, 0.98f, 1.0f);
+                                        ImGui::TextColored(color,
+                                            "    %s: %.3f / %.3f / %.3f ms [%s]",
+                                            metrics[metric], rolling.meanMs[metric],
+                                            rolling.p50Ms[metric], rolling.p95Ms[metric],
+                                            spiking && steady ? "spike + sustained" :
+                                            spiking ? "P95 variability" : "sustained CPU cost");
+                                    } else {
+                                        ImGui::Text("    %s: %.3f / %.3f / %.3f ms",
+                                            metrics[metric], rolling.meanMs[metric],
+                                            rolling.p50Ms[metric], rolling.p95Ms[metric]);
+                                    }
+                                }
+                            }
+                        }
+                        ImGui::TextDisabled("Spike heuristic: >=30 samples; P95 >=0.25 ms, >=mean+0.15 ms, >=1.8x mean.");
+                        ImGui::TextDisabled("Sustained-cost heuristic: >=30 samples; stage P50 >=0.35 ms and mean >=15%% of total pass mean.");
+                        ImGui::TextDisabled("Warnings are CPU cost candidates, not GPU stalls, confirmed regressions or automatic tuning.");
+                        ImGui::TextDisabled("Synchronous CPU time only; overlapping totals are not additive.");
+                        ImGui::TextDisabled("P95 is nearest-rank over eligible model-pass samples, not whole frames.");
+                        ImGui::TextDisabled("Profile is per beginScene view; reflections and auxiliary passes excluded.");
+                    }
+                    ImGui::TreePop();
+                }
+                const auto transfer = ed.renderer().indirectBufferUpdateStats();
+                if (transfer.available) {
+                    ImGui::Text("Backend snapshot writes: %.1f KiB GPU-visible / %.1f KiB CPU shadow",
+                        double(transfer.mappedWriteBytes) / 1024.0,
+                        double(transfer.cpuShadowWriteBytes) / 1024.0);
+                    ImGui::Text("Backend compared / skipped / preserved: %.1f / %.1f / %.1f KiB",
+                        double(transfer.comparedBytes) / 1024.0,
+                        double(transfer.skippedWriteBytes) / 1024.0,
+                        double(transfer.preservedBytes) / 1024.0);
+                    ImGui::Text("Backend snapshots: %llu allocations / %llu reused / %llu updates",
+                        (unsigned long long)transfer.allocations,
+                        (unsigned long long)transfer.reused,
+                        (unsigned long long)transfer.updateCalls);
+                    ImGui::Text("Backend retained buffers: %.1f KiB (CPU shadow %.1f KiB)",
+                        double(transfer.retainedBufferBytes) / 1024.0,
+                        double(transfer.retainedCpuShadowBytes) / 1024.0);
+                    ImGui::TextDisabled("Cumulative since command-buffer creation; no GPU readback.");
+                } else {
+                    ImGui::TextDisabled("Backend indirect snapshot counters unavailable.");
+                }
+                if (ImGui::TreeNode("Backend transfers by Scene model pass")) {
+                    static constexpr const char* labels[] = {"Sun shadow", "Main opaque"};
+                    for (size_t phase = 0; phase < 2; ++phase) {
+                        const auto& delta = modelStats.mdiBackendPassTransfers[phase];
+                        if (!delta.available) {
+                            ImGui::TextDisabled("%s: no instrumented MDI activity", labels[phase]);
+                            continue;
+                        }
+                        ImGui::Text("%s (%llu sampled invocations): %llu updates / %.1f KiB requested",
+                            labels[phase],
+                            (unsigned long long)modelStats.mdiBackendPassSamples[phase],
+                            (unsigned long long)delta.updateCalls,
+                            double(delta.requestedBytes) / 1024.0);
+                        ImGui::Text("  CPU writes: %.1f KiB GPU-visible / %.1f KiB shadow",
+                            double(delta.mappedWriteBytes) / 1024.0,
+                            double(delta.cpuShadowWriteBytes) / 1024.0);
+                        ImGui::Text("  Compared / skipped / preserved: %.1f / %.1f / %.1f KiB",
+                            double(delta.comparedBytes) / 1024.0,
+                            double(delta.skippedWriteBytes) / 1024.0,
+                            double(delta.preservedBytes) / 1024.0);
+                        ImGui::Text("  Buffer allocations / safe reuses: %llu / %llu",
+                            (unsigned long long)delta.allocations,
+                            (unsigned long long)delta.reused);
+                    }
+                    ImGui::TextDisabled("Deltas for this beginScene/view, not per GPU frame.");
+                    ImGui::TextDisabled("Excludes reflection/auxiliary model passes and retained-memory gauges.");
+                    ImGui::TreePop();
+                }
+                const auto layoutCache = ed.renderer().indirectLayoutCacheStats();
+                ImGui::Text("MDI layout CPU cache: %zu entries / %.1f KiB retained",
+                    layoutCache.entries, double(layoutCache.retainedBytes) / 1024.0);
+                ImGui::Text("MDI layout cache: %llu retired / %llu capacity-bypassed attempts",
+                    (unsigned long long)layoutCache.retired,
+                    (unsigned long long)modelStats.mdiLayoutCacheBypassed);
+                ImGui::TextDisabled("Per-pass 96-entry cap, 256 items/layout; stale after 120 scenes.");
+                if (sceneCrossModelMode_ == 1 ||
+                    (sceneCrossModelMode_ == 0 &&
+                     [] {
+                         const char* enabled = std::getenv("AIVERSE_STATIC_CROSS_MODEL_BATCHES");
+                         return enabled && std::strcmp(enabled, "1") == 0;
+                     }())) {
+                    ImGui::Text("Static cross-model MDI: %llu submissions / %llu commands / %llu items",
+                        (unsigned long long)modelStats.staticCrossModelSubmissions,
+                        (unsigned long long)modelStats.staticCrossModelCommands,
+                        (unsigned long long)modelStats.staticCrossModelItems);
+                    ImGui::Text("Page preflight: %llu ready / %llu groups (%llu rejected)",
+                        (unsigned long long)modelStats.staticCrossModelPreflightReady,
+                        (unsigned long long)modelStats.staticCrossModelPreflightGroups,
+                        (unsigned long long)modelStats.staticCrossModelPreflightRejected);
+                    ImGui::Text("Page preflight selected: %llu visible items",
+                        (unsigned long long)modelStats.staticCrossModelPreflightItems);
+                    ImGui::Text("Pre-ranked pooled state groups: %llu",
+                        (unsigned long long)modelStats.staticCrossModelRankedGroups);
+                    ImGui::Text("Bucket-sorted static items: %llu in %llu ranked groups",
+                        (unsigned long long)modelStats.staticCrossModelBucketedItems,
+                        (unsigned long long)modelStats.staticCrossModelBucketedGroups);
+                    ImGui::Text("Preflight workspace retained: %.1f KiB",
+                        double(modelStats.staticCrossModelPreflightWorkspaceBytes) / 1024.0);
+                    ImGui::TextDisabled("Reusable across views; cleared on scene reload, no retained GPU data.");
+                    if (ed.renderer().cpuMdiAdaptiveEnabled()) {
+                        ImGui::Text("Adaptive CPU MDI: skipped %llu / probe %llu passes, measured %llu attempts",
+                            (unsigned long long)modelStats.staticCrossModelAdaptiveSkippedPasses,
+                            (unsigned long long)modelStats.staticCrossModelAdaptiveProbePasses,
+                            (unsigned long long)modelStats.staticCrossModelAdaptiveMeasuredAttempts);
+                        ImGui::Text("Adaptive page groups: %llu skipped / %llu probed",
+                            (unsigned long long)modelStats.staticCrossModelAdaptiveSkippedGroups,
+                            (unsigned long long)modelStats.staticCrossModelAdaptiveProbeGroups);
+                        const auto pages = ed.renderer().cpuMdiPageStats();
+                        ImGui::Text("Page feedback: %zu tracked / %llu created / %llu reused",
+                            pages.live, (unsigned long long)pages.created,
+                            (unsigned long long)pages.reused);
+                        ImGui::Text("Page feedback: %llu evicted / %llu untracked",
+                            (unsigned long long)pages.evicted,
+                            (unsigned long long)pages.untracked);
+                        ImGui::Text("Over-budget pages: %zu shadow / %zu opaque",
+                            pages.slowShadow, pages.slowOpaque);
+                        const auto& cpu = ed.renderer().cpuMdiAdaptiveFeedback();
+                        ImGui::Text("All pages shadow (diagnostic): %.2f us/command (%u)",
+                            cpu[0].avgUsPerCommand, cpu[0].samples);
+                        ImGui::Text("All pages opaque (diagnostic): %.2f us/command (%u)",
+                            cpu[1].avgUsPerCommand, cpu[1].samples);
+                        ImGui::Text("Adaptive budget: %.1f us/command (CPU submit only)",
+                            ed.renderer().cpuMdiAdaptiveBudgetUs());
+                        ImGui::TextDisabled("Decisions are per GPU page; aggregate averages never gate others.");
+                        ImGui::TextDisabled("Feedback excludes GPU execution; 1 probe per 32 eligible page passes.");
+                    }
+                    ImGui::TextDisabled("Preflight is necessary, not a guarantee of a GPU MDI submission.");
+                    ImGui::TextDisabled("Pooled GPU buffers and exact material grouping; independent view/LOD.");
+                    ImGui::TextDisabled("Only accepted CPU MDI draws count, not grouping candidates.");
+                }
                 if (const char* pal = std::getenv("AIVERSE_MDI_INSTANCE_PALETTE");
                     pal && std::strcmp(pal, "1") == 0) {
                     ImGui::Text("Per-command PBR palette: %llu submissions / %llu commands",
@@ -1513,12 +1844,24 @@ private:
     float gizmoGroundX_ = 0.0f, gizmoGroundZ_ = 0.0f;
     float gizmoLastScreenX_ = 0.0f;
     bool sceneInstancing_ = true, sceneCulling_ = true, sceneIndirect_ = true;
+    // 0: follow process environment (OFF by default), 1: opt-in only for
+    // Scene viewport, 2: force off for Scene viewport. Never persists to Game.
+    int sceneCrossModelMode_ = 0;
+    int sceneCpuMdiAdaptiveMode_ = 0;
+    int sceneMdiLayoutCacheMode_ = 0;
+    int sceneMdiGeometrySortMode_ = 0;
+    double sceneCpuMdiBudgetOverrideUs_ = 0.0;
+    // Stable per Scene window, not persisted to gameplay or ECS IDs.
+    static constexpr uint64_t kSceneCpuMdiAdaptiveScope_ = 0x5343454E45564945ull;
+    static constexpr double kSceneCpuMdiBudgetMin_ = 0.0;
+    static constexpr double kSceneCpuMdiBudgetMax_ = 1000.0;
     bool sceneLodEnabled_ = true;
     bool lodPopupVisible_ = false;
     float sceneLodFadeWidth_ = 0.15f;
     ModelRenderStats lastSceneLodStats_{};
     Renderer3D::LodDebugSample lastSelectedLod_{};
     bool sceneGeometryPool_ = render::globalGeometryPoolingEnabled();
+    bool sceneRigidLodPooling_ = render::rigidLodGeometryPoolingEnabled();
     int sceneInstanceLimit_ = 0;
     bool sceneInstanceLimitDirty_ = true;
     bool sceneProfiling_ = false;

@@ -6,6 +6,8 @@
 //         the main pass is left open so the caller can draw UI, then calls device.endPass()]
 #pragma once
 #include "Geometry.h"
+#include <algorithm>
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -14,6 +16,10 @@
 #include "Lights.h"
 #include "Math3D.h"
 #include "Model.h"
+#include "ModelStaticEligibility.h"
+#include "CpuMdiAdaptivePolicy.h"
+#include "AutoCpuBatchPolicy.h"
+#include "StaticCrossModelBatchPolicy.h"
 #include "PersistentGpuSceneUpload.h"
 #include "GpuSceneCulling.h"
 #include "GpuSceneDrawCommands.h"
@@ -146,6 +152,21 @@ struct ModelDraw {
     // Optional stable entity identity; 0 means transient/immediate draw.
     // Attachments and multiple draws per entity need distinct IDs.
     uint64_t persistentId = 0;
+    // Explicit revision/opt-in for immutable CPU render packets: zero disables
+    // packet reuse. Increase when any caller-owned material/appearance state
+    // changes in-place (including pointer-stable material vectors).
+    uint64_t staticPacketRevision = 0;
+    // Optional versioned material-owner contract (both must be nonzero).
+    // Independent static objects sharing one immutable material set can
+    // reuse its GPU-state signature across draws, without hashing every
+    // material per instance. Owner ID is namespaced within a Model.
+    // Advance materialOwnerRevision on any override changes, including
+    // edits behind a stable pointer, texture content or shader graph edits.
+    // Also advance Model::materialRevision for model-owned state changes.
+    // Without this explicit contract the renderer retains exact GPU state
+    // equality checks on every packet candidate.
+    uint64_t materialOwnerKey = 0;
+    uint64_t materialOwnerRevision = 0;
     mat4 world;                                    // model space -> world
     const std::vector<mat4>* nodeWorld = nullptr;  // pose, model space; null = bind pose
     const std::vector<Material>* materials = nullptr; // per-instance override (model->materials first, extra ones after)
@@ -191,6 +212,71 @@ struct ModelRenderStats {
     uint64_t cameraLodBlocked = 0, cameraShadowLimitedLod = 0;
     uint64_t triangles = 0, instancedDraws = 0, drawnInstances = 0;
     uint64_t multiDrawSubmissions = 0, indirectCommands = 0;
+    // Submitted indexed MDI batches using an exact validated persistent
+    // layout, without copying cached CPU commands into transient scratch.
+    uint64_t mdiLayoutZeroCopySubmissions = 0;
+    uint64_t mdiLayoutCopyAvoidedBytes = 0;
+    // Exact-layout caching declined because the per-pass bounded cache is
+    // full or this batch exceeds the maximum cached signature length.
+    uint64_t mdiLayoutCacheBypassed = 0;
+    // Indirect indexed command bytes *submitted to the RHI*. Metal/Vulkan
+    // snapshot/dirty policies may avoid CPU copies; not GPU execution bytes.
+    uint64_t mdiIndirectCommandBytes = 0;
+    uint64_t mdiIndirectPrefixOverwrites = 0;
+    // Backend-observed CPU operations taken before/after renderModels(0)
+    // sun-shadow and the main-view renderModels(1) opaque pass. Aggregated
+    // within one beginScene; reset with this ModelRenderStats struct.
+    // These are deltas of monotonic counters, not GPU bytes/time. All other
+    // model phases and reflection/auxiliary views are excluded.
+    std::array<gfx::BufferUpdateStats, 2> mdiBackendPassTransfers{};
+    std::array<uint64_t, 2> mdiBackendPassSamples{};
+    // Opt-in Scene profile timings: shadow = 0, main-camera opaque = 1.
+    // Timed only while profiling_ is enabled; these are synchronous CPU
+    // durations and NEVER GPU execution times. Reset by beginScene().
+    struct CpuMdiStageProfile {
+        uint64_t passes = 0;           // eligible renderModels invocations
+        uint64_t candidateScans = 0;   // MDI candidate groups inspected
+        uint64_t indirectAttempts = 0; // reached exact command packing
+        uint64_t submitted = 0;        // successful indirect API submissions
+        uint64_t pipelineWarmups = 0;  // pipeline not yet ready, no MDI draw
+        uint64_t underThreshold = 0;   // encoded command count too small
+        uint64_t backendFallbacks = 0; // indirect failed, ordinary draws used
+        double totalMs = 0.0;
+        double selectionMs = 0.0;
+        double groupingSortMs = 0.0;
+        double candidateScanMs = 0.0;
+        double commandPackingMs = 0.0;
+        double pipelineSetupMs = 0.0;
+        double bufferUploadMs = 0.0;
+        double backendSubmitMs = 0.0;
+    };
+    std::array<CpuMdiStageProfile, 2> mdiCpuStages{};
+    // CPU MDI groups spanning at least two different Model instances
+    // using the SAME pooled vertex/index arena, after independent LOD and
+    // per-view culling. These are successful submissions, not candidates.
+    uint64_t staticCrossModelSubmissions = 0;
+    uint64_t staticCrossModelCommands = 0;
+    uint64_t staticCrossModelItems = 0;
+    // Current-frame, per-pass page/material preflight. Groups are necessary
+    // conditions; only actual indirect submissions count above.
+    uint64_t staticCrossModelPreflightGroups = 0;
+    uint64_t staticCrossModelPreflightReady = 0;
+    uint64_t staticCrossModelPreflightRejected = 0;
+    uint64_t staticCrossModelPreflightItems = 0;
+    // Number of distinct permitted static page/material groups ordered
+    // once per pass, rather than comparing full model/page state per item.
+    uint64_t staticCrossModelRankedGroups = 0;
+    // CPU ordering stats (not real draw calls); only large ranked prefixes
+    // bucketized by exact page/material group contribute.
+    uint64_t staticCrossModelBucketedItems = 0;
+    uint64_t staticCrossModelBucketedGroups = 0;
+    // Retained high-water workspace bytes, not per-frame allocation count.
+    size_t staticCrossModelPreflightWorkspaceBytes = 0;
+    uint64_t staticCrossModelAdaptiveSkippedPasses = 0;
+    uint64_t staticCrossModelAdaptiveProbePasses = 0;
+    uint64_t staticCrossModelAdaptiveMeasuredAttempts = 0;
+    uint64_t staticCrossModelAdaptiveSkippedGroups = 0;
+    uint64_t staticCrossModelAdaptiveProbeGroups = 0;
     // A subset of CPU MDI submissions: different rigid meshes and materials
     // share shader/texture state, with per-command base/PBR factors in U3.
     uint64_t mdiPaletteSubmissions = 0, mdiPaletteCommands = 0;
@@ -247,6 +333,73 @@ public:
     void circleXZ(float3 c, float radius, uint32_t color, int segments = 40, float y = 0.03f);
     bool warmModelPipelines(const Model& model, const std::vector<Material>* materials = nullptr);
     void drawModel(const ModelDraw& d);
+    // Opt-in CPU cache of per-node rigid bind transforms for stationary objects
+    // with stable persistentId. Does NOT cache visibility, LOD, materials or draws.
+    struct StaticModelCacheStats {
+        uint64_t hits = 0, rebuilds = 0, declined = 0, evicted = 0;
+        size_t live = 0;
+    };
+    StaticModelCacheStats staticModelCacheStats() const {
+        auto stats = staticModelCacheStats_;
+        stats.live = staticModelCaches_.size();
+        return stats;
+    }
+    // Invariant model eligibility is classified once per geometry revision
+    // instead of traversing node and primitive arrays for every instance.
+    struct StaticEligibilityStats {
+        uint64_t hits = 0, misses = 0, evicted = 0;
+        size_t live = 0;
+    };
+    StaticEligibilityStats staticEligibilityStats() const {
+        auto stats = staticEligibilityStats_;
+        stats.live = staticModelEligibility_.size();
+        return stats;
+    }
+    // Call before/after in-place model geometry or bind-hierarchy edits, or
+    // after an asset reload retaining the same model pointer and GPU handles.
+    void invalidateStaticModelCaches() {
+        clearCpuMdiRollingHistory(); // a full scene reload starts a new comparison window
+        staticModelCaches_.clear();
+        staticRenderPackets_.clear();
+        staticModelEligibility_.clear();
+        staticMaterialOwners_.clear();
+        cpuMdiPages_.clear(); // reset page-specific costs on whole-scene reload
+        cpuMdiAdaptive_ = {};
+        autoCpuBatch_ = {};
+        staticCrossPreflight_.release(); // retire temporary scene identities/capacity
+        clearIndirectLayoutCaches(); // release borrowed primitive/model references
+        staticRenderPacketBytes_ = 0;
+        staticMaterialOwnerBytes_ = 0;
+    }
+    // Targeted cache retirement for native ECS entity destruction/streaming.
+    // Invoke on the renderer thread before Model resources are released and
+    // before starting another draw submission; no GPU resources are owned here.
+    void invalidateStaticModelCache(uint64_t persistentId);
+    void invalidateModelCachesFor(const Model* model);
+    // Drop one shared material-owner signature before its native source is
+    // replaced or destroyed. Existing packets automatically rebuild when the
+    // owner returns with a new signature serial; other owners are unaffected.
+    void invalidateSharedMaterialState(const Model* model, uint64_t materialOwnerKey);
+    struct StaticRenderPacketStats {
+        uint64_t hits = 0, rebuilds = 0, declined = 0, evicted = 0;
+        size_t live = 0, retainedBytes = 0;
+    };
+    struct SharedMaterialStateStats {
+        uint64_t hits = 0, misses = 0, evicted = 0;
+        size_t live = 0, retainedBytes = 0;
+    };
+    SharedMaterialStateStats sharedMaterialStateStats() const {
+        auto stats = sharedMaterialStateStats_;
+        stats.live = staticMaterialOwners_.size();
+        stats.retainedBytes = staticMaterialOwnerBytes_;
+        return stats;
+    }
+    StaticRenderPacketStats staticRenderPacketStats() const {
+        auto s = staticRenderPacketStats_;
+        s.live = staticRenderPackets_.size();
+        s.retainedBytes = staticRenderPacketBytes_;
+        return s;
+    }
     // Diagnostic, opt-in persistent scene upload stats. This staging path is
     // not yet bound to model shaders or used for GPU culling.
     struct PersistentSceneStats {
@@ -343,11 +496,188 @@ public:
     void setModelCullingEnabled(bool on) { modelCullingEnabled_ = on; }
     void setModelInstancingEnabled(bool on) { modelInstancingEnabled_ = on; }
     void setModelMultiDrawEnabled(bool on) { modelMultiDrawEnabled_ = on; }
+    // Explicit editor-view override for the opt-in pooled static CPU MDI
+    // feature. Environment preserves the process-level opt-in (OFF by
+    // default), and Forbid/Enable are scoped by the caller to one view.
+    // This affects only eligible static CPU MDI ordering/admission; the
+    // authoritative geometry/material/LOD/backend checks remain.
+    enum class StaticCrossModelBatchMode : uint8_t {
+        Environment = 0, Enable = 1, Forbid = 2
+    };
+    void setStaticCrossModelBatchMode(StaticCrossModelBatchMode mode) {
+        staticCrossModelBatchMode_ = mode;
+    }
+    StaticCrossModelBatchMode staticCrossModelBatchMode() const {
+        return staticCrossModelBatchMode_;
+    }
+    bool staticCrossModelBatchesEnabled() const {
+        return staticCrossModelBatchesEnabled_;
+    }
+    // Runtime CPU MDI policies shared by every genre/host. Environment
+    // preserves existing defaults and flags; Enabled/Forbid affect the
+    // renderer's next beginScene only, never global process settings.
+    enum class CpuMdiPolicyMode : uint8_t {
+        Environment = 0, Enable = 1, Forbid = 2
+    };
+    void setCpuMdiAdaptiveMode(CpuMdiPolicyMode mode) { cpuMdiAdaptiveMode_ = mode; }
+    void setMdiLayoutCacheMode(CpuMdiPolicyMode mode) { mdiLayoutCacheMode_ = mode; }
+    void setMdiGeometrySortMode(CpuMdiPolicyMode mode) { mdiGeometrySortMode_ = mode; }
+    CpuMdiPolicyMode cpuMdiAdaptiveMode() const { return cpuMdiAdaptiveMode_; }
+    CpuMdiPolicyMode mdiLayoutCacheMode() const { return mdiLayoutCacheMode_; }
+    CpuMdiPolicyMode mdiGeometrySortMode() const { return mdiGeometrySortMode_; }
+    bool mdiLayoutCacheEnabled() const { return mdiLayoutCacheEnabled_; }
+    bool mdiGeometrySortRequested() const { return mdiGeometrySortRequested_; }
+    // 0 means follow AIVERSE_CPU_MDI_MAX_US_PER_COMMAND, otherwise accept
+    // the same conservative [1,1000] microseconds-per-command range.
+    // This is an admission-policy budget, NOT a GPU timing guarantee.
+    void setCpuMdiAdaptiveBudgetOverrideUs(double us) {
+        if (us == 0.0 || (us >= 1.0 && us <= 1000.0))
+            cpuMdiAdaptiveBudgetOverrideUs_ = us;
+    }
+    double cpuMdiAdaptiveBudgetOverrideUs() const {
+        return cpuMdiAdaptiveBudgetOverrideUs_;
+    }
+    // Reusable genre-neutral context namespace: two independent camera
+    // hosts may share a GPU geometry page yet have different CPU costs.
+    // Zero preserves legacy behavior. Used only in the per-page adaptive
+    // feedback key; never in a shader or actual draw command.
+    void setCpuMdiAdaptiveScope(uint64_t scope) { cpuMdiAdaptiveScope_ = scope; }
+    uint64_t cpuMdiAdaptiveScope() const { return cpuMdiAdaptiveScope_; }
+    // Value-type configuration snapshot lets a host preserve its existing
+    // renderer policy while a different viewport temporarily overrides it.
+    // This is CPU-only and does not serialize GPU buffers or dynamic feedback.
+    struct CpuMdiPolicyOverrides {
+        StaticCrossModelBatchMode crossModel = StaticCrossModelBatchMode::Environment;
+        CpuMdiPolicyMode adaptive = CpuMdiPolicyMode::Environment;
+        CpuMdiPolicyMode layoutCache = CpuMdiPolicyMode::Environment;
+        CpuMdiPolicyMode geometrySort = CpuMdiPolicyMode::Environment;
+        double adaptiveBudgetUs = 0.0;
+        uint64_t adaptiveScope = 0;
+    };
+    CpuMdiPolicyOverrides cpuMdiPolicyOverrides() const {
+        return {staticCrossModelBatchMode_, cpuMdiAdaptiveMode_,
+            mdiLayoutCacheMode_, mdiGeometrySortMode_,
+            cpuMdiAdaptiveBudgetOverrideUs_, cpuMdiAdaptiveScope_};
+    }
+    void setCpuMdiPolicyOverrides(const CpuMdiPolicyOverrides& value) {
+        setStaticCrossModelBatchMode(value.crossModel);
+        setCpuMdiAdaptiveMode(value.adaptive);
+        setMdiLayoutCacheMode(value.layoutCache);
+        setMdiGeometrySortMode(value.geometrySort);
+        setCpuMdiAdaptiveBudgetOverrideUs(value.adaptiveBudgetUs);
+        setCpuMdiAdaptiveScope(value.adaptiveScope);
+    }
+    // Scoped policy override for any native render host (RTS/FPS/editor/etc).
+    // Snapshot only CPU batching configuration, not transient GPU/scene state.
+    // Nested scopes restore in LIFO order, including on an exception or an
+    // early return. The host must not outlive the referenced Renderer3D.
+    class ScopedCpuMdiPolicyOverride {
+    public:
+        ScopedCpuMdiPolicyOverride(Renderer3D& renderer,
+                                   const CpuMdiPolicyOverrides& overrides)
+            : renderer_(renderer), saved_(renderer.cpuMdiPolicyOverrides()) {
+            renderer_.setCpuMdiPolicyOverrides(overrides);
+        }
+        ~ScopedCpuMdiPolicyOverride() {
+            renderer_.setCpuMdiPolicyOverrides(saved_);
+        }
+        ScopedCpuMdiPolicyOverride(const ScopedCpuMdiPolicyOverride&) = delete;
+        ScopedCpuMdiPolicyOverride& operator=(const ScopedCpuMdiPolicyOverride&) = delete;
+        ScopedCpuMdiPolicyOverride(ScopedCpuMdiPolicyOverride&&) = delete;
+        ScopedCpuMdiPolicyOverride& operator=(ScopedCpuMdiPolicyOverride&&) = delete;
+    private:
+        Renderer3D& renderer_;
+        CpuMdiPolicyOverrides saved_;
+    };
     // Independently control GPU-authored draws for 3-way Scene benchmarking.
     // The process-wide experimental environment flag remains mandatory.
     void setGpuAuthoredDrawEnabled(bool on) { gpuAuthoredDrawEnabled_ = on; }
     bool modelMultiDrawSupported() const { return dev_ && dev_->supportsMultiDrawIndirect(); }
     const ModelRenderStats& modelStats() const { return modelStats_; }
+    const AutoCpuBatchPolicy& autoCpuBatchStats() const { return autoCpuBatch_; }
+    static constexpr size_t kCpuMdiRollingWindow = 120;
+    // Diagnostic heuristic, not a performance target. Require enough
+    // samples and both relative and absolute P95 excursion to avoid
+    // alarming about nanosecond-scale noise on otherwise quiet stages.
+    static constexpr size_t kCpuMdiSpikeMinSamples = 30;
+    static constexpr double kCpuMdiSpikeMinP95Ms = 0.25;
+    static constexpr double kCpuMdiSpikeMinExcessMs = 0.15;
+    static constexpr double kCpuMdiSpikeP95ToMeanRatio = 1.8;
+    // Independent steady-cost heuristic: a high median indicates that
+    // at least half of the sampled invocations spend real CPU time here.
+    // Also require material share of the mean *whole* model pass. These
+    // limits diagnose candidates only and never change batching policy.
+    static constexpr double kCpuMdiSustainedMinMedianMs = 0.35;
+    static constexpr double kCpuMdiSustainedMinMeanShare = 0.15;
+    // The eight independent CPU durations are: total model pass,
+    // visibility selection, material grouping+sort, candidate scanning,
+    // CPU command packing, pipeline setup, indirect buffer update, backend
+    // API submission. P95 is nearest-rank for the last <=120 eligible
+    // model-pass invocations, not frame time or GPU work.
+    struct CpuMdiRollingSummary {
+        size_t samples = 0;
+        std::array<double, 8> meanMs{};
+        std::array<double, 8> p50Ms{}; // nearest-rank median, not an average
+        std::array<double, 8> p95Ms{};
+        // Index 0 is total model-pass wall time; indexes 1..7 are the
+        // specific CPU stages. Total may spike without any tracked stage.
+        std::array<bool, 8> spike{};
+        size_t highlightedStages = 0; // excludes overlapping total
+        int dominantStage = -1;       // 1..7, -1 if none
+        double dominantExcessMs = 0.0;
+        // Independent steady-cost candidates. Index 0 is always false:
+        // the whole model pass is an overlapping total, not an MDI stage.
+        std::array<bool, 8> sustained{};
+        size_t sustainedStages = 0;
+        int dominantSustainedStage = -1; // 1..7, -1 when no expensive stage
+        double dominantSustainedP50Ms = 0.0;
+        double dominantSustainedShare = 0.0; // ratio of means, not GPU occupancy
+        bool hasBaseline = false;     // at least 30 eligible samples
+    };
+    CpuMdiRollingSummary cpuMdiRollingSummary(size_t phase) const;
+    // Read-only history reset for a new world/scene. Does not touch any
+    // cached geometry, render commands, in-flight resources or profiling.
+    void clearCpuMdiRollingHistory() { cpuMdiRolling_ = {}; }
+    struct IndirectLayoutCacheStats {
+        size_t entries = 0, retainedBytes = 0;
+        uint64_t retired = 0;
+    };
+    // Retained CPU layout storage only; does not include GPU command buffers.
+    IndirectLayoutCacheStats indirectLayoutCacheStats() const;
+    // Backend-observed CPU memcpy/memcmp and snapshot/version allocation
+    // counts for our own dynamic indirect buffer, cumulative since creation.
+    // Unsupported backends or an as-yet-uncreated buffer return unavailable.
+    gfx::BufferUpdateStats indirectBufferUpdateStats() const {
+        return dev_ && indirectCommands_.valid()
+            ? dev_->bufferUpdateStats(indirectCommands_) : gfx::BufferUpdateStats{};
+    }
+    // 0 = sun shadow, 1 = opaque main view; CPU time only, no GPU timestamps.
+    const std::array<CpuMdiAdaptiveFeedback, 2>& cpuMdiAdaptiveFeedback() const {
+        return cpuMdiAdaptive_;
+    }
+    bool cpuMdiAdaptiveEnabled() const { return cpuMdiAdaptiveEnabled_; }
+    double cpuMdiAdaptiveBudgetUs() const { return cpuMdiAdaptiveBudgetUs_; }
+    struct CpuMdiPageStats {
+        uint64_t reused = 0, created = 0, evicted = 0, untracked = 0;
+        size_t live = 0, slowShadow = 0, slowOpaque = 0;
+    };
+    CpuMdiPageStats cpuMdiPageStats() const {
+        auto stats = cpuMdiPageStats_;
+        stats.live = cpuMdiPages_.size();
+        for (const auto& [key, entry] : cpuMdiPages_) {
+            (void)key;
+            if (entry.lifetime.expired()) continue;
+            for (size_t phase = 0; phase < 2; ++phase) {
+                const auto& feedback = entry.byPass[phase];
+                if (feedback.samples >= 8 &&
+                    feedback.avgUsPerCommand > cpuMdiAdaptiveBudgetUs_) {
+                    if (phase == 0) ++stats.slowShadow;
+                    else ++stats.slowOpaque;
+                }
+            }
+        }
+        return stats;
+    }
     struct RenderProfile {
         double submitMs=0,occlusionMs=0;
         std::array<double,5> selectMs{},sortMs{},drawMs{};
@@ -383,6 +713,54 @@ public:
     void setModelLodFadeWidth(float width) { modelLodFadeWidth_=std::clamp(width,0.0f,0.49f); }
     float modelLodFadeWidth() const { return modelLodFadeWidth_; }
 
+    // Native renderer hosts may choose different instancing/indirect/LOD
+    // settings per view. Save the configured state, not resolved GPU commands.
+    struct ModelRenderPolicyOverrides {
+        bool instancing = true;
+        bool multiDraw = true;
+        bool gpuAuthored = true;
+        bool culling = true;
+        bool lod = true;
+        float lodFadeWidth = 0.15f;
+    };
+    ModelRenderPolicyOverrides modelRenderPolicyOverrides() const {
+        return {modelInstancingEnabled_, modelMultiDrawEnabled_,
+                gpuAuthoredDrawEnabled_, modelCullingEnabled_,
+                modelLodEnabled_, modelLodFadeWidth_};
+    }
+    void setModelRenderPolicyOverrides(const ModelRenderPolicyOverrides& value) {
+        setModelInstancingEnabled(value.instancing);
+        setModelMultiDrawEnabled(value.multiDraw);
+        setGpuAuthoredDrawEnabled(value.gpuAuthored);
+        setModelCullingEnabled(value.culling);
+        setModelLodEnabled(value.lod);
+        setModelLodFadeWidth(value.lodFadeWidth);
+    }
+    // Restores the original model batching and culling/LOD settings on
+    // any exit, even when the view's benchmark changes them mid-scope.
+    // This does not restore instanceLimit (shader-pipeline setting), caches
+    // or diagnostics; the referenced renderer must outlive the guard.
+    class ScopedModelRenderPolicyOverride {
+    public:
+        explicit ScopedModelRenderPolicyOverride(Renderer3D& renderer)
+            : renderer_(renderer), saved_(renderer.modelRenderPolicyOverrides()) {}
+        ScopedModelRenderPolicyOverride(
+            Renderer3D& renderer, const ModelRenderPolicyOverrides& overridePolicy)
+            : ScopedModelRenderPolicyOverride(renderer) {
+            renderer_.setModelRenderPolicyOverrides(overridePolicy);
+        }
+        ~ScopedModelRenderPolicyOverride() {
+            renderer_.setModelRenderPolicyOverrides(saved_);
+        }
+        ScopedModelRenderPolicyOverride(const ScopedModelRenderPolicyOverride&) = delete;
+        ScopedModelRenderPolicyOverride& operator=(const ScopedModelRenderPolicyOverride&) = delete;
+        ScopedModelRenderPolicyOverride(ScopedModelRenderPolicyOverride&&) = delete;
+        ScopedModelRenderPolicyOverride& operator=(ScopedModelRenderPolicyOverride&&) = delete;
+    private:
+        Renderer3D& renderer_;
+        ModelRenderPolicyOverrides saved_;
+    };
+
     // Baked global illumination (agent-lightbake): lightmaps for static models (matched by model path,
     // node and world transform), light probes for everything else, mixed with the realtime sun by the
     // set's mode (indirect / shadowmask / subtractive). Null = realtime only. The set must outlive its use.
@@ -416,6 +794,7 @@ private:
     };
     struct ModelItem {
         const Model* model; const Primitive* prim; const Material* mat;
+        int32_t materialIndex = -1; // remap material pointers on packet replay
         bool rigid = false, castShadow = false;
         GeometryPolicy geometry;
         size_t geometryPrimitive = 0;
@@ -440,6 +819,7 @@ private:
         uint8_t materialRole = 0; // 1 original colour suppressed, 2 palette batch (colour only)
         uint8_t shadowRole = 0;   // 0 normal, 1 part covered by its mesh's shadow batch, 2 the shadow batch
         bool inView, inShadow; float depth;
+        int32_t sourceNode = -1; // producer node for per-view packet replay
     };
     void initModels();
     void shutdownModels();
@@ -530,12 +910,27 @@ private:
 
     // models
     ModelRenderStats modelStats_;
+    // Fixed storage persists across beginScene() without allocating on the
+    // render hot path; full scene invalidation/shutdown retires this history.
+    struct CpuMdiRollingHistory {
+        std::array<std::array<double, 8>, kCpuMdiRollingWindow> samples{};
+        size_t next = 0;
+        size_t count = 0;
+    };
+    std::array<CpuMdiRollingHistory, 2> cpuMdiRolling_{};
+    void recordCpuMdiStageSample(
+        size_t phase, const ModelRenderStats::CpuMdiStageProfile& before);
     gfx::BufferHandle indirectCommands_;
     // Reuse command storage across submissions; only contents/size change.
     std::vector<gfx::DrawIndexedIndirectCommand> indirectCommandScratch_;
     // Experimental persistent indirect command layout. Cache entries are
     // validated against the full per-item geometry signature on every use.
     struct IndirectLayoutItem {
+        // Borrowed only while the asset is loaded. Model unload explicitly
+        // retires dependent layouts before these pointers can be recycled.
+        const Model* model = nullptr;
+        uint64_t geometryRevision = 0;
+        uint32_t vertexBuffer = 0, indexBuffer = 0;
         const void* primitive = nullptr;
         uint32_t indexCount = 0, firstIndex = 0, gpuFirstIndex = 0, gpuBaseVertex = 0;
         bool operator==(const IndirectLayoutItem&) const = default;
@@ -544,10 +939,57 @@ private:
         std::vector<IndirectLayoutItem> signature;
         std::vector<gfx::DrawIndexedIndirectCommand> commands;
         uint64_t triangles = 0;
+        uint64_t lastUsedScene = 0; // ageing across beginScene epochs
     };
+    // There are five model phases (shadow, opaque, blended, outline, depth).
+    // Limit both positional entries and per-entry signature size: at most
+    // 96 * 5 * 256 retained item signatures/commands across all phases.
+    // Larger scenes still render normally using indirectCommandScratch_.
+    static constexpr size_t kMaxMdiLayoutsPerPhase = 96;
+    static constexpr uint32_t kMaxMdiCachedItems = 256;
+    static constexpr uint64_t kMdiLayoutIdleScenes = 120;
     std::vector<IndirectLayoutEntry> indirectLayoutCache_[5];
     size_t indirectLayoutCursor_[5] = {};
+    uint64_t indirectLayoutSceneEpoch_ = 0;
+    uint64_t indirectLayoutsRetired_ = 0;
+    void clearIndirectLayoutCaches();
+    void retireIndirectLayoutsFor(const Model* model);
+    void maintainIndirectLayoutCaches();
     bool modelMultiDrawEnabled_ = true;
+    // Optional CPU MDI sorter for static rigid meshes sharing one GPU arena.
+    // Never bypass per-object culling, LOD, material or shader compatibility.
+    bool staticCrossModelBatchesEnabled_ = false;
+    StaticCrossModelBatchMode staticCrossModelBatchMode_ =
+        StaticCrossModelBatchMode::Environment;
+    CpuMdiPolicyMode cpuMdiAdaptiveMode_ = CpuMdiPolicyMode::Environment;
+    CpuMdiPolicyMode mdiLayoutCacheMode_ = CpuMdiPolicyMode::Environment;
+    CpuMdiPolicyMode mdiGeometrySortMode_ = CpuMdiPolicyMode::Environment;
+    double cpuMdiAdaptiveBudgetOverrideUs_ = 0.0; // 0: env (default 25 us)
+    uint64_t cpuMdiAdaptiveScope_ = 0; // default namespace, not an Entity ID
+    bool mdiLayoutCacheEnabled_ = true;
+    bool mdiGeometrySortRequested_ = false;
+    // Per-renderer reusable hash directory, group storage and item mode map.
+    // All records are invalidated at each independent render pass.
+    StaticCrossModelPreflightWorkspace staticCrossPreflight_;
+    bool cpuMdiAdaptiveEnabled_ = false;
+    double cpuMdiAdaptiveBudgetUs_ = 25.0;
+    // Aggregate display-only diagnostics, not used to suppress any page.
+    std::array<CpuMdiAdaptiveFeedback, 2> cpuMdiAdaptive_{};
+    AutoCpuBatchPolicy autoCpuBatch_{}; // reset with world/cache invalidation
+    struct CpuMdiPageEntry {
+        std::weak_ptr<GeometryPoolPage> lifetime;
+        std::array<CpuMdiAdaptiveFeedback, 2> byPass{};
+        uint64_t seen = 0;
+        // A page receives at most one adaptive decision per render-scene
+        // epoch and pass, regardless of how many material groups it contains.
+        std::array<uint64_t, 2> decisionEpoch{};
+        std::array<bool, 2> permitted{true, true};
+    };
+    std::unordered_map<CpuMdiPageKey, CpuMdiPageEntry, CpuMdiPageKeyHash>
+        cpuMdiPages_;
+    uint64_t cpuMdiPageEpoch_ = 0;
+    CpuMdiPageStats cpuMdiPageStats_{};
+    CpuMdiPageEntry* cpuMdiPageEntry(const Model& model);
     bool gpuAuthoredDrawEnabled_ = true;
     bool modelCullingEnabled_ = true, modelInstancingEnabled_ = true;
     bool auxiliaryModelPass_ = false;
@@ -566,6 +1008,101 @@ private:
     int geometryShadowSize_=0;
     MaterialQuality matQuality_ = MaterialQuality::High;
     std::vector<ModelItem> modelItems_;
+    // Immutable rigid packet templates; views / shadows / depth are replayed
+    // for the current camera. Stored items own no GPU or Model resources.
+    struct StaticPacketEntry {
+        ModelDraw draw;
+        uint64_t geometryRevision = 0;
+        uint64_t materialRevision = 0;
+        // 0: conservative per-packet GPU-state equality. Nonzero: shared
+        // versioned-owner signature, checked via a monotonic renderer serial.
+        uint64_t sharedMaterialSerial = 0;
+        uint32_t vertexBuffer = 0, indexBuffer = 0;
+        uint64_t seen = 0;
+        std::vector<Material> materialsSnapshot;
+        std::vector<uint64_t> materialHashes;
+        std::vector<int> selectedMeshes; // by node index; -1 = node without mesh
+        // Node-level material assignments may be owned by a transient caller.
+        // Compare a value snapshot on replay; never retain vector pointers.
+        bool hasNodeMaterialOverride = false;
+        std::vector<int> nodeMaterialSnapshot;
+        std::vector<ModelItem> items;
+    };
+    static size_t staticPacketBytes(const StaticPacketEntry& packet) {
+        return packet.items.size() * sizeof(ModelItem) +
+            packet.materialsSnapshot.size() * sizeof(Material) +
+            packet.materialHashes.size() * sizeof(uint64_t) +
+            packet.selectedMeshes.size() * sizeof(int) +
+            packet.nodeMaterialSnapshot.size() * sizeof(int);
+    }
+    // Reused per-draw scratch: hot packet replay must not allocate one vector
+    // for every visible entity. Renderer3D submission is non-reentrant.
+    struct StaticPacketNodeState {
+        bool inView = false, inShadow = false;
+        int mesh = -1;
+        size_t level = 0;
+        bool transitioning = false;
+    };
+    std::vector<StaticPacketNodeState> staticPacketNodeScratch_;
+    // Immutable GPU material signatures shared by many static draw packets.
+    // Key is an explicit owner token scoped to a Model, never Material* or a
+    // temporary vector allocation address. Revisions are owner supplied.
+    struct MaterialOwnerKey {
+        const Model* model = nullptr;
+        uint64_t ownerKey = 0;
+        bool operator==(const MaterialOwnerKey&) const = default;
+    };
+    struct MaterialOwnerKeyHash {
+        size_t operator()(const MaterialOwnerKey& p) const {
+            const size_t a = std::hash<const Model*>{}(p.model);
+            const size_t b = std::hash<uint64_t>{}(p.ownerKey);
+            return a ^ (b + size_t(0x9e3779b9) + (a << 6) + (a >> 2));
+        }
+    };
+    struct SharedMaterialEntry {
+        uint64_t ownerRevision = 0, modelMaterialRevision = 0;
+        uint64_t geometryRevision = 0, serial = 0, seen = 0;
+        size_t count = 0;
+        int minVertexOffsetQuality = 2147483647; // INT_MAX = no displacement
+        std::vector<uint64_t> hashes; // resolved GPU state, computed once/revision
+    };
+    std::unordered_map<MaterialOwnerKey, SharedMaterialEntry, MaterialOwnerKeyHash>
+        staticMaterialOwners_;
+    uint64_t staticMaterialOwnerSerial_ = 0;
+    uint64_t staticMaterialOwnerEpoch_ = 0;
+    size_t staticMaterialOwnerBytes_ = 0;
+    SharedMaterialStateStats sharedMaterialStateStats_{};
+    const SharedMaterialEntry* cachedSharedMaterialState(
+        const Model& model, const ModelDraw& draw,
+        const std::vector<Material>& materials);
+    std::unordered_map<uint64_t, StaticPacketEntry> staticRenderPackets_;
+    size_t staticRenderPacketBytes_ = 0;
+    StaticRenderPacketStats staticRenderPacketStats_{};
+    bool staticRenderPacketsEnabled_ = false;
+    uint64_t staticRenderPacketEpoch_ = 0;
+    struct StaticCacheEntry {
+        StaticModelCache cache;
+        uint64_t seen = 0;
+        uint32_t vertexBuffer = 0, indexBuffer = 0;
+        uint64_t geometryRevision = 0;
+    };
+    std::unordered_map<uint64_t, StaticCacheEntry> staticModelCaches_;
+    uint64_t staticModelCacheEpoch_ = 0;
+    bool staticModelCacheEnabled_ = false;
+    StaticModelCacheStats staticModelCacheStats_{};
+    struct StaticEligibilityEntry {
+        ModelStaticEligibility eligibility{};
+        uint64_t geometryRevision = 0;
+        uint64_t seen = 0;
+        uint32_t vb = 0, ib = 0;
+        size_t nodes = 0, meshes = 0, bindNodes = 0;
+        size_t skins = 0, materials = 0;
+        const GeometryData* geometry = nullptr;
+    };
+    std::unordered_map<const Model*, StaticEligibilityEntry> staticModelEligibility_;
+    uint64_t staticEligibilityEpoch_ = 0;
+    StaticEligibilityStats staticEligibilityStats_{};
+    ModelStaticEligibility cachedStaticModelEligibility(const Model& source);
     // Material GPU-state equivalence is pass-independent within one scene.
     // Resolve each distinct (model, material) once for shadows, colour,
     // reflection and outline. All containers are cleared at beginScene(),
@@ -617,6 +1154,13 @@ private:
         uint32_t token = 0;
     };
     std::vector<GpuEncodedBatch> gpuEncodedBatches_;
+    // Retained CPU packing scratch, never shared with the in-flight GPU buffers.
+    std::vector<uint32_t> gpuIcbSourceSlotsScratch_;
+    std::vector<float> gpuIcbInstancesScratch_;
+    // Conservative automatic CPU/GPU authoring: previous successful batches
+    // are feedback, not a GPU-duration estimate.
+    uint32_t gpuIcbAutoMinimum_ = 64;
+    uint32_t gpuIcbAutoMisses_ = 0;
     std::vector<uint8_t> gpuEncodedCovered_;
     uint32_t gpuEncodedDrawCalls_ = 0, gpuEncodedCommands_ = 0;
     uint32_t gpuIcbCandidates_ = 0, gpuIcbPrepared_ = 0;
