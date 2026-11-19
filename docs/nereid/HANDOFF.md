@@ -3024,3 +3024,114 @@ pending/failed GPU rebuild keeps `dirty=true` after repeated identical
 one read-only snapshot per tick could suppress a required upload. This
 was a source-inspection correction, **not** a compiled test or GPU
 verification. Functional priority and Draft PR status are unchanged.
+
+## Stage 29 — fixed-point spatial currents for rivers and rapids
+
+**Branch:** `feature/nereid-water-core`, draft PR #23.
+**Starting head:** `8527532cb1b94749afe97e6f85402885c9545335`.
+**Owner priority:** finish features first; **no test authoring or runs**.
+No merges from other feature branches or main in this stage.
+
+### Implementation commits / modified files
+
+- `ea806393704e8c22dbca9cc61f18fae9924cba33` —
+  NEW `libraries/include/aiverselib/water/NereidCurrentField.h`:
+  persisted `WaterCurrentNode {downstream,lateral,shear}`,
+  `WaterCurrentFieldComponent {nodes,bankFade,enabled}`,
+  `waterCurrentAt(body,geometry,field,position)`. Fixed-point
+  nearest-segment projection, tangent speed, bank fade, cross-river
+  velocity and deterministic tie handling; invalid field falls back to
+  base `WaterBodyComponent.flow`.
+- `f9d13b59a9e1add49e9fe635ed9d66ad17115726` —
+  `libraries/include/aiverselib/water/NereidWaterSystems.h`:
+  optional current parameter on shared candidate selection;
+  reference water sampling now evaluates local current, and new
+  `registerNereidCurrentPersistence` schema registration.
+- `cf142f7af3f8808a9bf069220a06318a3b41005b` —
+  `libraries/include/aiverselib/water/NereidQueryIndex.h`:
+  indexed water sampling uses the same current field and returns the
+  same `WaterSample.flow` semantics as the reference sampler.
+- `7b7dc01f0893d9e66611cb1ee2d583897de0ad7e` —
+  `libraries/include/aiverselib/water/NereidNativeWater.h`:
+  opt-in `NativeWaterPipelineConfig::enableCurrentField`.
+- `0909de423bdce60ccc2caa2f066b8d996b0ad998` —
+  `engine/world/NereidWaterScene.h`:
+  read-only current profile and `useCurrentField` in each scene
+  source; `currentForInteractionWater(id,position)` queries local
+  current without reading or changing authoritative ECS.
+- `4b10b9fd0c78a2ac572cff26414d678167f0d81f` —
+  `engine/world/NereidEcsPresentation.h`:
+  copy optional water-current ECS component into presentation source.
+- `8679c71c712e08fde36f9663775c8a5649ca0b8c`,
+  `de258d20674268be0bf45fc20cff7a42c6b1b08b` —
+  `engine/world/NereidRipples.h`,
+  `engine/world/WorldScene.h`: visual ripple advection now invokes
+  the per-position current query using precise double positions
+  quantized only at the presentation read bridge.
+- `f34af12259231d0b76ac2122955270cf05754898` —
+  `engine/world/NereidWaterManifest.h`: optional strict
+  `currentField` node triples per RiverSpline; one node per control
+  point, bounded node speeds, and bankFade.
+- `cd0e8e6af0efa2e4b576f1236cccccf5379cd4d3` —
+  `libraries/catalog.json`: native reusable package
+  `AIVERSE::lib_nereid_currents`.
+- `47733fc78fb552cbd7afc2e18147435f3ede5a4e` —
+  `skills/gameplay/aiverse-nereid-water/SKILL.md`: native use,
+  ownership and feature guidance.
+
+### Contracts and examples
+
+Native ECS: attach a `WaterCurrentFieldComponent` on the SAME entity
+as `WaterBodyComponent` and enabled `WaterGeometryComponent`
+with kind `RiverSpline`. The number of profile nodes must match the
+number of spline nodes, up to `kMaxWaterGeometryPoints`. Nodes are
+interpolated along the closest spline segment; lateral direction is
+defined by its tangent normal, shear varies smoothly across width,
+and optional `bankFade` attenuates towards the bank. All simulation
+math uses deterministic `Fixed`, not float/double. The existing
+`WaterSample.flow` field now holds local velocity and is consumed
+by the existing buoyancy/drag output, without adding a new physics
+integrator. Existing water saves are unchanged unless the optional
+new schema is explicitly registered.
+
+Example scene `nereidWater.surfaces[]` entry:
+```json
+{
+  "id": 30, "kind": "river", "shape": "river",
+  "surfaceY": 10, "bottomY": -4,
+  "points": [[0,0,4],[20,0,4],[35,10,6]],
+  "flow": [0,0,0],
+  "currentField": {
+    "bankFade": 0.25,
+    "nodes": [[2,0,0],[8,0.5,2],[4,-0.3,-1]]
+  }
+}
+```
+
+The same current field is copied in `snapshotNereidEcsWater`;
+`WorldScene::advanceNereidRipples` advects visual pulse centres by
+that local value. This is **read-only presentation sampling**, and
+not an authoritative numerical fluid simulation. Flow profile changes
+must be republished by the host after the ECS read barrier. A change
+in flow alone should not require a water mesh re-upload.
+
+### Verification / limits / next feature
+
+**Actually done:** reviewed GitHub NEREID policies, authored and
+committed implementation, package catalog, skill and this handoff.
+**NOT DONE:** test authoring, native compiler, CTest, real shader
+compilation, GPU captures, mobile perf, RTS/FPS regression, per
+owner request. No test results are implied. Keep PR Draft.
+
+Known limitations: the nearest-spline-segment approximation is
+piecewise linear and may have discontinuities at sharp bends,
+self-crossings and confluences; no dynamic turbulence solver or
+pressure field. The local field is only defined for RiverSpline;
+other water kinds retain uniform `body.flow`. BankFade is
+deterministic and should not be used to infer collision with banks.
+
+**Next stage:** add directional/asymmetric vessel wakes in the
+existing NEREID ripple shader and ECS interaction event chain,
+then step-based SpectraFX cascade spray, followed by a PHYSIS wind
+presentation adapter. Update the handoff after *each* stage and
+defer tests until the functional backlog is completed.
