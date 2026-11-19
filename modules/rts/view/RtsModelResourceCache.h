@@ -12,6 +12,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
@@ -27,6 +28,62 @@ public:
     struct Stats {
         size_t models=0,textures=0,decodedCpuBytes=0;
     };
+
+    // Model-cache keys include CPU geometry-policy variants; the source
+    // file identity is independent of that variant and of load success.
+    static std::string sourceForKey(std::string_view key) {
+        constexpr std::string_view geometry="#geometry";
+        if(key.ends_with(geometry))key.remove_suffix(geometry.size());
+        return std::string(key);
+    }
+    struct AffectedModel {
+        std::string key;
+        const render::Model* model=nullptr; // null: failed-load tombstone
+    };
+    // Stable cache-key list for a changed source, including geometry
+    // variants and failed/null cached loads. No assets are loaded here.
+    std::vector<AffectedModel> affectedBySource(
+            std::string_view source) const {
+        std::vector<AffectedModel> result;
+        if(source.empty() || source.starts_with("shape:"))return result;
+        for(const auto& [key,model]:models_)
+            if(sourceForKey(key)==source)
+                result.push_back({key,model.get()});
+        return result;
+    }
+    // Render-thread transaction. The host MUST detach TypeLook, pose/graph,
+    // View packet, preview and other borrowed references in onDetach BEFORE
+    // any GPU model is released. A throwing callback aborts without eviction.
+    // Do not call while renderer submissions are in flight.
+    template<class OnDetach>
+    size_t invalidateSources(gfx::Device& dev,
+                             const std::vector<std::string>& sources,
+                             OnDetach&& onDetach) {
+        std::unordered_set<std::string> changed;
+        for(const auto& source:sources)
+            if(!source.empty() && source.rfind("shape:",0)!=0)
+                changed.insert(sourceForKey(source));
+        if(changed.empty())return 0;
+        std::vector<AffectedModel> affected;
+        for(const auto& [key,model]:models_)
+            if(changed.contains(sourceForKey(key)))
+                affected.push_back({key,model.get()});
+        if(affected.empty())return 0;
+#ifndef __EMSCRIPTEN__
+        preparation_.reset(); // join CPU worker before cache mutation
+#endif
+        // Never attempt a partial eviction if a host has not detached.
+        onDetach(affected);
+        for(const auto& item:affected) {
+            const auto it=models_.find(item.key);
+            if(it==models_.end())continue;
+            if(it->second)render::releaseModel(dev,*it->second);
+            models_.erase(it);
+            ++generation_;
+        }
+        textures_->trim(dev);
+        return affected.size();
+    }
 
 #ifndef __EMSCRIPTEN__
     RtsModelPreparationService& preparation() noexcept {return preparation_;}
@@ -93,9 +150,14 @@ public:
     }
     std::vector<std::string> modelFiles() const {
         std::vector<std::string> files;
-        for(const auto& [key,model]:models_)
-            if(key.rfind("shape:",0)!=0)
-                files.push_back(model?model->path:key);
+        std::unordered_set<std::string> seen;
+        for(const auto& [key,model]:models_) {
+            (void)model;
+            if(key.rfind("shape:",0)==0)continue;
+            const std::string source=sourceForKey(key);
+            if(!source.empty() && seen.insert(source).second)
+                files.push_back(source);
+        }
         return files;
     }
 
