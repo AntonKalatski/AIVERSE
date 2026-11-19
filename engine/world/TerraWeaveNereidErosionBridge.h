@@ -5,6 +5,7 @@
 #pragma once
 #include "engine/world/TerraWeaveEarthworks.h"
 #include "engine/world/TerraWeaveRootEvents.h"
+#include "engine/world/TerraWeaveGrassCover.h"
 #include <aiverselib/water/NereidErosion.h>
 #include <algorithm>
 #include <cstdint>
@@ -37,6 +38,7 @@ struct NereidBankSampleState {
 struct BankTick {
     EarthworkChange earth{};
     PlantSupportUpdate vegetation{};
+    std::vector<GrassCoverChange> grassCoverage{};
     uint64_t completedTick=0;
     uint32_t samples=0;
     uint32_t activeBankSamples=0;
@@ -85,7 +87,8 @@ public:
     BankTick step(const std::vector<NereidBankProbe>& probes,
                   uint64_t completedTick,uint32_t dtMs,
                   RootSupportRegistry* roots=nullptr,
-                  lib::nereid::ShoreErosionSettings options={}) {
+                  lib::nereid::ShoreErosionSettings options={},
+                  GrassCoverRegistry* grass=nullptr) {
         if(tickStarted_ && completedTick<=lastTick_)
             throw std::invalid_argument("NEREID stale/duplicate erosion tick");
         if(probes.size()>kMaxSampleCount)
@@ -144,6 +147,9 @@ public:
         lastTick_=completedTick;
         tickStarted_=true;
 
+        if(grass && !output.earth.vertices.empty())
+            output.grassCoverage=grass->applyEarthwork(
+                output.earth,earth_.spacingCm());
         if(roots && !output.earth.vertices.empty()){
             // Post-commit read of the *same* terrain owner, never a second
             // renderer/physics height map. World boundary throws return an
