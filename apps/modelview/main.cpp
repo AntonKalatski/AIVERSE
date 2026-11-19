@@ -307,74 +307,90 @@ struct Viewer {
         else log.push_back("saved attachment config: "+attachmentConfigPath);
     }
 
-    bool rebuildAttachments() {
-        if(!dev || !attachmentPreview || gallery)return false;
+    // Compile an entire attachment configuration in any provider generation.
+    // Both normal layout edits and on-disk Model hot-reimport call this same
+    // genre-neutral API. No live instance is mutated before all entries pass.
+    bool buildAttachmentLayout(
+            ModelAssetProvider& provider,
+            ::aiverse::view::AppearanceAssetRegistry& registry,
+            std::vector<Instance>& actors,std::string& error) {
         std::vector<Imported::Compiled> staged;
-        std::vector<::aiverse::view::AppearanceAssetRegistry::Snapshot> stagedParents;
-        staged.reserve(inst.size());
-        stagedParents.reserve(inst.size());
+        std::vector<::aiverse::view::AppearanceAssetRegistry::Snapshot> parents;
+        staged.reserve(actors.size());
+        parents.reserve(actors.size());
         std::map<std::string,::aiverse::view::AppearanceAssetRegistry::Snapshot> children;
-        std::string error;
         try {
-            // Import real child files BEFORE taking any source read lease:
-            // ModelResourceCache does not allow mutation while read-locked.
+            // Import every real child Model before taking any source read
+            // lease: the cache cannot evict/replace under active readers.
             for(const auto& entry:attachmentSpecs) {
                 if(!entry.enabled)continue;
                 if(entry.modelSource.empty() || entry.socketName.empty())
-                    throw std::invalid_argument("attachment needs model path and socket name");
+                    throw std::invalid_argument(
+                        "attachment needs a Model file and named socket");
                 if(children.count(entry.modelSource))continue;
                 ::aiverse::view::AppearanceAssetRegistry::Snapshot published;
                 ::aiverse::view::AppearanceAssetRegistry::Request request;
                 if(!Imported::importChild(
-                        nativeModels,*dev,attachmentsRegistry,
+                        provider,*dev,registry,
                         "modelview/child/"+entry.modelSource,
                         entry.modelSource,std::move(request),published,{},&error))
                     throw std::runtime_error(error);
                 children.emplace(entry.modelSource,std::move(published));
             }
-            for(size_t i=0;i<inst.size();++i) {
-                auto& instance=inst[i];
-                if(!instance.model)
+            for(size_t i=0;i<actors.size();++i) {
+                auto& actor=actors[i];
+                if(!actor.model)
                     throw std::invalid_argument("parent Model is unavailable");
-                auto lease=nativeModels->resources().acquireModelRead(instance.model);
+                auto lease=provider.resources().acquireModelRead(actor.model);
                 if(!lease)
                     throw std::invalid_argument(
-                        "source Model is not owned by the native provider");
+                        "parent Model must belong to the same provider");
                 ::aiverse::view::AppearanceAssetRegistry::Request req;
-                req.model=instance.model;
-                req.sources.push_back(instance.path);
-                const std::string key="modelview/source/"+std::to_string(i);
-                if(!attachmentsRegistry->publish(key,req,{}, {},&error))
+                req.model=actor.model;
+                req.sources.push_back(actor.path);
+                const auto key="modelview/source/"+std::to_string(i);
+                if(!registry.publish(key,req,{}, {},&error))
                     throw std::runtime_error(error);
-                auto parent=attachmentsRegistry->find(key);
-                std::vector<Imported::ChildRequest> requests;
+                auto parent=registry.find(key);
+                std::vector<Imported::ChildRequest> requested;
+                requested.reserve(attachmentSpecs.size());
                 for(const auto& entry:attachmentSpecs) {
                     if(!entry.enabled)continue;
                     Imported::ChildRequest child;
                     child.appearance=children.at(entry.modelSource);
                     child.socketName=entry.socketName;
-                    requests.push_back(std::move(child));
+                    requested.push_back(std::move(child));
                 }
                 Imported::Compiled compiled;
-                if(!Imported::compile(parent,nativeModels->resources(),
-                                      requests,compiled,&error))
+                if(!Imported::compile(parent,provider.resources(),
+                                      requested,compiled,&error))
                     throw std::runtime_error(error);
                 staged.push_back(std::move(compiled));
-                stagedParents.push_back(std::move(parent));
+                parents.push_back(std::move(parent));
             }
-            for(size_t i=0;i<inst.size();++i) {
-                inst[i].compiledAttachments=std::move(staged[i]);
-                inst[i].publishedAppearance=std::move(stagedParents[i]);
-                inst[i].attachmentsReady=true;
-                inst[i].lastAttachmentError.clear();
+            for(size_t i=0;i<actors.size();++i) {
+                actors[i].compiledAttachments=std::move(staged[i]);
+                actors[i].publishedAppearance=std::move(parents[i]);
+                actors[i].attachmentsReady=true;
+                actors[i].lastAttachmentError.clear();
             }
-            log.push_back("attachment layout published for "+std::to_string(inst.size())+" source Models");
             return true;
         }catch(const std::exception& e) {
             error=e.what();
-            log.push_back("attachment update rejected; last good retained: "+error);
             return false;
         }
+    }
+
+    bool rebuildAttachments() {
+        if(!dev || !attachmentPreview || gallery)return false;
+        std::string error;
+        if(buildAttachmentLayout(*nativeModels,*attachmentsRegistry,inst,error)) {
+            log.push_back("attachment layout compiled for "+
+                          std::to_string(inst.size())+" source Models");
+            return true;
+        }
+        log.push_back("attachment update rejected; last good retained: "+error);
+        return false;
     }
 
     void play(Instance& in) {
