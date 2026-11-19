@@ -118,6 +118,26 @@ void Portrait::renderMaterial(RtsView& view, const Json& material, int shape, do
     dev_->endPass();
 }
 
+// Canonical View portrait consumer for any native host's fully-authored,
+// already-resolved ModelDraw (including materials, variant, pose and tint).
+// All borrowed pointers are consumed synchronously before returning.
+bool Portrait::renderAppearance(const ModelDraw& draw,
+                                const RTSCamera& camera,float4 background) {
+    if(!dev_ || !color_.valid() || !draw.model)return false;
+    sceneView_.beginScene(r3d_,camera,size_,size_);
+    ::aiverse::View::submitModel(r3d_,draw);
+    gfx::PassDesc pass;
+    pass.colorTarget=color_;
+    pass.depthTarget=depth_;
+    pass.clearColor[0]=background.x;
+    pass.clearColor[1]=background.y;
+    pass.clearColor[2]=background.z;
+    pass.clearColor[3]=background.w;
+    r3d_.render(pass);
+    dev_->endPass();
+    return true;
+}
+
 bool Portrait::renderStaticModel(render::ModelAssetProvider& provider,
                                 const std::string& source,float yaw) {
     if(!dev_ || !color_.valid())return false;
@@ -133,21 +153,10 @@ bool Portrait::renderStaticModel(render::ModelAssetProvider& provider,
     cam.pitch=0.15f;
     cam.yaw=yaw;
     cam.fovY=0.6f;
-    sceneView_.beginScene(r3d_,cam,size_,size_);
     ModelDraw draw;
     draw.model=model;
     draw.world=mat4::identity();
-    ::aiverse::View::submitModel(r3d_,draw);
-    gfx::PassDesc pass;
-    pass.colorTarget=color_;
-    pass.depthTarget=depth_;
-    pass.clearColor[0]=0.12f;
-    pass.clearColor[1]=0.14f;
-    pass.clearColor[2]=0.18f;
-    pass.clearColor[3]=1.f;
-    r3d_.render(pass);
-    dev_->endPass();
-    return true;
+    return renderAppearance(draw,cam,{0.12f,0.14f,0.18f,1.f});
 }
 
 void Portrait::renderPose(const Model& model,const Pose& pose,float yaw) {
@@ -157,13 +166,10 @@ void Portrait::renderPose(const Model& model,const Pose& pose,float yaw) {
     auto e=model.boundsMax-model.boundsMin;cam.distance=std::max({e.x,e.y,e.z,.3f})*2.1f;
     cam.minDistance=.01f;cam.pitch=.15f;cam.yaw=yaw;cam.fovY=.6f;
     r3d_.lighting.skyColor={.8f,.85f,.9f};r3d_.lighting.groundColor={.5f,.5f,.5f};
-    sceneView_.beginScene(r3d_,cam,size_,size_);
-    ModelDraw d;d.model=&model;d.nodeWorld=&world;
-    d.pose=&pose;d.team={.1f,.4f,.9f};
-    ::aiverse::View::submitModel(r3d_,d);
-    gfx::PassDesc pass;pass.colorTarget=color_;pass.depthTarget=depth_;
-    pass.clearColor[0]=.12f;pass.clearColor[1]=.14f;pass.clearColor[2]=.18f;pass.clearColor[3]=1;
-    r3d_.render(pass);dev_->endPass();
+    ModelDraw draw;
+    draw.model=&model;draw.nodeWorld=&world;
+    draw.pose=&pose;draw.team={.1f,.4f,.9f};
+    (void)renderAppearance(draw,cam,{.12f,.14f,.18f,1.f});
 }
 
 void Portrait::shutdown() {
@@ -196,18 +202,28 @@ void Portrait::render(RtsView& view, uint16_t type, uint8_t owner, double time, 
     cam.pitch = 0.32f;
     cam.yaw = 0.5f;
     cam.fovY = 0.6f;
-    sceneView_.beginScene(r3d_,cam, size_, size_);
     const float previewYaw=yaw<0 ? float(time)*.6f : yaw;
-    // The portrait owns its View renderer and consumes host-supplied
-    // model resources directly. Animated/complex assets still use the
-    // compatibility renderer, without duplicating animation evaluation.
-    if(!view_adapter::submitResolvedPreview(
-           view,r3d_,type,owner,previewYaw))
-        view.drawPreview(r3d_,type,owner,time,previewYaw);
+    // Preserve the full authored appearance (material overrides, variant,
+    // geometry policy and tint) without routing this static packet through
+    // any legacy animation evaluation or a second graph owner.
+    view_adapter::StaticPreviewModel resolved;
+    ::aiverse::view::Object packet;
+    if(view.resolveStatic(type,owner,resolved) &&
+       view_adapter::buildStaticPreviewPacket(resolved,previewYaw,packet)) {
+        (void)renderAppearance(packet.draw,cam);
+        return;
+    }
+    // Complex or animated models continue using the established host
+    // authoring path; do not double-evaluate their MotionWeave graphs.
+    sceneView_.beginScene(r3d_,cam,size_,size_);
+    view.drawPreview(r3d_,type,owner,time,previewYaw);
     gfx::PassDesc pass;
-    pass.colorTarget = color_;
-    pass.depthTarget = depth_;
-    pass.clearColor[0] = 0.16f; pass.clearColor[1] = 0.18f; pass.clearColor[2] = 0.22f; pass.clearColor[3] = 1;
+    pass.colorTarget=color_;
+    pass.depthTarget=depth_;
+    pass.clearColor[0]=.16f;
+    pass.clearColor[1]=.18f;
+    pass.clearColor[2]=.22f;
+    pass.clearColor[3]=1.f;
     r3d_.render(pass);
     dev_->endPass();
 }
