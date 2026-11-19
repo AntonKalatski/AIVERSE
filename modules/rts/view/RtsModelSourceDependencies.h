@@ -5,6 +5,7 @@
 #include "RtsModelStreaming.h"
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <map>
 #include <set>
 #include <string>
@@ -55,7 +56,7 @@ public:
     // Embedded images have no source key and must not be registered.
     void addResidentTexture(const std::string& modelSource,
                             const std::string& textureSource) {
-        const auto it=sources_.find(modelSource);
+        const auto it=sources_.find(normalize(modelSource));
         if(it==sources_.end() || !it->second.has(ModelSourceKind::Model))
             return;
         for(const size_t type:it->second.types)
@@ -65,20 +66,21 @@ public:
     // A cache can retain models that are absent from the currently authored
     // rules (e.g. a just-edited choice). Keep them on the watch list too.
     void addResidentModel(const std::string& source) {
-        if(!source.empty())sources_[source].kinds|=uint8_t(ModelSourceKind::Model);
+        const auto path=normalize(source);
+        if(!path.empty())sources_[path].kinds|=uint8_t(ModelSourceKind::Model);
     }
 
     const std::map<std::string,Entry>& sources() const noexcept {
         return sources_;
     }
     const Entry* lookup(const std::string& source) const noexcept {
-        const auto it=sources_.find(source);
+        const auto it=sources_.find(normalize(source));
         return it==sources_.end()?nullptr:&it->second;
     }
     Impact resolve(const std::set<std::string>& changed) const {
         Impact impact;
         for(const auto& source:changed) {
-            const auto it=sources_.find(source);
+            const auto it=sources_.find(normalize(source));
             if(it==sources_.end())continue;
             const Entry& entry=it->second;
             impact.types.insert(entry.types.begin(),entry.types.end());
@@ -86,7 +88,7 @@ public:
             impact.texture |= entry.has(ModelSourceKind::Texture);
             impact.graph |= entry.has(ModelSourceKind::AnimationGraph);
             impact.materialLibrary |= entry.has(ModelSourceKind::MaterialLibrary);
-            if(entry.has(ModelSourceKind::Model))impact.models.insert(source);
+            if(entry.has(ModelSourceKind::Model))impact.models.insert(it->first);
         }
         // Refresh every model choice of a type affected by an authored
         // external texture: GPU caches are shared between model variants.
@@ -98,6 +100,11 @@ public:
         return impact;
     }
 private:
+    static std::string normalize(const std::string& source) {
+        if(source.empty())return {};
+        const auto path=std::filesystem::path(source).lexically_normal().generic_string();
+        return path=="."?std::string{}:path;
+    }
     static bool usesLibrary(const Json& value) {
         if(value.isString())return true;
         if(value.isObject()) {
@@ -114,11 +121,12 @@ private:
         return false;
     }
     void add(const std::string& source,ModelSourceKind kind,size_t type) {
-        if(source.empty() || source.rfind("shape:",0)==0)return;
-        auto& entry=sources_[source];
+        const std::string path=normalize(source);
+        if(path.empty() || path.rfind("shape:",0)==0)return;
+        auto& entry=sources_[path];
         entry.kinds|=uint8_t(kind);
         entry.types.insert(type);
-        if(kind==ModelSourceKind::Model)typeModels_[type].insert(source);
+        if(kind==ModelSourceKind::Model)typeModels_[type].insert(path);
     }
     void collectTextures(const Json& root,size_t type) {
         static const std::set<std::string> keys{
