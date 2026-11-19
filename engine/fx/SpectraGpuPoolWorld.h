@@ -127,6 +127,8 @@ public:
                             fx::float4 tint={1,1,1,1});
     bool detachSourceTransform(PoolSourceId source);
     bool configureContinuous(PoolSourceId source,PoolContinuousEmission emission);
+    // Checks binding revision without being affected by pause state.
+    bool sourceBindingCurrent(PoolSourceId source) const;
     bool sourceActive(PoolSourceId source) const;
     bool emitSource(PoolSourceId source,fx::float3 position,
                     fx::float3 direction={0,1,0},
