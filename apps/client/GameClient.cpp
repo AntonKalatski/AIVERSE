@@ -121,6 +121,7 @@ void GameClient::initStep(gfx::Device& dev, int step) {
         r3d_.setMaterialQuality(Renderer3D::defaultMaterialQualityFor(dev, platform::isTouchDevice()));
         r3d_.setBakedQuality(Renderer3D::defaultBakedQualityFor(dev, platform::isTouchDevice()));
         r3d_.lights.setQuality(aiverse::render::LightSystem::defaultQualityFor(dev, platform::isTouchDevice()));
+        postFx_.setGpuDeviceLease(gpuDeviceLease_);
         postFx_.init(dev);
         postFxBase_ = render::PostFx::defaultQualityFor(dev, platform::isTouchDevice());
         postFx_.setQuality(postFxBase_);
