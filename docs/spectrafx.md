@@ -2469,3 +2469,114 @@ editor UI launch/screenshots, GPU reset fault injection, multi-group
 atomicity stress, source staging under capacity pressure, or
 CPU/GPU parity. Implementation is unverified executable source;
 do not enable it by default for production.
+
+## Stage 38 — retryable GPU-group reset, Device recovery and interpolated ECS presentation
+
+### Explicit recovery state for pooled Metal VFX
+
+A SpectraFX `GpuPoolWorld` now has a read-only
+`PoolResetReport resetReport()` and `presentationBlocked()` gate.
+A rollback attempt remembers a **per-GPU-group accepted-reset mask**,
+rather than resetting already prepared groups repeatedly. If group
+number N rejects its checked reset uploads, `resetForRollback()`
+returns false, records `groupsAccepted`, `groupCount` and
+`failedGroup`, and blocks new source creation, bursts, GPU frame
+submission and drawing. A later safe presentation-frame retry skips
+groups whose uploads have already been accepted. The CPU effect
+world and renderer-source handles are not invalidated until ALL
+GPU groups accept their ordered reset commands.
+
+This is **restartable preparation**, not a hardware-atomic reset.
+`groupsAccepted` means the RHI **encoded** the reset uploads;
+the GPU may not have finished. If a subsequent Metal command buffer
+fails, the host must handle device health/loss and reinitialize the
+graphics stack. A lost Device latches `resetReport().deviceLost`;
+the pool does not falsely resume merely because a health flag
+later becomes true.
+
+A new CPU-only definition catalog, `PoolRecoveryManifest`, allows
+a native host to reconstruct effects on a **new, healthy graphics
+Device**. It preserves effect names, compiled original `EffectDef`,
+graph options, declared runtime-parameter schema and effective
+default values. It does NOT contain renderer source IDs, graphics
+handles, particle buffers, emitter timing or GPU checkpoints.
+
+```cpp
+using namespace aiverse::spectra;
+PoolRecoveryManifest snapshot=oldPool.exportRecoveryManifest();
+// Keep OLD graphics Device alive until oldPool.shutdown() finishes.
+oldPool.shutdown();
+GpuPoolWorld recovered;
+bool ok=recovered.importRecoveryManifest(&newHealthyDevice,snapshot);
+// Recreate the ECS attachment presenter against recovered and re-sync
+// the latest committed ECS World only if ok == true.
+```
+
+Import fails without publishing a usable partial pool if a
+`RequireGpu` effect is unsupported on the new backend. The old
+readback limiter is not reused across the Device boundary: a new
+checkpoint budget is created. GPU particles are deliberately lost;
+the goal is safe re-creation of effect definitions and native
+presentation attachments.
+
+### Render-pose interpolation for ECS sources
+
+The public native header
+`<aiverselib/genre/SpectraFX.h>` exports
+`GpuEcsPoseInterpolator` from
+`libraries/include/aiverselib/genre/SpectraEcsRenderPose.h`.
+The native host supplies the same `ResolvePose` callback used by
+`GpuEcsAttachmentPresenter`. The interpolator stores at most two
+renderer-side pose snapshots, captured once per **committed** ECS tick
+through const World iteration, and samples them with
+`alpha` in the range 0..1.
+
+```cpp
+GpuEcsPoseInterpolator poses;
+poses.captureCommitted(committedTick,world,resolvePose);
+pool.beginPresentationFrame(camera,viewProj,width,height);
+presenter.syncCommitted(committedTick,world,poses.resolver(renderAlpha));
+pool.step(dt);
+// draw scene + VFX, then end presentation frame
+// On rollback: presenter.resetForRollback() at safe frame;
+// only when it succeeds: poses.resetForRollback();
+```
+
+Only consecutive committed ticks and identical
+`Entity::packed()` identities interpolate. New/recycled entities
+snap to their current pose, avoiding history leaks across ECS
+generations. Nonfinite poses, excessive source counts or decreasing
+ticks are rejected without replacing a valid pose history. If a
+pose is unavailable, the attachment presenter pauses new emission;
+the interpolator never writes float positions into authoritative
+ECS. The updated `examples/spectrafx/native_ecs_attachments.h`
+shows this integration and explicitly rebuilding after device
+loss.
+
+### Read-only diagnostic history in Metal GPU preview
+
+The optional editor Metal GPU preview records the last **180
+rendered preview attempts** as a CPU-side timeline with
+`deviceFrame`, successfully accumulated visual time, estimated
+GPU particle count, checkpoint fresh/stale/pending counts, source
+kills awaiting a completion fence, GPU health and whether the
+simulation step was accepted. The SpectraFX editor shows a small
+history plot and can copy these records as JSON through
+`spectraGpuPreviewHistoryJson()`.
+
+The history is intentionally **not** a restorable GPU snapshot:
+no particle positions, VM registers or arbitrary framebuffer
+content are saved. Reverse seeking is still unsupported; the
+Stage 37 forward-only step/restart model remains intact.
+Device recovery/partial rollback status appears in the same
+editor diagnostics without asserting that accepted GPU commands
+have already completed.
+
+**Verification:** GitHub source writes, tree/branch readback and
+manual API/source inspection only. **NOT RUN:** local CMake or
+Clang compilation, Objective-C++/MSL shader compile, CTest,
+editor startup, actual Metal device-loss recovery, multi-group
+partial rollback fault injection, ECS pose interpolation tests,
+image parity or GPU performance benchmarks. Do not enable these
+experimental features by default in production based only on
+source code presence.
