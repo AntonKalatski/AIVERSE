@@ -18,6 +18,7 @@
 #include "GpuSceneCulling.h"
 #include "GpuSceneDrawCommands.h"
 #include <memory>
+#include <utility>
 #include <map>
 #include <tuple>
 #include <array>
