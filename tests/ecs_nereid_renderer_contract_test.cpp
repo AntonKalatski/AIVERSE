@@ -263,7 +263,7 @@ int main() {
     const auto lodConfig=world::parseNereidWaterManifest(Json::parse(R"({
       "nereidWater":{"surfaces":[{"id":22,"shape":"box",
         "surfaceY":2,"bottomY":-2,"halfExtents":[8,8],
-        "autoLod":true,"mediumDistance":80,"farDistance":200}]}
+        "autoLod":true,"mediumDistance":80,"farDistance":200}]}}
     )"));
     check(lodConfig.surfaces.size()==1 && lodConfig.surfaces[0].autoLod &&
           lodConfig.surfaces[0].mediumDistance==80.f &&
@@ -424,7 +424,7 @@ int main() {
       "nereidWater":{"surfaces":[{
         "kind":"lake","shape":"box","surfaceY":2,"bottomY":-5,
         "halfExtents":[10,10],"style":{"refractionStrength":0.5}
-      }]}
+      }]}}
     )"));
     check(refractConfig.surfaces.size()==1 &&
           refractConfig.surfaces[0].style.refractionStrength==0.5f,
@@ -460,7 +460,7 @@ int main() {
     const auto opticalManifest=world::parseNereidWaterManifest(Json::parse(R"({
       "nereidWater":{"surfaces":[{"id":5,"shape":"box","surfaceY":8,
         "bottomY":-3,"halfExtents":[5,6],
-        "style":{"absorption":0.3,"shoreFoamDepth":1.5,"depthTint":0.6}}]}
+        "style":{"absorption":0.3,"shoreFoamDepth":1.5,"depthTint":0.6}}]}}
     )"));
     const auto& optical=opticalManifest.surfaces[0].style;
     check(optical.absorption>0.29f && optical.absorption<0.31f &&
@@ -591,7 +591,7 @@ int main() {
     const auto opticsManifest=world::parseNereidWaterManifest(Json::parse(R"({
       "nereidWater":{"surfaces":[{"kind":"lake","shape":"box",
         "surfaceY":4,"bottomY":-10,"halfExtents":[5,5],
-        "style":{"underwaterDistortion":0.7,"underwaterScattering":0.5}}]}
+        "style":{"underwaterDistortion":0.7,"underwaterScattering":0.5}}]}}
     )"));
     check(opticsManifest.surfaces[0].style.underwaterDistortion>0.69f &&
           opticsManifest.surfaces[0].style.underwaterScattering==0.5f,

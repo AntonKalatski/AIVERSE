@@ -344,3 +344,8 @@ The new CPU-only `ecs_nereid_confluence_contract_test` covers JSON scene authori
 ## Stage 45.1 — CPU presentation manifest link contract
 
 NEREID renderer and confluence contract tests both require `worldInteger` / `worldVector`, defined in `engine/world/WorldAssets.cpp`, not `aiverse_engine`. CMake now links `aiverse_world` for these targets; standalone ECS experiment runner compiles `WorldAssets.cpp` and `Sha256.cpp`. Correct linkage has been source-reviewed but not natively built, due unavailable Git checkout and queued CI. See Stage 45 handoff.
+
+
+## Stage 46 — native CTest fixture corrections
+
+Far-LOD river surface generation deliberately suppresses shore foam to avoid whitening an all-perimeter mesh; its test now asserts no foam in Far and positive foam in Medium. Four intended-valid JSON water examples in the renderer contract test were missing final root braces and are now corrected. Gameplay/renderer behavior unchanged; no native tests run after change. See `docs/nereid/stage-46-native-test-fixtures.md`.

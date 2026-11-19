@@ -80,9 +80,17 @@ int main() {
     checkMesh(riverMesh,"river strip");
     check(riverMesh.vertices.size()==6 && riverMesh.triangleCount()==4,
           "river strip topology");
+    // Far LOD intentionally disables vertex shoreline foam: every
+    // far-river vertex is on its perimeter, so tinting would turn it white.
+    for(const auto& v:riverMesh.vertices)
+        check(v.shore==0.f,"far river must not tint the entire surface");
+    auto foamOpts=opts;
+    foamOpts.lod=n::WaterSurfaceLod::Medium;
+    const auto foamyRiver=n::buildWaterSurfaceMesh(b,&river,foamOpts);
+    checkMesh(foamyRiver,"medium river mesh missing");
     bool foundShore=false;
-    for(const auto& v:riverMesh.vertices)foundShore|=v.shore>0.0f;
-    check(foundShore,"shore factor missing");
+    for(const auto& v:foamyRiver.vertices)foundShore|=v.shore>0.0f;
+    check(foundShore,"medium river shoreline factor missing");
     b.footprint=n::WaterFootprint::Infinite;
     opts.cameraX=100;opts.cameraZ=200;opts.oceanPatchRadius=50;
     const auto ocean=n::buildWaterSurfaceMesh(b,nullptr,opts);

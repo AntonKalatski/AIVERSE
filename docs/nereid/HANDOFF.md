@@ -4095,3 +4095,14 @@ Inspected exact definitions: `worldInteger` and `worldVector` are implemented (n
 **Fix:** assert the actual `impact_flash` particle ID in a headless `ParticleSystem::snapshot`: the fixture's High-quality three-particle burst, with 0.5-second lifetime, must have exactly three impact particles after one 0.1-second update. Replaying the same tick must not add another impact burst, tested after a second 0.1-second update. Existing reset check still requires no attached or one-shot particles to remain. Added `<algorithm>` for `std::count_if`. No shipping VFX, ECS or water code changed.
 
 **Performed:** GitHub source inspection of CPU emission and presenter, guarded edit, branch commit and handoff. **Not performed:** native C++ build/CTest rerun, GPU check or FPS/RTS/PHYSIS regressions. **Next:** pull, build `aiverse_vfx_ecs_tests`, run `ctest --test-dir build/nereid-test --output-on-failure -R '^vfx_ecs_presentation$'`; if successful, full CTest. Remain Draft.
+
+
+## Stage 46 — fix two failures observed in the native NEREID CTest run
+
+**Date:** 2026-11-19. **Branch:** `feature/nereid-water-core`, Draft PR #23. **Base:** `07b67ec8016d97afdb651a55ea7cf5bb9f6bccaf`. **Actual user-reported failures:** `ecs_nereid_surface_mesh_test` aborted with `shore factor missing`; `ecs_nereid_renderer_contract_test` aborted with `JsonError: JSON error at 5:5: expected ',' or '}'`. Separately, VFX failure from the same earlier run still reports the old `gameplay event did not play` text, which was removed in commit `07b67ec8`; rebuild that test binary after pulling.
+
+**NEREID surface test fix:** `WaterSurfaceMesh.h` deliberately suppresses shoreline foam at Far LOD because far river meshes only have perimeter vertices (all would turn white). The test incorrectly required a nonzero river shore factor on Far LOD. It now checks that the Far river keeps zero shore and builds an independent Medium river to assert that shoreline contribution is nonzero, retaining the original Far topology/winding expectations.
+
+**Renderer contract test fix:** Source inspection with JSON parsing of all raw string fixtures found exactly four objects with a missing final root `}`, at original source lines **263, 423, 460, 591** (LOD, refraction, depth optics, underwater visuals). The test expected these JSON examples to load. Added one closing brace to each and verified all extracted raw JSON literals parse using JavaScript `JSON.parse`. No shipping water mesh, renderer or gameplay code was changed.
+
+**Actual verification:** reviewed generator branch, all test JSON strings scanned/parsed, code patch/commit via GitHub connector. **NOT executed:** native macOS C++ rebuild, CTest rerun, GPU shader compiler or genre regressions. The fixes are source-level and not yet proven passing. **Next:** resolve the separately reported duplicate NEREID skill ID/catalog regeneration; then rerun targeted CTest and full suite. Keep PR Draft.
