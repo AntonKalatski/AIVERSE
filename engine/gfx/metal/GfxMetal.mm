@@ -1644,8 +1644,29 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                 return end != raw && *end == '\0' && std::isfinite(v) &&
                     v >= 0.01 && v <= 100.0 ? v : 0.15;
             }();
+            // Select a warmed timeline window so the 24-event budget is
+            // not exhausted by initial Metal ICB allocations. Optional slot
+            // filtering samples equivalent command groups across frames.
+            static const uint64_t fromFrame = [] {
+                const char* raw = std::getenv("AIVERSE_ICB_SLOW_TRACE_FROM_FRAME");
+                if (!raw || !*raw) return uint64_t(0);
+                char* end = nullptr;
+                const unsigned long n = std::strtoul(raw, &end, 10);
+                return end != raw && *end == '\0' && n <= 1000000ul
+                    ? uint64_t(n) : uint64_t(0);
+            }();
+            static const long selectedSlot = [] {
+                const char* raw = std::getenv("AIVERSE_ICB_SLOW_TRACE_SLOT");
+                if (!raw || !*raw) return -1l;
+                char* end = nullptr;
+                const long n = std::strtol(raw, &end, 10);
+                return end != raw && *end == '\0' && n >= 0 && n <= 64
+                    ? n : -1l;
+            }();
             static uint32_t printed = 0;
-            if (totalMs >= slowMs && printed < 24) {
+            if (uint64_t(frame_) >= fromFrame &&
+                (selectedSlot < 0 || submissionIndex == size_t(selectedSlot)) &&
+                totalMs >= slowMs && printed < 24) {
                 ++printed;
                 std::fprintf(stderr,
                     "[metal-icb-slow] frame=%llu slot=%zu commands=%u total=%.5fms "
