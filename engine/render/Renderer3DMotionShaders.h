@@ -349,4 +349,96 @@ fragment float4 fs_main(VOut in [[stage_in]],constant U0& u [[buffer(1)]],
     return float4(float2(s.x,1.0-s.y)-prior,1.0,1.0);
 }
 )";
+
+// Alpha-tested rigid object velocity. Replays the base texture's alpha
+// cutoff with material UV transform rather than filling its whole triangle.
+inline const char* kMaskedVS = R"(
+layout(location=0) in vec3 a_pos;
+layout(location=2) in vec2 a_uv;
+layout(location=4) in vec4 a_col;
+layout(std140) uniform U0 {
+    mat4 currentMvp;
+    mat4 previousMvp;
+    vec4 params;
+    vec4 uvTransform0; // offset.xy, scale.zw
+    vec4 uvTransform1; // rotation, cutoff, baseAlpha, vertexColors
+};
+out vec4 v_prevClip;
+out vec2 v_uv;
+out float v_alpha;
+void main() {
+    vec4 p=vec4(a_pos,1.0);
+    gl_Position=currentMvp*p;
+    v_prevClip=previousMvp*p;
+    float c=cos(uvTransform1.x), sn=sin(uvTransform1.x);
+    vec2 q=a_uv*uvTransform0.zw;
+    v_uv=vec2(c*q.x+sn*q.y,-sn*q.x+c*q.y)+uvTransform0.xy;
+    v_alpha=mix(1.0,a_col.a,step(0.5,uvTransform1.w));
+}
+)";
+inline const char* kMaskedFS = R"(
+layout(std140) uniform U0 {
+    mat4 currentMvp;
+    mat4 previousMvp;
+    vec4 params;
+    vec4 uvTransform0;
+    vec4 uvTransform1;
+};
+uniform sampler2D tex0;
+uniform sampler2D tex1;
+in vec4 v_prevClip;
+in vec2 v_uv;
+in float v_alpha;
+out vec4 o_color;
+void main() {
+    if (texture(tex1,v_uv).a * uvTransform1.z * v_alpha <
+        uvTransform1.y) discard;
+    vec2 s=gl_FragCoord.xy/params.xy;
+    if (gl_FragCoord.z > texture(tex0,s).r + 0.0015 ||
+        v_prevClip.w <= 0.00001) discard;
+    vec2 prior=v_prevClip.xy/v_prevClip.w*0.5+0.5;
+    o_color=vec4(s-prior,1.0,1.0);
+}
+)";
+inline const char* kMaskedMSL = R"(
+#include <metal_stdlib>
+using namespace metal;
+struct U0 {
+    float4x4 currentMvp; float4x4 previousMvp;
+    float4 params; float4 uvTransform0; float4 uvTransform1;
+};
+struct VIn {
+    float3 pos [[attribute(0)]];
+    float2 uv [[attribute(2)]];
+    float4 color [[attribute(4)]];
+};
+struct VOut {
+    float4 position [[position]];
+    float4 previous;
+    float2 uv;
+    float alpha;
+};
+vertex VOut vs_main(VIn in [[stage_in]],constant U0& u [[buffer(1)]]) {
+    VOut o;
+    float4 p=float4(in.pos,1.0);
+    o.position=u.currentMvp*p;
+    o.previous=u.previousMvp*p;
+    float c=cos(u.uvTransform1.x),sn=sin(u.uvTransform1.x);
+    float2 q=in.uv*u.uvTransform0.zw;
+    o.uv=float2(c*q.x+sn*q.y,-sn*q.x+c*q.y)+u.uvTransform0.xy;
+    o.alpha=mix(1.0,in.color.a,step(0.5,u.uvTransform1.w));
+    return o;
+}
+fragment float4 fs_main(VOut in [[stage_in]],constant U0& u [[buffer(1)]],
+    depth2d<float> tex0 [[texture(0)]],sampler tex0_s [[sampler(0)]],
+    texture2d<float> tex1 [[texture(1)]],sampler tex1_s [[sampler(1)]]) {
+    if (tex1.sample(tex1_s,in.uv).a*u.uvTransform1.z*in.alpha <
+        u.uvTransform1.y) discard_fragment();
+    float2 s=in.position.xy/u.params.xy;
+    if (in.position.z > tex0.sample(tex0_s,s)+0.0015 ||
+        in.previous.w<=0.00001) discard_fragment();
+    float2 prior=in.previous.xy/in.previous.w*0.5+0.5;
+    return float4(float2(s.x,1.0-s.y)-prior,1.0,1.0);
+}
+)";
 } // namespace aiverse::render::motion_shaders
