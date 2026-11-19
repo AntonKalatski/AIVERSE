@@ -1486,6 +1486,13 @@ void Editor::frame(gfx::Device& dev, double dt) {
     };
     retireClosedView(1ULL, prismaSceneRendered_, prismaScenePreviouslyLive_);
     retireClosedView(2ULL, prismaGameRendered_, prismaGamePreviouslyLive_);
+    // Also discard stale per-view Prisma quality/temporal state from any
+    // future custom viewport ID, not just hard-coded Scene/Game. The same
+    // GPU-fenced retireView() owns every private texture; no forced GPU idle.
+    std::vector<uint64_t> activePrismaViews;
+    if (prismaSceneRendered_) activePrismaViews.push_back(1ULL);
+    if (prismaGameRendered_) activePrismaViews.push_back(2ULL);
+    prisma_.retireUnregisteredViews(activePrismaViews);
     // A cached size can remain after a tab closes or is resized. Retire it
     // only when NO live camera references the same size. This moves its
     // targets and graph pool behind the current GPU submission fence, never
