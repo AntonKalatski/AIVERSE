@@ -8,7 +8,12 @@ public:
     const char* dockArea() const override{return "center";}
     bool openByDefault() const override{return false;}
     void draw(Editor& ed) override{panel_.draw(ed);}
-    void update(Editor& ed,double dt) override{panel_.update(ed,dt);}
+    void update(Editor& ed,double dt) override{
+        panel_.update(ed,dt);
+        // GPU state is disposable on dock-tab hide, unlike graph document
+        // and user preview controls; keep it alive only while visible.
+        if (!open || !ed.isWindowInFront(this)) panel_.suspendPreview();
+    }
 private:AnimationEditorPanel panel_{true};
 };
 AIVERSE_EDITOR_WINDOW(AnimationRigWindow);
