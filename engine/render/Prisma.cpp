@@ -196,6 +196,7 @@ void Prisma::retireView(uint64_t id) {
     viewQualityPolicies_.erase(id);
     viewHistoryAdmissionRejected_.erase(id);
     scopedGpuTimings_.erase(id);
+    effectReports_.erase(id);
     adaptivePressure_.erase(id);
     motionViews_.erase(id); // only matrix state + borrowed GPU handles
     viewDimensions_.erase(id); // the shared size cache itself stays resident
@@ -216,6 +217,7 @@ size_t Prisma::retireUnregisteredViews(
     append(viewQualityPolicies_);
     append(viewHistoryAdmissionRejected_);
     append(scopedGpuTimings_);
+    append(effectReports_);
     append(adaptivePressure_);
     append(motionViews_);
     append(viewDimensions_);
@@ -606,6 +608,21 @@ void Prisma::acceptViewGpuTiming(uint64_t id,double gpuMs) {
     row.lastGpuMs=gpuMs;
     row.gpuFenceAtRead=dev_?dev_->gpuCompletedFence():0;
     ++row.sampleSequence; // only a real completed scoped GPU query
+}
+
+const Prisma::ViewEffectReport* Prisma::effectReport(uint64_t id) const {
+    const auto it = effectReports_.find(id);
+    return it == effectReports_.end() ? nullptr : &it->second;
+}
+
+std::vector<uint64_t> Prisma::effectReportViewIds() const {
+    std::vector<uint64_t> ids;
+    ids.reserve(effectReports_.size());
+    for (const auto& [id, snapshot] : effectReports_) {
+        (void)snapshot;
+        ids.push_back(id);
+    }
+    return ids;
 }
 
 std::vector<Prisma::ViewGpuTiming> Prisma::viewGpuTimings() const {
