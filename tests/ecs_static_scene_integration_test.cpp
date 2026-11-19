@@ -2,6 +2,7 @@
 // PrefabStaticCatalog across additive/replace/unload, independent ECS Worlds,
 // COW rollback and native persistent ECS v10 save/load.
 #include "engine/scene/PrefabStaticSceneBinding.h"
+#include "engine/sim/SceneHierarchySystem.h"
 #include "tests/AlwaysCheck.h"
 #include <array>
 #include <chrono>
