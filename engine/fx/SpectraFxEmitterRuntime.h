@@ -132,6 +132,12 @@ public:
         active_.clear();
     }
 
+    // Completion here means emission has stopped; previously spawned live
+    // particles may continue fading after this point.
+    bool emitting(uint64_t instance, const ParticleSystem& particles) const {
+        const auto it = active_.find(instance);
+        return it != active_.end() && particles.playing(it->second);
+    }
     bool owns(uint64_t instance) const { return active_.find(instance) != active_.end(); }
     size_t activeCount() const { return active_.size(); }
     const Stats& stats() const { return stats_; }
