@@ -2089,3 +2089,35 @@ material/LOD gates pass.
 
 Docs: `docs/strata.md`,
 `docs/agent-handoffs/strata-virtual-geometry.md`.
+
+
+## Strata Stage 12 verification — Mac Studio real Metal PASS (2026-11-19)
+
+The owner **actually built and ran** the new Stage 12
+`aiverse_strata_metal_depth_multiview_parity` GUI fixture on Mac Studio.
+All eight RGBA and eight genuine `Depth32Float` GPU captures
+completed across two independent cameras and four mutually exclusive
+Empty/Legacy/Fine/Coarse model modes each. The real GPU readbacks
+showed **ZERO changed colour channels and ZERO changed depth bytes**
+between Legacy/Fine and Legacy/Coarse in **both views**.
+The shadow maps were nonconstant: 73,179 non-clear samples in
+view 0 and 34,765 in view 1. The new fixture ended
+`status=PASSED views=2 modes=4 frames=89`, with 16 Metal pipelines
+and 0 pipeline failures. The owner's same output reconfirmed
+the earlier real GPU cluster selection **5/5 PASS** and the
+Stage 11 real Metal raster A/B **PASS**.
+
+Do not accidentally reassert the historical 'Stage 12 NOT RUN':
+it refers to the state before this owner-provided Mac Studio run.
+The precise tested checkout SHA was not printed in the terminal
+log. No production renderer switch, lossy LOD fidelity, reflection
+RTT, mixed materials, Vulkan, streaming or performance was tested.
+Stage 12's strict equality is **only for intentionally lossless
+test geometry**. Preserve single Renderer3D submission authority,
+the shared GlobalGeometryPool source, opt-in diagnostics and
+conservative unsupported-case fallback.
+
+Next independent gate: true planar reflection RTT readback and
+material/UV-boundary parity with multiple cameras, followed by
+lossy LOD seam and GPU-selected drawing tests. Keep PR #35 Draft.
+Stage handoff: `docs/agent-handoffs/strata-virtual-geometry.md`.
