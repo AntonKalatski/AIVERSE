@@ -154,6 +154,13 @@ void Renderer3D::shutdown() {
     objectMotionBakedPipeline_ = {}; objectMotionBakedShader_ = {};
     objectMotionMaskedPipeline_ = {}; objectMotionMaskedShader_ = {};
     objectMotionReactivePipeline_ = {}; objectMotionReactiveShader_ = {};
+    if (objectMotionReactiveSkinPipeline_.valid()) dev_->destroyPipeline(objectMotionReactiveSkinPipeline_);
+    if (objectMotionReactiveSkinShader_.valid()) dev_->destroyShader(objectMotionReactiveSkinShader_);
+    if (objectMotionReactiveBakedPipeline_.valid()) dev_->destroyPipeline(objectMotionReactiveBakedPipeline_);
+    if (objectMotionReactiveBakedShader_.valid()) dev_->destroyShader(objectMotionReactiveBakedShader_);
+    objectMotionReactiveSkinPipeline_ = {}; objectMotionReactiveSkinShader_ = {};
+    objectMotionReactiveBakedPipeline_ = {}; objectMotionReactiveBakedShader_ = {};
+    motionReactiveDraws_.clear();
     shutdownModels();
     lights.shutdown();
     shutdownTrace();
@@ -192,6 +199,7 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     cam_ = cam;
     ssrThisFrame_ = false;
     items_.clear(); lines_.clear(); tris_.clear(); custom_.clear(); customOpaque_.clear(); customShadow_.clear();
+    motionReactiveDraws_.clear(); // per-scene extensions register after beginScene
     modelItems_.clear(); jointData_.clear(); morphData_.clear(); modelStats_ = {};
     lodDebugSample_ = {}; // selected instance is tracked per viewport beginScene
     // ModelItem pointers are valid only within this scene; never reuse their
@@ -994,7 +1002,10 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
 }
 
 void Renderer3D::resolvePrisma() {
-    if (!post_) return;
+    if (!post_) {
+        motionReactiveDraws_.clear();
+        return;
+    }
     PostProcess* post = post_;
     post_ = nullptr;
     dev_->endPass();
@@ -1002,6 +1013,7 @@ void Renderer3D::resolvePrisma() {
     PostFrame f{viewProj_, camPos_, lighting, sceneW_ > 0 ? sceneW_ : dev_->framebufferWidth(), sceneH_ > 0 ? sceneH_ : dev_->framebufferHeight(),
                 quality_ != ShadowQuality::Off ? shadowMap_ : gfx::TextureHandle{}, lightViewProj_};
     post->resolve(*dev_, postOut_, f);
+    motionReactiveDraws_.clear();
     hdrFrame_ = false;
 }
 
