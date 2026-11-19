@@ -90,3 +90,40 @@ On `Simulation` rollback or restoring a saved game, invoke `publishFrame` with `
 **Known limits:** Native code must reserve disjoint collider IDs and avoid duplicate old static terrain colliders. `WorldScene` only hides the original static ground draw where the dynamic replacement is GPU resident. `nav::Mesh` must be initially built, and its source must use the same EarthworksLayer. A resource's large sparse state may cost memory when COW snapshots are detached. Box3D falls need a separate authoritative server transform stream, and the heightfield cannot create underground caves or overhangs.
 
 **QA status:** Source committed but this example and Stage 53–55 features have NOT been compiled, executed, tested or benchmarked; tests are scheduled after functional completion. Do not merge Draft PR until native build and gameplay/graphics tests confirm behavior.
+
+
+## Stage 57–59: automatically discover shore and riverbed sediment carriers
+
+The shoreline/riverbed rasterizer reads the *same* ECS water bodies, river splines, polygon footprints, confluence/cascade connections and TerraWeave terrain used by the native game. It does not simulate water separately. On map load or AFTER water geometry/soil topology changes, invoke this during a safe structural ECS barrier **before** NEREID sampling:
+
+```cpp
+terraweave::ShorelineRasterSettings scan;
+scan.area={-6400,-6400,6400,6400}; // 128x128 1m lattice at most
+scan.includeWetBedCells=true;      // also carry sediment through the interior riverbed
+scan.minWetBedDepthCm=5;
+scan.maxWaterDepthCm=3000;         // avoid unbounded deep-ocean interior cells
+scan.splashHeightCm=100;
+auto soil=terraweave::ShorelineSoilAt{
+    [&](terraweave::EarthVertex p,int32_t elevation)->lib::nereid::ShoreSoil {
+        (void)elevation;
+        const auto c=terraweave::climateAt(cfg.generator,biomeSettings,
+            p.x*cfg.soilGridCm,p.z*cfg.soilGridCm);
+        return terraweave::biomeShoreSubstrate(c.biome);
+    }
+};
+auto refreshed=examples::terraweave_native::refreshDetectedShoreline(
+    sim.world(),cfg,scan,soil);
+// refreshed.created / updated / disabled / manualSkipped
+```
+
+Prefer an **authored soil-material map** over the fallback biome→substrate mapping: rocks should block erosion, sand/silt can migrate, clay/gravel require stronger currents. An optional root-binding callback returns 0..1000 from saved root/vegetation support state. The raster detects wet/dry transition banks using actual NEREID coverage (polygon, river spline, ocean or lake) and bounded wave splash. With `includeWetBedCells=true`, fully submerged interior cells also participate, allowing sediment to cross broad rivers rather than only the perimeter. These remain one bounded bank/bed ECS entity per *terrain grid vertex*, never one per grass blade.
+
+`Integration.h::registerSystems` installs stages in canonical order:
+
+1. NEREID water sampling; local erosion/deposition from `WaterBankSoilComponent`.
+2. `nereid.sediment_transport`: simultaneous mass-conserving micro-centimetre transport down the Fixed current, with saved carry. Source and target must be in the same body OR explicitly linked by a valid NEREID confluence/cascade inlet→outlet.
+3. `terraweave.bank_commit`: applies NEREID's **already calculated** local ground edits once to canonical ECS Earthworks, then root support and grass coverage.
+
+A former bank that becomes dry is disabled but keeps its suspended sediment in saved ECS state; moving water cannot silently discard that material. The terrain owner must rerasterize when river course/water geometry changes (NOT every frame), and all generated cells must remain under the configured 16,384 sample budget. Deposition on a low-flow wet-bed cell raises its height. Once it emerges above the surface, subsequent topology refresh can turn it into a new sandbar/shoreline. This is a bounded sediment policy, not a solved full 3D Navier–Stokes sediment model.
+
+**Stage57–59 source is committed, but this example and the new kernels have NOT been compiled or run in a native game or CTest yet.** The native host still owns the terrain mesh/collision/NavMesh publication, visual terrain LOD, physics and replication barriers.
