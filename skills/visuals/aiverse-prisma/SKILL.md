@@ -1169,6 +1169,62 @@ Draft PR #26 unmerged until user explicitly
 approves merging main. Continue remaining bounded
 features, then enter the common native test phase.
 
+## Stage 64 — reactive animated alpha/dissolve and actor reveal
+
+Do NOT mutate normal `Renderer3DMotionShaders.h` or the
+established object velocity pipeline to achieve reactive material
+parity. Stage 64 creates *reactive-only shader variants* via
+`reactive_shaders::animatedVertexGlsl(source,baked)` and
+`reactive_shaders::animatedMsl(source,baked)`.
+These adapt existing skin/morph/baked vertex shaders and preserve
+current deformed model-space pose, UV and vertex color alpha.
+They deliberately return empty strings when source anchors
+change; the render path skips such an invalid pipeline rather
+than silently publishing an unshaded mask.
+
+The animated fragment has a 160-byte `ReactiveAnimatedU1`:
+`lod,uv0,uv1,maskInfo,world,reveal,revealAxis`.
+It occupies normal uniform U1/Metal buffer(2);
+existing motion U0 and deformer U3/U4/U5 remain intact.
+It uses source base color texture at TEX1 (scene depth
+at TEX0), applying UV transform, Material alpha cutoff,
+TeamMode::BaseAlpha/VertexAlpha and vertex AO handling,
+current-deformed object-space dissolve noise and exact
+4×4 LOD dither. This is current-frame mask coverage,
+not motion velocity or temporal history.
+
+Actor Reveal is now handled by rigid and animated reactive
+variants, but only for the main presentation camera
+(`geometryMainView_`), a flagged `kDrawActorReveal`
+ModelItem and a nonzero `actorReveal.w`. Renderer3D computes
+the same actor center/radius, view-axis and perspective
+attenuation as normal ModelShaders; fragment shaders replay
+the 4×4 screen dither aperture. Rigid U0 cutout uniforms
+now occupy 240 bytes, with world matrix and reveal
+vectors added after prior fields. Both shader variants
+sample borrowed sceneDepth but write to Renderer3D's
+own RGBA8 reactive target and private Depth scratch.
+
+New `ObjectMotionStats.actorRevealReactiveDraws` is
+an *encoded CPU draw counter*, not GPU pixel validation.
+Existing cutout/dissolve/LOD counters now include
+animated variants where appropriate. If custom material
+Shader Graph displaces vertices or overrides alpha beyond
+ordinary Material settings, provide an explicit native
+reactive callback instead of claiming this shader reproduces
+an arbitrary custom material. This does not create a
+separate postprocess GPU history or ECS state.
+
+**Actual verification:** 61/61 static source/binding checks;
+four shader-source generation fixture checks (skin and baked
+in GLSL and Metal). **NOT RUN:** CMake/clang, shader
+compilers, native Editor/GameClient, CTest, GPU alpha parity,
+Metal/GL/GLES/Vulkan/WebGL execution, stress and CI.
+See `docs/handoffs/prisma-stage-64.md` for exact commits,
+limits, next step and host pull commands.
+Draft PR #26 remains unmerged; do not merge main/base
+without user's approval.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
