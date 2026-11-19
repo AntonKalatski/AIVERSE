@@ -264,6 +264,15 @@ public:
     // resident chunk or canceling in-flight worker jobs.
     void setPresentationTick(uint64_t tick) { presentationTick_=tick; }
     uint64_t presentationTick() const { return presentationTick_; }
+    // Global, presentation-only canopy appearance. PHYSIS or a game calendar
+    // may translate its weather/season state into this genre-free POD.
+    // Material overrides are updated once; resident scatter and async
+    // generation revisions are untouched.
+    void setPhenology(CanopyPhenology state) {
+        adapter_.setPhenology(state);
+    }
+    const CanopyPhenology& phenology() const {return adapter_.phenology();}
+
 
     // A sparse, persistent regrowth timeline. When scheduled, the tree is
     // hidden until regrowAtTick, then smoothly scales from initialScalePermille
