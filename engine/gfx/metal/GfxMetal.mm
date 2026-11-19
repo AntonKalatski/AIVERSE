@@ -133,7 +133,7 @@ public:
     }
     const std::string& lastError() const override { return error_; }
     bool waitIdle() override {
-        if(enc_ || computeEncoder_ || !queue_) return false;
+        if(enc_ || compute_ || !queue_) return false;
         // A fresh command buffer waits for every previously submitted command
         // on this single queue. Never wait on cmd_ before endFrame commits it.
         id<MTLCommandBuffer> barrier=[queue_ commandBuffer];
