@@ -7053,3 +7053,67 @@ source-alpha/LOD visual parity and source texture lifecycle
 verification. Treat this graph node as implemented in source
 but not compiler/GPU-validated. Next agent should update
 AGENTS.md and add shader/backend tests during the test phase.
+
+
+## Stage 10L — per-axis VT sampling wrap semantics (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`, draft PR #21.
+**Main sync:** latest verified compare `main@9ee6ff6` was behind=0
+before this stage; no upstream main merge was necessary.
+
+**Implementation commits:**
+- `f3f0a760d0edccbf9e238b55e52ff9aa3d46eeab` —
+  `engine/gfx/VirtualTextureSampling.h`: GL/MSL table lookup now
+  supports per-axis ClampToEdge/Repeat/MirrorRepeat; old helper signatures
+  forward to explicit clamp-only overloads.
+- `d4195954058025d50516188a49d938535f6959db` —
+  `engine/render/ModelVirtualTextureSampling.h`: typed binding address
+  U/V policy, validation (border unsupported), hash/equality, unchanged
+  16-byte U6 ABI and shader-injection argument forwarding.
+- `e78ebefe3df8c88444b6389133908632235d6df6` —
+  `engine/render/Renderer3DModels.cpp`: active renderer source binds
+  both address modes through U6.zw; material Shader Graph explicit VT
+  sampling invokes matching GLSL/MSL entry points.
+
+**Documentation commits:**
+- `f8df4c88b9bc1ddd013dc90d6709e5e24d2bab7f` — `docs/texture-rhi.md`.
+- `e59cea10e8cc7de06672735029624f56617c0884` —
+  `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Architecture and compatibility:** `ModelVirtualTextureBinding` keeps
+default U/V clamp. Opt-in Repeat/MirrorRepeat are independent on each
+axis and use `fract` / mirrored-fract in the GPU virtual lookup before
+the physical page lookup, retaining existing edge-clamped gutter
+sampling. The source texture's ordinary fallback continues through
+`tex1` using its own sampler. Address modes are included in both exact
+GPU grouping identity and material-group hash, so groups with
+different wrap semantics never share one external VT state.
+`ModelVirtualTextureUniforms` remains four 32-bit floats; z/w now
+store the address modes. Legacy shader entry points still exist and
+select clamp. ClampToBorder fails binding validation; there is no
+fictional border-colour emulation.
+
+**Checks performed:** GitHub file fetch/diff-targeted source
+inspection and strict one-occurrence transform postconditions; all
+three source commits and docs commits accepted. The updated shader
+overload signatures and generated call sites were fetched again
+and manually inspected. **C++ compile NOT RUN, CTest NOT RUN,
+GLSL/MSL compiler NOT RUN, Metal/GL/Vulkan GPU tests NOT RUN**. No
+local repository checkout or native compiler invocation was possible.
+Explicitly do not claim UV-parity from source review.
+
+**Known limitations:** packer must supply periodic/mirrored tile
+gutters for high-fidelity seams; ordinary source sampler and
+resolver wrap modes must agree. Vulkan/Metal homogeneous ICB/MDI
+batches still require original GPU validation and may need explicit
+U6 parameter-path checks under per-draw VT bindings. No new GPU
+resource slot is consumed and this is not a new bindless strategy.
+
+**Next agent:** inspect and implement a true heterogeneous
+per-command Metal ICB VT resource-table ABI (optional opt-in) or
+material-table/bindless descriptor strategy for multiple independent
+Shader Graph source textures; preserve conservative homogeneous
+fallback. During the later verification phase, add wrap tests for
+negative UV, exactly integer UV, mirrored edges, mixed U/V modes,
+shader compile and source/VT edge pixels on Metal/GL/Vulkan. Keep
+this PR draft until actual backend builds/GPU tests pass.
