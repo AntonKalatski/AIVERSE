@@ -1277,6 +1277,9 @@ void GameClient::frame(gfx::Device& dev, double dt) {
                         spectator_?nullptr:&gs.vision[human_],time_);
                     view_.drawPreparedSprites(renderer);
                 }
+                // Renderer3D::beginScene reset the per-camera light list.
+                // Reuse primary-frame particle lights without collecting FX again.
+                fx_.addPreparedLights(renderer.lights);
                 // Re-submit final pose/material/attachment packets directly.
                 // RtsView::draw and MotionWeave::update are NOT repeated.
                 snapshot.submit(renderer,camera.entity.packed());
