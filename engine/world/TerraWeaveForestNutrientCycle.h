@@ -137,6 +137,14 @@ inline ForestNutrientCycleOutcome advanceForestNutrientCycle(
     }
     next.soilCursor=soilCount?
         (soilStart+result.soilCellsProcessed)%soilCount:0;
+    // Once depleted, keep no empty permanent soil cell. Released organic
+    // matter can re-create the same stable grid cell later.
+    next.soil.erase(std::remove_if(next.soil.begin(),next.soil.end(),
+        [](const ForestDeadwoodSoilCell& cell){
+            return cell.availableUnits==0;
+        }),next.soil.end());
+    next.soilCursor=next.soil.empty()?0:
+        next.soilCursor%next.soil.size();
 
     const size_t waterCount=previousWater.size();
     const size_t waterStart=waterCount?size_t(next.waterCursor%waterCount):0;
@@ -212,25 +220,34 @@ inline ForestNutrientCycleOutcome advanceForestNutrientCycle(
 // responsibility. The resulting explicit sink is persisted and counted.
 inline uint64_t exportForestDissolvedNutrients(
         ForestDeadwoodResource& resource,int64_t x,int64_t z,
-        uint64_t maximumUnits) {
+        uint64_t maximumUnits,uint64_t commandId) {
     validateForestDeadwoodResource(resource);
-    if(!maximumUnits)return 0;
+    if(!commandId)
+        throw std::invalid_argument(
+            "TerraWeave nutrient outflow needs nonzero command sequence");
+    // Monotonic native sequence suppresses duplicated/out-of-order
+    // events across network delivery and rollback replay. A zero-result
+    // command is also recorded so it cannot export matter later.
+    if(commandId<=resource.lastOutflowCommandId)return 0;
     using Cell=std::pair<int64_t,int64_t>;
-    auto copy=resource;
+    ForestDeadwoodResource copy=resource;
     const auto it=std::lower_bound(
         copy.water.begin(),copy.water.end(),Cell{x,z},
         [](const ForestDeadwoodWaterCell& cell,const Cell& key){
             return Cell{cell.x,cell.z}<key;
         });
-    if(it==copy.water.end() || Cell{it->x,it->z}!=Cell{x,z})
-        return 0;
-    const uint64_t exported=std::min(it->dissolvedUnits,maximumUnits);
-    if(copy.totalRunoffExportUnits>UINT64_MAX-exported ||
-       copy.revision==UINT64_MAX)
-        throw std::overflow_error("TerraWeave runoff export overflow");
-    it->dissolvedUnits-=exported;
-    if(!it->dissolvedUnits)copy.water.erase(it);
-    copy.totalRunoffExportUnits+=exported;
+    uint64_t exported=0;
+    if(it!=copy.water.end() && Cell{it->x,it->z}==Cell{x,z}){
+        exported=std::min(it->dissolvedUnits,maximumUnits);
+        if(copy.totalRunoffExportUnits>UINT64_MAX-exported)
+            throw std::overflow_error("TerraWeave runoff export overflow");
+        it->dissolvedUnits-=exported;
+        if(!it->dissolvedUnits)copy.water.erase(it);
+        copy.totalRunoffExportUnits+=exported;
+    }
+    if(copy.revision==UINT64_MAX)
+        throw std::overflow_error("TerraWeave runoff command revision overflow");
+    copy.lastOutflowCommandId=commandId;
     ++copy.revision;
     validateForestDeadwoodResource(copy);
     resource=std::move(copy);
