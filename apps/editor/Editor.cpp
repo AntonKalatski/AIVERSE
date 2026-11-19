@@ -81,6 +81,7 @@ void Viewport::image(gfx::Device& dev, float wPts, float hPts) {
 
 void Editor::init(gfx::Device& dev) {
     gpuLifetime_=std::make_unique<render::RenderDeviceLifetime>(dev);
+    view_.setGpuDeviceLease(gpuDeviceLease());
     dev_ = &dev;
     ws_.engineDir = opt_.engineDir;
     editor::setEditorLanguage(ws_.engineDir + "/engine/assets/lang");   // editor messages (map checks)
