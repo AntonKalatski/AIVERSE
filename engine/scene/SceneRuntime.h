@@ -40,7 +40,7 @@ struct SceneRecord {
 // Authoritative World resource. Snapshots/COW copy this with the ECS World.
 // Register both SceneOwner and SceneState for Simulation binary persistence.
 struct SceneState {
-    uint64_t nextId = 1;             // Monotonic: a stale SceneId never becomes valid again.
+    uint64_t nextId = 1;             // Monotonic within one timeline; rollback restores this counter.
     uint64_t pendingReplace = 0;     // Exactly one pending replacement per ECS World.
     std::map<uint64_t, SceneRecord> scenes; // Canonical iteration order.
 };
@@ -158,7 +158,7 @@ public:
         return true;
     }
 
-    // Abort an uncommitted load. A late async completion cannot reuse its ID.
+    // Abort an uncommitted load. IDs are not reused until a rollback restores state.
     bool cancel(SceneId id, SceneHierarchy* hierarchy = nullptr) {
         const auto* current = record(id);
         return current && current->phase == ScenePhase::Loading && unload(id, hierarchy);
