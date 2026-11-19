@@ -113,6 +113,20 @@ public:
         return it==links_.end()?kNullEntity:it->second;
     }
     size_t size() const noexcept {return links_.size();}
+    // Transactional resource invalidation: forget only selected source
+    // identities before the host destroys their borrowed Model/Graph.
+    // This is a presentation-thread structural operation, never a worker job.
+    size_t forget(World& presentation,std::span<const uint64_t> sourceIds) {
+        size_t removed=0;
+        for(const uint64_t id:sourceIds) {
+            auto it=links_.find(id);
+            if(it==links_.end())continue;
+            if(presentation.alive(it->second))presentation.destroy(it->second);
+            links_.erase(it);
+            ++removed;
+        }
+        return removed;
+    }
     void clear(World& presentation) {
         for(const auto& [id,entity]:links_) {
             (void)id;
