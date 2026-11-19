@@ -301,6 +301,51 @@ void rejectAlternateInstallers() {
         CHECK(sim->checksum()==checksum);
     }
 }
+void trackedSaveRestoreGuards() {
+    const auto map=setupMap();
+    auto makeTracked=[]() {
+        auto sim=std::make_unique<Simulation>(
+            SimConfig{},std::make_unique<AlternateInstallHost>(true));
+        sim->setup(Json::object(),setupMap());
+        return sim;
+    };
+    auto source=makeTracked();
+    const auto* before=source->world().resourceConst<RuntimeFieldRegistry>();
+    CHECK(before!=nullptr);
+    if(!before)return;
+    CHECK(before->fields.size()==4);
+    const auto saved=source->serialize();
+    auto restored=makeTracked();
+    std::string error;
+    CHECK(restored->deserialize(saved,&error));
+    const auto* after=restored->world().resourceConst<RuntimeFieldRegistry>();
+    CHECK(after!=nullptr);
+    if(!after)return;
+    CHECK(after->fields.size()==before->fields.size());
+    for(std::size_t i=0;i<after->fields.size() && i<before->fields.size();++i) {
+        CHECK(after->fields[i].id==before->fields[i].id);
+        CHECK(after->fields[i].kind==before->fields[i].kind);
+        CHECK(after->fields[i].entity==before->fields[i].entity);
+    }
+    CHECK(restored->checksum()==source->checksum());
+    const auto baseline=restored->checksum();
+    // The persisted tracked registry is authoritative even if the
+    // nonpersistent install-mode marker is missing after restore.
+    restored->world().removeResource<AuthoredFieldInstallMode>();
+    bool rejected=false;
+    try { (void)installEditableFromMap(*restored,map); }
+    catch(const std::logic_error&) { rejected=true; }
+    CHECK(rejected);
+    CHECK(restored->checksum()==baseline);
+    rejected=false;
+    try { (void)installTrackedFromMap(*restored,map); }
+    catch(const std::logic_error&) { rejected=true; }
+    CHECK(rejected);
+    CHECK(restored->checksum()==baseline);
+    source->step();
+    restored->step();
+    CHECK(source->checksum()==restored->checksum());
+}
 void rejectCompetingInstallers() {
     auto sim=make();
     const auto baseline=sim->checksum();
@@ -366,6 +411,7 @@ int main() {
     authorityAndStale();
     rejectCompetingInstallers();
     rejectAlternateInstallers();
+    trackedSaveRestoreGuards();
     std::printf("PHYSIS field runtime: %s\n",failures?"FAIL":"PASS");
     return failures?1:0;
 }
