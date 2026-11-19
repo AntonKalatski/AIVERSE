@@ -52,6 +52,8 @@ struct HorizonRuntimeStats {
     size_t vertexPatchRanges=0; // last successful vertex update run count
     size_t gpuCachedRegions=0, gpuCachedBytes=0, gpuCacheHits=0; // extra GPU residency
     size_t gpuCacheEvictions=0; // LRU and stale-revision RHI retirements
+    size_t windOverlayPatchWrites=0, windOverlayPatchBytes=0;
+    bool windOverlayPending=false, exactWindFieldActive=false;
     size_t transitionStarts=0;
     size_t nearClipQuads=0, nearClipTriangles=0;
     bool nearClipFallback=false;
@@ -733,6 +735,10 @@ public:
         out.gpuCachedBytes=gpuCache_.bytes();
         out.gpuCacheHits=gpuCacheHits_;
         out.gpuCacheEvictions=gpuCache_.evictions();
+        out.exactWindFieldActive=exactSpatialWindField_ && bool(windField_);
+        out.windOverlayPending=bool(model_) &&
+            !activeWindOverlay_.vertices.empty() &&
+            activeWindOverlay_.appliedRevision!=windFieldRevision_;
         out.transitionStarts=transitionStarts_;
         out.transitioning=transition_.model!=nullptr &&
                           transitionRevision_==sourceRevision_ &&
@@ -748,6 +754,31 @@ public:
     }
 
 private:
+    void refreshForestWindGpu(gfx::Device& device) {
+        // One bounded RHI update per visible region, up to 2 MiB per
+        // owner-thread update. The outgoing crossfade region shares this
+        // budget; unfinished updates retain their old safe shader mode.
+        size_t remaining=2u*1024u*1024u;
+        const ForestWindField* selectedField=
+            exactSpatialWindField_ ? windField_.get() : nullptr;
+        const auto refresh=[&](render::Model* model,
+                               HorizonForestWindOverlay& overlay) {
+            if(!model || overlay.vertices.empty() ||
+               overlay.appliedRevision==windFieldRevision_)return;
+            const auto result=applyHorizonForestWindOverlay(
+                device,*model,overlay,selectedField,wind_,
+                windFieldRevision_,remaining);
+            if(result.uploaded) {
+                remaining-=result.bytes;
+                ++runtime_.windOverlayPatchWrites;
+                runtime_.windOverlayPatchBytes+=result.bytes;
+            }
+        };
+        refresh(model_.get(),activeWindOverlay_);
+        if(transition_.model)
+            refresh(transition_.model.get(),transition_.forestWind);
+    }
+
     // Smoothstep in real elapsed monotonic time; no tick/ECS state is touched.
     float transitionFraction() const {
         if(!transition_.model || settings_.regionTransitionMs==0)
