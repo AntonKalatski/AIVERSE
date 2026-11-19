@@ -1737,3 +1737,51 @@ Objective-C++ compilation, native MSL compiler, real Metal ICB
 execution and visual/performance checks **NOT RUN**. Treat this GPU
 path as experimental/uncertified, and do not enable the environment
 flag in shipped games.
+
+
+## Explicit opt-in mixed virtual-atlas Metal ICB groups — Stage 10Y
+
+`Renderer3D` can now *in source* assemble a Metal GPU-encoded ICB
+group with differing **VT atlas/page-table bindings** when all draws
+otherwise share the same equivalent built-in PBR material state,
+geometry buffers, shader variant, and render flags. Two independent
+experimental flags are required:
+
+```sh
+AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT=1
+AIVERSE_EXPERIMENTAL_ICB_MIXED_VT=1
+```
+
+These flags do not replace the existing
+`AIVERSE_GPU_AUTHORED_DRAWS`, `AIVERSE_GPU_ENCODED_ICB` and
+`AIVERSE_EXPERIMENTAL_METAL_ICB` safety gates. **The feature is
+disabled by default.** Ordinary CPU MDI/instancing and direct draw
+paths retain exact VT resource compatibility.
+
+In mixed mode, batch preflight uses normal `equivalentGpuMaterial`
+for exact PBR state and material shader compatibility, but permits
+different VT resource identities between commands that *both*
+require valid VT sampling. CPU hash prefilters omit only the VT
+archive identity while preserving the no-VT/VT distinction. Every
+GPU command records its own `GpuIcbVirtualMaterial` descriptor
+(physical atlas, page table, layer, gutter, U/V wrap, optional alpha
+coverage) and its own generation-safe
+`GpuMaterialResourceTicket`. Before execution, every live
+per-command binding is re-resolved and checked against its captured
+ticket. Failed or stale groups remain eligible for ordinary CPU
+draw submission; the GPU path cannot silently inherit the first
+command's atlas.
+
+The `drawModelBatch` homogeneous VT check is bypassed **only**
+while an already-prevalidated opt-in per-command GPU ICB submission
+is active. Normal CPU batches still reject mismatched atlases.
+Metal's optional per-command fragment argument-buffer/U6 ABI from
+Stage 10X supplies the distinct VT resources at GPU execution.
+
+**Important limits:** this supports heterogeneous VT bindings,
+*not* arbitrary different source PBR textures or Shader Graph
+materials in one command group. Full shader/material-state
+heterogeneity needs additional per-command U2/source texture ABI.
+Metal command-encoder compilation and real GPU execution are
+**NOT RUN**; do not enable these flags in release builds or
+treat this as a verified performance optimization.
