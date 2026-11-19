@@ -7,6 +7,7 @@
 #pragma once
 #include "SceneRenderable.h"
 #include <cmath>
+#include <atomic>
 #include <deque>
 #include <memory>
 #include <set>
@@ -468,6 +469,11 @@ private:
     struct PendingShot { int client; int64_t id; std::string device; Json metadata; };
     std::vector<PendingShot> shots_;
     bool captureArmed_ = false;
+    // The graphics backend can call captureNextFrame asynchronously after
+    // Editor shuts down. A shared liveness token prevents a stale callback
+    // from dereferencing this or touching the closed MCP connection.
+    std::shared_ptr<std::atomic<bool>> captureLifetime_ =
+        std::make_shared<std::atomic<bool>>(true);
     bool overlayKeys_[int(platform::Key::Count)] = {};
 };
 
