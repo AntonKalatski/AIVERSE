@@ -18,7 +18,7 @@
 namespace aiverse::render {
 
 enum class RenderResourceHealth : uint8_t {
-    Ready, PendingGpuRetirement, DeviceUnhealthy
+    Ready, PendingGpuRetirement, RetirementFenceFailed, DeviceUnhealthy
 };
 
 struct RenderResourceGroupStats {
@@ -34,6 +34,8 @@ struct RenderResourceGroupStats {
     GeometryPoolStats deviceGeometryPool;
     uint64_t pendingGpuPolls=0,asyncTokenFallbacks=0;
     uint64_t idleFallbackFailures=0;
+    uint64_t failedFenceBatches=0;
+    size_t unresolvedFailedFences=0,expiredRegistrations=0;
     RenderResourceHealth health=RenderResourceHealth::Ready;
     // A source/format/layout estimate of owned allocations, not a VRAM
     // budget or total GPU heap consumption.
@@ -69,6 +71,7 @@ public:
     uint64_t estimatedBudgetBytes() const noexcept {return budgetBytes_;}
     bool mayAdmitNewSources(const RenderResourceGroupStats& stats) const noexcept {
         return stats.health!=RenderResourceHealth::DeviceUnhealthy &&
+               stats.health!=RenderResourceHealth::RetirementFenceFailed &&
                (budgetBytes_==0 || stats.estimatedKnownBytes()<budgetBytes_);
     }
 
@@ -78,6 +81,7 @@ public:
     RenderResourceGroupStats snapshotOwners(bool gpuHealthy=true) const {
         RenderResourceGroupStats stats;
         stats.uniqueOwners=size();
+        stats.expiredRegistrations=owners_.size()-stats.uniqueOwners;
         stats.health=gpuHealthy ? RenderResourceHealth::Ready:
                                   RenderResourceHealth::DeviceUnhealthy;
         std::set<const Model*> visitedModels;
@@ -98,6 +102,11 @@ public:
             add(stats.pendingGpuPolls,retired.pendingPolls);
             add(stats.asyncTokenFallbacks,retired.tokenFailures);
             add(stats.idleFallbackFailures,retired.idleFallbackFailures);
+            add(stats.failedFenceBatches,retired.failedFenceBatches);
+            stats.unresolvedFailedFences+=retired.unresolvedFailedFences;
+            if(retired.unresolvedFailedFences &&
+               stats.health!=RenderResourceHealth::DeviceUnhealthy)
+                stats.health=RenderResourceHealth::RetirementFenceFailed;
             owner->forEachOwnedModel([&](const Model& model,bool isRetired) {
                 if(!visitedModels.insert(&model).second)return;
                 const auto estimate=estimateModelResident(model);
