@@ -699,6 +699,77 @@ void killedProcessReleasesJournalLock() {
 // This integrates the disk journal, a real child endpoint process and a new
 // authoritative host after SIGKILL. A pre-crash Queued receipt must restore
 // as Unknown and only the exact authorized original may be re-admitted.
+// Privileged startup must never bind a listener using an unsafe or
+// corrupted receipt journal. Failure must release the process lock so an
+// operator can repair the file and restart against the same checkpoint.
+void pinnedEndpointRejectsUnsafeStartupJournal() {
+    const auto root=tempPath();
+    std::filesystem::create_directories(root);
+    const auto journal=root/"receipts";
+    const auto external=root/"external";
+    const auto lookup=[](const std::string& name)->std::optional<net::Key>{
+        return name=="admin"?std::optional<net::Key>(key()):std::nullopt;
+    };
+    std::string error;
+    {
+        FileJournal file(journal);
+        const std::map<ServerGateway::Key,ServerGateway::Entry> empty;
+        CHECK(file.save(empty,&error));
+    }
+    // First establish the happy path: an empty valid V1 journal loads.
+    {
+        LoopbackAdminEndpoint service(journal);
+        CHECK(service.open(0,kEdit,lookup,reader,writer,&error));
+        CHECK(service.journalHealthy());
+        CHECK(service.gateway().entries().empty());
+    }
+    // Break the magic/checksum without changing inode type or permissions.
+    const int fileFd=::open(journal.c_str(),O_RDWR);
+    CHECK(fileFd>=0);
+    if(fileFd>=0) {
+        std::uint8_t first=0;
+        CHECK(::pread(fileFd,&first,1,0)==1);
+        first^=0x5a;
+        CHECK(::pwrite(fileFd,&first,1,0)==1);
+        CHECK(::close(fileFd)==0);
+    }
+    {
+        LoopbackAdminEndpoint service(journal);
+        CHECK(!service.open(0,kEdit,lookup,reader,writer,&error));
+        CHECK(!service.journalHealthy());
+        CHECK(service.gateway().entries().empty());
+        JournalProcessLock retry;
+        CHECK(retry.acquire(journal,&error)); // startup released its flock
+    }
+    CHECK(std::filesystem::remove(journal));
+    // A symlink is never silently followed as an authorized journal file.
+    const int outside=::open(external.c_str(),O_WRONLY|O_CREAT|O_EXCL,0600);
+    CHECK(outside>=0);
+    if(outside>=0)CHECK(::close(outside)==0);
+    CHECK(::symlink(external.c_str(),journal.c_str())==0);
+    {
+        LoopbackAdminEndpoint service(journal);
+        CHECK(!service.open(0,kEdit,lookup,reader,writer,&error));
+        CHECK(!service.journalHealthy());
+    }
+    CHECK(std::filesystem::remove(journal));
+    // FIFO must fail without blocking server startup.
+    CHECK(::mkfifo(journal.c_str(),0600)==0);
+    {
+        LoopbackAdminEndpoint service(journal);
+        CHECK(!service.open(0,kEdit,lookup,reader,writer,&error));
+        CHECK(!service.journalHealthy());
+    }
+    CHECK(std::filesystem::remove(journal));
+    // After remediation the same service path can start successfully.
+    {
+        LoopbackAdminEndpoint recovered(journal);
+        CHECK(recovered.open(0,kEdit,lookup,reader,writer,&error));
+        CHECK(recovered.gateway().entries().empty());
+    }
+    std::filesystem::remove_all(root);
+}
+
 void killedEndpointRecoversQueuedJournal() {
     const auto dir=tempPath();
     std::filesystem::create_directories(dir);
@@ -943,6 +1014,7 @@ int main(){
     liveParentPermissionChangeSuspendsAdmin();
     pinnedJournalSaveDoesNotFollowMovedParent();
     pinnedJournalLoadRejectsUnsafeInodes();
+    pinnedEndpointRejectsUnsafeStartupJournal();
     killedEndpointRecoversQueuedJournal();
 #endif
 #ifndef __EMSCRIPTEN__
