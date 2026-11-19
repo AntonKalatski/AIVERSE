@@ -2169,3 +2169,12 @@ The Linux arm64 GCC GitHub Actions job 135396475446 in run 44475967180 failed co
 `engine/gfx/vulkan/VkApi.h` now lists `vkGetPhysicalDeviceImageFormatProperties` alongside the other physical-device format queries. The existing `VkApi.cpp` macros automatically declare the runtime pointer, define it and require it during instance initialization. No unconditional Vulkan SDK symbol linkage is introduced.
 
 **Observed evidence:** actual CI log, Linux arm64 GCC at 368/1314 objects, compile error as above. **Post-fix compile/CTest NOT RUN**; the failing run was for an older head SHA and must not be represented as evidence of this new commit passing.
+
+
+### Stage 10AN — Metal Shader Graph tex16 sampler parity guard
+
+The fourth independently authored Shader Graph fragment texture occupies tex16. Metal has only sixteen dynamic fragment sampler slots; the current ICB MSL source uses a hard-coded constexpr `s16` with normalized coordinates, repeat address, linear filtering and linear mip sampling. Binding a clamp/nearest source there would silently change rendered texels from the ordinary renderer.
+
+`MTTexture` now preserves the source `TextureDesc` sampler semantics (`samplerRepeat`, `samplerLinear`, `samplerCompare`) during `createTexture`. Experimental ICB resource staging validates source slot 16 against those original flags; it rejects nearest, clamp or compare sources rather than drawing with incorrect sampling. Graph sources 13..15 still use their dynamic native sampler states. Rejected ICB groups retain the normal CPU-render fallback.
+
+**Verification:** source-level inspection of `GfxMetal.mm::createTexture` and `Model.cpp` texture upload and native sampler allocation. No Apple MSL compiler, Metal GPU or image parity run.
