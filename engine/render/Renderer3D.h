@@ -1150,6 +1150,13 @@ private:
         uint32_t token = 0;
     };
     std::vector<GpuEncodedBatch> gpuEncodedBatches_;
+    // Retained CPU packing scratch, never shared with the in-flight GPU buffers.
+    std::vector<uint32_t> gpuIcbSourceSlotsScratch_;
+    std::vector<float> gpuIcbInstancesScratch_;
+    // Conservative automatic CPU/GPU authoring: previous successful batches
+    // are feedback, not a GPU-duration estimate.
+    uint32_t gpuIcbAutoMinimum_ = 64;
+    uint32_t gpuIcbAutoMisses_ = 0;
     std::vector<uint8_t> gpuEncodedCovered_;
     uint32_t gpuEncodedDrawCalls_ = 0, gpuEncodedCommands_ = 0;
     uint32_t gpuIcbCandidates_ = 0, gpuIcbPrepared_ = 0;
