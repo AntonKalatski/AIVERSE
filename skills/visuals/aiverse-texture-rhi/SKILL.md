@@ -1239,3 +1239,41 @@ If PASS, next distinct hardware gate is Metal Shader Graph
 GPU ICB with heterogeneous source textures and correct
 per-command binding; cross-platform tests remain separate.
 
+
+## Stage 10BQ — separately opted-in Metal GPU ICB Shader Graph ABI
+
+Experimental (NOT RUN) macOS-only hardware test:
+`tests/render/metal_icb_graph_gpu.mm`,
+CMake target `aiverse_metal_texture_icb_graph_gpu_test`,
+CTest `metal_texture_icb_graph_gpu`.
+CMake `AIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=OFF` by
+default; enabling `AIVERSE_TEXTURE_METAL_GPU_TESTS` alone
+does NOT run the GPU ICB test.
+
+CTest injects only for this isolated process:
+`AIVERSE_EXPERIMENTAL_METAL_ICB=1`,
+`AIVERSE_GPU_ENCODED_ICB=1`,
+`AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR=1`,
+`AIVERSE_ICB_TRACE=1`.
+
+Two real GPU-indexed ICB commands must draw different
+4×4 RGBA8 left/right halves with distinct material
+PBR texture(1), source graph texture(13) and per-command
+U2 factor. A deliberately minimal MSL fragment argument
+buffer matches Metal backend slot*2 resource IDs and the
+`AIVERSE_SG_ICB_GRAPH` count marker; it does NOT run the
+full production Shader Graph scene generator.
+The test explicitly requires nonzero GPU ICB token,
+successful native ICB execute, asynchronous GPU pixels,
+correct two-tone output (<=1 LSB/channel).
+No CPU draw fallback or silently skipped device.
+Unsupported/unsafe native drivers must return failure.
+
+Run only after user knowingly enables experimental ICB
+on the *isolated* Mac texture-verification worktree;
+see `docs/texture-rhi.md` Stage 10BQ for pull,
+configure, build, CTest steps. First build and native
+GPU result **NOT RUN** from this assistant environment.
+Passing the regular `metal_texture_gpu` is not proof
+of real GPU ICB Shader Graph resource binding.
+
