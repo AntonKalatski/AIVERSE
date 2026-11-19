@@ -3135,3 +3135,98 @@ existing NEREID ripple shader and ECS interaction event chain,
 then step-based SpectraFX cascade spray, followed by a PHYSIS wind
 presentation adapter. Update the handoff after *each* stage and
 defer tests until the functional backlog is completed.
+
+## Stage 30 — deterministic wake direction + stern-biased water shader
+
+**Branch:** `feature/nereid-water-core`, draft PR #23.
+**Baseline:** Stage 29 handoff `7c33f43e28734762572b8979710d9b05a4da09b3`.
+**Owner priority:** functions first, no compilation or test suite yet.
+No other branches merged; preserve existing ECS/Prisma/PHYSIS ownership.
+
+### Commits, architecture and source files
+
+- `a94f7bbeef20db8e09cf98050aa24ebd42890d71` —
+  NEW `libraries/include/aiverselib/water/NereidWakeDirection.h`.
+  A separate optional fixed-point `WaterWakeDirectionComponent`
+  holds normalized actor X/Z motion, travelled metres and source tick.
+  `waterWakeDirection(previous,now,tick)` is pure and deterministic.
+- `7d6972f9185ff8844e86aae94339710c7832a14b` —
+  `libraries/include/aiverselib/water/NereidInteractions.h`:
+  `SurfaceWake` computes motion metadata from the old probe history
+  before updating it; `registerNereidInteractionPersistence`
+  registers new `nereid.wake_direction` schema v1 without changing
+  the established `nereid.interaction_output` schema v1.
+  Only entities carrying the optional direction pool get metadata.
+- `3f7e46db962aa4b388b6c431d1d6249aaa7127d5` —
+  `libraries/include/aiverselib/water/NereidInteractionPresentation.h`:
+  appends `movementDirection` and `travelled` to read-only
+  `WaterPresentationEvent`, only for a matching sampled tick.
+- `5653012eb4c5f80c552ad1c14bc2da51fc3875cd` —
+  `engine/world/NereidRipples.h`: keeps movement direction on
+  `SurfaceWake` visuals; new `NereidRippleShaderPacket`
+  holds matched `rings[16]` and `shapes[16]` arrays with identical
+  ordering. The old ring-only shader queries remain wrappers for
+  compatibility.
+- `be6d10ae9193f16c313b701627e4652aa33a641d` —
+  `engine/render/Renderer3D.h`: optional wakeShapes on the water
+  submission API and deferred DrawItem state.
+- `931681920ad1a621a94e0c8db44cec276f6fc2cd` —
+  `engine/render/Renderer3D.cpp`: matching packed water wake shape
+  uniform data, set only for NEREID-tagged submissions.
+- `dbafb0f6e590acd4fc43edd7d5082f407b9972f4` —
+  `engine/render/Renderer3DReflect.cpp`: equal-size reflection
+  U0 block; zero-initialized for reflected opaque meshes.
+- `f498519b7c5370107e7ccf43ecd91cbe7dee9daf` —
+  `engine/render/NereidWaterRenderer.h`;
+  `86f9da17c46904194fc037b75bd1cc5742653df7` —
+  `engine/render/NereidSurfaceResident.h`;
+  `2d353d29ff8985bf35579fb4fd87cf701c8d3469` —
+  `engine/world/NereidWaterScene.h`: transfer packet shapes
+  through both single-body and spatial-tiled index range draws.
+- `5017f60540e38329dc45281f47c1355f570088a5` —
+  `engine/render/Shaders.h`: GLSL and MSL U0 acquire 16 parallel
+  `waterWakeShapes` vec4s. A valid directional marker distorts
+  radial distance into the moving actor's heading/transverse basis,
+  creates a stern-biased wake mask and propagates the resulting
+  anisotropic gradient/foam into existing water normals and lighting.
+  Old impacts remain round when shape marker is zero.
+- `94f707254793d3ca72112e71d3bc4139d4af7e6f` —
+  `skills/gameplay/aiverse-nereid-water/SKILL.md`: native
+  implementation, persisted schema, shader packet and ownership rules.
+
+### Usage
+
+Attach `WaterWakeDirectionComponent` alongside the Stage-22
+interaction components on actors with boats, swimming wakes or
+surface locomotion. This component is optional; the absence of
+motion metadata falls back to the original circular normal ripples.
+The host still owns physical velocity and water contact integration.
+The renderer owns only visual shader parameters; it never writes
+to ECS or generates authoritative motion.
+
+Directional wakes use the *existing* 16 ripple slots per water tile;
+each has a paired shape slot. There are no new draw calls,
+render textures or separate particle simulations. The **shared
+lit shader U0 grew by 16 additional vec4s**; GLSL, Metal,
+Renderer3D main and reflection C++ structures have matching fields,
+but must all be compiled and device-validated later.
+
+### Verification, limitations and next stage
+
+**Actually done:** connected GitHub source review and implementation
+commits; no tests authored. **NOT RUN / NOT VERIFIED:** C++ compiler,
+CTest, shader compilers, Metal/GL visualization, FPS/RTS regressions
+or performance; deferred per owner instruction. Draft PR retained.
+
+The directional profile is deliberately approximate, not a Kelvin
+wake solver, viscosity or fluid simulation. One direction is
+captured per emitted SurfaceWake pulse. Camera-origin precision
+still follows the existing visual field. Snapshots without the new
+optional ECS component remain backward-compatible.
+
+**Next functional stage:** attach additional SpectraFX emitters to
+individual waterfall steps and waterfall foot, using stable
+cascade/step identities, bounded handles, and correct update/stop/
+rollback behavior. Then provide an optional PHYSIS wind presentation
+adapter without linking NEREID to a particular weather engine
+module. Always append handoff after each stage.
