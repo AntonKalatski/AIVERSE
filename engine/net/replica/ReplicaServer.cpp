@@ -980,6 +980,15 @@ void Server::setViewers(uint8_t slot, const std::vector<std::array<float, 3>>& p
         if (std::isfinite(v[0]) && std::isfinite(v[1]) && std::isfinite(v[2]) && p->viewers.size() < 16) p->viewers.push_back(v);
 }
 
+void Server::setViewer(uint8_t slot, std::array<float, 3> point) {
+    auto& p = impl_->peers[slot];
+    if (!p) return;
+    p->viewers.clear();
+    if (std::isfinite(point[0]) && std::isfinite(point[1]) &&
+        std::isfinite(point[2]))
+        p->viewers.push_back(point);
+}
+
 uint32_t Server::rttMs(uint8_t slot) const {
     auto& p = impl_->peers[slot];
     if (!p) return 0;
