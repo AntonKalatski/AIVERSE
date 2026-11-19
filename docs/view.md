@@ -1862,3 +1862,120 @@ are source-derived estimates, not measured driver allocations.
 `RtsView` is still needed for complex authored animation and
 visual effects. The next agent must validate with real build and
 hardware before claiming parity or merging.
+
+## Stage 107 — scoped GPU owner registrations, replayable fence telemetry and generic appearance packets
+
+### Explicit device/thread ownership with scoped registration
+
+`render::ModelResourceCache::bindResourceDevice(gfx::Device&)` fixes
+the cache's GPU-device identity and owner thread at its first bind.
+Repeated binds to another device or thread fail with `logic_error`;
+its earlier non-owning `lifetimeToken()` remains available.
+`collectRetired`, `invalidateSources`, `replace`,
+`trimUnused`, `publishPrepared` and `shutdown` now verify this
+identity; `ModelAssetProvider` verifies it before import/upload,
+`RtsView::init` before presentation model setup and
+`Portrait::init` before preview GPU creation. After successful,
+explicit GPU-safe cache shutdown the device binding is cleared, so
+the cache may be reused by a different GPU device. Failed shutdown
+does NOT clear binding or make still-in-flight GPU allocations safe.
+
+The recommended multi-host API is now
+`RenderResourceOwnerGroup::registerScoped(device,cache)`, returning a
+move-only `ScopedRegistration` lease. The group binds the cache to
+that device, rejects mixed-device registration, remembers its
+constructing `std::thread::id` and throws on wrong-thread
+`snapshotOwners`, `snapshot(device)`, `add`, `clear` and budget
+changes. The lease automatically unregisters on the original thread.
+An expired/destroyed group leaves a harmless weak lease; a lease
+destroyed on the wrong thread refuses cross-thread mutation and
+increments `wrongThreadReleaseAttempts()`. A live cache that
+has been shut down/rebound is rejected by a stale scoped device
+snapshot. No registration extends the model cache lifetime.
+
+The old `add(const ModelResourceCache&)` remains as a source-compatible
+CPU-only observer method for legacy tools/tests, but new GPU-facing
+hosts should use scoped registration. The Editor raw-source Model
+window now uses three scoped leases — world, portrait and raw-model
+provider — for its group-wide estimated budget and device-health
+snapshot. All registration, cache destruction and snapshot operations
+MUST be serialized on the device owner thread. This does not magically
+make a cache safe for concurrent GPU/CPU mutation or detect a Device
+destroyed without respecting the host's lifecycle.
+
+### Replayable synthetic GPU completion trace
+
+`render::RetirementStatusReplay` supplies a deterministic,
+CPU-only scripted timeline for opaque GPU marker tokens.
+`script(token,{Pending,...,Complete/Failed})`, `issue()`,
+`advance()`, `status(token)` and `events()` reproduce status
+transitions in a fixed order without timers or a real gfx backend.
+Unknown tokens conservatively return Failed, not completion.
+This class is for testing and diagnostics, **not** a GPU fence or
+an authority for actual memory destruction.
+
+`AsyncResourceRetirementQueue` now has an optional diagnostic
+observer receiving `RetirementDiagnosticEvent` events:
+`Enqueued`, `TokenSubmitted`, `Pending`, `Completed`,
+`Failed`, `IdleFallbackFailed`, `RecoveredAfterIdle`.
+Instrumentation callbacks cannot interrupt the resource retirement
+operation if they throw. A `ModelResourceCache` host may subscribe
+via `setRetirementDiagnosticObserver`; no observer is installed by
+default and the user owns logging/retention limits. These events are
+informational and never replace explicit GPU completion checks.
+
+### Generic authored material and graph appearance provider
+
+New `engine/view/AppearancePacket.h` exposes
+`view::AppearanceSpec` and
+`view::buildAppearancePacket(spec, world, view::Object&)`.
+A native host can resolve a Model pointer, material override vector,
+node-material assignment, geometry policy, material variant, tint,
+team, flags, source identity/generation and optionally a shared
+animation graph/parameters **outside** any RTS/FPS module.
+The builder generates the ordinary canonical View packet without
+loading sources, evaluating an animation graph or uploading GPU
+resources. For precomputed/static appearances,
+`submitPrecomputedAppearance` synchronously sends the packet only
+when it has no graph; graph-backed instances must instead use
+one owning `View::update` followed by `submitOne`, so no graph is
+evaluated twice.
+
+`modules/rts/view/RtsStaticPreviewModel.h` now maps the existing
+authored RTS static model/placement fields into the genre-independent
+`AppearanceSpec`, then asks the generic builder to compose the
+materials/variant/geometry/tint/flags packet. RTS still owns the
+structure/air/footprint/yaw placement decision and typed resource
+lookup, but **not** the common ModelDraw field construction.
+The RTS static-preview packet and ghost placement paths still use
+their original transforms, flags and material overrides; no dynamic
+simulation or save/network state has changed. Full RTS material
+library rule parsing and animated graph authoring remain a legacy
+adapter pending separate migration and visual parity validation.
+
+### Deferred verification
+
+New CMake/CTest fixtures:
+`tests/render/resource_owner_scope.cpp` /
+`render_scoped_resource_owner` (native with Threads) tests
+device/thread mismatch, scoped unregister, stale binding after
+shutdown and safe detached lease after group destruction;
+`tests/render/retirement_status_replay.cpp` /
+`render_retirement_status_replay` tests deterministic marker
+transitions, sticky failure, owner diagnostic events and explicit
+idle recovery;
+`tests/view/appearance_packet.cpp` /
+`view_appearance_packet` checks typed host-authored appearance fields.
+All sources are committed but **NOT RUN** under the features-first
+test deferral. Native compiler/CMake/CTest, Metal/Vulkan/GL,
+GUI/editor, FPS/RTS, sanitizer and GPU fence stress are unverified.
+
+**Limitations:** per-cache GPU-device identity checks only protect
+paths that go through this resource owner; bespoke render targets,
+terrain/FX, external direct `uploadModel` calls and a destroyed
+gfx::Device are still host lifecycle responsibilities. Scoped
+registration is thread-confined, not thread-safe. Synthetic timing
+is not an actual GPU completion proof; real Metal/Vulkan/GL tests
+are required before merging this work. Full `game::RtsView`
+removal and full dynamic material/graph host migration remain
+future stages.
