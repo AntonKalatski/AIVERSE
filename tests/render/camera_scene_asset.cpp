@@ -22,7 +22,7 @@ int main(){
  check(render::resolveEcsCamera(dest,created[0],view),"presentation");
  check(view.output.targetAssetKey==42 && int(view.camera.eye().x)==1,"render values");
  auto invalid=json;
- invalid["cameras"].itemsMut()[0].set("id",Json::number(int64_t(0)));
+ invalid.find("cameras")->at(0).set("id",Json::number(int64_t(0)));
  World broken;SceneHierarchy hierarchy;
  check(!loadCameraScene(broken,hierarchy,invalid,nullptr,&error) &&
        broken.countExisting<CameraComponent>()==0,"reject before mutation");

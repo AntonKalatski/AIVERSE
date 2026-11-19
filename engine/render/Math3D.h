@@ -191,6 +191,8 @@ struct Camera {
     bool ortho = false;
     float2 jitter{0, 0}; // optional projection offset in NDC (temporal AA)
     float2 lensShift{0,0}; // optical projection centre shift in NDC (stereo/physical lens)
+    bool obliqueClip=false; // opt-in world-plane clipping for mirrors/portals
+    float4 clipWorldPlane{}; // keep dot(worldPlane, float4(worldPos,1)) >= 0
     float zNear = 0.5f, zFar = 1000.0f;   // perspective clip planes (planet systems need a far plane)
 
     // Direct world pose for ECS/cinematic cameras, including arbitrary roll.
@@ -226,18 +228,36 @@ struct Camera {
         return mat4::lookAt(eye(), target, up);
     }
     mat4 proj(float aspect, bool zeroToOne) const {
+        mat4 p;
         if (!ortho) {
-            mat4 p = mat4::perspective(fovY, aspect, zNear, zFar, zeroToOne);
+            p = mat4::perspective(fovY, aspect, zNear, zFar, zeroToOne);
             for (int i = 0; i < 4; ++i) {
                 p.at(0, i) += (jitter.x+lensShift.x) * p.at(3, i);
                 p.at(1, i) += (jitter.y+lensShift.y) * p.at(3, i);
             }
-            return p;
+        } else {
+            float h = orthoHalfHeight(), w = h * aspect;
+            // negative near plane: terrain/sprites taller than the zoom distance are not clipped
+            p = mat4::ortho(-w, w, -h, h, -200.0f, 1000.0f, zeroToOne);
+            p.at(0, 3) += jitter.x+lensShift.x; p.at(1, 3) += jitter.y+lensShift.y;
         }
-        float h = orthoHalfHeight(), w = h * aspect;
-        // negative near plane: terrain/sprites taller than the zoom distance are not clipped
-        mat4 p = mat4::ortho(-w, w, -h, h, -200.0f, 1000.0f, zeroToOne);
-        p.at(0, 3) += jitter.x+lensShift.x; p.at(1, 3) += jitter.y+lensShift.y;
+        if(obliqueClip) {
+            // Plane in camera coordinates = transpose(inverse(view)) * worldPlane.
+            const mat4 inverseView=view().inverse();
+            const float source[4]={clipWorldPlane.x,clipWorldPlane.y,
+                                   clipWorldPlane.z,clipWorldPlane.w};
+            float c[4]{};
+            for(int j=0;j<4;++j)
+                for(int i=0;i<4;++i)c[j]+=inverseView.at(i,j)*source[i];
+            const auto q=p.inverse()*float4{c[0]>=0?1.f:-1.f,
+                                              c[1]>=0?1.f:-1.f,1.f,1.f};
+            const float den=c[0]*q.x+c[1]*q.y+c[2]*q.z+c[3]*q.w;
+            if(std::isfinite(den) && std::fabs(den)>1.e-5f) {
+                const float factor=(zeroToOne?1.f:2.f)/den;
+                for(int j=0;j<4;++j)
+                    p.at(2,j)=c[j]*factor-(zeroToOne?0.f:p.at(3,j));
+            }
+        }
         return p;
     }
 

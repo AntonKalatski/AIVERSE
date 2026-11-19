@@ -11,6 +11,7 @@
 #include "CameraPostFxPool.h"
 #include "CameraCompositor.h"
 #include "CameraCaptureViews.h"
+#include "CameraCaptureGraph.h"
 #include <cstdint>
 #include <unordered_set>
 #include <utility>
@@ -223,6 +224,15 @@ public:
     // Explicit non-ECS captures for cubemap faces, stereo eyes, portals,
     // mirrors and one-shot scene previews. The host supplies distinct keys
     // and declares any sampling dependencies; no screen clear is involved.
+    template<class Submit>
+    CameraCaptureGraphPlan renderCaptureGraph(
+            const std::vector<CameraCaptureNode>& nodes,
+            Submit&& submit,unsigned maxDepth=4) {
+        auto plan=makeCameraCaptureGraphPlan(nodes,maxDepth);
+        renderCaptures(plan.ordered,std::forward<Submit>(submit));
+        return plan;
+    }
+
     template<class Submit>
     size_t renderCaptures(const std::vector<CameraCaptureView>& captures,
                           Submit&& submit) {
