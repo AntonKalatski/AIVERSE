@@ -191,6 +191,58 @@ void check() {
         req(rejected && weighted.vertices[0].weights[0]==before.weights[0],
             "shared seam with conflicting palettes was silently overwritten");
     }
+    {
+        render::Model painted;
+        painted.nodes.resize(3);
+        painted.nodes[0].name="root";
+        painted.nodes[1].name="jaw";painted.nodes[1].parent=0;
+        painted.nodes[2].name="mesh";painted.nodes[2].skin=0;
+        painted.nodes[2].mesh=0;
+        render::Skin skin;
+        skin.joints={0,1};
+        skin.inverseBind.resize(2);
+        painted.skins.push_back(skin);
+        painted.vertices.resize(3);
+        painted.vertices[0].pos={-0.1f,0,0};
+        painted.vertices[1].pos={0.1f,0,0};
+        painted.vertices[2].pos={2.0f,0,0};
+        for(auto& v:painted.vertices) {
+            v.weights[0]=200;v.joints[0]=0;
+            v.weights[1]=55;v.joints[1]=1;
+        }
+        painted.indices={0,1,2};
+        render::Primitive primitive;
+        primitive.firstIndex=0;primitive.indexCount=3;
+        primitive.firstVertex=0;primitive.vertexCount=3;
+        primitive.jointPalette={0,1};
+        render::MeshDef mesh;mesh.primitives.push_back(primitive);
+        painted.meshes.push_back(mesh);
+        SkinWeightAuthoring authoring;
+        req(authoring.brush(painted,0,0,"jaw",1.f,0.16f,0.8f,true),
+            "mirrored skin brush rejected valid mesh");
+        req(authoring.edits().count(0)==1 &&
+            authoring.edits().count(1)==1 &&
+            authoring.edits().count(2)==0 &&
+            authoring.edits().at(0).weight>0.55f &&
+            authoring.edits().at(1).weight>0.55f,
+            "mirrored skin brush failed smooth falloff/radius isolation");
+        req(authoring.canUndo() && authoring.undo() &&
+            authoring.edits().empty() &&
+            authoring.redo() && authoring.edits().size()==2,
+            "weight brush undo redo did not preserve the full stroke");
+        auto damaged=painted;
+        damaged.meshes[0].primitives[0].jointPalette={0};
+        const auto prior=authoring.toJson();
+        req(!authoring.brush(damaged,0,0,"jaw",0.5f,0.16f,1.f,true) &&
+            authoring.toJson()==prior,
+            "invalid skin brush modified authoring state");
+        auto updated=painted;
+        const auto changes=authoring.apply(updated);
+        req(changes.verticesChanged==2 &&
+            updated.vertices[0].weights[0]+updated.vertices[0].weights[1]==255 &&
+            updated.vertices[1].weights[0]+updated.vertices[1].weights[1]==255,
+            "skin weight brush failed to publish normalized palettes");
+    }
     model.nodes.resize(2); // missing jaw and eyes must be legal for morph-only rigs
     const auto fallback=HumanRigBinding::compile(model,HumanDNA{}.rig);
     req(fallback.valid()&&!fallback.hasFacialJoints(),"morph-only rig rejected");
