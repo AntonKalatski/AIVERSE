@@ -44,6 +44,9 @@ inline bool staticRenderPacketCandidate(const ModelDraw& d,
     if (!d.staticPacketRevision || d.materials || d.nodeMaterial ||
         d.variant >= 0 || bakedLighting || lodDiagnostics ||
         !staticModelCacheCandidate(d, activeDisplacement)) return false;
+    for (const auto& node : m->nodes)
+        if (node.skin >= 0 || (node.mesh >= 0 &&
+            size_t(node.mesh) >= m->meshes.size())) return false;
     for (const auto& mesh : m->meshes) {
         if (mesh.deformable || !mesh.lods.empty()) return false;
         for (const auto& p : mesh.primitives)
