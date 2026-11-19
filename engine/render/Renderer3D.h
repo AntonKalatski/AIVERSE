@@ -912,6 +912,7 @@ private:
         ModelVirtualTextureBinding virtualTexture;
         gfx::TextureHandle alphaCoverage;
         bool usesVirtualTexture = false;
+        bool perCommandVt = false; // Metal opt-in per-command fragment ABI
         // CPU table snapshot is a safety gate only. The Metal GPU ICB
         // still inherits homogeneous fragment resources per submission.
         GpuMaterialResourceTicket materialResources;
