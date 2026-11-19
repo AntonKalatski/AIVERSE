@@ -440,3 +440,19 @@ The cache keeps only **weak references** and can be pruned with `pruneExpired()`
 New coverage: the fake-RHI `vivid_actor_retirement` includes a 128-character 4-frame scenario verifying that immutable buffers/pipelines are shared, actor outputs remain separate, and a single ordered GPU token retires all 128 actors without blocking. It also verifies a cache hit for identical geometry, a separate asset on changed geometry, weak-entry pruning, and safe last-reference destruction. Real Metal `vivid_metal_rhi` now creates two independent GPU actors from a single cached GPU asset and tests their numerical parity over three frames, plus the existing async retirement test. The 3/3 user Mac tests from Stage 5F **predate** this source refactor; these extended tests are **NOT RUN** yet.
 
 Explicit limitations: the cache does not currently deduplicate CPU-authoring metadata, textures, skin rigs, or MotionWeave pose buffers. The render override remains a Metal-only opt-in and still excludes unsafe MDI/ICB/LOD batching. The queue requires completion-validated final references and successful drain before gfx device shutdown. Automated performance measurements on large fully shaded crowds, per-asset budget controls, Vulkan GPU parity and photorealistic face/hair/eyes remain future work.
+
+## Stage 5I — one-pass complete VIVID native validation (2026-11-19)
+
+**Automation authored, not a substitute for actually successful tests.** `tools/vivid-validate.sh` is the supported macOS one-command acceptance runner. Call it from the existing VIVID source tree:
+
+```sh
+bash ~/Projects/AIVERSE-vivid/tools/vivid-validate.sh
+```
+
+It aborts rather than switching a dirty tracked worktree, fetches `origin/feature/vivid-digital-humans`, records the exact detached Git SHA, configures a separate `build/vivid-onepass` tree with tests, builds every VIVID test binary and the MotionWeave API test and real GUI preview, runs `ctest -R '^(vivid_|motionweave_api$)'` sequentially (avoiding concurrent Metal GPU resource contention), then opens the macOS Metal Renderer3D/MotionWeave 3-frame visual preview. It requires three nonempty screenshots and a logged `pass=1` report before declaring one-pass acceptance. Detailed configure/build/test/preview logs, screenshots, revision and a summary are retained under `build/vivid-onepass/vivid-validation`. The shell uses `set -Eeuo pipefail` so any failed compilation, test or visual capture halts the command.
+
+`--no-gui` performs a **partial** headless validation; `--full` builds all engine targets and runs the full CTest suite before the same GUI preview. Neither optional mode is required for the normal VIVID acceptance.
+
+The focused GitHub Actions workflow `.github/workflows/vivid-validation.yml` independently tries the same native macOS VIVID/MotionWeave compile+CTest selection on pushes to this branch; hosted runners may lack an accessible Metal device, in which case the Metal tests report **Skipped**, not proven GPU parity. GitHub Actions does not execute the GUI visual preview, which requires a real graphical Mac. A queued CI workflow is NOT a passing test. Do not cite CI as green until its jobs conclude successfully; user Mac remains authoritative for Metal/Renderer3D captures.
+
+Current requirements for release-quality MetaHuman-like humans that remain outside this focused GPU facial-animation path include authored human DNA/rig assets, skin/eye shaders, groom and hair simulation, facial corrective shapes on actual head scans, mesh streaming/LOD benchmarks, editor authoring UI and cross-backend GPU parity. These are separate product features and must not be claimed finished just because the current VIVID graphics core passes.
