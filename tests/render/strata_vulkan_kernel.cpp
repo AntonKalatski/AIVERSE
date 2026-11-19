@@ -86,6 +86,7 @@ int main() {
     view.width=640;view.height=480;
     view.maxOutputClusters=16;
     view.errorThresholdPixels=1.0f;
+    view.baseVertex=7; // verify indexed Vulkan vertexOffset propagation
     bool callbackCalled=false;
     GpuSelectionReadback result;
     device->beginFrame(64,64);
@@ -93,24 +94,73 @@ int main() {
     const uint64_t serial=device->frameSerial();
     assert(culling.dispatch(*device,gpuMetadata,{instance},
                             view,serial,submission));
-    assert(submission.valid());
+    assert(submission.valid() && submission.gpuIndirectPrepared());
     assert(culling.requestReadback(*device,submission,
         [&](GpuSelectionReadback read){
             callbackCalled=true;
             result=std::move(read);
         }));
-    assert(!callbackCalled); // strictly asynchronous, no render-thread stall
+    bool commandsReady=false;
+    std::vector<uint8_t> commands;
+    assert(device->readBufferAsync(submission.indirect,
+        sizeof(gfx::DrawIndexedIndirectCommand)*view.maxOutputClusters,
+        [&](std::vector<uint8_t> bytes){
+            commands=std::move(bytes);
+            commandsReady=true;
+        }));
+    assert(!callbackCalled && !commandsReady);
     device->endFrame();
     // Frame slots are fence-guarded. Two subsequent submissions allow
     // async Vulkan readback callback to arrive when the originating slot
     // has completed, with no explicit CPU GPU-wait in the render path.
-    for(int frame=0;frame<3 && !callbackCalled;++frame){
+    for(int frame=0;frame<3 && (!callbackCalled || !commandsReady);++frame){
         device->beginFrame(64,64);
         device->endFrame();
     }
     assert(callbackCalled && result.valid());
     assert(result.counters.invalid==0 && result.counters.overflow==0);
     assert(compareGpuSelection(asset,{instance},view,400,result,&error));
+    assert(commandsReady && commands.size()==
+           sizeof(gfx::DrawIndexedIndirectCommand)*view.maxOutputClusters);
+    gfx::DrawIndexedIndirectCommand first{};
+    std::memcpy(&first,commands.data(),sizeof(first));
+    assert(first.indexCount==3 && first.instanceCount==1);
+    assert(first.firstIndex==400 && first.baseVertex==7);
+    assert(first.firstInstance==0);
+    for(uint32_t i=1;i<view.maxOutputClusters;++i){
+        gfx::DrawIndexedIndirectCommand zero{};
+        std::memcpy(&zero,commands.data()+
+                    size_t(i)*sizeof(zero),sizeof(zero));
+        assert(zero.indexCount==0 && zero.instanceCount==0);
+    }
+    // GPU-side overflow/invalid guard is independent of CPU readback:
+    // malformed primitive references must zero every indirect command.
+    const auto invalidInstance=makeGpuSceneInstance(mat4::identity(),99,121);
+    device->beginFrame(64,64);
+    GpuSelectionSubmission rejected;
+    assert(culling.dispatch(*device,gpuMetadata,{invalidInstance},view,
+                            device->frameSerial(),rejected));
+    assert(rejected.gpuIndirectPrepared());
+    std::vector<uint8_t> rejectedCommands;
+    bool rejectedReady=false;
+    assert(device->readBufferAsync(rejected.indirect,
+        sizeof(gfx::DrawIndexedIndirectCommand)*view.maxOutputClusters,
+        [&](std::vector<uint8_t> bytes){
+            rejectedCommands=std::move(bytes);
+            rejectedReady=true;
+        }));
+    device->endFrame();
+    for(int frame=0;frame<3 && !rejectedReady;++frame){
+        device->beginFrame(64,64);
+        device->endFrame();
+    }
+    assert(rejectedReady);
+    for(uint32_t i=0;i<view.maxOutputClusters;++i){
+        gfx::DrawIndexedIndirectCommand command{};
+        std::memcpy(&command,rejectedCommands.data()+
+                    size_t(i)*sizeof(command),sizeof(command));
+        assert(command.indexCount==0);
+    }
     culling.shutdown(*device);
     device->destroyBuffer(gpuMetadata);
     std::cout<<"[strata-vulkan] compute GPU selection parity PASS\n";
