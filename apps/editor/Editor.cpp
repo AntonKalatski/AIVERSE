@@ -928,8 +928,9 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     prisma_.setViewId(1ULL);
     prisma_.applyCameraVolumes(prismaVolumes_, useCam.eye());
     const bool postEnabledForScene = !r3d_.studioDebugMode() && postFxInScene;
+    const bool postActiveForScene = postEnabledForScene && prisma_.active();
     r3d_.render(pass, postEnabledForScene ? &prisma_ : nullptr);
-    if (postEnabledForScene) prismaSceneRendered_ = true;
+    if (postActiveForScene) prismaSceneRendered_ = true;
     const auto afterRender = std::chrono::steady_clock::now();
     r3d_.setSceneSelectionOutline(false);
     if (!ws_.project.isFps() && !r3d_.studioDebugMode()) {
@@ -1006,9 +1007,10 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
     refreshPrismaVolumes();
     prisma_.setViewId(prismaViewId);
     prisma_.applyCameraVolumes(prismaVolumes_, cam.eye());
+    const bool postActiveForGame = prisma_.active();
     r3d_.render(pass, &prisma_);
-    if (prismaViewId == 1ULL) prismaSceneRendered_ = true;
-    if (prismaViewId == 2ULL) prismaGameRendered_ = true;
+    if (postActiveForGame && prismaViewId == 1ULL) prismaSceneRendered_ = true;
+    if (postActiveForGame && prismaViewId == 2ULL) prismaGameRendered_ = true;
     gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
     if (gameFx_.hasReactiveGeometry())
         r3d_.addMotionReactiveDraw([this](gfx::Device& gpu,
