@@ -689,6 +689,22 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         COMMAND aiverse_model_parallel_jobs_tests)
 endif()
 if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_geometry_page_owners_tests
+        tests/render/geometry_page_owners.cpp)
+    target_link_libraries(aiverse_geometry_page_owners_tests
+        PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME render_geometry_page_owners
+        COMMAND aiverse_geometry_page_owners_tests)
+endif()
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_persistent_model_pool_tests
+        tests/render/persistent_model_pool.cpp)
+    target_link_libraries(aiverse_persistent_model_pool_tests
+        PRIVATE aiverse_models aiverse_zstd_dec Threads::Threads)
+    add_test(NAME render_persistent_model_pool
+        COMMAND aiverse_persistent_model_pool_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_animation_crowd_tests tests/animation/crowd.cpp)
     target_link_libraries(aiverse_animation_crowd_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_crowd_policy COMMAND aiverse_animation_crowd_tests)
