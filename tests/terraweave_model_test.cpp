@@ -111,7 +111,7 @@ int main() {
     assert(billboard->meshes[0].primitives.size() == 2);
     for (size_t layer = 0; layer < 2; ++layer) {
         const auto& p = billboard->meshes[0].primitives[layer];
-        assert(p.material == layer);
+        assert(p.material >= 0 && static_cast<size_t>(p.material) == layer);
         assert(p.firstVertex == layer * 4 && p.vertexCount == 4);
         assert(p.firstIndex == layer * 6 && p.indexCount == 6);
         assert(billboard->materials[layer].alpha ==
