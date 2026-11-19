@@ -97,6 +97,10 @@ public:
                             pf.stats().width,pf.stats().height,
                             pf.stats().outputWidth,pf.stats().outputHeight,
                             pf.stats().temporalUpscaled ? "yes" : "off / fallback");
+        ImGui::TextDisabled("View priority %u / 255 | HDR history admission: %s",
+            unsigned(pf.stats().adaptiveViewPriority),
+            pf.stats().adaptiveHistoryAdmissionRejected ?
+                "rejected by per-camera quota" : "allowed / not requested");
         ImGui::TextDisabled("Jitter: отдельный opt-in AIVERSE_PRISMA_JITTER=1; без него обычный Temporal Resolve остаётся доступен.");
         ImGui::TextDisabled("GPU adaptive: %s  |  scale: %.3f  |  stable fallback: %s",
             pf.stats().adaptiveResolution ? "on" : "off",
@@ -104,7 +108,7 @@ public:
             pf.stats().temporalFallback ? "used" : "not needed");
         if (pf.stats().adaptiveResolution) {
             constexpr double kMiB=1024.0*1024.0;
-            ImGui::TextDisabled("Prisma + Renderer3D owners + geometry pool (known minimum): %.1f / %.1f MiB (%s)",
+            ImGui::TextDisabled("Prisma + renderer + geometry + owned assets (known minimum): %.1f / %.1f MiB (%s)",
                 double(pf.stats().adaptiveKnownGpuBytes)/kMiB,
                 double(pf.stats().adaptiveMemoryLimitBytes)/kMiB,
                 pf.stats().adaptiveMemoryPressure ? "pressure" : "within budget");
