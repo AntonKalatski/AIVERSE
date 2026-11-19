@@ -179,6 +179,86 @@ static void verifyReadOwnerRebind() {
     CHECK(cache.activeModelReaders()==0);
 }
 
+// Stage 133: a callback handed a resident Model* may inspect it, but
+// must never change cache membership or create a new reader guard while
+// the caller still owns its std::map iterator.
+static void verifyDetachCallbackReentrancyContracts() {
+    StubDevice dev;
+    render::ModelResourceCache cache;
+    cache.bindResourceDevice(dev);
+    auto old=std::make_unique<render::Model>();
+    old->path="models/old.glb";
+    auto* resident=cache.insertIfAbsent("models/old.glb",std::move(old));
+    CHECK(resident);
+    const uint64_t initialGeneration=cache.generation();
+    auto expectRejected=[](auto&& callback) {
+        bool rejected=false;
+        try{callback();}
+        catch(const std::logic_error&){rejected=true;}
+        CHECK(rejected);
+    };
+
+    expectRejected([&]{
+        cache.replace(dev,"models/old.glb",
+            std::make_unique<render::Model>(),[&](const render::Model* model) {
+                CHECK(model==resident);
+                CHECK(cache.find("models/old.glb")==resident);
+                // A nested insertion would mutate the map while replace
+                // still owns an iterator and is not an acceptable callback.
+                cache.insertIfAbsent("models/other.glb",
+                    std::make_unique<render::Model>());
+            });
+    });
+    CHECK(cache.find("models/old.glb")==resident);
+    CHECK(cache.find("models/other.glb")==nullptr);
+    CHECK(cache.generation()==initialGeneration);
+
+    render::ModelResourceCache::ModelMap staged;
+    staged.emplace("models/new.glb",std::make_unique<render::Model>());
+    expectRejected([&]{
+        cache.invalidateSources(dev,{"models/old.glb"},
+            [&](const auto& affected) {
+                CHECK(affected.size()==1);
+                CHECK(affected.front().model==resident);
+                // A staged batch may be published later, but not during
+                // the external detach callback.
+                cache.publishStagedModels(dev,staged);
+            });
+    });
+    CHECK(staged.size()==1);
+    CHECK(cache.find("models/old.glb")==resident);
+    CHECK(cache.find("models/new.glb")==nullptr);
+    CHECK(cache.generation()==initialGeneration);
+
+    expectRejected([&]{
+        cache.trimUnused(dev,{},
+            [&](const render::Model* model) {
+                CHECK(model==resident);
+                // Fresh leases created here could outlive the trim callback
+                // and protect a pointer that trim immediately destroys.
+                auto frame=cache.acquireFrameReadScope();
+                (void)frame;
+            });
+    });
+    CHECK(cache.find("models/old.glb")==resident);
+    CHECK(cache.activeModelReaders()==0);
+    CHECK(cache.generation()==initialGeneration);
+
+    // A previously throwing callback must never poison the guard.
+    const size_t invalidated=cache.invalidateSources(dev,{"models/old.glb"},
+        [&](const auto& affected) {
+            CHECK(affected.size()==1);
+            CHECK(affected.front().model==resident);
+            CHECK(cache.find("models/old.glb")==resident);
+        });
+    CHECK(invalidated==1);
+    CHECK(cache.find("models/old.glb")==nullptr);
+    cache.publishStagedModels(dev,staged);
+    CHECK(staged.empty());
+    CHECK(cache.find("models/new.glb")!=nullptr);
+    CHECK(cache.activeModelReaders()==0);
+    cache.shutdown(dev);
+}
 // Fatal owner-thread contracts must be verified in a separate process:
 // they intentionally call std::terminate, never a catchable exception.
 static int fatalChild(const std::string& mode) {
@@ -227,6 +307,7 @@ int main(int argc,char** argv) {
     CHECK(argc==1);
     verifyReadLeaseContracts();
     verifyReadOwnerRebind();
+    verifyDetachCallbackReentrancyContracts();
 #if defined(__APPLE__) || defined(__unix__)
     verifyFatalReadContracts(argv[0]);
 #endif
