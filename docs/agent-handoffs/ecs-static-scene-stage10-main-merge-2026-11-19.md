@@ -72,3 +72,29 @@ migration is part of this integration.
 
 This handoff itself is a documentation-only commit after the tested
 source head. It does not change compiled C++ or test behavior.
+
+## Verified GitHub merge result
+
+PR [#41](https://github.com/chromealex/AIVERSE/pull/41) was merged
+successfully by the GitHub merge API using the regular **merge**
+method with an expected-head check.
+
+- Original feature head at merge:
+  `1bac33cf35c967613c973b69057e1451e1d80507`
+- Previous main:
+  `58e29ab052458fffcdebebffe27022b53adb9367`
+- Actual PR merge commit:
+  `36ceee13efff5d5dce4d97cd7d204963537efc7d`
+- GitHub PR state: `closed`, `merged=true`.
+- GitHub merged timestamp: `2026-11-19T19:10:07Z`.
+- Verified main branch pointed to the merge commit immediately
+  after the action.
+- **No compiled source change was made after the successful Mac
+  Studio test gate**; subsequent commits have been documentation only.
+- The feature branch is retained for source provenance. The previous
+  `main` history and independent agent branches were not rewritten.
+
+Future agent: work from updated `main` with a new scoped feature
+branch, not the previously merged integration worktree, and coordinate
+with active renderer/world/physics owners for optional Metal GPU,
+cross-host replay and real authored terrain seam coverage.
