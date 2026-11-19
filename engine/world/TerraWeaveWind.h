@@ -20,7 +20,9 @@ struct ForestWindState {
 inline void validateForestWind(const ForestWindState& state) {
     constexpr int64_t kMaxWindCmPerSec=5000;
     const int64_t x=state.xCmPerSec, z=state.zCmPerSec;
-    if(x*x+z*z>kMaxWindCmPerSec*kMaxWindCmPerSec ||
+    if(x < -kMaxWindCmPerSec || x > kMaxWindCmPerSec ||
+       z < -kMaxWindCmPerSec || z > kMaxWindCmPerSec ||
+       x*x+z*z>kMaxWindCmPerSec*kMaxWindCmPerSec ||
        state.gustPermille>1000 || state.cycleTicks<8 ||
        state.cycleTicks>4096 || state.maxLeanMilliDegrees>3000)
         throw std::invalid_argument("TerraWeave wind presentation");
