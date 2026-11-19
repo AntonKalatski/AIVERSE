@@ -50,6 +50,28 @@ def longest_slow_streak(rows, threshold=1.2):
     return longest
 
 
+def slow_runs(rows, threshold=1.2):
+    """Contiguous measured-frame periods above a CPU reference threshold."""
+    result = []
+    active = []
+    for row in rows:
+        if row["render_cpu_ms"] > threshold:
+            active.append(row)
+        elif active:
+            result.append(active)
+            active = []
+    if active:
+        result.append(active)
+    return result
+
+
+def stage_cost(row):
+    # The two backend submit measurements are CPU sub-stages of render().
+    # Do not call the remainder "GPU stall": it includes other CPU work.
+    backend = row["shadow_backend_ms"] + row["opaque_backend_ms"]
+    return backend, max(0.0, row["render_cpu_ms"] - backend)
+
+
 def stats(label, rows, kind):
     measured = [r for r in rows if 115 <= r["frame"] <= 195]
     mdi = [r for r in measured if r["mdi_submissions"]]
@@ -67,6 +89,11 @@ def stats(label, rows, kind):
     # Report the backend contribution and remainder. These CPU stages are
     # instrumented inside renderModels and do not exhaust all render() costs.
     worst = max(measured, key=lambda r: r["render_cpu_ms"])
+    episodes = slow_runs(measured)
+    episodes.sort(key=lambda run: (-len(run), run[0]["frame"]))
+    longest = episodes[0] if episodes else []
+    slow_mdi = [r for r in slow if r["mdi_submissions"]]
+    worst_backend, worst_other_cpu = stage_cost(worst)
     return {
         "trial": label, "mode": kind,
         "measured_frames": len(measured),
@@ -87,6 +114,22 @@ def stats(label, rows, kind):
         "worst_render_ms": worst["render_cpu_ms"],
         "worst_shadow_backend_ms": worst["shadow_backend_ms"],
         "worst_opaque_backend_ms": worst["opaque_backend_ms"],
+        "worst_backend_sum_ms": worst_backend,
+        "worst_non_backend_cpu_ms": worst_other_cpu,
+        "mdi_backend_median_ms": med(mdi, "shadow_backend_ms") + med(mdi, "opaque_backend_ms") if mdi else float("nan"),
+        "slow_mdi_backend_median_ms": (
+            med(slow_mdi, "shadow_backend_ms") +
+            med(slow_mdi, "opaque_backend_ms")
+        ) if slow_mdi else float("nan"),
+        "longest_slow_start_frame": longest[0]["frame"] if longest else -1,
+        "longest_slow_end_frame": longest[-1]["frame"] if longest else -1,
+        "longest_slow_backend_median_ms": (
+            med(longest, "shadow_backend_ms") +
+            med(longest, "opaque_backend_ms")
+        ) if longest else float("nan"),
+        "longest_slow_non_backend_median_ms": (
+            statistics.median(stage_cost(r)[1] for r in longest)
+        ) if longest else float("nan"),
     }
 
 
@@ -114,6 +157,14 @@ def main():
               f"{r['render_median_ms']:9.4f} {r['render_p95_ms']:9.4f} "
               f"{r['late_median_ms']:9.4f} {r['warm_mdi_over_1_2ms']:9d} "
               f"{r['max_slow_streak_1_2ms']:7d} {r['worst_frame']:12d}")
+    print("Slow intervals (>1.2ms CPU render; diagnostic threshold, not SLA):")
+    for r in results:
+        print(f"  {r['trial']}: longest={r['longest_slow_start_frame']}.."
+              f"{r['longest_slow_end_frame']}, "
+              f"backend_median={r['longest_slow_backend_median_ms']:.4f}ms "
+              f"non_backend_cpu_median={r['longest_slow_non_backend_median_ms']:.4f}ms, "
+              f"worst_backend={r['worst_backend_sum_ms']:.4f}ms "
+              f"worst_non_backend_cpu={r['worst_non_backend_cpu_ms']:.4f}ms")
     print(f"Summary: {output / 'summary.csv'}")
     print("NOTE: process-order controls are not randomized per-frame A/B/A;" 
           " interpret results as environment-dependent CPU wall timings.")
