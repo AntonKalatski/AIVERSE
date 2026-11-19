@@ -2,6 +2,7 @@
 #include "Shaders.h"
 #include "SelectionOutlineShaders.h"
 #include "Renderer3DMotionShaders.h"
+#include "Renderer3DReactiveShaders.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -132,6 +133,7 @@ void Renderer3D::shutdown() {
     for (auto& [id, history] : objectMotionViews_) {
         if (history.target.valid()) dev_->destroyTexture(history.target);
         if (history.depth.valid()) dev_->destroyTexture(history.depth);
+        if (history.reactive.valid()) dev_->destroyTexture(history.reactive);
     }
     objectMotionViews_.clear();
     if (objectMotionPipeline_.valid()) dev_->destroyPipeline(objectMotionPipeline_);
@@ -144,11 +146,14 @@ void Renderer3D::shutdown() {
     if (objectMotionBakedShader_.valid()) dev_->destroyShader(objectMotionBakedShader_);
     if (objectMotionMaskedPipeline_.valid()) dev_->destroyPipeline(objectMotionMaskedPipeline_);
     if (objectMotionMaskedShader_.valid()) dev_->destroyShader(objectMotionMaskedShader_);
+    if (objectMotionReactivePipeline_.valid()) dev_->destroyPipeline(objectMotionReactivePipeline_);
+    if (objectMotionReactiveShader_.valid()) dev_->destroyShader(objectMotionReactiveShader_);
     objectMotionPipeline_ = {}; objectMotionShader_ = {};
     objectMotionInstancedPipeline_ = {}; objectMotionInstancedShader_ = {};
     objectMotionDeformedPipeline_ = {}; objectMotionDeformedShader_ = {};
     objectMotionBakedPipeline_ = {}; objectMotionBakedShader_ = {};
     objectMotionMaskedPipeline_ = {}; objectMotionMaskedShader_ = {};
+    objectMotionReactivePipeline_ = {}; objectMotionReactiveShader_ = {};
     shutdownModels();
     lights.shutdown();
     shutdownTrace();
@@ -447,7 +452,8 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
         if (resize) {
             if (history.target.valid()) dev_->destroyTexture(history.target);
             if (history.depth.valid()) dev_->destroyTexture(history.depth);
-            history.target = {}; history.depth = {};
+            if (history.reactive.valid()) dev_->destroyTexture(history.reactive);
+            history.target = {}; history.depth = {}; history.reactive = {};
         }
         history.width = w; history.height = h;
         return;
@@ -462,7 +468,7 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
     if (history.width != w || history.height != h) {
         if (history.target.valid()) dev_->destroyTexture(history.target);
         if (history.depth.valid()) dev_->destroyTexture(history.depth);
-        history.target = {}; history.depth = {};
+        history.target = {}; history.depth = {}; history.reactive = {};
         history.width = w; history.height = h;
     }
     if (!history.target.valid()) {
@@ -855,6 +861,90 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
         dev_->endPass();
         objectMotionStats_.submitted = true;
         post.acceptObjectMotionVectors(history.target);
+
+        // Conservative translucent coverage: surfaces whose true motion
+        // cannot be reconstructed suppress blur locally via a reactive mask.
+        // No previous-pose approximation, no readback, no ECS state changes.
+        auto reactiveEligible = [](const ModelItem& it) {
+            if (!it.inView || !it.model || !it.prim || !it.mat ||
+                !it.model->vb.valid() || !it.model->ib.valid() ||
+                it.indexCount == 0 || !it.rigid || it.joints >= 0 ||
+                it.baked || it.morph >= 0 || it.model->geometry ||
+                it.mat->shaderGraph || it.materialRole == 1 ||
+                it.shadowRole == 2) return false;
+            return it.tint.w < 0.99f || it.mat->transparent ||
+                   it.mat->alpha == AlphaMode::Blend ||
+                   (it.flags & kDrawTransparent) != 0;
+        };
+        bool reactiveNeeded = false;
+        for (const auto& it : modelItems_) {
+            if (reactiveEligible(it)) { reactiveNeeded = true; break; }
+        }
+        if (reactiveNeeded && !history.reactive.valid()) {
+            gfx::TextureDesc target;
+            target.width = w; target.height = h;
+            target.renderTarget = true;
+            target.format = gfx::PixelFormat::RGBA8;
+            target.filter = gfx::Filter::Nearest;
+            target.label = "prisma motion reactive mask";
+            history.reactive = dev_->createTexture(target);
+        }
+        if (reactiveNeeded && !objectMotionReactiveShader_.valid()) {
+            gfx::ShaderDesc shader;
+            shader.glslVertex = reactive_shaders::kVS;
+            shader.glslFragment = reactive_shaders::kFS;
+            shader.msl = reactive_shaders::kMSL;
+            shader.textureSlots = 1;
+            shader.uniformSlots = 1;
+            shader.label = "prisma motion reactive coverage";
+            objectMotionReactiveShader_ = dev_->createShader(shader);
+            if (objectMotionReactiveShader_.valid()) {
+                gfx::PipelineDesc pipeline;
+                pipeline.shader = objectMotionReactiveShader_;
+                pipeline.attrs[0] = {0,gfx::VertexFormat::Float3,0};
+                pipeline.attrCount = 1;
+                pipeline.stride = sizeof(ModelVertex);
+                pipeline.indexType = gfx::IndexType::UInt32;
+                pipeline.cull = gfx::CullMode::Back;
+                pipeline.depthTest = false;
+                pipeline.depthWrite = false;
+                pipeline.colorFormat = gfx::PixelFormat::RGBA8;
+                pipeline.label = "prisma motion reactive coverage";
+                objectMotionReactivePipeline_ = dev_->createPipeline(pipeline);
+            }
+        }
+        if (reactiveNeeded && history.reactive.valid() &&
+            objectMotionReactivePipeline_.valid()) {
+            struct ReactiveUniforms { float mvp[16]; float params[4]; };
+            gfx::PassDesc maskPass;
+            maskPass.colorTarget = history.reactive;
+            maskPass.depthTarget = history.depth;
+            maskPass.clearColor[0] = maskPass.clearColor[1] =
+                maskPass.clearColor[2] = maskPass.clearColor[3] = 0.0f;
+            maskPass.clearColorEnabled = true;
+            maskPass.clearDepthEnabled = true;
+            dev_->beginPass(maskPass);
+            dev_->setViewport({0,0,w,h});
+            dev_->setPipeline(objectMotionReactivePipeline_);
+            dev_->setTexture(0,sceneDepth);
+            for (const auto& it : modelItems_) {
+                if (!reactiveEligible(it)) continue;
+                const mat4 mvp = viewProj_ * it.world;
+                ReactiveUniforms u{};
+                std::memcpy(u.mvp,mvp.m,sizeof u.mvp);
+                u.params[0] = float(w); u.params[1] = float(h);
+                u.params[2] = 1.0f; // conservative coverage, not alpha parity
+                dev_->setUniforms(0,&u,sizeof u);
+                dev_->setVertexBuffer(it.model->vb);
+                dev_->setIndexBuffer(it.model->ib);
+                dev_->drawIndexed(it.indexCount,
+                    it.firstIndex + it.model->gpuFirstIndex,
+                    int32_t(it.model->gpuBaseVertex));
+                ++objectMotionStats_.reactiveDraws;
+            }
+            dev_->endPass();
+            post.acceptMotionReactiveMask(history.reactive);
+        }
     }
     history.previous = std::move(current);
     history.previousDeformed = std::move(currentDeformed);
