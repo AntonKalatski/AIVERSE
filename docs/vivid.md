@@ -560,3 +560,10 @@ Creator now also exposes imported facial ARKit channel-to-morph route gain slide
 An imported closed scalp collision mesh now supports stable per-guide source triangle/barycentric anchors. During a successful `refitCollisionMesh`, guide roots, their rest positions, live positions and previous positions follow the deformed local-space scalp triangles. Failed geometry/refit/attachment staging retains previously published triangle/BVH and guide data. Collider replacement and clear invalidate old triangle identifiers; callers must reattach roots after changing topology.
 
 This is a **CPU geometry API**, not yet automatic MotionWeave-to-skinned-scalp streaming. `VIVID Creator` currently attaches static import proxies at authoring time. No source changes from this stage have been natively built or tested on macOS; test assertions were added but not executed. See `docs/agent-handoffs/vivid.md` for exact commits and future integration gates.
+
+
+## Stage 6R — Creator scalp proxy selection (2026-11-19)
+
+The imported-character Creator panel now exposes the optional named `scalpColliderMesh` from the v1 manifest. UI edits validate a staged manifest, preserve the last-good selection on error and request a new model/groom rebuild on success; the existing atomic manifest Save action persists the change. Empty selection falls back to the DNA ellipsoid.
+
+This source change was committed but **not compiled or GUI-tested**. Authoring a closed/unskinned scalp proxy, transforming an imported node hierarchy into groom-local coordinates and driving deforming scalp meshes from MotionWeave remain separate tasks.
