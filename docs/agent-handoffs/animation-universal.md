@@ -2847,3 +2847,12 @@ before calling this stage validated.
 - RTS `RtsView::draw` now holds a coarse cache reader scope through one synchronous presentation scene update/draw, acquired after up-front model loading. Editor Stats can show active read lease count.
 - **ACTUAL:** GitHub source/PR/main ancestry read, cache and RTS draw-path review, exact branch code commits and readbacks. **NOT RUN:** local native CMake/C++ compiler/link/CTest/CI, Metal/Vulkan/GL, editor/FPS/RTS visuals, GPU eviction/failure injection, sanitizers, benchmarking. No runtime success claimed; PR remains Draft.
 - **Next Stage 130:** finish features, validate native compile and full CTest/GPU parity, test active lease eviction rejection and release ordering, fix warnings/errors and keep a new handoff.
+
+## Stage 130 — Model cache lease rebind and denial metrics (2026-11-19)
+
+- **Standalone detailed handoff:** [Stage 130](animation-stage130-read-lease-lifecycle-diagnostics-2026-11-19.md) lists exact commits, code APIs, actual validation and Stage 131.
+- Continued Stage 129 HEAD `fad0d4ab`. `main` `d71c6d47` was already an ancestor; ahead 961/behind 0 before Stage 130. The PR #22 base `feature/universal-entity-inspector-fps` is **DIVERGENT** (feature ahead 1331/behind 615 at start). Never assume a main comparison alone makes the PR ready for merging. No main/peer writes or force push; PR remains Draft.
+- `ModelResourceCache::shutdown` now clears the cache's reader-owner thread ID only after zero-reader and GPU-completion safety, permitting a different-thread fresh-Device rebind after successful shutdown. `ModelReadLease` and `ModelCacheReadScope` now terminate on foreign-thread release rather than allowing unsafe decrement of active reader counts.
+- `ModelReadLeaseState` counts atomic historical peak readers and blocked mutation attempts. `ModelResourceCache::modelReadSafetyStats` exposes both plus active readers; RTS forwards the stats and Editor shows accurate read guard/blocked-mutation diagnostics. No MotionWeave clocks, simulation authority or GPU retire queue ownership changed.
+- **ACTUAL:** GitHub source/PR/base/main inspection, targeted commits and readback. **NOT RUN:** CMake/native compiler/CTest/CI, FPS/RTS/editor Metal/Vulkan/GL visual, ownership failure/subprocess fixtures, ASan/TSan/UBSan or benchmarks. No compiled success asserted, keep PR Draft.
+- **Next Stage 131:** finish needed integration, then perform native build/tests/GPU parity/sanitizer/benchmark validation and fix issues, while assessing the divergent PR base before any merge.
