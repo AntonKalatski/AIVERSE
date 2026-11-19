@@ -35,7 +35,9 @@ public:
                         std::forward<Callback>(onSpectraFxOrAudio));
     }
     void advanceNereidRipples(float deltaSeconds) {
-        ripples_.advance(deltaSeconds);
+        ripples_.advance(deltaSeconds,[this](uint64_t waterId) {
+            return nereidWater_.currentForInteractionWater(waterId);
+        });
     }
     const NereidRippleField& nereidRipples()const{return ripples_;}
 
