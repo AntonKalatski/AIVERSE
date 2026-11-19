@@ -94,6 +94,10 @@ public:
     void draw(Editor& ed) override {
         if (!dev_) {
             dev_ = &ed.device();
+            // FX preview graph reloads may still be in an in-flight GPU
+            // command buffer; retire old shader/buffer/texture handles.
+            preview_.setGpuResourceRetirement(&ed.gpuResourceRetirement());
+            textures_.setGpuResourceRetirement(&ed.gpuResourceRetirement());
             preview_.setQuality(fx::FxQuality::High);
             preview_.setFileReader([&ed](const std::string& path, std::string& out) { return readText(fs::path(ed.ws().project.dir) / path, out); });
             textures_.init(*dev_);
