@@ -1328,3 +1328,50 @@ On Apple Silicon specifically compare GPU/CPU Spawn+Update math, per-instance de
 3. Only Metal has this GPU VM implementation. The checked-in future GLSL compute source does NOT yet implement the VM; Vulkan/GL/GLES/WebGL fallback to CPU. Preserve this contract.
 4. Multiple advanced effects still use separate `ComputeParticles` resources. A genre-neutral GPU shared emitter pool, richer simulation/render modules, cross-material sorting/soft particles and native production integrations remain functional work.
 5. **Next bounded Stage 23:** add a GPU custom particle attribute storage extension plus input/output mappings for selected VM variables, then expand Metal GPU eligibility one feature at a time while retaining strict CPU fallback. Alternatively, implement multi-emitter GPU pooling and editor authoring of performance tiers. Keep it opt-in. The user wants **functions first; tests later**. Append a separate handoff commit after every next implementation stage in this same file.
+
+## Stage 26 — persistent Metal VM custom particle attributes (SOURCE COMMITTED, TESTS DEFERRED)
+
+**Date:** 2026-11-19. **Branch:** `feature/universal-entity-inspector-fps`.  
+**Goal:** finish the next bounded *functional* SpectraFX increment: persistent eight-channel per-particle user float attributes in the opt-in integrated Metal Spawn/Update VM, matching the existing CPU VM register semantics. Preserve all renderer/ECS/genre-neutral boundaries and exact original CPU fallback for unsupported features. The user explicitly asked to finish functions before running tests.
+
+**Concurrent work:** Earlier GPU VM milestone files are already labeled Stage 23 (standalone Metal VM pass), Stage 24 (generation-safe source parameter snapshots), and Stage 25 (newborn/partial-upload controls); they belong to other agents and have different kernels/runtime contracts. Our integration is **Stage 26**, not a duplicate of those milestones. The existing living handoff through Stage 22 has been preserved; no other agent's code was overwritten. Feature remains opt-in.
+
+### Exact implementation/source commits
+
+| SHA | Path | Implementation |
+|---|---|---|
+| `ba2bdf3bec40814d66ece643479e2b698be11ba6` | `engine/fx/SpectraGpuProgram.h` | GPU VM eligibility now accepts `program::Field::Attribute0..7` for expression reads and assignment targets, retaining bounded op/stage policy |
+| `5a6f55e1dd5a9e29bc882d62260b8468ae552d34` | `engine/fx/SpectraGpuShaders.h` | Metal compute slot 11 `VmAttributes` (two float4), dynamic VM attribute reads and writes, fresh zeroed Spawn state, persistent Update state |
+| `8a166df5da816707abe5fcaa9f033b750d58768e` | `engine/fx/SpectraGpuParticles.h` | C++ 32-byte `ProgramAttributes` storage type, size assertion and resource handle |
+| `2f7dc457ea06848f1d7a83c46adda99ceebc1357` | `engine/fx/SpectraGpuParticles.cpp` | Allocate/initialize, bind, clear and destroy GPU attribute buffer; account for extra GPU memory |
+| `d385cd1148f8db89b0f8b370f57161751988ac80` | `engine/fx/SpectraGpuProgram.h` | Explicit ABI field-ID assertions for attributes 16..23 and params 24..31 |
+| `eac63124eb60d97251a3c05f78cea539c4e8519f` | `examples/spectrafx/gpu_vm_custom_attributes_v2.vfx.json` | Complete v2 additive billboard sample with named `intensity`, `attribute0` Spawn write and Update-driven tint alpha/size |
+| `1776d4fe2d18c9d81faa7d4fccc790828d78f4f9` | `engine/fx/SpectraGpuProgram.h` | Clarify that ABI source is opt-in executable via integrated Metal backend, not GPU validation proof |
+| `10d9d4a68ca5f9cc191139ccf76477459c7e31b8` | `engine/fx/SpectraGpuVmDispatch.h` | Safeguard standalone Metal VM utility: reject custom attributes because its separate shader has no persistent register buffer |
+| `917ef6fe19c7ed720c8b691bb79cb5e216892dd1`, `3b23167055727661a324a2b9f6f97af7de4deabc` | `docs/spectrafx.md` | CPU/GPU attribute semantics and Stage-26 numbering |
+| `a52ae7ca4b02c15f9bf4ce6b5b14cc69e65a2c7c`, `0c79d69863cb30c5a8ebbf36109b1296d5f4b07d` | `skills/visuals/aiverse-spectrafx/SKILL.md` | Agent integration guidance, strict CPU material fallback and stage numbering |
+| `19f34a3fb7d60b45652ca73e5f5e8b0470bdb4a9`, `0e84f29229758dd5ad09dd81b33d06837b512ade` | `AGENTS.md` | Stage 26 independent GPU attribute ownership, user-deferred testing and per-stage handoff rule |
+
+### Source/compute ABI and exact lifecycle
+
+1. `fx::SpectraParticleProgram` already supports writable scalar `attribute0..7` fields on the existing CPU renderer. The Stage-22 integrated GPU payload uses matching uint32 field IDs **16..23**; these are now approved by the conservative GPU VM compiler for both reads and writes. No new VM opcode or arbitrary external executable source is introduced.
+2. `ComputeParticles::ParticleState` remains exactly **64 bytes** and its expanded billboard vertex remains **40 bytes**. A separate **32-byte-per-slot** `ProgramAttributes` / MSL `VmAttributes { float4 a0,a1; }` buffer holds eight floats per stable physical particle slot. New compute resource slot **11** binds that buffer. This works with existing compute buffers 0..10 and the previous GPU indirect/host-gather paths, without changing RHI device signatures or index-buffer limits.
+3. Initial GPU allocation creates zeroed attribute state for all capacity slots. On every GPU Spawn, a newly allocated/reused slot starts with **zeroed** registers. Spawn VM expressions may write registers in sequence, and the finalized record is persisted. On every subsequent Update, the shader loads this slot's record, executes bounded VM code in order, then stores it back. VM statements can read attributes modified by earlier statements in the same stage.
+4. `ComputeParticles::clear()` zeroes GPU state and attributes only outside active render/compute encoders (existing RHI restriction); `releaseGpu()` destroys the attribute buffer, and `gpuBytes` includes its capacity. CPU bookkeeping remains outside authoritative game state. There is no readback of GPU particle attributes to CPU each frame.
+5. The version-2 sample `examples/spectrafx/gpu_vm_custom_attributes_v2.vfx.json` captures the named runtime instance parameter `intensity` into `attribute0` at Spawn and later reads `attribute0` on Update to set tint-alpha/size. `GraphRuntimeOptions::gpuProgram` remains **false by default**; only explicit opt-in and full whole-effect eligibility can attempt Metal. All other effects retain the full `ParticleSystem` implementation.
+6. **Important independent utility boundary:** `gpu_program::MetalVmPass` uses a different MSL shader and its inputs/outputs don't have custom-attribute registers. Its initializer now rejects attribute writes/reads rather than claiming capability incorrectly. Its other features from Stages 23-25 remain untouched.
+
+**Out of scope:** GPU arbitrary `shaderGraph`, Stage-21 `graphInputs` custom material bindings, custom animation rotations, `uid` fields, collision/trigger/death stages, sub-emitter callbacks, mesh/ribbon renderers, GPU lifetime allocator, Vulkan/GL/GLES/WebGL GPU VM. Persistent attributes may still affect visible GPU sprite output through VM writes to tint, size, position or velocity. No silent GPU downgrade of authored data is permitted; `RequireGpu` must remain strict.
+
+### Actual checks performed
+
+**GitHub source inspection and commits only; NOT RUN:** The user explicitly postponed tests until all desired functions are implemented. No native CMake configure/build, CTest, Visual Studio/Clang verification, Metal shader compiler, GPU compute dispatch/readback, FPS/RTS sample screenshot, perf benchmark, or CI-passing validation was run by this agent. Static ABI assertions are authored but **not** compiler-verified. Source commits are not evidence of tested runtime correctness.
+
+For the eventual deferred validation phase, run `./run-tests.sh` per AGENTS.md; specifically include SpectraFX graph/VM compiler checks, headless GPU command protocol, actual Apple Silicon MSL `cs_main` compile/simulation, per-particle attr persistence across Update and slot reuse, CPU vs GPU visual/numeric parity and GPU fallback for unsupported event/material stages. Record actual PASS/FAIL/SKIP and exact commit SHA only after executing those checks.
+
+### Limits and next FUNCTIONAL implementation
+
+- Stage 26 enables persistent GPU VM attributes in the **integrated Metal sprite emitter** but not generic GPU shader-graph material effects. Material binding of the CPU `graphInputs` channels to a GPU shader pipeline remains a separate capability that must be explicitly supported rather than ignored.
+- The standalone `MetalVmPass` still lacks attribute storage; it now fails explicitly if given a program containing those fields. Adding a caller-owned attribute buffer and matching standalone shader would be a separate source-compatible extension.
+- The fixed GPU particle pool remains per `ComputeParticles`, and CPU still owns birth/death slot bookkeeping; no cross-emitter GPU pool, global alpha-sorted transparency or true GPU-driven lifecycle.
+- **Next Stage 27:** implement a restricted GPU material output path for selected `attribute/param` values using the already available 40-byte vertex graph data, with strict output/source validation and fallback for unsupported shader graphs, then continue shared multi-emitter GPU resource pooling and scalability controls. Maintain genre independence and separate handoffs. Tests remain deferred until the user changes that instruction.
