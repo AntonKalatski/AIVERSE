@@ -26,7 +26,7 @@ struct WaterCascadeComponent {
 inline constexpr size_t kMaxWaterCascadePoints=128;
 inline bool validWaterCascade(const WaterCascadeComponent& c) {
     if(!c.enabled || c.points.size()<2 || c.points.size()>kMaxWaterCascadePoints ||
-       c.widthAxis.x==Fixed{} && c.widthAxis.y==Fixed{} ||
+       (c.widthAxis.x==Fixed{} && c.widthAxis.y==Fixed{}) ||
        c.foam<0_fx || c.foam>1_fx || c.speed<0_fx || c.speed>1000_fx)
         return false;
     for(size_t i=0;i<c.points.size();++i) {
@@ -134,7 +134,7 @@ inline void io(Archive& a,WaterCascadePoint& p) {
     a(p.position,p.halfWidth);
 }
 inline void io(Archive& a,WaterCascadeComponent& c) {
-    a(c.widthAxis,c.foam,c.speed,c.enabled);
+    a(c.widthAxis.x,c.widthAxis.y,c.foam,c.speed,c.enabled);
     const uint32_t count=a.count(c.points.size());
     if(count>kMaxWaterCascadePoints){a.fail();return;}
     if(!a.writing())c.points.assign(count,{});
