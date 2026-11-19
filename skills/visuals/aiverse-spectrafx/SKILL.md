@@ -882,3 +882,45 @@ the CPU preview or gameplay time. Check telemetry for
 Objective-C++/MSL, CTest, editor UI, Metal hardware and
 performance have NOT RUN. Source-level complexity
 improvements are not measured performance gains.
+
+## Stage 37 — staged attachment transactions, GPU reset and timeline
+
+For persistent genre-neutral VFX, `GpuEcsAttachmentPresenter` now
+**prevalidates** all declarations and resolved poses, stages new
+`PoolSourceId` handles, and only then retires old bindings.
+If staging or detach preflight fails, it releases staged sources and
+keeps the old presentation bindings. Changes to named graph
+definitions are detected through `GpuPoolWorld::sourceBindingCurrent()`
+even for paused sources. Plan spare `PoolWorldBudgets::maxSources`
+capacity during replacement because staging needs old + new handles
+simultaneously. GPU hardware failures *during* commit can still
+leave a partial detach; sync returns false and must be retried.
+
+GPU diagnostics now separate device-health, checked upload, compute
+encoder, pass ordering and reset failures. Unsupported hardware
+health is unknown, never reported as healthy without a Metal device.
+A group failing its GPU step must not render stale last-frame vertices.
+
+`ComputeParticles::tryClear()` provides an explicit checked reset.
+Reset on Metal **requires Device::beginFrame() to have been called**
+and no active render/compute encoder. `GpuPoolWorld::resetForRollback()`
+only clears CPU and source book-keeping after all GPU group uploads
+have been accepted. A partially failed reset marks the emitter dirty,
+blocks further births/simulation/checkpoints, and requires a retry.
+Multi-group GPU reset is best-effort, not a globally atomic operation.
+See updated native sample:
+`examples/spectrafx/native_ecs_attachments.h`.
+
+The opt-in Metal GPU preview has a **forward-only** simulation
+timeline with up to 300 fixed 1/60-second step requests, visual
+elapsed time, and a **Restart GPU** action at a safe pre-pass phase.
+It does not support reverse scrub, arbitrary snapshot restoration,
+or gameplay time manipulation. The loop follows visual time, not
+the editor wall clock.
+
+**Handoff:**
+`docs/agent-handoffs/spectrafx-stage-37-staged-ecs-gpu-reset-timeline-2026-11-19.md`.
+
+**Verification:** source commits and GitHub reads only; C++/Objective-C++,
+MSL, CTest, editor screenshots and Metal device/fault testing
+have **NOT RUN**. Never claim GPU correctness without execution.
