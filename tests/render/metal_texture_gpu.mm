@@ -6,6 +6,7 @@
 #include "engine/gfx/VirtualTextureFeedbackPass.h"
 #include "engine/gfx/VirtualTextureStreamer.h"
 #include "engine/gfx/VirtualTextureFileStreamer.h"
+#include "engine/gfx/VirtualTextureSampling.h"
 #include "engine/platform/Platform.h"
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -712,6 +713,143 @@ void gpuPhysicalVirtualAtlas(Device& dev) {
 }
 
 
+
+// Renders the *production* RGBA8 VT page-table indirection helper.
+// This proves that a shader samples the expected *physical* atlas slice,
+// instead of only inspecting the two GPU textures independently by blit.
+struct VtAtlasFragmentProbe {
+    Device& device;
+    TextureHandle atlas;
+    TextureHandle table;
+    TextureHandle color;
+    TextureHandle depth;
+    ShaderHandle shader;
+    PipelineHandle pipeline;
+    const Color fallback{18,79,181,255};
+
+    explicit VtAtlasFragmentProbe(Device& dev):device(dev) {}
+    VtAtlasFragmentProbe(const VtAtlasFragmentProbe&)=delete;
+    VtAtlasFragmentProbe& operator=(const VtAtlasFragmentProbe&)=delete;
+    ~VtAtlasFragmentProbe() { shutdown(); }
+
+    bool initialize(TextureHandle atlasHandle,TextureHandle tableHandle) {
+        atlas=atlasHandle; table=tableHandle;
+        const auto start=Clock::now();
+        TextureDesc output;
+        output.width=4;output.height=4;
+        output.format=PixelFormat::RGBA8;
+        output.mipLevels=1;
+        output.renderTarget=true;
+        color=device.createTexture(output);
+        output.format=PixelFormat::Depth;
+        depth=device.createTexture(output);
+        std::string msl=R"AVT(
+#include <metal_stdlib>
+using namespace metal;
+struct VTProbeOutput { float4 position [[position]]; };
+vertex VTProbeOutput vs_main(uint index [[vertex_id]]) {
+    float2 positions[3]={
+        float2(-1.0,-1.0),float2(3.0,-1.0),float2(-1.0,3.0)
+    };
+    VTProbeOutput out;
+    out.position=float4(positions[index],0.0,1.0);
+    return out;
+}
+)AVT";
+        // Canonical implementation shared by the real Model VT shader.
+        msl+=kVirtualTextureMSL;
+        msl+=R"AVT(
+fragment float4 fs_main(
+        VTProbeOutput in [[stage_in]],
+        texture2d_array<float, access::sample> physical [[texture(0)]],
+        texture2d_array<float, access::read> pageTable [[texture(1)]],
+        sampler physicalSampler [[sampler(0)]],
+        constant float4& uv [[buffer(1)]]) {
+    return aiverse_sample_virtual(
+        physical,pageTable,physicalSampler,uv.xy,0u,0.0f,
+        float4(18.0f/255.0f,79.0f/255.0f,181.0f/255.0f,1.0f),
+        0u,0u);
+}
+)AVT";
+        ShaderDesc sd;
+        sd.msl=msl.c_str();
+        sd.textureSlots=2;
+        sd.uniformSlots=1;
+        sd.label="MetalDiskVTAtlasShaderAcceptance";
+        shader=device.createShader(sd);
+        if (shader.valid()) {
+            PipelineDesc pd;
+            pd.shader=shader;
+            pd.attrCount=0;
+            pd.stride=0;
+            pd.indexType=IndexType::None;
+            pd.cull=CullMode::None;
+            pd.depthTest=false;
+            pd.depthWrite=false;
+            pd.colorFormat=PixelFormat::RGBA8;
+            pd.colorAttachmentCount=1;
+            pd.label="MetalDiskVTAtlasShaderAcceptance";
+            pipeline=device.createPipeline(pd);
+        }
+        const bool ok=color.valid() && depth.valid() &&
+                      shader.valid() && pipeline.valid();
+        if (!ok) {
+            ++failures;
+            std::fprintf(stderr,
+                "FAIL: native GPU VT indirection shader setup: %s\n",
+                device.lastError().c_str());
+            shutdown();
+            return false;
+        }
+        std::printf("TIMING disk VT shader_lookup_setup_ms=%.3f\n",
+                    elapsedMs(start,Clock::now()));
+        return true;
+    }
+
+    void expect(float u,float v,Color expected,const char* label) {
+        if (!pipeline.valid()) {
+            ++failures;
+            std::fprintf(stderr,"FAIL: %s shader pipeline unavailable\n",label);
+            return;
+        }
+        const float uv[4]={u,v,0.0f,0.0f};
+        device.beginFrame(16,16);
+        RenderTargetPassDesc pass;
+        pass.colorCount=1;
+        pass.colors[0].texture=color;
+        pass.colors[0].clear=true;
+        pass.depth.texture=depth;
+        pass.depth.clear=true;
+        if (!device.beginRenderTargets(pass)) {
+            ++failures;
+            std::fprintf(stderr,"FAIL: %s VT shader render pass: %s\n",
+                         label,device.lastError().c_str());
+            device.endFrame();
+            return;
+        }
+        device.setViewport({0,0,4,4});
+        device.setPipeline(pipeline);
+        device.setTexture(0,atlas);
+        device.setTexture(1,table);
+        device.setUniforms(0,uv,sizeof(uv));
+        device.draw(3);
+        device.endPass();
+        device.endFrame();
+        verifyReads(device,{
+            probe(color,0,0,4,4,solid(4,4,expected),label,1)
+        },"disk VT fragment atlas indirection");
+    }
+
+    void shutdown() {
+        if (pipeline.valid()) device.destroyPipeline(pipeline);
+        if (shader.valid()) device.destroyShader(shader);
+        if (color.valid()) device.destroyTexture(color);
+        if (depth.valid()) device.destroyTexture(depth);
+        pipeline={};shader={};color={};depth={};
+        atlas={};table={};
+    }
+};
+
 // Real disk worker -> render-thread GPU upload -> native Metal page-table
 // publication. No fake Device, synthetic worker result, or application scene.
 struct VtDiskFixture {
@@ -854,6 +992,8 @@ void gpuDiskBackedVirtualAtlas(Device& dev) {
           "disk-backed Metal VT allocates physical GPU textures");
     if (!atlas.valid() || !table.valid()) {stream.shutdown();return;}
 
+    VtAtlasFragmentProbe sampling(dev);
+    const bool samplingReady=sampling.initialize(atlas,table);
     const auto allInvalid=solid(4,4,invalid);
     const auto allCoarse=solid(4,4,{0,0,2,255});
     const auto coarseTicket=stream.requestPage(coarse,true);
@@ -864,6 +1004,9 @@ void gpuDiskBackedVirtualAtlas(Device& dev) {
         probe(table,0,0,4,4,allInvalid,
               "disk VT GPU page table invalid before worker pump")
     },"disk VT before publication");
+    if (samplingReady)
+        sampling.expect(0.875f,0.875f,sampling.fallback,
+                        "disk VT fragment uses fallback before first page");
     if (pumpDiskPage(stream,coarseTicket,coarse,true,
                      "disk VT pinned coarse page publication")) {
         check(stream.exactResidentPage(coarse) &&
@@ -876,6 +1019,12 @@ void gpuDiskBackedVirtualAtlas(Device& dev) {
             probe(table,0,0,4,4,allCoarse,
                   "disk VT coarse GPU page-table bytes")
         },"disk VT coarse GPU publication");
+        if (samplingReady) {
+            sampling.expect(0.125f,0.125f,Color{18,71,93,255},
+                            "disk VT fragment reads pinned coarse page");
+            sampling.expect(0.875f,0.875f,Color{18,71,93,255},
+                            "disk VT fragment samples coarse fallback at fine UV");
+        }
     }
 
     const auto missingTicket=stream.requestPage(missing);
@@ -891,6 +1040,9 @@ void gpuDiskBackedVirtualAtlas(Device& dev) {
             probe(table,0,0,4,4,allCoarse,
                   "disk VT missing-page preserves original GPU mapping")
         },"disk VT failed disk lookup");
+        if (samplingReady)
+            sampling.expect(0.375f,0.375f,Color{18,71,93,255},
+                            "disk VT fragment preserves coarse after failed disk read");
     }
 
     const auto fineTicket=stream.requestPage(fine);
@@ -912,6 +1064,12 @@ void gpuDiskBackedVirtualAtlas(Device& dev) {
             probe(table,0,0,4,4,tableWithFine,
                   "disk VT fine override in GPU page table")
         },"disk VT fine GPU publication");
+        if (samplingReady) {
+            sampling.expect(0.875f,0.875f,Color{82,196,41,255},
+                            "disk VT fragment samples fine physical atlas slice");
+            sampling.expect(0.125f,0.125f,Color{18,71,93,255},
+                            "disk VT fragment still samples pinned coarse elsewhere");
+        }
     }
 
     const auto replacementTicket=stream.requestPage(replacement);
@@ -937,7 +1095,14 @@ void gpuDiskBackedVirtualAtlas(Device& dev) {
             probe(table,0,0,4,4,tableWithReplacement,
                   "disk VT GPU table drops old fine, publishes replacement")
         },"disk VT LRU GPU republish");
+        if (samplingReady) {
+            sampling.expect(0.875f,0.875f,Color{18,71,93,255},
+                            "disk VT fragment drops evicted fine and uses coarse");
+            sampling.expect(0.125f,0.125f,Color{220,44,16,255},
+                            "disk VT fragment samples recycled slot with replacement bytes");
+        }
     }
+    sampling.shutdown();
     stream.shutdown();
     const auto inventory=dev.textureResources();
     check(std::none_of(inventory.begin(),inventory.end(),[&](const auto& x) {
