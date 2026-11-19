@@ -6200,3 +6200,49 @@ later verification.
 Next: wire the new program into model material binding and
 Terra's render submissions; concrete skinned/baked/morph
 vertex variants must follow ModelShaders.h ABI.
+
+
+## Stage 9Y — Renderer3D rigid model material program integration (2026-11-19)
+
+Code commits: 41a805dc266493d50a3c9bf4456b3f74f49698d2,
+3769b46423347112730678fc1e47dad8eddcc970.
+Documentation commit: 9602f747e64025188dd142e900068d376466147f.
+Changed/new: engine/render/VirtualTextureModelFeedback.h
+and docs/texture-rhi.md.
+Added render::VirtualTextureModelFeedback, a reusable,
+genre-independent bridge that creates eight pipeline variants
+(alpha mask x LOD fade x double-sided), connects existing
+Renderer3D model/masked/LOD callbacks, builds U0 feedback
+uniforms from Renderer3D::viewProj()*world, reproduces the
+exact base material affine KHR UV rotation and alpha cutoff,
+sets ordered-dither scene-pixel mapping, selects material
+base image and emits packed page requests through the
+RHI-native program introduced in stage 9X.
+Its resolver maps Model/Material to virtual base tile counts,
+layer, texture extent, mip policy and optional virtual UV
+scale/offset. Non-VT materials emit zero feedback IDs but
+still write feedback depth so they can occlude VT surfaces.
+The adapter owns a 1x1 RGBA8 white fallback for alpha-masked
+materials lacking an uploaded base color image. Explicit
+initialize(), connect(), disconnect(), shutdown() lifecycle;
+the caller separately installs the feedback pass into
+Renderer3D with setVirtualTextureFeedback(&pass,{},{})
+and pumps streaming via VirtualTextureFeedbackPass::updateStreaming.
+
+Limitations and caveats: the adapter presently handles only
+rigid position/UV ModelVertex. Deformed models still require
+the separate callback and correct GPU deformation pipeline.
+Terra producer registration is NOT performed here. The
+adapter's disconnect calls clearVirtualTextureModelFeedback,
+which currently also clears deformed callback state; owners
+must coordinate lifecycle. Resolver callbacks must not refer
+to stale model/material resources. Depth/alpha/LOD behavior
+requires visual and GPU validation, especially different
+viewport sizes and material graph overrides.
+Verification: GitHub source and documentation commits
+succeeded; native C++ build, CTest, GLSL/MSL compilation
+and GPU execution NOT RUN as requested.
+Next: implement concrete feedback deformation for
+skinned/baked/morphed models, coordinate with Terra agent to
+hook custom feedback producers, and complete RHI backend
+compatibility checks before the test pass.
