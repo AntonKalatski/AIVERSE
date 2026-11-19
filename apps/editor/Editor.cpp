@@ -1061,6 +1061,92 @@ bool Editor::saveSafeSpectraGpuReport(
     output=target.string();
     return true;
 }
+bool Editor::saveSafeSpectraGpuBundle(
+    std::string& output,size_t groupIndex) const {
+    const auto* pool=spectraGpuTelemetry_;
+    if(!pool || !pool->ready() || pool->presentationBlocked() ||
+       groupIndex>=pool->gpuGroupCount()) {
+        output="Safe ZIP requires a healthy pool and valid group";
+        return false;
+    }
+    std::vector<uint8_t> diagnostic;
+    std::string error;
+    if(!pool->exportFreshCheckpoint(groupIndex,diagnostic,
+            spectra::kGpuCheckpointExportMaxBytes,&error)) {
+        output="Safe ZIP needs an existing fresh GPU checkpoint: "+error;
+        return false;
+    }
+    const spectra::GpuDiagnosticInspection inspected=
+        spectra::inspectGpuCheckpointDiagnostic(diagnostic);
+    if(!inspected.structurallyValid()) {
+        output="Safe ZIP rejected invalid checkpoint CRC/header";
+        return false;
+    }
+    // Stronger policy than ordinary JSON report: every ZIP entry is created
+    // from strict fixed-schema aggregate values. Raw bytes are NEVER included
+    // regardless of sensitive checkboxes on the SpectraFX window.
+    std::vector<spectra::GpuSafeTimelineFrame> frames;
+    frames.reserve(spectraPreviewHistory_.size());
+    for(size_t i=0;i<spectraPreviewHistory_.size();++i) {
+        const auto& src=spectraPreviewHistory_[i];
+        spectra::GpuSafeTimelineFrame frame{};
+        frame.sample=uint32_t(i);
+        frame.estimatedParticles=src.estimatedParticles;
+        frame.freshGroups=src.freshGroups;
+        frame.staleGroups=src.staleGroups;
+        frame.pendingGroups=src.pendingGroups;
+        frame.killsAwaitingCompletion=src.killedSlotsWaiting;
+        frame.stepAccepted=src.stepAccepted;
+        frame.deviceHealthy=src.deviceHealthy;
+        frames.push_back(frame);
+    }
+    std::vector<uint8_t> zip;
+    if(!spectra::makeSafeGpuDiagnosticZip(inspected,frames,zip)) {
+        output="Safe ZIP exceeded 128 KiB or has invalid diagnostic state";
+        return false;
+    }
+    const fs::path directory=fs::path(platform::userDataDir())/
+                             "spectrafx-diagnostics";
+    std::error_code ec;
+    fs::create_directories(directory,ec);
+    if(ec) {
+        output="Cannot create SpectraFX diagnostic directory: "+ec.message();
+        return false;
+    }
+    const std::string filename="safe-bundle-"+
+        std::to_string(dev_?dev_->frameSerial():0)+
+        "-group-"+std::to_string(groupIndex)+".zip";
+    const fs::path target=directory/filename;
+    if(fs::exists(target,ec) || ec) {
+        output="Safe ZIP target already exists or cannot be checked";
+        return false; // do not overwrite a previous support package
+    }
+    const fs::path temporary=directory/(filename+".tmp");
+    {
+        std::ofstream out(temporary,std::ios::binary|std::ios::trunc);
+        if(!out) {
+            output="Cannot open SpectraFX safe ZIP temporary file";
+            return false;
+        }
+        out.write(reinterpret_cast<const char*>(zip.data()),
+                  std::streamsize(zip.size()));
+        out.flush();
+        if(!out) {
+            out.close();
+            fs::remove(temporary,ec);
+            output="Failed to write complete SpectraFX safe ZIP";
+            return false;
+        }
+    }
+    fs::rename(temporary,target,ec);
+    if(ec) {
+        fs::remove(temporary);
+        output="Cannot publish SpectraFX safe ZIP: "+ec.message();
+        return false;
+    }
+    output=target.string();
+    return true;
+}
 bool Editor::spectraGpuPreviewActive() const {
     return spectraPreviewGpu_ && spectraPreviewGpu_->ready();
 }
