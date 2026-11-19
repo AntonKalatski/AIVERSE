@@ -165,7 +165,12 @@ void Editor::shutdown() {
     sim_.reset();
     gameFx_.shutdown();
     fxTextures_.shutdown();
-    windows_.clear(); // windows release their viewports in their destructors via update()? keep simple: textures die with the device
+    // Shutdown-only barrier: all window RTs (including queued captures) must
+    // be retired before their owning device is released.
+    const bool editorGpuIdle=dev_->waitIdle();
+    if(editorGpuIdle)
+        for(auto& window:windows_)window->shutdownAfterGpuIdle(*this);
+    windows_.clear(); // unsupported waitIdle: device teardown owns unreclaimed GPU handles
     if (studioLogo_.valid()) { dev_->destroyTexture(studioLogo_); studioLogo_ = {}; }
     view_.shutdown(*dev_);
     postFx_.shutdown();
