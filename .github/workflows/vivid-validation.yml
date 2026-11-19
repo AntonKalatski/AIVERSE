@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/vivid-digital-humans
+      - feature/vivid-human-safe-publication
     paths:
       - 'engine/character/vivid/**'
       - 'tests/vivid/**'
