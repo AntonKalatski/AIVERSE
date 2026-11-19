@@ -319,3 +319,59 @@ project; no built-in SpectraFX particle asset is assumed. Call
 The adapter holds up to 256 handles and calls the actual
 `ParticleSystem::play` API. NEREID does not own particle ticking/rendering.
 **Tests remain deferred by explicit user direction.**
+
+## Stage 26/27 — ocean tile waves and universal waterfalls
+
+**Ocean/large boxes:** use `"rippleTileGrid": 4` (range 1..8) on an
+individual `nereidWater.surfaces[]` manifest entry. The water builder
+subdivides rectangular Box/Infinite water into a static N×N grid; one
+resident GPU mesh retains disjoint index ranges. Each range selects up
+to 16 NEREID ripple impulses based on the tile's true world AABB.
+Default 1 is backward-compatible. Avoid 8 on weak mobile devices
+unless profiling justifies up to 64 indexed draws per water body.
+Nonrectangular geometries currently use the legacy draw.
+
+**Waterfall/cascade geometry:** include
+`<aiverselib/water/NereidCascades.h>` and link
+`AIVERSE::lib_nereid_cascades`. For ECS-native projects set
+`NativeWaterPipelineConfig::enableCascades=true` to persist
+`WaterCascadeComponent`. The component is genre independent:
+`points[{position,halfWidth}]`, `widthAxis` (horizontal X/Z),
+`foam`, `speed`, `enabled`. Points descend monotonically, allow
+horizontal shelves, and represent a vertical water ribbon, not a
+separate water-contact volume.
+
+For a pure CPU mesh use
+`buildWaterCascadeMesh(cascade, WaterCascadeMeshOptions{})`.
+WorldScene's `nereidCascades` JSON is an optional presentation
+manifest (no legacy RTS migration), and native ECS hosts may call
+`setNereidCascades(snapshotNereidEcsCascades(world))` after a read
+barrier. Use the existing `WorldScene::update/draw/shutdown` device
+lifecycle. NEREID CascadeScene owns GPU handles; the existing
+Renderer3D `kDrawNereidCascade` flag disables incorrect horizontal
+planar reflections and enables animated vertical water streaks.
+
+Example scene fragment:
+```json
+{
+  "nereidCascades": {
+    "maxUploadsPerFrame": 2,
+    "sources": [{
+      "id": 3,
+      "widthAxis": [1,0],
+      "foam": 0.6,
+      "speed": 7,
+      "stepsPerSegment": 4,
+      "points": [[10,20,0,4],[12,9,0,5],[14,3,0,6]],
+      "style": {"opacity":0.75,"foamStrength":0.8}
+    }]
+  }
+}
+```
+
+This is a double-sided static/stepped waterfall mesh with animated
+visual normals, not a true fluid simulation or automatic SpectraFX
+spray. Keep ECS force, geometry, presentation, Prisma and SpectraFX
+responsibilities separate. The owner requests features before tests;
+no builds/tests should be claimed PASS without execution. See the
+newest sections of `docs/nereid/HANDOFF.md`.
