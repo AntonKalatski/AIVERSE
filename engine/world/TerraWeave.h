@@ -16,6 +16,8 @@ namespace aiverse::terraweave {
 inline constexpr int64_t kWorldLimitCm = 1000000000LL;
 
 enum class Biome : uint8_t { Ocean = 0, Tundra, Desert, Grassland, Forest, Wetland, Alpine };
+// Grass is stored in aggregated patches, never scattered as one ECS plant.
+enum class PlantHabit : uint8_t { Tree=0, Shrub=1, Grass=2 };
 constexpr uint32_t biomeBit(Biome biome) { return 1u << static_cast<unsigned>(biome); }
 constexpr uint32_t kLandBiomes = biomeBit(Biome::Tundra) | biomeBit(Biome::Desert) |
     biomeBit(Biome::Grassland) | biomeBit(Biome::Forest) |
@@ -78,6 +80,15 @@ struct FoliageSpecies {
     int32_t maxSlopePermille = 800;   // rise / run * 1000
     uint32_t scaleMinPermille = 850;
     uint32_t scaleMaxPermille = 1150;
+    PlantHabit habit = PlantHabit::Tree;
+    // 0..1e12 sim ticks, deterministic per-placement age selection.
+    uint64_t minAgeTicks = 0;
+    uint64_t maxAgeTicks = 0;
+    uint64_t matureTicks = 0;      // 0: already mature (old behavior)
+    uint64_t lifespanTicks = 0;    // 0: indefinite
+    uint32_t lightPermille = 1000;
+    uint32_t waterPermille = 1000;
+    uint32_t nutrientsPermille = 1000;
 };
 
 struct ScatterSettings {
@@ -93,6 +104,15 @@ struct FoliageInstance {
     int32_t heightCm = 0;
     uint32_t yawMilliDegrees = 0;     // 0..359999
     uint32_t scalePermille = 1000;
+    // Seeds/ages are independent of chunk boundaries, draw LOD and order.
+    // Individual grass blades are instead derived from a GrassPatch.
+    uint64_t ageTicks = 0;
+    uint64_t matureTicks = 0;
+    uint64_t lifespanTicks = 0;
+    uint32_t lightPermille = 1000;
+    uint32_t waterPermille = 1000;
+    uint32_t nutrientsPermille = 1000;
+    PlantHabit habit = PlantHabit::Tree;
     constexpr bool operator==(const FoliageInstance&) const = default;
 };
 
@@ -253,8 +273,15 @@ inline std::vector<FoliageInstance> scatter(const TerrainSettings& t, const Biom
     std::vector<const FoliageSpecies*> sorted;
     sorted.reserve(species.size());
     for (const auto& s : species) {
-        if (!s.weight || s.scaleMinPermille > s.scaleMaxPermille)
-            throw std::invalid_argument("TerraWeave species settings");
+        if (!s.weight || s.scaleMinPermille > s.scaleMaxPermille ||
+            s.habit>PlantHabit::Grass || s.habit==PlantHabit::Grass ||
+            s.maxAgeTicks<s.minAgeTicks ||
+            s.maxAgeTicks>1000000000000ULL ||
+            s.matureTicks>1000000000000ULL ||
+            s.lifespanTicks>1000000000000ULL ||
+            s.lightPermille>1000u || s.waterPermille>1000u ||
+            s.nutrientsPermille>1000u)
+            throw std::invalid_argument("TerraWeave species settings (grass uses patches)");
         sorted.push_back(&s);
     }
     std::sort(sorted.begin(), sorted.end(), [](const auto* a, const auto* b) {
@@ -309,9 +336,16 @@ inline std::vector<FoliageInstance> scatter(const TerrainSettings& t, const Biom
             if (!chosen) throw std::logic_error("TerraWeave scatter selection");
             const uint64_t variation = detail::mix64(h ^ 0x96325a3b789abd12ULL);
             const uint32_t span = chosen->scaleMaxPermille - chosen->scaleMinPermille;
+            const uint64_t ageSpan=chosen->maxAgeTicks-chosen->minAgeTicks;
+            const uint64_t age=chosen->minAgeTicks+
+                (ageSpan?detail::mix64(variation^0x39edce154c88aa71ULL)%
+                (ageSpan+1):0ULL);
             out.push_back({h, chosen->id, x, z, height,
                 static_cast<uint32_t>(variation % 360000ULL),
-                chosen->scaleMinPermille + static_cast<uint32_t>((variation >> 20) % (static_cast<uint64_t>(span) + 1))});
+                chosen->scaleMinPermille + static_cast<uint32_t>((variation >> 20) % (static_cast<uint64_t>(span) + 1)),
+                age,chosen->matureTicks,chosen->lifespanTicks,
+                chosen->lightPermille,chosen->waterPermille,
+                chosen->nutrientsPermille,chosen->habit});
         }
     return out;
 }
