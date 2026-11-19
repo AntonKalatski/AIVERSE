@@ -134,3 +134,22 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
   cmake --build ../AIVERSE-vivid/build/vivid --target aiverse_vivid_face_tests aiverse_vivid_morph_tests aiverse_vivid_sparse_tests aiverse_vivid_shape_tests -j 4
   ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^vivid_'
   ```
+
+## Stage 3D — 2026-11-19 — fix Xcode/Clang C++20 span compilation in shape test
+
+- **Branch**: `feature/vivid-digital-humans`. **Fix commit**: `9b7e5b1e8e2cd6a25a842a25da0437de7756c354`.
+- **Affected file**: `tests/vivid/shape_binding.cpp`. No runtime source, library API, ECS, network or persistence changes.
+- **User's Mac evidence (before fix)**: Xcode 26.2 SDK libc++ rejected six `FaceShapeBinding::compile(library, {{...}})` calls because C++20 `std::span<const ShapeRoute>` cannot be built implicitly from a braced initializer list. The log contains 6 primary compiler errors and 60 secondary `note:` diagnostics; no `warning:` entries. The test executable failed to build, so CTest reported `vivid_shape_binding (Not Run)`. The other three tests — `vivid_face`, `vivid_sparse_morph`, `vivid_morph_binding` — **passed** in the user's pre-fix run (3/4).
+- **Fix**: tests now use `rejectRoutes(library, std::initializer_list<ShapeRoute>)`, materialize an owned `std::vector<ShapeRoute>`, and pass it as a valid view to `compile`. All six invalid-input fixtures remain intact, including duplicate destinations; production API continues to accept `std::span<const ShapeRoute>` without acquiring ownership.
+- **Tests actually executed by this agent**: local isolated C++20 Clang `-fsyntax-only` example of the exact owned-vector-to-span helper passed with `-Wall -Wextra -Wpedantic -Werror` (no warnings). Static inspection confirmed six replacements and zero remaining braced-list direct calls in `shape_binding.cpp`. **Full AIVERSE Mac build, CTest and GPU tests NOT RUN** in this session; require user's follow-up run before marking 4/4.
+- **CI**: not run / not verified.
+- **Next exact step**: pull latest branch in existing `~/Projects/AIVERSE-vivid` worktree, configure/build all four VIVID tests, run `ctest --output-on-failure -R '^vivid_'`. If warnings or errors remain, capture the full unformatted build log and repair the first primary compiler diagnostic; do not mask compiler warnings.
+- **Mac commands**:
+  ```sh
+  cd ~/Projects/AIVERSE
+  git fetch origin feature/vivid-digital-humans
+  git -C ../AIVERSE-vivid switch --detach origin/feature/vivid-digital-humans
+  cmake -S ../AIVERSE-vivid -B ../AIVERSE-vivid/build/vivid -DAIVERSE_BUILD_TESTS=ON
+  cmake --build ../AIVERSE-vivid/build/vivid --target aiverse_vivid_face_tests aiverse_vivid_morph_tests aiverse_vivid_sparse_tests aiverse_vivid_shape_tests -j 4
+  ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^vivid_'
+  ```
