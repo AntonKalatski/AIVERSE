@@ -1985,3 +1985,44 @@ echo "auto-small exit=$?"
 ```
 
 For auto-small require `GPU-encoded ICB ... submissions=0 commands=0`, `changed_channels=0`, `exit=0`; capture CPU MDI breakdown and actual CPU MDI submissions. However, this existing fixture also contains legacy MDI assertions; if the new auto route uses ordinary instancing, inspect the fixture assumptions before interpreting a failure. Add a separate >=64-command stress fixture and GPU timestamps before making any claim about automatic performance benefit. Preserve all existing developer handoffs, no merging until acceptance.
+
+
+---
+
+## Stage 65 — Mac Studio AUTO-small runtime evidence and CPU bottleneck (2026-11-19)
+
+**Branch:** `perf/incremental-static-model-cache`; Draft PR #34. **Tested implementation:** Stage 64. **This stage is documentation only**, no production renderer code changes.
+
+### Owner's actual native test
+
+The owner rebuilt `aiverse_material_batches` successfully, then ran `AIVERSE_BATCH_CPU_TIMING=1 AIVERSE_BATCH_AUTO=1` with Metal GPU ICB enablement on the existing `indirect` fixture. Reported:
+
+```text
+material palette CPU checks=30 result=passed
+batch=0 shadow=32 opaque=32 total=66 error=
+CPU render benchmark direct: samples=6 median_ms=0.1548 p95_ms=0.1733 min_ms=0.1477 max_ms=0.1733
+CPU render benchmark batched: samples=6 median_ms=0.2290 p95_ms=0.2959 min_ms=0.1881 max_ms=0.2959
+batch=1 shadow=1 opaque=1 total=4 error=
+GPU-encoded ICB: supported=1 required=0 submissions=0 commands=0
+GPU ICB diagnostics: candidates=0 prepared=0 rejected=0 executeFailed=0 preflightGroups=0
+PBR colour indirect active=1 (before 32, after 1)
+CPU MDI: supported=1 submissions=2 commands=64
+CPU MDI stages pass=0 samples=1 scans=1 attempts=1 submitted=1 total_ms=0.04858 selection_ms=0.00200 grouping_ms=0.00571 scan_ms=0.00058 packing_ms=0.00075 pipeline_ms=0.01158 upload_ms=0.00142 submit_ms=0.02504
+CPU MDI stages pass=1 samples=1 scans=1 attempts=1 submitted=1 total_ms=0.02712 selection_ms=0.00033 grouping_ms=0.00112 scan_ms=0.00029 packing_ms=0.00050 pipeline_ms=0.00625 upload_ms=0.00054 submit_ms=0.01725
+changed_channels=0
+[metal-assets] libraries=0 sourceMisses=13 pipelines=19 pipelineFailures=0 archive=0 strict=0
+AUTO exit=0
+```
+
+AUTO **correctly rejected GPU-encoded ICB** (zero GPU encoded submissions) for this 32-command scene and retained CPU MDI (two submissions, 64 indirect commands). Pixel parity and exit=0 passed. However **AUTO did not select the measured faster Direct path**: Direct median 0.1548ms vs AUTO CPU MDI 0.2290ms, +0.0742ms or +47.93% synchronous CPU render() time. The architecture currently only makes the GPU ICB decision automatically; Direct/instancing vs CPU MDI still obeys a separate CPU MDI policy. Thus the user request for complete Direct/CPU MDI/GPU ICB automatic load balancing is **not yet implemented**.
+
+One measured shadow pass: `pipelineSetupMs=0.01158`, `backendSubmitMs=0.02504`; one opaque pass: `pipelineSetupMs=0.00625`, `backendSubmitMs=0.01725`. Combined pipeline+submit = 0.06012ms, approximately 79.4% of the combined reported model pass time 0.07570ms. These are just **one pass each**, not stable aggregates; stage sum need not exactly equal total due to timing boundaries. Command packing was only 0.00125ms combined. Do not claim scratch reuse fixes these dominant Metal backend costs.
+
+### Next agent implementation targets
+
+1. Add an explicit AUTO decision **for CPU MDI vs Direct/instancing**, not only GPU ICB. Use per-pass command count, stable CPU stage measurements and measured break-even; hysteresis and occasional re-probes. Preserve explicit user-forced modes and safe Direct fallback. Current 32 commands per pass are below likely economic threshold; make this measurable, not hardcoded as an asserted win.
+2. On the CPU side focus on `drawModelIndirectBatch` pipeline/state changes and the Metal indexed indirect submission implementation, rather than micro-optimizing packing that is already less than 2% of this observed trace. Inspect source-level hot path and cache invariants first.
+3. Add 60+ steady-state samples and balanced crossover order, preferably 1k/10k/100k objects, GPU elapsed timestamps, and per-pass stage histograms before enabling default AUTO.
+4. In a new AUTO fallback fixture, **do not assert indirect submission or lower draw count** when AUTO intentionally chooses Direct. Continue to assert screenshot parity, successful exit, and actual chosen-path counters.
+
+**Caveat:** These results do not demonstrate a real GPU-FPS regression. All timings are synchronous CPU wall time and only 6 whole-render samples per mode. Keep PR #34 Draft and flags OFF by default.
