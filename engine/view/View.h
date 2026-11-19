@@ -289,7 +289,7 @@ public:
             }
             const size_t level=selectModelLodLevel(obj.lods,distance,prior,
                                                    saved?obj.lodHysteresis:0.f);
-            if(saved)saved->level=level;
+            if(saved){saved->level=level;saved->seen=frameStamp_;}
             // Missing streamed distant LODs retain the nearest available
             // representation. The base graph still advances every frame.
             size_t visual=level;
