@@ -1207,3 +1207,55 @@ camera selection, multi-material and UV boundary parity, GPU selected
 cluster range draw execution with exclusive legacy fallback, lossy
 LOD quality/edge cracks, multi-world lifecycle, and GPU performance
 before considering a production default.
+
+
+## Stage 12 hardware verification — real Metal depth/multiview PASS (2026-11-19)
+
+Owner-supplied Mac Studio terminal output confirms **successful native
+compilation and runtime execution** of the Stage 12 manual fixture
+`aiverse_strata_metal_depth_multiview_parity`.
+
+- Earlier real Metal GPU compute selection fixture was rerun and
+  confirmed `[strata-metal] cases=5/5 status=PASSED`.
+- Earlier Stage 11 raster fixture was rerun and confirmed both
+  `Legacy/Fine changed_channels=0` and
+  `Legacy/Coarse changed_channels=0`, with
+  `[strata-raster] status=PASSED frames=44`.
+- **Stage 12** captured all **8 main-camera RGBA** images
+  (800×600, 1,920,000 bytes each) and **8 sun shadow Depth32Float**
+  maps (512×512, 262,144 float samples each), covering
+  Empty/Legacy/Strata Fine/Strata Coarse for two distinct cameras.
+  Every GPU callback completed, including asynchronous depth
+  readbacks and delayed colour screenshots.
+- Exact parity, camera 0:
+  `color_fine=0 color_coarse=0 depth_fine_bytes=0 depth_coarse_bytes=0`.
+- Exact parity, camera 1:
+  `color_fine=0 color_coarse=0 depth_fine_bytes=0 depth_coarse_bytes=0`.
+- Raw maps were nonempty and had a nonconstant model contribution:
+  `nonclear_shadow_samples=73179` (view 0),
+  `nonclear_shadow_samples=34765` (view 1).
+- PASS messages confirmed independent camera views, exact
+  main-colour parity, exact **real GPU depth-texture parity** and
+  exclusive model submission:
+  `[strata-depth] status=PASSED views=2 modes=4 frames=89`.
+- Metal reported
+  `[metal-assets] libraries=0 sourceMisses=11 pipelines=16 pipelineFailures=0 archive=0 strict=0`
+  for the Stage 12 run.
+
+The previous documentation's `NOT RUN` status describes the
+*pre-verification state* and is superseded by this actual Mac Studio
+output. The owner did not print `git rev-parse HEAD` in the log;
+the exact **tested** commit SHA therefore remains unverified and
+must not be guessed.
+
+**Proof scope:** The fixture uses intentionally **lossless**
+parent/leaf cluster geometry. It validates two real main views
+and the sun shadow **raw depth bytes**, not merely shadow draw
+counters. It does NOT establish reflection render-target parity,
+different materials and UV seams, intentionally lossy LODs,
+cross-chunk crack prevention, real GPU-selected draw submission,
+production Strata/Legacy routing, memory streaming,
+cross-backend Vulkan parity or performance. Those are explicit
+next gates. All production Strata render paths remain default-OFF;
+the original `Renderer3D` remains authoritative and `main`
+is not modified by this verification.
