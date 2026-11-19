@@ -4,11 +4,13 @@
 #include "StrataModelAdapter.h"
 #include "StrataView.h"
 #include "StrataGpuScene.h"
+#include "StrataGpuCulling.h"
 #endif
 #include <algorithm>
 #include <numeric>
 #include <set>
 #include <tuple>
+#include <utility>
 
 namespace aiverse::render {
 namespace {
@@ -32,7 +34,7 @@ bool sameBoundMaterial(Material a,Material b,const std::vector<Image>& images){
 }
 float scaleBound(const mat4& m){float sum=0;for(int r=0;r<3;++r)for(int c=0;c<3;++c)sum+=m.at(r,c)*m.at(r,c);return std::sqrt(sum);}
 }
-void GeometryScene::shutdown(gfx::Device& dev){if(strataGpuMetadata_)strataGpuMetadata_->shutdown(dev);strataGpuMetadata_.reset();strataStaging_.reset();for(auto& g:groups_)if(g.proxy)releaseModel(dev,*g.proxy);for(auto& [k,m]:models_)if(m)releaseModel(dev,*m);models_.clear();instances_.clear();groups_.clear();warnings_.clear();stats_={};proxyVertices_=0;}
+void GeometryScene::shutdown(gfx::Device& dev){if(strataGpuCulling_)strataGpuCulling_->shutdown(dev);strataGpuCulling_.reset();if(strataGpuMetadata_)strataGpuMetadata_->shutdown(dev);strataGpuMetadata_.reset();strataGpuDevice_=nullptr;strataStaging_.reset();for(auto& g:groups_)if(g.proxy)releaseModel(dev,*g.proxy);for(auto& [k,m]:models_)if(m)releaseModel(dev,*m);models_.clear();instances_.clear();groups_.clear();warnings_.clear();stats_={};proxyVertices_=0;}
 bool GeometryScene::strataStagingSupported() const {
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
     return true;
@@ -50,6 +52,69 @@ gfx::BufferHandle GeometryScene::strataGpuMetadataBuffer(const std::string& sour
 #else
     (void)sourceKey;
     return {};
+#endif
+}
+
+bool GeometryScene::collectStrataGpuInstances(
+    const std::string& sourceKey,
+    std::vector<strata::GpuSceneInstance>& out) const {
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    if (!strataStaging_) return false;
+    const auto modelIt = models_.find(sourceKey);
+    const auto* asset = strataStaging_->find(sourceKey);
+    if (modelIt == models_.end() || !modelIt->second || !asset ||
+        asset->primitives.empty()) return false;
+    const Model& source = *modelIt->second;
+    if (source.bindWorld.size() != source.nodes.size() ||
+        source.order.empty()) return false;
+    std::vector<strata::GpuSceneInstance> instances;
+    uint32_t token = 1;
+    for (const Instance& sceneInstance : instances_) {
+        if (sceneInstance.model != &source) continue;
+        for (const int nodeId : source.order) {
+            if (nodeId < 0 || size_t(nodeId) >= source.nodes.size())
+                return false;
+            const Node& node = source.nodes[size_t(nodeId)];
+            if (node.mesh < 0) continue;
+            if (size_t(node.mesh) >= source.meshes.size()) return false;
+            const mat4 world = sceneInstance.world *
+                               source.bindWorld[size_t(nodeId)];
+            for (size_t p = 0; p < asset->primitives.size(); ++p) {
+                if (asset->primitives[p].mesh != uint32_t(node.mesh)) continue;
+                if (instances.size() >= 4096) return false;
+                instances.push_back(strata::makeGpuSceneInstance(
+                    world, uint32_t(p), token++));
+            }
+        }
+    }
+    if (instances.empty()) return false;
+    out = std::move(instances);
+    return true;
+#else
+    (void)sourceKey; (void)out;
+    return false;
+#endif
+}
+
+bool GeometryScene::dispatchStrataGpuView(
+    gfx::Device& device, const std::string& sourceKey,
+    const strata::GpuPassConfig& pass, uint64_t frameSerial,
+    strata::GpuSelectionSubmission& out) {
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    if (!strataGpuCullingEnabled_ || !strataStagingEnabled_ ||
+        !strataGpuMetadataEnabled_ || !strataGpuMetadata_ ||
+        strataGpuDevice_ != &device) return false;
+    const auto metadata = strataGpuMetadataBuffer(sourceKey);
+    if (!metadata.valid()) return false;
+    std::vector<strata::GpuSceneInstance> instances;
+    if (!collectStrataGpuInstances(sourceKey, instances)) return false;
+    if (!strataGpuCulling_)
+        strataGpuCulling_ = std::make_shared<strata::GpuClusterCulling>();
+    return strataGpuCulling_->dispatch(device, metadata, instances,
+                                      pass, frameSerial, out);
+#else
+    (void)device; (void)sourceKey; (void)pass; (void)frameSerial; (void)out;
+    return false;
 #endif
 }
 
@@ -176,6 +241,7 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
         for(auto& [k,m]:models_)if(!uploadModel(dev,*m)||!m->vb.valid()||!m->ib.valid())throw std::runtime_error("geometry scene: source GPU upload failed");
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
         if (strataGpuMetadataEnabled_ && strataStaging_) {
+            strataGpuDevice_ = &dev;
             // Optional GPU metadata only; source Model remains owner of
             // GlobalGeometryPool VB/IB and legacy Renderer3D draws unchanged.
             // Failure to allocate metadata must never abort the scene.
