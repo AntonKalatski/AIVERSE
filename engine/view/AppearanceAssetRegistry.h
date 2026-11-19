@@ -239,6 +239,53 @@ public:
         }
     }
 
+    // Adopt an ALREADY compiled/validated host appearance without reloading
+    // textures or recompiling its AnimationGraph. Useful when a native host
+    // staged multiple RTS/scene choices and must publish them as one outer
+    // frame-boundary transaction. Does not own Model/GPU resources or clocks.
+    bool publishPrepared(const std::string& key,const Asset& prepared,
+                         std::string* error=nullptr) {
+        if(error)error->clear();
+        try {
+            if(key.empty() || !prepared.model)
+                throw std::invalid_argument("prepared appearance needs key/model");
+            if(prepared.graph && !prepared.sourceId)
+                throw std::invalid_argument("prepared animated appearance needs sourceId");
+            if(prepared.materials.size()<prepared.model->materials.size())
+                throw std::invalid_argument("prepared materials missing base entries");
+            for(const int index:prepared.nodeMaterial)
+                if(index < -1 || (index>=0 &&
+                    size_t(index)>=prepared.materials.size()))
+                    throw std::invalid_argument("prepared node material index invalid");
+            if(versionSerial_==std::numeric_limits<uint64_t>::max())
+                throw std::overflow_error("prepared appearance version overflow");
+            const auto old=find(key);
+            auto next=std::make_shared<Asset>(prepared);
+            next->version=versionSerial_+1;
+            if(next->graph) {
+                if(old && old->graph==next->graph &&
+                   old->model==next->model &&
+                   old->sourceId==next->sourceId)
+                    next->generation=old->generation;
+                else {
+                    if(animationSerial_==std::numeric_limits<uint64_t>::max())
+                        throw std::overflow_error("prepared graph generation overflow");
+                    next->generation=animationSerial_+1;
+                }
+            }else next->generation=0;
+            assets_.insert_or_assign(key,std::move(next));
+            ++versionSerial_;
+            if(assets_.at(key)->graph)
+                animationSerial_=std::max(animationSerial_,
+                                          assets_.at(key)->generation);
+            dirty_.erase(key);dirtyGraph_.erase(key);
+            return true;
+        }catch(const std::exception& ex) {
+            if(error)*error=ex.what();
+            return false;
+        }
+    }
+
     void erase(const std::string& key) {
         assets_.erase(key);
         dirty_.erase(key);
