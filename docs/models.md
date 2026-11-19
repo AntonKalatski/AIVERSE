@@ -1603,3 +1603,38 @@ previews use the same portable named playback idea.
 [Stage 144 handoff](agent-handoffs/animation-stage144-named-playback-source-reload-2026-11-19.md).
 **NOT RUN:** native CMake/C++/CTest, GPU/driver source reload,
 FPS/RTS/editor playback screenshot parity or sanitizer/performance.
+
+
+## Stage 145 — generic ECS playback through validated Model asset epochs
+
+The generic presentation-only `MotionWeaveSourceBridge` now checks
+logical entity `generation` separately from Model publication
+`modelPublicationGeneration`. During a source change, the bridge uses
+an immutable, exact copy of old node names and parent indices rather
+than dereferencing the retired Model to compare rigs. New sources
+publish a fresh copied signature, shared among actors referencing the
+same authored Model during that sync. Absent/forgotten sources discard
+their copied signature.
+
+Compatible named Graph states and clip phases may carry to a NEW
+nonzero Model epoch when the previous epoch was also nonzero, the
+logical entity generation stayed fixed, the hierarchy matches and the
+new Model has a distinct pointer. An in-place same-pointer reimport
+must restart, because old compiled graph clip metadata cannot be
+trusted after mutation. Graph changes at unchanged Model epoch retain
+their existing compatible playback contract. ECS creates one new
+GraphInstance for the replacement and consumes its portable one-shot
+clock; failure restarts and drops the old clock, with no native solver,
+event, root-motion or GPU pointer transfer.
+
+The prior CPU Model and compiled Graph MUST outlive the synchronous
+bridge `sync` snapshot operation: the graph still reads its own
+old clip names/durations while capturing time. This bridge does not
+own CPU Model leases or GPU retirement tokens. For a host that calls
+`forget()` before replacing the Model, Stage 146 must provide a
+pre-retirement clock capture API rather than reading an already
+destroyed old Model.
+
+[Stage 145 handoff](agent-handoffs/animation-stage145-generic-ecs-source-epoch-playback-2026-11-19.md).
+**NOT RUN:** native CMake/C++/CTest, Metal/Vulkan/GL, sanitizer, source
+hot-reload visual test, GPU failure injection or benchmarks.
