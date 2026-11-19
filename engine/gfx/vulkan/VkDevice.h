@@ -136,6 +136,8 @@ public:
     bool setWindow(const VulkanWindow* window);
 
     const DeviceInfo& info() const override { return info_; }
+    // Descriptor limits are device-dependent, not necessarily 16.
+    int maxFragmentTextureSlots() const override { return textureSlots_; }
     const std::string& lastError() const override { return error_; }
     bool supports(PixelFormat f) const override;
     std::vector<TextureResourceInfo> textureResources() const override;
