@@ -44,6 +44,11 @@ public:
         uint64_t strataDiskBytesRead=0, strataDiskReadFailures=0;
         uint64_t strataDiskPending=0, strataDiskReadyBytes=0;
         uint64_t strataStreamingGpuTransferBytes=0;
+        // All live GeometryScenes sharing one gfx::Device contribute to the
+        // same reservation ledger. Excludes source model buffers and in-flight
+        // internal backend copies; see Stage 15.4 handoff.
+        uint64_t strataDeviceReservedIndexBytes=0;
+        uint32_t strataDeviceIndexLeases=0, strataGlobalBudgetDeclined=0;
     };
     void load(gfx::Device& dev, const Json& json, const FileReader& reader);
     // Procedural/offline callers may supply immutable CPU models instead of files.
@@ -96,6 +101,16 @@ public:
     }
     size_t strataStreamingSceneBudgetBytes() const {
         return strataStreamingSceneBudgetBytes_;
+    }
+    // Optional cap shared by all live GeometryScenes on the SAME gfx::Device.
+    // Must be identical across simultaneously loaded worlds; conflicting
+    // limits decline Strata streaming and retain Legacy for that scene.
+    // Configure before load. Zero inherits an existing device limit.
+    void setStrataGlobalIndexBudgetBytes(size_t bytes) {
+        strataGlobalIndexBudgetBytes_=bytes;
+    }
+    size_t strataGlobalIndexBudgetBytes() const {
+        return strataGlobalIndexBudgetBytes_;
     }
     // Stage 15.2: Metal/Vulkan stable index pages with checked subrange
     // uploads and fence-retired slot reuse. GLES3/GL33 retain generation
@@ -198,6 +213,8 @@ private:
     // Sources live until scene shutdown; aliases live until the following
     // draw epoch, after Renderer3D has consumed all ModelDraw pointers.
     std::map<const Model*, std::shared_ptr<strata::PortableSource>> strataPortableSources_;
+    // Reservation tokens are released AFTER GPU sidecars are destroyed.
+    std::map<const Model*,uint64_t> strataGlobalIndexLeases_;
     std::map<const Instance*, std::unique_ptr<Model>> strataPortableDrawModels_;
     gfx::Device* strataGpuDevice_ = nullptr; // borrowed owner-thread validation
     std::vector<Instance> instances_;
@@ -212,6 +229,7 @@ private:
     bool strataPortableRenderingEnabled_=false;
     size_t strataStreamingIndexBudgetBytes_=0;
     size_t strataStreamingSceneBudgetBytes_=0;
+    size_t strataGlobalIndexBudgetBytes_=0;
     bool strataIncrementalIndexStreamingEnabled_=false;
     size_t strataStreamingUploadBudgetBytes_=0;
     size_t strataStreamingFrameUploadBudgetBytes_=0;
