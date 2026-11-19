@@ -99,6 +99,8 @@ public:
         }
         if(!message_.empty()) ImGui::TextWrapped("%s",message_.c_str());
         ImGui::Separator();
+        drawQuickControls();
+        ImGui::Separator();
         if(selected_=="@routes") {
             ImGui::TextWrapped("Optional eventType -> GPU emitter asset routes (version 1). "
                                "Only local-player events are permitted; hidden enemy events "
@@ -157,6 +159,125 @@ private:
 }
 )JSON";
     }
+    // Edits always pass through the same strict authoring parsers used by
+    // project runtime. Invalid intermediate combinations are rejected;
+    // the original JSON and its unsaved changes are preserved.
+    bool applyDraft(Json changed) {
+        std::string issue;
+        if(selected_=="@routes") {
+            fx::SpectraFxGpuRouteAsset::Routes routes;
+            if(!fx::SpectraFxGpuRouteAsset::read(changed,routes,&issue)) {
+                message_=issue;return false;
+            }
+        } else {
+            fx::SpectraFxHybridEmitter::Config effect;
+            if(!fx::SpectraFxGpuEmitterAsset::read(changed,effect,&issue)) {
+                message_=issue;return false;
+            }
+        }
+        text_=changed.dump(2);
+        dirty_=text_!=saved_;
+        message_.clear();
+        return true;
+    }
+    void drawQuickControls() {
+        Json doc;
+        try {doc=Json::parse(text_);}
+        catch(const std::exception&) {
+            ImGui::TextDisabled("Quick controls require valid JSON syntax.");
+            return;
+        }
+        if(!doc.isObject()) return;
+        if(!ImGui::CollapsingHeader("Quick settings",ImGuiTreeNodeFlags_DefaultOpen))
+            return;
+
+        if(selected_=="@routes") {
+            const std::string oldQuality=doc.getStr("sceneQuality","");
+            const char* qualities[]={"Project default","Off","Low","Medium","High"};
+            const char* values[]={"","off","low","medium","high"};
+            int selection=0;
+            for(int i=1;i<5;++i)
+                if(oldQuality==values[i]) selection=i;
+            if(ImGui::Combo("Scene quality",&selection,qualities,5)) {
+                if(selection==0) doc.erase("sceneQuality");
+                else doc.set("sceneQuality",Json::string(values[selection]));
+                applyDraft(std::move(doc));
+                return;
+            }
+            float gpuBudget=float(doc["gpuFrameBudgetMs"].toDouble(0));
+            if(ImGui::DragFloat("GPU frame budget (ms)",&gpuBudget,
+                                0.05f,0.0f,1000.0f,"%.2f")) {
+                doc.set("gpuFrameBudgetMs",Json::number(
+                        double(std::clamp(gpuBudget,0.0f,1000.0f)),2));
+                applyDraft(std::move(doc));
+                return;
+            }
+            float spawnFloor=float(doc["minGpuSpawnScale"].toDouble(0.25));
+            if(ImGui::SliderFloat("Minimum GPU spawn scale",&spawnFloor,
+                                  0.0f,1.0f,"%.2f")) {
+                doc.set("minGpuSpawnScale",Json::number(double(spawnFloor),3));
+                applyDraft(std::move(doc));
+                return;
+            }
+            ImGui::TextDisabled("Frame budget 0 disables adaptive scaling.");
+            ImGui::TextDisabled("Edit event mappings in the JSON below.");
+            return;
+        }
+
+        const char* modes[]={"Auto","CPU only","GPU preferred"};
+        const std::string mode=doc.getStr("preference","auto");
+        int backend=mode=="cpu"?1:mode=="gpu"?2:0;
+        if(ImGui::Combo("Execution mode",&backend,modes,3)) {
+            const char* selected=backend==1?"cpu":backend==2?"gpu":"auto";
+            doc.set("preference",Json::string(selected));
+            applyDraft(std::move(doc));
+            return;
+        }
+        const char* levels[]={"Off","Low","Medium","High"};
+        const char* levelValues[]={"off","low","medium","high"};
+        const std::string level=doc.getStr("quality","high");
+        int quality=3;
+        for(int i=0;i<4;++i)
+            if(level==levelValues[i]) quality=i;
+        if(ImGui::Combo("Authored emitter quality",&quality,levels,4)) {
+            doc.set("quality",Json::string(levelValues[quality]));
+            applyDraft(std::move(doc));
+            return;
+        }
+        int capacity=int(doc.getInt("particles",256));
+        if(ImGui::SliderInt("GPU particle capacity",&capacity,1,65536)) {
+            doc.set("particles",Json::number(int64_t(capacity)));
+            applyDraft(std::move(doc));
+            return;
+        }
+        bool allowFallback=doc.getBool("allowCpuFallback",true);
+        if(ImGui::Checkbox("Allow CPU fallback",&allowFallback)) {
+            doc.set("allowCpuFallback",Json::fromBool(allowFallback));
+            applyDraft(std::move(doc));
+            return;
+        }
+        bool indirect=doc.getBool("gpuIndirectCompaction",false);
+        if(ImGui::Checkbox("Metal indirect compaction (experimental)",&indirect)) {
+            doc.set("gpuIndirectCompaction",Json::fromBool(indirect));
+            applyDraft(std::move(doc));
+            return;
+        }
+        bool sorted=doc.getBool("gpuSortAlpha",false);
+        if(ImGui::Checkbox("Metal alpha sort (experimental)",&sorted)) {
+            doc.set("gpuSortAlpha",Json::fromBool(sorted));
+            applyDraft(std::move(doc));
+            return;
+        }
+        bool unsorted=doc.getBool("allowUnsortedAlpha",false);
+        if(ImGui::Checkbox("Allow unsorted GPU alpha",&unsorted)) {
+            doc.set("allowUnsortedAlpha",Json::fromBool(unsorted));
+            applyDraft(std::move(doc));
+            return;
+        }
+        ImGui::TextDisabled("Alpha GPU sorting requires additive=false and no compaction.");
+        ImGui::TextDisabled("Remaining authoring fields are editable in the JSON below.");
+    }
+
     void refresh() {
         files_.clear();
         if(project_.empty()) return;
