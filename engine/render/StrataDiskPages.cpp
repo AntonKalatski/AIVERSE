@@ -1,5 +1,7 @@
 #include "StrataDiskPages.h"
+#include "StrataStreamingCoordinator.h"
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <condition_variable>
 #include <cstring>
@@ -139,10 +141,88 @@ struct DiskIndexPages::State {
     std::set<Key> failures;
     std::map<Key,std::vector<uint32_t>> pages;
     size_t readyLimit=0, queuedLimit=0, readyBytes=0;
-    bool stop=false;
-    std::thread worker;
+    std::atomic<bool> cancelled{false};
+    bool stop=false, scheduled=false;
     DiskPageStats counters;
 };
+
+// scheduleLocked is called only under State::mutex. A single shared-worker
+// task per archive permits fair rotation across many simultaneous worlds.
+bool DiskIndexPages::scheduleLocked(const std::shared_ptr<State>& state) {
+    if(state->stop || state->scheduled || state->queue.empty())return true;
+    state->scheduled=true;
+    if(!submitSharedDiskJob([state]{serviceOne(state);})){ 
+        state->scheduled=false;
+        ++state->counters.queueRefused;
+        return false;
+    }
+    return true;
+}
+
+void DiskIndexPages::serviceOne(const std::shared_ptr<State>& state) {
+    Key key{};
+    Entry entry{};
+    size_t bytes=0;
+    {
+        std::lock_guard lock(state->mutex);
+        if(state->stop || state->queue.empty()){
+            state->scheduled=false;
+            return;
+        }
+        key=state->queue.front();
+        state->queue.pop_front();
+        if(!state->desired.count(key)){
+            state->pending.erase(key);
+            state->scheduled=false;
+            (void)scheduleLocked(state);
+            return;
+        }
+        entry=state->entries.at(key);
+        bytes=size_t(entry.count)*sizeof(uint32_t);
+        if(bytes>state->readyLimit-state->readyBytes){
+            // Do not hold a globally shared worker blocked on one scene's
+            // full CPU cache; consume()/retainRequested() will reschedule.
+            state->queue.push_front(key);
+            state->scheduled=false;
+            return;
+        }
+    }
+    if(!acquireSharedDiskReady(bytes,state->cancelled)){
+        std::lock_guard lock(state->mutex);
+        state->pending.erase(key);
+        if(!state->stop){
+            state->failures.insert(key);
+            ++state->counters.failedReads;
+        }
+        state->scheduled=false;
+        (void)scheduleLocked(state);
+        return;
+    }
+    std::vector<uint32_t> payload;
+    const bool okay=readPage(state->path,entry,payload);
+    bool keep=false;
+    {
+        std::lock_guard lock(state->mutex);
+        state->pending.erase(key);
+        if(!state->stop){
+            if(okay){
+                ++state->counters.completedReads;
+                state->counters.bytesRead+=bytes;
+                if(state->desired.count(key)){
+                    state->readyBytes+=bytes;
+                    state->pages[key]=std::move(payload);
+                    keep=true;
+                }
+            }else if(state->desired.count(key)){
+                state->failures.insert(key);
+                ++state->counters.failedReads;
+            }
+        }
+        state->scheduled=false;
+        (void)scheduleLocked(state);
+    }
+    if(!keep)releaseSharedDiskReady(bytes);
+}
 
 DiskIndexPages::DiskIndexPages()=default;
 DiskIndexPages::~DiskIndexPages(){close();}
@@ -252,7 +332,7 @@ bool DiskIndexPages::open(const std::string& path,const ModelAsset& asset,
        dataOffset>size)
         return fail(error,"STRATA archive header/signature is invalid");
 
-    auto next=std::make_unique<State>();
+    auto next=std::make_shared<State>();
     next->path=path;
     next->readyLimit=readyBudgetBytes;
     next->queuedLimit=maxRequests;
@@ -288,61 +368,8 @@ bool DiskIndexPages::open(const std::string& path,const ModelAsset& asset,
     if(next->entries.size()!=expectedPages || previousEnd!=size)
         return fail(error,"STRATA archive payload length mismatch");
 
-    // Worker owns State only while DiskIndexPages owns it; close() signals,
-    // wakes and joins before State, ModelAsset or scene can be destroyed.
-    State* state=next.get();
-    try {
-    state->worker=std::thread([state]() {
-        for(;;) {
-            Key key;
-            Entry entry;
-            {
-                std::unique_lock lock(state->mutex);
-                state->cv.wait(lock,[&]{return state->stop||!state->queue.empty();});
-                if(state->stop)return;
-                key=state->queue.front();
-                state->queue.pop_front();
-                entry=state->entries.at(key);
-                if(!state->desired.count(key)){
-                    state->pending.erase(key);
-                    continue;
-                }
-                // Avoid reading an unbounded number of ready pages when
-                // the render thread cannot consume them this frame.
-                const size_t bytes=size_t(entry.count)*4u;
-                state->cv.wait(lock,[&]{
-                    return state->stop || !state->desired.count(key) ||
-                        bytes<=state->readyLimit-state->readyBytes;
-                });
-                if(state->stop)return;
-                if(!state->desired.count(key)){
-                    state->pending.erase(key);
-                    continue;
-                }
-            }
-            std::vector<uint32_t> data;
-            const bool good=readPage(state->path,entry,data);
-            {
-                std::lock_guard lock(state->mutex);
-                state->pending.erase(key);
-                if(good){
-                    ++state->counters.completedReads;
-                    state->counters.bytesRead+=uint64_t(entry.count)*4u;
-                    if(state->desired.count(key)){
-                        state->readyBytes+=data.size()*4u;
-                        state->pages[key]=std::move(data);
-                    }
-                }else{
-                    state->failures.insert(key);
-                    ++state->counters.failedReads;
-                }
-            }
-            state->cv.notify_all();
-        }
-    });
-    } catch (const std::system_error&) {
-        return fail(error,"STRATA disk worker could not start");
-    }
+    // No per-source thread. Requests are serviced by the process-wide
+    // bounded pool; each archive schedules at most one job at a time.
     state_=std::move(next);
     return true;
 #endif
