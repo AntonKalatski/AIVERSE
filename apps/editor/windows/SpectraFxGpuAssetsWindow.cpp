@@ -11,6 +11,7 @@
 #include "../EditorUtil.h"
 #include "engine/fx/SpectraFxGpuEmitterAsset.h"
 #include "engine/fx/SpectraFxGpuEmitterLibrary.h"
+#include "engine/fx/SpectraFxGpuRoutes.h"
 
 namespace aiverse::editor {
 namespace fs = std::filesystem;
@@ -41,6 +42,11 @@ public:
         ImGui::BeginChild("##gpu_asset_list",ImVec2(200,0),
                           ImGuiChildFlags_Borders|ImGuiChildFlags_ResizeX);
         if(ImGui::Button("Refresh list")) refresh();
+        if(ImGui::Selectable("Event routes (routes.json)",selected_=="@routes")) {
+            if(dirty_) { pending_="@routes";pendingCreate_=false; }
+            else load("@routes");
+        }
+        ImGui::Separator();
         for(const auto& name:files_) {
             if(ImGui::Selectable(name.c_str(),selected_==name)) {
                 if(dirty_) {pending_=name;pendingCreate_=false;}
@@ -80,7 +86,7 @@ public:
             ImGui::EndChild();
             return;
         }
-        ImGui::Text("%s%s",selected_.c_str(),dirty_?" *":"");
+        ImGui::Text("%s%s",selected_=="@routes"?"Event routes":selected_.c_str(),dirty_?" *":"");
         if(ImGui::Button("Validate")) validate();
         ImGui::SameLine();
         if(ImGui::Button("Save")) save(ed);
@@ -93,8 +99,17 @@ public:
         }
         if(!message_.empty()) ImGui::TextWrapped("%s",message_.c_str());
         ImGui::Separator();
-        ImGui::TextWrapped("GPU/CPU execution config (version 1). GPU is optional; "
-                           "unsupported modules remain on CPU through the authored fallback.");
+        if(selected_=="@routes") {
+            ImGui::TextWrapped("Optional eventType -> GPU emitter asset routes (version 1). "
+                               "Only local-player events are permitted; hidden enemy events "
+                               "must never be rendered from authoritative event streams. "
+                               "The game client reads this file on startup, so restart the "
+                               "play-test to apply route changes. Avoid duplicating FX "
+                               "already bound in fx/fx.json.");
+        } else {
+            ImGui::TextWrapped("GPU/CPU execution config (version 1). GPU is optional; "
+                               "unsupported modules remain on CPU through the authored fallback.");
+        }
         if(ui::inputMultiline("##spectrafx_gpu_config",text_,ImVec2(-1,-1)))
             dirty_=true;
         ImGui::EndChild();
@@ -103,7 +118,14 @@ public:
 private:
     fs::path directory() const { return fs::path(project_)/"fx"/"gpu"; }
     fs::path filePath(const std::string& name) const {
-        return directory()/(name+".gpu.json");
+        return name=="@routes" ? directory()/"routes.json" : directory()/(name+".gpu.json");
+    }
+    static std::string defaultRoutes() {
+        return R"JSON({
+  "version": 1,
+  "routes": []
+}
+)JSON";
     }
     static std::string defaultAsset() {
         return R"JSON({
@@ -162,27 +184,49 @@ private:
         message_.clear();
     }
     bool load(const std::string& name) {
-        if(!fx::SpectraFxGpuEmitterLibrary::validName(name)) return false;
+        if(name!="@routes" && !fx::SpectraFxGpuEmitterLibrary::validName(name)) return false;
         std::ifstream file(filePath(name),std::ios::binary);
-        if(!file) {message_="Unable to open GPU asset";return false;}
+        if(!file) {
+            if(name=="@routes") {
+                selected_="@routes";text_=defaultRoutes();saved_.clear();
+                dirty_=true;message_="New route file; save to enable routing";
+                return true;
+            }
+            message_="Unable to open GPU asset";return false;
+        }
         std::string content((std::istreambuf_iterator<char>(file)),
                             std::istreambuf_iterator<char>());
-        fx::SpectraFxHybridEmitter::Config candidate;
         std::string error;
-        if(!fx::SpectraFxGpuEmitterAsset::readText(content,candidate,&error)) {
-            message_=error;return false;
+        if(name=="@routes") {
+            fx::SpectraFxGpuRouteAsset::Routes routes;
+            if(!fx::SpectraFxGpuRouteAsset::readText(content,routes,&error)) {
+                message_=error;return false;
+            }
+        } else {
+            fx::SpectraFxHybridEmitter::Config candidate;
+            if(!fx::SpectraFxGpuEmitterAsset::readText(content,candidate,&error)) {
+                message_=error;return false;
+            }
         }
         selected_=name;text_=saved_=std::move(content);
         dirty_=false;message_.clear();
         return true;
     }
     bool validate() {
-        fx::SpectraFxHybridEmitter::Config parsed;
         std::string error;
-        if(!fx::SpectraFxGpuEmitterAsset::readText(text_,parsed,&error)) {
-            message_=error;return false;
+        if(selected_=="@routes") {
+            fx::SpectraFxGpuRouteAsset::Routes routes;
+            if(!fx::SpectraFxGpuRouteAsset::readText(text_,routes,&error)) {
+                message_=error;return false;
+            }
+            message_="Valid GPU event routes";
+        } else {
+            fx::SpectraFxHybridEmitter::Config parsed;
+            if(!fx::SpectraFxGpuEmitterAsset::readText(text_,parsed,&error)) {
+                message_=error;return false;
+            }
+            message_="Valid GPU/CPU emitter configuration";
         }
-        message_="Valid GPU/CPU emitter configuration";
         return true;
     }
     bool save(Editor& ed) {
@@ -208,7 +252,7 @@ private:
         dirty_=false;
         refresh();
         ed.reloadFx();
-        message_="Saved GPU emitter: "+target.string();
+        message_=(selected_=="@routes"?"Saved routes (restart game client): ":"Saved GPU emitter: ")+target.string();
         return true;
     }
 
