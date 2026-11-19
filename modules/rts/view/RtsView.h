@@ -294,6 +294,12 @@ public:
     uint64_t paintGpuRetirementOrphans() const noexcept {
         return paintLayers_.gpuRetirementOrphans();
     }
+    render::CanvasGpuRetirement::Stats paintGpuRetirementStats() const noexcept {
+        return paintLayers_.gpuRetirementStats();
+    }
+    uint64_t paintGpuRetirementEnqueueFailures() const noexcept {
+        return paintLayers_.gpuRetirementEnqueueFailures();
+    }
     void setImageRetirementDiagnosticObserver(
             render::ModelImageRollbackPool::DiagnosticObserver observer) {
         imageRollback_.setRetirementDiagnosticObserver(std::move(observer));
