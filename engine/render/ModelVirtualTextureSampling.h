@@ -68,12 +68,20 @@ inline bool injectModelVirtualTextureSampling(std::string& fragmentGLSL,
         "    float4 tb = tex1.sample(s1, in.uv);";
     const auto metalSample = msl.find(sourceMetal);
     if (metalSample == std::string::npos) return false;
-    const std::string parameterEnd = "GI_FARGS) {";
-    const auto signature = msl.find(parameterEnd,msl.find("fragment float4 fs_main("));
-    if (signature == std::string::npos) return false;
+    // ModelShaders.h has optional VIRTUAL_ALPHA_MASK arguments between
+    // GI_FARGS and the function body. Match the stable GI_FARGS line
+    // rather than the obsolete adjacent "GI_FARGS) {" sequence.
+    const std::string parameterAnchor = "                        GI_FARGS\\n";
+    const auto fragEntry=msl.find("fragment float4 fs_main(");
+    const auto signature = fragEntry==std::string::npos ?
+        std::string::npos : msl.find(parameterAnchor,fragEntry);
+    const auto bodyAnchor = ") {\\n#if defined(AIVERSE_ICB_PBR)\\n";
+    const auto body = signature==std::string::npos ?
+        std::string::npos : msl.find(bodyAnchor,signature);
     const std::string ns = "using namespace metal;";
     const auto metalNamespace = msl.find(ns);
-    if (metalNamespace == std::string::npos) return false;
+    if (signature==std::string::npos || body==std::string::npos ||
+        metalNamespace==std::string::npos) return false;
 
     // Stage 1: replace base-color texture fetch for the lit surface.
     // Preserve the existing tex1 fallback when a physical page is not
@@ -97,18 +105,18 @@ inline bool injectModelVirtualTextureSampling(std::string& fragmentGLSL,
     // Metal fragment resource arguments are appended after GI_FARGS so
     // the original texture slots / vertex ABI do not change. Sampler s1
     // is already bound by the regular material shader.
-    const auto mslSignature = msl.find(parameterEnd,msl.find("fragment float4 fs_main("));
-    msl.replace(mslSignature,parameterEnd.size(),
-        "GI_FARGS, constant float4& uModelVt [[buffer(7)]]\n"
+    msl.replace(signature,parameterAnchor.size(),
+        "                        GI_FARGS\n"
+        "                        , constant float4& uModelVt [[buffer(7)]]\n"
         "#if !defined(AIVERSE_ICB_PBR)\n"
-        ", texture2d_array<float, access::sample> tex13 [[texture(13)]],"
-        "texture2d_array<float, access::read> tex14 [[texture(14)]]"
-        "#endif\n"
-        ") {\n"
-        "#if defined(AIVERSE_ICB_PBR)\n"
-        "#define tex13 icbTextures.tex13\n"
-        "#define tex14 icbTextures.tex14\n"
+        "                        , texture2d_array<float, access::sample> tex13 [[texture(13)]]\n"
+        "                        , texture2d_array<float, access::read> tex14 [[texture(14)]]\n"
         "#endif\n");
+    const auto bodyAfter=msl.find(bodyAnchor,signature);
+    if (bodyAfter==std::string::npos) return false;
+    msl.insert(bodyAfter+bodyAnchor.size(),
+        "#define tex13 icbTextures.tex13\n"
+        "#define tex14 icbTextures.tex14\n");
     msl.insert(metalNamespace+ns.size(),"\n"+std::string(gfx::kVirtualTextureMSL));
     return true;
 }
