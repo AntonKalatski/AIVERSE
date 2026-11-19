@@ -8590,3 +8590,57 @@ on macOS; inspect `build/texture-rhi/verify-logs/`.
 Or run the new target/CTest explicitly on Linux GCC/Clang.
 Then verify macOS Metal graph/VT variants N=0..4 and
 same-camera GPU-vs-CPU image parity before marking PR ready.
+
+
+## Stage 10AQ — total CPU decode memory budget across mip chains (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / Draft PR #21.
+**Code commits:**
+- `70dfcb1887698934658fa9699356a75e62a26be3` — `engine/render/TextureAsset.h`.
+- `dbb67e501182b62fd2257037c33261ea0bb04431` — `tests/render/texture_asset.cpp`.
+
+**Documentation commits:**
+- `4d6d22e22fbaf21d0b63b3d1812da08427804d35` — `docs/texture-rhi.md`.
+- `3c181fc8134ae3aafb7384ac277f4fdf67c42b3a` — `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Functional change:** `render::TextureUploadOptions` gains an appended field
+`maxCpuDecodedBytes` defaulting to 512 MiB. All three public upload aliases
+now preflight the *sum* of all retained RGBA8 mip/layer/face/volume bytes when
+using the existing generic CPU fallback. This complements the existing 512 MiB
+per-level cap and uses overflow-safe division-based checks. Exceeding the
+configured total fails before decoding any slice or allocating a CPU fallback
+GPU texture. Zero disables CPU fallback; native compressed uploads are not
+subject to this CPU-only byte budget. The option is appended with a default,
+preserving existing source-level default and aggregate initialization patterns.
+No serialized assets, ECS state, RHI formats or binary file format are changed.
+The new limit counts retained RGBA8 bytes, NOT temporary decoder scratch.
+
+**Regression source:** `texture_asset` CTest now describes a two-mip,
+12-face cube-array payload decoded to 768+192=960 bytes, rejecting 959 bytes
+before GPU creation, accepting exactly 960, and rejecting a zero budget.
+Uses an independent mock device to preserve subsequent test counters.
+
+**Actually performed:** GitHub accepted source/test/docs commits. Re-fetched
+all four current branch blobs and checked 4/4 budget implementation markers,
+4/4 regression markers, and both documentation stage markers: all present.
+This is source-text verification only. `git ls-remote` from the Linux
+container failed with `Could not resolve host: github.com`.
+
+**NOT RUN:** native C++ compilation, `texture_asset` CTest, full CMake/CTest,
+Metal/GL/Vulkan GPU execution, shader compilation, runtime memory profiling
+and image parity. There is no new confirmed green CI result for this stage;
+do not represent repository text checks as compiler/runtime tests.
+PR #21 remains Draft and experimental Metal ICB flags remain OFF.
+
+**Known limitations:** a CPU decoder may temporarily use additional
+per-slice scratch buffers outside this retained-byte budget. Existing
+500+ MiB individual image cap still applies. Caller-selected high budgets
+are an explicit trust decision. Native compressed allocations and GPU
+residency need independent device/driver limits.
+
+**Next concrete step:** on a local macOS checkout, pull the latest branch
+and run `bash tools/verify-texture-rhi.sh --editor --jobs 4` (add
+`--vulkan` only with Vulkan SDK + driver). Confirm `texture_asset`
+and `gpu_icb_material_contract` compile/pass, then validate actual
+Metal graph/VT variants N=0..4 and CPU/GPU parity; resolve errors before
+promoting PR #21 from Draft.
