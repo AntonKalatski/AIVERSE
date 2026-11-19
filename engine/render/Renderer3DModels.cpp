@@ -392,6 +392,69 @@ void Renderer3D::syncPersistentModels() {
             uint32_t(persistentScene_.capacity()), frame, viewProj_);
 }
 
+const Renderer3D::SharedMaterialEntry* Renderer3D::cachedSharedMaterialState(
+    const Model& model, const ModelDraw& draw,
+    const std::vector<Material>& materials) {
+    if (!draw.materialOwnerKey || !draw.materialOwnerRevision ||
+        !draw.staticPacketRevision || !draw.persistentId ||
+        !(draw.flags & kDrawStatic) || materials.empty())
+        return nullptr;
+    // Large unique/streamed material sets use exact per-packet validation.
+    // Cap owner count and the actual retained signature payload separately.
+    constexpr size_t kMaxMaterialEntries = 4096;
+    constexpr size_t kMaxMaterialBytes = 8u * 1024u * 1024u;
+    constexpr size_t kMaxMaterialsPerOwner = 512;
+    if (materials.size() > kMaxMaterialsPerOwner) return nullptr;
+    const MaterialOwnerKey key{&model, draw.materialOwnerKey};
+    auto it = staticMaterialOwners_.find(key);
+    if (it != staticMaterialOwners_.end()) {
+        SharedMaterialEntry& state = it->second;
+        if (state.ownerRevision == draw.materialOwnerRevision &&
+            state.modelMaterialRevision == model.materialRevision &&
+            state.geometryRevision == model.geometryRevision &&
+            state.count == materials.size()) {
+            state.seen = staticMaterialOwnerEpoch_;
+            ++sharedMaterialStateStats_.hits;
+            return &state;
+        }
+    }
+    ++sharedMaterialStateStats_.misses;
+    const size_t newBytes = materials.size() * sizeof(uint64_t);
+    const size_t replacedBytes = it == staticMaterialOwners_.end()
+        ? 0 : it->second.hashes.size() * sizeof(uint64_t);
+    if ((it == staticMaterialOwners_.end() &&
+         staticMaterialOwners_.size() >= kMaxMaterialEntries) ||
+        newBytes > kMaxMaterialBytes ||
+        newBytes > kMaxMaterialBytes - (staticMaterialOwnerBytes_ - replacedBytes))
+        return nullptr;
+    // Every new owner revision receives a different serial, so packets
+    // referencing an earlier signature can never accidentally hot-replay.
+    // The cache is effectively bounded far below the 64-bit wrap interval.
+    SharedMaterialEntry& state = staticMaterialOwners_[key];
+    state.hashes = staticPacketMaterialHashes(model, materials);
+    state.minVertexOffsetQuality = std::numeric_limits<int>::max();
+    for (const Material& material : materials)
+        if (material.shaderGraph &&
+            material.shaderGraph->outputs.count("vertexOffset"))
+            state.minVertexOffsetQuality = std::min(
+                state.minVertexOffsetQuality, int(material.shaderGraph->minQuality));
+    state.ownerRevision = draw.materialOwnerRevision;
+    state.modelMaterialRevision = model.materialRevision;
+    state.geometryRevision = model.geometryRevision;
+    state.count = materials.size();
+    state.seen = staticMaterialOwnerEpoch_;
+    // A wrap can only occur after 2^64 signature changes; treat it as
+    // a global packet invalidation rather than reusing an old serial.
+    if (++staticMaterialOwnerSerial_ == 0) {
+        staticRenderPackets_.clear();
+        staticRenderPacketBytes_ = 0;
+        staticMaterialOwnerSerial_ = 1;
+    }
+    state.serial = staticMaterialOwnerSerial_;
+    staticMaterialOwnerBytes_ = staticMaterialOwnerBytes_ - replacedBytes + newBytes;
+    return &state;
+}
+
 ModelStaticEligibility Renderer3D::cachedStaticModelEligibility(const Model& source) {
     // Model* is a lookup key, not proof of identity or unchanged content.
     // Revision, GPU allocation, public cardinalities and geometry attachment
