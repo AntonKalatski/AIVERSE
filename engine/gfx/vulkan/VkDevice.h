@@ -165,6 +165,7 @@ public:
     void setComputeUniforms(const void* data,size_t size) override;
     void dispatch(uint32_t logicalX,uint32_t logicalY=1) override;
     void endCompute() override;
+    bool computeDispatchSucceeded() const override { return computeDispatchSucceeded_; }
     uint64_t frameSerial() const override { return recording_ ? serial_ : 0; }
     uint64_t completedFrameSerial() const override { return completed_; }
 
