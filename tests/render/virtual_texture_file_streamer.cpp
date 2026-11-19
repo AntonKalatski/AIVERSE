@@ -425,7 +425,11 @@ void asynchronousGpuFeedbackRuntime() {
                                       " (mock callback slot free)"));
     }
     const auto pending=std::move(gpu.feedbackCompletion);
-    require(bool(pending),"second GPU callback remains in flight");
+    // Simulate an RHI handing its in-flight completion to the owner and
+    // vacating its readback slot. Do not rely on moved-from function state.
+    gpu.feedbackCompletion={};
+    require(bool(pending) && !gpu.feedbackCompletion,
+            "second GPU callback detached from mock's pending slot");
     runtime.shutdown(); // user closes the preview/streamer before completion
     pending(std::move(readback)); // weak state must not publish/use a dangling this
     require(!runtime.pending() && !runtime.readyToSubmit(),
