@@ -252,7 +252,10 @@ private:
                 if(active!=active_.end() &&
                    active->second==request.revision)active_.erase(active);
                 --activeCount_;
-                if(!stop_ && result.revision==currentRevisionLocked(result.source))
+                // Pool resizing waits for active tasks but must preserve
+                // valid results. Only explicit shutdown clears the ready
+                // queue after joining, while invalidation rejects old ids.
+                if(result.revision==currentRevisionLocked(result.source))
                     ready_.push_back(std::move(result));
                 else ++discarded_;
             }
