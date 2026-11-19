@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <span>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -33,12 +34,157 @@ public:
            !std::isfinite(weight)||weight<0||weight>1 ||
            (edits_.size()>=65536 && !edits_.count(vertex)))
             return false;
-        edits_[vertex]={vertex,std::move(joint),weight};
+        auto next=edits_;
+        next[vertex]={vertex,std::move(joint),weight};
+        publish(std::move(next));
         return true;
     }
-    bool erase(std::uint32_t vertex) {return edits_.erase(vertex)!=0;}
-    void clear() noexcept {edits_.clear();}
+    bool erase(std::uint32_t vertex) {
+        if(!edits_.count(vertex))return false;
+        auto next=edits_;
+        next.erase(vertex);
+        publish(std::move(next));
+        return true;
+    }
+    void clear() {if(!edits_.empty())publish({});}
+    bool canUndo() const noexcept {return !undo_.empty();}
+    bool canRedo() const noexcept {return !redo_.empty();}
+    bool undo() {
+        if(undo_.empty())return false;
+        if(redo_.size()==kHistory)redo_.erase(redo_.begin());
+        redo_.push_back(std::move(edits_));
+        edits_=std::move(undo_.back());
+        undo_.pop_back();
+        return true;
+    }
+    bool redo() {
+        if(redo_.empty())return false;
+        if(undo_.size()==kHistory)undo_.erase(undo_.begin());
+        undo_.push_back(std::move(edits_));
+        edits_=std::move(redo_.back());
+        redo_.pop_back();
+        return true;
+    }
     const std::map<std::uint32_t,Edit>& edits() const noexcept {return edits_;}
+
+    // Read the currently presented weight for one named node. The caller
+    // supplies a skinned mesh owning the global source vertex. This is also
+    // used by the brush preview to show the exact quantized U8 share.
+    static float weightAt(const render::Model& model,std::size_t meshIndex,
+                          std::uint32_t vertex,const std::string& joint) {
+        if(meshIndex>=model.meshes.size() || vertex>=model.vertices.size())
+            throw std::invalid_argument("VIVID skin brush: missing mesh/vertex");
+        int nodeId=-1;
+        for(std::size_t i=0;i<model.nodes.size();++i)
+            if(model.nodes[i].mesh==int(meshIndex) && model.nodes[i].skin>=0) {
+                if(nodeId>=0)throw std::invalid_argument(
+                    "VIVID skin brush: mesh has multiple skinned owners");
+                nodeId=int(i);
+            }
+        if(nodeId<0)throw std::invalid_argument("VIVID skin brush: mesh is not skinned");
+        const auto skinId=model.nodes[std::size_t(nodeId)].skin;
+        if(skinId<0 || std::size_t(skinId)>=model.skins.size())
+            throw std::invalid_argument("VIVID skin brush: invalid skin");
+        const auto& skin=model.skins[std::size_t(skinId)];
+        const int jointIndex=model.findNode(joint);
+        if(jointIndex<0)throw std::invalid_argument("VIVID skin brush: unknown bone");
+        bool referenced=false;
+        std::vector<std::uint16_t> palette;
+        for(const auto& primitive:model.meshes[meshIndex].primitives) {
+            const std::size_t first=primitive.firstIndex;
+            if(first>model.indices.size() ||
+               primitive.indexCount>model.indices.size()-first)
+                throw std::invalid_argument("VIVID skin brush: corrupt indices");
+            bool contains=false;
+            for(std::size_t i=first;i<first+primitive.indexCount;++i)
+                if(model.indices[i]==vertex){contains=true;break;}
+            if(!contains)continue;
+            if(primitive.jointPalette.empty())
+                throw std::invalid_argument("VIVID skin brush: rigid vertex");
+            if(referenced && palette!=primitive.jointPalette)
+                throw std::invalid_argument("VIVID skin brush: conflicting seam palettes");
+            palette=primitive.jointPalette;
+            referenced=true;
+        }
+        if(!referenced)throw std::invalid_argument("VIVID skin brush: vertex not on mesh");
+        int destination=-1;
+        for(std::size_t i=0;i<palette.size();++i) {
+            if(palette[i]>=skin.joints.size())
+                throw std::invalid_argument("VIVID skin brush: bad palette");
+            if(skin.joints[palette[i]]==jointIndex)destination=int(i);
+        }
+        if(destination<0)
+            throw std::invalid_argument("VIVID skin brush: selected bone absent in palette");
+        unsigned sum=0;
+        const auto& v=model.vertices[vertex];
+        for(int i=0;i<4;++i) {
+            if(v.weights[i] && v.joints[i]>=palette.size())
+                throw std::invalid_argument("VIVID skin brush: invalid influence slot");
+            if(v.weights[i] && v.joints[i]==destination)sum+=v.weights[i];
+        }
+        return float(sum)/255.0f;
+    }
+
+    // A stroke is one undo step. Local-space (mesh) radius, smooth cubic
+    // falloff and optional bilateral X mirror. Uses explicit mesh vertex IDs
+    // so disconnected surfaces and unrelated meshes cannot be painted.
+    // One name/target per vertex; all failed operations preserve history.
+    bool brush(const render::Model& model,std::size_t meshIndex,
+               std::uint32_t center,const std::string& joint,
+               float target,float radius,float strength,bool mirrorX=false) {
+        if(meshIndex>=model.meshes.size() || center>=model.vertices.size() ||
+           !std::isfinite(target)||target<0||target>1 ||
+           !std::isfinite(radius)||radius<=0||radius>10 ||
+           !std::isfinite(strength)||strength<=0||strength>1)return false;
+        const auto& pivot=model.vertices[center].pos;
+        const render::float3 reflected{-pivot.x,pivot.y,pivot.z};
+        // Evaluate only vertices owned by this mesh, not the entire asset.
+        std::vector<std::uint32_t> ids;
+        for(const auto& primitive:model.meshes[meshIndex].primitives) {
+            const std::size_t first=primitive.firstIndex;
+            if(first>model.indices.size() ||
+               primitive.indexCount>model.indices.size()-first)return false;
+            for(std::size_t i=first;i<first+primitive.indexCount;++i) {
+                if(model.indices[i]>=model.vertices.size())return false;
+                ids.push_back(model.indices[i]);
+            }
+        }
+        std::sort(ids.begin(),ids.end());
+        ids.erase(std::unique(ids.begin(),ids.end()),ids.end());
+        if(!std::binary_search(ids.begin(),ids.end(),center))return false;
+        auto next=edits_;
+        bool changed=false;
+        for(auto id:ids) {
+            const auto& p=model.vertices[id].pos;
+            auto falloff=[&](const render::float3& point) {
+                const auto d=p-point;
+                const float dist=render::length(d);
+                if(!std::isfinite(dist)||dist>=radius)return 0.f;
+                const float t=dist/radius;
+                return (1.f-t)*(1.f-t)*(1.f+2.f*t);
+            };
+            const float direct=falloff(pivot);
+            const float mirrored=mirrorX&&std::fabs(pivot.x)>1e-6f
+                ?falloff(reflected):0.f;
+            const float influence=std::min(1.f,strength*std::max(direct,mirrored));
+            if(influence<=0)continue;
+            try {
+                const auto old=weightAt(model,meshIndex,id,joint);
+                const float previous=next.count(id)&&next[id].joint==joint
+                    ?next[id].weight:old;
+                const float value=std::clamp(
+                    previous+(target-previous)*influence,0.f,1.f);
+                if(next.size()>=65536 && !next.count(id))return false;
+                next[id]={id,joint,value};
+                changed=true;
+            }catch(const std::invalid_argument&) {
+                return false; // entire stroke rejected, no partial edits
+            }
+        }
+        if(!changed)return false;
+        publish(std::move(next));
+        return true;
+    }
 
     Json toJson() const {
         Json root=Json::object();
@@ -212,6 +358,14 @@ public:
         return stats;
     }
 private:
+    void publish(std::map<std::uint32_t,Edit> next) {
+        if(undo_.size()==kHistory)undo_.erase(undo_.begin());
+        undo_.push_back(std::move(edits_));
+        edits_=std::move(next);
+        redo_.clear();
+    }
+    static constexpr std::size_t kHistory=32;
     std::map<std::uint32_t,Edit> edits_;
+    std::vector<std::map<std::uint32_t,Edit>> undo_,redo_;
 };
 } // namespace aiverse::vivid
