@@ -2881,16 +2881,13 @@ void Renderer3D::renderModels(int phase) {
                 if (lane < 2 && printed[lane][mode]++ < 24) {
                     const auto& learned =
                         autoCpuBatch_.lanes[lane][AutoCpuBatchPolicy::bucket(order_.size())];
-                    const double stageMs = cpuStages
-                        ? (modelStats_.mdiCpuStages[lane].totalMs - cpuBefore.totalMs)
-                        : -1.0;
                     std::fprintf(stderr,
                         "[auto-cpu-cost] phase=%zu mode=%s items=%zu "
-                        "wall_ms=%.5f preceding_stage_ms=%.5f "
+                        "wall_ms=%.5f "
                         "submissions=%llu direct_ewma_ms=%.5f mdi_ewma_ms=%.5f "
                         "direct_samples=%u mdi_samples=%u opportunities=%u\n",
                         lane, mdiSubmitted ? "mdi" : "direct", order_.size(),
-                        cpuMs, stageMs,
+                        cpuMs,
                         (unsigned long long)(modelStats_.multiDrawSubmissions-cpuMdiBefore),
                         learned.directMs, learned.mdiMs,
                         learned.directSamples, learned.mdiSamples, learned.opportunities);
