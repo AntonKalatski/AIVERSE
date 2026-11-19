@@ -7,7 +7,9 @@
 #include "engine/render/Renderer3D.h"
 #include "engine/render/GlobalGeometryPool.h"
 #include "engine/render/ModelVertexStreamOverride.h"
-#include "engine/character/vivid/GpuMorphMeshStream.h"
+#include "engine/character/vivid/GpuActorStream.h"
+#include "engine/character/vivid/GpuActorRetirement.h"
+#include "engine/character/vivid/GpuMorphAssetCache.h"
 #include "engine/character/vivid/FaceShapeBinding.h"
 #include <aiverselib/motionweave/MotionWeave.h>
 
@@ -95,9 +97,11 @@ struct Preview {
     std::unique_ptr<vivid::SparseMorphLibrary> shapes;
     std::unique_ptr<vivid::FaceShapeBinding> shapeBinding;
     vivid::FaceController face{0.0f};
-    vivid::GpuMorphDeformer morph;
-    vivid::GpuMorphMeshStream mesh;
-    std::vector<float> weights;
+    std::unique_ptr<vivid::GpuMorphAssetCache> sharedCache;
+    std::shared_ptr<vivid::GpuMorphSharedAsset> sharedAsset;
+    std::unique_ptr<vivid::GpuActorRetirementQueue> actorRetirement;
+    std::vector<std::unique_ptr<vivid::GpuActorStream>> actors;
+    int actorCount = 1;
     World presentation;
     Entity actor{};
     std::shared_ptr<const render::AnimationGraph> graph;
@@ -157,7 +161,10 @@ struct Preview {
             {vivid::Channel::EyeBlinkRight,"blinkRight",1.0f}};
         shapeBinding = std::make_unique<vivid::FaceShapeBinding>(
             vivid::FaceShapeBinding::compile(*shapes,routes));
-        weights.resize(shapes->targets(),0.0f);
+        if(const char* value=std::getenv("AIVERSE_VIVID_PREVIEW_ACTORS")) {
+            const int requested=std::atoi(value);
+            actorCount=std::clamp(requested,1,32);
+        }
         require(render::uploadModel(dev,*model,true), "model GPU upload failed");
         require(!model->geometryPoolPage && !model->gpuBaseVertex &&
                 !model->gpuFirstIndex, "VIVID needs dedicated ModelVertex storage");
@@ -170,8 +177,22 @@ struct Preview {
                     model->meshes[0].primitives[0].firstVertex,
                     model->meshes[0].primitives[0].vertexCount,
                     model->vertices.size());
-        require(morph.initialize(dev,*shapes,base), "VIVID GPU morph init failed");
-        require(mesh.initialize(dev,model->vertices), "VIVID 60B GPU stream init failed");
+        sharedCache=std::make_unique<vivid::GpuMorphAssetCache>(dev);
+        sharedAsset=sharedCache->acquire(*shapes,model->vertices);
+        require(sharedAsset && sharedAsset->ready(),
+                "VIVID shared immutable model CSR GPU asset init failed");
+        actorRetirement=std::make_unique<vivid::GpuActorRetirementQueue>(dev);
+        actors.reserve(static_cast<std::size_t>(actorCount));
+        for(int i=0;i<actorCount;++i) {
+            auto actor=std::make_unique<vivid::GpuActorStream>();
+            require(actor->initializeShared(dev,*model,sharedAsset),
+                    "VIVID per-character GPU morph stream init failed");
+            actors.push_back(std::move(actor));
+        }
+        for(std::size_t i=0;i<actors.size();++i)
+            for(std::size_t j=i+1;j<actors.size();++j)
+                require(actors[i]->vertexBuffer()!=actors[j]->vertexBuffer(),
+                        "VIVID actors accidentally share writable GPU output");
         render::MeshBuilder ground;
         ground.box({0,-0.12f,0},{10,0.2f,9});
         floor = ground.upload(dev);
@@ -185,8 +206,9 @@ struct Preview {
         asset.graph=graph;
         presentation.add<motionweave::AnimationPlayerComponent>(actor);
         presentation.add<motionweave::AnimationPoseComponent>(actor);
-        std::printf("VIVID render preview ready: %zu vertices, %zu GPU shapes\n",
-                    model->vertices.size(),shapes->targets());
+        std::printf("VIVID render preview ready: %zu vertices, %zu GPU shapes, %d actors, %zu immutable GPU bytes\n",
+                    model->vertices.size(),shapes->targets(),actorCount,
+                    sharedAsset->gpuBytes());
     }
 
     void capture(gfx::Device& dev, const char* suffix, int number) {
@@ -269,10 +291,21 @@ struct Preview {
         require(face.set(vivid::Layer::Tracking,vivid::Channel::EyeBlinkRight,faceActive?1.f:0.f),
                 "blink source invalid");
         face.snap();
-        require(shapeBinding->evaluate(face.frame(),weights),"VIVID face mapping failed");
-        require(morph.dispatch(weights),"VIVID sparse GPU dispatch failed");
-        require(mesh.dispatch(morph.outputBuffer(),morph.vertexCount()),
-                "VIVID 60-byte GPU mesh packing failed");
+        // Each actor gets a separate semantic expression and writable GPU
+        // stream, while sharing one immutable CSR and both compute programs.
+        for(int i=0;i<actorCount;++i) {
+            auto expression=face.frame();
+            if(faceActive && actorCount>1) {
+                const float level=0.30f+0.65f*float(i%5)/4.0f;
+                expression.values[static_cast<std::size_t>(vivid::Channel::JawOpen)]=level;
+                expression.values[static_cast<std::size_t>(vivid::Channel::EyeBlinkRight)]=
+                    1.0f-level*0.5f;
+            }
+            if(!actors[std::size_t(i)]->dispatch(expression,*shapeBinding))
+                throw std::runtime_error(
+                    "VIVID character GPU dispatch failed: " +
+                    actors[std::size_t(i)]->lastError());
+        }
 
         render::RTSCamera camera;
         camera.target={0,0.45f,0};
@@ -281,15 +314,23 @@ struct Preview {
         camera.yaw=0.18f;
         renderer.beginScene(camera,kWidth,kHeight);
         renderer.drawMesh(floor,{}, {0.32f,0.38f,0.45f,1});
-        render::ModelDraw draw;
-        draw.model=model.get();
-        draw.nodeWorld=&pose.matrices;
-        draw.world=render::mat4::translate({0,1.15f,0});
-        if(faceActive){
-            draw.vertexOverride=mesh.vertexBuffer();
-            draw.vertexOverrideCount=static_cast<std::uint32_t>(mesh.vertexCount());
+        const int columns=std::min(actorCount,4);
+        const int rows=(actorCount+columns-1)/columns;
+        for(int i=0;i<actorCount;++i) {
+            render::ModelDraw draw;
+            draw.model=model.get();
+            draw.nodeWorld=&pose.matrices;
+            const float spacing=actorCount>1 ? 1.62f : 0.0f;
+            const float x=(float(i%columns)-float(columns-1)*0.5f)*spacing;
+            const float z=(float(i/columns)-float(rows-1)*0.5f)*spacing;
+            const float scale=actorCount>1 ? 0.62f : 1.0f;
+            draw.world=render::mat4::translate({x,1.15f,z}) *
+                       render::mat4::scale({scale,scale,scale});
+            if(faceActive)
+                require(actors[std::size_t(i)]->attach(draw),
+                        "VIVID character refused same-frame 60B render override");
+            renderer.drawModel(draw);
         }
-        renderer.drawModel(draw);
         gfx::PassDesc pass;
         pass.clearColor[0]=.08f;pass.clearColor[1]=.1f;pass.clearColor[2]=.13f;
         renderer.render(pass);
@@ -328,8 +369,21 @@ struct Preview {
             failed=true;
             return;
         }
-        mesh.release();
-        morph.release();
+        for(auto& actor:actors)
+            if(!actorRetirement->retire(actor)) {
+                failed=true;
+                std::fprintf(stderr,"VIVID preview: failed to retire GPU actor\n");
+                return;
+            }
+        if(!actorRetirement->drain()) {
+            failed=true;
+            std::fprintf(stderr,"VIVID preview: GPU actor queue drain failed\n");
+            return;
+        }
+        actors.clear();
+        sharedAsset.reset();
+        sharedCache.reset();
+        actorRetirement.reset();
         if(floor.vb.valid())device->destroyBuffer(floor.vb);
         if(floor.ib.valid())device->destroyBuffer(floor.ib);
         if(model)render::releaseModel(*device,*model);
