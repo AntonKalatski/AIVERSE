@@ -1,6 +1,7 @@
 #include "Renderer3D.h"
 #include "Shaders.h"
 #include "SelectionOutlineShaders.h"
+#include "NereidWaterReflectionPolicy.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -13,7 +14,7 @@ namespace aiverse::render {
 namespace {
 constexpr float kPi = 3.14159265358979f;
 
-struct DrawUniforms { float model[16]; float color[4]; float params[4]; };
+struct DrawUniforms { float model[16]; float color[4]; float params[4]; float waterRipples[64]; float waterWakeShapes[64]; float waterWind[4]; float waterHydraulics[4]; float waterRapidColor[4]; };
 struct FrameUniforms {
     float viewProj[16];
     float lightViewProj[16];
@@ -167,6 +168,8 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     camFwd_ = normalize(cam.target - camPos_);
     cam_ = cam;
     ssrThisFrame_ = false;
+    reflectionPlaneValid_ = false;
+    reflectionPlaneY_ = 0.f;
     items_.clear(); lines_.clear(); tris_.clear(); custom_.clear(); customOpaque_.clear(); customShadow_.clear();
     modelItems_.clear(); jointData_.clear(); morphData_.clear(); modelStats_ = {};
     lodDebugSample_ = {}; // selected instance is tracked per viewport beginScene
@@ -229,6 +232,24 @@ void Renderer3D::computeShadowMatrix(const RTSCamera& cam, float aspect) {
 
 void Renderer3D::drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags, float specular, float emissive) {
     items_.push_back({&m, model, color, flags, specular, emissive});
+}
+void Renderer3D::drawNereidRippleMesh(const Mesh& mesh,const mat4& model,
+        float4 color,float specular,float refraction,
+        const std::array<float4,16>& ripples,
+        uint32_t firstIndex,uint32_t indexCount,
+        const std::array<float4,16>& wakeShapes,float4 wind,
+        float4 hydraulics,float4 rapidColor) {
+    drawMesh(mesh,model,color,kDrawNoCastShadow|kDrawWaterSurface,
+             specular,refraction);
+    if(!items_.empty()) {
+        items_.back().waterRipples=ripples;
+        items_.back().waterWakeShapes=wakeShapes;
+        items_.back().waterWind=wind;
+        items_.back().waterHydraulics=hydraulics;
+        items_.back().waterRapidColor=rapidColor;
+        items_.back().waterFirstIndex=firstIndex;
+        items_.back().waterIndexCount=indexCount;
+    }
 }
 
 void Renderer3D::drawSelectionMesh(const Mesh& mesh, const mat4& model,
@@ -415,10 +436,29 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         DrawUniforms u{};
         std::memcpy(u.model, it.model.m, sizeof u.model);
         u.color[0] = it.color.x; u.color[1] = it.color.y; u.color[2] = it.color.z; u.color[3] = it.color.w;
-        u.params[0] = (it.flags & kDrawUnlit) ? 1.f : 0.f;
+        // Shader -1: reflective NEREID water. -2: NEREID water at a
+        // different elevation than the single planar reflection texture.
+        // Keep waves and SSR on secondary surfaces, but skip the wrong plane.
+        const bool markedWater=(it.flags & kDrawWaterSurface)!=0;
+        const bool otherPlane=markedWater && reflectionPlaneValid_ &&
+            !sameWaterReflectionPlane(
+                it.model.transformPoint((it.mesh->boundsMin+
+                                         it.mesh->boundsMax)*0.5f).y,
+                reflectionPlaneY_);
+        u.params[0] = markedWater ?
+                      ((it.flags & kDrawNereidCascade) ? -3.f :
+                       (otherPlane ? -2.f : -1.f)) :
+                      ((it.flags & kDrawUnlit) ? 1.f : 0.f);
         u.params[1] = it.specular;
         u.params[2] = (it.flags & kDrawNoReceiveShadow) ? 0.f : 1.f;
         u.params[3] = it.emissive;
+        std::memcpy(u.waterRipples,it.waterRipples.data(),sizeof u.waterRipples);
+        std::memcpy(u.waterWakeShapes,it.waterWakeShapes.data(),sizeof u.waterWakeShapes);
+        std::memcpy(u.waterWind,&it.waterWind,sizeof u.waterWind);
+        std::memcpy(u.waterHydraulics,&it.waterHydraulics,
+                    sizeof u.waterHydraulics);
+        std::memcpy(u.waterRapidColor,&it.waterRapidColor,
+                    sizeof u.waterRapidColor);
         if (studioDebugMode_ == 2 || studioDebugMode_ == 4 || studioDebugMode_ == 9)
             u.params[0] = 10.0f + float(studioDebugMode_);
         if (drawCallDebug_) {
@@ -429,10 +469,11 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         dev_->setUniforms(0, &u, sizeof u);
         dev_->setVertexBuffer(it.mesh->vb);
         dev_->setIndexBuffer(it.mesh->ib);
-        dev_->drawIndexed(it.mesh->indexCount);
+        const uint32_t drawCount=it.waterIndexCount?it.waterIndexCount:it.mesh->indexCount;
+        dev_->drawIndexed(drawCount,it.waterFirstIndex);
         ++drawCalls_;
         // drawItem is only used by the current camera's colour pass.
-        profile_.cameraMeshTriangles += uint64_t(it.mesh->indexCount) / 3;
+        profile_.cameraMeshTriangles += uint64_t(it.waterIndexCount?it.waterIndexCount:it.mesh->indexCount) / 3;
     };
     for (auto& it : items_) if (it.color.w >= 0.99f) drawItem(it);
     // The per-phase profile also includes reflection/SSR replay. Snapshot

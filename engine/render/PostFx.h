@@ -9,6 +9,8 @@
 // (PostFxQuality, PostFxData plans). RGBA16F on capable High-tier devices, RGBA8 fallback; no compute.
 #pragma once
 #include <functional>
+#include <algorithm>
+#include <cmath>
 #include <map>
 #include <string>
 #include <vector>
@@ -20,6 +22,87 @@ namespace aiverse::render {
 
 struct PostFxStats { int passes = 0; int effects = 0; int width = 0, height = 0; };
 
+// Per-frame, presentation-only environmental tint from a volume system.
+// PostFx never queries ECS or owns the meaning of any water volume.
+struct PostFxUnderwater {
+    bool submerged=false;
+    float tintR=0, tintG=0, tintB=0;
+    float absorption=0;
+    float depthMetres=0;
+    float distortion=0, scattering=0;
+    float surfaceBlend=-1; // negative: legacy binary; otherwise 0..1 near boundary
+    float surfaceOffset=0; // signed water plane height relative to camera Y
+};
+struct PostFxUnderwaterState {
+    float blend=0;
+    float tintR=0, tintG=0, tintB=0;
+    float absorption=0, depthMetres=0;
+    float distortion=0, scattering=0;
+    float crossing=0;
+    bool wasSubmerged=false;
+    float surfaceBlend=0;
+    float surfaceOffset=0;
+};
+
+// Pure presentation transition policy, testable without a GPU device.
+inline PostFxUnderwaterState advancePostFxUnderwater(
+        PostFxUnderwaterState state,PostFxUnderwater target,float seconds) {
+    const float dt=std::isfinite(seconds)?std::clamp(seconds,0.f,0.25f):0.f;
+    const float alpha=1.f-std::exp(-dt*6.f);
+    auto smooth=[alpha](float& v,float goal){v+=alpha*(goal-v);};
+    auto finite=[](float v,float lo,float hi) {
+        return std::isfinite(v)?std::clamp(v,lo,hi):lo;
+    };
+    if(target.submerged!=state.wasSubmerged && dt>0.f)
+        state.crossing=1.f;
+    state.wasSubmerged=target.submerged;
+    state.crossing*=std::exp(-dt*8.f);
+    const float opacity=target.surfaceBlend>=0.f ?
+        finite(target.surfaceBlend,0.f,1.f) : (target.submerged?1.f:0.f);
+    smooth(state.blend,opacity);
+    state.surfaceBlend=opacity;
+    if(target.submerged || opacity>0.f) {
+        smooth(state.tintR,finite(target.tintR,0.f,1.f));
+        smooth(state.tintG,finite(target.tintG,0.f,1.f));
+        smooth(state.tintB,finite(target.tintB,0.f,1.f));
+        smooth(state.absorption,finite(target.absorption,0.f,4.f));
+        smooth(state.depthMetres,finite(target.depthMetres,0.f,10000.f));
+        // Signed distance is required by the depth compositor to clip each
+        // scene ray against the water plane instead of tinting air segments.
+        state.surfaceOffset=finite(target.surfaceOffset,-10000.f,10000.f);
+        smooth(state.distortion,finite(target.distortion,0.f,1.f));
+        smooth(state.scattering,finite(target.scattering,0.f,1.f));
+    }
+    if(state.blend<0.0001f && state.crossing<0.0001f && !target.submerged)
+        state={};
+    return state;
+}
+
+// Fraction of a camera-to-scene segment below the water plane.
+// a/b are signed (surfaceY - endpointY). Handles partial crossings in
+// either direction, a fully submerged ray, and a fully airborne ray.
+inline float postFxUnderwaterRayFraction(float a,float b) {
+    if(!std::isfinite(a)||!std::isfinite(b))return 0.f;
+    if(a>=0.f&&b>=0.f)return 1.f;
+    if(a<=0.f&&b<=0.f)return 0.f;
+    return std::clamp(std::max(a,b)/(std::abs(a)+std::abs(b)),0.f,1.f);
+}
+
+struct PostFxUnderwaterBudget {
+    float distortion=0,scattering=0,crossing=0;
+    uint32_t samples=0;
+};
+// Explicit mobile-friendly quality policy: no extra scene passes or textures.
+inline PostFxUnderwaterBudget postFxUnderwaterBudget(PostFxQuality quality) {
+    switch(quality) {
+        case PostFxQuality::Off:return {};
+        case PostFxQuality::Low:return {0.2f,0.25f,0.3f,1};
+        case PostFxQuality::Medium:return {0.6f,0.7f,0.7f,2};
+        case PostFxQuality::High:return {1.f,1.f,1.f,3};
+    }
+    return {};
+}
+
 class PostFx : public PostProcess {
 public:
     void setGpuDeviceLease(RenderDeviceLifetime::Lease lease) {gpuDeviceLease_=std::move(lease);}
@@ -29,6 +112,12 @@ public:
     // game.json "postfx" then the map's (either may be null); problems go to `issues`.
     void configure(const Json& game, const Json& map, std::vector<std::string>* issues = nullptr);
     void setSettings(PostFxSettings s);
+    // Apply the volume owner's latest camera sample, once per frame.
+    // deltaSeconds is supplied by the host and only affects visual fading.
+    void setUnderwater(PostFxUnderwater target,float deltaSeconds);
+    const PostFxUnderwaterState& underwater()const{return underwater_;}
+    void resetUnderwater(){underwater_={};}
+
     const PostFxSettings& settings() const { return settings_; }
 
     void setQuality(PostFxQuality q) { quality_ = q; }
@@ -57,13 +146,13 @@ private:
         int w = 0, h = 0;
         uint64_t lastUse = 0;
         std::map<int, Target> targets;     // by role
-        std::map<uint64_t, gfx::TextureHandle> depths;   // Metal: every pass has a depth attachment, shared per size
+        std::map<std::pair<uint64_t,int>, gfx::TextureHandle> depths;   // Metal: every pass has a depth attachment, shared per size
     };
     struct Lut { gfx::TextureHandle tex; int n = 0; bool failed = false; };
     enum Prog { kPrefilter, kDown, kUp, kBlur, kShaftsPre, kShafts, kFxaa, kProgCount };
 
     Target& target(Sized& s, int role, int w, int h);
-    gfx::TextureHandle depthFor(Sized& s, int w, int h);
+    gfx::TextureHandle depthFor(Sized& s, int w, int h, int role=0);
     Sized& sized(int w, int h);
     gfx::PipelineHandle program(Prog p);
     gfx::PipelineHandle composite(uint32_t mask, const Json* graph = nullptr);
@@ -98,6 +187,7 @@ private:
     gfx::TextureHandle graphTexture(const std::string& path);
     double graphEpoch_ = -1;
     uint64_t frame_ = 0;
+    PostFxUnderwaterState underwater_{};
     PostFxStats stats_;
     std::string error_;
 };

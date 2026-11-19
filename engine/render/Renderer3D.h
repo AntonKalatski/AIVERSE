@@ -180,6 +180,8 @@ enum DrawFlags : uint32_t {
     // the light baker captures (Renderer3D::setModelCapture). Dynamic objects get light probes instead.
     kDrawStatic = 32,
     kDrawKeepShadow = 64, // preserve opaque shadow casting while the camera image fades
+    kDrawWaterSurface = 256, // opt-in NEREID water shader at arbitrary world Y; not a genre flag
+    kDrawNereidCascade = 512, // opt-in vertically flowing water; never a planar reflection source
 };
 
 struct ModelRenderStats {
@@ -228,6 +230,15 @@ public:
 
     void beginScene(const Camera3D& cam, int fbW, int fbH);
     void drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags = 0, float specular = 0.25f, float emissive = 0.0f);
+    // Opt-in per-surface ripple normals. Positions are render-origin-relative
+    // X/Z; z = propagating radius, w = signed amplitude. No new RHI buffers.
+    void drawNereidRippleMesh(const Mesh& mesh,const mat4& model,float4 color,
+                              float specular,float refraction,
+                              const std::array<float4,16>& ripples,
+                              uint32_t firstIndex=0,uint32_t indexCount=0,
+                              const std::array<float4,16>& wakeShapes={},
+                              float4 wind={},float4 hydraulics={},
+                               float4 rapidColor={0.84f,0.93f,0.94f,1.f});
     // Editor Scene only: render selected geometry into a depth-tested mask
     // and composite its exterior silhouette in screen pixels.
     void setSceneSelectionOutline(bool enabled) { sceneSelectionOutline_ = enabled; }
@@ -406,6 +417,12 @@ private:
         const Mesh* mesh; mat4 model; float4 color;
         uint32_t flags; float specular, emissive;
         float4 selection{0, 0, 0, 0};
+        std::array<float4,16> waterRipples{};
+        std::array<float4,16> waterWakeShapes{};
+        float4 waterWind{};
+        float4 waterHydraulics{};
+        float4 waterRapidColor{};
+        uint32_t waterFirstIndex=0,waterIndexCount=0;
     };
     struct ModelItem {
         const Model* model; const Primitive* prim; const Material* mat;
@@ -506,6 +523,10 @@ private:
     // trace tier
     bool traceWanted_ = true;
     bool ssrThisFrame_ = false;
+    // NEREID: only the selected water plane can sample this frame's planar RTT.
+    // Reset every beginScene; secondary elevations use SSR/environment only.
+    bool reflectionPlaneValid_ = false;
+    float reflectionPlaneY_ = 0.f;
     bool modelReflections_ = false; // opt-in opaque PBR SSR; High trace + HDR only
     bool hdrFrame_ = false;
     HeightField heightField_;

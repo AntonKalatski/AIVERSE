@@ -2218,6 +2218,174 @@
       "keywords": []
     },
     {
+      "id": "aiverse-nereid-buoyancy",
+      "package": "nereid-buoyancy",
+      "path": "skills/gameplay/aiverse-nereid-buoyancy/SKILL.md",
+      "domain": "gameplay",
+      "summary": "NEREID shared deterministic buoyancy and flow drag output for host physics",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_nereid_buoyancy",
+      "dependencies": [
+        "aiverse-nereid-water"
+      ],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/water/NereidBuoyancySystems.h",
+      "keywords": [
+        "buoyancy",
+        "float",
+        "drag",
+        "swimming",
+        "water",
+        "плавучесть",
+        "сила",
+        "вода"
+      ]
+    },
+    {
+      "id": "aiverse-nereid-cascades",
+      "package": "nereid-cascades",
+      "path": "skills/gameplay/aiverse-nereid-cascades/SKILL.md",
+      "domain": "gameplay",
+      "summary": "NEREID genre-independent waterfall/cascade ECS geometry, persistence and visual ribbon mesh",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_nereid_cascades",
+      "dependencies": [
+        "aiverse-nereid-water"
+      ],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/water/NereidCascades.h",
+      "keywords": [
+        "cascade",
+        "waterfall",
+        "river",
+        "flow",
+        "join",
+        "водопад",
+        "каскад",
+        "соединение"
+      ]
+    },
+    {
+      "id": "aiverse-nereid-currents",
+      "package": "nereid-currents",
+      "path": "skills/gameplay/aiverse-nereid-currents/SKILL.md",
+      "domain": "gameplay",
+      "summary": "NEREID fixed-point per-river spatial flow field with downstream, lateral and shear currents",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_nereid_currents",
+      "dependencies": [
+        "aiverse-nereid-water"
+      ],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/water/NereidCurrentField.h",
+      "keywords": [
+        "current",
+        "river",
+        "flow",
+        "stream",
+        "shear",
+        "течени",
+        "река",
+        "скорость"
+      ]
+    },
+    {
+      "id": "aiverse-nereid-interactions",
+      "package": "nereid-interactions",
+      "path": "skills/gameplay/aiverse-nereid-interactions/SKILL.md",
+      "domain": "gameplay",
+      "summary": "NEREID deterministic ECS entry/exit/wake events with ordered read-only VFX/audio presentation snapshots",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_nereid_interactions",
+      "dependencies": [
+        "aiverse-nereid-water"
+      ],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/water/NereidInteractions.h",
+      "keywords": [
+        "water",
+        "splash",
+        "ripple",
+        "wake",
+        "entry",
+        "exit",
+        "брызги",
+        "волны",
+        "след"
+      ]
+    },
+    {
+      "id": "aiverse-nereid-vortices",
+      "package": "nereid-vortices",
+      "path": "skills/gameplay/aiverse-nereid-vortices/SKILL.md",
+      "domain": "gameplay",
+      "summary": "NEREID deterministic bounded vortex/eddy currents for water contacts and visuals",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_nereid_vortices",
+      "dependencies": [
+        "aiverse-nereid-water"
+      ],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/water/NereidVortices.h",
+      "keywords": [
+        "vortex",
+        "water",
+        "eddy",
+        "whirlpool",
+        "swirl",
+        "вихрь",
+        "водоворот",
+        "течение"
+      ]
+    },
+    {
+      "id": "aiverse-nereid-water",
+      "package": "nereid-water",
+      "path": "skills/gameplay/aiverse-nereid-water/SKILL.md",
+      "domain": "gameplay",
+      "summary": "NEREID deterministic fixed-point ECS water volume sampling across game genres",
+      "side": "simulation",
+      "runtime": "header",
+      "target": "AIVERSE::lib_nereid_water",
+      "dependencies": [],
+      "backendDependencies": [
+        "aiverse_engine"
+      ],
+      "requiresOwner": null,
+      "source": "libraries/include/aiverselib/water/NereidWaterSystems.h",
+      "keywords": [
+        "water",
+        "ocean",
+        "lake",
+        "river",
+        "swim",
+        "nereid",
+        "вода",
+        "река",
+        "океан"
+      ]
+    },
+    {
       "id": "aiverse-network-session",
       "package": "network-session",
       "path": "skills/network/aiverse-network-session/SKILL.md",
@@ -2252,6 +2420,30 @@
         "механик",
         "фича",
         "движок"
+      ]
+    },
+    {
+      "id": "aiverse-niagara-vfx",
+      "package": null,
+      "path": "skills/visuals/aiverse-niagara-vfx/SKILL.md",
+      "domain": "workflow",
+      "summary": "Legacy Niagara-style discovery alias; use the official SpectraFX workflow",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/spectrafx.md",
+      "keywords": [
+        "niagara",
+        "unreal",
+        "vfx",
+        "legacy",
+        "compatibility",
+        "ниягара",
+        "анриал",
+        "старая",
+        "совместимость"
       ]
     },
     {
@@ -3213,6 +3405,40 @@
         "трафик",
         "машин",
         "пешеход"
+      ]
+    },
+    {
+      "id": "aiverse-spectrafx",
+      "package": null,
+      "path": "skills/visuals/aiverse-spectrafx/SKILL.md",
+      "domain": "workflow",
+      "summary": "SpectraFX universal graphs, particle assets and ECS presentation for native games",
+      "side": "tools",
+      "runtime": "none",
+      "target": null,
+      "dependencies": [],
+      "backendDependencies": [],
+      "source": "docs/spectrafx.md",
+      "keywords": [
+        "spectrafx",
+        "spectra",
+        "vfx",
+        "particles",
+        "particle",
+        "graph",
+        "effects",
+        "visual",
+        "ecs",
+        "game",
+        "genre",
+        "gpu",
+        "cpu",
+        "spectrum",
+        "спектрафх",
+        "эффекты",
+        "частицы",
+        "граф",
+        "универсальн"
       ]
     },
     {
