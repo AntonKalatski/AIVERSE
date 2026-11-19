@@ -825,3 +825,21 @@ CI if it remains queued or cancelled.
   compatible ICB fragment shader variant; no VT array/U6.
 - Renderer integration is not yet enabled in this stage.
   Never claim native GPU validation; all tests NOT RUN.
+
+
+### Renderer3D non-VT mixed opaque PBR ICB integration (Stage 10AG)
+
+- For test-only per-command built-in PBR without virtual textures,
+  set `AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR=1` and
+  `AIVERSE_EXPERIMENTAL_ICB_MIXED_PBR=1` (plus the existing
+  `AIVERSE_GPU_AUTHORED_DRAWS`, Metal ICB safety flags).
+  These are OFF by default.
+- The renderer groups only opaque built-in materials whose
+  pipeline traits match, sends their six actual/fallback
+  TextureHandles and U2 to the optional non-VT RHI API,
+  and compares exact per-command generation tickets
+  immediately before GPU submission.
+- VT groups still use `prepare...WithVirtualMaterials`
+  and require the additional VT flag. Masked/transparent
+  and Shader Graph material groups retain existing CPU
+  or homogeneous GPU fallback; no release GPU validation.
