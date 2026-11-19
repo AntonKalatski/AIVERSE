@@ -9189,3 +9189,57 @@ After macOS native validation, perform Metal 3D volume mip + partial
 z-region upload/readback on an actual GPU, and separately validate
 GL/Vulkan, Windows/mobile/WebGL2 support before marking PR ready.
 
+
+## Stage 10BA — macOS source-verification gate green (2026-11-19)
+
+**Branch / PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Last source-fix checkpoint verified by user:** `79e8c04fc10074fc5c8723cbe47d77113d9025ba`.
+**Documentation commit:** `f07a31faddfbe58074169ffa358ef526d7c7bcaa`
+(`docs/texture-rhi.md`).
+**Worktree:** isolated Mac Studio checkout
+`/Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819`;
+the original AIVERSE checkout remains in unrelated incomplete rebase.
+
+**Actual user-executed commands and output:**
+```text
+cmake --build build/texture-rhi --target aiverse_editor --parallel 4
+[100%] Built target aiverse_editor
+
+bash tools/verify-texture-rhi.sh --editor --jobs 4
+CONFIGURE PASS
+... 20/20 focused texture test executable targets BUILD PASS ...
+BUILD PASS aiverse_editor
+GLSL validator: present
+Metal validator: xcrun present
+CTEST PASS (inspect log for SKIPPED tests and GPU execution)
+OVERALL SOURCE TESTS PASS (GPU validation remains separate)
+```
+The prior full `ctest.log` excerpt provided by the same user explicitly
+showed 23/23 tests PASSED (including GLSL and MSL validator tests). This
+new terminal summary confirms the focused CTest invocation exited 0,
+but the new detailed `ctest.log` was not attached and exact timing or
+skips cannot be independently reconstructed.
+
+**Validation outcome:** **PASS** for focused macOS native C++/Objective-C++
+build, editor target link, and CTest source validation under the configured
+test filter. This is the first confirmed full focused verifier pass
+following Stage 10AZ's Metal Texture3D Objective-C selector correction.
+No new engine code is required by this user result; this is a
+documentation-only checkpoint.
+
+**Remaining unverified work:** actual Metal GPU volume upload, mip/subresource
+writes and readback; Metal sampled 3D/cube/array color parity; GPU VT feedback,
+page-cache transitions and streaming under actual command completion; GPU ICB
+heterogeneous fragment resource behavior; device loss/async readback lifetime;
+performance/memory; and cross-platform Vulkan/GL/GLES/Windows/mobile/WebGL.
+CPU CTest or MSL shader validation does not certify those GPU flows.
+
+**Next concrete step:** implement or run a real Metal GPU acceptance
+fixture that creates a Texture3D volume, writes a nonzero mip and partial
+z-range via `updateTextureRegion`, samples/renders slices and asynchronously
+reads back exact bytes. Also test 2DArray/Cube/CubeArray mip/face parity,
+and confirm GPU page-feedback and Shader Graph ICB only where explicitly
+enabled. Record actual GPU device, OS, shader/compiler results, visual
+pixel output, limits and performance; keep the PR in Draft until validated.
+Do not touch the main worktree during its unrelated rebase.
+
