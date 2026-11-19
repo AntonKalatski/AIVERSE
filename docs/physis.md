@@ -1004,3 +1004,22 @@ RUN_SERIAL property, not the actual Place speed.
 **Native macOS post-fix CTest remains UNVERIFIED.**
 See the dedicated Stage74 handoff at
 `docs/agent-handoffs/physis-stage74-full-ctest-skill-place-2026-11-19.md`.
+
+### Stage 75 — build/test visibility and Place performance follow-up
+
+The general engine build monitor `tools/aiverse-progress.py`
+was committed to the PHYSIS branch; it wraps CMake/CTest, shows
+live active test timing and heartbeat for long silent tests,
+provides TTY dashboard and CI plain fallback, and persists
+logs/JSON. Tested on a standalone Linux CMake fixture (2/2
+PASS; no-tests and deliberate fail return 8; 15s heartbeat).
+Full macOS AIVERSE testing of the new tool is NOT RUN.
+See `docs/aiverse-build-monitor.md`.
+
+The user's Stage74 isolated macOS CTest rerun confirmed
+`skill_audit` PASS but `place` still FAIL at average 8.110ms
+versus its strict 5.0ms threshold. This is an unrelated Place
+server performance gate, not a PHYSIS/Water simulation assertion.
+No threshold/physics code changed. Next: separate Release Place
+benchmark and phase profiling if it still exceeds 5ms.
+Handoff: `docs/agent-handoffs/physis-stage75-progress-monitor-place-2026-11-19.md`.

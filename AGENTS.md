@@ -1554,3 +1554,30 @@ not proof that Place meets 5ms on the user's machine. If it still
 fails alone, capture Release/Debug build mode, CPU/Rosetta status
 and isolated tick timing before changing performance budgets.
 Handoff: `docs/agent-handoffs/physis-stage74-full-ctest-skill-place-2026-11-19.md`.
+
+## Stage 75 — universal terminal build monitor + isolated Place triage (2026-11-19)
+
+- New `tools/aiverse-progress.py` (code commit
+  `d83716dcd835df40c7861828a92064e961a63bc6`): standard
+  library Python 3.8+ CMake/CTest wrapper, animated ANSI terminal
+  dashboard, CTest active names and elapsed duration, bounded recent
+  output/warning counts, plain CI fallback with 15s heartbeat, preserved
+  unabridged per-stage logs and `summary.json`, real exit codes.
+- **Actually tested on a local isolated Linux CMake fixture**, not
+  AIVERSE: configure/build/smoke CTest 2/2 PASS, deliberate no-tests
+  and failing-test exit 8, 16s silent test printed `[alive]`
+  heartbeat at 15s. `py_compile` PASS; GitHub blob SHA matches
+  the exact locally tested file. macOS ANSI UI remains unverified.
+- **User's Stage74 re-run**: `skill_audit` PASS (0.42s),
+  `place` FAIL after 309.14s, tick avg **8.110ms** (threshold
+  `<5.0ms`), worst 19.245ms; all other 51 Place internal
+  checks passed. This is an isolated CTest run after
+  `RUN_SERIAL TRUE`, so contention with other CTests is no
+  longer an adequate explanation. Do NOT relax the threshold.
+- Next: test `place` in a separate optimized Release build with
+  the monitor and examine `CMAKE_BUILD_TYPE`, actual Mac architecture/
+  Rosetta and then phase profile PlaceServer if needed.
+- This stage changes tooling/docs only; no engine PHYSIS/NEREID,
+  physics, network, ECS or genre API changes. PR #25 remains Draft.
+- Guides: `docs/aiverse-build-monitor.md`,
+  `docs/agent-handoffs/physis-stage75-progress-monitor-place-2026-11-19.md`.

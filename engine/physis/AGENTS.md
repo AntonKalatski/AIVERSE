@@ -1070,3 +1070,23 @@ Keep PR #25 Draft. Record later actual Place timing and
 `skill_audit` output; if Place fails serially, profile the
 actual CPU/build config instead of raising its threshold.
 Handoff: `docs/agent-handoffs/physis-stage74-full-ctest-skill-place-2026-11-19.md`.
+
+### Stage 75 — AIVERSE progress monitor, isolated Place still above budget
+
+New general `tools/aiverse-progress.py` monitors long CMake/CTest
+jobs, printing active tests and elapsed wall time in an interactive
+terminal and a periodic heartbeat in non-TTY output. Uses only Python
+stdlib; full output/JSON reports are preserved. Source:
+`d83716dcd835df40c7861828a92064e961a63bc6`.
+Local Linux toy CMake smoke passed with real success/failure/
+no-test exit code propagation and a 15s heartbeat; **native macOS
+AIVERSE use and TTY visuals NOT YET RUN**.
+
+User-rerun of `place` after Stage74 `RUN_SERIAL`: FAIL
+`tickAvg=8.110ms`, target `<5.0`, worst 19.245ms, duration
+309.14s; `skill_audit` PASS. The earlier parallel run was
+8.204ms, so scheduling isolation is insufficient. Do NOT
+raise the threshold; first test Release performance separately,
+inspect CPU architecture and profile bottlenecks if needed.
+Docs: `docs/aiverse-build-monitor.md`; handoff:
+`docs/agent-handoffs/physis-stage75-progress-monitor-place-2026-11-19.md`.
