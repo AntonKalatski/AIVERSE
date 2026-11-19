@@ -195,18 +195,29 @@ void Renderer3D::shutdown() {
     shutdownTrace();
     retireRenderTargets(shadowMap_);
     shadowMap_={};
-    dev_->destroyBuffer(lineVB_); dev_->destroyBuffer(triVB_);
+    if(lineVB_.valid())dev_->destroyBuffer(lineVB_);
+    if(triVB_.valid())dev_->destroyBuffer(triVB_);
+    lineVB_=triVB_={};
     retireRenderTargets(sceneSelectionMask_);
     sceneSelectionMask_={};
     if (sceneSelectionTriangle_.valid()) dev_->destroyBuffer(sceneSelectionTriangle_);
+    sceneSelectionTriangle_={};
     if (sceneSelectionPrimitiveMaskPipe_.valid())
         dev_->destroyPipeline(sceneSelectionPrimitiveMaskPipe_);
+    sceneSelectionPrimitiveMaskPipe_={};
     for (auto p : {sceneSelectionEdgePipe8_, sceneSelectionEdgePipeHdr_})
         if (p.valid()) dev_->destroyPipeline(p);
+    sceneSelectionEdgePipe8_=sceneSelectionEdgePipeHdr_={};
     if (sceneSelectionEdgeShader_.valid())
         dev_->destroyShader(sceneSelectionEdgeShader_);
-    for (auto p : {litPipe_, litBlendPipe_, shadowPipe_, linePipe_, triPipe_}) dev_->destroyPipeline(p);
-    for (auto s : {litShader_, shadowShader_, colorShader_}) dev_->destroyShader(s);
+    sceneSelectionEdgeShader_={};
+    for (auto p : {litPipe_, litBlendPipe_, shadowPipe_, linePipe_, triPipe_})
+        if(p.valid())dev_->destroyPipeline(p);
+    for (auto s : {litShader_, shadowShader_, colorShader_})
+        if(s.valid())dev_->destroyShader(s);
+    litPipe_=litBlendPipe_=shadowPipe_=linePipe_=triPipe_={};
+    litShader_=shadowShader_=colorShader_={};
+    shadowSize_=0;
     if(targetRetirement_ && !targetRetirement_->drain())
         throw std::runtime_error(
             "Renderer3D shutdown: pending GPU render target completion");
