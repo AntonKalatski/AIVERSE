@@ -279,6 +279,10 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
         for (float v : inst.objectToWorld)
             if (!std::isfinite(v)) return false;
     }
+    // If the RHI exposes a serial, reject callers passing a different
+    // epoch: otherwise a stale frame-slot could be overwritten in-flight.
+    if (dev.frameSerial() != 0 && dev.frameSerial() != frameSerial)
+        return false;
     if (!pipeline_.valid()) {
         pipeline_ = dev.createCompute({kMetalCulling, nullptr,
                                        "Strata diagnostic GPU cluster culling"});
@@ -288,8 +292,10 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
     if (epochs_[index] != frameSerial) {
         // Backend must guarantee a completed frame slot before reuse, like
         // the existing GpuSceneDrawCommands 3-frame-slot implementation.
-        if (epochs_[index] != 0 && dev.completedFrameSerial() != 0 &&
-            dev.completedFrameSerial() < epochs_[index]) return false;
+        if (epochs_[index] != 0 &&
+            (dev.completedFrameSerial() == 0 ||
+             dev.completedFrameSerial() < epochs_[index]))
+            return false;
         epochs_[index] = frameSerial;
         cursors_[index] = 0;
     }
