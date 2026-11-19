@@ -211,6 +211,7 @@ inline void populateHorizonNearSeamSamples(
     bake.nearSeamSamples.clear();
     bake.continuousNearNormalSamples=0;
     bake.localFallbackNearNormalSamples=0;
+    bake.nearNormalProvenanceAvailable=false;
     bake.nearWeldSlopeFallback=false;
     if(!source || (!source->nearGroundHeightAtCm &&
                    !source->nearGroundHeightAtQ16Cm) ||
@@ -218,6 +219,7 @@ inline void populateHorizonNearSeamSamples(
         return;
     const auto planned=planHorizonNearGroundClipping(bake);
     if(!planned)return; // geometric limit, old full-quad path is used
+    bake.nearNormalProvenanceAvailable=true;
     constexpr size_t kMaxSamples=4096;
     std::map<std::pair<int64_t,int64_t>,int32_t> samples;
     std::map<std::pair<int64_t,int64_t>,std::pair<int32_t,int32_t>>
