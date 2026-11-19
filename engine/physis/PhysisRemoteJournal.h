@@ -311,6 +311,65 @@ public:
         return true;
     }
 
+#ifndef _WIN32
+    // The privileged endpoint owns a verified directory fd for its entire
+    // lifetime. Perform every filesystem mutation relative to that inode:
+    // no temp-file creation or rename may follow a replaced parent path.
+    // Direct FileJournal::save remains a legacy, non-lock-owned API.
+    bool savePinned(int parentFd,
+                    const std::map<ServerGateway::Key,ServerGateway::Entry>& entries,
+                    std::string* error=nullptr) const {
+        const auto fail=[&](const char* reason) {
+            if(error)*error=reason;
+            return false;
+        };
+        if(parentFd<0)return fail("PHYSIS pinned journal directory missing");
+        struct stat parent{};
+        if(::fstat(parentFd,&parent)!=0 || !S_ISDIR(parent.st_mode))
+            return fail("PHYSIS pinned journal directory invalid");
+        const std::string target=file_.filename().string();
+        if(target.empty() || target=="." || target==".." ||
+           target.find('/')!=std::string::npos)
+            return fail("PHYSIS pinned journal filename invalid");
+        net::Bytes bytes;
+        if(!encodeEntries(entries,bytes,error))return false;
+        const auto nonce=net::randomKey();
+        const std::string temporary=target+".next-"+
+            net::toHexString(nonce.data(),16);
+        int flags=O_WRONLY|O_CREAT|O_EXCL;
+#ifdef O_CLOEXEC
+        flags|=O_CLOEXEC;
+#endif
+#ifdef O_NOFOLLOW
+        flags|=O_NOFOLLOW;
+#endif
+        const int fd=::openat(parentFd,temporary.c_str(),flags,0600);
+        if(fd<0)return fail("PHYSIS pinned journal temp creation failed");
+        std::size_t offset=0;
+        bool good=true;
+        while(offset<bytes.size()) {
+            const auto written=::write(fd,bytes.data()+offset,bytes.size()-offset);
+            if(written<0 && errno==EINTR)continue;
+            if(written<=0) {good=false;break;}
+            offset+=std::size_t(written);
+        }
+        if(good && ::fsync(fd)!=0)good=false;
+        if(::close(fd)!=0)good=false;
+        if(!good) {
+            (void)::unlinkat(parentFd,temporary.c_str(),0);
+            return fail("PHYSIS pinned journal write/fsync failed");
+        }
+        if(::renameat(parentFd,temporary.c_str(),parentFd,target.c_str())!=0) {
+            (void)::unlinkat(parentFd,temporary.c_str(),0);
+            return fail("PHYSIS pinned journal rename failed");
+        }
+        if(::fsync(parentFd)!=0)
+            return fail("PHYSIS pinned journal directory fsync failed");
+        if(error)error->clear();
+        return true;
+    }
+#endif
+
     // Load FIRST, then set the writer, then allow privileged connections.
     // A corrupt journal rejects startup rather than silently losing dedupe.
     bool attach(ServerGateway& gateway,std::string* error=nullptr) const {
