@@ -6,6 +6,7 @@
 #include "engine/world/TerraWeaveNativeDriver.h"
 #include "engine/world/TerraWeaveShorelineRaster.h"
 #include "engine/world/TerraWeaveSedimentEcs.h"
+#include "engine/world/TerraWeaveNereidFloodBridge.h"
 #include "engine/world/TerraWeaveFlowObstructionEcs.h"
 #include <functional>
 #include <string>
@@ -35,6 +36,8 @@ inline void registerSystems(
     water.enableConfluences=true;
     water.enableCascades=true;
     water.enableFlowObstructions=true;
+    water.enableFloodRouting=true;
+    water.floodTickMs=water.bankErosionTickMs;
     // This example gives bank cells explicit WaterProbe positions. A native
     // game that uses Transform-driven probes may choose true instead.
     water.probeFromTransform=false;
@@ -51,7 +54,7 @@ inline void registerSystems(
         sim,"nereid.sediment_transport",cfg.soilGridCm,
         water.bankErosionTickMs);
     terraweave::addTerraWeaveAuthoritativeBankSystem(
-        sim,"terraweave.bank_commit",std::move(cfg),
+        sim,"terraweave.bank_commit",cfg,
         [after=std::move(onEroded)](
             const terraweave::EcsBankTerrainCommit& change) {
             // A real server may append fall events to a host-managed
@@ -60,6 +63,11 @@ inline void registerSystems(
             // the canonical ECS resource still contains the new fallen flags.
             if(after)after(change);
         },enableSlopeFailures,slopeSettings);
+    // Refresh water-column ground heights ONLY when canonical ECS soil
+    // revision changes, AFTER the bank erosion+slides commit. The next
+    // NEREID flood tick sees the new bottom while preserving water volume.
+    terraweave::addTerraWeaveFloodGroundSyncSystem(
+        sim,"terraweave.flood_ground",cfg);
 }
 
 inline Entity addWaterBody(
@@ -119,6 +127,22 @@ inline terraweave::ShorelineRefreshStats refreshDetectedShoreline(
     auto banks=terraweave::discoverNereidShoreline(
         ecs,ground,settings,std::move(soilAt),std::move(rootsAt));
     return terraweave::refreshAutoShorelineBanks(ecs,banks);
+}
+
+// Structural ECS barrier after authored NEREID WaterBodyComponent creation,
+// shoreline detection and canonical TerraWeaveAuthorityResource setup.
+// Call ONCE for the pinned map window; do not repeatedly reseed a live flood
+// reservoir because that would create/destroy water rather than conserve it.
+inline void seedFloodReservoir(
+        World& ecs,
+        const terraweave::TerraWeaveEcsAuthorityConfig& cfg,
+        terraweave::NereidFloodGridRegion region){
+    const auto* state=ecs.resourceConst<
+        terraweave::TerraWeaveAuthorityResource>();
+    if(!state)throw std::logic_error(
+        "NEREID flood seed requires canonical TerraWeave soil");
+    auto ground=terraweave::materializeEcsTerrain(*state,cfg);
+    terraweave::initializeNereidFloodGrid(ecs,ground,region);
 }
 
 inline terraweave::NativeTerrainPublishResult publishFrame(
