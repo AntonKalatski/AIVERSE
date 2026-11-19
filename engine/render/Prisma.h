@@ -297,6 +297,8 @@ public:
         // "accepted" means declared metadata/RHI checks passed, NOT pixel proof.
         bool reactiveInputSupplied = false;
         bool reactiveInputAccepted = false;
+        bool objectVelocityInputAccepted = false; // independent borrowed RGBA16F
+        bool reactiveWithoutObjectVelocity = false; // current-frame mask only
         bool motionBlurReactiveEdgesEnabled = false; // actually encoded with tap rejection
         std::vector<EffectExecution> effects;
     };
