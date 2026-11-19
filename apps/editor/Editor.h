@@ -43,6 +43,19 @@ namespace aiverse::spectra { class GpuPoolWorld; }
 
 namespace aiverse::editor {
 
+// Read-only 180-frame diagnostic history of the optional Metal preview.
+// This is NOT a restorable GPU snapshot or authoritative simulation data.
+struct SpectraGpuPreviewFrameRecord {
+    uint64_t deviceFrame=0;
+    double visualSeconds=0;
+    uint32_t estimatedParticles=0;
+    uint32_t freshGroups=0, staleGroups=0, pendingGroups=0;
+    uint32_t killedSlotsWaiting=0;
+    bool stepAccepted=false;
+    bool deviceHealthy=false;
+};
+
+
 // What the Inspector shows. Hierarchy/Project/Scene set it.
 struct Selection {
     enum Kind { None, Entity, Player, Area, Region, Wave, Trigger, Type, Resource, Tech, Faction, MapProps, GameProps,
@@ -285,6 +298,10 @@ public:
     const std::string& spectraGpuPreviewLastError() const {
         return spectraPreviewLastError_;
     }
+    const std::deque<SpectraGpuPreviewFrameRecord>&
+    spectraGpuPreviewHistory() const {return spectraPreviewHistory_;}
+    // JSON diagnostic export; never promises a replayable GPU particle state.
+    std::string spectraGpuPreviewHistoryJson() const;
     // Non-owning optional telemetry source. Editor's normal FX preview is
     // CPU-only; external Metal preview hosts explicitly attach their pool.
     // The host MUST detach it before destroying the pool.
@@ -461,6 +478,7 @@ private:
     bool spectraPreviewRestart_=false;
     double spectraPreviewVisualSeconds_=0;
     std::string spectraPreviewLastError_;
+    std::deque<SpectraGpuPreviewFrameRecord> spectraPreviewHistory_;
     double spectraPreviewNextBurst_=0;
     std::array<float,8> spectraPreviewParams_{};
     fx::float3 spectraPreviewPosition_{};
