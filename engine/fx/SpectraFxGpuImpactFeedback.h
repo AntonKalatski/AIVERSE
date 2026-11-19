@@ -2,6 +2,7 @@
 // No synchronous particle readback, no writes to authoritative ECS state.
 // On backends without async buffer readback this is optional/unavailable.
 #pragma once
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -9,6 +10,7 @@
 #include <deque>
 #include <memory>
 #include <vector>
+#include <utility>
 #include "SpectraFxGpuParticleSlots.h"
 
 namespace aiverse::fx {
