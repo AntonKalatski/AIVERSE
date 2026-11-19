@@ -24,14 +24,14 @@ namespace aiverse::render::shaders {
     "  vec4 u_skyColor; vec4 u_groundColor; vec4 u_fog; vec4 u_camPos; vec4 u_shadow; vec4 u_quality;\n" \
     "  vec4 u_trace0; vec4 u_trace1; vec4 u_trace2; vec4 u_trace3; };\n"
 #define AIVERSE_GLSL_BLOCKS \
-    "layout(std140) uniform U0 { mat4 u_model; vec4 u_color; vec4 u_params; vec4 u_waterRipples[16]; vec4 u_waterWakeShapes[16]; };\n" AIVERSE_GLSL_FRAME
+    "layout(std140) uniform U0 { mat4 u_model; vec4 u_color; vec4 u_params; vec4 u_waterRipples[16]; vec4 u_waterWakeShapes[16]; vec4 u_waterWind; };\n" AIVERSE_GLSL_FRAME
 
 #define AIVERSE_MSL_FRAME \
     "struct U1 { float4x4 viewProj; float4x4 lightViewProj; float4x4 invViewProj; float4 sunDir; float4 sunColor;\n" \
     "  float4 skyColor; float4 groundColor; float4 fog; float4 camPos; float4 shadow; float4 quality;\n" \
     "  float4 trace0; float4 trace1; float4 trace2; float4 trace3; };\n"
 #define AIVERSE_MSL_BLOCKS \
-    "struct U0 { float4x4 model; float4 color; float4 params; float4 waterRipples[16]; float4 waterWakeShapes[16]; };\n" AIVERSE_MSL_FRAME
+    "struct U0 { float4x4 model; float4 color; float4 params; float4 waterRipples[16]; float4 waterWakeShapes[16]; float4 waterWind; };\n" AIVERSE_MSL_FRAME
 
 // Traced terrain shadows (Renderer3D "trace" tier, needs U1 and the height field in slot TEX):
 // the sun ray is marched over a 16-bit height map of the whole map (R high byte, G low byte; built by
@@ -416,8 +416,12 @@ void main() {
     // aliases into stripes; slow large patches of darker / lighter water.
     bool openWater = (u_params.x < -0.5 || (u_params.y >= 0.85 && v_wpos.y < 0.04)) && n.y > 0.9;
     if (openWater) {
-        vec2 p = v_wpos.xz;
         float wt = (l_cloud.x + l_cloud.y) * 20.0;
+        // PHYSIS/weather owner supplies world-space wind through NEREID's
+        // generic presentation API; legacy untagged water is unchanged.
+        float windCoupling=u_params.x < -0.5 ? u_waterWind.w : 0.0;
+        vec2 p = v_wpos.xz -
+                 u_waterWind.xy * wt * (0.02 * windCoupling);
         float fade = clamp(1.0 - length(u_camPos.xyz - v_wpos) / 160.0, 0.3, 1.0);
         const vec4 wv[6] = vec4[6](vec4(0.951, 0.309, 0.61, 0.060), vec4(-0.454, 0.891, 0.97, 0.045), vec4(0.588, -0.809, 1.63, 0.036),
                                    vec4(-0.978, -0.208, 2.71, 0.026), vec4(0.139, 0.990, 4.37, 0.018), vec4(0.743, 0.669, 6.91, 0.012));
@@ -432,6 +436,11 @@ void main() {
         float h01 = fract(sin(dot(qi + vec2(0, 1), vec2(127.1, 311.7))) * 43758.5), h11 = fract(sin(dot(qi + vec2(1, 1), vec2(127.1, 311.7))) * 43758.5);
         vec2 dn = vec2(mix(h10 - h00, h11 - h01, qu.y), mix(h01 - h00, h11 - h10, qu.x)) * 6.0 * qf * (1.0 - qf);
         g += dn * 0.09;
+        float windSpeed=length(u_waterWind.xy);
+        float gust=clamp(u_waterWind.z,0.0,1.0)*windCoupling;
+        float windSlope=clamp(windSpeed*0.006,0.0,0.32)*gust;
+        vec2 windDir=u_waterWind.xy/max(windSpeed,0.001);
+        g+=windDir*windSlope;
         n = normalize(vec3(-g.x * fade, 1.0, -g.y * fade));
         vec2 m = p * 0.021 + vec2(wt * 0.004, 0.0);
         float patches = 0.5 + 0.5 * sin(m.x * 2.3 + sin(m.y * 1.7) * 2.1) * sin(m.y * 1.9 + sin(m.x * 1.3) * 1.7);
@@ -603,8 +612,10 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     // aliases into stripes; slow large patches of darker / lighter water.
     bool openWater = (u.params.x < -0.5 || (u.params.y >= 0.85 && in.wpos.y < 0.04)) && n.y > 0.9;
     if (openWater) {
-        float2 p = in.wpos.xz;
         float wt = (l.cloud.x + l.cloud.y) * 20.0;
+        float windCoupling=u.params.x < -0.5 ? u.waterWind.w : 0.0;
+        float2 p = in.wpos.xz -
+                   u.waterWind.xy * wt * (0.02 * windCoupling);
         float fade = clamp(1.0 - length(f.camPos.xyz - in.wpos) / 160.0, 0.3, 1.0);
         const float4 wv[6] = {float4(0.951, 0.309, 0.61, 0.060), float4(-0.454, 0.891, 0.97, 0.045), float4(0.588, -0.809, 1.63, 0.036),
                                    float4(-0.978, -0.208, 2.71, 0.026), float4(0.139, 0.990, 4.37, 0.018), float4(0.743, 0.669, 6.91, 0.012)};
@@ -619,6 +630,11 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
         float h01 = fract(sin(dot(qi + float2(0, 1), float2(127.1, 311.7))) * 43758.5), h11 = fract(sin(dot(qi + float2(1, 1), float2(127.1, 311.7))) * 43758.5);
         float2 dn = float2(mix(h10 - h00, h11 - h01, qu.y), mix(h01 - h00, h11 - h10, qu.x)) * 6.0 * qf * (1.0 - qf);
         g += dn * 0.09;
+        float windSpeed=length(u.waterWind.xy);
+        float gust=clamp(u.waterWind.z,0.0,1.0)*windCoupling;
+        float windSlope=clamp(windSpeed*0.006,0.0,0.32)*gust;
+        float2 windDir=u.waterWind.xy/max(windSpeed,0.001);
+        g+=windDir*windSlope;
         n = normalize(float3(-g.x * fade, 1.0, -g.y * fade));
         float2 m = p * 0.021 + float2(wt * 0.004, 0.0);
         float patches = 0.5 + 0.5 * sin(m.x * 2.3 + sin(m.y * 1.7) * 2.1) * sin(m.y * 1.9 + sin(m.x * 1.3) * 1.7);
