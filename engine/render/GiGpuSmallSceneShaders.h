@@ -90,9 +90,10 @@ static Hit traceBvh(float3 origin,float3 direction,float limit,
             }
         } else {
             // Median splits cap tree depth; 64 entries far exceeds the maximum.
-            if(top+2u<=64u) {
+            uint children=node.meta.y==0xffffffffu?1u:2u;
+            if(top+children<=64u) {
+                if(children==2u)stack[top++]=node.meta.y;
                 stack[top++]=node.meta.x;
-                stack[top++]=node.meta.y;
             }
         }
     }
