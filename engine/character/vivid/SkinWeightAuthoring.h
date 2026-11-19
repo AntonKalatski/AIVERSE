@@ -94,8 +94,7 @@ public:
     }
     bool strokeBrush(const render::Model& model,std::size_t meshIndex,
                      std::uint32_t center,const std::string& joint,
-                     float target,float radius,float strength,bool mirrorX=false,
-               bool recordHistory=true) {
+                     float target,float radius,float strength,bool mirrorX=false) {
         if(!strokeStart_)return false;
         const bool result=brush(model,meshIndex,center,joint,
                                 target,radius,strength,mirrorX,false);
@@ -167,7 +166,8 @@ public:
     // One name/target per vertex; all failed operations preserve history.
     bool brush(const render::Model& model,std::size_t meshIndex,
                std::uint32_t center,const std::string& joint,
-               float target,float radius,float strength,bool mirrorX=false) {
+               float target,float radius,float strength,bool mirrorX=false,
+               bool recordHistory=true) {
         if(meshIndex>=model.meshes.size() || center>=model.vertices.size() ||
            !std::isfinite(target)||target<0||target>1 ||
            !std::isfinite(radius)||radius<=0||radius>10 ||
