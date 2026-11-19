@@ -12,6 +12,7 @@
 #include "engine/world/TerraWeaveForestEcologyEcs.h"
 #include "engine/world/TerraWeaveForestHarvestEcs.h"
 #include "engine/world/TerraWeaveForestDeadwoodEcs.h"
+#include "engine/world/TerraWeaveForestNutrientEcs.h"
 #include "engine/world/TerraWeaveFlowObstructionEcs.h"
 #include <functional>
 #include <optional>
@@ -45,7 +46,18 @@ inline void registerSystems(
         bool enableForestDeadwood=false,
         terraweave::ForestDeadwoodDecaySettings deadwoodSettings={},
         std::function<void(const terraweave::ForestDeadwoodDecayOutcome&)>
-            onDeadwoodDecay={}) {
+            onDeadwoodDecay={},
+        terraweave::ForestDeadwoodClimateSampler deadwoodClimate={},
+        bool enableForestNutrientCycle=false,
+        terraweave::ForestNutrientCycleSettings nutrientSettings={},
+        terraweave::ForestNutrientWeatherSampler nutrientWeather={},
+        std::function<void(const terraweave::ForestNutrientCycleOutcome&)>
+            onNutrientCycle={}) {
+    // Stage68 cannot run without the versioned organic ledger. Reject
+    // invalid setup BEFORE registering any ECS system or persistence type.
+    if(enableForestNutrientCycle && !enableForestDeadwood)
+        throw std::invalid_argument(
+            "TerraWeave nutrient cycle requires forest deadwood");
     lib::nereid::NativeWaterPipelineConfig water{};
     water.enableBankErosion=true;
     // Geometry and current state belong to NEREID, including polygon/
@@ -130,7 +142,13 @@ inline void registerSystems(
     if(enableForestDeadwood)
         terraweave::addTerraWeaveForestDeadwoodSystem(
             sim,"terraweave.forest_deadwood",deadwoodSettings,
-            std::move(onDeadwoodDecay));
+            std::move(onDeadwoodDecay),std::move(deadwoodClimate));
+    // PHYSIS weather snapshots and NEREID current are sampled only by
+    // the opt-in nutrient cycle after soil/wood/ecology authority commits.
+    if(enableForestNutrientCycle)
+        terraweave::addTerraWeaveForestNutrientSystem(
+            sim,"terraweave.forest_nutrients",cfg,nutrientSettings,
+            std::move(nutrientWeather),std::move(onNutrientCycle));
 }
 
 inline Entity addWaterBody(
