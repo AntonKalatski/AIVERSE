@@ -68,7 +68,7 @@ public:
     void submit(render::Renderer3D& r, const MapGrid& grid, float levelHeight);
     // Secondary camera: resubmit the already evaluated sprite queue and
     // uploaded tile mesh. Never beginFrame/addObject/endFrame/refreshTiles.
-    // World billboard vertices are currently primary-camera-oriented.
+    // Rebuild per-camera billboards from immutable same-frame sprite packets.
     void submitPrepared(render::Renderer3D& r);
 
     // world point at the top centre of the drawn sprite (health bars)
@@ -83,6 +83,15 @@ public:
     void refreshTiles(gfx::Device& dev, const MapGrid& grid, float levelHeight); // depleted fields
 
 private:
+    struct PreparedSprite {
+        SpriteLook look;
+        render::float3 ground, facing;
+        int action = 0;
+        double startTime = 0;
+        uint32_t team = 0, tint = 0;
+        bool corpse = false;
+        float fade = 1;
+    };
     struct Corpse { uint16_t type; uint8_t owner; render::float3 pos, facing; double start; };
     struct Seen { uint16_t type; uint8_t owner; render::float3 pos, facing; bool visible; uint32_t frame; };
     void loadLook(SpriteLook& L, const UnitType& t, const Json& s);
@@ -99,6 +108,10 @@ private:
     std::string base_;
     render::TextureCache textures_;
     render::SpriteBatch batch_;
+    render::SpriteBatch secondaryBatch_;
+    render::SpriteBatch* emittingBatch_ = nullptr;
+    std::vector<PreparedSprite> preparedSprites_;
+    bool replayingPrepared_ = false;
     render::TextureRef shadowTex_;
     std::vector<SpriteLook> looks_;
     std::vector<bool> loadedTypes_;
