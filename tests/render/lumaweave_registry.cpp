@@ -1,4 +1,5 @@
 #include "engine/render/LumaWeaveLights.h"
+#include "engine/render/LumaWeaveLegacyBridge.h"
 #include "tests/AlwaysCheck.h"
 #include <cmath>
 #include <stdexcept>
@@ -77,6 +78,28 @@ int main() {
     try { (void)registry.publish({invalidSpot}); }
     catch(const std::invalid_argument&) {rejected=true;}
     AIVERSE_TEST_CHECK(rejected && registry.revision()==2);
+
+    PointLight legacy{};
+    legacy.pos={2,1,3};
+    legacy.radius=6;
+    legacy.color={.8f,.4f,1};
+    legacy.intensity=8;
+    legacy.key=42;
+    const auto fromLegacy=lumaFromLegacy(legacy,uint64_t(10000042),true);
+    AIVERSE_TEST_CHECK(fromLegacy.key==10000042 && fromLegacy.kind==LumaLightKind::Point);
+    auto giRegistry=LumaWeaveRegistry{};
+    (void)giRegistry.publish({fromLegacy});
+    const auto gi=lumaGiPointSources(giRegistry);
+    AIVERSE_TEST_CHECK(gi.size()==1 && gi[0].key==10000042);
+    AIVERSE_TEST_CHECK(gi[0].color.x==.8f && gi[0].radius==6);
+    legacy.makeSpot({0,-1,0},40);
+    const auto legacySpot=lumaFromLegacy(legacy,uint64_t(10000042),true);
+    AIVERSE_TEST_CHECK(legacySpot.kind==LumaLightKind::Spot);
+    (void)giRegistry.publish({legacySpot});
+    rejected=false;
+    try {(void)lumaGiPointSources(giRegistry);}
+    catch(const std::invalid_argument&) { rejected=true; }
+    AIVERSE_TEST_CHECK(rejected); // no silent omnidirectional GI for a spot source
 
     auto cleared=registry.publish({});
     AIVERSE_TEST_CHECK(cleared.changed && cleared.removed==1);
