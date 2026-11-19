@@ -41,6 +41,12 @@ public:
     }
     void setVegetationPresentationTick(uint64_t tick);
     uint64_t vegetationPresentationTick() const {return vegetationPresentationTick_;}
+    // Quality/performance switch for independent 2.4km Horizon cluster
+    // wind variation. Disabling keeps a single shared macro wind shader.
+    void setVegetationHorizonSpatialWind(bool enabled);
+    bool vegetationHorizonSpatialWind() const {
+        return vegetationHorizonSpatialWind_;
+    }
     const AsyncChunkStream::Status& status()const{return stream_->status();}
     // Optional genre-independent presentation forest. Native hosts may feed
     // a deterministic tick and schedule sparse harvest/regrowth without
@@ -82,6 +88,7 @@ private:
     terraweave::ForestWindState vegetationWind_{};
     std::shared_ptr<const terraweave::ForestWindField> vegetationWindField_;
     uint64_t vegetationPresentationTick_=0;
+    bool vegetationHorizonSpatialWind_=true;
     float overhang_=0;                                        // "meshOverhang": units a mesh may reach past its chunk
     void releaseChunk(gfx::Device&,Prepared&);
     size_t uploadBytes_=16*1024*1024;
