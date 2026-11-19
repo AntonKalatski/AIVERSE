@@ -244,7 +244,22 @@ public:
                     animatedPose=pose;
             }
         }
+        // FPS, native and cinematic hosts may have evaluated this pose
+        // already in their own presentation World. Do not step the graph
+        // twice just because another visual LOD is selected here.
+        const render::Pose* sourcePose=nullptr;
+        const std::vector<render::mat4>* sourceMatrices=nullptr;
+        if(animatedPose) {
+            sourcePose=&animatedPose->local;
+            sourceMatrices=&animatedPose->matrices;
+        }else if(!obj.graph && rig && obj.draw.pose && obj.draw.nodeWorld &&
+                 obj.draw.pose->size()==rig->nodes.size() &&
+                 obj.draw.nodeWorld->size()==rig->nodes.size()) {
+            sourcePose=obj.draw.pose;
+            sourceMatrices=obj.draw.nodeWorld;
+        }
         render::ModelDraw draw=obj.draw;
+        const ModelLod* chosenLod=nullptr;
         if(draw.model && !obj.lods.empty()) {
             const render::float3 origin=draw.world.transformPoint({0,0,0});
             const float distance=render::length(renderer.cameraPos()-origin);
@@ -262,15 +277,18 @@ public:
             const size_t level=selectModelLodLevel(obj.lods,distance,prior,
                                                    saved?obj.lodHysteresis:0.f);
             if(saved)saved->level=level;
-            // Missing, asynchronously streamed distant LODs retain the
-            // nearest available representation; animation still advances.
+            // Missing streamed distant LODs retain the nearest available
+            // representation. The base graph still advances every frame.
             size_t visual=level;
             while(visual>0 && !obj.lods[visual-1].model)--visual;
-            if(visual>0)draw.model=obj.lods[visual-1].model;
+            if(visual>0) {
+                chosenLod=&obj.lods[visual-1];
+                draw.model=chosenLod->model;
+            }
         }
         if(draw.model!=obj.draw.model) {
-            // Base-model overrides and cached GPU geometry may reference
-            // an incompatible asset generation; never reuse them for a LOD.
+            // Overrides and cached GPU geometry are Model-generation
+            // specific. Rebinding these across whole-asset LODs is unsafe.
             draw.geometry={};
             draw.staticCache=nullptr;
             draw.materials=nullptr;
@@ -280,10 +298,32 @@ public:
             draw.nodeWorld=nullptr;
             draw.baked=nullptr;
         }
-        if(animatedPose && draw.model &&
-           compatibleModelPose(*rig,*draw.model)) {
-            draw.pose=&animatedPose->local;
-            draw.nodeWorld=&animatedPose->matrices;
+        // Renderer3D::drawModel resolves all incoming pose/matrix data
+        // synchronously during submitModel. This per-call scratch never
+        // escapes into the delayed draw or RHI completion queues.
+        render::Pose retargetPose;
+        std::vector<render::mat4> retargetMatrices;
+        if(sourcePose && sourceMatrices && rig && draw.model) {
+            if(compatibleModelPose(*rig,*draw.model)) {
+                draw.pose=sourcePose;
+                draw.nodeWorld=sourceMatrices;
+            }else if(chosenLod && chosenLod->retarget &&
+                     retargetModelPose(*rig,*draw.model,
+                         std::span<const render::NodePose>(
+                             sourcePose->data(),sourcePose->size()),
+                         *chosenLod->retarget,retargetPose,
+                         retargetMatrices)) {
+                draw.pose=&retargetPose;
+                draw.nodeWorld=&retargetMatrices;
+            }else {
+                // A mismatched source rig MUST NOT be applied to the
+                // visual Model. Keep the visual's own bind pose.
+                draw.pose=nullptr;
+                draw.nodeWorld=nullptr;
+            }
+        }else if(draw.model && rig && draw.model!=rig) {
+            draw.pose=nullptr;
+            draw.nodeWorld=nullptr;
         }
         if(draw.model) {
             if(!draw.persistentId)draw.persistentId=obj.id;
@@ -291,11 +331,11 @@ public:
         }
         if(!rig || obj.attachments.empty())return;
         const std::span<const render::mat4> socketMatrices=
-            animatedPose ? std::span<const render::mat4>(
-                animatedPose->matrices.data(),animatedPose->matrices.size())
+            sourceMatrices ? std::span<const render::mat4>(
+                sourceMatrices->data(),sourceMatrices->size())
                          : std::span<const render::mat4>();
-        // Always anchor on the animation source rig, not on a coarse
-        // render LOD that may remove or reorder socket nodes.
+        // Sockets always follow the base source rig, not the visual
+        // LOD, including when the visual has fewer bones.
         for(size_t i=0;i<obj.attachments.size();++i) {
             render::ModelDraw attached;
             if(!composeAttachment(obj.draw,*rig,socketMatrices,
