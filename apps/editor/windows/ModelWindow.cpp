@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
+#include <set>
 #include "../Editor.h"
 #include "../EditorUtil.h"
 #include "modules/rts/view/RtsPortrait.h"
@@ -223,22 +224,43 @@ public:
         sinceCheck_ = 0;
         const std::string& dir = ed.ws().project.dir;
         if (dir.empty()) return;
-        bool changed = false;
+        // Project changes must not leak old-file timestamps or reload requests.
+        if (watchedProject_ != dir) {
+            watchedProject_ = dir;
+            stamps_.clear();
+            tried_.clear();
+            pendingFiles_.clear();
+        }
         for (const auto& f : ed.view().modelFiles()) {
+            bool changed = false;
             std::error_code ec;
             const fs::path src = fs::path(dir) / f;
             const auto t = fs::last_write_time(src, ec);
             if (ec) continue;
-            if (!render::isNativeModelFormat(f)) {   // converted format: keep its sidecar up to date
+            if (!render::isNativeModelFormat(f)) {
                 const fs::path side = fs::path(src.string() + ".glb");
                 std::error_code e2;
-                if ((!fs::exists(side, e2) || fs::last_write_time(side, e2) < t) && convert(ed, src.string())) changed = true;
+                if ((!fs::exists(side, e2) || fs::last_write_time(side, e2) < t) &&
+                    convert(ed, src.string())) changed = true;
             }
             auto it = stamps_.find(f);
             if (it == stamps_.end()) stamps_[f] = t;
-            else if (it->second != t) { it->second = t; changed = true; ed.ws().log("view", "модель изменена: " + f); }
+            else if (it->second != t) {
+                it->second = t;
+                changed = true;
+                ed.ws().log("view", "модель изменена: " + f);
+            }
+            if (changed) pendingFiles_.insert(f);
         }
-        if (changed) ed.reloadRules();
+        // The renderer and active presentation worlds may borrow these
+        // resources during play. Reload only after play ends, coalescing all
+        // changes without reparsing rules or restarting the effect system.
+        if (!pendingFiles_.empty() && !ed.playing() && !ed.clientPlaying()) {
+            ed.reloadVisualAssets();
+            ed.ws().log("view", "визуальные ресурсы обновлены; источников: " +
+                        std::to_string(pendingFiles_.size()));
+            pendingFiles_.clear();
+        }
     }
 
 private:
@@ -284,6 +306,8 @@ private:
     bool portraitInit_ = false, opRegistered_ = false;
     game::Portrait portrait_;
     std::map<std::string, fs::file_time_type> stamps_;
+    std::set<std::string> pendingFiles_;
+    std::string watchedProject_;
 };
 
 AIVERSE_EDITOR_WINDOW(ModelWindow);
