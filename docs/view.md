@@ -885,3 +885,31 @@ still a compatibility host and owns the cache instance.
 **NOT RUN**: native compilation, CMake, CTest, sanitizers, Metal
 screenshots, editor/RTS/FPS smoke runs and CI were deferred at the
 user's explicit request.
+
+## Editor presentation-only asset refresh (Stage 95)
+
+The model watcher in `apps/editor/windows/ModelWindow.cpp` now batches changed
+**resident model files** into an editor-local pending set. It retains changes while
+either in-editor game play or client play is active and flushes them once both
+modes have ended. It resets timestamps and queued paths on a project switch,
+avoiding reload requests leaking between projects.
+
+`Editor::reloadVisualAssets()` re-creates the compatibility view on the editor
+render thread, which joins outstanding CPU model-preparation workers before
+destroying GPU model/texture resources. It invalidates queued model demands,
+preserves last-used timestamps, requeues retained authored/selected types and
+increments preview revision so borrowed scene data is rebuilt. Unlike
+`reloadRules()`, this path does **not** reparse project rules, clear the
+simulation, reset the editor's document or restart `reloadFx()`. Existing
+synchronous interactive loads and lower-priority opportunistic prefetch remain.
+
+This is a **whole-visual-view refresh**, not selective reload of changed models
+or animation graphs. The watcher currently sees only model paths reported by
+`RtsView::modelFiles()` (resident assets), not every uninstantiated type,
+texture dependency or external graph JSON. The model cache's tracked
+`generation()` is not yet a per-source dependency revision. A later stage
+must index source paths to cache keys, detach all referencing TypeLooks and
+presentation/animation graph instances, and retire changed GPU resources only
+after that barrier. FPS visual resource reload and native project host adapters
+remain separate work. Native build, CTest, sanitizers and Metal/editor visual
+verification are **NOT RUN**, per request to implement features first.
