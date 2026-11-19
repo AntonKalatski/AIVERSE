@@ -3578,3 +3578,17 @@ ctest --test-dir build/terraweave-qa --output-on-failure -R '^terraweave_horizon
 ```
 
 On a further failure, capture and report the *first new failing assertion/compile diagnostic*, not the already-superseded errors in the older attached log. The deferred all-TerraWeave CTest and RTS/FPS/editor full build still require independent validation.
+
+## Mac Studio Horizon QA fix — skirt-aware model vertex count, plus separate local rebase warning (2026-11-19)
+
+**Actual user-provided QA:** local `~/Projects/AIVERSE-terraweave-qa` compiled and linked `aiverse_terraweave_horizon_test` after the previous conservative triangle-budget fix, but CTest `terraweave_horizon` failed `tests/terraweave_horizon_test.cpp:120`: `model->vertices.size() < (13*13)+bake.clusters.size()*8+8`. This is the next obsolete Stage29-era assertion, not a production crash.
+
+**Diagnosis:** `makeHorizonModel` explicitly adds `4*(terrainResolution+1)` bottom skirt vertices when `terrainSkirtDepthCm>0`, optional near-ownership inner-lip vertices (up to 1024) and clipped triangle vertices (up to `3*maxNearClipTriangles`). The old test allowed just 8 extra vertices over base terrain + 8 vertices per forest cluster; for the tested resolution 12, the legitimate skirt alone adds 52 vertices. `estimateHorizonBudget(settings).maxVertices` already includes these additional conservative components.
+
+**Actual source fix:** commit `36479dc3b5ae70f8bcf0a7bec69055154af7a9c1`, changes only `tests/terraweave_horizon_test.cpp`: checks exactly two ordered material primitives; ground vertex range begins at 0, forest follows the complete ground range; forest primitive has exactly `8*bake.clusters.size()` (two crossed cards per cluster), the whole vertex vector equals the end of the forest primitive, it includes at least the base terrain + forest, and it stays **within the configured conservative `budget.maxVertices`**. This preserves substantive assertions and models true skirt/lip/clip behavior rather than inflating an arbitrary tolerance. Production geometry, PHYSIS/ECS/weather, archives and shaders unchanged.
+
+**Actually checked:** GitHub source inspections of `makeHorizonModel` terrain, skirt, lip and canopy construction, `estimateHorizonBudget` and exact failed test. GitHub write commit returned; native CTest after this fix **NOT YET RUN**.
+
+**Separate local Git state:** user reports a recurrent local Git rebase while multiple feature agents work on AIVERSE. This is separate from the TerraWeave test assertion. **Do not** rebase the shared `~/Projects/AIVERSE` checkout to fetch TerraWeave; use the isolated QA worktree `~/Projects/AIVERSE-terraweave-qa` for `git fetch origin feature/terraweave` + `git pull --ff-only origin feature/terraweave`. Never run `git rebase --continue`, `--skip`, `reset --hard` or `clean -fd` blindly on unrelated PHYSIS/SpectraFX changes. Inspect `git status -sb`, `git worktree list` and any rebase state in each checkout independently; if a rebase is running, finish/abort it only after preserving intended conflict resolutions and local commits. No local Git operations were performed by the agent.
+
+**Next QA:** pull latest TerraWeave into the isolated QA worktree, build `aiverse_terraweave_horizon_test`, rerun `ctest --test-dir build/terraweave-qa --output-on-failure -R '^terraweave_horizon$'`; record further failing assertions verbatim. Keep PR #24 Draft until full native tests and graphics acceptance.
