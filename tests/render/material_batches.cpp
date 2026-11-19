@@ -10,8 +10,24 @@
 #include <iterator>
 #include <algorithm>
 #include <chrono>
+#include <ctime>
 #include <vector>
 using namespace aiverse;
+
+// CPU consumed by this calling thread, not whole-process CPU. Wall time
+// includes descheduling/waits; their delta is diagnostic, not proof of a GPU
+// stall or scheduler fault. Unsupported platforms report unavailable.
+static bool currentThreadCpuNs(uint64_t& result) {
+#if defined(__APPLE__) || defined(__linux__)
+    timespec ts{};
+    if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) != 0) return false;
+    result = uint64_t(ts.tv_sec) * 1000000000ull + uint64_t(ts.tv_nsec);
+    return true;
+#else
+    (void)result;
+    return false;
+#endif
+}
 // GPU-free invariants, including shared vertices and material overrides.
 static bool unitChecks() {
     using namespace render;
@@ -236,6 +252,9 @@ int aiverseMain(int argc, char** argv) {
     const bool cpuTiming = std::getenv("AIVERSE_BATCH_CPU_TIMING") &&
         std::string(std::getenv("AIVERSE_BATCH_CPU_TIMING")) == "1";
     std::vector<double> cpuRenderBefore, cpuRenderAfter;
+    const bool threadCpuTiming = stress &&
+        std::getenv("AIVERSE_BATCH_THREAD_CPU_TIMING") &&
+        std::string(std::getenv("AIVERSE_BATCH_THREAD_CPU_TIMING")) == "1";
     // Opt-in per-frame CPU timeline: buffer data in memory and write once
     // after the capture window to avoid I/O during measured render frames.
     const bool frameTimeline = stress && std::getenv("AIVERSE_BATCH_FRAME_TIMELINE") &&
@@ -243,6 +262,7 @@ int aiverseMain(int argc, char** argv) {
     struct FrameCpuSample {
         int index = 0;
         double renderMs = 0.0;
+        double threadCpuMs = -1.0; // -1 means unsupported / clock read failed
         uint64_t mdiSubmissions = 0;
         uint64_t mdiCommands = 0;
         uint32_t shadowDraws = 0, opaqueDraws = 0;
@@ -399,14 +419,22 @@ int aiverseMain(int argc, char** argv) {
         if(scenario=="instanced"){draw.world=render::mat4::translate({3,0,0})*draw.world;renderer.drawModel(draw);}
         gfx::PassDesc pass;
         const auto startCpu = std::chrono::steady_clock::now();
+        uint64_t threadCpuStartNs = 0, threadCpuEndNs = 0;
+        const bool threadStartOk = threadCpuTiming &&
+            currentThreadCpuNs(threadCpuStartNs);
         renderer.render(pass);
+        const bool threadEndOk = threadStartOk &&
+            currentThreadCpuNs(threadCpuEndNs);
         const auto endCpu = std::chrono::steady_clock::now();
+        const double threadCpuMs = threadEndOk && threadCpuEndNs >= threadCpuStartNs
+            ? double(threadCpuEndNs - threadCpuStartNs) * 1e-6 : -1.0;
         if (frameTimeline && batch && frame <= captureAfterFrame) {
             const auto& stats = renderer.modelStats();
             const auto& profile = renderer.profile();
             frameCpuTimeline.push_back({
                 frame,
                 std::chrono::duration<double, std::milli>(endCpu-startCpu).count(),
+                threadCpuMs,
                 stats.multiDrawSubmissions, stats.indirectCommands,
                 profile.draws[0], profile.draws[1],
                 stats.mdiCpuStages[0].totalMs, stats.mdiCpuStages[1].totalMs,
@@ -589,13 +617,22 @@ int aiverseMain(int argc, char** argv) {
             std::ofstream csv(path, std::ios::binary);
             csv << "frame,render_cpu_ms,mdi_submissions,mdi_commands,"
                    "shadow_draws,opaque_draws,shadow_cpu_ms,opaque_cpu_ms,"
-                   "shadow_backend_ms,opaque_backend_ms\n";
+                   "shadow_backend_ms,opaque_backend_ms";
+            if (threadCpuTiming)
+                csv << ",render_thread_cpu_ms,render_offcpu_ms";
+            csv << '\n';
             for (const auto& sample : frameCpuTimeline) {
                 csv << sample.index << ',' << sample.renderMs << ','
                     << sample.mdiSubmissions << ',' << sample.mdiCommands << ','
                     << sample.shadowDraws << ',' << sample.opaqueDraws << ','
                     << sample.shadowCpuMs << ',' << sample.opaqueCpuMs << ','
-                    << sample.shadowBackendMs << ',' << sample.opaqueBackendMs << '\n';
+                    << sample.shadowBackendMs << ',' << sample.opaqueBackendMs;
+                if (threadCpuTiming)
+                    csv << ',' << sample.threadCpuMs << ','
+                        << (sample.threadCpuMs >= 0.0
+                            ? std::max(0.0, sample.renderMs - sample.threadCpuMs)
+                            : -1.0);
+                csv << '\n';
             }
             csv.close();
             if (!csv) {
