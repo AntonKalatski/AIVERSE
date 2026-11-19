@@ -702,3 +702,52 @@ Time-window patterns indicate bursts and recoveries within a run rather than an 
 **Actually performed:** loaded the exact three owner-uploaded CSVs and computed all tables directly in Python; updated this GitHub handoff. **Not performed:** native compilation/test on assistant side, OS thread state/frequency tracing, native Metal command buffer GPU durations, Vulkan parity, CI. No code change or promise of guaranteed speedup. PR #39 remains Draft and opt-in CPU MDI/AUTO defaults stay OFF.
 
 **Best next experiment:** acquire a macOS Instruments Time Profiler + System Trace (or equivalent signposted CPU dispatch/wait + GPU timeline), ideally alongside the same 1k fixture, **for both a slow and fast run**. Quantify CPU thread on-CPU vs waiting and GPU queue backpressure. Separate direct stopwatch data from actual scheduling and GPU submission latency before performing further low-level Metal optimizations. If a capture is too invasive, add low-overhead, per-frame CPU thread-time versus wall-time counters plus opt-in GPU completion timestamps in another isolated branch stage with handoff and pixel parity tests. Avoid excessive per-submission log I/O in the hot loop, and test only with reusable, driver-safe Metal bindings.
+
+
+---
+
+## Stage 95 — measure render calling-thread CPU time against CPU wall time (2026-11-19)
+
+**Repo/branch:** `chromealex/AIVERSE` / `perf/auto-batch-cost-metrics-20261119`, Draft PR #39. **Commits:** `c28a0295de1974f25f9cbf16b3ddf9dc06ce08ea` (`tests/render/material_batches.cpp`), `842270065a108347687f68d2f4c79067877bc6c2` (`tools/batching-stage95-analyze.py`), `ebebdc4e72e39e0083a18d61b56e4e13a25c3357` (`tools/batching-stage95-trials.sh`). This handoff is its own subsequent commit. **Stage 95 new source is not yet compiled or executed natively.** Renderer/Metal backend/CPU AUTO policy unchanged.
+
+### Motivation — actual observed performance variability
+
+User supplied 3 complete 106-frame CSVs from previous real Mac Metal forced CPU MDI tests, where two showed process median `renderer.render()` around 1.37–1.39ms and the third ~0.83ms despite identical 81/81 MDI-active frames, ten submissions, 2048 indirect commands and 5 shadow + 5 opaque draw calls per frame. Within slow periods, both `shadow_backend_ms + opaque_backend_ms` and other synchronous CPU work roughly doubled, on both shadow and opaque. CPU thread descheduling, CPU frequency shifts, blocking inside Metal driver and thermal/contention are still **hypotheses**, not established facts. GPU execution duration and FPS remain unmeasured.
+
+### New fixture
+
+`tests/render/material_batches.cpp` adds explicit **opt-in** `AIVERSE_BATCH_THREAD_CPU_TIMING=1`, intended with `AIVERSE_BATCH_FRAME_TIMELINE=1` and `AIVERSE_PALETTE_TEST_CASE=auto_stress`. Around the same `renderer.render(pass)` call measured by `steady_clock`, it calls `clock_gettime(CLOCK_THREAD_CPUTIME_ID,...)` on macOS/Linux to sample CPU time accumulated by the **calling thread**. It computes thread CPU milliseconds from nanoseconds and off-CPU approximation `max(0, wall_ms - thread_ms)`. Unsupported clock readings write `-1`, clearly marking unavailable values instead of substituting process-wide CPU clocks. Windows and unsupported platforms leave the optional timing unavailable; existing raster/time fixture behavior remains unchanged.
+
+When thread timing is explicitly ON, only then append two columns to the existing 10-field per-frame CSV (after the old fields): `render_thread_cpu_ms`, `render_offcpu_ms`. When flag is OFF, the previous CSV format is unchanged for backward compatibility. Samples still buffered in memory and only written after the second capture window. The timestamp overhead is within the wall interval but not the thread delta exactly; use repeated comparisons to assess effect. Calling-thread CPU time can be lower than wall due to CPU scheduling or blocking, but worker-thread parallel CPU time is excluded. The difference is **NOT** a direct GPU wait, a definite scheduler fault or GPU execution time. No RHI timing/event submission/command encoding changes.
+
+### Analysis and runner tools
+
+- New `tools/batching-stage95-analyze.py` uses Python 3 stdlib to read 3 (or arbitrary number) of Stage 95 CSVs. Validates 12 columns and 106 ordered frames 90..195, measured 115..195 with `mdi_submissions>0`, all nonnegative/finite CPU readings, and per-frame thread CPU no more than 0.15ms above the recorded wall CPU. Reports full MDI, fast MDI (<=1.2ms) and slow MDI (>1.2ms) median CPU wall, thread CPU, non-running/waiting difference, its P95, Metal backend CPU wall, and median off-CPU fraction. Writes `stage95-thread-summary.csv` beside input files. Threshold is a diagnostic split, **not an SLA or AUTO policy threshold**. Analyzer requires >=40 sampled MDI frames per input.
+- `tools/batching-stage95-trials.sh` runs **three independent processes** of 1,024-item forced MDI, with CPU thread timing and buffered CSV, no GPU ICB or prior trace flags inherited. Requires CPU invariant pass, actual real-MDI screenshot parity, exactly 81 MDI-submitted measured frames, 106-frame CSV, and test program success; invokes analyzer and prints final summary location. Use `bash` since GitHub Contents API does not guarantee executable file mode.
+
+### Validation truth
+
+**Completed:** GitHub source writes and comparison with existing fixture/CSV analyzer contract; external documentation confirms macOS `CLOCK_THREAD_CPUTIME_ID` supports calling-thread CPU-time clock. **Not performed:** Stage 95 AppleClang compilation, Python analyzer test on Stage 95 output, repeated native timings, GPU timestamps, Instruments capture, Vulkan parity, full CI. The measured Stage 92 owner passes belong to prior code only. Default behavior remains untouched; PR #39 stays Draft.
+
+### Safe Mac Studio steps (new isolated detached worktree)
+
+```bash
+ROOT=/Users/aleksandrfeer/Projects/AIVERSE
+WT=/Users/aleksandrfeer/Projects/AIVERSE-batching-stage95
+git -C "$ROOT" fetch origin perf/auto-batch-cost-metrics-20261119 || exit 1
+git -C "$ROOT" worktree add --detach "$WT" origin/perf/auto-batch-cost-metrics-20261119 || exit 1
+cmake -S "$WT" -B "$WT/build/batching-stage95" \
+  -DAIVERSE_BUILD_HDR_TESTS=ON -DAIVERSE_BUILD_TESTS=OFF \
+  -DAIVERSE_BUILD_EDITOR=OFF -DCMAKE_BUILD_TYPE=Release || exit 1
+cmake --build "$WT/build/batching-stage95" \
+  --target aiverse_material_batches --parallel 8 || exit 1
+cd "$WT" || exit 1
+AIVERSE_BATCH_BENCH_BIN=build/batching-stage95/aiverse_material_batches \
+  bash tools/batching-stage95-trials.sh build/batching-stage95/trials 1024
+```
+
+Each sample run should show `material palette CPU checks=38 result=passed` and `actual MDI pixel parity ... changed_channels=0` and the usual terminal `changed_channels=0`. The analyzer outputs `build/batching-stage95/trials/stage95-thread-summary.csv`. If an OS/thread clock is unavailable, `-1` should cause explicit analyzer failure, not a misleading result. Do not blindly destroy previous worktrees with in-progress rebase.
+
+### Next decisions
+
+If slow-frame **wall** increases while calling-thread **CPU time** stays near fast values, investigate descheduling or blocking/waiting with Instruments System Trace and Metal command buffer instrumentation. If thread CPU itself rises ~2x, inspect Xcode Time Profiler samples and CPU frequency/thermal/processor-core distribution; a thread CPU clock measures consumed time, not instructions or cycles. If both vary, compare per-stage CPU backend/other metrics and use paired fine-grained time profiling. In all cases validate the same byte-identical raster fixture, and eventually independent GPU timing with representative 10k workloads before any default enable/merge. Maintain separate handoff each stage.
