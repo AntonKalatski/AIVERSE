@@ -226,6 +226,21 @@ public:
         // Shared geometry-pool bytes belong to the device-level pool,
         // NOT this host owner. Query geometryPoolStats(device) separately.
     };
+    // Read-only enumeration for owner-group accounting. Each Model belongs
+    // to this cache or its pending GPU-retirement batches; no pointer is
+    // retained by the visitor unless the host guarantees its lifetime.
+    // Source aliases/tombstones do not count as distinct live GPU Models.
+    template<class Visit>
+    void forEachOwnedModel(Visit&& visit) const {
+        for(const auto& [key,model]:models_) {
+            (void)key;
+            if(model)visit(*model,false); // resident
+        }
+        retired_.forEachPending([&](const std::unique_ptr<Model>& model) {
+            if(model)visit(*model,true); // waiting on its own GPU token
+        });
+    }
+
     // Models can share geometry pages across multiple hosts. Give the
     // device-level geometry pool ONE combined model set when computing
     // page capacity; include retired models until their GPU token completes.
