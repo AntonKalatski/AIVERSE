@@ -515,3 +515,42 @@ second MotionWeave writer.
 metal/Vulkan/GL GPUs, editor/portrait FPS/RTS visual parity,
 sanitizers and CI. New deferred fixtures and the exact next
 stage are recorded in the Stage 107 handoff.
+
+### Stage 108 — GPU device epochs, bounded diagnostics and shared material/graph authoring
+
+Native host model caches now support
+`RenderDeviceLifetime::Lease` and
+`ModelResourceCache::bindResourceDevice(device,lease)` to
+distinguish re-created GPUs even when a platform reuses the
+same `gfx::Device*` address. `RenderResourceOwnerGroup`
+supports `registerScoped(lease,cache)` and rejects expired
+generations. The host must retire its device epoch only
+after safe GPU model-cache shutdown. This is NOT device
+loss recovery or a way to release unresolved fence-retired
+resources.
+
+`RetirementDiagnosticRing` stores a bounded, nonowning
+history of resource retirement events; the editor keeps
+128 events and reports dropped/overflow records without
+holding any GPU resources. Diagnostic callbacks do not
+change resource lifetime or GPU completion semantics.
+
+New `engine/view/AppearanceAuthoringService.h` separates
+material library inheritance and immutable animation graph
+compilation from RTS policy. It accepts library JSON,
+texture-loader and warning callbacks, FileReader, model,
+operations/traits and optional named graphs. Both type
+appearance compilation in RtsLook and runtime control
+graph compilation in RtsAnimate now use this generic
+service. Existing MotionWeave pose/graph players still
+have one owner; this service only creates immutable
+programs and does not evaluate or advance them.
+Authoring changes do not affect authoritative gameplay
+tick, movement, networking or serialization.
+
+The remaining legacy RtsView still chooses type/weapon,
+procedural animation, materials per entity and attachment
+policies. Full dynamic genre-neutral appearance state
+migration and real visual parity remain open.
+**NOT RUN**: native compiler, CTest, renderer/GPU validation,
+FPS/RTS screenshots, sanitizer and CI.
