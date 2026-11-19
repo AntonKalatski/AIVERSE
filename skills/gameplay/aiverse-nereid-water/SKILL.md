@@ -224,3 +224,35 @@ When working on render paths, test multiple water heights and both
 OpenGL and Metal; the new `ecs_nereid_renderer_contract_test`
 contains basic CPU/shader-source checks but cannot substitute GPU
 compilation or screenshots.
+
+## Stage 22 — universal water interactions (feature work, tests deferred)
+
+**Source:** `libraries/include/aiverselib/water/NereidInteractions.h`,
+`libraries/include/aiverselib/water/NereidInteractionPresentation.h`.
+**Link target:** `AIVERSE::lib_nereid_interactions` (native C++, independent of genre).
+Opt in with `NativeWaterPipelineConfig::enableInteractions=true` before
+`registerNativeWaterPipeline`; this installs the system AFTER water sampling.
+Do not also install another interaction system.
+
+For an actor, install `WaterProbeComponent`, `WaterContactComponent`,
+`WaterInteractionComponent`, `WaterInteractionStateComponent` and
+`WaterInteractionOutputComponent`. Synchronize actor position into the probe
+using the existing native probe stage. Each tick, the interaction stage emits
+at most one `Enter`, `Exit`, `SwitchBody` or `SurfaceWake` output when
+conditions change; initial immersion does not produce a fake entry.
+Wake spacing, near-surface depth, radius and strength are fixed-point.
+Only near-surface movement emits wakes.
+
+Post-tick, read `snapshotWaterInteractionEvents(world,completedTick)`.
+It returns stable actor-ID-ordered events suitable for spawning SpectraFX
+effects, audio or ripple decals. Never clear or mutate authoritative outputs
+from a presentation thread. The host owns actual VFX/audio presentation.
+`WaterInteractionStateComponent` is saved for rollback consistency;
+`registerNereidInteractionPersistence` is invoked by the optional native
+pipeline stage. Do not wire this API to RTS-specific actors or duplicate
+the core physics integrator.
+
+**Verification:** source authored only; C++ builds/CTest/visual checks
+NOT RUN by design, as requested by the user. After every implementation
+stage update `docs/nereid/HANDOFF.md` with exact SHA, changed files,
+limits and next features.
