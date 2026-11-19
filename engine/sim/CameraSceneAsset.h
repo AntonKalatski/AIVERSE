@@ -98,6 +98,7 @@ inline Json cameraSceneToJson(const World& world) {
             j.set("yaw",Json::number(rig->yaw));j.set("pitch",Json::number(rig->pitch));
             j.set("smoothing",Json::number(rig->smoothing));
             j.set("trackTarget",Json::fromBool(rig->trackTarget));
+            j.set("enabled",Json::fromBool(rig->enabled));
             item.set("rig",std::move(j));
         }
         if(const auto* lens=world.tryGetConst<CameraLensComponent>(entity)){
@@ -197,6 +198,7 @@ inline bool loadCameraScene(World& world,SceneHierarchy& hierarchy,const Json& j
             it.rig.yaw=rig.getFx("yaw");it.rig.pitch=rig.getFx("pitch");
             it.rig.smoothing=rig.getFx("smoothing",it.rig.smoothing);
             it.rig.trackTarget=rig.getBool("trackTarget",true);
+            it.rig.enabled=rig.getBool("enabled",true);
         }
         const Json& lens=input["lens"];
         if(lens.isObject()) {
