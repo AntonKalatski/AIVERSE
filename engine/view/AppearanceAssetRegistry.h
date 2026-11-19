@@ -343,7 +343,10 @@ public:
             if(next->graph) {
                 if(old && old->graph==next->graph &&
                    old->model==next->model &&
-                   old->sourceId==next->sourceId)
+                   old->sourceId==next->sourceId &&
+                   old->modelRevision==next->modelRevision &&
+                   !dirtyGraph_.contains(key) &&
+                   !dirtyModel_.contains(key))
                     next->generation=old->generation;
                 else {
                     if(animationSerial_==std::numeric_limits<uint64_t>::max())
