@@ -568,6 +568,10 @@ void Prisma::configure(const Json& game, const Json& map, std::vector<std::strin
 }
 
 void Prisma::setSettings(PrismaSettings s) {
+    // Native/ECS callers may bypass parsePrisma. Normalize all authored
+    // numeric/color/bool parameters against the GPU-free catalog before
+    // they can be observed by any shader-building or render pass.
+    sanitizePrismaSettings(s);
     // New map/project configuration invalidates adaptation across scenes.
     resetAutoExposure();
     resetMotionHistory();
