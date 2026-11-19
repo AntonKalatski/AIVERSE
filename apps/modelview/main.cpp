@@ -88,7 +88,7 @@ struct Viewer {
     std::vector<AttachmentSpec> attachmentSpecs;
     std::string attachmentConfigPath;
     char newAttachmentModel[512]{},newAttachmentSocket[256]{};
-    bool attachmentPreview=false;
+    bool attachmentPreview=false,attachmentsDirty=false;
     std::map<std::string, std::string> mergeInfo;   // path -> "parts 47 -> 14" or why not merged
     std::vector<Instance> inst;
     std::vector<std::string> log;
@@ -382,6 +382,13 @@ struct Viewer {
         if(nativeModels.resources().pendingRetirements()!=0 ||
            nativeModels.pendingRolledBackImages()!=0)
             nativeModels.collectRetired(d);
+        // All UI attachment edits are applied at the next OWNER frame
+        // boundary, before any Renderer3D GPU submission and after prior
+        // draw-scoped ModelReadLeases have been released.
+        if(attachmentsDirty) {
+            (void)rebuildAttachments();
+            attachmentsDirty=false;
+        }
         d.beginFrame(platform::framebufferWidth(), platform::framebufferHeight());
         gui.newFrame(dt);
         gfx::TextureHandle portrait = gallery ? gallery->portrait(time) : gfx::TextureHandle{}; // before the scene pass
@@ -406,9 +413,33 @@ struct Viewer {
                 bs = {b.clipA, b.clipB, b.timeA, b.timeB, b.w, b.loopA, b.loopB};
                 md.baked = &bs;
             }
-            // Preserve the existing host's precomputed pose, materials,
-            // variant, team and world transform; do not tick MotionWeave twice.
-            ::aiverse::View::submitModel(r3d,md);
+            // Existing host Animator is the only writer: generic View
+            // consumes its precomputed pose and composes imported children.
+            // Keep owner-thread ModelReadLeases until submitOne returns.
+            bool presented=false;
+            if(attachmentPreview && in.attachmentsReady) {
+                Imported::Prepared prepared;
+                std::string error;
+                if(Imported::prepare(
+                        in.compiledAttachments,nativeModels.resources(),
+                        in.fix,nullptr,prepared,
+                        Imported::AnimationOwner::HostPrecomputed,&error)) {
+                    auto& draw=prepared.object.draw;
+                    draw.pose=md.pose;
+                    draw.nodeWorld=md.nodeWorld;
+                    draw.baked=md.baked;
+                    draw.variant=md.variant;
+                    draw.team=md.team;
+                    attachmentView.submitOne(r3d,prepared.object);
+                    presented=true;
+                    in.lastAttachmentError.clear();
+                } else if(error!=in.lastAttachmentError) {
+                    in.lastAttachmentError=error;
+                    log.push_back(in.path+": attachment packet: "+error);
+                }
+            }
+            if(!presented)
+                ::aiverse::View::submitModel(r3d,md);
         }
         gfx::PassDesc pass;
         pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
@@ -431,6 +462,47 @@ struct Viewer {
         if (gallery) for (auto& ev : gallery->recentEvents()) ImGui::TextColored(ImVec4(1, 0.5f, 0.85f, 1), "event: %s", ev.c_str());
         if (!r3d.modelError().empty()) ImGui::TextColored(ImVec4(1, 0.4f, 0.3f, 1), "%s", r3d.modelError().c_str());
         ImGui::End();
+        if(attachmentPreview) {
+            ImGui::Begin("Attachments");
+            ImGui::TextUnformatted("Real imported child Models on named sockets");
+            ImGui::TextUnformatted("Changes apply next frame; models remain provider-owned");
+            for(size_t i=0;i<attachmentSpecs.size();++i) {
+                ImGui::PushID(int(i));
+                auto& spec=attachmentSpecs[i];
+                if(ImGui::Checkbox("##enabled",&spec.enabled))
+                    attachmentsDirty=true;
+                ImGui::SameLine();
+                ImGui::Text("%s @ %s",spec.modelSource.c_str(),spec.socketName.c_str());
+                ImGui::SameLine();
+                if(ImGui::SmallButton("Detach")) {
+                    attachmentSpecs.erase(attachmentSpecs.begin()+i);
+                    attachmentsDirty=true;
+                    ImGui::PopID();
+                    break;
+                }
+                ImGui::PopID();
+            }
+            ImGui::InputText("Child model file",newAttachmentModel,
+                             sizeof(newAttachmentModel));
+            ImGui::InputText("Socket name",newAttachmentSocket,
+                             sizeof(newAttachmentSocket));
+            if(ImGui::Button("Attach") && newAttachmentModel[0] &&
+               newAttachmentSocket[0]) {
+                attachmentSpecs.push_back(
+                    {newAttachmentModel,newAttachmentSocket,true});
+                newAttachmentModel[0]=newAttachmentSocket[0]='\0';
+                attachmentsDirty=true;
+            }
+            ImGui::SameLine();
+            if(ImGui::Button("Rebuild"))attachmentsDirty=true;
+            ImGui::SameLine();
+            if(ImGui::Button("Save"))saveAttachmentConfig();
+            if(!attachmentConfigPath.empty())
+                ImGui::TextWrapped("Config: %s",attachmentConfigPath.c_str());
+            if(!log.empty())
+                ImGui::TextWrapped("%s",log.back().c_str());
+            ImGui::End();
+        }
         gui.render();
         d.endPass();
         d.endFrame();
@@ -520,6 +592,16 @@ int aiverseMain(int argc, char** argv) {
         else if (a == "--native") v.native = true;
         else if (a == "--no-merge") v.merge = false;
         else if (a == "--provider") v.providerMode = true;
+        else if (a == "--attachments-file") v.attachmentConfigPath=next();
+        else if (a == "--attach") {
+            auto authored=next();
+            const auto at=authored.rfind('@');
+            if(at==std::string::npos || at==0 || at+1>=authored.size())
+                throw std::invalid_argument(
+                    "--attach expects imported-child.glb@NamedSocket");
+            v.attachmentSpecs.push_back({
+                authored.substr(0,at),authored.substr(at+1),true});
+        }
         else if (a == "--yaw") v.yawDeg = std::stof(next());
         else if (a == "--pitch") v.pitchDeg = std::stof(next());
         else if (a == "--quality") {
