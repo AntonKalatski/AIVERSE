@@ -17,6 +17,17 @@ struct GroomGuide {
     std::vector<render::float3> rest, position, previous;
 };
 enum class GroomQuality : std::uint8_t { Low, Medium, High };
+struct GroomSelfCollisionConfig {
+    bool enabled=false;
+    float separation=0.014f;
+    float response=0.6f;
+    std::size_t maxPairChecks=250000;
+};
+struct GroomSelfCollisionStats {
+    std::size_t pairChecks=0;
+    std::size_t contacts=0;
+    bool budgetHit=false;
+};
 struct GroomStats {
     std::size_t guides=0,segments=0,triangles=0;
     float updatedMs=0.0f;
@@ -29,6 +40,11 @@ public:
     // Fixed-bounded verlet + constraint projection and coarse scalp
     // collision. Steps at most 1/20 second and never mutates simulation ECS.
     bool step(float dt,render::float3 wind={});
+    bool setSelfCollision(GroomSelfCollisionConfig config) noexcept;
+    GroomSelfCollisionConfig selfCollision() const noexcept {return selfCollision_;}
+    GroomSelfCollisionStats selfCollisionStats() const noexcept {
+        return selfCollisionStats_;
+    }
     // Optional bounded closed triangle collider in the groom's local space.
     // Call after generate(); all triangles are validated before publication.
     // For imported meshes, caller owns model-to-groom coordinate conversion.
@@ -51,6 +67,8 @@ public:
 private:
     std::vector<GroomGuide> guides_;
     std::size_t segments_=0;
+    GroomSelfCollisionConfig selfCollision_{};
+    GroomSelfCollisionStats selfCollisionStats_{};
     float stiffness_=0.55f,damping_=0.25f,gravity_=0.65f,windStrength_=0.15f;
     // Scalp ellipsoid matches the DNA-generated guide root geometry.
     // Stored per instance, not inferred from a fixed human head preset.
