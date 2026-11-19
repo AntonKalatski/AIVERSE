@@ -7,6 +7,7 @@
 #include "ModelTextureCache.h"
 #include "AsyncResourceRetirementQueue.h"
 #include "ModelResidentEstimate.h"
+#include "RenderDeviceLifetime.h"
 #ifndef __EMSCRIPTEN__
 #include "ModelPreparationService.h"
 #endif
@@ -38,6 +39,8 @@ public:
     // Subsequent attempts from another device/thread fail closed.
     void bindResourceDevice(gfx::Device& device) const {
         const auto thread=std::this_thread::get_id();
+        if(resourceEpoch_!=0 && !resourceEpochLease_.validFor(device))
+            throw std::logic_error("ModelResourceCache expired GPU device epoch");
         if(resourceDevice_ &&
            (resourceDevice_!=&device || resourceThread_!=thread))
             throw std::logic_error("ModelResourceCache device/thread mismatch");
@@ -46,9 +49,23 @@ public:
             resourceThread_=thread;
         }
     }
+    void bindResourceDevice(
+            gfx::Device& device,const RenderDeviceLifetime::Lease& lease) const {
+        if(!lease.validFor(device))
+            throw std::logic_error("ModelResourceCache invalid device generation");
+        bindResourceDevice(device);
+        if(resourceEpoch_!=0 && resourceEpoch_!=lease.generation())
+            throw std::logic_error("ModelResourceCache device generation changed");
+        resourceEpoch_=lease.generation();
+        resourceEpochLease_=lease;
+    }
+    uint64_t resourceDeviceGeneration() const noexcept {
+        return resourceEpoch_;
+    }
     bool boundToResourceDevice(const gfx::Device& device) const noexcept {
         return resourceDevice_==&device &&
-               resourceThread_==std::this_thread::get_id();
+               resourceThread_==std::this_thread::get_id() &&
+               (resourceEpoch_==0 || resourceEpochLease_.validFor(device));
     }
     using ModelMap=std::map<std::string,std::unique_ptr<render::Model>>;
     // Incremented by every cache-owned insertion, replacement, eviction,
@@ -392,12 +409,16 @@ public:
         // every scoped observer for the old device has been released.
         resourceDevice_=nullptr;
         resourceThread_={};
+        resourceEpoch_=0;
+        resourceEpochLease_={};
     }
 private:
     std::shared_ptr<const void> lifetimeToken_=
         std::make_shared<const uint8_t>(1);
     mutable gfx::Device* resourceDevice_=nullptr;
     mutable std::thread::id resourceThread_;
+    mutable uint64_t resourceEpoch_=0;
+    mutable RenderDeviceLifetime::Lease resourceEpochLease_;
 #ifndef __EMSCRIPTEN__
     ModelPreparationService preparation_;
 #endif
