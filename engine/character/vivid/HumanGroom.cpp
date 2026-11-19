@@ -145,6 +145,57 @@ bool HumanGroomRuntime::setCollisionMesh(
     collisionTriangles_=std::move(proposed);
     collisionOrder_=std::move(order);
     collisionNodes_=std::move(nodes);
+    collisionSourceIndices_.assign(triangles.begin(),triangles.end());
+    collisionSourceVertexCount_=vertices.size();
+    return true;
+}
+bool HumanGroomRuntime::refitCollisionMesh(
+        std::span<const render::float3> vertices) {
+    using namespace render;
+    if(collisionTriangles_.empty()||
+       vertices.size()!=collisionSourceVertexCount_)return false;
+    for(const auto& p:vertices)if(!good(p))return false;
+    auto proposed=collisionTriangles_;
+    for(std::size_t i=0;i<proposed.size();++i) {
+        const auto base=i*3;
+        const auto a=collisionSourceIndices_[base];
+        const auto b=collisionSourceIndices_[base+1];
+        const auto c=collisionSourceIndices_[base+2];
+        proposed[i]={vertices[a],vertices[b],vertices[c]};
+        if(length(cross(proposed[i].b-proposed[i].a,
+                        proposed[i].c-proposed[i].a))<1e-7f)return false;
+    }
+    auto nodes=collisionNodes_;
+    const float inf=std::numeric_limits<float>::max();
+    auto expand=[](float3& lo,float3& hi,float3 p) {
+        lo.x=std::min(lo.x,p.x);lo.y=std::min(lo.y,p.y);
+        lo.z=std::min(lo.z,p.z);
+        hi.x=std::max(hi.x,p.x);hi.y=std::max(hi.y,p.y);
+        hi.z=std::max(hi.z,p.z);
+    };
+    for(std::size_t i=nodes.size();i-- >0;) {
+        auto& node=nodes[i];
+        if(!node.count) {
+            const auto& a=nodes[node.left];
+            const auto& b=nodes[node.right];
+            node.min={std::min(a.min.x,b.min.x),
+                      std::min(a.min.y,b.min.y),
+                      std::min(a.min.z,b.min.z)};
+            node.max={std::max(a.max.x,b.max.x),
+                      std::max(a.max.y,b.max.y),
+                      std::max(a.max.z,b.max.z)};
+        }else{
+            float3 lo{inf,inf,inf},hi{-inf,-inf,-inf};
+            for(std::uint32_t j=node.begin;j<node.begin+node.count;++j) {
+                const auto& tri=proposed[collisionOrder_[j]];
+                expand(lo,hi,tri.a);expand(lo,hi,tri.b);expand(lo,hi,tri.c);
+            }
+            node.min=lo;node.max=hi;
+        }
+    }
+    // Commit only after every leaf and parent is rebuilt successfully.
+    collisionTriangles_=std::move(proposed);
+    collisionNodes_=std::move(nodes);
     return true;
 }
 bool HumanGroomRuntime::attachRootsToCollisionMesh() {
@@ -204,6 +255,8 @@ void HumanGroomRuntime::clearCollisionMesh() noexcept {
     collisionTriangles_.clear();
     collisionOrder_.clear();
     collisionNodes_.clear();
+    collisionSourceIndices_.clear();
+    collisionSourceVertexCount_=0;
 }
 render::float3 HumanGroomRuntime::resolveCollision(
         render::float3 p,const GroomGuide& guide) const {
