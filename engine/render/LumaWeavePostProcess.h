@@ -122,6 +122,11 @@ public:
     LumaWeaveScreenMetal::Completion pollGpu(){
         return producer_.poll();
     }
+    // Only when Metal's asynchronous marker readback is unavailable AND the
+    // host has confirmed the command buffer completed using a real GPU fence.
+    bool confirmExternalGpuCompletion(uint64_t serial,bool success) {
+        return producer_.confirmExternalCompletion(serial,success);
+    }
 
     bool publishSources(const LumaWeaveRegistry& sources,
                         const LumaWeaveClusters& clusters) {
