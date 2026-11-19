@@ -739,6 +739,58 @@ Metal/GL shader validation, visual comparison, CTest and GPU profiling
 have NOT RUN. Do not enable these experimental paths by default before
 they are validated. Details: `docs/handoffs/prisma-stage-27.md`.
 
+
+## Stage 28 — baked clip motion, alpha-cutout velocity and depth thresholds
+
+The experimental `motionBlur` pipeline now includes a **baked-clips
+vertex velocity** shader variant. For a `ModelItem` with `baked=true`,
+the renderer records the current `anim` values (clip A row, clip B row,
+blend) and world matrix by stable `(persistentId, nodeIndex,
+geometryPrimitive)`. The new GLSL/MSL vertex shader reads the original
+baked bone atlas (`tex7`) and original per-primitive joint palette.
+Current and previous clip rows and interpolation are sampled separately
+to reconstruct both deformed vertex positions. The velocity fragment
+then writes current-minus-previous normalized screen UV motion. The
+history snapshot is presentation-only; the animation and authoritative
+simulation aren't modified. This path intentionally skips baked +
+morph simultaneous deformation until a mixed permutation is available.
+
+An optional **alpha-cutout rigid** velocity variant now replays the
+material's base texture alpha cutoff with KHR texture transform
+(offset/scale/rotation), base alpha and vertex-color alpha (when
+enabled). Because cutout surfaces contain empty pixels, the dedicated
+variant samples the base alpha texture and discards rejected fragments
+before depth-occlusion testing. These materials are kept out of the
+ordinary opaque instanced velocity draw and rendered separately.
+ShaderGraph-displaced surfaces and deformable alpha-cutout models are
+not included, since their visible shape requires matching additional
+material stages. Fully blended/transparent models remain excluded.
+
+The rigid history now stores the source Model identity alongside its
+world transform, preventing a reused `persistentId` from picking up
+a different model's previous transform. Existing per-view reset, initial
+frame and resize behavior stays intact.
+
+`motionBlur` also accepts `depthThreshold` (default 0.012, range
+0.0005..0.05) for rejecting unrelated depth layers during the
+directional color gather. The shader falls back to the sharp sample if
+all gathered samples are rejected instead of blending black into the
+image. The threshold is in **non-linear device depth units**, not metres.
+Example:
+```json
+{"type":"motionBlur","intensity":0.65,"maxPixels":20,
+ "samples":8,"shutterScale":1,"depthThreshold":0.012}
+```
+
+All additional paths remain behind the pre-existing
+`AIVERSE_PRISMA_MOTION_BLUR=1` and HDR/quality gates. They use the
+same masked velocity texture bridge and do not change gameplay ECS or
+SpectraFX. Baked clip pose and rigid alpha-cutout motion use new
+GLSL/MSL variants; no backend-specific testing has yet verified
+their image parity. CPU/GPU builds, CTest, shader compilation,
+screenshots and benchmarks are **NOT RUN** at the user's request.
+See `docs/handoffs/prisma-stage-28.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
