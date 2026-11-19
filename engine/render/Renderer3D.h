@@ -294,6 +294,9 @@ public:
     // previous transform and deformation history. No ECS mutation.
     void resetObjectMotionHistory(uint64_t viewId);
     void resetAllObjectMotionHistory();
+    // Explicit view closure after GPU-idle synchronization. NEVER call while
+    // submissions referencing the view textures can still be in flight.
+    void releaseObjectMotionViewAfterGpuIdle(uint64_t viewId);
     struct ObjectMotionStats {
         uint64_t viewId = 0;
         uint32_t rigidInstances = 0;
