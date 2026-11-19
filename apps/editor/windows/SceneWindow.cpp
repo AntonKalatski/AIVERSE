@@ -82,7 +82,11 @@ public:
         sceneCpuMdiPolicy.adaptiveBudgetUs = sceneCpuMdiBudgetOverrideUs_;
         // One fixed view namespace, not a GPU resource or Entity ID.
         sceneCpuMdiPolicy.adaptiveScope = kSceneCpuMdiAdaptiveScope_;
-        renderer.setCpuMdiPolicyOverrides(sceneCpuMdiPolicy);
+        // Scoped policy changes cannot leak to other views, including when
+        // rendering exits early. The guard restores the previous host values.
+        {
+        Renderer3D::ScopedCpuMdiPolicyOverride sceneCpuMdiGuard(
+            renderer, sceneCpuMdiPolicy);
         const bool measuredMode = benchmarkActive_ || autoBatchChoice_ >= 0;
         const int activeMode = benchmarkActive_ ? benchmarkMode_ : autoBatchChoice_;
         renderer.setModelInstancingEnabled(measuredMode ? true : sceneInstancing_);
@@ -189,6 +193,7 @@ public:
         // Renderer3D counters later in the editor frame.
         lastSceneLodStats_ = renderer.modelStats();
         lastSelectedLod_ = renderer.lodDebugSample();
+        } // Restore CPU MDI configuration before Game can render.
         const auto afterRenderScene = std::chrono::steady_clock::now();
         // Changes are scoped to Scene; Game playback uses the normal renderer defaults.
         renderer.setStudioDebugMode(0);
@@ -196,7 +201,6 @@ public:
         renderer.setModelInstancingEnabled(true);
         renderer.setModelMultiDrawEnabled(true);
         renderer.setGpuAuthoredDrawEnabled(true);
-        renderer.setCpuMdiPolicyOverrides(priorCpuMdiPolicy);
         renderer.setModelCullingEnabled(true);
         renderer.setModelLodEnabled(true);
         renderer.setModelLodFadeWidth(0.15f);

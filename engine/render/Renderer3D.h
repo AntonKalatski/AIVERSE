@@ -565,6 +565,28 @@ public:
         setCpuMdiAdaptiveBudgetOverrideUs(value.adaptiveBudgetUs);
         setCpuMdiAdaptiveScope(value.adaptiveScope);
     }
+    // Scoped policy override for any native render host (RTS/FPS/editor/etc).
+    // Snapshot only CPU batching configuration, not transient GPU/scene state.
+    // Nested scopes restore in LIFO order, including on an exception or an
+    // early return. The host must not outlive the referenced Renderer3D.
+    class ScopedCpuMdiPolicyOverride {
+    public:
+        ScopedCpuMdiPolicyOverride(Renderer3D& renderer,
+                                   const CpuMdiPolicyOverrides& overrides)
+            : renderer_(renderer), saved_(renderer.cpuMdiPolicyOverrides()) {
+            renderer_.setCpuMdiPolicyOverrides(overrides);
+        }
+        ~ScopedCpuMdiPolicyOverride() {
+            renderer_.setCpuMdiPolicyOverrides(saved_);
+        }
+        ScopedCpuMdiPolicyOverride(const ScopedCpuMdiPolicyOverride&) = delete;
+        ScopedCpuMdiPolicyOverride& operator=(const ScopedCpuMdiPolicyOverride&) = delete;
+        ScopedCpuMdiPolicyOverride(ScopedCpuMdiPolicyOverride&&) = delete;
+        ScopedCpuMdiPolicyOverride& operator=(ScopedCpuMdiPolicyOverride&&) = delete;
+    private:
+        Renderer3D& renderer_;
+        CpuMdiPolicyOverrides saved_;
+    };
     // Independently control GPU-authored draws for 3-way Scene benchmarking.
     // The process-wide experimental environment flag remains mandatory.
     void setGpuAuthoredDrawEnabled(bool on) { gpuAuthoredDrawEnabled_ = on; }
