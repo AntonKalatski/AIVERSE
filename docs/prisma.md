@@ -1437,7 +1437,11 @@ of every GUI frame, including after the Game tab has closed.
 `ClientHost::drainAfterGpuIdle()` is available at a host-confirmed
 GPU-idle point for clients whose submission fence was unavailable.
 The editor includes this drain in the memory-pressure cleanup and
-its graphics-device shutdown path.
+its graphics-device shutdown path. If more than two hosted clients are
+archived while waiting for GPU completion, their **count** (not CPU
+frame age) also triggers an attempted true pre-render GPU idle at
+the next frame. If the backend cannot confirm idle, they are retained
+rather than unsafely freed.
 
 If no GPU submission token is available, an archived client is
 quarantined rather than destroyed during an ordinary frame; its
