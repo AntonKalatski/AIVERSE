@@ -138,3 +138,31 @@ Stage 1; this stage supplies deterministic ECS ownership and lifecycle APIs.
 - Use `bash tools/ecs-static-scene-validate.sh build/static-scene extended 8`
   after pulling branch in an isolated worktree. It logs every CMake
   build and selected ECS/COW/FPS/RTS CTest result. See Stage 5 handoff.
+
+
+## Stage 6 — editor authoring and one-shot full validation (2026-11-19)
+
+- `PrefabStaticAuthoring<T>` parses bounded versioned JSON v1
+  into sealed `PrefabStaticCatalog<T>`. The owning native project
+  supplies a STRICT typed decoder: reject unknown fields, floats for
+  canonical integral config, overflows, wrong domain and duplicate IDs.
+  Authoring import order must not change the immutable catalog ID.
+- `PrefabStaticInspector<T>` generates read-only
+  `components/componentSchemas` JSON for the already existing
+  `NativeModule::inspectComponents` Editor hook. It never changes
+  gameplay World or exposes native writeback of static T values.
+  Live editor edits go to source assets and explicit revision migration
+  (future work), NOT into immutable runtime tables.
+- `ecs_static_scene_editor_contract_test` covers authoring and
+  read-only Inspector schema; `aiverse_ecs_shared_static_rss_bench`
+  samples actual process RSS separately for ordinary/shared/static
+  and checksums rather than merely estimating payload sizes.
+- User requested **complete feature work before any more native tests**.
+  Do not run partial test cycles. After all Stage 5/6 code is committed
+  with handoff, execute exactly ONE final Release gate:
+  `bash tools/ecs-static-scene-validate.sh build/static-scene all 8 1000000`
+  from existing isolated worktree. The `all` mode builds the full
+  project, executes complete registered CTest once, and runs isolated
+  1M-entity RSS read benchmark for 16/64/1024 unique configs.
+  Record actual results, errors, exact SHA, platform and warnings;
+  Stage 6 native run is not yet performed.
