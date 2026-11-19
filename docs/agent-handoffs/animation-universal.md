@@ -2744,3 +2744,14 @@ before calling this stage validated.
 - Audited independent canvas `engine/render/RenderTexture.cpp`: direct post-submit vertex buffer and upload texture destruction remains and needs a separate fence-aware transient resource queue in Stage 120; no conflicting team source was edited.
 - **ACTUAL:** linked GitHub source/branch/PR reads, precise targeted commits, owner audits and handoff. **NOT RUN:** native compiler/link, CMake, CTest, CI, real Metal/Vulkan/GL, TSAN/ASAN, screenshots or benchmarks; PR #22 must stay Draft.
 - **Next Stage 120:** safe RenderTexture GPU transient retirement, remaining generic host attachment/LOD continuity, later full build/tests/warnings fixes after functional implementation.
+
+## Stage 120 — fenced render canvas resources (2026-11-19)
+
+- **Standalone detailed handoff:** [Stage 120](animation-stage120-canvas-gpu-retirement-2026-11-19.md) records code commits, changed files, ownership, actual validation, risks, and next steps.
+- Continued Stage 119 HEAD `2d0fd8f0`. Existing `main` `d71c6d47` was already incorporated; GitHub compare after source changes showed ahead 815 / behind 0, with PR #22 Open/Draft. No force push or direct main modification.
+- Added the generic `render::CanvasGpuRetirement` fence queue for buffers/images/pipelines/shaders and optional GPU device generation lease. `RenderTexture` no longer destroys per-draw scratch buffers, temporary upload textures or a canvas's live shader programs during in-flight GPU work. A standalone owner can drain at explicit shutdown; a shared host polls at a real pre-render frame boundary.
+- The legacy RTS `RtsPaintLayers` adapter now owns one shared GPU queue across painting source changes and canvas removal. It also retires old meshes and coast textures, keeps last-good geometry on failed replacement upload, and forwards its host lease. Editor and GameClient poll the queue each owner frame and Editor Stats exposes pending/orphan/failed-fence diagnostics.
+- This is GPU lifetime presentation infrastructure only; MotionWeave ECS clock, FPS/RTS simulation, NEREID, Prisma and SpectraFX mechanics remain unchanged.
+- **ACTUAL:** GitHub branch/source review, direct commits using current blob SHAs, re-read of edited source and inspection confirming no direct `destroy*` calls in `RenderTexture.cpp` or `RtsPaintLayers.cpp`.
+- **NOT RUN:** local checkout/native build/link/CMake/CTest/CI, GPU Metal/GL/Vulkan, sanitizers, game/editor visual parity or benchmarks. All Stage 120 changes remain compile/runtime unverified; PR Draft.
+- **Next Stage 121:** finish universal View model/LOD/attachment adapters and canvas upload retry diagnostics; audit independent owner fallback contracts; then build/test after features are complete and fix failures/warnings.
