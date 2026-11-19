@@ -2903,3 +2903,18 @@ reflections. CPU/GPU selection comparison can be done in diagnostics
 but not as a synchronous production readback. Until verified, keep
 `GeometryScene`'s default-off STRATA GPU route, CPU portable LOD and
 Legacy fallback as authoritative.
+
+
+### Stage 16.2 completion table (source state, NOT test certification)
+
+| Component | Source status | Tests | Remains |
+| --- | --- | --- | --- |
+| Vulkan GPU-authored indexed packet | Implemented | NOT RUN | Real driver parity |
+| GPU clear/select/error safety | Implemented | NOT RUN | Buffer/overflow diagnostics |
+| Optional original-mesh GPU fallback | Implemented, strict opt-in | NOT RUN | Real pixel parity |
+| Vulkan one-command RHI indirect call | Implemented | NOT RUN | Renderer3D-owned invocation |
+| Source/material/frame eligibility gate | Implemented | NOT RUN | Multi-instance and pass support |
+| Auto exclusive Renderer3D GPU submission | NOT IMPLEMENTED | N/A | Stage 16.3 |
+| Shadow/reflection/material GPU rendering parity | NOT IMPLEMENTED | N/A | Stage 16.3/17 |
+| Vulkan/GLES3 final hardware acceptance | NOT RUN | N/A | Combined final test |
+
