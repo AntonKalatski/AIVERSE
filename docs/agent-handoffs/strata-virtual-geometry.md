@@ -2671,3 +2671,107 @@ priority-aware eviction to guarantee forward progress under sustained
 pressure. The aggregate GPU-index cap counts only reserved source
 arena bytes and NOT real RHI in-flight memory copies. No native
 acceptance was conducted here. Keep the PR Draft.
+
+
+---
+
+## Stage 16.1 — Vulkan GPU compute RHI and STRATA selection (2026-11-20)
+
+**Branch:** `feature/strata-virtual-geometry` (not `main`).
+**Validation:** this stage authored code and regression tests ONLY;
+**no native CMake, CTest, Vulkan driver or GPU capture has been run**.
+The owner requested one final combined test run when functionality is
+complete. Do not report Vulkan hardware parity PASS.
+
+### Completed implementation
+
+- `engine/gfx/vulkan/VkApi.h`: loads Vulkan 1.0
+  `vkCreateComputePipelines`, `vkCmdDispatch`, and
+  `vkCmdPushConstants`.
+- `VkShaderCompiler.h/.cpp`: standalone
+  `compileComputeProgram(glsl450,spirv,error)` compiles full GLSL450
+  compute into SPIR-V using the existing glslang library. Unlike
+  vertex/fragment translation, this API preserves std430 bindings,
+  explicit descriptor layouts, and push constants unchanged.
+- **New `engine/gfx/vulkan/VkCompute.cpp`**: Vulkan
+  `gfx::Device` compute overrides, explicit descriptor set storage
+  slots 0..7 subject to real device limits, <=128-byte push constants
+  via uniforms slot8, 64-wide X workgroups, checked dispatch return,
+  TRANSFER->COMPUTE and COMPUTE->DRAW/TRANSFER barriers, fence-gated
+  asynchronous `readBufferAsync` status diagnostics. Descriptor
+  pools are reset only after their frame-slot fence completes; GPU
+  readback callbacks occur on the device thread after completion,
+  not synchronously during rendering.
+- `VkDevice.h` and `GfxVulkan.cpp`: compute availability only for
+  graphics queues which also support compute, with 64-wide workgroup
+  and >=128 push constant limits. Compute resources are destroyed
+  at Device teardown; completed-slot readbacks delivered in
+  `prepareSlot()`. `VkResources.cpp` adds TRANSFER_SRC to buffer
+  usages and STORAGE to GPU-authored indirect arguments **while
+  preserving original Storage vertex+index pooled usage**.
+  `Gfx.h`: new `dispatchChecked()` virtual helper, backwards
+  compatible with other RHI implementations. `CMakeLists.txt`
+  compiles `VkCompute.cpp` only under `AIVERSE_VULKAN`.
+- **New `StrataVulkanCullingShaders.h`**: GLSL450 compute traversal
+  reads exactly the existing version-2 `GpuMetadataHeader` (32
+  bytes), `GpuPrimitive` (32), `GpuNode` (64), and instance
+  (80). One 64-thread compute dispatch visits per-primitive roots,
+  derives projected LOD error, frustum-tests nodes and emits the same
+  32-byte `GpuSelectedCluster` records plus status counters as
+  Metal. Bounded 128-entry local stack, capacity and invalid-metadata
+  signals force fail-closed behavior.
+- `StrataGpuCulling.cpp` picks MSL for Metal or GLSL for Vulkan,
+  uses checked compute, and allows diagnostic async readback on
+  both. `GpuMetadataScene`'s already existing Vulkan metadata/index
+  staging can now be used when Vulkan compute exists. CPU
+  `compareGpuSelection` remains authoritative for reference parity.
+  GLES3/GL33 never opt into compute or GPU indirect.
+
+### Stage 16.1 commits
+
+- `VkApi.h` `b443ae614f5c1ed9b43b451e9351209c95822ee9`
+- `VkShaderCompiler.h/.cpp` `9107cdc69b022d1b2430a38744553b8bc9406fa6`,
+  `5254680da60439624a62edad9d3ec6b190d4e010`
+- `Gfx.h` `6dff4bef156fec8bce0bf48172cf607517a97c3f`
+- `VkDevice.h` `1b607a7ebd13c8b22a835d1c185d1a0002295d60`,
+  `43ca0860cb1dca0a513128c6d4328b429532f9b9`,
+  `e5479b5333a22f6dd8d58158f416c08e71f54ffc`,
+  `8e2f601a993c401c2f355ffbe4ad99369163e38a`
+- New `VkCompute.cpp` `3234b077497d3635a609a035d7756cf590595777`
+- `VkResources.cpp` `b84581acd54a64c2080f943177ed45462eb8535e`,
+  `f3d8b02180b10e64d4ea26c423aea1ac116ecad8`
+- `GfxVulkan.cpp` `571ab15d2c61e211b541e6c9f19ae0707683d06c`
+- `CMakeLists.txt` `b48b58d9d138665542e62ef934c084955149b810`
+- GLSL selector `04f797dd4d118ac968e74733df7db87e3641abfe`,
+  `d2a4ee23d7886767836725737123c02fec29ebf9`
+- `StrataGpuCulling.cpp` `8f46b37a28557fbde3583b748668164fb7274d06`
+- Recording mock `tests/render/strata_gpu_culling.cpp`:
+  `e1956ffa2a38c2d0697848ae8301441bab3613c8`.
+- New `tests/render/strata_vulkan_kernel.cpp`:
+  `064999c0ee88f363b7507bb7fcdd734aa91d6380`,
+  `50bb072411b6cfe184d0fccf2dee9408b5258eea`.
+  `CMakeLists.txt` registers optional
+  `aiverse_strata_vulkan_kernel_tests`/
+  `strata_vulkan_kernel` under
+  `AIVERSE_VULKAN=ON,AIVERSE_BUILD_TESTS=ON`
+  via `83a3ee739f9a615c430987a0b6ca7bcf1f92d024`.
+
+### Unrun tests / next stage
+
+The headless Vulkan fixture first requires offline GLSL-to-SPIR-V
+compilation (even on hosts without Vulkan driver), then if a Vulkan
+compute-capable driver exists launches one real source/instance on
+GPU, asynchronously reads candidate range/status, compares to the
+CPU oracle, and identifies unsupported GPUs as SKIP rather than PASS.
+No production Vulkan renderer is switched on in this stage.
+
+| Component | Code | Test status |
+| --- | --- | --- |
+| Vulkan GLSL compute compilation | Implemented | NOT RUN |
+| Vulkan storage descriptor pipeline | Implemented | NOT RUN |
+| Vulkan RHI dispatch, barriers, async readback | Implemented | NOT RUN |
+| Vulkan STRATA cluster GPU culling | Implemented (diagnostic) | NOT RUN |
+| GLES3/Metal legacy selection behavior | Retained | NOT RUN on new tree |
+| GPU indirect packet preparation | Stage 16.2 | NOT RUN |
+| Renderer3D exclusive production GPU draw routing | NOT IMPLEMENTED | N/A |
+
