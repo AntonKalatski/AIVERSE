@@ -192,6 +192,10 @@ in this failure. The test mixed the two counters. Source fixes:
 3. `4e78817d9ee0826fa3cd40a0003cf11b594e0d28`: assert
    exactly two publish/retire cycles for `render/shared` across
    rollback invalidation followed by restored scene unload.
+4. `39fc2f66e5c4711329fbcae13a1d4f0af9745b1f`: document the
+   two-layer lease/reference ownership contract next to
+   `SceneResourceBackend::coordinatorAdapter` to prevent future
+   tests from confusing unique external leases with scene references.
 
 **Native results after these commits: NOT YET VERIFIED.** The user
 provided no compiler version or exact worktree SHA with this run, so
