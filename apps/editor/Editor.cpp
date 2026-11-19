@@ -57,7 +57,7 @@ void Editor::refreshPrismaVolumes() {
 // ============================ viewport ============================
 
 void Viewport::ensure(gfx::Device& dev, int pw, int ph,
-                      ViewportGpuRetirement& owner) {
+                      ViewportGpuRetirement& owner, const char* debugName) {
     ownerDevice = &dev;
     retirement = &owner;
     pw = std::max(pw, 8); ph = std::max(ph, 8);
@@ -74,9 +74,11 @@ void Viewport::ensure(gfx::Device& dev, int pw, int ph,
     td.filter = gfx::Filter::Nearest;
     depth = dev.createTexture(td);
     w = pw; h = ph;
+    owner.noteLive(this, debugName, w, h, color, depth);
 }
 
 void Viewport::release(gfx::Device& dev) {
+    if (retirement) retirement->forgetLive(this);
     // Color handles used in ImGui commands must survive GPU submission,
     // including when an entire Scene/Game/FX window is destroyed.
     if (retirement) {
