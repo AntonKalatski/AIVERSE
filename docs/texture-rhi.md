@@ -2662,3 +2662,42 @@ cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parall
 ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
 ```
 
+
+### Stage 10BH — Apple M3 Ultra fragment sampling and timing PASS (2026-11-19)
+
+**Actually executed:** user ran the opt-in native Metal GPU fixture on
+`Metal Apple M3 Ultra` in the isolated macOS texture worktree after
+Stages 10BF/10BG. CTest #122 `metal_texture_gpu` **PASSED**
+(1/1; 0 failures) in **1.14 s**.
+
+The verbose output confirmed exact RGBA8 readbacks (**0 LSB tolerance**)
+for three Texture3D planes/mips, three 2DArray subresources, three
+Cube subresources, and three CubeArray subresources; it additionally
+confirmed real fragment shader Texture3D sampling of the original
+Z=0, changed Z=2 and authored mip1 Z=1 (all **1 LSB tolerance**).
+
+**Measured wall-clock stages:** Metal device/layer initialization
+67.186 ms; Texture3D create/upload 2.439 ms; 2DArray 0.411 ms;
+Cube 0.395 ms; CubeArray 0.531 ms; Texture3D shader pipeline
+setup 194.582 ms; complete fragment sampling group 302.001 ms;
+fixture body 413.089 ms; total fixture 480.275 ms.
+Per readback group, command buffer GPU intervals ranged
+**0.005–0.021 ms** on this machine. These command intervals
+include the **whole GPU command buffer**, not a standalone
+upload benchmark. Each group required 2 polling frames;
+CPU-side callback waits were approximately 12.520–21.439 ms
+and submission wall times approximately 4.100–9.129 ms.
+The difference between overall CTest time (1.14 s) and fixture
+wall-time (0.480 s) includes process/runtime overhead
+outside the timestamped test body; its causes were not separately
+instrumented. This does **not** show texture transfer taking 1.14 s.
+
+**Scope:** validates real Metal upload/readback and direct fragment
+Texture3D sampling, not GPU ICB/Shader Graph resource mixing or
+actual VT page feedback and page-table upload. No game
+performance regression or cross-backend claim can be made.
+The previous source+Metal verifier pass was also confirmed
+on an earlier commit. The timing+fragment GPU run applies
+to the source at the user's test time, before any further
+VT GPU acceptance additions.
+
