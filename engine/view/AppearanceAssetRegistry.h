@@ -6,6 +6,7 @@
 #include "ModelPublicationEpoch.h"
 #include <algorithm>
 #include <cstdint>
+#include <cmath>
 #include <limits>
 #include <memory>
 #include <stdexcept>
@@ -92,6 +93,53 @@ public:
             if(!buildAppearancePacket(spec,world,out))return false;
             out.animationModelGeneration=modelPublicationGeneration;
             return true;
+        }
+
+        // Native C++ authoring helper: compile a visual LOD against two
+        // already published, immutable snapshots. Both revisions must be
+        // nonzero and are checked again by View::submitOne on every draw.
+        // On failure, out is unchanged, preserving a host's last-good LOD.
+        // This pins the plan, NOT the borrowed Models or their GPU buffers.
+        bool compileVisualLod(const Asset& visual,float minDistance,
+                              const ModelPoseRetarget& authored,
+                              ModelLod& out,std::string* error=nullptr) const {
+            if(error)error->clear();
+            try {
+                if(!model || !visual.model ||
+                   !modelPublicationGeneration ||
+                   !visual.modelPublicationGeneration)
+                    throw std::invalid_argument(
+                        "compiled LOD needs two published Model snapshots");
+                if(!std::isfinite(minDistance) || minDistance<=0.f)
+                    throw std::invalid_argument(
+                        "compiled LOD distance must be finite and positive");
+                auto plan=compileModelPoseRetarget(
+                    *model,*visual.model,authored,
+                    modelPublicationGeneration,
+                    visual.modelPublicationGeneration);
+                if(!plan) {
+                    if(error) {
+                        const auto report=describeModelPoseRetarget(
+                            *model,*visual.model,authored,
+                            modelPublicationGeneration,
+                            visual.modelPublicationGeneration);
+                        *error=std::string(modelPoseRetargetIssueName(report.issue))+
+                            " (visual node "+std::to_string(report.targetNode)+")";
+                    }
+                    return false;
+                }
+                ModelLod candidate;
+                candidate.model=visual.model;
+                candidate.minDistance=minDistance;
+                candidate.compiledRetarget=std::move(plan);
+                candidate.visualModelGeneration=
+                    visual.modelPublicationGeneration;
+                out=std::move(candidate);
+                return true;
+            }catch(const std::exception& ex) {
+                if(error)*error=ex.what();
+                return false;
+            }
         }
     };
 
