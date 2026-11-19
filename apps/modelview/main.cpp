@@ -129,7 +129,8 @@ struct Viewer {
         // This attachment preview uses ONE real ModelAssetProvider for both
         // source rig and imported children. The original comparison/gallery
         // paths remain unchanged unless the user opts into attachments.
-        if(!attachmentSpecs.empty() || !attachmentConfigPath.empty()) {
+        if(!attachmentSpecs.empty() || !attachmentConfigPath.empty() ||
+           watchModelFiles) {
             if(!gameDir.empty())
                 throw std::invalid_argument(
                     "attachment preview takes model files, not --game gallery");
