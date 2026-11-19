@@ -2502,3 +2502,43 @@ the opt-in target and supplies its log. Previous confirmed 23/23 CTest
 and editor PASS apply only to source validation on the older tested
 commit, not this new GPU test source.
 
+  
+### Stage 10BD — repair truncated `--metal` verifier footer after macOS run
+
+The first Mac Studio `--metal` attempt based on `a81fdbad9`
+**compiled** the 20 focused texture targets, `aiverse_editor`, and the
+new `aiverse_metal_texture_gpu_test`; focused source CTest also exited
+0. However, the verifier reached a malformed shell footer:
+line 171 contained only `-R '^metal_texture_gpu`, with a missing
+closing quote, output redirect, and a duplicated final block. Mac Bash
+reported `unexpected EOF while looking for matching '\''`
+and never ran `metal_texture_gpu`. No `metal-gpu.log` was produced,
+so GPU acceptance was **NOT RUN**.
+
+The repaired footer restores the complete CTest command
+`-R '^metal_texture_gpu$' >"$logs/metal-gpu.log" 2>&1` and a single
+error-accounting/summary block. The verifier now runs
+`bash -n "${BASH_SOURCE[0]}"` at startup, BEFORE CMake or build
+operations; Linux and Vulkan GitHub Actions jobs also run
+`bash -n tools/verify-texture-rhi.sh` before invoking the script.
+The corrected footer alone was parsed successfully under Linux Bash
+(`bash -n`, exit 0); **the complete script and real Metal CTest have
+NOT yet been run on macOS after the fix**.
+
+Since the GPU target already built on the Mac, it can be executed
+without repeating all focused source builds:
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+bash -n tools/verify-texture-rhi.sh
+ctest --test-dir build/texture-rhi --verbose --output-on-failure \
+  --no-tests=error -R '^metal_texture_gpu$'
+```
+
+This direct CTest does not create `metal-gpu.log`; capture its terminal
+output or use `ctest --output-log`. For a complete later run, invoke
+`bash tools/verify-texture-rhi.sh --editor --metal --jobs 4`.
+A native GPU PASS must be based on measured readback bytes, not
+`BUILD PASS` or source-only CTest success.
+
