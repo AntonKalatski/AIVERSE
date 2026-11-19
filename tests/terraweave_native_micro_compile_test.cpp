@@ -15,6 +15,7 @@
 #include "engine/world/TerraWeavePhysisNutrientBridge.h"
 #include <cassert>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <type_traits>
 
@@ -37,6 +38,37 @@ int main() {
     (void)terraweavePhysisWeatherAvailable();
     ForestMicroSettings cfg;
     validateForestMicroSettings(cfg);
+    // Out-of-range NEREID mouth positions must fail BEFORE raw Fixed
+    // -> centimetre scaling; no water query is permitted for bad input.
+    const ForestMicroWaterSampler neverQuery=[](int64_t,int64_t,uint64_t)
+        -> ForestMicroSample {
+        throw std::logic_error("TerraWeave out-of-world mouth queried water");
+    };
+    ForestNereidMicroJunctionSettings mouthCfg;
+    assert(!nearestNereidMicroCell(
+        {Fixed::fromRaw(std::numeric_limits<int64_t>::max()),
+         Fixed{},Fixed{}},1,neverQuery,mouthCfg));
+    assert(!nearestNereidMicroCell(
+        {Fixed::fromRaw(std::numeric_limits<int64_t>::min()),
+         Fixed{},Fixed{}},1,neverQuery,mouthCfg));
+    assert(!nearestNereidMicroCell(
+        {Fixed{},Fixed{},Fixed::fromRaw(
+            std::numeric_limits<int64_t>::max())},
+        1,neverQuery,mouthCfg));
+    // Normal negative coordinates must still discover the nearest
+    // correct body, with deterministic signed lattice floor.
+    const ForestMicroWaterSampler wetNegative=[](int64_t x,int64_t z,
+                                                   uint64_t expected) {
+        if(x==-1 && z==-1 && expected==7)
+            return ForestMicroSample{7,true,0,0};
+        return ForestMicroSample{};
+    };
+    const auto nearNegative=nearestNereidMicroCell(
+        {Fixed::fromInt(-2),Fixed{},Fixed::fromInt(-2)},
+        7,wetNegative,mouthCfg);
+    assert(nearNegative.has_value());
+    assert(nearNegative->bodyKey==7 &&
+           nearNegative->x==-1 && nearNegative->z==-1);
 #if defined(AIVERSE_TERRAWEAVE_SMOKE_WITH_PHYSICS)
     // A source-facing regression for the exact Clang precedence warning:
     // zero/zero is invalid, either nonzero budget is allowed, and
