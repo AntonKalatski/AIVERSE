@@ -173,8 +173,12 @@ public:
                     } else {
                         knownRemoteRevision_=true;
                         remoteRevision_=message.receipt.revision;
-                        if(!active_ && status_==ClientStatus::Uncertain)
+                        if(!active_ && status_==ClientStatus::Uncertain) {
+                            // A fresh successful probe clears the previous
+                            // journal-failure warning shown by the editor.
                             status_=ClientStatus::Idle;
+                            receipt_=Receipt{};
+                        }
                     }
                 } else if(message.receipt.result==Result::Denied) {
                     receipt_=message.receipt;
