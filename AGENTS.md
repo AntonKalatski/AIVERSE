@@ -389,6 +389,23 @@ or indexed draw is submitted by preview. Renderer3D counters are
 diagnostic only and reset at beginScene. Never infer GPU/raster parity
 from a preview-ready count; actual Metal validation and exclusive route
 ownership remain mandatory before legacy suppression can be added.
+Stage 11 adds opt-in `aiverse_strata_metal_raster_parity`: a
+real Metal/CAMetalLayer A/B visual fixture using **the ordinary
+Renderer3D model material and shadow passes**, with exclusive
+per-frame Legacy or Strata source alias. The aliases borrow the same
+source GPU VB and existing pooled Strata sidecar IB — no extra GPU
+geometry pool and no second GPU draw path. A blank baseline must
+differ from Legacy, fine/coarse raster screenshots must match Legacy
+byte-for-byte for a deliberately **lossless** two-triangle hierarchy,
+and only one ModelDraw is submitted per candidate frame. It is NOT
+yet a production Strata routing path or a proof of real simplified
+LOD crack-free visuals, water reflection parity or GPU-authored
+selected-command rendering. Stage 11 has **not been run** until
+native output is returned; do not conflate with the previously
+confirmed real Metal compute 5/5 or focused CPU 6/6.
+The Strata-focused workflow's previously malformed regex was
+replaced; CI compiles both Metal fixtures on macOS, but intentionally
+does not run GUI tests headlessly.
 On each bounded Strata step: implementation commit first; append and commit the
 handoff separately, recording unrun tests honestly.
 
