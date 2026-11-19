@@ -535,3 +535,59 @@ and rendered pixels OFF/ON/OFF, including buildings, cars, distance LOD,
 shadows, transparency and missing shared-page models. No numerical speedup
 or parity proof has yet been obtained; feature implementation precedes
 tests at the user's request.
+
+
+### Adaptive static pooled CPU MDI feedback (Stage 19)
+
+`AIVERSE_CPU_MDI_ADAPTIVE=1` optionally makes the **Stage 17/18 static
+pooled-page** CPU MDI path select between its extra cross-model grouping and
+the ordinary instancing/direct path using recent renderer-side **CPU**
+preparation cost. It only activates when
+`AIVERSE_STATIC_CROSS_MODEL_BATCHES=1` is also enabled. Both are OFF
+by default; GPU-authored ICB, dynamic models, general CPU MDI and other
+render passes keep their existing policies.
+
+The common genre-neutral, backend-independent
+`engine/render/CpuMdiAdaptivePolicy.h` contains the adaptive
+`CpuMdiAdaptiveFeedback` policy. The renderer retains one feedback state
+for the **sun-shadow pass (0)** and one for the **opaque main pass (1)**.
+Each qualifying static pooled group still needs the page/material preflight
+and enough **unique indexed primitive commands** for the backend's MDI
+threshold. Only then is its cost feedback consulted. The signal is measured
+CPU wall-clock microseconds from compatible-run scanning through
+indirect command packing, material/pipeline binding and backend submission
+calls, divided by the number of actual unique primitive runs. It does
+**not** measure GPU execution, total scene frame time, or predict a GPU
+speedup.
+
+The first two measured attempts are treated as warmup; feedback then
+tracks an exponential moving average (15% new sample), and starts gating
+after eight usable samples. A separate threshold,
+`AIVERSE_CPU_MDI_MAX_US_PER_COMMAND` (default **25**, accepted numeric
+range **1..1000**), determines whether the observed normalized CPU
+submission cost is too high for this workload. The default is a
+**provisional heuristic**, not a benchmark-derived platform optimum.
+When too high, the extra pooled cross-model sort is disabled for the
+current pass and eligible pooled static objects take their normal
+instancing/direct batching path. Other model MDI groups are unaffected.
+Once every 32 preflight-qualified opportunities, one normal MDI pass
+is probed to allow recovery after pipeline warmup, workload changes or
+a different camera. Feedback is retained per `Renderer3D` lifetime,
+and reset on renderer shutdown; no global or gameplay state is modified.
+
+The **minimum number of distinct commands and GPU capability checks remain
+hard requirements** regardless of feedback. Model material/pipeline
+compatibility, culling, LOD, shadow selection and per-instance bounds
+still run normally. Failure of indirect submission remains handled by
+the existing draw fallback. Stage 19 never introduces extra GPU
+commands or bypasses an eligibility check.
+
+Scene → Batching → Instancing and indirect details reports the moving
+average in microseconds/unique command for shadow and opaque, its sample
+count, adaptive skip/probe pass counts and measured attempts, alongside
+successful cross-model CPU MDI submissions and total actual draw calls.
+These are diagnostics for later A/B/A benchmarks, not proof of faster
+rendering. Compare `AIVERSE_CPU_MDI_ADAPTIVE=0/1` with the same camera,
+scene and backend on Metal and other supported GPUs, tracking rendered
+pixels, CPU scene time and GPU frame time. Tests and runtime benchmarking
+remain deferred by the user's feature-first request.
