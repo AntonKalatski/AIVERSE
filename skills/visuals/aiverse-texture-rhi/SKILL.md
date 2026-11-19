@@ -765,3 +765,20 @@ CI if it remains queued or cancelled.
   source texture handles and 36 U2 floats. Exact resource tickets
   include these values and must be checked again before ICB use.
 - This stage is CPU contract only; no GPU ABI or native tests run.
+
+
+### Per-command Metal ICB built-in PBR resource ABI (Stage 10AC)
+
+- The opt-in `GpuIcbVirtualMaterial` may carry
+  `hasPbr=true`, six source TextureHandles (slots 1..6),
+  and 36 U2 floats (nine vec4 material rows). All six
+  handles must be valid; use renderer fallback textures
+  for missing optional maps.
+- The Metal ICB GPU kernel can set fragment buffer(3)
+  to a 256-byte-aligned per-command U2 and use each
+  command's PBR textures and sampler states through its
+  4096-byte argument-buffer slice. Legacy groups preserve
+  original shared U2 / fragment bindings.
+- Renderer3D integration and hardware shader validation
+  are still required; do not treat this as an enabled or
+  verified heterogeneous ICB batch. Tests NOT RUN.
