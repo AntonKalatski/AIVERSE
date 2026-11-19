@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <thread>
@@ -67,6 +68,7 @@ struct Read {
     int width = 0, height = 0;
     std::vector<uint8_t> expected;
     std::string label;
+    int tolerance = 0; // zero for blits, <=1 LSB for sampled float->UNORM
     TextureReadbackResult output;
     bool done = false;
 };
@@ -136,17 +138,20 @@ void verifyReads(Device& dev, const std::vector<std::shared_ptr<Read>>& probes,
                          p->label.c_str());
             continue;
         }
-        if (p->output.pixels!=p->expected) {
+        const auto mismatch=std::mismatch(
+            p->expected.begin(),p->expected.end(),p->output.pixels.begin(),
+            [&](uint8_t want,uint8_t got) {
+                return std::abs(int(want)-int(got)) <= p->tolerance;
+            });
+        if (mismatch.first!=p->expected.end()) {
             ++failures;
-            const auto mismatch=std::mismatch(p->expected.begin(),p->expected.end(),
-                                             p->output.pixels.begin());
             const size_t at=size_t(mismatch.first-p->expected.begin());
             std::fprintf(stderr,
-                "FAIL: %s GPU bytes differ at %zu (wanted %u, got %u)\n",
+                "FAIL: %s GPU bytes differ at %zu (wanted %u, got %u, tolerance %d)\n",
                 p->label.c_str(),at,unsigned(*mismatch.first),
-                unsigned(p->output.pixels[at]));
-        } else std::printf("PASS: %s (%dx%d GPU RGBA8 bytes)\n",
-                           p->label.c_str(),p->width,p->height);
+                unsigned(p->output.pixels[at]),p->tolerance);
+        } else std::printf("PASS: %s (%dx%d GPU RGBA8 bytes; tolerance %d)\n",
+                           p->label.c_str(),p->width,p->height,p->tolerance);
     }
     timing.compareMs=elapsedMs(compareStart,Clock::now());
     std::printf("TIMING %s readbacks=%zu submit_ms=%.3f callback_wait_ms=%.3f "
@@ -157,11 +162,13 @@ void verifyReads(Device& dev, const std::vector<std::shared_ptr<Read>>& probes,
     else std::puts("unavailable");
 }
 std::shared_ptr<Read> probe(TextureHandle h,int mip,int layer,int w,int height,
-                            std::vector<uint8_t> expected,std::string label) {
+                            std::vector<uint8_t> expected,std::string label,
+                            int tolerance=0) {
     auto p=std::make_shared<Read>();
     p->texture=h; p->subresource={mip,layer};
     p->width=w; p->height=height; p->expected=std::move(expected);
     p->label=std::move(label);
+    p->tolerance=tolerance;
     return p;
 }
 void volume(Device& dev) {
@@ -260,6 +267,138 @@ void layered(Device& dev, TextureDimension dimension,int layers,
     },name);
     dev.destroyTexture(h);
 }
+
+// This is a real fragment texture fetch, not a CPU-side upload or Metal blit.
+// It closes the acceptance gap for 3D volume + manual mip + partial z updates.
+constexpr const char* kVolumeSampleMSL = R"MSL(
+#include <metal_stdlib>
+using namespace metal;
+struct VolumeVertexOut { float4 position [[position]]; };
+vertex VolumeVertexOut vs_main(uint vertexId [[vertex_id]]) {
+    float2 positions[3]={float2(-1.0,-1.0),float2(3.0,-1.0),
+                          float2(-1.0,3.0)};
+    VolumeVertexOut out;
+    out.position=float4(positions[vertexId],0.0,1.0);
+    return out;
+}
+fragment float4 fs_main(VolumeVertexOut in [[stage_in]],
+                        texture3d<float> tex0 [[texture(0)]],
+                        sampler s0 [[sampler(0)]],
+                        constant float4& coord [[buffer(1)]]) {
+    return tex0.sample(s0,coord.xyz,level(coord.w));
+}
+)MSL";
+
+void shaderSampleVolume(Device& dev) {
+    const auto start=Clock::now();
+    TextureDesc src;
+    src.dimension=TextureDimension::Texture3D;
+    src.width=4;src.height=4;src.depth=4;src.mipLevels=2;
+    src.filter=Filter::Nearest;
+    std::vector<uint8_t> base;
+    for(int z=0;z<4;++z)
+        append(base,solid(4,4,{uint8_t(11+z*35),55,77,255}));
+    src.data=base.data();
+    const auto volumeTex=dev.createTexture(src);
+    check(volumeTex.valid(),"3D shader sample volume allocated");
+    if (!volumeTex.valid()) return;
+    const auto patch=solid(2,2,{225,17,88,255});
+    TextureUploadDesc part;
+    part.x=1;part.y=1;part.z=2;
+    part.width=2;part.height=2;part.depth=1;
+    part.rowPitchBytes=8;part.slicePitchBytes=16;part.data=patch.data();
+    check(dev.updateTextureRegion(volumeTex,part),
+          "3D shader source partial Z rectangle uploaded");
+    const auto mipData=solid(2,2,{191,92,30,255});
+    TextureUploadDesc nextMip;
+    nextMip.mipLevel=1;nextMip.z=1;
+    nextMip.width=2;nextMip.height=2;nextMip.depth=1;
+    nextMip.rowPitchBytes=8;nextMip.slicePitchBytes=16;
+    nextMip.data=mipData.data();
+    check(dev.updateTextureRegion(volumeTex,nextMip),
+          "3D shader source authored mip1 Z plane uploaded");
+
+    TextureDesc color;
+    color.width=4;color.height=4;color.renderTarget=true;
+    color.format=PixelFormat::RGBA8;color.mipLevels=1;
+    TextureDesc depth=color;
+    depth.format=PixelFormat::Depth;
+    const auto target=dev.createTexture(color);
+    const auto depthTarget=dev.createTexture(depth);
+    ShaderDesc shader;
+    shader.msl=kVolumeSampleMSL;
+    shader.textureSlots=1;shader.uniformSlots=1;
+    shader.label="MetalVolumeSampleAcceptance";
+    const auto sh=dev.createShader(shader);
+    PipelineDesc desc;
+    desc.shader=sh;
+    desc.attrCount=0; desc.stride=0;
+    desc.indexType=IndexType::None;
+    desc.cull=CullMode::None;
+    desc.depthTest=false;desc.depthWrite=false;
+    desc.colorFormat=PixelFormat::RGBA8;
+    desc.colorAttachmentCount=1;
+    desc.label="MetalVolumeSampleAcceptance";
+    const auto pipeline=sh.valid() ? dev.createPipeline(desc) : PipelineHandle{};
+    if (!target.valid() || !depthTarget.valid() || !sh.valid() || !pipeline.valid()) {
+        ++failures;
+        std::fprintf(stderr,"FAIL: native Metal fragment sampling setup: %s\n",
+                     dev.lastError().c_str());
+    } else {
+        std::printf("TIMING Texture3D shader_pipeline_setup_ms=%.3f\n",
+                    elapsedMs(start,Clock::now()));
+        struct Sample {
+            std::array<float,4> coord;
+            Color expected;
+            const char* label;
+        };
+        const Sample cases[] = {
+            {{0.125f,0.125f,0.125f,0.0f},{11,55,77,255},
+             "3D fragment samples original z0"},
+            {{0.375f,0.375f,0.625f,0.0f},{225,17,88,255},
+             "3D fragment samples patched z2"},
+            {{0.75f,0.75f,0.75f,1.0f},{191,92,30,255},
+             "3D fragment samples explicit mip1 z1"}
+        };
+        for(const auto& sample:cases) {
+            dev.beginFrame(16,16);
+            RenderTargetPassDesc pass;
+            pass.colorCount=1;
+            pass.colors[0].texture=target;
+            pass.colors[0].clear=true;
+            pass.depth.texture=depthTarget;
+            pass.depth.clear=true;
+            const bool active=dev.beginRenderTargets(pass);
+            if (!active) {
+                ++failures;
+                std::fprintf(stderr,"FAIL: 3D fragment render target: %s\n",
+                             dev.lastError().c_str());
+            } else {
+                dev.setViewport({0,0,4,4});
+                dev.setPipeline(pipeline);
+                dev.setTexture(0,volumeTex);
+                dev.setUniforms(0,sample.coord.data(),sizeof(sample.coord));
+                dev.draw(3);
+                dev.endPass();
+            }
+            dev.endFrame();
+            if (active) {
+                verifyReads(dev,{
+                    probe(target,0,0,4,4,solid(4,4,sample.expected),
+                          sample.label,1)
+                },"Texture3D fragment sampling");
+            }
+        }
+    }
+    if (pipeline.valid()) dev.destroyPipeline(pipeline);
+    if (sh.valid()) dev.destroyShader(sh);
+    if (target.valid()) dev.destroyTexture(target);
+    if (depthTarget.valid()) dev.destroyTexture(depthTarget);
+    dev.destroyTexture(volumeTex);
+    std::printf("TIMING Texture3D fragment_sampling_total_ms=%.3f\n",
+                elapsedMs(start,Clock::now()));
+}
+
 } // namespace
 
 int main() {
@@ -288,6 +427,7 @@ int main() {
         layered(*device,TextureDimension::Texture2DArray,2,"Texture2DArray");
         layered(*device,TextureDimension::Cube,6,"Cube");
         layered(*device,TextureDimension::CubeArray,12,"CubeArray");
+        shaderSampleVolume(*device);
         std::printf("TIMING Metal fixture_total_ms=%.3f gpu_test_body_ms=%.3f\n",
                     elapsedMs(testStart,Clock::now()),
                     elapsedMs(deviceReady,Clock::now()));
