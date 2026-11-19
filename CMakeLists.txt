@@ -129,6 +129,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             ecs_prefab_static_catalog_test
             ecs_static_scene_integration_test
             ecs_static_scene_multidomain_test
+            ecs_static_scene_editor_contract_test
             ecs_cow_snapshot_test
             ecs_cow_exception_test
             ecs_cow_parallel_test
@@ -142,6 +143,10 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     endforeach()
     add_executable(aiverse_ecs_shared_static_bench tests/ecs_shared_static_bench.cpp)
     target_link_libraries(aiverse_ecs_shared_static_bench PRIVATE aiverse_engine Threads::Threads)
+    add_executable(aiverse_ecs_shared_static_rss_bench
+        tests/ecs_shared_static_rss_bench.cpp)
+    target_link_libraries(aiverse_ecs_shared_static_rss_bench PRIVATE
+        aiverse_engine Threads::Threads)
 endif()
 
 option(AIVERSE_ENABLE_PHYSICS "Build optional Box3D physics module" OFF)
