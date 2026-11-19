@@ -111,6 +111,10 @@ public:
                     (uint64_t(benchmarkMode_) << 38) |
                     (++benchmarkGpuSequence_ & ((uint64_t(1) << 38) - 1));
                 auto& timingRouter=ed.device().gpuTimingRouter();
+                if(benchmarkTimingDevice_!=&ed.device()) {
+                    benchmarkTimingDevice_=&ed.device();
+                    benchmarkTimingSubscriber_=0;
+                }
                 if(!benchmarkTimingSubscriber_)
                     benchmarkTimingSubscriber_=timingRouter.subscribe();
                 if(benchmarkTimingSubscriber_)
@@ -158,6 +162,10 @@ public:
             // Metal timings include the full editor MTLCommandBuffer, not just
             // renderScene. Never label them as isolated Scene GPU durations.
             auto& timingRouter=ed.device().gpuTimingRouter();
+            if(benchmarkTimingDevice_!=&ed.device()) {
+                benchmarkTimingDevice_=&ed.device();
+                benchmarkTimingSubscriber_=0;
+            }
             timingRouter.poll(ed.device());
             for (const auto& timing :
                  timingRouter.take(benchmarkTimingSubscriber_)) {
@@ -1541,6 +1549,7 @@ private:
     uint8_t benchmarkGeneration_ = 0;
     uint64_t benchmarkGpuSequence_ = 0;
     gfx::GpuTimingRouter::Subscriber benchmarkTimingSubscriber_ = 0;
+    gfx::Device* benchmarkTimingDevice_ = nullptr; // reset owner across device recreation
     uint64_t benchmarkDrawSum_[3] = {};
     uint64_t benchmarkIndirectSum_[3] = {};
     uint64_t benchmarkCommandSum_[3] = {};
