@@ -1363,3 +1363,41 @@ root-motion authority or GPU fence relaxation was introduced. **NOT
 RUN:** CMake/compiler/CTest, real Metal/Vulkan/GL, FPS/RTS/editor visual
 parity, TSAN or device-token failure injection.
 [Stage 143 handoff](agent-handoffs/animation-stage143-geometry-world-streamed-model-retirement-2026-11-19.md).
+
+
+## Stage 144 — compatible Graph/Model source hot reload without restarting animation
+
+The genre-independent `render::AnimationGraphInstance` now exposes
+`rebindPlayback(std::shared_ptr<const AnimationGraph>)`, using the
+existing named state/clip `snapshotPlayback` and `restorePlayback`
+contract to preserve compatible phase across graph replacements. Its
+result indicates successful clock recovery; an incompatible state or
+clip starts cleanly. Previous Model pointers, poses, rig/IK contacts,
+native operation state, root motion and notify queues NEVER transfer.
+
+Legacy `RtsView` source and appearance reload adapters previously
+erased affected EntityAnim instances (correct GPU/Model lifetime, but
+lost compatible playback). They now capture one short-lived, Model-free
+value snapshot per full logical entity ID before model/graph/LOD
+replacement. Records are bounded at 8192 and expire after 120 View
+frames. On the next matching entity presentation, scalar visual
+events/death/phase inputs can be restored, including a named Graph
+state and clip phase. For clip-only legacy actors, one unblended
+base Animator clip may be restored by *new* Model clip name,
+semantic kind, loop compatibility and normalized phase; no prior
+clip indices/crossfades/additive/notify state transfer.
+
+An entity's authored `program` can be overridden at runtime; the
+snapshot must wait until that final programmable/Lua graph is chosen,
+not restore against an intermediate default TypeLook graph.
+The independent generic MotionWeave ECS writer is never seeded
+from this legacy state. ModelingWindow and AnimationEditor panels
+also attempt compatible preview clock retention on new authored
+graph/model loads. Invalid mappings restart and optional memory
+failures cannot abort accepted GPU Model reloads.
+
+**NOT RUN:** native compiler, CMake/CTest, real GPU, editor/FPS/RTS
+visual parity, source reimport/LOD/retarget replay injection,
+sanitizers or benchmarking. This is a source-only implementation
+under the user-requested feature-first workflow. See
+[Stage 144 handoff](agent-handoffs/animation-stage144-named-playback-source-reload-2026-11-19.md).
