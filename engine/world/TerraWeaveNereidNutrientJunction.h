@@ -124,7 +124,16 @@ nereidNutrientLinkedCells(
     // never invent two reservoirs in one existing water-cell record.
     for(const auto& a:sources)
         for(const auto& b:targets)
-            if(a.x!=b.x || a.z!=b.z){
+            if((a.x!=b.x || a.z!=b.z) &&
+               // One dissolved pool is stored per 32m cell. A cell that
+               // also contains the opposite body is ambiguous, so do
+               // NOT debit it into another river: fail closed.
+               !nereidBodyTouchesNutrientCell(
+                   world,target,a.x,a.z,
+                   sourceAnchor.y,settings.samplesPerAxis) &&
+               !nereidBodyTouchesNutrientCell(
+                   world,source,b.x,b.z,
+                   targetAnchor.y,settings.samplesPerAxis)){
                 ForestNutrientJunctionLink link;
                 link.sourceX=a.x;link.sourceZ=a.z;
                 link.targetX=b.x;link.targetZ=b.z;
