@@ -3674,3 +3674,43 @@ data), other graph texture counts and material permutations,
 large-scene memory/performance/stress, cross-platform
 Vulkan/GL/WebGL/mobile acceptance. Keep PR #21 Draft and
 experimental GPU ICB flags OFF by default pending verification.
+
+### Stage 10BZ — fix native macOS Clang helper-name ambiguity (2026-11-19)
+
+The first real Stage 10BY macOS compilation **FAILED** (4 errors) in
+`tests/render/metal_renderer_graph_vt_seam_gpu.cpp`:
+Clang reported `reference to 'detail' is ambiguous` at lines
+387, 490, 523 and 578. The test's unqualified helper
+`detail(int)` collided with the existing namespace
+`aiverse::detail` from `engine/core/Fixed.h`, brought into
+scope by `using namespace aiverse;`. No test execution
+occurred after this failed build.
+
+**Fix:** source commit `8fe7265f2124539a36e388255acd1d9fc5ee3887`
+renames only the test helper to `finePageKey(int)`, including
+all four uses (direct invocation and function-pointer passing
+to the disk page request helper). The key remains
+`VirtualPageKey{0,3,1,side}`. No runtime, VT sampling,
+GPU ICB, platform, ECS or material behavior is modified.
+
+**Status:** source fix committed, a fresh native macOS
+recompile and GPU/CTest acceptance are **NOT YET RUN**.
+Previous Stage 10BX PASS is unrelated to this 10BY compiler
+failure. Repeat **fail-fast** in the isolated test directory:
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+cmake --build build/texture-graph-vt-seam \
+  --target aiverse_metal_renderer_graph_vt_seam_gpu_test --parallel 4
+ctest --test-dir build/texture-graph-vt-seam \
+  --verbose --output-on-failure --no-tests=error \
+  -R '^metal_renderer_graph_vt_seam_gpu$'
+```
+
+`set -e` prevents a stale prior test executable from
+accidentally running if compilation fails again. Only a new
+successful build, the Stage 10BY native expected fallback and
+wrap-oracle diagnostics, and 1/1 CTest PASS certify the new gate.
