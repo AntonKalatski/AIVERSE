@@ -2631,3 +2631,15 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         add_test(NAME terraweave_editor COMMAND aiverse_terraweave_editor_test)
     endif()
 endif()
+
+# ---------------------------------------------------------------------------
+# Experimental HTML5 Studio host. Production editor still uses its existing UI.
+# ---------------------------------------------------------------------------
+option(AIVERSE_BUILD_STUDIO_HTML5 "Enable opt-in macOS HTML5 Studio" OFF)
+if(AIVERSE_BUILD_STUDIO_HTML5)
+    if(APPLE AND TARGET aiverse_editor_core)
+        add_subdirectory(apps/studio-native)
+    else()
+        message(WARNING "AIVERSE Studio HTML5 currently requires macOS and aiverse_editor_core (AIVERSE_BUILD_TOOLS or AIVERSE_BUILD_EDITOR)")
+    endif()
+endif()
