@@ -3714,3 +3714,71 @@ ctest --test-dir build/texture-graph-vt-seam \
 accidentally running if compilation fails again. Only a new
 successful build, the Stage 10BY native expected fallback and
 wrap-oracle diagnostics, and 1/1 CTest PASS certify the new gate.
+
+### Stage 10CA — native Metal Shader Graph VT fallback and UV seam oracle PASS (2026-11-19)
+
+**Real user-provided Mac Studio hardware evidence** after the Stage 10BZ
+`finePageKey` compilation fix: `metal_renderer_graph_vt_seam_gpu`
+**1/1 CTest PASS (0 failed)**, test **5.65 s**, CTest elapsed **5.67 s**.
+GPU backend was Metal on the Mac Studio; the fixture uses the actual
+production `render::graph::compile`, `Renderer3D`,
+`VirtualTextureFileStreamer` and GPU-authored Metal ICB.
+
+**Observed per-frame GPU ICB counters for all seven states:**
+`graph=1 mixedGraph=1 vt=1 mixedVt=1 commands=2 rejected=0 errors=0`.
+Ordinary and ICB full-screen RGBA8 images in each state compared with
+`bad_channels=0 max_delta=0`; the CTest explicitly required
+nonzero mixed Shader Graph and VT command execution.
+
+**Independent fallback evidence:**
+
+- **Empty page table:** identical to no-VT `tex1` fallback image,
+  `FALLBACK ORACLE ... changed_channels=0`.
+- **Pinned coarse published from file:** image changed in **23,304
+  channels** relative to nonresident fallback.
+- **Missing file, both archives:** two expected disk-worker errors,
+  `missing page or incorrect RGBA8 page byte count`; current
+  pinned coarse resources remained healthy and their image
+  was **identical** to pre-failure (`changed_channels=0`).
+
+**Independent UV/page-selection oracle**, executed on both the
+ordinary and Metal ICB captured images:
+
+| Authored U | Expected fine page | Correct region change | Other region |
+|---|---|---:|---:|
+| -0.125 | Repeat, left | 210 RGB-distance | 0 |
+| +1.125 | MirrorRepeat, right | 289 | 0 |
+| -0.0005 (seam) | Repeat, left | 210 | 0 |
+| +1.0005 (seam) | MirrorRepeat, right | 289 | 0 |
+
+Each UV point produced **two** explicit
+`PASS: independent wrap oracle` lines (ordinary and ICB),
+**8/8 PASS**. The reported RGB deltas also matched the
+independently authored physical page color directions:
+left fine `(+104,-101,-5)`, right fine `(+108,+67,-114)`,
+and the non-target region stayed `(0,0,0)`.
+
+The fixture concluded:
+```text
+PASS: Renderer3D Shader Graph disk VT missing-page and Repeat/MirrorRepeat seam GPU ICB oracle
+1/1 Test #122: metal_renderer_graph_vt_seam_gpu ... Passed 5.65 sec
+```
+
+**Proof boundary:** This verifies expected *page selection* at
+negative and out-of-range UVs and fault isolation after a missing
+page on **one real Metal device** with solid-color 4x4 pages
+and zero gutter. It does **not** test filtering continuity over
+nonuniform page borders, bilinear/anisotropic filtering, varying
+mips at a seam, broad source-count/material permutations, large
+archive stress, Vulkan/GL/WebGL/mobile or production FPS.
+The CTest's wall time is not an isolated draw-call GPU timer.
+No additional production code change was necessary after PASS.
+
+**Next validation:** use nonuniform, adjacent physical page
+edge patterns and immutable gutters. Build an independent
+bilinear CPU reference (including Repeat/MirrorRepeat),
+test pixel-center offsets across tile boundaries and
+mip0→coarse fallback while page residency changes.
+Require visual error bounds and GPU ICB/direct parity,
+then validate non-Metal backends separately. Keep all
+experimental ICB flags default OFF and PR #21 Draft.
