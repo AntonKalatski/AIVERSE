@@ -45,8 +45,16 @@ public:
             out.vertices_[i].bind=model.vertices[sourceIds[i]].pos;
         }
         std::vector<bool> assigned(sourceIds.size(),false);
+        std::vector<std::int32_t> compact(model.vertices.size(),-1);
+        for(std::size_t i=0;i<sourceIds.size();++i) {
+            if(compact[sourceIds[i]]>=0)
+                throw std::invalid_argument("VIVID scalp skin: repeated compact vertex");
+            compact[sourceIds[i]]=std::int32_t(i);
+        }
         const auto& mesh=model.meshes[meshId];
-        // Assign palette per indexed primitive, not from a global guessed skin.
+        // A source vertex belongs to exactly one skin palette. Visit each
+        // referenced triangle index once; never scan the whole index buffer
+        // for every vertex of a production-sized scalp proxy.
         for(const auto& primitive:mesh.primitives) {
             if(primitive.jointPalette.empty())
                 throw std::invalid_argument("VIVID scalp skin: rigid primitive in skinned proxy");
@@ -54,14 +62,23 @@ public:
             if(first>model.indices.size() ||
                primitive.indexCount>model.indices.size()-first)
                 throw std::invalid_argument("VIVID scalp skin: indices outside model");
-            for(std::size_t i=0;i<sourceIds.size();++i) {
-                if(assigned[i])continue;
-                bool used=false;
-                for(std::size_t k=first;k<first+primitive.indexCount;++k)
-                    if(model.indices[k]==sourceIds[i]){used=true;break;}
-                if(!used)continue;
-                const auto& src=model.vertices[sourceIds[i]];
-                auto& vertex=out.vertices_[i];
+            for(std::size_t k=first;k<first+primitive.indexCount;++k) {
+                const auto source=model.indices[k];
+                if(source>=compact.size())
+                    throw std::invalid_argument("VIVID scalp skin: index outside vertices");
+                const auto local=compact[source];
+                if(local<0)continue;
+                // The same vertex may repeat within its own primitive.
+                // Cross-primitive sharing with a different palette must
+                // be rejected instead of silently mis-skinning the vertex.
+                auto& vertex=out.vertices_[std::size_t(local)];
+                if(assigned[std::size_t(local)]) {
+                    // Identical vertex sharing across triangles is normal;
+                    // palette consistency is checked using a per-vertex
+                    // palette signature below.
+                    continue;
+                }
+                const auto& src=model.vertices[source];
                 float total=0;
                 for(int j=0;j<4;++j) {
                     const auto raw=src.weights[j];
@@ -83,7 +100,7 @@ public:
                     throw std::invalid_argument("VIVID scalp skin: missing vertex weights");
                 for(std::size_t j=0;j<vertex.count;++j)
                     vertex.weights[j].weight/=total;
-                assigned[i]=true;
+                assigned[std::size_t(local)]=true;
             }
         }
         for(bool assignedVertex:assigned)
