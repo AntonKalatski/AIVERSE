@@ -4,7 +4,7 @@ Updated: 2026-11-19. Branch: `feature/spectrafx-generic-cue-queue`.
 Repository: `chromealex/AIVERSE`.
 Status: **feature implementation/source review only**. No native C++ builds,
 CTest, editor execution, Metal GPU rendering, shader compilation or CPU/GPU
-fallback verification were actually run for stages 1–84 in this branch.
+fallback verification were actually run for stages 1–85 in this branch.
 Do not claim release readiness or merge to `main` without validation.
 
 ## Where to start
@@ -79,6 +79,8 @@ Do not claim release readiness or merge to `main` without validation.
   Auto+allowCpuFallback=false must reject CPU (fixed in stage 82).
   Shared billboard init failure may use a private GPU renderer
   (fixed in stage 83).
+
+Latest source correction: stage 85 prevents repeated Editor preview resets on invalid JSON; see the chronological handoff for its commit and limitations.
 
 ## Next implementation/validation
 
