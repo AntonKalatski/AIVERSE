@@ -126,6 +126,8 @@ inline NereidSceneSurface surface(const Json& j) {
         s.mesh.oceanPatchRadius=scalar(j["oceanPatchRadius"],"oceanPatchRadius",1.f,100000.f);
     if(j.has("uvScale"))s.mesh.uvScale=scalar(j["uvScale"],"uvScale",0.0001f,128.f);
     if(j.has("foamWidth"))s.mesh.foamWidth=scalar(j["foamWidth"],"foamWidth",0.f,1000.f);
+    if(j.has("rippleTileGrid"))
+        s.mesh.rippleTileGrid=uint8_t(worldInteger(j,"rippleTileGrid",1,1,8));
     if(j.has("maxVertices"))
         s.mesh.maxVertices=uint32_t(worldInteger(j,"maxVertices",65536,4,65536));
     if(j.has("style")) {
