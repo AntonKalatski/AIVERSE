@@ -1,0 +1,52 @@
+// VIVID explicit source-to-LOD sparse morph transfer.
+// Authoring is conservative: a stable source-vertex map is mandatory.
+#pragma once
+#include "SparseMorph.h"
+#include <cstdint>
+#include <span>
+#include <stdexcept>
+#include <vector>
+
+namespace aiverse::vivid {
+class MorphLodTransfer {
+public:
+    // Each target LOD vertex references a source vertex. Invalid IDs are
+    // rejected instead of applying approximate facial deformation silently.
+    // Authoring tools can generate the mapping externally via surface bake.
+    static SparseMorphLibrary transfer(
+            const SparseMorphLibrary& source,
+            std::span<const std::uint32_t> lodToSource) {
+        if(lodToSource.empty()||lodToSource.size()>16'000'000)
+            throw std::invalid_argument("VIVID morph LOD: invalid output vertex budget");
+        std::vector<MorphTargetInput> targets;
+        targets.reserve(source.targets());
+        for(std::size_t targetIndex=0;targetIndex<source.targets();++targetIndex) {
+            MorphTargetInput target;
+            target.name=std::string(source.targetName(targetIndex));
+            const auto range=source.gpuRanges()[targetIndex];
+            std::vector<const GpuMorphDelta*> lookup(source.vertices(),nullptr);
+            for(std::uint32_t i=0;i<range.count;++i) {
+                const auto& delta=source.gpuDeltas()[range.first+i];
+                lookup[delta.vertex]=&delta;
+            }
+            for(std::size_t v=0;v<lodToSource.size();++v) {
+                const auto sourceId=lodToSource[v];
+                if(sourceId>=source.vertices())
+                    throw std::invalid_argument("VIVID morph LOD: missing source vertex");
+                const auto* delta=lookup[sourceId];
+                if(!delta)continue;
+                MorphDelta d;
+                d.vertex=std::uint32_t(v);
+                for(std::size_t axis=0;axis<3;++axis) {
+                    d.position[axis]=delta->position[axis];
+                    d.normal[axis]=delta->normal[axis];
+                    d.tangent[axis]=delta->tangent[axis];
+                }
+                target.deltas.push_back(d);
+            }
+            targets.push_back(std::move(target));
+        }
+        return SparseMorphLibrary::compile(lodToSource.size(),std::move(targets));
+    }
+};
+} // namespace aiverse::vivid
