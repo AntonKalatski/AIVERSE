@@ -694,6 +694,13 @@ private:
                         (unsigned long long)modelStats.staticCrossModelSubmissions,
                         (unsigned long long)modelStats.staticCrossModelCommands,
                         (unsigned long long)modelStats.staticCrossModelItems);
+                    ImGui::Text("Page preflight: %llu ready / %llu groups (%llu rejected)",
+                        (unsigned long long)modelStats.staticCrossModelPreflightReady,
+                        (unsigned long long)modelStats.staticCrossModelPreflightGroups,
+                        (unsigned long long)modelStats.staticCrossModelPreflightRejected);
+                    ImGui::Text("Page preflight selected: %llu visible items",
+                        (unsigned long long)modelStats.staticCrossModelPreflightItems);
+                    ImGui::TextDisabled("Preflight is necessary, not a guarantee of a GPU MDI submission.");
                     ImGui::TextDisabled("Pooled GPU buffers and exact material grouping; independent view/LOD.");
                     ImGui::TextDisabled("Only accepted CPU MDI draws count, not grouping candidates.");
                 }
