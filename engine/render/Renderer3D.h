@@ -459,6 +459,10 @@ public:
     // Light baker capture: every drawModel with kDrawStatic is reported (world matrix per node) until reset.
     using ModelCapture = std::function<void(const ModelDraw& d, const std::vector<mat4>& nodeWorld)>;
     void setModelCapture(ModelCapture fn) { capture_ = std::move(fn); }
+    // Synchronous tap for finalized models, animations and attachments.
+    // Copy borrowed pointers before drawModel returns; not light-baker capture.
+    using ModelPacketTap = std::function<void(const ModelDraw&)>;
+    void setModelPacketTap(ModelPacketTap tap) { modelPacketTap_=std::move(tap); }
     // Inside a custom lit draw (terrain): bind the terrain lightmap for AIVERSE_*_BAKED_TERRAIN (BakedShaders.h):
     // uniform block `uniformSlot`, RGBM page at `lightmapSlot`, shadow mask at `maskSlot` (placeholders when none).
     void bindBakedTerrain(int uniformSlot, int lightmapSlot, int maskSlot);
@@ -744,6 +748,7 @@ private:
     BakedQuality bakedQuality_ = BakedQuality::High;
     uint32_t bakedLightmapped_ = 0, bakedProbed_ = 0, bakedCountLm_ = 0, bakedCountPr_ = 0;
     ModelCapture capture_;
+    ModelPacketTap modelPacketTap_;
     void bakedItem(ModelItem& it, const ModelDraw& d, int node);
     void bindBakedGI(const ModelItem& it);
 };
