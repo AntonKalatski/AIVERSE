@@ -273,3 +273,17 @@ The macOS-only `aiverse_vivid_metal_rhi_tests` binary links `engine/gfx/metal/Gf
 This does **not** yet connect the GPU-computed 48B `GpuMorphVertex` stream to `ModelVertex` drawing/skin vertex buffers or the final MotionWeave skinned pose. Render integration will require careful frame ownership, barriers, LOD and shadow parity.
 
 User Mac runner: `cmake --build build/vivid --target aiverse_vivid_metal_rhi_tests -j 4` then `ctest --test-dir build/vivid --output-on-failure -R '^vivid_metal_rhi$'`. Record exact compile errors, warnings and GPU parity numbers in the next stage handoff; until then **new RHI test is NOT RUN**.
+
+## Stage 5A — render-compatible 60-byte GPU morph stream (2026-11-19)
+
+**New implementation and Metal RHI test source committed; full native build / new GPU test NOT RUN on this revision.**
+
+The renderer consumes a **60-byte** `render::ModelVertex` with float3 position/normal, float2 UV, float4 tangent with handedness in `.w`, 4B colour, 4B joints and 4B skin weights. VIVID's sparse morph kernel outputs a separate **48-byte** `GpuMorphVertex` (3 float4). Feeding 48-byte memory directly into Renderer3D's fixed 60-byte vertex pipeline would corrupt geometry and skin/UV data.
+
+VIVID now has a second, **optional GPU compute stage**, `GpuMorphMeshStream` in `engine/character/vivid/GpuMorphMeshStream.h/.cpp` backed by matching Metal and GLSL compute kernels in `GpuMorphMeshShaders.h`. It consumes the original 60-byte vertex buffer + the morphed 48-byte stream and produces a packed 60-byte vertex stream. A GPU thread handles exactly one vertex and copies the original 15 uint32 words, replacing only the bit patterns for position (0–2), normal (3–5), and tangent.xyz (8–10); UV (6–7), tangent handedness (11), colour (12), joints (13) and weights (14) are preserved **bit-for-bit**. This means existing Renderer3D skinning semantics remain intact: morph deformation precedes skinning and no skeleton algorithms are duplicated.
+
+Public API: `AIVERSE::vivid_mesh`, `GpuMorphMeshStream::initialize(device, span<ModelVertex>)`, `dispatch(deformedGpuBuffer, vertexCount)`, `vertexBuffer()`, `download(span<ModelVertex>)`, `release()`. A 512 MiB combined source/destination budget prevents unbounded GPU allocation. The full model stream (same indexed/global vertex space) is required, not a primitive-local partial stream.
+
+The real Metal RHI test `vivid_metal_rhi` was **extended (source only)** to dispatch VIVID's sparse gather then stream conversion in one GPU frame across four weight profiles; compare all deformed position/normal/tangent components against `SparseMorphLibrary::evaluateGather` and require UV, tangent.w, colour, joint IDs and joint weights to match the original 60-byte vertices byte-for-byte. The previous `vivid_metal_rhi` passed on user Mac at `22b60c471`, **before this extension**; therefore extended vertex-stream test is NOT YET VERIFIED.
+
+**Still NOT wired into normal draw calls.** `ModelDraw` does not yet accept an opt-in per-instance GPU vertex-buffer override. `GpuMorphMeshStream::vertexBuffer()` is now a storage buffer with model-compatible bytes, but the renderer must explicitly handle lifetime across colour, depth, shadows, instancing, geometry pooling/ICB and LOD before binding it for production. The 8-target compatibility path remains unchanged. MotionWeave still owns the finished pose, skin matrices and animation scheduling; VIVID only prepares input vertices for existing skin shaders.
