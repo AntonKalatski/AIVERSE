@@ -13,6 +13,7 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 namespace aiverse::examples::terraweave_native {
 
@@ -154,6 +155,16 @@ inline void seedFloodReservoir(
         "NEREID flood seed requires canonical TerraWeave soil");
     auto ground=terraweave::materializeEcsTerrain(*state,cfg);
     terraweave::initializeNereidFloodGrid(ecs,ground,region);
+}
+
+// River inlet/outlet volume is counted in the same NEREID flood ledger as
+// on-grid water. Set only after seedFloodReservoir and before the first tick.
+inline void configureFloodRiverPorts(
+        World& ecs,
+        std::vector<lib::nereid::WaterFloodPort> ports,
+        uint64_t finiteExternalReserveCm){
+    terraweave::configureNereidFloodBoundaryPorts(
+        ecs,std::move(ports),finiteExternalReserveCm);
 }
 
 inline terraweave::NativeTerrainPublishResult publishFrame(
