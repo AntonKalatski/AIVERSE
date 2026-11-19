@@ -6,6 +6,7 @@
 #include "engine/character/vivid/GpuMorph.h"
 #include "engine/character/vivid/VividComputeShaders.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -13,6 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <utility>
 
 using namespace aiverse::vivid;
 
