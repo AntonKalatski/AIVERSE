@@ -79,7 +79,8 @@ void Renderer3D::shutdownModels() {
     modelError_.clear();
     for (auto& [k, p] : modelPipes_) dev_->destroyPipeline(p);
     for (auto& [k, s] : modelShaders_) if (s.shader.valid()) dev_->destroyShader(s.shader);
-    pendingModelPipes_.clear(); modelPipes_.clear(); modelShaders_.clear();
+    pendingModelPipes_.clear(); pendingColorWarms_.clear();
+    modelPipes_.clear(); modelShaders_.clear();
     for (auto t : {white_, black_, flatNormal_}) dev_->destroyTexture(t);
 }
 
@@ -104,6 +105,7 @@ void Renderer3D::retireModelPrograms() {
     // Pending native compiler jobs own their own cancellation semantics.
     // They are never mistaken for completed shader handles.
     pendingModelPipes_.clear();
+    pendingColorWarms_.clear(); // invalidated pipeline handles must not be polled
     modelPipes_.clear();
     modelShaders_.clear();
     programRetirement_->retire(std::move(resources));
@@ -351,7 +353,17 @@ Renderer3D::warmModelPipelinesChecked(
     warmingPending_=warmingFailed_=false;
     auto warm=[&](const ModelItem& item,int phase,bool instanced) {
         const auto pipe=modelPipeline(item,phase,instanced);
-        if (pipe.valid() && !dev_->warmPipelineColor(pipe,gfx::PixelFormat::RGBA16F)) warmingPending_=true;
+        if(!pipe.valid())return;
+        // A pending colour variant has no backend ShaderJob to poll.
+        // Record its stable handle exactly once; all later owner frames
+        // advance it without regenerating the authored scratch Model.
+        if(std::find(pendingColorWarms_.begin(),pendingColorWarms_.end(),
+                     pipe)!=pendingColorWarms_.end()) {
+            warmingPending_=true;
+        }else if(!dev_->warmPipelineColor(pipe,gfx::PixelFormat::RGBA16F)) {
+            warmingPending_=true;
+            pendingColorWarms_.push_back(pipe);
+        }
     };
     const auto& mats = materials ? *materials : model.materials;
     bool lod = false, palette = false;
@@ -391,7 +403,8 @@ bool Renderer3D::warmModelPipelines(
 }
 
 bool Renderer3D::hasPendingModelPipelineJobs() const noexcept {
-    if(!pendingModelPipes_.empty())return true;
+    if(!pendingModelPipes_.empty() || !pendingColorWarms_.empty())
+        return true;
     for(const auto& [key,entry]:modelShaders_) {
         (void)key;
         if(entry.job)return true;
@@ -403,7 +416,12 @@ bool Renderer3D::pollPendingModelPipelineJobs() {
     if(!dev_)return false;
     checkGpuDevice(*dev_);
     // Do not allocate or upload a Model, texture, or material merely to
-    // advance native GPU compiler jobs that have already been submitted.
+    // advance GPU compiler jobs that have already been submitted.
+    for(auto it=pendingColorWarms_.begin();it!=pendingColorWarms_.end();) {
+        if(dev_->warmPipelineColor(*it,gfx::PixelFormat::RGBA16F))
+            it=pendingColorWarms_.erase(it);
+        else ++it;
+    }
     for(auto& [key,entry]:modelShaders_) {
         (void)key;
         if(!entry.job)continue;
