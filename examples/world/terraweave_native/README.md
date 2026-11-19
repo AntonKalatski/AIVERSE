@@ -254,7 +254,7 @@ The inlet can supply up to 6cm-equivalent of the source cell's area per fixed si
 
 The native sample optionally registers a persistent rooted forest ecology, separate from Stage64 aggregate grass recovery. It covers the interactable rooted trees/shrubs; the many cosmetic Arbor/Flora trees remain procedurally scattered without individual ECS entities.
 
-\`\`\`cpp
+```cpp
 terraweave::ForestEcologySpecies pine;
 pine.speciesId=1; // same Arbor/Flora prototype species ID
 pine.matureTicks=120000;
@@ -283,11 +283,11 @@ examples::terraweave_native::registerSystems(
         // NEVER step Box3D or draw from within an ECS system.
         (void)changed;
     });
-\`\`\`
+```
 
 Add gameplay-interactable rooted trees to the canonical ECS resource during authorized map setup (do not add one ECS entity per decorative tree):
 
-\`\`\`cpp
+```cpp
 auto state=*sim.world().resourceConst<
     terraweave::TerraWeaveAuthorityResource>();
 terraweave::AnchoredPlant tree;
@@ -304,12 +304,12 @@ state.rooted.push_back(tree);
 ++state.stateRevision;
 sim.world().setResource<terraweave::TerraWeaveAuthorityResource>(
     std::move(state));
-\`\`\`
+```
 
-Persistent \`terraweave.forest_ecology\` schema v1 stores stable cursor, last evaluation tick, shade/flood/drought stress, permanent natural death and recruited-sapling identities. Every configured ecology interval (default 32 ECS ticks), a spatial 32m canopy index is built over the bounded rooted subset, and at most 256 selected plants receive expensive age/light/water/seed calculations. New saplings receive a different stable key, exact terrain height and newborn age. Existing \`WorldScene\` Forest/Flora batching renders the sparse recruited \`FoliageInstance\` via the existing shared Arbor species prototype/LOD and hides naturally dead plants separately from harvested or fallen trees.
+Persistent `terraweave.forest_ecology` schema v1 stores stable cursor, last evaluation tick, shade/flood/drought stress, permanent natural death and recruited-sapling identities. Every configured ecology interval (default 32 ECS ticks), a spatial 32m canopy index is built over the bounded rooted subset, and at most 256 selected plants receive expensive age/light/water/seed calculations. New saplings receive a different stable key, exact terrain height and newborn age. Existing `WorldScene` Forest/Flora batching renders the sparse recruited `FoliageInstance` via the existing shared Arbor species prototype/LOD and hides naturally dead plants separately from harvested or fallen trees.
 
-The default native tree/shrub climate uses the NEREID water sample at the root zone (including Stage63 flood overlays) to track prolonged waterlogging; optional \`ForestEcologyClimateOverride\` supplies external PHYSIS sunlight, moisture and nutrients. Canopy overlap/shade is a cheap integer proxy, not true photometric sunlight/GI or per-leaf shadowing.
+The default native tree/shrub climate uses the NEREID water sample at the root zone (including Stage63 flood overlays) to track prolonged waterlogging; optional `ForestEcologyClimateOverride` supplies external PHYSIS sunlight, moisture and nutrients. Canopy overlap/shade is a cheap integer proxy, not true photometric sunlight/GI or per-leaf shadowing.
 
 A tree that is **naturally dead** is presentation-hidden, not automatically converted into a Box3D fallen log, collision/resource object or decomposing vegetation. Harvesting gameplay must update canonical rooted state, rather than hiding only an Arbor render instance; otherwise its hidden plant could continue to compete/reproduce.
 
-The default evaluation budget bounds costly **per-plant processing**; building the spatial canopy and staging native persistent ECS snapshots still costs O(N) for the active rooted subset at the ecology interval. Mass decorative forest remains procedural and stateless, and new source is not yet performance-tested. Stage65 commits have NOT been compiled or run through CTest/Metal/Box3D/ECS replay. See \`docs/terrain/stage-65-rooted-forest-ecology-handoff.md\`.
+The default evaluation budget bounds costly **per-plant processing**; building the spatial canopy and staging native persistent ECS snapshots still costs O(N) for the active rooted subset at the ecology interval. Mass decorative forest remains procedural and stateless, and new source is not yet performance-tested. Stage65 commits have NOT been compiled or run through CTest/Metal/Box3D/ECS replay. See `docs/terrain/stage-65-rooted-forest-ecology-handoff.md`.
