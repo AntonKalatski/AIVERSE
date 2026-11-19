@@ -50,7 +50,8 @@ bool safeSource(const Model& source){
 } // namespace
 
 bool PortableSource::validFor(const Model& source) const {
-    return source_==&source && asset_ && indexBuffer_.valid() &&
+    return source_==&source && device_ && device_->gpuHealthy() &&
+           asset_ && indexBuffer_.valid() &&
            sourceGeometryRevision_==source.geometryRevision &&
            sourceMaterialRevision_==source.materialRevision &&
            source.vb.valid() && source.ib.valid() &&
@@ -62,7 +63,7 @@ bool PortableSource::validFor(const Model& source) const {
 bool PortableSource::stage(gfx::Device& dev,const Model& source,
                            const ModelAsset& asset,std::string* error){
     if(error)error->clear();
-    if(source_ || indexBuffer_.valid() || pooledIndices_.valid())
+    if(device_ || source_ || indexBuffer_.valid() || pooledIndices_.valid())
         return fail(error,"portable Strata source already staged; shutdown first");
     if((dev.info().backend!=gfx::Backend::Metal &&
         dev.info().backend!=gfx::Backend::Vulkan &&
@@ -155,6 +156,7 @@ bool PortableSource::stage(gfx::Device& dev,const Model& source,
         dedicated=true;
     }
 
+    device_=&dev;
     source_=&source;
     asset_=&asset;
     indexBuffer_=buffer;
@@ -321,11 +323,14 @@ bool PortableSource::prepareModel(
 }
 
 void PortableSource::shutdown(gfx::Device& dev){
+    // A buffer handle is scoped to its creating RHI device. Never destroy
+    // that numeric handle on another device (which may own unrelated data).
+    if(device_ && device_!=&dev)return;
     if(pooledIndices_.valid())
         releaseAuxiliaryGeometryIndices(dev,pooledIndices_);
     if(dedicated_&&indexBuffer_.valid())
         dev.destroyBuffer(indexBuffer_);
-    source_=nullptr;asset_=nullptr;indexBuffer_={};
+    device_=nullptr;source_=nullptr;asset_=nullptr;indexBuffer_={};
     pooledIndices_={};dedicated_=false;
     firstIndex_=indexCount_=baseVertex_=0;
     sourceGeometryRevision_=sourceMaterialRevision_=0;
