@@ -7851,3 +7851,49 @@ shader permutations. Instrument actual mixed/legacy ICB counters
 and fallback reasons; after features close, run macOS Metal
 Shader Compiler and GPU A/B tests on multiple Terra archive
 domains. Keep draft until verified.
+
+
+## Stage 10Z — distinguish real mixed Metal ICB executions (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, Draft #21.
+**Feature commits:**
+- `1bc8b0a27b4f922e7f2c05da849c9f896f181ecd`
+  `engine/render/Renderer3D.h` extends
+  `GpuModelDrawStats` with `perCommandVtExecutions` and
+  `mixedVtExecutions` and records a mixed binding flag per
+  prepared GPU command group.
+- `43dcdde671fb37c005e6125acb3660c1505e77a6`
+  `engine/render/Renderer3DModels.cpp` resets and increments
+  these counters only after successful execution, not when a
+  batch was merely prepared; mixed counts require at least
+  two distinct VT archive binding identities within a group.
+**Documentation commits:**
+- `b4fc4fea0d11930decffabb904332593e319b1f4` `docs/texture-rhi.md`.
+- `0700fcd3ae29a6898ef0371b218e4ba85152ece7`
+  `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**API/architecture:** these are read-only diagnostics of the
+experimental source-level GPU ICB path, not new draw commands.
+They complement `gpuIcbPrepared`, `gpuIcbRejected` and
+`gpuIcbExecuteFailed` to distinguish CPU fallback from actual
+GPU batch execution. Both optional execution counters reset on
+a new `prepareGpuModelDraws` cycle and remain zero when
+per-command VT is disabled.
+
+**Checks performed:** GitHub source inspection of stats struct,
+aggregate getter initialization, group flag and success-only
+increment point. All commits accepted. **Native C++ compile
+NOT RUN; Metal MSL compile NOT RUN; CTest NOT RUN; GPU execution
+NOT RUN; screenshot parity/benchmark NOT RUN.** No performance
+or pixel-equivalence claim.
+
+**Remaining:** full GPU material/source-texture heterogeneity
+still needs per-command material U2 and base PBR sampler ABI.
+Existing mixed VT path is experimental and unverified; do not
+ship with its flags enabled. The next AI agent should read
+Stages 10W–10Z, then inspect `GfxMetal.mm`, `ModelShaders.h`
+and `GpuMaterialResourceTable.h` before extending material
+binding logic. The deferred test gate must include real Metal
+command execution of 2+ VT archive domains and compare same
+frame against CPU draws, including R8 masks, wrap, LOD and
+archive promotion/fence safety.
