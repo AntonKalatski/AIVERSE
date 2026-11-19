@@ -229,6 +229,14 @@ public:
         checkGpuDevice(*dev_);
         return programRetirement_->collect();
     }
+    size_t pendingTargetRetirements() const noexcept {
+        return targetRetirement_?targetRetirement_->pendingPairs():0;
+    }
+    bool collectRetiredTargets() {
+        if(!targetRetirement_ || !dev_)return true;
+        checkGpuDevice(*dev_);
+        return targetRetirement_->collect();
+    }
     uint64_t programRetirementOrphanBatches() const noexcept {
         return programRetirement_?programRetirement_->orphanBatches():0;
     }
@@ -472,6 +480,8 @@ private:
     };
     void initModels();
     void shutdownModels();
+    void retireRenderTargets(gfx::TextureHandle color,
+                             gfx::TextureHandle depth={});
     // Quality/instance-limit changes retire old shaders and pipelines
     // without freeing GPU-visible handles until their own completion token.
     void retireModelPrograms();
@@ -508,6 +518,9 @@ private:
     }
     RenderDeviceLifetime::Lease gpuDeviceLease_;
     std::unique_ptr<GpuProgramRetirement> programRetirement_;
+    // One render-target owner is shared with LightSystem. It must outlive
+    // the light, trace and selection GPU resource owners.
+    std::unique_ptr<OffscreenTargetRetirement> targetRetirement_;
     gfx::Device* dev_ = nullptr;
     gfx::ShaderHandle litShader_, shadowShader_, colorShader_;
     gfx::PipelineHandle litPipe_, litBlendPipe_, shadowPipe_, linePipe_, triPipe_;
