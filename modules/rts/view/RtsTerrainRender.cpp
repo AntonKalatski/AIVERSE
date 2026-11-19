@@ -826,8 +826,10 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
     const float3 eye = r.camera().eye();
     struct Item { const Lod* lod; float morphStart, morphEnd; };
     auto items = std::make_shared<std::vector<Item>>();
-    stats_.drawn = 0;
-    stats_.triangles = apron_.indexCount / 3;
+    if(!preparedOnly) {
+        stats_.drawn = 0;
+        stats_.triangles = apron_.indexCount / 3;
+    }
     for (auto& c : chunks_) {
         if (!c.valid || c.lods.empty() || !frustum.visibleAABB(c.bmin,c.bmax)) continue;
         int k = 0;
@@ -853,8 +855,10 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
         const Lod& l = c.lods[size_t(k)];
         if (!l.indexCount) continue;
         items->push_back({&l, start, end});
-        ++stats_.drawn;
-        stats_.triangles += l.indexCount / 3;
+        if(!preparedOnly) {
+            ++stats_.drawn;
+            stats_.triangles += l.indexCount / 3;
+        }
     }
     if(!preparedOnly)++frame_;
     if (!preparedOnly && detailOn_ && geoBytes_ > look_.detailBudgetMB * 1048576.0) { // LRU: drop LOD meshes not drawn for a while
@@ -866,9 +870,16 @@ void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
                 dev.destroyBuffer(l.vb); dev.destroyBuffer(l.ib); l = {};
             }
     }
-    stats_.geometryBytes = geoBytes_;
+    if(!preparedOnly)stats_.geometryBytes = geoBytes_;
     const int tier = tierFor(r);
-    gfx::PipelineHandle pipe = pipeline(dev, tier + (detailOn_ ? 3 : 0));
+    gfx::PipelineHandle pipe{};
+    if(preparedOnly) {
+        // Secondary cameras must not compile GPU shaders or pipelines.
+        const int first=tier+(detailOn_?3:0);
+        const int minimum=detailOn_?3:0;
+        for(int i=first;i>=minimum;--i)
+            if(pipes_[i].valid()){pipe=pipes_[i];break;}
+    }else pipe=pipeline(dev,tier+(detailOn_?3:0));
     if (!pipe.valid()) return;
     TU0 u{};
     u.lod[2] = float(mapW_); u.lod[3] = float(mapH_);
