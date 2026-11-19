@@ -99,6 +99,17 @@ public:
         return affected;
     }
 
+    // Optional environmental bounced light, OFF by default. Sun/sky direct
+    // shading still belongs to Renderer3D::lighting. Setting an environment
+    // invalidates all cached probe cells and flushes zeroes on update(0).
+    bool setEnvironment(GiEnvironmentLight environment) {
+        ensureReady();
+        if (!reference_.setEnvironment(environment)) return false;
+        clearPending_=true;
+        pendingRegionalClear_.clear();
+        return true;
+    }
+
     void setLights(std::vector<GiMovingLight> lights) {
         ensureReady();
         std::vector<uint32_t> cleared;
