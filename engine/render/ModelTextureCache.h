@@ -11,6 +11,9 @@ class ModelTextureCache : public std::enable_shared_from_this<ModelTextureCache>
 public:
     bool read(const std::string& path, const FileReader& reader, Image& out);
     void upload(gfx::Device& dev, Image& image);
+    // Read-only GPU lease lookup for speculative Model imports. Returns
+    // false without allocating a GPU texture or mutating the shared cache.
+    bool borrowResident(Image& image) const;
     void shutdown(gfx::Device& dev);
     void trim(gfx::Device& dev);
     // Render-thread source revision. Discards only its CPU decode; a new
