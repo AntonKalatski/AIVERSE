@@ -124,6 +124,12 @@ public:
     // Shadow sample scrambling must never be enabled without a temporal resolve pass.
     virtual bool temporalShadowResolve() const { return false; }
     virtual gfx::PassDesc scenePass(const gfx::PassDesc& out, int w, int h) = 0;
+    // Optional side-channel material receiver: linear base RGB + metallic alpha,
+    // with separate depth. Default PostProcess implementations pay ZERO cost.
+    // This pass is requested once per 3D scene before the normal color pass.
+    virtual bool wantsMaterialReceiverPass() const { return false; }
+    virtual gfx::PassDesc materialReceiverPass(int,int) { return {}; }
+    virtual void materialReceiverPublished(gfx::TextureHandle,int,int) {}
     virtual void resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame& frame) = 0;
 };
 
@@ -544,6 +550,7 @@ private:
     float reflectionPlaneY_ = 0.f;
     bool modelReflections_ = false; // opt-in opaque PBR SSR; High trace + HDR only
     bool hdrFrame_ = false;
+    bool lumaMaterialCapture_ = false; // opt-in PBR material receiver only
     HeightField heightField_;
     struct SceneTarget { int w = 0, h = 0; bool hdr = false; gfx::TextureHandle color, depth; uint64_t lastUse = 0; };
     std::vector<SceneTarget> sceneTargets_;   // one per view size (editor: Scene + Game views)
