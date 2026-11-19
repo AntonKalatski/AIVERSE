@@ -2101,3 +2101,93 @@ active source count. These do not imply completed GPU validation.
 **Verification:** GitHub source commits only; **NOT RUN** CMake/Clang,
 Metal shader compilation, CTest, native editor launch, fault-injection,
 render preview, user-facing GPU capture validation or performance benchmark.
+
+## Stage 34 — source-owned particles, continuous emission and Metal editor preview
+
+Stage 34 supersedes Stage 33's limitation that pooled GPU particles cannot be
+selectively killed. The resource group still owns one shared `ComputeParticles`
+instance per unique effect/policy: this is **not** a separate compute emitter
+for every game object or a genre-specific VFX system.
+
+The presentation-only source API now supports an ordered selective kill, a
+bounded continuous scheduler, and a host-updated render transform:
+
+```cpp
+using namespace aiverse::spectra;
+PoolSourceId flame=pool.createSource("flame");
+pool.setSourceTransform(flame,{10,1,20},{0,1,0},{1,0.5f,0.2f,1});
+pool.configureContinuous(flame,PoolContinuousEmission{
+    .burstsPerSecond=12, .metresPerBurst=0.5f,
+    .lifetimeSeconds=0, .maxBurstsPerFrame=8
+});
+
+// Once after gfx::Device::beginFrame and before the scene pass:
+pool.beginPresentationFrame(camera,viewProj,width,height);
+// Native scene updates the current transform once or more before pool.step().
+pool.setSourceTransform(flame,updatedPosition,forward,tint);
+pool.step(dt);   // emits at configured time/distance gates, then simulates
+// During depth-tested scene pass: pool.draw(fog);
+// After render pass: pool.endPresentationFrame();
+
+pool.pauseSource(flame);         // future emissions only
+pool.resumeSource(flame);        // resumes bounded scheduler
+pool.stopSource(flame,true);     // also selectively kill current particles
+pool.retireSource(flame);        // invalidate handle/release source slot
+```
+
+`PoolContinuousEmission` defines a rate gate in bursts per second, a
+distance gate in metres per burst, optional elapsed lifetime (0 means no
+expiration), and an additional per-source max bursts/frame. Both gates
+contribute births, limited by global `PoolWorldBudgets::maxBurstsPerFrame`.
+Excess is **dropped**, not queued for unbounded catch-up.
+`PoolWorldStats::continuousBursts` and `continuousSkipped` track both.
+Attached transforms are renderer-fed values; the engine does not insert
+graphics state into authoritative ECS. A native ECS adapter may call
+`setSourceTransform` from an immutable/committed render-pose snapshot.
+
+For GPU groups, `ComputeParticles::burstAt(...,sourceToken)` marks every
+physical slot with a source ownership token. The token is unique for a
+pool lifetime and does not alias a newly recycled source handle.
+`killSourceParticles(token)` removes source-matching births which were
+never submitted, and queues the submitted physical slots for GPU invalidation.
+On the next `step`, contiguous killed slots are coalesced into dead-state
+buffer updates **before** the compute encoder; only after the ordered GPU
+submission are those physical slots returned to the free list. GPU indirect
+compaction subsequently omits invalidated particles. This is a scoped kill,
+not a global buffer clear. The source's CPU path retains bounded
+`FxHandle` ownership and calls the existing shared CPU `kill` on demand.
+The `selectivelyKilled` counter is GPU particles marked/cancelled, not a
+GPU-side observed count. Pending kills make checkpoints ineligible for CPU
+restore, and a clear invalidates prior checkpoint revision data.
+
+**Editor GPU preview (opt-in):** SpectraFX Graph Window offers
+**Metal GPU** alongside the original CPU **Предпросмотр**. Equivalent MCP
+operation is `fx_graph_preview {graph:..., gpu:true, loop?:true,
+instanceValues?:{...}}`. Graphs are validated with
+`inspectGraphGpuEligibility` and a real Metal-compute capability check:
+`RequireGpu` refuses unsupported effects instead of silently dropping
+features or drawing a CPU approximation. The editor queues the compiled
+effect, creates a one-group GPU pool in the next pre-pass phase, submits
+compute before `r3d_.render`, draws in the open scene pass, and releases
+the preview after the pass. That live pool attaches automatically to the
+SpectraFX checkpoint telemetry panel. The default CPU preview path
+remains available and unchanged in output semantics. GPU preview does
+not yet replicate the CPU preview's `advance`/`freeze` feature and only
+previews the one-shot strict Metal billboard subset.
+
+**Important correctness boundaries:** source kill and transform attach
+remain presentation-only and require a healthy graphics device. Kill
+completion is ordered at the command submission boundary, not GPU-fenced
+to actual completion; correctness depends on the Metal RHI single command
+queue and buffer-blit ordering. Native source IDs and GPU tokens must not
+be serialized into authoritative gameplay saves. Source attachments
+are snapshots updated by callers, not a built-in hierarchy/animation
+transform-binding system. The GPU effect subset still does not implement
+arbitrary Niagara particle graphs, GPU collision, light/event output,
+multi-renderer effects, ribbon or material parity. Editor GPU preview
+requires native Metal and an open Scene or Game viewport.
+
+**Verification:** source commits/branch reads only. **NOT RUN:** native
+CMake compilation, editor startup, Metal shader compilation, CTest,
+GPU selective-kill/fence validation, multi-source compaction, editor
+screenshots, fallback parity or performance profiling.
