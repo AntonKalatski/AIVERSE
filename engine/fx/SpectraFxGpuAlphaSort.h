@@ -49,16 +49,19 @@ kernel void cs_main(
         return;
     }
     if(u.mode==1u) {
-        const uint peer=i^u.pass;
-        if(peer<=i || peer>=u.paddedCount) return;
-        const SortItem a=items[i];
+        // Dispatch only paddedCount/2 pair threads, not one thread per
+        // endpoint. Each pair is written exactly once; no atomic operations.
+        if(i>=u.paddedCount/2u || u.pass==0u) return;
+        const uint left=(i/u.pass)*(u.pass*2u)+(i%u.pass);
+        const uint peer=left+u.pass;
+        const SortItem a=items[left];
         const SortItem b=items[peer];
         // Stable ordering for equal depth (lower source slot first).
         const bool aBeforeB=(a.depth>b.depth) ||
                              (a.depth==b.depth && a.slot<b.slot);
-        const bool descending=(i & u.stage)==0u;
+        const bool descending=(left & u.stage)==0u;
         if((descending && !aBeforeB) || (!descending && aBeforeB)) {
-            items[i]=b;
+            items[left]=b;
             items[peer]=a;
         }
         return;
@@ -163,7 +166,7 @@ public:
         if(!dispatch(0,0,0,padded_)) return false;
         for(uint32_t stage=2;stage<=padded_;stage<<=1) {
             for(uint32_t pass=stage>>1;pass;pass>>=1)
-                if(!dispatch(1,stage,pass,padded_)) return false;
+                if(!dispatch(1,stage,pass,padded_/2u)) return false;
         }
         if(!dispatch(2,0,0,count_)) return false;
         preparedSerial_=device_->frameSerial();
