@@ -1335,3 +1335,31 @@ protocol or second MotionWeave clock is introduced.
 Metal/GL/Vulkan offscreen visual checks, GPU failure injection,
 sanitizers or benchmarks. See
 [Stage 142](agent-handoffs/animation-stage142-editor-preview-model-ownership-2026-11-19.md).
+
+
+## Stage 143 — static and streamed geometry GPU retirement across View hosts
+
+MotionWeave animated Model sources and static/HLOD scene geometry
+share the same GPU-completion constraint, but **not the same CPU
+ownership**. `render::GeometryScene` uniquely owns Models/HLOD proxies:
+a rules reload now calls `clear(device)` to detach its borrowed scene
+pointers and enqueue GPU assets behind actual completion tokens. Its
+pre-frame `collectRetired` is polled by RtsView and FPS native hosts;
+final `shutdown` requires a full GPU idle barrier, not a frame timer.
+A malformed new GeometryScene still may leave the scene empty; a
+last-good whole-scene transaction is not promised.
+
+`world::WorldScene` streams GPU Models also referenced by other chunks
+or asynchronous CPU workers via `shared_ptr`. An evicted cell transfers
+models into one deferred owner map per unique Model. Only after all other
+shared CPU references have dropped may the pre-frame hook atomically
+remove the matching weak-cache entry (under its worker mutex) and enqueue
+a final GPU retirement token. GameClient/FPS call this owner hook before
+new rendering, not from the streaming worker, animation ECS tick or
+renderer draw.
+
+No extra animation writer, genre-dependent logic in MotionWeave core,
+root-motion authority or GPU fence relaxation was introduced. **NOT
+RUN:** CMake/compiler/CTest, real Metal/Vulkan/GL, FPS/RTS/editor visual
+parity, TSAN or device-token failure injection.
+[Stage 143 handoff](agent-handoffs/animation-stage143-geometry-world-streamed-model-retirement-2026-11-19.md).
