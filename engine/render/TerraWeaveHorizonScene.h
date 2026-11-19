@@ -7,6 +7,7 @@
 #include "engine/render/TerraWeaveHorizonGpuPatch.h"
 #include "engine/render/TerraWeaveHorizonVertexPatch.h"
 #include "engine/render/TerraWeaveHorizonGpuCache.h"
+#include "engine/render/TerraWeaveVertexWind.h"
 #include "engine/world/TerraWeaveHorizonArchive.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/world/AsyncChunkStream.h"
@@ -256,6 +257,15 @@ public:
     const TerrainSettings& terrainSettings() const {return terrain_;}
     const BiomeSettings& biomeSettings() const {return biomes_;}
     const HorizonSettings& settings() const {return settings_;}
+    // Wind is an opt-in presentation input, independent of atlas baking.
+    // PHYSIS can supply this same POD to near Arbor and far Horizon.
+    void setWind(ForestWindState wind) {
+        validateForestWind(wind);
+        wind_=wind;
+    }
+    const ForestWindState& wind() const {return wind_;}
+    void setPresentationTick(uint64_t tick) {presentationTick_=tick;}
+    uint64_t presentationTick() const {return presentationTick_;}
 
     void update(gfx::Device& device,ForestCameraCm observer) {
         streamStarted_=true;
@@ -532,10 +542,23 @@ public:
         // cluster primitives of each region participate in tint-alpha fade.
         // Both primitives share the same GPU vertex/index/atlas buffers;
         // ModelDraw::primitiveMaterialFilter avoids any duplicate geometry.
-        const auto drawRegion=[&](const render::Model* model,
+        const auto drawRegion=[&](render::Model* model,
                                   int64_t xCm,int64_t zCm,
                                   float alpha,bool blending,int materialFilter) {
             if(!model || alpha<=0.0f)return;
+            const bool gpuWind=wind_.branchFlexPermille>0 &&
+                wind_.maxLeanMilliDegrees>0 &&
+                (wind_.xCmPerSec || wind_.zCmPerSec);
+            // The far forest is one primitive/material in a shared model.
+            // Only that material receives vertexOffset; ground is inert.
+            // Existing active and crossfade GPU regions are updated without
+            // rebaking their CPU atlas or reallocating vertex buffers.
+            if(model->materials.size()>1){
+                const auto desired=gpuWind ? canopyWindGraph() :
+                    std::shared_ptr<const render::graph::Program>{};
+                if(model->materials[1].shaderGraph!=desired)
+                    model->materials[1].shaderGraph=desired;
+            }
             render::ModelDraw draw;
             draw.model=model;
             draw.world=render::mat4::translate({
@@ -545,6 +568,15 @@ public:
             });
             draw.tint={1.0f,1.0f,1.0f,alpha};
             draw.primitiveMaterialFilter=materialFilter;
+            if(gpuWind && materialFilter!=0){
+                // HLOD crossing cards receive a small synchronized bend.
+                // The bottom two vertices have zero weight; only the top
+                // canopy edge moves, avoiding animated ground geometry.
+                draw.vertexParameters=canopyWindVertexParameters(
+                    wind_,presentationTick_,0.0f,0.30f);
+                draw.useVertexParameters=true;
+                draw.maxVertexOffsetMetres=kCanopyGpuWindMaxOffsetMetres;
+            }
             draw.flags=blending ?
                 (render::kDrawTransparent | render::kDrawNoCastShadow |
                  render::kDrawNoReceiveShadow) :
@@ -806,6 +838,8 @@ private:
     TerrainSettings terrain_;
     BiomeSettings biomes_;
     HorizonSettings settings_;
+    ForestWindState wind_{};
+    uint64_t presentationTick_=0;
     std::unique_ptr<world::AsyncChunkStream> stream_;
     std::unique_ptr<render::Model> model_;
     std::shared_ptr<const HorizonBake> activeBake_; // optional previous source
