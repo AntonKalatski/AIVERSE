@@ -1197,3 +1197,76 @@ GPU handles directly and have not been converted to the universal
 owner. Full legacy `game::RtsView` removal remains incomplete.
 Native compilation and Metal/Vulkan/GL correctness are UNVERIFIED;
 do not merge or claim runtime parity before the deferred checks.
+
+## Stage 100 — nonblocking GPU retirement timeline and native model provider
+
+`gfx::Device` now offers a token-based asynchronous GPU completion API:
+
+- `beginResourceRetirement()`: return a nonzero ordered token after all
+  **previously submitted** GPU work on the owning device/queue.
+- `resourceRetirementComplete(token)`: nonblocking owner-thread polling;
+  only `true` authorizes model/texture destruction.
+- `endResourceRetirement(token)`: release a completed token's backend
+  fence/callback state, never a still-running marker.
+- `waitForResourceIdle()`: existing blocking fallback and final shutdown
+  barrier; still fail closed if the device cannot guarantee completion.
+
+Metal commits an empty queue-ordered command buffer and uses its completion
+handler's atomic status; Vulkan queues a zero-command-buffer fence submission
+and polls `vkGetFenceStatus`; GL/GLES/WebGL2 enqueues `glFenceSync`, flushes
+the context and polls `glClientWaitSync(..., 0, 0)`. Windows GL's loader
+now resolves the sync API. The implementation is owner-thread-only except
+for the Metal completion handler. Frame sequence numbers and fixed delays
+are NOT treated as GPU completion.
+
+`render::AsyncResourceRetirementQueue<Resource>` keeps independent batches
+for each nonblocking token. New model evictions after a token was issued
+are never freed on that older token. At the next frame boundary
+`ModelResourceCache::collectRetired(device)` releases any completed batches
+and schedules newly queued models without stalling the GPU; it only uses
+the blocking `waitForResourceIdle` fallback when token creation fails or
+is unsupported. Shutdown still requires an explicit successful full-device
+barrier and drains all remaining batches before destroying the texture
+cache. Existing `ResourceRetirementQueue` remains for synchronous users
+and its original tests.
+
+### Reusable native model provider
+
+New `engine/render/ModelAssetProvider.h` implements a per-native-host
+source loader, uploading and caching ordinary authored models through
+`render::ModelResourceCache`. It accepts a project-supplied
+`render::FileReader`, returns a borrowed `Model*`, exposes failed-load
+warnings, selective source invalidation, async retirement collection and
+explicit shutdown. It knows no RTS, FPS, editor or simulation entities.
+Native projects may pass its borrowed `Model*` to the existing generic
+`aiverse::View::submitModel` or construct their own `view::Object`.
+
+`game::Portrait::renderStaticModel(ModelAssetProvider&,source,yaw)` is a
+real static model consumer: its renderer and canonical View submit the
+provider's model without constructing `game::RtsView`, creating another
+MotionWeave graph evaluator or assuming the resource provider owns game
+rules. Complex/animated RTS portraits keep the existing compatibility
+fallback until further migration.
+
+### Verification / limitations
+
+Source regression `tests/render/async_resource_retirement.cpp` checks
+multiple retirement batches, out-of-order requests, missing token fallback,
+failure to prove GPU idle, shutdown drain and exact destruction order.
+`tests/render/model_asset_provider_api.cpp` is a native C++ consumer API
+fixture without a real GPU. Both are registered in CTest (names
+`async_resource_retirement_queue` and `model_asset_provider_api`).
+**NOT RUN:** compilation, CTest, Metal/Vulkan/GL/WebGL2 native GPU runs,
+sanitizers, graphics screenshots, frame-time profiling, CI and memory
+retention checks remain explicitly deferred.
+
+Token creation is legal only between frames or before current-frame GPU
+commands may borrow retired resources. A token does not account for
+**unsubmitted** commands recorded in the current frame. The fallback
+`waitForResourceIdle` may still stall when a backend cannot create a
+token. Fences with device loss can remain pending; the host must handle
+GPU loss safely rather than assume a timeout proves completion. The
+backend-specific implementations and lifetime ordering are not yet
+validated on real hardware. Scene-level (RTS View) legacy retirement
+and custom FX/terrain caches still need their own migration; don't merge
+or claim parity before native verification.
