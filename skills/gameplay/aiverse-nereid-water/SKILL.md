@@ -602,3 +602,51 @@ Per-stage implementation notes, changed files and exact commits
 are in `docs/nereid/HANDOFF.md`. Owner requested **functions
 before tests**, so implementation must not be described as
 build-verified or GPU-validated.
+
+## Stages 36–38 — shoreline joins, cascade current and rapid whitewater
+
+**Stage 36: author safe join widths and banks** with
+`NereidCascadeSource::joinWidthBlend` [0,1] and
+`requireFootprint` (default true); these are also valid JSON fields.
+The read-only cascade scene interpolates the linked RiverSpline
+half-width and validates the exterior join endpoint and both edges
+against the linked water footprint. The immutable water body must
+be published before cascade GPU update; geometry revisions trigger
+join rebuilds even if water elevation stays the same.
+ECS-native cascades may attach an optional persisted
+`WaterCascadeJoinPolicyComponent` rather than modifying existing
+`WaterCascadeConnectionsComponent` v1.
+
+**Stage 37: author optional local current continuity** by attaching
+`WaterCascadeFlowPolicyComponent {radius,blend,speedLimit,enabled}`
+to the same cascade Entity as `WaterCascadeComponent` and
+`WaterCascadeConnectionsComponent`; persistence is registered
+with `NativeWaterPipelineConfig::enableCascades=true`.
+Normal and indexed NEREID water samples share
+`applyWaterCascadeFlow` after ordinary river/vortex flow
+selection. A connected cascade mouth steers `WaterSample.flow`
+locally without changing `WaterBodyComponent.flow` or applying
+host forces. Native scene JSON can set
+`"flowContinuity":{"radius":8,"blend":0.75,"speedLimit":30}`.
+The NEREID presentation flow bridge uses the same fixed-point
+mouth kernel, so visual ripples also follow the mouth current.
+No PHYSIS physics ownership is duplicated and this is NOT
+mass-conserving fluid simulation.
+
+**Stage 38: rapid whitewater material** is opt-in via
+`WaterSurfaceStyle::rapidFoamStrength` [0,1],
+`rapidFlowThreshold` [0,100] metres/sec, and
+`rapidNoiseScale` [0.1,8]. Scene JSON style uses the matching
+`rapidFoamStrength`, `rapidFlowThreshold` and `rapidNoiseScale`
+keys. When enabled, NEREID samples local river/current/vortex flow
+(and cascade-mouth transfers if supplied by the native scene),
+passes current X/Z + foam intensity + scale in the shared per-draw
+`waterHydraulics` vec4. GLSL/MSL use an animated breakup pattern
+and normal perturbations. Works with existing tiled-water draws,
+no extra texture, compute shader or fullscreen pass. Disabled by
+default, and ordinary genres/legacy water remain unchanged.
+
+**Validation status:** features committed, but native build, GPU
+compiler, CTest and visual integration are **NOT RUN** by owner
+instruction. Handoff for each stage is appended at
+`docs/nereid/HANDOFF.md`. Do not make PASS claims.
