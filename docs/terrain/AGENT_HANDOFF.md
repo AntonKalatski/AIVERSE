@@ -3691,3 +3691,34 @@ ctest --test-dir build/terraweave-router-qa --output-on-failure -R '^gpu_timing_
 ```
 
 **Status:** Source read-back verified; no code fix needed yet; native execution of the new test remains **NOT RUN**. Record a real compiler error or CTest assertion if either appears after this fresh configuration. Do not mark Stage43 passed prematurely. PR #24 stays Draft.
+
+
+## Stage 43 QA verified — standalone GPU timing router CTest passes on Mac Studio (2026-11-19)
+
+**Actual user-local validation (after the corrected fresh CMake configure):**
+- CMake build tree: `/Users/aleksandrfeer/Projects/AIVERSE-terraweave-qa/build/terraweave-router-qa` in isolated TerraWeave worktree.
+- `cmake --build build/terraweave-router-qa --parallel 4 --target aiverse_gpu_timing_router_test`: C++ object compilation and executable linkage **SUCCEEDED**.
+- `ctest --test-dir build/terraweave-router-qa --output-on-failure -R '^gpu_timing_router$'`: **PASS 1/1**, `gpu_timing_router` #93, individual runtime **0.32s**, total **0.33s**, `100% tests passed, 0 tests failed`.
+
+This resolves the previously observed stale/misconfigured `build/terraweave-qa` "No rule to make target" / "No tests were found" issue for the new router test, using a **fresh** build tree. The error did not require production or test source modifications.
+
+**Cumulative confirmed validation (separate runs):** previously reported TerraWeave CPU suite **9/9** passed in `build/terraweave-qa`; newly introduced `gpu_timing_router` **1/1** passed in `build/terraweave-router-qa`. Do not describe this as a single 10/10 run or infer a full AIVERSE test suite pass. Separately reported NEREID `ctest-full exit=0` is for the NEREID test suite, not TerraWeave.
+
+**Still NOT RUN / NOT REPORTED:** desktop editor integration target `aiverse_terraweave_editor_test` and `terraweave_editor` CTest, native `aiverse_client`, `aiverse_fps_client`, `aiverse_editor` build/startup, cross-backend GPU visuals/profiling and real GPU timer concurrent-tag behavior, Linux CI on this head, complete PR/main reconciliation. PR #24 remains Draft.
+
+**Next isolated native integration commands (preserve old passing test directories and shared AIVERSE checkout):**
+```sh
+cd ~/Projects/AIVERSE-terraweave-qa
+git fetch origin feature/terraweave
+git pull --ff-only origin feature/terraweave
+cmake -S . -B build/terraweave-integration \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DAIVERSE_BUILD_CLIENT=ON -DAIVERSE_BUILD_FPS_CLIENT=ON \
+  -DAIVERSE_BUILD_EDITOR=ON -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_BUILD_TOOLS=OFF -DAIVERSE_BUILD_SERVER=OFF \
+  -DAIVERSE_BUILD_HEADLESS=OFF -DAIVERSE_FBX=OFF
+cmake --build build/terraweave-integration --parallel 4 \
+  --target aiverse_client aiverse_fps_client aiverse_editor aiverse_terraweave_editor_test
+ctest --test-dir build/terraweave-integration --output-on-failure -R '^terraweave_editor$'
+```
+On failure capture **first** compiler/linker/CTest diagnostic for the agent, not only aggregate make/CTest status. Do not alter the unrelated main-worktree VFX/PHYSIS rebase. Integrate `main` via a separate safe integration branch/worktree only after inspecting the current ahead/behind and preserving concurrent teams' work.
