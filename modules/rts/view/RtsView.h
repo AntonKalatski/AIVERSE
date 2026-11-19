@@ -22,6 +22,7 @@ namespace kingston { class BulletFxHost; }
 namespace kingston { struct CabinResidentDraw; }
 #include "engine/render/GeometryScene.h"
 #include <algorithm>
+#include <functional>
 #include <map>
 #include <memory>
 #include <set>
@@ -242,6 +243,15 @@ public:
     // re-uploading their Model resources. Graph and material changes are
     // staged first; on compile/parse failure existing animations stay alive.
     // Returns true for an accepted transaction (including zero resident types).
+    using AppearancePipelineValidator=std::function<
+        render::Renderer3D::PipelineWarmStatus(
+            const render::Model&,const std::vector<render::Material>&)>;
+    // The host owns GPU shader caches. Stage all candidate appearance
+    // pipelines before committing new materials or Models to the live View.
+    void setAppearancePipelineValidator(AppearancePipelineValidator validator) {
+        appearancePipelineValidator_=std::move(validator);
+    }
+    bool gpuAppearancePending() const noexcept {return gpuAppearancePending_;}
     bool reloadAppearanceTypes(const std::set<size_t>& types,
                                bool reloadMaterialLibrary=false,
                                size_t* refreshed=nullptr);
@@ -639,6 +649,8 @@ private:
     bool deferredLoading_ = false, streamingTypes_ = false;
     bool deferAppearanceVariants_ = true; // client default; editor disables
     bool strictAppearanceReload_ = false; // temporary CPU preflight during authored reload
+    bool gpuAppearancePending_=false; // retry only unfinished async compiler work
+    AppearancePipelineValidator appearancePipelineValidator_;
     render::ModelImageRollbackPool imageRollback_;
     render::ModelImageUploadTransaction* activeImageTransaction_ = nullptr; // borrowed during staging only
     // Unpublished Model owners during appearance reload: no model-cache
