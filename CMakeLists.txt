@@ -2254,6 +2254,7 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
         tests/spectrafx_metal_rhi.mm engine/gfx/metal/GfxMetal.mm)
     target_include_directories(aiverse_spectrafx_metal_rhi_test PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_options(aiverse_spectrafx_metal_rhi_test PRIVATE "-fobjc-arc")
     target_link_libraries(aiverse_spectrafx_metal_rhi_test PRIVATE
         "-framework Metal" "-framework Foundation"
         "-framework QuartzCore")
