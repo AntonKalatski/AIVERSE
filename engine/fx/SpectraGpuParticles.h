@@ -59,6 +59,7 @@ struct ComputeStats {
     uint32_t gpuDispatches = 0, drawCalls = 0;
     uint32_t submittedSlots = 0; // dense GPU quads published from live-slot map
     uint32_t gpuFallbacks = 0, lostOnFallback = 0;
+    uint32_t recoveredOnFallback=0;
     uint32_t gpuCompactDispatches = 0, gpuIndirectDraws = 0;
     uint32_t gpuVmErrorsLastRead = 0;
     bool gpuVmErrorsKnown = false; // unknown until a successful diagnostic read
@@ -173,6 +174,8 @@ private:
     std::shared_ptr<uint64_t> readbackLifetime_ = std::make_shared<uint64_t>(0);
     bool asyncErrorPending_ = false;
     uint64_t vmFrameRevision_ = 0;
+    uint64_t checkpointRevision_ = 0;
+    GpuCheckpoint lastCheckpoint_;
 };
 
 } // namespace aiverse::spectra
