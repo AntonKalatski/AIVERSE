@@ -31,6 +31,7 @@ public:
     // including dedicated emitters and retained homogeneous pool capacity.
     static constexpr uint32_t kMaxPlaybackGpuSlots=65536;
     static constexpr float kUnusedPoolRetireSeconds=5.0f;
+    static constexpr uint64_t kMetalRetireFrameSlots=3;
     struct Route {
         std::string asset;
         bool enabled=true;
@@ -55,6 +56,7 @@ public:
         uint64_t gpuRuntimeCpuFallbacks=0;
         uint64_t pooledCpuRecoveries=0,pooledRecoveryDropped=0;
         uint64_t pooledRenderFaults=0;
+        uint64_t pooledResourceRetired=0,pooledResourceReleased=0;
         uint64_t cpuUpdateSamples=0,cpuDrawSamples=0;
         uint64_t cpuUpdateEncodeUs=0,cpuDrawEncodeUs=0;
         uint64_t cpuUpdatePeakUs=0,cpuDrawPeakUs=0;
@@ -282,19 +284,28 @@ public:
             shot.elapsed+=dt;
             ++i;
         }
+        // RHI command buffers can still refer to resources submitted in
+        // earlier frames. Reclaim only after Metal's completed slot has
+        // safely cycled; unknown frame serial => retain until reset().
+        collectRetiredPools();
         for(auto it=pools_.begin();it!=pools_.end();) {
             PoolGroup& group=it->second;
             group.arena->setExternalSpawnScale(spawnScale);
-            // No render/compute submission for completely empty groups.
-            // Retire their GPU allocations after a short idle grace period,
-            // avoiding perpetual memory reservation for one-shot bursts.
+            if(group.failurePending || !device_.gpuHealthy()) {
+                recoverPooledSources(it->first);
+                retirePoolResources(group);
+                it=pools_.erase(it);
+                continue;
+            }
+            // No GPU submission for wholly empty groups. Retirement remains
+            // deferred to a completed frame slot rather than immediate
+            // destruction of resources still referenced by earlier draws.
             if(group.arena->emitterCount()==0 &&
                group.arena->aliveParticles()==0) {
                 group.drawReady=false;
                 group.idleSeconds+=dt;
                 if(group.idleSeconds>=kUnusedPoolRetireSeconds) {
-                    group.arena->shutdown();
-                    totalPoolCapacity_-=group.config.particles;
+                    retirePoolResources(group);
                     it=pools_.erase(it);
                     ++stats_.unusedPoolsReleased;
                     continue;
@@ -302,7 +313,13 @@ public:
             } else {
                 group.idleSeconds=0;
                 group.drawReady=group.arena->update(dt,lastCameraEye_);
-                if(!group.drawReady) ++stats_.pooledFailures;
+                if(!group.drawReady) {
+                    ++stats_.pooledFailures;
+                    recoverPooledSources(it->first);
+                    retirePoolResources(group);
+                    it=pools_.erase(it);
+                    continue;
+                }
             }
             ++it;
         }
@@ -423,6 +440,9 @@ public:
         pooledShots_.clear();
         for(auto& pair:pools_) pair.second.arena->shutdown();
         pools_.clear();
+        for(auto& pool:retiringPools_) pool.arena->shutdown();
+        retiringPools_.clear();
+        retiringGpuSlots_=0;
         totalPoolCapacity_=0;
     }
 
@@ -439,11 +459,13 @@ public:
             bytes+=entry.emitter->nominalGpuBytes();
         for(const auto& entry:pools_)
             bytes+=entry.second.arena->nominalGpuBytes();
+        for(const auto& entry:retiringPools_)
+            bytes+=entry.arena->nominalGpuBytes();
         return bytes;
     }
 
     uint64_t usedGpuSlots() const {
-        uint64_t total=totalPoolCapacity_;
+        uint64_t total=uint64_t(totalPoolCapacity_)+retiringGpuSlots_;
         for(const auto& e:active_)
             if(e.second->gpuActive()) total+=e.second->config().backend.particles;
         for(const auto& e:oneShots_)
@@ -482,6 +504,77 @@ private:
         bool drawReady=false;
         bool failurePending=false;
     };
+    struct RetiringPool {
+        std::unique_ptr<SpectraFxGpuSharedArena> arena;
+        uint32_t reservedSlots=0;
+        uint64_t lastSubmittedSerial=0;
+    };
+
+    std::unique_ptr<SpectraFxHybridEmitter> makePooledCpuFallback(
+            const PooledRef& source) {
+        if(!source.config.backend.allowCpuFallback ||
+           source.config.cpuEffect.empty()) return {};
+        auto config=source.config;
+        config.backend.preference=SpectraFxExecutionPreference::Cpu;
+        auto cpu=std::make_unique<SpectraFxHybridEmitter>();
+        if(!cpu->begin(device_,cpu_,std::move(config),
+                       source.position,source.direction)) return {};
+        return cpu;
+    }
+
+    // Presentational replacement only. A pooled GPU source may have been
+    // advanced in an earlier encoded frame; no readback/state migration is
+    // attempted. CPU effects start at each source's latest known pose.
+    void recoverPooledSources(const std::string& name) {
+        for(auto it=pooledActive_.begin();it!=pooledActive_.end();) {
+            if(it->second.name!=name) {++it;continue;}
+            auto cpu=makePooledCpuFallback(it->second);
+            if(cpu) {
+                active_[it->first]=std::move(cpu);
+                ++stats_.pooledCpuRecoveries;
+            } else ++stats_.pooledRecoveryDropped;
+            it=pooledActive_.erase(it);
+        }
+        for(size_t i=0;i<pooledShots_.size();) {
+            auto& shot=pooledShots_[i];
+            if(shot.source.name!=name) {++i;continue;}
+            auto cpu=makePooledCpuFallback(shot.source);
+            if(cpu) {
+                oneShots_.push_back({std::move(cpu),shot.elapsed,shot.duration});
+                ++stats_.pooledCpuRecoveries;
+            } else ++stats_.pooledRecoveryDropped;
+            pooledShots_.erase(pooledShots_.begin()+std::ptrdiff_t(i));
+        }
+    }
+    // Called ONLY after GPU compute ended and outside all render passes.
+    // Keep old resources alive through Metal's in-flight command slots.
+    // Vulkan/unknown frame-serial uses conservative retention until reset.
+    void retirePoolResources(PoolGroup& group) {
+        if(!group.arena) return;
+        const uint32_t capacity=group.config.particles;
+        retiringGpuSlots_+=capacity;
+        totalPoolCapacity_-=capacity;
+        retiringPools_.push_back({std::move(group.arena),capacity,
+                                  device_.frameSerial()});
+        ++stats_.pooledResourceRetired;
+    }
+    void collectRetiredPools() {
+        if(!device_.canUpdateSharedBuffers()) return;
+        const uint64_t serial=device_.frameSerial();
+        if(!serial) return; // unknown RHI completion: never guess safe
+        for(size_t i=0;i<retiringPools_.size();) {
+            auto& retired=retiringPools_[i];
+            if(!retired.lastSubmittedSerial ||
+               serial<retired.lastSubmittedSerial ||
+               serial-retired.lastSubmittedSerial<kMetalRetireFrameSlots) {
+                ++i;continue;
+            }
+            retired.arena->shutdown();
+            retiringGpuSlots_-=retired.reservedSlots;
+            retiringPools_.erase(retiringPools_.begin()+std::ptrdiff_t(i));
+            ++stats_.pooledResourceReleased;
+        }
+    }
 
     static bool same(render::float3 a,render::float3 b) {
         return a.x==b.x && a.y==b.y && a.z==b.z;
@@ -645,6 +738,8 @@ private:
     std::unordered_map<uint64_t,std::unique_ptr<SpectraFxHybridEmitter>> active_;
     std::vector<OneShot> oneShots_;
     std::map<std::string,PoolGroup> pools_;
+    std::vector<RetiringPool> retiringPools_;
+    uint64_t retiringGpuSlots_=0;
     std::unordered_map<uint64_t,PooledRef> pooledActive_;
     std::vector<PooledShot> pooledShots_;
     uint32_t totalPoolCapacity_=0;
