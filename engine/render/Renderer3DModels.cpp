@@ -81,7 +81,9 @@ void Renderer3D::shutdownModels() {
     for (auto& [k, s] : modelShaders_) if (s.shader.valid()) dev_->destroyShader(s.shader);
     pendingModelPipes_.clear(); pendingColorWarms_.clear(); failedColorWarms_.clear();
     modelPipes_.clear(); modelShaders_.clear();
-    for (auto t : {white_, black_, flatNormal_}) dev_->destroyTexture(t);
+    for (auto t : {white_, black_, flatNormal_})
+        if(t.valid()) dev_->destroyTexture(t);
+    white_=black_=flatNormal_={};
 }
 
 void Renderer3D::retireModelPrograms() {
