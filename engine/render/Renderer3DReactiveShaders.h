@@ -1,11 +1,13 @@
 #pragma once
 #include <string>
-// PRISMA Stage 29: conservative reactive coverage for translucent rigid models.
-// A full-color postprocess uses this mask to reduce motion blur on glass,
-// ghost surfaces, water-like alpha blends and other uncertain velocities.
-// The pass never writes the scene's depth; it samples it and uses a separate
-// scratch attachment. Vertex deformation and material-specific alpha are not
-// represented by this conservative coverage pass.
+// PRISMA reactive coverage for translucent rigid, animated and mesh draws.
+// Stage 63's cutout variant reproduces rigid-model alpha texture cutoffs,
+// UV transform, material team alpha, screen-space LOD dither and 3D dissolve.
+// The animated variant reuses current-pose skin/morph/baked vertex shaders
+// and exact LOD dither, but still conservatively covers animated dissolve;
+// its material alpha cutout/actor aperture needs a future dedicated variant.
+// The mask never writes borrowed scene depth; it samples scene depth and
+// attaches Renderer3D's own private depth scratch.
 namespace aiverse::render::reactive_shaders {
 inline const char* kVS = R"(
 layout(location=0) in vec3 a_pos;
