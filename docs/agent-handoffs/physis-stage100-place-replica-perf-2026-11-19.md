@@ -133,7 +133,33 @@ cmake --build build/physis-terraweave-onepass \
 
 # Replica network parity (no weakened checks).
 ctest --test-dir build/physis-terraweave-onepass \
-  -R '^replica$' --config Debug --output-on-failure
+  -R '^aiverse_replica_tests
+./build/physis-terraweave-onepass/aiverse_place_tests \
+  examples/place/scene.json \
+  sixteen_clients_over_4g_converge_predict_and_late_join
+```
+
+The exact CMake-registered CTest is `aiverse_replica_tests` (the
+repo registers the executable under this same name). This test runner
+contains the new `batched_fields_preserve_legacy_replica_wire_and_values`
+case and the existing replication regression suite.
+The standalone case is ~30 virtual seconds, rather than all Place
+scenarios; it still enforces the original 5ms budget and convergence.
+
+After a confirmed `tickAvg < 5.0` and field parity, run the full suite
+exactly once:
+
+```sh
+AIVERSE_CTEST_VERBOSE=1 bash tools/physis-terraweave-final-validation.sh
+```
+
+This builds all enabled targets, includes the identical physics/native
+integration tests, and executes one unfiltered CTest. If the tick budget
+still fails, use the five Stage99 phase averages to identify the actual
+bottleneck; never increase 5ms, shrink client/body counts, loosen
+network convergence assertions or falsify a PASS. Keep PR #40 Draft and
+`main` untouched until real native evidence.
+ --config Debug --output-on-failure
 
 # The existing single slow Place test case with Stage99 live phase timing:
 ./build/physis-terraweave-onepass/aiverse_place_tests \
