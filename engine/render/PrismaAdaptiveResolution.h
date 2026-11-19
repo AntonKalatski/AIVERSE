@@ -34,7 +34,8 @@ struct PrismaAdaptiveResolution {
     // Duplicate/queued CPU frame updates never advance the controller.
     bool observe(double gpuMs, uint64_t completedFence, float targetGpuMs,
                  float floor, float ceiling, bool memoryPressure = false,
-                 bool scopedSample = false) {
+                 bool scopedSample = false,
+                 uint8_t viewPriority = 128) {
         if (!initialized) reset(ceiling);
         // A scoped query sequence may start at 1 while the whole-frame
         // GPU fence is already large. Never compare tokens from these
@@ -65,8 +66,15 @@ struct PrismaAdaptiveResolution {
         } else if (validMs && gpuMs<double(targetGpuMs)*0.80) {
             ++fastSamples;slowSamples=0;
         } else { slowSamples=fastSamples=0; }
+        // Under global memory pressure, low-priority views yield first;
+        // persistent GPU slowness still reduces any view after 12 samples.
+        const bool gpuSlow=validMs && gpuMs>double(targetGpuMs)*1.15;
+        const unsigned pressureThreshold =
+            viewPriority<85 ? 6u : viewPriority<170 ? 12u : 30u;
+        const unsigned slowThreshold=memoryPressure && !gpuSlow ?
+            pressureThreshold : 12u;
         float next=scale;
-        if (slowSamples>=12) next=std::max(lo,scale-1.0f/16.0f);
+        if (slowSamples>=slowThreshold) next=std::max(lo,scale-1.0f/16.0f);
         if (fastSamples>=36) next=std::min(hi,scale+1.0f/16.0f);
         if (next==scale) return false;
         scale=next;
