@@ -62,6 +62,9 @@ struct HorizonRuntimeStats {
     bool nearNormalProvenanceAvailable=false;
     uint64_t sourceRevision=0, activeRevision=0;
     bool activeRegionPresent=false, staleProxy=false;
+    bool requestedRegionPresent=false, requestedRegionPending=false;
+    int32_t requestedCellX=0, requestedCellZ=0;
+    int32_t activeCellX=0, activeCellZ=0;
     bool nearWeldSlopeFallback=false;
     bool transitioning=false;
     uint32_t transitionProgressPermille=1000;
@@ -277,6 +280,7 @@ public:
         const world::Cell desired{
             static_cast<int32_t>(wantedX),0,static_cast<int32_t>(wantedZ)
         };
+        requestedCell_=desired; // updated before cache, fast-return or worker paths
         // Source revisions invalidate cached geometry. Cached entries
         // can only be retired on the owning gfx::Device thread.
         gpuCache_.prune(device,sourceRevision_);
@@ -572,6 +576,7 @@ public:
         finishTransition(device,true);
         gpuCache_.clear(device);
         activeCell_.reset();
+        requestedCell_.reset();
         activeRevision_=0;
         activeBake_.reset();
         activeVertices_.clear();
@@ -593,6 +598,18 @@ public:
         out.activeRegionPresent=bool(model_) && activeCell_.has_value();
         out.staleProxy=out.activeRegionPresent &&
                        out.activeRevision!=out.sourceRevision;
+        out.requestedRegionPresent=requestedCell_.has_value();
+        if(requestedCell_){
+            out.requestedCellX=requestedCell_->x;
+            out.requestedCellZ=requestedCell_->z;
+        }
+        if(out.activeRegionPresent){
+            out.activeCellX=activeCell_->x;
+            out.activeCellZ=activeCell_->z;
+        }
+        out.requestedRegionPending=out.requestedRegionPresent &&
+            (!out.activeRegionPresent ||
+             !(*requestedCell_==*activeCell_) || out.staleProxy);
         if(stream_) {
             const auto& s=stream_->status();
             out.preparing=s.preparing;
@@ -789,6 +806,7 @@ private:
     world::Cell cell_{};
     bool cataloged_=false;
     std::optional<world::Cell> activeCell_;
+    std::optional<world::Cell> requestedCell_;
     uint64_t activeRevision_=0; // authored source revision of GPU-resident region
     HorizonGpuRegionCache gpuCache_;
     size_t gpuCacheHits_=0;
