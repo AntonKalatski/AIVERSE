@@ -44,6 +44,10 @@ class ModelingWindow final : public EditorWindow {
         if(r["document"]["graph"].isObject())
             nextGraph.reset(render::AnimationGraph::compile(
                 *built.model,modeling::evaluateDocument(r["document"])["graph"]));
+        // A compatible authored reload can keep the preview clip's named
+        // phase without retaining any pointer into the replaced CPU Model.
+        const bool continued=play_ && graph_.graph() && nextGraph.graph() &&
+            nextGraph.restorePlayback(graph_.snapshotPlayback());
         render::Pose nextPose;
         render::bindPose(*built.model,nextPose);
         const auto nextProject=ed.ws().project.dir;
@@ -70,7 +74,7 @@ class ModelingWindow final : public EditorWindow {
         state_=std::move(r);
         revision_=nextRevision;
         project_=nextProject;
-        time_=0;
+        if(!continued)time_=0;
         select(selected_);
     }
     void select(const std::string &id) {
