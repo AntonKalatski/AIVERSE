@@ -2959,6 +2959,61 @@ parity. Корректность сигнальных backend tokens в реал
 этап — `docs/handoffs/prisma-stage-54.md`.
 
 
+
+## Stage 55 — Auto Exposure совместно с четырьмя Shader Graph текстурами
+
+До этого этапа PRISMA отводила для GPU HDR Auto Exposure
+фиксированный sampler `TEX8`, а postfx Shader Graph использовал
+привязки `TEX5..TEX8` для максимум четырёх независимых текстур.
+При четырёх текстурах включённая автором Auto Exposure
+**молча отключалась**, хотя все остальные её условия были выполнены.
+Это было функциональным ограничением, а не физическим запретом RHI.
+
+Новый GPU-независимый `PrismaCompositeTextureLayout.h` определяет
+общую, constexpr-вычислимую карту ресурсов. Фиксированный композит
+занимает слоты 0..4, Shader Graph — 5..8, а HDR Auto Exposure —
+слот 8, пока граф использует 0..3 текстуры, и слот 9 при
+четырёх текстурах. Неподдерживаемое количество текстур (более 4)
+явно отклоняется. Пять `static_assert` подтверждают ожидаемые
+вычисления при компиляции библиотеки; **нативная компиляция ещё НЕ
+проводилась**. Схема не меняет сериализацию, JSON или MCP API.
+
+В `Prisma.cpp` план используется одновременно при создании
+`ShaderDesc.textureSlots`, формировании masks для GLSL/MSL
+`TEX0..TEX9` и фактическом `Device::setTexture`.
+`PrismaShaders.h` выбирает `TEX9` только с
+`PF_AUTO_EXPOSURE_SLOT9`, иначе сохраняет `TEX8`.
+Ключ кэша composite остаётся `effectMask + ShaderGraph JSON`:
+этого достаточно, поскольку layout однозначно определяется самим
+графом. При ошибке построения expanded pipeline PRISMA сохраняет
+старый fallback: тот же composite без Auto Exposure, а если он
+тоже недоступен, базовый composite без эффектов. Не подменять
+неуспешный pass на «эффект выполнен».
+
+`Prisma::ViewEffectReport` теперь содержит
+`shaderGraphTextures` и `autoExposureTextureSlot`.
+Последнее равно `-1`, когда **финальная выбранная composite pipeline**
+не содержит Auto Exposure; запись обновляется только после
+разрешения fallback. Editor `PRISMA — Постобработка` показывает
+фактический slot по каждому `viewId`, не инициируя GPU
+shader compile для отображения диагностики.
+
+Проверка RHI исходников: GL настраивает `texN` по
+`ShaderDesc.textureSlots`, Metal backend содержит sampler
+bindings, включающие 9, Vulkan допускает до 32 descriptor
+texture slots; Shader Graph компилятор ограничивает число
+самостоятельных текстур четырьмя. Это **структурная оценка
+исходников**, не доказательство работоспособности на всех
+адаптерах GLES/WebGL/Metal/Vulkan.
+
+**Actual verification:** после GitHub readback выполнено 25/25
+структурных проверок source/layout/логики; **NOT RUN:**
+CMake/clang, shader compilation, редактор, CTest, GPU-resolve,
+readback HDR пикселей, backend stress/CI/benchmarks. См.
+`docs/handoffs/prisma-stage-55.md` для точных коммитов,
+ограничений и следующего шага. PR #26 остаётся Draft;
+никаких изменений в `main` не вносилось.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
