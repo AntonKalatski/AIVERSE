@@ -2,7 +2,7 @@
 // c++ -std=c++20 -O2 -pthread -I. tests/ecs_simulation_bridge_test.cpp engine/sim/Simulation.cpp engine/core/Fixed.cpp engine/data/Json.cpp -o /tmp/aiverse-ecs-sim
 // /tmp/aiverse-ecs-sim
 #include "engine/experiments/EcsSimulationBridge.h"
-#include <cassert>
+#include "tests/AlwaysCheck.h"
 #include <cstdint>
 #include <iostream>
 #include <memory>
@@ -43,15 +43,15 @@ public:
         systems.push_back({{"counter",{}, {}, {}, {counter},false,false},
             [](GuardedWorld& w) {
                 auto* c=w.writeResource<Counter>();
-                assert(c);c->value+=1;
+                AIVERSE_TEST_CHECK(c);c->value+=1;
             }});
         systems.push_back({{"score",{p},{score},{counter},{},false,false},
             [](GuardedWorld& w) {
                 const auto* counterValue=w.readResource<Counter>();
-                assert(counterValue);
+                AIVERSE_TEST_CHECK(counterValue);
                 w.eachWrite<Score>([&](Entity e,Score& out) {
                     const auto* pos=w.read<Position>(e);
-                    assert(pos);
+                    AIVERSE_TEST_CHECK(pos);
                     out.value=pos->x+counterValue->value;
                 });
             }});
@@ -59,7 +59,7 @@ public:
     }
     void applyCommand(Simulation& sim,const Command& command) override {
         Counter* c=sim.world().resource<Counter>();
-        assert(c);
+        AIVERSE_TEST_CHECK(c);
         if(command.type==1)c->value+=command.param;
         else if(command.type==2)c->value*=command.param;
     }
@@ -70,7 +70,7 @@ public:
             hash.i64(world.get<Score>(e).value);
         });
         auto* counter=world.resource<Counter>();
-        assert(counter);
+        AIVERSE_TEST_CHECK(counter);
         hash.i64(counter->value);
         const auto state=world.entityState();
         for(auto g:state.gens)hash.u32(g);
@@ -99,9 +99,9 @@ static uint64_t simulate(unsigned workers,bool rollback) {
     const auto expected=sim.checksum();
     if(rollback) {
         sim.loadState(snap);
-        assert(sim.tick()==4 && sim.checksum()==snapHash);
+        AIVERSE_TEST_CHECK(sim.tick()==4 && sim.checksum()==snapHash);
         for(int i=0;i<6;++i)sim.step();
-        assert(sim.checksum()==expected);
+        AIVERSE_TEST_CHECK(sim.checksum()==expected);
     }
     return sim.checksum();
 }
@@ -114,14 +114,14 @@ static void testAccessRejection() {
         };
         addGuardedGroup(sim,"reject-structural",std::move(bad),0);
     } catch(const std::invalid_argument&) {rejected=true;}
-    assert(rejected);
+    AIVERSE_TEST_CHECK(rejected);
 }
 int main() {
     testAccessRejection();
     const auto expected=simulate(0,false);
     for(unsigned workerCount:{0u,1u,3u,7u}) {
-        assert(simulate(workerCount,false)==expected);
-        assert(simulate(workerCount,true)==expected);
+        AIVERSE_TEST_CHECK(simulate(workerCount,false)==expected);
+        AIVERSE_TEST_CHECK(simulate(workerCount,true)==expected);
     }
     std::cout<<"PASS Simulation step, canonical commands, snapshot rollback, 0/1/3/7-worker checksums\n";
 }
