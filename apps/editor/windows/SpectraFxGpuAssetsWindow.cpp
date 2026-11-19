@@ -350,23 +350,72 @@ private:
         }
         return true;
     }
+    // Keep the last known on-disk source as a compare-and-swap guard.
+    // A source edited by another AIVERSE instance or agent is never
+    // overwritten without an explicit reload. Back up the old JSON before
+    // the cross-platform rename (Windows does not replace existing files).
     bool save(Editor& ed) {
         if(!validate()||selected_.empty()) return false;
         std::error_code ec;
         fs::create_directories(directory(),ec);
-        if(ec) {message_=ec.message();return false;}
+        if(ec) {message_="Unable to create GPU asset folder: "+ec.message();return false;}
         const auto target=filePath(selected_);
         const fs::path temp=target.string()+".tmp";
+        const fs::path backup=target.string()+".bak";
+        const bool existing=fs::exists(target,ec);
+        if(ec) {message_="Unable to stat GPU asset: "+ec.message();return false;}
+        if(existing) {
+            std::ifstream current(target,std::ios::binary);
+            if(!current) {message_="Unable to read current GPU asset";return false;}
+            const std::string disk((std::istreambuf_iterator<char>(current)),
+                                   std::istreambuf_iterator<char>());
+            if(!current.eof() && current.bad()) {
+                message_="Unable to compare current GPU asset";
+                return false;
+            }
+            if(saved_.empty() || disk!=saved_) {
+                message_="GPU asset changed on disk; reload before saving";
+                return false;
+            }
+        }
         {
             std::ofstream file(temp,std::ios::binary|std::ios::trunc);
-            file<<text_;
+            if(!file) {message_="Unable to open temporary GPU asset";return false;}
+            file.write(text_.data(),std::streamsize(text_.size()));
             file.flush();
-            if(!file) {message_="Unable to save GPU asset";return false;}
+            if(!file) {
+                message_="Unable to write temporary GPU asset";
+                file.close();
+                fs::remove(temp,ec);
+                return false;
+            }
         }
+        if(existing) {
+            ec.clear();
+            fs::remove(backup,ec);
+            if(ec) {
+                fs::remove(temp);
+                message_="Unable to replace old GPU asset backup: "+ec.message();
+                return false;
+            }
+            fs::rename(target,backup,ec);
+            if(ec) {
+                fs::remove(temp);
+                message_="Unable to back up GPU asset: "+ec.message();
+                return false;
+            }
+        }
+        ec.clear();
         fs::rename(temp,target,ec);
         if(ec) {
+            const std::string failure=ec.message();
+            std::error_code rollback;
+            if(existing) fs::rename(backup,target,rollback);
             fs::remove(temp);
-            message_=ec.message();
+            message_="GPU asset save failed: "+failure;
+            if(rollback)
+                message_+="; backup retained at "+backup.string()+
+                          "; rollback failed: "+rollback.message();
             return false;
         }
         saved_=text_;
