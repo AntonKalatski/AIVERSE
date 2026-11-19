@@ -2,6 +2,7 @@
 // baked or posed skinning, dissolve, selection outline, attachments on sockets, effect anchors;
 // projectiles leaving muzzles; building ghosts and previews for portraits / editor.
 #include "RtsView.h"
+#include "engine/render/CameraModelSnapshot.h"
 #include "RtsPreviewRenderProvider.h"
 #include "RtsPreviewResourceProvider.h"
 #include "engine/view/View.h"
@@ -275,6 +276,8 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
         packet.animationModelGeneration=ch.modelGeneration;
         packet.draw=d;
         packet.graph=ch.graph;
+        if(cameraPreparedCapture_)
+            cameraPreparedCapture_->recordPrepared(*genericView_,packet);
         genericView_->submitOne(r,packet);
     } else {
         // All other model classes (stages, LODs, baked skinning and
