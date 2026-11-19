@@ -1101,3 +1101,13 @@ Native test `physis_nature_stress` and prior Stage78
 the latest branch. Do not label them passing based on Stage73's
 older 40/40 result. Follow
 `docs/agent-handoffs/physis-stage79-nature-stress-2026-11-19.md`.
+
+### Stage79 compile-safety follow-up
+
+In `tests/physis_nature_stress_test.cpp`, 12
+`World::add<T>(entity, {})` calls were replaced with
+explicit `T{}` values because the actual ECS method
+uses variadic `Args&&...` deduction. Test-only commit
+`146013f2e27cdefe24d6f224c6e30bad88c22251`.
+The expected native Stage79 test outcome remains
+**UNVERIFIED** until AppleClang and CTest execute.

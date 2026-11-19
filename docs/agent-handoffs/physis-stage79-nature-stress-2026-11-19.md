@@ -142,3 +142,28 @@ Then implement a host-owned Box3D/tree break adapter with
 deterministic once-only effect events; TerraWeave owns root
 generation and per-species stability, NEREID owns bank erosion.
 Publish a new standalone agent handoff on completion.
+
+
+## Stage79 follow-up — variadic World::add test compile fix
+
+Implementation fix commit:
+`146013f2e27cdefe24d6f224c6e30bad88c22251`.
+Static API inspection of `engine/core/ECS.h` revealed that
+`World::add<T>(Entity, Args&&...)` uses a variadic template.
+The new `physis_nature_stress` test passed a bare `{}` in
+12 calls, which cannot be used for template argument deduction.
+All 12 calls in `tests/physis_nature_stress_test.cpp` now pass
+explicitly typed `T{}` values for `ForceOutput`,
+`NatureProbeComponent`, `NatureContactComponent` and
+`NatureStressOutputComponent`. Existing engine code and
+CMake registration are unchanged.
+
+**Verification:** GitHub readback of the exact ECS
+`World::add` declaration and static replacement audit: each
+of the four component types had exactly three fixes.
+**NOT RUN:** actual AIVERSE native C++ compile, CTest or CI.
+Do NOT mark the stage green until the macOS targeted build
+and `physis_nature_stress` + `physis_nereid_contacts` CTests
+finish successfully. Test failure investigation is still first
+priority; preserve native compiler errors rather than weakening
+test checks.

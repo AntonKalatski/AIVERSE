@@ -1181,3 +1181,16 @@ Handoff: `docs/agent-handoffs/physis-stage78-ecs-nature-contacts-2026-11-19.md`.
   Previous 40/40 focused run predates Stages 78/79. Never claim
   code is green until actual tests.
 - Handoff: `docs/agent-handoffs/physis-stage79-nature-stress-2026-11-19.md`.
+
+### Stage79 follow-up — regression fixture syntax (2026-11-19)
+
+Test-only commit `146013f2e27cdefe24d6f224c6e30bad88c22251`
+corrected 12 non-deducible `World::add<T>(entity,{})` calls
+in `tests/physis_nature_stress_test.cpp` to explicit
+`World::add<T>(entity,T{})`. This was discovered by inspecting
+the actual generic variadic `World::add<T,Args...>` API
+before a native build; it is NOT proof of a compiling/running
+test suite. PHYSIS stress system code is unchanged.
+Prioritize macOS build of `aiverse_physis_nereid_contacts_test`
+and `aiverse_physis_nature_stress_test` and actual CTest output.
+See `docs/agent-handoffs/physis-stage79-nature-stress-2026-11-19.md`.

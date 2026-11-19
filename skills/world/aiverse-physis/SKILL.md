@@ -1127,3 +1127,13 @@ Native tests `physis_nereid_contacts` and
 `physis_nature_stress` are **WRITTEN but NOT RUN** on the
 latest source. Handoff:
 `docs/agent-handoffs/physis-stage79-nature-stress-2026-11-19.md`.
+
+### Stage79 template regression note
+
+When creating PHYSIS ECS components in fixture code,
+`World::add<T>(entity, Args&&...)` is a variadic template;
+do not pass an untyped `{}` as an argument. Use
+`World::add<T>(entity, T{})` or `World::add<T>(entity)`.
+The Stage79 test's 12 occurrences were fixed in commit
+`146013f2e27cdefe24d6f224c6e30bad88c22251`.
+This is an API source inspection, NOT native compile or CTest.
