@@ -242,6 +242,18 @@ void RtsView::buildLook(gfx::Device& dev, const UnitType& t, TypeLook& L) {
                    L.models[0].modelGeneration,lc.modelGeneration)) {
                 lc.poseRetarget=std::move(retarget);
                 lc.compiledPoseRetarget=std::move(plan);
+            }else {
+                // Only author-time failure diagnostics, never per crowd draw.
+                // Keep the older, uncompiled LOD behavior for compatibility
+                // until the editor's model visual parity suite is verified.
+                const auto report=view::describeModelPoseRetarget(
+                    base,*lc.model,*retarget,
+                    L.models[0].modelGeneration,lc.modelGeneration);
+                warn(t,"LOD '" + lc.model->path + "' retarget rejected: " +
+                    view::modelPoseRetargetIssueName(report.issue) +
+                    " (visual node " + std::to_string(report.targetNode) +
+                    ", matched " + std::to_string(report.mappedNodes) +
+                    ", unbound " + std::to_string(report.unboundNodes) + ")");
             }
             for (int k = 0; k < kAnimCount; ++k) { lc.clips[k] = L.models[0].clips[k]; lc.hasClip[k] = L.models[0].hasClip[k]; }
             procedural(lc, v);
