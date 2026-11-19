@@ -1410,3 +1410,39 @@ page residency and GPU work safety gates.
 
 **Verification deferred:** C++ build, CTest, GPU page filtering and
 cross-backend sampler parity NOT RUN for this stage.
+
+
+## Validated immutable page archive import (Stage 10O)
+
+`engine/gfx/VirtualTextureArchiveManifest.h` provides
+`gfx::importVirtualTextureArchiveManifest(Json, directory, out, error, ...)`
+and `gfx::loadVirtualTextureArchiveManifest(directory, out, error, ...)`.
+Both accept native C++ archive-writer and standalone Python packer
+`manifest.json` records (schema `aiverse.vt.disk-pages.v1`).
+The reader uses the existing `engine/data/Json.h` implementation and
+does not add another JSON library.
+
+Only a caller-selected trusted directory is used: JSON cannot provide
+paths. Required source dimensions, physical tile size/gutter, layers,
+mip-level geometry and optional `pageCount`/`archiveBytes` must agree
+with computed values and configured upper limits; every expected page
+must be a regular non-symlink file of exactly `pageSize² * 4` bytes.
+Mip/layer directories are also checked against symlinks. Optional
+`addressU/V` import clamp/repeat/mirror as typed sampler policy.
+Unsupported `ClampToBorder`, malformed metadata, incomplete archives
+and invalid source hash shape fail closed. The optional source SHA-256
+list and native FNV-64 are metadata, **not cryptographic authentication
+of page files**; an external signed/immutable content distribution
+policy is still required.
+
+The importer fills `VirtualTextureArchiveVersion` only on complete
+success. Existing active GPU state remains untouched; callers use the
+returned version in their normal prepare/pump/promote sequence.
+The importer performs synchronous filesystem metadata reads and must
+not run every graphics frame or concurrently with archive mutation.
+The Python manifest has no native revision/hash: callers supply a
+trusted `importedRevision` if needed. Native writer manifests carry
+their own revision.
+
+**Verification:** source commits only; C++ compilation and CPU/GPU
+integration tests NOT RUN.
