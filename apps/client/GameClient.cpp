@@ -119,6 +119,19 @@ void GameClient::initStep(gfx::Device& dev, int step) {
             std::string bytes;
             return platform::readContentFile(path, bytes) && render::decodeImage(bytes, w, h, rgba);
         });
+        // Opt-in project-authored LENS RT cameras. A client owns its screen
+        // output, so reject any camera JSON containing Screen outputs.
+        if(manifest_["lens"].getBool("enabled",false)) {
+            std::string asset,lensError;
+            if(platform::readContentFile("cameras.json",asset) &&
+               lensCameras_.loadOffscreenAsset(asset,&lensError) &&
+               lensCameras_.init(dev,r3d_)) {
+                lensCamerasActive_=true;
+            } else {
+                std::fprintf(stderr,"[lens] offscreen cameras disabled: %s\n",
+                             lensError.empty()?"cameras.json missing or initialization failed":lensError.c_str());
+            }
+        }
         break;
     case 2: view_.init(dev, rules_); break;     // models, textures, atlases of every type
     case 3: fx_.init(dev, rules_); break;
@@ -241,6 +254,12 @@ void GameClient::applyLanguage(const std::string& tag, bool save) {
 }
 
 void GameClient::shutdown() {
+    // Host shutdown runs after the last rendered frame. Keep the renderer
+    // alive until all LENS RTs are no longer referenced by GPU work.
+    if(lensCamerasActive_ && dev_ && dev_->waitIdle()) {
+        lensCameras_.shutdownAfterGpuIdle();
+        lensCamerasActive_=false;
+    }
     loadingSplash_.shutdown();
     net_.reset(); // detaches from the simulation before it goes away
     fx_.shutdown();
@@ -1168,6 +1187,23 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     ui_.setTarget(hostColor_, hostDepth_);   // linear UI blending reopens this pass
     ui_.render();
     dev.endPass();
+    // Independent offscreen LENS passes render after the legacy screen + UI
+    // has finished, without replacing the presented frame. Submission only
+    // reuses static world/scenery draws; gameplay updates and view events
+    // occur once in the principal presentation path above.
+    if(lensCamerasActive_ && sim_ && !mapLoading_ && dev.gpuHealthy()) {
+        auto captures=lensCameras_.render(time_,float(dt),
+            [&](const render::EcsCameraView&,render::Renderer3D& renderer){
+                if(worldScene_ && !planet())
+                    worldScene_->draw(renderer,world::Cell{0,0,0},1);
+                auto& gs=mod().state(*sim_);
+                view_.draw(renderer,scene_,time_,
+                           spectator_?nullptr:&gs.vision[human_],gs.grid);
+            });
+        if(!captures.diagnostics.empty() && std::getenv("AIVERSE_LENS_LOG"))
+            std::fprintf(stderr,"[lens] captured=%zu skipped=%zu diagnostics=%zu\n",
+                         captures.submitted,captures.skipped,captures.diagnostics.size());
+    }
     if (std::getenv("AIVERSE_STREAM_TRACE") && sim_ && !mapLoading_) {
         static auto previous = frameStarted;
         const double interval = std::chrono::duration<double,std::milli>(frameStarted-previous).count(); previous=frameStarted;
