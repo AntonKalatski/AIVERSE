@@ -2,7 +2,7 @@
 
 **Integration status:** isolated branch
 `feature/ecs-static-prefab-scene-integration`; code and tests committed,
-**combined native compile/CTest NOT yet performed**.
+**targeted native integration build and CTest verified on Mac Studio: 7/7 passed, 0 failed (2026-11-19)**. Broader RTS/FPS, GPU and RSS validation remains pending.
 
 This is a real source-level integration of the two previously separate
 branches, not a simulation that only imitates scene grouping.
@@ -23,8 +23,9 @@ Merge commit:
 
 Only `CMakeLists.txt` overlapped. The integration branch retains test
 targets from both branches; neither source feature branch nor `main`
-was changed by the merge. The compatibility of the combined code is still
-unverified until the full native build runs.
+was changed by the merge. The combined source compiled and the targeted seven-test CTest selection
+passed natively on Mac Studio (2026-11-19). Full engine and genre integration
+regressions remain pending.
 
 ## Integrated architecture
 
@@ -211,3 +212,19 @@ a merge to `main`.
   world-physics agent, not a second colliding `CollisionStream`.
 - Real integration tests with renderer, PHYSIS, TerraWeave, NEREID and
   SpectraFX adapters, including frame/budget profiling.
+
+## Mac Studio native result (2026-11-19)
+
+The user built all seven selected integration targets. The initial run
+was 6/7 because the resource-pipeline test treated two scene references
+as two backend leases. The corrected test distinguishes two
+SceneLoadCoordinator references from one backend lease. After rebuilding,
+`ecs_scene_resource_pipeline_test` passed **1/1** (0.60 s test), and the
+complete seven-test group passed **7/7** (0 failures, 0.24 s total).
+The two Clang `Pending` initializer warnings were not present in the supplied
+rebuild excerpt. Exact local HEAD and full build warning status were not
+provided. See `docs/agent-handoffs/ecs-static-scene-stage4-2026-11-19.md`.
+
+This validates the targeted integration, not production FPS/RTS replay,
+actual GPU/Metal, additive collision ownership, complete game save formats
+or process RSS. Preserve those as explicit pre-merge gates.
