@@ -154,20 +154,26 @@ public:
             render::releaseModel(device,*candidate);
             return false;
         }
+        // Preallocate the navmesh/vegetation dirty notification BEFORE
+        // committing collision. Memory allocation failure must not create
+        // geometry/collision revision skew.
+        std::vector<TerrainPatchDirtyRegion> nextDirty;
         try {
-            collisions.publish(spatial,patch,firstColliderId);
-            if(dirty_.size()>=64u)dirty_.erase(dirty_.begin());
+            nextDirty=dirty_;
+            if(nextDirty.size()>=64u)nextDirty.erase(nextDirty.begin());
             const int64_t x=int64_t(patch.cell.x)*
                             patch.cellSizeMetres*100;
             const int64_t z=int64_t(patch.cell.z)*
                             patch.cellSizeMetres*100;
-            dirty_.push_back({patch.cell,{
+            nextDirty.push_back({patch.cell,{
                 x,z,x+int64_t(patch.cellSizeMetres)*100,
                 z+int64_t(patch.cellSizeMetres)*100},patch.sourceRevision});
+            collisions.publish(spatial,patch,firstColliderId);
         }catch(...){
             render::releaseModel(device,*candidate);
             throw;
         }
+        dirty_.swap(nextDirty);
         if(model_)render::releaseModel(device,*model_);
         model_=std::move(candidate);
         cell_=patch.cell;
