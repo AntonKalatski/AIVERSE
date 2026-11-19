@@ -2,6 +2,17 @@ name: Texture RHI focused verification
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feature/texture-rhi-unification
+    paths:
+      - 'engine/gfx/**'
+      - 'engine/render/**'
+      - 'tests/render/**'
+      - 'tools/verify-texture-rhi.sh'
+      - 'tools/texture-rhi-final-verify.sh'
+      - '.github/workflows/texture-rhi.yml'
+      - 'CMakeLists.txt'
   pull_request:
     paths:
       - 'engine/gfx/**'
