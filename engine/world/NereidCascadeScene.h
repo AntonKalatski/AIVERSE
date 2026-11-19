@@ -24,6 +24,8 @@ struct NereidCascadeSource {
     float joinLength=2.f; // X/Z overlap extension in metres (0.1..50)
     float joinWidthBlend=1.f; // 0..1 cascade width -> linked bank width
     bool requireFootprint=true; // reject joins outside source water geometry
+    lib::nereid::WaterCascadeFlowPolicyComponent flowPolicy{};
+    bool useFlowPolicy=false; // visual-only transfer follows ECS opt-in
     lib::nereid::WaterCascadeComponent cascade;
     lib::nereid::WaterSurfaceStyle style{};
     lib::nereid::WaterCascadeMeshOptions options{};
@@ -315,6 +317,45 @@ public:
         maxUploadsPerFrame_=count;
     }
     size_t count()const{return slots_.size();}
+    // Uses the SAME fixed-point cascade-mouth kernel as NEREID ECS sampling.
+    // The water body's ordinary current/vortex sampling is supplied by the
+    // caller, and the cascade field merely blends it near linked mouths.
+    Vec3 flowAtConnection(uint64_t stableWaterId,Vec3 position,
+                          Vec3 base,const NereidWaterScene& water)const {
+        std::array<lib::nereid::WaterCascadeFlowContribution,64> entries{};
+        size_t count=0;
+        for(const auto& [id,slot]:slots_) {
+            const auto& source=slot.source;
+            if(!source.useFlowPolicy ||
+               !lib::nereid::validWaterCascadeFlowPolicy(source.flowPolicy) ||
+               !lib::nereid::validWaterCascade(source.cascade))
+                continue;
+            const bool outlet=stableWaterId==source.outletWaterId &&
+                              source.outletWaterId!=0;
+            const bool inlet=stableWaterId==source.inletWaterId &&
+                             source.inletWaterId!=0 && !outlet;
+            if(!outlet && !inlet)continue;
+            Fixed upstreamSpeed{};
+            if(outlet) {
+                if(const auto* upper=water.surfaceForId(source.inletWaterId)) {
+                    const auto& body=upper->body;
+                    const auto* geometry=upper->useGeometry?&upper->geometry:nullptr;
+                    const auto* current=upper->useCurrentField?&upper->currentField:nullptr;
+                    const auto* vortices=upper->useVortices?&upper->vortices:nullptr;
+                    upstreamSpeed=lib::nereid::waterCurrentWithVortices(
+                        body,geometry,current,vortices,
+                        source.cascade.points.front().position).xz().length();
+                }
+            }
+            const auto contribution=lib::nereid::waterCascadeMouthContribution(
+                id,source.cascade,source.flowPolicy,outlet,position,
+                upstreamSpeed);
+            if(contribution.weight>Fixed{} && count<entries.size())
+                entries[count++]=contribution;
+        }
+        return lib::nereid::blendWaterCascadeContributions(base,entries,count);
+    }
+
     template<class Fn> void forEachSource(Fn&& fn)const {
         for(const auto& [id,slot]:slots_)
             if(slot.source.cascade.enabled)fn(id,slot.source);
