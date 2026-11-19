@@ -5,6 +5,7 @@
 #pragma once
 #include "Model.h"
 #include "ModelTextureCache.h"
+#include "ResourceRetirementQueue.h"
 #ifndef __EMSCRIPTEN__
 #include "ModelPreparationService.h"
 #endif
@@ -12,6 +13,7 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <unordered_set>
@@ -80,11 +82,12 @@ public:
         for(const auto& item:affected) {
             const auto it=models_.find(item.key);
             if(it==models_.end())continue;
-            if(it->second)render::releaseModel(dev,*it->second);
+            if(it->second)retired_.enqueue(std::move(it->second));
             models_.erase(it);
             ++generation_;
         }
-        textures_->trim(dev);
+        // GPU handles from stale models remain alive until collectRetired()
+        // observes a definitive completed-work barrier on the owner thread.
         return affected.size();
     }
 
@@ -123,7 +126,7 @@ public:
         if(it!=models_.end()) {
             if(it->second) {
                 onRelease(it->second.get());
-                render::releaseModel(dev,*it->second);
+                retired_.enqueue(std::move(it->second));
             }
             it->second=std::move(replacement);
             ++generation_;
@@ -180,14 +183,27 @@ public:
             }
             if(it->second) {
                 onRelease(it->second.get());
-                render::releaseModel(dev,*it->second);
+                retired_.enqueue(std::move(it->second));
             }
             it=models_.erase(it);
             ++released;
             ++generation_;
         }
-        textures_->trim(dev);
         return released;
+    }
+
+    size_t pendingRetirements() const noexcept{return retired_.pending();}
+    // Call once at a real host frame boundary, before new renderer packets
+    // reference model/texture resources. Never infer GPU completion from
+    // frameSerial(): the explicit backend barrier is mandatory.
+    bool collectRetired(gfx::Device& dev) {
+        const bool ok=retired_.collect(
+            [&]{return dev.waitForResourceIdle();},
+            [&](std::unique_ptr<Model>& model) {
+                if(model)render::releaseModel(dev,*model);
+            });
+        if(ok)textures_->trim(dev);
+        return ok;
     }
 
     // Explicitly release GPU assets before destroying the device.
@@ -196,12 +212,21 @@ public:
 #ifndef __EMSCRIPTEN__
         preparation_.reset(); // join all texture/model CPU workers before release
 #endif
+        // Fail closed: no GPU objects (nor borrowed CPU Model storage) may
+        // be destroyed if the backend cannot prove prior GPU completion.
+        if(!dev.waitForResourceIdle())
+            throw std::runtime_error("model cache shutdown: GPU retirement barrier failed");
         for(auto& [key,model]:models_) {
             (void)key;
             if(model)render::releaseModel(dev,*model);
         }
         models_.clear();
         ++generation_;
+        if(!retired_.collect([]{return true;},
+            [&](std::unique_ptr<Model>& model) {
+                if(model)render::releaseModel(dev,*model);
+            }))
+            throw std::runtime_error("model cache: retired GPU resources not released");
         textures_->shutdown(dev);
     }
 private:
@@ -210,6 +235,7 @@ private:
 #endif
     uint64_t generation_=0;
     ModelMap models_;
+    ResourceRetirementQueue<std::unique_ptr<Model>> retired_;
     std::shared_ptr<render::ModelTextureCache> textures_=
         std::make_shared<render::ModelTextureCache>();
 };
