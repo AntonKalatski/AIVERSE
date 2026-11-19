@@ -68,6 +68,11 @@ public:
     // allocation or uses game-thread rendering resources.
     bool writeDiskArchives(const std::string& directory,
                            std::vector<std::string>* failures=nullptr) const;
+    // The owning scene calls this ONLY after an archive has been verified
+    // AND pinned roots uploaded, and only without GPU metadata/diagnostic
+    // consumers that require the full CPU index payload. Returns bytes
+    // physically released from the staged STRATA asset (not Model buffers).
+    size_t discardArchivedCpuIndices(const std::string& key);
     const ModelAsset* find(const std::string& key) const;
     const StagingStats& stats() const { return stats_; }
     const std::vector<std::string>& warnings() const { return warnings_; }
