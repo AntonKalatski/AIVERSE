@@ -2735,3 +2735,12 @@ before calling this stage validated.
 - Neither MotionWeave graph clock nor ECS gameplay, NEREID or Prisma ownership changed.
 - **ACTUAL:** connected GitHub source/ref review, branch-specific blob-SHA edits and readback, ancestry compare. **NOT RUN:** native compile/link, CMake/CTest/CI, Metal/Vulkan/GL, sanitizers, editor/FPS/RTS screenshots, benchmark or device loss. The code is NOT production-validated. Keep PR Draft.
 - **Next Stage 119:** audit remaining legacy unleased Renderer3D RTT and standalone plugin/FX/terrain owners; finish universal View/attachments hot reload continuity, add deferred failure injections, then run full build/tests after features are completed.
+
+## Stage 119 — genre-neutral graph hot reload and safe renderer RTT fallback (2026-11-19)
+
+- **Standalone detailed handoff:** [Stage 119](animation-stage119-playback-continuity-2026-11-19.md) contains exact source SHAs, changed files, compatibility, actual validation, limits and the next stage.
+- Same-source-generation compatible Model/Graph hot reload now carries a transient `AnimationGraphInstance::PlaybackSnapshot`: named state plus normalized named clip phases and loop identity. The bridge checks the old/new skeleton hierarchy, caches playback before replacing assets and restores once after graph reset; old pose/native/contact/event/montage data never moves into the new rig. Respawns and incompatible hierarchies still restart. Host-owned Model lifetime must cover the synchronous bridge migration.
+- Exceptional Renderer3D target retirement without the normal shared fenced owner requires successful full GPU idle before texture deletion; unsupported/failed barriers orphan and count resources rather than deleting in-flight handles. Editor stats reports fallback failures.
+- Audited independent canvas `engine/render/RenderTexture.cpp`: direct post-submit vertex buffer and upload texture destruction remains and needs a separate fence-aware transient resource queue in Stage 120; no conflicting team source was edited.
+- **ACTUAL:** linked GitHub source/branch/PR reads, precise targeted commits, owner audits and handoff. **NOT RUN:** native compiler/link, CMake, CTest, CI, real Metal/Vulkan/GL, TSAN/ASAN, screenshots or benchmarks; PR #22 must stay Draft.
+- **Next Stage 120:** safe RenderTexture GPU transient retirement, remaining generic host attachment/LOD continuity, later full build/tests/warnings fixes after functional implementation.
