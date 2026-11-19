@@ -777,8 +777,8 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
         // Only what Prisma can actually enumerate counts toward this
         // threshold: once-counted resident caches, per-camera histories,
         // and pending fence-retired resources. Not total physical VRAM.
-        const uint64_t maximum=std::numeric_limits<uint64_t>::max();
-        const auto saturatingAdd=[maximum](uint64_t a,uint64_t b) {
+        const auto saturatingAdd=[](uint64_t a,uint64_t b) {
+            constexpr uint64_t maximum=std::numeric_limits<uint64_t>::max();
             return a>maximum-b?maximum:a+b;
         };
         const uint64_t liveBytes=saturatingAdd(
