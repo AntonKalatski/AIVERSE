@@ -481,58 +481,126 @@ struct CreatorApp {
             proposed.head->uploadPrepared=true;
             auto newGraph=AnimationGraph::compile(*proposed.head,Json::parse(
                 R"({"nodes":[{"id":"idle","kind":"clip","clip":"vivid_idle"}],"output":"idle"})"));
-            if(!releaseHuman())return;
+            // Phase 1: allocate and validate the replacement while the
+            // old character remains drawable. The unique_ptr<Model> address
+            // remains stable when HumanPreviewAsset ownership is moved.
+            std::unique_ptr<GpuActorStream> nextActor;
+            std::unique_ptr<CpuActorStream> nextCpuActor;
+            std::unique_ptr<World> nextWorld;
+            Entity nextEntity{};
+            std::vector<mat4> nextFacePose(proposed.head->nodes.size());
+            std::vector<float3> nextScalpAnimated(
+                proposedScalp.bindPositions.size());
+            std::vector<float3> nextScalpSkinScratch(
+                proposedScalp.bindPositions.size());
+            try {
+                nextWorld=std::make_unique<World>();
+                nextEntity=nextWorld->create();
+                auto& anim=nextWorld->add<motionweave::AnimationAssetComponent>(
+                    nextEntity);
+                anim.model=proposed.head.get();
+                anim.graph=newGraph;
+                nextWorld->add<motionweave::AnimationPlayerComponent>(nextEntity);
+                nextWorld->add<motionweave::AnimationPoseComponent>(nextEntity);
+
+                if(!uploadModel(*device,*proposed.head,true))
+                    throw std::runtime_error("VIVID Creator: candidate head GPU upload failed");
+                if(proposed.hair) {
+                    gfx::BufferDesc vb;
+                    vb.type=gfx::BufferType::Vertex;
+                    vb.usage=gfx::Usage::Dynamic;
+                    vb.snapshotUpdates=true;
+                    vb.size=proposed.hair->vertices.size()*sizeof(ModelVertex);
+                    vb.data=proposed.hair->vertices.data();
+                    vb.label="VIVID dynamic groom cards";
+                    proposed.hair->vb=device->createBuffer(vb);
+                    gfx::BufferDesc ib;
+                    ib.type=gfx::BufferType::Index;
+                    ib.size=proposed.hair->indices.size()*sizeof(std::uint32_t);
+                    ib.data=proposed.hair->indices.data();
+                    proposed.hair->ib=device->createBuffer(ib);
+                    if(!proposed.hair->vb.valid() || !proposed.hair->ib.valid())
+                        throw std::runtime_error("VIVID Creator: candidate groom buffer upload failed");
+                }
+                if(device->supportsCompute() && device->frameSerial()) {
+                    auto gpu=cache->acquire(
+                        proposed.facialShapes,proposed.head->vertices);
+                    if(!gpu)
+                        throw std::runtime_error(
+                            "VIVID Creator: candidate shared morph CSR upload failed");
+                    nextActor=std::make_unique<GpuActorStream>();
+                    if(!nextActor->initializeShared(
+                        *device,*proposed.head,std::move(gpu)))
+                        throw std::runtime_error(
+                            "VIVID Creator: "+nextActor->lastError());
+                }else{
+                    nextCpuActor=std::make_unique<CpuActorStream>();
+                    if(!nextCpuActor->initialize(
+                        *device,*proposed.head,proposed.facialShapes,
+                        proposed.head->vertices))
+                        throw std::runtime_error(
+                            "VIVID Creator: "+nextCpuActor->lastError());
+                }
+            }catch(...) {
+                // Candidate construction must never retire the old scene.
+                // Synchronize before releasing any candidate-owned RHI
+                // buffers or shared immutable shader inputs.
+                if(!device->waitForResourceIdle()) {
+                    status="VIVID Creator: candidate GPU idle barrier failed; "
+                           "candidate resources retained for device shutdown";
+                    pendingRebuild=false;
+                    // Do not release potentially in-flight handles.
+                    // A failed native barrier makes the candidate unsafe
+                    // to destroy; preserve its lifetime until process exit.
+                    (void)proposed.head.release();
+                    (void)proposed.hair.release();
+                    (void)nextActor.release();
+                    (void)nextCpuActor.release();
+                    throw;
+                }
+                if(nextActor) (void)nextActor->shutdownAfterIdle();
+                if(nextCpuActor) (void)nextCpuActor->shutdownAfterIdle();
+                nextWorld.reset();
+                newGraph.reset();
+                if(proposed.hair)releaseModel(*device,*proposed.hair);
+                if(proposed.head)releaseModel(*device,*proposed.head);
+                throw;
+            }
+            // Phase 2: publish only after all GPU streams and the complete
+            // new MotionWeave ECS world have been successfully prepared.
+            // If old retirement fails, keep old preview and dispose the new
+            // candidate after a confirmed idle barrier (no partial swap).
+            if(!releaseHuman()) {
+                if(device->waitForResourceIdle()) {
+                    (void)(nextActor && nextActor->shutdownAfterIdle());
+                    (void)(nextCpuActor && nextCpuActor->shutdownAfterIdle());
+                    nextWorld.reset();
+                    newGraph.reset();
+                    if(proposed.hair)releaseModel(*device,*proposed.hair);
+                    if(proposed.head)releaseModel(*device,*proposed.head);
+                }else {
+                    (void)proposed.head.release();
+                    (void)proposed.hair.release();
+                    (void)nextActor.release();
+                    (void)nextCpuActor.release();
+                }
+                pendingRebuild=false;
+                return;
+            }
             human=std::move(proposed);
+            actor=std::move(nextActor);
+            cpuActor=std::move(nextCpuActor);
+            world=std::move(nextWorld);
+            entity=nextEntity;
+            graph=std::move(newGraph);
+            facePose=std::move(nextFacePose);
             scalpBindPositions=std::move(proposedScalp.bindPositions);
-            scalpAnimatedPositions.resize(scalpBindPositions.size());
-            scalpSkinScratch.resize(scalpBindPositions.size());
+            scalpAnimatedPositions=std::move(nextScalpAnimated);
+            scalpSkinScratch=std::move(nextScalpSkinScratch);
             scalpPoseNode=proposedScalp.node;
             scalpSkinning=std::move(proposedScalp.skinning);
             scalpBindNodeInverse=proposedScalp.nodeBindInverse;
             scalpBindHeadRigid=proposedScalp.headBindRigid;
-            if(!uploadModel(*device,*human.head,true))
-                throw std::runtime_error("VIVID Creator: head GPU upload failed");
-            // Vertex cards are mutable (secondary motion), so use a ringed
-            // Dynamic buffer instead of the loader's Immutable model buffer.
-            if(human.hair) {
-            gfx::BufferDesc vb;
-            vb.type=gfx::BufferType::Vertex;
-            vb.usage=gfx::Usage::Dynamic;
-            vb.snapshotUpdates=true;
-            vb.size=human.hair->vertices.size()*sizeof(ModelVertex);
-            vb.data=human.hair->vertices.data();
-            vb.label="VIVID dynamic groom cards";
-            human.hair->vb=device->createBuffer(vb);
-            gfx::BufferDesc ib;
-            ib.type=gfx::BufferType::Index;
-            ib.size=human.hair->indices.size()*sizeof(std::uint32_t);
-            ib.data=human.hair->indices.data();
-            human.hair->ib=device->createBuffer(ib);
-            if(!human.hair->vb.valid() || !human.hair->ib.valid())
-                throw std::runtime_error("VIVID Creator: groom buffer upload failed");
-            }
-            if(device->supportsCompute() && device->frameSerial()) {
-                auto gpu=cache->acquire(human.facialShapes,human.head->vertices);
-                if(!gpu)throw std::runtime_error(
-                    "VIVID Creator: shared morph CSR upload failed");
-                actor=std::make_unique<GpuActorStream>();
-                if(!actor->initializeShared(*device,*human.head,gpu))
-                    throw std::runtime_error("VIVID Creator: "+actor->lastError());
-            }else{
-                cpuActor=std::make_unique<CpuActorStream>();
-                if(!cpuActor->initialize(*device,*human.head,
-                                        human.facialShapes,human.head->vertices))
-                    throw std::runtime_error("VIVID Creator: "+cpuActor->lastError());
-            }
-            world=std::make_unique<World>();
-            entity=world->create();
-            auto& anim=world->add<motionweave::AnimationAssetComponent>(entity);
-            anim.model=human.head.get();
-            anim.graph=newGraph;
-            world->add<motionweave::AnimationPlayerComponent>(entity);
-            world->add<motionweave::AnimationPoseComponent>(entity);
-            graph=std::move(newGraph);
-            facePose.resize(human.head->nodes.size());
             displayedRevision=session.revision();
             pendingRebuild=false;
             status="Loaded "+session.dna().displayName+" / "+
