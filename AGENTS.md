@@ -6,6 +6,43 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 
 ## AIVERSE SpectraFX (universal VFX, in progress)
 
+**Latest implementation handoff (Stage 43, source committed; actual native tests deferred):**
+[docs/agent-handoffs/spectrafx-stage-43-safe-bundle-mailbox-recovery-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-43-safe-bundle-mailbox-recovery-2026-11-19.md).
+The offline CLI/editor now create one **explicit local SAFE ZIP**
+diagnostic bundle, at most 128 KiB, with fixed manifest,
+checkpoint summary and sanitized preview timeline JSON.
+Never add raw `.spfx` GPU particle/VM state, source filenames,
+world bounds, exact RHI identifiers or unrelated editor history
+to this safe ZIP. Raw SPFX remains a separate, sensitive export.
+Safe filenames exclude absolute GPU frame serials; sensitive
+report opt-ins reset on group/pool change.
+
+The public native `GpuCaptureRequestMailbox` is a same-owner-thread
+non-owning editor/native request slot. Editor UI can QUEUE a
+selected GPU group and request release, but it never calls GPU
+readback/compute/reset directly. The native render host claims the
+request before the scene pass and uses the existing one-at-a-time
+`GpuPoolCaptureHost`; Stage 32 shared readback budgets,
+Stage 35 completed-fence quarantine, Stage 40 checked buffer
+staging and Stage 42 current revision checks remain mandatory.
+Detach Editor's telemetry/capture/recovery pointers BEFORE the
+native pool, mailbox or Device is destroyed. Never store graphics
+handles or visual timelines in authoritative ECS, and never
+add genre-specific VFX code.
+
+`GpuPoolRecoveryHost` now supports a bounded GPU reset retry
+pump at the native gfx Device pre-pass phase, no background
+work or busy GPU loop: exponential host-frame cooldown up to
+32 frames. Events expose retry failure counts and earliest
+owner frame; editor can display them and queue only reset
+intent. Failed/lost graphics Device still requires an explicit
+NEW platform GPU Device; live particles are not recovered.
+Stage 43 C++/ObjC++/MSL builds, CTest, ZIP extraction,
+CLI execution, editor UI and Metal device tests have
+NOT RUN. Keep separate dated handoffs, preserve other
+agents' changes and do not merge to main without request.
+
+
 **Latest implementation handoff (Stage 42; committed source, tests deferred):**
 [docs/agent-handoffs/spectrafx-stage-42-redacted-diagnostics-group-routing-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-42-redacted-diagnostics-group-routing-2026-11-19.md).
 `SpectraDiagnosticReport.h` now generates **privacy-redacted**
