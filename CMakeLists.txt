@@ -2087,6 +2087,14 @@ if(AIVERSE_BUILD_STRATA)
         target_link_libraries(aiverse_strata_metal_raster_parity PRIVATE
             aiverse_runtime aiverse_strata_render_routing
             aiverse_strata_gpu_scene)
+        # Stage 12: actual Renderer3D 2-view pixel and shadow Depth32Float
+        # parity, using the SAME GlobalGeometryPool and no extra draw owner.
+        add_executable(aiverse_strata_metal_depth_multiview_parity
+            tests/render/strata_metal_depth_multiview_parity.cpp
+            $<TARGET_OBJECTS:aiverse_runtime>)
+        target_link_libraries(aiverse_strata_metal_depth_multiview_parity PRIVATE
+            aiverse_runtime aiverse_strata_render_routing
+            aiverse_strata_gpu_scene)
     endif()
 endif()
 if(AIVERSE_RUNTIME_AUTOLOD)
