@@ -1546,3 +1546,25 @@ stress, and an exclusive per-pass production
 Renderer3D Strata/Legacy draw gate with conservative
 fallback and GPU indirect command readback validation.
 Keep \`main\` untouched until those final gates are met.
+
+
+### Parallel-main divergence audit (after Stage 13 implementation)
+
+At the time Stage 13 was completed, \`main\` had advanced to
+\`d7d9b3f4180dcba98b9238fd56eedc7ccb420bb1\`. GitHub's compare
+showed this Strata branch **186 commits ahead and 162 behind**.
+The incoming main-only diff consisted mainly of independent
+shared-static ECS, scene/world runtime and skill registration work.
+\`CMakeLists.txt\` is also changed in both directions.
+
+**No automatic merge to main or forced ref rewrite was attempted.**
+The old shared build/test outputs must not be used to claim that
+the NEW main+Strata combined tree has been validated.
+The safe next integration after a Stage 13 GPU test is to fetch
+\`origin/main\` into an isolated local Strata worktree, merge it
+with \`--no-ff\`, reconcile the CMake target blocks and any
+new overlaps, record the resulting two-parent commit, run the
+focused native Strata CTests plus the latest real Metal
+fixtures, and commit a separate merge validation handoff.
+Never overwrite independent agents' CMake targets or silently
+update \`main\` by merging this Draft PR.
