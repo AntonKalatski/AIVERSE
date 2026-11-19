@@ -156,9 +156,19 @@ inline void evaluateAnimationPresentationRange(World& world,
             player.active=asset->graph;
             player.instance=std::make_shared<render::AnimationGraphInstance>();
             player.instance->reset(asset->graph);
-            if(player.pendingPlayback)
-                player.instance->restorePlayback(*player.pendingPlayback);
-            player.pendingPlayback.reset();
+            if(player.pendingPlayback) {
+                try {
+                    // One-shot portable state/clip clocks only. A missing
+                    // renamed state/clip or allocation failure simply
+                    // leaves the freshly reset graph at authored defaults.
+                    // Never replay old notifies, contacts or root motion.
+                    (void)player.instance->restorePlayback(*player.pendingPlayback);
+                }catch(...) {
+                    // CPU-only cosmetic handoff is optional. The new graph's
+                    // rig/pose must remain valid even after a failed restore.
+                }
+                player.pendingPlayback.reset();
+            }
             player.restart=false;
             pose->valid=false;
             if(recovery)recovery->inertializer.reset();
