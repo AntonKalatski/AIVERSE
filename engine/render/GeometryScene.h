@@ -112,6 +112,16 @@ public:
     size_t strataStreamingUploadBudgetBytes() const {
         return strataStreamingUploadBudgetBytes_;
     }
+    // Aggregate cap for checked incremental GPU page transfers in ONE RHI
+    // frame, across all sources of this GeometryScene. Zero means unlimited.
+    // Requires active Metal/Vulkan incremental streaming; GLES remains on
+    // the existing immutable fallback, excluded from this counter.
+    void setStrataStreamingFrameUploadBudgetBytes(size_t bytes) {
+        strataStreamingFrameUploadBudgetBytes_=bytes;
+    }
+    size_t strataStreamingFrameUploadBudgetBytes() const {
+        return strataStreamingFrameUploadBudgetBytes_;
+    }
     // Optional offline-built .strataidx archive directory. Requires
     // Metal/Vulkan incremental streaming + an active index budget.
     // A missing/stale archive keeps the affected source on Legacy. GLES
@@ -203,6 +213,12 @@ private:
     size_t strataStreamingSceneBudgetBytes_=0;
     bool strataIncrementalIndexStreamingEnabled_=false;
     size_t strataStreamingUploadBudgetBytes_=0;
+    size_t strataStreamingFrameUploadBudgetBytes_=0;
+    // Borrowed device set during load, never used after shutdown.
+    gfx::Device* strataPortableDevice_=nullptr;
+    uint64_t strataStreamingFrameSerial_=UINT64_MAX;
+    size_t strataStreamingFrameBudgetLeft_=0;
+    uint64_t strataStreamingSourceCursor_=0;
     std::string strataDiskPageDirectory_;
     float errorPixels_=2, maxPixels_=256;
     size_t proxyVertices_=0;
