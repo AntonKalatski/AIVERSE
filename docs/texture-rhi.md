@@ -2943,3 +2943,84 @@ path for tiny synthetic files. It would **not** yet validate
 application-level fragment shader page-table indirection,
 hardware sparse residency, GPU ICB, or cross-platform parity.
 
+
+### Stage 10BN — verified Apple M3 Ultra disk-backed VT GPU streaming PASS (2026-11-19)
+
+Actual Mac Studio native CTest `metal_texture_gpu` #122 **PASSED**
+(1/1 tests, 0 failed) in **1.46 sec**, total CTest 1.47 sec.
+The exact test log confirmed production disk-worker-to-GPU
+`VirtualTextureFileStreamer` acceptance, with all GPU RGBA8
+readbacks using **zero byte tolerance**:
+- page table invalid before disk worker publication;
+- pinned coarse file read and physical atlas/page-table publication;
+- missing page file returns a failure without poisoning existing
+  GPU mappings or atlas health;
+- fine page from disk overrides only the intended tile;
+- disk-backed LRU reuse preserves pinned coarse physical slice,
+  replaces the fine slice with authored bytes and publishes the
+  correct replacement table mapping without stale fine entries;
+- GPU cleanup succeeds.
+
+The verbose log measured `VT disk worker to Metal
+publication_total_ms=148.740` and per-file
+`worker_and_upload_ms` of **0.399 ms** (coarse,
+one poll), **3.701 ms** (missing page, two polls),
+**3.980 ms** (fine, two polls), and **3.746 ms**
+(replacement, two polls). Metal command-buffer intervals for
+the displayed readback groups were approximately
+**0.005–0.024 ms**; callback waits were approximately
+19–21 ms. Total fixture 694.571 ms, body 640.120 ms.
+As before, the 1.46 s CTest total is not the duration of
+a single GPU texture transfer.
+
+This is **on-device acceptance for Stage 10BM** only:
+application fragment shader sampling *through the actual
+page-table indirection* was not yet tested in this run.
+No engine code changes were required to achieve the PASS.
+
+### Stage 10BO — fragment page-table GPU sampling over disk-backed VT (source only)
+
+Extend the opt-in Mac `metal_texture_gpu` fixture with
+`VtAtlasFragmentProbe` and eight sampled GPU pixel checks
+after each real `VirtualTextureFileStreamer` publication
+transition. Instead of checking only the atlas and page-table
+subresources independently via blit, it draws through an
+ordinary AIVERSE Metal fragment shader and the **canonical**
+`gfx::kVirtualTextureMSL` helper
+`aiverse_sample_virtual`. The source of physical atlas
+pages is still the real asynchronous disk worker; no
+fake backend or separate page-table lookup implementation.
+
+The probe binds the live RGBA8 physical Texture2DArray
+atlas to texture slot 0, the RGBA8 page-table Texture2DArray
+to slot 1, and the physical atlas sampler to slot 0.
+It renders a fullscreen triangle to RGBA8 using a
+4×4 color/depth offscreen pass and reads back actual
+pixels asynchronously. A nonresident page must yield
+fallback `{18,79,181,255}`. A resident pinned coarse
+page yields `{18,71,93,255}`, the fine page
+`{82,196,41,255}`, and a later recycled physical slot
+`{220,44,16,255}`. The test also verifies that a
+failed disk read leaves coarse mapping intact and that
+the evicted fine address again samples coarse. Pixel
+comparisons allow at most **1 LSB/channel** for
+GPU float-to-UNORM quantization; the existing native
+blit readbacks still require exact bytes.
+
+This does not validate Shader Graph material ICB mixing,
+sparse residency, tile gutters for heterogeneous images,
+or every address mode; it verifies the real page-table
+sampling data flow for the test's pinned/evicted pages.
+**Source commit:** `32d69c8c6215ed470f9a1980bb212eb534eac1c5`,
+`tests/render/metal_texture_gpu.mm`. Public RHI and
+streaming implementation are unchanged. New shader
+sampling test has **NOT YET been compiled/run on macOS**.
+
+Run after pulling the feature branch:
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parallel 4
+ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
+```
+
