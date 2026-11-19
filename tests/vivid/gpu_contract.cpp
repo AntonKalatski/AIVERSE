@@ -124,20 +124,6 @@ void packing() {
           unpacked.tangent == input.tangent, "GPU packing roundtrip failed");
     check(sizeof(GpuMorphUniforms)==32 && sizeof(GpuMorphLink)==8, "shader metadata ABI mismatch");
 }
-void lifecycle() {
-    auto library=asset();
-    std::vector<MorphVertex> vertices{vertex(0),vertex(1)};
-    RecordingDevice backend;
-    GpuMorphDeformer deform;
-    backend.computeEnabled=false;
-    check(!deform.initialize(backend,library,vertices), "unsupported backend accepted");
-    check(backend.buffers.empty(), "unsupported backend allocated buffers");
-    backend.computeEnabled=true;
-    check(deform.initialize(backend,library,vertices), "RHI setup failed");
-    check(deform.ready() && deform.vertexCount()==2 && deform.targetCount()==2, "setup metadata");
-    check(backend.buffers.size()==6 && deform.gpuBytes()>0, "GPU resources missing");
-    check(backend.buffers[backend.computeSlots[0].id].empty(), "unexpected buffer slot populated before dispatch"); // slot map empty at init
-}
 void dispatchValidation() {
     auto library=asset();
     std::vector<MorphVertex> vertices{vertex(0),vertex(1)};
@@ -181,8 +167,7 @@ void allocationFailure() {
 int main() {
     try {
         packing();
-        // lifecycle() is covered by the dedicated dispatch/failure cases.
-        dispatchValidation();
+            dispatchValidation();
         allocationFailure();
         std::cout << "VIVID GPU contract PASS (recording backend, ABI, buffers, dispatch validation)\n";
         return 0;
