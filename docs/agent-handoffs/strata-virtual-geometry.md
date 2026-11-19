@@ -1842,3 +1842,146 @@ The source must still be shutdown via the same live RHI device.
 **No build or test run** was executed for this follow-up either.
 Latest code/test source snapshot before the documentation commits:
 `18878b0616e1288d7ba53e665cdd65dd55d2614e`.
+
+
+---
+
+## Stage 15 — index-only GPU residency + scene-driven demand (2026-11-19)
+
+**Branch:** `feature/strata-virtual-geometry`. Work is committed to the
+feature branch only. **No local compilation or CTest was executed**;
+the owner requested one final build/test batch after functionality.
+This stage is a real, opt-in GPU index-buffer residency path, not a
+CPU-only simulation. It is **not** Nanite-equivalent on-disk virtual
+geometry or Vulkan GPU-driven compute.
+
+### Architecture and implemented behavior
+
+- `engine/render/StrataIndexResidency.h/.cpp` owns one budgeted
+  **index-only** resident RHI buffer generation per source model.
+  `initialize(device, asset, budgetBytes)` uploads only the pinned
+  hierarchy roots. Failure if root bytes exceed budget is atomic and
+  lets the existing model render through Legacy. It validates topology,
+  finite AABBs, parent containment, monotone parent LOD error, index
+  ranges and device health before uploading.
+- `update(vector<IndexDemand>)` processes explicit per-node demands
+  in stable descending priority order. It promotes complete sibling
+  groups along a root-to-node path, never only one child whose siblings
+  are missing. Under budget pressure it keeps drawable ancestors,
+  records deferred demands and evicts unrequested descendants. A new
+  densely packed immutable RHI `BufferType::Index` is **fully
+  constructed before publication**, then the prior buffer is released
+  through backend RHI deferred/in-flight lifetime handling. A failed
+  createBuffer leaves the old resident generation intact; no partial
+  GPU page writes or second vertex allocation are possible.
+  Per-source `activeBytes` is bounded by `budgetBytes`; older
+  in-flight generations can transiently consume *additional* memory
+  until RHI reclamation, and total budget across independent sources
+  is **not yet global**.
+- `StrataView.h/.cpp` accepts an **optional physical-residency mask**
+  without editing immutable source assets. A missing child blocks
+  refinement at the resident parent; malformed masks are transactional.
+  The legacy unmasked `planView` interface still behaves as before.
+- `StrataPortableRender.h/.cpp` adds
+  `stage(device, source, asset, error, indexBudgetBytes)`.
+  `indexBudgetBytes==0` preserves the old eager fully resident Stage
+  14 pooled/dedicated path. A positive value switches to
+  `IndexResidency`; source VB/IB, images, materials and bind transforms
+  remain borrowed. `collectResidencyDemands` computes intended LODs
+  against the **complete CPU asset** for every supplied view or all
+  leaves for an unknown planar-reflection camera.
+  `updateResidency` publishes the new buffer between submission
+  epochs. `prepareModel` limits selection to physically resident
+  nodes and translates selected node IDs to the compact GPU offset,
+  with an atomic source-to-Legacy fallback on any inconsistency.
+  Streamed alias does not inherit a pooled `geometryPoolPage` because
+  its dedicated IB is not part of the shared page.
+- `GeometryScene.h/.cpp`: opt-in
+  `setStrataStreamingIndexBudgetBytes(size_t)` **before load**.
+  This only matters with `setStrataPortableRenderingEnabled(true)`.
+  `updateStrataStreamingBeforeDraw` gathers all source instance,
+  camera, sun-shadow and planar-reflection demands and updates each
+  source **once before any Renderer3D::drawModel submission**.
+  The main, shadow and mirror replays share one selected generation;
+  Legacy source/HLOD/surface-proxy ownership remains unchanged.
+  New stats: streamed source count, actual active index bytes, total
+  evictions and accumulated preparation failures. This API and
+  implementation are genre-independent (no RTS or FPS).
+- `CMakeLists.txt`: adds `StrataIndexResidency.cpp` to the existing
+  portable library and the `aiverse_strata_index_residency_tests`
+  executable/CTest named `strata_index_residency`.
+
+### Tests authored but NOT executed
+
+- `tests/render/strata_index_residency.cpp`: recording RHI for
+  Metal, Vulkan, GLES3 and GL33; root admission and rejected-too-small
+  budgets; sorted priority demands; all-sibling group promotion;
+  unchanged generation (no upload); eviction and root fallback;
+  atomic failure on RHI allocation; malformed demands; device loss
+  and wrong-device shutdown. Records one live compact IB only.
+- `tests/render/strata_view.cpp`: masked root-only, single missing
+  sibling, all resident, invalid mask preserves output.
+- `tests/render/strata_portable.cpp`: Vulkan/GLES3 streamed source
+  root-only initial alias, GPU upload failure, promotion to two leaves,
+  eviction to parent and source VB ownership/parity of handles.
+- No real Vulkan/GLES3/Metal shader, reflection, shadow, image parity
+  or frame-time measurement was performed on this Stage 15 source.
+
+### Concrete commit history for Stage 15
+
+- `a6e5e10b17b715247005e1fb4c7f3694820f7ab9` header, 
+  `c3769b371e5e171a0643caef77b7912c84f47d1e` implementation,
+  `2d6b8f43890d888aa7a192b361d1560a0e3db5f0` parent validation
+- `cf14b6d3790e0a8b6eae735f76a1a797a1e1fd0a` core recording test
+- `ebdbe7a2f771ca7fd0cd7a80b8095d4b34fcf2d9` CMake
+- `d9b2c739e8e60230f3638af54474eda705a7af10` View API,
+  `9c9ed26fcda27aae81395eea02b4f4a1ef91a7f7` view implementation,
+  `266651650d7eba01d4c1fa85a0b8580927d3c13f` test
+- `a0223512b9902cb9bf5bbe82b5828767cc5a0a59`
+  PortableSource header,
+  `38a2d5d7a9c0707c6a72f1e1d75b67a919507bc9`
+  portable GPU alias integration,
+  `723ae6dcc2f070286e4249cd2a5903b2b6bfb63f`
+  demand planning/updates,
+  `48fbe13beffaf5554b93f804de1aefe89252ff9d`
+  read-only residency stats
+- `8e96e988bed41cb554e5bbebb2bf3922bb89df3f`
+  GeometryScene API,
+  `b810d0b0d870af003d551f849138eff3acc1ec19`
+  all-instance prepass integration
+- `737d1d847cc1878c7e8668a020a8433e99679c68`
+  portable streamed-GLES3/Vulkan recording test
+
+### Important boundaries, risks and next agent step
+
+1. This is an **immutable repacking** strategy. It has **actual
+   budgeted GPU index-buffer allocations and atomic swaps**, but
+   *not* sparse GPU pages, async disk/SSD reads, compressed on-disk
+   streaming, page tables, hardware GPU-driven Vulkan selection or
+   multi-world aggregate budgets. CPU `ModelAsset` still stores
+   the full source index hierarchy.
+2. A budget is per source `ModelAsset`, not total scene memory.
+   Expose a global residency arbiter in Stage 15.1, add a GPU upload
+   bandwidth budget, persistence/hysteresis, and per-backend memory
+   diagnostics. Vulkan compute and async sparse page upload should
+   remain separate opt-in improvements after real raster validation.
+3. Safety relies on updating **before** Renderer3D submits a new
+   draw epoch, and on the existing RHI contract retaining in-flight
+   objects after `destroyBuffer`. Aliases must not survive source
+   shutdown or be used after the next buffer-generation swap.
+4. Verify native compilation **in the final combined run**:
+   `aiverse_strata_index_residency_tests`,
+   `aiverse_strata_portable_tests`,
+   `aiverse_strata_view_tests`, builder and all Stage 13 GPU parity
+   executables. Build on the owner's Mac Studio; perform exact
+   Vulkan/GLES3 image/LOD tests when their native platforms are
+   available. Do not claim test PASS from the authored fixtures.
+5. The Stage 14 branch is diverged from concurrent main work. Do
+   not blindly merge/force; first create an isolated integration
+   worktree, reconcile CMake targets and run the final suite.
+   Never overwrite other agents' work.
+
+**Next step:** Stage 15.1 global shared budget and asynchronous upload
+pressure control, then backend Vulkan compute/GPU-driven selector as
+a separate Stage 16. Maintain the one-Renderer3D-draw-per-source
+contract and keep default-OFF Legacy compatibility.
