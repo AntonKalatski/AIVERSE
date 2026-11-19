@@ -291,8 +291,12 @@ if(fx.takeSafeGpuDiagnosticReport(safeJson)) {
     // Report contains counts and numeric warnings only.
     // No world coordinates, VM scalar values or exact GPU serials.
 }
-// Optional sensitive WORLD BOUNDS (only an intentional opt-in):
-spectra::GpuDiagnosticReportPrivacy privacy;
+// For a NEW capture where sensitive world-space bounds are explicitly
+// required, request/complete a second readback first. takeSafeGpuDiagnosticReport
+// CONSUMES Ready state and cannot take the same request twice:
+fx.queueGpuCheckpoint(1); // only after previous Ready was consumed
+// ... advance native presentation frames until Ready again ...
+spectra::GpuDiagnosticReportPrivacy privacy{};
 privacy.includeWorldBounds=true;
 fx.takeSafeGpuDiagnosticReport(safeJson,privacy);
 
