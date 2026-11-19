@@ -45,7 +45,7 @@ int main() {
     box.halfExtents={1,1,1};
     box.blendDistance=2;
     check(std::abs(PrismaVolumeStack::influence(box,{2,0,0})-.5f)<1.e-6f);
-    box.priority=10;box.profile=parsePrisma(Json::parse(R"({"effects":[{"type":"colorGrade","exposure":4}]})"),Json());
+    box.priority=10;box.profile=parsePrisma(Json::parse(R"({"effects":[{"type":"colorGrade","exposure":3}]})"),Json());
     stack.volumes.push_back(box);
     auto high=stack.resolve(original,{0,0,0},1);
     check(high.find(PrismaType::ColorGrade)!=nullptr);
