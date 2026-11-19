@@ -217,6 +217,8 @@ public:
         stats.pendingRolledBackImages=imageRollback_.pendingImages();
         stats.imageRollbackEnqueueFailures=imageRollback_.enqueueFailures();
         stats.imageRollbackOrphanBatches=imageRollback_.unrecoverableBatches();
+        stats.stagingQueueFailures=resources_.stagingQueueFailures();
+        stats.stagingOrphanModels=resources_.stagingOrphanModels();
         stats.publicationBackpressured=resources_.publicationBackpressured();
         return stats;
     }
