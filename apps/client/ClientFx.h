@@ -27,6 +27,13 @@ public:
     void addLights(render::LightSystem& lights);
     // After Renderer3D::render(): draws into the still open main pass.
     void render(const render::Lighting& lighting);
+    // Reorient and draw already updated particles for another LENS camera.
+    // No bridge.update(), ParticleSystem::update(), sub-emitter processing
+    // or time advancement; call inside an active post-geometry render pass.
+    void renderPrepared(const render::Camera3D& camera,
+                        const render::mat4& viewProj,
+                        int width,int height,
+                        const render::Lighting& lighting);
 
     int quality() const { return int(ps_.quality()); }
     void setQuality(int q) { ps_.setQuality(fx::FxQuality(q < 0 ? 0 : q > 3 ? 3 : q)); }
