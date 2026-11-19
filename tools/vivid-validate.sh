@@ -6,7 +6,7 @@
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BRANCH="feature/vivid-digital-humans"
+BRANCH="${AIVERSE_VIVID_REF:-feature/vivid-digital-humans}"
 BUILD="${AIVERSE_VIVID_BUILD_DIR:-$ROOT/build/vivid-onepass}"
 JOBS="${AIVERSE_VIVID_JOBS:-4}"
 GUI=1
