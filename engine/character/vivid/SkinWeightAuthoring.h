@@ -24,6 +24,7 @@ public:
         std::uint32_t vertex=0;
         std::string joint;   // exact Model::Node name
         float weight=0.0f;   // requested share of 255 normalized bytes
+        bool operator==(const Edit&) const = default;
     };
     struct Result {
         std::size_t verticesChanged=0;
