@@ -688,6 +688,9 @@ private:
                 ImGui::Text("MDI submissions: %llu (%llu indexed commands)",
                     (unsigned long long)modelStats.multiDrawSubmissions,
                     (unsigned long long)modelStats.indirectCommands);
+                ImGui::Text("MDI exact-layout zero-copy: %llu submissions / %.1f KiB CPU copies avoided",
+                    (unsigned long long)modelStats.mdiLayoutZeroCopySubmissions,
+                    double(modelStats.mdiLayoutCopyAvoidedBytes) / 1024.0);
                 if (const char* shared = std::getenv("AIVERSE_STATIC_CROSS_MODEL_BATCHES");
                     shared && std::strcmp(shared, "1") == 0) {
                     ImGui::Text("Static cross-model MDI: %llu submissions / %llu commands / %llu items",

@@ -169,6 +169,19 @@ and the MDI pipeline still validates full material and geometry state.
 The group-order scratch vector is reused and included in retained memory;
 `staticCrossModelRankedGroups` reports ranked groups, **not draw calls**.
 Do not cache these ranks across passes or change transparency ordering.
+ Stage 25 additionally removes the indirect layout cache's CPU-to-CPU
+ command-array copy on exact signature hits: `drawModelIndirectBatch`
+ reads `IndirectLayoutEntry::commands` directly until synchronous
+ `dev_->drawIndexedIndirect` returns, but still uploads the same commands
+ to the GPU and runs exact signature/material/backend compatibility checks.
+ Cache misses continue to use renderer-owned scratch and persist their
+ finalized layout. Two fixed 64-entry stack arrays replace palette
+ preflight/U3 material slot heap allocations without changing material
+ order or GPU ABI. Scene Batching reports successfully submitted zero-copy
+ layouts and skipped CPU copy bytes, not GPU bandwidth savings.
+ Never mutate persistent layouts during a draw, assume the signature
+ survives asset changes, or enable experimental cross-model MDI without
+ Metal OFF/ON parity tests.
  Stage 24 replaces the optional *large* admitted candidate comparison-sort
  with a bounded ranked bucketization (minimum 64 items). It first partitions
  mode-1 candidates from ordinary/adaptive-mode-2 items; only mode-1 entries

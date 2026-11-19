@@ -12,6 +12,7 @@
 #include "StaticCrossModelBatchPolicy.h"
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -1054,8 +1055,10 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     // Each indirect instance can index the PBR factors for its own material
     // without changing geometry, textures or the per-model node transform.
     // Kept separate from the existing per-vertex mesh material palettes.
-    std::vector<const Material*> instanceMaterialSlots;
-    if (instancePalette) instanceMaterialSlots.reserve(std::min<size_t>(count, kMaxMaterialPalette));
+    // Palette has a fixed shader ABI of 64 entries. Stack storage avoids
+    // allocating and freeing one vector per indirect submission.
+    std::array<const Material*, kMaxMaterialPalette> instanceMaterialSlots{};
+    size_t instanceMaterialSlotCount = 0;
     if (!gpuInstances) {
         const uint32_t slots = instanced ? instanceLimit_ : 1u;
         instData_.assign(size_t(slots) * 36, 0.0f);
@@ -1063,14 +1066,17 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
             const auto& part = modelItems_[items[i]];
             uint32_t materialSlot = 0;
             if (instancePalette) {
-                auto it = std::find(instanceMaterialSlots.begin(),
-                                    instanceMaterialSlots.end(), part.mat);
-                if (it == instanceMaterialSlots.end()) {
-                    // Preflight in drawModelIndirectBatch enforces this.
-                    if (instanceMaterialSlots.size() >= kMaxMaterialPalette) return false;
-                    materialSlot = uint32_t(instanceMaterialSlots.size());
-                    instanceMaterialSlots.push_back(part.mat);
-                } else materialSlot = uint32_t(it - instanceMaterialSlots.begin());
+                const auto last = instanceMaterialSlots.begin() + instanceMaterialSlotCount;
+                const auto found = std::find(instanceMaterialSlots.begin(), last, part.mat);
+                if (found == last) {
+                    // The independent preflight in drawModelIndirectBatch
+                    // already checked the same fixed 64-material limit.
+                    if (instanceMaterialSlotCount == kMaxMaterialPalette) return false;
+                    materialSlot = uint32_t(instanceMaterialSlotCount);
+                    instanceMaterialSlots[instanceMaterialSlotCount++] = part.mat;
+                } else {
+                    materialSlot = uint32_t(found - instanceMaterialSlots.begin());
+                }
             }
             packModelInstance(part, phase, callColour,
                               instData_.data() + size_t(i) * 36, materialSlot);
@@ -1134,7 +1140,7 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     if (it.gi && (phase == 1 || phase == 2)) bindBakedGI(it);
     if (instancePalette) {
         float palette[kMaxMaterialPalette * 8] = {};
-        for (size_t i = 0; i < instanceMaterialSlots.size(); ++i) {
+        for (size_t i = 0; i < instanceMaterialSlotCount; ++i) {
             const auto& material = *instanceMaterialSlots[i];
             float* p = palette + i * 8;
             p[0] = material.baseColor.x; p[1] = material.baseColor.y;
@@ -1224,15 +1230,16 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
                                         bool instancePalette) {
     if (count < 2 || !dev_->supportsMultiDrawIndirect()) return false;
     if (instancePalette) {
-        // Shader U3 is fixed to 64 material entries. Never produce a batch
-        // that would index beyond that uniform array.
-        std::vector<const Material*> unique;
-        unique.reserve(std::min<size_t>(count, kMaxMaterialPalette));
+        // Fixed 64-entry shader palette: avoid transient heap allocations in
+        // this preflight, and preserve its exact material-pointer semantics.
+        std::array<const Material*, kMaxMaterialPalette> unique{};
+        size_t uniqueCount = 0;
         for (uint32_t n = 0; n < count; ++n) {
             const Material* m = modelItems_[items[n]].mat;
-            if (std::find(unique.begin(), unique.end(), m) != unique.end()) continue;
-            if (unique.size() == kMaxMaterialPalette) return false;
-            unique.push_back(m);
+            if (std::find(unique.begin(), unique.begin() + uniqueCount, m) !=
+                unique.begin() + uniqueCount) continue;
+            if (uniqueCount == kMaxMaterialPalette) return false;
+            unique[uniqueCount++] = m;
         }
     }
     // The Vulkan direct-draw path applies gpuBaseVertex as a vertex-buffer offset,
@@ -1253,8 +1260,9 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     const char* cacheMode = std::getenv("AIVERSE_MDI_LAYOUT_CACHE");
     const bool layoutCaching = !cacheMode ||
         (std::strcmp(cacheMode, "off") != 0 && std::strcmp(cacheMode, "0") != 0);
-    auto& commands = indirectCommandScratch_;
-    commands.clear();
+    // A signature hit can use the already retained immutable command vector
+    // directly until this synchronous drawIndexedIndirect returns. It does not
+    // need a second CPU-to-CPU copy into indirectCommandScratch_.
     uint64_t triangles = 0;
     bool cacheHit = false;
     IndirectLayoutEntry* cacheEntry = nullptr;
@@ -1276,7 +1284,6 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
             }
         }
         if (cacheHit) {
-            commands.assign(cacheEntry->commands.begin(), cacheEntry->commands.end());
             triangles = cacheEntry->triangles;
         }
         if (traceIndirect) {
@@ -1290,16 +1297,18 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
         }
     }
     if (!cacheHit) {
-        if (commands.capacity() < count) commands.reserve(count);
+        auto& scratch = indirectCommandScratch_;
+        scratch.clear();
+        if (scratch.capacity() < count) scratch.reserve(count);
         // Consecutive instances of one primitive form ONE indirect command.
         // firstInstance selects per-object transform data.
         for (uint32_t n = 0; n < count;) {
             const auto& part = modelItems_[items[n]];
             uint32_t end = n + 1;
             while (end < count && modelItems_[items[end]].prim == part.prim) ++end;
-            commands.push_back({part.indexCount, end - n,
-                                part.firstIndex + part.model->gpuFirstIndex,
-                                int32_t(part.model->gpuBaseVertex), n});
+            scratch.push_back({part.indexCount, end - n,
+                               part.firstIndex + part.model->gpuFirstIndex,
+                               int32_t(part.model->gpuBaseVertex), n});
             triangles += uint64_t(part.indexCount / 3) * (end - n);
             n = end;
         }
@@ -1311,10 +1320,14 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
                 cacheEntry->signature.push_back({part.prim, part.indexCount, part.firstIndex,
                     part.model->gpuFirstIndex, uint32_t(part.model->gpuBaseVertex)});
             }
-            cacheEntry->commands = commands;
+            cacheEntry->commands = scratch;
             cacheEntry->triangles = triangles;
         }
     }
+    // Cache hits own a stable per-entry command vector; misses build only in
+    // reusable scratch. Do not mutate either source during GPU submission.
+    const auto& commands = cacheHit
+        ? cacheEntry->commands : indirectCommandScratch_;
     // Building CPU ICB commands on Metal has a measurable setup cost.
     // Avoid switching to indirect for tiny groups where indexed draws win.
     const size_t minimumCommands = dev_->info().backend == gfx::Backend::Metal ? indirectCommandThreshold() : 4u;
@@ -1356,6 +1369,13 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
             samples = 0;
             for (double& v : sums) v = 0.0;
         }
+    }
+    if (cacheHit) {
+        // Only count genuinely submitted draws. The old warm path copied
+        // this complete command vector into scratch before each upload.
+        ++modelStats_.mdiLayoutZeroCopySubmissions;
+        modelStats_.mdiLayoutCopyAvoidedBytes +=
+            commands.size() * sizeof(gfx::DrawIndexedIndirectCommand);
     }
     // U2 / texture bindings come from items[0] for the whole indirect
     // submission. In per-instance palette mode the final command may use

@@ -766,3 +766,32 @@ Connected GitHub source read and write integration used with a branch-head lease
 ### Next action
 
 Feature-first follow-up: inspect the CPU indirect-command preparation for per-group transient allocations / redundant exact-state fetches, and optimize only if lifetimes/compatibility remain unchanged. Then update stale policy test expectations, add CPU strict-weak-order/bucket equivalence tests, Metal OFF/ON shadow+opaque raster parity and dense-city A/B/A before enabling the feature.
+
+---
+
+## Stage 25 — zero-copy cached CPU MDI layout replay and fixed palette slots (2026-11-19)
+
+**Repository/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34 (unmerged).
+**At start:** `main=9ee6ff6fbf390bd45363bc92c838f492dfe92eee`, branch `de5665f40df45fa4abbe20fabb49f25c1dae2738` and `main...branch behind=0`; `main` was already an ancestor. User continues feature-first work; tests deferred.
+
+### Implemented code/API/ownership
+
+- `engine/render/Renderer3DModels.cpp`: `drawModelIndirectBatch` **no longer copies the whole cached indirect-command vector into `indirectCommandScratch_` on each exact layout-cache hit**. It continues validating each primitive pointer, index count/offset and GPU base/index offsets before reuse. Hits read `cacheEntry->commands` as a const reference for the synchronous backend call; misses build in the existing renderer-owned scratch, snapshot into their positional `IndirectLayoutEntry`, and upload from scratch. The cache cursor and pass-specific invalidation/lifetime contracts are unchanged. Exact command count threshold and pipeline/material/transform validation remain. GPU indirect-command buffer upload still occurs on every accepted draw. The zero-copy design does not elide GPU transfers.
+- In the same source, the `instancePalette` preflight and `drawModelBatch` U3 slot assignment now each use `std::array<const Material*, kMaxMaterialPalette>` and an explicit active length instead of allocating a `std::vector` per call. Both paths retain unique material-pointer checks, first-seen slot ordering, 64-material limit and the preexisting indirect fallback semantics.
+- `engine/render/Renderer3D.h`: `ModelRenderStats::mdiLayoutZeroCopySubmissions` and `mdiLayoutCopyAvoidedBytes`. These count *successful* GPU indirect submissions that used a validated cached command vector, and the number of CPU command bytes previously copied into scratch; they are NOT GPU bytes saved or frame-time gains.
+- `apps/editor/windows/SceneWindow.cpp`: new MDI exact-layout zero-copy counters under Scene → Batching.
+- `docs/geometry-performance.md`, `AGENTS.md` and this per-stage handoff: new architecture/ownership rules and pending work.
+
+### Safety and fallbacks
+
+- The cached command source is borrowed only during synchronous `drawModelIndirectBatch`; persistent cache entries remain owned by `Renderer3D`, and a cache-miss rebuild never modifies them on a hit.
+- `AIVERSE_MDI_LAYOUT_CACHE=off` follows the existing uncached scratch path. Material palette mode retains its distinct opt-in. Original backend indirect fallback draws and `drawModelBatch` pipeline-warm behavior are unchanged.
+- No ECS, FPS/RTS, GPU ABI, shader, geometry-page or LOD change. No experimental flag is turned ON globally; PR remains Draft.
+
+### Actual verification and status
+
+Connected GitHub fetched existing code, confirmed `main` ancestry, and staged exact, unique source replacements. Read-back/source checks must confirm the cached hit no longer calls `commands.assign`, every miss uses scratch, palette fixed arrays are bounded and backend submissions still upload GPU command bytes. **Native CMake: NOT RUN. CTest: NOT RUN. Metal raster parity: NOT RUN. Fixed-camera A/B/A: NOT RUN.** No measured speedup or compilation success is claimed; older Stages 10/11/13 policy tests still need reconciliation.
+
+### Next work
+
+Continue feature-first work by auditing excessive per-pass `indirectLayoutCache_` high-water growth and explicit retirement/invalidation on scene unload, or move to focused policy tests when requested. Test exact-layout hit/miss GPU command parity, zero-copy lifetime across renderer shutdown/cache invalidation, palette 64-limit and backend fallbacks, and record real A/B/A before merge.

@@ -207,6 +207,10 @@ struct ModelRenderStats {
     uint64_t cameraLodBlocked = 0, cameraShadowLimitedLod = 0;
     uint64_t triangles = 0, instancedDraws = 0, drawnInstances = 0;
     uint64_t multiDrawSubmissions = 0, indirectCommands = 0;
+    // Submitted indexed MDI batches using an exact validated persistent
+    // layout, without copying cached CPU commands into transient scratch.
+    uint64_t mdiLayoutZeroCopySubmissions = 0;
+    uint64_t mdiLayoutCopyAvoidedBytes = 0;
     // CPU MDI groups spanning at least two different Model instances
     // using the SAME pooled vertex/index arena, after independent LOD and
     // per-view culling. These are successful submissions, not candidates.

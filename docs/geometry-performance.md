@@ -819,3 +819,33 @@ exact material compatibility, per-model LOD/occlusion/culling, the real
 GPU command builder and adaptive page fallback are unchanged. Tests,
 native compilation, Metal raster parity and actual benchmarks were
 not executed at this stage; all experimental flags remain OFF.
+
+### Exact-layout MDI zero-copy replay and allocation-free PBR palette (Stage 25)
+
+The existing `drawModelIndirectBatch` per-pass positional
+`IndirectLayoutEntry` cache still performs full per-item signature checks
+(primitive identity, index count/range, GPU geometry offsets, base vertex).
+On a validated hit it now passes the retained `entry.commands` vector
+**directly** to the normal GPU buffer-upload API instead of assigning/copying
+it into `indirectCommandScratch_`. Cache misses still build commands in the
+renderer-owned scratch, and copy a finalized layout into the cache for the
+following pass. Both paths use the same command threshold, pipeline, GPU
+upload, backend fallback, triangle accounting and shader-visible ABI.
+No GPU buffer upload or per-view geometry validation is skipped.
+
+The CPU palette path now uses fixed `std::array<const Material*, 64>`
+workspaces in BOTH the eligibility preflight and the final U3 slot
+assignment, eliminating two small allocations per palette submission.
+It preserves the same first-seen material-pointer order, 64-slot limit,
+uniform fill and unique material tests; it does not allow different
+textures/pipelines to merge.
+
+Scene → Batching reports `mdiLayoutZeroCopySubmissions` and
+`mdiLayoutCopyAvoidedBytes` (the command bytes the old warm path would
+copy, only when the indirect backend submission actually succeeds).
+These are **CPU-memory-copy savings**, not GPU traffic eliminated:
+`createBuffer/updateBuffer` are still called exactly as before.
+The existing `AIVERSE_MDI_LAYOUT_CACHE=off` mode bypasses reuse.
+Source/connector consistency was inspected, but **native compilation,
+CTest, Metal image parity and CPU/GPU benchmarks were not run**;
+the experimental cross-model path remains OFF by default.
