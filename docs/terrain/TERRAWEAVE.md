@@ -1,6 +1,6 @@
 # TerraWeave — procedural terrain, biomes and vegetation (AIVERSE)
 
-Status (2026-11-18): **Core + Arbor/Flora + hierarchical BranchLOD and far-tree billboard adapters implemented**; runtime scene/editor integration and GPU verification pending.
+Status (2026-11-19): **Core + Arbor/Flora, Horizon HLOD, async forest/terrain scene adapters, authored near/far Q16 stitching and Stage 22 diagnostics implemented in source**. GPU, editor, integration and performance verification remain pending; see the Draft PR and handoff for exact test status.
 Implementation: `engine/world/TerraWeave.h`. Test: `tests/terraweave_test.cpp`.
 Handoff: `docs/terrain/AGENT_HANDOFF.md`.
 
@@ -1980,3 +1980,113 @@ device-specific lighting captures, cross-compiler Q16
 rounding or GPU performance. All are owned by
 the dedicated testing agent; the feature source
 has been committed but testing is **NOT RUN**.
+
+
+## Stage 22 — neighbor-aware seam normals and live Horizon diagnostics
+
+This section describes the **current** source contract for
+`feature/terraweave` (PR #24); earlier TWH6/TWH7 descriptions in this
+file are historical. The current `.twh` archive version is **TWH8**.
+All Stage 22 fields below are CPU/runtime metadata; no new RHI buffers,
+draw submissions, shader variants, ECS components or archive fields were
+added. Builds/CTest and Metal/GL/Vulkan screenshots have **NOT RUN**
+under this feature stage.
+
+### Seam sampling across resident authored terrain tiles
+
+`AuthoredWorldHeightSnapshot::continuousSlopeQ16(xQ16cm,zQ16cm,
+radiusCm=200,toleranceCm=1)` returns
+`std::optional<std::pair<int32_t,int32_t>>` with signed X/Z slopes in
+**permille** (`-dY/dX`, `-dY/dZ`), or `nullopt` if a neighboring tile
+is unavailable or the crossed tile-edge heights disagree. Input X/Z is
+signed **Q16 world centimetres** (multiply whole centimetres by 65536).
+The bounded stencil radius accepts 1–4096cm; discontinuity tolerance is
+0–100cm (default 1cm). The snapshot probes the original authored
+two-triangle heightfields, including negative world tile coordinates,
+and never changes collision or authoritative terrain.
+
+`HorizonSurfaceSources::nearGroundContinuousSlopeAtQ16Cm` is an optional
+CPU-bake callback supplied by `WorldScene` from the same immutable
+`AuthoredWorldHeightSnapshot` used for authored near-ground heights.
+Native projects may provide this callback alongside
+`nearGroundHeightAtQ16Cm`; omit it to keep the existing local normal
+algorithm. During `populateHorizonNearSeamSamples`, the worker prefers
+a continuous neighbor-aware slope for each unique Q16 clipped perimeter
+point. When that query returns `nullopt` it **falls back** to the
+previous tile-local +/-200cm derivative when that data is available.
+If neither yields a valid normal, `nearNormalValid` remains false and
+the existing area-weighted clipped-face normal path is used.
+
+This affects **render shading only**. The Stage 20 all-or-none
+`maxNearWeldSlopePermille` height-weld guard, near X/Z clipping,
+TWH8 `NearSeamSample` layout and existing atlas/VB/full model patch
+selection remain in effect. The normal stencil must not smooth a
+genuine cliff across independently authored tiles.
+
+### Reading live region state
+
+After updating the scene on its owning thread, a native host/editor can
+read `TerraWeaveHorizonScene::runtimeStats()`:
+
+```cpp
+const auto h = horizon.runtimeStats();
+if (h.requestedRegionPending) {
+    // A requested region is not yet resolved at the current source revision.
+    // h.preparing is a separate worker status; "pending" != "CPU is running".
+}
+if (h.activeRegionResolved && h.activeRegionEmpty) {
+    // Accepted bake for the active cell, intentionally no drawable GPU model.
+}
+if (h.staleProxy) {
+    // Active resolved cell is from an older authored source revision.
+}
+if (h.nearNormalProvenanceAvailable) {
+    // Counts are unique sampled seam points, NOT vertices or draw calls.
+    auto neighbor = h.continuousNearNormalSamples;
+    auto local = h.localFallbackNearNormalSamples;
+    (void)neighbor; (void)local;
+}
+// Only inspect requestedCellX/Z if requestedRegionPresent is true.
+// Only inspect activeCellX/Z if activeRegionResolved is true.
+```
+
+| Field | Contract |
+| --- | --- |
+| `sourceRevision` / `activeRevision` | Current immutable source revision / accepted active-region revision. |
+| `requestedRegionPresent`, `requestedCellX/Z` | A camera-selected target exists; coordinates are **middle-tile grid indices**, not centimetres; camera hysteresis applies. |
+| `activeRegionResolved`, `activeCellX/Z` | A region result was accepted (including an intentionally empty result); active coordinates are defined only when resolved. |
+| `activeRegionPresent` | Accepted region currently has a drawable GPU model; **false does not imply pending**. |
+| `activeRegionEmpty` | A resolved region intentionally has no GPU model (e.g. empty ocean Horizon). |
+| `requestedRegionPending` | Target exists and is unresolved, differs from active cell, or active revision is stale. An empty resolved same-cell/same-revision region is **not pending**. |
+| `staleProxy` | Active resolved region revision differs from `sourceRevision`; it can also describe a stale **empty** region. Wrong-camera-cell status without source edits belongs to `requestedRegionPending`, not this flag. |
+| `preparing` / `discarded` | Async stream state; check independently of `requestedRegionPending`. |
+| `continuousNearNormalSamples` | Unique Q16 near-seam samples with valid neighbor-aware slopes in the CPU bake. |
+| `localFallbackNearNormalSamples` | Unique Q16 near-seam samples using the local-height derivative because neighbor-aware results were unavailable/invalid. |
+| `nearNormalProvenanceAvailable` | Counts above have a known CPU sampling origin. When false, treat both counts as **unknown**, even if numerically zero. |
+| `matchedAuthoredNearNormals` | Number of **render vertices** matched to an authored near-source normal; do not add to sample counts. |
+
+**Archive behavior:** TWH8 stores the near-seam height, slope and
+normal-valid bit but **not** the provenance counters or availability
+flag. A disk archive cache hit can legitimately report
+`nearNormalProvenanceAvailable=false` and zero provenance counts even
+when stored normals are valid; this is **unknown**, not measured zero.
+A fresh bake can report valid zero counts when no seam sample qualifies.
+All-or-none weld fallback may discard samples and zero counters while
+the CPU sampling-path availability flag remains true.
+
+**Lifecycle:** `shutdown(device)` clears current region, requested
+region, geometry metadata and diagnostic counters. GPU-cache
+retirement/restoration carries provenance counts and their availability.
+A source revision update can temporarily keep an older GPU proxy
+until an updated bake succeeds. `activeRegionPresent` only reports
+model existence, while `requestedRegionPending` reports unresolved
+selection. A large teleport may be hidden by the separate camera
+coverage check in `submit()`; this is not encoded by `staleProxy`.
+
+**Validation delegated to another agent:** compile with C++20 on target
+platforms; check adjacent positive/negative tiles, sloped and
+discontinuous boundaries, missing neighbors, Q16 corner rounding,
+all-or-none slope fallback, empty region and shutdown, GPU LRU restore,
+source revision invalidation, archive hit/miss, and atlas/vertex patch
+safety. Collect actual GPU captures and frame-time/overdraw measures
+before claiming production-ready seams or negligible GPU cost.
