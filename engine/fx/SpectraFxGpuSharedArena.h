@@ -50,7 +50,8 @@ public:
     SpectraFxGpuSharedArena& operator=(const SpectraFxGpuSharedArena&) = delete;
     ~SpectraFxGpuSharedArena() = default; // call shutdown before device destruction
 
-    bool init(gfx::Device& device,Config config) {
+    bool init(gfx::Device& device,Config config,
+              gfx::ComputeHandle sharedEvolution={}) {
         shutdown();
         error_.clear();
         const auto& a=config.appearance;
@@ -66,7 +67,8 @@ public:
             return false;
         }
         if(!slots_.init(device,config.particles,
-                        config.environment.reportImpacts)) {
+                        config.environment.reportImpacts,
+                        sharedEvolution)) {
             error_="SpectraFX shared arena GPU storage initialization failed";
             return false;
         }
