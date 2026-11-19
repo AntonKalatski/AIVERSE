@@ -2,6 +2,7 @@
 #include "engine/character/vivid/MorphAuthoring.h"
 #include "engine/character/vivid/HumanImport.h"
 #include <filesystem>
+#include <array>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -72,6 +73,18 @@ void test() {
         req(sculpt.undo() && sculpt.targets()==2 &&
             sculpt.redo() && sculpt.targets()==1,
             "corrective target deletion undo/redo failed");
+        const std::array<MorphVec3,4> positions{{{0,0,0},{0.1f,0,0},
+                                                  {0.3f,0,0},{2,0,0}}};
+        req(sculpt.brush(0,positions,0,0.35f,{0.05f,0,0}) &&
+            sculpt.canUndo(),
+            "falloff morph brush rejected");
+        const auto brushed=sculpt.compile();
+        req(brushed.deltas()>=2,"brush did not affect adjacent source vertices");
+        req(!sculpt.brush(0,positions,0,-1.0f,{0.1f,0,0}) &&
+            !sculpt.brush(0,positions,0,0.5f,{50.0f,0,0}),
+            "invalid brush parameters accepted");
+        req(sculpt.undo() && sculpt.redo(),
+            "brush stroke history failed");
         req(!sculpt.setPosition(0,4,{1,0,0}) &&
             !sculpt.setPosition(0,1,{100,0,0}),
             "out-of-range sculpt accepted");
