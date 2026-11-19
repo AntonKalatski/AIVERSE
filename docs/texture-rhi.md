@@ -1174,3 +1174,109 @@ compilation, actual GPU encoding/execution, visual comparison and
 performance profiling have NOT run. There is no measured speedup
 claim; this is a restored opt-in code path with conservative
 resource identity checks.
+
+
+## Multiple TerraWeave VT archives in one scene
+
+`engine/render/TerraWeaveVirtualAtlasDomains.h` manages separate
+virtual-texture domains (for example Horizon terrain, individual forest
+impostor atlases, and other procedurally generated texture sets).
+Each domain owns a `TerraWeaveVirtualAtlasSession` (immutable archive
+revision and independent disk/GPU streamer), plus its own RGBA8
+`VirtualTextureFeedbackPass` configured to that archive's virtual
+tile dimensions. **Do not submit page IDs from different domains to
+one feedback decoder:** the existing 32-bit page ID has coordinates,
+mip and layer, but no atlas/domain field.
+
+Initialize the usual model feedback adapter once, then register the
+independent domains. The existing legacy `VirtualTextureFeedbackPass`
+passed to `TerraWeaveVirtualTextureFeedback::initialize` can remain
+allocated but its automatic submission is superseded when the
+multi-domain scheduler is attached.
+
+```cpp
+#include "engine/render/TerraWeaveVirtualAtlasDomains.h"
+
+// renderThread: dev, renderer, feedback and legacyPass outlive domains.
+render::TerraWeaveVirtualTextureFeedback feedback;
+feedback.initialize(dev, legacyPass, renderer);
+render::TerraWeaveVirtualAtlasDomains domains(dev);
+render::TerraWeaveVirtualAtlasDomains::Options options;
+options.feedbackWidth = 256;
+options.feedbackHeight = 256;
+options.feedbackDepth = true;
+domains.addDomain(1, options);  // Horizon
+domains.addDomain(2, options);  // Forest atlas
+
+// After publishing immutable archive files:
+domains.prepare(1, horizonVersion);
+domains.prepare(2, forestVersion);
+// Each graphics frame, before a pass is open, pump candidate streamers
+// until their coarsest mip pages are resident.
+domains.pumpCandidate(1, 8);
+domains.pumpCandidate(2, 8);
+if (domains.session(1)->candidateFallbackResident()) domains.promote(1);
+if (domains.session(2)->candidateFallbackResident()) domains.promote(2);
+
+// Install callbacks once, with active archives available.
+domains.attach(renderer, feedback);
+
+// Once per scene frame, after Device::beginFrame:
+domains.pumpActive(8);
+domains.beginFrame();
+// Forest/Impostor: register the exact material override before submitting
+// the same ModelDraw through the ordinary shared Renderer3D queue.
+domains.registerDraw(forestDraw, 2);
+renderer.drawModel(forestDraw);
+// HorizonScene's active Model is private: assign its live DomainId
+// through domains.setLiveDomainLookup(...) during scene setup.
+renderer.render(...); // runs at most one archive's GPU feedback pass
+```
+
+The render callback runs after shadow passes and before the main
+colour pass. It selects one **idle** domain per frame by round-robin
+order; only that domain's models output page IDs. All other models
+still rasterize into feedback depth, so they occlude virtual pages
+behind them correctly. Different domains may be sampled during
+the **same primary scene frame**: `Renderer3D` resolves the
+model's domain to its active physical atlas/page-table and binding
+identity. CPU/Metal ICB batching stays valid for homogeneous
+resource groups and separates different VT domains.
+
+Use `domains.setLiveDomainLookup(fn)` for private Horizon region
+models that cannot be registered by `registerDraw()`; its
+callback receives the actual Model and Material and returns
+`DomainId` and the domain-local layer. The stored per-frame
+assignments and live lookup refer to real objects, not strings
+like `terraweave/horizon` that may be reused across revisions.
+The callback must not allocate GPU resources or read files.
+
+`domains.pumpActive(budget)` submits **each completed domain
+readback only to that domain's own** `VirtualTextureFileStreamer`,
+then pumps bounded GPU uploads. The caller may explicitly request
+coarse/visible pages with
+`domains.requestPage(domainId,VirtualPageKey{...},pin)`.
+A domain update uses `prepare(id,version)`,
+`pumpCandidate(id,budget)`, then `promote(id)`. Promotion
+creates a new feedback decoder for the new page-table geometry,
+keeps old GPU atlas resources until explicit
+`retireCompletedGpuWork(id)` after a real graphics fence,
+and rejects promotion while that domain's readback is pending.
+Other domains remain unaffected.
+
+Disconnect with `domains.detach()` **before destroying**
+Renderer3D/feedback; call `domains.shutdown()` only once
+all GPU work using its resources is finished. The feedback
+adapter still owns the shader programs and requires its
+separate `shutdown()`. Multi-domain support does not require
+modifying Terra's separate `feature/terraweave` branch.
+
+Limitations: there is one VT feedback capture per scene frame by
+default, not one per domain simultaneously. Domains not selected
+for that frame may use manual CPU prefetch/previously resident
+pages. The main shader still needs ordinary source-texture fallback
+until its pages arrive. Multi-domain grouping remains
+homogeneous within any one GPU ICB/MDI batch; a heterogeneous
+single-command resource table and Shader Graph VT remain future
+features. Native build, shader compilation, CTest and GPU tests
+for this new manager have **not run**.
