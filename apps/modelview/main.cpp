@@ -18,6 +18,7 @@
 #include "../../engine/render/ModelMerge.h"
 #include "../../engine/render/Renderer3D.h"
 #include "../../engine/render/ModelAssetProvider.h"
+#include "../../engine/render/FailedModelUpload.h"
 #include "../../engine/view/View.h"
 #include "imgui.h"
 #include "Gallery.h"
@@ -29,6 +30,7 @@
 #include <map>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 
 using namespace aiverse;
 using namespace aiverse::render;
@@ -135,10 +137,15 @@ struct Viewer {
             }
             auto it = models.find(path);
             if(!resolved && it == models.end()) {
+                // Create map storage before any GPU upload; a later
+                // allocation failure must never destroy GPU-live Models.
+                it = models.try_emplace(path).first;
                 std::unique_ptr<Model> m;
+                bool uploadStarted=false;
                 try {
                     std::vector<std::string> warn;
                     m = loadModel(path, readFile, &warn);
+                    if(!m)throw std::runtime_error("model import returned no data");
                     for (auto& w : warn) log.push_back(w);
                     if (merge) {
                         const auto mr = mergeStaticPrimitives(*m);
@@ -147,7 +154,9 @@ struct Viewer {
                                                     : "parts not merged: " + mr.reason;
                         log.push_back(path + ": " + mergeInfo[path]);
                     }
-                    uploadModel(d, *m);
+                    uploadStarted=true;
+                    if(!uploadModel(d, *m))
+                        throw std::runtime_error("GPU Model upload returned false");
                 // as the game view does by default: materials named "*team*" take the team colour
                 for (auto& mt : m->materials) {
                     std::string n = mt.name;
@@ -162,8 +171,15 @@ struct Viewer {
                     for (auto& im : m->images) if (im.gpuCompressed) log.push_back("  texture '" + im.name + "' stays GPU-compressed");
                     if (m->baked.tex.valid() || bakeAnimations(d, *m)) log.push_back("  clips baked: " + std::to_string(m->baked.rows) + " rows at " + std::to_string(int(m->baked.fps)) + " fps");
                     for (auto& v : m->variants) log.push_back("  variant '" + v + "'");
-                } catch (const std::exception& e) { log.push_back(e.what()); }
-                it = models.emplace(path, std::move(m)).first;
+                } catch (const std::exception& e) {
+                    if(uploadStarted) {
+                        const auto status=abortFailedModelUpload(d,m);
+                        if(status==FailedModelUploadDisposition::OrphanedWithoutGpuProof)
+                            log.push_back(path+": GPU completion unavailable; partial Model quarantined");
+                    } else m.reset();
+                    log.push_back(path+": "+e.what());
+                }
+                it->second = std::move(m);
             }
             Instance in;
             in.model = resolved ? resolved : it->second.get();
