@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Activity, Box, ChevronDown, ChevronRight, CirclePlay, Code2, Command, FileCode2, FolderTree, Layers3, Lightbulb, MonitorPlay, MoreHorizontal, PanelBottom, Plus, Redo2, RefreshCw, Save, Search, Settings2, SlidersHorizontal, Terminal, Undo2, WandSparkles } from 'lucide-react';
 import { invoke, nativeConnected, onNativeEvent } from './bridge';
-import type { StudioEntity, StudioProperty, StudioSnapshot } from './types';
+import type { StudioEntity, StudioSnapshot } from './types';
+import PanelTitle from './components/PanelTitle';
+import PropertyField from './components/PropertyField';
+import ViewportPlaceholder from './components/ViewportPlaceholder';
 
 type Section = 'scene' | 'game' | 'materials' | 'animation';
 const sections: { id: Section; title: string }[] = [
@@ -15,26 +18,6 @@ function hierarchyRows(nodes: StudioEntity[], parentId?: string, depth = 0): Arr
     .flatMap(node => [{ node, depth }, ...hierarchyRows(nodes, node.id, depth + 1)]);
 }
 
-function PanelTitle({ title, right }: { title: string; right?: React.ReactNode }) {
-  return <div className="panel-heading"><span>{title}</span><div className="panel-actions">{right}</div></div>;
-}
-function PropertyField({ property, disabled, onChange }: { property: StudioProperty; disabled: boolean; onChange: (value: string | number | boolean) => void }) {
-  const [draft, setDraft] = useState(String(property.value));
-  useEffect(() => setDraft(String(property.value)), [property.key, property.value]);
-  if (property.type === 'boolean') {
-    return <label className="property-row"><span>{property.label}</span><input disabled={disabled} type="checkbox" checked={Boolean(property.value)} onChange={e => onChange(e.target.checked)}/></label>;
-  }
-  return <label className="property-row"><span>{property.label}</span><input
-    disabled={disabled}
-    type={property.type === 'number' ? 'number' : 'text'} value={draft}
-    onChange={e => setDraft(e.target.value)}
-    onBlur={() => {
-      const value = property.type === 'number' ? Number(draft) : draft;
-      if (value !== property.value && (property.type !== 'number' || Number.isFinite(value))) onChange(value);
-    }}
-    onKeyDown={e => { if (e.key === 'Enter') e.currentTarget.blur(); if (e.key === 'Escape') { setDraft(String(property.value)); e.currentTarget.blur(); } }}
-  /></label>;
-}
 export default function App() {
   const [snapshot, setSnapshot] = useState<StudioSnapshot | null>(null);
   const [selectedTab, setSelectedTab] = useState<Section>('scene');
@@ -117,11 +100,7 @@ export default function App() {
       <main className="work-area">
         <nav className="tabbar" aria-label="Editor tabs">{sections.map(section => <button key={section.id} onClick={() => setSelectedTab(section.id)} className={'tab ' + (section.id === selectedTab ? 'tab-active' : '')}>{section.title}</button>)}</nav>
         <div className="viewport-toolbar"><div className="viewport-tools"><button className="viewport-control selected" title="Select tool"><SlidersHorizontal size={15}/></button><button className="viewport-control" disabled title="Transform tools pending native host"><Command size={15}/></button><span className="toolbar-divider"/><span className="viewport-label">{selectedTab === 'scene' ? 'Perspective' : selectedTab.toUpperCase()}</span></div><span className="render-badge"><Activity size={13}/> Native renderer pending</span></div>
-        <section className="viewport" aria-label="Native viewport placeholder">
-          <div className="viewport-grid"/>
-          <div className="viewport-placeholder"><div className="viewport-cube"><Box size={44} strokeWidth={1.1}/></div><h2>{selectedTab === 'scene' ? 'Scene viewport' : sections.find(s => s.id === selectedTab)?.title}</h2><p>The AIVERSE C++ renderer will be embedded here in the native host.<br/>This HTML5 shell never renders a fake GPU scene.</p><span className="viewport-tag">Metal · Vulkan · GLES</span></div>
-          <div className="viewport-axis"><span className="axis-y">Y</span><span className="axis-x">X</span><span className="axis-z">Z</span></div>
-        </section>
+        <ViewportPlaceholder title={selectedTab === 'scene' ? 'Scene viewport' : sections.find(s => s.id === selectedTab)?.title ?? selectedTab}/>
         {showConsole && <section className="console-panel"><PanelTitle title="CONSOLE" right={<button className="icon-button" aria-label="Close console" onClick={() => setShowConsole(false)}>×</button>}/><div className="log-list">{snapshot?.logs.map((line, i) => <div className={'log-row log-' + line.level} key={i}><span>{line.time}</span>{line.text}</div>)}</div></section>}
       </main>
       <div className="resize-handle" role="separator" aria-orientation="vertical" onPointerDown={e => beginResize('right', e.clientX)}/>

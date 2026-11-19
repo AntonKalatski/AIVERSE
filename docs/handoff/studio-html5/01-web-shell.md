@@ -16,11 +16,11 @@ Replace the AIVERSE **editor UI** (not game HUD) with HTML5/CSS/TypeScript. No g
 - README documents an AI-first workflow (edit React components + CSS tokens, hot reload).
 
 ## API contract (version 1)
-Web -> native: \`{id:number, method:string, params?:unknown}\`
-Native -> web through \`window.__aiverseReceive({...})\`:
-- response: \`{id:number, result?:unknown, error?:string}\`
-- event: \`{event:string, payload?:unknown}\`
-Required methods: \`studio.snapshot\`, \`studio.select\`, \`studio.setProperty\`.
+Web -> native: `{id:number, method:string, params?:unknown}`
+Native -> web through `window.__aiverseReceive({...})`:
+- response: `{id:number, result?:unknown, error?:string}`
+- event: `{event:string, payload?:unknown}`
+Required methods: `studio.snapshot`, `studio.select`, `studio.setProperty`.
 Native bridge MUST validate origin and method allowlist. Never expose MCP's unguarded localhost port to arbitrary pages.
 
 ## Files
@@ -49,7 +49,7 @@ Native integration tests and GPU parity: NOT RUN (native host not implemented).
 
 ## Next stage
 1. Add a macOS WKWebView native host in a new independent/opt-in target with strict local content origin and handler.
-2. Implement \`studio.snapshot\`, \`studio.select\`, \`studio.setProperty\` through real C++ Workspace/Editor logic, preserving undo validation.
+2. Implement `studio.snapshot`, `studio.select`, `studio.setProperty` through real C++ Workspace/Editor logic, preserving undo validation.
 3. Integrate native Scene Render Target (not a JS frame-upload), keyboard focus, DPI, resize, and clipping; measure GPU frame cost.
 4. Add unit tests for IPC schema, timeouts, update notifications; run npm build and macOS app compile.
 5. Write a **new handoff after each stage** with branch, exact commits, changed files, tests actually executed, limitations, next step.

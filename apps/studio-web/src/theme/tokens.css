@@ -1,0 +1,16 @@
+:root {
+  /* AI-friendly semantic color tokens. Change this file to restyle the Studio globally. */
+  --studio-background: #0d121c;
+  --studio-surface: #121924;
+  --studio-surface-raised: #151c29;
+  --studio-canvas: #0b1220;
+  --studio-border: #293445;
+  --studio-foreground: #dce5f4;
+  --studio-muted: #8a9eb9;
+  --studio-accent: #84aefe;
+  --studio-selection: #28456d;
+  --studio-danger: #ff8593;
+  --studio-success: #7bd9ad;
+  --studio-radius: 7px;
+  --studio-font: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
