@@ -4,6 +4,7 @@
 #include "engine/world/TerraWeave.h"
 #include "engine/world/TerraWeavePhenology.h"
 #include "engine/world/TerraWeaveWindField.h"
+#include "engine/world/TerraWeaveWindUploadPolicy.h"
 
 namespace aiverse::terraweave { class TerraWeaveForestScene; class TerraWeaveHorizonScene; }
 namespace aiverse::world {
@@ -53,6 +54,12 @@ public:
     bool vegetationHorizonExactWindField() const {
         return vegetationHorizonExactWindField_;
     }
+    // Runtime tuneable, genre-independent Horizon wind RHI bandwidth.
+    void setVegetationHorizonWindUploadPolicy(
+        terraweave::HorizonWindUploadPolicy policy);
+    terraweave::HorizonWindUploadPolicy vegetationHorizonWindUploadPolicy() const {
+        return vegetationHorizonWindUploadPolicy_;
+    }
     const AsyncChunkStream::Status& status()const{return stream_->status();}
     // Optional genre-independent presentation forest. Native hosts may feed
     // a deterministic tick and schedule sparse harvest/regrowth without
@@ -96,6 +103,7 @@ private:
     uint64_t vegetationPresentationTick_=0;
     bool vegetationHorizonSpatialWind_=true;
     bool vegetationHorizonExactWindField_=true;
+    terraweave::HorizonWindUploadPolicy vegetationHorizonWindUploadPolicy_{};
     float overhang_=0;                                        // "meshOverhang": units a mesh may reach past its chunk
     void releaseChunk(gfx::Device&,Prepared&);
     size_t uploadBytes_=16*1024*1024;
