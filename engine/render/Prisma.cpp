@@ -590,6 +590,7 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
         !enabled_ || !settings_.enabled ||
         quality_!=PrismaQuality::High || !hdrRequested()) {
         adaptiveViews_.erase(viewId_);
+        adaptivePressure_.erase(viewId_);
         return {width,height};
     }
     const auto* effect=settings_.find(PrismaType::TemporalResolve);
@@ -602,6 +603,7 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
         !jitter || std::strcmp(jitter,"1")!=0 ||
         effect->get("historyWeight")<=0 || effect->get("jitterPixels")<=0) {
         adaptiveViews_.erase(viewId_);
+        adaptivePressure_.erase(viewId_);
         return {width,height};
     }
 
@@ -614,14 +616,36 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
         effect->get("adaptiveResolution")>0.5f;
     if (adaptiveRequested) {
         auto& adaptive=adaptiveViews_[viewId_];
-        // Only completed hardware GPU frame duration may change the scale.
-        // On unsupported backends GPU ms/fences are zero, so stay authored.
-        adaptive.observe(dev_->gpuFrameMs(),dev_->gpuCompletedFence(),
-            effect->get("targetGpuMs"),
-            effect->get("minRenderScale"),ceiling);
+        // Only what Prisma can actually enumerate counts toward this
+        // threshold: once-counted resident caches, per-camera histories,
+        // and pending fence-retired resources. Not total physical VRAM.
+        const uint64_t liveBytes=memoryStats().liveKnownBytes;
+        const uint64_t pendingBytes=retirementStats().knownPendingBytes;
+        const uint64_t knownBytes=liveBytes > UINT64_MAX-pendingBytes
+            ? UINT64_MAX : liveBytes+pendingBytes;
+        const uint64_t memoryLimit=uint64_t(
+            std::clamp(effect->get("maxPrismaMemoryMiB"),32.0f,4096.0f))
+            * uint64_t(1024*1024);
+        const bool memoryPressure=knownBytes>memoryLimit;
+        // Prefer completed, bounded GL33 viewport GPU queries. Metal's
+        // existing GPU time is a whole-command-buffer measurement; NEVER
+        // label it as per-view. No completed timer -> no guessed CPU/FPS.
+        const auto scoped=scopedGpuTimings_.find(viewId_);
+        const bool scopedValid=scoped!=scopedGpuTimings_.end() &&
+            scoped->second.sampleSequence>0;
+        const double gpuMs=scopedValid ? scoped->second.lastGpuMs :
+            dev_->gpuFrameMs();
+        const uint64_t sampleToken=scopedValid ?
+            scoped->second.sampleSequence : dev_->gpuCompletedFence();
+        adaptive.observe(gpuMs,sampleToken,
+            effect->get("targetGpuMs"),effect->get("minRenderScale"),
+            ceiling,memoryPressure);
+        adaptivePressure_[viewId_]={
+            knownBytes,memoryLimit,memoryPressure,scopedValid,gpuMs};
         scale=adaptive.scale;
     } else {
         adaptiveViews_.erase(viewId_);
+        adaptivePressure_.erase(viewId_);
     }
     if (scale>=0.999f) return {width,height};
     const int renderW=std::clamp(int(std::lround(double(width)*scale)),32,width);
@@ -1957,6 +1981,14 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         stats_.temporalFallback=true;
     }
     stats_.adaptiveResolution=adaptiveViews_.count(viewId_)!=0;
+    if (const auto m=adaptivePressure_.find(viewId_);
+        m!=adaptivePressure_.end()) {
+        stats_.adaptiveKnownGpuBytes=m->second.knownBytes;
+        stats_.adaptiveMemoryLimitBytes=m->second.limitBytes;
+        stats_.adaptiveMemoryPressure=m->second.overLimit;
+        stats_.adaptiveScopedGpuTiming=m->second.scopedGpu;
+        stats_.adaptiveGpuMs=m->second.gpuMs;
+    }
     stats_.requestedRenderScale=float(w)/float(std::max(1,outW));
     uint32_t mask = 0;
     put(u.px, 1.0f / float(outW), 1.0f / float(outH), flip, seed);
