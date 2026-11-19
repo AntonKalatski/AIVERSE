@@ -11,6 +11,7 @@
 #include <map>
 #include <stdexcept>
 #include <vector>
+#include <utility>
 
 namespace aiverse::world {
 
@@ -83,7 +84,18 @@ public:
         for(size_t i=0;i<incoming.size();++i) {
             auto source=std::move(incoming[i]);
             if(!source.id)source.id=(uint64_t(1)<<62)|(i+1);
-            if(!next.emplace(source.id,Slot{std::move(source)}).second)
+            if((source.cascade.enabled &&
+                !lib::nereid::validWaterCascade(source.cascade)) ||
+               !render::validNereidWaterStyle(source.style) ||
+               source.options.stepsPerSegment<1 ||
+               source.options.stepsPerSegment>16 ||
+               source.options.maxVertices<8 ||
+               source.options.maxVertices>65536 ||
+               !std::isfinite(source.options.uvScale) ||
+               source.options.uvScale<=0)
+                throw std::invalid_argument("nereid.cascade: invalid source");
+            const uint64_t id=source.id;
+            if(!next.emplace(id,Slot{std::move(source)}).second)
                 throw std::invalid_argument("nereid.cascade: duplicate id");
         }
         retired_.reserve(retired_.size()+slots_.size());
