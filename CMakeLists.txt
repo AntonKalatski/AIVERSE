@@ -1936,6 +1936,27 @@ if(AIVERSE_ENABLE_PHYSICS AND NOT EMSCRIPTEN)
                 apps/place/PlaceAdmission.cpp apps/place/PlaceLink.cpp)
     target_link_libraries(aiverse_place PUBLIC aiverse_net_replica AIVERSE::physics)
     target_include_directories(aiverse_place PUBLIC ${PROJECT_SOURCE_DIR})
+    # From PHYSIS Stage100: an ordinary unoptimized Debug (-O0) build
+    # is not a comparable realtime server tick benchmark. Explicitly
+    # compile only Place/replica/net/Box3D hot paths with -O2 in Debug,
+    # retaining all assertions, server tick timing and the 5ms gate.
+    option(AIVERSE_PLACE_FAST_DEBUG
+        "Enable -O2 for Place/Box3D/replica hot paths in Debug, retaining assertions"
+        OFF)
+    if(AIVERSE_PLACE_FAST_DEBUG)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "^(AppleClang|Clang|GNU)$")
+            foreach(_place_hot_target IN ITEMS
+                    aiverse_place aiverse_net_replica aiverse_net
+                    aiverse_physics box3d)
+                if(TARGET ${_place_hot_target})
+                    target_compile_options(${_place_hot_target} PRIVATE
+                        "$<$<CONFIG:Debug>:-O2>")
+                endif()
+            endforeach()
+        else()
+            message(WARNING "AIVERSE_PLACE_FAST_DEBUG supports AppleClang/Clang/GNU only")
+        endif()
+    endif()
     option(AIVERSE_BUILD_PLACE_CLIENT "Build the graphical client into aiverse_place" ${AIVERSE_BUILD_CLIENT})
     if(AIVERSE_BUILD_PLACE_CLIENT AND AIVERSE_DESKTOP)
         add_executable(aiverse_place_app apps/place/main.cpp apps/place/PlaceView.cpp $<TARGET_OBJECTS:aiverse_runtime>)
