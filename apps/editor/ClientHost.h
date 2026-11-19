@@ -32,6 +32,10 @@ public:
     // Caller has explicitly synchronized *all* previously submitted GPU
     // work and is outside any render pass. Used at host teardown/pressure.
     size_t drainAfterGpuIdle();
+    // Terminal device loss: never invoke deferred GameClient::shutdown with
+    // a destroyed graphics device. Intentionally keep abandoned C++ owners
+    // inert until process exit (no GPU destroy and no destructor callbacks).
+    size_t abandonOnDeviceLoss();
     size_t pendingRetiredClients() const { return retired_.size(); }
     bool active() const { return client_ != nullptr; }
     bool loading() const { return active() && step_ < kSteps; }
