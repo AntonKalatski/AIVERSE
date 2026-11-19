@@ -148,7 +148,7 @@ void ClientFx::update(Simulation& sim, const game::RtsScene& scene, const render
     if (dbg && ++frames % 30 == 0) std::fprintf(stderr, "[fx] played %d rejected %d particles %d culled %d drawn %d\n", bridge_.played(), bridge_.rejected(), ps_.stats().particles, ps_.stats().culled, ps_.stats().drawn);
 }
 
-void ClientFx::prepareGpuFrame(float dt) {
+void ClientFx::prepareGpuFrame(float dt,const render::RTSCamera& camera) {
     if(!gpuPlayback_ || planet_) return;
     // Called inside Device::beginFrame, before Renderer3D::beginScene:
     // GPU buffers and compute are not touched by Simulation::step().
@@ -159,7 +159,7 @@ void ClientFx::prepareGpuFrame(float dt) {
             gpuPlayback_->dispatch(cue);
         }
     }
-    gpuPlayback_->updateGpu(dt);
+    gpuPlayback_->updateGpu(dt,camera.eye());
 }
 
 void ClientFx::renderGpu(const render::mat4& viewProj,
