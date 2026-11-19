@@ -35,3 +35,9 @@ This is **opt-in rooted subset simulation**, not a separate ECS entity for every
 Source committed through connected GitHub; file readbacks and static API review only. **NOT RUN**: native AppleClang/GCC/MSVC compile, CMake/CTest, ECS NEREID/PHYSIS ecological progression test, COW rollback/save replay, near/far LOD screenshots, Box3D falling/collider tests, stress/perf with 65k rooted plants or GPU profiling. Earlier TerraWeave 9/9 CPU and GPU timing-router 1/1 passes do NOT validate Stage65 code. Keep PR #24 Draft.
 
 **Next:** First compile the new rooted-forest header graph and existing native sample; fix any C++ errors before claiming success. Run deterministic prolonged (shade/drought/flood) death and seed/recruit regression fixtures, save/rollback/different input order, near/far Arbor batch parity, root support and harvested/collision ownership integration, benchmark canopy index/residency/World snapshots, then complete the older Stage44–64 unfinished CI and Metal/Box3D/ECS integration tests before merging into main. For further development always append a self-contained handoff with actual commits, test outcomes and next step.
+
+
+## Follow-up source review (same Stage65)
+
+- `e340654a2e834170db5945f5b25070b35c81f034`: backward-compatible tree-age handling: imported `PlantEnvironment` with `matureTicks==0` was historically *already mature*, so its initial `ageTicks==0` is interpreted as mature under a newly enabled ecology policy rather than unexpectedly making a previously mature tree tiny. Explicit newly recruited seedlings have nonzero `matureTicks` and age zero, so they still grow from sapling size.
+- This is a GitHub source fix; **no compiler, simulation tests, save/load roundtrip or GPU visual QA were run**.
