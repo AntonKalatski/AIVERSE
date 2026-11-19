@@ -163,6 +163,78 @@ void Prisma::collectCompletedSizes(uint64_t completedGpuFence) {
         if (s.graphExecutor)
             s.graphExecutor->collectCompleted(completedGpuFence);
 }
+void Prisma::retireView(uint64_t id) {
+    // Per-camera temporal state is not shared with another view, even if
+    // both viewports have the same size. Do NOT touch Sized: color/depth
+    // and graph targets are still shared by dimensions.
+    auto exposure = exposureViews_.find(id);
+    if (exposure != exposureViews_.end()) {
+        for (auto& h : exposure->second.history) retireTarget(h);
+        exposureViews_.erase(exposure);
+    }
+    motionViews_.erase(id); // only matrix state + borrowed GPU handles
+    // If the current presentation view was closed, keep its stable ID for
+    // compatibility with callers; the next render seeds fresh history.
+}
+
+void Prisma::collectGpuRetirements() {
+    if (dev_) collectCompletedSizes(dev_->gpuCompletedFence());
+}
+
+Prisma::RetirementStats Prisma::retirementStats() const {
+    RetirementStats stats;
+    stats.activeSizes = sizes_.size();
+    stats.retiredSizes = retiredSizes_.size();
+    stats.exposureViews = exposureViews_.size();
+    stats.motionViews = motionViews_.size();
+    stats.fencedTextures = retiredTargets_.pendingCount();
+    stats.unfencedTextures = unfencedTargets_.size();
+    stats.lastGpuCompletedFence = dev_ ? dev_->gpuCompletedFence() : 0;
+    auto bytesOf = [this](gfx::TextureHandle h) -> uint64_t {
+        if (!dev_ || !h.valid()) return 0;
+        gfx::TextureInfo info{};
+        if (!dev_->textureInfo(h,info) || info.width <= 0 || info.height <= 0)
+            return 0;
+        uint64_t bpp = 4;
+        switch (info.format) {
+            case gfx::PixelFormat::R8: bpp = 1; break;
+            case gfx::PixelFormat::RGBA16F: bpp = 8; break;
+            case gfx::PixelFormat::RGBA32F: bpp = 16; break;
+            case gfx::PixelFormat::Depth: bpp = 4; break;
+            default: break;
+        }
+        return uint64_t(info.width) * uint64_t(info.height) * bpp;
+    };
+    for (const auto& p : retiredTargets_.pending())
+        stats.knownPendingBytes += bytesOf(p.handle);
+    for (auto h : unfencedTargets_) stats.knownPendingBytes += bytesOf(h);
+    for (const auto& item : retiredSizes_) {
+        for (const auto& [role, target] : item.resources.targets) {
+            if (target.tex.valid()) {
+                ++stats.fencedTextures; // includes textures held in archived sets
+                stats.knownPendingBytes += bytesOf(target.tex);
+            }
+        }
+        for (const auto& [key, handle] : item.resources.depths) {
+            if (handle.valid()) {
+                ++stats.fencedTextures;
+                stats.knownPendingBytes += bytesOf(handle);
+            }
+        }
+        if (item.resources.graphExecutor) {
+            const auto& exec = *item.resources.graphExecutor;
+            stats.graphRetiredTextures += exec.retiredCount();
+            for (const auto& entry : exec.pool().entries()) {
+                ++stats.graphRetiredTextures;
+                stats.knownPendingBytes += bytesOf(entry.handle);
+            }
+        }
+    }
+    for (const auto& s : sizes_)
+        if (s.graphExecutor) stats.graphRetiredTextures += s.graphExecutor->retiredCount();
+    return stats; // lower bound excludes internal retired graph handles
+}
+
 void Prisma::releaseRetiredSizesAfterGpuIdle() {
     if (!dev_) return;
     // Explicit host guarantee: GPU queue is idle (all render encoders and
