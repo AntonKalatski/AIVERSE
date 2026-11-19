@@ -3128,40 +3128,65 @@ Metal GPU ICB execution have NOT RUN on the Mac Studio.**
 Previous passing `metal_texture_gpu` is a different, safer
 test and is not evidence of this ICB path.
 
-After pulling the feature branch in the **isolated** Mac Studio
-texture worktree (not the primary AIVERSE checkout), explicitly
-configure/build/run the separate risky target:
+### Stage 10BR — four Shader Graph source slots in GPU ICB acceptance (source only)
+
+Source commit `50969517f9fdd4a15b38103c378232459520d2a5` extends
+`tests/render/metal_icb_graph_gpu.mm` to run two independently
+checked native GPU-ICB cases within the opt-in fixture:
+
+1. One Shader Graph fragment source texture at slot 13
+   (existing Stage 10BQ acceptance layout).
+2. Four independent graph sources at slots 13, 14, 15, 16.
+   The corresponding Metal argument-buffer texture resource IDs
+   are 26, 28, 30, 32. Slot 16 uses the same constexpr
+   repeat/linear sampler contract as production `ModelShaders.h`,
+   because dynamic fragment sampler binding stops at slot 15.
+
+Both cases use two real GPU-encoded indexed commands with
+different per-command source textures and U2 factors. The four-source
+case expects left RGBA8 `{100,20,180,255}` and right
+`{110,160,30,255}`; the one-source case retains its previous
+`{90,0,160,255}` / `{100,140,0,255}` oracle. Every pixel
+must match within one LSB per channel; allocation, GPU token,
+execution or readback failure is a hard test failure.
+
+This extension still tests the native material resource-binding ABI
+with a minimal graph-like shader, **not** the full Shader Graph
+authoring/compiler and Renderer3D scene. It does not establish
+cross-backend parity or real batching performance. Experimental
+feature flags stay OFF by default.
+
+**Verification:** Source committed, but native macOS build,
+Metal shader compilation, execution and pixel parity have **NOT RUN**
+for Stage 10BR. Earlier Stage 10BP VT shader PASS is unrelated.
+
+In the **isolated** Mac Studio worktree, not the primary
+AIVERSE checkout (which has an unrelated unfinished rebase), use:
 
 ```bash
 cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
 git pull --ff-only origin feature/texture-rhi-unification
-# Keep experimental ICB validation out of the already-green
-# build/texture-rhi CMake cache and its ordinary CTest registration.
+# Do not modify the already-green build/texture-rhi CMake cache.
 cmake -S . -B build/texture-icb-gpu \
   -DAIVERSE_BUILD_TESTS=ON \
   -DAIVERSE_TEXTURE_METAL_GPU_TESTS=OFF \
   -DAIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=ON
-cmake --build build/texture-icb-gpu --target aiverse_metal_texture_icb_graph_gpu_test --parallel 4
-ctest --test-dir build/texture-icb-gpu --verbose --output-on-failure \
-  --no-tests=error -R '^metal_texture_icb_graph_gpu
+cmake --build build/texture-icb-gpu \
+  --target aiverse_metal_texture_icb_graph_gpu_test --parallel 4
+ctest --test-dir build/texture-icb-gpu \
+  --verbose --output-on-failure --no-tests=error \
+  -R '^metal_texture_icb_graph_gpu$'
 ```
 
-To disable the experimental test again, reconfigure with
-`-DAIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=OFF`. Keep
-PR #21 Draft until the actual GPU result, further
-Shader Graph production integration and cross-platform
-acceptance are recorded. Mac drivers with known AGX
-ICB instability may reject or abort the test; record the
-real diagnostic rather than reporting a synthetic pass.
+CTest scopes experimental environment flags to this test process.
+The fixture fails closed if the device cannot execute real GPU-encoded ICB.
+Mac drivers with previous AGX ICB instability may reject or abort it;
+report the actual first compiler/driver/pixel failure, not a
+substituted CPU result.
 
-
-```
-
-To disable the experimental test again, reconfigure with
-`-DAIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=OFF`. Keep
-PR #21 Draft until the actual GPU result, further
-Shader Graph production integration and cross-platform
-acceptance are recorded. Mac drivers with known AGX
-ICB instability may reject or abort the test; record the
-real diagnostic rather than reporting a synthetic pass.
-
+On native success: record both 1-source and 4-source GPU pixel PASS
+logs and build commit, then implement a separate full production
+Shader Graph material/compiler scene acceptance. On failure: fix
+the first confirmed root cause and create another handoff entry.
+Keep <https://github.com/chromealex/AIVERSE/pull/21> **Draft**.
