@@ -96,7 +96,8 @@ std::vector<SceneIndexBudgetGrant> apportionSceneIndexBudget(
 }
 
 bool IndexResidency::initialize(gfx::Device& device, const ModelAsset& asset,
-                                size_t budgetBytes, std::string* error) {
+                                size_t budgetBytes, std::string* error,
+                                bool preferIncremental, size_t uploadBudgetBytes) {
     if (error) error->clear();
     if (device_ || asset_ || buffer_.valid())
         return fail(error, "Strata index residency is already initialized");
@@ -146,8 +147,13 @@ bool IndexResidency::initialize(gfx::Device& device, const ModelAsset& asset,
         spans_[i].resize(asset.primitives[i].geometry.nodes.size());
     stats_.budgetBytes = budgetBytes;
     stats_.pinnedRootBytes = rootsBytes;
-    if (!update({}, error)) {
-        // update has not published a buffer on failure; reset borrowed state.
+    const bool useIncremental = preferIncremental &&
+        (device.info().backend == gfx::Backend::Metal ||
+         device.info().backend == gfx::Backend::Vulkan) &&
+        device.canUpdateSharedBuffers();
+    if (!(useIncremental ? initializeIncremental(uploadBudgetBytes, error)
+                          : update({}, error))) {
+        // Neither mode may expose a half-uploaded resident root frontier.
         device_ = nullptr;
         asset_ = nullptr;
         parent_.clear();
@@ -223,6 +229,9 @@ bool IndexResidency::update(const std::vector<IndexDemand>& demands,
         if (!fulfilled) ++deferred;
     }
 
+    if (incremental_)
+        return updateIncremental(wanted, deferred, error);
+
     bool unchanged = buffer_.valid();
     uint64_t oldNodes = 0, newNodes = 0, evictions = 0;
     for (size_t p = 0; p < wanted.size(); ++p)
@@ -294,7 +303,8 @@ IndexSpan IndexResidency::span(uint32_t primitive, uint32_t node) const {
 
 void IndexResidency::shutdown(gfx::Device& device) {
     if (device_ && device_ != &device) return;
-    if (buffer_.valid()) device.destroyBuffer(buffer_);
+    if (incremental_) shutdownIncremental(device);
+    else if (buffer_.valid()) device.destroyBuffer(buffer_);
     buffer_ = {};
     device_ = nullptr;
     asset_ = nullptr;
