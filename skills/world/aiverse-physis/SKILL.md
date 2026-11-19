@@ -636,3 +636,26 @@ been built or run; GitHub feature CI was queued/cancelled.
 
 Handoff:
 `docs/agent-handoffs/physis-stage50-post-read-integrity-2026-11-19.md`.
+
+### Stage 51 — verify real pinned admin startup against unsafe receipts
+
+The canonical privileged `LoopbackAdminEndpoint::open` must call
+`FileJournal::loadPinned` before binding a network listener, and
+must release the process lock on failure. The new POSIX fixture
+`pinnedEndpointRejectsUnsafeStartupJournal` tests valid startup,
+corrupted checksum refusal, released lock, symlink/FIFO refusal and
+successful startup after the operator repairs the file. It is
+authored in `tests/physis_admin_journal_test.cpp`, but the complete
+native AIVERSE executable has NOT been compiled or run.
+
+The low-level `posix_journal::read/write` helpers also reject
+embedded `\\0` in journal basenames and temporary suffixes, so
+POSIX `openat` cannot silently truncate a name. The source-identical
+test for this change passed on Linux (isolated CTest 1/1, GCC, Clang,
+ASan, UBSan), with code blobs
+`3e00b8ec1508c438f401c240eaa3aa38ab90bbd1` and
+`a2393a8d09a75429d9e291a537682c72dff09e3f`.
+
+No journal schema, ECS component, native game genre, network
+authority or NEREID/TerraWeave/Box3D ownership changed. See
+`docs/agent-handoffs/physis-stage51-pinned-startup-2026-11-19.md`.
