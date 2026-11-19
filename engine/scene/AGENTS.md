@@ -101,8 +101,8 @@ Stage 1; this stage supplies deterministic ECS ownership and lifecycle APIs.
   only installs the static prefab/scene schemas.
 - Native opt-in CTest: `ecs_static_scene_integration_test`; run this
   plus all relevant source-branch ECS, scene, COW, save and lockstep tests
-  before proposing a main merge. **No native result is yet available for
-  the combined integration branch.**
+  before proposing a main merge. **Combined native targeted integration CTest passed 7/7 on Mac Studio
+  (2026-11-19). Full ECS/COW/FPS/RTS and GPU checks remain outstanding.**
 - See `docs/ecs-static-prefab-scene-integration.md` and
   `docs/agent-handoffs/ecs-static-scene-stage4-2026-11-19.md` for the
   exact integration contract/commit history, verification and next step.
