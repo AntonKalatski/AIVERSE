@@ -9,6 +9,7 @@
 #include "engine/character/vivid/MorphLodGpuAuthoring.h"
 #include "engine/character/vivid/ViewportSculptPick.h"
 #include "engine/character/vivid/RigAuthoring.h"
+#include "engine/character/vivid/BindPoseRebind.h"
 #include "engine/character/vivid/ScalpSkinning.h"
 #include "engine/character/vivid/GpuActorStream.h"
 #include "engine/character/vivid/HumanRetirementQueue.h"
@@ -58,6 +59,7 @@ struct CreatorApp {
     std::vector<mat4> facePose;
     std::vector<mat4> rigPoseScratch;
     RigAuthoring rigCorrections;
+    bool authorBindPose=false;
     int selectedRigNode=0;
     float rigOffset[3]={0,0,0};
     char rigCorrectionFile[512]="/tmp/vivid-rig-corrections.json";
@@ -484,6 +486,12 @@ struct CreatorApp {
             } else {
                 proposed=generateHumanPreview(session.dna(),groomQuality);
             }
+            if(authorBindPose && !rigCorrections.edits().empty()) {
+                // Stage all bind / inverse-bind changes on this candidate
+                // before model GPU upload and AnimationGraph compilation.
+                // Import source and previously visible model stay immutable.
+                (void)BindPoseRebind::apply(*proposed.head,rigCorrections);
+            }
             AnimClip idle;
             idle.name="vivid_idle";
             idle.duration=2.0f;
@@ -727,8 +735,14 @@ struct CreatorApp {
             slider("Height metres",&draft.anatomy.heightMeters,0.8f,2.6f);
         }
         if(ImGui::CollapsingHeader("Rig correction authoring")) {
-            ImGui::TextWrapped("Non-destructive local bone translations are applied "
-                "after MotionWeave. Source inverse-bind matrices remain intact.");
+            ImGui::TextWrapped("Default edits are presentation-only. Opt-in rebinding "
+                "applies local bone translation to imported pre-upload skeleton and "
+                "recomputes inverse-bind matrices. Original asset files remain unchanged.");
+            if(ImGui::Checkbox("Rebind skeleton from authored bone translations",
+                                &authorBindPose))pendingRebuild=true;
+            if(authorBindPose)
+                ImGui::TextWrapped("Rebind requires valid skinned joint palettes; "
+                    "bone offsets are NOT applied again as a pose overlay.");
             if(human.head && !human.head->nodes.empty()) {
                 selectedRigNode=std::clamp(selectedRigNode,0,int(human.head->nodes.size())-1);
                 const char* selected=human.head->nodes[std::size_t(selectedRigNode)].name.c_str();
@@ -751,14 +765,17 @@ struct CreatorApp {
                 ImGui::DragFloat3("Local translation",rigOffset,0.002f,-1.0f,1.0f);
                 if(ImGui::Button("Apply rig correction")) {
                     if(rigCorrections.setTranslation(selected,
-                        {rigOffset[0],rigOffset[1],rigOffset[2]}))
+                        {rigOffset[0],rigOffset[1],rigOffset[2]})) {
+                        if(authorBindPose)pendingRebuild=true;
                         status="Rig correction applied";
-                    else status="Rig correction rejected";
+                    }else status="Rig correction rejected";
                 }
                 ImGui::SameLine();
-                if(ImGui::Button("Undo rig"))(void)rigCorrections.undo();
+                if(ImGui::Button("Undo rig") && rigCorrections.undo() &&
+                   authorBindPose)pendingRebuild=true;
                 ImGui::SameLine();
-                if(ImGui::Button("Redo rig"))(void)rigCorrections.redo();
+                if(ImGui::Button("Redo rig") && rigCorrections.redo() &&
+                   authorBindPose)pendingRebuild=true;
             }
             ImGui::InputText("Rig correction JSON",rigCorrectionFile,
                              sizeof(rigCorrectionFile));
@@ -783,6 +800,7 @@ struct CreatorApp {
                     auto next=RigAuthoring::fromJson(Json::parse(
                         fileContents(rigCorrectionFile,1024*1024)));
                     rigCorrections=std::move(next);
+                    if(authorBindPose)pendingRebuild=true;
                     status="Rig corrections loaded";
                 }catch(const std::exception& e){status=e.what();}
             }
@@ -1444,7 +1462,7 @@ struct CreatorApp {
             status="VIVID facial rig: invalid composition";
             return;
         }
-        if(!rigCorrections.edits().empty()) {
+        if(!authorBindPose && !rigCorrections.edits().empty()) {
             rigPoseScratch.resize(facePose.size());
             if(!rigCorrections.apply(*human.head,facePose,rigPoseScratch))
                 status="VIVID rig correction invalid: last-good pose retained";
