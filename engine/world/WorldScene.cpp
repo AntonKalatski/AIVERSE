@@ -101,6 +101,16 @@ NereidUnderwaterView WorldScene::nereidUnderwaterAt(Vec3 camera)const {
     return sampleNereidUnderwater(nereidWater_,camera);
 }
 
+void WorldScene::setVegetationRootStates(
+        std::vector<terraweave::RootState> states) {
+    if(!terraForest_)
+        throw std::logic_error("WorldScene root states require enabled terraweaveForest");
+    terraForest_->setRootStates(states);
+}
+size_t WorldScene::vegetationRootPrototypeCount()const {
+    return terraForest_?terraForest_->generatedRootPrototypes():0u;
+}
+
 // A caller-owned, serializable set of runtime clearings shared by both
 // Flora instances and distant Horizon canopy silhouettes. Only the first
 // state and the latest replacement matter until the next WorldScene update.
@@ -514,7 +524,9 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
                 static_cast<int64_t>(std::llround(zCm))
             });
         }
-        if(!terraForestReady_) {
+        if(!terraForestReady_ || terraForest_->pendingRootUploads()) {
+            // New exposed root tiers are prepared lazily after a soil
+            // change. GPU buffer lifetime stays on the owning render thread.
             if(!terraForest_->uploadModels(device))
                 throw JsonError("world.terraweaveForest: model GPU upload failed");
             terraForestReady_=true;
