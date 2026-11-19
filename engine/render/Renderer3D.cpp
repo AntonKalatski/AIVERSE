@@ -589,7 +589,7 @@ void Renderer3D::renderCurrentFrameReactiveMask(
     // Conservative translucent coverage: surfaces whose true motion
     // cannot be reconstructed suppress blur locally via a reactive mask.
     // No previous-pose approximation, no readback, no ECS state changes.
-    auto reactiveEligible = [](const ModelItem& it) {
+    auto reactiveEligible = [&](const ModelItem& it) {
         if (!it.inView || !it.model || !it.prim || !it.mat ||
             !it.model->vb.valid() || !it.model->ib.valid() ||
             it.indexCount == 0 || !it.rigid || it.joints >= 0 ||
@@ -607,9 +607,11 @@ void Renderer3D::renderCurrentFrameReactiveMask(
         // Alpha-mask silhouettes (foliage/grilles) require precise material
         // texture cutout; dissolving objects require object-space noise.
         const bool cutout = it.mat->alpha == AlphaMode::Mask;
-        return translucent || fade || cutout || it.dissolve > 0.0f;
+        const bool reveal = geometryMainView_ && actorReveal.w > 0.0f &&
+            (it.flags & kDrawActorReveal);
+        return translucent || fade || cutout || it.dissolve > 0.0f || reveal;
     };
-    auto reactiveAnimatedEligible = [](const ModelItem& it) {
+    auto reactiveAnimatedEligible = [&](const ModelItem& it) {
         if (!it.inView || !it.model || !it.prim || !it.mat ||
             !it.model->vb.valid() || !it.model->ib.valid() ||
             !it.indexCount || it.model->geometry ||
@@ -627,7 +629,10 @@ void Renderer3D::renderCurrentFrameReactiveMask(
         const bool fade = (it.lodThreshold < 1.0f || it.lodInvert) &&
             it.mat->alpha == AlphaMode::Opaque;
         const bool dissolve = it.dissolve > 0.0f && it.dissolve < 1.0f;
-        return deform && (translucent || fade || dissolve) &&
+        const bool reveal = geometryMainView_ && actorReveal.w > 0.0f &&
+            (it.flags & kDrawActorReveal);
+        const bool cutout = it.mat->alpha == AlphaMode::Mask;
+        return deform && (translucent || fade || dissolve || reveal || cutout) &&
             (!it.baked || it.model->baked.tex.valid());
     };
     // Water sheets and other immediate MeshVertex draws use DrawItem
@@ -648,7 +653,9 @@ void Renderer3D::renderCurrentFrameReactiveMask(
         const bool rigid = reactiveEligible(it);
         rigidReactiveNeeded |= rigid;
         const bool detailed = rigid &&
-            (it.mat->alpha == AlphaMode::Mask || it.dissolve > 0.0f);
+            (it.mat->alpha == AlphaMode::Mask || it.dissolve > 0.0f ||
+             (geometryMainView_ && actorReveal.w > 0.0f &&
+              (it.flags & kDrawActorReveal)));
         cutoutReactiveNeeded |= detailed;
         simpleRigidReactiveNeeded |= rigid && !detailed;
         const bool animated = reactiveAnimatedEligible(it);
@@ -837,7 +844,9 @@ void Renderer3D::renderCurrentFrameReactiveMask(
             if (!reactiveEligible(it)) continue;
             const bool cutout = it.mat->alpha == AlphaMode::Mask;
             const bool dissolve = it.dissolve > 0.0f;
-            const bool detailed = cutout || dissolve;
+            const bool reveal = geometryMainView_ && actorReveal.w > 0.0f &&
+                (it.flags & kDrawActorReveal);
+            const bool detailed = cutout || dissolve || reveal;
             const auto pipeline = detailed ? objectMotionReactiveCutoutPipeline_ :
                                              objectMotionReactivePipeline_;
             if (!pipeline.valid()) { ++objectMotionStats_.rejected; continue; }
