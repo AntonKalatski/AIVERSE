@@ -32,6 +32,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Verify texture script Bash syntax
+        run: bash -n tools/verify-texture-rhi.sh
       - name: System build dependencies
         run: |
           sudo apt-get update
@@ -66,6 +68,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+      - name: Verify texture script Bash syntax
+        run: bash -n tools/verify-texture-rhi.sh
       - name: System build dependencies
         run: |
           sudo apt-get update
