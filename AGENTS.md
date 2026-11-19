@@ -125,13 +125,22 @@ preparation/submission time per distinct indexed command**, separately
 for sun-shadow and opaque. It warms up for two attempts, uses a 15% EMA,
 and after eight usable samples temporarily prefers ordinary instancing
 when the EMA exceeds `AIVERSE_CPU_MDI_MAX_US_PER_COMMAND` (default
-25 us; experimental, user-tunable). Every 32 preflight-ready passes a
-probe retries MDI to allow recovery. Nonpooled/nonstatic MDI and GPU ICB
-are unaffected. This does **not** measure GPU time or prove a speedup;
-keep all flags default OFF until Metal pixel tests and same-scene CPU/GPU
-A/B/A. Scene → Batching shows cost, sample counts, skipped and probe
-passes. See `docs/geometry-performance.md` and the latest
-batching-agent handoff before editing these paths.
+25 us; experimental, user-tunable). Stage 20 scopes those decisions
+**per shared GPU geometry page and pass**, not globally per pass:
+`CpuMdiPageKey` includes the page address + VB/IB handles, and the
+renderer keeps a weak page lifetime reference to reject recycled keys.
+At most 256 pages have tracked feedback, expiring after 128 unseen epochs;
+untracked pages retain normal MDI, never an assumed fallback. Each page
+makes one decision per render-scene pass, with a recovery probe every
+32 eligible *page* opportunities. A slow page only sends its own
+preflight-ready candidates to instancing; fast pages still use cross-model
+MDI in the same view. The pass-wide EMA is **diagnostics only**.
+Nonpooled/nonstatic MDI and GPU ICB are unaffected. This does **not**
+measure GPU time or prove a speedup; keep all flags default OFF until
+Metal pixel tests and same-scene CPU/GPU A/B/A. Scene → Batching shows
+page counts, shadow/opaque slow pages, per-page skipped/probed groups
+and global CPU averages. See `docs/geometry-performance.md` and the
+latest batching-agent handoff before editing these paths.
 
 `engine/render/EcsStaticModelRender.h` provides the **shared genre-independent
 ECS presentation adapter** using only integer asset/revision state in the ECS
