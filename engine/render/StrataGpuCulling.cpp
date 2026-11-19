@@ -214,6 +214,33 @@ kernel void cs_main(device const uchar* metadata [[buffer(0)]],
 )MSL";
 } // namespace
 
+GpuSceneInstance makeGpuSceneInstance(const mat4& objectToWorld,
+                                     uint32_t primitiveIndex,
+                                     uint32_t instanceToken, bool enabled) {
+    GpuSceneInstance instance{};
+    std::memcpy(instance.objectToWorld, objectToWorld.m,
+                sizeof(instance.objectToWorld));
+    instance.primitiveIndex = primitiveIndex;
+    instance.instanceToken = instanceToken;
+    instance.enabled = enabled ? 1u : 0u;
+    return instance;
+}
+
+ViewConfig cpuReferenceView(const GpuPassConfig& pass,
+                            const GpuSceneInstance& instance) {
+    mat4 world{};
+    std::memcpy(world.m, instance.objectToWorld, sizeof(world.m));
+    ViewConfig reference{};
+    reference.objectToClip = pass.viewProjection * world;
+    reference.width = pass.width;
+    reference.height = pass.height;
+    reference.clipDepthZeroToOne = pass.clipDepthZeroToOne;
+    reference.frustumCull = pass.frustumCull;
+    reference.errorThresholdPixels = pass.errorThresholdPixels;
+    reference.maxSelectedNodes = pass.maxOutputClusters;
+    return reference;
+}
+
 bool GpuClusterCulling::allocate(gfx::Device& dev, gfx::BufferHandle& h,
                                  size_t& bytes, size_t needed,
                                  const char* label) {
@@ -234,19 +261,19 @@ bool GpuClusterCulling::allocate(gfx::Device& dev, gfx::BufferHandle& h,
 bool GpuClusterCulling::dispatch(gfx::Device& dev,
                                 gfx::BufferHandle gpuMetadataV2,
                                 const std::vector<GpuSceneInstance>& instances,
-                                const ViewConfig& config, uint64_t frameSerial,
+                                const GpuPassConfig& config, uint64_t frameSerial,
                                 GpuSelectionSubmission& out) {
     if (dev.info().backend != gfx::Backend::Metal ||
         !dev.supportsCompute() || !gpuMetadataV2.valid() ||
         !frameSerial || instances.empty() || instances.size() > 4096 ||
-        config.maxSelectedNodes == 0 || config.maxSelectedNodes > 65536 ||
+        config.maxOutputClusters == 0 || config.maxOutputClusters > 65536 ||
         config.width <= 0 || config.height <= 0 ||
         config.width > 32768 || config.height > 32768 ||
         !std::isfinite(config.errorThresholdPixels) ||
         config.errorThresholdPixels <= 0.f ||
         config.errorThresholdPixels > 10000.f)
         return false;
-    for (float v : config.objectToClip.m)
+    for (float v : config.viewProjection.m)
         if (!std::isfinite(v)) return false;
     for (const auto& inst : instances) {
         for (float v : inst.objectToWorld)
@@ -273,7 +300,7 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
     auto& slot = pool[submission];
     const size_t inputBytes = instances.size() * sizeof(GpuSceneInstance);
     const size_t outputBytes =
-        size_t(config.maxSelectedNodes) * sizeof(GpuSelectedCluster);
+        size_t(config.maxOutputClusters) * sizeof(GpuSelectedCluster);
     if (!allocate(dev, slot.instances, slot.instancesBytes, inputBytes,
                   "Strata diagnostic GPU instances") ||
         !allocate(dev, slot.ranges, slot.rangesBytes, outputBytes,
@@ -296,10 +323,10 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
     dev.setComputeBuffer(2, slot.ranges);
     dev.setComputeBuffer(3, slot.counters);
     GpuSelectionUniforms uniforms{};
-    std::memcpy(uniforms.viewProjection, config.objectToClip.m,
+    std::memcpy(uniforms.viewProjection, config.viewProjection.m,
                 sizeof(uniforms.viewProjection));
     uniforms.instanceCount = uint32_t(instances.size());
-    uniforms.outputCapacity = config.maxSelectedNodes;
+    uniforms.outputCapacity = config.maxOutputClusters;
     uniforms.width = uint32_t(config.width);
     uniforms.height = uint32_t(config.height);
     uniforms.thresholdPixels = config.errorThresholdPixels;
@@ -311,7 +338,7 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
     GpuSelectionSubmission ready{};
     ready.ranges = slot.ranges;
     ready.counters = slot.counters;
-    ready.capacity = config.maxSelectedNodes;
+    ready.capacity = config.maxOutputClusters;
     ready.submittedInstances = uint32_t(instances.size());
     ready.frameSerial = frameSerial;
     ready.submission = submission;
