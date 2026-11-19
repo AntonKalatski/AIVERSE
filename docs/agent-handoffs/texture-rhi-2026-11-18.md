@@ -6038,3 +6038,32 @@ per user's functional-first request.
 Next: implement combined masked+LOD feedback shader and
 parameter bindings; account for main viewport-to-feedback
 pixel coordinates, then finish deformed model and Terra paths.
+
+
+## Stage 9T — combined masked + LOD feedback variant (2026-11-19)
+
+Source commits: 5e32f8cb627ba5fbdac6f756294994c52dbcd226,
+b93df1739d39dfde7a6ff5ba58ebd1db76137756.
+Changed files: engine/render/Renderer3D.h,
+engine/gfx/VirtualTextureFeedback.h.
+Added setVirtualTextureMaskedLodModelFeedback(pipeline,
+FeedbackLodBinder) and matching clear method. Renderer3D now
+routes rigid masked+fading ModelItem primitives through a
+dedicated combined pipeline rather than unconditionally
+skipping them. The binder receives material/world and LOD
+threshold/inversion. Added GLSL/MSL combined fragment shader
+builders that perform base alpha discard and Renderer3D's
+4x4 screen-space ordered LOD discard before writing packed
+virtual page feedback. Automatic mip selection is computed
+before discards. The Metal combined variant binds alpha params
+at buffer(1) and LOD params at buffer(2).
+
+Important: the caller still creates pipelines and binds the
+same base texture, sampler, UV transform and alpha cutoff as
+the main pass. Downsampled feedback coordinates may not match
+main-pass LOD dithering. Animated/morph/skinned model support,
+Terra registration and backend parity remain outstanding.
+Verification: GitHub commits succeeded. Native compilation,
+CTest, shader compiler and GPU tests NOT RUN per user request.
+Next: implement deforming-model feedback parity, then wire
+Terra's material producer and close RHI backend gaps.
