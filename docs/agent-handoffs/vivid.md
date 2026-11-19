@@ -218,3 +218,29 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
 - **Tests actually run on this merged revision:** **NOT RUN**. Prior VIVID 5/5 Mac tests were on the pre-merge code. MotionWeave Stage 126 handoffs state deferred build/tests; do not claim any inherited CI pass or platform parity. No merged Metal GPU numerical readback has been run.
 - **Risks:** MotionWeave includes extensive shared Renderer3D, Gfx, Model, render texture and LOD lifetime work. Test cross-module link order, FPS and RTS asset/presentation regressions, experimental GPU resource ownership, especially under hot-reload. If current MotionWeave source continues advancing, integrate new deltas deliberately after validation; do not copy worker or graph implementations into VIVID.
 - **Next exact implementation step:** add a small bridge consuming MotionWeave `AnimationPoseComponent` **after** MotionWeave::update; produce a derived render::Pose with VIVID facial morph weights, never modify MotionWeave's cached pose or create a duplicate AnimationGraph. Tests must cover repeat-frame composition without weight accumulation and invalid pose. Then build/run all VIVID + MotionWeave tests on Mac.
+
+## Stage 4B — 2026-11-19 — consume MotionWeave pose without extra animation pipeline
+
+- **Branch:** `feature/vivid-digital-humans` (MotionWeave source `548f75f0ce824db6f468f6577da95387d388ea0b` merged previously as `f27c076410a5cb0aa7d12cc689d83c7eff302928`). PR #37 was opened during conflict diagnosis, then closed after the equivalent two-parent merge was completed manually; it was not an additional PR merge.
+- **Implementation SHAs and files**:
+  - `ddc93cd481eca7e108d3e6494090b0d18c2cf7c5` — `engine/character/vivid/MotionWeaveBridge.h` public post-pose composition API.
+  - `a883e2f6ba3c3ff5be892db9d7626ce3fdb4e11e` — `MotionWeaveBridge.cpp`, caller-owned output/scratch pose double-buffer, copy final MotionWeave source and apply only VIVID morph weights, swap on success.
+  - `e2fa835f689cf974bf2f32b5d6a574b4ec26bbb1` — `tests/vivid/motionweave_bridge.cpp`, MotionWeave ECS World + AnimationGraph bind fixture and repeated additive/no-drift checks.
+  - `944b9a115c051518feb53bf4a16c83ad4551b5e3` — local VIVID CMake adds `AIVERSE::vivid_motionweave`, target and CTest `vivid_motionweave_bridge`.
+  - `3096f54f337ef332b95fd6a191148c6e733c6244` — root CMake moves VIVID add_subdirectory AFTER declaring the `AIVERSE::MotionWeave` alias/interface to support linking correctly.
+  - `62bf6edd715d99642f6474e0578d0f4671718801` — add headless `aiverse::platform::readContentFile` fixture hook, matching MotionWeave's existing standalone native test.
+  - `82e0b760e9bd5f519e9914ffef1d1c151d4021cf` — `docs/vivid.md` usage and status.
+- **Public API**: `aiverse::vivid::composeFaceAfterMotionWeave(const aiverse::motionweave::AnimationPoseComponent&, const FaceFrame&, const MorphBinding&, render::Pose& output, render::Pose& scratch, float influence, MorphApply)`. Output/scratch must differ and must not alias MotionWeave's cached local pose. Invalid source/influence/binding must not change the previously completed output.
+- **Ownership:** MotionWeave is the only writer of skeletal pose, AnimationGraph state, workers, IK and retargeting. VIVID derives a separate final render pose with legacy facial morph channels; no new animation scheduler/graph/ECS world. Only 0..7 `render::Pose` morph indices are used in this adapter; VIVID's separate sparse GPU stream remains 52+ capable but not yet consumed by renderer.
+- **Tests actually run:** **NOT RUN** on this merged revision. Earlier user reported 5/5 VIVID native tests PASS before merge; these do not cover combined MotionWeave CMake or the new bridge. No Mac build, GitHub CI, GPU readback, visual capture or full suite has verified this integration.
+- **Risks and limitations:** MotionWeave feature branch contains extensive yet-unverified resource and renderer changes; merged tree should be configured in a fresh build directory. The new adapter intentionally does not change bone matrices for facial jaw or eye joints, and it must execute after MotionWeave worker tasks are complete. A separate owned render pose is necessary to avoid accumulating facial values when MotionWeave animation LOD throttles pose evaluation.
+- **Next exact step:** on Mac, fetch/reselect merged `feature/vivid-digital-humans` in existing worktree, configure with `AIVERSE_BUILD_TESTS=ON`, build six VIVID tests including `aiverse_vivid_motionweave_tests`, run `ctest -R '^vivid_'`. Build and run MotionWeave's standalone `aiverse_motionweave_api_tests` too; then consider full graphics/preview integration. Fix any first compiler warning/error and append a new handoff with actual results.
+- **Mac verification commands (NOT RUN in this stage):**
+  ```sh
+  cd ~/Projects/AIVERSE
+  git fetch origin feature/vivid-digital-humans
+  git -C ../AIVERSE-vivid switch --detach origin/feature/vivid-digital-humans
+  cmake -S ../AIVERSE-vivid -B ../AIVERSE-vivid/build/vivid -DAIVERSE_BUILD_TESTS=ON
+  cmake --build ../AIVERSE-vivid/build/vivid --target aiverse_vivid_face_tests aiverse_vivid_sparse_tests aiverse_vivid_shape_tests aiverse_vivid_morph_tests aiverse_vivid_gpu_contract_tests aiverse_vivid_motionweave_tests aiverse_motionweave_api_tests -j 4
+  ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^(vivid_|motionweave_api$)'
+  ```
