@@ -143,16 +143,18 @@ public:
                 ++indegree[i];
             }
         }
-        struct Ready { size_t index; int32_t priority; uint64_t entity; };
+        struct Ready { size_t index; int32_t priority; uint64_t entity; bool screen; };
         struct LowerPriority {
             bool operator()(const Ready& a,const Ready& b) const {
-                return a.priority != b.priority ? a.priority < b.priority :
-                       a.entity > b.entity;
+                return a.screen != b.screen ? a.screen :
+                       (a.priority != b.priority ? a.priority < b.priority :
+                        a.entity > b.entity);
             }
         };
         std::priority_queue<Ready,std::vector<Ready>,LowerPriority> ready;
         for (size_t i=0;i<n;++i) if (!blocked[i] && indegree[i]==0)
-            ready.push({i,cameras[i].priority,cameras[i].entity.packed()});
+            ready.push({i,cameras[i].priority,cameras[i].entity.packed(),
+                        cameras[i].output.kind==CameraOutputKind::Screen});
         size_t visited=0;
         while (!ready.empty()) {
             const size_t i=ready.top().index;
@@ -181,7 +183,8 @@ public:
             if (anotherFrame && (due || state.manual || outputChanged))
                 plan.jobs.push_back(view);
             for (size_t child: edges[i]) if (--indegree[child]==0 && !blocked[child])
-                ready.push({child,cameras[child].priority,cameras[child].entity.packed()});
+                ready.push({child,cameras[child].priority,cameras[child].entity.packed(),
+                            cameras[child].output.kind==CameraOutputKind::Screen});
         }
         (void)visited;
         // A node left with indegree > 0 is cyclic or downstream of a cycle.
