@@ -115,7 +115,13 @@ bool VulkanDevice::pickDevice(std::string& error) {
             const bool digits = std::strspn(forced, "0123456789") == std::strlen(forced);
             if (digits ? uint32_t(std::atoi(forced)) == i : std::strstr(p.deviceName, forced) != nullptr) score += 100;
         }
-        if (score > bestScore) { bestScore = score; best = int(i); queueFamily_ = uint32_t(family); }
+        if (score > bestScore) {
+            bestScore=score;
+            best=int(i);
+            queueFamily_=uint32_t(family);
+            queueSupportsCompute_=(qs[size_t(family)].queueFlags &
+                                   VK_QUEUE_COMPUTE_BIT)!=0;
+        }
     }
     if (best < 0) { error = "Vulkan: no GPU with graphics and present support"; return false; }
     gpu_ = gpus[size_t(best)];
@@ -273,6 +279,7 @@ void VulkanDevice::destroyDeviceObjects() {
     destroySwapchain();
     completed_ = ~uint64_t(0);
     collectGarbage();
+    shutdownCompute();
     buffers_.each([&](VBuffer& b) { for (auto& v : b.versions) { vkDestroyBuffer(device_, v.buffer, nullptr); memory_.release(v.alloc); } });
     auto killTex = [&](VTexture& t) { if (t.view) vkDestroyImageView(device_, t.view, nullptr); if (t.image) vkDestroyImage(device_, t.image, nullptr); memory_.release(t.alloc); };
     textures_.each(killTex);
@@ -419,6 +426,8 @@ void VulkanDevice::prepareSlot() {
     if (waited == VK_SUCCESS) completed_ = std::max(completed_, s.serial);
     else healthy_ = false;
     collectGarbage();
+    deliverComputeReadbacks();
+    resetComputeFrame(uint32_t(slot_));
     vkResetCommandPool(device_, s.pool, 0);
     for (auto p : s.descriptorPools) vkResetDescriptorPool(device_, p, 0);
     s.descriptorPool = 0;
