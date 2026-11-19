@@ -467,7 +467,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
     const size_t packetStart = modelItems_.size();
     std::vector<int> packetSelectedMeshes;
     bool packetHasFade = false;
-    if (packetEligible) packetSelectedMeshes.assign(m->nodes.size(), -1);
+    // The selected-mesh vector is needed only if a packet is missing or
+    // invalidated. Never allocate it on a successful hot replay.
     if (packetEligible) {
         auto found = staticRenderPackets_.find(d.persistentId);
         if (found != staticRenderPackets_.end()) {
@@ -577,6 +578,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
     } else if (staticRenderPacketsEnabled_) {
         ++staticRenderPacketStats_.declined;
     }
+    if (packetEligible)
+        packetSelectedMeshes.assign(m->nodes.size(), -1);
     for (int n : m->order) {
         const Node& node = m->nodes[size_t(n)];
         if (node.mesh < 0) continue;
