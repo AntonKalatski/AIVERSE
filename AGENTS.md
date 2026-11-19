@@ -6,6 +6,28 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 
 ## AIVERSE SpectraFX (universal VFX, in progress)
 
+**Latest implementation handoff (Stage 35, source-only, tests deferred):**
+[docs/agent-handoffs/spectrafx-stage-35-ecs-attachments-gpu-fences-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-35-ecs-attachments-gpu-fences-2026-11-19.md).
+The working SpectraFX branch already contained main at Stage 35 start
+(main `9ee6ff6fbf390bd45363bc92c838f492dfe92eee`, feature
+`4a50d05329840e713d6179a1519fb2f16a8d8604`); no merge/rebase
+was performed. New native `GpuEcsAttachmentPresenter` is a read-only
+adapter for the existing `SpectraSourceComponent`; only presentation
+owns generation-safe source IDs, no genre-specific ECS changes.
+Explicit `syncCommitted` checks for decreasing ticks, requiring
+`resetForRollback()` to clear the entire shared presentation pool.
+Non-unit ECS source scale is **not** silently approximated on Metal:
+the strict pooled path rejects it. Metal source-kill uploads now use
+`gfx::Device::updateStorageBufferChecked`; killed slots are not
+recycled until `completedFrameSerial()` confirms successful GPU
+frame completion. Other RHIs default to unsupported. The editor's
+opt-in Metal GPU preview has Pause/Play, Freeze, Loop and Stop.
+**NOT RUN:** compiler, Metal shaders, device tests, editor screenshots,
+CTest, fault injection, performance. Preserve Stage 34 source ownership,
+Stage 32 readback budgets and all agent handoffs. Never force-push,
+merge to main or claim production GPU validation based on these writes.
+
+
 **Latest implementation handoff (Stage 34, source-only; tests deferred):**
 [docs/agent-handoffs/spectrafx-stage-34-source-kill-continuous-editor-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-34-source-kill-continuous-editor-2026-11-19.md).
 In `SpectraGpuPoolWorld`, persistent presentation sources are generation-safe
