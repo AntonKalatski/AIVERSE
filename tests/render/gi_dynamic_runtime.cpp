@@ -29,6 +29,18 @@ int main() {
     AIVERSE_TEST_CHECK(next.upload.probes==2 && next.upload.bytes==96);
     AIVERSE_TEST_CHECK(next.dirty==14);
 
+    // Even with zero new tracing budget the portable GLES/Vulkan CPU GI
+    // fallback must upload BLACK into all stale cells after a source move.
+    runtime.setLights({GiMovingLight{42,{100,0,0},{1,0,0},4,20}});
+    const auto clearedLight=runtime.update(0,{0,0,0});
+    AIVERSE_TEST_CHECK(clearedLight.trace.primaryRays==0);
+    AIVERSE_TEST_CHECK(clearedLight.upload.probes>0);
+    AIVERSE_TEST_CHECK(clearedLight.upload.bytes>0);
+    const auto afterLightMove=runtime.atlas().texture();
+    for(const auto& value:device.textures.at(afterLightMove.id).data)
+        AIVERSE_TEST_CHECK(value.x==0 && value.y==0 &&
+                           value.z==0 && value.w==0);
+
     // Geometry revision resets stale light transport on CPU and GPU even with zero trace budget.
     runtime.setGeometry(nullptr,2);
     auto cleared=runtime.update(0,{0,0,0});
