@@ -1269,7 +1269,12 @@ void Renderer3D::prepareGpuModelDraws() {
             (it.mat->shaderGraph &&
              (!graphIcbEnabled ||
               int(matQuality_)<it.mat->shaderGraph->minQuality ||
-              !gpuIcbFragmentGraphEligible(*it.mat))) ||
+              !gpuIcbFragmentGraphEligible(*it.mat) ||
+              !supportsModelGraphSourceTextures(
+                  *dev_,it.mat->shaderGraph->textures.size()) ||
+              (it.mat->shaderGraph->usesVirtualTexture &&
+               14+int(it.mat->shaderGraph->textures.size()) >=
+                   dev_->maxFragmentTextureSlots()))) ||
             it.joints >= 0 || it.morph >= 0 || it.baked ||
             it.gi != 0 || it.materialRole || it.shadowRole || it.paletteMaterials ||
             // Current GPU compute only does frustum culling; do not bypass
