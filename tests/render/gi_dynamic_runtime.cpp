@@ -110,6 +110,10 @@ int main() {
         cross.setLights({});
         const auto clearedOnBackend=cross.update(0,{0,0,0});
         AIVERSE_TEST_CHECK(clearedOnBackend.upload.probes==18);
+        cross.cpuTraceBudget().configure(.5,2);
+        const auto bounded=cross.updateAdaptive({0,0,0});
+        AIVERSE_TEST_CHECK(bounded.trace.claimed<=2);
+        AIVERSE_TEST_CHECK(cross.cpuTraceBudget().maxProbes()==2);
         cross.shutdown();
         AIVERSE_TEST_CHECK(portable.textures.empty());
     }
