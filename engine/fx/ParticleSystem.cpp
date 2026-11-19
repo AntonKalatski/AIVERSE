@@ -703,6 +703,9 @@ void ParticleSystem::shutdown() {
         for (auto& p : I.meshPipe) if (p.valid()) I.dev->destroyPipeline(p);
         if (I.shader.valid()) I.dev->destroyShader(I.shader);
         if (I.mulShader.valid()) I.dev->destroyShader(I.mulShader);
+        if (I.reactiveQuadPipe.valid()) I.dev->destroyPipeline(I.reactiveQuadPipe);
+        if (I.reactiveMeshPipe.valid()) I.dev->destroyPipeline(I.reactiveMeshPipe);
+        if (I.reactiveShader.valid()) I.dev->destroyShader(I.reactiveShader);
         if (I.vb.valid()) I.dev->destroyBuffer(I.vb);
         if (I.ib.valid()) I.dev->destroyBuffer(I.ib);
         if (I.atlas.valid()) I.dev->destroyTexture(I.atlas);
