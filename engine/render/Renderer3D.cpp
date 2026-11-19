@@ -128,7 +128,9 @@ void Renderer3D::shutdown() {
     persistentIds_.clear();
     persistentScene_ = {};
     staticModelCaches_.clear();
+    staticRenderPackets_.clear();
     staticModelCacheEpoch_ = 0;
+    staticRenderPacketEpoch_ = 0;
     shutdownModels();
     lights.shutdown();
     shutdownTrace();
@@ -160,6 +162,25 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     }();
     staticModelCacheEnabled_ = enableCpuStaticCache;
     staticModelCacheStats_ = {};
+    static const bool enablePackets = [] {
+        const char* value = std::getenv("AIVERSE_PERSISTENT_CPU_PACKETS");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    staticRenderPacketsEnabled_ = enablePackets;
+    staticRenderPacketStats_ = {};
+    if (staticRenderPacketsEnabled_) {
+        ++staticRenderPacketEpoch_;
+        // Bound packet templates by retiring long-unseen object identities.
+        // The grace period protects alternating Scene/Game viewports.
+        if ((staticRenderPacketEpoch_ % 64u) == 0u) {
+            for (auto it = staticRenderPackets_.begin(); it != staticRenderPackets_.end();) {
+                if (it->second.seen + 4 < staticRenderPacketEpoch_) {
+                    it = staticRenderPackets_.erase(it);
+                    ++staticRenderPacketStats_.evicted;
+                } else ++it;
+            }
+        }
+    }
     if (staticModelCacheEnabled_) {
         ++staticModelCacheEpoch_;
         // Bounded persistent memory. Delayed removal tolerates alternating
