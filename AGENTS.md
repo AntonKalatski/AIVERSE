@@ -6,6 +6,38 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 
 ## AIVERSE SpectraFX (universal VFX, in progress)
 
+**Latest implementation handoff (Stage 44, actual standalone tests RUN):**
+[docs/agent-handoffs/spectrafx-stage-44-offline-diagnostics-tested-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-44-offline-diagnostics-tested-2026-11-19.md).
+New `tests/vfx_spfx_diagnostics_test.cpp` and
+`aiverse_vfx_spfx_diagnostics_test` (CTest:
+`vfx_spfx_diagnostics`, label `SpectraFX`) cover
+raw SPFX V2 checkpoint CRC, bad magic/version/size,
+redacted/opted-in JSON, fixed 3-entry ZIP STORE
+structure and CRC. The offline CLI and test were
+compiled and actually executed on GCC 14.2 Linux,
+using byte-exact GitHub source mirrors (six
+`git hash-object` comparisons passed), with minimal
+`render::float4`/checkpoint ABI stubs. C++20
+`-Wall -Wextra -Werror`, real Python `zipfile`
+extraction, CLI valid/corrupt/missing-file exit
+codes, standalone CMake/CTest **1/1 PASS**, and
+ASAN+UBSAN of portable diagnostics also PASS.
+A separate Linux/macOS workflow is now available:
+`.github/workflows/spectrafx-diagnostics.yml`,
+and `.github/workflows/spectrafx-validation.yml`
+builds the new focused test target.
+
+**NOT VERIFIED:** full AIVERSE/CMake project
+compilation, editor/Metal/Objective-C++ shaders,
+GPU checkpoint readback and recovery, live device
+testing or CPU/GPU parity. GitHub Actions checks
+were still queued/pending when inspected. Do not
+claim those tests passed. Do not merge `main` or
+change other agents' branches without instruction.
+Keep the separate Stage 44 handoff and all existing
+genre-neutral ECS presentation ownership rules.
+
+
 **Latest implementation handoff (Stage 43, source committed; actual native tests deferred):**
 [docs/agent-handoffs/spectrafx-stage-43-safe-bundle-mailbox-recovery-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-43-safe-bundle-mailbox-recovery-2026-11-19.md).
 The offline CLI/editor now create one **explicit local SAFE ZIP**
