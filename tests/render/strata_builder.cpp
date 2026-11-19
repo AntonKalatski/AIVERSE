@@ -43,6 +43,7 @@ int main() {
     assert(asset.bounds.size() == asset.nodes.size());
     assert(!asset.meshlets.empty());
     size_t leafIndices = 0;
+    std::vector<uint32_t> reconstructed;
     for (const Meshlet& m : asset.meshlets) {
         assert(m.node < asset.nodes.size());
         assert(asset.nodes[m.node].childCount == 0);
@@ -52,12 +53,23 @@ int main() {
         assert(size_t(m.vertexOffset) + m.vertexCount <= asset.meshletVertices.size());
         assert(size_t(m.triangleOffset) + m.triangleCount * 3 <= asset.meshletTriangles.size());
         leafIndices += asset.nodes[m.node].indexCount;
-        for (size_t i = 0; i < m.triangleCount * 3; ++i)
-            assert(asset.meshletTriangles[m.triangleOffset + i] < m.vertexCount);
+        for (size_t i = 0; i < m.triangleCount * 3; ++i) {
+            const auto local = asset.meshletTriangles[m.triangleOffset + i];
+            assert(local < m.vertexCount);
+            const uint32_t global = asset.meshletVertices[m.vertexOffset + local];
+            reconstructed.push_back(global);
+            assert(asset.indices[asset.nodes[m.node].firstIndex + i] == global);
+        }
     }
     assert(leafIndices == source.size());
-    for (const auto& node : asset.nodes)
+    assert(reconstructed == source); // exact leaf LOD0 triangle order
+    for (const auto& node : asset.nodes) {
         assert(size_t(node.firstIndex) + node.indexCount <= asset.indices.size());
+        if (node.childCount)
+            for (uint32_t k = 0; k < node.childCount; ++k)
+                assert(node.geometricError >=
+                       asset.nodes[node.firstChild + k].geometricError);
+    }
 
     std::vector<float> pixels(asset.nodes.size(), 2.f);
     SelectionInput selectInput;
@@ -97,5 +109,26 @@ int main() {
     input.indexCount = 3;
     assert(!build(input, {}, asset, &error));
     assert(!error.empty() && asset.indices == unchanged.indices);
+
+    // Attribute-aware API accepts a regular float stream and refuses invalid
+    // weights/layouts without mutating the previous successful asset.
+    const float weights[3] = {0.5f, 0.5f, 0.5f};
+    input.indices = source.data();
+    input.indexCount = source.size();
+    input.attributes = positions.data();
+    input.attributeStride = sizeof(float) * 3;
+    input.attributeComponents = 3;
+    input.attributeWeights = weights;
+    assert(build(input, {}, asset, &error));
+    assert(validate(asset.nodes, asset.roots));
+    unchanged = asset;
+    const float badWeights[3] = {0.5f, -1.f, 0.5f};
+    input.attributeWeights = badWeights;
+    assert(!build(input, {}, asset, &error));
+    assert(asset.indices == unchanged.indices);
+    input.attributeWeights = weights;
+    input.attributeStride = sizeof(float);
+    assert(!build(input, {}, asset, &error));
+    assert(asset.indices == unchanged.indices);
     return 0;
 }
