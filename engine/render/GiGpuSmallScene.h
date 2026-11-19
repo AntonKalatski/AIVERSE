@@ -110,7 +110,16 @@ public:
         if (revision == geometryRevision_) return true;
         if (snapshot.triangleCount()>kMaxTriangles || !dev_->canUpdateSharedBuffers())
             return false;
-        const GiGpuBvh bvh = GiGpuBvh::build(snapshot);
+        return setPackedGeometry(GiGpuBvh::build(snapshot), revision);
+    }
+
+    // Cache callers may reuse unchanged per-chunk BLAS and provide a packed
+    // TLAS+BLAS packet. Must only run after the previous GPU fence completed.
+    bool setPackedGeometry(const GiGpuBvh& bvh, uint64_t revision) {
+        if (!ready() || !dev_->canUpdateSharedBuffers() ||
+            bvh.triangles.size()>kMaxTriangles || bvh.nodes.size()>2*kMaxTriangles+4096)
+            return false;
+        if (revision==geometryRevision_) return true;
         const auto triangles = allocate(std::max<size_t>(1,bvh.triangles.size())*sizeof(GpuTri),
                                         bvh.triangles.empty()?nullptr:bvh.triangles.data());
         if (!triangles.valid()) return false;
