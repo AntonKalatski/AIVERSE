@@ -154,3 +154,13 @@ ctest --test-dir build/lumaweave --output-on-failure -R '^gi_gpu_clipmap_cache$'
 ctest --test-dir build/lumaweave --output-on-failure -R '^(gi_|lumaweave_)'
 ```
 If the existing build dir has a different name, substitute it. After a successful rerun, record the exact tested commit SHA and log here in another separate handoff. If another assertion fails, inspect full output and fix the next failure rather than assuming one changed assertion proves the suite green. Keep `main` and `feature/hybrid-dynamic-gi` untouched by this leaf-branch test correction.
+
+## Stage 7 validation follow-up — 2026-11-19 — owner-reported native CTest 33/33 PASS
+
+Evidence from Mac Studio owner supplied directly in this conversation after the stage-7 test fix: `100% tests passed, 0 tests failed out of 33`.
+
+Scope: previously requested native focused suite `ctest --test-dir build/lumaweave --output-on-failure -R '^(gi_|lumaweave_)'` contains 27 GI + 6 LumaWeave tests, including the formerly failing `gi_gpu_clipmap_cache`. The owner reports the 33-test rerun now passes. This is **owner-reported native CTest execution**, NOT a CI run and NOT a test executed by this agent. The user did not provide the exact tested git SHA/build directory in this confirmation; the source fix was commit `fb68986e8e66bdf515a5bcc2a23ca85af76eaa74`, followed by handoff commit `da4e1f0e464817871e161073d13ad0fcabb16734`. Do not mislabel a specific SHA as tested without checking `git rev-parse HEAD` on the Mac.
+
+Outcome: Stage 7 previously failing check from `gi_gpu_clipmap_cache.cpp:67` is no longer failing in the owner's 33-test report; the full 33-test GI+LumaWeave set is green in that run. Code was not changed in this validation follow-up.
+
+Still NOT RUN / not evidenced by this result: actual xcrun Metal shader compile, GPU BVH ray query and LumaWeave screen-output correctness/parity, native Metal API Validation, GLES/Vulkan backend check, GPU timing, full `./run-tests.sh --quick`, Release/Debug dual-build matrix. Next action is real Metal compute GI/LumaWeave shader compile and direct-light visual/performance benchmarks, then explicitly exclusive old LightSystem vs LumaWeave renderer integration.
