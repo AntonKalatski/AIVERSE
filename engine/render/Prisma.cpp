@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include "PrismaShaders.h"
 
 namespace aiverse::render {
@@ -621,8 +622,9 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
         // and pending fence-retired resources. Not total physical VRAM.
         const uint64_t liveBytes=memoryStats().liveKnownBytes;
         const uint64_t pendingBytes=retirementStats().knownPendingBytes;
-        const uint64_t knownBytes=liveBytes > UINT64_MAX-pendingBytes
-            ? UINT64_MAX : liveBytes+pendingBytes;
+        const uint64_t maximum=std::numeric_limits<uint64_t>::max();
+        const uint64_t knownBytes=liveBytes > maximum-pendingBytes
+            ? maximum : liveBytes+pendingBytes;
         const uint64_t memoryLimit=uint64_t(
             std::clamp(effect->get("maxPrismaMemoryMiB"),32.0f,4096.0f))
             * uint64_t(1024*1024);
