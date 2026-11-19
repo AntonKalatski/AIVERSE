@@ -625,3 +625,57 @@ must be reviewed during the later GPU test stage.
 The isolated fragment source generators in
 `VirtualTextureFeedback.h` are not themselves complete
 `ShaderDesc` sources; use the new program builder for native RHI.
+
+
+### Deformed model VT feedback: skinning, baked clips, morphs
+
+`engine/render/VirtualTextureDeformedFeedback.h` provides the opt-in
+`render::VirtualTextureDeformedModelFeedback` adapter. It uses the
+same `ModelShaders.h` GLSL/MSL deformation functions as the main
+model pass (rather than a simplified second implementation),
+including `U3` joint palette, baked joint texture `tex7`,
+`U4` morph weights and `tex8` morph deltas. The adapter creates
+six deformation shader configurations, each with backface or
+double-sided culling: rigid-dynamic, skinned, baked, morph,
+skinned+morph, and baked+morph. Material alpha test and LOD fade
+are controlled per draw using a shared U6 feedback block;
+the fragment shader computes automatic mip before any discard.
+
+Add the adapter after initializing the model feedback renderer:
+
+```cpp
+#include "engine/render/VirtualTextureDeformedFeedback.h"
+
+render::VirtualTextureModelFeedback rigidFeedback;
+render::VirtualTextureDeformedModelFeedback animatedFeedback;
+rigidFeedback.initialize(dev, feedback.hasDepthAttachment());
+animatedFeedback.initialize(dev, feedback.hasDepthAttachment());
+rigidFeedback.connect(renderer, resolveVirtualMaterial);
+animatedFeedback.connect(renderer, resolveVirtualMaterial);
+renderer.setVirtualTextureFeedback(&feedback, {}, {});
+```
+
+`resolveVirtualMaterial` is the same
+`VirtualTextureMaterialResolver` callback used by rigid models.
+It fills virtual page tile counts, logical texture resolution,
+mip level count, page layer and optional UV scale/offset.
+Unmapped materials write zero feedback while retaining depth
+occlusion. The deformed callback uses the shared `Model::vb/ib`,
+including `gpuBaseVertex` and `gpuFirstIndex`, and matches
+the main renderer's 60-byte `ModelVertex` vertex layout.
+
+On teardown, clear the pass from `Renderer3D`, disconnect
+`animatedFeedback` and `rigidFeedback`, then shut down both
+adapters and the pass **before** destroying the RHI device or
+renderer. Deformed feedback requires valid per-frame animation
+state from normal `Renderer3D::beginScene` and `drawModel`.
+
+Caveats: this is not a CPU skinning implementation; it issues
+GPU vertex deformation using the same shader functions as
+the visible draw. Shaders with custom material graphs and
+vertex displacement require further parity work. Geometry
+residency and alpha texture availability must be valid.
+Deformed objects whose required bone/morph GPU state is
+incomplete are skipped conservatively rather than drawn
+undeformed. Multi-backend compilation and visual parity
+have **not yet been tested**.
