@@ -2303,3 +2303,24 @@ Verify in isolated worktree with
 `bash tools/verify-texture-rhi.sh --editor --jobs 4`.
 The original checkout remains in an unrelated unresolved rebase.
 
+
+### Stage 10AV — async feedback mock callback slot cleanup
+
+The Mac Studio CTest report at `ddd096979` additionally reported
+`virtual_texture_file_streamer` as an **executed, failed** test, not merely
+a missing executable. Its assertion was `capture next frame after consuming
+result` in `asynchronousGpuFeedbackRuntime()`.
+
+The mock device's `finishFeedback` now clears its `std::function` member
+explicitly **before** invoking the moved callback. C++ permits a valid but
+unspecified moved-from function state; the mock must model an RHI whose
+one-in-flight readback slot becomes free at completion. A new assertion
+checks the cleared slot after the initial callback, and the second-capture
+assertion reports `runtime.lastError()` and whether the mock slot remained
+occupied if it still fails. Production `VirtualTextureFeedbackRuntime` and
+real backend code are unchanged. This change is a test-harness lifecycle
+fix, not confirmation of real GPU readback behavior.
+
+**Post-fix CTest NOT RUN.** Run the focused texture verifier on macOS and
+examine `ctest.log` for `virtual_texture_file_streamer`.
+
