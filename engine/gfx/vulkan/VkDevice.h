@@ -133,6 +133,20 @@ public:
     bool copyColor(TextureHandle from, TextureHandle to) override;
     bool gpuHealthy() const override { return healthy_; }
 
+    // Portable opt-in Vulkan compute RHI: GLSL450 shader storage descriptors
+    // 0..7, <=128-byte push constants at slot 8 and 64 local X threads.
+    bool supportsCompute() const override { return healthy_ && device_ &&
+        gpuProps_.limits.maxComputeWorkGroupInvocations>=64 &&
+        gpuProps_.limits.maxPushConstantsSize>=128; }
+    ComputeHandle createCompute(const ComputeDesc& desc) override;
+    void destroyCompute(ComputeHandle handle) override;
+    bool beginCompute(ComputeHandle handle) override;
+    void setComputeBuffer(int slot,BufferHandle buffer) override;
+    void setComputeUniforms(const void* bytes,size_t size) override;
+    void dispatch(uint32_t totalThreadsX,uint32_t groupsY=1) override;
+    void endCompute() override;
+    bool readBufferAsync(BufferHandle buffer,size_t size,BufferReadFn callback) override;
+
     void beginFrame(int framebufferWidth, int framebufferHeight) override;
     void endFrame() override;
     void captureNextFrame(CaptureFn fn) override { capture_ = std::move(fn); }
@@ -187,6 +201,10 @@ private:
     VkPipeline pipelineFor(VPipeline& p, VkFormat color, VkFormat depth, bool hdr);
     VkShaderModule createModule(const std::vector<uint32_t>& code);
     bool prepareDraw();
+    // VkCompute.cpp lifecycle. Only call on the owning RHI device thread.
+    void resetComputeFrame(uint32_t slot);
+    void shutdownCompute();
+    void deliverComputeReadbacks();
 
 public:   // helpers shared by the translation units
     VkCommandBuffer transferCmd();               // main command buffer outside passes, else the pre-frame one
@@ -244,6 +262,31 @@ private:
     Pool<VTexture> textures_;
     Pool<VShader> shaders_;
     Pool<VPipeline> pipelines_;
+    struct VCompute {
+        VkShaderModule module=VK_NULL_HANDLE;
+        VkPipeline pipeline=VK_NULL_HANDLE;
+    };
+    Pool<VCompute> computes_;
+    VkDescriptorSetLayout computeSetLayout_=VK_NULL_HANDLE;
+    VkPipelineLayout computePipelineLayout_=VK_NULL_HANDLE;
+    struct ComputeFrame {
+        std::vector<VkDescriptorPool> pools;
+        size_t nextPool=0,usedSets=0;
+    };
+    std::array<ComputeFrame,kFramesInFlight> computeFrames_{};
+    std::array<BufferHandle,8> computeBuffers_{};
+    std::array<uint8_t,128> computeUniforms_{};
+    size_t computeUniformSize_=0;
+    ComputeHandle computeHandle_{};
+    bool computing_=false,computeStateValid_=false;
+    struct PendingComputeRead {
+        uint64_t serial=0;
+        VkBuffer buffer=VK_NULL_HANDLE;
+        Allocation allocation{};
+        size_t bytes=0;
+        BufferReadFn callback;
+    };
+    std::vector<PendingComputeRead> computeReads_;
     VTexture dummy_;          // bound to unset texture slots
     VTexture dummyDepth_;     // ... of compare samplers
     struct SamplerKey { uint32_t key; VkSampler sampler; };
