@@ -187,7 +187,7 @@ game::RtsModule* Editor::worldModule() {
     return s ? dynamic_cast<game::RtsModule*>(&s->module()) : nullptr;
 }
 
-Selection Editor::pickObject(const Viewport& vp, const render::RTSCamera& cam, float sx, float sy) const {
+Selection Editor::pickObject(const Viewport& vp, const render::Camera& cam, float sx, float sy) const {
     // All Scene consumers (hover, click, Inspector, Hierarchy) use one
     // selection API. FPS previews map their renderable ID back to the
     // document source; the transient render-array index never escapes.

@@ -10,7 +10,7 @@
 namespace aiverse::editor {
 
 inline int pickMoveGizmoAxis(
-    const render::RTSCamera& camera,
+    const render::Camera& camera,
     float viewportWidth, float viewportHeight,
     float viewportOriginX, float viewportOriginY,
     float cursorX, float cursorY,
@@ -53,7 +53,7 @@ inline int pickMoveGizmoAxis(
 
 
 inline bool pickRotateYawGizmoRing(
-    const render::RTSCamera& camera,
+    const render::Camera& camera,
     float viewportWidth, float viewportHeight,
     float viewportOriginX, float viewportOriginY,
     float cursorX, float cursorY,

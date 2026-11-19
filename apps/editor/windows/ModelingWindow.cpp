@@ -304,7 +304,7 @@ class ModelingWindow final : public EditorWindow {
                 auto avail = ImGui::GetContentRegionAvail();
                 float height = std::max(160.f, avail.y * .55f);
                 viewport_.ensure(*device_, std::clamp(int(avail.x), 64, 1600), std::clamp(int(height), 64, 1000));
-                render::RTSCamera cam;
+                render::Camera cam;
                 cam.target = (model_->boundsMin + model_->boundsMax) * .5f;
                 cam.distance = std::max(2.f, render::length(model_->boundsMax - model_->boundsMin) * 1.15f);
                 cam.minDistance = .01f;
