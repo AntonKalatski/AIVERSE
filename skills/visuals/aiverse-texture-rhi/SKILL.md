@@ -485,3 +485,20 @@ output for skipped execution**. Metal, GL33, GLES3, WebGL2 and GPU readback
 require their own real device build/validation. Record each real test
 command and result in the handoff after every stage; never claim passing
 CI if it remains queued or cancelled.
+
+
+### Per-axis material VT wrapping (Stage 10L)
+
+- The normal `ModelVirtualTextureBinding` defaults to clamped U/V for
+  compatibility; opt in with `binding.addressU/addressV =
+  gfx::SamplerAddressMode::Repeat` or `MirrorRepeat` independently.
+- Keep the original source texture sampler's U/V policy consistent with the
+  virtual mapping and pack wrapped tile-edge gutters into the immutable archive.
+  `ClampToBorder` is explicitly unsupported; a binding with that mode fails
+  `valid()` and must use the non-VT fallback.
+- The shader U6 remains 16 bytes, containing layer, gutter, U-address and
+  V-address. Shared GLSL/MSL helpers keep legacy clamp-only overloads;
+  the model renderer and Shader Graph VT node use the addressing-aware ones.
+- The wrap policy participates in exact GPU material-group identity and hash.
+  Verify GL/Metal/Vulkan UV seams and sampler parity during the deferred GPU
+  validation phase. These additions are source-only, not GPU certified.
