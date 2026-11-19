@@ -376,7 +376,7 @@ void DiskIndexPages::retainRequested(
     if(!state_)return;
     auto& s=*state_;
     std::lock_guard lock(s.mutex);
-    s.desired={wanted.begin(),wanted.end()};
+    s.desired=std::set<Key>(wanted.begin(),wanted.end());
     // An already running worker cannot be interrupted mid-read. Its output
     // is discarded if the source is no longer in the desired set.
     for(auto it=s.queue.begin();it!=s.queue.end();){
