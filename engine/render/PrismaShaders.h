@@ -171,7 +171,9 @@ inline const char* kDepthOfField = R"(
 // First pass stores weighted log2 luminance in R and total weight in G.
 // p0.x = centerWeight (0 uniform, 1 strongly center-biased)
 // p0.y = centerRadius (relative normalized image coordinates)
-// sun.x/sun.y = min/max metering log2 luminance clamps.
+// p0.z = opt-in bright-outlier rejection (0 = byte-for-byte legacy weights)
+// sun.xy = min/max metering log2 luminance clamps
+// sun.zw = bright-outlier start log2 L and smooth transition width in stops.
 // Later reduction preserves numerator/denominator rather than averaging
 // already-normalized values, so center weighting remains correct.
 inline const char* kExposureLog = R"(
@@ -199,6 +201,16 @@ inline const char* kExposureLog = R"(
                        vec4(exp(-2.0*dot(d0,d0)),exp(-2.0*dot(d1,d1)),
                             exp(-2.0*dot(d2,d2)),exp(-2.0*dot(d3,d3))),
                        clamp(p0.x,0.0,1.0));
+    // Stage 57 optional robust metering: reduce the influence of tiny,
+    // intensely emissive regions on the average log luminance. Every
+    // sample retains >=5% weight to avoid an empty meter in all-bright
+    // scenes (and to prevent sudden overexposure).
+    float reject = clamp(p0.z,0.0,0.95);
+    if (reject > 0.0) {
+        vec4 t = smoothstep(vec4(sun.z),
+                            vec4(sun.z + max(sun.w,0.1)),logL);
+        weights *= vec4(1.0) - t*reject;
+    }
     RETURN(vec4(dot(logL,weights)*0.25,
                 (weights.x+weights.y+weights.z+weights.w)*0.25,0.0,1.0));
 )";
