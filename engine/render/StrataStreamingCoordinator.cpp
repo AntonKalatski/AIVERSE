@@ -193,8 +193,8 @@ bool configureDeviceFrameUploadBudget(gfx::Device& device,uint64_t bytes) {
     std::lock_guard lock(gpuMutex);
     auto& ledger=gpuLedgers[&device];
     if(!bytes)return true; // inherit any previously configured cap
-    if(ledger.frameUploadLimit && ledger.frameUploadLimit!=bytes &&
-       !ledger.leases.empty())
+    if(ledger.frameUploadLimit==bytes)return true; // never reset mid-frame
+    if(ledger.frameUploadLimit && !ledger.leases.empty())
         return false;
     ledger.frameUploadLimit=bytes;
     ledger.frameUploadRemaining=bytes;
