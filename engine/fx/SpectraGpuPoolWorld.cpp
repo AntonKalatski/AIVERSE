@@ -44,6 +44,7 @@ void GpuPoolWorld::shutdown() {
     cpu_.shutdown();
     device_=nullptr;
     initialized_=frameOpen_=stepped_=drawn_=false;
+    nextGroupStart_=0;
     stats_={};
     reason_.clear();
 }
@@ -279,7 +280,13 @@ bool GpuPoolWorld::step(float dt) {
     stepped_=true;
     cpu_.update(dt);
     bool allOk=true;
-    for(auto& group:gpuGroups_) {
+    // Checkpoint cadence is per GPU group. Rotating the simulation submission
+    // order gives later groups a chance when the shared readback budget fills.
+    const size_t groupCount=gpuGroups_.size();
+    const size_t first=groupCount?nextGroupStart_%groupCount:0;
+    if(groupCount)nextGroupStart_=(first+1)%groupCount;
+    for(size_t j=0;j<groupCount;++j) {
+        auto& group=gpuGroups_[(first+j)%groupCount];
         if(!group.particles->step(dt)) {
             allOk=false;
             reason_="GPU pool group step: "+group.particles->reason();
