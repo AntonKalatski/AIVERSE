@@ -890,3 +890,11 @@ Use `world::WorldScene::setVegetationClearings(std::vector<terraweave::RectCm>)`
 - The far HLOD atlas currently samples mask positions rather than tracking every individual generated near-tree identity. Rectangular clearings suppress far canopy; Stage 24 individual regrowth is near-only. Fully empty cluster cards and visual alpha transitions still require future optimization, not an unverified claim of perfect GPU performance.
 
 **User preference:** finish functional features before running builds/CTest. After each coding stage append an agent handoff with exact commits, changed paths, public API, *actual* checks, limitations and next feature. All GPU/CI tests remain assigned to the later testing stage.
+
+## Stage 26 — native tree selection without per-tree ECS entities
+
+For gameplay interactions that require identifying a nearby planted tree, call `TerraWeaveForestScene::nearestTreeAt(xCm,zCm,radiusCm)` or `treesInRect(RectCm,maxResults)`. They query *already-resident* CPU foliage patches and share the exact removal/regrowth filtering of `visibleBatches()`. Avoid rebuilding procedural chunks merely to select one tree. Use `ForestTreeIdentity{key,speciesId}` as the stable handle, never the position of an instance in a render batch.
+
+Queries use signed world-centimetre coordinates and are bounded: a nearest radius of 1..10 million cm, or up to 100,000 returned rectangle results (caller should normally request far fewer). Tied distance sorting is deterministic by species/key; rectangle queries sort the result by the same identities. The source does not include remote/unloaded trees. The authoritative game retains collisions, harvesting decisions, inventory, pathfinding, networking and save state; no RTS/FPS-specific runtime is required.
+
+**Features-first policy:** do not start a CTest/GPU troubleshooting loop until feature implementation is complete or the user reprioritizes. Append exact code/docs commits and next step to `docs/terrain/AGENT_HANDOFF.md` at every implementation stage.
