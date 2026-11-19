@@ -1966,7 +1966,8 @@ void Renderer3D::renderModels(int phase) {
                 const ModelItem& item = modelItems_[itemIndex];
                 if (!eligibleStaticPage(item)) continue;
                 const PreflightKey key{item.model->geometryPoolPage.get(),
-                                       materialGroup[itemIndex], item.flags};
+                                       materialGroup[itemIndex], item.flags,
+                                       item.model->vb.id, item.model->ib.id};
                 groups[key].observe(item.model, item.prim, threshold);
             }
             modelStats_.staticCrossModelPreflightGroups += groups.size();
@@ -1991,7 +1992,8 @@ void Renderer3D::renderModels(int phase) {
                     const ModelItem& item = modelItems_[itemIndex];
                     if (!eligibleStaticPage(item)) continue;
                     const PreflightKey key{item.model->geometryPoolPage.get(),
-                                           materialGroup[itemIndex], item.flags};
+                                           materialGroup[itemIndex], item.flags,
+                                           item.model->vb.id, item.model->ib.id};
                     const auto found = groups.find(key);
                     if (found != groups.end() && found->second.ready) {
                         staticCrossCandidates[itemIndex] = 1;
