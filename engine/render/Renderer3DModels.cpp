@@ -730,7 +730,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             packet.materialCount = m->materials.size();
             packet.seen = staticRenderPacketEpoch_;
             packet.items.assign(modelItems_.begin() + packetStart, modelItems_.end());
-            staticRenderPacketBytes_ += packetBytes - replacedBytes;
+            staticRenderPacketBytes_ = staticRenderPacketBytes_ - replacedBytes + packetBytes;
             ++staticRenderPacketStats_.rebuilds;
         } else {
             ++staticRenderPacketStats_.declined;
