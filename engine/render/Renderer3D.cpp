@@ -138,8 +138,11 @@ void Renderer3D::shutdown() {
     if (objectMotionShader_.valid()) dev_->destroyShader(objectMotionShader_);
     if (objectMotionInstancedPipeline_.valid()) dev_->destroyPipeline(objectMotionInstancedPipeline_);
     if (objectMotionInstancedShader_.valid()) dev_->destroyShader(objectMotionInstancedShader_);
+    if (objectMotionDeformedPipeline_.valid()) dev_->destroyPipeline(objectMotionDeformedPipeline_);
+    if (objectMotionDeformedShader_.valid()) dev_->destroyShader(objectMotionDeformedShader_);
     objectMotionPipeline_ = {}; objectMotionShader_ = {};
     objectMotionInstancedPipeline_ = {}; objectMotionInstancedShader_ = {};
+    objectMotionDeformedPipeline_ = {}; objectMotionDeformedShader_ = {};
     shutdownModels();
     lights.shutdown();
     shutdownTrace();
@@ -346,7 +349,9 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
         return it.motionPersistentId != 0 && it.motionNodeIndex >= 0 &&
             it.rigid && it.inView && it.tint.w >= 0.99f &&
             it.dissolve <= 0.0f && it.joints < 0 && !it.baked &&
-            it.morph < 0 && it.materialRole != 1 && it.shadowRole != 2 &&
+            it.morph < 0 && (!it.prim || it.prim->morphTargets == 0 ||
+            !it.model || !it.model->morphTex.valid()) &&
+            it.materialRole != 1 && it.shadowRole != 2 &&
             it.mat && it.mat->alpha == AlphaMode::Opaque &&
             !it.mat->transparent && !(it.flags & kDrawTransparent) &&
             it.model && !it.model->geometry && it.model->vb.valid() &&
@@ -357,10 +362,46 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
             current.try_emplace(Key{it.motionPersistentId,it.motionNodeIndex},
                                 it.world);
 
+    using DeformKey = std::tuple<uint64_t,int,size_t>;
+    std::map<DeformKey, MotionDeformPose> currentDeformed;
+    auto deformEligible = [&](const ModelItem& it) {
+        if (!it.motionPersistentId || it.motionNodeIndex < 0 ||
+            !it.inView || !it.model || !it.prim || !it.mat ||
+            !it.model->vb.valid() || !it.model->ib.valid() ||
+            it.model->geometry || it.indexCount == 0 ||
+            it.baked || it.mat->shaderGraph)
+            return false;
+        const bool hasMorph = it.prim->morphTargets > 0 &&
+                              it.model->morphTex.valid();
+        const bool hasSkin = it.joints >= 0;
+        return (hasSkin || hasMorph) && it.tint.w >= 0.99f &&
+            it.dissolve <= 0.0f && it.materialRole != 1 &&
+            it.shadowRole != 2 && it.mat->alpha == AlphaMode::Opaque &&
+            !it.mat->transparent && !(it.flags & kDrawTransparent);
+    };
+    for (const auto& it : modelItems_) {
+        if (!deformEligible(it)) continue;
+        MotionDeformPose pose;
+        pose.world = it.world;
+        pose.hasSkin = it.joints >= 0;
+        if (pose.hasSkin &&
+            size_t(it.joints) + pose.joints.size() <= jointData_.size())
+            std::memcpy(pose.joints.data(), jointData_.data() + it.joints,
+                        pose.joints.size()*sizeof(float));
+        else if (pose.hasSkin) continue;
+        if (it.morph >= 0 &&
+            size_t(it.morph) + pose.weights.size() <= morphData_.size())
+            std::memcpy(pose.weights.data(),morphData_.data()+it.morph,
+                        pose.weights.size()*sizeof(float));
+        currentDeformed[{it.motionPersistentId,it.motionNodeIndex,
+                         it.geometryPrimitive}] = std::move(pose);
+    }
+
     // A cut, first frame, or new viewport has no trustworthy previous state.
     // Still prime the next frame. No velocity overlay is submitted this time.
     if (!previousCameraValid) {
         history.previous = std::move(current);
+        history.previousDeformed = std::move(currentDeformed);
         return;
     }
     const auto sceneDepth = post.objectMotionSceneDepth();
@@ -522,6 +563,7 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
         post.acceptObjectMotionVectors(history.target);
     }
     history.previous = std::move(current);
+    history.previousDeformed = std::move(currentDeformed);
 }
 
 void Renderer3D::resolvePrisma() {
