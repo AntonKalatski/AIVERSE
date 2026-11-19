@@ -447,6 +447,20 @@ VkCommandBuffer VulkanDevice::transferCmd() {
     return s.pre;
 }
 
+bool VulkanDevice::waitForSubmittedGpuWork() {
+    if (!device_ || !queue_ || !healthy_) return false;
+    // Only call at the PRE-RENDER boundary. Current frame's recording
+    // command buffer may be open, but no new draw referencing old resources
+    // has been encoded. vkQueueWaitIdle covers already SUBMITTED work only.
+    if (vkQueueWaitIdle(queue_) != VK_SUCCESS) {
+        healthy_ = false;
+        return false;
+    }
+    if (serial_ > 0) completed_ = std::max(completed_,serial_-1);
+    collectGarbage(); // uses real GPU-idle confirmation, not CPU frame age
+    return true;
+}
+
 void VulkanDevice::beginFrame(int w, int h) {
     fbW_ = w; fbH_ = h;
     FrameSlot& s = slots_[size_t(slot_)];
