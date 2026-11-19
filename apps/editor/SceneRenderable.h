@@ -2,6 +2,7 @@
 // The extractor owns the lifetime of referenced geometry until submit().
 #pragma once
 #include "../../engine/render/Renderer3D.h"
+#include "../../engine/view/View.h"
 #include <cstdint>
 #include <limits>
 #include <cmath>
@@ -77,7 +78,7 @@ inline void submitSceneRenderables(render::Renderer3D& renderer,
             draw.tint = object.tint;
             if (object.selected) draw.outline = {0.25f, 0.62f, 1.0f, 0.035f};
             else if (object.hovered) draw.outline = {0.75f, 0.8f, 0.85f, 0.025f};
-            renderer.drawModel(draw);
+            ::aiverse::View::submitModel(renderer,draw);
         } else if (object.mesh) {
             if (object.selected || object.hovered) {
                 const render::float4 selection = object.selected
@@ -86,7 +87,11 @@ inline void submitSceneRenderables(render::Renderer3D& renderer,
                 renderer.drawSelectionMesh(*object.mesh, object.world,
                                            object.tint, selection);
             } else {
-                renderer.drawMesh(*object.mesh, object.world, object.tint);
+                ::aiverse::view::MeshObject packet;
+                packet.mesh=object.mesh;
+                packet.world=object.world;
+                packet.color=object.tint;
+                ::aiverse::View::submitMesh(renderer,packet);
             }
             if (!renderer.sceneSelectionOutlineEnabled() && object.pickable &&
                 (object.selected || object.hovered)) {
