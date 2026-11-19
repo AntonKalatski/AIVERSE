@@ -241,6 +241,28 @@ public:
         std::string fallbackReason;
     };
     RuntimeCapabilities runtimeCapabilities() const;
+    // GPU-free snapshot captured AFTER resolve() for one stable camera.
+    // encoded means a draw was issued, NOT that the GPU finished or the
+    // resulting pixels were verified. Queries never compile shaders.
+    struct EffectExecution {
+        PrismaType type = PrismaType::ColorGrade;
+        bool authored = false;       // present in the resolved camera profile
+        bool requested = false;      // enabled, tier and opt-in/parameter gates
+        bool pipelinePrepared = false; // cached RHI handle, not device validation
+        bool encoded = false;        // an applicable pass actually issued draw(s)
+        std::string reason;          // skipped/degraded explanation, empty if encoded
+    };
+    struct ViewEffectReport {
+        uint64_t viewId = 0;
+        uint64_t sequence = 0;      // increments on each resolve for this view
+        int width = 0, height = 0;
+        PrismaQuality quality = PrismaQuality::Off;
+        bool hdr = false, sceneReady = false;
+        std::vector<EffectExecution> effects;
+    };
+    const ViewEffectReport* effectReport(uint64_t viewId) const;
+    // Last reported view IDs only; owning camera IDs are not inferred from size.
+    std::vector<uint64_t> effectReportViewIds() const;
     // Canonical history has sole ownership. The optional older
     // PrismaScreenLighting wrapper MUST skip its separate TAA when true.
     bool canonicalTemporalRequested() const;
@@ -345,6 +367,7 @@ private:
     std::map<uint64_t, TemporalView> temporalViews_;
     std::map<uint64_t, PrismaAdaptiveResolution> adaptiveViews_;
     std::map<uint64_t, ViewGpuTiming> scopedGpuTimings_;
+    std::map<uint64_t, ViewEffectReport> effectReports_;
     struct AdaptivePressure {
         uint64_t knownBytes = 0, limitBytes = 0;
         bool overLimit = false, scopedGpu = false;
