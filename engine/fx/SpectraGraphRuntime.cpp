@@ -15,6 +15,7 @@ GraphGpuEligibility inspectGraphGpuEligibility(
     result.gpu.gpuProgram=options.gpuProgram;
     result.gpu.gpuMaterial=options.gpuMaterial;
     result.gpu.checkpointEveryFrames=options.checkpointEveryFrames;
+    result.gpu.checkpointBudget=options.checkpointBudget;
 
     const auto reject=[&](const char* why) {
         result.reason=why;
