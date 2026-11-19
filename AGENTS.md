@@ -1745,8 +1745,11 @@ uncompiled GPU/resource/animation source into main.
   new material images, retains last-good appearances on staging
   failure, and calls image `commit()` before swapping TypeLooks.
   `RtsView::collectRetiredModels` polls both image and model
-  queues; RtsView shutdown drains rolled-back images before
-  releasing Model resources.
+  queues; the **Editor and GameClient** must call it when
+  `pendingModelRetirements()` OR `pendingRolledBackImages()` is
+  nonzero. The Editor Stats panel surfaces image rollback failures.
+  RtsView shutdown drains rolled-back images before releasing
+  Model resources.
 - PostFx, RTS terrain/groundFX, general `fx::ParticleSystem`,
   and the Editor's Scene/Game Viewports now receive the host-owned
   `RenderDeviceLifetime::Lease`. Editor and its hosted GameClient
