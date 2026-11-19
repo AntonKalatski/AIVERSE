@@ -89,6 +89,7 @@ bool IndexResidency::initializeIncremental(size_t uploadBudgetBytes,
                 return false;
             }
             initial[p][root] = {at, node.indexCount};
+            stats_.gpuTransferBytes += uint64_t(node.indexCount)*sizeof(uint32_t);
             at += node.indexCount;
             ++roots;
         }
@@ -331,6 +332,7 @@ bool IndexResidency::updateIncremental(
             if (error) *error = "STRATA incremental page upload rejected by RHI";
             return false;
         }
+        stats_.gpuTransferBytes+=uint64_t(node.indexCount)*sizeof(uint32_t);
     }
 
     for (const Range& range : newlyRetired)
