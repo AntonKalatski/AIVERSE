@@ -156,8 +156,8 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
 
     // ---- pose / skinning
     BakedSample bs;
-    static std::vector<mat4> lodWorld;
-    static Pose lodRetargetPose; // legacy submitModel resolves this synchronously
+    auto& lodWorld=lodWorldScratch_;
+    auto& lodRetargetPose=lodRetargetPoseScratch_;
     if (show == &ch) {
         if (ch.needsPose && !st.world.empty()) { d.nodeWorld = &st.world; d.pose = &st.pose; }
         if (ch.baked) {
