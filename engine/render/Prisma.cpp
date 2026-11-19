@@ -607,22 +607,17 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
     const char* temporal=std::getenv("AIVERSE_PRISMA_TEMPORAL");
     const char* upscale=std::getenv("AIVERSE_PRISMA_UPSCALE");
     const char* jitter=std::getenv("AIVERSE_PRISMA_JITTER");
-    if (!effect || !effect->enabled || int(quality_)<int(effect->minQuality) ||
-        !temporal || std::strcmp(temporal,"1")!=0 ||
-        !upscale || std::strcmp(upscale,"1")!=0 ||
-        !jitter || std::strcmp(jitter,"1")!=0 ||
-        effect->get("historyWeight")<=0 || effect->get("jitterPixels")<=0) {
+    // History quotas must protect normal 1:1 temporal resolve too; Stage 42
+    // can accumulate without jitter and without temporal upscaling.
+    const bool temporalActive=effect && effect->enabled &&
+        int(quality_)>=int(effect->minQuality) &&
+        temporal && std::strcmp(temporal,"1")==0 &&
+        effect->get("historyWeight")>0;
+    if (!temporalActive) {
         adaptiveViews_.erase(viewId_);
         adaptivePressure_.erase(viewId_);
         return {width,height};
     }
-
-    const float ceiling=PrismaAdaptiveResolution::quantize(
-        std::clamp(effect->get("renderScale"),0.5f,1.0f));
-    // Admission is for two output-size RGBA16F histories owned by this
-    // camera, not the global/opaque VRAM budget. Refuse *before* jitter and
-    // suppress temporal resolve too, otherwise resolve() could allocate
-    // precisely the history that this hard per-view cap rejected.
     const auto policyIt=viewQualityPolicies_.find(viewId_);
     const ViewQualityPolicy policy=policyIt==viewQualityPolicies_.end()
         ? ViewQualityPolicy{} : policyIt->second;
@@ -636,8 +631,35 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
             history->second.preflightRejected=true;
             for (auto& handle:history->second.history) retireTarget(handle);
         }
+        adaptiveViews_.erase(viewId_);
+        adaptivePressure_.erase(viewId_);
         return {width,height};
     }
+    const bool jitterRequested=jitter && std::strcmp(jitter,"1")==0 &&
+        effect->get("jitterPixels")>0;
+    const bool upscaleRequested=jitterRequested && upscale &&
+        std::strcmp(upscale,"1")==0;
+    // Scene jitter needs a history/velocity pipeline even when renderScale
+    // is native 1:1. Preflight before Renderer3D::beginScene so a failed
+    // allocation never produces an unresolvable jittered frame.
+    if (!upscaleRequested) {
+        adaptiveViews_.erase(viewId_);
+        adaptivePressure_.erase(viewId_);
+        if (jitterRequested) {
+            auto& history=temporalViews_[viewId_];
+            if (history.preflightCooldown) {
+                --history.preflightCooldown;
+                history.preflightRejected=true;
+            } else if (!preflightUpscale(width,height,width,height)) {
+                history.valid=false;
+                history.preflightRejected=true;
+                history.preflightCooldown=60;
+            }
+        }
+        return {width,height};
+    }
+    const float ceiling=PrismaAdaptiveResolution::quantize(
+        std::clamp(effect->get("renderScale"),0.5f,1.0f));
     float scale=ceiling;
     const char* adaptiveFlag=std::getenv("AIVERSE_PRISMA_ADAPTIVE");
     const bool adaptiveRequested=adaptiveFlag &&
@@ -692,7 +714,20 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
         adaptiveViews_.erase(viewId_);
         adaptivePressure_.erase(viewId_);
     }
-    if (scale>=0.999f) return {width,height};
+    if (scale>=0.999f) {
+        // Adaptive may recover to 1:1 but the camera still jitters.
+        // Guarantee output history and motion targets before beginScene.
+        auto& history=temporalViews_[viewId_];
+        if (history.preflightCooldown) {
+            --history.preflightCooldown;
+            history.preflightRejected=true;
+        } else if (!preflightUpscale(width,height,width,height)) {
+            history.valid=false;
+            history.preflightRejected=true;
+            history.preflightCooldown=60;
+        }
+        return {width,height};
+    }
     const int renderW=std::clamp(int(std::lround(double(width)*scale)),32,width);
     const int renderH=std::clamp(int(std::lround(double(height)*scale)),32,height);
     auto& history=temporalViews_[viewId_];
@@ -1313,7 +1348,9 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     const bool motionRequested = hdrFrame_ && motionEffect && motionFlag &&
         std::strcmp(motionFlag,"1")==0 && motionEffect->get("intensity")>0 &&
         motionEffect->get("maxPixels")>0;
-    const bool rejectedHistory = viewHistoryAdmissionRejected_.count(viewId_) != 0;
+    const bool rejectedHistory = viewHistoryAdmissionRejected_.count(viewId_) != 0 ||
+        (temporalViews_.count(viewId_) != 0 &&
+         temporalViews_.at(viewId_).preflightRejected);
     const bool temporalRequested = hdrFrame_ && temporalEffect && temporalFlag &&
         std::strcmp(temporalFlag,"1")==0 && !rejectedHistory &&
         temporalEffect->get("historyWeight")>0;
