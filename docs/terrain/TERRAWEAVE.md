@@ -2141,3 +2141,34 @@ if (auto* forest = worldScene.forestScene()) {
 ```
 
 **Ownership and limitations:** this is *cosmetic presentation* only. An authoritative game layer is responsible for deciding when harvests occur and for modifying collision/navmesh/resources, save versioning, replay/network replication and any wider ecosystem simulation. Harvesting a single tree does not yet punch an individual hole in the **far Horizon HLOD cluster silhouettes**; coordinate harvested-area masks with Horizon in a later stage to avoid near/far inconsistencies. The implementation has not been built or visually tested in this feature-first phase.
+
+## Stage 25 — runtime forest clearings shared by near Flora and Horizon HLOD
+
+**Source implemented, tests deferred** at user request. A native `world::WorldScene` now exposes:
+
+```cpp
+void setVegetationClearings(std::vector<terraweave::RectCm> clearings);
+const std::vector<terraweave::RectCm>& vegetationClearings() const;
+```
+
+Clearings are **signed world-centimetre half-open X/Z rectangles**, not RTS map-grid units. A game can use them to clear whole construction areas, timber harvest zones, or landscape patches (unlike the individual per-tree `ForestRegrowthSchedule` in Stage 24). All input rectangles must be nonempty and inside TerraWeave's `+/-kWorldLimitCm` extent; at most 4096 are accepted. The setter normalizes order and removes exact duplicates; passing an identical canonical set is a no-op. The returned list is suitable for caller-owned save/replication; the engine does **not** create authoritative gameplay events, collision edits, or a new save schema.
+
+```cpp
+using aiverse::terraweave::RectCm;
+worldScene.setVegetationClearings({
+    RectCm{siteX0cm,siteZ0cm,siteX1cm,siteZ1cm}
+});
+// Call worldScene.update(device, observers, radius) from the owner thread.
+// Later: worldScene.setVegetationClearings({}) to restore the area.
+```
+
+The `site*cm` values in this example are game-provided coordinates.
+
+The next `WorldScene::update` captures one immutable `FoliageExclusionMask` containing both active clearing rectangles and resident authored object/terrain footprints. The **same** snapshot is shared with:
+
+- `TerraWeaveForestScene::setLandscapeSources` for near Flora placement. Its bounded async patches are invalidated by a single source revision and rebuilt safely after their captured callbacks are released.
+- `HorizonSurfaceSources::allowsCanopyAt` for distant forest silhouette atlas sampling. It suppresses crowns at masked positions during the normal bounded CPU region bake and reuses the existing Horizon async/GPU update path. Existing terrain mesh and near/far height welding remain unchanged.
+
+Clearing updates mark **both previous and new** rectangles as edited, so moving or removing a clearing restores vegetation in the old location rather than preserving stale distant silhouettes. Multiple setter calls before a scene update retain only the first pre-update clearing state and the final replacement; intermediate states never become published. Large edited lists take the Horizon full-rebake fallback rather than unbounded incremental work. Unlike per-tree regrowth, this area mask **does affect** the far HLOD canopy, while not adding a new shader, draw pass, GPU buffer layout or component type.
+
+**Caveats:** The mask suppresses individual CPU canopy samples and may leave empty far cluster cards if all samples in that cluster are excluded; this is a rendering efficiency follow-up. An authored forest/city streaming update can also trigger shared mask republishing, independent of gameplay clearings. No shape rotation, polygon harvesting, sector replication, authoritative resource/collision modifications, or weather/season coupling is included yet. Runtime re-bake, cross-boundary exclusions, visual transitions and performance budgets have **NOT** been verified; another agent owns those tests.
