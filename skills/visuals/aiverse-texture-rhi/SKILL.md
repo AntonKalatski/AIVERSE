@@ -1603,3 +1603,63 @@ Stage 10CC, then implement full production Renderer3D
 nonuniform-gutter graph+VT mixed Metal ICB pixel
 oracle and trilinear/anisotropic validation.
 Do not merge Draft PR #21 or enable ICB by default.
+
+## Stage 10CD — one-shot full Texture RHI acceptance and nonuniform production scene
+
+**New full Renderer3D/graph/VT native Metal ICB test:**
+`tests/render/metal_renderer_graph_vt_gutter_gpu.cpp`
+(source commit `1c4a3be68f829775c5af4894c1e15f1d265a08e0`).
+It runs the *actual* JSON graph compiler with four regular
+texture sources plus `sampleVirtualTexture`, two independent
+disk-backed VT atlases and page tables, and per-command
+heterogeneous Metal GPU ICB materials. Physical pages are
+8×8 RGBA8 with 6×6 nonuniform source interiors and
+one-neighbor-texel gutters on each side. For U=0.40,
+0.48, 0.50, 0.52, 0.60 at V=0.40, direct and ICB
+full RGBA8 images must match within 2 LSB/channel.
+An independent *original logical texel* bilinear oracle,
+calibrated to the Renderer3D endpoint transfer, checks
+both paths' intermediate ROI colors independently (≤3
+displayed levels) and scene-channel monotonicity. It is
+a lighting-transfer-adjusted scene oracle, not a substitute
+for the separately passed **absolute** low-level 136-point
+Stage 10CC CPU reference test.
+
+CMake `AIVERSE_TEXTURE_METAL_GRAPH_VT_GUTTER_GPU_TESTS`
+**OFF by default** adds native CTest
+`metal_renderer_graph_vt_gutter_gpu`
+(commit `ed9a707e0f48102bd60c1b0640fd408cfb384325`).
+
+**One-shot Mac Studio suite:**
+`tools/texture-rhi-final-verify.sh`
+(commits `04e9612189b9e10e4a218bce326af405bc8ddd37`,
+`86254fca82f0866005fbd2508872f7ca05ede7d4`).
+After pulling the branch in the isolated texture worktree,
+run `bash tools/texture-rhi-final-verify.sh --jobs 4`.
+It compiles/runs 21 portable texture/VT/Shader Graph
+CTests plus optional page pack/shader syntax tests,
+then builds all seven risky native Metal GPU targets
+and executes them serially in separate processes.
+`--full-engine` additionally builds/runs the full
+nonexperimental AIVERSE default CTest suite.
+Any compile/test failure stops the suite. Exact native
+GPU success markers are checked and
+`build/texture-final-logs/acceptance.txt` with source
+SHA only appears at the end of a fully passing run.
+See `docs/texture-rhi.md` Stage 10CD for full commands.
+
+**Truthful status:** Neither the new production gutter
+GPU-ICB fixture nor the unified one-shot Mac suite has
+been run on hardware by this agent. Prior 10CC 136-point
+bilinear sampling passed on Apple M3 Ultra and Stage
+10BX/10BY older zero-gutter ICB scenes passed before
+the gutter shader change. Do not mark this new gate
+green until new user-provided one-shot logs show PASS.
+
+Remaining platform/mip/perf limits: GL/Vulkan/WebGL/mobile
+native validation, trilinear mip transitions, anisotropy,
+long-running streamed page churn, memory ceilings and
+representative GPU timing. Do not merge Draft PR #21
+or turn on experimental GPU ICB by default based only
+on a Metal smoke test. After each fix, commit code and
+append a new agent handoff with actual test evidence.
