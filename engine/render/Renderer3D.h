@@ -211,6 +211,12 @@ struct ModelRenderStats {
     uint64_t staticCrossModelSubmissions = 0;
     uint64_t staticCrossModelCommands = 0;
     uint64_t staticCrossModelItems = 0;
+    // Current-frame, per-pass page/material preflight. Groups are necessary
+    // conditions; only actual indirect submissions count above.
+    uint64_t staticCrossModelPreflightGroups = 0;
+    uint64_t staticCrossModelPreflightReady = 0;
+    uint64_t staticCrossModelPreflightRejected = 0;
+    uint64_t staticCrossModelPreflightItems = 0;
     // A subset of CPU MDI submissions: different rigid meshes and materials
     // share shader/texture state, with per-command base/PBR factors in U3.
     uint64_t mdiPaletteSubmissions = 0, mdiPaletteCommands = 0;
