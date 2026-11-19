@@ -102,7 +102,7 @@ bool outside(mat4 clip,Node node) {
 void main(){
     uint tid=gl_GlobalInvocationID.x;
     if(tid>=params.instanceCount)return;
-    if(wordAt(0u)!=2u)return invalid();
+    if(wordAt(0u)!=2u){invalid();return;}
     uint primitiveCount=wordAt(4u), nodeCount=wordAt(8u);
     uint rootCount=wordAt(12u);
     uint primitivesOffset=wordAt(16u), nodesOffset=wordAt(20u);
