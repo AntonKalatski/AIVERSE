@@ -8,7 +8,7 @@ description: Author and integrate AIVERSE SpectraFX visual effects: versioned gr
 **Canonical documentation:** `docs/spectrafx.md`.  
 **Exact stage history:** `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.  
 **Engineering rules:** `AGENTS.md`.
-**Latest handoff:** `docs/agent-handoffs/spectrafx-stage102-metal-evidence-2026-11-19.md`.
+**Latest handoff:** `docs/agent-handoffs/spectrafx-stage104-renderer3d-metal-2026-11-19.md`.
 
 ## Fast path (current supported capabilities)
 
@@ -86,3 +86,14 @@ Check the `metal_evidence` stage: `spectrafx_metal_gpu`,
 `PASS`; CTest skip code is not evidence of execution.
 The Python parser tests are portable, but C++/GPU acceptance on
 Stage 98–102 remains unverified until the Mac Studio run is supplied.
+
+
+## Stage 104 — real Renderer3D integration QA
+
+The macOS `spectrafx_metal_scene` test links production Renderer3D,
+SpectraFxSceneHost and a real Metal RHI. It probes two-camera RT output,
+foreground depth occlusion and live reset/retirement. Optional PPM frames:
+`AIVERSE_SPECTRAFX_SCENE_CAPTURE=/tmp/spectrafx-scene`.
+Strict `AIVERSE_ACCEPTANCE_REQUIRE_METAL=1` now requires 4/4 real
+MetalGPU tests to PASS; the old 3/3 evidence applies to Stage 103 only.
+Do not claim Stage 104 native acceptance before fresh Mac Studio logs.

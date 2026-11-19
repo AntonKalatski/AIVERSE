@@ -1,5 +1,21 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 104 — real Renderer3D two-camera Metal scene acceptance (NOT RUN)
+
+Code commits `4e7539d298076a3944bf837e570e0cd420e26275`,
+`4518f775451c32af36a8db8fdd21e95a2fbf433a`. New production
+`Renderer3D` + `SpectraFxSceneHost` test `spectrafx_metal_scene`
+renders baseline/FX in two independent camera RTs, verifies opaque
+depth occlusion, checks camera-dependent screen displacement and
+post-`resetScene()` removal + deferred GPU retirement.
+Optional five PPM captures for real-device visual QA.
+Strict Metal evidence now requires **4/4 hardware PASS**, not old 3/3.
+**Native compilation, screenshots and GPU test results are NOT yet known
+for Stage 104**. Last proven hardware acceptance is Stage 103's older SHA
+`fceb8caef1bf26085063b55c224631a3c53a9407`.
+Handoff: `docs/agent-handoffs/spectrafx-stage104-renderer3d-metal-2026-11-19.md`.
+
+
 ## Stage 103 — strict full native acceptance 9/9 PASS on Apple M3 Ultra
 
 User supplied the acceptance report for validated SHA

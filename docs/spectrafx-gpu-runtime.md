@@ -1,10 +1,28 @@
 # SpectraFX — opt-in GPU emitter playback in native AIVERSE projects
 
+## Stage 104 — real Renderer3D + SceneHost multi-camera acceptance (authored)
+
+A new macOS `spectrafx_metal_scene` CTest uses production Renderer3D,
+SpectraFxSceneHost, GPU particle assets/cue events, RGBA8/depth
+render-to-texture and completed-frame pixel readback. It compares
+FX vs baseline for two camera positions, checks opaque foreground
+geometry hides the particle center and verifies scene reset/retirement.
+The fourth MetalGPU test has **not yet been run on Apple M3 Ultra**.
+
+Run strict native acceptance with
+`AIVERSE_ACCEPTANCE_REQUIRE_METAL=1`; the evidence parser now requires
+**4/4 MetalGPU tests** with zero skips. Optionally set
+`AIVERSE_SPECTRAFX_SCENE_CAPTURE=/tmp/spectrafx-scene` to save
+five top-down PPM files (both baseline and FX cameras, plus post-reset).
+No image is emitted without the flag. Read the Stage 104 handoff for
+exact commands and visualization limitations.
+
+
 ## Strict on-device Metal acceptance (Stage 102)
 
 CTest's default success return code can include **skipped** MetalGPU tests.
-The new `metal_evidence` acceptance stage explicitly reports each of the
-three real GPU tests. On Apple M3 Ultra, enforce true native 3/3 PASS:
+The `metal_evidence` stage now reports four real GPU tests (including
+the Stage 104 Renderer3D fixture). On Apple M3 Ultra, require 4/4 PASS:
 
 ```bash
 AIVERSE_ACCEPTANCE_REQUIRE_METAL=1 \
