@@ -170,8 +170,16 @@ RtsView::EntityAnim& RtsView::stateFor(uint64_t key, const SceneObject& o) {
                 st.yaw=previous.yaw;
                 st.speed=previous.speed;
                 st.lastPos=previous.lastPos;
-                if(st.graph.graph() && !previous.graph.state.empty())
-                    (void)st.graph.restorePlayback(previous.graph);
+                if(st.graph.graph() && !previous.graph.state.empty()) {
+                    try {
+                        (void)st.graph.restorePlayback(previous.graph);
+                    }catch(...) {
+                        // Named clock preservation is cosmetic. A memory
+                        // error must not interrupt a valid new Model frame.
+                        // restorePlayback prepares the matches before
+                        // mutating the graph clocks, so defaults stay valid.
+                    }
+                }
             }
         }
         // Source hot reload is not a gameplay spawn. No duplicate
