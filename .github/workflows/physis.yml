@@ -73,6 +73,7 @@ jobs:
             aiverse_physis_live_edit_test \
             aiverse_physis_remote_edit_test \
             aiverse_physis_admin_journal_test \
+            aiverse_physis_journal_posix_io_test \
             aiverse_physis_box3d_test 2>&1 | tee build/physis-ci/physis-build.log
       - name: CTest PHYSIS (includes real Box3D Scene)
         shell: bash
