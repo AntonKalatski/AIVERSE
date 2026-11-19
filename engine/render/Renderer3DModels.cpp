@@ -2114,8 +2114,8 @@ void Renderer3D::renderModels(int phase) {
                 // GPU page, material, model and buffer state on each sort
                 // comparison. Within one group keep the previous lightmap
                 // page / primitive / stable item-index ordering.
-                const uint16_t rankX = staticCrossPreflight_.sortRankForItem(a);
-                const uint16_t rankY = staticCrossPreflight_.sortRankForItem(b);
+                const uint16_t rankX = staticCrossPreflight_.sortRankForPermittedItem(a);
+                const uint16_t rankY = staticCrossPreflight_.sortRankForPermittedItem(b);
                 if (rankX != rankY) return rankX < rankY;
                 if (x.lmPage != y.lmPage) return x.lmPage < y.lmPage;
                 if (x.prim != y.prim) return x.prim < y.prim;
