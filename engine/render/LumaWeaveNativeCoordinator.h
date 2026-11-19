@@ -118,6 +118,29 @@ public:
         stats_.quality={};
         stats_.geometryRevision=geometryRevision;
 
+        // World-grid candidate coverage follows the actual camera instead of
+        // staying forever at origin (0,0,0). Snap to whole cluster cells to
+        // avoid rebuilding on every sub-metre camera movement. A host-supplied
+        // fixed grid remains supported by setClusterFollowCamera(false).
+        if(clusterFollowsCamera_) {
+            LumaClusterConfig centered=clusterConfig_;
+            const auto snap=[](float coordinate,float cellSize,int cells)->float {
+                const double cellsFromZero=std::floor(
+                    double(coordinate)/double(cellSize)-double(cells)/2.0);
+                return float(cellsFromZero*double(cellSize));
+            };
+            centered.origin={
+                snap(cameraFocus.x,centered.cellSize.x,centered.nx),
+                snap(cameraFocus.y,centered.cellSize.y,centered.ny),
+                snap(cameraFocus.z,centered.cellSize.z,centered.nz)
+            };
+            if(centered.origin.x!=clusterConfig_.origin.x ||
+               centered.origin.y!=clusterConfig_.origin.y ||
+               centered.origin.z!=clusterConfig_.origin.z) {
+                clusterConfig_.origin=centered.origin;
+                clustersReady_=false;
+            }
+        }
         const bool gridCurrent=clustersReady_ &&
             clusters_.sourceRevision()==registry_.revision();
         if(!gridCurrent) {
@@ -190,6 +213,13 @@ public:
         clusterConfig_=cfg;
         clustersReady_=false;
     }
+    void setClusterFollowCamera(bool on) {
+        if(on!=clusterFollowsCamera_) {
+            clusterFollowsCamera_=on;
+            clustersReady_=false;
+        }
+    }
+    bool clusterFollowsCamera() const {return clusterFollowsCamera_;}
     void reset() {
         // Does not destroy RHI; native host must separately drain GPU fences.
         registry_=LumaWeaveRegistry{};
@@ -210,6 +240,7 @@ private:
     LumaClusterConfig clusterConfig_{};
     LumaNativeFrameStats stats_{};
     bool clustersReady_=false;
+    bool clusterFollowsCamera_=true;
 };
 
 } // namespace aiverse::render
