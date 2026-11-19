@@ -81,3 +81,20 @@ A useful first consumer is a CPU-only terrain debug overlay: snow/wetness colour
 - PHYSIS: PR #25 (`feature/physis-nature-simulation`), `docs/physis.md`, `engine/physis/AGENTS.md`
 - NEREID: PR #23 (`feature/nereid-water-core`), `docs/nereid/ARCHITECTURE.md`, `docs/nereid/HANDOFF.md`
 - TerraWeave: `feature/terraweave`, `docs/terrain/TERRAWEAVE.md`, `docs/terrain/AGENT_HANDOFF.md`
+
+## 2026-11-19 — combined native regression checkpoint (Stage 73)
+
+After merging the NEREID water implementation from `main` into
+`feature/physis-nature-simulation`, the user ran the focused native
+macOS CTest filter `^(physis_|ecs_nereid_|vfx_)` and provided
+**40/40 PASS, 0 failures, 10.25s**. Among the overlapping labels
+PHYSIS had 26 and SpectraFX had 5 tests. This confirms test-suite
+compatibility for the merged sources, NOT automatic gameplay
+composition: standalone PHYSIS/NEREID tests may initialize
+different World/Simulation instances. A joint host must explicitly
+install both systems, choose `FloodMode::ExternalAuthority` for
+PHYSIS, define deterministic tick ownership, and validate
+save/rollback state and weather/water read-only presentation.
+This is still a required integration acceptance step, alongside
+full repo CTest, real editor GUI, GPU/Metal water and CI tests.
+See `docs/agent-handoffs/physis-stage73-postmerge-40-green-2026-11-19.md`.

@@ -1039,3 +1039,12 @@ open "$APP"
   Earlier individual subsystem CTests do not cover this merge.
 - Standalone handoff:
   `docs/agent-handoffs/physis-stage72-main-nereid-merge-2026-11-19.md`.
+
+### Stage 73 — post-merge PHYSIS + NEREID + SpectraFX focused CTest GREEN (2026-11-19)
+
+- **Actual user-reported native macOS post-merge CTest:** 40/40 tests passed, 0 failed, total wall time 10.25s. The test command from Stage72 selected `^(physis_|ecs_nereid_|vfx_)`. The summary labels included PHYSIS 26 tests (21.96 sec*proc), SpectraFX 5 (5.98 sec*proc), EDITOR 3, NETWORK 2, PERSISTENCE 4, PHYSICS 1, SECURITY 3. The 9 remaining tests in the 40-test selection correspond to the `ecs_nereid_` filter; category labels can overlap and must not be added together.
+- This verifies native CTest compatibility for the **combined PHYSIS branch after merging main/NEREID** at `7c617d7fbc1a7ff7529e84a8e7e281f5f3298f0b` and Stage72 docs `012eca843ed65651a31ca48dd7944fa5c3835a37`. It supersedes Stage72's "combined CTest NOT RUN" status.
+- The user pasted the terminal summary, **not** independent compiler logs or a saved report directory for the post-merge run. Do not infer all-repository CTest or GUI/GPU QA from this evidence.
+- No C++ source or ECS schema changed this stage. PHYSIS remains authoritative for climate/wind/gravity/storms; NEREID is authoritative for water. When combined in the same native World, opt into `FloodMode::ExternalAuthority` for PHYSIS. Existing read-only `engine/world/NereidPhysisWindBridge.h` is presentation only and does not prove real gameplay weather-to-water coupling.
+- **Still unverified:** full repo-wide tests, one-host joint PHYSIS+NEREID ECS scheduling/rollback with both systems active, interactive GUI gizmos/Inspector, actual Metal water render/performance, cross-platform CI and admin security/TLS.
+- Handoff: `docs/agent-handoffs/physis-stage73-postmerge-40-green-2026-11-19.md`.

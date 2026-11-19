@@ -1507,3 +1507,17 @@ Follow `docs/physis-nereid-terraweave-integration.md` and
 Previous PHYSIS/Box3D, Editor authoring and NEREID standalone test
 results do NOT establish a PASS for the new combined merge: run a
 new native cross-module compile/CTest and preserve the result.
+
+## PHYSIS + NEREID post-merge native test checkpoint (2026-11-19)
+
+User ran the PHYSIS branch's focused post-`main` merge CTest
+(`^(physis_|ecs_nereid_|vfx_)`) and reported **40/40 PASS,
+0 failures, 10.25s**. This verifies those native test targets after
+the two-parent merge `7c617d7f`; it is **not** all-repo CTest or
+runtime visual validation. The system authority contract is unchanged:
+PHYSIS owns environment/weather; NEREID owns water bodies/flow
+and buoyancy; TerraWeave owns terrain/foliage. No duplicate local
+PHYSIS shallow flood with canonical NEREID: choose
+`FloodMode::ExternalAuthority`. The existing PHYSIS-to-NEREID
+wind adapter changes visuals only, not ECS water authority.
+See `docs/agent-handoffs/physis-stage73-postmerge-40-green-2026-11-19.md`.

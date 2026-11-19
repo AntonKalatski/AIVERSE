@@ -1045,3 +1045,17 @@ are NOT RUN. Prior separate 24/24 PHYSIS, 2/2 editor authoring,
 NEREID 119/119 and GUI build are not a current-merge PASS.
 Handoff:
 `docs/agent-handoffs/physis-stage72-main-nereid-merge-2026-11-19.md`.
+
+### Stage 73 — 40/40 combined PHYSIS/NEREID/SpectraFX CTest PASS
+
+After main/NEREID was merged into `feature/physis-nature-simulation`,
+the owner ran focused native macOS CTest and supplied **40/40 PASS,
+0 failed**, 10.25 seconds. The scope is `^(physis_|ecs_nereid_|vfx_)`,
+with 26 PHYSIS-labelled and 5 SpectraFX-labelled CTests; editor,
+persistence, network, physics/security label groups overlap.
+Stage72's "combined suite NOT RUN" is now superseded, but complete
+repo-wide regression, same-World host integration and live Metal
+rendering remain NOT VERIFIED. Do not infer automatic PHYSIS rain
+to NEREID water levels or authoritative water changes via visual
+wind bridge. Handoff:
+`docs/agent-handoffs/physis-stage73-postmerge-40-green-2026-11-19.md`.

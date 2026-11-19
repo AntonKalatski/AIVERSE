@@ -971,3 +971,20 @@ merging is not an automatic runtime integration.
 GitHub static ancestry/CMake/catalog checks PASS, but no combined
 native build/CTest or Metal visual tests have run. Full details:
 `docs/agent-handoffs/physis-stage72-main-nereid-merge-2026-11-19.md`.
+
+### Stage 73 — native post-merge 40/40 CTest success
+
+The owner supplied macOS native CTest output from the combined
+PHYSIS/NEREID/SpectraFX branch: **40 of 40 PASS; 0 failures;
+total CTest 10.25s**. The Stage72 filtered command targeted
+`^(physis_|ecs_nereid_|vfx_)`. PHYSIS label had 26 tests,
+SpectraFX 5, and additional NEREID ECS tests passed.
+This is the first real reported post-merge CTest PASS and
+supersedes the "NOT RUN" field for **this focused suite**.
+It does not verify all AIVERSE tests, two active authoritative
+modules running together in the same host World, GUI interactions,
+Metal rendering or remote admin transport. Next: broader
+repository-wide CTest and explicit dual-module host smoke with
+`FloodMode::ExternalAuthority`; preserve save/rollback parity.
+Handoff:
+`docs/agent-handoffs/physis-stage73-postmerge-40-green-2026-11-19.md`.
