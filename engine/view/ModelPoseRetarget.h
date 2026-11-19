@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <utility>
 #include <vector>
 
 namespace aiverse::view {
@@ -205,6 +206,24 @@ compileModelPoseRetarget(const render::Model& source,
                          uint64_t visualGeneration) {
     if(sourceGeneration==0 || visualGeneration==0 ||
        !validModelPoseRetarget(source,visual,map))return {};
+    // Fail once at publication for malformed bind transforms. A weak or
+    // zero-scale source bone must not force the same runtime rejection
+    // for every member of a large animated crowd.
+    const auto finite=[](float v){return std::isfinite(v);};
+    for(size_t i=0;i<visual.nodes.size();++i) {
+        const auto& dst=visual.nodes[i];
+        for(float v:{dst.t.x,dst.t.y,dst.t.z,dst.r.x,dst.r.y,
+                     dst.r.z,dst.r.w,dst.s.x,dst.s.y,dst.s.z})
+            if(!finite(v))return {};
+        const int sourceId=map.sourceNodeForVisual[i];
+        if(sourceId<0)continue;
+        const auto& src=source.nodes[size_t(sourceId)];
+        for(float v:{src.t.x,src.t.y,src.t.z,src.r.x,src.r.y,
+                     src.r.z,src.r.w,src.s.x,src.s.y,src.s.z})
+            if(!finite(v))return {};
+        if(std::abs(src.s.x)<1.e-6f || std::abs(src.s.y)<1.e-6f ||
+           std::abs(src.s.z)<1.e-6f)return {};
+    }
     auto compiled=std::make_shared<CompiledModelPoseRetarget>();
     compiled->sourceModel=&source;
     compiled->visualModel=&visual;
@@ -256,10 +275,6 @@ inline bool retargetCompiledModelPose(
                      pose.r.x,pose.r.y,pose.r.z,pose.r.w,
                      pose.s.x,pose.s.y,pose.s.z})
             if(!std::isfinite(f))return false;
-        if(std::abs(step.sourceBindS.x)<1.e-6f ||
-           std::abs(step.sourceBindS.y)<1.e-6f ||
-           std::abs(step.sourceBindS.z)<1.e-6f)
-            return false;
         auto& dst=next[i];
         dst.t=step.targetBindT +
               (pose.t-step.sourceBindT)*plan.translationScale;
