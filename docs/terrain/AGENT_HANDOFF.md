@@ -2547,3 +2547,23 @@ would silently reintroduce cracks).
 **Actual validation:** GitHub commit success only.
 No CMake/build/CTest/GPU execution; the dedicated
 testing agent retains ownership.
+
+## Stage 21a — fractional authored height and source-normal seam alignment (SOURCE COMMITTED; TESTS DEFERRED)
+
+**Branch:** `feature/terraweave` / Draft PR #24. Stage 20 TWH7 slope guard and area-weighted face-normal smoothing were already in branch on entry (head `a77ac835b0f59334b72a6604ffba3dad1ef0f887`), so do NOT reimplement them.
+
+**Source commits and changed API:**
+- `c23d9010643d066227347a9d1d2e63e441570c8e`: `engine/world/TerraWeaveWorldHeightSource.h`: new `AuthoredWorldHeightSnapshot::sampleQ16(xQ16cm,zQ16cm)` samples **fractional** world centimetres inside the same authored two-triangle collider surface as integer `sample`. Uses bounded Q16 integer barycentric weights, signed negative-height rounding, explicit world limits, and preserves the exact legacy result for integer input positions. No added persistent heightfield, ECS or GPU buffer.
+- `96b1e5e8277381edd8d292c0eed47ffcf50b1faa`: `engine/world/TerraWeaveHorizon.h`: optional `HorizonSurfaceSources::nearGroundHeightAtQ16Cm` callback; extends **trailing fields** of `HorizonBake::NearSeamSample` with slope X/Z in permille and validity flag. Legacy native providers can omit the callback and continue using whole-centimetre `nearGroundHeightAtCm`.
+- `2e027de24eb4fdfc68893a417d87fe5a3e420a03`: `engine/world/WorldScene.cpp`: supplies the Q16 callback from the SAME immutable authored snapshot as the existing near coverage and height callbacks.
+- `036a105a06fb7428b7b5fafd8e00a94d19e8fa74`: `engine/render/TerraWeaveHorizonClip.h`: samples exact clipped perimeter Q16 positions, clamping to at most 1/65536 cm INSIDE the resident half-open authored tile instead of offsetting by up to 1 cm. Computes bounded near-surface slope X/Z using +/- 200 cm (2 m) Q16 finite-difference stencil restricted to the SAME resident tile. Missing gradient samples fall back to face-normal shading; missing required height keeps the prior all-or-nothing height-weld fallback and slope guard.
+- `920ac22bfcfad73b753492a0c97955c53378a2c0`: `engine/render/TerraWeaveHorizonModel.h`: seam vertices blend with the authored source normal at Q16-welded positions when valid; otherwise the earlier Stage 20 area-weighted clipped face normal path remains. Interior far-terrain normals continue to use previous conservative blending. No new model vertices/indices or draw calls.
+- `a2e8e489231f1dbfca029986658bee06a0cdd92f`: `engine/world/TerraWeaveHorizonArchive.h` migrates to **TWH8/version 8**, storing two signed slope permille values and a bounded normal-valid flag per `NearSeamSample` (now 32 bytes vs 20). TWH7 and older assets are intentionally rejected; regenerate via `aiverse_horizon_bake` or runtime fallback.
+
+**Important invariants:** WorldScene captures a single immutable authored source snapshot in each worker; neither GPU renderer nor gameplay state is consulted while reconstructing model vertices. All existing CPU triangle clipping, 4096 maximum welded seam samples, area-weighted normal continuity and `maxNearWeldSlopePermille` all-or-none slope guard remain. The Q16 sampler does not change the native integer-height `sample()` behavior. Terrain/forest geometry counts and shader/RHI contracts remain unchanged; only CPU sampling, stored per-seam metadata, vertex normal attributes and the TWH8 archive change.
+
+**Actual verification:** GitHub source inspection/commits only. **NO compiler, CMake, CTest, GPU screenshots, benchmarks, running editor/game, or independent geometry fixture tests performed** (user delegates all to a separate testing agent). Keep PR Draft.
+
+**Test-agent matrix:** compare `sampleQ16(x*65536,z*65536)` to legacy `sample` for negative and positive tile coordinates/heights, triangle diagonal and corners; check fractional coordinate continuity across neighboring same-height authored tiles; verify Q16 high-edge 1-unit inset; compare 200cm one-sided normal stencil on x/z tile edges and sloped near terrain; confirm missing Q16 source falls back to integer heights, missing gradient maintains previous area-normal rendering; verify old TWH7 rejection / TWH8 signed normal roundtrip and bounded count, Full/partial GPU model updates, source revision and cached model restoration. Report measured outcomes separately.
+
+**Next functionality:** include source-normal-specific diagnostics in `HorizonRuntimeStats`, enforce strict atlas-only GPU geometry equivalence when seam normals/heights change, update docs/skill and PR description. No additional triangles should be introduced.
