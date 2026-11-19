@@ -40,6 +40,14 @@ inline bool equivalentGpuMaterial(const Model& ma, const Material& a,
     const int tb[] = {b.baseTex, b.mrTex, b.normalTex, b.occlusionTex, b.emissiveTex, b.teamTex};
     for (size_t i = 0; i < 6; ++i)
         if (texture(ma, ta[i]) != texture(mb, tb[i])) return false;
+    // A reduced VT base image can have a different full-resolution R8
+    // alpha mask despite otherwise equivalent material parameters.
+    const auto alphaTexture = [](const Model& model,const Material& material) {
+        return material.baseTex >= 0 &&
+               size_t(material.baseTex) < model.images.size() ?
+               model.images[size_t(material.baseTex)].virtualAlphaMask.id : 0u;
+    };
+    if (alphaTexture(ma,a) != alphaTexture(mb,b)) return false;
     if (a.shaderGraph) {
         for (size_t i = 0; i < a.shaderGraph->textures.size() && i < 4; ++i)
             if (texture(ma, a.graphTextures[i]) != texture(mb, b.graphTextures[i])) return false;
@@ -84,6 +92,8 @@ inline uint64_t gpuMaterialStateHash(const Model& model, const Material& m) {
             ? model.images[size_t(index)].tex.id : 0);
     };
     for (int t : {m.baseTex, m.mrTex, m.normalTex, m.occlusionTex, m.emissiveTex, m.teamTex}) texture(t);
+    u(m.baseTex >= 0 && size_t(m.baseTex) < model.images.size() ?
+        model.images[size_t(m.baseTex)].virtualAlphaMask.id : 0u);
     if (m.shaderGraph)
         for (size_t i = 0; i < m.shaderGraph->textures.size() && i < 4; ++i)
             texture(m.graphTextures[i]);
