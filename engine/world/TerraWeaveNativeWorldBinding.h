@@ -1,0 +1,117 @@
+// TerraWeave opt-in native host read barrier. ECS World is authoritative;
+// this adapter rehydrates a transient terrain/vegetation cache after ticks,
+// save loads, and Simulation rollback, then publishes the SAME resource
+// revision into WorldScene near forest and Horizon when GPU tiles are ready.
+// No NEREID flow duplication and no gameplay writes from rendering.
+#pragma once
+#include "engine/world/TerraWeaveEcsAuthority.h"
+#include "engine/world/TerraWeaveTerrainRuntime.h"
+#include "engine/world/TerraWeaveWorldSceneBinding.h"
+#include "engine/world/TerraWeaveForestScene.h"
+#include <cstdint>
+#include <stdexcept>
+#include <utility>
+#include <vector>
+
+namespace aiverse::terraweave {
+
+class NativeTerraWeaveWorldBinding {
+public:
+    NativeTerraWeaveWorldBinding(
+            TerraWeaveEcsAuthorityConfig cfg,EarthworksLayer& earth,
+            RootSupportRegistry& roots,GrassCoverRegistry& grass,
+            TerrainMutationCoordinator& runtime)
+        :cfg_(std::move(cfg)),earth_(earth),roots_(roots),
+         grass_(grass),runtime_(runtime) {
+        validateEcsAuthorityConfig(cfg_);
+        if(earth_.spacingCm()!=cfg_.soilGridCm ||
+           earth_.bedrockCm()!=cfg_.bedrockCm)
+            throw std::invalid_argument(
+                "TerraWeave native host ground grid differs from ECS authority");
+    }
+
+    uint64_t loadedStateRevision()const{return stateRevision_;}
+    bool initialized()const{return initialized_;}
+
+    // Call after completed simulation tick / state-restored hook and before
+    // any render/Box3D/navmesh owner phase. Rehydrate when stateRevision
+    // changes; an explicit force=true handles an ECS rollback to the SAME
+    // revision with different content (branches/replays).
+    bool reconcile(const World& ecs,world::WorldScene& scene,
+                   bool force=false) {
+        const auto* state=ecs.resourceConst<TerraWeaveAuthorityResource>();
+        if(!state || state->immutableRecipeId!=cfg_.immutableRecipeId)
+            throw std::invalid_argument(
+                "TerraWeave scene authority resource/recipe mismatch");
+        if(initialized_ && !force && state->stateRevision==stateRevision_)
+            return false;
+
+        auto stagedSoil=materializeEcsTerrain(*state,cfg_);
+        RootSupportRegistry stagedRoots;
+        GrassCoverRegistry stagedGrass;
+        stagedRoots.setSnapshot(state->rooted);
+        stagedGrass.setSnapshot(state->grass);
+
+        // Construct view metadata before modifying the live scene or soil.
+        std::vector<RootState> exposed;
+        std::vector<ForestPlantCondition> conditions;
+        std::vector<ForestTreeIdentity> fallen;
+        exposed.reserve(state->rooted.size());
+        conditions.reserve(state->rooted.size());
+        fallen.reserve(state->rooted.size());
+        for(const auto& plant:state->rooted){
+            const ForestTreeIdentity id{
+                plant.anchor.plantKey,plant.anchor.speciesId};
+            if(plant.support.plantKey)exposed.push_back(plant.support);
+            conditions.push_back({id,plant.environment});
+            if(plant.fallen)fallen.push_back(id);
+        }
+
+        // Stage publication; the render/physics system is not authoritative
+        // and can be rebuilt after successful ECS snapshot validation.
+        earth_.exchangeSnapshotState(stagedSoil);
+        roots_.exchangeSnapshotState(stagedRoots);
+        grass_.exchangeSnapshotState(stagedGrass);
+        if(auto* forest=scene.forestScene()){
+            forest->setPlantConditions(conditions);
+            forest->setRootStates(exposed);
+            forest->setFallenTrees(fallen);
+        }
+
+        // The caller now uploads new dynamic mesh/collision tiles within
+        // its per-frame budget. Do not simulate actor movement on stale
+        // ground while pendingTiles()>0.
+        runtime_.invalidateAllResident();
+        world_.reset(scene);
+        stateRevision_=state->stateRevision;
+        initialized_=true;
+        return true;
+    }
+
+    // After publishVisible(), call this before WorldScene::update/draw.
+    // The snapshot goes live only after pending tile publications finish.
+    bool publishScene(world::WorldScene& scene){
+        if(!initialized_)return false;
+        return world_.synchronize(scene,runtime_);
+    }
+    bool groundReady()const{return initialized_ &&
+                                    runtime_.pendingTiles()==0;}
+    // Host must stop submitting old dynamic terrain while resetting.
+    void detach(world::WorldScene& scene){
+        world_.reset(scene);
+        initialized_=false;
+        stateRevision_=0;
+    }
+
+private:
+    TerraWeaveEcsAuthorityConfig cfg_;
+    EarthworksLayer& earth_;
+    RootSupportRegistry& roots_;
+    GrassCoverRegistry& grass_;
+    TerrainMutationCoordinator& runtime_;
+    WorldSceneEarthworksBinding world_;
+    uint64_t stateRevision_=0;
+    bool initialized_=false;
+};
+
+} // namespace aiverse::terraweave
