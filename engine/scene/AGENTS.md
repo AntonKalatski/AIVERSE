@@ -234,3 +234,24 @@ Stage 1; this stage supplies deterministic ECS ownership and lifecycle APIs.
   failing because this skill was absent from registration.
   See `docs/agent-handoffs/ecs-static-scene-stage8-2026-11-19.md`
   for the corrections and exact verification boundary.
+
+## Native validation evidence (Mac Studio, 2026-11-19)
+
+The final default Release one-shot validation in the isolated
+`AIVERSE-static-scene` worktree has now completed successfully:
+the script exited `SUCCESS: complete all run`, CTest elapsed
+517.25 seconds, and all 9 separate-process RSS samples produced
+matching checksums. Previous full run had 129 registered tests;
+the successful snippet lacks its own aggregate count, so report
+the source-proven successful *full gate*, not an invented test count.
+
+For one million entities with 128-byte immutable config, Static
+measured 36.21/38.77/39.05 MiB RSS deltas for 16/64/1024 unique
+values compared to 272.77/276.60/280.48 MiB Ordinary; memory growth
+saving ~86%, read speedup 2.1–2.6× in this synthetic benchmark.
+This is process RSS delta, not whole-game RAM or GPU VRAM.
+
+Do not rerun or invalidate the verified gate by changing production
+code without a new full test. The only later branch changes so far
+have been documentation. See Stage 9 handoff for complete native
+evidence, exact sample numbers, tool limitations and merge checklist.
