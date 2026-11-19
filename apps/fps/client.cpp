@@ -23,6 +23,7 @@
 #include "engine/render/GeometryScene.h"
 #include "engine/view/View.h"
 #include "engine/view/AppearanceAuthoringService.h"
+#include "engine/render/RenderDeviceLifetime.h"
 #include "engine/render/ImGuiLayer.h"
 #include "engine/i18n/Localization.h"
 #include "imgui.h"
@@ -53,6 +54,9 @@ struct App {
     platform::ContentReader contentReader;
     render::GeometryScene staticGeometry;
     render::Renderer3D renderer;render::ImGuiLayer gui;render::Mesh cube;
+    // One explicit generation for this FPS host/device lifetime. Do not
+    // retire it until the character, scene and renderer GPU owners stop.
+    std::unique_ptr<render::RenderDeviceLifetime> gpuLifetime;
     // Universal engine View receives generic renderer packets from FPS.
     // Server/net/player semantics remain entirely in this host adapter.
     ::aiverse::View genericSceneView;
@@ -207,6 +211,7 @@ struct App {
         return ok;
     }
     void init(gfx::Device& device) {
+        gpuLifetime=std::make_unique<render::RenderDeviceLifetime>(device);
         configureInput();
         loadInputConfig();
         renderer.init(device);renderer.setShadowQuality(render::ShadowQuality::Low);
@@ -233,6 +238,8 @@ struct App {
     // Opt-in model for FPS remote players. Existing box fallback remains when
     // fps.visual.model is unset or the asset fails to load.
     void loadAnimatedCharacter(gfx::Device& device) {
+        if(!gpuLifetime || !gpuLifetime->lease().validFor(device))
+            throw std::logic_error("FPS animated character GPU device generation expired");
         const auto& view=rules["fps"]["visual"];
         const std::string file=view.getStr("model");
         if (file.empty()) return;
@@ -929,7 +936,31 @@ struct App {
         fps::view::drawRoyaleHud(lang,client->snapshot(),actor,config);
         gui.render();device.endPass();device.endFrame();
     }
-    void shutdown(gfx::Device& device){characterScheduler.reset();characterEntities.clear();characterLives.clear();characterActions.clear();characterMontages.clear();characterGraph.reset();if(characterModel){render::releaseModel(device,*characterModel);characterModel.reset();}if(streamedScene)streamedScene->shutdown(device);server.reset();client.reset();staticGeometry.shutdown(device);platform::setPointerLock(false);audio.shutdown();gui.shutdown();renderer.shutdown();device.destroyBuffer(cube.vb);device.destroyBuffer(cube.ib);}
+    void shutdown(gfx::Device& device) {
+        if(!gpuLifetime || !gpuLifetime->lease().validFor(device))
+            throw std::logic_error("FPS shutdown GPU device generation expired");
+        characterScheduler.reset();
+        characterEntities.clear();
+        characterLives.clear();
+        characterActions.clear();
+        characterMontages.clear();
+        characterGraph.reset();
+        if(characterModel) {
+            render::releaseModel(device,*characterModel);
+            characterModel.reset();
+        }
+        if(streamedScene)streamedScene->shutdown(device);
+        server.reset();client.reset();
+        staticGeometry.shutdown(device);
+        platform::setPointerLock(false);
+        audio.shutdown();gui.shutdown();renderer.shutdown();
+        device.destroyBuffer(cube.vb);
+        device.destroyBuffer(cube.ib);
+        // gfx::Device is still alive: all known FPS device allocations have
+        // been submitted for release before the old generation is retired.
+        gpuLifetime->retire();
+        gpuLifetime.reset();
+    }
 };
 }
 int aiverseMain(int argc,char** argv) {
