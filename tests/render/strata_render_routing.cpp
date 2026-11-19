@@ -12,6 +12,7 @@
 #include <map>
 #include <string>
 #include <vector>
+#include <utility>
 
 using namespace aiverse;
 using namespace aiverse::render;
@@ -156,7 +157,7 @@ int main() {
     gfx::DrawIndexedIndirectCommand untouched;
     untouched.firstIndex=1234;
     commands.push_back(untouched);
-    assert(!encodeRendererCommands(model,candidate,7,gate,commands));
+    assert(!encodeRendererCommands(model,residency,candidate,7,gate,commands));
     assert(commands.size()==1 && commands.front().firstIndex==1234);
     gate.requested=true;
     gate.sourceAndMaterialSafe=true;
@@ -169,10 +170,10 @@ int main() {
     assert(chooseExclusiveRenderRoute(gate)==RenderRoute::Legacy);
     gate.rasterParityVerified=true;
     assert(chooseExclusiveRenderRoute(gate)==RenderRoute::Strata);
-    assert(!encodeRendererCommands(model,candidate,invalidNode,gate,commands));
+    assert(!encodeRendererCommands(model,residency,candidate,invalidNode,gate,commands));
     assert(commands.size()==1 && commands.front().firstIndex==1234);
 
-    assert(encodeRendererCommands(model,candidate,7,gate,commands));
+    assert(encodeRendererCommands(model,residency,candidate,7,gate,commands));
     assert(commands.size()==2);
     for(size_t i=0;i<commands.size();++i) {
         assert(commands[i].firstIndex==candidate.ranges[i].firstIndex);
@@ -190,7 +191,7 @@ int main() {
                                   RenderPass::SunShadow,view,candidate,&error));
     assert(candidate.ranges.size()==1);
     assert(candidate.ranges[0].firstIndex==indices.firstIndex);
-    assert(encodeRendererCommands(model,candidate,8,gate,commands));
+    assert(encodeRendererCommands(model,residency,candidate,8,gate,commands));
     assert(commands.size()==1 && commands.front().firstInstance==8);
     // Completely offscreen is an exclusive empty route, not fallback to
     // drawing the source's full legacy primitive.
@@ -198,7 +199,7 @@ int main() {
     assert(prepareRenderCandidate(model,asset,residency,"static",0,0,
                                   RenderPass::MainOpaque,view,candidate,&error));
     assert(candidate.ranges.empty());
-    assert(encodeRendererCommands(model,candidate,8,gate,commands));
+    assert(encodeRendererCommands(model,residency,candidate,8,gate,commands));
     assert(commands.empty());
     view.objectToClip=mat4::identity();
 
@@ -206,7 +207,7 @@ int main() {
     assert(prepareRenderCandidate(model,asset,residency,"static",0,0,
                                   RenderPass::MainOpaque,view,candidate,&error));
     model.markMaterialChanged();
-    assert(!encodeRendererCommands(model,candidate,7,gate,commands));
+    assert(!encodeRendererCommands(model,residency,candidate,7,gate,commands));
     model.materials[0].alpha=AlphaMode::Blend;
     assert(!prepareRenderCandidate(model,asset,residency,"static",0,0,
                                    RenderPass::MainOpaque,view,candidate,&error));
@@ -218,7 +219,7 @@ int main() {
     assert(prepareRenderCandidate(model,asset,residency,"static",0,0,
                                   RenderPass::MainOpaque,view,candidate,&error));
     model.markGeometryChanged();
-    assert(!encodeRendererCommands(model,candidate,7,gate,commands));
+    assert(!encodeRendererCommands(model,residency,candidate,7,gate,commands));
     assert(!prepareRenderCandidate(model,asset,residency,"static",0,0,
                                    RenderPass::MainOpaque,view,candidate,&error));
 
