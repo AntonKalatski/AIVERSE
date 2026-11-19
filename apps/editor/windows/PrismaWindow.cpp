@@ -108,10 +108,14 @@ public:
                 double(pf.stats().adaptiveKnownGpuBytes)/kMiB,
                 double(pf.stats().adaptiveMemoryLimitBytes)/kMiB,
                 pf.stats().adaptiveMemoryPressure ? "pressure" : "within budget");
-            ImGui::TextDisabled("Adaptive timing: %.3f ms (%s)",
-                pf.stats().adaptiveGpuMs,
-                pf.stats().adaptiveScopedGpuTiming ?
-                    "completed viewport GL33 query" : "whole completed GPU frame / unsupported");
+            if (std::isfinite(pf.stats().adaptiveGpuMs) &&
+                pf.stats().adaptiveGpuMs>0.0)
+                ImGui::TextDisabled("Adaptive timing: %.3f ms (%s)",
+                    pf.stats().adaptiveGpuMs,
+                    pf.stats().adaptiveScopedGpuTiming ?
+                        "completed viewport GL33 query" : "completed whole GPU frame");
+            else
+                ImGui::TextDisabled("Adaptive timing: unavailable; no CPU/FPS substitute");
         }
         const double gpuFrame=ed.device().gpuFrameMs();
         if (std::isfinite(gpuFrame) && gpuFrame>0.0)
