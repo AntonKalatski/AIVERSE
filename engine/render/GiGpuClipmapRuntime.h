@@ -4,6 +4,7 @@
 // acknowledged only by GiGpuTicketQueue's real async RHI completion callback.
 #pragma once
 #include "GiClipmapVolume.h"
+#include "GiClipmapValidityTexture.h"
 #include "GiGpuTicketQueue.h"
 #include "GiGpuChunkBvhCache.h"
 #include "Renderer3D.h"
@@ -23,6 +24,7 @@ public:
         GiGpuTicketQueue::PollStats completed{};
         GiGpuTicketQueue::Submission submitted{};
         GiClipmapScroll scroll{};
+        GiClipmapValidityTexture::UploadStats validityUpload{};
         size_t dirty=0, inFlight=0;
         bool safeForPresentation=false;
     };
@@ -48,6 +50,13 @@ public:
             volume_=GiClipmapVolume{};
             return false;
         }
+        if(!validity_.initialize(device,volume_.size())) {
+            queue_.shutdown();
+            gpu_.shutdown();
+            volume_=GiClipmapVolume{};
+            return false;
+        }
+        validitySynchronized_=true;
         device_=&device;
         samples_=samples;
         traceDistance_=traceDistance;
@@ -57,17 +66,20 @@ public:
     bool shutdown() {
         // Never release GPU resources while their command-buffer fence is pending.
         if(!queue_.shutdown())return false;
+        validity_.release();
         gpu_.shutdown();
         volume_=GiClipmapVolume{};
         scene_.reset();
         lights_.clear();
         device_=nullptr;
+        validitySynchronized_=false;
         return true;
     }
 
     bool ready() const {return device_ && gpu_.ready() && queue_.ready();}
     bool busy() const {return queue_.pending()!=0;}
     const GiClipmapVolume& volume() const {return volume_;}
+    const GiClipmapValidityTexture& validity() const {return validity_;}
     const GiGpuSmallScene& backend() const {return gpu_;}
     size_t pendingProbes() const {return volume_.pending();}
 
@@ -77,6 +89,7 @@ public:
         if(!queue_.setGeometry(gpu_,*scene,revision))return false;
         scene_=std::move(scene);
         volume_.invalidateAll(GiDirtyReason::Geometry);
+        validitySynchronized_=false;
         return true;
     }
 
@@ -93,6 +106,7 @@ public:
         if(cacheStats)*cacheStats=stats;
         scene_=std::move(scene);
         volume_.invalidateAll(GiDirtyReason::Geometry);
+        validitySynchronized_=false;
         return true;
     }
 
@@ -107,6 +121,7 @@ public:
         for(const auto& light:lights_)
             margin=std::max(margin,traceDistance_+light.radius+extraRadius);
         volume_.invalidate(bounds,GiDirtyReason::Geometry,margin);
+        validitySynchronized_=false;
         return true;
     }
 
@@ -126,6 +141,7 @@ public:
         for(const auto& light:lights_)
             margin=std::max(margin,traceDistance_+light.radius+extraRadius);
         volume_.invalidate(bounds,GiDirtyReason::Geometry,margin);
+        validitySynchronized_=false;
         return true;
     }
 
@@ -155,6 +171,7 @@ public:
                 invalidateLight(light);
         }
         lights_=std::move(next);
+        validitySynchronized_=false;
         return true;
     }
 
@@ -167,19 +184,26 @@ public:
         stats.completed=queue_.poll(volume_);
         if(!busy())stats.scroll=volume_.scroll(camera);
         else stats.scroll.blocked=true;
+        // Physical probe validity can change after a confirmed GPU fence,
+        // or after an immediate dirty/recycle operation. Synchronize it before
+        // rendering any scene fragment that samples the atlas.
+        stats.validityUpload=validity_.sync(volume_);
+        validitySynchronized_=true;
         if(scene_ && probeBudget>0)
             stats.submitted=queue_.submit(gpu_,volume_,probeBudget,camera,
                                           samples_,traceDistance_);
         stats.dirty=volume_.pending();
         stats.inFlight=volume_.inFlight();
-        stats.safeForPresentation=scene_ && queue_.safeToSample(volume_);
+        stats.safeForPresentation=scene_ && validitySynchronized_ &&
+                                  validity_.validCount()>0;
         return stats;
     }
 
     // U6.origin carries CURRENT logical corner; U6.ring converts the logical
     // neighbor grid coordinates to the persistent physical atlas slots.
     bool bind(Renderer3D& renderer) const {
-        if(!ready() || !scene_ || !queue_.safeToSample(volume_)) {
+        if(!ready() || !scene_ || !validitySynchronized_ ||
+           validity_.validCount()==0) {
             renderer.clearDynamicGiOverlay();
             return false;
         }
@@ -187,7 +211,7 @@ public:
         const auto ring=volume_.ringOffset();
         return renderer.setDynamicGiOverlay(&gpu_.atlas(),volume_.originWorld(),
                    volume_.spacing(),dims[0],dims[1],dims[2],
-                   ring[0],ring[1],ring[2]);
+                   ring[0],ring[1],ring[2],&validity_);
     }
     void unbind(Renderer3D& renderer) const {renderer.clearDynamicGiOverlay();}
     bool confirmExternalCompletion(uint64_t serial,bool success) {
@@ -210,6 +234,8 @@ private:
 
     gfx::Device* device_=nullptr;
     GiClipmapVolume volume_;
+    GiClipmapValidityTexture validity_;
+    bool validitySynchronized_=false;
     GiGpuSmallScene gpu_;
     GiGpuTicketQueue queue_;
     std::shared_ptr<const GiChunkedGeometrySnapshot> scene_;
