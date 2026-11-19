@@ -117,7 +117,8 @@ public:
     // Must be called after ECS light-change barrier with a stable key per source.
     // Only changed/new/removed light volumes are invalidated, expanded by traceDistance
     // to account for light -> surface -> probe transport rather than direct light alone.
-    void setLights(std::vector<GiMovingLight> current) {
+    void setLights(std::vector<GiMovingLight> current,
+                   std::vector<uint32_t>* invalidatedProbes=nullptr) {
         if (current.size() > 64) throw std::invalid_argument("too many dynamic GI lights");
         const auto valid = [](const GiMovingLight& l) {
             const auto finite3 = [](float3 v) { return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z); };
@@ -146,14 +147,24 @@ public:
                                              [](const GiMovingLight& a, uint64_t k) { return a.key < k; });
             return it != src.end() && it->key == key ? &*it : nullptr;
         };
+        std::vector<uint32_t> dirty;
         for (const auto& old : lights_) {
             const auto* newer = find(current, old.key);
-            if (!newer || changed(old, *newer)) invalidateLight(old);
+            if (!newer || changed(old, *newer)) invalidateLight(old,&dirty);
         }
         for (const auto& next : current) {
             const auto* old = find(lights_, next.key);
-            if (!old || changed(*old, next)) invalidateLight(next);
+            if (!old || changed(*old, next)) invalidateLight(next,&dirty);
         }
+        // A moved/removed light MUST immediately invalidate previously
+        // visible bounced irradiance, not merely enqueue replacement work.
+        // Otherwise a small per-frame CPU budget leaves light ghosts.
+        std::sort(dirty.begin(),dirty.end());
+        dirty.erase(std::unique(dirty.begin(),dirty.end()),dirty.end());
+        for (uint32_t id : dirty) coeffs_[id] = {};
+        if (invalidatedProbes)
+            invalidatedProbes->insert(invalidatedProbes->end(),
+                                     dirty.begin(),dirty.end());
         lights_ = std::move(current);
     }
 
@@ -177,10 +188,12 @@ public:
     }
 
 private:
-    void invalidateLight(const GiMovingLight& light) {
+    void invalidateLight(const GiMovingLight& light,
+                         std::vector<uint32_t>* invalidated=nullptr) {
         const float r = light.radius + traceDistance_;
         const float3 ext{r,r,r};
-        scheduler_.invalidate({light.position-ext, light.position+ext}, GiDirtyReason::Lighting);
+        scheduler_.invalidate({light.position-ext, light.position+ext},
+                              GiDirtyReason::Lighting,0,invalidated);
     }
     static float3 direction(int i, int count) {
         const float y = 1 - 2 * (float(i)+.5f)/float(count);
