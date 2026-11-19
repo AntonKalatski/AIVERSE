@@ -2442,3 +2442,14 @@ therefore moves `StrataDiskPages.cpp` into a separate
 GLES/GL33 still use the established non-disk runtime fallback.
 Offline importers should explicitly link `aiverse_strata_disk`.
 **Neither target has been compiled in this stage.**
+
+
+### Stage 15.3 final documentation linkage
+
+The agent entrypoint was updated in `AGENTS.md` commit
+`8df61ea66cfaed5d95c669196da891637733ccda`
+to point future agents to this handoff and the exact incomplete
+hardware-validation gates. The public system documentation was
+updated in `docs/strata.md` commit
+`b4d2ebb8f666576b666a328078aa4b150608ee0b`.
+All source changes remain **uncompiled/unexecuted** at this stage.
