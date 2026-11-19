@@ -3,6 +3,7 @@
 // token lease and never determines whether GPU destruction is safe.
 #pragma once
 #include "AsyncResourceRetirementQueue.h"
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -21,19 +22,25 @@ public:
     size_t size() const noexcept{return events_.size();}
     uint64_t overflowCount() const noexcept{return overflows_;}
     uint64_t receivedCount() const noexcept{return received_;}
-    uint64_t wrongThreadCount() const noexcept{return wrongThread_;}
+    uint64_t wrongThreadCount() const noexcept{
+        return wrongThread_.load(std::memory_order_relaxed);
+    }
     void record(RetirementDiagnosticEvent event) noexcept {
         if(std::this_thread::get_id()!=ownerThread_) {
-            ++wrongThread_; // debug indication, never cross-thread mutate ring
+            wrongThread_.fetch_add(1,std::memory_order_relaxed);
             return;
         }
         ++received_;
         if(capacity_==0) {++overflows_;return;}
-        if(events_.size()==capacity_) {
-            events_.pop_front();
-            ++overflows_;
+        try {
+            if(events_.size()==capacity_) {
+                events_.pop_front();
+                ++overflows_;
+            }
+            events_.push_back(event);
+        }catch(...) {
+            ++overflows_; // diagnostic OOM must not affect GPU retirement
         }
-        events_.push_back(event);
     }
     std::vector<RetirementDiagnosticEvent> snapshot() const {
         return {events_.begin(),events_.end()};
@@ -42,7 +49,7 @@ public:
         events_.clear();
         overflows_=0;
         received_=0;
-        wrongThread_=0;
+        wrongThread_.store(0,std::memory_order_relaxed);
     }
     // Callback cannot extend the Ring's lifecycle; safe if a model
     // cache emits events after the owning editor window disappears.
@@ -57,7 +64,8 @@ private:
     size_t capacity_=0;
     std::thread::id ownerThread_;
     std::deque<RetirementDiagnosticEvent> events_;
-    uint64_t received_=0,overflows_=0,wrongThread_=0;
+    uint64_t received_=0,overflows_=0;
+    std::atomic<uint64_t> wrongThread_{0};
 };
 
 } // namespace aiverse::render
