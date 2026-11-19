@@ -1137,3 +1137,28 @@ whole-trim rollback is promised after an exception on a later entry.
 
 **NOT RUN:** AIVERSE compiler/build/CTest/CI on this head, graphics
 parity, sanitizer or performance checks. [Stage 133 details](agent-handoffs/animation-stage133-model-cache-callback-reentrancy-2026-11-19.md).
+
+
+## Stage 134 — owner-thread Model residency enumeration
+
+A native animation host must not enumerate `ModelResourceCache`'s
+`std::map` from an animation worker or streaming job. In addition to
+Stage 132's checked new-key publication, established-owner reads through
+`find`, `contains`, `models`, `modelFiles`,
+`affectedBySource`, `stats`, Model visitors and GPU residency
+estimates now reject foreign-thread access before touching the map.
+The returned `models()` reference is borrowed and cannot safely escape
+the render-owner thread. Before binding the owner, initialization remains
+host-serialized; there is no concurrent reader/writer support or GPU fence
+implicit in these checks.
+
+The existing `render_device_epoch` test source covers ten wrong-thread
+reads and verifies owner-thread behavior afterward. macOS/Linux child
+death fixtures now inherit the process environment for native runtime
+library loading. Targeted RTS reload/trim callback inspection found no
+direct nested Model cache mutation; if new hosts require one, defer it to
+a later owner-thread transaction.
+
+**NOT RUN:** native CMake/compiler/CTest, successful CI for Stage 134
+HEAD, renderer/GPU visual parity, sanitizer or performance measurements.
+Detailed [Stage 134 handoff](agent-handoffs/animation-stage134-owner-thread-read-guards-2026-11-19.md).
