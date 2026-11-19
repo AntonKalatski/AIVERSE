@@ -90,8 +90,8 @@ inline bool installFromMap(Simulation& sim, const Json& map) {
         throw std::logic_error("PHYSIS authored fields already installed");
     const auto fields = parseFieldAssets(map["physis"], *options);
     install(sim, *options);
-    sim.world().setResource<AuthoredFieldInstallMode>(AuthoredFieldInstallMode{AuthoredFieldMode::Static});
     spawnFieldAssets(sim.world(), fields);
+    sim.world().setResource<AuthoredFieldInstallMode>(AuthoredFieldInstallMode{AuthoredFieldMode::Static});
     return true;
 }
 
@@ -106,10 +106,10 @@ inline bool installTrackedFromMap(Simulation& sim, const Json& map) {
         throw std::logic_error("PHYSIS authored fields already installed");
     const auto fields = parseFieldAssets(map["physis"], *options);
     install(sim, *options);
-    sim.world().setResource<AuthoredFieldInstallMode>(AuthoredFieldInstallMode{AuthoredFieldMode::Tracked});
     sim.registerPersistentResource<RuntimeFieldRegistry>(
         "physis.authored_field_registry", 1);
     reconcileTrackedRuntimeFields(sim.world(), fields);
+    sim.world().setResource<AuthoredFieldInstallMode>(AuthoredFieldInstallMode{AuthoredFieldMode::Tracked});
     return true;
 }
 
