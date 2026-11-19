@@ -300,6 +300,28 @@ void recoveredIntent() {
     CHECK(sim->world().resourceConst<FieldRuntimeState>()->revision==1);
     std::filesystem::remove_all(dir);
 }
+void exclusiveJournalOwnership() {
+    const auto dir=tempPath();
+    std::filesystem::create_directories(dir);
+    const auto path=dir/"journal";
+    std::string error;
+    {
+        JournalProcessLock first;
+        JournalProcessLock second;
+        CHECK(first.acquire(path,&error));
+        CHECK(first.held());
+        CHECK(!first.acquire(path,&error));
+        CHECK(!second.acquire(path,&error));
+        CHECK(!second.held());
+        first.release();
+        CHECK(!first.held());
+        CHECK(second.acquire(path,&error));
+        CHECK(second.held());
+        second.release();
+        CHECK(first.acquire(path,&error));
+    }
+    std::filesystem::remove_all(dir);
+}
 void authProof() {
     auto [client,server]=net::makeLoopbackPair();
     const auto k=key();
@@ -389,6 +411,7 @@ int main(){
     missingJournalFailsClosed();
     recoveredIntent();
     authProof();
+    exclusiveJournalOwnership();
 #ifndef __EMSCRIPTEN__
     realLoopbackWebSocket();
 #endif
