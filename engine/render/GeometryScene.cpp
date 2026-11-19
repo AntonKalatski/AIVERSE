@@ -6,6 +6,7 @@
 #include "StrataGpuScene.h"
 #include "StrataGpuCulling.h"
 #include "StrataRenderRouting.h"
+#include "StrataPortableRender.h"
 #endif
 #include <algorithm>
 #include <numeric>
@@ -37,6 +38,12 @@ float scaleBound(const mat4& m){float sum=0;for(int r=0;r<3;++r)for(int c=0;c<3;
 }
 void GeometryScene::shutdown(gfx::Device& dev){
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    // Renderer3D has consumed the previous draw epoch before scene unload.
+    // Release alias borrowers BEFORE their index sidecars / source Models.
+    strataPortableDrawModels_.clear();
+    for (auto& [source, staged] : strataPortableSources_)
+        if (staged) staged->shutdown(dev);
+    strataPortableSources_.clear();
     if (strataGpuCulling_) strataGpuCulling_->shutdown(dev);
     if (strataGpuMetadata_) strataGpuMetadata_->shutdown(dev);
 #endif
@@ -263,7 +270,7 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
         }
         for(auto& [file,m]:models_)if(hlod_||std::any_of(instances_.begin(),instances_.end(),[&](const Instance& i){return i.model==m.get()&&(i.policy.clusters||i.policy.shadowClusters||i.policy.occluder);}))prepareGeometry(*m);
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
-        if (strataStagingEnabled_) {
+        if (strataStagingEnabled_ || strataPortableRenderingEnabled_) {
             // Build once for each *source* model before uploadModel may release
             // CPU vertex streams. Surface/HLOD proxies retain legacy ownership
             // and are never duplicated here. This path does NOT draw Strata.
@@ -290,6 +297,28 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
         if(hlod_&&!instances_.empty()){std::vector<size_t> ids(instances_.size());std::iota(ids.begin(),ids.end(),0);buildGroup(dev,std::move(ids));}
         for(auto& [k,m]:models_)if(!uploadModel(dev,*m)||!m->vb.valid()||!m->ib.valid())throw std::runtime_error("geometry scene: source GPU upload failed");
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
+        if (strataPortableRenderingEnabled_ && strataStaging_) {
+            // CPU-selected raster fallback works without compute or MDI:
+            // Vulkan may use an index span in the shared source GPU page,
+            // GLES3 uses the original source VB plus one immutable index IB.
+            // Every failed source remains eligible for ordinary Legacy draws.
+            for (const auto& [key, model] : models_) {
+                if (!model) continue;
+                const auto* asset = strataStaging_->find(key);
+                if (!asset) { ++stats_.strataPortableDeclined; continue; }
+                auto source=std::make_shared<strata::PortableSource>();
+                std::string error;
+                if (!source->stage(dev, *model, *asset, &error)) {
+                    ++stats_.strataPortableDeclined;
+                    if (!error.empty())
+                        warnings_.push_back("portable Strata source " + key +
+                                            ": " + error);
+                    continue;
+                }
+                strataPortableSources_.emplace(model.get(), std::move(source));
+                ++stats_.strataPortableSources;
+            }
+        }
         if (strataGpuMetadataEnabled_ && strataStaging_) {
             strataGpuDevice_ = &dev;
             // Optional GPU metadata only; source Model remains owner of
@@ -417,6 +446,51 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
             if (prepared && strataGpuMetadata_->find(key, *d.model).valid())
                 r.previewStrataModel(d, *prepared, *strataGpuMetadata_, key);
             break;
+        }
+    }
+#endif
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    if (strataPortableRenderingEnabled_ && d.model == i.model &&
+        !strataPortableSources_.empty()) {
+        const auto staged=strataPortableSources_.find(d.model);
+        if (staged != strataPortableSources_.end() && staged->second &&
+            r.sceneWidth() > 0 && r.sceneHeight() > 0) {
+            std::vector<strata::PortablePassView> views;
+            views.push_back({r.viewProj(), r.sceneWidth(), r.sceneHeight(),
+                             r.clipDepthZeroToOne(), errorPixels_});
+            if (r.shadowQuality() != ShadowQuality::Off &&
+                r.shadowMapSize() > 0)
+                views.push_back({r.lightViewProj(), r.shadowMapSize(),
+                                 r.shadowMapSize(), r.clipDepthZeroToOne(),
+                                 errorPixels_});
+            // A planar reflection camera is chosen after drawModel(), by
+            // renderReflection(). To guarantee no missing reflected detail,
+            // use the finest resident frontier whenever water reflections
+            // might consume this ModelDraw in the current frame.
+            const bool forceFinest = r.lights.reflectionsWanted();
+            auto& slot=strataPortableDrawModels_[&i];
+            if (!slot) slot=std::make_unique<Model>();
+            std::string error;
+            if (staged->second->prepareModel(i.world, views, forceFinest,
+                                              *slot, &error)) {
+                d.model=slot.get();
+                d.staticCache=nullptr;
+                d.persistentId=0; // no stale original static-render packets
+                // The actual draw is STILL authored only by Renderer3D.
+                // Do not draw the original source after a successful switch.
+                ++stats_.strataPortableDraws;
+                stats_.strataPortableClusters+=
+                    slot->meshes.empty() ? 0u :
+                    uint64_t(std::accumulate(
+                        slot->meshes.begin(),slot->meshes.end(),size_t(0),
+                        [](size_t n,const MeshDef& mesh) {
+                            return n+mesh.primitives.size();
+                        }));
+            }else{
+                ++stats_.strataPortableFallbacks;
+                // Failure is atomic: output was preserved, and source model
+                // always remains the only drawn object in this epoch.
+            }
         }
     }
 #endif
