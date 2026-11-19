@@ -596,6 +596,11 @@ struct CreatorApp {
                                   "%s",importedPackage.scalpColliderMesh.c_str());
                 }
             }
+            if(human.groom.hasCollisionMesh())
+                ImGui::Text("Scalp: %s MotionWeave deformation",
+                            scalpSkinning?"multi-joint CPU skinning":"rigid-node");
+            else
+                ImGui::TextUnformatted("Scalp: DNA ellipsoid fallback");
             ImGui::TextWrapped("Adjust gain for each imported ARKit channel -> shape route. "
                                "The source target names and vertex data remain unchanged.");
             for(std::size_t i=0;i<importedPackage.routes.size();++i) {
