@@ -843,3 +843,42 @@ Metal device execution or visual parity has been produced.
 **Handoff:** `docs/agent-handoffs/spectrafx-stage-35-ecs-attachments-gpu-fences-2026-11-19.md`.
 **Status: functional source committed, all native builds, CTest, actual
 Metal runs and editor screenshots NOT RUN.** Never claim otherwise.
+
+## Stage 36 — GPU scatter-kill and native ECS example
+
+For native C++ presentation modules, use
+`examples/spectrafx/native_ecs_attachments.h` as a reusable
+`GpuEcsAttachmentPresenter` integration example and read
+`examples/spectrafx/native_ecs_attachments.md` before wiring it.
+The example reads the existing `SpectraSourceComponent` and
+fixed-point world pose through a const resolver, creates no
+new genre-specific ECS VFX components, and separates
+`prepare` (pre-pass), `drawInsidePass`, `finish` (post-pass)
+and `afterRollback` (safe completed-frame boundary).
+Do not call `afterRollback` while the scene encoder is active.
+
+Metal selective GPU source kill now uploads just a compact
+`uint32_t` kill-slot list through a checked storage transfer,
+binds it at compute buffer slot **14**, and dispatches shader
+mode **6** before the canonical Spawn/Update/Compact phases.
+This makes highly fragmented kills a single index-buffer
+upload and a single compute dispatch, rather than many per-range
+64-byte state blits. The source-generated physical slot IDs
+remain quarantined until `completedFrameSerial()` confirms
+successful completion. The GPU compute shader does not change
+authoritative ECS or networking semantics. Never recycle
+physical slots based only on CPU submission.
+
+Editor Metal preview additionally supports a one-frame
+`Step GPU` while frozen and an opt-in `GPU speed`
+multiplier clamped to `0.1x..2x`. Neither feature changes
+the CPU preview or gameplay time. Check telemetry for
+`killScatterDispatches` and `killIndexBytes` counters.
+
+**Next agent handoff:**
+`docs/agent-handoffs/spectrafx-stage-36-scatter-kills-native-ecs-2026-11-19.md`.
+
+**Verification status:** committed source only; CMake,
+Objective-C++/MSL, CTest, editor UI, Metal hardware and
+performance have NOT RUN. Source-level complexity
+improvements are not measured performance gains.
