@@ -1,5 +1,6 @@
 // PHYSIS Stage 82: persistent host fracture outbox and deterministic delivery.
 #include "engine/physis/PhysisIntegration.h"
+#include <algorithm>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
