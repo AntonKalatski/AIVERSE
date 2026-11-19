@@ -93,6 +93,11 @@ if(AIVERSE_BUILD_TESTS)
         set_tests_properties(vivid_metal_rhi PROPERTIES SKIP_RETURN_CODE 77)
     endif()
 
+    add_executable(aiverse_vivid_vertex_override_tests
+        ${PROJECT_SOURCE_DIR}/tests/vivid/render_vertex_override.cpp)
+    target_link_libraries(aiverse_vivid_vertex_override_tests PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME vivid_vertex_override COMMAND aiverse_vivid_vertex_override_tests)
+
     add_executable(aiverse_vivid_morph_tests ${PROJECT_SOURCE_DIR}/tests/vivid/morph_binding.cpp)
     target_link_libraries(aiverse_vivid_morph_tests PRIVATE aiverse_vivid_render aiverse_zstd_dec)
     add_test(NAME vivid_morph_binding COMMAND aiverse_vivid_morph_tests)
