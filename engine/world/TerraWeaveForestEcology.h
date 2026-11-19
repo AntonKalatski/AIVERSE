@@ -68,6 +68,7 @@ struct ForestEcologyPlantState {
     uint64_t shadeStressTicks=0;
     uint64_t lastSeedEpoch=0;
     bool dead=false;
+    bool recruited=false; // new procedural-age sapling, not an old scatter tree
 };
 
 struct ForestEcologyResource {
@@ -96,12 +97,12 @@ inline void validateForestEcologyResource(const ForestEcologyResource& state) {
 }
 inline void io(Archive& a,ForestEcologyPlantState& p) {
     a(p.id.speciesId,p.id.key,p.lastEvaluatedTick,
-      p.shadeStressTicks,p.lastSeedEpoch,p.dead);
+      p.shadeStressTicks,p.lastSeedEpoch,p.dead,p.recruited);
 }
 inline void io(Archive& a,ForestEcologyResource& state) {
     a(state.version,state.initialTick,state.lastStepTick,
       state.cursor,state.revision,state.initialized);
-    uint32_t count=a.count(state.plants.size(),37);
+    uint32_t count=a.count(state.plants.size(),38);
     if(!a.ok() || count>262144u){a.fail();return;}
     if(!a.writing())state.plants.assign(count,{});
     for(auto& p:state.plants)if(a.ok())a(p);
@@ -137,8 +138,16 @@ public:
                 maturity/1000000ll,60,2000);
             if(radius<=0)continue;
             const size_t index=entries_.size();
+            const int64_t estimatedHeight=std::clamp<int64_t>(
+                int64_t(p.anchor.roots.radiusCm)*
+                (p.anchor.roots.habit==PlantHabit::Tree?8ll:3ll)*
+                maturity/1000ll,
+                p.anchor.roots.habit==PlantHabit::Tree?150ll:40ll,
+                30000ll);
+            const int64_t canopyTop=
+                int64_t(p.anchor.plantedHeightCm)+estimatedHeight;
             entries_.push_back({id,p.anchor.xCm,p.anchor.zCm,
-                                radius,p.anchor.plantedHeightCm,
+                                radius,canopyTop,
                                 p.anchor.roots.habit});
             const int64_t x0=detail::floorDiv(p.anchor.xCm-radius,3200);
             const int64_t x1=detail::floorDiv(p.anchor.xCm+radius,3200);
@@ -180,8 +189,12 @@ public:
                 (r2-dist2)*1000u/r2);
             const uint32_t canopyStrength=
                 crown.habit==PlantHabit::Tree?650u:300u;
-            const uint32_t tall=crown.groundCm>=
-                subject.anchor.plantedHeightCm?1000u:500u;
+            const int64_t subjectTop=
+                int64_t(subject.anchor.plantedHeightCm)+
+                int64_t(subject.anchor.roots.radiusCm)*
+                (subject.anchor.roots.habit==PlantHabit::Tree?6ll:2ll);
+            const uint32_t tall=crown.canopyTopCm>=subjectTop?
+                1000u:300u;
             const uint32_t attenuation=uint32_t(
                 uint64_t(closeness)*canopyStrength*tall/1000000ull);
             blocked=std::min<uint32_t>(900,blocked+attenuation);
@@ -208,7 +221,7 @@ private:
     struct Entry {
         AnchoredPlantId id{};
         int64_t x=0,z=0,radius=0;
-        int32_t groundCm=0;
+        int64_t canopyTopCm=0;
         PlantHabit habit=PlantHabit::Tree;
     };
     std::vector<Entry> entries_;
@@ -320,7 +333,7 @@ inline ForestEcologyResult advanceForestEcology(
         const auto tr=traits.find(id.speciesId);
         if(tr==traits.end() || plant.fallen)continue;
         ForestEcologyPlantState& history=histories[id];
-        if(!history.id.key)history={id,next.initialTick,0,0,false};
+        if(!history.id.key)history={id,next.initialTick,0,0,false,false};
         if(history.dead)continue;
         const uint64_t dt=completedTick-history.lastEvaluatedTick;
         history.lastEvaluatedTick=completedTick;
@@ -429,7 +442,7 @@ inline ForestEcologyResult advanceForestEcology(
     }
     for(const auto& child:seedlings)
         next.plants.push_back({{child.anchor.speciesId,
-                               child.anchor.plantKey},completedTick,0,0,false});
+                               child.anchor.plantKey},completedTick,0,0,false,true});
     std::sort(next.plants.begin(),next.plants.end(),
         [](const auto& a,const auto& b){return a.id<b.id;});
     if(next.revision==UINT64_MAX)
