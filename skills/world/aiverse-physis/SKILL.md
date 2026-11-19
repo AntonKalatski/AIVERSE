@@ -990,3 +990,20 @@ keeps this compile regression exercised in native PHYSIS CTest.
 GUI compilation failed before this fix; after-fix native build/CTest
 remains NOT RUN. Do not claim editor GUI success. See
 `docs/agent-handoffs/physis-stage69-editor-net-shadow-2026-11-19.md`.
+
+### Stage 70 — C++ ternary and ::aiverse::net qualifier syntax
+
+Stage69's bulk replacement fixed `editor::net` shadowing but produced
+`():::aiverse::net::Bytes{}` in a ternary expression.
+The user-provided macOS compiler correctly rejected this at
+`apps/editor/PhysisRemoteEdit.h:169`. Stage70 commit
+`4817aaadebe20dd9f77e2d057d3ff275848e1416` uses:
+`client_ ? client_->exportOutstanding() : ::aiverse::net::Bytes{}`.
+Keep the colon as a separate ternary operator preceding absolute
+namespace resolution. Source audit finds no other `:::` sequences
+in the PHYSIS editor bridge/window/regression test. Real
+post-fix compilation and CTest have NOT RUN. Next: pull PHYSIS
+branch and compile/test `aiverse_physis_remote_edit_test`, then
+`aiverse_editor` on macOS; keep PR #25 Draft until actual logs.
+Handoff:
+`docs/agent-handoffs/physis-stage70-ternary-net-qualification-2026-11-19.md`.

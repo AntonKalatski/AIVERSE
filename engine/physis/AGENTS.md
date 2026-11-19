@@ -983,3 +983,11 @@ ctest --test-dir build/physis-editor-validation --output-on-failure -R '^physis_
 - Real native PHYSIS headless 24/24 and editor authoring 2/2 passed **before this code fix**. **GUI rebuild and new collision fixture have NOT RUN after the fix**. The new source was inspected, not compiled by this agent. The Stage68 user GUI build is the precise failure evidence.
 - Next: pull PHYSIS branch, rebuild `aiverse_physis_remote_edit_test` and run CTest `physis_remote_edit` in `build/physis-editor-validation`, then rebuild `aiverse_editor` from `build/physis-gui-validation`; preserve real compiler output and report any further failures.
 - Handoff: `docs/agent-handoffs/physis-stage69-editor-net-shadow-2026-11-19.md`.
+
+### Stage 70 — repair ternary separator after qualified network namespace (2026-11-19)
+
+- Real user macOS native build of `aiverse_physis_remote_edit_test` after Stage69 failed at `apps/editor/PhysisRemoteEdit.h:169` with two parser errors: `expected ':'`, `expected unqualified-id`. Source had `return client_?client_->exportOutstanding():::aiverse::net::Bytes{};`. Bulk qualification had concatenated the ternary's `:` with the absolute namespace `::`.
+- Fix commit `4817aaadebe20dd9f77e2d057d3ff275848e1416`: `return client_ ? client_->exportOutstanding() : ::aiverse::net::Bytes{};`. This retains the Stage69 correct explicit transport namespace and changes only one return statement.
+- Re-fetched bridge header and checked that no `:::` remains in `PhysisRemoteEdit.h`, `PhysisWindow.cpp` or `tests/physis_remote_edit_test.cpp`. **Actual post-fix native compilation/CTest/GUI build NOT RUN**. Previously reported PHYSIS 24/24 and editor authoring 2/2 were obtained before these Stage69/70 source edits.
+- Existing `physis_remote_edit` translation unit has a deliberate `aiverse::editor::net` namespace shadow fixture to cover the bridge's qualified symbols, but must actually be compiled on macOS to confirm.
+- Handoff: `docs/agent-handoffs/physis-stage70-ternary-net-qualification-2026-11-19.md`.
