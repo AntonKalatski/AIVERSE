@@ -885,3 +885,27 @@ reset per presentation update / prepared frame.
 
 **NOT RUN:** CMake/C++ compiler, CTest, GPU backend visual
 comparison, sanitizers or crowd benchmarks. See [Stage 123 handoff](agent-handoffs/animation-stage123-compiled-retarget-cache-2026-11-19.md).
+
+## Stage 124 — source graph unchanged; reusable target-local retarget scratch
+
+The already-compiled source/visual skeleton mapping continues
+to consume ONE MotionWeave source graph pose per frame.
+`retargetCompiledModelPose` now writes the target-local
+Pose and world matrices into reusable caller-owned vectors;
+`aiverse::View::submitOne` retains scratch capacity per View.
+A nested synchronous model submission uses isolated scratch,
+preserving the outer draw's currently borrowed pose pointers.
+Renderer3D copies draw-item matrices/morph weights during
+submit and does not enqueue these Pose pointers on the GPU.
+
+Retarget authoring diagnostics now distinguish invalid map
+sizes/ancestry, duplicate/missing nodes, malformed morph slots,
+bad bind transforms and obsolete asset generation. No
+animation authority or new clock was introduced, nor was
+baked/crowd clip state reset by model LOD changes.
+An unsuccessful retarget call is a bind-pose fallback;
+never rely on scratch remaining unchanged on failure.
+
+**NOT RUN:** native C++ compile/link, CTest/CI,
+Metal/Vulkan/GL visual, sanitizers or benchmarks.
+[Stage 124 handoff](agent-handoffs/animation-stage124-pose-scratch-authoring-2026-11-19.md).
