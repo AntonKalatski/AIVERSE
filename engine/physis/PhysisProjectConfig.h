@@ -86,7 +86,8 @@ inline bool installFromMap(Simulation& sim, const Json& map) {
     if (!options) return false;
     // Parse/validate all authored field volumes BEFORE mutating/initializing
     // ECS or sealing persistence. No partial setup from malformed map input.
-    if (sim.world().resourceConst<AuthoredFieldInstallMode>() ||
+    if (sim.world().resourceConst<State>() ||
+        sim.world().resourceConst<AuthoredFieldInstallMode>() ||
         sim.world().resourceConst<RuntimeFieldRegistry>() ||
         sim.world().resourceConst<FieldRuntimeState>())
         throw std::logic_error("PHYSIS authored fields already installed");
@@ -103,7 +104,8 @@ inline bool installFromMap(Simulation& sim, const Json& map) {
 inline bool installTrackedFromMap(Simulation& sim, const Json& map) {
     const auto options = optionsFromMap(map);
     if (!options) return false;
-    if (sim.world().resourceConst<AuthoredFieldInstallMode>() ||
+    if (sim.world().resourceConst<State>() ||
+        sim.world().resourceConst<AuthoredFieldInstallMode>() ||
         sim.world().resourceConst<RuntimeFieldRegistry>() ||
         sim.world().resourceConst<FieldRuntimeState>())
         throw std::logic_error("PHYSIS authored fields already installed");
