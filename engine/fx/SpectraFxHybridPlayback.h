@@ -145,7 +145,7 @@ public:
         // particles are currently dormant. Exceeding the cap falls back to
         // the authored CPU effect only if the route explicitly allows it.
         auto selected=entry->config; // never mutate the cached authored asset
-        auto preference=chooseSpectraFxBackend(device_,selected.backend);
+        auto preference=chooseSpectraFxBackend(device_,SpectraFxHybridEmitter::effectiveRequest(selected));
         bool gpuRequested=preference.accepted &&
                           preference.backend==SpectraFxExecutionBackend::Gpu;
         if(gpuRequested &&
@@ -421,7 +421,7 @@ private:
            !effect.appearance.additive ||
            effect.environment.reportImpacts) return false;
         // CPU policy and unsupported GPU features retain dedicated fallback.
-        const auto choice=chooseSpectraFxBackend(device_,effect.backend);
+        const auto choice=chooseSpectraFxBackend(device_,SpectraFxHybridEmitter::effectiveRequest(effect));
         if(!choice.accepted || choice.backend!=SpectraFxExecutionBackend::Gpu)
             return false;
 
