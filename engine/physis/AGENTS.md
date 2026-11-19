@@ -530,3 +530,31 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   not confirmed green. No cross-file journal+World atomic guarantee
   or Windows ACL parity. See
   `docs/agent-handoffs/physis-stage50-post-read-integrity-2026-11-19.md`.
+
+### Stage 51 — fail-closed pinned admin startup and NUL-safe paths (2026-11-19)
+
+- The canonical `LoopbackAdminEndpoint::open` must not bind the listener
+  if its pinned journal fails to load. Treat corrupt checksum, unsafe
+  owner/mode, a symlink, or FIFO as startup failures. Release the
+  process lock when opening fails; allow operator remediation and
+  a fresh endpoint on the same journal path.
+- New POSIX regression `pinnedEndpointRejectsUnsafeStartupJournal`
+  in `tests/physis_admin_journal_test.cpp` exercises the real admin
+  endpoint: clean startup, checksum corruption refusal, unlocked
+  failed startup, symlink/FIFO denial and post-repair restart.
+  Its source is authored; native full-engine CTest is NOT RUN.
+- POSIX `posix_journal::validBasename` and `write` reject
+  embedded NUL bytes in filenames and temporary suffixes; POSIX
+  C interfaces would otherwise interpret a truncated name.
+  `tests/physis_journal_posix_io_test.cpp` covers these cases.
+- ACTUAL PASS: an isolated source-identical Linux CMake/CTest
+  `physis_journal_posix_io` 1/1, strict GCC/Clang builds and GCC
+  ASan+UBSan. Checked GitHub blobs: I/O header
+  `3e00b8ec1508c438f401c240eaa3aa38ab90bbd1`,
+  I/O test `a2393a8d09a75429d9e291a537682c72dff09e3f`.
+  This is NOT a PASS of `physis_admin_journal`.
+- Full native AIVERSE build is still blocked by GitHub DNS from the
+  current container and PHYSIS GitHub Actions remain queued/cancelled.
+  Keep PR #25 DRAFT, preserve the separate FileJournal + ECS
+  checkpoint authority and exact per-stage handoff:
+  `docs/agent-handoffs/physis-stage51-pinned-startup-2026-11-19.md`.
