@@ -66,6 +66,16 @@ public:
         width=target->width;height=target->height;hdr=target->hdr;
         return true;
     }
+    // Bind a ready camera output to a shader sampler during an active render
+    // pass. The caller owns texture-slot selection and must ensure there is
+    // no feedback from the currently rendered target.
+    bool bindColorTarget(gfx::Device& device,int textureSlot,uint64_t assetKey) const {
+        if(textureSlot<0 || textureSlot>=gfx::kMaxTextureSlots)return false;
+        const auto handle=colorTarget(assetKey);
+        if(!handle.valid())return false;
+        device.setTexture(textureSlot,handle);
+        return true;
+    }
     bool loaded()const{return loaded_;}
     CameraRuntimeHost& host(){return host_;}
     const CameraRuntimeHost& host()const{return host_;}
