@@ -239,3 +239,17 @@ When the actual Mac Studio log is available:
 3. Fix all build/runtime failures in this isolated branch, rerun the
    comprehensive gate if code changes, then review main merge readiness
    with active ECS/renderer/world agents.
+
+
+## Later Stage 7 continuation
+
+The previously identified additive collision ID problem is now
+addressed by **opt-in source code** in
+`engine/world/CollisionStream.{h,cpp}` (explicit namespace ranges),
+`engine/scene/SceneCollisionNamespaces.h` (deterministic RAII leases)
+and `engine/scene/SceneCollisionBridge.h` (real
+SceneLoadCoordinator dependency adapter). Both native CTests are
+registered, but not run. The detailed Stage 7 handoff is
+`docs/agent-handoffs/ecs-static-scene-stage7-2026-11-19.md`.
+Continue to run ONE combined final build/CTest/RSS gate after all
+source changes, and do not mislabel Stage 7 as verified.
