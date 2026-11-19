@@ -2370,3 +2370,26 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos"
     set_tests_properties(metal_vt_bilinear_gpu PROPERTIES
         LABELS "METAL;GPU;TEXTURE_RHI;VIRTUAL_TEXTURE;BILINEAR_ORACLE" TIMEOUT 120)
 endif()
+
+
+# Full production Renderer3D compiled graph + disk-backed nonuniform VT
+# gutters through heterogeneous Metal GPU-authored ICB, including a
+# separate original-source CPU seam oracle. Isolated opt-in test process.
+option(AIVERSE_TEXTURE_METAL_GRAPH_VT_GUTTER_GPU_TESTS
+    "Opt-in production graph plus nonuniform VT gutters and mixed Metal GPU ICB scene pixel oracle" OFF)
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos"
+   AND AIVERSE_TEXTURE_METAL_GRAPH_VT_GUTTER_GPU_TESTS)
+    add_executable(aiverse_metal_renderer_graph_vt_gutter_gpu_test
+        tests/render/metal_renderer_graph_vt_gutter_gpu.cpp
+        $<TARGET_OBJECTS:aiverse_runtime>)
+    target_include_directories(aiverse_metal_renderer_graph_vt_gutter_gpu_test
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_metal_renderer_graph_vt_gutter_gpu_test PRIVATE
+        aiverse_runtime aiverse_shader_graph Threads::Threads)
+    add_test(NAME metal_renderer_graph_vt_gutter_gpu
+        COMMAND aiverse_metal_renderer_graph_vt_gutter_gpu_test)
+    set_tests_properties(metal_renderer_graph_vt_gutter_gpu PROPERTIES
+        LABELS "METAL;GPU;TEXTURE_RHI;EXPERIMENTAL_ICB;RENDERER3D;SHADER_GRAPH;VIRTUAL_TEXTURE;BILINEAR_ORACLE"
+        TIMEOUT 120
+        ENVIRONMENT "AIVERSE_EXPERIMENTAL_METAL_ICB=1;AIVERSE_GPU_ENCODED_ICB=1;AIVERSE_GPU_AUTHORED_DRAWS=1;AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR=1;AIVERSE_EXPERIMENTAL_ICB_MIXED_PBR=1;AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT=1;AIVERSE_EXPERIMENTAL_ICB_MIXED_VT=1;AIVERSE_EXPERIMENTAL_ICB_SHADER_GRAPH=1;AIVERSE_GPU_ICB_ADAPTIVE=0;AIVERSE_ADAPTIVE_DRAW_GROUPS=0;AIVERSE_GPU_ICB_MIN_COMMANDS=2;AIVERSE_ICB_TRACE=1")
+endif()
