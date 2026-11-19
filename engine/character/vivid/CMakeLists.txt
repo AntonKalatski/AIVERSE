@@ -19,6 +19,13 @@ add_library(AIVERSE::vivid_mesh ALIAS aiverse_vivid_mesh)
 target_link_libraries(aiverse_vivid_mesh PUBLIC aiverse_vivid_gpu aiverse_models)
 target_compile_features(aiverse_vivid_mesh PUBLIC cxx_std_20)
 
+# Per-character GPU presentation owner. Each actor owns independent writable
+# compute/model vertex streams, with no second animation scheduler.
+add_library(aiverse_vivid_actor STATIC GpuActorStream.cpp)
+add_library(AIVERSE::vivid_actor ALIAS aiverse_vivid_actor)
+target_link_libraries(aiverse_vivid_actor PUBLIC aiverse_vivid_mesh)
+target_compile_features(aiverse_vivid_actor PUBLIC cxx_std_20)
+
 # Legacy render::Pose adapter; core remains usable without aiverse_models.
 add_library(aiverse_vivid_render STATIC MorphBinding.cpp)
 add_library(AIVERSE::vivid_render ALIAS aiverse_vivid_render)
@@ -83,7 +90,7 @@ if(AIVERSE_BUILD_TESTS)
             ${PROJECT_SOURCE_DIR}/engine/gfx/metal/GfxMetal.mm
             PROPERTIES COMPILE_FLAGS "-fobjc-arc")
         target_link_libraries(aiverse_vivid_metal_rhi_tests PRIVATE
-            aiverse_vivid_mesh aiverse_vivid_gpu
+            aiverse_vivid_actor aiverse_vivid_mesh aiverse_vivid_gpu
             "-framework Metal" "-framework QuartzCore" "-framework Foundation")
         set_target_properties(aiverse_vivid_metal_rhi_tests PROPERTIES
             OBJCXX_STANDARD 20
