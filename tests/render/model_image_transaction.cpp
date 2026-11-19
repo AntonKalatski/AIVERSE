@@ -2,6 +2,7 @@
 #include "engine/render/ModelImageUploadTransaction.h"
 #include "engine/render/ModelResourceCache.h"
 #include "engine/render/ModelStagingTransaction.h"
+#include "engine/render/OffscreenTargetLifetime.h"
 #include <cassert>
 #include <set>
 #include <string>
@@ -345,6 +346,32 @@ int main(){
     assert(native.pendingRetirements()==0);
     device.idle=true;
     native.shutdown(device);
+    assert(device.live.empty());
+
+    // Stage 114 offscreen targets use the same per-batch fence semantics.
+    // A resize or window destruction must not immediately release GPU
+    // textures referenced by previous frame command buffers.
+    render::OffscreenTargetRetirement targets(device,epoch.lease());
+    gfx::TextureDesc targetDesc;
+    targetDesc.width=targetDesc.height=4;
+    targetDesc.renderTarget=true;
+    auto colorTarget=device.createTexture(targetDesc);
+    targetDesc.format=gfx::PixelFormat::Depth;
+    auto depthTarget=device.createTexture(targetDesc);
+    const int oldDestroyed=device.destroyed;
+    device.failed=false;device.complete=false;device.idle=false;
+    targets.retire(colorTarget,depthTarget);
+    assert(targets.pendingPairs()==1);
+    assert(!targets.collect());
+    assert(device.destroyed==oldDestroyed);
+    device.failed=true;
+    assert(!targets.collect()); // failed token is NOT completion
+    assert(!targets.drain()); // failed waitForResourceIdle blocks release
+    assert(device.destroyed==oldDestroyed);
+    device.idle=true;
+    assert(targets.drain());
+    assert(targets.pendingPairs()==0);
+    assert(device.destroyed==oldDestroyed+2);
     assert(device.live.empty());
 
     epoch.retire();
