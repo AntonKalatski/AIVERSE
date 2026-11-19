@@ -557,3 +557,13 @@ git switch feature/spectrafx-generic-cue-queue
 git pull --ff-only origin feature/spectrafx-generic-cue-queue
 git fetch origin main && git merge origin/main
 ```
+
+
+## 2026-11-19 — Stage 33: opt-in GPU event routes with visibility guard
+- **Branch:** `feature/spectrafx-generic-cue-queue`; verified start-of-stage comparison against main `d71c6d47e532b25fb816a8bb1f96c41e5275a165`: ahead 76, behind 0.
+- **Implementation SHA:** `ddf52b1449202bd1bc97730335ac166bbfcd924e`.
+- **Changed:** new `engine/fx/SpectraFxGpuRoutes.h`. `SpectraFxGpuRouteAsset::read/readText` parses versioned `fx/gpu/routes.json` containing 0–64 `{eventType,asset,enabled,oneShotSeconds,ownPlayerOnly}` entries, with strict types, unique uint16 event IDs, safe asset names and bounded one-shot lifetime. Atomic configuration replacement prevents malformed reloads from partially changing routes.
+- **Visibility contract:** `ownPlayerOnly=true` is mandatory in this generic RTS bridge. It does not infer enemy visibility from hidden simulation events; requests for `ownPlayerOnly=false` are rejected until an explicit game/view visibility callback exists. This prevents rendering otherwise hidden enemy combat cues solely from reading authoritative `sim.events()`. Host must also avoid duplicating legacy RtsFx cues when authoring routes.
+- **Compatibility:** feature-gated and standalone, no GameClient/Editor runtime modified in this stage, no ECS simulation/save changes, PRISMA untouched.
+- **Verification actually performed:** **NOT RUN**, per user's features-first request. No compilation, CTest, application/editor or GPU validation. No production-ready claim.
+- **Next actionable step:** integrate the authored routes in `apps/client/ClientFx` with a weak-owned, bounded per-tick event collector, then dispatch only at the safe GPU frame point before `Renderer3D::beginScene`; render after scene render while the pass is open. Protect against duplicate tick deliveries, paused/planet views and device teardown. Commit code and append next handoff separately.
