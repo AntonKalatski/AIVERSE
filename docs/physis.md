@@ -888,3 +888,17 @@ and a bounded two-raw-unit error against ideal -98.1 N.
 No production changes. **The corrected test has not been rerun yet.**
 Handoff:
 `docs/agent-handoffs/physis-stage66-fixed-gravity-rounding-2026-11-19.md`.
+
+### Stage 67 — complete headless PHYSIS suite verified (macOS)
+
+User-provided native `--full` output **after** the Stage66
+forces Q47.16 test correction confirms **24/24 tests PASS,
+0 failed, 10.51s**, PHYSIS validation PASS. Report:
+`/Users/aleksandrfeer/Projects/AIVERSE/build/physis-validation-full/physis-reports/20261119-105206-10283`.
+This covers the headless PHYSIS suite with Box3D, nature fields,
+network, security and persistence. The editor-only
+`physis_authoring` and `physis_field_authoring` targets are
+registered only when `aiverse_editor_core` exists; they still
+require an editor-core enabled CMake configuration and CTest.
+Do not claim those editor tests or GUI QA passed. See handoff:
+`docs/agent-handoffs/physis-stage67-headless-green-2026-11-19.md`.

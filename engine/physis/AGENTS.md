@@ -947,3 +947,18 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   complete 24/24 confirmation.
 - Handoff:
   `docs/agent-handoffs/physis-stage66-fixed-gravity-rounding-2026-11-19.md`.
+
+### Stage 67 — full headless PHYSIS green on macOS (2026-11-19)
+
+- After Stage 66's Q47.16 gravity force test correction (`2dda8ccfa242b14b327a01a0cd7ea7ca16ea4d90`), the user reran the native `tools/physis-validate-native.sh --full --jobs 4` on macOS.
+- **ACTUAL USER-REPORTED PASS:** CTest **24/24 passed, 0 failed**, 10.51 seconds; PHYSIS validation PASS. The previous sole failure `physis_forces` is therefore resolved. PHYSIS/Box3D, integration, networking, persistence, security and headless editor-tagged tests passed in this runner.
+- Report: `/Users/aleksandrfeer/Projects/AIVERSE/build/physis-validation-full/physis-reports/20261119-105206-10283`.
+- This result does **not** include the separate `physis_authoring` and `physis_field_authoring` CTests: in CMake both require `aiverse_editor_core`, which is enabled by `AIVERSE_BUILD_EDITOR` or `AIVERSE_BUILD_TOOLS`.
+- Next validation on macOS, using a separate build directory with editor-core enabled (tools ON, GUI editor OFF):
+```sh
+cmake -S . -B build/physis-editor-validation -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_TOOLS=ON -DAIVERSE_BUILD_EDITOR=OFF
+cmake --build build/physis-editor-validation --target aiverse_physis_authoring_test aiverse_physis_field_authoring_test --parallel 4
+ctest --test-dir build/physis-editor-validation --output-on-failure -R '^physis_(authoring|field_authoring)$'
+```
+- The authoring suite, GUI interaction, full repository-wide CTest and completed cross-platform CI remain unverified. PR #25 stays Draft until remaining integration and review.
+- Standalone handoff: `docs/agent-handoffs/physis-stage67-headless-green-2026-11-19.md`.

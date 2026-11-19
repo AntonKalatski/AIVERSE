@@ -944,3 +944,22 @@ bash tools/physis-validate-native.sh --full --jobs 4
 ```
 Do not claim 24/24 without actual output. See
 `docs/agent-handoffs/physis-stage66-fixed-gravity-rounding-2026-11-19.md`.
+
+### Stage 67 — PHYSIS native full 24/24 PASS, editor-core verification next
+
+User's native macOS `--full` run after Stage66: **24/24 CTest
+PASS, 0 failed, 10.51 seconds**, including PHYSIS physics/Box3D,
+storms, force sampling, journaling, admin and remote editing.
+Report: `build/physis-validation-full/physis-reports/20261119-105206-10283`
+(on user's AIVERSE checkout). Do NOT reclassify the two
+editor-core MapDoc tests as covered: `physis_authoring` and
+`physis_field_authoring` require `aiverse_editor_core`.
+
+Use the real CMake target/test names and a separate directory:
+```sh
+cmake -S . -B build/physis-editor-validation -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_TOOLS=ON -DAIVERSE_BUILD_EDITOR=OFF
+cmake --build build/physis-editor-validation --target aiverse_physis_authoring_test aiverse_physis_field_authoring_test --parallel 4
+ctest --test-dir build/physis-editor-validation --output-on-failure -R '^physis_(authoring|field_authoring)$'
+```
+If native compiler or CTest fails, report the first actual error.
+Handoff: `docs/agent-handoffs/physis-stage67-headless-green-2026-11-19.md`.
