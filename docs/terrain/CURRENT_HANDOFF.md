@@ -1,5 +1,17 @@
 # TerraWeave — current agent handoff entry point
 
+
+> **Stage70 native NEREID coordinate hardening (2026-11-20):**
+> overflow guard source `730271f7`, authored mouth regression
+> `83c45279`, direct empty-ECS signed-boundary native smoke
+> `09ff998b`. Read
+> [coordinate guard handoff](qa-2026-11-20-stage70-nereid-coordinate-guard-handoff.md)
+> and
+> [native sampler test handoff](qa-2026-11-20-stage70-native-sampler-boundary-test-handoff.md).
+> **Source committed, C++ compiler and CTest NOT RUN.**
+> PR #53 stays Draft until CI and live cross-owner acceptance.
+>
+
 > **QA/PR gate update:** [Stage70 PHYSIS CI trigger and Draft PR #53](qa-2026-11-20-stage70-physis-ci-trigger-handoff.md).
 > [CI run #44624069071](https://github.com/chromealex/AIVERSE/actions/runs/44624069071)
 > remained **QUEUED** at the last check. The PR is draft, and
