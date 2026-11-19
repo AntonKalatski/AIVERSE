@@ -58,12 +58,15 @@ public:
     // Only the owner-host shutdown path may block on a complete-device idle.
     bool drain() {
         if(!deviceValid())return queue_.empty() && orphanedResources_==0;
-        return queue_.drain(
+        const bool drained=queue_.drain(
             [&]{return device_->waitForResourceIdle();},
             [&](uint64_t token) {
                 if(token)device_->abandonRetirementTokenAfterIdle(token);
             },
             [&](Resource& resource){destroy(resource);});
+        // Untracked handles orphaned on an earlier failed OOM fallback
+        // cannot be reconstructed; never report successful full teardown.
+        return drained && orphanedResources_==0;
     }
 private:
     bool deviceValid() const noexcept {
