@@ -787,3 +787,12 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
 - Constraints: outward normal orientation uses mesh AABB centre, suitable for simple closed convex-like scalp proxies only. Complex concave/self-intersecting collider and moving/skinned scalp need robust signed-distance normals and per-frame skinning/refit. The one-time attachment still scans triangles per root, not an accelerated nearest traversal. Automatically generated cards do not replace externally authored hair.
 - **Actual tests: NOT RUN**. Do not treat the implementation as integrated MetaHuman quality or production-ready until Mac C++ build, 16 CTests, actual imported closed proxy GUI preview and full-engine regression.
 - Follow-up: build one small closed proxy fixture for Creator smoke, run `bash tools/vivid-validate.sh --full` once, resolve concrete diagnostics, then review gameplay-neutral rig/LOD mesh authoring and physically measured eye/skin/hair material parity.
+
+
+## Stage 6P build-log triage — 2026-11-19 — animation budget public ECS API + groom warning
+
+- Branch: `feature/vivid-digital-humans`; no main merge.
+- Mac compilation report from user: `tests/animation/budget.cpp` failed because `AnimationBudgetPolicy.h:42` accessed private `World::poolIfExists<AnimationSignificanceComponent>()`. Separate compiler warning `HumanGroom.cpp:14` reported unused `clampFloat`.
+- Fix commits: `3f2514d496b2e83169dd8032e5b82cbfc6e32d09` replaces private access with public `countExisting<T>()` and `eachExistingConst<T>()`, preserving non-registering read behavior and existing writable `prepareExistingWrite<AnimationBudgetComponent>()` budget handle. `e94368d8b61b5f278db36355516ce238dace1e16` deletes the unused `clampFloat` helper without changing groom runtime behavior.
+- Scope: this is a compile-blocker fix in shared animation library plus VIVID diagnostic cleanup, **not** a claim of fully tested MetaHuman feature completion. Actual compilation after fixes: **NOT RUN** in this session; the supplied failing logs precede these commits.
+- Next action: update the VIVID validation worktree to latest `origin/feature/vivid-digital-humans` and continue the previously requested one-pass build. Capture any subsequent compiler error without guessing success. No rewrite of ECS private interface or MotionWeave scheduler.
