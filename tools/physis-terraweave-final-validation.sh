@@ -21,7 +21,13 @@ mkdir -p "$REPORT"
 HEAD="$(git rev-parse HEAD)"
 printf 'AIVERSE PHYSIS+TerraWeave ONE-PASS acceptance\ncommit=%s\nreport=%s\n' "$HEAD" "$REPORT" | tee "$REPORT/summary.txt"
 printf 'merge-parents=%s\n' "$(git show -s --format='%P' HEAD)" | tee -a "$REPORT/summary.txt"
-trap 'rc=$?; printf "FAILED exit=%s; logs=%s\\n" "$rc" "$REPORT" >&2' ERR
+trap 'rc=$?; printf "FAILED exit=%s; logs=%s\\n" "$rc" "$REPORT" >&2; printf "Disk remaining at failure:\\n" >&2; df -h "$BUILD" >&2 || true; printf "Current acceptance build size:\\n" >&2; du -sh "$BUILD" >&2 || true' ERR
+
+echo '[0/4] Record disk capacity before full build (read-only)'
+{
+  df -h "$BUILD"
+  du -sh "$BUILD"
+} 2>&1 | tee "$REPORT/disk-before.txt"
 
 echo '[1/4] Configure ALL desktop test targets (Box3D required)'
 cmake -S "$ROOT" -B "$BUILD" \
@@ -62,4 +68,5 @@ ctest --test-dir "$BUILD" --config Debug \
   --output-junit "$REPORT/ctest.xml" \
   2>&1 | tee "$REPORT/ctest.log"
 
+df -h "$BUILD" | tee "$REPORT/disk-after.txt"
 printf 'PASS: ALL AIVERSE CTest selected by default, including PHYSIS/TerraWeave/Box3D\ncommit=%s\nlogs=%s\n' "$HEAD" "$REPORT" | tee -a "$REPORT/summary.txt"
