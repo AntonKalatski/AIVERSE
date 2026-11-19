@@ -1071,3 +1071,23 @@ ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=erro
 ```
 Source commit `50656c4bd120755e6fa14bf8d2774aeb77b7e752`.
 
+
+## Stage 10BG — sampled Texture3D fragment GPU acceptance
+
+`tests/render/metal_texture_gpu.mm` additionally renders a full-screen
+triangle using AIVERSE's actual Metal
+`Device::createShader`/`createPipeline`/`setTexture` RHI and
+`texture3d<float>` MSL fragment shader. It verifies base Z=0,
+partial patch Z=2 at mip0, and explicit authored mip1 Z=1 through
+render-target readback. Shader float-to-UNORM output accepts
+at most ±1 LSB per channel; original native blit readbacks
+continue to require byte-exact parity. Setup, draw/pass and GPU
+errors are fail-closed. Source: `9e747cff974d6f44085cc25cfc841198a6f1c309`.
+
+This is an extension of the optional `metal_texture_gpu`
+CTest, not a new default CPU test. No post-change macOS run
+has occurred. Run only the target after `git pull --ff-only
+origin feature/texture-rhi-unification`, then verify the
+individual GPU sampling PASS lines. Do not confuse this with
+Shader Graph, GPU ICB or virtual page feedback acceptance.
+
