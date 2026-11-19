@@ -115,4 +115,55 @@ bool buildModelAsset(const Model& model, const BuildOptions& options,
     out = std::move(next);
     return true;
 }
+
+bool SceneStaging::stage(const std::string& key, const Model& model) {
+    // Model IDs are unique within a scene and the current GeometryScene
+    // owns their lifetime. Refuse duplicate staging instead of rebuilding.
+    if (key.empty()) {
+        ++stats_.failedSources;
+        warnings_.push_back("Strata staging: source key must not be empty");
+        return false;
+    }
+    if (assets_.find(key) != assets_.end()) return true;
+    if (model.vertices.size() > limits_.maxVerticesPerSource ||
+        model.indices.size() > limits_.maxIndicesPerSource) {
+        ++stats_.skippedSources;
+        warnings_.push_back("Strata staging skipped '" + key +
+                            "': source exceeds staging geometry budget");
+        return false;
+    }
+    ModelAsset built;
+    std::string error;
+    if (!buildModelAsset(model, options_, built, &error)) {
+        ++stats_.failedSources;
+        warnings_.push_back("Strata staging failed '" + key + "': " + error);
+        return false;
+    }
+    stats_.skippedPrimitives += uint32_t(built.skipped.size());
+    if (built.primitives.empty()) {
+        ++stats_.skippedSources;
+        return false;
+    }
+    for (const auto& primitive : built.primitives) {
+        ++stats_.stagedPrimitives;
+        stats_.clusterNodes += primitive.geometry.nodes.size();
+        stats_.meshlets += primitive.geometry.meshlets.size();
+        stats_.indexBytes += primitive.geometry.indices.size() * sizeof(uint32_t);
+    }
+    assets_.emplace(key, std::move(built));
+    ++stats_.stagedSources;
+    return true;
+}
+
+void SceneStaging::clear() {
+    assets_.clear();
+    warnings_.clear();
+    stats_ = {};
+}
+
+const ModelAsset* SceneStaging::find(const std::string& key) const {
+    const auto found = assets_.find(key);
+    return found == assets_.end() ? nullptr : &found->second;
+}
+
 } // namespace aiverse::render::strata
