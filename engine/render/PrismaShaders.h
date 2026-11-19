@@ -429,7 +429,11 @@ inline const char* kCompositeHelpers = R"(
 PF_FN float pfHash(vec2 p) { return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
 )";
 inline const char* kComposite = R"(
-    vec2 sp = s;
+    // When output-history reconstruction fails after a jittered scene frame,
+    // restore stable screen-space sampling in the fallback composite.
+    // graphFrame.zw remains zero on normal frames; the caller owns this
+    // uniform and leaves HUD/UI rasterization untouched.
+    vec2 sp = clamp(s + graphFrame.zw,vec2(0.0),vec2(1.0));
 #ifdef PF_PIXELATE
     {
         vec2 cell = px.xy * grade1.w;
