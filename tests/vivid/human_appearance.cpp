@@ -1,4 +1,5 @@
 #include "engine/character/vivid/HumanPreview.h"
+#include "engine/character/vivid/ScalpSkinning.h"
 #include "engine/render/GpuMaterialState.h"
 #include "engine/render/ModelShaders.h"
 #include <algorithm>
@@ -218,6 +219,48 @@ void test() {
                "scalp proxy failed to restore original bind pose");
         groom.clearCollisionMesh();
         expect(!groom.hasCollisionMesh(),"groom collision reset failed");
+    }
+    // Multi-joint closed scalp proxy CPU skinning matches normalized
+    // palette weights and MotionWeave world pose, without touching ECS.
+    {
+        render::Model model;
+        model.nodes.resize(3);
+        model.nodes[0].mesh=0;
+        model.nodes[0].skin=0;
+        model.meshes.resize(1);
+        render::Primitive prim;
+        prim.firstIndex=0;
+        prim.indexCount=3;
+        prim.jointPalette={0,1};
+        model.meshes[0].primitives.push_back(prim);
+        model.skins.resize(1);
+        model.skins[0].joints={1,2};
+        model.skins[0].inverseBind={render::mat4{},render::mat4{}};
+        model.vertices.resize(3);
+        model.indices={0,1,2};
+        model.vertices[0].pos={1,0,0};
+        model.vertices[1].pos={0,1,0};
+        model.vertices[2].pos={0,0,1};
+        for(auto& v:model.vertices) {
+            v.joints[0]=0;v.weights[0]=128;
+            v.joints[1]=1;v.weights[1]=127;
+        }
+        const std::array<std::uint32_t,3> ids{{0,1,2}};
+        const auto skin=ScalpSkinning::compile(model,0,0,ids);
+        std::array<render::mat4,3> pose{};
+        pose[1]=render::mat4::translate({2,0,0});
+        pose[2]=render::mat4::translate({0,3,0});
+        std::array<render::float3,3> output{};
+        expect(skin.evaluate(pose,render::mat4{},output),
+               "multi-joint scalp skinning evaluation failed");
+        expect(std::fabs(output[0].x-(1.0f+2.0f*128.0f/255.0f))<0.0001f &&
+               std::fabs(output[0].y-3.0f*127.0f/255.0f)<0.0001f,
+               "scalp skinning did not normalize indexed joint weights");
+        const auto first=output[0];
+        pose[1].at(0,3)=std::numeric_limits<float>::quiet_NaN();
+        expect(!skin.evaluate(pose,render::mat4{},output) &&
+               render::length(output[0]-first)<0.0001f,
+               "bad MotionWeave pose modified last-good scalp vertices");
     }
     auto eyeHealthy=HumanDNA::preset("neutral");
     auto eyeRed=eyeHealthy;
