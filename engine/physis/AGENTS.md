@@ -311,3 +311,25 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   regressions for failed Queued/Applied persistence and denied new
   edits. Source authored, native CMake/CTest NOT RUN at this stage.
 - Handoff: `docs/agent-handoffs/physis-stage42-durable-receipts-2026-11-19.md`.
+
+### Stage 43 — suspend client retry when journal is unavailable (2026-11-19)
+
+- PHYSIS V1 Receipt binary layout remains unchanged. Protocol constants
+  `kJournalDurabilityUnavailable` and `kJournalRetrySuspended`
+  identify `Result::Unknown` responses that MUST NOT trigger automatic
+  `RemoteClient` retransmission. These strings are a V1 compatibility
+  convention, not a new wire enum or a terminal applied result.
+- `RemoteClient::poll` now transitions such responses to
+  `ClientStatus::Uncertain` and stops automatic `Submit/Query` retries.
+  Preserve the original pending request for explicit user retry only
+  after the host's durable journal has recovered.
+- Ordinary `Result::Unknown` without a journal-unavailable diagnostic
+  continues the same-ID idempotent recovery path. Never change this into
+  a new request ID. Do not treat Uncertain as success.
+- New `unhealthyJournalStopsAutomaticResubmit` source fixture is in
+  `tests/physis_remote_edit_test.cpp`; it checks that no application
+  Submit/Query packets are emitted after a journal-unavailable response.
+- Code and tests committed, but native C++ build, CTest and macOS/Windows
+  runtime QA are NOT RUN. PHYSIS Actions had queued/cancelled jobs, no
+  verified PASS. Handoff:
+  `docs/agent-handoffs/physis-stage43-client-journal-backoff-2026-11-19.md`.
