@@ -181,6 +181,10 @@ std::unique_ptr<render::Model> HumanGroomRuntime::makeCardModel(
     // Restore this explicit dynamic policy AFTER finalize to prevent the
     // general rigid geometry pool from reusing our mutable vertex stream.
     m->meshes[0].deformable=true;
+    // The generated stream already has stable normal/tangent/UV/index
+    // topology. Do not let auto LOD or material batching rewrite its
+    // vertex IDs; the editor updates exactly this dynamic buffer per frame.
+    m->uploadPrepared=true;
     return m;
 }
 } // namespace aiverse::vivid
