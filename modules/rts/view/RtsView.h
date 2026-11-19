@@ -269,6 +269,10 @@ public:
     size_t pendingRolledBackImages() const noexcept {
         return imageRollback_.pendingImages();
     }
+    void setImageRetirementDiagnosticObserver(
+            render::ModelImageRollbackPool::DiagnosticObserver observer) {
+        imageRollback_.setRetirementDiagnosticObserver(std::move(observer));
+    }
     // An independent, worker-safe reader enables CPU decoding off the render thread.
     void setAsyncReader(render::FileReader reader) { asyncReader_ = std::move(reader); }
     bool prepareType(uint16_t type, bool allVariants = false);
