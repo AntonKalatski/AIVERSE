@@ -8494,3 +8494,20 @@ reload, archive promotion/fence safety, non-graph PBR
 parity and CPU/GPU same-frame screenshot diff. Use the
 new host-accepted counters but require real GPU completion.
 Keep Draft until evidence is green.
+
+
+## Stage 10AM — Vulkan instance-format capability loader fix (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / draft PR #21. **Source commits:** `0ef03e79b44a34d9ce5946ff30e46a254935f34b engine/gfx/vulkan/VkApi.h`.
+
+**Architecture/API and observed results:** The Linux arm64 GCC GitHub Actions job 135396475446 in run 44475967180 failed compiling `engine/gfx/vulkan/VkResources.cpp:577` because `vkGetPhysicalDeviceImageFormatProperties` was not declared under `VK_NO_PROTOTYPES`. The runtime Vulkan loader uses `AIVERSE_VK_INSTANCE_FUNCS` to declare, define, and obtain instance-level function pointers. This entry was missing.
+
+`engine/gfx/vulkan/VkApi.h` now lists `vkGetPhysicalDeviceImageFormatProperties` alongside the other physical-device format queries. The existing `VkApi.cpp` macros automatically declare the runtime pointer, define it and require it during instance initialization. No unconditional Vulkan SDK symbol linkage is introduced.
+
+**Observed evidence:** actual CI log, Linux arm64 GCC at 368/1314 objects, compile error as above. **Post-fix compile/CTest NOT RUN**; the failing run was for an older head SHA and must not be represented as evidence of this new commit passing.
+
+**Documentation commits:** `b02678b55a819b23721d8ef6ced38c42c218eb1e` (`docs/texture-rhi.md`); `eaf8058b40e8c7c7024d2be2c2e7445e18042b45` (`skills/visuals/aiverse-texture-rhi/SKILL.md`).
+
+**Actual tests:** See above. Do not infer CTest/native GPU pass from CI jobs belonging to an older SHA, static source checks, or the presence of a registered test. Current HEAD must be validated independently.
+
+**Next concrete step:** Verify VkApi instance pointer resolves on Vulkan 1.0+ loaders and confirm Linux arm64 GCC compile progresses past VkResources.cpp.
