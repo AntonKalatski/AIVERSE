@@ -111,7 +111,7 @@ public:
         }
         ImGui::Separator();
         if(ImGui::BeginCombo("Add node","Choose")) {
-            for(auto type : {"Spawn","Initialize","Update","SpriteOutput",
+            for(auto type : {"Update","SpriteOutput",
                              "MeshOutput","RibbonOutput"}) {
                 if(ImGui::Selectable(type)) add(type);
             }
@@ -247,7 +247,7 @@ private:
     void load(const std::string& name) {
         std::ifstream stream(dir()/(name+".vfx.json"),std::ios::binary);
         if(!stream) {message_="Unable to open graph";return;}
-        std::string raw((std::istreambuf_iterator<char>(stream)),{});
+        std::string raw((std::istreambuf_iterator<char>(stream)),std::istreambuf_iterator<char>());
         try {
             Json doc=Json::parse(raw);
             std::string error;
@@ -290,27 +290,64 @@ private:
         commit(std::move(next));
     }
     void add(const std::string& type) {
+        // Extend one valid emitter path. A new Update goes directly before
+        // an existing Output, preserving a valid Spawn -> Initialize -> Update
+        // -> Output route. A new Output branches from an existing Initialize
+        // or Update. The compiler validates the complete draft transactionally.
         Json next=document_;
         Json& nodes=*next.find("nodes");
         if(nodes.size()>=256) {message_="Node limit reached";return;}
         std::set<std::string> ids;
         for(const auto& n:nodes.items()) ids.insert(n.getStr("id"));
-        std::string id;for(int i=1;i<10000;++i) {
+        std::string id;
+        for(int i=1;i<10000;++i) {
             id="node"+std::to_string(i);
             if(!ids.count(id)) break;
         }
+        std::string source;
+        if(type=="Update") {
+            // Find a currently connected output.
+            for(const auto& n:nodes.items())
+                if(isOutput(n.getStr("type"))) {
+                    source=parentOf(n.getStr("id"));
+                    if(!source.empty()) break;
+                }
+        } else {
+            for(const auto& n:nodes.items()) {
+                const auto kind=n.getStr("type");
+                if(kind=="Update" || kind=="Initialize")
+                    source=n.getStr("id");
+            }
+        }
+        if(source.empty()) {message_="No compatible source node";return;}
         Json properties=Json::object();
         if(type=="MeshOutput") {
-            Json meshes=Json::array();meshes.push(Json::string("builtin:cube"));
+            Json meshes=Json::array();
+            meshes.push(Json::string("builtin:cube"));
             properties.set("meshes",std::move(meshes));
         }
         if(isOutput(type)) properties.set("texture",Json::string("builtin:soft"));
+        if(type=="Update") {
+            // Insert in the path of an output that already consumes source.
+            std::string to;
+            for(const auto& n:nodes.items())
+                if(isOutput(n.getStr("type")) && parentOf(n.getStr("id"))==source) {
+                    to=n.getStr("id");break;
+                }
+            if(to.empty()) {message_="No output to extend";return;}
+            Json& links=*next.find("links");
+            for(size_t i=0;i<links.size();++i)
+                if(links[i].getStr("from")==source && links[i].getStr("to")==to) {
+                    links.at(i).set("from",Json::string(id));break;
+                }
+        } else next.find("outputs")->push(Json::string(id));
         next.find("nodes")->push(node(id,type,std::move(properties)));
-        if(isOutput(type)) next.find("outputs")->push(Json::string(id));
-        // A new node starts disconnected. It is intentionally *not* validated
-        // until connected by the editor, so keep it in a local draft.
-        // Existing valid graph stays intact if compile rejects this proposal.
-        if(commit(std::move(next))) selected_=int(document_["nodes"].size())-1;
+        Json link=Json::object();
+        link.set("from",Json::string(source));
+        link.set("to",Json::string(id));
+        next.find("links")->push(std::move(link));
+        if(commit(std::move(next)))
+            selected_=int(document_["nodes"].size())-1;
     }
     void removeSelected() {
         if(selected_<0 || selected_>=int(document_["nodes"].size())) return;
