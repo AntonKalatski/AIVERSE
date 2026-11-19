@@ -67,6 +67,7 @@ struct CreatorApp {
     std::unique_ptr<MorphAuthoring> morphDraft;
     std::size_t morphSourceVertices=0;
     int morphTargetIndex=0,morphVertexIndex=0;
+    int routeChannelIndex=0;
     char newMorphName[129]="newCorrective";
     render::float3 morphEditOffset{};
     bool morphDirty=false;
@@ -649,6 +650,27 @@ struct CreatorApp {
                 morphTargetIndex=std::clamp(morphTargetIndex,0,maxTarget);
                 const auto& target=morphDraft->shapes()[std::size_t(morphTargetIndex)];
                 ImGui::Text("Target: %s",target.name.c_str());
+                ImGui::SliderInt("Route ARKit channel",&routeChannelIndex,0,
+                                 int(kChannelCount)-1);
+                ImGui::Text("Channel: %s",
+                    std::string(channelName(static_cast<Channel>(routeChannelIndex))).c_str());
+                if(ImGui::Button("Bind channel to target")) {
+                    auto proposed=importedPackage;
+                    const auto channel=static_cast<Channel>(routeChannelIndex);
+                    const auto match=std::find_if(proposed.routes.begin(),proposed.routes.end(),
+                        [&](const ShapeRoute& route) {
+                            return route.channel==channel && route.targetName==target.name;
+                        });
+                    if(match==proposed.routes.end()) {
+                        proposed.routes.push_back({channel,target.name,1.0f});
+                        try {
+                            proposed.validate();
+                            importedPackage=std::move(proposed);
+                            pendingRebuild=true;
+                            status="VIVID facial route added; save manifest to publish";
+                        }catch(const std::exception& e){status=e.what();}
+                    }
+                }
                 bool removedThisFrame=false;
                 if(ImGui::Button("Delete selected target")) {
                     if(morphDraft->removeTarget(std::size_t(morphTargetIndex))) {
