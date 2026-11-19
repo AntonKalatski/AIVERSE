@@ -914,6 +914,13 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_lumaweave_temporal_test tests/render/lumaweave_temporal.cpp)
     target_include_directories(aiverse_lumaweave_temporal_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME lumaweave_temporal COMMAND aiverse_lumaweave_temporal_test)
+    # Native GI/direct driver headers and fence-aware bounce source publication.
+    add_executable(aiverse_lumaweave_gi_frame_contract_test
+        tests/render/lumaweave_gi_frame_contract.cpp)
+    target_include_directories(aiverse_lumaweave_gi_frame_contract_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME lumaweave_gi_frame_contract
+        COMMAND aiverse_lumaweave_gi_frame_contract_test)
 endif()
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_bake_tests tests/bake/bake_tests.cpp)
