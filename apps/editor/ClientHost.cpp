@@ -19,7 +19,12 @@ struct ClientHost::Scope {
 static_assert(client::GameClient::kInitSteps == 6, "ClientHost::kSteps follows GameClient::kInitSteps");
 
 ClientHost::ClientHost() = default;
-ClientHost::~ClientHost() { stop(); }
+ClientHost::~ClientHost() {
+    stop();
+    // Owner's teardown contract must guarantee device idle. This fallback
+    // preserves the pre-existing destruction behavior for host shutdown.
+    drainAfterGpuIdle();
+}
 
 void ClientHost::start(gfx::Device& dev, const std::string& projectDir, const std::string& engineAssets) {
     stop();
@@ -35,13 +40,61 @@ void ClientHost::start(gfx::Device& dev, const std::string& projectDir, const st
 
 void ClientHost::stop() {
     if (!client_) return;
-    {
-        Scope s(*this);
-        if (step_ > 0) client_->shutdown();
-        client_.reset();
-    }
+    // Client may have submitted draws into the editor's current frame even
+    // though the Game tab is now closing. Move ownership into an archive
+    // tagged with a real GPU submission fence; do not destroy textures now.
+    RetiredClient old;
+    old.client = std::move(client_);
+    old.view = view_;
+    old.device = dev_;
+    old.completionToken = dev_ ? dev_->gpuSubmissionFence() : 0;
+    old.initialized = step_ > 0;
+    retired_.push_back(std::move(old));
     step_ = 0;
     captured_ = finger_ = focused_ = false;
+}
+
+size_t ClientHost::collectGpuRetirements() {
+    if (!dev_) return 0;
+    const uint64_t completed = dev_->gpuCompletedFence();
+    if (!completed) return 0;
+    size_t collected = 0;
+    for (auto it = retired_.begin(); it != retired_.end();) {
+        if (!it->completionToken || it->completionToken > completed) {
+            ++it;
+            continue;
+        }
+        // The outgoing client has a separate HostedView: restore the
+        // previous OS/editor context even if the new client is active.
+        platform::HostedView* prior = platform::hostedView();
+        ImGuiContext* imgui = ImGui::GetCurrentContext();
+        platform::setHostedView(&it->view);
+        if (it->initialized) it->client->shutdown();
+        it->client.reset();
+        platform::setHostedView(prior);
+        ImGui::SetCurrentContext(imgui);
+        it = retired_.erase(it);
+        ++collected;
+    }
+    return collected;
+}
+
+size_t ClientHost::drainAfterGpuIdle() {
+    // Requires the host to prove GPU idle; unlike completed-token collection
+    // this also drains entries for which no submission fence was available.
+    size_t drained = 0;
+    for (auto& item : retired_) {
+        platform::HostedView* prior = platform::hostedView();
+        ImGuiContext* imgui = ImGui::GetCurrentContext();
+        platform::setHostedView(&item.view);
+        if (item.initialized) item.client->shutdown();
+        item.client.reset();
+        platform::setHostedView(prior);
+        ImGui::SetCurrentContext(imgui);
+        ++drained;
+    }
+    retired_.clear();
+    return drained;
 }
 
 float ClientHost::progress() const {
