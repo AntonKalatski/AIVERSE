@@ -5,6 +5,7 @@
 // No NEREID flow duplication and no gameplay writes from rendering.
 #pragma once
 #include "engine/world/TerraWeaveEcsAuthority.h"
+#include "engine/world/TerraWeaveForestEcology.h"
 #include "engine/world/TerraWeaveTerrainRuntime.h"
 #include "engine/world/TerraWeaveWorldSceneBinding.h"
 #include "engine/world/TerraWeaveForestScene.h"
@@ -75,6 +76,43 @@ public:
             conditions.push_back({id,plant.environment});
             if(plant.fallen)fallen.push_back(id);
         }
+        std::vector<ForestTreeIdentity> dead;
+        std::vector<FoliageInstance> recruited;
+        if(const auto* ecology=ecs.resourceConst<ForestEcologyResource>()){
+            validateForestEcologyResource(*ecology);
+            dead.reserve(ecology->plants.size());
+            for(const auto& record:ecology->plants){
+                if(record.dead)
+                    dead.push_back({record.id.key,record.id.speciesId});
+                if(!record.recruited)continue;
+                const auto match=std::find_if(
+                    state->rooted.begin(),state->rooted.end(),
+                    [&](const AnchoredPlant& p){
+                        return p.anchor.plantKey==record.id.key &&
+                               p.anchor.speciesId==record.id.speciesId;
+                    });
+                if(match==state->rooted.end())continue;
+                const auto& p=*match;
+                FoliageInstance instance;
+                instance.key=p.anchor.plantKey;
+                instance.speciesId=p.anchor.speciesId;
+                instance.xCm=p.anchor.xCm;
+                instance.zCm=p.anchor.zCm;
+                instance.heightCm=p.anchor.plantedHeightCm;
+                instance.habit=p.anchor.roots.habit;
+                instance.yawMilliDegrees=uint32_t(
+                    detail::mix64(instance.key^(uint64_t(instance.speciesId)<<32))%
+                    360000ull);
+                instance.scalePermille=1000;
+                instance.ageTicks=p.environment.ageTicks;
+                instance.matureTicks=p.environment.matureTicks;
+                instance.lifespanTicks=p.environment.lifespanTicks;
+                instance.lightPermille=p.environment.lightPermille;
+                instance.waterPermille=p.environment.waterPermille;
+                instance.nutrientsPermille=p.environment.nutrientsPermille;
+                recruited.push_back(instance);
+            }
+        }
 
         // Stage publication; the render/physics system is not authoritative
         // and can be rebuilt after successful ECS snapshot validation.
@@ -86,6 +124,8 @@ public:
             forest->setPlantConditions(conditions);
             forest->setRootStates(exposed);
             forest->setFallenTrees(fallen);
+            forest->setDeadTrees(dead);
+            forest->setRecruitedPlants(recruited);
         }
 
         // The caller now uploads new dynamic mesh/collision tiles within
