@@ -260,11 +260,12 @@ public:
     }
     struct StaticRenderPacketStats {
         uint64_t hits = 0, rebuilds = 0, declined = 0, evicted = 0;
-        size_t live = 0;
+        size_t live = 0, retainedBytes = 0;
     };
     StaticRenderPacketStats staticRenderPacketStats() const {
         auto s = staticRenderPacketStats_;
         s.live = staticRenderPackets_.size();
+        s.retainedBytes = staticRenderPacketBytes_;
         return s;
     }
     // Diagnostic, opt-in persistent scene upload stats. This staging path is
