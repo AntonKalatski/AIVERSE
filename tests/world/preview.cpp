@@ -22,7 +22,7 @@ int aiverseMain(int argc,char** argv) {
                 std::printf("world frame=%d ready=%zu staging=%zu reserved=%zu error=%s\n",frame,s.ready,s.stagingBytes,s.selection.reservedBytes,s.error.c_str());}
             if(empty)failed|=scene.status().ready!=0;
             auto origin=world::SpatialWorld(128).cell(position);auto local=world::relativeTo(position,origin,128);
-            render::RTSCamera camera;camera.target={float(local.x.toDouble()),4,float(local.z.toDouble())+32};camera.distance=48;camera.pitch=.25f;camera.yaw=3.14159265f;
+            render::Camera camera;camera.target={float(local.x.toDouble()),4,float(local.z.toDouble())+32};camera.distance=48;camera.pitch=.25f;camera.yaw=3.14159265f;
             renderer.beginScene(camera,d.framebufferWidth(),d.framebufferHeight());scene.draw(renderer,origin,128);
             gfx::PassDesc pass;pass.clearColor[0]=.08f;pass.clearColor[1]=.12f;pass.clearColor[2]=.18f;renderer.render(pass);++frame;
         };
