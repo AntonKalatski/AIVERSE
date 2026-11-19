@@ -5,6 +5,7 @@
 #include "engine/world/TerraWeaveEarthworks.h"
 #include "engine/world/TerraWeaveVegetationSoil.h"
 #include <aiverselib/water/NereidErosion.h>
+#include <aiverselib/water/NereidShorelineSystems.h>
 #include <algorithm>
 #include <cstdint>
 #include <optional>
@@ -45,6 +46,24 @@ inline BankErosionCommit erodeTerrainVertex(
     }
     result.soil=eroded.cell;
     return result;
+}
+
+// ECS WaterBankErosionOutputComponent is authoritative and already applied
+// to the ECS soil component. Do NOT call erodeShore again at the render barrier.
+// Instead apply precisely its one computed ground delta after verifying
+// that the terrain is still at the corresponding pre-tick elevation.
+inline EarthworkChange applyEcsBankErosion(
+        EarthworksLayer& layer,EarthVertex vertex,
+        const lib::nereid::WaterBankErosionOutputComponent& output) {
+    if(!output.changed)return {};
+    if(output.removedCm && output.depositedCm)
+        throw std::invalid_argument("NEREID bank output cannot cut and deposit together");
+    const int64_t delta=int64_t(output.afterGroundCm)-output.beforeGroundCm;
+    if(delta!=int64_t(output.depositedCm)-output.removedCm)
+        throw std::invalid_argument("NEREID bank output sediment delta mismatch");
+    if(layer.heightAt(vertex)!=output.beforeGroundCm)
+        throw std::invalid_argument("NEREID bank output stale terrain revision");
+    return layer.setHeight(vertex,output.afterGroundCm);
 }
 
 struct PlantGroundResponse {
