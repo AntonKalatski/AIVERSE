@@ -164,7 +164,8 @@ public:
         }
         if(config_.autoSpawnGpu && dt>0.0f) {
             const bool scheduled=scheduler_.tick(dt,origin_,direction_,
-                spectraFxSpawnQualityScale(config_.quality)*lodSpawnScale_*externalSpawnScale_,
+                spectraFxSpawnQualityScale(std::min(config_.quality,globalQuality_))*
+                lodSpawnScale_*externalSpawnScale_,
                 [this](render::float3 pos,render::float3 vel,float life) {
                     return slots_.emit({pos,vel,0,life}).valid();
                 });
@@ -208,6 +209,8 @@ public:
 
     // External GPU load governor only scales new visual spawns, never
     // existing particle state/lifetime, gameplay events or emitter transforms.
+    void setGlobalQuality(FxQuality quality) {globalQuality_=quality;}
+    FxQuality globalQuality() const {return globalQuality_;}
     void setExternalSpawnScale(float scale) {
         if(std::isfinite(scale))
             externalSpawnScale_=std::clamp(scale,0.0f,1.0f);
@@ -377,6 +380,7 @@ private:
     bool suspended_=false;
     float lodSpawnScale_=1.0f;
     float externalSpawnScale_=1.0f;
+    FxQuality globalQuality_=FxQuality::High;
     bool lodVisible_=true;
     uint64_t sortedFrames_=0;
     uint64_t runtimeFallbacks_=0;
