@@ -9,6 +9,7 @@
 #include "engine/render/GpuSceneDrawCommands.h"
 #include "engine/render/GpuIcbPolicy.h"
 #include "engine/render/StaticModelCachePolicy.h"
+#include "engine/render/ModelLodTransition.h"
 #include "engine/render/ModelShaders.h"
 #include <cstdlib>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "model batching check failed: %s at %d\n", #x, __LINE__); std::exit(1); } } while (0)
