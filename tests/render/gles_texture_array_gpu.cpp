@@ -152,6 +152,22 @@ int main() {
               "GLES3 padded row array layer/mip upload");
         check(statePreserved(),"upload restores texture/PBO/all unpack pixel-store state");
     }
+    // Legacy Texture2D allocation and void update must also be isolated
+    // from a bound PBO and deliberately dirty UNPACK_ROW/SKIP state.
+    TextureDesc legacyDesc;
+    legacyDesc.width=legacyDesc.height=4;
+    legacyDesc.format=PixelFormat::RGBA8;
+    legacyDesc.filter=Filter::Nearest;
+    const auto legacy=dev->createTexture(legacyDesc);
+    check(legacy.valid(),"legacy Texture2D allocation with dirty unpack state");
+    check(statePreserved(),"legacy Texture2D allocation restores unpack state");
+    const auto legacyColor=std::array<uint8_t,4>{78,145,214,255};
+    const auto legacyBytes=image(4,20,legacyColor);
+    if(legacy.valid()) {
+        dev->updateTexture(legacy,0,0,4,4,legacyBytes.data(),20);
+        check(statePreserved(),"legacy updateTexture restores unpack/PBO/binding");
+        check(dev->lastError().empty(),"legacy updateTexture succeeds with padded row pitch");
+    }
     // Readback uses the production RHI FBO/PBO path, not an independent copy
     // of the texture data or the upload code.
     for(const auto& sample:samples) {
@@ -163,6 +179,16 @@ int main() {
                   result->done=true;
               }),"GLES3 layer/mip GPU readback queued");
         reads.push_back(std::move(result));
+    }
+    if(legacy.valid()) {
+        auto read=std::make_shared<Read>();
+        read->expected=packed(4,legacyColor);
+        check(dev->readTextureAsync(legacy,{0,0},
+            [read](TextureReadbackResult value) {
+                read->result=std::move(value);
+                read->done=true;
+            }),"legacy Texture2D GPU readback queued");
+        reads.push_back(std::move(read));
     }
     dev->endFrame();
     const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);
@@ -182,6 +208,7 @@ int main() {
     glBindTexture(GL_TEXTURE_2D_ARRAY,0);
     glDeleteBuffers(1,&pbo);
     glDeleteTextures(1,&sentinel);
+    if(legacy.valid()) dev->destroyTexture(legacy);
     dev->destroyTexture(atlas);
     if(failures)return 1;
     std::puts("PASS: native GLES3 texture-array mip/layer padded upload and state isolation");
