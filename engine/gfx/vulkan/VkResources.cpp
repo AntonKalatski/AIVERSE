@@ -718,13 +718,32 @@ bool VulkanDevice::updateTextureRegion(TextureHandle handle, const TextureUpload
         for (int y = 0; y < u.height; ++y)
             std::memcpy(packed.data() + (size_t(z) * size_t(u.height) + size_t(y)) * row,
                         source + size_t(z) * imagePitch + size_t(y) * size_t(u.rowPitchBytes), row);
+    // This upload is used by the virtual-texture page streamer as its
+    // publication acknowledgement. Never report success when staging memory
+    // could not be allocated: the generic uploadImage() helper silently
+    // returns in that case, leaving the page uninitialized.
+    VkBuffer staging = VK_NULL_HANDLE;
+    VkDeviceSize stagingOffset = 0;
+    void* mapped = stagingWrite(packed.size(), staging, stagingOffset);
+    if (!mapped) {
+        if (error_.empty()) error_ = "Vulkan texture region staging allocation failed";
+        return false;
+    }
+    std::memcpy(mapped, packed.data(), packed.size());
     VkCommandBuffer cb = transferCmd();
     const bool regen = t->generateMips && u.mipLevel == 0;
     barrierImage(cb, t->image, false, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                  VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, regen ? VK_REMAINING_MIP_LEVELS : 1,
                  uint32_t(u.mipLevel), uint32_t(t->layers));
-    uploadImage(*t, u.mipLevel, u.x, u.y, u.width, u.height, packed.data(), packed.size(), cb,
-                u.z, u.depth, u.arrayLayer, 1);
+    VkBufferImageCopy copy{};
+    copy.bufferOffset = stagingOffset;
+    copy.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, uint32_t(u.mipLevel),
+                             uint32_t(u.arrayLayer), 1};
+    copy.imageOffset = {u.x, u.y, u.z};
+    copy.imageExtent = {uint32_t(u.width), uint32_t(u.height),
+                        uint32_t(u.depth)};
+    vkCmdCopyBufferToImage(cb, staging, t->image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
     if (regen) generateMips(*t, cb);
     else barrierImage(cb, t->image, false, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                       VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, 1,
