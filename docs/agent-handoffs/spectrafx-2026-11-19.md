@@ -265,3 +265,25 @@ git fetch origin main && git merge origin/main
 - **Important discovery:** main already includes `engine/fx/SpectraFX.h`, `VfxGraph.h`, `VfxGraphAssets.h` with a Niagara-style Spawn→Initialize→Update→Output graph compiler, CPU ParticleSystem integration, and variant hot reload. DO NOT create another competing particle graph or duplicate its compiler. The feature branch's `SpectraFxGraph` is a separate presentation *cue* routing DAG, not the canonical particle graph. Future editor UI should edit the existing `VfxGraph.h` schema (`fx/graphs/<name>.vfx.json`) and use `SpectraGraphAssets` for actual runtime loading.
 - **Verification:** GitHub merge object and branch ref update completed; native build, CTest, editor execution, GPU behavior **NOT RUN**. No claim of runtime compatibility yet.
 - **Next:** add one editor window for the canonical particle graph format, reusing main's `FxWindow` and `ShaderGraphWindow` patterns; keep cue routing assets separate. Continue stages/handoffs without tests until requested feature pass is finished.
+
+
+## 2026-11-19 — Stage 16: SpectraFX particle graph editor window
+
+- **Branch:** `feature/spectrafx-generic-cue-queue`. **Code commits:** `679b29193c08e1efac62fe790134e63865851ac8` and `674d898a7231b0be85160f6e35775acc443dccfb` (connected-node insertion correction). Latest merged main ancestor is `d71c6d47e532b25fb816a8bb1f96c41e5275a165`, via `de0872a`.
+- **Changed:** new `apps/editor/windows/SpectraFxGraphWindow.cpp`, registered via existing `AIVERSE_EDITOR_WINDOW` mechanism. The window owns **canonical particle graph JSON**, not the separate presentation-cue graph and not PRISMA post-process effects. Works with main's actual `fx::compileSpectraGraph` and `fx/graphs/<name>.vfx.json` used by `SpectraGraphAssets`.
+- **Features:** project-scoped graph discovery/create/open, version-1 starter graph Spawn→Initialize→SpriteOutput, topological Update insertion, additional Sprite/Mesh/Ribbon outputs, node removal and rewiring through source selector, per-node JSON properties, full-document JSON editing, compiler-backed transactional validation, bounded Undo/Redo, explicit dirty/discard flow and save to fx/graphs followed by Editor::reloadFx. Output creation is connected to an Initialize or Update node; Update insertion rewires an existing output. Existing effect runtime remains the canonical CPU particle solver.
+- **Compatibility:** additive editor window; no existing FX files or ECS authority changed; effect graph compiler and existing asset hot-reload implementation are reused rather than replaced. Keeps SpectraFX and PRISMA ownership separate.
+- **Tests actually executed:** **NOT RUN** (user specifically requested finishing functionality before tests). No C++ compilation, CTest, macOS editor window verification, UI interaction, GPU or visual screenshot checks have been performed. **Do not mark this editor production-ready.**
+- **Known limitations:** graph view is currently a structured node/properties editor, not freely draggable canvas; no GPU compute backend, no automatic live preview image in this window (FX window remains separate), no typed port UX or multi-parent graph support. Persistence writes version-1 canonical graph JSON only. The new window must be checked against current auto-registration/CMake and editor ImGui API in the later build phase. Existing `SpectraFxGraph*.h` cue-routing DAG remains distinct; documentation should prevent confusion.
+- **Next step:** add typed visual node canvas/selection/links and embedded preview reusing FX window resources; create an RHI-backed GPU particle execution pipeline with explicit CPU fallback/capability checks, then genre-level connections. Run all tests and fix errors after the complete functionality phase as requested.
+
+### Pull branch (always fetch first)
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main
+git merge origin/main
+```
