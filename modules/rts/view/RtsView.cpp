@@ -147,6 +147,13 @@ void RtsView::shutdown(gfx::Device& dev) {
 #ifndef __EMSCRIPTEN__
     resources_.preparation().reset();
 #endif
+    // GeometryScene's standalone meshes and the road/shore/portrait/paint
+    // owners may still be GPU-visible. The Model cache's own shutdown idle
+    // barrier used to run AFTER GeometryScene had freed its GPU handles.
+    // Establish a single full-device completion proof BEFORE tearing down
+    // any presentation resource. A failed barrier leaves all owners intact.
+    if(!dev.waitForResourceIdle())
+        throw std::runtime_error("RtsView shutdown: GPU idle barrier failed");
     geometryScene_.shutdown(dev);
     // IMPORTANT: detach borrowed Model, graph, skin pose and material
     // references before the cache can release their CPU/GPU storage.
