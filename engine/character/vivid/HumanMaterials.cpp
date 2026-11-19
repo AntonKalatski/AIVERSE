@@ -176,7 +176,12 @@ render::Material humanMaterial(HumanSurface surface,const HumanDNA& dna) {
         m.humanProfile={dna.eyes.corneaIor,dna.eyes.tearFilm};
         break;
     case HumanSurface::Sclera:
-        m=basic("VIVID sclera",{0.92f,0.89f,0.86f},0.24f);
+        // The sclera is not pure white. Small blood-vessel absorption is
+        // driven by authored DNA and must affect the actual PBR material.
+        m=basic("VIVID sclera",{
+            0.92f,
+            std::clamp(0.89f-0.12f*dna.eyes.scleraRedness,0.0f,1.0f),
+            std::clamp(0.86f-0.18f*dna.eyes.scleraRedness,0.0f,1.0f)},0.24f);
         break;
     case HumanSurface::Cornea:
         m=basic("VIVID cornea",{1.0f,1.0f,1.0f},0.04f);
