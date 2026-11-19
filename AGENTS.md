@@ -1379,3 +1379,17 @@ Retry after `updateFrame` confirms completion. `GiWorldGeometryBridge`
 reads real source collision; do NOT generate a second terrain mesh or
 simultaneously publish authored terrain and a live TerraWeave patch.
 The coordinator is opt-in and CTest sources are NOT EXECUTED.
+
+
+## GI stage 41 — textured Shader Graph + dynamic GI (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage41-shader-graph-dynamic-gi-2026-11-20.md`.
+`GiShaderGraphTextureSlots.h` allocates graph textures AFTER active GI
+bindings: no GI starts at tex13, dynamic GI at tex14, validity at tex15,
+dual cascade at tex16, Metal triple at tex17. The renderer only selects GI
+with graph textures when device fragment texture caps allow the complete
+permutation; otherwise it falls back to old graph-only shading. Bind shader
+generation and draw submission use the SAME base, including pipeline-change
+graph texture rebinding even if material pointer is unchanged.
+GLES3 16-unit limit admits a single GI atlas + up to two graph textures,
+not dual GI + graph texture. SOURCE ONLY, NOT COMPILER/GPU-TESTED.
