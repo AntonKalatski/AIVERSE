@@ -227,6 +227,13 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
         return value && std::strcmp(value, "1") == 0;
     }();
     staticRenderPacketsEnabled_ = enablePackets;
+    // A separate opt-in for pooled static geometry sorting. It uses existing
+    // CPU MDI submission and honors the global MDI disable/safety flags.
+    static const bool enableStaticCrossModelBatches = [] {
+        const char* value = std::getenv("AIVERSE_STATIC_CROSS_MODEL_BATCHES");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    staticCrossModelBatchesEnabled_ = enableStaticCrossModelBatches;
     staticRenderPacketStats_ = {};
     staticEligibilityStats_ = {};
     sharedMaterialStateStats_ = {};
