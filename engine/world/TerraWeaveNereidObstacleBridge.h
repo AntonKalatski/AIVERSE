@@ -6,11 +6,14 @@
 #pragma once
 #include "engine/world/TerraWeaveFallenPhysics.h"
 #include "engine/world/TerraWeaveSlopeDebrisPhysics.h"
+#include "engine/world/WorldScene.h"
 #include <aiverselib/water/NereidWaterSystems.h>
 #include <aiverselib/water/NereidFlowObstacles.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <functional>
+#include <optional>
 #include <map>
 #include <stdexcept>
 #include <utility>
@@ -239,6 +242,64 @@ inline FlowObstructionPublishResult publishNereidFlowObstructions(
         }
     }
     return result;
+}
+
+
+// Scene stable water IDs are NOT ECS body Entity indices. The host supplies
+// this exact mapping (from its water manifest/scene adapter); missing bodies
+// intentionally produce no visual blockage, while ECS flow remains valid.
+using NereidSceneWaterId=
+    std::function<std::optional<uint64_t>(Entity)>;
+
+inline std::vector<world::NereidSceneFlowObstruction>
+makeNereidSceneObstructionSnapshot(
+        const std::vector<lib::nereid::WaterFlowObstructionComponent>& raw,
+        const NereidSceneWaterId& sceneIdForBody) {
+    if(!sceneIdForBody ||
+       raw.size()>lib::nereid::kMaxWaterFlowObstructions)
+        throw std::invalid_argument("TerraWeave missing scene-water ID mapper");
+    std::vector<world::NereidSceneFlowObstruction> output;
+    output.reserve(raw.size());
+    for(const auto& component:raw) {
+        if(!lib::nereid::validWaterFlowObstruction(component) ||
+           !component.sourceKey)
+            throw std::invalid_argument(
+                "TerraWeave invalid visual flow obstruction source");
+        const auto stableId=sceneIdForBody(component.waterBody);
+        if(!stableId)continue;
+        if(!*stableId)
+            throw std::invalid_argument(
+                "TerraWeave scene water IDs must be nonzero");
+        output.push_back({*stableId,component});
+    }
+    // WorldScene further sorts/validates the list, this normalization lets
+    // native hosts compare stable snapshots for dirties/replay diagnostics.
+    std::sort(output.begin(),output.end(),
+        [](const auto& a,const auto& b){
+            return a.sceneWaterId==b.sceneWaterId ?
+                a.effect.sourceKey<b.effect.sourceKey :
+                a.sceneWaterId<b.sceneWaterId;
+        });
+    return output;
+}
+
+inline FlowObstructionPublishResult synchronizeNereidPhysicalObstacles(
+        World& authoritativeEcs,world::WorldScene& scene,
+        const physics::Scene& physicsScene,
+        const FallenPlantPhysics* trees,const SlopeDebrisPhysics* debris,
+        const NereidSceneWaterId& sceneIdForBody,
+        FlowObstructionCapturePolicy policy={}) {
+    // Run on native structural/game scene owner barrier AFTER the Box3D step
+    // and BEFORE NEREID samples water next tick. Visuals cannot inspect
+    // mutable Box3D live pointers or recalculate hydraulic flow themselves.
+    const auto physical=captureNereidFlowObstructions(
+        authoritativeEcs,physicsScene,trees,debris,policy);
+    auto visual=makeNereidSceneObstructionSnapshot(
+        physical,sceneIdForBody);
+    auto changed=publishNereidFlowObstructions(
+        authoritativeEcs,physical);
+    scene.setNereidFlowObstructions(std::move(visual));
+    return changed;
 }
 
 } // namespace aiverse::terraweave
