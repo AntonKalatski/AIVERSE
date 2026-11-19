@@ -62,6 +62,7 @@ struct CreatorApp {
     char manifestFile[512]="/tmp/aiverse-human-package.json";
     std::string importedManifest;
     HumanImportManifest importedPackage;
+    std::array<char,129> scalpProxyName{};
     bool externalMode=false;
     bool commandLineAsset=false;
     std::string status;
@@ -167,6 +168,8 @@ struct CreatorApp {
         syncDraft();
         importedManifest=path;
         importedPackage=std::move(manifest);
+        std::snprintf(scalpProxyName.data(),scalpProxyName.size(),"%s",
+                      importedPackage.scalpColliderMesh.c_str());
         externalMode=true;
         pendingRebuild=true;
         status="Imported open human package: "+path;
@@ -510,6 +513,24 @@ struct CreatorApp {
             pendingRebuild=true;
         }
         if(externalMode && ImGui::CollapsingHeader("Imported facial morph bindings")) {
+            ImGui::TextWrapped("Optional closed, unskinned proxy in groom-local "
+                               "coordinates. Leave empty for DNA ellipsoid.");
+            ImGui::InputText("Scalp collision mesh",
+                             scalpProxyName.data(),scalpProxyName.size());
+            if(ImGui::IsItemDeactivatedAfterEdit()) {
+                auto proposed=importedPackage;
+                proposed.scalpColliderMesh=scalpProxyName.data();
+                try {
+                    proposed.validate();
+                    importedPackage=std::move(proposed);
+                    pendingRebuild=true;
+                    status="Scalp proxy selection updated";
+                } catch(const std::exception& e) {
+                    status=e.what();
+                    std::snprintf(scalpProxyName.data(),scalpProxyName.size(),
+                                  "%s",importedPackage.scalpColliderMesh.c_str());
+                }
+            }
             ImGui::TextWrapped("Adjust gain for each imported ARKit channel -> shape route. "
                                "The source target names and vertex data remain unchanged.");
             for(std::size_t i=0;i<importedPackage.routes.size();++i) {
