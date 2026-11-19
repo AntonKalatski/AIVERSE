@@ -51,7 +51,7 @@ struct IndexResidencyStats {
 };
 class IndexResidency final {
 public:
-    IndexResidency() = default;
+    IndexResidency(); // out-of-line: owns incomplete IncrementalStorage
     IndexResidency(const IndexResidency&) = delete;
     IndexResidency& operator=(const IndexResidency&) = delete;
     ~IndexResidency(); // call shutdown(device) while RHI is alive
