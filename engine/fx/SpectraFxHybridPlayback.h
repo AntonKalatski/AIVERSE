@@ -101,8 +101,33 @@ public:
             if(!cue.key) {++stats_.refused;return false;}
             auto pooled=pooledActive_.find(cue.key);
             if(pooled!=pooledActive_.end()) {
-                auto* arena=poolArena(pooled->second.name);
-                if(!arena) {++stats_.failed;return false;}
+                auto group=pools_.find(pooled->second.name);
+                if(group==pools_.end()) {++stats_.failed;return false;}
+                const bool unhealthy=group->second.failurePending ||
+                                     !device_.gpuHealthy();
+                // Failed pools must never receive new GPU buffer updates.
+                // Preserve pose-only changes for the upcoming CPU recovery.
+                // A Stop/Kill removes the presentation key immediately, so
+                // that source is NOT later resurrected by recovery.
+                if(unhealthy) {
+                    if(cue.action==SpectraFxCue::Action::Move) {
+                        const auto finite=[](render::float3 p) {
+                            return std::isfinite(p.x)&&std::isfinite(p.y)&&
+                                   std::isfinite(p.z);
+                        };
+                        if(!finite(cue.position)||!finite(cue.direction))
+                            return false;
+                        pooled->second.position=cue.position;
+                        pooled->second.direction=cue.direction;
+                        ++stats_.moved;
+                    } else {
+                        pooledActive_.erase(pooled);
+                        if(cue.action==SpectraFxCue::Action::Kill) ++stats_.killed;
+                        else ++stats_.stopped;
+                    }
+                    return true;
+                }
+                auto* arena=group->second.arena.get();
                 if(cue.action==SpectraFxCue::Action::Move) {
                     if(!arena->moveEmitter(pooled->second.ticket,
                                            cue.position,cue.direction)) {
@@ -182,6 +207,20 @@ public:
         // particles are currently dormant. Exceeding the cap falls back to
         // the authored CPU effect only if the route explicitly allows it.
         auto selected=entry->config; // never mutate the cached authored asset
+        // If a prior frame marked this group failed, new sources must not
+        // re-enter it or create more GPU work until the safe-point recovery.
+        if(!route->second.sharedPool.empty()) {
+            const auto group=pools_.find(route->second.sharedPool);
+            if(group!=pools_.end() && group->second.failurePending) {
+                if(!selected.backend.allowCpuFallback ||
+                   selected.cpuEffect.empty()) {
+                    ++stats_.gpuBudgetRefusals;
+                    return false;
+                }
+                selected.backend.preference=SpectraFxExecutionPreference::Cpu;
+                ++stats_.pooledFallbacks;
+            }
+        }
         auto preference=chooseSpectraFxBackend(device_,SpectraFxHybridEmitter::effectiveRequest(selected));
         bool gpuRequested=preference.accepted &&
                           preference.backend==SpectraFxExecutionBackend::Gpu;
@@ -708,6 +747,7 @@ private:
         auto it=pools_.find(route.sharedPool);
         bool newlyCreated=false;
         if(it!=pools_.end()) {
+            if(it->second.failurePending) return false;
             const auto& cfg=it->second.config;
             if(cfg.particles!=route.sharedPoolCapacity ||
                cfg.gpuIndirectCompaction!=effect.gpuIndirectCompaction ||
