@@ -52,6 +52,8 @@ struct ComputeStats {
     uint32_t submittedSlots = 0; // dense GPU quads published from live-slot map
     uint32_t gpuFallbacks = 0, lostOnFallback = 0;
     uint32_t gpuCompactDispatches = 0, gpuIndirectDraws = 0;
+    uint32_t gpuVmErrorsLastRead = 0;
+    bool gpuVmErrorsKnown = false; // unknown until a successful diagnostic read
     // In indirect mode submittedSlots/alive are CPU lifespan estimates;
     // exact GPU alive count stays on GPU and is used as the draw argument.
     size_t gpuBytes = 0, uploadedBytes = 0;
@@ -84,6 +86,9 @@ public:
         return gpuActive() && desc_.gpuProgram && !desc_.particleProgram.isNull();
     }
     bool setProgramParameter(uint32_t slot,float value,bool affectExisting=false);
+    // Between completed frames only. Returns false when unavailable; failure
+    // must never be interpreted as zero VM errors.
+    bool readGpuVmErrors(uint32_t& count);
     const std::string& reason() const { return reason_; }
     const ComputeStats& stats() const { return stats_; }
     const fx::ParticleSystem& cpuFallback() const { return cpu_; }
@@ -133,6 +138,7 @@ private:
     gfx::BufferHandle states_, seeds_, slots_, vertices_, indices_, liveSlots_;
     gfx::BufferHandle aliveCounter_, gpuDrawArgs_;
     gfx::BufferHandle seedProgramParams_, stateProgramParams_, gpuVmPayload_;
+    gfx::BufferHandle vmErrors_;
     gfx::BufferHandle stateAttributes_; // compute slot 11, 8 scalar VM registers/particle
     gfx::TextureHandle texture_;
     std::vector<float> ages_;
