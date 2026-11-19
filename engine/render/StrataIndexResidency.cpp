@@ -97,7 +97,8 @@ std::vector<SceneIndexBudgetGrant> apportionSceneIndexBudget(
 
 bool IndexResidency::initialize(gfx::Device& device, const ModelAsset& asset,
                                 size_t budgetBytes, std::string* error,
-                                bool preferIncremental, size_t uploadBudgetBytes) {
+                                bool preferIncremental, size_t uploadBudgetBytes,
+                                std::shared_ptr<DiskIndexPages> diskPages) {
     if (error) error->clear();
     if (device_ || asset_ || buffer_.valid())
         return fail(error, "Strata index residency is already initialized");
@@ -151,11 +152,21 @@ bool IndexResidency::initialize(gfx::Device& device, const ModelAsset& asset,
         (device.info().backend == gfx::Backend::Metal ||
          device.info().backend == gfx::Backend::Vulkan) &&
         device.canUpdateSharedBuffers();
+    if(diskPages && (!useIncremental || !diskPages->valid())) {
+        device_=nullptr;
+        asset_=nullptr;
+        parent_.clear();
+        spans_.clear();
+        stats_={};
+        return fail(error,"STRATA disk stream requires ready incremental Metal/Vulkan RHI");
+    }
+    diskPages_=std::move(diskPages);
     if (!(useIncremental ? initializeIncremental(uploadBudgetBytes, error)
                           : update({}, error))) {
         // Neither mode may expose a half-uploaded resident root frontier.
         // The private type is destroyed only in StrataIndexPages.cpp.
         if (incremental_) shutdownIncremental(device);
+        diskPages_.reset();
         device_ = nullptr;
         asset_ = nullptr;
         parent_.clear();
@@ -307,6 +318,7 @@ void IndexResidency::shutdown(gfx::Device& device) {
     if (device_ && device_ != &device) return;
     if (incremental_) shutdownIncremental(device);
     else if (buffer_.valid()) device.destroyBuffer(buffer_);
+    diskPages_.reset();
     buffer_ = {};
     device_ = nullptr;
     asset_ = nullptr;
