@@ -32,6 +32,8 @@ struct StaticCrossModelPreflightKey {
     const GeometryPoolPage* page = nullptr;
     uint32_t materialGroup = 0;
     uint32_t flags = 0;
+    uint32_t vertexBuffer = 0;
+    uint32_t indexBuffer = 0;
     constexpr bool operator==(const StaticCrossModelPreflightKey&) const = default;
 };
 
@@ -43,6 +45,8 @@ struct StaticCrossModelPreflightKeyHash {
         };
         combine(std::hash<uint32_t>{}(key.materialGroup));
         combine(std::hash<uint32_t>{}(key.flags));
+        combine(std::hash<uint32_t>{}(key.vertexBuffer));
+        combine(std::hash<uint32_t>{}(key.indexBuffer));
         return value;
     }
 };
