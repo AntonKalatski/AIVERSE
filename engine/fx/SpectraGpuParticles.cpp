@@ -785,7 +785,7 @@ bool ComputeParticles::readGpuVmErrors(uint32_t& count) {
     stats_.gpuVmErrorsKnown=false;
     if(!initialized_ || backend_!=ComputeBackend::Metal || !device_ ||
        !vmErrors_.valid() || !device_->gpuHealthy() ||
-        gpuResetDirty_ || gpuStagingDirty_ ||
+       gpuResetDirty_ || gpuStagingDirty_ ||
        !device_->canUpdateSharedBuffers())return false;
     uint32_t observed=0;
     if(!device_->readBuffer(vmErrors_,&observed,sizeof(observed)))return false;
@@ -798,6 +798,7 @@ bool ComputeParticles::requestGpuVmErrors(
     std::function<void(bool,uint32_t)> callback) {
     if(!callback || !initialized_ || backend_!=ComputeBackend::Metal ||
        !device_ || !vmErrors_.valid() || !device_->gpuHealthy() ||
+       gpuResetDirty_ || gpuStagingDirty_ ||
        !device_->canUpdateSharedBuffers() || asyncErrorPending_ ||
        !readbackLifetime_)return false;
     const uint64_t revision=vmFrameRevision_;
