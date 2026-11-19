@@ -150,6 +150,40 @@ void Renderer3D::shutdown() {
     dev_ = nullptr;
 }
 
+// Static cache entries hold borrowed Model/Primitive pointers only. Remove
+// them before the owner unloads an asset or reuses a persistent draw identity.
+// These methods must be called on the renderer's submission thread, between
+// drawModel calls; they do not cancel items already queued this frame.
+void Renderer3D::invalidateStaticModelCache(uint64_t persistentId) {
+    if (!persistentId) return;
+    if (staticModelCaches_.erase(persistentId))
+        ++staticModelCacheStats_.evicted;
+    auto it = staticRenderPackets_.find(persistentId);
+    if (it != staticRenderPackets_.end()) {
+        staticRenderPacketBytes_ -= staticPacketBytes(it->second);
+        staticRenderPackets_.erase(it);
+        ++staticRenderPacketStats_.evicted;
+    }
+}
+
+void Renderer3D::invalidateModelCachesFor(const Model* model) {
+    if (!model) return;
+    // Compare pointer identity only, never dereference a model being released.
+    for (auto it = staticModelCaches_.begin(); it != staticModelCaches_.end();) {
+        if (it->second.cache.model == model) {
+            it = staticModelCaches_.erase(it);
+            ++staticModelCacheStats_.evicted;
+        } else ++it;
+    }
+    for (auto it = staticRenderPackets_.begin(); it != staticRenderPackets_.end();) {
+        if (it->second.draw.model == model) {
+            staticRenderPacketBytes_ -= staticPacketBytes(it->second);
+            it = staticRenderPackets_.erase(it);
+            ++staticRenderPacketStats_.evicted;
+        } else ++it;
+    }
+}
+
 void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     static const bool enablePersistentScene = [] {
         const char* value = std::getenv("AIVERSE_PERSISTENT_GPU_SCENE");
