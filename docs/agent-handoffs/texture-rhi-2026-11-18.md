@@ -12217,3 +12217,130 @@ page churn and GPU frame-timing/FPS
 profiling. Keep Draft PR #21 and
 Metal GPU ICB disabled by default
 until broader platform/driver evidence.
+
+## Stage 10CI — full focused Texture RHI one-shot PASS, Apple M3 Ultra (2026-11-19)
+
+**Repository / PR:** `chromealex/AIVERSE`,
+`feature/texture-rhi-unification`, PR #21 Draft.
+**ACTUAL tested source revision:**
+`7494f32d313a2ac45050be02d25ca3ae97749086`.
+This SHA was independently verified via GitHub file
+lookup to contain the Stage 10CH native fixture
+corrections, including ROI contrast threshold
+`delta>12.0` and `std::_Exit(1)` for a
+macOS application shutdown after a failed check.
+The earlier Stage 10CH false-positive CTest run was
+therefore not confused with this successful run.
+
+**User-supplied final one-shot Mac Studio log:**
+```text
+sha=7494f32d313a2ac45050be02d25ca3ae97749086
+safe_texture_tests=21
+native_metal_gpu_tests=7
+full_engine=0
+result=PASS
+PASS: all 21 portable texture/graph and 7 native Metal GPU tests
+Logs: /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819/build/texture-final-logs
+```
+
+**What ran:** `tools/texture-rhi-final-verify.sh
+--jobs 4` configured/compiled 21 focused
+portable texture, Shader Graph, VT and ICB-material
+tests, ran them through fail-fast CTest, and built
+seven independent native Metal GPU test binaries
+before running each GPU CTest serially. The suite
+has explicit success marker and FAIL-log checks,
+and creates `acceptance.txt` only after
+all required checks pass. The user supplied the
+entire final native GPU CTest #128 output plus
+the completed shell manifest. Results for the
+earlier six GPU processes are grounded in the
+fail-fast suite's successful end status and
+mandatory marker checks, not individually pasted
+full logs here. Optional tool-dependent shader
+syntax/pack checks may also have run; do not
+claim counts for optional checks without logs.
+
+**Full production new guttered scene details:**
+`metal_renderer_graph_vt_gutter_gpu` **1/1 PASS**,
+test #128, 1.90 sec CTest wall time; 0 Metal
+pipeline failures. Disk-backed native physical
+VT slices `0/1` published successfully in
+both independent 8x8 nonuniform-gutter archives.
+Five UV points, `0.400`, `0.480`, `0.500`,
+`0.520`, `0.600`, each recorded exactly
+`graph=1 mixedGraph=1 vt=1 mixedVt=1
+commands=2 rejected=0 errors=0`.
+The two distinct material ROI color deltas
+were 18/19/17/18/16 (all >12), and
+**every direct/Metal GPU ICB full RGBA8
+frame pair was byte-identical**:
+`bad_channels=0 max_delta=0`.
+
+The separate independent original-logical-source
+bilinear scene oracle **ran and passed**, both
+ordinary rendering and GPU ICB paths, two
+material regions, three intermediate seam U
+points (0.480,0.500,0.520), three RGB channels.
+All authored source gradients and actual scene
+channel directions agreed and errors were <=
+**1 displayed RGB level** in the observed
+calibrated expectation tests. The test printed:
+```text
+PASS: production Renderer3D graph VT nonuniform gutters independent CPU seam oracle
+PASS: production Renderer3D Shader Graph nonuniform guttered disk VT mixed Metal GPU ICB seam parity
+1/1 Test #128: metal_renderer_graph_vt_gutter_gpu ... Passed 1.90 sec
+```
+No `FAIL:` diagnostics appeared in the real
+final native log. The prior aborted first run
+had been correctly diagnosed as a threshold
+mismatch and OS CTest false-positive issue;
+Stage 10CH fixed both and this revision
+passed its independent oracle.
+
+**Changes this Stage 10CI:** no runtime,
+shader, C++ fixture, CMake or shell code changes.
+The authoritative native PASS was recorded in
+`docs/texture-rhi.md` (commit
+`17657ed8492c8f1fb416b0c10a53a0ed1a86ea6f`)
+and the reusable agent skill
+`skills/visuals/aiverse-texture-rhi/SKILL.md`
+(commit `3e5bce0ee62c2fe9c4861ac9fd88350a7758cce2`).
+This append-only handoff is a separate commit.
+Documentation-only commits later advance the
+branch head beyond the *tested* 7494f32d;
+never attribute an unobserved Mac test run
+to the newer docs HEAD.
+
+**Coverage and remaining responsibilities:**
+This is a complete **focused Texture RHI**
+Mac Studio acceptance run at one SHA,
+including earlier zero-gutter Shader Graph
+and VT GPU ICB regression gates as well as
+the new nonuniform bilinear/scene oracle.
+It is **NOT** the entire engine CTest suite:
+the manifest explicitly says `full_engine=0`.
+It does NOT establish correctness on Vulkan,
+GL/GLES, WebGL or mobile, trilinear/mipmap
+transitions with mixed residency, anisotropic
+sampling, long-running streaming/page churn
+or scene FPS/GPU performance. These are
+separate hardware/backend and scaling gates.
+Metal experimental GPU ICB flags remain
+default-OFF and PR #21 Draft.
+
+**Next exact agent work:**
+If a whole-engine regression is required,
+rerun the one-shot with
+`bash tools/texture-rhi-final-verify.sh
+--jobs 4 --full-engine` on the latest
+feature SHA, and record its actual results.
+Then prioritize genuine GL/Vulkan/mobile
+non-ICB texture/VT shader parity (respect
+16-slot source texture limits), trilinear
+mip transition/anisotropic seams, real GPU
+timing and long-run disk-page stress.
+Do not claim a new GPU PASS after commits
+without a new native log. After every stage
+append API/source SHA/changed files/actual
+tests/limits/next action to this handoff.
