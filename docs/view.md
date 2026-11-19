@@ -3137,3 +3137,11 @@ per-provider async GPU token retirement solution. Source SHA list,
 limitations and test backlog: [Stage 156 handoff](agent-handoffs/animation-stage156-studio-attachment-preview-deferred-retirement-2026-11-20.md).
 **NOT RUN:** native CMake/CTest, GUI screenshots, Metal/Vulkan/GLES,
 GPU-fence failure injection, sanitizers and performance.
+
+
+
+## Stage 157 — ModelView atomic on-disk parent + child Model hot reload
+
+The native `aiverse_modelview` example can now re-read the **actual source and child Model files** into a newly owned ModelAssetProvider, re-create each old parent Animator against the new Model (matching clip by exact name and optionally preserving normalized phase), publish a fresh AppearanceAssetRegistry and compile all named attachment sockets before switching the visible Scene generation. Invalid Model import/GPU upload/retarget/bone/socket refuses the candidate and leaves prior live source+attachment draw layout unchanged. The generic View still consumes a precomputed pose with `AnimationOwner::HostPrecomputed`; it does not evaluate the same graph twice.
+
+The ModelView Attachments window has **Reload model files** (unlike cached-layout **Rebuild**) and optional **Watch source files**. CLI `--watch-model-files` polls parent/enabled child file modification times about once per second and schedules reload on the NEXT render-owner pre-Device-frame boundary. Old parent instances/Animators, appearance metadata and provider GPU resources are retained in a whole-generation queue until an explicit GPU-idle proof, capped by advisory 8 generations. On no GPU completion it intentionally quarantines GPU owners rather than freeing them; a true per-provider async GPU fence solution is still missing. See [Stage 157 handoff](agent-handoffs/animation-stage157-modelview-atomic-model-file-reimport-2026-11-20.md) and [ModelView guide](modelview-attachments.md). **NOT RUN:** native compile/CTest, real Metal/Vulkan/GLES rendering, file watcher/manual reload visual tests, sanitizer and high-crowd performance.
