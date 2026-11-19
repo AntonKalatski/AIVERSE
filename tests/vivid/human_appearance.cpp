@@ -171,6 +171,15 @@ void test() {
         groom.clearCollisionMesh();
         expect(!groom.hasCollisionMesh(),"groom collision reset failed");
     }
+    auto eyeHealthy=HumanDNA::preset("neutral");
+    auto eyeRed=eyeHealthy;
+    eyeHealthy.eyes.scleraRedness=0.0f;
+    eyeRed.eyes.scleraRedness=1.0f;
+    const auto scleraA=humanMaterial(HumanSurface::Sclera,eyeHealthy);
+    const auto scleraB=humanMaterial(HumanSurface::Sclera,eyeRed);
+    expect(scleraB.baseColor.y<scleraA.baseColor.y &&
+           scleraB.baseColor.z<scleraA.baseColor.z,
+           "DNA sclera redness did not change real PBR surface color");
     auto originalDNA=HumanDNA{};
     auto sculptedDNA=originalDNA;
     sculptedDNA.skin.wrinkleStrength=0.95f;
