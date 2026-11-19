@@ -18,6 +18,12 @@ Create `fx/gpu/flame_gpu.gpu.json`:
   "particles": 256,
   "allowCpuFallback": true,
   "quality": "medium",
+  "lod": {
+    "near": 20,
+    "far": 100,
+    "farSpawnScale": 0.15,
+    "cullBeyondFar": true
+  },
   "spawn": {
     "rate": 20,
     "perMeter": 0,
@@ -56,6 +62,14 @@ sorting, flipbooks and local space) stay on CPU. The backend selection
 permits GPU only on compatible Metal/Vulkan devices with compute and
 RGBA32F; there is no D3D12 RHI in this project.
 
+Distance-LOD is optional. With `lod.far: 0` (the default), the
+effect's spawn intensity and visibility are unchanged by camera distance.
+With a positive range, the spawn rate and startup burst decrease from
+near to far distance; `cullBeyondFar` skips GPU billboard draw outside
+the range, while the existing particles continue ageing for safe slot
+recycling. This is not GPU frustum/occlusion culling or live-slot
+compaction.
+
 For optional visual GPU ground-impact feedback, set
 `environment.groundCollision.emitImpactEvents: true`, and optionally
 `"impactEffect": "sparks"` at the emitter asset root (the named
@@ -63,7 +77,12 @@ For optional visual GPU ground-impact feedback, set
 world-Y plane; there is no terrain mesh/depth collision. Impact event
 feedback requires Metal's asynchronous buffer readback and at most
 4,096 GPU slots; a CPU fallback is selected when the policy disallows
-the requested GPU feature. The returned impact is **visual only**:
+the requested GPU feature. For example, add `"impactEffect": "sparks"` at the top of
+`flame_gpu.gpu.json` and change `emitImpactEvents` to `true`.
+The `sparks` effect must already exist in the project, and the
+GPU-impact data may be delayed or discarded after particle reuse.
+
+The returned impact is **visual only**:
 it is not a gameplay collision, damage, physics contact or
 authoritative ECS event.
 
