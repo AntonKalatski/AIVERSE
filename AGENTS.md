@@ -1445,3 +1445,46 @@ New tests are authored but **NOT RUN** under the features-first
 rule. After each implementation stage append a separate handoff
 in `docs/agent-handoffs/animation-universal.md` with exact source
 SHAs, changed paths, reality of test execution, risks and next step.
+
+## AIVERSE Stage 104 — persistent CPU workers, shared geometry page accounting and View selection
+
+Use `render::ModelAssetProvider` / `AsyncModelCpuQueue` for
+genre-neutral model imports. The CPU queue now keeps up to 8
+persistent worker threads (1 default) with condition-variable
+dispatch, priority and bounded pending/ready queues. Worker
+threads may call only thread-safe FileReader and CPU model
+preparation; never gfx::Device, ECS Worlds, AnimationGraph
+players or View submission. Render-thread
+`ModelAssetProvider::publishReady` still owns GPU publication.
+Reconfiguration via `setCpuWorkerCount` joins currently running
+imports; it is not a per-frame knob. Invalidated source revisions
+must not be published after project/asset changes.
+
+When reporting shared geometry pool memory, gather references
+across all relevant ModelResourceCache owners and pass a **combined**
+span of Model pointers once to
+`geometryPoolReferencedStats(device,models)`. This counts unique
+GeometryPoolPage instances using their device identity. Do not add
+per-owner page sums together or double charge shared texture
+leases; use `geometryPoolStats(device)` for device-global pool
+allocation and `ModelTextureCache::gpuOwnerEstimate` once per
+texture owner for distinct textures. These are allocator/format
+estimates, not driver VRAM readings. Retired-but-fenced models
+remain page borrowers until GPU completion is verified.
+
+`aiverse::view::MeshObject` now carries the optional
+`selectionOutline` and `selectionColor` fields. Native
+editor/scene clients should use `View::submitMesh` for both
+unselected and selected/hovered meshes and `View::submitLine`
+for supplementary pickable edges, preserving their exact
+Renderer3D silhouette/outline behavior. No genre, network,
+save/checksum or game-simulation concepts belong inside the
+canonical View. Do not introduce a second MotionWeave graph
+update when submitting these packet types.
+
+Stage 104 test fixtures and CMake entries are **NOT RUN**
+by user request. Maintain `docs/agent-handoffs/animation-universal.md`
+after every implementation stage as a separate commit with
+architecture, changed files, actual validation, known risks,
+current ref and next exact step. Do not merge unvalidated changes
+to main based only on source-level inspection.
