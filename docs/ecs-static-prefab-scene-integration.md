@@ -398,6 +398,15 @@ PrefabStaticInspector<WeaponConfig> inspector(
 inspector.append(world,entity,components,schemas);
 ```
 
+`engine/scene/PrefabStaticInspector.h` now additionally provides
+`PrefabStaticInspectorRegistry`, which lets one NativeModule hook
+render several typed immutable StaticRef domains in stable, sorted
+component-ID order. Native GameModules register each typed
+`const T& -> Json` callback once, call `seal()`, then invoke
+`inspectorRegistry.append(world,entity,components,schemas)` from the
+existing read-only inspector hook. This does not change the editor's
+runtime writeback permissions.
+
 The existing editor Inspector consumes this JSON through its native
 module's `inspectComponents` callback. This bridge **does not itself
 install an existing game module hook**, nor change global editor
