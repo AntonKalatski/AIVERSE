@@ -2827,3 +2827,13 @@ before calling this stage validated.
 - Single MotionWeave source clock, gameplay ECS authority, NEREID/PHYSIS/TerraWeave/Prisma/SpectraFX and GPU fence owners remain unchanged.
 - **ACTUAL:** GitHub PR/main/source/handoff reads, exact target-branch commits with current blob SHAs, code readback. **NOT RUN:** local compiler/CMake/CTest/CI, Metal/Vulkan/GL, native FPS/RTS/editor visuals, sanitizers, memory/fault injection or benchmarks; no compiled/runtime success claimed. PR Draft.
 - **Next Stage 128:** further native Model owner/source publication protections, then complete features and run full build/tests/warnings and GPU parity before PR merge.
+
+## Stage 128 — owned native Model pins and GPU epoch preflight (2026-11-19)
+
+- **Separate detailed handoff:** [Stage 128](animation-stage128-native-model-lifetime-pins-2026-11-19.md) records exact code commits, touched files, API, owner contracts, actual source checks, constraints and Stage 129.
+- Continued Stage 127 HEAD `dfb3e76c`; main `d71c6d47` was already ancestor; before Stage 128 ahead 937/behind 0, after source commits ahead 941/behind 0. No main/peer mutation, no force push; PR #22 Draft (base `feature/universal-entity-inspector-fps`).
+- Extended `view::PinnedAppearanceBatch` with optional `addOwned` and `pinRelatedModel` for real shared CPU Model ownership alongside existing immutable appearance/Graph snapshots. `requireModelPins` and `validatedSpan` confirm all source/base/visual LOD/attachment models have owners. Additional `validatedSpan(Device,Lease)` checks active host owner-thread/Device epoch. Strong Model pins are deduplicated for shared crowd instances.
+- Existing `ModelResourceCache` was inspected but NOT changed: it uses `unique_ptr<Model>` plus GPU-fenced retirement. Cache-backed native hosts keep the borrowed `batch.add` path and detach/evict lifetime contract; a fake non-owning shared_ptr is NOT safe. CPU strong pins and GPU Device leases are not GPU retirement fences; the host retains all GPU resources until actual completion.
+- No MotionWeave clock, ECS gameplay authority, other render domains or GPU owner semantics changed.
+- **Actual:** connected GitHub branch/PR/ancestry, ModelResourceCache and Device lease source reads, precise code commits and readback. **NOT RUN:** native checkout/CMake/C++ compiler/link, CTest/CI, Metal/Vulkan/GL, FPS/RTS/editor visual checks, ASan/TSan or memory/profiling benchmarks. PR stays Draft.
+- **Next Stage 129:** review owner-approved unique ModelResourceCache eviction/read leases for legacy native hosts, finish remaining features, then full native build, CTest, GPU backend parity, sanitizer/fault injection, warnings and benchmarks before any merge.
