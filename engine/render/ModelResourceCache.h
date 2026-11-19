@@ -324,6 +324,11 @@ public:
     void retireUnpublished(gfx::Device& dev,std::unique_ptr<Model>& model) noexcept {
         if(!model)return;
         try {
+            // A Model ownership visitor may currently be enumerating the
+            // retirement queue. Do not append under that borrowed iterator.
+            // On rejection the catch path requires explicit GPU idle before
+            // releasing scratch resources; otherwise they are orphaned.
+            requireNoDetachCallback("retireUnpublished");
             bindResourceDevice(dev);
             retired_.enqueueFrom(model);
         }catch(...) {
@@ -436,6 +441,8 @@ public:
     // The host may attach a read-only token trace, e.g. in a GPU debug
     // panel. Callback exceptions cannot interrupt resource retirement.
     void setRetirementDiagnosticObserver(RetirementDiagnosticObserver observer) {
+        requireReadOwnerThread("setRetirementDiagnosticObserver");
+        requireNoDetachCallback("setRetirementDiagnosticObserver");
         retired_.setDiagnosticObserver(std::move(observer));
     }
     size_t pendingRetirements() const {
