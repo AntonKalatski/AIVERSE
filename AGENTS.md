@@ -1525,3 +1525,42 @@ screenshot and sanitizer checks. After each feature stage
 append a separate detailed handoff to
 `docs/agent-handoffs/animation-universal.md` including
 exact Git refs, actual tests, limitations and next step.
+
+## AIVERSE Stage 106 — expiring resource owners and failed GPU retirement tokens
+
+Use `ModelResourceCache::lifetimeToken()` when observing native
+render caches across project boundaries. `RenderResourceOwnerGroup`
+holds a weak token and a borrowed cache pointer and skips expired
+registrations before access; do not store unguarded raw pointers to
+transient Editor/Portrait/Project model owners. The registration,
+snapshot and cache teardown MUST all run on the device owner thread;
+weak_ptr expiration does not protect against concurrent destruction.
+The group is for accounting/admission only and never destroys GPU
+resources.
+
+`gfx::ResourceRetirementStatus` distinguishes `Pending`,
+`Complete`, and `Failed`. Metal/Vulkan/GL backends now override
+`resourceRetirementStatus(token)`. Never equate normal Pending
+with GPU failure or infer completion from time, frame count or a
+later unrelated fence. `AsyncResourceRetirementQueue` records a
+Failed token once, retains every failed batch, and only frees it
+after a successful full `Device::waitForResourceIdle` barrier.
+After that barrier the backend may call
+`abandonRetirementTokenAfterIdle` to release native marker
+bookkeeping. Without a successfully established idle barrier,
+device-loss paths MUST keep resources alive rather than
+destroying them unsafely. Failed fence status blocks new-source
+admission; it does not kill gameplay or rewind MotionWeave.
+
+The live material library preview now uses the generic
+`Portrait::renderAppearance` draw packet and canonical
+`aiverse::View`. It still resolves materials in the existing
+compatibility host and must not create a second MotionWeave
+animation player or replace the authored-animated fallback
+without verified visual parity.
+
+Stage 106 fixture sources are present but **NOT RUN**.
+Maintain `docs/agent-handoffs/animation-universal.md` with exact
+commits, changed paths, actual tests and next action after each
+stage, in a separate handoff commit. Do not merge source-only
+unverified changes to main.
