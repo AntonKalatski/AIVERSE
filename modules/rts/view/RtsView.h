@@ -168,6 +168,10 @@ public:
     void setDeferAppearanceVariants(bool on) { deferAppearanceVariants_ = on; }
     struct AssetResidencyStats {
         size_t loadedTypes = 0, cachedModels = 0, gpuTextures = 0, decodedCpuBytes = 0;
+        size_t retiredModels=0,retirementBatches=0,retirementPeak=0;
+        size_t retirementSoftLimit=0;
+        uint64_t retirementTokenFailures=0,retirementFallbackFailures=0;
+        bool publicationBackpressured=false;
     };
     // Excludes the terrain, special renderers, FX, dedicated buffers and
     // textures not owned by ModelTextureCache.
@@ -178,6 +182,14 @@ public:
         stats.cachedModels=cached.models;
         stats.gpuTextures=cached.textures;
         stats.decodedCpuBytes=cached.decodedCpuBytes;
+        const auto retired=resources_.retirementStats();
+        stats.retiredModels=retired.pendingResources;
+        stats.retirementBatches=retired.pendingBatches;
+        stats.retirementPeak=retired.highWatermark;
+        stats.retirementSoftLimit=resources_.retirementSoftLimit();
+        stats.retirementTokenFailures=retired.tokenFailures;
+        stats.retirementFallbackFailures=retired.idleFallbackFailures;
+        stats.publicationBackpressured=resources_.publicationBackpressured();
         return stats;
     }
     bool typeLoaded(uint16_t type) const { return type < loadedTypes_.size() && loadedTypes_[type]; }
