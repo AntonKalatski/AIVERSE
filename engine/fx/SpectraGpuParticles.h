@@ -6,9 +6,12 @@
 #pragma once
 
 #include "ParticleSystem.h"
+#include "SpectraGpuCheckpoint.h"
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -89,6 +92,12 @@ public:
     // Between completed frames only. Returns false when unavailable; failure
     // must never be interpreted as zero VM errors.
     bool readGpuVmErrors(uint32_t& count);
+    // Asynchronous 4-byte diagnostics. Accepted requests invoke callback
+    // after a later frame; shutdown invalidates callbacks safely.
+    bool requestGpuVmErrors(std::function<void(bool,uint32_t)> callback);
+    // Blocking diagnostics only, between COMPLETED frames (Metal's readBuffer
+    // rejects open command buffers). This is not CPU ParticleSystem import.
+    bool captureGpuCheckpoint(GpuCheckpoint& out);
     const std::string& reason() const { return reason_; }
     const ComputeStats& stats() const { return stats_; }
     const fx::ParticleSystem& cpuFallback() const { return cpu_; }
@@ -155,6 +164,8 @@ private:
     bool gpuIndirectActive_ = false;
     ComputeStats stats_;
     std::string reason_;
+    std::shared_ptr<uint64_t> readbackLifetime_ = std::make_shared<uint64_t>(0);
+    bool asyncErrorPending_ = false;
 };
 
 } // namespace aiverse::spectra
