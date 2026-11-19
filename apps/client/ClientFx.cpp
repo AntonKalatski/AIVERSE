@@ -196,6 +196,21 @@ void ClientFx::update(Simulation& sim, const game::RtsScene& scene, const render
                     static_cast<unsigned long long>(
                         encode.gpuRuntimeCpuFallbacks));
             }
+            std::fprintf(stderr,
+                "[spectrafx-gpu-lifetime] poolRecovered=%llu poolDropped=%llu "
+                "poolRenderFaults=%llu queuedPoolRetires=%llu releasedPools=%llu "
+                "queuedEmitters=%llu releasedEmitters=%llu "
+                "retiringSlots=%llu retiringResources=%zu\n",
+                static_cast<unsigned long long>(encode.pooledCpuRecoveries),
+                static_cast<unsigned long long>(encode.pooledRecoveryDropped),
+                static_cast<unsigned long long>(encode.pooledRenderFaults),
+                static_cast<unsigned long long>(encode.pooledResourceRetired),
+                static_cast<unsigned long long>(encode.pooledResourceReleased),
+                static_cast<unsigned long long>(encode.dedicatedGpuRetired),
+                static_cast<unsigned long long>(encode.dedicatedGpuReleased),
+                static_cast<unsigned long long>(
+                    gpuPlayback_->retiringGpuSlots()),
+                gpuPlayback_->retiringGpuResourceCount());
         }
     }
 }
