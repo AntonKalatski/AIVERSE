@@ -1,26 +1,12 @@
 #include "RtsPortrait.h"
-
 #include <algorithm>
 #include <cmath>
 
 namespace aiverse::game {
-
 using namespace render;
 
-bool Portrait::init(gfx::Device& dev, int size) {
-    dev_ = &dev;
-    size_ = size;
-    if (!r3d_.init(dev)) return false;
-    r3d_.setShadowQuality(ShadowQuality::Low);
-    gfx::TextureDesc td;
-    td.width = td.height = size;
-    td.renderTarget = true;
-    td.label = "portrait";
-    color_ = dev.createTexture(td);
-    td.format = gfx::PixelFormat::Depth;
-    td.filter = gfx::Filter::Nearest;
-    depth_ = dev.createTexture(td);
-    return color_.valid() && depth_.valid();
+bool Portrait::init(gfx::Device& device, int size) {
+    return preview_.init(device, size);
 }
 
 namespace {
@@ -76,88 +62,68 @@ std::unique_ptr<Model> previewShape(int shape) {
 } // namespace
 
 void Portrait::renderMaterial(RtsView& view, const Json& material, int shape, double time) {
-    if (!dev_ || !color_.valid()) return;
+    gfx::Device* device = preview_.device();
+    if (!device || !preview_.texture().valid()) return;
     shape = shape == 1 ? 1 : 0;
     if (!shapes_[shape]) {
         shapes_[shape] = previewShape(shape);
-        uploadModel(*dev_, *shapes_[shape], true);
+        uploadModel(*device, *shapes_[shape], true);
     }
-    Model& m = *shapes_[shape];
-    static UnitType previewType;   // warnings read "type 'material preview': ..."
+    Model& model = *shapes_[shape];
+    static UnitType previewType;
     previewType.id = "material preview";
-    mats_ = m.materials;
-    view.applyMaterial(*dev_, previewType, m, mats_[0], material);
-    Camera cam;
-    cam.target = {0, 0.45f, 0};
-    cam.distance = 2.1f;
-    cam.minDistance = 0.1f;
-    cam.pitch = 0.42f;
-    cam.yaw = 0.6f;
-    cam.fovY = 0.6f;
-    r3d_.beginScene(cam, size_, size_);
-    ModelDraw d;
-    d.model = &m;
-    d.world = mat4::rotateY(float(time) * 0.4f);
-    d.materials = &mats_;
-    d.team = {0.8f, 0.1f, 0.08f};
-    r3d_.drawModel(d);
-    gfx::PassDesc pass;
-    pass.colorTarget = color_;
-    pass.depthTarget = depth_;
-    pass.clearColor[0] = 0.16f; pass.clearColor[1] = 0.18f; pass.clearColor[2] = 0.22f; pass.clearColor[3] = 1;
-    r3d_.render(pass);
-    dev_->endPass();
+    materials_ = model.materials;
+    view.applyMaterial(*device, previewType, model, materials_[0], material);
+    Camera camera;
+    camera.target = {0, 0.45f, 0};
+    camera.distance = 2.1f;
+    camera.minDistance = 0.1f;
+    camera.pitch = 0.42f;
+    camera.yaw = 0.6f;
+    camera.fovY = 0.6f;
+    preview_.capture(camera, [&](Renderer3D& renderer) {
+        ModelDraw draw;
+        draw.model = &model;
+        draw.world = mat4::rotateY(float(time) * 0.4f);
+        draw.materials = &materials_;
+        draw.team = {0.8f, 0.1f, 0.08f};
+        renderer.drawModel(draw);
+    });
 }
 
-void Portrait::renderPose(const Model& model,const Pose& pose,float yaw) {
-    if(!dev_||!color_.valid()||pose.size()!=model.nodes.size())return;
-    std::vector<mat4> world;worldMatrices(model,pose,world);
-    Camera cam;cam.target=(model.boundsMin+model.boundsMax)*.5f;
-    auto e=model.boundsMax-model.boundsMin;cam.distance=std::max({e.x,e.y,e.z,.3f})*2.1f;
-    cam.minDistance=.01f;cam.pitch=.15f;cam.yaw=yaw;cam.fovY=.6f;
-    r3d_.lighting.skyColor={.8f,.85f,.9f};r3d_.lighting.groundColor={.5f,.5f,.5f};
-    r3d_.beginScene(cam,size_,size_);ModelDraw d;d.model=&model;d.nodeWorld=&world;d.pose=&pose;d.team={.1f,.4f,.9f};r3d_.drawModel(d);
-    gfx::PassDesc pass;pass.colorTarget=color_;pass.depthTarget=depth_;
-    pass.clearColor[0]=.12f;pass.clearColor[1]=.14f;pass.clearColor[2]=.18f;pass.clearColor[3]=1;
-    r3d_.render(pass);dev_->endPass();
+void Portrait::renderPose(const Model& model, const Pose& pose, float yaw) {
+    preview_.renderPose(model, pose, yaw);
 }
 
 void Portrait::shutdown() {
-    if (!dev_) return;
-    for (auto& s : shapes_) if (s) { releaseModel(*dev_, *s); s.reset(); }
-    r3d_.shutdown();
-    if (color_.valid()) dev_->destroyTexture(color_);
-    if (depth_.valid()) dev_->destroyTexture(depth_);
-    color_ = depth_ = {};
-    dev_ = nullptr;
+    gfx::Device* device = preview_.device();
+    if (device)
+        for (auto& shape : shapes_)
+            if (shape) { releaseModel(*device, *shape); shape.reset(); }
+    materials_.clear();
+    preview_.shutdown();
 }
 
 void Portrait::render(RtsView& view, uint16_t type, uint8_t owner, double time, float yaw) {
-    if (!dev_ || !color_.valid()) return;
-    // frame the bind-pose bounds (look scale and fit are applied by the view; approximate with the model)
+    if (!preview_.device() || !preview_.texture().valid()) return;
     float radius = 0.8f, height = 1.0f;
-    if (const Model* m = view.modelOf(type)) {
-        const float3 e = m->boundsMax - m->boundsMin;
+    if (const Model* model = view.modelOf(type)) {
+        const float3 e = model->boundsMax - model->boundsMin;
         height = std::max(0.3f, std::min(e.y, 4.0f));
         radius = std::max({e.x, e.y, e.z, 0.3f}) * 0.6f;
     }
-    const float s = view.selectionRadius(type);
-    radius = std::max(radius, s);
-    Camera cam;
-    cam.target = {0, std::min(height, radius * 1.4f) * 0.45f, 0};
-    cam.distance = radius * 3.2f;
-    cam.minDistance = 0.1f;
-    cam.pitch = 0.32f;
-    cam.yaw = 0.5f;
-    cam.fovY = 0.6f;
-    r3d_.beginScene(cam, size_, size_);
-    view.drawPreview(r3d_, type, owner, time, yaw < 0 ? float(time) * 0.6f : yaw);
-    gfx::PassDesc pass;
-    pass.colorTarget = color_;
-    pass.depthTarget = depth_;
-    pass.clearColor[0] = 0.16f; pass.clearColor[1] = 0.18f; pass.clearColor[2] = 0.22f; pass.clearColor[3] = 1;
-    r3d_.render(pass);
-    dev_->endPass();
+    radius = std::max(radius, view.selectionRadius(type));
+    Camera camera;
+    camera.target = {0, std::min(height, radius * 1.4f) * 0.45f, 0};
+    camera.distance = radius * 3.2f;
+    camera.minDistance = 0.1f;
+    camera.pitch = 0.32f;
+    camera.yaw = 0.5f;
+    camera.fovY = 0.6f;
+    preview_.capture(camera, [&](Renderer3D& renderer) {
+        view.drawPreview(renderer, type, owner, time,
+                         yaw < 0 ? float(time) * 0.6f : yaw);
+    });
 }
 
 } // namespace aiverse::game
