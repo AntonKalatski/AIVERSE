@@ -303,6 +303,10 @@ public:
     using BufferReadFn=std::function<void(std::vector<uint8_t>)>;
     virtual bool readBufferAsync(BufferHandle,size_t,BufferReadFn) { return false; }
     virtual bool gpuHealthy() const { return true; }
+    // Explicit shutdown-only GPU synchronization. Call from the owning thread,
+    // outside an active render pass/frame, before releasing RHI-dependent views.
+    // Unsupported backends return false; never mistake a frame serial for idle.
+    virtual bool waitIdle() { return false; }
     virtual double gpuFrameMs() const { return 0; } // last completed frame; asynchronous
     // Zero if backend does not expose a completed-slot-safe frame serial.
     virtual uint64_t frameSerial() const { return 0; }
