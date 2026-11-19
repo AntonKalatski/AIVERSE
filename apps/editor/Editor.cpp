@@ -868,6 +868,16 @@ bool Editor::restartSpectraGpuPreview() {
     spectraPreviewStepRequests_=0;
     return true;
 }
+bool Editor::requestSpectraGpuPreviewCheckpoint() {
+    if(!spectraGpuPreviewActive() || spectraPreviewStop_)return false;
+    // The GPU must stop changing particle state while readback chunks
+    // complete on a later graphics frame. Queued Step GPU is cancelled.
+    spectraPreviewFrozen_=true;
+    spectraPreviewStepRequests_=0;
+    spectraGpuCaptureState_=SpectraGpuCaptureState::Queued;
+    spectraGpuCaptureNote_="Awaiting a frozen graphics pre-pass";
+    return true;
+}
 bool Editor::saveFreshSpectraGpuCheckpoint(std::string& output) const {
     const auto* pool=spectraGpuTelemetry_;
     if(!pool || !pool->ready() || pool->presentationBlocked()) {
@@ -968,6 +978,8 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
         spectraPreviewVisualSeconds_=0;
         spectraPreviewLastError_.clear();
         spectraPreviewHistory_.clear();
+        spectraGpuCaptureState_=SpectraGpuCaptureState::Idle;
+        spectraGpuCaptureNote_.clear();
     }
     if(spectraPreviewRequest_.pending && spectraPreviewRequest_.inGame==game) {
         auto pending=std::move(spectraPreviewRequest_);
@@ -1006,6 +1018,8 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
             spectraPreviewVisualSeconds_=0;
             spectraPreviewLastError_.clear();
             spectraPreviewHistory_.clear();
+            spectraGpuCaptureState_=SpectraGpuCaptureState::Idle;
+            spectraGpuCaptureNote_.clear();
             spectraPreviewParams_=pending.params;
             spectraPreviewPosition_=pending.position;
             spectraPreviewNextBurst_=-1; // guaranteed first-frame spawn
@@ -1023,6 +1037,8 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
         }
         spectraPreviewVisualSeconds_=0;
         spectraPreviewHistory_.clear();
+        spectraGpuCaptureState_=SpectraGpuCaptureState::Idle;
+        spectraGpuCaptureNote_.clear();
         spectraPreviewNextBurst_=-1;
         spectraPreviewStepRequests_=0;
         spectraPreviewLastError_.clear();
@@ -1061,6 +1077,38 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
         spectraPreviewLastError_.clear();
     }
     const auto checkpoint=spectraPreviewGpu_->checkpointStats();
+    if(spectraGpuCaptureState_==SpectraGpuCaptureState::Queued) {
+        if(!accepted) {
+            spectraGpuCaptureState_=SpectraGpuCaptureState::Failed;
+            spectraGpuCaptureNote_="Metal simulation rejected before checkpoint: "+
+                                   spectraPreviewLastError_;
+        } else if(checkpoint.exportReadyGroups>0) {
+            spectraGpuCaptureState_=SpectraGpuCaptureState::Ready;
+            spectraGpuCaptureNote_="Current GPU revision is ready for binary export";
+        } else if(checkpoint.pendingGroups>0) {
+            spectraGpuCaptureState_=SpectraGpuCaptureState::InFlight;
+            spectraGpuCaptureNote_="Waiting for GPU checkpoint readback";
+        } else if(spectraPreviewGpu_->requestGpuCheckpoint(0)) {
+            spectraGpuCaptureState_=SpectraGpuCaptureState::InFlight;
+            spectraGpuCaptureNote_="Checkpoint readback queued on the Metal graphics frame";
+        } else {
+            spectraGpuCaptureState_=SpectraGpuCaptureState::Failed;
+            spectraGpuCaptureNote_="GPU checkpoint rejected: "+
+                                   spectraPreviewGpu_->reason();
+        }
+    } else if(spectraGpuCaptureState_==SpectraGpuCaptureState::InFlight) {
+        if(checkpoint.exportReadyGroups>0) {
+            spectraGpuCaptureState_=SpectraGpuCaptureState::Ready;
+            spectraGpuCaptureNote_="Fresh GPU checkpoint complete; save the binary diagnostic";
+        } else if(checkpoint.pendingGroups==0) {
+            spectraGpuCaptureState_=SpectraGpuCaptureState::Failed;
+            spectraGpuCaptureNote_="GPU checkpoint completed without fresh data; retry while frozen";
+        }
+    } else if(spectraGpuCaptureState_==SpectraGpuCaptureState::Ready &&
+              checkpoint.exportReadyGroups==0) {
+        spectraGpuCaptureState_=SpectraGpuCaptureState::Idle;
+        spectraGpuCaptureNote_="GPU particle revision advanced; previous checkpoint is stale";
+    }
     SpectraGpuPreviewFrameRecord record{};
     record.deviceFrame=dev_?dev_->frameSerial():0;
     record.visualSeconds=spectraPreviewVisualSeconds_;
