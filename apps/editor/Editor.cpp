@@ -260,8 +260,12 @@ void Editor::retainEditorType(uint16_t type) {
     modelDemand_.touch(type,time_,game::view_adapter::ModelDemandPriority::Interactive);
     // The Model/Materials windows and model_info must work when the type has
     // no instances on the map. The RtsView loader caches this call per type.
-    if (lazyEditorAssets_) modelDemand_.drain(modelDemand_.pendingCount(),
-        [&](size_t requested){view_.loadType(uint16_t(requested));});
+    // Eager mode already has resident types; still consume the demand
+    // queue to avoid retaining stale requests across editor frames.
+    modelDemand_.drain(modelDemand_.pendingCount(),
+        [&](size_t requested) {
+            if(lazyEditorAssets_)view_.loadType(uint16_t(requested));
+        });
 }
 
 void Editor::reclaimEditorAssets(bool force) {
