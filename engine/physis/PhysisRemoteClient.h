@@ -114,7 +114,11 @@ public:
 
     void disconnected() {
         connected_=false;
-        if(active_ && !terminal(receipt_.result))
+        // A journal-durability failure is not a transient network timeout.
+        // Keep the explicit-retry requirement across connection loss; a
+        // reconnect must not silently re-arm a previously suspended Submit.
+        if(active_ && !terminal(receipt_.result) &&
+           status_!=ClientStatus::Uncertain)
             status_=ClientStatus::Offline;
     }
     // Explicit user action after an indeterminate network timeout.
