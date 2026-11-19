@@ -52,6 +52,8 @@ public:
 
     bool addDomain(DomainId id, Options settings) {
         if (!device_ || id == 0 || domains_.count(id) ||
+            (feedback_ &&
+             settings.feedbackDepth != feedback_->feedbackDepthAttachment()) ||
             domains_.size() >= 32 || settings.feedbackWidth < 1 ||
             settings.feedbackHeight < 1 ||
             settings.feedbackWidth > 4096 || settings.feedbackHeight > 4096 ||
@@ -164,6 +166,13 @@ public:
     // Terra feedback adapter. Call detach() before destroying either.
     bool attach(Renderer3D& renderer,TerraWeaveVirtualTextureFeedback& feedback) {
         if (renderer_ || !feedback.ready()) return false;
+        // Feedback pipeline depth state is selected when model shader
+        // programs are created; every domain must use the same mode.
+        for (const auto& [id,domain] : domains_) {
+            (void)id;
+            if (domain.options.feedbackDepth != feedback.feedbackDepthAttachment())
+                return false;
+        }
         renderer_=&renderer;
         feedback_=&feedback;
         feedback_->setLiveMaterialMapper(
