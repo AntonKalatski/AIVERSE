@@ -73,6 +73,9 @@ inline ForestNutrientCycleOutcome advanceForestNutrientCycle(
     if(!climate)
         throw std::invalid_argument("TerraWeave nutrient cycle needs climate/water");
     validateForestDeadwoodResource(resource);
+    if(resource.initialized && completedTick<resource.lastStepTick)
+        throw std::invalid_argument(
+            "TerraWeave nutrient tick precedes saved decay");
     if(resource.nutrientInitialized &&
        completedTick<resource.lastNutrientTick)
         throw std::invalid_argument("TerraWeave reversed nutrient tick");
