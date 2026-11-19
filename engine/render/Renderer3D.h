@@ -560,6 +560,7 @@ private:
     MaterialQuality matQuality_ = MaterialQuality::High;
     std::vector<ModelItem> modelItems_;
     struct MotionDeformPose {
+        const Model* sourceModel = nullptr; // identity only, never dereference after frame
         mat4 world;
         std::array<float, size_t(kMaxPaletteJoints) * 12> joints{};
         std::array<float, kMaxMorphTargets> weights{};
