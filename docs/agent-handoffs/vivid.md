@@ -366,3 +366,29 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
 - **Verification provenance:** Mac test executed by user; this agent is recording the reported terminal output, not claiming an independent device run. No full 9-test CTest run on this SHA, graphics mesh render, shadows, MotionWeave skinning integration, performance benchmarks or Vulkan/GL verification yet.
 - **Compatibility:** this checkpoint changes documentation only; no model ABI or genre-specific code was modified.
 - **Next exact step:** inspect the actual `render::Vertex` / `Model` / `Renderer3D` layout and GPU skinning order. Build an opt-in VIVID render-stream integration adapter preserving the original model path, with explicit buffer ownership and a regression fixture. Only after native build + screenshots may it be enabled for characters.
+
+## Stage 5A — 2026-11-19 — GPU ModelVertex stream repacking
+
+- **Branch:** `feature/vivid-digital-humans`. Pre-stage confirmed user native Metal RHI source `22b60c4714c257e9714bcfd48943f4f62f1fb9d5` passed 1/1, 1.18s total. Validation-only commit `3ec4b5e5a757de9abb6390a5ed3cc9a9b2f443f8` records it. New Stage 5A commits are **not** covered by that pass.
+- **Implementation commits and exact paths:**
+  - `ccd59be309192a2cec734258bed62be714472aab` — NEW `engine/character/vivid/GpuMorphMeshStream.h`: model-compatible 60B GPU output, ABI assertions, public opt-in class, no direct Renderer3D ownership.
+  - `b2c0bcda150d49107997223063528054f5ea933e` — NEW `engine/character/vivid/GpuMorphMeshShaders.h`: paired Metal/GLSL compute kernels that preserve 15 packed 32-bit words from `ModelVertex`, replace only morphed position/normal/tangent.xyz.
+  - `f24365d7d4cd646498f4e60e3745cd517ba13c20` — NEW `engine/character/vivid/GpuMorphMeshStream.cpp`: opt-in separate compute pipeline with resource validation, 512MiB budget, dispatch/download/release.
+  - `c6750f35c1e8c0633cdd37ecc36e9de377341b6a` — `engine/character/vivid/CMakeLists.txt`: `AIVERSE::vivid_mesh` static library and link into the real Metal RHI test target.
+  - `bc2ab74663ff7898b97addd64c49e868e45a5d48` — `tests/vivid/metal_rhi.mm`: four-frame actual Metal RHI pass now includes mesh conversion and CPU parity, asserts bitwise preservation of UV/colour/tangent handedness/joints/weights.
+  - `6895ba3a67f2651e37eaccd6b552d5c32e0217d9` — correct a malformed newline character literal in test diagnostics before compilation.
+  - `a696eceef4e450555bd950fce5c2d02487b7f6a2` — `docs/vivid.md` technical API and compatibility limitations.
+- **Functional path:** VIVID sparse 48-byte `GpuMorphVertex` → `GpuMorphMeshStream` GPU repack to full 60-byte `render::ModelVertex`. Same model vertex indices are preserved. Copy all original 15 × uint32 words per vertex, replace offsets 0–2 (pos), 3–5 (normal), 8–10 (tangent xyz), and preserve UV, tangent sign, colour and skeletal joint influences bitwise. Model shaders already deform before skin. No duplicate skeletal animation: MotionWeave still owns pose, retargeting, IK, worker scheduler and bone palettes.
+- **Public API and compatibility:** new `GpuMorphMeshStream::initialize/dispatch/vertexBuffer/download/release` and `AIVERSE::vivid_mesh` only; no `ModelVertex`, `ModelDraw`, `Renderer3D`, `gfx::Device` or MotionWeave ABI changes. No saved game/network format changes. Vertex output is a `gfx::BufferType::Storage` allocation containing valid 60B words; renderer has not yet been changed to use it.
+- **Tests actually run:** **NOT RUN** for new Stage 5A code. GitHub source fetch and layout review only. The modified `vivid_metal_rhi` fixture was written and statically inspected, but Mac compilation, actual Metal shader compilation, runtime parity, full CTest, and renderer screenshots remain outstanding. CI NOT RUN. Prior pre-stage user-confirmed Metal `vivid_metal_rhi` 1/1 PASS cannot be used as Stage 5A test evidence.
+- **Risks:** GPU buffer type Storage-as-vertex use must be checked on each RHI, especially Vulkan/GL. Existing `render::ModelDraw` binds `model->vb`; this stage does NOT change normal draw behavior. Renderer colour/shadows/geometry pool/ICB/LOD must explicitly opt in and preserve full indexed stream offsets and device resource retirement. A fixed 512MiB maximum limits this bridge but does not solve all dynamic streaming or cross-frame draw hazards.
+- **Next exact step:** user Mac: fetch current VIVID, configure, build `aiverse_vivid_metal_rhi_tests` and `aiverse_vivid_metal_gpu_tests`, run `vivid_metal_rhi` + `vivid_metal_gpu`, record compiler warnings and numerical parity. Then implement an opt-in per-ModelDraw vertex-stream override in Renderer3D (with direct draw/colour/shadow parity first, batching/ICB initially disabled and tested separately) rather than bypassing legacy UV/bone attributes. Append handoff for every implementation stage.
+- **Commands for owner (not run by assistant):**
+  ```sh
+  cd ~/Projects/AIVERSE
+  git fetch origin feature/vivid-digital-humans
+  git -C ../AIVERSE-vivid switch --detach origin/feature/vivid-digital-humans
+  cmake -S ../AIVERSE-vivid -B ../AIVERSE-vivid/build/vivid -DAIVERSE_BUILD_TESTS=ON
+  cmake --build ../AIVERSE-vivid/build/vivid --target aiverse_vivid_metal_rhi_tests aiverse_vivid_metal_gpu_tests -j 4
+  ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^vivid_metal_(rhi|gpu)$'
+  ```
