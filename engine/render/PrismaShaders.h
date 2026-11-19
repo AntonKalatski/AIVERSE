@@ -220,17 +220,27 @@ inline const char* kMotionBlur = R"(
     float scale = min(1.0, p0.y / max(distancePx,0.0001));
     velocity *= scale;
     int n = int(clamp(floor(p0.z + 0.5),2.0,16.0));
+    // Scene depth is supplied as TEX2. Reject far-away samples where a
+    // near silhouette would otherwise smear their color over foreground.
+    // Device-depth threshold is intentionally conservative, independent of
+    // the camera near/far planes; exact linear-depth filtering comes later.
+    float centerDepth = TEX2(uv).r;
     vec3 accum = vec3(0.0);
     float weight = 0.0;
     for (int i = 0; i < 16; ++i) {
         if (i >= n) break;
         float t = float(i) / float(n-1) - 0.5;
         vec2 q = clamp(s + velocity * t,vec2(0.0),vec2(1.0));
-        accum += TEX0(TUV(q)).rgb;
-        weight += 1.0;
+        vec2 sampleUv = TUV(q);
+        float sampleDepth = TEX2(sampleUv).r;
+        float depthDelta = abs(sampleDepth - centerDepth);
+        float keep = 1.0 - smoothstep(p0.y > 0.0 ? 0.0015 : 0.0,
+                                      0.012, depthDelta);
+        accum += TEX0(sampleUv).rgb * keep;
+        weight += keep;
     }
     vec3 sharp = TEX0(uv).rgb;
-    RETURN(vec4(mix(sharp,accum/max(weight,1.0),p0.w),1.0));
+    RETURN(vec4(mix(sharp,accum/max(weight,0.0001),p0.w),1.0));
 )";
 
 // FXAA (console-style, 5 taps + early out, 9 at most). px.xy = texel; p0.x = subpixel softening.
