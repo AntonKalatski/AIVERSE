@@ -68,6 +68,7 @@ struct CreatorApp {
     // Updated positions are always supplied in the groom's local space.
     std::vector<render::float3> scalpBindPositions;
     std::vector<render::float3> scalpAnimatedPositions;
+    std::vector<render::float3> scalpSkinScratch;
     int scalpPoseNode=-1;
     std::unique_ptr<ScalpSkinning> scalpSkinning;
     render::mat4 scalpBindNodeInverse{};
@@ -139,6 +140,7 @@ struct CreatorApp {
         facePose.clear();
         scalpBindPositions.clear();
         scalpAnimatedPositions.clear();
+        scalpSkinScratch.clear();
         scalpPoseNode=-1;
         scalpSkinning.reset();
         cache->pruneExpired();
@@ -333,6 +335,7 @@ struct CreatorApp {
             human=std::move(proposed);
             scalpBindPositions=std::move(proposedScalp.bindPositions);
             scalpAnimatedPositions.resize(scalpBindPositions.size());
+            scalpSkinScratch.resize(scalpBindPositions.size());
             scalpPoseNode=proposedScalp.node;
             scalpSkinning=std::move(proposedScalp.skinning);
             scalpBindNodeInverse=proposedScalp.nodeBindInverse;
@@ -682,7 +685,8 @@ struct CreatorApp {
                     // MotionWeave owns all node matrices; the VIVID adapter
                     // only performs presentation CPU skinning of scalp proxy.
                     validPose=scalpSkinning->evaluate(
-                        facePose,frameHead,scalpAnimatedPositions);
+                        facePose,frameHead,scalpAnimatedPositions,
+                        scalpSkinScratch);
                 } else {
                     const auto delta=frameHead.inverse() *
                         facePose[std::size_t(scalpPoseNode)] *
