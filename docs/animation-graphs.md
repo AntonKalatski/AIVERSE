@@ -963,3 +963,37 @@ No second AnimationGraph update is introduced.
 **NOT RUN:** CMake/C++ compiler, CTest, FPS animation
 visual parity, GPU runtime validation or sanitizers.
 See [Stage 126 handoff](agent-handoffs/animation-stage126-published-lod-hot-reload-2026-11-19.md).
+
+## Stage 127 — reject stale graph/Model epoch pairs before ECS update
+
+The universal `MotionWeaveSourceBridge` now stores
+`modelPublicationGeneration` in its presentation
+`AnimationSourceLinkComponent`. `View::update`
+supplies the epoch from the host's `view::Object`,
+and `View::submitOne` refuses to use a Pose produced
+for a different asset epoch even when the logical actor
+generation is unchanged.
+
+A newly published nonzero Model epoch means a Model asset
+may have changed at the same address. The bridge therefore
+rejects a submitted frame that pairs the new Model epoch
+with the SAME old Model and AnimationGraph pointers.
+This is a fatal source contract violation, diagnosed
+before World structural mutations: recompile the graph
+against the new Model before publication. With a newly
+compiled graph, the player resets instead of transferring
+stale playback, IK, montage or notify state across Model
+reimport. Graph-only reload with unchanged Model epoch
+continues to support the compatible state/clip-phase
+migration from Stage 119/126.
+
+`AnimationBridgeStats::assetEpochRestarts` separately
+counts new Model-epoch-triggered restarts. No second graph
+update or simulation authority was added. Host-owned
+published snapshots can be kept alive for a frame using
+`PinnedAppearanceBatch`; the loaded Model itself still
+requires separate lifetime ownership.
+
+**NOT RUN:** native C++ compilation, animation graph
+CTest, GPU FPS/RTS/editor parity or sanitizers.
+See [Stage 127 handoff](agent-handoffs/animation-stage127-model-epoch-bridge-pinned-appearance-2026-11-19.md).
