@@ -56,6 +56,9 @@ bool GpuActorStream::initializeShared(gfx::Device& device,
     }
 
     std::vector<float> zeroWeights(std::max<std::size_t>(targets,1),0.0f);
+    // Allocate instance-owned CPU weights before allocating GPU resources;
+    // after this point publication uses only noexcept moves/assignments.
+    std::vector<float> actorWeights(targets,0.0f);
     gfx::BufferDesc desc{};
     desc.type=gfx::BufferType::Storage;
     desc.usage=gfx::Usage::Dynamic;
@@ -92,7 +95,7 @@ bool GpuActorStream::initializeShared(gfx::Device& device,
     device_=&device;
     model_=&model;
     shared_=std::move(asset);
-    weights_.assign(targets,0.0f);
+    weights_=std::move(actorWeights);
     lastAttemptedFrame_=lastCompletedFrame_=0;
     return true;
 }
