@@ -18,8 +18,9 @@ struct LumaGpuLight {
     float4 colorIntensity{}; // linear rgb, w = intensity; NOT pre-exposed or baked
     float4 directionCone{};  // xyz, w = spot cosOuter, -2 means omni point
     float4 settings{};       // x = cosInner, y = importanceBias, z = shadowEnabled, w reserved
+    std::array<uint32_t,4> identity{}; // key low/high, source kind, contributesToGi flag
 };
-static_assert(sizeof(LumaGpuLight)==64, "LumaWeave GPU light buffer ABI changed");
+static_assert(sizeof(LumaGpuLight)==80, "LumaWeave GPU light buffer ABI changed");
 
 struct LumaGpuReceiver {
     float4 worldPosition{}; // xyz, w = isValid (0 or 1)
@@ -66,7 +67,9 @@ inline LumaGpuInputPacket packLumaSources(const LumaWeaveRegistry& registry,
             {light.color.x,light.color.y,light.color.z,light.intensity},
             {light.direction.x,light.direction.y,light.direction.z,
              light.kind==LumaLightKind::Spot ? light.cosOuter : -2.0f},
-            {light.cosInner,light.importanceBias,light.castsShadows?1.0f:0.0f,0.0f}
+            {light.cosInner,light.importanceBias,light.castsShadows?1.0f:0.0f,0.0f},
+            {uint32_t(light.key),uint32_t(light.key>>32),
+             uint32_t(light.kind),light.contributesToGi?1u:0u}
         });
     }
     const auto& c=csr.config;
