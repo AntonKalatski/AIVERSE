@@ -233,7 +233,7 @@ public:
                               const std::array<float4,16>& ripples,
                               uint32_t firstIndex=0,uint32_t indexCount=0,
                               const std::array<float4,16>& wakeShapes={},
-                              float4 wind={});
+                              float4 wind={},float4 hydraulics={});
     // Editor Scene only: render selected geometry into a depth-tested mask
     // and composite its exterior silhouette in screen pixels.
     void setSceneSelectionOutline(bool enabled) { sceneSelectionOutline_ = enabled; }
@@ -409,6 +409,7 @@ private:
         std::array<float4,16> waterRipples{};
         std::array<float4,16> waterWakeShapes{};
         float4 waterWind{};
+        float4 waterHydraulics{};
         uint32_t waterFirstIndex=0,waterIndexCount=0;
     };
     struct ModelItem {
