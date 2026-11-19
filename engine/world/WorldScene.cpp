@@ -120,6 +120,14 @@ void WorldScene::setVegetationWind(terraweave::ForestWindState wind) {
     if(terraForest_)terraForest_->setWind(wind);
     if(terraHorizon_)terraHorizon_->setWind(wind);
 }
+void WorldScene::setVegetationWindField(
+        std::shared_ptr<const terraweave::ForestWindField> field) {
+    if(field==vegetationWindField_)return;
+    if(field)field->validate(); // fail without changing the live snapshot
+    if(terraForest_)terraForest_->setWindField(field);
+    if(terraHorizon_)terraHorizon_->setWindField(field);
+    vegetationWindField_=std::move(field);
+}
 void WorldScene::setVegetationPresentationTick(uint64_t tick) {
     vegetationPresentationTick_=tick;
     if(terraForest_)terraForest_->setPresentationTick(tick);
