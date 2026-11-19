@@ -90,6 +90,17 @@ static void stageAndRetire() {
     require(!w.resourceConst<host::NatureFallHostState>()->records[0].active &&
             w.resourceConst<host::NatureFallHostState>()->records[1].active,
             "retired wrong plant event");
+    require(!host::unbindNatureFallPlant(w,shrub),
+            "active shrub fall was detached from its root identity");
+    require(host::unbindNatureFallPlant(w,tree),
+            "repaired tree identity could not be unbound");
+    require(!host::unbindNatureFallPlant(w,tree),
+            "duplicate unbind unexpectedly succeeded");
+    require(host::pruneNatureFallHistory(w,16)==1 &&
+            w.resourceConst<host::NatureFallHostState>()->records.size()==1,
+            "retired fall history did not prune within rollback window");
+    require(host::pruneNatureFallHistory(w,16)==0,
+            "active shrub record was accidentally pruned");
 
     w = before; // rollback to a pending event and binding snapshot
     require(pn::pendingNatureFractures(w).size() == 2 &&
@@ -110,7 +121,19 @@ static void stageAndRetire() {
     require(host::stageNatureFall(w,first,changed) ==
                 pn::NatureFractureDisposition::Retry,
             "conflicting replay payload consumed old event");
-    (void)second;
+    // Import validation rejects multiple active fall identities for one
+    // stable plant even if the entity generation/ticks differ.
+    host::NatureFallHostState invalid;
+    invalid.records.push_back(fallRecord(first,oak));
+    invalid.records.push_back(fallRecord(second,oak));
+    std::string saved;
+    Archive archiveWriter(&saved);
+    host::io(archiveWriter,invalid);
+    host::NatureFallHostState decoded;
+    Archive archiveReader(saved);
+    host::io(archiveReader,decoded);
+    require(!archiveReader.ok(),
+            "ambiguous duplicate active plant journal accepted on load");
 }
 
 class NativeFallHost : public GameModule {
