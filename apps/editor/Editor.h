@@ -240,6 +240,9 @@ public:
     const AssocStatus& fileAssoc() const { return assoc_; }
     void registerFileAssoc();
     void reloadRules();                        // after rules change: views, palette
+    // Reload presentation assets without resetting project rules, FX, or editor policy.
+    // Call only outside a play session; GPU teardown/publication run on the editor thread.
+    void reloadVisualAssets();
     void showGamePicker() { showProjectHub(0); }
     void showProjectHub(int tab);   // 0: recent projects, 1: new project, 2: make a game (EditorProjects.cpp)
 
