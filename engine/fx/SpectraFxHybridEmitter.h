@@ -261,6 +261,8 @@ public:
         cpuHandle_={};
         impactFeedback_.reset();
         gpuDevice_=nullptr;
+        deferredGpuRelease_=false;
+        deferredGpuSince_=0;
         compaction_.release();
         alphaSort_.release();
         renderer_.release(); // only owned/local pipelines; shared lives in playback
@@ -288,6 +290,42 @@ public:
     SpectraFxExecutionBackend backend() const {return backend_;}
     const SpectraFxBackendDecision& decision() const {return decision_;}
     const Config& config() const {return config_;}
+    // True even after a GPU->CPU transition until the old GPU buffers
+    // have been safely retired. Include these slots in playback budgets.
+    bool gpuResourcesHeld() const {return slots_.evolution().ready();}
+    bool hasDeferredGpuRelease() const {return deferredGpuRelease_;}
+    uint64_t deferredGpuSince() const {return deferredGpuSince_;}
+    // Called at an outside-pass device safe point once each frame. On
+    // Metal, beginFrame waits for the 3-frame slot semaphore; 3 newer
+    // serials are required before resources last used at 'since' free.
+    // Unknown/zero serial is retained until explicit scene shutdown.
+    bool collectDeferredGpuRelease() {
+        if(!deferredGpuRelease_ || !gpuDevice_ ||
+           !gpuDevice_->canUpdateSharedBuffers()) return false;
+        const uint64_t now=gpuDevice_->frameSerial();
+        if(!now || !deferredGpuSince_ || now<deferredGpuSince_ ||
+           now-deferredGpuSince_<3) return false;
+        compaction_.release();
+        alphaSort_.release();
+        renderer_.release(); // only our local pipeline, not shared owner
+        rendererOwner_=nullptr;
+        slots_.shutdown();
+        gpuDevice_=nullptr;
+        deferredGpuRelease_=false;
+        deferredGpuSince_=0;
+        ++deferredGpuReleases_;
+        return true;
+    }
+    // Stopping a CPU fallback must not force premature GPU cleanup.
+    // The caller retains this emitter until the deferred retirement.
+    void stopCpuOnly(bool killCpu=true) {
+        if(cpu_ && cpuHandle_.valid()) {
+            if(killCpu) cpu_->kill(cpuHandle_);
+            else cpu_->stop(cpuHandle_);
+        }
+        cpuHandle_={};
+    }
+    uint64_t deferredGpuReleases() const {return deferredGpuReleases_;}
     uint64_t gpuRuntimeFallbacks() const {return runtimeFallbacks_;}
     uint64_t gpuSortedFrames() const {return sortedFrames_;}
     uint64_t gpuCompactedFrames() const {return compactionFrames_;}
@@ -295,7 +333,7 @@ public:
     const std::string& status() const {return status_;}
     uint32_t gpuActiveParticles() const {return slots_.activeCount();}
     uint64_t nominalGpuBytes() const {
-        if(!gpuActive()) return 0;
+        if(!gpuResourcesHeld()) return 0;
         return slots_.evolution().nominalGpuBytes()+
                compaction_.nominalGpuBytes()+alphaSort_.nominalGpuBytes();
     }
@@ -308,13 +346,12 @@ private:
         // update/render, so it never double-simulates the same frame.
         const FxHandle h=cpu_->play(config_.cpuEffect,origin_,direction_);
         if(!h.valid()) return false;
+        // Stop publishing callbacks immediately, but the underlying GPU
+        // textures and storage may still be referenced by command buffers
+        // from this frame. Keep them alive until a completed frame slot.
         impactFeedback_.reset();
-        compaction_.release();
-        alphaSort_.release();
-        renderer_.release(); // shared renderer is borrowed, never released
-        rendererOwner_=nullptr;
-        slots_.shutdown();
-        gpuDevice_=nullptr;
+        deferredGpuRelease_=slots_.evolution().ready();
+        deferredGpuSince_=gpuDevice_?gpuDevice_->frameSerial():0;
         backend_=SpectraFxExecutionBackend::Cpu;
         cpuHandle_=h;
         suspended_=false;
@@ -343,6 +380,9 @@ private:
     bool lodVisible_=true;
     uint64_t sortedFrames_=0;
     uint64_t runtimeFallbacks_=0;
+    bool deferredGpuRelease_=false;
+    uint64_t deferredGpuSince_=0;
+    uint64_t deferredGpuReleases_=0;
     bool sortCameraValid_=false;
     render::float3 sortCameraEye_{},sortCameraForward_{};
     uint64_t compactionFrames_=0;
