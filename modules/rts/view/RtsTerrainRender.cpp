@@ -158,6 +158,70 @@ void TerrainRenderer::loadTextures(gfx::Device&) {
     for (size_t i = 0; i < look_.layers.size(); ++i) { layerTex_[i] = load(look_.layers[i].texture); layerNrm_[i] = load(look_.layers[i].normal); }
     cliffTex_ = load(look_.cliffTexture);
     cliffNrm_ = load(look_.cliffNormal);
+    // GL33 has a 16-active-fragment-texture-unit limit on Apple.
+    // Pack all four independently tiled normal maps into one repeatable
+    // padded atlas. This leaves the splat, albedo, cliff and baked inputs
+    // intact. A failed atlas is never sampled: the shader falls back.
+    layerNormalAtlasSize_ = 0;
+    if (dev_ && dev_->info().backend == gfx::Backend::GL33) {
+        struct Source { int width=1, height=1; std::vector<uint8_t> rgba; };
+        Source source[4];
+        int tile = 1;
+        bool valid = true;
+        for (int i=0; i<4; ++i) {
+            const auto& name = i < int(look_.layers.size())
+                ? look_.layers[size_t(i)].normal : std::string{};
+            if (name.empty() || !layerNrm_[i].valid()) continue;
+            std::string bytes;
+            if (!platform::readContentFile(base_ + name, bytes) ||
+                !render::decodeImage(bytes,source[i].width,source[i].height,
+                                     source[i].rgba) ||
+                source[i].width<=0 || source[i].height<=0) {
+                valid=false;
+                break;
+            }
+            tile=std::max(tile,std::max(source[i].width,source[i].height));
+        }
+        // The atlas is optional. Larger images retain the existing bounded
+        // shader-tier fallback instead of silently downsampling source maps.
+        if (valid && tile<=2048) {
+            constexpr int gutter=16;
+            const int stride=tile+2*gutter;
+            const int extent=2*stride;
+            std::vector<uint8_t> rgba(size_t(extent)*size_t(extent)*4);
+            for (int layer=0;layer<4;++layer) {
+                const Source& src=source[layer];
+                for (int y=-gutter;y<tile+gutter;++y) {
+                    const int sy=((y%tile)+tile)%tile;
+                    const int iy=std::min(src.height-1,int((int64_t(sy)*src.height)/tile));
+                    for (int x=-gutter;x<tile+gutter;++x) {
+                        const int sx=((x%tile)+tile)%tile;
+                        const int ix=std::min(src.width-1,int((int64_t(sx)*src.width)/tile));
+                        const size_t dst=(size_t((layer/2)*stride+y+gutter)*extent+
+                                          size_t((layer%2)*stride+x+gutter))*4;
+                        if (src.rgba.empty()) {
+                            rgba[dst+0]=128;rgba[dst+1]=128;
+                            rgba[dst+2]=255;rgba[dst+3]=255;
+                        } else {
+                            const size_t from=(size_t(iy)*src.width+size_t(ix))*4;
+                            for(int channel=0;channel<4;++channel)
+                                rgba[dst+channel]=src.rgba[from+size_t(channel)];
+                        }
+                    }
+                }
+            }
+            gfx::TextureDesc td;
+            td.width=extent;td.height=extent;
+            td.data=rgba.data();td.filter=gfx::Filter::Linear;
+            td.mipmaps=true;td.repeat=false;td.label="terrain GL33 normal atlas";
+            layerNormalAtlas_=dev_->createTexture(td);
+            if (layerNormalAtlas_.valid()) {
+                layerNormalAtlasSize_=tile;
+                std::fprintf(stderr,"[terrain] GL33 layer normal atlas %dx%d, four source normals\\n",
+                             extent,extent);
+            }
+        }
+    }
 }
 
 void TerrainRenderer::shutdown(gfx::Device& dev) {
@@ -166,6 +230,9 @@ void TerrainRenderer::shutdown(gfx::Device& dev) {
     for (auto* l : {&apron_}) { dev.destroyBuffer(l->vb); dev.destroyBuffer(l->ib); *l = {}; }
     dev.destroyBuffer(water_.vb); dev.destroyBuffer(water_.ib); water_ = {};
     for (auto t : {cellTex_, dynTex_, splatTex_, visionTex_, white_, flatN_, gray_, heightField_.tex}) if (t.valid()) dev.destroyTexture(t);
+    dev.destroyTexture(layerNormalAtlas_);
+    layerNormalAtlas_ = {};
+    layerNormalAtlasSize_ = 0;
     cellTex_ = dynTex_ = splatTex_ = visionTex_ = white_ = flatN_ = gray_ = {};
     heightField_ = {};
     heightDirty_ = true;
@@ -772,7 +839,11 @@ gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant) {
         const int slot = dbase + tier;
         if (pipes_[slot].valid()) return pipes_[slot];
         if (shaderFailed_[slot]) continue;
-        const std::string def = "#define TERRAIN_TIER " + std::to_string(tier) + "\n#define TERRAIN_DETAIL " + std::to_string(dbase ? 1 : 0) + "\n";
+        const std::string def = "#define TERRAIN_TIER " + std::to_string(tier) +
+            "\n#define TERRAIN_DETAIL " + std::to_string(dbase ? 1 : 0) +
+            "\n#define TERRAIN_GL_NORMAL_ATLAS " +
+            std::to_string(layerNormalAtlas_.valid() && dev.info().backend ==
+                           gfx::Backend::GL33 ? 1 : 0) + "\n";
         const std::string vs = def + shaders::kTerrainVS, fs = def + shaders::kTerrainFS, msl = def + shaders::kTerrainMSL;
         gfx::ShaderDesc sd;
         sd.glslVertex = vs.c_str(); sd.glslFragment = fs.c_str(); sd.msl = msl.c_str();
@@ -906,6 +977,11 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
         if (!cliffTex) { u.cliff[2] = look_.slopeStart; u.cliff[3] = look_.slopeEnd; }
         u.blend[0] = look_.blendSharpness; u.blend[1] = look_.macro; u.blend[2] = 1.0f;
     }
+    if (layerNormalAtlasSize_ > 0) {
+        constexpr int gutter=16;
+        u.blend[3]=float(layerNormalAtlasSize_)/
+                   float(2*(layerNormalAtlasSize_+2*gutter));
+    }
     const Lod* apron = apron_.indexCount ? &apron_ : nullptr;
     // traced terrain shadows (Renderer3D trace tier): the height map of the drawn surface
     if (r.traceActive()) {
@@ -922,6 +998,7 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
             d.setTexture(5 + i, layerTex_[i].valid() ? layerTex_[i].tex : white_);
             d.setTexture(9 + i, layerNrm_[i].valid() ? layerNrm_[i].tex : flatN_);
         }
+        if (layerNormalAtlas_.valid()) d.setTexture(9,layerNormalAtlas_);
         d.setTexture(13, cliffTex_.valid() ? cliffTex_.tex : gray_);
         d.setTexture(14, cliffNrm_.valid() ? cliffNrm_.tex : flatN_);
         d.setTexture(15, visionTex_);
