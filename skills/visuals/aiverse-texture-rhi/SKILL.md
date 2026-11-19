@@ -1951,3 +1951,7 @@ Canonical GLSL `aiverseSampleVirtualAnisotropic` and MSL `aiverse_sample_virtual
 ## Stage 10CW — CI queue is not a PASS (SHA 0ad0d8a9)
 
 The focused Texture RHI workflow now triggers on pushes to `feature/texture-rhi-unification` with code/test/script paths. First run `44604340610` is queued for OpenEXR ON/OFF and Vulkan jobs, which must actually complete with build, new `virtual_texture_mip_pipeline`, and GLSL compiler results before claims. Mac Metal GPU and full engine are separate required gates.
+
+## Stage 10CX — cache identity also matters for revision skip (SHA fbaaf8ed)
+
+`VirtualTexturePageTable::rebuild` now requires the same cache object AND same revision to return early. A different cache object with coincidentally equal revision forces full table rebuild. New `virtual_texture_mip_pipeline` regression compares page table values when switching two caches with identical revision counters. Not yet compiled/tested; do not claim PASS until CI or Mac log evidence.

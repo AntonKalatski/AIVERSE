@@ -12711,3 +12711,13 @@ Require actual new SHA and `result=PASS`, `full_engine=1`, `safe_texture_tests=2
 **Execution evidence at this writing:** GitHub Actions workflow run `44604340610` for exact SHA `0ad0d8a9...` is **QUEUED**, with three queued jobs: Vulkan compute/source CTests; Linux texture OpenEXR=ON; Linux texture OpenEXR=OFF. No job has passed or failed yet. This is an actual scheduled GitHub workflow run, not a hardware test outcome. Inspect the run's exact logs and all job conclusions before reporting PASS. The old 21+7 Mac GPU PASS remains at `7494f32d` only.
 
 **Next:** review real GitHub Actions job logs once run concludes; fix any build/GLSL regression with source commit and separate handoff. Then run macOS whole-engine + seven native Metal GPU acceptance on latest feature source SHA. Do not infer green GPU tests from Linux shader compilation, and do not merge PR #21 until all necessary gates pass.
+
+## Stage 10CX — page-table cache-identity revision safety (2026-11-19)
+
+**Code SHA:** `fbaaf8ed87840d7cea7d2d931991a3673cb43184`. **Branch:** `feature/texture-rhi-unification`; PR #21 Draft, no main merge.
+
+**Bug/fix:** Two distinct `VirtualTexturePageCache` instances can have identical geometry and `mappingRevision()` counters but different physical resident pages. A long-lived `VirtualTexturePageTable::rebuild(newCache)` could incorrectly fast-return on equal revision and retain old sampled slice mappings. `VirtualTexturePageTable` now also records the non-owning identity `lastCache_`; skips / incremental dirty-region rebuilds are permitted only if both pointer identity and mapping revision match the same cache. New cache identity forcibly triggers a full rebuild, refreshing invalid old entries and new same-layer fallback. Clear resets pointer+revision. It never dereferences the cached pointer.
+
+**Regression:** extended `tests/render/virtual_texture_mip_pipeline.cpp` with two independent caches whose revision/geometry match but ready tile coordinates differ, and asserts table rebind invalidates stale samples. Existing streaming and indexed table CTests unchanged.
+
+**Validation:** GitHub source commit and ref update succeeded; new source/test not yet compiled/executed. The Linux feature-branch CI trigger is available, but prior run `44604340610` was only queued when last observed; a newer source push may cancel it and schedule a new run. Confirm exact SHA and individual job results before declaring a PASS. Full-engine Mac Studio and native Metal GPU tests remain outstanding.
