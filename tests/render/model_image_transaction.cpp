@@ -1,6 +1,7 @@
 // Stage 112 deferred native test: rollback survives pending/failed GPU fence.
 #include "engine/render/ModelImageUploadTransaction.h"
 #include "engine/render/ModelResourceCache.h"
+#include "engine/render/ModelStagingTransaction.h"
 #include <cassert>
 #include <set>
 #include <string>
@@ -294,6 +295,56 @@ int main(){
     render::releaseModel(device,mixed);
     shared->trim(device);
     assert(shared->gpuCount()==0 && device.live.empty());
+
+    // Generic native Model staging: a successful import publishes the
+    // unchanged Model* and a shared GPU texture only after commit().
+    render::ModelResourceCache native;
+    render::ModelImageRollbackPool nativeRollback;
+    native.bindResourceDevice(device,epoch.lease());
+    auto nativeModel=std::make_unique<render::Model>();
+    nativeModel->path="models/native.glb";
+    auto nativeImage=makeImage("native.png");
+    nativeImage.textureKey="textures/native.png";
+    nativeImage.textureCache=native.textures();
+    nativeModel->images.push_back(std::move(nativeImage));
+    render::Model* nativePointer=nativeModel.get();
+    {
+        render::ModelStagingTransaction tx(
+            device,native,nativeRollback,epoch.lease());
+        assert(tx.stage(nativeModel->path,std::move(nativeModel))==nativePointer);
+        assert(!native.find("models/native.glb"));
+        assert(native.textures()->gpuCount()==0);
+        assert(tx.commit()==1);
+    }
+    assert(native.find("models/native.glb")==nativePointer);
+    assert(native.textures()->gpuCount()==1);
+    assert(nativePointer->images[0].borrowedTexture);
+
+    // Aborted native import never becomes a cache tombstone and holds
+    // partially uploaded images until the Model's own completion fence.
+    device.complete=false;device.idle=false;
+    {
+        render::ModelStagingTransaction tx(
+            device,native,nativeRollback,epoch.lease());
+        auto invalid=std::make_unique<render::Model>();
+        invalid->path="models/cancelled.glb";
+        auto pic=makeImage("cancelled.png");
+        pic.textureKey="textures/cancelled.png";
+        pic.textureCache=native.textures();
+        invalid->images.push_back(std::move(pic));
+        assert(tx.stage("models/cancelled.glb",std::move(invalid)));
+        assert(!native.contains("models/cancelled.glb"));
+    }
+    assert(!native.contains("models/cancelled.glb"));
+    assert(native.pendingRetirements()==1);
+    assert(native.textures()->gpuCount()==1); // no aborted GPU-cache key
+    assert(!native.collectRetired(device));
+    device.complete=true;
+    assert(native.collectRetired(device));
+    assert(native.pendingRetirements()==0);
+    device.idle=true;
+    native.shutdown(device);
+    assert(device.live.empty());
 
     epoch.retire();
     bool stale=false;
