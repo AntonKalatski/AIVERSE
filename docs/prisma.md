@@ -2178,8 +2178,9 @@ does not synthesize true per-viewport GPU timing nor promise a
 frame-rate gain. Motion-vector reprojection, jitter sign and
 GLSL/MSL compilation still need native GPU validation.
 
-**Performed:** direct GitHub source edits and source readback only
-(structural checks in the Stage 45 handoff). **NOT RUN:** CMake,
+**Performed:** direct GitHub source edits and source readback,
+including **38/38 static presence checks** for the adaptive/preflight/
+shader-fallback wiring. These checks are not a native compile or GPU run. **NOT RUN:** CMake,
 C++/Obj-C++ compile, CTest, Metal/GL/GLES/Vulkan runtime,
 screenshot/PSNR/ghosting, GPU timing experiments, VRAM profiling,
 device-loss tests or CI. For implementation and next stage see
