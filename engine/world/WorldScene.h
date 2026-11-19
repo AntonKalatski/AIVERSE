@@ -2,6 +2,7 @@
 #include "WorldAssets.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/world/TerraWeave.h"
+#include "engine/world/TerraWeavePhenology.h"
 
 namespace aiverse::terraweave { class TerraWeaveForestScene; class TerraWeaveHorizonScene; }
 namespace aiverse::world {
@@ -19,6 +20,12 @@ public:
     void setVegetationClearings(std::vector<terraweave::RectCm> clearings);
     const std::vector<terraweave::RectCm>& vegetationClearings() const {
         return vegetationClearings_;
+    }
+    // Host-managed seasonal/PHYSIS bridge. Leaves cosmetic near-tree
+    // scatter intact, and rebakes only the distant Horizon atlas.
+    void setVegetationPhenology(terraweave::CanopyPhenology state);
+    const terraweave::CanopyPhenology& vegetationPhenology() const {
+        return vegetationPhenology_;
     }
     const AsyncChunkStream::Status& status()const{return stream_->status();}
     // Optional genre-independent presentation forest. Native hosts may feed
@@ -56,6 +63,8 @@ private:
     std::vector<terraweave::RectCm> vegetationClearings_;
     std::vector<terraweave::RectCm> previousVegetationClearings_;
     bool vegetationClearingsDirty_=false;
+    terraweave::CanopyPhenology vegetationPhenology_{};
+    bool vegetationPhenologyDirty_=false;
     float overhang_=0;                                        // "meshOverhang": units a mesh may reach past its chunk
     void releaseChunk(gfx::Device&,Prepared&);
     size_t uploadBytes_=16*1024*1024;
