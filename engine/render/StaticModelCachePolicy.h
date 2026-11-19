@@ -9,13 +9,15 @@
 
 namespace aiverse::render {
 
-// An explicit stable identity is mandatory. Never cache animation, morph, skin,
-// node-edited or runtime-mutable hierarchy transforms under an entity ID.
+// An explicit stable identity is mandatory. Models may *contain authored*
+// animation clips while a particular static instance remains at its bind
+// pose. Never cache an active pose, baked animation, skin or mutable hierarchy.
 inline bool staticModelCacheCandidate(const ModelDraw& d, bool activeDisplacement) {
     const Model* m = d.model;
     if (!m || !d.persistentId || !(d.flags & kDrawStatic) || activeDisplacement ||
         d.nodeWorld || d.pose || d.baked || !m->skins.empty() ||
-        !m->clips.empty() || m->geometry || m->nodes.empty())
+        m->geometry || m->nodes.empty() ||
+        m->bindWorld.size() != m->nodes.size())
         return false;
     return std::none_of(m->nodes.begin(), m->nodes.end(),
                         [](const Node& node) { return node.runtimeMutable; });
@@ -30,7 +32,8 @@ inline bool staticModelCacheGeometryCompatible(const StaticModelCache& cache,
     const Model* m = d.model;
     return m && cache.model == m && !activeDisplacement &&
         !d.nodeWorld && !d.pose && !d.baked && m->skins.empty() &&
-        m->clips.empty() && cache.transforms.size() == m->nodes.size() &&
+        m->bindWorld.size() == m->nodes.size() &&
+        cache.transforms.size() == m->nodes.size() &&
         cache.primitiveOffsets.size() == m->meshes.size() &&
         std::memcmp(cache.world.m, d.world.m, sizeof(d.world.m)) == 0;
 }
