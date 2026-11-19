@@ -27,12 +27,20 @@ fragment float4 fs_main(LumaComposeVaryings in [[stage_in]],
                         constant LumaComposeParams& params [[buffer(1)]],
                         texture2d<float> direct [[texture(0)]],
                         texture2d<float> receiverMaterial [[texture(1)]],
-                        depth2d<float> sceneDepth [[texture(2)]]) {
+                        depth2d<float> sceneDepth [[texture(2)]],
+                        depth2d<float> receiverDepth [[texture(3)]]) {
     float2 projectedUv=in.uv;
     float2 texUv=params.options.x>.5f ?
                  float2(projectedUv.x,1.0f-projectedUv.y):projectedUv;
     float depth=sceneDepth.sample(lumaCompositeNearest,texUv);
     if(depth>=.99999f)return float4(0);
+    // The material pass covers opaque Model/ModelDraw geometry only. If a
+    // custom terrain/mesh pass occludes it, the main depth differs: do not
+    // apply the hidden model's albedo to the front-most unknown material.
+    const float receiverZ=receiverDepth.sample(lumaCompositeNearest,texUv);
+    if(receiverZ>=.99999f ||
+       abs(receiverZ-depth)>max(params.options.y,1e-5f))
+        return float4(0);
     float4 material=receiverMaterial.sample(lumaCompositeNearest,texUv);
     float3 diffuse=clamp(material.rgb,0.0f,1.0f)*
                    (1.0f-clamp(material.a,0.0f,1.0f));
