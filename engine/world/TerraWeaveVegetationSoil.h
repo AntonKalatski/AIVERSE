@@ -104,6 +104,7 @@ struct RootState {
     uint64_t plantKey=0;
     uint32_t speciesId=0;
     PlantHabit habit=PlantHabit::Tree;
+    int32_t plantedHeightCm=0;  // stable planting Y: do not sink tree into an eroded pit
     uint32_t exposedCm=0;        // max positive soil loss among sampled ring
     uint32_t supportPermille=1000;
     bool hasVisibleRoots=false;
@@ -129,6 +130,7 @@ inline RootState evaluateRootSupport(const RootAnchor& anchor,
     result.plantKey=anchor.plantKey;
     result.speciesId=anchor.speciesId;
     result.habit=anchor.roots.habit;
+    result.plantedHeightCm=anchor.plantedHeightCm;
     if(anchor.roots.habit==PlantHabit::Grass)return result;
 
     static constexpr std::array<std::array<int32_t,2>,8> directions{{
