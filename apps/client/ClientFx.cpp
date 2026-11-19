@@ -7,7 +7,6 @@
 namespace aiverse::client {
 
 void ClientFx::init(gfx::Device& dev, const game::Rules& rules) {
-    device_=&dev;
     ps_.setQuality(fx::defaultQualityFor(dev, platform::isTouchDevice()));
     ps_.setFileReader([](const std::string& path, std::string& out) { return platform::readContentFile(path, out); });
     textures_.init(dev);
@@ -59,7 +58,6 @@ void ClientFx::shutdown() {
     gpuPlayback_.reset(); // destroy RHI handles before ParticleSystem/device
     gpuLibrary_.reset();
     gpuRoutes_.clear();
-    device_=nullptr;
     ps_.shutdown();
     textures_.shutdown();
 }
