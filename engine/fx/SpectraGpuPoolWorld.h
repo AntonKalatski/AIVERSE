@@ -193,6 +193,7 @@ private:
     struct Group {
         std::string key;
         std::unique_ptr<ComputeParticles> particles;
+        bool stepOk=false; // never draw stale GPU vertices after a failed step
     };
     bool defineCompiled(const std::string& name,const fx::EffectDef& effect,
                         const GraphRuntimeOptions& options,
