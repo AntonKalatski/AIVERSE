@@ -401,43 +401,54 @@ bool DiskIndexPages::readRoot(uint32_t primitive,uint32_t node,
 void DiskIndexPages::retainRequested(
         const std::vector<std::pair<uint32_t,uint32_t>>& wanted) {
     if(!state_)return;
-    auto& s=*state_;
-    std::lock_guard lock(s.mutex);
-    s.desired=std::set<Key>(wanted.begin(),wanted.end());
-    // An already running worker cannot be interrupted mid-read. Its output
-    // is discarded if the source is no longer in the desired set.
-    for(auto it=s.queue.begin();it!=s.queue.end();){
-        if(!s.desired.count(*it)){
-            s.pending.erase(*it);
-            it=s.queue.erase(it);
-        }else ++it;
+    const auto shared=state_;
+    size_t released=0;
+    {
+        std::lock_guard lock(shared->mutex);
+        shared->desired=std::set<Key>(wanted.begin(),wanted.end());
+        // An executing read may finish later. The worker checks desired
+        // again before publishing its verified result into the CPU cache.
+        for(auto it=shared->queue.begin();it!=shared->queue.end();){
+            if(!shared->desired.count(*it)){
+                shared->pending.erase(*it);
+                it=shared->queue.erase(it);
+            }else ++it;
+        }
+        for(auto it=shared->pages.begin();it!=shared->pages.end();){
+            if(!shared->desired.count(it->first)){
+                released+=it->second.size()*sizeof(uint32_t);
+                shared->readyBytes-=it->second.size()*sizeof(uint32_t);
+                it=shared->pages.erase(it);
+            }else ++it;
+        }
+        (void)scheduleLocked(shared);
     }
-    for(auto it=s.pages.begin();it!=s.pages.end();){
-        if(!s.desired.count(it->first)){
-            s.readyBytes-=it->second.size()*4u;
-            it=s.pages.erase(it);
-        }else ++it;
-    }
-    s.cv.notify_all();
+    if(released)releaseSharedDiskReady(released);
+    wakeSharedDiskIo(); // cancellation releases workers waiting on memory
 }
 
 bool DiskIndexPages::request(uint32_t primitive,uint32_t node) {
     if(!state_)return false;
-    auto& s=*state_;
+    auto shared=state_;
     const Key key{primitive,node};
-    std::lock_guard lock(s.mutex);
-    const auto it=s.entries.find(key);
-    if(s.stop||it==s.entries.end()||s.failures.count(key)||
-       !s.desired.count(key))return false;
-    if(s.pages.count(key)||s.pending.count(key))return true;
-    if(s.pending.size()>=s.queuedLimit){
-        ++s.counters.queueRefused;
+    std::lock_guard lock(shared->mutex);
+    const auto it=shared->entries.find(key);
+    if(shared->stop||it==shared->entries.end()||
+       shared->failures.count(key)||!shared->desired.count(key))
+        return false;
+    if(shared->pages.count(key)||shared->pending.count(key))return true;
+    if(shared->pending.size()>=shared->queuedLimit){
+        ++shared->counters.queueRefused;
         return false;
     }
-    s.pending.insert(key);
-    s.queue.push_back(key);
-    ++s.counters.requests;
-    s.cv.notify_one();
+    shared->pending.insert(key);
+    shared->queue.push_back(key);
+    ++shared->counters.requests;
+    if(!scheduleLocked(shared)){
+        shared->pending.erase(key);
+        shared->queue.pop_back();
+        return false;
+    }
     return true;
 }
 
@@ -453,13 +464,18 @@ bool DiskIndexPages::ready(uint32_t primitive,uint32_t node,
 }
 void DiskIndexPages::consume(uint32_t primitive,uint32_t node) {
     if(!state_)return;
-    auto& s=*state_;
-    std::lock_guard lock(s.mutex);
-    const auto it=s.pages.find({primitive,node});
-    if(it==s.pages.end())return;
-    s.readyBytes-=it->second.size()*4u;
-    s.pages.erase(it);
-    s.cv.notify_all();
+    auto shared=state_;
+    size_t bytes=0;
+    {
+        std::lock_guard lock(shared->mutex);
+        const auto it=shared->pages.find({primitive,node});
+        if(it==shared->pages.end())return;
+        bytes=it->second.size()*sizeof(uint32_t);
+        shared->readyBytes-=bytes;
+        shared->pages.erase(it);
+        (void)scheduleLocked(shared); // room available for a queued sibling
+    }
+    releaseSharedDiskReady(bytes);
 }
 bool DiskIndexPages::failed(uint32_t primitive,uint32_t node) const {
     if(!state_)return true;
@@ -478,14 +494,26 @@ DiskPageStats DiskIndexPages::stats() const {
 }
 bool DiskIndexPages::valid() const {return bool(state_);}
 void DiskIndexPages::close() {
-    if(!state_)return;
+    auto shared=std::move(state_);
+    if(!shared)return;
+    size_t released=0;
     {
-        std::lock_guard lock(state_->mutex);
-        state_->stop=true;
-        state_->cv.notify_all();
+        std::lock_guard lock(shared->mutex);
+        shared->stop=true;
+        shared->cancelled.store(true,std::memory_order_release);
+        shared->desired.clear();
+        shared->queue.clear();
+        shared->pending.clear();
+        for(const auto& [key,page]:shared->pages)
+            released+=page.size()*sizeof(uint32_t);
+        shared->pages.clear();
+        shared->readyBytes=0;
     }
-    if(state_->worker.joinable())state_->worker.join();
-    state_.reset();
+    if(released)releaseSharedDiskReady(released);
+    wakeSharedDiskIo();
+    // The executor job owns State with shared_ptr; close never detaches a
+    // thread that accesses this DiskIndexPages object or its ModelAsset.
+    // Any queued task sees cancelled and exits without publishing.
 }
 bool SceneStaging::writeDiskArchives(
         const std::string& directory,
