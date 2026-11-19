@@ -906,9 +906,12 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     const bool postEnabledForScene = !r3d_.studioDebugMode() && postFxInScene;
     // Only the renderer's camera receives jitter. UI, picking, overlays,
     // camera navigation and authored scene positions use the stable useCam.
+    const auto [renderW,renderH] = postEnabledForScene
+        ? prisma_.renderSizeForOutput(vp.w,vp.h)
+        : std::pair<int,int>{vp.w,vp.h};
     const RTSCamera renderCam = postEnabledForScene
-        ? prisma_.jitteredCamera(useCam, vp.w, vp.h) : useCam;
-    r3d_.beginScene(renderCam, vp.w, vp.h);
+        ? prisma_.jitteredCamera(useCam,renderW,renderH) : useCam;
+    r3d_.beginScene(renderCam,renderW,renderH);
     // Scene selection outline is a depth-tested posteffect, not an
     // inverted-hull ModelDraw vertex extrusion. Never enable in Game.
     r3d_.setSceneSelectionOutline(true);
@@ -926,7 +929,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     if (const auto& oc = view_.overlays().context(); !ws_.project.isFps() && overlayPreviewType >= 0 && oc.placeType >= 0)   // overlay preview ghost
         view_.drawGhost(r3d_, uint16_t(oc.placeType), oc.placeAt, oc.placeOk, grid_, time_);
     if (editOverlays && !planets && !ws_.project.isFps()) drawEditOverlays3D();
-    if (!planets && !ws_.project.isFps()) tickFx(cam, vp.w, vp.h, nullptr);   // agent previews (fx_preview) in the Scene view
+    if (!planets && !ws_.project.isFps()) tickFx(cam,renderW,renderH,nullptr);   // agent previews (fx_preview) in the Scene view
     gfx::PassDesc pass;
     pass.colorTarget = vp.color;
     pass.depthTarget = vp.depth;
@@ -1003,13 +1006,14 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
     refreshPrismaVolumes();
     prisma_.setViewId(prismaViewId);
     prisma_.applyCameraVolumes(prismaVolumes_, cam.eye());
-    const RTSCamera renderCam = prisma_.jitteredCamera(cam, vp.w, vp.h);
-    r3d_.beginScene(renderCam, vp.w, vp.h);
+    const auto [renderW,renderH]=prisma_.renderSizeForOutput(vp.w,vp.h);
+    const RTSCamera renderCam=prisma_.jitteredCamera(cam,renderW,renderH);
+    r3d_.beginScene(renderCam,renderW,renderH);
     setOverlayContext(vp, cam, true);
     view_.draw(r3d_, sc, time_, human_ ? &gs.vision[size_t(human_)] : nullptr, gs.grid);
     if (const auto& oc = view_.overlays().context(); overlayPreviewType >= 0 && oc.placeType >= 0)
         view_.drawGhost(r3d_, uint16_t(oc.placeType), oc.placeAt, oc.placeOk, gs.grid, time_);
-    tickFx(cam, vp.w, vp.h, &sc.objects);
+    tickFx(cam,renderW,renderH,&sc.objects);
     gfx::PassDesc pass;
     pass.colorTarget = vp.color;
     pass.depthTarget = vp.depth;
