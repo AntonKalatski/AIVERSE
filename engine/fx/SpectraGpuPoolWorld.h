@@ -64,6 +64,7 @@ struct PoolCheckpointStats {
     uint64_t gpuDeviceUnhealthy=0;
     uint64_t gpuKillUploadFailures=0;
     uint64_t gpuComputeBeginFailures=0;
+    uint64_t gpuResetFailures=0;
     uint64_t gpuPassOrderRejections=0;
     uint64_t killScatterDispatches=0;
     size_t killIndexBytes=0;
