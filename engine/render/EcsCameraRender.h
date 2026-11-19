@@ -4,6 +4,7 @@
 #pragma once
 #include "../core/ECS.h"
 #include "../sim/CameraComponents.h"
+#include "../sim/CameraViewportComponents.h"
 #include "../sim/SceneHierarchy.h"
 #include "Math3D.h"
 #include <cmath>
@@ -17,6 +18,8 @@ struct EcsCameraView {
     CameraOutputComponent output{};
     CameraUpdateComponent update{};
     CameraDependenciesComponent dependencies{};
+    CameraViewportComponent viewport{};
+    CameraStackComponent stack{};
     uint32_t visibilityMask = UINT32_MAX;
     int32_t priority = 0;
 };
@@ -59,6 +62,8 @@ inline bool resolveEcsCamera(const aiverse::World& world, aiverse::Entity entity
     if (const auto* output=world.tryGetConst<CameraOutputComponent>(entity)) out.output=*output;
     if (const auto* update=world.tryGetConst<CameraUpdateComponent>(entity)) out.update=*update;
     if (const auto* inputs=world.tryGetConst<CameraDependenciesComponent>(entity)) out.dependencies=*inputs;
+    if (const auto* layout=world.tryGetConst<CameraViewportComponent>(entity)) out.viewport=*layout;
+    if (const auto* stack=world.tryGetConst<CameraStackComponent>(entity)) out.stack=*stack;
     out.visibilityMask = settings->visibilityMask;
     out.priority = settings->priority;
     return true;

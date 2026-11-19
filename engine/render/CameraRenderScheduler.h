@@ -87,6 +87,7 @@ public:
         };
         std::unordered_map<uint64_t, std::vector<size_t>> producerGroups;
         size_t screen = n;
+        bool layeredScreens=false;
         for (size_t i=0;i<n;++i) {
             const auto& output = cameras[i].output;
             if ((output.width == 0) != (output.height == 0)) {
@@ -100,14 +101,16 @@ public:
                 }
                 producerGroups[output.targetAssetKey].push_back(i);
             } else if (output.kind == CameraOutputKind::Screen) {
+                layeredScreens=layeredScreens || cameras[i].viewport.enabled || cameras[i].stack.overlay;
                 if (screen == n || cameras[i].priority > cameras[screen].priority ||
                     (cameras[i].priority == cameras[screen].priority &&
                      cameras[i].entity.packed() < cameras[screen].entity.packed()))
                     screen = i;
             } else issue(i,CameraPlanIssue::InvalidOutput);
         }
-        // One full-frame screen camera until explicit viewport/stack support.
-        for (size_t i=0;i<n;++i) if (i!=screen &&
+        // Without explicit viewport/stack authoring keep legacy single screen.
+        // When composition is opted in all screen cameras render to isolated RTs.
+        for (size_t i=0;i<n && !layeredScreens;++i) if (i!=screen &&
             cameras[i].output.kind==CameraOutputKind::Screen && !blocked[i])
             issue(i,CameraPlanIssue::ScreenSuppressed);
         std::unordered_map<uint64_t,size_t> producer;

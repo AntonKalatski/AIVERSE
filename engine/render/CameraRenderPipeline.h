@@ -9,6 +9,7 @@
 #include "Renderer3D.h"
 #include "CameraRig.h"
 #include "CameraPostFxPool.h"
+#include "CameraCompositor.h"
 #include <cstdint>
 #include <unordered_set>
 #include <utility>
@@ -17,7 +18,7 @@
 namespace aiverse::render {
 
 enum class CameraExecutionIssue : uint8_t {
-    MissingInput, TargetUnavailable, InvalidFramebuffer, SharedPostProcess, DeviceLost
+    MissingInput, TargetUnavailable, InvalidFramebuffer, SharedPostProcess, DeviceLost, CompositeFailed
 };
 struct CameraExecutionDiagnostic {
     Entity entity{};
@@ -36,11 +37,15 @@ public:
                          CameraRenderScheduler& scheduler)
         : device_(device), renderer_(renderer), scheduler_(scheduler) {
         targets_.init(device);
+        screenTargets_.init(device);
     }
     CameraRenderTargetPool& targets() { return targets_; }
     const CameraRenderTargetPool& targets() const { return targets_; }
     // Requires a host-confirmed GPU idle point (or final device teardown).
-    void shutdownAfterGpuIdle() { targets_.shutdownAfterGpuIdle(); scheduler_.reset(); }
+    void shutdownAfterGpuIdle() {
+        compositor_.shutdownAfterGpuIdle();screenTargets_.shutdownAfterGpuIdle();
+        targets_.shutdownAfterGpuIdle(); scheduler_.reset();
+    }
 
     template<class Submit>
     CameraExecutionResult execute(const World& world,uint64_t frame,double seconds,
@@ -70,6 +75,17 @@ public:
         CameraExecutionResult result;
         targets_.collectCompleted();
         result.plan=scheduler_.buildPlan(world,frame,seconds,renderOrigin);
+        // A full-screen view plus explicit viewports/overlays uses isolated
+        // per-Entity screen RTs and a single final screen composite pass.
+        bool compositing=false;
+        std::vector<EcsCameraView> screenViews;
+        visitEcsCameras(world,[&](const EcsCameraView& v){
+            if(v.output.kind==CameraOutputKind::Screen) {
+                screenViews.push_back(v);
+                compositing=compositing || v.viewport.enabled || v.stack.overlay;
+            }
+        },renderOrigin);
+        compositing=compositing && screenViews.size()>1;
         std::unordered_set<PostProcess*> usedPost;
         std::unordered_set<uint64_t> failedTargets;
         for(const auto& planned: result.plan.jobs) {
@@ -108,6 +124,25 @@ public:
                 pass.colorTarget=target->color;
                 pass.depthTarget=target->depth;
             }
+            const bool compositedScreen=compositing && view.output.kind==CameraOutputKind::Screen;
+            if(compositedScreen) {
+                const auto rect=cameraViewportRect(view.viewport,device_.framebufferWidth(),device_.framebufferHeight());
+                if(rect.w<=0 || rect.h<=0) {
+                    ++result.skipped;
+                    result.diagnostics.push_back({view.entity,CameraExecutionIssue::InvalidFramebuffer});
+                    continue;
+                }
+                width=view.output.width?int(view.output.width):rect.w;
+                height=view.output.height?int(view.output.height):rect.h;
+                const auto* screenTarget=screenTargets_.acquire(view.entity.packed(),width,height,false,true);
+                if(!screenTarget) {
+                    ++result.skipped;
+                    result.diagnostics.push_back({view.entity,CameraExecutionIssue::TargetUnavailable});
+                    continue;
+                }
+                pass.colorTarget=screenTarget->color;
+                pass.depthTarget=screenTarget->depth;
+            }
             if(width<=0 || height<=0) {
                 ++result.skipped;
                 result.diagnostics.push_back({view.entity,CameraExecutionIssue::InvalidFramebuffer,
@@ -141,11 +176,26 @@ public:
                     targets_.markInvalid(view.output.targetAssetKey);
                     failedTargets.insert(view.output.targetAssetKey);
                 }
+                if(compositedScreen)screenTargets_.markInvalid(view.entity.packed());
                 continue; // no acknowledgement on reported GPU failure
             }
             if(target)targets_.markReady(view.output.targetAssetKey);
+            if(compositedScreen)screenTargets_.markReady(view.entity.packed());
             scheduler_.acknowledge(view.entity,view.output,frame,seconds,true);
             ++result.submitted;
+        }
+        if(compositing) {
+            std::vector<CameraCompositeLayer> layers;
+            const int fbW=device_.framebufferWidth(),fbH=device_.framebufferHeight();
+            for(const auto& view:screenViews) {
+                auto color=screenTargets_.color(view.entity.packed());
+                auto rect=cameraViewportRect(view.viewport,fbW,fbH);
+                if(!color.valid() || rect.w<=0 || rect.h<=0)continue;
+                layers.push_back({color,rect,int(view.stack.order),
+                    float(view.stack.opacity.toDouble()),view.entity.packed()});
+            }
+            if(!compositor_.init(device_) || !compositor_.composite(layers,fbW,fbH))
+                result.diagnostics.push_back({{},CameraExecutionIssue::CompositeFailed});
         }
         return result;
     }
@@ -174,6 +224,8 @@ private:
     Renderer3D& renderer_;
     CameraRenderScheduler& scheduler_;
     CameraRenderTargetPool targets_;
+    CameraRenderTargetPool screenTargets_;
+    CameraCompositor compositor_;
 };
 
 } // namespace aiverse::render
