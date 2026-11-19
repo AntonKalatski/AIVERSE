@@ -2728,3 +2728,38 @@ Added owner-thread `requestedCell_` updated after camera hysteresis chooses `des
 **Limitations:** Docs describe committed source behavior, not verified on-device guarantees; older archived TWH6/TWH7 passages in this large document are historical and current version is explicitly called out at Stage 22. Neighbor-aware fallback deliberately does not remove cliffs or height discontinuities. Diagnostic provenance is not persisted in the archive; a zero counter without availability is not an observed zero.
 
 **Next agent action:** The independent testing agent should compile and execute `aiverse_terraweave_horizon_test` plus related terrain/forest/scene tests, run an archive TWH8 hit/miss fixture and revision/empty-region/GPU cache lifecycle tests, inspect real slope/near-far seams and captures on target backends, measure draw/triangle/overdraw budgets, then append actual command outputs and outcomes here. If a source bug is found, create a focused source commit with an updated handoff. Preserve universal (genre-independent) APIs, avoid unrelated FPS/RTS code, and do not merge PR #24 until verified.
+
+## Stage 23a — CI log triage and Stage 22 regression tests (SOURCE/TESTS COMMITTED; NEW CI PENDING)
+
+**Date:** 2026-11-19. **Branch:** `feature/terraweave`; PR #24 remains Draft.
+
+### Observed CI evidence
+
+The repository's `.github/workflows/terraweave.yml` registers an isolated Release CMake/Ninja build with GCC and Clang. It enables assertions with `-UNDEBUG`, builds nine TerraWeave test targets and runs CTest on the TerraWeave label/name pattern.
+
+**Actually executed upstream (historical head only):** GitHub Actions run [44320349413](https://github.com/chromealex/AIVERSE/actions/runs/44320349413) completed with `failure` on earlier feature branch commit `73d338f5...`. Both GCC job `134857326655` and Clang job `134857327368` reported successful CMake configure but failed **Build TerraWeave tests** at `TerraWeaveHorizonScene.h:240`:
+`prepared->bake.terrainResolution` attempts a member access on `std::shared_ptr<const HorizonBake>` instead of dereferencing `prepared->bake->terrainResolution`. As a result, **CTest was skipped**. These logs confirm a real compilation defect in older source, NOT a test pass on the current branch.
+
+Direct cloning from `github.com` into the agent's container failed with `Could not resolve host: github.com`; no full repository checkout, native engine GPU or local CMake invocation was possible in this environment. GitHub connector read/write, Actions metadata and job log retrieval were available.
+
+### Fixes and test source commits
+
+- `0d5ab33ede678b6bf3c337534f854c86353ee29e`: `engine/render/TerraWeaveHorizonScene.h` — fix erroneous `prepared->bake.terrainResolution` member expression in the full GPU model publication path. No intended behavior change beyond repairing compilation.
+- `40cf576a920089282b621dc1d8d26d4557ef4a71`: `engine/world/TerraWeaveWorldHeightSource.h` — explicitly include `<utility>` required by the new `std::pair<int32_t,int32_t>` slope API rather than relying on transitive declarations.
+- `0fed1bbb4efaa52d127045c3e1faaa4b0be301e6`: `tests/terraweave_horizon_test.cpp` — add Stage 22 assertions for neighbor-aware Q16 slopes across continuous positive/negative world tiles, absent/discontinuous neighbors and invalid radius/tolerance; TWH8 archive provenance omission, initial no-region Horizon runtime flags. Existing isolated CI already builds and executes this target; no new target registration needed.
+- This handoff document append records the stage.
+
+### Validation status (do not conflate earlier and latest heads)
+
+- **Observed failure (older source):** GCC/Clang compilation error in historical CI, logged above; CTest skipped.
+- **Confirmed actions (current branch):** three GitHub source/test commits successful. New GitHub Actions run [44477600335](https://github.com/chromealex/AIVERSE/actions/runs/44477600335), for head `0fed1bbb...`, was observed with both GCC and Clang jobs **queued**, not completed.
+- **Not performed:** local CMake/Ninja build, compiler invocation against the complete repository, passing or failing results from newly committed regression assertions, editor/game runtime, TWH8 cross-compiler fixture, Metal/GL/Vulkan screenshots, frame-time and overdraw benchmark.
+- Therefore **NO current-HEAD build or CTest pass may be claimed**. PR remains Draft.
+
+### Exact next steps for testing agent
+
+1. Await or inspect the **current commit**'s GCC and Clang CI jobs; extract errors from both job logs and fix compiler issues before interpreting CTest.
+2. Once builds succeed, verify all nine isolated TerraWeave targets and their CTest results. Record actual counts and full failing test cases here.
+3. Add/execute GPU lifecycle tests for requested vs active region, `staleProxy`, resolved-empty region, CPU/GPU cache restores, revision changes and partial atlas/VB/full uploads. Existing Stage 22 test additions cover the **CPU snapshot and archive**, not a live GPU scene.
+4. Capture real editor/game seams at continuous/discontinuous tile boundaries, horizons under camera teleport and near/middle/far forest transitions; measure draw calls, vertex/index counts and GPU time on each supported backend.
+5. If tests reveal new source bugs, commit narrowly scoped fixes and append another stage with exact SHA, files, observed results and remaining limitations. Preserve TWH8 format and genre-independent APIs. **Do not merge PR #24 without actual verified tests.**
