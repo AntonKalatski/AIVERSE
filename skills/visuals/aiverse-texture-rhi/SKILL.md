@@ -1048,3 +1048,26 @@ GPU results without recompiling the entire editor. Full
 GPU tests passed until the CTest executed and its exact readback
 comparisons are reported.
 
+
+## Stage 10BF — measurable native Metal GPU phases
+
+`tests/render/metal_texture_gpu.mm` now prints `TIMING` lines
+for `Metal device_and_layer_init_ms`, per-Texture3D/array/cube
+`create_and_upload_ms`, per-group `submit_ms`,
+`callback_wait_ms`, `poll_frames`, `compare_ms`, optional
+`gpu_command_ms`, and fixture total. These are wall-clock
+timings unless `gpu_command_ms` is valid; the latter measures
+the *entire* Metal readback command buffer (not pure blit throughput).
+The former includes startup, drawables, semaphore waits and 10ms
+polling. No latency threshold is enforced, no measured values
+can be claimed until the instrumented fixture is run.
+
+Compile the opt-in Mac GPU target and run CTest directly after
+pulling the branch:
+```bash
+git pull --ff-only origin feature/texture-rhi-unification
+cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parallel 4
+ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
+```
+Source commit `50656c4bd120755e6fa14bf8d2774aeb77b7e752`.
+
