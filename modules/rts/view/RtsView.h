@@ -657,7 +657,7 @@ private:
         render::float3 lastPos{};
         bool dead=false;
     };
-    void rememberReloadPlayback(uint64_t key,const EntityAnim& state);
+    void rememberReloadPlayback(uint64_t key,const EntityAnim& state) noexcept;
 
     struct Tracer { SceneObject from, to; float age = 0; };
     std::vector<Tracer> tracers_;
