@@ -106,3 +106,68 @@ Nine editable PBR presets and a safe project installer are documented in
 [the material library](../examples/shader_graph/material_library/README.md).
 The HDR test scene accepts `AIVERSE_MATERIAL_LIBRARY` to render their actual
 material graphs as a gallery on GL and Metal.
+
+
+## Virtual texture sampling in material graphs
+
+Material-domain Shader Graph now provides a
+`sampleVirtualTexture` fragment node with **one UV input**.
+It samples the active `Renderer3D::ModelVirtualTextureBinding`
+using the existing physical VT atlas and page table, rather than
+creating a second virtual-texture implementation. If the material
+has no valid VT binding, the node safely samples the ordinary
+`tex1` source texture (the existing coarse/full-resolution
+fallback). `srgb:true` on the node requests the compiler's
+standard sRGB-to-linear conversion after sampling.
+
+Minimal graph:
+```json
+{
+  "version": 1,
+  "domain": "material",
+  "nodes": [
+    {"id":"uv0","op":"uv","inputs":[]},
+    {"id":"baseVT","op":"sampleVirtualTexture",
+     "inputs":["uv0"],"srgb":true}
+  ],
+  "outputs":{"color":"baseVT"}
+}
+```
+
+The compiler sets `Program::usesVirtualTexture` when the node
+appears. The model renderer assigns physical atlas and page table
+to the next two free texture slots after the graph's own texture
+resources, which start at slot 13. The supported layouts on the
+current GL33/GLES3/Metal RHI are:
+
+| Independent graph textures | VT physical atlas | VT page table |
+| --- | --- | --- |
+| 0 | tex13 | tex14 |
+| 1 | tex14 | tex15 |
+
+A graph with `sampleVirtualTexture` and more than one
+**independent** graph texture fails graph compilation with
+an explicit slot-budget error; it is never silently rendered
+with a broken binding. The node is fragment-only and material-
+only: vertex graphs, postprocessing and particle graphs cannot
+use it. It is subject to the existing eight-sample graph budget.
+
+If the application enables this path via
+`renderer.setModelVirtualTextureResolver(...)`, the compiler
+creates a VT material shader permutation; `SG_SAMPLE_VIRTUAL`
+uses the canonical `VirtualTextureSampling.h` GLSL/MSL
+lookup and U6 layer/gutter parameters. If the resolver returns
+no binding, the same graph runs with `SG_SAMPLE` on tex1.
+Shader Graph material GPU equivalence and hashing now include
+whether it declares the VT node. GPU Metal ICB batches remain
+unavailable for graph-backed materials; the ordinary model
+render path still handles them.
+
+**Scope:** this virtualizes the material's explicit VT sample
+(and the built-in base sample in the same VT shader
+permutation). Other `sampleTexture` graph nodes continue to
+use their normal project texture bindings, and the current
+system does not expose arbitrary N-domain bindless textures
+inside one graph. Alpha-mask R8 reduction is still excluded
+for graph-backed assets. The new node and shaders have NOT
+been native-compiled or GPU-tested yet.
