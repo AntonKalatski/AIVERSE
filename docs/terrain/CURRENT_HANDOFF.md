@@ -1,6 +1,15 @@
 # TerraWeave — current agent handoff entry point
 
 
+> **Stage70 65k cap regression (2026-11-20):**
+> `0f3ec2da` adds a pure CTest fixture covering the full
+> 65,536 body-tagged 4m cell limit, 1,024-cell bounded scheduler
+> slices and rejection of a 65,537th cell before mutation.
+> [Standalone handoff](qa-2026-11-20-stage70-sparse-cap-65536-handoff.md).
+> **Source committed; native compiler/CTest and performance NOT RUN.**
+>
+
+
 > **Stage70 native NEREID coordinate hardening (2026-11-20):**
 > overflow guard source `730271f7`, authored mouth regression
 > `83c45279`, direct empty-ECS signed-boundary native smoke
