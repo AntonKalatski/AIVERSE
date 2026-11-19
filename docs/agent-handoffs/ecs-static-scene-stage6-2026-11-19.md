@@ -7,8 +7,9 @@ Parent handoffs:
 - `docs/agent-handoffs/ecs-static-scene-stage4-2026-11-19.md`
 - `docs/agent-handoffs/ecs-static-scene-stage5-2026-11-19.md`
 
-**Status:** Planned Stage 6 source and documentation committed.
-**No Stage 5 or Stage 6 native compilation/CTest/RSS results were
+**Status:** Stage 6 source and documentation committed, including
+typed multi-domain inspector registry and the final one-shot validation
+script. **No Stage 5 or Stage 6 native compilation/CTest/RSS results were
 available in this turn.** The user's last reported passing integration
 result (Stage 4) was **7/7 targeted CTests Passed**. Do not conflate
 that result with code introduced in Stages 5/6.
@@ -187,6 +188,20 @@ contract, examples and the required single final run.
   scene-scoped AGENTS continuation rules.
 - `492a474c00096a7a9ea0e9aa524c46c82617e28e` —
   gameplay agent skill.
+- `5f59e23b613d863b90748c475f2242d449e4451c` —
+  initial Stage 6 agent handoff.
+- `7595e49cbdb86dd69cb7fec5c1921154485de887` —
+  type-erased multi-domain read-only Inspector registry.
+- `27e47b97d64d2552808dee7e0c6fa730158ec88b` —
+  static Inspector registry contract test for two typed domains.
+- `4b14d0d45bef0407fc58704fb7340b66ef95ce01` —
+  document existing native editor Inspector extension API.
+- `ec2084408cf1025be0e72067ac008c781009de59` —
+  architecture documentation for multi-domain native Inspector.
+- `5fabf592ca08088c9f3e12e23e9995bc36243e5b` —
+  update Stage 6 handoff with those additions.
+- `054ffdb54f7a54a3708b6ca556bbfed069c2d2af` —
+  propagate CMake/CTest failure even within logged pipeline.
 
 This handoff is a later commit. Use `git rev-parse HEAD` after pulling
 to identify the exact unverified Stage 6 source snapshot.
