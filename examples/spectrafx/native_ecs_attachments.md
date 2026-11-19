@@ -69,3 +69,52 @@ Build on macOS with Clang and the Metal device, run
 and add coverage for kill shader mode 6, fragments, empty-kill frames,
 source generation recycling, committed tick rollback, and multi-emitter
 GPU/CPU fallback. No build or test has been run for this Stage 36 handoff.
+
+## Stage 38 — interpolated poses and Device reconstruction
+
+The sample now uses `spectra::GpuEcsPoseInterpolator`, exported by
+`<aiverselib/genre/SpectraFX.h>`. The presentation thread captures fixed
+`DemoPose` coordinates from the **committed** ECS World once per tick.
+Its `prepare(...,dt,alpha)` accepts render interpolation
+`alpha` from 0 to 1, keeps up to two committed render-pose snapshots
+and blends only entities with the **same packed generation ID**
+appearing in adjacent ticks. A newly recycled entity index, a missing
+pose, or a skipped committed tick will **snap**, never interpolate from
+an unrelated old entity. Authoritative ECS World is not modified.
+
+The sample exposes `rebuildOnRecoveredDevice(recoveredDevice)`:
+it exports the existing pool's authored effect definitions as a CPU-only
+`PoolRecoveryManifest`, shuts down GPU/CPU resources while the **old
+Device is still alive**, invalidates presentation source tracking and pose
+history, and imports the definitions into the **same pool object** using a
+healthy replacement graphics Device. Existing presenter effect policies
+are preserved, but all live GPU particles, source IDs and render
+timelines are deliberately discarded. On the next successful
+`prepare`, committed ECS sources are reconstructed. If importing
+`RequireGpu` effects into an unsupported backend fails, the pool is
+not published as recovered.
+
+```cpp
+// After the host has created a recovered Device, while the old Device
+// still exists so the old pool can dispose of its resources:
+bool recovered=fx.rebuildOnRecoveredDevice(recoveredDevice);
+// The host may now destroy the old Device.
+// Only on success may presentation resume from the committed World.
+```
+
+For other hosts, `pool.exportRecoveryManifest()` can be called even
+while the existing GPU is unhealthy (but the pool object must still
+exist). Create a **fresh** `GpuPoolWorld` and call
+`fresh.importRecoveryManifest(&recoveredDevice,manifest)`. Recreate
+the ECS presenter against that fresh pool. Neither path promises to
+restore GPU-resident particle state or use stale GPU checkpoints.
+
+The pool's `resetReport()` exposes which GPU groups already accepted
+a partial reset, how many remain, and whether a device-loss rebuild is
+required. While `presentationBlocked()` is true, no new GPU scene
+frames, sources or effects may be emitted. An accepted group reset is
+an **RHI command encoding status**, not a claim that the GPU has
+completed the work.
+
+No native sample, test suite or Metal device run has been executed
+for this stage.
