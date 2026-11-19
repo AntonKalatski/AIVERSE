@@ -201,8 +201,10 @@ void Editor::shutdown() {
     // A hosted GameClient may have submitted resources in an earlier GUI
     // frame. Its GPU handles must survive until a true graphics completion
     // signal; do not release them simply because the Game tab was closed.
-    if (dev_->waitForSubmittedGpuWork())
+    if (dev_->gpuHealthy() && dev_->waitForSubmittedGpuWork())
         clientHost_.drainAfterGpuIdle();
+    else if (!dev_->gpuHealthy())
+        clientHost_.abandonOnDeviceLoss();
     gameFxBridge_.detach();
     sim_.reset();
     gameFx_.shutdown();
@@ -210,8 +212,10 @@ void Editor::shutdown() {
     windows_.clear(); // All windows (including ShaderGraph previews) retire owned resources.
     // The last submitted GPU frame may still reference ShaderGraph
     // pipelines/buffers/portrait resources queued by window destruction.
-    if (dev_->waitForSubmittedGpuWork())
+    if (dev_->gpuHealthy() && dev_->waitForSubmittedGpuWork())
         gpuResourceRetirement_.drainAfterGpuIdle(*dev_);
+    else if (!dev_->gpuHealthy())
+        gpuResourceRetirement_.abandonDevice(*dev_);
     // Shut down after last frame submission. Only an actual successful
     // graphics-queue idle barrier permits destroying ImGui-referenced
     // viewport handles; otherwise leave them owned by the device until
