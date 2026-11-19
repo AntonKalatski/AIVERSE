@@ -771,3 +771,92 @@ integration, distant Horizon region transitions, and GPU/IO
 performance. Terra's independently developed custom material
 paths or transparent transition draws may need additional
 feedback policies beyond this rigid-model bridge.
+
+
+### Runtime Terra atlas page files and Horizon revision switch
+
+Use `engine/gfx/VirtualTexturePageArchiveWriter.h` for generic RGBA8
+assets or `engine/render/TerraWeaveVirtualAtlasArchive.h` to pack
+Terra-generated RGBA8 directly from retained CPU memory, before
+`uploadModel` frees `Image::rgba`. For an active Horizon region
+whose `HorizonBake::atlasRgba` is available:
+
+```cpp
+gfx::VirtualTextureArchivePackConfig settings;
+settings.pageSize = 128;
+settings.gutter = 2;
+gfx::VirtualTextureArchiveVersion nextVersion;
+std::string error;
+render::TerraWeaveVirtualAtlasSource source{
+    int(bake.atlasWidth), int(bake.atlasHeight),
+    std::span<const uint8_t>(bake.atlasRgba)};
+bool packed = render::packTerraWeaveAtlas(
+    cacheRoot / "horizon-vt", horizonRevision, source,
+    settings, nextVersion, error);
+```
+
+The writer generates the same `m<MIP>/l<LAYER>/x<X>_y<Y>.rgba`
+page paths that `VirtualTextureDiskQueue` reads, applies
+deterministic 2x2 RGBA box mip filtering and clamped page gutters,
+and publishes the complete version via a same-filesystem
+directory rename. Existing versions are immutable and stay
+available until readers/GPU accesses have retired.
+
+After packing, on the graphics-device thread, prepare the new
+streamer while the previous one remains active:
+
+```cpp
+render::TerraWeaveVirtualAtlasSession atlasSession(dev);
+if (atlasSession.prepare(nextVersion, /*physicalPages=*/128)) {
+    // Called each frame while the new archive's disk reads and
+    // GPU page uploads progress, not in a worker thread.
+    atlasSession.pumpCandidate(8);
+    if (atlasSession.candidateFallbackResident() &&
+        atlasSession.promote(feedbackPass)) {
+        // Bind the NEW active()->physicalAtlas() and
+        // active()->pageTableTexture() in the virtual-sampling shader.
+        // Then update the active VT resolver to the matching generation.
+        terraFeedback.beginFrame(); // remove stale per-material page keys
+    }
+}
+```
+
+Promote only at a frame boundary with no outstanding old feedback
+readback; it will refuse a switch while one is pending/unconsumed.
+The old streamer is retained separately. After an **actual GPU fence**
+confirms all prior commands no longer reference the old atlas/page
+table, call `atlasSession.retireCompletedGpuWork()`. Never infer that
+a frame delay alone is a GPU fence. Switching to the new streamer
+changes page ID ownership: the application must swap its
+material sampling bindings and feedback resolver in the same
+frame. Continue `feedbackPass.updateStreaming(*atlasSession.active(),
+budget)` thereafter. If the new archive or GPU allocation fails,
+the previous active atlas remains unaffected.
+
+For an unrotated material whose UVs select a subrectangle of
+a shared Terra impostor atlas, use
+`terraWeaveAtlasMappingForMaterial(version,material,mapping,layer)`.
+It includes `Material::uvScale` and `uvOffset` in the virtual UVs.
+Nonzero `uvRotation` currently returns false deliberately because
+the compact feedback U0 virtual-UV mapping does not yet support
+rotation. This avoids silently loading unrelated atlas pages.
+A `setLiveMaterialMapper` callback can return the mapping for
+the active Horizon atlas model (material with `baseTex=0`);
+it must distinguish old/transition models using real model
+identity, not just `Model::path`. Forest impostors use their
+actual per-azimuth `ModelDraw::materials` overrides.
+
+The writer works on one VT *sampling domain* at a time: all
+image layers in one archive must have identical width/height.
+Different-sized forest atlases may use separate VT domains,
+or a build-time common atlas layout with explicit UV scale.
+`TerraWeaveVirtualAtlasSession` handles one active domain;
+it does not combine independent page-table resources.
+
+The archive writer and session do **not** modify the main model
+shader to sample virtual data. Actual page-table sampling must
+be bound by the game's material/shader integration, using
+`VirtualTextureSampling.h`. Until this step, the feedback
+and disk streaming pipeline may operate but the main draw
+still samples the regular material texture. The implementation
+has not been compiled or exercised on the GPU yet.
