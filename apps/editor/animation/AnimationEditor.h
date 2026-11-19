@@ -242,7 +242,27 @@ private:
         try{
             if(modelKey_!=modelKey){release();modelKey_=modelKey;dev_=&ed.device();model_=loadAnimationModel(ed.ws(),path);if(!render::uploadModel(*dev_,*model_,true))throw std::runtime_error("model upload failed");if(!portrait_->init(*dev_,320))throw std::runtime_error("preview initialization failed");}
             if(!model_)return;
-            std::string key=graph().dump(-1)+doc_["graphs"].dump(-1);if(programKey_!=key){programKey_=key;render::AnimationGraphs graphs;for(auto& [name,g]:doc_["graphs"].members())graphs[name]=g;auto previewGraph=graph();animation::sort(previewGraph);instance_.reset(render::AnimationGraph::compile(*model_,previewGraph,{}, {},graphs));controls_=instance_.parameters();error_.clear();}
+            std::string key=graph().dump(-1)+doc_["graphs"].dump(-1);if(programKey_!=key){
+                programKey_=key;
+                // Graph recompilation must not erase the user-adjusted
+                // preview parameters, even when model/Portrait GPU assets
+                // were retired during a reload or a hidden-tab transition.
+                const auto oldValues = controls_.values;
+                const auto oldVectors = controls_.vectors;
+                render::AnimationGraphs graphs;
+                for(auto& [name,g]:doc_["graphs"].members())graphs[name]=g;
+                auto previewGraph=graph();
+                animation::sort(previewGraph);
+                instance_.reset(render::AnimationGraph::compile(*model_,previewGraph,{}, {},graphs));
+                controls_=instance_.parameters();
+                for (const auto& [name,value] : oldValues)
+                    if (auto it=controls_.values.find(name);it!=controls_.values.end())
+                        it->second=value;
+                for (const auto& [name,value] : oldVectors)
+                    if (auto it=controls_.vectors.find(name);it!=controls_.vectors.end())
+                        it->second=value;
+                error_.clear();
+            }
             if(!instance_.graph())return;
             ImGui::Checkbox(text("play").c_str(),&playing_);ImGui::SameLine();if(ImGui::Button(text("reset").c_str())){programKey_.clear();}
             ImGui::SameLine();ImGui::SliderFloat("##yaw",&yaw_,-3.14f,3.14f);if(instance_.hasContacts()){ImGui::SetNextItemWidth(130);ImGui::DragFloat(text("previewGround").c_str(),&previewGround_,.01f);auto env=std::make_shared<render::AnimationEnvironment>();float ground=previewGround_;env->sphereContact=[ground](render::float3 p,float r,render::IKHit& h){return render::ikSpherePlane(p,r,{0,ground,0},{0,1,0},h);};env->raycast=[ground](render::float3 a,render::float3 b,render::IKHit& h){float d=b.y-a.y;if(std::abs(d)<1e-8f)return false;float t=(ground-a.y)/d;if(t<0||t>1)return false;h={a+(b-a)*t,{0,1,0},0,1};return true;};controls_.environment=env;}
