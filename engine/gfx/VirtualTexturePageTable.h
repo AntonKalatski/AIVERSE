@@ -19,22 +19,28 @@ namespace aiverse::gfx {
 class VirtualTexturePageTable {
 public:
     bool initialize(int mipZeroTilesX, int mipZeroTilesY,
-                    int mipLevels, int virtualLayers) {
+                    int mipLevels, int virtualLayers,
+                    bool indexVirtualMipLevels = false) {
         clear();
         constexpr size_t kMaxCells = size_t(8) << 20; // <=32 MiB CPU table
         if (mipZeroTilesX < 1 || mipZeroTilesY < 1 ||
-            mipLevels < 1 || mipLevels > 30 || virtualLayers < 1 ||
-            size_t(mipZeroTilesX) > kMaxCells / size_t(mipZeroTilesY) ||
-            size_t(mipZeroTilesX) * size_t(mipZeroTilesY) >
-                kMaxCells / size_t(virtualLayers) ||
-            size_t(mipZeroTilesX) > size_t(std::numeric_limits<int>::max()) / 4)
+            mipLevels < 1 || mipLevels > 30 || virtualLayers < 1)
+            return false;
+        const int selectors=indexVirtualMipLevels ? mipLevels : 1;
+        if (virtualLayers>std::numeric_limits<int>::max()/selectors ||
+            size_t(mipZeroTilesX)>kMaxCells/size_t(mipZeroTilesY) ||
+            size_t(mipZeroTilesX)*size_t(mipZeroTilesY)>
+                kMaxCells/(size_t(virtualLayers)*size_t(selectors)) ||
+            size_t(mipZeroTilesX)>size_t(std::numeric_limits<int>::max())/4)
             return false;
         width_ = mipZeroTilesX;
         height_ = mipZeroTilesY;
         levels_ = mipLevels;
         layers_ = virtualLayers;
-        pixels_.assign(size_t(width_) * size_t(height_) * size_t(layers_) * 4, 0);
-        dirtyRows_.assign(size_t(height_) * size_t(layers_), uint8_t(1));
+        selectors_ = selectors;
+        tableLayers_ = virtualLayers*selectors;
+        pixels_.assign(size_t(width_) * size_t(height_) * size_t(tableLayers_) * 4, 0);
+        dirtyRows_.assign(size_t(height_) * size_t(tableLayers_), uint8_t(1));
         return true;
     }
 
@@ -44,7 +50,7 @@ public:
         d.width = width_;
         d.height = height_;
         d.dimension = TextureDimension::Texture2DArray;
-        d.arrayLayers = layers_;
+        d.arrayLayers = tableLayers_;
         d.mipLevels = 1;
         d.format = PixelFormat::RGBA8;
         d.filter = Filter::Nearest;
@@ -63,39 +69,44 @@ public:
         return result;
     }
 
-    // Read stable CPU page cache mappings and encode nearest resident parent
-    // for every mip-zero virtual tile in each logical texture layer.
+    // Optional indexed virtual mips: one physical page-table array layer
+    // for EACH requested virtual mip and logical layer. This supports
+    // choosing floor/ceil(virtualLod) in shaders without changing legacy
+    // page-table ABI (selectors_=1 by default). Arrays are strictly capped
+    // to 32 MiB of CPU-side encoded mappings.
     size_t rebuild(const VirtualTexturePageCache& cache) {
         if (pixels_.empty() || cache.baseTilesX() != width_ ||
             cache.baseTilesY() != height_ ||
             cache.mipLevels() != levels_ || cache.virtualLayers() != layers_)
             return 0;
-        size_t changed = 0;
-        for (int layer = 0; layer < layers_; ++layer)
-            for (int y = 0; y < height_; ++y)
-                for (int x = 0; x < width_; ++x) {
-                    VirtualPageAllocation resolved;
-                    int residentMip = 0;
-                    for (int mip = 0; mip < levels_; ++mip) {
-                        resolved = cache.resolve({mip, x >> mip, y >> mip, layer});
-                        if (resolved.valid()) { residentMip = mip; break; }
-                    }
-                    std::array<uint8_t,4> value{};
-                    if (resolved.valid() && resolved.physicalSlice < 65536) {
-                        value[0] = uint8_t(resolved.physicalSlice & 255);
-                        value[1] = uint8_t((resolved.physicalSlice >> 8) & 255);
-                        value[2] = uint8_t(residentMip);
-                        value[3] = 255;
-                    }
-                    const size_t index = (size_t(layer) * size_t(height_) *
-                                          size_t(width_) + size_t(y) *
-                                          size_t(width_) + size_t(x)) * 4;
-                    if (std::memcmp(pixels_.data() + index, value.data(), 4) != 0) {
-                        std::memcpy(pixels_.data() + index, value.data(), 4);
-                        dirtyRows_[size_t(layer) * size_t(height_) + size_t(y)] = 1;
-                        ++changed;
-                    }
+        size_t changed=0;
+        for(int logicalLayer=0;logicalLayer<layers_;++logicalLayer)
+          for(int selectedMip=0;selectedMip<selectors_;++selectedMip) {
+            const int tableLayer=logicalLayer*selectors_+selectedMip;
+            for(int y=0;y<height_;++y)
+              for(int x=0;x<width_;++x) {
+                VirtualPageAllocation resolved;
+                int residentMip=0;
+                for(int mip=selectedMip;mip<levels_;++mip) {
+                    resolved=cache.resolve({mip,x>>mip,y>>mip,logicalLayer});
+                    if(resolved.valid()){residentMip=mip;break;}
                 }
+                std::array<uint8_t,4> value{};
+                if(resolved.valid() && resolved.physicalSlice<65536) {
+                    value[0]=uint8_t(resolved.physicalSlice&255);
+                    value[1]=uint8_t((resolved.physicalSlice>>8)&255);
+                    value[2]=uint8_t(residentMip);
+                    value[3]=255;
+                }
+                const size_t row=size_t(tableLayer)*size_t(height_)+size_t(y);
+                const size_t offset=(row*size_t(width_)+size_t(x))*4u;
+                if(std::memcmp(pixels_.data()+offset,value.data(),4)!=0) {
+                    std::memcpy(pixels_.data()+offset,value.data(),4);
+                    dirtyRows_[row]=1;
+                    ++changed;
+                }
+              }
+          }
         return changed;
     }
 
@@ -121,7 +132,7 @@ public:
             error_ = "page-table slice pitch exceeds the RHI integer range";
             return 0;
         }
-        for (int layer = 0; layer < layers_; ++layer) {
+        for (int layer = 0; layer < tableLayers_; ++layer) {
             int row = 0;
             while (row < height_) {
                 const size_t idx = size_t(layer) * size_t(height_) + size_t(row);
@@ -164,13 +175,18 @@ public:
     }
 
     // CPU-only inspection, useful for editor debugging and test fixtures.
-    std::array<uint8_t,4> entry(int x, int y, int layer) const {
-        if (x < 0 || y < 0 || layer < 0 ||
-            x >= width_ || y >= height_ || layer >= layers_) return {};
-        const size_t index = (size_t(layer) * size_t(height_) *
-                              size_t(width_) + size_t(y) *
-                              size_t(width_) + size_t(x)) * 4;
-        return {pixels_[index], pixels_[index+1], pixels_[index+2], pixels_[index+3]};
+    std::array<uint8_t,4> entry(int x,int y,int layer) const {
+        return entryForMip(x,y,layer,0);
+    }
+    std::array<uint8_t,4> entryForMip(int x,int y,int logicalLayer,
+                                     int requestedMip) const {
+        if (x<0 || y<0 || logicalLayer<0 || requestedMip<0 ||
+            x>=width_ || y>=height_ || logicalLayer>=layers_ ||
+            requestedMip>=selectors_) return {};
+        const int tableLayer=logicalLayer*selectors_+requestedMip;
+        const size_t offset=(size_t(tableLayer)*size_t(height_)*size_t(width_)+
+                             size_t(y)*size_t(width_)+size_t(x))*4u;
+        return {pixels_[offset],pixels_[offset+1],pixels_[offset+2],pixels_[offset+3]};
     }
     size_t pendingRows() const {
         return size_t(std::count(dirtyRows_.begin(), dirtyRows_.end(), uint8_t(1)));
@@ -178,16 +194,20 @@ public:
     int width() const { return width_; }
     int height() const { return height_; }
     int layers() const { return layers_; }
+    int selectableMipLevels() const { return selectors_; }
+    int tableArrayLayers() const { return tableLayers_; }
     const std::string& lastError() const { return error_; }
     void clear() {
         pixels_.clear();
         dirtyRows_.clear();
-        width_ = height_ = levels_ = layers_ = 0;
+        width_ = height_ = levels_ = layers_ = tableLayers_ = 0;
+        selectors_ = 1;
         error_.clear();
     }
 
 private:
     int width_ = 0, height_ = 0, levels_ = 0, layers_ = 0;
+    int selectors_ = 1, tableLayers_ = 0;
     std::vector<uint8_t> pixels_;
     std::vector<uint8_t> dirtyRows_;
     std::string error_;

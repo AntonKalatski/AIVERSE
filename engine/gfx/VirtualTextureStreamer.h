@@ -24,6 +24,7 @@ struct VirtualTextureStreamConfig {
     int physicalPages = 0;
     int physicalPageSize = 128; // including caller-provided edge gutters
     int physicalMipLevels = 1; // opt-in complete mip chain per physical array slice
+    bool indexedMipTable = false; // opt-in per-virtual-mip page-table array layers
     PixelFormat physicalFormat = PixelFormat::RGBA8;
     size_t pageTableBytesPerFlush = size_t(4) << 20;
 };
@@ -57,7 +58,7 @@ public:
         if (!pages_.initialize(cfg.tilesX,cfg.tilesY,cfg.mipLevels,
                                cfg.virtualLayers,cfg.physicalPages) ||
             !table_.initialize(cfg.tilesX,cfg.tilesY,cfg.mipLevels,
-                               cfg.virtualLayers)) {
+                               cfg.virtualLayers,cfg.indexedMipTable)) {
             pages_.clear();
             table_.clear();
             error_ = "virtual texture page dimensions or metadata budget invalid";
@@ -268,7 +269,18 @@ public:
         return ready()?uploads_.texture(atlas_):TextureHandle{};
     }
     TextureHandle pageTableTexture() const {
-        return ready()?tableGpu_:TextureHandle{};
+        // With indexedMipTable, this handle contains virtualLayers*mipLevels
+        // table slices; legacy shader bindings MUST use the mip=0 slice offset.
+        return ready() && !config_.indexedMipTable ? tableGpu_ : TextureHandle{};
+    }
+    TextureHandle indexedMipPageTableTexture() const {
+        return ready() && config_.indexedMipTable ? tableGpu_ : TextureHandle{};
+    }
+    int indexedMipTableLevels() const {
+        return ready() && config_.indexedMipTable ? config_.mipLevels : 0;
+    }
+    std::array<uint8_t,4> encodedPageTableForMip(int x,int y,int layer,int mip) const {
+        return table_.entryForMip(x,y,layer,mip);
     }
     VirtualPageStats pageStats() const { return pages_.stats(); }
     TextureStreamStats streamStats() const { return uploads_.stats(); }
