@@ -1769,6 +1769,43 @@ ModelView screenshots, memory profiling, and CI. Source inspection
 cannot certify actual GPU lifetime correctness.
 See `docs/handoffs/prisma-stage-39.md`.
 
+## Stage 40 — GPU-independent preview clock checkpoint (Animation Graph/Rig)
+
+When an Animation Graph or Rig editor tab hides or the preview's uploaded
+model is reloaded, GPU-fenced preview retirement from Stage 39 no longer
+always restarts simple animation playback from zero.
+
+`AnimationGraphInstance::snapshotPreviewClocks()` provides an optional
+pointer-free `PreviewClockSnapshot` with the active state ID, its elapsed
+time, clip node names and clocks, source clip identities/durations, state
+IDs, node kind order, and the loaded model's skeleton names/parents.
+`restorePreviewClocks(snapshot)` first validates all of those facts
+against the newly compiled graph and refuses an invalid snapshot without
+partially mutating the current instance. The editor *also* requires the
+same model path and the same authored program key (which excludes
+visual-only node position changes) before attempting to restore.
+
+This is intentionally narrow: a graph with an in-progress transition
+fade, subgraphs, native operators, rig state, motion matching, controllers,
+traits, or other stateful nodes will restart rather than rebind potentially
+model-dependent CPU state. Simple bind/clip/blend/additive/two-bone IK
+graphs can restore state and clip time, assuming the graph program and
+skeleton/clip identities are unchanged. Camera, document, controls,
+playback toggle, and undo/redo remain as in Stage 39. Explicit New/Load/
+Discard and Preview Reset clear the saved checkpoint; a changed graph
+program or incompatible loaded model cannot consume it.
+
+Files: `engine/render/AnimationGraph.h`,
+`engine/render/AnimationGraph.cpp`,
+`apps/editor/animation/AnimationEditor.h`.
+This is only preview-presentation state; ECS gameplay, animation graph
+JSON schema, Prisma GPU shader effects, SpectraFX and the GPU retirement
+fence policy are unchanged.
+
+**NOT RUN:** native compile, CTest, editor UI playback, Metal/GL/Vulkan
+fence tests and CI (features-first direction). See
+`docs/handoffs/prisma-stage-40.md` for committed source SHAs and next step.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
@@ -1777,5 +1814,5 @@ See `docs/handoffs/prisma-stage-39.md`.
 - Для каждого этапа нужен `docs/handoffs/prisma-stage-XX.md` с проверяемыми фактами; результаты тестов фиксировать честно.
 
 ## Статус
-- Этап 01: имя C++ класса и совместимость. Этап 02: GPU-free `PrismaVolumeStack` (opt-in, ещё не подключён к камерному loop). Этап 03: физический перенос ядра postprocess в PRISMA. Этап 04: редактор/MCP и документирование владения системами. Этап 07: GPU-free RenderGraph planner (пока не executor). Этап 08: профили камер в рантайме и редакторе. DoF/AutoExposure/motion vectors и GPU execution графа ещё не реализованы.
+- Этап 01: имя C++ класса и совместимость. Этап 02: GPU-free `PrismaVolumeStack` (opt-in, ещё не подключён к камерному loop). Этап 03: физический перенос ядра postprocess в PRISMA. Этап 04: редактор/MCP и документирование владения системами. Этап 07: GPU-free RenderGraph planner. Этап 08: профили камер в рантайме и редакторе. Последующие этапы реализуют RHI graph execution, DoF, AutoExposure, motion vectors и GPU lifetime; актуальные детали и неподтверждённые проверки указаны в handoff 35–40.
 - Дальнейшие стадии смотреть в handoff-документах.
