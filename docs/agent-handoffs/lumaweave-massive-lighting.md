@@ -131,3 +131,26 @@ Test source (NOT RUN): lumaweave_temporal verifies normal two-frame accumulation
 ACTUAL validation: GitHub commits and CMake registration only. Native compile/CTest, GLSL/MSL, GPU callback execution, actual temporal imagery, full run-tests.sh and frame-timing benchmarks were NOT RUN. No false green CI claim.
 
 Next: Run actual C++/CTest tests for all 6 lumaweave_* targets, run existing GI suite on this branch because shared GPU ray-query source changed, and compile Metal compute GI plus LumaWeave on the same Mac. Then build an opt-in HDR receiver producer from actual Renderer3D render/depth/motion signals and an explicit exclusive lighting composition mode (legacy OR LumaWeave direct). Implement real GPU temporal and spatial denoise with history invalidation using light IDs, geometry revision, motion depth and normals; add quantitative 100/500/1000 moving-light stress benchmarks and selective capability/fallback budgets. Avoid claiming complete Unreal MegaLights implementation or merging main until GPU visual/parity/performance acceptance.
+
+## Stage 7 — 2026-11-19 — fix cached clipmap test expectation after R8 partial-valid GI rollout (SOURCE FIX; native retry NOT RUN)
+
+Source commit: `fb68986e8e66bdf515a5bcc2a23ca85af76eaa74` — `tests/render/gi_gpu_clipmap_cache.cpp` only; no renderer, GPU, scheduler, RHI, physics, ECS, baked GI or LumaWeave algorithm changed.
+
+Failure reported by the native Mac Studio owner (this report is user-supplied, NOT locally reproduced): `ctest -R '^(lumaweave_|gi_)'`: **32 of 33 passed, 1 failed** (`gi_gpu_clipmap_cache`, CTest #40). The exact exception was `tests/render/gi_gpu_clipmap_cache.cpp:67: CHECK failed: !step.safeForPresentation && runtime.busy()`. All displayed LumaWeave tests (#48–53) passed in the supplied output. This test originated before stage 23 of `docs/agent-handoffs/hybrid-dynamic-gi.md`, which introduced R8 per-probe validity and allowed partially computed GI to be presented while another batch is in flight.
+
+Root cause confirmed from current source: `GiGpuClipmapRuntime::updateFrame` first polls previously confirmed GPU callbacks, then synchronizes `GiClipmapValidityTexture` and sets `safeForPresentation = scene_ && validitySynchronized_ && validity_.validCount()>0`. The test starts with 64 probes and dispatches 32 in each pass. On pass 0, validity=0 and safeForPresentation is false; after the first successful fence, validity=32. On pass 1 it is **correctly true**, even though `runtime.busy()` is still true for the second batch. The old assertion incorrectly required the entire volume to be withheld until the second fence; this violated the stage 23 partial-valid rendering contract.
+
+Change: In the two-pass loop, assert `runtime.busy()` on both passes, `safeForPresentation == (pass>0)`, and `validity().validCount() == pass*32`. After both fences, assert 64 valid probes and `fullyValid()`. After a local geometry revision, assert presentation is held until mask synchronization, and then assert only the previously dirty region is invalid, while the unaffected probes remain renderable and `fullyValid()` stays false until the new work completes. At the end assert all 64 slots are valid and all fences completed. This makes the test stricter about safe partial presentation, not weaker about completion.
+
+Actual validation performed this turn: GitHub fetch of current branch HEAD, `gi_gpu_clipmap_cache.cpp`, `GiGpuClipmapRuntime.h` and `GiClipmapValidityTexture.h`, source-level reproduction of the state transition, and successful GitHub file update commit. **NOT RUN**: native compiler, CTest retry, real Metal execution, full `./run-tests.sh`, hardware timing. Do not call this PASS until owner re-runs. No CI status asserted.
+
+Next exact commands (on the native owner Mac):
+```sh
+git fetch origin
+git switch feature/lumaweave-massive-lighting
+git pull --ff-only origin feature/lumaweave-massive-lighting
+cmake --build build/lumaweave --target aiverse_gi_gpu_clipmap_cache_test -j8
+ctest --test-dir build/lumaweave --output-on-failure -R '^gi_gpu_clipmap_cache$'
+ctest --test-dir build/lumaweave --output-on-failure -R '^(gi_|lumaweave_)'
+```
+If the existing build dir has a different name, substitute it. After a successful rerun, record the exact tested commit SHA and log here in another separate handoff. If another assertion fails, inspect full output and fix the next failure rather than assuming one changed assertion proves the suite green. Keep `main` and `feature/hybrid-dynamic-gi` untouched by this leaf-branch test correction.
