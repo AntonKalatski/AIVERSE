@@ -1028,3 +1028,23 @@ Its first native run is outstanding. Other capabilities (GPU ICB,
 fragment shader sampling, virtual texture feedback page demand,
 cross-platform parity) require separate hardware tests.
 
+
+## Stage 10BD — Metal acceptance verifier syntax gate
+
+An initial Mac Studio GPU attempt successfully built the Metal GPU
+fixture, but a duplicated/truncated footer of
+`tools/verify-texture-rhi.sh` caused an unmatched single quote and
+prevented GPU CTest execution. The footer is repaired and the verifier
+now preflights the whole file via `bash -n` before any CMake operation.
+CI also checks shell syntax before running Linux and Vulkan jobs.
+
+After pulling the texture branch, run
+`bash -n tools/verify-texture-rhi.sh`. Because the native Mac test
+binary has already built in the user's isolated worktree, run
+`ctest --test-dir build/texture-rhi --verbose --output-on-failure
+--no-tests=error -R '^metal_texture_gpu$'` directly to gather actual
+GPU results without recompiling the entire editor. Full
+`--editor --metal` verifier mode is also available. Do not claim
+GPU tests passed until the CTest executed and its exact readback
+comparisons are reported.
+
