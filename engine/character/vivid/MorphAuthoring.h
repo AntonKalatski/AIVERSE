@@ -42,6 +42,25 @@ public:
     bool canRedo() const noexcept {return !redo_.empty();}
     // Edits sparse offsets by source model vertex ID. A zero triplet removes
     // an existing sparse entry. Failed edits are fully transactional.
+    bool addTarget(const std::string& name) {
+        if(name.empty()||name.size()>128 || targets_.size()>=4096)return false;
+        for(const auto& target:targets_)if(target.name==name)return false;
+        auto next=targets_;
+        next.push_back({name,{}});
+        try { (void)SparseMorphLibrary::compile(vertices_,next); }
+        catch(...) {return false;}
+        commit(std::move(next));
+        return true;
+    }
+    bool removeTarget(std::size_t index) {
+        if(index>=targets_.size())return false;
+        auto next=targets_;
+        next.erase(next.begin()+std::ptrdiff_t(index));
+        try { (void)SparseMorphLibrary::compile(vertices_,next); }
+        catch(...) {return false;}
+        commit(std::move(next));
+        return true;
+    }
     bool setPosition(std::size_t target,std::uint32_t vertex,MorphVec3 value) {
         if(target>=targets_.size() || vertex>=vertices_)return false;
         for(float c:value)if(!std::isfinite(c)||std::fabs(c)>10.0f)return false;
@@ -62,10 +81,7 @@ public:
         }
         try { (void)SparseMorphLibrary::compile(vertices_,next); }
         catch(...) {return false;}
-        if(undo_.size()==kMaxHistory)undo_.erase(undo_.begin());
-        undo_.push_back(std::move(targets_));
-        targets_=std::move(next);
-        redo_.clear();
+        commit(std::move(next));
         return true;
     }
     bool undo() {
@@ -122,6 +138,12 @@ public:
         return root;
     }
 private:
+    void commit(std::vector<MorphTargetInput> next) {
+        if(undo_.size()==kMaxHistory)undo_.erase(undo_.begin());
+        undo_.push_back(std::move(targets_));
+        targets_=std::move(next);
+        redo_.clear();
+    }
     static constexpr std::size_t kMaxHistory=32;
     std::size_t vertices_=0;
     std::vector<MorphTargetInput> targets_;
