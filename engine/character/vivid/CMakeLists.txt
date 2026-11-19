@@ -64,6 +64,26 @@ if(AIVERSE_BUILD_TESTS)
             OBJCXX_EXTENSIONS OFF)
         add_test(NAME vivid_metal_gpu COMMAND aiverse_vivid_metal_gpu_tests)
         set_tests_properties(vivid_metal_gpu PROPERTIES SKIP_RETURN_CODE 77)
+
+        # Real AIVERSE Metal RHI (not direct MTLDevice and not a recording mock).
+        # Link the backend source into this small diagnostic executable rather
+        # than pulling every editor/platform object from aiverse_runtime.
+        add_executable(aiverse_vivid_metal_rhi_tests
+            ${PROJECT_SOURCE_DIR}/tests/vivid/metal_rhi.mm
+            ${PROJECT_SOURCE_DIR}/engine/gfx/metal/GfxMetal.mm)
+        set_source_files_properties(
+            ${PROJECT_SOURCE_DIR}/tests/vivid/metal_rhi.mm
+            ${PROJECT_SOURCE_DIR}/engine/gfx/metal/GfxMetal.mm
+            PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+        target_link_libraries(aiverse_vivid_metal_rhi_tests PRIVATE
+            aiverse_vivid_gpu
+            "-framework Metal" "-framework QuartzCore" "-framework Foundation")
+        set_target_properties(aiverse_vivid_metal_rhi_tests PROPERTIES
+            OBJCXX_STANDARD 20
+            OBJCXX_STANDARD_REQUIRED ON
+            OBJCXX_EXTENSIONS OFF)
+        add_test(NAME vivid_metal_rhi COMMAND aiverse_vivid_metal_rhi_tests)
+        set_tests_properties(vivid_metal_rhi PROPERTIES SKIP_RETURN_CODE 77)
     endif()
 
     add_executable(aiverse_vivid_morph_tests ${PROJECT_SOURCE_DIR}/tests/vivid/morph_binding.cpp)
