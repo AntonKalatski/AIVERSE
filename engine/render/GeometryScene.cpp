@@ -270,11 +270,28 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
         }
         for(auto& [file,m]:models_)if(hlod_||std::any_of(instances_.begin(),instances_.end(),[&](const Instance& i){return i.model==m.get()&&(i.policy.clusters||i.policy.shadowClusters||i.policy.occluder);}))prepareGeometry(*m);
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
+        if (strataPortableRenderingEnabled_) {
+            // Crucial ordering: ordinary uploadModel() may generate LOD
+            // meshes, change packed vertex attributes and rebuild batches.
+            // Complete that preparation first, then stage Strata from the
+            // EXACT source vertex/index stream that the RHI will upload.
+            // This leaves legacy material/shadow/LOD metadata intact.
+            for (auto& [key, model] : models_)
+                if (model && !model->uploadPrepared) {
+                    prepareModelUpload(*model);
+                    using Policy=Model::Batching::GeometryPoolPolicy;
+                    if (model->batching.geometryPoolPolicy==Policy::Inherit)
+                        model->batching.geometryPoolPolicy=
+                            Policy::AllowRigidLods;
+                }
+        }
         if (strataStagingEnabled_ || strataPortableRenderingEnabled_) {
             // Build once for each *source* model before uploadModel may release
             // CPU vertex streams. Surface/HLOD proxies retain legacy ownership
             // and are never duplicated here. This path does NOT draw Strata.
             strataStaging_ = std::make_shared<strata::SceneStaging>();
+            if (strataPortableRenderingEnabled_)
+                strataStaging_->setAllowPreparedRootLods(true);
             std::set<const Model*> usedSources;
             for (const auto& instance : instances_)
                 usedSources.insert(instance.model);
