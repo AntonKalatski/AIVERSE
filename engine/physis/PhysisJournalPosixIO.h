@@ -5,11 +5,13 @@
 #ifndef _WIN32
 #include <cerrno>
 #include <cstddef>
+#include <cstdio>
 #include <cstdint>
 #include <fcntl.h>
 #include <string>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <utility>
 #include <vector>
 
 namespace aiverse::physis::remote::posix_journal {
