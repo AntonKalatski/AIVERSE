@@ -2129,3 +2129,34 @@ or measured speedups.
 
 No native code, MSL shader compiler, actual GPU execution
 or benchmark was run for this stage.
+
+
+## Stage 10AL — fail-closed Shader Graph fragment slot preflight
+
+The experimental `Renderer3D` GPU ICB graph candidate gate
+now checks `Device::maxFragmentTextureSlots()` before allowing
+a fragment-only graph on the GPU-authored path. It rejects
+source indices beyond the current RHI budget and, for graphs
+that request virtual texture sampling, requires space for
+both physical atlas and page-table slots after the authored
+graph sources. The normal CPU renderer remains eligible
+for every rejected draw.
+
+The native Metal per-command resource preparation separately
+checks the same physical texture-slot capacity for up to four
+graph source textures and an optional VT atlas/page table.
+It cannot encode an out-of-bounds fragment argument ID even
+if an application bypasses Renderer3D and directly uses the
+optional RHI descriptor.
+
+A source-only cross-file audit of the current shader and Metal
+host code checked all N=0,1,2,3,4 layouts with optional VT:
+atlas slots `13+N`, tables `14+N`, Metal argument IDs
+`2*(13+N)` and `2*(14+N)`. All five shader source branch
+declarations matched the host index formula; the fourth
+graph source uses compile-time s16 and no dynamic sampler 16.
+These are **source consistency checks**, not native shader
+compilation or GPU execution.
+
+No C++/Objective-C++ compile, Metal shader compiler, CTest,
+GPU execution or visual/performance test was run.
