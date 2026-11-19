@@ -2090,3 +2090,54 @@ all-or-none slope fallback, empty region and shutdown, GPU LRU restore,
 source revision invalidation, archive hit/miss, and atlas/vertex patch
 safety. Collect actual GPU captures and frame-time/overdraw measures
 before claiming production-ready seams or negligible GPU cost.
+
+## Stage 24 — sparse deterministic forest regrowth and presentation ticks
+
+**Status:** native C++ source committed, runtime/compiler/CTest/GPU verification intentionally deferred until the separate testing phase. This feature extends the already-existing persisted `ForestTreeIdentity` removals; it does **not** introduce per-tree ECS entities, a new shader, another RHI backend, a new save file format, or a second GPU forest model.
+
+A `TerraWeaveForestScene` now supports `ForestRegrowthSchedule`, a sparse value type:
+
+```cpp
+struct ForestRegrowthSchedule {
+    ForestTreeIdentity tree;        // {key, speciesId}: stable across chunks
+    uint64_t regrowAtTick;          // hidden before this tick
+    uint64_t matureAtTick;          // full generator scale at/after this tick
+    uint32_t initialScalePermille;  // 1..1000, defaults to 150
+};
+```
+
+Use the **game's own deterministic simulation tick** — not wall-clock time — with `setPresentationTick(uint64_t)`. `scheduleRegrowth(schedule)` removes the tree from the persistent `removedTrees` set and hides it before `regrowAtTick`. For ticks between appearance and maturity, `visibleBatches()` modifies the **presentation copy** of `FoliageInstance::scalePermille` using bounded integer interpolation, from `initialScalePermille` to 1000 permille of its original generated scale. `matureAtTick == regrowAtTick` means instant restoration. Nothing changes in the authoritative scatter keys, heights, seed, collision, navmesh or GPU prototype models. On later camera movement/re-streaming the same identity gets the same scale for the same tick.
+
+```cpp
+#include "engine/world/TerraWeaveForestScene.h"
+using namespace aiverse::terraweave;
+
+// Use an existing configured scene and a stable ID obtained from foliage.
+ForestTreeIdentity oak{stableTreeKey, 1001};
+forest.removeTree(oak); // optional gameplay-driven harvest
+forest.scheduleRegrowth({oak, 6000, 12000, 120});
+forest.setPresentationTick(gameplayTick);
+const auto batches = forest.visibleBatches();
+// Host still calls uploadModels()/submit() on the renderer owner thread.
+// Persist forest.removedTrees() and forest.regrowthSchedules() in game saves.
+```
+
+Here `stableTreeKey` and `gameplayTick` are native-game values, not engine globals. `setRegrowthSchedules(...)` atomically validates and replaces a saved sorted list; `regrowthSchedules()` exposes a stable sorted snapshot for persistence/replication. `cancelRegrowth(id)` cancels a schedule without automatically hiding or removing the tree. `removeTree(id)` cancels any pending regrowth and hides the tree; `restoreTree(id)` clears both hidden and scheduled states; `setRemovedTrees(...)` clears any overlapping regrowth schedules so explicitly removed trees remain hidden. Use the caller's save/network authority for lifecycle decisions.
+
+The implementation limits regrowth to at most **1,000,000** sparse records, rejects zero species, duplicate replacement keys, `initialScalePermille` outside 1..1000, backward schedules, and maturity intervals greater than **1e12 ticks**. These bounds keep `elapsed * (1000 - minScale)` within signed/unsigned 64-bit integer range without platform-specific 128-bit arithmetic. Even with asynchronous forest generation, tick changes are evaluated at presentation time and do **not** cancel/rebuild chunk workers.
+
+`ForestSceneStats` exposes the additional trailing fields `scheduledRegrowth` and `presentationTick`, without breaking earlier aggregate uses of its existing members.
+
+### Access from WorldScene
+
+An opt-in `world::WorldScene` exposes
+`terraweave::TerraWeaveForestScene* forestScene() noexcept` (and the const overload). It returns null if the world manifest does not enable `terraweaveForest`. Native games can include both `engine/world/WorldScene.h` and `engine/world/TerraWeaveForestScene.h` and feed game time or saved lifecycle records directly without any genre-specific API:
+
+```cpp
+if (auto* forest = worldScene.forestScene()) {
+    forest->setPresentationTick(gameplayTick);
+    forest->scheduleRegrowth({oak, 6000, 12000, 120});
+}
+```
+
+**Ownership and limitations:** this is *cosmetic presentation* only. An authoritative game layer is responsible for deciding when harvests occur and for modifying collision/navmesh/resources, save versioning, replay/network replication and any wider ecosystem simulation. Harvesting a single tree does not yet punch an individual hole in the **far Horizon HLOD cluster silhouettes**; coordinate harvested-area masks with Horizon in a later stage to avoid near/far inconsistencies. The implementation has not been built or visually tested in this feature-first phase.
