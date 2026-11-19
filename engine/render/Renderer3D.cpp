@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <tuple>
 
 namespace aiverse::render {
 
@@ -135,7 +136,10 @@ void Renderer3D::shutdown() {
     objectMotionViews_.clear();
     if (objectMotionPipeline_.valid()) dev_->destroyPipeline(objectMotionPipeline_);
     if (objectMotionShader_.valid()) dev_->destroyShader(objectMotionShader_);
+    if (objectMotionInstancedPipeline_.valid()) dev_->destroyPipeline(objectMotionInstancedPipeline_);
+    if (objectMotionInstancedShader_.valid()) dev_->destroyShader(objectMotionInstancedShader_);
     objectMotionPipeline_ = {}; objectMotionShader_ = {};
+    objectMotionInstancedPipeline_ = {}; objectMotionInstancedShader_ = {};
     shutdownModels();
     lights.shutdown();
     shutdownTrace();
@@ -413,6 +417,30 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
             objectMotionPipeline_ = dev_->createPipeline(pipeline);
         }
     }
+    if (!objectMotionInstancedShader_.valid()) {
+        gfx::ShaderDesc shader;
+        shader.glslVertex = motion_shaders::kInstancedVS;
+        shader.glslFragment = motion_shaders::kInstancedFS;
+        shader.msl = motion_shaders::kInstancedMSL;
+        shader.textureSlots = 1;
+        shader.uniformSlots = 1;
+        shader.label = "prisma batched rigid velocity";
+        objectMotionInstancedShader_ = dev_->createShader(shader);
+        if (objectMotionInstancedShader_.valid()) {
+            gfx::PipelineDesc pipeline;
+            pipeline.shader = objectMotionInstancedShader_;
+            pipeline.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
+            pipeline.attrCount = 1;
+            pipeline.stride = sizeof(ModelVertex);
+            pipeline.indexType = gfx::IndexType::UInt32;
+            pipeline.cull = gfx::CullMode::Back;
+            pipeline.depthTest = false;
+            pipeline.depthWrite = false;
+            pipeline.colorFormat = gfx::PixelFormat::RGBA16F;
+            pipeline.label = "prisma batched rigid velocity";
+            objectMotionInstancedPipeline_ = dev_->createPipeline(pipeline);
+        }
+    }
     if (history.target.valid() && history.depth.valid() &&
         objectMotionPipeline_.valid()) {
         struct MotionU {
@@ -429,26 +457,66 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
         dev_->setViewport({0,0,w,h});
         dev_->setPipeline(objectMotionPipeline_);
         dev_->setTexture(0, sceneDepth);
+        // Geometry-equivalent rigid draws can share one instanced velocity
+        // submission even when their ordinary material states differ.
+        // The source Model pointer is part of the key: model buffer IDs,
+        // index offsets and base vertex must be identical in one batch.
+        using BatchKey = std::tuple<const Model*, uint32_t, uint32_t>;
+        std::map<BatchKey, std::vector<const ModelItem*>> batches;
         for (const auto& it : modelItems_) {
             if (!eligible(it)) continue;
+            batches[{it.model,it.firstIndex,it.indexCount}].push_back(&it);
+        }
+        struct BatchU {
+            float current[16][16];
+            float previous[16][16];
+            float params[4];
+        };
+        static_assert(sizeof(BatchU) <= 4096);
+        const auto lastModel = [&](const ModelItem& it) {
             const Key key{it.motionPersistentId,it.motionNodeIndex};
             const auto previous = history.previous.find(key);
-            const mat4& prevWorld = previous != history.previous.end()
-                ? previous->second : it.world;
-            const mat4 currentMvp = viewProj_ * it.world;
-            const mat4 previousMvp = previousCamera * prevWorld;
-            MotionU uniforms{};
-            std::memcpy(uniforms.current,currentMvp.m,sizeof uniforms.current);
-            std::memcpy(uniforms.previous,previousMvp.m,sizeof uniforms.previous);
-            uniforms.params[0] = float(w);
-            uniforms.params[1] = float(h);
-            uniforms.params[2] = dev_->info().renderTargetFlipY ? 1.0f : 0.0f;
-            dev_->setUniforms(0,&uniforms,sizeof uniforms);
-            dev_->setVertexBuffer(it.model->vb);
-            dev_->setIndexBuffer(it.model->ib);
-            dev_->drawIndexed(it.indexCount,
-                it.firstIndex + it.model->gpuFirstIndex,
-                int32_t(it.model->gpuBaseVertex));
+            return previous == history.previous.end() ? it.world : previous->second;
+        };
+        for (const auto& [key, items] : batches) {
+            for (size_t first = 0; first < items.size();) {
+                const size_t n = objectMotionInstancedPipeline_.valid()
+                    ? std::min<size_t>(16,items.size()-first) : 1;
+                const ModelItem& sample = *items[first];
+                if (n > 1) {
+                    BatchU uniforms{};
+                    uniforms.params[0] = float(w);
+                    uniforms.params[1] = float(h);
+                    uniforms.params[2] = dev_->info().renderTargetFlipY ? 1.0f : 0.0f;
+                    for (size_t i=0; i<n; ++i) {
+                        const ModelItem& it = *items[first+i];
+                        const mat4 currentMvp = viewProj_ * it.world;
+                        const mat4 previousMvp = previousCamera * lastModel(it);
+                        std::memcpy(uniforms.current[i], currentMvp.m, sizeof currentMvp.m);
+                        std::memcpy(uniforms.previous[i], previousMvp.m, sizeof previousMvp.m);
+                    }
+                    dev_->setPipeline(objectMotionInstancedPipeline_);
+                    dev_->setUniforms(0,&uniforms,sizeof uniforms);
+                } else {
+                    const mat4 currentMvp = viewProj_ * sample.world;
+                    const mat4 previousMvp = previousCamera * lastModel(sample);
+                    MotionU uniforms{};
+                    std::memcpy(uniforms.current,currentMvp.m,sizeof uniforms.current);
+                    std::memcpy(uniforms.previous,previousMvp.m,sizeof uniforms.previous);
+                    uniforms.params[0] = float(w);
+                    uniforms.params[1] = float(h);
+                    uniforms.params[2] = dev_->info().renderTargetFlipY ? 1.0f : 0.0f;
+                    dev_->setPipeline(objectMotionPipeline_);
+                    dev_->setUniforms(0,&uniforms,sizeof uniforms);
+                }
+                dev_->setVertexBuffer(sample.model->vb);
+                dev_->setIndexBuffer(sample.model->ib);
+                dev_->drawIndexed(sample.indexCount,
+                    sample.firstIndex + sample.model->gpuFirstIndex,
+                    int32_t(sample.model->gpuBaseVertex),
+                    static_cast<uint32_t>(n));
+                first += n;
+            }
         }
         dev_->endPass();
         post.acceptObjectMotionVectors(history.target);
