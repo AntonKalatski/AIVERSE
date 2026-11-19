@@ -268,6 +268,37 @@ int main() {
            continuousSeam.nearSeamSamples.size());
     assert(continuousSeam.localFallbackNearNormalSamples==0);
 
+    // TWH8 stores the actual near-seam normal slopes, but intentionally
+    // omits CPU-only provenance counters. Encode the *populated* seam rather
+    // than a bake with no authored near boundary samples.
+    const auto seamBytes=encodeHorizonArchive(continuousSeam,fingerprint);
+    const auto seamRestored=decodeHorizonArchive(seamBytes,fingerprint);
+    assert(seamRestored.nearSeamSamples.size()==
+           continuousSeam.nearSeamSamples.size());
+    for(size_t i=0;i<continuousSeam.nearSeamSamples.size();++i) {
+        const auto& src=continuousSeam.nearSeamSamples[i];
+        const auto& dst=seamRestored.nearSeamSamples[i];
+        assert(dst.xQ16cm==src.xQ16cm);
+        assert(dst.zQ16cm==src.zQ16cm);
+        assert(dst.nearHeightCm==src.nearHeightCm);
+        assert(dst.nearNormalValid==src.nearNormalValid);
+        assert(dst.nearSlopeXPermille==src.nearSlopeXPermille);
+        assert(dst.nearSlopeZPermille==src.nearSlopeZPermille);
+    }
+    assert(!seamRestored.nearNormalProvenanceAvailable);
+    assert(seamRestored.continuousNearNormalSamples==0);
+    assert(seamRestored.localFallbackNearNormalSamples==0);
+    auto corruptSeamBytes=seamBytes;
+    corruptSeamBytes.back()^=0x80;
+    bool badSeamRejected=false;
+    try { (void)decodeHorizonArchive(corruptSeamBytes,fingerprint); }
+    catch(const std::invalid_argument&) { badSeamRejected=true; }
+    assert(badSeamRejected);
+    badSeamRejected=false;
+    try { (void)decodeHorizonArchive(seamBytes,fingerprint^1ULL); }
+    catch(const std::invalid_argument&) { badSeamRejected=true; }
+    assert(badSeamRejected);
+
     auto localOnly=clippedSource;
     localOnly.nearGroundContinuousSlopeAtQ16Cm={};
     auto localSeam=clipped;
@@ -306,6 +337,12 @@ int main() {
     assert(steepSeam.nearSeamSamples.empty());
     assert(steepSeam.continuousNearNormalSamples==0);
     assert(steepSeam.localFallbackNearNormalSamples==0);
+
+    // Slope-guarded fallback remains serializable with no half-welded seam.
+    const auto guardedBytes=encodeHorizonArchive(steepSeam,fingerprint);
+    const auto guardedRestored=decodeHorizonArchive(guardedBytes,fingerprint);
+    assert(guardedRestored.nearWeldSlopeFallback);
+    assert(guardedRestored.nearSeamSamples.empty());
 
     // Constructor should prepare a *bounded* async scheduler without requiring
     // an initialized graphics device. Actual GPU upload has a separate test.
