@@ -1811,3 +1811,26 @@ A/B capture is still required.
 This stage is a diagnostics/API addition only. No native C++
 compilation, Metal shader compilation, real ICB execution or GPU
 performance tests were run in this environment.
+
+
+## Fail-closed per-command Metal VT native resource validation — Stage 10AA
+
+Before encoding any experimental per-command VT ICB, the Metal
+backend now requires both the physical page atlas and the page
+table to be actual `Texture2DArray` `RGBA8` resources. The
+optional cutout coverage must be an `R8` `Texture2D`.
+It also checks native slice counts, the requested logical
+virtual layer against the page-table layer count and physically
+feasible gutter inset based on the atlas dimensions.
+
+An incompatible resource rejects the whole GPU group before
+encoding rather than passing mismatched texture types to the
+shader. The ordinary CPU draw fallback and existing legacy
+ICB resource binding are unchanged. This restricts the
+experimental path to the currently implemented RGBA8 VT
+archive contract; typed HDR/alternative formats require an
+explicitly compatible MSL shader variant in a later stage.
+
+**Verification:** source review and GitHub commit only; native
+Objective-C++, Metal shader compiler and actual GPU execution
+NOT RUN. Leave experimental flags disabled in production.
