@@ -138,6 +138,9 @@ public:
                 previewPaused_=true;
                 previewStepRequested_=true;
             }
+            ImGui::SameLine();
+            if(ImGui::Button("Reset view"))
+                previewCamera_={{0,0.8f,0},9.0f,0.45f,0.7f};
             drawPreview(ed,std::max(200.0f,ImGui::GetContentRegionAvail().x),230.0f);
             ImGui::Separator();
         }
@@ -470,6 +473,19 @@ private:
     }
     void drawPreview(Editor& ed,float width,float height) {
         if(!previewDevice_) previewDevice_=&ed.device();
+        // The preview runs inside the Editor's already-open RHI frame.
+        // Resolve the actual RT dimensions/projection before any GPU sorting
+        // so camera-specific matrices and the CPU particle view agree.
+        const float dpi=ImGui::GetIO().DisplayFramebufferScale.x;
+        previewViewport_.ensure(*previewDevice_,int(width*dpi),int(height*dpi));
+        const int viewW=std::max(1,previewViewport_.w);
+        const int viewH=std::max(1,previewViewport_.h);
+        const float aspect=float(viewW)/float(viewH);
+        const auto viewProj=previewCamera_.proj(
+            aspect,previewDevice_->info().clipDepthZeroToOne)*
+            previewCamera_.view();
+        const auto view=fx::SpectraFxView::fromCamera(
+            previewCamera_,viewProj,viewW,viewH);
         const double now=ed.time();
         float dt=previewLastTime_<0?0:float(now-previewLastTime_);
         previewLastTime_=now;
@@ -522,12 +538,10 @@ private:
                 if(canDraw || (previewInitialized_ &&
                    !previewRestartRequested_ && previewHash_==hash)) {
                     canDraw=true;
-                    previewHost_.prepareGpu(dt,previewCamera_);
+                    previewHost_.prepareGpu(dt,view);
                 }
             }
         }
-        const float dpi=ImGui::GetIO().DisplayFramebufferScale.x;
-        previewViewport_.ensure(*previewDevice_,int(width*dpi),int(height*dpi));
         auto& renderer=ed.renderer();
         renderer.beginScene(previewCamera_,previewViewport_.w,previewViewport_.h);
         const uint32_t grid=render::rgba(70,80,95,255);
@@ -535,9 +549,16 @@ private:
             renderer.line({float(i),0,-5},{float(i),0,5},grid);
             renderer.line({-5,0,float(i)},{5,0,float(i)},grid);
         }
-        if(canDraw)
-            previewHost_.prepareCpu(dt,previewCamera_,renderer.viewProj(),
-                                    previewViewport_.w,previewViewport_.h);
+        if(canDraw) {
+            previewHost_.prepareCpu(dt,view);
+            // Must be outside the render pass: the sorted-alpha compute
+            // encoder is camera-dependent and cannot run during drawing.
+            if(!previewHost_.prepareRenderView(view)) {
+                previewMessage_="Preview view preparation failed: "
+                    "GPU sort or render-thread safe point unavailable";
+                canDraw=false;
+            }
+        }
         gfx::PassDesc pass;
         pass.colorTarget=previewViewport_.color;
         pass.depthTarget=previewViewport_.depth;
@@ -546,8 +567,7 @@ private:
         pass.clearColor[2]=0.16f;
         renderer.render(pass);
         if(canDraw)
-            previewHost_.render(renderer.lighting,renderer.viewProj(),
-                                previewCamera_);
+            previewHost_.render(renderer.lighting,view);
         previewDevice_->endPass();
         previewViewport_.image(*previewDevice_,width,height);
         if(ImGui::IsItemHovered()) {
