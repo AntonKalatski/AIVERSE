@@ -1,5 +1,5 @@
 #include <aiverselib/motionweave/MotionWeave.h>
-#include <cassert>
+#include "../AlwaysCheck.h"
 using namespace aiverse;
 using namespace aiverse::motionweave;
 namespace aiverse::platform {
@@ -23,14 +23,14 @@ int main() {
     }
     MotionWeaveScheduler scheduler(3);
     const auto first=scheduler.update(p,.016f);
-    assert(first.uniqueGraphs==1 && first.eligible==128);
+    AIVERSE_TEST_CHECK(first.uniqueGraphs==1 && first.eligible==128);
     for(size_t i=0;i<64;++i)p.get<AnimationBudgetComponent>(entities[i]).visible=false;
     const auto second=scheduler.update(p,.016f);
-    assert(second.uniqueGraphs==1);
-    assert(second.offscreenEntities==64);
-    assert(second.estimatedSafeCost<=first.estimatedSafeCost);
+    AIVERSE_TEST_CHECK(second.uniqueGraphs==1);
+    AIVERSE_TEST_CHECK(second.offscreenEntities==64);
+    AIVERSE_TEST_CHECK(second.estimatedSafeCost<=first.estimatedSafeCost);
     p.get<AnimationPlayerComponent>(entities[0]).restart=true;
     const auto third=scheduler.update(p,.016f);
-    assert(third.uniqueGraphs==1);
+    AIVERSE_TEST_CHECK(third.uniqueGraphs==1);
     return 0;
 }
