@@ -383,7 +383,8 @@ inline bool installEditableFromMap(Simulation& sim,const Json& map) {
     // Both registry paths own the same authored ECS entities. Never install
     // canonical editing over tracked fields or over a previous canonical host.
     // Reject BEFORE install() mutates the World or registers persistence.
-    if(sim.world().resourceConst<AuthoredFieldInstallMode>() ||
+    if(sim.world().resourceConst<State>() ||
+        sim.world().resourceConst<AuthoredFieldInstallMode>() ||
        sim.world().resourceConst<RuntimeFieldRegistry>() ||
        sim.world().resourceConst<FieldRuntimeState>())
         throw std::logic_error("PHYSIS authored field registry already installed; choose exactly one runtime");
