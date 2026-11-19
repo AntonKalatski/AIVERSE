@@ -125,3 +125,20 @@ limits, unsupported device behavior, GL exclusive query behavior,
 Metal full-command-buffer semantics, Device recreation, and
 FPS/RTS stream teardown. Keep PR #24 Draft until compiled and
 tested; see `docs/terrain/AGENT_HANDOFF.md` Stage42.
+
+
+## Stage 43 — hardware-free GPU timing router regression fixture
+
+A dedicated native C++20 fixture `tests/gpu_timing_router_test.cpp` constructs an isolated
+`gfx::GpuTimingRouter` with a fake tagged GPU backend. It checks same client tag
+across subscribers, out-of-order completion, consumer mailbox isolation,
+invalid GPU samples, cancel/unsubscribe with late completions, unsupported and
+busy backend rejection, 32 subscribers, 64 in-flight queries, 64 queued
+completed samples and dropped-result diagnostics, and independent Device/router
+lifetime. There is no real graphics driver in this fixture.
+
+CMake target `aiverse_gpu_timing_router_test`, CTest name `gpu_timing_router`.
+The TerraWeave isolated GCC/Clang workflow builds this target as well as the
+nine TerraWeave CPU tests. This checks the shared Stage42 infrastructure,
+not the quality of actual Metal/GL/Vulkan timing or the integration of
+real RTS/FPS/Editor frame callbacks. Those still require independent QA.
