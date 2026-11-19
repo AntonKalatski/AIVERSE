@@ -4,6 +4,7 @@
 #pragma once
 #include "PhysisFieldChangePlan.h"
 #include "PhysisProjectConfig.h"
+#include "PhysisFieldRuntimeState.h"
 #include <algorithm>
 #include <bit>
 #include <cstdint>
@@ -15,26 +16,6 @@
 #include <vector>
 
 namespace aiverse::physis {
-
-struct FieldRuntimeEntry {
-    Entity entity = kNullEntity;
-    AuthoredFieldKind kind = AuthoredFieldKind::Wind;
-    // Binary canonical authored component value; never compare a dynamic
-    // StormEvent's current (drifted) runtime centre to its initial map value.
-    std::string fingerprint;
-};
-struct FieldRuntimeState {
-    std::uint64_t revision = 0;
-    std::map<std::string, FieldRuntimeEntry> byId;
-};
-
-// These are opt-in persistent resource fields, NOT new default PHYSIS schemas.
-inline void io(Archive& a, FieldRuntimeEntry& entry) {
-    a(entry.entity, entry.kind, entry.fingerprint);
-}
-inline void io(Archive& a, FieldRuntimeState& state) {
-    a(state.revision, state.byId);
-}
 
 // Reusable typed fields are encoded field-wise with the same persistence IO
 // as normal PHYSIS ECS components; never reinterpret C++ struct memory.
