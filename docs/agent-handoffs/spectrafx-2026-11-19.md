@@ -163,3 +163,22 @@ git pull --ff-only origin feature/spectrafx-generic-cue-queue
 git fetch origin main
 git merge origin/main
 ```
+
+
+## 2026-11-19 — Stage 8: versioned authoring asset codec
+
+- **Implementation SHA:** `4bbc22c35b99a1bad5a9c7e04139486fc9b6a7ea`; branch `feature/spectrafx-generic-cue-queue`; prior comparison with `main` at `9ee6ff6` showed 0 behind.
+- **Changed:** new `engine/fx/SpectraFxGraphAsset.h`. `SpectraFxGraphAssetCodec::read/readText/write/install` serializes node data and typed default parameters into explicit JSON `version:1`. Supports the nine current node kinds, named scalar/color/flag defaults and stable sorted output keys. Strict input type/unknown-field checks, finite numeric/uint32 bounds, DAG validation and transactional parse into a temporary asset before overwriting caller data. `install` validates and commits through registry.define.
+- **Compatibility:** entirely optional rendering/presentation data; no ECS save format changes, no FPS/RTS rewrite, no PRISMA ownership overlap. Existing registry/graph APIs remain available.
+- **Actual verification:** NOT RUN — user requested feature development first. C++ compilation, headless tests, editor, JSON round-trip and CI are unverified.
+- **Limitations:** decimal values serialized to six places; no preservation of editor UI node positions, links beyond single parent source, or custom unknown fields. No file watcher, async streaming or visual editor. The JSON codec relies on the existing `Json` library.
+- **Next:** add a feature-gated stage lifecycle / emitter program descriptor and CPU backend adapter, ensuring FX render/update logic remains single-owned by `ParticleSystem`.
+
+Pull-first:
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main && git merge origin/main
+```
