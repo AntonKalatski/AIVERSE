@@ -15,6 +15,8 @@ using namespace aiverse;
 using namespace aiverse::gfx;
 std::unique_ptr<VirtualTextureStreamer> stream;
 unsigned generations=0, stages=0, completed=0, failures=0, shutdowns=0;
+unsigned gpuReads=0;
+unsigned outstandingReads=0;
 bool started=false;
 VirtualPageKey root{2,0,0,0}, detail{0,0,0,0}, replacement{0,3,3,0};
 std::vector<uint8_t> pageColor(uint8_t r,uint8_t g,uint8_t b) {
@@ -32,6 +34,8 @@ void check(bool ok,const char* description) {
 void init(Device& device) {
     ++generations;
     stages=0;
+    gpuReads=0;
+    outstandingReads=0;
     started=false;
     TextureStreamConfig limits;
     limits.gpuBudgetBytes=4096;
@@ -52,7 +56,7 @@ void init(Device& device) {
           "stage pinned root into real GPU atlas");
     started=true;
 }
-void frame(Device&,double) {
+void frame(Device& device,double) {
     if(!stream || !stream->ready() || !started)return;
     stream->drain();
     if(stages==0 && stream->resolveExact(root).valid()) {
@@ -81,9 +85,49 @@ void frame(Device&,double) {
               "replacement indexed entry committed");
         check(stream->streamStats().stagedBytes==0,
               "all streaming staging bytes released");
+        // Independent readback of the *production* physical resources.
+        // Page table layout is [logicalLayer * mipLevels + requestedMip].
+        // At mip selector zero, root fills every cell except replacement
+        // key (3,3), which points to physical slice 1 and resident mip 0.
+        const auto rootExpected=pageColor(28,75,98);
+        const auto replacementExpected=pageColor(11,205,47);
+        std::vector<uint8_t> tableExpected(4u*4u*4u,0);
+        for(size_t p=0;p<tableExpected.size();p+=4) {
+            tableExpected[p]=0;
+            tableExpected[p+2]=2;
+            tableExpected[p+3]=255;
+        }
+        const size_t replacementOffset=(3u*4u+3u)*4u;
+        tableExpected[replacementOffset]=1;
+        tableExpected[replacementOffset+2]=0;
+        const auto queueRead=[&](TextureHandle handle,int slice,
+                                 std::vector<uint8_t> expected,
+                                 const char* description) {
+            ++outstandingReads;
+            const bool queued=device.readTextureAsync(handle,{0,slice},
+                [expected=std::move(expected),description](TextureReadbackResult image) {
+                    check(image.success() && image.width==4 && image.height==4 &&
+                          image.pixels==expected,description);
+                    ++gpuReads;
+                    --outstandingReads;
+                });
+            if(!queued) {
+                --outstandingReads;
+                check(false,description);
+            }
+        };
+        queueRead(stream->physicalAtlas(),0,rootExpected,
+                  "production pinned root physical GPU bytes");
+        queueRead(stream->physicalAtlas(),1,replacementExpected,
+                  "production recycled detail physical GPU bytes");
+        queueRead(stream->indexedMipPageTableTexture(),0,tableExpected,
+                  "production indexed page table actual GPU bytes");
         stages=3;
+    } else if(stages==3 && outstandingReads==0 && gpuReads==3 && failures==0) {
+        stages=4;
         ++completed;
-        std::printf("PASS: WebGL2 production VT streaming LRU generation=%u\n",generations);
+        std::printf("PASS: WebGL2 production VT atlas and table GPU readback generation=%u\n",
+                    generations);
     }
 }
 void shutdown() {
@@ -95,6 +139,7 @@ void shutdown() {
 extern "C" {
 EMSCRIPTEN_KEEPALIVE unsigned aiverse_web_vt_generation() { return generations; }
 EMSCRIPTEN_KEEPALIVE unsigned aiverse_web_vt_stage() { return stages; }
+EMSCRIPTEN_KEEPALIVE unsigned aiverse_web_vt_gpu_reads() { return gpuReads; }
 EMSCRIPTEN_KEEPALIVE unsigned aiverse_web_vt_completed() { return completed; }
 EMSCRIPTEN_KEEPALIVE unsigned aiverse_web_vt_shutdowns() { return shutdowns; }
 EMSCRIPTEN_KEEPALIVE unsigned aiverse_web_vt_failures() { return failures; }
