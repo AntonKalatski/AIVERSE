@@ -1422,3 +1422,21 @@ terrain pass with tex0..20, start GI at tex21 if the GPU supports >=22
 fragment bindings; otherwise retain the no-GI terrain permutation.
 GLES3 minimum 16 units cannot satisfy that terrain layout.
 All source/CTest tests authored but **NOT EXECUTED**.
+
+
+## GI Stage 44 — actual terrain pass as GI receiver (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage44-terrain-receiver-2026-11-20.md`.
+The **generic** Stage43 custom shader API now has a real consumer in the
+existing `modules/rts/view/RtsTerrainRender` and `RtsTerrainShaders`.
+Do not add RTS dependencies to `engine/render`: this integration is only
+one sample client of the engine's genre-independent interfaces.
+Terrain already uses tex0..20; optional Single GI uses U6/tex21 with
+a capability-gated separate shader variant on >=22-slot Metal/Vulkan,
+selected inside the deferred custom draw pass. Failure and strict
+GLES3 (16-slot) conditions retain the existing terrain shading, NOT a
+pretend GLES terrain GI implementation. Direct/baked sun+spot and fog
+remain unchanged, bounce multiplies linear terrain albedo once.
+Native compilation, CTest, GLSL/MSL/Vulkan shader testing and visuals
+are NOT RUN. TerraWeave standalone renderers are in divergent newer
+branches and MUST be integrated conflict-aware before applying this API.
