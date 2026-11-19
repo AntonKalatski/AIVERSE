@@ -65,8 +65,11 @@ public:
             return false;
         }
         const auto frame=device_->frameSerial();
-        if(!frame || frame==lastFrame_) {
-            error_="VIVID CPU actor: invalid or duplicate frame";
+        // Some GLES3/WebGL2 devices have no frame serial. The host calls
+        // dispatch once per presentation frame; serials are checked when
+        // the backend advertises them, but are not mandatory for CPU mode.
+        if(frame && frame==lastFrame_) {
+            error_="VIVID CPU actor: duplicate frame";
             return false;
         }
         if(!morphs_->evaluateGather(originalMorph_,weights_,currentMorph_)) {
@@ -84,13 +87,15 @@ public:
         }
         device_->updateBuffer(buffer_,output_.data(),output_.size()*sizeof(render::ModelVertex));
         lastFrame_=frame;
+        hasOutput_=true;
         error_.clear();
         return true;
     }
     bool attach(render::ModelDraw& draw) const noexcept {
         if(!ready() || draw.model!=model_ ||
            draw.vertexOverride.valid() || draw.vertexOverrideCount ||
-           device_->frameSerial()!=lastFrame_ ||
+           !hasOutput_ ||
+           (device_->frameSerial()&&device_->frameSerial()!=lastFrame_) ||
            render::modelVertexOverrideStatus(*model_,buffer_,
                std::uint32_t(output_.size()))!=render::ModelVertexOverrideStatus::Ready)
             return false;
@@ -105,6 +110,7 @@ public:
         buffer_={};device_=nullptr;model_=nullptr;morphs_=nullptr;
         base_.clear();output_.clear();originalMorph_.clear();
         currentMorph_.clear();weights_.clear();lastFrame_=0;
+        hasOutput_=false;
         return true;
     }
     bool ready() const noexcept {return device_&&model_&&morphs_&&buffer_.valid();}
@@ -118,6 +124,7 @@ private:
     std::vector<MorphVertex> originalMorph_,currentMorph_;
     std::vector<float> weights_;
     std::uint64_t lastFrame_=0;
+    bool hasOutput_=false;
     std::string error_;
 };
 } // namespace aiverse::vivid
