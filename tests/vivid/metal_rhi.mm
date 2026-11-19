@@ -194,7 +194,7 @@ void run() {
                                          std::to_string(frame) +
                                          " max_abs_error=" + std::to_string(meshError));
             std::cout << "VIVID Metal RHI ModelVertex(60B) frame=" << frame
-                      << " max_abs_error=" << meshError << '\\n';
+                      << " max_abs_error=" << meshError << '\n';
         }
         meshStream.release();
         require(!meshStream.ready() && !meshStream.vertexBuffer().valid(),
