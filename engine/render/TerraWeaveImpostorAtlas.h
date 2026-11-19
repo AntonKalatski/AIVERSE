@@ -153,10 +153,14 @@ inline ArborImpostorAtlas makeArborImpostorAtlas(
     bark.alpha=render::AlphaMode::Mask;
     render::Material leaves=bark;
     leaves.name="TerraWeave impostor foliage";
+    // Vertex alpha stores GPU wind height weight on foliage only.
+    // Do not use it for cutout opacity: the atlas alpha remains authoritative.
+    leaves.vertexColors=false;
     model.materials={std::move(bark),std::move(leaves)};
     for(size_t i=0;i<4;++i){
         auto vertex=model.vertices[i];
         vertex.pos.z+=0.02f; // 2cm toward camera reduces far-LOD depth fighting
+        vertex.color=(i>=2 ? 0xff000000u : 0u)|0x00ffffffu;
         model.vertices.push_back(vertex);
     }
     model.indices.insert(model.indices.end(),{4u,5u,6u,4u,6u,7u});
