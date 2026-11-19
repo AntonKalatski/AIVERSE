@@ -103,6 +103,7 @@ bool boxVisible(const mat4& vp, float3 mn, float3 mx) {
 // ------------------------------------------------------------------ setup
 
 void RtsGroundFx::init(gfx::Device& dev, const Rules& rules, const FileReader& read, const std::string& contentBase) {
+    checkGpuDevice(dev);
     if (dev_) shutdown(*dev_);
     dev_ = &dev;
     rules_ = &rules;
@@ -258,6 +259,7 @@ void RtsGroundFx::setMesh(Mesh& m, const MeshBuilder& b) {
 }
 
 void RtsGroundFx::shutdown(gfx::Device& dev) {
+    checkGpuDevice(dev);
     dev_ = &dev;
     for (Chunk& c : chunks_)
         for (Mesh* m : {&c.fill, &c.border, &c.rock, &c.veins, &c.gems, &c.marks, &c.road, &c.concrete}) freeMesh(*m);
@@ -858,6 +860,7 @@ void RtsGroundFx::buildLanes(const RtsScene& s, const MapGrid& g, const RtsView&
 // ------------------------------------------------------------------ frame
 
 void RtsGroundFx::draw(Renderer3D& r, const RtsScene& s, double time, const std::vector<uint8_t>* vision, const MapGrid& g, const RtsView& v) {
+    if(dev_)checkGpuDevice(*dev_);
     if (!dev_ || !rules_ || g.w <= 0 || g.h <= 0) return;
     time_ = float(std::fmod(time, 1000.0));
     bool hi = r.materialQuality() != MaterialQuality::Low;
