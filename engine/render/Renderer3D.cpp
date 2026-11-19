@@ -168,6 +168,7 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     reflectionPlaneValid_ = false;
     reflectionPlaneY_ = 0.f;
     items_.clear(); lines_.clear(); tris_.clear(); custom_.clear(); customOpaque_.clear(); customShadow_.clear();
+    customMaterialReceiver_.clear();customSurfaceReceiver_.clear();
     modelItems_.clear(); jointData_.clear(); morphData_.clear(); modelStats_ = {};
     lodDebugSample_ = {}; // selected instance is tracked per viewport beginScene
     // ModelItem pointers are valid only within this scene; never reuse their
@@ -420,7 +421,8 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
             dev_->setViewport({0,0,sw,sh});
             lumaMaterialCapture_=true;
             uploadFrameUniforms(false);
-            renderModels(1); // opaque models only; custom renderers can supply a buffer explicitly
+            renderModels(1);
+            for(auto& fn:customMaterialReceiver_)fn(*dev_);
             lumaMaterialCapture_=false;
             dev_->endPass();
             post_->materialReceiverPublished(receiver.colorTarget,sw,sh);
@@ -437,6 +439,7 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
             lumaSurfaceCapture_=true;
             uploadFrameUniforms(false);
             renderModels(1);
+            for(auto& fn:customSurfaceReceiver_)fn(*dev_);
             lumaSurfaceCapture_=false;
             dev_->endPass();
             post_->surfaceReceiverPublished(surface.colorTarget,sw,sh);
