@@ -451,7 +451,7 @@ struct App {
         gui.render();device.endPass();device.endFrame();
         horizonFrameTiming.finish(streamedScene.get(),frameStarted);
     }
-    void shutdown(gfx::Device& device){horizonFrameTiming.discard();if(streamedScene)streamedScene->shutdown(device);server.reset();client.reset();staticGeometry.shutdown(device);platform::setPointerLock(false);audio.shutdown();gui.shutdown();renderer.shutdown();device.destroyBuffer(cube.vb);device.destroyBuffer(cube.ib);}
+    void shutdown(gfx::Device& device){horizonFrameTiming.detach(device);if(streamedScene)streamedScene->shutdown(device);server.reset();client.reset();staticGeometry.shutdown(device);platform::setPointerLock(false);audio.shutdown();gui.shutdown();renderer.shutdown();device.destroyBuffer(cube.vb);device.destroyBuffer(cube.ib);}
 };
 }
 int aiverseMain(int argc,char** argv) {
