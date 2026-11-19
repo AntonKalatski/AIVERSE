@@ -3117,3 +3117,23 @@ The generic `ImportedAttachmentAuthoring` system is now used from a **real AIVER
 Each Studio publication first imports the entire source and child set into a new, separate `ModelAssetProvider`/ModelResourceCache bound to the current Editor GPU Device generation. This is a real file reread and compiled socket validation; failed import or socket validation retains the last-good published session. A **full GPU idle proof** is deliberately required before replacing the old provider and retiring its GPU handles. This is conservative **blocking** authoring; the existing provider and file-backed JSON metadata do NOT implement in-viewport 3D attachment visualization or deferred nonblocking hot reload yet. Nonproven GPU resources are deliberately held alive instead of freed; investigate with the eventual fence fault-injection tests.
 
 There is no gameplay/genre logic in the new shared code; the studio editor is only an asset host and the existing `AnimationGraphInstance` preview owners remain independent. Read [Stage 155 handoff](agent-handoffs/animation-stage155-studio-attachment-staged-reimport-2026-11-20.md) and [Studio attachment guide](studio-attachment-authoring.md). **NOT RUN:** CMake/compiler/CTest/current CI passing, actual Studio launch, Metal/GLES/Vulkan visuals, GPU-fence/sanitizer/crowd tests.
+
+
+## Stage 156: Studio offscreen animation attachment composition
+
+The Studio `MotionWeave — Attachments` tab now renders the real compiled
+source/child Models using its own `Viewport`, `Renderer3D`,
+`ImportedAttachmentAuthoring::prepare` and generic `aiverse::View::submitOne`.
+A transient preview pose is evaluated from the source Model's first imported
+clip (or bind pose) and submitted as `AnimationOwner::HostPrecomputed`,
+without registering another graph writer. Owner-thread parent/child
+`ModelReadLease` guards remain alive throughout the synchronous renderer
+pass. The source and child resources are NOT borrowed from other editor tabs.
+
+The Studio's prior ModelAssetProvider sessions are deferred on publication
+and released after a verified full-GPU-idle barrier at the retention limit or
+shutdown. This is a practical bounded ownership queue, NOT yet a
+per-provider async GPU token retirement solution. Source SHA list,
+limitations and test backlog: [Stage 156 handoff](agent-handoffs/animation-stage156-studio-attachment-preview-deferred-retirement-2026-11-20.md).
+**NOT RUN:** native CMake/CTest, GUI screenshots, Metal/Vulkan/GLES,
+GPU-fence failure injection, sanitizers and performance.

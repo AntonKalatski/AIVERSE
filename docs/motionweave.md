@@ -638,3 +638,21 @@ ModelView's existing Animator is the only animation writer; its already evaluate
 AIVERSE Studio now opens a dedicated `MotionWeave — Attachments` authoring window from Modeling and Animation Graph/Rig toolbars. It uses the same genre-independent `ImportedAttachmentAuthoring` Model and named-socket compiler as native ModelView, but has its OWN provider-owned cache for real imported parent/child models. It never imports gameplay actions or borrows a different editor preview panel's directly-owned Model; the existing editor GraphInstance remains the only preview animation writer.
 
 `Reimport & Publish` rereads on-disk Model sources into a complete separate staged GPU resource owner before committing the new snapshot. Errors keep the previous published asset session; a full Editor GPU idle barrier gates destruction of the old provider. This is intentionally blocking, not seamless/nonblocking, and is currently a **file-layout and socket-validation editor**, not a second 3D preview or a live scene/prefab operation. Further visual integration, ModelView source reimport, retarget/morph authoring and backend validation remain pending. [Stage 155 handoff](agent-handoffs/animation-stage155-studio-attachment-staged-reimport-2026-11-20.md) / [UI guide](studio-attachment-authoring.md). **NOT RUN:** native compiler/CTest/CI green/Metal-Vulkan-GLES/ASan-TSan/benchmarks.
+
+
+## Stage 156: real Studio 3D preview, deferred attachment owner generations
+
+AIVERSE Studio's attachment authoring window now owns a true offscreen
+parent+child model viewport using the genre-neutral `ImportedAttachmentAuthoring`
+pipeline and a render-only `View`. It samples the first imported clip in a
+temporary preview pose, composes named bone sockets from the same published
+source Model, and draws without creating another MotionWeave graph owner.
+
+New source/child provider generations may publish immediately after successful
+authoring; previous and failed scratch providers remain retained until a safe
+full GPU-idle cleanup at the bounded queue threshold/shutdown. These delayed
+owners reduce per-reimport stalls, but still require full idle for actual
+provider shutdown and can increase peak memory; do not call this true
+fence-based or zero-stall retirement. See
+[Stage 156 handoff](agent-handoffs/animation-stage156-studio-attachment-preview-deferred-retirement-2026-11-20.md).
+Real C++/CTest/GPU/visual/sanitizer/benchmark verification remains **NOT RUN**.
