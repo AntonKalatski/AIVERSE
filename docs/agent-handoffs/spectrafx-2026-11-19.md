@@ -287,3 +287,24 @@ git pull --ff-only origin feature/spectrafx-generic-cue-queue
 git fetch origin main
 git merge origin/main
 ```
+
+
+## 2026-11-19 — Stage 17: canonical particle-graph playback from ECS presentation cues
+
+- **Branch:** `feature/spectrafx-generic-cue-queue`; prior main merge `de0872a1f9a48a9f384b3d5ff320e4314b1f6c60` includes main `d71c6d47e532b25fb816a8bb1f96c41e5275a165`.
+- **Code commit:** `ac79ac5f7a5b10a7a090f5c1a2394e9c1b147f48`.
+- **Changed:** new `engine/fx/SpectraFxGraphPlayback.h`.
+- **New functionality:** `SpectraFxGraphPlayback` connects generic `SpectraFxCue` (Play/Move/Stop/Kill, ID, generation-safe key, position, direction, scale, tint) to main's **canonical** `SpectraGraphAssets::load(name,overrides)` and `ParticleSystem::play(effectId,...)`. `route/unroute/clearRoutes/find` select particle graph assets by gameplay cue ID; `dispatch/dispatchAll` translate events; `invalidateAssets/invalidateAsset` expose cache invalidation, `lastLoad` retains compiler errors or safe fallback indication; `prune` clears completed emitter attachments, `reset` kills tracked FX on a rollback/scene reset and leaves unrelated effects untouched. Play replaces an existing keyed instance only after the new effect starts successfully. No second particle simulation.
+- **Compatibility:** additive header; no changes to existing FPS/RTS runtimes, ECS deterministic checksum, save, post-processing or VFX graph file schemas. This is opt-in host integration; users still must install an actual Simulation presenter/collector and call `dispatch` from the presentation frame. Gameplay state is never written back.
+- **Tests actually executed:** **NOT RUN** per user's features-first instruction. Native compile, CTest, live editor preview, effect rendering and GPU backend verification remain pending.
+- **Limitations:** `SpectraFxGraphPlayback` is separate from earlier `SpectraFxCommandQueue` until a unified dispatcher bridge is authored; no direct callback from ParticleSystem per-particle collision/death yet. New graph requests compile/load on Play, which should be cached/preloaded in production. Ownership of particle definitions and handles stays in `SpectraGraphAssets`/`ParticleSystem`.
+- **Next:** connect `SpectraFxGraphPlayback` to the existing `spectrafx.collect` producer without making a second gameplay authority; add editor preview and performance-aware GPU path later. Tests after the complete functionality pass.
+
+Pull newest branch:
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main && git merge origin/main
+```
