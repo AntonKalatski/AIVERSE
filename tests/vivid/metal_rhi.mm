@@ -136,8 +136,12 @@ void run() {
             }
         }
         GpuMorphMeshStream meshStream;
-        require(meshStream.initialize(*device,original),
-                "VIVID RHI 60-byte mesh stream initialization failed");
+        if (!meshStream.initialize(*device,original)) {
+            throw std::runtime_error(
+                "VIVID RHI 60-byte mesh stream initialization failed: " +
+                meshStream.lastError() +
+                " | gfx::Device: " + device->lastError());
+        }
         require(meshStream.ready() && meshStream.vertexCount()==f.base.size(),
                 "VIVID RHI 60-byte mesh stream unavailable");
 
