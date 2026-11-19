@@ -11,6 +11,7 @@
 #include <array>
 #include <cstdint>
 #include <deque>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -28,6 +29,9 @@ struct GraphRuntimeOptions {
     bool gpuMaterial = false;
     // Nonblocking checkpoint requests every N submitted GPU frames (0=off).
     uint32_t checkpointEveryFrames = 0;
+    // Share one limiter across GraphRuntime instances using the same Device.
+    // Optional, for compatibility with single-emitter users.
+    std::shared_ptr<CheckpointReadbackBudget> checkpointBudget;
 };
 
 struct GraphGpuEligibility {
