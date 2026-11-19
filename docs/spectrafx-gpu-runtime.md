@@ -261,7 +261,16 @@ feature.
 The native FPS game renders in a floating-origin local cell space.
 The adapter submits effect poses in that same render-relative space
 and resets scene presentation instances when the camera moves to
-another `world::Cell`. GPU updates happen before the scene pass,
+another `world::Cell`. A live scene switch uses
+`SpectraFxSceneHost::resetScene()` and
+`SpectraFxHybridPlayback::resetPresentation()`, which hide the old
+effects immediately but **retain their GPU resources until the
+appropriate Metal in-flight frame slots have retired**. These
+methods must be called on the device thread outside all GPU encoders;
+`resetScene()` returns false without changing presentation state
+when the current RHI state is not safe. The host's complete
+`shutdown()` / playback `reset()` remains a separate contract for
+device teardown after render submission has stopped. GPU updates happen before the scene pass,
 CPU particles update after camera setup, and the combined VFX draw
 happens in the existing scene pass. This does not modify the
 authoritative FPS motor, weapon fire, replication or hit detection.
