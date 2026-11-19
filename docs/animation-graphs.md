@@ -1096,3 +1096,25 @@ CPU test was expanded for owner-thread and streaming
 invariants, but is **NOT RUN**.
 
 [Stage 131 handoff](agent-handoffs/animation-stage131-streaming-cache-read-regressions-2026-11-19.md).
+
+
+## Stage 132 — native Model streaming and owner-thread read lifetime
+
+The presentation-asset owner can publish a **new** model-cache key during
+a coarse read guard only on the established cache/render thread.
+`ModelResourceCache::insertIfAbsent` now enforces that thread before it
+touches the mutable `std::map`. It does not permit off-thread streaming
+publication or cross-thread cache reads; pre-binding asset creation must
+still be serialized by the native host. Existing model eviction, replacement,
+trim, source invalidation and shutdown remain prohibited with active
+read leases. CPU Model pins are not GPU retirement fences.
+
+The `render_device_epoch` CPU regression now uses always-on `CHECK`
+instead of Release-elidable assertions and contains staged-publish
+transaction checks. On macOS/Linux it also spawns separate children to
+test intentional fatal wrong-thread `ModelReadLease` /
+`ModelCacheReadScope` release and destruction with live readers.
+
+**NOT RUN:** native compiler/CMake/CTest/CI/GPU parity/sanitizers; these
+are committed test sources, not verified passing tests. Details and exact
+commits: [Stage 132 handoff](agent-handoffs/animation-stage132-thread-owned-streaming-release-tests-2026-11-19.md).
