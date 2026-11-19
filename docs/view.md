@@ -913,3 +913,53 @@ presentation/animation graph instances, and retire changed GPU resources only
 after that barrier. FPS visual resource reload and native project host adapters
 remain separate work. Native build, CTest, sanitizers and Metal/editor visual
 verification are **NOT RUN**, per request to implement features first.
+
+## Selective model-source and animation presentation reload (Stage 96)
+
+Model/animation hot reload no longer requires a full `RtsView` restart for a
+changed **resident model source**. The editor watcher invokes
+`Editor::reloadVisualModelSources(paths)`, which invokes
+`RtsView::reloadModelSources(paths)` on the presentation/render thread
+outside play mode. `Editor::reloadVisualAssets()` remains available as the
+legacy full-view fallback for non-model asset categories.
+
+The independently owned `view_adapter::RtsModelResourceCache` now supports:
+- `sourceForKey(key)`: maps both `model.glb` and `model.glb#geometry`
+  cache entries to the original source path.
+- `affectedBySource(path)`: enumerates affected keys and borrowed model
+  pointers; importantly, failed-load/null entries are also represented.
+- `invalidateSources(device,changed,onDetach)`: joins any pending native
+  CPU preparation, invokes the host detachment callback **before** any
+  cached GPU model destruction, evicts only affected keys, advances cache
+  generation and runs texture trimming. The callback must clear all
+  external borrowed model/animation references and is invoked on the render
+  thread between submissions; a throwing callback aborts before eviction.
+- `modelFiles()`: reports deduplicated normalized source paths even for
+  geometry-policy variants and failed loads, so a fixed missing model can
+  be reloaded without reopening the editor.
+
+The RTS host's detachment phase identifies loaded appearances through
+current `ModelChoice` pointers (including attachments, stage choices and
+LOD choices) and through recursive authored model references (covering
+failed loads, late variants and nested objects). Streaming
+`coarseModel/detailModel` and requested runtime models are checked too.
+Affected `TypeLook` and `EntityAnim` records and per-model compiled graph
+caches are invalidated, then only previously loaded affected types are
+reconstructed. `MotionWeaveSourceBridge::forget` and
+`aiverse::view::View::forgetSources` remove only affected presentation ECS
+entities; unrelated animation clocks are not deliberately restarted.
+The ephemeral ghost animator is reset conservatively. There is no second
+animation tick or owner.
+
+**Scope and constraints:** the editor watcher still enumerates only
+resident cache sources, not all unloaded authored assets. File changes to
+external graph definitions, materials, stand-alone textures and independent
+FPS host caches are not routed into this targeted model path. They require
+explicit dependency indexing and safe texture/graph invalidation next.
+GPU submission completion, shared texture retention, active portrait
+render targets and exact visual parity require native/graphics validation
+before this is production-safe. `RtsView` remains a compatibility adapter.
+
+**NOT RUN** by request: no local native compiler, CMake/CTest, Metal/RTS/FPS/
+editor runtime, ASan/TSan, benchmarks or CI. The code was committed through
+the GitHub API; source review is not a substitute for compilation.
