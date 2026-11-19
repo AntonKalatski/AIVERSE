@@ -401,6 +401,7 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
             it.morph < 0 && (!it.prim || it.prim->morphTargets == 0 ||
             !it.model || !it.model->morphTex.valid()) &&
             it.materialRole != 1 && it.shadowRole != 2 &&
+            it.lodThreshold >= 1.0f && !it.lodInvert &&
             it.mat && (it.mat->alpha == AlphaMode::Opaque ||
              it.mat->alpha == AlphaMode::Mask) && !it.mat->shaderGraph &&
             it.mat->team == TeamMode::None && !it.mat->transparent && !(it.flags & kDrawTransparent) &&
@@ -432,7 +433,8 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
         return (hasSkin || hasMorph || bakedEligible) &&
             !(it.baked && !bakedEligible) && it.tint.w >= 0.99f &&
             it.dissolve <= 0.0f && it.materialRole != 1 &&
-            it.shadowRole != 2 && it.mat->alpha == AlphaMode::Opaque &&
+            it.shadowRole != 2 && it.lodThreshold >= 1.0f &&
+            !it.lodInvert && it.mat->alpha == AlphaMode::Opaque &&
             !it.mat->transparent && !(it.flags & kDrawTransparent);
     };
     for (const auto& it : modelItems_) {
