@@ -255,6 +255,10 @@ public:
     spectra::GpuCaptureRequestMailbox& captureMailbox() {
         return captureMailbox_;
     }
+    // Native/editor host integration exposes only non-owning references.
+    // Attach while NativeAttachmentExample lives; detach before shutdown.
+    const spectra::GpuPoolWorld& poolTelemetry() const {return pool_;}
+    spectra::GpuPoolRecoveryHost& recoveryHost() {return recovery_;}
     // Legacy immediate export remains read-only and cannot request readback.
     bool exportFreshGpuCheckpoint(size_t groupIndex,
                                   std::vector<uint8_t>& bytes) const {
