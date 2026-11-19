@@ -256,6 +256,42 @@ void submitViaSimulationCommandQueue() {
     CHECK(!submitEditableFieldsFromMap(*sim,bad,kFieldEditCmd,scheduled,&error));
     CHECK(registry(*sim).revision==revision);
 }
+void rejectCompetingInstallers() {
+    auto sim=make();
+    const auto baseline=sim->checksum();
+    const auto count=registry(*sim).byId.size();
+    const auto map=setupMap();
+    bool rejected=false;
+    try { (void)installEditableFromMap(*sim,map); }
+    catch(const std::logic_error&) { rejected=true; }
+    CHECK(rejected);
+    CHECK(sim->checksum()==baseline);
+    CHECK(registry(*sim).byId.size()==count);
+    rejected=false;
+    try { (void)installTrackedFromMap(*sim,map); }
+    catch(const std::logic_error&) { rejected=true; }
+    CHECK(rejected);
+    CHECK(sim->checksum()==baseline);
+    rejected=false;
+    try { (void)installFromMap(*sim,map); }
+    catch(const std::logic_error&) { rejected=true; }
+    CHECK(rejected);
+    CHECK(sim->checksum()==baseline);
+    // A serialized canonical registry survives restoration, while the
+    // ephemeral setup marker may not. The persistent registry alone must
+    // block competing tracked/static setup before any mutation.
+    const auto saved=sim->serialize();
+    auto restored=make();
+    std::string error;
+    CHECK(restored->deserialize(saved,&error));
+    CHECK(restored->world().resourceConst<FieldRuntimeState>()!=nullptr);
+    const auto restoredChecksum=restored->checksum();
+    rejected=false;
+    try { (void)installTrackedFromMap(*restored,map); }
+    catch(const std::logic_error&) { rejected=true; }
+    CHECK(rejected);
+    CHECK(restored->checksum()==restoredChecksum);
+}
 void authorityAndStale() {
     auto sim=make();
     Command cmd;
@@ -283,6 +319,7 @@ int main() {
     kindChangeAndSave();
     submitViaSimulationCommandQueue();
     authorityAndStale();
+    rejectCompetingInstallers();
     std::printf("PHYSIS field runtime: %s\n",failures?"FAIL":"PASS");
     return failures?1:0;
 }
