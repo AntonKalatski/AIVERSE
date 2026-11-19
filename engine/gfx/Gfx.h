@@ -295,6 +295,16 @@ public:
     virtual void setComputeUniforms(const void*,size_t) {}
     // 64 threads per X group; dispatch provides total logical threads. Bounds-check in shader.
     virtual void dispatch(uint32_t,uint32_t=1) {}
+    // Unlike the legacy void dispatch(), this reports a CPU-side encode
+    // rejection (missing descriptor, invalid pipeline, unsupported limits).
+    // GPU execution errors still require health/readback/fence validation.
+    // Backends that implement only void dispatch retain conservative
+    // device-health-based behavior.
+    virtual bool dispatchChecked(uint32_t x,uint32_t y=1) {
+        if (!supportsCompute() || !gpuHealthy()) return false;
+        dispatch(x,y);
+        return gpuHealthy();
+    }
     virtual void endCompute() {}
     // Debug/readback only, between frames. Never used in normal simulation/rendering.
     virtual bool readBuffer(BufferHandle,void*,size_t) { return false; }
