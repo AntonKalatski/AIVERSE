@@ -1498,3 +1498,37 @@ compute/render encoder. GPU error handling/fallback is not yet automatic.
 VM integration, no fully GPU-owned multi-source allocator, no proven shader
 compilation, no GPU/CPU numerical parity and no lossless device-failure migration.
 Tests and native builds remain deferred by user instruction.
+
+
+## Stage 27 — integrated Metal GPU VM error diagnostics and honest fallback accounting
+
+The integrated Metal particle kernel (`SpectraGpuShaders.h`, *not* the
+standalone experimental Stage 23 kernel) now counts failed VM statements,
+invalid arithmetic and nonfinite assignment results into a dedicated atomic
+storage-buffer counter. The counter is reset before a nonempty compute frame
+and bound as Metal compute buffer slot 12. A failed VM statement continues to
+be skipped, as the existing CPU VM semantics require; diagnostics do not enable
+unsupported GPU graph operations.
+
+`ComputeParticles::readGpuVmErrors(uint32_t&)` and
+`GraphRuntime::readGpuVmErrors(uint32_t&)` expose an opt-in, blocking,
+**between-completed-frames** diagnostic. A `false` result indicates
+unsupported/unavailable readback, never a count of zero.
+`ComputeStats::gpuVmErrorsKnown` is false until a successful read and is
+invalidated on every new GPU frame or CPU fallback. Do not call this from an
+active render/compute encoder. The Metal RHI's `readBuffer` explicitly refuses
+an active command buffer and waits for a separate readback submission; only use
+for diagnostics, not every game frame.
+
+On unhealthy GPU, `RequireGpu` continues to reject fallback. In permissive
+modes, the existing `switchToCpu` creates a new CPU emitter, **not** a live
+state migration. The `lostOnFallback` count now includes pending GPU slot
+allocations rather than only last frame's drawn particles. This change
+improves accounting, but GPU-resident particle positions, attributes,
+per-particle ages and remaining lifetimes are still lost. A recovery policy
+requiring lossless migration must retain or read back a complete checkpoint
+and reconstruct CPU state. **No such migration exists yet.**
+
+Status: source code committed; native C++ build, Metal shader compile,
+CTest, editor UI and GPU fault-injection tests NOT RUN. Do not claim that
+this is a production-grade recovery implementation.
