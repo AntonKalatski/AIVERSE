@@ -117,9 +117,21 @@ overflow, or unsupported/safe modes. It never replaces exact final MDI
 compatibility checks or per-entity culling/LOD. Stats report **ready groups
 versus actual successful CPU MDI submissions**, so neither number alone is
 a proven frame-time improvement. Do not use cross-model preflight while
-the separate instance-material-palette sorter is active. See
-`docs/geometry-performance.md` and the latest batching-agent handoff
-before editing these paths.
+the separate instance-material-palette sorter is active. Stage 19
+adds the optional `AIVERSE_CPU_MDI_ADAPTIVE=1` cost-feedback loop,
+only active with `AIVERSE_STATIC_CROSS_MODEL_BATCHES=1`.
+`engine/render/CpuMdiAdaptivePolicy.h` tracks measured **CPU API
+preparation/submission time per distinct indexed command**, separately
+for sun-shadow and opaque. It warms up for two attempts, uses a 15% EMA,
+and after eight usable samples temporarily prefers ordinary instancing
+when the EMA exceeds `AIVERSE_CPU_MDI_MAX_US_PER_COMMAND` (default
+25 us; experimental, user-tunable). Every 32 preflight-ready passes a
+probe retries MDI to allow recovery. Nonpooled/nonstatic MDI and GPU ICB
+are unaffected. This does **not** measure GPU time or prove a speedup;
+keep all flags default OFF until Metal pixel tests and same-scene CPU/GPU
+A/B/A. Scene → Batching shows cost, sample counts, skipped and probe
+passes. See `docs/geometry-performance.md` and the latest
+batching-agent handoff before editing these paths.
 
 `engine/render/EcsStaticModelRender.h` provides the **shared genre-independent
 ECS presentation adapter** using only integer asset/revision state in the ECS
