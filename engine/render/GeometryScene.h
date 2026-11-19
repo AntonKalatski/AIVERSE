@@ -52,6 +52,8 @@ public:
         uint32_t strataSharedIoWorkers=0;
         uint64_t strataSharedIoQueuedJobs=0, strataSharedIoActiveJobs=0;
         uint64_t strataSharedCpuReadyBytes=0, strataSharedCpuReadyBudgetBytes=0;
+        uint64_t strataArchivedCpuIndexBytesFreed=0;
+        uint32_t strataArchivedCpuIndexSources=0;
     };
     void load(gfx::Device& dev, const Json& json, const FileReader& reader);
     // Procedural/offline callers may supply immutable CPU models instead of files.
@@ -151,6 +153,16 @@ public:
     const std::string& strataDiskPageDirectory() const {
         return strataDiskPageDirectory_;
     }
+    // Stage 15.4 opt-in. After verified on-disk archive open + root GPU
+    // upload, discard duplicate staged STRATA CPU indices (source Model
+    // retains its original CPU/GPU ownership). Incompatible diagnostics
+    // keep the indices. Must set before load; default OFF.
+    void setStrataDropArchivedCpuIndicesEnabled(bool enabled) {
+        strataDropArchivedCpuIndicesEnabled_=enabled;
+    }
+    bool strataDropArchivedCpuIndicesEnabled() const {
+        return strataDropArchivedCpuIndicesEnabled_;
+    }
     bool collectStrataGpuInstances(const std::string& sourceKey,
                                    std::vector<strata::GpuSceneInstance>& out) const;
     bool dispatchStrataGpuView(gfx::Device& device, const std::string& sourceKey,
@@ -242,6 +254,7 @@ private:
     size_t strataStreamingFrameBudgetLeft_=0;
     uint64_t strataStreamingSourceCursor_=0;
     std::string strataDiskPageDirectory_;
+    bool strataDropArchivedCpuIndicesEnabled_=false;
     float errorPixels_=2, maxPixels_=256;
     size_t proxyVertices_=0;
 };
