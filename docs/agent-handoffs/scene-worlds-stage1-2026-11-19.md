@@ -28,7 +28,7 @@ not collapse those concepts. `SceneHierarchy` remains per ECS World.
      `ownerOf`, `activate`, `cancel`, `unload`, `record`, `count`.
    - Additive and Replace modes; old scene retained until replacement is
      ready to activate. Persistent scenes survive replacement. Only one
-     pending Replace at a time. Stale IDs never recycled.
+     pending Replace at a time. Stale IDs never recycled within one rollback timeline.
    - Unload gathers scene-owned entities before mutation, sorts by Entity
      index/generation, detaches SceneHierarchy nodes before destruction.
      Foreign children are promoted to hierarchy roots.
@@ -119,6 +119,9 @@ working copy. Run the wider ECS/RTS/FPS save/replay suite before integration.
   same validated command tick. Worker completion order must not influence
   simulation outcomes. Use `readyToStep()` to gate immutable content
   availability.
+- Rollback restores `SceneState::nextId`, so asynchronously prepared jobs
+  from the discarded future must be invalidated with a host-owned timeline
+  epoch in Stage 2, not only a World-local SceneId.
 - World-local `SceneId` is not unique across independent simulations;
   transport scene IDs with WorldHandle (or canonical scene asset key).
 - Entity references from other scene entities can outlive an unload;
