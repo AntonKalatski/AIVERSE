@@ -238,8 +238,11 @@ void VulkanDevice::updateBuffer(BufferHandle h, const void* data, size_t size, s
             vkCmdCopyBuffer(cb, src, b->versions[0].buffer, 1, &c);
             auto mb = vkStruct<VkMemoryBarrier>(VK_STRUCTURE_TYPE_MEMORY_BARRIER);
             mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            mb.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_INDEX_READ_BIT;
-            vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_VERTEX_INPUT_BIT, 0, 1, &mb, 0, nullptr, 0, nullptr);
+            mb.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                                 VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+                                 0, 1, &mb, 0, nullptr, 0, nullptr);
             return;
         }
     }
@@ -399,8 +402,19 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
     t.width = std::max(1, d.width); t.height = std::max(1, d.height);
     t.depth = d.format == PixelFormat::Depth;
     t.renderTarget = d.renderTarget;
+    t.storage = d.storage;
     t.compressed = isCompressed(d.format);
     if (!supports(d.format) && !t.depth) { error_ = "texture format unsupported"; return {}; }
+    if (d.storage) {
+        VkFormatProperties fp{};
+        vkGetPhysicalDeviceFormatProperties(gpu_,t.vkFormat,&fp);
+        if (!computeAvailable_ || t.depth || t.compressed || d.mipmaps ||
+            d.format!=PixelFormat::RGBA16F ||
+            !(fp.optimalTilingFeatures & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)) {
+            error_="Vulkan: compute storage texture format unsupported";
+            return {};
+        }
+    }
     if (t.compressed) t.levels = std::max(1, d.levelCount);
     else if (d.mipmaps && !t.depth && !d.renderTarget && d.format != PixelFormat::RGBA16F && d.format != PixelFormat::RGBA32F) {
         VkFormatProperties fp;
@@ -414,6 +428,7 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
     VkImageUsageFlags usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
     if (t.depth) usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
     else if (d.renderTarget) usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
+    if (d.storage) usage |= VK_IMAGE_USAGE_STORAGE_BIT;
     if (!createImage(t, usage)) return {};
     t.sampler = samplerFor(d, t);
     VkCommandBuffer cb = transferCmd();
