@@ -20,6 +20,10 @@ namespace aiverse::view {
 
 class ImportedAttachmentAuthoring final {
 public:
+    enum class AnimationOwner : uint8_t {
+        ViewEvaluates, // call generic View::update exactly once
+        HostPrecomputed // never create a second graph writer
+    };
     using Asset = AppearanceAssetRegistry::Asset;
     using Snapshot = AppearanceAssetRegistry::Snapshot;
 
@@ -187,7 +191,9 @@ public:
                         const render::ModelResourceCache& cache,
                         const render::mat4& world,
                         const Asset::CompiledPresentationBindings* bindings,
-                        Prepared& out,std::string* error=nullptr) {
+                        Prepared& out,
+                        AnimationOwner owner=AnimationOwner::ViewEvaluates,
+                        std::string* error=nullptr) {
         if(error)error->clear();
         try {
             if(!compiled.source || !compiled.source->model ||
@@ -256,6 +262,14 @@ public:
                     attachment.compiledSocket=
                         compiled.children[i].socketBinding;
             }
+            // A host that already advanced MotionWeave must not hand the
+            // same graph to another View animation source. Preserve the
+            // authoritative host-precomputed Pose/skin output separately.
+            if(owner==AnimationOwner::HostPrecomputed)
+                next.object.graph.reset();
+            else if(next.object.graph && next.object.id==0)
+                throw std::invalid_argument(
+                    "View-owned animated source requires a stable nonzero ID");
             out=std::move(next);
             return true;
         }catch(const std::exception& ex) {
