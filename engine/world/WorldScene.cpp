@@ -94,6 +94,33 @@ WorldScene::~WorldScene()=default;
 void WorldScene::setNereidSurfaces(std::vector<NereidSceneSurface> surfaces) {
     nereidWater_.setSurfaces(std::move(surfaces));
 }
+void WorldScene::setNereidFlowObstructions(
+        std::vector<NereidSceneFlowObstruction> obstructions) {
+    if(obstructions.size()>lib::nereid::kMaxWaterFlowObstructions)
+        throw std::length_error("WorldScene NEREID visual obstacle budget");
+    for(const auto& source:obstructions)
+        if(!source.sceneWaterId || !source.effect.sourceKey ||
+           !source.effect.enabled ||
+           !lib::nereid::validWaterFlowObstruction(source.effect))
+            throw std::invalid_argument(
+                "WorldScene invalid NEREID water obstacle snapshot");
+    std::sort(obstructions.begin(),obstructions.end(),
+        [](const auto& a,const auto& b){
+            return a.sceneWaterId==b.sceneWaterId ?
+                a.effect.sourceKey<b.effect.sourceKey :
+                a.sceneWaterId<b.sceneWaterId;
+        });
+    const auto duplicated=std::adjacent_find(
+        obstructions.begin(),obstructions.end(),
+        [](const auto& a,const auto& b){
+            return a.sceneWaterId==b.sceneWaterId &&
+                a.effect.sourceKey==b.effect.sourceKey;
+        });
+    if(duplicated!=obstructions.end())
+        throw std::invalid_argument(
+            "WorldScene duplicate NEREID scene water obstacle");
+    nereidFlowObstructions_.swap(obstructions);
+}
 size_t WorldScene::nereidVisibleSurfaceCount()const {
     return nereidWater_.visibleSurfaceCount();
 }
@@ -637,8 +664,10 @@ void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
         [this](uint64_t stableWaterId,Vec3 position,Vec3 ordinary) {
             const Vec3 joined=confluences_.flowForWater(
                 stableWaterId,position,ordinary,nereidWater_);
-            return cascades_.flowAtConnection(
+            const Vec3 current=cascades_.flowAtConnection(
                 stableWaterId,position,joined,nereidWater_);
+            return resolveNereidFlowObstructions(
+                stableWaterId,position,current);
         });
     cascades_.draw(renderer,origin,size);
     // Shader-normal ripples replace the old overlay rings for surfaces
