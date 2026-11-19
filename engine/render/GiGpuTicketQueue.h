@@ -1,7 +1,7 @@
-// Conservative RHI-completion-aware submission for Metal dynamic GI.
+// Conservative completion-fenced GI submission for Metal and Vulkan.
 // A dispatch only ENCODEs work: it does not mean the probe texture is ready.
-// Metal readBufferAsync schedules a blit AFTER compute in the same command buffer;
-// its callback is delivered on the device owner thread after GPU completion.
+// Metal readBufferAsync returns a completion callback after the GPU command buffer;
+// Vulkan waits for completedFrameSerial() from a real reused-slot VkFence.
 // No callback captures this queue or a raw ECS/renderer pointer (shutdown-safe).
 #pragma once
 #include "GiGpuSmallScene.h"
@@ -42,7 +42,9 @@ public:
         if (dev_ && fence_.valid()) dev_->destroyBuffer(fence_);
         dev_=nullptr;
         fence_={};
-        if (!device.supportsCompute() || device.info().backend!=gfx::Backend::Metal)
+        const auto backend=device.info().backend;
+        if (!device.supportsCompute() ||
+            (backend!=gfx::Backend::Metal && backend!=gfx::Backend::Vulkan))
             return false;
         constexpr uint32_t marker=0x47494631u; // GIF1
         fence_=device.createBuffer({gfx::BufferType::Storage,gfx::Usage::Immutable,
@@ -117,14 +119,22 @@ public:
         batch.tickets=tickets;
         batch.fence=std::make_shared<Fence>();
         const auto state=batch.fence;
-        batch.fence->asyncSupported=dev_->readBufferAsync(
+        batch.fence->asyncSupported=dev_->info().backend==gfx::Backend::Metal &&
+            dev_->readBufferAsync(
             fence_,sizeof(uint32_t),[state](std::vector<uint8_t> bytes) {
                 uint32_t marker=0;
                 if(bytes.size()==sizeof(marker))std::memcpy(&marker,bytes.data(),sizeof(marker));
                 state->successful.store(marker==0x47494631u,std::memory_order_release);
                 state->ready.store(true,std::memory_order_release);
             });
-        result={batch.serial,true,batch.fence->asyncSupported,tickets.size()};
+        if (dev_->info().backend==gfx::Backend::Vulkan) {
+            // The dispatch is encoded in the CURRENT Vulkan frame. Its result
+            // must not be published before the VkFence for this exact serial
+            // completes; endFrame merely submits the command buffer.
+            batch.gpuFrameSerial=dev_->frameSerial();
+        }
+        result={batch.serial,true,batch.fence->asyncSupported ||
+                batch.gpuFrameSerial!=0,tickets.size()};
         pending_.push_back(std::move(batch));
         return result;
     }
@@ -133,7 +143,8 @@ public:
     // host must obtain a separate, REAL GPU completion signal before calling this.
     // Never call from endFrame() merely because the command buffer was submitted.
     bool confirmExternalCompletion(uint64_t serial,bool success) {
-        for(auto& batch:pending_) if(batch.serial==serial && !batch.fence->asyncSupported) {
+        for(auto& batch:pending_) if(batch.serial==serial &&
+            !batch.fence->asyncSupported && batch.gpuFrameSerial==0) {
             batch.fence->successful.store(success,std::memory_order_release);
             batch.fence->ready.store(true,std::memory_order_release);
             return true;
@@ -146,6 +157,11 @@ public:
         PollStats stats;
         for(size_t i=0;i<pending_.size();) {
             auto& batch=pending_[i];
+            if(batch.gpuFrameSerial && dev_ &&
+               dev_->completedFrameSerial()>=batch.gpuFrameSerial) {
+                batch.fence->successful.store(dev_->gpuHealthy(),std::memory_order_release);
+                batch.fence->ready.store(true,std::memory_order_release);
+            }
             if(!batch.fence->ready.load(std::memory_order_acquire)) {++i;continue;}
             ++stats.completed;
             const bool success=batch.fence->successful.load(std::memory_order_acquire);
@@ -169,6 +185,7 @@ private:
         uint64_t serial=0;
         std::vector<GiProbeTicket> tickets;
         std::shared_ptr<Fence> fence;
+        uint64_t gpuFrameSerial=0; // Vulkan: genuine completed-frame fence, never a submitted-only serial
     };
     gfx::Device* dev_=nullptr; // device owner must outlive queue
     gfx::BufferHandle fence_{};
