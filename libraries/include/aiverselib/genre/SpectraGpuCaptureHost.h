@@ -16,6 +16,12 @@
 
 namespace aiverse::spectra {
 
+// Selection affects the next explicit request ONLY. The controller still
+// admits at most one outstanding readback, using the Device-shared budget.
+enum class GpuCaptureTargetPolicy : uint8_t {
+    RoundRobin, LargestEstimatedGroup, MissingOrStalestCheckpoint
+};
+
 enum class GpuCapturePhase : uint8_t {
     Idle, Queued, InFlight, Ready, Failed
 };
@@ -53,9 +59,15 @@ public:
         result_.clear();
         status_=GpuCaptureStatus{};
         if(!pool_.ready() || pool_.presentationBlocked() ||
-           groupIndex>=pool_.stats().gpuGroups || maxBytes==0 ||
+           groupIndex>=pool_.gpuGroupCount() || maxBytes==0 ||
            maxBytes>kGpuCheckpointExportMaxBytes) {
             fail("Capture request: invalid group, byte cap, or unavailable GPU pool");
+            return false;
+        }
+        PoolGpuGroupSummary group{};
+        if(!pool_.gpuGroupSummary(groupIndex,group) || !group.gpuActive ||
+           group.checkpoint.pending) {
+            fail("Capture request: GPU group is unavailable or readback already pending");
             return false;
         }
         status_.phase=GpuCapturePhase::Queued;
@@ -66,6 +78,54 @@ public:
         maxBytes_=maxBytes;
         shared_->received=false;
         shared_->completed=false;
+        return true;
+    }
+
+    // Explicitly route one request across multiple GPU groups. No timer,
+    // worker or background sweep. Pending readback groups are skipped; the
+    // existing Stage 32 shared byte/chunk budget still decides admission.
+    bool requestNext(
+        GpuCaptureTargetPolicy policy=GpuCaptureTargetPolicy::RoundRobin,
+        size_t maxBytes=kGpuCheckpointExportMaxBytes) {
+        if(status_.phase==GpuCapturePhase::Queued ||
+           status_.phase==GpuCapturePhase::InFlight)return false;
+        const size_t count=pool_.gpuGroupCount();
+        if(count==0 || !pool_.ready() || pool_.presentationBlocked()) {
+            fail("No active GPU pool groups available for selected capture");
+            return false;
+        }
+        size_t chosen=count;
+        uint64_t highestScore=0;
+        const size_t start=nextSelectionStart_%count;
+        for(size_t scan=0;scan<count;++scan) {
+            const size_t index=(start+scan)%count;
+            PoolGpuGroupSummary summary{};
+            if(!pool_.gpuGroupSummary(index,summary) ||
+               !summary.gpuActive || summary.checkpoint.pending)continue;
+            if(policy==GpuCaptureTargetPolicy::RoundRobin) {
+                chosen=index;break;
+            }
+            uint64_t score=0;
+            if(policy==GpuCaptureTargetPolicy::LargestEstimatedGroup)
+                score=summary.estimatedAlive;
+            else {
+                // Missing captures are prioritized; a stale checkpoint is
+                // more useful to recapture than a fresh one.
+                score=!summary.checkpoint.complete?
+                    (uint64_t(1)<<63):
+                    summary.checkpoint.fresh?0:
+                    uint64_t(1)+summary.checkpoint.framesBehind;
+            }
+            if(chosen==count || score>highestScore) {
+                chosen=index;highestScore=score;
+            }
+        }
+        if(chosen==count) {
+            fail("All GPU groups are unavailable or already capturing");
+            return false;
+        }
+        if(!request(chosen,maxBytes))return false;
+        nextSelectionStart_=(chosen+1)%count;
         return true;
     }
 
@@ -176,6 +236,7 @@ private:
     std::vector<uint8_t> result_;
     size_t maxBytes_=kGpuCheckpointExportMaxBytes;
     uint64_t nextRequestId_=0;
+    size_t nextSelectionStart_=0;
 };
 
 } // namespace aiverse::spectra
