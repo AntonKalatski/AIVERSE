@@ -316,13 +316,16 @@ static void durableDeliveryBudgetRetryAndReplay() {
             }, 4097);
         require(false, "oversize delivery budget accepted");
     } catch (const std::invalid_argument&) {}
+    bool sinkThrew = false;
     try {
         pn::dispatchNatureFractures(world,
             [](const pn::NatureFractureEvent&) -> pn::NatureFractureDisposition {
                 throw std::runtime_error("temporary durable sink failure");
             }, 1);
-        require(false, "sink exception unexpectedly swallowed");
-    } catch (const std::runtime_error&) {}
+    } catch (const std::runtime_error&) {
+        sinkThrew = true;
+    }
+    require(sinkThrew, "sink exception unexpectedly swallowed");
     require(pn::pendingNatureFractures(world).size() == 2,
             "failed delivery callback lost a pending event");
 
