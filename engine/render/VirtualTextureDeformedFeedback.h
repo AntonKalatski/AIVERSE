@@ -21,8 +21,9 @@ struct alignas(16) VirtualTextureDeformedFeedbackU6 {
     float virtualUv[4] = {1,1,0,0};
     float policy[4] = {};     // alphaMask,LODfade,threshold,invert
     float scenePixel[4] = {1,1,0,0};
+    float alphaMode[4] = {};  // x: source is full-res R8 tex15
 };
-static_assert(sizeof(VirtualTextureDeformedFeedbackU6) == 80);
+static_assert(sizeof(VirtualTextureDeformedFeedbackU6) == 96);
 
 struct VirtualTextureDeformedFeedbackSources {
     std::string vertex, fragment, metal;
@@ -54,9 +55,10 @@ layout(std140) uniform U2 {
     vec4 m_base,m_emissive,m_pbr,m_misc,m_uv0,m_uv1,m_light,m_reveal,m_revealAxis;
 };
 layout(std140) uniform U6 {
-    vec4 vtPage,vtTexels,vtVirtualUv,vtPolicy,vtScenePixel;
+    vec4 vtPage,vtTexels,vtVirtualUv,vtPolicy,vtScenePixel,vtAlphaMode;
 };
 uniform sampler2D tex1;
+uniform sampler2D tex15;
 in vec2 v_uv;
 flat in vec4 v_lod;
 layout(location=0) out vec4 outFeedback;
@@ -69,8 +71,11 @@ void main() {
     vec2 virtualUV = v_uv * vtVirtualUv.xy + vtVirtualUv.zw;
     int mip = aiverseFeedbackMipFromDerivatives(
         virtualUV,vtTexels.xy,int(vtTexels.z),vtTexels.w);
-    if (vtPolicy.x > 0.5 &&
-        texture(tex1,v_uv).a * m_base.a < m_misc.x) discard;
+    if (vtPolicy.x > 0.5) {
+        float a = vtAlphaMode.x > 0.5 ?
+            texture(tex15,v_uv).r : texture(tex1,v_uv).a;
+        if (a * m_base.a < m_misc.x) discard;
+    }
     if (vtPolicy.y > 0.5) {
         vec2 pixel = gl_FragCoord.xy * vtScenePixel.xy + vtScenePixel.zw;
         ivec2 lp=ivec2(floor(pixel)) & ivec2(3);
@@ -102,19 +107,23 @@ void main() {
     result.metal += gfx::kVirtualTextureFeedbackAutoMipMSL;
     result.metal += R"MSL(
 struct VTFeedbackU6 {
-    float4 page,texels,virtualUv,policy,scenePixel;
+    float4 page,texels,virtualUv,policy,scenePixel,alphaMode;
 };
 fragment float4 fs_main(VOut in [[stage_in]],
                         constant MU2& m [[buffer(3)]],
                         constant VTFeedbackU6& vt [[buffer(7)]],
                         texture2d<float> tex1 [[texture(1)]],
-                        sampler s1 [[sampler(1)]]) {
+                        sampler s1 [[sampler(1)]],
+                        texture2d<float> tex15 [[texture(15)]],
+                        sampler s15 [[sampler(15)]]) {
     float2 virtualUV = in.uv * vt.virtualUv.xy + vt.virtualUv.zw;
     int mip = aiverse_feedback_mip_from_derivatives(
         virtualUV,vt.texels.xy,int(vt.texels.z),vt.texels.w);
-    if (vt.policy.x > 0.5 &&
-        tex1.sample(s1,in.uv).a * m.base.a < m.misc.x)
-        discard_fragment();
+    if (vt.policy.x > 0.5) {
+        float a = vt.alphaMode.x > 0.5 ?
+            tex15.sample(s15,in.uv).r : tex1.sample(s1,in.uv).a;
+        if (a * m.base.a < m.misc.x) discard_fragment();
+    }
     if (vt.policy.y > 0.5) {
         float2 pixel=in.pos.xy*vt.scenePixel.xy+vt.scenePixel.zw;
         int2 lp=int2(floor(pixel)) & int2(3);
@@ -157,7 +166,7 @@ public:
             sd.glslVertex=source.vertex.c_str();
             sd.glslFragment=source.fragment.c_str();
             sd.msl=source.metal.c_str();
-            sd.textureSlots=9; sd.uniformSlots=7;
+            sd.textureSlots=16; sd.uniformSlots=7;
             sd.label="VT feedback deformed model";
             shader_[mode]=dev.createShader(sd);
             if (!shader_[mode].valid()) { shutdown(); return false; }
@@ -269,6 +278,11 @@ private:
         vt.virtualUv[2]=map.uvOffsetX;
         vt.virtualUv[3]=map.uvOffsetY;
         vt.policy[0]=it.material.alpha==AlphaMode::Mask?1.0f:0.0f;
+        gfx::TextureHandle alphaMask;
+        if (it.material.baseTex >= 0 &&
+            size_t(it.material.baseTex) < it.model.images.size())
+            alphaMask = it.model.images[size_t(it.material.baseTex)].virtualAlphaMask;
+        vt.alphaMode[0]=alphaMask.valid()?1.0f:0.0f;
         vt.policy[1]=it.lodThreshold<1.0f?1.0f:0.0f;
         vt.policy[2]=it.lodThreshold;
         vt.policy[3]=it.lodInvert?1.0f:0.0f;
@@ -318,6 +332,9 @@ private:
             it.model.images[size_t(it.material.baseTex)].tex.valid())
             alpha=it.model.images[size_t(it.material.baseTex)].tex;
         dev.setTexture(1,alpha);
+        // Bind the exact R8 coverage for masked VT images, irrespective of
+        // whether this draw also uses bone textures and morph deltas.
+        dev.setTexture(15,alphaMask.valid()?alphaMask:white_);
         dev.setVertexBuffer(it.model.vb);
         dev.setIndexBuffer(it.model.ib);
         dev.drawIndexed(it.indexCount,
