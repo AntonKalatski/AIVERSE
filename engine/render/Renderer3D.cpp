@@ -45,6 +45,10 @@ ShadowQuality Renderer3D::defaultQualityFor(const gfx::Device& dev, bool mobile)
 
 bool Renderer3D::init(gfx::Device& dev) {
     checkGpuDevice(dev);
+    if(programRetirement_ && programRetirement_->pendingBatches()!=0)
+        throw std::logic_error("Renderer3D cannot reinitialize with pending GPU programs");
+    programRetirement_=std::make_unique<GpuProgramRetirement>(
+        dev,gpuDeviceLease_);
     dev_ = &dev;
     gfx::ShaderDesc ls; ls.glslVertex = shaders::kLitVS; ls.glslFragment = shaders::kLitFS; ls.msl = shaders::kLitMSL;
     ls.uniformSlots = 3; ls.textureSlots = 6; ls.label = "lit"; // U2/tex1/tex2: Lights (tex2 water reflection); tex3 height field, tex4/tex5 scene (trace)
@@ -122,6 +126,11 @@ void Renderer3D::setShadowQuality(ShadowQuality q) {
 void Renderer3D::shutdown() {
     if (!dev_) return;
     checkGpuDevice(*dev_);
+    // Successful full-device idle is required when shader cache generations
+    // are still pending. Failed completion cannot silently discard them.
+    if(programRetirement_ && !programRetirement_->drain())
+        throw std::runtime_error(
+            "Renderer3D shutdown: pending GPU shader/pipeline completion");
     gpuModelCommands_.release(*dev_);
     persistentCull_.release(*dev_);
     if (persistentUpload_) {
@@ -145,6 +154,7 @@ void Renderer3D::shutdown() {
         dev_->destroyShader(sceneSelectionEdgeShader_);
     for (auto p : {litPipe_, litBlendPipe_, shadowPipe_, linePipe_, triPipe_}) dev_->destroyPipeline(p);
     for (auto s : {litShader_, shadowShader_, colorShader_}) dev_->destroyShader(s);
+    programRetirement_.reset();
     dev_ = nullptr;
 }
 
