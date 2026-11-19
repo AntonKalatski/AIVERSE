@@ -2239,3 +2239,24 @@ fails before GPU creation, exactly 960 succeeds, and zero rejects CPU
 fallback. These C++ cases have been **added but NOT COMPILED/EXECUTED**
 in this tool environment. This budget caps retained decoded images, not
 instantaneous decoder scratch, native GPU allocations or file size.
+
+
+### Stage 10AR — one-mip-at-a-time CPU fallback uploads (source-only)
+
+After the Stage 10AQ *logical decoded-chain* budget preflight, the importer
+no longer allocates a `std::vector` for every decoded mip simultaneously.
+It reuses one RGBA8 mip buffer, including all of that mip's faces, layers,
+and volume slices, to initialize the base texture and then uploads each
+subsequent authored mip via `Device::updateTextureRegion`. The native
+`Device::createTexture` and `updateTextureRegion` contracts must consume
+caller-provided CPU bytes synchronously. An error decoding a later level
+now also destroys any already allocated GPU handle; upload failures retain
+the same rollback behavior.
+
+`maxCpuDecodedBytes` limits the **logical total number of decoded RGBA8
+bytes** across all levels, not simultaneous resident CPU memory. Peak
+retained mip data is instead bounded by the largest level (plus per-slice
+decoder scratch and backend staging). Existing cube-array/3D/second-mip
+mock checks cover the upload ordering and resource cleanup, but this
+refactor has **NOT been compiled or run** on an actual backend.
+
