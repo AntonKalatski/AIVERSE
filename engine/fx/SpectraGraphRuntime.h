@@ -97,6 +97,9 @@ public:
     }
     bool usesSharedBatchWorld() const { return sharedWorld_ != nullptr; }
     const ComputeStats& gpuStats() const { return gpu_.stats(); }
+    // Diagnostic readback, only between completed Metal frames. Returns false
+    // when GPU is unavailable; never treats missing results as zero errors.
+    bool readGpuVmErrors(uint32_t& count) { return gpu_.readGpuVmErrors(count); }
 private:
     bool initCpu(gfx::Device*, const fx::EffectDef&, fx::FxQuality);
     bool initialized_ = false;
