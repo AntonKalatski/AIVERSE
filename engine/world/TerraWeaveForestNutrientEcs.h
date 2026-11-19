@@ -113,8 +113,11 @@ inline ForestNutrientCycleOutcome advanceForestNutrientCycleEcs(
                 result.submergedPermille=1000;
                 // Flood-only samples without a canonical body must not invent
                 // a common transport path across isolated pools.
+                // 0 is reserved for 'no body'. ECS Entity(index=0,
+                // generation=0) is valid and packs to zero, so offset the
+                // packed identifier to keep that first water body usable.
                 result.waterBodyKey=resolved.body.valid()?
-                    resolved.body.packed():0;
+                    resolved.body.packed()+1ull:0ull;
                 const auto cmPerSec=[](Fixed speed)->int32_t{
                     const int64_t cap=100ll*Fixed::kOne;
                     return int32_t(std::clamp<int64_t>(
