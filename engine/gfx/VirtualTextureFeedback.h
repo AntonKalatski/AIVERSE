@@ -472,4 +472,52 @@ inline std::string virtualTextureLodFeedbackFragmentMSL(
     return shader;
 }
 
+// Combined alpha-test and ordered LOD coverage. Both rejection conditions
+// must pass before a page ID is written. Derivatives are computed first.
+inline std::string virtualTextureMaskedLodFeedbackFragmentGLSL(
+    bool automaticMip=true) {
+    std::string shader=virtualTextureMaskedFeedbackFragmentGLSL(automaticMip);
+    const size_t main=shader.rfind("void main(){");
+    if (main==std::string::npos) return {};
+    shader.insert(main,
+        "uniform float uLodThreshold;\n"
+        "uniform bool uLodInvert;\n");
+    const size_t alpha=shader.find(" if(alpha<uAlphaCutoff) discard;",main);
+    if (alpha==std::string::npos) return {};
+    const size_t after=alpha+std::string(" if(alpha<uAlphaCutoff) discard;\n").size();
+    shader.insert(after,
+        " ivec2 lp=ivec2(floor(gl_FragCoord.xy)) & ivec2(3);\n"
+        " int rank=((lp.x & 1) ^ (lp.y & 1))*8+(lp.y & 1)*4+"
+        "((lp.x>>1) ^ (lp.y>>1))*2+(lp.y>>1);\n"
+        " float noise=(float(rank)+0.5)/16.0;\n"
+        " if(uLodInvert ? noise<uLodThreshold : noise>=uLodThreshold) discard;\n");
+    return shader;
+}
+
+inline std::string virtualTextureMaskedLodFeedbackFragmentMSL(
+    bool automaticMip=true) {
+    std::string shader=virtualTextureMaskedFeedbackFragmentMSL(automaticMip);
+    const size_t entry=shader.find("fragment float4 aiverseVirtualFeedbackFragment(");
+    if (entry==std::string::npos) return {};
+    shader.insert(entry,
+        "struct AiverseLodFeedbackParams { float threshold; uint invert; };\n");
+    const size_t sampler=shader.find(" sampler baseSampler [[sampler(0)]]) {");
+    if (sampler==std::string::npos) return {};
+    shader.replace(sampler,
+        std::string(" sampler baseSampler [[sampler(0)]]) {").size(),
+        " sampler baseSampler [[sampler(0)]],\n"
+        " constant AiverseLodFeedbackParams& lod [[buffer(2)]]) {");
+    const size_t alpha=shader.find(" if(alpha<a.alphaCutoff) discard_fragment();");
+    if (alpha==std::string::npos) return {};
+    const size_t after=alpha+std::string(" if(alpha<a.alphaCutoff) discard_fragment();\n").size();
+    shader.insert(after,
+        " int2 lp=int2(floor(in.position.xy)) & int2(3);\n"
+        " int rank=((lp.x & 1) ^ (lp.y & 1))*8+(lp.y & 1)*4+"
+        "((lp.x>>1) ^ (lp.y>>1))*2+(lp.y>>1);\n"
+        " float noise=(float(rank)+0.5)/16.0;\n"
+        " if(lod.invert!=0 ? noise<lod.threshold : noise>=lod.threshold)"
+        " discard_fragment();\n");
+    return shader;
+}
+
 } // namespace aiverse::gfx
