@@ -3027,3 +3027,27 @@ the owner releases its guard. See
 
 **NOT RUN:** native compiler/CMake/CTest,
 GPU visual parity, sanitizers or benchmarks.
+
+## Stage 131 — streamed Model publication while View is reading
+
+`ModelResourceCache::acquireModelRead(key)` now verifies the owner
+thread and active cache lifetime BEFORE accessing its non-threadsafe
+Model map. A foreign-thread lookup rejects with `logic_error`;
+this is not a cross-thread reader-writer lock and does not make
+the underlying Model memory concurrently mutable.
+
+`RtsView::draw` continues to guard Model lifetime with a
+coarse `ModelCacheReadScope` acquired after upfront type
+loads and held until synchronous Renderer3D submission returns.
+NEW Model keys may still be published by the owner thread
+using `insertIfAbsent`, `publishPrepared` or
+`publishStagedModels`, preserving the streaming design.
+Replacing, trimming, invalidating or shutting down the
+unique-owned cache while readers are active fails closed.
+
+The existing native CTest `render_device_epoch` has new
+CPU-only regression scenarios for lease lifecycle, denied
+mutations, new-key streaming and owner-thread rebind.
+These source tests are **authored but NOT RUN**; no measured
+runtime verification or GPU frame safety is claimed.
+See [Stage 131 handoff](agent-handoffs/animation-stage131-streaming-cache-read-regressions-2026-11-19.md).
