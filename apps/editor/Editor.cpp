@@ -211,14 +211,29 @@ void Editor::init(gfx::Device& dev) {
     }
 }
 
+void Editor::retirePreviewModel(std::unique_ptr<render::Model>& model) noexcept {
+    if(!model)return;
+    if(dev_)previewModelRetirement_.retireModel(*dev_,model);
+    else (void)model.release(); // Device no longer exists: fail closed
+}
+
 void Editor::shutdown() {
     if (!dev_) return;
+    // Editor windows own offscreen Model/portrait/viewport allocations and
+    // can still have prior-frame submissions in flight. Prove full device
+    // completion BEFORE allowing destructors to destroy native GPU objects.
+    if(!dev_->waitForResourceIdle())
+        throw std::runtime_error(
+            "Editor shutdown: GPU completion barrier failed");
     clientHost_.stop();
     gameFxBridge_.detach();
     sim_.reset();
     gameFx_.shutdown();
     fxTextures_.shutdown();
-    windows_.clear(); // windows release their viewports in their destructors via update()? keep simple: textures die with the device
+    windows_.clear(); // window destructors may retire Model pointers into the shared queue
+    if(!previewModelRetirement_.completeForShutdown(*dev_))
+        throw std::runtime_error(
+            "Editor preview Models: GPU retirement barrier failed");
     if (studioLogo_.valid()) { dev_->destroyTexture(studioLogo_); studioLogo_ = {}; }
     view_.shutdown(*dev_);
     view_.modelResources().setRetirementDiagnosticObserver({});
@@ -1444,6 +1459,8 @@ void Editor::frame(gfx::Device& dev, double dt) {
         view_.collectRetiredModels();
     if(view_.pendingPaintGpuRetirements()!=0)
         view_.collectRetiredPaintGpuResources();
+    if(previewModelRetirement_.pending()!=0)
+        (void)previewModelRetirement_.collect(dev);
     if(offscreenTargets_ && offscreenTargets_->pendingPairs()!=0)
         offscreenTargets_->collect();
     if(r3d_.pendingProgramRetirements()!=0)
