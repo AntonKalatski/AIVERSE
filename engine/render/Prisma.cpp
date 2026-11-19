@@ -641,10 +641,20 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     // Typed producer descriptors are checked before GPU binding. Legacy
     // no-metadata inputs are still accepted for backward compatibility.
     // In either case the producer owns the GPU handle and its real format.
-    const bool validVelocity = motionView.objectVelocity.validFor(
-        w,h,gfx::PixelFormat::RGBA16F);
-    const bool validReactive = motionView.reactiveMask.validFor(
-        w,h,gfx::PixelFormat::RGBA8);
+    const auto validInput = [&](const MotionTextureInput& input,
+                                gfx::PixelFormat required) {
+        if (!input.validFor(w,h,required)) return false;
+        // Prefer actual live RHI metadata over the provider's declaration.
+        // This check never samples a texture or invokes GPU readback.
+        gfx::TextureInfo actual{};
+        return !dev.textureInfo(input.texture,actual) ||
+            (actual.width == w && actual.height == h &&
+             actual.format == required);
+    };
+    const bool validVelocity = validInput(motionView.objectVelocity,
+                                         gfx::PixelFormat::RGBA16F);
+    const bool validReactive = validInput(motionView.reactiveMask,
+                                         gfx::PixelFormat::RGBA8);
     const PrismaEffect* motionEffect = find(PrismaType::MotionBlur);
     const char* motionFlag = std::getenv("AIVERSE_PRISMA_MOTION_BLUR");
     if (motionEffect && motionFlag && std::strcmp(motionFlag, "1") == 0 &&
