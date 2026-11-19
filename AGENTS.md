@@ -1889,3 +1889,34 @@ Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. 
   suites pass. See the separate
   `docs/agent-handoffs/animation-stage115-main-gpu-retirement-2026-11-19.md`
   for exact commits, unresolved risks and the Stage 116 work plan.
+
+### Animation/View Stage 116 — fence-backed shadows/trace and HDR warmup
+
+- Continue using one renderer-host GPU generation. `Renderer3D`
+  now owns `OffscreenTargetRetirement` for its shadow/SSR/trace,
+  selection, light-map, spot-shadow and reflection RTTs.
+  `LightSystem::setTargetRetirement` borrows this queue; do
+  not create a separate Device epoch or let the owner die first.
+- Resize/quality changes must allocate replacements *before*
+  releasing prior targets and retire old handles using GPU
+  completion tokens; Pending/Failed fences never permit
+  destruction. `Renderer3D::shutdown` requires a confirmed
+  full-device idle before freeing active buffers and shaders.
+- Editor, GameClient and FPS must poll renderer targets through
+  `pendingTargetRetirements/collectRetiredTargets` at owner
+  frame boundaries. Renderer-target orphan/queue failure
+  diagnostics and `gpuWarmStats` are visible in editor Stats.
+- Native HDR `warmPipelineColor` can return false without a
+  ShaderJob. `pendingColorWarms_` now tracks these handles,
+  and `pollPendingModelPipelineJobs` advances them without
+  duplicate scratch Model imports. Boolean false cannot
+  distinguish a true backend failure from Pending; do not
+  claim this case is fully resolved.
+- The existing `render_model_image_transaction` test has
+  new deferred shadow/SSR/reflection/partial allocation and
+  failed indexed geometry scenarios. **NO CMake, CTest,
+  GPU or sanitizer tests have been run for Stage 116.**
+  Consult the separate
+  `docs/agent-handoffs/animation-stage116-render-targets-2026-11-19.md`
+  before any next step. Keep PR #22 Draft until full native
+  validation passes.
