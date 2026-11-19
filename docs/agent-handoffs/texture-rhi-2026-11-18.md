@@ -8528,3 +8528,20 @@ Keep Draft until evidence is green.
 **Actual tests:** See above. Do not infer CTest/native GPU pass from CI jobs belonging to an older SHA, static source checks, or the presence of a registered test. Current HEAD must be validated independently.
 
 **Next concrete step:** On macOS, compile MSL with source counts N=0..4; compare clamp/nearest fourth texture CPU fallback and repeat/linear fourth texture ICB on the same camera.
+
+
+## Stage 10AO — Portable GPU ICB material contract test registered in CTest (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / draft PR #21. **Source commits:** `efe108acc0184cb4353e89e2f53aa37355d2a170 tests/render/gpu_icb_material_contract.cpp`; `63e7831f210ebfe2b5bc9f29201eaaed4e83bfe9 tests/render/gpu_icb_material_contract.cpp (portable NaN)`; `cd807bcee415401fc4968d7b287c591810610fc1 CMakeLists.txt`.
+
+**Architecture/API and observed results:** Added `tests/render/gpu_icb_material_contract.cpp` and registered `aiverse_gpu_icb_material_contract_test` / CTest `gpu_icb_material_contract` under the existing `AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN` test target section. The test compiles against actual public engine headers `GpuMaterialResourceTable.h`, `GpuMaterialState.h` and their RHI dependencies.
+
+The executable checks bounded exact deduplication; per-frame generation invalidation, even when a frame serial repeats; source/VT table/wrap/U2 identity changes; graph source counts, missing/tail handles, finite U2; native RHI descriptor validation; conservative opaque/masked/normalmap pipeline grouping; and fragment-only graph equivalence, including different authored source paths with byte-identical shader source. The test uses `std::numeric_limits<float>::quiet_NaN()` instead of a compiler-specific builtin.
+
+**Actual check:** code added to GitHub and verified CMake registration exists. **The test was NOT built or executed in this environment** (the local container cannot resolve github.com and cannot clone the complete AIVERSE source tree); no pass count should be claimed.
+
+**Documentation commits:** `476193bd471f2fc38924c29952c2ad9640e4fe3e` (`docs/texture-rhi.md`); `56330d69b076760ead99259cbafba1bc4362ec5c` (`skills/visuals/aiverse-texture-rhi/SKILL.md`).
+
+**Actual tests:** See above. Do not infer CTest/native GPU pass from CI jobs belonging to an older SHA, static source checks, or the presence of a registered test. Current HEAD must be validated independently.
+
+**Next concrete step:** Run the new C++ contract test through Actions and local Mac. Then run full Texture RHI focused verification and Metal GPU capture; fix any new errors before marking PR ready.
