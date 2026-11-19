@@ -6,7 +6,7 @@
 #include <string>
 
 namespace aiverse::render {
-namespace strata { struct ModelAsset; class SceneStaging; struct ViewConfig; struct ViewPlan; }
+namespace strata { struct ModelAsset; class SceneStaging; class GpuMetadataScene; struct ViewConfig; struct ViewPlan; }
 class Renderer3D;
 // Static presentation geometry, never collision or simulation objects. HLOD proxies merge
 // compatible materials and use bounded-error cluster simplification. Sources stay available.
@@ -16,6 +16,9 @@ public:
         uint32_t strataSources=0, strataPrimitives=0, strataSkippedSources=0,
                  strataSkippedPrimitives=0, strataFailures=0;
         uint64_t strataNodes=0, strataMeshlets=0, strataIndexBytes=0;
+        uint32_t strataGpuMetadataSources=0, strataGpuMetadataDeclined=0,
+                 strataGpuMetadataFailures=0;
+        uint64_t strataGpuMetadataBytes=0;
     };
     void load(gfx::Device& dev, const Json& json, const FileReader& reader);
     // Procedural/offline callers may supply immutable CPU models instead of files.
@@ -29,6 +32,12 @@ public:
     // Must be configured before load/loadPrepared. Defaults OFF.
     void setStrataStagingEnabled(bool value) { strataStagingEnabled_ = value; }
     bool strataStagingEnabled() const { return strataStagingEnabled_; }
+    // Experimental metadata-only upload after ordinary Model GPU upload.
+    // Requires CPU staging and an existing shared geometry-pool allocation;
+    // default OFF. Does not upload Strata index data or change draw calls.
+    void setStrataGpuMetadataEnabled(bool enabled) { strataGpuMetadataEnabled_ = enabled; }
+    bool strataGpuMetadataEnabled() const { return strataGpuMetadataEnabled_; }
+    gfx::BufferHandle strataGpuMetadataBuffer(const std::string& sourceKey) const;
     bool strataStagingSupported() const;
     const strata::ModelAsset* strataAsset(const std::string& sourceKey) const;
     // Explicit, read-only CPU reference plan for one source primitive.
@@ -58,12 +67,14 @@ private:
     std::unique_ptr<Model> makeProxy(const std::vector<size_t>& ids,float& error);
     std::map<std::string,std::unique_ptr<Model>> models_;
     std::shared_ptr<strata::SceneStaging> strataStaging_; // null unless explicitly staged
+    std::shared_ptr<strata::GpuMetadataScene> strataGpuMetadata_;
     std::vector<Instance> instances_;
     std::vector<Group> groups_;
     std::vector<std::string> warnings_;
     Stats stats_;
     bool hlod_=false,geometryEnabled_=true,surfacesEnabled_=true,cacheEnabled_=true;
     bool strataStagingEnabled_=false;
+    bool strataGpuMetadataEnabled_=false;
     float errorPixels_=2, maxPixels_=256;
     size_t proxyVertices_=0;
 };
