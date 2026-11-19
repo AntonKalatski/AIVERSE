@@ -290,27 +290,27 @@ inline float4 aiverse_encode_feedback(int4 page) {
 // camera visibility pass, opaque blending and linear RGBA8 output.
 inline std::string virtualTextureFeedbackFragmentGLSL(bool automaticMip=true) {
     std::string shader =
-        "precision highp float;\\nprecision highp int;\\n"
-        "in vec2 vVirtualUV;\\n"
-        "layout(location=0) out vec4 outFeedback;\\n"
-        "uniform ivec2 uVirtualBaseTiles;\\n"
-        "uniform int uVirtualLayer;\\n"
-        "uniform int uVirtualMip;\\n"
-        "uniform int uVirtualMipLevels;\\n"
-        "uniform vec2 uVirtualTexels;\\n"
-        "uniform float uVirtualMipBias;\\n";
+        "precision highp float;\nprecision highp int;\n"
+        "in vec2 vVirtualUV;\n"
+        "layout(location=0) out vec4 outFeedback;\n"
+        "uniform ivec2 uVirtualBaseTiles;\n"
+        "uniform int uVirtualLayer;\n"
+        "uniform int uVirtualMip;\n"
+        "uniform int uVirtualMipLevels;\n"
+        "uniform vec2 uVirtualTexels;\n"
+        "uniform float uVirtualMipBias;\n";
     shader += kVirtualTextureFeedbackGLSL;
     shader += kVirtualTextureFeedbackMaterialGLSL;
     if (automaticMip) shader += kVirtualTextureFeedbackAutoMipGLSL;
     shader += automaticMip
-        ? "void main(){\\n"
+        ? "void main(){\n"
           " int mip=aiverseFeedbackMipFromDerivatives("
-          "vVirtualUV,uVirtualTexels,uVirtualMipLevels,uVirtualMipBias);\\n"
+          "vVirtualUV,uVirtualTexels,uVirtualMipLevels,uVirtualMipBias);\n"
           " outFeedback=aiverseMaterialFeedback(vVirtualUV,mip,"
-          "uVirtualLayer,uVirtualBaseTiles);\\n}\\n"
-        : "void main(){\\n"
+          "uVirtualLayer,uVirtualBaseTiles);\n}\n"
+        : "void main(){\n"
           " outFeedback=aiverseMaterialFeedback(vVirtualUV,uVirtualMip,"
-          "uVirtualLayer,uVirtualBaseTiles);\\n}\\n";
+          "uVirtualLayer,uVirtualBaseTiles);\n}\n";
     return shader;
 }
 
@@ -320,29 +320,29 @@ inline std::string virtualTextureFeedbackFragmentGLSL(bool automaticMip=true) {
 // float2/int2 alignment when uploading this struct.
 inline std::string virtualTextureFeedbackFragmentMSL(bool automaticMip=true) {
     std::string shader =
-        "#include <metal_stdlib>\\nusing namespace metal;\\n"
-        "struct AiverseFeedbackParams {\\n"
-        " int2 baseTiles; int layer; int mip;\\n"
-        " int mipLevels; float2 texels; float mipBias;\\n"
-        "};\\n"
-        "struct AiverseFeedbackInput {\\n"
-        " float4 position [[position]];\\n"
-        " float2 uv [[user(locn0)]];\\n"
-        "};\\n";
+        "#include <metal_stdlib>\nusing namespace metal;\n"
+        "struct AiverseFeedbackParams {\n"
+        " int2 baseTiles; int layer; int mip;\n"
+        " int mipLevels; float2 texels; float mipBias;\n"
+        "};\n"
+        "struct AiverseFeedbackInput {\n"
+        " float4 position [[position]];\n"
+        " float2 uv [[user(locn0)]];\n"
+        "};\n";
     shader += kVirtualTextureFeedbackMSL;
     shader += kVirtualTextureFeedbackMaterialMSL;
     if (automaticMip) shader += kVirtualTextureFeedbackAutoMipMSL;
     shader += automaticMip
         ? "fragment float4 aiverseVirtualFeedbackFragment("
           "AiverseFeedbackInput in [[stage_in]],"
-          "constant AiverseFeedbackParams& p [[buffer(0)]]) {\\n"
+          "constant AiverseFeedbackParams& p [[buffer(0)]]) {\n"
           " int mip=aiverse_feedback_mip_from_derivatives("
-          "in.uv,p.texels,p.mipLevels,p.mipBias);\\n"
-          " return aiverse_material_feedback(in.uv,mip,p.layer,p.baseTiles);\\n}\\n"
+          "in.uv,p.texels,p.mipLevels,p.mipBias);\n"
+          " return aiverse_material_feedback(in.uv,mip,p.layer,p.baseTiles);\n}\n"
         : "fragment float4 aiverseVirtualFeedbackFragment("
           "AiverseFeedbackInput in [[stage_in]],"
-          "constant AiverseFeedbackParams& p [[buffer(0)]]) {\\n"
-          " return aiverse_material_feedback(in.uv,p.mip,p.layer,p.baseTiles);\\n}\\n";
+          "constant AiverseFeedbackParams& p [[buffer(0)]]) {\n"
+          " return aiverse_material_feedback(in.uv,p.mip,p.layer,p.baseTiles);\n}\n";
     return shader;
 }
 
