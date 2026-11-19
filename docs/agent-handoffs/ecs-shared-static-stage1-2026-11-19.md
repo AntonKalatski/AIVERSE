@@ -95,9 +95,13 @@ snapshots remain intact. No genre-specific implementation.
 - `2ebb71e8fc21a6db8d3cfc3eed30577a44a64926` — agent skill.
 - `77f79689d6b8cd89533d787cfc1e689e3e27719f` — initial stage-1 handoff.
 - `08d0227c540fed21a9a9b875f343db3951a0c746` — benchmark accepts entity count, uses atomic checksum sink.
+- `11568cd16d7ad410421bfc018f630a426edf2f03` — finalize initial handoff, **exact commit tested on Mac Studio**.
+- `e3d2002e236e9f7e2df3d986e19d36e0b2b9b67b` — document verified Mac Studio native CTest/Release microbenchmark.
+- `8701e40ceec45c7dbd9104bb788d7b56a05023a2` — record measured numbers and limitations in architecture doc.
 
-The handoff commit comes after the above list; get the authoritative
-branch head with `git rev-parse HEAD`.
+The latest handoff update comes after these commits; use `git rev-parse HEAD`
+for the exact branch head. Documentation-only commits after `11568cd16`
+do not alter the tested C++ sources.
 
 ## Native validation evidence — 2026-11-19
 
