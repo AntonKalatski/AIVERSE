@@ -113,6 +113,7 @@ struct FoliageInstance {
     uint32_t waterPermille = 1000;
     uint32_t nutrientsPermille = 1000;
     PlantHabit habit = PlantHabit::Tree;
+    uint32_t foliagePermille = 1000; // derived presentation canopy density
     constexpr bool operator==(const FoliageInstance&) const = default;
 };
 
