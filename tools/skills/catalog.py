@@ -20,6 +20,7 @@ def load_meta():
 
 # Search vocabulary is routing metadata, not another copy of skill instructions.
 ALIASES = {
+ 'aiverse-ecs-shared-static':'ecs shared static immutable configuration prefab interned dedup memory snapshot rollback staticref sharedref scene read-only component component storage game editor общие статические компоненты префаб память конфиг дедупликация снапшот откат',
  'aiverse-voxel-world':'voxel voxels block blocks chunk chunks minecraft dig mine place raycast region save воксел блок чанк майнкрафт копат ставит регион',
  'aiverse-voxel-light':'voxel light skylight blocklight torch shadow flood свет освещен факел тень воксел',
  'aiverse-voxel-mesh':'voxel mesh meshing greedy ambient occlusion chunk render меш воксел затенен рендер чанк',
@@ -230,6 +231,15 @@ def generate():
     entries.append(dict(id='aiverse-roads',package=None,path='skills/world/aiverse-roads/SKILL.md',domain='gameplay',
         summary='Spline roads: road types, map roadNetwork, editor tool and road_* ops, tiles, checks',
         side='tools',runtime='none',target=None,dependencies=[],backendDependencies=[],source='modules/rts/RtsRoadNet.cpp'))
+    # Native ECS opt-in engine feature, not a separately installed library.
+    # Register it as a gameplay recipe (runtime=none) so skill routing reads
+    # its native headers without inventing a duplicate CMake library target.
+    entries.append(dict(id='aiverse-ecs-shared-static',package=None,
+        path='skills/gameplay/aiverse-ecs-shared-static/SKILL.md',
+        domain='gameplay',
+        summary='Immutable SharedRef and StaticRef ECS configs, prefab dedup, snapshots and multi-world scene integration',
+        side='tools',runtime='none',target=None,dependencies=[],backendDependencies=[],
+        source='engine/sim/SharedStaticComponents.h'))
     for name,summary,source in WORKFLOWS:
         entries.append(dict(id=name,package=None,path=skill_path(name),domain='workflow',summary=summary,
             side='tools',runtime='none',target=None,dependencies=[],backendDependencies=[],source=source))

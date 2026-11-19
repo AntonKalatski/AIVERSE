@@ -121,6 +121,15 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             ecs_snapshot_delta_test
             ecs_scene_hierarchy_test
             ecs_scene_hierarchy_simulation_test
+            ecs_scene_runtime_test
+            ecs_multiworld_test
+            ecs_scene_load_coordinator_test
+            ecs_scene_resource_pipeline_test
+            ecs_shared_static_components_test
+            ecs_prefab_static_catalog_test
+            ecs_static_scene_integration_test
+            ecs_static_scene_multidomain_test
+            ecs_static_scene_editor_contract_test
             ecs_cow_snapshot_test
             ecs_cow_exception_test
             ecs_cow_parallel_test
@@ -132,6 +141,12 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         target_link_libraries(aiverse_${test_name} PRIVATE aiverse_engine Threads::Threads)
         add_test(NAME ${test_name} COMMAND aiverse_${test_name})
     endforeach()
+    add_executable(aiverse_ecs_shared_static_bench tests/ecs_shared_static_bench.cpp)
+    target_link_libraries(aiverse_ecs_shared_static_bench PRIVATE aiverse_engine Threads::Threads)
+    add_executable(aiverse_ecs_shared_static_rss_bench
+        tests/ecs_shared_static_rss_bench.cpp)
+    target_link_libraries(aiverse_ecs_shared_static_rss_bench PRIVATE
+        aiverse_engine Threads::Threads)
 endif()
 
 option(AIVERSE_ENABLE_PHYSICS "Build optional Box3D physics module" OFF)
@@ -1519,6 +1534,18 @@ if(AIVERSE_BUILD_TESTS)
     if(Python3_Interpreter_FOUND)
         add_test(NAME aiverse_gameplay_generated COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/libraries/generate_gameplay.py --check)
         add_test(NAME aiverse_gameplay_tools COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/libraries/gameplay_tools.py)
+        # Python tempfile on some macOS runners chooses /var/folders/...,
+        # where nested CMake configure_file() has failed with ENOTTY.
+        # Use the build filesystem for temporary project checks instead.
+        file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/aiverse-test-tmp")
+        set_tests_properties(aiverse_gameplay_tools PROPERTIES
+            ENVIRONMENT "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}/aiverse-test-tmp")
+        # Test the headless executable built from THIS worktree/config,
+        # not a stale build/.temp binary or an inherited shell setting.
+        if(TARGET aiverse_headless)
+            set_tests_properties(aiverse_gameplay_tools PROPERTIES
+                ENVIRONMENT "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}/aiverse-test-tmp;AIVERSE_HEADLESS=$<TARGET_FILE:aiverse_headless>")
+        endif()
     endif()
 endif()
 
@@ -1551,6 +1578,25 @@ endif()
 
 # FPS is an independent GameModule; RTS lockstep remains available unchanged.
 add_subdirectory(modules/fps)
+# Opt-in additive scene collision namespaces use the existing
+# aiverse_world / CollisionStream library. Define these after modules/fps
+# has created aiverse_world, not in the early aiverse_engine-only test group.
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_ecs_scene_collision_namespaces_test
+        tests/ecs_scene_collision_namespaces_test.cpp)
+    target_link_libraries(aiverse_ecs_scene_collision_namespaces_test PRIVATE
+        aiverse_world aiverse_engine)
+    add_test(NAME ecs_scene_collision_namespaces_test
+        COMMAND aiverse_ecs_scene_collision_namespaces_test)
+
+    add_executable(aiverse_ecs_scene_collision_bridge_test
+        tests/ecs_scene_collision_bridge_test.cpp)
+    target_link_libraries(aiverse_ecs_scene_collision_bridge_test PRIVATE
+        aiverse_world aiverse_engine)
+    add_test(NAME ecs_scene_collision_bridge_test
+        COMMAND aiverse_ecs_scene_collision_bridge_test)
+endif()
+
 # Real genre-adapter validation: both production GameModules, v9 disk states,
 # canonical command order, COW snapshots, replay and FPS ECS authority.
 if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
@@ -2079,7 +2125,12 @@ endif()
 
 if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND AND UNIX AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME skill_library_isolation COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/skills/isolation.py)
-    set_tests_properties(skill_library_isolation PROPERTIES TIMEOUT 600)
+    # Nested CMake probes require a working writable temporary volume.
+    # CTest-created directories inherit the verified build filesystem.
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/aiverse-test-tmp")
+    set_tests_properties(skill_library_isolation PROPERTIES
+        TIMEOUT 600
+        ENVIRONMENT "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}/aiverse-test-tmp")
 endif()
 
 # ---------------------------------------------------------------------------
