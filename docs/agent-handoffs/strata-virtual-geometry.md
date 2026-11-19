@@ -1113,3 +1113,140 @@ oracles and explicit unsupported-material fallback. Only after
 native real-Metal evidence for those gates should a scoped production
 Strata/Legacy route be considered. Update this handoff after the
 next implementation stage with exact commits and test results.
+
+
+---
+
+## Stage 12 — actual Metal shadow Depth32Float GPU readback and independent two-view parity (2026-11-19)
+
+**Branch:** `feature/strata-virtual-geometry`, PR #35 (Draft,
+base `main`). **No merge to main**. The already owner-verified
+Stage 11 real-Metal raster fixture is preserved without modifications.
+
+### What was implemented
+
+1. `engine/gfx/Gfx.h` — new optional cross-backend
+   `bool Device::readDepthTextureAsync(TextureHandle,DepthReadFn)`;
+   default false on unsupported backends. The returned bytes are
+   tightly packed native little-endian float32 depth with width
+   and height, or empty on GPU error. Callback occurs on the device
+   owner thread during later `beginFrame`. No blocking GPU wait.
+2. `engine/gfx/metal/GfxMetal.mm` — Metal implementation,
+   asynchronous private `MTLPixelFormatDepth32Float` 2D texture
+   copy to a temporary shared GPU readback buffer, with
+   256-byte-aligned rows repacked to `width*height*sizeof(float)`.
+   Restricts sizes to <=4096 per axis and <=64MiB per copy,
+   max eight pending readbacks, requires `cmd_` and no active
+   graphics/compute encoder, rejects invalid formats/handles.
+   Uses an async command-buffer completion handler to populate
+   payload and owner-thread `deliverDepthReads()` after the
+   normal RHI frame fence; errors return empty data. It does not
+   create a second geometry pool, expose a synchronous read of
+   private textures or change ordinary draw routing.
+3. `engine/render/Renderer3D.h/.cpp` — small opt-in
+   `requestSunShadowDepthReadback(gfx::Device::DepthReadFn)`
+   delegated to `dev_->readDepthTextureAsync(shadowMap_, ...)`,
+   requiring shadow quality ON, a valid map, active renderer.
+   No raw `shadowMap_` ownership leak.
+4. `tests/render/strata_metal_depth_multiview_parity.cpp`
+   — separate real Metal CAMetalLayer fixture reusing the
+   previously successful Stage 11 source+lossless cluster hierarchy
+   and **same pooled source VB and sidecar IB**. It uses one
+   production `Renderer3D`, submits exclusive Empty/Legacy/
+   Fine/Coarse ModelDraw mode in isolated steady frames,
+   and repeats for two independent camera positions:
+   - view0 pitch 0.2 yaw 0 distance 5;
+   - view1 pitch 0.55 yaw 0.7 distance 6;
+   - output color 800×600 RGBA, shadow 512×512 Depth32Float.
+   Capture requests occur **inside** steady 11-frame windows,
+   not on the transition frame, and `setScreenReadable(true)`
+   preserves the previously confirmed Metal capture fix.
+   The test reads real depth **after** finishing main pass in
+   the same frame as the color capture, not merely shadow draw
+   counters. It writes one PPM and one raw `.f32` file per
+   camera/mode (8 of each), with optional
+   `AIVERSE_STRATA_DEPTH_CAPTURE_PREFIX` for paths.
+   Strict gates: Empty != Legacy for color AND depth, both
+   Strata fine/coarse equal Legacy byte-for-byte in both formats
+   for both cameras, nonclear finite depth in [0,1], distinct
+   color screenshots for view0/view1, main/shadow pass draw
+   counters nonzero for model modes, and exactly one ModelDraw
+   per comparison frame. The LOD hierarchy is **lossless** and
+   this deliberately is NOT a simplified LOD visual quality test.
+5. `CMakeLists.txt` — `aiverse_strata_metal_depth_multiview_parity`
+   added to macOS-only opt-in
+   `AIVERSE_STRATA_METAL_GPU_TESTS=ON`.
+   `.github/workflows/strata-focused.yml` compiles the new
+   target on macOS CI, **but does not run its GUI**.
+
+### Exact commits in this stage (implementation followed by handoff)
+- `c90437baaa1f3b52e69d839b6f205937dfb1bd98`: opt-in DepthReadFn virtual API
+- `302e6be51768761ac7e7af3f8d7c341f353d6149`: real Metal async depth blit
+- `2d7838a89b2d80d17bc29fc423e6d1c54729028e`: Renderer3D header
+- `af17549a32037453b3e0eed5f8115afcd74a87ca`: Renderer3D shadow readback method
+- `fe61cc57c6dbe170c56bbbf3b1d097662e341cab`: real Metal 2-view pixel/depth fixture
+- `e03d17acc86f31bb5187f7c3b1f57fff39d672b8`: macOS CMake target
+- `723878d45438cdd58d8b35b62a2cd26dbaa93430`: macOS CI compile target
+- `315745c2923444ebc5b37e1b93b78b1f56dee087`: raw .f32 depth captures
+- `cd77ccc959e072848e62e09c4c1cf843269a31f9`: `docs/strata.md` stage 12
+- `f10d0c9f71f7a1e0f1d1d4b79b553f451796ca7c`: root `AGENTS.md` agent routing
+
+### Actual test results vs outstanding claims
+- **Previously owner-verified:** Stage 11 real Metal
+  main-color raster parity exact 0 changed channels, PASS;
+  Stage 8.2 real Metal GPU compute cluster selection/async
+  readback against CPU oracle 5/5 PASS;
+  focused six CPU/mock Strata CTests PASS. Those are
+  **prior snapshots**, not a new Stage 12 run.
+- **Stage 12 C++ compile: NOT RUN in the assistant's
+  environment. Stage 12 real Metal raw depth readback: NOT RUN.
+  Stage 12 two-view equality: NOT RUN.** Do NOT mark PASS
+  from this commit; do not treat a queued CI workflow as green.
+- **Not supported yet:** reflection target capture, mixed
+  materials, watertight lossy LOD, GPU-selected cluster
+  command rasterization, production exclusive route,
+  streaming, Vulkan parity or performance improvement.
+
+### Next Mac Studio validation
+Use the existing worktree and do not discard uncommitted work:
+```sh
+cd ~/Projects/AIVERSE-strata-validation
+git status --short
+git fetch origin feature/strata-virtual-geometry
+git switch --detach origin/feature/strata-virtual-geometry
+cmake -S . -B build/strata \
+  -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_BUILD_STRATA=ON \
+  -DAIVERSE_STRATA_METAL_GPU_TESTS=ON
+cmake --build build/strata --target \
+  aiverse_strata_metal_depth_multiview_parity --parallel 8
+./build/strata/aiverse_strata_metal_depth_multiview_parity
+```
+
+Expected if real hardware agrees (unverified):
+```text
+[strata-depth] view=0 color_fine=0 color_coarse=0 depth_fine_bytes=0 depth_coarse_bytes=0
+[strata-depth] view=1 color_fine=0 color_coarse=0 depth_fine_bytes=0 depth_coarse_bytes=0
+[strata-depth] PASS: two independent camera views
+[strata-depth] PASS: exact sun-shadow Depth32Float Legacy/Fine/Coarse parity
+[strata-depth] status=PASSED views=2 modes=4 frames=...
+```
+On C++/Objective-C++ compile or GPU validation errors:
+collect the actual diagnostics, update the precise failed
+assertion, and fix without loosening depth/color baseline
+guards or adding a second GPU geometry allocator. In
+particular, inspect Metal resource blit restrictions and the
+saved `.f32` output on unexpected depth mismatches.
+Record the observed tested checkout SHA when available.
+Test output is required before advancing to production routing.
+
+### Next bounded development stage
+After actual native Stage 12 depth/color parity PASS, implement
+a separate real Metal planar-reflection target image A/B
+(opaque models mirrored by Renderer3D's existing water/reflection
+pass), with both camera views and material variants; do not
+pretend main-view captures prove reflection parity.
+Then validate lossy meshlet transitions, cracks and GPU-selected
+draw input under an **exclusive per-pass renderer gate**, with
+conservative Legacy fallback. Update this agent handoff
+after every bounded stage.
