@@ -189,10 +189,15 @@ or an explicit variant disable distance-based CPU LOD selection** for that draw,
 while all geometry/material batch compatibility decisions remain unchanged.
 Snapshots are included in the bounded packet memory budget.
 
-Eligibility still excludes skinned/morphed/animated models,
-runtime-mutable nodes, cluster geometry, vertex displacement, baked GI
-and active LOD diagnostics. No simulation state is cached or made
-genre-specific. The optional RTS view bridge marks
+Eligibility still excludes *active* animation poses (`nodeWorld` /
+`pose` / baked samples), skinned and morphed models, runtime-mutable
+nodes, cluster geometry, vertex displacement, baked GI and active LOD
+diagnostics. A model file may contain authored animation clips and still
+be cached for a particular `kDrawStatic` instance using the rigid bind
+pose, provided it supplies no live pose, has no skins, and its bind
+transforms have been finalized. The instance remains an ordinary
+uncached draw if later supplied an animated pose. No simulation state
+is cached or made genre-specific. The optional RTS view bridge marks
 safe stationary scenery with a nonzero packet revision; this has **no**
 effect unless the global CPU packet flag is explicitly enabled.
 Native games can instead use `engine/render/EcsStaticModelRender.h`
