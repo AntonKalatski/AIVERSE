@@ -679,7 +679,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 motionEffect->get("maxPixels"),
                 motionEffect->get("samples"), motionEffect->get("intensity"));
             put(blur.sun, motionEffect->get("depthThreshold"),
-                motionEffect->get("reactiveStrength"), 0, 0);
+                motionEffect->get("reactiveStrength"),
+                motionEffect->get("velocityDilation"), 0);
             raster(blurred, pipes_[kMotionBlur], &blur, sizeof blur,
                    scene.tex, velocity.tex, sceneDepth);
             src = blurred;
