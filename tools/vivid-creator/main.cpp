@@ -194,13 +194,23 @@ struct CreatorApp {
                             surface,session.dna(),
                             proposed.head->materials[std::size_t(index)]);
                 }
-                proposed.groom.generate(session.dna(),groomQuality);
-                proposed.hair=proposed.groom.makeCardModel(session.dna());
+                const bool hasAuthoredHair=std::any_of(
+                    manifest.materials.begin(),manifest.materials.end(),
+                    [](const auto& pair) {
+                        return pair.second==HumanSurface::Hair ||
+                               pair.second==HumanSurface::Eyelash;
+                    });
+                // Imported artist groom geometry is already in head with
+                // its own UVs/textures and must not grow a second wig.
+                if(!hasAuthoredHair) {
+                    proposed.groom.generate(session.dna(),groomQuality);
+                    proposed.hair=proposed.groom.makeCardModel(session.dna());
+                }
             }else {
                 proposed=generateHumanPreview(session.dna(),groomQuality);
             }
-            if(!proposed.head || !proposed.hair)
-                throw std::runtime_error("VIVID Creator: incomplete generated human");
+            if(!proposed.head)
+                throw std::runtime_error("VIVID Creator: generated human missing head");
             AnimClip idle;
             idle.name="vivid_idle";
             idle.duration=2.0f;
@@ -225,6 +235,7 @@ struct CreatorApp {
             uploaded=true;
             if(!uploadModel(*device,*proposed.head,true))
                 throw std::runtime_error("VIVID Creator: staged head GPU upload failed");
+            if(proposed.hair) {
             gfx::BufferDesc vb;
             vb.type=gfx::BufferType::Vertex;
             vb.usage=gfx::Usage::Dynamic;
@@ -240,6 +251,7 @@ struct CreatorApp {
             proposed.hair->ib=device->createBuffer(ib);
             if(!proposed.hair->vb.valid() || !proposed.hair->ib.valid())
                 throw std::runtime_error("VIVID Creator: staged groom GPU upload failed");
+            }
 
             auto gpu=cache->acquire(proposed.facialShapes,proposed.head->vertices);
             if(!gpu)throw std::runtime_error("VIVID Creator: shared morph CSR upload failed");
