@@ -10,6 +10,7 @@
 #include <memory>
 #include "../../../engine/platform/Platform.h"
 #include "RtsTerrainShaders.h"
+#include "RtsTerrainShaderBudget.h"
 #include "../../../engine/render/GiCustomShaderSource.h"
 #include "RtsTerrainSurface.h"
 
@@ -769,11 +770,18 @@ int TerrainRenderer::tierFor(const Renderer3D& r) const {
 
 gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant, bool dynamicGi) {
     const int dbase = variant >= 3 ? 3 : 0;
+    const bool compact=terrainNeedsCompactSamplers(dev.maxFragmentTextureSlots());
+    if(compact && !terrainCompactSupported(dev.maxFragmentTextureSlots()))
+        return {}; // even the minimal terrain fragments need 16 texture units
+    if(compact && dynamicGi)return {}; // no GI-at-tex21 on strict GLES/Vulkan
     for (int tier = variant - dbase; tier >= (dynamicGi ? 1 : 0); --tier) {
+        if(compact && tier>0)continue; // resource-limited shader is low tier only
         const int slot = (dynamicGi ? 6 : 0) + dbase + tier;
         if (pipes_[slot].valid()) return pipes_[slot];
         if (shaderFailed_[slot]) continue;
-        const std::string def = "#define TERRAIN_TIER " + std::to_string(tier) + "\n#define TERRAIN_DETAIL " + std::to_string(dbase ? 1 : 0) + "\n";
+        const std::string def = "#define TERRAIN_TIER " + std::to_string(tier) +
+                                "\n#define TERRAIN_DETAIL " +
+                                std::to_string(compact ? 0 : (dbase ? 1 : 0)) + "\n";
         const std::string vs = def + shaders::kTerrainVS;
         std::string fs = def;
         std::string msl = def + shaders::kTerrainMSL;
@@ -796,11 +804,11 @@ gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant, boo
                 render::GiCustomShaderMode::Single,21));
             msl.insert(pos+namespaceMarker.size(),prelude);
         }
-        fs += shaders::kTerrainFS;
+        fs += compact ? terrainCompactLowFragment() : shaders::kTerrainFS;
         gfx::ShaderDesc sd;
         sd.glslVertex = vs.c_str(); sd.glslFragment = fs.c_str(); sd.msl = msl.c_str();
         sd.uniformSlots = dynamicGi ? 7 : 4;
-        sd.textureSlots = dynamicGi ? 22 : 21;
+        sd.textureSlots = compact ? 16 : dynamicGi ? 22 : 21;
         sd.label = dynamicGi ? "terrain GI" : "terrain";   // tex18: height field (traced shadows); U3 + tex19/20: baked lightmap
         shaders_[slot] = dev.createShader(sd);
         if (!shaders_[slot].valid()) {
