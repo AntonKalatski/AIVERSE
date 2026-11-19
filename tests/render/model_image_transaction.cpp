@@ -159,6 +159,68 @@ int main(){
     device.idle=true;
     owner.shutdown(device);
 
+    // Stage 114: two speculative Models upload the SAME missing GPU source.
+    // Preparing a shared-cache plan must not change global GPU residency;
+    // committing adopts one already-uploaded image and returns the other
+    // dedicated handle for a real GPU-fenced retirement batch.
+    render::Model left,right;
+    auto leftImage=makeImage("atlas.png");
+    leftImage.textureKey="textures/new-atlas.png";
+    leftImage.textureCache=shared;
+    auto rightImage=makeImage("atlas.png");
+    rightImage.textureKey="textures/new-atlas.png";
+    rightImage.textureCache=shared;
+    assert(render::uploadStandaloneImage(device,leftImage));
+    assert(render::uploadStandaloneImage(device,rightImage));
+    assert(leftImage.tex!=rightImage.tex);
+    left.images.push_back(std::move(leftImage));
+    right.images.push_back(std::move(rightImage));
+    assert(shared->gpuCount()==0);
+    auto planned=shared->prepareGpuPromotion({&left,&right});
+    assert(planned.newSharedTextures()==1 && planned.bindings()==2);
+    assert(shared->gpuCount()==0);
+    assert(!left.images[0].borrowedTexture && !right.images[0].borrowedTexture);
+    auto duplicates=planned.commit();
+    assert(shared->gpuCount()==1 && duplicates.size()==1);
+    assert(left.images[0].borrowedTexture && right.images[0].borrowedTexture);
+    assert(left.images[0].tex==right.images[0].tex);
+    assert(left.images[0].textureLease==right.images[0].textureLease);
+    const auto duplicateId=duplicates.front().tex.id;
+    const int destroyedBeforePromotion=device.destroyed;
+    device.complete=false;device.idle=false;
+    pool.retire(device,std::move(duplicates));
+    assert(pool.pendingImages()==1);
+    assert(!pool.collect(device));
+    assert(device.live.contains(duplicateId));
+    device.complete=true;
+    assert(pool.collect(device));
+    assert(!device.live.contains(duplicateId));
+    assert(device.destroyed==destroyedBeforePromotion+1);
+    render::releaseModel(device,left);
+    render::releaseModel(device,right);
+    assert(shared->gpuCount()==1); // lease owner still resident
+    shared->trim(device);
+    assert(shared->gpuCount()==0 && device.live.empty());
+
+    // Aborted promotion plan never published cache entries or changed
+    // Model ownership; the staged Model's normal rollback path still owns
+    // and retires its dedicated GPU texture.
+    render::Model aborted;
+    auto abortedImage=makeImage("reject.png");
+    abortedImage.textureKey="textures/reject.png";
+    abortedImage.textureCache=shared;
+    assert(render::uploadStandaloneImage(device,abortedImage));
+    aborted.images.push_back(std::move(abortedImage));
+    {
+        auto uncommitted=shared->prepareGpuPromotion({&aborted});
+        assert(uncommitted.newSharedTextures()==1);
+    }
+    assert(shared->gpuCount()==0);
+    assert(!aborted.images[0].borrowedTexture);
+    device.idle=true;
+    render::releaseModel(device,aborted);
+    assert(device.live.empty());
+
     epoch.retire();
     bool stale=false;
     try {
