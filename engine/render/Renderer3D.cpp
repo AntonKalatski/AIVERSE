@@ -384,9 +384,16 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     // scene pass stays open for UI and must never be interrupted.
     // Skip when an asynchronous readback is outstanding; streaming
     // completion/pumping is owned by the application frame coordinator.
+    const bool feedbackProducerConfigured =
+        (feedbackMeshPipeline_.valid() && feedbackMeshBinder_) ||
+        (feedbackModelPipeline_.valid() && feedbackModelBinder_) ||
+        (feedbackMaskedModelPipeline_.valid() && feedbackMaskedModelBinder_) ||
+        (feedbackLodModelPipeline_.valid() && feedbackLodModelBinder_) ||
+        (feedbackMaskedLodModelPipeline_.valid() && feedbackMaskedLodModelBinder_) ||
+        feedbackDeformedModelDraw_ || !customFeedback_.empty();
     if (feedbackPass_ && feedbackPass_->ready() &&
         !feedbackPass_->pending() && !feedbackPass_->readyToSubmit() &&
-        feedbackMeshPipeline_.valid() && feedbackMeshBinder_) {
+        feedbackProducerConfigured) {
         renderVirtualTextureFeedback(*feedbackPass_,
                                      feedbackMeshPipeline_,
                                      feedbackMeshBinder_);
