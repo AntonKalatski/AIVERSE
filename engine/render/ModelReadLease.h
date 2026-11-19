@@ -7,6 +7,7 @@
 #pragma once
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <exception>
 #include <memory>
@@ -20,8 +21,18 @@ class ModelResourceCache;
 
 struct ModelReadLeaseState final {
     std::atomic<size_t> readers{0};
+    std::atomic<size_t> peakReaders{0};
+    std::atomic<uint64_t> blockedMutations{0};
     std::atomic<bool> alive{true};
     std::thread::id ownerThread;
+
+    void enter() noexcept {
+        const size_t active=readers.fetch_add(1,std::memory_order_acq_rel)+1;
+        size_t previous=peakReaders.load(std::memory_order_relaxed);
+        while(active>previous &&
+              !peakReaders.compare_exchange_weak(previous,active,
+                  std::memory_order_relaxed,std::memory_order_relaxed)) {}
+    }
 };
 
 class ModelReadLease final {
@@ -68,7 +79,7 @@ private:
     ModelReadLease(std::shared_ptr<ModelReadLeaseState> state,
                    const Model* model) noexcept
         :state_(std::move(state)),model_(model) {
-        state_->readers.fetch_add(1,std::memory_order_acq_rel);
+        state_->enter();
     }
     std::shared_ptr<ModelReadLeaseState> state_;
     const Model* model_=nullptr; // borrowed; cache mutations blocked while live
@@ -110,7 +121,7 @@ private:
     friend class ModelResourceCache;
     explicit ModelCacheReadScope(std::shared_ptr<ModelReadLeaseState> state) noexcept
         :state_(std::move(state)) {
-        state_->readers.fetch_add(1,std::memory_order_acq_rel);
+        state_->enter();
     }
     std::shared_ptr<ModelReadLeaseState> state_;
 };
