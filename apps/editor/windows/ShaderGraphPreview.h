@@ -16,7 +16,7 @@ public:
     static std::string resourceKey(const Json& graph) {
         Json gpu = graph;
         if (auto* nodes = gpu.find("nodes"))
-            for (auto& node : nodes->items()) node.erase("position");
+            for (auto& node : nodes->itemsMut()) node.erase("position");
         return gpu.dump(-1);
     }
     // Only used by GPU-fence-completed or host-idle owned-bundle callbacks.
