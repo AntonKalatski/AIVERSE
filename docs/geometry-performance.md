@@ -392,6 +392,11 @@ The shared owner cache is bounded to 4096 entries, 512 materials per
 owner, and **8 MiB of fingerprint payload**. Old owners expire after
 128 unseen render-scene epochs at periodic sweeps; full invalidation
 and `invalidateModelCachesFor(model)` discard associated signatures.
+`Renderer3D::invalidateSharedMaterialState(model, materialOwnerKey)`
+retires just one owner signature before a native material source is replaced
+or destroyed. Packets that referred to its previous serial then miss and
+rebuild if the owner is encountered again. This is a rendering-thread
+operation; keep material sources alive through already queued frame draws.
 The Scene → Batching panel exposes shared hits, misses, entries,
 evictions and payload memory. No GPU resources are owned by this cache.
 Model pointer identity is only a scoped lookup key, not an asset lifetime
