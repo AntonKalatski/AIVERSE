@@ -269,9 +269,10 @@ public:
     // Combined scheduling convenience: returns false when resolve/capture
     // could not be scheduled. The host keeps the device frame alive until
     // submissions finish and the recorder callback eventually delivers PNG.
-    bool recordHdrPngFrame(CameraFrameRecorder& recorder,uint64_t hdrKey,
+    bool recordHdrFrameForPng(CameraFrameRecorder& recorder,uint64_t hdrKey,
                            uint64_t sdrKey,double seconds,
                            CameraHdrResolveSettings settings={}) {
+        if(!recorder.recording()||recorder.pending())return false;
         return resolveHdrForExport(hdrKey,sdrKey,settings) &&
                recorder.tickTexture(device_,targets_.color(sdrKey),seconds);
     }
