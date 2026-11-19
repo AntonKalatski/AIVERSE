@@ -1049,3 +1049,27 @@ no animation update or gameplay writer was added.
 **NOT RUN:** CMake/compiler/CTest, FPS/RTS/editor visual
 validation, GPU Model fence failure-injection, sanitizers
 or crowd benchmarks. [Stage 129 handoff](agent-handoffs/animation-stage129-model-cache-read-leases-2026-11-19.md).
+
+## Stage 130 — Model read guard lifetime across MotionWeave dispatch
+
+The source Model remains borrowed by the presentation
+AnimationGraph ECS while MotionWeave evaluates; a host
+that uses `ModelResourceCache` must hold a
+`ModelReadLease` or `ModelCacheReadScope`
+from before evaluation until the workers join and
+Renderer3D finishes synchronous submission. Stage 130
+keeps this owner-thread-only contract strict by
+terminating on lease release from a foreign thread.
+It does NOT add a second graph clock or turn the
+CPU reader count into a GPU fence.
+
+The Model cache's reader owner resets only AFTER a
+successful zero-reader GPU-safe shutdown, enabling
+a later Device reinitialization. The cache exposes
+active/peak reader and denied-mutation counters for
+host diagnostics; these are never written to gameplay
+simulation or an authoritative replay checksum.
+[Stage 130 handoff](agent-handoffs/animation-stage130-read-lease-lifecycle-diagnostics-2026-11-19.md).
+
+**NOT RUN:** native CMake/CTest, animation/graphics parity,
+thread-lifetime subprocess fixtures, sanitizers or benchmarks.
