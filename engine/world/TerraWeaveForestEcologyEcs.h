@@ -128,7 +128,8 @@ inline void addTerraWeaveForestEcologySystem(
         TerraWeaveEcsAuthorityConfig cfg,
         std::vector<ForestEcologySpecies> species,
         ForestEcologySettings settings={},
-        ForestEcologyClimateOverride climate={}) {
+        ForestEcologyClimateOverride climate={},
+        std::function<void(const ForestEcologyEcsOutcome&)> onChanged={}) {
     validateEcsAuthorityConfig(cfg);
     validateForestEcologySettings(settings);
     if(species.empty() || species.size()>64u)
@@ -137,9 +138,16 @@ inline void addTerraWeaveForestEcologySystem(
     for(const auto& p:species)validateForestEcologySpecies(p);
     sim.addSystem(std::move(name),
         [cfg=std::move(cfg),species=std::move(species),
-         settings,climate=std::move(climate)](Simulation& current){
-            (void)advanceForestEcologyEcs(
+         settings,climate=std::move(climate),
+         onChanged=std::move(onChanged)](Simulation& current){
+            const auto result=advanceForestEcologyEcs(
                 current.world(),cfg,current.tick(),species,settings,climate);
+            // Host callbacks must only enqueue the immutable outcome to
+            // post-tick presentation; no Box3D or Renderer3D calls here.
+            if(onChanged && (!result.ecology.changed.empty() ||
+                             !result.ecology.died.empty() ||
+                             !result.ecology.born.empty()))
+                onChanged(result);
         });
 }
 
