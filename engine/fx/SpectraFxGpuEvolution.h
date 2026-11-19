@@ -199,6 +199,16 @@ public:
         return ready() && feedbackEnabled_ && count_<=4096;
     }
     bool impactFeedbackAllocated() const {return feedbackEnabled_;}
+    // Nominal RHI payload bytes only: excludes driver heaps, pipeline
+    // caches, alignment, transient staging and GPU allocator overhead.
+    uint64_t nominalGpuBytes() const {
+        if(!ready()) return 0;
+        const uint64_t cells=uint64_t(kTextureWidth)*
+            ((uint64_t(count_)+kTextureWidth-1)/kTextureWidth);
+        return uint64_t(2)*count_*sizeof(render::float4) +
+               uint64_t(feedbackEnabled_?count_:1)*sizeof(render::float4) +
+               cells*sizeof(render::float4);
+    }
     uint32_t count() const {return count_;}
     bool ready() const {return device_ && shader_.valid() && position_.valid() &&
                                velocity_.valid() && impacts_.valid() && output_.valid();}
