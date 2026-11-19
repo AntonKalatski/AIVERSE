@@ -192,6 +192,11 @@ public:
     size_t emitterCount() const {return emitters_.size();}
     uint32_t aliveParticles() const {return slots_.activeCount();}
     uint32_t capacity() const {return slots_.capacity();}
+    uint64_t nominalGpuBytes() const {
+        if(!ready()) return 0;
+        return slots_.evolution().nominalGpuBytes() +
+               compact_.nominalGpuBytes();
+    }
     const Stats& stats() const {return stats_;}
     const std::string& lastError() const {return error_;}
     const SpectraFxGpuParticleSlots& slots() const {return slots_;}
