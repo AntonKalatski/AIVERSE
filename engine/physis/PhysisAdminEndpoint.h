@@ -37,10 +37,20 @@ public:
         }
         if(!journalLock_.acquire(journal_.path(),error))return false;
         gateway_.setReservedCommandType(reservedFieldCommandType);
+#ifndef _WIN32
+        const int journalDir=journalLock_.directoryFd();
+        if(journalDir<0 || !journal_.loadPinned(journalDir,gateway_,error)) {
+            if(journalDir<0 && error)
+                *error="PHYSIS admin journal directory ownership lost";
+            journalLock_.release();
+            return false;
+        }
+#else
         if(!journal_.attach(gateway_,error)) {
             journalLock_.release();
             return false;
         }
+#endif
         // A previous lock inode can be unlinked while flock is still
         // held. Validate path ownership before EVERY journal write.
         gateway_.setJournalWriter([this](
