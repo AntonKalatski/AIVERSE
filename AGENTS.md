@@ -1484,3 +1484,26 @@ Keep source-only unverified stages marked **NOT RUN**, document
 exact code commits/risks/next step in
 `docs/terrain/AGENT_HANDOFF.md`, keep PR #24 Draft until
 a separate tester compiles and profiles real platforms.
+
+### TerraWeave Stage41 — native client frame timing ownership
+
+AIVERSE already exposes asynchronous tagged `gfx::Device::timeGpuFrame`
+and `takeGpuTimings`. Stage41's
+`engine/world/TerraWeaveHorizonFrameTimingBridge.h` connects real
+measured CPU callback durations plus asynchronous tagged GPU samples
+to Stage40's optional adaptive `WorldScene` controller. The bridge
+is included in both `apps/client/GameClient` (platform begins/ends
+the RTS frame) and `apps/fps/client.cpp` (FPS explicitly begins/ends
+its device frame). Do not add duplicate `beginFrame/endFrame` calls,
+use simulation `dt` as measured CPU/GPU time, or treat
+`Device::gpuFrameMs()` from an old completed frame as a sample for
+the current one. Tagged GPU completions are matched to original
+frame IDs; unsupported/late results use bounded CPU-only fallback.
+The `takeGpuTimings` API destructively drains **all** ready GPU tags,
+so a future app using multiple timing subsystems needs one shared
+device timing collector; do not silently race two consumers.
+No frame query when `adaptiveQuality.enabled` is false; no
+simulation, PHYSIS, terrain geometry, TWH8 or shader change.
+Build/tests/native Metal/GL/Vulkan timings **NOT RUN** until the
+separate agent performs QA. Continue updating the Stage41 handoff
+in `docs/terrain/AGENT_HANDOFF.md`.
