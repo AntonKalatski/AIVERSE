@@ -503,3 +503,39 @@ above are placeholders: load/define them in the project first.
 NEREID does not allocate a separate particle runtime or change
 `WaterCascadeComponent` persistence. No tests/builds were run,
 per owner direction; see HANDOFF Stage 31.
+
+## Stage 32 — optional PHYSIS/weather wind presentation bridge
+
+Wind is **owned by PHYSIS or the native game's weather source**,
+not by NEREID. The current water branch contains no linked PHYSIS
+component contract, so NEREID accepts a generic sampled
+`Vec3` velocity and `Fixed` gust, after the ECS read barrier:
+
+```cpp
+#include "engine/world/NereidPhysisWindBridge.h"
+// Supply these values from the external PHYSIS wind query:
+world::applyNereidPhysisWindSample(
+    worldScene, sampledWorldWindVelocity, gustFraction, 1_fx);
+// Existing WorldScene draw receives the current NEREID visual wind.
+worldScene.advanceNereidRipples(deltaSeconds);
+// On PHYSIS disconnect/world reset:
+world::clearNereidPhysisWind(worldScene);
+```
+
+`engine/world/NereidWindPresentation.h` defines opt-in
+`NereidVisualWind {east,north,gust,coupling}`.
+`WorldScene::setNereidVisualWind` is a direct non-PHYSIS
+alternative. Values are finite-checked and capped to ±100 m/s
+and [0,1] strengths. The shared Renderer3D water draw uniforms,
+GLSL and Metal water normals now respond to wind direction,
+steady strength and gusts; the existing presentation ripple field
+gets a small additional wind drift **after** the local river current.
+A zero wind vector or coupling zero preserves old water behavior.
+Untagged legacy water and genre-independent simulation/physics
+are not changed.
+
+PHYSIS may provide this snapshot from its own wind system, but
+do not include PHYSIS internals in the NEREID ECS library and do
+not imply a full native PHYSIS adapter has been compiled/integrated
+until both workstreams merge. Tests deferred by owner request.
+See `docs/nereid/HANDOFF.md` Stage 32.
