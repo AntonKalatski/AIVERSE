@@ -220,3 +220,23 @@ composition and full legacy game adapter removal require further
 refactoring. No source-level genre dependency is allowed inside
 `engine/view`.
 
+### Render-resource owner (Stage 99)
+
+MotionWeave graph and pose state does **not** own GPU Model allocations.
+Generic native hosts can use `aiverse::render::ModelResourceCache`
+(`engine/render/ModelResourceCache.h`) with a separate presentation
+`World`/`aiverse::View`. The cache owns the model map and shared
+texture leases. On model/graph replacement, hosts must detach affected
+`AnimationSourceFrame` and pose/graph players **before** moving the
+old model to the cache's deferred retirement queue. At the next safe
+host frame boundary, `collectRetired(device)` invokes the explicit
+`gfx::Device::waitForResourceIdle` barrier and releases only resources
+whose previous GPU submissions are complete. Never derive completion
+from `frameSerial()` or a fixed number of frames in flight.
+
+Legacy `game::view_adapter::RtsModelResourceCache` and
+`RtsModelPreparationService` are aliases to the universal render
+classes. Material preview sphere/box resources in `game::Portrait`
+are the first independently owned real editor consumer. The complete
+RTS scene compatibility adapter is not yet retired. Deferred
+GPU/backend and animation parity tests are **NOT RUN**.
