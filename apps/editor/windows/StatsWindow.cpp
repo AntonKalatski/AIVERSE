@@ -138,6 +138,9 @@ public:
             ImGui::TextDisabled("GPU RenderTargets: ошибок очереди %llu · сиротских пар %llu",
                 (unsigned long long)ed.renderer().targetRetirementEnqueueFailures(),
                 (unsigned long long)ed.renderer().targetRetirementOrphanPairs());
+        if(ed.renderer().unleasedTargetIdleFailures())
+            ImGui::TextDisabled("GPU RenderTargets: отсутствие idle-барьера %llu",
+                (unsigned long long)ed.renderer().unleasedTargetIdleFailures());
         const auto warm=ed.renderer().gpuWarmStats();
         if(warm.shaderJobs || warm.pipelineJobs || warm.colorVariants)
             ImGui::TextDisabled(
