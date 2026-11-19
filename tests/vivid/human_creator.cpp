@@ -203,10 +203,12 @@ void test() {
         MorphLodMapping mappingSidecar;
         mappingSidecar.sourceVertices=3;
         mappingSidecar.sourceTriangles=1;
+        mappingSidecar.targetVertexIds={4,7};
         mappingSidecar.sourceFingerprint=MorphLodMapping::fingerprint(sourcePositions,faces);
         mappingSidecar.samples=correspondence;
         const auto restored=MorphLodMapping::fromJson(mappingSidecar.toJson());
         req(restored.samples.size()==2 &&
+            restored.targetVertexIds==std::vector<std::uint32_t>({4,7}) &&
             std::fabs(restored.samples[0].bary.x-0.5f)<1.e-5f,
             "LOD barycentric sidecar lost mapping data");
         const auto restoredMorphs=restored.transfer(sourceMorph,sourcePositions,faces);
