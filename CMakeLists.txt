@@ -2079,6 +2079,10 @@ if(AIVERSE_BUILD_STRATA)
         target_link_libraries(aiverse_strata_render_routing_tests PRIVATE
             aiverse_strata_render_routing aiverse_zstd_dec)
         add_test(NAME strata_render_routing COMMAND aiverse_strata_render_routing_tests)
+        add_executable(aiverse_strata_portable_tests tests/render/strata_portable.cpp)
+        target_link_libraries(aiverse_strata_portable_tests PRIVATE
+            aiverse_strata_portable aiverse_zstd_dec)
+        add_test(NAME strata_portable COMMAND aiverse_strata_portable_tests)
     endif()
     # The GPU parity runner opens a real macOS CAMetalLayer and compiles MSL at
     # runtime. Keep it manual/opt-in: focused CPU/mocked CTests have no window.
