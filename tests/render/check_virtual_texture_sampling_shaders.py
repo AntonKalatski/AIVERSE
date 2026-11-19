@@ -44,30 +44,44 @@ def compile_source(command: list[str], label: str) -> None:
     print(f"PASS: canonical VT sampler compiles for {label}")
 
 
-def test_glsl(source: str) -> None:
+def test_glsl(source: str, backend: str = "glsl") -> None:
     compiler = shutil.which("glslangValidator")
     if not compiler:
         raise RuntimeError(
             "FAIL: glslangValidator is required for GL33/GLES3 shader compilation"
         )
-    for profile, version, preamble in (
+    profiles = (
         ("OpenGL 3.3", "#version 330 core\n", ""),
         (
             "OpenGL ES 3.0",
             "#version 300 es\n",
             "precision highp float;\nprecision highp int;\n",
         ),
-    ):
+    )
+    if backend == "vulkan":
+        profiles = (("Vulkan 1.1 SPIR-V", "#version 450 core\n", ""),)
+    for profile, version, preamble in profiles:
+        vulkan = backend == "vulkan"
+        sampler_declarations = (
+            "layout(set=0,binding=0) uniform sampler2DArray physicalAtlas;\n"
+            "layout(set=0,binding=1) uniform sampler2DArray virtualTable;\n"
+            "layout(set=0,binding=2) uniform VtParameters {\n"
+            "    vec2 testUV; int virtualLayer; float gutterPixels;\n"
+            "    int addressU; int addressV;\n"
+            "};\n"
+        ) if vulkan else (
+            "uniform highp sampler2DArray physicalAtlas;\n"
+            "uniform highp sampler2DArray virtualTable;\n"
+            "uniform vec2 testUV;\n"
+            "uniform int virtualLayer;\n"
+            "uniform float gutterPixels;\n"
+            "uniform int addressU;\n"
+            "uniform int addressV;\n"
+        )
         shader = (
             version + preamble
             + "layout(location = 0) out vec4 fragmentColor;\n"
-            + "uniform highp sampler2DArray physicalAtlas;\n"
-            + "uniform highp sampler2DArray virtualTable;\n"
-            + "uniform vec2 testUV;\n"
-            + "uniform int virtualLayer;\n"
-            + "uniform float gutterPixels;\n"
-            + "uniform int addressU;\n"
-            + "uniform int addressV;\n"
+            + sampler_declarations
             + source + "\n"
             + "void main() {\n"
             + "    vec4 fallback = vec4(0.13,0.31,0.57,1.0);\n"
@@ -109,7 +123,13 @@ def test_glsl(source: str) -> None:
         with tempfile.TemporaryDirectory(prefix="aiverse-vt-glsl-") as temp:
             fragment = pathlib.Path(temp) / "vt_sampling.frag"
             fragment.write_text(shader, encoding="utf-8")
-            compile_source([compiler, "-S", "frag", str(fragment)], profile)
+            args = [compiler, "-S", "frag", str(fragment)]
+            if vulkan:
+                args[1:1] = ["-V", "--target-env", "vulkan1.1"]
+                args += ["-o", str(pathlib.Path(temp) / "vt_sampling.spv")]
+            compile_source(args, profile)
+            if vulkan and not (pathlib.Path(temp) / "vt_sampling.spv").is_file():
+                raise RuntimeError("FAIL: Vulkan compiler did not produce SPIR-V")
 
 
 def test_metal(source: str) -> None:
@@ -174,7 +194,7 @@ def test_metal(source: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--backend", choices=("glsl", "metal", "all"), required=True,
+        "--backend", choices=("glsl", "vulkan", "metal", "all"), required=True,
         help="explicit compiler target; never silently skip missing toolchains",
     )
     args = parser.parse_args()
@@ -182,6 +202,8 @@ def main() -> int:
         source = HEADER.read_text(encoding="utf-8")
         if args.backend in ("glsl", "all"):
             test_glsl(extract_shader(source, "kVirtualTextureGLSL"))
+        if args.backend in ("vulkan", "all"):
+            test_glsl(extract_shader(source, "kVirtualTextureGLSL"), "vulkan")
         if args.backend in ("metal", "all"):
             test_metal(extract_shader(source, "kVirtualTextureMSL"))
         return 0
