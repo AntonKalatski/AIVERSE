@@ -313,3 +313,61 @@ The default native tree/shrub climate uses the NEREID water sample at the root z
 A tree that is **naturally dead** is presentation-hidden, not automatically converted into a Box3D fallen log, collision/resource object or decomposing vegetation. Harvesting gameplay must update canonical rooted state, rather than hiding only an Arbor render instance; otherwise its hidden plant could continue to compete/reproduce.
 
 The default evaluation budget bounds costly **per-plant processing**; building the spatial canopy and staging native persistent ECS snapshots still costs O(N) for the active rooted subset at the ecology interval. Mass decorative forest remains procedural and stateless, and new source is not yet performance-tested. Stage65 commits have NOT been compiled or run through CTest/Metal/Box3D/ECS replay. See `docs/terrain/stage-65-rooted-forest-ecology-handoff.md`.
+
+
+## Stage 66 — authoritative harvest/replant with persistent forest visibility
+
+This optional feature connects old `ForestScene::removeTree` presentation to
+the canonical ECS simulation. The new `terraweave.forest_harvest` v1 resource
+stores a sorted, bounded list of stable `{speciesId,plantKey}` tombstones.
+Enable it by passing `enableForestHarvest=true` as the final argument to
+`examples::terraweave_native::registerSystems`, or explicitly call
+`terraweave::registerTerraWeaveForestHarvestPersistence(sim)` once before
+registry sealing. Existing games retain their legacy presentation-only
+removals when harvest persistence is disabled.
+
+At a server-authoritative structural/command barrier, **outside** a
+`World::each` callback or active Box3D/render phase:
+
+```cpp
+#include "engine/world/TerraWeaveForestHarvestEcs.h"
+
+terraweave::AnchoredPlantId id{speciesId, stablePlantKey};
+auto event=terraweave::harvestNativeForestTree(
+    sim.world(),id,sim.tick());
+if(event.changed) {
+    // Award inventory once, enqueue collision removal for Box3D owner,
+    // and replicate the authoritative command/snapshot to clients.
+    // event.uprooted is populated for an interactable rooted tree.
+}
+
+// An explicit replant/undo may remove the tombstone. For an ECS-grown
+// sapling, provide its validated new planted AnchoredPlant; ordinary
+// generated cosmetic foliage can be unhidden with no rooted record.
+bool restored=terraweave::restoreHarvestedForestTree(
+    sim.world(),id,optionalNewRootedPlant);
+```
+
+The harvest transaction copies and commits the authoritative rooted state,
+optional Stage65 ecological history and the harvest tombstones atomically via
+the existing World COW resource. A rooted harvested plant is **removed**
+from canopy competition, seed production and root-support sampling. A newly
+recruited sapling's identity is saved with the harvest tombstone; on explicit
+replant, its `recruited` ecology marker is rebuilt so near Arbor/Flora can
+render the new plant instead of expecting nonexistent procedural scatter.
+Repeated harvest commands are idempotent and do not emit another inventory
+reward. There is no per-tree render mesh or grass-blade ECS entity.
+
+After the tick, the existing `NativeTerraWeaveWorldBinding::reconcile`
+publishes `setRemovedTrees` from the saved tombstones; streaming, load and
+rollback reconstruct the same visibility. Soil revision and water flow are
+unchanged. Do **not** call `ForestScene::restoreTree` as a replacement for the
+authoritative restore when the new resource is enabled. A game-specific
+inventory, replanted physical collider, fallen/deadwood debris cleanup and
+NavMesh blocker update remain the native host's responsibility. Natural death
+is NOT counted as a harvest and a fallen tree is NOT automatically harvested.
+
+**QA gate:** new Stage66 source has been committed, but no native build,
+CTest, save/load, rollback, Metal/GL/Vulkan visuals or Box3D interaction has
+been run. Keep PR #24 Draft; see
+`docs/terrain/stage-66-authoritative-harvest-handoff.md`.
