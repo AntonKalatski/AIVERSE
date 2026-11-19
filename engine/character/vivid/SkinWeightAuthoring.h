@@ -152,9 +152,23 @@ public:
         std::sort(ids.begin(),ids.end());
         ids.erase(std::unique(ids.begin(),ids.end()),ids.end());
         if(!std::binary_search(ids.begin(),ids.end(),center))return false;
+        // Avoid unbounded per-stroke CPU work on huge imported meshes.
+        // Only candidates inside brush influence need palette evaluation.
+        std::vector<std::uint32_t> nearby;
+        nearby.reserve(std::min<std::size_t>(ids.size(),4096));
+        for(auto id:ids) {
+            const auto p=model.vertices[id].pos;
+            const auto a=render::length(p-pivot);
+            const auto b=mirrorX?render::length(p-reflected):radius;
+            if(a<radius || b<radius) {
+                if(nearby.size()>=4096)return false;
+                nearby.push_back(id);
+            }
+        }
+        if(nearby.empty())return false;
         auto next=edits_;
         bool changed=false;
-        for(auto id:ids) {
+        for(auto id:nearby) {
             const auto& p=model.vertices[id].pos;
             auto falloff=[&](const render::float3& point) {
                 const auto d=p-point;
