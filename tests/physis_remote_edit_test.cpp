@@ -581,6 +581,56 @@ void appliedRecheckNeedsFreshQueryAndManualReconcile() {
     CHECK(client.requestId()==requestId);
 }
 
+
+void appliedRecheckTimeoutCanRetryOnlyQuery() {
+    auto sim=make();
+    ServerGateway gateway;
+    RemoteClient client(99642);
+    CHECK(client.begin(edit(Fixed::fromInt(74)),kEdit,4));
+    const auto id=client.requestId();
+    auto [c1,s1]=net::makeLoopbackPair();
+    drive(client,gateway,*sim,*c1,*s1,0,2100);
+    CHECK(client.status()==ClientStatus::Applied);
+    CHECK(registry(*sim).revision==1);
+    c1->close();s1->close();
+    client.disconnected();
+
+    // No server consumes the verification queries; after a bounded number
+    // of attempts the client must not silently allow a new edit.
+    auto [c2,s2]=net::makeLoopbackPair();
+    for(std::uint64_t ms=2200;ms<30000;ms+=200)
+        client.poll(*c2,ms);
+    CHECK(client.status()==ClientStatus::Uncertain);
+    CHECK(client.receipt().result==Result::Applied);
+    CHECK(client.requestId()==id);
+    CHECK(!client.begin(edit(Fixed::fromInt(75),1),kEdit,4));
+
+    // Manual Retry verifies the SAME ID with Query only, not Submit.
+    c2->close();s2->close();
+    client.disconnected();
+    client.retry();
+    auto [c3,s3]=net::makeLoopbackPair();
+    client.poll(*c3,31000);
+    net::Bytes wire;
+    CHECK(s3->recv(wire));
+    Packet sent;
+    CHECK(decode(wire,sent));
+    CHECK(sent.kind==Message::Query);
+    CHECK(sent.requestId==id);
+    // The server's original confirmed outcome can now be revalidated.
+    Packet reply;
+    reply.kind=Message::Receipt;
+    reply.clientInstance=client.instance();
+    reply.requestId=id;
+    reply.receipt={Result::Applied,0,1,"verified after timeout"};
+    net::Bytes confirmed;
+    CHECK(encode(reply,confirmed));
+    s3->send(confirmed);
+    client.poll(*c3,31001);
+    CHECK(client.status()==ClientStatus::Applied);
+    CHECK(registry(*sim).revision==1);
+}
+
 void initialRevisionProbe() {
     auto sim=make();
     ServerGateway gateway;
@@ -664,6 +714,7 @@ int main() {
     latencyAndReorderSimulation();
     delayedReceiptCannotUndoApplied();
     appliedRecheckNeedsFreshQueryAndManualReconcile();
+    appliedRecheckTimeoutCanRetryOnlyQuery();
     initialRevisionProbe();
     revisionProbeStopsOnUnhealthyJournal();
     unhealthyJournalStopsAutomaticResubmit();

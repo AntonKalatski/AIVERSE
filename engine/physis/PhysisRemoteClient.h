@@ -53,7 +53,9 @@ public:
                std::uint8_t authorizedClientSlot,
                std::string* error=nullptr) {
         if(!instance_ || nextId_==0 ||
-           (active_ && !terminal(receipt_.result) && status_!=ClientStatus::Idle))
+           status_==ClientStatus::Uncertain || refreshApplied_ ||
+           (active_ && !terminal(receipt_.result)) ||
+           (active_ && receipt_.result==Result::Applied && !connected_))
             return protocolError(error,"PHYSIS edit already outstanding or instance invalid");
         if(authorizedClientSlot==0 || hostCommandType==0)
             return protocolError(error,"PHYSIS remote edit needs nonzero player and command type");
@@ -130,9 +132,23 @@ public:
             status_=ClientStatus::Offline;
     }
     // Explicit user action after an indeterminate network timeout.
-    // Original request ID/payload are preserved: retry is idempotent.
+    // Original request ID/payload are preserved. If an already-Applied
+    // request's verification timed out, only Query it; never resend Submit.
     void retry() {
-        if(!active_ || terminal(receipt_.result))return;
+        if(!active_)return;
+        if(terminal(receipt_.result)) {
+            if(receipt_.result!=Result::Applied ||
+               status_!=ClientStatus::Uncertain)return;
+            suspendedForReconcile_=false;
+            refreshApplied_=true;
+            refreshQuerySent_=false;
+            attempts_=0;
+            nextSendMs_=0;
+            query_=true;
+            status_=connected_ ? ClientStatus::AwaitingReceipt
+                               : ClientStatus::Offline;
+            return;
+        }
         // Only a deliberate user action may lift journal-failure suspension.
         suspendedForJournal_=false;
         suspendedForReconcile_=false;
