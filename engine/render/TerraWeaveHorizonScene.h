@@ -309,10 +309,6 @@ public:
         if(observer.x<-kWorldLimitCm||observer.x>kWorldLimitCm||
            observer.z<-kWorldLimitCm||observer.z>kWorldLimitCm)
             throw std::out_of_range("TerraWeave Horizon camera extent");
-        // Run BEFORE fast-return/cached-region paths. No atlas/mesh
-        // regeneration; one bounded render-thread RHI vertex update per
-        // visible model and published weather-field revision.
-        refreshForestWindGpu(device);
         // Keep the current region until the camera moves past the cell
         // boundary plus a hysteresis margin. This prevents rapid rebuilds
         // when the observer oscillates near a 128m streaming edge.
@@ -342,6 +338,9 @@ public:
         // can only be retired on the owning gfx::Device thread.
         gpuCache_.prune(device,sourceRevision_);
         finishTransition(device);
+        // Patch only models that survived transition retirement. This must
+        // run BEFORE fast-return/cached-region paths, and never during submit.
+        refreshForestWindGpu(device);
         // A recently departed region may still be in the short-lived
         // transition slot instead of the normal GPU LRU.
         if(transition_.model && transitionCell_ &&
