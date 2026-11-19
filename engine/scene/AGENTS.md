@@ -70,3 +70,42 @@ Stage 1; this stage supplies deterministic ECS ownership and lifecycle APIs.
   results are still outstanding. Do not describe Stage 2 as tested.
 - Next stage should integrate existing world streaming and presentation
   facilities via adapters, *not* fork a second renderer/physics/terrain cache.
+
+
+## Integrated Static prefab catalog (Stage 4, 2026-11-19)
+
+- `engine/scene/PrefabStaticSceneBinding.h` is the actual native bridge
+  between `SceneLoadCoordinator::SpawnPrefab` and
+  `storage::PrefabStaticCatalog<T>` from `engine/sim/PrefabStaticCatalog.h`.
+  A new SceneAsset instance stores only a 4-byte `StaticRef<T>`; the
+  sealed config table is shared through `shared_ptr<const Catalog>` across
+  additive scenes and independent ECS Worlds.
+- Call `registerScenePersistence` and
+  `registerPrefabStaticPersistence<T>` inside `GameModule::setup`, then
+  `catalog->bindWorld(sim.world())`. Do not double-register native
+  `StaticRef<T>` schemas.
+- Supply `StaticPrefabSceneBinding<T>(catalog, optionalInitializer).callback()`
+  to the actual `SceneLoadCoordinator`; `MissingPrefabConfig::Reject`
+  rejects unrecognized prefabs and rolls back the *new* scene while old
+  scenes survive. Optional domains can use `Skip` and
+  `PrefabSceneSpawnChain` in a deterministic registration order.
+- A scene unload destroys only scene-owned Entity refs; the immutable
+  prefab catalog stays alive while owned by the game/preview/module
+  or any other legitimate `shared_ptr` holder. Never mutate static
+  config values or register a second authoritatively writable copy.
+- After cold native state restore, validate
+  `catalog->validateWorld(sim.world())`, rebuild `SceneHierarchy` and
+  restore scene resource residency via `invalidateAfterRestore` /
+  `queueRestoredResidency`. Instance Parent/LocalTransform persistence
+  is still host-owned and must be explicitly registered; this adapter
+  only installs the static prefab/scene schemas.
+- Native opt-in CTest: `ecs_static_scene_integration_test`; run this
+  plus all relevant source-branch ECS, scene, COW, save and lockstep tests
+  before proposing a main merge. **No native result is yet available for
+  the combined integration branch.**
+- See `docs/ecs-static-prefab-scene-integration.md` and
+  `docs/agent-handoffs/ecs-static-scene-stage4-2026-11-19.md` for the
+  exact integration contract/commit history, verification and next step.
+- The additive `CollisionStream` static collider ID namespace is still
+  unresolved; do NOT attach two independent collision streams to one
+  `SpatialWorld` or disable its existing guard to make tests green.
