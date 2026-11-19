@@ -628,6 +628,61 @@ rendering, nor image correctness have been tested. All compilation,
 CTest and GPU checks remain **NOT RUN**, per user request.
 See `docs/handoffs/prisma-stage-25.md`.
 
+
+## Stage 26 — automatic rigid-object motion vectors (experimental)
+
+When HDR `motionBlur` is active with
+`AIVERSE_PRISMA_MOTION_BLUR=1`, Renderer3D now has an optional GPU
+overlay pass for **opaque rigid ModelDraw primitives with a stable
+`persistentId`**. It runs between the scene pass and
+`Prisma::resolve()`, outside any open render pass, then sends the
+RGBA16F velocity texture to PRISMA through the new generic
+`PostProcess` bridge. It does not modify gameplay/ECS, and the
+existing camera-derived vectors remain the fallback for pixels
+without valid object velocity.
+
+The renderer tracks the previous world transform of each
+`(ModelDraw::persistentId, nodeIndex)` in a per-view map. On the first
+frame or after a camera cut, it records current transforms without
+drawing a velocity overlay. Once the camera history is valid, it
+renders each eligible rigid primitive with a dedicated GLSL/MSL
+shader and `ModelVertex` position stream. Current and previous
+model-view-projection matrices produce signed current-minus-previous
+screen UV motion in RG. B=1 marks visible rigid pixels. A separate
+scratch depth texture is attached; the shader *samples* original scene
+depth and rejects fragments behind the visible surface, so world
+occlusion/terrain can hide moving objects without writing scene depth.
+
+This pass operates on the existing ModelItems after ordinary batching:
+individual model node transforms are preserved even if the regular
+opaque pass used instancing/MDI. The velocity overlay currently uses
+one regular indexed draw per primitive (not an indirect/instanced
+velocity submission); it reuses the existing model vertex/index GPU
+buffers. The overlay render target and depth attachment are owned
+per `PostProcess` view ID by Renderer3D and released on its shutdown.
+No resource is shared between cameras with different stable IDs.
+
+Only *rigid*, visible, opaque, non-deformed, stable-ID model primitives
+are eligible. Missing IDs, transparent/masked materials, skinned or
+baked animated meshes, morph targets, custom geometry and transient
+immediate draws are skipped. Their pixels continue using the
+camera-only motion reconstruction. The scene depth test is an
+approximate epsilon comparison, not a full material/alpha/deformation
+replay; fast disocclusions and edge artifacts remain possible.
+
+Existing `Prisma::setObjectMotionVectors(viewId,texture)` stays
+available for custom native renderers; automatic Renderer3D
+generation uses the same borrowed-handle bridge via virtual
+`PostProcess::acceptObjectMotionVectors`. There is no ECS scheduling
+or genre-specific integration. Default behavior is unchanged when
+MotionBlur is not active.
+
+**NOT RUN:** native build, CTest, Metal/GL shader compilation,
+screen comparisons and profiling, per user's features-first request.
+A GPU fence-completed retirement path is still required for robust
+target resizing and teardown while work is in flight. See
+`docs/handoffs/prisma-stage-26.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
