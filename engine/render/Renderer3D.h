@@ -18,6 +18,7 @@
 #include "GpuSceneCulling.h"
 #include "GpuSceneDrawCommands.h"
 #include <memory>
+#include <map>
 #include <unordered_map>
 
 namespace aiverse::render {
@@ -123,6 +124,8 @@ public:
     virtual gfx::PassDesc scenePass(const gfx::PassDesc& out, int w, int h) = 0;
     virtual void resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame& frame) = 0;
     // Optional read-only presentation bridge for object motion vectors.
+    virtual bool wantsObjectMotionVectors() const { return false; }
+    virtual gfx::TextureHandle objectMotionSceneDepth() const { return {}; }
     virtual bool objectMotionContext(uint64_t& viewId, mat4& previousViewProj) const {
         (void)viewId; (void)previousViewProj; return false;
     }
