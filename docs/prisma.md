@@ -1233,6 +1233,109 @@ Native compilation, CTest, Metal/GL/Vulkan GPU completion tests,
 images and memory profiling have **NOT RUN**, per the user's
 features-first instruction. See `docs/handoffs/prisma-stage-33.md`.
 
+
+## Stage 34 — GPU-fenced per-camera history lifecycle and editor diagnostics
+
+PRISMA temporal history is now explicitly **owned by stable view IDs**
+instead of render-target size. The Stage 34 public APIs are:
+
+```cpp
+prisma.retireView(viewId);               // close only this camera's history
+prisma.collectGpuRetirements();          // nonblocking, GPU-completed fence
+auto post = prisma.retirementStats();    // read-only CPU diagnostics
+auto motion = renderer.motionRetirementStats();
+```
+
+`retireView(id)` removes the per-view Auto Exposure ping-pong 1×1
+RGBA16F texture handles from the active exposure map and queues them
+via the existing GPU-fence-aware `retireTarget()` mechanism. An
+unfenced backend retains them until a host-confirmed GPU-idle drain;
+a completed GPU token permits collection without stalling.
+Per-view MotionBlur matrices, validity and borrowed current-frame
+velocity/reactive handles are discarded without destroying those
+**externally owned** borrowed resources. Importantly, `retireView`
+does **not** delete the shared `Prisma::Sized` scene render targets:
+multiple Scene/Game cameras of equal resolution may still use them.
+
+`Renderer3D::retireObjectMotionView(id, fence=0)` is now callable
+without a manually supplied fence; the queue first queries the live
+backend `gpuSubmissionFence()`. Its separate current-frame GPU
+velocity, reactive and depth targets are retired independently from
+PRISMA exposure. `Renderer3D::motionRetirementStats()` reports
+retained per-view context count, fenced/unfenced texture count,
+backend completed GPU fence and known pending bytes.
+
+`Prisma::retirementStats()` reports active/retired size contexts,
+exposure/motion view counts, fenced/unfenced textures, retired graph
+pool entries, the last GPU-completed fence and **known minimum**
+held GPU bytes. The byte estimate uses `Device::textureInfo()` on
+live RHI allocations, including the archive of `Sized` targets and
+depth attachments; it deliberately does not invent memory for
+internal graph retired allocations whose handle metadata has
+already been discarded. Statistics are **not** total VRAM use.
+
+### Scene/Game viewport transitions
+
+In the editor `Editor::frame` tracks which view **actually rendered
+postprocess** this GUI frame. When a Scene or Game tab is hidden,
+closed, switched to non-postprocessed diagnostic mode, or stops
+rendering, the editor retires that camera's PRISMA state plus its
+Renderer3D motion targets **once**, then continues collecting
+backend-confirmed GPU completions on subsequent editor frames even
+with no 3D viewport rendered. Reopening a view seeds fresh temporal
+history instead of reusing stale exposure after a long hidden period.
+
+The Scene view uses stable ID `1` and Game uses `2`. The editor
+previously used Game ID `2` even when the Scene tab reused the
+game renderer during play; Stage 34 passes explicit ID `1`
+in that path to prevent simultaneous same-resolution Scene/Game
+motion and exposure contamination. A hosted standalone game client
+uses its own PRISMA instance and view ID `3`.
+
+The native `GameClient` similarly retires view `3` on a new match
+before camera and map replacement, and continues checking
+pending GPU work on menu/loading frames when the 3D renderer is not
+rendering.
+
+The editor's **Statistics** tab now shows a new
+`PRISMA · GPU resource retirement` section for completed GPU fence,
+active/retired size contexts, view histories, counts of fenced and
+unfenced textures, outstanding graph allocations, and the
+**minimum known MiB** retained by both PRISMA and Renderer3D.
+This is observational and creates no GPU readback or synchronizing
+GPU wait.
+
+### Project asset reloads
+
+`Prisma::setImageLoader` now GPU-fence-retires superseded LUT and
+user ShaderGraph textures rather than immediately destroying them
+while another frame might still reference them. Shared shader
+pipelines and graphs keep their existing ownership; this only
+changes the texture retirement policy.
+
+### Limitations / compatibility
+
+The API leaves existing `postfx` JSON, editor configuration, game
+behavior and ECS unchanged. No new postprocessing effect is enabled
+by default. Active `Prisma::Sized` contexts remain keyed by output
+dimensions, **not** individual camera IDs, because they contain
+reusable frame-local targets; only private exposure and motion history
+is camera-keyed.
+
+`Viewport::color`/`Viewport::depth` (the editor's external
+framebuffers) and other engine-wide texture resources are **not**
+automatically released by `retireView`; the editor's own framebuffer
+resource lifetime requires a separate safe owner-side migration.
+If the GPU never exposes a completed fence, pending allocations
+remain quarantined until explicit GPU idle. GPU bytes shown in the
+Statistics tab are lower bounds, not comprehensive VRAM accounting.
+
+**NOT RUN** as requested: CMake/C++, CTest, editor/client runtime,
+Metal/GL/Vulkan GPU images, fence/pixel smoke, CI, profiler and
+memory leak tests. Code and API integrations are source-level only
+and not validated on real hardware.
+See `docs/handoffs/prisma-stage-34.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
