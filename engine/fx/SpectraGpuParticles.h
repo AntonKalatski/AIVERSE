@@ -8,6 +8,7 @@
 #include "ParticleSystem.h"
 #include "SpectraGpuCheckpoint.h"
 #include "SpectraCheckpointReadbackBudget.h"
+#include "SpectraAdaptiveCheckpoint.h"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -54,6 +55,7 @@ struct ComputeEmitterDesc {
     // Opt-in async checkpoint cadence (0 = disabled). One full capture is
     // at most 512 KiB / eight 64 KiB reads at capacity 4096.
     uint32_t checkpointEveryFrames = 0;
+    AdaptiveCheckpointPolicy adaptiveCheckpoint{};
     // Optional shared readback budget; all GPU emitters on one Device should
     // share it. If absent, legacy independent checkpoint behavior is retained.
     std::shared_ptr<CheckpointReadbackBudget> checkpointBudget;
@@ -76,6 +78,8 @@ struct GpuCheckpointStatus {
     uint64_t frameSerial = 0;
     uint64_t framesBehind = 0; // valid only when complete
     uint32_t physicalSlots = 0;
+    uint32_t checkpointIntervalFrames = 0;
+    uint64_t nextCheckpointRevision = 0;
 };
 
 struct ComputeStats {
@@ -86,6 +90,7 @@ struct ComputeStats {
     uint32_t recoveredOnFallback=0;
     uint32_t checkpointRequests=0, checkpointCompleted=0, checkpointFailed=0;
     uint32_t checkpointBudgetDenied=0;
+    uint32_t checkpointAdaptiveBackoffs=0, checkpointAdaptiveRecoveries=0;
     size_t checkpointBytesReturned=0; // valid callback payload bytes, not DMA profiling
     uint32_t gpuCompactDispatches = 0, gpuIndirectDraws = 0;
     uint32_t gpuVmErrorsLastRead = 0;
@@ -209,7 +214,7 @@ private:
     uint64_t checkpointRevision_ = 0;
     GpuCheckpoint lastCheckpoint_;
     bool asyncCheckpointPending_ = false;
-    uint64_t checkpointFrameCounter_ = 0;
+    AdaptiveCheckpointCadence checkpointCadence_{};
 };
 
 } // namespace aiverse::spectra
