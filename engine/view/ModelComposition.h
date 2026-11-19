@@ -25,6 +25,10 @@ struct ModelLod {
     // the LOD exporter. Without it, only exact compatible layouts can
     // share the source pose; otherwise the LOD remains in bind pose.
     std::shared_ptr<const ModelPoseRetarget> retarget;
+    // Optional Stage 123 precompiled plan. Once supplied, it must NOT
+    // fall back to per-draw recompilation if its asset generation expires.
+    std::shared_ptr<const CompiledModelPoseRetarget> compiledRetarget;
+    uint64_t visualModelGeneration=0; // explicit asset epoch, not an entity life
 };
 
 inline bool validModelLods(std::span<const ModelLod> levels) noexcept {
