@@ -44,6 +44,7 @@ namespace kingston { struct CabinResidentDraw; }
 #include "RtsOverlays.h"
 #include "RtsModelResourceProvider.h"
 #include "RtsModelResourceCache.h"
+#include "RtsModelPreparationService.h"
 #include "RtsTerrainRender.h"
 #include "EntityFx.h"
 
@@ -200,12 +201,12 @@ public:
     size_t modelChoiceCount(uint16_t type) const { return type < looks_.size() ? looks_[type].models.size() : 0; }
     float typePreparationProgress() const {
 #ifndef __EMSCRIPTEN__
-        return preparePaths_.empty() ? 0.0f : float(prepareCursor_) / float(preparePaths_.size());
+        return preparation_.progress();
 #else
         return 0.0f;
 #endif
     }
-    const std::string& preparingResource() const { return preparingResource_; }
+    const std::string& preparingResource() const { return preparation_.resource(); }
     std::string typeResource(uint16_t type) const;
     void shutdown(gfx::Device& dev);
     // Terrain from the grid (chunked: only chunks whose cells changed are rebuilt); call again after
@@ -545,14 +546,10 @@ private:
     bool deferredLoading_ = false, streamingTypes_ = false;
     bool deferAppearanceVariants_ = true; // client default; editor disables
     render::FileReader asyncReader_;
-    std::string preparingResource_;
+    // Worker lifecycle belongs to the independent resource preparation
+    // service; the host still provides model policy and GPU publication.
 #ifndef __EMSCRIPTEN__
-    struct PreparedModel { std::unique_ptr<render::Model> model; std::vector<std::string> warnings; };
-    std::future<PreparedModel> preparing_;
-    std::vector<std::pair<std::string, std::string>> preparePaths_;
-    size_t prepareCursor_ = 0;
-    int prepareType_ = -1;
-    bool prepareAllVariants_ = false;
+    view_adapter::RtsModelPreparationService preparation_;
 #endif
     std::vector<std::string> warnings_;
     // Only entities first seen while variants stream need a stable choice override.
