@@ -248,3 +248,12 @@ git fetch origin main && git merge origin/main
 - **Verification:** **NOT RUN** (user requested all functions first, tests later). Native build, CTest, editor integration and asset roundtrip are unverified.
 - **Current limitations:** stage Update/Render are declarative placeholders delegating to legacy ParticleSystem, not configurable stages or new GPU shader passes; no automatic file watcher/editor panel yet. The new asset parser must be covered by the later compile+negative-validation pass.
 - **Next actionable feature step:** runtime asset loader, editor graph UI and GPU capability-specific implementations; preserve old CPU fallback. All future functionality requires per-stage handoff commits and an eventual full focused/native validation pass.
+
+
+## 2026-11-19 — Stage 14: transactional graph authoring API
+- **Code commit:** `d3f41176457a956d75564bafda83f90025c6e4c4`, branch `feature/spectrafx-generic-cue-queue`.
+- **Changed:** `engine/fx/SpectraFxGraphAuthoring.h` (new). `SpectraFxGraphAuthoring::replace/append/update/remove/connect/createDefault/revision` supplies the eventual editor's graph mutation surface. Each mutation validates a temporary graph before replacing the canonical authored graph; failed topology edits leave the previous graph and revision untouched. Remove refuses referenced nodes and shifts later source indices; graph requires exactly one Input, topologically ordered nodes and at least one Emit. Empty initial graph is not editable through append; start with `createDefault()` and `replace()`.
+- **Integration boundaries:** declarative editor/data layer, no GUI window yet. Optional header, no changes to ECS, gameplay, CPU particles, RHI, PRISMA or serialization IDs.
+- **Tests actually run:** **NOT RUN**, per user's features-first instruction; native C++ compile, CTest, UI operation and cross-platform quality checks are still pending. This stage is not verified.
+- **Limitations:** indexed single-parent connections rather than full arbitrary typed dataflow; no node position/selection/Undo history persisted; insert/reorder require complete graph replacement.
+- **Next:** build a genuine dockable editor graph UI using existing editor window APIs, persist graph assets with editor metadata and implement a GPU compute path without duplicating CPU particle authority. Only then perform native test and QA phase.
