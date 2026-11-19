@@ -1493,6 +1493,11 @@ void Editor::frame(gfx::Device& dev, double dt) {
     if (prismaSceneRendered_) activePrismaViews.push_back(1ULL);
     if (prismaGameRendered_) activePrismaViews.push_back(2ULL);
     prisma_.retireUnregisteredViews(activePrismaViews);
+    // Renderer3D keeps a separate per-camera object/deformation velocity
+    // history, independent of PRISMA's own temporal/exposure resources.
+    // Retire orphaned custom-camera IDs as well as the two built-in views,
+    // behind the graphics backend submission fence, never a CPU frame age.
+    r3d_.retireUnregisteredObjectMotionViews(activePrismaViews);
     // A cached size can remain after a tab closes or is resized. Retire it
     // only when NO live camera references the same size. This moves its
     // targets and graph pool behind the current GPU submission fence, never
