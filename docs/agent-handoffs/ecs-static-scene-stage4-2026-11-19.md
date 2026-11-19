@@ -254,7 +254,11 @@ gameplay/replay checks, actual GPU/Metal, physics/collision
 streaming, memory RSS and production editor scene workflow.
 The seven passes do not establish those integrations.
 
-### Minimal retest from existing worktree
+## Reproducible Stage 4/5 validation on Mac Studio
+
+Stage 4's corrected 7/7 targeted suite was recorded above. The following
+commands are for subsequent source changes and broader parity, and have
+**not** been run in the present stage. Use the existing isolated worktree:
 
 ```sh
 cd ~/Projects/AIVERSE-static-scene
@@ -262,48 +266,18 @@ git fetch origin feature/ecs-static-prefab-scene-integration
 git pull --ff-only origin feature/ecs-static-prefab-scene-integration
 git rev-parse HEAD
 
-cmake --build build/static-scene \
-  --target aiverse_ecs_scene_resource_pipeline_test --parallel 8
-
-ctest --test-dir build/static-scene \
-  -R '^ecs_scene_resource_pipeline_test
-
-Use a **new isolated worktree**, so neither main checkout nor other
-agents' worktrees are modified:
-
-```sh
-cd ~/Projects/AIVERSE
-git fetch origin main feature/ecs-static-prefab-scene-integration
-
-git worktree add -b verify-static-scene \
-  ../AIVERSE-static-scene \
-  origin/feature/ecs-static-prefab-scene-integration
-
-cd ../AIVERSE-static-scene
-git pull --ff-only origin feature/ecs-static-prefab-scene-integration
-git rev-parse HEAD
-
-cmake -S . -B build/static-scene \
-  -DAIVERSE_BUILD_TESTS=ON \
-  -DCMAKE_BUILD_TYPE=Release
-
-cmake --build build/static-scene --parallel 8 --target \
-  aiverse_ecs_static_scene_integration_test \
-  aiverse_ecs_prefab_static_catalog_test \
-  aiverse_ecs_shared_static_components_test \
-  aiverse_ecs_scene_runtime_test \
-  aiverse_ecs_scene_load_coordinator_test \
-  aiverse_ecs_multiworld_test \
-  aiverse_ecs_scene_resource_pipeline_test
-
-ctest --test-dir build/static-scene --output-on-failure \
-  -R '^(ecs_static_scene_integration_test|ecs_prefab_static_catalog_test|ecs_shared_static_components_test|ecs_scene_runtime_test|ecs_scene_load_coordinator_test|ecs_multiworld_test|ecs_scene_resource_pipeline_test)$'
+# Reconfigure to register added tests, then execute the complete
+# targeted and broader native ECS/COW/FPS/RTS suites.
+bash tools/ecs-static-scene-validate.sh build/static-scene extended 8
 ```
 
-Run COW/hierarchy then full ECS and RTS/FPS replay/rollback save tests
-before offering this as a production merge. After each compiler fix,
-commit code to this *integration* branch and update this handoff
-with actual CTest results, warnings, exact SHA and next step.
+Use `smoke` instead of `extended` for the narrower Scene/Static/COW
+suite during iterative code fixes. The script writes the build/CTest
+log under `build/static-scene/verification`.
+
+The Stage 5 handoff `docs/agent-handoffs/ecs-static-scene-stage5-2026-11-19.md`
+records later multi-domain implementation and test status. Never
+infer that an unrun new test is passing from older Stage 4 results.
 
 ## Known boundaries and hazards
 
