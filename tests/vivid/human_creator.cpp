@@ -1,4 +1,6 @@
 #include "engine/character/vivid/HumanCreatorSession.h"
+#include "engine/character/vivid/MorphAuthoring.h"
+#include "engine/character/vivid/HumanImport.h"
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -38,6 +40,36 @@ void test() {
     req(!second.loadJson(aiverse::Json::parse(R"({"version":100})"),&error) &&
         second.dna().toJson()==session.dna().toJson(),
         "creator invalid DNA replaced last-good profile");
+    {
+        MorphTargetInput shape;
+        shape.name="mouthSmileLeft";
+        MorphDelta initial;
+        initial.vertex=1;
+        initial.position={0.1f,0,0};
+        shape.deltas.push_back(initial);
+        const auto csr=SparseMorphLibrary::compile(4,{shape});
+        auto sculpt=MorphAuthoring::fromCompiled(csr);
+        req(sculpt.targets()==1 && sculpt.vertices()==4,
+            "sculpt target import failed");
+        req(sculpt.setPosition(0,1,{0.25f,0.1f,0}) && sculpt.canUndo(),
+            "sparse morph edit failed");
+        req(sculpt.undo() && sculpt.redo(),
+            "sparse morph undo/redo failed");
+        const auto exported=sculpt.toJson(4);
+        const auto compiled=parseHumanMorphs(exported,4);
+        req(compiled.targets()==1 && compiled.deltas()==1,
+            "sparse morph JSON roundtrip lost shape");
+        std::size_t targetId=0;
+        req(compiled.findTarget("mouthSmileLeft",targetId) && targetId==0,
+            "sparse sculpt export lost target name");
+        req(!sculpt.setPosition(0,4,{1,0,0}) &&
+            !sculpt.setPosition(0,1,{100,0,0}),
+            "out-of-range sculpt accepted");
+        bool rejected=false;
+        try { (void)sculpt.toJson(1); }
+        catch(const std::invalid_argument&) { rejected=true; }
+        req(rejected,"sculpt exported generated vertex outside original topology");
+    }
     std::filesystem::remove(file);
 }
 }
