@@ -44,19 +44,27 @@ public:
 int main() {
     StubDevice device;
     render::ModelResourceCache cache;
+    render::ModelResourceCache hosted; // embedded GameClient shares editor epoch
     render::RenderDeviceLifetime first(device);
     const auto prior=first.lease();
     cache.bindResourceDevice(device,prior);
+    hosted.bindResourceDevice(device,prior);
     assert(cache.resourceDeviceGeneration()==prior.generation());
+    assert(hosted.resourceDeviceGeneration()==prior.generation());
     assert(prior.validFor(device));
     {
         render::RenderResourceOwnerGroup group;
         auto lease=group.registerScoped(prior,cache);
-        assert(group.snapshot(device).uniqueOwners==1);
+        auto hostedLease=group.registerScoped(prior,hosted);
+        assert(group.snapshot(device).uniqueOwners==2);
+        hostedLease.reset();
         lease.reset();
     }
     // Successful explicit GPU idle is required BEFORE retiring the
     // host's generation token or recreating the GPU device at this address.
+    // Hosted GameClient destroys its resources first, then the owning
+    // editor cache, before the ONE shared GPU generation is retired.
+    hosted.shutdown(device);
     cache.shutdown(device);
     first.retire();
     assert(!prior.validFor(device));
@@ -65,10 +73,13 @@ int main() {
     assert(current.validFor(device));
     assert(current.generation()!=prior.generation());
     cache.bindResourceDevice(device,current);
+    hosted.bindResourceDevice(device,current);
     assert(cache.resourceDeviceGeneration()==current.generation());
+    assert(hosted.resourceDeviceGeneration()==current.generation());
     bool rejected=false;
     try {cache.bindResourceDevice(device,prior);}
     catch(const std::logic_error&) {rejected=true;}
     assert(rejected);
+    hosted.shutdown(device);
     cache.shutdown(device);
 }
