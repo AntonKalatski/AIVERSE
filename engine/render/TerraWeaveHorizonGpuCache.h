@@ -101,6 +101,18 @@ public:
         }
         return count;
     }
+    // One compression attempt per inactive cache entry, including entries
+    // already resident when the native host enables packing at runtime.
+    // An incompressible model is not repeatedly scanned every frame.
+    void compactWindShadows() {
+        for(auto& [cell,entry]:entries_) {
+            (void)cell;
+            if(entry.windCompressionAttempted)continue;
+            if(compressHorizonForestWindOverlay(entry.region.forestWind))
+                ++windShadowCompressions_;
+            entry.windCompressionAttempted=true;
+        }
+    }
     size_t cachedWindShadowBytes() const {
         size_t sum=0;
         for(const auto& [cell,entry]:entries_) {
@@ -199,14 +211,12 @@ public:
             render::releaseModel(device,*region.model);
             return;
         }
-        // No GPU readback or reupload: only inactive shadow bytes are
-        // packed. A non-beneficial stream keeps the raw reference intact.
-        if(compressCachedShadows &&
-           compressHorizonForestWindOverlay(region.forestWind))
-            ++windShadowCompressions_;
         const size_t cost=region.estimatedGpuBytes;
-        entries_.emplace(cell,Entry{std::move(region),revision,++stamp_});
+        entries_.emplace(cell,Entry{std::move(region),revision,++stamp_,false});
         occupiedBytes_+=cost;
+        // Pack only after the record is safely owned by the LRU; this also
+        // picks up older raw entries if compression was enabled mid-scene.
+        if(compressCachedShadows)compactWindShadows();
         trimWindShadowBytes(device,windShadowBudgetBytes);
     }
 
@@ -232,6 +242,7 @@ private:
     struct Entry {
         HorizonGpuRegion region;
         uint64_t revision=0, stamp=0;
+        bool windCompressionAttempted=false;
     };
     void release(gfx::Device& device,std::map<world::Cell,Entry>::iterator it) {
         if(it->second.region.model)
