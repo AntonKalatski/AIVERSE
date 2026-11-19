@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -118,7 +119,8 @@ public:
         const uint32_t shift=std::min(consecutiveResetFailures_,5u);
         const uint64_t delay=uint64_t(1)<<shift;
         retryNotBeforeOwnerFrame_=
-            ownerFrameOrdinal>UINT64_MAX-delay?UINT64_MAX:
+            ownerFrameOrdinal>std::numeric_limits<uint64_t>::max()-delay?
+            std::numeric_limits<uint64_t>::max():
             ownerFrameOrdinal+delay;
         poll();
         return PoolRecoveryServiceResult::ResetFailed;
