@@ -710,6 +710,10 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
                         , constant GiDynamicU& farGi [[buffer(8)]],
                           texture2d<float> tex15 [[texture(15)]]
 #endif
+#if defined(DYNAMIC_GI_TRIPLE)
+                        , constant GiDynamicU& thirdGi [[buffer(9)]],
+                          texture2d<float> tex16 [[texture(16)]]
+#endif
                         ) {
 #if defined(AIVERSE_ICB_PBR)
 #define tex0 icbTextures.tex0
@@ -880,7 +884,9 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     amb = lm;
 #endif
 #if defined(DYNAMIC_GI)
-#if defined(DYNAMIC_GI_CASCADES) && defined(DYNAMIC_GI_VALIDITY)
+#if defined(DYNAMIC_GI_TRIPLE) && defined(DYNAMIC_GI_CASCADES) && defined(DYNAMIC_GI_VALIDITY)
+    amb += dynamicGiTripleAt(tex13,tex14,tex15,tex16,dgi,farGi,thirdGi,in.wpos,n);
+#elif defined(DYNAMIC_GI_CASCADES) && defined(DYNAMIC_GI_VALIDITY)
     amb += dynamicGiCascadedAt(tex13,tex14,tex15,dgi,farGi,in.wpos,n);
 #elif defined(DYNAMIC_GI_VALIDITY)
     amb += dynamicGiAt(tex13,dgi,tex14,in.wpos,n);
