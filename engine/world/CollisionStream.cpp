@@ -19,6 +19,8 @@ bool seams(Cell cell,const TerrainTile& tile,const std::map<Cell,TerrainTile>& n
 CollisionStream::CollisionStream(const Json& manifest,AssetReader reader,
                                  SpatialWorld& target,CollisionIdRange idRange)
     :assets_(WorldAssets::parse(manifest)),target_(target) {
+    if(idRange.firstSlot && !idRange.slotCount)
+        throw JsonError("world: namespace firstSlot requires nonzero slotCount");
     if(idRange.slotCount) {
         // Each explicit namespace reserves whole 65,536-ID chunks. Ranges
         // are assigned by the host from a sorted immutable catalog before
