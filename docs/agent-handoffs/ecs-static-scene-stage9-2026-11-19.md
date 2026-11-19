@@ -5,9 +5,13 @@ Repository: `chromealex/AIVERSE`
 Branch: `feature/ecs-static-prefab-scene-integration`
 Previous: `docs/agent-handoffs/ecs-static-scene-stage8-2026-11-19.md`
 
-**Status: 127/129 tests passed in the user-provided full native
-CTest run (268.20 seconds). Two failures remain to be rechecked.
-The source correction is committed but NOT NATIVE-RETESTED.**
+**Status: FULL native build/CTest and all 9 process-isolated RSS
+benchmarks passed on Mac Studio after the Stage 9 environment fix.**
+User-reported full CTest time: 517.25 seconds; final script status:
+`SUCCESS: complete all run`. The rerun excerpt does not print the
+CTest aggregate test-count line or exact `git rev-parse HEAD`; no source
+commit after `2f119fefdadd06c5053c5f2a2e3eb68e5353f3e0` was required.
+See measured results below.
 
 ## User-supplied native validation — Mac Studio
 
@@ -144,14 +148,111 @@ inside the build volume, inspect filesystem permissions/space and
 CMake/Apple system calls before considering a controlled one-time
 retry with explicit diagnostics.
 
+## Successful full native rerun and RSS measurements — 2026-11-19
+
+After pulling the Stage 9 fixes, the user supplied the end of the
+one-shot validation output. It shows:
+
+```text
+Label Time Summary:
+SpectraFX = 0.62 sec*proc (3 tests)
+Total Test time (real) = 517.25 sec
+...
+RSS samples validated: 9
+SUCCESS: complete all run
+```
+
+Since `tools/ecs-static-scene-validate.sh` runs the full native build
+and the complete registered CTest under `set -euo pipefail`, and only
+executes RSS after successful CTest, the final SUCCESS is evidence
+that the complete **default build and CTest completed with exit 0**.
+The prior run contained 129 tests. The rerun excerpt does not display
+its own aggregate `100% tests passed` line, so avoid independently
+asserting an exact rerun count without viewing its full log.
+
+- Native project / platform: user Mac Studio, source worktree
+  `~/Projects/AIVERSE-static-scene`, Release script default.
+- Full CTest elapsed: **517.25 sec**, zero failures inferred from
+  the success-gated script.
+- All 9 RSS samples: JSON lines validated, no checksum differences.
+- Full build/test log in user's worktree:
+  `build/static-scene/verification/ecs-static-scene-all.log`.
+- RSS output in user's worktree:
+  `build/static-scene/verification/ecs-static-scene-rss.jsonl`.
+- The tool output does not contain current `git rev-parse HEAD`;
+  last confirmed branch source HEAD before this documentation
+  update was `2f119fefdadd06c5053c5f2a2e3eb68e5353f3e0`.
+
+### Original user-provided process measurements
+
+Each row represents a separate process constructing **1,000,000
+Entities** with a **128-byte configuration type**. Delta RSS is
+`rss_after_build_bytes - rss_baseline_bytes`, which includes ECS
+allocation overhead, entity bookkeeping and process allocator effects;
+it is not simply the payload memory footprint.
+
+| Unique | Mode | Baseline RSS bytes | After build RSS bytes | RSS delta bytes | Median read ms | Checksum |
+| ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| 16 | ordinary | 4296704 | 290320384 | 286023680 | 1.733709 | 991000000 |
+| 16 | shared | 4296704 | 42299392 | 38002688 | 0.716334 | 991000000 |
+| 16 | static | 4337664 | 42303488 | 37965824 | 0.671584 | 991000000 |
+| 64 | ordinary | 4296704 | 294334464 | 290037760 | 1.666042 | 4063000000 |
+| 64 | shared | 4296704 | 44969984 | 40673280 | 0.724584 | 4063000000 |
+| 64 | static | 4296704 | 44949504 | 40652800 | 0.669459 | 4063000000 |
+| 1024 | ordinary | 4296704 | 298401792 | 294105088 | 1.694500 | 65486484928 |
+| 1024 | shared | 4296704 | 46493696 | 42196992 | 1.288292 | 65486484928 |
+| 1024 | static | 4325376 | 45273088 | 40947712 | 0.807083 | 65486484928 |
+
+All user-reported `rss_after_reads_bytes` values were also measured.
+They were only 4–12 KiB above after-build RSS; see the original
+`rss.jsonl` on the user's machine for all exact values.
+
+### Derived comparisons to ordinary storage
+
+| Unique | Ordinary delta MiB | Shared delta MiB | Static delta MiB | Static RSS saved | Static read speedup |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 16 | 272.77 | 36.24 | 36.21 | 86.73% | 2.58× |
+| 64 | 276.60 | 38.79 | 38.77 | 85.98% | 2.49× |
+| 1024 | 280.48 | 40.24 | 39.05 | 86.08% | 2.10× |
+
+Shared's measured RSS savings relative to ordinary were
+86.71%, 85.98% and 85.65% respectively. Its read speedups were
+2.42×, 2.30× and 1.32×.
+
+**Conclusion bounded to the benchmark:** retaining one large
+immutable configuration table and per-Entity 4-byte references
+reduces **measured process RSS growth by approximately 86%** and
+improves this two-field read pass by ~2.1–2.6× for Static.
+The comparison is a single observed Mac run, without confidence
+intervals or multi-run variance control, and does not directly
+represent an entire FPS/RTS level's working set or GPU memory.
+
+### Follow-up after successful gate
+
+The original failure in `skill_library_isolation` (macOS CMake ENOTTY
+under system temporary folder) and the previously uncharacterized
+`aiverse_gameplay_tools` failure were **not present as blockers in
+this successful gated rerun**. The exact initial gameplay-tools
+traceback is still unknown, so credit the reproducible rerun rather
+than overclaiming proof that its previous cause was solely TMPDIR.
+
+Before any main merge, check current `main` divergence, ensure
+no concurrent agents modified these sources, and run any additional
+configuration-specific GPU/physics/integration tests required by the
+target platform. The default CTest gate does not automatically cover
+all optional Metal GPU settings, production scenes and multi-process
+network parity.
+
 ## Remaining risks
 
-- Unknown gameplay_tools traceback until a full failing-test detail
-  is provided; this environment hardening may not solve its
-  underlying problem.
+- The successful rerun confirms the default full gate now passes.
+  The initial gameplay_tools traceback was not supplied, so the exact
+  root cause of its earlier failure is not established separately.
 - Full static-scene integration, COW, FPS/RTS and collision tests
   are only as verified as the reported CTest summary; platform
   variants, GPU/Metal, RSS and cross-scene terrain seam behavior
   remain independent test gates.
-- Do NOT merge to main until full suite succeeds and RSS results
-  and exact source SHA are recorded in this handoff.
+- The default full gate and measured RSS have now succeeded;
+  exact checked-out SHA on the user's Mac was not printed in the
+  supplied excerpt. Source review, any recent main divergence and
+  production-specific optional test gates still precede main merge.
