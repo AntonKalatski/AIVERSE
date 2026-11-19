@@ -69,3 +69,12 @@ only open this dedicated window; they do not share its ModelResourceCache.
 **NOT RUN** for this stage: C++ compilation, CMake/CTest, real Metal/Vulkan/GLES
 rendering, UI integration, device-fence fault injection, sanitizer or performance
 benchmarks. Continue from [Stage 155 agent handoff](agent-handoffs/animation-stage155-studio-attachment-staged-reimport-2026-11-20.md).
+
+
+### Update scheduling
+
+The **Reimport & Publish** button queues the request; the next Studio
+`EditorWindow::update()` executes it on the resource-owner thread before
+window drawing, not inside the current ImGui button callback. This is still
+blocking once that update begins, and graphics Device-frame legality must be
+confirmed on Metal/Vulkan/GLES during the final native validation.
