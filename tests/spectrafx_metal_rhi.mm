@@ -5,6 +5,7 @@
 #import <Foundation/Foundation.h>
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -187,8 +188,38 @@ int main() {
         const int kChurnCapacity=envInt(
             "AIVERSE_SPECTRAFX_RHI_STRESS_CAPACITY",1,1,4096);
         uint64_t maxOutstandingBytes=0;
+        // These measurements are a diagnostic whole-frame GPU timeline,
+        // NOT a SpectraFX-exclusive shader dispatch benchmark. Backend
+        // timing data is asynchronous; poll every frame so the Metal RHI's
+        // 64 pending-sample cap cannot be reached by a 2048-frame test.
+        constexpr uint64_t kGpuTimingTagBase=0x5350580000000000ull;
+        std::vector<double> gpuFrameSamplesMs;
+        uint32_t timedFrames=0, invalidGpuSamples=0;
+        auto collectGpuTimes=[&]() {
+            for(const auto& t:device->takeGpuTimings()) {
+                if(t.tag<kGpuTimingTagBase ||
+                   t.tag>=kGpuTimingTagBase+uint64_t(kChurnFrames))
+                    continue;
+                if(t.valid && std::isfinite(t.milliseconds) &&
+                   t.milliseconds>=0.0)
+                    gpuFrameSamplesMs.push_back(t.milliseconds);
+                else ++invalidGpuSamples;
+            }
+        };
+        // Metal currentAllocatedSize is device-wide resource allocation,
+        // not resident VRAM and not uniquely attributable to SpectraFX.
+        const auto metalAllocation=[&]() -> uint64_t {
+            if (@available(macOS 10.15, *))
+                return uint64_t(metal.currentAllocatedSize);
+            return 0;
+        };
+        const uint64_t baselineMetalAllocation=metalAllocation();
+        uint64_t peakMetalAllocation=baselineMetalAllocation;
         for (int i=0;i<kChurnFrames;++i) {
             device->beginFrame(kWidth,kHeight);
+            collectGpuTimes();
+            if(device->timeGpuFrame(kGpuTimingTagBase+uint64_t(i)))
+                ++timedFrames;
             retire();
             auto next=std::make_unique<aiverse::fx::SpectraFxGpuEvolution>();
             std::vector<aiverse::fx::SpectraFxGpuSeed> seeds;
@@ -212,17 +243,41 @@ int main() {
             for(const auto& held:retiring)
                 outstanding+=held.particles->nominalGpuBytes();
             maxOutstandingBytes=std::max(maxOutstandingBytes,outstanding);
+            peakMetalAllocation=std::max(peakMetalAllocation,metalAllocation());
             device->endFrame();
             if (failures) break;
         }
         for (int i=0;i<4;++i) {
             device->beginFrame(kWidth,kHeight);
+            collectGpuTimes();
             retire();
             device->endFrame();
         }
         check(retiring.empty(),"all retired resources released only after safe 3-frame grace");
         check(device->readColorRGBA8(colorA,frameA),
               "finished churn frame readable through RHI");
+        collectGpuTimes(); // readback above fences all earlier GPU work
+        std::sort(gpuFrameSamplesMs.begin(),gpuFrameSamplesMs.end());
+        auto percentile=[&](double fraction) {
+            if(gpuFrameSamplesMs.empty()) return 0.0;
+            const size_t n=gpuFrameSamplesMs.size();
+            const size_t idx=std::min(n-1,
+                size_t(std::ceil(fraction*double(n))-1.0));
+            return gpuFrameSamplesMs[idx];
+        };
+        const uint64_t afterMetalAllocation=metalAllocation();
+        std::printf("[spectrafx-metal-rhi] gpu_frame_timing "
+                    "requested=%d scheduled=%u valid=%zu invalid=%u "
+                    "p50_ms=%.4f p95_ms=%.4f "
+                    "metal_alloc_baseline_kib=%llu peak_kib=%llu after_kib=%llu\n",
+                    kChurnFrames,timedFrames,gpuFrameSamplesMs.size(),
+                    invalidGpuSamples,percentile(0.50),percentile(0.95),
+                    static_cast<unsigned long long>(
+                        baselineMetalAllocation/1024u),
+                    static_cast<unsigned long long>(
+                        peakMetalAllocation/1024u),
+                    static_cast<unsigned long long>(
+                        afterMetalAllocation/1024u));
         check(device->gpuHealthy(),"GPU healthy after 24 emitter churn frames");
         std::printf("[spectrafx-metal-rhi] churn_frames=%d capacity=%d "
                     "peak_nominal_kib=%llu retire_remaining=%zu "
