@@ -101,9 +101,25 @@ public:
     int order() const override { return 3; }
     bool openByDefault() const override { return false; }
 
-    ~ModelWindow() override { portrait_.shutdown(); }
+    ~ModelWindow() override { retirePortrait(); }
+    void retirePortrait() {
+        auto former = std::move(portrait_);
+        portrait_ = std::make_shared<game::Portrait>();
+        portraitInit_ = false;
+        if (!former || !portraitDev_) return;
+        if (!gpuResourceOwner_) {
+            // Standalone owner: requires its existing GPU-idle teardown.
+            former->shutdown();
+            return;
+        }
+        gfx::Device& gpu = *portraitDev_;
+        gpuResourceOwner_->retireOwned(gpu,
+            [former = std::move(former)] { former->shutdown(); });
+    }
 
     void draw(Editor& ed) override {
+        gpuResourceOwner_ = &ed.gpuResourceRetirement();
+        portraitDev_ = &ed.device();
         const auto& types = ed.rules().types;
         if (types.empty()) { ImGui::TextDisabled("Нет типов"); return; }
         if (ed.selection.kind == Selection::Type) {
@@ -132,14 +148,14 @@ public:
         // A type chosen in this panel might not occur on the open map.
         // Load it on demand and keep it resident while its preview is visible.
         ed.retainEditorType(uint16_t(type_));
-        if (!portraitInit_) { portraitInit_ = true; portrait_.init(ed.device(), 256); }
+        if (!portraitInit_) { portraitInit_ = true; portrait_->init(ed.device(), 256); }
         time_ += ImGui::GetIO().DeltaTime;
-        portrait_.render(ed.view(), uint16_t(type_), uint8_t(owner_), time_);
-        if (portrait_.texture().valid()) {
+        portrait_->render(ed.view(), uint16_t(type_), uint8_t(owner_), time_);
+        if (portrait_->texture().valid()) {
             const bool flip = ed.device().info().renderTargetFlipY;
             const float side = std::clamp(ImGui::GetContentRegionAvail().x, 120.0f, 260.0f);
             ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (ImGui::GetContentRegionAvail().x - side) * 0.5f);
-            ImGui::Image(ImTextureRef(ImTextureID(portrait_.texture().id)), ImVec2(side, side), ImVec2(0, flip ? 0.f : 1.f), ImVec2(1, flip ? 1.f : 0.f));
+            ImGui::Image(ImTextureRef(ImTextureID(portrait_->texture().id)), ImVec2(side, side), ImVec2(0, flip ? 0.f : 1.f), ImVec2(1, flip ? 1.f : 0.f));
         }
         const std::string& tid = types[size_t(type_)].id;
         for (const auto& w : ed.view().warnings())
@@ -282,7 +298,10 @@ private:
     int type_ = 0, owner_ = 1;
     double time_ = 0, sinceCheck_ = 0;
     bool portraitInit_ = false, opRegistered_ = false;
-    game::Portrait portrait_;
+    std::shared_ptr<game::Portrait> portrait_ =
+        std::make_shared<game::Portrait>();
+    render::GpuResourceRetirement* gpuResourceOwner_ = nullptr;
+    gfx::Device* portraitDev_ = nullptr;
     std::map<std::string, fs::file_time_type> stamps_;
 };
 
