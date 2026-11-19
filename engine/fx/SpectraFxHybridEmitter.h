@@ -9,6 +9,7 @@
 #include "SpectraFxExecutionPolicy.h"
 #include "SpectraFxGpuParticleSlots.h"
 #include "SpectraFxGpuBillboardRenderer.h"
+#include "SpectraFxGpuSpawnScheduler.h"
 #include "ParticleSystem.h"
 
 namespace aiverse::fx {
@@ -20,6 +21,9 @@ public:
         std::string cpuEffect;
         SpectraFxGpuBillboardRenderer::Appearance appearance{};
         SpectraFxGpuEnvironment environment{};
+        SpectraFxGpuSpawnSettings spawning{};
+        FxQuality quality=FxQuality::High;
+        bool autoSpawnGpu=true;
     };
 
     // Begin an emitter with no GPU particles yet. GPU emits are explicit
@@ -27,8 +31,16 @@ public:
     bool begin(gfx::Device& device,ParticleSystem& cpu,Config config,
                float3 origin={0,0,0},float3 direction={0,1,0}) {
         stop();
+        // Configure before allocating GPU resources: failed settings do not
+        // replace or partially initialize any backend.
+        if(!scheduler_.configure(config.spawning)) {
+            status_="Invalid SpectraFX GPU spawn settings";
+            return false;
+        }
         cpu_=&cpu;
         config_=std::move(config);
+        origin_=origin;
+        direction_=direction;
         decision_=chooseSpectraFxBackend(device,config_.backend);
         if(!decision_.accepted) {
             status_="requested backend unavailable and CPU fallback disabled";
@@ -69,7 +81,7 @@ public:
     // GPU only: emits into dormant slots, safe update point outside passes.
     // The CPU path has its own authored spawning logic in ParticleSystem.
     SpectraFxGpuParticleHandle emitGpu(const SpectraFxGpuSeed& seed) {
-        if(!gpuActive()) return {};
+        if(!gpuActive() || suspended_) return {};
         return slots_.emit(seed);
     }
     bool killGpu(SpectraFxGpuParticleHandle handle) {
@@ -80,12 +92,28 @@ public:
     // For CPU selection, caller must update the shared ParticleSystem once
     // for the entire scene; no CPU update is performed by this adapter.
     bool updateGpu(float dt) {
-        if(!gpuActive()) return false;
+        if(!gpuActive() || suspended_) return false;
+        if(config_.autoSpawnGpu) {
+            const bool scheduled=scheduler_.tick(dt,origin_,direction_,
+                spectraFxSpawnQualityScale(config_.quality),
+                [this](render::float3 pos,render::float3 vel,float life) {
+                    return slots_.emit({pos,vel,0,life}).valid();
+                });
+            if(!scheduled) {status_="Invalid GPU emission frame";return false;}
+        }
         if(slots_.step(dt,config_.environment)) return true;
         status_="GPU compute step failed; emitter suspended pending reset";
         suspended_=true;
         return false;
     }
+
+    // Update attachment transform before the next GPU spawn tick.
+    void moveOrigin(float3 pos,float3 direction={0,1,0}) {
+        origin_=pos;
+        direction_=direction;
+        if(cpuActive()) cpu_->move(cpuHandle_,pos,direction);
+    }
+    const SpectraFxGpuSpawnStats& spawnStats() const {return scheduler_.stats();}
 
     // GPU only, inside the scene render pass after updateGpu completed.
     bool renderGpu(const render::mat4& viewProj,render::float3 cameraRight,
@@ -107,6 +135,7 @@ public:
         slots_.shutdown();
         cpu_=nullptr;
         suspended_=false;
+        scheduler_.reset();
         backend_=SpectraFxExecutionBackend::Cpu;
     }
 
@@ -132,6 +161,8 @@ private:
     SpectraFxExecutionBackend backend_=SpectraFxExecutionBackend::Cpu;
     SpectraFxGpuParticleSlots slots_{};
     SpectraFxGpuBillboardRenderer renderer_{};
+    SpectraFxGpuSpawnScheduler scheduler_{};
+    float3 origin_{},direction_{0,1,0};
     std::string status_;
     bool suspended_=false;
 };
