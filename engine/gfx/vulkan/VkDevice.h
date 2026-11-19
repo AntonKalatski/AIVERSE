@@ -136,6 +136,7 @@ public:
     uint64_t gpuCompletedFence() const override {
         return healthy_ ? completed_ : 0;
     }
+    bool waitForSubmittedGpuWork() override;
 
     void beginFrame(int framebufferWidth, int framebufferHeight) override;
     void endFrame() override;
