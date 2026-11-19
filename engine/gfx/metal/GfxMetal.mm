@@ -834,6 +834,7 @@ public:
 
     bool encodeGpuScopeTimestamp(id<MTLCounterSampleBuffer> samples,
                                  NSUInteger index) {
+        if (@available(macOS 11.0, iOS 14.0, *)) {
         if (!cmd_ || enc_ || compute_ || gpuIcbEncoder_ || !samples)
             return false;
         if (timestampScopeMode_ == 1) {
@@ -853,6 +854,7 @@ public:
             if (!blit) return false;
             [blit endEncoding];
             return true;
+        }
         }
         return false;
     }
