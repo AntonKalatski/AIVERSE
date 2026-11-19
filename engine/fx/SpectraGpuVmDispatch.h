@@ -44,6 +44,27 @@ public:
             reason_="invalid SpectraFX GPU VM ABI or budgets";
             return false;
         }
+        // Standalone MetalVmPass uses a different kernel from
+        // ComputeParticles and has no custom-attribute storage binding.
+        // The integrated GPU particle kernel supports attribute0..7, but
+        // accepting such a program here would silently drop its semantics.
+        for(uint32_t i=0;i<program.statementCount;++i) {
+            const auto& st=program.statements[i];
+            if(st.target>=uint32_t(program::Field::Attribute0) &&
+               st.target<=uint32_t(program::Field::Attribute7)) {
+                reason_="standalone MetalVmPass needs an attribute buffer for custom VM writes";
+                return false;
+            }
+        }
+        for(uint32_t i=0;i<program.instructionCount;++i) {
+            const auto& op=program.instructions[i];
+            if(op.opcode==uint32_t(program::Op::Read) &&
+               op.field>=uint32_t(program::Field::Attribute0) &&
+               op.field<=uint32_t(program::Field::Attribute7)) {
+                reason_="standalone MetalVmPass needs an attribute buffer for custom VM reads";
+                return false;
+            }
+        }
         if(!device->canUpdateSharedBuffers()) {
             reason_="create SpectraFX VM outside render/compute passes";
             return false;
