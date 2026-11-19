@@ -201,14 +201,14 @@ public:
     size_t modelChoiceCount(uint16_t type) const { return type < looks_.size() ? looks_[type].models.size() : 0; }
     float typePreparationProgress() const {
 #ifndef __EMSCRIPTEN__
-        return preparation_.progress();
+        return resources_.preparation().progress();
 #else
         return 0.0f;
 #endif
     }
     const std::string& preparingResource() const {
 #ifndef __EMSCRIPTEN__
-        return preparation_.resource();
+        return resources_.preparation().resource();
 #else
         static const std::string empty;
         return empty;
@@ -553,11 +553,8 @@ private:
     bool deferredLoading_ = false, streamingTypes_ = false;
     bool deferAppearanceVariants_ = true; // client default; editor disables
     render::FileReader asyncReader_;
-    // Worker lifecycle belongs to the independent resource preparation
-    // service; the host still provides model policy and GPU publication.
-#ifndef __EMSCRIPTEN__
-    view_adapter::RtsModelPreparationService preparation_;
-#endif
+    // Model resources (including async worker lifetime) are owned by
+    // resources_; RtsView only supplies appearance rules and GPU publication.
     std::vector<std::string> warnings_;
     // Only entities first seen while variants stream need a stable choice override.
     std::unordered_map<uint64_t, std::pair<uint16_t, int>> streamingChoices_;
