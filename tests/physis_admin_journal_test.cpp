@@ -156,6 +156,19 @@ void journalWriteFailureNeverAcknowledgesDurableSuccess() {
         CHECK(response.receipt.result==Result::Unknown);
         CHECK(response.receipt.scheduledTick==0);
 
+        // An unknown ID must not be advertised as safe to retry while
+        // the journal is unhealthy (even if the ECS state is readable).
+        question.requestId=submission.requestId+100;
+        CHECK(encode(question,frame));
+        client->send(frame);
+        gateway.poll(*sim,*server,"admin",reader,writer,100);
+        client->update(100);
+        CHECK(client->recv(responseBytes));
+        CHECK(decode(responseBytes,response));
+        CHECK(response.receipt.result==Result::Unknown);
+        CHECK(response.receipt.detail.find("retry disabled")!=std::string::npos ||
+              response.receipt.detail.find("retries suspended")!=std::string::npos);
+
         // Replaying the exact bytes must not reveal an unpersisted Applied.
         CHECK(encode(submission,frame));
         client->send(frame);
