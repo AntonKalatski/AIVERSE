@@ -99,7 +99,7 @@ inline bool injectModelVirtualTextureSampling(std::string& fragmentGLSL,
     // is already bound by the regular material shader.
     const auto mslSignature = msl.find(parameterEnd,msl.find("fragment float4 fs_main("));
     msl.replace(mslSignature,parameterEnd.size(),
-        "GI_FARGS, constant float4& uModelVt [[buffer(7)]]"
+        "GI_FARGS, constant float4& uModelVt [[buffer(7)]]\n"
         "#if !defined(AIVERSE_ICB_PBR)\n"
         ", texture2d_array<float, access::sample> tex13 [[texture(13)]],"
         "texture2d_array<float, access::read> tex14 [[texture(14)]]"
