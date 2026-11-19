@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 namespace aiverse::lib::animation {
@@ -24,6 +25,10 @@ struct AnimationPlayerComponent {
     std::shared_ptr<const render::AnimationGraph> active;
     std::shared_ptr<render::AnimationGraphInstance> instance;
     bool restart = false;
+    // One-shot, presentation-only clip/state transfer on compatible
+    // Model/AnimationGraph asset replacement. Never persisted in sim ECS.
+    std::optional<render::AnimationGraphInstance::PlaybackSnapshot>
+        pendingPlayback;
 };
 struct AnimationPoseComponent {
     render::Pose local;
@@ -138,6 +143,7 @@ inline void evaluateAnimationPresentationRange(World& world,
         if (!asset || !asset->model || !asset->graph ||
             asset->graph->model()!=asset->model) {
             player.active.reset(); player.instance.reset();
+            player.pendingPlayback.reset();
             pose->local.clear(); pose->matrices.clear(); pose->valid=false;
             if (status) {
                 status->healthy=false;
@@ -150,6 +156,9 @@ inline void evaluateAnimationPresentationRange(World& world,
             player.active=asset->graph;
             player.instance=std::make_shared<render::AnimationGraphInstance>();
             player.instance->reset(asset->graph);
+            if(player.pendingPlayback)
+                player.instance->restorePlayback(*player.pendingPlayback);
+            player.pendingPlayback.reset();
             player.restart=false;
             pose->valid=false;
             if(recovery)recovery->inertializer.reset();
