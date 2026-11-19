@@ -167,3 +167,29 @@ Next:
 1. Pull branch and configure/build all GI tests including gi_dynamic_runtime, run ctest -R '^gi_' and full ./run-tests.sh --quick; compare CPU references to GPU frames on Metal/GLES; fix any warnings or assertion failures. Record results and exact SHA in the next handoff.
 2. Create an optional simulation-to-render read-only world-change subscription with stable event types (light old/new bounds, destructible changes, terrain, vegetation). The presentation side calls runtime.invalidate with conservative transport influence and republishes a rebuilt geometry snapshot when blockers change. Do not add genre-specific state to GI.
 3. Replace high-cost CPU tracing with bounded GPU compute on supported backends and a robust fallback. Progressive update/clipmap/relocation and material system integration are still needed before claiming production dynamic GI.
+
+
+## Stage 7 - 2026-11-19 - bounded, genre-independent world-change dirty-region bridge (source committed; NOT VERIFIED)
+
+Implementation commits:
+- 42aa7fc2047f9a0c14e440e42c2365135a33692a - engine/render/GiWorldDirtyAccumulator.h
+- 077a5e7fbb17a2b3d33cbc5909496c973f27996d - engine/render/GiDynamicRuntime.h, applyWorldChanges accumulator flush
+- 81188175152aa8dc1eab49689cd522ef2365a63e - tests/render/gi_world_dirty_accumulator.cpp
+- 586b75b57cc536e3a2846b790003e10b6068e292 - CMakeLists.txt, registers gi_world_dirty_accumulator in default ALL and CTest
+
+Public API: GiWorldChange carries a generic GiDirtyReason, current and optional previous world bounds, and conservative transportRadius. GiWorldDirtyAccumulator::submit validates events, expands influence bounds, merges intersecting regions (including transitive overlaps) and retains reason categories. At most 128 independent regions are stored. If the batch exceeds that limit (e.g. thousands of grass changes), it switches to a full-volume dirty mark; no unbounded per-grass memory growth. flush(GiUpdateScheduler&) sorts resulting regions for deterministic invalidation order, marks the right probe cells, clears queued events and reports events, coalesced region count, probe marks and saturation. GiDynamicRuntime::applyWorldChanges(accumulator) is an opt-in convenience bridge; host owns the ECS source and event ordering.
+
+Invariants/limitations: This accumulates visual invalidation events; it DOES NOT update traceable world geometry, create a new BVH, identify occlusion changes, or supply an ECS subscription itself. After digging terrain, opening a door or falling trees, the producer must publish new immutable traceable geometry and revision using setGeometry(), then apply any other affected material/light edits. This currently triggers a full dynamic-atlas clear on geometry revision; later chunked/proxy-BVH updates are necessary for big worlds. Moved objects should submit BOTH previous and current bounds rather than a long connecting AABB. The 128-region overflow degrades conservatively to a whole-volume update, which may take several frames under a bounded per-frame probe budget.
+
+Compatibility: no ECS runtime or save schema changes, no genre-specific logic, no legacy/AVGIC005/cache format changes, no new default renderer quality cost.
+
+Verification ACTUALLY executed: connected GitHub file create/update returned successful commit SHA. **NOT RUN:** compilation, CTest, ./run-tests.sh, GPU captures, mobile timing. New test source covers moved-object old+new bounds, merging categories, saturation under 129 changes and invalid reason/region rejection; it is not a PASS until executed.
+
+Next exact steps:
+1. Pull feature/hybrid-dynamic-gi and run:
+   cmake -S . -B build/gi -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_EDITOR=OFF -DAIVERSE_BUILD_CLIENT=OFF
+   cmake --build build/gi --target aiverse_gi_update_scheduler_test aiverse_gi_dynamic_probe_reference_test aiverse_gi_dynamic_probe_texture_test aiverse_gi_lighting_composition_test aiverse_gi_dynamic_sampling_test aiverse_gi_dynamic_runtime_test aiverse_gi_world_dirty_accumulator_test -j8
+   ctest --test-dir build/gi --output-on-failure -R '^gi_'
+   Run ./run-tests.sh --quick and GPU shader variant checks if possible. Record actual exact tested source SHA and results in another handoff stage.
+2. Integrate concrete read-only scene events from TerraWeave/NEREID/vegetation/building systems after their respective commits land in main; avoid guessing proprietary unpublished APIs. Surface changes must rebuild a geometry proxy for visibility.
+3. Add partial geometry-region update, probe relocation/classification, GPU tracing on Metal and portable graphics fallback, then real performance and visual acceptance. No work was merged into main.
