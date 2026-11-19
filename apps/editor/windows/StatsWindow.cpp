@@ -143,10 +143,11 @@ public:
             ImGui::TextDisabled(
                 "GPU shader warmup: %zu shaders · %zu pipelines · %zu HDR variants",
                 warm.shaderJobs,warm.pipelineJobs,warm.colorVariants);
-        if(warm.colorPollAttempts)
-            ImGui::TextDisabled("GPU HDR прогрев: опросов %llu · завершено %llu",
+        if(warm.colorPollAttempts || warm.colorVariantsFailed)
+            ImGui::TextDisabled("GPU HDR прогрев: опросов %llu · успешно %llu · ошибок %llu",
                 (unsigned long long)warm.colorPollAttempts,
-                (unsigned long long)warm.colorVariantsReady);
+                (unsigned long long)warm.colorVariantsReady,
+                (unsigned long long)warm.colorVariantsFailed);
         if(ed.renderer().programRetirementOrphanBatches())
             ImGui::TextDisabled("GPU программы: потеряно партий %llu",
                 (unsigned long long)ed.renderer().programRetirementOrphanBatches());
