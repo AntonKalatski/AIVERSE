@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstring>
 #include <cstdio>
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -108,6 +109,26 @@ public:
         astc_ = has("texture_compression_astc");
         hdr_ = flavor == Backend::GL33 || has("EXT_color_buffer_float") || has("EXT_color_buffer_half_float");
     }
+    // Nonblocking GLsync timeline. Fence placed after the current frame's
+    // GPU commands, polled with timeout=0 on the GL/context owner thread.
+    uint64_t gpuSubmissionFence() const override {
+        return frameActive_ ? nextGpuToken_ : 0;
+    }
+    uint64_t gpuCompletedFence() const override {
+        return completedGpuToken_;
+    }
+    void pollCompletedGpuFences() {
+        while (!gpuFences_.empty()) {
+            auto& front = gpuFences_.front();
+            const GLenum status = glClientWaitSync(front.second, 0, 0);
+            if (status != GL_ALREADY_SIGNALED &&
+                status != GL_CONDITION_SATISFIED)
+                break;
+            completedGpuToken_ = front.first;
+            glDeleteSync(front.second);
+            gpuFences_.pop_front();
+        }
+    }
     bool supports(PixelFormat f) const override {
         switch (f) {
             case PixelFormat::ETC2_RGB8: case PixelFormat::ETC2_RGBA8: return etc2_;
@@ -119,6 +140,8 @@ public:
         }
     }
     ~GLDevice() override {
+        for (const auto& pending : gpuFences_) glDeleteSync(pending.second);
+        gpuFences_.clear();
 #if defined(__APPLE__) || defined(_WIN32)
         if (queryActive_) glEndQuery(GL_TIME_ELAPSED);
         for (const auto& t:timedQueries_) glDeleteQueries(1,&t.query);
@@ -378,6 +401,8 @@ public:
     }
 #endif
     void beginFrame(int w, int h) override {
+        pollCompletedGpuFences();
+        frameActive_ = true;
         fbW_ = w; fbH_ = h;
         uboOffset_ = 0;
         for (auto& d : slotData_) d.clear();
@@ -391,6 +416,19 @@ public:
 #if defined(__APPLE__) || defined(_WIN32)
         if (queryActive_) {glEndQuery(GL_TIME_ELAPSED);queryActive_=false;glFlush();}
 #endif
+        if (frameActive_) {
+            GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+            if (sync) {
+                gpuFences_.push_back({nextGpuToken_,sync});
+                glFlush(); // ensures this fence is submitted, no CPU wait
+            } else {
+                // No proof of GPU completion. Never advance completed token.
+                // Any retired target with this token remains quarantined
+                // until a true idle drain by its owner.
+            }
+            ++nextGpuToken_;
+            frameActive_ = false;
+        }
         if (!capture_) return;
         std::vector<uint8_t> px(size_t(fbW_) * size_t(fbH_) * 4);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
@@ -605,6 +643,10 @@ public:
     }
 
 private:
+    std::deque<std::pair<uint64_t,GLsync>> gpuFences_;
+    uint64_t nextGpuToken_ = 1;
+    uint64_t completedGpuToken_ = 0;
+    bool frameActive_ = false;
     bool hdr_ = false;
     bool hdrPass_ = false;
     DeviceInfo info_;
