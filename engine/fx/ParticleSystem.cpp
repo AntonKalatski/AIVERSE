@@ -638,6 +638,17 @@ void ParticleSystem::Impl::stepParticle(size_t& i, float dt, bool& removed) {
 ParticleSystem::ParticleSystem() : impl_(std::make_unique<Impl>()) {}
 ParticleSystem::~ParticleSystem() { shutdown(); }
 
+render::GpuOwnedMemoryStats ParticleSystem::ownedGpuMemoryStats() const {
+    if (!impl_ || !impl_->dev) return {};
+    render::GpuOwnedMemoryCounter counter(*impl_->dev);
+    // Only buffers/atlas created in init(). Batch textures, custom mesh
+    // VBOs, graph images and loader sprites are owned by their providers.
+    counter.buffer(impl_->vb);
+    counter.buffer(impl_->ib);
+    counter.texture(impl_->atlas);
+    return counter.stats();
+}
+
 bool ParticleSystem::init(gfx::Device* dev) {
     shutdown();
     auto& I = *impl_;
