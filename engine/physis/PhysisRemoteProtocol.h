@@ -12,6 +12,17 @@ inline constexpr std::uint32_t kMagic=0x53594850u; // PHYS, little endian
 inline constexpr std::uint16_t kVersion=1;
 inline constexpr std::size_t kMaxFrame=40u*1024u;
 inline constexpr std::size_t kMaxText=240;
+// Stable V1 receipt diagnostics: when the durable journal is unavailable,
+// Unknown must NOT trigger automatic Submit retries. Keeping this as V1
+// receipt detail preserves existing binary layouts and journal schemas.
+inline constexpr const char* kJournalDurabilityUnavailable =
+    "PHYSIS journal unavailable; receipt durability unconfirmed";
+inline constexpr const char* kJournalRetrySuspended =
+    "PHYSIS journal unavailable; new edits and retries suspended";
+inline bool journalRetrySuspended(const std::string& detail) {
+    return detail==kJournalDurabilityUnavailable ||
+           detail==kJournalRetrySuspended;
+}
 
 enum class Message : std::uint8_t { Submit=1, Query=2, Receipt=3 };
 enum class Result : std::uint8_t {
