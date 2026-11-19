@@ -5822,3 +5822,32 @@ CTest, shader validation or GPU tests run, per user's instruction.
 Next: add ModelItem and custom terrain feedback registration
 with correct material UVs, integrate feedback scheduling before
 the main pass, then finish backend parity and validate.
+
+
+## Stage 9L — Renderer3D custom terrain/foliage feedback submission (2026-11-19)
+
+Source commits: 0e2ee2f2145d47ab646d4505b82c58be108c6d2b,
+e77768f53107b71bf6e04cdc52998246405776dc.
+Changed files: engine/render/Renderer3D.h,
+engine/render/Renderer3D.cpp.
+Added Renderer3D::drawCustomFeedback(FeedbackCustomDraw)
+to register per-scene terrain/foliage/procedural feedback
+draw callbacks. Added renderVirtualTextureFeedback(pass,
+meshPipeline,meshBinder), which collects opaque immediate mesh
+feedback draws, then submits them and the registered custom
+draws through a single renderAndCapture invocation. Custom
+callbacks execute inside the feedback render pass and must
+bind their own RGBA8 feedback pipeline, geometry, uniforms,
+and matching depth state. beginScene clears customFeedback_
+alongside other per-frame draw queues.
+
+This is opt-in and NOT automatically called by Renderer3D::render:
+the main pass remains active after render() so the host must
+schedule feedback before it. ModelItem/animated models are not
+covered. Terra is not yet wired to register callbacks. No
+backend feature parity claims are made.
+Verification: GitHub commits succeeded. Native build, CTest,
+shader compilation and GPU tests NOT RUN, per user request.
+Next: connect Terra's renderer to drawCustomFeedback, add
+ModelItem feedback handling, and schedule feedback at the
+appropriate point before Renderer3D main scene pass.
