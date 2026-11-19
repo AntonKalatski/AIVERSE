@@ -1154,3 +1154,48 @@ Pull `feature/texture-rhi-unification`, build
 Next after GPU acceptance: file-backed disk->GPU worker path
 and real shader page-table indirection/ICB as separate tests.
 
+
+## Stage 10BM — native disk worker to Metal virtual atlas GPU acceptance
+
+The opt-in `aiverse_metal_texture_gpu_test` now additionally runs
+`gpuDiskBackedVirtualAtlas`, which uses actual
+`VirtualTextureFileStreamer` plus the asynchronous
+`VirtualTextureDiskQueue` worker and native Metal GPU
+Texture2DArray atlas and page table. No fake GPU or synthetic
+worker completion is introduced.
+
+It writes RAII-cleaned temporary packed RGBA8 files in
+`m<MIP>/l<LAYER>/x<X>_y<Y>.rgba` layout, then checks
+the following lifecycle using bounded `pump()` polling,
+completion ticket/key/status matching and exact GPU
+`Device::readTextureAsync` bytes:
+
+1. Coarse page `{2,0,0,0}` remains invisible before worker
+   publication; GPU table bytes initially all zero.
+2. Coarse page is pinned/resident after successful disk read
+   and GPU page upload; full 4×4 table maps to slot 0/mip 2.
+3. Missing page `{0,1,1,0}` returns one failure with a reason,
+   leaving the existing atlas and GPU mapping healthy.
+4. Fine page `{0,3,3,0}` uses physical slice 1 and only
+   overrides the (3,3) GPU table cell.
+5. New page `{0,0,0,0}` evicts the unpinned fine slice,
+   preserves coarse slot 0, and republishes the new slot1 bytes
+   and page-table mapping with no stale fine entry.
+6. Shutdown destroys both GPU resources.
+
+The test is not enabled for regular source CTest. It uses
+the existing opt-in `--metal` hardware gate; the CMake test
+target now explicitly links `Threads::Threads`. It has **not
+yet been compiled or run after this stage's source changes**.
+Source commits: `11ad74279ff2bbd348de16e4981efae645d7ab4c`,
+`ebf5f1652c1284eaac6c7be5612def0a78e2c895`,
+`e8ba85b16a51eaa8794b67f29e2a6ad8503d1893`.
+
+To validate on Mac Studio after pulling
+`feature/texture-rhi-unification`, configure the existing
+build with `-DAIVERSE_TEXTURE_METAL_GPU_TESTS=ON`,
+build `aiverse_metal_texture_gpu_test`, and run CTest
+`-R '^metal_texture_gpu$'`. A source-only marker check
+is not GPU acceptance. Next: fragment shader page-table
+indirection and independent Shader Graph GPU ICB tests.
+
