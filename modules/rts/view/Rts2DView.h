@@ -69,7 +69,7 @@ public:
     // Secondary camera: resubmit the already evaluated sprite queue and
     // uploaded tile mesh. Never beginFrame/addObject/endFrame/refreshTiles.
     // World billboard vertices are currently primary-camera-oriented.
-    void submitPrepared(render::Renderer3D& r) const;
+    void submitPrepared(render::Renderer3D& r);
 
     // world point at the top centre of the drawn sprite (health bars)
     render::float3 barPoint(const SceneObject& o, float groundY) const;
