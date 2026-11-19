@@ -46,6 +46,8 @@ static_assert(uint32_t(program::Field::Age)==0 &&
               uint32_t(program::Field::PositionX)==4 &&
               uint32_t(program::Field::VelocityX)==7 &&
               uint32_t(program::Field::TintA)==15 &&
+              uint32_t(program::Field::Attribute0)==16 &&
+              uint32_t(program::Field::Attribute7)==23 &&
               uint32_t(program::Field::Param0)==24 &&
               uint32_t(program::Field::Param7)==31,
               "Metal VM field IDs changed: update vmRead/vmWrite");
