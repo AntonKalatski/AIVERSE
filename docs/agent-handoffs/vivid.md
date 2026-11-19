@@ -153,3 +153,18 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
   cmake --build ../AIVERSE-vivid/build/vivid --target aiverse_vivid_face_tests aiverse_vivid_morph_tests aiverse_vivid_sparse_tests aiverse_vivid_shape_tests -j 4
   ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^vivid_'
   ```
+
+## Validation checkpoint — 2026-11-19 — macOS VIVID 4/4
+
+- **Verified source commit**: `31d04c986ada3ff4602d303d28fa4cdc08686de8` (VIVID Xcode `std::span` fix + Stage 3C), in `feature/vivid-digital-humans`. User's local worktree was detached at exactly this commit per the provided `git switch --detach origin/feature/vivid-digital-humans` output.
+- **Documentation status commit**: `b50851f11b0068a9c20417a5a2545c2c8bcc04aa` (`docs/vivid.md`), following this user's validation report.
+- **Actual test evidence**: user reported successful CMake configure/generate (4.1 s / 0.9 s) and completed builds of `aiverse_vivid`, `aiverse_vivid_face_tests`, `aiverse_vivid_morph_tests`, `aiverse_vivid_sparse_tests`, `aiverse_vivid_shape_tests` on macOS. CTest at `/Users/aleksandrfeer/Projects/AIVERSE-vivid/build/vivid`:
+  - `vivid_face`: Passed (0.03 s).
+  - `vivid_sparse_morph`: Passed (0.03 s).
+  - `vivid_shape_binding`: Passed (0.61 s).
+  - `vivid_morph_binding`: Passed (0.03 s).
+  - **100% tests passed, 0 failed / 4, total real 0.71 s.**
+- **Diagnostics**: The supplied post-fix output contains no `error:`, `warning:`, or `note:` compiler diagnostics; this is limited to the displayed incremental build, not a warning-as-error clean full rebuild.
+- **Status interpretation**: Stages 1, 2, 3A, 3B, 3C now have user-confirmed local native unit tests on macOS for this exact revision. Testing was performed by the user; this agent recorded evidence but did not independently rerun it. GitHub CI, comprehensive engine suite, GPU shaders, render captures, cross-platform tests and MetaHuman DNA import remain **NOT RUN / NOT IMPLEMENTED as appropriate**.
+- **API/save compatibility**: this checkpoint changes no executable API, engine ABI or game persistence, only documentation. Existing `render::Model` eight-morph GPU limit is still in effect.
+- **Next actionable step**: begin Stage 4 as opt-in GPU morph execution, first inspect the existing RHI buffer/compute and model skinning contracts on current main and feature branches. Implement Metal compute dispatch and readback parity against `SparseMorphLibrary::evaluateGather`, with a backend-neutral command/resource interface, while keeping legacy rendering unchanged. Add real GPU tests and a separate implementation + handoff commit before claiming working GPU rendering.
