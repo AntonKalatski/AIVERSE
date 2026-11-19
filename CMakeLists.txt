@@ -2157,6 +2157,22 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "linux"
         LABELS "TextureRHI;GLES;GPU" TIMEOUT 45)
 endif()
 
+# Opt-in standalone WebGL2 acceptance app using the production Device,
+# VirtualTextureStreamer, canvas lifecycle and standard web shell.
+# The normal web client is not modified by the test.
+if(AIVERSE_PLATFORM STREQUAL "web" AND AIVERSE_WEBGL_CONTEXT_ACCEPTANCE)
+    add_executable(aiverse_webgl_vt_acceptance
+        tests/render/webgl2_vt_integration.cpp
+        $<TARGET_OBJECTS:aiverse_runtime>)
+    target_link_libraries(aiverse_webgl_vt_acceptance PRIVATE aiverse_runtime)
+    target_include_directories(aiverse_webgl_vt_acceptance
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    set_target_properties(aiverse_webgl_vt_acceptance
+        PROPERTIES OUTPUT_NAME "webgl-vt-acceptance" SUFFIX ".html")
+    target_link_options(aiverse_webgl_vt_acceptance PRIVATE
+        "--shell-file=${CMAKE_CURRENT_SOURCE_DIR}/platform/web/shell.html")
+endif()
+
 # GPU-independent descriptor validation; a foundation for subsequent texture backends.
 if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_executable(aiverse_texture_contract_test tests/render/texture_contract.cpp)
