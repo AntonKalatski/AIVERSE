@@ -73,6 +73,33 @@ public:
         else scheduler_.invalidateAll(GiDirtyReason::Geometry);
     }
 
+    // After the host has rebuilt the entire immutable BVH snapshot, local edits can
+    // invalidate only probes whose primary/secondary rays could depend on the edit.
+    // An initial/no-geometry snapshot must instead use setGeometry() (full reset).
+    // `influenceRadius` is an optional larger safety margin; the conservative
+    // minimum includes max probe tracing distance and the widest light radius.
+    // The new geometry snapshot must stay alive until the next replacement.
+    size_t setGeometryRegion(const StaticShadowGeometry* geometry, uint64_t revision,
+                             GiBounds changed, float influenceRadius = 0,
+                             std::vector<uint32_t>* cleared = nullptr) {
+        if (!geometry || !geometry_)
+            throw std::logic_error("regional GI geometry requires both snapshots");
+        if (geometry == geometry_ && revision == geometryRevision_) return 0;
+        float radius = traceDistance_;
+        for (const auto& source : lights_) radius = std::max(radius, traceDistance_ + source.radius);
+        radius = std::max(radius, influenceRadius);
+        std::vector<uint32_t> affected;
+        // A failed invalidation must not replace the previously valid BVH.
+        scheduler_.invalidate(changed, GiDirtyReason::Geometry, radius, &affected);
+        geometry_ = geometry;
+        geometryRevision_ = revision;
+        for (auto id : affected) {
+            coeffs_[id] = {};
+            if (cleared) cleared->push_back(id);
+        }
+        return affected.size();
+    }
+
     // Must be called after ECS light-change barrier with a stable key per source.
     // Only changed/new/removed light volumes are invalidated, expanded by traceDistance
     // to account for light -> surface -> probe transport rather than direct light alone.
