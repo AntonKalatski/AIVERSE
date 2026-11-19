@@ -342,6 +342,42 @@ and suppresses FX enqueue/update/draw until it can safely reset
 outside all RHI encoders. It never draws particle positions from a
 previous origin in a newly shifted render coordinate system.
 
+## Native editor live emitter preview
+
+Open **Look → SpectraFX GPU Assets** in AIVERSE Editor. Select a named
+`fx/gpu/*.gpu.json` emitter asset (not `routes.json`) and expand its
+**Live CPU/GPU emitter preview**. The viewport shows the selected effect
+on a neutral floor grid, using a private editor camera. Drag with the
+left mouse button to orbit; scroll to zoom. The preview reads the
+**current unsaved JSON draft**, so it does not alter the project file
+or the current game session.
+
+**Restart live preview** resets the effect to its initial burst/spawn
+state. **Pause/Resume** freezes the presentation clock; **Step 1/60 s**
+advances one fixed frame while paused. A read-only status shows the
+backend selected by the real `SpectraFxHybridPlayback`: counts of
+GPU, CPU fallback, pooled and suspended effect instances, plus reserved
+and retiring GPU particle slots and a **nominal** RHI allocation
+estimate. These counters are not GPU timings or guaranteed driver
+memory usage. Metal supports the experimental GPU path; Vulkan and
+OpenGL use the authored CPU fallback when available.
+
+The preview reuses `SpectraFxSceneHost` with two synthetic in-memory
+assets: its own route `fx/gpu/routes.json` and the selected emitter
+`fx/gpu/__spectrafx_preview.gpu.json`. Neither is written to disk.
+It still loads real project `fx/*.json` assets for CPU fallback,
+including image and mesh resources. A missing CPU effect or invalid GPU
+configuration reports an error rather than silently creating a fake
+effect. Changes to a currently valid emitter trigger a frame-safe
+`resetPresentation`: old GPU storage is retired conservatively
+through the RHI frame lifecycle, and a failed reset temporarily blanks
+the preview until the next safe frame instead of drawing stale data.
+
+This preview is **experimental source functionality**, not a
+confirmed native run. Validate macOS Metal offscreen rendering, shader
+compilation, scene pass ownership, repeated edits/pauses and FPS/RTS
+fallback once the functional scope is complete, before merging.
+
 ## Runtime integration order
 
 The existing generic RTS client has opt-in hooks:
