@@ -871,6 +871,28 @@ bool Editor::restartSpectraGpuPreview() {
 bool Editor::spectraGpuPreviewActive() const {
     return spectraPreviewGpu_ && spectraPreviewGpu_->ready();
 }
+std::string Editor::spectraGpuPreviewHistoryJson() const {
+    Json out=Json::object();
+    out.set("kind",Json::string("spectrafx_gpu_preview_diagnostics"));
+    out.set("replayable",Json::fromBool(false));
+    out.set("historyCapacity",Json::number(int64_t(180)));
+    Json frames=Json::array();
+    for(const auto& frame:spectraPreviewHistory_) {
+        Json item=Json::object();
+        item.set("deviceFrame",Json::number(int64_t(frame.deviceFrame)));
+        item.set("visualSeconds",Json::number(frame.visualSeconds,6));
+        item.set("estimatedParticles",Json::number(int64_t(frame.estimatedParticles)));
+        item.set("freshGroups",Json::number(int64_t(frame.freshGroups)));
+        item.set("staleGroups",Json::number(int64_t(frame.staleGroups)));
+        item.set("pendingGroups",Json::number(int64_t(frame.pendingGroups)));
+        item.set("killedSlotsWaiting",Json::number(int64_t(frame.killedSlotsWaiting)));
+        item.set("stepAccepted",Json::fromBool(frame.stepAccepted));
+        item.set("deviceHealthy",Json::fromBool(frame.deviceHealthy));
+        frames.push(std::move(item));
+    }
+    out.set("frames",std::move(frames));
+    return out.dump(2);
+}
 void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
     if(spectraPreviewStop_) {
         if(spectraGpuTelemetry_==spectraPreviewGpu_.get())
@@ -883,6 +905,7 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
         spectraPreviewRestart_=false;
         spectraPreviewVisualSeconds_=0;
         spectraPreviewLastError_.clear();
+        spectraPreviewHistory_.clear();
     }
     if(spectraPreviewRequest_.pending && spectraPreviewRequest_.inGame==game) {
         auto pending=std::move(spectraPreviewRequest_);
@@ -914,6 +937,7 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
             spectraPreviewRestart_=false;
             spectraPreviewVisualSeconds_=0;
             spectraPreviewLastError_.clear();
+            spectraPreviewHistory_.clear();
             spectraPreviewParams_=pending.params;
             spectraPreviewPosition_=pending.position;
             spectraPreviewNextBurst_=-1; // guaranteed first-frame spawn
@@ -930,6 +954,7 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
             return;
         }
         spectraPreviewVisualSeconds_=0;
+        spectraPreviewHistory_.clear();
         spectraPreviewNextBurst_=-1;
         spectraPreviewStepRequests_=0;
         spectraPreviewLastError_.clear();
@@ -959,13 +984,30 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
         dt=1.f/60.f; // one simulation frame, no new bursts while frozen
         --spectraPreviewStepRequests_;
     }
-    if(!spectraPreviewGpu_->step(dt)) {
+    const bool accepted=spectraPreviewGpu_->step(dt);
+    if(!accepted) {
         spectraPreviewLastError_="Metal preview step: "+spectraPreviewGpu_->reason();
         ws_.log("spectrafx",spectraPreviewLastError_,true);
     } else {
         spectraPreviewVisualSeconds_+=dt;
         spectraPreviewLastError_.clear();
     }
+    const auto checkpoint=spectraPreviewGpu_->checkpointStats();
+    SpectraGpuPreviewFrameRecord record{};
+    record.deviceFrame=dev_?dev_->frameSerial():0;
+    record.visualSeconds=spectraPreviewVisualSeconds_;
+    record.estimatedParticles=spectraPreviewGpu_->stats().gpuParticlesEstimated;
+    record.freshGroups=checkpoint.freshGroups;
+    record.staleGroups=checkpoint.staleGroups;
+    record.pendingGroups=checkpoint.pendingGroups;
+    record.killedSlotsWaiting=checkpoint.killedSlotsAwaitingFence;
+    record.stepAccepted=accepted;
+    record.deviceHealthy=checkpoint.gpuDeviceHealthKnown &&
+                         checkpoint.gpuDeviceHealthy;
+    constexpr size_t kHistoryFrames=180;
+    if(spectraPreviewHistory_.size()>=kHistoryFrames)
+        spectraPreviewHistory_.pop_front();
+    spectraPreviewHistory_.push_back(record);
 }
 void Editor::drawSpectraGpuPreview() {
     if(!spectraPreviewFrameOpen_ || !spectraPreviewGpu_)return;
