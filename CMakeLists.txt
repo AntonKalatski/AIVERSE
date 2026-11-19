@@ -128,6 +128,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             ecs_shared_static_components_test
             ecs_prefab_static_catalog_test
             ecs_static_scene_integration_test
+            ecs_static_scene_multidomain_test
             ecs_cow_snapshot_test
             ecs_cow_exception_test
             ecs_cow_parallel_test
