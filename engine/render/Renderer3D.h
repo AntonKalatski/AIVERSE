@@ -164,6 +164,14 @@ struct ModelDraw {
     // -1 submits the complete model. Trailing field preserves existing
     // positional ModelDraw aggregate initializers in native projects.
     int primitiveMaterialFilter = -1;
+    // Optional four per-instance vertex graph parameters for rigid models.
+    // Reuses the unused U0 Inst.anim slot (baked clip/lightmap take priority);
+    // no uniform-buffer layout change. Other users may reuse this contract.
+    bool useVertexParameters = false;
+    float4 vertexParameters{0, 0, 0, 0};
+    // Conservative local-metre vertexOffset envelope for safe frustum/LOD.
+    // 0 means unknown deformation; retain conservative uncullable behavior.
+    float maxVertexOffsetMetres = 0;
 };
 
 enum DrawFlags : uint32_t {
