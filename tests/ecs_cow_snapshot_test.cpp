@@ -1,5 +1,6 @@
 // c++ -std=c++20 -O2 -pthread -I. tests/ecs_cow_snapshot_test.cpp -o /tmp/ecs-cow-test
 #include "engine/core/ECS.h"
+#include "tests/AlwaysCheck.h"
 #include "tests/TestCheck.h"
 #include <cstdint>
 #include <iostream>
