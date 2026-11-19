@@ -1613,3 +1613,25 @@ readback. Values are **per gfx::Device**, not necessarily
 one Scene viewport, and do not represent GPU frame time or
 measured memory savings. All safety/enable defaults unchanged.
 Native/Metal/Vulkan validation pending.
+
+
+### CPU regression coverage for pool reuse and failed uploads (Stage 49)
+
+The existing `model_batching_policy` CTest executable now contains
+mock GPU regressions with a staged `frameSerial` /
+`completedFrameSerial` sequence. It proves at **test runtime** (once
+executed) that a retired whole geometry pair cannot be reused while
+in-flight, and that a large->small->large stream retains the entire
+original reserved vertex/index capacity across two reuse cycles.
+
+The same mock injects a failure on the second checked shared-buffer
+write, and a separate failure when creating the second dedicated
+GPU buffer. Required results: no half-published Model handles,
+no leaked mock buffers, CPU vertices/indices retained for retry,
+and normal standalone fallback after a failed shared-page upload.
+
+This C++ test is committed but **NOT RUN** yet: source inspection is
+not a passing CTest result and does not replace real Metal/Vulkan
+raster, completion fence, validation layer or A/B/A checks. The
+test sets the recycle opt-in only within its own process;
+runtime production defaults remain OFF.

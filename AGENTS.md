@@ -1817,3 +1817,17 @@ occupied is not live VRAM residency. Renderer and RHI
 behavior unchanged, `AIVERSE_GEOMETRY_POOL_RECYCLE` OFF by
 default. No native compilation/GPU tests run yet. See Stage 48
 handoff and maintain per-stage documentation.
+
+
+## Stage 49 — model-batching mock regression tests
+
+`tests/render/model_batching_policy.cpp` extends `MockDevice`
+with completed GPU serial simulation, checked shared-write and
+dedicated-buffer allocation fault injection. The new test covers
+quarantined GPU geometry spans, large->small->large capacity
+preservation, failed second pooled upload with dedicated fallback
+and failed second standalone IB allocation with successful retry.
+No additional CMake target. Recycling is enabled by test-process
+environment only, not engine default. Native compilation and CTest
+have NOT RUN; never describe authored assertions as passing.
+PR #34 remains Draft pending actual CI/Metal/Vulkan parity.

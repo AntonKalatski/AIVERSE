@@ -1435,3 +1435,25 @@ The Vulkan RHI has asynchronous submissions; the staged copy being *encoded* is 
 **Actual verification:** Read latest source and current branch, exact one-location replacement in Scene window, atomic one-file Git commit and expected-SHA ref advance. **Native CMake/CTest, Metal/Vulkan runtime, graphics screenshots, thread sanitizers and CPU/GPU performance measurement: NOT RUN** (checkout unavailable in execution environment). This is a source-only feature, not a verified native build. PR remains Draft.
 
 **Next:** Complete final audit of remaining upload/LOD/MDI edge cases and run focused CI/build/CTest where runner is available, with actual outcomes; on owner's Mac run hardware Metal raster parity and A/B/A with flags OFF/ON only after CI. Do not claim queued/cancelled Actions passed.
+
+
+---
+
+## Stage 49 — CPU mock regressions for pool quarantine/reuse and upload fallback (2026-11-19)
+
+**Branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. **Code SHA:** `94935f516b0f2e3dc39ca4b668f03cb32fe62eb9` based on Stage 48 handoff `d3d9142326e477347938677cc7bed6b764e9d5a0`. Main was up to date at source inspection (behind=0).
+
+**Changed file:** `tests/render/model_batching_policy.cpp` (existing `aiverse_model_batching_policy_tests` target; no new binaries/CMake targets). Extended the GPU-free `MockDevice` with explicit fake frame and completion serials, a checked shared-upload failure at an indexed write, and an injected dedicated `createBuffer` failure. Existing success behavior remains the default of the mock. Test main sets `AIVERSE_GEOMETRY_POOL_RECYCLE=1` **for this test process only**, so it does not alter the shipping flag default OFF.
+
+The new `verifyGeometryPoolRetirementAndUploadRecovery()` exercises:
+1. Two models on one page, release the larger pair at serial 10, require retirement but no ready pair while completion is 0. Upload a small model before completion and ensure it does not occupy the retired range.
+2. After `completed=10`, upload a smaller successor and require exact old offsets and complete **original** pair extents retained on that Model, counting one recycled upload.
+3. Release smaller successor at serial 11, hold completion at 10, and prove a larger model cannot consume the quarantined pair. Advance completion to 11 and prove a large successor reuses the exact old offsets and counts a second recycled upload.
+4. Inject failure of the **second checked shared GPU write** on a new page, ensure it is not published and the normal dedicated VB/IB fallback succeeds, then cleanly release all buffers.
+5. Disable shared MDI in mock and inject failure of the second **dedicated** VB/IB allocation; confirm false return, no published handles, retained CPU vertices/indices, no leaked mock buffer; retry successfully and release.
+
+**Verification actually performed:** Read the current test/mock and CMake/CI target definitions via GitHub, matched and changed exact source locations, committed one-file atomic tree through connected GitHub with expected-SHA ref lease. **Native CMake/CTest: NOT RUN. This new test binary has NOT EXECUTED. Metal/Vulkan pixel, device-loss and fence scenarios: NOT RUN.** Test coverage has been authored but cannot yet be claimed as passing. Container environment has no AIVERSE checkout and cannot resolve github.com with git, so only source inspection is possible here.
+
+**Next actionable:** Inspect PR #34 `GPU batching focused regression` and CI for this SHA once Actions leave queued state; if failures arise, fix on this branch with new handoff. On user's Mac run
+`git fetch origin && git switch perf/incremental-static-model-cache && git pull --ff-only origin perf/incremental-static-model-cache && cmake --build build-metal --target aiverse_model_batching_policy_tests -j8 && ctest --test-dir build-metal -R '^model_batching_policy$' --output-on-failure`.
+Then run real Metal/Vulkan pixel parity with opt-ins independently OFF/ON; do not enable recycling or Vulkan canonical MDI in production before successful hardware validation.
