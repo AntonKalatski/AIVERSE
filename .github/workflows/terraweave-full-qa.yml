@@ -46,6 +46,8 @@ jobs:
             -DAIVERSE_BUILD_SERVER=OFF \
             -DAIVERSE_BUILD_HEADLESS=ON \
             -DAIVERSE_BUILD_TOOLS=OFF \
+            -DAIVERSE_ENABLE_PHYSICS=ON \
+            -DAIVERSE_BUILD_PHYSICS_DEMO=OFF \
             -DAIVERSE_FBX=OFF \
             2>&1 | tee terraweave-full-configure.log
       - name: Build all enabled native targets once
