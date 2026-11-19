@@ -62,6 +62,16 @@ void test() {
         std::size_t targetId=0;
         req(compiled.findTarget("mouthSmileLeft",targetId) && targetId==0,
             "sparse sculpt export lost target name");
+        req(sculpt.addTarget("browUp") && sculpt.targets()==2,
+            "named corrective creation failed");
+        req(!sculpt.addTarget("browUp"),
+            "duplicate corrective name accepted");
+        req(sculpt.setPosition(1,2,{0,0.2f,0}) &&
+            sculpt.removeTarget(0) && sculpt.targets()==1,
+            "corrective deletion or remapping failed");
+        req(sculpt.undo() && sculpt.targets()==2 &&
+            sculpt.redo() && sculpt.targets()==1,
+            "corrective target deletion undo/redo failed");
         req(!sculpt.setPosition(0,4,{1,0,0}) &&
             !sculpt.setPosition(0,1,{100,0,0}),
             "out-of-range sculpt accepted");
