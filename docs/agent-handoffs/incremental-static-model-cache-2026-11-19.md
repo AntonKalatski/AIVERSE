@@ -1156,3 +1156,27 @@ Read the current branch source via connected GitHub; verified one-occurrence sou
 - The guard only snapshots CPU MDI configuration (including scope), not computed effective `beginScene` state, page-adaptive EMA, cached GPU buffers or other renderer debug flags. It intentionally restores configuration rather than rewinding GPU state. Reusing one renderer from multiple simultaneous threads is still unsupported.
 - The guard's lifetime must end before destroying the renderer; do not return it by value or store references across renderer lifetime changes. It is not a model-asset invalidation mechanism.
 - Next feature-first: examine active native renderer host/RTS view invocation paths for any remaining **genre-dependent policy decisions** and document supported/unsupported GPU geometry-pool cases without relaxing batch correctness; keep Stage 35 changes isolated. Only after the user finishes batching features: build and run focused policy tests, scope nesting/exception tests, Scene/Game isolation, Metal/Vulkan visual comparisons, and real CPU/GPU A/B/A. Preserve Draft PR and OFF defaults until validation.
+
+
+---
+
+## Stage 36 — preserve native model batching/LOD policy through Studio Scene (2026-11-19)
+
+**Source:** `chromealex/AIVERSE`, `perf/incremental-static-model-cache`, Draft PR #34. **Implementation:** `3e83773969d30f7d665fbbda15568587066d59cb`; parent `c9a01ae01bbc65ed106a3d7caa950c5a40795c9b`. `main` was fully integrated before these two feature stages. Do not force-push or assume another agent has not moved the branch.
+
+### Why / changes / APIs
+The Studio Scene window previously set instancing, CPU multi-draw, GPU-authored drawing, model culling, LOD and LOD crossfade for its own comparison and then unconditionally wrote `true,true,true,true,true,0.15f`. These were **not** necessarily the prior settings selected by a native game host. Scene could therefore silently enable instancing or MDI for the next Game viewport even if the host disabled it.
+
+- `engine/render/Renderer3D.h`: adds `ModelRenderPolicyOverrides` (bool `instancing`, `multiDraw`, `gpuAuthored`, `culling`, `lod`; `float lodFadeWidth`) with `modelRenderPolicyOverrides()` readback and `setModelRenderPolicyOverrides(...)` using existing validated setter APIs. Public nested `ScopedModelRenderPolicyOverride` snapshots/restores values on scope exit, supports default snapshot-only or explicit temporary override constructor, and forbids copying/moving. Stays genre independent and requires owning renderer to outlive guard.
+- `apps/editor/windows/SceneWindow.cpp`: nests the model policy guard alongside Stage 35 CPU MDI policy guard so all A/B baseline and optimized draws may temporarily alter instancing/indirect/LOD without leaking those flags into Game/native rendering. Removes the six hard-coded post-Scene resets. Scope ends before the existing Scene-only StudioDebug/profiling/selection reset.
+- No changes to GL/Metal/Vulkan RHI, GPU indirect command buffers, scene packet algorithms, GPU fences, LOD calculation, shaders or ECS components/serialization. GPU ICB still requires the independent process opt-in and all safe checks. New snapshot is purely host configuration; not a frame-state rollback.
+
+### Host audit completed during this stage
+`RtsViewDraw.cpp` submits general `ModelDraw` packets for RTS objects, while the common `EcsStaticModelRender.h` visitor can submit models from any ECS World with per-host stable keys and appearance revisions. `apps/editor/Editor.cpp::renderScene` invokes RTS view for RTS, and `enqueueFpsSceneGeometry` for FPS; the FPS editor's current `SceneRenderable` extractor mainly uses debug Mesh geometry, which is not eligible for `ModelDraw` static packet caching by merely toggling policy flags. The generic batcher cannot combine arbitrary distinct vertex/index allocations or textures into one primitive; the shared GPU geometry page and exact material/pipeline checks remain necessary. Do not invent FPS packet hits or silently mark debug Mesh draw calls as immutable models.
+
+### Actual verification and unresolved work
+Read GitHub branch source and verified exact structural changes, constructed a two-file atomic Git tree, authored implementation commit and fast-forwarded the target branch using an expected SHA. No source files from other agents changed. **Native CMake/CTest NOT RUN; Metal/Vulkan visual/driver parity NOT RUN; CPU/GPU A/B/A NOT RUN**, as the user explicitly prioritizes all features before tests and this environment has no native project checkout. No measured speedup, performance regression or successful build claimed. PR stays Draft.
+
+**Known limitations:** `instanceLimit` changes shader pipeline layouts and remains intentionally persistent; this snapshot does not revert it. Studio profiling/debug-mode, LOD diagnostic target and other Scene diagnostic flags still use existing Scene-window lifecycle (not this model batching snapshot). The guard does not protect concurrent multi-threaded use of one Renderer3D or guarantee correctness of native asset unloads. Nested policy scopes are source-inspected, not compiled/executed.
+
+**Next action:** Finish reviewing real pooled Model upload/backends and other native/custom rendering paths for safe cross-model CPU MDI eligibility and actual usage; then at user's feature-complete milestone run native builds, model batching policy tests, Scene/Game isolation and same-camera A/B/A Metal/Vulkan raster/performance validation. Keep all experimental flags opt-in and PR #34 Draft until completed.

@@ -1325,3 +1325,26 @@ LOD, culling or material state. The isolated scope key partitions page
 EMA but not its bounded global storage. Explicit backend safety/MDI
 eligibility still takes precedence. No experimental feature turns on
 by default and there is no measured performance result yet.
+
+
+### Preserve host model batching and LOD settings in Studio
+
+`Renderer3D::ModelRenderPolicyOverrides` is a separate host-side
+configuration record for `instancing`, `multiDraw`, `gpuAuthored`,
+`culling`, `lod` and `lodFadeWidth`. Read the configured state via
+`modelRenderPolicyOverrides()` and set it via
+`setModelRenderPolicyOverrides(...)`. The nested
+`ScopedModelRenderPolicyOverride` captures the previous values and
+automatically restores them at scope exit. It also has an overload
+accepting an explicit temporary policy. Combine it with
+`ScopedCpuMdiPolicyOverride` to isolate one native render view.
+
+Studio Scene's baseline/optimized batching comparison now restores
+the **prior native/Game values**, not hard-coded true defaults. The
+renderer's GPU pipeline/indirect safety rules, per-camera culling and
+LOD calculation are unchanged. This snapshot does **not** rewind
+shader pipeline `instanceLimit`, GPU commands, material arrays,
+profile/debug toggles or ECS state; explicit shader-layout changes
+retain their previous behavior. All experimental modes stay OFF unless
+separately enabled. This is a feature-only update; native tests and
+GPU A/B measurements are not yet performed.

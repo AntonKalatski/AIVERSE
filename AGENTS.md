@@ -1610,3 +1610,22 @@ The Studio Scene viewport uses it and does not overwrite a game host's
 configured CPU MDI policy. Generic backend/material/geometry constraints
 remain authoritative. PR #34 remains Draft; native validation deferred
 under user's feature-first instruction. See Stage 35 handoff.
+
+
+## Model batching host policy isolation — Stage 36
+
+Use `Renderer3D::ModelRenderPolicyOverrides` for instancing,
+multi-draw, GPU-authored model draws, model culling, LOD and fade width.
+`ScopedModelRenderPolicyOverride(renderer)` snapshots and restores the
+existing configuration at scope exit. The two-argument overload can
+apply a temporary policy. Nest with the CPU MDI guard from Stage 35
+when rendering with a shared Scene/Game/native Renderer3D. Do not
+unconditionally restore `true` defaults after an editor view.
+Do not treat the value snapshot as a GPU buffer/sampler/scene rollback:
+`instanceLimit` is deliberately not included because it can trigger
+shader pipeline recompilation; profiling/debug/selection have their
+separate existing lifecycle. FPS editor debug Mesh previews are *not*
+static ModelDraw packets; the engine's genre-neutral static ECS
+adapter is `engine/render/EcsStaticModelRender.h`. Cross-model CPU
+MDI still requires genuinely shared GPU geometry and exact material
+compatibility. PR #34 Draft, native validation deferred as directed.
