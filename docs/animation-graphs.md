@@ -842,3 +842,24 @@ RTS gameplay filters into the animation library.
 parity, sanitizer or performance tests. Do not claim functional
 validation from GitHub-only source commits.
 [Stage 121 handoff](agent-handoffs/animation-stage121-universal-lod-attachments-2026-11-19.md).
+
+## Stage 122 — animation clock continuity with LOD retargeting
+
+`ModelPoseRetarget` maps one validated base Model's presentation
+Pose into a different visual Model's bone hierarchy and optional
+morph target channels. The source AnimationGraphInstance remains
+owned by the same MotionWeave presentation ECS World and is never
+reset because the camera chooses a lower-detail Model.
+Strictly compatible LODs share source Pose without a copy;
+explicit mappings produce target-local Pose and matrices; invalid
+mappings use visual bind pose. Source sockets always use base-rig
+matrices. No animation notifies are synthesized from a LOD switch.
+
+FPS already evaluates its `characterPresentation` World; it now
+calls `View::beginPreparedFrame` before sending precomputed draw
+packets, rather than invoking `View::update`. RTS keeps its
+game-specific authoring and state filters but reuses the common
+retarget helper for LOD visuals whose node maps validate.
+
+**NOT RUN:** native compiler/linker, animation graph or LOD CTests,
+Metal/GL/Vulkan real GPU parity or sanitizers. See [Stage 122 handoff](agent-handoffs/animation-stage122-rig-retarget-2026-11-19.md).
