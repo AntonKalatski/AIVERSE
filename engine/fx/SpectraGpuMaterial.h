@@ -68,7 +68,7 @@ inline bool compile(const Json& graph, const Json& inputs, Material& output,
         return false;
     }
     const Json& nodes=graph["nodes"];
-    if(!nodes.isArray()||nodes.empty()||nodes.size()>32) {
+    if(!nodes.isArray()||nodes.size()==0||nodes.size()>32) {
         reason="GPU material graph supports 1..32 pure fragment nodes";
         return false;
     }
