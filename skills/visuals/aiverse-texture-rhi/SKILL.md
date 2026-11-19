@@ -1831,3 +1831,56 @@ actual tested source SHA in reports.
 Keep PR #21 Draft pending any desired whole-engine
 regression, cross-backend and driver/performance
 acceptance. All experimental GPU ICB defaults OFF.
+
+## Stage 10CJ — canonical VT GLSL and Metal compiler gates
+
+The current branch now has `tests/render/check_virtual_texture_sampling_shaders.py`
+(commit `6d0d9a8d3ebec7f57c9c4657c2925d6460667b8e`) to
+compile the **real embedded VT source code** from
+`engine/gfx/VirtualTextureSampling.h`. It exercises both the
+address-aware and legacy sampler overloads in complete
+OpenGL 3.3 and GLES 3.0 fragments with `glslangValidator`,
+and Metal MSL using `xcrun metal` where installed.
+Missing requested compilers or broken code **fail** the
+test, not an empty skipped PASS.
+
+CMake now registers `virtual_texture_sampling_glsl`
+**only with Python+glslangValidator** and
+`virtual_texture_sampling_msl` **only with
+Python+Apple+xcrun**. The dedicated Linux OpenEXR ON/OFF
+and Vulkan CI jobs install `glslang-tools` and run the
+GLSL CTest explicitly with `--no-tests=error`.
+Toolchain-backed checks were incorporated into both
+`tools/verify-texture-rhi.sh` and the previously
+hardware-PASS one-shot
+`tools/texture-rhi-final-verify.sh`.
+
+Commits for the corrected final versions:
+`20c79da8473abf99f56eedcc12e6f2e3fc1547bc`
+(CMake registration),
+`3a222231828d432a9cb04d4b7d9a69124fb2e2e6`
+(focused script),
+`3a1a17b1fa061314398a21f40fedb6b69e5cb9a1`
+(one-shot Mac script) and
+`f40cbef2a14ce5df92daa9cb9152811a7333a57f`
+(Texture RHI workflow).
+
+**Validation boundary:** static GitHub source inspection was
+done. Actual new GLSL 330 / GLES 300 or Metal toolchain
+compilation, full-engine CTest or Vulkan/GL runtime readbacks
+have **NOT yet been observed** for this stage. Do not
+misrepresent the earlier Apple M3 Ultra **21+7 GPU PASS**
+at source SHA `7494f32d` as tests on these newer commits.
+The new GLSL test is a compile-only guard, **not**
+evidence of GL/GLES GPU pixel parity.
+
+To continue, run the isolated Mac Studio
+`bash tools/texture-rhi-final-verify.sh --jobs 4 --full-engine`
+after fetch/pull and `bash -n` script checks.
+Review CI explicit GLSL CTests and whether Vulkan
+GPU tests actually execute instead of SKIPping.
+Then build native GPU-rendered Vulkan/GL fallback
+framebuffer oracles, nonuniform mip LOD/aniso tests,
+stress/budget tests and GPU timing.
+Never merge Draft PR #21 or enable experimental
+ICB by default without deliberate release gating.
