@@ -6,6 +6,28 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 
 ## AIVERSE SpectraFX (universal VFX, in progress)
 
+**Latest implementation handoff (Stage 37, features source, tests deferred):**
+[docs/agent-handoffs/spectrafx-stage-37-staged-ecs-gpu-reset-timeline-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-37-staged-ecs-gpu-reset-timeline-2026-11-19.md).
+The read-only `GpuEcsAttachmentPresenter` now stages new source handles
+and checks binding revisions, source capacity, finite poses and detach
+preconditions before retiring old attachments. GPU hardware failure
+during a later detach can still leave a partial application, so it
+returns false and requires safe retry; do not claim cross-GPU
+transactions are atomic. Use `ComputeParticles::tryClear()` for
+checked Metal reset **inside an active Device graphics frame**,
+outside all encoders. Partial reset sets a dirty state and blocks
+new GPU births/steps/checkpoints until retry. The pooled rollback
+must not advance/replay visual sources on rejected reset. Failed
+per-group steps must not draw old GPU vertices. The editor Metal
+timeline only advances forward with bounded 1/60 steps (300 queued),
+tracks actual visual elapsed time, and has explicit checked restart.
+Metal device health/categorized upload, compute and reset failures
+are exposed without inventing successful GPU operation. This stage
+has NOT RUN native C++, MSL, CTest, editor or on-device Metal checks.
+Preserve Stage 32 checkpoint budget, Stage 35 kill fences and
+Stage 36 scatter-kill ordering. Do not alter main without request.
+
+
 **Latest implementation handoff (Stage 36, functional source, execution NOT verified):**
 [docs/agent-handoffs/spectrafx-stage-36-scatter-kills-native-ecs-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-36-scatter-kills-native-ecs-2026-11-19.md).
 GPU kill mode 6 operates on a compact uint32 physical-slot list at
