@@ -106,3 +106,38 @@ No comparative frame-time speedup is claimed; GPU/CPU profiling on weak devices 
 
 Static surface meshes use immutable buffers. Metal dynamic buffers rotate across frames in flight,
 so a once-uploaded cached mesh must not use that path (otherwise the layer disappears on other frames).
+
+## Stage 120 — GPU-fenced canvas resources (2026-11-19)
+
+Canvas GPU lifetime is now explicit and independent of game genre:
+
+- `engine/render/CanvasGpuRetirement.h` owns a device-bound
+  `AsyncResourceRetirementQueue` of GPU buffer, texture, pipeline and
+  shader handles. Each batch is released only after real GPU completion.
+  Unsupported async tokens require a successful full idle barrier.
+  Pending/Failed completion never authorizes destruction.
+- `RenderTexture::setRetirementOwner(owner)` lets a native host borrow
+  one shared queue before canvas `init`; `setGpuDeviceLease`
+  supports a host GPU epoch. Standalone canvases construct their own
+  owner, can call `collectRetiredResources` at a safe frame boundary,
+  and must call `shutdown` before destroying their Device.
+- `flush` and `blit` allocate per-batch vertex buffers *before*
+  opening a pass. Invalid GPU allocations do not submit the draw;
+  brushes remain queued for retry. Every transient buffer and
+  temporary upload image is retired by a real GPU fence, rather than
+  destroyed immediately after `endPass`.
+- `RtsPaintLayers` creates one shared retirement pool for all canvases,
+  meshes, coast textures and shader programs. Layer removal/resize/
+  source reset queues old resources; the pool survives until its
+  owner-host shutdown and drains after actual GPU idle. The existing
+  RtsView GPU lease is forwarded. Editor and GameClient poll the pool
+  once at their GPU owner frame boundary (outside render passes).
+- Paint mesh replacement is transactional: failed new GPU allocation
+  preserves the previous mesh. Editor Stats reports pending resources,
+  orphan counts, failed completion tokens and fallback idle failures.
+
+**Current Stage 120 source-only status:** no new native CMake build,
+CTest, GPU visual comparison, sanitizer or performance test was run.
+The macOS/Metal verification cited above is historical and **does
+not validate this Stage 120 refactor**. Keep Draft PR #22 unmerged.
+See [Stage 120 handoff](agent-handoffs/animation-stage120-canvas-gpu-retirement-2026-11-19.md).
