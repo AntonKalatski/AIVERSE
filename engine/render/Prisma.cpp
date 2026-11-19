@@ -121,7 +121,19 @@ bool Prisma::init(gfx::Device& dev) {
     return triangle_.valid();
 }
 
-void Prisma::release(gfx::TextureHandle& t) { if (t.valid() && dev_) dev_->destroyTexture(t); t = {}; }
+void Prisma::release(gfx::TextureHandle& t) {
+    if (t.valid() && dev_) dev_->destroyTexture(t);
+    t = {};
+}
+void Prisma::retireTarget(gfx::TextureHandle& t) {
+    if (!t.valid()) return;
+    // A newly issued frame token includes the last render use on this
+    // graphics queue; no token -> keep until explicit GPU idle teardown.
+    const uint64_t fence = dev_ ? dev_->gpuSubmissionFence() : 0;
+    if (fence) retiredTargets_.retire(t,fence);
+    else unfencedTargets_.push_back(t);
+    t = {};
+}
 
 void Prisma::destroySized(Sized& s) {
     // Only when the last GPU submission that may reference these targets
@@ -136,6 +148,8 @@ void Prisma::destroySized(Sized& s) {
 }
 void Prisma::collectCompletedSizes(uint64_t completedGpuFence) {
     if (!dev_ || completedGpuFence == 0) return;
+    retiredTargets_.collect(completedGpuFence,
+        [this](gfx::TextureHandle h) { dev_->destroyTexture(h); });
     for (auto it = retiredSizes_.begin(); it != retiredSizes_.end();) {
         if (it->lastSubmittedFence &&
             it->lastSubmittedFence <= completedGpuFence) {
@@ -155,6 +169,11 @@ void Prisma::releaseRetiredSizesAfterGpuIdle() {
     // submissions referencing the archived resources have completed).
     for (auto& item : retiredSizes_) destroySized(item.resources);
     retiredSizes_.clear();
+    retiredTargets_.drainAfterGpuIdle(
+        [this](gfx::TextureHandle h) { dev_->destroyTexture(h); });
+    for (auto h : unfencedTargets_)
+        if (h.valid()) dev_->destroyTexture(h);
+    unfencedTargets_.clear();
 }
 void Prisma::shutdown() {
     if (!dev_) return;
@@ -348,7 +367,7 @@ Prisma::Target& Prisma::target(Sized& s, int role, int w, int h) {
     Target& t = s.targets[role];
     const auto format = hdrFrame_ ? gfx::PixelFormat::RGBA16F : gfx::PixelFormat::RGBA8;
     if (t.tex.valid() && t.w == w && t.h == h && t.format == format) return t;
-    release(t.tex);
+    retireTarget(t.tex); // HDR/size switches can overlap previous GPU frames
     gfx::TextureDesc td;
     td.width = w; td.height = h;
     td.renderTarget = true;
