@@ -19,24 +19,25 @@ struct AnimationCue {
 inline std::vector<AnimationCue> collectAnimationCues(const World& world,
                                                      size_t maxEvents=8192) {
     std::vector<AnimationCue> cues;
-    auto* players=world.poolIfExists<AnimationAssetComponent>();
-    if(!players)return cues;
+    if(!maxEvents)return cues;
     uint64_t sequence=0;
-    for(size_t i=0;i<players->size() && cues.size()<maxEvents;++i) {
-        const Entity entity=players->entityAt(i);
-        if(!world.alive(entity))continue;
-        if(auto* g=world.tryGetConst<AnimationGraphNotifiesComponent>(entity))
-            for(const auto& event:g->events) {
-                if(cues.size()>=maxEvents)break;
-                cues.push_back({entity,event.name,"graph:"+event.node,
-                    event.framePhase,sequence++});
-            }
-        if(auto* m=world.tryGetConst<AnimationMontageSlotsComponent>(entity))
-            for(const auto& event:m->events) {
-                if(cues.size()>=maxEvents)break;
-                cues.push_back({entity,event.name,"montage",0.5f,sequence++});
-            }
-    }
+    // Public ECS traversal never registers absent pools. Its existing
+    // entity order also preserves the deterministic sequence tie-break.
+    world.eachExistingConst<AnimationAssetComponent>(
+        [&](Entity entity,const AnimationAssetComponent&) {
+            if(cues.size()>=maxEvents || !world.alive(entity))return;
+            if(const auto* g=world.tryGetConst<AnimationGraphNotifiesComponent>(entity))
+                for(const auto& event:g->events) {
+                    if(cues.size()>=maxEvents)break;
+                    cues.push_back({entity,event.name,"graph:"+event.node,
+                        event.framePhase,sequence++});
+                }
+            if(const auto* m=world.tryGetConst<AnimationMontageSlotsComponent>(entity))
+                for(const auto& event:m->events) {
+                    if(cues.size()>=maxEvents)break;
+                    cues.push_back({entity,event.name,"montage",0.5f,sequence++});
+                }
+        });
     std::stable_sort(cues.begin(),cues.end(),
         [](const AnimationCue& a,const AnimationCue& b) {
             return a.framePhase!=b.framePhase?a.framePhase<b.framePhase:
