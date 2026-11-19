@@ -7,6 +7,7 @@
 #include "SpectraGraphRuntime.h"
 #include <array>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <limits>
@@ -225,6 +226,12 @@ public:
     const PoolWorldStats& stats() const {return stats_;}
     // On-demand, no GPU readback. Reflects callbacks delivered since step().
     PoolCheckpointStats checkpointStats() const;
+    // Opt-in nonblocking capture of one GPU group's current particle state.
+    // Enqueue only inside an open Device graphics frame, outside encoders.
+    // The callback runs on the RHI owner thread after GPU completion and
+    // reports transport completeness (not freshness of a later revision).
+    bool requestGpuCheckpoint(size_t groupIndex,
+                              std::function<void(bool)> completion={});
     // Copies an existing CURRENT-revision GPU checkpoint for one pooled
     // compute group. Does not request GPU readback or allocate unbounded
     // diagnostic data. Caller chooses where/how to persist bytes.
