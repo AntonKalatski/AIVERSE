@@ -14,6 +14,7 @@
 #include <vector>
 #include "PostFxData.h"
 #include "Renderer3D.h"
+#include "RenderDeviceLifetime.h"
 
 namespace aiverse::render {
 
@@ -21,6 +22,7 @@ struct PostFxStats { int passes = 0; int effects = 0; int width = 0, height = 0;
 
 class PostFx : public PostProcess {
 public:
+    void setGpuDeviceLease(RenderDeviceLifetime::Lease lease) {gpuDeviceLease_=std::move(lease);}
     bool init(gfx::Device& dev);
     void shutdown();
 
@@ -70,6 +72,11 @@ private:
     const Lut* lut(const std::string& path);
     void release(gfx::TextureHandle& t);
 
+    void checkGpuDevice(const gfx::Device& dev) const {
+        if(gpuDeviceLease_.device() && !gpuDeviceLease_.validFor(dev))
+            throw std::logic_error("PostFx GPU device generation expired");
+    }
+    RenderDeviceLifetime::Lease gpuDeviceLease_;
     gfx::Device* dev_ = nullptr;
     PostFxSettings settings_;
     PostFxQuality quality_ = PostFxQuality::Medium;
