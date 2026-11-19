@@ -392,11 +392,18 @@ public:
         return token;
     }
     bool resourceRetirementComplete(uint64_t token) override {
+        return resourceRetirementStatus(token)==ResourceRetirementStatus::Complete;
+    }
+    ResourceRetirementStatus resourceRetirementStatus(uint64_t token) override {
         const auto it=retirementFences_.find(token);
-        if(it==retirementFences_.end())return false;
+        if(it==retirementFences_.end())return ResourceRetirementStatus::Failed;
         const GLenum status=glClientWaitSync(it->second,0,0);
-        return status==GL_ALREADY_SIGNALED ||
-               status==GL_CONDITION_SATISFIED;
+        if(status==GL_ALREADY_SIGNALED ||
+           status==GL_CONDITION_SATISFIED)
+            return ResourceRetirementStatus::Complete;
+        if(status==GL_TIMEOUT_EXPIRED)
+            return ResourceRetirementStatus::Pending;
+        return ResourceRetirementStatus::Failed; // GL_WAIT_FAILED
     }
     void endResourceRetirement(uint64_t token) override {
         const auto it=retirementFences_.find(token);
