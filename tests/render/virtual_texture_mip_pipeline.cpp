@@ -283,7 +283,9 @@ void repeatedCancellationAndLruReuse() {
     check(streamer.resolveExact(root).valid(),"pinned root ready");
     VirtualPageKey previous{0,0,0,0};
     bool hasPrevious=false;
-    for(int iteration=0;iteration<96;++iteration) {
+    // Deterministic longer soak: exercise repeated page-key wrap-around,
+    // LRU eviction and mid-batch cancellation under a two-slice atlas.
+    for(int iteration=0;iteration<2048;++iteration) {
         VirtualPageKey key{0,iteration%4,(iteration/4)%4,0};
         page[0]=uint8_t(iteration);
         auto ticket=streamer.stage(key,page.data(),page.size());
@@ -314,6 +316,11 @@ void repeatedCancellationAndLruReuse() {
         check(streamer.resolveExact(root).valid(),
               "pinned root survives cancellation and LRU reuse");
         check(streamer.ready(),"streamer remains usable after repeated reuse");
+        const auto stats=streamer.streamStats();
+        check(stats.pendingUploads==0 && stats.stagedBytes==0,
+              "every LRU iteration releases staging bytes and pending tickets");
+        check(streamer.pageStats().pinned==1,
+              "only the root remains pinned during LRU stress");
     }
     streamer.shutdown();
     check(gpu.resources.empty(),"stress fixture GPU handles released");
