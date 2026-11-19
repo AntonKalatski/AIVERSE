@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <functional>
+#include <iterator>
 #include <stdexcept>
 #include <unordered_set>
 
@@ -468,8 +469,19 @@ void RtsView::trimTypes(const std::vector<bool>& keep, bool compact) {
 // Bounded even if the host repeatedly reloads sources for unseen entities.
 void RtsView::rememberReloadPlayback(uint64_t key,const EntityAnim& state) {
     constexpr size_t kMaxPending=8192;
+    constexpr uint64_t kMaxAgeFrames=120;
     if(reloadPlayback_.size()>=kMaxPending &&
-       !reloadPlayback_.contains(key))return;
+       !reloadPlayback_.contains(key)) {
+        // Preserve a strict memory bound across repeated source imports
+        // when some deleted entities never return to consume their state.
+        for(auto it=reloadPlayback_.begin();it!=reloadPlayback_.end();) {
+            if(frame_>=it->second.capturedFrame &&
+               frame_-it->second.capturedFrame>kMaxAgeFrames)
+                it=reloadPlayback_.erase(it);
+            else ++it;
+        }
+        if(reloadPlayback_.size()>=kMaxPending)return;
+    }
     ReloadPlayback snapshot;
     snapshot.type=state.type;
     snapshot.choice=state.choice;
