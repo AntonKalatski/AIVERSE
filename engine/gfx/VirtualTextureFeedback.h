@@ -357,25 +357,25 @@ inline std::string virtualTextureMaskedFeedbackFragmentGLSL(
     if (main==std::string::npos) return {};
     shader.erase(main);
     shader +=
-        "uniform sampler2D uBaseColor;\\n"
-        "uniform vec3 uAlphaUvRow0;\\n"
-        "uniform vec3 uAlphaUvRow1;\\n"
-        "uniform float uBaseAlphaFactor;\\n"
-        "uniform float uAlphaCutoff;\\n"
-        "void main(){\\n";
+        "uniform sampler2D uBaseColor;\n"
+        "uniform vec3 uAlphaUvRow0;\n"
+        "uniform vec3 uAlphaUvRow1;\n"
+        "uniform float uBaseAlphaFactor;\n"
+        "uniform float uAlphaCutoff;\n"
+        "void main(){\n";
     if (automaticMip)
         shader +=
             " int mip=aiverseFeedbackMipFromDerivatives("
-            "vVirtualUV,uVirtualTexels,uVirtualMipLevels,uVirtualMipBias);\\n";
+            "vVirtualUV,uVirtualTexels,uVirtualMipLevels,uVirtualMipBias);\n";
     shader +=
-        " vec3 uvh=vec3(vVirtualUV,1.0);\\n"
+        " vec3 uvh=vec3(vVirtualUV,1.0);\n"
         " vec2 alphaUv=vec2(dot(uAlphaUvRow0,uvh),"
-        "dot(uAlphaUvRow1,uvh));\\n"
-        " float alpha=texture(uBaseColor,alphaUv).a*uBaseAlphaFactor;\\n"
-        " if(alpha<uAlphaCutoff) discard;\\n"
+        "dot(uAlphaUvRow1,uvh));\n"
+        " float alpha=texture(uBaseColor,alphaUv).a*uBaseAlphaFactor;\n"
+        " if(alpha<uAlphaCutoff) discard;\n"
         " outFeedback=aiverseMaterialFeedback(vVirtualUV,";
     shader += automaticMip ? "mip" : "uVirtualMip";
-    shader += ",uVirtualLayer,uVirtualBaseTiles);\\n}\\n";
+    shader += ",uVirtualLayer,uVirtualBaseTiles);\n}\n";
     return shader;
 }
 
@@ -389,29 +389,29 @@ inline std::string virtualTextureMaskedFeedbackFragmentMSL(
     if (entry==std::string::npos) return {};
     shader.erase(entry);
     shader +=
-        "struct AiverseAlphaFeedbackParams {\\n"
-        " float3 uvRow0; float3 uvRow1;\\n"
-        " float alphaFactor; float alphaCutoff;\\n"
-        "};\\n"
-        "fragment float4 aiverseVirtualFeedbackFragment(\\n"
-        " AiverseFeedbackInput in [[stage_in]],\\n"
-        " constant AiverseFeedbackParams& p [[buffer(0)]],\\n"
-        " constant AiverseAlphaFeedbackParams& a [[buffer(1)]],\\n"
-        " texture2d<float> baseColor [[texture(0)]],\\n"
-        " sampler baseSampler [[sampler(0)]]) {\\n";
+        "struct AiverseAlphaFeedbackParams {\n"
+        " float3 uvRow0; float3 uvRow1;\n"
+        " float alphaFactor; float alphaCutoff;\n"
+        "};\n"
+        "fragment float4 aiverseVirtualFeedbackFragment(\n"
+        " AiverseFeedbackInput in [[stage_in]],\n"
+        " constant AiverseFeedbackParams& p [[buffer(0)]],\n"
+        " constant AiverseAlphaFeedbackParams& a [[buffer(1)]],\n"
+        " texture2d<float> baseColor [[texture(0)]],\n"
+        " sampler baseSampler [[sampler(0)]]) {\n";
     if (automaticMip)
         shader +=
             " int mip=aiverse_feedback_mip_from_derivatives("
-            "in.uv,p.texels,p.mipLevels,p.mipBias);\\n";
+            "in.uv,p.texels,p.mipLevels,p.mipBias);\n";
     shader +=
-        " float3 uvh=float3(in.uv,1.0);\\n"
+        " float3 uvh=float3(in.uv,1.0);\n"
         " float2 alphaUv=float2(dot(a.uvRow0,uvh),"
-        "dot(a.uvRow1,uvh));\\n"
-        " float alpha=baseColor.sample(baseSampler,alphaUv).a*a.alphaFactor;\\n"
-        " if(alpha<a.alphaCutoff) discard_fragment();\\n"
+        "dot(a.uvRow1,uvh));\n"
+        " float alpha=baseColor.sample(baseSampler,alphaUv).a*a.alphaFactor;\n"
+        " if(alpha<a.alphaCutoff) discard_fragment();\n"
         " return aiverse_material_feedback(in.uv,";
     shader += automaticMip ? "mip" : "p.mip";
-    shader += ",p.layer,p.baseTiles);\\n}\\n";
+    shader += ",p.layer,p.baseTiles);\n}\n";
     return shader;
 }
 
