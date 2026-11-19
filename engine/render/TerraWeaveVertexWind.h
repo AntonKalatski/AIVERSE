@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <memory>
+#include <utility>
 
 namespace aiverse::terraweave {
 
