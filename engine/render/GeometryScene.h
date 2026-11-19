@@ -49,6 +49,10 @@ public:
     // Requires BOTH other Strata staging flags. Default OFF.
     void setStrataGpuCullingEnabled(bool on) { strataGpuCullingEnabled_ = on; }
     bool strataGpuCullingEnabled() const { return strataGpuCullingEnabled_; }
+    // Renderer3D diagnostic-only preview. Legacy ModelDraw is always sent
+    // unchanged; no Strata indirect or direct draw is performed. Default OFF.
+    void setStrataRenderPreviewEnabled(bool on) { strataRenderPreviewEnabled_ = on; }
+    bool strataRenderPreviewEnabled() const { return strataRenderPreviewEnabled_; }
     bool collectStrataGpuInstances(const std::string& sourceKey,
                                    std::vector<strata::GpuSceneInstance>& out) const;
     bool dispatchStrataGpuView(gfx::Device& device, const std::string& sourceKey,
@@ -119,6 +123,7 @@ private:
     bool strataStagingEnabled_=false;
     bool strataGpuMetadataEnabled_=false;
     bool strataGpuCullingEnabled_=false;
+    bool strataRenderPreviewEnabled_=false;
     float errorPixels_=2, maxPixels_=256;
     size_t proxyVertices_=0;
 };
