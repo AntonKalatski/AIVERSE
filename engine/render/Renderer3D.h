@@ -702,6 +702,9 @@ private:
     bool warmingPipelines_ = false, warmingPending_ = false;
     bool warmingFailed_ = false;
     std::vector<std::pair<ModelShaderKey, gfx::Device::PipelineJob>> pendingModelPipes_;
+    // Backend colour-target warmup may be asynchronous even when it returns
+    // no ShaderJob/PipelineJob. Poll these handles without reloading Models.
+    std::vector<gfx::PipelineHandle> pendingColorWarms_;
     std::vector<std::pair<ModelShaderKey, ShaderEntry>> modelShaders_;
     std::vector<std::pair<ModelShaderKey, gfx::PipelineHandle>> modelPipes_;
     gfx::TextureHandle white_, black_, flatNormal_;
