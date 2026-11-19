@@ -18,6 +18,7 @@
 #include "GpuSceneCulling.h"
 #include "GpuSceneDrawCommands.h"
 #include "RenderDeviceLifetime.h"
+#include "GpuProgramRetirement.h"
 #include <memory>
 #include <unordered_map>
 
@@ -218,6 +219,19 @@ public:
     }
     bool init(gfx::Device& dev);
     void shutdown();
+    // Call only at a host frame boundary, outside any active graphics pass.
+    // A Pending or Failed token never authorizes GPU program destruction.
+    size_t pendingProgramRetirements() const noexcept {
+        return programRetirement_?programRetirement_->pendingBatches():0;
+    }
+    bool collectRetiredPrograms() {
+        if(!programRetirement_ || !dev_)return true;
+        checkGpuDevice(*dev_);
+        return programRetirement_->collect();
+    }
+    uint64_t programRetirementOrphanBatches() const noexcept {
+        return programRetirement_?programRetirement_->orphanBatches():0;
+    }
     // Optional fixed scene bounds for interior/model viewers; clear to use RTS ground fitting.
     void setShadowBounds(float3 lo, float3 hi) { shadowBoundsMin_=lo; shadowBoundsMax_=hi; hasShadowBounds_=true; }
     void clearShadowBounds() { hasShadowBounds_=false; }
@@ -453,6 +467,9 @@ private:
     };
     void initModels();
     void shutdownModels();
+    // Quality/instance-limit changes retire old shaders and pipelines
+    // without freeing GPU-visible handles until their own completion token.
+    void retireModelPrograms();
     gfx::PipelineHandle modelPipeline(const ModelItem& it, int phase, bool instanced,
                                       bool gpuInstances = false, bool instancePalette = false);
     bool drawModelBatch(const uint32_t* items, uint32_t count, int phase,
@@ -485,6 +502,7 @@ private:
             throw std::logic_error("Renderer3D GPU device generation expired");
     }
     RenderDeviceLifetime::Lease gpuDeviceLease_;
+    std::unique_ptr<GpuProgramRetirement> programRetirement_;
     gfx::Device* dev_ = nullptr;
     gfx::ShaderHandle litShader_, shadowShader_, colorShader_;
     gfx::PipelineHandle litPipe_, litBlendPipe_, shadowPipe_, linePipe_, triPipe_;
