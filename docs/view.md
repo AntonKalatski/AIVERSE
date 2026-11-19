@@ -1270,3 +1270,111 @@ backend-specific implementations and lifetime ordering are not yet
 validated on real hardware. Scene-level (RTS View) legacy retirement
 and custom FX/terrain caches still need their own migration; don't merge
 or claim parity before native verification.
+
+## Stage 101 — bounded retirement pressure, async CPU imports and editor raw-model preview
+
+### Resource pressure / diagnostics
+
+`render::AsyncResourceRetirementQueue<Resource>` now exposes
+`stats()` and `saturated(limit)`. Statistics include queued resources
+(in submitted and unsubmitted batches), active fence batches, unsubmitted
+resources, high-watermark, number of successfully released resources and
+batches, repeated pending polls, async-token creation fallbacks and failed
+synchronous-idle attempts. A **pending** GPU token is normal; it must not
+be reported as a device error. A zero token means unsupported *or*
+failed asynchronous marker issuance, not proof of GPU loss.
+
+`render::ModelResourceCache` offers
+`retirementStats()`, `setRetirementSoftLimit(count)`,
+`retirementSoftLimit()` and `publicationBackpressured()`.
+The default soft limit is 128 **retired model objects**; zero disables
+the limit. This is an advisory allocation throttle for new generic
+source-provider loads, NOT a hard cap on in-flight allocations and not a
+VRAM byte quota. Existing resident models keep working; worker results
+already prepared by the legacy RTS service are not discarded simply
+because the queue reaches its limit. No timeout or backpressure signal
+ever allows a model to be destroyed before its GPU fence completes.
+
+`RtsView::assetResidencyStats` forwards these counters and the Stats
+window displays waiting models, fence batches, queue peak, throttle
+state and fallbacks. The actual GPU texture bytes, shared geometry-pool
+allocations and other render targets remain outside this statistic.
+
+### Generic asynchronous native-source loader
+
+New `engine/render/AsyncModelCpuQueue.h` contains a reusable,
+single-worker native CPU import queue. `request(path,reader,textures)`
+deduplicates active/queued paths, limits the waiting queue (default 16),
+and executes `loadModel` plus `prepareModelUpload` on a background
+worker. No GPU Device/Renderer/ModelDraw functions are invoked there.
+`pollReady(Prepared&)` is nonblocking on the owner thread;
+`invalidate(path)` advances the source revision and removes queued
+requests, so an already running stale CPU result is rejected instead
+of being published. `shutdown()` joins the worker before the project
+reader and texture-cache lifetime ends. The application-supplied
+`FileReader` MUST be thread-safe.
+
+`render::ModelAssetProvider` integrates that CPU worker with
+`requestAsync(path)`, `cpuStats()` and
+`publishReady(device,maxCount)` (native builds). A project can use
+the following frame-boundary pattern:
+
+```cpp
+render::ModelAssetProvider provider(projectReader);
+// On demand, without blocking the render thread for CPU import:
+provider.requestAsync("models/prop.glb");
+// During a later render-thread frame, before scene submission:
+provider.collectRetired(device);
+provider.publishReady(device, 1);
+if (const auto* model = provider.find("models/prop.glb")) {
+    render::ModelDraw draw;
+    draw.model = model;
+    aiverse::View::submitModel(renderer, draw);
+}
+// During project shutdown, on the device owner thread:
+provider.shutdown(device);
+```
+
+The generic provider pauses admission/publication of NEW models if
+retirement pressure is at its soft limit, but does not invalidate
+finished CPU work prematurely. Its old synchronous `load` path is
+still available. Emscripten remains on the synchronous path; no CPU
+threads are required for browser projects.
+
+### Actual editor consumer
+
+`apps/editor/windows/ModelWindow.cpp` adds an explicit alternative
+*“Исходная 3D-модель (без overrides)”* for imported static unskinned
+models. Only when this inspection mode is selected, the window owns a
+separate `ModelAssetProvider`, asynchronously imports the raw model,
+and calls `Portrait::renderStaticModel(provider,path,...)` through the
+canonical `aiverse::View`. The imported original deliberately omits
+type-level colour, material overrides, graph/procedural animation,
+attachments and authored transform correction. This is **not** a
+replacement for the normal type-appearance preview; the latter remains
+the default and retains the legacy path for fidelity. The independent
+provider joins/releases its resources on project/cache revision changes
+and editor window destruction.
+
+### Validation and limits
+
+New deferred CPU fixtures:
+`tests/render/retirement_pressure.cpp` (`render_retirement_pressure`)
+and `tests/render/async_model_cpu_queue.cpp`
+(`render_async_model_cpu_queue`, native-only with Threads) are
+registered in CMake. The first checks resource-pressure telemetry,
+high-watermark, per-batch completion and fail-closed fallback; the
+second checks worker request coalescing, bounded waiting queue,
+invalidated-result rejection and safe shutdown. All are **NOT RUN**,
+along with native builds, CTest, GPU backend tests, sanitizers,
+screenshots and FPS/RTS/editor play parity, by the existing
+features-first test deferral.
+
+**Remaining issues:** the soft limit does not cap memory from all
+legacy RTS model-publication paths, FX, terrain, texture bytes or shared
+geometry pages; worker preparation is one-at-a-time, not a parallel
+priority job system; the editor source preview is opt-in and differs
+visually from a fully authored type by design. Backend device-loss
+recovery and GPU-fence error states still require real hardware
+validation. The generic resource owner is suitable for native projects,
+but the full legacy `game::RtsView` scene adapter is not retired.
