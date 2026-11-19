@@ -142,6 +142,7 @@ void Renderer3D::shutdown() {
     cpuMdiPages_.clear();
     cpuMdiPageEpoch_ = 0;
     cpuMdiPageStats_ = {};
+    staticCrossPreflight_.release();
     shutdownModels();
     lights.shutdown();
     shutdownTrace();
