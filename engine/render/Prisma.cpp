@@ -2408,12 +2408,15 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 state.pipelinePrepared = pipes_[kPrefilter].valid() &&
                     pipes_[kDown].valid() && pipes_[kUp].valid();
                 compositeBit(kPfBloom);
+                state.pipelinePrepared = pipes_[kPrefilter].valid() &&
+                    pipes_[kDown].valid() && pipes_[kUp].valid();
                 if (!state.encoded) state.reason = !state.pipelinePrepared ?
                     "Bloom GPU pipelines unavailable" : "Bloom target/chain not composited";
                 break;
             case PrismaType::TiltShift:
                 state.pipelinePrepared = pipes_[kDown].valid() && pipes_[kBlur].valid();
                 compositeBit(kPfTilt);
+                state.pipelinePrepared = pipes_[kDown].valid() && pipes_[kBlur].valid();
                 if (!state.encoded) state.reason = !state.pipelinePrepared ?
                     "tilt/blur GPU pipelines unavailable" : "tilt target not composited";
                 break;
@@ -2421,6 +2424,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 state.pipelinePrepared = pipes_[kShaftsPre].valid() &&
                     pipes_[kShafts].valid();
                 compositeBit(kPfShafts);
+                state.pipelinePrepared = pipes_[kShaftsPre].valid() &&
+                    pipes_[kShafts].valid();
                 if (!state.encoded) state.reason = !shaftTex.valid() ?
                     "sun unavailable or shaft target not produced" : "shaft composite failed";
                 break;
