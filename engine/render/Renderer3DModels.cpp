@@ -1173,6 +1173,7 @@ void Renderer3D::prepareGpuModelDraws() {
     gpuIcbCandidates_ = gpuIcbPrepared_ = 0;
     gpuIcbRejected_ = gpuIcbExecuteFailed_ = 0;
     gpuIcbPerCommandVtExecuted_ = gpuIcbMixedVtExecuted_ = 0;
+    gpuIcbPerCommandPbrSubmitted_ = gpuIcbMixedPbrSubmitted_ = 0;
     gpuEncodedBatches_.clear();
     gpuEncodedCovered_.clear();
     // Invalidate previous-frame resource indices even when GPU ICB is off.
@@ -2051,6 +2052,9 @@ void Renderer3D::renderModels(int phase) {
             if (group.perCommandVt) ++gpuIcbPerCommandVtExecuted_;
             if (group.perCommandVt && group.mixedVtResources)
                 ++gpuIcbMixedVtExecuted_;
+            if (group.perCommandPbr) ++gpuIcbPerCommandPbrSubmitted_;
+            if (group.perCommandPbr && group.mixedPbrResources)
+                ++gpuIcbMixedPbrSubmitted_;
             ++gpuEncodedDrawCalls_;
             gpuEncodedCommands_ += uint32_t(group.items.size());
             ++drawCalls_;
