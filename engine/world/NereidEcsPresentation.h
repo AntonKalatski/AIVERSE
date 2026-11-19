@@ -34,6 +34,10 @@ inline std::vector<NereidSceneSurface> snapshotNereidEcsWater(
             surface.body=body;
             surface.mesh=options.mesh;
             surface.style=options.style;
+            if(const auto* eddies=world.tryGetConst<lib::nereid::WaterVortexFieldComponent>(e)) {
+                surface.useVortices=true;
+                surface.vortices=*eddies;
+            }
             if(const auto* field=world.tryGetConst<lib::nereid::WaterCurrentFieldComponent>(e)) {
                 surface.useCurrentField=true;
                 surface.currentField=*field;
