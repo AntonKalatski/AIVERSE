@@ -143,11 +143,22 @@ public:
                    saved!=pendingRetirements_.end()) {
                     const auto& old=saved->second;
                     const auto newRig=incomingRigs.at(source.sourceId);
+                    // Two safe, explicit publication transitions:
+                    // (1) new Model object + advanced nonzero epoch, or
+                    // (2) new compiled Graph for the SAME immutable Model
+                    //     within an unchanged nonzero publication epoch.
+                    // The host contract forbids in-place Model mutation
+                    // without bumping its epoch; an ambiguous transition
+                    // always starts playback from authored defaults.
+                    const auto newAddress=reinterpret_cast<std::uintptr_t>(source.model);
+                    const bool freshModel=old.publication!=source.modelPublicationGeneration &&
+                        old.modelAddress!=newAddress;
+                    const bool sameModelGraphReload=old.publication==source.modelPublicationGeneration &&
+                        old.modelAddress==newAddress;
                     const bool compatible=old.generation==source.generation &&
                         old.publication!=0 &&
                         source.modelPublicationGeneration!=0 &&
-                        old.publication!=source.modelPublicationGeneration &&
-                        old.modelAddress!=reinterpret_cast<std::uintptr_t>(source.model) &&
+                        (freshModel || sameModelGraphReload) &&
                         old.rig && newRig && *old.rig==*newRig;
                     if(compatible) {
                         try {
@@ -264,7 +275,8 @@ public:
     // and its player are still readable, BEFORE retiring those assets.
     // Captures only named playback, then destroys the old ECS entity.
     // A later sync may consume it once for an identical logical generation
-    // and rig with a different, nonzero publication epoch and Model address.
+    // and rig after either a fresh new-epoch Model publication or a
+    // same-epoch Graph reload of the original immutable Model.
     // Unmatched snapshots expire within 120 sync calls, capped at 8192.
     size_t forgetForReimport(World& presentation,
                             std::span<const uint64_t> sourceIds) {
