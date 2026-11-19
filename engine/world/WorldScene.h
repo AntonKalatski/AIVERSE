@@ -70,7 +70,7 @@ public:
         return nereidFlowObstructions_.size();
     }
     Vec3 resolveNereidFlowObstructions(
-        uint64_t sceneWaterId,Vec3 sampleAt,Vec3 current)const { 
+        uint64_t sceneWaterId,Vec3 sampleAt,Vec3 current)const {
         const auto* source=nereidWater_.surfaceForId(sceneWaterId);
         if(!source)return current;
         for(const auto& obstacle:nereidFlowObstructions_){
