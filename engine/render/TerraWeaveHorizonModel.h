@@ -56,6 +56,9 @@ inline std::unique_ptr<render::Model> makeHorizonModel(
     forest.baseTex=0;
     forest.alpha=render::AlphaMode::Mask;
     forest.alphaCutoff=0.5f;
+    // Forest-card vertex alpha is a root-to-canopy shader wind weight,
+    // not an atlas transparency factor. The cutout atlas owns opacity.
+    forest.vertexColors=false;
     forest.doubleSided=true;
     forest.castShadow=false;
     forest.receiveShadow=false;
@@ -490,6 +493,7 @@ inline std::unique_ptr<render::Model> makeHorizonModel(
             for (int i=0;i<4;++i) {
                 render::ModelVertex v;
                 v.pos=pos[i];v.nrm={nx,0,nz};v.uv=uv[i];
+                v.color=(i>=2 ? 0xff000000u : 0u)|0x00ffffffu;
                 model->vertices.push_back(v);
             }
             model->indices.insert(model->indices.end(),{
