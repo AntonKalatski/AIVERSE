@@ -987,9 +987,72 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                 objectMotionReactivePipeline_ = dev_->createPipeline(pipeline);
             }
         }
+        // Deformable translucent models use the same GPU current-pose
+        // vertex deformation as their motion shaders, but a coverage-only
+        // fragment. The Metal fragment is swapped at shader creation time.
+        auto prepareAnimatedReactive = [&](bool baked) {
+            auto& shaderHandle = baked ? objectMotionReactiveBakedShader_
+                                       : objectMotionReactiveSkinShader_;
+            auto& pipelineHandle = baked ? objectMotionReactiveBakedPipeline_
+                                         : objectMotionReactiveSkinPipeline_;
+            if (shaderHandle.valid()) return;
+            const char* vertex = baked ? motion_shaders::kBakedVS :
+                                           motion_shaders::kDeformedVS;
+            const char* vertexMsl = baked ? motion_shaders::kBakedMSL :
+                                              motion_shaders::kDeformedMSL;
+            const std::string msl = reactive_shaders::animatedMsl(vertexMsl);
+            if (msl.empty()) return;
+            gfx::ShaderDesc shader;
+            shader.glslVertex = vertex;
+            shader.glslFragment = reactive_shaders::kAnimatedFS;
+            shader.msl = msl.c_str();
+            shader.textureSlots = 9; // scene depth 0 + morph atlas 8 / baked 7
+            shader.uniformSlots = 6;
+            shader.label = baked ? "prisma animated baked reactive" :
+                                   "prisma animated skin reactive";
+            shaderHandle = dev_->createShader(shader);
+            if (!shaderHandle.valid()) return;
+            gfx::PipelineDesc pipeline;
+            pipeline.shader = shaderHandle;
+            pipeline.attrs[0] = {0,gfx::VertexFormat::Float3,0};
+            pipeline.attrs[1] = {5,gfx::VertexFormat::UByte4,
+                                 uint32_t(offsetof(ModelVertex,joints))};
+            pipeline.attrs[2] = {6,gfx::VertexFormat::UByte4N,
+                                 uint32_t(offsetof(ModelVertex,weights))};
+            pipeline.attrCount = 3;
+            pipeline.stride = sizeof(ModelVertex);
+            pipeline.indexType = gfx::IndexType::UInt32;
+            pipeline.cull = gfx::CullMode::Back;
+            pipeline.depthTest = false;
+            pipeline.depthWrite = false;
+            pipeline.blend = gfx::BlendMode::Screen;
+            pipeline.colorFormat = gfx::PixelFormat::RGBA8;
+            pipeline.label = shader.label;
+            pipelineHandle = dev_->createPipeline(pipeline);
+        };
+        if (animatedReactiveNeeded) {
+            bool needBaked = false, needSkin = false;
+            for (const auto& item : modelItems_)
+                if (reactiveAnimatedEligible(item)) {
+                    needBaked |= item.baked;
+                    needSkin |= !item.baked;
+                }
+            if (needBaked) prepareAnimatedReactive(true);
+            if (needSkin) prepareAnimatedReactive(false);
+        }
         if (reactiveNeeded && history.reactive.valid() &&
-            objectMotionReactivePipeline_.valid()) {
-            struct ReactiveUniforms { float mvp[16]; float params[4]; };
+            (objectMotionReactivePipeline_.valid() ||
+             objectMotionReactiveSkinPipeline_.valid() ||
+             objectMotionReactiveBakedPipeline_.valid() ||
+             !motionReactiveDraws_.empty())) {
+            struct ReactiveUniforms {
+                float mvp[16], params[4], lod[4];
+            };
+            static_assert(sizeof(ReactiveUniforms) == 96);
+            struct ReactiveMorphU {
+                float currentW[8] = {}, previousW[8] = {};
+                float info[4] = {}, info2[4] = {};
+            };
             gfx::PassDesc maskPass;
             maskPass.colorTarget = history.reactive;
             maskPass.depthTarget = history.depth;
@@ -999,15 +1062,21 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
             maskPass.clearDepthEnabled = true;
             dev_->beginPass(maskPass);
             dev_->setViewport({0,0,w,h});
-            dev_->setPipeline(objectMotionReactivePipeline_);
             dev_->setTexture(0,sceneDepth);
             for (const auto& it : modelItems_) {
-                if (!reactiveEligible(it)) continue;
+                if (!objectMotionReactivePipeline_.valid() || !reactiveEligible(it))
+                    continue;
+                dev_->setPipeline(objectMotionReactivePipeline_);
                 const mat4 mvp = viewProj_ * it.world;
                 ReactiveUniforms u{};
                 std::memcpy(u.mvp,mvp.m,sizeof u.mvp);
                 u.params[0] = float(w); u.params[1] = float(h);
                 u.params[2] = 1.0f; // conservative coverage, not alpha parity
+                const bool fade = it.lodThreshold < 1.0f || it.lodInvert;
+                u.lod[0] = it.lodThreshold;
+                u.lod[1] = it.lodInvert ? 1.0f : 0.0f;
+                u.lod[2] = fade ? 1.0f : 0.0f;
+                if (fade) ++objectMotionStats_.lodReactiveDraws;
                 dev_->setUniforms(0,&u,sizeof u);
                 dev_->setVertexBuffer(it.model->vb);
                 dev_->setIndexBuffer(it.model->ib);
