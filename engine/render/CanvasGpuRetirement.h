@@ -64,9 +64,12 @@ public:
                 if(token)device_->abandonRetirementTokenAfterIdle(token);
             },
             [&](Resource& resource){destroy(resource);});
-        // Untracked handles orphaned on an earlier failed OOM fallback
-        // cannot be reconstructed; never report successful full teardown.
-        return drained && orphanedResources_==0;
+        if(!drained)return false;
+        // A failed enqueue may have left untracked native handles behind.
+        // Their destruction is impossible now; after a REAL full idle,
+        // the host may safely retire the Device epoch and let the backend
+        // clean them up. Preserve the orphan diagnostic count.
+        return orphanedResources_==0 || device_->waitForResourceIdle();
     }
 private:
     bool deviceValid() const noexcept {
