@@ -331,12 +331,16 @@ Strata development is isolated on `feature/strata-virtual-geometry`.
 Before editing mesh/LOD/geometry import, GeometryScene, GPU scene, RHI or
 indirect batching, read `docs/strata.md` and
 `docs/agent-handoffs/strata-virtual-geometry.md`, plus the latest
-`docs/metal-batching-agent-handoff.md`. Stages 2–6 now build CPU meshlet/LOD assets, a read-only `Model` adapter,
-opt-in `GeometryScene` staging and a per-view CPU selection oracle
-(`StrataView.h`/`GeometryScene::planStrataView`): **no Strata GPU submission
-path is operational**. Default scene staging is OFF; `Renderer3D::drawModel`
-remains authoritative. `SelectedRange::firstIndex` indexes an auxiliary
-Strata Asset stream, NEVER the original pooled Model index buffer.
+`docs/metal-batching-agent-handoff.md`. Stages 2–7A build CPU meshlet/LOD assets, a read-only `Model`
+adapter, opt-in `GeometryScene` staging, a per-view CPU selection oracle
+(`StrataView.h`), and optional `StrataGpuScene` cluster metadata in a
+Metal/Vulkan storage buffer (default OFF). **No Strata GPU draw path,
+geometry residency or compute culling is operational.** `Renderer3D`
+remains the sole draw owner. `SelectedRange::firstIndex` and
+`GpuNode::sourceFirstIndex` index an auxiliary Strata CPU Asset stream,
+NEVER the original pooled Model index buffer. GPU metadata staging
+requires the pre-existing `GlobalGeometryPool` Model allocation; do not
+bypass its admission checks or create a second source geometry pool.
 Coordinate with the batching agent: share a single instance/material/indirect
 grouping authority, do not duplicate rendered primitives or transforms.
 On each bounded Strata step: implementation commit first; append and commit the
