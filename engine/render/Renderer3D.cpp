@@ -383,6 +383,7 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
         if (!deformEligible(it)) continue;
         MotionDeformPose pose;
         pose.world = it.world;
+        pose.sourceModel = it.model;
         pose.hasSkin = it.joints >= 0;
         if (pose.hasSkin &&
             size_t(it.joints) + pose.joints.size() <= jointData_.size())
@@ -397,11 +398,20 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                          it.geometryPrimitive}] = std::move(pose);
     }
 
-    // A cut, first frame, or new viewport has no trustworthy previous state.
-    // Still prime the next frame. No velocity overlay is submitted this time.
-    if (!previousCameraValid) {
+    // First frame, camera cut or viewport resize cannot use the previous
+    // screen velocity. Seed the next frame without drawing any overlay.
+    const int w = std::max(sceneW_,1), h = std::max(sceneH_,1);
+    const bool resize = (history.width != 0 && history.height != 0) &&
+                        (history.width != w || history.height != h);
+    if (!previousCameraValid || resize) {
         history.previous = std::move(current);
         history.previousDeformed = std::move(currentDeformed);
+        if (resize) {
+            if (history.target.valid()) dev_->destroyTexture(history.target);
+            if (history.depth.valid()) dev_->destroyTexture(history.depth);
+            history.target = {}; history.depth = {};
+        }
+        history.width = w; history.height = h;
         return;
     }
     const auto sceneDepth = post.objectMotionSceneDepth();
@@ -410,7 +420,6 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
         return;
     }
 
-    const int w = std::max(sceneW_,1), h = std::max(sceneH_,1);
     if (history.width != w || history.height != h) {
         if (history.target.valid()) dev_->destroyTexture(history.target);
         if (history.depth.valid()) dev_->destroyTexture(history.depth);
@@ -608,7 +617,8 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                 const auto now = currentDeformed.find(key);
                 if (prior == history.previousDeformed.end() ||
                     now == currentDeformed.end() ||
-                    prior->second.hasSkin != now->second.hasSkin) continue;
+                    prior->second.hasSkin != now->second.hasSkin ||
+                    prior->second.sourceModel != now->second.sourceModel) continue;
                 const auto& cur = now->second;
                 const auto& prev = prior->second;
                 const mat4 currentMvp = viewProj_ * cur.world;
