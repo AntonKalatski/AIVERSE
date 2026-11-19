@@ -3,6 +3,8 @@
 #pragma once
 #include "apps/editor/core/MapDoc.h"
 #include "engine/world/TerraWeaveHeightmap.h"
+#include "engine/world/TerraWeaveLayer.h"
+#include <string>
 #include <stdexcept>
 #include <utility>
 
@@ -38,6 +40,60 @@ inline void bakeTerraWeaveTerrain(MapDoc& doc,
     doc.touched();                    // existing view rebuild policy
     // Does not change rules.terrain.model or terrain.detail: the caller
     // explicitly chooses whether corners are gameplay or visual only.
+}
+
+
+// Rebuild the former procedural base and move the authored composite by
+// (newBase - oldBase). Sparse sculpt changes therefore survive a generator
+// seed/noise/origin edit, without introducing a duplicate terrain renderer.
+// The base checksum protects against a changed generator implementation.
+// A failed preflight leaves MapDoc, undo history and revision untouched.
+struct TerraWeaveRebaseReport {
+    size_t authoredCorners=0;
+    size_t shiftedCorners=0;
+    size_t shiftedDetail=0;
+    std::string newBaseFingerprint;
+};
+
+inline TerraWeaveRebaseReport rebaseTerraWeaveTerrain(
+        MapDoc& doc,
+        const terraweave::TerrainSettings& previousTerrain,
+        terraweave::LegacyHeightfieldOptions previousOrigin,
+        const std::string& previousBaseFingerprint,
+        const terraweave::TerrainSettings& nextTerrain,
+        terraweave::LegacyHeightfieldOptions nextOrigin) {
+    if(doc.data.planet() || !doc.data.fps.isNull())
+        throw std::invalid_argument("TerraWeave rebase supports flat RTS maps only");
+    const int w=doc.data.w, h=doc.data.h;
+    const auto previous=terraweave::generateLegacyCorners(
+        previousTerrain,w,h,previousOrigin);
+    if(terraweave::legacyBaseFingerprint(previous,w,h)!=previousBaseFingerprint)
+        throw std::invalid_argument(
+            "TerraWeave previous recipe fingerprint changed; refusing to lose authored edits");
+    const auto next=terraweave::generateLegacyCorners(
+        nextTerrain,w,h,nextOrigin);
+    const auto newFingerprint=terraweave::legacyBaseFingerprint(next,w,h);
+    // Detail textures must remain paired with their in-memory height samples.
+    const auto& data=doc.data;
+    if((data.detailScale>0 && data.detail.empty()) ||
+       (data.detailScale==0 && (!data.detail.empty() || !data.detailSplat.empty())) ||
+       (!data.detailSplat.empty() &&
+        data.detailSplat.size()!=data.detail.size()*4u))
+        throw std::invalid_argument("TerraWeave rebase: inconsistent detail/splat layers");
+    auto result=terraweave::rebaseLegacyHeightfield(
+        data.corners,data.detail,w,h,data.detailScale,previous,next);
+    const TerraWeaveRebaseReport report={
+        result.authoredCorners,result.shiftedCorners,result.shiftedDetail,
+        newFingerprint
+    };
+    // The only document mutations occur after ALL dimensions, generated
+    // samples, fingerprints, detail data and R16 ranges have passed.
+    doc.beginEdit();
+    doc.data.corners=std::move(result.corners);
+    if(!data.detail.empty())doc.data.detail=std::move(result.detail);
+    // Keep author-painted detail splat, detailFile and scale byte-for-byte.
+    doc.touched();
+    return report;
 }
 
 } // namespace aiverse::editor
