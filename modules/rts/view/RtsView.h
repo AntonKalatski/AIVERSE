@@ -180,6 +180,9 @@ public:
         uint64_t retirementTokenFailures=0,retirementFallbackFailures=0;
         uint64_t retirementFailedFenceBatches=0;
         size_t unresolvedFailedFences=0;
+        size_t pendingRolledBackImages=0;
+        uint64_t imageRollbackEnqueueFailures=0;
+        uint64_t imageRollbackOrphanBatches=0;
         bool publicationBackpressured=false;
     };
     // Excludes the terrain, special renderers, FX, dedicated buffers and
@@ -210,6 +213,9 @@ public:
         stats.retirementFallbackFailures=retired.idleFallbackFailures;
         stats.retirementFailedFenceBatches=retired.failedFenceBatches;
         stats.unresolvedFailedFences=retired.unresolvedFailedFences;
+        stats.pendingRolledBackImages=imageRollback_.pendingImages();
+        stats.imageRollbackEnqueueFailures=imageRollback_.enqueueFailures();
+        stats.imageRollbackOrphanBatches=imageRollback_.unrecoverableBatches();
         stats.publicationBackpressured=resources_.publicationBackpressured();
         return stats;
     }
