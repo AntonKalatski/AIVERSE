@@ -25,7 +25,8 @@ kernel void cs_main(uint2 tid [[thread_position_in_grid]],
         velocityLife[i]=float4(nextVelocity,v.w);
     }
     positionAge[i]=a;
-    positionTexture.write(a,uint2(i%positionTexture.get_width(),i/positionTexture.get_width()));
+    const float remaining=v.w>0.0f?clamp((v.w-a.w)/v.w,0.0f,1.0f):0.0f;
+    positionTexture.write(float4(a.xyz,remaining),uint2(i%positionTexture.get_width(),i/positionTexture.get_width()));
 }
 )GPU";
 
@@ -51,7 +52,8 @@ void main() {
     }
     positionAge[i]=a;
     const ivec2 size=imageSize(positionTexture);
-    imageStore(positionTexture,ivec2(int(i)%size.x,int(i)/size.x),a);
+    const float remaining=v.w>0.0?clamp((v.w-a.w)/v.w,0.0,1.0):0.0;
+    imageStore(positionTexture,ivec2(int(i)%size.x,int(i)/size.x),vec4(a.xyz,remaining));
 }
 )GPU";
 } // namespace aiverse::fx
