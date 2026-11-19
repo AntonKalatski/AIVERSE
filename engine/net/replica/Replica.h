@@ -149,6 +149,9 @@ public:
     std::vector<uint8_t> clients() const;
     // Where the client looks from (its character, camera); several viewers per client are allowed.
     void setViewers(uint8_t slot, const std::vector<std::array<float, 3>>& points);
+    // Single-viewer fast path for character-driven cameras: same finite
+    // filter and replacement semantics, without a temporary vector.
+    void setViewer(uint8_t slot, std::array<float, 3> point);
     uint32_t rttMs(uint8_t slot) const;
 
     std::function<void(uint8_t slot)> onJoin, onLeave;
