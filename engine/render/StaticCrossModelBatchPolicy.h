@@ -11,6 +11,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
+#include <vector>
 
 namespace aiverse::render {
 
@@ -81,6 +83,98 @@ struct StaticCrossModelPreflightGroup {
             maxItemsPerSubmission >= threshold &&
             distinctCount >= threshold;
     }
+};
+
+// A reusable renderer-owned, *per-pass* workspace. The fixed-size open-
+// addressing directory avoids allocating one unordered_map node for every
+// page/material group on each shadow/opaque pass. Each index is meaningful
+// only until the next beginPass(); no source pointers are dereferenced after
+// the pass that inserted them.
+class StaticCrossModelPreflightWorkspace {
+public:
+    static constexpr uint32_t kMaxGroups = 2048;
+    static constexpr uint32_t kHashSlots = 4096; // power-of-two, <=50% full
+    static constexpr uint16_t kInvalidGroup = UINT16_MAX;
+
+    struct Entry {
+        StaticCrossModelPreflightKey key{};
+        StaticCrossModelPreflightGroup group{};
+    };
+
+    void beginPass(size_t itemCount) {
+        if (slots_.empty()) slots_.resize(kHashSlots);
+        if (++epoch_ == 0) {
+            // Extremely rare wraparound must not interpret old slots as new.
+            for (Slot& slot : slots_) slot.epoch = 0;
+            epoch_ = 1;
+        }
+        groups_.clear(); // retain capacity, reset all per-pass group state
+        groupForItem_.assign(itemCount, kInvalidGroup);
+        modes_.assign(itemCount, uint8_t{0});
+    }
+
+    // Inexpensive when preflight is disabled; preserve high-water capacities.
+    void clearModes() { modes_.clear(); }
+
+    uint16_t findOrCreate(const StaticCrossModelPreflightKey& key) {
+        if (slots_.empty()) return kInvalidGroup; // beginPass() required
+        uint32_t slotIndex = uint32_t(StaticCrossModelPreflightKeyHash{}(key)) &
+                             (kHashSlots - 1);
+        for (uint32_t probe = 0; probe < kHashSlots; ++probe) {
+            Slot& slot = slots_[slotIndex];
+            if (slot.epoch != epoch_) {
+                if (groups_.size() == kMaxGroups) return kInvalidGroup;
+                const uint16_t index = uint16_t(groups_.size());
+                groups_.push_back(Entry{key, {}});
+                slot.epoch = epoch_;
+                slot.group = index;
+                return index;
+            }
+            if (groups_[slot.group].key == key)
+                return slot.group;
+            slotIndex = (slotIndex + 1) & (kHashSlots - 1);
+        }
+        return kInvalidGroup;
+    }
+
+    void rememberItem(uint32_t index, uint16_t groupIndex) {
+        groupForItem_[index] = groupIndex;
+    }
+    uint16_t groupForItem(uint32_t index) const {
+        return groupForItem_[index];
+    }
+    std::vector<Entry>& groups() { return groups_; }
+    const std::vector<Entry>& groups() const { return groups_; }
+    std::vector<uint8_t>& modes() { return modes_; }
+    const std::vector<uint8_t>& modes() const { return modes_; }
+
+    size_t retainedBytes() const {
+        return slots_.capacity() * sizeof(Slot) +
+               groups_.capacity() * sizeof(Entry) +
+               groupForItem_.capacity() * sizeof(uint16_t) +
+               modes_.capacity() * sizeof(uint8_t);
+    }
+
+    // Explicit full-scene reload / renderer shutdown: release the high-water
+    // allocations rather than retaining references to old streamed assets.
+    void release() {
+        std::vector<Slot>().swap(slots_);
+        std::vector<Entry>().swap(groups_);
+        std::vector<uint16_t>().swap(groupForItem_);
+        std::vector<uint8_t>().swap(modes_);
+        epoch_ = 0;
+    }
+
+private:
+    struct Slot {
+        uint64_t epoch = 0;
+        uint16_t group = 0;
+    };
+    std::vector<Slot> slots_; // allocated once when the feature is first used
+    std::vector<Entry> groups_;
+    std::vector<uint16_t> groupForItem_; // by ModelItem index, current pass only
+    std::vector<uint8_t> modes_;        // 0=ordinary, 1=MDI, 2=instancing
+    uint64_t epoch_ = 0;
 };
 
 } // namespace aiverse::render
