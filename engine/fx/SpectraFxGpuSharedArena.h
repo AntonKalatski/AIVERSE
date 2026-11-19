@@ -128,6 +128,13 @@ public:
         return true;
     }
 
+    // Source-global presentation budget only; valid for all compatible
+    // emitters in this arena. The physical GPU buffer capacity is unchanged.
+    void setExternalSpawnScale(float scale) {
+        if(std::isfinite(scale))
+            externalSpawnScale_=std::clamp(scale,0.0f,1.0f);
+    }
+
     // Run ONCE for this arena each frame after beginFrame, before the scene
     // pass. All compatible sources share a single GPU compute dispatch.
     bool update(float dt,render::float3 cameraEye) {
@@ -143,7 +150,8 @@ public:
             if(dt<=0) continue; // paused: no burst or new emissions
             const float distance=spectraFxDistance(cameraEye,emitter.position);
             const float spawnScale=spectraFxSpawnQualityScale(emitter.config.quality) *
-                                   emitter.config.lod.spawnScale(distance);
+                                   emitter.config.lod.spawnScale(distance) *
+                                   externalSpawnScale_;
             const bool ok=emitter.scheduler.tick(
                 dt,emitter.position,emitter.direction,spawnScale,
                 [this,&emitter](render::float3 pos,render::float3 vel,float life) {
@@ -212,6 +220,7 @@ private:
     SpectraFxGpuCompaction compact_{};
     std::map<uint64_t,Emitter> emitters_;
     Stats stats_{};
+    float externalSpawnScale_=1.0f;
     std::string error_;
 };
 
