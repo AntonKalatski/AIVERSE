@@ -892,20 +892,31 @@ struct App {
                     draw.team=remote.team==actor.team?render::float3{.1f,.5f,.9f}:render::float3{.9f,.2f,.1f};
                     const auto submitCharacter=[&](const render::ModelDraw& packetDraw) {
                         ::aiverse::view::Object packet;
+                        // The generic published Asset is the source of
+                        // material, geometry and Model revision identity.
+                        // The native host supplies only the current resolved
+                        // pose/bake, world transform and appearance overrides.
+                        const bool published=characterAppearance &&
+                            characterAppearance->model==characterModel.get() &&
+                            characterAppearance->packetWithBindings(
+                                packetDraw.world,{},nullptr,packet);
+                        if(published) {
+                            packet.draw.persistentId=packetDraw.persistentId;
+                            packet.draw.team=packetDraw.team;
+                            packet.draw.pose=packetDraw.pose;
+                            packet.draw.nodeWorld=packetDraw.nodeWorld;
+                            packet.draw.baked=packetDraw.baked;
+                        } else packet.draw=packetDraw; // old unbound fallback
                         packet.id=remote.slot;
                         packet.generation=remote.life;
-                        packet.draw=packetDraw;
                         packet.animationModel=characterModel.get();
-                        // The published appearance (not the actor life)
-                        // identifies a reimported source rig. Graph-only
-                        // reload preserves this generation; a replacement
-                        // Model reissues it before any compiled LOD is used.
                         packet.animationModelGeneration=characterAppearance
                             ?characterAppearance->modelPublicationGeneration:0;
-                        // Precomputed pose/baked sample: no graph attached;
-                        // View consumes the source rig without a second
-                        // MotionWeave update. Optional LOD retarget maps
-                        // can be supplied by this host in future.
+                        // Animation was evaluated ONCE in the host's
+                        // presentation World. A published Asset may contain
+                        // a Graph, but prepared packets must not create a
+                        // competing View-owned evaluator.
+                        packet.graph.reset();
                         remotePackets.add(std::move(packet));
                     };
                     if(characterBakedCrowd) {
