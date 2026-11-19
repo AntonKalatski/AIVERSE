@@ -922,3 +922,15 @@ Use `engine/world/TerraWeaveWind.h` and `ForestWindState` to pass optional wind 
 - Host must not update wind state during `Renderer3D` submission/rendering. Use deterministic tick values and make scene setup/update single-thread-owned. Tree-model GPU buffers are only touched by the existing upload/release lifecycle.
 
 **Testing is postponed by user instruction.** The later agent should benchmark large forest draw rates, camera motion and origin rebasing, verify zero-wind parity, amplitude bounds, negative wind, different tree keys and native PHYSIS integration, plus real Metal/GL/Vulkan visuals. After each feature commit, record exact source SHA, API, actual checks, limitations and next agent task in `docs/terrain/AGENT_HANDOFF.md`.
+
+## Stage 29 — bark/foliage impostor atlas separation
+
+For `makeArborImpostorAtlas(profile, seed, settings)`, assume **two** mask layers per azimuth in **one** shared RGBA8 atlas: bark tiles first, foliage tiles second. The resulting model has ONE node and mesh, two cutout primitives (bark material slot 0, foliage slot 1), 8 vertices, 12 indices. The foliage quad sits 2cm toward camera-facing local +Z to avoid z-fighting. The output `viewMaterials[azimuth]` contains two material overrides with independent UV offsets/scales referencing `baseTex=0`; these vectors must remain alive until the renderer finishes.
+
+- Never seasonally tint or fade `materials[0]` of the impostor: the bark stays visible. Apply `CanopyPhenology` to foliage `materials[1]` only. At 0% cover set `ModelDraw::primitiveMaterialFilter=0` (bark only); restore `-1` for partially or fully leafed trees. The same source primitive convention is used by near Arbor BranchLOD.
+- Max atlas width is 8192 pixels and must account for *both* pages: `2 * tile.width * azimuthViews <= 8192`. The change doubles default atlas RGBA8 bytes and can increase material batches/draws. Do not claim zero GPU cost, and do not split this into per-tree GPU textures.
+- The *standalone* `makeArborBillboardModel` remains a legacy single-view, single-primitive utility. Do not apply the new 8-vertex layout to it without updating all consumers.
+- Existing model test `tests/terraweave_model_test.cpp` still asserts the OLD multi-azimuth 4-vertex/6-index/one-material and atlas width. **Tests are intentionally deferred** while new features are being finished; the testing agent must update the assertions and run targeted/CI GPU validation later.
+- The far `Horizon` canopy uses a different statistical HLOD atlas; these near-tree bark/leaf pages do not alter TWH8 archives or the far forest tree samples.
+
+Per user instruction, after each feature stage append `docs/terrain/AGENT_HANDOFF.md` listing exact commits, affected APIs, actual verification, limitations, next concrete step, current branch and PR state. Never label a source-only commit as successfully compiled or GPU-tested.
