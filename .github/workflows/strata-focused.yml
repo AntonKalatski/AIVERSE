@@ -59,4 +59,5 @@ jobs:
           cmake -S . -B build/strata-focused -DAIVERSE_STRATA_METAL_GPU_TESTS=ON
           cmake --build build/strata-focused --target \
             aiverse_strata_metal_parity \
-            aiverse_strata_metal_raster_parity --parallel 4
+            aiverse_strata_metal_raster_parity \
+            aiverse_strata_metal_depth_multiview_parity --parallel 4
