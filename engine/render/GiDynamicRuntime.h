@@ -96,7 +96,14 @@ public:
 
     void setLights(std::vector<GiMovingLight> lights) {
         ensureReady();
-        reference_.setLights(std::move(lights));
+        std::vector<uint32_t> cleared;
+        reference_.setLights(std::move(lights),&cleared);
+        // Publish black/zero irradiance to ALL affected probe cells at the
+        // next update(), even with probeBudget=0. Do not present yesterday's
+        // bounce while CPU tracing works through a bounded dirty queue.
+        if(!clearPending_)
+            pendingRegionalClear_.insert(pendingRegionalClear_.end(),
+                                         cleared.begin(),cleared.end());
     }
 
     void invalidate(GiBounds bounds, GiDirtyReason reason, float influenceRadius=0) {
