@@ -346,6 +346,10 @@ public:
     // separate explicit opt-ins. NEVER includes raw GPU/VM scalar buffers.
     bool saveSafeSpectraGpuReport(std::string& out,size_t groupIndex,
         bool includeWorldBounds=false,bool includeGpuIdentifiers=false) const;
+    // Only a local, explicit user action. This ZIP cannot contain raw SPFX,
+    // world bounds, GPU identifiers or VM scalars even if other export
+    // checkboxes are enabled. Fixed filenames and total size <=128 KiB.
+    bool saveSafeSpectraGpuBundle(std::string& out,size_t groupIndex) const;
     void reloadFx();                           // after fx files changed (Effects window, agents)
     std::vector<std::string> fxWarnings;       // from the last reloadFx()
     int fxRevision = 0;                        // bumped when fx files change (agents): the Effects window re-reads
