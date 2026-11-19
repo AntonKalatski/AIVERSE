@@ -476,6 +476,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             const bool sameSource = packet.geometryRevision == m->geometryRevision &&
                 packet.vertexBuffer == m->vb.id && packet.indexBuffer == m->ib.id &&
                 packet.selectedMeshes.size() == m->nodes.size() &&
+                packet.hasNodeMaterialOverride == (d.nodeMaterial != nullptr) &&
+                (!d.nodeMaterial || packet.nodeMaterialSnapshot == *d.nodeMaterial) &&
                 equivalentStaticRenderPacketDraw(packet.draw, d) &&
                 staticPacketMaterialStateMatches(*m, mats, packet.materialsSnapshot,
                                                  packet.materialHashes) &&
@@ -516,7 +518,10 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                                                                    mesh.boundsMin, mesh.boundsMax);
                     }
                     ModelLodBlend lod{node.mesh};
-                    if (modelLodEnabled_ && !mesh.lods.empty()) {
+                    // Explicit variant/node-material selection disables normal
+                    // CPU LOD selection in the baseline model draw path too.
+                    if (modelLodEnabled_ && d.variant < 0 && !d.nodeMaterial &&
+                        !mesh.lods.empty()) {
                         const float error = length(mesh.boundsMax - mesh.boundsMin);
                         const bool z01 = dev_->info().clipDepthZeroToOne;
                         const float cameraPixels = st.inView
@@ -793,7 +798,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         const size_t count = modelItems_.size() - packetStart;
         const size_t newBytes = count * sizeof(ModelItem) +
             mats.size() * (sizeof(Material) + sizeof(uint64_t)) +
-            packetSelectedMeshes.size() * sizeof(int);
+            packetSelectedMeshes.size() * sizeof(int) +
+            (d.nodeMaterial ? d.nodeMaterial->size() * sizeof(int) : 0);
         auto old = staticRenderPackets_.find(d.persistentId);
         const size_t replacedBytes = old == staticRenderPackets_.end()
             ? 0 : staticPacketBytes(old->second);
@@ -805,6 +811,11 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             packet.draw.staticCache = nullptr;
             packet.draw.materials = nullptr; // don't retain caller-owned vector
             packet.draw.nodeMaterial = nullptr;
+            packet.hasNodeMaterialOverride = d.nodeMaterial != nullptr;
+            if (d.nodeMaterial)
+                packet.nodeMaterialSnapshot = *d.nodeMaterial;
+            else
+                packet.nodeMaterialSnapshot.clear();
             packet.geometryRevision = m->geometryRevision;
             packet.vertexBuffer = m->vb.id;
             packet.indexBuffer = m->ib.id;
