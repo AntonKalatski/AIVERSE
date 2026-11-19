@@ -3,6 +3,7 @@
 // intended to be used on the presentation host thread.
 #pragma once
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -58,6 +59,23 @@ public:
             ++count;
         }
         return count;
+    }
+    // Per-frame best-effort time budget. One synchronous load may exceed
+    // the budget; never start another after time has elapsed.
+    template<class Load>
+    size_t drainBudget(double budgetMs,size_t maxCount,Load&& load) {
+        if(!(budgetMs>0) || maxCount==0)return 0;
+        const auto start=std::chrono::steady_clock::now();
+        size_t processed=0;
+        while(processed<maxCount && !pending_.empty()) {
+            if(processed>0) {
+                const auto elapsed=std::chrono::duration<double,std::milli>(
+                    std::chrono::steady_clock::now()-start).count();
+                if(elapsed>=budgetMs)break;
+            }
+            processed+=drain(1,load);
+        }
+        return processed;
     }
     bool recentlyUsed(size_t type,double now,double grace) const noexcept {
         return type<lastUsed_.size() && now-lastUsed_[type]<grace;
