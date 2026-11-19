@@ -23,6 +23,9 @@ struct GraphRuntimeOptions {
     bool gpuIndirect = false; // opt-in GPU-authored compaction/draw, Metal only
     // Opt-in Stage-22 bounded Metal VM. Unsupported programs use exact CPU effects.
     bool gpuProgram = false;
+    // Strict opt-in: only pure, bounded particle-domain shaderGraph nodes.
+    // Arbitrary shader/material graphs remain on the original CPU backend.
+    bool gpuMaterial = false;
 };
 
 struct GraphGpuEligibility {
