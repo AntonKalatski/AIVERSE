@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <stdexcept>
 
 namespace aiverse::render {
 namespace {
@@ -51,26 +52,59 @@ fragment float4 fs_main(Out i [[stage_in]],constant U& u [[buffer(1)]],texture2d
 
 }
 bool RenderTexture::init(gfx::Device& dev,int w,int h){
- shutdown(); if(w<1||h<1||w>2048||h>2048)return false;
+ shutdown();
+ if(w<1||h<1||w>2048||h>2048)return false;
+ if(!retirement_){
+  ownedRetirement_=std::make_unique<CanvasGpuRetirement>(dev,gpuLease_);
+  retirement_=ownedRetirement_.get();
+ }
  dev_=&dev;width_=w;height_=h;
- gfx::TextureDesc td;td.width=w;td.height=h;td.renderTarget=true;td.label="Lua render texture";
- texture_=dev.createTexture(td);
- gfx::ShaderDesc sd;sd.glslVertex=vs;sd.glslFragment=fs;sd.msl=msl;sd.label="canvas brush";
- shader_=dev.createShader(sd);
- gfx::PipelineDesc pd;pd.shader=shader_;pd.attrs[0]={0,gfx::VertexFormat::Float2,0};pd.attrCount=1;pd.stride=sizeof(float)*2;
- pd.depthTest=false;pd.depthWrite=false;pd.cull=gfx::CullMode::None;pd.blend=gfx::BlendMode::Alpha;pd.indexType=gfx::IndexType::None;
- if(shader_.valid())pipe_=dev.createPipeline(pd);
- sd.glslFragment=blitFS;sd.msl=blitMSL;sd.textureSlots=1;sd.label="canvas blit";blitShader_=dev.createShader(sd);
- pd.shader=blitShader_;pd.blend=gfx::BlendMode::Opaque;if(blitShader_.valid())blitPipe_=dev.createPipeline(pd);
- if(!texture_.valid()||!pipe_.valid()||!blitPipe_.valid()){
-  std::fprintf(stderr,"[canvas] %s\n",dev.lastError().c_str());shutdown();return false;
+ try {
+  gfx::TextureDesc td;td.width=w;td.height=h;td.renderTarget=true;td.label="Lua render texture";
+  texture_=dev.createTexture(td);
+  gfx::ShaderDesc sd;sd.glslVertex=vs;sd.glslFragment=fs;sd.msl=msl;sd.label="canvas brush";
+  shader_=dev.createShader(sd);
+  gfx::PipelineDesc pd;pd.shader=shader_;pd.attrs[0]={0,gfx::VertexFormat::Float2,0};pd.attrCount=1;pd.stride=sizeof(float)*2;
+  pd.depthTest=false;pd.depthWrite=false;pd.cull=gfx::CullMode::None;pd.blend=gfx::BlendMode::Alpha;pd.indexType=gfx::IndexType::None;
+  if(shader_.valid())pipe_=dev.createPipeline(pd);
+  sd.glslFragment=blitFS;sd.msl=blitMSL;sd.textureSlots=1;sd.label="canvas blit";blitShader_=dev.createShader(sd);
+  pd.shader=blitShader_;pd.blend=gfx::BlendMode::Opaque;if(blitShader_.valid())blitPipe_=dev.createPipeline(pd);
+  if(!texture_.valid()||!shader_.valid()||!pipe_.valid()||
+     !blitShader_.valid()||!blitPipe_.valid()){
+   std::fprintf(stderr,"[canvas] %s\n",dev.lastError().c_str());
+   shutdown();return false;
+  }
+ }catch(...){
+  // Retire any partially published resources, retaining them until
+  // real GPU completion even when the backend allocation throws.
+  shutdown();throw;
  }
  clear();return true;
 }
 void RenderTexture::shutdown(){
- if(dev_){dev_->destroyTexture(texture_);dev_->destroyPipeline(pipe_);dev_->destroyShader(shader_);dev_->destroyPipeline(blitPipe_);dev_->destroyShader(blitShader_);}
- dev_=nullptr;texture_={};pipe_={};shader_={};blitPipe_={};blitShader_={};strokes_.clear();width_=height_=0;
+ if(dev_){
+  if(!retirement_)throw std::logic_error("RenderTexture: missing GPU lifetime owner");
+  // In each completion batch, pipelines retire before their shaders.
+  retirement_->retire(pipe_);
+  retirement_->retire(blitPipe_);
+  retirement_->retire(shader_);
+  retirement_->retire(blitShader_);
+  retirement_->retire(texture_);
+ }
+ texture_={};pipe_={};shader_={};blitPipe_={};blitShader_={};
+ strokes_.clear();width_=height_=0;clear_=true;
+ // Standalone native canvas can own its own queue. It may block on
+ // shutdown, never per stroke or after a GPU draw. If the device
+ // cannot prove idle, keep this owner available for explicit retry.
+ if(ownedRetirement_){
+  if(!ownedRetirement_->drain())
+   throw std::runtime_error("RenderTexture shutdown: GPU idle barrier failed");
+  ownedRetirement_.reset();
+  retirement_=nullptr;
+ }
+ dev_=nullptr;
 }
+
 void RenderTexture::clear(std::array<float,4> c){clear_=true;clearColor_=c;strokes_.clear();}
 bool RenderTexture::stroke(const Stroke& s){
  for(float f:{s.ax,s.ay,s.bx,s.by,s.radius,s.softness,s.color[0],s.color[1],s.color[2],s.color[3]})if(!std::isfinite(f))return false;
