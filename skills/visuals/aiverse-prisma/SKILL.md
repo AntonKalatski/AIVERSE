@@ -756,6 +756,57 @@ native CMake, shader compiler, GPU parity and CI are NOT RUN.
 Continue feature work before the dedicated test phase and leave
 Draft PR #26 unmerged without user instruction.
 
+## Stage 57 — robust opt-in HDR Auto Exposure (per camera)
+
+`autoExposure` continues to run only when authored, HDR/High is
+effective and `AIVERSE_PRISMA_AUTO_EXPOSURE=1`. Its 1x1 history
+remains owned by stable camera view ID, not by shared viewport size.
+The weighted log2 luminance meter now accepts optional fields
+`highlightRejection` (default 0, max 0.95),
+`highlightStartEV` (default 3, threshold in **log2 luminance**),
+and `highlightSoftnessEV` (default 2 stops). They are appended
+to the same `PrismaData` parameter catalog; existing JSON/MCP
+and old volume numeric masks retain their original offsets.
+
+The first exposure mip adjusts each sample's weight by
+`1-rejection*smoothstep(start,start+softness,logL)`.
+There is a mandatory 5% minimum contribution per sample; never
+create an all-zero global meter for an all-bright HDR scene.
+When rejection=0 the old meter and spatial `centerWeight`
+remain unchanged. The downsample pyramid continues to accumulate
+weighted log sums AND weight sums. This is **not** histogram/
+percentile metering, automatic local exposure or a sky mask.
+
+Important order: `Prisma::resolve` must detect automatic camera
+jumps BEFORE running the exposure luminance pyramid. Reset only
+the current `viewId` exposure, motion and temporal validity on
+an automatic camera cut. An explicit `resetMotionHistory(id)`
+also invalidates `resetAutoExposure(id)`; reset-all handles
+both maps. Histories remain allocated and GPU-fence owned.
+No CPU-frame guess or destructive sync is added.
+
+HDR pipeline: sample the pre-tone-map linear SceneColor, apply one
+GPU-adapted 1x1 auto-exposure factor at the final composite
+(before ACES/sRGB), then the standard display-space grade,
+LUT and postfx Shader Graph. ColorGrade's authored exposure
+is an additional controlled HDR multiplier, not a second
+auto-exposure history. Preserve the Stage 55 four-graph-textures
+sampler layout (exposure at 8 or 9). If GPU composite fallback
+omits exposure, do not claim it ran.
+
+`Prisma::ViewEffectReport.autoExposureHighlightRejection` describes
+the strength actually selected in the FINAL encoded composite,
+zero if omitted; the editor shows it only alongside an active
+Auto Exposure slot. This is an issued draw status, not a GPU
+completion/readback. The effect editor also explains the new
+opt-in thresholds.
+
+**Verification:** 31/31 static readback/source checks; CMake,
+compiler, CTest, GPU, shader compiler, editor runtime and CI
+**NOT RUN**. See `docs/handoffs/prisma-stage-57.md` for exact
+commits, limitations and the next feature. Keep the draft PR
+unmerged until expressly instructed otherwise.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
