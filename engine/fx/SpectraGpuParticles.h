@@ -166,6 +166,7 @@ private:
     std::string reason_;
     std::shared_ptr<uint64_t> readbackLifetime_ = std::make_shared<uint64_t>(0);
     bool asyncErrorPending_ = false;
+    uint64_t vmFrameRevision_ = 0;
 };
 
 } // namespace aiverse::spectra
