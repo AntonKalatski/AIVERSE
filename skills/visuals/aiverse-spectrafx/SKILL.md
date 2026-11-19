@@ -580,7 +580,7 @@ first and tests later: no native build, CTest, shader
 compilation or GPU benchmark has been run for Stage 22.
 See the living handoff for exact commits and follow-up work.
 
-## Persistent GPU custom particle attributes (Stage 23)
+## Persistent GPU custom particle attributes (Stage 26)
 
 The opt-in integrated Metal `ComputeParticles` kernel now stores
 eight scalar `attribute0..7` registers in a separate
@@ -613,8 +613,7 @@ still uses CPU fallback.
 The particle ABI remains 64 bytes, expanded Vertex 40 bytes,
 VM Payload version 1. No native build, CTest, Metal shader compile,
 pixel verification or performance benchmark has run for this
-stage by user's explicit deferral. Keep a **separate Stage-23
-handoff commit** and record NOT RUN, not PASS.
+stage by user's explicit deferral. Keep a **separate Stage-26 handoff commit** and record NOT RUN, not PASS.
 
 ## Boundaries and tests
 
