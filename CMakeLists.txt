@@ -2026,11 +2026,15 @@ if(AIVERSE_BUILD_STRATA)
     add_library(aiverse_strata_portable STATIC
         engine/render/StrataPortableRender.cpp
         engine/render/StrataIndexResidency.cpp
-        engine/render/StrataIndexPages.cpp)
+        engine/render/StrataIndexPages.cpp
+        engine/render/StrataDiskPages.cpp)
     target_link_libraries(aiverse_strata_portable PUBLIC
         aiverse_strata_view aiverse_models)
     target_include_directories(aiverse_strata_portable PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR})
+    if(Threads_FOUND)
+        target_link_libraries(aiverse_strata_portable PUBLIC Threads::Threads)
+    endif()
     # GPU metadata is a non-drawing, source-revision-checked storage buffer.
     # Original GPU geometry MUST remain owned by GlobalGeometryPool.
     add_library(aiverse_strata_gpu_scene STATIC engine/render/StrataGpuScene.cpp)
@@ -2095,6 +2099,13 @@ if(AIVERSE_BUILD_STRATA)
         target_link_libraries(aiverse_strata_index_pages_tests PRIVATE
             aiverse_strata_portable aiverse_zstd_dec)
         add_test(NAME strata_index_pages COMMAND aiverse_strata_index_pages_tests)
+        if(NOT EMSCRIPTEN)
+            add_executable(aiverse_strata_disk_pages_tests
+                tests/render/strata_disk_pages.cpp)
+            target_link_libraries(aiverse_strata_disk_pages_tests PRIVATE
+                aiverse_strata_portable aiverse_zstd_dec)
+            add_test(NAME strata_disk_pages COMMAND aiverse_strata_disk_pages_tests)
+        endif()
     endif()
     # The GPU parity runner opens a real macOS CAMetalLayer and compiles MSL at
     # runtime. Keep it manual/opt-in: focused CPU/mocked CTests have no window.
