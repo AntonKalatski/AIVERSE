@@ -102,6 +102,17 @@ public:
             pf.stats().adaptiveResolution ? "on" : "off",
             double(pf.stats().requestedRenderScale),
             pf.stats().temporalFallback ? "used" : "not needed");
+        if (pf.stats().adaptiveResolution) {
+            constexpr double kMiB=1024.0*1024.0;
+            ImGui::TextDisabled("Prisma known VRAM: %.1f / %.1f MiB (%s)",
+                double(pf.stats().adaptiveKnownGpuBytes)/kMiB,
+                double(pf.stats().adaptiveMemoryLimitBytes)/kMiB,
+                pf.stats().adaptiveMemoryPressure ? "pressure" : "within budget");
+            ImGui::TextDisabled("Adaptive timing: %.3f ms (%s)",
+                pf.stats().adaptiveGpuMs,
+                pf.stats().adaptiveScopedGpuTiming ?
+                    "completed viewport GL33 query" : "whole completed GPU frame / unsupported");
+        }
         const double gpuFrame=ed.device().gpuFrameMs();
         if (std::isfinite(gpuFrame) && gpuFrame>0.0)
             ImGui::TextDisabled("GPU: %.2f ms (last completed, WHOLE frame; not this viewport)",
