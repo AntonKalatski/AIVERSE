@@ -1487,3 +1487,35 @@ Mac Studio texture worktree, pull the latest branch, then
 build the seam target with `set -euo pipefail` before CTest.
 Do not report Stage 10BY hardware PASS without the actual
 missing-page and Repeat/MirrorRepeat oracle output.
+
+## Stage 10CA — Apple M3 Ultra missing VT page and UV seam oracle PASS
+
+**User-supplied real-device result:** the corrected Stage 10BY/10BZ
+`metal_renderer_graph_vt_seam_gpu` ran on the Mac Studio's Metal
+device and **PASSED 1/1 (5.65 sec, total CTest 5.67 sec)**.
+All seven production Renderer3D graph+VT direct/ICB RGBA8
+capture pairs had `bad_channels=0 max_delta=0`.
+Each GPU ICB pair submitted a real heterogeneous Shader Graph
+and VT batch: `graph=1 mixedGraph=1 vt=1 mixedVt=1 commands=2
+rejected=0 errors=0`.
+
+Independent **expected-page** validation also PASSED:
+empty page table equaled the no-resolver fallback exactly,
+coarse publication changed 23,304 channels, missing disk files
+triggered two expected failure callbacks while preserving
+pinned-coarse pixels exactly, and Repeat/MirrorRepeat page
+selection was correct for U=-0.125, +1.125, -0.0005 and
++1.0005 on both ordinary and ICB captures (**8/8 oracle PASS**).
+The non-target region did not change.
+
+These are real GPU acceptance results, not source-only
+verification. Source was unchanged after the hardware PASS.
+See `docs/texture-rhi.md` Stage 10CA and the agent handoff.
+
+**Next:** test true bilinear seam/filter fidelity over
+nonuniform source pixels and guttered physical pages
+with an independent CPU reference, then cross-backend
+Vulkan/GL/WebGL/mobile acceptance and performance stress.
+Solid-color pages and zero gutter do not establish
+nonuniform filtering continuity. Experimental ICB remains
+OFF by default and PR #21 Draft.
