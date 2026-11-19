@@ -122,6 +122,17 @@ public:
     Simulation* simulation() { return sim_.get(); }
     bool inMatch() const { return !mapLoading_ && sim_ != nullptr && (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over); }
     const std::string& errorText() const { return error_; }
+    // Native/UI/material consumers may bind these non-owning RT handles for
+    // the current GPU frame. Never cache them across resize/reload/shutdown.
+    gfx::TextureHandle lensColorTarget(uint64_t key) const {
+        return lensCamerasActive_?lensCameras_.colorTarget(key):gfx::TextureHandle{};
+    }
+    gfx::TextureHandle lensDepthTarget(uint64_t key) const {
+        return lensCamerasActive_?lensCameras_.depthTarget(key):gfx::TextureHandle{};
+    }
+    bool lensTargetInfo(uint64_t key,int& w,int& h,bool& hdr) const {
+        return lensCamerasActive_ && lensCameras_.targetInfo(key,w,h,hdr);
+    }
 
 private:
     enum class Screen { Menu, Lobby, Playing, Paused, Over };
