@@ -548,6 +548,16 @@ if(AIVERSE_VULKAN)
         add_executable(aiverse_vulkan_tests tests/render/vulkan_tests.cpp)
         target_link_libraries(aiverse_vulkan_tests PRIVATE aiverse_gfx_vulkan)
         add_test(NAME vulkan_backend COMMAND aiverse_vulkan_tests)
+        # Compile the real portable GI L1 / validity / dual-cascade GLSL
+        # through the Vulkan translation stack, without a GPU requirement.
+        add_executable(aiverse_gi_vulkan_glsl_contract_test
+            tests/render/gi_vulkan_glsl_contract.cpp)
+        target_include_directories(aiverse_gi_vulkan_glsl_contract_test PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR})
+        target_link_libraries(aiverse_gi_vulkan_glsl_contract_test PRIVATE
+            aiverse_gfx_vulkan)
+        add_test(NAME gi_vulkan_glsl_contract
+            COMMAND aiverse_gi_vulkan_glsl_contract_test)
     endif()
 endif()
 
