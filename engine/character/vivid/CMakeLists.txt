@@ -137,6 +137,13 @@ if(AIVERSE_BUILD_TESTS)
 
     # Headless token/failure/idle actor GPU retirement test. Uses the same
     # genre-neutral AsyncResourceRetirementQueue as the renderer.
+    # GLES3/WebGL2 CPU fallback: no compute shader or frame serial required.
+    add_executable(aiverse_vivid_cpu_actor_tests
+        ${PROJECT_SOURCE_DIR}/tests/vivid/cpu_actor.cpp)
+    target_link_libraries(aiverse_vivid_cpu_actor_tests PRIVATE
+        aiverse_vivid_actor aiverse_zstd_dec)
+    add_test(NAME vivid_cpu_actor COMMAND aiverse_vivid_cpu_actor_tests)
+
     add_executable(aiverse_vivid_actor_retirement_tests
         ${PROJECT_SOURCE_DIR}/tests/vivid/actor_retirement.cpp)
     target_link_libraries(aiverse_vivid_actor_retirement_tests PRIVATE
