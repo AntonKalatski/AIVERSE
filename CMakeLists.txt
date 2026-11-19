@@ -2291,6 +2291,13 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_physis_nature_stress_test PRIVATE aiverse_engine)
     add_test(NAME physis_nature_stress COMMAND aiverse_physis_nature_stress_test)
     set_tests_properties(physis_nature_stress PROPERTIES LABELS "PHYSIS;ECS")
+    # Stage 82: durable, deduplicated host fracture event handoff.
+    # PHYSIS never owns TerraWeave/Box3D physics bodies.
+    add_executable(aiverse_physis_fracture_outbox_test
+        tests/physis_fracture_outbox_test.cpp)
+    target_link_libraries(aiverse_physis_fracture_outbox_test PRIVATE aiverse_engine)
+    add_test(NAME physis_fracture_outbox COMMAND aiverse_physis_fracture_outbox_test)
+    set_tests_properties(physis_fracture_outbox PROPERTIES LABELS "PHYSIS;ECS;PERSISTENCE")
 endif()
 
 # PHYSIS Stage 8: deterministic spatial wind and seeded gust volumes.
