@@ -656,6 +656,68 @@ indirect draws. Tests are not considered passing until executed.
 The `.github/workflows/strata-focused.yml` workflow builds this sixth
 contract suite on Linux/macOS.
 
+## Stage 10 — actual ModelDraw dry-run in Renderer3D (no rendering change)
+
+**Renderer3D now has a diagnostic preview call, not a Strata draw path.**
+The Stage 9 source routing preflight alone was unaware of the actual
+per-draw tint, pose, node transforms and independent renderer passes.
+The new `StrataRendererPreview.h/.cpp` adds a stateless, testable
+`strata::previewModelDraw` evaluator that accepts the existing
+`ModelDraw`, per-source `ModelAsset` and GPU sidecar residency,
+plus a `PreviewContext` containing main/sun view projections and
+target dimensions. It never creates command buffers, calls
+`drawIndexed`, changes ModelDraw or caches transform ownership.
+
+`Renderer3D::previewStrataModel(draw, stagedAsset, gpuScene, sourceKey)`
+runs the same evaluator with the **renderer’s real** current matrices,
+sun shadow quality, viewport size and depth convention.
+`Renderer3D::strataPreviewStats()` provides per-`beginScene` counts:
+modelDraws, attempted, ready, rejected, selectedClusters, fullyCulled
+and skippedUnsafeDraws. A 'ready' candidate only means the CPU
+reference geometry and pooled indices passed preflight — it does
+**not** mean GPU/CPU selection or image parity has passed.
+
+`GeometryScene` owns the only current integration call:
+```cpp
+scene.setStrataStagingEnabled(true);
+scene.setStrataGpuMetadataEnabled(true);
+scene.setStrataRenderPreviewEnabled(true); // additional opt-in, default OFF
+scene.loadPrepared(device, json, std::move(models));
+// In an existing renderer frame:
+scene.draw(renderer);
+// Every source still goes through original Renderer3D::drawModel().
+auto diagnostics = renderer.strataPreviewStats();
+```
+
+Only source models (not HLOD or surface proxy replacements) are
+previewed, and only when the source is already GPU-resident in the
+original `GlobalGeometryPool` and its Strata CPU data is staged.
+No new ECS data, renderer material cache, GPU pool or alternate draw
+path is introduced. The temporary sourceKey and pooled data are borrowed
+only synchronously for this evaluation and never stored in Renderer3D
+packets. Preview refuses animated pose/baked skinning, material and node
+overrides, alpha/fade, model variants, reveal, water passes and
+incompatible live shader/material/geometry. Each eligible source node
+is evaluated separately with the proper per-node bind transform and
+per-pass projection. Sun shadow selection is independent of the main
+camera, and an empty successful selection counts as a fully culled
+preview rather than an invitation to render a second source.
+
+**No duplicate draw calls:** after an optional preview,
+`GeometryScene::drawInstance` ALWAYS invokes the original
+`renderer.drawModel(d)` exactly once. HLOD/proxy substitutions never
+enter the dry-run. Stage 9 `RenderRouteGate` remains a proof contract
+and is not connected to the live submission path, even if a caller
+manually enables the preview flag.
+
+`tests/render/strata_render_routing.cpp` additionally exercises
+source ModelDraw with independent main/shadow views and a recording
+RHI to verify correct preflight counts, opaque/alpha restrictions,
+and **zero draw submissions**. The six focused Strata CTests are still
+required on a native build; Stage 10 has not been executed by this
+assistant. The user's earlier Stage 8 Mac Studio 5/5 CTest PASS remains
+a confirmed **older** code snapshot, not Stage 10 verification.
+
 ## Architectural constraints
 - **One scene/instance truth**: `GeometryScene` owns static render instances
   and HLOD; do not create separate Strata transforms or introduce gameplay
