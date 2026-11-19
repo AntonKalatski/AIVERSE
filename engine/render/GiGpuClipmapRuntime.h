@@ -80,6 +80,14 @@ public:
     bool busy() const {return queue_.pending()!=0;}
     const GiClipmapVolume& volume() const {return volume_;}
     const GiClipmapValidityTexture& validity() const {return validity_;}
+    bool hasRenderableProbes() const {
+        return ready() && bool(scene_) && validitySynchronized_ &&
+               validity_.validCount()>0;
+    }
+    bool fullyValid() const {
+        return hasRenderableProbes() && validity_.validCount()==volume_.size() &&
+               volume_.pending()==0 && volume_.inFlight()==0 && !busy();
+    }
     const GiGpuSmallScene& backend() const {return gpu_;}
     size_t pendingProbes() const {return volume_.pending();}
 
