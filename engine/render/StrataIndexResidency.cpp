@@ -52,11 +52,18 @@ bool IndexResidency::initialize(gfx::Device& device, const ModelAsset& asset,
         std::vector<uint32_t> p(g.nodes.size(), invalidNode);
         for (size_t id = 0; id < g.nodes.size(); ++id) {
             const auto& n = g.nodes[id];
+            const auto& bounds = g.bounds[id];
             for (uint32_t k = 0; k < n.childCount; ++k) {
                 const uint32_t child = n.firstChild + k;
                 if (p[child] != invalidNode)
                     return fail(error, "duplicate Strata parent");
                 p[child] = uint32_t(id);
+                if (n.geometricError < g.nodes[child].geometricError)
+                    return fail(error, "nonconservative streaming parent LOD error");
+                for (unsigned axis = 0; axis < 3; ++axis)
+                    if (bounds.min[axis] > g.bounds[child].min[axis] ||
+                        bounds.max[axis] < g.bounds[child].max[axis])
+                        return fail(error, "streamed parent bounds omit child");
             }
         }
         for (uint32_t root : g.roots) {
