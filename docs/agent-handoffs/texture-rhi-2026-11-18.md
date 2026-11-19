@@ -5702,3 +5702,30 @@ CTest, shader compilation and GPU tests NOT RUN, per user request.
 Next: implement optional depth attachment in feedback pass,
 then integrate actual generic renderer draw submission and
 per-material shader parameter binding; finish backend parity.
+
+
+## Stage 9H — optional depth attachment for visibility-correct feedback (2026-11-19)
+
+Source commit: a06dfa5e4771270b2d0fffc924feb7d8e8e69f39.
+Changed file: engine/gfx/VirtualTextureFeedbackPass.h.
+Extended initialize(...,size_t maxDeferredFrames=8,
+bool depthAttachment=false) with optional depth support.
+Depth-enabled passes require PixelFormat::Depth capability,
+allocate depth via RenderTargetSet, and clear depth to 1.0
+at every begin(). resize() retains the depth mode, shutdown()
+clears it. hasDepthAttachment() and depthTexture() expose
+read-only state/handle for renderers. Existing call sites remain
+compatible with depth disabled by default. Pair with
+virtualTextureFeedbackPipelineDesc(shader,true) and depth-tested
+geometry submissions for camera-visible feedback.
+
+Limitations: geometry and camera transforms still come from
+the renderer. Depth correctness requires compatible projection,
+culling, winding and draw order. Depth attachment is not an
+automatic copy of the main scene depth buffer.
+Verification: GitHub source commit succeeded. Per user's
+functions-first instruction, CMake, CTest, shader compilation,
+GPU rendering and readback NOT RUN.
+Next: connect the depth-enabled pass to generic renderer
+submission and material parameter binding, then close remaining
+RenderTexture/storage image backend parity.
