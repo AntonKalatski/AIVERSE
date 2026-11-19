@@ -87,14 +87,27 @@ inline bool configureTerraWeavePackedImageFallback(
     const gfx::VirtualTextureArchiveVersion& archive,
     int maxDimension = 64,
     VirtualFallbackSavings* savings = nullptr,
-    std::string* reason = nullptr) {
+    std::string* reason = nullptr,
+    bool preserveAlpha = false) {
     if (model.path.rfind("terraweave/", 0) != 0) {
         if (reason) *reason = "model is not a TerraWeave asset";
         if (savings) *savings = {};
         return false;
     }
     return configureModelVirtualFallback(
-        model,imageIndex,archive,maxDimension,savings,reason);
+        model,imageIndex,archive,maxDimension,savings,reason,preserveAlpha);
+}
+
+// Preserve Horizon/Arbor impostor cutout geometry using one R8 channel,
+// instead of retaining the original full-size RGBA8 image in VRAM.
+inline bool configureTerraWeavePackedMaskedImageFallback(
+    Model& model, size_t imageIndex,
+    const gfx::VirtualTextureArchiveVersion& archive,
+    int maxDimension = 64,
+    VirtualFallbackSavings* savings = nullptr,
+    std::string* reason = nullptr) {
+    return configureTerraWeavePackedImageFallback(
+        model,imageIndex,archive,maxDimension,savings,reason,true);
 }
 
 // One complete archive per VT sampling domain. The atlas and page-table
