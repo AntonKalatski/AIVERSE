@@ -54,6 +54,17 @@ bool Gallery::init(gfx::Device& dev, const std::string& dir, const std::vector<s
 
 void Gallery::shutdown(gfx::Device& dev) { portrait_.shutdown(); view_.shutdown(dev); }
 
+void Gallery::collectRetiredGpuResources() {
+    // The model viewer has one owning Device frame per update but may
+    // render both a portrait and the game scene in that same frame.
+    // Poll only before either pass records new GPU submissions.
+    if(view_.pendingModelRetirements()!=0 ||
+       view_.pendingRolledBackImages()!=0)
+        view_.collectRetiredModels();
+    if(view_.pendingPaintGpuRetirements()!=0)
+        view_.collectRetiredPaintGpuResources();
+}
+
 gfx::TextureHandle Gallery::portrait(double time) {
     if (slots_.empty() || !dev_) return {};
     if (!portraitInit_) { portraitInit_ = true; portrait_.init(*dev_, 192); }
