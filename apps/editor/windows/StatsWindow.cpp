@@ -112,6 +112,10 @@ public:
                     objects.textures,objects.bundles);
         ImGui::Text("Другие отложенные GPU: %zu fenced + %zu без fence",
                     objects.fenced,objects.unfenced);
+        if (objects.abandonedHandles || objects.abandonedBundles)
+            ImGui::TextDisabled("GPU device lost: abandoned %zu handles, %zu owner bundles (без GPU destroy)",
+                objects.abandonedHandles,objects.abandonedBundles);
+        ImGui::Text("FX GPU-буферы: известные отложенные bytes включены в нижнюю оценку памяти");
         const uint64_t totalRetired = post.knownPendingBytes +
             motion.knownPendingBytes + viewport.knownPendingBytes +
             objects.knownPendingBytes;
