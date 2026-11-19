@@ -268,8 +268,6 @@ int main() {
     shrubOut.eventKey=pn::natureFractureEventKey(shrubProxy,19);
     shrubOut.delivery=pn::NatureFractureDelivery::Pending;
     world.add<pn::NatureFractureOutboxComponent>(shrubProxy,shrubOut);
-    require(host::dispatchPhysisTerraWeaveFalls(world).committed==1,
-            "shrub PHYSIS fracture failed");
     auto shrubSpec=[](std::uint32_t species)
             ->std::optional<tw::FallenPlantBodySpec> {
         if(species==14)return tw::FallenPlantBodySpec{};
@@ -279,9 +277,11 @@ int main() {
         cfg.radiusCm=12;
         return cfg;
     };
-    require(reconciler.reconcile(world,bodies,shrubSpec).spawned==1 &&
-            scene.bodyCount()==2,
-            "shrub did not create one additional Box3D body");
+    const auto shrubBarrier = host::advanceNatureFallHostBarrier(
+        world,bodies,reconciler,shrubSpec);
+    require(shrubBarrier.delivery.committed==1 &&
+            shrubBarrier.physics.spawned==1 && scene.bodyCount()==2,
+            "native fall barrier did not commit one shrub and spawn one body");
     tw::AnchoredPlant grass;
     grass.anchor.plantKey=553;
     grass.anchor.speciesId=16;
