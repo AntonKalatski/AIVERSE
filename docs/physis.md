@@ -988,3 +988,19 @@ repository-wide CTest and explicit dual-module host smoke with
 `FloodMode::ExternalAuthority`; preserve save/rollback parity.
 Handoff:
 `docs/agent-handoffs/physis-stage73-postmerge-40-green-2026-11-19.md`.
+
+### Stage 74 — broad repository CTest: 148/150, targeted mitigations
+
+The user-reported macOS full 150-test suite after the PHYSIS/main
+merge passed 148, failed two: PHYSIS `skill_audit` (a method
+name incorrectly appended to a Markdown source path) and
+cross-subsystem `place` (strict server tick budget <5ms, measured
+8.204ms during parallel CTest). Commit
+`a61923df653994a9a94c1916f4077db7fb7e9848` fixes the
+skill source path and adds CMake `RUN_SERIAL TRUE` for the
+Place timing benchmark, without modifying the tick threshold or
+Place/PHYSIS physics. A small external CMake fixture verified the
+RUN_SERIAL property, not the actual Place speed.
+**Native macOS post-fix CTest remains UNVERIFIED.**
+See the dedicated Stage74 handoff at
+`docs/agent-handoffs/physis-stage74-full-ctest-skill-place-2026-11-19.md`.

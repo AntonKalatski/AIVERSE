@@ -1521,3 +1521,36 @@ PHYSIS shallow flood with canonical NEREID: choose
 `FloodMode::ExternalAuthority`. The existing PHYSIS-to-NEREID
 wind adapter changes visuals only, not ECS water authority.
 See `docs/agent-handoffs/physis-stage73-postmerge-40-green-2026-11-19.md`.
+
+## PHYSIS full repository test follow-up: skill audit and Place performance (2026-11-19)
+
+After the native post-main-merge focused suite passed 40/40,
+the user's full 150-test macOS CTest had **148/150 PASS**.
+`skill_audit` failed on one PHYSIS documentation reference
+(`tests/physis_remote_edit_test.cpp::revisionProbeStopsOnUnhealthyJournal`
+was treated as a nonexistent file), while `place` had **51/52
+internal checks PASS** but missed a strict performance check:
+server tick average **8.204 ms**, required **<5.0 ms**.
+All Place convergence/correctness assertions reported in the log
+passed; the measured sample had 523 physics bodies, 16 clients/4g
+and a late joiner.
+
+Source commit `a61923df653994a9a94c1916f4077db7fb7e9848`:
+- In `skills/world/aiverse-physis/SKILL.md` separate the valid
+  file path from the function name so `tools/skills/audit.py`
+  no longer treats the combined `file.cpp::function` as a path.
+- In `CMakeLists.txt`, make `place` CTest `RUN_SERIAL TRUE`.
+  This schedules the wall-clock performance test exclusively,
+  eliminating competition with parallel CTests as a confound.
+  The **original <5.0ms** performance condition and full scenario
+  are unchanged; no Place simulation/physics runtime was modified.
+
+**Verification:** CMake 3.31 isolated fixture confirmed
+`RUN_SERIAL=True` in `ctest --show-only=json-v1`.
+GitHub source readback confirmed the updated skill reference.
+**NOT RUN after these changes:** the actual macOS `skill_audit`,
+`place`, complete 150-test suite. This is a scheduling mitigation,
+not proof that Place meets 5ms on the user's machine. If it still
+fails alone, capture Release/Debug build mode, CPU/Rosetta status
+and isolated tick timing before changing performance budgets.
+Handoff: `docs/agent-handoffs/physis-stage74-full-ctest-skill-place-2026-11-19.md`.

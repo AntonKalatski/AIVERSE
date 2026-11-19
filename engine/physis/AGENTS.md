@@ -1048,3 +1048,25 @@ open "$APP"
 - No C++ source or ECS schema changed this stage. PHYSIS remains authoritative for climate/wind/gravity/storms; NEREID is authoritative for water. When combined in the same native World, opt into `FloodMode::ExternalAuthority` for PHYSIS. Existing read-only `engine/world/NereidPhysisWindBridge.h` is presentation only and does not prove real gameplay weather-to-water coupling.
 - **Still unverified:** full repo-wide tests, one-host joint PHYSIS+NEREID ECS scheduling/rollback with both systems active, interactive GUI gizmos/Inspector, actual Metal water render/performance, cross-platform CI and admin security/TLS.
 - Handoff: `docs/agent-handoffs/physis-stage73-postmerge-40-green-2026-11-19.md`.
+
+### Stage 74 — full-CTest skill audit and unrelated Place timing (2026-11-19)
+
+The user ran all 150 CTests on the merged PHYSIS+NEREID branch.
+**148 PASS, 2 FAIL**: `skill_audit` referenced nonexistent
+`tests/physis_remote_edit_test.cpp::revisionProbeStopsOnUnhealthyJournal`
+as a path; the actual file exists, the function name is not part
+of the path. `place` failed only `CHECK(tickAvg < 5.0)` with a
+user-reported 8.204ms tick average (worst 19.381ms), while all
+other 51 internal Place scenario checks passed.
+
+Commit `a61923df653994a9a94c1916f4077db7fb7e9848`
+splits the PHYSIS skill path and method name, and registers Place
+CTest with `RUN_SERIAL TRUE` to prevent concurrent CPU load from
+polluting the measured server wall-clock tick. The 5ms threshold
+and physics simulation code are unchanged. A minimal native
+CMake 3.31 smoke verified the property is recognized. The full
+macOS post-fix run is **NOT RUN**: do not claim 150/150 yet.
+Keep PR #25 Draft. Record later actual Place timing and
+`skill_audit` output; if Place fails serially, profile the
+actual CPU/build config instead of raising its threshold.
+Handoff: `docs/agent-handoffs/physis-stage74-full-ctest-skill-place-2026-11-19.md`.
