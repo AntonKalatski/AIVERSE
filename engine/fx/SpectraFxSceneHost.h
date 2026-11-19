@@ -45,7 +45,7 @@ public:
         reader_=std::move(reader);
         textureBase_=std::move(textureBase);
         textures_.init(device);
-        cpu_.setQuality(FxQuality::Medium);
+        cpu_.setQuality(quality_);
         cpu_.setFileReader(reader_);
         cpu_.setTextureLoader([this](const std::string& name,FxTexture& out){
             const auto texture=textures_.resolve(name,false,textureBase_);
@@ -67,6 +67,7 @@ public:
         playback_=std::make_unique<SpectraFxHybridPlayback>(
             device,cpu_,*library_);
         playback_->configureGpuBudget(budget);
+        playback_->setGlobalQuality(quality_);
         for(const auto& [type,route]:routes)
             if(route.playback.enabled)
                 playback_->route(uint32_t(type),route.playback);
@@ -75,6 +76,14 @@ public:
     }
 
     bool enabled() const {return enabled_;}
+    // A single native scene quality control for both existing CPU FX and
+    // new GPU spawn density. Per-asset quality is never raised by this cap.
+    void setQuality(FxQuality quality) {
+        quality_=quality;
+        if(enabled_) cpu_.setQuality(quality);
+        if(playback_) playback_->setGlobalQuality(quality);
+    }
+    FxQuality quality() const {return quality_;}
     const std::string& lastError() const {return lastError_;}
     // Immediate device-safe submission retained for existing native hosts.
     // New producers should use enqueueCue and let prepareGpu drain at the
@@ -173,6 +182,7 @@ private:
     std::string textureBase_;
     std::string lastError_;
     bool enabled_=false;
+    FxQuality quality_=FxQuality::Medium;
 };
 
 } // namespace aiverse::fx
