@@ -423,3 +423,14 @@ git switch feature/spectrafx-generic-cue-queue
 git pull --ff-only origin feature/spectrafx-generic-cue-queue
 git fetch origin main && git merge origin/main
 ```
+
+
+## 2026-11-19 — Stage 24: generation-safe GPU slot allocation and emission lifecycle
+- **Branch:** `feature/spectrafx-generic-cue-queue`; comparison against main `d71c6d47e532b25fb816a8bb1f96c41e5275a165` at this continuation: ahead 53, behind 0.
+- **Implementation commits:** `859c348ac52ec978bba8c47b49cb6dd309639d32` and `59c5f3aef0bbce1c6cfa278f3ce12c41b1499c8c`.
+- **Paths:** `engine/fx/SpectraFxGpuEvolution.h` (modified), `engine/fx/SpectraFxGpuParticleSlots.h` (new).
+- **Architecture/API:** GPU evolution now supports `initCapacity(device,capacity)` using dormant zero-lifetime slots and `writeSlot(index,seed)` for a bounded partial update of two dynamic storage buffers at RHI safe points. `SpectraFxGpuParticleSlots::init/emit/kill/step/shutdown/alive` tracks allocation, expiration and generation-protected handles; free slots recycle without writing to authoritative ECS. All motion continues on the GPU, and CPU only tracks age for reclaiming capacity. Dormant slots have GPU lifetime zero and therefore draw transparent after the next compute update; no direct GPU readback. Slot generation increments when reused. A failed GPU dispatch does not advance the CPU slot clock; an unsafe GPU-buffer update postpones release and prevents early reuse.
+- **Contract:** device-thread-only; capacity 1..65536, caller must issue one `step` before first draw to populate the GPU output texture. Call `emit/kill` only when `canUpdateSharedBuffers()` holds and outside passes, ensure emitted particle lifetimes fit the evolving slot clock, and `shutdown()` before destroying the device. This is presentation-only; not yet a complete multi-emitter Niagara GPU backend.
+- **Actual validation:** **NOT RUN**: no native compilation, shader compiler, macOS Metal/Vulkan run, CTest, editor/GPU visual QA, CPU parity or CI, per user instruction functions first. Do not treat correctness as verified.
+- **Known limitations:** CPU expiry clock intentionally approximates the same age used by GPU; GPU execution timing and stalling must be checked. No sorting, collisions, GPU-side event callbacks, indirect live-count compaction, multi-emitter particle-level configuration. The GPU texture still contains dormant slots and draws the fixed-capacity instance count.
+- **Next:** introduce an explicit backend policy/capability decision with CPU fallback. Then wire a GPU-capable emitter to the actual editor/game rendering passes and implement richer spawning/kill/streaming. Tests only after feature completion.
