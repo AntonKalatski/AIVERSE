@@ -779,3 +779,12 @@ The seam splitting authoring transaction now handles an additional previously re
 Any cached shadow/material batch descriptors belonging to a seam-affected mesh are invalidated, preventing a stale batch draw from referring to the old primitive layout. This is safe for skinned meshes, which normal AIVERSE batch preparation intentionally excludes; it is **not** a rebuild of optimized material/shadow batches. Resident morph textures, shared GPU geometry pages, index-range aliasing and multi-owner skinned meshes are still refused.
 
 A regression source case checks legacy morph data, batch invalidation and rejection of malformed morph strides without input mutation. **Native compilation, CTest and actual GPU atlas/skinning parity were NOT RUN**. See `docs/agent-handoffs/vivid.md` Stage 7U for implementation SHAs, API contracts and next-agent instructions.
+
+
+## Stage 7V — bounded groom hair self-collision (2026-11-20)
+
+The `HumanGroomRuntime` Verlet guide solver now offers opt-in **inter-guide self collision**. A CPU uniform-grid broadphase hashes movable groom guide particles and checks only neighboring cells, with a deterministic unique-pair rule and a fixed per-substep candidate budget. The Jacobi contact correction separates overlapping particles belonging to *different* guide strands, keeps roots pinned, and adjusts `previous` coordinates to avoid injecting artificial velocity. The previous closed-mesh BVH or procedural scalp ellipsoid collision runs again after these contacts.
+
+Library users can call `setSelfCollision(GroomSelfCollisionConfig)` and inspect `selfCollisionStats()`; unchanged projects have self-collision **off by default**. Creator previews expose enable, strand separation, response, pair checks, contact count and budget diagnostics and enable the feature by default. Runtime behavior is still CPU guide-particle-level, not exact continuous segment/strand/card collision or GPU compute.
+
+Source regression scenarios cover root pinning, repeatability, two-strand separation, finite positions, invalid configuration rejection and bounded candidate checks. **No C++ compilation, CTest, GPU Creator demo or performance benchmark has been run for Stage 7V.** Source SHA/architecture/handoff: `docs/agent-handoffs/vivid.md` Stage 7V. Remaining improvements: persistent spatial indexing, segment-segment narrowphase, clump friction, high-guide stress, and optical skin/eye/hair realism.
