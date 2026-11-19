@@ -78,6 +78,18 @@ public:
     WebGL2VtSeamOracle& operator=(const WebGL2VtSeamOracle&)=delete;
     ~WebGL2VtSeamOracle(){shutdown();}
     bool initialize() {
+        // Guard against a degenerate fixture: at the internal tile seam
+        // the correct bilinear sample MUST differ from simply sampling the
+        // first interior texel in the right tile (legacy centre-inset bug).
+        const auto middle=expected(0.5f,0.5f,1);
+        const auto rightFirst=logical(kInterior,2,1);
+        int sensitivity=0;
+        for(int c=0;c<3;++c)
+            sensitivity=std::max(sensitivity,
+                std::abs(int(middle[size_t(c)])-int(rightFirst[size_t(c)])));
+        if(!check(sensitivity>=4,
+                  "logical gradient must detect legacy seam centre-inset regression"))
+            return false;
         // Independent authored page-table bytes. Physical slice 0 = left,
         // slice 1 = right. One virtual mip; all pixels are resident.
         const uint8_t tableBytes[]={0,0,0,255,1,0,0,255};
@@ -170,7 +182,15 @@ void main() {
                         const Color oracle=expected(positions[size_t(x)],0.5f,mode);
                         for(int c=0;c<4;++c) {
                             const int actual=int(read.pixels[size_t((y*4+x)*4+c)]);
-                            if(std::abs(actual-int(oracle[size_t(c)]))>2)ok=false;
+                            const int delta=std::abs(actual-int(oracle[size_t(c)]));
+                            if(delta>2) {
+                                std::fprintf(stderr,
+                                    "FAIL: WebGL2 seam mode=%d u=%.5f v=0.5 "
+                                    "pixel=(%d,%d) channel=%d expected=%u got=%d delta=%d\\n",
+                                    mode,double(positions[size_t(x)]),x,y,c,
+                                    unsigned(oracle[size_t(c)]),actual,delta);
+                                ok=false;
+                            }
                         }
                     }
                     check(ok,"Repeat/MirrorRepeat seam RGBA8 GPU/CPU parity");
