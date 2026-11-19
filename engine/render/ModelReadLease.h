@@ -7,6 +7,8 @@
 #pragma once
 #include <atomic>
 #include <cstddef>
+#include <cstdio>
+#include <exception>
 #include <memory>
 #include <thread>
 #include <utility>
@@ -49,8 +51,13 @@ public:
     explicit operator bool() const noexcept{return valid();}
     void reset() noexcept {
         if(state_) {
-            // Atomic releases may happen during exception unwinding,
-            // but dereferencing is only allowed on the cache owner thread.
+            // Releasing on a worker thread would permit cache mutation
+            // before its borrowed Model read completed. This is a strict
+            // owner-thread token, not an atomic cross-thread reader lock.
+            if(state_->ownerThread!=std::this_thread::get_id()) {
+                std::fputs("ModelReadLease released on foreign thread\n",stderr);
+                std::terminate();
+            }
             state_->readers.fetch_sub(1,std::memory_order_acq_rel);
             state_.reset();
         }
@@ -91,6 +98,10 @@ public:
     explicit operator bool() const noexcept{return valid();}
     void reset() noexcept {
         if(state_) {
+            if(state_->ownerThread!=std::this_thread::get_id()) {
+                std::fputs("ModelCacheReadScope released on foreign thread\n",stderr);
+                std::terminate();
+            }
             state_->readers.fetch_sub(1,std::memory_order_acq_rel);
             state_.reset();
         }
