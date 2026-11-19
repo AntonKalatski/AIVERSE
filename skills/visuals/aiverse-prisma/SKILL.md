@@ -871,6 +871,82 @@ stages before test phase; see
 `docs/handoffs/prisma-stage-58.md`. PR #26 stays Draft;
 do not merge to main without explicit user authorization.
 
+## Stage 59 — fixed cinematic EV, box metering and AE failure gates
+
+The `autoExposure` effect now supports optional
+`manualExposure` (default false) and `manualEV`
+(default 0, range −12..+12 stops). Manual EV is NOT
+`freezeExposure`: it requires no earlier GPU meter, history,
+resource, shader pass or `AIVERSE_PRISMA_AUTO_EXPOSURE=1`.
+The authored AutoExposure effect still needs an enabled
+PRISMA profile, usable HDR and its quality gate.
+Manual mode bypasses the `kExposureLog/Reduce/Adapt`
+path and multiplies the existing linear HDR
+`CompositeU.filt[2]` by `exp2(manualEV)`. It is evaluated
+before ACES/sRGB/display ColorGrade/LUT/Shader Graph,
+and it composes multiplicatively with authored
+ColorGrade exposure. A plain `composite(0)` fallback
+retains this fixed EV; no extra sampler or RenderGraph
+ownership was added. Nonfinite native or authored EV
+is replaced by 0, and values are bounded to ±12.
+
+For native/cinematic cameras call
+`setViewManualExposure(stableViewId,true,ev)`;
+`setViewManualExposure(id,false,0)` explicitly
+disables profile-authored manual exposure; and
+`clearViewManualExposure(id)` re-enables inheritance.
+Manual selection invalidates old per-view AE history,
+so resuming the automatic mode begins with fresh
+scene luminance instead of stale adapted pixels.
+All manual override maps are per `viewId` and
+included in `retireUnregisteredViews(liveIds)`,
+`retireView` and shutdown. Do not invent ECS state
+or aggregate by camera dimensions.
+
+Area metering still defaults to the Stage 58 circle.
+An optional `meterBox` flag (default false) changes
+`kExposureLog` to a soft rectangular ROI with
+`meterHalfWidth/Height` (default 0.25 each; normalized
+width/height of viewport). The `ExposureMeterRegion`
+native struct appends `box`, `halfWidth`, and
+`halfHeight` to preserve existing positional
+aggregate-initializer compatibility. Native inputs
+are finite-clamped. Stage 59 extends ONLY
+`ExposureMeterU` with `regionBox` and the associated
+`kExposureLog` UBO field count; reduction/adapt
+and unrelated shaders retain their old uniforms.
+ROI uses backend-correct UVs, aspect-correct soft
+rectangle distance and a bounded nonzero outside
+sample weight.
+
+The exposure pipeline now checks that the entire
+luminance pyramid produced a valid 1×1 target
+BEFORE allocating/writing camera history. On any
+failed or incomplete reduction, invalidate the
+existing exposure history and allow final composite
+to omit Auto Exposure; do not sample partial mip
+targets as valid exposure. No additional GPU waits
+or synchronous disposal.
+
+`ViewEffectReport.manualExposureEncoded`,
+`manualExposureEV`, `autoExposureBoxMetered`
+are read-only last-encoded camera fields. Only
+the true final composite (possibly plain fallback)
+may report fixed manual EV; box reporting only
+when a fresh ROI exposure was composited.
+The editor surfaces these distinctions; prepared
+shaders and encoded draws are NOT verified GPU
+pixels or completion fences.
+
+Stage 59: **49/49 GitHub source-only structural
+checks** after readback; **NOT RUN** CMake,
+clang, Obj-C++, shader compilation, CTest,
+GPU, editor startup, image parity, FPS and CI.
+Read `docs/handoffs/prisma-stage-59.md` for
+exact commit IDs, architecture and next work.
+Retain PR #26 Draft, do not merge into main
+without an explicit user request.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
