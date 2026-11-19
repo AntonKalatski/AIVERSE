@@ -299,7 +299,7 @@ private:
         ui::help("На более низких уровнях эффект пропускается: так тяжёлые эффекты не попадают на слабые телефоны.");
         for (auto& w : warningsRu(e)) ui::toneText(ui::Tone::Warn, "%s", w.c_str());
         if (d.type == PrismaType::DepthOfField)
-            ui::help("Старые focusDepth/focusRange: аппаратная глубина 0..1. Включите metricFocus для фокуса по расстоянию вдоль камеры (единицы мира); focusDistance/focusRangeMeters задают плоскость и диапазон, occlusionToleranceMeters ограничивает смешивание на границах объектов. Требуется AIVERSE_PRISMA_DOF=1 и HDR High. При некорректной near/far автоматически используется старый режим.");
+            ui::help("Старые focusDepth/focusRange: аппаратная глубина 0..1. Включите metricFocus для фокуса по расстоянию вдоль камеры (единицы мира); focusDistance/focusRangeMeters задают плоскость и диапазон, occlusionToleranceMeters ограничивает смешивание на границах объектов. Требуется AIVERSE_PRISMA_DOF=1; стандартный minQuality — High, но его можно переопределить. При некорректной near/far автоматически используется старый режим.");
         int off = 0;
         for (auto& p : d.params) {
             switch (p.kind) {
