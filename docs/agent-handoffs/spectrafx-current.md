@@ -1,5 +1,17 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 96 — Metal half4 compile failure fixed in source; verification pending
+
+User's Mac Studio full CTest reported `spectrafx_metal_billboard` FAILED
+(`112/122`, test #113) with `half4(float3,float)` MSL constructor error.
+Code commit `7f77b26fa7e6092ed970d3cf8d2d08c764527761` explicitly
+narrows each billboard vertex color component to `half`. This is the
+runtime shader used by the exact Metal offscreen raster test.
+**No post-fix native compilation or CTest result exists yet**.
+Full details and revalidation commands:
+`docs/agent-handoffs/spectrafx-stage96-metal-half4-2026-11-19.md`.
+
+
 ## Stage 95 — rolled/overhead camera basis (unverified)
 
 `ParticleSystem` now derives billboards from the caller's `SpectraFxView.up`
