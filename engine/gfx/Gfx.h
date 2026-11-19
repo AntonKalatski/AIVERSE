@@ -221,6 +221,10 @@ public:
     virtual double gpuFrameMs() const { return 0; } // last completed frame; asynchronous
     // Zero if backend does not expose a completed-slot-safe frame serial.
     virtual uint64_t frameSerial() const { return 0; }
+    // The greatest submitted frame serial whose GPU fence has completed.
+    // Returns zero when unsupported. Distinct from endFrame submission:
+    // consumers must not publish async compute results before completion.
+    virtual uint64_t completedFrameSerial() const { return 0; }
 
     // Frame (driven by the platform layer)
     virtual void beginFrame(int framebufferWidth, int framebufferHeight) = 0;
