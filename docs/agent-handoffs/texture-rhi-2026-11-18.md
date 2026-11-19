@@ -5984,3 +5984,31 @@ GLSL/MSL compilation and GPU readback NOT RUN, as requested.
 Next: bind masked shaders in model material renderer, support
 LOD transition and deformed geometry, wire Terra and finish
 backend feature parity.
+
+
+## Stage 9R — LOD-crossfade-aware model feedback routing (2026-11-19)
+
+Source commit: da18b554d14ea581cfc908cdba5aab411345eb87.
+Changed file: engine/render/Renderer3D.h.
+Added setVirtualTextureLodModelFeedback(pipeline,FeedbackLodBinder)
+and clearVirtualTextureLodModelFeedback(). Callback receives
+Model/Primitive/Material/world matrix plus lodThreshold and
+lodInvert to reproduce the main renderer's per-fragment LOD
+crossfade. The ModelItem feedback path selects this pipeline
+for fading rigid geometry; when no compatible pipeline is
+installed, fading geometry is skipped. Masked+fading geometry
+is conservatively skipped until a combined discard shader is
+available. Clearing model feedback also clears LOD variant.
+This avoids using opaque feedback for partial-coverage LODs.
+
+Limitations: this adds routing and parameters, not a compiled
+LOD-dither shader. Exact coverage parity, alpha+LOD combined
+path, animated/morph models, Terra registration and backend
+parity remain outstanding. The caller must bind all material
+and camera uniforms.
+Verification: GitHub commit succeeded. Native compile,
+CTest, GLSL/MSL shader compilation and GPU tests NOT RUN
+per user's functions-first instruction.
+Next: implement LOD-dither feedback fragment shader matching
+the main renderer, combined masked+LOD variant, then address
+deformed models and Terra integration.
