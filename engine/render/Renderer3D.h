@@ -229,7 +229,7 @@ public:
     // X/Z; z = propagating radius, w = signed amplitude. No new RHI buffers.
     void drawNereidRippleMesh(const Mesh& mesh,const mat4& model,float4 color,
                               float specular,float refraction,
-                              const std::array<float4,4>& ripples);
+                              const std::array<float4,16>& ripples);
     // Editor Scene only: render selected geometry into a depth-tested mask
     // and composite its exterior silhouette in screen pixels.
     void setSceneSelectionOutline(bool enabled) { sceneSelectionOutline_ = enabled; }
@@ -402,7 +402,7 @@ private:
         const Mesh* mesh; mat4 model; float4 color;
         uint32_t flags; float specular, emissive;
         float4 selection{0, 0, 0, 0};
-        std::array<float4,4> waterRipples{};
+        std::array<float4,16> waterRipples{};
     };
     struct ModelItem {
         const Model* model; const Primitive* prim; const Material* mat;
