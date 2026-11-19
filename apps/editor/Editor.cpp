@@ -133,6 +133,9 @@ void Editor::init(gfx::Device& dev) {
     view_.setDeferAppearanceVariants(false); // editing always exposes every variant
     view_.setContentBase(ws_.project.dir.empty() ? "" : ws_.project.dir + "/");
     view_.init(dev, rules(), projectReader(ws_.project.dir));
+    gpuRetirementRing_=std::make_shared<render::RetirementDiagnosticRing>(128);
+    view_.modelResources().setRetirementDiagnosticObserver(
+        render::RetirementDiagnosticRing::observe(gpuRetirementRing_));
     for (auto& w : view_.warnings()) ws_.log("view", w, true);
     fxTextures_.init(dev);
     gameFx_.setQuality(fx::defaultQualityFor(dev, false));
@@ -170,6 +173,8 @@ void Editor::shutdown() {
     windows_.clear(); // windows release their viewports in their destructors via update()? keep simple: textures die with the device
     if (studioLogo_.valid()) { dev_->destroyTexture(studioLogo_); studioLogo_ = {}; }
     view_.shutdown(*dev_);
+    view_.modelResources().setRetirementDiagnosticObserver({});
+    gpuRetirementRing_.reset();
     postFx_.shutdown();
     if(fpsPreviewMesh_.vb.valid())dev_->destroyBuffer(fpsPreviewMesh_.vb);
     if(fpsPreviewMesh_.ib.valid())dev_->destroyBuffer(fpsPreviewMesh_.ib);
