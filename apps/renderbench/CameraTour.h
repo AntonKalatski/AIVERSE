@@ -9,7 +9,7 @@
 namespace aiverse::bench {
 // Presentation-only shot track. Sample absolute time so frame rate cannot change the path.
 struct CameraTour {
-    struct Shot { render::RTSCamera from, to; double duration; };
+    struct Shot { render::Camera from, to; double duration; };
     std::vector<Shot> shots;
     double duration=0;
     static render::float3 vector(const Json& j) {
@@ -18,8 +18,8 @@ struct CameraTour {
         if(!std::isfinite(v.x)||!std::isfinite(v.y)||!std::isfinite(v.z))throw std::runtime_error("tour: nonfinite position");
         return v;
     }
-    static render::RTSCamera pose(const Json& j) {
-        render::RTSCamera c;c.target=vector(j["target"]);auto d=vector(j["eye"])-c.target;
+    static render::Camera pose(const Json& j) {
+        render::Camera c;c.target=vector(j["target"]);auto d=vector(j["eye"])-c.target;
         c.distance=render::length(d);
         const float fov=float(j["fovYDegrees"].toDouble(58.5));
         if(c.distance<0.01f||!std::isfinite(c.distance)||!std::isfinite(fov)||fov<5||fov>150)throw std::runtime_error("tour: invalid camera");
@@ -37,7 +37,7 @@ struct CameraTour {
         }
         if(duration>3600)throw std::runtime_error("tour: duration exceeds one hour");
     }
-    render::RTSCamera sample(double time,int& shot) const {
+    render::Camera sample(double time,int& shot) const {
         if(shots.empty())throw std::runtime_error("tour: empty track");
         time=std::clamp(time,0.0,duration);shot=0;
         while(size_t(shot+1)<shots.size()&&time>=shots[size_t(shot)].duration)time-=shots[size_t(shot++)].duration;

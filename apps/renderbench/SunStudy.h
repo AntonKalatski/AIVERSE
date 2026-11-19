@@ -8,7 +8,7 @@
 namespace aiverse::bench {
 // Offline diagnostic: rank sun directions against artist-marked screen-space receivers.
 // Uses the existing opaque BVH; candidates still require a real shader/shadow-map capture.
-inline Json studySun(const render::StaticShadowGeometry& geometry,const render::RTSCamera& camera,
+inline Json studySun(const render::StaticShadowGeometry& geometry,const render::Camera& camera,
                      float aspect,const Json& targets) {
     using namespace render;
     if(targets.size()<1||targets.size()>32)throw std::runtime_error("sunStudy requires 1..32 targets");

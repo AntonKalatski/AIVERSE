@@ -63,7 +63,7 @@ struct Viewer {
     gfx::Device* dev = nullptr;
     Renderer3D r3d;
     ImGuiLayer gui;
-    RTSCamera cam;
+    Camera cam;
     std::map<std::string, std::unique_ptr<Model>> models;
     std::map<std::string, std::string> mergeInfo;   // path -> "parts 47 -> 14" or why not merged
     std::vector<Instance> inst;
