@@ -4108,18 +4108,25 @@ normalization boolean. Test запускается
 в рамках `prisma_volume` полного CTest
 и не создаёт отдельного GPU target.
 
-**Фактическое состояние на момент документации:**
-workflow для HEAD `96da88d098307f10d7745af6b2f880e35d918f9e`
-зарегистрирован как
-[GitHub Actions run #44595377866](https://github.com/chromealex/AIVERSE/actions/runs/44595377866).
-Оба задания Linux/macOS были **queued**, ни
-одна сборка/CTest/GPU fixture ещё не имела
-результата. Нельзя выводить PASS/FAIL из
-успешной постановки workflow в очередь.
-Первоначальный workflow запуск на предыдущем
-SHA был отменён `concurrency.cancel-in-progress`
-после добавления теста; не использовать
-его как результат валидации.
+**Фактическое состояние по последнему GitHub API readback:**
+[GitHub Actions run #44597082684](https://github.com/chromealex/AIVERSE/actions/runs/44597082684)
+на source/test commit
+`aa262d6b44546985429c0cda0abf0338f270c693`
+остаётся **queued** для Ubuntu 24.04 и macOS 15.
+Нативная компиляция/CTest/GPU smoke не имели
+наблюдаемого результата; очередь — НЕ PASS.
+Предыдущие запуски 44595169973 и 44595377866
+были отменены через `concurrency.cancel-in-progress`.
+Дальше тестовый исходник не менять без необходимости,
+чтобы не отменять ожидающий runner снова.
+
+Дополнительный `prisma_graph` CTest теперь в коде
+проверяет 4 варианта reactive shader source
+(skin/baked × GLSL/MSL), безопасный отказ
+на неподдерживаемых shader anchors и
+TEX8/TEX9 sampler plan для 0–4 Shader Graph
+текстур. Сама реализация теста прочитана
+из GitHub; результат CTest ещё NOT RUN.
 
 Следующий агент должен считать фактический
 run/job status, получить реальные job logs
