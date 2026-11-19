@@ -6,6 +6,7 @@
 #include "engine/gfx/Gfx.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <limits>
 
 #include <string>
@@ -16,6 +17,10 @@ struct TextureUploadOptions {
     bool trustShaderSrgbDecode = false; // compressed sRGB UNORM formats need shader decode
     bool forceCpuDecode = false;        // for debugging and GPU compression fallback
     bool shaderReconstructsBc5NormalZ = false; // opt-in; BC5 native sampling returns RG only
+    // Upper bound on all retained RGBA8 mip/face/layer bytes during CPU
+    // fallback. The native compressed path does not consume this budget.
+    // Zero disables CPU fallback; enlarge explicitly for large trusted assets.
+    size_t maxCpuDecodedBytes = size_t(512) << 20;
 };
 
 // TextureHandle is owned by the caller. Returns invalid and sets error on
@@ -120,6 +125,39 @@ inline gfx::TextureHandle uploadContainerTexture(gfx::Device& dev, const Compres
         // except ASTC which intentionally has no CPU decoder in this engine.
     }
 
+    // Preflight the FULL decoded mip chain before allocating any RGBA8
+    // image. Per-mip limits alone allow many individually legal levels to
+    // exhaust memory together. Division-based checks avoid size_t overflow
+    // for malformed caller-constructed container metadata.
+    constexpr size_t kMaxDecodedMipBytes = size_t(512) << 20;
+    std::vector<size_t> decodedMipBytes;
+    decodedMipBytes.reserve(in.levels.size());
+    size_t totalDecodedBytes = 0;
+    for (size_t level = 0; level < in.levels.size(); ++level) {
+        const int images = levelImageCount(in, int(level));
+        const int width = levelWidth(in, int(level));
+        const int height = levelHeight(in, int(level));
+        if (images < 1 || width < 1 || height < 1) {
+            error = "invalid decoded texture mip geometry";
+            return {};
+        }
+        const size_t w = size_t(width), h = size_t(height);
+        if (w > kMaxDecodedMipBytes / 4 ||
+            h > (kMaxDecodedMipBytes / 4) / w ||
+            w * h * 4 > kMaxDecodedMipBytes / size_t(images)) {
+            error = "decoded texture mip exceeds memory budget";
+            return {};
+        }
+        const size_t bytes = w * h * 4 * size_t(images);
+        if (totalDecodedBytes > opt.maxCpuDecodedBytes ||
+            bytes > opt.maxCpuDecodedBytes - totalDecodedBytes) {
+            error = "decoded texture chain exceeds CPU fallback byte budget";
+            return {};
+        }
+        totalDecodedBytes += bytes;
+        decodedMipBytes.push_back(bytes);
+    }
+
     // Decode each 2D slice of each mip into packed RGBA8, keeping the original
     // layer/face/z order so native array and volume uploads preserve all images.
     std::vector<std::vector<uint8_t>> decoded(in.levels.size());
@@ -127,12 +165,8 @@ inline gfx::TextureHandle uploadContainerTexture(gfx::Device& dev, const Compres
         const int count = levelImageCount(in, int(level));
         const size_t stride = size_t(levelWidth(in, int(level))) *
                               size_t(levelHeight(in, int(level))) * 4;
-        if (stride > (size_t(512) << 20) / size_t(count)) {
-            error = "decoded texture mip exceeds memory budget";
-            return {};
-        }
         auto& output = decoded[level];
-        output.resize(stride * size_t(count));
+        output.resize(decodedMipBytes[level]);
         for (int slice = 0; slice < count; ++slice) {
             std::vector<uint8_t> rgba;
             if (!decodeBlocksSlice(in, int(level), slice, rgba) ||
