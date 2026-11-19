@@ -2342,3 +2342,69 @@ all RHI allocations in the engine. The new native-only deferred
 `render_model_image_transaction` test checks abort, duplicate
 staging, multi-Model commit and failure-to-idle GPU token behavior.
 No native CMake build, CTest or real backend validation was run.
+
+## Stage 113 — transactional scratch Models and shared GPU texture aliases
+
+The Stage 112 `ModelImageUploadTransaction` now also participates in a
+**scratch Model** transaction for RTS authored appearance hot reload.
+`RtsView::reloadAppearanceTypes` supplies a temporary
+`ModelResourceCache::ModelMap` to its `loadModelCached` adapter.
+Uncached choices/LODs/stage alternatives/attachments are decoded and
+uploaded into that map, without inserting them into the live Model
+cache or adding failed-load tombstones before the entire appearance
+transaction succeeds. Repeated keys within the transaction reuse the
+same scratch Model and preserve the Model* used by staged attachments.
+
+Speculative `uploadModel(device,model,keepCpu,
+publishSharedTextures=false)` reuses **already resident**
+`ModelTextureCache::borrowResident(image)` GPU leases, including
+the current texture revision and sampler key. A missing key receives
+a transaction-owned dedicated texture: it does **not** insert a GPU
+entry into the shared cache. The shared decoded-pixel LRU can still
+receive CPU entries while staging; these do not imply GPU
+publication. Existing alias leases outlive the speculative Model
+until its GPU retirement completes. New shared GPU cache entries
+are not promoted by this stage; this is a deliberately conservative
+GPU-residency boundary, not complete shared-cache transaction support.
+
+After all requested TypeLooks and immutable appearance snapshots
+are prepared, the image transaction commits and
+`ModelResourceCache::publishStagedModels(device,models)` validates
+the bound GPU generation and resident-key uniqueness, then transfers
+whole `std::map` nodes into live storage (no new Model allocation;
+borrowed Model* addresses remain stable). On precommit failure,
+an owner RAII scope sends each scratch Model through
+`retireUnpublished` into the ordinary model GPU fence queue.
+Partially uploaded buffers, owned textures, baked animation
+textures and morph textures are released by `releaseModel` only
+after a completed native token or a proven full-device idle.
+A failed retirement queue allocation attempts an explicit
+idle barrier; if unavailable, the code deliberately retains an
+orphaned GPU allocation for device teardown rather than releasing
+potentially in-flight memory. Counters surface this condition.
+
+The generic `AsyncResourceRetirementQueue::enqueueFrom(resource)`
+preserves caller ownership if a queue vector allocation throws.
+The rollback image pool uses this API too. Retirement metadata
+now has `RetirementResourceKind::Model/Image`, written by
+editor observers into the same bounded ring; event tags are **not**
+GPU synchronization or permission to destroy resources. Editor
+Stats distinguishes model and image events, plus scratch queue
+failures and orphan Models.
+
+The canonical `Renderer3D` now accepts the same optional
+host-controlled `RenderDeviceLifetime::Lease` as PostFx and VFX.
+It checks this lease at init, shutdown, `beginScene`, `render`,
+and `resolvePostFx`. Editor, GameClient (including editor-hosted)
+and FPS propagate their **existing**, single device epoch into
+Renderer3D. The check prevents use of an expired/recycled
+Device pointer; it is neither a completion fence nor automatic
+recovery after device loss.
+
+Deferred `render_model_image_transaction` now additionally covers
+resident shared texture aliasing, missing-key dedicated fallback,
+unpublished Model retirement and scratch Model map publication;
+`render_retirement_diagnostic_ring` checks Model/Image event tags.
+**NOT RUN:** native CMake, CTest, real GPU timelines, screenshots,
+sanitizers and cross-platform parity. This stage is source-only
+and must remain Draft until validated.
