@@ -4224,3 +4224,53 @@ To include the entire nonexperimental engine suite as
 well as the texture gates, add `--full-engine`.
 Review the first error if anything new fails and keep
 the existing fail-fast / native GPU success-marker rules.
+
+### Stage 10CG — allow task-named Mac validation branch (2026-11-19)
+
+**Observed native user log:** the isolated worktree's local branch
+was `verify-texture-rhi-20261119-150819`, **not** detached HEAD.
+The user successfully fetched `origin/feature/texture-rhi-unification`
+and fast-forwarded local HEAD from `67cd9a421` to `954ed5a8d`.
+`bash -n tools/texture-rhi-final-verify.sh` succeeded, but the
+Stage 10CF runner stopped **before CMake** with
+`FAIL: refusing another local branch: verify-texture-rhi-20261119-150819`.
+This was a second incorrect source-identity guard, not a failed
+texture, build or Metal GPU test.
+
+**Source fix:** commit `e7e012b01c6599c85c94f24f4a85197e4a616cf4`
+changes only `tools/texture-rhi-final-verify.sh`. It accepts
+**any local ref name** (including the existing task-specific
+validation branch and detached HEAD) when the actual `HEAD`
+commit equals the fetched
+`refs/remotes/origin/feature/texture-rhi-unification^{commit}`.
+An absent remote-tracking ref, stale/other branch commit or
+wrong checkout still fails closed. The runner prints the
+actual SHA and local branch/detached name for traceability.
+The start of each run also removes an old
+`build/texture-final-logs/acceptance.txt`, preventing a
+previous PASS manifest from being mistaken for a new result
+if the current run fails.
+
+**Verification:** GitHub source patch and its guard were inspected;
+the remote commit was created. A fresh `bash -n`, native CMake
+build, CPU CTest, 7 native Metal GPU tests, and a complete
+`acceptance.txt` have **NOT YET RUN** after the fix.
+
+**Exact one-pass retry in the same existing Mac Studio worktree
+(do not switch local branches):**
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+bash -n tools/texture-rhi-final-verify.sh
+bash tools/texture-rhi-final-verify.sh --jobs 4
+```
+
+With `--full-engine`, additionally run all nonexperimental
+engine tests, not just the texture-focused acceptance.
+Only a zero exit and a **new** `acceptance.txt` ending in
+`result=PASS` after seven actually executed native Metal
+CTest cases certify the full suite. Keep Draft PR #21
+and GPU ICB default-OFF until the actual results.
