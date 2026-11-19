@@ -174,6 +174,7 @@ public:
     }
 
     bool ready() const { return renderer_ && rigid_.ready(); }
+    bool feedbackDepthAttachment() const { return feedbackDepthAttachment_; }
     size_t mappedMaterialCount() const { return pages_.size(); }
     bool deformedEnabled() const { return deformedEnabled_; }
 
@@ -192,6 +193,7 @@ public:
         renderer_ = nullptr;
         pass_ = nullptr;
         deformedEnabled_ = false;
+        feedbackDepthAttachment_ = false;
     }
 private:
     bool initializePrograms(gfx::Device& device,Renderer3D& renderer,
@@ -223,6 +225,7 @@ private:
         // its own per-domain targets; no feedback pass is implicitly run.
         renderer.setVirtualTextureFeedback(pass,{},{});
         deformedEnabled_=includeDeformed;
+        feedbackDepthAttachment_=depthAttachment;
         return true;
     }
     struct Key {
@@ -240,6 +243,7 @@ private:
     Renderer3D* renderer_ = nullptr; // non-owning
     gfx::VirtualTextureFeedbackPass* pass_ = nullptr; // non-owning
     bool deformedEnabled_ = false;
+    bool feedbackDepthAttachment_ = false;
     MaterialMapper liveMapper_;
     FeedbackMaterialFilter feedbackMaterialFilter_;
     std::unordered_map<Key, Mapping, KeyHash> pages_;
