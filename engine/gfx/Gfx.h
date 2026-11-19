@@ -67,6 +67,11 @@ struct DrawIndexedIndirectCommand {
 };
 static_assert(sizeof(DrawIndexedIndirectCommand) == 20);
 
+struct BufferInfo {
+    size_t logicalBytes = 0; // lower bound: excludes ring snapshots/driver padding
+    uint32_t versions = 1;   // dynamic GPU versions may occupy more VRAM
+};
+
 struct BufferDesc {
     BufferType type = BufferType::Vertex;
     Usage usage = Usage::Immutable;
@@ -166,6 +171,11 @@ public:
     virtual BufferHandle createBuffer(const BufferDesc& d) = 0;
     virtual void updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset = 0) = 0; // grows Dynamic buffers if needed
     virtual void destroyBuffer(BufferHandle h) = 0;
+    // CPU-only live RHI buffer metadata, same contract as textureInfo.
+    // No GPU readback or synchronization; false if unsupported/stale.
+    virtual bool bufferInfo(BufferHandle h, BufferInfo& out) const {
+        (void)h; (void)out; return false;
+    }
     // Safe point for shared geometry writes (Metal cannot blit into storage during an encoder).
     virtual bool canUpdateSharedBuffers() const { return true; }
     virtual TextureHandle createTexture(const TextureDesc& d) = 0;
