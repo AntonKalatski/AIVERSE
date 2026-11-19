@@ -10,6 +10,7 @@
 #include "../Editor.h"
 #include "../EditorUtil.h"
 #include "modules/rts/view/RtsPortrait.h"
+#include "engine/render/RenderResourceOwnerGroup.h"
 
 namespace aiverse::editor {
 
@@ -179,18 +180,38 @@ public:
                 rawProject_=project;
                 rawRevision_=revision;
             }
+            // One resource budget across THREE live native host owners:
+            // the world RtsView, this portrait's generated geometry and the
+            // independent raw-source model provider. Shared GPU pool pages
+            // and texture-owner allocations are never charged per Model.
+            render::RenderResourceOwnerGroup ownerGroup;
+            ownerGroup.add(ed.view().modelResources());
+            ownerGroup.add(portrait_.modelResources());
+            ownerGroup.add(rawModels_.resources());
+            ownerGroup.setEstimatedBudgetBytes(256ull*1024ull*1024ull);
+            const auto group=ownerGroup.snapshot(ed.device());
+            const bool admission=ownerGroup.mayAdmitNewSources(group);
+            ImGui::TextDisabled("Ресурсы: %zu хоста · %zu модели · %.1f MiB (оценка)",
+                group.uniqueOwners,group.residentModels+group.retiredModels,
+                double(group.estimatedKnownBytes())/(1024.0*1024.0));
+            if(group.health==render::RenderResourceHealth::DeviceUnhealthy)
+                ImGui::TextDisabled("GPU сообщил об ошибке; новые источники не загружаются");
+            else if(!admission)
+                ImGui::TextDisabled("Бюджет визуальных ресурсов занят, загрузка отложена");
+            else if(group.health==render::RenderResourceHealth::PendingGpuRetirement)
+                ImGui::TextDisabled("GPU завершает освобождение предыдущих моделей");
 #ifndef __EMSCRIPTEN__
-            if(!rawModels_.resources().contains(current->path))
+            if(admission && !rawModels_.resources().contains(current->path))
                 rawModels_.requestAsync(
                     current->path,render::ModelLoadPriority::Interactive);
-            rawModels_.publishReady(ed.device(),1,1.0);
+            if(admission)rawModels_.publishReady(ed.device(),1,1.0);
             const auto progress=rawModels_.cpuStats();
             if(progress.workerActive || progress.queued)
                 ImGui::TextDisabled("CPU моделей: %zu / %zu задач · очередь %zu",
                     progress.activeWorkers,progress.configuredWorkers,
                     progress.queued);
 #else
-            rawModels_.load(ed.device(),current->path);
+            if(admission)rawModels_.load(ed.device(),current->path);
 #endif
             if(rawModels_.find(current->path))
                 rawDrawn=portrait_.renderStaticModel(
