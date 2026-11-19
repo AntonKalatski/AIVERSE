@@ -293,7 +293,7 @@ inline const char* kMotionBlur = R"(
 // p0.w = reactive rejection. sun.x = depth threshold, sun.y = motion attenuation,
 // sun.z = valid reactive mask, sun.w = confidence rejection (0..1).
 // jitter.xy = current projection jitter UV, jitter.zw = prior projection
-// jitter UV. Jitter is intentionally removed from previous history lookup:
+// jitter UV; inputPx.xy=1/internal render width/height, inputPx.z=sharpness. Jitter is intentionally removed from previous history lookup:
 // input pixels are sampled in jittered projection space, while history is
 // stored on the stable output pixel grid. History is NEVER sampled as RT.
 inline const char* kTemporalResolveHelpers = R"(
@@ -311,13 +311,17 @@ inline const char* kTemporalResolve = R"(
     vec3 current=prismaHistoryCompress(TEX0(uv).rgb);
     float depth=TEX3(uv).r;
     vec3 lo=current,hi=current;
+    vec3 neighborhoodSum=vec3(0.0);
     float meanLuma=0.0, meanLumaSq=0.0;
     float nearDepth=depth,farDepth=depth;
     for(int y=-1;y<=1;++y)for(int x=-1;x<=1;++x) {
-        vec2 q=TUV(clamp(sampleS+vec2(float(x)*px.x,float(y)*px.y),
-                         px.xy*0.5,vec2(1.0)-px.xy*0.5));
+        // Neighborhood classification is at NATIVE scene texel scale;
+        // history taps below are at OUTPUT pixel scale.
+        vec2 q=TUV(clamp(sampleS+vec2(float(x)*inputPx.x,float(y)*inputPx.y),
+                         inputPx.xy*0.5,vec2(1.0)-inputPx.xy*0.5));
         vec3 c=prismaHistoryCompress(TEX0(q).rgb);
         lo=min(lo,c);hi=max(hi,c);
+        neighborhoodSum+=c;
         float luma=dot(c,vec3(0.2126,0.7152,0.0722));
         meanLuma+=luma;
         meanLumaSq+=luma*luma;
@@ -326,6 +330,11 @@ inline const char* kTemporalResolve = R"(
     }
     meanLuma*=1.0/9.0;meanLumaSq*=1.0/9.0;
     float localSigma=sqrt(max(meanLumaSq-meanLuma*meanLuma,0.0));
+    // Mild bounded spatial reconstruction of a bilinearly upsampled scene.
+    // Work in compressed HDR to avoid hot highlight ringing; the temporal
+    // history provides subpixel detail over successive jitter phases.
+    vec3 neighborhoodMean=neighborhoodSum*(1.0/9.0);
+    current=clamp(current+(current-neighborhoodMean)*inputPx.z,lo,hi);
     vec3 resolved=current;
     if(p0.y>0.5 && depth<0.99999) {
         vec2 velocity=TEX2(uv).rg;
