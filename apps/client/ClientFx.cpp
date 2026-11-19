@@ -147,7 +147,26 @@ void ClientFx::update(Simulation& sim, const game::RtsScene& scene, const render
     ps_.update(dt);
     static const bool dbg = std::getenv("AIVERSE_FX_DEBUG") != nullptr;
     static int frames = 0;
-    if (dbg && ++frames % 30 == 0) std::fprintf(stderr, "[fx] played %d rejected %d particles %d culled %d drawn %d\n", bridge_.played(), bridge_.rejected(), ps_.stats().particles, ps_.stats().culled, ps_.stats().drawn);
+    if(dbg && ++frames%30==0) {
+        std::fprintf(stderr,
+            "[fx] played %d rejected %d particles %d culled %d drawn %d\n",
+            bridge_.played(),bridge_.rejected(),ps_.stats().particles,
+            ps_.stats().culled,ps_.stats().drawn);
+        if(gpuPlayback_) {
+            const auto& budget=gpuPlayback_->gpuBudgetStats();
+            std::fprintf(stderr,
+                "[spectrafx-gpu] attached=%zu oneShots=%zu pools=%zu "
+                "slots=%llu nominalGpuKiB=%llu gpuFrameMs=%.3f "
+                "spawnScale=%.3f timingSamples=%llu\n",
+                gpuPlayback_->attached(),gpuPlayback_->oneShotCount(),
+                gpuPlayback_->sharedPoolCount(),
+                static_cast<unsigned long long>(gpuPlayback_->usedGpuSlots()),
+                static_cast<unsigned long long>(
+                    gpuPlayback_->nominalGpuBytes()/1024),
+                double(budget.filteredFrameMs),double(budget.spawnScale),
+                static_cast<unsigned long long>(budget.samples));
+        }
+    }
 }
 
 void ClientFx::prepareGpuFrame(float dt,const render::RTSCamera& camera) {
