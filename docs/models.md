@@ -1367,3 +1367,27 @@ for concurrent mutation.
 This is a Stage 130 source-only change:
 **NOT RUN** native compiler, CTest, Metal GPU, fault injection
 or sanitizer tests. [Stage 130 handoff](agent-handoffs/animation-stage130-read-lease-lifecycle-diagnostics-2026-11-19.md).
+
+## Stage 131 — Model cache owner-thread lookup and streaming tests
+
+Native `ModelResourceCache::acquireModelRead(key)` checks
+the cache's read/GPU thread ownership before reading
+`models_`, avoiding the previous order where a foreign
+thread could touch the map before the pointer-based guard
+rejected it. A read lease/scope is still a temporary CPU
+lifetime contract, NOT a GPU retirement fence or a
+cross-thread general-purpose lock.
+
+This scope blocks existing-Model eviction/replacement/
+invalidation/shutdown, but intentionally allows NEW-key
+`insertIfAbsent` and `publishStagedModels` publication,
+since `std::map` keeps existing element/pointer stability.
+The existing `render_device_epoch` native CTest now
+contains source regressions for this split, plus active/
+peak reader and blocked-mutation counters, move-only
+leases, owner-thread lookup rejection and post-shutdown
+thread rebinding.
+
+**NOT RUN:** CMake/compiler/linker, CTest, real GPU
+streaming, Metal/GL/Vulkan visuals, sanitizer or CPU
+profiling. [Stage 131 handoff](agent-handoffs/animation-stage131-streaming-cache-read-regressions-2026-11-19.md).
