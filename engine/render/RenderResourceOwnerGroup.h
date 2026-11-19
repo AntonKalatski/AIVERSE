@@ -56,7 +56,11 @@ struct RenderResourceGroupStats {
 };
 
 class RenderResourceOwnerGroup final {
-    struct ScopedState;
+    struct ScopedState {
+        RenderResourceOwnerGroup* owner=nullptr;
+        std::thread::id thread;
+        std::atomic<size_t> wrongThreadReleases{0};
+    };
 public:
     // Scoped registration is the recommended path for GUI/native hosts.
     // The returned lease never owns or extends a ModelResourceCache.
@@ -241,23 +245,18 @@ private:
         if(std::this_thread::get_id()!=ownerThread_)
             throw std::logic_error("RenderResourceOwnerGroup wrong owner thread");
     }
-    void unregister(uint64_t id) {
-        checkThread();
-        owners_.erase(std::remove_if(owners_.begin(),owners_.end(),
-            [id](const Registration& entry){return entry.id==id;}),
-            owners_.end());
-    }
     struct Registration {
         const ModelResourceCache* cache=nullptr;
         std::weak_ptr<const void> lifetime;
         const gfx::Device* device=nullptr;
         uint64_t id=0;
     };
-    struct ScopedState {
-        RenderResourceOwnerGroup* owner=nullptr;
-        std::thread::id thread;
-        std::atomic<size_t> wrongThreadReleases{0};
-    };
+    void unregister(uint64_t id) {
+        checkThread();
+        owners_.erase(std::remove_if(owners_.begin(),owners_.end(),
+            [id](const Registration& entry){return entry.id==id;}),
+            owners_.end());
+    }
     std::vector<Registration> owners_;
     std::thread::id ownerThread_;
     std::shared_ptr<ScopedState> scopedState_;
