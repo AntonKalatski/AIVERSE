@@ -110,6 +110,11 @@ void Editor::init(gfx::Device& dev) {
     resetLayout_ = !fs::exists(iniPath, fec);
     r3d_.setGpuDeviceLease(gpuDeviceLease());
     r3d_.init(dev);
+    view_.setAppearancePipelineValidator(
+        [this](const render::Model& model,
+               const std::vector<render::Material>& materials) {
+            return r3d_.warmModelPipelinesChecked(model,&materials);
+        });
     postFx_.setGpuDeviceLease(gpuDeviceLease());
     postFx_.init(dev);
     postFx_.setQuality(render::PostFx::defaultQualityFor(dev, false));
