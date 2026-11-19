@@ -1281,8 +1281,46 @@ Limitations: there is one VT feedback capture per scene frame by
 default, not one per domain simultaneously. Domains not selected
 for that frame may use manual CPU prefetch/previously resident
 pages. The main shader still needs ordinary source-texture fallback
-until its pages arrive. Multi-domain grouping remains
-homogeneous within any one GPU ICB/MDI batch; a heterogeneous
-single-command resource table and Shader Graph VT remain future
-features. Native build, shader compilation, CTest and GPU tests
+until its pages arrive. Multi-domain grouping remains homogeneous within any one GPU
+ICB/MDI batch; a heterogeneous single-command resource table remains
+future work. Shader Graph now supports an explicit material-only
+`sampleVirtualTexture` node with a bounded one-extra-texture budget,
+documented below. Native build, shader compilation, CTest and GPU tests
 for this new manager have **not run**.
+
+
+## Shader Graph virtual texture node
+
+The normal material graph compiler now offers
+`sampleVirtualTexture(uv)` as a material-only fragment operation.
+Its `Program::usesVirtualTexture` flag selects a shader permutation
+that uses the same `ModelVirtualTextureBinding` and physical
+page-table lookup as normal `Renderer3D` materials.
+
+`graph::compile` counts the node toward the existing sample
+limit, rejects it in vertex/postprocessing/particle graphs, and
+enforces an explicit **16-fragment-texture-slot** budget:
+one or zero independent graph textures may coexist with the
+two VT arrays. With zero additional graph textures the virtual
+atlas/page table are `tex13/tex14`; with one, `tex14/tex15`.
+These are bound per material draw by the existing resolver.
+When the resolver returns no valid VT allocation, generated
+`SG_SAMPLE_VIRTUAL(uv)` falls back to ordinary `tex1`
+sampling so the shader remains usable while streaming or for
+non-virtual materials.
+
+The graph node may specify `"srgb":true` to request the existing
+compiler's sRGB-to-linear approximation. Raw VT pages are
+RGBA8 without any implicit shader-colour reinterpretation.
+ShaderGraph GPU material equivalence/hash includes the new
+flag. It is not available with the separate R8 reduction
+policy for graph assets, and graph-backed models still use
+direct/CPU submission rather than experimental Metal ICB.
+The graph may continue sampling its own non-VT `sampleTexture`
+resources independently.
+
+See `docs/shader-graph.md` for the graph JSON/API example.
+This is an opt-in **explicit node**, not automatic conversion of
+every Shader Graph texture input into virtual storage.
+Native C++ builds, MSL/GLSL compilers and GPU validation have
+not yet run for the new material graph path.
