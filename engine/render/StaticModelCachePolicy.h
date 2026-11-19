@@ -102,6 +102,8 @@ inline bool equivalentStaticRenderPacketDraw(const ModelDraw& a,
     const auto& h = b.geometry;
     return a.model == b.model && a.persistentId == b.persistentId &&
         a.staticPacketRevision == b.staticPacketRevision &&
+        a.materialOwnerKey == b.materialOwnerKey &&
+        a.materialOwnerRevision == b.materialOwnerRevision &&
         a.flags == b.flags && a.variant == b.variant &&
         a.flash == b.flash && a.teamGlow == b.teamGlow &&
         a.dissolve == b.dissolve &&
