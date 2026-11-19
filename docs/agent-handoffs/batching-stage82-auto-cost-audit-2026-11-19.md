@@ -252,3 +252,53 @@ The scripts print `Stage 86 PASS` only after all five child executables and CSV 
 ### Following tasks
 
 If all three AUTO runs are stable near forced MDI and only first-cold MDI frames spike, quantify cold-start versus settled performance and consider GPU-timestamp instrumentation next; do not unconditionally enable AUTO. If AUTO sometimes runs slowly but forced MDI controls do not, use the per-pass backend timings in CSVs to isolate which phase changes. If both are slow together, prioritize system/device contention and native GPU completion instrumentation over policy changes. Verify shader/geometry permutations, Vulkan cross-platform parity, and full CI before release.
+
+
+---
+
+## Stage 87 — five-process Stage 86 shows backend/environment variability, not only AUTO (2026-11-19)
+
+**Branch:** `perf/auto-batch-cost-metrics-20261119`, Draft PR #39. **Owner-tested previous script:** `tools/batching-stage86-trials.sh` and `tools/batching-stage86-analyze.py` from Stage 86. **New analyzer change:** `7af48913c4dea101aee080282a6a5b4c71f069df` in `tools/batching-stage86-analyze.py`. Documentation in this follow-up commit. **Native execution of the new analyzer revision has NOT yet occurred.** No renderer/Metal RHI/CPU policy changes.
+
+### Actual owner Mac Studio Stage 86 results
+
+The owner ran all five processes and the runner printed `Stage 86` summary and `changed_channels=0` at the end. The complete printed summary:
+
+```text
+Trial    MDI/81    median       p95      late   MDI>1.2  streak  worst frame
+auto1        76    0.8063    1.7736    0.7775        12       6          141
+mdi1         81    1.5965    1.9701    1.6193        59       8          178
+auto2        80    0.8393    1.8285    1.5731        26       5          162
+mdi2         81    0.8620    0.9219    0.8726         0       0          159
+auto3        80    1.3900    1.8787    1.4392        48       8          173
+```
+
+**Key finding:** forced MDI without AUTO changes CPU median from `1.5965ms` (MDI1) to `0.8620ms` (MDI2), a ~85% difference, and MDI1 has 59 sampled MDI frames above 1.2ms while MDI2 has 0. Thus the slowdown is **not only caused by AUTO mode selection**; CPU backend work, queue synchronization, scheduling/thermal and concurrent system load remain possible explanations. AUTO still uses MDI in 76–80 of 81 measured frames, confirming mode selection is not the main cause of this run's differences. The healthy low-latency runs indicate the engine is capable of a ~0.8–0.9ms CPU render on this fixed synthetic scene, but neither sustained GPU improvement nor general FPS gains have been proven.
+
+All five runs returned to the runner and generated a summary; detailed CSVs have **not** yet been provided to this agent for Stage 86. Do not assert exact per-frame backend costs or identify an individual OS/GPU cause from only the printed summary. The final `changed_channels=0` appears in the owner log; the runner's own assertions require actual-MDI screenshot parity and CPU invariants in every mode before completing successfully.
+
+### Stage 87 analyzer implementation
+
+Without changing the original CSV input format, the analyzer now:
+- Identifies contiguous **measured-frame** slow intervals above the previous diagnostic 1.2ms CPU threshold, including first/last frame indices of the longest slow streak.
+- Separates each slow interval's **median CPU time in two Metal submit sub-stages** (`shadow_backend_ms + opaque_backend_ms`) from the rest of synchronous render CPU time (`render_cpu_ms - backend_sum`). The remainder includes all other CPU work; it **must not be labelled a GPU wait**.
+- Reports summed median backend costs for slow MDI frames, longest slow interval and worst frame to `summary.csv`, and prints concise per-run attribution lines.
+- Preserves existing per-run medians, P95, MDI submission counts, raster parity gates, run order and all data sources. No GPU timers and no production flags changed.
+
+### Validation performed and next precise instructions
+
+**Performed:** analyzed actual owner-reported five-run summary and modified GitHub analyzer source. **Not performed:** running changed Python analyzer, verifying all per-frame values from owner CSVs, native CMake, CTest, new Metal tests, GPU timestamps, Vulkan and CI. PR remains Draft.
+
+Re-run the analyzer only against the already generated five CSV files — no GPU re-render or rebuild needed:
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-batching-stage82 || exit 1
+git fetch origin perf/auto-batch-cost-metrics-20261119 || exit 1
+git switch --detach origin/perf/auto-batch-cost-metrics-20261119 || exit 1
+python3 tools/batching-stage86-analyze.py \
+  build/batching-stage82/stage86-trials 1024
+```
+
+The output is `build/batching-stage82/stage86-trials/summary.csv`; share that CSV plus any slow-run `auto3-frames.csv`, `mdi1-frames.csv`, `auto2-frames.csv` to diagnose the stages. A direct read of the raw CSV is needed before concluding whether backend encoding, render setup or process scheduling dominates. Keep primary AIVERSE conflict worktree untouched.
+
+**Next engineering action:** if the slow intervals clearly correlate with Metal backend submit CPU stages, add independent opt-in timing around the Metal CPU ICB encoding loop/argument-buffer stage and/or GPU command buffer waits; if they correlate with other CPU work, inspect command submission cadence and renderer preprocessing. Run more clean A/B rotated trials only after locating the dominant cost. Do not enable AUTO by default or merge PR #39 without native checks.
