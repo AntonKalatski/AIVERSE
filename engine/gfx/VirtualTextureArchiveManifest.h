@@ -156,9 +156,6 @@ inline bool importVirtualTextureArchiveManifest(
         }
         // The page-table decoder expects every mip down to one tile.
         const int lastW=1+(w-1)/interior, lastH=1+(h-1)/interior;
-        const int beforeW=std::max(1,(next.width+(1<<(next.mipLevels-1))-1) /
-                                   (1<<(next.mipLevels-1)));
-        (void)beforeW; // Mip layout is checked below by the exact iterator.
         if (lastW > 1 || lastH > 1)
             return fail("VT archive lacks coarsest fallback mip");
         // Extra authored mips with identical single-page resolutions are invalid.
@@ -204,11 +201,20 @@ inline bool importVirtualTextureArchiveManifest(
         w=next.width;h=next.height;
         for (mip=0; mip<next.mipLevels; ++mip) {
             const int cx=1+(w-1)/interior, cy=1+(h-1)/interior;
-            for (int layer=0;layer<next.virtualLayers;++layer)
+            const auto mipDir=directory/("m"+std::to_string(mip));
+            ec.clear();
+            if (!std::filesystem::is_directory(
+                    std::filesystem::symlink_status(mipDir,ec)) || ec)
+                return fail("VT archive mip directory missing or symlink");
+            for (int layer=0;layer<next.virtualLayers;++layer) {
+                const auto layerDir=mipDir/("l"+std::to_string(layer));
+                ec.clear();
+                if (!std::filesystem::is_directory(
+                        std::filesystem::symlink_status(layerDir,ec)) || ec)
+                    return fail("VT archive layer directory missing or symlink");
                 for (int y=0;y<cy;++y)
                     for (int x=0;x<cx;++x) {
-                        const auto file=directory/("m"+std::to_string(mip))/
-                            ("l"+std::to_string(layer))/
+                        const auto file=layerDir/
                             ("x"+std::to_string(x)+"_y"+std::to_string(y)+".rgba");
                         ec.clear();
                         const auto status=std::filesystem::symlink_status(file,ec);
@@ -218,6 +224,7 @@ inline bool importVirtualTextureArchiveManifest(
                         if (ec || length != bytesPerPage)
                             return fail("VT archive page length mismatch");
                     }
+            }
             w=std::max(1,(w+1)/2);
             h=std::max(1,(h+1)/2);
         }
