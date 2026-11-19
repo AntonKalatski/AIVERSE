@@ -401,7 +401,7 @@ private:
     }
     void create(const std::string& name) {
         current_=name;document_=defaultGraph();saved_=document_;
-        layout_.clear();pan_={};pendingLink_.clear();
+        layout_.clear();pan_={};pendingLink_.clear();layoutDirty_=true;
         raw_=document_.dump(2);dirty_=true;selected_=1;
         propertiesText_=document_["nodes"][1]["properties"].dump(2);
         undo_.clear();redo_.clear();message_.clear();
