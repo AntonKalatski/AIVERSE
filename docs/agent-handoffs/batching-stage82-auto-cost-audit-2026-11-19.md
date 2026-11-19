@@ -437,3 +437,70 @@ A single forced MDI run is a focused probe, not a five-trial performance compari
 ### Following stage
 
 Correlate specific expensive Metal ICB samples (frame, slot, draw count, four sub-stages) with frame CSV's `shadow_backend_ms` and `opaque_backend_ms`; identify whether slow time comes from actual encode loop, uniform/ICB allocations, or residency/command issuance. Distinguish slow *CPU* path from GPU runtime with independent native Metal command buffer / GPU timestamps when viable. Keep PR Draft and experiment flags OFF by default; no engine performance claim until repeatability.
+
+
+---
+
+## Stage 90 — Mac Metal CPU MDI cold alloc diagnosed; filtered warm slow-ICB trace (2026-11-19)
+
+**Repo/branch:** `chromealex/AIVERSE` / `perf/auto-batch-cost-metrics-20261119` (Draft PR #39). **Code change:** `f1dcfbb7079fb4a25b738c0bef0e7cca8f18ecc3` in `engine/gfx/metal/GfxMetal.mm`. This handoff is a separate commit. **Stage 90 code not yet compiled/run on Mac.** GPU/CPU experimentation remains explicitly opt-in, all defaults unchanged.
+
+### Real owner-provided Stage 89 Metal evidence
+
+Owner built the real Mac Objective-C++ renderer and ran forced `mdi` with `AIVERSE_ICB_SLOW_TRACE=1`, threshold 0.15ms. Actual output:
+- `material palette CPU checks=38 result=passed`; actual MDI raster parity `frame=100 changed_channels=0`; final `changed_channels=0`; `Stage 89 exit=0`; 81/81 measured frames submitted real MDI (810 submissions).
+- Forced-MDI `renderer.render()` sampled median 1.6058ms, P95 1.9307ms; late 36-frame median 1.6127ms. It was a **slow run**, matching previous intermittent slow forced MDI results.
+- First 24 `[metal-icb-slow]` lines all came from **frames 91..93**, because the diagnostic printed only the first 24 submissions exceeding 0.15ms and the first CPU ICB builds were very expensive.
+- Frame 91 slot 0 (227 commands): total 0.92938ms, **alloc 0.81671ms**, encode 0.07067ms, residency/execute 0.03979ms, args 0.00221ms. The cold `alloc` includes ICB allocation/reset, command-buffer and uniform-resource preparation; exact OS/driver cause is not established.
+- Most other cold frame 91..93 227-command submissions: total ~0.31–0.36ms, `alloc` ~0.25–0.30ms, `encode` ~0.045–0.055ms. The selected subset therefore proves **cold ICB setup dominated initial slow submissions**. It does **NOT** explain late-frame slowdown: no trace lines for frames after 93 and late median was still 1.6127ms.
+- Later final-frame renderer stage: shadow backend submit 0.24667ms and opaque backend submit 0.23925ms, indicating at least some warmed frame could be quick even in slow experiment; no raw per-frame CSV for Stage 89 was provided.
+
+### Stage 90 implementation
+
+Enhances the existing `AIVERSE_ICB_SLOW_TRACE=1` diagnostic with two **optional static parsed flags**:
+- `AIVERSE_ICB_SLOW_TRACE_FROM_FRAME=120`: ignore CPU ICB submit events before frame 120; valid 0..1,000,000, default 0. Preserves 24-event budget for warmed frames and intermittent late slow periods.
+- `AIVERSE_ICB_SLOW_TRACE_SLOT=0`: optional per-frame submission index filter (valid 0..64); default all slots. Choosing 0 lets us compare similarly sized 227-command groups once per MDI-submitting frame and reduces stdout/trace distortion. `slot` refers to the index of the command submission in the current Metal frame slot's pool; prior logs indicated 0..9 per frame.
+- Existing `AIVERSE_ICB_SLOW_TRACE_MS` default 0.15ms and max 24 printed messages stay unchanged. No extra timing inside the per-draw loop, no resource, pipeline, command or GPU behavior modification. The filtering is diagnostic only.
+
+### Actual status and next exact Mac Studio validation
+
+**Verified:** owner Stage 89 native build/correctness and 24 cold trace samples. GitHub source updated for Stage 90. **Unverified:** new Stage 90 compilation, real late-frame filtered trace, distinct CPU vs GPU wait mechanism, GPU duration/timestamps, Vulkan/full CI. Do not conflate CPU wall with GPU runtime.
+
+Because the owner's primary worktree and an older batching worktree have unresolved rebase conflicts, create a separate **new** worktree for Stage 90 (check its path first; do not overwrite existing work):
+
+```bash
+ROOT=/Users/aleksandrfeer/Projects/AIVERSE
+WT=/Users/aleksandrfeer/Projects/AIVERSE-batching-stage90
+
+git -C "$ROOT" fetch origin perf/auto-batch-cost-metrics-20261119 || exit 1
+git -C "$ROOT" worktree add --detach "$WT" origin/perf/auto-batch-cost-metrics-20261119 || exit 1
+cmake -S "$WT" -B "$WT/build/batching-stage90" \
+  -DAIVERSE_BUILD_HDR_TESTS=ON -DAIVERSE_BUILD_TESTS=OFF \
+  -DAIVERSE_BUILD_EDITOR=OFF -DCMAKE_BUILD_TYPE=Release || exit 1
+cmake --build "$WT/build/batching-stage90" --target aiverse_material_batches --parallel 8 || exit 1
+
+cd "$WT" || exit 1
+mkdir -p build/batching-stage90/captures
+set -o pipefail
+AIVERSE_PALETTE_TEST_CASE=auto_stress \
+AIVERSE_BATCH_STRESS_ITEMS=1024 \
+AIVERSE_BATCH_STRESS_POLICY=mdi \
+AIVERSE_METAL_CPU_MDI=1 \
+AIVERSE_BATCH_CPU_TIMING=1 \
+AIVERSE_BATCH_FRAME_TIMELINE=1 \
+AIVERSE_CAPTURE_SUCCESSFUL_MDI=1 \
+AIVERSE_ICB_SLOW_TRACE=1 \
+AIVERSE_ICB_SLOW_TRACE_FROM_FRAME=120 \
+AIVERSE_ICB_SLOW_TRACE_SLOT=0 \
+AIVERSE_ICB_SLOW_TRACE_MS=0.08 \
+build/batching-stage90/aiverse_material_batches unused.obj \
+  build/batching-stage90/captures/stage90-mdi-1k \
+  2>&1 | tee build/batching-stage90/stage90-mdi.log
+echo "Stage 90 exit=$?"
+```
+
+Require native build, 38 CPU checks, actual MDI `changed_channels=0`, final pixel parity, real 81/81 measured submissions, CSV and exit=0. Trace threshold `0.08` ms is intentionally below the 0.15ms initial cutoff to catch moderate slow slot-0 submissions; no log entries would mean that slot remained below threshold for all allowed frames, not that every Metal ICB submission was fast. The 24-line budget and optional slot filter intentionally sample, not exhaustively profile.
+
+### Next
+
+Analyze `[metal-icb-slow]` lines from frames >=120 together with Stage 90 `-frames.csv` for frame-level CPU backend/other costs. If warmed `alloc` dominates during slow MDI intervals, investigate pool growth, uniform allocation/reuse, `resetWithRange` cost or driver scheduling without removing explicit bindings. If `encode` dominates, investigate CPU command setup overhead and validated alternatives. If measured backend is fast but overall CPU slow, profile renderer setup/visibility/grouping and OS scheduler. Only make changes with clear evidence, confirm pixel parity and repeated low-variance performance afterward. Keep PR #39 Draft/default opt-ins OFF.
