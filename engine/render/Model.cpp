@@ -737,7 +737,13 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
         // real GPU completion token instead of publishing a broken Model.
         if(img.width>0 && img.height>0 && !img.tex.valid())
             return false;
-        if (!keepCpu) { img.rgba.clear(); img.rgba.shrink_to_fit(); img.compressed.reset(); img.sharedRgba.reset(); }
+        if (!keepCpu) {
+            // Non-throwing release of CPU pixels AFTER successful GPU upload.
+            // shrink_to_fit may throw on some vector implementations.
+            std::vector<uint8_t>{}.swap(img.rgba);
+            img.compressed.reset();
+            img.sharedRgba.reset();
+        }
     }
     // morph deltas of every primitive in one float texture: 2 texels (position, normal) per vertex and target
     size_t texels = 0;
@@ -772,12 +778,11 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
             for (auto& mesh : m.meshes)
                 for (auto& p : mesh.primitives)
                     if (p.morphTargets > 0 && !p.morphDeltas.empty()) {
-                        p.morphDeltas.clear();
-                        p.morphDeltas.shrink_to_fit();
+                        std::vector<float>{}.swap(p.morphDeltas);
                     }
         }
-        m.vertices.clear(); m.vertices.shrink_to_fit();
-        m.indices.clear(); m.indices.shrink_to_fit();
+        std::vector<ModelVertex>{}.swap(m.vertices);
+        std::vector<uint32_t>{}.swap(m.indices);
     }
     return !hasGeometry || bool(m.geometryPoolPage) ||
            (m.vb.valid() && m.ib.valid());
