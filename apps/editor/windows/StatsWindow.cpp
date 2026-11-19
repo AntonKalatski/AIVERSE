@@ -114,6 +114,10 @@ public:
             ImGui::TextDisabled("GPU retirement: token fallback %llu, неуспешный idle %llu",
                      (unsigned long long)residency.retirementTokenFailures,
                      (unsigned long long)residency.retirementFallbackFailures);
+        if(residency.unresolvedFailedFences)
+            ImGui::TextDisabled("GPU fence ERROR: %zu удерживаемых партий (ошибок всего %llu)",
+                residency.unresolvedFailedFences,
+                (unsigned long long)residency.retirementFailedFenceBatches);
         ImGui::TextDisabled("Общий geometry pool учитывается выше отдельно. Оценки без драйверных mip/padding, FX и RT.");
         ImGui::TextDisabled("Выгрузка моделей редактора: %s (период ожидания 15 с)",
                             ed.lazyEditorAssetsEnabled() ? "по требованию" : "отключена");
