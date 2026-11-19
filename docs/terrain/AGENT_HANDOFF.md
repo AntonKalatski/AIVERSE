@@ -1,6 +1,6 @@
 # TerraWeave — AI agent handoff
 
-Last updated: 2026-11-18. Branch: `feature/terraweave`.
+Last updated: 2026-11-19. Branch: `feature/terraweave`.
 Base: `feature/universal-entity-inspector-fps`.
 Owner request: implement generic terrain/trees/foliage for AIVERSE; **update this file
 at the end of EVERY development stage** so a different AI can pick up immediately.
@@ -2706,3 +2706,25 @@ Added owner-thread `requestedCell_` updated after camera hysteresis chooses `des
 **Tester acceptance:** first update before worker completion, successful empty bake, repeated same empty region (no requeue), camera move to nonempty cell, source revision invalidation of empty cell, GPU LRU restore, transition reversal and shutdown. Verify pending=false for resolved empty same-revision cell, and pending=true for requested different/unresolved or stale cell.
 
 **Next:** update public TERRAWEAVE.md and skill docs to explain diagnostics, then independent test agent performs CMake/CTest and runtime validation.
+
+
+## Stage 22i — public documentation and agent skill synced to Horizon state (DOCS COMMITTED, TESTS NOT RUN)
+
+**Branch / PR:** `feature/terraweave`, [Draft PR #24](https://github.com/chromealex/AIVERSE/pull/24). The branch already contains Stage 22a–h code, including resolved empty region handling. This stage changes **documentation only**; no new source or tests.
+
+**Commits and changed files:**
+- `f8da28202882c62370799d4cff73ac644add9fab` — `docs/terrain/TERRAWEAVE.md`: updated 2026-11-19 status and appended a current Stage 22 contract (neighbor-aware Q16 seam slopes, optional WorldScene/native callback, nullopt fallback order, active/requested cells/revisions, empty vs pending, source-stale proxy semantics, CPU sample provenance and TWH8 archive limitations). Includes host C++ inspection example and a table of each diagnostic field.
+- `e36ada1ed4a385ec7fb9e4ab4ef427a58fe42ada` — `skills/world/aiverse-terraweave/SKILL.md`: marks TWH8 / Stage 22 as current, adds deterministic/genre-independent implementation recipe, strict flags-before-values and unknown-vs-zero provenance rules, safe GPU patch/lifecycle guidance, and a concrete separate-test-agent acceptance checklist.
+- This handoff append records documentation synchronization after those two commits.
+
+**Architecture/API summary:**
+- Use `AuthoredWorldHeightSnapshot::continuousSlopeQ16(xQ16cm,zQ16cm,radiusCm=200,toleranceCm=1)` only for continuous resident authored surfaces; optional `HorizonSurfaceSources::nearGroundContinuousSlopeAtQ16Cm` uses the same immutable snapshot captured per async bake, with tile-local then area-weighted fallback for missing neighbor data.
+- Query `TerraWeaveHorizonScene::runtimeStats()` for `sourceRevision`, `activeRevision`, `staleProxy`, `activeRegionResolved`, `activeRegionEmpty`, `activeRegionPresent`, `requestedRegionPending`, `requestedRegionPresent`, active/requested middle-tile X/Z, and near normal provenance fields. Check presence/resolved flags before interpreting cells. `preparing` is worker progress, NOT synonymous with requestedRegionPending.
+- `nearNormalProvenanceAvailable=false` means unknown provenance (especially after TWH8 archive decode); counters are unique seam samples, whereas `matchedAuthoredNearNormals` counts render vertices. Current **TWH8** serialized format intentionally omits provenance.
+- Existing shader/RHI/geometry/archive APIs are unchanged in this documentation-only stage.
+
+**Actual verification:** Both GitHub documentation writes succeeded and their resulting commit hashes were returned by the connector. **NOT RUN:** CMake, C++ compiler, CTest, code lint, AI skill audit, editor/game launches, archive fixtures, CPU/GPU benchmarks, Metal/GL/Vulkan screenshots. No pass/fail assertions are made about these. PR remains Draft.
+
+**Limitations:** Docs describe committed source behavior, not verified on-device guarantees; older archived TWH6/TWH7 passages in this large document are historical and current version is explicitly called out at Stage 22. Neighbor-aware fallback deliberately does not remove cliffs or height discontinuities. Diagnostic provenance is not persisted in the archive; a zero counter without availability is not an observed zero.
+
+**Next agent action:** The independent testing agent should compile and execute `aiverse_terraweave_horizon_test` plus related terrain/forest/scene tests, run an archive TWH8 hit/miss fixture and revision/empty-region/GPU cache lifecycle tests, inspect real slope/near-far seams and captures on target backends, measure draw/triangle/overdraw budgets, then append actual command outputs and outcomes here. If a source bug is found, create a focused source commit with an updated handoff. Preserve universal (genre-independent) APIs, avoid unrelated FPS/RTS code, and do not merge PR #24 until verified.
