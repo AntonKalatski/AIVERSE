@@ -1,5 +1,17 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 108 — real Metal GPU alpha sort between two cameras (NOT RUN)
+
+Code `9468a46297abbdd846e8a98ccf1df371bba95f17` extends
+`spectrafx_metal_rhi` with actual GPU bitonic sorting for two
+opposite camera directions. A diagnostic RHI shader visualizes the
+first sorted slot into separate RGBA8 RTs, read after frame end:
+expected red values ~51 (index 0) and ~230 (index 1). The test
+exercises per-view compute→draw ordering without CPU particle readback.
+**Native acceptance not yet run**; last green Stage 105 SHA.
+Handoff: `docs/agent-handoffs/spectrafx-stage108-multicamera-alpha-2026-11-20.md`.
+
+
 ## Stage 107 — PRISMA HDR/Bloom + SpectraFX integration fixture (NOT RUN)
 
 Code `9ee2ffeb5a0ff3a0d3088e291b098a95279994dc`
