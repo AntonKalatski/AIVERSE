@@ -302,7 +302,17 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
     // passed validation below. Otherwise an invalid View pose switches to
     // legacy animation without restarting its stale clocks in this frame.
     const bool wasGenericViewPose=st.wasGenericViewPose;
-    if(st.graph.graph()!=program.get()){st.graph.reset(program);st.poseValid=false;updatePose=true;}
+    if(st.graph.graph()!=program.get()){
+        // A compatible authoring/Lua graph replacement must not restart an
+        // ongoing attack/move/death clip. Preserve only names/phase (never
+        // old rig/native state/Model pointers). The generic ECS source has
+        // its own sole animation clock and must not be seeded from legacy.
+        if(!st.genericViewPose)
+            (void)st.graph.rebindPlayback(program);
+        else st.graph.reset(program);
+        st.poseValid=false;
+        updatePose=true;
+    }
     if(st.genericViewPose && genericView_) {
         const Entity presentation=genericView_->presentationEntity(st.genericViewId);
         const auto* evaluated=genericView_->presentation().tryGetConst<
