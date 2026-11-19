@@ -19,6 +19,8 @@
 #include "GpuSceneDrawCommands.h"
 #include <memory>
 #include <map>
+#include <tuple>
+#include <array>
 #include <unordered_map>
 
 namespace aiverse::render {
@@ -557,16 +559,27 @@ private:
     int geometryShadowSize_=0;
     MaterialQuality matQuality_ = MaterialQuality::High;
     std::vector<ModelItem> modelItems_;
+    struct MotionDeformPose {
+        mat4 world;
+        std::array<float, size_t(kMaxPaletteJoints) * 12> joints{};
+        std::array<float, kMaxMorphTargets> weights{};
+        bool hasSkin = false;
+    };
     struct ObjectMotionHistory {
         gfx::TextureHandle target;
+        gfx::TextureHandle depth;
         int width = 0, height = 0;
         std::map<std::pair<uint64_t, int>, mat4> previous;
+        // Same node can draw different primitives with distinct skin palettes.
+        std::map<std::tuple<uint64_t, int, size_t>, MotionDeformPose> previousDeformed;
     };
     std::map<uint64_t, ObjectMotionHistory> objectMotionViews_;
     gfx::ShaderHandle objectMotionShader_;
     gfx::PipelineHandle objectMotionPipeline_;
     gfx::ShaderHandle objectMotionInstancedShader_;
     gfx::PipelineHandle objectMotionInstancedPipeline_;
+    gfx::ShaderHandle objectMotionDeformedShader_;
+    gfx::PipelineHandle objectMotionDeformedPipeline_;
 
     // Material GPU-state equivalence is pass-independent within one scene.
     // Resolve each distinct (model, material) once for shadows, colour,
