@@ -10,6 +10,7 @@
 #include "engine/render/FullBodyIK.h"
 #include <algorithm>
 #include <map>
+#include <optional>
 namespace aiverse::editor {
 // Both windows edit the same runtime document; rig units remain an ordered execution graph.
 class AnimationEditorPanel {
@@ -162,6 +163,13 @@ private:
         }
     };
     void release(){
+        // The GPU bundle is retired separately; retain only pointer-free
+        // playback clocks for compatible simple clip graphs.
+        if (const auto clocks = instance_.snapshotPreviewClocks()) {
+            savedPreviewClocks_ = *clocks;
+            savedClockModelKey_ = modelKey_;
+            savedClockProgramKey_ = programKey_;
+        }
         const bool gpuOwned = dev_ && (model_ ||
             (portrait_ && portrait_->texture().valid()));
         if (gpuOwned) {
@@ -195,7 +203,7 @@ private:
         // Keep doc_, saved_, undo/redo, selected, controls, pose, yaw,
         // playback, camera and canvas state intact across GPU retirement.
     }
-    void reset(){release();undo_.clear();redo_.clear();scope_.clear();selected_.clear();error_.clear();controls_={};}
+    void reset(){release();savedPreviewClocks_.reset();savedClockModelKey_.clear();savedClockProgramKey_.clear();undo_.clear();redo_.clear();scope_.clear();selected_.clear();error_.clear();controls_={};}
     void remember(){remember(doc_);}void remember(const Json& before){if(undo_.size()>=64)undo_.erase(undo_.begin());undo_.push_back(before);redo_.clear();dirty_=true;}
     bool check(const Json& r){if(r.has("error")){error_=r.getStr("error");return false;}error_.clear();return true;}
     bool save(Editor& ed){Json p=Json::object();p.set("name",Json::string(name_));p.set("graph",doc_);p.set("expected",saved_);auto r=ed.ws().call("animation_graph_set",p);if(!check(r))return false;doc_=saved_=r["graph"];dirty_=false;message_=text("savedDraft");return true;}
@@ -259,7 +267,6 @@ private:
             if(modelKey_!=modelKey){release();modelKey_=modelKey;dev_=&ed.device();model_=loadAnimationModel(ed.ws(),path);if(!render::uploadModel(*dev_,*model_,true))throw std::runtime_error("model upload failed");if(!portrait_->init(*dev_,320))throw std::runtime_error("preview initialization failed");}
             if(!model_)return;
             std::string key=previewProgramKey();if(programKey_!=key){
-                programKey_=key;
                 // Graph recompilation must not erase the user-adjusted
                 // preview parameters, even when model/Portrait GPU assets
                 // were retired during a reload or a hidden-tab transition.
@@ -277,10 +284,17 @@ private:
                 for (const auto& [name,value] : oldVectors)
                     if (auto it=controls_.vectors.find(name);it!=controls_.vectors.end())
                         it->second=value;
+                if (savedPreviewClocks_ && savedClockModelKey_ == modelKey_ &&
+                    savedClockProgramKey_ == key)
+                    (void)instance_.restorePreviewClocks(*savedPreviewClocks_);
+                savedPreviewClocks_.reset();
+                savedClockModelKey_.clear();
+                savedClockProgramKey_.clear();
+                programKey_=key; // successful compilation only
                 error_.clear();
             }
             if(!instance_.graph())return;
-            ImGui::Checkbox(text("play").c_str(),&playing_);ImGui::SameLine();if(ImGui::Button(text("reset").c_str())){programKey_.clear();}
+            ImGui::Checkbox(text("play").c_str(),&playing_);ImGui::SameLine();if(ImGui::Button(text("reset").c_str())){savedPreviewClocks_.reset();programKey_.clear();}
             ImGui::SameLine();ImGui::SliderFloat("##yaw",&yaw_,-3.14f,3.14f);if(instance_.hasContacts()){ImGui::SetNextItemWidth(130);ImGui::DragFloat(text("previewGround").c_str(),&previewGround_,.01f);auto env=std::make_shared<render::AnimationEnvironment>();float ground=previewGround_;env->sphereContact=[ground](render::float3 p,float r,render::IKHit& h){return render::ikSpherePlane(p,r,{0,ground,0},{0,1,0},h);};env->raycast=[ground](render::float3 a,render::float3 b,render::IKHit& h){float d=b.y-a.y;if(std::abs(d)<1e-8f)return false;float t=(ground-a.y)/d;if(t<0||t>1)return false;h={a+(b-a)*t,{0,1,0},0,1};return true;};controls_.environment=env;}
             instance_.parameters()=controls_;if(playing_)instance_.update(dt_);instance_.evaluate(pose_);if(!instance_.healthy())error_=instance_.error();
             if(instance_.locomotionReport().active){const auto c=instance_.locomotionReport();ImGui::TextWrapped(text("climbReport").c_str(),c.supports,c.stepping,c.footError);ImGui::TextUnformatted(text(c.attached?"attached":"detached").c_str());}
@@ -297,7 +311,7 @@ private:
               if (ImGui::DragFloat3(name.c_str(), f, .01f))
                 v = {f[0], f[1], f[2]};
             }
-        }catch(const std::exception& e){error_=e.what();instance_.reset({});}
+        }catch(const std::exception& e){error_=e.what();instance_.reset({});programKey_.clear();}
     }
     void skeleton(ImVec2 size){
         auto origin=ImGui::GetCursorScreenPos();ImGui::BeginChild("skeleton",size,ImGuiChildFlags_Borders,ImGuiWindowFlags_NoScrollbar|ImGuiWindowFlags_NoScrollWithMouse);auto* dl=ImGui::GetWindowDrawList();std::vector<render::mat4> world;render::worldMatrices(*model_,pose_,world);
@@ -323,6 +337,8 @@ private:
     std::string project_,name_="untitled",scope_,subName_="subgraph",selected_,target_,modelKey_,programKey_,error_,message_;
     std::unique_ptr<render::Model> model_;
     render::AnimationGraphInstance instance_;
+    std::optional<render::AnimationGraphInstance::PreviewClockSnapshot> savedPreviewClocks_;
+    std::string savedClockModelKey_, savedClockProgramKey_;
     render::AnimationParameters controls_;
     render::Pose pose_;
     std::shared_ptr<game::Portrait> portrait_ = std::make_shared<game::Portrait>();
