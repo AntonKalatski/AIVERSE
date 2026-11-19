@@ -57,6 +57,20 @@ public:
                         return false;
                     }
                 }
+        // R8 cutouts read the red channel, not the alpha channel (R8
+        // sampled alpha defaults to 1). Keep original RGBA alpha programs
+        // for non-virtualized and non-R8 masked models.
+        for (int fading=0;fading<2;++fading)
+            for (int twoSided=0;twoSided<2;++twoSided) {
+                vertex.cull=twoSided ?
+                    gfx::CullMode::None : gfx::CullMode::Back;
+                if (!redMaskPrograms_[fading][twoSided].initialize(
+                        dev,true,fading!=0,depthAttachment,vertex,
+                        true,true)) {
+                    shutdown();
+                    return false;
+                }
+            }
         return true;
     }
 
@@ -127,6 +141,9 @@ public:
             for (auto& fades : masks)
                 for (auto& program : fades)
                     program.shutdown(*device_);
+        for (auto& fades : redMaskPrograms_)
+            for (auto& program : fades)
+                program.shutdown(*device_);
         if (ownedWhite_.valid()) device_->destroyTexture(ownedWhite_);
         ownedWhite_ = {};
         device_ = nullptr;
@@ -181,12 +198,18 @@ private:
         u.scenePixel[3] = grid.offsetY;
 
         gfx::TextureHandle alpha = fallbackWhite_;
+        bool redChannel = false;
         if (material.baseTex >= 0 &&
-            size_t(material.baseTex) < model.images.size() &&
-            model.images[size_t(material.baseTex)].tex.valid())
-            alpha = model.images[size_t(material.baseTex)].tex;
-        const auto& program=programs_[masked?1:0][fading?1:0]
-                                     [material.doubleSided?1:0];
+            size_t(material.baseTex) < model.images.size()) {
+            const auto& image = model.images[size_t(material.baseTex)];
+            if (masked && image.virtualAlphaMask.valid()) {
+                alpha=image.virtualAlphaMask;
+                redChannel=true;
+            } else if (image.tex.valid()) alpha=image.tex;
+        }
+        const auto& program = masked && redChannel ?
+            redMaskPrograms_[fading?1:0][material.doubleSided?1:0] :
+            programs_[masked?1:0][fading?1:0][material.doubleSided?1:0];
         return program.bind(dev,u,masked ? alpha : gfx::TextureHandle{});
     }
 
@@ -197,6 +220,7 @@ private:
     gfx::TextureHandle fallbackWhite_;
     gfx::TextureHandle ownedWhite_;
     gfx::VirtualTextureFeedbackProgram programs_[2][2][2];
+    gfx::VirtualTextureFeedbackProgram redMaskPrograms_[2][2];
 };
 
 } // namespace aiverse::render
