@@ -95,7 +95,8 @@ std::vector<PrismaTypeDef> buildCatalog() {
         num("maxPixels", 20.0f, 0, 64, "maximum motion displacement in screen pixels", "Максимальное смещение"),
         num("samples", 8.0f, 2, 16, "blur sample count, rounded to integer", "Число проб"),
         num("shutterScale", 1.0f, 0, 2, "velocity multiplier per frame, 1=one frame displacement", "Выдержка"),
-        num("depthThreshold", 0.012f, 0.0005f, 0.05f, "motion blur depth-edge rejection threshold in device-depth units", "Порог глубины")}});
+        num("depthThreshold", 0.012f, 0.0005f, 0.05f, "motion blur depth-edge rejection threshold in device-depth units", "Порог глубины"),
+        num("reactiveStrength", 0.85f, 0.0f, 1.0f, "reduce motion blur on uncertain translucent surfaces covered by a reactive mask", "Подавление на прозрачности")}});
     c.push_back({T::ShaderGraph, "shaderGraph", "Shader Graph", "Custom bounded fragment graph.", C::Medium, PrismaQuality::Medium, {}});
     return c;
 }
