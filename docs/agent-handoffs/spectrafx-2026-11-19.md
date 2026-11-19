@@ -257,3 +257,11 @@ git fetch origin main && git merge origin/main
 - **Tests actually run:** **NOT RUN**, per user's features-first instruction; native C++ compile, CTest, UI operation and cross-platform quality checks are still pending. This stage is not verified.
 - **Limitations:** indexed single-parent connections rather than full arbitrary typed dataflow; no node position/selection/Undo history persisted; insert/reorder require complete graph replacement.
 - **Next:** build a genuine dockable editor graph UI using existing editor window APIs, persist graph assets with editor metadata and implement a GPU compute path without duplicating CPU particle authority. Only then perform native test and QA phase.
+
+
+## 2026-11-19 — Stage 15: synchronize 409 main commits, preserve SpectraFX and legacy graph work
+- **Merge commit** `de0872a1f9a48a9f384b3d5ff320e4314b1f6c60`, first parent previous SpectraFX HEAD `9be28f6`, second parent main `d71c6d47e532b25fb816a8bb1f96c41e5275a165`; branch `feature/spectrafx-generic-cue-queue`.
+- GitHub compare previously showed 409 behind main. A two-parent merge tree uses the exact main tree `b5b659a` plus all 12 independently added `engine/fx/SpectraFx*.h` files and this living handoff from the feature branch, without overwriting any main source. No overlapping path existed for those new files.
+- **Important discovery:** main already includes `engine/fx/SpectraFX.h`, `VfxGraph.h`, `VfxGraphAssets.h` with a Niagara-style Spawn→Initialize→Update→Output graph compiler, CPU ParticleSystem integration, and variant hot reload. DO NOT create another competing particle graph or duplicate its compiler. The feature branch's `SpectraFxGraph` is a separate presentation *cue* routing DAG, not the canonical particle graph. Future editor UI should edit the existing `VfxGraph.h` schema (`fx/graphs/<name>.vfx.json`) and use `SpectraGraphAssets` for actual runtime loading.
+- **Verification:** GitHub merge object and branch ref update completed; native build, CTest, editor execution, GPU behavior **NOT RUN**. No claim of runtime compatibility yet.
+- **Next:** add one editor window for the canonical particle graph format, reusing main's `FxWindow` and `ShaderGraphWindow` patterns; keep cue routing assets separate. Continue stages/handoffs without tests until requested feature pass is finished.
