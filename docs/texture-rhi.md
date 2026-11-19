@@ -1885,3 +1885,41 @@ arbitrary material shader permutations. Renderer3D has not yet
 started emitting per-command PBR records. Existing features
 remain disabled by default. Objective-C++/MSL compilation,
 GPU execution, CTest and real image parity are NOT RUN.
+
+
+## Renderer3D per-command heterogeneous opaque PBR grouping — Stage 10AD
+
+`Renderer3DModels.cpp` now uses a shared
+`packGpuPbrMaterialU2(material)` helper for the existing
+ordinary `drawModelBatch` U2 upload and for experimental
+ICB command descriptors. The helper packs the exact same
+9×float4 (144-byte) U2 payload; actor-reveal overrides remain
+in the ordinary draw path, since GPU ICB eligibility excludes
+`kDrawActorReveal`. Built-in PBR source texture slots 1..6
+are resolved with the same white/black/flat-normal fallbacks
+as normal Renderer3D drawing.
+
+**Explicit experimental flags**: `AIVERSE_EXPERIMENTAL_ICB_MIXED_PBR=1`
+requires both `AIVERSE_EXPERIMENTAL_ICB_MIXED_VT=1` and
+`AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT=1`, in addition to
+the pre-existing GPU-authored/Metal ICB flags. Only built-in
+opaque PBR materials with matching structural pipeline traits
+and valid VT bindings are eligible. A grouping hash intentionally
+ignores U2 and source textures *only* inside that opt-in path;
+exact `equivalentGpuIcbPbrPipelineMaterial` still checks
+pipeline-sensitive flags.
+
+Each command captures `GpuIcbVirtualMaterial` with its six
+source TextureHandles and U2 payload, and
+`GpuMaterialResourceBinding` with the same values for exact
+frame/generation ticket validation. The render-phase check
+rebuilds the live material payload and resolves source handles
+again before executing a GPU ICB. A changed texture, sampler
+handle identity (checked again on Metal), U2, or pipeline mode
+causes CPU fallback. Shader Graph and masked, blended and
+non-VT materials still use their prior conservative path.
+No regular CPU material batching policy was relaxed.
+
+**Validation**: source inspection/commits only. Native
+C++, Objective-C++, MSL, CTest and real hardware execution
+remain NOT RUN; keep all new flags disabled by default.
