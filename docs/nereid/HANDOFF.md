@@ -3672,3 +3672,92 @@ connection-surface footprint validation, current continuity through
 waterfall links and optional whitewater turbulence at the seam.
 After the functional backlog, run native C++ builds plus GLSL/Metal
 GPU rendering and record actual results.
+
+## Stage 36 — safe river-width cascade joins and shoreline footprint policy
+
+**Branch:** `feature/nereid-water-core`, Draft PR #23.
+**Before implementation:** checked GitHub `main` ref
+`9ee6ff6fbf390bd45363bc92c838f492dfe92eee` versus NEREID
+head `77fd209f286368e7cdcd50db212dae0664c81eeb`.
+GitHub compare reported **0 commits behind main**; its exact
+`main` commit was already an ancestor. Thus no redundant merge
+or changes to main were made. If main advances during subsequent
+work, refresh and recompare before concluding synchronization.
+
+**Implementation commits / files:**
+- `f6d30a7a979afd6fba55c72aa1d8e91147bfeca1` —
+  `engine/world/NereidWaterScene.h`:
+  `surfaceForId(stableId)` returns a synchronous, read-only
+  scene-source pointer; never retain it across `setSurfaces`.
+- `cd0d322c321fb31a06bb9deb2daf45f4cb2a1285` —
+  `libraries/include/aiverselib/water/NereidCascades.h`:
+  new optional `WaterCascadeJoinPolicyComponent` with
+  `widthBlend` and `requireFootprint`; new separately named
+  persistence schema `nereid.cascade_join_policy`, version 1.
+  The existing `WaterCascadeConnectionsComponent` archive/version
+  is unchanged.
+- `d3caced80b5eab95255d94dcdc576d234f3501dc` —
+  `engine/world/NereidCascadeScene.h`:
+  authorable scene join policy with same-source comparison and
+  bounded input validation.
+- `93d81d33472be98869ecf5d414dbbbdec8c8465a` —
+  `engine/world/NereidCascadeManifest.h`:
+  optional JSON `joinWidthBlend` in [0,1] and strictly boolean
+  `requireFootprint`.
+- `e6d17269476e015b1fa99051bafeec7b21c13f42` —
+  `engine/world/NereidCascadeEcsPresentation.h`:
+  optional independent ECS join-policy component to read-only
+  scene policy mapping.
+- `d9eb9d83d13650998cecb27037fd1345ae256878` —
+  `engine/world/NereidCascadeScene.h`:
+  overload `connectedNereidCascade(source,inletSurface*,outletSurface*)`
+  that creates a *presentation-only copy*. The exterior join end
+  must be inside the linked `WaterBody` footprint when
+  `requireFootprint=true` (default). For RiverSpline, interpolate
+  the closest segment's source `halfWidth`, blend the authored
+  cascade endpoint's halfWidth towards it by `joinWidthBlend`,
+  then clip both exterior ribbon edges to valid water coverage
+  by bounded fixed-point binary search. Missing/non-covering
+  water bodies skip that join; prior standalone cascade remains.
+  The GPU resident tracks inlet/outlet `surfaceRevision` in addition
+  to level, rebuilding a changed bank/river geometry without
+  forcing an ECS mutation or reuploading every unrelated mesh.
+  The legacy level-only overload remains for compatibility.
+- `aa8dce3005b2c7b1dd55c9cc38490990a0ff53fa` —
+  `engine/world/NereidCascadeScene.h`: explicit `<limits>`
+  for nearest river-segment distance sentinel.
+
+**Public use:**
+```json
+{
+  "inletWaterId": 10,
+  "outletWaterId": 11,
+  "joinLength": 3.0,
+  "joinWidthBlend": 1.0,
+  "requireFootprint": true
+}
+```
+Native projects can attach `WaterCascadeJoinPolicyComponent`
+to the same cascade entity, with optional
+`WaterCascadeConnectionsComponent`.  The interpolation/clipping
+is on presentation geometry only; ECS authoritative shape, body
+elevation and collision are unchanged. The source pointer must
+not be retained after the current draw/update transaction.
+
+**Actual verification:** connected GitHub ref/compare inspection,
+source review and the commits above. **Not performed:** local C++
+build, CTest, native gameplay, shader compilation, GPU captures or
+visual seam checks (user explicitly prioritizes features).
+**Limits:** checks the *exterior* join cross-section against the
+water footprint, not every interior cross-section. Complex concave
+banks, narrow peninsulas and multiple intersecting rivers can still
+need additional subdivision or authored correction. Missing or
+incompatible inlet/outlet elevations suppress the join.
+The width matching policy is a visual approximation, not proof of
+watertight mesh topology or mass-conserving fluid dynamics.
+Keep PR Draft.
+
+**Next:** Stage 37 read-only/opt-in fixed-point current-transfer
+policy for connected water bodies near cascade mouths, shared by
+reference and indexed NEREID samplers, preserving the canonical
+`WaterBody.flow` and body geometry.
