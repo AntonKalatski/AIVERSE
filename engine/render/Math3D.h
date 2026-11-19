@@ -178,8 +178,8 @@ inline mat4 mat4::inverse() const {
     return r;
 }
 
-// RTS camera orbiting a ground target point.
-struct RTSCamera {
+// Genre-independent orbit camera: world-space target, perspective or orthographic view.
+struct Camera {
     float3 target{0, 0, 0};
     float distance = 30.0f;
     float pitch = 0.95f;   // radians from horizontal

@@ -139,7 +139,7 @@ public:
     void emitManual(FxHandle h);                       // fires the "manual" sub-emitters of its live particles
     void clear();                                      // everything (new match)
 
-    void setView(const render::RTSCamera& cam, const render::mat4& viewProj, int fbW, int fbH);
+    void setView(const render::Camera& cam, const render::mat4& viewProj, int fbW, int fbH);
     void update(float dt);
     void render(const FxFog& fog);
     // Lights of emitters with a "light" module (after update): appended to `out`, at most `maxLights`

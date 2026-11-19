@@ -108,7 +108,7 @@ public:
     // Cloud shadows on the sun: coverage 0..1, strength 0..1 (0 = off), drift offset in world units.
     void setClouds(float coverage, float strength, float scale, float offsetX, float offsetZ);
 
-    void begin(const RTSCamera& cam, float aspect);  // Renderer3D::beginScene
+    void begin(const Camera& cam, float aspect);  // Renderer3D::beginScene
     void add(const PointLight& l);
     void add(float3 pos, float radius, float3 color, float intensity = 1) { add(PointLight{pos, radius, color, intensity}); }
     size_t count() const { return lights_.size(); }

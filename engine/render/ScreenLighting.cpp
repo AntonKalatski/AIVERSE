@@ -59,7 +59,7 @@ void ScreenLighting::shutdown() {
     if(triangle_.valid())dev_->destroyBuffer(triangle_);
     dev_=nullptr;post_=nullptr;
 }
-RTSCamera ScreenLighting::jittered(RTSCamera c,int w,int h) {
+Camera ScreenLighting::jittered(Camera c,int w,int h) {
     if(enabled_&&post_&&post_->hdrRequested()&&post_->quality()==PostFxQuality::High&&w>0&&h>0) {
         int index=(sequence_++%8)+1;c.jitter={2*(halton(index,2)-0.5f)/float(w),2*(halton(index,3)-0.5f)/float(h)};
     }

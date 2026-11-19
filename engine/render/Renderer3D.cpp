@@ -218,7 +218,7 @@ void Renderer3D::invalidateModelCachesFor(const Model* model) {
     retireIndirectLayoutsFor(model);
 }
 
-void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
+void Renderer3D::beginScene(const Camera& cam, int fbW, int fbH) {
     static const bool enablePersistentScene = [] {
         const char* value = std::getenv("AIVERSE_PERSISTENT_GPU_SCENE");
         return value && std::strcmp(value, "1") == 0;
@@ -386,13 +386,13 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     materialRepresentatives_.clear();
     materialItemIds_.clear();
     geometryStats_ = {}; profile_ = {}; geometryMainView_ = true;
-    RTSCamera shadowCamera = cam; shadowCamera.jitter = {};
+    Camera shadowCamera = cam; shadowCamera.jitter = {};
     computeShadowMatrix(shadowCamera, aspect);
     geometryShadowSize_=shadowSize_;
     lights.begin(cam, aspect);
 }
 
-void Renderer3D::computeShadowMatrix(const RTSCamera& cam, float aspect) {
+void Renderer3D::computeShadowMatrix(const Camera& cam, float aspect) {
     // Fit an orthographic light frustum around the part of the ground the camera sees.
     float3 pts[8];
     int n = 0;

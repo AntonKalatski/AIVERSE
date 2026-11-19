@@ -310,7 +310,7 @@ public:
     ShadowQuality shadowQuality() const { return quality_; }
     static ShadowQuality defaultQualityFor(const gfx::Device& dev, bool mobile);
 
-    void beginScene(const RTSCamera& cam, int fbW, int fbH);
+    void beginScene(const Camera& cam, int fbW, int fbH);
     void drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags = 0, float specular = 0.25f, float emissive = 0.0f);
     // Opt-in per-surface ripple normals. Positions are render-origin-relative
     // X/Z; z = propagating radius, w = signed amplitude. No new RHI buffers.
@@ -454,7 +454,7 @@ public:
     // the target bound; draw depth with lightViewProj(). Same lifetime rules as drawCustom.
     void drawCustomShadow(CustomDraw fn) { customShadow_.push_back(std::move(fn)); }
     const mat4& lightViewProj() const { return lightViewProj_; }
-    const RTSCamera& camera() const { return cam_; }
+    const Camera& camera() const { return cam_; }
     float4 actorReveal{}; // world-space actor centre + aperture radius, zero disables
 
     // Traced lighting ("trace" tier, Renderer3DTrace.cpp): sun rays marched over the terrain height
@@ -840,7 +840,7 @@ private:
 
     void renderReflection();        // water planar reflection (Renderer3DReflect.cpp, lighting agent)
     void renderSpotShadow();        // depth of the casters seen from the main spot light (same file)
-    void computeShadowMatrix(const RTSCamera& cam, float aspect);
+    void computeShadowMatrix(const Camera& cam, float aspect);
     void uploadFrameUniforms(bool forShadow);
     // trace tier (Renderer3DTrace.cpp)
     bool initTrace();
@@ -873,7 +873,7 @@ private:
     std::vector<DrawItem> items_;
     std::vector<ColorVertex> lines_, tris_;
     std::vector<CustomDraw> custom_, customOpaque_, customShadow_;
-    RTSCamera cam_;
+    Camera cam_;
     mat4 viewProj_, lightViewProj_;
     float3 camPos_;
     uint32_t drawCalls_ = 0;
