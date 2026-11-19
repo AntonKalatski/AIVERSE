@@ -909,3 +909,29 @@ never rely on scratch remaining unchanged on failure.
 **NOT RUN:** native C++ compile/link, CTest/CI,
 Metal/Vulkan/GL visual, sanitizers or benchmarks.
 [Stage 124 handoff](agent-handoffs/animation-stage124-pose-scratch-authoring-2026-11-19.md).
+
+## Stage 125 — bounded Pose scratch independent from AnimationGraph
+
+One MotionWeave graph continues to evaluate per source
+entity/animation World. `View::submitOne` can reuse
+precomputed Pose across visual LODs and retain at most
+the configured CPU scratch capacity (512 KiB per View
+by default) AFTER a completed synchronous submission.
+One giant rig is never clipped by this retention budget.
+Nested renderer capture uses isolated scratch; neither
+the animation clock nor ECS schedule changes.
+
+`ModelPublicationEpoch` is a globally monotonic,
+CPU-only revision for replaced models. It is distinct
+from entity `generation`, Graph generation and GPU
+retirement tokens. `AppearanceAssetRegistry::Asset::packet`
+propagates this revision to generic View. Compiled retarget
+plans diagnose stale source/visual revisions, and rejected
+plans safely produce visual bind poses while keeping the
+same source animation time and socket attachments.
+RTS optional legacy bind fallback is a host-only visual
+choice and leaves authoritative game logic unchanged.
+
+**NOT RUN:** native CMake/CTest/linker, Metal/Vulkan/GL,
+performance, animator parity or sanitizers. See
+[Stage 125 handoff](agent-handoffs/animation-stage125-scratch-budget-model-epochs-2026-11-19.md).
