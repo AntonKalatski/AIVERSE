@@ -1,0 +1,244 @@
+// TerraWeave Stage62: publish authoritative Box3D tree/debris blockage
+// into NEREID's existing WaterFlowObstructionComponent ECS inputs.
+// The server captures this AFTER physics::Scene::step(), at an ECS
+// structural write barrier BEFORE the next NEREID water sampling tick.
+// No water solver duplication, no float simulation on lockstep clients.
+#pragma once
+#include "engine/world/TerraWeaveFallenPhysics.h"
+#include "engine/world/TerraWeaveSlopeDebrisPhysics.h"
+#include <aiverselib/water/NereidWaterSystems.h>
+#include <aiverselib/water/NereidFlowObstacles.h>
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <map>
+#include <stdexcept>
+#include <utility>
+#include <vector>
+
+namespace aiverse::terraweave {
+
+// Generated obstacle tag separates authoritative auto obstacles from hand
+// authored NEREID debris/bridge obstructions. Stable sourceKey links a
+// fallen tree/debris event to its current physics pose across rollback.
+struct AutoFlowObstructionComponent {
+    uint64_t sourceKey=0;
+};
+inline void io(Archive& a,AutoFlowObstructionComponent& c){
+    a(c.sourceKey);
+}
+inline void registerTerraWeaveObstructionPersistence(Simulation& sim){
+    sim.registerPersistentComponent<AutoFlowObstructionComponent>(
+        "terraweave.auto_flow_obstruction",1);
+}
+
+struct FlowObstructionCapturePolicy {
+    uint32_t maxFallenTrees=128; // <=128; rest remain physical/nav obstacles
+    uint32_t maxSlopeDebris=128;  // <=128
+    uint32_t treePermeabilityPermille=250;
+    uint32_t debrisPermeabilityPermille=650;
+    uint32_t deflectionPermille=400;
+};
+inline void validateFlowObstructionCapture(
+        const FlowObstructionCapturePolicy& c){
+    if(c.maxFallenTrees>128 || c.maxSlopeDebris>128 ||
+       !c.maxFallenTrees && !c.maxSlopeDebris ||
+       c.treePermeabilityPermille>1000 ||
+       c.debrisPermeabilityPermille>1000 ||
+       c.deflectionPermille>1000)
+        throw std::invalid_argument("TerraWeave water obstruction capture policy");
+}
+
+namespace obstruction_detail {
+// Float Box3D is the SERVER presentation/physics layer. Quantize at its
+// owner-thread barrier before updating authoritative Fixed ECS obstructions.
+// A network client does NOT capture locally simulated physics.
+inline int64_t cm(float metres){
+    if(!std::isfinite(metres) || std::abs(metres)>90000.f)
+        throw std::out_of_range("TerraWeave invalid Box3D obstacle position");
+    return std::llround(double(metres)*100.0);
+}
+inline uint64_t treeKey(AnchoredPlantId id){
+    uint64_t key=detail::mix64(id.key ^
+        (uint64_t(id.speciesId)<<32) ^ 0x74726565776f6465ULL);
+    return key?key:1;
+}
+inline uint64_t slideKey(SlopeDebrisId id){
+    uint64_t key=detail::mix64(
+        id.tick ^ detail::mix64(uint64_t(id.from.x)) ^
+        (detail::mix64(uint64_t(id.from.z))<<1) ^
+        detail::mix64(uint64_t(id.to.x)) ^
+        (detail::mix64(uint64_t(id.to.z))>>1) ^
+        0x736c6f7065646562ULL);
+    return key?key:1;
+}
+} // namespace obstruction_detail
+
+inline std::vector<lib::nereid::WaterFlowObstructionComponent>
+captureNereidFlowObstructions(
+        const World& waterWorld,const physics::Scene& physicsScene,
+        const FallenPlantPhysics* trees,const SlopeDebrisPhysics* debris,
+        FlowObstructionCapturePolicy policy={}) {
+    validateFlowObstructionCapture(policy);
+    using Obstacle=lib::nereid::WaterFlowObstructionComponent;
+    std::map<uint64_t,Obstacle> sorted;
+    const auto add=[&](uint64_t key,int64_t x,int64_t y,int64_t z,
+                       int64_t radiusCm,int64_t heightCm,
+                       uint32_t permeability) {
+        if(!key || radiusCm<5 || radiusCm>10000 ||
+           heightCm<5 || heightCm>30000)
+            return;
+        const int64_t radius=radiusCm;
+        if(x<-10000000+radius || x>10000000-radius ||
+           z<-10000000+radius || z>10000000-radius)
+            return;
+        const int64_t bottom=y-heightCm/2;
+        const int64_t top=y+(heightCm+1)/2;
+        if(bottom<-10000000 || top>10000000)return;
+        const Vec3 sampleAt{
+            Fixed::fromRatio(x,100),Fixed::fromRatio(y,100),
+            Fixed::fromRatio(z,100)};
+        // The existing NEREID sample chooses the authoritative WaterBody
+        // polygon/spline/priority. Obstruction does not create water itself.
+        const auto water=lib::nereid::sampleWater(waterWorld,sampleAt);
+        if(!water.found || Fixed::fromRatio(top,100)<=water.bottomY ||
+           Fixed::fromRatio(bottom,100)>=water.surfaceY)
+            return;
+        Obstacle obstacle;
+        obstacle.waterBody=water.body;
+        obstacle.center={sampleAt.x,sampleAt.z};
+        obstacle.radius=Fixed::fromRatio(radius,100);
+        obstacle.bottomY=Fixed::fromRatio(bottom,100);
+        obstacle.topY=Fixed::fromRatio(top,100);
+        obstacle.sourceKey=key;
+        obstacle.permeabilityPermille=permeability;
+        obstacle.deflectionPermille=policy.deflectionPermille;
+        if(!lib::nereid::validWaterFlowObstruction(obstacle) ||
+           !sorted.emplace(key,obstacle).second)
+            throw std::invalid_argument(
+                "TerraWeave duplicated or invalid water obstruction source");
+    };
+    if(trees){
+        uint32_t processed=0;
+        for(const auto& item:trees->snapshot()){
+            if(processed>=policy.maxFallenTrees)break;
+            if(!physicsScene.valid(item.body))continue;
+            const b3Vec3 p=physicsScene.position(item.body);
+            const b3Quat q=physicsScene.rotation(item.body);
+            const double qx=q.v.x,qy=q.v.y,qz=q.v.z,qw=q.s;
+            if(!std::isfinite(qx) || !std::isfinite(qy) ||
+               !std::isfinite(qz) || !std::isfinite(qw))
+                continue;
+            // A fallen trunk is a dynamic capsule. Its rotated local +Y
+            // axis bounds the horizontal footprint; keep radius <=100m.
+            const double ax=2.0*(qx*qy-qw*qz);
+            const double az=2.0*(qy*qz+qw*qx);
+            const double ay=1.0-2.0*(qx*qx+qz*qz);
+            const double halfCm=
+                double(item.heightCm)*item.modelScalePermille/2000.0;
+            const double horizontal=std::sqrt(ax*ax+az*az);
+            const int64_t radius=std::clamp<int64_t>(
+                int64_t(std::ceil(halfCm*horizontal+40)),40,10000);
+            const int64_t vertical=std::clamp<int64_t>(
+                int64_t(std::ceil(halfCm*std::abs(ay)*2.0+80)),20,30000);
+            add(obstruction_detail::treeKey(item.id),
+                obstruction_detail::cm(p.x),
+                obstruction_detail::cm(p.y),
+                obstruction_detail::cm(p.z),
+                radius,vertical,policy.treePermeabilityPermille);
+            ++processed;
+        }
+    }
+    if(debris){
+        uint32_t processed=0;
+        for(const auto& item:debris->snapshot()){
+            if(processed>=policy.maxSlopeDebris)break;
+            if(!physicsScene.valid(item.body))continue;
+            const b3Vec3 p=physicsScene.position(item.body);
+            add(obstruction_detail::slideKey(item.id),
+                obstruction_detail::cm(p.x),
+                obstruction_detail::cm(p.y),
+                obstruction_detail::cm(p.z),
+                std::max<int64_t>(5,item.radiusCm),
+                std::max<int64_t>(10,int64_t(item.radiusCm)*2),
+                policy.debrisPermeabilityPermille);
+            ++processed;
+        }
+    }
+    std::vector<Obstacle> out;
+    out.reserve(sorted.size());
+    for(const auto& [id,entry]:sorted){
+        (void)id;out.push_back(entry);
+    }
+    return out;
+}
+
+struct FlowObstructionPublishResult {
+    uint32_t added=0,updated=0,removed=0;
+};
+
+// Run only at the authoritative ECS STRUCTURAL barrier after Box3D step,
+// before the next NEREID water sampling. Replacing derived obstructions does
+// not rewrite any WaterBodyComponent/flow/geometry.
+// Existing manually authored obstruction entities are NEVER touched.
+inline FlowObstructionPublishResult publishNereidFlowObstructions(
+        World& world,
+        const std::vector<lib::nereid::WaterFlowObstructionComponent>& desired){
+    using Obstacle=lib::nereid::WaterFlowObstructionComponent;
+    if(desired.size()>lib::nereid::kMaxWaterFlowObstructions)
+        throw std::length_error("TerraWeave water obstruction ECS budget");
+    std::map<uint64_t,Obstacle> wanted;
+    for(const auto& item:desired){
+        if(!item.sourceKey || !item.enabled ||
+           !lib::nereid::validWaterFlowObstruction(item) ||
+           !world.alive(item.waterBody) ||
+           !world.has<lib::nereid::WaterBodyComponent>(item.waterBody) ||
+           !wanted.emplace(item.sourceKey,item).second)
+            throw std::invalid_argument(
+                "TerraWeave invalid/duplicated water obstruction ECS publication");
+    }
+    std::map<uint64_t,Entity> previous;
+    world.eachExistingConst<AutoFlowObstructionComponent>(
+        [&](Entity entity,const AutoFlowObstructionComponent& tag){
+            const auto* obstacle=world.tryGetConst<Obstacle>(entity);
+            if(!tag.sourceKey || !obstacle ||
+               obstacle->sourceKey!=tag.sourceKey ||
+               !previous.emplace(tag.sourceKey,entity).second)
+                throw std::invalid_argument(
+                    "TerraWeave corrupt auto NEREID obstruction identity");
+        });
+    if(previous.size()>lib::nereid::kMaxWaterFlowObstructions)
+        throw std::length_error("TerraWeave retained NEREID obstruction budget");
+
+    // Structural mutation only after every desired/source identity has been
+    // validated. Existing water/forest/manual obstacles are never deleted.
+    FlowObstructionPublishResult result;
+    for(const auto& [key,entity]:previous){
+        if(wanted.contains(key))continue;
+        world.destroy(entity);
+        ++result.removed;
+    }
+    // COW pool ownership is detached before direct in-place component writes.
+    // New entities are created via World::create/add at the structural barrier.
+    auto* records=&world.pool<Obstacle>();
+    for(const auto& [key,item]:wanted){
+        const auto known=previous.find(key);
+        if(known==previous.end()){
+            const Entity entity=world.create();
+            world.add<AutoFlowObstructionComponent>(
+                entity,AutoFlowObstructionComponent{key});
+            world.add<Obstacle>(entity,item);
+            ++result.added;
+        }else{
+            auto* mutableValue=records->tryGet(known->second.index);
+            if(!mutableValue)
+                throw std::logic_error(
+                    "TerraWeave auto obstruction disappeared during update");
+            *mutableValue=item;
+            ++result.updated;
+        }
+    }
+    return result;
+}
+
+} // namespace aiverse::terraweave
