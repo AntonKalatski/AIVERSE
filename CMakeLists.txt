@@ -2032,7 +2032,8 @@ if(AIVERSE_BUILD_STRATA)
         aiverse_strata_view aiverse_models)
     target_include_directories(aiverse_strata_portable PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR})
-    if(Threads_FOUND)
+    if(NOT EMSCRIPTEN)
+        find_package(Threads REQUIRED)
         target_link_libraries(aiverse_strata_portable PUBLIC Threads::Threads)
     endif()
     # GPU metadata is a non-drawing, source-revision-checked storage buffer.
