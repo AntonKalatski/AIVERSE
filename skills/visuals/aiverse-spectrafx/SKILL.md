@@ -1076,3 +1076,61 @@ and leaves explicit one-shot bursts on the normal global budget.
 C++/ObjC++/MSL, CTest, native editor, readback corruption tests,
 Metal device-loss retries and hardware GPU performance have
 **NOT RUN**.
+
+## Stage 41 — offline SPFX inspection and native one-at-a-time capture
+
+Use `engine/fx/SpectraCheckpointInspector.h` to diagnose V2
+`.spfx` files **offline**. It requires no Metal Device or editor
+and accepts at most `kGpuCheckpointExportMaxBytes` (540,720
+bytes at 4096 slots). `inspectGpuCheckpointDiagnostic(bytes)`
+returns explicit error codes for invalid magic/version,
+length/bounds/truncation/trailing bytes and CRC32. A valid
+structure may still have warning counters for nonfinite GPU
+particle values, ages and CPU-lifetime mirror differences.
+Do NOT interpret diagnostic data as authoritative ECS,
+GPU restore state, portable savegame or replayable timeline.
+
+For an immediate offline report, build the single-file C++20
+`tools/spectrafx/inspect_spfx.cpp` utility from the repository
+root with `-I.` and run `inspect_spfx --json path/to/file.spfx`.
+Read `tools/spectrafx/README.md` for exact build/exit-code
+and security limits. Do not ask an agent to invent a new
+binary parser, serialization format or GPU readback loop
+when this inspector already exists.
+
+Native projects can include
+`<aiverselib/genre/SpectraFX.h>` and use the new
+`GpuPoolCaptureHost` to request ONE bounded asynchronous
+GPU group capture. Call `request(groupIndex)` between frames;
+after `Device::beginFrame` and BEFORE any new `pool.step`,
+call `pollBeforeStep()`; after the frozen `pool.step(0)`
+and BEFORE opening the render encoder call
+`submitAfterStepBeforePass()`. Once `Ready`,
+`takeReady(bytes)` copies only a complete fresh,
+CRC-validated capture. Never block with `readBuffer`
+inside the render frame or create background graphics
+work. On pool rollback/teardown or Device recreation,
+`cancel()` before destroying the old resources. The
+controller uses a pool-lifetime generation, a request ID,
+weak callback lifetime references and a 600-frame-poll
+timeout. It cannot cancel submitted Metal DMA; the RHI
+remains responsible for eventual callback/budget settlement.
+
+`examples/spectrafx/native_ecs_attachments.h` illustrates
+this in a normal render frame, with VFX state frozen while
+Queued/InFlight/Ready to preserve checkpoint revision
+freshness; committed gameplay World remains unchanged.
+If the capture times out or fails it reports an error and
+normal render simulation may resume. Source handles,
+GPU checkpoint bytes and render poses must never enter
+authoritative ECS state. The Stage 39 recovery host now
+rejects `replaceDevice(oldDevice)` when the candidate is
+the same still-bound graphics object.
+
+**Stage 41 agent handoff:**
+`docs/agent-handoffs/spectrafx-stage-41-offline-inspector-native-capture-2026-11-19.md`.
+
+**Actual verification:** GitHub source inspection and commits only.
+C++/ObjC++/MSL compilation, executing the CLI,
+CTest, malformed-file tests, RHI callback/device-loss tests,
+editor screenshot and Metal hardware checks have NOT RUN.
