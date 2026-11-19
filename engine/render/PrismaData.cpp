@@ -115,7 +115,8 @@ std::vector<PrismaTypeDef> buildCatalog() {
         num("reconstructionSharpness", 0.15f, 0.0f, 0.5f, "mild HDR current-sample reconstruction before temporal confidence blending", "Резкость реконструкции"),
         flag("adaptiveResolution", false, "automatically adjust renderScale only from completed GPU frame timings; AIVERSE_PRISMA_ADAPTIVE=1 required", "Адаптивное разрешение"),
         num("targetGpuMs", 16.6f, 4.0f, 50.0f, "target completed GPU frame milliseconds; whole frame, not viewport-only", "Целевое время GPU, мс"),
-        num("minRenderScale", 0.5f, 0.5f, 1.0f, "minimum adaptive internal render scale; never exceed authored renderScale", "Минимальный масштаб")}});
+        num("minRenderScale", 0.5f, 0.5f, 1.0f, "minimum adaptive internal render scale; never exceed authored renderScale", "Минимальный масштаб"),
+        num("maxPrismaMemoryMiB", 256.0f, 32.0f, 4096.0f, "known Prisma live + GPU-pending bytes pressure threshold, NOT actual total VRAM", "Бюджет Prisma, МиБ")}});
     c.push_back({T::ShaderGraph, "shaderGraph", "Shader Graph", "Custom bounded fragment graph.", C::Medium, PrismaQuality::Medium, {}});
     return c;
 }
