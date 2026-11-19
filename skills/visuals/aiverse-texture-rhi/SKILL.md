@@ -950,3 +950,19 @@ CI if it remains queued or cancelled.
 - Tested here: only GitHub source registration and branch-string
   consistency, **not** executable CTest nor the Metal compiler.
   Never record PASS for a test whose GitHub job is queued/cancelled.
+
+
+## Stage 10AQ — aggregate CPU decode budget for container textures
+
+When calling `render::uploadContainerTexture`, `uploadDdsImage` or
+`uploadKtx2Image`, use `TextureUploadOptions::maxCpuDecodedBytes`
+(default 512 MiB) to bound total retained decoded RGBA8 bytes across
+**all** levels, faces, array layers and volume slices. Set it to zero to
+reject CPU fallback entirely; increase only for trusted large assets.
+Native compressed uploads bypass this CPU-specific budget. Failures occur
+before any CPU-fallback texture allocation, with a descriptive error.
+The earlier independent 512 MiB *per-mip* bound remains in place.
+
+The registered `texture_asset` CTest now includes cumulative-budget
+boundary cases; their C++ execution is **NOT RUN** in this environment.
+Do not infer native GPU decode safety or production readiness from source.
