@@ -43,6 +43,7 @@ namespace kingston { struct CabinResidentDraw; }
 #include "RtsPlanetRender.h"
 #include "RtsOverlays.h"
 #include "RtsModelResourceProvider.h"
+#include "RtsModelResourceCache.h"
 #include "RtsTerrainRender.h"
 #include "EntityFx.h"
 
@@ -169,13 +170,12 @@ public:
     // Excludes the terrain, special renderers, FX, dedicated buffers and
     // textures not owned by ModelTextureCache.
     AssetResidencyStats assetResidencyStats() const {
+        const auto cached=resources_.stats();
         AssetResidencyStats stats;
-        for (bool loaded : loadedTypes_) if (loaded) ++stats.loadedTypes;
-        stats.cachedModels = models_.size(); // includes built-in shape fallbacks
-        if (textureCache_) {
-            stats.gpuTextures = textureCache_->gpuCount();
-            stats.decodedCpuBytes = textureCache_->decodedBytes();
-        }
+        for(bool loaded:loadedTypes_)if(loaded)++stats.loadedTypes;
+        stats.cachedModels=cached.models;
+        stats.gpuTextures=cached.textures;
+        stats.decodedCpuBytes=cached.decodedCpuBytes;
         return stats;
     }
     bool typeLoaded(uint16_t type) const { return type < loadedTypes_.size() && loadedTypes_[type]; }
@@ -186,7 +186,7 @@ public:
     void requestDetail(uint16_t type, bool detailed);
     bool warmPipelines(render::Renderer3D& renderer, uint16_t type);
     void setStreamingTypes(bool enabled) { streamingTypes_ = enabled; }
-    std::shared_ptr<render::ModelTextureCache> textureCache() const { return textureCache_; }
+    std::shared_ptr<render::ModelTextureCache> textureCache() const { return resources_.textures(); }
     // An independent, worker-safe reader enables CPU decoding off the render thread.
     void setAsyncReader(render::FileReader reader) { asyncReader_ = std::move(reader); }
     bool prepareType(uint16_t type, bool allVariants = false);
@@ -522,10 +522,10 @@ private:
 
     const Rules* rules_ = nullptr;
     render::FileReader read_;
-    std::shared_ptr<render::ModelTextureCache> textureCache_ = std::make_shared<render::ModelTextureCache>();
+    view_adapter::RtsModelResourceCache resources_;
     Json materialLib_ = Json::object();   // materials.json "materials"
     gfx::Device* dev_ = nullptr;
-    std::map<std::string, std::unique_ptr<render::Model>> models_;  // by path; shapes as "shape:<name>"
+
     render::GeometryScene geometryScene_;
     std::vector<TypeLook> looks_;
     // Immutable per-type reveal policy; avoid string prefix checks on every draw.
