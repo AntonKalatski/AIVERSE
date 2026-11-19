@@ -3998,3 +3998,9 @@ New `NereidConfluences.h` optional persistent v1 `WaterConfluenceComponent` (2â€
 ### Stage 41 source correction (follow-up commit)
 
 Corrected a source-level compile incompatibility: `Fixed` has no integer constructor; the inlet count now uses `Fixed::fromInt`. The contribution now carries its own `speedLimit`, and the shared reducer applies the strictest limit **only among the retained lowest-ID junctions**. Otherwise a discarded junction could silently constrain the result. The correction was made by GitHub connector source inspection; native build, tests and replay remain **not run**.
+
+
+## Stage 42 â€” read-only confluence scene bridge
+
+**Branch:** `feature/nereid-water-core`, Draft PR #23, code and per-stage handoff atomic. [Stage 42](stage-42-confluence-scene.md) contains files, API, limitations and next steps.
+New `NereidConfluenceScene.h` stores immutable confluence snapshots by stable id, checks linked `NereidWaterScene` bodies, and computes confluence flow through the same Fixed-point Stage-41 kernel/reducer. New `NereidConfluenceEcsPresentation.h` snapshots live complete ECS junctions at read barrier using Entity packed()+1 water IDs. `WorldScene::setNereidConfluences` opts in; ripple advection and per-tile whitewater follow confluence then cascade in the same order as water sampling. No ECS writes or GPU geometry ownership changes. **Verified only by source inspection/remote commit**, not by compiler, CTest, GPU or native game. **Next:** split shader-only material updates from mesh residency; run deferred tests before merging.

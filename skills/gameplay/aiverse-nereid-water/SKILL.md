@@ -665,3 +665,8 @@ Use scene `style.rapidDetail` values `"low"`, `"medium"`, `"high"` or native `Wa
 ## Stage 41 — confluence current ECS composition
 
 Include `<aiverselib/water/NereidConfluences.h>`; enable `NativeWaterPipelineConfig::enableConfluences`, then attach a `WaterConfluenceComponent` on a dedicated junction Entity with 2..4 distinct inlet water Entity IDs, one distinct outlet and Fixed mouth/radius/blend/speed limit. All linked bodies must cover the authored mouth; invalid/dead link suppresses junction. The same `applyWaterConfluenceFlow` runs in reference/indexed water sampling before cascade continuity. The component has independent persistent schema `nereid.confluence` v1; do not alter old water archives or genre modules. Rendering bridge remains pending. Handoff: `docs/nereid/stage-41-confluence-ecs.md`. **C++/CTest unverified**.
+
+
+## Stage 42 — confluence presentation snapshots
+
+After publishing the water-body ECS snapshot to WorldScene, call `scene.setNereidConfluences(aiverse::world::snapshotNereidEcsConfluences(sim.world()))` with `engine/world/NereidConfluenceEcsPresentation.h` after the same ECS read barrier. Water sources must share `packed Entity + 1` stable IDs. Visual NEREID flow is composed as ordinary current -> confluence -> cascade, then used for ripples and rapid-water shader inputs. No implicit JSON scene topology inference or renderer-to-ECS feedback. Read Stage 42 handoff at `docs/nereid/stage-42-confluence-scene.md`; CMake, CTest, shader compilers and graphics execution remain unverified.

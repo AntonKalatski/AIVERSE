@@ -3,6 +3,7 @@
 #include "engine/render/Renderer3D.h"
 #include "engine/world/NereidWaterScene.h"
 #include "engine/world/NereidCascadeScene.h"
+#include "engine/world/NereidConfluenceScene.h"
 #include "engine/world/NereidUnderwaterView.h"
 #include "engine/world/NereidRipples.h"
 #include "engine/world/NereidWindPresentation.h"
@@ -28,6 +29,12 @@ public:
         cascades_.setCascades(std::move(cascades));
     }
     size_t nereidCascadeCount()const{return cascades_.residentCount();}
+    // Publish an immutable confluence snapshot from the same ECS tick
+    // as setNereidSurfaces; missing body snapshots suppress contribution.
+    void setNereidConfluences(std::vector<NereidConfluenceSource> sources) {
+        confluences_.setConfluences(std::move(sources));
+    }
+    size_t nereidConfluenceCount()const{return confluences_.count();}
     template<class Fn> void forEachNereidCascade(Fn&& fn)const {
         cascades_.forEachSource(std::forward<Fn>(fn));
     }
@@ -55,8 +62,10 @@ public:
             const Vec3 bodyFlow=nereidWater_.currentForInteractionWater(
                 waterId,position);
             if(waterId==UINT64_MAX)return bodyFlow;
-            return cascades_.flowAtConnection(
+            const Vec3 joined=confluences_.flowForWater(
                 waterId+1,position,bodyFlow,nereidWater_);
+            return cascades_.flowAtConnection(
+                waterId+1,position,joined,nereidWater_);
         });
         ripples_.applyVisualWind(deltaSeconds,
             [this](double x,double z) {
@@ -93,6 +102,7 @@ private:
     std::unique_ptr<AsyncChunkStream> stream_;
     NereidWaterScene nereidWater_;
     NereidCascadeScene cascades_;
+    NereidConfluenceScene confluences_;
     NereidRippleField ripples_;
     NereidVisualWindField windField_{};
     std::shared_ptr<Prepared> prepare(Cell,const AssetReader&);

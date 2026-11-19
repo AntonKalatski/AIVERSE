@@ -166,8 +166,10 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
 void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
     nereidWater_.draw(renderer,origin,size,&ripples_,&windField_,
         [this](uint64_t stableWaterId,Vec3 position,Vec3 ordinary) {
-            return cascades_.flowAtConnection(
+            const Vec3 joined=confluences_.flowForWater(
                 stableWaterId,position,ordinary,nereidWater_);
+            return cascades_.flowAtConnection(
+                stableWaterId,position,joined,nereidWater_);
         });
     cascades_.draw(renderer,origin,size);
     // Shader-normal ripples replace the old overlay rings for surfaces

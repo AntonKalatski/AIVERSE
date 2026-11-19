@@ -319,3 +319,8 @@ Per-water-surface presentation style now has `rapidFoamR/G/B` (normalized, defau
 ## Stage 41 — optional confluence flow (ECS only)
 
 `WaterConfluenceComponent` is a distinct persistent junction entity linking 2–4 generation-safe upstream water bodies and one outlet. The source is validated in Fixed and sampled only near its explicitly authored mouth. `applyWaterConfluenceFlow` is a shared post-sampling policy in both linear and indexed paths, BEFORE cascade mouth transfer. `WaterSample.flow` changes locally, never source `WaterBody.flow`; no mass conservation, erosion, physics integration or geometry modification. Register through `NativeWaterPipelineConfig::enableConfluences` (false default) or `registerNereidConfluencePersistence`. Presentation scene parity is deferred to Stage 42. Neither compilation nor test execution has been performed. See `docs/nereid/stage-41-confluence-ecs.md`.
+
+
+## Stage 42 — immutable scene confluence flow projection
+
+`NereidConfluenceScene` is a read-only value snapshot adapter. `snapshotNereidEcsConfluences(world)` maps generation-safe ECS junction and water-body IDs to scene IDs (`packed()+1`). Publish via `WorldScene::setNereidConfluences(...)` at the same ECS read barrier as `setNereidSurfaces(...)`. Both visual ripple advection and per-tile rapid foam apply `flowForWater` (shared Fixed confluence kernel) followed by cascade flow, mirroring ECS sampling. Missing/invalid input snapshots suppress contribution. Scene has no new fluid solver, GPU buffer, geometry modification or persistence. C++/GPU/tests NOT RUN; see `docs/nereid/stage-42-confluence-scene.md`.
