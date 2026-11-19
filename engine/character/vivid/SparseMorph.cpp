@@ -9,6 +9,7 @@
 namespace aiverse::vivid {
 namespace {
 constexpr std::size_t kMaxTargets = 4096;
+constexpr std::size_t kMaxVertices = 16'000'000;
 constexpr std::size_t kMaxDeltas = 16'000'000;
 constexpr float kMaxAbsCoordinate = 100'000'000.0f;
 
@@ -40,8 +41,8 @@ void normalize(MorphVec3& v) noexcept {
 
 SparseMorphLibrary SparseMorphLibrary::compile(std::size_t vertexCount,
                                                std::vector<MorphTargetInput> targets) {
-    if (vertexCount > std::numeric_limits<std::uint32_t>::max())
-        throw std::length_error("VIVID sparse morph: vertex count exceeds 32-bit index");
+    if (vertexCount > kMaxVertices)
+        throw std::length_error("VIVID sparse morph: vertex count exceeds budget (16M)");
     if (targets.size() > kMaxTargets)
         throw std::length_error("VIVID sparse morph: target count exceeds budget (4096)");
 
@@ -86,6 +87,27 @@ SparseMorphLibrary SparseMorphLibrary::compile(std::size_t vertexCount,
             {}});
         result.names_.push_back(std::move(target.name));
     }
+
+    // Build a per-vertex compressed sparse row (CSR) gather table. Every
+    // shader invocation owns its one destination vertex and never scatters
+    // into another invocation's memory. Stable target-major iteration orders
+    // all contributions for a vertex identically to the CPU reference.
+    result.offsets_.assign(vertexCount + 1, 0);
+    for (const GpuMorphDelta& d : result.deltas_)
+        ++result.offsets_[std::size_t(d.vertex) + 1];
+    for (std::size_t i = 1; i < result.offsets_.size(); ++i)
+        result.offsets_[i] += result.offsets_[i-1];
+    result.links_.resize(result.deltas_.size());
+    std::vector<std::uint32_t> cursor = result.offsets_;
+    for (std::size_t t = 0; t < result.ranges_.size(); ++t) {
+        const GpuMorphRange range = result.ranges_[t];
+        for (std::uint32_t i = 0; i < range.count; ++i) {
+            const std::uint32_t delta = range.first + i;
+            const std::uint32_t v = result.deltas_[delta].vertex;
+            result.links_[cursor[v]++] = {
+                static_cast<std::uint32_t>(t), delta};
+        }
+    }
     return result;
 }
 
@@ -129,6 +151,40 @@ bool SparseMorphLibrary::evaluate(std::span<const MorphVertex> base,
         for (MorphVertex& v : output) {
             normalize(v.normal);
             normalize(v.tangent);
+        }
+    }
+    return true;
+}
+
+bool SparseMorphLibrary::evaluateGather(std::span<const MorphVertex> base,
+                                         std::span<const float> weights,
+                                         std::span<MorphVertex> output,
+                                         bool normalizeDirections) const noexcept {
+    if (base.size() != vertices_ || output.size() != vertices_ || weights.size() != targets())
+        return false;
+    for (float w : weights)
+        if (!std::isfinite(w) || w < 0.0f || w > 1.0f) return false;
+    for (const MorphVertex& v : base)
+        if (!validVertex(v)) return false;
+    if (base.data() != output.data())
+        std::copy(base.begin(), base.end(), output.begin());
+
+    for (std::size_t vertex = 0; vertex < vertices_; ++vertex) {
+        MorphVertex& destination = output[vertex];
+        for (std::uint32_t link = offsets_[vertex]; link < offsets_[vertex + 1]; ++link) {
+            const GpuMorphLink ref = links_[link];
+            const float weight = weights[ref.target];
+            if (weight == 0.0f) continue;
+            const GpuMorphDelta& delta = deltas_[ref.delta];
+            for (std::size_t axis = 0; axis < 3; ++axis) {
+                destination.position[axis] += delta.position[axis] * weight;
+                destination.normal[axis] += delta.normal[axis] * weight;
+                destination.tangent[axis] += delta.tangent[axis] * weight;
+            }
+        }
+        if (normalizeDirections) {
+            normalize(destination.normal);
+            normalize(destination.tangent);
         }
     }
     return true;
