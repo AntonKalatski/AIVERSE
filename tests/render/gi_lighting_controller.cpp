@@ -60,6 +60,12 @@ int main() {
     AIVERSE_TEST_CHECK(step.cpu.trace.claimed<=2 && step.canPresent);
     AIVERSE_TEST_CHECK(controller.setLights({}));
     AIVERSE_TEST_CHECK(controller.updateFrame({0,0,0}).cpu.upload.probes>=1);
+    GiWorldDirtyAccumulator changes;
+    changes.submit({GiDirtyReason::Material,
+                    {{-.5f,-1.5f,-1.5f},{-.5f,-1.5f,-1.5f}}});
+    const auto dirtyStats=controller.applyWorldChanges(changes);
+    AIVERSE_TEST_CHECK(dirtyStats.events==1 && dirtyStats.probeMarks==1);
+    AIVERSE_TEST_CHECK(controller.updateFrame({0,0,0}).cpu.upload.probes>=1);
     AIVERSE_TEST_CHECK(controller.shutdown());
     AIVERSE_TEST_CHECK(controller.mode()==GiTransportMode::Off);
     AIVERSE_TEST_CHECK(device.buffers.empty() && device.textures.empty());
