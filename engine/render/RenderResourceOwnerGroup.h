@@ -53,12 +53,17 @@ public:
     // Register borrowed caches. Clearing or destroying the group does not
     // shut down owners; owners must outlive snapshot().
     void add(const ModelResourceCache& cache) {
-        for(const auto* existing:owners_)
-            if(existing==&cache)return;
-        owners_.push_back(&cache);
+        for(const auto& entry:owners_)
+            if(!entry.lifetime.expired() && entry.cache==&cache)return;
+        owners_.push_back({&cache,cache.lifetimeToken()});
     }
     void clear() noexcept {owners_.clear();}
-    size_t size() const noexcept {return owners_.size();}
+    size_t size() const noexcept {
+        size_t alive=0;
+        for(const auto& entry:owners_)
+            if(!entry.lifetime.expired())++alive;
+        return alive;
+    }
 
     void setEstimatedBudgetBytes(uint64_t bytes) noexcept {budgetBytes_=bytes;}
     uint64_t estimatedBudgetBytes() const noexcept {return budgetBytes_;}
@@ -72,7 +77,7 @@ public:
     // Geometry-page capacity requires the device-level snapshot() below.
     RenderResourceGroupStats snapshotOwners(bool gpuHealthy=true) const {
         RenderResourceGroupStats stats;
-        stats.uniqueOwners=owners_.size();
+        stats.uniqueOwners=size();
         stats.health=gpuHealthy ? RenderResourceHealth::Ready:
                                   RenderResourceHealth::DeviceUnhealthy;
         std::set<const Model*> visitedModels;
@@ -81,8 +86,11 @@ public:
         auto add=[max](uint64_t& dst,uint64_t amount) {
             dst=amount>max-dst?max:dst+amount;
         };
-        for(const ModelResourceCache* owner:owners_) {
-            if(!owner)continue;
+        for(const auto& entry:owners_) {
+            // Never dereference a destroyed cache even if the original
+            // address has been reused by a new owner.
+            if(entry.lifetime.expired())continue;
+            const ModelResourceCache* owner=entry.cache;
             const auto retired=owner->retirementStats();
             if(retired.pendingResources &&
                stats.health==RenderResourceHealth::Ready)
@@ -120,8 +128,11 @@ public:
     RenderResourceGroupStats snapshot(gfx::Device& device) const {
         auto stats=snapshotOwners(device.gpuHealthy());
         std::vector<const Model*> modelsForPool;
-        for(const ModelResourceCache* owner:owners_) {
-            if(!owner)continue;
+        for(const auto& entry:owners_) {
+            // Never dereference a destroyed cache even if the original
+            // address has been reused by a new owner.
+            if(entry.lifetime.expired())continue;
+            const ModelResourceCache* owner=entry.cache;
             owner->forEachOwnedModel([&](const Model& model,bool) {
                 if(model.geometryPoolPage)modelsForPool.push_back(&model);
             });
@@ -133,7 +144,11 @@ public:
         return stats;
     }
 private:
-    std::vector<const ModelResourceCache*> owners_;
+    struct Registration {
+        const ModelResourceCache* cache=nullptr;
+        std::weak_ptr<const void> lifetime;
+    };
+    std::vector<Registration> owners_;
     uint64_t budgetBytes_=0;
 };
 
