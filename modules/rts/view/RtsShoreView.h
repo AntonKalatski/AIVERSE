@@ -23,7 +23,7 @@ public:
     // Called only at a frame boundary, BEFORE this frame's scene submissions.
     // Polls actual GPU retirement tokens, never frame-count heuristics.
     void collectRetired(gfx::Device& dev) { (void)retirement_.collect(dev); }
-    size_t pendingModelRetirements() const noexcept {return retirement_.pending();}
+    size_t pendingGpuRetirements() const noexcept {return retirement_.pending();}
     void setMap(const Json& map);   // its "waterNetwork"; rebuilt on the next draw
     void invalidateGround() { dirty_ = true; }
     // heightAt in world units; waterY: the water surface (world units); w, h: the map size in cells
