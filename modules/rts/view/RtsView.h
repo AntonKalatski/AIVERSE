@@ -634,6 +634,10 @@ private:
     bool strictAppearanceReload_ = false; // temporary CPU preflight during authored reload
     render::ModelImageRollbackPool imageRollback_;
     render::ModelImageUploadTransaction* activeImageTransaction_ = nullptr; // borrowed during staging only
+    // Unpublished Model owners during appearance reload: no model-cache
+    // tombstones or speculative GPU residency until the outer transaction
+    // succeeds. The scope clears this borrowed pointer before returning.
+    render::ModelResourceCache::ModelMap* activeStagedModels_ = nullptr;
     render::FileReader asyncReader_;
     // Model resources (including async worker lifetime) are owned by
     // resources_; RtsView only supplies appearance rules and GPU publication.
