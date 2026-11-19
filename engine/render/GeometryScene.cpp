@@ -34,7 +34,15 @@ bool sameBoundMaterial(Material a,Material b,const std::vector<Image>& images){
 }
 float scaleBound(const mat4& m){float sum=0;for(int r=0;r<3;++r)for(int c=0;c<3;++c)sum+=m.at(r,c)*m.at(r,c);return std::sqrt(sum);}
 }
-void GeometryScene::shutdown(gfx::Device& dev){if(strataGpuCulling_)strataGpuCulling_->shutdown(dev);strataGpuCulling_.reset();if(strataGpuMetadata_)strataGpuMetadata_->shutdown(dev);strataGpuMetadata_.reset();strataGpuDevice_=nullptr;strataStaging_.reset();for(auto& g:groups_)if(g.proxy)releaseModel(dev,*g.proxy);for(auto& [k,m]:models_)if(m)releaseModel(dev,*m);models_.clear();instances_.clear();groups_.clear();warnings_.clear();stats_={};proxyVertices_=0;}
+void GeometryScene::shutdown(gfx::Device& dev){
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    if (strataGpuCulling_) strataGpuCulling_->shutdown(dev);
+    if (strataGpuMetadata_) strataGpuMetadata_->shutdown(dev);
+#endif
+    strataGpuCulling_.reset();
+    strataGpuMetadata_.reset();
+    strataGpuDevice_ = nullptr;
+    strataStaging_.reset();for(auto& g:groups_)if(g.proxy)releaseModel(dev,*g.proxy);for(auto& [k,m]:models_)if(m)releaseModel(dev,*m);models_.clear();instances_.clear();groups_.clear();warnings_.clear();stats_={};proxyVertices_=0;}
 bool GeometryScene::strataStagingSupported() const {
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
     return true;
