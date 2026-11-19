@@ -7,8 +7,10 @@
 #include "engine/world/TerraWeaveShorelineRaster.h"
 #include "engine/world/TerraWeaveSedimentEcs.h"
 #include "engine/world/TerraWeaveNereidFloodBridge.h"
+#include "engine/world/TerraWeaveFloodShorelineSystem.h"
 #include "engine/world/TerraWeaveFlowObstructionEcs.h"
 #include <functional>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -24,7 +26,9 @@ inline void registerSystems(
         std::function<void(
             const terraweave::EcsBankTerrainCommit&)> onEroded={},
         bool enableSlopeFailures=true,
-        terraweave::SlopeFailureSettings slopeSettings={}) {
+        terraweave::SlopeFailureSettings slopeSettings={},
+        std::optional<terraweave::ShorelineRasterSettings>
+            autoFloodShoreline=std::nullopt) {
     lib::nereid::NativeWaterPipelineConfig water{};
     water.enableBankErosion=true;
     // Geometry and current state belong to NEREID, including polygon/
@@ -44,6 +48,8 @@ inline void registerSystems(
     lib::nereid::registerNativeWaterPipeline(sim,"nereid",water);
     terraweave::registerTerraWeaveBankVertexPersistence(sim);
     terraweave::registerAutoShorelineBankPersistence(sim);
+    if(autoFloodShoreline)
+        terraweave::registerAutomaticShorelineRevisionPersistence(sim);
     terraweave::registerTerraWeaveObstructionPersistence(sim);
     terraweave::registerNereidSedimentEcsPersistence(sim);
     terraweave::registerTerraWeaveAuthorityResource(sim,cfg);
@@ -68,6 +74,11 @@ inline void registerSystems(
     // NEREID flood tick sees the new bottom while preserving water volume.
     terraweave::addTerraWeaveFloodGroundSyncSystem(
         sim,"terraweave.flood_ground",cfg);
+    // Only when the game supplies an explicit bounded raster region.
+    // Installed last, after both NEREID and TerraWeave finished this tick.
+    if(autoFloodShoreline)
+        terraweave::addAutomaticNereidShorelineRefreshSystem(
+            sim,"terraweave.auto_shoreline",cfg,*autoFloodShoreline);
 }
 
 inline Entity addWaterBody(
