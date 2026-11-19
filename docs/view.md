@@ -2724,3 +2724,36 @@ See [Stage 121 handoff](agent-handoffs/animation-stage121-universal-lod-attachme
 
 **NOT RUN:** CMake compiler/linker, CTest, GPU visual parity, sanitizers
 or performance benchmarks. This source-only stage is not release validated.
+
+## Stage 122 — explicit visual rig retargeting and prepared-packet frame lifecycle
+
+The canonical `aiverse::View` accepts optional `ModelLod::retarget`
+maps from `engine/view/ModelPoseRetarget.h`. An explicit, target-indexed
+mapping identifies which source animation node drives each visible
+LOD node; -1 preserves that visual node's bind TRS. Visual skeleton
+differences are supported through target bind + mapped source-local
+animation deltas, not by incorrectly copying source joint palettes,
+skin inverse binds or morph data. Morph remapping is explicit and
+target-indexed; unmapped targets keep their own bind weights.
+Invalid mappings fall back to the visual bind pose while the base
+animation source and sockets keep advancing independently.
+
+`View::submitOne` now also recognizes a host-precomputed Pose and
+nodeWorld matrix array, provided `graph` is null and
+`animationModel` identifies the authoritative source. This is
+the normal FPS character path: the FPS presentation ECS runs once,
+`View::beginPreparedFrame` maintains LOD hysteresis IDs without
+advancing graphs, then the FPS client calls `submitPackets`.
+For a View-owned graph use `View::update` once instead; NEVER
+call both update and beginPreparedFrame for the same source frame.
+Existing per-mesh Renderer3D LOD is unchanged.
+
+The RTS adapter constructs a validated name-based map once in
+`RtsLook` and supplies it to the same retarget helper when a
+separate LOD asset is selected, while preserving the previous
+legacy world-matrix fallback for unsupported authored LODs pending
+visual parity. No gameplay or animation authority was migrated
+to the renderer.
+
+**NOT RUN:** native compiler/build/CTest, real GPU backend visual
+tests, sanitizers or benchmarks. Review [Stage 122 handoff](agent-handoffs/animation-stage122-rig-retarget-2026-11-19.md).
