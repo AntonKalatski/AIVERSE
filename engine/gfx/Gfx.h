@@ -74,6 +74,11 @@ struct BufferDesc {
     const void* data = nullptr;
     const char* label = nullptr;
     bool snapshotUpdates = false; // Dynamic: preserve earlier updates encoded in this frame
+    // Opt-in for dynamic buffers whose next offset-zero update replaces the
+    // entire *readable* payload. Old tail bytes need not be copied to a new
+    // GPU-safe version. Clients must only read the freshly written prefix.
+    // This does NOT relax snapshotUpdates or in-flight GPU lifetime rules.
+    bool discardOnUpdate = false;
 };
 
 struct TextureDesc {

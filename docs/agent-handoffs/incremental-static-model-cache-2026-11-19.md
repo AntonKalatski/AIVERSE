@@ -824,3 +824,32 @@ GitHub source inspection verified pre-stage cursor, model unload and shutdown pa
 ### Next action
 
 Feature-first follow-up: audit the GPU indirect command buffer capacity/resizing behavior and its GPU upload costs, preserving backend snapshot lifetime, or advance to tests once feature work is complete. Future tests must exercise entry cap fallback, big batches, model unload with mixed-model layouts, age/cursor rollover and zero-copy warm replay; reconcile older Stages 10/11/13 policy assertions, then Metal OFF/ON raster parity and fixed-scene A/B/A before merging.
+
+---
+
+## Stage 27 — GPU-safe indirect command snapshot growth and prefix overwrite (2026-11-19)
+
+**Repo / branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. **At start:** `main=9ee6ff6fbf390bd45363bc92c838f492dfe92eee`, feature HEAD `43bf1f6355096884a888e9e0c8c74b552169093f`, compare `behind=0`; main was already an ancestor, not modified. User continues to prioritize feature implementation over tests.
+
+### Architecture / implemented files / API
+
+- `engine/gfx/Gfx.h` adds the opt-in `BufferDesc::discardOnUpdate` contract (default false): an offset-zero dynamic update replaces the entire **readable** prefix, with no need to retain old tail bytes. This does not weaken `snapshotUpdates` or allow writing to in-flight GPU allocations. Other buffer types and call sites retain unchanged semantics.
+- `engine/render/Renderer3DModels.cpp` opts only its existing dynamic `indirectCommands_` buffer into `discardOnUpdate=true`. Every submission updates exactly the current contiguous indexed command prefix, and `drawIndexedIndirect` consumes `commands.size()` commands. Exact material, geometry, LOD, visibility and GPU pipeline/backend compatibility remain. Cache-hit zero-copy CPU layouts and ordinary fallback remain intact.
+- `engine/gfx/metal/GfxMetal.mm` preserves the existing per-frame-slot/per-submission indirect snapshot pool (three fenced frames). Opted-in snapshots grow geometrically to reduce MTLBuffer reallocations, and no longer copy an old command tail before each prefix replacement. The preexisting **optional** `AIVERSE_METAL_ICB_DIRTY_UPDATES=1` mode now compares 128-byte chunks on safe *completed* slots and copies only changed chunks. Non-opted-in partial updates retain their previous copy-before-write semantics. `AIVERSE_ICB_PROFILE=1` logs copied/avoided CPU bytes and snapshot allocations per 600 updates.
+- `engine/gfx/vulkan/VkDevice.h` / `VkResources.cpp`: dynamic `VBuffer` carries `discardOnUpdate`. Offset-zero replacement skips old-tail shadow copies when selecting a new GPU-safe version and after allocation growth. Existing Vulkan serial completion/version allocation and actual current command bytes remain unchanged.
+- `engine/render/Renderer3D.h` and `apps/editor/windows/SceneWindow.cpp`: new diagnostics `mdiIndirectCommandBytes` (successful RHI command payload size) and `mdiIndirectPrefixOverwrites` (existing command-buffer updates); these are **not** backend transferred bytes or GPU time. `docs/geometry-performance.md`, `AGENTS.md`, this handoff document the contract.
+
+### Hard safety contracts
+
+- `discardOnUpdate` does **not** make command buffers immutable, persistent across independent scene states, or safe to overwrite in-flight snapshots. Metal maintains one allocation per draw submission until fenced completion; Vulkan continues serial-tracked versioning. Never replace those with one writable MTLBuffer/VkBuffer without GPU fencing.
+- The optional Metal byte-diff optimization only writes/reads a previously completed recycled snapshot; it must never overwrite one used by an earlier draw in the *same* GPU frame. The 20-byte indexed command ABI and full per-command validation are preserved.
+- Do not advertise GPU-side dirty-only uploads; Metal uses shared-memory snapshot writes, Vulkan maintains actual command prefix updates. `AIVERSE_METAL_ICB_DIRTY_UPDATES` remains opt-in; CPU memcmp overhead may exceed saved copies.
+- No new ECS/genre or GPU-driven culling path, no change to transparent/LOD/material batching. Metal CPU ICB remains opt-in and all experimental multi-model features remain OFF by default.
+
+### Actual verification / pending
+
+Source/API and exact replacement consistency was checked against GitHub branch and main ancestry. **Native CMake: NOT RUN. CTest: NOT RUN. Metal raster: NOT RUN. Vulkan real device: NOT RUN. Xcode GPU validation: NOT RUN. Dense-city A/B/A: NOT RUN.** No rendering correctness or speedup claim. Keep PR Draft.
+
+### Next work
+
+Feature-first option: add backend-owned byte-copy statistics exposed via a read-only RHI diagnostic API, so the editor can distinguish 20-byte command payload submissions from actual snapshot CPU copies. Later tests should cover Metal multiple submissions in one GPU frame, frame-slot fence reuse, mixed exact/partial updates, dirty mode, snapshot capacity growth, Vulkan version reuse and growth, unload/reload and LOD/shadow parity. Reconcile old Stage 10/11/13 policy fixtures, run Metal visual A/B/A and fixed-scene CPU/GPU benchmarks before enabling or merging.

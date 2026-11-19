@@ -1425,11 +1425,16 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     if (!drawModelBatch(items, count, phase, false, false, instancePalette))
         return true; // pipeline warming: no fallback draw
     const auto afterPipeline = std::chrono::steady_clock::now();
-    if (!indirectCommands_.valid()) {
+    const bool existingIndirectBuffer = indirectCommands_.valid();
+    if (!existingIndirectBuffer) {
         gfx::BufferDesc d;
         d.type = gfx::BufferType::Indirect;
         d.usage = gfx::Usage::Dynamic;
         d.snapshotUpdates = true;
+        // Every call writes a complete ordered command prefix and executes
+        // exactly commands.size() draws. No draw reads the previous tail.
+        // Backends still create isolated in-flight snapshots/versions.
+        d.discardOnUpdate = true;
         d.size = commands.size() * sizeof(commands[0]);
         d.data = commands.data();
         d.label = "model indexed indirect commands";
@@ -1443,6 +1448,9 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
         return true;
     }
     const auto afterSubmit = std::chrono::steady_clock::now();
+    modelStats_.mdiIndirectCommandBytes +=
+        commands.size() * sizeof(gfx::DrawIndexedIndirectCommand);
+    if (existingIndirectBuffer) ++modelStats_.mdiIndirectPrefixOverwrites;
     if (traceIndirect) {
         static uint32_t samples = 0;
         static double sums[4] = {};

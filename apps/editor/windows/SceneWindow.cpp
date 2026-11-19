@@ -691,6 +691,10 @@ private:
                 ImGui::Text("MDI exact-layout zero-copy: %llu submissions / %.1f KiB CPU copies avoided",
                     (unsigned long long)modelStats.mdiLayoutZeroCopySubmissions,
                     double(modelStats.mdiLayoutCopyAvoidedBytes) / 1024.0);
+                ImGui::Text("MDI RHI command payload: %.1f KiB / %llu discard-prefix updates",
+                    double(modelStats.mdiIndirectCommandBytes) / 1024.0,
+                    (unsigned long long)modelStats.mdiIndirectPrefixOverwrites);
+                ImGui::TextDisabled("CPU payload requested; backend may skip bytes with dirty snapshots.");
                 const auto layoutCache = ed.renderer().indirectLayoutCacheStats();
                 ImGui::Text("MDI layout CPU cache: %zu entries / %.1f KiB retained",
                     layoutCache.entries, double(layoutCache.retainedBytes) / 1024.0);

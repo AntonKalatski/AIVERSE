@@ -214,6 +214,10 @@ struct ModelRenderStats {
     // Exact-layout caching declined because the per-pass bounded cache is
     // full or this batch exceeds the maximum cached signature length.
     uint64_t mdiLayoutCacheBypassed = 0;
+    // Indirect indexed command bytes *submitted to the RHI*. Metal/Vulkan
+    // snapshot/dirty policies may avoid CPU copies; not GPU execution bytes.
+    uint64_t mdiIndirectCommandBytes = 0;
+    uint64_t mdiIndirectPrefixOverwrites = 0;
     // CPU MDI groups spanning at least two different Model instances
     // using the SAME pooled vertex/index arena, after independent LOD and
     // per-view culling. These are successful submissions, not candidates.

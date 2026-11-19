@@ -885,3 +885,48 @@ do not describe GPU memory or GPU performance. `AIVERSE_MDI_LAYOUT_CACHE=off`
 continues to disable all command caching. Feature-first implementation
 is **not yet compiled, CTest-validated, visually compared on Metal or
 A/B benchmarked**.
+
+### GPU-safe indirect command snapshot prefix replacement (Stage 27)
+
+The model CPU MDI path creates its **dynamic indirect buffer** with
+`BufferDesc::snapshotUpdates=true` and now explicitly opts into
+`BufferDesc::discardOnUpdate=true`. This is a narrow RHI contract:
+an offset-zero `updateBuffer` call replaces the entire **readable**
+command prefix, and subsequent `drawIndexedIndirect` reads only that
+many commands. The unwritten tail is undefined. It does **not** let
+the backend overwrite in-flight GPU data: earlier command snapshots
+remain private to their submission until fence completion. All other
+dynamic/partial buffer clients default to `discardOnUpdate=false`.
+
+Metal's existing triple-frame-slot, per-submission indirect-snapshot
+pool continues to assign an independent `MTLBuffer` per submission.
+For the opt-in command-prefix buffers it grows each snapshot buffer
+geometrically (at least 256 bytes, doubling when needed), then reuses
+the capacity at the same completed frame-slot/submission ordinal.
+It skips copying an old snapshot's unused tail before an offset-zero
+update; partial or non-opted-in updates preserve the existing
+previous-contents path. With the **existing optional**
+`AIVERSE_METAL_ICB_DIRTY_UPDATES=1`, a completed snapshot may have
+128-byte chunks compared to the new command stream and only changed
+chunks copied. This incurs additional `memcmp` CPU work and is still
+OFF by default until measurements justify it. Under
+`AIVERSE_ICB_PROFILE=1` the backend logs requested CPU writes avoided,
+actual copied bytes and snapshot reallocations every 600 indirect
+updates. The flag does not elide the logical RHI update/draw or
+permit reuse of an in-flight snapshot.
+
+Vulkan stores the same opt-in contract in `VBuffer`; for
+offset-zero replacement it does not copy stale shadow-buffer tail
+bytes to a newly selected GPU-safe version. All GPU serial/fence
+versioning and the actual uploaded command prefix are retained.
+Other buffers still preserve their prior partial-update semantics.
+
+Scene → Batching reports `mdiIndirectCommandBytes` as bytes passed
+to the RHI on successful indirect submissions and
+`mdiIndirectPrefixOverwrites` as subsequent command updates. Neither
+metric represents PCIe traffic, saved GPU frame time, or backend bytes
+physically copied. The Metal snapshot log is the source for CPU
+copy-elision measurements. The command ABI, material/geometry checks,
+per-camera culling/LOD and fallback are unchanged. This stage was
+source-checked only; **CMake, CTest, Metal screenshot parity, Xcode GPU
+validation and A/B timing are NOT RUN**. Metal CPU ICB remains opt-in.

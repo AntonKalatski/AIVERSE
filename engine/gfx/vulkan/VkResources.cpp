@@ -178,6 +178,7 @@ BufferHandle VulkanDevice::createBuffer(const BufferDesc& d) {
     VBuffer b;
     b.type = d.type; b.usage = d.usage; b.size = std::max<size_t>(d.size, 4);
     b.host = d.usage == Usage::Dynamic;
+    b.discardOnUpdate = d.discardOnUpdate;
     VBuffer::Version v;
     if (!createBufferObject(b.size, bufferUsage(d.type), b.host, v.buffer, v.alloc)) return {};
     if (b.host) {
@@ -253,11 +254,18 @@ void VulkanDevice::updateBuffer(BufferHandle h, const void* data, size_t size, s
         b->versions.push_back(v);
         b->current = 0;
         std::memcpy(b->shadow.data() + offset, data, size);
-        std::memcpy(v.alloc.mapped, b->shadow.data(), b->size);
+        if (b->discardOnUpdate && offset == 0)
+            std::memcpy(v.alloc.mapped, data, size);
+        else
+            std::memcpy(v.alloc.mapped, b->shadow.data(), b->size);
         return;
     }
     std::memcpy(b->shadow.data() + offset, data, size);
-    const bool whole = offset == 0 && size >= b->size;
+    // The model indirect buffer reads only the newly written prefix.
+    // When a new GPU-safe version is needed, do not first copy an unused
+    // shadow tail. Writable-version fencing and serials are unchanged.
+    const bool whole = offset == 0 &&
+        (b->discardOnUpdate || size >= b->size);
     VBuffer::Version& v = writableVersion(*b, !whole);
     std::memcpy(static_cast<uint8_t*>(v.alloc.mapped) + offset, data, size);
 }

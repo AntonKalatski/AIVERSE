@@ -169,6 +169,20 @@ and the MDI pipeline still validates full material and geometry state.
 The group-order scratch vector is reused and included in retained memory;
 `staticCrossModelRankedGroups` reports ranked groups, **not draw calls**.
 Do not cache these ranks across passes or change transparency ordering.
+ Stage 27 introduces the narrow `gfx::BufferDesc::discardOnUpdate`
+ contract for dynamic indirect buffers whose offset-zero update replaces
+ the complete readable command prefix. Renderer3D alone opts into it.
+ Metal keeps an independent snapshot for **every** submission and frame
+ slot, grows snapshot capacity geometrically, and skips old-tail copies
+ for opted-in prefix updates. `AIVERSE_METAL_ICB_DIRTY_UPDATES=1`
+ may compare/copy only changed 128-byte chunks of a *completed* slot;
+ it stays OFF by default because memcmp costs CPU. Vulkan can omit
+ carrying shadow-tail bytes into a new GPU-safe version, but retains
+ all frame serial fencing. Never reuse/overwrite command storage that
+ a previous draw in the same GPU frame still references, never skip
+ model material/LOD/culling validation, and never conflate saved CPU
+ memcpy bytes with GPU bandwidth/frame-time gains. Partial updates and
+ other buffers remain legacy. Read Stage 27 handoff before changing RHI.
  Stage 26 bounds the per-phase positional CPU MDI layout cache to
  96 entries of at most 256 items each. Cache overflow must use the
  uncached command scratch and must never omit a GPU draw. Each exact

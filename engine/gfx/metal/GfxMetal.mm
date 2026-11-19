@@ -22,6 +22,19 @@ namespace {
 
 constexpr int kFramesInFlight = 3;
 
+// Snapshot allocations belong to independent GPU submissions and cannot be
+// overwritten while in flight. Geometric growth avoids frequent MTLBuffer
+// reallocations when a batch grows by a few indexed commands.
+size_t growIndirectSnapshotCapacity(size_t oldCapacity, size_t required) {
+    if (required <= oldCapacity) return oldCapacity;
+    size_t capacity = std::max(oldCapacity, size_t{256});
+    while (capacity < required) {
+        if (capacity > SIZE_MAX / 2) return required;
+        capacity *= 2;
+    }
+    return capacity;
+}
+
 template <class T> class Pool {
 public:
     uint32_t add(T v) {
@@ -40,6 +53,7 @@ struct MTBuffer {
     size_t size = 0;
     BufferType type = BufferType::Vertex;
     bool storage = false,snapshot = false;
+    bool discardOnUpdate = false; // offset-zero writes replace readable prefix
     uint64_t updatedFrame = UINT64_MAX;
     // Only for dynamic indirect command snapshots: per-frame, per-submission
     // allocations retained until this frame slot is safe to recycle.
@@ -120,6 +134,7 @@ public:
         b.size = d.size ? d.size : 16;
         b.type = d.type;
         b.snapshot = d.snapshotUpdates;
+        b.discardOnUpdate = d.discardOnUpdate;
         b.storage = d.type == BufferType::Storage;
         b.count = !b.storage && d.usage == Usage::Dynamic ? kFramesInFlight : 1;
         for (int i = 0; i < b.count; ++i) {
@@ -156,10 +171,17 @@ public:
             auto& snapshots = b->indirectSnapshots[slot];
             auto& valid = b->indirectSnapshotValid[slot];
             const size_t cursor = b->indirectCursor;
-            id<MTLBuffer> previous = cursor ? b->bufs[slot] : nil;
+            // The previous logical contents may be needed for general partial
+            // updates, including cursor zero after this frame slot is recycled.
+            // GPU fences guarantee the previous slot submission is finished.
+            id<MTLBuffer> previous = b->bufs[slot];
             id<MTLBuffer> target = cursor < snapshots.size() ? snapshots[cursor] : nil;
-            const size_t capacity = std::max(b->size, required);
-            if (!target || target.length < capacity) {
+            const bool discardPrefix = b->discardOnUpdate && offset == 0;
+            const size_t capacity = discardPrefix
+                ? growIndirectSnapshotCapacity(b->size, required)
+                : std::max(b->size, required);
+            const bool allocated = !target || target.length < capacity;
+            if (allocated) {
                 target = [device_ newBufferWithLength:capacity options:MTLResourceStorageModeShared];
                 if (!target) {
                     error_ = "indirect snapshot allocation failed";
@@ -174,28 +196,71 @@ public:
                     valid[cursor] = 0;
                 }
             }
-            // Full updates are the common model indirect path. If this
-            // frame-slot/submission's commands have not changed, keep the
-            // previous contents. The slot is safe after the GPU fence.
-            // Partial updates preserve the previous submission's bytes.
-            const bool fullUpdate = offset == 0 && size == required;
+            // The model indirect path replaces the readable command prefix.
+            // No old tail is read by drawIndexedIndirect(drawCount), so skip
+            // copying it from the previous submission. Non-opted-in buffers
+            // retain their partial-update preservation semantics.
+            if (!discardPrefix && previous && previous != target &&
+                (offset != 0 || size < b->size)) {
+                std::memcpy(target.contents, previous.contents,
+                            std::min(size_t(target.length), size_t(previous.length)));
+            }
             static const bool dirtyIndirectUpdates = [] {
                 const char* setting = std::getenv("AIVERSE_METAL_ICB_DIRTY_UPDATES");
                 return setting && std::strcmp(setting, "1") == 0;
             }();
-            const bool unchanged = dirtyIndirectUpdates && fullUpdate &&
-                valid[cursor] >= size && std::memcmp(target.contents, data, size) == 0;
-            if (!unchanged) {
-                if (previous && (offset != 0 || size < b->size))
-                    std::memcpy(target.contents, previous.contents,
-                                std::min(size_t(target.length), size_t(previous.length)));
+            size_t written = size;
+            size_t avoided = 0;
+            // Comparing a completed frame-slot snapshot is safe; comparing
+            // snapshots from an earlier submission in *this* frame is not
+            // permission to overwrite that submission. The cursor always
+            // provides a distinct target for each new draw.
+            if (dirtyIndirectUpdates && discardPrefix && valid[cursor] >= size) {
+                // A changing camera often changes only a few indexed
+                // commands. Copy only dirty 128-byte spans; keep the exact
+                // 20-byte command ABI and the full current drawCount.
+                constexpr size_t kDirtyChunk = 128;
+                written = 0;
+                auto* dst = static_cast<uint8_t*>(target.contents);
+                const auto* src = static_cast<const uint8_t*>(data);
+                for (size_t at = 0; at < size; at += kDirtyChunk) {
+                    const size_t length = std::min(kDirtyChunk, size - at);
+                    if (std::memcmp(dst + at, src + at, length) != 0) {
+                        std::memcpy(dst + at, src + at, length);
+                        written += length;
+                    } else {
+                        avoided += length;
+                    }
+                }
+            } else if (dirtyIndirectUpdates && !discardPrefix &&
+                       offset == 0 && size == b->size &&
+                       valid[cursor] >= size &&
+                       std::memcmp(target.contents, data, size) == 0) {
+                written = 0;
+                avoided = size;
+            } else {
                 std::memcpy(static_cast<uint8_t*>(target.contents) + offset, data, size);
             }
-            valid[cursor] = std::max(valid[cursor], required);
+            // When only the new prefix is valid, old tail data remains
+            // explicitly undefined for discardOnUpdate clients.
+            valid[cursor] = discardPrefix ? required : std::max(valid[cursor], required);
             b->bufs[slot] = target;
             b->size = capacity;
             b->indirectCursor = cursor + 1;
             b->updatedFrame = frame_;
+            if (std::getenv("AIVERSE_ICB_PROFILE")) {
+                static uint64_t uploads = 0, copied = 0, saved = 0, growths = 0;
+                copied += written;
+                saved += avoided;
+                growths += allocated ? 1u : 0u;
+                if (++uploads == 600) {
+                    std::fprintf(stderr,
+                        "[metal-indirect-snapshots] /600 updates copied=%.1f KiB dirty-elided=%.1f KiB allocations=%llu (slot fenced)\\n",
+                        double(copied) / 1024.0, double(saved) / 1024.0,
+                        (unsigned long long)growths);
+                    uploads = copied = saved = growths = 0;
+                }
+            }
             return;
         }
         if (offset + size > b->size) {

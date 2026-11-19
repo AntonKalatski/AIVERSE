@@ -58,6 +58,7 @@ struct VBuffer {
     Usage usage = Usage::Immutable;
     size_t size = 0;
     bool host = false;                 // host-visible versions (Dynamic): a write never touches a version the GPU may read
+    bool discardOnUpdate = false;      // offset-zero update replaces complete readable prefix
     std::vector<Version> versions;
     int current = 0;
     std::vector<uint8_t> shadow;       // host buffers: the contents, copied into a fresh version
