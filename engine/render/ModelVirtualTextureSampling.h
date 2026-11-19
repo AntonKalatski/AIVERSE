@@ -7,6 +7,8 @@
 #include "../gfx/VirtualTextureSampling.h"
 #include "Model.h"
 #include <cmath>
+#include <bit>
+#include <cstdint>
 #include <string>
 
 namespace aiverse::render {
@@ -25,6 +27,27 @@ struct ModelVirtualTextureBinding {
     }
     bool operator==(const ModelVirtualTextureBinding&) const = default;
 };
+
+// External atlas identity is part of a GPU draw group. Source Material
+// equivalence alone cannot compare archive generations or VT layers.
+inline uint64_t modelVirtualTextureBindingHash(const ModelVirtualTextureBinding& b) {
+    if (!b.valid()) return 0;
+    uint64_t hash = 14695981039346656037ULL;
+    const auto mix = [&hash](uint32_t n) {
+        hash ^= uint64_t(n); hash *= 1099511628211ULL;
+    };
+    mix(b.physicalAtlas.id);
+    mix(b.pageTable.id);
+    mix(uint32_t(b.layer));
+    mix(b.gutterPixels == 0 ? 0u : std::bit_cast<uint32_t>(b.gutterPixels));
+    return hash;
+}
+inline bool compatibleModelVirtualTextureBinding(
+    bool leftEnabled, const ModelVirtualTextureBinding& left,
+    bool rightEnabled, const ModelVirtualTextureBinding& right) {
+    return leftEnabled == rightEnabled &&
+           (!leftEnabled || left == right);
+}
 
 struct ModelVirtualTextureUniforms {
     float layer = 0, gutterPixels = 2, unused0 = 0, unused1 = 0;
@@ -76,9 +99,16 @@ inline bool injectModelVirtualTextureSampling(std::string& fragmentGLSL,
     // is already bound by the regular material shader.
     const auto mslSignature = msl.find(parameterEnd,msl.find("fragment float4 fs_main("));
     msl.replace(mslSignature,parameterEnd.size(),
-        "GI_FARGS, constant float4& uModelVt [[buffer(7)]],"
-        "texture2d_array<float, access::sample> tex13 [[texture(13)]],"
-        "texture2d_array<float, access::read> tex14 [[texture(14)]]) {");
+        "GI_FARGS, constant float4& uModelVt [[buffer(7)]]"
+        "#if !defined(AIVERSE_ICB_PBR)\n"
+        ", texture2d_array<float, access::sample> tex13 [[texture(13)]],"
+        "texture2d_array<float, access::read> tex14 [[texture(14)]]"
+        "#endif\n"
+        ") {\n"
+        "#if defined(AIVERSE_ICB_PBR)\n"
+        "#define tex13 icbTextures.tex13\n"
+        "#define tex14 icbTextures.tex14\n"
+        "#endif\n");
     msl.insert(metalNamespace+ns.size(),"\n"+std::string(gfx::kVirtualTextureMSL));
     return true;
 }
