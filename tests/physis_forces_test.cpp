@@ -31,7 +31,14 @@ void testWindAndGravity() {
     gravity.baseline={0_fx,Fixed::fromRatio(-981,100),0_fx};
     world.setResource<GravitySettings>(gravity);
     sampled=evaluateForces(world,body);
-    CHECK(sampled.gravityForce.y==Fixed::fromRatio(-981,10));
+    // Q47.16 rounds the baseline -9.81 m/s^2 BEFORE multiplying by
+    // 10 kg. This differs by two raw ticks from separately rounding
+    // the ideal -98.1 N; do not compare those two quantization paths
+    // bit-for-bit. The actual deterministic force policy is F = m * g.
+    CHECK(sampled.gravityAcceleration.y==gravity.baseline.y);
+    CHECK(sampled.gravityForce.y==gravity.baseline.y * body.massKg);
+    CHECK(fxAbs(sampled.gravityForce.y-Fixed::fromRatio(-981,10))<=
+          Fixed::fromRaw(2));
     CHECK(sampled.totalForce.x==400_fx);
 }
 void testSystemOnlyPublishes() {
