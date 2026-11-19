@@ -107,6 +107,10 @@ public:
         asyncReservation_ = 4096 + static_cast<size_t>(perChunk) * sizeof(FoliageInstance);
         // Validate LOD/far transition settings before first draw.
         (void)buildFloraBatches({}, settings_.view);
+        const int32_t windEnd=std::max<int32_t>(1,settings_.view.cullRangeCm);
+        adapter_.setWindTransitionRange(
+            std::min<int32_t>(settings_.view.mediumRangeCm,windEnd-1),
+            windEnd);
     }
 
     void addSpecies(const TreeProfile& profile,
@@ -269,6 +273,12 @@ public:
     uint64_t presentationTick() const { return presentationTick_; }
     void setWind(ForestWindState value) {adapter_.setWind(value);}
     const ForestWindState& wind() const {return adapter_.wind();}
+    void setWindField(std::shared_ptr<const ForestWindField> field) {
+        adapter_.setWindField(std::move(field));
+    }
+    std::shared_ptr<const ForestWindField> windField() const {
+        return adapter_.windField();
+    }
     // Native hosts may tune the CPU/pose memory budget by quality tier.
     // Zero disables articulated branches, preserving root-only sway.
     void setBranchPoseBudgetBytes(size_t bytes) {
