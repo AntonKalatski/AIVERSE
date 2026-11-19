@@ -35,7 +35,11 @@ void RtsView::setRoadMap(const Json& map) { roads_->setMap(map); shores_->setMap
 float4 RtsView::playerColor(int p) { return overlayPlayerColor(p); }   // palette shared with the overlays
 
 bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
-    resources_.bindResourceDevice(dev);
+    if(gpuDeviceLease_.device()) {
+        if(!gpuDeviceLease_.validFor(dev))
+            throw std::logic_error("RTS view stale GPU device generation");
+        resources_.bindResourceDevice(dev,gpuDeviceLease_);
+    } else resources_.bindResourceDevice(dev);
 #ifndef __EMSCRIPTEN__
     resources_.preparation().reset();
 #endif
@@ -118,11 +122,16 @@ void RtsView::shutdown(gfx::Device& dev) {
     resources_.preparation().reset();
 #endif
     geometryScene_.shutdown(dev);
+    // IMPORTANT: detach borrowed Model, graph, skin pose and material
+    // references before the cache can release their CPU/GPU storage.
+    // The lease stays live until the host successfully completes teardown.
+    if(genericView_) { genericView_->clear(); genericView_.reset(); }
+    anims_.clear(); streamingChoices_.clear(); ghostAnim_=EntityAnim{};
+    animationCache_.clear();
+    looks_.clear(); actorRevealTypes_.clear(); loadedTypes_.clear(); tracers_.clear();
     // All model GPU buffers and textures are now released by the same
     // per-host resource owner, after any asynchronous preparation joined.
     resources_.shutdown(dev);
-    if(genericView_) { genericView_->clear(); genericView_.reset(); }
-    looks_.clear(); actorRevealTypes_.clear(); loadedTypes_.clear(); anims_.clear(); streamingChoices_.clear(); animationCache_.clear(); tracers_.clear();
     drawTypeStamps_.clear(); drawTypes_.clear(); drawTypeEpoch_ = 0;
     for (Mesh* m : {&projectile_}) { dev.destroyBuffer(m->vb); dev.destroyBuffer(m->ib); *m = Mesh{}; }
     terrain_.shutdown(dev);
