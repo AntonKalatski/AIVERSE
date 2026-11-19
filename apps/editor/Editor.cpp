@@ -427,6 +427,15 @@ void Editor::pollVisualAssets(double dt) {
     // happen only here, before the first rendering pass of a new frame.
     if(!visualAssets_.pending() || playing() || clientPlaying())return;
     const auto impact=visualAssets_.impact();
+    // A previous candidate may be waiting for native Metal/Vulkan shader
+    // jobs already owned by Renderer3D. Do not rebuild scratch Models and
+    // reupload speculative textures while those SAME jobs remain Pending.
+    // The source watcher retains the edit until the compiler finishes.
+    if((impact.graph||impact.materialLibrary) &&
+       view_.gpuAppearancePending() &&
+       r3d_.hasPendingModelPipelineJobs() &&
+       r3d_.pollPendingModelPipelineJobs())
+        return;
     // Source mutations to a model and a graph/material in the same scan
     // cannot safely share the appearance-only transaction. Keep the
     // existing full-view barrier for mixed or unclassified GPU sources.
@@ -1437,6 +1446,10 @@ void Editor::frame(gfx::Device& dev, double dt) {
         offscreenTargets_->collect();
     if(r3d_.pendingProgramRetirements()!=0)
         r3d_.collectRetiredPrograms();
+    // Poll previously submitted native GPU compiler jobs once per owner
+    // frame. Scratch authoring resumes only when they have completed.
+    if(r3d_.hasPendingModelPipelineJobs())
+        r3d_.pollPendingModelPipelineJobs();
     if(postFx_.pendingTargetRetirements()!=0)
         postFx_.collectRetiredTargets();
     pollAgentLink();
