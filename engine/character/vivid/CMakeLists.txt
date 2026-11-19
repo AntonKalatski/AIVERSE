@@ -56,7 +56,12 @@ if(AIVERSE_BUILD_TESTS)
             PROPERTIES COMPILE_FLAGS "-fobjc-arc")
         target_link_libraries(aiverse_vivid_metal_gpu_tests PRIVATE
             aiverse_vivid_gpu "-framework Metal" "-framework Foundation")
-        target_compile_features(aiverse_vivid_metal_gpu_tests PRIVATE cxx_std_20)
+        # CXX_STANDARD does not consistently select Objective-C++ language mode.
+        # metal_gpu.mm includes std::span from the shared C++20 VIVID headers.
+        set_target_properties(aiverse_vivid_metal_gpu_tests PROPERTIES
+            OBJCXX_STANDARD 20
+            OBJCXX_STANDARD_REQUIRED ON
+            OBJCXX_EXTENSIONS OFF)
         add_test(NAME vivid_metal_gpu COMMAND aiverse_vivid_metal_gpu_tests)
         set_tests_properties(vivid_metal_gpu PROPERTIES SKIP_RETURN_CODE 77)
     endif()
