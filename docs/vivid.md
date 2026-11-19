@@ -627,3 +627,8 @@ This is source-level morph transfer, **not** automatic mesh simplification, Crea
 A versioned `MorphLodMapping` JSON sidecar now records the source mesh dimensions and each target LOD vertex's barycentric triangle projection. Stored maps can be reloaded to produce target-specific sparse morph CSR data without recalculating Stage 7A surface proximity. The loader enforces bounded dimensions, finite coordinates and barycentric values and verifies source vertex/triangle counts.
 
 **Not yet production-safe against unrelated same-sized meshes:** a topology fingerprint and authoring asset identity remain required. Creator sidecar UI, BVH accelerated surface search, GPU LOD switching and native Mac acceptance are still outstanding. Source and regression assertions are committed, **tests not run**. Exact commits and handoff are in `docs/agent-handoffs/vivid.md`.
+
+
+### Stage 7B source-identity safety update
+
+Cached `MorphLodMapping` now additionally requires a deterministic source geometry fingerprint calculated from original vertex float bits and source triangle indices; reusing a sidecar against changed geometry fails even when vertex and triangle counts happen to match. This is accidental mismatching protection, not a cryptographic guarantee. Earlier development sidecars without fingerprints must be regenerated. Native compilation and testing remain **NOT RUN**.
