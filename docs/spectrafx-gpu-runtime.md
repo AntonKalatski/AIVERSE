@@ -213,6 +213,59 @@ implemented in the running `ClientFx`. The separate **SpectraFX Graph**
 editor edits `fx/graphs/*.vfx.json` for CPU compiled graph output,
 not these GPU emission assets.
 
+## FPS reference client: local weapon fire cue
+
+The **actual** native `apps/fps/client.cpp` now uses the generic
+`SpectraFxSceneHost`; no genre logic is added to the core FX library.
+A project must explicitly provide `fx/gpu/routes.json`. Without it,
+there are no new FX resources or behavior.
+
+Within an FPS project's root, author
+`fx/gpu/routes.json` for the **FPS presentation-only eventType 1**:
+
+```json
+{
+  "version": 1,
+  "routes": [
+    {
+      "eventType": 1,
+      "asset": "fps_muzzle",
+      "enabled": true,
+      "oneShotSeconds": 0.25,
+      "ownPlayerOnly": true
+    }
+  ]
+}
+```
+
+`eventType 1` here is **local player weapon fired** in the FPS
+client's presentation adapter, *not* an authoritative `SimEvent` type
+and not a universal event number shared by RTS or other genres.
+At most four local shot visual requests are submitted in one frame.
+Remote players' shots are not automatically turned into SpectraFX
+cues, avoiding accidental visibility leaks or duplicate effects.
+
+A matching `fx/gpu/fps_muzzle.gpu.json` can use the ordinary v1
+schema from the project asset example above. For instance use
+`"spawn": {"burst": 16, "rate": 0, "life": 0.15,
+"speed": 3, "maxPerFrame": 64}`, an additive billboard appearance
+and `"particles": 256`. For cross-platform CPU fallback, provide
+an authored `fx/muzzle_flash.json` and use
+`"cpuEffect": "muzzle_flash", "preference": "auto",
+"allowCpuFallback": true`. The engine does **not** automatically
+install a matching CPU effect file; choose a real effect already
+available in your project or author one in the existing Effects
+editor. This is an example configuration, not an installed gameplay
+feature.
+
+The native FPS game renders in a floating-origin local cell space.
+The adapter submits effect poses in that same render-relative space
+and resets scene presentation instances when the camera moves to
+another `world::Cell`. GPU updates happen before the scene pass,
+CPU particles update after camera setup, and the combined VFX draw
+happens in the existing scene pass. This does not modify the
+authoritative FPS motor, weapon fire, replication or hit detection.
+
 ## Runtime integration order
 
 The existing generic RTS client has opt-in hooks:
