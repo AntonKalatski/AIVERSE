@@ -159,7 +159,7 @@ public:
             const bool inserted=bodies_.emplace(fall.id,
                 FallenPlantBodyInfo{fall.id,created,fall.tick,
                                     fall.sourceSoilRevision,
-                                    spec.heightCm,spec.modelScalePermille});
+                                    spec.heightCm,spec.modelScalePermille}).second;
             if(!inserted)throw std::logic_error("TerraWeave duplicated falling tree");
             if(forest)forest->removeTree({fall.id.key,fall.id.speciesId});
         }catch(...){
