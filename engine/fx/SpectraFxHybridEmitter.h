@@ -38,14 +38,22 @@ public:
         // Explicit experimental opt-in for alpha effects that can tolerate
         // unsorted GPU drawing. Otherwise alpha requires CPU sorting.
         bool allowUnsortedAlpha=false;
+        // Explicit Metal GPU back-to-front alpha sort. CPU remains default.
+        bool gpuSortAlpha=false;
     };
 
     static SpectraFxBackendRequest effectiveRequest(const Config& config) {
         auto request=config.backend;
         // Alpha blending without back-to-front ordering is not generally
         // correct. The current GPU billboards/compaction are unsorted.
-        if(!config.appearance.additive && !config.allowUnsortedAlpha)
-            request.required=request.required|SpectraFxFeature::Sorting;
+        if(!config.appearance.additive) {
+            if(config.gpuSortAlpha)
+                request.required=request.required|
+                                 SpectraFxFeature::Sorting|
+                                 SpectraFxFeature::GpuDepthSort;
+            else if(!config.allowUnsortedAlpha)
+                request.required=request.required|SpectraFxFeature::Sorting;
+        }
         return request;
     }
 
@@ -57,7 +65,9 @@ public:
         stop();
         // Configure before allocating GPU resources: failed settings do not
         // replace or partially initialize any backend.
-        if(!scheduler_.configure(config.spawning) || !config.lod.validate()) {
+        if(!scheduler_.configure(config.spawning) || !config.lod.validate() ||
+           (config.gpuSortAlpha && (config.appearance.additive ||
+                                    config.gpuIndirectCompaction))) {
             status_="Invalid SpectraFX GPU spawn settings";
             return false;
         }
@@ -76,15 +86,26 @@ public:
                (sharedRenderer ? sharedRenderer->ready() : renderer_.init(device))) {
                 rendererOwner_=sharedRenderer ? sharedRenderer : &renderer_;
                 gpuDevice_=&device;
-                if(config_.gpuIndirectCompaction) {
-                    // Compaction failure only disables the optimization;
-                    // the GPU evolution and regular draw remain functional.
-                    if(!compaction_.init(device,config_.backend.particles))
-                        ++compactionFallbacks_;
+                if(config_.gpuSortAlpha &&
+                   !alphaSort_.init(device,config_.backend.particles)) {
+                    // Cannot silently draw unsorted alpha when authored sorted
+                    // alpha is required. Release the GPU path and let the
+                    // existing authored CPU fallback start below.
+                    rendererOwner_=nullptr;
+                    gpuDevice_=nullptr;
+                    slots_.shutdown();
+                    renderer_.release();
+                } else {
+                    if(config_.gpuIndirectCompaction) {
+                        // Metal-only unsorted live-particle compaction;
+                        // any failure retains regular GPU instanced draw.
+                        if(!compaction_.init(device,config_.backend.particles))
+                            ++compactionFallbacks_;
+                    }
+                    backend_=SpectraFxExecutionBackend::Gpu;
+                    status_="GPU emitter initialized; awaiting spawn at buffer-safe point";
+                    return true;
                 }
-                backend_=SpectraFxExecutionBackend::Gpu;
-                status_="GPU emitter initialized; awaiting spawn at buffer-safe point";
-                return true;
             }
             slots_.shutdown();
             renderer_.release();
@@ -134,6 +155,16 @@ public:
             if(!scheduled) {status_="Invalid GPU emission frame";return false;}
         }
         if(slots_.step(dt,config_.environment)) {
+            if(config_.gpuSortAlpha) {
+                if(!sortCameraValid_ ||
+                   !alphaSort_.prepare(slots_.evolution(),
+                                       sortCameraEye_,sortCameraForward_)) {
+                    status_="GPU alpha sorting failed; emitter suspended";
+                    suspended_=true; // never draw an unsorted alpha frame
+                    return false;
+                }
+                ++sortedFrames_;
+            }
             if(compaction_.ready()) {
                 if(compaction_.prepare(slots_.evolution())) ++compactionFrames_;
                 else ++compactionFallbacks_;
@@ -145,6 +176,12 @@ public:
         status_="GPU compute step failed; emitter suspended pending reset";
         suspended_=true;
         return false;
+    }
+
+    void setSortView(render::float3 eye,render::float3 forward) {
+        sortCameraEye_=eye;
+        sortCameraForward_=forward;
+        sortCameraValid_=true;
     }
 
     // Update only presentation LOD; the particle state and its clock still
@@ -180,7 +217,8 @@ public:
         return gpuActive() && !suspended_ && rendererOwner_ &&
                rendererOwner_->draw(slots_.evolution(),viewProj,cameraRight,
                                     cameraUp,config_.appearance,
-                                    compaction_.ready()?&compaction_:nullptr);
+                                    compaction_.ready()?&compaction_:nullptr,
+                                    alphaSort_.ready()?&alphaSort_:nullptr);
     }
 
     // Stop emission and destroy owned GPU resources before the RHI device.
@@ -194,6 +232,7 @@ public:
         impactFeedback_.reset();
         gpuDevice_=nullptr;
         compaction_.release();
+        alphaSort_.release();
         renderer_.release(); // only owned/local pipelines; shared lives in playback
         rendererOwner_=nullptr;
         slots_.shutdown();
@@ -202,6 +241,7 @@ public:
         scheduler_.reset();
         lodSpawnScale_=1;
         lodVisible_=true;
+        sortCameraValid_=false;
         backend_=SpectraFxExecutionBackend::Cpu;
     }
 
@@ -217,6 +257,7 @@ public:
     SpectraFxExecutionBackend backend() const {return backend_;}
     const SpectraFxBackendDecision& decision() const {return decision_;}
     const Config& config() const {return config_;}
+    uint64_t gpuSortedFrames() const {return sortedFrames_;}
     uint64_t gpuCompactedFrames() const {return compactionFrames_;}
     uint64_t gpuCompactionFallbacks() const {return compactionFallbacks_;}
     const std::string& status() const {return status_;}
@@ -231,6 +272,7 @@ private:
     SpectraFxGpuParticleSlots slots_{};
     SpectraFxGpuBillboardRenderer renderer_{};
     SpectraFxGpuCompaction compaction_{};
+    SpectraFxGpuAlphaSort alphaSort_{};
     SpectraFxGpuBillboardRenderer* rendererOwner_=nullptr;
     SpectraFxGpuSpawnScheduler scheduler_{};
     SpectraFxGpuImpactFeedback impactFeedback_{};
@@ -240,6 +282,9 @@ private:
     bool suspended_=false;
     float lodSpawnScale_=1.0f;
     bool lodVisible_=true;
+    uint64_t sortedFrames_=0;
+    bool sortCameraValid_=false;
+    render::float3 sortCameraEye_{},sortCameraForward_{};
     uint64_t compactionFrames_=0;
     uint64_t compactionFallbacks_=0;
 };
