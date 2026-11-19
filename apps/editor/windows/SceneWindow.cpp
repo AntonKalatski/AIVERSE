@@ -700,6 +700,20 @@ private:
                         (unsigned long long)modelStats.staticCrossModelPreflightRejected);
                     ImGui::Text("Page preflight selected: %llu visible items",
                         (unsigned long long)modelStats.staticCrossModelPreflightItems);
+                    if (ed.renderer().cpuMdiAdaptiveEnabled()) {
+                        ImGui::Text("Adaptive CPU MDI: skipped %llu / probe %llu passes, measured %llu attempts",
+                            (unsigned long long)modelStats.staticCrossModelAdaptiveSkippedPasses,
+                            (unsigned long long)modelStats.staticCrossModelAdaptiveProbePasses,
+                            (unsigned long long)modelStats.staticCrossModelAdaptiveMeasuredAttempts);
+                        const auto& cpu = ed.renderer().cpuMdiAdaptiveFeedback();
+                        ImGui::Text("Shadow cost: %.2f us/command (%u samples)",
+                            cpu[0].avgUsPerCommand, cpu[0].samples);
+                        ImGui::Text("Opaque cost: %.2f us/command (%u samples)",
+                            cpu[1].avgUsPerCommand, cpu[1].samples);
+                        ImGui::Text("Adaptive budget: %.1f us/command (CPU submit only)",
+                            ed.renderer().cpuMdiAdaptiveBudgetUs());
+                        ImGui::TextDisabled("Feedback excludes GPU execution; 1 probe every 32 eligible passes.");
+                    }
                     ImGui::TextDisabled("Preflight is necessary, not a guarantee of a GPU MDI submission.");
                     ImGui::TextDisabled("Pooled GPU buffers and exact material grouping; independent view/LOD.");
                     ImGui::TextDisabled("Only accepted CPU MDI draws count, not grouping candidates.");
