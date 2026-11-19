@@ -26,6 +26,8 @@ namespace aiverse::render {
 
 struct PrismaStats {
     int passes = 0, effects = 0, width = 0, height = 0;
+    int outputWidth = 0, outputHeight = 0;
+    bool temporalUpscaled = false;
     bool temporalResolved = false, temporalJittered = false;
     float jitterPixelX = 0, jitterPixelY = 0;
 };
@@ -119,6 +121,11 @@ public:
     // retain the original camera for gameplay picking and 2D overlays.
     // Active only with HDR temporalResolve + AIVERSE_PRISMA_JITTER=1.
     RTSCamera jitteredCamera(RTSCamera camera, int width, int height);
+    // Host query BEFORE beginScene(): returns internal 3D resolution while
+    // leaving the output texture/UI at the caller's full output resolution.
+    // The default is unchanged. Upscaling requires temporalResolve, HDR/High,
+    // an explicit renderScale < 1 and AIVERSE_PRISMA_UPSCALE=1.
+    std::pair<int,int> renderSizeForOutput(int width, int height);
     void resetAutoExposure(uint64_t id);
     // Camera cut/teleport: stop motion blur on the next rendered frame.
     void resetMotionHistory(uint64_t id);
@@ -187,6 +194,7 @@ private:
     struct TemporalView {
         gfx::TextureHandle history[2]; // RGBA16F: HDR RGB + previous hardware depth in A
         int width = 0, height = 0;
+        int inputWidth = 0, inputHeight = 0;
         int current = 0; // most recently written history index
         bool valid = false;
         uint64_t jitterSequence = 0;
