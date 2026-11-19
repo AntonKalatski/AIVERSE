@@ -155,7 +155,7 @@ public:
         const double dt=double(std::min(deltaSeconds,0.25f));
         for(auto& r:ripples_) {
             r.age+=float(dt);
-            const Vec3 flow=current(r.waterId);
+            const Vec3 flow=current(r.waterId,r.x,r.y,r.z);
             // Use flow from the copied ECS water snapshot only; never
             // integrate physical actor velocity or modify simulation.
             r.x+=std::clamp(flow.x.toDouble(),-100.0,100.0)*dt;
@@ -165,7 +165,7 @@ public:
             [](const NereidRipple& r){return r.age>=r.lifetime;}),ripples_.end());
     }
     void advance(float deltaSeconds) {
-        advance(deltaSeconds,[](uint64_t){return Vec3{};});
+        advance(deltaSeconds,[](uint64_t,double,double,double){return Vec3{};});
     }
     // Alpha-blended annular quads, generated only for currently live ripples.
     // World origin uses double subtraction before conversion to float,
