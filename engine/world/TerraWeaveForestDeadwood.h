@@ -62,8 +62,7 @@ inline void validateForestDeadwoodResource(
            log.createdTick>log.lastEvaluatedTick ||
            log.rateUnitsPer1000Ticks>1000000 ||
            log.nutrientsPermille>1000 ||
-           log.decayCarry>=1000 || log.nutrientCarry>=1000 ||
-           (state.initialized && log.lastEvaluatedTick>state.lastStepTick))
+           log.decayCarry>=1000 || log.nutrientCarry>=1000)
             throw std::invalid_argument("TerraWeave invalid deadwood log");
         prevId=log.id;first=false;
     }
