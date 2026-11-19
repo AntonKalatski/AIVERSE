@@ -93,6 +93,7 @@ private:
     std::unique_ptr<IncrementalStorage> incremental_;
     bool initializeIncremental(size_t uploadBudgetBytes, std::string* error);
     bool updateIncremental(const std::vector<std::vector<uint8_t>>& wanted,
+                           const std::vector<IndexDemand>& priorities,
                            uint64_t deferred, std::string* error);
     void shutdownIncremental(gfx::Device& device);
     IndexResidencyStats stats_{};
