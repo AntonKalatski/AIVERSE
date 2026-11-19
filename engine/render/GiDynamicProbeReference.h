@@ -21,6 +21,11 @@ struct GiMovingLight {
     float3 color{1, 1, 1}; // linear RGB, never packed sRGB
     float radius = 4;
     float intensity = 1;
+    // Optional spot cone. cosOuter <= -1.5 denotes omnidirectional point light.
+    // Direction runs FROM the emitter toward illuminated surfaces, normalized.
+    float3 direction{0,-1,0};
+    float cosInner=-2, cosOuter=-2;
+    bool spot() const { return cosOuter > -1.5f; }
 };
 
 struct GiDynamicCoefficient {
@@ -136,7 +141,12 @@ public:
                    l.color.x >= 0 && l.color.y >= 0 && l.color.z >= 0 &&
                    l.color.x <= 10000 && l.color.y <= 10000 && l.color.z <= 10000 &&
                    std::isfinite(l.radius) && l.radius > 0 && l.radius <= 1000 &&
-                   std::isfinite(l.intensity) && l.intensity >= 0 && l.intensity <= 10000;
+                   std::isfinite(l.intensity) && l.intensity >= 0 && l.intensity <= 10000 &&
+                   std::isfinite(l.cosOuter) && std::isfinite(l.cosInner) &&
+                   (!l.spot() || (finite3(l.direction) &&
+                       std::abs(dot(l.direction,l.direction)-1.0f)<.002f &&
+                       l.cosOuter>=-1.0f && l.cosOuter<1.0f &&
+                       l.cosInner>=l.cosOuter && l.cosInner<=1.0f));
         };
         for (const auto& light : current)
             if (!valid(light)) throw std::invalid_argument("invalid dynamic GI light");
@@ -150,7 +160,10 @@ public:
             return a.position.x != b.position.x || a.position.y != b.position.y ||
                    a.position.z != b.position.z || a.color.x != b.color.x ||
                    a.color.y != b.color.y || a.color.z != b.color.z ||
-                   a.radius != b.radius || a.intensity != b.intensity;
+                   a.radius != b.radius || a.intensity != b.intensity ||
+                   a.direction.x != b.direction.x || a.direction.y != b.direction.y ||
+                   a.direction.z != b.direction.z ||
+                   a.cosInner != b.cosInner || a.cosOuter != b.cosOuter;
         };
         const auto find = [](const std::vector<GiMovingLight>& src, uint64_t key) -> const GiMovingLight* {
             const auto it = std::lower_bound(src.begin(), src.end(), key,
@@ -240,12 +253,20 @@ private:
                 const float3 towardLight = delta*(1/d);
                 const float ndl = std::max(0.0f, dot(normal,towardLight));
                 if (ndl == 0) continue;
+                float cone=1.0f;
+                if (light.spot()) {
+                    // The surface sees the light along -towardLight.
+                    const float angle=dot(light.direction,-towardLight);
+                    const float width=std::max(light.cosInner-light.cosOuter,1e-5f);
+                    cone=std::clamp((angle-light.cosOuter)/width,0.0f,1.0f);
+                    if (cone<=0) continue;
+                }
                 // Static BVH is only a reference. Dynamic blockers require a new snapshot.
                 ++stats.visibilityRays;
                 if (geometry_.distance(surface, towardLight, d) < d - .03f) continue;
                 float falloff = 1.0f - d2/(light.radius*light.radius);
                 falloff *= falloff;
-                const float strength = light.intensity * ndl * falloff / (1.0f + d2);
+                const float strength = light.intensity * ndl * cone * falloff / (1.0f + d2);
                 outgoing += float3{light.color.x*albedo.x,light.color.y*albedo.y,
                                    light.color.z*albedo.z} * strength;
             }
