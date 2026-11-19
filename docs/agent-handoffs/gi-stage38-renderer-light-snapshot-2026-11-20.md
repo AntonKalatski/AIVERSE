@@ -6,7 +6,8 @@ Branch: `feature/gi-lighting-portable-backends-20261119`, draft PR #47 to GI fea
 
 - `29e7a0b9e551dc0162e266ad228c0faf609d34be`: `engine/render/Lights.h`, public `LightSystem::submittedLights() const -> const std::vector<PointLight>&`.
 - `2b8bb7f8a9e7c16469b45d00f5db3d9b06d4a079`: `engine/render/GiLightingController.h`, explicit `syncRendererLights(const Renderer3D&,uint32_t sourceNamespace,float3 focus,GiLightOverflowPolicy,Stats*)`.
-- `b705162cb86a115ef4a37b960d9eb0f2381f843c`: `tests/render/gi_lighting_controller.cpp`, source test directly adding a point/spot to a vanilla Renderer3D LightSystem and synchronizing it into the indirect source controller.
+- `b705162cb86a115ef4a37b960d9eb0f2381f843c`: initial `tests/render/gi_lighting_controller.cpp` direct-renderer fixture attempt; superseded by the following fixes.
+- `e1a01b40960f5f60525cadab94eb5e1a29c8eac6`, `648f99b0fdc38313637ea73034a6b4c1e9a42fa9`: remove construction of full `Renderer3D` in the header-only test (it has incomplete GPU cache owner / out-of-line runtime dependencies). Instead use a C++ compile-time type contract asserting `LightSystem::submittedLights()` returns `const std::vector<PointLight>&`. The actual `syncRendererLights` integration must be exercised later in a renderer-linked native test.
 
 **SOURCE ONLY, NOT COMPILED/TESTED.** No native CMake, CTest, CPU/GPU runtime, Vulkan SPIR-V, GLES model shader link, Metal GPU images or performance has run.
 
@@ -20,4 +21,4 @@ The existing direct shader, shadows, spot-shadow and baked GI behavior are uncha
 
 ## Known limits / next step
 
-This adds an explicit adapter, not automatic subscription or a renderer-created controller. Sun/sky/area GI, Shader Graph, terrain/foliage custom shader and GPU clipmap cascade transfer remain separate. Metal/Vulkan compute and GLES3 LDR source code are unvalidated until actual native builds. Validate `aiverse_gi_lighting_controller_test` and `aiverse_gi_light_bridge_test`, then a real Scene frame with dynamically moving spotlight and editable terrain, comparing Metal/Vulkan/GLES. Preserve all concurrent renderer/texture/main branch changes and record tested SHA after the final acceptance pass.
+This adds an explicit adapter, not automatic subscription or a renderer-created controller. Sun/sky/area GI, Shader Graph, terrain/foliage custom shader and GPU clipmap cascade transfer remain separate. Metal/Vulkan compute and GLES3 LDR source code are unvalidated until actual native builds. Validate `aiverse_gi_lighting_controller_test` and `aiverse_gi_light_bridge_test` first. For the real `syncRendererLights` data path, add a test linked to `aiverse_runtime` or run the editor/client Scene frame (the header-only test checks just its const snapshot API), then a real Scene frame with dynamically moving spotlight and editable terrain, comparing Metal/Vulkan/GLES. Preserve all concurrent renderer/texture/main branch changes and record tested SHA after the final acceptance pass.
