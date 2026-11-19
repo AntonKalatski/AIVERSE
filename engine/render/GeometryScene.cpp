@@ -475,6 +475,23 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                 }
                 strataPortableSources_.emplace(model.get(), std::move(source));
                 ++stats_.strataPortableSources;
+                // Disk manifest was matched against the entire source,
+                // and all pinned roots have been checked and GPU-uploaded.
+                // Only the portable disk path is allowed to drop its
+                // redundant STRATA CPU index arrays. Diagnostic/metadata
+                // paths still require raw indices and must retain them.
+                const bool canReleaseCpu = diskApplicable &&
+                    strataDropArchivedCpuIndicesEnabled_ &&
+                    !strataStagingEnabled_ && !strataGpuMetadataEnabled_ &&
+                    !strataGpuCullingEnabled_ && !strataRenderPreviewEnabled_;
+                if(canReleaseCpu){
+                    const size_t freed=strataStaging_->
+                        discardArchivedCpuIndices(key);
+                    stats_.strataArchivedCpuIndexBytesFreed+=freed;
+                    stats_.strataArchivedCpuIndexSources+=freed!=0;
+                }else if(diskApplicable && strataDropArchivedCpuIndicesEnabled_){
+                    warnings_.push_back("STRATA kept CPU index payload for diagnostic source "+key);
+                }
             }
         }
         {
