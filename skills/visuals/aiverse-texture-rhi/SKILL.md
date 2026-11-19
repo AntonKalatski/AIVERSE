@@ -1277,3 +1277,25 @@ GPU result **NOT RUN** from this assistant environment.
 Passing the regular `metal_texture_gpu` is not proof
 of real GPU ICB Shader Graph resource binding.
 
+
+## Stage 10BR — four-source Metal graph ICB hardware fixture (still NOT RUN)
+
+`metal_texture_icb_graph_gpu` now runs **two** GPU-indexed passes:
+one graph texture (slot 13) and four textures (slots 13–16).
+Each pass requires nonzero native GPU ICB preparation token,
+successful execute, and two different readback pixel colors
+matching its independently calculated material/U2 oracle.
+Graph slot 16 deliberately uses the production constexpr
+repeat/linear sampler, with Metal argument IDs 26/28/30/32
+for the source textures. Four-source textures must be repeat/linear.
+No CPU draw substitution is accepted.
+
+Source: `tests/render/metal_icb_graph_gpu.mm`,
+commit `50969517f9fdd4a15b38103c378232459520d2a5`.
+Commands and acceptance oracle:
+`docs/texture-rhi.md`, Stage 10BR. **Not compiled or run**
+on macOS by this agent. Stage 10BP was a distinct, successful
+virtual-texture shader indirection test and does not validate ICB.
+Do not enable GPU ICB in production or merge Draft PR #21.
+After a real-device result, implement full Shader Graph compiler/
+Renderer3D material acceptance, then test other backends.
