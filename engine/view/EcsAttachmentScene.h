@@ -37,6 +37,8 @@ struct SceneAttachmentChildComponent {
     bool enabled=false;
     render::mat4 local{};
     render::mat4 childWorld{};
+    // Stable authored prefab child key (may be empty in legacy layouts).
+    std::string authoredId;
 };
 
 // One explicit presentation World source/root instance. It retains
@@ -134,7 +136,7 @@ public:
                     entity,SceneAttachmentChildComponent{
                         parent,candidate.revision,uint32_t(i),
                         child.model,child.socket,child.enabled,
-                        child.local,child.childWorld});
+                        child.local,child.childWorld,child.id});
                 candidate.children.push_back(entity);
             }
             // The source Entity is externally owned and is NEVER destroyed.
@@ -213,6 +215,7 @@ public:
                child->authoredIndex!=i ||
                child->modelSource!=authored.model ||
                child->socketName!=authored.socket ||
+               child->authoredId!=authored.id ||
                child->enabled!=authored.enabled ||
                !sameMatrix(child->local,authored.local) ||
                !sameMatrix(child->childWorld,authored.childWorld))
