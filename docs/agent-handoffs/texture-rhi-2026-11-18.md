@@ -6563,3 +6563,28 @@ material fallback, then run backend-specific tests.
 **Actual verification:** GitHub source commits + documentation commit succeeded, inspected current `Renderer3DModels.cpp`, `ModelShaders.h`, `VirtualTextureSampling.h` and backend slot limits (GL only 0..15); **C++ native build NOT RUN; CTest NOT RUN; GLSL/MSL shader validation NOT RUN; Metal/GL/Vulkan GPU rendering NOT RUN** as requested (features before tests).
 
 **Next step:** preserve texture-memory advantages by supporting optional reduced fallback instead of full `tex1`, improve multi-domain Terra sampling with page atlas selection/indirection, restore fast GPU submission by encoding virtual material identity in the command/batch cache, and then run compile/GPU shader verification.
+
+
+## Stage 10F — reduced GPU fallback for archived opaque model textures (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`; PR #21.
+
+**Source commits:**
+- `50812808f715134a32ff66902f1e39a1298e84f0` — `engine/render/Model.h`: optional `Image::virtualFallbackMaxDimension` marker; default 0 preserves all existing imports/uploads.
+- `de109fd2d7111c4431ac9c9a6df852c5c04da301` — `engine/render/Model.cpp`: when explicitly marked, generate reduced packed RGBA8 fallback before GPU upload; no full-size texture or compressed source upload; bypass full-resolution shared ModelTextureCache entry.
+- `b1ce65fc5e12ec483ddb31f042a95e2352e87f4c` — include necessary standard headers and reject oversized fallback image dimensions.
+- `250cbb77091fcda544906bfaf521fdaeb01e88c1` — new `engine/render/ModelVirtualTextureFallback.h`: `configureModelVirtualFallback(Model&,imageIndex,publishedArchive,maxDim,VirtualFallbackSavings*,reason*)` validates archived dimensions, retained RGBA8 pixels, source ownership and material safety before opt-in.
+- `5fd0eeb81a9e2ff9a0683002e7cf3cd841caa192` — `engine/render/TerraWeaveVirtualAtlasArchive.h`: `configureTerraWeavePackedImageFallback(...)` uses the same generic policy, limited to `terraweave/` models.
+- `f2d19a6cab27176bc3aeac3a343ef6e0ea379de6` — opted-in source upload failure now returns false and retains CPU source for retry; no success claim after missing GPU fallback.
+**Documentation commit:** `4819842af6c83aa11c38afdc449e82456ce5dc66`.
+**Handoff commit:** this commit, after functionality/documentation changes.
+
+**Architecture:** The main shader in Stage 10E already reads `tex13` (physical atlas) + `tex14` (RGBA8 page table), with conventional `tex1` as fallback. Previously `tex1` was always the full-size source, negating some VRAM savings. New default-off asset policy downsamples an **opaque, base-only** model source using deterministic 2x2 RGBA8 box filtering (odd edge clamping) until the longest edge <= requested cap. `uploadModel()` then allocates only that small image in the original `Image::tex` handle, and no full-sized source GPU resource for that image. Main/shadow/editor non-VT code continues binding a valid `tex1`. When the model is released, the reduced image is destroyed via normal model resource ownership. The full source is retained on disk in immutable page archives. The shared texture-cache path is bypassed rather than replacing/reusing a cached full-resolution handle.
+
+**Safety constraints:** `configureModelVirtualFallback()` must be called after the source has been archived and before any GPU upload, with CPU RGBA8 retained. The archive's source width/height must match the image. It verifies that every `Model::materials` use is exclusively as an opaque base-colour texture and not as shader-graph, roughness, metal, normal, occlusion, emissive or team map, nor as an alpha-sensitive or transparent base (including `TeamMode::BaseAlpha`). Dynamic `ModelDraw::materials` overrides are outside this model-local validation and must be audited by the owner. `maxDimension` must be 4..1024 and smaller than the original dimensions. Existing full GPU textures or cache leases cannot be converted in place; a fresh model/image is required, after the relevant GPU fence. Helpers return a conservative `VirtualFallbackSavings` base-level byte estimate; it is NOT actual GPU VRAM measurement and ignores mip/driver overhead.
+
+**Actual limitations:** This improves memory for opaque VT base images only. Terra Horizon forest impostor atlases often use `AlphaMode::Mask`, and are intentionally excluded because reducing the alpha mask changes scene/shadow coverage. A future safe implementation should use full-resolution alpha-only R8 or equivalent mask alongside a reduced RGB fallback, and bind it for main, shadow, selection and feedback passes with guaranteed parity. No source-VRAM reduction is claimed for those masked atlases yet. The old GPU ICB/MDI VT state restrictions from Stage 10E remain; no fast GPU per-command VT material identity implemented.
+
+**Actual verification:** Compared `uploadModel`, `uploadImage`, `ModelTextureCache::upload`, `Model::Image`, `Model::Material` and the Terra archive bridge via GitHub source fetch; connector accepted all code and documentation commits. **Native C++ compilation NOT RUN. CTest NOT RUN. GLSL/MSL compilation NOT RUN. Real GPU rendering, VRAM and profiling NOT RUN** per the user's instruction to finish features before tests. Do not claim build or behavioural parity from these commits.
+
+**Next step:** add alpha-preserving memory reduction for masked Terra Horizon/impostor materials (separate full-resolution alpha mask, robust alpha cutout in main/selection/shadow/feedback), then enable safe GPU ICB batching for VT with per-command atlas/material identity. Afterwards run full native and GPU cross-backend verification.
