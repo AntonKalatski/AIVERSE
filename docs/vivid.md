@@ -666,3 +666,12 @@ The feature does **not** automatically create decimated meshes or embed a LOD-ch
 New baked LODs publish through content-addressed immutable mapping/morph sidecars, followed by a staged atomic replacement of the **manifest last**. Removing an LOD also atomically updates the manifest index. Already published sidecar bytes are not overwritten; abandoned old sidecars can be collected separately. This gives readers a consistent package index on normal local filesystems, not a multi-file atomic transaction.
 
 The source-level implementation and negative-case tests have been committed; **no new native C++ build, CTest, Metal Renderer3D LOD frame parity, or Vulkan/GLES compute test has been run**. True target-mesh content identity, multi-LOD performance, GPU backend coverage, full bind-pose editing, hair self-collision, and high-end skin/eye/hair rendering remain open. See `docs/agent-handoffs/vivid.md` Stage 7F for exact commits and next handoff.
+
+
+## Stage 7G–7H — RHI-neutral GPU dispatch gate and GLES CPU fallback (2026-11-20)
+
+VIVID's `GpuActorStream` no longer hard-rejects non-Metal GPUs; it requires the RHI to actually advertise compute support, a valid frame serial and healthy GPU state. Existing MSL and GLSL 4.30 CSR/mesh-packing kernels remain unchanged. This unlocks eligible compute devices at the VIVID API level but **does not by itself implement or verify Vulkan backend compute**.
+
+VIVID Creator can now fall back to a separate `CpuActorStream` on baseline GLES3/WebGL2 or any non-compute device. That actor uses the same sparse morph source and ARKit semantic bindings to deform the full `ModelVertex` stream on CPU and upload a dynamic vertex override through standard gfx::Device; original UVs, joints, material data and model LOD vertex ranges remain intact. It requires no compute shaders or frame serial, and retains the existing safe resource-release contract. This is a CPU fallback, not GPU morphing on GLES.
+
+A fake-GLES headless CTest for output bytes and retirement was added, but **not compiled/run**. Real Android/WebGL2 vertex-buffer update reliability, bandwidth, GPU image parity and native Vulkan compute remain to be measured/implemented. Detailed ownership, commits and test gate are in `docs/agent-handoffs/vivid.md` Stages 7G–7H.
