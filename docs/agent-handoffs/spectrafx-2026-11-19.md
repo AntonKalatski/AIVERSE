@@ -221,3 +221,11 @@ git switch feature/spectrafx-generic-cue-queue
 git pull --ff-only origin feature/spectrafx-generic-cue-queue
 git fetch origin main && git merge origin/main
 ```
+
+
+## 2026-11-19 — Stage 11: source marker dispatch correctness
+- **Code SHA**: `22b3cfb6c715d69e251d2dea18d3005fc0d20daf`; branch `feature/spectrafx-generic-cue-queue`. Remote main `9ee6ff6` is ancestor; comparison showed zero behind.
+- **Changed**: `engine/fx/SpectraFxEmitterEvents.h`. Marker links now filter matching `sourceMarker` when the event type is Marker (zero matches all). `discardPending()` drops unconfirmed presentation events on rollback without clearing configured event links. Clarified explicit parent-producer responsibility for bounded event depth. Existing queue budget and deferred drains preserved.
+- **Build/CTest/CI**: **NOT RUN** by user request (all features first, tests later). No claims of renderer verification.
+- **Known limitations**: no direct particle collision/death callback plumbing, no RHI GPU simulation; event depth relies on external event provenance. `Completed` must not be conflated with particle extinction.
+- **Next**: connect lifecycle events from tracked CPU emitters to event router on explicit starts/stops and natural emission shutdown, without altering existing particle simulation.
