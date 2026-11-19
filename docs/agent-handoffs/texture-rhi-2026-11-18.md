@@ -8169,3 +8169,68 @@ PBR, use the same U2/texture pack helper from Stage 10AD,
 retain exact resource-table ticket checks and default
 CPU fallback. Keep all experimental flags OFF until
 real hardware validation.
+
+
+## Stage 10AG — Renderer3D per-command opaque PBR without VT (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, #21 Draft.
+**Source commits:**
+- `ae6876c0d907a717d801ac827f8d11be79b879b8`
+  `engine/render/Renderer3DModels.cpp`: independent
+  non-VT PBR grouping gate requiring
+  `AIVERSE_EXPERIMENTAL_ICB_MIXED_PBR=1` and
+  `AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR=1`.
+  Existing per-command VT remains a separate opt-in,
+  so ordinary PBR without atlas/page-table may submit
+  through `prepareGpuEncodedIndexedIcbWithPbrMaterials`.
+  Both paths snapshot exact U2 and six source handles
+  into `GpuMaterialResourceTicket`, rechecking all
+  live per-item payloads and pipeline traits before
+  GPU execution. Fallback to legacy is preserved.
+- `33a170003d15672e16dc23017c494ad84ddc5abf`
+  `engine/render/Renderer3DModels.cpp`: pipeline-only
+  grouping is permitted only if the candidate material
+  is an opaque built-in non-graph material. Masked
+  cutout/other unsupported variants retain exact
+  old material grouping and are not disabled or merged
+  unintentionally when experimental PBR mode is on.
+
+**Docs commits:** `b95c2b6ae3086ea41933960a075173345e34dcc7` in `docs/texture-rhi.md`
+and `f6deada1e089f1e2e00da0f9b26b24f5b1f564c8` in
+`skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**API and rendering:** `Renderer3D` reuses canonical U2 packing
+and six texture fallback handles from Stage 10AD.
+The optional PBR non-VT Metal API is called only for
+fully compatible opaque pipeline/geometry/flags.
+When all commands have VT, the older separate per-command
+VT resource API is used. Opaque normal-map presence is a
+pipeline key bit; actual normal map texture/sampler handles
+remain per-command values. Commands with mixed VT/non-VT
+are not allowed in one group. Full MDI/direct draw, alpha
+mask, transparent and Shader Graph paths retain original
+exact material behavior and fallback.
+
+**Actual checks:** inspected code path and converted all
+source grouping/ticket paths with strict GitHub source
+edits; code/docs commits accepted. **C++/Objective-C++
+compilation NOT RUN, CTest NOT RUN, MSL compiler NOT RUN,
+GPU command execution NOT RUN, performance/pixel parity
+NOT RUN**. PR must stay Draft, experimental flags OFF.
+
+**Known risks:** Metal PBR indirect shader variant must
+compile on actual MTL hardware and use the argument-buffer
+PBR slot layout correctly. The command stride for U2 is
+256 bytes, and all source samplers must be resolved per
+command. Frame-fence and resource lifetime management is
+unchanged. Alpha mask and Shader Graph are still excluded
+from heterogeneous PBR.
+
+**Next stage:** review Metal non-VT GPU shader mode,
+native argument-buffer offsets and ownership, then add
+further guardrails/diagnostics around reasons for
+per-command rejection. After functional completion,
+run native Metal shader compilation and two-material
+same-camera GPU vs CPU capture tests, with a normal
+map and different sampler states. Do not merge until
+real hardware validation passes.
