@@ -2200,3 +2200,34 @@ Keep the PR Draft, one GPU geometry pool and one production
 Renderer3D draw owner. Record and test a separate main
 integration before any merge. Handoff in
 `docs/agent-handoffs/strata-virtual-geometry.md`.
+
+
+## STRATA Stage 15.3 — async disk page handoff (2026-11-20)
+
+Current work is on `feature/strata-virtual-geometry`, not main.
+Full details, exact implementation commits, API changes, authored
+but **unrun** tests and next steps are in
+`docs/agent-handoffs/strata-virtual-geometry.md`, Stage 15.3.
+
+- `aiverse_strata_disk` is a separate reusable offline/runtime
+  archive library: `SceneStaging::writeDiskArchives(directory)`
+  produces verified `.strataidx` files per source key.
+- Metal/Vulkan `IndexResidency` uses bounded background archive
+  reads for child cluster indices, with roots checked synchronously
+  during scene load and parent fallback until complete siblings
+  are resident and GPU-uploaded.
+- `GeometryScene` opts in with `setStrataDiskPageDirectory` and
+  `setStrataStreamingFrameUploadBudgetBytes`, after enabling portable
+  plus incremental streaming and setting a positive index budget.
+  GLES3/WebGL2 continue the old CPU-selected index fallback.
+- Do not claim disk mode reduces the original CPU `ModelAsset`
+  index memory: full CPU indices remain required by current planners.
+  FNV checksums detect accidental corruption, not malicious assets.
+- Do not replace the source vertex buffer, bypass Renderer3D, or
+  merge this divergent feature branch into main until a clean native
+  build, focused CTest and actual Metal/Vulkan/GLES parity run pass.
+  No Stage 15.3 tests have been executed yet.
+
+Next: Stage 15.4 global multi-world CPU/GPU streaming coordination,
+then Vulkan compute GPU selection and crack-free lossy LOD. Append a
+new handoff after each bounded implementation stage.
