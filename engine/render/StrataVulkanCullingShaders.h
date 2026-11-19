@@ -194,6 +194,34 @@ void main(){
 }
 )GLSL";
 
+// Clear all indirect command slots on GPU before selection. This avoids a
+// large per-frame CPU zero upload and guarantees that entries beyond
+// producedCount are harmless (instanceCount=0). Invalid/overflow results
+// are additionally invalidated by the separate safety pass.
+inline constexpr const char* kVulkanIndirectClear=R"GLSL(#version 450
+layout(local_size_x=64,local_size_y=1,local_size_z=1) in;
+struct IndexedCommand {
+    uint indexCount, instanceCount, firstIndex;
+    int vertexOffset;
+    uint firstInstance;
+};
+layout(std430,set=0,binding=0) buffer Indirect {
+    IndexedCommand commands[];
+} indirect;
+layout(push_constant) uniform Params {
+    uint capacity;
+} settings;
+void main(){
+    const uint id=gl_GlobalInvocationID.x;
+    if(id>=settings.capacity)return;
+    indirect.commands[id].indexCount=0u;
+    indirect.commands[id].instanceCount=0u;
+    indirect.commands[id].firstIndex=0u;
+    indirect.commands[id].vertexOffset=0;
+    indirect.commands[id].firstInstance=0u;
+}
+)GLSL";
+
 // A second GPU-only pass invalidates *all* GPU-authored commands on a
 // selection overflow or invalid metadata, without reading counters on CPU.
 // Each command slot is pre-zeroed; only produced records are potentially
