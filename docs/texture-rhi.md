@@ -1015,3 +1015,95 @@ optimization is intentionally conservative.
 Native builds, GPU allocation accounting and visual comparisons
 have not been run yet. Verify actual driver residency and
 alpha/LOD quality when the user's deferred test phase begins.
+
+
+### Full-resolution cutout alpha with reduced VT colour fallback
+
+`engine/render/ModelVirtualTextureFallback.h` now supports
+**alpha-preserving fallback** for opaque cutout models
+(`Material::alpha == AlphaMode::Mask`). This closes the earlier
+restriction that Terra Horizon/Arbor impostor atlases always had to
+retain the full source RGBA8 GPU image.
+
+After writing the full-resolution source RGBA8 to an immutable VT
+archive, configure the model **before** calling `uploadModel()`:
+
+```cpp
+render::VirtualFallbackSavings estimated;
+std::string reason;
+bool reduced = render::configureTerraWeavePackedMaskedImageFallback(
+    horizonModel, /*imageIndex=*/0, archiveVersion,
+    /*maxDimension=*/64, &estimated, &reason);
+if (reduced) {
+    // Image::tex becomes reduced RGBA8 fallback, and
+    // Image::virtualAlphaMask becomes full-resolution R8 coverage.
+    bool uploaded = render::uploadModel(dev, horizonModel);
+    // Check uploaded before publishing this model for rendering.
+}
+```
+
+Generic models can use
+`configureModelVirtualMaskedFallback(model,imageIndex,archive,...)`,
+or `configureModelVirtualFallback(...,reason,true)` to request
+the R8 mode explicitly. The default plain
+`configureModelVirtualFallback()` still rejects alpha-masked
+images unless preserve-alpha is enabled.
+
+`Image::virtualFallbackMaxDimension` and
+`Image::virtualFallbackPreserveAlpha` are opt-in CPU upload policies.
+`uploadImage()` extracts the original full-size alpha channel into
+a separate R8 GPU texture, including the image's existing repeat,
+filter and mip policy. It independently downsamples the source
+RGBA8 pixels via edge-clamped 2×2 box filtering into the small
+`Image::tex` fallback. A failed R8 or coarse-texture GPU
+allocation aborts the opted-in upload without discarding the
+CPU source; any newly created R8 resource is cleaned up when
+the coarse allocation fails. `releaseModel()` destroys both
+model-owned handles.
+
+The built-in model shader's new `VIRTUAL_ALPHA_MASK` permutation
+uses `tex15.r` for original-resolution cutout coverage while its
+base-colour `tex1` and VT `tex13/tex14` paths can use much smaller
+colour resources. Both GLSL and MSL perform alpha clipping with
+R8 for colour, sun/spot shadow and selection-mask passes. The
+same source alpha is used for LOD-fading fragment rejection.
+`VirtualTextureModelFeedback` has dedicated R8 red-channel
+feedback pipelines; `VirtualTextureDeformedModelFeedback`
+also reads full-resolution tex15.r for skin/baked/morph paths.
+`GpuMaterialState` accounts for distinct alpha handles when
+grouping batches. GPU ICB submissions are conservatively
+disabled when an in-view model uses an external R8 mask,
+because their per-command bindings do not encode tex15 yet.
+
+For a 2048×2048 RGBA8 source, original base level = 16 MiB.
+A 2048×2048 R8 alpha mask = 4 MiB; a 64×64 RGBA8 colour
+fallback = 16 KiB. That is approximately **75% base-level
+source-texture reduction**, excluding RHI mip chains, driver
+alignment, the bounded physical VT atlas, page table, and
+actual virtual pages resident in GPU memory. The
+`VirtualFallbackSavings::fullResolutionAlphaBytes` field
+records the calculated base-level R8 cost; these estimates
+are **not measured VRAM statistics**.
+
+Restrictions: `configureModelVirtualMaskedFallback()` accepts
+masked but nonblended, non-graph source materials. It excludes
+shared non-base textures, `TeamMode::BaseAlpha` and
+`TeamMode::VertexAlpha`, and requires the full RGBA8 CPU
+source before any existing GPU upload/cache lease. Dynamically
+overridden `ModelDraw::materials` must follow the same
+invariants; model-local validation cannot inspect unknown
+future overrides. Material shader graphs occupy texture slots
+13–15 and are deliberately not virtualized through this
+built-in shader permutation. A valid VT mapping and packed
+source archive are still required for high-detail colour.
+Without them, the main scene retains a visually coarse
+colour fallback while keeping the full-resolution cutout
+silhouette. For alpha-only silhouette equivalence, compare
+coverage with the original texture at multiple mip levels
+on each GPU/backend; R8 and RGBA GPU mip filters may have
+implementation-dependent rounding.
+
+**Verification deferred:** GitHub source modifications committed;
+native C++ compilation, GLSL/MSL shader compilation, Metal/
+OpenGL/Vulkan rendering, shadow/selection silhouette tests
+and actual driver VRAM accounting have NOT been run.
