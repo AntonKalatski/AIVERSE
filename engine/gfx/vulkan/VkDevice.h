@@ -144,6 +144,7 @@ public:
     void setComputeBuffer(int slot,BufferHandle buffer) override;
     void setComputeUniforms(const void* bytes,size_t size) override;
     void dispatch(uint32_t totalThreadsX,uint32_t groupsY=1) override;
+    bool dispatchChecked(uint32_t totalThreadsX,uint32_t groupsY=1) override;
     void endCompute() override;
     bool readBufferAsync(BufferHandle buffer,size_t size,BufferReadFn callback) override;
 
@@ -269,6 +270,7 @@ private:
     Pool<VCompute> computes_;
     VkDescriptorSetLayout computeSetLayout_=VK_NULL_HANDLE;
     VkPipelineLayout computePipelineLayout_=VK_NULL_HANDLE;
+    uint32_t computeBindingCount_=0;
     struct ComputeFrame {
         std::vector<VkDescriptorPool> pools;
         size_t nextPool=0,usedSets=0;
@@ -279,6 +281,7 @@ private:
     size_t computeUniformSize_=0;
     ComputeHandle computeHandle_{};
     bool computing_=false,computeStateValid_=false;
+    bool computeDispatchSucceeded_=false;
     struct PendingComputeRead {
         uint64_t serial=0;
         VkBuffer buffer=VK_NULL_HANDLE;
