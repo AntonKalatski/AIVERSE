@@ -5,6 +5,7 @@
 #include "../Editor.h"
 #include "../EditorUtil.h"
 #include "engine/view/ImportedAttachmentAuthoring.h"
+#include "engine/view/AttachmentLayout.h"
 #include "engine/render/Animation.h"
 #include <algorithm>
 #include <cmath>
@@ -28,6 +29,8 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         std::string model;
         std::string socket;
         bool enabled=true;
+        render::mat4 local{};
+        render::mat4 childWorld{};
     };
     struct Session {
         std::unique_ptr<render::ModelAssetProvider> provider;
@@ -221,19 +224,16 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         std::string contents;
         if(!readAsset(path,contents))
             throw std::runtime_error("Attachment JSON file is not readable");
-        const auto parsed=Json::parse(contents);
-        if(!parsed["attachments"].isArray())
-            throw std::invalid_argument("Expected attachments array");
+        view::AttachmentLayout layout;
+        view::AttachmentLayoutCodec::read(Json::parse(contents),layout);
         std::vector<AuthoredChild> next;
-        for(const auto& entry:parsed["attachments"].items()) {
-            const auto model=entry.getStr("model");
-            const auto socket=entry.getStr("socket");
-            if(model.empty() || socket.empty())
-                throw std::invalid_argument("Attachment needs model and socket");
-            (void)withinProject(model);
-            next.push_back({model,socket,entry.getBool("enabled",true)});
+        next.reserve(layout.attachments.size());
+        for(const auto& entry:layout.attachments) {
+            (void)withinProject(entry.model);
+            next.push_back({entry.model,entry.socket,entry.enabled,
+                            entry.local,entry.childWorld});
         }
-        const auto parent=parsed.getStr("parent",sourcePath_);
+        const auto parent=layout.parent.empty()?sourcePath_:layout.parent;
         if(!parent.empty())(void)withinProject(parent);
         sourcePath_=parent;
         authored_.swap(next);
@@ -243,17 +243,13 @@ class AttachmentAuthoringWindow final : public EditorWindow {
 
     void saveLayout() {
         const auto path=withinProject(layoutPath_);
-        Json root=Json::object();
-        root.set("parent",Json::string(sourcePath_));
-        Json attachments=Json::array();
-        for(const auto& child:authored_) {
-            Json item=Json::object();
-            item.set("model",Json::string(child.model));
-            item.set("socket",Json::string(child.socket));
-            item.set("enabled",Json::fromBool(child.enabled));
-            attachments.push(item);
-        }
-        root.set("attachments",attachments);
+        view::AttachmentLayout layout;
+        layout.parent=sourcePath_;
+        for(const auto& child:authored_)
+            layout.attachments.push_back({
+                child.model,child.socket,child.enabled,
+                child.local,child.childWorld});
+        const Json root=view::AttachmentLayoutCodec::write(layout);
         std::ofstream output(path,std::ios::binary|std::ios::trunc);
         if(!output || !(output<<root.dump(2)))
             throw std::runtime_error("Unable to write attachment layout");
@@ -305,6 +301,8 @@ class AttachmentAuthoringWindow final : public EditorWindow {
                 Imported::ChildRequest request;
                 request.appearance=it->second;
                 request.socketName=child.socket;
+                request.local=child.local;
+                request.childWorld=child.childWorld;
                 requested.push_back(std::move(request));
             }
             if(!Imported::compile(staged->source,staged->provider->resources(),
@@ -412,6 +410,14 @@ public:
             if(ImGui::Checkbox("Enabled",&child.enabled))dirty_=true;
             if(ui::inputString("Child Model",child.model))dirty_=true;
             if(ui::inputString("Socket",child.socket))dirty_=true;
+            float position[]={
+                child.local.m[12],child.local.m[13],child.local.m[14]};
+            if(ImGui::DragFloat3("Socket offset",position,0.01f)) {
+                child.local.m[12]=position[0];
+                child.local.m[13]=position[1];
+                child.local.m[14]=position[2];
+                dirty_=true;
+            }
             if(ImGui::Button("Detach")) {
                 authored_.erase(authored_.begin()+i);
                 dirty_=true;
