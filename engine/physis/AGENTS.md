@@ -558,3 +558,26 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   Keep PR #25 DRAFT, preserve the separate FileJournal + ECS
   checkpoint authority and exact per-stage handoff:
   `docs/agent-handoffs/physis-stage51-pinned-startup-2026-11-19.md`.
+
+### Stage 52 — journal startup revalidation and after-rename durability fault (2026-11-19)
+
+- On canonical `LoopbackAdminEndpoint::open`, after a successful
+  `FileJournal::loadPinned` and BEFORE binding `WsListener`,
+  revalidate `JournalProcessLock::valid()`. A lock or parent
+  replaced during the bounded startup read must fail startup
+  closed and release the lock. No privileged listener may bind.
+- The native `physis_journal_posix_io` test now has Linux-only
+  `O_PATH` fault injection: `openat`/`renameat` operate relative
+  to an O_PATH directory descriptor, but `fsync(directory)` fails
+  with EBADF. `posix_journal::write` MUST return false despite a
+  visible new receipt. Do not advertise `Applied` or durable
+  `Queued` after such a failure.
+- ACTUAL PASS (isolated): compiled source-identical low-level POSIX
+  CTest 1/1 on GCC 14.2; Clang 17 C++20 strict-warning run and
+  GCC ASan/UBSan also passed. Test source GitHub blob
+  `c9c7063481b15d9e3d96fc3c8b022e86a32f30ff`.
+  Full AIVERSE CMake, `physis_admin_journal` integration and
+  macOS/Windows QA remain NOT RUN.
+- Changes are independent of FPS/RTS, Box3D, NEREID and TerraWeave.
+  Handoff:
+  `docs/agent-handoffs/physis-stage52-startup-revalidation-fsync-2026-11-19.md`.
