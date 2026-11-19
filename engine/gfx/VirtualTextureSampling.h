@@ -300,7 +300,7 @@ inline float4 aiverse_sample_virtual_grad(
     float2 gradient = aiverse_virtual_gradient_orientation(uv, addressU, addressV)
                       * p.gradientScale;
     return atlas.sample(atlasSampler, p.uv, p.layer,
-                        gradient2d<float>(uvDx * gradient, uvDy * gradient));
+                        gradient2d(uvDx * gradient, uvDy * gradient));
 }
 inline float4 aiverse_sample_virtual_grad(
     texture2d_array<float, access::sample> atlas,
@@ -312,7 +312,7 @@ inline float4 aiverse_sample_virtual_grad(
 }
 
     // Indexed page-table slices are [logicalLayer * mipLevels + selectedMip].
-inline inline bool aiverse_virtual_finite2(float2 v) {
+inline bool aiverse_virtual_finite2(float2 v) {
     return all(abs(v)<=float2(1.0e8f));
 }
 inline bool aiverse_virtual_finite1(float v) {
@@ -350,11 +350,11 @@ inline float4 aiverse_sample_virtual_trilinear(
         logicalLayer*virtualMipLevels+upper,gutterPixels,addressU,addressV);
     float2 orientation=aiverse_virtual_gradient_orientation(uv,addressU,addressV);
     float4 colorA=a.valid ? atlas.sample(atlasSampler,a.uv,a.layer,
-        gradient2d<float>(uvDx*orientation*a.gradientScale,
+        gradient2d(uvDx*orientation*a.gradientScale,
                           uvDy*orientation*a.gradientScale)) : fallbackColor;
     if (upper==lower) return colorA;
     float4 colorB=b.valid ? atlas.sample(atlasSampler,b.uv,b.layer,
-        gradient2d<float>(uvDx*orientation*b.gradientScale,
+        gradient2d(uvDx*orientation*b.gradientScale,
                           uvDy*orientation*b.gradientScale)) : fallbackColor;
     return mix(colorA,colorB,lod-float(lower));
 }
