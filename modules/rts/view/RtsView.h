@@ -173,6 +173,20 @@ public:
         }
         return stats;
     }
+    // Enumerates actual GPU assets owned by this presentation view, not
+    // temporary draw references. Pooled geometry pages are counted by
+    // GlobalGeometryPool, and cache-borrowed images by ModelTextureCache.
+    // Graphics-owner thread only, since GPU caches are mutated there.
+    render::GpuOwnedMemoryStats ownedModelGpuMemoryStats(
+            const gfx::Device& device) const {
+        render::GpuOwnedMemoryCounter counter(device);
+        for (const auto& [key, model] : models_) {
+            (void)key;
+            if (model) render::appendModelOwnedGpuMemory(*model,counter);
+        }
+        if (textureCache_) textureCache_->appendOwnedGpuMemory(counter);
+        return counter.stats();
+    }
     bool typeLoaded(uint16_t type) const { return type < loadedTypes_.size() && loadedTypes_[type]; }
     void loadType(uint16_t type);
     void trimTypes(const std::vector<bool>& keep, bool compact = false);
