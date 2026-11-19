@@ -21,9 +21,13 @@ static_assert(client::GameClient::kInitSteps == 6, "ClientHost::kSteps follows G
 ClientHost::ClientHost() = default;
 ClientHost::~ClientHost() {
     stop();
-    // Owner's teardown contract must guarantee device idle. This fallback
-    // preserves the pre-existing destruction behavior for host shutdown.
-    drainAfterGpuIdle();
+    // Full Editor shutdown is required to run at a graphics-device teardown
+    // safe point. Try to verify idle if a device is still available; never
+    // silently claim a completed fence based on the frame serial.
+    if (dev_ && dev_->waitForSubmittedGpuWork())
+        drainAfterGpuIdle();
+    // A backend that cannot synchronize retains the old host-teardown
+    // contract. Do not dereference the device after its lifetime ends.
 }
 
 void ClientHost::start(gfx::Device& dev, const std::string& projectDir, const std::string& engineAssets) {
@@ -60,7 +64,8 @@ size_t ClientHost::collectGpuRetirements() {
     if (!completed) return 0;
     size_t collected = 0;
     for (auto it = retired_.begin(); it != retired_.end();) {
-        if (!it->completionToken || it->completionToken > completed) {
+        if (it->device != dev_ || !it->completionToken ||
+            it->completionToken > completed) {
             ++it;
             continue;
         }
