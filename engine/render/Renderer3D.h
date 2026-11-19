@@ -313,6 +313,10 @@ public:
     // A completed GPU failure arrives as an empty byte vector.
     // Does not expose or change shadow texture ownership.
     bool requestSunShadowDepthReadback(gfx::Device::DepthReadFn callback) const;
+    // Diagnostic-only readback of the actual LDR planar water reflection
+    // RTT (half-resolution). Not a main-screen screenshot or surrogate.
+    // Call after render() and closing its main pass; the callback is async.
+    bool requestPlanarReflectionColorReadback(gfx::Device::ColorReadFn callback) const;
     bool setShadowMapSize(int size) { highShadowSize_=size; setShadowQuality(quality_); return quality_!=ShadowQuality::High||shadowMap_.valid(); }
     ShadowQuality shadowQuality() const { return quality_; }
     static ShadowQuality defaultQualityFor(const gfx::Device& dev, bool mobile);
