@@ -1138,8 +1138,8 @@ void Renderer3D::prepareGpuModelDraws() {
         if (!it.inView || !it.rigid || !it.prim || !it.model || !it.mat ||
             (!includeRigidDynamic && !(it.flags & kDrawStatic)) ||
             (it.flags & (kDrawTransparent | kDrawFadeDepth | kDrawActorReveal)) ||
-            it.tint.w < .99f || it.mat->alpha != AlphaMode::Opaque ||
-            it.mat->transparent || it.mat->shaderGraph ||
+            it.tint.w < .99f || it.mat->transparent ||
+            it.mat->shaderGraph ||
             it.joints >= 0 || it.morph >= 0 || it.baked ||
             it.gi != 0 || it.materialRole || it.shadowRole || it.paletteMaterials ||
             // Current GPU compute only does frustum culling; do not bypass
@@ -1148,12 +1148,48 @@ void Renderer3D::prepareGpuModelDraws() {
             it.model->geometry || it.lodThreshold < 1.0f || it.lodInvert ||
             !it.model->vb.valid() || !it.model->ib.valid() || !it.indexCount)
             continue;
+        // GPU PBR ICB supports opaque models and masked models whose
+        // exact R8 alpha is bound at tex15 in the argument buffer.
+        // Other alpha materials keep their ordinary CPU path.
+        const bool alphaCoverage = it.mat->baseTex >= 0 &&
+            size_t(it.mat->baseTex) < it.model->images.size() &&
+            it.model->images[size_t(it.mat->baseTex)].virtualAlphaMask.valid();
+        if (it.mat->alpha != AlphaMode::Opaque &&
+            !(it.mat->alpha == AlphaMode::Mask && alphaCoverage))
+            continue;
         eligibleIndices.push_back(i);
         if (!(it.flags & kDrawStatic)) ++gpuModelDynamicEligible_;
         if (it.gpuLodAvailable) ++gpuModelLodEligible_;
     }
     gpuModelEligible_ = uint32_t(eligibleIndices.size());
     if (!gpuModelEligible_) return;
+    // Resolve once for this scene/viewport so the preflight, cache key,
+    // exact equivalence and command encoding observe the SAME VT domain.
+    // Revision changes between frames invalidate GPU batch signatures.
+    std::vector<ModelVirtualTextureBinding> vtBindings(modelItems_.size());
+    std::vector<uint8_t> vtEnabled(modelItems_.size(), uint8_t(0));
+    for (uint32_t index : eligibleIndices) {
+        const auto& item=modelItems_[index];
+        if (resolveModelVirtualTexture(*item.model,*item.mat,vtBindings[index]))
+            vtEnabled[index] = 1;
+    }
+    const auto vtCompatible = [&](uint32_t left, uint32_t right) {
+        return compatibleModelVirtualTextureBinding(
+            vtEnabled[left]!=0,vtBindings[left],
+            vtEnabled[right]!=0,vtBindings[right]);
+    };
+    const auto externalMaterialHash = [&](uint32_t index) {
+        const auto& item=modelItems_[index];
+        uint64_t hash=gpuMaterialStateHash(*item.model,*item.mat);
+        // Exact comparison below remains authoritative, even on a hash
+        // collision. The special no-VT tag distinguishes the two modes.
+        const uint64_t vtHash=vtEnabled[index] ?
+            modelVirtualTextureBindingHash(vtBindings[index]) : 0;
+        hash ^= vtHash + 0x9e3779b97f4a7c15ULL +
+                (hash << 6) + (hash >> 2);
+        hash ^= vtEnabled[index] ? 0x5654524849414c4FULL : 0ULL;
+        return hash;
+    };
     static const bool gpuIcb = [] {
         const char* flag = std::getenv("AIVERSE_GPU_ENCODED_ICB");
         return flag && std::strcmp(flag, "1") == 0;
@@ -1199,7 +1235,7 @@ void Renderer3D::prepareGpuModelDraws() {
         for (uint32_t i : eligibleIndices) {
             const auto& x = modelItems_[i];
             auto [it, fresh] = hashes.try_emplace(std::make_pair(x.model, x.mat), 0);
-            if (fresh) it->second = gpuMaterialStateHash(*x.model, *x.mat);
+            if (fresh) it->second = externalMaterialHash(i);
             auto& count = counts[{x.model->vb.id, x.model->ib.id, x.flags, it->second}];
             if (count < groupCapacity) ++count;
         }
@@ -1286,7 +1322,7 @@ void Renderer3D::prepareGpuModelDraws() {
         const auto& m = modelItems_[item];
         const auto key = std::make_pair(m.model, m.mat);
         auto [cached, fresh] = cachedMaterialHashes.try_emplace(key, 0);
-        if (fresh) cached->second = gpuMaterialStateHash(*m.model, *m.mat);
+        if (fresh) cached->second = externalMaterialHash(item);
         const uint64_t hash = cached->second;
         hashes[item] = hash;
         signature.push_back({m.model, m.mat, item, m.flags,
@@ -1308,6 +1344,7 @@ void Renderer3D::prepareGpuModelDraws() {
                 if (first.model->vb != candidate.model->vb ||
                     first.model->ib != candidate.model->ib ||
                     first.flags != candidate.flags ||
+                    !vtCompatible(members.front(),member) ||
                     !equivalentGpuMaterial(*first.model, *first.mat,
                                            *candidate.model, *candidate.mat)) {
                     cacheValid = false;
@@ -1342,6 +1379,7 @@ void Renderer3D::prepareGpuModelDraws() {
                     first.model->baked.tex != m.model->baked.tex ||
                     first.model->morphTex != m.model->morphTex ||
                     first.flags != m.flags ||
+                    !vtCompatible(group.items.front(),item) ||
                     !equivalentGpuMaterial(*first.model, *first.mat, *m.model, *m.mat))
                     continue;
                 group.items.push_back(item);
