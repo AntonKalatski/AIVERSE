@@ -105,6 +105,20 @@ horizonSceneFromManifest(
     terraweave::validateHorizonSettings(settings);
     auto scene=std::make_unique<terraweave::TerraWeaveHorizonScene>(
         terrain,biomes,settings);
+    // Stage39 quality applies to presentation only, independently of the
+    // existing "quality" geometry/bake preset. No field = legacy defaults.
+    const std::string presentationQuality=j.getStr("presentationQuality","");
+    if(!presentationQuality.empty()) {
+        terraweave::HorizonPresentationQualityPreset selected;
+        using Preset=terraweave::HorizonPresentationQualityPreset;
+        if(presentationQuality=="battery-saver") selected=Preset::BatterySaver;
+        else if(presentationQuality=="mobile") selected=Preset::Mobile;
+        else if(presentationQuality=="balanced") selected=Preset::Balanced;
+        else if(presentationQuality=="desktop") selected=Preset::Desktop;
+        else throw JsonError(
+            "world.terraweaveHorizon.presentationQuality: expected battery-saver|mobile|balanced|desktop");
+        scene->setPresentationQualityPreset(selected);
+    }
     // Read-only prebaked assets are strictly opt-in. The game pack owns
     // access to the archive files; runtime never writes into content.
     const std::string archivePrefix=j.getStr("archivePrefix");
