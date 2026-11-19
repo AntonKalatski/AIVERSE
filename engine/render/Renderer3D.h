@@ -589,13 +589,18 @@ private:
         std::vector<Material> materialsSnapshot;
         std::vector<uint64_t> materialHashes;
         std::vector<int> selectedMeshes; // by node index; -1 = node without mesh
+        // Node-level material assignments may be owned by a transient caller.
+        // Compare a value snapshot on replay; never retain vector pointers.
+        bool hasNodeMaterialOverride = false;
+        std::vector<int> nodeMaterialSnapshot;
         std::vector<ModelItem> items;
     };
     static size_t staticPacketBytes(const StaticPacketEntry& packet) {
         return packet.items.size() * sizeof(ModelItem) +
             packet.materialsSnapshot.size() * sizeof(Material) +
             packet.materialHashes.size() * sizeof(uint64_t) +
-            packet.selectedMeshes.size() * sizeof(int);
+            packet.selectedMeshes.size() * sizeof(int) +
+            packet.nodeMaterialSnapshot.size() * sizeof(int);
     }
     // Reused per-draw scratch: hot packet replay must not allocate one vector
     // for every visible entity. Renderer3D submission is non-reentrant.
