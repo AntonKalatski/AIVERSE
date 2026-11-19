@@ -58,6 +58,50 @@ the shared renderer. The current implementation has no GPU rendering path.
   or per-pass culling. Do not automatically route displaced surfaces here.
   Importers should preserve existing meshes and exact LOD0 as a fallback.
 
+## Stage 4 — optional CPU staging in GeometryScene
+
+`GeometryScene` remains the source-of-truth for scene instances, model
+ownership, existing HLOD, visibility and draw submission. New APIs:
+
+```cpp
+render::GeometryScene scene;
+scene.setStrataStagingEnabled(true);  // Before load/loadPrepared, default OFF
+scene.loadPrepared(device, sceneJson, std::move(models));
+// Scene draws through the existing Renderer3D exactly as before.
+const auto& counters = scene.stats(); // strataSources, strataNodes,
+// strataMeshlets, strataIndexBytes, strataSkippedSources,
+// strataSkippedPrimitives, strataFailures
+const auto* cpuAsset = scene.strataAsset("models/stone.glb");
+// cpuAsset is nullptr when unavailable or the key is not staged.
+scene.shutdown(device); // invalidates cpuAsset and all staging handles
+```
+
+Staging is compiled only when `AIVERSE_BUILD_STRATA=ON`, and is inert unless
+`setStrataStagingEnabled(true)` is called before loading a scene.
+`strataStagingSupported()` reports compile-time availability. The method
+returns false on builds where Strata was disabled. Scene staging is configured
+by **native API**, not via scene JSON, so no existing saved scene is affected.
+There are no additional draw calls and no GPU-resident Strata buffers.
+
+The CPU `SceneStaging` object is in
+`engine/render/StrataModelAdapter.h` and can also be used by tools without
+creating a scene or renderer. It stores at most one copy per unique source key.
+It preserves the source `Model`, reports skip/failure diagnostics and
+has configurable default caps of 250k vertices and 750k indices per source.
+These are **per-source preparation bounds**, not global Strata/VRAM limits.
+All staged data is released with `GeometryScene::shutdown` and re-created
+on subsequent loads. Source proxies and generated HLOD proxies are deliberately
+excluded. Models ineligible for Strata continue through the existing renderer
+unchanged. A failed staging operation must never fail the scene's legacy upload.
+
+The `strataIndexBytes` counter measures only auxiliary Strata flat index
+storage (not total Strata CPU heap usage); do not report it as resident VRAM.
+All counters are diagnostics and are not part of a public save/network schema.
+
+**Not yet active:** GPU scene buffers, meshlet culling, GPU residency,
+GPU-encoded indirect draws, software rasterization, per-pass Strata selection,
+actual Strata render submission, or terrain/foliage integration.
+
 ## Architectural constraints
 - **One scene/instance truth**: `GeometryScene` owns static render instances
   and HLOD; do not create separate Strata transforms or introduce gameplay
@@ -77,7 +121,7 @@ the shared renderer. The current implementation has no GPU rendering path.
   require distinct culling/error metrics and shadow caster inclusion.
 
 ## Known shortcomings / next steps
-1. Make both focused test targets compile and pass. Command:
+1. Make both focused test targets compile and pass (including new staging test cases). Command:
    `cmake -S . -B build/strata -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_STRATA=ON`
    then `cmake --build build/strata --target aiverse_strata_builder_tests aiverse_strata_model_adapter_tests`
    then `ctest --test-dir build/strata -R '^strata_(builder|model_adapter)
@@ -87,8 +131,10 @@ the shared renderer. The current implementation has no GPU rendering path.
    at all heterogeneous LOD frontiers.
 3. Validate meshlet locality; consider importing full upstream meshoptimizer
    clustering/partition implementation in a versioned dependency update.
-4. Add a feature-gated, single `GeometryScene` adapter and per-pass bounds
-   tests before any GPU Scene/culling path.
+4. CPU-only `GeometryScene` staging is available behind an explicit opt-in
+   switch, but requires full native validation and visual/performance A/B.
+   Only then add a per-pass selected-range submission adapter; retain legacy
+   material and batching ownership and prevent double submission.
 5. Build independent CPU and GPU benchmark references; measure quality,
    memory, streaming stalls, frame time and fallback behavior.
 
