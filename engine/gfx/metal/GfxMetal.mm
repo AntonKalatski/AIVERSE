@@ -1554,6 +1554,11 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         const auto afterAlloc = std::chrono::steady_clock::now();
         const bool u32 = p->desc.indexType == IndexType::UInt32;
         const size_t indexBytes = u32 ? 4u : 2u;
+        // All indirect commands share the same validated pipeline. Avoid
+        // re-querying the pipeline table in prim() for each encoded command.
+        const MTLPrimitiveType icbPrimitive =
+            p->desc.primitive == Primitive::Lines
+                ? MTLPrimitiveTypeLine : MTLPrimitiveTypeTriangle;
         const auto& modelUniforms = indirectUniformSnapshots_[0];
         constexpr size_t kModelInstanceBytes = 36u * sizeof(float);
         const size_t instanceCapacity = modelUniforms.size() / kModelInstanceBytes;
@@ -1580,7 +1585,7 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                 [command setVertexBuffer:uniforms[slot] offset:0 atIndex:NSUInteger(1 + slot)];
                 [command setFragmentBuffer:uniforms[slot] offset:0 atIndex:NSUInteger(1 + slot)];
             }
-            [command drawIndexedPrimitives:prim() indexCount:args.indexCount
+            [command drawIndexedPrimitives:icbPrimitive indexCount:args.indexCount
                 indexType:u32 ? MTLIndexTypeUInt32 : MTLIndexTypeUInt16
                 indexBuffer:indices indexBufferOffset:ibOffset_ + size_t(args.firstIndex) * indexBytes
                 instanceCount:args.instanceCount baseVertex:args.baseVertex baseInstance:args.firstInstance];
