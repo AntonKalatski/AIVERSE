@@ -658,3 +658,22 @@ take an optional host `RenderDeviceLifetime::Lease` and check it at
 their GPU entrypoints. Editor-embedded clients share the editor's
 generation. These guards cannot prove a GPU fence has completed and
 do not replace explicit resource retirement and shutdown ordering.
+
+## Stage 113 — scratch model imports preserve last-good animation
+
+`RtsView::reloadAppearanceTypes` stages new (previously
+nonresident) models as independent scratch resource owners, as
+well as staging new material images. On failed graph/material
+authoring, it leaves the active TypeLooks and their graph/pose
+writers untouched; scratch model GPU buffers and images retire
+through normal GPU tokens without replacing live Model pointers.
+A successful publish transfers the same Model* storage into the
+real model cache after committing new image indices.
+
+A speculative model may borrow a *resident* shared texture
+lease, but cannot modify the shared GPU texture residency map
+during authoring. The active MotionWeave or legacy per-entity
+animation writer is unchanged; no second ECS or graph clock
+is allocated by the scratch owner. `Renderer3D` now validates
+the render host's existing GPU generation before scene work.
+Validation is still deferred.
