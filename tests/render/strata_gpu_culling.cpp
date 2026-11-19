@@ -126,7 +126,7 @@ int main() {
     assert(result.valid() && result.capacity == 64);
     assert(result.frameSerial == 101 && result.submission == 0);
     assert(result.submittedInstances == 2);
-    assert(compute.computeCalls == 1 && compute.dispatchCount == 2);
+    assert(dev.computeCalls == 1 && dev.dispatchCount == 2);
     assert(dev.shaderText.find("projectError") != std::string::npos);
     assert(dev.lastUniforms.width == 1920 &&
            dev.lastUniforms.height == 1080);
@@ -148,7 +148,7 @@ int main() {
     invalid.width = 0;
     assert(!compute.dispatch(dev, {99}, {one}, invalid, 101, nextResult));
     assert(nextResult.submission == 1); // transactional failure
-    assert(compute.computeCalls == 1);
+    assert(dev.computeCalls == 1);
     // Frame 104 would reuse the same triple-buffer slot while frame 101
     // remains GPU-in-flight. Reject until completion is reported.
     assert(!compute.dispatch(dev, {99}, {one}, pass, 104, nextResult));
