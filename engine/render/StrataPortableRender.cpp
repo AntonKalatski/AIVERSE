@@ -108,11 +108,42 @@ bool PortableSource::stage(gfx::Device& dev,const Model& source,
         for(uint32_t idx:entry.geometry.indices)
             if(idx>=sourceVertexCeiling)
                 return fail(error,"Strata index exceeds original vertex allocation");
-        for(const auto& n:entry.geometry.nodes)
+        // Whole-primitive coverage is essential: an importer/streamer that
+        // accidentally drops one leaf must never silently erase source
+        // triangles. The CPU vertex/index data can be gone after upload,
+        // but the immutable original Primitive::indexCount remains known.
+        const auto& g=entry.geometry;
+        uint64_t leafIndices=0;
+        for(size_t nodeId=0;nodeId<g.nodes.size();++nodeId){
+            const auto& n=g.nodes[nodeId];
+            const auto& b=g.bounds[nodeId];
             if(!n.resident || n.materialGroup!=entry.material ||
-               n.firstIndex>entry.geometry.indices.size() ||
-               n.indexCount>entry.geometry.indices.size()-n.firstIndex)
+               n.firstIndex>g.indices.size() ||
+               n.indexCount>g.indices.size()-n.firstIndex)
                 return fail(error,"Strata primitive includes nonresident or foreign material clusters");
+            for(unsigned axis=0;axis<3;++axis)
+                if(!std::isfinite(b.min[axis]) ||
+                   !std::isfinite(b.max[axis]) ||
+                   b.min[axis]>b.max[axis])
+                    return fail(error,"nonfinite or inverted Strata cluster bounds");
+            if(!n.childCount){
+                leafIndices+=n.indexCount;
+                continue;
+            }
+            for(uint32_t k=0;k<n.childCount;++k){
+                const size_t childId=size_t(n.firstChild)+k;
+                const auto& child=g.nodes[childId];
+                const auto& cb=g.bounds[childId];
+                if(n.geometricError<child.geometricError)
+                    return fail(error,"nonconservative Strata parent LOD error");
+                for(unsigned axis=0;axis<3;++axis)
+                    if(b.min[axis]>cb.min[axis] ||
+                       b.max[axis]<cb.max[axis])
+                        return fail(error,"Strata parent bounds omit child geometry");
+            }
+        }
+        if(leafIndices!=source.meshes[entry.mesh].primitives[entry.primitive].indexCount)
+            return fail(error,"Strata leaf frontier does not cover full source primitive");
         offsets.push_back(uint32_t(stagedIndices));
         stagedIndices+=entry.geometry.indices.size();
         combined.insert(combined.end(),entry.geometry.indices.begin(),
