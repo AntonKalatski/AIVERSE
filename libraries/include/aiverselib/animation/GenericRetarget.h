@@ -27,6 +27,17 @@ inline std::string bonePath(const render::Model& m,int node) {
     return path;
 }
 
+
+ // Resolve an exact hierarchy path (e.g. root/Hips/Head), not a loose
+ // node name. Shared by humanoid avatar, montage and offline root baker.
+ // Missing paths return -1; malformed model hierarchies fail via bonePath.
+inline int findNodePath(const render::Model& model,const std::string& path) {
+    if(path.empty())return -1;
+    for(size_t i=0;i<model.nodes.size();++i)
+        if(bonePath(model,int(i))==path)return int(i);
+    return -1;
+}
+
 struct RetargetOptions {
     bool scaleTranslation = true;
     bool copyScale = false;
