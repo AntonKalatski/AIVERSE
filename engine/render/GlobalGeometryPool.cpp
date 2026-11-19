@@ -69,26 +69,52 @@ void setRigidLodGeometryPoolingEnabled(bool enabled) {
     rigidLodPoolingOverride.store(enabled ? 1 : 0, std::memory_order_relaxed);
 }
 
-bool uploadModelToGeometryPool(gfx::Device& dev, Model& m) {
-    // Pooling is primarily for MDI across assets. On GLES/WebGL/legacy GL,
-    // retain compact per-model buffers instead of allocating unused large pages.
-    if (disabled() || !dev.supportsMultiDrawIndirect() ||
-        !dev.canUpdateSharedBuffers() ||
-        m.vertices.empty() || m.indices.empty()) return false;
+const char* geometryPoolAdmissionName(GeometryPoolAdmissionReason reason) {
+    switch (reason) {
+    case GeometryPoolAdmissionReason::Eligible: return "eligible for shared geometry upload";
+    case GeometryPoolAdmissionReason::Disabled: return "geometry pooling disabled";
+    case GeometryPoolAdmissionReason::UnsupportedBackend: return "backend has no compatible shared indexed MDI buffers";
+    case GeometryPoolAdmissionReason::EmptyGeometry: return "model has no CPU vertex/index data";
+    case GeometryPoolAdmissionReason::DedicatedAsset: return "asset explicitly requests dedicated buffers";
+    case GeometryPoolAdmissionReason::UnsafeGeometry: return "model is not rigid geometry-pool eligible";
+    case GeometryPoolAdmissionReason::Oversized: return "model exceeds 16 MiB pool upload limit";
+    }
+    return "unknown geometry pool admission";
+}
+
+GeometryPoolAdmission geometryPoolAdmission(gfx::Device& dev, const Model& model) {
+    if (disabled()) return {GeometryPoolAdmissionReason::Disabled};
+    if (!dev.supportsMultiDrawIndirect() || !dev.canUpdateSharedBuffers())
+        return {GeometryPoolAdmissionReason::UnsupportedBackend};
+    if (model.vertices.empty() || model.indices.empty())
+        return {GeometryPoolAdmissionReason::EmptyGeometry};
     using PoolPolicy = Model::Batching::GeometryPoolPolicy;
-    const PoolPolicy modelPolicy = m.batching.geometryPoolPolicy;
-    if (modelPolicy == PoolPolicy::Dedicated) return false;
-    const bool allowRigidLods = modelPolicy == PoolPolicy::AllowRigidLods ||
-        (modelPolicy == PoolPolicy::Inherit && rigidLodPoolAllowed());
-    if (!rigidGeometryPoolCandidate(m, allowRigidLods)) return false;
-    // Guard size arithmetic before allocating or calculating page offsets.
-    if (m.vertices.size() > kMaximumPooledModelSize / sizeof(ModelVertex) ||
-        m.indices.size() > kMaximumPooledModelSize / sizeof(uint32_t)) return false;
+    const PoolPolicy policy = model.batching.geometryPoolPolicy;
+    if (policy == PoolPolicy::Dedicated)
+        return {GeometryPoolAdmissionReason::DedicatedAsset};
+    const bool allowRigidLods = policy == PoolPolicy::AllowRigidLods ||
+        (policy == PoolPolicy::Inherit && rigidLodPoolAllowed());
+    const RigidGeometryPoolBlock block = rigidGeometryPoolBlock(model, allowRigidLods);
+    if (block != RigidGeometryPoolBlock::None)
+        return {GeometryPoolAdmissionReason::UnsafeGeometry, block};
+    // Do these checks BEFORE multiplying counts; never overflow size_t.
+    if (model.vertices.size() > kMaximumPooledModelSize / sizeof(ModelVertex) ||
+        model.indices.size() > kMaximumPooledModelSize / sizeof(uint32_t))
+        return {GeometryPoolAdmissionReason::Oversized};
+    const size_t vb = model.vertices.size() * sizeof(ModelVertex);
+    const size_t ib = model.indices.size() * sizeof(uint32_t);
+    if (vb > kMaximumPooledModelSize || ib > kMaximumPooledModelSize ||
+        vb + ib > kMaximumPooledModelSize)
+        return {GeometryPoolAdmissionReason::Oversized};
+    return {};
+}
+
+bool uploadModelToGeometryPool(gfx::Device& dev, Model& m) {
+    // This prediction is the authoritative CPU admission check. GPU buffer
+    // creation may still fail, in which case uploadModel uses dedicated VB/IB.
+    if (!geometryPoolAdmission(dev, m).eligible()) return false;
     const size_t vertexBytes = m.vertices.size() * sizeof(ModelVertex);
     const size_t indexBytes = m.indices.size() * sizeof(uint32_t);
-    if (vertexBytes > kMaximumPooledModelSize ||
-        indexBytes > kMaximumPooledModelSize ||
-        vertexBytes + indexBytes > kMaximumPooledModelSize) return false;
 
     std::lock_guard lock(poolMutex);
     auto& pages = pools[&dev];
