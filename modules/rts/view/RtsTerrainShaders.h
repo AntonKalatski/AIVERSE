@@ -277,6 +277,11 @@ void main() {
     float rim = pow(1.0 - max(dot(n, V), 0.0), 3.0) * 0.25;
     vec3 col = base * (amb + sun * ndl * sh) + sun * spec * sh + amb * rim * base;
     col += base * dynamicLight(v_wpos, n, V, t_mode.x);
+#if defined(DYNAMIC_GI)
+    // The GI transport returns incident indirect radiance, not albedo-coloured
+    // output. Apply the terrain's *same* linear diffuse base exactly once.
+    col += base * dynamicGiAt(v_wpos, n);
+#endif
     float dist = length(u_camPos.xyz - v_wpos);
     col = mix(col, rtsDecodeScene(u_fog.rgb), 1.0 - exp(-dist * u_fog.w));
     col = rtsToneScene(col, u_skyColor.w > 0.5); // ACES fit
@@ -531,6 +536,9 @@ fragment float4 fs_main(VOut in [[stage_in]], constant TU0& u [[buffer(1)]], con
     float rim = pow(1.0 - max(dot(n, V), 0.0), 3.0) * 0.25;
     float3 col = base * (amb + sun * ndl * sh) + sun * spec * sh + amb * rim * base;
     col += base * dynamicLight(l, tex1, s1, in.wpos, n, V, u.mode.x);
+#if defined(DYNAMIC_GI)
+    col += base * dynamicGiAt(giFineAtlas, giFine, in.wpos, n);
+#endif
     float dist = length(f.camPos.xyz - in.wpos);
     col = mix(col, rtsDecodeScene(f.fog.rgb), 1.0 - exp(-dist * f.fog.w));
     col = rtsToneScene(col, f.skyColor.w > 0.5);
