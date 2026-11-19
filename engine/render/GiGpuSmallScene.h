@@ -39,7 +39,8 @@ public:
     GeometryUploadStats lastGeometryUpload() const { return geometryUpload_; }
     using GpuTri = GiGpuBvhTri;
     using GpuNode = GiGpuBvhNode;
-    struct GpuLamp { float4 posRadius{}, colorIntensity{}; };
+    // Spot parameters are explicit so MSL and std430 SPIR-V see identical 64 B.
+    struct GpuLamp { float4 posRadius{}, colorIntensity{}, spotDirectionOuter{}, spotInner{}; };
     struct GpuJob { uint32_t index = 0; float x = 0, y = 0, z = 0; };
     struct Uniforms {
         uint32_t triangles = 0, lights = 0, jobs = 0, samples = 0;
@@ -47,7 +48,7 @@ public:
         uint32_t nodes = 0;
         float pad1 = 0, pad2 = 0;
     };
-    static_assert(sizeof(GpuTri) == 64 && sizeof(GpuNode) == 48 && sizeof(GpuLamp) == 32 &&
+    static_assert(sizeof(GpuTri) == 64 && sizeof(GpuNode) == 48 && sizeof(GpuLamp) == 64 &&
                   sizeof(GpuJob) == 16 && sizeof(Uniforms) == 32);
 
     ~GiGpuSmallScene() { shutdown(); }
@@ -200,10 +201,17 @@ public:
             if ((haveLast && l.key==last) || !finite(l.position) || !finite(l.color) ||
                 l.color.x<0 || l.color.y<0 || l.color.z<0 ||
                 !std::isfinite(l.radius) || l.radius<=0 ||
-                !std::isfinite(l.intensity) || l.intensity<0)
+                !std::isfinite(l.intensity) || l.intensity<0 ||
+                !std::isfinite(l.cosOuter) || !std::isfinite(l.cosInner) ||
+                (l.spot() && (!finite(l.direction) ||
+                    std::abs(dot(l.direction,l.direction)-1.0f)>.002f ||
+                    l.cosOuter < -1.0f || l.cosOuter>=1.0f ||
+                    l.cosInner < l.cosOuter || l.cosInner>1.0f)))
                 return false;
             packed.push_back({{l.position.x,l.position.y,l.position.z,l.radius},
-                              {l.color.x,l.color.y,l.color.z,l.intensity}});
+                              {l.color.x,l.color.y,l.color.z,l.intensity},
+                              {l.direction.x,l.direction.y,l.direction.z,l.cosOuter},
+                              {l.cosInner,0,0,0}});
             haveLast=true;
             last=l.key;
         }
