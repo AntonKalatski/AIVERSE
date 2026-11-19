@@ -221,6 +221,45 @@ int main(){
     render::releaseModel(device,aborted);
     assert(device.live.empty());
 
+    // Stage 114: material images are still outside Model::images when
+    // the shared-promotion plan is prepared. One plan must support their
+    // FUTURE append indices and deduplicate the same source across Models.
+    render::Model materialA,materialB;
+    device.complete=false;device.idle=false;
+    {
+        render::ModelImageUploadTransaction tx(device,pool,epoch.lease());
+        auto a=makeImage("mat.png");
+        a.textureKey="textures/material.png";a.textureCache=shared;
+        auto b=makeImage("mat.png");
+        b.textureKey="textures/material.png";b.textureCache=shared;
+        assert(tx.stage(materialA,std::move(a))==0);
+        assert(tx.stage(materialB,std::move(b))==0);
+        const auto refs=tx.pendingImageReferences();
+        assert(refs.size()==2);
+        std::vector<render::ModelTextureCache::PendingImage> proposed;
+        for(const auto& ref:refs)
+            proposed.push_back({ref.model,ref.appendIndex,ref.staged});
+        auto promotion=shared->prepareGpuPromotion({},proposed);
+        assert(promotion.newSharedTextures()==1 && promotion.bindings()==2);
+        assert(shared->gpuCount()==0);
+        assert(materialA.images.empty() && materialB.images.empty());
+        assert(tx.commit()==2);
+        auto duplicates=promotion.commit();
+        assert(duplicates.size()==1);
+        assert(shared->gpuCount()==1);
+        assert(materialA.images[0].borrowedTexture);
+        assert(materialB.images[0].borrowedTexture);
+        assert(materialA.images[0].tex==materialB.images[0].tex);
+        pool.retire(device,std::move(duplicates));
+    }
+    assert(!pool.collect(device));
+    device.complete=true;
+    assert(pool.collect(device));
+    render::releaseModel(device,materialA);
+    render::releaseModel(device,materialB);
+    shared->trim(device);
+    assert(shared->gpuCount()==0 && device.live.empty());
+
     epoch.retire();
     bool stale=false;
     try {
