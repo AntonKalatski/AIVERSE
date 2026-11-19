@@ -242,6 +242,9 @@ class ModelingWindow final : public EditorWindow {
                 ImGui::SameLine();
                 if (ImGui::Button(tr("export").c_str()))
                     call(ed, "modeling_export", modelParams(name_, revision_));
+                ImGui::SameLine();
+                if (ImGui::Button("Attachments"))
+                    ed.focusWindow("animation_attachments");
             }
             if (!message_.empty())
                 ImGui::TextWrapped("%s", message_.c_str());
