@@ -1272,3 +1272,13 @@ rgba16f storage atlas + frame-fence ACK), but it has **NOT BEEN COMPILED OR
 GPU-TESTED**. Do not conflate source support with hardware validation.
 GLES3/WebGL2 continue using the no-compute CPU GI path. Preserve any
 other agents' texture-RHI and renderer changes when rebasing.
+
+
+## Stage 31 — portable GI fragment texture budgets (2026-11-19)
+
+Read `docs/agent-handoffs/gi-stage31-fragment-texture-budget-2026-11-19.md`.
+Renderer3D now checks `gfx::Device::maxFragmentTextureSlots()`: one GI
+atlas requires 14 bindings, optional R8 validity 15, dual cascade 16,
+and Metal-only triple cascade 17. Vulkan reports its true descriptor cap;
+GL/GLES queries GL_MAX_TEXTURE_IMAGE_UNITS. A GLES3/WebGL2 backend must
+never bind tex16. This code and tests are SOURCE ONLY, not yet built.
