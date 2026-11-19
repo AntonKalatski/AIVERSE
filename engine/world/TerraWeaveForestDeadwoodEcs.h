@@ -17,12 +17,15 @@ namespace aiverse::terraweave {
 
 inline void registerTerraWeaveForestDeadwoodPersistence(Simulation& sim) {
     sim.registerPersistentResource<ForestDeadwoodResource>(
-        "terraweave.forest_deadwood",2);
-    // Native ECS save schema changed with the dissolved water and uptake
-    // ledgers. Explicit v1 migration reads the OLD value, whose io() now
-    // promotes it losslessly; saves/hashes always write v2.
+        "terraweave.forest_deadwood",3);
+    // Stage70 schema v3 preserves all v1/v2 coarse 32m dissolved water
+    // as UNASSIGNED legacy state; only a game-validated migration command
+    // may transfer it to 4m body-tagged cells. Save writes v3.
     sim.registerPersistentResourceMigration<ForestDeadwoodResource>(
         "terraweave.forest_deadwood",1,
+        [](Archive& a,ForestDeadwoodResource& item){io(a,item);});
+    sim.registerPersistentResourceMigration<ForestDeadwoodResource>(
+        "terraweave.forest_deadwood",2,
         [](Archive& a,ForestDeadwoodResource& item){io(a,item);});
     sim.world().setResource<ForestDeadwoodResource>(
         ForestDeadwoodResource{});
