@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <limits>
+#include <set>
 #include "PrismaShaders.h"
 
 namespace aiverse::render {
@@ -200,6 +201,31 @@ void Prisma::retireView(uint64_t id) {
     viewDimensions_.erase(id); // the shared size cache itself stays resident
     // If the current presentation view was closed, keep its stable ID for
     // compatibility with callers; the next render seeds fresh history.
+}
+
+size_t Prisma::retireUnregisteredViews(
+        const std::vector<uint64_t>& liveViewIds) {
+    const std::set<uint64_t> live(liveViewIds.begin(),liveViewIds.end());
+    std::set<uint64_t> tracked;
+    const auto append=[&](const auto& map) {
+        for (const auto& [id, state]:map) { (void)state; tracked.insert(id); }
+    };
+    append(exposureViews_);
+    append(temporalViews_);
+    append(adaptiveViews_);
+    append(viewQualityPolicies_);
+    append(viewHistoryAdmissionRejected_);
+    append(scopedGpuTimings_);
+    append(adaptivePressure_);
+    append(motionViews_);
+    append(viewDimensions_);
+    append(requestedOutputSizes_);
+    size_t count=0;
+    for (uint64_t id:tracked) if (!live.contains(id)) {
+        retireView(id);
+        ++count;
+    }
+    return count;
 }
 
 size_t Prisma::retireUnreferencedSizeCaches() {
