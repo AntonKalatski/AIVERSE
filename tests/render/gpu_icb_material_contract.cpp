@@ -4,6 +4,7 @@
 #include "engine/render/GpuMaterialState.h"
 #include <cstdio>
 #include <memory>
+#include <limits>
 
 using namespace aiverse;
 namespace {
@@ -63,7 +64,7 @@ int main() {
     check(!changed.valid(),"nonzero unused graph source rejected");
     changed=a; changed.pbrEnabled=false;
     check(!changed.valid(),"graph sources without U2/PBR rejected");
-    changed=a; changed.pbrU2[1]=__builtin_nanf("");
+    changed=a; changed.pbrU2[1]=std::numeric_limits<float>::quiet_NaN();
     check(!changed.valid(),"nonfinite U2 rejected");
     table.beginFrame(42);
     check(!table.matches(ticket,a),"generation rejects same-frame serial reuse");
