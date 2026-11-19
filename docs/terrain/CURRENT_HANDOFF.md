@@ -4,6 +4,18 @@ Last source stage: **70** (2026-11-19), branch `feature/terraweave`.
 PR #24 is Draft, and must not merge to `main` before native QA and
 cross-branch conflict reconciliation.
 
+## Current integration/QA stage — source features frozen
+
+**Read first:** [2026-11-19 full native QA handoff](qa-2026-11-19-full-integration-handoff.md).
+The existing TerraWeave GCC/Clang workflow had an unterminated CTest
+regex; this has been fixed. It now builds the Stage70 pure nutrient
+test and a native NEREID/ECS/optional-PHYSIS header compile smoke.
+A second Linux+macOS workflow configures/builds all enabled native
+targets and runs all registered CTests in one batch. At creation,
+both GitHub Actions runs were QUEUED, so **no new tests are yet
+confirmed passing**. Do not begin Stage71 before real QA results,
+source fixes, and cross-branch integration.
+
 ## Where to start
 
 1. [Stage 70: sparse body-tagged 4m nutrient ledger and v3 save migration](stage-70-sparse-micro-nutrients-handoff.md)
