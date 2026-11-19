@@ -212,6 +212,9 @@ void Renderer3D::invalidateModelCachesFor(const Model* model) {
             ++staticRenderPacketStats_.evicted;
         } else ++it;
     }
+    // A mixed-model command layout borrows every source Model pointer.
+    // Asset unload must not leave any of those pointers in a layout cache.
+    retireIndirectLayoutsFor(model);
 }
 
 void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
@@ -343,6 +346,7 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     ssrThisFrame_ = false;
     items_.clear(); lines_.clear(); tris_.clear(); custom_.clear(); customOpaque_.clear(); customShadow_.clear();
     modelItems_.clear(); jointData_.clear(); morphData_.clear(); modelStats_ = {};
+    maintainIndirectLayoutCaches(); // prune unused layouts even in empty scenes
     lodDebugSample_ = {}; // selected instance is tracked per viewport beginScene
     // ModelItem pointers are valid only within this scene; never reuse their
     // material identity across frames, asset reloads or another viewport.

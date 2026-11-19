@@ -691,6 +691,13 @@ private:
                 ImGui::Text("MDI exact-layout zero-copy: %llu submissions / %.1f KiB CPU copies avoided",
                     (unsigned long long)modelStats.mdiLayoutZeroCopySubmissions,
                     double(modelStats.mdiLayoutCopyAvoidedBytes) / 1024.0);
+                const auto layoutCache = ed.renderer().indirectLayoutCacheStats();
+                ImGui::Text("MDI layout CPU cache: %zu entries / %.1f KiB retained",
+                    layoutCache.entries, double(layoutCache.retainedBytes) / 1024.0);
+                ImGui::Text("MDI layout cache: %llu retired / %llu capacity-bypassed attempts",
+                    (unsigned long long)layoutCache.retired,
+                    (unsigned long long)modelStats.mdiLayoutCacheBypassed);
+                ImGui::TextDisabled("Per-pass 96-entry cap, 256 items/layout; stale after 120 scenes.");
                 if (const char* shared = std::getenv("AIVERSE_STATIC_CROSS_MODEL_BATCHES");
                     shared && std::strcmp(shared, "1") == 0) {
                     ImGui::Text("Static cross-model MDI: %llu submissions / %llu commands / %llu items",

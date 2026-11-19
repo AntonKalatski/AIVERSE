@@ -169,6 +169,18 @@ and the MDI pipeline still validates full material and geometry state.
 The group-order scratch vector is reused and included in retained memory;
 `staticCrossModelRankedGroups` reports ranked groups, **not draw calls**.
 Do not cache these ranks across passes or change transparency ordering.
+ Stage 26 bounds the per-phase positional CPU MDI layout cache to
+ 96 entries of at most 256 items each. Cache overflow must use the
+ uncached command scratch and must never omit a GPU draw. Each exact
+ signature includes Model identity, geometry revision, GPU VB/IB IDs,
+ primitive identity and index/base offsets. Unloading a Model calls
+ retireIndirectLayoutsFor(model) through invalidateModelCachesFor and
+ retires whole mixed-model command groups referencing it. Full scene
+ invalidation/shutdown frees layouts; beginScene ages out entries idle
+ 120 scenes, even in empty scenes. The zero-copy cached command vector
+ must never be invalidated *during* drawIndexedIndirect submission.
+ The editor reports retained CPU layout bytes, retired entries and
+ capacity bypasses. These are not frame-time or GPU bandwidth metrics.
  Stage 25 additionally removes the indirect layout cache's CPU-to-CPU
  command-array copy on exact signature hits: `drawModelIndirectBatch`
  reads `IndirectLayoutEntry::commands` directly until synchronous

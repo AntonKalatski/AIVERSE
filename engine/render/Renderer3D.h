@@ -211,6 +211,9 @@ struct ModelRenderStats {
     // layout, without copying cached CPU commands into transient scratch.
     uint64_t mdiLayoutZeroCopySubmissions = 0;
     uint64_t mdiLayoutCopyAvoidedBytes = 0;
+    // Exact-layout caching declined because the per-pass bounded cache is
+    // full or this batch exceeds the maximum cached signature length.
+    uint64_t mdiLayoutCacheBypassed = 0;
     // CPU MDI groups spanning at least two different Model instances
     // using the SAME pooled vertex/index arena, after independent LOD and
     // per-view culling. These are successful submissions, not candidates.
@@ -316,6 +319,7 @@ public:
         cpuMdiPages_.clear(); // reset page-specific costs on whole-scene reload
         cpuMdiAdaptive_ = {};
         staticCrossPreflight_.release(); // retire temporary scene identities/capacity
+        clearIndirectLayoutCaches(); // release borrowed primitive/model references
         staticRenderPacketBytes_ = 0;
         staticMaterialOwnerBytes_ = 0;
     }
@@ -449,6 +453,12 @@ public:
     void setGpuAuthoredDrawEnabled(bool on) { gpuAuthoredDrawEnabled_ = on; }
     bool modelMultiDrawSupported() const { return dev_ && dev_->supportsMultiDrawIndirect(); }
     const ModelRenderStats& modelStats() const { return modelStats_; }
+    struct IndirectLayoutCacheStats {
+        size_t entries = 0, retainedBytes = 0;
+        uint64_t retired = 0;
+    };
+    // Retained CPU layout storage only; does not include GPU command buffers.
+    IndirectLayoutCacheStats indirectLayoutCacheStats() const;
     // 0 = sun shadow, 1 = opaque main view; CPU time only, no GPU timestamps.
     const std::array<CpuMdiAdaptiveFeedback, 2>& cpuMdiAdaptiveFeedback() const {
         return cpuMdiAdaptive_;
@@ -656,6 +666,11 @@ private:
     // Experimental persistent indirect command layout. Cache entries are
     // validated against the full per-item geometry signature on every use.
     struct IndirectLayoutItem {
+        // Borrowed only while the asset is loaded. Model unload explicitly
+        // retires dependent layouts before these pointers can be recycled.
+        const Model* model = nullptr;
+        uint64_t geometryRevision = 0;
+        uint32_t vertexBuffer = 0, indexBuffer = 0;
         const void* primitive = nullptr;
         uint32_t indexCount = 0, firstIndex = 0, gpuFirstIndex = 0, gpuBaseVertex = 0;
         bool operator==(const IndirectLayoutItem&) const = default;
@@ -664,9 +679,22 @@ private:
         std::vector<IndirectLayoutItem> signature;
         std::vector<gfx::DrawIndexedIndirectCommand> commands;
         uint64_t triangles = 0;
+        uint64_t lastUsedScene = 0; // ageing across beginScene epochs
     };
+    // There are five model phases (shadow, opaque, blended, outline, depth).
+    // Limit both positional entries and per-entry signature size: at most
+    // 96 * 5 * 256 retained item signatures/commands across all phases.
+    // Larger scenes still render normally using indirectCommandScratch_.
+    static constexpr size_t kMaxMdiLayoutsPerPhase = 96;
+    static constexpr uint32_t kMaxMdiCachedItems = 256;
+    static constexpr uint64_t kMdiLayoutIdleScenes = 120;
     std::vector<IndirectLayoutEntry> indirectLayoutCache_[5];
     size_t indirectLayoutCursor_[5] = {};
+    uint64_t indirectLayoutSceneEpoch_ = 0;
+    uint64_t indirectLayoutsRetired_ = 0;
+    void clearIndirectLayoutCaches();
+    void retireIndirectLayoutsFor(const Model* model);
+    void maintainIndirectLayoutCaches();
     bool modelMultiDrawEnabled_ = true;
     // Optional CPU MDI sorter for static rigid meshes sharing one GPU arena.
     // Never bypass per-object culling, LOD, material or shader compatibility.

@@ -795,3 +795,32 @@ Connected GitHub fetched existing code, confirmed `main` ancestry, and staged ex
 ### Next work
 
 Continue feature-first work by auditing excessive per-pass `indirectLayoutCache_` high-water growth and explicit retirement/invalidation on scene unload, or move to focused policy tests when requested. Test exact-layout hit/miss GPU command parity, zero-copy lifetime across renderer shutdown/cache invalidation, palette 64-limit and backend fallbacks, and record real A/B/A before merge.
+
+---
+
+## Stage 26 — bounded CPU MDI layout cache, idle ageing and model unload retirement (2026-11-19)
+
+**Branch:** `chromealex/AIVERSE:perf/incremental-static-model-cache`, Draft PR #34. **At start:** `main=9ee6ff6fbf390bd45363bc92c838f492dfe92eee` and feature HEAD `99702417144f1e09bc71a6196268328fe14f89fe`, with `main...feature behind=0`. Main was not modified. User directive remains **features first; tests later**.
+
+### Feature and architecture
+
+- `engine/render/Renderer3D.h`: positional layout cache bounded to **96 entries per phase** and **256 items per entry** (five phases), plus idle retirement after 120 `beginScene` epochs. `IndirectLayoutItem` now stores owner `Model*`, `geometryRevision`, GPU VB/IB IDs, primitive pointer and existing exact command geometry fields. `IndirectLayoutEntry::lastUsedScene` enables aging; `IndirectLayoutCacheStats` exposes live entries, retained CPU capacity in bytes, cumulative retired entries; `ModelRenderStats::mdiLayoutCacheBypassed` counts current-scene attempts bypassing the cache due to limits. Renderer-private clear/targeted-retire/maintenance methods own the layout vectors; no GPU resources are owned by them.
+- `engine/render/Renderer3DModels.cpp`: cache entry lookup refuses to create entries past bounds, falls through to the unchanged indirect-command scratch/real GPU upload and MDI submission. Warm-hit signature validation checks every model/revision/VB/IB/primitive/index field before borrowing cached commands. `clearIndirectLayoutCaches` frees all slots; `retireIndirectLayoutsFor(model)` removes **every** cached group with a matching source Model pointer (including mixed-model batches) without dereferencing it; `maintainIndirectLayoutCaches` ages out unused records and reclaims high-water vector capacity when notably underused; `shutdownModels` clears both cache and scratch. All invalidation calls belong **between rendering passes** to protect Stage 25 zero-copy borrows until their synchronous backend call returns.
+- `engine/render/Renderer3D.cpp`: `beginScene` ages caches regardless of scene visibility (even when no `renderModels` runs), while existing `invalidateModelCachesFor` now retires dependent layouts before an asset is unloaded.
+- `engine/render/Renderer3D.h`: existing inline `invalidateStaticModelCaches()` now frees the layout cache too on full scene reload.
+- `apps/editor/windows/SceneWindow.cpp`: display CPU cache retained entries/bytes, cumulative retired layouts and current-scene capacity bypass count.
+- `docs/geometry-performance.md`, `AGENTS.md`, this handoff: documented ownership, API, actual checks and follow-up.
+
+### Invariants, tradeoffs, API contracts
+
+The new cap bounds the number of retained source signature/command items, **not** submitted primitives: uncached batches still use the same `drawModelIndirectBatch` shader/pipeline checks and `dev_->drawIndexedIndirect` upload/fallback. The cache's historical positional lookup behavior remains, and no cross-frame cached visibility, LOD, textures or GPU command buffers are introduced. Invalid/stale model data is rejected by exact signature checks. Targeted model retirement removes complete mixed-model records; other records may shift slot position and safely cold-rebuild. Age 120 counts renderer `beginScene` invocations (multiple viewports may advance it faster than game frames), not wall-clock seconds. Retained storage includes vector capacity; the ordinary uncached scratch is excluded from the displayed cache budget.
+
+**No default flags changed.** `AIVERSE_STATIC_CROSS_MODEL_BATCHES`, `AIVERSE_PERSISTENT_CPU_PACKETS` and experimental GPU ICB remain OFF by default. `AIVERSE_MDI_LAYOUT_CACHE=off` preserves uncached CPU MDI.
+
+### Actual verification
+
+GitHub source inspection verified pre-stage cursor, model unload and shutdown paths; edits were applied via exact single-match replacements with a leased branch HEAD and then read-back inspection. **Native CMake/CTest NOT RUN; Metal image parity NOT RUN; dense-city CPU/GPU A/B/A NOT RUN.** Therefore compilation, correctness under a real backend and performance improvements are unverified. PR remains Draft.
+
+### Next action
+
+Feature-first follow-up: audit the GPU indirect command buffer capacity/resizing behavior and its GPU upload costs, preserving backend snapshot lifetime, or advance to tests once feature work is complete. Future tests must exercise entry cap fallback, big batches, model unload with mixed-model layouts, age/cursor rollover and zero-copy warm replay; reconcile older Stages 10/11/13 policy assertions, then Metal OFF/ON raster parity and fixed-scene A/B/A before merging.

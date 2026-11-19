@@ -849,3 +849,39 @@ The existing `AIVERSE_MDI_LAYOUT_CACHE=off` mode bypasses reuse.
 Source/connector consistency was inspected, but **native compilation,
 CTest, Metal image parity and CPU/GPU benchmarks were not run**;
 the experimental cross-model path remains OFF by default.
+
+### Bounded MDI layout cache and safe asset retirement (Stage 26)
+
+The CPU `drawModelIndirectBatch` positional command cache now has a
+bounded capacity of **96 entries per phase** (five model phases) and **256
+source items per entry**. Beyond either bound, it continues using the
+existing renderer-owned uncached `indirectCommandScratch_` and still
+submits exactly the same validated GPU indirect commands; it never drops
+a draw or silently switches to another shader/material. Worst-case
+retained signature and command payload are bounded by the fixed entry
+and per-entry sizes, rather than growing indefinitely with city size.
+
+Each cached signature now includes the source `Model*`, its
+`geometryRevision`, GPU vertex/index buffer IDs, and the original
+primitive pointer/index/base-vertex fields. The renderer still checks
+the **complete current signature** before every warm replay.
+`invalidateModelCachesFor(model)` retires *all* dependent command
+layouts, including mixed-model groups with one unloaded member,
+comparing stored pointers without dereferencing them. The public
+`invalidateStaticModelCaches()` clears all command layouts on full
+scene reload. `shutdownModels()` releases retained layout vectors
+and scratch as part of renderer shutdown. Call invalidation on the
+renderer/submission thread **between** passes, not during a borrowed
+zero-copy command upload.
+
+Every `beginScene()` advances a renderer-local ageing epoch and removes
+entries idle for more than 120 scenes, including when no renderModels
+phase executes. Positional layouts may shift after removal, producing
+a safe full-signature miss/rebuild rather than stale reuse. Entry
+vector memory is reclaimed when substantially underused after pruning.
+Scene → Batching exposes retained CPU layout entries/bytes, cumulative
+retirements and current-scene capacity bypass attempts; these figures
+do not describe GPU memory or GPU performance. `AIVERSE_MDI_LAYOUT_CACHE=off`
+continues to disable all command caching. Feature-first implementation
+is **not yet compiled, CTest-validated, visually compared on Metal or
+A/B benchmarked**.

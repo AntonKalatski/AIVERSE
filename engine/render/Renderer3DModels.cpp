@@ -77,7 +77,83 @@ void Renderer3D::initModels() {
     setInstanceLimit(0);
 }
 
+
+void Renderer3D::clearIndirectLayoutCaches() {
+    // Call between render passes, never while drawModelIndirectBatch borrows
+    // entry.commands for its synchronous GPU upload/submission.
+    for (size_t phase = 0; phase < 5; ++phase) {
+        indirectLayoutsRetired_ += indirectLayoutCache_[phase].size();
+        std::vector<IndirectLayoutEntry>().swap(indirectLayoutCache_[phase]);
+        indirectLayoutCursor_[phase] = 0;
+    }
+}
+
+void Renderer3D::retireIndirectLayoutsFor(const Model* model) {
+    if (!model) return;
+    // Compare borrowed pointer identity only: never inspect an unloaded Model.
+    // A mixed-model indirect layout must be retired if ANY source unloads.
+    for (size_t phase = 0; phase < 5; ++phase) {
+        auto& entries = indirectLayoutCache_[phase];
+        const size_t before = entries.size();
+        entries.erase(std::remove_if(entries.begin(), entries.end(),
+            [model](const IndirectLayoutEntry& entry) {
+                return std::any_of(entry.signature.begin(), entry.signature.end(),
+                    [model](const IndirectLayoutItem& item) {
+                        return item.model == model;
+                    });
+            }), entries.end());
+        indirectLayoutsRetired_ += before - entries.size();
+        if (entries.size() != before) {
+            indirectLayoutCursor_[phase] = 0;
+            if (entries.size() * 2 < entries.capacity())
+                entries.shrink_to_fit();
+        }
+    }
+}
+
+void Renderer3D::maintainIndirectLayoutCaches() {
+    // No renderModels call is needed to age out a scene's old layouts:
+    // empty scenes and changed viewports also release inactive entries.
+    if (++indirectLayoutSceneEpoch_ == 0) {
+        clearIndirectLayoutCaches();
+        indirectLayoutSceneEpoch_ = 1;
+    }
+    if (indirectLayoutSceneEpoch_ <= kMdiLayoutIdleScenes) return;
+    const uint64_t cutoff = indirectLayoutSceneEpoch_ - kMdiLayoutIdleScenes;
+    for (size_t phase = 0; phase < 5; ++phase) {
+        auto& entries = indirectLayoutCache_[phase];
+        const size_t before = entries.size();
+        entries.erase(std::remove_if(entries.begin(), entries.end(),
+            [cutoff](const IndirectLayoutEntry& entry) {
+                return entry.lastUsedScene < cutoff;
+            }), entries.end());
+        indirectLayoutsRetired_ += before - entries.size();
+        if (entries.size() != before) {
+            indirectLayoutCursor_[phase] = 0;
+            if (entries.size() * 2 < entries.capacity())
+                entries.shrink_to_fit();
+        }
+    }
+}
+
+Renderer3D::IndirectLayoutCacheStats Renderer3D::indirectLayoutCacheStats() const {
+    IndirectLayoutCacheStats stats{};
+    stats.retired = indirectLayoutsRetired_;
+    for (const auto& entries : indirectLayoutCache_) {
+        stats.entries += entries.size();
+        stats.retainedBytes += entries.capacity() * sizeof(IndirectLayoutEntry);
+        for (const auto& entry : entries) {
+            stats.retainedBytes += entry.signature.capacity() * sizeof(IndirectLayoutItem);
+            stats.retainedBytes += entry.commands.capacity() *
+                sizeof(gfx::DrawIndexedIndirectCommand);
+        }
+    }
+    return stats;
+}
+
 void Renderer3D::shutdownModels() {
+    clearIndirectLayoutCaches();
+    std::vector<gfx::DrawIndexedIndirectCommand>().swap(indirectCommandScratch_);
     if (indirectCommands_.valid()) dev_->destroyBuffer(indirectCommands_);
     indirectCommands_ = {};
     modelError_.clear();
@@ -1266,17 +1342,27 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     uint64_t triangles = 0;
     bool cacheHit = false;
     IndirectLayoutEntry* cacheEntry = nullptr;
-    if (layoutCaching) {
+    if (layoutCaching && count <= kMaxMdiCachedItems) {
         auto& entries = indirectLayoutCache_[size_t(phase)];
         const size_t cursor = indirectLayoutCursor_[size_t(phase)]++;
-        if (cursor == entries.size()) entries.emplace_back();
-        cacheEntry = &entries[cursor];
-        // Compare exact geometry signatures, not hashes: stale model pointers,
-        // mesh reloads and LOD changes must never reuse invalid commands.
+        if (cursor < kMaxMdiLayoutsPerPhase) {
+            if (cursor == entries.size()) entries.emplace_back();
+            cacheEntry = &entries[cursor];
+            cacheEntry->lastUsedScene = indirectLayoutSceneEpoch_;
+        }
+    }
+    if (layoutCaching && !cacheEntry)
+        ++modelStats_.mdiLayoutCacheBypassed;
+    if (cacheEntry) {
+        // Compare exact model, revision, GPU handles and primitive geometry.
+        // Unloaded assets are explicitly retired before pointers can recycle.
         cacheHit = cacheEntry->signature.size() == count;
         if (cacheHit) for (uint32_t n = 0; n < count; ++n) {
             const auto& part = modelItems_[items[n]];
-            const IndirectLayoutItem current{part.prim, part.indexCount, part.firstIndex,
+            const IndirectLayoutItem current{
+                part.model, part.model->geometryRevision,
+                part.model->vb.id, part.model->ib.id,
+                part.prim, part.indexCount, part.firstIndex,
                 part.model->gpuFirstIndex, uint32_t(part.model->gpuBaseVertex)};
             if (!(cacheEntry->signature[n] == current)) {
                 cacheHit = false;
@@ -1317,7 +1403,10 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
             cacheEntry->signature.reserve(count);
             for (uint32_t n = 0; n < count; ++n) {
                 const auto& part = modelItems_[items[n]];
-                cacheEntry->signature.push_back({part.prim, part.indexCount, part.firstIndex,
+                cacheEntry->signature.push_back({
+                    part.model, part.model->geometryRevision,
+                    part.model->vb.id, part.model->ib.id,
+                    part.prim, part.indexCount, part.firstIndex,
                     part.model->gpuFirstIndex, uint32_t(part.model->gpuBaseVertex)});
             }
             cacheEntry->commands = scratch;
