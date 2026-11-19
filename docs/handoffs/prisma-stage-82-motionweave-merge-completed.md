@@ -71,3 +71,39 @@ Both appended animation handoff histories preserved. No save/API feature changes
 beyond the source branch. `git diff --check` clean; unmerged path list empty.
 Build/CTest/GPU/CI: **NOT RUN** by user request; runtime compatibility unverified.
 Next: merge the remote integration documentation, final ancestry check and push.
+
+
+## Final merge checkpoint — 2026-11-20
+
+Final merge commit: `5a01b4561d95c890d9a2ecd5724b04850fe1bf3e`. Branch: `integration/prisma-motionweave-view`.
+The final merge preserves remote integration handoffs 77–81 from
+`5709e43456c4fcea0301837551dab3b727b2b3d8`; it changes only five documentation
+files. Code merges are `fc46059ee6523cbc1f04f8c412d44e4fdae9398a` and
+`57c839bff` (latest MotionWeave). This separate documentation commit follows
+the final merge; its own SHA is the published branch tip, not a self-reference.
+
+Final read-only checks actually executed:
+- `git merge-base --is-ancestor origin/feature/prisma-postfx HEAD`: exit 0.
+- `git merge-base --is-ancestor origin/feature/universal-ecs-animation-pipeline HEAD`: exit 0.
+- `git merge-base --is-ancestor origin/integration/prisma-motionweave-view HEAD`: exit 0.
+- `git diff --name-only --diff-filter=U`: empty.
+- Conflict-marker scan over apps/engine/modules C++ headers/sources: no matches.
+- Source scan: one Viewport destructor, no second PostFx/FogOfWar class,
+  no obsolete offscreenTargets/setTargetOwner calls in integrated source.
+- `git diff --check db607e5879347d78ccab44ad5457c007a54c9145 HEAD -- apps engine modules`: clean.
+- `git diff --check HEAD^ HEAD`: clean for final documentation merge.
+- `git status --short`: only the user's pre-existing untracked
+  `prisma-motionweave-conflicts.zip`, left untouched and uncommitted.
+
+Build/CMake/CTest/GPU/sanitizer/benchmark/CI validation: **NOT RUN**. No CI
+workflow manually dispatched; no green status or runtime parity claim.
+No changes to main or source branches, no force-push, no reset --hard.
+
+| Subsystem | Status | Remaining work |
+|---|---|---|
+| Prisma + MotionWeave/View integration | implemented in source | none within merge scope |
+| Native compilation and GPU/runtime parity | not tested | separate user-authorized validation |
+
+Next action for this task: ordinary push of the integration branch, verify
+remote tip matches local HEAD. Future agents should start from this handoff;
+do not continue feature development or run tests under this merge-only request.

@@ -3151,3 +3151,12 @@ Both appended animation handoff histories preserved. No save/API feature changes
 beyond the source branch. `git diff --check` clean; unmerged path list empty.
 Build/CTest/GPU/CI: **NOT RUN** by user request; runtime compatibility unverified.
 Next: merge the remote integration documentation, final ancestry check and push.
+
+
+## 2026-11-20 — Final integration merge
+
+Final merge `5a01b4561d95c890d9a2ecd5724b04850fe1bf3e` on `integration/prisma-motionweave-view` contains
+both source tips and remote integration handoffs. See
+[merge handoff](../handoffs/prisma-stage-82-motionweave-merge-completed.md).
+Source/ancestry checks complete; build/CTest/GPU/CI **NOT RUN** by merge-only
+request. Next: ordinary integration-branch push and remote SHA verification.
