@@ -50,6 +50,9 @@ struct ComputeEmitterDesc {
     bool gpuMaterial = false;
     Json shaderGraph;
     Json graphInputs; // four vertex graphData source names
+    // Opt-in async checkpoint cadence (0 = disabled). One full capture is
+    // at most 512 KiB / eight 64 KiB reads at capacity 4096.
+    uint32_t checkpointEveryFrames = 0;
 };
 
 bool validComputeEmitter(const ComputeEmitterDesc&, std::string* reason = nullptr);
@@ -60,6 +63,7 @@ struct ComputeStats {
     uint32_t submittedSlots = 0; // dense GPU quads published from live-slot map
     uint32_t gpuFallbacks = 0, lostOnFallback = 0;
     uint32_t recoveredOnFallback=0;
+    uint32_t checkpointRequests=0, checkpointCompleted=0, checkpointFailed=0;
     uint32_t gpuCompactDispatches = 0, gpuIndirectDraws = 0;
     uint32_t gpuVmErrorsLastRead = 0;
     bool gpuVmErrorsKnown = false; // unknown until a successful diagnostic read
@@ -104,6 +108,9 @@ public:
     // Blocking diagnostics only, between COMPLETED frames (Metal's readBuffer
     // rejects open command buffers). This is not CPU ParticleSystem import.
     bool captureGpuCheckpoint(GpuCheckpoint& out);
+    // Enqueues bounded async chunks, returns false if it cannot start.
+    // Callback reports whether all three buffers formed a complete snapshot.
+    bool requestGpuCheckpoint(std::function<void(bool)> callback = {});
     const std::string& reason() const { return reason_; }
     const ComputeStats& stats() const { return stats_; }
     const fx::ParticleSystem& cpuFallback() const { return cpu_; }
@@ -176,6 +183,8 @@ private:
     uint64_t vmFrameRevision_ = 0;
     uint64_t checkpointRevision_ = 0;
     GpuCheckpoint lastCheckpoint_;
+    bool asyncCheckpointPending_ = false;
+    uint64_t checkpointFrameCounter_ = 0;
 };
 
 } // namespace aiverse::spectra
