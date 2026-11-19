@@ -1,5 +1,14 @@
 # TerraWeave — current agent handoff entry point
 
+> **Stage70 native NEREID search bound — 2026-11-20:**
+> `4cd0ca4d` guards the public nearest-4m-cell helper against
+> excessive radius/invalid body ID/missing sampler. `1316a51c`
+> adds headless native regression cases. Read the
+> [bounded NEREID search handoff](qa-2026-11-20-stage70-bounded-nereid-search-handoff.md).
+> **Source committed; Clang/GCC, CMake, CTest, PHYSIS/NEREID/Box3D live
+> integration and GPU QA NOT RUN.** Draft PR #53 remains open.
+>
+
 
 > **Stage70 65k cap regression (2026-11-20):**
 > `0f3ec2da` adds a pure CTest fixture covering the full
