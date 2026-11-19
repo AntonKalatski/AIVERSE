@@ -9923,3 +9923,56 @@ indirection / Shader Graph GPU ICB. Keep PR #21 Draft.
 The primary AIVERSE worktree still has unrelated
 unfinished rebase; do not touch it.
 
+
+## Stage 10BL — real native Metal physical VT page-table PASS (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Source acceptance baseline:** 10BK in opt-in
+`tests/render/metal_texture_gpu.mm`, prior branch HEAD
+`26f73151a92d0ada0cc76bc918175e3cdffc59b2`.
+**Docs checkpoint:** `77944be3b06bb1a6de7ce93b12790405674d5c08`,
+`docs/texture-rhi.md`.
+**User execution context:** Mac Studio in isolated
+`AIVERSE-texture-verify-20261119-150819` worktree,
+previously identified native device `Metal Apple M3 Ultra`.
+
+**Actually observed native GPU evidence:** user pasted verbose
+`metal_texture_gpu` output with GPU exact RGBA8 PASS lines
+for `VT GPU fine-page override`,
+`VT GPU table invalidated before slot reuse`,
+`VT overwritten physical page contains replacement`,
+`VT GPU table after LRU republish`,
+`VT GPU page table falls back after explicit eviction`.
+All used **tolerance 0**. CTest #122 returned
+`Passed 1.62 sec`, 100% (1/1), 0 failed, total CTest 1.63 s.
+Last fixture PASS line explicitly mentions subresources,
+fragment sampling, VT feedback/page table and async readback.
+
+**Reported timings:** 177.399 ms for complete physical atlas
+publication subtest; full fixture 1221.715 ms,
+body 475.428 ms. Fine publish GPU command 0.018 ms;
+old mapping invalidation 0.005 ms; LRU republish
+0.006 ms; explicit eviction 0.005 ms. Corresponding
+readback callback waits ~20 ms; those are owner-thread
+frame/synchronization waits and must not be equated
+with GPU physical-page copy time. No invented GPU benchmark.
+
+**Behavior/architecture:** Existing production
+`VirtualTextureStreamer`, `VirtualTexturePageTable`
+and real Metal backend are now accepted for the specified
+tiny page data, coarse/fine/LRU mapping/byte parity.
+No production or test source modifications in this bounded
+result stage. **Still unverified**: actual disk worker/file
+payloads through `VirtualTextureFileStreamer`,
+shader sample of the page-table indirection, material
+Shader Graph GPU ICB and other GPU backends.
+
+**Next concrete action:** implement an opt-in native Metal
+file-backed streaming test with real temporary page files,
+`VirtualTextureFileStreamer` worker, bounded owner-thread
+`pump()`, exact atlas/page-table readbacks and cleanup.
+Record source commit plus separate handoff. Do not edit
+the primary AIVERSE worktree, which still has an unrelated
+unfinished rebase, or merge Draft PR #21 before remaining
+hardware acceptance.
+
