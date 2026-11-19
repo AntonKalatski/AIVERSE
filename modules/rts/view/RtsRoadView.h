@@ -30,7 +30,7 @@ public:
     // Called only at a frame boundary, BEFORE this frame's scene submissions.
     // Polls actual GPU retirement tokens, never frame-count heuristics.
     void collectRetired(gfx::Device& dev) { (void)retirement_.collect(dev); }
-    size_t pendingModelRetirements() const noexcept {return retirement_.pending();}
+    size_t pendingGpuRetirements() const noexcept {return retirement_.pending();}
     // the map (its "roadNetwork"); rebuilt on the next draw. Errors go to warnings().
     void setMap(const Json& map);
     void setNetwork(const RoadNetwork& n) { net_ = n; dirty_ = true; hasNet_ = true; }
