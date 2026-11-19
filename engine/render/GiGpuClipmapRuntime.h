@@ -5,6 +5,7 @@
 #pragma once
 #include "GiClipmapVolume.h"
 #include "GiGpuTicketQueue.h"
+#include "GiGpuChunkBvhCache.h"
 #include "Renderer3D.h"
 #include <algorithm>
 #include <cmath>
@@ -79,12 +80,47 @@ public:
         return true;
     }
 
+    // Reuses per-chunk CPU BLAS from the supplied cache and, when the combined
+    // packet layout stays unchanged, performs sparse Metal storage-buffer uploads.
+    // The immutable snapshot remains owned by this runtime after publication.
+    bool setGeometryCached(std::shared_ptr<const GiChunkedGeometrySnapshot> scene,
+                           uint64_t revision,GiGpuChunkBvhCache& cache,
+                           GiGpuChunkBvhCache::Stats* cacheStats=nullptr) {
+        if(!ready() || busy() || !scene || revision==0)return false;
+        const auto stats=cache.refresh(*scene);
+        const auto packet=cache.pack();
+        if(!queue_.setPackedGeometry(gpu_,packet,revision))return false;
+        if(cacheStats)*cacheStats=stats;
+        scene_=std::move(scene);
+        volume_.invalidateAll(GiDirtyReason::Geometry);
+        return true;
+    }
+
     bool setGeometryRegion(std::shared_ptr<const GiChunkedGeometrySnapshot> scene,
                            uint64_t revision,GiBounds bounds,float extraRadius=0) {
         if(!ready() || busy() || !scene_ || !scene || revision==0 ||
            !std::isfinite(extraRadius) || extraRadius<0 ||
            !validBounds(bounds))return false;
         if(!queue_.setGeometry(gpu_,*scene,revision))return false;
+        scene_=std::move(scene);
+        float margin=traceDistance_+extraRadius;
+        for(const auto& light:lights_)
+            margin=std::max(margin,traceDistance_+light.radius+extraRadius);
+        volume_.invalidate(bounds,GiDirtyReason::Geometry,margin);
+        return true;
+    }
+
+    bool setGeometryRegionCached(
+            std::shared_ptr<const GiChunkedGeometrySnapshot> scene,
+            uint64_t revision,GiBounds bounds,GiGpuChunkBvhCache& cache,
+            float extraRadius=0,GiGpuChunkBvhCache::Stats* cacheStats=nullptr) {
+        if(!ready() || busy() || !scene_ || !scene || revision==0 ||
+           !std::isfinite(extraRadius) || extraRadius<0 || !validBounds(bounds))
+            return false;
+        const auto stats=cache.refresh(*scene);
+        const auto packet=cache.pack();
+        if(!queue_.setPackedGeometry(gpu_,packet,revision))return false;
+        if(cacheStats)*cacheStats=stats;
         scene_=std::move(scene);
         float margin=traceDistance_+extraRadius;
         for(const auto& light:lights_)
