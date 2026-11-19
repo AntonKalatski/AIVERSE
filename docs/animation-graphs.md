@@ -782,3 +782,23 @@ This does not add a second AnimationGraph update, ECS simulation writer,
 root motion authority or genre dependency. Native build/CTest, GPU
 failure injection, visual hot reload and sanitizers were **NOT RUN**.
 See [Stage 118 handoff](agent-handoffs/animation-stage118-gpu-init-rollback-2026-11-19.md).
+
+## Stage 119 — compatible MotionWeave playback state across hot reload
+
+`AnimationGraphInstance::snapshotPlayback()/restorePlayback()` now
+capture an authored state name and normalized named clip node phases.
+On the SAME source generation and compatible ordered bone hierarchy,
+`MotionWeaveSourceBridge` attaches this one-shot snapshot to the
+presentation ECS player while replacing its Model/Graph. After
+resetting the new compiled graph, the evaluator restores matching
+state/node/clip/loop identities with the new clip duration, and
+re-evaluates a fresh pose without duplicating time-zero notifies.
+New graph contacts, rig/native state, montage slots, pose matrices
+and unwrapped notify cycles begin clean. Incompatible hierarchy or
+respawn generation intentionally restarts from authored defaults.
+
+The host must keep the old Model and Graph valid until bridge sync
+and never run presentation ECS mutation during MotionWeave worker
+dispatch. This is not a simulation snapshot or authority transfer.
+**NOT RUN:** build, CTest, GPU editor, FPS/RTS visual parity, sanitizers.
+See [Stage 119 handoff](agent-handoffs/animation-stage119-playback-continuity-2026-11-19.md).
