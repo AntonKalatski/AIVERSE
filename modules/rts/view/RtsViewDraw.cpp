@@ -126,11 +126,15 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
         (o.entity.valid() ? o.entity.packed() : 0);
     d.model = show->model;
     if (!tintOverride && o.type < actorRevealTypes_.size() && actorRevealTypes_[o.type]) d.flags |= kDrawActorReveal;
-    d.geometry = show->geometry;
+    // Hot-reloaded choices pin an immutable published appearance snapshot.
+    // The owning TypeLook keeps it alive across this synchronous submission.
+    const auto& appearance=show->appearanceSnapshot;
+    d.geometry = appearance ? appearance->geometry : show->geometry;
     d.world = reusePlacement ? cached.world : base * st.objXf * show->fix;
-    d.materials = &show->materials;
-    d.nodeMaterial = show->nodeMaterial.empty() ? nullptr : &show->nodeMaterial;
-    d.variant = show->variant;
+    d.materials = appearance ? &appearance->materials : &show->materials;
+    const auto* assigned=appearance ? &appearance->nodeMaterial : &show->nodeMaterial;
+    d.nodeMaterial = assigned->empty() ? nullptr : assigned;
+    d.variant = appearance ? appearance->variant : show->variant;
     st.drawn = reusePlacement ? cached.drawn : base * st.objXf * ch.fix;
     if (immutablePlacement && !reusePlacement) {
         cached.pos = o.pos;
