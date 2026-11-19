@@ -41,7 +41,8 @@ struct LumaNativeViewInput {
 struct LumaNativeViewResult {
     LumaNativeFrameStats sources{};
     LumaWeaveScreenMetal::Completion priorGpuCompletion{};
-    GiCascadeFrame giFrame{};           // actual submitted/dirty probe tickets
+    GiCascadeFrame giFrame{};           // submitted/dirty after point sync
+    GiCascadeFrame giPollFrame{};       // previous GPU completions before sync
     LumaGiSyncStatus giSourceSync{};    // meaningful if sync was requested
     bool giRequested=false;
     bool giBound=false;
@@ -64,9 +65,18 @@ public:
         // LightSystem/lighting path remains fully available.
         return post_.initialize(device_);
     }
-    bool shutdown(){return post_.shutdown();}
+    bool shutdown(){
+        if(!post_.shutdown())return false;
+        coordinator_.resetGiSourceSync();
+        lastGiRuntime_=nullptr;
+        lastGiSynchronization_=false;
+        return true;
+    }
     LumaWeavePostProcess& gpuPost(){return post_;}
     LumaWeaveNativeCoordinator& coordinator(){return coordinator_;}
+    // Explicitly call when an external host replaces/reinitializes the same
+    // GiGpuCascadeRuntime object at the SAME address.
+    void resetGiSourceSync(){coordinator_.resetGiSourceSync();}
 
     // Requires the host has ALREADY called device.beginFrame and completed
     // ECS/SpectraFX read barriers. One view at a time. The submitted callback
@@ -76,11 +86,21 @@ public:
                                const gfx::PassDesc& output,
                                SubmitScene&& submitScene) {
         if(!input.width || !input.height ||
-           (input.sceneGeometry==nullptr)!=(input.geometryRevision==0))
+           (input.sceneGeometry==nullptr)!=(input.geometryRevision==0) ||
+           (input.synchronizeGiPointSources && !input.indirectGi))
             throw std::invalid_argument(
                 "LumaWeave frame requires nonzero view and coherent optional ray BVH revision");
         LumaNativeViewResult result;
         result.priorGpuCompletion=post_.pollGpu(); // callbacks from prior beginFrame
+        // The GI adapter caches the accepted registry revision. A new GI
+        // runtime may have zero lights despite an identical source revision;
+        // republish on runtime identity change or when sync is re-enabled.
+        if(lastGiRuntime_!=input.indirectGi ||
+           (input.synchronizeGiPointSources && !lastGiSynchronization_)) {
+            coordinator_.resetGiSourceSync();
+        }
+        lastGiRuntime_=input.indirectGi;
+        lastGiSynchronization_=input.synchronizeGiPointSources;
         coordinator_.collectScene(input.authored,input.fxSystems,
                                   input.effectLights,input.areaLights);
         renderer_.beginScene(input.camera,int(input.width),int(input.height));
@@ -103,7 +123,7 @@ public:
             // republish moving bounce lights. No old-light GI is displayed
             // while a newer source revision is waiting for a GPU fence.
             if(input.synchronizeGiPointSources) {
-                result.giFrame=gi.updateFrame(0,input.camera.target);
+                result.giPollFrame=gi.updateFrame(0,input.camera.target);
                 result.giSourceSync=coordinator_.syncGi(gi);
                 result.giDeferred=!result.giSourceSync.accepted;
             }
@@ -126,6 +146,8 @@ private:
     PostProcess& existing_;
     LumaWeavePostProcess post_;
     LumaWeaveNativeCoordinator coordinator_;
+    GiGpuCascadeRuntime* lastGiRuntime_=nullptr; // borrowed, identity only
+    bool lastGiSynchronization_=false;
 };
 
 } // namespace aiverse::render
