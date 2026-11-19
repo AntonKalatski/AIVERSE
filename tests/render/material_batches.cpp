@@ -104,7 +104,8 @@ static bool unitChecks() {
 
 // Deterministic 16-primitive fixture with one shader/material and independent
 // node transforms. MDI and the fallback must render byte-identical images.
-static std::unique_ptr<render::Model> indirectFixture(bool variedMaterials = false) {
+static std::unique_ptr<render::Model> indirectFixture(bool variedMaterials = false,
+                                                       size_t primitives = 16) {
     using namespace render;
     auto m = std::make_unique<Model>();
     m->path = "indirect-fixture";
@@ -120,7 +121,7 @@ static std::unique_ptr<render::Model> indirectFixture(bool variedMaterials = fal
         m->materials[2].baseColor = {.15f, .25f, .85f, 1.f};
         m->materials[2].roughness = .18f;
     }
-    for (int i = 0; i < 16; ++i) {
+    for (size_t i = 0; i < primitives; ++i) {
         const uint32_t start = uint32_t(m->vertices.size());
         for (float3 pos : {float3{-.3f, 0, 0}, float3{.3f, 0, 0}, float3{0, .75f, 0}}) {
             ModelVertex v;
@@ -130,7 +131,7 @@ static std::unique_ptr<render::Model> indirectFixture(bool variedMaterials = fal
         }
         m->indices.insert(m->indices.end(), {start, start + 1, start + 2});
         Primitive p;
-        p.material = variedMaterials ? i % 3 : 0;
+        p.material = variedMaterials ? int(i % 3) : 0;
         p.firstIndex = uint32_t(m->indices.size() - 3);
         p.indexCount = 3;
         p.firstVertex = start;
@@ -141,7 +142,14 @@ static std::unique_ptr<render::Model> indirectFixture(bool variedMaterials = fal
         Node node;
         node.mesh = int(m->meshes.size());
         node.name = mesh.name;
-        node.t = {float(i % 4) * 1.5f - 2.25f, float(i / 4) * .9f, 0};
+        // Stress: unique primitives in a compact region around the fixed
+        // camera target. No identical-primitive instancing can collapse the
+        // workload into 16 draws, and no repeated model draws are needed.
+        node.t = primitives == 16
+            ? float3{float(i % 4) * 1.5f - 2.25f, float(i / 4) * .9f, 0}
+            : float3{float(i % 128) * .028f - 1.8f,
+                     float((i / 128) % 128) * .028f,
+                     float(i / 16384) * .016f};
         m->meshes.push_back(std::move(mesh));
         m->nodes.push_back(std::move(node));
     }
@@ -176,11 +184,25 @@ int aiverseMain(int argc, char** argv) {
         return models && after<before ? 0 : 1;
     }
     const std::string scenario = std::getenv("AIVERSE_PALETTE_TEST_CASE") ? std::getenv("AIVERSE_PALETTE_TEST_CASE") : "default";
+    const bool stress = scenario == "auto_stress";
+    size_t stressItems = 0;
+    if (stress) {
+        const char* raw = std::getenv("AIVERSE_BATCH_STRESS_ITEMS");
+        char* end = nullptr;
+        const unsigned long parsed = raw ? std::strtoul(raw, &end, 10) : 1024ul;
+        if (raw && (end == raw || *end != '\0' || parsed < 64ul ||
+                    parsed > 100000ul)) {
+            std::fprintf(stderr, "AIVERSE_BATCH_STRESS_ITEMS must be 64..100000\n");
+            return 2;
+        }
+        stressItems = size_t(parsed);
+    }
     // Cold-vs-warm packet screenshot parity uses the same self-contained
     // varied-material 16-rigid-part fixture as the indirect palette test.
     auto model = scenario == "indirect" || scenario == "indirect_palette" ||
                  scenario == "static_packets" || scenario == "auto_stress"
-        ? indirectFixture(scenario != "indirect") : render::loadModel(argv[1],read);
+        ? indirectFixture(scenario != "indirect" && !stress,
+                          stress ? stressItems : 16) : render::loadModel(argv[1],read);
     const std::string prefix = argv[2];
     const bool reflection=std::getenv("AIVERSE_SHADOW_TEST_REFLECTION")!=nullptr;
     render::Renderer3D renderer; render::Mesh floor; gfx::Device* device = nullptr;
@@ -194,27 +216,13 @@ int aiverseMain(int argc, char** argv) {
     const bool cpuTiming = std::getenv("AIVERSE_BATCH_CPU_TIMING") &&
         std::string(std::getenv("AIVERSE_BATCH_CPU_TIMING")) == "1";
     std::vector<double> cpuRenderBefore, cpuRenderAfter;
-    const bool stress = scenario == "auto_stress";
     const int captureBeforeFrame = stress ? 75 : 8;
     const int captureAfterFrame = stress ? 195 : 23;
     const int startBatchFrame = stress ? 90 : 15;
     const int maximumFrame = stress ? 205 : 40;
-    // Number of visible-targeted primitive items, rounded up in 16-part
-    // rigid-model units. This is not a guaranteed post-culling visible count.
-    size_t stressDraws = 0;
     if (stress) {
-        const char* raw = std::getenv("AIVERSE_BATCH_STRESS_ITEMS");
-        char* end = nullptr;
-        const unsigned long parsed = raw ? std::strtoul(raw, &end, 10) : 1024ul;
-        if (raw && (end == raw || *end != '\0' || parsed < 64ul ||
-                    parsed > 100000ul)) {
-            std::fprintf(stderr, "AIVERSE_BATCH_STRESS_ITEMS must be 64..100000\n");
-            return 2;
-        }
-        stressDraws = (size_t(parsed) + 15) / 16;
-        std::printf("stress requested_items=%zu submitted_model_draws=%zu "
-                    "source_primitives_per_draw=16\n",
-                    size_t(parsed), stressDraws);
+        std::printf("stress requested_items=%zu authored_unique_primitives=%zu "
+                    "submitted_model_draws=1\n", stressItems, model->meshes.size());
     }
     // Benchmark only: independent runs for CPU MDI and GPU ICB. The latter
     // may legitimately retain CPU MDI for a different render pass.
@@ -267,7 +275,7 @@ int aiverseMain(int argc, char** argv) {
                         scenario != "auto_stress") || batch));
         // Keep CPU packet primitive source pointers stable for the lifetime of
         // the fixture. Other scenarios deliberately toggle material batches.
-        if (scenario != "static_packets")
+        if (scenario != "static_packets" && !stress)
             for(size_t i=0;i<model->meshes.size();++i)
                 model->meshes[i].materialBatches=(batch && scenario != "indirect" &&
                                                    scenario != "indirect_palette")
@@ -281,7 +289,7 @@ int aiverseMain(int argc, char** argv) {
         // puts static (or explicitly allowed rigid) instances into the
         // compute-generated ICB path. Without this flag a green test would
         // exercise CPU MDI only, regardless of AIVERSE_GPU_ENCODED_ICB.
-        if (scenario == "indirect" || scenario == "static_packets")
+        if (scenario == "indirect" || scenario == "static_packets" || stress)
             draw.flags |= render::kDrawStatic;
         if (scenario == "static_packets") {
             draw.persistentId = 0x12345;
@@ -300,18 +308,7 @@ int aiverseMain(int argc, char** argv) {
             pixels=std::max(pixels,render::geometryErrorPixels(renderer.lightViewProj()*xf,mesh.boundsMin,mesh.boundsMax,error,renderer.shadowMapSize(),renderer.shadowMapSize(),d.info().clipDepthZeroToOne));
             mesh.lods.resize(1);mesh.lods[0].maxPixels=pixels;renderer.setModelLodFadeWidth(.15f);
         }
-        if (stress) {
-            // Deterministic grid with bounded world footprint; use identical
-            // geometry, camera, lighting and transforms in both phases.
-            // Avoid multiplying geometry payload size by reusing one Model.
-            for (size_t n = 0; n < stressDraws; ++n) {
-                auto instance = draw;
-                const float x = float(n % 32) * 0.12f - 1.8f;
-                const float z = float((n / 32) % 32) * 0.12f - 1.8f;
-                instance.world = render::mat4::translate({x, 0, z}) * draw.world;
-                renderer.drawModel(instance);
-            }
-        } else renderer.drawModel(draw);
+        renderer.drawModel(draw);
         if (scenario == "indirect") {
             render::ModelDraw other = draw;
             other.model = secondModel.get();
