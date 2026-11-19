@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <mutex>
+#include <stdexcept>
 
 namespace aiverse::world {
 namespace {
@@ -139,18 +140,73 @@ std::shared_ptr<WorldScene::Prepared> WorldScene::prepare(Cell cell,const AssetR
     }
     return out;
 }
-// GPU resources of a chunk that leaves: its own models always, a shared model only when no other chunk (resident or
-// being prepared) holds it; the cache entry goes first, under the lock, so a worker cannot pick up a released model.
+// A cell eviction stops all new draws of its Models but may race with
+// already submitted GPU work AND async CPU workers borrowing shared Models.
+// Retain ONE manager-owned shared_ptr per unique Model until every other
+// resident/worker reference has gone. Direct releaseModel here was unsafe.
 void WorldScene::releaseChunk(gfx::Device& device,Prepared& chunk) {
-    for(size_t i=0;i<chunk.models.size();++i){
-        auto& model=chunk.models[i];
-        if(i<chunk.sharedKeys.size()&&!chunk.sharedKeys[i].empty()){
-            std::lock_guard lock(cache_->mutex);
-            if(model.use_count()>1)continue;
-            cache_->models.erase(chunk.sharedKeys[i]);
-        }
-        render::releaseModel(device,*model);
+    (void)device; // the GPU is touched only by collectRetired / shutdown
+    for(auto& model:chunk.models) {
+        if(!model)continue;
+        deferredModels_.try_emplace(model.get(),model);
+        model.reset();
     }
+}
+
+// Run once at the owning Device frame boundary, before this frame's new
+// submissions. No texture/model GPU resources are destroyed before a
+// real completion token or verified full-idle fallback.
+bool WorldScene::collectRetired(gfx::Device& device) {
+    for(auto it=deferredModels_.begin();it!=deferredModels_.end();) {
+        bool finalCpuOwner=false;
+        {
+            // A worker can lock the weak shared-model cache concurrently.
+            // Serialize final-owner check with its weak.lock(), and erase
+            // only the weak entry for THIS Model (a newer import may have
+            // already replaced the same source file's weak cache entry).
+            std::lock_guard lock(cache_->mutex);
+            if(it->second.use_count()==1) {
+                for(auto weak=cache_->models.begin();weak!=cache_->models.end();) {
+                    auto locked=weak->second.lock();
+                    if(!locked || locked.get()==it->first)
+                        weak=cache_->models.erase(weak);
+                    else ++weak;
+                }
+                // A late worker cannot acquire this candidate after erase.
+                finalCpuOwner=true;
+            }
+        }
+        if(finalCpuOwner) {
+            retiredModels_.enqueueFrom(it->second);
+            it=deferredModels_.erase(it);
+        }else ++it;
+    }
+    if(retiredModels_.empty())return deferredModels_.empty();
+    return retiredModels_.collect(
+        [&]{return device.beginResourceRetirement();},
+        [&](uint64_t token){return device.resourceRetirementComplete(token);},
+        [&](uint64_t token){
+            if(device.resourceRetirementStatus(token)==
+               gfx::ResourceRetirementStatus::Complete)
+                device.endResourceRetirement(token);
+            else
+                device.abandonRetirementTokenAfterIdle(token);
+        },
+        [&]{
+            // Unsupported async-token backends should not stall for every
+            // streaming-cell eviction. A bounded-count pressure point or
+            // explicit shutdown authorizes one full-device idle fallback.
+            return retiredModels_.pending()>=128 &&
+                   device.waitForResourceIdle();
+        },
+        [&](std::shared_ptr<render::Model>& model) {
+            if(model)render::releaseModel(device,*model);
+            model.reset();
+        },
+        [&](uint64_t token) {
+            return device.resourceRetirementStatus(token)==
+                   gfx::ResourceRetirementStatus::Failed;
+        });
 }
 void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int radius) {
     std::vector<StreamObserver> interests;for(auto p:observers)interests.push_back({assets_.cell(p),radius});
@@ -184,9 +240,39 @@ void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
         for(const auto& instance:chunk->instances){render::ModelDraw draw;draw.model=chunk->models[instance.model].get();draw.world=offset*instance.transform;renderer.drawModel(draw);}}
 }
 void WorldScene::shutdown(gfx::Device& device) {
+    // Stop/join CPU decode before invalidating any shared Model owners.
+    // No worker can lock a new Model from the cache after this point.
+    stream_->shutdown([&](Cell cell){
+        auto it=resident_.find(cell);
+        if(it!=resident_.end()){
+            releaseChunk(device,*it->second);
+            resident_.erase(it);
+        }
+    });
+    // One explicit barrier protects every last streamed mesh plus NEREID
+    // image/geometry allocation. Never free GPU handles after a failed wait.
+    if(!device.waitForResourceIdle())
+        throw std::runtime_error("WorldScene GPU shutdown barrier failed");
+    // The GPU is known idle. Any queued marker, including a FAILED one,
+    // can now be abandoned before its Model resources are destroyed.
+    if(!retiredModels_.drain(
+            []{return true;},
+            [&](uint64_t token){device.abandonRetirementTokenAfterIdle(token);},
+            [&](std::shared_ptr<render::Model>& model){
+                if(model)render::releaseModel(device,*model);
+                model.reset();
+            }))
+        throw std::runtime_error("WorldScene GPU retirement drain failed");
+    for(auto& [key,model]:deferredModels_) {
+        (void)key;
+        if(model)render::releaseModel(device,*model);
+    }
+    deferredModels_.clear();
+    // Shut down the texture cache's borrowers after all shared Models;
+    // the pool itself remains owned by the embedding client/renderer.
+    {std::lock_guard lock(cache_->mutex);cache_->models.clear();}
     nereidWater_.shutdown(device);
     cascades_.shutdown(device);
     ripples_.clear();
-    stream_->shutdown([&](Cell cell){auto it=resident_.find(cell);if(it!=resident_.end()){releaseChunk(device,*it->second);resident_.erase(it);}});
 }
 }
