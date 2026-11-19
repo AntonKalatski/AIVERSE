@@ -581,3 +581,31 @@ verified the exact lock header SHA
 native pinned-dirfd `openat/renameat` smoke passed. The full
 FileJournal/AIVERSE CMake/CTest/macOS CI are **NOT VERIFIED**.
 See `docs/agent-handoffs/physis-stage48-pinned-journal-io-2026-11-19.md`.
+
+### Stage 49 — standalone tested POSIX receipt journal I/O
+
+Use the canonical `FileJournal::loadPinned/savePinned` for
+privileged POSIX admin receipt persistence; they now delegate raw
+filesystem operations to `engine/physis/PhysisJournalPosixIO.h`
+(`posix_journal::read/write`). The helper has NO engine dependencies
+and accepts a trusted pinned directory fd from
+`JournalProcessLock::directoryFd()`. Never use a client-provided
+journal path or bypass lock ownership.
+
+`read` fails closed on unsafe inode type, owner, mode, hardlinks,
+oversize/short reads and symlink/FIFO tricks, while preserving the
+caller buffer after failure. `write` creates an unpredictable
+O_EXCL temporary file, flushes/atomically renames within the SAME
+dirfd and syncs the directory. Receipt byte format and canonical
+ECS authority are unchanged.
+
+New `tests/physis_journal_posix_io_test.cpp` is a focused CTest
+target. On Linux, the exact committed source blobs for that header
+and test matched `git hash-object` and the isolated native test
+PASSED on GCC 14.2 C++20 CTest (1/1), Clang 17 strict-warning run,
+and GCC ASan/UBSan. This is a real **isolated low-level PASS**, not a
+full AIVERSE/Ubuntu+macOS CI or admin endpoint PASS.
+Full engine checkout/CTest remains unavailable due GitHub DNS and
+queued/cancelled workflow runs. Continue testing once CI completes.
+
+See `docs/agent-handoffs/physis-stage49-posix-journal-test-2026-11-19.md`.
