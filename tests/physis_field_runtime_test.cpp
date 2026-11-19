@@ -256,6 +256,51 @@ void submitViaSimulationCommandQueue() {
     CHECK(!submitEditableFieldsFromMap(*sim,bad,kFieldEditCmd,scheduled,&error));
     CHECK(registry(*sim).revision==revision);
 }
+class AlternateInstallHost final : public GameModule {
+public:
+    explicit AlternateInstallHost(bool tracked):tracked_(tracked){}
+    std::string name() const override { return "physis-install-mode-test"; }
+    void setup(Simulation& sim,const Json&,const Json& map) override {
+        if(tracked_ ? !installTrackedFromMap(sim,map) : !installFromMap(sim,map))
+            throw std::runtime_error("PHYSIS alternate install failed");
+    }
+    void applyCommand(Simulation&,const Command&) override {}
+    void hashState(Simulation&,Hasher&) override {}
+    int result(Simulation&) override { return 0; }
+    bool serializeState(Simulation&,Archive& a) override { return a.ok(); }
+private:
+    bool tracked_;
+};
+void rejectAlternateInstallers() {
+    const auto map=setupMap();
+    for(const bool tracked : {false,true}) {
+        auto sim=std::make_unique<Simulation>(
+            SimConfig{},std::make_unique<AlternateInstallHost>(tracked));
+        sim->setup(Json::object(),map);
+        const auto checksum=sim->checksum();
+        const auto* marker=sim->world().resourceConst<AuthoredFieldInstallMode>();
+        CHECK(marker!=nullptr);
+        if(marker) CHECK(marker->mode==(tracked ?
+            AuthoredFieldMode::Tracked : AuthoredFieldMode::Static));
+        if(tracked)
+            CHECK(sim->world().resourceConst<RuntimeFieldRegistry>()!=nullptr);
+        bool rejected=false;
+        try { (void)installEditableFromMap(*sim,map); }
+        catch(const std::logic_error&) { rejected=true; }
+        CHECK(rejected);
+        CHECK(sim->checksum()==checksum);
+        rejected=false;
+        try { (void)installTrackedFromMap(*sim,map); }
+        catch(const std::logic_error&) { rejected=true; }
+        CHECK(rejected);
+        CHECK(sim->checksum()==checksum);
+        rejected=false;
+        try { (void)installFromMap(*sim,map); }
+        catch(const std::logic_error&) { rejected=true; }
+        CHECK(rejected);
+        CHECK(sim->checksum()==checksum);
+    }
+}
 void rejectCompetingInstallers() {
     auto sim=make();
     const auto baseline=sim->checksum();
@@ -320,6 +365,7 @@ int main() {
     submitViaSimulationCommandQueue();
     authorityAndStale();
     rejectCompetingInstallers();
+    rejectAlternateInstallers();
     std::printf("PHYSIS field runtime: %s\n",failures?"FAIL":"PASS");
     return failures?1:0;
 }
