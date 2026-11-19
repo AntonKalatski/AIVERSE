@@ -12,6 +12,8 @@ Read these in order:
 4. `docs/terrain.md` and `skills/world/aiverse-terrain/SKILL.md` (existing terrain renderer/editor).
 5. `docs/ecs-agent-handoff.md` when modifying ECS or parallel scheduler.
 
+> **Current implementation:** Horizon source is at Stage 22; **TWH8** is the latest archive. Earlier TWH6/TWH7 sections below are historical. Feature source commits exist, but CMake/CTest/GPU benchmarks have **NOT RUN** in this stage; PR #24 must stay Draft pending a separate testing agent.
+
 ## First decisions
 - Identify whether work is generation (`engine/world/TerraWeave.h`),
   existing heightfield rendering, editor operations, tree geometry, foliage
@@ -750,3 +752,116 @@ index layout and bounds are still safe. The test agent
 owns all CMake/CTest, archive roundtrips, cross-platform
 GPU screenshots and profiling. Label them NOT RUN
 until logs exist.
+
+
+## Stage 22 — current Horizon seam and diagnostics recipe
+
+These rules apply when implementing **or consuming** TerraWeave
+Horizon in native C++ games, the generic WorldScene adapter or editor
+preview. Do not introduce genre-specific FPS/RTS dependencies.
+
+1. **Capture one immutable authored height snapshot per bake.**
+   Keep `HorizonSurfaceSources::nearGroundHeightAtCm` and optional
+   `nearGroundHeightAtQ16Cm` from the SAME snapshot used by
+   `collectNearTerrainRects`. If available, also supply
+   `nearGroundContinuousSlopeAtQ16Cm` with signed Q16-centimetre
+   arguments and an `optional<pair<int32_t,int32_t>>` result.
+   `WorldScene` already wires these callbacks. Native providers may
+   omit optional callbacks without breaking older terrain.
+
+2. **Use neighbor-aware normals only across continuous authored tiles.**
+   `AuthoredWorldHeightSnapshot::continuousSlopeQ16` uses a bounded
+   200cm default radius and 1cm default boundary-height tolerance.
+   It returns signed X/Z permille slopes, or nullopt when a tile is
+   missing or has a real seam discontinuity. In
+   `populateHorizonNearSeamSamples` prefer the callback, then the
+   existing tile-local Q16 derivative, then
+   `makeHorizonModel`'s area-weighted face-normal fallback.
+   Never invent missing normals; do not alter authoritative physics,
+   collision, triangle topology, weld slope limits or RHI layouts.
+
+3. **Read `HorizonRuntimeStats` as a state machine, not as raw numbers.**
+   It is returned by `TerraWeaveHorizonScene::runtimeStats()`.
+   Use these conditions:
+   - `requestedRegionPresent` before reading `requestedCellX/Z`.
+   - `activeRegionResolved` before reading `activeCellX/Z`.
+   - `activeRegionEmpty` means an accepted no-model bake, not a job still running.
+   - `activeRegionPresent` means drawable model only.
+   - `requestedRegionPending` means selected target is unresolved,
+     different from active cell or at an old source revision; consult
+     `preparing` separately for actual CPU worker activity.
+   - `staleProxy` means `activeRevision != sourceRevision` for a resolved
+     active cell, including resolved empty cells; it does not by itself
+     report a wrong-camera-cell teleport.
+   - Cell X/Z values are middle-tile grid coordinates, not centimetres.
+     A requested region is chosen after camera hysteresis.
+
+4. **Never interpret unknown provenance as zero.**
+   Only present `continuousNearNormalSamples` and
+   `localFallbackNearNormalSamples` as measurements when
+   `nearNormalProvenanceAvailable` is true. They count **unique seam
+   sample points**, not pixels, GPU vertices or draw calls.
+   `matchedAuthoredNearNormals` is a **render-vertex** count.
+   TWH8 archives store sampled slopes/validity but intentionally do NOT
+   store provenance; archived bakes can report unknown counters.
+   A fresh bake may legitimately have valid zero counters.
+   GPU LRU retention/restoration propagates provenance and availability.
+
+5. **Preserve lifecycle and patch semantics.**
+   The CPU worker produces bounded immutable bakes; only the owning
+   render thread may change RHI state. The Horizon scene may retain
+   the previous GPU proxy when the authored source revision advances.
+   `shutdown(device)` clears active/requested cells and diagnostic
+   stats. Atlas-only patch checks must reject altered seam normal/height
+   fields; use the existing compatible partial vertex update or full
+   upload fallback. The current **TWH8** layout/fingerprint must remain
+   unchanged unless a deliberate format migration is documented.
+
+6. **Handoff after every code or documentation stage.**
+   Record the exact branch and source commit hashes, files/API touched,
+   actual verification (do not claim CTest/GPU validation from a GitHub
+   commit), limitations and the next implementation/test task in
+   `docs/terrain/AGENT_HANDOFF.md`. Keep PR #24 Draft until separately
+   verified.
+
+### Practical host-side status check
+
+```cpp
+const auto stats = horizon.runtimeStats();
+if (stats.requestedRegionPending) {
+    // Not resolved for selected camera cell/revision. Check stats.preparing.
+}
+if (stats.activeRegionResolved && stats.activeRegionEmpty) {
+    // Resolved empty region: do not keep requesting a mesh just because
+    // activeRegionPresent is false.
+}
+if (stats.staleProxy) {
+    // Rendered/resolved result reflects an older source revision.
+}
+if (stats.nearNormalProvenanceAvailable) {
+    reportSeamNormalSamples(stats.continuousNearNormalSamples,
+                            stats.localFallbackNearNormalSamples);
+} else {
+    reportUnknownSeamNormalProvenance();
+}
+```
+
+The reporting functions above are pseudocode host callbacks, not
+AIVERSE APIs. For the exact field semantics and source callback
+contracts, see `docs/terrain/TERRAWEAVE.md` Stage 22.
+
+### Required independent test-agent acceptance
+
+- C++20 build for target platforms; no transitive include assumptions.
+- Q16 negative coordinates, integer/fractional heights, adjacent
+  continuous/discontinuous/missing tiles and half-open corners.
+- Source-revision changes while GPU proxy remains, cache hit, partial
+  VB/atlas/full GPU paths, empty model, teleport, camera hysteresis
+  and shutdown.
+- TWH8 archive hit vs newly generated provenance availability,
+  exact old-format rejection and never asserting unknown counts
+  as observed zeros.
+- Verify unchanged draw/index/triangle budget, capture real
+  Metal/GL/Vulkan screenshots and benchmark overdraw/frame time.
+
+**Feature-agent validation state: NOT RUN** (code/docs committed only).
