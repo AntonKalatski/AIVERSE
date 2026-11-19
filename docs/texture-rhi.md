@@ -1834,3 +1834,28 @@ explicitly compatible MSL shader variant in a later stage.
 **Verification:** source review and GitHub commit only; native
 Objective-C++, Metal shader compiler and actual GPU execution
 NOT RUN. Leave experimental flags disabled in production.
+
+
+## Conservative opaque-PBR pipeline key and per-command resource signatures — Stage 10AB
+
+`render::equivalentGpuIcbPbrPipelineMaterial(a,b)` and
+`render::gpuIcbPbrPipelineHash(material)` define a conservative
+experiment-only grouping key for future per-command PBR resources.
+Only built-in opaque materials without Shader Graph or transparency
+are admitted. Double-sided/cast/receive-shadow and the normal-map
+presence bit remain part of pipeline compatibility, while ordinary
+PBR texture content/handles and U2 factors are intended to vary per
+GPU command. Hashes are only prefilters: exact pipeline comparison
+must still gate grouping.
+
+`GpuMaterialResourceBinding` now optionally contains
+`pbrEnabled`, six texture handles corresponding to fragment slots
+1..6, and 36 floats representing the exact nine float4 rows of
+ModelShaders' U2. It checks finite U2 values and valid texture handles,
+and includes the full source handles/U2 in the resource-table hash
+and exact equality. Existing VT/alpha and frame-generation ticket
+semantics remain intact. These are CPU-only primitives; they do not
+yet change GPU command submission.
+
+Only source inspection and GitHub commits were performed. Native
+build, tests and Metal GPU execution remain NOT RUN.
