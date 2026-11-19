@@ -1484,3 +1484,33 @@ simulation state.
 [Stage 140 handoff](agent-handoffs/animation-stage140-native-scene-gpu-retirement-2026-11-19.md).
 **NOT RUN:** native build, CTest, real Metal/Vulkan/GL, editor/FPS/RTS
 visual or GPU fence fault injection, sanitizers and benchmarks.
+
+
+## Stage 141 — explicit native host frame-boundary GPU retirement
+
+Do NOT call `NativePresentationRetirement::collect` during an arbitrary
+`RtsView::draw`: one Editor frame can submit multiple scene/game and
+offscreen portrait draws. The generic `RtsView` now aggregates
+`ModelResourceCache`, image rollback, road and shoreline retirement
+inside the existing explicit `collectRetiredModels()` owner hook. The
+associated `pendingModelRetirements()` now includes road/shore
+`SpriteMesh` buffers as well as Models, despite the legacy name. Existing
+GameClient/Editor frame hooks poll this once before any new passes.
+
+Standalone modelview Gallery explicitly polls the same queues before
+`gfx::Device::beginFrame`, covering the offscreen portrait and main
+gallery in the same frame. Its `ModelAssetProvider` rollback is also
+polled when nonempty. Raw modelview and Gallery portrait teardown require
+real full-Device GPU idle before native destruction; an unproven barrier
+stops release. `RtsView::shutdown` now also establishes GPU completion
+before releasing standalone GeometryScene Models.
+
+`ModelAssetProvider::find` and `publicationBackpressured` correctly
+propagate exceptions on cache-owner misuse; they are not `noexcept`.
+Third-party clients using `RtsView` must call its owner retirement hook
+at a genuine frame boundary. Resource retirement never trusts frame age
+or an incomplete GPU token.
+
+[Stage 141 handoff](agent-handoffs/animation-stage141-explicit-frame-boundary-preview-lifetime-2026-11-19.md).
+**NOT RUN:** CMake, native C++, CTest, Metal/GL/Vulkan, GPU-failure fixtures,
+editor/portrait/FPS/RTS visual comparisons, sanitizers or profiling.
