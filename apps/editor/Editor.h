@@ -80,7 +80,8 @@ struct Viewport {
     Viewport(const Viewport&) = delete;
     Viewport& operator=(const Viewport&) = delete;
     Viewport() = default;
-    void ensure(gfx::Device& dev, int pw, int ph, ViewportGpuRetirement& owner);
+    void ensure(gfx::Device& dev, int pw, int ph, ViewportGpuRetirement& owner,
+                const char* debugName = "Viewport");
     void release(gfx::Device& dev);
     // ImGui::Image with the right orientation for the backend
     void image(gfx::Device& dev, float wPts, float hPts);
