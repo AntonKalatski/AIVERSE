@@ -3635,3 +3635,31 @@ This validates the native CPU suites including the Stage29 legacy assertions upd
 **Git safety:** the main `~/Projects/AIVERSE` checkout still has an unrelated VFX/PHYSIS rebase conflict as previously reported; use only `~/Projects/AIVERSE-terraweave-qa`, whose pull from `origin/feature/terraweave` fast-forwarded successfully. Do not automatically rebase, reset or clean the main checkout.
 
 **Next step: native integration build in a separate build directory (avoid changing current tested configuration):** fetch/pull `feature/terraweave` in the QA worktree; configure `build/terraweave-integration` with `AIVERSE_BUILD_CLIENT=ON`, `AIVERSE_BUILD_FPS_CLIENT=ON`, `AIVERSE_BUILD_EDITOR=ON`, `AIVERSE_BUILD_TESTS=ON`, server/headless/tools/FBX OFF; compile `aiverse_client`, `aiverse_fps_client`, `aiverse_editor`, and `aiverse_terraweave_editor_test`, then run `ctest --test-dir build/terraweave-integration --output-on-failure -R '^terraweave_editor$'`. The actual CMake targets and options were inspected in `CMakeLists.txt` and `modules/fps/CMakeLists.txt`. Capture the first actual compile error on Mac and keep PR #24 Draft until integration and graphics acceptance.
+
+
+## Stage 43 — shared GPU timing router CPU regression and CI coverage (2026-11-19)
+
+**Owner / branch / PR:** TerraWeave agent, `feature/terraweave`, Draft PR #24 to `main`.
+**Feature baseline:** Stage42 introduced `gfx::GpuTimingRouter`; no RHI behavior, graphics backend, Horizon geometry, ECS, PHYSIS or live gameplay update is intentionally changed here.
+
+**Actual source commits and paths:**
+- `35d4b9c10fe76862ccdabff4589f214e1427aeff` — NEW `tests/gpu_timing_router_test.cpp`, pure C++20 fake GPU backend fixture.
+- `a2e2d3c5e9d223c64084aeddcc2d634052d4b2d1` — `CMakeLists.txt`, adds `aiverse_gpu_timing_router_test` and CTest `gpu_timing_router`; assertions explicitly enabled on AppleClang/Clang/GCC Release.
+- `97d3e99739cb2913d57820ebfed48ffe979cbfba` — `.github/workflows/terraweave.yml`, builds the router fixture in isolated GCC/Clang matrix and runs it with the existing nine TerraWeave CPU cases.
+- `e717646a54c680cb37104748faf8b7b47efbb241` — `docs/render/GPU_TIMING_ROUTER.md`, hardware-free regression coverage; this handoff and the AI skill are updated in following source commits.
+
+**Scenarios encoded:** (1) two independent subscribers with identical original tags and unique raw device tags; (2) out-of-order replies; (3) valid vs invalid measurements, independent mailbox `take()`; (4) cancellation/unsubscription, ignored late completions and non-reuse of subscriber IDs; (5) 32-owner and 64-pending capacity; (6) 64-entry mailbox drop-oldest accounting; (7) rejected unsupported/busy GPU requests without creating phantom pending requests; (8) distinct device/router lifetimes. The test uses an intentionally fake `timeGpuFrame/takeGpuTimings` backend, never requires graphics hardware or Vulkan/Metal/GL runtime.
+
+**Verification performed:** GitHub returned new source commits and read-back confirmed the new test file and CMake registrations. **NOT RUN in agent runtime:** CMake configure, Clang/GCC compilation, the new `gpu_timing_router` CTest, macOS integration/editor/native game/graphics tests, profiler, screenshots, performance measurements. Existing 9/9 TerraWeave CPU green result was reported by the Mac Studio user on the previous head; do not attribute that result to this new revision or count the new case as passed. GitHub's commit workflow query returned no PR-triggered runs for the queried docs commit; that is not evidence of a successful CI build.
+
+**Branch integration warning:** Current `main` has moved significantly since TerraWeave's feature base (last checked: 605 commits ahead / 370 behind and PR mergeability `dirty`). Do not merge this Draft PR or run a destructive rebase in the user's shared `~/Projects/AIVERSE` checkout. That checkout was previously reported to contain an unrelated VFX/PHYSIS rebase conflict. Use the isolated `~/Projects/AIVERSE-terraweave-qa` worktree and coordinate integration/reconciliation separately.
+
+**Next independent QA commands** (in the existing isolated macOS worktree, after confirming no local rebase):
+```sh
+cd ~/Projects/AIVERSE-terraweave-qa
+git fetch origin feature/terraweave
+git pull --ff-only origin feature/terraweave
+cmake --build build/terraweave-qa --parallel 4 --target aiverse_gpu_timing_router_test
+ctest --test-dir build/terraweave-qa --output-on-failure -R '^gpu_timing_router$'
+```
+Then configure a **separate** `build/terraweave-integration` with `-DAIVERSE_BUILD_CLIENT=ON -DAIVERSE_BUILD_FPS_CLIENT=ON -DAIVERSE_BUILD_EDITOR=ON -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_TOOLS=OFF -DAIVERSE_BUILD_SERVER=OFF -DAIVERSE_BUILD_HEADLESS=OFF -DAIVERSE_FBX=OFF`; build `aiverse_client aiverse_fps_client aiverse_editor aiverse_terraweave_editor_test`; run CTest `terraweave_editor`. Record exact first C++/link error and fix feature-branch source only. After native integration, run real Metal graphics screenshot/performance and inspect GPU timing behavior; do not infer real GPU correctness from fake backend tests. Keep PR Draft.
