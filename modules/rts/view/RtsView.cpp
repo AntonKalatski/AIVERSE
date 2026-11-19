@@ -115,7 +115,7 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
     }
     for (auto& w : overlays_.set().warnings) warnings_.push_back(w);
     if(genericView_)genericView_->clear();
-    anims_.clear(); streamingChoices_.clear(); animationCache_.clear();
+    anims_.clear(); streamingChoices_.clear(); reloadPlayback_.clear(); animationCache_.clear();
     tracers_.clear();
     looks_.resize(rules.types.size());
     actorRevealTypes_.resize(rules.types.size());
@@ -164,7 +164,7 @@ void RtsView::shutdown(gfx::Device& dev) {
     // references before the cache can release their CPU/GPU storage.
     // The lease stays live until the host successfully completes teardown.
     if(genericView_) { genericView_->clear(); genericView_.reset(); }
-    anims_.clear(); streamingChoices_.clear(); ghostAnim_=EntityAnim{};
+    anims_.clear(); streamingChoices_.clear(); reloadPlayback_.clear(); ghostAnim_=EntityAnim{};
     animationCache_.clear();
     looks_.clear(); actorRevealTypes_.clear(); loadedTypes_.clear(); tracers_.clear();
     // Failed appearance publications may leave uncommitted image GPU
