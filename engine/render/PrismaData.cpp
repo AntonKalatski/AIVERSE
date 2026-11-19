@@ -74,11 +74,15 @@ std::vector<PrismaTypeDef> buildCatalog() {
     c.push_back({T::Letterbox, "letterbox", "Кинорамка", "Bars at the top and bottom (cinematic).", C::Cheap, kLow, {
         num("amount", 0.12f, 0, 0.5f, "share of the screen height covered by both bars", "Высота полос"),
         col("color", 0, 0, 0, 0, 1, "bar colour", "Цвет")}});
-    c.push_back({T::DepthOfField, "depthOfField", "Глубина резкости", "Screen-space depth-based defocus. focusDepth and focusRange use hardware depth in [0,1]; optical distance units are not inferred.", C::Heavy, kHigh, {
-        num("focusDepth", 0.5f, 0, 1, "focus point in device depth (0..1)", "Глубина фокуса"),
-        num("focusRange", 0.08f, 0.001f, 1, "sharp depth interval around focus", "Диапазон резкости"),
-        num("maxBlur", 8.0f, 0, 16, "maximum blur radius in output pixels", "Радиус размытия"),
-        num("intensity", 1.0f, 0, 1, "defocus blend strength", "Сила размытия")}});
+    c.push_back({T::DepthOfField, "depthOfField", "Глубина резкости", "Depth-driven defocus. Default uses device depth [0,1]; opt-in metricFocus uses camera-linear distance with near/far projection metadata and depth-edge rejection.", C::Heavy, kHigh, {
+        num("focusDepth", 0.5f, 0, 1, "legacy focus point in device depth (0..1)", "Глубина фокуса (0..1)"),
+        num("focusRange", 0.08f, 0.001f, 1, "legacy sharp interval in device depth", "Диапазон (0..1)"),
+        num("maxBlur", 8.0f, 0, 16, "maximum blur radius in internal render pixels", "Радиус размытия"),
+        num("intensity", 1.0f, 0, 1, "defocus blend strength", "Сила размытия"),
+        flag("metricFocus", false, "enable camera-linear focus distance instead of legacy hardware depth", "Фокус по расстоянию (м)"),
+        num("focusDistance", 12.0f, 0.05f, 2000.0f, "focus plane along the camera view direction in world units (metres for metre-scaled worlds)", "Расстояние фокуса"),
+        num("focusRangeMeters", 4.0f, 0.01f, 500.0f, "sharp depth interval around the view-space focus plane", "Глубина резкости, м"),
+        num("occlusionToleranceMeters", 0.35f, 0.001f, 20.0f, "reject color samples across depth silhouette discontinuities", "Порог границ, м")}});
     c.push_back({T::AutoExposure, "autoExposure", "Автоэкспозиция", "HDR-only GPU log-luminance measurement and temporal eye adaptation. Uses per-viewport exposure history.", C::Heavy, kHigh, {
         num("keyValue", 0.18f, 0.01f, 1.0f, "target middle-grey luminance in linear HDR", "Целевая яркость"),
         num("minEV", -6.0f, -12.0f, 0.0f, "minimum automatic exposure in EV stops", "Минимум EV"),
