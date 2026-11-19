@@ -17,7 +17,12 @@ inline void applyNereidPhysisWindSample(
 
 // Clear visual weather when unloading, changing levels or disconnecting the
 // upstream PHYSIS source; the next supplied snapshot may set it again.
+inline void applyNereidPhysisWindZones(
+        WorldScene& scene,std::vector<NereidWindZone> zones) {
+    scene.setNereidWindZones(std::move(zones));
+}
 inline void clearNereidPhysisWind(WorldScene& scene) {
     scene.setNereidVisualWind({});
+    scene.setNereidWindZones({});
 }
 } // namespace aiverse::world
