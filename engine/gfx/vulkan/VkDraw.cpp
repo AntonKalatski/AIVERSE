@@ -512,6 +512,20 @@ bool VulkanDevice::drawIndexedIndirect(BufferHandle commands, size_t offset,
     return true;
 }
 
+bool VulkanDevice::drawIndexedGpuIndirect(BufferHandle arguments,
+                                                 size_t offset) {
+    // The caller must already bind the correct shader pipeline, materials,
+    // instance uniforms and matching source VB/IB. This RHI API only consumes
+    // the one GPU-authored command; it NEVER bypasses Renderer3D decisions.
+    if(!supportsCompute() || !multiDrawIndirect_ || !recording_ ||
+       !inPass_ || computing_ || !healthy_)return false;
+    // drawIndexedIndirect checks BufferType::Indirect, bounds/alignment and
+    // binds canonical GPU vertexOffset semantics. The earlier compute
+    // dispatch encodes its shader-write -> indirect-command barrier.
+    return drawIndexedIndirect(arguments,offset,1,
+                               sizeof(DrawIndexedIndirectCommand));
+}
+
 bool VulkanDevice::copyColor(TextureHandle from, TextureHandle to) {
     if (!recording_ || inPass_) return false;
     VTexture* dst = textures_.get(to.id);
