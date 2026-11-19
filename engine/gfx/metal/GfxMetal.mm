@@ -98,6 +98,7 @@ public:
     }
 
     const DeviceInfo& info() const override { return info_; }
+    int maxFragmentTextureSlots() const override { return 32; }
     std::vector<TextureResourceInfo> textureResources() const override {
         std::vector<TextureResourceInfo> result;
         textures_.each([&](uint32_t id, const MTTexture& tex) {
