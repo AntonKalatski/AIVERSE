@@ -1877,7 +1877,15 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         // when their direct fragment textures/samplers are rejected by Metal.
         // The existing PBR ICB variant consumes these resources through a
         // fragment argument buffer at index 8 instead.
-        const bool usePbrVariant = !pipeline->state.supportIndirectCommandBuffers;
+        const auto* boundShader=shaders_.get(pipeline->desc.shader.id);
+        // Direct fragment texture bindings cannot be inherited reliably by
+        // a GPU-encoded ICB. VT/R8 permutations MUST use an argument-buffer
+        // variant even when the direct pipeline reports ICB support.
+        const bool externalMaterialTextures = boundShader &&
+            (boundShader->source.find("#define AIVERSE_MODEL_VT 1") != std::string::npos ||
+             boundShader->source.find("#define VIRTUAL_ALPHA_MASK 1") != std::string::npos);
+        const bool usePbrVariant = externalMaterialTextures ||
+            !pipeline->state.supportIndirectCommandBuffers;
         // GPU command encoder uses uint32 index addresses. A future uint16
         // specialization must be explicit rather than reinterpret indices.
         if (pipeline->desc.indexType != IndexType::UInt32)
@@ -2000,6 +2008,11 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         const id<MTLBuffer> indices = current(*ib);
         const id<MTLBuffer> vertices = current(*vb);
         const bool pbr = p->icbPbrState != nil;
+        const auto* sourceShader=shaders_.get(p->desc.shader.id);
+        const bool externalMaterialTextures = sourceShader &&
+            (sourceShader->source.find("#define AIVERSE_MODEL_VT 1") != std::string::npos ||
+             sourceShader->source.find("#define VIRTUAL_ALPHA_MASK 1") != std::string::npos);
+        if (externalMaterialTextures && !pbr) return false;
         id<MTLRenderPipelineState> indirectPipeline = pbr ? p->icbPbrState : p->state;
         if (!indirectData || !indirectData.contents || !indices || !vertices || !indirectPipeline ||
             !indirectPipeline.supportIndirectCommandBuffers) return false;
