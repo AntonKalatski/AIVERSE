@@ -80,6 +80,17 @@ public:
                     pool.liveModels, residency.cachedModels, residency.loadedTypes, ed.rules().types.size());
         ImGui::Text("CPU кэш изображений: %.1f MiB  ·  GPU текстур моделей: %zu шт.",
                     double(residency.decodedCpuBytes) / mib, residency.gpuTextures);
+        ImGui::Text("GPU очередь освобождения: %zu моделей · %zu партий · пик %zu",
+                    residency.retiredModels,residency.retirementBatches,
+                    residency.retirementPeak);
+        ImGui::Text("Порог новых загрузок: %zu моделей · ожидание fence: %s",
+                    residency.retirementSoftLimit,
+                    residency.publicationBackpressured ? "ограничивает новые загрузки" : "норма");
+        if(residency.retirementTokenFailures || residency.retirementFallbackFailures)
+            ui::hint("GPU retirement: проблемы создания fence %llu, "
+                     "неуспешный idle fallback %llu (объекты сохранены)",
+                     (unsigned long long)residency.retirementTokenFailures,
+                     (unsigned long long)residency.retirementFallbackFailures);
         ImGui::TextDisabled("Без dedicated-геометрии, размеров GPU текстур, render targets и FX.");
         ImGui::TextDisabled("Выгрузка моделей редактора: %s (период ожидания 15 с)",
                             ed.lazyEditorAssetsEnabled() ? "по требованию" : "отключена");
