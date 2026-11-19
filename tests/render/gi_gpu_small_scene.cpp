@@ -19,12 +19,26 @@ static std::vector<StaticShadowGeometry::Triangle> plane(float z) {
 }
 
 int main() {
-    // No use of compute on GLES/GL/Vulkan without an explicitly compatible backend.
+    // GLES3/WebGL2 must retain the CPU GI transport fallback: compute is
+    // optional on these systems, even when a fake device reports a capability.
     GiComputeFakeDevice d;
     d.computeEnabled=true;
     GiGpuSmallScene gpu;
     AIVERSE_TEST_CHECK(!gpu.initialize(d,32));
     AIVERSE_TEST_CHECK(!gpu.ready());
+
+    // Vulkan is allowed to use the same bounded GI jobs with the distinct
+    // SPIR-V shader. These are FakeDevice API tests, not Vulkan execution.
+    d.info_.backend=gfx::Backend::Vulkan;
+    AIVERSE_TEST_CHECK(gpu.initialize(d,32));
+    AIVERSE_TEST_CHECK(gpu.ready() && gpu.atlas().computeWritable());
+    d.beginFrame(320,240);
+    const auto vkDispatch=gpu.dispatch(
+        {{0,1,giDirtyBit(GiDirtyReason::Geometry),{.5f,.5f,.5f}}},16,6);
+    AIVERSE_TEST_CHECK(vkDispatch.submitted && vkDispatch.probes==1);
+    d.endFrame();
+    gpu.shutdown();
+    AIVERSE_TEST_CHECK(d.buffers.empty() && d.textures.empty());
 
     d.info_.backend=gfx::Backend::Metal;
     d.computeEnabled=false;
@@ -70,6 +84,14 @@ int main() {
     d.endFrame();
 
     // Shader existence/ABI checks, not an MSL compiler or GPU image parity test.
+    const std::string vulkanShader=gi_gpu::kVulkanSmallScene;
+    AIVERSE_TEST_CHECK(vulkanShader.find("#version 450")!=std::string::npos);
+    AIVERSE_TEST_CHECK(vulkanShader.find("local_size_x=64")!=std::string::npos);
+    AIVERSE_TEST_CHECK(vulkanShader.find("binding=4,rgba16f")!=std::string::npos);
+    AIVERSE_TEST_CHECK(vulkanShader.find("layout(push_constant)")!=std::string::npos);
+    AIVERSE_TEST_CHECK(vulkanShader.find("imageStore(outputImage")!=std::string::npos);
+    AIVERSE_TEST_CHECK(vulkanShader.find("job.index*3u")!=std::string::npos);
+
     std::string shader=gi_gpu::kMetalSmallScene;
     AIVERSE_TEST_CHECK(shader.find("kernel void cs_main")!=std::string::npos);
     AIVERSE_TEST_CHECK(shader.find("access::write")!=std::string::npos);
