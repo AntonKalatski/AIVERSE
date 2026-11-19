@@ -5,6 +5,7 @@
 #include "GiUpdateScheduler.h"
 #include "StaticDiffuseField.h"
 #include "GiTraceGeometry.h"
+#include "GiEnvironmentLight.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -57,6 +58,7 @@ public:
         sampleCount_ = samples;
         traceDistance_ = traceDistance;
         lights_.clear();
+        environment_ = {};
         geometry_ = {};
         geometryRevision_ = 0;
     }
@@ -74,6 +76,22 @@ public:
     }
     void clearAllCoefficients() {
         std::fill(coeffs_.begin(), coeffs_.end(), GiDynamicCoefficient{});
+    }
+
+    const GiEnvironmentLight& environment() const { return environment_; }
+    // Changes to distant sunlight or sky affect all probes, not only the
+    // volume of one point/spot lamp. Dirty revisions retire in-flight tickets.
+    // A caller must flush cleared coefficients to the GPU before sampling.
+    bool setEnvironment(GiEnvironmentLight next,
+                        std::vector<uint32_t>* cleared = nullptr) {
+        if (!next.valid()) throw std::invalid_argument("invalid dynamic GI environment");
+        if (next==environment_) return false;
+        environment_=next;
+        clearAllCoefficients();
+        scheduler_.invalidateAll(GiDirtyReason::Environment);
+        if (cleared)
+            for (uint32_t i=0;i<coeffs_.size();++i) cleared->push_back(i);
+        return true;
     }
 
     // A null BVH makes dynamic bounce zero, not "unchanged/stale".
@@ -223,7 +241,7 @@ private:
     }
     GiDynamicCoefficient compute(float3 p, Stats& stats) const {
         GiDynamicCoefficient result;
-        if (lights_.empty()) return result;
+        if (lights_.empty() && !environment_.enabled()) return result;
         auto add = [&](float3 rgb, float3 dir) {
             const float colors[3] = {rgb.x,rgb.y,rgb.z};
             const float components[3] = {dir.x,dir.y,dir.z};
@@ -270,6 +288,36 @@ private:
                 outgoing += float3{light.color.x*albedo.x,light.color.y*albedo.y,
                                    light.color.z*albedo.z} * strength;
             }
+            // Sun/sky terms illuminate the hit SURFACE, not the camera/probe
+            // directly. We project only that surface's indirect re-emission.
+            if (environment_.sunIntensity>0) {
+                const float ndl=std::max(0.0f,dot(normal,environment_.sunDirection));
+                if (ndl>0) {
+                    ++stats.visibilityRays;
+                    if (geometry_.distance(surface,environment_.sunDirection,traceDistance_) >=
+                        traceDistance_-.03f) {
+                        outgoing += float3{environment_.sunColor.x*albedo.x,
+                                           environment_.sunColor.y*albedo.y,
+                                           environment_.sunColor.z*albedo.z} *
+                                    (environment_.sunIntensity*ndl);
+                    }
+                }
+            }
+            if (environment_.skyIntensity>0) {
+                const float skyCos=std::max(0.0f,normal.y);
+                if (skyCos>0) {
+                    // Explicit bounded +Y overhead visibility. Occluded by roof
+                    // and any other published opaque geometry.
+                    ++stats.visibilityRays;
+                    if (geometry_.distance(surface,{0,1,0},traceDistance_) >=
+                        traceDistance_-.03f) {
+                        outgoing += float3{environment_.skyColor.x*albedo.x,
+                                           environment_.skyColor.y*albedo.y,
+                                           environment_.skyColor.z*albedo.z} *
+                                    (environment_.skyIntensity*skyCos);
+                    }
+                }
+            }
             // The same first-order directional convention used by the baked L1 probes.
             // No direct-light term is inserted; the bounced radiance is a separate delta.
             add(outgoing,dir);
@@ -280,6 +328,7 @@ private:
     GiUpdateScheduler scheduler_;
     std::vector<GiDynamicCoefficient> coeffs_;
     std::vector<GiMovingLight> lights_;
+    GiEnvironmentLight environment_{};
     GiTraceGeometryView geometry_{};
     uint64_t geometryRevision_ = 0;
     int sampleCount_ = 32;
