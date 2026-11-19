@@ -1979,3 +1979,121 @@ is not an actual GPU completion proof; real Metal/Vulkan/GL tests
 are required before merging this work. Full `game::RtsView`
 removal and full dynamic material/graph host migration remain
 future stages.
+
+## Stage 108 — device-epoch-safe resource ownership, bounded retirement tracing and generic appearance authoring
+
+### Explicit device generations
+
+`render::RenderDeviceLifetime` is a host-owned, thread-affine
+generation token for one live `gfx::Device`. Its
+`Lease::validFor(device)` verifies the stored device identity,
+unique nonzero generation and owner thread, and requires a live
+host epoch. `RenderDeviceLifetime::retire()` must be called by
+the host **after** all model caches have successfully released
+their GPU allocations and **before** the gfx device is
+destroyed/recreated. Expiration cannot turn an unsuccessful
+GPU idle barrier into completion. The lease is not a GPU
+fence and does not retain a gfx Device.
+
+`ModelResourceCache::bindResourceDevice(device,lease)` now supports
+an optional explicit epoch in addition to the Stage 107 legacy
+device-pointer/thread guard. Once bound to an epoch, subsequent
+cache GPU mutation requires the lease to remain valid for that
+device, and another generation is rejected even when a new device
+reuses the same memory address. An **explicitly successful**
+GPU-safe cache `shutdown(device)` resets its device/epoch
+binding; failed shutdown does not. `RenderResourceOwnerGroup`
+has an overload `registerScoped(lease,cache)`, stores the
+registration's generation, rejects generation mismatch and
+checks for expired/rebound generations before device snapshots.
+
+The Editor owns a `RenderDeviceLifetime` across
+`Editor::init` / `Editor::shutdown`. Its Scene,
+Portrait and raw-source ModelResourceCache registrations use
+that same epoch lease, and it is retired only after its windows
+and scene resource caches have shut down. New native hosts can
+do the same. Older `registerScoped(device,cache)` and
+CPU-only `add(cache)` remain source compatible but do not
+provide generation protection by themselves.
+
+### Bounded GPU diagnostics
+
+New `render::RetirementDiagnosticRing` holds up to N metadata
+events (128 by default in the Editor), reporting capacity,
+retained count, total received and overflow/discard count.
+Oldest records are dropped when full; a zero-capacity ring
+counts discards without storing events. Its weak observer
+callback cannot extend the ring lifetime, and callback
+exceptions/allocation failures are isolated from GPU
+retirement. This ring does **not** hold Models, GPU handles
+or fence leases, and diagnostics can never prove completion
+or authorize resource destruction.
+
+The Editor attaches a 128-event ring to its RtsView Model
+resource owner and displays retained/overflow counts in the
+Statistics window. The trace is retained across ordinary
+scene reloads and detached on editor shutdown, never kept
+beyond the GPU owner's lifecycle. Callbacks and ring reads
+must be on the device-owner thread; wrong-thread events are
+reported, not inserted into the non-thread-safe deque.
+
+### Independent authored materials and AnimationGraph policies
+
+New `engine/view/AppearanceAuthoringService.h` is a
+genre-independent authoring service usable from native
+projects without `UnitType`, RTS/FPS gameplay rules or
+`RtsView`. It provides:
+
+- `resolveMaterial(library,reference,warn,depth)`: the same
+  bounded `base`/`use` reference overlay semantics and
+  warning strings, including depth protection for cycles
+  and unknown material library entries
+- `applyMaterial(material,library,ref,textureLoader,warn)`:
+  the existing colour, metallic/roughness, emissive,
+  shaderGraph, alpha, fixedLight, shadows, vertex colours,
+  team channel, texture sampler references and UV overrides,
+  with externally supplied GPU texture insertion
+- `compileGraph(model,inlineOrSourceJson,FileReader,operations,
+  traits,namedGraphs)`: inline/external graph source parsing
+  and immutable `render::AnimationGraph::compile` without
+  constructing a graph playback instance
+
+The RTS adapter `RtsView::resolveMaterial` and
+`RtsView::applyMaterial` now delegate to this common service
+and supply their previous warning scoping, external texture
+upload and material library. `RtsView::configureChoice`
+compiles inline/external type-level graphs through the
+service, and `RtsAnimate.cpp` uses the same compile entry
+for dynamic control-authored graph definitions. **No
+second MotionWeave graph clock is created**: the existing
+graph instance / generic View presentation remains the
+single writer of each pose. The rest of RTS gameplay
+selection, procedural animation, attachments, authored
+type placement and material hot reload remains with the
+compatibility adapter.
+
+### Deferred verification
+
+New source-only CTest fixtures
+`tests/render/device_epoch.cpp` (`render_device_epoch`),
+`tests/render/retirement_diagnostic_ring.cpp`
+(`render_retirement_diagnostic_ring`) and
+`tests/view/appearance_authoring.cpp`
+(`view_appearance_authoring`) cover explicit generation
+changes with an identically addressed mock Device, ring
+overflow/weak lifetime, material inheritance/texture-loader
+semantics and external graph failure propagation. CMake
+registration is included. **NOT RUN**: actual native
+C++ compilation, CTest/unified runner, Metal/Vulkan/GL
+real-backend execution, editor screenshots, FPS/RTS
+visual parity, ThreadSanitizer and CI.
+
+**Limits:** the epoch guard protects participating native
+model caches, not arbitrary raw gfx allocations, other render
+modules or a platform tearing down a Device without allowing
+safe model-cache shutdown. The host must manage the lifetime
+correctly; it cannot recover automatically from real device
+loss. Source-derived GPU bytes are still not exact VRAM.
+Dynamic authored appearances still rely on RTS-specific state
+mapping/attachment policy. Real native builds and visual
+tests are required before claiming compatibility or merging.
