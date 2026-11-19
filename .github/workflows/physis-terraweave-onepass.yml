@@ -1,11 +1,12 @@
 name: PHYSIS TerraWeave one-pass native acceptance
 
-# Only the dedicated combined integration branch: one full build/test after
+# The validated original and current-main staging branches: one full build/test after
 # all feature code, merge composition and per-stage documentation are ready.
 on:
   push:
     branches:
       - integration/physis-terraweave-complete-20261119
+      - integration/physis-terraweave-onto-main-20261119
 
 permissions:
   contents: read
