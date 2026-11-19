@@ -1252,7 +1252,7 @@ the render work (and `endFrame` when owned by the app). The bridge is
 enabled ONLY when `worldScene->vegetationHorizonAdaptiveQualityConfig().enabled`;
 no Horizon or disabled adaptation causes no GPU timers or feedback.
 
-Existing integrations: `apps/client/GameClient.h/.cpp` uses the bridge
+Existing integrations: `apps/client/GameClient.h` and `apps/client/GameClient.cpp` uses the bridge
 around streamed-world RTS render within the platform-owned frame; native
 `apps/fps/client.cpp` begins/ends a graphics frame itself and brackets its
 FPS client callback. It uses `std::chrono::steady_clock` *measured CPU
@@ -1353,7 +1353,7 @@ per patch and deterministic \`sampleGrassBlade\` on demand.
 undo. **Not yet finished:** true Box3D fallen-tree rigid bodies,
 streaming terrain collision/navmesh patch/rebuild, GPU grass instancing,
 and voxel cave excavation. **No new native tests run** after Stage45/46.
-See \`docs/nereid/TERRAIN_EROSION.md\` and handoff for exact status.
+See `docs/nereid/TERRAIN_EROSION.md` and handoff for exact status.
 
 
 ### Stages 47–56: Earthworks + NEREID + canonical ECS native integration (2026-11-19)
@@ -1408,7 +1408,7 @@ See \`docs/nereid/TERRAIN_EROSION.md\` and handoff for exact status.
 ### Stage63c finite water inlet/outlet accounting (2026-11-19)
 
 - `NereidFloodRouting.h` now has `WaterFloodPort` (Inflow/Outflow) and persisted `WaterFloodResource.externalVolumeCm`. NEREID routes the **same finite water** between this outside reserve and its explicit equal-area grid cells; exact global-local ledger conservation across cells + reserve is validated every tick. This is required for an upstream head rise on an initially flat river with incoming water; no infinite, unaccounted pump exists. At most 64 ports, configured before first routing tick with a valid WaterBody Entity and a grid-local coordinate. `WaterFloodTick` exposes `suppliedCm/drainedCm` and new wet/dry results; a depleted reserve halts inflow.
-- `TerraWeaveNereidFloodBridge.h::configureNereidFloodBoundaryPorts` and `examples/world/terraweave_native/Integration.h::configureFloodRiverPorts` expose native setup, independent of Box3D. See `docs/terrain/stage-63c-finite-river-ports-handoff.md` and the updated native example README. For changed water geometry or new area, use an explicit account-preserving reservoir migration in the future; never reseed an active simulation.
+- `TerraWeaveNereidFloodBridge.h::configureNereidFloodBoundaryPorts` and `examples/world/terraweave_native/Integration.h` (`configureFloodRiverPorts`) expose native setup, independent of Box3D. See `docs/terrain/stage-63c-finite-river-ports-handoff.md` and the updated native example README. For changed water geometry or new area, use an explicit account-preserving reservoir migration in the future; never reseed an active simulation.
 - **Not a global water-volume proof** including legacy static WaterBodyComponent; no rainfall, ocean tide/river pressure solve, volumetric flood hydrodynamics or automatic riverbed mesh rerouting. Source is committed but native CMake/CTest/Metal/full ECS replay QA NOT RUN. Keep Draft PR #24.
 
 
