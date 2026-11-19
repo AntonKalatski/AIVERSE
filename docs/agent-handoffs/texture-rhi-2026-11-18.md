@@ -9789,3 +9789,54 @@ handoff. When GPU VT encoding+decoding passes,
 extend actual page-table / atlas publication and
 Shader Graph ICB as separate opt-in gates.
 
+
+## Stage 10BJ — Apple M3 Ultra Metal VT feedback PASS (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Prior implementation:** Stage 10BI source
+`5830d16f8531d462fa02709a0e6a0f8e5c4ef9f1`;
+current acceptance record includes the new canonical Metal
+VirtualTextureFeedbackPass/Msl encoder path. **Docs commit:**
+`847de51dc3ea1b2aa6f89452f937671f37776cef`.
+
+**Actual user-run hardware evidence:** Mac Studio native
+`metal_texture_gpu` CTest #122 **PASSED (1/1, 0 failed)** in
+`0.45 sec`; reported total CTest time 0.46 sec.
+Verbose tail specifically included
+`TIMING VT GPU feedback RGBA8 ID readbacks=1
+submit_ms=7.758 callback_wait_ms=19.502 poll_frames=2
+compare_ms=0.030 gpu_command_ms=0.005`,
+`TIMING VT feedback GPU acceptance_total_ms=74.085` and
+`TIMING Metal fixture_total_ms=393.549
+gpu_test_body_ms=333.485`.
+The CTest completed the extended GPU fixture; the supplied
+excerpt did not contain individual valid/invalid feedback PASS
+lines or a repeated GPU name. Earlier user-provided full
+fixture output named `Metal Apple M3 Ultra`.
+
+**Verified scope:** previously passed physical 3D/array/cube
+uploads, fragment Texture3D sampling, and now the additional
+opt-in GPU feedback shader/async readback/decoder assertion suite.
+Test exit zero is grounded; no invented per-probe timings or
+blit-only performance inference. Wall clock 450 ms includes
+multiple separate GPU tests, not a single texture upload.
+
+**Changes in this bounded stage:** only canonical docs and
+this separately committed handoff; no engine/test source
+changes required by the observed PASS.
+
+**Not verified:** physical page upload/publish in VT atlas
+and GPU page table after page-cache state transitions,
+file-backed disk page scheduling, Shader Graph GPU ICB,
+larger scene throughput, platform parity. PR remains Draft.
+
+**Next:** add an opt-in real Metal test for
+`VirtualTextureStreamer`:
+actual stage/drain of a physical RGBA8 atlas slice,
+GPU readback of the atlas slice and RGBA8 2DArray page
+table, explicitly verifying no page-table visibility
+before successful publication, fine-page override,
+eviction and coarser fallback. No mock GPU and no
+silently skipped CTest. After source commit, append
+a separate handoff and ask for Mac Studio execution.
+
