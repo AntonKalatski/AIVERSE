@@ -334,3 +334,145 @@ CMake with `AIVERSE_BUILD_TESTS=ON` and
 considering a production main merge. Platform-specific graphics/Metal,
 scene-editor and collision namespaces remain separate verification
 requirements.
+
+
+## Stage 6 — typed prefab authoring, immutable Inspector and measured RSS
+
+Stage 6 adds the remaining **opt-in authoring and inspection seams** without
+changing the deterministic ECS, production editor writeback, RTS or FPS
+components. Its source was committed after Stage 5, whose new multi-domain
+test has still **not** been run natively. Stage 4's prior 7/7 does not prove
+the new Stage 5/6 sources work.
+
+### Editor/import pipeline: `PrefabStaticAuthoring<T>`
+
+`engine/scene/PrefabStaticAuthoring.h` parses an authored JSON v1
+document into an immutable `PrefabStaticCatalog<T>` using a
+project-supplied typed decoder. The document is bounded to 4 MiB,
+the number of entries is limited, duplicate IDs are rejected,
+relative logical prefab keys are validated, and the decoded catalog
+is sorted/interened regardless of JSON source order.
+
+```json
+{
+  "version": 1,
+  "domain": "combat/weapon",
+  "prefabs": [
+    {"id": "prefabs/soldier",
+     "config": {"damage": 60, "range": 5}},
+    {"id": "prefabs/turret",
+     "config": {"damage": 60, "range": 5}}
+  ]
+}
+```
+
+The *game's* decoder must strictly validate field names, exact numeric
+syntax, bounds and version migrations; do not silently coerce unknown
+types via `Json::getInt` or floats in deterministic configs. Once
+loaded, both soldier and turret reuse ONE `WeaponConfig` value in
+the sealed table. The source document can be edited/rewritten by
+ordinary editor content tools; changing its revision requires an
+explicit authoring-to-runtime rebuild and immutable catalog revision
+rebind, **not a write into a live StaticTable**.
+
+### Runtime editor Inspector: `PrefabStaticInspector<T>`
+
+`engine/scene/PrefabStaticInspector.h` emits the actual
+`NativeModule::inspectComponents` API-compatible
+`components`/`componentSchemas` JSON for a selected real ECS entity.
+It reads `StaticRef<T>` and the bound catalog, using a typed, read-only
+project callback that renders `const T&` as JSON. The emitted schema
+has `editable:false` for every exposed field and displays slot,
+unique config count, 16-digit exact hexadecimal table/catalog
+fingerprints and typed config properties.
+
+```cpp
+// In a native game's module inspectComponents(World&,Entity,Json&,Json&):
+PrefabStaticInspector<WeaponConfig> inspector(
+    weaponCatalog,"StaticWeapon","Weapon config (read-only)",
+    [](const WeaponConfig& config) {
+        Json value=Json::object();
+        value.set("damage",Json::number(int64_t(config.damage)));
+        return value;
+    });
+inspector.append(world,entity,components,schemas);
+```
+
+The existing editor Inspector consumes this JSON through its native
+module's `inspectComponents` callback. This bridge **does not itself
+install an existing game module hook**, nor change global editor
+registration/writeback or introduce a generic C++ reflection system.
+Each native game opts in and supplies its own typed converter.
+
+The existing `EditorEcsWriteback.h` restricts edits to explicit
+authoring bindings; this feature does **not** enable raw StaticRef or
+shared StaticTable mutation. Editing configs means editing the
+**source JSON asset**, reimporting a new sealed catalog, then
+performing an explicit asset migration/reload barrier.
+
+Test source:
+`tests/ecs_static_scene_editor_contract_test.cpp` checks deterministic
+authoring order, duplicate/path/numeric validation, immutability
+and read-only native Inspector JSON schema. CMake target is
+`aiverse_ecs_static_scene_editor_contract_test`. Native execution
+remains pending until the single requested final verification run.
+
+### Memory benchmark: actual resident bytes per isolated process
+
+`tests/ecs_shared_static_rss_bench.cpp` reports an OS-backed
+process resident-set measurement using Mach task information
+on macOS, `/proc/self/statm` on Linux and zero if unsupported.
+It also prints the canonical read checksum and median CPU read time.
+
+**Ordinary**, **Shared**, and **Static** each run in a separate process,
+so allocations/heap fragmentation from another storage mode cannot
+contaminate RSS. The benchmark creates 128-byte config values in
+one ECS World and reports both baseline and post-build RSS, plus
+the delta. The full-run script checks matching read checksums for all
+three modes at each unique-value count.
+
+`tools/ecs-static-scene-validate.sh` mode `all` runs:
+- one CMake Release configure;
+- one **full project native build**;
+- one complete serial CTest pass (not just the targeted suite);
+- process-isolated RSS/CPU read benchmarks for 1,000,000 entities with
+  16, 64 and 1,024 distinct 128-byte configuration values;
+- a JSONL log and a Python standard-library summary that checks
+  read checksum parity and reports **measured** memory deltas.
+
+It logs the Git SHA and outputs under
+`build/static-scene/verification/`. No backend/GPU cache or
+production compiler assumptions are hidden. RSS is **not** the same
+as payload-only savings, and one RSS number is not a cross-platform
+performance claim.
+
+### One-shot final native validation
+
+No Stage 6 native compilation or tests have been executed here.
+After finishing all feature changes, use the existing isolated worktree
+and run **one** final command:
+
+```sh
+cd ~/Projects/AIVERSE-static-scene
+git fetch origin feature/ecs-static-prefab-scene-integration
+git pull --ff-only origin feature/ecs-static-prefab-scene-integration
+bash tools/ecs-static-scene-validate.sh build/static-scene all 8 1000000
+```
+
+The `all` mode builds all targets and runs the entire registered CTest
+suite, including scene/Static, COW, RTS/FPS, gameplay and editor tests
+under the current default CMake options. It does not test disabled
+optional platforms/feature flags or Metal GPU scenarios that require
+special configuration. Any failing test should be fixed and the
+whole gate rerun before a main merge. The script will not declare
+success until all stages complete.
+
+### Remaining production limitations
+
+- No automatic mutation of arbitrary third-party native module
+  components; authoring and Inspector type conversion use project hooks.
+- An immutable `StaticTable` still requires explicit content revision
+  migration. Editor authoring changes don't silently rewrite live Worlds.
+- Scene streaming collision namespace issues and GPU/Metal/TerraWeave/
+  PHYSIS/NEREID integration remain outside this feature's verified
+  scope. They must be coordinated with their owners before main.
