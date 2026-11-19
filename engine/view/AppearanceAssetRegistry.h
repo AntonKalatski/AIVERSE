@@ -431,13 +431,17 @@ public:
                   std::shared_ptr<const render::Model> modelOwner) {
         if(!asset || !modelOwner || asset->model!=modelOwner.get())
             return false;
-        modelPins_.push_back(std::move(modelOwner));
+        // Thousands of actors may share one Model. Keep ONE strong CPU pin
+        // per distinct Model pointer, not one shared_ptr ref per instance.
+        const bool newPin=std::none_of(modelPins_.begin(),modelPins_.end(),
+            [&](const auto& existing){return existing.get()==modelOwner.get();});
+        if(newPin)modelPins_.push_back(std::move(modelOwner));
         try {
             if(add(std::move(asset),world))return true;
-            modelPins_.pop_back();
+            if(newPin)modelPins_.pop_back();
             return false;
         }catch(...) {
-            modelPins_.pop_back();
+            if(newPin)modelPins_.pop_back();
             throw;
         }
     }
