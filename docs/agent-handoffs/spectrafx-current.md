@@ -1,5 +1,16 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 106 — Editor GPU preview camera/RT coherence (NOT RUN)
+
+Code `f12afc07483523b34923f1fc1378c654cf40c9fb`:
+`SpectraFxGpuAssetsWindow` derives the actual RT camera projection
+and dimensions, updates GPU/CPU once, calls per-view GPU alpha sorting
+outside the pass and renders with the same `SpectraFxView`.
+Reset view control added. No genre dependence.
+**Native/editor tests NOT RUN**; last validated SHA remains Stage 105.
+Handoff `docs/agent-handoffs/spectrafx-stage106-editor-preview-camera-2026-11-20.md`.
+
+
 ## Stage 105 — full Renderer3D native acceptance **PASS** (M3 Ultra)
 
 User-provided hardware run at validated SHA
