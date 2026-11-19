@@ -934,6 +934,13 @@ Prisma::RuntimeCapabilities Prisma::runtimeCapabilities() const {
     RuntimeCapabilities out;
     out.deviceHealthy=dev_ && dev_->gpuHealthy() && enabled_ && settings_.enabled;
     out.hdrFormatSupported=dev_ && dev_->supports(gfx::PixelFormat::RGBA16F);
+    HdrMode authoredHdr=settings_.hdr;
+    if (const char* flag=std::getenv("AIVERSE_HDR")) {
+        const std::string mode=flag;
+        if (mode=="off" || mode=="0") authoredHdr=HdrMode::Off;
+        else if (mode=="on" || mode=="1") authoredHdr=HdrMode::On;
+    }
+    out.hdrAuthoredRequested=authoredHdr!=HdrMode::Off;
     out.hdrRequested=hdrRequested();
     out.hdrEffectiveLastFrame=hdrFrame_ && stats_.width>0 && sceneReady_;
     const auto* effect=settings_.find(PrismaType::TemporalResolve);
@@ -957,7 +964,14 @@ Prisma::RuntimeCapabilities Prisma::runtimeCapabilities() const {
     out.adaptiveRequested=out.upscaleRequested && adaptive &&
         std::strcmp(adaptive,"1")==0 &&
         effect->get("adaptiveResolution")>0.5f;
-    out.scopedGpuSampleAvailable=scopedGpuTimings_.count(viewId_)!=0;
+    if (const auto sample=scopedGpuTimings_.find(viewId_);
+        sample!=scopedGpuTimings_.end() && sample->second.sampleSequence) {
+        const uint64_t completed=dev_?dev_->gpuCompletedFence():0;
+        out.scopedGpuSampleAvailable=completed==0 ||
+            sample->second.gpuFenceAtRead==0 ||
+            (completed>=sample->second.gpuFenceAtRead &&
+             completed-sample->second.gpuFenceAtRead<=8);
+    }
     out.reactiveLastFrame=stats_.reactiveUsed;
     if (!dev_) out.fallbackReason="GPU device absent";
     else if (!dev_->gpuHealthy()) out.fallbackReason="GPU device lost";
