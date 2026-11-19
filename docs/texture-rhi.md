@@ -2363,3 +2363,39 @@ GPU acceptance pass. Run
 `bash tools/verify-texture-rhi.sh --editor --jobs 4` in the isolated
 texture verification worktree after pulling the latest feature branch.
 
+
+### Stage 10AZ — Metal Texture3D upload Objective-C selector correction
+
+The Mac Studio verification run passed **23/23 focused CTests** but
+`aiverse_editor` still failed compiling
+`engine/gfx/metal/GfxMetal.mm` at lines 654 and 723. Both Texture3D
+CPU upload paths used an Objective-C selector that does not exist:
+`replaceRegion:mipmapLevel:withBytes:bytesPerRow:bytesPerImage:`.
+
+Metal's supported 3D upload method is
+`replaceRegion:mipmapLevel:slice:withBytes:bytesPerRow:bytesPerImage:`.
+For `MTLTextureType3D`, the `slice` argument is **0**; the
+`MTLRegionMake3D` origin.z and depth describe the actual volume region.
+Both full-volume creation and `updateTextureRegion` now pass `slice:0`,
+while preserving `bytesPerRow`, `bytesPerImage`, mip level, origin.z and
+depth. This does not change the generic RHI API, existing 2D/array/cube
+upload semantics, ECS, or serialized textures.
+
+**Source fix:** `094bfe7c602fd57b8defa6bae2474a28cd04c3de`.
+Reference: Apple MTLTexture documentation for
+`replaceRegion:mipmapLevel:slice:withBytes:bytesPerRow:bytesPerImage:`.
+
+**Observed before this fix:** all 23 focused CTests passed on Mac Studio;
+the editor compile stopped at the two invalid 3D Metal selectors.
+**Post-fix macOS ObjC++ compilation, editor linking and GPU volume
+upload/readback were NOT RUN** in this assistant environment. Real GPU
+format/copy parity remains a separate requirement.
+
+In the independent macOS worktree:
+```bash
+git pull --ff-only origin feature/texture-rhi-unification
+cmake --build build/texture-rhi --target aiverse_editor --parallel 4
+# Once the editor builds:
+bash tools/verify-texture-rhi.sh --editor --jobs 4
+```
+
