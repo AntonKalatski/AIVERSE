@@ -727,3 +727,12 @@ VIVID Creator now offers model-relative vertex selection, named skeleton bone se
 Edits can be serialized to a versioned JSON sidecar and restored through Creator. Global vertices referenced by more than one skinned primitive require compatible skin+joint-palette mappings; ambiguous shared seams are rejected rather than changing weights under the wrong skeleton. The authoring API currently stores one named-bone weight adjustment per vertex (the latest per-vertex edit); it does not yet implement weight painting brushes, seam splitting or automatic bone assignment.
 
 **Verification:** source tests added for U8 normalization, JSON roundtrip, invalid-palette rollback and conflicting-seam rejection; actual C++ compilation, CTest and GPU image parity are **NOT RUN**. See `docs/agent-handoffs/vivid.md` Stage 7O for source commit IDs, risk discussion and next-agent work.
+
+
+## Stage 7P — viewport weight painting and skin diagnostic overlay (2026-11-20)
+
+The existing `SkinWeightAuthoring` supports a transactional brush stroke over selected model-relative mesh vertices, using a configurable local-space radius and smooth falloff, target influence, brush strength and optional X=0 bilateral mirroring. One stroke is one undo/redo record; all affected vertices are validated before the new authored edit map is published, with a provisional maximum of 4096 vertices per stroke. The actual model is updated only by rebuilding a fresh private character candidate and passing the previous skin palette/influence validation, then publishing through the already integrated GPU-safe Creator actor replacement.
+
+The Creator exposes a selected mesh, selected named joint, weight painting controls, an arm-and-click triangle ray-picking interaction, Undo/Redo, and a screen-space red/blue diagnostic heatmap of sampled original model vertex weights. **Accuracy limitation:** this overlay uses the mesh owner's node transform and does not yet reconstruct final skinned and morphed GPU vertices. GPU skinning-aware surface picking, continuous drag paint, spatial indexing for very dense meshes and actual per-vertex GPU-accurate heatmap are still open. Mirroring assumes local X symmetry; ambiguous shared seams still reject edits.
+
+Source-level regression assertions cover symmetric brush influence, bounded falloff, undo/redo, invalid-stroke rollback and U8 weight normalization. The changes were committed but **not compiled, run or visually tested**; see `docs/agent-handoffs/vivid.md` Stage 7P for exact source commits and remaining work.
