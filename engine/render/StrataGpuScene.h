@@ -77,9 +77,10 @@ bool packGpuMetadata(const ModelAsset& source, std::vector<uint8_t>& out,
 
 // Device-thread-only, explicit resource ownership. Stage after uploadModel()
 // so source.Model can be checked against the EXISTING shared geometry pool.
-// A metadata upload alone does NOT make Strata index streams GPU resident.
-// Source buffers, model transforms, material grouping and all RHI draws remain
-// owned by the existing engine; no new geometry pool is created here.
+// Staging uploads a bounded auxiliary Strata index stream inside THAT page,
+// then writes version-2 metadata mapping each source primitive to its pooled
+// first index. No second source VB/IB pool is created, and NO draw commands,
+// instance transforms, shading or visibility are handled here.
 class GpuMetadataScene {
 public:
     struct Limits {
