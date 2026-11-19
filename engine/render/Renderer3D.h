@@ -894,6 +894,12 @@ private:
     struct GpuEncodedBatch {
         std::vector<uint32_t> items;
         uint32_t token = 0;
+        // Capture the exact external resources when GPU commands are
+        // encoded. A Horizon revision switch can change bindings between
+        // prepareGpuModelDraws() and the actual scene render pass.
+        ModelVirtualTextureBinding virtualTexture;
+        gfx::TextureHandle alphaCoverage;
+        bool usesVirtualTexture = false;
     };
     std::vector<GpuEncodedBatch> gpuEncodedBatches_;
     std::vector<uint8_t> gpuEncodedCovered_;
