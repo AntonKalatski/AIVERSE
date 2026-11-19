@@ -17,6 +17,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -93,6 +94,9 @@ public:
     size_t windShadowEvictions() const {return windShadowEvictions_;}
     size_t windShadowCompressions() const {return windShadowCompressions_;}
     size_t windShadowRestores() const {return windShadowRestores_;}
+    size_t windShadowDecodeFailures() const {
+        return windShadowDecodeFailures_;
+    }
     size_t compressedWindShadowRegions() const {
         size_t count=0;
         for(const auto& [cell,entry]:entries_) {
@@ -161,6 +165,22 @@ public:
         occupiedBytes_-=result.estimatedGpuBytes;
         entries_.erase(it);
         return std::optional<HorizonGpuRegion>{std::move(result)};
+    }
+    // Render-thread device-aware activation: malformed packed snapshots
+    // retire as complete GPU entries and fall through to normal streaming.
+    // Ordinary memory-allocation errors still propagate to the host.
+    std::optional<HorizonGpuRegion> take(
+            gfx::Device& device,world::Cell cell,uint64_t revision) {
+        try {
+            return take(cell,revision);
+        } catch(const std::logic_error&) {
+            auto it=entries_.find(cell);
+            if(it!=entries_.end() && it->second.revision==revision) {
+                release(device,it);
+                ++windShadowDecodeFailures_;
+            }
+            return std::nullopt;
+        }
     }
 
     // A crossfading old region is an *additional* GPU resident, just
@@ -257,6 +277,7 @@ private:
     size_t windShadowEvictions_=0; // subset: CPU budget evicted whole GPU entry
     size_t windShadowCompressions_=0; // successful inactive lossless packs
     size_t windShadowRestores_=0; // GPU LRU reactivation with exact unpack
+    size_t windShadowDecodeFailures_=0; // corrupt dormant GPU entries retired
     uint64_t stamp_=0;
 };
 
