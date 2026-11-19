@@ -457,6 +457,37 @@ const Renderer3D::SharedMaterialEntry* Renderer3D::cachedSharedMaterialState(
     return &state;
 }
 
+Renderer3D::CpuMdiPageEntry* Renderer3D::cpuMdiPageEntry(const Model& model) {
+    const auto page = model.geometryPoolPage;
+    if (!page || !model.vb.valid() || !model.ib.valid()) return nullptr;
+    const CpuMdiPageKey key{page.get(), model.vb.id, model.ib.id};
+    auto it = cpuMdiPages_.find(key);
+    if (it != cpuMdiPages_.end()) {
+        // An allocator can recycle the raw pointer and even GPU handle IDs.
+        // A weak reference to the actual shared arena detects that case.
+        const auto retained = it->second.lifetime.lock();
+        if (retained == page) {
+            ++cpuMdiPageStats_.reused;
+            it->second.seen = cpuMdiPageEpoch_;
+            return &it->second;
+        }
+        cpuMdiPages_.erase(it);
+        ++cpuMdiPageStats_.evicted;
+    }
+    constexpr size_t kMaxTrackedPages = 256;
+    if (cpuMdiPages_.size() >= kMaxTrackedPages) {
+        // No tracked feedback means "allow original CPU MDI", not an unsafe
+        // inferred decision or a new unbounded allocation.
+        ++cpuMdiPageStats_.untracked;
+        return nullptr;
+    }
+    CpuMdiPageEntry entry{};
+    entry.lifetime = page;
+    entry.seen = cpuMdiPageEpoch_;
+    ++cpuMdiPageStats_.created;
+    return &cpuMdiPages_.emplace(key, std::move(entry)).first->second;
+}
+
 ModelStaticEligibility Renderer3D::cachedStaticModelEligibility(const Model& source) {
     // Model* is a lookup key, not proof of identity or unchanged content.
     // Revision, GPU allocation, public cardinalities and geometry attachment
