@@ -1,5 +1,9 @@
 #include "engine/render/StrataBuilder.h"
 #include <algorithm>
+// Keep CTest assertions active under Release (-DNDEBUG) builds.
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <cassert>
 #include <cmath>
 #include <cstdint>
