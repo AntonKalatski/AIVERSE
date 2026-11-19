@@ -2462,7 +2462,10 @@ The test covers:
   mip. Checks exact RGBA8 bytes, dimensions, format, callback completion,
   GPU device health, and the live/destroyed 3D resource inventory.
 
-It is deliberately excluded from the standard 23 focused CTests.
+It is deliberately excluded from the standard 23 focused CTests and
+from **all default CTest registration**. CMake option
+`AIVERSE_TEXTURE_METAL_GPU_TESTS` defaults to `OFF`; the verifier's
+`--metal` switch turns it `ON` and builds/runs the hardware test.
 Opt in on a Mac with a working Metal GPU:
 
 ```bash
@@ -2472,13 +2475,17 @@ bash tools/verify-texture-rhi.sh --editor --metal --jobs 4
 cat build/texture-rhi/verify-logs/metal-gpu.log
 ```
 
-Alternatively, after configuring the worktree:
+Alternatively, explicitly configure GPU testing first:
 
 ```bash
+cmake -S . -B build/texture-rhi -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_TEXTURE_METAL_GPU_TESTS=ON
 cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parallel 4
 ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
 ```
 
+`--metal` also explicitly disables hardware-test registration on a later
+ordinary verifier run using the same CMake cache. The GPU test is
+registered **only** when requested; normal CI CTest remains unaffected.
 `--metal` fails on non-macOS hosts, fails if the GPU is unavailable,
 fails if the test binary is not registered, and fails on incorrect
 readback bytes or callback timeout. A CTest `SKIPPED` event must never
