@@ -2207,3 +2207,67 @@ model revision and model-source invalidation. Stage 109
 `view_appearance_registry` still covers last-good reload behavior.
 **Neither has been run**. Native CMake, CTest, sanitizer, GPU
 resource/device-loss and screenshot parity checks remain pending.
+
+## Stage 111 — RTS appearance snapshots and shared host GPU epochs
+
+The generic `AppearanceAssetRegistry` now has
+`publishPrepared(key, Asset, error)` for native authoring hosts that already
+resolved material textures and compiled an AnimationGraph. It publishes an
+immutable, host-pinned snapshot **without** reloading textures, recompiling
+the graph or creating another animation runtime. A rejected snapshot keeps
+the old asset/dirty flag intact. It validates non-null Model, a full base
+material set, node material indices and an explicit source ID for an
+animated asset. It does not make host GPU side effects transactional.
+
+RTS `reloadAppearanceTypes` stages replacement TypeLooks and their
+prepared snapshots locally, keeping all previous looks in place until every
+requested resident type has completed staging. Each model, LOD and
+construction/damage stage gets its own snapshot. A strict reload path
+prevalidates material-library references, shader DAG programs and external
+AnimationGraph definitions. Invalid external graph content or an invalid
+material shader program rejects the staged type before that choice's
+additional texture overrides are uploaded. On a successful publication,
+`RtsView::drawObject` uses the immutable snapshot's material overrides,
+node material assignments, GeometryPolicy and variant. The host still owns
+GPU texture indices and the underlying imported Models.
+
+Compiled graph signatures are taken from the **parsed** JSON definition,
+including re-read external graph contents instead of the file path alone.
+When only `materials.json` is reloaded and every model choice, LOD and
+stage retains compatible graph/model/runtime shape, the old compiled
+graph pointers are reused and the running per-entity
+`AnimationGraphInstance` / MotionWeave clock remains intact. If a graph
+signature or model changes, the affected animation sources are forgotten
+and rebuilt as before. Per-type eligibility is conservative; all modeled
+choices/stages/LODs must match. The simulation remains authoritative.
+
+`RtsView::shutdown` now detaches generic View source handles, RTS
+animation state and TypeLooks (including their snapshots) **before**
+`ModelResourceCache::shutdown` begins GPU retirement. The original cache
+wait-for-idle safety requirement is unchanged.
+
+A native `GameClient` creates one `RenderDeviceLifetime` in
+`initStep(0)`, binds its `RtsView` model-cache resources to that epoch
+during `initStep(2)`, and retires the epoch only after shutdown of its
+render resource owners. For an editor-embedded GameClient, the editor
+passes its **own** generation-aware lease through
+`EditorClientPlay -> ClientHost -> GameClient -> RtsView`. The hosted
+client neither constructs nor retires a separate GPU device epoch;
+the Editor owns the generation for the entire shared gfx::Device.
+External mismatched/expired generations fail closed.
+
+**Limitations:** The RTS transaction is atomic at the TypeLook/snapshot
+publication boundary, not at the RHI: a texture loader can still add
+images/handles to a cached Model during staging. Strict preflight rejects
+known authored ShaderGraph/graph-reference errors early, but failures
+in texture upload or later GPU pipeline compilation still need a
+host-side GPU resource rollback/retirement transaction. Other postFX,
+terrain, effects and render targets are not yet lifetime-guarded by
+the model-cache epoch; no real device-loss recovery is claimed.
+
+The deferred fixture `view_appearance_prepared` checks prepared publication,
+pinned old snapshots, generation preservation and failure rollback.
+The existing `render_device_epoch` fixture was expanded to cover
+multiple cache owners sharing one editor-hosted generation. **NOT RUN**:
+CMake configure/build, CTest, native editor/gameplay, GPU screenshot
+parity, sanitizers or hardware-fence/device-loss tests.
