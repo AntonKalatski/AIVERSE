@@ -1541,3 +1541,37 @@ contracts in GeometryScene, WorldScene and other native hosts remain
 open. [Stage 142 handoff](agent-handoffs/animation-stage142-editor-preview-model-ownership-2026-11-19.md).
 **NOT RUN** native CMake, CTest, real GPU, visual screenshots, sanitizer or
 benchmarks per user's feature-first workflow.
+
+
+## Stage 143 — GPU-safe HLOD reload and shared streamed Model eviction
+
+`render::GeometryScene` now holds static source Models and generated
+HLOD proxies in a dedicated `NativePresentationRetirement` owner.
+Source/rules `clear(device)` and `loadImpl` rollback detach old
+`Model*` scene references and enqueue prior GPU allocations; they do
+not immediately call `releaseModel` during live reload.
+`GeometryScene::collectRetired` and `pendingGpuRetirements` expose
+explicit pre-render owner hooks. Final `shutdown` requires one
+verified GPU idle barrier before draining pending resources.
+The existing RtsView and FPS owner frame hooks poll this queue.
+
+`world::WorldScene` owns streaming Model data via
+`shared_ptr<Model>`, potentially across multiple resident cells and
+in-progress CPU decoding jobs. Removing a cell is not permission to
+free native GPU handles: the Model moves into a manager-owned deferred
+registry (one entry per unique pointer). A candidate may be queued for
+ordered GPU retirement only when all other CPU refs have gone and the
+matching weak cache entry has been erased under the worker's mutex.
+A delayed worker ref no longer permanently loses the final GPU release.
+The host calls `WorldScene::collectRetired(device)` at an explicit
+Device owner frame boundary; both GameClient and FPS clients have been
+updated. After stream shutdown joins workers, one full-device idle
+proof authorizes draining any pending models/NEREID assets.
+
+These guarantees are SOURCE LEVEL only. An unsupported GPU fence
+backend may defer retirement until a 128-resource count threshold or
+final shutdown; it is not a VRAM-byte budget. Shader, image, material
+and geometry asset ownership must still be audited with other owners.
+[Stage 143 handoff](agent-handoffs/animation-stage143-geometry-world-streamed-model-retirement-2026-11-19.md).
+**NOT RUN:** native CMake/compiler/CTest/CI, Metal/Vulkan/GL,
+worker-thread sanitizer, GPU fence fault injection, visuals or benchmarks.
