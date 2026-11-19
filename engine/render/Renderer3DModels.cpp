@@ -454,58 +454,118 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         const BakedSample& b = *d.baked;
         anim = {float(bakedRow(*m, b.clipA, b.timeA, b.loopA)), float(bakedRow(*m, b.clipB, b.timeB, b.loopB)), std::clamp(b.mix, 0.0f, 1.0f), 0};
     }
-    // Persistent *CPU packet* replay (not a saved GPU submission).
-    // The caller explicitly owns the revision of any in-place appearance
-    // mutations. No LOD, pose or baked GI is reused across frames here.
-    const bool packetEligible = staticRenderPacketsEnabled_ &&
+    // Revision-aware immutable CPU packet replay. Material copies are
+    // checked by resolved GPU state and remapped by index, never by stale
+    // vector element pointers. Camera, sun shadow, LOD and depth remain live.
+    static const bool gpuPacketLod = [] {
+        const char* flag = std::getenv("AIVERSE_GPU_ICB_LOD");
+        return flag && std::strcmp(flag, "1") == 0;
+    }();
+    const bool packetEligible = staticRenderPacketsEnabled_ && !gpuPacketLod &&
         staticRenderPacketCandidate(d, activeDisplacement, bakedActive(),
                                     lodDiagnosticsEnabled_);
     const size_t packetStart = modelItems_.size();
+    std::vector<int> packetSelectedMeshes;
+    bool packetHasFade = false;
+    if (packetEligible) packetSelectedMeshes.assign(m->nodes.size(), -1);
     if (packetEligible) {
         auto found = staticRenderPackets_.find(d.persistentId);
         if (found != staticRenderPackets_.end()) {
             StaticPacketEntry& packet = found->second;
-            if (packet.geometryRevision == m->geometryRevision &&
-                packet.vertexBuffer == m->vb.id &&
-                packet.indexBuffer == m->ib.id &&
-                packet.materialData == m->materials.data() &&
-                packet.materialCount == m->materials.size() &&
-                equivalentStaticRenderPacketDraw(packet.draw, d)) {
-                ++staticRenderPacketStats_.hits;
-                packet.seen = staticRenderPacketEpoch_;
-                // ModelItem sources remain ordered by the model's node order.
-                // Recompute all camera- and shadow-dependent bits each draw.
-                size_t itemIndex = 0;
+            const bool sameSource = packet.geometryRevision == m->geometryRevision &&
+                packet.vertexBuffer == m->vb.id && packet.indexBuffer == m->ib.id &&
+                packet.selectedMeshes.size() == m->nodes.size() &&
+                equivalentStaticRenderPacketDraw(packet.draw, d) &&
+                staticPacketMaterialStateMatches(*m, mats, packet.materialsSnapshot,
+                                                 packet.materialHashes);
+            if (sameSource) {
+                struct PacketNodeState {
+                    bool inView = false, inShadow = false;
+                    ModelLodBlend lod;
+                };
+                std::vector<PacketNodeState> nodeStates(m->nodes.size());
+                bool sameLods = true;
+                const bool opaque = d.tint.w >= .99f && d.dissolve <= 0 &&
+                    !transparentItem(d.flags) &&
+                    std::none_of(mats.begin(), mats.end(), [](const Material& mat) {
+                        return mat.alpha == AlphaMode::Blend || mat.transparent;
+                    });
+                const float fadeWidth = opaque && !m->geometry &&
+                    matQuality_ != MaterialQuality::Low ? modelLodFadeWidth_ : 0.0f;
                 for (int n : m->order) {
                     const Node& node = m->nodes[size_t(n)];
                     if (node.mesh < 0) continue;
-                    ++modelStats_.nodes;
-                    ++modelStats_.lodNodes[0];
                     const MeshDef& mesh = m->meshes[size_t(node.mesh)];
-                    const mat4 nodeWorld = cache ? cache->transforms[size_t(n)]
-                                                 : d.world * world[size_t(n)];
-                    bool nodeView = inView, nodeShadow = inShadow;
+                    const mat4 xf = cache ? cache->transforms[size_t(n)]
+                                          : d.world * world[size_t(n)];
+                    auto& st = nodeStates[size_t(n)];
+                    st.inView = inView;
+                    st.inShadow = inShadow;
                     if (modelCullingEnabled_) {
-                        nodeView = inView && modelBoxVisible(viewProj_ * nodeWorld,
-                                                             mesh.boundsMin, mesh.boundsMax);
-                        nodeShadow = inShadow && modelBoxVisible(lightViewProj_ * nodeWorld,
+                        st.inView = inView && modelBoxVisible(viewProj_ * xf,
+                                                              mesh.boundsMin, mesh.boundsMax);
+                        st.inShadow = inShadow && modelBoxVisible(lightViewProj_ * xf,
                                                                    mesh.boundsMin, mesh.boundsMax);
-                        if (!nodeView && !nodeShadow) ++modelStats_.culledNodes;
                     }
-                    while (itemIndex < packet.items.size() &&
-                           packet.items[itemIndex].sourceNode == n) {
-                        ModelItem item = packet.items[itemIndex++];
-                        item.inView = item.shadowRole != 2 && nodeView;
-                        item.inShadow = nodeShadow && item.castShadow;
-                        const float3 center = item.world.transformPoint(
-                            (item.prim->boundsMin + item.prim->boundsMax) * 0.5f);
-                        item.depth = cam_.ortho
-                            ? dot(center - camPos_, normalize(cam_.target - camPos_))
-                            : length(center - camPos_);
-                        modelItems_.push_back(std::move(item));
+                    st.lod = ModelLodBlend{node.mesh};
+                    if (modelLodEnabled_ && !mesh.lods.empty()) {
+                        const float error = length(mesh.boundsMax - mesh.boundsMin);
+                        const bool z01 = dev_->info().clipDepthZeroToOne;
+                        const float cameraPixels = st.inView
+                            ? geometryErrorPixels(viewProj_ * xf, mesh.boundsMin,
+                                                  mesh.boundsMax, error,
+                                                  sceneW_, sceneH_, z01) : 0.0f;
+                        float pixels = cameraPixels;
+                        if (st.inShadow)
+                            pixels = std::max(pixels, geometryErrorPixels(
+                                lightViewProj_ * xf, mesh.boundsMin, mesh.boundsMax,
+                                error, shadowSize_, shadowSize_, z01));
+                        if (!st.inView && !st.inShadow)
+                            pixels = std::numeric_limits<float>::infinity();
+                        st.lod = selectModelLod(node.mesh, mesh.lods, pixels, fadeWidth);
+                    }
+                    if (st.lod.incoming >= 0 ||
+                        st.lod.mesh != packet.selectedMeshes[size_t(n)]) {
+                        sameLods = false;
+                        break;
                     }
                 }
-                return;
+                if (sameLods) {
+                    packet.seen = staticRenderPacketEpoch_;
+                    ++staticRenderPacketStats_.hits;
+                    size_t itemIndex = 0;
+                    for (int n : m->order) {
+                        const Node& node = m->nodes[size_t(n)];
+                        if (node.mesh < 0) continue;
+                        const auto& st = nodeStates[size_t(n)];
+                        ++modelStats_.nodes;
+                        ++modelStats_.lodNodes[std::min<size_t>(st.lod.level, 3)];
+                        if (st.lod.mesh != node.mesh) ++profile_.lodNodes;
+                        if (!st.inView && !st.inShadow && modelCullingEnabled_)
+                            ++modelStats_.culledNodes;
+                        while (itemIndex < packet.items.size() &&
+                               packet.items[itemIndex].sourceNode == n) {
+                            ModelItem item = packet.items[itemIndex++];
+                            if (item.materialIndex < 0 ||
+                                size_t(item.materialIndex) >= mats.size()) {
+                                // Invalid templates are never expected after exact
+                                // material signature checks; do not dereference them.
+                                continue;
+                            }
+                            item.mat = &mats[size_t(item.materialIndex)];
+                            item.paletteMaterials = item.materialRole == 2 ? &mats : nullptr;
+                            item.inView = item.shadowRole != 2 && st.inView;
+                            item.inShadow = st.inShadow && item.castShadow;
+                            const float3 center = item.world.transformPoint(
+                                (item.prim->boundsMin + item.prim->boundsMax) * 0.5f);
+                            item.depth = cam_.ortho
+                                ? dot(center - camPos_, normalize(cam_.target - camPos_))
+                                : length(center - camPos_);
+                            modelItems_.push_back(std::move(item));
+                        }
+                    }
+                    return;
+                }
             }
         }
     } else if (staticRenderPacketsEnabled_) {
@@ -574,6 +634,10 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             }
             if(lodBlend.incoming>=0)++profile_.lodTransitionNodes;
             if (meshIndex != node.mesh) ++profile_.lodNodes;
+        }
+        if (packetEligible) {
+            packetSelectedMeshes[size_t(n)] = meshIndex;
+            packetHasFade |= lodBlend.incoming >= 0;
         }
         ++modelStats_.lodNodes[std::min<size_t>(level, 3)];
         if (lodDiagnosticsEnabled_ && nodeView) {
@@ -655,7 +719,9 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             size_t pi = cache?cache->primitiveOffsets[size_t(meshIndex)]:0;
             if(!cache)for (int mesh = 0; mesh < meshIndex; ++mesh) pi += m->meshes[size_t(mesh)].primitives.size();
             it.geometryPrimitive = shadowRole == 2 || materialRole == 2 ? 0 : pi + size_t(&p - m->meshes[size_t(meshIndex)].primitives.data());
-            it.model = m; it.prim = &p; it.mat = &mats[size_t(std::clamp(mi, 0, int(mats.size()) - 1))];
+            const int materialIndex = std::clamp(mi, 0, int(mats.size()) - 1);
+            it.model = m; it.prim = &p; it.materialIndex = materialIndex;
+            it.mat = &mats[size_t(materialIndex)];
             it.tint = d.tint; it.team = d.team; it.flash = d.flash; it.flags = d.flags | (mats[size_t(std::clamp(mi, 0, int(mats.size()) - 1))].transparent ? uint32_t(kDrawTransparent) : 0u);
             it.dissolve = d.dissolve; it.teamGlow = d.teamGlow; it.outline = d.outline;
             it.rigid = rigid;
@@ -710,27 +776,36 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         }
     }
     if (packetEligible) {
-        // Bound packet templates separately from the existing geometry pool.
+        // Crossfade blends depend continuously on camera pixels, so never
+        // replay a stored packet across a transition. Frame falls back to
+        // ordinary drawModel even if the last stable LOD had a packet.
         constexpr size_t kMaxPacketItems = 128;
         constexpr size_t kMaxPacketBytes = 64u * 1024u * 1024u;
         const size_t count = modelItems_.size() - packetStart;
-        const size_t packetBytes = count * sizeof(ModelItem);
+        const size_t newBytes = count * sizeof(ModelItem) +
+            mats.size() * (sizeof(Material) + sizeof(uint64_t)) +
+            packetSelectedMeshes.size() * sizeof(int);
         auto old = staticRenderPackets_.find(d.persistentId);
         const size_t replacedBytes = old == staticRenderPackets_.end()
-            ? 0 : old->second.items.size() * sizeof(ModelItem);
-        if (count <= kMaxPacketItems &&
-            packetBytes <= kMaxPacketBytes - (staticRenderPacketBytes_ - replacedBytes)) {
+            ? 0 : staticPacketBytes(old->second);
+        if (!packetHasFade && count <= kMaxPacketItems &&
+            newBytes <= kMaxPacketBytes &&
+            newBytes <= kMaxPacketBytes - (staticRenderPacketBytes_ - replacedBytes)) {
             StaticPacketEntry& packet = staticRenderPackets_[d.persistentId];
             packet.draw = d;
-            packet.draw.staticCache = nullptr; // the owner may free its cache
+            packet.draw.staticCache = nullptr;
+            packet.draw.materials = nullptr; // don't retain caller-owned vector
+            packet.draw.nodeMaterial = nullptr;
             packet.geometryRevision = m->geometryRevision;
             packet.vertexBuffer = m->vb.id;
             packet.indexBuffer = m->ib.id;
-            packet.materialData = m->materials.data();
-            packet.materialCount = m->materials.size();
             packet.seen = staticRenderPacketEpoch_;
             packet.items.assign(modelItems_.begin() + packetStart, modelItems_.end());
-            staticRenderPacketBytes_ = staticRenderPacketBytes_ - replacedBytes + packetBytes;
+            packet.selectedMeshes = std::move(packetSelectedMeshes);
+            packet.materialHashes = staticPacketMaterialHashes(*m, mats);
+            packet.materialsSnapshot = mats;
+            staticRenderPacketBytes_ = staticRenderPacketBytes_ - replacedBytes +
+                                       staticPacketBytes(packet);
             ++staticRenderPacketStats_.rebuilds;
         } else {
             ++staticRenderPacketStats_.declined;
