@@ -747,3 +747,36 @@ CTest, sanitizers, Metal graphics, CI or visual comparison was executed.
 Before shipping, verify resource release ordering, shared-texture
 hot reload, streaming cancellation, and asset residency under editor
 scene switching.
+
+## Independent model preparation lifecycle (Stage 91)
+
+`modules/rts/view/RtsModelPreparationService.h` provides a
+per-resource-owner asynchronous CPU preparation queue. It owns the
+current source type/variant request, ordered source/key list, cursor,
+displayed in-progress resource name, and at most one `std::future`
+for a CPU-prepared `render::Model` with warnings. The service
+exposes `begin`, `appendPath`, `launch`, `ready`, `take`,
+`advance`, `reset`, `progress` and resource state queries.
+`begin`/reset join any active task before discarding its state.
+The caller still supplies immutable model/reader/texture-cache
+inputs to the CPU task and publishes GPU uploads on the render thread.
+
+The per-host `RtsModelResourceCache` **owns** this scheduler on
+non-Emscripten builds and resets it before freeing models and textures.
+`RtsView` no longer carries independent worker futures, type/cursor
+or path state. `RtsLook.cpp` sends requests and polls completion
+through `resources_.preparation()`; it still determines RTS model
+choices, skinning policy, variant order, warning destinations and
+render-thread uploads. Clearing loaded types or replacing hot-reloaded
+models continues to be blocked when a preparation request is active.
+
+This separates resource scheduling and lifetime from legacy rendering,
+but it is **not yet a fully independent RTS asset-loading service**:
+the host still owns source discovery and the model-file loading policy,
+and it still stores rules-driven appearance data. New native hosts can
+own `RtsModelResourceCache` independently and supply equivalent CPU
+work/publish callbacks without instantiating `RtsView`.
+
+The browser/Emscripten path retains its original synchronous/no-worker
+behaviour. **NOT RUN:** no CMake, compiler, CTest, sanitizer, Metal
+visuals or CI on this feature stage, by user request.
