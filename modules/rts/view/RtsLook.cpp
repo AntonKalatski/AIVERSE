@@ -2,6 +2,7 @@
 // overrides, clip mapping and procedural animation presets. Problems become warnings with the
 // type id, never errors: a broken model must not stop a game from starting.
 #include "RtsView.h"
+#include "RtsModelStreaming.h"
 
 #include <algorithm>
 #include <chrono>
@@ -362,31 +363,21 @@ bool RtsView::prepareType(uint16_t type, bool allVariants) {
     const bool geometry = policy.clusters || policy.shadowClusters || policy.occluder;
     if (!resources_.preparation().matches(int(type),allVariants)) {
         resources_.preparation().begin(int(type),allVariants);
-        auto add = [&](const std::string& path) {
-            if (path.empty()) return;
-            const auto key = path + (geometry ? "#geometry" : "");
-            if (resources_.models().count(key)) return;
-            resources_.preparation().appendPath(path,key);
-        };
-        // Main choices, LODs, attachments and construction stages share the model syntax.
-        std::function<void(const Json&)> visit = [&](const Json& v) {
-            if (v.isObject()) for (const auto& [key, value] : v.members()) {
-                if (key == "model") {
-                    if (value.isString()) add(value.str());
-                    for (const auto& choice : value.items()) {
-                        if (choice.isString()) add(choice.str()); else add(choice.getStr("file"));
-                    }
-                }
-                visit(value);
-            }
-            else for (const auto& value : v.items()) visit(value);
+        const auto discover=[&](const Json& authored) {
+            view_adapter::discoverModelPaths(authored,geometry,
+                [&](const std::string& key) {
+                    return resources_.models().count(key)!=0;
+                },
+                [&](const std::string& path,const std::string& key) {
+                    resources_.preparation().appendPath(path,key);
+                });
         };
         if (!allVariants && deferredLoading_ && deferAppearanceVariants_ && t.view["model"].isArray() && t.view["streaming"].getInt("initialModels", 0) > 0) {
             Json initialView = t.view, choices = Json::array();
             for (size_t index : initialModelChoices(t.view)) choices.push(t.view["model"][index]);
             initialView.set("model", std::move(choices));
-            visit(initialView);
-        } else visit(t.view);
+            discover(initialView);
+        } else discover(t.view);
     }
     if (resources_.preparation().busy()) {
         if (!resources_.preparation().ready()) return false;
@@ -394,10 +385,7 @@ bool RtsView::prepareType(uint16_t type, bool allVariants) {
         for (const auto& message : result.warnings) warn(t, message);
         // A runtime spawn can have synchronously cached the same file while the worker ran.
         const auto& key = resources_.preparation().current().second;
-        if (!resources_.models().count(key)) {
-            if (result.model) uploadModel(*dev_, *result.model);
-            resources_.models().emplace(key, std::move(result.model));
-        }
+        resources_.publishPrepared(*dev_,key,std::move(result));
         resources_.preparation().advance();
     }
     if (resources_.preparation().hasRemaining()) {
@@ -406,14 +394,8 @@ bool RtsView::prepareType(uint16_t type, bool allVariants) {
         const auto textures = resources_.textures();
         const bool prepareSkin = t.view.getStr("skinning", "auto") != "palette" && !t.view.has("animationGraph") && !t.view.getBool("programmableAnimation");
         resources_.preparation().launch(path,[path, reader, geometry, prepareSkin, textures] {
-            view_adapter::RtsModelPreparationService::PreparedModel result;
-            try {
-                result.model = loadModel(path, reader, &result.warnings, textures);
-                if (geometry && result.model) prepareGeometry(*result.model);
-                if (prepareSkin && result.model) prepareAnimationBake(*result.model);
-                if (result.model) prepareModelUpload(*result.model);
-            } catch (const std::exception& e) { result.warnings.push_back(e.what()); result.model.reset(); }
-            return result;
+            return view_adapter::prepareModelCpu(
+                path,reader,textures,{geometry,prepareSkin});
         });
         return false;
     }
