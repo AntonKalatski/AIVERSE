@@ -498,7 +498,8 @@ public:
             if(!composeAttachment(obj.draw,*rig,socketMatrices,
                                   obj.attachments[i],attached))continue;
             if(!attached.persistentId && obj.id)
-                attached.persistentId=attachmentDrawId(obj.id,obj.generation,i);
+                attached.persistentId=attachmentDrawId(
+                    obj.id,obj.generation,obj.animationModelGeneration,i);
             submitModel(renderer,attached);
         }
     }
@@ -604,13 +605,19 @@ public:
     // Detach selected presentation sources before their host-owned models
     // are evicted; other graph players keep their clocks and pose state.
     size_t forgetSources(std::span<const uint64_t> ids) {
-        return bridge_.forget(presentation_,ids);
+        const size_t removed=bridge_.forget(presentation_,ids);
+        for(const auto id:ids)lodState_.erase(id);
+        return removed;
     }
     // Opt-in source reimport, while the old CPU Model and compiled Graph
     // remain readable. Keeps only a bounded portable named playback seed;
     // subsequent compatible new-epoch sync consumes it once or restarts.
     size_t forgetSourcesForReimport(std::span<const uint64_t> ids) {
-        return bridge_.forgetForReimport(presentation_,ids);
+        const size_t removed=bridge_.forgetForReimport(presentation_,ids);
+        // The next published source starts with a fresh visual-LOD state,
+        // independently of optional named animation-clock continuity.
+        for(const auto id:ids)lodState_.erase(id);
+        return removed;
     }
     const World& presentation() const noexcept{return presentation_;}
     // For controlled host-only effects such as montage slots. Never
@@ -645,9 +652,11 @@ private:
         float visualDistance=0.f;
     };
     static uint64_t attachmentDrawId(uint64_t id,uint64_t generation,
+                                     uint64_t modelPublication,
                                      size_t attachmentIndex) noexcept {
         uint64_t x=id*0x9e3779b97f4a7c15ULL ^
                    generation*0xbf58476d1ce4e5b9ULL ^
+                   modelPublication*0xd6e8feb86659fd93ULL ^
                    (uint64_t(attachmentIndex)+1)*0x94d049bb133111ebULL;
         x^=x>>30;
         x*=0xbf58476d1ce4e5b9ULL;
