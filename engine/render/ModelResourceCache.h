@@ -181,6 +181,55 @@ public:
         return insertIfAbsent(std::move(key),std::move(replacement));
     }
 
+    // Commit an entire set of already uploaded, unpublished native Models.
+    // Both maps have the SAME node type; after validating all keys, node
+    // extraction/transfer does not allocate GPU objects or CPU map nodes.
+    // Model* addresses remain stable in appearance packets and attachments.
+    void publishStagedModels(ModelMap& staged) {
+        for(const auto& [key,model]:staged) {
+            (void)model;
+            if(models_.contains(key))
+                throw std::logic_error("speculative Model key already resident: "+key);
+        }
+        while(!staged.empty()) {
+            auto node=staged.extract(staged.begin());
+            models_.insert(std::move(node));
+            ++generation_;
+        }
+    }
+
+    // A failed appearance transaction must not destroy GPU geometry or
+    // model textures while previous frame submissions can still use them.
+    // Move a scratch Model into the SAME GPU-fenced retirement queue used
+    // for ordinary resident models. On allocator failure the caller still
+    // owns the Model and an explicit full-idle fallback is required.
+    void retireUnpublished(gfx::Device& dev,std::unique_ptr<Model>& model) noexcept {
+        if(!model)return;
+        try {
+            bindResourceDevice(dev);
+            retired_.enqueueFrom(model);
+        }catch(...) {
+            ++stagingQueueFailures_;
+            try {
+                if(dev.waitForResourceIdle()) {
+                    render::releaseModel(dev,*model);
+                    model.reset();
+                } else {
+                    // A failed idle barrier is not a release authorization.
+                    // Keep handles alive until device teardown rather than
+                    // potentially freeing GPU-visible memory.
+                    (void)model.release();
+                    ++stagingOrphanModels_;
+                }
+            }catch(...) {
+                (void)model.release();
+                ++stagingOrphanModels_;
+            }
+        }
+    }
+    uint64_t stagingQueueFailures() const noexcept{return stagingQueueFailures_;}
+    uint64_t stagingOrphanModels() const noexcept{return stagingOrphanModels_;}
+
     // Publish a CPU-prepared model on the render thread. A synchronous
     // load may have installed this key while the worker ran; do not
     // overwrite that resource or upload its duplicate.
@@ -423,6 +472,7 @@ private:
     ModelPreparationService preparation_;
 #endif
     uint64_t generation_=0;
+    uint64_t stagingQueueFailures_=0,stagingOrphanModels_=0;
     size_t retirementSoftLimit_=128;
     uint64_t estimatedByteLimit_=0; // optional; never claims exact VRAM usage
     ModelMap models_;
