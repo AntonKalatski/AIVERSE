@@ -2221,6 +2221,23 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
         SKIP_RETURN_CODE 77)
 endif()
 
+# Metal rasterization acceptance for the exact SpectraFX billboard MSL:
+# validates source-instance lookup and alpha/additive pixel output offscreen.
+# Runs independently of the previously passing compute-only MSL test.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_executable(aiverse_spectrafx_metal_billboard_test
+        tests/spectrafx_metal_billboard.mm)
+    target_include_directories(aiverse_spectrafx_metal_billboard_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_spectrafx_metal_billboard_test PRIVATE
+        "-framework Metal" "-framework Foundation")
+    add_test(NAME spectrafx_metal_billboard
+        COMMAND aiverse_spectrafx_metal_billboard_test)
+    set_tests_properties(spectrafx_metal_billboard PROPERTIES
+        LABELS "SpectraFX;MetalGPU"
+        SKIP_RETURN_CODE 77)
+endif()
+
 # Versioned VFX graph assets, CPU fallback, exposed parameters and live reload.
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_vfx_assets_tests tests/vfx_graph_assets_test.cpp)
