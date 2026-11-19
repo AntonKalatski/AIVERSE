@@ -10,8 +10,10 @@ if [[ "$#" -ne 1 || "$1" != "--run" ]]; then
 fi
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
-if [[ "$(git branch --show-current)" != "feature/lumaweave-massive-lighting" ]]; then
-  echo "ERROR: checkout feature/lumaweave-massive-lighting first" >&2
+branch="$(git branch --show-current)"
+if [[ "$branch" != "feature/lumaweave-massive-lighting" &&
+      "$branch" != "feature/gi-lumaweave-frame-integration-20261119" ]]; then
+  echo "ERROR: checkout LumaWeave or the GI+LumaWeave integration branch first" >&2
   exit 3
 fi
 if [[ -n "$(git status --porcelain)" && "$(printenv ALLOW_DIRTY || echo 0)" != "1" ]]; then
