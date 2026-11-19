@@ -729,3 +729,17 @@ authenticated `physis_admin_journal` CTest remain unverified.
 
 Handoff:
 `docs/agent-handoffs/physis-stage54-locked-io-test-2026-11-19.md`.
+
+
+### Stage 55 — orphan temp is not committed journal history
+
+The POSIX `FileJournal` loader reads only the canonical
+`receipts` path. A crash before `renameat` can leave
+`receipts.next-*` files; they must not be interpreted as committed
+request/receipt records. New calls to `posix_journal::write` refuse
+an empty payload before creating a temp file. Do not remove orphan
+files by default, as they may be forensic evidence. The
+`physis_journal_posix_io` regression checks these policies.
+Actual isolated Linux CTest 2/2 and strict GCC/Clang/ASan/UBSan pass;
+full AIVERSE `physis_admin_journal` remains unverified. Handoff:
+`docs/agent-handoffs/physis-stage55-interrupted-temp-recovery-2026-11-19.md`.

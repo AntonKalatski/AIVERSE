@@ -108,6 +108,7 @@ inline bool write(int directory,const std::string& name,
                   const std::string& randomSuffix,
                   std::string* why=nullptr) {
     if(!ownedDirectory(directory) || !validBasename(name) ||
+       bytes.empty() ||
        randomSuffix.empty() || randomSuffix.find('/')!=std::string::npos ||
        randomSuffix.find('\0')!=std::string::npos)
         return error(why,"PHYSIS pinned journal directory or name invalid");

@@ -642,3 +642,21 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   Source test proves two standalone headers coexist, NOT full
   authenticated endpoint behavior. See
   `docs/agent-handoffs/physis-stage54-locked-io-test-2026-11-19.md`.
+
+
+### PHYSIS Stage 55 — interrupted temporary journal recovery (2026-11-19)
+
+- `posix_journal::write` rejects empty payloads, so a bug in a caller
+  cannot replace a valid V1 receipt journal with an invalid empty file.
+  `FileJournal::savePinned` still uses the unchanged V1 encoder.
+- Interrupted writes before `renameat` may leave orphan
+  `receipts.next-*` files; these are NOT committed history. On
+  startup/read, use only the canonical receipt filename. A future
+  writer uses its own cryptographically random O_EXCL temp suffix.
+  Do not automatically delete unrecognized orphan files while a
+  privileged service is running; keep them for operator inspection.
+- `physis_journal_posix_io` now exercises orphan-preserving recovery,
+  empty-payload rejection and normal subsequent publication. Isolated
+  Linux native CTest 2/2 with the existing locked I/O test, GCC 14.2,
+  Clang 17, ASan and UBSan PASSED. Full engine CTest/CI did NOT run.
+- Handoff: `docs/agent-handoffs/physis-stage55-interrupted-temp-recovery-2026-11-19.md`.

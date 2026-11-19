@@ -50,9 +50,25 @@ int main() {
     CHECK(!io::write(dir,"receipts",data,invalidSuffix,&reason));
     CHECK(io::read(dir,"receipts",1,1024,readback,missing,&reason));
     CHECK(missing && readback==std::vector<std::uint8_t>{77});
+    // A crash before rename may leave a temp file. Never treat the
+    // incomplete intent as the canonical receipt journal.
+    const fs::path orphan=parent/"receipts.next-abandoned";
+    const int orphanFd=::open(orphan.c_str(),O_WRONLY|O_CREAT|O_EXCL,0600);
+    CHECK(orphanFd>=0);
+    if(orphanFd>=0) {
+        const char malformed[]="incomplete-intent";
+        CHECK(::write(orphanFd,malformed,sizeof(malformed))==sizeof(malformed));
+        CHECK(::close(orphanFd)==0);
+    }
+    CHECK(!io::write(dir,"receipts",{},"empty-payload",&reason));
+    CHECK(!fs::exists(parent/"receipts.next-empty-payload"));
+    CHECK(io::read(dir,"receipts",1,1024,readback,missing,&reason));
+    CHECK(missing);
     CHECK(io::write(dir,"receipts",data,"nonce-a",&reason));
+    CHECK(fs::exists(orphan));
     CHECK(io::read(dir,"receipts",1,1024,readback,missing,&reason));
     CHECK(!missing && readback==data);
+    CHECK(fs::remove(orphan));
     CHECK(::chmod((parent/"receipts").c_str(),0644)==0);
     CHECK(!io::read(dir,"receipts",1,1024,readback,missing,&reason));
     CHECK(::chmod((parent/"receipts").c_str(),0600)==0);
