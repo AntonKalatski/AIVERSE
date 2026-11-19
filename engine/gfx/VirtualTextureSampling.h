@@ -149,6 +149,48 @@ vec4 aiverseSampleVirtualTrilinear(
         gutterPixels,fallbackColor,uvDx,uvDy,virtualMipLod,
         virtualMipLevels,0,0);
 }
+
+    // Multi-tap across the *virtual* footprint: unlike hardware anisotropy
+    // restricted to one physical slice, every tap resolves its own page key.
+    // maxTaps is clamped to 1..8; 1 preserves ordinary trilinear LOD.
+vec4 aiverseSampleVirtualAnisotropic(
+    highp sampler2DArray atlas, highp sampler2DArray indexedTable,
+    vec2 uv, int logicalLayer, float gutterPixels, vec4 fallbackColor,
+    vec2 uvDx, vec2 uvDy, vec2 virtualSizePixels, float mipBias,
+    int virtualMipLevels, int maxTaps, int addressU, int addressV) {
+    vec2 sizePixels=max(virtualSizePixels,vec2(1.0));
+    float dxPixels=length(uvDx*sizePixels);
+    float dyPixels=length(uvDy*sizePixels);
+    bool xMajor=dxPixels>=dyPixels;
+    float major=max(dxPixels,dyPixels);
+    float minor=max(1.0,min(dxPixels,dyPixels));
+    int limit=clamp(maxTaps,1,8);
+    int taps=clamp(int(ceil(major/minor)),1,limit);
+    vec2 majorDerivative=xMajor?uvDx:uvDy;
+    vec2 adjustedDx=xMajor?uvDx/float(taps):uvDx;
+    vec2 adjustedDy=xMajor?uvDy:uvDy/float(taps);
+    float footprint=max(minor,major/float(taps));
+    float virtualMipLod=max(0.0,log2(max(footprint,1.0))+mipBias);
+    vec4 color=vec4(0.0);
+    for(int i=0;i<8;++i) {
+        if(i>=taps)break;
+        float position=(float(i)+0.5)/float(taps)-0.5;
+        vec2 sampleUv=uv+position*majorDerivative;
+        color+=aiverseSampleVirtualTrilinear(atlas,indexedTable,sampleUv,
+            logicalLayer,gutterPixels,fallbackColor,adjustedDx,adjustedDy,
+            virtualMipLod,virtualMipLevels,addressU,addressV);
+    }
+    return color/float(taps);
+}
+vec4 aiverseSampleVirtualAnisotropic(
+    highp sampler2DArray atlas, highp sampler2DArray indexedTable,
+    vec2 uv, int logicalLayer, float gutterPixels, vec4 fallbackColor,
+    vec2 uvDx, vec2 uvDy, vec2 virtualSizePixels, float mipBias,
+    int virtualMipLevels, int maxTaps) {
+    return aiverseSampleVirtualAnisotropic(atlas,indexedTable,uv,
+        logicalLayer,gutterPixels,fallbackColor,uvDx,uvDy,
+        virtualSizePixels,mipBias,virtualMipLevels,maxTaps,0,0);
+}
 )AVT";
 
 inline constexpr const char* kVirtualTextureMSL = R"AVT(
@@ -291,6 +333,49 @@ inline float4 aiverse_sample_virtual_trilinear(
     return aiverse_sample_virtual_trilinear(atlas,indexedTable,atlasSampler,
         uv,logicalLayer,gutterPixels,fallbackColor,uvDx,uvDy,
         virtualMipLod,virtualMipLevels,0u,0u);
+}
+
+    // Up to eight virtual-footprint taps, each with separate indexed table
+    // lookup. Keeps anisotropic direction continuity across physical slices.
+inline float4 aiverse_sample_virtual_anisotropic(
+    texture2d_array<float, access::sample> atlas,
+    texture2d_array<float, access::read> indexedTable, sampler atlasSampler,
+    float2 uv, uint logicalLayer, float gutterPixels, float4 fallbackColor,
+    float2 uvDx, float2 uvDy, float2 virtualSizePixels, float mipBias,
+    uint virtualMipLevels, uint maxTaps, uint addressU, uint addressV) {
+    float2 sizePixels=max(virtualSizePixels,float2(1.0));
+    float dxPixels=length(uvDx*sizePixels);
+    float dyPixels=length(uvDy*sizePixels);
+    bool xMajor=dxPixels>=dyPixels;
+    float major=max(dxPixels,dyPixels);
+    float minor=max(1.0f,min(dxPixels,dyPixels));
+    uint limit=clamp(maxTaps,1u,8u);
+    uint taps=clamp(uint(ceil(major/minor)),1u,limit);
+    float2 majorDerivative=xMajor?uvDx:uvDy;
+    float2 adjustedDx=xMajor?uvDx/float(taps):uvDx;
+    float2 adjustedDy=xMajor?uvDy:uvDy/float(taps);
+    float footprint=max(minor,major/float(taps));
+    float virtualMipLod=max(0.0f,log2(max(footprint,1.0f))+mipBias);
+    float4 color=float4(0.0);
+    for(uint i=0u;i<8u;++i) {
+        if(i>=taps)break;
+        float position=(float(i)+0.5f)/float(taps)-0.5f;
+        float2 sampleUv=uv+position*majorDerivative;
+        color+=aiverse_sample_virtual_trilinear(atlas,indexedTable,atlasSampler,
+            sampleUv,logicalLayer,gutterPixels,fallbackColor,adjustedDx,adjustedDy,
+            virtualMipLod,virtualMipLevels,addressU,addressV);
+    }
+    return color/float(taps);
+}
+inline float4 aiverse_sample_virtual_anisotropic(
+    texture2d_array<float, access::sample> atlas,
+    texture2d_array<float, access::read> indexedTable, sampler atlasSampler,
+    float2 uv, uint logicalLayer, float gutterPixels, float4 fallbackColor,
+    float2 uvDx, float2 uvDy, float2 virtualSizePixels, float mipBias,
+    uint virtualMipLevels, uint maxTaps) {
+    return aiverse_sample_virtual_anisotropic(atlas,indexedTable,atlasSampler,
+        uv,logicalLayer,gutterPixels,fallbackColor,uvDx,uvDy,virtualSizePixels,
+        mipBias,virtualMipLevels,maxTaps,0u,0u);
 }
 )AVT";
 
