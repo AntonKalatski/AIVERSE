@@ -161,6 +161,10 @@ public:
         std::stable_sort(out.effects.begin(), out.effects.end(), [](const auto& a, const auto& b){
             return int(a.type) < int(b.type);
         });
+        // Native volume components are mutable C++ data. A nonfinite
+        // authored/interpolated float must not reach any GPU uniform,
+        // even if the profile bypassed the JSON parser entirely.
+        sanitizePrismaSettings(out);
         return out;
     }
 };
