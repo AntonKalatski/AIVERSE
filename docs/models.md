@@ -914,3 +914,34 @@ texture overrides. Initial model upload, shared texture caches and
 other direct GPU allocations still have independent lifetime
 contracts. Native build/CTest and physical GPU tests have not been
 performed for Stage 112.
+
+## Stage 113 — speculative model imports and shared texture residency
+
+For authored hot reload that can introduce **new model files**,
+avoid inserting imported Models in the host's live
+`ModelResourceCache` before the entire update passes.
+Use a scratch `ModelResourceCache::ModelMap` and call
+`uploadModel(device,model,false,false)` for speculative
+GPU preparation. This may borrow an existing
+`ModelTextureCache::borrowResident` lease but does not create
+new shared-cache GPU entries. Shared-cache misses become dedicated,
+transaction-owned textures. The decoded CPU image cache may still
+be reused and populated.
+
+After the host has staged its per-type material, variant, LOD,
+attachment and AnimationGraph choices, call
+`ModelImageUploadTransaction::commit` then
+`ModelResourceCache::publishStagedModels(device,models)` at a safe
+frame boundary. Its node transfer preserves Model addresses.
+An aborted scratch import must use
+`ModelResourceCache::retireUnpublished(device,model)`, which
+enqueues the Model into the GPU-fenced retirement queue instead
+of releasing partially uploaded GPU resources immediately.
+Neither `ModelImageRollbackPool` nor `ModelResourceCache`
+may be destroyed before their pending resources are drained
+behind real GPU completion.
+
+This path is implemented by RTS `reloadAppearanceTypes`;
+ordinary initial loading and other native host importers have
+not yet been converted. This Stage 113 implementation has
+not been compiled or run on hardware.
