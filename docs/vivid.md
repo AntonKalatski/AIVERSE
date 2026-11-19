@@ -542,3 +542,14 @@ The optional `HumanGroomRuntime::setCollisionMesh` accepts a bounded closed tria
 `HumanMaterials` now routes `scleraRedness` into actual sclera PBR pigment. The Creator exposes all 52 `Face.h` facial defaults for authoring and undoable DNA persistence; interactive jaw, blink and smile preview controls override their corresponding defaults. Existing Hair High/Med/Low is a groom presentation quality selector rather than mesh-LOD authoring.
 
 **Source authored; native macOS build, the newly extended `vivid_human_appearance` test, actual imported character GPU preview, and all-engine regressions NOT RUN** for these commits. The next validation is `bash tools/vivid-validate.sh --full` on an appropriate Mac, with logs appended to `docs/agent-handoffs/vivid.md`. True mesh sculpting, skinned scalp collision/BVH, production hair simulation, physically correct eye refraction and multilayer SSS are still outstanding.
+
+
+## Stage 6K–6O — collision acceleration and imported-human authoring (2026-11-19)
+
+The procedural hair runtime now builds a bounded median-split **CPU BVH** from an optional closed scalp proxy. Mesh validation rejects open/non-manifold edges; nearest-surface projection and ray-parity interior checks use the hierarchy rather than scanning all triangles each simulation iteration. Guide updates run bounded internal steps up to 120 Hz, with collision inelastic response.
+
+Open v1 import manifests may specify `"scalpColliderMesh": "closed_head_proxy"`. Creator extracts that named mesh's triangles into a compact collider, rejects explicitly skinned and open meshes, and projects guide roots onto the collision proxy, translating rest and previous positions consistently. This is **static bind-pose local-space authoring**. Dynamic skinned refits, arbitrary node transforms and full self-/cloth-/body collision are not yet supported.
+
+Creator now also exposes imported facial ARKit channel-to-morph route gain sliders (0–4) and can atomically save edited manifests. The existing 52-channel DNA authoring and procedural groom LOD selectors remain available.
+
+**No new C++ build, CTest, Metal GUI acceptance or performance benchmarks have been run for these changes** (implementation-first request). Source includes newly authored regression assertions covering open-surface rejection, last-good preservation, scalp root relocation, manifest roundtrip and 30/120 Hz substep equivalence. These are not passing-test claims. Full photoreal MetaHuman-level character creation still requires additional artist-authored mesh sculpt/rig/LOD tools, realistic scanned assets, accurate skin/eye/hair optics and runtime GPU performance validation. See `docs/agent-handoffs/vivid.md` for implementation SHAs and the final validation gate.
