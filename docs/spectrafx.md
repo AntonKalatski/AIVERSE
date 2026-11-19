@@ -2929,3 +2929,119 @@ parsing, Metal readback completion/cancellation, editor
 launch, host recovery/fence tests, CPU/GPU parity or
 performance measurements. Stage 41 is source-implemented,
 not production-verified.
+
+## Stage 42 — privacy-redacted diagnostics, per-group capture and explicit recovery requests
+
+### Privacy-safe diagnostics are the default
+
+Stage 41's read-only inspector exposed world bounds and GPU frame
+identifiers in its JSON/console output. Stage 42 introduces
+`engine/fx/SpectraDiagnosticReport.h` and
+`GpuDiagnosticReportPrivacy`. The new
+`gpuDiagnosticReportJson(inspection,privacy)` returns a **fixed
+aggregate-only schema**, without original file paths, per-particle
+positions, VM scalar values or raw GPU binary data. By default it
+also redacts scene-coordinate bounds, GPU serial/revision and
+CRC-based content fingerprints. Each sensitive category requires
+its own intentional opt-in:
+
+```cpp
+auto inspected=inspectGpuCheckpointDiagnostic(checkpointBytes);
+GpuDiagnosticReportPrivacy privacy{}; // all sensitive categories OFF
+std::string redacted=gpuDiagnosticReportJson(inspected,privacy);
+
+// Only when a developer specifically requires bounds:
+privacy.includeWorldBounds=true;
+// Similarly, frame serial/revision/CRC fingerprints are opt-in:
+privacy.includeGpuIdentifiers=true;
+```
+
+`tools/spectrafx/inspect_spfx.cpp` now defaults to redacted text
+and `--json`. The explicit `--report <safe.json>` argument
+creates one local JSON report, never auto-uploads or automatically
+includes the raw checkpoint. The optional
+`--include-coordinates` and `--include-identifiers` CLI flags
+enable only their respective aggregate fields. No CLI option ever
+prints the original per-particle VM parameter arrays.
+
+The editor adds **Save safe JSON report** and an intentionally
+separate **Save RAW GPU checkpoint (sensitive)**. A safe report
+contains aggregate inspection counters and at most 180
+privacy-filtered GPU preview samples (sample ordinal, estimated
+particles, step result, fresh/stale/pending counts and pending
+kill count). It excludes exact RHI frame serials, authored graph
+names, filenames and per-particle positions and VM inputs.
+Checkboxes permit optional world-coordinate BOUNDS and GPU
+identifiers, but never raw state inside a safe report. Saving
+is a direct, local user action under
+`platform::userDataDir()/spectrafx-diagnostics`; the system
+does NOT upload diagnostics or create recurring jobs.
+
+### Group selection across a pooled GPU world
+
+`GpuPoolWorld::gpuGroupCount()` and
+`gpuGroupSummary(index,out)` expose a read-only
+`PoolGpuGroupSummary`: active state, estimated particle count,
+GPU buffer bytes, pending/fresh checkpoint revision status,
+most recent step/reset acceptance and whether a **complete,
+current** checkpoint can be exported. These APIs do **not**
+expose serialized effect graph keys or the source effect code.
+An invalid group index leaves the output unmodified.
+
+The editor displays a bounded index selector for up to the
+existing 64 GPU-group maximum and scopes both binary
+`saveFreshSpectraGpuCheckpoint(out,index)` and
+`saveSafeSpectraGpuReport(out,index,...)` to the chosen group.
+The old one-argument binary-save API still auto-selects the first
+eligible group for compatibility. Only the editor-owned Metal
+preview group 0 can be captured directly by the editor; a
+separately attached external renderer pool remains **non-owning
+telemetry** and must run its own GPU capture between safe RHI
+passes. It is never driven out of render order by a diagnostics UI.
+
+The native `GpuPoolCaptureHost::requestNext(policy)` selects
+one currently active group via
+`GpuCaptureTargetPolicy::{RoundRobin,LargestEstimatedGroup,
+MissingOrStalestCheckpoint}`. RoundRobin rotates starting
+group; the other modes use the previous CPU-estimated active
+count or the checkpoint's missing/stale revision. Groups already
+reading back are skipped. Exactly **one** capture remains
+queued/in flight per native host and the shared Stage 32
+bytes/chunk budget is still authoritative. Requests are owner
+thread operations, with no background polling, extra GPU
+contexts or direct synchronous buffer reads.
+
+### Native reset and graphics recreation events
+
+`GpuPoolRecoveryHost::requestPresentationReset(purpose)`
+now explicitly schedules a visual reset **without** submitting
+GPU commands. On the next safe graphics frame, outside active
+encoders, the host calls `retryPresentationReset()`.
+`PoolRecoveryPhase::ResetRequested` is distinct from
+`ResetRetryRequired` (a failed/incomplete GPU-group reset)
+and `DeviceRecreationRequired` (lost GPU or failed new-device
+import).
+
+`PoolRecoveryEvent` now includes a stable monotonic
+`transitionSequence` that changes only when an observable
+phase, progress, health or error detail changes. It also reports
+host reset-request and Device-replacement attempt counters,
+whether a reset was explicitly queued, and whether a CPU-only
+recovery manifest is being retained for retry. No event
+handler recreates a Device itself. A real platform host must
+construct a distinct healthy `gfx::Device` and keep the old
+Device alive until old pooled GPU resources have been released.
+
+The updated `examples/spectrafx/native_ecs_attachments.h`
+exposes both explicit per-group and automatic policy-based
+capture, safe summary retrieval, and a queued reset/status
+workflow. VFX capture bytes and GPU physical-slot identifiers
+remain outside authoritative ECS, and lost GPU particles are
+never falsely reconstructed.
+
+**Verification:** Stage 42 source changes and GitHub content
+readback only. **NOT RUN:** CMake/C++/ObjC++/MSL compilation,
+CTest, offline redacted-report CLI, actual editor report export,
+Metal multi-group capture, fault-injected device reset, UI
+screenshots, CPU/GPU parity or performance benchmarks. These
+are experimental source APIs pending executable validation.
