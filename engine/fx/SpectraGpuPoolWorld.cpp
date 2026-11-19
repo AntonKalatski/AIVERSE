@@ -17,6 +17,11 @@ bool validParams(const std::array<float,8>& params) {
     for(float value:params)if(!valid(value))return false;
     return true;
 }
+// Multiply-free hysteresis threshold: no overflow even for SIZE_MAX.
+size_t releaseBelow(size_t threshold,uint32_t percentage) {
+    return (threshold/100u)*percentage+
+           ((threshold%100u)*percentage)/100u;
+}
 } // namespace
 
 bool GpuPoolWorld::init(gfx::Device* device, PoolWorldBudgets budgets) {
@@ -26,6 +31,9 @@ bool GpuPoolWorld::init(gfx::Device* device, PoolWorldBudgets budgets) {
     budgets.maxBurstsPerFrame=std::min<uint32_t>(budgets.maxBurstsPerFrame,4096);
     budgets.maxSources=std::clamp<uint32_t>(budgets.maxSources,1,65536);
     if(budgets.loadShedding.enabled) {
+        budgets.loadShedding.recoverBelowPercent=
+            std::clamp<uint32_t>(
+                budgets.loadShedding.recoverBelowPercent,1u,100u);
         budgets.loadShedding.maxContinuousBurstsPerFrame=std::min(
             budgets.loadShedding.maxContinuousBurstsPerFrame,
             budgets.maxBurstsPerFrame);
@@ -63,6 +71,7 @@ void GpuPoolWorld::shutdown() {
     device_=nullptr;
     initialized_=frameOpen_=stepped_=drawn_=false;
     nextGroupStart_=nextContinuousSource_=0;
+    particlePressureLatched_=readbackPressureLatched_=false;
     stats_={};
     reason_.clear();
 }
@@ -223,11 +232,16 @@ bool GpuPoolWorld::setLoadShedding(PoolLoadSheddingPolicy policy) {
     if(!initialized_ || frameOpen_ ||
        (policy.enabled &&
        (policy.maxContinuousBurstsPerFrame>budgets_.maxBurstsPerFrame ||
-        policy.reserveManualBursts>budgets_.maxBurstsPerFrame))) {
+        policy.reserveManualBursts>budgets_.maxBurstsPerFrame ||
+        policy.recoverBelowPercent<1 ||
+        policy.recoverBelowPercent>100))) {
         reason_="SpectraFX load policy must fit global burst budget and change between frames";
         return false;
     }
     budgets_.loadShedding=policy;
+    particlePressureLatched_=readbackPressureLatched_=false;
+    stats_.particlePressureLatched=false;
+    stats_.readbackPressureLatched=false;
     reason_.clear();
     return true;
 }
@@ -552,16 +566,38 @@ void GpuPoolWorld::tickContinuous(float dt) {
             remainingGlobal-policy.reserveManualBursts : 0u);
         const uint64_t occupancy=uint64_t(stats_.cpuParticles)+
                                  uint64_t(stats_.gpuParticlesEstimated);
-        const bool particlePressure=policy.estimatedParticleSoftLimit>0 &&
-            occupancy>=policy.estimatedParticleSoftLimit;
-        const bool readbackPressure=policy.maxReadbackBytesInFlight>0 &&
-            checkpointBudget_ &&
-            checkpointBudget_->stats().bytesInFlight>=
-                policy.maxReadbackBytesInFlight;
-        if(particlePressure || readbackPressure)budget=0;
-        stats_.pressureActive=particlePressure || readbackPressure ||
-            budget<remainingGlobal;
+        if(policy.estimatedParticleSoftLimit==0) {
+            particlePressureLatched_=false;
+        } else if(!particlePressureLatched_) {
+            particlePressureLatched_=
+                occupancy>=policy.estimatedParticleSoftLimit;
+        } else if(occupancy<=releaseBelow(
+                     policy.estimatedParticleSoftLimit,
+                     policy.recoverBelowPercent)) {
+            particlePressureLatched_=false;
+        }
+        const size_t readbackInFlight=checkpointBudget_?
+            checkpointBudget_->stats().bytesInFlight:0;
+        if(policy.maxReadbackBytesInFlight==0) {
+            readbackPressureLatched_=false;
+        } else if(!readbackPressureLatched_) {
+            readbackPressureLatched_=
+                readbackInFlight>=policy.maxReadbackBytesInFlight;
+        } else if(readbackInFlight<=releaseBelow(
+                     policy.maxReadbackBytesInFlight,
+                     policy.recoverBelowPercent)) {
+            readbackPressureLatched_=false;
+        }
+        if(particlePressureLatched_ || readbackPressureLatched_)budget=0;
+        stats_.pressureActive=particlePressureLatched_ ||
+            readbackPressureLatched_ || budget<remainingGlobal;
+    } else {
+        particlePressureLatched_=readbackPressureLatched_=false;
     }
+    stats_.particlePressureLatched=particlePressureLatched_;
+    stats_.readbackPressureLatched=readbackPressureLatched_;
+    if(particlePressureLatched_ || readbackPressureLatched_)
+        ++stats_.pressureHeldFrames;
     stats_.continuousFrameBudget=budget;
     uint32_t emittedTotal=0;
     const size_t count=sources_.size();
