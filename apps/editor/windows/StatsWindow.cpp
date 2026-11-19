@@ -126,9 +126,18 @@ public:
                 (unsigned long long)residency.imageRollbackEnqueueFailures,
                 (unsigned long long)residency.imageRollbackOrphanBatches);
         if(const auto* ring=ed.gpuRetirementDiagnostics()) {
+            size_t modelEvents=0,imageEvents=0;
+            for(const auto& event:ring->snapshot()) {
+                if(event.resource==render::RetirementResourceKind::Model)
+                    ++modelEvents;
+                else if(event.resource==render::RetirementResourceKind::Image)
+                    ++imageEvents;
+            }
             ImGui::TextDisabled("GPU retirement события: %zu/%zu · переполнений %llu",
                 ring->size(),ring->capacity(),
                 (unsigned long long)ring->overflowCount());
+            ImGui::TextDisabled("Из них GPU модели: %zu · откат текстур: %zu",
+                modelEvents,imageEvents);
         }
         ImGui::TextDisabled("Общий geometry pool учитывается выше отдельно. Оценки без драйверных mip/padding, FX и RT.");
         ImGui::TextDisabled("Выгрузка моделей редактора: %s (период ожидания 15 с)",
