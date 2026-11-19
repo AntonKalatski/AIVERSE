@@ -6,6 +6,8 @@ on:
       - feature/physis-nature-simulation
     paths:
       - 'engine/physis/**'
+      # Handoff-only changes must not cancel queued native builds.
+      - '!engine/physis/AGENTS.md'
       - 'engine/physics/PhysisBox3D.h'
       - 'tests/physis_*.cpp'
       - 'CMakeLists.txt'
@@ -13,6 +15,8 @@ on:
   pull_request:
     paths:
       - 'engine/physis/**'
+      # Handoff-only changes must not cancel queued native builds.
+      - '!engine/physis/AGENTS.md'
       - 'engine/physics/PhysisBox3D.h'
       - 'tests/physis_*.cpp'
       - 'CMakeLists.txt'
