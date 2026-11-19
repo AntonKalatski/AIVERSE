@@ -567,3 +567,10 @@ This is a **CPU geometry API**, not yet automatic MotionWeave-to-skinned-scalp s
 The imported-character Creator panel now exposes the optional named `scalpColliderMesh` from the v1 manifest. UI edits validate a staged manifest, preserve the last-good selection on error and request a new model/groom rebuild on success; the existing atomic manifest Save action persists the change. Empty selection falls back to the DNA ellipsoid.
 
 This source change was committed but **not compiled or GUI-tested**. Authoring a closed/unskinned scalp proxy, transforming an imported node hierarchy into groom-local coordinates and driving deforming scalp meshes from MotionWeave remain separate tasks.
+
+
+## Stage 6S — MotionWeave-driven rigid scalp refit (2026-11-19)
+
+An imported closed rigid scalp-proxy in VIVID Creator can now follow a named MotionWeave animated node. The Creator stores original proxy positions and bind-pose transforms, converts the current node transform into the already-used head-local groom coordinate system, and transactionally refits the CPU collision BVH before presentation hair simulation. Invalid/nonfinite computed poses are rejected while retaining the last-good collider. No new skeleton scheduler is introduced.
+
+**Scope:** only an unskinned scalp-proxy with a single owning model node and existing groom-local vertex convention. Multi-joint skinning, morph-deformed scalp geometry, arbitrary transform authoring, collision self-contacts and full character sculpting are still unfinished. This stage is committed as source but **native build, CTests, Metal GPU GUI and visual parity have NOT RUN**. Full implementation details and next-step handoff live in `docs/agent-handoffs/vivid.md`.
