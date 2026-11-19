@@ -184,7 +184,10 @@ public:
                     return stats_;
                 }
             }
-        } else {
+        } else if(requestedQuality!=LumaWeaveQuality::Off && !gpu_.ready()) {
+            // This means the experimental Metal producer is unavailable.
+            // An absent BVH, inactive HDR target or deliberate quality=Off is
+            // a distinct host/prerequisite decision, not a failed backend.
             stats_.backendUnavailable=true;
         }
 
