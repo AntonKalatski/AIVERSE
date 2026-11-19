@@ -18,6 +18,7 @@ struct GeometryPoolPage {
     size_t capacity = 0;
     size_t vertexEnd = 0;
     size_t indexBegin = 0;
+    size_t modelOwners = 0; // spans also own shared_ptr, so use explicit model count
     struct RetiredPair {
         size_t vertexOffset = 0, indexOffset = 0;
         uint32_t vertexBytes = 0, indexBytes = 0;
@@ -84,8 +85,7 @@ GeometryPoolStats geometryPoolStats(gfx::Device& dev) {
         ++stats.pages;
         stats.allocatedBytes += page->capacity;
         stats.occupiedBytes += page->vertexEnd + (page->capacity - page->indexBegin);
-        const long owners = page.use_count() - 1; // exclude this temporary lock
-        if (owners > 0) stats.liveModels += size_t(owners);
+        stats.liveModels += page->modelOwners;
         stats.retiredPairs += page->retired.size();
         stats.recycledUploads += page->recycledUploads;
         stats.auxiliaryIndexSpans += page->liveAuxiliarySpans;
@@ -262,6 +262,7 @@ bool uploadModelToGeometryPool(gfx::Device& dev, Model& m) {
     m.gpuFirstIndex = uint32_t(ibOffset / sizeof(uint32_t));
     m.gpuPoolVertexBytes = reservedVertices;
     m.gpuPoolIndexBytes = reservedIndices;
+    ++target->modelOwners;
     return true;
 }
 
@@ -421,6 +422,7 @@ void releaseModelGeometryPool(gfx::Device& dev, Model& m) {
         if (!m.geometryPoolPage) return;
         const std::shared_ptr<GeometryPoolPage> page =
             std::move(m.geometryPoolPage);
+        if (page->modelOwners) --page->modelOwners;
         if (page.use_count() > 1 && recyclingEnabled() &&
             m.gpuPoolVertexBytes && m.gpuPoolIndexBytes &&
             page->retired.size() < kMaxRetiredPairsPerPage) {
