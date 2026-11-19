@@ -185,7 +185,8 @@ public:
     // Both maps have the SAME node type; after validating all keys, node
     // extraction/transfer does not allocate GPU objects or CPU map nodes.
     // Model* addresses remain stable in appearance packets and attachments.
-    void publishStagedModels(ModelMap& staged) {
+    void publishStagedModels(gfx::Device& dev,ModelMap& staged) {
+        bindResourceDevice(dev);
         for(const auto& [key,model]:staged) {
             (void)model;
             if(models_.contains(key))
