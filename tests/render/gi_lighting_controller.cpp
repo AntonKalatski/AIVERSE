@@ -42,6 +42,18 @@ int main() {
     auto scene=wall();
     AIVERSE_TEST_CHECK(controller.setGeometry(scene,1));
     AIVERSE_TEST_CHECK(!controller.setGeometry(scene,1)); // monotonic revisions
+    PointLight authored{{0,0,0},5,{1,0,0},10};
+    authored.key=7;
+    GiLightBridge::Stats authoredStats;
+    // Indirect is explicitly disabled for ordinary realtime/baked lights.
+    AIVERSE_TEST_CHECK(controller.setAuthoredLights({authored},3,{0,0,0},
+        GiLightOverflowPolicy::Reject,&authoredStats));
+    AIVERSE_TEST_CHECK(authoredStats.enabled==0);
+    authored.indirectMultiplier=.5f;
+    authored.makeSpot({0,0,1},60,.4f);
+    AIVERSE_TEST_CHECK(controller.setAuthoredLights({authored},3,{0,0,0},
+        GiLightOverflowPolicy::Reject,&authoredStats));
+    AIVERSE_TEST_CHECK(authoredStats.enabled==1 && authoredStats.output==1);
     AIVERSE_TEST_CHECK(controller.setLights({GiMovingLight{7,{0,0,0},{1,0,0},5,10}}));
     const auto step=controller.updateFrame({0,0,0});
     AIVERSE_TEST_CHECK(step.mode==GiTransportMode::CpuProbes);
