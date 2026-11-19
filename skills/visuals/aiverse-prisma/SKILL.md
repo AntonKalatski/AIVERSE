@@ -676,6 +676,38 @@ NOT RUN. Handoff: `docs/handoffs/prisma-stage-54.md`.
 Complete remaining functional catalog/editor work first; retain
 Draft PR #26 and never merge main without user authorization.
 
+## Stage 55 — no collision between postfx Shader Graph and Auto Exposure
+
+For HDR High + explicitly authored/opted-in Auto Exposure and a
+`postfx` Shader Graph with four project textures, never assume
+the old fixed `TEX8` binding. Read
+`engine/render/PrismaCompositeTextureLayout.h` first:
+
+- Composite fixed inputs: textures 0..4. The four bounded graph
+  texture slots: 5..8. Auto exposure: 8 when 0..3 graph textures
+  are used, **9 when four** graph textures are present.
+- The same CPU-only constexpr layout MUST drive generation of
+  GLSL/MSL sampler declarations, `ShaderDesc.textureSlots`,
+  shader preprocessor `PF_AUTO_EXPOSURE_SLOT9`, and runtime
+  `Device::setTexture`. Do not hard-code a second conflicting
+  exposure binding in the editor or shader builder.
+- If a backend rejects the 10-slot variant, retain the old
+  no-auto-exposure (but otherwise identical graph) composite
+  fallback, then the plain scene fallback if even that fails.
+  Never count an unavailable composite as executed.
+- The per-camera `ViewEffectReport` includes
+  `shaderGraphTextures` and `autoExposureTextureSlot`
+  (negative means final composite did not encode exposure).
+  The editor reports that captured value, without compiling
+  GPU pipelines to inspect it.
+
+This source was read back on GitHub and passed 25/25 static checks.
+The RHI/GL/Metal/Vulkan slot implementation was inspected by source
+only. **No native C++/GLSL/MSL build, CTest, GPU, visual parity or
+CI tests were actually run**. Read exact commits and next features
+in `docs/handoffs/prisma-stage-55.md`. Keep PR #26 Draft and
+complete functionality before the dedicated verification phase.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
