@@ -222,6 +222,10 @@ struct ModelRenderStats {
     // Number of distinct permitted static page/material groups ordered
     // once per pass, rather than comparing full model/page state per item.
     uint64_t staticCrossModelRankedGroups = 0;
+    // CPU ordering stats (not real draw calls); only large ranked prefixes
+    // bucketized by exact page/material group contribute.
+    uint64_t staticCrossModelBucketedItems = 0;
+    uint64_t staticCrossModelBucketedGroups = 0;
     // Retained high-water workspace bytes, not per-frame allocation count.
     size_t staticCrossModelPreflightWorkspaceBytes = 0;
     uint64_t staticCrossModelAdaptiveSkippedPasses = 0;

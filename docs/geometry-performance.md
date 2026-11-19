@@ -786,3 +786,36 @@ was computed once per pass, not a claimed reduction in draw calls.
 All experimental flags remain OFF by default. Real compile,
 Metal screenshot parity and dense-scene CPU/GPU A/B remain deferred
 until the later test phase.
+
+### Ranked page buckets instead of global candidate sort (Stage 24)
+
+When `AIVERSE_STATIC_CROSS_MODEL_BATCHES=1` and this view has permitted
+page-aware static CPU MDI groups, the renderer partitions the current-view
+visible `order_` into admitted (mode 1) and ordinary/fallback entries. This
+matches the prior candidate-first total ordering. For at least **64**
+admitted items it counts the already exact group ranks, performs an
+`O(C + G)` prefix distribution of admitted items into **ranked page/material
+buckets**, and sorts only each individual group by `lmPage`, primitive
+pointer and stable ModelItem index. The ordinary suffix still uses the
+**unchanged legacy comparator**, including material, joints, baked, GI and
+geometry-sort policies; transparent phase 2 retains depth sorting. The
+separate palette mode remains mutually exclusive with this opt-in path.
+
+`StaticCrossModelPreflightWorkspace::bucketizePermittedPrefix` owns
+high-water CPU scratch, validates every rank *before mutating the order*,
+and returns failure for stale/invalid ranks. The renderer falls back
+to the Stage 23 comparison-sort for fewer than 64 items or if bucket
+preconditions fail. The bucket rank is per current visibility/material
+preflight and never retained across views. Its high-water memory is
+included in Scene → Batching `Preflight workspace retained`, and released
+on full scene invalidation or shutdown. The panel separately reports
+`staticCrossModelBucketedItems` and
+`staticCrossModelBucketedGroups`, **not GPU draw calls**.
+
+This reduces cross-group comparisons for large accepted prefixes but
+does **not** promise lower end-to-end CPU or GPU time; the partition,
+counting, and group sorting still cost work. Geometry page identity,
+exact material compatibility, per-model LOD/occlusion/culling, the real
+GPU command builder and adaptive page fallback are unchanged. Tests,
+native compilation, Metal raster parity and actual benchmarks were
+not executed at this stage; all experimental flags remain OFF.

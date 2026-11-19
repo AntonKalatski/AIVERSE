@@ -743,3 +743,26 @@ No new ECS authoritative, save/network, shader, GPU ABI, GPU ICB or genre-specif
 
 ### Exact next feature and later tests
 Consider further reducing `std::sort` overhead by partitioning preflight-ready static items into ranked buckets and sorting only within each group, while preserving the original global order for ordinary items, transparency/alpha and indirect fallback. Do **not** introduce an unstable sort comparator or regroup different GPU pages simply because their material or texture pointer matches. Any new feature stage must update this handoff. Later, reconcile stale policy tests, add CPU-only ranked-key / strict weak-order equivalence cases, real Metal mixed-page raster parity and a fixed-camera dense-city CPU/GPU A/B/A; validate memory churn and page lifetime before merging.
+
+---
+
+## Stage 24 — per-pass ranked bucketization of admitted static page groups (2026-11-19)
+
+**Repository/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34 (unmerged). **Source HEAD before this stage:** `6c6751114e15f310bf1cf16822199dfa06d4ff47`, `main` was `9ee6ff6fbf390bd45363bc92c838f492dfe92eee` and compare confirmed `behind=0`; no main merge required. **User instruction:** features first, tests later.
+
+### Implemented feature, ownership and API
+
+- `engine/render/StaticCrossModelBatchPolicy.h`: new reusable `bucketizePermittedPrefix(order, candidateCount, withinGroupLess)` uses the exact preflight Stage 23 ranks to count and prefix-assign accepted items by page/material/flags/VB/IB group. Every candidate's group rank is checked before mutating draw order; a missing/stale group returns false. `bucketOffsets_`, `bucketWrites_` and `bucketItems_` grow to high-water capacity, are tracked by `retainedBytes()` and freed by `release()`. `rankedGroupCount()` exposes the current-pass count.
+- `engine/render/Renderer3DModels.cpp`: for shadow/opaque passes under the existing cross-model opt-in, uses `std::partition` to separate accepted mode-1 candidates from all ordinary/adaptive mode-2 items, exactly as the old candidate-first comparator did. For 64+ accepted items performs an `O(C+G)` bucket distribution, then sorts **within** exact ranked groups by lightmap page, primitive and stable item index. The regular suffix keeps the **same** legacy sort comparator. Fewer than 64 candidates or rank validation failure retain the Stage 23 rank comparator for the candidate prefix. Phase-2 transparency retains original back-to-front sorting.
+- `engine/render/Renderer3D.h` and `apps/editor/windows/SceneWindow.cpp`: new `staticCrossModelBucketedItems` / `staticCrossModelBucketedGroups` CPU-ordering diagnostics in Scene → Batching, distinct from actual successful MDI submissions. Retained workspace accounting now happens *after* sorting, so scratch allocations are counted immediately.
+- `docs/geometry-performance.md`, `AGENTS.md` and this handoff record contracts, affected files and next work.
+
+Existing `AIVERSE_STATIC_CROSS_MODEL_BATCHES=1` opt-in, per-GPU-page adaptive admission and strict final GPU submission checks are preserved. **No new GPU path**, shader change, ECS or genre dependency. Transparent/material-palette ordering is intentionally untouched. The old ordinary-item comparator is kept byte-for-byte except removal of the candidate-only block, which cannot be reached for the ordinary suffix.
+
+### Validation performed / not performed
+
+Connected GitHub source read and write integration used with a branch-head lease; API/layout and exact source replacements checked before commit. **CMake: NOT RUN. CTest: NOT RUN. Metal raster: NOT RUN. Dense urban A/B/A CPU/GPU: NOT RUN.** No compilation, visual correctness or performance speedup is claimed. Stage 10/11 policy fixtures remain to be updated when switching to tests. Keep PR Draft and experimental flags OFF by default.
+
+### Next action
+
+Feature-first follow-up: inspect the CPU indirect-command preparation for per-group transient allocations / redundant exact-state fetches, and optimize only if lifetimes/compatibility remain unchanged. Then update stale policy test expectations, add CPU strict-weak-order/bucket equivalence tests, Metal OFF/ON shadow+opaque raster parity and dense-city A/B/A before enabling the feature.

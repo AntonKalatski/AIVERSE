@@ -702,6 +702,9 @@ private:
                         (unsigned long long)modelStats.staticCrossModelPreflightItems);
                     ImGui::Text("Pre-ranked pooled state groups: %llu",
                         (unsigned long long)modelStats.staticCrossModelRankedGroups);
+                    ImGui::Text("Bucket-sorted static items: %llu in %llu ranked groups",
+                        (unsigned long long)modelStats.staticCrossModelBucketedItems,
+                        (unsigned long long)modelStats.staticCrossModelBucketedGroups);
                     ImGui::Text("Preflight workspace retained: %.1f KiB",
                         double(modelStats.staticCrossModelPreflightWorkspaceBytes) / 1024.0);
                     ImGui::TextDisabled("Reusable across views; cleared on scene reload, no retained GPU data.");

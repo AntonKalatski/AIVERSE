@@ -224,10 +224,54 @@ public:
             ? kInvalidGroup : groups_[groupIndex].sortRank;
     }
 
+    // Bucketize the *partitioned* accepted static prefix by the previously
+    // prepared exact page/material/flags ranks. The caller has already checked
+    // modeOf(item)==1. Buckets preserve the candidate-first ordering of the
+    // previous comparator, but only sort within each exact group instead of
+    // running a global O(C log C) comparison sort on all C candidates.
+    //
+    // Defensive failure leaves the source order untouched: validation and
+    // counts run before any writes, so the renderer can use its old comparison
+    // sort when an invalid/stale rank is encountered.
+    template<class WithinGroupLess>
+    bool bucketizePermittedPrefix(std::vector<uint32_t>& order, size_t count,
+                                  WithinGroupLess&& withinGroupLess) {
+        const size_t rankCount = sortedGroups_.size();
+        if (!rankCount || count > order.size()) return false;
+        bucketOffsets_.assign(rankCount + 1, size_t{0});
+        for (size_t i = 0; i < count; ++i) {
+            const uint16_t rank = sortRankForPermittedItem(order[i]);
+            if (rank == kInvalidGroup || rank >= rankCount) return false;
+            ++bucketOffsets_[size_t(rank) + 1];
+        }
+        for (size_t i = 1; i <= rankCount; ++i)
+            bucketOffsets_[i] += bucketOffsets_[i - 1];
+        bucketWrites_.assign(bucketOffsets_.begin(), bucketOffsets_.end() - 1);
+        if (bucketItems_.size() < count) bucketItems_.resize(count);
+        for (size_t i = 0; i < count; ++i) {
+            const uint16_t rank = sortRankForPermittedItem(order[i]);
+            bucketItems_[bucketWrites_[rank]++] = order[i];
+        }
+        std::copy_n(bucketItems_.begin(), count, order.begin());
+        for (size_t rank = 0; rank < rankCount; ++rank) {
+            const size_t first = bucketOffsets_[rank];
+            const size_t last = bucketOffsets_[rank + 1];
+            if (last - first > 1)
+                std::sort(order.begin() + first, order.begin() + last,
+                          withinGroupLess);
+        }
+        return true;
+    }
+
+    size_t rankedGroupCount() const { return sortedGroups_.size(); }
+
     size_t retainedBytes() const {
         return slots_.capacity() * sizeof(Slot) +
                groups_.capacity() * sizeof(Entry) +
                sortedGroups_.capacity() * sizeof(uint16_t) +
+               bucketOffsets_.capacity() * sizeof(size_t) +
+               bucketWrites_.capacity() * sizeof(size_t) +
+               bucketItems_.capacity() * sizeof(uint32_t) +
                groupForItem_.capacity() * sizeof(uint16_t) +
                groupStamp_.capacity() * sizeof(uint32_t) +
                modes_.capacity() * sizeof(uint8_t) +
@@ -240,6 +284,9 @@ public:
         std::vector<Slot>().swap(slots_);
         std::vector<Entry>().swap(groups_);
         std::vector<uint16_t>().swap(sortedGroups_);
+        std::vector<size_t>().swap(bucketOffsets_);
+        std::vector<size_t>().swap(bucketWrites_);
+        std::vector<uint32_t>().swap(bucketItems_);
         std::vector<uint16_t>().swap(groupForItem_);
         std::vector<uint32_t>().swap(groupStamp_);
         std::vector<uint8_t>().swap(modes_);
@@ -258,6 +305,9 @@ private:
     std::vector<Slot> slots_; // allocated once when the feature is first used
     std::vector<Entry> groups_;
     std::vector<uint16_t> sortedGroups_; // bounded current-pass group ranks
+    std::vector<size_t> bucketOffsets_; // exclusive prefix offsets, rankCount + 1
+    std::vector<size_t> bucketWrites_; // temporary per-rank write positions
+    std::vector<uint32_t> bucketItems_; // high-water candidate scratch
     std::vector<uint16_t> groupForItem_; // contents guarded by groupStamp_
     std::vector<uint32_t> groupStamp_;
     std::vector<uint8_t> modes_; // 0=ordinary, 1=MDI, 2=instancing

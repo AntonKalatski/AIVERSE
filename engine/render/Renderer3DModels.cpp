@@ -2093,45 +2093,63 @@ void Renderer3D::renderModels(int phase) {
             }
         }
     }
-    modelStats_.staticCrossModelPreflightWorkspaceBytes = std::max(
-        modelStats_.staticCrossModelPreflightWorkspaceBytes,
-        staticCrossPreflight_.retainedBytes());
-    if (phase == 2) { // back to front
-        std::sort(order_.begin(), order_.end(), [&](uint32_t a, uint32_t b) { return modelItems_[a].depth > modelItems_[b].depth; });
-    } else {          // group by state so identical primitives end up next to each other (instancing)
+    if (phase == 2) { // transparent: preserve original back-to-front order
         std::sort(order_.begin(), order_.end(), [&](uint32_t a, uint32_t b) {
-            const ModelItem &x = modelItems_[a], &y = modelItems_[b];
-            const bool crossX = staticCrossModelSort &&
-                staticCrossPreflight_.modeOf(a) == 1u;
-            const bool crossY = staticCrossModelSort &&
-                staticCrossPreflight_.modeOf(b) == 1u;
-            if (crossX != crossY) return crossX; // only preflight-ready static groups
-            if (crossX && crossY) {
-                // All rigid cross-model candidates share the invariants:
-                // no joints/baking/GI, one exact material/page/VB/IB/flags
-                // key per preflight group. Preserve the original key order
-                // using a compact precomputed rank instead of re-reading
-                // GPU page, material, model and buffer state on each sort
-                // comparison. Within one group keep the previous lightmap
-                // page / primitive / stable item-index ordering.
-                const uint16_t rankX = staticCrossPreflight_.sortRankForPermittedItem(a);
-                const uint16_t rankY = staticCrossPreflight_.sortRankForPermittedItem(b);
-                if (rankX != rankY) return rankX < rankY;
+            return modelItems_[a].depth > modelItems_[b].depth;
+        });
+    } else {
+        // The existing static cross-model comparator puts all admitted items
+        // before ordinary items. Partition that same set once; then avoid
+        // comparing a candidate to every ordinary item during a global sort.
+        // mode 2 (adaptive fallback) always follows the legacy sorter.
+        auto ordinaryBegin = order_.begin();
+        if (staticCrossModelSort) {
+            ordinaryBegin = std::partition(order_.begin(), order_.end(),
+                [&](uint32_t index) {
+                    return staticCrossPreflight_.modeOf(index) == 1u;
+                });
+            const size_t permittedCount = size_t(ordinaryBegin - order_.begin());
+            const auto withinGroupLess = [&](uint32_t a, uint32_t b) {
+                const ModelItem &x = modelItems_[a], &y = modelItems_[b];
                 if (x.lmPage != y.lmPage) return x.lmPage < y.lmPage;
-                if (x.prim != y.prim) return x.prim < y.prim;
+                if (x.prim != y.prim)
+                    return std::less<const Primitive*>{}(x.prim, y.prim);
                 return a < b;
+            };
+            // For small candidate sets the counting pass and bucket scratch
+            // can cost more than one comparison sort; use a conservative
+            // CPU-only threshold without changing GPU MDI eligibility.
+            if (permittedCount >= 64u &&
+                staticCrossPreflight_.bucketizePermittedPrefix(
+                    order_, permittedCount, withinGroupLess)) {
+                modelStats_.staticCrossModelBucketedItems += permittedCount;
+                modelStats_.staticCrossModelBucketedGroups +=
+                    staticCrossPreflight_.rankedGroupCount();
+            } else {
+                // The earlier ranked comparator is the safe fallback for
+                // tiny groups or unexpected stale/missing rank records.
+                std::sort(order_.begin(), ordinaryBegin,
+                    [&](uint32_t a, uint32_t b) {
+                        const uint16_t ra =
+                            staticCrossPreflight_.sortRankForPermittedItem(a);
+                        const uint16_t rb =
+                            staticCrossPreflight_.sortRankForPermittedItem(b);
+                        if (ra != rb) return ra < rb;
+                        return withinGroupLess(a, b);
+                    });
             }
+        }
+        // Non-admitted objects retain the exact legacy order: this includes
+        // per-page adaptive instancing, nonstatic, nonpooled and GI items.
+        std::sort(ordinaryBegin, order_.end(), [&](uint32_t a, uint32_t b) {
+            const ModelItem &x = modelItems_[a], &y = modelItems_[b];
             if ((x.joints >= 0) != (y.joints >= 0)) return x.joints < y.joints;
             if (x.baked != y.baked) return x.baked < y.baked;
             if (paletteSort && paletteGroup[a] != paletteGroup[b])
                 return paletteGroup[a] < paletteGroup[b];
             if (!paletteSort && materialGroup[a] != materialGroup[b])
                 return materialGroup[a] < materialGroup[b];
-            if (mdiGeometrySort || (crossX && crossY)) {
-                if (crossX && crossY &&
-                    x.model->geometryPoolPage.get() != y.model->geometryPoolPage.get())
-                    return std::less<const GeometryPoolPage*>{}(
-                        x.model->geometryPoolPage.get(), y.model->geometryPoolPage.get());
+            if (mdiGeometrySort) {
                 if (x.model->vb.id != y.model->vb.id) return x.model->vb.id < y.model->vb.id;
                 if (x.model->ib.id != y.model->ib.id) return x.model->ib.id < y.model->ib.id;
                 // Keep non-MDI-eligible material variants in their own runs.
@@ -2149,6 +2167,9 @@ void Renderer3D::renderModels(int phase) {
             return a < b;
         });
     }
+    modelStats_.staticCrossModelPreflightWorkspaceBytes = std::max(
+        modelStats_.staticCrossModelPreflightWorkspaceBytes,
+        staticCrossPreflight_.retainedBytes());
     if(profiling_)profile_.sortMs[size_t(phase)]+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();
     const auto afterSort = std::chrono::steady_clock::now();
     ProfileTimer timer(profiling_?&profile_.drawMs[size_t(phase)]:nullptr);

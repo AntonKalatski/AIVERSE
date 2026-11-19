@@ -169,6 +169,15 @@ and the MDI pipeline still validates full material and geometry state.
 The group-order scratch vector is reused and included in retained memory;
 `staticCrossModelRankedGroups` reports ranked groups, **not draw calls**.
 Do not cache these ranks across passes or change transparency ordering.
+ Stage 24 replaces the optional *large* admitted candidate comparison-sort
+ with a bounded ranked bucketization (minimum 64 items). It first partitions
+ mode-1 candidates from ordinary/adaptive-mode-2 items; only mode-1 entries
+ enter ranked buckets, and each exact group is ordered by lmPage/primitive/index.
+ The remaining entries retain the full legacy comparator, and transparent
+ passes still use depth sort. An invalid rank causes a safe pre-mutation
+ fallback to Stage 23 comparison-sort. Bucket scratch is renderer-owned,
+ released on scene invalidation; track bucketed items/groups separately from
+ actual MDI submissions. Never reuse rank/mode across camera passes.
 `invalidateStaticModelCaches()` and `shutdown()` release this workspace.
 Scene → Batching reports its retained CPU memory in KiB. Do not retain
 camera, visibility, material equivalence or LOD results across passes, or
