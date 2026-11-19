@@ -6,6 +6,45 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 
 ## AIVERSE SpectraFX (universal VFX, in progress)
 
+**Latest implementation handoff (Stage 42; committed source, tests deferred):**
+[docs/agent-handoffs/spectrafx-stage-42-redacted-diagnostics-group-routing-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-42-redacted-diagnostics-group-routing-2026-11-19.md).
+`SpectraDiagnosticReport.h` now generates **privacy-redacted**
+V2 `.spfx` JSON by default: NO raw particle/VM data,
+world-coordinate bounds, exact GPU frame/revision/CRC identifiers
+or original file path. Only explicit `includeWorldBounds` /
+`includeGpuIdentifiers` options reveal their respective
+aggregate fields. The offline inspector CLI defaults to
+redaction and writes local JSON only with `--report`; it
+never auto-uploads. Raw `.spfx` itself remains SENSITIVE.
+Editor has two separate opt-in actions: Save safe JSON report
+and Save RAW GPU checkpoint (sensitive), both scoped to the
+selected GPU group with fresh V2 snapshot eligibility.
+
+`GpuPoolWorld::gpuGroupCount/gpuGroupSummary` provide safe
+per-group status, and native `GpuPoolCaptureHost::requestNext`
+selects ONE capture by RoundRobin, largest prior particle
+estimate, or missing/stalest checkpoint. Continue to enforce
+Stage 32 shared readback limits, current-revision capture
+freshness and Stage 35 completed-GPU-fence slot quarantine.
+Only the editor's OWN group-0 preview may be scheduled by
+its UI; external render-host pools are non-owning telemetry.
+
+`GpuPoolRecoveryHost` now supports a queued
+`requestPresentationReset` with explicit ResetRequested phase,
+distinct ResetRetryRequired/DeviceRecreationRequired status,
+stable monotonic transition sequences and visible reset/rebuild
+attempt counters. It does not allocate a Device, operate
+asynchronously or restore live GPU particles; the native host
+must execute reset in an active graphics frame outside encoders
+or recreate a distinct healthy Device, preserving the old
+Device until old resources are released. Renderer/ECS source
+handles remain entirely presentation-only and genre-neutral.
+Stage 42 C++/Metal compilation, CTest, CLI execution, editor
+screenshots, GPU multi-group capture and hardware recovery
+have NOT RUN. Keep mandatory handoffs; do not merge to main
+or overwrite parallel agents' work without instruction.
+
+
 **Latest implementation handoff (Stage 41, source-only; native tests deferred):**
 [docs/agent-handoffs/spectrafx-stage-41-offline-inspector-native-capture-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-41-offline-inspector-native-capture-2026-11-19.md).
 Use `engine/fx/SpectraCheckpointInspector.h` and
