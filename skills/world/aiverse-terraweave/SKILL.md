@@ -1127,3 +1127,61 @@ toggle after old regions are cached, GPU LRU return without reupload,
 multiple PHYSIS wind revisions, Stage35 sparse wind patches, Stage37
 zero/low/16MiB limits and device loss. Keep PR #24 Draft and record
 all exact implementation commits in the Stage38 handoff.
+
+## Stage 39 — Horizon runtime presentation quality policy
+
+Use `engine/world/TerraWeaveHorizonPresentationQuality.h` to
+compose existing runtime features rather than inventing yet another
+GPU wind update/cache subsystem. `HorizonPresentationQualityPreset`
+has `BatterySaver`, `Mobile`, `Balanced`, `Desktop` presets,
+and `horizonPresentationPolicyForQuality(preset)` produces the
+POD `HorizonPresentationPolicy` with exact/procedural spatial wind
+switches, Stage36 `HorizonWindUploadPolicy`, Stage37/38
+`HorizonWindShadowCachePolicy`. Validate the complete policy before
+publishing with `validateHorizonPresentationPolicy`.
+
+Native games use
+`WorldScene::setVegetationHorizonPresentationQualityPreset(...)`
+or `setVegetationHorizonPresentationPolicy(...)`, plus
+`vegetationHorizonPresentationPolicy()` for actual values.
+Standalone renderer uses
+`TerraWeaveHorizonScene::setPresentationQualityPreset` /
+`setPresentationPolicy` / `presentationPolicy`.
+Individual existing setters remain composable, and getter reports the
+effective values after overrides. All calls on the owner thread.
+
+The optional manifest field
+`terraweaveHorizon.presentationQuality` chooses
+`battery-saver|mobile|balanced|desktop`; this is entirely **separate**
+from the preexisting `terraweaveHorizon.quality` geometry preset.
+Do not change TWH8 archive serialization, source revisions, terrain
+geometry, near-owned seams, wind quantization, PHYSIS ownership or
+genre/ECS module selection when applying a runtime preset. When the
+manifest has NO new field, preserve legacy Stage38 defaults. Invalid
+names must fail with `JsonError`. Copy effective constructor-applied
+settings back into `WorldScene` getters.
+
+Policy values: BatterySaver disables exact/procedural spatial wind and
+uses 0 GPU transfer bytes, 0 dormant CPU shadow budget; Mobile uses
+procedural spatial wind, 128KiB GPU/update, 2 sparse runs, 90% full
+fallback, 1MiB CPU shadow + lossless compression; Balanced uses
+exact PHYSIS and procedural fallback, 512KiB, 4 runs, 75%, 4MiB +
+compression; Desktop uses exact + procedural, 2MiB, 8 runs, 70%, 16MiB
++ compression. All are unbenchmarked starting points. A low limit
+may indefinitely defer a dense weather VB patch, with the existing
+macro shader safe fallback; do not claim visual parity or a guaranteed
+battery/FPS improvement.
+
+`HorizonRuntimeStats` exposes the *effective* GPU/CPU budgets, sparse
+limits, compression switch and procedural graph status for editors,
+along with earlier actual patch and eviction counters. All are
+bookkeeping until tested on a real device.
+
+**QA NOT RUN:** compile, CMake/CTest, GLSL/Metal/Vulkan/GL, performance
+and visual screenshots are delegated to the independent testing agent,
+as user requested. Tests should cover all preset values, opt-in
+manifest and invalid values, custom override and combined getter,
+per-frame bandwidth starvation/retry, early no-field behavior,
+cache residency/Stage38 packed shadow restoration, crossfade and
+shader selection. Record separate implementation commits and next
+action in `docs/terrain/AGENT_HANDOFF.md` before ending the stage.
