@@ -611,3 +611,34 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   `physis_remote_edit`, `physis_field_runtime`, macOS and
   Windows are **NOT RUN/NOT VERIFIED**. See
   `docs/agent-handoffs/physis-stage53-published-inode-2026-11-19.md`.
+
+### Stage 54 — compiled lock + pinned journal I/O integration without ECS (2026-11-19)
+
+- New standalone native test \`tests/physis_journal_locked_io_test.cpp\`
+  compiles the **real** \`PhysisJournalProcessLock.h\` and
+  \`PhysisJournalPosixIO.h\` together and is registered as CTest
+  \`physis_journal_locked_io\` under
+  \`AIVERSE_BUILD_TESTS AND UNIX AND NOT EMSCRIPTEN\`.
+- It acquires a valid journal lock, saves/loads through the borrowed
+  pinned directory fd, rejects a concurrent owner, renames the live
+  lock inode, checks \`valid()==false\` and \`directoryFd()==-1\`,
+  demonstrates that a second owner can lock the newly created
+  basename, then verifies release/restart ownership and data.
+  This confirms why the canonical endpoint's validity checks
+  around I/O and gateway suspension must NEVER be bypassed.
+- The existing POSIX I/O unit test and the new cross-header test
+  are both included in \`.github/workflows/physis.yml\` targets.
+- ACTUAL PASS: source-identical isolated Linux GCC C++20 CMake/CTest
+  1/1 for \`physis_journal_locked_io\`, Clang 17 with strict warnings,
+  and GCC ASan/UBSan. Exact code-source blob hashes:
+  \`PhysisJournalProcessLock.h\` =
+  \`2512aefb07f612c808041b92a21da897df4f195b\`,
+  \`PhysisJournalPosixIO.h\` =
+  \`2dd114731b498c4156da305915201f97c4848647\`,
+  \`physis_journal_locked_io_test.cpp\` =
+  \`db075dd14dd47f77a719fa47a86cce4adbac71ae\`.
+- Full AIVERSE CMake, \`physis_admin_journal\`, complete PHYSIS CTest,
+  macOS, Windows, editor and production WebSocket remain NOT RUN.
+  Source test proves two standalone headers coexist, NOT full
+  authenticated endpoint behavior. See
+  \`docs/agent-handoffs/physis-stage54-locked-io-test-2026-11-19.md\`.
