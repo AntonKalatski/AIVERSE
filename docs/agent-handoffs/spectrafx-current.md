@@ -1,5 +1,20 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 97 — full native acceptance PASS on Apple M3 Ultra
+
+**Validated source:** `4e363db3a6fc0d1631a574165febb7d26e08c3b8`.
+User-provided `acceptance.sh` summary: configure, core, architecture,
+Editor/FPS/RTS hosts, full build, full CTest, focused SpectraFX and real
+Metal GPU acceptance all exit **0**; **failed stages 0, skipped stages 0**.
+Real Metal compute and billboard tests are **2/2 PASS**, including
+alpha direct/remap 163/163 and additive red 76/152. Full CTest count is
+not in the excerpt. End-to-end Renderer3D / Editor viewport visuals and
+GPU resource-lifetime stress still need validation.
+
+Full evidence/next stage:
+`docs/agent-handoffs/spectrafx-stage97-native-acceptance-2026-11-19.md`.
+
+
 ## Stage 96 — Metal half4 compile failure: focused 1/1 PASS
 
 User's Mac Studio full CTest previously reported `spectrafx_metal_billboard` FAILED
