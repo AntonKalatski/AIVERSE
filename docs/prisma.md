@@ -953,6 +953,93 @@ compilation, screenshots, memory/performance profiling or CI, per
 the user's features-first instruction. No hardware parity or shipping
 readiness is claimed. See `docs/handoffs/prisma-stage-30.md`.
 
+
+## Stage 31 — real RTS water/particles reactive integration and optional linear depth
+
+Stage 30 introduced the generic `Renderer3D::addMotionReactiveDraw()`
+producer interface. Stage 31 connects **existing runtime producers**:
+
+- **RTS terrain water and generic mesh translucency:** `RtsTerrainRender.cpp`
+  queues water with `Renderer3D::drawMesh(water_, ..., waterColor)`.
+  `Renderer3D::renderObjectMotionVectors` now picks up the real
+  translucent `DrawItem` mesh buffers (including those water sheets).
+  A dedicated `MeshVertex` pipeline draws that same geometry into the
+  RGBA8 reactive mask with read-only scene depth, no gameplay geometry
+  regeneration. The mask strength is the draw item's alpha. The
+  fallback shader is two-sided for water sheets. Other semi-transparent
+  immediate MeshVertex draws benefit from the same path.
+- **Real particle billboards/trails/ribbons/mesh particles:**
+  `fx::ParticleSystem::render()` records the non-opaque runs that it
+  *actually rendered*, including source alpha texture and vertex ranges.
+  `hasReactiveGeometry()` reports whether those runs are available.
+  `renderReactive(gfx::Device&,sceneDepth,w,h)` runs **inside the
+  already-open** Stage 30 mask pass, using exactly the uploaded
+  current-frame particle vertex/index buffer and alpha texture. It
+  samples scene depth, combines source alpha with particle vertex
+  alpha, and uses Screen blending to union overlapping coverage.
+  Quads use the existing 16-bit indexed ranges; mesh particles use
+  their nonindexed triangle ranges. There is no second particle
+  simulation, CPU vertex expansion or additional vertex upload.
+- **Client and editor:** `GameClient.cpp` and `Editor.cpp` now
+  register callbacks immediately after `fx_.render` /
+  `gameFx_.render` and before `r3d_.resolvePrisma()`. The callbacks
+  consume the just-recorded particle geometry synchronously during
+  the current scene's reactive-pass. They are not retained between
+  view frames.
+
+These paths remain **behind** the regular `motionBlur` effect,
+`AIVERSE_PRISMA_MOTION_BLUR=1`, required HDR format and minQuality
+gating. Water and particles are genre-independent *producers* of
+current-frame presentation coverage; PRISMA still owns the full-screen
+postprocessing and does not depend on any specific water/FX module.
+Specialized water/particle renderers not using these two concrete
+paths can continue using the existing generic callback.
+
+### Optional linear view-depth filtering
+
+`PostFrame` now carries the camera's actual projection near/far
+planes and perspective/orthographic mode. The renderer populates
+these from its `RTSCamera`; orthographic near/far match its
+explicit -200..1000 projection.
+
+`motionBlur` adds two optional settings:
+- `linearDepth` (default false): if enabled and camera projection
+  planes are valid, compares **linear view distance** for velocity
+  dilation and blur gather rather than non-linear window depth.
+- `depthToleranceMeters` (default 0.35; accepted range 0.01..10):
+  near/far-layer rejection tolerance in scene world units (metres
+  when the project uses metre scale).
+
+The renderer uses the ordinary non-reversed 0..1 **window** depth
+on both GL and Metal; the helper handles perspective and
+orthographic projections separately. If `linearDepth` is false,
+`depthThreshold` retains its existing meaning in hardware depth
+units, so previously authored scenes retain their original
+behavior. Both paths sample only the current frame and are
+presentation-only. Example:
+
+```json
+{"type":"motionBlur","intensity":0.65,"maxPixels":20,
+ "samples":8,"depthThreshold":0.012,
+ "linearDepth":true,"depthToleranceMeters":0.35,
+ "velocityDilation":1,"reactiveStrength":0.85}
+```
+
+**Resource ownership:** the real particle producer owns its shader
+and two reactive pipelines and destroys them with `ParticleSystem`.
+`Renderer3D` owns the generic MeshVertex reactive pipeline and
+destroys it with other object-motion resources. The reactive pass
+owns the output texture; producers must not begin/end GPU passes or
+destroy its source depth. Raw externally supplied reactive/velocity
+textures still have no portable RHI introspection for dimensions
+and formats and must be validated by their owner.
+
+**NOT RUN** (user requested features before tests): native C++
+compiler, CMake, CTest, Metal/GL/GLES shader compilation, editor
+smoke, water/particle image comparison, timing and GPU profiler.
+No verified parity or speedup is claimed. See
+`docs/handoffs/prisma-stage-31.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
