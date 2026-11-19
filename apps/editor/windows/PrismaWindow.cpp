@@ -165,6 +165,12 @@ public:
                                 "metadata accepted" : "rejected (size/format)",
                             report->motionBlurReactiveEdgesEnabled ?
                                 "encoded" : "off");
+                        if (report->reactiveInputAccepted)
+                            ImGui::TextDisabled("Object velocity: %s | Current-frame reactive: %s",
+                                report->objectVelocityInputAccepted ?
+                                    "accepted" : "absent (seed/cut/unsupported)",
+                                report->reactiveWithoutObjectVelocity ?
+                                    "mask-only pass" : "with object motion");
                     }
                     if (report->effects.empty())
                         ImGui::TextDisabled("Для последнего кадра нет authored эффектов.");
