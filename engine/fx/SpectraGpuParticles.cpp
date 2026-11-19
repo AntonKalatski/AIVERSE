@@ -490,6 +490,7 @@ bool ComputeParticles::step(float dt) {
         return true;
     }
     if(!device_->gpuHealthy()) {
+        ++stats_.gpuDeviceUnhealthy;
         if(desc_.backend==ComputePreference::RequireGpu) {
             // Never claim a CPU backend when the caller explicitly required GPU.
             initialized_=false;verticesReady_=false;
@@ -501,6 +502,7 @@ bool ComputeParticles::step(float dt) {
         return false;
     }
     if(!device_->canUpdateSharedBuffers()) {
+        ++stats_.gpuPassOrderRejections;
         reason_="SpectraFX GPU step must be before the render pass";
         return false;
     }
@@ -551,6 +553,7 @@ bool ComputeParticles::step(float dt) {
         if(!device_->updateStorageBufferChecked(
                 killSlots_,pendingKillSlots_.data(),
                 size_t(killCount)*sizeof(uint32_t))) {
+            ++stats_.gpuKillUploadFailures;
             reason_="SpectraFX GPU kill-index upload rejected: "+
                     device_->lastError();
             return false; // still owned; no slots returned to free list
@@ -578,6 +581,7 @@ bool ComputeParticles::step(float dt) {
         stats_.uploadedBytes+=size_t(compactCount)*sizeof(uint32_t);
     }
     if(!device_->beginCompute(compute_)) {
+        ++stats_.gpuComputeBeginFailures;
         reason_="Metal compute encoder unavailable: call step between beginFrame/endFrame, before rendering";
         return false; // pending births, age/free lists and draw count remain unchanged
     }
