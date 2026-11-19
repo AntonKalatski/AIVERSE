@@ -10,7 +10,7 @@
 namespace aiverse::render {
 
 namespace {
-struct DrawUniformsR { float model[16]; float color[4]; float params[4]; float waterRipples[64]; float waterWakeShapes[64]; float waterWind[4]; };   // = DrawUniforms (Renderer3D.cpp)
+struct DrawUniformsR { float model[16]; float color[4]; float params[4]; float waterRipples[64]; float waterWakeShapes[64]; float waterWind[4]; float waterHydraulics[4]; };   // = DrawUniforms (Renderer3D.cpp)
 } // namespace
 
 void Renderer3D::renderReflection() {
