@@ -78,6 +78,8 @@ public:
     bool hdrRequested() const;
     gfx::PassDesc scenePass(const gfx::PassDesc& out, int w, int h) override;
     void resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame& frame) override;
+    bool wantsObjectMotionVectors() const override;
+    gfx::TextureHandle objectMotionSceneDepth() const override { return sceneDepthForMotion_; }
     bool objectMotionContext(uint64_t& viewId, mat4& previousViewProj) const override;
     void acceptObjectMotionVectors(gfx::TextureHandle velocity) override;
 
@@ -128,6 +130,7 @@ private:
     bool hdrFailed_ = false; // allocation failure: stay on the low-cost path
     gfx::BufferHandle triangle_;
     gfx::TextureHandle black_;
+    gfx::TextureHandle sceneDepthForMotion_;
     gfx::ShaderHandle shaders_[kProgCount];
     gfx::PipelineHandle pipes_[kProgCount];
     bool failed_[kProgCount] = {};
