@@ -8021,3 +8021,63 @@ flag, and ensure full U2/source texture identity revalidation
 before execution. Only group materials with matching pipeline
 traits from Stage 10AB; keep alpha-mask/transparent/graphs out.
 Keep PR Draft, experiment flags OFF by default.
+
+
+## Stage 10AD — opt-in heterogeneous opaque PBR material ICB integration (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, #21 Draft.
+**Feature commits:**
+- `270cfc374b77b42eaff39ac5a35a9cda6d7542b2`
+  `engine/render/Renderer3DModels.cpp`: extract a canonical
+  144-byte (nine float4) U2 packer and reuse it in original
+  draw path. Add a helper for exact source texture slots 1..6
+  with matching white/black/flat-normal fallback handles.
+- `8dd1faa74460ea35863166230ffa3f611f0fa358`
+  `engine/render/Renderer3DModels.cpp`: introduce
+  `AIVERSE_EXPERIMENTAL_ICB_MIXED_PBR=1` requiring both prior
+  per-command VT and mixed-VT flags. Group hashing and exact
+  compatibility checks accept only pipeline-identical built-in
+  opaque materials with valid VT, while allowing differing U2
+  and PBR source textures. Per command, stage exact U2/6
+  TextureHandles and their `GpuMaterialResourceTicket`.
+  Rebuild live U2/source handles and compare exact tickets
+  before GPU execution; pipeline structural flags are checked
+  against the captured first-material snapshot.
+- `dcff6078de6eb7bd1e2f5ac0b88ef9ffdcf179d9`
+  `engine/render/Renderer3D.h`: track per-command PBR mode,
+  source-payload variation and an immutable pipeline snapshot.
+
+**Docs commits:** `20e7b963a40ca6addbf5cb5a46dc96a725ff7821` `docs/texture-rhi.md`,
+`795d5da141fe540e30c99b1f6fb1c7cec433bd38` `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Architecture:** existing shader graph, transparent, cutout,
+material palettes and non-VT models remain on the conservative
+path. New grouping uses the Stage 10AB pipeline-only material
+equivalence and Stage 10AC Metal ICB per-command U2/texture ABI.
+Group geometry, shader permutation, flags and non-command
+resources remain shared. Direct CPU/MDI grouping is unmodified.
+Source texture fallbacks are identical to the legacy renderer,
+and the U2 packer is single-source so both variants share fields.
+
+**Actual checks:** fetched and examined Renderer3D draw state,
+ModelShaders MU2 struct, material variants and Metal argument IDs;
+strict per-file edits and GitHub commits accepted.
+**C++ compilation NOT RUN; Objective-C++ NOT RUN; MSL compile
+NOT RUN; CTest NOT RUN; GPU execution NOT RUN; A/B screenshots
+and performance NOT RUN**. No release-readiness assertion.
+
+**Known limitations:** currently heterogeneous PBR requires
+valid VT materials for all commands (the new optional API
+is built on GpuIcbVirtualMaterial). No regular non-VT mixed
+PBR path, arbitrary Shader Graph texture semantics or alpha-mask
+pipeline heterogeneity. Metal sampler-state pointer identity
+is checked at native execution; graphics resource ownership
+remains with renderer and device-fence retirement.
+
+**Next:** inspect potentially stale parent PBR source bindings,
+U2 array/pointer stride alignment and experimental per-command
+validation under true Metal compiler. Add diagnostic counter
+for *executed* mixed-PBR groups, then explore a non-VT
+per-command material ABI, only without weakening regular
+rendering paths. Defer cross-backend tests until feature closure
+as requested, but keep PR Draft.
