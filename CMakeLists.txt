@@ -470,7 +470,7 @@ target_link_libraries(aiverse_models PUBLIC aiverse_engine)
 
 # Programmable presentation animation graphs reuse the existing model sampler and IK.
 target_sources(aiverse_models PRIVATE engine/render/SurfaceLocomotion.cpp engine/render/AnimationContacts.cpp engine/render/FullBodyIK.cpp engine/render/AnimationGraph.cpp engine/render/AnimationRig.cpp engine/render/AnimationMotion.cpp)
-# VIVID digital humans (independent facial presentation runtime and headless tests).
+# VIVID digital humans (presentation-only facial/runtime and portable GPU morph compute).
 add_subdirectory(engine/character/vivid)
 # Unity animation import (agent-unity-anim): clip sidecars and the Mecanim-style controller node.
 target_sources(aiverse_models PRIVATE engine/render/ModelClips.cpp engine/render/AnimationController.cpp)
@@ -495,6 +495,526 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_animation_tests tests/animation/graphs.cpp apps/editor/core/AnimationDocument.cpp)
     target_link_libraries(aiverse_animation_tests PRIVATE aiverse_models aiverse_zstd_dec)
     add_test(NAME animation_graphs COMMAND aiverse_animation_tests)
+endif()
+
+# Genre-independent ECS animation presentation host for native C++ projects.
+add_library(aiverse_animation_ecs INTERFACE)
+add_library(AIVERSE::animation_ecs ALIAS aiverse_animation_ecs)
+# MotionWeave is the canonical public API name; the existing animation_ecs
+# target stays available to native projects and tests without a breaking change.
+add_library(aiverse_motionweave INTERFACE)
+add_library(AIVERSE::MotionWeave ALIAS aiverse_motionweave)
+add_library(AIVERSE::motionweave ALIAS aiverse_motionweave)
+target_link_libraries(aiverse_motionweave INTERFACE AIVERSE::animation_ecs)
+target_compile_features(aiverse_animation_ecs INTERFACE cxx_std_20)
+target_include_directories(aiverse_animation_ecs INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/libraries/include")
+if(NOT EMSCRIPTEN)
+    find_package(Threads REQUIRED)
+    target_link_libraries(aiverse_animation_ecs INTERFACE aiverse_models Threads::Threads)
+else()
+    target_link_libraries(aiverse_animation_ecs INTERFACE aiverse_models)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_ecs_tests tests/animation/ecs_presentation.cpp)
+    target_link_libraries(aiverse_animation_ecs_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_ecs_presentation COMMAND aiverse_animation_ecs_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_playback_tests tests/animation/notifies_root_motion.cpp)
+    target_link_libraries(aiverse_animation_playback_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_playback COMMAND aiverse_animation_playback_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_generic_retarget_tests tests/animation/generic_retarget.cpp)
+    target_link_libraries(aiverse_generic_retarget_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_generic_retarget COMMAND aiverse_generic_retarget_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_montage_tests tests/animation/montage.cpp)
+    target_link_libraries(aiverse_animation_montage_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_montage COMMAND aiverse_animation_montage_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_warp_tests tests/animation/motion_warp.cpp)
+    target_link_libraries(aiverse_animation_warp_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_motion_warp COMMAND aiverse_animation_warp_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_inertial_tests tests/animation/inertialization.cpp)
+    target_link_libraries(aiverse_animation_inertial_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_inertialization COMMAND aiverse_animation_inertial_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_physical_pose_tests tests/animation/physical_pose.cpp)
+    target_link_libraries(aiverse_animation_physical_pose_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_physical_pose COMMAND aiverse_animation_physical_pose_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_budget_tests tests/animation/budget.cpp)
+    target_link_libraries(aiverse_animation_budget_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_budget_policy COMMAND aiverse_animation_budget_tests)
+endif()
+# Fixed-tick authored root motion for authoritative ECS motor integration.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_root_motor_tests tests/animation/root_motor.cpp)
+    target_link_libraries(aiverse_animation_root_motor_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_root_motor COMMAND aiverse_animation_root_motor_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_humanoid_retarget_tests tests/animation/humanoid_retarget.cpp)
+    target_link_libraries(aiverse_humanoid_retarget_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_humanoid_retarget COMMAND aiverse_humanoid_retarget_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_ragdoll_tests tests/animation/ragdoll.cpp)
+    target_link_libraries(aiverse_animation_ragdoll_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_ragdoll_asset COMMAND aiverse_animation_ragdoll_tests)
+endif()
+if((AIVERSE_BUILD_TOOLS OR AIVERSE_BUILD_TESTS) AND NOT EMSCRIPTEN AND NOT ANDROID AND NOT IOS)
+    add_executable(aiverse_root_motion_bake tools/animation/root_motion_bake.cpp)
+    target_link_libraries(aiverse_root_motion_bake PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_root_motion_bake_tests tests/animation/root_motion_bake.cpp)
+    target_link_libraries(aiverse_root_motion_bake_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_root_motion_bake COMMAND aiverse_root_motion_bake_tests)
+endif()
+# Optional Box3D ragdoll readback adapter, no link dependency in the base animation API.
+if(TARGET aiverse_physics)
+    add_library(aiverse_animation_physics INTERFACE)
+    add_library(AIVERSE::animation_physics ALIAS aiverse_animation_physics)
+    target_link_libraries(aiverse_animation_physics INTERFACE AIVERSE::animation_ecs AIVERSE::physics)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_recovery_tests tests/animation/recovery.cpp)
+    target_link_libraries(aiverse_animation_recovery_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_recovery COMMAND aiverse_animation_recovery_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_profile_tests tests/animation/humanoid_profile.cpp)
+    target_link_libraries(aiverse_animation_profile_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_humanoid_profile COMMAND aiverse_animation_profile_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_jobs_tests tests/animation/jobs.cpp)
+    target_link_libraries(aiverse_animation_jobs_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_jobs COMMAND aiverse_animation_jobs_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_graph_notify_tests tests/animation/graph_notifies.cpp)
+    target_link_libraries(aiverse_animation_graph_notify_tests PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME animation_graph_notifies COMMAND aiverse_animation_graph_notify_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_hot_reload_tests tests/animation/hot_reload.cpp)
+    target_link_libraries(aiverse_animation_hot_reload_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_hot_reload COMMAND aiverse_animation_hot_reload_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_model_dependencies_tests tests/animation/model_dependencies.cpp)
+    target_link_libraries(aiverse_model_dependencies_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_model_dependencies COMMAND aiverse_model_dependencies_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_visual_asset_watcher_tests
+        tests/animation/editor_visual_asset_service.cpp)
+    target_link_libraries(aiverse_visual_asset_watcher_tests
+        PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_editor_visual_asset_watcher
+        COMMAND aiverse_visual_asset_watcher_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_resource_retirement_tests tests/render/resource_retirement.cpp)
+    target_include_directories(aiverse_resource_retirement_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME resource_retirement_queue COMMAND aiverse_resource_retirement_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_async_resource_retirement_tests
+        tests/render/async_resource_retirement.cpp)
+    target_include_directories(aiverse_async_resource_retirement_tests
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME async_resource_retirement_queue
+        COMMAND aiverse_async_resource_retirement_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_model_resource_owner_tests
+        tests/render/model_resource_provider_contract.cpp)
+    target_link_libraries(aiverse_model_resource_owner_tests
+        PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME model_resource_owner_contract COMMAND aiverse_model_resource_owner_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_model_asset_provider_api_tests
+        tests/render/model_asset_provider_api.cpp)
+    target_link_libraries(aiverse_model_asset_provider_api_tests
+        PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME model_asset_provider_api COMMAND aiverse_model_asset_provider_api_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_retirement_pressure_tests
+        tests/render/retirement_pressure.cpp)
+    target_include_directories(aiverse_retirement_pressure_tests
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME render_retirement_pressure COMMAND aiverse_retirement_pressure_tests)
+endif()
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_async_model_cpu_queue_tests
+        tests/render/async_model_cpu_queue.cpp)
+    target_link_libraries(aiverse_async_model_cpu_queue_tests
+        PRIVATE aiverse_models aiverse_zstd_dec Threads::Threads)
+    add_test(NAME render_async_model_cpu_queue COMMAND aiverse_async_model_cpu_queue_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_model_estimate_tests tests/render/model_estimate.cpp)
+    target_link_libraries(aiverse_model_estimate_tests PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME render_model_estimate COMMAND aiverse_model_estimate_tests)
+endif()
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_model_priority_tests tests/render/model_priority.cpp)
+    target_link_libraries(aiverse_model_priority_tests PRIVATE aiverse_models aiverse_zstd_dec Threads::Threads)
+    add_test(NAME render_model_priority COMMAND aiverse_model_priority_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_model_owner_estimates_tests
+        tests/render/model_owner_estimates.cpp)
+    target_link_libraries(aiverse_model_owner_estimates_tests
+        PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME render_model_owner_estimates
+        COMMAND aiverse_model_owner_estimates_tests)
+endif()
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_model_parallel_jobs_tests
+        tests/render/model_parallel_jobs.cpp)
+    target_link_libraries(aiverse_model_parallel_jobs_tests
+        PRIVATE aiverse_models aiverse_zstd_dec Threads::Threads)
+    add_test(NAME render_model_parallel_jobs
+        COMMAND aiverse_model_parallel_jobs_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_geometry_page_owners_tests
+        tests/render/geometry_page_owners.cpp)
+    target_link_libraries(aiverse_geometry_page_owners_tests
+        PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME render_geometry_page_owners
+        COMMAND aiverse_geometry_page_owners_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_render_resource_owner_lifetime_tests
+        tests/render/resource_owner_lifetime.cpp)
+    target_link_libraries(aiverse_render_resource_owner_lifetime_tests
+        PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME render_resource_owner_lifetime
+        COMMAND aiverse_render_resource_owner_lifetime_tests)
+    add_executable(aiverse_retirement_failed_token_tests
+        tests/render/retirement_failed_token.cpp)
+    target_include_directories(aiverse_retirement_failed_token_tests
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME render_retirement_failed_token
+        COMMAND aiverse_retirement_failed_token_tests)
+endif()
+
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_render_resource_owner_group_tests
+        tests/render/resource_owner_group.cpp)
+    target_link_libraries(aiverse_render_resource_owner_group_tests
+        PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME render_resource_owner_group
+        COMMAND aiverse_render_resource_owner_group_tests)
+    add_executable(aiverse_portrait_appearance_api_tests
+        tests/view/portrait_appearance_api.cpp)
+    target_link_libraries(aiverse_portrait_appearance_api_tests
+        PRIVATE aiverse_game_view AIVERSE::View)
+    add_test(NAME view_portrait_appearance_api
+        COMMAND aiverse_portrait_appearance_api_tests)
+endif()
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_persistent_model_pool_tests
+        tests/render/persistent_model_pool.cpp)
+    target_link_libraries(aiverse_persistent_model_pool_tests
+        PRIVATE aiverse_models aiverse_zstd_dec Threads::Threads)
+    add_test(NAME render_persistent_model_pool
+        COMMAND aiverse_persistent_model_pool_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_retirement_status_replay_tests
+        tests/render/retirement_status_replay.cpp)
+    target_include_directories(aiverse_retirement_status_replay_tests
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME render_retirement_status_replay
+        COMMAND aiverse_retirement_status_replay_tests)
+    add_executable(aiverse_view_appearance_packet_tests
+        tests/view/appearance_packet.cpp)
+    target_link_libraries(aiverse_view_appearance_packet_tests
+        PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_appearance_packet
+        COMMAND aiverse_view_appearance_packet_tests)
+endif()
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_scoped_resource_owner_tests
+        tests/render/resource_owner_scope.cpp)
+    target_link_libraries(aiverse_scoped_resource_owner_tests
+        PRIVATE aiverse_models aiverse_zstd_dec Threads::Threads)
+    add_test(NAME render_scoped_resource_owner
+        COMMAND aiverse_scoped_resource_owner_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_retirement_diagnostic_ring_tests
+        tests/render/retirement_diagnostic_ring.cpp)
+    target_include_directories(aiverse_retirement_diagnostic_ring_tests
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME render_retirement_diagnostic_ring
+        COMMAND aiverse_retirement_diagnostic_ring_tests)
+    add_executable(aiverse_appearance_authoring_tests
+        tests/view/appearance_authoring.cpp)
+    target_link_libraries(aiverse_appearance_authoring_tests
+        PRIVATE aiverse_models AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_appearance_authoring
+        COMMAND aiverse_appearance_authoring_tests)
+    add_executable(aiverse_appearance_registry_tests
+        tests/view/appearance_registry.cpp)
+    target_link_libraries(aiverse_appearance_registry_tests
+        PRIVATE aiverse_models AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_appearance_registry
+        COMMAND aiverse_appearance_registry_tests)
+    add_executable(aiverse_appearance_choice_tests
+        tests/view/appearance_choice.cpp)
+    target_link_libraries(aiverse_appearance_choice_tests
+        PRIVATE aiverse_models AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_appearance_choice
+        COMMAND aiverse_appearance_choice_tests)
+    add_executable(aiverse_appearance_prepared_tests
+        tests/view/appearance_prepared.cpp)
+    target_link_libraries(aiverse_appearance_prepared_tests
+        PRIVATE aiverse_models AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_appearance_prepared
+        COMMAND aiverse_appearance_prepared_tests)
+endif()
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_model_image_transaction_tests
+        tests/render/model_image_transaction.cpp)
+    target_link_libraries(aiverse_model_image_transaction_tests
+        PRIVATE aiverse_models aiverse_zstd_dec Threads::Threads)
+    add_test(NAME render_model_image_transaction
+        COMMAND aiverse_model_image_transaction_tests)
+endif()
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_gpu_program_retirement_tests
+        tests/render/gpu_program_retirement.cpp)
+    target_include_directories(aiverse_gpu_program_retirement_tests
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(aiverse_gpu_program_retirement_tests PRIVATE Threads::Threads)
+    add_test(NAME render_gpu_program_retirement
+        COMMAND aiverse_gpu_program_retirement_tests)
+endif()
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_device_epoch_tests tests/render/device_epoch.cpp)
+    target_link_libraries(aiverse_device_epoch_tests
+        PRIVATE aiverse_models aiverse_zstd_dec Threads::Threads)
+    add_test(NAME render_device_epoch COMMAND aiverse_device_epoch_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_crowd_tests tests/animation/crowd.cpp)
+    target_link_libraries(aiverse_animation_crowd_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_crowd_policy COMMAND aiverse_animation_crowd_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_cues_tests tests/animation/cues.cpp)
+    target_link_libraries(aiverse_animation_cues_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_cues COMMAND aiverse_animation_cues_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_animation_asset_loader_tests tests/animation/asset_loader.cpp)
+    target_link_libraries(aiverse_animation_asset_loader_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
+    add_test(NAME animation_montage_asset_loader COMMAND aiverse_animation_asset_loader_tests)
+endif()
+
+# Public MotionWeave API compatibility/standalone consumer check.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_api_tests tests/animation/motionweave_api.cpp)
+    target_link_libraries(aiverse_motionweave_api_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_api COMMAND aiverse_motionweave_api_tests)
+endif()
+
+# MotionWeave persistent host workers (no worker startup in simulation).
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_worker_tests tests/animation/motionweave_workers.cpp)
+    target_link_libraries(aiverse_motionweave_worker_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_workers COMMAND aiverse_motionweave_worker_tests)
+endif()
+# Hybrid MotionWeave scheduler regression; validates callback lane separation.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_hybrid_tests tests/animation/motionweave_hybrid.cpp)
+    target_link_libraries(aiverse_motionweave_hybrid_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_hybrid COMMAND aiverse_motionweave_hybrid_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_cost_tests tests/animation/motionweave_cost.cpp)
+    target_link_libraries(aiverse_motionweave_cost_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_cost_balancing COMMAND aiverse_motionweave_cost_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_backend_tests tests/animation/motionweave_backend.cpp)
+    target_link_libraries(aiverse_motionweave_backend_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_backend_selection COMMAND aiverse_motionweave_backend_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_cache_tests tests/animation/motionweave_cache.cpp)
+    target_link_libraries(aiverse_motionweave_cache_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_graph_cost_cache COMMAND aiverse_motionweave_cache_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_worker_reuse_tests tests/animation/motionweave_worker_reuse.cpp)
+    target_link_libraries(aiverse_motionweave_worker_reuse_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_worker_reuse COMMAND aiverse_motionweave_worker_reuse_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_parallel_rig_tests tests/animation/motionweave_parallel_rig.cpp)
+    target_link_libraries(aiverse_motionweave_parallel_rig_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_parallel_rig COMMAND aiverse_motionweave_parallel_rig_tests)
+endif()
+# Host-only, opt-in MotionWeave CPU performance suite (no benchmark in CTest).
+if(AIVERSE_BUILD_TOOLS AND AIVERSE_DESKTOP)
+    add_executable(aiverse_motionweave_bench tools/animation/motionweave_bench.cpp)
+    target_link_libraries(aiverse_motionweave_bench PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+endif()
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_phase_tests tests/animation/motionweave_phase.cpp)
+    target_link_libraries(aiverse_motionweave_phase_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_phase_seed COMMAND aiverse_motionweave_phase_tests)
+endif()
+
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_phase_transfer_tests tests/animation/backend_phase_transfer.cpp)
+    target_link_libraries(aiverse_motionweave_phase_transfer_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_backend_phase_transfer COMMAND aiverse_motionweave_phase_transfer_tests)
+endif()
+
+# Genre-independent native MotionWeave snapshot-to-presentation bridge.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_source_bridge_tests tests/animation/motionweave_source_bridge.cpp)
+    target_link_libraries(aiverse_motionweave_source_bridge_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_source_bridge COMMAND aiverse_motionweave_source_bridge_tests)
+endif()
+
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_motionweave_action_edges_tests tests/animation/action_edges.cpp)
+    target_link_libraries(aiverse_motionweave_action_edges_tests PRIVATE AIVERSE::MotionWeave aiverse_zstd_dec)
+    add_test(NAME motionweave_action_edges COMMAND aiverse_motionweave_action_edges_tests)
+endif()
+
+# Enforce that MotionWeave core cannot import FPS/RTS/other game genres.
+if(AIVERSE_BUILD_TESTS)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME motionweave_genre_boundary
+            COMMAND ${Python3_EXECUTABLE}
+                ${PROJECT_SOURCE_DIR}/tools/animation/check_motionweave_dependencies.py
+                ${PROJECT_SOURCE_DIR})
+    endif()
+endif()
+
+# The canonical AIVERSE View is a generic presentation layer, not RTS.
+add_library(aiverse_view INTERFACE)
+add_library(AIVERSE::view ALIAS aiverse_view)
+add_library(AIVERSE::View ALIAS aiverse_view)
+target_compile_features(aiverse_view INTERFACE cxx_std_20)
+target_include_directories(aiverse_view INTERFACE "${PROJECT_SOURCE_DIR}" "${PROJECT_SOURCE_DIR}/libraries/include")
+target_link_libraries(aiverse_view INTERFACE AIVERSE::MotionWeave)
+
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_view_core_tests tests/view/view.cpp)
+    target_link_libraries(aiverse_view_core_tests PRIVATE AIVERSE::view aiverse_zstd_dec)
+    add_test(NAME view_genre_independent COMMAND aiverse_view_core_tests)
+endif()
+
+# Enforce that engine-level View never includes genre-specific game modules.
+if(AIVERSE_BUILD_TESTS)
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME view_genre_boundary
+            COMMAND ${Python3_EXECUTABLE}
+                ${PROJECT_SOURCE_DIR}/tools/view/check_view_dependencies.py
+                ${PROJECT_SOURCE_DIR})
+    endif()
+endif()
+
+# View pass queue is independent of game modules and the graphics device.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_view_layer_tests tests/view/layers.cpp)
+    target_link_libraries(aiverse_view_layer_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_layer_order COMMAND aiverse_view_layer_tests)
+endif()
+
+# A single mixed scene draw stream for any host genre.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_view_packet_tests tests/view/packets.cpp)
+    target_link_libraries(aiverse_view_packet_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_scene_packets COMMAND aiverse_view_packet_tests)
+endif()
+
+# Universal View surface queries (no terrain/game module dependencies).
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_view_surface_tests tests/view/surface.cpp)
+    target_link_libraries(aiverse_view_surface_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_surface_composition COMMAND aiverse_view_surface_tests)
+endif()
+
+# Generic external View layer-provider API.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_view_provider_tests tests/view/layer_providers.cpp)
+    target_link_libraries(aiverse_view_provider_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_layer_providers COMMAND aiverse_view_provider_tests)
+endif()
+
+# Compile-time generic/legacy visibility type parity.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_view_visibility_alias_tests tests/view/visibility_alias.cpp)
+    target_link_libraries(aiverse_view_visibility_alias_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_visibility_alias COMMAND aiverse_view_visibility_alias_tests)
+endif()
+
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_view_frustum_tests tests/view/frustum.cpp)
+    target_link_libraries(aiverse_view_frustum_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_frustum_culling COMMAND aiverse_view_frustum_tests)
+endif()
+
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_view_horizon_tests tests/view/horizon.cpp)
+    target_link_libraries(aiverse_view_horizon_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_spherical_horizon COMMAND aiverse_view_horizon_tests)
+endif()
+
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_view_grid_geometry_tests tests/view/grid_geometry.cpp)
+    target_link_libraries(aiverse_view_grid_geometry_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_grid_geometry COMMAND aiverse_view_grid_geometry_tests)
+endif()
+
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_view_triangle_facing_tests tests/view/triangle_facing.cpp)
+    target_link_libraries(aiverse_view_triangle_facing_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_triangle_facing COMMAND aiverse_view_triangle_facing_tests)
+endif()
+
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_view_geometry_bounds_tests tests/view/geometry_bounds.cpp)
+    target_link_libraries(aiverse_view_geometry_bounds_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_geometry_bounds COMMAND aiverse_view_geometry_bounds_tests)
+endif()
+
+# RTS presentation adapter uses Rules but never constructs the legacy RtsView.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_rts_selection_presentation_tests tests/view/rts_selection_presentation.cpp)
+    target_link_libraries(aiverse_rts_selection_presentation_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_rts_selection_presentation COMMAND aiverse_rts_selection_presentation_tests)
+endif()
+
+# RTS preview authoring is independent of the legacy RtsView renderer.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_rts_preview_presentation_tests tests/view/rts_preview_presentation.cpp)
+    target_link_libraries(aiverse_rts_preview_presentation_tests PRIVATE AIVERSE::View aiverse_zstd_dec)
+    add_test(NAME view_rts_preview_presentation COMMAND aiverse_rts_preview_presentation_tests)
 endif()
 
 set(AIVERSE_RUNTIME_SRC
@@ -614,12 +1134,18 @@ else()
     target_link_libraries(aiverse_runtime PUBLIC X11 EGL GLESv2)
 endif()
 
+# Shared presentation visibility field; independent of game genre.
+add_library(aiverse_view_visibility STATIC engine/view/VisibilityField.cpp)
+add_library(AIVERSE::view_visibility ALIAS aiverse_view_visibility)
+target_include_directories(aiverse_view_visibility PUBLIC "${PROJECT_SOURCE_DIR}")
+target_link_libraries(aiverse_view_visibility PUBLIC aiverse_models)
+
 add_library(aiverse_game_view STATIC modules/rts/view/RtsView.cpp modules/rts/view/RtsTerrain.cpp
     modules/rts/view/RtsRoadView.cpp modules/rts/view/RtsRoadKit.cpp modules/rts/view/RtsShoreView.cpp
     modules/rts/view/RtsShapes.cpp modules/rts/view/RtsLook.cpp modules/rts/view/RtsAnimate.cpp
     modules/rts/view/RtsViewDraw.cpp modules/rts/view/RtsPortrait.cpp
     modules/rts/view/RtsLights.cpp modules/rts/view/RtsLightsData.cpp modules/rts/view/RtsGroundFx.cpp modules/rts/view/RtsTerrainRender.cpp modules/rts/view/RtsTerrainDetailMesh.cpp
-    modules/rts/view/RtsFog.cpp modules/rts/view/RtsFieldView.cpp
+    modules/rts/view/RtsFieldView.cpp
     modules/rts/view/TopDownControls.cpp   # top-down hero sticks / buttons / follow camera (agent-topdown-control)
     modules/rts/view/EncounterDecals.cpp   # boss encounters: telegraph decals, status rings (agent-df-encounters-glue)
     modules/rts/view/RtsPlanetRender.cpp modules/rts/view/RtsPlanetView.cpp modules/rts/view/RtsPlanetGroundFx.cpp)
@@ -629,6 +1155,10 @@ add_library(aiverse_terrain_detail STATIC modules/rts/view/RtsTerrainDetail.cpp 
 target_link_libraries(aiverse_terrain_detail PUBLIC aiverse_game)
 target_link_libraries(aiverse_game_view PUBLIC aiverse_game aiverse_models aiverse_imgui)
 target_link_libraries(aiverse_game_view PUBLIC aiverse_terrain_detail)
+target_link_libraries(aiverse_game_view PUBLIC aiverse_view_visibility)
+# Transitional host adapter consumes the engine View. The dependency points
+# from the game module into the engine, never back into an RTS implementation.
+target_link_libraries(aiverse_game_view PUBLIC AIVERSE::view)
 
 # Helper: package content + platform metadata around an executable.
 include(platform/cmake/ThirdPartyNotices.cmake)
@@ -959,7 +1489,7 @@ endif()
 # Model viewer (models agent): models, materials, clips and quality tiers as the game renders them.
 if(AIVERSE_BUILD_TOOLS AND AIVERSE_DESKTOP)
     add_executable(aiverse_modelview apps/modelview/main.cpp apps/modelview/Gallery.cpp $<TARGET_OBJECTS:aiverse_runtime>)
-    target_link_libraries(aiverse_modelview PRIVATE aiverse_runtime aiverse_game_view)
+    target_link_libraries(aiverse_modelview PRIVATE aiverse_runtime aiverse_game_view AIVERSE::View)
 endif()
 
 if(AIVERSE_BUILD_TOOLS)

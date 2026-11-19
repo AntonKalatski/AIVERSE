@@ -24,6 +24,7 @@
 #include "core/Workspace.h"
 #include "core/FieldOps.h"
 #include "core/WorldInspect.h"
+#include "core/VisualAssetDependencyService.h"
 #include "engine/fx/ParticleSystem.h"
 #include "engine/render/TextureCache.h"
 #include "engine/gfx/Gfx.h"
@@ -31,12 +32,16 @@
 #include "engine/render/ImGuiLayer.h"
 #include "engine/render/PostFx.h"
 #include "engine/render/Renderer3D.h"
+#include "engine/render/RenderDeviceLifetime.h"
+#include "engine/render/RetirementDiagnosticRing.h"
+#include "engine/render/OffscreenTargetLifetime.h"
 #include "engine/sim/Simulation.h"
 #include "modules/rts/RtsAI.h"
 #include "modules/rts/RtsMap.h"
 #include "modules/rts/RtsModule.h"
 #include "modules/rts/fx/RtsFx.h"
 #include "modules/rts/view/RtsView.h"
+#include "modules/rts/view/RtsModelDemandScheduler.h"
 
 namespace aiverse::editor {
 
@@ -68,6 +73,13 @@ struct Viewport {
     float pointsW = 0, pointsH = 0;   // logical size in the window
     float originX = 0, originY = 0;   // top-left on screen (points)
     bool hovered = false;
+    render::RenderDeviceLifetime::Lease gpuDeviceLease;
+    std::weak_ptr<render::OffscreenTargetRetirement> targetOwner;
+    ~Viewport() noexcept;
+    void setGpuDeviceLease(render::RenderDeviceLifetime::Lease lease) {gpuDeviceLease=std::move(lease);}
+    void setTargetOwner(const std::shared_ptr<render::OffscreenTargetRetirement>& owner) {
+        targetOwner=owner;
+    }
     int drawnFrame = -100;            // ImGui frame the owning window last drew it (hidden tab: stale)
     void ensure(gfx::Device& dev, int pw, int ph);
     void release(gfx::Device& dev);
@@ -102,6 +114,15 @@ public:
     const MapDoc& doc() const { return ws_.map; }
     const game::Rules& rules() const { return ws_.project.rules; }
     gfx::Device& device() { return *dev_; }
+    render::RenderDeviceLifetime::Lease gpuDeviceLease() const {
+        return gpuLifetime_?gpuLifetime_->lease():render::RenderDeviceLifetime::Lease{};
+    }
+    const std::shared_ptr<render::OffscreenTargetRetirement>& offscreenTargets() const {
+        return offscreenTargets_;
+    }
+    const render::RetirementDiagnosticRing* gpuRetirementDiagnostics() const {
+        return gpuRetirementRing_.get();
+    }
     render::Renderer3D& renderer() { return r3d_; }
     render::PostFx& postFx() { return postFx_; }   // post effects of Scene / Game views (PostFxWindow configures it)
     bool postFxInScene = true;                     // false: only the Game view is post-processed
@@ -239,6 +260,12 @@ public:
     const AssocStatus& fileAssoc() const { return assoc_; }
     void registerFileAssoc();
     void reloadRules();                        // after rules change: views, palette
+    // Reload presentation assets without resetting project rules, FX, or editor policy.
+    // Call only outside a play session; GPU teardown/publication run on the editor thread.
+    void reloadVisualAssets();
+    // Targeted model-file reload; keeps unaffected View resources and graph
+    // clocks resident. Call outside play mode between renderer submissions.
+    size_t reloadVisualModelSources(const std::vector<std::string>& paths);
     void showGamePicker() { showProjectHub(0); }
     void showProjectHub(int tab);   // 0: recent projects, 1: new project, 2: make a game (EditorProjects.cpp)
 
@@ -314,6 +341,8 @@ private:
     void buildEditScene(game::RtsScene& out) const;
     void drawEditOverlays3D();
     void applyChanges();
+    void pollVisualAssets(double dt); // editor-owned asset watcher, independent of windows
+    bool convertVisualModelSource(const std::string& source);
     void pollAgentLink();
     void registerGuiOps();
     void registerPlayOps();   // EditorPlayOps.cpp
@@ -331,6 +360,9 @@ private:
     Options opt_;
     Workspace ws_;
     gfx::Device* dev_ = nullptr;
+    std::unique_ptr<render::RenderDeviceLifetime> gpuLifetime_;
+    std::shared_ptr<render::OffscreenTargetRetirement> offscreenTargets_;
+    std::shared_ptr<render::RetirementDiagnosticRing> gpuRetirementRing_;
     gfx::TextureHandle studioLogo_{}; // editor brand mark
     render::ImGuiLayer ui_;
     ClientHost clientHost_;   // after ui_: shut down first (its ImGui context, RmlUi)
@@ -345,8 +377,8 @@ private:
     render::PostFx postFx_;
     game::RtsView view_;
     bool lazyEditorAssets_ = true;
-    std::vector<double> editorTypeLastUsed_;
-    double lastEditorTrim_ = 0.0;
+    game::view_adapter::RtsModelDemandScheduler modelDemand_;
+    VisualAssetDependencyService visualAssets_;
     bool showPicker_ = false;
     bool resetLayout_ = false;
     bool layoutChecked_ = false;

@@ -17,6 +17,8 @@
 #include "PersistentGpuSceneUpload.h"
 #include "GpuSceneCulling.h"
 #include "GpuSceneDrawCommands.h"
+#include "RenderDeviceLifetime.h"
+#include "GpuProgramRetirement.h"
 #include <memory>
 #include <unordered_map>
 
@@ -212,19 +214,62 @@ struct ModelRenderStats {
 
 class Renderer3D {
 public:
+    void setGpuDeviceLease(RenderDeviceLifetime::Lease lease) {
+        gpuDeviceLease_=std::move(lease);
+    }
     bool init(gfx::Device& dev);
     void shutdown();
+    // Call only at a host frame boundary, outside any active graphics pass.
+    // A Pending or Failed token never authorizes GPU program destruction.
+    size_t pendingProgramRetirements() const noexcept {
+        return programRetirement_?programRetirement_->pendingBatches():0;
+    }
+    bool collectRetiredPrograms() {
+        if(!programRetirement_ || !dev_)return true;
+        checkGpuDevice(*dev_);
+        return programRetirement_->collect();
+    }
+    size_t pendingTargetRetirements() const noexcept {
+        return targetRetirement_?targetRetirement_->pendingPairs():0;
+    }
+    uint64_t targetRetirementOrphanPairs() const noexcept {
+        return (targetRetirement_?targetRetirement_->orphanedPairs():0) +
+            unleasedTargetOrphans_;
+    }
+    // Exceptional use before shared target owner initialization: a failed
+    // true-idle barrier never authorizes deleting still-in-flight textures.
+    uint64_t unleasedTargetIdleFailures() const noexcept {
+        return unleasedTargetIdleFailures_;
+    }
+    uint64_t targetRetirementEnqueueFailures() const noexcept {
+        return targetRetirement_?targetRetirement_->enqueueFailures():0;
+    }
+    bool collectRetiredTargets() {
+        if(!targetRetirement_ || !dev_)return true;
+        checkGpuDevice(*dev_);
+        return targetRetirement_->collect();
+    }
+    uint64_t programRetirementOrphanBatches() const noexcept {
+        return programRetirement_?programRetirement_->orphanBatches():0;
+    }
     // Optional fixed scene bounds for interior/model viewers; clear to use RTS ground fitting.
     void setShadowBounds(float3 lo, float3 hi) { shadowBoundsMin_=lo; shadowBoundsMax_=hi; hasShadowBounds_=true; }
     void clearShadowBounds() { hasShadowBounds_=false; }
     void setShadowQuality(ShadowQuality q);
     // Desktop/benchmark override of the High-tier map size (2048 default). Low/Medium keep their sizes.
     int shadowMapSize() const { return shadowSize_; }
-    bool setShadowMapSize(int size) { highShadowSize_=size; setShadowQuality(quality_); return quality_!=ShadowQuality::High||shadowMap_.valid(); }
+    bool setShadowMapSize(int size) {
+        highShadowSize_=size;
+        setShadowQuality(quality_);
+        // A failed allocation keeps the previous shadow texture alive;
+        // report that the requested High resolution was not published.
+        return quality_!=ShadowQuality::High ||
+               (shadowMap_.valid() && shadowSize_==size);
+    }
     ShadowQuality shadowQuality() const { return quality_; }
     static ShadowQuality defaultQualityFor(const gfx::Device& dev, bool mobile);
 
-    void beginScene(const RTSCamera& cam, int fbW, int fbH);
+    void beginScene(const Camera3D& cam, int fbW, int fbH);
     void drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags = 0, float specular = 0.25f, float emissive = 0.0f);
     // Opt-in per-surface ripple normals. Positions are render-origin-relative
     // X/Z; z = propagating radius, w = signed amplitude. No new RHI buffers.
@@ -245,6 +290,22 @@ public:
     void triangle(float3 a, float3 b, float3 c, uint32_t color);    // flat, alpha-blended
     void quadXZ(float3 a, float3 b, float width, uint32_t color, float y = 0.02f);
     void circleXZ(float3 c, float radius, uint32_t color, int segments = 40, float y = 0.03f);
+    enum class PipelineWarmStatus : uint8_t { Ready, Pending, Failed };
+    // Strict authoring preflight distinguishes an asynchronous GPU compiler
+    // still working from a rejected shader/pipeline. A rejected appearance
+    // must retain its last-good Model/Material/AnimationGraph publication.
+    PipelineWarmStatus warmModelPipelinesChecked(
+        const Model& model,const std::vector<Material>* materials=nullptr);
+    // Poll only jobs already staged by a previous candidate. This lets
+    // editor hot-reload hold the last-good appearance without reimporting
+    // scratch Models/textures every time a GPU compiler is still Pending.
+    bool hasPendingModelPipelineJobs() const noexcept;
+    bool pollPendingModelPipelineJobs();
+    struct GpuWarmStats {
+        size_t shaderJobs=0,pipelineJobs=0,colorVariants=0;
+        uint64_t colorPollAttempts=0,colorVariantsReady=0,colorVariantsFailed=0;
+    };
+    GpuWarmStats gpuWarmStats() const noexcept;
     bool warmModelPipelines(const Model& model, const std::vector<Material>* materials = nullptr);
     void drawModel(const ModelDraw& d);
     // Diagnostic, opt-in persistent scene upload stats. This staging path is
@@ -301,7 +362,7 @@ public:
     // the target bound; draw depth with lightViewProj(). Same lifetime rules as drawCustom.
     void drawCustomShadow(CustomDraw fn) { customShadow_.push_back(std::move(fn)); }
     const mat4& lightViewProj() const { return lightViewProj_; }
-    const RTSCamera& camera() const { return cam_; }
+    const Camera3D& camera() const { return cam_; }
     float4 actorReveal{}; // world-space actor centre + aperture radius, zero disables
 
     // Traced lighting ("trace" tier, Renderer3DTrace.cpp): sun rays marched over the terrain height
@@ -443,6 +504,11 @@ private:
     };
     void initModels();
     void shutdownModels();
+    void retireRenderTargets(gfx::TextureHandle color,
+                             gfx::TextureHandle depth={});
+    // Quality/instance-limit changes retire old shaders and pipelines
+    // without freeing GPU-visible handles until their own completion token.
+    void retireModelPrograms();
     gfx::PipelineHandle modelPipeline(const ModelItem& it, int phase, bool instanced,
                                       bool gpuInstances = false, bool instancePalette = false);
     bool drawModelBatch(const uint32_t* items, uint32_t count, int phase,
@@ -460,7 +526,7 @@ private:
 
     void renderReflection();        // water planar reflection (Renderer3DReflect.cpp, lighting agent)
     void renderSpotShadow();        // depth of the casters seen from the main spot light (same file)
-    void computeShadowMatrix(const RTSCamera& cam, float aspect);
+    void computeShadowMatrix(const Camera3D& cam, float aspect);
     void uploadFrameUniforms(bool forShadow);
     // trace tier (Renderer3DTrace.cpp)
     bool initTrace();
@@ -470,6 +536,16 @@ private:
     void bindSceneTextures(int colorSlot, int depthSlot);   // after the capture: the scene targets, else placeholders
     void bindTraceTextures();                                // lit pipeline: tex3 height, tex4/tex5 scene
 
+    void checkGpuDevice(const gfx::Device& dev) const {
+        if(gpuDeviceLease_.device() && !gpuDeviceLease_.validFor(dev))
+            throw std::logic_error("Renderer3D GPU device generation expired");
+    }
+    RenderDeviceLifetime::Lease gpuDeviceLease_;
+    std::unique_ptr<GpuProgramRetirement> programRetirement_;
+    // One render-target owner is shared with LightSystem. It must outlive
+    // the light, trace and selection GPU resource owners.
+    std::unique_ptr<OffscreenTargetRetirement> targetRetirement_;
+    uint64_t unleasedTargetOrphans_=0,unleasedTargetIdleFailures_=0;
     gfx::Device* dev_ = nullptr;
     gfx::ShaderHandle litShader_, shadowShader_, colorShader_;
     gfx::PipelineHandle litPipe_, litBlendPipe_, shadowPipe_, linePipe_, triPipe_;
@@ -493,7 +569,7 @@ private:
     std::vector<DrawItem> items_;
     std::vector<ColorVertex> lines_, tris_;
     std::vector<CustomDraw> custom_, customOpaque_, customShadow_;
-    RTSCamera cam_;
+    Camera3D cam_;
     mat4 viewProj_, lightViewProj_;
     float3 camPos_;
     uint32_t drawCalls_ = 0;
@@ -649,7 +725,15 @@ private:
     };
     struct ShaderEntry { gfx::ShaderHandle shader; bool failed = false; gfx::Device::ShaderJob job; };
     bool warmingPipelines_ = false, warmingPending_ = false;
+    bool warmingFailed_ = false;
     std::vector<std::pair<ModelShaderKey, gfx::Device::PipelineJob>> pendingModelPipes_;
+    // Backend colour-target warmup may be asynchronous even when it returns
+    // no ShaderJob/PipelineJob. Poll these handles without reloading Models.
+    std::vector<gfx::PipelineHandle> pendingColorWarms_;
+    // Do not re-poll or repeatedly count an HDR variant rejected by its backend.
+    // Invalidated alongside its original model pipeline generation.
+    std::vector<gfx::PipelineHandle> failedColorWarms_;
+    uint64_t colorWarmPollAttempts_=0,colorWarmReady_=0,colorWarmFailed_=0;
     std::vector<std::pair<ModelShaderKey, ShaderEntry>> modelShaders_;
     std::vector<std::pair<ModelShaderKey, gfx::PipelineHandle>> modelPipes_;
     gfx::TextureHandle white_, black_, flatNormal_;

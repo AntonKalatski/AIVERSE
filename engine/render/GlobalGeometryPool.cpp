@@ -5,6 +5,7 @@
 #include <limits>
 #include <map>
 #include <mutex>
+#include <set>
 #include <vector>
 
 namespace aiverse::render {
@@ -59,6 +60,40 @@ GeometryPoolStats geometryPoolStats(gfx::Device& dev) {
         if (owners > 0) stats.liveModels += size_t(owners);
     }
     return stats;
+}
+
+GeometryPoolReferencedStats geometryPoolReferencedStats(
+        gfx::Device& dev,std::span<const Model* const> models) {
+    GeometryPoolReferencedStats result;
+    std::set<const Model*> distinctModels;
+    std::set<const GeometryPoolPage*> requested;
+    for(const Model* model:models) {
+        if(!model || !model->geometryPoolPage ||
+           !distinctModels.insert(model).second)continue;
+        requested.insert(model->geometryPoolPage.get());
+    }
+    std::set<const GeometryPoolPage*> matched;
+    {
+        std::lock_guard lock(poolMutex);
+        const auto it=pools.find(&dev);
+        if(it==pools.end())return {};
+        for(const auto& weak:it->second) {
+            const auto page=weak.lock();
+            if(!page || !requested.contains(page.get()) ||
+               !matched.insert(page.get()).second)continue;
+            ++result.uniquePages;
+            result.allocatedBytes+=page->capacity;
+            result.occupiedBytes+=page->vertexEnd+
+                                  (page->capacity-page->indexBegin);
+        }
+    }
+    for(const Model* model:distinctModels)
+        if(model->geometryPoolPage &&
+           matched.contains(model->geometryPoolPage.get()))
+            ++result.referenceModels;
+    // Count each device page once even when many native hosts share it.
+    // The page metadata describes allocator bytes, never driver VRAM.
+    return result;
 }
 
 bool globalGeometryPoolingEnabled() { return !disabled(); }

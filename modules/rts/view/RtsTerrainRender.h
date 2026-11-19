@@ -23,6 +23,7 @@
 #include <vector>
 #include "../../../engine/render/Renderer3D.h"
 #include "../../../engine/render/TextureCache.h"
+#include "../../../engine/render/RenderDeviceLifetime.h"
 #include "../RtsData.h"
 #include "../RtsMap.h"
 #include "RtsTerrainDetail.h"
@@ -65,6 +66,7 @@ std::vector<uint8_t> parseMaterialRows(const Json& rows, int w, int h);
 
 class TerrainRenderer {
 public:
+    void setGpuDeviceLease(render::RenderDeviceLifetime::Lease lease) {gpuDeviceLease_=std::move(lease);}
     void init(gfx::Device& dev, const Rules& rules, const render::FileReader& read, const std::string& contentBase);
     void shutdown(gfx::Device& dev);
     // Optional per-cell material layer painted on the map (0..3, 255 = by cell kind). Next build().
@@ -130,6 +132,11 @@ private:
     int tierFor(const render::Renderer3D& r) const;
     int tierFor0() const;                       // device / env tier without a renderer (detail sample count)
 
+    void checkGpuDevice(const gfx::Device& dev) const {
+        if(gpuDeviceLease_.device() && !gpuDeviceLease_.validFor(dev))
+            throw std::logic_error("TerrainRenderer GPU device generation expired");
+    }
+    render::RenderDeviceLifetime::Lease gpuDeviceLease_;
     gfx::Device* dev_ = nullptr;
     const Rules* rules_ = nullptr;
     std::string base_;

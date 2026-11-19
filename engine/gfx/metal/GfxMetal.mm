@@ -83,6 +83,64 @@ public:
 
     const DeviceInfo& info() const override { return info_; }
     uint64_t frameSerial() const override { return frame_; }
+    bool waitForResourceIdle() override {
+        // A separate command buffer on the same ordered queue completes
+        // only AFTER all previously committed frames and uploads. It does
+        // not flush currently recording draw commands; the host invokes
+        // this before recording resource uses in its current frame.
+        if(enc_ || compute_ || gpuIcbEncoder_ || !queue_)return false;
+        id<MTLCommandBuffer> barrier=[queue_ commandBuffer];
+        if(!barrier)return false;
+        [barrier commit];
+        [barrier waitUntilCompleted];
+        if(barrier.status!=MTLCommandBufferStatusCompleted)return false;
+        // A successfully completed queue-tail marker proves that all older
+        // retirement markers have finished. Their completion-handler atomics
+        // can still be waiting for callback dispatch on another thread.
+        for(auto& [token,state]:retirementTokens_) {
+            (void)token;
+            state->store(1);
+        }
+        return true;
+    }
+    uint64_t beginResourceRetirement() override {
+        // This marker is ordered after previously committed GPU work, but
+        // NOT after the current frame's uncommitted command buffer.
+        if(!queue_ || enc_ || compute_ || gpuIcbEncoder_ ||
+           !gpuHealthy_->load())return 0;
+        id<MTLCommandBuffer> marker=[queue_ commandBuffer];
+        if(!marker)return 0;
+        const auto state=std::make_shared<std::atomic<int>>(0);
+        const uint64_t token=nextRetirementToken_++;
+        retirementTokens_.emplace(token,state);
+        [marker addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+            state->store(completed.status==MTLCommandBufferStatusCompleted ? 1 : -1);
+        }];
+        [marker commit];
+        return token;
+    }
+    bool resourceRetirementComplete(uint64_t token) override {
+        const auto it=retirementTokens_.find(token);
+        return it!=retirementTokens_.end() && it->second->load()==1;
+    }
+    ResourceRetirementStatus resourceRetirementStatus(uint64_t token) override {
+        const auto it=retirementTokens_.find(token);
+        if(it==retirementTokens_.end())return ResourceRetirementStatus::Failed;
+        const int status=it->second->load();
+        if(status>0)return ResourceRetirementStatus::Complete;
+        if(status<0)return ResourceRetirementStatus::Failed;
+        return ResourceRetirementStatus::Pending;
+    }
+    void endResourceRetirement(uint64_t token) override {
+        const auto it=retirementTokens_.find(token);
+        if(it!=retirementTokens_.end() && it->second->load()==1)
+            retirementTokens_.erase(it);
+    }
+    void abandonRetirementTokenAfterIdle(uint64_t token) override {
+        // Only after a successful ordered queue-tail idle marker.
+        // The completion handler retains its own shared atomic reference.
+        retirementTokens_.erase(token);
+    }
     bool supports(PixelFormat f) const override {
         bool apple = false, bc = false;
 #if TARGET_OS_IPHONE
@@ -632,19 +690,36 @@ public:
             if (shader.valid()) destroyShader(shader);
         }
     }
+    // Old bool API retains terminal-completion semantics for existing clients;
+    // use the explicit status API to distinguish a GPU compiler rejection.
     bool warmPipelineColor(PipelineHandle h, PixelFormat format) override {
+        return warmPipelineColorStatus(h, format) != PipelineColorWarmStatus::Pending;
+    }
+    PipelineColorWarmStatus warmPipelineColorStatus(PipelineHandle h, PixelFormat format) override {
         auto* p=pipelines_.get(h.id);
-        if (!p || format!=PixelFormat::RGBA16F || p->desc.depthOnly || p->desc.colorFormat==format || p->hdr.valid() || p->hdrFailed) return true;
+        if (!p) { error_="HDR warmup: invalid pipeline handle"; return PipelineColorWarmStatus::Failed; }
+        if (format!=PixelFormat::RGBA16F || p->desc.depthOnly ||
+            p->desc.colorFormat==format) return PipelineColorWarmStatus::Ready;
+        if (p->hdr.valid()) return PipelineColorWarmStatus::Ready;
+        if (p->hdrFailed) return PipelineColorWarmStatus::Failed;
         if (!p->hdrShader.valid()) {
             if (!p->hdrShaderJob) {
                 auto* shader=shaders_.get(p->desc.shader.id);
-                if (!shader) { p->hdrFailed=true; return true; }
+                if (!shader) {
+                    error_="HDR warmup: missing source shader";
+                    p->hdrFailed=true;
+                    return PipelineColorWarmStatus::Failed;
+                }
                 ShaderDesc desc; desc.msl=shader->source.c_str(); desc.linearTarget=true;
                 p->hdrShaderJob=createShaderAsync(desc);
             }
-            if (!p->hdrShaderJob(p->hdrShader)) return false;
+            if (!p->hdrShaderJob(p->hdrShader)) return PipelineColorWarmStatus::Pending;
             p->hdrShaderJob={};
-            if (!p->hdrShader.valid()) { p->hdrFailed=true; std::fprintf(stderr,"[gfx] HDR warmup shader: %s\n",error_.c_str()); return true; }
+            if (!p->hdrShader.valid()) {
+                p->hdrFailed=true;
+                std::fprintf(stderr,"[gfx] HDR warmup shader: %s\n",error_.c_str());
+                return PipelineColorWarmStatus::Failed;
+            }
         }
         if (!p->hdrPipelineJob) {
             auto desc=p->desc; desc.shader=p->hdrShader; desc.colorFormat=format;
@@ -652,11 +727,19 @@ public:
         }
         // Publishing may reallocate the pool, including the job itself. Poll a local copy.
         auto job=p->hdrPipelineJob; PipelineHandle result;
-        if (!job(result)) return false;
+        if (!job(result)) return PipelineColorWarmStatus::Pending;
         p=pipelines_.get(h.id);
+        if (!p) {
+            // A destroyed base pipeline cannot publish its asynchronous variant.
+            if (result.valid()) destroyPipeline(result);
+            error_="HDR warmup: pipeline retired before variant completion";
+            return PipelineColorWarmStatus::Failed;
+        }
         p->hdrPipelineJob={}; p->hdr=result; p->hdrFailed=!result.valid();
-        if (p->hdrFailed) std::fprintf(stderr,"[gfx] HDR warmup pipeline: %s\n",error_.c_str());
-        return true;
+        if (p->hdrFailed)
+            std::fprintf(stderr,"[gfx] HDR warmup pipeline: %s\n",error_.c_str());
+        return p->hdrFailed ? PipelineColorWarmStatus::Failed
+                            : PipelineColorWarmStatus::Ready;
     }
     PipelineHandle hdrPipeline(PipelineHandle h) {
         auto* p = pipelines_.get(h.id);
@@ -1500,6 +1583,10 @@ private:
     id<MTLTexture> depth_;
     dispatch_semaphore_t frameSemaphore_;
     uint64_t frame_ = 0;
+    uint64_t nextRetirementToken_ = 1;
+    // Only the GPU callback modifies the atomic status. The token map is
+    // accessed exclusively on the Metal device owner thread.
+    std::map<uint64_t,std::shared_ptr<std::atomic<int>>> retirementTokens_;
     // Each frame slot is recycled only after its completion semaphore.
     // Each submission gets its own reusable resources to avoid overwriting
     // buffers referenced by earlier commands in the same frame.

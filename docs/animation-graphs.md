@@ -1,4 +1,10 @@
-# Программируемые анимации AIVERSE
+# AIVERSE MotionWeave — программируемые анимации
+
+**MotionWeave** — новое общее имя модульной системы анимации.
+Старые классы `AnimationGraph` и `Animator`, JSON-форматы и namespace
+`aiverse::lib::animation` остаются без изменений для совместимости.
+Публичная точка входа: `<aiverselib/motionweave/MotionWeave.h>`,
+`AIVERSE::MotionWeave`. [Архитектура](motionweave.md).
 
 `engine/render/AnimationGraph.h` предоставляет граф поз и машину состояний поверх
 существующих glTF/FBX/процедурных моделей, семплера клипов и двухкостного IK.
@@ -9,7 +15,7 @@
 
 ## Подключение к игре
 
-Добавьте объект `animationGraph` в `view` типа, рядом с `model` и `animations`.
+Добавьте объект `animationGraph` в `view` типа, рядом с `model` и `animations`. Также `view.animationGraph` может быть строкой — относительным путём к внешнему JSON-графу (Stage 97): `"animationGraph": "animation/hero.json"`. Файл читается тем же project `FileReader`, проверяется `render::parseAnimationAsset` и компилируется с текущей моделью. Внешний файл позволяет редактировать граф независимо от `rules.json`. Начиная со Stage 98 редактор подготавливает новую версию `TypeLook` и скомпилированных графов, а затем заменяет только затронутые визуальные типы, сохраняя резидентные GPU-модели и часы анимаций остальных типов. При ошибке перекомпиляции предыдущие рабочие графы не заменяются. Несколько одновременных изменений (модель вместе с графом/текстурой) используют полную перезагрузку визуальных ресурсов как fallback. Проверка сборкой и реальным рендерингом ещё не выполнена.
 Пример определения: `examples/animation/locomotion.json`. Имена клипов и костей
 в нём иллюстративные: замените их именами из своей модели. Это не готовый персонаж.
 Граф автоматически включает CPU palette skinning, включая при `skinning: "baked"`.
@@ -103,11 +109,19 @@ Lua может также создавать графы и реализовыв�
 
 Это собственная система AIVERSE, ориентированная на принципы AnimGraph. В неё не входят
 визуальный редактор Blueprint, совместимость с Unreal Control Rig VM,
-ретаргетинг, montage slots/notifies, root-motion authority или motion warping.
-Существующий terrain foot IK и procedural modifiers применяются после графа;
-при их одновременном использовании учитывайте порядок и не дублируйте коррекцию ног.
-Граф не генерирует старые clip events: звуки/VFX запускайте из подтверждённых событий
-игры. Модельные mesh LOD и construction stages используют существующий mapping костей.
+полная автоматическая интеграция Humanoid/Avatar, Unreal Control Rig VM
+или root-motion motor в RTS/FPS. Новый самостоятельный модуль
+`aiverselib/animation` предоставляет семантический Humanoid Retargeter,
+Montage, extract-only Motion Warping, фиксированный ECS Root Motion motor
+с явной регистрацией и Ragdoll/Box3D bridge. Эти модули подключаются
+проектом, а не включаются автоматически для каждого жанра.
+`kind:"clip"` теперь поддерживает массив
+`"notifies":[{"time":0.35,"name":"step"}]`; экземпляр графа
+возвращает `notifies()` после update, но не дублирует legacy clip events
+`RtsView`. Эти события предназначены для звука/VFX, не для авторитетного
+урона или hit detection. Старые `RtsView` terrain foot IK/procedural
+модификаторы применяются после графа и должны учитывать порядок IK.
+LOD и construction stage используют старый mapping костей.
 
 Проверки: `aiverse_animation_tests` (CPU pose, blending, transitions, IK, validation),
 основной `aiverse_tests` и сборка клиента. Визуальная проверка должна использовать
@@ -554,3 +568,398 @@ local status = view.animation_status(actor) -- результат последн
 The `surfaceLocomotion` rig unit adds multi-leg floor/wall/ceiling movement and adhesive
 support. See [the controller guide](surface-locomotion.md) for C++/Lua/editor setup,
 world query contracts, the generated spider demo and gameplay authority boundaries.
+
+### Stage 108 — shared native graph and material authoring entrypoint
+
+For any genre, `view::AppearanceAuthoringService::compileGraph`
+from `engine/view/AppearanceAuthoringService.h` accepts a
+`render::Model`, inline JSON or a path to an external
+AnimationGraph asset, optional project FileReader and
+compile-time operations/traits/graph libraries. It performs
+the same bounded external JSON parsing and immutable
+`render::AnimationGraph::compile` as the legacy RTS view,
+but does not create a player or advance a pose.
+
+`AppearanceAuthoringService::resolveMaterial` and
+`applyMaterial` are likewise independent material-library
+operations with project-provided texture callbacks. Native
+projects may reuse these without introducing RTS/FPS types.
+The compatibility RtsLook type graph and runtime
+RtsAnimate control-authored graph paths use the service.
+MotionWeave animation evaluation still happens in the
+existing presentation World/graph instance, once per
+source. Attachments, type selection, texture residency,
+legacy material library hot reload and all runtime
+gameplay-specific state decisions remain the host's job.
+
+Validation: source code and deferred CMake fixtures only;
+**NOT RUN** native compilation, GPU visual playback, CTest
+or screenshot/animation parity checks.
+
+## Stage 110 — one animation writer during appearance hot reload
+
+The standalone FPS character host now publishes its project-authored
+graph and material choices via `view::AppearanceAssetRegistry`. The
+registry owns immutable compiled graph/material snapshots, not a
+runtime `AnimationGraphInstance`. Its `sourceId=1` is the *asset
+authoring key*, not an ECS actor identity. Actual remote actors keep
+their own presentation ECS entities, per-actor clips and MotionWeave
+updates. When a watched `fps.visual.graphFile` changes, the FPS host
+invalidates that source, publishes a replacement, then updates the
+existing `AnimationAssetComponent` and marks the existing player for
+restart; failure leaves the current player untouched. Draw submission
+uses already computed node matrices or baked samples through the
+generic `View` and must not call a second `View::update`.
+
+`AppearanceChoiceAuthoring` now shares RTS/FPS authored material,
+node-assignment and model-variant rules, while per-genre simulation
+data, attack state, IK contact sampling and attachment behavior remain
+host adapters. A host that replaces `Model` at the same address must
+increment `Request::modelRevision` or invalidate its `Model::path`
+before republishing so a graph cannot be reused against stale model
+node/clip storage. This is not protection against destruction of a
+Model while a pinned snapshot or render packet still borrows it.
+
+## Stage 111 — retaining RTS graph clocks during material updates
+
+The RTS compatibility adapter now stores the parsed
+`ModelChoice::graphSignature` (including contents of external
+AnimationGraph files) and a pinned
+`AppearanceAssetRegistry::Snapshot` for hot-reloaded model/LOD/stage
+choices. A material-library-only rebuild may keep its previous graph
+pointer and existing entity animation clocks when every corresponding
+choice still uses the same imported Model, graph signature and runtime
+shape. No new evaluator or timing source is allocated by
+`AppearanceAssetRegistry::publishPrepared`; the original per-entity
+MotionWeave / legacy animation state remains the only pose writer.
+Changed graphs and incompatible choices retain the existing reset path.
+
+`RtsView::shutdown` detaches generic View poses and clears model
+borrowing animation state and appearance snapshots before the
+ModelResourceCache GPU release barrier. Standalone RTS GameClient and
+the Editor's embedded GameClient now use a host-owned GPU lifetime
+generation, with the embedded client borrowing the Editor generation.
+
+## Stage 112 — model texture rollback without resetting animation clocks
+
+The RTS hot-appearance reload has a separate
+`render::ModelImageUploadTransaction` for newly authored material
+textures. Material indices refer to proposed append slots while
+candidate looks are staged, and only become live with `commit()`
+after all candidate models/LODs/stages and their immutable appearance
+snapshots are prepared. A rejected texture/ShaderGraph/AnimationGraph
+change leaves the last-good Model image count, live TypeLooks and
+existing animation players untouched. GPU allocations created by the
+rejected transaction go to a host-owned, fence-aware rollback queue;
+no graph runtime or second animation ECS is added.
+
+PostFx, terrain, ground effects and native particle rendering now
+take an optional host `RenderDeviceLifetime::Lease` and check it at
+their GPU entrypoints. Editor-embedded clients share the editor's
+generation. These guards cannot prove a GPU fence has completed and
+do not replace explicit resource retirement and shutdown ordering.
+
+## Stage 113 — scratch model imports preserve last-good animation
+
+`RtsView::reloadAppearanceTypes` stages new (previously
+nonresident) models as independent scratch resource owners, as
+well as staging new material images. On failed graph/material
+authoring, it leaves the active TypeLooks and their graph/pose
+writers untouched; scratch model GPU buffers and images retire
+through normal GPU tokens without replacing live Model pointers.
+A successful publish transfers the same Model* storage into the
+real model cache after committing new image indices.
+
+A speculative model may borrow a *resident* shared texture
+lease, but cannot modify the shared GPU texture residency map
+during authoring. The active MotionWeave or legacy per-entity
+animation writer is unchanged; no second ECS or graph clock
+is allocated by the scratch owner. `Renderer3D` now validates
+the render host's existing GPU generation before scene work.
+Validation is still deferred.
+
+## Stage 114 — GPU shader readiness is an appearance publication condition
+
+In the RTS/editor appearance reload path, authored CPU materials,
+AnimationGraph programs, shared GPU image ownership and native GPU
+shader/pipeline readiness must be prepared **before** the live TypeLook
+and animation graph sources are replaced. The host can supply
+`RtsView::setAppearancePipelineValidator`, normally forwarding to
+its existing `Renderer3D::warmModelPipelinesChecked`.
+
+- Ready: candidate may proceed through shared texture/Model commit.
+- Pending: preserve last-good graph and material snapshots, leave
+  the editor's watched source pending and retry after GPU compiler
+  progress.
+- Failed: reject the candidate, keep old animations and return an
+  authoring error; do not replace the live TypeLook.
+
+The validator handles GPU pipeline **preflight** but does not own a
+second animation evaluator or make the Renderer3D shader cache fully
+transactional. Speculative Model and material texture GPU handles
+still require retirement using their own completion fences on abort.
+The implementation is not compiled or GPU-verified.
+
+## Stage 115 — asynchronous GPU compiler progress without repeated Model imports
+
+`Renderer3D::warmModelPipelinesChecked` still distinguishes
+`Ready`, `Pending`, and `Failed`. Stage 115 additionally
+exposes `hasPendingModelPipelineJobs()` and
+`pollPendingModelPipelineJobs()` so the renderer's already
+submitted native shader/pipeline jobs can progress independently
+of a repeated authored model import. An Editor hot appearance
+update marked `gpuAppearancePending` does not reupload
+speculative Models and textures while those jobs are still
+in-flight. After they complete, the Editor retries the original
+authoring transaction and publishes only the validated candidate.
+This does not add a second ECS animation evaluator, reset
+locomotion/attack clocks on material-only changes, or change
+simulation ownership.
+
+The optimization currently covers pending native shader/pipeline
+jobs. A renderer whose `warmPipelineColor` variant remains
+pending but exposes no native job may still trigger another
+candidate staging attempt. Different file edits during a pending
+job may also require another authoring attempt. Do not infer
+successful GPU compilation until the real backend returns Ready.
+The branch now includes NEREID main changes, but native and
+GPU cross-system parity has not been tested.
+
+## Stage 116 — HDR pipeline warmup without reimporting animation sources
+
+The single `Renderer3D` shader cache now tracks asynchronous
+`warmPipelineColor` requests in addition to ShaderJob and
+PipelineJob callbacks. A variant that has not completed is recorded
+as `pendingColorWarms_`. Later presentation-owner frames poll the
+existing native handle; `hasPendingModelPipelineJobs()` remains
+true while any shader, pipeline or HDR colour variant is pending.
+This lets the editor keep an authored appearance transaction
+unpublished and retain last-good MotionWeave player clocks without
+reimporting Models solely to retry the identical GPU program.
+
+Quality or instance-limit changes clear the outdated variant
+polling list and retire old pipeline/shader handles behind actual
+GPU fences. Native GPU API colour-warm readiness is currently
+boolean, not a precise Failed/Pending status; persistent false
+readiness is visible through `gpuWarmStats()` and requires backend
+diagnostics for definitive failure classification.
+
+NEREID water reflection rendering retains its own scene policy
+while sharing the same generic GPU target retirement pool. This
+stage changes no animation clock, ECS writer or gameplay state.
+Source changes are committed to the feature branch but were not
+compiled or GPU-tested.
+
+## Stage 117 — transactional animation appearance with terminal GPU errors
+
+During Model/Material/AnimationGraph hot reload the existing appearance
+validator distinguishes an asynchronous HDR colour variant still Pending
+from a Metal shader/pipeline that definitively Failed. It uses the same
+`Renderer3D::warmModelPipelinesChecked` call from generic View, not a
+separate graph evaluator. Failed variants remain cached as terminal
+for that GPU pipeline generation, keeping last-good model materials
+and MotionWeave presentation state. Quality/instance-limit shader
+invalidation clears those failed-handle entries.
+
+The generic gfx::Device status API is optional and backwards-compatible.
+Legacy bool-only Vulkan/GL/third-party implementations report Ready/Pending
+without inventing a Failed result. Real Metal and cross-backend validation,
+CMake/CTest and visual continuity tests are **NOT RUN**.
+See [Stage 117 handoff](agent-handoffs/animation-stage117-hdr-warm-status-2026-11-19.md).
+
+## Stage 118 — GPU resource initialization for appearance publication
+
+The AnimationGraph and MotionWeave presentation ECS remain unchanged.
+Their genre-neutral View publication host can now reject and roll back
+partial Renderer3D, LightSystem and trace GPU initialization without
+mistaking a partially allocated pipeline or fallback texture for a valid
+render owner. Rollback requires a real Device GPU-idle barrier; on
+failure to prove idle, a native exception prevents unsafe publication
+or destruction rather than silently falling back to old resource IDs.
+Standalone LightSystem owners have explicit orphan/idle-failure counters.
+
+This does not add a second AnimationGraph update, ECS simulation writer,
+root motion authority or genre dependency. Native build/CTest, GPU
+failure injection, visual hot reload and sanitizers were **NOT RUN**.
+See [Stage 118 handoff](agent-handoffs/animation-stage118-gpu-init-rollback-2026-11-19.md).
+
+## Stage 119 — compatible MotionWeave playback state across hot reload
+
+`AnimationGraphInstance::snapshotPlayback()/restorePlayback()` now
+capture an authored state name and normalized named clip node phases.
+On the SAME source generation and compatible ordered bone hierarchy,
+`MotionWeaveSourceBridge` attaches this one-shot snapshot to the
+presentation ECS player while replacing its Model/Graph. After
+resetting the new compiled graph, the evaluator restores matching
+state/node/clip/loop identities with the new clip duration, and
+re-evaluates a fresh pose without duplicating time-zero notifies.
+New graph contacts, rig/native state, montage slots, pose matrices
+and unwrapped notify cycles begin clean. Incompatible hierarchy or
+respawn generation intentionally restarts from authored defaults.
+
+The host must keep the old Model and Graph valid until bridge sync
+and never run presentation ECS mutation during MotionWeave worker
+dispatch. This is not a simulation snapshot or authority transfer.
+**NOT RUN:** build, CTest, GPU editor, FPS/RTS visual parity, sanitizers.
+See [Stage 119 handoff](agent-handoffs/animation-stage119-playback-continuity-2026-11-19.md).
+
+## Stage 120 — canvas lifetime remains outside MotionWeave ECS
+
+Stage 120 changes `RenderTexture` and the generic GPU resource
+retirement owner used for native canvases and view paint layers.
+Its GPU buffers, textures and shader programs retire via GPU
+completion tokens at host frame boundaries. No AnimationGraph
+parameters, source generations, pose evaluators, montage players,
+root-motion authority or MotionWeave scheduler clocks were changed.
+
+Compatible hot-reload playback introduced in Stage 119 remains
+presentation-only. Canvas owner source changes are independent
+from those graph/model generation semantics. **NOT COMPILED OR
+TESTED** for this Stage 120.
+See [Stage 120 handoff](agent-handoffs/animation-stage120-canvas-gpu-retirement-2026-11-19.md).
+
+## Stage 121 — MotionWeave clocks independent from whole-model LOD
+
+The new optional `view::Object::animationModel` identifies the
+immutable graph rig separately from `draw.model` and any
+`view::Object::lods` visual replacements. `View::update` sends
+the source rig, stable ID, generation and named graph inputs to the
+ONE MotionWeave presentation ECS player. `View::submitOne` selects
+a camera-distance visual LOD without re-evaluating or resetting the
+animation. Per-View hysteresis is source-ID/generation scoped and
+no animation update occurs during draw submission.
+
+Only a visual LOD whose skeleton, bind TRS and skin matrices match
+the source consumes its evaluated pose. Distinct morph meshes need
+explicit channel maps; incompatible whole-model LODs use bind pose
+while the source rig and its socket attachments remain animated.
+The host continues to own model/graph lifetime through the worker
+join and synchronous draw. The RTS attachment pass now composes
+socket draws through the generic View algorithm without migrating
+RTS gameplay filters into the animation library.
+
+**NOT RUN:** actual CMake build, animation/LOD CTests, GPU visual
+parity, sanitizer or performance tests. Do not claim functional
+validation from GitHub-only source commits.
+[Stage 121 handoff](agent-handoffs/animation-stage121-universal-lod-attachments-2026-11-19.md).
+
+## Stage 122 — animation clock continuity with LOD retargeting
+
+`ModelPoseRetarget` maps one validated base Model's presentation
+Pose into a different visual Model's bone hierarchy and optional
+morph target channels. The source AnimationGraphInstance remains
+owned by the same MotionWeave presentation ECS World and is never
+reset because the camera chooses a lower-detail Model.
+Strictly compatible LODs share source Pose without a copy;
+explicit mappings produce target-local Pose and matrices; invalid
+mappings use visual bind pose. Source sockets always use base-rig
+matrices. No animation notifies are synthesized from a LOD switch.
+
+FPS already evaluates its `characterPresentation` World; it now
+calls `View::beginPreparedFrame` before sending precomputed draw
+packets, rather than invoking `View::update`. RTS keeps its
+game-specific authoring and state filters but reuses the common
+retarget helper for LOD visuals whose node maps validate.
+
+**NOT RUN:** native compiler/linker, animation graph or LOD CTests,
+Metal/GL/Vulkan real GPU parity or sanitizers. See [Stage 122 handoff](agent-handoffs/animation-stage122-rig-retarget-2026-11-19.md).
+
+## Stage 123 — retarget plans share assets, never graph clocks
+
+`CompiledModelPoseRetarget` stores prevalidated static
+source/visual bone and morph correspondence for a particular
+pair of host-owned Model publication generations. Model LOD
+selection never resets the MotionWeave source graph, advances
+animation time twice, or transfers ECS/gameplay authority.
+The CPU retarget step consumes the **already evaluated** source
+Pose, computing a transient target-local Pose for one draw.
+
+The source and visual pointers/versions must match before the
+compiled steps run. On stale plan or incompatible source Pose,
+the visual uses its own bind pose, while base rig sockets and
+source AnimationGraph continue uninterrupted. When no compiled
+plan exists the older validation path remains. Host assets must
+outlive the synchronous animation worker join and Renderer3D
+submission. `View::modelRetargetStats` is diagnostic only,
+reset per presentation update / prepared frame.
+
+**NOT RUN:** CMake/C++ compiler, CTest, GPU backend visual
+comparison, sanitizers or crowd benchmarks. See [Stage 123 handoff](agent-handoffs/animation-stage123-compiled-retarget-cache-2026-11-19.md).
+
+## Stage 124 — source graph unchanged; reusable target-local retarget scratch
+
+The already-compiled source/visual skeleton mapping continues
+to consume ONE MotionWeave source graph pose per frame.
+`retargetCompiledModelPose` now writes the target-local
+Pose and world matrices into reusable caller-owned vectors;
+`aiverse::View::submitOne` retains scratch capacity per View.
+A nested synchronous model submission uses isolated scratch,
+preserving the outer draw's currently borrowed pose pointers.
+Renderer3D copies draw-item matrices/morph weights during
+submit and does not enqueue these Pose pointers on the GPU.
+
+Retarget authoring diagnostics now distinguish invalid map
+sizes/ancestry, duplicate/missing nodes, malformed morph slots,
+bad bind transforms and obsolete asset generation. No
+animation authority or new clock was introduced, nor was
+baked/crowd clip state reset by model LOD changes.
+An unsuccessful retarget call is a bind-pose fallback;
+never rely on scratch remaining unchanged on failure.
+
+**NOT RUN:** native C++ compile/link, CTest/CI,
+Metal/Vulkan/GL visual, sanitizers or benchmarks.
+[Stage 124 handoff](agent-handoffs/animation-stage124-pose-scratch-authoring-2026-11-19.md).
+
+## Stage 125 — bounded Pose scratch independent from AnimationGraph
+
+One MotionWeave graph continues to evaluate per source
+entity/animation World. `View::submitOne` can reuse
+precomputed Pose across visual LODs and retain at most
+the configured CPU scratch capacity (512 KiB per View
+by default) AFTER a completed synchronous submission.
+One giant rig is never clipped by this retention budget.
+Nested renderer capture uses isolated scratch; neither
+the animation clock nor ECS schedule changes.
+
+`ModelPublicationEpoch` is a globally monotonic,
+CPU-only revision for replaced models. It is distinct
+from entity `generation`, Graph generation and GPU
+retirement tokens. `AppearanceAssetRegistry::Asset::packet`
+propagates this revision to generic View. Compiled retarget
+plans diagnose stale source/visual revisions, and rejected
+plans safely produce visual bind poses while keeping the
+same source animation time and socket attachments.
+RTS optional legacy bind fallback is a host-only visual
+choice and leaves authoritative game logic unchanged.
+
+**NOT RUN:** native CMake/CTest/linker, Metal/Vulkan/GL,
+performance, animator parity or sanitizers. See
+[Stage 125 handoff](agent-handoffs/animation-stage125-scratch-budget-model-epochs-2026-11-19.md).
+
+## Stage 126 — FPS graph hot reload continuity and independent model epochs
+
+The FPS native presentation host now uses the same
+`AnimationGraphInstance::snapshotPlayback` /
+`AnimationPlayerComponent::pendingPlayback` contract as
+MotionWeave source-bridge hot reload. When the character
+Model remains unchanged and the graph file is recompiled,
+compatible named state and normalized clip phases are
+captured before the one-shot player restart and restored
+by the existing evaluator. Deleted/renamed states or clip
+nodes cannot be restored and restart at authored defaults.
+Notifies, montage events, rig native/contact caches and
+gameplay authority remain discarded.
+
+The FPS prepared View packet forwards the published
+`modelPublicationGeneration`, independent of player
+network life or AnimationGraph generation. Material/graph
+only appearance changes do not invalidate Model-asset
+LOD retarget caches, while actual reimport/model source
+changes require a new Model epoch and compiled plan.
+Generic C++ `AppearanceSpec` and published
+`Asset::packet` use the same epoch propagation API.
+No second AnimationGraph update is introduced.
+
+**NOT RUN:** CMake/C++ compiler, CTest, FPS animation
+visual parity, GPU runtime validation or sanitizers.
+See [Stage 126 handoff](agent-handoffs/animation-stage126-published-lod-hot-reload-2026-11-19.md).

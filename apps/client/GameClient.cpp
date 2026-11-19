@@ -61,6 +61,15 @@ float GameClient::initWeight(int step) {
 void GameClient::initStep(gfx::Device& dev, int step) {
     switch (step) {
     case 0: {   // manifest, rules, language
+        // Never mint a second generation when hosted by the editor.
+        // An external lease must match this exact device and host thread.
+        if(gpuDeviceLease_.device()) {
+            if(!gpuDeviceLease_.validFor(dev))
+                throw std::logic_error("GameClient external GPU device lease expired");
+        } else {
+            ownedGpuLifetime_=std::make_unique<render::RenderDeviceLifetime>(dev);
+            gpuDeviceLease_=ownedGpuLifetime_->lease();
+        }
         dev_ = &dev;
         { // settings (language, online name) are saved here; platforms do not create it
             std::error_code ec;
@@ -107,11 +116,18 @@ void GameClient::initStep(gfx::Device& dev, int step) {
         }
 #endif
         overlay_.init(dev, "fonts/ui.ttf", 17.0f);
+        r3d_.setGpuDeviceLease(gpuDeviceLease_);
         if (!r3d_.init(dev)) error_ = "renderer: " + dev.lastError();
+        view_.setAppearancePipelineValidator(
+            [this](const render::Model& model,
+                   const std::vector<render::Material>& materials) {
+                return r3d_.warmModelPipelinesChecked(model,&materials);
+            });
         r3d_.setShadowQuality(Renderer3D::defaultQualityFor(dev, platform::isTouchDevice()));
         r3d_.setMaterialQuality(Renderer3D::defaultMaterialQualityFor(dev, platform::isTouchDevice()));
         r3d_.setBakedQuality(Renderer3D::defaultBakedQualityFor(dev, platform::isTouchDevice()));
         r3d_.lights.setQuality(aiverse::render::LightSystem::defaultQualityFor(dev, platform::isTouchDevice()));
+        postFx_.setGpuDeviceLease(gpuDeviceLease_);
         postFx_.init(dev);
         postFxBase_ = render::PostFx::defaultQualityFor(dev, platform::isTouchDevice());
         postFx_.setQuality(postFxBase_);
@@ -120,8 +136,14 @@ void GameClient::initStep(gfx::Device& dev, int step) {
             return platform::readContentFile(path, bytes) && render::decodeImage(bytes, w, h, rgba);
         });
         break;
-    case 2: view_.init(dev, rules_); break;     // models, textures, atlases of every type
-    case 3: fx_.init(dev, rules_); break;
+    case 2:
+        view_.setGpuDeviceLease(gpuDeviceLease_);
+        view_.init(dev, rules_);
+        break;     // models, textures, atlases of every type
+    case 3:
+        fx_.setGpuDeviceLease(gpuDeviceLease_);
+        fx_.init(dev, rules_);
+        break;
     case 4: initAudio(); break;
     case 5: initUi(); break;
     default: break;
@@ -256,6 +278,13 @@ void GameClient::shutdown() {
     shutdownUi();
     minimap_.release(*dev_);
     overlay_.shutdown();
+    // All owned render resources are gone while gfx::Device still exists.
+    // Editor-hosted clients only drop their borrowed lease; the editor owns
+    // the epoch and retires it after ALL of its own resource owners shutdown.
+    if(ownedGpuLifetime_)ownedGpuLifetime_->retire();
+    ownedGpuLifetime_.reset();
+    gpuDeviceLease_={};
+    dev_=nullptr;
 }
 
 void GameClient::configurePostFx(const Json& map) {
@@ -961,6 +990,22 @@ void GameClient::runViewScripts(float dt) {
 }
 
 void GameClient::frame(gfx::Device& dev, double dt) {
+    // Previous-frame model uploads can remain GPU-visible after their
+    // TypeLooks detach. Drain only before this frame's render submissions;
+    // if a backend refuses the idle barrier, retain them for the next frame.
+    if(view_.pendingModelRetirements()!=0 ||
+       view_.pendingRolledBackImages()!=0)
+        view_.collectRetiredModels();
+    if(view_.pendingPaintGpuRetirements()!=0)
+        view_.collectRetiredPaintGpuResources();
+    if(r3d_.pendingProgramRetirements()!=0)
+        r3d_.collectRetiredPrograms();
+    if(r3d_.pendingTargetRetirements()!=0)
+        r3d_.collectRetiredTargets();
+    if(r3d_.hasPendingModelPipelineJobs())
+        r3d_.pollPendingModelPipelineJobs();
+    if(postFx_.pendingTargetRetirements()!=0)
+        postFx_.collectRetiredTargets();
     const auto frameStarted = std::chrono::steady_clock::now();
     if (mapLoading_) { frameMapLoading(dev, dt); return; }
     if (mapJustLoaded_) { dt = 0; mapJustLoaded_ = false; }

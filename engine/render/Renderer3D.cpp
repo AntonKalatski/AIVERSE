@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <stdexcept>
 
 namespace aiverse::render {
 
@@ -44,82 +45,159 @@ ShadowQuality Renderer3D::defaultQualityFor(const gfx::Device& dev, bool mobile)
 }
 
 bool Renderer3D::init(gfx::Device& dev) {
+    checkGpuDevice(dev);
+    // Reinitializing the same instance without shutdown would overwrite live
+    // GPU handles and the retirement owners borrowed by LightSystem.
+    if(dev_)throw std::logic_error("Renderer3D init: already initialized; call shutdown first");
+    if(programRetirement_ && programRetirement_->pendingBatches()!=0)
+        throw std::logic_error("Renderer3D cannot reinitialize with pending GPU programs");
+    if(targetRetirement_ && targetRetirement_->pendingPairs()!=0)
+        throw std::logic_error("Renderer3D cannot reinitialize with pending GPU targets");
+    programRetirement_=std::make_unique<GpuProgramRetirement>(
+        dev,gpuDeviceLease_);
+    targetRetirement_=std::make_unique<OffscreenTargetRetirement>(
+        dev,gpuDeviceLease_);
+    lights.setTargetRetirement(targetRetirement_.get());
     dev_ = &dev;
-    gfx::ShaderDesc ls; ls.glslVertex = shaders::kLitVS; ls.glslFragment = shaders::kLitFS; ls.msl = shaders::kLitMSL;
-    ls.uniformSlots = 3; ls.textureSlots = 6; ls.label = "lit"; // U2/tex1/tex2: Lights (tex2 water reflection); tex3 height field, tex4/tex5 scene (trace)
-    litShader_ = dev.createShader(ls);
-    gfx::ShaderDesc ss; ss.glslVertex = shaders::kShadowVS; ss.glslFragment = shaders::kShadowFS; ss.msl = shaders::kShadowMSL;
-    ss.uniformSlots = 2; ss.label = "shadow";
-    shadowShader_ = dev.createShader(ss);
-    gfx::ShaderDesc cs; cs.glslVertex = shaders::kColorVS; cs.glslFragment = shaders::kColorFS; cs.msl = shaders::kColorMSL;
-    cs.uniformSlots = 2; cs.label = "color";
-    colorShader_ = dev.createShader(cs);
-    if (!litShader_.valid() || !shadowShader_.valid() || !colorShader_.valid()) return false;
 
-    gfx::PipelineDesc mp;
-    mp.shader = litShader_;
-    mp.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
-    mp.attrs[1] = {1, gfx::VertexFormat::Float3, 12};
-    mp.attrs[2] = {2, gfx::VertexFormat::UByte4N, 24};
-    mp.attrCount = 3; mp.stride = sizeof(MeshVertex);
-    mp.indexType = gfx::IndexType::UInt32;
-    litPipe_ = dev.createPipeline(mp);
-    mp.blend = gfx::BlendMode::Alpha; mp.depthWrite = false;
-    litBlendPipe_ = dev.createPipeline(mp);
+    // Allocate as a single transaction. An unsuccessful shader, buffer,
+    // texture, LightSystem or trace setup must not leave a half-initialized
+    // renderer that a host can mistakenly render or initialize again.
+    // Rollback requires a real GPU idle barrier, even for async backends.
+    bool initialized = false;
+    try {
+        initialized = [&]() -> bool {
+            gfx::ShaderDesc ls; ls.glslVertex = shaders::kLitVS; ls.glslFragment = shaders::kLitFS; ls.msl = shaders::kLitMSL;
+            ls.uniformSlots = 3; ls.textureSlots = 6; ls.label = "lit"; // U2/tex1/tex2: Lights (tex2 water reflection); tex3 height field, tex4/tex5 scene (trace)
+            litShader_ = dev.createShader(ls);
+            gfx::ShaderDesc ss; ss.glslVertex = shaders::kShadowVS; ss.glslFragment = shaders::kShadowFS; ss.msl = shaders::kShadowMSL;
+            ss.uniformSlots = 2; ss.label = "shadow";
+            shadowShader_ = dev.createShader(ss);
+            gfx::ShaderDesc cs; cs.glslVertex = shaders::kColorVS; cs.glslFragment = shaders::kColorFS; cs.msl = shaders::kColorMSL;
+            cs.uniformSlots = 2; cs.label = "color";
+            colorShader_ = dev.createShader(cs);
+            if (!litShader_.valid() || !shadowShader_.valid() || !colorShader_.valid()) return false;
 
-    gfx::PipelineDesc sp;
-    sp.shader = shadowShader_;
-    sp.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
-    sp.attrCount = 1; sp.stride = sizeof(MeshVertex);
-    sp.indexType = gfx::IndexType::UInt32;
-    sp.depthOnly = true;
-    sp.cull = gfx::CullMode::Back;   // models are closed meshes; back faces would self-shadow less but cost more
-    sp.depthBiasConstant = 2.0f; sp.depthBiasSlope = 2.5f;
-    shadowPipe_ = dev.createPipeline(sp);
+            gfx::PipelineDesc mp;
+            mp.shader = litShader_;
+            mp.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
+            mp.attrs[1] = {1, gfx::VertexFormat::Float3, 12};
+            mp.attrs[2] = {2, gfx::VertexFormat::UByte4N, 24};
+            mp.attrCount = 3; mp.stride = sizeof(MeshVertex);
+            mp.indexType = gfx::IndexType::UInt32;
+            litPipe_ = dev.createPipeline(mp);
+            mp.blend = gfx::BlendMode::Alpha; mp.depthWrite = false;
+            litBlendPipe_ = dev.createPipeline(mp);
 
-    gfx::PipelineDesc lp;
-    lp.shader = colorShader_;
-    lp.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
-    lp.attrs[1] = {1, gfx::VertexFormat::UByte4N, 12};
-    lp.attrCount = 2; lp.stride = sizeof(ColorVertex);
-    lp.indexType = gfx::IndexType::None;
-    lp.primitive = gfx::Primitive::Lines;
-    lp.cull = gfx::CullMode::None;
-    lp.blend = gfx::BlendMode::Alpha;
-    lp.depthWrite = false;
-    linePipe_ = dev.createPipeline(lp);
-    lp.primitive = gfx::Primitive::Triangles;
-    triPipe_ = dev.createPipeline(lp);
+            gfx::PipelineDesc sp;
+            sp.shader = shadowShader_;
+            sp.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
+            sp.attrCount = 1; sp.stride = sizeof(MeshVertex);
+            sp.indexType = gfx::IndexType::UInt32;
+            sp.depthOnly = true;
+            sp.cull = gfx::CullMode::Back;   // models are closed meshes; back faces would self-shadow less but cost more
+            sp.depthBiasConstant = 2.0f; sp.depthBiasSlope = 2.5f;
+            shadowPipe_ = dev.createPipeline(sp);
 
-    gfx::BufferDesc vb; vb.usage = gfx::Usage::Dynamic; vb.size = 64 * 1024;
-    lineVB_ = dev.createBuffer(vb);
-    triVB_ = dev.createBuffer(vb);
-    setShadowQuality(quality_);
-    initModels();
-    if (!lights.init(dev)) return false;
-    if (!initTrace()) return false;
-    initSelectionOutline();  // optional editor effect: failure must not break the game renderer
-    return litPipe_.valid() && shadowPipe_.valid() && linePipe_.valid() && triPipe_.valid();
+            gfx::PipelineDesc lp;
+            lp.shader = colorShader_;
+            lp.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
+            lp.attrs[1] = {1, gfx::VertexFormat::UByte4N, 12};
+            lp.attrCount = 2; lp.stride = sizeof(ColorVertex);
+            lp.indexType = gfx::IndexType::None;
+            lp.primitive = gfx::Primitive::Lines;
+            lp.cull = gfx::CullMode::None;
+            lp.blend = gfx::BlendMode::Alpha;
+            lp.depthWrite = false;
+            linePipe_ = dev.createPipeline(lp);
+            lp.primitive = gfx::Primitive::Triangles;
+            triPipe_ = dev.createPipeline(lp);
+
+            gfx::BufferDesc vb; vb.usage = gfx::Usage::Dynamic; vb.size = 64 * 1024;
+            lineVB_ = dev.createBuffer(vb);
+            triVB_ = dev.createBuffer(vb);
+            setShadowQuality(quality_);
+            initModels();
+            if (!lights.init(dev)) return false;
+            if (!initTrace()) return false;
+            initSelectionOutline();  // optional editor effect: failure must not break the game renderer
+            return litPipe_.valid() && litBlendPipe_.valid() &&
+                   shadowPipe_.valid() && linePipe_.valid() && triPipe_.valid() &&
+                   lineVB_.valid() && triVB_.valid() && white_.valid() &&
+                   black_.valid() && flatNormal_.valid() &&
+                   (quality_ == ShadowQuality::Off || shadowMap_.valid());
+        }();
+    } catch (...) {
+        // If idle/cleanup is impossible, shutdown throws and preserves the
+        // live owner state instead of freeing potentially in-flight handles.
+        shutdown();
+        throw;
+    }
+    if(!initialized)shutdown();
+    return initialized;
+}
+
+void Renderer3D::retireRenderTargets(gfx::TextureHandle color,
+                                     gfx::TextureHandle depth) {
+    if(!color.valid() && !depth.valid())return;
+    if(targetRetirement_) {
+        targetRetirement_->retire(color,depth);
+        return;
+    }
+    // The shared target owner exists throughout normal Renderer3D use.
+    // The fallback is for exceptional setup/teardown only. Never destroy
+    // GPU-visible resources without a real idle proof, even with no lease.
+    if(!dev_) {
+        ++unleasedTargetOrphans_;
+        return;
+    }
+    try {
+        if(!dev_->waitForResourceIdle()) {
+            ++unleasedTargetIdleFailures_;
+            ++unleasedTargetOrphans_;
+            return;
+        }
+        if(color.valid())dev_->destroyTexture(color);
+        if(depth.valid())dev_->destroyTexture(depth);
+    }catch(...) {
+        ++unleasedTargetOrphans_;
+    }
 }
 
 void Renderer3D::setShadowQuality(ShadowQuality q) {
-    quality_ = q;
-    if (!dev_) return;
-    int size = q == ShadowQuality::High ? highShadowSize_ : q == ShadowQuality::Medium ? 1536 : 1024;
-    if (q == ShadowQuality::Off) size = 0;
-    if (size == shadowSize_ && shadowMap_.valid()) return;
-    if (shadowMap_.valid()) dev_->destroyTexture(shadowMap_);
-    shadowMap_ = {};
-    shadowSize_ = size;
+    if(!dev_) {quality_=q;return;}
+    checkGpuDevice(*dev_);
+    int size=q==ShadowQuality::High?highShadowSize_:
+             q==ShadowQuality::Medium?1536:1024;
+    if(q==ShadowQuality::Off)size=0;
+    if(size==shadowSize_ && shadowMap_.valid()) {
+        quality_=q;return;
+    }
     gfx::TextureDesc td;
-    td.width = td.height = std::max(size, 16);
-    td.format = gfx::PixelFormat::Depth;
-    td.renderTarget = true; td.compare = false; td.filter = gfx::Filter::Nearest; // raw depth for PCSS blocker search
-    shadowMap_ = dev_->createTexture(td);
+    td.width=td.height=std::max(size,16);
+    td.format=gfx::PixelFormat::Depth;
+    td.renderTarget=true;
+    td.compare=false;
+    td.filter=gfx::Filter::Nearest;
+    auto replacement=dev_->createTexture(td);
+    if(!replacement.valid())return; // preserve previous valid shadow target
+    retireRenderTargets(shadowMap_);
+    shadowMap_=replacement;
+    shadowSize_=size;
+    quality_=q;
 }
 
 void Renderer3D::shutdown() {
     if (!dev_) return;
+    checkGpuDevice(*dev_);
+    // Live renderer shaders and buffers also require a completed GPU frame.
+    if(!dev_->waitForResourceIdle())
+        throw std::runtime_error("Renderer3D shutdown: GPU idle barrier failed");
+    // Successful full-device idle is required when shader cache generations
+    // are still pending. Failed completion cannot silently discard them.
+    if(programRetirement_ && !programRetirement_->drain())
+        throw std::runtime_error(
+            "Renderer3D shutdown: pending GPU shader/pipeline completion");
     gpuModelCommands_.release(*dev_);
     persistentCull_.release(*dev_);
     if (persistentUpload_) {
@@ -130,23 +208,43 @@ void Renderer3D::shutdown() {
     persistentScene_ = {};
     shutdownModels();
     lights.shutdown();
+    lights.setTargetRetirement(nullptr);
     shutdownTrace();
-    dev_->destroyTexture(shadowMap_);
-    dev_->destroyBuffer(lineVB_); dev_->destroyBuffer(triVB_);
-    if (sceneSelectionMask_.valid()) dev_->destroyTexture(sceneSelectionMask_);
+    retireRenderTargets(shadowMap_);
+    shadowMap_={};
+    if(lineVB_.valid())dev_->destroyBuffer(lineVB_);
+    if(triVB_.valid())dev_->destroyBuffer(triVB_);
+    lineVB_=triVB_={};
+    retireRenderTargets(sceneSelectionMask_);
+    sceneSelectionMask_={};
     if (sceneSelectionTriangle_.valid()) dev_->destroyBuffer(sceneSelectionTriangle_);
+    sceneSelectionTriangle_={};
     if (sceneSelectionPrimitiveMaskPipe_.valid())
         dev_->destroyPipeline(sceneSelectionPrimitiveMaskPipe_);
+    sceneSelectionPrimitiveMaskPipe_={};
     for (auto p : {sceneSelectionEdgePipe8_, sceneSelectionEdgePipeHdr_})
         if (p.valid()) dev_->destroyPipeline(p);
+    sceneSelectionEdgePipe8_=sceneSelectionEdgePipeHdr_={};
     if (sceneSelectionEdgeShader_.valid())
         dev_->destroyShader(sceneSelectionEdgeShader_);
-    for (auto p : {litPipe_, litBlendPipe_, shadowPipe_, linePipe_, triPipe_}) dev_->destroyPipeline(p);
-    for (auto s : {litShader_, shadowShader_, colorShader_}) dev_->destroyShader(s);
+    sceneSelectionEdgeShader_={};
+    for (auto p : {litPipe_, litBlendPipe_, shadowPipe_, linePipe_, triPipe_})
+        if(p.valid())dev_->destroyPipeline(p);
+    for (auto s : {litShader_, shadowShader_, colorShader_})
+        if(s.valid())dev_->destroyShader(s);
+    litPipe_=litBlendPipe_=shadowPipe_=linePipe_=triPipe_={};
+    litShader_=shadowShader_=colorShader_={};
+    shadowSize_=0;
+    if(targetRetirement_ && !targetRetirement_->drain())
+        throw std::runtime_error(
+            "Renderer3D shutdown: pending GPU render target completion");
+    targetRetirement_.reset();
+    programRetirement_.reset();
     dev_ = nullptr;
 }
 
 void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
+    if(dev_)checkGpuDevice(*dev_);
     static const bool enablePersistentScene = [] {
         const char* value = std::getenv("AIVERSE_PERSISTENT_GPU_SCENE");
         return value && std::strcmp(value, "1") == 0;
@@ -338,6 +436,7 @@ void Renderer3D::bindTraceTextures() {
 }
 
 void Renderer3D::resolvePostFx() {
+    if(dev_)checkGpuDevice(*dev_);
     if (!post_) return;
     PostProcess* post = post_;
     post_ = nullptr;
@@ -364,6 +463,7 @@ float4 Renderer3D::drawCallDebugColor(uint32_t drawId) {
 }
 
 void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
+    if(dev_)checkGpuDevice(*dev_);
     drawCalls_ = 0;
     // Synchronize persistent scene staging before any rendering passes.
     // Model shader bindings and GPU culling remain on the legacy path.
@@ -591,19 +691,20 @@ void Renderer3D::renderSelectionOutline(const gfx::PassDesc& mainPass,
     }
     if (!any) return;
 
-    if (!sceneSelectionMask_.valid() ||
-        sceneSelectionWidth_ != width || sceneSelectionHeight_ != height) {
-        if (sceneSelectionMask_.valid()) dev_->destroyTexture(sceneSelectionMask_);
-        sceneSelectionMask_ = {};
-        sceneSelectionWidth_ = width;
-        sceneSelectionHeight_ = height;
+    if(!sceneSelectionMask_.valid() ||
+       sceneSelectionWidth_!=width || sceneSelectionHeight_!=height) {
         gfx::TextureDesc td;
-        td.width = width; td.height = height;
-        td.format = gfx::PixelFormat::RGBA8;
-        td.renderTarget = true;
-        td.filter = gfx::Filter::Nearest;
-        td.label = "Scene selected-object depth-tested mask";
-        sceneSelectionMask_ = dev_->createTexture(td);
+        td.width=width;td.height=height;
+        td.format=gfx::PixelFormat::RGBA8;
+        td.renderTarget=true;
+        td.filter=gfx::Filter::Nearest;
+        td.label="Scene selected-object depth-tested mask";
+        const auto replacement=dev_->createTexture(td);
+        if(!replacement.valid())return; // keep old mask for its in-flight work
+        retireRenderTargets(sceneSelectionMask_);
+        sceneSelectionMask_=replacement;
+        sceneSelectionWidth_=width;
+        sceneSelectionHeight_=height;
     }
     if (!sceneSelectionMask_.valid()) return;
 

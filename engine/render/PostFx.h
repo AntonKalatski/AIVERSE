@@ -16,6 +16,8 @@
 #include <vector>
 #include "PostFxData.h"
 #include "Renderer3D.h"
+#include "RenderDeviceLifetime.h"
+#include "OffscreenTargetLifetime.h"
 
 namespace aiverse::render {
 
@@ -104,8 +106,19 @@ inline PostFxUnderwaterBudget postFxUnderwaterBudget(PostFxQuality quality) {
 
 class PostFx : public PostProcess {
 public:
+    void setGpuDeviceLease(RenderDeviceLifetime::Lease lease) {gpuDeviceLease_=std::move(lease);}
     bool init(gfx::Device& dev);
     void shutdown();
+    // Process stale color/depth/LUT targets only at the true owner-thread
+    // frame boundary, after the previous commands are submitted.
+    size_t pendingTargetRetirements() const noexcept {
+        return targetRetirement_?targetRetirement_->pendingPairs():0;
+    }
+    bool collectRetiredTargets() {
+        if(!targetRetirement_)return true;
+        if(dev_)checkGpuDevice(*dev_);
+        return targetRetirement_->collect();
+    }
 
     // game.json "postfx" then the map's (either may be null); problems go to `issues`.
     void configure(const Json& game, const Json& map, std::vector<std::string>* issues = nullptr);
@@ -159,6 +172,12 @@ private:
     const Lut* lut(const std::string& path);
     void release(gfx::TextureHandle& t);
 
+    void checkGpuDevice(const gfx::Device& dev) const {
+        if(gpuDeviceLease_.device() && !gpuDeviceLease_.validFor(dev))
+            throw std::logic_error("PostFx GPU device generation expired");
+    }
+    RenderDeviceLifetime::Lease gpuDeviceLease_;
+    std::unique_ptr<OffscreenTargetRetirement> targetRetirement_;
     gfx::Device* dev_ = nullptr;
     PostFxSettings settings_;
     PostFxQuality quality_ = PostFxQuality::Medium;

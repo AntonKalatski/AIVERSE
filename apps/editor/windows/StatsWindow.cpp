@@ -5,6 +5,7 @@
 #include "../Editor.h"
 #include "../EditorUtil.h"
 #include "engine/render/GlobalGeometryPool.h"
+#include <span>
 
 namespace aiverse::editor {
 
@@ -72,15 +73,158 @@ public:
         // visible in the camera. No texture or render-target byte estimates.
         ui::section(ICON_REGIONS, "Память ассетов (учтённая)");
         const auto pool = render::geometryPoolStats(ed.device());
+        // Unique page identity within this owner, resident AND waiting for
+        // a GPU retirement fence. These pages are already in 'pool' above
+        // and must never be added to its device-wide allocation total.
+        const auto referencedModels=
+            ed.view().modelResources().geometryPoolModelReferences();
+        const auto ownedPages=render::geometryPoolReferencedStats(
+            ed.device(),std::span<const render::Model* const>(
+                referencedModels.data(),referencedModels.size()));
         const auto residency = ed.view().assetResidencyStats();
         constexpr double mib = 1024.0 * 1024.0;
         ImGui::Text("GPU геометрия (pool): %.1f / %.1f MiB  ·  страниц: %zu",
                     double(pool.occupiedBytes) / mib, double(pool.allocatedBytes) / mib, pool.pages);
         ImGui::Text("Модели в пуле: %zu  ·  кэш моделей: %zu  ·  загружено типов: %zu / %zu",
                     pool.liveModels, residency.cachedModels, residency.loadedTypes, ed.rules().types.size());
+        ImGui::TextDisabled("Из них страницы, используемые этим View: %zu · %.1f MiB выделено (уже включено выше)",
+                    ownedPages.uniquePages,
+                    double(ownedPages.allocatedBytes)/ (1024.0*1024.0));
         ImGui::Text("CPU кэш изображений: %.1f MiB  ·  GPU текстур моделей: %zu шт.",
                     double(residency.decodedCpuBytes) / mib, residency.gpuTextures);
-        ImGui::TextDisabled("Без dedicated-геометрии, размеров GPU текстур, render targets и FX.");
+        ImGui::Text("GPU очередь освобождения: %zu моделей · %zu партий · пик %zu",
+                    residency.retiredModels,residency.retirementBatches,
+                    residency.retirementPeak);
+        ImGui::Text("GPU модели: резидентные ≈ %.2f MiB · ожидают освобождения ≈ %.2f MiB",
+                    double(residency.residentModelKnownBytes)/mib,
+                    double(residency.estimatedRetiredGpuBytes)/mib);
+        ImGui::Text("GPU текстуры (владелец кэша, RGBA8 экв.): ≈ %.2f MiB · %zu уникальных",
+                    double(residency.sharedTextureRgba8Equivalent)/mib,
+                    residency.uniqueSharedTextures);
+        ImGui::TextDisabled("Из них сжатых GPU текстур: %zu; моделей в общем geometry pool: %zu",
+                    residency.compressedSharedTextures,
+                    residency.sharedGeometryModels);
+        if(residency.estimatedRetirementByteLimit)
+            ImGui::TextDisabled("Предел оценки: %.2f MiB",
+                double(residency.estimatedRetirementByteLimit)/mib);
+        ImGui::Text("Порог новых загрузок: %zu моделей · ожидание fence: %s",
+                    residency.retirementSoftLimit,
+                    residency.publicationBackpressured ? "ограничивает новые загрузки" : "норма");
+        if(residency.retirementTokenFailures || residency.retirementFallbackFailures)
+            ImGui::TextDisabled("GPU retirement: token fallback %llu, неуспешный idle %llu",
+                     (unsigned long long)residency.retirementTokenFailures,
+                     (unsigned long long)residency.retirementFallbackFailures);
+        if(residency.unresolvedFailedFences)
+            ImGui::TextDisabled("GPU fence ERROR: %zu удерживаемых партий (ошибок всего %llu)",
+                residency.unresolvedFailedFences,
+                (unsigned long long)residency.retirementFailedFenceBatches);
+        ImGui::Text("GPU откат текстур hot reload: %zu текстур ждут GPU fence",
+                    residency.pendingRolledBackImages);
+        if(residency.imageRollbackEnqueueFailures ||
+           residency.imageRollbackOrphanBatches)
+            ImGui::TextDisabled("GPU откат: ошибок очереди %llu · потерянных партий %llu",
+                (unsigned long long)residency.imageRollbackEnqueueFailures,
+                (unsigned long long)residency.imageRollbackOrphanBatches);
+        if(residency.stagingQueueFailures || residency.stagingOrphanModels)
+            ImGui::TextDisabled("GPU откат моделей: ошибок очереди %llu · потерянных моделей %llu",
+                (unsigned long long)residency.stagingQueueFailures,
+                (unsigned long long)residency.stagingOrphanModels);
+        ImGui::TextDisabled("GPU canvas/paint: %zu ресурсов ожидают fence",
+            ed.view().pendingPaintGpuRetirements());
+        if(ed.view().paintGpuRetirementOrphans())
+            ImGui::TextDisabled("GPU canvas/paint: сиротских ресурсов %llu",
+                (unsigned long long)ed.view().paintGpuRetirementOrphans());
+        const auto canvasSubmissions=ed.view().paintGpuCanvasSubmitStats();
+        if(canvasSubmissions.failedBrushBuffers ||
+           canvasSubmissions.failedBlitBuffers ||
+           canvasSubmissions.failedUploadTextures)
+            ImGui::TextDisabled(
+                "GPU canvas: brush OOM %llu · blit OOM %llu · staging OOM %llu",
+                (unsigned long long)canvasSubmissions.failedBrushBuffers,
+                (unsigned long long)canvasSubmissions.failedBlitBuffers,
+                (unsigned long long)canvasSubmissions.failedUploadTextures);
+        const auto canvasRetirement=ed.view().paintGpuRetirementStats();
+        if(canvasRetirement.idleFallbackFailures ||
+           canvasRetirement.unresolvedFailedFences ||
+           ed.view().paintGpuRetirementEnqueueFailures())
+            ImGui::TextDisabled(
+                "GPU canvas/paint: idle failures %llu · failed fences %zu · queue failures %llu",
+                (unsigned long long)canvasRetirement.idleFallbackFailures,
+                canvasRetirement.unresolvedFailedFences,
+                (unsigned long long)ed.view().paintGpuRetirementEnqueueFailures());
+        // Comparison mode for historical authored LODs without an
+        // accepted retarget plan. Visuals are unchanged by default.
+        bool strictLegacyLod=ed.view().legacyLodFallbackMode()==
+            game::RtsView::LegacyLodFallbackMode::BindPose;
+        if(ImGui::Checkbox("RTS LOD: bind pose для несовместимых скелетов",
+                           &strictLegacyLod))
+            ed.view().setLegacyLodFallbackMode(
+                strictLegacyLod
+                    ?game::RtsView::LegacyLodFallbackMode::BindPose
+                    :game::RtsView::LegacyLodFallbackMode::PreserveWorldMatrices);
+        const auto legacyLod=ed.view().legacyLodFallbackStats();
+        if(legacyLod.worldMatrixFallbacks || legacyLod.bindPoseFallbacks ||
+           legacyLod.rejectedCompiledPlans)
+            ImGui::TextDisabled(
+                "RTS LOD: legacy %llu · bind %llu · rejected compiled %llu",
+                (unsigned long long)legacyLod.worldMatrixFallbacks,
+                (unsigned long long)legacyLod.bindPoseFallbacks,
+                (unsigned long long)legacyLod.rejectedCompiledPlans);
+        ImGui::TextDisabled("MotionWeave retarget CPU scratch: %.1f / %.1f KiB",
+            double(ed.view().genericRetargetScratchCapacityBytes())/1024.0,
+            double(ed.view().genericRetargetScratchBudgetBytes())/1024.0);
+        ImGui::TextDisabled("GPU программы Renderer3D: %zu партий ждут fence",
+            ed.renderer().pendingProgramRetirements());
+        ImGui::TextDisabled("GPU RenderTargets: %zu пар ждут fence",
+            ed.renderer().pendingTargetRetirements());
+        if(ed.renderer().targetRetirementOrphanPairs() ||
+           ed.renderer().targetRetirementEnqueueFailures())
+            ImGui::TextDisabled("GPU RenderTargets: ошибок очереди %llu · сиротских пар %llu",
+                (unsigned long long)ed.renderer().targetRetirementEnqueueFailures(),
+                (unsigned long long)ed.renderer().targetRetirementOrphanPairs());
+        if(ed.renderer().unleasedTargetIdleFailures())
+            ImGui::TextDisabled("GPU RenderTargets: отсутствие idle-барьера %llu",
+                (unsigned long long)ed.renderer().unleasedTargetIdleFailures());
+        const auto warm=ed.renderer().gpuWarmStats();
+        if(warm.shaderJobs || warm.pipelineJobs || warm.colorVariants)
+            ImGui::TextDisabled(
+                "GPU shader warmup: %zu shaders · %zu pipelines · %zu HDR variants",
+                warm.shaderJobs,warm.pipelineJobs,warm.colorVariants);
+        if(warm.colorPollAttempts || warm.colorVariantsFailed)
+            ImGui::TextDisabled("GPU HDR прогрев: опросов %llu · успешно %llu · ошибок %llu",
+                (unsigned long long)warm.colorPollAttempts,
+                (unsigned long long)warm.colorVariantsReady,
+                (unsigned long long)warm.colorVariantsFailed);
+        if(ed.renderer().programRetirementOrphanBatches())
+            ImGui::TextDisabled("GPU программы: потеряно партий %llu",
+                (unsigned long long)ed.renderer().programRetirementOrphanBatches());
+        ImGui::TextDisabled("GPU PostFx: %zu ожидающих освобождения текстур",
+            ed.postFx().pendingTargetRetirements());
+        if(const auto& targets=ed.offscreenTargets();targets) {
+            ImGui::TextDisabled("GPU render targets: %zu пар ждут fence",
+                targets->pendingPairs());
+            if(targets->enqueueFailures() || targets->orphanedPairs())
+                ImGui::TextDisabled("Render targets: ошибок очереди %llu · сиротских пар %llu",
+                    (unsigned long long)targets->enqueueFailures(),
+                    (unsigned long long)targets->orphanedPairs());
+        }
+        if(const auto* ring=ed.gpuRetirementDiagnostics()) {
+            size_t modelEvents=0,imageEvents=0,targetEvents=0;
+            for(const auto& event:ring->snapshot()) {
+                if(event.resource==render::RetirementResourceKind::Model)
+                    ++modelEvents;
+                else if(event.resource==render::RetirementResourceKind::Image)
+                    ++imageEvents;
+                else if(event.resource==render::RetirementResourceKind::Target)
+                    ++targetEvents;
+            }
+            ImGui::TextDisabled("GPU retirement события: %zu/%zu · переполнений %llu",
+                ring->size(),ring->capacity(),
+                (unsigned long long)ring->overflowCount());
+            ImGui::TextDisabled("Из них GPU модели: %zu · откат текстур: %zu · RenderTargets: %zu",
+                modelEvents,imageEvents,targetEvents);
+        }
+        ImGui::TextDisabled("Общий geometry pool учитывается выше отдельно. Оценки без драйверных mip/padding, FX и RT.");
         ImGui::TextDisabled("Выгрузка моделей редактора: %s (период ожидания 15 с)",
                             ed.lazyEditorAssetsEnabled() ? "по требованию" : "отключена");
         if (ed.lazyEditorAssetsEnabled() && ImGui::Button("Освободить неиспользуемые модели"))

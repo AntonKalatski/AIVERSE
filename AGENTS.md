@@ -37,6 +37,69 @@ re-reading the entire chat or trusting unverifiable status claims.
 
 **Active Metal batching/performance work (2026-11-17):** Before changing the renderer, Scene viewport, GPU pooling, RTS scene building, or macOS frame loop, read [docs/metal-batching-agent-handoff.md](docs/metal-batching-agent-handoff.md), especially its latest continuation section. It records actual Apple Silicon 2×2/4×4 road-merge tests, CPU profile gains, draw-call visualisation limitations, required flags, the Metal ICB crash gate, and the pending incremental scene-cache work. Distinguish direct/indirect GPU submissions from scene objects and per-material primitives. Keep unsafe experimental ICB disabled by default.
 
+**MANDATORY: MotionWeave never depends on game genres or modules.**
+The core animation subsystem is NOT allowed to include, depend on or
+interpret FPS, RTS, RPG, networking, AI, weapon, economy or game-action
+types. Generic sources supply immutable model/graph, stable IDs with
+generations, named float/vector parameters and optional animation events.
+Any genre host transforms its own state OUTSIDE the animation library.
+Core provides reusable ECS components, graph sampling, montage,
+retargeting, IK, root-motion policy, scheduling, pose/skin output.
+Never fork an algorithm per genre or put genre-specific events in
+`engine/render`, `libraries/include/aiverselib/animation` or
+`libraries/include/aiverselib/motionweave`. Use
+`<aiverselib/animation/MotionWeaveSourceBridge.h>`.
+Document each implementation stage in a separate handoff commit.
+
+**AIVERSE MotionWeave — canonical modular animation system.**
+For new projects use `<aiverselib/motionweave/MotionWeave.h>`,
+`aiverse::motionweave`, `motionweave::MotionWeave::update` and
+`AIVERSE::MotionWeave`. Legacy `aiverse::lib::animation`,
+`AIVERSE::animation_ecs`, `AnimationGraph`, existing JSON asset IDs and
+editor window IDs remain source/asset compatible. See `docs/motionweave.md`.
+
+**Active animation PR #22 (`feature/universal-ecs-animation-pipeline`):**
+read `docs/agent-handoffs/animation-universal.md` (the latest numbered stage and all
+earlier constraints) before editing `engine/render/Animation*`, reusable animation
+libraries, editor authoring, or FPS/RTS integration. Keep float-backed animation
+in a separate presentation World; never contaminate simulation checksums.
+
+**Required animation handoff for EVERY stage, including partial/failing work:**
+commit implementation first, then append a *separate* chronological stage entry to
+`docs/agent-handoffs/animation-universal.md` and commit that handoff **before
+starting the next stage**. Record (1) branch and exact implementation commit SHA;
+(2) changed paths and architecture/algorithm; (3) public C++/ECS/JSON API and
+compatibility; (4) commands actually run with results, or **NOT RUN** and reason;
+(5) risks, known bugs and work still missing; (6) explicit next file/function/task
+with enough detail for another agent to continue independently. Do not replace or
+rewrite prior stage entries, and read the latest head before appending. The user
+has explicitly deferred animation tests, so preserve test sources and mark runs
+**NOT RUN**, never green or passed, until they are actually executed.
+
+## AIVERSE View — canonical scene for EVERY genre (2026-11-18)
+
+The canonical engine View is `aiverse::View` from
+`engine/view/View.h` and CMake `AIVERSE::View`. Never include
+RTS/FPS/game/editor modules in `engine/view`. The dependency
+direction is always host adapter -> View -> Renderer/MotionWeave.
+
+`game::RtsView` is **legacy compatibility only** for historical
+terrain, fog, roads, unit state and specialized effects; don't
+add new general render/animation logic there. Move reusable
+algorithms and scene packets into View, keeping game rules
+and decision-making inside their owning adapters.
+
+Generic scene packets are `view::Object` (model/material/
+transform/optional Graph), `view::MeshObject` (mesh/transform/
+color/flags), and common presentation ECS records. Existing
+host adapters may migrate incrementally but must NOT evaluate
+or draw a source twice.
+
+Read `docs/view.md` and `skills/gameplay/aiverse-view/SKILL.md`.
+Every bounded implementation must be followed by its own
+committed agent handoff. User deferred actual tests: mark
+NOT RUN until executed.
+
 ## Genre-independent ECS mechanics contract (2026-11-18)
 
 **Full feature-by-feature migration inventory:** `docs/ecs-all-features-migration-plan.md`
@@ -1211,6 +1274,565 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
   `docs/agent-handoffs/unified-test-runner.md` **after every stage**, in
   addition to the active feature handoff and existing agent update rules.
 
+## AIVERSE Stage 99 render resource lifetime — mandatory for all genres
+
+The generic per-host resource owner is
+`aiverse::render::ModelResourceCache` in
+`engine/render/ModelResourceCache.h` (with the optional
+`ModelPreparationService` CPU worker). Existing
+`game::view_adapter::RtsModelResourceCache` and
+`RtsModelPreparationService` are **compatibility aliases**, not
+separate implementations. New native project code must use the generic
+render headers; no RTS, FPS or editor types may enter the render owner.
+
+On a model replacement or hot reload, detach its MotionWeave graph
+sources, `AnimationAssetComponent`, borrowed model/material pointers
+and preview packets before the cache entry is invalidated. The cache
+queues old Models for deferred GPU release. A host must call
+`collectRetired(gfx::Device&)` at a known frame boundary **before**
+current-frame submissions reference released objects. This method
+uses `gfx::Device::waitForResourceIdle()`: `frameSerial()` is NOT a GPU
+completion proof. Never use guessed numbers of frames in flight for
+GPU lifetime management. If the barrier fails, retain resources and
+retry safely; on cache shutdown a failed barrier raises an exception
+and must be treated as a real failure, not ignored. Neither Vulkan
+nor Metal nor GL backend completion behaviour has been tested yet.
+`Editor::frame` and `GameClient::frame` have integrations; other
+hosts must provide their own safe frame boundary. Avoid adding
+unrelated raw GPU-release code in legacy RtsView.
+
+Keep the persistent Stage 99 handoff in
+`docs/agent-handoffs/animation-universal.md`, with exact commit IDs,
+changed files, actual tests (or **NOT RUN**) and the next specific
+stage. Do not merge to main based only on source inspection; native
+builds and GPU lifetime checks are still deferred by user instruction.
+
+## AIVERSE Stage 100 nonblocking GPU resource retirement
+
+For new native code, the generic owned-model entrypoint is
+`engine/render/ModelAssetProvider.h` with
+`aiverse::render::ModelAssetProvider` and
+`aiverse::render::ModelResourceCache`. It accepts a project
+`FileReader` and returns borrowed `render::Model*` valid until
+source invalidation/shutdown. Never store a borrowed pointer past a
+host resource replacement/trim or create a second MotionWeave animation
+World during `aiverse::View` packet submission.
+
+The GPU completion API is:
+`gfx::Device::beginResourceRetirement()` (token, zero means no
+async marker), `resourceRetirementComplete(token)` (nonblocking poll)
+and `endResourceRetirement(token)` (close only when complete).
+`ModelResourceCache::collectRetired()` uses the
+`AsyncResourceRetirementQueue` with independent token batches:
+a model evicted AFTER an earlier marker must never be freed on
+that earlier token. Use `waitForResourceIdle()` only for unsupported
+token fallback or explicit device shutdown, not every frame. The
+caller MUST be on the owning GPU thread, at the host frame boundary,
+before new draw/compute commands can reference retired models.
+Neither a GPU frame serial nor guessed frames-in-flight is a fence.
+
+Do not claim safety in the presence of unsubmitted current-frame GPU
+commands referencing retired assets. Backend loss must fail closed:
+if completion cannot be established, keep objects alive and do not
+silently release GPU allocations. GPU retirement token/real-backend
+tests are authored but **NOT RUN** by user request. Follow
+`docs/agent-handoffs/animation-universal.md` Stage 100 for status
+and the next exact work item. Never merge PR #22 to main on
+source inspection alone; wait for native/runtime checks.
+
+## AIVERSE Stage 101 async model resources and GPU retirement pressure
+
+For any native project (independent of FPS/RTS/genre), prefer
+`render::ModelAssetProvider` and `AsyncModelCpuQueue` from
+`engine/render` rather than adding new model loader code. CPU
+`requestAsync`/reader callbacks must be thread-safe. Publish finished
+CPU models through `ModelAssetProvider::publishReady(gfx::Device&,...)`
+on the device owner/render thread, outside an active pass. The
+`source` revision protects against stale workers resurrecting
+hot-reloaded assets. Always call `shutdown`/join before destroying the
+project reader or shared texture cache.
+
+Retired GPU models remain alive until their OWN GPU completion token
+signals (see Stage 100). `ModelResourceCache::retirementStats` reports
+pending models/batches, peak and fallback counts;
+`setRetirementSoftLimit` is a **soft admission throttle** for new
+generic ModelAssetProvider loads, not a hard VRAM cap. Never release
+an object to meet a pressure threshold while its GPU use remains
+unconfirmed. Completed legacy RTS worker publications must not be
+silently discarded under backpressure. The editor exposes the
+metrics through Asset Residency statistics.
+
+`ModelWindow` now has an optional raw static-model preview through
+the independent generic source provider and canonical View. It
+intentionally bypasses type-level tint, material overrides, graph,
+attachments and model correction; do NOT switch ordinary animated
+character/type portraits to this path without full parity work.
+Source code and deferred fixtures were committed, but the actual
+CMake/compiler/GPU tests remain **NOT RUN** as requested. Follow the
+latest `docs/agent-handoffs/animation-universal.md` and add the
+next handoff as a SEPARATE commit after each feature stage.
+
+## AIVERSE Stage 102 — source-derived GPU memory estimates and model import policy
+
+New project code should include `engine/render/ModelResidentEstimate.h`
+for read-only estimates of dedicated model geometry, owned image base
+levels and baked pose texture storage, plus
+`engine/render/ModelAssetProvider.h` for source imports. The estimated
+bytes are **not driver VRAM usage**: shared geometry pool pages,
+borrowed/shared texture leases, driver padding and unknown morph
+storage remain separate. `ModelResourceCache::estimatedRetiredGpuBytes`
+and `setEstimatedRetirementByteLimit` optionally throttle admission
+of NEW native source models. A budget MUST NOT cause forced GPU
+destruction before the correct completion token signals.
+
+`AsyncModelCpuQueue` accepts `ModelLoadPriority`:
+`Background`, `Visible`, `Interactive`. Queued work can upgrade,
+equal-priority pending work remains FIFO, and executing work is not
+preempted. `ModelAssetProvider::publishReady(device,maxCount,budgetMs)`
+must run on the render/device thread before scene submissions. The
+count cap is hard; elapsed milliseconds are advisory and one upload
+may exceed them. Never make a CPU worker invoke `gfx::Device`,
+renderer, presentation `World` or `aiverse::View` operations.
+Handle stale source revisions and project switches before publication.
+
+The standalone `aiverse_modelview --provider --no-merge` routes
+static raw files through the independent `ModelAssetProvider`, then
+canonical View. The legacy path is preserved for merging and
+animated-model parity. Editor raw preview remains opt-in, with
+the default full type portrait unchanged. Do not silently switch
+ordinary animated type previews or assume RtsView has disappeared.
+Test fixture code is committed but **NOT RUN**; follow
+`docs/agent-handoffs/animation-universal.md` Stage 102 for exact
+next tasks and maintain a separate handoff commit after each stage.
+
+## AIVERSE Stage 103 — bounded multi-worker model preparation and resource owner accounting
+
+For genre-neutral C++ model loading, use
+`engine/render/AsyncModelCpuQueue.h` through
+`ModelAssetProvider::setCpuWorkerCount(1..8)`,
+`setCpuMaxQueued`, `requestAsync(source,priority)` and
+`publishReady(device,count,budgetMs)`. The default worker count is
+one for compatibility; opt into concurrency only for genuinely
+thread-safe `FileReader` providers. Do not touch `gfx::Device`,
+`Renderer3D`, View, ECS Worlds or MotionWeave player states on
+workers. All GPU uploads and model publication stay on the owner
+render thread, between draw submissions. Request and completion
+order are distinct: use source revisions to reject stale results
+after a hot reload or project switch. Do not destroy readers,
+decoded-image caches or other captured sources before joining
+the CPU worker queue.
+
+`ModelLoadPriority` affects only CPU job admission and order:
+Interactive > Visible > Background. Same priority uses FIFO;
+bounded fairness occasionally admits the oldest queued source.
+Workers are not preempted. A resource pressure limit never
+authorizes GPU release; the exact async retirement token/fence
+must complete first.
+
+For GPU diagnostics use `ModelResourceCache::gpuOwnerEstimate`
+and `ModelTextureCache::gpuOwnerEstimate`, accounting each unique
+shared texture cache entry once. The global geometry pool is
+device-owned and must be reported separately via
+`geometryPoolStats(device)`; never multiply shared pages by
+the number of models or hosts. All byte counts are estimates,
+not precise driver VRAM allocations.
+
+The editor `SceneRenderable` model/unselected mesh path uses
+`aiverse::View` while selected meshes keep their specialized
+silhouette, and the old RTS appearance/animated portrait adapter
+still exists. Keep the generic View independent of genre classes.
+New tests are authored but **NOT RUN** under the features-first
+rule. After each implementation stage append a separate handoff
+in `docs/agent-handoffs/animation-universal.md` with exact source
+SHAs, changed paths, reality of test execution, risks and next step.
+
+## AIVERSE Stage 104 — persistent CPU workers, shared geometry page accounting and View selection
+
+Use `render::ModelAssetProvider` / `AsyncModelCpuQueue` for
+genre-neutral model imports. The CPU queue now keeps up to 8
+persistent worker threads (1 default) with condition-variable
+dispatch, priority and bounded pending/ready queues. Worker
+threads may call only thread-safe FileReader and CPU model
+preparation; never gfx::Device, ECS Worlds, AnimationGraph
+players or View submission. Render-thread
+`ModelAssetProvider::publishReady` still owns GPU publication.
+Reconfiguration via `setCpuWorkerCount` joins currently running
+imports; it is not a per-frame knob. Invalidated source revisions
+must not be published after project/asset changes.
+
+When reporting shared geometry pool memory, gather references
+across all relevant ModelResourceCache owners and pass a **combined**
+span of Model pointers once to
+`geometryPoolReferencedStats(device,models)`. This counts unique
+GeometryPoolPage instances using their device identity. Do not add
+per-owner page sums together or double charge shared texture
+leases; use `geometryPoolStats(device)` for device-global pool
+allocation and `ModelTextureCache::gpuOwnerEstimate` once per
+texture owner for distinct textures. These are allocator/format
+estimates, not driver VRAM readings. Retired-but-fenced models
+remain page borrowers until GPU completion is verified.
+
+`aiverse::view::MeshObject` now carries the optional
+`selectionOutline` and `selectionColor` fields. Native
+editor/scene clients should use `View::submitMesh` for both
+unselected and selected/hovered meshes and `View::submitLine`
+for supplementary pickable edges, preserving their exact
+Renderer3D silhouette/outline behavior. No genre, network,
+save/checksum or game-simulation concepts belong inside the
+canonical View. Do not introduce a second MotionWeave graph
+update when submitting these packet types.
+
+Stage 104 test fixtures and CMake entries are **NOT RUN**
+by user request. Maintain `docs/agent-handoffs/animation-universal.md`
+after every implementation stage as a separate commit with
+architecture, changed files, actual validation, known risks,
+current ref and next exact step. Do not merge unvalidated changes
+to main based only on source-level inspection.
+
+## AIVERSE Stage 105 — multi-host resource groups and authored static portraits
+
+For native model resource aggregation, use
+`engine/render/RenderResourceOwnerGroup.h`. A group can
+non-owningly register multiple `render::ModelResourceCache`
+hosts and deduplicates exact Model pointers, shared texture
+cache owners and device-global geometry pages. Only call
+`snapshot(device)` on the device owner thread; all registered
+cache allocations must belong to the same gfx::Device.
+`snapshotOwners(bool gpuHealthy)` is the CPU-only source
+diagnostic path. Do not add shared geometry pool allocations
+per model/host, and do not double-charge borrowed textures.
+The group's estimated-byte admission limit is advisory and
+must NEVER cause forced destruction before the resource's own
+GPU fence signals. `PendingGpuRetirement` is normal;
+`DeviceUnhealthy` means new imports/publication must pause
+until the host resolves backend loss (no timeout-based release).
+
+For static previews that require full authored appearance,
+use `game::Portrait::renderAppearance(ModelDraw,camera,...)`
+or submit a `view::Object` to `aiverse::View`. The host owns
+model/material vectors, variant, geometry policy, tint and
+optional precomputed pose until the synchronous submit returns.
+The normal `Portrait::render(RtsView&,...)` now delegates
+static resolved packets to this API with its original camera;
+animated/complex scenes keep the legacy fallback until visual
+parity and single-writer animation evaluation are verified.
+Do not introduce a genre dependency into engine/render or
+canonical View.
+
+Stage 105 GPU-owner and portrait API tests are authored but
+**NOT RUN**, as are native compiler, render device, FPS/RTS,
+screenshot and sanitizer checks. After each feature stage
+append a separate detailed handoff to
+`docs/agent-handoffs/animation-universal.md` including
+exact Git refs, actual tests, limitations and next step.
+
+## AIVERSE Stage 106 — expiring resource owners and failed GPU retirement tokens
+
+Use `ModelResourceCache::lifetimeToken()` when observing native
+render caches across project boundaries. `RenderResourceOwnerGroup`
+holds a weak token and a borrowed cache pointer and skips expired
+registrations before access; do not store unguarded raw pointers to
+transient Editor/Portrait/Project model owners. The registration,
+snapshot and cache teardown MUST all run on the device owner thread;
+weak_ptr expiration does not protect against concurrent destruction.
+The group is for accounting/admission only and never destroys GPU
+resources.
+
+`gfx::ResourceRetirementStatus` distinguishes `Pending`,
+`Complete`, and `Failed`. Metal/Vulkan/GL backends now override
+`resourceRetirementStatus(token)`. Never equate normal Pending
+with GPU failure or infer completion from time, frame count or a
+later unrelated fence. `AsyncResourceRetirementQueue` records a
+Failed token once, retains every failed batch, and only frees it
+after a successful full `Device::waitForResourceIdle` barrier.
+After that barrier the backend may call
+`abandonRetirementTokenAfterIdle` to release native marker
+bookkeeping. Without a successfully established idle barrier,
+device-loss paths MUST keep resources alive rather than
+destroying them unsafely. Failed fence status blocks new-source
+admission; it does not kill gameplay or rewind MotionWeave.
+
+The live material library preview now uses the generic
+`Portrait::renderAppearance` draw packet and canonical
+`aiverse::View`. It still resolves materials in the existing
+compatibility host and must not create a second MotionWeave
+animation player or replace the authored-animated fallback
+without verified visual parity.
+
+Stage 106 fixture sources are present but **NOT RUN**.
+Maintain `docs/agent-handoffs/animation-universal.md` with exact
+commits, changed paths, actual tests and next action after each
+stage, in a separate handoff commit. Do not merge source-only
+unverified changes to main.
+
+## AIVERSE Stage 107 — scoped GPU device ownership, replayable fence diagnostics and appearance packet providers
+
+For all NEW native render hosts, call
+`ModelResourceCache::bindResourceDevice(device)` before GPU
+upload/replacement or use `RenderResourceOwnerGroup::registerScoped(
+device, cache)`, keeping its move-only lease alive until after
+the last resource snapshot. All resource registration, host
+mutation, shutdown and View submission MUST run on the same
+device-owner thread. Do not share an already GPU-bound cache with
+another device. A failed shutdown leaves binding intact and GPU
+resources retained; only successful GPU-safe `shutdown` allows
+device rebind. `snapshot(device)` now rejects expired/rebound
+scoped registrations. A wrong-thread scoped lease release is
+diagnosed, not executed. The legacy `add(cache)` is a CPU-only
+compatibility observer, not a safe replacement for device-bound
+leases. The GPU Device itself must outlive all attached caches.
+
+Use `gfx::ResourceRetirementStatus::{Pending,Complete,Failed}`
+and the existing fence completion semantics; NEVER infer GPU
+completion from elapsed time or frame serial. For debugging,
+`AsyncResourceRetirementQueue::setDiagnosticObserver` emits
+token lifecycle events and `render::RetirementStatusReplay`
+can replay a scripted synthetic sequence. A synthetic replay is
+NOT a native GPU fence. Diagnostic callback exceptions are
+ignored so they cannot corrupt retirement. A Failed token
+must retain its Models until an actual successful idle barrier.
+
+For genre-neutral fully authored visuals, use
+`engine/view/AppearancePacket.h` with `AppearanceSpec` and
+`buildAppearancePacket`. The caller supplies Model, materials,
+node assignments, geometry, variant, tint, optional animation
+graph and source identity; the generic builder creates
+`view::Object` without genre dependencies. RTS static preview
+and ghost packets now delegate common appearance composition
+to this provider. No second animation player may be created:
+static/precomputed submissions must have no graph, while graph
+inputs require one owning `View::update` before submit.
+The remaining RtsView rules/material/graph authoring is
+compatibility code pending further migration and real
+visual parity testing.
+
+Stage 107 regression sources are present but tests have NOT RUN
+by user request; handoff in
+`docs/agent-handoffs/animation-universal.md` records actual
+source changes, limitations and the next agent step. Do not
+merge unverified GPU/resource/animation changes to main.
+
+## AIVERSE Stage 108 — explicit GPU device epochs, bounded retirement traces and independent appearance authoring
+
+A native host that supports GPU device recreation must create
+one `render::RenderDeviceLifetime` **per actual device
+lifetime** and use its `Lease` when calling
+`ModelResourceCache::bindResourceDevice(device,lease)`
+and `RenderResourceOwnerGroup::registerScoped(lease,cache)`.
+A generation invalidates when the host explicitly retires
+the epoch, even if a new GPU Device is allocated at exactly
+the same pointer address. Do NOT retire a token before all
+ModelResourceCache/Portrait/View GPU allocations have been
+safely shut down. Only a successful full-device completion
+barrier permits cache shutdown and subsequent rebind.
+Neither a weak epoch nor `gfx::Device::frameSerial()` is a
+GPU completion fence. Resource/group calls remain confined
+to the render/device owner thread.
+
+Use `render::RetirementDiagnosticRing` for bounded metadata
+tracing of GPU retirement only, never for GPU leases or
+proof of completion. It has a fixed event capacity and
+overflow counter, and a weak observer to avoid extending
+host lifetime. The editor exposes the first 128 events.
+Every event callback must be optional, non-authoritative,
+and exception-isolated so it cannot change destruction
+ordering or release an in-flight GPU resource.
+
+For new native project appearance authoring use
+`engine/view/AppearanceAuthoringService.h`.
+`resolveMaterial` composes a material library's `base`
+and `use` references with bounded recursion. `applyMaterial`
+accepts callbacks for project texture upload/warnings;
+`compileGraph` compiles inline or external
+AnimationGraph assets with host-provided operations/traits.
+The service must NOT allocate an animation player, run
+MotionWeave graph clocks, or import RTS/FPS/game classes.
+The legacy RtsLook and runtime RtsAnimate graph compilation
+now delegate to it while retaining host-specific rules,
+material texture residency, attachments and pose authority.
+For rendering use the canonical `view::AppearanceSpec`
+and `aiverse::View`; there is exactly ONE graph evaluator
+for each presentation source.
+
+Stage 108 test sources/CTest entries exist but are **NOT RUN**
+by user instruction. After each stage append a separate
+`docs/agent-handoffs/animation-universal.md` entry listing
+architecture, API, changed files/commits, actual tests,
+known limitations and the next precise task. Do not merge
+uncompiled GPU/resource/animation source into main.
+
+### Animation/View Stage 109: immutable appearance transactions
+
+- The genre-independent authoring API lives in `engine/view/AppearanceAuthoringService.h` and `AppearanceAssetRegistry.h`; do not import RTS/FPS types into it. A `Request` resolves material overrides and optionally compiles an authored/external AnimationGraph before publishing a pinned immutable `Asset`.
+- Hot reload must call `invalidateSources` with the host's material library/model/external graph paths, then `publish` at a safe frame boundary. A failed publication leaves the old asset and dirty flag alive. `graphRevision` handles in-memory graph changes; material-only changes preserve the graph instance generation.
+- A returned `Asset` owns material overrides and immutable graph, but borrows `Model` and external texture indices. Keep its shared snapshot alive through `Asset::packet` and View submission. Retire/release GPU resources only after the last borrowed render packet and snapshot are gone. TextureLoader callbacks must manage their own side-effect rollback. Only the host-owned View/MotionWeave may advance an animated source once.
+- Standalone FPS now uses `AppearanceAuthoringService::compileGraph` and a host-owned `RenderDeviceLifetime` for GPU character load/shutdown; do not multiply AnimationGraph clocks. Do not assume the RTS GameClient, editor-hosted FPS, postFX or other direct GPU owners are fully epoch protected.
+- Stage 109 regression `tests/view/appearance_registry.cpp` / `view_appearance_registry` is registered but **NOT RUN**. CMake/CTest/graphics/sanitizer checks remain deferred at user request (implement features first). For exact commits/risks/next task see `docs/agent-handoffs/animation-universal.md` Stage 109.
+
+### Animation/View Stage 110: appearance choice and hot reload contract
+
+- AIVERSE scene/animation modules are **genre-neutral**. Material
+  `materials`, node `assign`, and `variant` are now authored through
+  `engine/view/AppearanceChoiceAuthoring.h`, not copied into each RTS/FPS
+  game. Retain `*`-before-named layer ordering, case-insensitive descendant
+  node matching, late-node-rule precedence, and warning policy.
+- The FPS animated-character load and `graphFile` hot-reload path use
+  `AppearanceAssetRegistry` directly. Its snapshot owns the draw
+  materials/node-material vector and immutable graph. Pin that snapshot for
+  the synchronous frame. Only the current FPS presentation ECS owns the
+  actual graph clock. On successful graph change, restart existing ECS
+  players once; on failure do not change players or model draw materials.
+- `Request::modelRevision` and explicit `invalidateSources({Model::path})`
+  prevent graph program reuse against a replaced Model at the same address.
+  Host GPU teardown must still detach all packets/snapshots before Model
+  shutdown, and texture loader side effects require host cleanup.
+- The legacy RTS adapter consumes the generic choice plan for materials and
+  variants, while preserving live animations/IK/attachments/LOD/stages.
+  **Do not** assume the adapter is ready for removal or that model textures
+  are GPU-transactional.
+- Deferred CTest `view_appearance_choice` in
+  `tests/view/appearance_choice.cpp`, and prior
+  `view_appearance_registry`, are registered but **NOT RUN**. No build,
+  CTest, TSAN, FPS/RTS/editor screenshot validation was performed. Follow
+  Stage 110 handoff for specific commits, risks and exact next step.
+
+### Animation/View Stage 111 — RTS reload and GPU epoch ownership
+
+- `AppearanceAssetRegistry::publishPrepared` accepts already-resolved
+  `Asset` material/node/variant/graph data and stores immutable
+  snapshots **without** texture loading or graph recompilation. It
+  validates prepared indices before publishing but cannot roll back
+  texture/GPU callbacks already performed by native hosts.
+- `RtsView::reloadAppearanceTypes` now preflights external
+  AnimationGraph JSON, named material references and ShaderGraph
+  programs, stages a snapshot for each model/LOD/stage, and only then
+  swaps committed TypeLooks. For a **material-library-only** reload,
+  preserve entity clocks only if all graph signatures, Models and
+  runtime shapes match. Never introduce a second pose writer.
+- `RtsView::drawObject` uses published materials/assignments/variants
+  when a snapshot is present. `RtsView::shutdown` must detach
+  graph/pose/TypeLook/snapshot borrows **before**
+  `ModelResourceCache::shutdown`. GPU uploads performed before an
+  exception may still be resident: do NOT treat this as an atomic RHI
+  transaction.
+- A standalone `GameClient` owns one `RenderDeviceLifetime`;
+  an editor-hosted GameClient borrows the Editor's generation via
+  `ClientHost::start(..., gpuDeviceLease())`. Bind a compatible
+  lease to the RTS `ModelResourceCache` before GPU model operations.
+  Never create two independent generations for one live shared Device.
+  The editor must stop its hosted client before destroying its own
+  resource owners and retiring the one device epoch.
+- Deferred `view_appearance_prepared` and expanded
+  `render_device_epoch` tests have **NOT RUN**. No CMake/CTest,
+  native runtime, GPU loss or visual parity validation was performed.
+  Read `docs/agent-handoffs/animation-universal.md` Stage 111 for
+  exact implementation commits, limitations and next step.
+
+### Animation/View Stage 112 — staged GPU image rollback and render epoch checks
+
+- Hot model-appearance reload must stage new decoded textures with
+  `render::ModelImageUploadTransaction`; do **not** mutate
+  `Model::images` or publish future material indices before all
+  selected types/LODs/stages pass authoring checks and commit.
+- Keep `render::ModelImageRollbackPool` alive on the render host
+  after a staging transaction is destroyed. Call `collect` only at
+  a valid frame boundary, and require a successful full-idle
+  `drain` before device shutdown. Pending/Failed GPU tokens
+  NEVER authorize destroying a texture. If an allocation and
+  GPU-idle fallback both fail, prefer a diagnostic orphaned handle
+  until device teardown rather than an unsafe GPU free.
+- `RtsView::reloadAppearanceTypes` uses the transaction for
+  new material images, retains last-good appearances on staging
+  failure, and calls image `commit()` before swapping TypeLooks.
+  `RtsView::collectRetiredModels` polls both image and model
+  queues; the **Editor and GameClient** must call it when
+  `pendingModelRetirements()` OR `pendingRolledBackImages()` is
+  nonzero. The Editor Stats panel surfaces image rollback failures.
+  RtsView shutdown drains rolled-back images before releasing
+  Model resources.
+- PostFx, RTS terrain/groundFX, general `fx::ParticleSystem`,
+  and the Editor's Scene/Game Viewports now receive the host-owned
+  `RenderDeviceLifetime::Lease`. Editor and its hosted GameClient
+  must reuse the same generation. Validate before GPU draw/alloc/
+  release operations; an epoch is NOT a GPU completion marker.
+  ParticleSystem shutdown deliberately avoids calling an expired
+  device, possibly leaking orphan handles until actual device
+  destruction; all ordinary shutdowns must run before epoch retire.
+- Deferred native `render_model_image_transaction` test is wired,
+  but **NOT RUN**, alongside all earlier deferred animation GPU
+  tests. Stage 112 does not implement global GPU allocator
+  transactions or actual device-loss recovery. See the exact
+  commits, limitations and next action in
+  `docs/agent-handoffs/animation-universal.md` Stage 112.
+
+### Animation/View Stage 113 — scratch Model and GPU alias transaction rules
+
+- For RTS appearance reload, new Models, LOD alternatives, stage
+  replacements and attachments must be staged in a temporary
+  `ModelResourceCache::ModelMap`. Do not insert new resident
+  Models or failed-load tombstones before the full transaction
+  commits. Preserve Model* identity through `std::map` node transfer.
+- Speculative `uploadModel(dev,model,false,false)` may
+  `borrowResident` existing GPU textures from
+  `ModelTextureCache` but **must not** publish new shared
+  cache keys. Misses use dedicated staged GPU image allocation.
+  This protects shared residency on abort; it does **not**
+  yet deduplicate newly staged texture misses across Models.
+- Rejected scratch Models belong to the GPU-fenced
+  `ModelResourceCache::retireUnpublished` path, never plain
+  `unique_ptr::reset` after partial uploads. Use
+  `AsyncResourceRetirementQueue::enqueueFrom` when preserving
+  caller ownership after an allocation failure matters.
+  If a full idle barrier fails, retain/leak an orphan handle
+  rather than using unsafe GPU destruction. Expose and review
+  orphan diagnostic counts before attempting a device recreation.
+- `Renderer3D` now has an optional shared
+  `RenderDeviceLifetime::Lease`; editor, hosted/standalone
+  GameClient and FPS supply their existing host epoch. Never
+  mint a second generation for the same gfx::Device. Epoch
+  checks prevent stale access but are not GPU fences.
+- The editor's bounded `RetirementDiagnosticRing` tags
+  Model and Image events. GPU source-event counts are
+  informational only; Model/Texture release still needs
+  backend completion. Deferred native tests have **NOT RUN**;
+  Stage 113 code is unverified for compilation/runtime and
+  PR #22 stays Draft. See the separate Stage 113 agent handoff
+  for exact commits, unfinished work and next stage.
+
+### Animation/View Stage 114 — shared cache, GPU compiler and offscreen ownership
+
+- New speculative GPU texture misses (Model images and pending
+  material override images) are prepared together through
+  `ModelTextureCache::prepareGpuPromotion`. Only after the outer
+  appearance transaction succeeds may `commit()` publish shared
+  GPU owners. Immediately pass returned duplicate owned images to
+  `ModelImageRollbackPool::retire` for GPU-fenced destruction.
+- Do NOT retain `Image*` pointers into `Model::images` across
+  material append/reserve. The promotion plan identifies images by
+  **stable Model* + final image index**. Proposed material image
+  pointers are valid only until `ModelImageUploadTransaction`
+  commits or aborts. Avoid GPU cache publication inside CPU staging.
+- `Renderer3D::warmModelPipelinesChecked` distinguishes Ready,
+  Pending, Failed. GPU compiler failure must preserve the old
+  TypeLook/AnimationGraph; on Pending the editor watcher must retry
+  rather than acknowledge. GPU shader cache allocation is NOT an
+  all-or-nothing RHI transaction.
+- General native `ModelAssetProvider` sync and async publication
+  use `ModelStagingTransaction` with the same cache and GPU fence
+  ownership. A failed partial GPU model upload is NEVER directly
+  released without retirement completion. Keep a persistent rollback
+  pool and poll it at frame boundaries.
+- Editor Scene/Game offscreen color/depth targets are owned by a
+  shared `OffscreenTargetRetirement` queue via weak Viewport handles.
+  Resize and window destruction enqueue target pairs; the editor
+  drains with a proven GPU idle barrier before retiring its sole
+  gfx::Device epoch. The editor GPU diagnostic ring includes
+  `RetirementResourceKind::Target`.
+- All Stage 114 tests are **DEFERRED / NOT RUN** per user's
+  features-first instruction. Source commits are NOT proof of native
+  C++ compilation or Metal/Vulkan/GL correctness. Keep animation
+  PR #22 Draft and follow separate Stage 114 handoff for actual
+  validation, limitations and next task.
 
 ## NEREID universal water framework (2026-11-18)
 
@@ -1231,6 +1853,247 @@ test status, limits and next step to its handoff as the next separate commit.
 
 Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. **Never rely on standard `assert(expr)` for a test requirement, especially if `expr` has side effects or creates fixtures**, because the expression disappears entirely in Release, yielding false-green tests and Clang unused-variable warnings. Use `#include "tests/AlwaysCheck.h"` and `AIVERSE_TEST_CHECK(expr)`, or an equivalent always-on check throwing an informative exception. Tests must enforce invariants identically in Debug and Release; don't use `(void)variable`, `[[maybe_unused]]`, `-Wno-unused-*`, or `#undef NDEBUG` as a substitute for real assertions. Source: `docs/nereid/stage-50-release-assertion-correctness.md`.
 
+### Animation/View Stage 115 — main integration and GPU program lifetime
+
+- Merge `01538817a68ac869b1e9ca12bc48ef9d9f4d56c7`
+  integrated main's NEREID/SpectraFX work with the animation
+  feature branch, preserving both parent histories. The six
+  shared files were reconciled without dropping unrelated
+  water/postprocessing or animation GPU-epoch changes.
+  **This Git merge is NOT a C++ compilation or test result.**
+- `Renderer3D` now owns `GpuProgramRetirement`: a material
+  quality/instance-limit change must enqueue obsolete shader
+  and pipeline handles for GPU-fenced retirement instead of
+  destroying potentially in-flight programs. Editor, FPS and
+  client hosts call `collectRetiredPrograms` only at true
+  frame boundaries, while using the same host GPU epoch.
+- When an edited AnimationGraph's GPU shader preflight is
+  `Pending`, poll native jobs through
+  `Renderer3D::pollPendingModelPipelineJobs()`. Do not
+  repeatedly decode/upload scratch Models merely to check
+  the same unfinished shader job. Preserve the old
+  AnimationGraph and presentation clocks on `Failed`.
+- A leased `PostFx` owner now queues old color/depth and LUT
+  texture handles into GPU-fenced `OffscreenTargetRetirement`
+  on size eviction/loader replacement. Frame-boundary
+  collection and successful idle-drain at shutdown are required
+  before retiring the host Device. Legacy unleased tools
+  retain immediate cleanup for compatibility. Do not erase
+  NEREID underwater/depth compositing changes.
+- `uploadModel` may report false when an indexed GPU vertex
+  or index allocation failed; scratch callers must use
+  fence-backed rollback, not direct immediate destruction.
+  The native `render_gpu_program_retirement` CTest is
+  registered but **NOT RUN**. PR #22 remains Draft until
+  build, GPU/backend, cross-genre animation and sanitizer
+  suites pass. See the separate
+  `docs/agent-handoffs/animation-stage115-main-gpu-retirement-2026-11-19.md`
+  for exact commits, unresolved risks and the Stage 116 work plan.
+
+### Animation/View Stage 116 — fence-backed shadows/trace and HDR warmup
+
+- Continue using one renderer-host GPU generation. `Renderer3D`
+  now owns `OffscreenTargetRetirement` for its shadow/SSR/trace,
+  selection, light-map, spot-shadow and reflection RTTs.
+  `LightSystem::setTargetRetirement` borrows this queue; do
+  not create a separate Device epoch or let the owner die first.
+- Resize/quality changes must allocate replacements *before*
+  releasing prior targets and retire old handles using GPU
+  completion tokens; Pending/Failed fences never permit
+  destruction. `Renderer3D::shutdown` requires a confirmed
+  full-device idle before freeing active buffers and shaders.
+- Editor, GameClient and FPS must poll renderer targets through
+  `pendingTargetRetirements/collectRetiredTargets` at owner
+  frame boundaries. Renderer-target orphan/queue failure
+  diagnostics and `gpuWarmStats` are visible in editor Stats.
+- Native HDR `warmPipelineColor` can return false without a
+  ShaderJob. `pendingColorWarms_` now tracks these handles,
+  and `pollPendingModelPipelineJobs` advances them without
+  duplicate scratch Model imports. Boolean false cannot
+  distinguish a true backend failure from Pending; do not
+  claim this case is fully resolved.
+- The existing `render_model_image_transaction` test has
+  new deferred shadow/SSR/reflection/partial allocation and
+  failed indexed geometry scenarios. **NO CMake, CTest,
+  GPU or sanitizer tests have been run for Stage 116.**
+  Consult the separate
+  `docs/agent-handoffs/animation-stage116-render-targets-2026-11-19.md`
+  before any next step. Keep PR #22 Draft until full native
+  validation passes.
+
+## Animation / MotionWeave Stage 117 — terminal HDR warmup contract
+
+- Current branch: `feature/universal-ecs-animation-pipeline`; Draft PR #22.
+  First inspect [Stage 117 handoff](docs/agent-handoffs/animation-stage117-hdr-warm-status-2026-11-19.md).
+- A backend HDR variant is **Ready**, **Pending** or **Failed** through
+  `gfx::Device::warmPipelineColorStatus`. The bool API remains compatible;
+  default bool-only backends CANNOT prove failure. Never infer readiness from
+  a timeout or return true-on-terminal as success.
+- Metal explicitly reports terminal shader and pipeline rejection.
+  `Renderer3D::warmModelPipelinesChecked` must reject Failed appearances;
+  its `pendingColorWarms_` and `failedColorWarms_` belong to ONE cache
+  generation and are invalidated together with the pipeline owner.
+  An invalid appearance must never replace the last-good View/MotionWeave graph.
+- GPU warmups remain device-owner work at safe frame boundaries. Do not
+  add FPS/RTS/physics/AI dependencies to MotionWeave or create another
+  presentation graph clock.
+- **NOT RUN:** native configure/build/compiler, CTest, Metal/Vulkan/GL,
+  editor visual checks, sanitizers and benchmarks. Stage 117 is source-only,
+  PR #22 remains Draft. Continue Stage 118 resource-init/rollback audit
+  before validation; append its own separate handoff.
+
+## MotionWeave / Universal View Stage 118 GPU owner rules
+
+- Continue from [Stage 118 handoff](docs/agent-handoffs/animation-stage118-gpu-init-rollback-2026-11-19.md).
+  Work in `feature/universal-ecs-animation-pipeline`; inspect Git graph
+  before merging main, never force push or overwrite concurrent agents.
+- `Renderer3D::init` and `LightSystem::init` are now transactional.
+  Any required partial GPU allocation failure must roll back ONLY
+  after a proven `Device::waitForResourceIdle()`. If GPU idle is
+  unavailable, preserve the owner and surface the failure; never
+  release potentially in-flight GPU handles.
+- `shutdown` must be safe for partial construction: check `.valid()`
+  before destruction and reset handles. Trace failures are owned by
+  Renderer3D rollback; LightSystem borrows the renderer's target queue.
+  Standalone LightSystem target retirement requires full GPU idle or
+  intentionally orphans the resource with diagnostics.
+- Do not put renderer Device/RTT management into the MotionWeave ECS
+  graph clock; do not move FPS/RTS gameplay, NEREID hydrology or
+  Prisma/PostFx ownership into animation. Keep the engine genre-free.
+- **NO BUILD/TESTS RUN** for this Stage 118 source edit: no native CMake,
+  compiler, CTest, GPU, sanitizers or visual parity. PR #22 remains
+  Draft. Next Stage 119 audits unleased renderer RTT fallback and other
+  resource owners before feature completion and comprehensive tests.
+
+## MotionWeave / Universal View Stage 119 — playback hot reload and GPU fallback
+
+- Continue from [Stage 119 handoff](docs/agent-handoffs/animation-stage119-playback-continuity-2026-11-19.md). Branch: `feature/universal-ecs-animation-pipeline`, PR #22 Draft. Review `main` ancestry before changing files; never force push or delete concurrent team changes.
+- On SAME presentation source generation, `MotionWeaveSourceBridge` may capture a healthy `AnimationGraphInstance::PlaybackSnapshot` before compatible Model/Graph replacement. It is restored once after graph reset; matching named states and node/clip phases survive, but old Pose, IK, native/montage state and events MUST NOT be copied. Changed generation/rig hierarchy gets a full reset. The host must keep old Models alive until synchronous bridge migration finishes and worker jobs have joined.
+- `Renderer3D::retireRenderTargets` uses its GPU-fenced owner normally. Without the owner, deletion is allowed only after `waitForResourceIdle()` succeeds. Unsupported/failed barriers deliberately orphan the handles; `unleasedTargetIdleFailures` and `targetRetirementOrphanPairs` diagnose this condition.
+- Independent `RenderTexture` immediately destroys GPU upload textures and per-draw vertex buffers after command submission; handle its fence-aware lifetime as a separate Stage 120. Do not modify SpectraFX, NEREID or Prisma owners without checking concurrent agents' code.
+- **NOT TESTED:** no local CMake configure, C++ compiler/link, CTest, CI, native GPU parity, sanitizer or performance test. Keep PR #22 Draft until the entire feature suite is finished and successfully validated.
+
+## MotionWeave / Universal View — Stage 120 resource owner handoff
+
+- Continue from [Stage 120 handoff](docs/agent-handoffs/animation-stage120-canvas-gpu-retirement-2026-11-19.md).
+  Branch: `feature/universal-ecs-animation-pipeline`, PR #22 Draft.
+  Compare with latest `main` and other agents before writing; no
+  force push, no lost NEREID/Prisma/SpectraFX/TerraWeave changes.
+- `render::CanvasGpuRetirement` is the generic device-bound,
+  optionally epoch-leased, GPU-fenced owner of canvas vertex
+  buffers, staging images, target textures and shader pipelines.
+  `retire(handle)` does not imply completed GPU work.
+  Poll `collect()` ONLY at a real host frame boundary after prior
+  command submission, outside render passes. On Failed/Pending
+  tokens retain native handles; a real `waitForResourceIdle`
+  can authorize fallback destruction.
+- A native `RenderTexture` borrows a shared owner using
+  `setRetirementOwner` **before** `init`. A standalone
+  `RenderTexture` owns its queue, and the native caller must
+  collect/drain it before destroying the Device. Never free its
+  scratch brush/blit buffer or upload image immediately after a
+  GPU `endPass`. On invalid upload, preserve pending brush commands.
+- `RtsPaintLayers` owns one pool across source resets and removed
+  layers, passes the existing RtsView GPU lease, and queues old
+  cached meshes/coast textures/programs. Editor and GameClient poll
+  via `RtsView::collectRetiredPaintGpuResources` at their frame
+  boundary, and RtsView.shutdown drains only after proven GPU idle.
+- Keep a last-good mesh if replacement GPU geometry allocation
+  fails; do not submit an invalid draw packet.
+- This stage did NOT modify MotionWeave graph/clock, authoritative
+  ECS, NEREID water selection, Prisma or SpectraFX. Neighbor GPU
+  resource owners require their own audits.
+- **NOT TESTED:** native CMake compiler/link, CTest/CI, real GPU
+  render/fence failures, sanitizers or visual parity. Do not mark
+  PR #22 ready before full features-first validation. Continue
+  Stage 121 with remaining View/attachment and ownership work.
+
+## MotionWeave / Universal View — Stage 121 source-rig LOD and socket rules
+
+- Continue from [Stage 121 handoff](docs/agent-handoffs/animation-stage121-universal-lod-attachments-2026-11-19.md).
+  Branch `feature/universal-ecs-animation-pipeline`; PR #22 remains
+  Draft. Inspect `main` and peer branches before updates and never
+  force-push or overwrite NEREID, PHYSIS, Prisma, SpectraFX or TerraWeave.
+- `view::Object::animationModel` is the graph's immutable source rig;
+  optional `draw.model` visual LOD replacements never create a new
+  MotionWeave clock or restart a presentation ECS source.
+  `View::update` runs graph logic once, and `submitOne` only
+  chooses a GPU model. Scene packet data are borrowed until submission.
+- `engine/view/ModelComposition.h` is the shared API for native
+  model distance-LOD choice and socket placement. Reuse it in game
+  hosts: generic View never reads RTS/FPS gameplay fields.
+  Source node matrices are **model-space**. `composeAttachment`
+  transforms a child's local draw by parent world * source socket
+  * local grip. Invalid socket IDs/names fail, never silently root.
+- Only reuse source Pose for a distinct visual Model when node order,
+  hierarchy, bind TRS, skin/inverse bind layout and morph semantics
+  are compatible. Separately authored morph channels have no implicit
+  correspondence; incompatible LODs must use bind pose or explicit
+  future retargeting. Attachments always use source rig, not visual LOD.
+- Existing `view::Object` fields retain their positional aggregate
+  order; append optional fields instead of reordering them.
+  Preserve LOD hysteresis memory by ID/generation; clear stale
+  state when the entity disappears or respawns.
+- `RenderTexture::upload` now returns bool: do not clear a paint
+  layer's dirty flags after a failed GPU staging/blit operation.
+  Territory partial updates must retry from saved CPU bytes;
+  failed `copy_from` must retain its operation order.
+  GPU temporary handles retire through CanvasGpuRetirement only
+  at real owner frame boundaries (Stage 120).
+- **NOT TESTED:** no native CMake/link/CTest, CI, Metal/Vulkan/GL
+  rendering, FPS/RTS/editor visual parity, sanitizer or benchmark
+  run for Stage 121. Do not merge PR #22 or mark it ready.
+  Next Stage 122 continues host integration and explicit LOD remaps,
+  then performs full testing only after feature completion.
+
+## MotionWeave / Universal View Stage 122 — explicit LOD retarget and canvas status
+
+- Continue from [Stage 122 handoff](docs/agent-handoffs/animation-stage122-rig-retarget-2026-11-19.md). Branch `feature/universal-ecs-animation-pipeline`, PR #22 stays DRAFT. Compare latest `main` and related agent branches before any further source edits; never force push or overwrite PHYSIS/NEREID/Prisma/SpectraFX/TerraWeave.
+- Whole-asset LODs may provide an immutable `view::ModelPoseRetarget` mapping visual nodes to source rig nodes. The map is validated for node indices, ancestry, morph channel bounds and translation scale. `retargetModelPose` applies source animation TRS deltas to the **visual target bind pose**, then builds visual node matrices. Do not blindly copy source node matrices or inverse binds into a different skeleton.
+- `view::ModelLod::retarget` is optional. Strictly equivalent models share source Pose directly; a valid mapping produces a separate visual Pose; otherwise draw target bind pose. `ModelAttachment` always follows source rig. MotionWeave updates ONCE, regardless of LOD, and never writes gameplay state.
+- An FPS/native source with a precomputed pose must set `view::Object::animationModel` and call `View::beginPreparedFrame()` once before ordered draw packet submission, NOT `View::update()`, avoiding a second graph step. The FPS host now follows this contract. RTS retains its genre-owned LOD selection but shares the retarget helper, caching validated source-to-visual node maps per loaded LOD in `RtsLook`.
+- Optional morph retarget arrays must initialize every unmapped entry to -1. Do not assume independently authored morph target slot indices are equivalent. Source and visual GPU/CPU asset ownership remains with the host through all worker joins and synchronous submissions.
+- `RenderTexture::flushChecked()` returns success/failure. Old `void flush()` remains a compatibility wrapper. On GPU scratch allocation failure, preserve brush commands. Canvas `SubmissionStats` and Editor statistics record failed brush, blit and staging-image allocations for live paint owners.
+- No native C++ compilation, CMake/CTest, CI, Metal/Vulkan/GL GPU, sanitizer or benchmark was performed in Stage 122; source changes are UNVERIFIED for native compilation/runtime. PR #22 must stay Draft. Next Stage 123: compiled/generation-aware retarget maps and remaining host parity; test only after feature completion.
+
+## MotionWeave / Universal View Stage 123 — compiled, generation-safe LOD retarget
+
+- Continue from [Stage 123 handoff](docs/agent-handoffs/animation-stage123-compiled-retarget-cache-2026-11-19.md). Branch `feature/universal-ecs-animation-pipeline`; PR #22 is Draft. Refresh latest `main` and peer branches; do not force-push or overwrite PHYSIS, NEREID, TerraWeave, Prisma or SpectraFX.
+- `CompiledModelPoseRetarget` is IMMUTABLE per source/visual Model publication pair, not per Actor. Build with `compileModelPoseRetarget(source,visual,authored,sourceGeneration,visualGeneration)` on a safe host asset-publication boundary. Both generations must be nonzero, explicitly assigned by the owner and changed on hot reload, even when Model pointers are reused.
+- At draw time prefer `retargetCompiledModelPose`: it checks identity + both generations without revalidating the hierarchy or allocating visited-node scratch. If the plan has expired, the target uses bind pose and NEVER tries the old mapping. The authored `ModelPoseRetarget` remains a slower source-compatible path for native hosts without compiled plans.
+- `ModelLod` has optional `compiledRetarget` and `visualModelGeneration`; `view::Object` appends `animationModelGeneration`. Preserve all prior aggregate field ordering. `View::modelRetargetStats()` exposes compiled hits/rejections, strict zero-copy poses, legacy dynamic mapping and bind pose fallbacks. These counters do not touch gameplay or MotionWeave time.
+- RTS `RtsLook::loadChoice` stamps model choice publication with a monotonic source generation. The LOD map is compiled ONCE at publication and shared across that choice's actors; `RtsViewDraw` uses it without per-draw hierarchy validation. Reused scratch Pose/mat4 buffers belong to each RtsView instance, not static globals. Source reload and appearance reload rebuild choices via loadChoice.
+- Never retain a borrowed Model, Graph, source Pose or compiled model pointer across its GPU/worker retirement barrier. Retarget maps have no ownership over Model CPU/GPU resources.
+- **NO NATIVE TESTS:** Stage 123 source was reviewed and committed via GitHub, but CMake, C++ build, CTest, CI, Metal/GL/Vulkan, sanitizers and benchmarks have NOT run. Do not report success or merge PR #22. Next Stage 124: finish remaining legacy host adapters/compiled-plan optimization and then test full feature set.
+
+## MotionWeave / Universal View Stage 124 — reusable Pose scratch and authoring diagnostics
+
+- Continue from [Stage 124 handoff](docs/agent-handoffs/animation-stage124-pose-scratch-authoring-2026-11-19.md). Branch `feature/universal-ecs-animation-pipeline`, PR #22 Draft. Refresh `main` and active agent branches; never force-push or overwrite PHYSIS, NEREID, TerraWeave, Prisma or SpectraFX.
+- `retargetCompiledModelPose` now uses caller-provided Pose and mat4 vector output capacity instead of constructing new temporary vectors every draw. The return boolean governs validity: NEVER reuse partially modified output on a failed dynamic pose or invalid generation.
+- `aiverse::View` retains one `RetargetScratch` per View instance. `submitOne` uses it only on the render-owner thread after MotionWeave jobs complete; an RAII busy guard makes reentrant renderer capture callbacks use separate stack scratch rather than overwrite outer borrowed pose pointers. Do not run concurrent View submissions or call `clear()` during a nested renderer capture submission. `Renderer3D::drawModel` consumes Pose/mat4 pointers synchronously, retaining only copies of draw data.
+- `ModelPoseRetargetIssue`, `ModelPoseRetargetReport`, `describeModelPoseRetarget` and `modelPoseRetargetIssueName` are authoring-only diagnostic APIs, used after failed compile, never per actor. `makeNamedModelPoseRetarget` produces a visual-node -> source-node mapping by name with -1 on misses; it DOES NOT infer morph-slot correspondence.
+- The RTS `RtsLook` loader shares this helper and emits deduplicated per-model warning on rejected compiled retarget maps. Legacy raw world-node fallback is deliberately retained until GPU/editor visual parity proves a safe replacement. Source animations and other LOD paths continue unchanged.
+- Stage 124 validation: GitHub source/ancestry review, Renderer3D pointer-lifetime source audit and exact branch commits only. **NOT RUN** native CMake/compiler/link/CTest/CI, Metal/Vulkan/GL, FPS/RTS/editor screenshots, ASan/TSan/UBSan or benchmarks. No measured performance speedup. PR #22 MUST remain Draft. Next Stage 125: retarget scratch budget, legacy adapter migration and completed features before final full validation.
+
+## MotionWeave / Universal View Stage 125 — scratch budget and Model asset revisions
+
+- Continue from [Stage 125 handoff](docs/agent-handoffs/animation-stage125-scratch-budget-model-epochs-2026-11-19.md). Work on `feature/universal-ecs-animation-pipeline`; keep PR #22 Draft. Compare with `main` and peer work before any merge and never force-push or overwrite PHYSIS/NEREID/Prisma/SpectraFX/TerraWeave.
+- Native `aiverse::View` has `setRetargetScratchBudgetBytes`, `retargetScratchBudgetBytes`, `retargetScratchCapacityBytes`. Default retained scratch budget is 512 KiB PER View. It is **not** an instantaneous draw allocation cap: a large rig renders, then release excess retained Pose/matrix vector capacity ONLY after synchronous Renderer3D submission and capture callbacks. Nested draw calls use isolated scratch; do not call `View::clear` or change budget while a draw is active. `ModelRetargetStats::scratchTrims` reports per-frame trims.
+- `engine/view/ModelPublicationEpoch.h` provides `view::ModelPublicationEpoch::next()`, a checked global monotonic nonzero asset publication revision. This is neither ECS source generation nor GPU fence. Reissue revisions on any in-place Model reimport/replace, even if pointers are recycled. RTS `RtsLook` and generic `AppearanceAssetRegistry` now use this shared generator. Registry snapshots forward the revision to `Object::animationModelGeneration`.
+- A `CompiledModelPoseRetarget` compares source/visual Model identity and epochs before evaluating. `CompiledRetargetStatus` distinguishes missing/expired revisions, changed model pointers and invalid plan shape without rescanning bones. Generic View reports failure categories in its retarget stats and renders the visual bind pose on any stale plan. Do NOT fall back to the old unversioned plan on invalid compiled maps.
+- RTS-only compatibility switch `RtsView::setLegacyLodFallbackMode(BindPose)` opts into safe bind-pose fallback for unsupported legacy LODs. **Default preserves old world-matrix mapping until actual GPU visual parity.** RtsView counters distinguish legacy, bind and rejected compiled plans. Editor Stats provides a checkbox and reports retained generic MotionWeave scratch capacity/budget; none of these switches affect simulation.
+- **Actual checks:** GitHub source inspection, branch ancestry, code commits/readback, no native compiler. **NOT RUN:** CMake/C++ build/link, CTest, CI, Metal/Vulkan/GL visual parity, sanitizer or benchmark. Do not claim functionality was runtime-tested or merge Draft PR #22. Next Stage 126 finishes remaining features/host adapters, followed by full native validation and warnings fixes.
+
+## MotionWeave / Universal View Stage 126 — stable model epochs and FPS graph continuity
+
+- Continue from [Stage 126 handoff](docs/agent-handoffs/animation-stage126-published-lod-hot-reload-2026-11-19.md). Branch: `feature/universal-ecs-animation-pipeline`; PR #22 remains Draft, with base `feature/universal-entity-inspector-fps`. Refresh latest `main` and peer branches before edits. No force push, overwriting NEREID/PHYSIS/TerraWeave/Prisma/SpectraFX, or direct main mutation.
+- `AppearanceAssetRegistry` now treats appearance publication `version`, graph `generation` and Model `modelPublicationGeneration` as distinct counters. Graph or material-only republishing of the same Model and host `modelRevision` preserves its Model epoch; Model pointer/revision/source changes issue a NEW nonzero epoch. `invalidateSources(modelPath)` marks a separate `dirtyModel_`, whereas graph source invalidation need not change Model epoch. This dirty flag clears ONLY after successful publication or explicit erase/clear.
+- In native projects, use `AppearanceSpec::modelPublicationGeneration` with `buildAppearancePacket` even without the registry; `Asset::packet` uses that same code. Host owners MUST bump `Request::modelRevision` or invalidate model source on in-place reimport with a recycled pointer. The registry cannot infer hidden Model mutations or extend borrowed Model/GPU lifetime.
+- `AppearanceAssetRegistry::Asset::compileVisualLod(visual,minDistance,authored,out,error)` builds generation-safe compiled LODs from immutable published source+visual snapshots, validates positive finite LOD distance, and replaces `out` only on success (last-good LOD preserved on error). Host retains snapshots and underlying Models through joined worker and synchronous draw.
+- FPS prepared character packets forward `characterAppearance->modelPublicationGeneration` while maintaining network entity life separately. A graph-file-only FPS reload snapshots healthy named state and clip phases into `AnimationPlayerComponent::pendingPlayback` before one-shot reset; incompatible node/clip changes restart cleanly. Montages, contacts, notifies and authoritative FPS state are deliberately reset/not migrated.
+- `publishPrepared` must NOT reuse a graph generation after model revision/source or graph source was invalidated, even with the same Graph pointer. No duplicate MotionWeave graph tick is authorized. Canonical View remains genre-independent.
+- **Actual Stage 126 validation:** GitHub branch/PR/main compare, source inspection/readback and blob-SHA commits only. **NOT RUN:** native CMake/C++ compilation/link, CTest/CI, Metal/GL/Vulkan visual parity, FPS/RTS/editor replay, sanitizers or benchmarks. Leave PR #22 Draft. Stage 127: finish remaining native authoring/legacy adapters and then fully validate features and fix errors/warnings.
+
 ## VIVID universal digital humans (2026-11-19)
 
 **Feature branch:** `feature/vivid-digital-humans`. **Canonical contract:** `docs/vivid.md`.
@@ -1238,9 +2101,10 @@ Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. 
 **Local ownership:** `engine/character/vivid/AGENTS.md`, `engine/character/vivid/*`, `tests/vivid/*`.
 
 VIVID is genre-independent and presentation-only. It provides a pure C++20 facial
-controller (`AIVERSE::vivid`) and a separate adapter to legacy `render::Pose`
-(`AIVERSE::vivid_render`). Do not fork `AnimationGraph`, assume more than
-eight supported GPU morph targets, bundle proprietary human assets, or claim
-MetaHuman DNA, groom and skin features before they actually ship. Every bounded
-implementation step MUST have a following separate handoff commit with exact
-commit IDs and tests that were actually run.
+controller (`AIVERSE::vivid`), `AIVERSE::vivid_render` legacy morph binding
+and `AIVERSE::vivid_gpu` extended sparse morph compute.
+MotionWeave owns the final presentation skeleton pose and final graph/retarget output.
+VIVID applies optional facial channels afterwards. Do not duplicate MotionWeave
+workers, IK, animation graphs or LOD policies. Never alter the legacy eight-target
+renderer ABI without a staged GPU parity test. Every completed stage MUST have
+a separate committed handoff with SHA, executed tests, risks, and next step.

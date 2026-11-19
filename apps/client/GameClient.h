@@ -30,6 +30,7 @@
 #include "engine/render/BakedLighting.h"
 #include "engine/render/QualityGovernor.h"
 #include "engine/render/Renderer3D.h"
+#include "engine/render/RenderDeviceLifetime.h"
 #include "engine/services/Store.h"
 #include "engine/sim/Simulation.h"
 #include "engine/ui/UiLayer.h"
@@ -94,6 +95,11 @@ class GameClient {
     struct ScriptUiApi;     // ClientScriptUi.cpp: scripthost.event / send for engine/ui/lib/scriptui.lua
     friend struct ScriptUiApi;
 public:
+    // Embedded GameClient shares its editor's gfx::Device generation.
+    // Standalone client creates an epoch automatically during initStep(0).
+    void setGpuDeviceLease(render::RenderDeviceLifetime::Lease lease) {
+        gpuDeviceLease_=std::move(lease);
+    }
     void init(gfx::Device& dev);   // every init step at once
     // Startup in steps, one per frame, so the splash screen (ClientSplash.h) keeps animating.
     static constexpr int kInitSteps = 6;
@@ -290,6 +296,8 @@ private:
     int addAction(std::function<void()> fn, bool enabled = true) { nextActions_.push_back(enabled ? std::move(fn) : nullptr); return int(nextActions_.size()) - 1; }
 
     gfx::Device* dev_ = nullptr;
+    std::unique_ptr<render::RenderDeviceLifetime> ownedGpuLifetime_;
+    render::RenderDeviceLifetime::Lease gpuDeviceLease_;
     gfx::TextureHandle hostColor_, hostDepth_;   // setHostTarget: invalid = the screen
     int hostW_ = 0, hostH_ = 0;
     int fbW() const { return hostColor_.valid() ? hostW_ : dev_->framebufferWidth(); }

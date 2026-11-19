@@ -874,3 +874,375 @@ cost are intentionally excluded. Geometry pooling stays at upload-time
 configuration in both passes. The 382.9/384 MiB scene observation indicates
 high page occupancy, so simply shrinking page sizes will not materially reduce
 geometry storage for that workload.
+
+### Standalone native model provider comparison (Stage 102)
+
+The `aiverse_modelview` tool now accepts
+`--provider --no-merge` for an opt-in, non-gallery **raw static model**
+path. It uses a native `render::ModelAssetProvider` and the canonical
+`aiverse::View::submitModel` without constructing a `game::RtsView`
+for that source. It preserves the model viewer's existing camera,
+materials, team colour, variants and scale, but does not merge rigid
+parts or run this provider path for requested animation clips/baked
+skinning. Those scenarios continue using the original loader; both
+paths submit the same precomputed `ModelDraw` to universal View.
+This is an inspection/comparison path, not a promise of scene-render
+parity or a replacement for full game view blocks. Visual/native
+validation has **NOT RUN**.
+
+## Transactional material texture hot reload — Stage 112
+
+When implementing a native renderer that accepts changes to authored
+materials, use `render::ModelImageUploadTransaction` instead of
+`addImage` while constructing replacement model appearances.
+`stage(model,image)` allocates a texture outside the live
+`Model::images` array and returns a future append index. A
+successful all-model `commit()` makes the index visible; a failed
+attempt queues temporary GPU handles in a persistent
+`ModelImageRollbackPool` rather than destroying them while prior
+GPU commands may still reference them.
+
+The rollback pool must outlive every staging transaction and be
+collected at a safe frame boundary. Its `drain(device)` must succeed
+before the parent device is destroyed. Texture retirement requires a
+real GPU completion token or full-device idle: `frameSerial()` and
+wall-clock delays are NOT proof. Keep Model, material and appearance
+snapshot borrows detached before model cache eviction.
+
+The RTS hot-appearance loader now uses this path for newly imported
+texture overrides. Initial model upload, shared texture caches and
+other direct GPU allocations still have independent lifetime
+contracts. Native build/CTest and physical GPU tests have not been
+performed for Stage 112.
+
+## Stage 113 — speculative model imports and shared texture residency
+
+For authored hot reload that can introduce **new model files**,
+avoid inserting imported Models in the host's live
+`ModelResourceCache` before the entire update passes.
+Use a scratch `ModelResourceCache::ModelMap` and call
+`uploadModel(device,model,false,false)` for speculative
+GPU preparation. This may borrow an existing
+`ModelTextureCache::borrowResident` lease but does not create
+new shared-cache GPU entries. Shared-cache misses become dedicated,
+transaction-owned textures. The decoded CPU image cache may still
+be reused and populated.
+
+After the host has staged its per-type material, variant, LOD,
+attachment and AnimationGraph choices, call
+`ModelImageUploadTransaction::commit` then
+`ModelResourceCache::publishStagedModels(device,models)` at a safe
+frame boundary. Its node transfer preserves Model addresses.
+An aborted scratch import must use
+`ModelResourceCache::retireUnpublished(device,model)`, which
+enqueues the Model into the GPU-fenced retirement queue instead
+of releasing partially uploaded GPU resources immediately.
+Neither `ModelImageRollbackPool` nor `ModelResourceCache`
+may be destroyed before their pending resources are drained
+behind real GPU completion.
+
+This path is implemented by RTS `reloadAppearanceTypes`;
+ordinary initial loading and other native host importers have
+not yet been converted. This Stage 113 implementation has
+not been compiled or run on hardware.
+
+## Stage 114 — two-phase shared cache promotion and generic native imports
+
+New native or RTS model appearances can promote already uploaded
+speculative texture misses into a shared cache **only after** all
+authoring and GPU shader preflight checks succeed. Call
+`ModelTextureCache::prepareGpuPromotion(models, appended)` while the
+scratch Models and pending image references are alive, then commit the
+pending Model images, publish any scratch Model map nodes, and finally
+call `PreparedGpuPromotion::commit()`. The plan allocates its shared
+cache owners and leases during preparation; its commit does not upload
+new GPU images. Retire the returned duplicate Image handles using a
+persistent `ModelImageRollbackPool` and real GPU fences. The plan uses
+Model+index identifiers so a pending material append can reallocate
+`Model::images` safely.
+
+`ModelImageUploadTransaction::pendingImageReferences()` exposes
+temporary references for GPU promotion preflight. Do not use their
+`Image*` after that transaction commits or aborts.
+`ModelTextureCache::read()` provides shared decoded CPU data and
+preserves source/sampler identity, but new GPU entries are not visible
+until the whole staged transaction succeeds.
+
+For ordinary non-RTS importers, `ModelStagingTransaction` manages a
+scratch map of newly decoded Models and routes failed partially uploaded
+Model resources to GPU-fenced retirement. `ModelAssetProvider::load`
+and `publishReady` now use this helper. Its `commit` publishes
+Model pointer identities and shared GPU leases without a second upload.
+The native caller still owns the gfx::Device, Model cache, GPU lifetime
+and recurring retirement polling. Errors must not bypass a GPU
+completion marker by directly calling `releaseModel` on in-flight
+Model resources.
+
+ShaderGraph CPU validation and native GPU pipeline preflight are
+separate: `Renderer3D::warmModelPipelinesChecked` returns
+Ready/Pending/Failed; only a Ready candidate is safe to publish when
+a host supplies a pipeline validator. The GPU shader cache is not
+fully transactional and may retain cached failed or prepared pipelines
+until renderer teardown. No physical backend tests have been run.
+
+## Stage 115 — GPU geometry upload failure and shader retirement
+
+In native scratch import or standard model upload,
+`uploadModel()` now validates that a required indexed model
+actually obtained its vertex/index GPU buffers (or a shared
+geometry-pool page) before discarding source CPU geometry.
+This closes a false-success path where cleared vertex arrays
+previously made a failed GPU upload appear successful.
+An unsuccessful speculative import remains owned by its
+`ModelStagingTransaction` and is retired with the normal
+GPU completion marker.
+
+The separate generic `GpuProgramRetirement` owner handles
+shader/pipeline cache generations invalidated by
+`Renderer3D::setMaterialQuality` and
+`Renderer3D::setInstanceLimit`. It is not a Model owner and
+must not create its own GPU device epoch. Program eviction is
+deferred until a confirmed completion token or full GPU idle,
+with pipeline handles destroyed before shader handles.
+For the host runtime, call `collectRetiredPrograms()` at a
+safe frame boundary and require successful retirement before
+device teardown. Renderer3D's ordinary live program teardown
+still depends on the host's complete GPU shutdown ordering.
+
+CMake registers `render_gpu_program_retirement`, but it
+and all prior deferred image/model/GPU fixtures remain
+unexecuted pending completion of feature work.
+
+## Stage 116 — shared graphics target ownership and failed GPU geometry
+
+Native animated Models, the Editor, FPS, RTS, NEREID and other
+presentation modules continue to share generic
+`RenderDeviceLifetime` and `OffscreenTargetRetirement` contracts.
+For `Renderer3D` the owner now also covers shadow maps, SSR scene
+colour/depth, selection masks, light-map/spot-shadow targets and
+planar reflections. A per-host owner pool is required: do not
+create another `RenderDeviceLifetime` for a borrowed `gfx::Device`.
+A `LightSystem` borrowed target owner is only valid while the
+containing Renderer3D still exists.
+
+On size/quality changes, allocate a complete replacement pair
+before retiring old handles. Failed allocations must not
+overwrite the live Model/renderer state with incomplete targets.
+Use `pendingTargetRetirements()` and
+`collectRetiredTargets()` at safe frame boundaries and require a
+proven successful full-device idle barrier at shutdown.
+
+The existing `uploadModel` failed GPU vertex/index buffer
+regression has been declared in `render_model_image_transaction`,
+but **not executed**. All Stage 116 code must be compiled,
+linked and GPU-validated before PR #22 is merged.
+
+## Stage 118 — Model fallback GPU allocation and rollback
+
+`Renderer3D::init` no longer considers a partly allocated graphics
+owner initialized. It requires valid default model textures and main
+rendering pipelines before publishing, and on failure triggers a
+GPU-idle-guarded renderer rollback. `shutdownModels` now destroys only
+valid white/black/normal fallback handles and clears them before reuse.
+Light/trace partial resource setup follows the same owner policy.
+This does not change Model format, skeleton retargeting, LOD assets
+or MotionWeave state. Native build and GPU failure tests are **NOT RUN**.
+See [Stage 118 handoff](agent-handoffs/animation-stage118-gpu-init-rollback-2026-11-19.md).
+
+## Stage 119 — graph playback continuity across compatible Model replacement
+
+Changing a Model pointer no longer unconditionally loses presentation
+clip phase when the MotionWeave source ID/generation stays the same,
+the previous graph is healthy and the ordered bone node names/parents
+match. `AnimationGraphInstance` snapshots named state and normalized
+clip phases before the old Model is evicted and maps them to the
+replacement Model's clip durations. A new rig pose is evaluated for
+the replacement; old node matrices, native state, GPU handles and
+morph arrays are not copied. A logical respawn (new generation)
+and incompatible hierarchies still restart.
+
+The host must retain old Model/Graph resources throughout bridge
+sync and may not mutate ECS structure during worker dispatch.
+**NOT RUN:** native build or hot reload parity tests.
+See [Stage 119 handoff](agent-handoffs/animation-stage119-playback-continuity-2026-11-19.md).
+
+## Stage 121 — optional source-rig LOD and socket ModelDraw API
+
+For native C++ projects, `aiverse::view::Object` can keep
+`animationModel` as the stable MotionWeave AnimationGraph source
+while `draw.model` is the base visual asset and
+`lods = {{&model30, 30.f}, {&model100, 100.f}}` supplies
+distance-selected whole-model replacements. This is separate from
+the renderer's existing per-mesh LODs and from RTS-specific authored
+construction/variant choices. Selection has per-entity/generation
+hysteresis to avoid LOD flicker without creating new graph players.
+
+Compatible visual rigs may receive source pose matrices only if
+ordered nodes, parents, bind TRS, skins and inverse-bind matrices
+match. Independently authored morph target slots do **not**
+automatically match. Incompatible LOD Models draw in their own
+bind pose rather than corrupting GPU skinning; a future explicit
+retarget/map can opt in. Named/indexed attachments always use the
+base `animationModel` source pose (or its bind pose), regardless
+of which visual LOD is rendered. The old RTS weapon/cargo/banner
+socket pass now uses this generic View composition primitive.
+ModelDraw and asset pointers remain borrowed through submission.
+
+The `view::Object` original field order is unchanged, with all new
+fields appended for native aggregate source compatibility. There
+is no new gameplay authority, clip clock, save format, or GPU model
+ownership. **NOT RUN:** native build, real model LOD/skin/morph
+comparison, CTest, editor/RTS/FPS screenshots or sanitizers.
+[Stage 121 handoff](agent-handoffs/animation-stage121-universal-lod-attachments-2026-11-19.md).
+
+## Stage 122 — explicit skeleton/morph LOD correspondence
+
+For genre-neutral native C++ projects, optional
+`view::ModelLod::retarget` points to an immutable
+`view::ModelPoseRetarget` profile authored for the specific base
+and visual Models. `sourceNodeForVisual[i]` selects the source
+skeleton node driving visual node i, or -1 to preserve its bind
+pose. Its optional `sourceMorphForVisual[i][channel]` selects a
+source morph channel for that visual channel; initialize all
+unmapped entries to -1 before adding mappings. The validator
+rejects duplicate/invalid node mappings, incompatible ancestry,
+invalid morph slots or nonfinite translation scale.
+
+Retargeting computes source local T/R/S changes relative to
+the source rest pose and applies them to the LOD's own bind
+pose, then recomputes target Model world matrices; the visual
+uses its own skin, mesh geometry and inverse binds. This is
+not automatic inverse-kinematic/twist/body-proportion retargeting,
+and mapping correctness requires an authored profile. If the
+mapping is invalid or absent, the target remains in bind pose.
+The base MotionWeave graph and source-rig attachments continue
+to animate. FPS prepared character poses and eligible RTS LODs
+share the generic helper without a second graph update.
+
+This Stage 122 is **source-only** and has NOT been compiled,
+linked, GPU-tested, benchmarked or validated with real visual
+LOD assets. See [Stage 122 handoff](agent-handoffs/animation-stage122-rig-retarget-2026-11-19.md).
+
+## Stage 123 — immutable source/visual rig versions and retarget cache
+
+An authored `ModelPoseRetarget` can now be compiled once per
+source/visual Model publication into a shared immutable
+`CompiledModelPoseRetarget`. Compile outside the animation
+worker dispatch, with nonzero **host-controlled publication
+version IDs** for each Model. The plan caches source bind T,
+inverse bind rotation and scale, target bind T/R/S, and optional
+morph channel mappings; its runtime path is a bounded pass over
+visual nodes. This is separate from GPU Model residency and from
+ECS entity generation.
+
+For an opt-in whole-asset visual LOD, native C++ code supplies
+`ModelLod::compiledRetarget` and
+`ModelLod::visualModelGeneration`, and the host actor supplies
+`Object::animationModelGeneration`. `View` rejects mismatched
+pointers/versions and uses the visual's bind pose rather than
+feeding stale source bones to another asset. Rebuild plans after
+**every** hot reload (also for in-place Model changes). Old
+`ModelLod::retarget` remains for older native host code.
+
+`RtsLook` publishes monotonic, nonzero per-choice versions
+through `loadChoice`, including appearances built by source
+and material/graph reload. It compiles one LOD map when the
+authored choice is built and reuses that plan for multiple actors.
+RTS presentation scratch is now owned by the individual View,
+not a process-static buffer. Old LODs without a compiled map
+continue using the legacy path pending visual parity tests.
+
+**NOT COMPILED OR TESTED:** no measured speedup or real rig
+validation is claimed. See [Stage 123 handoff](agent-handoffs/animation-stage123-compiled-retarget-cache-2026-11-19.md).
+
+## Stage 124 — retarget map authoring errors and source-pose scratch
+
+Native projects can create a best-effort source-visual
+`ModelPoseRetarget` with
+`makeNamedModelPoseRetarget(source,visual,translationScale)`.
+Every visual node is resolved by its authored source bone
+name; unmatched nodes are set to -1 and remain in the
+visual bind pose. Morph target correspondence is deliberately
+NOT inferred from names or mesh indices — explicit
+sourceMorphForVisual authoring remains required.
+
+After an unsuccessful `compileModelPoseRetarget`, use
+`describeModelPoseRetarget` with the same models,
+source/visual generations and authored mapping to obtain
+`ModelPoseRetargetIssue`, the first failing visual
+node, and mapped/unbound totals. This is an offline/editor
+publication helper, not a per-frame analyzer. RTS now
+uses the same name-map builder for ModelChoice LODs and
+reports rejected compiled maps through deduplicated
+per-type warnings, preserving legacy LOD visuals
+pending native editor comparison.
+
+Compiled runtime retarget output reuses Pose/matrix capacity
+and a per-View scratch owner with nested-call isolation;
+it does not change skin inverse-binds, modify source
+AnimationGraph clocks or make generic View genre dependent.
+No measured speedup or native correctness is claimed.
+See [Stage 124 handoff](agent-handoffs/animation-stage124-pose-scratch-authoring-2026-11-19.md).
+
+**NOT RUN:** compiler, CTest, GPU visual parity or sanitizers.
+
+## Stage 125 — Model publication revision and safe legacy LOD migration
+
+Compiled LOD retarget maps must be keyed by nonzero host-owned
+source AND visual Model publication generations, not only
+the C++ pointer, model path, animation clock, or entity life.
+Use `view::ModelPublicationEpoch::next()` on each new
+Model publication. The generic
+`AppearanceAssetRegistry` now assigns a new revision on
+each successful publish/publishPrepared and its packets
+forward `Object::animationModelGeneration`. Any existing
+compiled visual retarget plan must be rebuilt when the source
+asset revision changes, even if the underlying Model pointer
+is unchanged. The approach favors safety over preserving maps
+through materials-only appearance updates.
+
+`CompiledRetargetStatus` diagnoses missing/expired
+source or visual revisions, pointer changes and invalid
+map shapes with constant-time identity checks. A rejected
+compiled plan uses target bind pose; no stale source
+bone matrices are applied to another Model. RTS-authored
+LOD models with no valid compiled map still default to
+their historical legacy nodeWorld presentation until
+visual parity is verified. Opt in to bind fallback using
+`RtsView::LegacyLodFallbackMode::BindPose`, exposed in
+Editor Stats for side-by-side comparison. Legacy/bind/
+rejected-plan counts are available on the adapter.
+
+Retarget scratch capacity is capped for retention (512 KiB
+per View by default), NOT current draw memory. No CPU/GPU
+benchmark or real model comparison was run. See
+[Stage 125 handoff](agent-handoffs/animation-stage125-scratch-budget-model-epochs-2026-11-19.md).
+
+## Stage 126 — model publication epoch continuity
+
+A new appearance snapshot is not necessarily a new Model
+asset. `AppearanceAssetRegistry` now keeps a borrowed Model's
+`modelPublicationGeneration` stable across material-only and
+AnimationGraph-only republishing. Its appearance `version`
+still changes every successful publication; its graph
+`generation` changes when the compiled graph/source changes.
+A replaced Model, changed `Request::modelRevision`, changed
+model path or `invalidateSources(modelPath)` produces a new
+Model epoch, so compiled LOD retarget plans reject stale
+generations even when a C++ allocator reuses an address.
+
+Native projects can now pass the model epoch in
+`AppearanceSpec::modelPublicationGeneration` to the
+genre-neutral `buildAppearancePacket`. Published registry
+assets use the same field automatically, and native callers
+can compile an immutable visual LOD from two published
+`AppearanceAssetRegistry::Asset` snapshots using
+`compileVisualLod`. On failure this API reports the bone/map
+reason if requested and preserves the previous valid LOD.
+It does not own Model/texture/buffer lifetimes and cannot
+detect a host that modifies a Model in-place without
+modelRevision updates or source invalidation.
+
+**NOT RUN:** native C++ build/CTest, hot reload fault injection,
+GPU visual parity and performance tests. See
+[Stage 126 handoff](agent-handoffs/animation-stage126-published-lod-hot-reload-2026-11-19.md).
