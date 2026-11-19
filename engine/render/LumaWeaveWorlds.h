@@ -80,7 +80,7 @@ public:
     // falsely pending forever and never safely retire their GPU resources.
     struct CompletedWorld {
         uint64_t worldId=0;
-        LumaWeaveMetalScreen::Completion completion{};
+        LumaWeaveScreenMetal::Completion completion{};
     };
     std::vector<CompletedWorld> pollAll() {
         if(inFrame_)throw std::logic_error("cannot poll during LumaWeave draw");
