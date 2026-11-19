@@ -142,6 +142,16 @@ triangle/terrain decode, SpatialWorld and streaming scheduler.
   scene worlds documentation.
 - `d0c9a728f931d289ea1d89b6e6cd411a601dd6a3` —
   ECS/static prefab integrated documentation.
+- `bdd7f3319ef3c28044a49679465b126e5c1be424` —
+  initial Stage 7 agent handoff.
+- `aa44beb47965f32be06b7390fea918a626b37813` —
+  collision namespace overflow and partial range CTest cases.
+- `0025b2781d3df18ad3f83021c3e618d31ddb7ddd` —
+  agent skill for additive collider ownership.
+- `8b0629c3e64359cacde7237b86a6d9ed888f67db` —
+  Stage 6 handoff links to Stage 7 continuation.
+- `760c9094dca6162b13cfb7a067480e7526d47958` —
+  add direct fixed-width integer include to CollisionStream API.
 
 The handoff itself is a later commit. Use `git rev-parse HEAD`
 after updating the Mac Studio worktree. No native Stage 7 result
