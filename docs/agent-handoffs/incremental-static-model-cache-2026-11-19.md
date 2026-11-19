@@ -1347,3 +1347,20 @@ Connected GitHub source inspection, unique-code-location matching, one-file atom
 ### Remaining constraints / next exact stage
 
 The Vulkan RHI has asynchronous submissions; the staged copy being *encoded* is not a GPU-fence completion guarantee. Graphics device calls must be made from their normal owner thread. The dedicated `uploadModel` fallback now sees invalid VB/IB handles and preserves CPU arrays for retry, rather than declaring incomplete geometry uploaded. Add asset-loading failure visibility (optional read-only diagnostic) only if it does not introduce per-render allocations; then finish a code-level audit of remaining unsafe GPU resource/LOD paths. During final test cycle, simulate staging allocation failure, memory binding failure, pooled write failure and second dedicated IB failure; validate that no published model uses uninitialized storage and no allocation leaks. Also run Metal/Vulkan pixel parity, renderer tests and real A/B/A before enabling any defaults.
+
+
+---
+
+## Stage 44 — completed GPU queue serial for safe page-retirement barriers (2026-11-19)
+
+**Repo/branch:** `chromealex/AIVERSE`, `perf/incremental-static-model-cache` / Draft PR #34. **Code commit:** `7dbf7ac729d063c40af504f600973ca445d8ce3e`, parent `95084bba715918216143f4528cc6460524dcece8`. No concurrent main changes at stage start (behind=0).
+
+**Problem.** `gfx::Device::frameSerial()` denotes the CPU/submission frame, not a completed GPU fence. An orphaned suballocation inside a live shared geometry page may still be accessed by earlier queued draws. Reusing its bytes merely because a Model was removed is unsafe.
+
+**Changes.** `engine/gfx/Gfx.h` now exposes `virtual uint64_t completedFrameSerial() const` (default 0 = unsupported). It guarantees a *fully completed queue submission*, NOT an inference from current frame number. Vulkan `engine/gfx/vulkan/VkDevice.h` exposes its current `serial_` and latest `completed_` (as already advanced by `prepareSlot` fence waits), returning 0 on unhealthy device. Metal `engine/gfx/metal/GfxMetal.mm` exposes current `frame_` and a shared atomic completed frame serial updated only in the `MTLCommandBufferStatusCompleted` handler; health errors disable the feature. The Metal shared_ptr keeps callback state alive if the C++ MetalDevice is destroyed. No GPU waits, stalls, allocations in draw hot loop, shader format or submission behavior changed.
+
+**Contract.** A retiring Model/geometry page may record `retireFrame = device.frameSerial()` on its owner device thread after all its drawing has stopped; a later upload may reclaim its bytes only when `retireFrame != 0` and `device.completedFrameSerial() >= retireFrame` and the device is healthy. Zero/unavailable guarantees NO reuse. Do not retire/reuse while another thread is still queuing draws of the same Model. A completed serial is not a guarantee of asset-identity correctness or ownership outside normal graphics thread/lifetime barriers.
+
+**Actual verification:** GitHub connected source inspection; single-occurrence transforms in three files; atomic tree, commit, expected-SHA branch fast-forward. **CMake/CTest, Metal/Vulkan native compilation, GPU fence/runtime validation and CPU/GPU benchmarks NOT RUN** per feature-first user instruction. PR remains Draft.
+
+**Next:** Build bounded quarantined freed-range storage on `GeometryPoolPage`, accounting for per-model vertex/index extents after CPU arrays are freed. Reuse only *retired pairs* with the completion gate; keep old high-water growth fallback. Then add native lifetime/fence and visual tests after feature completion.

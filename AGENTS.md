@@ -1745,3 +1745,17 @@ not uploaded. Preserve Stage 42 atomic Model publish/CPU retry,
 Vulkan in-flight buffer versioning and the original fallback.
 No new tests were run; PR #34 remains Draft with experimental
 options OFF until native build/failure-injection/visual parity.
+
+
+## Stage 44 — GPU-completed serial for geometry retirement
+
+Use `gfx::Device::completedFrameSerial()` instead of
+`frameSerial()` alone when considering reuse of GPU geometry
+storage. Metal/Vulkan return confirmed completed queue serials;
+other backends return 0 (no reuse permission). Match a freed
+span's nonzero `frameSerial()` against the completed value
+on the **same graphics Device**, and never race source Model
+teardown with render submission. No GPU stalls or new draw
+format. Stage 44 source is committed but native tests NOT RUN.
+See the incremental static cache handoff; user still requires
+all features before test phase.

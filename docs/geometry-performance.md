@@ -1519,3 +1519,19 @@ pooling policy or CPU MDI thresholds. Successfully encoded copies
 are not claims of completed GPU execution. This remains **source
 inspection only**, pending native CMake/CTest, Vulkan fault injection,
 Metal/Vulkan raster parity and performance A/B/A.
+
+
+### Completed GPU submission serial for recyclable geometry (Stage 44)
+
+`gfx::Device::completedFrameSerial()` returns the highest confirmed
+queue-completed frame (Metal/Vulkan) or zero on unsupported/error
+backends. Unlike `frameSerial()`, this is a completed GPU fence
+observation. A retired page range must never be reused until
+its owner-thread retirement serial is nonzero, the device is healthy,
+and completed serial has reached it. Metal completion is recorded
+from a finished command buffer; Vulkan uses already waited per-slot
+fences. This is a **new conservative RHI contract**, not a
+synchronous GPU wait or instruction to reuse live allocations.
+The normal model-draw path and GPU command ABI are unchanged.
+Native GPU tests have **NOT RUN**, so do not enable automatic
+suballocation reuse globally without actual fence/visual parity.
