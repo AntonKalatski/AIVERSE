@@ -91,6 +91,7 @@ struct ComputeStats {
     uint32_t checkpointRequests=0, checkpointCompleted=0, checkpointFailed=0;
     uint32_t checkpointBudgetDenied=0;
     uint32_t checkpointAdaptiveBackoffs=0, checkpointAdaptiveRecoveries=0;
+    uint32_t selectivelyKilled=0;
     size_t checkpointBytesReturned=0; // valid callback payload bytes, not DMA profiling
     uint32_t gpuCompactDispatches = 0, gpuIndirectDraws = 0;
     uint32_t gpuVmErrorsLastRead = 0;
@@ -115,7 +116,11 @@ public:
     void shutdown();
     void clear();                            // inside GPU frame, before render pass
     bool burstAt(fx::float3 position, fx::float3 direction = {0,1,0},
-                 fx::float4 tint = {1,1,1,1});
+                 fx::float4 tint = {1,1,1,1},uint64_t sourceToken=0);
+    // Renderer-only source token. 0 means unowned one-shot particles.
+    // Cancel pending births and queue an ordered GPU kill for submitted slots.
+    // Slots cannot be reused until the next successful GPU step submission.
+    bool killSourceParticles(uint64_t sourceToken);
     void setView(const render::RTSCamera&, const render::mat4&, int width, int height);
     bool step(float dt);                    // once per presentation frame
     void draw(const fx::FxFog& fog = {});    // inside render pass
@@ -197,6 +202,8 @@ private:
     std::vector<float> ages_;
     uint32_t drawCount_ = 0; // dense vertices emitted this frame (<= alive)
     std::vector<uint32_t> freeSlots_, pendingSlots_, aliveSlots_;
+    std::vector<uint32_t> pendingKillSlots_;
+    std::vector<uint64_t> slotSourceTokens_;
     std::vector<ParticleState> pendingStates_;
     std::vector<ProgramParams> pendingProgramParams_, programStateCache_;
     std::array<float,8> programParams_{};
