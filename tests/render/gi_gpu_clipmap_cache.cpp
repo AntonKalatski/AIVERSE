@@ -64,7 +64,12 @@ int main() {
         device.beginFrame(300,200);
         auto step=runtime.updateFrame(32,{0,0,0});
         AIVERSE_TEST_CHECK(step.submitted.submitted && step.submitted.probes==32);
-        AIVERSE_TEST_CHECK(!step.safeForPresentation && runtime.busy());
+        // After the first completed GPU fence, the R8 validity mask permits
+        // the already-computed 32 probes to be presented even while the
+        // remaining 32 are in flight. A fresh atlas has none valid yet.
+        AIVERSE_TEST_CHECK(runtime.busy());
+        AIVERSE_TEST_CHECK(step.safeForPresentation == (pass > 0));
+        AIVERSE_TEST_CHECK(runtime.validity().validCount() == size_t(pass)*32u);
         device.endFrame();
         device.finish();
         device.beginFrame(300,200);
@@ -73,6 +78,8 @@ int main() {
         device.endFrame();
     }
     AIVERSE_TEST_CHECK(runtime.pendingProbes()==0);
+    AIVERSE_TEST_CHECK(runtime.validity().validCount()==64);
+    AIVERSE_TEST_CHECK(runtime.fullyValid());
 
     // One changed chunk retains old BLAS for chunk 2 and only uploads changed
     // GPU spans (assuming unchanged node/triangle packet capacities).
@@ -87,10 +94,17 @@ int main() {
     AIVERSE_TEST_CHECK(!partial.full && partial.bytes>0);
     AIVERSE_TEST_CHECK(partial.bytes<baseline.bytes);
     AIVERSE_TEST_CHECK(runtime.pendingProbes()>0 && runtime.pendingProbes()<64);
+    const auto dirtyProbes=runtime.pendingProbes();
+    // Publication dirties the relevant CPU scheduler probes immediately;
+    // the validity mask is resynchronized at the next updateFrame().
+    AIVERSE_TEST_CHECK(!runtime.hasRenderableProbes());
 
     device.beginFrame(300,200);
     auto pending=runtime.updateFrame(16,{0,0,0});
     AIVERSE_TEST_CHECK(pending.submitted.submitted && runtime.busy());
+    AIVERSE_TEST_CHECK(pending.safeForPresentation);
+    AIVERSE_TEST_CHECK(runtime.validity().validCount()==64-dirtyProbes);
+    AIVERSE_TEST_CHECK(!runtime.fullyValid());
     AIVERSE_TEST_CHECK(!runtime.setGeometryRegionCached(first,3,changed,cache));
     device.endFrame();
     device.finish();
@@ -98,7 +112,8 @@ int main() {
     pending=runtime.updateFrame(0,{0,0,0});
     AIVERSE_TEST_CHECK(pending.completed.accepted>0);
     device.endFrame();
-    // Finish remaining dirty probes without presentation while incomplete.
+    // Complete remaining dirty probes; the previously valid portion stays
+    // renderable through the R8 mask while the new batch runs.
     while(runtime.pendingProbes()) {
         device.beginFrame(300,200);
         auto job=runtime.updateFrame(16,{0,0,0});
@@ -110,6 +125,8 @@ int main() {
         AIVERSE_TEST_CHECK(job.completed.accepted>0);
         device.endFrame();
     }
+    AIVERSE_TEST_CHECK(runtime.fullyValid());
+    AIVERSE_TEST_CHECK(runtime.validity().validCount()==64);
     AIVERSE_TEST_CHECK(runtime.shutdown());
     AIVERSE_TEST_CHECK(device.buffers.empty() && device.textures.empty());
 }
