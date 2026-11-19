@@ -1339,3 +1339,35 @@ tests are authored but **NOT RUN** by user request. Follow
 `docs/agent-handoffs/animation-universal.md` Stage 100 for status
 and the next exact work item. Never merge PR #22 to main on
 source inspection alone; wait for native/runtime checks.
+
+## AIVERSE Stage 101 async model resources and GPU retirement pressure
+
+For any native project (independent of FPS/RTS/genre), prefer
+`render::ModelAssetProvider` and `AsyncModelCpuQueue` from
+`engine/render` rather than adding new model loader code. CPU
+`requestAsync`/reader callbacks must be thread-safe. Publish finished
+CPU models through `ModelAssetProvider::publishReady(gfx::Device&,...)`
+on the device owner/render thread, outside an active pass. The
+`source` revision protects against stale workers resurrecting
+hot-reloaded assets. Always call `shutdown`/join before destroying the
+project reader or shared texture cache.
+
+Retired GPU models remain alive until their OWN GPU completion token
+signals (see Stage 100). `ModelResourceCache::retirementStats` reports
+pending models/batches, peak and fallback counts;
+`setRetirementSoftLimit` is a **soft admission throttle** for new
+generic ModelAssetProvider loads, not a hard VRAM cap. Never release
+an object to meet a pressure threshold while its GPU use remains
+unconfirmed. Completed legacy RTS worker publications must not be
+silently discarded under backpressure. The editor exposes the
+metrics through Asset Residency statistics.
+
+`ModelWindow` now has an optional raw static-model preview through
+the independent generic source provider and canonical View. It
+intentionally bypasses type-level tint, material overrides, graph,
+attachments and model correction; do NOT switch ordinary animated
+character/type portraits to this path without full parity work.
+Source code and deferred fixtures were committed, but the actual
+CMake/compiler/GPU tests remain **NOT RUN** as requested. Follow the
+latest `docs/agent-handoffs/animation-universal.md` and add the
+next handoff as a SEPARATE commit after each feature stage.
