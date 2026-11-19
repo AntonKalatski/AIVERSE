@@ -84,7 +84,10 @@ vertex VOut vs_main(VIn in [[stage_in]],
     VOut o;
     o.position=u.viewProj*float4(world,1.0);
     o.uv=in.corner*0.5+0.5;
-    o.color=half4(u.colorSize.rgb,p.w);
+    // Metal does not implicitly narrow float3/float to half4 components.
+    // Convert explicitly to half before interpolating across the rasterizer.
+    o.color=half4(half(u.colorSize.r),half(u.colorSize.g),
+                  half(u.colorSize.b),half(p.w));
     return o;
 }
 fragment half4 fs_main(VOut in [[stage_in]]) {
