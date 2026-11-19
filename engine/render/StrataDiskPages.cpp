@@ -333,8 +333,16 @@ bool DiskIndexPages::readRoot(uint32_t primitive,uint32_t node,
     if(it==state_->entries.end())
         return fail(error,"STRATA root page not in archive");
     std::vector<uint32_t> data;
-    if(!readPage(state_->path,it->second,data))
+    if(!readPage(state_->path,it->second,data)){
+        std::lock_guard lock(state_->mutex);
+        ++state_->counters.failedReads;
         return fail(error,"STRATA pinned root page failed integrity check");
+    }
+    {
+        std::lock_guard lock(state_->mutex);
+        ++state_->counters.completedReads;
+        state_->counters.bytesRead+=uint64_t(data.size())*sizeof(uint32_t);
+    }
     result=std::move(data);
     return true;
 }
