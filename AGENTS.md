@@ -72,9 +72,15 @@ Before editing this feature, read
 check current branch/PR #34 and coordinate changes to the shared renderer.
 Do **not** enable production defaults until compilation, cross-platform
 visual checks and same-scene Mac A/B. Call `Model::markGeometryChanged()` for
-in-place geometry/hierarchy edits; `Renderer3D::invalidateStaticModelCaches()`
-before reload/unload. Camera culling, dynamic LOD decisions, sorting and
-GPU submissions still happen each render frame.
+in-place geometry/hierarchy edits. On model unload call
+`Renderer3D::invalidateModelCachesFor(model)` **before** releasing GPU/model
+resources; on ECS entity despawn or asset replacement call
+`invalidateStaticModelCache(persistentId)` or the generic
+`invalidateEcsStaticModel` adapter. Full scene reload uses
+`Renderer3D::invalidateStaticModelCaches()`. These methods run on the
+renderer thread between submissions, not inside authoritative ECS ticks.
+Camera culling, dynamic LOD decisions, sorting and GPU submissions still
+happen each render frame.
 
 ## Genre-independent ECS mechanics contract (2026-11-18)
 
