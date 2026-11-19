@@ -1246,3 +1246,36 @@ modelRevision updates or source invalidation.
 **NOT RUN:** native C++ build/CTest, hot reload fault injection,
 GPU visual parity and performance tests. See
 [Stage 126 handoff](agent-handoffs/animation-stage126-published-lod-hot-reload-2026-11-19.md).
+
+## Stage 127 — Asset publication revision controls animated source lifetime
+
+The Model's `modelPublicationGeneration` is now validated
+not only by compiled visual LOD retarget maps, but also
+by the MotionWeave presentation source bridge itself.
+A changed Model asset epoch invalidates the current
+animation player and cached Pose even when the same
+`Model*` is reused by an in-place reimport. Submitting
+the old compiled AnimationGraph with the newly published
+Model at the same C++ address is rejected before ECS
+mutations. Native hosts MUST recompile the graph when
+a Model is reimported; graph-only edits with unchanged
+Model epoch may still restore compatible clip clocks.
+
+`PinnedAppearanceBatch` keeps material overrides,
+node assignments and immutable AnimationGraph snapshots
+alive across `View::update` and synchronous
+`View::submit` if an `AppearanceAssetRegistry` publishes
+a replacement key. It does NOT own or extend the
+underlying Model CPU/GPU lifetime; a host ModelResourceCache
+and its fence retirement remain responsible for that
+storage. Use `batch.add(snapshot,world)`,
+`batch.span()` and `batch.clear()` at the correct
+owner-thread boundaries.
+
+The source Model publication epoch, gameplay entity life,
+graph generation and GPU Device epoch are four separate
+concepts; never substitute one for another.
+[Stage 127 handoff](agent-handoffs/animation-stage127-model-epoch-bridge-pinned-appearance-2026-11-19.md).
+
+**NOT RUN:** native CMake/C++ build/link, CTest,
+GPU visual tests, sanitizers or benchmarks.
