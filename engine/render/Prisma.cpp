@@ -983,6 +983,20 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     // not shared by same-resolution Scene/Game cameras.
     Target src = scene;
     auto& motionView = motionViews_[viewId_];
+    // Unexpected teleport: do not accumulate stale color or smear a huge
+    // apparent velocity across a newly selected camera. Explicit camera-cut
+    // notifications still use resetMotionHistory(id) and take precedence.
+    const float3 cameraDelta = f.cameraPos - motionView.previousCameraPos;
+    const bool automaticCut = motionView.valid &&
+        (!std::isfinite(cameraDelta.x) || !std::isfinite(cameraDelta.y) ||
+         !std::isfinite(cameraDelta.z) ||
+         dot(cameraDelta,cameraDelta) > 144.0f); // >12 presentation-world units
+    if (automaticCut) {
+        motionView.valid=false;
+        ++motionView.cutEpoch;
+        if (auto it=temporalViews_.find(viewId_); it!=temporalViews_.end())
+            it->second.valid=false;
+    }
     const bool previousValid = motionView.valid &&
         motionView.width == w && motionView.height == h;
     const auto validInput = [&](const MotionTextureInput& input,
@@ -1159,6 +1173,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     // Seed motion history independently of the effect switches. A cut or
     // resize makes the next temporal pass sharp, never a stale reprojection.
     motionView.previousViewProj=f.viewProj;
+    motionView.previousCameraPos=f.cameraPos;
     motionView.width=w;motionView.height=h;motionView.valid=true;
     motionView.objectVelocity={};
     motionView.reactiveMask={};
