@@ -2255,30 +2255,6 @@
       ]
     },
     {
-      "id": "aiverse-niagara-vfx",
-      "package": null,
-      "path": "skills/visuals/aiverse-niagara-vfx/SKILL.md",
-      "domain": "workflow",
-      "summary": "Legacy Niagara-style discovery alias; use the official SpectraFX workflow",
-      "side": "tools",
-      "runtime": "none",
-      "target": null,
-      "dependencies": [],
-      "backendDependencies": [],
-      "source": "docs/spectrafx.md",
-      "keywords": [
-        "niagara",
-        "unreal",
-        "vfx",
-        "legacy",
-        "compatibility",
-        "ниягара",
-        "анриал",
-        "старая",
-        "совместимость"
-      ]
-    },
-    {
       "id": "aiverse-object-interactions",
       "package": "object-interactions",
       "path": "skills/gameplay/aiverse-object-interactions/SKILL.md",
@@ -3237,40 +3213,6 @@
         "трафик",
         "машин",
         "пешеход"
-      ]
-    },
-    {
-      "id": "aiverse-spectrafx",
-      "package": null,
-      "path": "skills/visuals/aiverse-spectrafx/SKILL.md",
-      "domain": "workflow",
-      "summary": "SpectraFX universal graphs, particle assets and ECS presentation for native games",
-      "side": "tools",
-      "runtime": "none",
-      "target": null,
-      "dependencies": [],
-      "backendDependencies": [],
-      "source": "docs/spectrafx.md",
-      "keywords": [
-        "spectrafx",
-        "spectra",
-        "vfx",
-        "particles",
-        "particle",
-        "graph",
-        "effects",
-        "visual",
-        "ecs",
-        "game",
-        "genre",
-        "gpu",
-        "cpu",
-        "spectrum",
-        "спектрафх",
-        "эффекты",
-        "частицы",
-        "граф",
-        "универсальн"
       ]
     },
     {
