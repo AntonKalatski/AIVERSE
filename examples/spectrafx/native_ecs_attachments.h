@@ -6,6 +6,8 @@
 
 #include <aiverselib/genre/SpectraFX.h>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace aiverse::examples::spectrafx {
 
