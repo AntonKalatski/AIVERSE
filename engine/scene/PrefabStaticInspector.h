@@ -8,6 +8,7 @@
 #include "engine/data/Json.h"
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <string>
 #include <utility>
@@ -89,6 +90,53 @@ private:
     std::shared_ptr<const Catalog> catalog_;
     std::string componentId_,title_;
     Describe describe_;
+};
+
+// Convenience for native games with several static-config domains.
+// Register typed inspectors once, then call registry.append(...) from the
+// native module's existing inspectComponents hook. The editor never has
+// to know or reflect arbitrary user C++ types.
+class PrefabStaticInspectorRegistry {
+public:
+    template<class T>
+    bool add(std::shared_ptr<const storage::PrefabStaticCatalog<T>> catalog,
+             std::string componentId,std::string title,
+             typename PrefabStaticInspector<T>::Describe describe) {
+        if(sealed_ || !catalog || componentId.empty() ||
+           componentId.size()>128 ||
+           componentId.find('.')!=std::string::npos ||
+           entries_.contains(componentId))
+            return false;
+        auto inspector=std::make_shared<const PrefabStaticInspector<T>>(
+            std::move(catalog),componentId,std::move(title),
+            std::move(describe));
+        entries_.emplace(std::move(componentId),
+            [inspector](const World& world,Entity entity,
+                        Json& components,Json& schemas) {
+                inspector->append(world,entity,components,schemas);
+            });
+        return true;
+    }
+    bool seal() {
+        if(sealed_)return false;
+        sealed_=true;
+        return true;
+    }
+    size_t size() const noexcept {return entries_.size();}
+
+    void append(const World& world,Entity entity,
+                Json& components,Json& schemas) const {
+        // NativeModule::inspectComponents receives mutable World&;
+        // we accept a const World&, guaranteeing no ECS writes.
+        for(const auto& [id,read]:entries_) {
+            (void)id;
+            read(world,entity,components,schemas);
+        }
+    }
+private:
+    using Reader=std::function<void(const World&,Entity,Json&,Json&)>;
+    std::map<std::string,Reader> entries_; // stable canonical UI order
+    bool sealed_=false;
 };
 
 } // namespace aiverse::scene
