@@ -120,7 +120,7 @@ public:
     // Budget controls number of probes rebuilt, not their light count or shader pixels.
     // Zero budget is a no-op. Caller must publish the independent dynamic texture after
     // receiving new coefficients; CPU publication here does not touch GPU state.
-    Stats update(size_t probeBudget, float3 camera) {
+    Stats update(size_t probeBudget, float3 camera, std::vector<uint32_t>* published = nullptr) {
         Stats stats;
         if (!geometry_ || probeBudget == 0) return stats;
         const auto tickets = scheduler_.claim(probeBudget, camera);
@@ -129,6 +129,7 @@ public:
             GiDynamicCoefficient out = compute(t.position, stats);
             if (scheduler_.complete(t)) {
                 coeffs_[t.index] = out;
+                if (published) published->push_back(t.index);
                 ++stats.published;
             } else ++stats.stale;
         }
