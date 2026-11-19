@@ -170,6 +170,18 @@ class ModelingWindow final : public EditorWindow {
             state_ = Json{};
             revision_ = -1;
         }
+        if(!open && model_) {
+            // Dock tab closed: release the borrowed rig/pose and enqueue the
+            // old GPU Model at next owner's pre-render frame boundary.
+            // The window object survives for MCP registration/reopening.
+            graph_.reset({});
+            ed.retirePreviewModel(model_);
+            state_=Json{};
+            revision_=-1;
+            pinned_=false;
+            play_=false;
+            if(device_)viewport_.release(*device_); // uses Editor offscreen target queue
+        }
         if (play_ && model_) {
             time_ += float(std::min(dt, .1));
             if (useGraph_ && graph_.graph()) {
