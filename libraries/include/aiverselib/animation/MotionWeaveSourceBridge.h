@@ -104,6 +104,11 @@ public:
                 incomingRigs.emplace(input.sourceId,found->second);
             }
         }
+        // A retirement handoff remains valid for at most 120 complete
+        // source-sync calls. All records are values; no retired Model or
+        // Graph is dereferenced during this expiration sweep.
+        if(syncSerial_!=UINT64_MAX)++syncSerial_;
+        pruneRetirementSnapshots();
         AnimationBridgeStats stats;
         for(const auto& source:sources) {
             auto existing=links_.find(source.sourceId);
@@ -126,8 +131,39 @@ public:
                 presentation.add<AnimationDiagnosticsComponent>(entity);
                 sourceRigs_.insert_or_assign(
                     source.sourceId,incomingRigs.at(source.sourceId));
+                // The opt-in pre-retirement snapshot was taken BEFORE the
+                // old CPU Model was freed. The recreated source must be the
+                // same logical generation but a distinct, explicitly
+                // published Model with an identical copied rig hierarchy.
+                // Reject the SAME address (including allocator reuse) and
+                // a reused epoch conservatively; never read an old pointer.
+                if(auto saved=pendingRetirements_.find(source.sourceId);
+                   saved!=pendingRetirements_.end()) {
+                    const auto& old=saved->second;
+                    const auto newRig=incomingRigs.at(source.sourceId);
+                    const bool compatible=old.generation==source.generation &&
+                        old.publication!=0 &&
+                        source.modelPublicationGeneration!=0 &&
+                        old.publication!=source.modelPublicationGeneration &&
+                        old.modelAddress!=reinterpret_cast<std::uintptr_t>(source.model) &&
+                        old.rig && newRig && *old.rig==*newRig;
+                    if(compatible) {
+                        try {
+                            presentation.get<AnimationPlayerComponent>(entity)
+                                .pendingPlayback=std::move(saved->second.playback);
+                            ++stats.playbackCaptured;
+                        }catch(...) {
+                            ++stats.playbackDeclined;
+                        }
+                    } else ++stats.playbackDeclined;
+                    pendingRetirements_.erase(saved); // consume even on mismatch
+                }
                 ++stats.created;
             } else {
+                // A non-detached live source must never claim a pending
+                // retirement snapshot intended for a recreated entity.
+                if(pendingRetirements_.erase(source.sourceId))
+                    ++stats.playbackDeclined;
                 entity=existing->second;
                 auto& link=presentation.get<AnimationSourceLinkComponent>(entity);
                 auto& asset=presentation.get<AnimationAssetComponent>(entity);
@@ -216,20 +252,21 @@ public:
         return it==links_.end()?kNullEntity:it->second;
     }
     size_t size() const noexcept {return links_.size();}
-    // Transactional resource invalidation: forget only selected source
-    // identities before the host destroys their borrowed Model/Graph.
-    // This is a presentation-thread structural operation, never a worker job.
+    // Default invalidation erases every old state and pending handoff.
+    // Use this for despawns, removals, and Model detach without continuity.
+    // Call on the presentation owner, never during worker dispatch.
     size_t forget(World& presentation,std::span<const uint64_t> sourceIds) {
-        size_t removed=0;
-        for(const uint64_t id:sourceIds) {
-            auto it=links_.find(id);
-            if(it==links_.end())continue;
-            if(presentation.alive(it->second))presentation.destroy(it->second);
-            sourceRigs_.erase(id);
-            links_.erase(it);
-            ++removed;
-        }
-        return removed;
+        return detach(presentation,sourceIds,false);
+    }
+    // Opt-in hot-reimport handshake: call while the OLD CPU Model/Graph
+    // and its player are still readable, BEFORE retiring those assets.
+    // Captures only named playback, then destroys the old ECS entity.
+    // A later sync may consume it once for an identical logical generation
+    // and rig with a different, nonzero publication epoch and Model address.
+    // Unmatched snapshots expire within 120 sync calls, capped at 8192.
+    size_t forgetForReimport(World& presentation,
+                            std::span<const uint64_t> sourceIds) {
+        return detach(presentation,sourceIds,true);
     }
     void clear(World& presentation) {
         for(const auto& [id,entity]:links_) {
@@ -238,6 +275,8 @@ public:
         }
         links_.clear();
         sourceRigs_.clear();
+        pendingRetirements_.clear();
+        syncSerial_=0;
     }
 private:
     // Immutable source rig identity, shared by every actor using the same
@@ -264,7 +303,87 @@ private:
             nodes->emplace_back(node.name,node.parent);
         return nodes;
     }
+    // No owning/borrowed Model or Graph pointers survive pre-retirement.
+    // The old address is an integer-only conservative identity guard:
+    // never dereferenced, and an allocator-reused address rejects handoff.
+    struct RetiredPlayback {
+        uint64_t generation=0;
+        uint64_t publication=0;
+        std::uintptr_t modelAddress=0;
+        std::shared_ptr<const RigHierarchy> rig;
+        render::AnimationGraphInstance::PlaybackSnapshot playback;
+        uint64_t syncSerial=0;
+    };
+    static constexpr size_t kMaxRetiredPlayback=8192;
+    static constexpr uint64_t kRetiredPlaybackSyncLifetime=120;
+    void pruneRetirementSnapshots() {
+        for(auto it=pendingRetirements_.begin();
+            it!=pendingRetirements_.end();) {
+            if(syncSerial_-it->second.syncSerial>kRetiredPlaybackSyncLifetime)
+                it=pendingRetirements_.erase(it);
+            else ++it;
+        }
+    }
+    void saveRetirementSnapshot(const World& presentation,
+                                uint64_t id,Entity entity) {
+        try {
+            if(!presentation.alive(entity))return;
+            const auto& link=presentation.get<AnimationSourceLinkComponent>(entity);
+            const auto& asset=presentation.get<AnimationAssetComponent>(entity);
+            const auto& player=presentation.get<AnimationPlayerComponent>(entity);
+            const auto rig=sourceRigs_.find(id);
+            if(link.sourceId!=id || link.modelPublicationGeneration==0 ||
+               !asset.model || !asset.graph ||
+               asset.graph->model()!=asset.model ||
+               rig==sourceRigs_.end() || !rig->second ||
+               player.restart || !player.instance ||
+               player.active!=asset.graph ||
+               player.instance->graph()!=asset.graph.get() ||
+               !player.instance->healthy())return;
+            auto snapshot=player.instance->snapshotPlayback();
+            if(snapshot.state.empty())return;
+            if(pendingRetirements_.size()>=kMaxRetiredPlayback) {
+                // Reimports are rare, and this only executes at detach;
+                // evict the oldest record instead of growing without bound.
+                auto oldest=pendingRetirements_.begin();
+                for(auto it=std::next(oldest);it!=pendingRetirements_.end();++it)
+                    if(it->second.syncSerial<oldest->second.syncSerial)
+                        oldest=it;
+                pendingRetirements_.erase(oldest);
+            }
+            RetiredPlayback retired;
+            retired.generation=link.generation;
+            retired.publication=link.modelPublicationGeneration;
+            retired.modelAddress=reinterpret_cast<std::uintptr_t>(asset.model);
+            retired.rig=rig->second;
+            retired.playback=std::move(snapshot);
+            retired.syncSerial=syncSerial_;
+            pendingRetirements_.insert_or_assign(id,std::move(retired));
+        }catch(...) {
+            // Optional cosmetic phase retention must not block Model detach.
+            pendingRetirements_.erase(id);
+        }
+    }
+    size_t detach(World& presentation,std::span<const uint64_t> sourceIds,
+                  bool preservePortablePlayback) {
+        if(preservePortablePlayback)pruneRetirementSnapshots();
+        size_t removed=0;
+        for(const uint64_t id:sourceIds) {
+            auto it=links_.find(id);
+            pendingRetirements_.erase(id);
+            if(it==links_.end())continue;
+            if(preservePortablePlayback)
+                saveRetirementSnapshot(presentation,id,it->second);
+            if(presentation.alive(it->second))presentation.destroy(it->second);
+            sourceRigs_.erase(id);
+            links_.erase(it);
+            ++removed;
+        }
+        return removed;
+    }
     std::map<uint64_t,Entity> links_;
     std::map<uint64_t,std::shared_ptr<const RigHierarchy>> sourceRigs_;
+    std::map<uint64_t,RetiredPlayback> pendingRetirements_;
+    uint64_t syncSerial_=0;
 };
 } // namespace aiverse::lib::animation
