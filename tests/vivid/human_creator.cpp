@@ -176,6 +176,17 @@ void test() {
             {0.5f,0.5f,0},{0.25f,0.25f,0.01f}}};
         const auto correspondence=MorphLodSurface::project(
             sourcePositions,faces,lodPositions,0.05f);
+        const auto accelerated=MorphLodSurface::projectAccelerated(
+            sourcePositions,faces,lodPositions,0.05f);
+        req(accelerated.size()==correspondence.size(),
+            "BVH LOD bake returned different number of mappings");
+        for(std::size_t i=0;i<accelerated.size();++i) {
+            req(accelerated[i].triangle==correspondence[i].triangle &&
+                std::fabs(accelerated[i].bary.x-correspondence[i].bary.x)<1.e-5f &&
+                std::fabs(accelerated[i].bary.y-correspondence[i].bary.y)<1.e-5f &&
+                std::fabs(accelerated[i].bary.z-correspondence[i].bary.z)<1.e-5f,
+                "BVH facial LOD projection differs from reference");
+        }
         req(correspondence.size()==2 &&
             correspondence[0].triangle==0 &&
             std::fabs(correspondence[0].bary.x-0.5f)<1.e-5f &&
