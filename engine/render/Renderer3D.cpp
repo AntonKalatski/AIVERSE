@@ -428,11 +428,34 @@ Renderer3D::ResidentMemoryStats Renderer3D::residentMemoryStats() const {
     addBuffer(blitVB_);
     addBuffer(indirectCommands_);
     out.pendingMotionKnownBytes=motionRetirementStats().knownPendingBytes;
-    // Exclusions: external asset Model meshes/textures, Lighting/LightSystem
-    // reflection + spot shadow targets, PersistentGpuScene/geometry pooling,
-    // upload snapshots, pipeline/shader driver memory and Prisma caches.
-    // RHI TextureInfo lacks mip count and physical alignment: all values
-    // are intentionally lower bounds, not complete device VRAM.
+    // Add each mutually exclusive owner exactly once. These owners allocate
+    // RHI handles directly; they never include external Model/Material
+    // textures/buffers and do not borrow Renderer3D's core handles.
+    const auto addOwner=[&](const GpuOwnedMemoryStats& owned,
+                            uint64_t& category) {
+        category=owned.knownBytes();
+        out.liveTextureKnownBytes=GpuOwnedMemoryCounter::saturatingAdd(
+            out.liveTextureKnownBytes,owned.textureKnownBytes);
+        out.liveBufferKnownBytes=GpuOwnedMemoryCounter::saturatingAdd(
+            out.liveBufferKnownBytes,owned.bufferKnownBytes);
+        out.liveTextures+=owned.textures;
+        out.liveBuffers+=owned.buffers;
+        out.unknownTextures+=owned.unknownTextures;
+        out.unknownBuffers+=owned.unknownBuffers;
+        out.multiVersionBuffers+=owned.multiVersionBuffers;
+    };
+    addOwner(lights.ownedGpuMemoryStats(),out.lightSystemKnownBytes);
+    if (persistentUpload_)
+        addOwner(persistentUpload_->ownedGpuMemoryStats(),
+                 out.persistentUploadKnownBytes);
+    addOwner(persistentCull_.ownedGpuMemoryStats(*dev_),
+             out.persistentCullKnownBytes);
+    addOwner(gpuModelCommands_.ownedGpuMemoryStats(*dev_),
+             out.gpuAuthoredKnownBytes);
+    // Exclusions: external asset Model meshes/textures, geometry upload
+    // pools not directly owned by this renderer, transient Metal/GL
+    // driver allocations, pipelines/shaders, and PRISMA-owned targets.
+    // RHI metadata omits mip/physical alignment: this is a LOWER BOUND.
     return out;
 }
 
