@@ -1506,6 +1506,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     stats_.reactiveUsed=validReactive;
     bool motionBlurEncoded = false;
     bool depthOfFieldEncoded = false;
+    bool dofMetricRequested = false;
+    bool dofMetricEncoded = false;
     bool fxaaEncoded = false;
     const PrismaEffect* motionEffect = find(PrismaType::MotionBlur);
     const PrismaEffect* temporalEffect = find(PrismaType::TemporalResolve);
@@ -1624,6 +1626,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                     (f.orthographic || f.depthNear > 0.0f);
                 const bool metricRequested = dof->get("metricFocus") > 0.5f;
                 const bool useMetricFocus = metricRequested && projectionValid;
+                dofMetricRequested = metricRequested;
                 put(dofU.depthInfo, f.depthNear, f.depthFar,
                     f.orthographic ? 1.0f : 0.0f, 0.0f);
                 put(dofU.focusInfo, dof->get("focusDistance"),
@@ -1647,6 +1650,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 ++stats_.passes;
                 src = destination;
                 depthOfFieldEncoded = true;
+                dofMetricEncoded = useMetricFocus;
             }
         }
     }
@@ -2504,6 +2508,12 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                         state.encoded = depthOfFieldEncoded;
                         if (!state.encoded) state.reason = state.pipelinePrepared ?
                             "DoF depth/target unavailable" : "DoF pipeline unavailable";
+                        else if (dofMetricRequested && !dofMetricEncoded) {
+                            // The authored metric mode ran in legacy device
+                            // depth because camera near/far was not usable.
+                            state.degraded = true;
+                            state.reason = "metric focus rejected: invalid camera near/far; legacy depth used";
+                        }
                     }
                 }
                 break;
