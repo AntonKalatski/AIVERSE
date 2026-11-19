@@ -133,6 +133,10 @@ void WorldScene::setVegetationPresentationTick(uint64_t tick) {
     if(terraForest_)terraForest_->setPresentationTick(tick);
     if(terraHorizon_)terraHorizon_->setPresentationTick(tick);
 }
+void WorldScene::setVegetationHorizonSpatialWind(bool enabled) {
+    vegetationHorizonSpatialWind_=enabled;
+    if(terraHorizon_)terraHorizon_->setSpatialWindVariation(enabled);
+}
 std::shared_ptr<WorldScene::Prepared> WorldScene::prepare(Cell cell,const AssetReader& reader) {
     const auto& asset=assets_.chunks.at(cell);std::string text;
     if(!reader(asset.file,text))throw JsonError("world.scene: read/hash failure: "+asset.file);
