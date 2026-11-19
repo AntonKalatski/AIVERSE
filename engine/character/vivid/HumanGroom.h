@@ -31,6 +31,9 @@ public:
     // For imported meshes, caller owns model-to-groom coordinate conversion.
     bool setCollisionMesh(std::span<const render::float3> vertices,
                           std::span<const std::uint32_t> triangles);
+    // One-shot bind-pose transfer of procedural roots onto the authored proxy.
+    // Keeps each guide's rest/previous offsets coherent after relocation.
+    bool attachRootsToCollisionMesh();
     void clearCollisionMesh() noexcept;
     bool hasCollisionMesh() const noexcept {return !collisionTriangles_.empty();}
     std::unique_ptr<render::Model> makeCardModel(const HumanDNA& dna) const;
