@@ -182,6 +182,68 @@ Metal/Vulkan validation has been claimed. The implementation remains a
 CPU reference path to compare eventual compute culling against; there is
 **no GPU scene buffer, RHI command upload or Strata draw path** yet.
 
+## Stage 7A — experimental GPU cluster metadata (not geometry residency)
+
+`engine/render/StrataGpuScene.h/.cpp` supplies a versioned, fixed-layout
+storage buffer for CPU-prepared cluster records, primitive mappings and
+hierarchy root indices. It is optional, off by default, and requires the
+source `Model` to have been uploaded into **the existing**
+`GlobalGeometryPool`. It does not create or own geometry VB/IB pages.
+
+The CPU packer `strata::packGpuMetadata(ModelAsset, bytes, error)` is pure,
+transactional and validates unique primitive keys, all cluster hierarchies,
+bounds, materials, source-local index ranges and u32 offsets. Layout version 1:
+
+| GPU metadata record | Size | Purpose |
+| --- | ---: | --- |
+| `GpuMetadataHeader` | 32 B | Version, counts, byte offsets |
+| `GpuPrimitive` | 32 B | Model mesh/primitive IDs, global node/root spans |
+| `GpuNode` | 64 B | AABB, global child ID, **source-local** index span, error/flags |
+| Root IDs | 4 B each | Global root IDs, padded to 16-byte total length |
+
+The compact arrays are stored in one RHI `BufferType::Storage` buffer
+per eligible source (not per instance). Default bounds: 1 MiB per source,
+8 MiB per scene for metadata. Experimental upload is restricted to Metal
+and Vulkan devices reporting compute support and a matching existing
+`Model::geometryPoolPage`, shared VB/IB and nonempty pooled extents.
+Noneligible sources do not abort scene loading and continue normal rendering.
+`Model::geometryRevision`, source identity and source GPU handles are checked
+when retrieving metadata; stale source records are never silently reused.
+
+Native integration is explicit:
+```cpp
+render::GeometryScene scene;
+scene.setStrataStagingEnabled(true);
+scene.setStrataGpuMetadataEnabled(true); // both OFF by default
+scene.loadPrepared(dev, sceneJson, std::move(models));
+auto gpuBuffer = scene.strataGpuMetadataBuffer("models/stone.glb");
+auto stats = scene.stats();
+// strataGpuMetadataSources, strataGpuMetadataDeclined,
+// strataGpuMetadataFailures, strataGpuMetadataBytes
+scene.shutdown(dev); // call before destroying gfx::Device
+```
+
+The metadata buffer is read-only for future compute code; it is **not** a
+GPU scene draw list and no compute shader consumes it yet. `GpuNode::resident`
+is a snapshot of the CPU cluster flag, NOT proof of GPU-resident Strata
+geometry. Most importantly, `GpuNode::sourceFirstIndex` references the
+auxiliary CPU `strata::Asset::indices`, not the `Model::ib` index stream or
+any pooled GPU allocation. Until the shared pool gains safe, versioned
+**auxiliary Strata index-stream allocations**, **do not emit** indexed or
+indirect draws from these metadata offsets.
+
+Existing `GeometryCluster` preparation can make `Model::geometry` non-null
+and intentionally exclude that model from the current rigid shared geometry
+pool. Such a source will decline experimental GPU metadata staging. Resolve
+the pool's admission/ownership policy explicitly; do not bypass its safety
+guards. This stage leaves `GlobalGeometryPool.cpp`, active `Renderer3D`
+batching, all render passes, ECS and saved scene formats unmodified.
+
+`aiverse_strata_gpu_scene` builds the metadata layer and CTest
+`strata_gpu_scene` checks CPU binary layout, multi-primitive global
+offsets, source flags, malformed ranges and transactional failure.
+**Native compilation and GPU/CTest execution have not been verified**.
+
 ## Architectural constraints
 - **One scene/instance truth**: `GeometryScene` owns static render instances
   and HLOD; do not create separate Strata transforms or introduce gameplay
@@ -205,18 +267,42 @@ CPU reference path to compare eventual compute culling against; there is
 1. Compile and execute focused tests on a native project checkout:
    ```sh
    cmake -S . -B build/strata -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_STRATA=ON
-   cmake --build build/strata --target aiverse_strata_builder_tests aiverse_strata_model_adapter_tests aiverse_strata_view_tests -j 8
-   ctest --test-dir build/strata -R '^strata_(builder|model_adapter|view)$' --output-on-failure
+   cmake --build build/strata --target aiverse_strata_builder_tests aiverse_strata_model_adapter_tests aiverse_strata_view_tests aiverse_strata_gpu_scene_tests -j 8
+   ctest --test-dir build/strata -R '^strata_(builder|model_adapter|view|gpu_scene) --output-on-failure
    ```
 2. Add a recording-device scene fixture comparing Strata staging OFF/ON,
    instance deduplication, material/LOD/shadow draw parity and unload/reload.
 3. Validate silhouette and seam quality for different LOD depths and attribute
    discontinuities; parent simplification and locked borders alone do not
    guarantee crack-free transitions.
-4. Integrate Strata auxiliary index-stream allocation with the **existing**
-   `GlobalGeometryPool`, including versioned GPU lifetime and frame fences.
-   Never publish `SelectedRange::firstIndex` as an index into the original
-   `Model::ib`. It references `Strata::Asset::indices` only.
+4. Extend **existing** `GlobalGeometryPool` to safely allocate an auxiliary
+   Strata index stream on an existing pooled page, with explicit scene/
+   model revision checks, upload failure rollback, frame-fenced retirement
+   and shared-buffer synchronization. Do not add a second geometry VB/IB pool.
+   All current Strata metadata offsets remain source-local, not drawable.
+5. Build a capability-gated GPU scene/cluster selection path using the
+   CPU planner as a correctness oracle. Submit visible ranges through one
+   existing `Renderer3D` batching/MDI owner, or fall back to normal models.
+6. Benchmark CPU and GPU time separately, validate view-dependent shadows,
+   reflection views and multi-world lifetime, then pursue streaming.
+
+## Verification policy
+
+Compiler, CTest, screenshots, GPU timing and benchmarks must be reported only
+after **actual execution** with exact logs or CI URLs. Queued/cancelled runs
+are not passing results.
+ --output-on-failure
+   ```
+2. Add a recording-device scene fixture comparing Strata staging OFF/ON,
+   instance deduplication, material/LOD/shadow draw parity and unload/reload.
+3. Validate silhouette and seam quality for different LOD depths and attribute
+   discontinuities; parent simplification and locked borders alone do not
+   guarantee crack-free transitions.
+4. Extend **existing** `GlobalGeometryPool` to safely allocate an auxiliary
+   Strata index stream on an existing pooled page, with explicit scene/
+   model revision checks, upload failure rollback, frame-fenced retirement
+   and shared-buffer synchronization. Do not add a second geometry VB/IB pool.
+   All current Strata metadata offsets remain source-local, not drawable.
 5. Build a capability-gated GPU scene/cluster selection path using the
    CPU planner as a correctness oracle. Submit visible ranges through one
    existing `Renderer3D` batching/MDI owner, or fall back to normal models.
