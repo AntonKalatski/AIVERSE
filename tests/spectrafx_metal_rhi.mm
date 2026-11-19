@@ -17,6 +17,8 @@
 #include "engine/fx/SpectraFxView.h"
 #include "engine/fx/SpectraFxGpuEvolution.h"
 #include "engine/fx/SpectraFxGpuBillboardRenderer.h"
+#include "engine/fx/SpectraFxGpuParticleSlots.h"
+#include "engine/fx/SpectraFxGpuImpactFeedback.h"
 
 // The production backend's optional shader-archive loader only needs this
 // platform file-reader symbol. In a standalone headless test no game bundle
@@ -197,6 +199,102 @@ int main() {
         std::printf("[spectrafx-metal-rhi] churn_frames=%d retire_remaining=%zu "
                     "gpu_healthy=%d\n",kChurnFrames,retiring.size(),
                     device->gpuHealthy()?1:0);
+
+        // Stage 100: exercise the real asynchronous Metal impact callback,
+        // including an invalidated scene epoch and recycled particle handles.
+        // Callback data stays presentation-only; neither path writes ECS.
+        aiverse::fx::SpectraFxGpuParticleSlots impactSlots;
+        check(impactSlots.init(*device,1,true,sharedCompute),
+              "GPU impact slots allocated with real RHI");
+        aiverse::fx::SpectraFxGpuImpactFeedback feedback;
+        aiverse::fx::SpectraFxGpuEnvironment collision{};
+        collision.acceleration={0,0,0};
+        collision.damping=1;
+        collision.collideGround=true;
+        collision.reportImpacts=true;
+        collision.groundHeight=0;
+        collision.restitution=0;
+        collision.tangentRetention=1;
+        aiverse::fx::SpectraFxGpuSeed falling;
+        falling.position={0,0.05f,0.5f};
+        falling.velocity={0,-4,0};
+        falling.age=0;falling.lifetime=5;
+        if(impactSlots.evolution().ready()) {
+            device->beginFrame(kWidth,kHeight);
+            const auto oldHandle=impactSlots.emit(falling);
+            check(oldHandle.valid(),"first generation-safe GPU impact slot");
+            check(impactSlots.step(0.05f,collision),
+                  "first native GPU ground-collision compute");
+            check(feedback.request(*device,impactSlots),
+                  "first asynchronous RHI impact readback queued");
+            // Simulate rollback/floating-origin reset BEFORE GPU completion.
+            feedback.reset();
+            device->endFrame();
+
+            // Three frame slots must be cycled before asserting callback
+            // delivery/discard. The fourth frame supplies safe slack.
+            for(int frame=0;frame<4;++frame) {
+                device->beginFrame(kWidth,kHeight);
+                device->endFrame();
+            }
+            int delivered=0;
+            feedback.drain(impactSlots,
+                           [&](const aiverse::fx::SpectraFxGpuImpact&) {
+                               ++delivered;
+                           });
+            check(feedback.pending()==0 && delivered==0,
+                  "old scene epoch cannot publish delayed GPU impacts");
+
+            device->beginFrame(kWidth,kHeight);
+            check(impactSlots.kill(oldHandle),"retire old impact particle");
+            const auto newHandle=impactSlots.emit(falling);
+            check(newHandle.valid() &&
+                  newHandle.generation!=oldHandle.generation,
+                  "recycled GPU slot receives a new generation");
+            check(impactSlots.step(0.05f,collision),
+                  "second real GPU impact collision");
+            check(feedback.request(*device,impactSlots),
+                  "new scene can request impact after reset");
+            device->endFrame();
+
+            for(int frame=0;frame<4;++frame) {
+                device->beginFrame(kWidth,kHeight);
+                device->endFrame();
+            }
+            const size_t queuedBeforeReuse=feedback.pending();
+            check(queuedBeforeReuse==1,
+                  "GPU callback queued a genuine collision event");
+
+            device->beginFrame(kWidth,kHeight);
+            check(impactSlots.kill(newHandle),
+                  "recycle particle after GPU callback arrival");
+            const auto recycled=impactSlots.emit(falling);
+            check(recycled.valid() &&
+                  recycled.index==newHandle.index &&
+                  recycled.generation!=newHandle.generation,
+                  "new entity generation cannot alias queued GPU feedback");
+            const auto discardedBefore=feedback.stats().discarded;
+            feedback.drain(impactSlots,
+                           [&](const aiverse::fx::SpectraFxGpuImpact&) {
+                               ++delivered;
+                           });
+            check(delivered==0 && feedback.pending()==0 &&
+                  feedback.stats().discarded>discardedBefore,
+                  "stale GPU impact rejected on particle generation mismatch");
+            device->endFrame();
+            // Finish the final RHI slot writes before destroying storage.
+            for(int frame=0;frame<4;++frame) {
+                device->beginFrame(kWidth,kHeight);
+                device->endFrame();
+            }
+            check(device->gpuHealthy(),"GPU remains healthy after callback churn");
+            std::printf("[spectrafx-metal-rhi] impact_queued=%zu "
+                        "impact_discarded=%llu delivered=%d\n",
+                        queuedBeforeReuse,
+                        static_cast<unsigned long long>(feedback.stats().discarded),
+                        delivered);
+        }
+        impactSlots.shutdown();
 
         // Teardown order: the standalone RHI device outlives all dependent
         // particle textures, shaders, render targets and shared compute state.
