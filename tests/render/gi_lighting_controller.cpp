@@ -1,0 +1,87 @@
+#include "engine/render/GiLightingController.h"
+#include "tests/AlwaysCheck.h"
+#include "tests/cloth/FakeDevice.h"
+#include <memory>
+#include <vector>
+
+using namespace aiverse::render;
+
+struct GiBackendDevice : FakeDevice {
+    bool halfFloatSupported=true;
+    bool supports(gfx::PixelFormat format) const override {
+        if(format==gfx::PixelFormat::RGBA16F)return halfFloatSupported;
+        return FakeDevice::supports(format);
+    }
+};
+
+static std::shared_ptr<const GiChunkedGeometrySnapshot> wall() {
+    GiChunkedGeometryBuilder builder;
+    builder.replace(3, {
+        {{-4,-4,2},{4,-4,2},{4,4,2},0},
+        {{-4,-4,2},{4,4,2},{-4,4,2},0}
+    }, {{1,0,0}});
+    return std::make_shared<GiChunkedGeometrySnapshot>(builder.publish());
+}
+
+int main() {
+    GiBackendDevice device;
+    device.info_.backend=gfx::Backend::GLES3;
+    device.computeEnabled=true; // GLES3 contract still has NO compute requirement.
+    GiTransportConfig cfg;
+    cfg.origin={-2,-2,-2};
+    cfg.nx=4;cfg.ny=1;cfg.nz=1;
+    cfg.raysPerProbe=16;
+    cfg.cpuMaxProbes=2;
+
+    GiLightingController controller;
+    AIVERSE_TEST_CHECK(controller.initialize(device,cfg));
+    AIVERSE_TEST_CHECK(controller.mode()==GiTransportMode::CpuProbes);
+    AIVERSE_TEST_CHECK(controller.maxMovingLights()==64);
+    AIVERSE_TEST_CHECK(controller.cpuRuntime()!=nullptr);
+    AIVERSE_TEST_CHECK(controller.gpuRuntime()==nullptr);
+    auto scene=wall();
+    AIVERSE_TEST_CHECK(controller.setGeometry(scene,1));
+    AIVERSE_TEST_CHECK(!controller.setGeometry(scene,1)); // monotonic revisions
+    AIVERSE_TEST_CHECK(controller.setLights({GiMovingLight{7,{0,0,0},{1,0,0},5,10}}));
+    const auto step=controller.updateFrame({0,0,0});
+    AIVERSE_TEST_CHECK(step.mode==GiTransportMode::CpuProbes);
+    AIVERSE_TEST_CHECK(step.cpu.trace.claimed<=2 && step.canPresent);
+    AIVERSE_TEST_CHECK(controller.setLights({}));
+    AIVERSE_TEST_CHECK(controller.updateFrame({0,0,0}).cpu.upload.probes>=1);
+    AIVERSE_TEST_CHECK(controller.shutdown());
+    AIVERSE_TEST_CHECK(controller.mode()==GiTransportMode::Off);
+    AIVERSE_TEST_CHECK(device.buffers.empty() && device.textures.empty());
+
+    // Metal and Vulkan use compute only when the concrete device reports
+    // the storage/image/queue support; no GPU execution is proved by this fake.
+    for(const auto backend:{gfx::Backend::Metal,gfx::Backend::Vulkan}) {
+        device.info_.backend=backend;
+        device.computeEnabled=true;
+        device.halfFloatSupported=true;
+        AIVERSE_TEST_CHECK(controller.initialize(device,cfg));
+        AIVERSE_TEST_CHECK(controller.mode()==GiTransportMode::GpuCompute);
+        AIVERSE_TEST_CHECK(controller.maxMovingLights()==GiGpuSmallScene::kMaxLights);
+        AIVERSE_TEST_CHECK(controller.gpuRuntime()!=nullptr);
+        AIVERSE_TEST_CHECK(controller.setGeometry(scene,2));
+        std::vector<GiMovingLight> tooMany(17);
+        AIVERSE_TEST_CHECK(!controller.setLights(tooMany));
+        AIVERSE_TEST_CHECK(controller.shutdown());
+        AIVERSE_TEST_CHECK(device.buffers.empty() && device.textures.empty());
+
+        // No writable RGBA16F, or no compute: same CPU mode remains usable.
+        device.halfFloatSupported=false;
+        AIVERSE_TEST_CHECK(controller.initialize(device,cfg));
+        AIVERSE_TEST_CHECK(controller.mode()==GiTransportMode::CpuProbes);
+        AIVERSE_TEST_CHECK(controller.shutdown());
+        device.halfFloatSupported=true;
+        device.computeEnabled=false;
+        AIVERSE_TEST_CHECK(controller.initialize(device,cfg));
+        AIVERSE_TEST_CHECK(controller.mode()==GiTransportMode::CpuProbes);
+        AIVERSE_TEST_CHECK(controller.shutdown());
+    }
+
+    cfg.cpuMaxProbes=0;
+    AIVERSE_TEST_CHECK(!controller.initialize(device,cfg));
+    AIVERSE_TEST_CHECK(!controller.ready());
+    return 0;
+}
