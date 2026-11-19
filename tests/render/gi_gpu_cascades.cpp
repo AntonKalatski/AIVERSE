@@ -92,7 +92,10 @@ int main() {
     AIVERSE_TEST_CHECK(step.levels[0].scroll.recycled==4);
     AIVERSE_TEST_CHECK(!step.levels[1].scroll.changed);
     AIVERSE_TEST_CHECK(!step.levels[2].scroll.changed);
-    AIVERSE_TEST_CHECK(step.validLevels==2);
+    // Fine level still has 12 valid probes; the R8 validity mask suppresses
+    // only its entering slab, so all three levels have safe partial output.
+    AIVERSE_TEST_CHECK(step.validLevels==3);
+    AIVERSE_TEST_CHECK(cascade.level(0).validity().validCount()==12);
     d.endFrame();
     AIVERSE_TEST_CHECK(cascade.shutdown());
     AIVERSE_TEST_CHECK(d.buffers.empty() && d.textures.empty());
