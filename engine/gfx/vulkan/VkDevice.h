@@ -219,7 +219,7 @@ private:
     bool createImage(VTexture& t, VkImageUsageFlags usage);
     VkSampler samplerFor(const TextureDesc& d, const VTexture& t);
     void* stagingWrite(size_t size, VkBuffer& buf, VkDeviceSize& offset);
-    void uploadImage(VTexture& t, int level, int x, int y, int w, int h, const void* data, size_t bytes, VkCommandBuffer cb,
+    bool uploadImage(VTexture& t, int level, int x, int y, int w, int h, const void* data, size_t bytes, VkCommandBuffer cb,
                      int z = 0, int depth = 1, int baseArrayLayer = 0, int layerCount = 1);
     void generateMips(VTexture& t, VkCommandBuffer cb);
     void initImageLayout(VTexture& t, VkCommandBuffer cb, bool clear);
