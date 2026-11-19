@@ -205,10 +205,17 @@ public:
                     const bool rigMatches=oldRig!=sourceRigs_.end() &&
                         newRig!=incomingRigs.end() && oldRig->second &&
                         newRig->second && *oldRig->second==*newRig->second;
-                    const bool epochSafe=!assetEpochChanged ||
-                        (link.modelPublicationGeneration!=0 &&
-                         source.modelPublicationGeneration!=0 &&
-                         asset.model!=source.model);
+                    // A graph-only recompile may retain playback on
+                    // the SAME immutable Model and epoch. A different
+                    // Model requires BOTH distinct nonzero publication
+                    // epochs, regardless of whether the host forgot to
+                    // increment the publication ID. A same-address in-place
+                    // reimport always restarts.
+                    const bool modelChanged=asset.model!=source.model;
+                    const bool epochSafe=(!modelChanged && !assetEpochChanged) ||
+                        (modelChanged && assetEpochChanged &&
+                         link.modelPublicationGeneration!=0 &&
+                         source.modelPublicationGeneration!=0);
                     const bool eligible=link.generation==source.generation &&
                         rigMatches && epochSafe && asset.model && asset.graph &&
                         !player.restart && player.instance &&
