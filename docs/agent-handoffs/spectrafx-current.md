@@ -1,5 +1,29 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 113 — actual screenshot + Metal timing inspection complete
+
+User uploaded `spectrafx-visual-review.ppm` and `ctest_metal.log`.
+The 532×400 contact sheet was **visually inspected**: camera A
+blue box occludes the center of a red/orange FX ring, camera B shifts
+box/FX projection, post-reset image has no residual particle, PRISMA
+shows layered HDR/Bloom arcs. Tiny 128×128 fixtures are not proof of
+production artistic quality.
+
+From the actual MetalGPU log on Apple M3 Ultra: GPU timing
+**requested=512 scheduled=512 valid=512 invalid=0**,
+**p50=0.0849 ms p95=0.3166 ms** (whole small test frame).
+`MTLDevice.currentAllocatedSize` **1472 → peak 1728 → after 1664 KiB**
+(+192 KiB after vs baseline), **device-wide allocation only**,
+not proof of GPU leak or physical residency. Stress **512×256 PASS**,
+`peak_nominal_kib=36`, `retire_remaining=0 gpu_healthy=1`.
+Four native MetalGPU tests PASS on validated engine SHA
+`441d69e08836888604e0aee6ec71765a51fddddc`.
+Source unchanged. Remaining: interactive Editor QA, memory stability and
+perceptual alpha overlap.
+Full handoff:
+`docs/agent-handoffs/spectrafx-stage113-visual-gpu-profile-2026-11-20.md`.
+
+
 ## Stage 112 — Stage 111 strict native + visual review PASS (M3 Ultra)
 
 User-provided acceptance at validated source SHA

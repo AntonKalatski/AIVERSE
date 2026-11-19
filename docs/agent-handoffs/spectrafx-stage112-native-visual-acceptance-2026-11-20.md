@@ -95,3 +95,16 @@ remain on the user's Mac and have not been seen by this agent.
 **Tested SHA belongs to the code release**:
 `441d69e08836888604e0aee6ec71765a51fddddc`.
 Later documentation commits do not imply rerunning tests.
+
+## Follow-up actual visual + GPU profiling evidence (Stage 113)
+
+User uploaded the contact sheet PPM and verbose Metal CTest log, and
+they were directly inspected. `512/512` GPU timing samples valid;
+whole-frame p50 `0.0849 ms`, p95 `0.3166 ms`;
+device-wide Metal allocation `1472 KiB` baseline,
+`1728 KiB` peak, `1664 KiB` after.
+Four MetalGPU CTests PASS. The contact sheet visibly confirms camera
+projection changes, opaque center occlusion, no reset ghost and
+PRISMA's visible particle arcs, with aliasing expected at 128x128.
+No subjective production-quality sign-off or driver leak claim.
+See `docs/agent-handoffs/spectrafx-stage113-visual-gpu-profile-2026-11-20.md`.
