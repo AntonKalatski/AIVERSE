@@ -6,6 +6,7 @@
 // frame, and uses bind() rather than exposing incomplete atlas textures.
 #pragma once
 #include "GiGpuTicketQueue.h"
+#include "GiWorldDirtyAccumulator.h"
 #include "Renderer3D.h"
 #include <algorithm>
 #include <cmath>
@@ -130,6 +131,22 @@ public:
         }
         lights_=std::move(next);
         return true;
+    }
+
+    // Presentation-only dirty events may arrive while a GPU dispatch is still
+    // working. The scheduler increments source revisions so its stale results
+    // can NEVER be acknowledged on a later Vulkan VkFence/Metal callback.
+    // Geometry/material edits must also publish rebuilt immutable GPU BVH.
+    size_t invalidate(GiBounds bounds,GiDirtyReason reason,
+                      float influenceRadius=0) {
+        if(!ready()) return 0;
+        return scheduler_.invalidate(bounds,reason,influenceRadius);
+    }
+
+    GiWorldDirtyAccumulator::Stats applyWorldChanges(
+            GiWorldDirtyAccumulator& changes) {
+        if(!ready())return {};
+        return changes.flush(scheduler_);
     }
 
     // Unlike the CPU path, this does not block until GPU work is complete.
