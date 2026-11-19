@@ -641,3 +641,12 @@ A new `MorphLodSurface::projectAccelerated` builds a median-split triangle BVH f
 VIVID Creator now has `Facial LOD surface bake` controls for choosing separate source/target model meshes, selecting the allowed projection distance and exporting `vivid-facial-lod.mapping.json` plus `vivid-facial-lod.morphs.json`. The mapping includes exact source fingerprint, barycentric references and sorted model-relative target vertex IDs. This is an **offline authoring/export path**; GPU actor LOD switching, correct per-LOD materials/skinning, one-transaction multi-file publication and topology-aware seam constraints are not yet complete.
 
 New C++ source and regression tests are committed but **not compiled or run**. Stage 7C detailed handoff and implementation commits are in `docs/agent-handoffs/vivid.md`.
+
+
+## Stage 7D — full-model GPU actor facial morph parity across authored LODs (2026-11-19)
+
+The Creator now optionally publishes an authored Stage 7C LOD facial mapping into VIVID's existing **full-model** `GpuActorStream` vertex override. `MorphLodGpuAuthoring::combine` retains all original facial morph deltas, maps compact target-LOD deltas onto their exact model-relative vertex IDs, validates identical target name/order and rejects conflicting or invalid source/LOD vertices. One existing ARKit weight buffer therefore drives original and authored LOD morphs in the same Metal GPU compute dispatch; Renderer3D continues selecting authored `MeshDef::lods` normally. No GPU buffer is replaced mid-render.
+
+Creator enables this after a successful LOD bake and provides an optional publication toggle and validated `Load baked LOD mapping` control. A normal rare GPU-idle rebuild acquires the new full-model shared asset, preserving the existing per-actor resource ownership rules. Source fingerprint is recomputed on every reimport; prepared model streams may append vertices after the stable original prefix.
+
+This stage is currently **one authored LOD mapping per actor**, not a multi-LOD publish pipeline. It does not generate decimated meshes, skin palettes or Renderer3D LOD metadata. The VIVID actor remains Metal-only, so Vulkan/GLES compute parity is still open. New code and regression checks are committed, but **native C++ compile, CTest, real Metal GPU actor/LOD image parity and automated Creator acceptance have NOT RUN**. Consult `docs/agent-handoffs/vivid.md` Stage 7D for commit SHAs, test provenance and next tasks.
