@@ -936,3 +936,5 @@ Read current feature source, confirmed `main` is already an ancestor and that sc
 ### Next step
 
 Feature-first option: persist a small, read-only rolling distribution of per-stage CPU timing (e.g. last 120 eligible scene passes) to compare spikes/P95 without confusing CPU vs GPU and without allocating per frame. When switching to validation, reconcile stale Stage 10/11/13 policy tests and add timed-path coverage for no-items/no-MDI, pipeline warming, backend fallback, mixed geometry pages, order parity and instrumentation OFF. Run Metal/Vulkan visual parity and balanced same-camera A/B/A before considering merge.
+
+**Stage 30 opt-in overhead follow-up:** revised the short-command-count rejection and failed indirect submission branches to call the new Stage 30 timing clock only when `profiling_` is active. Original successful path retains its pre-existing timestamps for the independent `AIVERSE_ICB_PROFILE` trace; fallback drawing, backend conditions and counters are unchanged. Re-fetched source only, native compile/CTest/Metal tests NOT RUN.

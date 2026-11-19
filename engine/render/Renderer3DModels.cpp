@@ -1428,14 +1428,18 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     // Building CPU ICB commands on Metal has a measurable setup cost.
     // Avoid switching to indirect for tiny groups where indexed draws win.
     const size_t minimumCommands = dev_->info().backend == gfx::Backend::Metal ? indirectCommandThreshold() : 4u;
+    if (commands.size() < minimumCommands) {
+        if (cpuStages) {
+            cpuStages->commandPackingMs += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - packStart).count();
+            ++cpuStages->underThreshold;
+        }
+        return false;
+    }
     const auto afterGrouping = std::chrono::steady_clock::now();
     if (cpuStages) {
         cpuStages->commandPackingMs += std::chrono::duration<double, std::milli>(
             afterGrouping - packStart).count();
-    }
-    if (commands.size() < minimumCommands) {
-        if (cpuStages) ++cpuStages->underThreshold;
-        return false;
     }
     if (!drawModelBatch(items, count, phase, false, false, instancePalette)) {
         if (cpuStages) {
@@ -1472,18 +1476,22 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     }
     const bool indirectSubmitted = indirectCommands_.valid() &&
         dev_->drawIndexedIndirect(indirectCommands_, 0, uint32_t(commands.size()));
-    const auto afterSubmit = std::chrono::steady_clock::now();
-    if (cpuStages) {
-        cpuStages->backendSubmitMs += std::chrono::duration<double, std::milli>(
-            afterSubmit - afterUpload).count();
-    }
     if (!indirectSubmitted) {
-        if (cpuStages) ++cpuStages->backendFallbacks;
+        if (cpuStages) {
+            cpuStages->backendSubmitMs += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - afterUpload).count();
+            ++cpuStages->backendFallbacks;
+        }
         for (uint32_t n = 0; n < count; ++n)
             drawModelBatch(items + n, 1, phase);
         return true;
     }
-    if (cpuStages) ++cpuStages->submitted;
+    const auto afterSubmit = std::chrono::steady_clock::now();
+    if (cpuStages) {
+        cpuStages->backendSubmitMs += std::chrono::duration<double, std::milli>(
+            afterSubmit - afterUpload).count();
+        ++cpuStages->submitted;
+    }
     modelStats_.mdiIndirectCommandBytes +=
         commands.size() * sizeof(gfx::DrawIndexedIndirectCommand);
     if (existingIndirectBuffer) ++modelStats_.mdiIndirectPrefixOverwrites;
