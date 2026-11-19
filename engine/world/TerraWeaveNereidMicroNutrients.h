@@ -72,6 +72,12 @@ inline std::optional<ForestMicroKey> nearestNereidMicroCell(
         Vec3 mouth,uint64_t bodyKey,
         const ForestMicroWaterSampler& waterAt,
         ForestNereidMicroJunctionSettings settings) {
+    // This is also a public native helper. Enforce the bounded search
+    // contract here, not only in buildNereidMicroJunctions: an external
+    // caller could otherwise supply UINT32_MAX radius and stall a tick.
+    validateForestNereidMicroJunctionSettings(settings);
+    if(!bodyKey || !waterAt)
+        throw std::invalid_argument("TerraWeave invalid micro body/sampler");
     // A malformed authored mouth can carry an arbitrary Fixed raw value.
     // Validate in raw units BEFORE multiplying by 100 (centimetres).
     constexpr int64_t mouthLimitRaw=
