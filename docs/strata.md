@@ -1087,3 +1087,123 @@ multiview fixtures, then materially varied, simplified and multi-instance
 cases. Continue enforcing one `GlobalGeometryPool` owner and one
 `Renderer3D` draw authority; only then consider opt-in exclusive
 Legacy/Strata production switching.
+
+
+## Stage 12 — native Metal raw shadow-depth and independent two-view parity (2026-11-19)
+
+**Implementation is committed; native compilation and execution are NOT
+YET VERIFIED**. This is a new, opt-in, standalone fixture that does not
+modify the previously owner-verified Stage 11 raster fixture, does not
+switch Strata production renderer ownership, and does not introduce a
+second GPU geometry pool.
+
+### Diagnostic GPU API and lifetime
+
+- `engine/gfx/Gfx.h`: `gfx::Device::readDepthTextureAsync(TextureHandle,
+  DepthReadFn)` is optional (default false on other RHI backends);
+  returns tightly packed native `float32` pixels in a
+  `std::vector<uint8_t>` with width and height, or empty data on GPU
+  failure. The callback fires on the owning device thread at a later
+  `beginFrame`. The caller must schedule it after the writing pass
+  and keep the texture alive until the command completes.
+- `engine/gfx/metal/GfxMetal.mm`: bounded, non-stalling Metal
+  `Depth32Float` private-texture-to-shared-buffer GPU blit. It only
+  accepts non-multisampled 2D depth texture; rejects open encoders,
+  invalid handles, unsupported format, dimensions over 4096², more
+  than eight outstanding readbacks or transfers over 64 MiB.
+  Uses 256-byte aligned Metal blit rows, repacks as tightly packed
+  float32, checks GPU completion status and delivers callbacks on
+  the device owner thread; no global synchronizing GPU wait.
+  This API remains unused in ordinary rendering.
+- `engine/render/Renderer3D.h/.cpp`:
+  `requestSunShadowDepthReadback(DepthReadFn)` exposes **no owned
+  shadow texture handle** and delegates to the RHI only when an
+  active sun shadow map exists. Call after `Renderer3D::render`
+  and after ending the still-open main pass.
+
+### Stage 12 executable
+
+`tests/render/strata_metal_depth_multiview_parity.cpp` builds as
+`aiverse_strata_metal_depth_multiview_parity` on macOS with
+`AIVERSE_STRATA_METAL_GPU_TESTS=ON`. It is intentionally not
+registered as a headless CTest, since it opens a real CAMetalLayer.
+
+For each of TWO independent cameras (view 0: pitch 0.2, yaw 0,
+distance 5; view 1: pitch 0.55, yaw 0.7, distance 6), render four
+separate and *exclusive* steady-mode frames:
+Empty (no ModelDraw), Legacy, Strata Fine (two children) and
+Strata Coarse (lossless parent). No frame ever submits both
+legacy source and Strata; all draws go through the ordinary
+`Renderer3D::drawModel`. The Strata alias uses the original
+`GlobalGeometryPool` source VB and auxiliary index sidecar.
+The sun map is intentionally 512×512 for bounded readback, while
+the real screen image remains 800×600.
+
+For each view/mode, the fixture captures:
+- An actual main RGBA frame via `captureNextFrame`, after enabling
+  screen-readability before frame acquisition, with screenshots
+  requested inside a steady mode to avoid the known capture-delay
+  bug; and
+- The current sun shadow texture's real `Depth32Float` pixels,
+  via the new GPU blit **after closing the main pass**, in the same
+  frame. Data are not derived from GPU draw counters.
+
+Acceptance requires: all eight RGBA and eight depth captures,
+nonblank Legacy vs Empty for BOTH formats, zero changed RGBA channels
+between Legacy/Fine/Coarse in each view, **zero byte changes in
+raw float32 sun-shadow depth** between Legacy/Fine/Coarse in each
+view, finite depth values in [0,1], at least one sample different
+from clear-depth, nonzero shadow/opaque draw counters for model
+cases, exactly one candidate ModelDraw per frame, and distinct
+Legacy RGBA images from the two camera views.
+This strict oracle is appropriate only because the fixture's
+hierarchical LODs are intentionally **geometrically lossless**.
+It does NOT prove fidelity of simplified LODs.
+
+By default the runner saves eight `strata-depth-view{0|1}-MODE.ppm`
+color captures and eight
+`strata-depth-view{0|1}-MODE-shadow.f32` packed little-endian
+32-bit float raw depth snapshots in the working directory.
+Set `AIVERSE_STRATA_DEPTH_CAPTURE_PREFIX=/path/prefix` to adjust.
+With 512² float32 values, each depth file is 1 MiB.
+
+Manual Mac Studio build/run:
+
+```sh
+cd ~/Projects/AIVERSE-strata-validation
+git status --short
+git fetch origin feature/strata-virtual-geometry
+git switch --detach origin/feature/strata-virtual-geometry
+cmake -S . -B build/strata \
+  -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_BUILD_STRATA=ON \
+  -DAIVERSE_STRATA_METAL_GPU_TESTS=ON
+cmake --build build/strata --target \
+  aiverse_strata_metal_depth_multiview_parity --parallel 8
+./build/strata/aiverse_strata_metal_depth_multiview_parity
+```
+
+Switching commits requires a clean worktree or saved local edits.
+Expected, **not yet observed**, successful summaries:
+
+```text
+[strata-depth] view=0 color_fine=0 color_coarse=0 depth_fine_bytes=0 depth_coarse_bytes=0
+[strata-depth] view=1 color_fine=0 color_coarse=0 depth_fine_bytes=0 depth_coarse_bytes=0
+[strata-depth] PASS: exact sun-shadow Depth32Float Legacy/Fine/Coarse parity
+[strata-depth] status=PASSED views=2 modes=4 ...
+```
+
+The `.github/workflows/strata-focused.yml` macOS job now
+**compiles** the Stage 12 executable, but does not execute GUI GPU
+fixtures. Until real owner Mac Studio output is provided, do not
+claim Stage 12 PASS, real shadow-depth parity, independent-view
+parity, or safety of production Strata rendering. Stage 11's prior
+real Metal main-raster strict parity remains **actually PASS**
+(0 changed channels for Fine and Coarse), and the prior real
+Metal compute oracle remains **5/5 PASS** in its separate fixture.
+
+**Next gates:** Planar reflection target readback and per-reflection
+camera selection, multi-material and UV boundary parity, GPU selected
+cluster range draw execution with exclusive legacy fallback, lossy
+LOD quality/edge cracks, multi-world lifecycle, and GPU performance
+before considering a production default.
