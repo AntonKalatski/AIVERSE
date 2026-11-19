@@ -721,6 +721,8 @@ private:
         runtime_.maxNearWeldDeltaCm=region.maxNearWeldDeltaCm;
         runtime_.smoothedNearNormals=region.smoothedNearNormals;
         runtime_.matchedAuthoredNearNormals=region.matchedAuthoredNearNormals;
+        runtime_.continuousNearNormalSamples=region.continuousNearNormalSamples;
+        runtime_.localFallbackNearNormalSamples=region.localFallbackNearNormalSamples;
         runtime_.nearWeldSlopeFallback=region.nearWeldSlopeFallback;
         runtime_.gpuUploadMs=0;
         runtime_.atlasPatchRegions=0;
