@@ -731,6 +731,7 @@ RTSCamera Prisma::jitteredCamera(RTSCamera camera, int width, int height) {
         effect && effect->enabled && int(quality_) >= int(effect->minQuality) &&
         effect->get("historyWeight") > 0 && effect->get("jitterPixels") > 0 &&
         camera.jitter.x == 0 && camera.jitter.y == 0 &&
+        viewHistoryAdmissionRejected_.count(viewId_)==0 &&
         (temporalViews_.find(viewId_)==temporalViews_.end() ||
          !temporalViews_.at(viewId_).preflightRejected);
     // Shader compilation can fail on a backend. Never jitter the scene
