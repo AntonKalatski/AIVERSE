@@ -24,6 +24,7 @@
 #include "../gfx/Gfx.h"
 #include "FxEffect.h"
 
+namespace aiverse::render { class GpuResourceRetirement; }
 namespace aiverse::fx {
 
 struct QualityLimits {
@@ -92,6 +93,12 @@ public:
     // `dev` may be null: simulation without drawing (tests, headless tools).
     bool init(gfx::Device* dev);
     void shutdown();
+    // Optional presentation-only GPU-fenced lifetime manager for editor
+    // effect-graph hot reload. Defaults to legacy owner-managed destruction.
+    // Manager must outlive this ParticleSystem and its GPU device.
+    void setGpuResourceRetirement(render::GpuResourceRetirement* owner) {
+        gpuRetirement_ = owner;
+    }
     const std::string& lastError() const { return error_; }
 
     void setQuality(FxQuality q);
@@ -166,6 +173,7 @@ public:
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
+    render::GpuResourceRetirement* gpuRetirement_ = nullptr;
     FxQuality quality_ = FxQuality::Medium;
     FileReader reader_;
     std::vector<std::string> errors_;
