@@ -1474,3 +1474,28 @@ Then run real Metal/Vulkan pixel parity with opt-ins independently OFF/ON; do no
 **Actually checked:** Connected GitHub current source and unique replacement, atomic one-file code commit and expected-SHA branch fast-forward. **Native CMake/CTest: NOT RUN; Vulkan fault injection: NOT RUN; Metal/Vulkan raster: NOT RUN; CPU/GPU A/B/A: NOT RUN**. PR stays Draft and all experimental recycling flags default OFF.
 
 **Next:** Watch latest CI for Stage 49–50 once jobs complete, and fix compiler/runtime failures with new stage handoff. Owner hardware: capture Vulkan validation output for mid-flight destroy/recycling/fence errors, and Metal pixel parity. Never report a queued/cancelled job as passed.
+
+
+---
+
+## Stage 51 — Release-mode ECS test assertions blocking Linux ARM64 CI (2026-11-19)
+
+**Repository:** `chromealex/AIVERSE`; **branch:** `perf/incremental-static-model-cache`; **PR:** #34 Draft. **Last audited branch head before this stage:** `99c7ec03b77708fc9d1d649c78a5ed4d4fe59f82`; **implementation commits:** `1d816a4d74a168cab057a949cfbb033a740cb934`, `b7eef40ac4d41dfb3c04a9e9ad04e68b4e292acc`.
+
+### Evidence and failure
+
+GitHub Actions overall CI run [44540545468](https://github.com/chromealex/AIVERSE/actions/runs/44540545468) for head `99c7ec0` had a **completed failed** `Linux arm64 gcc` job `135617454000`: 2026-11-19 14:09:19–14:20:01 UTC, Configure succeeded and the build failed after reaching ~888/1278 Ninja objects. The job log contains `-DNDEBUG -Werror` compiler options and failures in **four ECS test sources**. `tests/ecs_cow_snapshot_test.cpp` reported unused `check(World&,Entity,...)` parameters; `ecs_cow_exception_test.cpp` reported unused `caught`/`rejected` flags; `ecs_cow_parallel_test.cpp` reported unused `original`, `expected`, `workers`; `ecs_guarded_parallel_test.cpp` reported unused `caught`, `expected`. The root cause: their only consumers were `assert(...)`, elided by `NDEBUG` in Release mode. This is an **observed CI failure**, not a hypothetical defect of the batching code. GitHub Actions `GPU batching focused regression` was queued at inspection (not passing), and prior superseded runs were cancelled.
+
+### Changes
+
+- New `tests/TestCheck.h`: `AIVERSE_TEST_CHECK(condition)` always evaluates its expression and aborts with file/line diagnostic when false, even with Release `NDEBUG`.
+- Four files switched from `#include <cassert>`/`assert(...)` to this explicit test-only macro: `tests/ecs_cow_snapshot_test.cpp` (28 sites), `tests/ecs_cow_exception_test.cpp` (19), `tests/ecs_cow_parallel_test.cpp` (5), and `tests/ecs_guarded_parallel_test.cpp` (7). No simulation or engine logic modified; checked expressions are now evaluated in Release instead of silently removed.
+- `b7eef40` corrects newline formatting in the test failure diagnostic string. No other changes to ECS behavior, renderer, geometry pool, shaders, GPU RHI or experimental flags.
+
+### Actual validation / limitations
+
+GitHub source retrieval and readback, logged CI error extraction, exact in-file `assert` occurrence replacement, two commits to the feature branch by fast-forward expected-head GitHub updates. **Full CMake compilation: NOT RUN in assistant container** (no AIVERSE source checkout; `git ls-remote https://github.com/chromealex/AIVERSE.git` failed `Could not resolve host: github.com`). **CTest: NOT RUN. Metal/Vulkan raster parity: NOT RUN. A/B/A: NOT RUN.** The observed ARM64 job **failed on the old head**; later HEAD still requires fresh CI execution. Do not present these fixes as a passing workflow result.
+
+### Next exact step
+
+Check the latest CI job on this source+handoff SHA, particularly `Linux arm64 gcc` after the `-DNDEBUG` test-fix, `GPU batching focused regression` Ubuntu/macOS model-policy, and Metal CPU MDI/ICB parity. Fix any subsequent compiler errors in the same feature branch and append another stage handoff. When native source is accessible, compile and execute `aiverse_model_batching_policy_tests` and all four impacted ECS test executables in Release, then run real backend comparisons before removing PR #34 Draft status.

@@ -1841,3 +1841,17 @@ checks `VK_SUCCESS` before updating `completed_`;
 non-success marks RHI unhealthy, disallowing completed-serial
 recycling. Keep this contract through any device-loss recovery.
 No new GPU stalls/changes to batching output; native tests NOT RUN.
+
+
+## Release-mode unit checks in CI — Stage 51
+
+Do **not** rely on `assert(expr)` as the only test assertion in
+Release builds compiled with `-DNDEBUG`; all checks become no-ops,
+and under `-Werror` test variables can trigger unused warnings.
+`tests/TestCheck.h` now exposes `AIVERSE_TEST_CHECK(expr)`
+to evaluate/abort with a source location in both Debug and Release.
+Four ECS regression files use it after a genuine Linux ARM64 CI
+compile failure (run 44540545468 / job 135617454000). These changes
+address the compilation blockers observed in that job, but the
+new head's CMake/CTest result is NOT YET VERIFIED. Keep preserving
+genre independence and the per-stage handoff protocol.
