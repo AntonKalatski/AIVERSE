@@ -34,6 +34,7 @@
 #include "engine/render/Renderer3D.h"
 #include "engine/render/RenderDeviceLifetime.h"
 #include "engine/render/RetirementDiagnosticRing.h"
+#include "engine/render/OffscreenTargetLifetime.h"
 #include "engine/sim/Simulation.h"
 #include "modules/rts/RtsAI.h"
 #include "modules/rts/RtsMap.h"
@@ -73,7 +74,12 @@ struct Viewport {
     float originX = 0, originY = 0;   // top-left on screen (points)
     bool hovered = false;
     render::RenderDeviceLifetime::Lease gpuDeviceLease;
+    std::weak_ptr<render::OffscreenTargetRetirement> targetOwner;
+    ~Viewport() noexcept;
     void setGpuDeviceLease(render::RenderDeviceLifetime::Lease lease) {gpuDeviceLease=std::move(lease);}
+    void setTargetOwner(const std::shared_ptr<render::OffscreenTargetRetirement>& owner) {
+        targetOwner=owner;
+    }
     int drawnFrame = -100;            // ImGui frame the owning window last drew it (hidden tab: stale)
     void ensure(gfx::Device& dev, int pw, int ph);
     void release(gfx::Device& dev);
@@ -110,6 +116,9 @@ public:
     gfx::Device& device() { return *dev_; }
     render::RenderDeviceLifetime::Lease gpuDeviceLease() const {
         return gpuLifetime_?gpuLifetime_->lease():render::RenderDeviceLifetime::Lease{};
+    }
+    const std::shared_ptr<render::OffscreenTargetRetirement>& offscreenTargets() const {
+        return offscreenTargets_;
     }
     const render::RetirementDiagnosticRing* gpuRetirementDiagnostics() const {
         return gpuRetirementRing_.get();
@@ -352,6 +361,7 @@ private:
     Workspace ws_;
     gfx::Device* dev_ = nullptr;
     std::unique_ptr<render::RenderDeviceLifetime> gpuLifetime_;
+    std::shared_ptr<render::OffscreenTargetRetirement> offscreenTargets_;
     std::shared_ptr<render::RetirementDiagnosticRing> gpuRetirementRing_;
     gfx::TextureHandle studioLogo_{}; // editor brand mark
     render::ImGuiLayer ui_;
