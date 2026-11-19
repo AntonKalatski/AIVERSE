@@ -1621,6 +1621,92 @@ VRAM profiling and CI. Source-level commits and symbol inspection do
 not establish runtime correctness. See
 `docs/handoffs/prisma-stage-37.md`.
 
+
+## Stage 38 — additional Portrait owners, buffer metadata and GPU device-loss abandonment
+
+The editor now uses the existing Stage 37
+`render::GpuResourceRetirement::retireOwned()` API for additional
+**complete Portrait renderer owners** in the Model and Materials
+windows. Those windows previously stored an inline `game::Portrait`
+and immediately ran its `shutdown()` when a panel was destroyed.
+They now retain the entire old portrait (Renderer3D, generated
+models, vertex/index buffers, shader pipelines, color/depth textures)
+in a deferred graphics-owner bundle. Its cleanup runs only after
+the relevant device's actual GPU completion fence or an explicit
+host-confirmed GPU-idle drain. On window closure or loss of the
+selected dock tab, the old portrait is retired; reopening creates a
+new portrait without reusing the previous in-flight GPU handles.
+The standalone model-viewer and other clients with different
+ownership are not modified.
+
+### RHI buffer allocation metadata
+
+`gfx::BufferInfo` and the optional
+`gfx::Device::bufferInfo(BufferHandle,BufferInfo&)` provide a
+CPU-only live-resource query. The GL, Metal and Vulkan backends read
+their own buffer tables without waiting for the GPU or readback.
+The result contains `logicalBytes` and `versions` (dynamic buffer
+copies can take extra GPU memory). These describe **logical buffer
+allocation size**; Metal/Vulkan dynamic snapshots and GPU allocator
+padding can exceed that amount.
+
+`GpuResourceRetirement::retire(device,buffer)` now automatically
+uses `bufferInfo` to estimate the retained bytes if the producer
+has not supplied them. Retired textures similarly use actual
+`textureInfo` width, height and pixel format. This improves the
+known-pending-memory estimate for Editor FX graph hot reload,
+model previews and texture caches. It is still not a precise total
+GPU VRAM counter; shader/pipeline driver allocations and complex
+preview owner bundles may have unknown size.
+
+### Terminal device-loss handling
+
+`GpuResourceRetirement::collect()` checks
+`Device::gpuHealthy()`; if the device is lost it does **not**
+call any `destroyShader`, `destroyPipeline`, `destroyBuffer`,
+`destroyTexture` or `destroyCompute` functions. The new explicit
+`abandonDevice(device)` removes pending raw RHI handles without
+calling dead GPU APIs. Complete owner bundles are more dangerous:
+destroying a captured `ShaderGraphPreview` object can transitively
+call `Device` in its destructor. Their callbacks are moved to an
+inert process-lifetime orphan sink with **no destructor**. This
+intentionally retains that CPU memory until process exit rather
+than risking use-after-free after terminal device loss.
+
+A normal `GpuResourceRetirement` destructor also prevents unsafe
+bundle callbacks from being run implicitly if the host did not
+first drain at a verified GPU-idle point. The editor's shutdown
+integrates `abandonDevice` when `gpuHealthy()` is false.
+`ClientHost::abandonOnDeviceLoss()` provides a similar terminal
+path for deferred hosted GameClient owners, which otherwise might
+destroy nested renderers against a dead GPU Device. An archived
+client's device must match the verified completion source.
+
+The Statistics window exposes abandoned handles/bundles for
+diagnostics. **Abandonment is an emergency device-loss/teardown
+fallback, not ordinary memory reclamation**, and does not replace
+restoring the device, recreating render targets or handling other
+rendering subsystems' old ownership policies.
+
+### Scope and limitations
+
+The common GPU retirement service remains presentation-only,
+genre-independent and opt-in for owners that can guarantee the
+device is alive during normal collection. The Model and Materials
+windows are additional concrete adopters; the Animation Graph
+editor, external model viewer and other independent preview
+owners remain on their own lifetime paths and should be migrated
+via a similarly self-contained complete owner bundle.
+
+No changes to ECS, FPS/RTS gameplay logic, postfx effect schema,
+HDR shader output, water, or the default-off Motion Blur flag.
+
+**NOT RUN:** CMake/C++/Obj-C++ builds, CTest, GL/Metal/Vulkan
+runtime GPU fences, editor Model/Materials tab switching,
+device-loss simulations, memory profiling, screenshots and CI
+(per user instruction). Static source inspection is not proof
+of runtime correctness. See `docs/handoffs/prisma-stage-38.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
