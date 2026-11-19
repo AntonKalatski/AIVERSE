@@ -261,6 +261,7 @@ public:
         bool hdr = false, sceneReady = false;
         int shaderGraphTextures = 0;     // authored graph texture bindings on last resolve
         int autoExposureTextureSlot = -1; // -1 when final composite omitted exposure
+        float autoExposureHighlightRejection = 0; // applied in last composite; 0=legacy or inactive
         std::vector<EffectExecution> effects;
     };
     const ViewEffectReport* effectReport(uint64_t viewId) const;
