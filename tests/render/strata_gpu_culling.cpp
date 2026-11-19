@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstring>
 #include <map>
+#include <utility>
 #include <string>
 #include <vector>
 using namespace aiverse;
@@ -23,7 +24,31 @@ public:
     uint32_t next = 1, computeCalls = 0, dispatchCount = 0;
     uint32_t drawCalls = 0;
     bool supported = true, active = false;
-    uint64_t completed = 100;
+    uint64_t completed = 100, currentFrame = 101;
+    struct PendingRead {
+        BufferReadFn callback;
+        std::vector<uint8_t> data;
+    };
+    std::vector<PendingRead> reads;
+    uint64_t frameSerial() const override { return currentFrame; }
+    bool readBufferAsync(gfx::BufferHandle handle, size_t size,
+                         BufferReadFn callback) override {
+        auto it = buffers.find(handle.id);
+        if (it == buffers.end() || !size || size > 65536 ||
+            size > it->second.size() || !callback) return false;
+        PendingRead pending;
+        pending.callback = std::move(callback);
+        pending.data.assign(it->second.begin(),
+                            it->second.begin() + size);
+        reads.push_back(std::move(pending));
+        return true;
+    }
+    void flushReads() {
+        auto pending = std::move(reads);
+        reads.clear();
+        for (auto& read : pending)
+            read.callback(std::move(read.data));
+    }
     const gfx::DeviceInfo& info() const override { return deviceInfo; }
     const std::string& lastError() const override { return error; }
     bool supportsCompute() const override { return supported; }
@@ -153,8 +178,100 @@ int main() {
     // remains GPU-in-flight. Reject until completion is reported.
     assert(!compute.dispatch(dev, {99}, {one}, pass, 104, nextResult));
     dev.completed = 101;
+    dev.currentFrame = 104;
     assert(compute.dispatch(dev, {99}, {one}, pass, 104, nextResult));
     assert(nextResult.frameSerial == 104 && nextResult.submission == 0);
+    assert(dev.drawCalls == 0);
+
+    // Diagnostic async readback and CPU oracle comparison. The recording
+    // device does NOT execute Metal shader: synthesize two result records,
+    // deliberately unordered to verify key-based, not atomic-order parity.
+    ModelAsset reference;
+    ModelPrimitiveAsset part;
+    part.mesh = 0;
+    part.primitive = 0;
+    part.material = 7;
+    part.geometry.indices = {0, 1, 2};
+    part.geometry.roots = {0};
+    ClusterNode root;
+    root.firstIndex = 0; root.indexCount = 3; root.materialGroup = 7;
+    root.resident = true;
+    part.geometry.nodes.push_back(root);
+    part.geometry.bounds.push_back({{-0.2f,-0.2f,0.2f},
+                                     {0.2f,0.2f,0.8f}});
+    reference.primitives.push_back(part);
+    auto ia = makeGpuSceneInstance(mat4::identity(), 0, 333);
+    auto ib = makeGpuSceneInstance(mat4::identity(), 0, 444);
+    GpuPassConfig referencePass;
+    referencePass.width = 800;
+    referencePass.height = 600;
+    referencePass.maxOutputClusters = 16;
+    GpuSelectionSubmission selection;
+    assert(compute.dispatch(dev, {99}, {ia,ib},
+                            referencePass, 104, selection));
+    GpuSelectionCounters counts;
+    counts.produced = 2;
+    std::memcpy(dev.buffers.at(selection.counters.id).data(),
+                &counts, sizeof(counts));
+    GpuSelectedCluster recordA{};
+    recordA.instanceToken = 333;
+    recordA.gpuFirstIndex = 400;
+    recordA.indexCount = 3;
+    recordA.materialGroup = 7;
+    recordA.nodeIndex = 0;
+    recordA.primitiveIndex = 0;
+    GpuSelectedCluster recordB = recordA;
+    recordB.instanceToken = 444;
+    std::memcpy(dev.buffers.at(selection.ranges.id).data(),
+                &recordB, sizeof(recordB));
+    std::memcpy(dev.buffers.at(selection.ranges.id).data()+sizeof(recordB),
+                &recordA, sizeof(recordA));
+    GpuSelectionReadback decoded;
+    int callbacks = 0;
+    assert(compute.requestReadback(dev, selection, [&](GpuSelectionReadback r) {
+        ++callbacks;
+        decoded = std::move(r);
+    }));
+    assert(callbacks == 0 && dev.reads.size() == 2);
+    dev.flushReads();
+    assert(callbacks == 1 && decoded.valid());
+    assert(decoded.counters.produced == 2 && decoded.ranges.size() == 2);
+    std::string error;
+    assert(compareGpuSelection(reference, {ia,ib}, referencePass, 400,
+                               decoded, &error));
+    auto wrong = decoded;
+    wrong.ranges[0].materialGroup = 123;
+    assert(!compareGpuSelection(reference, {ia,ib}, referencePass, 400,
+                                wrong, &error));
+    assert(!error.empty());
+    // A GPU-reported overflow must never pass parity or return drawable
+    // ranges, even if the output prefix appears plausible.
+    counts.overflow = 1;
+    std::memcpy(dev.buffers.at(selection.counters.id).data(),
+                &counts, sizeof(counts));
+    assert(compute.requestReadback(dev, selection, [&](GpuSelectionReadback r) {
+        ++callbacks;
+        decoded = std::move(r);
+    }));
+    dev.flushReads();
+    assert(callbacks == 2);
+    assert(decoded.status == GpuSelectionReadback::Status::Overflow);
+    assert(decoded.ranges.empty());
+    assert(!compareGpuSelection(reference, {ia,ib}, referencePass, 400,
+                                decoded, &error));
+
+    // The 64 KiB RHI read limit means oversized requests are not a
+    // partially accepted oracle (2048 selected records maximum).
+    GpuPassConfig oversized = referencePass;
+    oversized.maxOutputClusters = 2049;
+    GpuSelectionSubmission big;
+    assert(compute.dispatch(dev, {99}, {ia}, oversized, 104, big));
+    assert(!compute.requestReadback(dev, big, [&](GpuSelectionReadback r) {
+        ++callbacks;
+        decoded = std::move(r);
+    }));
+    assert(callbacks == 3);
+    assert(decoded.status == GpuSelectionReadback::Status::ReadbackFailed);
     assert(dev.drawCalls == 0);
     compute.shutdown(dev);
     assert(dev.buffers.empty());
