@@ -15,8 +15,8 @@
 namespace aiverse::spectra {
 
 enum class PoolRecoveryPhase : uint8_t {
-    Uninitialized, Ready, ResetRetryRequired, DeviceRecreationRequired,
-    BlockedUnknown
+    Uninitialized, Ready, ResetRequested, ResetRetryRequired,
+    DeviceRecreationRequired, BlockedUnknown
 };
 enum class PoolRecoveryAction : uint8_t {
     None, InitPool, RetryResetInGraphicsFrame, RecreateGraphicsDevice,
@@ -27,6 +27,10 @@ struct PoolRecoveryEvent {
     PoolRecoveryAction next=PoolRecoveryAction::InitPool;
     uint32_t resetGroupsAccepted=0, resetGroupsTotal=0;
     uint64_t resetAttempts=0;
+    uint64_t transitionSequence=0; // stable until a REAL observable transition
+    uint64_t hostResetRequests=0, deviceReplacementAttempts=0;
+    bool explicitResetPending=false;
+    bool recoveryCatalogRetained=false;
     bool deviceHealthKnown=false, deviceHealthy=false;
     bool presentationBlocked=false;
     std::string reason;
@@ -47,13 +51,33 @@ public:
     PoolRecoveryEvent poll() {
         PoolRecoveryEvent result=inspect();
         if(!observed_ || changed(last_,result)) {
+            result.transitionSequence=++transitionSequence_;
             last_=result;
             observed_=true;
             if(onChange_)onChange_(result);
-        }
+        } else result.transitionSequence=last_.transitionSequence;
         return result;
     }
     void onChange(OnChange callback) {onChange_=std::move(callback);}
+    // Caller can explicitly request a presentation reset BETWEEN frames.
+    // This does not touch GPU or ECS; it tells the host to schedule
+    // retryPresentationReset after Device.beginFrame and before render pass.
+    bool requestPresentationReset(const std::string& purpose="visual rollback") {
+        if(!pool_.ready() || recoveryRecipe_ ||
+           pool_.resetReport().deviceLost) {
+            reason_="SpectraFX cannot queue reset on missing or lost Device";
+            poll();
+            return false;
+        }
+        explicitResetPending_=true;
+        resetPurpose_=purpose.substr(0,128);
+        ++resetRequestCount_;
+        reason_.clear();
+        poll();
+        return true;
+    }
+    bool hasQueuedReset() const {return explicitResetPending_;}
+
 
     // Retry at a graphics safe point AFTER Device::beginFrame (Metal has an
     // active ordered command buffer), BEFORE any scene encoder/pass.
@@ -72,6 +96,8 @@ public:
             return false;
         }
         if(poses_)poses_->resetForRollback();
+        explicitResetPending_=false;
+        resetPurpose_.clear();
         reason_.clear();
         poll();
         return true;
@@ -84,6 +110,7 @@ public:
     // A failed import shuts down its partial new pool and does not claim
     // that any GPU data was restored.
     bool replaceDevice(gfx::Device& healthyReplacement) {
+        ++deviceReplacementAttempts_;
         if(pool_.boundToDevice(&healthyReplacement)) {
             reason_="SpectraFX recovery requires a DIFFERENT graphics Device, "
                     "not the same previous graphics object";
@@ -120,6 +147,8 @@ public:
             return false;
         }
         recoveryRecipe_.reset();
+        explicitResetPending_=false;
+        resetPurpose_.clear();
         reason_.clear();
         poll();
         return true;
@@ -127,6 +156,10 @@ public:
 
     PoolRecoveryEvent inspect() const {
         PoolRecoveryEvent out;
+        out.hostResetRequests=resetRequestCount_;
+        out.deviceReplacementAttempts=deviceReplacementAttempts_;
+        out.explicitResetPending=explicitResetPending_;
+        out.recoveryCatalogRetained=bool(recoveryRecipe_);
         if(!pool_.ready()) {
             out.phase=recoveryRecipe_?
                 PoolRecoveryPhase::DeviceRecreationRequired:
@@ -153,6 +186,10 @@ public:
         } else if(reset.retryRequired) {
             out.phase=PoolRecoveryPhase::ResetRetryRequired;
             out.next=PoolRecoveryAction::RetryResetInGraphicsFrame;
+        } else if(explicitResetPending_) {
+            out.phase=PoolRecoveryPhase::ResetRequested;
+            out.next=PoolRecoveryAction::RetryResetInGraphicsFrame;
+            out.presentationBlocked=true; // native frame host must not emit
         } else if(out.presentationBlocked) {
             out.phase=PoolRecoveryPhase::BlockedUnknown;
             out.next=PoolRecoveryAction::InspectFailure;
@@ -160,7 +197,8 @@ public:
             out.phase=PoolRecoveryPhase::Ready;
             out.next=PoolRecoveryAction::None;
         }
-        out.reason=reason_.empty()?pool_.reason():reason_;
+        out.reason=reason_.empty()?
+            (explicitResetPending_?resetPurpose_:pool_.reason()):reason_;
         return out;
     }
 
@@ -173,6 +211,10 @@ private:
             a.resetGroupsAccepted!=b.resetGroupsAccepted ||
             a.resetGroupsTotal!=b.resetGroupsTotal ||
             a.resetAttempts!=b.resetAttempts ||
+            a.hostResetRequests!=b.hostResetRequests ||
+            a.deviceReplacementAttempts!=b.deviceReplacementAttempts ||
+            a.explicitResetPending!=b.explicitResetPending ||
+            a.recoveryCatalogRetained!=b.recoveryCatalogRetained ||
             a.deviceHealthKnown!=b.deviceHealthKnown ||
             a.deviceHealthy!=b.deviceHealthy ||
             a.presentationBlocked!=b.presentationBlocked ||
@@ -186,6 +228,10 @@ private:
     std::string reason_;
     std::optional<PoolRecoveryManifest> recoveryRecipe_;
     bool observed_=false;
+    bool explicitResetPending_=false;
+    uint64_t transitionSequence_=0,resetRequestCount_=0;
+    uint64_t deviceReplacementAttempts_=0;
+    std::string resetPurpose_;
 };
 
 } // namespace aiverse::spectra
