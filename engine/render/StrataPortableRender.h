@@ -63,6 +63,11 @@ private:
     const Model* source_ = nullptr; // borrowed, never dereference after unload
     const ModelAsset* asset_ = nullptr; // borrowed immutable CPU asset
     gfx::BufferHandle indexBuffer_{};
+    // Dedicated GLES3/Vulkan sidecars borrow the source VB/IB, but do not
+    // own a GeometryPool lease. Snapshot the original binding to reject
+    // source unload/reupload even when callers forget a revision bump.
+    gfx::BufferHandle sourceVertexBuffer_{}, sourceIndexBuffer_{};
+    uint32_t sourceFirstIndex_ = 0;
     GeometryPoolIndexSpan pooledIndices_;
     bool dedicated_ = false;
     uint32_t firstIndex_ = 0, indexCount_ = 0;
