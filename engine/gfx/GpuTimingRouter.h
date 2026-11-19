@@ -40,6 +40,17 @@ public:
             else ++it;
         }
     }
+    // A subscriber may give up on a delayed query without affecting other
+    // subscribers' pending GPU results. If it completes later the raw tag
+    // is ignored; it can never be misdelivered to another mailbox.
+    void cancel(Subscriber subscriber,uint64_t clientTag) {
+        for(auto it=pending_.begin();it!=pending_.end();) {
+            if(it->second.subscriber==subscriber &&
+               it->second.clientTag==clientTag)
+                it=pending_.erase(it);
+            else ++it;
+        }
+    }
     // Does not start/end any GPU frame. Existing Metal, GL, Vulkan and
     // other backends may reject concurrent or unsupported timer requests;
     // false means the caller must use its own CPU-only fallback.
