@@ -32,7 +32,8 @@ inline Entity spawnDemoSource(World& world,const std::string& effect,
 // ensures the bridge is destroyed first. Device must outlive this object.
 class NativeAttachmentExample final {
 public:
-    NativeAttachmentExample() : bridge_(pool_) {}
+    NativeAttachmentExample()
+        : bridge_(pool_), recovery_(pool_,bridge_,&poseHistory_) {}
     NativeAttachmentExample(const NativeAttachmentExample&)=delete;
     NativeAttachmentExample& operator=(const NativeAttachmentExample&)=delete;
 
@@ -61,6 +62,10 @@ public:
                  const render::RTSCamera& camera,const render::mat4& viewProj,
                  int width,int height,float dt,float alpha=1.f) {
         if(frameOpen_)return false;
+        // Surface pending-reset / lost-Device actions to the renderer host
+        // BEFORE asking the ECS bridge to stage new particle sources.
+        const auto recovery=recovery_.poll();
+        if(recovery.next!=spectra::PoolRecoveryAction::None)return false;
         // Capture only immutable committed fixed-point poses, once per tick.
         // A new Entity generation is automatically snapped rather than
         // interpolated against the previous occupant of the same slot.
@@ -110,9 +115,7 @@ public:
     // Host separately owns restoring the authoritative World snapshot.
     bool afterRollback() {
         if(frameOpen_)return false;
-        if(!bridge_.resetForRollback())return false;
-        poseHistory_.resetForRollback();
-        return true;
+        return recovery_.retryPresentationReset();
     }
 
     // Explicit graphics-device recovery. Both old and new Device objects
@@ -122,11 +125,23 @@ public:
     // and renderer source IDs are lost. ECS rebinds on the next prepare().
     bool rebuildOnRecoveredDevice(gfx::Device& recoveredDevice) {
         if(frameOpen_)return false;
-        const auto manifest=pool_.exportRecoveryManifest();
-        pool_.shutdown(); // old graphics Device MUST still exist here
-        bridge_.discardTrackingAfterPoolRecreation();
-        poseHistory_.resetForRollback();
-        return pool_.importRecoveryManifest(&recoveredDevice,manifest);
+        return recovery_.replaceDevice(recoveredDevice);
+    }
+
+    // Native host receives an event when reset progress, failure/recovery
+    // phase or Metal health changes. No automatic platform Device creation.
+    void onRecoveryEvent(spectra::GpuPoolRecoveryHost::OnChange handler) {
+        recovery_.onChange(std::move(handler));
+    }
+    spectra::PoolRecoveryEvent recoveryStatus() {
+        return recovery_.poll();
+    }
+    bool exportFreshGpuCheckpoint(size_t groupIndex,
+                                  std::vector<uint8_t>& bytes) const {
+        return pool_.exportFreshCheckpoint(groupIndex,bytes);
+    }
+    bool setLoadShedding(spectra::PoolLoadSheddingPolicy policy) {
+        return pool_.setLoadShedding(policy);
     }
 
     // Explicitly release resources while Device is still alive.
@@ -145,6 +160,7 @@ private:
     spectra::GpuPoolWorld pool_;
     spectra::GpuEcsAttachmentPresenter bridge_;
     spectra::GpuEcsPoseInterpolator poseHistory_{4096};
+    spectra::GpuPoolRecoveryHost recovery_;
     bool frameOpen_=false;
 };
 
