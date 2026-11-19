@@ -110,9 +110,14 @@ public:
         }
         groups_.clear(); // retain capacity, reset all per-pass group state
         groupForItem_.assign(itemCount, kInvalidGroup);
-        modes_.assign(itemCount, uint8_t{0});
+        modes_.clear(); // no full-frame clear until some group is actually ready
     }
 
+    // Keep the per-item mode vector dormant for views without any ready
+    // cross-model groups; most small/fragmented scenes need no promotion map.
+    void activateModes(size_t itemCount) {
+        modes_.assign(itemCount, uint8_t{0});
+    }
     // Inexpensive when preflight is disabled; preserve high-water capacities.
     void clearModes() { modes_.clear(); }
 
