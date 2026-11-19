@@ -8,10 +8,12 @@
 #include "engine/character/vivid/GpuMorph.h"
 #include "engine/character/vivid/GpuMorphMeshStream.h"
 #include "engine/character/vivid/GpuActorStream.h"
+#include "engine/character/vivid/GpuActorRetirement.h"
 #include "engine/gfx/Gfx.h"
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -19,6 +21,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace aiverse;
@@ -303,6 +306,43 @@ void run() {
             require(!actorA.ready() && !actorB.ready() &&
                     !actorA.vertexBuffer().valid() && !actorB.vertexBuffer().valid(),
                     "multi-actor GPU stream handles survived shutdown");
+            // Real Metal queue completion: the GPU actor remains alive while
+            // the completion marker is pending, without a per-actor idle wait.
+            auto asyncActor=std::make_unique<GpuActorStream>();
+            require(asyncActor->initialize(*device,sharedModel,f.library,original),
+                    "async-retired Metal actor GPU initialization failed");
+            device->beginFrame(8,8);
+            FaceFrame retiringFace{};
+            retiringFace.values[static_cast<std::size_t>(Channel::JawOpen)]=0.6f;
+            require(asyncActor->dispatch(retiringFace,mapping),
+                    "async-retired Metal actor dispatch failed");
+            device->endFrame();
+
+            GpuActorRetirementQueue retireQueue(*device);
+            require(retireQueue.retire(asyncActor) && !asyncActor,
+                    "Metal retirement queue did not take actor ownership");
+            require(!retireQueue.collect(),
+                    "Metal GPU marker incorrectly reported completed at creation");
+            bool retired=false;
+            for(int attempt=0;attempt<500 && !retired;++attempt) {
+                retired=retireQueue.collect();
+                if(!retired)std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            if(!retired) {
+                // Explicit shutdown recovery is allowed, but we still fail
+                // the nonblocking-token test if the marker never completes.
+                require(retireQueue.drain(),
+                        "Metal retirement marker failed and idle recovery failed");
+                throw std::runtime_error(
+                    "Metal actor retirement never completed asynchronously");
+            }
+            const auto stats=retireQueue.stats();
+            require(retireQueue.pending()==0 && stats.completedResources==1 &&
+                    stats.completedBatches==1 && stats.tokenFailures==0 &&
+                    stats.idleFallbackFailures==0,
+                    "Metal retirement queue did not use a completion token");
+            std::cout << "VIVID real Metal async actor retirement PASS\n";
+
             device->destroyBuffer(sharedModel.vb);
             device->destroyBuffer(sharedModel.ib);
             std::cout << "VIVID multi-actor GPU 2 independent actors / 3 frames PASS\n";
