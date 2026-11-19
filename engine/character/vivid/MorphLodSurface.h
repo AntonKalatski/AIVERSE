@@ -56,7 +56,9 @@ class MorphLodSurface {
         return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z);
     }
 public:
-    // Bounded reference projection. maxDistance is measured in model-space
+    // Bounded O(LOD vertices x source triangles) reference projection;
+    // at most eight million triangle checks per publication.
+    // maxDistance is measured in model-space
     // units. Samples that are too far from the original mesh fail closed.
     // Indices must reference the same source vertex stream as morph CSR.
     static std::vector<LodSurfaceSample> project(
