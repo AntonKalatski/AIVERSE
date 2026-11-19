@@ -575,6 +575,11 @@ public:
         activeVertices_.clear();
         activeIndices_.clear();
         { std::lock_guard lock(cacheMutex_); cache_.clear(); }
+        runtime_={}; // No active GPU region: diagnostics must not describe the retired one.
+        clusters_=0;
+        terrainQuads_=0;
+        originXcm_=0;
+        originZcm_=0;
     }
     bool ready() const {return model_!=nullptr;}
     size_t clusterCount() const {return clusters_;}
