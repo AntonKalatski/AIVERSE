@@ -8,6 +8,7 @@
 #include "engine/core/Archive.h"
 #include <algorithm>
 #include <cstddef>
+#include <compare>
 #include <cstdint>
 #include <functional>
 #include <limits>
