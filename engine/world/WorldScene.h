@@ -1,6 +1,7 @@
 #pragma once
 #include "WorldAssets.h"
 #include "engine/render/Renderer3D.h"
+#include "engine/render/GpuOwnedMemory.h"
 
 namespace aiverse::world {
 // CPU model decode/terrain tessellation in the worker; GPU publication on update's thread.
@@ -11,6 +12,11 @@ public:
     void update(gfx::Device&,std::span<const Vec3> observers,int radius=2);
     void draw(render::Renderer3D&,Cell renderOrigin,int originCellSize);
     void shutdown(gfx::Device&);
+    // Owned resident chunk models only. ModelTextureCache is potentially
+    // shared with another view, so this never charges its textures again.
+    // Distinct shared Model objects are deduplicated across resident cells.
+    render::GpuOwnedMemoryStats ownedGpuMemoryStats(
+        const gfx::Device& device) const;
     const AsyncChunkStream::Status& status()const{return stream_->status();}
 private:
     struct Instance { size_t model=0;render::mat4 transform; };
