@@ -12,13 +12,15 @@ BUILD_DIR=""
 usage() {
     cat <<'HELP'
 PHYSIS native validation (run from any directory)
-  bash tools/physis-validate-native.sh [--full|--standalone]
+  bash tools/physis-validate-native.sh [--full|--integration|--standalone]
        [--jobs N] [--no-physics] [--build-dir DIR]
 
   --full          Root AIVERSE CMake, build every headless PHYSIS target,
                   then run all ^physis_ CTests (default)
+  --integration   Root AIVERSE CMake, build only admin journal, remote edit,
+                  field runtime and three journal tests; run just those CTests
   --standalone    Only the 3 independent POSIX journal CTests
-  --no-physics    Do not build optional Box3D (only for --full)
+  --no-physics    Disable optional Box3D in full/integration mode
   --build-dir DIR Use a different build directory; never wipes it
   --jobs N        Build parallelism (default 4)
   --help          Show this help
@@ -32,6 +34,7 @@ fail() { printf 'ERROR: %s\n' "$*" >&2; exit 2; }
 while (( $# )); do
     case "$1" in
         --full) MODE=full; shift ;;
+        --integration) MODE=integration; shift ;;
         --standalone) MODE=standalone; shift ;;
         --jobs) (( $# >= 2 )) || fail '--jobs requires a number'; JOBS="$2"; shift 2 ;;
         --no-physics) ENABLE_PHYSICS=OFF; shift ;;
@@ -42,7 +45,7 @@ while (( $# )); do
 done
 [[ "$JOBS" =~ ^[1-9][0-9]*$ ]] || fail '--jobs must be a positive integer'
 if [[ "$MODE" == standalone && "$ENABLE_PHYSICS" == OFF ]]; then
-    fail '--no-physics is relevant only with --full'
+    fail '--no-physics is relevant only with --full/--integration'
 fi
 command -v cmake >/dev/null 2>&1 || fail 'cmake is missing'
 command -v ctest >/dev/null 2>&1 || fail 'ctest is missing'
@@ -98,6 +101,15 @@ else
         -DAIVERSE_BUILD_SERVER=OFF \
         -DAIVERSE_BUILD_PHYSICS_DEMO=OFF
     TARGETS=(
+        aiverse_physis_field_runtime_test
+        aiverse_physis_remote_edit_test
+        aiverse_physis_admin_journal_test
+        aiverse_physis_journal_posix_io_test
+        aiverse_physis_journal_locked_io_test
+        aiverse_physis_journal_crash_recovery_test
+    )
+    if [[ "$MODE" == full ]]; then
+        TARGETS=(
         aiverse_physis_core_test
         aiverse_physis_climate_test
         aiverse_physis_environment_test
@@ -121,11 +133,17 @@ else
         aiverse_physis_journal_posix_io_test
         aiverse_physis_journal_locked_io_test
         aiverse_physis_journal_crash_recovery_test
-    )
-    if [[ "$ENABLE_PHYSICS" == ON ]]; then
-        TARGETS+=(aiverse_physis_box3d_test)
+        )
+        if [[ "$ENABLE_PHYSICS" == ON ]]; then
+            TARGETS+=(aiverse_physis_box3d_test)
+        fi
     fi
     stage build cmake --build "$BUILD_DIR" --parallel "$JOBS" --target "${TARGETS[@]}"
-    stage ctest ctest --test-dir "$BUILD_DIR" --output-on-failure --no-tests=error -R '^physis_'
+    if [[ "$MODE" == integration ]]; then
+        stage ctest ctest --test-dir "$BUILD_DIR" --output-on-failure --no-tests=error \
+          -R '^physis_(admin_journal|remote_edit|field_runtime|journal_posix_io|journal_locked_io|journal_crash_recovery)$'
+    else
+        stage ctest ctest --test-dir "$BUILD_DIR" --output-on-failure --no-tests=error -R '^physis_'
+    fi
 fi
 printf '\nPHYSIS validation PASS | report=%s\n' "$REPORT" | tee -a "$SUMMARY"
