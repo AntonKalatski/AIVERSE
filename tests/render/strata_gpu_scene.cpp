@@ -7,6 +7,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstring>
+#include <cstdlib>
 #include <limits>
 #include <map>
 #include <string>
@@ -53,6 +54,9 @@ public:
     std::string error;
     uint32_t next = 1;
     bool rejectSharedWrites = false;
+    uint64_t currentSerial = 10, completedSerial = 8;
+    uint64_t frameSerial() const override { return currentSerial; }
+    uint64_t completedFrameSerial() const override { return completedSerial; }
     const aiverse::gfx::DeviceInfo& info() const override { return deviceInfo; }
     aiverse::gfx::BufferHandle createBuffer(const aiverse::gfx::BufferDesc& d) override {
         if (!d.size || d.size > 8 * 1024 * 1024) return {};
@@ -104,6 +108,13 @@ public:
     void drawIndexed(uint32_t,uint32_t = 0,int32_t = 0,uint32_t = 1) override {}
 };
 int main() {
+    // The existing pool's optional recycler must be enabled before its
+    // first use, so we can exercise actual serial-gated sidecar reuse.
+#ifdef _WIN32
+    assert(_putenv_s("AIVERSE_GEOMETRY_POOL_RECYCLE", "1") == 0);
+#else
+    assert(setenv("AIVERSE_GEOMETRY_POOL_RECYCLE", "1", 1) == 0);
+#endif
     ModelAsset asset;
     asset.primitives.push_back(primitive(2, 7));
     asset.primitives.push_back(primitive(5, 9));
@@ -279,5 +290,35 @@ int main() {
     aiverse::render::releaseAuxiliaryGeometryIndices(dev, pending);
     assert(dev.buffers.empty());
     assert(!pending.valid());
+
+    // A released span is quarantined until the GPU completion serial passes
+    // its release frame. Before then a new allocation must use distinct bytes.
+    RecordingDevice fencedDev;
+    aiverse::render::Model fencedModel;
+    fencedModel.vertices.resize(4);
+    fencedModel.indices = {0, 1, 2};
+    assert(aiverse::render::uploadModelToGeometryPool(fencedDev, fencedModel));
+    const uint32_t triangle[] = {0, 1, 2};
+    aiverse::render::GeometryPoolIndexSpan firstLease, secondLease, thirdLease;
+    assert(aiverse::render::uploadAuxiliaryGeometryIndices(
+        fencedDev, fencedModel, triangle, 3, firstLease));
+    const auto firstOffset = firstLease.firstIndex;
+    aiverse::render::releaseAuxiliaryGeometryIndices(fencedDev, firstLease);
+    assert(aiverse::render::geometryPoolStats(fencedDev).retiredAuxiliarySpans == 1);
+    assert(aiverse::render::geometryPoolStats(fencedDev).reusableAuxiliarySpans == 0);
+    assert(aiverse::render::uploadAuxiliaryGeometryIndices(
+        fencedDev, fencedModel, triangle, 3, secondLease));
+    assert(secondLease.firstIndex != firstOffset); // completedSerial 8 < retireFrame 10
+    fencedDev.currentSerial = 11;
+    aiverse::render::releaseAuxiliaryGeometryIndices(fencedDev, secondLease);
+    fencedDev.completedSerial = 10;
+    assert(aiverse::render::geometryPoolStats(fencedDev).reusableAuxiliarySpans == 1);
+    assert(aiverse::render::uploadAuxiliaryGeometryIndices(
+        fencedDev, fencedModel, triangle, 3, thirdLease));
+    assert(thirdLease.firstIndex == firstOffset); // only retired frame 10 is safe
+    assert(aiverse::render::geometryPoolStats(fencedDev).recycledAuxiliaryUploads == 1);
+    aiverse::render::releaseAuxiliaryGeometryIndices(fencedDev, thirdLease);
+    aiverse::render::releaseModelGeometryPool(fencedDev, fencedModel);
+    assert(fencedDev.buffers.empty());
     return 0;
 }
