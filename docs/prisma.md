@@ -2186,6 +2186,93 @@ screenshot/PSNR/ghosting, GPU timing experiments, VRAM profiling,
 device-loss tests or CI. For implementation and next stage see
 `docs/handoffs/prisma-stage-45.md`.
 
+## Stage 46 — actual scoped GL33 viewport GPU timings and VRAM-pressure guard
+
+**The timing distinction matters:** RHI `gfx::Device` now has optional
+nonblocking `beginGpuScope(tag)`/`endGpuScope()` and a separate
+`takeGpuScopeTimings()` result queue. Unlike `gpuFrameMs()` and
+`timeGpuFrame()`, a scope measures only GPU commands submitted between
+its boundaries. Desktop **OpenGL 3.3** on supported macOS/Windows paths
+uses a real `GL_TIME_ELAPSED` query. The backend refuses to start a scope
+while a whole-frame elapsed query or another scope is running (OpenGL
+does not allow nested same-target queries). `takeGpuScopeTimings()`
+only returns completed, nonblocking results and does not consume other
+`takeGpuTimings()` benchmark results. The bounded queue is capped at
+64 pending entries. GL ES/WebGL/Linux fallback, Metal and Vulkan do
+**not** claim per-viewport timings: the default API returns false/empty.
+Metal's `gpuFrameMs()` is whole-command-buffer duration and must always
+be labeled as such.
+
+Editor opt-in: `AIVERSE_PRISMA_VIEWPORT_GPU_TIMING=1`. For Scene/Game,
+the editor begins a GPU timing scope immediately before the graphics
+`Renderer3D::render` and ends it after `Renderer3D::resolvePrisma`
+and the last viewport pass. This covers rendered shadows, world,
+post-effects and scene FX in this interval, **not** prior CPU scene
+preparation, prior GPU asset streaming or other windows. When supported,
+the editor polls finished measurements at its pre-render safe boundary,
+passes them to `Prisma::acceptViewGpuTiming(viewId,gpuMs)` and lists
+per-viewport samples through `Prisma::viewGpuTimings()`. The source
+is presentation/diagnostic only, not the authoritative simulation or
+an ECS component. It is opt-in and never enables full-frame timing
+automatically.
+
+**Adaptive source selection:** the existing `PrismaAdaptiveResolution`
+controller now prefers the latest completed scoped GL query for its
+particular view. Each accepted scoped query increments that view's
+completed-sample sequence; a repeat value cannot cause repeated
+hysteresis updates. If no scoped query is available, the controller
+retains the earlier whole-GPU-frame fallback gated by the genuine
+`Device::gpuCompletedFence()`. It does **not** convert CPU FPS to GPU
+milliseconds. Scoped interval duration still includes shared GPU
+shadow/reflection/FX passes and is not a pure postprocess-only cost.
+On unsupported backends this scope-specific diagnostic is explicitly
+unavailable.
+
+**Bounded known-memory pressure:** `temporalResolve` gains
+`maxPrismaMemoryMiB` (32..4096, default 256 MiB) as an opt-in
+adaptive-resolution pressure threshold. Only when the Stage 45
+`adaptiveResolution` effect and `AIVERSE_PRISMA_ADAPTIVE=1` are
+active does the policy compare the threshold against
+`Prisma::memoryStats().liveKnownBytes +
+Prisma::retirementStats().knownPendingBytes`. These estimates count
+shared size-cache allocations **once**, add active per-view HDR
+histories and pending fence-retired textures exactly once, and
+**exclude** unknown/unobservable bytes and physical driver overhead.
+A known lower-bound overage counts as a pressure sample only on a
+**new confirmed GPU completion** (actual completed scope query or
+GPU fence). After 12 over-budget samples it may step scale **down**
+1/16. Over-budget pressure blocks upward quality steps; normal
+fast/slow GPU timing and the existing 48-completed-sample cooldown
+continue to apply. Pressure alone does not allow unsafe GPU release,
+unconditional memory waits, or repeated CPU-frame counting.
+Without a verified GPU completion, no adaptation is attempted.
+
+`PrismaStats` and the editor report the chosen timing source,
+last valid GPU milliseconds, known Prisma live+pending bytes,
+the configured threshold and whether it is exceeded. The Stats
+window also displays the recent completed GL33 Scene/Game
+intervals, rather than mislabeling Metal whole-frame timings as
+isolated view costs.
+
+**Caveats:** `gpuFrameMs` and GL elapsed queries are GPU-timeline
+intervals, not identical to busy-time; scopes can include expensive
+shared renderer passes and do not measure earlier resource uploads.
+Using a shared whole-frame GPU measurement for two simultaneously
+active editor views is inherently conservative. The memory threshold
+is not total physical VRAM or a hard memory cap, and unmeasurable
+ShaderGraph/Portrait/driver allocations remain unknown. Over-budget
+known bytes may stay high until actual fence completion; bounded
+frame hysteresis prevents per-frame thrashing, but is not a promise
+of performance gain. A backend's unavailable query must not cause a
+false zero-time result or stale scope escalation.
+
+**Verification performed:** GitHub source readback/structural
+inspection only; see `docs/handoffs/prisma-stage-46.md`.
+**NOT RUN:** native C++/Metal/GLSL compilation, CTest, actual GL33
+GPU scope queries, Metal/GLES/Vulkan/WebGL smoke, frame budget/
+VRAM profiling, GPU-loss/queue saturation and CI. No production-ready
+claim is made until those checks are performed.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
