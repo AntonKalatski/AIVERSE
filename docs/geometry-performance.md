@@ -1046,3 +1046,41 @@ per-buffer CPU memcpy counters remain distinct, useful for comparing
 **Verification:** source and GitHub write/read checks only; native
 CMake, CTest, Metal/Vulkan raster parity and performance A/B/A **NOT
 RUN**. No frame-time gain or stable production Metal ICB claim.
+
+### Fixed 120-sample rolling CPU MDI stage history (Stage 31)
+
+The Stage 30 opt-in `profiling_` timing path now keeps a **fixed,
+allocation-free ring** of the last 120 eligible `renderModels`
+invocations, separately for `phase=0` sun shadow and
+`phase=1` main-camera opaque. `Renderer3D::CpuMdiRollingHistory`
+lives outside `ModelRenderStats`, so `beginScene()` resets its
+own per-view totals but **does not reset the rolling window**. Each
+eligible invocation stores the *difference* between the Stage 30
+cumulative pass timing fields at entry and exit, including the
+zero-visible-item early-return case. No samples are appended when
+profiling is disabled; the existing historical ring remains readable.
+
+`Renderer3D::cpuMdiRollingSummary(phase)` provides a read-only
+`CpuMdiRollingSummary` with count, arithmetic mean and
+**nearest-rank P95** separately for eight CPU metrics:
+total model-pass time, selection, material grouping/sort, candidate
+scan, command packing, pipeline setup, buffer upload and synchronous
+backend submit. `ceil(0.95 * N) - 1` selects the P95 array index.
+It runs only on explicit UI/API read and sorts a bounded 120-double
+stack array for each metric, without allocating or disturbing the
+render thread's current history. The ring writes one eight-double
+record per eligible model pass, independent of scene object count.
+
+Scene → Batching → Instancing and indirect details → **CPU MDI stage
+timings** shows mean/P95 beside the current view's Stage 30 totals.
+The per-pass ring counts *eligible renderModels invocations*, not
+whole engine/GPU frames: multiple viewports and repeated model passes
+may contribute multiple samples, and reflections/auxiliary passes
+remain excluded. Whole-scene invalidation and renderer shutdown call
+`clearCpuMdiRollingHistory()` to prevent old scenes contaminating new
+measurements; simply disabling profiling pauses collection.
+This feature only records synchronous CPU timings; no GPU stamps,
+memory bandwidth, GPU synchronization or batching behavior changes.
+
+**Build/CTest/Metal/Vulkan visual and CPU/GPU A/B/A validation:
+NOT RUN**, per feature-first direction.

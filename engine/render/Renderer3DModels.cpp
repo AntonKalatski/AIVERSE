@@ -49,7 +49,52 @@ std::string metalGraphSampler(int slot) {
     return slot < 16 ? ", sampler s"+std::to_string(slot)+" [[sampler("+std::to_string(slot)+")]]" : std::string();
 }
 
+std::array<double, 8> cpuMdiStageValues(
+    const ModelRenderStats::CpuMdiStageProfile& p) {
+    return {p.totalMs, p.selectionMs, p.groupingSortMs, p.candidateScanMs,
+            p.commandPackingMs, p.pipelineSetupMs, p.bufferUploadMs,
+            p.backendSubmitMs};
+}
+
 } // namespace
+
+void Renderer3D::recordCpuMdiStageSample(
+    size_t phase, const ModelRenderStats::CpuMdiStageProfile& before) {
+    if (phase >= cpuMdiRolling_.size() || !profiling_) return;
+    auto& history = cpuMdiRolling_[phase];
+    const auto start = cpuMdiStageValues(before);
+    const auto finish = cpuMdiStageValues(modelStats_.mdiCpuStages[phase]);
+    auto& target = history.samples[history.next];
+    for (size_t i = 0; i < target.size(); ++i)
+        target[i] = std::max(0.0, finish[i] - start[i]);
+    history.next = (history.next + 1) % history.samples.size();
+    history.count = std::min(history.count + 1, history.samples.size());
+}
+
+Renderer3D::CpuMdiRollingSummary Renderer3D::cpuMdiRollingSummary(
+    size_t phase) const {
+    CpuMdiRollingSummary result{};
+    if (phase >= cpuMdiRolling_.size()) return result;
+    const auto& history = cpuMdiRolling_[phase];
+    result.samples = history.count;
+    if (!result.samples) return result;
+    // Only the read-only UI/query path sorts a fixed stack scratch array.
+    // Nothing allocates, sorts or scans the ring while rendering a pass.
+    std::array<double, kCpuMdiRollingWindow> sorted{};
+    const size_t rank = ((95 * result.samples + 99) / 100) - 1; // nearest-rank P95
+    for (size_t metric = 0; metric < result.meanMs.size(); ++metric) {
+        double sum = 0.0;
+        for (size_t i = 0; i < result.samples; ++i) {
+            const double value = history.samples[i][metric];
+            sum += value;
+            sorted[i] = value;
+        }
+        std::sort(sorted.begin(), sorted.begin() + result.samples);
+        result.meanMs[metric] = sum / double(result.samples);
+        result.p95Ms[metric] = sorted[rank];
+    }
+    return result;
+}
 
 MaterialQuality Renderer3D::defaultMaterialQualityFor(const gfx::Device& dev, bool mobile) {
     if (const char* q = std::getenv("AIVERSE_MATERIALS")) { // testing override: low|medium|high
@@ -152,6 +197,7 @@ Renderer3D::IndirectLayoutCacheStats Renderer3D::indirectLayoutCacheStats() cons
 }
 
 void Renderer3D::shutdownModels() {
+    clearCpuMdiRollingHistory();
     clearIndirectLayoutCaches();
     std::vector<gfx::DrawIndexedIndirectCommand>().swap(indirectCommandScratch_);
     if (indirectCommands_.valid()) dev_->destroyBuffer(indirectCommands_);
@@ -1937,6 +1983,10 @@ void Renderer3D::renderModels(int phase) {
     const bool traceModelPass = std::getenv("AIVERSE_MODEL_BATCH_PROFILE") != nullptr;
     const bool profileMdiCpu = profiling_ && sampleMdiTransfers;
     auto* cpuStages = profileMdiCpu ? &modelStats_.mdiCpuStages[size_t(phase)] : nullptr;
+    // Stage 30 aggregates within beginScene. Snapshot before incrementing
+    // pass counters so each Stage 31 ring sample is an independent invocation.
+    const ModelRenderStats::CpuMdiStageProfile cpuBefore =
+        cpuStages ? *cpuStages : ModelRenderStats::CpuMdiStageProfile{};
     const auto passBegin = std::chrono::steady_clock::now();
     if (cpuStages) ++cpuStages->passes;
     uint64_t mdiCandidates = 0, mdiAccepted = 0, mdiRejected = 0, mdiShort = 0;
@@ -1985,8 +2035,11 @@ void Renderer3D::renderModels(int phase) {
             afterSelect - passBegin).count();
     }
     if (order_.empty()) {
-        if (cpuStages) cpuStages->totalMs += std::chrono::duration<double, std::milli>(
-            std::chrono::steady_clock::now() - passBegin).count();
+        if (cpuStages) {
+            cpuStages->totalMs += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - passBegin).count();
+            recordCpuMdiStageSample(size_t(phase), cpuBefore);
+        }
         return;
     }
     // Material identity is NOT a batching key. Editor/game code routinely
@@ -2658,6 +2711,7 @@ void Renderer3D::renderModels(int phase) {
     if (cpuStages) {
         cpuStages->totalMs += std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - passBegin).count();
+        recordCpuMdiStageSample(size_t(phase), cpuBefore);
     }
     if (sampleMdiTransfers) {
         const size_t pass = size_t(phase); // only 0 (shadow) or 1 (main opaque)

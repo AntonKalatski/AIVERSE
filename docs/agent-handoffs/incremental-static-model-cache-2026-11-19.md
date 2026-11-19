@@ -938,3 +938,28 @@ Read current feature source, confirmed `main` is already an ancestor and that sc
 Feature-first option: persist a small, read-only rolling distribution of per-stage CPU timing (e.g. last 120 eligible scene passes) to compare spikes/P95 without confusing CPU vs GPU and without allocating per frame. When switching to validation, reconcile stale Stage 10/11/13 policy tests and add timed-path coverage for no-items/no-MDI, pipeline warming, backend fallback, mixed geometry pages, order parity and instrumentation OFF. Run Metal/Vulkan visual parity and balanced same-camera A/B/A before considering merge.
 
 **Stage 30 opt-in overhead follow-up:** revised the short-command-count rejection and failed indirect submission branches to call the new Stage 30 timing clock only when `profiling_` is active. Original successful path retains its pre-existing timestamps for the independent `AIVERSE_ICB_PROFILE` trace; fallback drawing, backend conditions and counters are unchanged. Re-fetched source only, native compile/CTest/Metal tests NOT RUN.
+
+---
+
+## Stage 31 — fixed 120-invocation CPU stage mean/P95 history (2026-11-19)
+
+**Repository / branch / PR:** `chromealex/AIVERSE`, `perf/incremental-static-model-cache`, PR #34 **Draft**, not merged. Before this work `main=9ee6ff6fbf390bd45363bc92c838f492dfe92eee`, feature head `871de354c3656e5a19acdba707d9bce11fdbbcff`; compare `behind=0` so no main merge needed. **User direction:** features before tests.
+
+### Feature, ownership and API
+
+- `engine/render/Renderer3D.h`: new `kCpuMdiRollingWindow=120`, `CpuMdiRollingSummary {samples,meanMs[8],p95Ms[8]}`, public read-only `cpuMdiRollingSummary(phase)`, public `clearCpuMdiRollingHistory()`, and renderer-owned `cpuMdiRolling_[2]`. The latter contains **two fixed 120 x 8 double arrays**, one shadow and one main-opaque, with ring cursor and sample count, not heap-allocated vectors. Ring storage remains alive across ordinary `beginScene` calls even though `modelStats_` resets. Its samples contain eight Stage 30 CPU-time durations (total, selection, material grouping/sort, candidate scan, command packing, pipeline setup, buffer upload, backend submit).
+- `engine/render/Renderer3DModels.cpp`: `recordCpuMdiStageSample(phase,before)` snapshots stage-time differences from the Stage 30 current-`beginScene` cumulative profile and stores one fixed-length record per eligible renderModels invocation. Stage 31 records on both the visible-order-empty early return and the normal end; the empty modelItems early return does not count as an eligible model pass. The existing Stage 30 profiling predicate (`profiling_ && !auxiliaryModelPass_ && (phase==0 || (phase==1 && geometryMainView_))`) continues to gate all history writes. All other render phases, reflections and auxiliary views are excluded.
+- `Renderer3D::cpuMdiRollingSummary(phase)` computes an independent arithmetic mean and **nearest-rank P95** for each of eight metrics over the currently filled ring (up to 120 observations). It uses `std::array<double, 120>` scratch on the stack, sorts only when the UI/API requests a summary, and returns zero samples for invalid phases/empty rings. No sorting or allocation is performed on a per-frame render path.
+- `Renderer3D::invalidateStaticModelCaches()` and `shutdownModels()` clear this history across a full scene reload or renderer shutdown; turning profiling off *pauses* collection rather than deleting the existing history.
+- `apps/editor/windows/SceneWindow.cpp` displays rolling sample count and mean/P95 for all eight CPU metrics under the already existing **Scene → Batching → Instancing and indirect details → CPU MDI stage timings**, retaining Stage 30 live per-view totals and warnings.
+- `docs/geometry-performance.md`, `AGENTS.md` and this Stage 31 handoff explain exact files, behavior and restrictions.
+
+### Safety, interpretation, limitations
+
+This does not change render order, LOD, material checks, indirect command ABI, ECS modules, graphics RHI, Metal in-flight snapshots, Vulkan GPU-fenced versions or GPU memory use. The rolling sample is **one eligible model-pass invocation**, not a hardware GPU frame. A single overall scene frame can contain a sun shadow and an opaque sample, and several Scene/Game `beginScene`s can happen in one hardware frame. Asynchronous GPU time is not measured. P95 is computed via `ceil(0.95*N)-1` (nearest rank), so its granularity depends on the number of collected samples; Stage 30 cumulative per-view numbers and Stage 29 backend memcpy deltas retain their separate scope.
+
+**Current state:** feature-first GitHub code changes/source inspection; **native CMake: NOT RUN, CTest: NOT RUN, Metal/Vulkan raster parity: NOT RUN, fixed camera CPU/GPU benchmark: NOT RUN**. No measured acceleration or compilation success is claimed. PR remains Draft, experimental modes default OFF.
+
+### Next exact action
+
+Feature-first option: add spike/threshold highlighting using the rolling P95 and count when profiling is explicitly on, without conflating model-pass CPU times with GPU times or treating a threshold as a benchmark. When changing to test phase, reconcile stale Stage 10/11/13 test expectations, add 120-sample wrap/eviction/empty/inactive/scene-clear and P95 nearest-rank cases, verify backend parity and run the dense-city fixed-camera A/B/A before merging.

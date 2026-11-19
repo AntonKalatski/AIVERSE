@@ -169,6 +169,18 @@ and the MDI pipeline still validates full material and geometry state.
 The group-order scratch vector is reused and included in retained memory;
 `staticCrossModelRankedGroups` reports ranked groups, **not draw calls**.
 Do not cache these ranks across passes or change transparency ordering.
+ Stage 31 retains the last 120 Stage 30 CPU MDI pass-timing samples
+ for shadow and main opaque in a renderer-owned fixed ring OUTSIDE
+ `ModelRenderStats`. Per-pass samples are deltas against the existing
+ per-beginScene accumulators, not cumulative numbers or whole GPU
+ frame timings. Record both the ordinary exit and the empty visible-
+ order early return, but never record when profiling is disabled or
+ for reflections/auxiliary views. `cpuMdiRollingSummary(phase)` computes
+ arithmetic mean and nearest-rank P95 per CPU metric on UI read using
+ bounded stack scratch. Never sort or allocate in the rendering hot
+ loop. Clear ring on full scene invalidation/shutdown; disabling
+ profiling pauses sampling. No GPU timing or speedup claim is justified.
+ See Stage 31 handoff and preserve per-stage agent docs.
  Stage 30 adds opt-in `ModelRenderStats::mdiCpuStages[0/1]`
  CPU timing breakdown, controlled by the existing Studio
  "Profile Scene renderer" (`profiling_`) toggle. The shadow and

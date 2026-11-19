@@ -722,8 +722,24 @@ private:
                                 (unsigned long long)cpu.pipelineWarmups,
                                 (unsigned long long)cpu.underThreshold,
                                 (unsigned long long)cpu.backendFallbacks);
+                            const auto rolling = ed.renderer().cpuMdiRollingSummary(phase);
+                            if (rolling.samples) {
+                                ImGui::Text("  Rolling CPU average / P95 (last %zu/%zu invocations):",
+                                    rolling.samples, ed.renderer().kCpuMdiRollingWindow);
+                                static constexpr const char* metrics[] = {
+                                    "Total model pass", "Selection", "Grouping + sort",
+                                    "Candidate scan", "Command packing", "Pipeline setup",
+                                    "Buffer upload", "Backend submit"
+                                };
+                                for (size_t metric = 0; metric < rolling.meanMs.size(); ++metric) {
+                                    ImGui::Text("    %s: %.3f / %.3f ms",
+                                        metrics[metric], rolling.meanMs[metric],
+                                        rolling.p95Ms[metric]);
+                                }
+                            }
                         }
                         ImGui::TextDisabled("Synchronous CPU time only; overlapping totals are not additive.");
+                        ImGui::TextDisabled("P95 is nearest-rank over eligible model-pass samples, not whole frames.");
                         ImGui::TextDisabled("Profile is per beginScene view; reflections and auxiliary passes excluded.");
                     }
                     ImGui::TreePop();

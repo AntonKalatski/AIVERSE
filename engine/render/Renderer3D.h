@@ -6,6 +6,7 @@
 //         the main pass is left open so the caller can draw UI, then calls device.endPass()]
 #pragma once
 #include "Geometry.h"
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <functional>
@@ -345,6 +346,7 @@ public:
     // Call before/after in-place model geometry or bind-hierarchy edits, or
     // after an asset reload retaining the same model pointer and GPU handles.
     void invalidateStaticModelCaches() {
+        clearCpuMdiRollingHistory(); // a full scene reload starts a new comparison window
         staticModelCaches_.clear();
         staticRenderPackets_.clear();
         staticModelEligibility_.clear();
@@ -486,6 +488,21 @@ public:
     void setGpuAuthoredDrawEnabled(bool on) { gpuAuthoredDrawEnabled_ = on; }
     bool modelMultiDrawSupported() const { return dev_ && dev_->supportsMultiDrawIndirect(); }
     const ModelRenderStats& modelStats() const { return modelStats_; }
+    static constexpr size_t kCpuMdiRollingWindow = 120;
+    // The eight independent CPU durations are: total model pass,
+    // visibility selection, material grouping+sort, candidate scanning,
+    // CPU command packing, pipeline setup, indirect buffer update, backend
+    // API submission. P95 is nearest-rank for the last <=120 eligible
+    // model-pass invocations, not frame time or GPU work.
+    struct CpuMdiRollingSummary {
+        size_t samples = 0;
+        std::array<double, 8> meanMs{};
+        std::array<double, 8> p95Ms{};
+    };
+    CpuMdiRollingSummary cpuMdiRollingSummary(size_t phase) const;
+    // Read-only history reset for a new world/scene. Does not touch any
+    // cached geometry, render commands, in-flight resources or profiling.
+    void clearCpuMdiRollingHistory() { cpuMdiRolling_ = {}; }
     struct IndirectLayoutCacheStats {
         size_t entries = 0, retainedBytes = 0;
         uint64_t retired = 0;
@@ -700,6 +717,16 @@ private:
 
     // models
     ModelRenderStats modelStats_;
+    // Fixed storage persists across beginScene() without allocating on the
+    // render hot path; full scene invalidation/shutdown retires this history.
+    struct CpuMdiRollingHistory {
+        std::array<std::array<double, 8>, kCpuMdiRollingWindow> samples{};
+        size_t next = 0;
+        size_t count = 0;
+    };
+    std::array<CpuMdiRollingHistory, 2> cpuMdiRolling_{};
+    void recordCpuMdiStageSample(
+        size_t phase, const ModelRenderStats::CpuMdiStageProfile& before);
     gfx::BufferHandle indirectCommands_;
     // Reuse command storage across submissions; only contents/size change.
     std::vector<gfx::DrawIndexedIndirectCommand> indirectCommandScratch_;
