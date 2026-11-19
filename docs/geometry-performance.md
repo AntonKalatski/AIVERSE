@@ -1499,3 +1499,23 @@ behavior. This complements Stage 41's checked pooled upload so a
 failed shared-page write cannot cause a false-positive dedicated
 fallback result. Real backend allocation/fault tests still have
 NOT RUN; do not enable an experimental default or claim performance.
+
+
+### Vulkan fail-closed immutable buffer creation — Stage 43
+
+`engine/gfx/vulkan/VkResources.cpp::createBuffer` now returns an
+invalid `BufferHandle` on failed immutable staging allocation rather
+than publishing a handle to uninitialized GPU contents. It cleans
+up both VkBuffer and its allocation on that error path. The shared
+`createBufferObject` also rejects failed `vkBindBufferMemory` and
+releases the previously allocated Vulkan memory span. This is
+necessary for Stage 42's atomic dedicated VB/IB pair checks to be
+meaningful: a valid handle must no longer hide a failed CPU-to-GPU
+staging allocation.
+
+These changes do not modify indexed indirect command format,
+base-vertex addressing, material grouping, Vulkan fences, default
+pooling policy or CPU MDI thresholds. Successfully encoded copies
+are not claims of completed GPU execution. This remains **source
+inspection only**, pending native CMake/CTest, Vulkan fault injection,
+Metal/Vulkan raster parity and performance A/B/A.

@@ -1324,3 +1324,26 @@ Inspected live source; applied exact one-occurrence transformations, committed t
 ### Next
 
 The implementation is ready for a feature-completeness audit followed by the deferred validation gate. At a minimum: simulate an invalid first VB, failed second IB, pooled first/second checked upload failure, failed Vulkan version allocation, Metal storage encoding denied, last-two-owner release under contention, repeated unload/reload, rigid-Lod mesh chains and visibility/culling/shadow/transparent parity. Verify no CPU vectors are lost on allocation failure and no model ever publishes a single valid GPU handle. Only then run real Metal/Vulkan A/B/A with experimental feature flags.
+
+
+---
+
+## Stage 43 — Vulkan immutable upload must fail closed on staging or memory bind failure (2026-11-19)
+
+**Repository/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. **Source HEAD before code:** `7a2fac34ea3f34adeec9cb91b2714ff1e7859823`. **Code commit:** `61c1a29e3ac6c9193ca68fef40ab09e3d146429e`. Latest common main at stage start `d71c6d47e532b25fb816a8bb1f96c41e5275a165`, feature behind=0.
+
+### Concrete defect and changes
+
+In `engine/gfx/vulkan/VkResources.cpp`, `createBuffer` with **immutable** `BufferDesc::data` previously returned a valid buffer handle even if `stagingWrite(d.size,...)` returned null, leaving a newly allocated Vulkan buffer with uninitialized GPU bytes. The model upload success check from Stage 42 could not detect this: it checked handle validity, not whether immutable bytes had actually been submitted. Also `createBufferObject` ignored a failing `vkBindBufferMemory`, so buffer allocation could appear successful with unbound memory.
+
+- `createBuffer`: after a failed immutable staging allocation, now immediately destroys the just-created `VkBuffer`, releases its `Allocation`, sets `error_`, and returns an **invalid** handle. It only appends a `VBuffer::Version` to the resource registry once the staging copy was successfully recorded. Normal host-visible `Usage::Dynamic` and all successful immutable writes retain their old code paths.
+- `createBufferObject`: check the result of `vkBindBufferMemory`; on failure, destroy the Vulkan buffer, reset its local handle to `VK_NULL_HANDLE`, release the allocated GPU memory span, set `error_` and return false. Callers (including version creation) already propagate this creation failure and preserve in-flight versions.
+- No public API/serialized ECS change. No change to material state, Vulkan direct/indirect vertex addressing, buffer usage masks, Metal/GLES paths, GPU command layout, renderer pipeline, or opt-in feature defaults.
+
+### Actually performed
+
+Connected GitHub source inspection, unique-code-location matching, one-file atomic Git tree/commit creation and expected-SHA branch fast-forward. `VkResources.cpp` updated on `perf/incremental-static-model-cache`. **Native Vulkan compile: NOT RUN; CMake/CTest: NOT RUN; vkBindBufferMemory/staging fault injection: NOT RUN; Metal raster: NOT RUN; CPU/GPU benchmark: NOT RUN.** No claim of successful build, runtime correctness, CI pass, or measured performance. User wants batching functionality finished before running tests; PR #34 remains Draft.
+
+### Remaining constraints / next exact stage
+
+The Vulkan RHI has asynchronous submissions; the staged copy being *encoded* is not a GPU-fence completion guarantee. Graphics device calls must be made from their normal owner thread. The dedicated `uploadModel` fallback now sees invalid VB/IB handles and preserves CPU arrays for retry, rather than declaring incomplete geometry uploaded. Add asset-loading failure visibility (optional read-only diagnostic) only if it does not introduce per-render allocations; then finish a code-level audit of remaining unsafe GPU resource/LOD paths. During final test cycle, simulate staging allocation failure, memory binding failure, pooled write failure and second dedicated IB failure; validate that no published model uses uninitialized storage and no allocation leaks. Also run Metal/Vulkan pixel parity, renderer tests and real A/B/A before enabling any defaults.

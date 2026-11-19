@@ -1731,3 +1731,17 @@ requirement before CPU vertex/index clearing. Shared GeometryPool
 uploads still take precedence and remain subject to Stage 41's
 checked-write contract. No CMake/CTest/Metal/Vulkan validation has
 run for this code; preserve PR #34 Draft until final validation.
+
+
+## Stage 43 — Vulkan immutable buffers fail closed
+
+When changing `VulkanDevice::createBufferObject`, propagate
+`vkBindBufferMemory` failure: destroy the unbound Vulkan buffer,
+release the allocation and return false. For `createBuffer` with
+immutable CPU initial data, `stagingWrite` failure must destroy
+the new VkBuffer and allocation and return an **invalid** RHI handle.
+Never report a valid Model VB/IB when its immutable contents were
+not uploaded. Preserve Stage 42 atomic Model publish/CPU retry,
+Vulkan in-flight buffer versioning and the original fallback.
+No new tests were run; PR #34 remains Draft with experimental
+options OFF until native build/failure-injection/visual parity.
