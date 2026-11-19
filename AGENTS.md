@@ -1489,3 +1489,21 @@ fallback never samples an unbound probe texture. GLES3 requires NO compute
 or float HDR render target for CPU-probe GI. New source regression and CTest
 registration exist but native GLSL/GLES/Metal/Vulkan builds and GPU pixel
 validation are NOT RUN. Never claim actual mobile parity without that.
+
+
+## GI Stage 48 — conservative large-world GPU BVH residency (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage48-gpu-resident-volume-2026-11-20.md`.
+A huge WorldScene/TerraWeave full snapshot may exceed the 8192-triangle
+experimental Metal/Vulkan GPU BVH. `GiGpuResidencyPlanner` now selects
+ONLY chunks whose world-space collision bounds overlap the fixed GI probe
+volume expanded by conservative ray/point-light reach, preserving immutable
+per-chunk BVH shared pointers. `GiLightingController` uses this only for
+GPU transport, retains full CPU source, reports admitted/excluded counts
+and refuses any potentially relevant >8192-triangle region instead of
+silently clipping nearby obstacles/light blockers. GPU light radii must
+remain within `GiTransportConfig::maxGpuMovingLightRadius`; oversized
+sources are rejected. The host still needs clipmap/LOD streaming if near
+geometry exceeds budget. This is NOT a full world-scale GPU GI solution,
+NOT native built or GPU-tested. Preserve the user's source-authoritative
+TerraWeave/PHYSIS/WorldScene geometry and the pending-event retry contract.
