@@ -2055,3 +2055,160 @@ scene/world-wide active+in-flight physical residency budget,
 then actual Vulkan compute selection + final visual/performance parity.
 The current manager does not claim async SSD streaming, hardware
 sparse bindings or cross-GeometryScene global pooling.
+
+
+---
+
+## Stage 15.2 — incremental Metal/Vulkan GPU index pages (2026-11-20)
+
+**Repository/branch:** `chromealex/AIVERSE`, `feature/strata-virtual-geometry`.
+This is a source-committed functional stage. **NO build, CTest, native GPU
+run, shader/raster parity or performance profiling was performed**. The
+owner specifically requested feature completion before one final native
+build-and-test batch. Do not report this stage as hardware-validated.
+
+### Architecture and implemented API
+
+Stage 15/15.1 used a compact immutable `BufferType::Index` generation
+for every residency change. Stage 15.2 adds an **opt-in alternative**:
+a single fixed-capacity `gfx::BufferType::Storage`, `Usage::Dynamic`
+RHI buffer with **stable indexed node offsets**. Both Metal and Vulkan
+expose a checked shared-storage upload and native INDEX-compatible
+storage. Each cluster node owns one variable-size, 4-byte-aligned
+index subrange ("page") in that buffer. This is a software index arena,
+**not** Vulkan sparse binding, MTL sparse textures or on-disk pages.
+
+- `IndexResidency::initialize(..., preferIncremental=true,
+  uploadBudgetBytes)` only enables stable pages on **Metal or Vulkan**
+  when `canUpdateSharedBuffers()` is true. The default remains
+  `preferIncremental=false`, maintaining Stage 15 behavior.
+  GLES3/GL33/WebGL2 continue to use the safe immutable-generation path
+  even if the caller requests incremental mode. A fixed buffer sized
+  to the admitted per-source budget is allocated ONCE, but initialization
+  only uploads pinned root node indices. Its buffer is type Storage,
+  usable as a regular 32-bit index buffer through existing Renderer3D.
+  Source vertex buffer is never duplicated.
+- `StrataIndexPages.cpp` implements the private `IncrementalStorage`
+  allocator. Retained node addresses are unchanged across all updates.
+  Newly demanded children are admitted and uploaded as **complete
+  sibling groups**, using the existing descending-priority demand list.
+  Entire group deferral occurs if the per-update upload bandwidth cap
+  or available arena space is insufficient: no half-frontier, no hole
+  in rendering. `0` upload cap is unthrottled; a cap smaller than
+  one complete sibling group means that group remains deferred rather
+  than silently violating the cap.
+- Evicted pages are placed in **quarantine** with
+  `Device::frameSerial()`. A retired slot is reused ONLY when
+  `completedFrameSerial()!=0` and
+  `completedFrameSerial() >= retirementFrame`. No live or in-flight
+  page is overwritten. Newly freed slots are not reused within the
+  same update, even if the completion counter advances concurrently.
+  Unknown/zero retirement serial leaves old nodes drawable instead
+  of leaking an un-reclaimable slot. Completed adjacent free ranges
+  are coalesced for first-fit allocation, then new tail space is used.
+- Every source updates its pages **before** any Renderer3D draw
+  submissions for that epoch. All planned GPU uploads target fresh
+  or fully fence-completed storage. The draft page table, used/free
+  ranges, counters and pending evictions are atomically published
+  only after every required `updateSharedBufferChecked` succeeds.
+  On a partial upload failure, only previously unreferenced GPU bytes
+  may have changed; the visible page table and existing resident
+  parent remain unchanged. Renderer3D uses exactly one source ModelDraw
+  with the original source VB and the same stable Storage/INDEX handle.
+- `GeometryScene` exposes:
+  `setStrataIncrementalIndexStreamingEnabled(bool)` and
+  `setStrataStreamingUploadBudgetBytes(size_t)`.
+  Set both before `load/loadPrepared`, alongside the existing
+  `setStrataPortableRenderingEnabled(true)` and a positive
+  per-source or scene index budget. Default incremental mode is OFF.
+  The upload cap is **per source per prepass invocation**, not a global
+  multi-world GPU bandwidth throttle.
+- `IndexResidencyStats`: added
+  `incremental`, `arenaBytes`, `uploadedBytes`, `uploadCalls`,
+  `uploadBudgetDeferrals`, `fenceReuseDeferrals`.
+  `activeBytes` remains the sum of *resident* node index bytes;
+  `arenaBytes` is the **fixed capacity reserved on GPU** when the
+  incremental path is active. These are not physical VRAM telemetry.
+  `GeometryScene::Stats` exposes aggregate counters, plus the count
+  of actually incremental sources; Vulkan may internally retain
+  multiple buffer versions and CPU shadow data.
+
+### Files and exact implementation commits
+
+- `engine/render/StrataIndexResidency.h`:
+  `5fd444052192a1e9181228de3b8242d47259e4aa`,
+  `b16b07777cf92b766a6327dd069bb5d202920f60`,
+  `164f8ccc51aea2c329eb3408ee0c09a6e2cfb38a`,
+  `f9b9d7ad3d46d27388a7756e935b8c269960392d`.
+- `engine/render/StrataIndexResidency.cpp`:
+  `de9a99aca842c5b0a447a561e186627978455257`,
+  `1574fd4786e0fa2b826117c6b36ab95040d48552`,
+  `2db70a03816655fdf4badd890963edf8a5cc2d5b`.
+- **New** `engine/render/StrataIndexPages.cpp`:
+  `b70093d62190b658eea33ebeb39aab0f28cb5476`;
+  fixes `bbaefa700c5d6cee711014d6e3e915ee717ed1e7`,
+  `6146898e5d3d0353aa720713df3ce38003e759f9`,
+  `bf1e60f221610de7757727e18ef6f5cd2ebae9ad`.
+- `engine/render/StrataPortableRender.h/.cpp`:
+  `f7a52e2e949766f2611e220d02e39fb2204b8351`,
+  `63739fb676ad428658aec3d1ebce9000dc5ee8bd`.
+- `engine/render/GeometryScene.h/.cpp`:
+  `86e7e85f320a2e3c0307d993be55e0e2fea69b96`,
+  `3b4276a4cc62052b6798cd533c90bf7dedd31a13`.
+- `CMakeLists.txt`: `a9f09aa2ff32520aad90ccbb1c623b9eb0af637e`
+  adds the new library source; `10667ba1bee20e1b8ea58fad1a9c17e6644ad6ae`
+  registers `aiverse_strata_index_pages_tests` /
+  `strata_index_pages`.
+- **New** `tests/render/strata_index_pages.cpp`:
+  `9c7e9353350b9d8f191509d650f130b997e00e1b`,
+  `727e298a4a46fffd7612281ff70bad93010e2341`,
+  `0b174fc8f522e41a462f472398ae078c63ce8769`.
+- `tests/render/strata_portable.cpp`:
+  `384a1ccea995fb2a61e5b4f622165c1a3c1fc108`.
+
+### Authored tests; none executed
+
+`strata_index_pages` recording RHI verifies (for Metal, Vulkan and
+immutable GLES/GL33 fallback): root-only allocation, constant handle
+and index offsets, no uploads on unchanged demand, complete sibling
+promotion with limited bandwidth, atomic first/second child upload
+failure, valid ancestor after deferral, retirement quarantine,
+no reuse while completion fence is behind, successful reuse after
+completion, unsupported GPU write epoch, and unknown frame serial.
+`strata_portable` exercises the actual Model alias with incremental
+metal/Vulkan staged index offsets and preexisting source VB identity.
+The test target exists in CMake, but **zero pass/fail evidence** is
+available yet. Existing Stage 13 actual Metal reflection parity is
+a separate older test and does not verify this source change.
+
+### Known limitations / continuation
+
+1. Allocation is a **fixed-capacity per-source arena**; backing storage
+   is fully allocated, even when only roots are active. "GPU memory
+   saved" must refer to *active* node residency, not reserved arena
+   bytes. The scene cap now bounds the sum of these reserved capacities;
+   the Vulkan RHI may additionally retain internal versions/copies.
+2. The checked Metal/Vulkan uploads transfer only newly requested node
+   payloads through the RHI API, but Vulkan's dynamic-buffer version
+   preservation may copy its entire CPU shadow to a new mapped GPU
+   buffer when an earlier version is in flight. Do not claim a measured
+   reduction in physical transfer bandwidth before profiling.
+3. Retired fragmentation and delayed completion can stall fine-detail
+   promotion despite nominal free *active* capacity. Source/parent
+   fallback remains correct, but there is **no separate compaction or
+   page-move job** yet. For now there is no GPU page table for
+   mesh-shader indirect draws and no disk/IO loader.
+4. Incremental mode cannot overwrite any live range. The update must
+   occur before Renderer3D ModelDraw submission, and an alias must not
+   outlive that draw epoch or source device. A manual call to
+   `IndexResidency::update` from inside an active encoder is invalid.
+5. The feature branch remains divergent from concurrent `main`;
+   preserve other agents' CMake and render changes before integration.
+   **Do not merge into main** until a clean combined-source build and
+   focused + hardware CTests PASS.
+
+**Next bounded stage:** 15.3 asynchronous content-addressed on-disk
+index-page IO, page upload staging/visibility deadlines and a real
+global per-frame bandwidth governor. Later Stage 16 Vulkan compute
+selection; Stage 17 crack-free LOD; final Metal/Vulkan/GLES3 acceptance.
+Append a fresh handoff with exact test results after each stage.
