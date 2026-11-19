@@ -1932,3 +1932,69 @@ instances sharing two workers. ModelAdapter/View/Disk tests additionally
 exercise release of staged CPU indices after verification. Full
 Stage 15.4 file/commit/test handoff:
 `docs/agent-handoffs/strata-virtual-geometry.md`.
+
+
+## Stage 16.1–16.2 — Vulkan GPU cluster compute and indexed-indirect candidates
+
+Stage 16 adds an **opt-in Vulkan compute backend** to AIVERSE's
+shared `gfx::Device` interface, using standalone GLSL 450 compilation
+through glslang/SPIR-V. Vulkan now supports compute pipeline creation,
+storage-buffer descriptors, `dispatchChecked`, barriers to subsequent
+indirect/vertex input, and asynchronous diagnostic storage readback.
+Storage buffers remain valid for pooled vertex **and** index input;
+GPU-authored indirect buffers have both STORAGE and INDIRECT usage.
+
+`GpuClusterCulling` reuses the same STRATA hierarchy metadata v2
+and CPU parity oracle as Metal, but selects a GLSL compute kernel
+on Vulkan. The selected list is limited to 2048 cluster records per
+diagnostic submission; GPU status counters signal malformed metadata
+or output overflow. No CPU readback is required to produce cluster
+records or subsequent GPU indirect data.
+
+### Vulkan compute-authored indirect arguments
+
+A Vulkan submission now writes its own 20-byte
+`gfx::DrawIndexedIndirectCommand` records into an RHI
+`BufferType::Indirect` array. Three GPU compute passes
+**clear → select → safety** run outside graphics render passes.
+Unused slots are zeroed (no draw); a failed selection zeroes all
+commands. An optional, separately validated one-material path may
+write one **original full-primitive** fallback command to slot0,
+so GPU overflow does not silently erase the complete source.
+`GpuSelectionSubmission::gpuIndirectPrepared()` indicates that an
+argument buffer exists, **not** that its material/transforms have
+been approved for production raster.
+
+`StrataVulkanIndirectContract.h/.cpp` provides strict, read-only
+source/submission preflight for one rigid opaque material, one
+primitive/node/instance, source VB/IB sharing its pooled allocation,
+matching model revisions and one main-camera view (no additional
+shadow/reflection). Unsupported/animated/transparent/multi-material
+sources remain on existing CPU-selected or Legacy routes.
+
+### Status, limitations and verification
+
+| Item | Implementation | Hardware confirmation |
+| --- | --- | --- |
+| Vulkan compute / GLSL450 → SPIR-V | Code written | NOT RUN |
+| Vulkan GPU cluster selection | Code written (diagnostic) | NOT RUN |
+| Vulkan GPU indirect clear/select/safety | Code written | NOT RUN |
+| Vulkan asynchronous range/indirect readback | Code written | NOT RUN |
+| Vulkan source/material eligibility checks | Code written | NOT RUN |
+| Real exclusive Renderer3D GPU draw substitution | NOT DONE | N/A |
+| Multiple materials / shadows / reflection GPU raster | NOT DONE | N/A |
+| GLES3 CPU portable fallback | Preserved | NOT RECHECKED |
+
+The rendering engine is **not yet switched to a Vulkan GPU-driven
+production draw path**. The checked `Device::drawIndexedGpuIndirect`
+API is available to the renderer, but a Renderer3D-owned integration
+must bind exactly the same model/material/lighting/instance state and
+first prove GPU pixel parity. No Vulkan driver test, shader compile
+test, offscreen readback or native build was run for Stage 16 in this
+turn. New test fixtures:
+`strata_vulkan_kernel` (optional real GPU + SPIR-V),
+`strata_gpu_culling` (recording backend), and
+`strata_render_routing` (strict material/state gate).
+See Stage 16.1 and Stage 16.2 in
+`docs/agent-handoffs/strata-virtual-geometry.md` for code commits,
+explicit limitations and the next agent handoff.
