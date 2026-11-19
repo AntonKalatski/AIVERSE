@@ -893,7 +893,8 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
             }
     }
     stats_.geometryBytes = geoBytes_;
-    const int tier = tierFor(r);
+    const bool compact=terrainNeedsCompactSamplers(dev.maxFragmentTextureSlots());
+    const int tier = compact ? 0 : tierFor(r);
     const int variant=tier+(detailOn_ ? 3 : 0);
     const gfx::PipelineHandle fallbackPipe=pipeline(dev,variant,false);
     if (!fallbackPipe.valid()) return;
@@ -946,14 +947,14 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
         if (heightDirty_) updateHeightField(dev, g);
         r.setHeightField(heightField_);
     } else r.setHeightField({});
-    r.drawCustomOpaque([this, &r, items, u, fallbackPipe, giPipe, apron](gfx::Device& d) {
+    r.drawCustomOpaque([this, &r, items, u, fallbackPipe, giPipe, apron, compact](gfx::Device& d) {
         const bool giAvailable=giPipe.valid() &&
             r.availableDynamicGiForCustomShader(
                 render::GiCustomShaderMode::Single,21)==render::GiCustomShaderMode::Single;
         d.setPipeline(giAvailable ? giPipe : fallbackPipe);
         r.bindLitFrame();
-        r.bindTrace(18);
-        r.bindBakedTerrain(3, 19, 20);   // agent-lightbake
+        r.bindTrace(compact ? 6 : 18);
+        r.bindBakedTerrain(3,compact ? 4 : 19,compact ? 5 : 20);
         if(giAvailable && r.bindDynamicGiForCustomShader(
                 render::GiCustomShaderMode::Single,21)!=render::GiCustomShaderMode::Single) {
             // Unexpected GI resource retirement between preflight and bind:
@@ -961,18 +962,29 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
             // an unbound tex21 in a GI shader variant.
             d.setPipeline(fallbackPipe);
             r.bindLitFrame();
-            r.bindTrace(18);
-            r.bindBakedTerrain(3,19,20);
+            r.bindTrace(compact ? 6 : 18);
+            r.bindBakedTerrain(3,compact ? 4 : 19,compact ? 5 : 20);
         }
-        d.setTexture(2, cellTex_); d.setTexture(3, dynTex_); d.setTexture(4, splatTex_);
-        for (int i = 0; i < 4; ++i) {
-            d.setTexture(5 + i, layerTex_[i].valid() ? layerTex_[i].tex : white_);
-            d.setTexture(9 + i, layerNrm_[i].valid() ? layerNrm_[i].tex : flatN_);
+        d.setTexture(2,cellTex_);
+        d.setTexture(3,dynTex_);
+        if(!compact) {
+            // The rich terrain pass owns slots 4..14 and 16..17.
+            // Compact low tier reserves slots 4/5 for baked GI and 6 for
+            // traced height; overwriting them with layer textures would
+            // silently break the resulting lighting.
+            d.setTexture(4,splatTex_);
+            for(int i=0;i<4;++i) {
+                d.setTexture(5+i,layerTex_[i].valid()?layerTex_[i].tex:white_);
+                d.setTexture(9+i,layerNrm_[i].valid()?layerNrm_[i].tex:flatN_);
+            }
+            d.setTexture(13,cliffTex_.valid()?cliffTex_.tex:gray_);
+            d.setTexture(14,cliffNrm_.valid()?cliffNrm_.tex:flatN_);
+            if(detailOn_) {
+                d.setTexture(16,detailNrmTex_);
+                d.setTexture(17,detailSplatTex_);
+            }
         }
-        d.setTexture(13, cliffTex_.valid() ? cliffTex_.tex : gray_);
-        d.setTexture(14, cliffNrm_.valid() ? cliffNrm_.tex : flatN_);
-        d.setTexture(15, visionTex_);
-        if (detailOn_) { d.setTexture(16, detailNrmTex_); d.setTexture(17, detailSplatTex_); }
+        d.setTexture(15,visionTex_);
         TU0 uu = u;
         auto drawLod = [&](const Lod& l, float s, float e) {
             uu.lod[0] = s; uu.lod[1] = e;
