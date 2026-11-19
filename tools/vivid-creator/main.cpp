@@ -511,7 +511,7 @@ struct CreatorApp {
             status="VIVID facial rig: invalid composition";
         if(!actor->dispatch(controller.frame(),human.facialBinding))
             status=actor->lastError();
-        if(inspectGroom) {
+        if(inspectGroom && human.hair) {
             human.groom.step(step,{wind,0,wind*0.3f});
             human.groom.updateCardVertices(human.hair->vertices);
             dev.updateBuffer(human.hair->vb,human.hair->vertices.data(),
@@ -536,10 +536,12 @@ struct CreatorApp {
             const float inv=1.0f/std::sqrt(std::max(lengthSq,0.00001f));
             for(int row=0;row<3;++row)headRigid.at(row,col)*=inv;
         }
-        ModelDraw hair;
-        hair.model=human.hair.get();
-        hair.world=headRigid;
-        renderer.drawModel(hair);
+        if(human.hair) {
+            ModelDraw hair;
+            hair.model=human.hair.get();
+            hair.world=headRigid;
+            renderer.drawModel(hair);
+        }
         gfx::PassDesc pass;
         pass.clearColor[0]=0.075f;pass.clearColor[1]=0.085f;pass.clearColor[2]=0.12f;
         renderer.render(pass);
@@ -594,6 +596,14 @@ int aiverseMain(int argc,char** argv) {
             application->smoke=true;
             if(const char* path=std::getenv("AIVERSE_VIVID_CREATOR_CAPTURE"))
                 application->smokePath=path;
+        }else if(std::strcmp(argv[i],"--preset")==0 && i+1<argc) {
+            const std::string preset=argv[++i];
+            std::string error;
+            if(!application->session.preset(preset,&error)) {
+                std::fprintf(stderr,"VIVID Creator preset: %s\n",error.c_str());
+                return 2;
+            }
+            application->syncDraft();
         }else if(std::strcmp(argv[i],"--asset")==0 && i+1<argc) {
             const auto& path=argv[++i];
             if(std::strlen(path)>=sizeof(application->manifestFile)) {
