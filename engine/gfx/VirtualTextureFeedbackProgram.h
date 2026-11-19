@@ -41,7 +41,8 @@ struct VirtualTextureFeedbackProgramSources {
 // [[buffer(1)]] for U0 (buffer 0 is reserved for vertices).
 inline VirtualTextureFeedbackProgramSources
 virtualTextureFeedbackProgramSources(bool alphaMask, bool lodFade,
-                                     bool automaticMip = true) {
+                                     bool automaticMip = true,
+                                     bool alphaRedChannel = false) {
     VirtualTextureFeedbackProgramSources src;
     const std::string glslBlock = R"GLSL(
 layout(std140) uniform U0 {
@@ -86,8 +87,10 @@ layout(location=0) out vec4 outFeedback;
         src.glslFragment +=
             " vec3 auv=vec3(vAlphaUV,1.0);\n"
             " vec2 sampleUv=vec2(dot(uAlphaUv0.xyz,auv),"
-            "dot(uAlphaUv1.xyz,auv));\n"
-            " if(texture(tex0,sampleUv).a*uCoverage.x<uCoverage.y) discard;\n";
+            "dot(uAlphaUv1.xyz,auv));\n";
+        src.glslFragment += std::string(" if(texture(tex0,sampleUv)") +
+            (alphaRedChannel ? ".r" : ".a") +
+            "*uCoverage.x<uCoverage.y) discard;\n";
     if (lodFade)
         src.glslFragment +=
             " vec2 pixel=gl_FragCoord.xy*uScenePixel.xy+uScenePixel.zw;\n"
@@ -148,8 +151,10 @@ vertex FeedbackOut vs_main(FeedbackIn in [[stage_in]],
             " float3 auv=float3(in.alphaUv,1.0);\n"
             " float2 sampleUv=float2(dot(u.alphaUv0.xyz,auv),"
             "dot(u.alphaUv1.xyz,auv));\n"
-            " if(tex0.sample(s0,sampleUv).a*u.coverage.x<u.coverage.y)"
-            " discard_fragment();\n";
+            " float4 alphaSample = tex0.sample(s0,sampleUv);\n";
+        src.msl += std::string(" if(alphaSample.") +
+            (alphaRedChannel ? "r" : "a") +
+            "*u.coverage.x<u.coverage.y) discard_fragment();\n";
     if (lodFade)
         src.msl +=
             " float2 pixel=in.position.xy*u.scenePixel.xy+u.scenePixel.zw;\n"
@@ -185,7 +190,8 @@ public:
     bool initialize(Device& dev, bool alphaMask, bool lodFade,
                     bool depthAttachment,
                     VirtualTextureFeedbackVertexLayout layout = {},
-                    bool automaticMip = true) {
+                    bool automaticMip = true,
+                    bool alphaRedChannel = false) {
         if (shader_.valid() || pipeline_.valid() ||
             layout.stride == 0 ||
             layout.positionOffset + 12 > layout.stride ||
@@ -193,7 +199,7 @@ public:
             layout.indexType == IndexType::None)
             return false;
         const auto sources = virtualTextureFeedbackProgramSources(
-            alphaMask, lodFade, automaticMip);
+            alphaMask, lodFade, automaticMip, alphaRedChannel);
         ShaderDesc sd;
         sd.glslVertex = sources.glslVertex.c_str();
         sd.glslFragment = sources.glslFragment.c_str();
