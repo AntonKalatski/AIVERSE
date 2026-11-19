@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <functional>
+#include <numeric>
 #include <limits>
 #include <span>
 #include <stdexcept>
@@ -111,6 +113,136 @@ public:
             result.push_back(best);
         }
         return result;
+    }
+    // Median-split BVH reference bake for production-size source surfaces.
+    // Same closest-triangle semantics as project(), with stable ID tie-break.
+    // Triangle/vertex caps keep memory and traversal depth bounded.
+    static std::vector<LodSurfaceSample> projectAccelerated(
+        std::span<const render::float3> source,
+        std::span<const std::uint32_t> sourceIndices,
+        std::span<const render::float3> lod,
+        float maxDistance=0.05f) {
+        using namespace render;
+        if(source.empty() || source.size()>1'000'000 ||
+           lod.empty() || lod.size()>1'000'000 ||
+           sourceIndices.empty() || sourceIndices.size()%3 ||
+           sourceIndices.size()/3>2'000'000 ||
+           !std::isfinite(maxDistance) || maxDistance<=0 || maxDistance>10)
+            throw std::invalid_argument("VIVID LOD BVH: invalid input/budget");
+        for(const auto& p:source)if(!finite(p))
+            throw std::invalid_argument("VIVID LOD BVH: nonfinite source");
+        for(const auto& p:lod)if(!finite(p))
+            throw std::invalid_argument("VIVID LOD BVH: nonfinite target");
+        for(const auto i:sourceIndices)if(i>=source.size())
+            throw std::invalid_argument("VIVID LOD BVH: source index outside mesh");
+        struct Node {
+            float3 lo{},hi{};
+            std::uint32_t left=0,right=0,begin=0,count=0;
+        };
+        const auto triangleCount=std::uint32_t(sourceIndices.size()/3);
+        std::vector<std::uint32_t> order(triangleCount);
+        std::iota(order.begin(),order.end(),0u);
+        std::vector<Node> nodes;
+        nodes.reserve(std::size_t(triangleCount)*2);
+        auto triangle=[&](std::uint32_t t,int corner)->float3 {
+            return source[sourceIndices[std::size_t(t)*3+std::size_t(corner)]];
+        };
+        auto component=[](float3 p,int axis) {
+            return axis==0?p.x:axis==1?p.y:p.z;
+        };
+        auto expand=[](Node& node,float3 p) {
+            node.lo=min3(node.lo,p);
+            node.hi=max3(node.hi,p);
+        };
+        std::function<std::uint32_t(std::uint32_t,std::uint32_t)> build=
+            [&](std::uint32_t begin,std::uint32_t count)->std::uint32_t {
+            const float inf=std::numeric_limits<float>::max();
+            Node node;
+            node.lo={inf,inf,inf};
+            node.hi={-inf,-inf,-inf};
+            for(std::uint32_t i=begin;i<begin+count;++i)
+                for(int corner=0;corner<3;++corner)
+                    expand(node,triangle(order[i],corner));
+            const auto id=std::uint32_t(nodes.size());
+            nodes.push_back(node);
+            if(count<=8) {
+                nodes[id].begin=begin;
+                nodes[id].count=count;
+                return id;
+            }
+            const auto extent=node.hi-node.lo;
+            const int axis=(extent.x>=extent.y&&extent.x>=extent.z)?0:
+                           (extent.y>=extent.z)?1:2;
+            const auto mid=begin+count/2;
+            std::nth_element(order.begin()+begin,order.begin()+mid,
+                order.begin()+begin+count,[&](auto lhs,auto rhs) {
+                    const auto a=(triangle(lhs,0)+triangle(lhs,1)+triangle(lhs,2))*(1.0f/3.0f);
+                    const auto b=(triangle(rhs,0)+triangle(rhs,1)+triangle(rhs,2))*(1.0f/3.0f);
+                    const float av=component(a,axis),bv=component(b,axis);
+                    return av==bv?lhs<rhs:av<bv;
+                });
+            const auto left=build(begin,count/2);
+            const auto right=build(mid,count-count/2);
+            nodes[id].left=left;nodes[id].right=right;
+            return id;
+        };
+        for(std::uint32_t i=0;i<triangleCount;++i) {
+            const auto a=triangle(i,0),b=triangle(i,1),c=triangle(i,2);
+            if(length(cross(b-a,c-a))<1.e-8f)
+                throw std::invalid_argument("VIVID LOD BVH: degenerate source triangle");
+        }
+        build(0,triangleCount);
+        const auto allowed=maxDistance*maxDistance;
+        std::vector<LodSurfaceSample> output;
+        output.reserve(lod.size());
+        auto distanceToBox=[](float3 p,const Node& node) {
+            const float dx=std::max({node.lo.x-p.x,0.0f,p.x-node.hi.x});
+            const float dy=std::max({node.lo.y-p.y,0.0f,p.y-node.hi.y});
+            const float dz=std::max({node.lo.z-p.z,0.0f,p.z-node.hi.z});
+            return dx*dx+dy*dy+dz*dz;
+        };
+        for(const auto point:lod) {
+            LodSurfaceSample best;
+            best.distanceSquared=std::numeric_limits<float>::max();
+            std::vector<std::uint32_t> stack;
+            stack.reserve(64);
+            stack.push_back(0);
+            while(!stack.empty()) {
+                const auto id=stack.back();stack.pop_back();
+                const auto& node=nodes[id];
+                if(distanceToBox(point,node)>best.distanceSquared)continue;
+                if(node.count) {
+                    for(std::uint32_t i=node.begin;i<node.begin+node.count;++i) {
+                        const auto tri=order[i];
+                        float3 bary{};
+                        const auto p=closest(point,triangle(tri,0),
+                                            triangle(tri,1),triangle(tri,2),bary);
+                        const auto delta=point-p;
+                        const float dsq=dot(delta,delta);
+                        if(dsq<best.distanceSquared ||
+                          (dsq==best.distanceSquared&&tri<best.triangle)) {
+                            best.triangle=tri;
+                            best.bary=bary;
+                            best.distanceSquared=dsq;
+                        }
+                    }
+                }else {
+                    const auto a=node.left,b=node.right;
+                    const auto da=distanceToBox(point,nodes[a]);
+                    const auto db=distanceToBox(point,nodes[b]);
+                    // Process nearer subtree first; stable tie break by node ID.
+                    if(da<db || (da==db && a<b)) {
+                        stack.push_back(b);stack.push_back(a);
+                    }else {
+                        stack.push_back(a);stack.push_back(b);
+                    }
+                }
+            }
+            if(best.distanceSquared>allowed)
+                throw std::invalid_argument("VIVID LOD BVH: outside projection tolerance");
+            output.push_back(best);
+        }
+        return output;
     }
     static SparseMorphLibrary transfer(
         const SparseMorphLibrary& source,
