@@ -1,6 +1,7 @@
 #pragma once
 #include "WorldAssets.h"
 #include "engine/render/Renderer3D.h"
+#include "engine/world/TerraWeave.h"
 
 namespace aiverse::terraweave { class TerraWeaveForestScene; class TerraWeaveHorizonScene; }
 namespace aiverse::world {
@@ -12,6 +13,13 @@ public:
     void update(gfx::Device&,std::span<const Vec3> observers,int radius=2);
     void draw(render::Renderer3D&,Cell renderOrigin,int originCellSize);
     void shutdown(gfx::Device&);
+    // Runtime forest clearing rectangles, signed world centimetres,
+    // half-open. Shared across near Flora and far Horizon. Set on the
+    // WorldScene update thread, not while worker/render callbacks execute.
+    void setVegetationClearings(std::vector<terraweave::RectCm> clearings);
+    const std::vector<terraweave::RectCm>& vegetationClearings() const {
+        return vegetationClearings_;
+    }
     const AsyncChunkStream::Status& status()const{return stream_->status();}
     // Optional genre-independent presentation forest. Native hosts may feed
     // a deterministic tick and schedule sparse harvest/regrowth without
@@ -45,6 +53,9 @@ private:
     std::unique_ptr<terraweave::TerraWeaveForestScene> terraForest_;
     std::unique_ptr<terraweave::TerraWeaveHorizonScene> terraHorizon_;
     bool terraForestReady_=false;
+    std::vector<terraweave::RectCm> vegetationClearings_;
+    std::vector<terraweave::RectCm> previousVegetationClearings_;
+    bool vegetationClearingsDirty_=false;
     float overhang_=0;                                        // "meshOverhang": units a mesh may reach past its chunk
     void releaseChunk(gfx::Device&,Prepared&);
     size_t uploadBytes_=16*1024*1024;
