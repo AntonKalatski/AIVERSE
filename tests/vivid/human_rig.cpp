@@ -2,6 +2,7 @@
 #include "engine/character/vivid/RigAuthoring.h"
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 using namespace aiverse;
@@ -33,6 +34,16 @@ void check() {
     req(!binding.compose(motion,result,invalid) && result[2].at(2,1)==before[2].at(2,1),
         "invalid facial values partially changed output");
     req(!binding.compose(motion,motion,face),"face overlay mutated MotionWeave source");
+    {
+        auto invalidPose=motion;
+        invalidPose[1].at(0,3)=std::numeric_limits<float>::quiet_NaN();
+        const auto last=result;
+        req(!binding.compose(invalidPose,result,face),
+            "VIVID facial rig accepted invalid MotionWeave source matrix");
+        req(result[1].at(0,3)==last[1].at(0,3) &&
+            result[2].at(2,1)==last[2].at(2,1),
+            "invalid MotionWeave source partially changed facial render pose");
+    }
     model.nodes[2].parent=0;
     bool thrown=false;
     try{(void)HumanRigBinding::compile(model,HumanDNA{}.rig);}
