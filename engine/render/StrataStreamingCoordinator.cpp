@@ -179,6 +179,13 @@ void releaseDeviceIndexBytes(gfx::Device& device,uint64_t token) {
     if(it->second.leases.empty())gpuLedgers.erase(it);
 }
 
+void clearIdleDeviceIndexBudget(gfx::Device& device) {
+    std::lock_guard lock(gpuMutex);
+    const auto it=gpuLedgers.find(&device);
+    if(it!=gpuLedgers.end() && it->second.leases.empty())
+        gpuLedgers.erase(it);
+}
+
 DeviceIndexBudgetStats deviceIndexBudgetStats(gfx::Device& device) {
     std::lock_guard lock(gpuMutex);
     const auto it=gpuLedgers.find(&device);
