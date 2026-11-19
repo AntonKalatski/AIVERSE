@@ -25,6 +25,7 @@ StudioMetalScene::~StudioMetalScene() {
         if (cube_.ib.valid()) device_->destroyBuffer(cube_.ib);
         renderer_.shutdown();
     }
+}
 int StudioMetalScene::pick(float x, float y, float width, float height, const editor::MapData& map) const {
     float3 origin{}, direction{};
     if (!cameraInitialized_ || !camera_.screenRay(x,y,width,height,origin,direction)) return -1;
@@ -50,7 +51,6 @@ int StudioMetalScene::pick(float x, float y, float width, float height, const ed
     }
     const int index=editor::pickSceneRenderable(candidates,origin,direction);
     return index<0 ? -1 : int(candidates[size_t(index)].entity-1);
-}
 }
 void StudioMetalScene::orbit(float dx, float dy) {
     camera_.yaw += dx * 0.007f;

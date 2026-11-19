@@ -99,7 +99,7 @@
 - (void)applicationDidFinishLaunching:(NSNotification*)note {
     (void)note;
     window_=[[NSWindow alloc] initWithContentRect:NSMakeRect(0,0,1440,900)
-        styleMask:NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskMiniaturizable|NSWindowStyleMaskResizable
+        styleMask:(NSWindowStyleMaskTitled|NSWindowStyleMaskClosable|NSWindowStyleMaskMiniaturizable|NSWindowStyleMaskResizable)
         backing:NSBackingStoreBuffered defer:NO];
     window_.title=@"AIVERSE Studio HTML5";
     [window_ center];
