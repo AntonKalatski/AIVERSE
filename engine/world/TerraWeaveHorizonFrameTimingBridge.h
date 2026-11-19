@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <deque>
 #include <limits>
@@ -64,6 +65,8 @@ public:
 
     uint64_t lastFrameId() const {return frameId_;}
     size_t pendingFrames() const {return frames_.size();}
+    uint64_t deliveredGpuFrames() const {return deliveredGpuFrames_;}
+    uint64_t deliveredCpuOnlyFrames() const {return deliveredCpuOnlyFrames_;}
 
 private:
     struct Frame {
@@ -111,13 +114,17 @@ private:
                 break;
             // CPU-only fallback on unsupported/timed-out GPU providers.
             // Emit each frame ID only once, strictly in increasing order.
+            const bool gpuValid=first.gpuReady && first.gpuUs!=0;
             scene.submitVegetationHorizonFrameTiming({
-                first.id,first.cpuUs,first.gpuReady?first.gpuUs:0u});
+                first.id,first.cpuUs,gpuValid?first.gpuUs:0u});
+            if(gpuValid)++deliveredGpuFrames_;
+            else ++deliveredCpuOnlyFrames_;
             frames_.pop_front();
         }
     }
     uint64_t frameId_=0;
     bool capturing_=false;
     std::deque<Frame> frames_;
+    uint64_t deliveredGpuFrames_=0,deliveredCpuOnlyFrames_=0;
 };
 } // namespace aiverse::terraweave
