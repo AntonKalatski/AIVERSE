@@ -191,6 +191,8 @@ void Prisma::retireView(uint64_t id) {
     }
     requestedOutputSizes_.erase(id);
     adaptiveViews_.erase(id);
+    scopedGpuTimings_.erase(id);
+    adaptivePressure_.erase(id);
     motionViews_.erase(id); // only matrix state + borrowed GPU handles
     viewDimensions_.erase(id); // the shared size cache itself stays resident
     // If the current presentation view was closed, keep its stable ID for
@@ -465,6 +467,8 @@ void Prisma::shutdown() {
         for (auto& h : view.history) release(h);
     temporalViews_.clear();
     adaptiveViews_.clear();
+    scopedGpuTimings_.clear();
+    adaptivePressure_.clear();
     motionViews_.clear();
     viewDimensions_.clear();
     requestedOutputSizes_.clear();
@@ -559,6 +563,21 @@ bool Prisma::preflightUpscale(int outputW,int outputH,int renderW,int renderH) {
     return history.history[0].valid() && history.history[1].valid() &&
            color.valid() && velocity.valid() && depth.valid() &&
            internalScratch.valid() && outputScratch.valid();
+}
+
+void Prisma::acceptViewGpuTiming(uint64_t id,double gpuMs) {
+    if (!std::isfinite(gpuMs) || gpuMs<=0.0 || gpuMs>250.0) return;
+    auto& row=scopedGpuTimings_[id];
+    row.viewId=id;
+    row.lastGpuMs=gpuMs;
+    ++row.sampleSequence; // only a real completed scoped GPU query
+}
+
+std::vector<Prisma::ViewGpuTiming> Prisma::viewGpuTimings() const {
+    std::vector<ViewGpuTiming> out;
+    out.reserve(scopedGpuTimings_.size());
+    for (const auto& [id, row] : scopedGpuTimings_) out.push_back(row);
+    return out;
 }
 
 std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
