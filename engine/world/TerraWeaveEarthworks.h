@@ -32,6 +32,14 @@ struct EarthworkChange {
     RectCm dirty{};
     std::vector<EarthVertexEdit> vertices;
 };
+// Persistent sparse overlay. Base terrain recipe/asset identity is supplied
+// separately by the game and MUST match before rehydrating this snapshot.
+struct EarthworksSnapshot {
+    int32_t spacingCm=0,bedrockCm=0;
+    uint64_t revision=0;
+    std::vector<std::pair<EarthVertex,int32_t>> heights;
+};
+
 enum class EarthworkMode:uint8_t { Dig=0, Fill=1 };
 struct EarthworkBrush {
     int64_t centerXcm=0,centerZcm=0;
@@ -54,6 +62,34 @@ public:
     int32_t spacingCm()const{return spacingCm_;}
     uint64_t revision()const{return revision_;}
     size_t overrideCount()const{return heights_.size();}
+    int32_t bedrockCm()const{return bedrockCm_;}
+    EarthworksSnapshot snapshot()const {
+        EarthworksSnapshot out;
+        out.spacingCm=spacingCm_;
+        out.bedrockCm=bedrockCm_;
+        out.revision=revision_;
+        out.heights.reserve(heights_.size());
+        for(const auto& entry:heights_)out.heights.push_back(entry);
+        return out;
+    }
+    // Transactional restore; rejects malformed data instead of clamping,
+    // preserving the exact authoritative soil revision for ECS replay.
+    void setSnapshot(const EarthworksSnapshot& snapshot){
+        if(snapshot.spacingCm!=spacingCm_ ||
+           snapshot.bedrockCm!=bedrockCm_ ||
+           snapshot.heights.size()>1000000u)
+            throw std::invalid_argument("TerraWeave Earthworks incompatible snapshot");
+        std::map<EarthVertex,int32_t> next;
+        for(const auto& [key,height]:snapshot.heights) {
+            const auto [x,z]=worldPosition(key);
+            if(height<bedrockCm_ || height==base_(x,z) ||
+               !next.emplace(key,height).second)
+                throw std::invalid_argument(
+                    "TerraWeave Earthworks invalid/duplicate sparse override");
+        }
+        heights_.swap(next);
+        revision_=snapshot.revision;
+    }
     const std::map<EarthVertex,int32_t>& overrides()const{return heights_;}
 
     int32_t heightAt(EarthVertex key)const {
