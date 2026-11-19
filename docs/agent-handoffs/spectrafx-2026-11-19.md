@@ -384,3 +384,23 @@ git switch feature/spectrafx-generic-cue-queue
 git pull --ff-only origin feature/spectrafx-generic-cue-queue
 git fetch origin main && git merge origin/main
 ```
+
+
+## 2026-11-19 — Stage 22: RHI-backed GPU particle evolution foundation
+- **Branch:** `feature/spectrafx-generic-cue-queue`. Last branch comparison to main `d71c6d47e532b25fb816a8bb1f96c41e5275a165` showed zero behind.
+- **Code commits:** `b41c845aee3f8021ddcac72139119210b6dd7ed9` and `a757b545d02d624eba8358ec37828b06380831f6`.
+- **Added files:** `engine/fx/SpectraFxComputeShaders.h`, `engine/fx/SpectraFxGpuEvolution.h`.
+- **Functionality:** GPU kernels implemented for Metal MSL and GLSL 4.30: bounded particle position/age and velocity/lifetime evolution with acceleration/damping and a GPU-written RGBA32F position texture. `SpectraFxGpuEvolution::init` capability-gates via `supportsCompute()` and RGBA32F format support, validates finite seeds and max 65,536 particles, allocates RHI storage buffers and a storage texture, and creates compute pipeline. `step` validates 0..0.1-second dt/environment, binds storage, dispatches through existing RHI compute API outside rendering passes; `shutdown` releases device handles. Public accessors expose buffer/texture handles to a future GPU renderer. CPU `ParticleSystem` remains sole full-featured particle simulation/render path on devices without GPU support.
+- **Compatibility:** opt-in GPU data evolution only. No changes to deterministic ECS, existing FX format, PRISMA, CMake or CPU ParticleSystem render order. Vulkan shader route is GLSL where supported; **no D3D12 RHI exists in inspected Gfx.h** and no D3D12 backend was added.
+- **Actual verification:** **NOT RUN**, by user instruction (all functions first, tests later). No compile, shader compilation, RHI dispatch, real GPU render, CPU/GPU parity, CI, macOS Metal or Vulkan smoke. GPU kernel correctness is source-authored only, not verified.
+- **Honest capability boundary:** this stage does NOT implement GPU particle spawning, collision, sorting, draw/indirect renderer or Niagara-level GPU parity. It is a real compute API path and position-buffer producer that must be consumed by a GPU drawing pipeline before it replaces any full CPU FX. Do not route active production effects onto it until renderer/fallback/lifetime handling are complete. GPU-owned buffers should be shut down on the device thread before device destruction.
+- **Next:** add GPU billboard draw path (sample GPU-written positions), render-side budgeting and CPU fallback, then broader GPU particle modules. Add a frontend/backend chooser only when both execution and draw paths exist. Tests remain deferred.
+
+Pull latest branch:
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main && git merge origin/main
+```
