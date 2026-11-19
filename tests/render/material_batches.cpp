@@ -427,6 +427,21 @@ int aiverseMain(int argc, char** argv) {
                             int(supported),
                             (unsigned long long)renderer.modelStats().multiDrawSubmissions,
                             (unsigned long long)renderer.modelStats().indirectCommands);
+                if (cpuTiming) {
+                    for (size_t pass = 0; pass < 2; ++pass) {
+                        const auto& st = renderer.modelStats().mdiCpuStages[pass];
+                        std::printf("CPU MDI stages pass=%zu samples=%llu scans=%llu attempts=%llu submitted=%llu "
+                                    "total_ms=%.5f selection_ms=%.5f grouping_ms=%.5f scan_ms=%.5f "
+                                    "packing_ms=%.5f pipeline_ms=%.5f upload_ms=%.5f submit_ms=%.5f\n",
+                            pass, (unsigned long long)st.passes,
+                            (unsigned long long)st.candidateScans,
+                            (unsigned long long)st.indirectAttempts,
+                            (unsigned long long)st.submitted, st.totalMs,
+                            st.selectionMs, st.groupingSortMs, st.candidateScanMs,
+                            st.commandPackingMs, st.pipelineSetupMs,
+                            st.bufferUploadMs, st.backendSubmitMs);
+                    }
+                }
             }
             else if(p.draws[0]!=shadowBefore || (scenario=="fallback"?p.draws[1]!=opaqueBefore:p.draws[1]>=opaqueBefore)) failed=true;
             if(scenario=="transition") {std::printf("lod_transition_nodes=%u\n",p.lodTransitionNodes);failed|=p.lodTransitionNodes==0;}
