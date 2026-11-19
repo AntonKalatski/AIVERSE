@@ -176,7 +176,8 @@ void ClientFx::update(Simulation& sim, const game::RtsScene& scene, const render
                 std::fprintf(stderr,
                     "[spectrafx-cpu-encode] updateAvgUs=%.2f updatePeakUs=%llu "
                     "drawAvgUs=%.2f drawPeakUs=%llu "
-                    "sharedPrograms=%llu createErrors=%llu\n",
+                    "sharedEvo=%llu sharedSort=%llu sharedCompact=%llu "
+                    "createErrors=%llu metalCreateErrors=%llu\n",
                     avgUpdate,
                     static_cast<unsigned long long>(encode.cpuUpdatePeakUs),
                     avgDraw,
@@ -184,7 +185,13 @@ void ClientFx::update(Simulation& sim, const game::RtsScene& scene, const render
                     static_cast<unsigned long long>(
                         encode.sharedComputePrograms),
                     static_cast<unsigned long long>(
-                        encode.sharedComputeFailures));
+                        encode.sharedAlphaPrograms),
+                    static_cast<unsigned long long>(
+                        encode.sharedCompactPrograms),
+                    static_cast<unsigned long long>(
+                        encode.sharedComputeFailures),
+                    static_cast<unsigned long long>(
+                        encode.sharedMetalProgramFailures));
             }
         }
     }
