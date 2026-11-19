@@ -1385,3 +1385,23 @@ The Vulkan RHI has asynchronous submissions; the staged copy being *encoded* is 
 **Actual verification:** GitHub branch reads/source-invariant checks; atomic 3-file implementation commit and expected-SHA fast-forward. **Native CMake/CTest: NOT RUN; GPU fence regression: NOT RUN; in-flight Metal/Vulkan rendering: NOT RUN; memory pressure tests: NOT RUN; CPU/GPU A/B/A: NOT RUN.** Never claim a measured memory decrease or stable GPU recycling. PR remains Draft.
 
 **Next:** inspect Vulkan nonzero pooled `gpuBaseVertex` indirect addressing and shader-facing vertex IDs. Preserve safe fallback unless exact direct/indirect semantics can be equalized without affecting morph/skinning. Then feature-completion audit and explicit native concurrency/fence/visual validation before enabling experimental flags.
+
+
+---
+
+## Stage 46 — opt-in Vulkan canonical pooled rigid vertex addressing (2026-11-19)
+
+**Repository/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. **Code commit:** `99c70c54385864b8169fe6d8f066879c414bba1f`, parent Stage 45 docs `d02e1aa92596c6d5948bb7e220a2fbf8d01c4761`. As of stage start, feature branch was even with latest main; recompare before merging.
+
+**Problem.** Vulkan ordinary `drawIndexed` currently applies `baseVertex` by shifting the bound vertex buffer offset and using VkDrawIndexed vertexOffset=0. Vulkan indexed-indirect commands instead use the per-command `baseVertex` in their 20-byte ABI. Nonzero pooled offsets therefore differ in shader-visible `gl_VertexIndex`, and the old renderer correctly rejected them from indirect to avoid a mismatch. In the engine's model shaders, morph/skinned animation may consume shader-visible indices; blindly changing all direct draws would be unsafe.
+
+**Implementation.**
+- `engine/gfx/Gfx.h`: new optional `drawIndexedCanonical(indexCount,firstIndex,baseVertex,instanceCount)` virtual, default forwarding to existing direct drawIndexed. No change to old RHI API or GPU indirect command ABI.
+- `engine/gfx/vulkan/VkDevice.h`, `VkDraw.cpp`: Vulkan override binds the vertex buffer at its original `vbOffset_` and calls `vkCmdDrawIndexed(..., vertexOffset=baseVertex, firstInstance=0)`. This is Vulkan-standard address semantics and matches its indirect command's `baseVertex`, while leaving **existing** `drawIndexed` unchanged for all other clients. Same shader/texture/material/pipeline binding, queue/fence and index buffer selection.
+- `engine/render/StaticCrossModelBatchPolicy.h`: central opt-in `vulkanPooledMdiAddressingEnabled()` from `AIVERSE_VULKAN_POOLED_MDI=1`, **default OFF**.
+- `engine/render/Renderer3DModels.cpp`: calls canonical direct draw only on **Vulkan** when the flag is enabled and the ModelItem is static, rigid, in the shared geometry pool, not skinned/morphed/baked, and not using shaderGraph. The general indexed-indirect method relaxes the old nonzero `gpuBaseVertex` rejection only for the same opt-in eligible pooled rigid items; all other nonzero-base cases retain fallback. Static cross-model preflight admits these items only with the flag. View/LOD/material/sun-shadow selection, transparent sorting and backend command thresholds are unchanged.
+- No auto-enabling of Metal GPU ICB, no enabling pooled/recycled uploads, and no changes to ECS genres, serialized data, shader ABI, vertex buffer layouts or general Vulkan indexed draw semantics.
+
+**Actual validation:** inspected Vulkan direct/indirect bindings, ModelShaders morph source and shader translation (`gl_VertexID` → `gl_VertexIndex`), and current render grouping. GitHub connector performed exact multi-file modifications, atomic 5-file tree/commit and an expected-SHA fast-forward. **Native CMake/CTest: NOT RUN. Vulkan shader/real GPU pixel parity: NOT RUN. Metal model parity: NOT RUN. CPU/GPU A/B/A: NOT RUN.** This is a source-level opt-in implementation, not a proven hardware fix; leave the flag OFF by default and PR Draft.
+
+**Next exact validation:** Build Vulkan backend, render two different static rigid Models in the SAME page with nonzero baseVertex, compare direct vs canonical/CPU MDI pixels and output primitive counts on same camera+sun-shadow. Repeat with AIVERSE_VULKAN_POOLED_MDI=0 fallback, LOD changes/crossfade, material overrides, scene reload and quarantine/recycling. Exercise a model with per-vertex material palette (no morph) and check `gl_VertexIndex` parity, then confirm morphed/skinned/animated/ShaderGraph models remain on old direct path. Compare Metal/GL for pixel parity, run Vulkan validation layers and full CTest. Only after parity can the flag be considered for default enablement.

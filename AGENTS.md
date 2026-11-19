@@ -1775,3 +1775,20 @@ upload failure does not consume an available retired pair.
 pairs and recycled uploads, not GPU residency gains. No
 genre logic, no immediate in-place compaction, no default enable.
 Native/Metal/Vulkan/concurrency tests NOT RUN; PR #34 Draft.
+
+
+## Stage 46 — Vulkan pooled rigid nonzero base-vertex (opt-in)
+
+`AIVERSE_VULKAN_POOLED_MDI=1` (default OFF) makes eligible
+static, rigid, pooled, no-ShaderGraph ModelDraw calls use
+`Device::drawIndexedCanonical()` on Vulkan, so direct and
+indexed-indirect paths both apply `baseVertex` as GPU
+vertexOffset. The legacy Vulkan `drawIndexed` continues to
+apply VB binding offset for all other callers (especially
+morph/skinning). The renderer still rejects nonzero pooled
+baseVertex from MDI when flag OFF, and keeps normal fallback
+for unsupported/deformed/variant paths. Shader ABI, ECS,
+material/LOD/culling, Metal GPU ICB and command thresholds
+unchanged. No native builds, pixel comparisons or GPU
+validation performed; Draft PR #34 remains open. See Stage 46
+handoff for required tests before default enablement.

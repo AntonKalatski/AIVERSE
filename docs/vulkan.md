@@ -104,3 +104,21 @@ read as UNORM).
 
 - compute (`supportsCompute()` is false, as on GL), GPU timings (`timeGpuFrame`), async readbacks;
 - pipeline and SPIR-V disk caches, finer barriers, descriptor sets reused across draws.
+
+
+### Canonical indexed base vertex in opt-in rigid model batches
+
+Existing `Device::drawIndexed` retains legacy Vulkan semantics:
+`baseVertex` shifts the vertex-buffer binding, leaving
+`gl_VertexIndex` local. A new `Device::drawIndexedCanonical`
+(default forwarding for non-Vulkan) uses Vulkan-native semantics:
+bind the original VB page offset, and put `baseVertex` in
+`vkCmdDrawIndexed` vertexOffset. This exactly mirrors the indexed
+indirect command's addressing. `AIVERSE_VULKAN_POOLED_MDI=1`
+activates it **only** for eligible static rigid pooled
+Renderer3D ModelItems (not animated/morphed/skinned/baked/ShaderGraph).
+Indirect with nonzero pooled baseVertex is still OFF by default
+and other RHI clients keep their historical behavior.
+Do not change the shader translator or force all draws to the
+canonical path. Validate real Vulkan pixels/validation layers
+before enabling. CPU feature stage NOT TESTED.

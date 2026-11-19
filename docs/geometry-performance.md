@@ -1558,3 +1558,28 @@ not a reduction in actual GPU allocations or the precise live
 set. This is a feature-only implementation, not yet native
 compiled or GPU-fence stress tested, and MUST remain OFF by
 default until genuine Metal/Vulkan visual and memory tests.
+
+
+### Vulkan indexed base-vertex parity for rigid pooled CPU MDI (Stage 46)
+
+`AIVERSE_VULKAN_POOLED_MDI=1` (default **OFF**) enables the
+Vulkan-standard indexed `baseVertex` addressing path for
+eligible **static, rigid, pooled** ModelItems. Historically the
+Vulkan RHI `drawIndexed` shifted its VB binding by baseVertex
+and supplied VkDrawIndexed vertexOffset=0 so the shader-visible
+vertex ID stayed local, whereas a `DrawIndexedIndirectCommand`
+uses the GPU vertexOffset. With this flag, shared renderer
+`drawModelBatch` calls `Device::drawIndexedCanonical()`
+for safe pooled rigid fallback draws; the Vulkan override binds
+the unshifted page VB and passes baseVertex to `vkCmdDrawIndexed`.
+The indirect path already uses that same Vulkan vertexOffset.
+The old ordinary `drawIndexed` and GLSL translator stay unchanged.
+
+The renderer only relaxes Vulkan's nonzero base-vertex indirect
+rejection and static pooled sorter admission when the identical
+opt-in and rigid/no-skin/no-morph/no-baked/no-ShaderGraph
+restrictions apply. All other paths keep the old direct fallback.
+This is not GPU-tested: do not use globally in shipping builds
+without source fixture + real Vulkan/Metal pixel comparisons,
+LOD/variant tests and GPU validation layers. CPU MDI thresholds,
+material-state equality and transparency ordering stay mandatory.
