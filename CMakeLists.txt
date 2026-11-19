@@ -2117,6 +2117,14 @@ if(AIVERSE_BUILD_STRATA)
         target_link_libraries(aiverse_strata_metal_reflection_material_parity PRIVATE
             aiverse_runtime aiverse_strata_render_routing
             aiverse_strata_gpu_scene)
+        # Stage 14: new portable CPU-selected LOD path, selected clusters
+        # through the SAME production Renderer3D on actual Metal hardware.
+        # Vulkan/GLES3 compile contract is in strata_portable_tests.
+        add_executable(aiverse_strata_metal_portable_parity
+            tests/render/strata_metal_portable_parity.cpp
+            $<TARGET_OBJECTS:aiverse_runtime>)
+        target_link_libraries(aiverse_strata_metal_portable_parity PRIVATE
+            aiverse_runtime aiverse_strata_portable)
     endif()
 endif()
 if(AIVERSE_RUNTIME_AUTOLOD)
