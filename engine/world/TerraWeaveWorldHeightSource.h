@@ -12,6 +12,7 @@
 #include <map>
 #include <optional>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 namespace aiverse::terraweave {
