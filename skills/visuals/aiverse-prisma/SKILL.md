@@ -1047,6 +1047,61 @@ See `docs/handoffs/prisma-stage-61.md` for exact commits,
 source impacts, limitations and next functionality.
 Maintain Draft PR #26; never merge to main without approval.
 
+## Stage 62 — current-frame reactive coverage MUST survive a camera cut
+
+`Renderer3D::renderObjectMotionVectors` now admits object velocity
+ONLY with valid previous camera/pose history and a non-resized view
+(`velocityHistoryReady`) plus RGBA16F support. Do not publish
+fabricated current=current or zero-motion velocity textures
+on the first frame, on a camera cut/epoch change, or after
+viewport resize.
+
+Reactive transparency coverage is a SEPARATE current-pose
+producer:
+`Renderer3D::renderCurrentFrameReactiveMask(post,history,
+sceneDepth,w,h)`. It runs even when object velocity is not
+admitted, provided a native post hook requested motion/reactive
+inputs and borrowed scene depth is valid. It creates its own
+private depth scratch attachment if velocity didn't already
+allocate it, and only renders a RGBA8 reactive target when
+there is current translucent/dithered geometry or a provider
+callback. The scene depth remains a sampled borrowed texture,
+not a render attachment or owner. The target's contents are
+cleared per pass; no stale previous-mask reuse is allowed.
+Rigid, morph/skinned/baked transparent models, immediate water,
+particles/custom callbacks all use their CURRENT pose.
+`MotionTextureInput::declared(...,RGBA8)` is published only
+after a mask pass was encoded, never on absent pipelines.
+
+History for the NEXT frame is updated AFTER the current-frame
+reactive draw; on resize, velocity target, private depth and
+reactive target all use existing GPU-fenced
+`queueObjectMotionTexture`. No CPU frame delay and no
+synchronous `destroyTexture`. Maintain stable per-view IDs;
+do not merge camera histories by shared resolution.
+
+`Renderer3D::ObjectMotionStats.submitted` remains strictly
+the object velocity pass; new `velocitySeedOnly` and
+`reactiveSubmitted` distinguish a first-frame seed from
+a successful reactive-only mask. `Prisma::ViewEffectReport`
+adds `objectVelocityInputAccepted` and
+`reactiveWithoutObjectVelocity` (for the CURRENT accepted
+borrowed inputs). The editor displays mask-only reactive
+behavior; these fields describe pass submission and metadata,
+not GPU completion or pixel correctness. Stage 61's
+`reactiveTapRejection` continues to require an accepted
+mask and an encoded MotionBlur pass.
+
+Static readback checks: **42/42 structural contracts and
+2/2 C++ scope-brace checks**, not compilation.
+Native CMake, C++/Obj-C++, shader compile, CTest,
+Metal/GL/Vulkan/GLES/WebGL, first-frame/cut/resize
+screenshots, GPU-fence stress, performance and CI
+remain **NOT RUN**. See
+`docs/handoffs/prisma-stage-62.md` for exact commits,
+limitations and the next step. Keep PR #26 Draft and
+do not merge into main without explicit user approval.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
