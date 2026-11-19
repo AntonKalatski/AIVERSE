@@ -321,7 +321,8 @@ bool Editor::convertVisualModelSource(const std::string& src) {
         return value.find_first_of("\"$\\\r\n")!=std::string::npos ||
                value.find(char(96))!=std::string::npos; // backtick
 #endif
-    };    if(unsafeShellPath(src) || unsafeShellPath(tool.string())) {
+    };
+    if(unsafeShellPath(src) || unsafeShellPath(tool.string())) {
         ws_.log("view","отклонён небезопасный путь модели: "+src,true);
         return false;
     }
