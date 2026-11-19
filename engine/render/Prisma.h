@@ -59,6 +59,11 @@ public:
     // Exposure history is owned per view; borrowed velocity/reactive handles
     // are not destroyed. The current GPU submission fences owned textures.
     void retireView(uint64_t viewId);
+    // Explicit host-frame registry of all live camera identities. Inactive
+    // view-only state is GPU-fenced via retireView; shared size caches stay
+    // until retireUnreferencedSizeCaches. Call AFTER all view submissions
+    // for this frame, never infer activity from CPU frameSerial.
+    size_t retireUnregisteredViews(const std::vector<uint64_t>& liveViewIds);
     // At a graphics-owner frame boundary, retire size-keyed targets that NO
     // recorded view currently references. Never destroys active/in-flight GPU
     // resources synchronously. The caller keeps any desired view IDs live.
