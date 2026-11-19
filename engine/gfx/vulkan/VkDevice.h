@@ -112,6 +112,8 @@ public:
     bool setWindow(const VulkanWindow* window);
 
     const DeviceInfo& info() const override { return info_; }
+    uint64_t frameSerial() const override { return healthy_ ? serial_ : 0; }
+    uint64_t completedFrameSerial() const override { return healthy_ ? completed_ : 0; }
     const std::string& lastError() const override { return error_; }
     bool supports(PixelFormat f) const override;
 

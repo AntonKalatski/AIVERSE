@@ -98,6 +98,10 @@ public:
 
     const DeviceInfo& info() const override { return info_; }
     uint64_t frameSerial() const override { return frame_; }
+    uint64_t completedFrameSerial() const override {
+        return gpuHealthy_->load(std::memory_order_acquire)
+            ? completedFrame_->load(std::memory_order_acquire) : 0;
+    }
     bool supports(PixelFormat f) const override {
         bool apple = false, bc = false;
 #if TARGET_OS_IPHONE
@@ -867,13 +871,26 @@ public:
         __block dispatch_semaphore_t sem = frameSemaphore_;
         [cmd_ addCompletedHandler:^(id<MTLCommandBuffer>) { dispatch_semaphore_signal(sem); }];
         auto timing=gpuMs_;auto health=gpuHealthy_;
+        auto completedSerial=completedFrame_;
+        const uint64_t submittedFrame=frame_;
         [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> completed) {
             if(completed.status==MTLCommandBufferStatusError) {
                 health->store(false);
                 const char* description = completed.error ? completed.error.localizedDescription.UTF8String : "unknown";
                 std::fprintf(stderr, "[metal] command buffer failed: %s\\n", description);
             }
-            if(completed.status==MTLCommandBufferStatusCompleted)timing->store((completed.GPUEndTime-completed.GPUStartTime)*1000);
+            if(completed.status==MTLCommandBufferStatusCompleted) {
+                timing->store((completed.GPUEndTime-completed.GPUStartTime)*1000);
+                // Only a completed queue submission may release quarantined
+                // geometry spans. One Metal queue orders all model uploads
+                // and draws; atomically publish the highest completed frame.
+                uint64_t observed=completedSerial->load(std::memory_order_relaxed);
+                while(observed<submittedFrame &&
+                      !completedSerial->compare_exchange_weak(
+                          observed, submittedFrame,
+                          std::memory_order_release,
+                          std::memory_order_relaxed)) {}
+            }
         }];
         firstPass_ = true;
     }
@@ -1616,6 +1633,9 @@ private:
     Pool<id<MTLComputePipelineState>> computes_;
     std::shared_ptr<std::atomic<bool>> gpuHealthy_=std::make_shared<std::atomic<bool>>(true);
     std::shared_ptr<std::atomic<double>> gpuMs_=std::make_shared<std::atomic<double>>(0);
+    // Shared with the completion callback: never capture a destroyed device.
+    std::shared_ptr<std::atomic<uint64_t>> completedFrame_=
+        std::make_shared<std::atomic<uint64_t>>(0);
     id<CAMetalDrawable> drawable_;
     id<MTLTexture> depth_;
     dispatch_semaphore_t frameSemaphore_;

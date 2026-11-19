@@ -306,6 +306,11 @@ public:
     virtual double gpuFrameMs() const { return 0; } // last completed frame; asynchronous
     // Zero if backend does not expose a completed-slot-safe frame serial.
     virtual uint64_t frameSerial() const { return 0; }
+    // Highest fully completed queue serial. Zero means unknown/unsupported.
+    // A buffer range retired at frameSerial() may be overwritten ONLY when
+    // this value is nonzero and >= that retirement serial. This does not
+    // imply any safety for races on a live Model or unsubmitted GPU work.
+    virtual uint64_t completedFrameSerial() const { return 0; }
 
     // Frame (driven by the platform layer)
     virtual void beginFrame(int framebufferWidth, int framebufferHeight) = 0;
