@@ -27,6 +27,17 @@ public:
     uint64_t gpuRetirementEnqueueFailures() const noexcept {
         return retirement_?retirement_->enqueueFailures():0;
     }
+    render::RenderTexture::SubmissionStats canvasSubmitStats() const noexcept {
+        render::RenderTexture::SubmissionStats total;
+        for(const auto& [id,layer]:layers_) {
+            (void)id;
+            const auto stats=layer.canvas.submissionStats();
+            total.failedBrushBuffers+=stats.failedBrushBuffers;
+            total.failedBlitBuffers+=stats.failedBlitBuffers;
+            total.failedUploadTextures+=stats.failedUploadTextures;
+        }
+        return total;
+    }
     void draw(render::Renderer3D&,gfx::Device&,const std::shared_ptr<render::PaintLayers>&,
               const MapGrid&,const RtsView&,const std::vector<uint8_t>* vision,double time,uint8_t viewer);
     void shutdown();
