@@ -738,3 +738,51 @@ stamp capacities. A scene that reuses nearly every item every pass may
 not be faster; only same-camera CPU/GPU A/B can establish the benefit.
 No shader, GPU command ABI, geometry, LOD, culling, or model ownership
 behavior changes, and experimental flags remain disabled by default.
+
+
+### Per-pass ranked static group sorting (Stage 23)
+
+The optional `AIVERSE_STATIC_CROSS_MODEL_BATCHES=1` path previously
+repeated multiple expensive `ModelItem` comparisons inside the full
+`std::sort` comparator for every eligible pair. These included reading
+resolved material-group IDs, shared GPU geometry-page pointers, vertex/
+index buffer IDs and flags from the source Models even though Stage 18/21
+preflight had already assigned identical values to each exact group.
+
+`StaticCrossModelPreflightWorkspace::prepareSortRanks()` now runs **once
+per pass after page-aware preflight and per-page adaptive admission**.
+It orders only groups marked ready **and** permitted, with a compact
+`uint16_t` rank assigned to each accepted group. The group comparator
+uses the same ordering as the prior cross-model item comparator:
+`materialGroup → geometryPage → GPU VB → GPU IB → drawFlags`. Page
+pointers are ordered with `std::less` (not subtracted or cast to
+integers). The group list has at most 2048 entries and is stored in a
+renderer-owned reusable vector with high-water capacity. Sorting group
+ranks costs `O(G log G)` per eligible pass (`G <= 2048`) instead of
+repeating these multi-field comparisons across many item-sort
+comparisons.
+
+Only when **both** ModelItems are confirmed as accepted static
+cross-model candidates does `renderModels` use the numeric group
+ranks. Within a single exact group it continues the same
+`lightmapPage → primitive pointer → original ModelItem index` order.
+The original comparator is used for all other items, including
+translucent objects, shadow-role or material-role batches, animated/
+nonpooled models, the instance-material-palette experiment and
+adaptive pages that declined MDI. This preserves the existing
+material, visibility, LOD, shadow, GPU buffer and indirect command
+requirements; the final MDI builder still validates the real
+submission. The feature does **not** replace the overall
+`std::sort(order_)` with a linear-time algorithm — the improvement is
+a smaller per-comparison cost for qualifying static groups.
+
+`StaticCrossModelPreflightWorkspace::retainedBytes()` includes the
+new reusable vector of sorted group indices (at most 2048
+`uint16_t` values); it is released with other workspace allocations
+on full scene cache invalidation or shutdown. The public
+`ModelRenderStats::staticCrossModelRankedGroups` metric and the
+Scene → Batching panel report the number of groups whose sort key
+was computed once per pass, not a claimed reduction in draw calls.
+All experimental flags remain OFF by default. Real compile,
+Metal screenshot parity and dense-scene CPU/GPU A/B remain deferred
+until the later test phase.
