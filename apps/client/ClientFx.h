@@ -29,7 +29,7 @@ public:
     void addLights(render::LightSystem& lights);
     // Opt-in SpectraFX GPU effects: call once before Renderer3D::beginScene,
     // inside beginFrame and outside all GPU render/compute passes.
-    void prepareGpuFrame(float dt);
+    void prepareGpuFrame(float dt,const render::RTSCamera& camera);
     // Draw GPU-owned billboards in the still open scene pass, after render().
     void renderGpu(const render::mat4& viewProj, const render::RTSCamera& camera);
     // After Renderer3D::render(): draws into the still open main pass.
