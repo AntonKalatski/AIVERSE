@@ -1065,3 +1065,32 @@ The host must retain old Model/Graph resources throughout bridge
 sync and may not mutate ECS structure during worker dispatch.
 **NOT RUN:** native build or hot reload parity tests.
 See [Stage 119 handoff](agent-handoffs/animation-stage119-playback-continuity-2026-11-19.md).
+
+## Stage 121 — optional source-rig LOD and socket ModelDraw API
+
+For native C++ projects, `aiverse::view::Object` can keep
+`animationModel` as the stable MotionWeave AnimationGraph source
+while `draw.model` is the base visual asset and
+`lods = {{&model30, 30.f}, {&model100, 100.f}}` supplies
+distance-selected whole-model replacements. This is separate from
+the renderer's existing per-mesh LODs and from RTS-specific authored
+construction/variant choices. Selection has per-entity/generation
+hysteresis to avoid LOD flicker without creating new graph players.
+
+Compatible visual rigs may receive source pose matrices only if
+ordered nodes, parents, bind TRS, skins and inverse-bind matrices
+match. Independently authored morph target slots do **not**
+automatically match. Incompatible LOD Models draw in their own
+bind pose rather than corrupting GPU skinning; a future explicit
+retarget/map can opt in. Named/indexed attachments always use the
+base `animationModel` source pose (or its bind pose), regardless
+of which visual LOD is rendered. The old RTS weapon/cargo/banner
+socket pass now uses this generic View composition primitive.
+ModelDraw and asset pointers remain borrowed through submission.
+
+The `view::Object` original field order is unchanged, with all new
+fields appended for native aggregate source compatibility. There
+is no new gameplay authority, clip clock, save format, or GPU model
+ownership. **NOT RUN:** native build, real model LOD/skin/morph
+comparison, CTest, editor/RTS/FPS screenshots or sanitizers.
+[Stage 121 handoff](agent-handoffs/animation-stage121-universal-lod-attachments-2026-11-19.md).
