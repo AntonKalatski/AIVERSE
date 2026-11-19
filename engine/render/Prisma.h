@@ -34,6 +34,9 @@ struct PrismaStats {
     bool adaptiveResolution = false;
     bool adaptiveMemoryPressure = false;
     uint64_t adaptiveKnownGpuBytes = 0;
+    uint64_t adaptiveMemoryLimitBytes = 0;
+    bool adaptiveScopedGpuTiming = false;
+    double adaptiveGpuMs = 0;
     float requestedRenderScale = 1.0f;
     bool temporalResolved = false, temporalJittered = false;
     float jitterPixelX = 0, jitterPixelY = 0;
@@ -278,6 +281,12 @@ private:
     std::map<uint64_t, TemporalView> temporalViews_;
     std::map<uint64_t, PrismaAdaptiveResolution> adaptiveViews_;
     std::map<uint64_t, ViewGpuTiming> scopedGpuTimings_;
+    struct AdaptivePressure {
+        uint64_t knownBytes = 0, limitBytes = 0;
+        bool overLimit = false, scopedGpu = false;
+        double gpuMs = 0;
+    };
+    std::map<uint64_t, AdaptivePressure> adaptivePressure_;
     // Last successful postprocess scene pass per stable view ID. A size cache
     // can be shared by several views; retireView() removes a view reference.
     std::map<uint64_t, std::pair<int, int>> viewDimensions_;
