@@ -232,6 +232,12 @@ public:
     size_t pendingTargetRetirements() const noexcept {
         return targetRetirement_?targetRetirement_->pendingPairs():0;
     }
+    uint64_t targetRetirementOrphanPairs() const noexcept {
+        return targetRetirement_?targetRetirement_->orphanedPairs():0;
+    }
+    uint64_t targetRetirementEnqueueFailures() const noexcept {
+        return targetRetirement_?targetRetirement_->enqueueFailures():0;
+    }
     bool collectRetiredTargets() {
         if(!targetRetirement_ || !dev_)return true;
         checkGpuDevice(*dev_);
