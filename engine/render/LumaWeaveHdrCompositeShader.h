@@ -13,7 +13,7 @@ using namespace metal;
 struct LumaComposeVertex {float2 pos [[attribute(0)]];};
 struct LumaComposeVaryings {float4 position [[position]];float2 uv;};
 struct LumaComposeParams {
-    float4 options; // x=flip RT texture y, y=depth tolerance, z=exposure scale, w=unused
+    float4 options; // x=flip RT texture y, y=depth tolerance, z=exposure scale, w=already BRDF reflected
 };
 vertex LumaComposeVaryings vs_main(LumaComposeVertex v [[stage_in]]) {
     LumaComposeVaryings out;
@@ -44,7 +44,9 @@ fragment float4 fs_main(LumaComposeVaryings in [[stage_in]],
     float4 material=receiverMaterial.sample(lumaCompositeNearest,texUv);
     float3 diffuse=clamp(material.rgb,0.0f,1.0f)*
                    (1.0f-clamp(material.a,0.0f,1.0f));
-    if(all(diffuse<=float3(0)))return float4(0);
+    // Material-reflected PBR mode still needs depth/receiver checks, but a
+    // black dielectric may have a valid 0.04 Fresnel specular response.
+    if(params.options.w<.5f && all(diffuse<=float3(0)))return float4(0);
 
     // 2x2 low-resolution taps with depth rejection reduce light leaks at
     // silhouettes. Do not renormalize rejected neighbours to their brightest
@@ -69,7 +71,12 @@ fragment float4 fs_main(LumaComposeVaryings in [[stage_in]],
     }
     if(weightSum<=0)return float4(0);
     const float3 irradiance=accumulated/weightSum;
-    const float3 reflected=irradiance*diffuse*(1.0f/3.14159265358979323846f)*
+    // w=1: LumaWeaveSCREEN_PBR computed reflected diffuse+GGX specular per
+    // light BEFORE stochastic sampling. Multiplying base color a second time
+    // would lose the Fresnel energy and destroy metallic reflections.
+    const float3 reflected=params.options.w>.5f ?
+                           irradiance*max(params.options.z,0.0f) :
+                           irradiance*diffuse*(1.0f/3.14159265358979323846f)*
                            max(params.options.z,0.0f);
     return float4(max(reflected,float3(0)),0);
 }
