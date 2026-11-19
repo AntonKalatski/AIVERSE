@@ -195,6 +195,10 @@ public:
     LegacyLodFallbackStats legacyLodFallbackStats() const noexcept {
         return legacyLodFallbackStats_;
     }
+    // Budget only retained transient Pose/matrix capacity in the generic
+    // MotionWeave View. The largest single actor still renders normally.
+    void setGenericRetargetScratchBudgetBytes(size_t bytes);
+    size_t genericRetargetScratchCapacityBytes() const noexcept;
     struct AssetResidencyStats {
         size_t loadedTypes = 0, cachedModels = 0, gpuTextures = 0, decodedCpuBytes = 0;
         size_t retiredModels=0,retirementBatches=0,retirementPeak=0;
@@ -723,6 +727,7 @@ private:
     LegacyLodFallbackMode legacyLodFallbackMode_=
         LegacyLodFallbackMode::PreserveWorldMatrices;
     LegacyLodFallbackStats legacyLodFallbackStats_;
+    size_t genericRetargetScratchBudgetBytes_=512u*1024u;
     std::unique_ptr<::aiverse::view::View> genericView_;
     bool genericViewEnabled_=true; // opt-in per-object safety predicate
     render::Mesh projectile_;
