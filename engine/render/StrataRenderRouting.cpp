@@ -103,6 +103,8 @@ bool prepareRenderCandidate(const Model& source, const ModelAsset& staged,
 
     RenderCandidate candidate;
     candidate.source = &source;
+    candidate.sourceKey = sourceKey;
+    candidate.pass = pass;
     candidate.vertexBuffer = source.vb;
     candidate.indexBuffer = resident.buffer;
     candidate.mesh = mesh;
@@ -139,6 +141,7 @@ bool prepareRenderCandidate(const Model& source, const ModelAsset& staged,
 }
 
 bool encodeRendererCommands(const Model& liveSource,
+                            const GpuMetadataScene& liveResidency,
                             const RenderCandidate& candidate,
                             uint32_t rendererInstanceSlot,
                             const RenderRouteGate& gate,
@@ -151,14 +154,24 @@ bool encodeRendererCommands(const Model& liveSource,
         candidate.materialRevision != liveSource.materialRevision ||
         candidate.vertexBuffer != liveSource.vb ||
         candidate.indexBuffer != liveSource.ib ||
-        !candidate.vertexBuffer.valid() || !candidate.indexBuffer.valid())
+        !candidate.vertexBuffer.valid() || !candidate.indexBuffer.valid() ||
+        !sourceCompatible(liveSource, candidate.mesh, candidate.primitive,
+                          candidate.material, candidate.pass))
+        return false;
+    GpuMetadataScene::IndexBinding binding;
+    if (!liveResidency.indexBinding(candidate.sourceKey, liveSource, binding) ||
+        !binding.valid() || binding.buffer != candidate.indexBuffer ||
+        binding.baseVertex != int32_t(liveSource.gpuBaseVertex))
         return false;
     std::vector<gfx::DrawIndexedIndirectCommand> commands;
     commands.reserve(candidate.ranges.size());
     for (const auto& range : candidate.ranges) {
         if (!range.indexCount || range.indexCount % 3 ||
             range.material != candidate.material ||
-            range.baseVertex < 0 ||
+            range.baseVertex != binding.baseVertex ||
+            range.firstIndex < binding.firstIndex ||
+            uint64_t(range.firstIndex) + range.indexCount >
+                uint64_t(binding.firstIndex) + binding.indexCount ||
             range.firstIndex > std::numeric_limits<uint32_t>::max() -
                                range.indexCount)
             return false;
