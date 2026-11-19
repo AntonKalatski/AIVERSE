@@ -157,6 +157,12 @@ static void pageLifecycle(gfx::Backend backend) {
     assert(cache.update({{0,1,10.f}},&error));
     assert(dev.bytesWritten_==beforeNoop);
 
+    // Frame serial zero is not a usable retirement fence. Keep already
+    // visible leaves rather than generating an unrecyclable GPU hole.
+    dev.serial_=0;
+    assert(cache.update({},&error));
+    assert(cache.resident(0,1) && cache.resident(0,2));
+
     // Evict old children; same current frame cannot reuse their offsets.
     // The other source still falls back to its resident parent.
     dev.serial_=3;
