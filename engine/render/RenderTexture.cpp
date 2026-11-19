@@ -157,12 +157,23 @@ bool RenderTexture::blit(gfx::TextureHandle source,float x,float y,float w,float
  for(float v:{x,y,w,h})if(!std::isfinite(v))return false;
  if(w<=0||h<=0)return false;
  flush();
+ if(clear_||!strokes_.empty())return false; // unsuccessful brush upload
  const float verts[]={x,y,x+w,y,x+w,y+h,x,y,x+w,y+h,x,y+h};
- gfx::BufferDesc bd;bd.data=verts;bd.size=sizeof(verts);auto vertices=dev_->createBuffer(bd);
- gfx::PassDesc pass;pass.colorTarget=texture_;pass.clearColorEnabled=false;pass.clearDepthEnabled=false;
- dev_->beginPass(pass);dev_->setViewport({0,0,width_,height_});dev_->setScissor({});dev_->setPipeline(blitPipe_);
- struct {float ends[4],color[4],params[4];}u{{x,y,w,h},{0,0,0,0},{0,0,dev_->info().renderTargetFlipY?-1.f:1.f,0}};
- dev_->setUniforms(0,&u,sizeof(u));dev_->setTexture(0,source);dev_->setVertexBuffer(vertices);dev_->draw(6);dev_->endPass();dev_->destroyBuffer(vertices);return true;
+ gfx::BufferDesc bd;bd.data=verts;bd.size=sizeof(verts);
+ auto vertices=dev_->createBuffer(bd);
+ if(!vertices.valid())return false;
+ try{
+  gfx::PassDesc pass;pass.colorTarget=texture_;pass.clearColorEnabled=false;pass.clearDepthEnabled=false;
+  dev_->beginPass(pass);dev_->setViewport({0,0,width_,height_});dev_->setScissor({});dev_->setPipeline(blitPipe_);
+  struct {float ends[4],color[4],params[4];}u{{x,y,w,h},{0,0,0,0},{0,0,dev_->info().renderTargetFlipY?-1.f:1.f,0}};
+  dev_->setUniforms(0,&u,sizeof(u));dev_->setTexture(0,source);dev_->setVertexBuffer(vertices);
+  dev_->draw(6);dev_->endPass();
+ }catch(...){
+  retirement_->retire(vertices);
+  throw;
+ }
+ retirement_->retire(vertices);
+ return true;
 }
 
 void RenderTexture::upload(int x,int y,int w,int h,const void* p,int pitch){
@@ -173,6 +184,16 @@ void RenderTexture::upload(int x,int y,int w,int h,const void* p,int pitch){
  for(int row=0;row<h;++row)std::copy_n(static_cast<const uint8_t*>(p)+size_t(row)*pitch,w*4,bytes.data()+size_t(row)*w*4);
  gfx::TextureDesc td;td.width=w;td.height=h;td.data=bytes.data();td.label="canvas upload";
  auto source=dev_->createTexture(td);
- if(source.valid()){blit(source,float(x)/width_,float(y)/height_,float(w)/width_,float(h)/height_);dev_->destroyTexture(source);}
+ if(source.valid()){
+  try{
+   blit(source,float(x)/width_,float(y)/height_,float(w)/width_,float(h)/height_);
+  }catch(...){
+   retirement_->retire(source);
+   throw;
+  }
+  // Source may still be sampled by this frame's GPU blit, even after
+  // endPass. Release through the same owner as the blit vertex buffer.
+  retirement_->retire(source);
+ }
 }
 }
