@@ -1451,3 +1451,36 @@ successful uploads; Stage 140 must handle those separately.
 **NOT RUN:** CMake/compiler/CTest/CI, real Metal/GL/Vulkan, sanitizer,
 partial GPU failure injection or visuals. Feature-first workflow keeps
 validation until after all remaining functionality is complete.
+
+
+## Stage 140 — GPU-fenced native Model replacement for scene hosts
+
+Native road and shoreline scene hosts previously called `releaseModel`
+on Models that might still have GPU submissions in flight, and road
+SpriteMesh buffers were destroyed immediately on rebuild/weather changes.
+New `render::NativePresentationRetirement` (header under `engine/render`)
+owns a per-host, render-thread-only ordered completion-token queue for
+`unique_ptr<Model>` and `gfx::BufferHandle`. It accepts
+`retireModel`/`retireBuffer` on removal from draw lists and
+`collect` only at a true host frame boundary. Completion requires an
+actual backend token or explicit `waitForResourceIdle`, never frame age.
+
+`RtsRoadView` queues old chunks, editor ghosts and decal/verge/wet/puddle
+sprite vertex buffers. `RtsShoreView` queues terrain chunks and foam
+Models. The scene entry in `RtsView::draw` polls queues *before*
+the draw providers; this location must be verified against actual
+graphics frame boundaries (including editor multiple-draw/offscreen
+cases) before production. Backends lacking async tokens defer full
+idle until an advisory 128 retired resources, or shutdown; this is
+NOT an exact VRAM memory bound.
+
+Both native hosts now require an explicit full GPU idle barrier before
+shutdown destroys their still-live shared kit textures, texture caches,
+and SpriteBatch resources. An unproven barrier fails closed. The helper
+is not a general cross-thread ownership mechanism, does not replace
+ModelResourceCache's GPU-fenced retirement and does not own host
+simulation state.
+
+[Stage 140 handoff](agent-handoffs/animation-stage140-native-scene-gpu-retirement-2026-11-19.md).
+**NOT RUN:** native build, CTest, real Metal/Vulkan/GL, editor/FPS/RTS
+visual or GPU fence fault injection, sanitizers and benchmarks.
