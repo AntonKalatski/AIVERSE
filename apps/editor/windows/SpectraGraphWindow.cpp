@@ -315,6 +315,16 @@ private:
             ed.setSpectraGpuPreviewLoop(loop);
         ImGui::SameLine();
         if(ImGui::Button("Stop GPU"))ed.stopSpectraGpuPreview();
+        ImGui::SameLine();
+        if(ImGui::Button("Step GPU")) {
+            ed.setSpectraGpuPreviewFrozen(true);
+            ed.stepSpectraGpuPreviewOnce();
+        }
+        ImGui::SameLine();
+        float speed=ed.spectraGpuPreviewSpeed();
+        ImGui::SetNextItemWidth(85.f);
+        if(ImGui::SliderFloat("GPU speed",&speed,0.1f,2.f,"%.1fx"))
+            ed.setSpectraGpuPreviewSpeed(speed);
         ImGui::EndDisabled();
         ImGui::SameLine();ImGui::TextDisabled("%s  v%lld (%d)",
             dirty_?"*":"",static_cast<long long>(doc_.getInt("version")),emitters_);
