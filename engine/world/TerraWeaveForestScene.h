@@ -474,7 +474,19 @@ public:
             if(!next.emplace(id,plant).second)
                 throw std::invalid_argument("TerraWeave duplicated recruited sapling");
         }
+        // One spatial bucket per EXISTING forest chunk. Runtime rendering
+        // can now visit at most the nearby stream radius (<=17x17 buckets)
+        // instead of scanning all 65k persistent recruits every frame.
+        std::map<std::pair<int64_t,int64_t>,
+                 std::vector<ForestTreeIdentity>> byChunk;
+        for(const auto& [id,plant]:next) {
+            const auto key=std::pair{
+                detail::floorDiv(plant.xCm,settings_.chunkSizeCm),
+                detail::floorDiv(plant.zCm,settings_.chunkSizeCm)};
+            byChunk[key].push_back(id);
+        }
         recruited_.swap(next);
+        recruitedByChunk_.swap(byChunk);
     }
     size_t recruitedPlantCount() const {return recruited_.size();}
 
@@ -531,11 +543,22 @@ public:
         // Recruits are sparse, persistent and rendered only by the
         // existing Arbor prototypes. The normal Flora distance/LOD cull
         // rejects those outside the visual forest radius.
-        for(const auto& [id,plant]:recruited_){
-            (void)id;
-            if(auto shown=presentationInstance(plant))
-                placements.push_back(*shown);
-        }
+        const int64_t cx=detail::floorDiv(
+            observer_.x,settings_.chunkSizeCm);
+        const int64_t cz=detail::floorDiv(
+            observer_.z,settings_.chunkSizeCm);
+        const int64_t radius=settings_.radiusChunks;
+        for(int64_t dz=-radius;dz<=radius;++dz)
+            for(int64_t dx=-radius;dx<=radius;++dx){
+                const auto found=recruitedByChunk_.find({
+                    cx+dx,cz+dz});
+                if(found==recruitedByChunk_.end())continue;
+                for(const auto& id:found->second){
+                    const auto& plant=recruited_.at(id);
+                    if(auto shown=presentationInstance(plant))
+                        placements.push_back(*shown);
+                }
+            }
         FloraView view = settings_.view;
         view.cameraXcm = observer_.x;
         view.cameraZcm = observer_.z;
@@ -876,6 +899,8 @@ private:
     std::set<ForestTreeIdentity> fallen_;
     std::set<ForestTreeIdentity> dead_;
     std::map<ForestTreeIdentity,FoliageInstance> recruited_;
+    std::map<std::pair<int64_t,int64_t>,
+             std::vector<ForestTreeIdentity>> recruitedByChunk_;
     std::map<ForestTreeIdentity,ForestRegrowthSchedule> regrowth_;
     std::map<ForestTreeIdentity,PlantEnvironment> conditions_;
     std::map<ForestTreeIdentity,RootState> rootStates_;
