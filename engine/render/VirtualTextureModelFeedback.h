@@ -19,6 +19,8 @@ struct VirtualTextureMaterialMapping {
     float texelWidth = 1, texelHeight = 1, mipBias = 0;
     float uvScaleX = 1, uvScaleY = 1;
     float uvOffsetX = 0, uvOffsetY = 0;
+    gfx::SamplerAddressMode addressU = gfx::SamplerAddressMode::ClampToEdge;
+    gfx::SamplerAddressMode addressV = gfx::SamplerAddressMode::ClampToEdge;
 };
 using VirtualTextureMaterialResolver = std::function<bool(
     const Model&, const Material&, VirtualTextureMaterialMapping&)>;
@@ -178,6 +180,8 @@ private:
         u.virtualUv[1] = map.uvScaleY;
         u.virtualUv[2] = map.uvOffsetX;
         u.virtualUv[3] = map.uvOffsetY;
+        u.addressModes[0] = float(uint32_t(map.addressU));
+        u.addressModes[1] = float(uint32_t(map.addressV));
 
         // Identical KHR_texture_transform convention to ModelShaders.h:
         // uv = rotate(uv0 * scale, -rotation) + offset.
