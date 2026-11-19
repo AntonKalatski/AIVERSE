@@ -5,6 +5,7 @@
 #include "engine/gfx/Gfx.h"
 #include "engine/gfx/VirtualTextureFeedbackPass.h"
 #include "engine/gfx/VirtualTextureStreamer.h"
+#include "engine/gfx/VirtualTextureFileStreamer.h"
 #include "engine/platform/Platform.h"
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -16,6 +17,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
 #include <thread>
@@ -708,6 +711,242 @@ void gpuPhysicalVirtualAtlas(Device& dev) {
                 elapsedMs(start,Clock::now()));
 }
 
+
+// Real disk worker -> render-thread GPU upload -> native Metal page-table
+// publication. No fake Device, synthetic worker result, or application scene.
+struct VtDiskFixture {
+    std::filesystem::path root;
+    bool ready = false;
+
+    VtDiskFixture() {
+        std::error_code ec;
+        const auto temp = std::filesystem::temp_directory_path(ec);
+        if (ec) return;
+        root = temp / ("aiverse-metal-vt-disk-" +
+                       std::to_string(Clock::now().time_since_epoch().count()));
+        ready = std::filesystem::create_directories(root,ec) && !ec;
+    }
+    ~VtDiskFixture() {
+        if (!root.empty()) {
+            std::error_code ec;
+            std::filesystem::remove_all(root,ec);
+        }
+    }
+    bool write(VirtualPageKey key,const std::vector<uint8_t>& data) const {
+        if (!ready) return false;
+        const auto file=root / VirtualTextureDiskQueue::relativePath(key);
+        std::error_code ec;
+        std::filesystem::create_directories(file.parent_path(),ec);
+        if (ec) return false;
+        std::ofstream out(file,std::ios::binary|std::ios::trunc);
+        if (!out) return false;
+        out.write(reinterpret_cast<const char*>(data.data()),
+                  std::streamsize(data.size()));
+        out.close();
+        return bool(out);
+    }
+};
+
+bool pumpDiskPage(VirtualTextureFileStreamer& stream,
+                  VirtualDiskPageTicket ticket,VirtualPageKey key,
+                  bool expectedSuccess,const char* label) {
+    if (!ticket.valid()) {
+        ++failures;
+        std::fprintf(stderr,"FAIL: %s invalid disk ticket\n",label);
+        return false;
+    }
+    const auto start=Clock::now();
+    const auto deadline=start+std::chrono::seconds(6);
+    bool completed=false,success=false;
+    size_t callbacks=0;
+    std::string error;
+    size_t staged=0;
+    unsigned polls=0;
+    while (!completed && Clock::now()<deadline) {
+        staged+=stream.pump(2,[&](VirtualDiskPageTicket current,
+                                 VirtualPageKey actual,bool ok,
+                                 const std::string& why) {
+            if (current!=ticket || !(actual==key)) {
+                ++failures;
+                std::fprintf(stderr,
+                    "FAIL: %s unexpected disk-to-GPU completion\n",label);
+                return;
+            }
+            ++callbacks;
+            completed=true;
+            success=ok;
+            error=why;
+        });
+        ++polls;
+        if (!completed) std::this_thread::sleep_for(std::chrono::milliseconds(3));
+    }
+    const bool valid=completed && callbacks==1 &&
+                     success==expectedSuccess &&
+                     (success ? error.empty() : !error.empty());
+    if (!valid) {
+        ++failures;
+        std::fprintf(stderr,
+            "FAIL: %s completed=%d callbacks=%zu success=%d wanted=%d error=%s\n",
+            label,int(completed),callbacks,int(success),int(expectedSuccess),
+            error.c_str());
+    } else {
+        std::printf("PASS: %s (%s)\n",label,
+                    expectedSuccess?"disk -> Metal GPU accepted":"disk failure isolated");
+    }
+    std::printf("TIMING %s worker_and_upload_ms=%.3f polls=%u "
+                "gpu_pages_staged=%zu\n",
+                label,elapsedMs(start,Clock::now()),polls,staged);
+    return valid;
+}
+
+void gpuDiskBackedVirtualAtlas(Device& dev) {
+    const auto start=Clock::now();
+    VtDiskFixture files;
+    check(files.ready,"temporary VT disk page fixture allocated");
+    if (!files.ready) return;
+
+    const VirtualPageKey coarse{2,0,0,0};
+    const VirtualPageKey fine{0,3,3,0};
+    const VirtualPageKey replacement{0,0,0,0};
+    const VirtualPageKey missing{0,1,1,0};
+    const Color invalid{0,0,0,0};
+    const auto coarseData=solid(4,4,{18,71,93,255});
+    const auto fineData=solid(4,4,{82,196,41,255});
+    const auto replacementData=solid(4,4,{220,44,16,255});
+    check(files.write(coarse,coarseData) &&
+          files.write(fine,fineData) &&
+          files.write(replacement,replacementData),
+          "temporary packed RGBA8 virtual page files written");
+    if (failures) return; // avoid a misleading disk->GPU PASS after fixture error
+
+    VirtualTextureStreamConfig atlasCfg;
+    atlasCfg.tilesX=atlasCfg.tilesY=4;
+    atlasCfg.mipLevels=3;
+    atlasCfg.virtualLayers=1;
+    atlasCfg.physicalPages=2;
+    atlasCfg.physicalPageSize=4;
+    atlasCfg.physicalFormat=PixelFormat::RGBA8;
+    atlasCfg.pageTableBytesPerFlush=64;
+    VirtualDiskPageConfig diskCfg;
+    diskCfg.assetRoot=files.root;
+    diskCfg.tilesX=diskCfg.tilesY=4;
+    diskCfg.mipLevels=3;
+    diskCfg.virtualLayers=1;
+    diskCfg.pageSize=4;
+    diskCfg.maxOutstanding=8;
+    diskCfg.maxReadyBytes=256;
+    TextureStreamConfig gpuLimits;
+    gpuLimits.gpuBudgetBytes=4096;
+    gpuLimits.stagingBudgetBytes=256;
+    gpuLimits.uploadBytesPerFrame=128;
+    gpuLimits.uploadsPerFrame=2;
+
+    VirtualTextureFileStreamer stream(dev,gpuLimits);
+    if (!stream.initialize(atlasCfg,diskCfg,2)) {
+        ++failures;
+        std::fprintf(stderr,"FAIL: disk-backed Metal VT init: %s\n",
+                     stream.lastError().c_str());
+        return;
+    }
+    const auto atlas=stream.physicalAtlas();
+    const auto table=stream.pageTableTexture();
+    check(atlas.valid() && table.valid(),
+          "disk-backed Metal VT allocates physical GPU textures");
+    if (!atlas.valid() || !table.valid()) {stream.shutdown();return;}
+
+    const auto allInvalid=solid(4,4,invalid);
+    const auto allCoarse=solid(4,4,{0,0,2,255});
+    const auto coarseTicket=stream.requestPage(coarse,true);
+    check(coarseTicket.valid() && stream.pendingPage(coarse) &&
+          !stream.exactResidentPage(coarse),
+          "file request does not make coarse page resident before worker publication");
+    verifyReads(dev,{
+        probe(table,0,0,4,4,allInvalid,
+              "disk VT GPU page table invalid before worker pump")
+    },"disk VT before publication");
+    if (pumpDiskPage(stream,coarseTicket,coarse,true,
+                     "disk VT pinned coarse page publication")) {
+        check(stream.exactResidentPage(coarse) &&
+              stream.encodedPageTable(3,3,0)==(Color{0,0,2,255}) &&
+              stream.stats().pages.pinned==1,
+              "file-backed coarse page becomes pinned and mapped after GPU upload");
+        verifyReads(dev,{
+            probe(atlas,0,0,4,4,coarseData,
+                  "disk VT coarse physical atlas pixels"),
+            probe(table,0,0,4,4,allCoarse,
+                  "disk VT coarse GPU page-table bytes")
+        },"disk VT coarse GPU publication");
+    }
+
+    const auto missingTicket=stream.requestPage(missing);
+    check(missingTicket.valid() &&
+          !stream.exactResidentPage(missing),
+          "missing file can be queued without premature residency");
+    if (pumpDiskPage(stream,missingTicket,missing,false,
+                     "disk VT missing-page failure")) {
+        check(stream.ready() && !stream.exactResidentPage(missing) &&
+              !stream.pendingPage(missing),
+              "missing file does not quarantine healthy GPU atlas");
+        verifyReads(dev,{
+            probe(table,0,0,4,4,allCoarse,
+                  "disk VT missing-page preserves original GPU mapping")
+        },"disk VT failed disk lookup");
+    }
+
+    const auto fineTicket=stream.requestPage(fine);
+    check(fineTicket.valid() && !stream.exactResidentPage(fine),
+          "file-backed fine page awaits GPU publication");
+    if (pumpDiskPage(stream,fineTicket,fine,true,
+                     "disk VT fine page publication")) {
+        check(stream.exactResidentPage(fine) &&
+              stream.encodedPageTable(3,3,0)==(Color{1,0,0,255}),
+              "disk-backed fine page overrides coarse GPU fallback");
+        auto tableWithFine=allCoarse;
+        const size_t offset=size_t(3*4+3)*4;
+        const Color fineEntry{1,0,0,255};
+        std::copy(fineEntry.begin(),fineEntry.end(),
+                  tableWithFine.begin()+std::ptrdiff_t(offset));
+        verifyReads(dev,{
+            probe(atlas,0,1,4,4,fineData,
+                  "disk VT fine physical atlas pixels"),
+            probe(table,0,0,4,4,tableWithFine,
+                  "disk VT fine override in GPU page table")
+        },"disk VT fine GPU publication");
+    }
+
+    const auto replacementTicket=stream.requestPage(replacement);
+    check(replacementTicket.valid() && stream.pendingPage(replacement) &&
+          !stream.exactResidentPage(replacement),
+          "new file-backed replacement stays pending before pump");
+    if (pumpDiskPage(stream,replacementTicket,replacement,true,
+                     "disk VT LRU physical page reuse")) {
+        check(stream.exactResidentPage(coarse) &&
+              !stream.exactResidentPage(fine) &&
+              stream.exactResidentPage(replacement) &&
+              stream.stats().pages.evictions==1,
+              "disk VT keeps pinned coarse, evicts old fine on physical reuse");
+        auto tableWithReplacement=allCoarse;
+        const Color replacementEntry{1,0,0,255};
+        std::copy(replacementEntry.begin(),replacementEntry.end(),
+                  tableWithReplacement.begin());
+        verifyReads(dev,{
+            probe(atlas,0,0,4,4,coarseData,
+                  "disk VT pinned coarse physical pixels survive eviction"),
+            probe(atlas,0,1,4,4,replacementData,
+                  "disk VT overwritten physical slice contains replacement bytes"),
+            probe(table,0,0,4,4,tableWithReplacement,
+                  "disk VT GPU table drops old fine, publishes replacement")
+        },"disk VT LRU GPU republish");
+    }
+    stream.shutdown();
+    const auto inventory=dev.textureResources();
+    check(std::none_of(inventory.begin(),inventory.end(),[&](const auto& x) {
+        return x.handle==atlas || x.handle==table;
+    }),"disk-backed VT shutdown releases actual Metal atlas/page table");
+    std::printf("TIMING VT disk worker to Metal publication_total_ms=%.3f\n",
+                elapsedMs(start,Clock::now()));
+}
+
 } // namespace
 
 int main() {
@@ -739,6 +978,7 @@ int main() {
         shaderSampleVolume(*device);
         gpuVirtualTextureFeedback(*device);
         gpuPhysicalVirtualAtlas(*device);
+        gpuDiskBackedVirtualAtlas(*device);
         std::printf("TIMING Metal fixture_total_ms=%.3f gpu_test_body_ms=%.3f\n",
                     elapsedMs(testStart,Clock::now()),
                     elapsedMs(deviceReady,Clock::now()));
