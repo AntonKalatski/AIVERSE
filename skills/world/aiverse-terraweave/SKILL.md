@@ -1286,3 +1286,37 @@ frame loop, GPU tag ordering, FPS/RTS smoke, map teardown, concurrent
 tag consumers, performance/battery benefit. The independent tester
 must verify all these and the Stage29 atlas migration before merging
 PR #24. Update `docs/terrain/AGENT_HANDOFF.md` with exact code SHAs.
+
+## Stage 42 — shared gfx Device GPU timing router
+
+Do NOT call `gfx::Device::takeGpuTimings()` directly from a new
+native subsystem if the Device is shared with TerraWeave,
+Prisma, SpectraFX/VFX, renderer benchmarks or the editor.
+This is a destructive device-wide drain. Use
+`gfx::Device::gpuTimingRouter()`, defined in the general
+`engine/gfx/GpuTimingRouter.h`, not a new TerraWeave-specific
+timer manager. Subscribe, request a GPU timing with a native
+caller-defined tag, poll once or more on the Device owner thread,
+then `take(subscriber)` only your own mailbox. Unsubscribe
+during consumer teardown; `cancel(subscriber,tag)` drops a
+stale metadata request without stealing other owners' results.
+All GPU timings are asynchronous and may be unsupported/rejected.
+
+The Stage41 `HorizonFrameTimingBridge` has been migrated to this
+API and maintains its measured CPU fallback and eight-frame limit.
+RTS GameClient and native FPS App detach their subscriber at
+shutdown; editor batching benchmark, RenderBench, GeometryBench and
+instancing preview also use per-device routing. See
+`docs/render/GPU_TIMING_ROUTER.md` for native API and bounded
+queues (32 subscribers, 64 in-flight, 64 completed per mailbox).
+These numbers bound router CPU memory, NOT measured frame time.
+GL may allow only one active GPU timing query, and Metal command
+buffer timestamps include unrelated GPU passes; this router does
+not provide isolated system timing or concurrent timers for
+unsupported backends.
+
+No genre, PHYSIS, ECS or TWH8 changes. Existing Stage40 QoS
+remains opt-in and uses the original CPU/GPU frame tags. Source
+writes and handoff are recorded; native compile/CTest/GPU
+benchmark/visual tests **NOT RUN** at user request. Keep PR #24
+Draft until independent QA.
