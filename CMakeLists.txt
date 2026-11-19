@@ -1534,6 +1534,18 @@ if(AIVERSE_BUILD_TESTS)
     if(Python3_Interpreter_FOUND)
         add_test(NAME aiverse_gameplay_generated COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/libraries/generate_gameplay.py --check)
         add_test(NAME aiverse_gameplay_tools COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/libraries/gameplay_tools.py)
+        # Python tempfile on some macOS runners chooses /var/folders/...,
+        # where nested CMake configure_file() has failed with ENOTTY.
+        # Use the build filesystem for temporary project checks instead.
+        file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/aiverse-test-tmp")
+        set_tests_properties(aiverse_gameplay_tools PROPERTIES
+            ENVIRONMENT "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}/aiverse-test-tmp")
+        # Test the headless executable built from THIS worktree/config,
+        # not a stale build/.temp binary or an inherited shell setting.
+        if(TARGET aiverse_headless)
+            set_tests_properties(aiverse_gameplay_tools PROPERTIES
+                ENVIRONMENT "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}/aiverse-test-tmp;AIVERSE_HEADLESS=$<TARGET_FILE:aiverse_headless>")
+        endif()
     endif()
 endif()
 
@@ -2113,7 +2125,12 @@ endif()
 
 if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND AND UNIX AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME skill_library_isolation COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/skills/isolation.py)
-    set_tests_properties(skill_library_isolation PROPERTIES TIMEOUT 600)
+    # Nested CMake probes require a working writable temporary volume.
+    # CTest-created directories inherit the verified build filesystem.
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/aiverse-test-tmp")
+    set_tests_properties(skill_library_isolation PROPERTIES
+        TIMEOUT 600
+        ENVIRONMENT "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}/aiverse-test-tmp")
 endif()
 
 # ---------------------------------------------------------------------------
