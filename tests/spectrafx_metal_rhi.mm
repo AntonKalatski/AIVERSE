@@ -17,6 +17,7 @@
 #include "engine/fx/SpectraFxView.h"
 #include "engine/fx/SpectraFxGpuEvolution.h"
 #include "engine/fx/SpectraFxGpuBillboardRenderer.h"
+#include "engine/fx/SpectraFxGpuAlphaSort.h"
 #include "engine/fx/SpectraFxGpuParticleSlots.h"
 #include "engine/fx/SpectraFxGpuImpactFeedback.h"
 
@@ -199,6 +200,93 @@ int main() {
         std::printf("[spectrafx-metal-rhi] churn_frames=%d retire_remaining=%zu "
                     "gpu_healthy=%d\n",kChurnFrames,retiring.size(),
                     device->gpuHealthy()?1:0);
+
+        // Stage 108: real GPU alpha-sort parity for two opposite camera
+        // directions in ONE Metal frame. This is a test-only diagnostic
+        // shader: it visualizes the first GPU-sorted source index in RGBA8,
+        // without CPU mapping or reading particle positions.
+        aiverse::fx::SpectraFxGpuAlphaSort viewSort;
+        aiverse::fx::SpectraFxGpuEvolution alphaParticles;
+        auto first=seed(0),second=seed(0);
+        first.position={0,0,0.5f};second.position={0,0,-0.5f};
+        check(alphaParticles.init(*device,{first,second},false,sharedCompute),
+              "two GPU-owned alpha particles initialized");
+        check(viewSort.init(*device,2),
+              "Metal GPU alpha sorter ready for two slots");
+        static constexpr const char* kIndexVisual=R"MSL(
+#include <metal_stdlib>
+using namespace metal;
+struct VIn { float2 p [[attribute(0)]]; };
+struct VOut { float4 pos [[position]]; };
+vertex VOut vs_main(VIn v [[stage_in]]) {
+    VOut o; o.pos=float4(v.p,0.0,1.0);return o;
+}
+fragment half4 fs_main(VOut i [[stage_in]],
+                       texture2d<float> tex0 [[texture(0)]]) {
+    const float index=tex0.read(uint2(0,0)).x;
+    return half4(half(index>0.5f?0.90f:0.20f),
+                 half(0.0f),half(0.0f),half(1.0f));
+}
+)MSL";
+        const auto indexShader=device->createShader({
+            nullptr,nullptr,kIndexVisual,1,0,
+            "SpectraFX alpha-sort index map diagnostic"});
+        const float fullscreenTriangle[]={-1,-1,3,-1,-1,3};
+        const auto fullscreenVB=device->createBuffer({
+            aiverse::gfx::BufferType::Vertex,
+            aiverse::gfx::Usage::Immutable,sizeof(fullscreenTriangle),
+            fullscreenTriangle,"SpectraFX sorted-index probe quad"});
+        aiverse::gfx::PipelineDesc indexDesc{};
+        indexDesc.shader=indexShader;
+        indexDesc.attrs[0]={0,aiverse::gfx::VertexFormat::Float2,0};
+        indexDesc.attrCount=1;
+        indexDesc.stride=sizeof(float)*2;
+        indexDesc.depthTest=false;
+        indexDesc.depthWrite=false;
+        indexDesc.cull=aiverse::gfx::CullMode::None;
+        indexDesc.indexType=aiverse::gfx::IndexType::None;
+        indexDesc.label="SpectraFX sorted index visual probe";
+        const auto indexPipeline=device->createPipeline(indexDesc);
+        check(indexShader.valid() && fullscreenVB.valid() &&
+              indexPipeline.valid(),"GPU sorted-index diagnostic RHI pipeline");
+        if(alphaParticles.ready() && viewSort.ready() &&
+           indexPipeline.valid() && fullscreenVB.valid()) {
+            device->beginFrame(kWidth,kHeight);
+            check(alphaParticles.step(0.0f,env),
+                  "GPU position texture initialized before sorting");
+            const auto probeSort=[&](aiverse::gfx::TextureHandle target,
+                                     aiverse::render::float3 forward) {
+                check(viewSort.prepare(alphaParticles,{0,0,0},forward),
+                      "per-camera GPU bitonic sort encoding");
+                check(viewSort.preparedFor(alphaParticles),
+                      "current frame sorted index texture available");
+                device->beginPass(pass(target));
+                device->setViewport({0,0,kWidth,kHeight});
+                device->setPipeline(indexPipeline);
+                device->setVertexBuffer(fullscreenVB);
+                device->setTexture(0,viewSort.sortedIndexTexture());
+                device->draw(3);
+                device->endPass();
+            };
+            probeSort(colorA,{0,0,1});
+            probeSort(colorB,{0,0,-1});
+            device->endFrame();
+            std::vector<uint8_t> sortedA,sortedB;
+            check(device->readColorRGBA8(colorA,sortedA) &&
+                  device->readColorRGBA8(colorB,sortedB),
+                  "both camera index maps recorded by real Metal");
+            const int a=int(red(sortedA,kWidth/2,kHeight/2));
+            const int b=int(red(sortedB,kWidth/2,kHeight/2));
+            check(a>=35 && a<=85 && b>=195 && b<=255,
+                  "opposite camera depth directions reverse GPU sort ordering");
+            std::printf("[spectrafx-metal-rhi] alpha_views_first="
+                        "%d/%d expected~51/230\n",a,b);
+        }
+        viewSort.release();
+        alphaParticles.shutdown();
+        if(indexPipeline.valid())device->destroyPipeline(indexPipeline);
+        if(fullscreenVB.valid())device->destroyBuffer(fullscreenVB);
+        if(indexShader.valid())device->destroyShader(indexShader);
 
         // Stage 100: exercise the real asynchronous Metal impact callback,
         // including an invalidated scene epoch and recycled particle handles.
