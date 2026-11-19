@@ -35,7 +35,19 @@ public:
         // Experimental Metal-only GPU live-slot compaction + indirect draw.
         // False by default until GPU/Metal acceptance; legacy draw is fallback.
         bool gpuIndirectCompaction=false;
+        // Explicit experimental opt-in for alpha effects that can tolerate
+        // unsorted GPU drawing. Otherwise alpha requires CPU sorting.
+        bool allowUnsortedAlpha=false;
     };
+
+    static SpectraFxBackendRequest effectiveRequest(const Config& config) {
+        auto request=config.backend;
+        // Alpha blending without back-to-front ordering is not generally
+        // correct. The current GPU billboards/compaction are unsorted.
+        if(!config.appearance.additive && !config.allowUnsortedAlpha)
+            request.required=request.required|SpectraFxFeature::Sorting;
+        return request;
+    }
 
     // Begin an emitter with no GPU particles yet. GPU emits are explicit
     // on safe buffer update points; CPU fallback plays an authored effect.
@@ -53,7 +65,7 @@ public:
         config_=std::move(config);
         origin_=origin;
         direction_=direction;
-        decision_=chooseSpectraFxBackend(device,config_.backend);
+        decision_=chooseSpectraFxBackend(device,effectiveRequest(config_));
         if(!decision_.accepted) {
             status_="requested backend unavailable and CPU fallback disabled";
             cpu_=nullptr;
