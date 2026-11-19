@@ -66,6 +66,7 @@ void Editor::registerFxPreviewOps() {
                 r.set("summary", Json::string("Превью эффекта убрано"));
                 return r;
             }
+            stopSpectraGpuPreview(); // a CPU fx_preview replaces Metal preview
             if (ws_.project.dir.empty()) throw std::runtime_error("no game is open (open_game)");
             const std::string name = p.getStr("effect");
             if (!validFxName(name) || name == "fx") throw std::runtime_error("'effect' must be an effect name (fx_list)");
