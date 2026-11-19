@@ -1121,6 +1121,11 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         }
         prisma_.setViewId(3ULL);
         prisma_.applyCameraVolumes(prismaVolumes_, cam_.eye());
+        // The running game has priority over auxiliary editor previews.
+        // Up to 256 MiB for two camera-owned output HDR histories.
+        prisma_.setViewQualityPolicy(3ULL,{224,256});
+        const auto modelAssets=view_.ownedModelGpuMemoryStats(dev);
+        prisma_.setExternalModelAssetGpuMemory(modelAssets.knownBytes());
         const auto rendererMemory=r3d_.residentMemoryStats();
         prisma_.setExternalRendererGpuMemory(
             rendererMemory.liveTextureKnownBytes+
