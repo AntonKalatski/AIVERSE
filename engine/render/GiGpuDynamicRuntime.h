@@ -133,6 +133,21 @@ public:
         return true;
     }
 
+    // Sun/sky revisions may arrive while the previous GPU frame is still in
+    // flight: no resource upload occurs here. The old encoded uniforms finish,
+    // but tickets are invalidated and never accepted after their old fence.
+    bool setEnvironment(GiEnvironmentLight value) {
+        if (!ready() || !value.valid()) return false;
+        if (value==gpu_.environment()) return true;
+        if (!gpu_.setEnvironment(value)) return false;
+        scheduler_.invalidateAll(GiDirtyReason::Environment);
+        return true;
+    }
+
+    const GiEnvironmentLight& environment() const {
+        return gpu_.environment();
+    }
+
     // Presentation-only dirty events may arrive while a GPU dispatch is still
     // working. The scheduler increments source revisions so its stale results
     // can NEVER be acknowledged on a later Vulkan VkFence/Metal callback.
