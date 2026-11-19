@@ -179,6 +179,7 @@ public:
     // variants and failed/null cached loads. No assets are loaded here.
     std::vector<AffectedModel> affectedBySource(
             std::string_view source) const {
+        requireReadOwnerThread("affectedBySource");
         std::vector<AffectedModel> result;
         const std::string normalized=sourceForKey(source);
         if(normalized.empty() || normalized.rfind("shape:",0)==0)return result;
@@ -237,15 +238,18 @@ public:
         return preparation_;
     }
 #endif
-    render::Model* find(const std::string& key) noexcept {
+    render::Model* find(const std::string& key) {
+        requireReadOwnerThread("find");
         const auto it=models_.find(key);
         return it==models_.end()?nullptr:it->second.get();
     }
-    const render::Model* find(const std::string& key) const noexcept {
+    const render::Model* find(const std::string& key) const {
+        requireReadOwnerThread("find");
         const auto it=models_.find(key);
         return it==models_.end()?nullptr:it->second.get();
     }
     bool contains(const std::string& key) const {
+        requireReadOwnerThread("contains");
         return models_.count(key)!=0; // null entries cache failed loads
     }
     // Insert without replacing a resident or a cached failed load.
@@ -365,14 +369,22 @@ public:
         return true;
     }
 
-    const ModelMap& models() const noexcept {return models_;}
+    // Returned references are valid only on the same owner thread while
+    // the cache remains alive. The check cannot police later use of a
+    // borrowed reference; do not hand models() to a background worker.
+    const ModelMap& models() const {
+        requireReadOwnerThread("models");
+        return models_;
+    }
     std::shared_ptr<render::ModelTextureCache> textures() const noexcept {
         return textures_;
     }
     Stats stats() const {
+        requireReadOwnerThread("stats");
         return {models_.size(),textures_->gpuCount(),textures_->decodedBytes()};
     }
     std::vector<std::string> modelFiles() const {
+        requireReadOwnerThread("modelFiles");
         std::vector<std::string> files;
         std::unordered_set<std::string> seen;
         for(const auto& [key,model]:models_) {
@@ -459,6 +471,7 @@ public:
     // Source aliases/tombstones do not count as distinct live GPU Models.
     template<class Visit>
     void forEachOwnedModel(Visit&& visit) const {
+        requireReadOwnerThread("forEachOwnedModel");
         for(const auto& [key,model]:models_) {
             (void)key;
             if(model)visit(*model,false); // resident
@@ -472,6 +485,7 @@ public:
     // device-level geometry pool ONE combined model set when computing
     // page capacity; include retired models until their GPU token completes.
     std::vector<const Model*> geometryPoolModelReferences() const {
+        requireReadOwnerThread("geometryPoolModelReferences");
         std::vector<const Model*> result;
         for(const auto& [key,model]:models_) {
             (void)key;
@@ -483,6 +497,7 @@ public:
         return result;
     }
     GpuOwnerEstimate gpuOwnerEstimate() const {
+        requireReadOwnerThread("gpuOwnerEstimate");
         GpuOwnerEstimate result;
         const auto max=std::numeric_limits<uint64_t>::max();
         auto add=[max](uint64_t& dst,uint64_t value) {
@@ -597,6 +612,21 @@ public:
         readState_->ownerThread={};
     }
 private:
+    // All map readers require the render/reader owner. The map is NOT a
+    // concurrent-read/write container, including during new-key streaming.
+    // Before first binding/reader acquisition the host must serialize its
+    // initial population itself; afterward foreign threads fail before
+    // touching map storage. Do not call concurrently with first bind.
+    void requireReadOwnerThread(const char* operation) const {
+        const auto thread=std::this_thread::get_id();
+        if((resourceDevice_ && resourceThread_!=thread) ||
+           (readState_->ownerThread!=std::thread::id{} &&
+            readState_->ownerThread!=thread) ||
+           !readState_->alive.load(std::memory_order_acquire))
+            throw std::logic_error(
+                std::string("ModelResourceCache ")+operation+
+                " on foreign or expired owner thread");
+    }
     // Detach/release callbacks are allowed to inspect existing Models, but
     // nested writes (or new reader tokens) would invalidate an iterator or
     // resurrect a Model about to be moved into GPU retirement.
