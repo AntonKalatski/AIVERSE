@@ -326,10 +326,6 @@ bool phaseGpu(Phase p) {
            p==Phase::PositiveIcb || p==Phase::NearNegativeIcb ||
            p==Phase::NearPositiveIcb;
 }
-bool phaseWait(Phase p) {
-    return p==Phase::WaitCoarse || p==Phase::WaitFine ||
-           p==Phase::WaitMissing;
-}
 int pairFor(Phase p) {
     switch(p) {
         case Phase::EmptyDirect: case Phase::EmptyIcb: return 0;
