@@ -14,6 +14,7 @@
 #include "Lights.h"
 #include "Math3D.h"
 #include "PrismaMotionTextureInput.h"
+#include "PrismaGpuRetirement.h"
 #include "Model.h"
 #include "PersistentGpuSceneUpload.h"
 #include "GpuSceneCulling.h"
@@ -312,6 +313,16 @@ public:
     // Explicit view closure after GPU-idle synchronization. NEVER call while
     // submissions referencing the view textures can still be in flight.
     void releaseObjectMotionViewAfterGpuIdle(uint64_t viewId);
+    // Optional non-blocking GPU-lifetime path. Fence tokens MUST be issued
+    // by the backend for the last GPU submission that may use a texture.
+    // Never use CPU frameSerial() or a guessed frame delay as completion.
+    void setObjectMotionSubmittedFence(uint64_t lastSubmittedFence) {
+        motionLastSubmittedFence_ = lastSubmittedFence;
+    }
+    void retireObjectMotionView(uint64_t viewId, uint64_t lastSubmittedFence);
+    size_t collectCompletedObjectMotion(uint64_t completedGpuFence);
+    // Valid only after the host has explicitly confirmed GPU idle.
+    size_t drainObjectMotionAfterGpuIdle();
     struct ObjectMotionStats {
         uint64_t viewId = 0;
         uint32_t rigidInstances = 0;
@@ -638,7 +649,12 @@ private:
         // Same node can draw different primitives with distinct skin palettes.
         std::map<std::tuple<uint64_t, int, size_t>, MotionDeformPose> previousDeformed;
     };
+    void queueObjectMotionTexture(gfx::TextureHandle& texture,
+                                  uint64_t lastSubmittedFence);
     std::map<uint64_t, ObjectMotionHistory> objectMotionViews_;
+    PrismaGpuRetirementQueue<gfx::TextureHandle> motionRetired_;
+    std::vector<gfx::TextureHandle> motionUnfenced_; // quarantined until GPU idle
+    uint64_t motionLastSubmittedFence_ = 0; // 0: unknown, never guess
     ObjectMotionStats objectMotionStats_{};
     std::vector<MotionReactiveDraw> motionReactiveDraws_;
     gfx::ShaderHandle objectMotionShader_;
