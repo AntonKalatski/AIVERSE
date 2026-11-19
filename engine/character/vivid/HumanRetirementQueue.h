@@ -6,6 +6,10 @@
 #include "GpuActorStream.h"
 #include "CpuActorStream.h"
 #include "engine/render/AsyncResourceRetirementQueue.h"
+#include "engine/render/ModelResidentEstimate.h"
+#include <algorithm>
+#include <cstdint>
+#include <limits>
 #include <aiverselib/motionweave/MotionWeave.h>
 #include <memory>
 #include <utility>
@@ -27,6 +31,70 @@ public:
     HumanRetirementQueue(const HumanRetirementQueue&)=delete;
     HumanRetirementQueue& operator=(const HumanRetirementQueue&)=delete;
 
+    // Estimates are from source geometry and known actor buffers, not
+    // driver-accounted VRAM. Shared GPU assets may be held by multiple actors;
+    // only per-instance write buffers are included in this estimate.
+    struct Admission {
+        std::size_t maxPending=3;
+        std::uint64_t maxEstimatedBytes=512ull*1024ull*1024ull;
+    };
+    struct Residency {
+        std::size_t pending=0;
+        std::uint64_t estimatedBytes=0;
+        std::size_t highWatermark=0;
+        std::uint64_t blockedPublications=0;
+    };
+    void setAdmission(Admission limits) noexcept {limits_=limits;}
+    Admission admission() const noexcept {return limits_;}
+    static std::uint64_t estimatedBytes(const Resident& resident) noexcept {
+        auto add=[](std::uint64_t& total,std::uint64_t amount) {
+            const auto max=std::numeric_limits<std::uint64_t>::max();
+            total=amount>max-total?max:total+amount;
+        };
+        std::uint64_t total=0;
+        if(resident.human.head)
+            add(total,render::estimateModelResident(*resident.human.head).knownBytes());
+        if(resident.human.hair)
+            add(total,render::estimateModelResident(*resident.human.hair).knownBytes());
+        if(resident.actor) {
+            const auto count=resident.actor->vertexCount();
+            if(count>std::numeric_limits<std::uint64_t>::max()/
+                     (sizeof(GpuMorphVertex)+sizeof(render::ModelVertex)))
+                return std::numeric_limits<std::uint64_t>::max();
+            add(total,std::uint64_t(count)*
+                (sizeof(GpuMorphVertex)+sizeof(render::ModelVertex)));
+        }
+        if(resident.cpuActor && resident.human.head)
+            add(total,std::uint64_t(resident.human.head->vertices.size())*
+                sizeof(render::ModelVertex));
+        return total;
+    }
+    Residency residency() const noexcept {
+        Residency result;
+        result.pending=queue_.pending();
+        result.highWatermark=queue_.stats().highWatermark;
+        result.blockedPublications=blocked_;
+        result.estimatedBytes=queue_.estimatedPendingBytes(
+            [](const Resource& item) {
+                return item?estimatedBytes(*item):std::uint64_t(0);
+            });
+        return result;
+    }
+    // Reject additional full-character publication before allocating more
+    // RHI resources. Pending fences are NEVER treated as completed to
+    // satisfy these budgets, even if they have been pending many frames.
+    bool canPublish(std::uint64_t nextRetiredBytes) noexcept {
+        const auto state=residency();
+        const bool slots=limits_.maxPending!=0 &&
+            state.pending<limits_.maxPending;
+        const bool bytes=nextRetiredBytes<=limits_.maxEstimatedBytes &&
+            state.estimatedBytes<=limits_.maxEstimatedBytes-nextRetiredBytes;
+        if(!slots || !bytes) {
+            ++blocked_;
+            return false;
+        }
+        return true;
+    }
     // Reserve pending slot *before* the caller transfers old live owners.
     // On allocation failure no live Model/World/actor pointer has moved.
     Resident* enqueueEmpty() {
@@ -87,5 +155,7 @@ private:
     }
     gfx::Device& device_;
     Queue queue_;
+    Admission limits_{};
+    std::uint64_t blocked_=0;
 };
 } // namespace aiverse::vivid
