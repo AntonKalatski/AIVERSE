@@ -8,8 +8,6 @@ on:
       - 'engine/world/TerraWeave*.h'
       - 'engine/render/TerraWeave*.h'
       - 'tests/terraweave*.cpp'
-      - 'docs/terrain/**'
-      - 'skills/world/aiverse-terraweave/**'
       - 'apps/editor/core/TerraWeave*.h'
       - 'apps/editor/windows/TerrainWindow.cpp'
       - 'apps/editor/TerraWeave*.h'
@@ -25,6 +23,12 @@ on:
       - 'CMakeLists.txt'
       - '.github/workflows/terraweave.yml'
   workflow_dispatch:
+
+# Only the newest commit for a branch/PR needs an isolated CPU build.
+# Preserve separate groups for refs, so unrelated PRs never cancel each other.
+concurrency:
+  group: terraweave-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   terraweave:
