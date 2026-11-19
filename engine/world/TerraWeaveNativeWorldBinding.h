@@ -10,6 +10,7 @@
 #include "engine/world/TerraWeaveWorldSceneBinding.h"
 #include "engine/world/TerraWeaveForestScene.h"
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -81,18 +82,18 @@ public:
         if(const auto* ecology=ecs.resourceConst<ForestEcologyResource>()){
             validateForestEcologyResource(*ecology);
             dead.reserve(ecology->plants.size());
+            std::map<AnchoredPlantId,const AnchoredPlant*> rootsById;
+            for(const auto& plant:state->rooted)
+                rootsById.emplace(
+                    AnchoredPlantId{plant.anchor.speciesId,
+                                    plant.anchor.plantKey},&plant);
             for(const auto& record:ecology->plants){
                 if(record.dead)
                     dead.push_back({record.id.key,record.id.speciesId});
                 if(!record.recruited)continue;
-                const auto match=std::find_if(
-                    state->rooted.begin(),state->rooted.end(),
-                    [&](const AnchoredPlant& p){
-                        return p.anchor.plantKey==record.id.key &&
-                               p.anchor.speciesId==record.id.speciesId;
-                    });
-                if(match==state->rooted.end())continue;
-                const auto& p=*match;
+                const auto match=rootsById.find(record.id);
+                if(match==rootsById.end())continue;
+                const auto& p=*match->second;
                 FoliageInstance instance;
                 instance.key=p.anchor.plantKey;
                 instance.speciesId=p.anchor.speciesId;
