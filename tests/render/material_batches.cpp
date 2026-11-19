@@ -407,6 +407,22 @@ int aiverseMain(int argc, char** argv) {
                             p.draws[0], p.draws[1]);
                         failed = true;
                     }
+                } else if (std::getenv("AIVERSE_BATCH_AUTO") &&
+                           std::string(std::getenv("AIVERSE_BATCH_AUTO")) == "1" &&
+                           benchmarkMode == "legacy") {
+                    // AUTO intentionally keeps this tiny scene on direct draws.
+                    // Reject accidental indirect submissions, not missing savings.
+                    const auto stats = renderer.modelStats();
+                    if (stats.multiDrawSubmissions || gpuDraw.gpuEncodedSubmissions ||
+                        p.draws[0] != shadowBefore ||
+                        p.draws[1] != opaqueBefore) {
+                        std::fprintf(stderr,
+                            "AUTO small-direct isolation failed: cpu=%llu gpu=%u shadow=%u opaque=%u\n",
+                            (unsigned long long)stats.multiDrawSubmissions,
+                            gpuDraw.gpuEncodedSubmissions, p.draws[0], p.draws[1]);
+                        failed = true;
+                    }
+                    std::printf("AUTO path: direct/instancing (small eligible scene)\n");
                 } else if (supported) {
                     if (uint64_t(p.draws[0]) + p.draws[1] >=
                             uint64_t(shadowBefore) + opaqueBefore ||
