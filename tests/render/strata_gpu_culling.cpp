@@ -260,6 +260,23 @@ int main() {
     assert(!compareGpuSelection(reference, {ia,ib}, referencePass, 400,
                                 decoded, &error));
 
+    // Any malformed traversal is also non-drawable, even with a seemingly
+    // complete prefix and without an overflow.
+    counts.overflow = 0;
+    counts.invalid = 1;
+    std::memcpy(dev.buffers.at(selection.counters.id).data(),
+                &counts, sizeof(counts));
+    assert(compute.requestReadback(dev, selection, [&](GpuSelectionReadback r) {
+        ++callbacks;
+        decoded = std::move(r);
+    }));
+    dev.flushReads();
+    assert(callbacks == 3);
+    assert(decoded.status == GpuSelectionReadback::Status::Invalid);
+    assert(decoded.ranges.empty());
+    assert(!compareGpuSelection(reference, {ia,ib}, referencePass, 400,
+                                decoded, &error));
+
     // The 64 KiB RHI read limit means oversized requests are not a
     // partially accepted oracle (2048 selected records maximum).
     GpuPassConfig oversized = referencePass;
@@ -270,7 +287,7 @@ int main() {
         ++callbacks;
         decoded = std::move(r);
     }));
-    assert(callbacks == 3);
+    assert(callbacks == 4);
     assert(decoded.status == GpuSelectionReadback::Status::ReadbackFailed);
     assert(dev.drawCalls == 0);
     compute.shutdown(dev);
