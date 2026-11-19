@@ -659,10 +659,23 @@ struct CreatorApp {
                 const auto delta=frameHead.inverse() *
                     facePose[std::size_t(scalpPoseNode)] *
                     scalpBindNodeInverse * scalpBindHeadRigid;
-                for(std::size_t i=0;i<scalpBindPositions.size();++i)
-                    scalpAnimatedPositions[i]=delta.transformPoint(scalpBindPositions[i]);
-                if(!human.groom.refitCollisionMesh(scalpAnimatedPositions))
-                    status="VIVID Creator: animated scalp BVH refit rejected";
+                bool validPose=true;
+                for(float value:delta.m)
+                    validPose=validPose&&std::isfinite(value);
+                if(validPose) {
+                    for(std::size_t i=0;i<scalpBindPositions.size();++i) {
+                        auto p=delta.transformPoint(scalpBindPositions[i]);
+                        if(!std::isfinite(p.x)||!std::isfinite(p.y)||
+                           !std::isfinite(p.z)) {
+                            validPose=false;
+                            break;
+                        }
+                        scalpAnimatedPositions[i]=p;
+                    }
+                }
+                if(!validPose ||
+                   !human.groom.refitCollisionMesh(scalpAnimatedPositions))
+                    status="VIVID Creator: invalid scalp pose, last-good BVH retained";
             }
             human.groom.step(step,{wind,0,wind*0.3f});
             human.groom.updateCardVertices(human.hair->vertices);
