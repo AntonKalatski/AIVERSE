@@ -1200,7 +1200,8 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             oc.over = screen_ == Screen::Over;
             view_.setOverlayContext(oc);
         }
-        if(lensCamerasActive_)lensModelSnapshot_.beginCapture(r3d_);
+        render::CameraModelSnapshot::CaptureGuard lensCaptureGuard;
+        if(lensCamerasActive_)lensCaptureGuard.begin(lensModelSnapshot_,r3d_);
         view_.draw(r3d_, scene_, time_, spectator_ ? nullptr : &gs.vision[human_], gs.grid);
         for (auto& fe : view_.fieldView().takeEffects()) fx_.particles().play(fe.name, {fe.pos.x, fe.pos.y + 0.2f, fe.pos.z});   // grid field particles
         fx_.setPlanetView(planet() ? &view_ : nullptr);   // planets: effects in the camera body's space
@@ -1222,7 +1223,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             }
         }
         drawToolPreview();
-        if(lensCamerasActive_)lensModelSnapshot_.endCapture(r3d_);
+        lensCaptureGuard.end();
         const float fogBase = r3d_.lighting.fogDensity;   // a narrow top-down lens: fog as a default lens framing it sees
         if (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over)
             if (topDownActive()) r3d_.lighting.fogDensity = fogBase * topDown_.fogScale();
