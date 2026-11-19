@@ -354,6 +354,7 @@ bool ComputeParticles::tryClear() {
     // simulation or a new burst until the entire reset is retried. Kill any
     // retained checkpoint immediately; a partial reset is never a snapshot.
     gpuResetDirty_=true;
+    verticesReady_=false;drawCount_=0;stats_.submittedSlots=0;
     lastCheckpoint_={};checkpointRevision_=0;
     ++vmFrameRevision_;
     const uint32_t cap=desc_.capacity;
@@ -711,7 +712,8 @@ void ComputeParticles::draw(const fx::FxFog& fog) {
     if(backend_==ComputeBackend::Cpu) {
         cpu_.render(fog);stats_.drawCalls=uint32_t(cpu_.stats().drawCalls);return;
     }
-    if(!verticesReady_||!pipeline_.valid()||drawCount_==0)return;
+    if(gpuResetDirty_ || !verticesReady_ || !pipeline_.valid() ||
+       drawCount_==0)return;
     DrawUniforms u{};
     std::memcpy(u.viewProj,viewProj_.m,sizeof(u.viewProj));
     u.fog[0]=fog.color.x;u.fog[1]=fog.color.y;u.fog[2]=fog.color.z;u.fog[3]=fog.density;
