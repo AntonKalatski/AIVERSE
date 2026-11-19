@@ -3722,3 +3722,16 @@ cmake --build build/terraweave-integration --parallel 4 \
 ctest --test-dir build/terraweave-integration --output-on-failure -R '^terraweave_editor$'
 ```
 On failure capture **first** compiler/linker/CTest diagnostic for the agent, not only aggregate make/CTest status. Do not alter the unrelated main-worktree VFX/PHYSIS rebase. Integrate `main` via a separate safe integration branch/worktree only after inspecting the current ahead/behind and preserving concurrent teams' work.
+
+
+## Stage 44a — deterministic tree/shrub uprooting from excavated or eroded soil (2026-11-19)
+
+**Current branch:** `feature/terraweave` (Draft PR #24). **Source commit:** `64c8941a6fb8d918f5786c5a2bde655144120a27` — NEW `engine/world/TerraWeaveRootEvents.h`. This builds on `TerraWeaveEarthworks.h` (sparse soil excavation) and `TerraWeaveVegetationSoil.h` (root profile, support and optional exposed-root segments).
+
+**Implemented:** `RootSupportRegistry` stores at most 1,000,000 *interactable* rooted plants, keyed by stable species/key, with saved `RootAnchor`, `RootState`, `PlantEnvironment` and permanent fallen flag. Its `applyGroundChange(SoilHeightSampler, EarthworkChange, tick)` evaluates only root disks intersecting the changed X/Z rectangle, emits `PlantSupportChange` on exposure/support changes and one `PlantFallEvent` when a tree or shrub loses supporting soil. Events include stable plant ID, root support/exposure, authored anchor position, deterministic downhill fall direction (seeded tie fallback), soil revision and simulation tick. `initialize` samples natural cliffs at spawn so roots may show *before* digging. Snapshot/restore, upsert, erase, explicit replant reset and environment updates are available. Grass has no visible roots, no per-blade ECS entities, and is intentionally excluded from this registry.
+
+**Ownership:** This header is pure CPU; it does NOT insert physics bodies, topple renderer transforms, alter collision/navmesh, modify authoritative game state or emit audiovisual effects. The native game host must consume falling events at a deterministic ECS barrier, move/hide the upright `TerraWeaveForestScene` instance (`removeTree`), create a fallen rigid-body entity if desired, and persist/replicate the event. Visual root mesh creation remains opt-in through `generateExposedRoots`; no automatic GPU mesh upload is claimed.
+
+**Actual verification:** GitHub create-file returned source commit. **NOT RUN:** CMake/Clang/GCC/MSVC compilation, CTest, integrated ECS/Physics animation, native/editor tests, real water/terrain scene and GPU visuals (user requested features first). The prior 9/9 TerraWeave tests and 1/1 GPU router test are from prior revisions, not a validation of new Earthworks/roots/erosion features.
+
+**Next functional steps:** 44b add a native NEREID→TerraWeave erosion tick bridge that applies per-bank WaterSample forcing to Earthworks with transaction/soil revision guards and feeds `RootSupportRegistry` events; 44c sparse grass coverage disturbance/age/light scheduling; 44d optional roots mesh and falling tree render/physics event bridge. Preserve source/agent ownership and append a handoff after each stage. Do not merge Draft PR or claim live gameplay behavior until actual integration is observed.
