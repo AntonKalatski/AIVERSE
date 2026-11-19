@@ -1,5 +1,6 @@
-// Opt-in Metal GI runtime: GPU BVH + scheduler + completion-fenced publication.
-// The CPU GiDynamicRuntime remains the independent fallback on non-Metal devices.
+// Opt-in Metal/Vulkan GI runtime: GPU BVH + completion-fenced publication.
+// GiDynamicRuntime is the bounded CPU fallback for GLES3/WebGL2 or Vulkan without
+// suitable compute/storage-image support.
 // This owner does not use/modify authoritative ECS state or legacy lightmaps.
 // Caller drives updateFrame AFTER beginFrame, BEFORE render passes, polls every
 // frame, and uses bind() rather than exposing incomplete atlas textures.
