@@ -20,9 +20,11 @@ public:
     };
 
     bool init(gfx::Device& device,uint32_t capacity,
-              bool enableImpactEvents=false) {
+              bool enableImpactEvents=false,
+              gfx::ComputeHandle sharedCompute={}) {
         shutdown();
-        if(!evolution_.initCapacity(device,capacity,enableImpactEvents))
+        if(!evolution_.initCapacity(device,capacity,enableImpactEvents,
+                                    sharedCompute))
             return false;
         slots_.assign(capacity,{});
         free_.clear();
