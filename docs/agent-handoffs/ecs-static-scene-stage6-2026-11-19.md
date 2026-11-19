@@ -111,6 +111,20 @@ Target: `aiverse_ecs_shared_static_rss_bench`, built in CMake.
   supplies the reusable bridge, not magic reflection for arbitrary T.
   Source asset revision changes require explicit reimport/migration.
 
+**Follow-up within Stage 6:** the Inspector now supports a type-erased
+`PrefabStaticInspectorRegistry` with one read-only
+`append(world,entity,components,schemas)` call for several independent
+config domains, without bringing editor ImGui code into engine.
+`ecs_static_scene_editor_contract_test` now verifies two typed
+components (StaticWeapon and StaticBrain) in one Inspector snapshot,
+duplicate registration rejection and all metadata marked read-only.
+See commits `7595e49cbdb86dd69cb7fec5c1921154485de887`
+and `27e47b97d64d2552808dee7e0c6fa730158ec88b`.
+Editor hook documentation updated in
+`docs/editor-native-ecs-inspector.md` by commit
+`4b14d0d45bef0407fc58704fb7340b66ef95ce01`.
+Native execution remains pending.
+
 ### 4. New authoring + Inspector correctness CTest
 
 `tests/ecs_static_scene_editor_contract_test.cpp`:
