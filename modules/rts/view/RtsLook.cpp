@@ -259,12 +259,12 @@ void RtsView::buildLook(gfx::Device& dev, const UnitType& t, TypeLook& L) {
     L.shape = L.models.empty();
     if (L.shape) {
         std::string shape = v.getStr("shape", t.structure ? (t.resourceNode >= 0 ? "mine" : "structure") : "generic");
-        if (!resources_.models().count("shape:" + shape)) {
+        if (!resources_.contains("shape:" + shape)) {
             warn(t, "unknown shape '" + shape + "'");
             shape = t.structure ? "structure" : "generic";
         }
         ModelChoice ch;
-        ch.model = resources_.models()["shape:" + shape].get();
+        ch.model = const_cast<render::Model*>(resources_.find("shape:" + shape));
         ch.materials = ch.model->materials;
         configureChoice(dev, t, v, ch, true);
         L.models.push_back(std::move(ch));
@@ -366,7 +366,7 @@ bool RtsView::prepareType(uint16_t type, bool allVariants) {
         const auto discover=[&](const Json& authored) {
             view_adapter::discoverModelPaths(authored,geometry,
                 [&](const std::string& key) {
-                    return resources_.models().count(key)!=0;
+                    return resources_.contains(key);
                 },
                 [&](const std::string& path,const std::string& key) {
                     resources_.preparation().appendPath(path,key);
@@ -553,7 +553,7 @@ Model* RtsView::loadModelCached(gfx::Device& dev, const UnitType& t, const std::
             warn(t, e.what());
             m.reset();
         }
-        it = resources_.models().emplace(key, std::move(m)).first;
+        return resources_.insertIfAbsent(key,std::move(m));
     }
     return it->second.get();
 }
