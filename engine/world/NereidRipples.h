@@ -20,6 +20,12 @@ struct NereidRipple {
     double x=0,y=0,z=0;
     float age=0, lifetime=3.f, speed=3.f;
     float initialRadius=1, amplitude=1, width=0.2f;
+    float directionX=0,directionZ=0; // normalized movement for directional wakes
+};
+
+struct NereidRippleShaderPacket {
+    std::array<render::float4,16> rings{};
+    std::array<render::float4,16> shapes{};
 };
 
 // Draws camera-origin-relative geometry using the existing overlay triangle
@@ -37,10 +43,10 @@ public:
     // Select at most sixteen nearest ripple rings for one water body.
     // A body snapshot uses Entity::packed()+1 as its ID; events contain
     // Entity::packed() directly. Render coordinates match WorldScene origin.
-    std::array<render::float4,16> shaderRipples(
+    NereidRippleShaderPacket shaderPacket(
             uint64_t waterId,double originX,double originZ,
             double targetX,double targetZ) const {
-        std::array<render::float4,16> result{};
+        NereidRippleShaderPacket result{};
         struct Candidate {double distanceSquared=0;size_t index=0;};
         std::vector<Candidate> candidates;
         candidates.reserve(ripples_.size());
@@ -62,18 +68,26 @@ public:
             const auto& r=ripples_[candidates[i].index];
             const float fade=std::clamp(1.f-r.age/r.lifetime,0.f,1.f);
             const float radius=r.initialRadius+r.speed*r.age;
-            result[i]={float(r.x-originX),float(r.z-originZ),radius,
-                       std::min(r.amplitude*fade*0.12f,2.f)};
+            result.rings[i]={float(r.x-originX),float(r.z-originZ),radius,
+                              std::min(r.amplitude*fade*0.12f,2.f)};
+            if(r.kind==lib::nereid::WaterInteractionKind::SurfaceWake &&
+               (r.directionX!=0 || r.directionZ!=0))
+                result.shapes[i]={r.directionX,r.directionZ,1.35f,1.f};
         }
         return result;
+    }
+    std::array<render::float4,16> shaderRipples(
+            uint64_t waterId,double originX,double originZ,
+            double targetX,double targetZ) const {
+        return shaderPacket(waterId,originX,originZ,targetX,targetZ).rings;
     }
     // Localized ocean/box tile selection. Excludes impulses whose current
     // annular wavefront cannot touch this tile; scores overlapping waves by
     // proximity to the tile centre. Work per tile is bounded by 256 pulses.
-    std::array<render::float4,16> shaderRipplesForTile(
+    NereidRippleShaderPacket shaderPacketForTile(
             uint64_t waterId,double originX,double originZ,
             double minX,double maxX,double minZ,double maxZ) const {
-        std::array<render::float4,16> result{};
+        NereidRippleShaderPacket result{};
         if(waterId==0 || !(minX<=maxX && minZ<=maxZ))return result;
         struct Candidate {double distance=0;size_t index=0;};
         std::vector<Candidate> candidates;
@@ -100,11 +114,20 @@ public:
         for(size_t i=0;i<std::min(size_t(16),candidates.size());++i) {
             const auto& r=ripples_[candidates[i].index];
             const float fade=std::clamp(1.f-r.age/r.lifetime,0.f,1.f);
-            result[i]={float(r.x-originX),float(r.z-originZ),
-                       r.initialRadius+r.speed*r.age,
-                       std::min(r.amplitude*fade*0.12f,2.f)};
+            result.rings[i]={float(r.x-originX),float(r.z-originZ),
+                             r.initialRadius+r.speed*r.age,
+                             std::min(r.amplitude*fade*0.12f,2.f)};
+            if(r.kind==lib::nereid::WaterInteractionKind::SurfaceWake &&
+               (r.directionX!=0 || r.directionZ!=0))
+                result.shapes[i]={r.directionX,r.directionZ,1.35f,1.f};
         }
         return result;
+    }
+    std::array<render::float4,16> shaderRipplesForTile(
+            uint64_t waterId,double originX,double originZ,
+            double minX,double maxX,double minZ,double maxZ) const {
+        return shaderPacketForTile(waterId,originX,originZ,
+                                   minX,maxX,minZ,maxZ).rings;
     }
     // Supplying the same simulated tick twice must not duplicate VFX events.
     // Call in ascending tick order; a rollback starts a new visual timeline.
@@ -135,6 +158,10 @@ public:
             r.z=e.position.z.toDouble();
             r.initialRadius=std::clamp(float(e.radius.toDouble()),0.05f,100.f);
             r.amplitude=std::clamp(float(e.strength.toDouble()),0.f,16.f);
+            if(e.kind==lib::nereid::WaterInteractionKind::SurfaceWake) {
+                r.directionX=float(item.movementDirection.x.toDouble());
+                r.directionZ=float(item.movementDirection.y.toDouble());
+            }
             if(e.kind==lib::nereid::WaterInteractionKind::SurfaceWake) {
                 r.lifetime=2.2f;r.speed=2.5f;r.width=0.11f;
             }else{
