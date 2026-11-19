@@ -2026,3 +2026,78 @@ No stale snapshot is imported automatically.
 
 **NOT RUN:** C++/Metal builds, CTest, device-loss injection, partial-enqueue
 fault simulation, multi-pool stress tests, or performance measurements.
+
+## Stage 33 — adaptive checkpoint scheduling and source-safe pooled VFX
+
+Checkpoint readbacks can now adapt their frequency when GPU submission is
+backed up. The opt-in `AdaptiveCheckpointPolicy` is defined in
+`engine/fx/SpectraAdaptiveCheckpoint.h` and passed through
+`GraphRuntimeOptions` to `ComputeParticles`. Scheduling counts
+**successful GPU simulation submissions**, not wall-clock frames or ECS ticks.
+
+```cpp
+using namespace aiverse::spectra;
+GraphRuntimeOptions o;
+o.checkpointEveryFrames=15;
+o.adaptiveCheckpoint.enabled=true;
+o.adaptiveCheckpoint.maxIntervalFrames=240;
+o.adaptiveCheckpoint.recoverAfterCompletions=3;
+o.checkpointBudget=sharedBudget; // optional Stage 32 shared limiter
+
+// Runtime accepts the options during initGraph / initEffect.
+// A budget denial, a pending earlier capture, or RHI rejection doubles
+// the interval up to maxIntervalFrames; fully completed captures restore
+// it by halves after the configured number of successes.
+const auto st=runtime.checkpointStatus();
+// st.checkpointIntervalFrames; st.nextCheckpointRevision
+// runtime.gpuStats().checkpointAdaptiveBackoffs / Recoveries
+```
+
+The scheduling state is optional and does not block rendering. It cannot make
+an old snapshot current or guarantee lossless CPU fallback. A capture
+completion is counted as a successful transfer even if the simulation has
+advanced and the snapshot is therefore stale.
+
+`GpuPoolWorld` now supports **generation-safe** presentation source handles.
+A source owns a name-bound effect revision and a distinct 8-scalar parameter
+snapshot. It can pause, resume, retire, and emit multiple bursts through the
+shared pooled GPU/CPU resources:
+
+```cpp
+PoolSourceId source=pool.createSource("impact");
+pool.setSourceNamedParameter(source,"speed",2.5f); // if "speed" is declared
+pool.emitSource(source,position);
+pool.pauseSource(source);        // prevents future emission
+pool.resumeSource(source);
+pool.emitSource(source,newPosition);
+pool.retireSource(source);       // invalidates this handle
+```
+
+Source handles carry `worldEpoch`, `slot` and `generation`. A retired,
+reused, post-rollback or reinitialized handle cannot legitimately emit.
+Redefining a named effect invalidates old handles' binding revisions instead
+of silently changing the graph used for future bursts. `maxSources`
+limits active/reusable slots (default 4096, max 65536). This remains
+genre-agnostic, ECS-read-only presentation state.
+
+**Important limitation:** `pauseSource` and `retireSource` prevent
+**future** emissions. Already-born GPU particles continue their natural
+lifetime and cannot yet be selectively killed or migrated to a different
+source group. Per-particle GPU slot ownership and fence-safe selective kill
+are a separate feature. A rollback resets the shared pool and invalidates
+source handles. `PoolWorldStats::activeSources` counts active handles,
+including paused ones.
+
+The editor SpectraFX Graph Window has an optional **Metal GPU checkpoint —
+live** telemetry panel using `PoolCheckpointStats`. The host may attach a
+non-owning pool via `Editor::setSpectraGpuTelemetry(&pool)` and **must
+detach** it before the pool is destroyed. The existing Scene VFX preview
+is CPU-only and **does not** automatically create a Metal GPU pool; without
+an attached pool, the window displays an explicit unavailable message.
+Diagnostics include fresh/stale/missing/pending, readback budget pressure,
+bytes returned, adaptive backoffs/recoveries, current maximum interval and
+active source count. These do not imply completed GPU validation.
+
+**Verification:** GitHub source commits only; **NOT RUN** CMake/Clang,
+Metal shader compilation, CTest, native editor launch, fault-injection,
+render preview, user-facing GPU capture validation or performance benchmark.
