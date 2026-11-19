@@ -697,6 +697,21 @@ if(AIVERSE_BUILD_TESTS)
         COMMAND aiverse_geometry_page_owners_tests)
 endif()
 if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_render_resource_owner_lifetime_tests
+        tests/render/resource_owner_lifetime.cpp)
+    target_link_libraries(aiverse_render_resource_owner_lifetime_tests
+        PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME render_resource_owner_lifetime
+        COMMAND aiverse_render_resource_owner_lifetime_tests)
+    add_executable(aiverse_retirement_failed_token_tests
+        tests/render/retirement_failed_token.cpp)
+    target_include_directories(aiverse_retirement_failed_token_tests
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME render_retirement_failed_token
+        COMMAND aiverse_retirement_failed_token_tests)
+endif()
+
+if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_render_resource_owner_group_tests
         tests/render/resource_owner_group.cpp)
     target_link_libraries(aiverse_render_resource_owner_group_tests
