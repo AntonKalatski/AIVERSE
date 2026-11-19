@@ -1180,3 +1180,35 @@ Read GitHub branch source and verified exact structural changes, constructed a t
 **Known limitations:** `instanceLimit` changes shader pipeline layouts and remains intentionally persistent; this snapshot does not revert it. Studio profiling/debug-mode, LOD diagnostic target and other Scene diagnostic flags still use existing Scene-window lifecycle (not this model batching snapshot). The guard does not protect concurrent multi-threaded use of one Renderer3D or guarantee correctness of native asset unloads. Nested policy scopes are source-inspected, not compiled/executed.
 
 **Next action:** Finish reviewing real pooled Model upload/backends and other native/custom rendering paths for safe cross-model CPU MDI eligibility and actual usage; then at user's feature-complete milestone run native builds, model batching policy tests, Scene/Game isolation and same-camera A/B/A Metal/Vulkan raster/performance validation. Keep all experimental flags opt-in and PR #34 Draft until completed.
+
+
+---
+
+## Stage 37 — opt-in rigid LOD models in shared GPU geometry pool (2026-11-19)
+
+**Branch/PR:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. **Prior head:** `6efc05808d1274dac44392462d16c8a36493f4ba`. **Implementation commit:** `8a80b40f6fa7c87d00de97e7b80844ea62364cb9`. **Base:** main `d71c6d47e532b25fb816a8bb1f96c41e5275a165`, at Stage 37 start branch behind=0; recompare before merging. Continue on this branch and retain all other agents' changes.
+
+### Problem and implementation
+
+`GlobalGeometryPool.cpp::canPool()` rejected **every** model containing a LOD chain, including ordinary rigid imported assets after automatic LOD generation in `prepareModelUpload()`. With default AutoLOD, otherwise eligible native scenery was then uploaded to dedicated VB/IB handles and could never satisfy cross-model CPU MDI's exact shared-page requirement. This is a *geometry upload admission* problem, not an RTS/FPS batching rule.
+
+- New `engine/render/GeometryPoolEligibility.h`: public, genre-agnostic `rigidGeometryPoolCandidate(model, allowRigidLods)`, evaluated at asset upload. With `allowRigidLods=false`, retains the original exclusions. When true, permits rigid LOD chains **only** if every referenced mesh index is in range, not the referencing mesh, and its projected size is finite and strictly positive. The entire model is still rejected for cluster geometry, skin data, authored clips, material variants, morph texture, deformable meshes and per-primitive morph/joint-palette/variant inputs. Does not inspect or mutate GPU buffers, and does not change active draw eligibility or LOD thresholds.
+- `engine/render/GlobalGeometryPool.h`/`.cpp`: adds `rigidLodGeometryPoolingEnabled()` and `setRigidLodGeometryPoolingEnabled(bool)`, default inherited from `AIVERSE_GEOMETRY_POOL_RIGID_LOD=1` (default OFF). The runtime setting explicitly overrides the process env once set. New candidate replaces prior hardcoded `canPool` gate; existing `AIVERSE_GEOMETRY_POOL`, `AIVERSE_RENDER_SAFE`, backend `supportsMultiDrawIndirect` and `canUpdateSharedBuffers` safety, size limit (16 MiB/model), GPU page allocation, vertex/index offsets, fallback to dedicated buffers and page lifetime rules are preserved.
+- `apps/editor/windows/SceneWindow.cpp`: independent "Rigid LOD geometry pooling (experimental)" checkbox under Scene → Batching. Uses the common renderer upload policy, calls `reloadRules()` to force model GPU reupload after a change, and reports that skin/morph/clip assets remain on dedicated buffers. Not a per-draw switch and not Scene-only: shared GPU geometry allocation affects all hosts using a Device. Do not flip it mid GPU render or from a worker thread.
+- No changes to model file format, ECS simulation, serialized data, material equivalence, camera/shadow culling, crossfade, indexed MDI thresholds, shader/pipeline ABI, Metal GPU ICB, Vulkan addressing or RHI fence ownership.
+
+### Host compatibility/safety
+
+All model uploaders using `uploadModel(dev, model)` (including game native code and editor assets) use the same predicate, without linking FPS/RTS views. Rigid LOD levels share the same original vertex/index arrays and have model-relative triangle offsets; `Renderer3D` still selects LOD for each camera and adds `gpuFirstIndex`/`gpuBaseVertex` at GPU submission. The extra cross-model sorter is separately opt-in and still requires exact shared GPU buffers, material equivalence, static/no deformation and no LOD crossfade. **Vulkan nonzero base-vertex indirect remains rejected to the original direct draw path**. A pooled LOD is *not* proof that an MDI group is possible. Backend or device lacking shared dynamic buffer updates still uploads dedicated models.
+
+No in-place repack/reallocation of existing Model GPU handles occurs: changing the switch affects only later `uploadModel()`, or explicit editor asset reload. Material/geometry revision handling stays as before. The model-specific `AIVERSE_AUTOLOD` generation opt-in and runtime-Lod renderer switches are independent from this allocation policy.
+
+### Actual verification
+
+Read live branch source and renderer/backend conditions through connected GitHub. Applied exact source replacements, checked structural invariants, created one four-file Git tree + implementation commit and fast-forwarded branch ref with expected parent. **Native CMake/CTest: NOT RUN. Metal/Vulkan LOD pixel parity: NOT RUN. Vulkan in-flight/OOM stress: NOT RUN. Same-scene CPU/GPU A/B/A: NOT RUN.** No compilation, correctness-on-device, performance or FPS gain claimed; user requires completing batching features before tests. PR stays Draft and rigid LOD opt-in stays OFF by default.
+
+### Risks and specific next step
+
+Inspect device-specific pooled Model index/vertex binding and Metal GPU-authored draws before allowing a default-ON policy. Rigid models with authored clips remain unpooled (intentional until animation presentation parity). Some models will fail the new strict LOD reference validation, falling back safely. Shared global upload policy cannot automatically migrate already uploaded game assets; hosts must reload explicitly. Out-of-range/cyclic and nested LOD references are rejected or still require normal importer validation; the new predicate only guards its direct mesh references. Do not interpret "pool enabled" as an actual cross-model submission metric.
+
+**Next feature:** add safe **per-device/per-asset** opt-in ownership or richer geometry-pool admission diagnostics for native clients (where a global editor toggle can surprise unrelated game hosts). Then finish feature checklist before testing. Validation later must cover no/one/multiple rigid LOD, invalid levels, skin/morph/clip fallbacks, actual two-model same-page uploads, Metal/Vulkan direct vs MDI parity and forced reload/eviction.

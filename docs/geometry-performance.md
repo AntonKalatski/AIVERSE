@@ -1348,3 +1348,36 @@ profile/debug toggles or ECS state; explicit shader-layout changes
 retain their previous behavior. All experimental modes stay OFF unless
 separately enabled. This is a feature-only update; native tests and
 GPU A/B measurements are not yet performed.
+
+
+### Shared rigid LOD geometry pool — Stage 37 (experimental upload policy)
+
+The common `uploadModel(Device&, Model&)` pipeline now exposes
+`rigidLodGeometryPoolingEnabled()` and
+`setRigidLodGeometryPoolingEnabled(bool)`; the default is governed by
+`AIVERSE_GEOMETRY_POOL_RIGID_LOD=1` (unset means OFF). This is
+**independent** of CPU cross-model MDI opt-in and runtime AutoLOD
+generation. Enabling it can place a safe, immutable **rigid LOD**
+model's vertex/index streams into a shared GPU page so different
+models become possible candidates for grouped CPU MDI.
+
+`GeometryPoolEligibility.h::rigidGeometryPoolCandidate(model,
+allowRigidLods)` refuses cluster geometry, skinned/morphed/
+deformable assets, authored clips, explicit material variants,
+or any out-of-range/self/invalid LOD target. Static no-LOD models
+retain their prior eligibility. LOD levels continue to be selected
+independently for current camera/shadow and active crossfades
+retain their ordinary path. All final GPU material and pipeline
+equality checks remain mandatory; the **same GPU geometry page**
+and VB/IB handles are still required. The existing Vulkan
+nonzero pooled base-vertex MDI fallback stays active.
+
+Scene → Batching has a separate experimental rigid LOD pooling
+checkbox. Unlike Scene-only CPU policies, this is a **global
+asset-upload policy**: changing it requires asset reload/reupload
+and can affect native or Game hosts. The editor performs
+`reloadRules()` to reupload editor assets; native hosts must manage
+their own asset lifetimes. It does not reallocate any already
+uploaded buffers in place. This feature was source-reviewed, not
+yet native-built, pixel-validated, or performance-benchmarked;
+default remains OFF pending final validation.

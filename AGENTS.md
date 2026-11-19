@@ -1629,3 +1629,25 @@ static ModelDraw packets; the engine's genre-neutral static ECS
 adapter is `engine/render/EcsStaticModelRender.h`. Cross-model CPU
 MDI still requires genuinely shared GPU geometry and exact material
 compatibility. PR #34 Draft, native validation deferred as directed.
+
+
+## Rigid LOD shared GPU geometry pool — Stage 37
+
+The public shared geometry upload code now has an **experimental**
+`AIVERSE_GEOMETRY_POOL_RIGID_LOD=1` opt-in (default OFF) plus
+`rigidLodGeometryPoolingEnabled()`/
+`setRigidLodGeometryPoolingEnabled(bool)`.
+`GeometryPoolEligibility.h::rigidGeometryPoolCandidate` is the
+genre-neutral predicate for uploaders: safe rigid LOD chains may
+use the shared VB/IB page, but skin, morph, authored clips,
+material variants, deformable or clustered meshes remain dedicated.
+Reject invalid/self/nonfinite LOD thresholds/targets, and preserve
+existing backend and size fallbacks. This affects asset **upload**
+only, NOT live per-pass LOD decisions or cross-model material
+compatibility; no existing buffers are repacked in place.
+Scene Batching checkbox triggers editor `reloadRules()`.
+Global setting affects all game/native hosts, unlike scoped
+Scene-only renderer policies. Vulkan nonzero pooled base vertex
+still falls back to direct draws. Keep PR #34 Draft and do not
+claim a speedup or compilation before native testing. Document
+every subsequent stage separately.
