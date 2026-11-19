@@ -146,6 +146,13 @@ void test() {
         shape.deltas.push_back(delta);
         auto source=SparseMorphLibrary::compile(4,{shape});
         const std::array<std::uint32_t,3> mapping{{0,2,3}};
+        const std::array<aiverse::render::float3,4> sourcePositions{{
+            {0,0,0},{1,0,0},{2,0,0},{3,0,0}}};
+        const std::array<aiverse::render::float3,3> lodPositions{{
+            {0,0,0},{2,0,0},{3,0,0}}};
+        req(MorphLodTransfer::matchPositions(sourcePositions,lodPositions)==
+            std::vector<std::uint32_t>(mapping.begin(),mapping.end()),
+            "exact geometric LOD matching returned incorrect indices");
         auto lod=MorphLodTransfer::transfer(source,mapping);
         req(lod.vertices()==3 && lod.targets()==1 && lod.deltas()==1 &&
             lod.gpuDeltas()[0].vertex==1 &&
