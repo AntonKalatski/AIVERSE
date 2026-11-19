@@ -315,6 +315,8 @@ public:
         uint32_t preflightGroups = 0, batchCacheHits = 0, batchCacheMisses = 0;
         bool adaptiveInstancing = false;
         bool compacted = false, prepared = false;
+        // Counts only successful Metal ICB executions, not GPU staging.
+        uint32_t perCommandVtExecutions = 0, mixedVtExecutions = 0;
     };
     GpuModelDrawStats gpuModelDrawStats() const {
         const auto upload = gpuModelCommandsReady_ ?
@@ -329,7 +331,8 @@ public:
                 gpuPreflightGroups_, gpuBatchCacheHits_, gpuBatchCacheMisses_,
                 gpuAdaptiveInstancingFallback_,
                 gpuModelCommandsReady_ && gpuModelCommands_.compactedReady(gpuModelFrame_, gpuModelSubmission_),
-                gpuModelCommandsReady_};
+                gpuModelCommandsReady_,
+                gpuIcbPerCommandVtExecuted_, gpuIcbMixedVtExecuted_};
     }
     void render(const gfx::PassDesc& screenPass, PostProcess* post = nullptr); // shadow pass + opens the main pass and draws everything
     // With a post hook: ends the scene pass, runs the effects into screenPass (left open). No-op otherwise.
@@ -913,6 +916,7 @@ private:
         gfx::TextureHandle alphaCoverage;
         bool usesVirtualTexture = false;
         bool perCommandVt = false; // Metal opt-in per-command fragment ABI
+        bool mixedVtResources = false; // actual different VT bindings
         std::vector<GpuMaterialResourceTicket> perCommandTickets;
         // CPU table snapshot validates each command before ICB execution. The Metal GPU ICB
         // still inherits homogeneous fragment resources per submission.
@@ -927,6 +931,7 @@ private:
     uint32_t gpuEncodedDrawCalls_ = 0, gpuEncodedCommands_ = 0;
     uint32_t gpuIcbCandidates_ = 0, gpuIcbPrepared_ = 0;
     uint32_t gpuIcbRejected_ = 0, gpuIcbExecuteFailed_ = 0;
+    uint32_t gpuIcbPerCommandVtExecuted_ = 0, gpuIcbMixedVtExecuted_ = 0;
     uint32_t gpuModelEligible_ = 0, gpuModelDrawn_ = 0;
     uint32_t gpuModelDynamicEligible_ = 0, gpuModelLodEligible_ = 0;
     PersistentGpuScene persistentScene_;
