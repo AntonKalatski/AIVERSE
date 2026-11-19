@@ -12,6 +12,7 @@
 #include <optional>
 #include <stdexcept>
 #include <utility>
+#include <tuple>
 #include <vector>
 
 namespace aiverse::terraweave {
@@ -34,16 +35,28 @@ struct ForestDeadwoodSoilCell {
 };
 
 struct ForestDeadwoodWaterCell {
-    int64_t x=0,z=0; // dissolved nutrients; flow is NEREID-owned
+    int64_t x=0,z=0; // legacy 32m dissolved grid; unbound to NEREID body
     uint64_t dissolvedUnits=0;
+};
+
+// Stage70: persistent 4m water grid, with generation-safe NEREID body key.
+// Unlike the old 32m untagged pool, overlapping rivers can own independent
+// dissolved nutrient amounts at the SAME X/Z position.
+struct ForestMicroWaterCell {
+    uint64_t bodyKey=0; // NEREID Entity::packed()+1; 0 is invalid
+    int64_t x=0,z=0;    // 4m world lattice indices
+    uint64_t dissolvedUnits=0;
+    constexpr auto operator<=>(const ForestMicroWaterCell&) const = default;
 };
 
 struct ForestDeadwoodResource {
     static constexpr size_t kMaxLogs=65536;
     static constexpr size_t kMaxSoilCells=65536;
     static constexpr size_t kMaxWaterCells=65536;
+    static constexpr size_t kMaxMicroWaterCells=65536;
     static constexpr int64_t kNutrientCellCm=3200;
-    uint32_t version=2;
+    static constexpr int64_t kMicroWaterCellCm=400;
+    uint32_t version=3;
     uint64_t revision=0;
     uint64_t cursor=0;
     uint64_t lastStepTick=0;
@@ -57,17 +70,20 @@ struct ForestDeadwoodResource {
     uint64_t lastNutrientTick=0,soilCursor=0,waterCursor=0;
     uint64_t lastOutflowCommandId=0; // monotonic native outlet command
     bool nutrientInitialized=false;
+    uint64_t microWaterCursor=0; // persistent bounded 4m water scheduler
     std::vector<ForestDeadwoodRecord> logs; // strictly by species/key
     std::vector<ForestDeadwoodSoilCell> soil; // strictly by x,z
-    std::vector<ForestDeadwoodWaterCell> water; // sorted by x,z
+    std::vector<ForestDeadwoodWaterCell> water; // legacy v2 coarse, untouched in micro mode
+    std::vector<ForestMicroWaterCell> microWater; // sorted bodyKey,x,z
 };
 
 inline void validateForestDeadwoodResource(
         const ForestDeadwoodResource& state) {
-    if(state.version!=2 || state.logs.size()>
+    if(state.version!=3 || state.logs.size()>
        ForestDeadwoodResource::kMaxLogs ||
        state.soil.size()>ForestDeadwoodResource::kMaxSoilCells ||
-       state.water.size()>ForestDeadwoodResource::kMaxWaterCells)
+       state.water.size()>ForestDeadwoodResource::kMaxWaterCells ||
+       state.microWater.size()>ForestDeadwoodResource::kMaxMicroWaterCells)
         throw std::invalid_argument("TerraWeave invalid deadwood resource");
     AnchoredPlantId prevId{};
     bool first=true;
@@ -107,6 +123,22 @@ inline void validateForestDeadwoodResource(
             throw std::invalid_argument("TerraWeave invalid dissolved nutrient cell");
         prevCell=key;first=false;
     }
+    uint64_t previousBody=0;
+    std::pair<int64_t,int64_t> previousMicro{};
+    first=true;
+    const int64_t microLimit=
+        kWorldLimitCm/ForestDeadwoodResource::kMicroWaterCellCm;
+    for(const auto& cell:state.microWater){
+        if(!cell.bodyKey || !cell.dissolvedUnits ||
+           cell.x<=-microLimit || cell.x>=microLimit ||
+           cell.z<=-microLimit || cell.z>=microLimit ||
+           (!first && std::tuple{previousBody,previousMicro.first,
+                                  previousMicro.second}>=
+                      std::tuple{cell.bodyKey,cell.x,cell.z}))
+            throw std::invalid_argument("TerraWeave invalid 4m nutrient cell");
+        first=false;previousBody=cell.bodyKey;
+        previousMicro={cell.x,cell.z};
+    }
     // Reject impossible save/replay states BEFORE any resource publication:
     // no organic matter may silently appear or disappear in the ledger.
     uint64_t accounted=state.totalRespiredUnits;
@@ -121,6 +153,7 @@ inline void validateForestDeadwoodResource(
     for(const auto& log:state.logs)add(log.remainingUnits);
     for(const auto& cell:state.soil)add(cell.availableUnits);
     for(const auto& cell:state.water)add(cell.dissolvedUnits);
+    for(const auto& cell:state.microWater)add(cell.dissolvedUnits);
     if(accounted!=state.totalInitialUnits)
         throw std::invalid_argument("TerraWeave deadwood mass not conserved");
 }
@@ -147,10 +180,15 @@ inline void io(Archive& a,ForestDeadwoodSoilCell& r) {
 inline void io(Archive& a,ForestDeadwoodWaterCell& r) {
     a(r.x,r.z,r.dissolvedUnits);
 }
+inline void io(Archive& a,ForestMicroWaterCell& r) {
+    a(r.bodyKey,r.x,r.z,r.dissolvedUnits);
+}
 inline void io(Archive& a,ForestDeadwoodResource& s) {
     a(s.version);
-    if(!a.ok() || (s.version!=1u && s.version!=2u)){a.fail();return;}
-    const bool v2=s.version==2u;
+    if(!a.ok() || (s.version!=1u && s.version!=2u &&
+                   s.version!=3u)){a.fail();return;}
+    const bool v2=s.version>=2u;
+    const bool v3=s.version==3u;
     a(s.revision,s.cursor,s.lastStepTick,s.initialized,
       s.totalInitialUnits,s.totalRespiredUnits,s.totalExportedUnits);
     if(v2)
@@ -174,15 +212,27 @@ inline void io(Archive& a,ForestDeadwoodResource& s) {
         if(!a.writing())s.water.assign(n,{});
         for(auto& v:s.water)if(a.ok())a(v);
     }else if(!a.writing()){
-        // Legacy v1 nutrient pool is wholly in soil/wood. No mineral
-        // uptake or dissolved-water reservoir existed. Promote losslessly
-        // into v2 after reading the complete v1 layout.
-        s.version=2;
+        // Legacy v1 had neither dissolved reservoir nor uptake sinks.
         s.totalAbsorbedUnits=s.totalRunoffExportUnits=s.totalLeachedUnits=0;
         s.lastNutrientTick=s.soilCursor=s.waterCursor=0;
         s.lastOutflowCommandId=0;
         s.nutrientInitialized=false;
         s.water.clear();
+    }
+    if(v3){
+        a(s.microWaterCursor);
+        n=a.count(s.microWater.size(),32);
+        if(!a.ok() || n>ForestDeadwoodResource::kMaxMicroWaterCells){
+            a.fail();return;
+        }
+        if(!a.writing())s.microWater.assign(n,{});
+        for(auto& v:s.microWater)if(a.ok())a(v);
+    }else if(!a.writing()){
+        // Preserve every 32m legacy water cell UNCHANGED. We do not
+        // guess its owning NEREID body or split mass across 4m cells.
+        s.microWater.clear();
+        s.microWaterCursor=0;
+        s.version=3;
     }
     if(!a.writing() && a.ok()){
         try{validateForestDeadwoodResource(s);}
