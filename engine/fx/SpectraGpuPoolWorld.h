@@ -94,6 +94,19 @@ struct PoolCheckpointStats {
 // Reset is an ordered, restartable GPU-group transaction, not a single
 // cross-device atomic command buffer. Records exactly which groups accepted
 // reset uploads. Scene emission must stay blocked while retryRequired is true.
+// A privacy-safe read-only view of one pooled GPU group. Does not expose
+// effect names, serialized graph keys, shader code or scalar VM values.
+struct PoolGpuGroupSummary {
+    size_t index=0;
+    uint32_t estimatedAlive=0;
+    size_t allocatedGpuBytes=0;
+    bool gpuActive=false;
+    bool stepAccepted=false;
+    bool resetAccepted=false;
+    bool exportReady=false;
+    GpuCheckpointStatus checkpoint{};
+};
+
 struct PoolResetReport {
     bool retryRequired=false;
     bool deviceLost=false;       // requires explicit host graphics-device recovery
@@ -239,6 +252,8 @@ public:
     const PoolWorldStats& stats() const {return stats_;}
     // On-demand, no GPU readback. Reflects callbacks delivered since step().
     PoolCheckpointStats checkpointStats() const;
+    size_t gpuGroupCount() const {return gpuGroups_.size();}
+    bool gpuGroupSummary(size_t index,PoolGpuGroupSummary& result) const;
     // Opt-in nonblocking capture of one GPU group's current particle state.
     // Enqueue only inside an open Device graphics frame, outside encoders.
     // The callback runs on the RHI owner thread after GPU completion and
