@@ -358,3 +358,20 @@ independent ECS Worlds. See
 `docs/ecs-static-prefab-scene-integration.md` and
 `docs/agent-handoffs/ecs-static-scene-stage4-2026-11-19.md`.
 **Combined CTest remains native-unverified; do not merge to main yet.**
+
+## Stage 7 — additive static collision ownership
+
+The isolated integration branch now provides opt-in collision namespaces
+for multiple active `CollisionStream` instances in one
+`world::SpatialWorld`, preserving the legacy 3-argument API. A host
+declares a sorted `SceneCollisionNamespaces` catalog before loading,
+then uses `SceneCollisionBridge` as a dependency adapter to
+`SceneLoadCoordinator`. Each actual async stream receives a unique
+high-ID range. Unloading one scene removes only its own colliders.
+Required collision regions must be ready before advancing the ECS tick.
+
+Read `docs/scene-collision-namespaces.md` for the full contract and
+native tests. Unlike previously noted limitations, **static ID
+namespace support is now implemented in source**, but not yet verified
+by native CTest. Cross-stream terrain seams, multi-platform GPU and
+complete FPS/RTS adoption still need additional validation.
