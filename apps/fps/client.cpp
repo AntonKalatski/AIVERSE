@@ -22,6 +22,7 @@
 #include "libraries/include/aiverselib/animation/AnimationPhaseTransfer.h"
 #include "engine/render/GeometryScene.h"
 #include "engine/view/View.h"
+#include "engine/view/AppearanceAuthoringService.h"
 #include "engine/render/ImGuiLayer.h"
 #include "engine/i18n/Localization.h"
 #include "imgui.h"
@@ -286,7 +287,7 @@ struct App {
                 def.set("output",Json::string(output));
                 def.set("parameters",Json::parse(R"({"moving":0,"speed":0})"));
             }
-            auto compiled=render::AnimationGraph::compile(*model,def);
+            auto compiled=::aiverse::view::AppearanceAuthoringService::compileGraph(*model,def);
             // Optional project-local hot-reloadable graph asset; file revisions
             // never affect authoritative FPS simulation or networking.
             const auto graphFile=view.getStr("graphFile");
