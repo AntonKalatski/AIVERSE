@@ -186,7 +186,15 @@ bool HumanGroomRuntime::step(float dt,render::float3 wind) {
             const auto p=guide.position[j];
             const auto velocity=(p-guide.previous[j])*friction;
             const auto shapePull=(guide.rest[j]-p)*(stiffness_*3.0f);
-            guide.position[j]=p+velocity+(force+shapePull)*dt2;
+            // Bound a single Verlet displacement under violent wind or a
+            // stale previous frame. This avoids tunnelling across the scalp
+            // while retaining the authored rest-length constraint.
+            auto delta=velocity+(force+shapePull)*dt2;
+            const float maxTravel=std::max(0.10f,
+                length(guide.rest[j]-guide.rest[j-1])*2.0f);
+            const float travel=length(delta);
+            if(travel>maxTravel)delta=delta*(maxTravel/travel);
+            guide.position[j]=p+delta;
             guide.previous[j]=p;
         }
         for(int iteration=0;iteration<5;++iteration) {
@@ -204,8 +212,14 @@ bool HumanGroomRuntime::step(float dt,render::float3 wind) {
             }
         }
         // Final contact pass after segment constraints have converged.
-        for(std::size_t j=1;j<guide.position.size();++j)
-            guide.position[j]=resolveCollision(guide.position[j],guide);
+        for(std::size_t j=1;j<guide.position.size();++j) {
+            const auto before=guide.position[j];
+            guide.position[j]=resolveCollision(before,guide);
+            // Collisions are inelastic at this coarse LOD: discard velocity
+            // normal to the surface rather than bounce out next frame.
+            if(length(guide.position[j]-before)>1e-5f)
+                guide.previous[j]=guide.position[j];
+        }
         for(auto v:guide.position)if(!good(v))return false;
     }
     lastStepMs_=float(std::chrono::duration<double,std::milli>(
