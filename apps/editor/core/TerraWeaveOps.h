@@ -38,7 +38,9 @@ inline terraweave::LegacyHeightfieldOptions origin(const Json& p) {
     return out;
 }
 inline Json sanitizedConfig(const terraweave::TerrainSettings& t,
-                            terraweave::LegacyHeightfieldOptions o) {
+                            terraweave::LegacyHeightfieldOptions o,
+                            int widthCells=0,int heightCells=0,
+                            const std::string& baseFingerprint={}) {
     Json j = Json::object();
     j.set("version", Json::number(int64_t(1)));
     j.set("seed", Json::number(static_cast<int64_t>(t.seed)));
@@ -49,7 +51,35 @@ inline Json sanitizedConfig(const terraweave::TerrainSettings& t,
     j.set("originXcm", Json::number(o.worldOriginXcm));
     j.set("originZcm", Json::number(o.worldOriginZcm));
     j.set("cellSizeCm", Json::number(int64_t(o.cellSizeCm)));
+    // Optional verified provenance for safe future non-destructive edits.
+    // Old version-1 metadata without these fields is still readable, but
+    // cannot be blindly trusted for a rebase (the map may have resized).
+    if(widthCells>0 || heightCells>0 || !baseFingerprint.empty()) {
+        if(widthCells<=0 || heightCells<=0 || baseFingerprint.size()!=16)
+            throw std::invalid_argument("TerraWeave recipe provenance missing");
+        j.set("widthCells",Json::number(int64_t(widthCells)));
+        j.set("heightCells",Json::number(int64_t(heightCells)));
+        j.set("baseFingerprint",Json::string(baseFingerprint));
+    }
     return j;
+}
+// Only fingerprints attached to a complete, dimension-matched recipe are
+// authoritative. V1 recipes without provenance require explicit replace.
+inline void validateRebaseRecipe(const Json& recipe,int widthCells,int heightCells) {
+    if(!recipe.isObject() || recipe.getInt("version")!=1 ||
+       recipe.getInt("widthCells",-1)!=widthCells ||
+       recipe.getInt("heightCells",-1)!=heightCells ||
+       !recipe["baseFingerprint"].isString() ||
+       recipe.getStr("baseFingerprint").size()!=16)
+        throw std::invalid_argument(
+            "TerraWeave rebase needs a matching provenance recipe; use overwrite=true to reset");
+    for(const char* key:{"seed","baseHeightCm","reliefCm",
+                        "basePeriodCm","octaves","originXcm",
+                        "originZcm","cellSizeCm"})
+        if(!recipe[key].isNumber())
+            throw std::invalid_argument(
+                std::string("TerraWeave recipe missing field ")+key);
+    // terrain() / origin() perform full range validation in the caller.
 }
 inline Json preview(const terraweave::TerrainSettings& t,
                     terraweave::LegacyHeightfieldOptions o,
@@ -96,7 +126,8 @@ inline void registerTerraWeaveOps(Workspace& ws) {
         "originXcm":{"type":"integer"},
         "originZcm":{"type":"integer"},
         "cellSizeCm":{"type":"integer","minimum":1},
-        "overwrite":{"type":"boolean"}
+        "overwrite":{"type":"boolean"},
+        "preserveEdits":{"type":"boolean"}
       }
     })";
     Workspace* w = &ws;
@@ -127,32 +158,66 @@ inline void registerTerraWeaveOps(Workspace& ws) {
     ws.registerOp({"terraweave_generate",
         "Generate full deterministic TerraWeave heightfield in the current RTS map. "
         "By default refuses to overwrite existing sculpt/detail. Set overwrite=true "
-        "to explicitly replace authored terrain. Creates an undo step, records seed "
-        "and settings in map terraweave block, and notifies the existing view.",
+        "to explicitly replace authored terrain, or preserveEdits=true to move "
+        "the existing authored height and detail residuals onto a new generator base "
+        "(requires a matching saved TerraWeave recipe fingerprint). "
+        "Both choices are mutually exclusive. Creates one undo step.",
         Json::parse(schema), [w](const Json& p) -> Json {
             if (w->project.dir.empty()) throw std::runtime_error("open a game first");
             if (w->project.isFps()) throw std::runtime_error(
                 "TerraWeave MapDoc heightfield adapter is for RTS grid maps only");
             auto settings = terraweave_ops_detail::terrain(p);
             auto origin = terraweave_ops_detail::origin(p);
-            bakeTerraWeaveTerrain(w->map, settings, origin,
-                p.getBool("overwrite", false)
-                  ? TerraWeaveExistingTerrain::ReplaceExplicitly
-                  : TerraWeaveExistingTerrain::RefuseOverwrite);
+            const bool overwrite=p.getBool("overwrite",false);
+            const bool preserve=p.getBool("preserveEdits",false);
+            if(overwrite && preserve)
+                throw std::invalid_argument(
+                    "TerraWeave overwrite and preserveEdits are mutually exclusive");
+            const int mapWidth=w->map.data.w, mapHeight=w->map.data.h;
+            Json result=Json::object();
+            std::string fingerprint;
+            if(preserve) {
+                const Json& previous=w->map.data.extra["terraweave"];
+                terraweave_ops_detail::validateRebaseRecipe(
+                    previous,mapWidth,mapHeight);
+                const auto oldTerrain=terraweave_ops_detail::terrain(previous);
+                const auto oldOrigin=terraweave_ops_detail::origin(previous);
+                const auto report=rebaseTerraWeaveTerrain(
+                    w->map,oldTerrain,oldOrigin,
+                    previous.getStr("baseFingerprint"),settings,origin);
+                fingerprint=report.newBaseFingerprint;
+                result.set("preservedAuthoredCorners",
+                    Json::number(int64_t(report.authoredCorners)));
+                result.set("shiftedCorners",
+                    Json::number(int64_t(report.shiftedCorners)));
+                result.set("shiftedDetail",
+                    Json::number(int64_t(report.shiftedDetail)));
+                result.set("preservedDetail",Json::fromBool(
+                    !w->map.data.detail.empty()));
+            } else {
+                bakeTerraWeaveTerrain(w->map,settings,origin,
+                    overwrite ? TerraWeaveExistingTerrain::ReplaceExplicitly :
+                                TerraWeaveExistingTerrain::RefuseOverwrite);
+                // No authored deltas exist after a fresh/explicit overwrite.
+                fingerprint=terraweave::legacyBaseFingerprint(
+                    w->map.data.corners,mapWidth,mapHeight);
+            }
             w->map.data.extra.set("terraweave",
-                terraweave_ops_detail::sanitizedConfig(settings, origin));
-            w->map.touched();
-            w->note({Change::Map, 0, 0, w->map.data.w - 1,
-                     w->map.data.h - 1, -1, "TerraWeave generated heightfield"});
-            Json result = Json::object();
-            result.set("ok", Json::fromBool(true));
-            result.set("corners", Json::number(
+                terraweave_ops_detail::sanitizedConfig(
+                    settings,origin,mapWidth,mapHeight,fingerprint));
+            w->note({Change::Map,0,0,mapWidth-1,mapHeight-1,-1,
+                     preserve?"TerraWeave preserve authored edits":
+                              "TerraWeave generated heightfield"});
+            result.set("ok",Json::fromBool(true));
+            result.set("corners",Json::number(
                 int64_t(w->map.data.corners.size())));
-            result.set("revision", Json::number(
+            result.set("revision",Json::number(
                 static_cast<int64_t>(w->map.revision)));
-            result.set("summary", Json::string(
-                "TerraWeave: generated " + std::to_string(w->map.data.w) +
-                "x" + std::to_string(w->map.data.h) + " terrain; undo available"));
+            result.set("summary",Json::string(
+                "TerraWeave: " + std::string(preserve?"rebased":"generated") +
+                " " + std::to_string(mapWidth) + "x" +
+                std::to_string(mapHeight) +
+                " terrain; undo available"));
             return result;
         }});
 }
