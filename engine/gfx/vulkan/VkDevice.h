@@ -22,6 +22,7 @@ public:
         items_.push_back(std::move(v)); alive_.push_back(1); return uint32_t(items_.size());
     }
     T* get(uint32_t id) { return id && id <= items_.size() && alive_[id - 1] ? &items_[id - 1] : nullptr; }
+    const T* get(uint32_t id) const { return id && id <= items_.size() && alive_[id - 1] ? &items_[id - 1] : nullptr; }
     void remove(uint32_t id) { if (get(id)) { alive_[id - 1] = 0; items_[id - 1] = T{}; free_.push_back(id - 1); } }
     template <class F> void each(F&& f) { for (size_t i = 0; i < items_.size(); ++i) if (alive_[i]) f(items_[i]); }
 private:
@@ -118,6 +119,7 @@ public:
     void destroyBuffer(BufferHandle h) override;
     TextureHandle createTexture(const TextureDesc& d) override;
     void updateTexture(TextureHandle h, int x, int y, int w, int h2, const void* pixels, int rowPitchBytes) override;
+    bool textureInfo(TextureHandle h, TextureInfo& out) const override;
     void destroyTexture(TextureHandle h) override;
     ShaderHandle createShader(const ShaderDesc& d) override;
     void destroyShader(ShaderHandle h) override;
