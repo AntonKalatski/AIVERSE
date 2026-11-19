@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <unordered_map>
 #include <type_traits>
 #include <variant>
@@ -118,6 +119,9 @@ struct Stats {
 struct ModelRetargetStats {
     uint64_t compiledUsed=0,compiledRejected=0;
     uint64_t exactPoseReused=0,legacyValidated=0,bindPoseFallback=0;
+    // Capacity trims are per-frame diagnostics; CPU profiling required
+    // before interpreting them as measured allocation savings.
+    uint64_t scratchTrims=0;
 };
 class View final {
 public:
@@ -335,12 +339,37 @@ public:
         RetargetScratch reentrantScratch;
         struct ReleaseScratch {
             bool* busy=nullptr;
-            ~ReleaseScratch(){if(busy)*busy=false;}
+            RetargetScratch* retained=nullptr;
+            size_t budget=0;
+            uint64_t* trims=nullptr;
+            ~ReleaseScratch() noexcept {
+                if(retained) {
+                    // Budget limits RETAINED capacity, never the in-flight
+                    // actor's required pose size. Release only after the
+                    // synchronous Renderer3D submission and any capture
+                    // callbacks have finished reading these buffers.
+                    const size_t poseLimit=budget/sizeof(render::NodePose);
+                    const bool poseOver=retained->pose.capacity()>poseLimit;
+                    const size_t poseBytes=poseOver?budget:
+                        retained->pose.capacity()*sizeof(render::NodePose);
+                    const bool worldOver=retained->matrices.capacity()>
+                        (budget-poseBytes)/sizeof(render::mat4);
+                    if(poseOver || worldOver) {
+                        render::Pose{}.swap(retained->pose);
+                        std::vector<render::mat4>{}.swap(retained->matrices);
+                        if(trims)++*trims;
+                    }
+                }
+                if(busy)*busy=false;
+            }
         } releaseScratch;
         RetargetScratch* scratch=&reentrantScratch;
         if(!retargetScratchBusy_) {
             retargetScratchBusy_=true;
             releaseScratch.busy=&retargetScratchBusy_;
+            releaseScratch.retained=&retargetScratch_;
+            releaseScratch.budget=retargetScratchBudgetBytes_;
+            releaseScratch.trims=&retargetStats_.scratchTrims;
             scratch=&retargetScratch_;
         }
         auto& retargetPose=scratch->pose;
@@ -485,6 +514,27 @@ public:
 
     const Stats& stats() const noexcept{return stats_;}
     ModelRetargetStats modelRetargetStats() const noexcept{return retargetStats_;}
+    // Bounds retained CPU pose/matrix memory per View; a single large
+    // synchronous draw is still allowed and releases excess after submit.
+    // Zero disables retention. Must be called on the render-owner thread
+    // outside submitOne()/nested capture callbacks.
+    size_t retargetScratchBudgetBytes() const noexcept {
+        return retargetScratchBudgetBytes_;
+    }
+    size_t retargetScratchCapacityBytes() const noexcept {
+        return retargetScratch_.pose.capacity()*sizeof(render::NodePose) +
+               retargetScratch_.matrices.capacity()*sizeof(render::mat4);
+    }
+    void setRetargetScratchBudgetBytes(size_t bytes) {
+        if(retargetScratchBusy_)
+            throw std::logic_error("View scratch budget cannot change during model submit");
+        retargetScratchBudgetBytes_=bytes;
+        if(retargetScratchCapacityBytes()>bytes) {
+            render::Pose{}.swap(retargetScratch_.pose);
+            std::vector<render::mat4>{}.swap(retargetScratch_.matrices);
+            ++retargetStats_.scratchTrims;
+        }
+    }
     void setBudgetPolicy(lib::animation::AnimationBudgetPolicy policy) {
         budgets_=policy;
     }
@@ -500,6 +550,8 @@ public:
     // snapshot this World or mutate it while update() is running.
     World& presentation() noexcept{return presentation_;}
     void clear() {
+        if(retargetScratchBusy_)
+            throw std::logic_error("View cannot clear during nested model submission");
         bridge_.clear(presentation_);
         lodState_.clear();
         stats_={};
@@ -540,6 +592,9 @@ private:
     mutable ModelRetargetStats retargetStats_;
     // Render-owner thread only, never accessed by the ECS worker pool.
     mutable RetargetScratch retargetScratch_;
+    // A 512 KiB default holds common 1-500 bone visual rigs while
+    // avoiding indefinite retention of an exceptionally huge rig.
+    size_t retargetScratchBudgetBytes_=512u*1024u;
     mutable bool retargetScratchBusy_=false;
     uint64_t frameStamp_=0;
     mutable std::unordered_map<uint64_t,LodSelection> lodState_;
