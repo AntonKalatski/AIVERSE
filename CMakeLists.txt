@@ -2206,6 +2206,21 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_DESKTOP)
     set_tests_properties(spectrafx_contract PROPERTIES LABELS "SpectraFX")
 endif()
 
+# Actual Apple Metal GPU compute acceptance. Unlike CPU-only contract tests,
+# this compiles MSL at runtime and dispatches the same evolution, depth-sort
+# and compaction shaders used by HybridPlayback, then reads the GPU results.
+# A runner without an available Metal device reports SKIPPED (exit 77).
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_executable(aiverse_spectrafx_metal_gpu_test tests/spectrafx_metal_gpu.mm)
+    target_include_directories(aiverse_spectrafx_metal_gpu_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_spectrafx_metal_gpu_test PRIVATE
+        "-framework Metal" "-framework Foundation")
+    add_test(NAME spectrafx_metal_gpu COMMAND aiverse_spectrafx_metal_gpu_test)
+    set_tests_properties(spectrafx_metal_gpu PROPERTIES
+        LABELS "SpectraFX;MetalGPU"
+        SKIP_RETURN_CODE 77)
+endif()
+
 # Versioned VFX graph assets, CPU fallback, exposed parameters and live reload.
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_vfx_assets_tests tests/vfx_graph_assets_test.cpp)
