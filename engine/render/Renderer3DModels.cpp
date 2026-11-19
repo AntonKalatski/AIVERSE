@@ -1920,11 +1920,11 @@ void Renderer3D::renderModels(int phase) {
     // pass order is built. This only changes the safe opaque grouping order.
     const char* crossSafe = std::getenv("AIVERSE_RENDER_SAFE");
     const char* crossIndirect = std::getenv("AIVERSE_MULTI_DRAW_INDIRECT");
-    const bool staticCrossModelSort = staticCrossModelBatchesEnabled_ &&
+    bool staticCrossModelSort = staticCrossModelBatchesEnabled_ &&
         modelMultiDrawEnabled_ && dev_->supportsMultiDrawIndirect() &&
         !gpuAdaptiveInstancingFallback_ && !gpuModelCommandsReady_ &&
         geometryMainView_ && !auxiliaryModelPass_ && !drawCallDebug_ &&
-        phase <= 1 &&
+        phase <= 1 && !paletteSort &&
         !(crossSafe && std::strcmp(crossSafe, "1") == 0) &&
         !(crossIndirect && std::strcmp(crossIndirect, "off") == 0);
     const auto eligibleStaticPage = [&](const ModelItem& item) {
@@ -1945,14 +1945,65 @@ void Renderer3D::renderModels(int phase) {
             (dev_->info().backend != gfx::Backend::Vulkan ||
              item.model->gpuBaseVertex == 0);
     };
+    // Page-aware preflight operates on *already visible* ModelItems. Only
+    // groups with distinct source Models AND enough unique primitives to
+    // meet the backend's indirect-command threshold trigger special sorting.
+    // Everything else retains the original material/primitive sort order.
+    // GPU-state materialGroup IDs were resolved with exact comparisons above.
+    std::vector<uint8_t> staticCrossCandidates;
+    if (staticCrossModelSort) {
+        const size_t threshold = dev_->info().backend == gfx::Backend::Metal
+            ? indirectCommandThreshold() : size_t{4};
+        if (order_.size() < threshold || size_t(instanceLimit_) < threshold) {
+            staticCrossModelSort = false;
+        } else {
+            using PreflightKey = StaticCrossModelPreflightKey;
+            using PreflightGroup = StaticCrossModelPreflightGroup;
+            std::unordered_map<PreflightKey, PreflightGroup,
+                               StaticCrossModelPreflightKeyHash> groups;
+            groups.reserve(std::min<size_t>(order_.size(), 256));
+            for (uint32_t itemIndex : order_) {
+                const ModelItem& item = modelItems_[itemIndex];
+                if (!eligibleStaticPage(item)) continue;
+                const PreflightKey key{item.model->geometryPoolPage.get(),
+                                       materialGroup[itemIndex], item.flags};
+                groups[key].observe(item.model, item.prim, threshold);
+            }
+            modelStats_.staticCrossModelPreflightGroups += groups.size();
+            for (auto& [key, group] : groups) {
+                (void)key;
+                group.ready = group.opportunity(threshold, instanceLimit_);
+                if (group.ready)
+                    ++modelStats_.staticCrossModelPreflightReady;
+                else
+                    ++modelStats_.staticCrossModelPreflightRejected;
+            }
+            if (modelStats_.staticCrossModelPreflightReady == 0) {
+                staticCrossModelSort = false;
+            } else {
+                staticCrossCandidates.resize(modelItems_.size(), uint8_t{0});
+                for (uint32_t itemIndex : order_) {
+                    const ModelItem& item = modelItems_[itemIndex];
+                    if (!eligibleStaticPage(item)) continue;
+                    const PreflightKey key{item.model->geometryPoolPage.get(),
+                                           materialGroup[itemIndex], item.flags};
+                    const auto found = groups.find(key);
+                    if (found != groups.end() && found->second.ready) {
+                        staticCrossCandidates[itemIndex] = 1;
+                        ++modelStats_.staticCrossModelPreflightItems;
+                    }
+                }
+            }
+        }
+    }
     if (phase == 2) { // back to front
         std::sort(order_.begin(), order_.end(), [&](uint32_t a, uint32_t b) { return modelItems_[a].depth > modelItems_[b].depth; });
     } else {          // group by state so identical primitives end up next to each other (instancing)
         std::sort(order_.begin(), order_.end(), [&](uint32_t a, uint32_t b) {
             const ModelItem &x = modelItems_[a], &y = modelItems_[b];
-            const bool crossX = staticCrossModelSort && eligibleStaticPage(x);
-            const bool crossY = staticCrossModelSort && eligibleStaticPage(y);
-            if (crossX != crossY) return crossX; // group only safe static page items
+            const bool crossX = staticCrossModelSort && staticCrossCandidates[a] != 0;
+            const bool crossY = staticCrossModelSort && staticCrossCandidates[b] != 0;
+            if (crossX != crossY) return crossX; // only preflight-ready static groups
             if ((x.joints >= 0) != (y.joints >= 0)) return x.joints < y.joints;
             if (x.baked != y.baked) return x.baked < y.baked;
             if (paletteSort && paletteGroup[a] != paletteGroup[b])
@@ -1960,6 +2011,10 @@ void Renderer3D::renderModels(int phase) {
             if (!paletteSort && materialGroup[a] != materialGroup[b])
                 return materialGroup[a] < materialGroup[b];
             if (mdiGeometrySort || (crossX && crossY)) {
+                if (crossX && crossY &&
+                    x.model->geometryPoolPage.get() != y.model->geometryPoolPage.get())
+                    return std::less<const GeometryPoolPage*>{}(
+                        x.model->geometryPoolPage.get(), y.model->geometryPoolPage.get());
                 if (x.model->vb.id != y.model->vb.id) return x.model->vb.id < y.model->vb.id;
                 if (x.model->ib.id != y.model->ib.id) return x.model->ib.id < y.model->ib.id;
                 // Keep non-MDI-eligible material variants in their own runs.
@@ -2109,7 +2164,7 @@ void Renderer3D::renderModels(int phase) {
                 !first.baked && first.joints < 0 && first.morph < 0 &&
                 !first.paletteMaterials && first.tint.w >= .99f;
             const bool pooledStatic = staticCrossModelSort &&
-                eligibleStaticPage(first);
+                staticCrossCandidates[firstIndex] != 0;
             auto compatible = [&](uint32_t candidateIndex) {
                 const auto& y = modelItems_[candidateIndex];
                 // Each indirect command selects its own world/tint/team/etc
@@ -2117,7 +2172,8 @@ void Renderer3D::renderModels(int phase) {
                 // Pipeline, geometry buffers, textures and material uniforms
                 // must remain compatible across the entire command group.
                 return (!pooledStatic ||
-                    (eligibleStaticPage(y) &&
+                    (staticCrossCandidates[candidateIndex] != 0 &&
+                     eligibleStaticPage(y) &&
                      (first.model == y.model ||
                       staticCrossModelPageCompatible(*first.model, *y.model)))) &&
                     first.model->vb == y.model->vb &&
