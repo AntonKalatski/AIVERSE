@@ -921,6 +921,12 @@ if(AIVERSE_BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME lumaweave_gi_frame_contract
         COMMAND aiverse_lumaweave_gi_frame_contract_test)
+    # Header-only native driver template bodies must compile, not just parse.
+    # OBJECT (not linked): Metal/Vulkan backend symbols are provided by host apps.
+    add_library(aiverse_lumaweave_native_compile OBJECT
+        tests/render/lumaweave_native_compile.cpp)
+    target_include_directories(aiverse_lumaweave_native_compile PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_bake_tests tests/bake/bake_tests.cpp)
