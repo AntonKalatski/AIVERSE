@@ -63,6 +63,14 @@ public:
     uint64_t revision()const{return revision_;}
     size_t overrideCount()const{return heights_.size();}
     int32_t bedrockCm()const{return bedrockCm_;}
+    // Prevalidated swap for atomic multi-registry game-save restoration.
+    // Different generator callbacks remain owned by their respective layers.
+    void exchangeSnapshotState(EarthworksLayer& other) {
+        if(spacingCm_!=other.spacingCm_ || bedrockCm_!=other.bedrockCm_)
+            throw std::invalid_argument("TerraWeave Earthworks incompatible state swap");
+        heights_.swap(other.heights_);
+        std::swap(revision_,other.revision_);
+    }
     EarthworksSnapshot snapshot()const {
         EarthworksSnapshot out;
         out.spacingCm=spacingCm_;
