@@ -42,6 +42,8 @@ struct ForestSceneStats {
     uint64_t revision = 0;
     size_t preparing = 0, discarded = 0; // asynchronous streaming diagnostics
     size_t removed = 0; // persisted hidden tree identities
+    size_t scheduledRegrowth = 0; // persistent visual regrowth schedules
+    uint64_t presentationTick = 0; // caller-provided deterministic tick
 };
 
 // A stable resource/tree identity for gameplay-driven removal and restoration.
@@ -55,6 +57,17 @@ struct ForestTreeIdentity {
                                              speciesId < other.speciesId;
     }
     constexpr bool operator==(const ForestTreeIdentity&) const = default;
+};
+
+// Persistent sparse lifecycle presentation state, keyed by procedural tree ID.
+// The game owns authoritative harvesting, save/replication and actual growth
+// mechanics. The forest host only filters/scales instances on a supplied tick.
+struct ForestRegrowthSchedule {
+    ForestTreeIdentity tree{};
+    uint64_t regrowAtTick = 0;   // hidden before this tick
+    uint64_t matureAtTick = 0;   // fully grown on/after this tick
+    uint32_t initialScalePermille = 150; // relative to generated tree size
+    constexpr bool operator==(const ForestRegrowthSchedule&) const = default;
 };
 
 // Header-only native-project API. Call addSpecies before streamAt/uploadModels.
@@ -244,6 +257,53 @@ public:
         }
     }
 
+    // Native host supplies deterministic gameplay/replay time; no platform
+    // clocks, floating elapsed time or RHI calls are used for regrowth.
+    // Advancing this tick changes visibleBatches() without rescattering any
+    // resident chunk or canceling in-flight worker jobs.
+    void setPresentationTick(uint64_t tick) { presentationTick_=tick; }
+    uint64_t presentationTick() const { return presentationTick_; }
+
+    // A sparse, persistent regrowth timeline. When scheduled, the tree is
+    // hidden until regrowAtTick, then smoothly scales from initialScalePermille
+    // to its original generator scale by matureAtTick. The interval is
+    // bounded so integer arithmetic is deterministic and overflow-free.
+    void scheduleRegrowth(ForestRegrowthSchedule schedule) {
+        validateRegrowth(schedule);
+        if(regrowth_.size() >= 1000000 && !regrowth_.contains(schedule.tree))
+            throw std::length_error("TerraWeave regrowth state too large");
+        regrowth_[schedule.tree]=schedule;
+        removed_.erase(schedule.tree);
+    }
+    bool cancelRegrowth(ForestTreeIdentity id) {
+        return regrowth_.erase(id)!=0;
+    }
+    void setRegrowthSchedules(const std::vector<ForestRegrowthSchedule>& schedules) {
+        if(schedules.size()>1000000)
+            throw std::length_error("TerraWeave regrowth state too large");
+        std::map<ForestTreeIdentity,ForestRegrowthSchedule> replacement;
+        for(const auto& schedule:schedules) {
+            validateRegrowth(schedule);
+            if(!replacement.emplace(schedule.tree,schedule).second)
+                throw std::invalid_argument("TerraWeave duplicate regrowth key");
+        }
+        // Load replacement atomically after all validation succeeds.
+        for(const auto& [id,record]:replacement) {
+            (void)record;
+            removed_.erase(id);
+        }
+        regrowth_=std::move(replacement);
+    }
+    std::vector<ForestRegrowthSchedule> regrowthSchedules() const {
+        std::vector<ForestRegrowthSchedule> out;
+        out.reserve(regrowth_.size());
+        for(const auto& [id,schedule]:regrowth_) {
+            (void)id;
+            out.push_back(schedule);
+        }
+        return out;
+    }
+
     // Gameplay systems can call this on the owning update thread when a
     // tree is harvested/destroyed; the stable key survives chunk unloading.
     // This is a presentation filter, NOT a substitute for authoritative ECS
@@ -252,9 +312,13 @@ public:
         if (!id.speciesId) throw std::invalid_argument("TerraWeave tree species");
         if (removed_.size() >= 1000000 && !removed_.contains(id))
             throw std::length_error("TerraWeave removed-tree state too large");
+        regrowth_.erase(id); // a new harvest cancels previously scheduled growth
         return removed_.insert(id).second;
     }
-    bool restoreTree(ForestTreeIdentity id) { return removed_.erase(id) != 0; }
+    bool restoreTree(ForestTreeIdentity id) {
+        const bool hadSchedule=regrowth_.erase(id)!=0;
+        return removed_.erase(id)!=0 || hadSchedule;
+    }
 
     void setRemovedTrees(const std::vector<ForestTreeIdentity>& ids) {
         if (ids.size() > 1000000)
@@ -266,6 +330,8 @@ public:
             replacement.insert(id);
         }
         removed_ = std::move(replacement);
+        // Explicitly hidden trees take precedence over any loaded regrowth.
+        for(const auto& id:removed_)regrowth_.erase(id);
     }
     std::vector<ForestTreeIdentity> removedTrees() const {
         return {removed_.begin(), removed_.end()};
@@ -283,8 +349,27 @@ public:
         for (const auto& [key, patch] : patches_) {
             (void)key;
             for (const FoliageInstance& instance : patch) {
-                if (!removed_.contains({instance.key, instance.speciesId}))
+                const ForestTreeIdentity id{instance.key,instance.speciesId};
+                if (removed_.contains(id)) continue;
+                const auto it=regrowth_.find(id);
+                if (it==regrowth_.end()) {
                     placements.push_back(instance);
+                } else {
+                    const auto& growth=it->second;
+                    if (presentationTick_<growth.regrowAtTick)continue;
+                    FoliageInstance scaled=instance;
+                    uint32_t factor=1000;
+                    if (presentationTick_<growth.matureAtTick &&
+                        growth.matureAtTick>growth.regrowAtTick) {
+                        const uint64_t duration=growth.matureAtTick-growth.regrowAtTick;
+                        const uint64_t elapsed=presentationTick_-growth.regrowAtTick;
+                        factor=growth.initialScalePermille+static_cast<uint32_t>(
+                            elapsed*(1000u-growth.initialScalePermille)/duration);
+                    }
+                    scaled.scalePermille=std::max<uint32_t>(1u,
+                        uint32_t(uint64_t(instance.scalePermille)*factor/1000u));
+                    placements.push_back(scaled);
+                }
             }
         }
         FloraView view = settings_.view;
@@ -329,7 +414,8 @@ public:
         }
         const auto state = async_ ? async_->status() : world::AsyncChunkStream::Status{};
         return {patches_.size(), n, species_.size(), revision_,
-                state.preparing, state.discarded, removed_.size()};
+                state.preparing, state.discarded, removed_.size(),
+                regrowth_.size(), presentationTick_};
     }
 
     const ForestSceneSettings& settings() const { return settings_; }
@@ -349,6 +435,15 @@ public:
     const ArborForestAdapter& adapter() const { return adapter_; }
 
 private:
+    static void validateRegrowth(const ForestRegrowthSchedule& value) {
+        constexpr uint64_t kMaxGrowthTicks=1000000000000ULL;
+        if(!value.tree.speciesId ||
+           !value.initialScalePermille ||
+           value.initialScalePermille>1000 ||
+           value.matureAtTick<value.regrowAtTick ||
+           value.matureAtTick-value.regrowAtTick>kMaxGrowthTicks)
+            throw std::invalid_argument("TerraWeave regrowth schedule");
+    }
     struct GenerationSnapshot {
         TerrainSettings terrain;
         BiomeSettings biomes;
@@ -494,6 +589,8 @@ private:
     ArborForestAdapter adapter_;
     std::vector<FoliageSpecies> species_;
     std::set<ForestTreeIdentity> removed_;
+    std::map<ForestTreeIdentity,ForestRegrowthSchedule> regrowth_;
+    uint64_t presentationTick_ = 0;
     std::vector<RectCm> exclusions_;
     HeightSource heightSource_;
     PlacementFilter placementFilter_;
