@@ -111,6 +111,10 @@ public:
     bool ready() const{return dev_ && producer_.ready() && pipeline_.valid();}
     void setEnabled(bool on){enabled_=on;}
     bool enabled() const{return enabled_;}
+    // Called only when a selected Metal direct route is actually abandoned.
+    // The coordinator disables/re-enables the post wrapper at the START of
+    // every frame, so setEnabled(false) alone is not an epoch boundary.
+    void invalidateHistory(){producer_.invalidateHistory();}
     void setQuality(LumaWeaveQuality q) {
         // Called by the native coordinator EVERY frame. Never reset the
         // adaptive controller merely because the requested upper tier stays
