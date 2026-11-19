@@ -2837,3 +2837,13 @@ before calling this stage validated.
 - No MotionWeave clock, ECS gameplay authority, other render domains or GPU owner semantics changed.
 - **Actual:** connected GitHub branch/PR/ancestry, ModelResourceCache and Device lease source reads, precise code commits and readback. **NOT RUN:** native checkout/CMake/C++ compiler/link, CTest/CI, Metal/Vulkan/GL, FPS/RTS/editor visual checks, ASan/TSan or memory/profiling benchmarks. PR stays Draft.
 - **Next Stage 129:** review owner-approved unique ModelResourceCache eviction/read leases for legacy native hosts, finish remaining features, then full native build, CTest, GPU backend parity, sanitizer/fault injection, warnings and benchmarks before any merge.
+
+## Stage 129 — unique-owned Model cache leases, RTS frame lifetime (2026-11-19)
+
+- **Detailed separate handoff:** [Stage 129](animation-stage129-model-cache-read-leases-2026-11-19.md) records source code commits, API and owner boundaries, actually performed checks, limitations and Stage 130.
+- Continued Stage 128 HEAD `8d1a0bd5`. Before implementation `main` `d71c6d47` already ancestor, feature ahead 947 / behind 0; after eight source commits ahead 955 / behind 0. PR #22 remains Draft, based on `feature/universal-entity-inspector-fps`. No unrelated branch/main modifications or force push.
+- Added `render::ModelReadLease` and coarse `ModelCacheReadScope`, both owner-thread CPU guards backed by shared active-reader state. `ModelResourceCache` remains `unique_ptr<Model>`; its replace/evict/invalidate/shutdown operations fail closed when any readers exist. Cache destruction with active leases is fatal to avoid dangling pointer use. Its existing GPU-fenced retirement remains independent and unchanged.
+- Extended `PinnedAppearanceBatch` with genuine cache-owned Model read tokens (`addCacheOwned`, `pinCacheRelatedModel`) alongside Stage 128 real shared CPU pins. Validation accepts either; batch clear releases cache read guards after packets and appearance snapshots.
+- RTS `RtsView::draw` now holds a coarse cache reader scope through one synchronous presentation scene update/draw, acquired after up-front model loading. Editor Stats can show active read lease count.
+- **ACTUAL:** GitHub source/PR/main ancestry read, cache and RTS draw-path review, exact branch code commits and readbacks. **NOT RUN:** local native CMake/C++ compiler/link/CTest/CI, Metal/Vulkan/GL, editor/FPS/RTS visuals, GPU eviction/failure injection, sanitizers, benchmarking. No runtime success claimed; PR remains Draft.
+- **Next Stage 130:** finish features, validate native compile and full CTest/GPU parity, test active lease eviction rejection and release ordering, fix warnings/errors and keep a new handoff.
