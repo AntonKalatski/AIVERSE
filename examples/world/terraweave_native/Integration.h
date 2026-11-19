@@ -36,7 +36,9 @@ inline void registerSystems(
         terraweave::ShoreRecoverySettings recoverySettings={},
         std::vector<terraweave::ForestEcologySpecies>
             rootedForestSpecies={},
-        terraweave::ForestEcologySettings rootedForestSettings={}) {
+        terraweave::ForestEcologySettings rootedForestSettings={},
+        std::function<void(const terraweave::ForestEcologyEcsOutcome&)>
+            onForestEcology={}) {
     lib::nereid::NativeWaterPipelineConfig water{};
     water.enableBankErosion=true;
     // Geometry and current state belong to NEREID, including polygon/
@@ -106,7 +108,8 @@ inline void registerSystems(
     if(!rootedForestSpecies.empty())
         terraweave::addTerraWeaveForestEcologySystem(
             sim,"terraweave.forest_ecology",cfg,
-            std::move(rootedForestSpecies),rootedForestSettings);
+            std::move(rootedForestSpecies),rootedForestSettings,{},
+            std::move(onForestEcology));
 }
 
 inline Entity addWaterBody(
