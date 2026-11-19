@@ -5,6 +5,7 @@
 #include "EcsVfxPresentation.h"
 #include "SpectraCueEcsAdapter.h"
 #include "SpectraGpuCueEcsAdapter.h"
+#include "SpectraGpuAttachmentEcsAdapter.h"
 
 namespace aiverse::spectra {
 
