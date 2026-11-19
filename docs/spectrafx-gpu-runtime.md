@@ -161,6 +161,70 @@ One-shot cues (`key == 0`) have a bounded lifetime configured with
 instances. They are killed at the deadline (including CPU effect tails),
 not guaranteed to fade naturally.
 
+## Experimental GPU live-slot compaction and shared arena
+
+The optional top-level emitter asset property
+
+```json
+"gpuIndirectCompaction": true
+```
+
+enables a **Metal-only** experimental path. It is **false by default**.
+Following GPU evolution, a compute pass writes a packed texture of live
+slot indices and GPU-authored indexed indirect arguments. A Metal GPU
+indirect draw then submits just the live instance count without CPU
+readback. The renderer restores its original full-capacity instanced draw
+if indirect preparation or submission fails. Vulkan currently lacks the
+required GPU-authored `drawIndexedGpuIndirect` implementation; it uses
+the original instanced draw with transparent dormant slots. These shader
+and render transitions **have not yet been compiled or verified**.
+
+For many compatible instances with the **same** color, radius,
+alpha/additive blend, acceleration, damping and collision settings,
+native games can opt into one shared GPU arena:
+
+```cpp
+#include "engine/fx/SpectraFxGpuSharedArena.h"
+
+aiverse::fx::SpectraFxGpuSharedArena arena;
+aiverse::fx::SpectraFxGpuSharedArena::Config config;
+config.particles = 8192;
+config.gpuIndirectCompaction = true; // Metal only, optional
+if (arena.init(device, config)) {
+    aiverse::fx::SpectraFxGpuSharedArena::EmitterConfig flame;
+    flame.spawn.particlesPerSecond = 50;
+    flame.spawn.lifetime = 1.5f;
+    // Host supplies a generation-safe effect/source key.
+    arena.addEmitter(123456789ULL, flame, {0, 1, 0});
+}
+
+// In device.beginFrame/endFrame, before opening a render pass:
+arena.update(dt, camera.eye());
+
+// Inside an open compatible render pass:
+const auto view = camera.view();
+arena.render(viewProj,
+    {view.at(0,0),view.at(0,1),view.at(0,2)},
+    {view.at(1,0),view.at(1,1),view.at(1,2)});
+
+// During scene teardown and before destroying gfx::Device:
+arena.shutdown();
+```
+
+This is a separate, opt-in **homogeneous shared pool**. It has a global
+65,536-particle maximum and up to 64 registered emission sources;
+sources have independent scheduling, positions, and distance LOD, but
+share the physical environment and billboard appearance. It does not
+yet provide a project JSON arena registry or automatic integration with
+`SpectraFxHybridPlayback`. Source removal can preserve existing
+particles until expiry or explicitly kill them at a safe point.
+
+The GPU compaction uses atomics and is **unsorted**. Transparent alpha
+effects that need depth ordering still require the CPU fallback; this
+is not general sorted GPU transparency, GPU-side collision meshes or
+global multi-material batching. Measure actual GPU cost and memory
+before enabling it in production.
+
 ## API boundaries and known work
 
 `SpectraFxHybridPlayback` now shares a billboard GPU pipeline and
