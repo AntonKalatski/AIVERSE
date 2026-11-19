@@ -2,6 +2,7 @@
 #include "engine/character/vivid/MorphAuthoring.h"
 #include "engine/character/vivid/ViewportSculptPick.h"
 #include "engine/character/vivid/MorphLodTransfer.h"
+#include "engine/character/vivid/MorphLodSurface.h"
 #include "engine/character/vivid/HumanImport.h"
 #include <filesystem>
 #include <array>
@@ -163,6 +164,41 @@ void test() {
         try {(void)MorphLodTransfer::transfer(source,bad);}
         catch(const std::invalid_argument&){rejected=true;}
         req(rejected,"facial LOD accepted invalid original vertex ID");
+    }
+    {
+        // Independently decimated vertex inside a source face has no exact
+        // source-vertex match, but receives barycentrically blended deltas.
+        const std::array<aiverse::render::float3,3> sourcePositions{{
+            {0,0,0},{2,0,0},{0,2,0}}};
+        const std::array<std::uint32_t,3> faces{{0,1,2}};
+        const std::array<aiverse::render::float3,2> lodPositions{{
+            {0.5f,0.5f,0},{0.25f,0.25f,0.01f}}};
+        const auto correspondence=MorphLodSurface::project(
+            sourcePositions,faces,lodPositions,0.05f);
+        req(correspondence.size()==2 &&
+            correspondence[0].triangle==0 &&
+            std::fabs(correspondence[0].bary.x-0.5f)<1.e-5f &&
+            std::fabs(correspondence[0].bary.y-0.25f)<1.e-5f &&
+            std::fabs(correspondence[0].bary.z-0.25f)<1.e-5f,
+            "surface projected LOD barycentric coordinates incorrect");
+        MorphTargetInput shape;
+        shape.name="faceLift";
+        MorphDelta a,b;
+        a.vertex=0;a.position={0,1,0};
+        b.vertex=1;b.position={0,2,0};
+        shape.deltas={a,b};
+        const auto sourceMorph=SparseMorphLibrary::compile(3,{shape});
+        const auto projected=MorphLodSurface::transfer(
+            sourceMorph,faces,correspondence);
+        req(projected.vertices()==2 && projected.targets()==1 &&
+            projected.deltas()==2 &&
+            std::fabs(projected.gpuDeltas()[0].position[1]-1.0f)<1.e-5f,
+            "decimated facial LOD did not interpolate source morph");
+        bool rejected=false;
+        const std::array<aiverse::render::float3,1> tooFar{{{0.5f,0.5f,1}}};
+        try {(void)MorphLodSurface::project(sourcePositions,faces,tooFar,0.01f);}
+        catch(const std::invalid_argument&){rejected=true;}
+        req(rejected,"LOD projected a vertex outside authored surface tolerance");
     }
     std::filesystem::remove(file);
 }
