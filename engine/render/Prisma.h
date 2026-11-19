@@ -52,6 +52,7 @@ public:
         size_t retiredSizes = 0;
         size_t exposureViews = 0;
         size_t motionViews = 0;
+        size_t temporalViews = 0;
         size_t fencedTextures = 0;
         size_t unfencedTextures = 0;
         size_t graphRetiredTextures = 0;
@@ -71,8 +72,10 @@ public:
         int width = 0, height = 0;
         size_t sharedSizeViews = 0; // >1 means other view IDs reference this same size cache
         size_t sharedTextures = 0, ownedHistoryTextures = 0;
+        size_t ownedTemporalTextures = 0;
         size_t unknownTextures = 0;
         uint64_t sharedKnownBytes = 0, ownedHistoryKnownBytes = 0;
+        uint64_t ownedTemporalKnownBytes = 0;
         uint64_t graphLiveKnownBytes = 0, graphPendingKnownBytes = 0;
         size_t graphLiveTextures = 0, graphPendingTextures = 0;
     };
@@ -84,6 +87,7 @@ public:
         uint64_t sharedSizeKnownBytes = 0;
         uint64_t unreferencedSizeKnownBytes = 0; // subset of sharedSizeKnownBytes
         uint64_t viewHistoryKnownBytes = 0;
+        uint64_t temporalHistoryKnownBytes = 0; // subset of viewHistoryKnownBytes
         uint64_t otherLiveKnownBytes = 0;
         uint64_t graphPendingKnownBytes = 0; // belongs to retirement, NOT live bytes
     };
@@ -171,6 +175,12 @@ private:
         bool valid = false;
         double time = 0;
     };
+    struct TemporalView {
+        gfx::TextureHandle history[2]; // RGBA16F: HDR RGB + previous hardware depth in A
+        int width = 0, height = 0;
+        int current = 0; // most recently written history index
+        bool valid = false;
+    };
     struct MotionView {
         mat4 previousViewProj;
         bool valid = false;
@@ -180,7 +190,7 @@ private:
         MotionTextureInput reactiveMask; // borrowed for this frame only
     };
     struct Lut { gfx::TextureHandle tex; int n = 0; bool failed = false; };
-    enum Prog { kPrefilter, kDown, kUp, kBlur, kShaftsPre, kShafts, kFxaa, kDepthOfField, kExposureLog, kExposureReduce, kExposureAdapt, kMotionVectors, kMotionBlur, kProgCount };
+    enum Prog { kPrefilter, kDown, kUp, kBlur, kShaftsPre, kShafts, kFxaa, kDepthOfField, kExposureLog, kExposureReduce, kExposureAdapt, kMotionVectors, kMotionBlur, kTemporalResolve, kProgCount };
 
     Target& target(Sized& s, int role, int w, int h);
     gfx::TextureHandle depthFor(Sized& s, int w, int h, bool scratch = false);
@@ -217,6 +227,7 @@ private:
     // Temporal state is keyed by view identity, NOT by render target size.
     std::map<uint64_t, ExposureView> exposureViews_;
     std::map<uint64_t, MotionView> motionViews_;
+    std::map<uint64_t, TemporalView> temporalViews_;
     // Last successful postprocess scene pass per stable view ID. A size cache
     // can be shared by several views; retireView() removes a view reference.
     std::map<uint64_t, std::pair<int, int>> viewDimensions_;
