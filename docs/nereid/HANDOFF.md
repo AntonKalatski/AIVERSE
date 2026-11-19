@@ -3473,3 +3473,81 @@ integration, FPS/RTS regression (per owner direction). Keep PR Draft.
 **Next:** Stage 34 optional deterministic current vortices tied to
 water-body ECS, shared by reference/indexed sampler, buoyancy and
 visual ripple flow. Add own handoff before proceeding to connections.
+
+## Stage 34 — deterministic eddies and vortex currents in NEREID
+
+**Branch:** `feature/nereid-water-core`, PR #23 Draft.
+**Stage 33 head:** `ec98482c4e57c2c65c81f3e2a962079a02c924b1`.
+**Owner instruction:** implement features before tests; no test
+authoring/compilation/CTest/GPU validation in this stage.
+
+**Commits / changed files:**
+- `a385d8bf34b3dc7639b10cf54bc0606ee13846f7`: new
+  `libraries/include/aiverselib/water/NereidVortices.h`,
+  persistent `WaterVortex {center,radius,circulation,radial}`,
+  `WaterVortexFieldComponent`, `validWaterVortexField`,
+  pure deterministic `waterVortexVelocity` and
+  `waterCurrentWithVortices` (up to 16 eddies per water body).
+- `32cd340c88389000202757a6fe69958edfe19e4f`:
+  `libraries/include/aiverselib/water/NereidWaterSystems.h`;
+  optional vortex on `considerWaterCandidate`, ref sampler,
+  `registerNereidVortexPersistence` schema `nereid.vortex_field` v1.
+- `4f9cdc154773f27b63db7b51549ef48c8fc9e9b4`:
+  `libraries/include/aiverselib/water/NereidQueryIndex.h`;
+  indexed broadphase uses same local vortex current.
+- `66ef99dff46fa11d02de755971f9e029e7c18721`:
+  `libraries/include/aiverselib/water/NereidNativeWater.h`;
+  `NativeWaterPipelineConfig::enableVortices` opt-in.
+- `e833e7e15c397fa91f72e93b34dee4cae7b3b795`:
+  `engine/world/NereidWaterScene.h`; read-only vortex snapshot
+  and `currentForInteractionWater` local flow resolver.
+- `2115f5917af7e796f89f0fb8b74fbb035d4e5442`:
+  `engine/world/NereidEcsPresentation.h` copies the optional
+  vortex component from the same water-body Entity.
+- `1e9bb0cca252306d44276d725c9d846a2570ad21`:
+  `engine/world/NereidWaterManifest.h`; strict optional
+  `vortices` JSON array, bounded source values and lengths.
+- `87cf38dc29d29474209f175894403cc6eabe1e0d`:
+  `libraries/catalog.json` registers reusable
+  `AIVERSE::lib_nereid_vortices` native package.
+
+**Usage:**
+```json
+{
+  "id": 7, "kind": "river", "shape": "river",
+  "surfaceY": 4, "bottomY": -8,
+  "points": [[0,0,3],[15,0,4],[24,8,6]],
+  "vortices": [
+    [15,0,6,3,-0.4], [22,6,4,-2,0.2]
+  ]
+}
+```
+
+The five numbers describe `[X,Z,radius,circulation,radial]`;
+positive circulation rotates counterclockwise in X/Z and positive
+radial moves outward. Vortex strength falls quadratically to
+zero at radius, invalid fields fall back to base currents.
+The new field can be attached to any NEREID water footprint, with
+or without Stage 29 RiverSpline current profile. Both samplers
+return shared `WaterSample.flow` already consumed by the existing
+buoyancy/drag module; visual wave drift uses the copied field
+through the same function. No new physics integrator, weather
+ownership or genre-specific code was introduced.
+
+**Actually performed:** GitHub source review and implementation
+commits only; no tests were written/run. **NOT VERIFIED:** C++
+compilation, native runtime, save/rollback execution, numerical
+current matching, Box3D/FPS/RTS behaviors, GPU. PR stays Draft.
+
+**Limits:** a sum of localized analytic swirls, not a pressure,
+Navier–Stokes or collision-driven fluid simulation. Zero-radius and
+invalid parameters are rejected, centre velocity is zero to avoid
+division by zero, output X/Z current is capped at ±1000m/s.
+Profile changes must be republished into WorldScene by the host.
+Potential fixed-point overflow at enormous authored coordinates
+requires verification during the later hardening phase.
+
+**Next:** Stage 35 optional river/cascade/lake connector ribbons
+using immutable NEREID surface levels and cascade geometry, with
+bounded transition lengths and explicit water IDs. Update
+handoff before starting any tests.
