@@ -9,6 +9,7 @@
 
 #include "Model.h"
 #include "VirtualTextureModelFeedback.h"
+#include "TerraWeaveVirtualTextureFeedback.h"
 #include "../gfx/VirtualTexturePageArchiveWriter.h"
 #include <cstdint>
 #include <cmath>
@@ -241,6 +242,44 @@ inline bool terraWeaveAtlasMappingForMaterial(
     mapping.uvOffsetX = material.uvOffset.x;
     mapping.uvOffsetY = material.uvOffset.y;
     return true;
+}
+
+// Connect Terra's active, immutable virtual archive to the actual model
+// colour shader. The resolver reads the active generation on every draw,
+// so promotion changes atlas/page-table bindings together without stale
+// cached TextureHandles. Scene-wide virtual sampling is opt-in and regular
+// models remain unaffected. The owner must disconnect this renderer
+// callback before destroying feedback/session.
+inline void connectTerraWeaveVirtualTextureSampling(
+    Renderer3D& renderer,
+    TerraWeaveVirtualTextureFeedback& feedback,
+    TerraWeaveVirtualAtlasSession& session) {
+    renderer.setModelVirtualTextureResolver(
+        [&feedback,&session](const Model& model,const Material& material,
+                             ModelVirtualTextureBinding& binding) -> bool {
+            binding = {};
+            if (!feedback.ready() || !feedback.isTerraWeaveModel(model))
+                return false;
+            VirtualTextureMaterialMapping map;
+            if (!feedback.resolveMaterialMapping(model,material,map))
+                return false;
+            const auto& version = session.activeVersion();
+            auto* streamer = session.active();
+            if (!version.valid() || !streamer || !streamer->ready() ||
+                map.baseTilesX != version.baseTilesX ||
+                map.baseTilesY != version.baseTilesY ||
+                map.mipLevels != version.mipLevels ||
+                map.layer < 0 || map.layer >= version.virtualLayers)
+                return false;
+            const auto atlas=streamer->physicalAtlas();
+            const auto table=streamer->pageTableTexture();
+            if (!atlas.valid() || !table.valid()) return false;
+            binding.physicalAtlas=atlas;
+            binding.pageTable=table;
+            binding.layer=map.layer;
+            binding.gutterPixels=float(version.gutter);
+            return binding.valid();
+        });
 }
 
 } // namespace aiverse::render
