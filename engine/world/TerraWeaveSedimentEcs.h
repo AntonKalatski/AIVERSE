@@ -6,6 +6,8 @@
 #pragma once
 #include "engine/world/TerraWeaveEcsBankBridge.h"
 #include <aiverselib/water/NereidSedimentTransport.h>
+#include <aiverselib/water/NereidConfluences.h>
+#include <aiverselib/water/NereidCascades.h>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -66,8 +68,25 @@ inline EcsSedimentTransportResult transportNereidBankSediment(
                 contact->sample.body});
         });
 
+    // NEREID-authored junctions connect *different* WaterBodyComponent
+    // identities; transport is one-way from inlet to outlet, never inferred
+    // from two overlapping surfaces. Cascades link their own body pairs.
+    std::vector<SedimentWaterLink> links;
+    read.eachExistingConst<WaterConfluenceComponent>(
+        [&](Entity,const WaterConfluenceComponent& junction){
+            if(!validWaterConfluence(junction))return;
+            for(size_t i=0;i<junction.inletCount;++i)
+                links.push_back({junction.inlets[i],junction.outlet});
+        });
+    read.eachExistingConst<WaterCascadeConnectionsComponent>(
+        [&](Entity,const WaterCascadeConnectionsComponent& cascade){
+            if(cascade.enabled && cascade.inlet.valid() &&
+               cascade.outlet.valid() &&
+               cascade.inlet!=cascade.outlet)
+                links.push_back({cascade.inlet,cascade.outlet});
+        });
     const auto changed=advectSuspendedSediment(
-        std::move(samples),spacingCm,dtMs,settings);
+        std::move(samples),spacingCm,dtMs,settings,links);
     // No callbacks or ECS structural writes during the publication loop.
     // Obtain ALL mutable pools before changing either type.
     // pool<T> detaches COW ownership; tryGet detaches the relevant page.
