@@ -238,6 +238,12 @@ public:
     void triangle(float3 a, float3 b, float3 c, uint32_t color);    // flat, alpha-blended
     void quadXZ(float3 a, float3 b, float width, uint32_t color, float y = 0.02f);
     void circleXZ(float3 c, float radius, uint32_t color, int segments = 40, float y = 0.03f);
+    enum class PipelineWarmStatus : uint8_t { Ready, Pending, Failed };
+    // Strict authoring preflight distinguishes an asynchronous GPU compiler
+    // still working from a rejected shader/pipeline. A rejected appearance
+    // must retain its last-good Model/Material/AnimationGraph publication.
+    PipelineWarmStatus warmModelPipelinesChecked(
+        const Model& model,const std::vector<Material>* materials=nullptr);
     bool warmModelPipelines(const Model& model, const std::vector<Material>* materials = nullptr);
     void drawModel(const ModelDraw& d);
     // Diagnostic, opt-in persistent scene upload stats. This staging path is
@@ -637,6 +643,7 @@ private:
     };
     struct ShaderEntry { gfx::ShaderHandle shader; bool failed = false; gfx::Device::ShaderJob job; };
     bool warmingPipelines_ = false, warmingPending_ = false;
+    bool warmingFailed_ = false;
     std::vector<std::pair<ModelShaderKey, gfx::Device::PipelineJob>> pendingModelPipes_;
     std::vector<std::pair<ModelShaderKey, ShaderEntry>> modelShaders_;
     std::vector<std::pair<ModelShaderKey, gfx::PipelineHandle>> modelPipes_;
