@@ -134,3 +134,59 @@ with a warmup, comparing separate processes with flag absent vs `=1`.
 Compare `[scene-stages]` and `[view-stages]` as well as visual consistency:
 these cache counters do **not** prove a frame-time improvement. MDI / GPU ICB
 is independent and should stay disabled during the initial A/B on Metal.
+
+
+### Persistent rigid CPU render packets (experimental)
+
+`AIVERSE_PERSISTENT_CPU_PACKETS=1` enables a **second independent opt-in**
+in `Renderer3D`. It caches each eligible rigid `ModelDraw`'s material/primitive
+selection, static item transforms, and per-mesh colour/shadow batch
+representation as `ModelItem` templates. A warm hit copies those item
+templates instead of walking the model's primitive/material batches and
+reassembling the full items. The engine **still** performs per-node main-camera
+and shadow-frustum culling, computes current transparent depth and then runs
+normal per-pass material grouping, instancing, shaders and GPU draws.
+No indirect GPU commands or static GPU buffers are preserved.
+
+Native project example (must maintain the revision contract):
+
+```cpp
+render::ModelDraw d;
+d.model = myImmutableRigidModel;
+d.world = worldMatrix;
+d.persistentId = uniqueEntityDrawId; // never share IDs between distinct draws
+d.flags = render::kDrawStatic;
+d.staticPacketRevision = immutableAppearanceRevision; // nonzero!
+renderer.drawModel(d);
+```
+
+`ModelDraw::staticPacketRevision` defaults to zero. Only opt in for
+caller-owned material/appearance state whose **every in-place mutation**
+increments the revision before the next submission. The renderer also
+validates exact transform / visual parameters, `Model::geometryRevision`,
+material vector address/count, vertex/index GPU handles and stable model
+identity. Different entity IDs own independent packets. Current eligibility
+excludes custom per-draw material arrays/overrides, material variants,
+skinning, morphs, authored animations/poses, node mutability, runtime LOD
+meshes, cluster geometry, shader vertex displacement, baked GI and active
+LOD inspector diagnostics. These cases keep the existing dynamic path.
+`Model::geometryRevision` and the existing `markGeometryChanged()`
+are necessary for model geometry/hierarchy mutations, but do not automatically
+detect every native-side material edit. The caller must advance
+`staticPacketRevision` for such edits. Since the revision contract is explicit,
+**no existing RTS/FPS submission is automatically enrolled** without being
+audited first.
+
+Source templates hold non-owning `Model*`, `Material*`, `Primitive*`
+references. `Renderer3D::invalidateStaticModelCaches()` clears both the
+transform cache and packet cache before asset destruction/reload; the editor
+does so from `reloadRules()`. The implementation caps each packet at 128
+items and total retained template item storage at 64 MiB, with periodic
+expiry of unused packets. A cache miss always uses the full original draw path.
+
+Scene → Batching → Persistent rigid draw packets reports per-scene replay,
+rebuild and declined counts. Use matched fixed-camera Metal/other-backend
+A/B/A runs and pixel checks to decide whether copying item templates is
+faster than normal assembly for actual scenes. Do not infer GPU performance
+from CPU packet hit count. The feature is off by default and has not been
+validated with owner Mac build/GPU capture yet.
