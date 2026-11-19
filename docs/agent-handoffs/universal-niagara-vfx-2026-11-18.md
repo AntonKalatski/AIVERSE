@@ -1375,3 +1375,63 @@ For the eventual deferred validation phase, run `./run-tests.sh` per AGENTS.md; 
 - The standalone `MetalVmPass` still lacks attribute storage; it now fails explicitly if given a program containing those fields. Adding a caller-owned attribute buffer and matching standalone shader would be a separate source-compatible extension.
 - The fixed GPU particle pool remains per `ComputeParticles`, and CPU still owns birth/death slot bookkeeping; no cross-emitter GPU pool, global alpha-sorted transparency or true GPU-driven lifecycle.
 - **Next Stage 27:** implement a restricted GPU material output path for selected `attribute/param` values using the already available 40-byte vertex graph data, with strict output/source validation and fallback for unsupported shader graphs, then continue shared multi-emitter GPU resource pooling and scalability controls. Maintain genre independence and separate handoffs. Tests remain deferred until the user changes that instruction.
+
+## Stage 27 — restricted GPU particle shader graph materials (SOURCE COMMITTED, TESTS DEFERRED)
+
+**Date:** 2026-11-19. **Branch:** `feature/universal-entity-inspector-fps`.  
+**User instruction:** finish functional SpectraFX work before running tests.  
+**Goal:** allow opt-in **Metal GPU sprite materials** to consume custom particle `attribute0..7` and per-source `param0..7` values through the existing `graphInputs`/particle-domain `shaderGraph` format, without implementing a second shader graph language or silently dropping unsupported authoring. Preserve the full CPU effect and its renderer as the default/fallback. All gameplay/ECS code remains unmodified.
+
+### Exact source and documentation commits
+
+| SHA | Path | What changed |
+|---|---|---|
+| `2adc7b398439fc84718a975537edd3a4a8f0500e` | `engine/fx/SpectraGpuMaterial.h` | New reusable strict capability validator for GPU particle shaderGraph and trusted-template GLSL/MSL shader builder using the existing `render::graph::compile` program |
+| `298fc9a4e6dc56629476c6f45f44dcaa35fbd9ae` | `engine/fx/SpectraGpuMaterial.h` | Use repository-supported JSON bounded-array size check |
+| `0ba6c1e33fbfbf312719b3ad08caadd51496c767` | `engine/fx/SpectraGpuMaterial.h` | Explicit required C++ utility include |
+| `54866e94b3590d578da8d6e233e104961ef87b40` | `engine/fx/SpectraGpuParticles.h` | `ComputeEmitterDesc::gpuMaterial` opt-in, preserved `shaderGraph`/`graphInputs` and GPU graph input source handle |
+| `91d1c6b21e811a431539880ed59ba06251c87abc` | `engine/fx/SpectraGpuShaders.h` | Stage-26 integrated Metal kernel gathers four graph source floats from GPU attributes/param snapshots/age/lifetime into 40-byte vertex graphData; new compute storage slot 13 |
+| `8ba1abe15d1403936af41a238486c80af37685f8` | `engine/fx/SpectraGpuParticles.cpp` | Validate material opt-in/direct config; preserve full shaderGraph and graphInputs in direct CPU fallback; allocate/bind/release 16-byte source map; compile GPU material shader and select four-attribute graphics pipeline; old no-material pipeline unchanged |
+| `f172bfd386fc5c52761434374e1fdd48020faa99` | `engine/fx/SpectraGraphRuntime.h` | Add default-false `GraphRuntimeOptions::gpuMaterial` |
+| `d25de54766c4da5d117a9e91346745a851efecba` | `engine/fx/SpectraGraphRuntime.cpp` | Strict whole-effect eligibility for GPU material subset; preserve material fields in normalized definition equality; populate GPU emitter config; reject unapproved material GPU with reason |
+| `9d08f7f6b719294e1c648c103e0f7252ac5b7188` | `examples/spectrafx/gpu_vm_material_inputs_v2.vfx.json` | Complete v2 graph: runtime intensity -> custom VM attribute0 -> particle material `particleAge` lane -> multiply base sprite tint |
+| `e7b01c9a2815ef52a994fbe5be2995c0e9f74f28` | `docs/spectrafx.md` | Public stage-27 format, opt-in API, GPU/CPU and platform limits |
+| `10ac5097f59810c8ae1a7760a63f2146bc648e23` | `skills/visuals/aiverse-spectrafx/SKILL.md` | Agent authoring and strict shader/material opt-in instructions |
+| `1a3963013d5751017562e08cf3f8bfc8772fe4ce` | `AGENTS.md` | Stage-27 ownership and deferred-test rules |
+
+### Native API, data/compute/pipeline layout and CPU parity
+
+```cpp
+#include "engine/fx/SpectraFX.h"
+aiverse::spectra::GraphRuntimeOptions options;
+options.preference = aiverse::spectra::ComputePreference::Automatic;
+options.gpuProgram = true;  // if ParticleProgramModule uses custom registers
+options.gpuMaterial = true; // a bounded particle shaderGraph
+// options.gpuIndirect = true; // separate experimental capability, not required
+aiverse::spectra::GraphRuntime runtime;
+runtime.initGraph(device, graphV2, aiverse::Json::object(), options);
+runtime.setNamedProgramParameter("intensity",0.8f);
+runtime.burstAt({0,1,0});
+// Device beginFrame + runtime.step() before scene pass;
+// runtime.draw() inside scene render pass.
+```
+
+1. `gpu_material::compile(shaderGraph,graphInputs,...)` first checks the **full authored material graph**, then delegates to the existing trusted `render::graph::compile(graph,"particle")`, which already generates typed MSL/GLSL statements. This class does **not** accept arbitrary authored shader snippets. Its GPU subset is limited to particle-domain graph v1 with at most **32 fragment-only nodes**, only a `color` output, no vertex material graph, no external textures, and only builtin sample/UV/input/vertexColor, particle channels and bounded colour/math ops. CPU supports much more; ineligible graphs stay on CPU. No genre-specific conditions.
+2. The existing CPU FX asset field `graphInputs` is reused. GPU supports `age`, `lifetime`, `zero`, `attribute0..7`, `param0..7`. CPU UID-based stable `random` is **not GPU-compatible**, so the GPU selector rejects it rather than silently changing behaviour. Similarly a material graph reading the default `particleRandom` lane requires an explicit, compatible `graphInputs` mapping. The four names are decoded once to four `uint32_t` source selectors and stored in a **16-byte** GPU resource (compute storage buffer **13**).
+3. During Metal quad expansion (both Stage-13 host-index gather and Stage-14 GPU atomic compaction), the shader reads the physical slot's `ParticleState`, `VmParams` and Stage-26 persistent `VmAttributes`; writes selected values into the four existing `Vertex::graphData` floats at offset 24. The sprite's particle state remains **64 bytes**, expanded vertex **40 bytes**, and previous VM/event/lifetime/resource-buffer slots 0..12 are unchanged. No GPU readback or extra vertex stride.
+4. Only for a validated material graph, the Metal pipeline adds `Float4` vertex attribute **3** at byte offset 24 and uses a trusted generated graphics shader with `sg_particle` source lanes and the compiled graph's `color` output. Other GPU billboard effects keep the preexisting three-attribute default pipeline; shader/material programs are still compiled once on initialization, not during each frame.
+5. `GraphRuntimeOptions::gpuMaterial` / `ComputeEmitterDesc::gpuMaterial` default **false**. ShaderGraph presence without this flag prevents GPU routing. The full normalized `EffectDef` check includes `shaderGraph`, `graphInputs` and existing `particleProgram` only after each capability gate has accepted them; every other unsupported emitter parameter, stage, module or material feature rejects GPU. `ComputePreference::RequireGpu` returns an error; `Automatic` or `PreferGpu` keeps the full original CPU effect.
+6. Direct `ComputeParticles` CPU fallback copies both graph fields to its `EmitterDef`, in addition to its previously preserved particleProgram, avoiding loss of material authoring. Metal custom material graph rendering is still a single additive `builtin:soft` camera-facing sprite emitter, not full multi-emitter material support.
+
+### Verification actually performed
+
+**SOURCE INSPECTION AND GITHUB WRITES ONLY; ALL TESTS DEFERRED / NOT RUN.** The user explicitly deferred testing until completion of functional work. No CMake/clang build, CTest, live MSL shader compilation, Apple Silicon GPU execution, image capture, CPU/GPU visual or numerical parity, editor GUI interaction, performance/memory profiling or CI conclusion was observed for this stage. The connector confirmed file changes and commit SHA, not runtime validity. Do not claim a proven or shipping-ready GPU material pipeline.
+
+During the eventual test phase, run the unified `./run-tests.sh` per AGENTS.md. Verify: invalid/missing external textures/material nodes fail GPU eligibility without loss; `RequireGpu` refuses; attributes persist through Spawn/Update and recycled physical slots; named parameters yield independent colours for two runtime instances; source mapping/UV/HDR/fog parity in actual Metal screenshots; direct/indirect GPU draw; source buffer at compute slot 13; shader compilation in Metal and GLSL fallback; shared-BatchWorld CPU shader rendering is unaffected. Check API/ABI against actual RHI.
+
+### Known limitations / exact next functional stage
+
+- GPU graph subset is **fragment-only** with builtin soft-sprite texture. Mesh, ribbons, scene depth collisions, arbitrary external texture assets, vertex displacement, alpha sorting and general shader/material plugins remain CPU-only; camera-facing additive blending is unchanged.
+- The Stage-26 eight-register GPU VM is restricted to supported Spawn/Update scalar operations, not event stages, rotations, arbitrary CPU physics, module forces or sub-emitters. Strict full CPU fallback is mandatory.
+- Every `ComputeParticles` still owns separate GPU state/vertex/pipeline resources. CPU still owns physical birth/death bookkeeping, and `gpuIndirect` remains an independent opt-in path. No multi-source shared GPU allocator or global GPU material batching exists yet.
+- **Next bounded Stage 28:** build a genre-independent shared GPU emitter resource/pool scheduler with explicit per-emitter material keys, capacity/quality budgets, lifecycle and source reset semantics; preserve the existing shared `BatchWorld` CPU path and never silently switch existing FPS/RTS clients. Provide separate handoff with exact SHAs. Continue postponing tests until user requests them.
