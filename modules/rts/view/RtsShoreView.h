@@ -26,6 +26,19 @@ public:
     bool active() const { return !net_.empty(); }
     const water::ShoreTypes& types() const { return types_; }
     const water::Network& network() const { return net_; }
+    render::GpuOwnedMemoryStats ownedGpuMemoryStats() const {
+        if (!dev_) return {};
+        render::GpuOwnedMemoryCounter c(*dev_);
+        for (const auto& m : chunks_)
+            if (m) render::appendModelOwnedGpuMemory(*m,c);
+        for (const auto& m : transparent_)
+            if (m) render::appendModelOwnedGpuMemory(*m,c);
+        for (const auto& p : propModels_)
+            if (p.model) render::appendModelOwnedGpuMemory(*p.model,c);
+        // The shore kit owns its images; road/chunk meshes borrow them.
+        for (const auto& i : images_) c.texture(i.tex);
+        return c.stats();
+    }
     const std::vector<std::string>& warnings() const { return warnings_; }
 
     // extra materials after the road kit's (RtsRoadView::Mat)
