@@ -7,6 +7,7 @@
 #include "SpectraGpuCueEcsAdapter.h"
 #include "SpectraGpuAttachmentEcsAdapter.h"
 #include "SpectraEcsRenderPose.h"
+#include "SpectraGpuRecoveryHost.h"
 
 namespace aiverse::spectra {
 
