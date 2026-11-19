@@ -100,7 +100,7 @@ export default function App() {
       <main className="work-area">
         <nav className="tabbar" aria-label="Editor tabs">{sections.map(section => <button key={section.id} onClick={() => setSelectedTab(section.id)} className={'tab ' + (section.id === selectedTab ? 'tab-active' : '')}>{section.title}</button>)}</nav>
         <div className="viewport-toolbar"><div className="viewport-tools"><button className="viewport-control selected" title="Select tool"><SlidersHorizontal size={15}/></button><button className="viewport-control" disabled title="Transform tools pending native host"><Command size={15}/></button><span className="toolbar-divider"/><span className="viewport-label">{selectedTab === 'scene' ? 'Perspective' : selectedTab.toUpperCase()}</span></div><span className="render-badge"><Activity size={13}/> Native renderer pending</span></div>
-        <ViewportPlaceholder title={selectedTab === 'scene' ? 'Scene viewport' : sections.find(s => s.id === selectedTab)?.title ?? selectedTab}/>
+        <ViewportPlaceholder title={selectedTab === 'scene' ? 'Scene viewport' : sections.find(s => s.id === selectedTab)?.title ?? selectedTab} active={selectedTab === 'scene'}/>
         {showConsole && <section className="console-panel"><PanelTitle title="CONSOLE" right={<button className="icon-button" aria-label="Close console" onClick={() => setShowConsole(false)}>×</button>}/><div className="log-list">{snapshot?.logs.map((line, i) => <div className={'log-row log-' + line.level} key={i}><span>{line.time}</span>{line.text}</div>)}</div></section>}
       </main>
       <div className="resize-handle" role="separator" aria-orientation="vertical" onPointerDown={e => beginResize('right', e.clientX)}/>

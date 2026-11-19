@@ -29,6 +29,9 @@ const redoStack: StudioSnapshot[] = [];
 const clone = (): StudioSnapshot => ({ ...structuredClone(snapshot), history: { canUndo: undoStack.length > 0, canRedo: redoStack.length > 0 } });
 
 export async function mockInvoke<M extends StudioMethod>(method: M, params: StudioParams[M]): Promise<StudioResult[M]> {
+  if (method === 'studio.viewportRect') {
+    return { ok: true } as StudioResult[M]; // Browser preview has no native surface.
+  }
   if (method === 'studio.select') {
     const id = (params as StudioParams['studio.select']).id;
     if (id !== null && !snapshot.scene.entities.some(entity => entity.id === id)) throw Error('Unknown entity: ' + id);

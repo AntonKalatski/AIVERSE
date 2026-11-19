@@ -635,3 +635,10 @@ button:focus-visible {
 }
 
 
+
+/* The native metal-backed NSView sits over this content rectangle only.
+   Keep controls, toolbar and tabbar outside the rectangle. */
+.viewport.viewport-native .viewport-grid,
+.viewport.viewport-native .viewport-placeholder,
+.viewport.viewport-native .viewport-axis { display: none; }
+.viewport.viewport-native { background: #0b1422; }
