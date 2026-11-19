@@ -130,6 +130,11 @@ public:
     virtual bool wantsMaterialReceiverPass() const { return false; }
     virtual gfx::PassDesc materialReceiverPass(int,int) { return {}; }
     virtual void materialReceiverPublished(gfx::TextureHandle,int,int) {}
+    // Optional HIGH-quality PBR normal+roughness receiver. Independent depth
+    // attachment; producer must ensure it belongs to this same frame/view.
+    virtual bool wantsSurfaceReceiverPass() const { return false; }
+    virtual gfx::PassDesc surfaceReceiverPass(int,int) { return {}; }
+    virtual void surfaceReceiverPublished(gfx::TextureHandle,int,int) {}
     virtual void resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame& frame) = 0;
 };
 
@@ -551,6 +556,7 @@ private:
     bool modelReflections_ = false; // opt-in opaque PBR SSR; High trace + HDR only
     bool hdrFrame_ = false;
     bool lumaMaterialCapture_ = false; // opt-in PBR material receiver only
+    bool lumaSurfaceCapture_ = false;  // opt-in signed normal.xyz + roughness.w
     HeightField heightField_;
     struct SceneTarget { int w = 0, h = 0; bool hdr = false; gfx::TextureHandle color, depth; uint64_t lastUse = 0; };
     std::vector<SceneTarget> sceneTargets_;   // one per view size (editor: Scene + Game views)
