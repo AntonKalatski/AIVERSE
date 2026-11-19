@@ -193,11 +193,35 @@ public:
             shot.elapsed+=dt;
             ++i;
         }
+        // Retire pooled one-shots before the arena's next compute pass.
+        // Both public and private pooled sources count toward the 64 limit.
+        for(size_t i=0;i<pooledShots_.size();) {
+            PooledShot& shot=pooledShots_[i];
+            if(shot.elapsed+dt>=shot.duration) {
+                auto* arena=poolArena(shot.source.name);
+                if(!arena || !arena->removeEmitter(shot.source.ticket,true)) {
+                    ++stats_.pooledFailures;
+                    ++i; // keep ownership and retry next safe frame
+                    continue;
+                }
+                pooledShots_.erase(pooledShots_.begin()+std::ptrdiff_t(i));
+                ++stats_.retired;
+                ++stats_.pooledRetired;
+                continue;
+            }
+            shot.elapsed+=dt;
+            ++i;
+        }
+        for(auto& pair:pools_) {
+            if(!pair.second.arena->update(dt,lastCameraEye_))
+                ++stats_.pooledFailures;
+        }
     }
 
     // Camera-aware update used by native clients. The no-camera overload
     // remains for standalone hosts and preserves LOD settings from last view.
     void updateGpu(float dt,render::float3 cameraEye) {
+        lastCameraEye_=cameraEye;
         for(auto& pair:active_) pair.second->updateLod(cameraEye);
         for(auto& shot:oneShots_) shot.emitter->updateLod(cameraEye);
         updateGpu(dt);
@@ -211,6 +235,11 @@ public:
             drawGpu(*pair.second,viewProj,cameraRight,cameraUp);
         for(auto& shot:oneShots_)
             drawGpu(*shot.emitter,viewProj,cameraRight,cameraUp);
+        // One billboard draw per homogeneous pool regardless of source count.
+        for(auto& pair:pools_)
+            if(pair.second.arena->aliveParticles()>0 &&
+               !pair.second.arena->render(viewProj,cameraRight,cameraUp))
+                ++stats_.pooledFailures;
     }
 
     // Called on the GPU owner/presentation thread after async readback
@@ -262,10 +291,17 @@ public:
         active_.clear();
         for(auto& shot:oneShots_) shot.emitter->stop();
         oneShots_.clear();
+        pooledActive_.clear();
+        pooledShots_.clear();
+        for(auto& pair:pools_) pair.second.arena->shutdown();
+        pools_.clear();
+        totalPoolCapacity_=0;
     }
 
-    size_t attached() const {return active_.size();}
-    size_t oneShotCount() const {return oneShots_.size();}
+    size_t attached() const {return active_.size()+pooledActive_.size();}
+    size_t oneShotCount() const {return oneShots_.size()+pooledShots_.size();}
+    size_t sharedPoolCount() const {return pools_.size();}
+    uint32_t sharedPoolCapacity() const {return totalPoolCapacity_;}
     const Stats& stats() const {return stats_;}
     void resetStats() {stats_={};}
 
@@ -274,6 +310,118 @@ private:
         std::unique_ptr<SpectraFxHybridEmitter> emitter;
         float elapsed=0,duration=3;
     };
+    struct PooledRef {
+        std::string name;
+        uint64_t ticket=0;
+    };
+    struct PooledShot {
+        PooledRef source;
+        float elapsed=0,duration=3;
+    };
+    struct PoolGroup {
+        SpectraFxGpuSharedArena::Config config;
+        std::unique_ptr<SpectraFxGpuSharedArena> arena;
+    };
+
+    static bool same(render::float3 a,render::float3 b) {
+        return a.x==b.x && a.y==b.y && a.z==b.z;
+    }
+    static bool same(const SpectraFxGpuEnvironment& a,
+                     const SpectraFxGpuEnvironment& b) {
+        return same(a.acceleration,b.acceleration) &&
+            a.damping==b.damping && a.collideGround==b.collideGround &&
+            a.reportImpacts==b.reportImpacts &&
+            a.groundHeight==b.groundHeight &&
+            a.restitution==b.restitution &&
+            a.tangentRetention==b.tangentRetention;
+    }
+    static bool same(const SpectraFxGpuBillboardRenderer::Appearance& a,
+                     const SpectraFxGpuBillboardRenderer::Appearance& b) {
+        return same(a.color,b.color) && a.radius==b.radius &&
+               a.additive==b.additive;
+    }
+
+    SpectraFxGpuSharedArena* poolArena(const std::string& name) {
+        auto it=pools_.find(name);
+        return it==pools_.end()?nullptr:it->second.arena.get();
+    }
+    // Replaces an existing keyed instance only after a new one has started.
+    // Called at GPU-buffer-safe presentation points before compute passes.
+    bool retireKey(uint64_t key) {
+        auto pooled=pooledActive_.find(key);
+        if(pooled!=pooledActive_.end()) {
+            auto* arena=poolArena(pooled->second.name);
+            if(!arena || !arena->removeEmitter(pooled->second.ticket,true))
+                return false;
+            pooledActive_.erase(pooled);
+        }
+        auto direct=active_.find(key);
+        if(direct!=active_.end()) {
+            direct->second->stop();
+            active_.erase(direct);
+        }
+        return true;
+    }
+    bool tryStartPooled(const Route& route,
+                        const SpectraFxHybridEmitter::Config& effect,
+                        const SpectraFxCue& cue,PooledRef& out) {
+        if(!SpectraFxGpuEmitterLibrary::validName(route.sharedPool) ||
+           route.sharedPoolCapacity==0 ||
+           route.sharedPoolCapacity>kMaxTotalPooledParticles ||
+           !effect.autoSpawnGpu || !effect.impactEffect.empty() ||
+           effect.environment.reportImpacts) return false;
+        // CPU policy and unsupported GPU features retain dedicated fallback.
+        const auto choice=chooseSpectraFxBackend(device_,effect.backend);
+        if(!choice.accepted || choice.backend!=SpectraFxExecutionBackend::Gpu)
+            return false;
+
+        auto it=pools_.find(route.sharedPool);
+        bool newlyCreated=false;
+        if(it!=pools_.end()) {
+            const auto& cfg=it->second.config;
+            if(cfg.particles!=route.sharedPoolCapacity ||
+               cfg.gpuIndirectCompaction!=effect.gpuIndirectCompaction ||
+               !same(cfg.appearance,effect.appearance) ||
+               !same(cfg.environment,effect.environment))
+                return false; // heterogeneous group: separate HybridEmitter
+        } else {
+            if(pools_.size()>=kMaxGpuPools ||
+               route.sharedPoolCapacity>kMaxTotalPooledParticles-totalPoolCapacity_)
+                return false;
+            auto arena=std::make_unique<SpectraFxGpuSharedArena>();
+            SpectraFxGpuSharedArena::Config cfg;
+            cfg.particles=route.sharedPoolCapacity;
+            cfg.appearance=effect.appearance;
+            cfg.environment=effect.environment;
+            cfg.gpuIndirectCompaction=effect.gpuIndirectCompaction;
+            if(!arena->init(device_,cfg)) {
+                ++stats_.pooledFailures;
+                return false;
+            }
+            it=pools_.emplace(route.sharedPool,
+                              PoolGroup{cfg,std::move(arena)}).first;
+            totalPoolCapacity_+=route.sharedPoolCapacity;
+            newlyCreated=true;
+        }
+        SpectraFxGpuSharedArena::EmitterConfig source;
+        source.spawn=effect.spawning;
+        source.lod=effect.lod;
+        source.quality=effect.quality;
+        if(++nextPoolTicket_==0) ++nextPoolTicket_;
+        const uint64_t ticket=nextPoolTicket_;
+        if(!it->second.arena->addEmitter(ticket,std::move(source),
+                                         cue.position,cue.direction)) {
+            ++stats_.pooledFailures;
+            if(newlyCreated) {
+                it->second.arena->shutdown();
+                totalPoolCapacity_-=it->second.config.particles;
+                pools_.erase(it);
+            }
+            return false;
+        }
+        out={route.sharedPool,ticket};
+        return true;
+    }
     void advanceGpu(SpectraFxHybridEmitter& emitter,float dt) {
         if(emitter.gpuActive()&&!emitter.suspended()&&!emitter.updateGpu(dt))
             ++stats_.failed;
@@ -292,6 +440,12 @@ private:
     std::unordered_map<uint32_t,Route> routes_;
     std::unordered_map<uint64_t,std::unique_ptr<SpectraFxHybridEmitter>> active_;
     std::vector<OneShot> oneShots_;
+    std::map<std::string,PoolGroup> pools_;
+    std::unordered_map<uint64_t,PooledRef> pooledActive_;
+    std::vector<PooledShot> pooledShots_;
+    uint32_t totalPoolCapacity_=0;
+    uint64_t nextPoolTicket_=0;
+    render::float3 lastCameraEye_{};
     Stats stats_{};
 };
 
