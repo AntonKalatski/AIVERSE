@@ -70,6 +70,9 @@ public:
         auto* output=world_->tryGet<CameraOutputComponent>(selected_);
         auto* update=world_->tryGet<CameraUpdateComponent>(selected_);
         auto* vp=world_->tryGet<CameraViewportComponent>(selected_);
+        auto* rig=world_->tryGet<CameraRigComponent>(selected_);
+        auto* lens=world_->tryGet<CameraLensComponent>(selected_);
+        auto* stack=world_->tryGet<CameraStackComponent>(selected_);
         if(!camera||!output||!update||!vp)return;
         ImGui::Separator();
         bool enabled=camera->enabled;
@@ -117,6 +120,58 @@ public:
             if(ImGui::SliderFloat("Viewport Y",&y,0,1))vp->y=fixedFromUi(y);
             if(ImGui::SliderFloat("Viewport W",&w,.01f,1))vp->width=fixedFromUi(w);
             if(ImGui::SliderFloat("Viewport H",&h,.01f,1))vp->height=fixedFromUi(h);
+        }
+        if(stack && ImGui::CollapsingHeader("Camera Composition")) {
+            ImGui::Checkbox("Overlay",&stack->overlay);
+            int order=stack->order;
+            if(ImGui::DragInt("Stack Order",&order,1,-1000,1000))
+                stack->order=int16_t(std::clamp(order,-1000,1000));
+            float opacity=float(stack->opacity.toDouble());
+            if(ImGui::SliderFloat("Opacity",&opacity,0.f,1.f))
+                stack->opacity=fixedFromUi(opacity);
+        }
+        if(rig && ImGui::CollapsingHeader("Camera Rig")) {
+            int mode=int(rig->mode);
+            if(ImGui::Combo("Rig Mode",&mode,"Static\0Follow\0Orbit\0Look At\0Rail\0"))
+                rig->mode=CameraRigMode(mode);
+            float offset[3]={float(rig->offset.x.toDouble()),
+                             float(rig->offset.y.toDouble()),float(rig->offset.z.toDouble())};
+            if(ImGui::DragFloat3("Rig Offset",offset,.05f))
+                rig->offset={fixedFromUi(offset[0]),fixedFromUi(offset[1]),fixedFromUi(offset[2])};
+            float distance=float(rig->distance.toDouble());
+            if(ImGui::DragFloat("Rig Distance",&distance,.05f,.01f,100000.f))
+                rig->distance=fixedFromUi(distance);
+            float yaw=float(rig->yaw.toDouble()),pitch=float(rig->pitch.toDouble());
+            if(ImGui::SliderFloat("Rig Yaw",&yaw,-render::cameraPi,render::cameraPi))
+                rig->yaw=fixedFromUi(yaw);
+            if(ImGui::SliderFloat("Rig Pitch",&pitch,-1.55f,1.55f))
+                rig->pitch=fixedFromUi(pitch);
+            float smoothing=float(rig->smoothing.toDouble());
+            if(ImGui::DragFloat("Rig Smoothing",&smoothing,.05f,0.f,100.f))
+                rig->smoothing=fixedFromUi(smoothing);
+            ImGui::Checkbox("Track Target",&rig->trackTarget);
+            ImGui::TextDisabled("Follow/Orbit/LookAt require a runtime-bound target.");
+            ImGui::TextDisabled("Rail control points are supplied by the runtime.");
+        }
+        if(lens && ImGui::CollapsingHeader("Physical Lens")) {
+            ImGui::Checkbox("Use Physical FOV",&lens->physicalFov);
+            const auto editPositive=[&](const char* label,Fixed& field,float speed,float minimum,float maximum){
+                float value=float(field.toDouble());
+                if(ImGui::DragFloat(label,&value,speed,minimum,maximum))
+                    field=fixedFromUi(std::clamp(value,minimum,maximum));
+            };
+            editPositive("Focal Length (mm)",lens->focalLengthMm,.1f,.1f,1000.f);
+            editPositive("Sensor Height (mm)",lens->sensorHeightMm,.1f,.1f,100.f);
+            editPositive("F Number",lens->fNumber,.05f,.1f,128.f);
+            editPositive("Focus Distance",lens->focusDistance,.05f,.01f,100000.f);
+            editPositive("Shutter (s)",lens->shutterSeconds,.0001f,.00001f,60.f);
+            editPositive("ISO",lens->iso,1.f,1.f,204800.f);
+        }
+        if(output->kind==CameraOutputKind::Texture) {
+            ImGui::Separator();
+            ImGui::TextDisabled("RenderTexture key: %llu",static_cast<unsigned long long>(output->targetAssetKey));
+            ImGui::TextDisabled("Capture/export uses the runtime LENS pipeline.");
+            ImGui::TextDisabled("HDR export: resolve to SDR RGBA8 before PNG readback.");
         }
         if(ImGui::Button("Use in Scene"))useInScene(ed);
         ImGui::SameLine();
@@ -166,6 +221,9 @@ private:
         world_->add<CameraOutputComponent>(e,CameraOutputComponent{});
         world_->add<CameraUpdateComponent>(e,CameraUpdateComponent{});
         world_->add<CameraViewportComponent>(e,CameraViewportComponent{});
+        world_->add<CameraRigComponent>(e,CameraRigComponent{});
+        world_->add<CameraLensComponent>(e,CameraLensComponent{});
+        world_->add<CameraStackComponent>(e,CameraStackComponent{});
         world_->add<CameraNameComponent>(e,CameraNameComponent{nextId_,"Camera "+std::to_string(nextId_)});
         ++nextId_;cameras_.push_back(e);selected_=e;
         hierarchy_->update(*world_);
