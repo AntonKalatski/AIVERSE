@@ -115,6 +115,10 @@ inline GpuDiagnosticInspection inspectGpuCheckpointDiagnostic(
         std::memcpy(&cpuRemaining,
                     data+lifetimeStart+size_t(i)*sizeof(float),
                     sizeof(float));
+        // NaN age is neither >=0 nor <0; diagnose it instead of silently
+        // counting a corrupt live slot as a healthy dead particle.
+        if(!std::isfinite(particle.positionAge.w))
+            ++out.invalidAgeSlots;
         const bool live=particle.positionAge.w>=0.f &&
                         cpuRemaining>0.f;
         if(!live) {
