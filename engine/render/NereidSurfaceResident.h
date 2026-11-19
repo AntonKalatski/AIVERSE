@@ -16,6 +16,7 @@ struct NereidSurfaceKey {
     lib::nereid::WaterSurfaceLod lod=lib::nereid::WaterSurfaceLod::Medium;
     float uvScale=0, foamWidth=0, oceanPatchRadius=0;
     uint32_t maxVertices=0;
+    uint8_t rippleTileGrid=1;
     double patchX=0,patchZ=0; // relevant for infinite ocean only
     double originX=0,originZ=0; // local vertex basis, retained with GPU mesh
     double originY=0;
@@ -55,6 +56,7 @@ inline NereidSurfaceKey makeNereidSurfaceKey(uint64_t revision,bool infinite,
     key.uvScale=opts.uvScale;
     key.foamWidth=opts.foamWidth;
     key.maxVertices=opts.maxVertices;
+    key.rippleTileGrid=opts.rippleTileGrid;
     key.style=style;
     if(infinite) {
         key.oceanPatchRadius=opts.oceanPatchRadius;
@@ -75,6 +77,7 @@ inline bool sameNereidSurfaceKey(const NereidSurfaceKey& a,
         a.infinite==b.infinite && a.lod==b.lod &&
         a.uvScale==b.uvScale && a.foamWidth==b.foamWidth &&
         a.maxVertices==b.maxVertices &&
+        a.rippleTileGrid==b.rippleTileGrid &&
         a.oceanPatchRadius==b.oceanPatchRadius &&
         a.patchX==b.patchX && a.patchZ==b.patchZ &&
         a.originX==b.originX && a.originZ==b.originZ &&
@@ -168,6 +171,7 @@ public:
         }
         releaseNereidWaterSurface(device,mesh_);
         mesh_=replacement;
+        tiles_=prepared.cpu.tiles;
         key_=prepared.key;
         resident_=true;
         return NereidSurfaceUpdate::Uploaded;
@@ -185,6 +189,14 @@ public:
         return prepared?uploadPrepared(device,*prepared):NereidSurfaceUpdate::Failed;
     }
 
+    const std::vector<lib::nereid::WaterTileRange>& tiles()const{return tiles_;}
+    void drawTile(Renderer3D& renderer,const mat4& transform,
+                  const lib::nereid::WaterTileRange& tile,
+                  const std::array<float4,16>& ripples={})const {
+        if(resident_ && tile.indexCount>0)
+            drawNereidWaterSurface(renderer,mesh_,key_.style,transform,
+                                   ripples,tile.firstIndex,tile.indexCount);
+    }
     void draw(Renderer3D& renderer,const mat4& transform=mat4::identity(),
               const std::array<float4,16>& ripples={}) const {
         if(resident_)drawNereidWaterSurface(renderer,mesh_,key_.style,
@@ -192,6 +204,7 @@ public:
     }
     void release(gfx::Device& device) {
         releaseNereidWaterSurface(device,mesh_);
+        tiles_.clear();
         resident_=false;
         key_={};
     }
@@ -201,6 +214,7 @@ public:
 
 private:
     Mesh mesh_{};
+    std::vector<lib::nereid::WaterTileRange> tiles_;
     NereidSurfaceKey key_{};
     bool resident_=false;
 };
