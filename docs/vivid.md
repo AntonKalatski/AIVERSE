@@ -249,3 +249,15 @@ aiverse::vivid::composeFaceAfterMotionWeave(
 The adapter covers only legacy `render::Pose` morph indices 0..7 because that is the format that MotionWeave/Renderer3D currently exposes. Extended 52+ shape weights are handled separately by VIVID's `FaceShapeBinding` / GPU CSR morph stream, pending real GPU numerical parity and renderer consumption. This is **not** a fork of MotionWeave, nor a replacement of the rig/retargeting pipeline.
 
 New headless CTest source: `tests/vivid/motionweave_bridge.cpp`, registered as `vivid_motionweave_bridge` / target `aiverse_vivid_motionweave_tests`. The fixture uses real MotionWeave presentation ECS World and a bind-pose AnimationGraph and checks source isolation, repeat-frame additive stability, morph preservation and invalid-input rejection. Native compilation and execution **NOT RUN** in this stage.
+
+## Stage 4D — real macOS Metal compute parity test (2026-11-19)
+
+**Test source added; native Metal execution NOT RUN on this new commit.** This stage validates the GPU kernel directly, not yet the engine's complete model renderer.
+
+- New macOS-only `tests/vivid/metal_gpu.mm`, target `aiverse_vivid_metal_gpu_tests`, CTest `vivid_metal_gpu`. It compiles the *actual* `kVividMorphMSL` kernel from `VividComputeShaders.h` at runtime using Apple's Metal framework and dispatches 64-thread workgroups, with an intentionally non-multiple-of-64 **137-vertex** mesh and **160 independent morph targets**.
+- Test builds the same `SparseMorphLibrary`/CSR and `GpuMorphVertex`/uniform buffer layout that the VIVID GPU adapter uses. It uploads all six buffers (base, sparse deltas, vertex offsets, links, weights, output), dispatches and waits for completion, then compares all resulting vertex positions/normals/tangents against `SparseMorphLibrary::evaluateGather` within a maximum absolute difference of `0.0005`.
+- Three real Metal passes: authored weights with normalized directions, authored weights without normalization, and all-zero weights. Non-finite outputs or a shader/pipeline/command failure cause a failing CTest. A machine without a Metal-capable device exits with skip code 77 and is reported **Skipped**, not Passed.
+- CMake enables Objective-C++ only for macOS when tests are enabled and links Foundation + Metal. No changes to `engine/gfx` or MotionWeave source files, public C++ API, saved games or network formats.
+- **What this test does not prove:** the `gfx::Device` Metal command path (`GpuMorphDeformer::dispatch()`), GPU resource lifetime across frames, drawing with VIVID-deformed mesh buffers, VIVID↔MotionWeave skinning order, other render passes or Vulkan/GL. A separate actual device RHI integration test and renderer hookup are required after the kernel passes.
+
+The user's earlier **7/7 native tests Passed** on the pre-Stage-4D merged source. No real Metal GPU comparison has yet been executed, and do not transfer those passes to this new test.
