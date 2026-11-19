@@ -2860,3 +2860,17 @@ Previous handoff reported PR #24 as nonmergeable with `main`. That was inaccurat
 **Actual validation performed:** GitHub repository file reads, workflow metadata inspection and one successful source commit. **NOT RUN:** full C++20 compilation, CMake/Ninja, CTest, Python skill catalog check, editor/WorldScene scene, Vulkan/Metal/GL screenshots or profiling. PR must remain Draft.
 
 **Exact next work:** Inspect the newest completed TerraWeave isolated workflow on **post-Stage23f** source HEAD; retrieve GCC and Clang job logs, fix real compiler failures or test assertions; then run full and targeted CI, `tools/skills/catalog.py check`, and RHI/editor visual QA. Keep this handoff updated after every stage. Do not claim source tests passed until explicit run conclusions and logs are available.
+
+## Stage 23g — unified push/PR concurrency and current CI status (WORKFLOW COMMITTED; TESTS NOT RUN ON NEW HEAD)
+
+**Date:** 2026-11-19. **Branch/PR:** `feature/terraweave` → `main`, Draft PR #24.
+**Implementation commit:** `f7a5810b9d175f30b24be2b7f0457c7c6bd4beee`.
+**Modified file:** `.github/workflows/terraweave.yml`.
+
+**Reason and behavior:** Stage 23c's workflow concurrency used `github.ref`, so `push` to `feature/terraweave` and `pull_request` synchronization for PR #24 had different group identifiers (branch ref vs PR merge ref), allowing redundant TerraWeave builds for the same source tree. The new expression combines `github.workflow`, normalized source repo (`github.event.pull_request.head.repo.full_name || github.repository`) and source branch (`github.event.pull_request.head.ref || github.ref_name`). The existing `cancel-in-progress: true` then applies to both event types of the **same head branch**, while unrelated branches/repos retain independent groups. No GCC/Clang CMake flags, nine TerraWeave test targets, CTest expression, engine source, archive or GPU paths were changed.
+
+**Observed CI evidence BEFORE Stage 23g:** Head `e48b6b4b6533da796b974d643bd17f07c15aa801` PR jobs for TerraWeave isolated checks [44480515679](https://github.com/chromealex/AIVERSE/actions/runs/44480515679), main CI [44480515591](https://github.com/chromealex/AIVERSE/actions/runs/44480515591) and additional integration workflows were **queued** at observation, with no passing GCC, Clang, CTest or GPU evidence. An older `pull_request` TerraWeave run [44480455342](https://github.com/chromealex/AIVERSE/actions/runs/44480455342) was `completed/cancelled`, while the equivalent `push` run [44480446860](https://github.com/chromealex/AIVERSE/actions/runs/44480446860) was still queued. This confirmed the cross-event duplication that the expression is designed to address.
+
+**Actual validation:** GitHub file read and source update commit succeeded; inspection confirmed the old `github.ref`-only group was replaced. No CMake/compiler/CTest executed locally (full repo cannot be cloned from container due DNS resolution restriction). **Not yet verified** that the new group cancels duplicates, nor any passing GH Actions tests or GPU screenshots; do not claim otherwise. PR remains Draft.
+
+**Next exact action:** Inspect the newest TerraWeave workflow run for the Stage 23g head or later; verify whether `push` and `pull_request` now deduplicate and capture both GCC/Clang build + CTest outcomes from the surviving run. If failed, retrieve job logs and fix actual errors with source commit + fresh handoff. Then validate full CI, native editor/WorldScene and GPU visual quality before merging.
