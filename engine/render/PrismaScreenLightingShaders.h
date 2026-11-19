@@ -103,7 +103,10 @@ inline const char* temporal = R"(
     }
     RETURN(vec4(taaExpand(mix(now,old,weight)),distance));
 )";
+// Legacy TAA history alpha contains depth distance; do NOT copy it to scene alpha.
 inline const char* copy = R"( RETURN(vec4(COLOR(UV(s)).rgb,1.0)); )";
+// Lighting-only output must keep the original scene alpha before Prisma resolve.
+inline const char* copyLinear = R"( RETURN(COLOR(UV(s))); )";
 // Sun in-scattering along the view ray, shadowed by the sun shadow map. volume: x march length cap,
 // y steps, z frame noise offset; sunColor.w scattering coefficient; sun.w Henyey-Greenstein g.
 inline const char* scatter = R"(
