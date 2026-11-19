@@ -692,6 +692,7 @@ PoolCheckpointStats GpuPoolWorld::checkpointStats() const {
         result.gpuDeviceUnhealthy+=stats.gpuDeviceUnhealthy;
         result.gpuKillUploadFailures+=stats.gpuKillUploadFailures;
         result.gpuComputeBeginFailures+=stats.gpuComputeBeginFailures;
+        result.gpuResetFailures+=stats.gpuResetFailures;
         result.gpuPassOrderRejections+=stats.gpuPassOrderRejections;
         result.killScatterDispatches+=stats.gpuKillScatterDispatches;
         result.killIndexBytes+=stats.gpuKillIndexBytes;
