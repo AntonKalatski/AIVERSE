@@ -15,6 +15,7 @@ public:
     std::string error;
     const gfx::DeviceInfo& info() const override{return details;}
     const std::string& lastError() const override{return error;}
+    bool waitForResourceIdle() override{return true;} // CPU stub: no GPU work
     gfx::BufferHandle createBuffer(const gfx::BufferDesc&) override{return {};}
     void updateBuffer(gfx::BufferHandle,const void*,size_t,size_t) override{}
     void destroyBuffer(gfx::BufferHandle) override{}
@@ -78,4 +79,20 @@ int main() {
     lease.reset();
     assert(!lease.valid());
     assert(group.size()==0);
+    auto active=group.registerScoped(first,scene);
+    scene.shutdown(first); // proven empty stub, clears cache/device binding
+    bool stale=false;
+    try {(void)group.snapshot(first);}
+    catch(const std::logic_error&) {stale=true;}
+    assert(stale); // live scope must not survive host device rebind
+    active.reset();
+    assert(group.size()==0);
+
+    render::RenderResourceOwnerGroup::ScopedRegistration surviving;
+    {
+        render::RenderResourceOwnerGroup temporary;
+        surviving=temporary.registerScoped(first,scene);
+        assert(surviving.valid());
+    }
+    surviving.reset(); // safe after group destruction
 }
