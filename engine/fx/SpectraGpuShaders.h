@@ -25,6 +25,7 @@ struct Uniforms {
     float4 up;
     uint4 meta;             // x: 0 spawn, 1 integrate, 2 host gather, 3 reset
                             // 4 atomic compact, 5 GPU-authored indirect args
+                            // 6 scatter-kill by physical slot IDs
                             // y: capacity; z: births; w: host survivor count
 };
 struct DrawArgs {
@@ -196,8 +197,19 @@ kernel void cs_main(uint2 gid [[thread_position_in_grid]],
                      device const VmPayload* vmProgram [[buffer(10)]],
                      device VmAttributes* stateAttributes [[buffer(11)]],
                      device atomic_uint* vmErrors [[buffer(12)]],
-                     device const uint* graphSources [[buffer(13)]]) {
+                     device const uint* graphSources [[buffer(13)]],
+                      device const uint* killSlots [[buffer(14)]]) {
     uint id=gid.x;
+    if(u.meta.x==6u) {
+        if(id>=u.meta.z)return; // z carries kill count for this dispatch
+        uint slot=killSlots[id];
+        if(slot<u.meta.y) {
+            Particle p=particles[slot];
+            p.positionAge.w=-1.0f;
+            particles[slot]=p;
+        }
+        return;
+    }
     if(u.meta.x==0u) {
         if(id>=u.meta.z)return;
         uint slot=slots[id];
@@ -305,6 +317,7 @@ layout(std430,binding=1) readonly buffer Seeds { Particle spawns[]; };
 layout(std430,binding=2) readonly buffer Slots { uint slots[]; };
 layout(std430,binding=3) buffer Vertices { Vertex vertices[]; };
 layout(std430,binding=4) readonly buffer LiveSlots { uint liveSlots[]; };
+layout(std430,binding=14) readonly buffer KillSlots { uint killSlots[]; };
 layout(std430,binding=5) buffer AliveCounter { uint aliveCounter; };
 layout(std430,binding=6) buffer IndirectArgs {
     uint indexCount, instanceCount, firstIndex;
@@ -321,6 +334,11 @@ uint packColor(vec4 c) {
 }
 void main() {
     uint id=gl_GlobalInvocationID.x;
+    if(u.meta.x==6u) {
+        if(id<u.meta.z && killSlots[id]<u.meta.y)
+            particles[killSlots[id]].positionAge.w=-1.0;
+        return;
+    }
     if(u.meta.x==0u) {
         if(id<u.meta.z && slots[id]<u.meta.y) particles[slots[id]]=spawns[id];
         return;
