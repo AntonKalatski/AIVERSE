@@ -1255,3 +1255,26 @@ index cleanup uses nonthrowing empty-vector swaps.
 **Source-only stage:** all native CMake, CTest, GPU visual/fault injection,
 sanitizers and benchmarks remain **NOT RUN** under the user-approved
 feature-first workflow. [Stage 138 handoff](agent-handoffs/animation-stage138-image-morph-gpu-admission-2026-11-19.md).
+
+
+## Stage 140 — presentation scene GPU lifetime beyond ModelResourceCache
+
+A standalone native host may use the generic
+`render::NativePresentationRetirement` to retain successful Model
+and standalone SpriteMesh GPU buffer ownership until an actual
+completion token proves that previous submissions are complete. RTS
+road and shore adapters now do so on rebuild, editor ghost and weather
+changes, while preserving the same MotionWeave animation writer and
+presentation-only source/graph clocks.
+
+Collection is currently called at top-level `RtsView::draw` entry,
+before scene provider callbacks; **the host must validate that this is
+a legitimate GPU frame/submission boundary**, not merely a second View
+draw within one in-progress graphics frame. Failure to prove GPU idle
+at explicit host shutdown blocks destruction of resident textures,
+SpriteBatch resources and pending Model allocations.
+
+This is an uncompiled feature stage under the user-approved
+implementation-first workflow. Exact source revisions and remaining
+boundary/owner review:
+[Stage 140 handoff](agent-handoffs/animation-stage140-native-scene-gpu-retirement-2026-11-19.md).
