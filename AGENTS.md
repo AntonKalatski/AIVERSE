@@ -1243,3 +1243,18 @@ test status, limits and next step to its handoff as the next separate commit.
 ## Release-mode test assertion contract (2026-11-19)
 
 Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. **Never rely on standard `assert(expr)` for a test requirement, especially if `expr` has side effects or creates fixtures**, because the expression disappears entirely in Release, yielding false-green tests and Clang unused-variable warnings. Use `#include "tests/AlwaysCheck.h"` and `AIVERSE_TEST_CHECK(expr)`, or an equivalent always-on check throwing an informative exception. Tests must enforce invariants identically in Debug and Release; don't use `(void)variable`, `[[maybe_unused]]`, `-Wno-unused-*`, or `#undef NDEBUG` as a substitute for real assertions. Source: `docs/nereid/stage-50-release-assertion-correctness.md`.
+
+
+## Portable dynamic GI transport updates (2026-11-19, opt-in)
+
+On `feature/gi-lighting-portable-backends-20261119`, see
+`docs/agent-handoffs/gi-stage27-portable-light-invalidation-2026-11-19.md`
+and `docs/agent-handoffs/gi-stage28-world-dirty-clearing-2026-11-19.md`.
+The CPU bounce layer now clears invalidated world/light radiance immediately
+and flushes zeros through RHI before `bind()`; use `GiDynamicRuntime::setLights`,
+`invalidate` or `applyWorldChanges`, then `update(0, camera)` if tracing is paused.
+Continue the existing `docs/agent-handoffs/hybrid-dynamic-gi.md` history.
+GLSL sampling exists for Vulkan/GLES, but hardware tests and Vulkan native GI
+compute are **NOT DONE**. FakeDevice backend identities are not GPU parity evidence.
+Never merge this branch into `main` without reconciling the diverged histories
+and compiling/validating all required backends.
