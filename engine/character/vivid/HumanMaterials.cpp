@@ -87,8 +87,14 @@ std::shared_ptr<const render::graph::Program> skinGraph(const HumanSkin& d) {
     const auto noise=g.scalarOp("gradientNoise",poreUv);
     const auto poreOffset=g.binary("subtract",noise,g.constant(0.5f));
     const auto pore=g.binary("multiply",poreOffset,g.constant(0.06f*d.poreScale));
+    const auto wrinkleUv=g.binary("multiply",uv,
+                                  g.constant(20.0f+60.0f*d.wrinkleStrength));
+    const auto wrinkleNoise=g.scalarOp("gradientNoise",wrinkleUv);
+    const auto wrinkle=g.binary("multiply",
+                     g.binary("subtract",wrinkleNoise,g.constant(0.5f)),
+                     g.constant(0.085f*d.wrinkleStrength));
     const auto skinNoise=g.binary("multiply",base,
-                                 g.binary("add",g.constant(1.0f),pore));
+             g.binary("add",g.constant(1.0f),g.binary("add",pore,wrinkle)));
     const auto fresnel=g.ternary("fresnel",normal,view,g.constant(2.4f));
     const auto blood=g.color({0.17f*d.hemoglobin,
                              0.035f*d.hemoglobin,0.023f*d.hemoglobin});
@@ -145,8 +151,9 @@ std::shared_ptr<const render::graph::Program> hairGraph(const HumanGroom& d) {
                         g.add("viewDirection"),g.constant(4.0f));
     const auto glint=g.binary("multiply",facing,g.constant(0.2f));
     const auto highlight=g.binary("add",variation,glint);
+    const auto melaninDarkening=g.constant(1.0f-0.38f*d.melanin);
     const auto color=g.scalarOp("clamp",g.binary("multiply",
-                       g.color(d.color),highlight));
+             g.binary("multiply",g.color(d.color),melaninDarkening),highlight));
     return g.finish(color,g.constant(std::clamp(d.roughness,0.05f,1.0f)));
 }
 } // namespace
