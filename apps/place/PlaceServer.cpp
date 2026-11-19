@@ -460,7 +460,7 @@ void PlaceServer::syncCharacters() {
             {Schema::kCharInput, integer(int64_t(p.applied & 0xFFFFu))},
         };
         server_.setFields(p.object, fields);
-        server_.setViewers(slot, {{st.position.x, st.position.y, st.position.z}});
+        server_.setViewer(slot, {st.position.x, st.position.y, st.position.z});
     }
 }
 
