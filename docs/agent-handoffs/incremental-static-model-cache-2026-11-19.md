@@ -1669,3 +1669,32 @@ The new log corrects the literal backslash-n formatting and prevents mistaken at
 Stage 55 already verified Metal CPU-encoded MDI raster parity and persistent packet replay parity; Stage 56 user log adds Metal GPU-authored ICB parity (conditional on prescribed `AIVERSE_EXPECT_GPU_ICB=1`). **Not yet verified:** exact GPU-encoded counters printed from this new source, overall CI/full CTest, real Vulkan canonical pooled MDI pixel parity, in-flight recycling stress, cross-scene performance timings, or release readiness. Keep PR #34 Draft, `AIVERSE_GEOMETRY_POOL_RECYCLE` and `AIVERSE_VULKAN_POOLED_MDI` OFF by default.
 
 Next on Mac: `git fetch origin && git switch perf/incremental-static-model-cache && git pull --ff-only origin perf/incremental-static-model-cache`; `cmake --build build/batching-gpu-verify --target aiverse_material_batches --parallel 8`; rerun same GPU ICB fixture with `AIVERSE_EXPECT_GPU_ICB=1` and report the new explicit GPU-encoded and CPU MDI counters plus `changed_channels=0`. After that measure baseline / CPU MDI / GPU ICB **CPU frame time and GPU time** on an identical camera, and validate recycling/Vulkan on supporting hardware.
+
+
+---
+
+## Stage 57 — GPU ICB execution/preflight diagnostics (2026-11-19)
+
+**Repository and branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`; Draft PR #34. **Code commit:** `6b6e5b7a7c11e484934fe36369bfe1b0ccc24d57`. This documentation update follows the code commit on the same branch. Main was already an ancestor of this branch when checked (0 behind, 242 ahead); no integration merge was necessary.
+
+### Implementation / touched files
+
+- `tests/render/material_batches.cpp`: print `GpuModelDrawStats::gpuIcbCandidates`, `gpuIcbPrepared`, `gpuIcbRejected`, `gpuIcbExecuteFailed`, and `preflightGroups` alongside the Stage 56 actual `gpuEncodedSubmissions` and `gpuEncodedCommands` counters. Eligibility or preparation must not be confused with actual GPU-encoded submission.
+- Correct literal escaped newline sequences in the two `[metal-gpu-icb]` error diagnostics so failed runs produce readable lines.
+- No renderer pipeline, RHI, geometry pool, scheduling, eligibility, material, ECS, fixture assertions, or default feature flags changed. The existing opt-in `AIVERSE_EXPECT_GPU_ICB=1` remains the runtime assertion gate.
+
+### Verification actually performed / limits
+
+Confirmed the branch/main ancestry using GitHub compare and inspected the fixture and existing `Renderer3D::GpuModelDrawStats` field names. The GitHub connector accepted and committed the fixture modification. **NOT RUN for Stage 57:** local/native CMake, CTest, Metal execution, screenshots, full CI, Vulkan rendering, GPU timing, frame-time A/B/A. The previous Stage 55/56 results are historical evidence on earlier source revisions, not a fresh Stage 57 validation. Keep PR Draft and experimental flags OFF by default until verification.
+
+### Exact next step for the next agent / Mac Studio
+
+```sh
+git fetch origin
+git switch perf/incremental-static-model-cache
+git pull --ff-only origin perf/incremental-static-model-cache
+cmake --build build/batching-gpu-verify --target aiverse_material_batches --parallel 8
+AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTHORED_DRAWS=1 AIVERSE_GPU_ENCODED_ICB=1 AIVERSE_GPU_ICB_RIGID=1 AIVERSE_GPU_ICB_MIN_COMMANDS=2 AIVERSE_EXPECT_GPU_ICB=1 AIVERSE_PALETTE_TEST_CASE=indirect AIVERSE_ICB_TRACE=1 build/batching-gpu-verify/aiverse_material_batches unused.obj build/batching-gpu-verify/captures/gpu-icb
+```
+
+Require exit 0, `changed_channels=0`, nonzero `GPU-encoded ICB ... submissions/commands`, and inspect the newly printed `GPU ICB diagnostics` line for preflight failures. Then run an identical fixed-camera baseline / CPU MDI / GPU ICB A/B/A CPU and GPU frame-time comparison, and independently validate Vulkan pooled MDI and geometry-pool recycling on relevant GPU hardware. Record command outputs and failures verbatim in the next handoff before advancing the stage.
