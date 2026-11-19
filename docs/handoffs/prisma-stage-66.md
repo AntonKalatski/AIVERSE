@@ -207,3 +207,29 @@ automatically retry or cancel these jobs merely
 to refresh documentation; no further source pushes
 are necessary until actual compiler feedback arrives.
 
+
+## Source-only closure / latest docs reconciliation
+
+Subsequent documentation-only commits after the additional
+`prisma_graph` test:
+- `be9fb1b272efcc64089670de44feff462a6cd8c0` —
+  this Stage-66 handoff updated to reference latest queued
+  CI run and regression tests.
+- `19b11febe3af0e06fafd62499bb6cc2a38914d91` —
+  `skills/visuals/aiverse-prisma/SKILL.md` updated the
+  authoritative latest run and shader-contract guidance.
+- `2bb1582110ea8b187be7cc62ee3e0693371dd992` —
+  `docs/prisma.md` no longer incorrectly labels the
+  earlier cancelled workflow as the current run.
+
+GitHub returned the current source-test workflow
+`44597082684` as QUEUED, with Linux job
+`135818178734` and macOS job `135818179217`
+both QUEUED and no native test output. No further source
+writes were made after the test commit, so this
+documentation-only handoff update should not supersede
+the queued source-tested SHA. Do not interpret tests
+in source or queued runners as a native PASS. Next
+action remains: inspect exact run job statuses,
+logs and artifact outputs, then fix actual blockers.
+
