@@ -1884,3 +1884,11 @@ framebuffer oracles, nonuniform mip LOD/aniso tests,
 stress/budget tests and GPU timing.
 Never merge Draft PR #21 or enable experimental
 ICB by default without deliberate release gating.
+
+## Stage 10CK — explicit gradient virtual texture sampling (source SHA ee63acda)
+
+- Use `gfx::kVirtualTextureGLSL`: `aiverseSampleVirtualGrad(atlas, table, uv, layer, gutterPixels, fallbackColor, uvDx, uvDy, addressU, addressV)` or its no-address clamp convenience overload. Metal counterpart: `aiverse_sample_virtual_grad(atlas, table, sampler, uv, layer, gutterPixels, fallbackColor, uvDx, uvDy, addressU, addressV)`.
+- Derivatives `uvDx` and `uvDy` are **original virtual UV** gradients; do not differentiate `fract`, the page lookup, or physical-page-local UVs. Runtime transforms the derivatives using resident fallback mip, physical-gutter inset and wrap/mirror orientation.
+- Existing implicit-derivative entrypoints remain in place. The new gradient variants are **opt-in source only** until native compiler/GPU tests verify them.
+- This is not automatic anisotropic/trilinear VT: current physical atlas has one mip per slice and page-table stores one nearest resident parent. Build explicit multi-mip/page transitions and real backend pixel tests in subsequent stages.
+- Stage 10CK handoff appended to `docs/agent-handoffs/texture-rhi-2026-11-18.md`. Latest actual Mac 21 portable + seven Metal GPU tests were on older `7494f32d`; full-engine, new GLSL/MSL compile, Vulkan, GL, GLES, WebGL and mobile tests still **NOT RUN** on new SHA. Keep PR #21 Draft and experimental GPU ICB disabled by default.

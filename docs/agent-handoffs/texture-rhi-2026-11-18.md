@@ -12510,3 +12510,32 @@ stress and LRU/streaming churn, GPU timestamps/
 FPS. Existing high-risk experimental Metal GPU
 ICB flags are still default OFF and PR #21
 remains Draft until intentionally approved.
+
+## Stage 10CK — opt-in explicit-gradient virtual-texture atlas sampling (2026-11-19)
+
+**Source SHA:** `ee63acda3a4eb9d4977aab717ccbe5ccfa8b75a4`.
+**Branch:** `feature/texture-rhi-unification`. **PR:** #21 Draft; no main merge.
+**Source changes:**
+- `engine/gfx/VirtualTextureSampling.h`: both canonical embedded GLSL 330/GLES 300 and Metal shader snippets now retain an `AiverseVirtualPage.gradientScale` computed from the fallback resident mip and the physical gutter inset. This maps original virtual UV derivatives to continuous physical atlas UV derivatives, avoiding implicit derivative spikes when the chosen virtual page/slice changes.
+- New **opt-in** overloads `aiverseSampleVirtualGrad(..., uvDx, uvDy, addressU, addressV)` / `aiverse_sample_virtual_grad(..., uvDx, uvDy, addressU, addressV)` and corresponding clamp-mode convenience overloads, with explicit derivative orientation for ClampToEdge (zero outside [0,1]), Repeat, and MirrorRepeat (negated derivative on alternate periods). Return the provided fallback color for invalid/unresident table entries. Caller passes original pre-wrap virtual UV gradients, not derivatives of `fract` or page-local atlas UV.
+- Existing `aiverseSampleVirtual` / `aiverse_sample_virtual` entrypoints are unchanged; consuming shaders must explicitly opt in after backend verification.
+- `tests/render/check_virtual_texture_sampling_shaders.py` now compiles references to **both** new addressed and legacy clamp-style gradient overloads in its generated real production GLSL and MSL fragments. It continues to fail when requested toolchains are absent.
+
+**Important scope limits:** This stage addresses virtual-page discontinuity in derivative *mapping*, not full virtual-mip trilinear blending. The physical atlas descriptor currently allocates exactly **one mip per physical slice**, so real authored physical mip chains and anisotropic footprint/gutter fidelity need a subsequent RHI/runtime stage. This stage does not alter the page-table encoding, residency transition, streamer, material graph bindings, or the default sampler behavior. Use sufficiently populated gutters for footprints; no cross-mip or neighbor-page filtering guarantee yet. GLSL and MSL function availability must be verified on real compilers before activation. In particular, `textureGrad` sampler2DArray and Metal `gradient2d<float>` are currently source assumptions.
+
+**Actual verification:** Source anchor uniqueness and two shader raw-string block presence checked during write, followed by GitHub API commit success. **NOT RUN on this source SHA:** glslangValidator, xcrun/Metal, C++, CMake/CTest, Mac GPU pixels, Vulkan, GL33/GLES3, WebGL2, iOS/Android. Never inherit the previous 21+7 Mac GPU PASS (tested on SHA `7494f32d`) as verification of this new code.
+
+**Next stage:**
+1. On the isolated Mac verification worktree, pull from `feature/texture-rhi-unification` and run `bash tools/texture-rhi-final-verify.sh --jobs 4 --full-engine`. Require `acceptance.txt` to state `full_engine=1`, `result=PASS`, and inspect the new `virtual_texture_sampling_msl` compiler probe; fix any actual MSL compiler diagnostic first. Linux texture CI must pass `virtual_texture_sampling_glsl` for GL330 and GLES300.
+2. Add **real rendered** pixel-readback cases: affine/sheared UVs, mirror-repeat and mixed-address seams, nonuniform resident mip vs coarse fallback, and gradient LOD/aniso; compare explicit-grad to a CPU sampling reference. Build a second physical-page mip path and a genuine virtual coarse/fine transition representation before claiming trilinear support. Keep per-material source texture slot limits and sample fallback parity.
+3. Keep GPU ICB experimental flags default OFF. PR #21 remains Draft until full-engine and cross-backend acceptance. Append another exact source SHA, actual test outputs, and next action after each stage.
+
+**Reproduce from the user's Mac Studio without disturbing the primary unfinished rebase:**
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+bash -n tools/texture-rhi-final-verify.sh
+bash tools/texture-rhi-final-verify.sh --jobs 4 --full-engine
+```
