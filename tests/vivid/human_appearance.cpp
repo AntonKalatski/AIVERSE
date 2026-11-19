@@ -172,6 +172,13 @@ void test() {
         expect(groom.setCollisionMesh(verts,indices),
                "closed imported groom collider rejected");
         expect(groom.hasCollisionMesh(),"groom collider was not retained");
+        expect(groom.attachRootsToCollisionMesh(),
+               "closed scalp proxy failed to bind groom roots");
+        for(const auto& guide:groom.guides())
+            expect(std::max({std::fabs(guide.root.x),
+                             std::fabs(guide.root.y),
+                             std::fabs(guide.root.z)})>=1.399f,
+                   "groom root remained inside imported scalp proxy");
         const std::array<std::uint32_t,3> bad{0,0,1};
         expect(!groom.setCollisionMesh(verts,bad) && groom.hasCollisionMesh(),
                "invalid collider replaced last-good imported geometry");
