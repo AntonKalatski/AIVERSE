@@ -463,6 +463,25 @@ void check() {
             stitched.meshes[0].materialBatches.empty() &&
             !stitched.meshes[0].primitives[1].shadowBatched,
             "legacy morph repack or stale batch invalidation failed");
+        // Invalid legacy atlas layout must reject the entire operation
+        // without changing either Model or CSR content.
+        auto corrupt=stitched;
+        auto corruptFacial=facial;
+        // Re-create a fresh shared-vertex conflict from the existing
+        // clone by making the second primitive read original IDs again.
+        corrupt.indices[3]=0;
+        corrupt.indices[4]=1;
+        corrupt.indices[5]=2;
+        corrupt.meshes[0].primitives[1].morphDeltas.pop_back();
+        const auto beforeVertexCount=corrupt.vertices.size();
+        const auto beforeMorphCount=corruptFacial.vertices();
+        bool legacyRejected=false;
+        try {(void)SkinSeamSplit::apply(corrupt,corruptFacial);}
+        catch(const std::invalid_argument&){legacyRejected=true;}
+        req(legacyRejected && corrupt.vertices.size()==beforeVertexCount &&
+            corruptFacial.vertices()==beforeMorphCount &&
+            corrupt.indices[3]==0,
+            "invalid legacy morph atlas did not preserve transactional input");
         const auto range=facial.gpuRanges()[0];
         req(range.count==2 && facial.gpuDeltas()[range.first].vertex==0 &&
             facial.gpuDeltas()[range.first+1].vertex==3,
