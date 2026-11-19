@@ -5931,3 +5931,27 @@ compile, CTest, shader validation or GPU run, per user's
 functionality-first instruction.
 Next: implement material-aware alpha-mask and LOD feedback
 pipeline variants and Terra integration; close backend gaps.
+
+
+## Stage 9P — explicit alpha-masked model feedback pipeline (2026-11-19)
+
+Source commit: 0d2464cbf3adc0d66517e7f0acdff95ec79351c6.
+Changed file: engine/render/Renderer3D.h.
+Added setVirtualTextureMaskedModelFeedback(pipeline,binder) and
+clearVirtualTextureMaskedModelFeedback(). The ModelItem feedback
+loop selects opaque or masked pipeline and binder according to
+Material::alpha. Masked items are skipped if no masked pipeline
+and binder are installed; blended and flagged transparent
+materials remain excluded. Masked binder MUST supply the same
+alpha texture, alphaCutoff, UV transform, and discard behavior
+as the main scene shader. clearVirtualTextureModelFeedback()
+now clears the masked configuration as well.
+
+This is a material-aware routing feature, not a new alpha
+shader implementation or validated rendering parity. LOD
+crossfades, skinned/baked/morph models and Terra auto-registration
+remain outstanding. No changes to backend RHI.
+Verification: GitHub commit succeeded. No native compilation,
+CTest, GLSL/MSL compilation or GPU tests run, per user request.
+Next: implement alpha-mask feedback shader variant, LOD fade
+and deforming model support; wire Terra feedback producers.
