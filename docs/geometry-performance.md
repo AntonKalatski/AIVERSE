@@ -1169,3 +1169,26 @@ not be added together. Thresholds are compile-time conservative
 heuristics, not guaranteed CPU frame-time budgets and do not control
 batch admission. **CMake/CTest, GPU raster parity, real device tests
 and fixed-scene CPU/GPU A/B/A NOT RUN** under feature-first direction.
+
+### Vulkan GPU-fenced indirect failure handling validation (2026-11-19)
+
+A source audit of Stage 27/28 found that `VulkanDevice::writableVersion`
+could return the *old current version* when an allocation for a new
+dynamic version failed. Its caller would then memcpy new indirect
+commands over a still-in-flight VkBuffer, breaking the central
+per-submission GPU lifetime invariant. The allocator now returns a
+nullable pointer and refuses that unsafe fallback. The normal
+`updateBuffer` path selects a safe destination **before** writing
+the CPU shadow, leaving both unchanged on allocation failure.
+Dynamic growth and immutable→dynamic growth also allocate a new
+buffer first and only retire the previous VkBuffers after successful
+allocation; failed growth preserves existing versions and metadata.
+These changes do **not** introduce a new GPU command path or weaken
+serial/fence versioning.
+
+`tests/render/model_batching_policy.cpp` gains CPU-only assertions
+for rank/bucket preflight, generation invalidation, bounded group
+selection and `gfx::bufferUpdateCounterDelta` / accumulator behavior.
+An actual Vulkan allocation-failure regression requires a separately
+instrumented/fault-injecting Vulkan device; these CPU tests do not
+simulate GPU OOM or certify Metal image parity.

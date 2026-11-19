@@ -1013,3 +1013,27 @@ Inspected live branch `Renderer3D.h`, `Renderer3DModels.cpp`, Studio UI, agent d
 ### Next exact action
 
 Prefer moving to validation soon: reconcile stale policy tests from Stages 10/11/13, add CPU-only summaries for P50 (N=1, 29, 30, 120), stable-high/no-spike, rare spike-only/no-sustained, both classifications, dominant ties, share=0.15 boundary, empty total, ring wrap/scene reset and no-profile operation. Run full CMake/CTest and owner Metal/Vulkan fixed-view raster comparisons, then measured CPU/GPU balanced A/B/A before enabling/merging. If features continue first, consider configurable (non-mutating) diagnostic thresholds or an exportable per-view CPU report, but do not add more render-path work without measurements.
+
+---
+
+## Validation & safety stage — Vulkan in-flight allocation failure and CPU policy regression coverage (2026-11-19)
+
+**Repo:** `chromealex/AIVERSE`, branch `perf/incremental-static-model-cache`, PR #34 Draft. Before change `main=9ee6ff6fbf390bd45363bc92c838f492dfe92eee`, feature HEAD `9f4e85f449c4d9e4760cac29a09dea4813d71599`, `behind=0`. User explicitly approved transitioning from feature implementation to validation/fixes.
+
+### Concrete problem found
+
+In `engine/gfx/vulkan/VkResources.cpp`, `writableVersion(VBuffer&,keepContents)` returned a reference to the previous **in-flight** version if `createBufferObject` failed, so `updateBuffer` could overwrite an earlier frame's indirect command data on OOM. The CPU shadow was also modified **before** the safe version selection; on failure its contents would contradict the last GPU upload. The immutable→dynamic and dynamic growth paths retired previous versions before securing a replacement. These are correctness/robustness hazards independent of any claimed performance benefit.
+
+### Changes, API, files
+
+- `engine/gfx/vulkan/VkDevice.h` and `VkResources.cpp`: `writableVersion` now returns `VBuffer::Version*` or `nullptr`, creating a new version only when no completed version is reusable. On allocation failure, the caller skips the entire CPU-shadow and mapped update rather than overwriting an in-flight allocation. CPU shadow is updated only *after* a safe version has been selected, while `keepContents` still copies the prior shadow before the new write. Immutable→dynamic growth and dynamic growth allocate the new buffer before retiring old versions, so failed allocations leave the old buffer valid. Existing GPU serial/fence tracking, ABI, RHI virtual methods, and command ordering remain.
+- `tests/render/model_batching_policy.cpp`: adds `verifyIncrementalBatchingWorkspaceAndRhiCounters` CPU regression cases for Stage 21–24 exact group keys, mixed-model opportunity, permitted rank ordering, deterministic bucketization and its no-mutation-on-failure contract, stale group/mode generation invalidation, workspace release, Stage 27 default-OFF `discardOnUpdate`, and Stage 28/29 monotonic delta/accumulation, shadow/mapped/preserved/compared/skip bytes and never-added retained-capacity gauges. Uses the already configured `model_batching_policy` CTest target; no CMake target changes needed.
+- `docs/geometry-performance.md`, `AGENTS.md`, this handoff document the failure and requirements.
+
+### Actual verification / limits
+
+GitHub connector read working source, inspected the CI workflow and found GitHub Actions for PR #34 **queued/pending**, not completed. Local environment has CMake/Clang/GCC but no AIVERSE checkout and DNS cannot reach GitHub; therefore a full native build/CTest/Metal run cannot be executed locally. Source replacements are exact and should be re-read after commit. **Full native CMake: NOT RUN. Focused test binary: NOT RUN at time of commit. Metal/Vulkan device raster parity: NOT RUN.** Never represent these tests as passed merely because they were added. The remote CI may subsequently execute them when the runner becomes available.
+
+### Next
+
+Inspect the latest PR #34 CI `model-policy` + Linux/macOS editor jobs as they actually complete. Fix any compiler diagnostics and test failures on the branch with an additional handoff entry and re-run validation. Later add a fault-injection test for Vulkan failed buffer allocation, Metal in-flight snapshot reuse and an actual renderer-backed 120-sample mean/P50/P95/spike classification test; then owner Metal/Vulkan OFF/ON raster parity and same-camera GPU/CPU benchmark. Leave PR Draft until proven.

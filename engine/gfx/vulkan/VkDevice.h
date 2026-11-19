@@ -163,7 +163,9 @@ private:
     // VkResources.cpp
     bool createBufferObject(size_t size, VkBufferUsageFlags usage, bool host, VkBuffer& buf, Allocation& alloc);
     VkBufferUsageFlags bufferUsage(BufferType t) const;
-    VBuffer::Version& writableVersion(VBuffer& b, bool keepContents);
+    // Null on allocation failure. Never return an in-flight version as a
+    // fallback: writing it corrupts commands already submitted to the GPU.
+    VBuffer::Version* writableVersion(VBuffer& b, bool keepContents);
     VkBuffer resolveBuffer(uint32_t id, uint64_t serialUse);
     bool createImage(VTexture& t, VkImageUsageFlags usage);
     VkSampler samplerFor(const TextureDesc& d, const VTexture& t);

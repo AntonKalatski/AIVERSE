@@ -1499,3 +1499,17 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
   `docs/agent-handoffs/unified-test-runner.md` **after every stage**, in
   addition to the active feature handoff and existing agent update rules.
 
+
+## Validation follow-up for CPU MDI GPU safety (2026-11-19)
+
+The Vulkan `writableVersion` API now returns `nullptr` when a
+new GPU-safe version could not be allocated, **never** a writable
+reference to an in-flight VkBuffer. `updateBuffer` must select a
+safe destination BEFORE modifying its CPU shadow, and transactional
+growth must preserve the old allocations on failure. Do not revert
+to overwriting the previous serial's memory to avoid an OOM. Existing
+`tests/render/model_batching_policy.cpp` now exercises Stage 21–24
+preflight rank/bucket/generation behavior and Stage 28–29 monotonic
+RHI buffer stats; these are CPU tests, not Metal/Vulkan GPU validation.
+CI results must be reported only when the corresponding workflow run
+actually completes, not inferred from test source or staging.

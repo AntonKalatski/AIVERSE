@@ -9,6 +9,7 @@
 #include "engine/render/GpuSceneDrawCommands.h"
 #include "engine/render/GpuIcbPolicy.h"
 #include "engine/render/StaticModelCachePolicy.h"
+#include "engine/render/StaticCrossModelBatchPolicy.h"
 #include "engine/render/ModelLodTransition.h"
 #include "engine/render/EcsStaticModelRender.h"
 #include "engine/render/ModelShaders.h"
@@ -176,8 +177,117 @@ static Model pooledFixture(float dx) {
 }
 
 
+
+static void verifyIncrementalBatchingWorkspaceAndRhiCounters() {
+    // Stage 21-24: current-pass exact page/material grouping, epoch-safe
+    // membership, and deterministic bucket sorting of the admitted prefix.
+    StaticCrossModelPreflightWorkspace workspace;
+    workspace.beginPass(10);
+    const StaticCrossModelPreflightKey high{nullptr, 20u, 3u, 17u, 19u};
+    const StaticCrossModelPreflightKey low{nullptr, 10u, 3u, 17u, 19u};
+    const uint16_t highGroup = workspace.findOrCreate(high);
+    const uint16_t lowGroup = workspace.findOrCreate(low);
+    CHECK(highGroup != StaticCrossModelPreflightWorkspace::kInvalidGroup);
+    CHECK(lowGroup != StaticCrossModelPreflightWorkspace::kInvalidGroup);
+    CHECK(highGroup != lowGroup);
+    CHECK(workspace.findOrCreate(high) == highGroup);
+    Model first, second;
+    Primitive primitiveA, primitiveB;
+    auto& admitted = workspace.groups()[highGroup].group;
+    admitted.observe(&first, &primitiveA, 2);
+    admitted.observe(&second, &primitiveB, 2);
+    CHECK(admitted.opportunity(2, 16));
+    admitted.ready = true;
+    admitted.permitted = true;
+    auto& earlier = workspace.groups()[lowGroup].group;
+    earlier.ready = earlier.permitted = true;
+    for (uint32_t index = 1; index <= 4; ++index) {
+        workspace.rememberItem(index, index <= 2 ? highGroup : lowGroup);
+    }
+    workspace.activateModes(10);
+    for (uint32_t index = 1; index <= 4; ++index)
+        workspace.rememberMode(index, 1);
+    CHECK(workspace.modeOf(1) == 1);
+    CHECK(workspace.modeOf(5) == 0);
+    CHECK(workspace.prepareSortRanks() == 2);
+    CHECK(workspace.sortRankForPermittedItem(3) <
+          workspace.sortRankForPermittedItem(1));
+    std::vector<uint32_t> order{4, 1, 3, 2, 8};
+    CHECK(workspace.bucketizePermittedPrefix(
+        order, 4, [](uint32_t a, uint32_t b) { return a < b; }));
+    const std::vector<uint32_t> expected{3, 4, 1, 2, 8};
+    CHECK(order == expected);
+    // Invalid prefix does not corrupt the caller's ordering.
+    std::vector<uint32_t> invalid{5, 1, 2};
+    const auto unchanged = invalid;
+    CHECK(!workspace.bucketizePermittedPrefix(
+        invalid, 3, [](uint32_t a, uint32_t b) { return a < b; }));
+    CHECK(invalid == unchanged);
+    workspace.beginPass(10);
+    CHECK(workspace.groupForItem(1) ==
+          StaticCrossModelPreflightWorkspace::kInvalidGroup);
+    CHECK(workspace.modeOf(1) == 0);
+    workspace.activateModes(10);
+    CHECK(workspace.modeOf(1) == 0);
+    workspace.clearModes();
+    CHECK(workspace.modeOf(1) == 0);
+    workspace.release();
+    CHECK(workspace.retainedBytes() == 0);
+
+    // Stage 28-29: counter differences are monotonic and retained-capacity
+    // gauges are deliberately not added to per-pass transfer deltas.
+    aiverse::gfx::BufferDesc desc{};
+    CHECK(!desc.discardOnUpdate);
+    aiverse::gfx::BufferUpdateStats before{};
+    before.available = true;
+    before.updateCalls = 2;
+    before.requestedBytes = 160;
+    before.mappedWriteBytes = 192;
+    before.cpuShadowWriteBytes = 40;
+    before.comparedBytes = 80;
+    before.skippedWriteBytes = 20;
+    before.preservedBytes = 32;
+    before.allocations = 3;
+    before.reused = 4;
+    before.retainedBufferBytes = 4096;
+    auto after = before;
+    ++after.updateCalls;
+    after.requestedBytes += 80;
+    after.mappedWriteBytes += 64;
+    after.cpuShadowWriteBytes += 80;
+    after.comparedBytes += 80;
+    after.skippedWriteBytes += 16;
+    after.preservedBytes += 8;
+    after.allocations += 1;
+    after.reused += 2;
+    after.retainedBufferBytes = 8192;
+    const auto delta = aiverse::gfx::bufferUpdateCounterDelta(before, after);
+    CHECK(delta.available && delta.updateCalls == 1);
+    CHECK(delta.requestedBytes == 80);
+    CHECK(delta.mappedWriteBytes == 64);
+    CHECK(delta.cpuShadowWriteBytes == 80);
+    CHECK(delta.comparedBytes == 80);
+    CHECK(delta.skippedWriteBytes == 16);
+    CHECK(delta.preservedBytes == 8);
+    CHECK(delta.allocations == 1 && delta.reused == 2);
+    CHECK(delta.retainedBufferBytes == 0 && delta.retainedCpuShadowBytes == 0);
+    aiverse::gfx::BufferUpdateStats sum{};
+    aiverse::gfx::accumulateBufferUpdateCounters(sum, delta);
+    aiverse::gfx::accumulateBufferUpdateCounters(sum, delta);
+    CHECK(sum.available && sum.updateCalls == 2);
+    CHECK(sum.mappedWriteBytes == 128 && sum.allocations == 2);
+    CHECK(sum.retainedBufferBytes == 0);
+    auto reset = after;
+    reset.updateCalls = 0;
+    CHECK(!aiverse::gfx::bufferUpdateCounterDelta(after, reset).available);
+    CHECK(!aiverse::gfx::bufferUpdateCounterDelta(before, {}).available);
+    const auto initiallyCreated = aiverse::gfx::bufferUpdateCounterDelta({}, after);
+    CHECK(initiallyCreated.available && initiallyCreated.allocations == after.allocations);
+}
+
 int main() {
     verifyVehiclePartsRemainIndependent();
+    verifyIncrementalBatchingWorkspaceAndRhiCounters();
     Model m;
     m.materials.resize(1);
     constexpr int kNodes = 5;

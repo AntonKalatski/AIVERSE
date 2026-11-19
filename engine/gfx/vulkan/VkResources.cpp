@@ -205,16 +205,24 @@ BufferHandle VulkanDevice::createBuffer(const BufferDesc& d) {
     return {buffers_.add(std::move(b))};
 }
 
-VBuffer::Version& VulkanDevice::writableVersion(VBuffer& b, bool keepContents) {
+VBuffer::Version* VulkanDevice::writableVersion(VBuffer& b, bool keepContents) {
     VBuffer::Version& cur = b.versions[size_t(b.current)];
-    if (cur.usedSerial < serial_ && cur.usedSerial <= completed_) return cur;   // the GPU is done with it, write in place
+    if (cur.usedSerial < serial_ && cur.usedSerial <= completed_) return &cur; // completed version
+    bool foundReusable = false;
     for (size_t i = 0; i < b.versions.size(); ++i) {
-        auto& v = b.versions[i];
-        if (int(i) != b.current && v.usedSerial <= completed_) { b.current = int(i); break; }
+        const auto& v = b.versions[i];
+        if (int(i) != b.current && v.usedSerial <= completed_) {
+            b.current = int(i);
+            foundReusable = true;
+            break;
+        }
     }
-    if (&b.versions[size_t(b.current)] == &cur) {
+    if (!foundReusable) {
         VBuffer::Version v;
-        if (!createBufferObject(b.size, bufferUsage(b.type), true, v.buffer, v.alloc)) return cur;
+        // An allocation failure must never fall back to the in-flight
+        // current version. Keep the previous serial/handle untouched.
+        if (!createBufferObject(b.size, bufferUsage(b.type), true, v.buffer, v.alloc))
+            return nullptr;
         b.versions.push_back(v);
         b.current = int(b.versions.size() - 1);
     }
@@ -226,21 +234,28 @@ VBuffer::Version& VulkanDevice::writableVersion(VBuffer& b, bool keepContents) {
             b.transferStats.preservedBytes += b.size;
         }
     }
-    return next;
+    return &next;
 }
 
 void VulkanDevice::updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset) {
     VBuffer* b = buffers_.get(h.id);
     if (!b || size == 0) return;
     if (!b->host) {
-        if (offset + size > b->size) {   // growth makes it a host buffer (old contents are gone, as GL's glBufferData)
-            for (auto& v : b->versions) { VkBuffer buf = v.buffer; Allocation a = v.alloc; deferDestroy([this, buf, a]() mutable { vkDestroyBuffer(device_, buf, nullptr); memory_.release(a); }); }
+        if (offset + size > b->size) {   // immutable->dynamic growth
+            const size_t capacity = (offset + size) * 3 / 2;
+            VBuffer::Version v;
+            if (!createBufferObject(capacity, bufferUsage(b->type), true, v.buffer, v.alloc))
+                return; // preserve existing immutable version on failure
+            for (auto& old : b->versions) {
+                VkBuffer buf = old.buffer; Allocation a = old.alloc;
+                deferDestroy([this, buf, a]() mutable {
+                    vkDestroyBuffer(device_, buf, nullptr); memory_.release(a);
+                });
+            }
             b->versions.clear();
             b->host = true;
-            b->size = (offset + size) * 3 / 2;
-            b->shadow.assign(b->size, 0);
-            VBuffer::Version v;
-            if (!createBufferObject(b->size, bufferUsage(b->type), true, v.buffer, v.alloc)) return;
+            b->size = capacity;
+            b->shadow.assign(capacity, 0);
             b->versions.push_back(v);
             b->current = 0;
         } else {   // immutable buffer: staged copy in queue order
@@ -258,40 +273,50 @@ void VulkanDevice::updateBuffer(BufferHandle h, const void* data, size_t size, s
             return;
         }
     }
-    if (offset + size > b->size) {   // grow: GL orphans the storage, keep the bytes anyway
-        b->size = (offset + size) * 3 / 2;
-        b->shadow.resize(b->size, 0);
-        for (auto& v : b->versions) { VkBuffer buf = v.buffer; Allocation a = v.alloc; deferDestroy([this, buf, a]() mutable { vkDestroyBuffer(device_, buf, nullptr); memory_.release(a); }); }
-        b->versions.clear();
+    if (offset + size > b->size) {   // grow: old GPU versions may still be in flight
+        const size_t capacity = (offset + size) * 3 / 2;
         VBuffer::Version v;
-        if (!createBufferObject(b->size, bufferUsage(b->type), true, v.buffer, v.alloc)) return;
-        b->versions.push_back(v);
-        b->current = 0;
+        // Stage the replacement before touching the old versions or shadow:
+        // failed growth preserves the prior drawable buffer and CPU mirror.
+        if (!createBufferObject(capacity, bufferUsage(b->type), true, v.buffer, v.alloc))
+            return;
+        b->shadow.resize(capacity, 0);
         std::memcpy(b->shadow.data() + offset, data, size);
-        if (b->discardOnUpdate && offset == 0)
+        const bool discardPrefix = b->discardOnUpdate && offset == 0;
+        if (discardPrefix)
             std::memcpy(v.alloc.mapped, data, size);
         else
-            std::memcpy(v.alloc.mapped, b->shadow.data(), b->size);
+            std::memcpy(v.alloc.mapped, b->shadow.data(), capacity);
+        for (auto& old : b->versions) {
+            VkBuffer buf = old.buffer; Allocation a = old.alloc;
+            deferDestroy([this, buf, a]() mutable {
+                vkDestroyBuffer(device_, buf, nullptr); memory_.release(a);
+            });
+        }
+        b->versions.clear();
+        b->versions.push_back(v);
+        b->current = 0;
+        b->size = capacity;
         if (b->transferStats.available) {
             ++b->transferStats.updateCalls;
             b->transferStats.requestedBytes += size;
             b->transferStats.cpuShadowWriteBytes += size;
-            b->transferStats.mappedWriteBytes +=
-                (b->discardOnUpdate && offset == 0) ? size : b->size;
+            b->transferStats.mappedWriteBytes += discardPrefix ? size : capacity;
             ++b->transferStats.allocations;
         }
         return;
     }
-    std::memcpy(b->shadow.data() + offset, data, size);
-    if (b->transferStats.available) b->transferStats.cpuShadowWriteBytes += size;
-    // The model indirect buffer reads only the newly written prefix.
-    // When a new GPU-safe version is needed, do not first copy an unused
-    // shadow tail. Writable-version fencing and serials are unchanged.
+    // Select or allocate a GPU-fence-safe destination FIRST. Do not
+    // mutate the shadow or a version that is still in flight when a new
+    // version allocation fails. Preserved bytes use the previous shadow.
     const bool whole = offset == 0 &&
         (b->discardOnUpdate || size >= b->size);
     const size_t versionCountBefore = b->versions.size();
-    VBuffer::Version& v = writableVersion(*b, !whole);
-    std::memcpy(static_cast<uint8_t*>(v.alloc.mapped) + offset, data, size);
+    VBuffer::Version* v = writableVersion(*b, !whole);
+    if (!v) return;
+    std::memcpy(b->shadow.data() + offset, data, size);
+    if (b->transferStats.available) b->transferStats.cpuShadowWriteBytes += size;
+    std::memcpy(static_cast<uint8_t*>(v->alloc.mapped) + offset, data, size);
     if (b->transferStats.available) {
         ++b->transferStats.updateCalls;
         b->transferStats.requestedBytes += size;
