@@ -1466,3 +1466,24 @@ Do not merge PR #21 or enable experimental Metal ICB in production.
 Remaining: nonuniform page-edge gutters with bilinear filtering,
 cross-platform Vulkan/GL/mobile and WebGL, shader counts 0–4,
 stress and real GPU frame-time benchmarks.
+
+## Stage 10BZ — native Clang name collision corrected (retest pending)
+
+The first Stage 10BY macOS build failed at four
+`metal_renderer_graph_vt_seam_gpu.cpp` call sites because a
+fixture helper named `detail` collided with namespace
+`aiverse::detail` from `Fixed.h` through
+`using namespace aiverse`.
+Source commit `8fe7265f2124539a36e388255acd1d9fc5ee3887`
+renamed the helper and all invocations to `finePageKey`,
+preserving the virtual page tuple (0,3,1,side).
+See `docs/texture-rhi.md` Stage 10BZ and append-only
+`docs/agent-handoffs/texture-rhi-2026-11-18.md`.
+
+The source fix is committed, but the new test has **not**
+been compiled or run successfully yet. The previous
+Stage 10BX PASS is a different GPU test. In the isolated
+Mac Studio texture worktree, pull the latest branch, then
+build the seam target with `set -euo pipefail` before CTest.
+Do not report Stage 10BY hardware PASS without the actual
+missing-page and Repeat/MirrorRepeat oracle output.
