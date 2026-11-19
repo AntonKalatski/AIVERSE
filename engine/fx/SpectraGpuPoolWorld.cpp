@@ -488,8 +488,10 @@ bool GpuPoolWorld::beginPresentationFrame(const render::RTSCamera& camera,
     frameOpen_=true;stepped_=drawn_=false;
     stats_.frameBursts=stats_.gpuDrawCalls=stats_.cpuDrawCalls=0;
     cpu_.setView(camera,viewProj,width,height);
-    for(auto& group:gpuGroups_)
+    for(auto& group:gpuGroups_) {
+        group.stepOk=false;
         group.particles->setView(camera,viewProj,width,height);
+    }
     reason_.clear();
     return true;
 }
@@ -596,7 +598,8 @@ bool GpuPoolWorld::step(float dt) {
     if(groupCount)nextGroupStart_=(first+1)%groupCount;
     for(size_t j=0;j<groupCount;++j) {
         auto& group=gpuGroups_[(first+j)%groupCount];
-        if(!group.particles->step(dt)) {
+        group.stepOk=group.particles->step(dt);
+        if(!group.stepOk) {
             allOk=false;
             reason_="GPU pool group step: "+group.particles->reason();
         }
@@ -619,6 +622,7 @@ void GpuPoolWorld::draw(const fx::FxFog& fog) {
     stats_.cpuDrawCalls=uint32_t(cpu_.stats().drawCalls);
     stats_.gpuDrawCalls=0;
     for(auto& group:gpuGroups_) {
+        if(!group.stepOk)continue; // never replay stale last-frame vertices
         group.particles->draw(fog);
         stats_.gpuDrawCalls+=group.particles->stats().drawCalls;
     }
