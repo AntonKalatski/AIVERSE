@@ -173,8 +173,10 @@ inline const char* kDepthOfField = R"(
 // p0.y = centerRadius (relative normalized image coordinates)
 // p0.z = opt-in bright-outlier rejection (0 = legacy highlight weights)
 // p0.w = weight OUTSIDE optional region, clamped to >= .02
-// region = (screen center X, screen center Y, radius, feather);
+// region = (screen center X, screen center Y, circle radius, feather);
 //          negative radius disables region and reproduces legacy meter.
+// regionBox = (half width fraction of frame width, half height fraction
+//              of frame height, use box shape, reserved).
 // sun.xy = min/max metering log2 luminance clamps
 // sun.zw = bright-outlier start log2 L and smooth transition width in stops.
 // Later reduction preserves numerator/denominator rather than averaging
@@ -222,13 +224,31 @@ inline const char* kExposureLog = R"(
         float aspect = px.y / max(px.x,0.000001);
         vec2 ar = vec2(aspect,1.0);
         vec2 rc = region.xy;
-        vec4 distance = vec4(length((TUV(q0)-rc)*ar),
-                             length((TUV(q1)-rc)*ar),
-                             length((TUV(q2)-rc)*ar),
-                             length((TUV(q3)-rc)*ar));
-        vec4 inside = vec4(1.0) -
-            smoothstep(vec4(region.z),
-                       vec4(region.z+max(region.w,0.001)),distance);
+        vec4 inside;
+        if (regionBox.z > 0.5) {
+            // Signed distance from a rectangle in normalized frame-height
+            // units; half width is authored relative to viewport WIDTH.
+            vec2 halfSize = max(regionBox.xy,vec2(0.01));
+            vec2 b0 = abs(TUV(q0)-rc)-halfSize;
+            vec2 b1 = abs(TUV(q1)-rc)-halfSize;
+            vec2 b2 = abs(TUV(q2)-rc)-halfSize;
+            vec2 b3 = abs(TUV(q3)-rc)-halfSize;
+            vec4 signedDistance = vec4(max(b0.x*aspect,b0.y),
+                                       max(b1.x*aspect,b1.y),
+                                       max(b2.x*aspect,b2.y),
+                                       max(b3.x*aspect,b3.y));
+            inside = vec4(1.0) -
+                smoothstep(vec4(0.0),
+                           vec4(max(region.w,0.001)),signedDistance);
+        } else {
+            vec4 distance = vec4(length((TUV(q0)-rc)*ar),
+                                 length((TUV(q1)-rc)*ar),
+                                 length((TUV(q2)-rc)*ar),
+                                 length((TUV(q3)-rc)*ar));
+            inside = vec4(1.0) -
+                smoothstep(vec4(region.z),
+                           vec4(region.z+max(region.w,0.001)),distance);
+        }
         weights *= mix(vec4(clamp(p0.w,0.02,1.0)),
                        vec4(1.0),inside);
     }
