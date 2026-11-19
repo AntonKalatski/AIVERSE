@@ -228,6 +228,12 @@ public:
                         }
                     } else ++stats.playbackDeclined;
                     player.restart=true;
+                    // The previous pose was evaluated for the OLD asset.
+                    // Invalidate it synchronously: even if the next animation
+                    // update is skipped (invalid dt, LOD budget or suspend),
+                    // no renderer can submit stale bone matrices.
+                    if(auto* pose=presentation.tryGet<AnimationPoseComponent>(entity))
+                        pose->valid=false;
                     if(auto* overlays=presentation.tryGet<AnimationMontageSlotsComponent>(entity)) {
                         overlays->players.clear();
                         overlays->events.clear();
