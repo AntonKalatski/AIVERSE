@@ -242,7 +242,12 @@ inline const char* kMotionBlur = R"(
     }
     vec3 sharp = TEX0(uv).rgb;
     vec3 blurred = weight > 0.0001 ? accum / weight : sharp;
-    RETURN(vec4(mix(sharp,blurred,p0.w),1.0));
+    // tex3 is the reactive coverage mask: R=0 unchanged, R=1 fully
+    // suppresses blur for the pixel when the configured strength is 1.
+    // This mask is current-frame only and never participates in history.
+    float reactive = clamp(TEX3(uv).r, 0.0, 1.0);
+    float strength = p0.w * (1.0 - reactive * clamp(sun.y, 0.0, 1.0));
+    RETURN(vec4(mix(sharp,blurred,strength),1.0));
 )";
 
 // FXAA (console-style, 5 taps + early out, 9 at most). px.xy = texel; p0.x = subpixel softening.
