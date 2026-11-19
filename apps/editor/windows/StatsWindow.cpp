@@ -121,12 +121,20 @@ public:
             double(rendererOwned.sceneCaptureKnownBytes) / mib,
             double(rendererOwned.objectMotionKnownBytes) / mib,
             double(rendererOwned.pendingMotionKnownBytes) / mib);
+        ImGui::TextDisabled("LightSystem %.2f MiB | persistent upload %.2f MiB | culling %.2f MiB | authored draws %.2f MiB",
+            double(rendererOwned.lightSystemKnownBytes) / mib,
+            double(rendererOwned.persistentUploadKnownBytes) / mib,
+            double(rendererOwned.persistentCullKnownBytes) / mib,
+            double(rendererOwned.gpuAuthoredKnownBytes) / mib);
+        ImGui::TextDisabled("GlobalGeometryPool %.2f MiB (%zu shared pages, counted separately from model handles)",
+            double(render::geometryPoolStats(ed.device()).allocatedBytes) / mib,
+            render::geometryPoolStats(ed.device()).pages);
         if (rendererOwned.unknownTextures || rendererOwned.unknownBuffers ||
             rendererOwned.multiVersionBuffers)
             ImGui::TextDisabled("Renderer unknown: %zu textures, %zu buffers; %zu multi-version buffer(s)",
                 rendererOwned.unknownTextures,rendererOwned.unknownBuffers,
                 rendererOwned.multiVersionBuffers);
-        ImGui::TextDisabled("Excludes externally owned models/materials, LightSystem, pools, driver overhead and Prisma resources.");
+        ImGui::TextDisabled("Renderer direct+subowners includes LightSystem/persistent pools; external models/materials, driver and Prisma excluded.");
         ImGui::Text("Hosted GameClient ожидают GPU: %zu  ·  ShaderGraph pools: %zu активных / %zu ожидают",
                     ed.clientHost().pendingRetiredClients(),
                     post.graphLiveTextures, post.graphRetiredTextures);
