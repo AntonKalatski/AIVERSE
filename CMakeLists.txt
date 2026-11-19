@@ -2224,6 +2224,10 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/check_virtual_texture_sampling_shaders.py"
                 --backend glsl)
+        add_test(NAME virtual_texture_sampling_vulkan_spirv
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/check_virtual_texture_sampling_shaders.py"
+                --backend vulkan)
     endif()
     if(APPLE AND Python3_Interpreter_FOUND)
         find_program(AIVERSE_XCRUN NAMES xcrun)
