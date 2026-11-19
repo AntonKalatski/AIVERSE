@@ -1830,13 +1830,17 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         put(u.px, 1.0f / float(w), 1.0f / float(h), flip, 0);
         put(u.p0, e->get("subpixel"), 0, 0, 0);
         const Target fxaaInput = src;
-        src = target(set, kAa, w, h);
+        const Target fxaaOutput = target(set, kAa, w, h);
+        // Do not substitute a failed/invalid render target as the next
+        // composite input. The previous scene remains the stable fallback.
+        if (fxaaInput.tex.valid() && fxaaOutput.tex.valid() &&
+            depthFor(set, w, h).valid()) {
         // Experimental Stage 14: only the SDR FXAA prepass uses the compiled
         // RenderGraph, with the same pipeline/uniforms/inputs as the fixed path.
         // Off by default; the fallback is kept for unsupported devices/errors.
         bool graphDrawn = false;
         const char* optIn = std::getenv("AIVERSE_PRISMA_GRAPH_FXAA");
-        if (optIn && std::strcmp(optIn, "1") == 0 && src.tex.valid()) {
+        if (optIn && std::strcmp(optIn, "1") == 0 && fxaaOutput.tex.valid()) {
             const gfx::TextureHandle aaDepth = depthFor(set, w, h);
             if (aaDepth.valid()) {
                 PrismaRenderGraph graph;
@@ -1856,7 +1860,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 // already exist in the same per-view Sized allocator.
                 if (!set.graphExecutor) set.graphExecutor = std::make_unique<PrismaRhiExecutor>(dev);
                     auto& executor = *set.graphExecutor;
-                std::vector<gfx::TextureHandle> external{fxaaInput.tex, src.tex};
+                std::vector<gfx::TextureHandle> external{fxaaInput.tex, fxaaOutput.tex};
                 const auto run = executor.execute(
                     graph, plan, external,
                     [&](gfx::Device& gpu, PrismaGraphId,
@@ -1881,9 +1885,11 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         }
         if (!graphDrawn) {
             const int before = stats_.passes;
-            draw(set, src, pipes_[kFxaa], &u, sizeof u, {{0, fxaaInput.tex}});
+            draw(set, fxaaOutput, pipes_[kFxaa], &u, sizeof u, {{0, fxaaInput.tex}});
             fxaaEncoded = stats_.passes > before;
         } else fxaaEncoded = true;
+        if (fxaaEncoded) src = fxaaOutput;
+        } // valid SDR FXAA attachments only
     }
 
     // ---- bloom: prefilter -> dual-filter down chain -> up chain
