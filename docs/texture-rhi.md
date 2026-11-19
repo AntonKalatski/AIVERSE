@@ -1324,3 +1324,32 @@ This is an opt-in **explicit node**, not automatic conversion of
 every Shader Graph texture input into virtual storage.
 Native C++ builds, MSL/GLSL compilers and GPU validation have
 not yet run for the new material graph path.
+
+
+## Per-axis virtual-texture address modes (Stage 10L, source only)
+
+`render::ModelVirtualTextureBinding` now exposes `addressU` and `addressV`
+using `gfx::SamplerAddressMode`. Defaults remain `ClampToEdge` on both axes
+for binary/source-compatible legacy material resolvers. `Repeat` and
+`MirrorRepeat` are supported independently along U/V in the shared GLSL/MSL
+virtual-page lookup; the original tex1 fallback continues to use its normal
+RHI sampler. The wrap policy is part of exact binding equality and the
+GPU batching hash to prevent mixing incompatible material groups.
+
+For repeat/mirror sampling, the archive must contain edge-safe gutters for
+tiles at wrapping boundaries and the source material's ordinary sampler must
+use the corresponding U/V modes. Updating only the virtual resolver without
+updating the texture sampler/packer does not guarantee filtering parity.
+`ClampToBorder` is intentionally rejected by `binding.valid()` because the
+current RGBA8 page-table shader cannot reproduce an arbitrary border colour.
+
+`ModelVirtualTextureUniforms` retains its existing 16-byte U6 layout:
+`(layer, gutterPixels, addressU, addressV)`. The existing five-argument
+lookup/six-argument sample shader helpers still compile as clamp-only wrappers;
+opt-in callers pass both address modes as the final arguments. Built-in and
+Shader Graph VT material variants now forward U6.zw, so wrap modes are honored
+without allocating additional sampler slots.
+
+**Validation:** source-level changes committed; C++/MSL/GLSL compilation,
+GL/Metal/Vulkan renders, wrap-boundary filtering parity, batch identity tests
+and GPU profiling remain **NOT RUN** in the current environment.
