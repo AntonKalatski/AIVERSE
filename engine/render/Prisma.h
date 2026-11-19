@@ -254,7 +254,7 @@ public:
     };
     struct ViewEffectReport {
         uint64_t viewId = 0;
-        uint64_t sequence = 0;      // increments on each resolve for this view
+        uint64_t sequence = 0;      // resolve count per view since last settings reset
         int width = 0, height = 0;
         PrismaQuality quality = PrismaQuality::Off;
         bool hdr = false, sceneReady = false;
