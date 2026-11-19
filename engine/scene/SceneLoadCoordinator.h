@@ -137,6 +137,14 @@ public:
     bool ready(SceneTicket ticket) const {
         return status(ticket) == SceneLoadStatus::Ready;
     }
+    // Read-only prepared manifest for host-only prewarming of dependencies.
+    // Invalidated by any mutating coordinator operation or rollback; never
+    // expose this pointer to a background worker or authoritative gameplay.
+    const SceneAsset* prepared(SceneTicket ticket) const {
+        const Job* job = lookup(ticket);
+        return job && job->status == SceneLoadStatus::Ready && job->manifest
+            ? &*job->manifest : nullptr;
+    }
 
     // Caller must be in a deterministic tick/structural barrier. In networked
     // games, the *command* to activate is canonical and all peers must be ready
