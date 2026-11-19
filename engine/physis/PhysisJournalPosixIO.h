@@ -76,8 +76,24 @@ inline bool read(int directory,const std::string& name,
         if(count<=0) {good=false;break;}
         offset+=static_cast<std::size_t>(count);
     }
+    // The opened fd can outlive its published pathname. Detect a rename,
+    // replacement or size mutation during the read before exposing bytes
+    // as an authoritative journal checkpoint.
+    struct stat finalFd{}, visible{};
+    if(good)good=::fstat(fd,&finalFd)==0 &&
+        ::fstatat(directory,name.c_str(),&visible,AT_SYMLINK_NOFOLLOW)==0 &&
+        S_ISREG(visible.st_mode) &&
+        finalFd.st_dev==state.st_dev &&
+        finalFd.st_ino==state.st_ino &&
+        finalFd.st_size==state.st_size &&
+        visible.st_dev==state.st_dev &&
+        visible.st_ino==state.st_ino &&
+        visible.st_nlink==1 &&
+        visible.st_uid==::geteuid() &&
+        (visible.st_mode & 0077)==0 &&
+        ownedDirectory(directory);
     if(::close(fd)!=0)good=false;
-    if(!good)return error(why,"PHYSIS pinned journal read failed");
+    if(!good)return error(why,"PHYSIS pinned journal read or path identity failed");
     output=std::move(candidate);
     if(why)why->clear();
     return true;
@@ -121,8 +137,8 @@ inline bool write(int directory,const std::string& name,
         (void)::unlinkat(directory,temporary.c_str(),0);
         return error(why,"PHYSIS pinned journal rename failed");
     }
-    if(::fsync(directory)!=0)
-        return error(why,"PHYSIS pinned journal directory fsync failed");
+    if(::fsync(directory)!=0 || !ownedDirectory(directory))
+        return error(why,"PHYSIS pinned journal directory fsync/ownership failed");
     if(why)why->clear();
     return true;
 }
