@@ -1391,3 +1391,31 @@ thread rebinding.
 **NOT RUN:** CMake/compiler/linker, CTest, real GPU
 streaming, Metal/GL/Vulkan visuals, sanitizer or CPU
 profiling. [Stage 131 handoff](agent-handoffs/animation-stage131-streaming-cache-read-regressions-2026-11-19.md).
+
+
+## Stage 138 — Model image/morph GPU upload admission contract
+
+`render::uploadModel` now checks the created handle of every dimensioned
+Model image in both shared and speculative GPU cache modes and rejects a
+failed morph texture allocation (RGBA32F). On a failed morph GPU create,
+CPU `Primitive::morphDeltas` remain available for diagnostic/retry. After
+successful upload, image, mesh and morph CPU arrays are released via
+allocation-free swaps rather than potentially throwing `shrink_to_fit`.
+
+`ModelTextureCache::upload` allocates a shared lease and map node before
+creating the device texture; it does not publish an invalid GPU texture.
+`addImage` reserves Model image-vector capacity before texture allocation
+and reports GPU upload failure as `-1`, not an apparently valid image index.
+
+This is a **boolean upload-result contract**, not an automatic GPU
+retirement policy for every native Model owner. Each host must handle
+`false` and any thrown GPU allocation without immediately destroying a
+Model that may hold in-flight GPU handles. The native synchronous RTS
+import now queues partial Models via `ModelResourceCache::retireUnpublished`;
+the Stage 136 asynchronous prepared publisher already does so.
+Other direct host upload call-sites require continued audit and completion.
+
+[Stage 138 handoff](agent-handoffs/animation-stage138-image-morph-gpu-admission-2026-11-19.md).
+**NOT RUN:** native compiler, CMake/CTest, Metal/GL/Vulkan, sanitizer,
+GPU-fence fault injection or perf/visual regressions. Tests will be run
+only after all remaining functionality is implemented as requested.
