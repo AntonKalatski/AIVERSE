@@ -201,9 +201,7 @@ bool Prisma::objectMotionContext(uint64_t& id, mat4& previous) const {
         effect->get("intensity") <= 0.0f || effect->get("maxPixels") <= 0.0f)
         return false;
     const auto found = motionViews_.find(viewId_);
-    if (found == motionViews_.end() || !found->second.valid ||
-        found->second.width != stats_.width ||
-        found->second.height != stats_.height)
+    if (found == motionViews_.end() || !found->second.valid)
         return false;
     previous = found->second.previousViewProj;
     return true;
