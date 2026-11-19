@@ -131,9 +131,20 @@ public:
     // BEFORE beginPresentationFrame / scene rendering. GPU checked reset
     // requires an active RHI command buffer. On false, do not replay visuals.
     // Host separately owns restoring the authoritative World snapshot.
+    // Schedule a VFX-only reset without attempting GPU work here.
+    // The host should call afterRollback() once Device.beginFrame opens a
+    // safe Metal command buffer and before opening its scene encoder.
+    bool queueVisualReset() {
+        if(frameOpen_)return false;
+        capture_.cancel();
+        return recovery_.requestPresentationReset("explicit visual rollback");
+    }
     bool afterRollback() {
         if(frameOpen_)return false;
         capture_.cancel(); // invalidate any old-device in-flight callback
+        if(!recovery_.hasQueuedReset() &&
+           !recovery_.requestPresentationReset("committed ECS tick rollback"))
+            return false;
         return recovery_.retryPresentationReset();
     }
 
@@ -162,11 +173,27 @@ public:
         if(frameOpen_)return false;
         return capture_.request(groupIndex);
     }
+    // Multi-group selection, still a single outstanding GPU readback.
+    bool queueNextGpuCheckpoint(
+        spectra::GpuCaptureTargetPolicy policy=
+            spectra::GpuCaptureTargetPolicy::RoundRobin) {
+        if(frameOpen_)return false;
+        return capture_.requestNext(policy);
+    }
     spectra::GpuCaptureStatus gpuCaptureStatus() const {
         return capture_.status();
     }
     bool takeGpuCheckpoint(std::vector<uint8_t>& bytes) {
-        return capture_.takeReady(bytes);
+        return capture_.takeReady(bytes); // explicit sensitive RAW .spfx bytes
+    }
+    bool takeSafeGpuDiagnosticReport(
+        std::string& json,spectra::GpuDiagnosticReportPrivacy privacy={}) {
+        std::vector<uint8_t> bytes;
+        if(!capture_.takeReady(bytes))return false;
+        const auto inspected=spectra::inspectGpuCheckpointDiagnostic(bytes);
+        if(!inspected.structurallyValid())return false;
+        json=spectra::gpuDiagnosticReportJson(inspected,privacy);
+        return true; // aggregate JSON; no raw VM or per-particle coordinates
     }
     void cancelGpuCheckpoint() {capture_.cancel();}
     // Legacy immediate export remains read-only and cannot request readback.
