@@ -100,6 +100,49 @@ public:
         return true;
     }
 
+    // Fractional world-centimetre Q16 sample at the exact near/far clipped
+    // vertex, using the SAME authored two-triangle diagonal as sample().
+    // The old integer API stays unchanged for gameplay/render callers.
+    // Weights are normalized to Q16 before multiplying 32-bit heights,
+    // keeping all interpolation arithmetic safely inside signed int64.
+    std::optional<int32_t> sampleQ16(int64_t xQ16cm,int64_t zQ16cm) const {
+        constexpr int64_t scale=65536;
+        const int64_t limit=kWorldLimitCm*scale;
+        if(xQ16cm < -limit || xQ16cm > limit ||
+           zQ16cm < -limit || zQ16cm > limit)
+            throw std::out_of_range("TerraWeave authored Q16 terrain extent");
+        // Preserve the exact integral-world-centimetre interpolation
+        // contract, including rounding of negative heights.
+        if(xQ16cm%scale==0 && zQ16cm%scale==0)
+            return sample(xQ16cm/scale,zQ16cm/scale);
+        const int64_t step=cellSizeCm_*scale;
+        const int64_t cx=detail::floorDiv(xQ16cm,step);
+        const int64_t cz=detail::floorDiv(zQ16cm,step);
+        const auto it=tiles_.find(world::Cell{
+            static_cast<int32_t>(cx),0,static_cast<int32_t>(cz)});
+        if(it==tiles_.end())return std::nullopt;
+        const auto& tile=it->second;
+        const int64_t localX=xQ16cm-cx*step;
+        const int64_t localZ=zQ16cm-cz*step;
+        const int64_t gx=localX*(tile.resolution-1);
+        const int64_t gz=localZ*(tile.resolution-1);
+        const size_t ix=static_cast<size_t>(gx/step);
+        const size_t iz=static_cast<size_t>(gz/step);
+        const int64_t fx=(gx%step)*scale/step;
+        const int64_t fz=(gz%step)*scale/step;
+        const auto at=[&](size_t x,size_t z){
+            return int64_t(tile.heightsCm[z*tile.resolution+x]);
+        };
+        const int64_t a=at(ix,iz),b=at(ix+1,iz);
+        const int64_t d=at(ix,iz+1),v=at(ix+1,iz+1);
+        const int64_t sum=fx>=fz ?
+            a*(scale-fx)+b*(fx-fz)+v*fz :
+            a*(scale-fz)+d*(fz-fx)+v*fx;
+        const int64_t positive=sum<0 ? -sum : sum;
+        const int64_t rounded=(positive+scale/2)/scale;
+        return static_cast<int32_t>(sum<0 ? -rounded : rounded);
+    }
+
     // A null result means that no loaded WorldScene heightfield covers this
     // point. Caller may fall back to deterministic procedural height.
     // The same two triangles as the terrain collider are interpolated in
