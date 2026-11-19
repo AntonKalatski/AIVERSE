@@ -7,12 +7,14 @@
 #include <cstdint>
 #include <cmath>
 #include <memory>
+#include <map>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
 #include "SpectraFxGpuEmitterLibrary.h"
+#include "SpectraFxGpuSharedArena.h"
 #include "SpectraFxEmitterEvents.h"
 #include "SpectraFxCueBridge.h"
 
@@ -21,6 +23,8 @@ namespace aiverse::fx {
 class SpectraFxHybridPlayback {
 public:
     static constexpr size_t kMaxEmitters=64;
+    static constexpr size_t kMaxGpuPools=8;
+    static constexpr uint32_t kMaxTotalPooledParticles=65536;
     struct Route {
         std::string asset;
         bool enabled=true;
@@ -36,6 +40,7 @@ public:
         uint64_t played=0,moved=0,stopped=0,killed=0;
         uint64_t missing=0,refused=0,failed=0,oneShots=0,retired=0;
         uint64_t gpuImpacts=0,impactDropped=0,impactEffects=0;
+        uint64_t pooledPlays=0,pooledFallbacks=0,pooledRetired=0,pooledFailures=0;
     };
 
     SpectraFxHybridPlayback(gfx::Device& device,ParticleSystem& cpu,
@@ -55,6 +60,26 @@ public:
     bool dispatch(const SpectraFxCue& cue) {
         if(cue.action!=SpectraFxCue::Action::Play) {
             if(!cue.key) {++stats_.refused;return false;}
+            auto pooled=pooledActive_.find(cue.key);
+            if(pooled!=pooledActive_.end()) {
+                auto* arena=poolArena(pooled->second.name);
+                if(!arena) {++stats_.failed;return false;}
+                if(cue.action==SpectraFxCue::Action::Move) {
+                    if(!arena->moveEmitter(pooled->second.ticket,
+                                           cue.position,cue.direction)) {
+                        ++stats_.failed;return false;
+                    }
+                    ++stats_.moved;return true;
+                }
+                if(!arena->removeEmitter(pooled->second.ticket,
+                                         cue.action==SpectraFxCue::Action::Kill)) {
+                    ++stats_.failed;return false;
+                }
+                pooledActive_.erase(pooled);
+                if(cue.action==SpectraFxCue::Action::Kill) ++stats_.killed;
+                else ++stats_.stopped;
+                return true;
+            }
             auto it=active_.find(cue.key);
             if(it==active_.end()) {++stats_.missing;return false;}
             if(cue.action==SpectraFxCue::Action::Move) {
@@ -78,13 +103,38 @@ public:
                        route->second.oneShotSeconds>60)) {
             ++stats_.refused;return false;
         }
-        if(active_.size()+oneShots_.size()>=kMaxEmitters &&
-           (oneShot || active_.find(cue.key)==active_.end())) {
+        if(active_.size()+oneShots_.size()+pooledActive_.size()+
+           pooledShots_.size()>=kMaxEmitters &&
+           (oneShot || (active_.find(cue.key)==active_.end() &&
+                        pooledActive_.find(cue.key)==pooledActive_.end()))) {
             ++stats_.refused;return false;
         }
         const auto load=library_.load(route->second.asset);
         const auto* entry=library_.find(route->second.asset);
         if(!load.valid || !entry) {++stats_.failed;return false;}
+        // Shared pools are explicit project opt-ins. Unsupported devices,
+        // heterogeneous settings, or an exhausted pool use the existing
+        // per-emitter HybridEmitter path with the authored CPU fallback.
+        if(!route->second.sharedPool.empty()) {
+            PooledRef pooled;
+            if(tryStartPooled(route->second,entry->config,cue,pooled)) {
+                if(!oneShot && !retireKey(cue.key)) {
+                    auto* arena=poolArena(pooled.name);
+                    if(arena) arena->removeEmitter(pooled.ticket,true);
+                    ++stats_.failed;
+                    return false;
+                }
+                if(oneShot) {
+                    pooledShots_.push_back({std::move(pooled),0,
+                                            route->second.oneShotSeconds});
+                    ++stats_.oneShots;
+                } else pooledActive_[cue.key]=std::move(pooled);
+                ++stats_.played;
+                ++stats_.pooledPlays;
+                return true;
+            }
+            ++stats_.pooledFallbacks;
+        }
         // All GPU emitter batches share one static quad, MSL/GLSL shader,
         // and alpha/additive render pipelines; only particle state is private.
         const auto preference=chooseSpectraFxBackend(device_,entry->config.backend);
@@ -103,6 +153,11 @@ public:
             oneShots_.push_back({std::move(next),0,route->second.oneShotSeconds});
             ++stats_.oneShots;
         } else {
+            if(!retireKey(cue.key)) {
+                next->stop();
+                ++stats_.failed;
+                return false;
+            }
             auto it=active_.find(cue.key);
             if(it!=active_.end()) {
                 it->second->stop();
