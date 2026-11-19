@@ -31,3 +31,30 @@ API: `LumaNativeViewInput.indirectGi` optionally provides a host-owned, already-
 Actual validation: GitHub read/update/create commit operations acknowledged, CMake target registered. **NOT RUN:** C++ compilation, Clang Debug/Release, CTest, Metal MSL, GPU frame capture, visual parity, mobile backend tests, full acceptance script. Earlier 33/33 GI tests were owner-reported against stage7, NOT this source SHA. No claims of pass.
 
 Known limitations and next: verify header-only native driver code builds (its include graph is broader than earlier tests); ensure runtime replacement does not reuse the old `LumaWeaveGiSync` revision, preserve GI fence-poll diagnostics, and accept the isolated branch name in the one-shot validation script. Then native Mac test only after code freeze. Current branch still inherits the 467-main-commit divergence from its LumaWeave parent.
+
+## Stage 3 — runtime-replacement safety, one-shot acceptance and native compile gate (SOURCE COMMITTED; NOT NATIVE TESTED)
+
+Implementation commits:
+- `b0e8c822c859d3fe659360b5a9e86edfe66da4d2` — `LumaWeaveNativeCoordinator::resetGiSourceSync()` public explicit adapter reset, no GPU or ECS mutation.
+- `2c85573f8d58a564c6a1465a635d13fa93ecceda` — `LumaWeaveNativeDriver` resets revision-cache on GI runtime pointer swap or re-enabling GI source synchronization; exposes same-address `driver.resetGiSourceSync()`; rejects sync=true without runtime; preserves prior GPU poll in separate `giPollFrame`, and clears adapter on safe shutdown.
+- `088915889e5a2ce995f56251a9e9ec3ac9e30c15` — `tools/lumaweave_acceptance.sh` now accepts either LumaWeave branch or isolated GI integration branch, still requires explicit `--run`, clean native macOS checkout and Xcode Metal.
+- `08c9f6d31bb7834c2e5b8caabd36ccb794063efe` — `docs/lumaweave.md` fixes stale claim about GGX: experimental High/Ultra material-normal/roughness specular path exists but actual GPU parity remains unverified; documents combined direct/indirect API.
+- `2732ccefebe30aaaab303b6b98905c5d1e7b96a6` — `tests/render/lumaweave_native_compile.cpp` forces compiler instantiation of normal and per-world native frame templates; intentionally not linked to GPU RHI.
+- `12e00a8644e748cf5dfe09582097c9eb5da0b4b3` — CMake registers `aiverse_lumaweave_native_compile` OBJECT target in test-enabled default ALL build.
+- `eb484de6a95bd6e24a2146e6cef683780147a4da` — compile-time assertions for GI lifecycle reset and completed-vs-new GI frame status.
+
+API/lifecycle: `LumaNativeViewResult::giPollFrame` records pre-sync real GPU completion observations while `giFrame` is the post-sync GI job state. The driver auto-resets its `LumaWeaveGiSync` cache on pointer replacement and on transition from external to synchronized GI source ownership; an owner reconstructing a runtime at the same address MUST explicitly call `driver.resetGiSourceSync()`. `LumaWeaveWorlds` uses independent drivers per world. The compile-only OBJECT fixture deliberately checks that `driver.frame` and `worlds.frame` function-template bodies compile, rather than only parsing headers.
+
+Actual validation: GitHub updates accepted; **NOT RUN**: native compiler, ALL build, CTest, Metal compiler, on-device GPU readbacks, screenshots, performance, full acceptance script. A test target's presence is not a pass. Do NOT re-use earlier 33/33 PASS as validation for this branch.
+
+Native final acceptance on a clean checkout of this branch:
+```sh
+git fetch origin
+git switch feature/gi-lumaweave-frame-integration-20261119
+git pull --ff-only origin feature/gi-lumaweave-frame-integration-20261119
+git rev-parse HEAD
+bash tools/lumaweave_acceptance.sh --run
+```
+The acceptance script builds both configurations, executes registered CTest and assembles/compiles MSL; hardware GI+Luma PBR visual correctness, mobile raster and actual GPU ms must still be separately measured. Prefer testing the source branch first, then reconcile its ~467 missing main commits in a separate integration branch and repeat tests, with no unreviewed mass overwrite of concurrent renderer/camera work.
+
+Known limitations: static source GI selection still requires host-provided scene geometry; bounce spot/area transport is intentionally unsupported (explicit failure); GI GPU caps, 4096 direct-source cap, mobile lossy fallback and metal-only 3-cascade texture slot are existing design limits. The new driver is opt-in, not automatically registered in all games/editor scenes. Physical end-to-end verification and main reconciliation remain outstanding.
