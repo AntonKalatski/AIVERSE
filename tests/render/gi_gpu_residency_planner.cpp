@@ -89,6 +89,10 @@ int main() {
     AIVERSE_TEST_CHECK(controller.gpuResidency().exceededBudget);
     AIVERSE_TEST_CHECK(!controller.gpuResidency().selected);
     AIVERSE_TEST_CHECK(controller.gpuRuntime()->backend().triangleCount()==2);
+    AIVERSE_TEST_CHECK(controller.presentationBlocked());
+    // Even after old probes completed, an authoritatively newer geometry
+    // revision has not yet been accepted. No stale indirect frame is valid.
+    AIVERSE_TEST_CHECK(!controller.updateFrame({0,0,0},0).canPresent);
     AIVERSE_TEST_CHECK(controller.shutdown());
     AIVERSE_TEST_CHECK(device.buffers.empty() && device.textures.empty());
 }
