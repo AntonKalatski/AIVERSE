@@ -140,3 +140,26 @@ git pull --ff-only origin feature/spectrafx-generic-cue-queue
 git fetch origin main
 git merge origin/main
 ```
+
+
+## 2026-11-19 — Stage 7: versioned in-memory graph registry and cue routing
+
+- **Branch:** `feature/spectrafx-generic-cue-queue`; remote main `9ee6ff6fbf390bd45363bc92c838f492dfe92eee` still matched branch merge base at the latest comparison (0 behind).
+- **Implementation SHA:** `bbc340cb34a30e03a264d05704c621aee2737875`.
+- **File changed:** `engine/fx/SpectraFxGraphRegistry.h` (new).
+- **New API:** `SpectraFxGraphRegistry::define(name,graph,defaults,error)` performs pre-validation and atomic graph replacement with revision increment; `find/erase` manage graph assets; `route/unroute/routeFor` map arbitrary host cue IDs to named graphs; `dispatch(cue,bridge,queue,overrides)` uses either a routed graph with ephemeral typed parameter overrides or legacy direct cue dispatch when unrouted. Routes whose graph asset has not streamed yet fail explicitly. `mergeParameters` applies scalar/color/bool overrides without mutating registry defaults; `Stats`, `graphCount`, `routeCount` expose basic diagnostics.
+- **Compatibility / authority:** no new save format, renderer API, ECS component or genre dependency; only read-only presentation routing. Existing direct cue effects are preserved if no route is set. PRISMA remains post-process owner.
+- **Checks actually run:** **NOT RUN** (user explicitly requested features first; source edits via GitHub connector; no native compiler, tests, CI, UI or GPU verification). Do not call this feature production-proven yet.
+- **Limitations:** in-memory registration only, no asset-file parsing/serialization or visual graph editor; no GPU backend; no automatic per-entity parameter sync; no hot-reload notification beyond `revision`. Production must validate unresolved asset references, memory budgets and graph execution before integration.
+- **Next:** author graph data assets, graph import/export and editor node authoring; then runtime emit/spawn lifecycle and backend abstraction. After the feature pass: compile/test, cross-genre examples, rollout/rollback and real Mac Metal profiling.
+
+### Pull-first commands
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main
+git merge origin/main
+```
