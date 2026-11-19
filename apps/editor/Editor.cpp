@@ -417,9 +417,15 @@ void Editor::pollVisualAssets(double dt) {
             }
             ws_.log("view","обновлено визуальных типов (без выгрузки моделей): "+
                      std::to_string(refreshed));
+        } else if(view_.gpuAppearancePending()) {
+            // Async GPU shaders may need several device frames; keep the
+            // source watcher pending instead of acknowledging this edit.
+            ws_.log("view","компиляция GPU шейдеров продолжается; "
+                           "старая версия сохранена, повторим обновление");
+            return;
         } else {
-            // A bad AnimationGraph JSON or malformed material library keeps
-            // the previous working look and active animations in place.
+            // A bad AnimationGraph JSON, material library, or native GPU
+            // pipeline compiler result keeps the last-good appearance.
             ws_.log("view","обновление графа/материалов отклонено; "
                            "старая версия сохранена",true);
         }
