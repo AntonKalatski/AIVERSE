@@ -511,6 +511,23 @@ void Renderer3D::retireObjectMotionView(
     if (objectMotionStats_.viewId == viewId) objectMotionStats_ = {};
 }
 
+size_t Renderer3D::retireUnregisteredObjectMotionViews(
+    const std::vector<uint64_t>& liveViewIds) {
+    // Explicit per-host roster; do not infer view liveness from dimensions
+    // or a CPU frame timestamp. Copy IDs before erasing map entries.
+    const std::set<uint64_t> live(liveViewIds.begin(), liveViewIds.end());
+    std::vector<uint64_t> orphanIds;
+    orphanIds.reserve(objectMotionViews_.size());
+    for (const auto& [id, history] : objectMotionViews_) {
+        (void)history;
+        if (!live.contains(id)) orphanIds.push_back(id);
+    }
+    const uint64_t submission = dev_ ? dev_->gpuSubmissionFence() : 0;
+    for (const uint64_t id : orphanIds)
+        retireObjectMotionView(id, submission);
+    return orphanIds.size();
+}
+
 size_t Renderer3D::collectCompletedObjectMotion(
     uint64_t completedGpuFence) {
     if (!dev_ || !completedGpuFence) return 0;
