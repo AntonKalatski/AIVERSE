@@ -635,9 +635,10 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
             std::clamp(effect->get("maxPrismaMemoryMiB"),32.0f,4096.0f))
             * uint64_t(1024*1024);
         const bool memoryPressure=knownBytes>memoryLimit;
-        // Prefer completed, bounded GL33 viewport GPU queries. Metal's
-        // existing GPU time is a whole-command-buffer measurement; NEVER
-        // label it as per-view. No completed timer -> no guessed CPU/FPS.
+        // Prefer completed, bounded Metal-counter/GL33 viewport GPU
+        // queries. Where scoped GPU samples are unavailable or stale, the
+        // backend whole-frame timer remains a distinct fallback, NEVER
+        // mislabeled as per-view. No CPU/FPS timing is synthesized.
         const auto scoped=scopedGpuTimings_.find(viewId_);
         const uint64_t completedFence=dev_->gpuCompletedFence();
         const bool scopedValid=scoped!=scopedGpuTimings_.end() &&
