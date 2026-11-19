@@ -37,9 +37,11 @@ inline void addNereidBankErosionSystem(Simulation& sim,std::string name,
         throw std::invalid_argument("NEREID bank erosion fixed timestep");
     sim.addSystem(std::move(name),[fixedDeltaMs](Simulation& current) {
         World& world=current.world();
-        auto* soils=world.prepareExistingWrite<WaterBankSoilComponent>();
-        auto* output=world.prepareExistingWrite<WaterBankErosionOutputComponent>();
-        if(!output||!soils)return;
+        // pool<T> detaches shared ECS COW pool ownership. The older
+        // prepareExistingWrite<T>() only prepares pages and is insufficient
+        // for resource/rollback isolation when the pool itself is shared.
+        auto* soils=&world.pool<WaterBankSoilComponent>();
+        auto* output=&world.pool<WaterBankErosionOutputComponent>();
         const World& read=world;
         for(size_t i=0;i<output->size();++i) {
             const Entity entity=output->entityAt(i);
