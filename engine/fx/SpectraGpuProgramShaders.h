@@ -141,6 +141,8 @@ kernel void cs_main(uint tid [[thread_position_in_grid]],
     if(dispatch.reserved==1u) {
         VMParticleParams snapshot=snapshots[tid];
         if(snapshot.active==0u || snapshot.generation==0u)return;
+        // Spawn is exactly once per newly allocated physical particle.
+        if(dispatch.stage==0u && snapshot.reserved!=1u)return;
         for(uint k=0u;k<8u;++k)effective.values[k]=snapshot.values[k];
     } else if(dispatch.reserved!=0u) {
         atomic_fetch_add_explicit(errorCount,1u,memory_order_relaxed);
