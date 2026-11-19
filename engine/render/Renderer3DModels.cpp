@@ -1151,6 +1151,7 @@ void Renderer3D::prepareGpuModelDraws() {
     gpuEncodedDrawCalls_ = gpuEncodedCommands_ = 0;
     gpuIcbCandidates_ = gpuIcbPrepared_ = 0;
     gpuIcbRejected_ = gpuIcbExecuteFailed_ = 0;
+    gpuIcbPerCommandVtExecuted_ = gpuIcbMixedVtExecuted_ = 0;
     gpuEncodedBatches_.clear();
     gpuEncodedCovered_.clear();
     // Invalidate previous-frame resource indices even when GPU ICB is off.
@@ -1596,6 +1597,14 @@ void Renderer3D::prepareGpuModelDraws() {
                 group.items.assign(indices.begin() + first, indices.begin() + end);
                 group.token = token;
                 group.perCommandVt = materialMode;
+                if (materialMode) {
+                    const auto& reference=vtBindings[indices[first]];
+                    for (size_t j=first+1;j<end;++j)
+                        if (!(reference == vtBindings[indices[j]])) {
+                            group.mixedVtResources = true;
+                            break;
+                        }
+                }
                 group.perCommandTickets = std::move(commandTickets);
                 group.usesVirtualTexture = vtEnabled[indices[first]] != 0;
                 group.virtualTexture = vtBindings[indices[first]];
@@ -1954,6 +1963,9 @@ void Renderer3D::renderModels(int phase) {
                 continue;
             }
             lastItem_ = &modelItems_[group.items.back()];
+            if (group.perCommandVt) ++gpuIcbPerCommandVtExecuted_;
+            if (group.perCommandVt && group.mixedVtResources)
+                ++gpuIcbMixedVtExecuted_;
             ++gpuEncodedDrawCalls_;
             gpuEncodedCommands_ += uint32_t(group.items.size());
             ++drawCalls_;
