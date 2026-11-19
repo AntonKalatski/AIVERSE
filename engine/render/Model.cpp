@@ -704,6 +704,12 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
             // the shared cache; an aborted Model is retired normally.
             uploadImage(dev,img);
         }
+        // A speculative import is never allowed to publish an incompletely
+        // GPU-uploaded Model. The outer transaction retires every allocation
+        // that succeeded earlier in this loop behind its own completion token.
+        if(!publishSharedTextures && img.width>0 && img.height>0 &&
+           !img.tex.valid())
+            return false;
         if (!keepCpu) { img.rgba.clear(); img.rgba.shrink_to_fit(); img.compressed.reset(); img.sharedRgba.reset(); }
     }
     // morph deltas of every primitive in one float texture: 2 texels (position, normal) per vertex and target
