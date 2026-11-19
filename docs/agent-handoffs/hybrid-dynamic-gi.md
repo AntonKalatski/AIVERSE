@@ -323,3 +323,20 @@ Major limitations: O(max 256 triangles * rays * max 16 lights) shader traversal,
 ACTUAL verification: GitHub branch comparisons and code inspection, source create/update success, CTest registration. NOT RUN: native C++ compilation, CTest, Metal shader compilation, GPU execution/readback/captures, timing, ./run-tests.sh, Android/Vulkan. FakeDevice test source only checks capability gating, rejected invalid jobs/IDs, dispatch count and shader marker ABI. It cannot prove GPU result correctness.
 
 Next steps: (1) Pull this branch and run all 12 GI test targets, CTest -R '^gi_', ./run-tests.sh --quick and actual Metal shader compilation/API validation; fix all issues, record source SHA + logs. (2) Implement an RHI GPU completion/fence mechanism or conservative safe ring, generation-aware scheduler publication and ABI/pixel-parity tests versus CPU reference before wiring the backend into GiDynamicRuntime. (3) Replace flat-triangle O(T) loops with uploaded GPU BVH/SDF, dirty chunk uploads and scrolling GI volumes, then integrate TerraWeave/foliage/water and benchmark on real mobile GPU. Avoid merging the divergent texture branch until it is rebased or isolated prerequisites can be tested. Do not touch main.
+
+## Stage 13 - 2026-11-19 - deterministic GPU BVH ray traversal (source committed; NOT RUN)
+
+Code commits:
+- 7a807d8b5fabe74d110fa50c0ab5b22848be0931 - engine/render/GiGpuBvh.h
+- bfb4f6a791e756c2b1935fb45a4d4cb2dff99299 - engine/render/GiGpuSmallSceneShaders.h
+- 60fe05738345eb2f73a0c58012cb0972f6a4ecb2 - engine/render/GiGpuSmallScene.h
+- 4194b184bcb5338c22a66c85f01f785df8a33ab2 - tests/render/gi_gpu_bvh.cpp
+- fb0e6c9465a3c02adad9f6affa704df0a454e3f0 - CMakeLists.txt, gi_gpu_bvh in default ALL / CTest.
+
+Implementation: GiGpuBvh::build(snapshot) copies up to 8192 world-space triangles from immutable GiChunkedGeometrySnapshot, rejects invalid coordinates/albedos, uses deterministic median centroid splits to emit packed C++/MSL 64-byte triangles and 48-byte nodes. Leaf size is <=4; CPU GiGpuBvh::trace provides nearest-hit reference. Metal GiGpuSmallSceneShaders.h uses a 64-entry explicit stack for GPU BVH traversal of primary and secondary shadow rays, replacing O(all triangles) loops. Compute buffer(3) supplies nodes; 32-byte uniform ABI includes nodeCount; existing RGB L1 output format stays unchanged. GiGpuSmallScene uploads triangle and node buffers transactionally on scene revision, updates metadata only after both allocations succeed, and reports nodes count in dispatch diagnostics.
+
+Compatibility: unchanged existing lightmap/baker, GI output texture (3 float4 / probe), ECS save/network and default renderer. GPU option remains Metal-only, off by default and standalone; no shader-graph, terrain, water or Vulkan path enabled. CPU BVH still flattens/rebuilds a full <=8192 triangle scene per geometry revision; NOT yet incremental per-chunk GPU streaming. GPU geometry resource lifetime and fences remain unresolved; do not release or reuse resources from in-flight compute until a GPU completion barrier.
+
+Validation performed: GitHub source fetch/commits + CTest registration only. NOT RUN: native C++ compilation, actual tests, Metal shader compilation, GPU readback, GPU perf, ./run-tests.sh. The new gi_gpu_bvh fixture source compares CPU BVH nearest hit against chunk snapshot, broad-phase pruning and fake Metal dispatch; it is not proof that MSL compiled or ran.
+
+Next: Pull branch and build all 13 GI targets, run ctest --test-dir build/gi --output-on-failure -R '^gi_', and ./run-tests.sh --quick; compile MSL on actual Metal and compare GPU readback against GiDynamicProbeReference with explicit tolerance. Fix any errors and append exact SHA / observed logs. Add generation-aware GPU-fence completion acknowledgements before wiring scheduler to GPU; dispatch is encoder submission, not completion. Then implement per-chunk GPU BVH updates/SDF, clipmaps and real device profiling.
