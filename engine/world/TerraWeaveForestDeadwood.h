@@ -21,6 +21,7 @@ struct ForestDeadwoodRecord {
     int64_t xCm=0,zCm=0;
     uint64_t createdTick=0,lastEvaluatedTick=0;
     uint64_t remainingUnits=0; // zero is a persistent spent identity
+    uint64_t initialUnits=0;   // Stage68 visual ratio (not a second ledger)
     uint32_t rateUnitsPer1000Ticks=40; // constant loss in full tick time
     uint32_t nutrientsPermille=300; // rest escapes to the non-soil sink
     uint16_t decayCarry=0,nutrientCarry=0; // integer fractional remainders
@@ -75,6 +76,7 @@ inline void validateForestDeadwoodResource(
            log.xCm<-kWorldLimitCm || log.xCm>kWorldLimitCm ||
            log.zCm<-kWorldLimitCm || log.zCm>kWorldLimitCm ||
            log.createdTick>log.lastEvaluatedTick ||
+           log.initialUnits<log.remainingUnits ||
            log.rateUnitsPer1000Ticks>1000000 ||
            log.nutrientsPermille>1000 ||
            log.decayCarry>=1000 || log.nutrientCarry>=1000)
@@ -126,7 +128,17 @@ inline void io(Archive& a,ForestDeadwoodRecord& r) {
     a(r.id.speciesId,r.id.key,r.xCm,r.zCm,
       r.createdTick,r.lastEvaluatedTick,r.remainingUnits,
       r.rateUnitsPer1000Ticks,r.nutrientsPermille,
+      r.decayCarry,r.nutrientCarry,r.fromFall,r.initialUnits);
+}
+// Explicit version-1 decoder. The old record had NO initial mass; use
+// surviving units as a conservative presentation baseline only.
+inline void readForestDeadwoodRecordV1(Archive& a,
+                                      ForestDeadwoodRecord& r) {
+    a(r.id.speciesId,r.id.key,r.xCm,r.zCm,
+      r.createdTick,r.lastEvaluatedTick,r.remainingUnits,
+      r.rateUnitsPer1000Ticks,r.nutrientsPermille,
       r.decayCarry,r.nutrientCarry,r.fromFall);
+    if(!a.writing())r.initialUnits=r.remainingUnits;
 }
 inline void io(Archive& a,ForestDeadwoodSoilCell& r) {
     a(r.x,r.z,r.availableUnits);
@@ -147,7 +159,10 @@ inline void io(Archive& a,ForestDeadwoodResource& s) {
     uint32_t n=a.count(s.logs.size(),76);
     if(!a.ok() || n>ForestDeadwoodResource::kMaxLogs){a.fail();return;}
     if(!a.writing())s.logs.assign(n,{});
-    for(auto& v:s.logs)if(a.ok())a(v);
+    for(auto& v:s.logs)if(a.ok()) {
+        if(v2)a(v);
+        else readForestDeadwoodRecordV1(a,v);
+    }
     n=a.count(s.soil.size(),24);
     if(!a.ok() || n>ForestDeadwoodResource::kMaxSoilCells){a.fail();return;}
     if(!a.writing())s.soil.assign(n,{});
@@ -260,6 +275,7 @@ inline bool seedForestDeadwood(
     log.xCm=plant.anchor.xCm;log.zCm=plant.anchor.zCm;
     log.createdTick=log.lastEvaluatedTick=completedTick;
     log.remainingUnits=units;
+    log.initialUnits=units;
     log.rateUnitsPer1000Ticks=rateUnitsPer1000Ticks;
     log.nutrientsPermille=nutrientsPermille;
     log.fromFall=fromFall;
