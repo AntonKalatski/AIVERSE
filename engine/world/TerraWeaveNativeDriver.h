@@ -5,6 +5,7 @@
 #pragma once
 #include "engine/world/TerraWeaveNativeWorldBinding.h"
 #include "engine/world/TerraWeaveNavMeshBridge.h"
+#include "engine/world/NereidFloodVisualScene.h"
 #include <cstddef>
 #include <functional>
 #include <span>
@@ -50,6 +51,16 @@ inline NativeTerrainPublishResult publishNativeTerraWeaveFrame(
     if(!resource)
         throw std::logic_error("TerraWeave native ECS resource missing");
     status.ecsStateRevision=resource->stateRevision;
+    // Only actual floodwater beyond the authored NEREID surface is
+    // converted into one bounded visual mesh. Native water ECS remains the
+    // authoritative volume source and the scene owns only copied vertices.
+    if(const auto* flood=ecs.resourceConst<
+            lib::nereid::WaterFloodResource>()){
+        worldScene.setNereidFloodCells(
+            world::collectNereidFloodVisualCells(
+                ecs,*flood,grassArea.minX,grassArea.minZ,
+                grassArea.maxX,grassArea.maxZ));
+    }
     status.ecsStateChanged=binding.reconcile(
         ecs,worldScene,forceRehydrate);
 
