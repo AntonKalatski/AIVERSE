@@ -796,6 +796,13 @@ gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant) {
         if (pipes_[slot].valid()) return pipes_[slot];
         shaderFailed_[slot] = true;
     }
+    // GL3.3 may exceed its active fragment sampler budget when detail
+    // textures are present. Preserve terrain using the non-detail shader.
+    // A Metal backend which compiled the detailed shader retains it.
+    if (dbase) {
+        std::fprintf(stderr, "[terrain] detail shader unavailable; falling back to non-detail tier %d\n", variant - dbase);
+        return pipeline(dev, variant - dbase);
+    }
     return {};
 }
 
