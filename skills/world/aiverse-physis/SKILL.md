@@ -423,3 +423,22 @@ When authoring crash/restart fixtures, keep a journal's `.lock` inode
 alive until the final `LoopbackAdminEndpoint` destructor runs. Never
 remove a temporary journal directory while a service is open. See
 `docs/agent-handoffs/physis-stage41-ci-validation-2026-11-19.md`.
+
+### Stage 42 — receipt journal failure semantics
+
+The authenticated admin gateway may have committed a command in ECS
+without persisting its Queued or Applied receipt. If
+`ServerGateway::journalHealthy()==false`, outbound positive receipt
+states must be masked as `Unknown`, and all fresh editor submissions
+remain suspended. An unknown request ID must not be described as
+"safe to retry" while dedupe persistence is compromised.
+
+Use `tests/physis_admin_journal_test.cpp` writer-failure injection
+fixture to confirm Queued persistence and post-tick Applied persistence
+failures, stale receipt queries, same-ID submissions and new-ID denial.
+Do not claim crash-atomic exactly-once acknowledgements: the sidecar
+journal and Simulation World checkpoint are separate.
+
+Stage 42 code/test source is committed but native compilation, CTest,
+macOS and Windows QA are NOT VERIFIED. See
+`docs/agent-handoffs/physis-stage42-durable-receipts-2026-11-19.md`.
