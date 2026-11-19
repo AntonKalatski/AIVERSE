@@ -234,7 +234,9 @@ int run(uint32_t graphCount) {
         else shaderSource.replace(pos,std::char_traits<char>::length(marker),
                                   "#define AIVERSE_SG_TEXTURE_COUNT 4");
     }
-    shDesc.msl=shaderSource;
+    // ShaderDesc stores a non-owning const char*. Keep this string alive
+    // through createShader(), which synchronously copies/compiles MSL.
+    shDesc.msl=shaderSource.c_str();
     shDesc.label="TextureIcbGraphAbiAcceptance";
     shDesc.textureSlots=fourSources?17:14;
     shDesc.uniformSlots=8;
@@ -369,8 +371,9 @@ int run(uint32_t graphCount) {
                     }
                 require(match,
                     "actual ICB fragment pixels have distinct per-command PBR/graph textures and U2");
-                if (match) std::puts(
-                    "PASS: GPU ICB per-command Shader Graph source textures and U2 pixel parity");
+                if (match) std::printf(
+                    "PASS: GPU ICB graph sources=%u, per-command textures/U2 pixel parity\n",
+                    unsigned(graphCount));
             }
         }
     }
