@@ -52,11 +52,14 @@ public:
                       bool forceFinestForUnspecifiedPass,
                       Model& output, std::string* error = nullptr);
     bool validFor(const Model& source) const;
+    // Must be called with the same live device used by stage(). A wrong
+    // device is refused without destroying foreign RHI buffer handles.
     void shutdown(gfx::Device& device);
     const PortableRenderStats& stats() const { return stats_; }
     gfx::BufferHandle indexBuffer() const { return indexBuffer_; }
     uint32_t firstIndex() const { return firstIndex_; }
 private:
+    gfx::Device* device_ = nullptr; // borrowed: index handles belong to this RHI device
     const Model* source_ = nullptr; // borrowed, never dereference after unload
     const ModelAsset* asset_ = nullptr; // borrowed immutable CPU asset
     gfx::BufferHandle indexBuffer_{};
