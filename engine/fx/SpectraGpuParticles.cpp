@@ -470,7 +470,7 @@ bool ComputeParticles::burstAt(fx::float3 position,fx::float3 direction,fx::floa
 }
 bool ComputeParticles::killSourceParticles(uint64_t sourceToken) {
     if(sourceToken==0 || !initialized_ || backend_!=ComputeBackend::Metal ||
-       !device_ || !device_->gpuHealthy() ||
+       !device_ || !device_->gpuHealthy() || gpuResetDirty_ ||
        !device_->canUpdateSharedBuffers())return false;
     // The birth queue is an ordered zip of physical slot, seed and params.
     // Removing unsent births is safe: the GPU has never seen those slots.
@@ -781,9 +781,9 @@ bool ComputeParticles::requestGpuVmErrors(
 bool ComputeParticles::requestGpuCheckpoint(std::function<void(bool)> callback) {
     if(!initialized_ || backend_!=ComputeBackend::Metal || !device_ ||
        !device_->gpuHealthy() || !device_->canUpdateSharedBuffers() ||
-       !readbackLifetime_ || asyncCheckpointPending_ ||
+       !readbackLifetime_ || asyncCheckpointPending_ || gpuResetDirty_ ||
        !states_.valid() || !stateProgramParams_.valid() ||
-       !stateAttributes_.valid() || ages_.empty() ||
+       !stateAttributes_.valid() || ages_.empty() || gpuResetDirty_ ||
        !pendingStates_.empty() || !pendingKillSlots_.empty() ||
         !killedSlotsAwaitingFrame_.empty())return false;
 
@@ -946,7 +946,7 @@ bool ComputeParticles::captureGpuCheckpoint(GpuCheckpoint& out) {
     if(!initialized_ || backend_!=ComputeBackend::Metal || !device_ ||
        !device_->gpuHealthy() || !device_->canUpdateSharedBuffers() ||
        !states_.valid() || !stateProgramParams_.valid() ||
-       !stateAttributes_.valid() || ages_.empty() ||
+       !stateAttributes_.valid() || ages_.empty() || gpuResetDirty_ ||
        !pendingStates_.empty() || !pendingKillSlots_.empty() ||
         !killedSlotsAwaitingFrame_.empty())return false;
     const size_t n=ages_.size();
