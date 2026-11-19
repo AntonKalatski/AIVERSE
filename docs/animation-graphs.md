@@ -568,3 +568,30 @@ local status = view.animation_status(actor) -- результат последн
 The `surfaceLocomotion` rig unit adds multi-leg floor/wall/ceiling movement and adhesive
 support. See [the controller guide](surface-locomotion.md) for C++/Lua/editor setup,
 world query contracts, the generated spider demo and gameplay authority boundaries.
+
+### Stage 108 — shared native graph and material authoring entrypoint
+
+For any genre, `view::AppearanceAuthoringService::compileGraph`
+from `engine/view/AppearanceAuthoringService.h` accepts a
+`render::Model`, inline JSON or a path to an external
+AnimationGraph asset, optional project FileReader and
+compile-time operations/traits/graph libraries. It performs
+the same bounded external JSON parsing and immutable
+`render::AnimationGraph::compile` as the legacy RTS view,
+but does not create a player or advance a pose.
+
+`AppearanceAuthoringService::resolveMaterial` and
+`applyMaterial` are likewise independent material-library
+operations with project-provided texture callbacks. Native
+projects may reuse these without introducing RTS/FPS types.
+The compatibility RtsLook type graph and runtime
+RtsAnimate control-authored graph paths use the service.
+MotionWeave animation evaluation still happens in the
+existing presentation World/graph instance, once per
+source. Attachments, type selection, texture residency,
+legacy material library hot reload and all runtime
+gameplay-specific state decisions remain the host's job.
+
+Validation: source code and deferred CMake fixtures only;
+**NOT RUN** native compilation, GPU visual playback, CTest
+or screenshot/animation parity checks.
