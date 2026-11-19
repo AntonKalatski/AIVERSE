@@ -1908,7 +1908,15 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                                 sizeof(native.u2));
                 }
                 native.graphTextureCount=materials[i].graphTextureCount;
-                if (native.graphTextureCount>0 && !native.hasPbr) return 0;
+                // Graph sources use 13..16 and optional VT occupies the
+                // next two fragment texture indices, not dynamic samplers.
+                // Do not encode out-of-range Metal argument IDs even if
+                // the caller bypassed the renderer's slot planner.
+                if (native.graphTextureCount>4 ||
+                    (native.graphTextureCount>0 && !native.hasPbr) ||
+                    13+int(native.graphTextureCount)+(native.hasVt ? 2 : 0) >
+                        maxFragmentTextureSlots())
+                    return 0;
                 for (uint32_t j=0;j<native.graphTextureCount;++j) {
                     const auto handle=materials[i].graphTextures[j];
                     const auto* source=textures_.get(handle.id);
