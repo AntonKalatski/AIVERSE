@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <compare>
 #include <functional>
 #include <limits>
 #include <optional>
