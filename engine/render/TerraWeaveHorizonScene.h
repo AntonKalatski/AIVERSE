@@ -8,6 +8,7 @@
 #include "engine/render/TerraWeaveHorizonVertexPatch.h"
 #include "engine/render/TerraWeaveHorizonGpuCache.h"
 #include "engine/render/TerraWeaveVertexWind.h"
+#include "engine/world/TerraWeaveWindField.h"
 #include "engine/world/TerraWeaveHorizonArchive.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/world/AsyncChunkStream.h"
@@ -264,6 +265,16 @@ public:
         wind_=wind;
     }
     const ForestWindState& wind() const {return wind_;}
+    // Snapshot is owned by the native host; a single macro sample is
+    // shared across all cards of an HLOD region and both crossfade models.
+    // No per-tree data in the statistical Horizon cluster atlas.
+    void setWindField(std::shared_ptr<const ForestWindField> field) {
+        if(field)field->validate();
+        windField_=std::move(field);
+    }
+    std::shared_ptr<const ForestWindField> windField() const {
+        return windField_;
+    }
     void setPresentationTick(uint64_t tick) {presentationTick_=tick;}
     uint64_t presentationTick() const {return presentationTick_;}
 
@@ -542,13 +553,18 @@ public:
         // cluster primitives of each region participate in tint-alpha fade.
         // Both primitives share the same GPU vertex/index/atlas buffers;
         // ModelDraw::primitiveMaterialFilter avoids any duplicate geometry.
+        // One continuously varying observer-space macro wind is used for
+        // BOTH outgoing and incoming regions. This avoids a velocity snap
+        // at HLOD region boundaries without rebaking the atlas per tick.
+        const ForestWindState macroWind=sampleForestWindField(
+            windField_.get(),lastObserver_.x,lastObserver_.z,wind_);
         const auto drawRegion=[&](render::Model* model,
                                   int64_t xCm,int64_t zCm,
                                   float alpha,bool blending,int materialFilter) {
             if(!model || alpha<=0.0f)return;
-            const bool gpuWind=wind_.branchFlexPermille>0 &&
-                wind_.maxLeanMilliDegrees>0 &&
-                (wind_.xCmPerSec || wind_.zCmPerSec);
+            const bool gpuWind=macroWind.branchFlexPermille>0 &&
+                macroWind.maxLeanMilliDegrees>0 &&
+                (macroWind.xCmPerSec || macroWind.zCmPerSec);
             // The far forest is one primitive/material in a shared model.
             // Only that material receives vertexOffset; ground is inert.
             // Existing active and crossfade GPU regions are updated without
@@ -573,7 +589,7 @@ public:
                 // The bottom two vertices have zero weight; only the top
                 // canopy edge moves, avoiding animated ground geometry.
                 draw.vertexParameters=canopyWindVertexParameters(
-                    wind_,presentationTick_,0.0f,0.30f);
+                    macroWind,presentationTick_,0.0f,0.30f);
                 draw.useVertexParameters=true;
                 draw.maxVertexOffsetMetres=kCanopyGpuWindMaxOffsetMetres;
             }
@@ -839,6 +855,7 @@ private:
     BiomeSettings biomes_;
     HorizonSettings settings_;
     ForestWindState wind_{};
+    std::shared_ptr<const ForestWindField> windField_;
     uint64_t presentationTick_=0;
     std::unique_ptr<world::AsyncChunkStream> stream_;
     std::unique_ptr<render::Model> model_;
