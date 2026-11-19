@@ -194,6 +194,9 @@ inline const char* kModelFS =
     "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_GLSL_MODEL_BLOCKS AIVERSE_GLSL_SHADOW AIVERSE_GLSL_LIGHTS_AT("U5", "tex9") AIVERSE_GLSL_TRACE_AT("tex10") AIVERSE_GLSL_SSR_AT("tex11", "tex12")
     R"(
 uniform mediump sampler2D tex1;
+#if defined(VIRTUAL_ALPHA_MASK)
+uniform mediump sampler2D tex15;
+#endif
 uniform mediump sampler2D tex2;
 uniform mediump sampler2D tex3;
 uniform mediump sampler2D tex4;
@@ -273,7 +276,11 @@ void main() {
 #if defined(ALPHAMASK)
     // Mask pass uses original geometry and must exclude discarded foliage,
     // grills and other cutout surfaces from the selection silhouette.
+#if defined(VIRTUAL_ALPHA_MASK)
+    if (texture(tex15, v_uv).r * PALETTE_BASE.a < m_misc.x) discard;
+#else
     if (texture(tex1, v_uv).a * PALETTE_BASE.a < m_misc.x) discard;
+#endif
 #endif
     o_color = vec4(rtsEncodeScene(v_team.rgb), v_tint.a);
 #else
@@ -295,6 +302,9 @@ void main() {
         edge = 1.0 - smoothstep(0.0, 0.06, nz - v_draw.y);
     }
     vec4 tb = texture(tex1, v_uv);
+#if defined(VIRTUAL_ALPHA_MASK)
+    tb.a = texture(tex15, v_uv).r;
+#endif
     vec4 base = PALETTE_BASE * vec4(toLinear(tb.rgb), tb.a);
     if (mod(m_misc.w,2.0) > 0.5) base *= vec4(v_col.rgb, m_misc.w > 1.5 ? 1.0 : v_col.a);
     int teamMode = int(m_misc.y + 0.5);
@@ -451,6 +461,9 @@ inline const char* kModelShadowFS =
     AIVERSE_GLSL_MODEL_BLOCKS
     R"(
 uniform mediump sampler2D tex1;
+#if defined(VIRTUAL_ALPHA_MASK)
+uniform mediump sampler2D tex15;
+#endif
 in vec2 v_uv;
 in vec3 v_wpos; in vec3 v_opos; in vec3 v_nrm; in vec4 v_col;
 flat in vec4 v_lod;
@@ -463,6 +476,9 @@ void main() {
 #endif
 #if defined(ALPHAMASK)
     vec4 base = m_base * texture(tex1, v_uv);
+#if defined(VIRTUAL_ALPHA_MASK)
+    base.a = m_base.a * texture(tex15, v_uv).r;
+#endif
     // SG_COLOR
     if (base.a < m_misc.x) discard;
 #endif
@@ -681,7 +697,12 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
                         texture2d<float> tex11 [[texture(11)]], sampler s11 [[sampler(11)]],
                         depth2d<float> tex12 [[texture(12)]], sampler s12 [[sampler(12)]]
 #endif
-                        GI_FARGS) {
+                        GI_FARGS
+#if defined(VIRTUAL_ALPHA_MASK)
+                        , texture2d<float> tex15 [[texture(15)]],
+                          sampler s15 [[sampler(15)]]
+#endif
+                        ) {
 #if defined(AIVERSE_ICB_PBR)
 #define tex0 icbTextures.tex0
 #define s0 icbTextures.s0
@@ -742,8 +763,13 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
 #endif
 #if defined(OUTLINE)
 #if defined(ALPHAMASK)
+#if defined(VIRTUAL_ALPHA_MASK)
+    if (tex15.sample(s15, in.uv).r * m.base.a < m.misc.x)
+        discard_fragment();
+#else
     if (tex1.sample(s1, in.uv).a * m.base.a < m.misc.x)
         discard_fragment();
+#endif
 #endif
     return float4(rtsEncodeScene(in.team.rgb), in.tint.a);
 #else
@@ -765,6 +791,9 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
         edge = 1.0 - smoothstep(0.0, 0.06, nz - in.draw.y);
     }
     float4 tb = tex1.sample(s1, in.uv);
+#if defined(VIRTUAL_ALPHA_MASK)
+    tb.a = tex15.sample(s15, in.uv).r;
+#endif
     float4 base = m.base * float4(toLinear(tb.rgb), tb.a);
     if (fmod(m.misc.w,2.0) > 0.5) base *= float4(in.col.rgb, m.misc.w > 1.5 ? 1.0 : in.col.a);
     int teamMode = int(m.misc.y + 0.5);
@@ -913,7 +942,12 @@ vertex VOut vs_main(VERTEX_ARGS) {
 }
 #if defined(ALPHAMASK) || defined(LODFADE)
 fragment void fs_main(VOut in [[stage_in]], constant MU2& m [[buffer(3)]], constant U1& f [[buffer(2)]],
-                      texture2d<float> tex1 [[texture(1)]], sampler s1 [[sampler(1)]]) {
+                      texture2d<float> tex1 [[texture(1)]], sampler s1 [[sampler(1)]]
+#if defined(VIRTUAL_ALPHA_MASK)
+                      , texture2d<float> tex15 [[texture(15)]],
+                        sampler s15 [[sampler(15)]]
+#endif
+                      ) {
 #if defined(LODFADE)
     uint2 lp=uint2(in.pos.xy) & uint2(3);
     uint rank=((lp.x & 1u) ^ (lp.y & 1u))*8u+(lp.y & 1u)*4u+((lp.x>>1u) ^ (lp.y>>1u))*2u+(lp.y>>1u);
@@ -922,6 +956,9 @@ fragment void fs_main(VOut in [[stage_in]], constant MU2& m [[buffer(3)]], const
 #endif
 #if defined(ALPHAMASK)
     float4 base = m.base * tex1.sample(s1, in.uv);
+#if defined(VIRTUAL_ALPHA_MASK)
+    base.a = m.base.a * tex15.sample(s15, in.uv).r;
+#endif
     // SG_COLOR
     if (base.a < m.misc.x) discard_fragment();
 #endif
