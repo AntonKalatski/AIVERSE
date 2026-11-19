@@ -2703,6 +2703,21 @@
       "packageDependencies": [
         "nereid-water"
       ]
+    },
+    {
+      "id": "nereid-cascades",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "experimental",
+      "source": "libraries/include/aiverselib/water/NereidCascades.h",
+      "skill": "skills/gameplay/aiverse-nereid-water/SKILL.md",
+      "summary": "NEREID genre-independent waterfall/cascade ECS geometry, persistence and visual ribbon mesh",
+      "notes": "Stage 27: opt-in descending cascade components, double-sided CPU ribbons and WorldScene graphics; host owns terrain, physics and particle effects. Build/GPU tests deferred by owner.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_nereid_cascades",
+      "runtime": "header",
+      "linkDependencies": ["aiverse_engine"],
+      "packageDependencies": ["nereid-water"]
     }
   ]
 }
