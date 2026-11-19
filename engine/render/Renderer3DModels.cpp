@@ -348,7 +348,10 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                     }
                     replace(source,"// SG_SURFACE",surface);
                 }
-                if(vertexOnly || metal) {
+                // Do not inject unused texture arguments into the Metal
+                // vertex entry point of a fragment-only graph ICB shader.
+                // A GPU-encoded ICB does not bind per-command vertex textures.
+                if(vertexOnly || (metal && !graphIcbCandidate)) {
                     const std::string pos=metal?"d.p":"p", normal=metal?"d.n":"n";
                     std::string code="{\n"+std::string(metal?"float2 sg_uv=uvTransform(m,in.uv);":"vec2 sg_uv=uvTransform(a_uv);");
                     code+=v3+" sg_object="+pos+".xyz, sg_world=(I.model*"+pos+").xyz;\n";
