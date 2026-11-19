@@ -6,15 +6,31 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <limits>
 #include <utility>
 #include <vector>
 
 namespace aiverse::render {
 
+enum class RetirementDiagnosticKind : uint8_t {
+    Enqueued, TokenSubmitted, Pending, Completed, Failed,
+    IdleFallbackFailed, RecoveredAfterIdle
+};
+struct RetirementDiagnosticEvent {
+    RetirementDiagnosticKind kind=RetirementDiagnosticKind::Pending;
+    uint64_t token=0;
+    size_t resources=0;
+};
+
 template<class Resource>
 class AsyncResourceRetirementQueue final {
 public:
+    using DiagnosticObserver=
+        std::function<void(const RetirementDiagnosticEvent&)>;
+    void setDiagnosticObserver(DiagnosticObserver observer) {
+        observer_=std::move(observer);
+    }
     struct Stats {
         size_t pendingResources=0;
         size_t pendingBatches=0;
@@ -31,6 +47,7 @@ public:
     void enqueue(Resource resource) {
         pending_.push_back(std::move(resource));
         ++count_;
+        emit({RetirementDiagnosticKind::Enqueued,0,count_});
         if(count_>highWatermark_)highWatermark_=count_;
     }
     size_t pending() const noexcept {return count_;}
@@ -100,10 +117,16 @@ public:
                 if(!batch.failed && failed(batch.token)) {
                     batch.failed=true;
                     ++failedFenceBatches_;
-                }
+                    emit({RetirementDiagnosticKind::Failed,batch.token,
+                          batch.resources.size()});
+                } else if(!batch.failed)
+                    emit({RetirementDiagnosticKind::Pending,batch.token,
+                          batch.resources.size()});
                 ++pendingPolls_;
                 break;
             }
+            emit({RetirementDiagnosticKind::Completed,batch.token,
+                  batch.resources.size()});
             close(batch.token);
             for(auto& resource:batch.resources) {
                 destroy(resource);
@@ -121,6 +144,8 @@ public:
             batch.resources=std::move(pending_);
             pending_.clear();
             batches_.push_back(std::move(batch));
+            emit({RetirementDiagnosticKind::TokenSubmitted,token,
+                  batches_.back().resources.size()});
             return false; // new batch cannot be assumed complete
         }
         // Unsupported token backend: fall back to one explicit completion
@@ -128,8 +153,10 @@ public:
         ++tokenFailures_;
         if(!waitIdle()) {
             ++idleFallbackFailures_;
+            emit({RetirementDiagnosticKind::IdleFallbackFailed,0,pending_.size()});
             return false;
         }
+        emit({RetirementDiagnosticKind::RecoveredAfterIdle,0,count_});
         drainKnownCompleted(close,destroy);
         return true;
     }
@@ -172,6 +199,13 @@ private:
         }
         pending_.clear();
     }
+    void emit(RetirementDiagnosticEvent event) noexcept {
+        if(!observer_)return;
+        // Diagnostics must NEVER jeopardize an otherwise safe GPU
+        // retirement transaction (an observer may allocate or throw).
+        try {observer_(event);}catch(...) {}
+    }
+    DiagnosticObserver observer_;
     size_t count_=0,highWatermark_=0;
     uint64_t completedResources_=0,completedBatches_=0;
     uint64_t pendingPolls_=0,tokenFailures_=0,idleFallbackFailures_=0;
