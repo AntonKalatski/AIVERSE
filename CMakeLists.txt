@@ -470,7 +470,7 @@ target_link_libraries(aiverse_models PUBLIC aiverse_engine)
 
 # Programmable presentation animation graphs reuse the existing model sampler and IK.
 target_sources(aiverse_models PRIVATE engine/render/SurfaceLocomotion.cpp engine/render/AnimationContacts.cpp engine/render/FullBodyIK.cpp engine/render/AnimationGraph.cpp engine/render/AnimationRig.cpp engine/render/AnimationMotion.cpp)
-# Unity animation import (agent-unity-anim): clip sidecars and the Mecanim-style controller node.
+# VIVID digital humans (independent facial presentation runtime and headless tests).\nadd_subdirectory(engine/character/vivid)\n# Unity animation import (agent-unity-anim): clip sidecars and the Mecanim-style controller node.
 target_sources(aiverse_models PRIVATE engine/render/ModelClips.cpp engine/render/AnimationController.cpp)
 if((AIVERSE_BUILD_TOOLS OR AIVERSE_BUILD_TESTS) AND NOT EMSCRIPTEN AND NOT ANDROID AND NOT IOS)
     add_executable(aiverse_clipinfo tools/unity_anim/clipinfo.cpp)
