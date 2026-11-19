@@ -1200,3 +1200,73 @@ platform graphics hardware or restores live GPU particles.
 only. Native compiler/Metal, CTest, CLI file corruption tests,
 GPU multi-group capture, editor UI and on-device recovery
 have NOT RUN for Stage 42.
+
+## Stage 43 — safe support ZIP, external GPU capture mailbox and bounded host recovery
+
+For an explicitly requested support package, reuse
+`engine/fx/SpectraDiagnosticBundle.h` and
+`makeSafeGpuDiagnosticZip(inspection,aggregateFrames,out)`.
+The result is a bounded **ZIP STORE** archive (max 128 KiB)
+with exactly three fixed entries:
+`manifest.json`, `checkpoint_summary.json` and
+`preview_timeline.json`. It accepts at most 180
+sanitized per-frame counters and NEVER includes an
+original `.spfx` binary, per-particle positions, scalar
+VM registers, graph source names, GPU serials or world
+bounds. There is no option to add raw GPU data to this
+safe bundle; `GpuDiagnosticReportPrivacy` overrides
+cannot change this rule.
+
+The offline utility
+`tools/spectrafx/inspect_spfx.cpp` supports an
+explicit `--bundle <safe.zip>` destination, and the
+editor exposes a distinct **Save SAFE ZIP bundle** action.
+Both require a complete V2 source checkpoint and
+produce only local files on user action. They never
+auto-upload data. Safe filenames do not include the
+absolute GPU frame serial, and the editor does not
+mix its preview history into another GPU pool's
+support bundle.
+
+For external editor/native integration, use
+`GpuCaptureRequestMailbox` from the public
+`<aiverselib/genre/SpectraFX.h>` API. The native
+render-host owns the mailbox; the editor receives
+a **non-owning** pointer and may only queue a selected
+GPU group or request release. The host consumes
+requests and runs `GpuPoolCaptureHost` at its OWN
+safe gfx frame boundary (after beginFrame, before
+render pass), preserving Stage 32 readback budget,
+Stage 35 completed GPU fences and Stage 40 checked
+staging. The UI must NOT call any Metal/RHI
+compute/readback function or mutate ECS.
+
+The native example's `NativeAttachmentExample` exposes
+`poolTelemetry()`, `captureMailbox()` and
+`recoveryHost()` for external editor attachment.
+**Detach those three pointers from Editor before
+native host shutdown or destruction.** The mailbox
+statuses are only renderer-presentation data;
+old sequences are invalidated on rollback,
+shutdown or Device re-creation.
+
+The host recovery coordinator now optionally supports
+`serviceQueuedResetAtSafeFrame(ownerFrameOrdinal)`:
+it retries a queued/failed GPU-group reset with
+frame-based bounded exponential spacing (up to 32
+owner frames) and returns NoWork/Deferred/ResetSucceeded/
+ResetFailed/NeedsNewDevice. No sleeping/background
+tasks. `PoolRecoveryEvent` exposes failure counts
+and next eligible owner frame. A lost GPU still needs
+the native platform to create a distinct healthy
+graphics Device. Editor may display recovery status
+and queue a visual reset intent, but does NOT execute
+GPU commands while drawing its UI.
+
+**Mandatory handoff:**
+`docs/agent-handoffs/spectrafx-stage-43-safe-bundle-mailbox-recovery-2026-11-19.md`.
+
+**Verification status:** source commits and repository
+readback only; compilation, ZIP extraction, offline
+CLI execution, CTest, editor UI, real Metal capture
+and Device recovery were NOT RUN. Do not claim otherwise.
