@@ -1245,14 +1245,17 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     // Never replay RtsView::draw: its animation, event and appearance updates
     // are stateful, even with MotionWeave's universal View adapter.
     if(lensCamerasActive_ && sim_ && !mapLoading_ && dev.gpuHealthy()) {
-        const auto result=lensCameras_.render(time_,float(dt),
-            [&](const render::EcsCameraView&,render::Renderer3D& renderer){
+        const render::CameraVisualFrameId visualId{
+            uint64_t(sim_->tick()),++lensPresentationFrame_,time_};
+        const auto result=lensCameras_.renderPrepared(
+            lensModelSnapshot_,visualId,float(dt),
+            [&](const render::CameraModelSnapshot& snapshot,
+                const render::EcsCameraView&,render::Renderer3D& renderer){
                 if(worldScene_ && !planet())
                     worldScene_->draw(renderer,world::Cell{0,0,0},1);
-                // These finalized packets were captured AFTER MotionWeave's
-                // single update. Replaying them cannot consume animation
-                // events or update animation graph clocks.
-                lensModelSnapshot_.submit(renderer);
+                // Re-submit final pose/material/attachment packets directly.
+                // RtsView::draw and MotionWeave::update are NOT repeated.
+                snapshot.submit(renderer);
             });
         if(std::getenv("AIVERSE_LENS_LOG") && !result.diagnostics.empty())
             std::fprintf(stderr,"[lens] submitted=%zu skipped=%zu diagnostics=%zu\n",
