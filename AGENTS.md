@@ -2263,3 +2263,40 @@ or RHI buffer lifetime. Current branch:
 Next functional target: Stage 16 actual Vulkan compute selected cluster
 visibility, followed by Stage 17 crack-free lossy LOD. Preserve one
 Renderer3D draw owner and Metal/Vulkan/GLES3 fallback semantics.
+
+
+## STRATA Stage 16.1–16.2 — Vulkan GPU compute + indirect candidates (2026-11-20)
+
+Read `docs/agent-handoffs/strata-virtual-geometry.md`, Stage
+16.1 and 16.2, **before** editing `VkCompute`, Strata GPU selection,
+Renderer3D indexed draw submission or model metadata. Branch:
+`feature/strata-virtual-geometry`, NOT merged to `main`.
+
+- `VkCompute.cpp`: Vulkan compute RHI, standalone GLSL450 SPIR-V,
+  storage descriptors, checked 64-thread dispatch, GPU barriers and
+  async fence-completed readback. Preserve legacy Vulkan graphics
+  indexing and Storage vertex+index pooled buffer usages.
+- `StrataVulkanCullingShaders.h`: version-2 metadata shared with
+  Metal; GLSL GPU hierarchy selection + GPU indexed-indirect command
+  clear/select/safety. Overflow/invalid counters disable partial
+  commands on GPU, optionally replacing them with one original indexed
+  primitive only when strict one-material fallback fields are set.
+- `StrataVulkanIndirectContract.h/.cpp`: eligible static opaque,
+  single-primitive/material/node pooled source; no animation, author
+  LOD, shader graph, shadows/reflections or multi-instance alias.
+  Checks model revisions, handles and frame serial. Strict rejection
+  keeps the authoritative CPU/Legacy renderer route.
+- `GpuClusterCulling::dispatch` now emits Vulkan
+  `GpuSelectionSubmission::indirect` in addition to diagnostic ranges.
+  **DO NOT interpret `gpuIndirectPrepared()` as permission to
+  submit a production Renderer3D draw.** Vulkan RHI has an explicit
+  `drawIndexedGpuIndirect` method but no exclusive Renderer3D
+  production bridge is enabled yet. Next Stage 16.3 must own the
+  full renderer state and establish actual pixel parity before opt-in.
+- Stage16 authored CMake targets / tests are **NOT EXECUTED**:
+  `strata_vulkan_kernel` (real Vulkan+SPIR-V when available),
+  `strata_gpu_culling`, `strata_render_routing`. Do not claim
+  GPU parity from older Stage13 Metal lossless fixture.
+- Metal selector remains diagnostic, GLES3 portable CPU path
+  remains untouched. Avoid merging the divergent feature branch
+  to main until the full final native acceptance run.
