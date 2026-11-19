@@ -52,8 +52,9 @@ struct SpectraFxBackendDecision {
 
 // The implemented GPU backend currently handles only simple world-space,
 // unsorted alpha/additive billboards and simple world-Y ground plane bounce.
+// Native GPU execution is currently Metal-only. Vulkan has no implemented
+// compute entry points in this AIVERSE RHI; all other RHI backends stay CPU.
 // Mesh/scene/terrain/depth collisions still stay CPU.
-// No D3D12 graphics backend exists in the current AIVERSE RHI.
 inline SpectraFxBackendDecision chooseSpectraFxBackend(
         const gfx::Device& device,const SpectraFxBackendRequest& request) {
     const auto cpu = [&](const char* reason) -> SpectraFxBackendDecision {
@@ -78,9 +79,16 @@ inline SpectraFxBackendDecision chooseSpectraFxBackend(
         return cpu("requested particle modules require CPU fallback");
     if(!device.gpuHealthy())
         return cpu("RHI GPU reported unhealthy; use authored CPU effect");
+    // As of this branch's RHI inspection, VulkanDevice does not implement
+    // the Device compute entry points. A future Vulkan compute backend
+    // must separately validate persistent GPU-writable storage, barriers,
+    // frame-in-flight uploads and sampled RGBA32F output before enabling
+    // this path. Do not silently turn GPU particles on when that changes.
+    const auto backend=device.info().backend;
+    if(backend==gfx::Backend::Vulkan)
+        return cpu("SpectraFX Vulkan GPU evolution requires native RHI validation");
     if(!device.supportsCompute() || !device.supports(gfx::PixelFormat::RGBA32F))
         return cpu("RHI compute or RGBA32F storage unavailable");
-    const auto backend=device.info().backend;
     const bool depthSort=hasFeature(request.required,SpectraFxFeature::GpuDepthSort);
     const bool needsSort=hasFeature(request.required,SpectraFxFeature::Sorting);
     if(depthSort && (!needsSort ||
@@ -94,8 +102,8 @@ inline SpectraFxBackendDecision chooseSpectraFxBackend(
     if(hasFeature(request.required,SpectraFxFeature::GpuImpactFeedback) &&
        (backend!=gfx::Backend::Metal || request.particles>4096))
         return cpu("GPU impact feedback requires Metal and <=4096 particles");
-    if(backend!=gfx::Backend::Metal && backend!=gfx::Backend::Vulkan)
-        return cpu("GPU particle shaders are not supported on this RHI backend");
+    if(backend!=gfx::Backend::Metal)
+        return cpu("SpectraFX GPU evolution is currently Metal-only");
     return {SpectraFxExecutionBackend::Gpu,true,
             depthSort?"Metal GPU-sorted alpha eligible":"GPU billboard backend eligible"};
 }
