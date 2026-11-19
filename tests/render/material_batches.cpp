@@ -222,6 +222,17 @@ int aiverseMain(int argc, char** argv) {
     const bool cpuTiming = std::getenv("AIVERSE_BATCH_CPU_TIMING") &&
         std::string(std::getenv("AIVERSE_BATCH_CPU_TIMING")) == "1";
     std::vector<double> cpuRenderBefore, cpuRenderAfter;
+    // Stage 76: do not conflate AUTO exploration frames with its learned
+    // Direct frames. Retain CPU samples for *actual* successful MDI frames.
+    std::vector<double> stressDirectFallbackMs, stressSuccessfulMdiMs;
+    std::vector<double> stressSteadyAutoMs;
+    struct SuccessfulMdiCpu {
+        uint64_t samples = 0, submissions = 0;
+        double totalMs = 0, selectionMs = 0, groupingMs = 0;
+        double scanMs = 0, packingMs = 0, pipelineMs = 0;
+        double uploadMs = 0, submitMs = 0;
+    };
+    std::array<SuccessfulMdiCpu, 2> successfulMdiStages{};
     uint64_t stressAutoMdiScans = 0, stressAutoMdiAttempts = 0;
     uint64_t stressAutoMdiSubmitted = 0, stressAutoMdiShort = 0;
     uint64_t stressAutoMdiBelow = 0, stressAutoMdiIneligible = 0;
@@ -344,6 +355,34 @@ int aiverseMain(int argc, char** argv) {
         const auto startCpu = std::chrono::steady_clock::now();
         renderer.render(pass);
         const auto endCpu = std::chrono::steady_clock::now();
+        if (stress && batch && cpuTiming && frame >= 100 &&
+            frame <= captureAfterFrame) {
+            const auto& st = renderer.modelStats();
+            const double ms = std::chrono::duration<double, std::milli>(
+                endCpu - startCpu).count();
+            if (st.multiDrawSubmissions > 0) {
+                stressSuccessfulMdiMs.push_back(ms);
+                for (size_t phase = 0; phase < successfulMdiStages.size(); ++phase) {
+                    const auto& sample = st.mdiCpuStages[phase];
+                    if (!sample.submitted) continue;
+                    auto& total = successfulMdiStages[phase];
+                    ++total.samples;
+                    total.submissions += sample.submitted;
+                    total.totalMs += sample.totalMs;
+                    total.selectionMs += sample.selectionMs;
+                    total.groupingMs += sample.groupingSortMs;
+                    total.scanMs += sample.candidateScanMs;
+                    total.packingMs += sample.commandPackingMs;
+                    total.pipelineMs += sample.pipelineSetupMs;
+                    total.uploadMs += sample.bufferUploadMs;
+                    total.submitMs += sample.backendSubmitMs;
+                }
+            } else {
+                stressDirectFallbackMs.push_back(ms);
+            }
+            // Late AUTO frames, clearly separate from exploratory warmup.
+            if (frame >= 160) stressSteadyAutoMs.push_back(ms);
+        }
         if (stress && batch) {
             const auto& st = renderer.modelStats();
             stressAutoMdiScans += st.mdiScans;
@@ -398,6 +437,30 @@ int aiverseMain(int argc, char** argv) {
                    benchmarkMode == "gpu_icb" ? "gpu_icb_mixed" :
                    "batched", cpuRenderAfter);
             std::printf("CPU render benchmark: synchronous renderer.render() only; not GPU time or FPS\n");
+            if (stress) {
+                report("auto_direct_frames", stressDirectFallbackMs);
+                report("auto_mdi_submitted_frames", stressSuccessfulMdiMs);
+                report("auto_late_frames", stressSteadyAutoMs);
+                for (size_t phase = 0; phase < successfulMdiStages.size(); ++phase) {
+                    const auto& x = successfulMdiStages[phase];
+                    if (!x.samples) continue;
+                    const double scale = 1.0 / double(x.samples);
+                    std::printf("successful MDI CPU stage pass=%zu samples=%llu "
+                                "submissions=%llu mean_total_ms=%.5f "
+                                "selection_ms=%.5f grouping_ms=%.5f scan_ms=%.5f "
+                                "packing_ms=%.5f pipeline_ms=%.5f "
+                                "upload_ms=%.5f submit_ms=%.5f\n",
+                        phase, (unsigned long long)x.samples,
+                        (unsigned long long)x.submissions, x.totalMs * scale,
+                        x.selectionMs * scale, x.groupingMs * scale,
+                        x.scanMs * scale, x.packingMs * scale,
+                        x.pipelineMs * scale, x.uploadMs * scale,
+                        x.submitMs * scale);
+                }
+                std::printf("AUTO stress timing note: exploratory frame modes "
+                            "are not randomized A/B/A, GPU time remains unknown\n");
+            }
+
             if (std::getenv("AIVERSE_BATCH_AUTO") &&
                 std::string(std::getenv("AIVERSE_BATCH_AUTO")) == "1") {
                 const auto& learned = renderer.autoCpuBatchStats();
