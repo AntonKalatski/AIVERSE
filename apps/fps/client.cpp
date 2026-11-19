@@ -902,6 +902,12 @@ struct App {
                         packet.generation=remote.life;
                         packet.draw=packetDraw;
                         packet.animationModel=characterModel.get();
+                        // The published appearance (not the actor life)
+                        // identifies a reimported source rig. Graph-only
+                        // reload preserves this generation; a replacement
+                        // Model reissues it before any compiled LOD is used.
+                        packet.animationModelGeneration=characterAppearance
+                            ?characterAppearance->modelPublicationGeneration:0;
                         // Precomputed pose/baked sample: no graph attached;
                         // View consumes the source rig without a second
                         // MotionWeave update. Optional LOD retarget maps
