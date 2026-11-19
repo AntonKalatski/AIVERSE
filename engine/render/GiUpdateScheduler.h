@@ -77,7 +77,8 @@ public:
 
     // influenceRadius extends the affected AABB by the light's influence radius or
     // a conservative transport radius; never assume only the edited voxel is affected.
-    size_t invalidate(GiBounds bounds, GiDirtyReason reason, float influenceRadius = 0) {
+    size_t invalidate(GiBounds bounds, GiDirtyReason reason, float influenceRadius = 0,
+                      std::vector<uint32_t>* affectedIndices = nullptr) {
         if (!finite(bounds.min) || !finite(bounds.max) ||
             bounds.min.x > bounds.max.x || bounds.min.y > bounds.max.y || bounds.min.z > bounds.max.z ||
             !std::isfinite(influenceRadius) || influenceRadius < 0)
@@ -105,7 +106,9 @@ public:
         for (int z = a[2]; z <= b[2]; ++z)
             for (int y = a[1]; y <= b[1]; ++y)
                 for (int x = a[0]; x <= b[0]; ++x) {
-                    mark(slots_[index(x, y, z)], giDirtyBit(reason));
+                    const auto id = uint32_t(index(x, y, z));
+                    mark(slots_[id], giDirtyBit(reason));
+                    if (affectedIndices) affectedIndices->push_back(id);
                     ++affected;
                 }
         return affected;
