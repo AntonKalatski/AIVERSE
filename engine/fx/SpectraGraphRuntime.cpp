@@ -1,5 +1,6 @@
 #include "SpectraGraphRuntime.h"
 #include "SpectraGpuProgram.h"
+#include "SpectraGpuMaterial.h"
 #include <utility>
 
 namespace aiverse::spectra {
@@ -12,6 +13,7 @@ GraphGpuEligibility inspectGraphGpuEligibility(
     result.gpu.backend=options.preference;
     result.gpu.gpuIndirect=options.gpuIndirect;
     result.gpu.gpuProgram=options.gpuProgram;
+    result.gpu.gpuMaterial=options.gpuMaterial;
 
     const auto reject=[&](const char* why) {
         result.reason=why;
@@ -23,6 +25,17 @@ GraphGpuEligibility inspectGraphGpuEligibility(
         return reject("GPU v1 has no effect force fields");
 
     const fx::EmitterDef& e=effect.emitters[0];
+    const bool hasMaterial=!e.shaderGraph.isNull()||!e.graphInputs.isNull();
+    if(hasMaterial) {
+        if(!options.gpuMaterial || e.shaderGraph.isNull())
+            return reject("shaderGraph requires opt-in gpuMaterial and a complete particle material");
+        gpu_material::Material compiled;
+        std::string why;
+        if(!gpu_material::compile(e.shaderGraph,e.graphInputs,compiled,why)) {
+            result.reason=why.empty()?"GPU shaderGraph unsupported":why;
+            return result;
+        }
+    }
     // VM capability is opt-in and must cover the entire program. A prepared
     // payload alone never implies a passing real Metal GPU shader test.
     if(!e.particleProgram.isNull()) {
@@ -44,7 +57,7 @@ GraphGpuEligibility inspectGraphGpuEligibility(
     if(e.texture!="builtin:soft"||e.blend!=fx::FxBlend::Additive||
        e.align!=fx::FxAlign::Camera||e.shape!=fx::FxShape::Point)
         return reject("GPU v1 supports only additive soft camera-facing point sprites");
-    if(!e.shaderGraph.isNull() || e.hidden || e.noise.enabled() ||
+    if(e.hidden || e.noise.enabled() ||
        e.collision.enabled || e.trail.enabled || e.light.enabled ||
        e.trigger.enabled || !e.subEmitters.empty() || e.force.enabled ||
        e.velocityOverLife.enabled || e.inheritVelocity.enabled ||
@@ -89,6 +102,10 @@ GraphGpuEligibility inspectGraphGpuEligibility(
     // operation/stage. Keep it in the normalized effect comparison so other
     // authored emitter fields cannot disappear.
     supported.particleProgram=e.particleProgram;
+    if(hasMaterial) {
+        supported.shaderGraph=e.shaderGraph;
+        supported.graphInputs=e.graphInputs;
+    }
     fx::EffectDef limited;
     limited.emitters.push_back(std::move(supported));
     if(!(fx::effectToJson(effect)==fx::effectToJson(limited)))
@@ -101,6 +118,10 @@ GraphGpuEligibility inspectGraphGpuEligibility(
     result.gpu.gravityY=e.gravity.y;
     result.gpu.drag=e.drag.min;
     result.gpu.particleProgram=e.particleProgram;
+    if(hasMaterial) {
+        result.gpu.shaderGraph=e.shaderGraph;
+        result.gpu.graphInputs=e.graphInputs;
+    }
     std::string why;
     if(!validComputeEmitter(result.gpu,&why)) {
         result.reason="GPU v1 configuration: "+why;
