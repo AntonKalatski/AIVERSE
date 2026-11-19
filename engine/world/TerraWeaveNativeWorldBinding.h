@@ -58,6 +58,15 @@ public:
         std::optional<EarthworksLayer> stagedSoil;
         if(groundChanged)
             stagedSoil.emplace(materializeEcsTerrain(*state,cfg_));
+        bool grassChanged=state->grass.size()!=grass_.size();
+        if(!grassChanged)
+            for(const auto& patch:state->grass){
+                const auto* old=grass_.find(patch.key);
+                if(!old || !sameGrassPresentation(*old,patch)){
+                    grassChanged=true;
+                    break;
+                }
+            }
         RootSupportRegistry stagedRoots;
         GrassCoverRegistry stagedGrass;
         stagedRoots.setSnapshot(state->rooted);
@@ -120,7 +129,8 @@ public:
         if(stagedSoil)
             earth_.exchangeSnapshotState(*stagedSoil);
         roots_.exchangeSnapshotState(stagedRoots);
-        grass_.exchangeSnapshotState(stagedGrass);
+        if(grassChanged)
+            grass_.exchangeSnapshotState(stagedGrass);
         if(auto* forest=scene.forestScene()){
             forest->setPlantConditions(conditions);
             forest->setRootStates(exposed);
@@ -135,10 +145,10 @@ public:
         if(groundChanged){
             runtime_.invalidateAllResident();
             world_.reset(scene);
-        }else{
-            // Grass can regrow independently of terrain height. Keep the
-            // published terrain model/collision/NavMesh resident and only
-            // rebatch vegetation GPU patches at their normal frame budget.
+        }else if(grassChanged){
+            // Only grass changes need rebatching. Tree/shrub age/light and
+            // mortality use existing Arbor shared prototypes and per-tree
+            // conditions; no terrain or grass buffer reupload is required.
             runtime_.grassRenderer().invalidateAll();
         }
         stateRevision_=state->stateRevision;
