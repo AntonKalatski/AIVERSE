@@ -75,9 +75,7 @@ inline WaterInteractionOutputComponent evaluateWaterInteraction(
     }
     if(!state.initialized) {
         state.initialized=true;
-        if(wet && water.depth>config.surfaceWakeDepth)
-        state.wakeAnchor=probePosition;
-    state.previouslySubmerged=wet;
+        state.previouslySubmerged=wet;
         state.previousBody=wet?water.body:kNullEntity;
         state.previousSurfaceY=wet?water.surfaceY:Fixed{};
         state.previousPosition=probePosition;
