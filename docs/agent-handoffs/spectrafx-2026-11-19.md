@@ -31,3 +31,29 @@ cmake -S . -B build/spectrafx-validation -DCMAKE_BUILD_TYPE=Debug
 cmake --build build/spectrafx-validation --parallel
 ctest --test-dir build/spectrafx-validation --output-on-failure -R 'fx|particle|vfx'
 ```
+
+
+## 2026-11-19: Stage 2 — generic gameplay/ECS cue translation
+
+- **Branch:** `feature/spectrafx-generic-cue-queue`; remote `main` still `9ee6ff6fbf390bd45363bc92c838f492dfe92eee` at stage start; branch 0 commits behind main. No merge required.
+- **Implementation commit:** `1d83c02841cfb5f9f2fa83a02140476347314239`.
+- **Changed files:** `engine/fx/SpectraFxCueBridge.h` (new).
+- **Architecture/API:** `SpectraFxCue { id, action, key, position, direction, scale, tint }`; `SpectraFxBinding { effect, scale, tint, enabled }`; `SpectraFxCueBridge::bind/unbind/binding/dispatch/dispatchAll/translate/stats/resetStats`. Caller-provided `translate(event, cue)` maps any game/ECS event record into immutable presentation cues. Cue Play resolves a generic ID to an effect and multiplies binding/runtime size and tint; Move, Stop, Kill operate on generation-safe instance keys even after a binding is removed. An unbound/disabled Play is ignored. Actions with missing instance key are rejected. Calls enqueue into `SpectraFxCommandQueue`; `flush` occurs on render thread before `ParticleSystem::update`.
+- **Compatibility:** no changes to SimEvent, ECS snapshots, JSON serialization or existing RTS/FPS game logic. Optional header-only integration, not an installed ECS system. The host must maintain a read-only extraction barrier and invalidate presentation handles on rollback/reset.
+- **Tests actually executed:** **NOT RUN** (GitHub connector editing does not provide a native repository checkout/compiler/CTest); no native, CI or macOS editor verification. API is authored, not proven by compilation.
+- **Known limitations:** no authored JSON cue-binding loader, no live RTS/FPS call sites, no renderer parameter graph, no thread-safe producer queue or dedup of rollback events; all are future work. For rollback, discard cues from discarded ticks and `reset(particles)` before re-emitting the confirmed presentation state.
+- **Next step:** integrate the bridge with one existing game presentation adapter using an explicit event-to-cue mapping; add a second independent example, then compile/test both. Consider an optional generic effect parameter-block API after behavior is verified. Do not copy PRISMA post-processing into SpectraFX.
+
+### Pull / build commands
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main
+git merge origin/main
+cmake -S . -B build/spectrafx-validation -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/spectrafx-validation --parallel
+ctest --test-dir build/spectrafx-validation --output-on-failure -R 'fx|particle|vfx'
+```
