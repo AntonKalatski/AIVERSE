@@ -399,7 +399,17 @@ public:
                              float spacing, int nx, int ny, int nz,
                              int ringX = 0, int ringY = 0, int ringZ = 0,
                              const GiClipmapValidityTexture* validity = nullptr);
-    void clearDynamicGiOverlay() { dynamicGiOverlay_ = nullptr; dynamicGiValidity_ = nullptr; }
+    // Optional dual-cascade far volume. Call only after binding a fine atlas
+    // WITH an R8 validity mask. The far atlas must be fully GPU-complete.
+    bool setDynamicGiCascadeOverlay(const GiDynamicProbeTexture* far,
+                                    float3 origin, float spacing,
+                                    int nx, int ny, int nz,
+                                    int ringX=0, int ringY=0, int ringZ=0);
+    void clearDynamicGiOverlay() {
+        dynamicGiOverlay_ = nullptr;
+        dynamicGiValidity_ = nullptr;
+        dynamicGiFarOverlay_ = nullptr;
+    }
     bool dynamicGiOverlayActive() const { return dynamicGiOverlay_ != nullptr; }
     void setBakedQuality(BakedQuality q);
     BakedQuality bakedQuality() const { return bakedQuality_; }
@@ -672,9 +682,13 @@ private:
     const BakedLighting* baked_ = nullptr;
     const GiDynamicProbeTexture* dynamicGiOverlay_ = nullptr;
     const GiClipmapValidityTexture* dynamicGiValidity_ = nullptr;
+    const GiDynamicProbeTexture* dynamicGiFarOverlay_ = nullptr;
     float4 dynamicGiOrigin_{};
     float4 dynamicGiSize_{};
     float4 dynamicGiRing_{};
+    float4 dynamicGiFarOrigin_{};
+    float4 dynamicGiFarSize_{};
+    float4 dynamicGiFarRing_{};
     BakedQuality bakedQuality_ = BakedQuality::High;
     uint32_t bakedLightmapped_ = 0, bakedProbed_ = 0, bakedCountLm_ = 0, bakedCountPr_ = 0;
     ModelCapture capture_;
