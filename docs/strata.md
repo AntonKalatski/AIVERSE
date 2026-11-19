@@ -1043,3 +1043,47 @@ are not passing results.
 Compiler, CTest, screenshots, GPU timing and benchmarks must be reported only
 after **actual execution** with exact logs or CI URLs. Queued/cancelled runs
 are not passing results.
+
+
+## Stage 11.1 — owner-verified real Metal raster parity PASS (2026-11-19)
+
+**Actual native Mac Studio output**, after the Metal screenshot scheduling
+fix `bcc471e93c9a4a35f7fda457d4fa15ccbda13fe9`, confirms:
+
+- `aiverse_strata_metal_raster_parity` successfully built and executed.
+- Capture requests/callbacks: Empty frame 4→6; Legacy 15→17;
+  Strata Fine 26→28; Strata Coarse 37→39. All four capture callbacks
+  returned **1,920,000 bytes**, consistent with 800 × 600 × 4.
+- Renderer profile draw counts per requested frame:
+  Empty shadow=0 opaque=0; Legacy shadow=1 opaque=1;
+  Fine shadow=2 opaque=2; Coarse shadow=1 opaque=1.
+- `Legacy/Fine changed_channels=0`;
+  `Legacy/Coarse changed_channels=0`.
+- Three reported PASS assertions: actual `Renderer3D`
+  source-page raster pixel parity, main+sun-shadow submissions, and
+  one ModelDraw per comparison frame with no second GPU geometry pool.
+- Final `[strata-raster] status=PASSED frames=44`.
+- Metal pipeline diagnostics:
+  `[metal-assets] libraries=0 sourceMisses=11 pipelines=16 pipelineFailures=0 archive=0 strict=0`.
+
+The prior fixture's `Legacy and empty screenshots identical` failure
+was fixed without relaxing the nonblank baseline check or pixel parity
+criteria. Real Metal cluster-selection parity had already been
+owner-verified independently: `cases=5/5 status=PASSED`;
+the focused native CPU/recording-RHI CTests passed 6/6 on the earlier
+provided log. The Stage 11.1 run did **not** rerun all six CTests.
+
+**This proves only lossless parent/leaf indices produce identical final
+main-camera RGBA images through the existing renderer on this fixture,
+with main/shadow pass submission counters.** It does NOT demonstrate
+direct shadow-map depth-texture equality, reflection parity,
+arbitrary material equivalence, intentionally simplified LOD visual
+quality, crack-free mixed LOD seams, GPU-selected indirect rendering,
+automatic streaming, or cross-backend parity. Production Strata
+draw routing remains OFF; main remains unchanged; PR #35 stays Draft.
+
+Next: add independent shadow depth texture readback parity and reflection/
+multiview fixtures, then materially varied, simplified and multi-instance
+cases. Continue enforcing one `GlobalGeometryPool` owner and one
+`Renderer3D` draw authority; only then consider opt-in exclusive
+Legacy/Strata production switching.
