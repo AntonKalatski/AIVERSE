@@ -371,3 +371,65 @@ is NOT counted as a harvest and a fallen tree is NOT automatically harvested.
 CTest, save/load, rollback, Metal/GL/Vulkan visuals or Box3D interaction has
 been run. Keep PR #24 Draft; see
 `docs/terrain/stage-66-authoritative-harvest-handoff.md`.
+
+
+## Stage 67 — deadwood, conserved nutrients and native Box3D cleanup
+
+The new optional module adds a persistent, budgeted organic-matter ledger
+`ForestDeadwoodResource`, with one stable deadwood ID per opted-in
+interactive tree/shrub and one integer nutrient amount per 32m soil cell.
+This is **not** a second heightfield, a second water simulation, an entity
+per grass blade or a per-frame forest mesh rebuild.
+
+Enable by passing the new final `enableForestDeadwood=true` argument to
+`registerSystems` (defaults to false); optionally provide
+`ForestDeadwoodDecaySettings` and an `onDeadwoodDecay` callback.
+For direct native setup register persistence, then append
+`addTerraWeaveForestDeadwoodSystem` AFTER
+`addTerraWeaveForestEcologySystem`. Stage65 natural mortality automatically
+seeds newly dead plants in the same World COW transaction. If no
+ecological species policy is enabled, a game may still seed fallen
+root-supported trees at a safe ECS structural barrier:
+
+```cpp
+#include "engine/world/TerraWeaveForestDeadwoodEcs.h"
+
+// Use the authoritative Earthworks root-support fall events from a
+// completed dig/landslide/erosion transaction. Do not step physics here.
+const size_t newlySeeded=terraweave::seedFallenForestDeadwoodEventsEcs(
+    sim.world(),change.rooted.fell,sim.tick());
+
+// After the ECS decay callback enqueues its outcome, run this on the
+// Box3D owner thread, outside ECS simulation:
+#include "examples/world/terraweave_native/PhysicsIntegration.h"
+const size_t bodiesRemoved=
+    examples::terraweave_native::removeFullyDecayedFallenBodies(
+        completedDecay,fallenTrees);
+// Rebuild fallen-tree NavMesh blocker snapshots and refresh NEREID
+// obstruction mirrors on the next owner-thread barrier.
+```
+
+A harvest of already-decomposing wood goes through
+`harvestNativeForestTree`; it exports only the remaining saved organic
+units and avoids a duplicate soil nutrient payout. The previous
+`NativeForestHarvestOutcome::exportedDeadwoodUnits` value exposes how
+much was carried away. Natural death is not automatically a harvest or a
+new Box3D fall: native gameplay still decides when a trunk falls,
+becomes a collidable log, can be collected, and has its NavMesh blocker
+removed.
+
+Every decay step uses integer simulated ticks and bounded persistent
+cursors, not camera distance or wall clock. Decomposed organic matter
+splits into the local saved nutrient pool and an explicit respiration
+sink; `deadwoodLedgerBalanced(resource)` checks that no units appeared
+or vanished. Living trees/shrubs receive up to +250 fertility permille
+and Stage64 grass patches use five aggregate sample locations. These
+are health/regrowth **proxies**: actual mineral uptake by living plants,
+runoff/leaching into NEREID, fungal networks, bespoke corpse meshes and
+natural-death Box3D spawning remain future feature stages.
+
+**Testing status:** source uploaded and read back through GitHub; this
+stage has **not** been compiled, executed in a native game, or verified
+on Metal/GL/Vulkan/Box3D/CTest. See
+[Stage67 agent handoff](../../docs/terrain/stage-67-deadwood-soil-nutrients-handoff.md)
+for exact commits, budgets, dependencies, QA and next work.
