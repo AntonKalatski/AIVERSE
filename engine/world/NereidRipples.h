@@ -194,6 +194,21 @@ public:
     void advance(float deltaSeconds) {
         advance(deltaSeconds,[](uint64_t,double,double,double){return Vec3{};});
     }
+    // Environmental wind drift is visual only and independent from
+    // WaterBody.flow (which remains authoritative for gameplay forces).
+    void applyVisualWind(float deltaSeconds,float east,float north,
+                         float gust,float coupling) {
+        if(!std::isfinite(deltaSeconds) || deltaSeconds<=0 ||
+           !std::isfinite(east) || !std::isfinite(north) ||
+           !std::isfinite(gust) || !std::isfinite(coupling))return;
+        const double dt=std::min(double(deltaSeconds),0.25);
+        const double weight=0.07*
+            std::clamp(double(coupling),0.0,1.0)*
+            (0.35+0.65*std::clamp(double(gust),0.0,1.0));
+        const double dx=std::clamp(double(east),-100.0,100.0)*dt*weight;
+        const double dz=std::clamp(double(north),-100.0,100.0)*dt*weight;
+        for(auto& r:ripples_) {r.x+=dx;r.z+=dz;}
+    }
     // Alpha-blended annular quads, generated only for currently live ripples.
     // World origin uses double subtraction before conversion to float,
     // avoiding far-world precision loss. Y is lifted slightly to avoid z-fight.
