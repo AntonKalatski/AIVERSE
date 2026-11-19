@@ -4,6 +4,7 @@
 #include "engine/character/vivid/SkinWeightAuthoring.h"
 #include "engine/character/vivid/SkinnedWeightPick.h"
 #include "engine/character/vivid/SkinWeightLodTransfer.h"
+#include "engine/character/vivid/SkinSeamAnalysis.h"
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -375,6 +376,15 @@ void check() {
             lod.vertices[3].weights[0]<=129 &&
             lod.vertices[3].weights[0]+lod.vertices[3].weights[1]==255,
             "LOD skin transfer did not remap palette and barycentric weights");
+        const auto originalSeams=SkinSeamAnalysis::detect(lod);
+        req(originalSeams.empty(),"independent LOD vertices reported as shared seam");
+        render::Primitive secondSource=source;
+        secondSource.jointPalette={1,0};
+        lod.meshes[0].primitives.push_back(secondSource);
+        const auto seams=SkinSeamAnalysis::detect(lod);
+        req(seams.size()==3 && seams[0].vertex==0,
+            "conflicting shared skin joint slot palettes not diagnosed");
+        lod.meshes[0].primitives.pop_back();
         const auto before=lod.vertices[3];
         lod.meshes[1].primitives[0].jointPalette={0};
         bool rejected=false;
