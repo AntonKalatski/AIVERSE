@@ -1,5 +1,5 @@
 #include "modules/rts/view/RtsTerrainShaderBudget.h"
-#include "engine/render/GiCustomShaderPolicy.h"
+#include "engine/render/GiCustomShaderSource.h"
 #include "tests/AlwaysCheck.h"
 #include <string>
 
@@ -16,6 +16,13 @@ int main() {
     AIVERSE_TEST_CHECK(!terrainCompactSupported(15));
     AIVERSE_TEST_CHECK(terrainCompactSupported(16));
     AIVERSE_TEST_CHECK(!giCustomModeFitsAt(GiCustomShaderMode::Single,21,16,false));
+    AIVERSE_TEST_CHECK(giCustomModeFitsAt(GiCustomShaderMode::Single,7,16,false));
+    AIVERSE_TEST_CHECK(giCustomModeFitsAt(GiCustomShaderMode::Single,7,16,true));
+    const std::string compactGi=giCustomGlslFunctions(
+        GiCustomShaderMode::Single,7);
+    AIVERSE_TEST_CHECK(compactGi.find("uniform highp sampler2D tex7;")!=std::string::npos);
+    AIVERSE_TEST_CHECK(compactGi.find("texelFetch(tex7")!=std::string::npos);
+    AIVERSE_TEST_CHECK(compactGi.find("uniform highp sampler2D tex13;")==std::string::npos);
 
     const std::string rich=aiverse::game::shaders::kTerrainFS;
     const std::string low=terrainCompactLowFragment();
