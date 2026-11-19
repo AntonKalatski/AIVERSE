@@ -8699,3 +8699,64 @@ Metal/GL/Vulkan base-layer and authored-mip upload/readback parity with
 a multi-face cube array and a volume image. Fix compiler or device errors
 before promoting the PR; do not treat source assertions as test passes.
 
+
+## Stage 10AS — macOS Bash verification script repair (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`. **PR:** Draft #21.
+**Observed user failure:** after a successful `git pull --ff-only`,
+`bash tools/verify-texture-rhi.sh --editor --jobs 4` printed
+`Configuring CMake...` followed by
+`tools/verify-texture-rhi.sh: line 62: cmake_flags[@]: unbound variable`.
+It never completed CMake configuration and did not build or run tests.
+
+**Code commit:** `e52728c4a0db07aedd41effe282d98f74acdb9b1`
+(`tools/verify-texture-rhi.sh`). **Docs commit:**
+`a1e9c1cd592b7b85c95af55697337d325d6499d2`
+(`docs/texture-rhi.md`).
+
+**Root cause & changes:** macOS ships an older Bash that can throw
+`unbound variable` when an explicitly empty array is expanded with
+`set -u`. The script previously interpolated
+`"${cmake_flags[@]}"` directly with no extra `-D` flags.
+Switched to the Bash-supported conditional
+`"${cmake_flags[@]+"${cmake_flags[@]}"}"`, which passes zero
+arguments when the array is empty while preserving the exact words
+for supplied flags (including spaces). Inspection also uncovered a
+pre-existing malformed and duplicated tail: the `ctest -N -R`
+registration query had an unmatched single quote, swallowing a
+later CTest invocation, and the final test/summary logic was
+duplicated. Replaced it with one correctly closed optional shader
+registration query, validator availability notes, one focused CTest
+invocation, final error accounting and one summary message.
+
+**Actually verified:** re-fetched the updated GitHub branch source
+and checked the exact safe Bash expansion and repaired CTest/summary
+markers; each appears where expected, with a single
+`ctest --output-on-failure` occurrence. In an isolated local
+GNU Bash 5.2 shell fixture (not the AIVERSE repo), executed
+`bash -n /tmp/check_texture_rhi_flags.sh` (exit 0) and
+`bash /tmp/check_texture_rhi_flags.sh` (exit 0);
+zero optional arguments yielded exactly 5 mock CMake arguments,
+and one flag containing spaces yielded 6 without splitting.
+**The complete corrected script was NOT syntax-checked or run
+with macOS Bash 3.2 in this environment.**
+
+**Still NOT RUN:** repository-local `bash -n`, native CMake
+configure, C++/Objective-C++ compilation, CTest, MSL/GLSL
+shader compilation, real Metal/Vulkan/GL GPU runs or visual parity.
+The only observed native run was the user's failure on the old script.
+Do not mark current PR or stages as passing based on this repair.
+
+**Next exact action:** on the Mac Studio:
+```bash
+cd ~/Projects/AIVERSE
+git switch feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+bash -n tools/verify-texture-rhi.sh
+bash tools/verify-texture-rhi.sh --editor --jobs 4
+```
+If there is another failure, collect
+`build/texture-rhi/verify-logs/{configure.log,build.log,ctest.log,summary.txt}`
+and fix the first real error; always preserve user/other-agent changes
+and append a new handoff after each bounded stage.
+
