@@ -88,6 +88,7 @@ int main() {
     AIVERSE_TEST_CHECK(scene.geometry().hasPendingChanges());
     AIVERSE_TEST_CHECK(scene.pendingRegions()==2); // old and new Y bounds do not overlap
     AIVERSE_TEST_CHECK(scene.geometry().revision()==1); // original still published
+    AIVERSE_TEST_CHECK(gpu.presentationBlocked());
     device.endFrame();
     device.finish();
 
@@ -98,6 +99,7 @@ int main() {
     AIVERSE_TEST_CHECK(completed.geometry.published &&
                        completed.geometry.revision==2);
     AIVERSE_TEST_CHECK(completed.events.events==1 && !completed.deferred);
+    AIVERSE_TEST_CHECK(!gpu.presentationBlocked());
     AIVERSE_TEST_CHECK(completed.retainedSnapshots==0);
     AIVERSE_TEST_CHECK(!scene.pending());
     work=gpu.updateFrame({0,0,0},4);
