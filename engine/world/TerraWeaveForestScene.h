@@ -262,8 +262,13 @@ public:
     // clocks, floating elapsed time or RHI calls are used for regrowth.
     // Advancing this tick changes visibleBatches() without rescattering any
     // resident chunk or canceling in-flight worker jobs.
-    void setPresentationTick(uint64_t tick) { presentationTick_=tick; }
+    void setPresentationTick(uint64_t tick) {
+        presentationTick_=tick;
+        adapter_.setPresentationTick(tick);
+    }
     uint64_t presentationTick() const { return presentationTick_; }
+    void setWind(ForestWindState value) {adapter_.setWind(value);}
+    const ForestWindState& wind() const {return adapter_.wind();}
     // Global, presentation-only canopy appearance. PHYSIS or a game calendar
     // may translate its weather/season state into this genre-free POD.
     // Material overrides are updated once; resident scatter and async
