@@ -328,6 +328,9 @@ private:
     Minimap minimap_;
 
     Renderer3D r3d_;
+    // Optional project-authored texture-only LENS cameras. Never owns screen output.
+    render::CameraClientAdapter lensCameras_;
+    bool lensCamerasActive_=false;
     // streamed static world (map "streamedWorld": {"async": true, ...}, docs/large-worlds.md): chunks around the camera
     std::unique_ptr<world::WorldScene> worldScene_;
     int worldRadius_ = 2;
