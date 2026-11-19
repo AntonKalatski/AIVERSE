@@ -4,6 +4,22 @@ Last source stage: **70** (2026-11-19), branch `feature/terraweave`.
 PR #24 is Draft, and must not merge to `main` before native QA and
 cross-branch conflict reconciliation.
 
+## Latest native performance evidence — Place and replica passed
+
+**Read first:** [Mac Studio user-verified Place 0.766ms and replica 1/1 PASS](qa-2026-11-19-place-perf-native-green.md).
+In the optimized Debug QA build, the original 16-client 4G/523-body
+strict `tickAvg < 5.0` scenario now **PASSES** at 0.766ms average,
+1.729ms worst (11 checks, 0 failed; 12.7s real wall time).
+The independent `aiverse_replica_tests` CTest executable also
+**PASSES 1/1** (2.36s real). Source case field/bandwidth/
+convergence/late join match the earlier workload with
+31,954 B/s/client and 0.0069m resting/late discrepancy.
+This is real user-provided evidence, NOT a full unfiltered CTest
+or proof of ordinary -O0 Debug perf. Exact tested local SHA
+was not included in the pasted output; verify with `git rev-parse HEAD`.
+Next: full all-target build and one unfiltered CTest with
+`AIVERSE_PLACE_FAST_DEBUG=ON`, then actual integration/renderer QA.
+
 ## Latest PHYSIS-proven Place performance QA backport
 
 **Read first:** [2026-11-19 PHYSIS Stage100/101 Place performance backport and replica parity](qa-2026-11-19-physis-place-performance-backport.md).
