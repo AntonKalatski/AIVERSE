@@ -100,8 +100,11 @@ static std::uint64_t run(bool cow) {
 
     sim->step();
     const auto& world = sim->world();
-    const auto nature = world.get<pn::NatureContactComponent>(host->observer);
-    const auto water = world.get<nw::WaterContactComponent>(host->observer);
+    const auto* naturePtr = world.tryGetConst<pn::NatureContactComponent>(host->observer);
+    const auto* waterPtr = world.tryGetConst<nw::WaterContactComponent>(host->observer);
+    require(naturePtr && waterPtr, "PHYSIS/NEREID contact components missing");
+    const auto nature = *naturePtr;
+    const auto water = *waterPtr;
     require(nature.valid && nature.hasAtmosphere && nature.hasHazards,
             "PHYSIS nature contact missing");
     require(nature.sampledSimulationTick == 0 && nature.climateTick == 1,
