@@ -400,22 +400,15 @@ Prisma::MemoryStats Prisma::memoryStats() const {
             addTexture(h, out.viewHistoryKnownBytes,
                        out.liveTextures, out.unknownTextures);
     }
+    // Count unattributed camera histories once without repeatedly querying
+    // RHI metadata; these may be awaiting the next retireView() call.
     for (const auto& [id, history] : temporalViews_) {
         if (viewDimensions_.count(id)) continue;
+        uint64_t bytes=0;
         for (const auto& h : history.history)
-            addTexture(h, out.temporalHistoryKnownBytes,
-                       out.liveTextures, out.unknownTextures);
-    }
-    // Orphan temporal buffers are part of the private-history total too.
-    // The earlier view loop already counted attributed temporal textures.
-    for (const auto& [id, history] : temporalViews_) {
-        if (!viewDimensions_.count(id)) {
-            uint64_t bytes = 0;
-            size_t ignoredCount = 0, ignoredUnknown = 0;
-            for (const auto& h : history.history)
-                addTexture(h, bytes, ignoredCount, ignoredUnknown);
-            out.viewHistoryKnownBytes += bytes;
-        }
+            addTexture(h, bytes, out.liveTextures, out.unknownTextures);
+        out.temporalHistoryKnownBytes += bytes;
+        out.viewHistoryKnownBytes += bytes;
     }
     addTexture(black_, out.otherLiveKnownBytes,
                out.liveTextures, out.unknownTextures);
