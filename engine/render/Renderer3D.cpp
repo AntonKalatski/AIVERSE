@@ -643,6 +643,7 @@ void Renderer3D::renderCurrentFrameReactiveMask(
         meshReactiveNeeded |= meshReactiveEligible(item);
     bool rigidReactiveNeeded = false, animatedReactiveNeeded = false;
     bool cutoutReactiveNeeded = false, simpleRigidReactiveNeeded = false;
+    bool animatedBakedNeeded = false, animatedSkinNeeded = false;
     for (const auto& it : modelItems_) {
         const bool rigid = reactiveEligible(it);
         rigidReactiveNeeded |= rigid;
@@ -650,7 +651,12 @@ void Renderer3D::renderCurrentFrameReactiveMask(
             (it.mat->alpha == AlphaMode::Mask || it.dissolve > 0.0f);
         cutoutReactiveNeeded |= detailed;
         simpleRigidReactiveNeeded |= rigid && !detailed;
-        animatedReactiveNeeded |= reactiveAnimatedEligible(it);
+        const bool animated = reactiveAnimatedEligible(it);
+        animatedReactiveNeeded |= animated;
+        if (animated) {
+            animatedBakedNeeded |= it.baked;
+            animatedSkinNeeded |= !it.baked;
+        }
     }
     const bool reactiveNeeded = rigidReactiveNeeded ||
         animatedReactiveNeeded || meshReactiveNeeded ||
@@ -790,14 +796,8 @@ void Renderer3D::renderCurrentFrameReactiveMask(
         pipelineHandle = dev_->createPipeline(pipeline);
     };
     if (animatedReactiveNeeded) {
-        bool needBaked = false, needSkin = false;
-        for (const auto& item : modelItems_)
-            if (reactiveAnimatedEligible(item)) {
-                needBaked |= item.baked;
-                needSkin |= !item.baked;
-            }
-        if (needBaked) prepareAnimatedReactive(true);
-        if (needSkin) prepareAnimatedReactive(false);
+        if (animatedBakedNeeded) prepareAnimatedReactive(true);
+        if (animatedSkinNeeded) prepareAnimatedReactive(false);
     }
     // Check the pipeline for the ACTUAL provider type. A failed cutout
     // shader must not publish an empty mask merely because the simple
@@ -805,9 +805,8 @@ void Renderer3D::renderCurrentFrameReactiveMask(
     const bool anyReactiveProviderReady =
         (simpleRigidReactiveNeeded && objectMotionReactivePipeline_.valid()) ||
         (cutoutReactiveNeeded && objectMotionReactiveCutoutPipeline_.valid()) ||
-        (animatedReactiveNeeded &&
-            (objectMotionReactiveSkinPipeline_.valid() ||
-             objectMotionReactiveBakedPipeline_.valid())) ||
+        (animatedSkinNeeded && objectMotionReactiveSkinPipeline_.valid()) ||
+        (animatedBakedNeeded && objectMotionReactiveBakedPipeline_.valid()) ||
         (meshReactiveNeeded && objectMotionReactiveMeshPipeline_.valid()) ||
         !motionReactiveDraws_.empty();
     if (reactiveNeeded && history.reactive.valid() &&
