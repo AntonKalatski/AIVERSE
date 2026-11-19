@@ -188,6 +188,14 @@ public:
     bool ready() const {
         return device_ && compute_.valid() && capacity_ != 0;
     }
+    uint64_t nominalGpuBytes() const {
+        if(!ready()) return 0;
+        const uint64_t cells=uint64_t(SpectraFxGpuEvolution::kTextureWidth)*
+            ((uint64_t(capacity_)+SpectraFxGpuEvolution::kTextureWidth-1)/
+             SpectraFxGpuEvolution::kTextureWidth);
+        return kBufferedFrames*(cells*sizeof(render::float4) +
+                sizeof(uint32_t)+sizeof(gfx::DrawIndexedIndirectCommand));
+    }
     uint32_t capacity() const { return capacity_; }
     const std::string& lastError() const { return error_; }
 
