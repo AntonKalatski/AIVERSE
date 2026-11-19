@@ -564,3 +564,74 @@ build/strata/aiverse_strata_metal_parity
 ```
 
 On any compiler error, shader pipeline error or failed GPU/CPU comparison, save the exact output, update the implementation and append a **new handoff section with actual results**. Inspect Metal shader compiler diagnostics, frame serials and GPU counters first. The real fixture must print five PASS scenario lines and `cases=5/5 status=PASSED` before claiming stage 8.2 GPU parity. Those are future required results, NOT current achievements. Preserve diagnostic-only mode and the legacy Renderer3D draw owner. Next work after real parity: randomized passes/transforms and conservative CPU/GPU pixel parity before mutually exclusive submission and Hi-Z.
+
+
+---
+
+## Stage 9 — exclusive renderer source routing preflight (2026-11-19)
+
+### Current branch and upstream integration
+**Working branch:** `feature/strata-virtual-geometry`; PR #35 remains Draft. PR #34 for `perf/incremental-static-model-cache` was merged into `main` at commit `58e29ab052458fffcdebebffe27022b53adb9367`. This Strata branch includes the new `main` using a **two-parent merge** `a77cd830e8dee751658028786066111bc8e65f6a` while keeping all Strata files and latest batching changes (`GfxMetal.mm`, `Renderer3DModels.cpp`, `AutoCpuBatchPolicy.h`, material batching fixture and batching handoff/script). No changes were made to the batching branch or main by Strata. PR base should now be `main`, not the already merged batching feature branch.
+
+### Exact implementation commits
+- `a77cd830e8dee751658028786066111bc8e65f6a`: actual merge from current batching `main`.
+- `2930878b938b4a30743f94cf8f1af5e203ce3491`: new `engine/render/StrataRenderRouting.h`, exclusive source route decision, per-pass geometry-only candidates and common indexed indirect ABI.
+- `8cd26285c19863a0fd9c6a8695291d9b4e01a85b`: new `engine/render/StrataRenderRouting.cpp`, strict active-source preflight, CPU `planView()` selection and pooled sidecar index translation; no draw calls.
+- `0c3ead9339db925877f7444d8b0e0f71742e9a0e` / `e70fa64ad77589aba7efaaef625e36c9ebb320bc`: tie a command candidate to the exact Model identity, geometry/material revisions and pooled buffer handles at encoding time.
+- `63632145689003fdef185a7ff66dc49a8912b7d4`: decline existing material and shadow batching ownership, in addition to skinned/morphed, alpha, vertex displacement, variants, material overrides and authored LOD.
+- `76fb03c2ee1859586392abc14be8b850e1affbfd`: new `tests/render/strata_render_routing.cpp` recording-RHI route preflight fixture.
+- `c86fe0110c8ad835954813d4c1ec96c8006a500c`: new CMake library `aiverse_strata_render_routing`, test executable `aiverse_strata_render_routing_tests`, CTest `strata_render_routing`; runtime links the preflight library only when Strata is compiled.
+- `94456211a4eac216c0594bb3a0047f19f1d9fade` / `cbc65002a1ae99f7c4ba19cf215b161acd2ffeef`: additive `GeometryScene::prepareStrataRenderCandidate` API; reads scene-owned source and staged metadata but does not alter `GeometryScene::draw`.
+- `a8d0a3b1a969fec2797906e0005d9522314ca72e` / `82e7cea293b2c021ae98dd6fff1015c1a0a98cb7`: always check a **fresh live `GpuMetadataScene::indexBinding`** during command encoding, preventing reuse after GPU sidecar retirement. Re-check live material/geometry compatibility even when a caller forgot to mark a material revision.
+- `df20b874f99c04780d2c8cf1b703dc6ebaa753eb`: extend recording RHI tests for live lease checks.
+- `4a4462001ae4ee2e11f453caa0665dd186e973a7`: update `.github/workflows/strata-focused.yml` to compile/test all six focused Strata targets.
+- `f0272ecdf1b0f05b31a265571880c60a3498d77e`: regression cases for missing sidecar, changing a material alpha without a revision increment, and existing shadow-batch ownership.
+- `54fb33b73d601762bffdccc320abeb604a20d3f9`: `docs/strata.md` stage 9 API, gated route and no-live-draw policy.
+- `ee9cd11e116c3540bf5df5008bf678e7783df739`: root `AGENTS.md` ownership notes, no-double-render guard and merged batching provenance.
+
+### Architecture/API contract
+`strata::prepareRenderCandidate(const Model&, const ModelAsset&, const GpuMetadataScene&, sourceKey, mesh, primitive, pass, ViewConfig, RenderCandidate&, error)` requires a **currently live** source model, matching per-source metadata v2 and existing `GlobalGeometryPool` auxiliary index lease, rigid nonanimated/nondeformable object, opaque compatible material, no material batching, variant, explicit authored LOD, or shadow batch that would duplicate submission. It calls per-pass CPU `planView` and rejects budget fallbacks not representable by the GPU output. The candidate includes actual `gfx::BufferHandle` identity and ranges with **absolute pooled GPU index offsets**, original pooled base vertex, source geometry and material revision. Zero ranges after conservative frustum culling is a legitimate Strata-only skip, not permission to also draw the legacy primitive. It never submits anything.
+
+`strata::RenderRouteGate` has six explicit opt-in conditions: requested, source/material safety, source residency, CPU/GPU parity, raster parity and Renderer3D submission ownership. `chooseExclusiveRenderRoute` defaults to `Legacy` unless **all six** are true. There is no supported path for simultaneously drawing Strata and legacy for the same primitive/pass. In production, these bits MUST come from proven actual tests and renderer control flow; simply setting them to true is not validation.
+
+`encodeRendererCommands(liveModel, liveGpuMetadataScene, candidate, rendererInstanceSlot, gate, output)` requires a real renderer-owned per-draw uniform slot. It rechecks live Model identity/revisions/vertex+index handles and **fresh** source sidecar binding before preparing shared 20-byte `gfx::DrawIndexedIndirectCommand` records. Every selected range must be inside the active GPU lease, triangle aligned and have the correct material/base vertex. It is transactional: error preserves caller output. This only *constructs* command bytes and never calls `drawIndexed` / `drawIndexedIndirect`, sets pipeline/uniforms, or suppresses legacy ModelDraw. Renderer3D still owns all renders, material grouping, shadows, GI and CPU/GPU batching. No GPU culling was made authoritative.
+
+`GeometryScene::prepareStrataRenderCandidate` exposes the existing staged source to this helper behind explicit CPU/GPU Strata staging. The caller supplies the exact pass-specific object-to-clip matrix including the node transform. Do not use a shared main-camera selection for sun shadows, reflection, portal or stereo passes. The preflight is per primitive and per pass; use `Legacy` on unsupported backend/material/model or missing/off GPU residency.
+
+### Actual test evidence (not inferred)
+- **Owner-provided Mac Studio result from earlier Stage 8.1:** 5/5 focused CPU and recording-RHI CTests PASS in 1.19 s. This remains valid only for that prior code snapshot.
+- New Stage 8.2 Metal async readback, actual real-Metal parity runner and **Stage 9 route preflight**: native build/CTest **NOT RUN in this session**. No actual GPU/CPU parity or screenshot validation has been furnished. Do not claim Stage 9 tests PASS because a fake RHI fixture was added.
+- GitHub Actions for intermediate current-feature commits are queued/pending, not yet a verified PASS. The assistant has no AIVERSE checkout or macOS Metal GPU execution capability.
+
+### Immediate native commands (existing Mac Studio worktree)
+```sh
+cd ~/Projects/AIVERSE-strata-stage8
+git status --short
+git fetch origin main feature/strata-virtual-geometry
+# Only when status shows no uncommitted work:
+git switch --detach origin/feature/strata-virtual-geometry
+cmake -S . -B build/strata \
+  -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_STRATA=ON \
+  -DAIVERSE_STRATA_METAL_GPU_TESTS=ON
+cmake --build build/strata --target \
+  aiverse_strata_render_routing_tests aiverse_strata_gpu_culling_tests \
+  aiverse_strata_metal_parity --parallel 8
+ctest --test-dir build/strata \
+  -R '^strata_(builder|model_adapter|view|gpu_scene|gpu_culling|render_routing)$' \
+  --output-on-failure
+build/strata/aiverse_strata_metal_parity
+```
+The real Metal fixture MUST actually print five scenario PASS lines and `cases=5/5 status=PASSED` before GPU selection parity is declared. Compile and test `AIVERSE_BUILD_STRATA=OFF` as a separate portability check; this branch is otherwise experimental and default-off for all runtime Stage 7+ flags.
+
+### Next bounded step for a subsequent agent
+1. Fix any native compiler/CTest errors reported for Stage 8.2/9 with a code commit, then append a separate handoff including the actual logs.
+2. Run and validate the real Metal GPU `strata_metal_parity` fixture (not just the fake RHI tests), then expand to random camera/LOD thresholds, scene node transforms, materials, shadow pass and multiple instances. Record exact compared counters/ranges and GPU timeline if available.
+3. Once *real GPU-vs-CPU* and raster parity are independently confirmed, add a single exclusive Strata route inside existing `Renderer3D::renderModels` / `drawGeometryBatch`, not another renderer. Per-primitive visibility, material state, instance uniforms and material/shadow batch roles must be owned by the existing pipeline. Direct fallback on any error or unsupported pass. Never submit both old and Strata indexed geometry in one pass.
+4. Only afterward implement compute-to-ICB indirect submission, Hi-Z and streaming; preserve GLES/WebGL and non-Metal legacy behavior.
+
+### Risk register
+- Stage 9's command output is **preflight**, not rendering. Boolean route gates are declarations by a future renderer caller, not evidence from GPU.
+- Metal GPU buffer/metadata v2 must stay alive through all GPU frames that reference any selected index span, including async diagnostic readback.
+- Auxiliary Strata index ranges live on the existing model GPU page; never copy a stale candidate after device, source or material revision change.
+- CPU LOD simplification may have visual seams/cracks under different depths; texture parity remains unverified.
+- PR #35 remains Draft. The batching PR #34 was already merged; rebase the PR base onto `main` after this exact upstream integration and continue writing per-stage handoffs.
