@@ -41,6 +41,11 @@ using ComputeHandle = Handle<struct ComputeTag>;
 using PipelineHandle = Handle<struct PipelineTag>;
 
 enum class Backend { Metal, GLES3, GL33, Vulkan };
+// Pending != failed: a renderer must never infer GPU fence failure
+// from normal in-flight work or elapsed frame counters.
+enum class ResourceRetirementStatus : uint8_t {
+    Pending, Complete, Failed
+};
 enum class BufferType { Vertex, Index, Storage, Indirect };
 enum class Usage { Immutable, Dynamic };          // Dynamic: updated (whole or partially) every frame
 enum class PixelFormat { RGBA8, R8, Depth, RGBA32F,
@@ -237,6 +242,14 @@ public:
     // destroy resources based solely on frameSerial() or elapsed time.
     virtual bool resourceRetirementComplete(uint64_t token) {
         (void)token; return false;
+    }
+    // Backend-specific implementations can report an actual failed
+    // completion marker. The legacy default conservatively treats false
+    // as Pending; old Device subclasses remain source-compatible.
+    virtual ResourceRetirementStatus resourceRetirementStatus(uint64_t token) {
+        return resourceRetirementComplete(token) ?
+            ResourceRetirementStatus::Complete:
+            ResourceRetirementStatus::Pending;
     }
     // Release a COMPLETED token after checking resourceRetirementComplete().
     // No backend may free a still-in-flight native fence here.
