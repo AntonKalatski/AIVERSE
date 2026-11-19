@@ -52,6 +52,36 @@ public:
     size_t pendingTiles()const{return pending_.size();}
     size_t residentTiles()const{return residents_.size();}
     uint64_t soilRevision()const{return earth_.revision();}
+    int32_t terrainCellSizeMetres()const{return cellSizeMetres_;}
+    std::vector<world::Cell> residentCells()const{
+        std::vector<world::Cell> cells;
+        cells.reserve(residents_.size());
+        for(const auto& [key,patch]:residents_){
+            (void)patch;cells.push_back(key);
+        }
+        return cells;
+    }
+    // Copy only after an authoritative terrain tick/barrier. The caller must
+    // ensure Earthworks' original BaseSampler closure owns immutable inputs;
+    // copying std::function cannot freeze captured mutable external data.
+    std::shared_ptr<const EarthworksLayer> presentationSnapshot()const{
+        return std::make_shared<const EarthworksLayer>(earth_);
+    }
+    std::vector<TerrainPatchDirtyRegion> pendingTerrainNotifications()const{
+        std::vector<TerrainPatchDirtyRegion> result;
+        for(const auto& [cell,resident]:residents_){
+            (void)cell;
+            const auto& pending=resident.pendingDirty();
+            result.insert(result.end(),pending.begin(),pending.end());
+        }
+        std::sort(result.begin(),result.end(),
+            [](const auto& a,const auto& b){
+                if(a.cell<b.cell)return true;
+                if(b.cell<a.cell)return false;
+                return a.sourceRevision<b.sourceRevision;
+            });
+        return result;
+    }
     GrassPatchRenderer& grassRenderer(){return grassRhi_;}
     const GrassPatchRenderer& grassRenderer()const{return grassRhi_;}
 
