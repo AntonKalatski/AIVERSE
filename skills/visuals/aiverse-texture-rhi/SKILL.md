@@ -1332,3 +1332,25 @@ MSL shader generation, Metal GPU execution or scene image parity.
 Never promote 10BT's ABI PASS to a 10BU Renderer3D PASS.
 Do not merge Draft PR #21 or enable GPU ICB by default
 until actual native logs and cross-backend acceptance.
+
+## Stage 10BV — full production Renderer3D graph ICB Apple M3 Ultra PASS
+
+**Real hardware acceptance now observed**, not merely source-level:
+the user built `aiverse_metal_renderer_graph_icb_gpu_test` and ran its
+opt-in CTest `metal_renderer_graph_icb_gpu` on Apple M3 Ultra.
+**1/1 PASS (3.73 sec test; total 3.74 sec)**. Diagnostics:
+`eligible=2 candidates=1 prepared=1 submitted=1 mixed=1
+gpu_commands=2 rejected=0 errors=0`; both ordinary and ICB
+image regions were distinct and identical to each other;
+`bad_channels=0 max_delta=0`. Production
+`render::graph::compile`, `Renderer3D` shader injection,
+mixed graph texture resource tickets, GPU ICB and live pixels
+were exercised together. See `docs/texture-rhi.md` Stage 10BV.
+
+**Remaining:** Shader Graph + disk-backed virtual texturing in
+the same ICB group, separate archive page-table/layer and wrap
+modes; LRU transitions; all excluded graph permutations,
+Vulkan/GL/mobile fallbacks, and large-scene performance.
+These are **not verified** by Stage 10BV.
+Keep experimental GPU ICB flags and the risky CMake test
+OFF in production; keep PR #21 Draft.
