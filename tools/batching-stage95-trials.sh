@@ -33,6 +33,14 @@ for run in 1 2 3; do
       "$BIN" unused.obj "$name" 2>&1 | tee "$name.log"
   grep -Eq 'material palette CPU checks=[0-9]+ result=passed' "$name.log"
   grep -Eq 'actual MDI pixel parity frame=[0-9]+ changed_channels=0' "$name.log"
+  grep -q '^changed_channels=0
+  grep -q 'stress frame timeline samples=106' "$name.log"
+  test -s "$name-frames.csv"
+done
+python3 tools/batching-stage95-analyze.py \
+  "$OUT/mdi-1-frames.csv" "$OUT/mdi-2-frames.csv" "$OUT/mdi-3-frames.csv"
+echo "Stage 95 PASS: three native runs, CPU thread/wall CSV: $OUT/stage95-thread-summary.csv"
+ "$name.log"
   grep -Eq 'stress benchmark policy=mdi measured_mdi_frames=81 ' "$name.log"
   grep -q 'stress frame timeline samples=106' "$name.log"
   test -s "$name-frames.csv"
