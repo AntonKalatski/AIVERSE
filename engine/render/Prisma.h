@@ -24,7 +24,11 @@
 
 namespace aiverse::render {
 
-struct PrismaStats { int passes = 0; int effects = 0; int width = 0, height = 0; };
+struct PrismaStats {
+    int passes = 0, effects = 0, width = 0, height = 0;
+    bool temporalResolved = false, temporalJittered = false;
+    float jitterPixelX = 0, jitterPixelY = 0;
+};
 
 class PrismaVolumeStack;
 
