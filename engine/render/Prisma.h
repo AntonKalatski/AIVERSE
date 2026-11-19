@@ -125,11 +125,12 @@ public:
     void setExternalGeometryPoolGpuMemory(uint64_t livePageBytes) {
         externalGeometryPoolKnownBytes_ = livePageBytes;
     }
-    // Dedicated GPU geometry and owned texture-cache resources from a
-    // presentation asset owner. Excludes shared GeometryPool pages,
-    // borrowed material textures and Renderer3D/Prisma-owned handles.
-    void setExternalModelAssetGpuMemory(uint64_t liveKnownBytes) {
-        externalModelAssetKnownBytes_=liveKnownBytes;
+    // Dedicated model GPU buffers, texture caches and owned external
+    // presentation assets. The host submits disjoint owner totals only;
+    // pooled geometry, borrowed textures, Renderer3D and Prisma handles
+    // are excluded to avoid double counting.
+    void setExternalPresentationAssetsGpuMemory(uint64_t liveKnownBytes) {
+        externalPresentationAssetKnownBytes_=liveKnownBytes;
     }
     // Per-presentation view admission/priority policy; no ECS/genre coupling.
     // Priority 0 = yield under known memory pressure first, 255 = last.
@@ -331,7 +332,7 @@ private:
     uint64_t externalRendererLiveKnownBytes_ = 0;
     uint64_t externalRendererPendingKnownBytes_ = 0;
     uint64_t externalGeometryPoolKnownBytes_ = 0;
-    uint64_t externalModelAssetKnownBytes_ = 0;
+    uint64_t externalPresentationAssetKnownBytes_ = 0;
     // Last successful postprocess scene pass per stable view ID. A size cache
     // can be shared by several views; retireView() removes a view reference.
     std::map<uint64_t, std::pair<int, int>> viewDimensions_;
