@@ -737,3 +737,16 @@ CI if it remains queued or cancelled.
   source-level statistics do not prove shader correctness.
 - Both experimental per-command/mixed flags remain
   release-disabled. Native and GPU tests are NOT RUN.
+
+
+### Experimental Metal VT format gate (Stage 10AA)
+
+- Per-command GPU ICB virtual materials must supply an
+  `RGBA8` `Texture2DArray` physical atlas and page table.
+  Optional full-resolution alpha cutout must be an `R8`
+  `Texture2D`. The native Metal preflight also validates
+  page-table virtual layer and gutter inset bounds.
+- Unsupported formats and invalid handles reject the entire
+  ICB preparation. Do not reinterpret HDR, depth or arbitrary
+  compressed textures as VT page-table/physical resources.
+  CPU fallback remains the safe path. GPU tests NOT RUN.
