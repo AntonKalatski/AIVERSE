@@ -107,12 +107,18 @@ public:
                 if(!ground.isObject()) return fail("groundCollision must be object");
                 for(const auto& p:ground.members())
                     if(p.first!="enabled" && p.first!="height" &&
-                       p.first!="restitution" && p.first!="tangentRetention")
+                       p.first!="restitution" && p.first!="tangentRetention" &&
+                       p.first!="emitImpactEvents")
                         return fail("unknown groundCollision field "+p.first);
                 if(ground.has("enabled")) {
                     if(ground["enabled"].type()!=Json::Type::Bool)
                         return fail("groundCollision.enabled must be boolean");
                     next.environment.collideGround=ground["enabled"].boolean();
+                }
+                if(ground.has("emitImpactEvents")) {
+                    if(ground["emitImpactEvents"].type()!=Json::Type::Bool)
+                        return fail("groundCollision.emitImpactEvents must be boolean");
+                    next.environment.reportImpacts=ground["emitImpactEvents"].boolean();
                 }
                 if(!floatField(ground,"height",next.environment.groundHeight) ||
                    !floatField(ground,"restitution",next.environment.restitution) ||
@@ -136,6 +142,12 @@ public:
         if(next.environment.collideGround)
             next.backend.required=next.backend.required |
                                   SpectraFxFeature::GroundPlaneCollision;
+        if(next.environment.reportImpacts) {
+            if(!next.environment.collideGround)
+                return fail("emitImpactEvents requires groundCollision.enabled");
+            next.backend.required=next.backend.required |
+                                  SpectraFxFeature::GpuImpactFeedback;
+        }
         if(next.backend.preference!=SpectraFxExecutionPreference::Cpu &&
            next.backend.particles==0)
             return fail("GPU/auto emitter requires nonzero capacity");
