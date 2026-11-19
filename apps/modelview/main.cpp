@@ -227,6 +227,13 @@ struct Viewer {
     void frame(gfx::Device& d, double dt) {
         if (fixedDt > 0) dt = fixedDt;
         if (!paused && seek < 0) time += dt;
+        // Explicit Device-owner frame boundary. Gallery may draw a portrait
+        // and scene within ONE RHI frame; neither draw is a safe retirement
+        // hook. Poll model and paint token queues before any GPU pass.
+        if(gallery)gallery->collectRetiredGpuResources();
+        if(nativeModels.resources().pendingRetirements()!=0 ||
+           nativeModels.pendingRolledBackImages()!=0)
+            nativeModels.collectRetired(d);
         d.beginFrame(platform::framebufferWidth(), platform::framebufferHeight());
         gui.newFrame(dt);
         gfx::TextureHandle portrait = gallery ? gallery->portrait(time) : gfx::TextureHandle{}; // before the scene pass
