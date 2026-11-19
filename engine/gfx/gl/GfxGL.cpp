@@ -375,7 +375,7 @@ public:
         // from this context before model buffers/textures are recycled.
         // The host must call between render passes on the context thread.
         glFinish();
-        return glGetError()!=GL_OUT_OF_MEMORY;
+        return glGetError()==GL_NO_ERROR;
     }
     void beginFrame(int w, int h) override {
         fbW_ = w; fbH_ = h;
