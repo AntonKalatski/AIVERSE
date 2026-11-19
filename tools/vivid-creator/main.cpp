@@ -178,7 +178,9 @@ struct CreatorApp {
                 for(const auto& [name,surface]:manifest.materials) {
                     const auto index=proposed.head->findMaterial(name);
                     if(index>=0)proposed.head->materials[std::size_t(index)]=
-                        humanMaterial(surface,session.dna());
+                        humanMaterialFromSource(
+                            surface,session.dna(),
+                            proposed.head->materials[std::size_t(index)]);
                 }
                 proposed.groom.generate(session.dna(),groomQuality);
                 proposed.hair=proposed.groom.makeCardModel(session.dna());
