@@ -572,6 +572,16 @@ public:
         clearVirtualTextureModelFeedback();
     }
 
+    // Optional owner-thread scheduler for multiple independent VT feedback
+    // domains. Invoked after shadows and before the main scene pass starts.
+    // When installed it takes precedence over the single feedbackPass_.
+    // Must be detached before destroying the scheduler/captured resources.
+    using VirtualTextureFeedbackScheduler = std::function<void(Renderer3D&)>;
+    void setVirtualTextureFeedbackScheduler(VirtualTextureFeedbackScheduler fn) {
+        feedbackScheduler_ = std::move(fn);
+    }
+    void clearVirtualTextureFeedbackScheduler() { feedbackScheduler_ = {}; }
+
     // Extra shadow casters (sprites): run inside the sun shadow pass (only when shadows are on) with
     // the target bound; draw depth with lightViewProj(). Same lifetime rules as drawCustom.
     void drawCustomShadow(CustomDraw fn) { customShadow_.push_back(std::move(fn)); }
@@ -763,6 +773,7 @@ private:
     std::vector<ColorVertex> lines_, tris_;
     std::vector<CustomDraw> custom_, customOpaque_, customShadow_;
     std::vector<FeedbackCustomDraw> customFeedback_;
+    VirtualTextureFeedbackScheduler feedbackScheduler_;
     gfx::VirtualTextureFeedbackPass* feedbackPass_ = nullptr; // non-owning
     gfx::PipelineHandle feedbackMeshPipeline_;
     FeedbackMeshBinder feedbackMeshBinder_;
