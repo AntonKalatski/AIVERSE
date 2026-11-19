@@ -233,7 +233,13 @@ public:
         return targetRetirement_?targetRetirement_->pendingPairs():0;
     }
     uint64_t targetRetirementOrphanPairs() const noexcept {
-        return targetRetirement_?targetRetirement_->orphanedPairs():0;
+        return (targetRetirement_?targetRetirement_->orphanedPairs():0) +
+            unleasedTargetOrphans_;
+    }
+    // Exceptional use before shared target owner initialization: a failed
+    // true-idle barrier never authorizes deleting still-in-flight textures.
+    uint64_t unleasedTargetIdleFailures() const noexcept {
+        return unleasedTargetIdleFailures_;
     }
     uint64_t targetRetirementEnqueueFailures() const noexcept {
         return targetRetirement_?targetRetirement_->enqueueFailures():0;
@@ -539,6 +545,7 @@ private:
     // One render-target owner is shared with LightSystem. It must outlive
     // the light, trace and selection GPU resource owners.
     std::unique_ptr<OffscreenTargetRetirement> targetRetirement_;
+    uint64_t unleasedTargetOrphans_=0,unleasedTargetIdleFailures_=0;
     gfx::Device* dev_ = nullptr;
     gfx::ShaderHandle litShader_, shadowShader_, colorShader_;
     gfx::PipelineHandle litPipe_, litBlendPipe_, shadowPipe_, linePipe_, triPipe_;
