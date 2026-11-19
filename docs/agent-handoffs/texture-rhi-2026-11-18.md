@@ -12611,3 +12611,15 @@ bash tools/texture-rhi-final-verify.sh --jobs 4 --full-engine
 **Actual validation:** Source staged via GitHub API and committed to branch; no compile, tests, shader compile or GPU work executed (features-first instruction). Runtime/perf characteristics are theoretical complexity, not measured timings.
 
 **Open work and next:** This is still a full CPU rebuild on each residency change. For high churn, add bounded dirty-region updates per changed page and track cross-frame upload budgets; verify correctness against full-rebuild oracle in final tests. Check multi-frame batch publication/cancellation and indexed mip blending with real Metal framebuffer pixel results. Analyze texture sampler caps, virtual gutter quality and cross-backend compatibility. Final CTest only after functional stages are ready; keep PR Draft.
+
+## Stage 10CQ — bounded incremental page-table dirty rectangles (2026-11-19)
+
+**Source SHA** `6bfa3872d3d7d6ac8b3e478d85b87d78e3cb6806`, branch `feature/texture-rhi-unification`, PR #21 Draft.
+
+**Implementation:** `VirtualTexturePageCache` records up to 512 `(revision, VirtualPageKey)` entries for newly reserved, evicted, completed or cancelled pages, including both old and replacement keys when reusing an LRU slot. `mappingChangesSince(revision,out,maxKeys=128)` fails closed if any event fell out of retained history or the caller budget was exceeded; clear/reinit also invalidates incremental history. Touch/pin do not change mappings.
+
+`VirtualTexturePageTable::rebuild` now uses this history after the first full rebuild: calculates each changed key's mip-zero XY coverage with 64-bit shift bounds, updates affected tiles only when total visited cells stay below half the entire page-table size, otherwise falls back to the full reference scan. Each visited tile resolves all selected virtual mips in one descending pass. A changed mapping increments the revision but never publishes an in-flight page. The existing dirty-row GPU flush budget remains unchanged and is not bypassed.
+
+**Coverage boundary:** This is committed source only: no CPU compile/CTest, real GPU tests or performance measurements run. No measured speedup claim. Need validate overlapping changed page rectangles, history truncation, partial-vs-full byte equivalence, eviction and async cancellation, budget flush, staged multisubresource publication, and multi-backend rendering in the final one-shot suite.
+
+**Next:** add CPU reference-parity test fixtures and GPU native shader pixel oracles after remaining functionality, examine anisotropic/wrap gutter and memory limits, then run all CTests and native Metal verification as a separate final stage. PR #21 remains Draft; experimental ICB flags OFF.

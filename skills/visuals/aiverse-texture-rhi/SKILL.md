@@ -1923,3 +1923,7 @@ Include `engine/render/ModelVirtualTextureArchiveBinding.h` in the caller's mode
 ## Stage 10CP — revision-gated indexed page-table refresh (SHA 9eabd011)
 
 `VirtualTexturePageCache::mappingRevision()` changes on actual mapping/READY state changes, not touches/pins. `VirtualTexturePageTable::rebuild(cache)` now skips identical revisions and scans coarse-to-fine once to resolve all requested mip slices per base tile: O(baseCells * mipLevels). GPU dirty-row flushing and legacy ABI unchanged; still requires GPU and CPU test oracles. Model archive helper now guards gutter multiplication overflow. Do not claim benchmarks; none run.
+
+## Stage 10CQ — incremental virtual table refresh (SHA 6bfa3872)
+
+The page cache now exposes `mappingChangesSince(revision,out,maxKeys=128)`, backed by bounded 512-event history. Page-table `rebuild(cache)` skips unchanged revisions, refreshes only small changed mip-zero rectangles, and falls back to a full rebuild for large changes or truncated history. Still requires CPU reference oracle and GPU hardware tests; none have been run for this SHA. Keep release gates explicit.
