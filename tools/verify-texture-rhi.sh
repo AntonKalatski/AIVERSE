@@ -133,16 +133,68 @@ for target in "${targets[@]}"; do
     fi
 done
 
-test_filter='^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|virtual_texture_prefetch|virtual_texture_feedback|virtual_texture_feedback_pass|gpu_icb_material_contract|virtual_texture_feedback_shaders|virtual_texture_feedback_msl|virtual_texture_pack|ktx2_layers|ktx2_transcode|dds_layers|texture_asset|hdr_texture|exr_texture)$'
+test_filter='^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|virtual_texture_prefetch|virtual_texture_feedback|virtual_texture_feedback_pass|gpu_icb_material_contract|virtual_texture_feedback_shaders|virtual_texture_feedback_msl|virtual_texture_sampling_glsl|virtual_texture_sampling_msl|virtual_texture_pack|ktx2_layers|ktx2_transcode|dds_layers|texture_asset|hdr_texture|exr_texture)$'
 if [[ "$want_vulkan" -eq 1 ]]; then
-    test_filter='^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|virtual_texture_prefetch|virtual_texture_feedback|virtual_texture_feedback_pass|gpu_icb_material_contract|virtual_texture_feedback_shaders|virtual_texture_feedback_msl|virtual_texture_pack|ktx2_layers|ktx2_transcode|dds_layers|texture_asset|hdr_texture|exr_texture|vulkan_backend)$'
+    test_filter='^(texture_contract|render_target_set|texture_streaming|texture_mip_residency|texture_resident_streamer|virtual_texture_pages|virtual_texture_page_table|virtual_texture_streamer|virtual_texture_disk_queue|virtual_texture_file_streamer|virtual_texture_prefetch|virtual_texture_feedback|virtual_texture_feedback_pass|gpu_icb_material_contract|virtual_texture_feedback_shaders|virtual_texture_feedback_msl|virtual_texture_sampling_glsl|virtual_texture_sampling_msl|virtual_texture_pack|ktx2_layers|ktx2_transcode|dds_layers|texture_asset|hdr_texture|exr_texture|vulkan_backend)$'
 fi
 
 # Record actual CTest registration of optional validators. Neither
 # executable discovery nor registration proves a shader was compiled.
 {
     printf '\nShader validator registration:\n'
-    ctest --test-dir "$build" -N -R '^(virtual_texture_feedback_shaders|virtual_texture_feedback_msl)$'
+    ctest --test-dir "$build" -N -R '^(virtual_texture_feedback_shaders|virtual_texture_feedback_msl|virtual_texture_sampling_glsl|virtual_texture_sampling_msl)
+} >>"$logs/configure.log" 2>&1
+
+if command -v glslangValidator >/dev/null 2>&1; then
+    echo "GLSL validator: present (check CTest log for execution)" | tee -a "$summary"
+else
+    echo "GLSL validator: NOT INSTALLED (shader compilation not verified)" | tee -a "$summary"
+fi
+if [[ "$(uname -s)" == "Darwin" ]] && command -v xcrun >/dev/null 2>&1; then
+    echo "Metal validator: xcrun present (check CTest log for execution)" | tee -a "$summary"
+else
+    echo "Metal validator: NOT AVAILABLE on this host" | tee -a "$summary"
+fi
+
+echo "Running focused CTest... (see $logs/ctest.log)"
+ctest --test-dir "$build" --output-on-failure -R "$test_filter" \
+    >"$logs/ctest.log" 2>&1
+ctest_status=$?
+if [[ "$ctest_status" -eq 0 ]]; then
+    echo "CTEST PASS (inspect log for SKIPPED tests and GPU execution)" | tee -a "$summary"
+else
+    echo "CTEST FAIL (exit $ctest_status)" | tee -a "$summary"
+    failures=$((failures+1))
+fi
+
+if [[ "$want_vulkan" -eq 1 ]]; then
+    echo "VULKAN NOTE: CTest may return success while a missing GPU driver causes a skip." | tee -a "$summary"
+    echo "VULKAN NOTE: Read $logs/ctest.log and confirm real Vulkan rendering/readbacks." | tee -a "$summary"
+fi
+# Separate fail-closed opt-in CTest GPU gate. --no-tests=error prevents
+# missing test registration from masquerading as a successful run.
+if [[ "$want_metal" -eq 1 ]]; then
+    echo "Running native Metal GPU acceptance... (see $logs/metal-gpu.log)"
+    ctest --test-dir "$build" --verbose --output-on-failure --no-tests=error \
+        -R '^metal_texture_gpu$' >"$logs/metal-gpu.log" 2>&1
+    metal_status=$?
+    if [[ "$metal_status" -eq 0 ]]; then
+        echo "METAL GPU PASS (inspect real readback evidence)" | tee -a "$summary"
+    else
+        echo "METAL GPU FAIL (exit $metal_status; see $logs/metal-gpu.log)" | tee -a "$summary"
+        failures=$((failures+1))
+    fi
+fi
+if [[ "$failures" -gt 0 ]]; then
+    echo "OVERALL FAIL: $failures build/test gates failed" | tee -a "$summary"
+    exit 1
+fi
+if [[ "$want_metal" -eq 1 ]]; then
+    echo "OVERALL SOURCE AND METAL TEXTURE GPU TESTS PASS (other GPU validation remains separate)" | tee -a "$summary"
+else
+    echo "OVERALL SOURCE TESTS PASS (GPU validation remains separate)" | tee -a "$summary"
+fi
+
 } >>"$logs/configure.log" 2>&1
 
 if command -v glslangValidator >/dev/null 2>&1; then
