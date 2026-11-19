@@ -319,6 +319,13 @@ public:
     // The callback may run one or two frames later; it always runs on the main thread.
     using CaptureFn = std::function<void(int w, int h, std::vector<uint8_t> rgba)>;
     virtual void captureNextFrame(CaptureFn fn) { if (fn) fn(0, 0, {}); }
+    // Optional offscreen RGBA8 RT capture. Called outside render passes in an
+    // active frame; the callback receives top-down RGBA8 on the Device thread.
+    // Unsupported backends return false and do not invoke the callback.
+    // GPU backends may complete asynchronously in a later beginFrame.
+    virtual bool captureTexture(TextureHandle source,CaptureFn callback) {
+        (void)source; (void)callback; return false;
+    }
     int framebufferWidth() const { return fbW_; }
     int framebufferHeight() const { return fbH_; }
 

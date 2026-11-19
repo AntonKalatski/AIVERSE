@@ -42,6 +42,28 @@ public:
     void stop() {
         if(state_){state_->recording=false;state_->pending=false;state_->onFrame={};}
     }
+    bool tickTexture(gfx::Device& device,gfx::TextureHandle texture,double seconds) {
+        if(!texture.valid() || !recording() || state_->pending ||
+           !std::isfinite(seconds)) return false;
+        if(state_->previous>=0 && seconds-state_->previous+1e-9<1.0/state_->frequency)
+            return false;
+        auto state=state_;
+        state->pending=true;
+        const uint64_t index=state->frameIndex;
+        std::weak_ptr<State> weak=state;
+        const bool accepted=device.captureTexture(texture,
+            [weak,index,seconds](int w,int h,std::vector<uint8_t> rgba){
+                auto current=weak.lock();
+                if(!current||!current->recording)return;
+                current->pending=false;
+                CameraCapturedFrame frame{index,seconds,w,h,std::move(rgba)};
+                if(current->onFrame)current->onFrame(std::move(frame));
+            });
+        if(!accepted){state->pending=false;return false;}
+        state->previous=seconds;
+        ++state->frameIndex;
+        return true;
+    }
     bool recording()const{return state_&&state_->recording;}
     bool pending()const{return state_&&state_->pending;}
     // Invoke inside a valid gfx frame before Device::endFrame. Backends may
