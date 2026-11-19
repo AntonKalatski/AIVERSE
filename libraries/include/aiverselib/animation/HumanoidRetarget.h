@@ -36,7 +36,15 @@ struct HumanoidAvatar {
             const auto index=size_t(role);
             if(index>=kHumanoidBoneCount || path.empty())
                 throw std::invalid_argument("avatar: invalid role/path");
-            const int node=findNodePath(m,path);
+            // Resolve against the same canonical hierarchical paths used
+            // by GenericRetargetMap; no independent node-name matching.
+            int node=-1;
+            for(size_t i=0;i<m.nodes.size();++i) {
+                if(bonePath(m,int(i))==path) {
+                    node=int(i);
+                    break;
+                }
+            }
             if(node<0 || !used.insert(node).second)
                 throw std::invalid_argument("avatar: missing or duplicated bone "+path);
             a.nodes[index]=node;
