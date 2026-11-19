@@ -754,3 +754,12 @@ Tests for translated-joint picking, invalid-pose staging, multi-dab undo history
 `SkinSeamAnalysis` provides non-mutating diagnostics of shared global vertices that resolve to incompatible bone palettes across skinned primitives. **Automatic seam splitting remains open**, since cloning shared vertices requires a coordinated update of geometry IDs, morph CSR, multiple LOD mappings and primitive ranges. No speculative vertex duplication is attempted.
 
 Source regression cases cover reversed LOD palettes, barycentric weights, U8 sum-255, invalid LOD palette rollback and seam-conflict detection. **No C++ compilation, CTest, native GPU skinning comparison or Creator visual acceptance has been performed.** Exact commits and next-agent handoff are recorded in `docs/agent-handoffs/vivid.md` Stage 7R.
+
+
+## Stage 7S — constrained skinned seam splitting and facial morph preservation (2026-11-20)
+
+`SkinSeamSplit` now implements transactional **automatic separation of conflicting skinned primitive palettes** on a private pre-upload character candidate. It appends a new contiguous vertex range for the conflicting primitive, updates only its model-relative indices and vertex interval, and duplicates every applicable extended sparse facial morph delta to each new cloned global vertex ID. The original vertices and previously authored source IDs remain unchanged, so the tool avoids destructive remapping of imported authoring files. `SkinWeightAuthoring::withSplitClones` extends authored named-joint weight edits to the candidate clones without rewriting the source JSON or undo history.
+
+The safe supported subset requires a unique skinned mesh owner, independent index ranges, CPU-owned source geometry and no legacy per-primitive morph atlas or precompiled material/shadow batches. Affected authored *target* LOD mappings that do not include the cloned new vertices still fail closed, rather than silently producing missing LOD morphs or skin weights. Full rebaking of legacy renderer morphs, target LOD sidecars, material and shadow batches is still outstanding.
+
+Regression source asserts cloned primitive ranges, source ID stability, preservation of extended facial morph CSR deltas and normalized skin weights on source and clone. **No C++ compilation, runtime CTest or actual Metal/Vulkan/GLES GPU comparison has been performed for this stage**. Complete implementation SHAs, restrictions and next-agent steps appear in `docs/agent-handoffs/vivid.md` Stage 7S.
