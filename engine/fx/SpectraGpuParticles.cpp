@@ -263,6 +263,8 @@ bool ComputeParticles::initGpu() {
         return false;
     }
     ages_.assign(cap,-1.f);
+    slotSourceTokens_.assign(cap,0);
+    pendingKillSlots_.clear();
     freeSlots_.clear();freeSlots_.reserve(cap);
     for(uint32_t i=cap;i>0;--i)freeSlots_.push_back(i-1);
     pendingStates_.reserve(cap);
@@ -305,6 +307,7 @@ void ComputeParticles::releaseGpu() {
     seedProgramParams_={};stateProgramParams_={};gpuVmPayload_={};
     stateAttributes_={};graphSources_={};
     ages_.clear();freeSlots_.clear();pendingStates_.clear();pendingSlots_.clear();
+    pendingKillSlots_.clear();slotSourceTokens_.clear();
     pendingProgramParams_.clear();programStateCache_.clear();cpuHandles_.clear();
     programParamsDirty_=false;
     aliveSlots_.clear();
@@ -332,6 +335,8 @@ void ComputeParticles::clear() {
         return;
     }
     pendingStates_.clear();pendingSlots_.clear();pendingProgramParams_.clear();
+    pendingKillSlots_.clear();
+    std::fill(slotSourceTokens_.begin(),slotSourceTokens_.end(),0);
     aliveSlots_.clear();verticesReady_=false;
     const uint32_t cap=desc_.capacity;
     std::vector<ParticleState> empty(cap);
@@ -379,7 +384,7 @@ bool ComputeParticles::setProgramParameter(uint32_t slot,float value,
     }
     return true;
 }
-bool ComputeParticles::burstAt(fx::float3 position,fx::float3 direction,fx::float4 tint) {
+bool ComputeParticles::burstAt(fx::float3 position,fx::float3 direction,fx::float4 tint,uint64_t sourceToken) {
     if(!initialized_||desc_.quality==fx::FxQuality::Off||!finite(position)||!finite(direction)||!finite(tint))return false;
     const float length=render::length(direction);
     const fx::float3 normal=length>1e-5f?direction*(1.0f/length):fx::float3{0,1,0};
@@ -400,6 +405,7 @@ bool ComputeParticles::burstAt(fx::float3 position,fx::float3 direction,fx::floa
     for(uint32_t n=0;n<desc_.burst;++n) {
         const uint32_t slot=freeSlots_.back();freeSlots_.pop_back();
         ages_[slot]=desc_.lifetime;
+        slotSourceTokens_[slot]=sourceToken;
         ParticleState particle{};
         particle.positionAge={position.x,position.y,position.z,0};
         particle.velocityLife={normal.x*desc_.speed,normal.y*desc_.speed,normal.z*desc_.speed,desc_.lifetime};
@@ -415,6 +421,40 @@ bool ComputeParticles::burstAt(fx::float3 position,fx::float3 direction,fx::floa
         programStateCache_[slot]=parameters;
     }
     stats_.alive=desc_.capacity-uint32_t(freeSlots_.size());
+    return true;
+}
+bool ComputeParticles::killSourceParticles(uint64_t sourceToken) {
+    if(sourceToken==0 || !initialized_ || backend_!=ComputeBackend::Metal ||
+       !device_ || !device_->gpuHealthy() ||
+       !device_->canUpdateSharedBuffers())return false;
+    // The birth queue is an ordered zip of physical slot, seed and params.
+    // Removing unsent births is safe: the GPU has never seen those slots.
+    for(size_t i=pendingSlots_.size();i>0;--i) {
+        const size_t at=i-1;
+        const uint32_t slot=pendingSlots_[at];
+        if(slotSourceTokens_[slot]!=sourceToken)continue;
+        pendingSlots_.erase(pendingSlots_.begin()+at);
+        pendingStates_.erase(pendingStates_.begin()+at);
+        pendingProgramParams_.erase(pendingProgramParams_.begin()+at);
+        ages_[slot]=-1.f;slotSourceTokens_[slot]=0;
+        freeSlots_.push_back(slot);
+        ++stats_.selectivelyKilled;
+    }
+    // Submitted slots remain reserved until the next successful GPU compute
+    // submission. They become invisible to CPU gather immediately, and
+    // receive a Metal-ordered dead-state upload before the next compact pass.
+    for(uint32_t i=0;i<uint32_t(slotSourceTokens_.size());++i) {
+        if(slotSourceTokens_[i]!=sourceToken)continue;
+        slotSourceTokens_[i]=0;
+        if(ages_[i]>0.f) {
+            ages_[i]=-1.f;
+            pendingKillSlots_.push_back(i);
+            ++stats_.selectivelyKilled;
+        }
+    }
+    stats_.alive=uint32_t(ages_.size()-freeSlots_.size()-
+                          pendingKillSlots_.size());
+    verticesReady_=false;
     return true;
 }
 void ComputeParticles::setView(const render::RTSCamera& camera,const render::mat4& viewProjection,int w,int h) {
@@ -468,12 +508,37 @@ bool ComputeParticles::step(float dt) {
             if(!gpuIndirectActive_)aliveSlots_.push_back(i);
         }
     }
-    if(updatePrefix==0 && count==0) {
+    if(updatePrefix==0 && count==0 && pendingKillSlots_.empty()) {
         drawCount_=0;
         stats_.submittedSlots=stats_.alive=0;
         verticesReady_=true;
         reason_.clear();
         return true; // no live GPU particles, no compute work or draw
+    }
+    if(!pendingKillSlots_.empty()) {
+        std::sort(pendingKillSlots_.begin(),pendingKillSlots_.end());
+        // Coalesce adjacent killed physical slots: never overwrite a live slot
+        // with a broad update. These writes occur before the compute encoder
+        // and the RHI serializes blit -> spawn -> integrate -> compact.
+        size_t at=0;
+        while(at<pendingKillSlots_.size()) {
+            size_t end=at+1;
+            while(end<pendingKillSlots_.size() &&
+                  pendingKillSlots_[end]==pendingKillSlots_[end-1]+1)++end;
+            std::vector<ParticleState> dead(end-at);
+            for(auto& p:dead) {
+                p.positionAge={0,0,0,-1};
+                p.velocityLife={0,0,0,1};
+            }
+            device_->updateBuffer(states_,dead.data(),
+                dead.size()*sizeof(ParticleState),
+                size_t(pendingKillSlots_[at])*sizeof(ParticleState));
+            at=end;
+        }
+        if(!device_->gpuHealthy()) {
+            reason_="SpectraFX GPU kill upload failed; physical slots retained";
+            return false;
+        }
     }
     const uint32_t resetVmErrors=0;
     device_->updateBuffer(vmErrors_,&resetVmErrors,sizeof(resetVmErrors));
@@ -536,11 +601,16 @@ bool ComputeParticles::step(float dt) {
     // is now stale and may not be used for automatic recovery.
     ++vmFrameRevision_;
     pendingStates_.clear();pendingSlots_.clear();pendingProgramParams_.clear();
+    // Recycle killed physical slots only after the ordered GPU submission.
+    for(const uint32_t slot:pendingKillSlots_)freeSlots_.push_back(slot);
+    pendingKillSlots_.clear();
     // Commit CPU lifespan/free-slot changes only after GPU dispatch submission.
     for(uint32_t i=0;i<desc_.capacity;++i) {
         if(ages_[i]<=0.f)continue;
         ages_[i]-=dt;
-        if(ages_[i]<=0.f){ages_[i]=-1.f;freeSlots_.push_back(i);}
+        if(ages_[i]<=0.f){
+            ages_[i]=-1.f;slotSourceTokens_[i]=0;freeSlots_.push_back(i);
+        }
     }
     stats_.alive=compactCount;
     drawCount_=compactCount;
