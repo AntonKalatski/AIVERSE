@@ -2328,7 +2328,7 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_ENABLE_PHYSICS AND
     add_executable(aiverse_physis_terraweave_fall_bridge_test
         tests/physis_terraweave_fall_bridge_test.cpp)
     target_link_libraries(aiverse_physis_terraweave_fall_bridge_test PRIVATE
-        aiverse_engine aiverse_physics)
+        aiverse_engine aiverse_physics aiverse_models aiverse_zstd_dec)
     add_test(NAME physis_terraweave_fall_bridge
         COMMAND aiverse_physis_terraweave_fall_bridge_test)
     set_tests_properties(physis_terraweave_fall_bridge PROPERTIES
