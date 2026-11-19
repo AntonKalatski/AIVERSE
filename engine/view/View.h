@@ -499,7 +499,8 @@ public:
         for(size_t i=0;i<obj.attachments.size();++i) {
             render::ModelDraw attached;
             if(!composeAttachment(obj.draw,*rig,socketMatrices,
-                                  obj.attachments[i],attached))continue;
+                                  obj.attachments[i],
+                                  obj.animationModelGeneration,attached))continue;
             if(!attached.persistentId && obj.id)
                 attached.persistentId=attachmentDrawId(
                     obj.id,obj.generation,obj.animationModelGeneration,i);
