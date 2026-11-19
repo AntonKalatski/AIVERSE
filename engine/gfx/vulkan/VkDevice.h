@@ -7,6 +7,7 @@
 
 #include <array>
 #include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -126,6 +127,9 @@ public:
     bool copyColor(TextureHandle from, TextureHandle to) override;
     bool gpuHealthy() const override { return healthy_; }
     bool waitForResourceIdle() override;
+    uint64_t beginResourceRetirement() override;
+    bool resourceRetirementComplete(uint64_t token) override;
+    void endResourceRetirement(uint64_t token) override;
 
     void beginFrame(int framebufferWidth, int framebufferHeight) override;
     void endFrame() override;
@@ -222,6 +226,8 @@ private:
     std::array<FrameSlot, kFramesInFlight> slots_;
     int slot_ = 0;
     uint64_t serial_ = 1, completed_ = 0;
+    uint64_t nextRetirementToken_ = 1;
+    std::map<uint64_t,VkFence> retirementFences_;
     bool recording_ = false;
     struct Garbage { uint64_t serial; std::function<void()> fn; };
     std::vector<Garbage> garbage_;
