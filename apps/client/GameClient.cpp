@@ -1280,6 +1280,12 @@ void GameClient::frame(gfx::Device& dev, double dt) {
                 // Re-submit final pose/material/attachment packets directly.
                 // RtsView::draw and MotionWeave::update are NOT repeated.
                 snapshot.submit(renderer,camera.entity.packed());
+            },{},[&](const render::EcsCameraView& camera,
+                     render::Renderer3D& renderer,int width,int height) {
+                // The already updated particle population is reprojected
+                // into each camera's still-open draw pass. No FX tick/event.
+                fx_.renderPrepared(camera.camera,renderer.viewProj(),
+                                   width,height,renderer.lighting);
             });
         if(std::getenv("AIVERSE_LENS_LOG") && !result.diagnostics.empty())
             std::fprintf(stderr,"[lens] submitted=%zu skipped=%zu diagnostics=%zu\n",
