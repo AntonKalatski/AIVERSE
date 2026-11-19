@@ -256,6 +256,9 @@ private:
     // Last successful postprocess scene pass per stable view ID. A size cache
     // can be shared by several views; retireView() removes a view reference.
     std::map<uint64_t, std::pair<int, int>> viewDimensions_;
+    // Host-declared full output size, needed for offscreen targets whose RHI
+    // metadata may be unavailable. Updated by renderSizeForOutput each frame.
+    std::map<uint64_t, std::pair<int,int>> requestedOutputSizes_;
     uint64_t viewId_ = 0;
     std::map<std::string, Lut> luts_;
     ImageLoader loader_;
