@@ -218,6 +218,15 @@ public:
     struct GpuTiming { uint64_t tag = 0; double milliseconds = 0; bool valid = false; };
     virtual bool timeGpuFrame(uint64_t tag) { (void)tag; return false; }
     virtual std::vector<GpuTiming> takeGpuTimings() { return {}; }
+    // Optional exact GPU timeline of a bounded portion of ONE graphics frame.
+    // Begin outside a render pass, end after its last encoder/pass. These
+    // samples are asynchronous and kept separate from full-frame benchmark
+    // timing consumers. Unsupported backends must return false/empty, NEVER
+    // return whole-command-buffer timings falsely labeled as per-view.
+    // No nested scopes: overlapping queries are rejected by the backend.
+    virtual bool beginGpuScope(uint64_t tag) { (void)tag; return false; }
+    virtual void endGpuScope() {}
+    virtual std::vector<GpuTiming> takeGpuScopeTimings() { return {}; }
     // Optional compute. Buffer slots 0..7/9; uniform bytes at slot 8 (<=4 KB).
     // Storage buffers persist across frames; updateBuffer uploads in queue order.
     // Commands are between beginFrame/endFrame and outside render passes.
