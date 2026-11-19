@@ -889,3 +889,28 @@ paths submit the same precomputed `ModelDraw` to universal View.
 This is an inspection/comparison path, not a promise of scene-render
 parity or a replacement for full game view blocks. Visual/native
 validation has **NOT RUN**.
+
+## Transactional material texture hot reload — Stage 112
+
+When implementing a native renderer that accepts changes to authored
+materials, use `render::ModelImageUploadTransaction` instead of
+`addImage` while constructing replacement model appearances.
+`stage(model,image)` allocates a texture outside the live
+`Model::images` array and returns a future append index. A
+successful all-model `commit()` makes the index visible; a failed
+attempt queues temporary GPU handles in a persistent
+`ModelImageRollbackPool` rather than destroying them while prior
+GPU commands may still reference them.
+
+The rollback pool must outlive every staging transaction and be
+collected at a safe frame boundary. Its `drain(device)` must succeed
+before the parent device is destroyed. Texture retirement requires a
+real GPU completion token or full-device idle: `frameSerial()` and
+wall-clock delays are NOT proof. Keep Model, material and appearance
+snapshot borrows detached before model cache eviction.
+
+The RTS hot-appearance loader now uses this path for newly imported
+texture overrides. Initial model upload, shared texture caches and
+other direct GPU allocations still have independent lifetime
+contracts. Native build/CTest and physical GPU tests have not been
+performed for Stage 112.
