@@ -131,6 +131,7 @@ public:
     bool busy() const{return bool(pending_);}
     uint64_t sourceRevision() const{return sourceRevision_;}
     uint64_t geometryRevision() const{return geometryRevision_;}
+    size_t sourceCount() const{return sourcePacket_.lights.size();}
     uint32_t width() const{return width_;}
     uint32_t height() const{return height_;}
     const LumaScreenSettings& settings() const{return settings_;}
@@ -312,8 +313,17 @@ public:
     // This prior result is safe only for the exact prior camera/source revision.
     // Callers cannot blindly draw it on new frames of moving geometry.
     gfx::TextureHandle confirmedOutput() const {
-        return ready() && historyValid_ && !pending_ ? filtered_[confirmedIndex_] :
+        // The pending producer targets the OTHER ping-pong slot. The last
+        // completed history remains immutable/readable until this next fence.
+        return ready() && historyValid_ ? filtered_[confirmedIndex_] :
                gfx::TextureHandle{};
+    }
+    bool canReuseConfirmedFor(const mat4& vp,float3 camera) const {
+        if(!confirmedOutput().valid() || !finite3(camera) ||
+           length(camera-previousEye_)>1e-4f)return false;
+        for(int i=0;i<16;++i)
+            if(std::abs(vp.m[i]-previousVP_.m[i])>1e-5f)return false;
+        return true;
     }
 
     // Required only when asynchronous RHI readback rejected an encoded batch.
