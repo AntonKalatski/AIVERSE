@@ -48,6 +48,8 @@ void ClientFx::startMatch(Simulation& sim, uint8_t viewer, const game::RtsView& 
 }
 
 void ClientFx::stopMatch() {
+    lightBuf_.clear();
+    preparedLightsValid_ = false;
     if (attached_) bridge_.detach();
     attached_ = false;
     ps_.clear();
@@ -72,6 +74,8 @@ void ClientFx::setPlanetView(const game::RtsView* view) {
 
 void ClientFx::update(Simulation& sim, const game::RtsScene& scene, const render::RTSCamera& cam, const render::mat4& viewProj,
                       int fbW, int fbH, float dt) {
+    preparedLightsValid_ = false;
+    lightBuf_.clear();
     ps_.setView(cam, viewProj, fbW, fbH);
     if (attached_ && dt > 0) bridge_.update(sim, &scene.objects, dt);
     ps_.update(dt);
@@ -83,7 +87,14 @@ void ClientFx::update(Simulation& sim, const game::RtsScene& scene, const render
 void ClientFx::addLights(render::LightSystem& lights) {
     lightBuf_.clear();
     ps_.collectLights(lightBuf_);
-    for (auto& l : lightBuf_) lights.add(planet_ ? space_.transformPoint(l.pos) : l.pos, l.radius, l.color, l.intensity);
+    preparedLightsValid_ = true;
+    addPreparedLights(lights);
+}
+
+void ClientFx::addPreparedLights(render::LightSystem& lights) const {
+    if (!preparedLightsValid_) return;
+    for (const auto& l : lightBuf_)
+        lights.add(planet_ ? space_.transformPoint(l.pos) : l.pos, l.radius, l.color, l.intensity);
 }
 
 void ClientFx::render(const render::Lighting& lighting) {
