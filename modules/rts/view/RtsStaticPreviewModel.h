@@ -3,7 +3,7 @@
 // RTS host selects resource/variant and supplies presentation appearance.
 // The renderer owns actual model drawing and GPU state.
 #pragma once
-#include "engine/view/View.h"
+#include "engine/view/AppearancePacket.h"
 #include <algorithm>
 #include <cstdint>
 
@@ -35,20 +35,21 @@ inline bool buildStaticPreviewPacket(const StaticPreviewModel& spec,
     else
         base=render::mat4::translate(p)*render::mat4::rotateY(yaw)*
              render::mat4::scale({k,k,k});
-    packet={};
-    packet.draw.model=spec.model;
-    packet.draw.geometry=spec.geometry;
-    packet.draw.world=base*spec.fix;
-    packet.draw.materials=spec.materials;
-    packet.draw.nodeMaterial=spec.nodeMaterial;
-    packet.draw.variant=spec.variant;
-    packet.draw.tint=spec.tint;
-    packet.draw.team=spec.team;
-    if(spec.transparent)packet.draw.flags|=render::kDrawTransparent;
+    // RTS owns *selection* of appearance and the authored object frame;
+    // generic View owns packet field composition shared by all genres.
+    view::AppearanceSpec appearance;
+    appearance.model=spec.model;
+    appearance.geometry=spec.geometry;
+    appearance.materials=spec.materials;
+    appearance.nodeMaterial=spec.nodeMaterial;
+    appearance.variant=spec.variant;
+    appearance.tint=spec.tint;
+    appearance.team=spec.team;
+    if(spec.transparent)appearance.flags|=render::kDrawTransparent;
     if(spec.staticObject && !spec.air)
-        packet.draw.flags|=render::kDrawStatic;
-    // No graph is attached: never create a second animation owner.
-    return true;
+        appearance.flags|=render::kDrawStatic;
+    // Static preview never supplies a graph; View cannot tick it twice.
+    return view::buildAppearancePacket(appearance,base*spec.fix,packet);
 }
 
 // A flat-ground placement preview keeps the same resolved mesh/material
@@ -70,7 +71,7 @@ inline bool buildStaticGhostPacket(const StaticPreviewModel& spec,
 
 inline void submitStaticPreview(render::Renderer3D& renderer,
                                 const view::Object& packet) {
-    View::submitModel(renderer,packet.draw);
+    view::submitPrecomputedAppearance(renderer,packet);
 }
 
 } // namespace aiverse::game::view_adapter
