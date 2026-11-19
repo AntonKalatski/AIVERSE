@@ -10075,3 +10075,61 @@ then GPU ICB Shader Graph validation. Keep PR #21 Draft
 and do not touch the primary repo's unrelated unfinished
 rebase.
 
+
+## Stage 10BN — verified real Metal disk-backed VT source to GPU acceptance (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`; Draft PR #21.
+**Previously implemented:** Stage 10BM added temporary RGBA8
+asset files, native asynchronous `VirtualTextureDiskQueue` worker,
+`VirtualTextureFileStreamer::pump` on the render thread, and
+actual Metal physical atlas + page-table readbacks.
+**Documentation commit:** `5d74f4f4d178116eb083a44936389e3bd226efca`
+(`docs/texture-rhi.md`).
+
+**Actual user-provided Mac Studio CTest output:** the new native
+`aiverse_metal_texture_gpu_test` target built and linked
+successfully. CTest `metal_texture_gpu` #122 PASSED
+**1/1 in 1.46 seconds**, zero failures (overall CTest 1.47 sec).
+Earlier full device identification: `Metal Apple M3 Ultra`.
+The pasted verbose log shows every prior Texture3D,
+2DArray, Cube and CubeArray exact readback, fragment
+Texture3D sampling, canonical VT GPU feedback encoding,
+and physical atlas page-table acceptance still PASS.
+
+**Specific Stage 10BM real GPU PASS evidence:**
+- Actual GPU page table all-zero before disk-worker `pump()`.
+- Coarse `m2/l0/x0_y0.rgba` requested and loaded on the
+  worker, mapped pinned physical slot 0; raw GPU pixels
+  and RGBA8 table matched.
+- Missing disk page returned explicit failed completion
+  with atlas and page table intact.
+- Fine `m0/l0/x3_y3.rgba` allocated physical slot 1;
+  its authored page bytes and GPU fine override matched.
+- Replacement `m0/l0/x0_y0.rgba` evicted the old
+  unpinned fine page without disturbing pinned coarse;
+  GPU atlas readback showed the overwritten physical slice
+  contains the new bytes, and the page table discarded
+  the stale fine mapping.
+All reported readback checks used **tolerance 0**.
+
+**Measured timing evidence:** full disk worker→GPU
+stage `148.740 ms`, coarse read+upload `0.399 ms`,
+missing failure `3.701 ms`, fine `3.980 ms`,
+replacement `3.746 ms`. The displayed Metal GPU
+command buffer durations for readback were
+`0.005..0.024 ms`; CPU callback waits approximately
+19–21 ms. Fixture total `694.571 ms`, CPU body
+`640.120 ms`, enclosing CTest `1.46 sec`.
+These intervals are not isolated upload bandwidth metrics.
+
+**Changed files:** only documentation and this handoff
+in this bounded validation stage; no source fixes were
+necessary after the user-reported PASS.
+
+**Remaining:** real fragment shader page-table indirection
+over these disk-backed atlas resources, GPU ICB per-command
+Shader Graph source material sampling, cross-backend GPU
+parity and larger-scene performance. Stage 10BO begins
+the shader-indirection source work; its new source has
+NOT been built or run on Mac. Keep PR Draft.
+
