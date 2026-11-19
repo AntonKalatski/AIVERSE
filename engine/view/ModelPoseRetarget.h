@@ -183,6 +183,34 @@ inline bool retargetModelPose(const render::Model& source,
 // time. Runtime pose evaluation never traverses/validates the mapping and
 // never allocates validation scratch, even for thousands of crowd instances.
 // The output Pose and world matrices are still per-draw transient buffers.
+// Cheap diagnostic for a compiled plan's *current* asset identity.
+// This is a constant-time CPU comparison and does not dereference the
+// plan's potentially retired source/visual Model pointers.
+enum class CompiledRetargetStatus : uint8_t {
+    Ready,
+    MissingSourceGeneration,
+    MissingVisualGeneration,
+    SourceModelChanged,
+    VisualModelChanged,
+    SourceGenerationChanged,
+    VisualGenerationChanged,
+    InvalidPlanShape
+};
+inline const char* compiledRetargetStatusName(
+        CompiledRetargetStatus status) noexcept {
+    switch(status) {
+        case CompiledRetargetStatus::Ready:return "ready";
+        case CompiledRetargetStatus::MissingSourceGeneration:return "source asset generation missing";
+        case CompiledRetargetStatus::MissingVisualGeneration:return "visual asset generation missing";
+        case CompiledRetargetStatus::SourceModelChanged:return "source model identity changed";
+        case CompiledRetargetStatus::VisualModelChanged:return "visual model identity changed";
+        case CompiledRetargetStatus::SourceGenerationChanged:return "source asset generation changed";
+        case CompiledRetargetStatus::VisualGenerationChanged:return "visual asset generation changed";
+        case CompiledRetargetStatus::InvalidPlanShape:return "compiled map shape invalid";
+    }
+    return "compiled map status unavailable";
+}
+
 struct CompiledModelPoseRetarget final {
     struct NodeStep {
         int source=-1;
@@ -199,15 +227,26 @@ struct CompiledModelPoseRetarget final {
     render::Pose visualBind;
     std::vector<NodeStep> steps;
     size_t mappedNodes=0;
+    CompiledRetargetStatus status(const render::Model& source,
+                 const render::Model& visual,uint64_t sourceGen,
+                 uint64_t visualGen) const noexcept {
+        if(!sourceGen)return CompiledRetargetStatus::MissingSourceGeneration;
+        if(!visualGen)return CompiledRetargetStatus::MissingVisualGeneration;
+        if(sourceModel!=&source)return CompiledRetargetStatus::SourceModelChanged;
+        if(visualModel!=&visual)return CompiledRetargetStatus::VisualModelChanged;
+        if(sourceGeneration!=sourceGen)
+            return CompiledRetargetStatus::SourceGenerationChanged;
+        if(visualGeneration!=visualGen)
+            return CompiledRetargetStatus::VisualGenerationChanged;
+        if(steps.size()!=visualBind.size() ||
+           steps.size()!=visual.nodes.size())
+            return CompiledRetargetStatus::InvalidPlanShape;
+        return CompiledRetargetStatus::Ready;
+    }
     bool matches(const render::Model& source,const render::Model& visual,
                  uint64_t sourceGen,uint64_t visualGen) const noexcept {
-        // A zero generation is deliberately not trusted: old cached maps
-        // could otherwise survive pointer reuse after an asset reload.
-        return sourceGen!=0 && visualGen!=0 &&
-               sourceGeneration==sourceGen && visualGeneration==visualGen &&
-               sourceModel==&source && visualModel==&visual &&
-               steps.size()==visualBind.size() &&
-               steps.size()==visual.nodes.size();
+        return status(source,visual,sourceGen,visualGen)==
+            CompiledRetargetStatus::Ready;
     }
 };
 
