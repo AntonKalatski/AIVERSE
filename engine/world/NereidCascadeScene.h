@@ -124,6 +124,10 @@ public:
         maxUploadsPerFrame_=count;
     }
     size_t count()const{return slots_.size();}
+    template<class Fn> void forEachSource(Fn&& fn)const {
+        for(const auto& [id,slot]:slots_)
+            if(slot.source.cascade.enabled)fn(id,slot.source);
+    }
     size_t residentCount()const {
         size_t n=0;for(const auto& [id,s]:slots_) { (void)id;if(s.resident)++n; }
         return n;
