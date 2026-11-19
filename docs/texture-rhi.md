@@ -860,3 +860,79 @@ be bound by the game's material/shader integration, using
 and disk streaming pipeline may operate but the main draw
 still samples the regular material texture. The implementation
 has not been compiled or exercised on the GPU yet.
+
+
+## Opt-in virtual texture sampling in the main Model renderer
+
+The VT page loader and feedback pipeline now connect to the **normal**
+`Renderer3D` material fragment shader, rather than only rendering
+feedback page IDs. New `engine/render/ModelVirtualTextureSampling.h`
+reuses `engine/gfx/VirtualTextureSampling.h`'s existing physical
+page lookup, page-table format and mip fallback implementation.
+
+Call `Renderer3D::setModelVirtualTextureResolver(resolver)` to
+provide a valid `ModelVirtualTextureBinding` for the exact
+`Model` and `Material`. It contains:
+`physicalAtlas`, `pageTable` (RGBA8 2D arrays),
+`layer` and `gutterPixels`. Only a valid binding creates the
+`kKeyModelVirtualTexture` variant of the regular model shader.
+This shader reads the page table from `tex14`, the physical atlas
+from `tex13`, and a single U6 vec4 holding virtual layer/gutter.
+Both resources are selected at each draw, not cached by material
+pointer across Horizon revisions.
+
+The primary fragment shader's normal `tex1` base-colour sample
+becomes `aiverseSampleVirtual(tex13,tex14,uv,layer,gutter,tex1Fallback)`
+in GLSL or `aiverse_sample_virtual(...)` in Metal. It retains
+the original material texture `tex1` as fallback if no virtual
+page is resident, so regular materials, alpha masking, lighting,
+team-colour blending, tint and LOD coverage remain unchanged
+while streaming loads. **Because tex1 remains a fallback,
+this first integration does not yet reclaim source texture
+VRAM**; a separate fallback policy/resident coarse mip texture
+will be needed before claiming VT memory savings.
+
+Only ordinary built-in model shaders use the opt-in slots
+`tex13/tex14` (bounded by GL's 16 texture units). Shader Graph
+programs also use slots from 13 onward and therefore remain on
+their existing sampling path, as do shadow and outline passes,
+GPU ICB/indirect variants and per-vertex material-palette
+batches. Model batching separates submissions if their
+external VT resource pair/layer/gutter differs. To avoid
+binding the wrong page table in existing GPU encoded commands,
+a frame with any VT material falls back to CPU model submissions;
+mixed CPU multi-draw indirect batches are also rejected.
+No game genre is referenced in the shared sampler.
+
+For the current TerraWeave integration, initialize the existing
+`TerraWeaveVirtualTextureFeedback` bridge and
+`TerraWeaveVirtualAtlasSession`, then install a resolver
+that always reads the currently active revision:
+
+```cpp
+render::connectTerraWeaveVirtualTextureSampling(
+    renderer, terraFeedback, atlasSession);
+```
+
+The helper is in
+`engine/render/TerraWeaveVirtualAtlasArchive.h`. It confirms
+that a material has an actual VT allocation in the feedback
+bridge, checks that it matches the active archive's virtual
+page dimensions, and returns `atlasSession.active()->physicalAtlas()`
+plus `pageTableTexture()` as a *single consistent domain*.
+Calling `atlasSession.promote(feedbackPass)` at the correct
+frame boundary changes both bindings atomically for new draws.
+Never release the old GPU atlas until its final fence is done.
+The `TerraWeaveVirtualTextureFeedback::shutdown()` path also
+clears its installed sampling resolver. Ensure the bridge
+outlives any renderer callbacks that capture its reference,
+and explicitly clear callbacks when replacing ownership.
+
+**Unsupported or deferred:** custom Shader Graph VT sampling,
+per-command VT identity for GPU ICB/MDI, fully virtualized
+source texture residency, opaque-to-transparent transition
+feedback, multiple independent Terra atlas domains in one
+session, and validated texture/colour parity on every backend.
+The existing source texture fallback is intentional for
+correctness. Native build, CTest, GL shader compilation,
+Metal compilation and actual Vulkan/GPU tests have not been run.
