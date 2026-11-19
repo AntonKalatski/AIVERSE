@@ -277,6 +277,11 @@ public:
     }
     void setParallelThreshold(size_t count) {minimumParallelActors_=count;}
     Entity presentationEntity(uint64_t id) const {return bridge_.find(id);}
+    // Detach selected presentation sources before their host-owned models
+    // are evicted; other graph players keep their clocks and pose state.
+    size_t forgetSources(std::span<const uint64_t> ids) {
+        return bridge_.forget(presentation_,ids);
+    }
     const World& presentation() const noexcept{return presentation_;}
     // For controlled host-only effects such as montage slots. Never
     // snapshot this World or mutate it while update() is running.
