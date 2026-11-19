@@ -339,3 +339,8 @@ NEREID source mesh revision depends only on body geometry, LOD and vertex tint f
 ## Stage 45 — confluence and material residency regression coverage (authored)
 
 The new CPU-only `ecs_nereid_confluence_contract_test` covers JSON scene authoring and validation (Stage 44), reference/indexed ECS water confluence parity (Stage 41), ECS-to-scene Fixed current transfer (Stage 42), and draw-only vs vertex-baked material upload keys (Stage 43). It is included in CMake/CTest and experimental ECS shell runner. It does not exercise graphics devices, shaders, full persistence/rollback or unrelated genre integration. No test was actually run in the agent environment. See `docs/nereid/stage-45-confluence-contract-tests.md`.
+
+
+## Stage 45.1 — CPU presentation manifest link contract
+
+NEREID renderer and confluence contract tests both require `worldInteger` / `worldVector`, defined in `engine/world/WorldAssets.cpp`, not `aiverse_engine`. CMake now links `aiverse_world` for these targets; standalone ECS experiment runner compiles `WorldAssets.cpp` and `Sha256.cpp`. Correct linkage has been source-reviewed but not natively built, due unavailable Git checkout and queued CI. See Stage 45 handoff.

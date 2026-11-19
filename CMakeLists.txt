@@ -1660,7 +1660,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_executable(aiverse_ecs_nereid_renderer_contract_test
         tests/ecs_nereid_renderer_contract_test.cpp)
     target_link_libraries(aiverse_ecs_nereid_renderer_contract_test PRIVATE
-        aiverse_engine AIVERSE::lib_nereid_water)
+        aiverse_engine aiverse_world AIVERSE::lib_nereid_water)
     add_test(NAME ecs_nereid_renderer_contract_test
         COMMAND aiverse_ecs_nereid_renderer_contract_test)
     # NEREID stages 41-44: JSON links, reference/indexed/scene flow parity
@@ -1668,7 +1668,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_executable(aiverse_ecs_nereid_confluence_contract_test
         tests/ecs_nereid_confluence_contract_test.cpp)
     target_link_libraries(aiverse_ecs_nereid_confluence_contract_test PRIVATE
-        aiverse_engine AIVERSE::lib_nereid_water)
+        aiverse_engine aiverse_world AIVERSE::lib_nereid_water)
     add_test(NAME ecs_nereid_confluence_contract_test
         COMMAND aiverse_ecs_nereid_confluence_contract_test)
     # Real NativeModule instantiated by RtsModule, exercising RtsSave and COW.

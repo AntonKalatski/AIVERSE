@@ -87,11 +87,19 @@ for nereid in water buoyancy geometry query_index native_pipeline; do
     compile_run "ecs-nereid-$nereid" -Ilibraries/include \
         "tests/ecs_nereid_${nereid}_test.cpp" "${NEREID_CORE[@]}"
 done
-# Compile-only/CPU renderer marker test (no device or shader backend).
+# CPU presentation manifests call worldInteger/worldVector from WorldAssets.cpp;
+# the translation unit also references Sha256 from verifiedReader, so compile
+# both sources in this standalone runner (CMake tests link aiverse_world).
+NEREID_WORLD_MANIFEST=(
+    engine/world/WorldAssets.cpp engine/pack/Sha256.cpp
+)
+# Renderer/JSON contracts do not create a graphics Device or window.
 compile_run ecs-nereid-renderer-contract -Ilibraries/include \
-    tests/ecs_nereid_renderer_contract_test.cpp "${NEREID_CORE[@]}"
+    tests/ecs_nereid_renderer_contract_test.cpp "${NEREID_CORE[@]}" \
+    "${NEREID_WORLD_MANIFEST[@]}"
 compile_run ecs-nereid-confluence-contract -Ilibraries/include \
-    tests/ecs_nereid_confluence_contract_test.cpp "${NEREID_CORE[@]}"
+    tests/ecs_nereid_confluence_contract_test.cpp "${NEREID_CORE[@]}" \
+    "${NEREID_WORLD_MANIFEST[@]}"
 # Legacy bridge imports only from the editor-time RtsWater geometry code.
 # Presentation geometry must compile on both Linux and macOS independently of RHI.
 compile_run ecs-nereid-surface-mesh -Ilibraries/include \

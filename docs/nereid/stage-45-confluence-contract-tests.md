@@ -36,3 +36,10 @@ Run GLSL/Metal compilation separately: this CPU regression only checks rendering
 If C++ compiler/CI exposes a failure, fix the actual issue before marking the PR ready. Prioritize include/standalone symbol problems, stable ID parity, Fixed rounding, manifest rejection behaviour and stale async mesh states.
 
 **Next agent:** run this new contract test and the rest of `ecs_nereid_.*_test`, fix actual build/runtime failures, then run native ECS persistence+rollback, FPS/RTS/PHYSIS regression, GLSL/MSL compiler checks and GPU residency profiling. Append actual command, platform, exit status and commit to the handoff. Keep PR Draft until verified.
+
+
+### Stage 45.1 — source-level link dependency repair
+
+Inspected exact definitions: `worldInteger` and `worldVector` are implemented (not inline) in `engine/world/WorldAssets.cpp`. Both renderer contract and confluence contract include NEREID manifest parsing and therefore need those symbols. The existing CMake targets linked only `aiverse_engine` plus the NEREID header-only package, missing `aiverse_world` (which owns `WorldAssets.cpp`). Updated BOTH CMake test link libraries to include `aiverse_world`. The standalone `tests/run_ecs_experiment_suite.sh` now compiles `engine/world/WorldAssets.cpp` and `engine/pack/Sha256.cpp` for both tests; the latter resolves references from `WorldAssets::verifiedReader` even though the fixture itself does not call it.
+
+**Actually performed:** read CMake targets, `modules/fps/CMakeLists.txt` world library ownership and WorldAssets/Sha256 source via GitHub connector; applied guarded source patch/atomic commit. **Not performed:** native compile/link, CTest, shell execution or green CI. Git clone of repo from the local container failed (GitHub hostname DNS resolution unavailable); observed GitHub Actions for old SHAs remained queued/cancelled. Do not claim test PASS. **Next:** run the two CPU contracts on a checkout with network/source, resolve any compiler/logic failures, then full suite.
