@@ -1089,3 +1089,27 @@ Exact GitHub source transformations and readback checks only. **Native CMake/CTe
 ### Next step
 
 Feature-first audit any remaining policies which are unintentionally hard-coded to RTS or editor functionality, and inspect whether switching runtime policies between Scene and Game also invalidates stale page-adaptive feedback safely across different render contexts. Finish all functional work before opening the test/benchmark phase.
+
+---
+
+## Feature continuation — per-host CPU MDI page-feedback isolation (2026-11-19)
+
+**Repo:** `chromealex/AIVERSE`; **branch** `perf/incremental-static-model-cache`, Draft PR #34. At start `main=d71c6d47e532b25fb816a8bb1f96c41e5275a165`, branch `5a8a21d128bf04cbd51a4e6648edbf767460a453`, behind=0. **User directive:** all batching features before tests.
+
+### Design and files
+
+- `engine/render/CpuMdiAdaptivePolicy.h`: new `CpuMdiPageKey::scope` (uint64_t, default zero) participates in equality and hash. It keys CPU adaptive EMA/probe decisions only, never GPU buffers or shader materials.
+- `engine/render/Renderer3D.h`: public `setCpuMdiAdaptiveScope(uint64_t)` and `cpuMdiAdaptiveScope()`, renderer-owned current scope default zero.
+- `engine/render/Renderer3DModels.cpp`: `cpuMdiPageEntry(model)` creates a page key including the configured scope; all existing adaptive decision and feedback sites already go through this function, so they are isolated without changing actual submission eligibility.
+- `apps/editor/windows/SceneWindow.cpp`: applies a stable Scene-only namespace before each Scene render and restores zero before Game. This prevents a slow viewport/editor profile from accidentally switching Game to instancing on the same GPU geometry arena.
+- `docs/geometry-performance.md`, `AGENTS.md`, this handoff document API, safety, validation and next action.
+
+The per-page bounded directory remains capped at 256 across scopes, not per scope. An exhausted directory retains normal safe MDI fallback, not stale estimates. Weak geometry page lifetime checking remains. Aggregate display-only adaptive stats may still span contexts, but page-based admission does not; do not reinterpret aggregated diagnostics as isolated GPU timing. No existing environment opt-ins changed.
+
+### Actual verification
+
+GitHub source readback/unique replacement/branch ancestry only. **CMake NOT RUN; CTest NOT RUN; Metal/Vulkan GPU parity NOT RUN; frame-time benchmark NOT RUN.** No performance win or compilation claim. PR Draft.
+
+### Next feature direction
+
+Check any remaining genre-specific batching assumptions (RTS model flags vs generic renderer API), expose native integration guidance for all host genres and add a single `Renderer3D` batching configuration snapshot for hosts that need to save/restore view state automatically. Preserve existing MDI safety/fallback, cache bounds and feature-first priority.

@@ -1565,3 +1565,17 @@ these controls only to the Scene view and restores Environment/0 before
 Game. Never globally toggle Metal GPU-encoded ICB, shared geometry
 pooling, scene shader/LOD or bypass GPU safety/fallback. No tests until
 all batching functions are finished, per current user instruction.
+
+## Per-host CPU MDI adaptive scope contract (feature continuation)
+
+`CpuMdiPageKey::scope` participates in hash/equality; admission
+policy uses it to isolate feedback across independent renderer hosts
+sharing a pooled GPU page. Default scope 0 preserves old clients.
+Use `setCpuMdiAdaptiveScope(uint64_t)` before `beginScene`. The
+Studio Scene window uses a stable nonzero scope and restores zero
+before Game. Do not use transient ECS Entity IDs here: scope is a
+host/view namespace, not a source model/entity identity. The 256-page
+cache bound is shared across scopes; untracked pages keep normal
+safe MDI admission. This never changes GPU geometry eligibility,
+material compatibility, shader binding, GPU-owned in-flight memory
+or draw fallback. Document stage and defer tests until all features.

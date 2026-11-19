@@ -535,6 +535,12 @@ public:
     double cpuMdiAdaptiveBudgetOverrideUs() const {
         return cpuMdiAdaptiveBudgetOverrideUs_;
     }
+    // Reusable genre-neutral context namespace: two independent camera
+    // hosts may share a GPU geometry page yet have different CPU costs.
+    // Zero preserves legacy behavior. Used only in the per-page adaptive
+    // feedback key; never in a shader or actual draw command.
+    void setCpuMdiAdaptiveScope(uint64_t scope) { cpuMdiAdaptiveScope_ = scope; }
+    uint64_t cpuMdiAdaptiveScope() const { return cpuMdiAdaptiveScope_; }
     // Independently control GPU-authored draws for 3-way Scene benchmarking.
     // The process-wide experimental environment flag remains mandatory.
     void setGpuAuthoredDrawEnabled(bool on) { gpuAuthoredDrawEnabled_ = on; }
@@ -862,6 +868,7 @@ private:
     CpuMdiPolicyMode mdiLayoutCacheMode_ = CpuMdiPolicyMode::Environment;
     CpuMdiPolicyMode mdiGeometrySortMode_ = CpuMdiPolicyMode::Environment;
     double cpuMdiAdaptiveBudgetOverrideUs_ = 0.0; // 0: env (default 25 us)
+    uint64_t cpuMdiAdaptiveScope_ = 0; // default namespace, not an Entity ID
     bool mdiLayoutCacheEnabled_ = true;
     bool mdiGeometrySortRequested_ = false;
     // Per-renderer reusable hash directory, group storage and item mode map.

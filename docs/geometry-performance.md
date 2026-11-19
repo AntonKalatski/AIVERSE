@@ -1243,3 +1243,28 @@ snapshot/fence ownership remain unchanged.
 This is a feature-only implementation; **no native CMake, CTest,
 Metal/Vulkan raster, OOM stress or frame-time benchmark was run**.
 Keep experimental static cross-model batching default OFF.
+
+### Per-host adaptive CPU MDI feedback isolation
+
+`CpuMdiPageKey` now contains a `uint64_t scope` that is included in
+equality and hashing. `Renderer3D::setCpuMdiAdaptiveScope(uint64_t)`
+selects that namespace for the next renderer view. It is **only**
+used to find/update per-page CPU MDI adaptive EMA and probe state:
+shader/material, geometry-pool page matching, GPU buffer handles,
+render order and indirect command encoding are unchanged.
+
+The default scope is zero to preserve legacy native/game hosts.
+The editor Scene window uses its own stable nonzero scope while it
+renders and resets scope to zero before Game. Thus measuring slow
+static batches in Scene cannot suppress otherwise eligible Game
+batches on an identical GPU page. The bounded per-page directory
+continues to be capped at 256 tracked entries **across scopes**;
+when full, untracked pages use the ordinary fallback-safe MDI policy
+rather than inferred cross-host feedback. Full scene invalidation
+still clears all scope entries and weak page references prevent raw
+address reuse. Display-only aggregate feedback may span scopes,
+but **admission uses the scope-keyed page feedback only**.
+
+Functional source integration only. Native compilation, CTest, GPU
+raster parity, in-flight GPU fences and frame-time benchmarks remain
+NOT RUN per user feature-first instruction.

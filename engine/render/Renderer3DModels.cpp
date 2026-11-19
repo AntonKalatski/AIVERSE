@@ -625,7 +625,8 @@ const Renderer3D::SharedMaterialEntry* Renderer3D::cachedSharedMaterialState(
 Renderer3D::CpuMdiPageEntry* Renderer3D::cpuMdiPageEntry(const Model& model) {
     const auto page = model.geometryPoolPage;
     if (!page || !model.vb.valid() || !model.ib.valid()) return nullptr;
-    const CpuMdiPageKey key{page.get(), model.vb.id, model.ib.id};
+    const CpuMdiPageKey key{
+        page.get(), model.vb.id, model.ib.id, cpuMdiAdaptiveScope_};
     auto it = cpuMdiPages_.find(key);
     if (it != cpuMdiPages_.end()) {
         // An allocator can recycle the raw pointer and even GPU handle IDs.

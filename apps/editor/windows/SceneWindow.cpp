@@ -75,6 +75,10 @@ public:
         renderer.setMdiLayoutCacheMode(policy(sceneMdiLayoutCacheMode_));
         renderer.setMdiGeometrySortMode(policy(sceneMdiGeometrySortMode_));
         renderer.setCpuMdiAdaptiveBudgetOverrideUs(sceneCpuMdiBudgetOverrideUs_);
+        // A shared Renderer3D can draw both Studio Scene and Game using the
+        // same pooled geometry in one host frame. Keep CPU timing feedback
+        // namespaces separate so Scene experiments cannot gate Game draws.
+        renderer.setCpuMdiAdaptiveScope(kSceneCpuMdiAdaptiveScope_);
         const bool measuredMode = benchmarkActive_ || autoBatchChoice_ >= 0;
         const int activeMode = benchmarkActive_ ? benchmarkMode_ : autoBatchChoice_;
         renderer.setModelInstancingEnabled(measuredMode ? true : sceneInstancing_);
@@ -194,6 +198,7 @@ public:
         renderer.setMdiLayoutCacheMode(Renderer3D::CpuMdiPolicyMode::Environment);
         renderer.setMdiGeometrySortMode(Renderer3D::CpuMdiPolicyMode::Environment);
         renderer.setCpuMdiAdaptiveBudgetOverrideUs(0.0);
+        renderer.setCpuMdiAdaptiveScope(0);
         renderer.setModelCullingEnabled(true);
         renderer.setModelLodEnabled(true);
         renderer.setModelLodFadeWidth(0.15f);
@@ -1832,6 +1837,8 @@ private:
     int sceneMdiLayoutCacheMode_ = 0;
     int sceneMdiGeometrySortMode_ = 0;
     double sceneCpuMdiBudgetOverrideUs_ = 0.0;
+    // Stable per Scene window, not persisted to gameplay or ECS IDs.
+    static constexpr uint64_t kSceneCpuMdiAdaptiveScope_ = 0x5343454E45564945ull;
     static constexpr double kSceneCpuMdiBudgetMin_ = 0.0;
     static constexpr double kSceneCpuMdiBudgetMax_ = 1000.0;
     bool sceneLodEnabled_ = true;

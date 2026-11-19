@@ -21,6 +21,9 @@ struct CpuMdiPageKey {
     const GeometryPoolPage* page = nullptr;
     uint32_t vertexBuffer = 0;
     uint32_t indexBuffer = 0;
+    // Renderer-local view/host namespace, explicitly chosen by callers.
+    // Zero preserves historical shared feedback behavior for other hosts.
+    uint64_t scope = 0;
     bool operator==(const CpuMdiPageKey&) const = default;
 };
 struct CpuMdiPageKeyHash {
@@ -31,6 +34,7 @@ struct CpuMdiPageKeyHash {
         };
         mix(std::hash<uint32_t>{}(key.vertexBuffer));
         mix(std::hash<uint32_t>{}(key.indexBuffer));
+        mix(std::hash<uint64_t>{}(key.scope));
         return h;
     }
 };
