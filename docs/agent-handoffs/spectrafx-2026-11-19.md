@@ -528,3 +528,14 @@ git switch feature/spectrafx-generic-cue-queue
 git pull --ff-only origin feature/spectrafx-generic-cue-queue
 git fetch origin main && git merge origin/main
 ```
+
+
+## 2026-11-19 — Stage 31: bounded one-shot hybrid emitter ownership
+- **Branch** `feature/spectrafx-generic-cue-queue`. At stage start, compared with remote main `d71c6d47e532b25fb816a8bb1f96c41e5275a165`: 0 behind, 71 ahead; no merge required.
+- **Implementation commit** `ee4d0e852ef9e44f43e53cf098499a57e01adceb`.
+- **File** `engine/fx/SpectraFxHybridPlayback.h` (modified).
+- **Behavior**: zero-key Play now creates an internally owned one-shot instead of being rejected; `Route::oneShotSeconds` (default 3, valid 0..60 exclusive of zero) provides a hard retirement deadline. One-shot and keyed instances jointly respect `kMaxEmitters=64`. `updateGpu(dt)` also advances one-shot ownership time and retires owned CPU/GPU resources; `renderGpu` draws their GPU batches; `reset` clears both types, and destructor calls `reset` (caller MUST destroy playback before Device/ParticleSystem). `oneShotCount` and `Stats::oneShots/retired` expose ownership. Invalid delta-time is rejected instead of advancing expiries.
+- **Semantics**: one-shot retirement calls Stop with kill semantics; CPU particle tails are cut at the hard deadline instead of guaranteed to fade naturally. This is a safety bound, not an effect-duration detector. GPU effects continue spawning until deadline unless configured otherwise. Keyed Play still preserves a live prior instance until a successful replacement starts.
+- **Compatibility**: additive API, no ECS/gameplay save changes and no PRISMA ownership overlap.
+- **Actually executed**: **NOT RUN** — C++ build, CTest, native editor, CPU/GPU integration, shader compilation, CI and visual QA deliberately deferred per user request. Code is not confirmed production-safe.
+- **Next step**: expose authored GPU hybrid assets in a real editor window. Then implement optional authoring/route configuration and scene runtime lifecycle. Keep testing deferred until feature completion.
