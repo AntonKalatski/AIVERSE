@@ -195,6 +195,12 @@ public:
     LegacyLodFallbackStats legacyLodFallbackStats() const noexcept {
         return legacyLodFallbackStats_;
     }
+    // Legacy RTS renderer holds one cache read scope during draw().
+    // The counter is normally zero after the draw has returned;
+    // use for host frame-lifetime and teardown diagnostics only.
+    size_t activeModelReadLeases() const noexcept {
+        return resources_.activeModelReaders();
+    }
     // Budget only retained transient Pose/matrix capacity in the generic
     // MotionWeave View. The largest single actor still renders normally.
     void setGenericRetargetScratchBudgetBytes(size_t bytes);
