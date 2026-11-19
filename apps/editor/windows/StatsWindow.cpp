@@ -86,6 +86,7 @@ public:
         ui::section(ICON_REGIONS, "PRISMA · GPU resource retirement");
         const auto post = ed.prisma().retirementStats();
         const auto motion = ed.renderer().motionRetirementStats();
+        const auto viewport = ed.viewportRetirement().stats(ed.device());
         ImGui::Text("GPU completed fence: %llu  ·  сцены: %zu активных + %zu ожидают",
                     (unsigned long long)post.lastGpuCompletedFence,
                     post.activeSizes, post.retiredSizes);
@@ -96,9 +97,19 @@ public:
                     post.graphRetiredTextures);
         ImGui::Text("Renderer motion: %zu fenced + %zu unfenced textures",
                     motion.fencedTextures, motion.unfencedTextures);
-        ImGui::Text("Удерживается GPU (известный минимум): %.2f MiB",
-                    double(post.knownPendingBytes + motion.knownPendingBytes) / mib);
-        ImGui::TextDisabled("Это только ожидающие освобождения ресурсы; внутренние RenderGraph allocations могут добавить память.");
+        ImGui::Text("Viewport Scene / Game / FX: %zu fenced + %zu без fence",
+                    viewport.fenced,viewport.unfenced);
+        const uint64_t totalRetired = post.knownPendingBytes +
+            motion.knownPendingBytes + viewport.knownPendingBytes;
+        ImGui::Text("Удерживается GPU (известный минимум): %.2f MiB / %.0f MiB",
+                    double(totalRetired) / mib,double(viewport.budgetBytes) / mib);
+        if (viewport.budgetBytes && totalRetired > viewport.budgetBytes)
+            ImGui::TextDisabled("Превышен бюджет: на следующем кадре попытка GPU idle. WebGL может не поддерживать ожидание.");
+        if (ImGui::Button("Запросить безопасную очистку GPU"))
+            ed.requestGpuRetirementFlush();
+        ImGui::SameLine();
+        ImGui::TextDisabled("в начале следующего кадра; может задержать отрисовку");
+        ImGui::TextDisabled("Оценка — только ожидающие ресурсы. Активные textures, mip-цепочки, драйвер и RenderGraph учитываются частично.");
         if (ed.lazyEditorAssetsEnabled() && ImGui::Button("Освободить неиспользуемые модели"))
             ed.reclaimEditorAssets(true);
         ui::section(ICON_REGIONS, "Карта");
