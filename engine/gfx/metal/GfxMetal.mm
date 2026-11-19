@@ -84,6 +84,13 @@ public:
 
     const DeviceInfo& info() const override { return info_; }
     uint64_t frameSerial() const override { return frame_; }
+    uint64_t gpuSubmissionFence() const override {
+        return cmd_ && gpuHealthy_->load(std::memory_order_acquire) ? frame_ : 0;
+    }
+    uint64_t gpuCompletedFence() const override {
+        return gpuHealthy_->load(std::memory_order_acquire)
+            ? completedGpuFrame_->load(std::memory_order_acquire) : 0;
+    }
     bool supports(PixelFormat f) const override {
         bool apple = false, bc = false;
 #if TARGET_OS_IPHONE
@@ -753,6 +760,19 @@ public:
         cmd_ = [queue_ commandBuffer];
         __block dispatch_semaphore_t sem = frameSemaphore_;
         [cmd_ addCompletedHandler:^(id<MTLCommandBuffer>) { dispatch_semaphore_signal(sem); }];
+        const uint64_t gpuToken = frame_;
+        auto completed = completedGpuFrame_;
+        [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> command) {
+            // Callback runs after the GPU command buffer has actually
+            // finished. Command buffers from this Metal queue complete in
+            // submission order; never substitute frame_ on the CPU thread.
+            if (command.status != MTLCommandBufferStatusCompleted) return;
+            uint64_t seen = completed->load(std::memory_order_relaxed);
+            while (seen < gpuToken &&
+                   !completed->compare_exchange_weak(
+                       seen,gpuToken,std::memory_order_release,
+                       std::memory_order_relaxed)) {}
+        }];
         auto timing=gpuMs_;auto health=gpuHealthy_;
         [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> completed) {
             if(completed.status==MTLCommandBufferStatusError) {
@@ -1507,6 +1527,10 @@ private:
     id<MTLTexture> depth_;
     dispatch_semaphore_t frameSemaphore_;
     uint64_t frame_ = 0;
+    // Shared with asynchronous MTL completion handlers; safe even if the
+    // command buffer finishes after the MetalDevice owner has been released.
+    std::shared_ptr<std::atomic<uint64_t>> completedGpuFrame_ =
+        std::make_shared<std::atomic<uint64_t>>(0);
     // Each frame slot is recycled only after its completion semaphore.
     // Each submission gets its own reusable resources to avoid overwriting
     // buffers referenced by earlier commands in the same frame.
