@@ -146,7 +146,7 @@ public:
     // for the entire scene; no CPU update is performed by this adapter.
     bool updateGpu(float dt) {
         if(!gpuActive() || suspended_) return false;
-        if(config_.autoSpawnGpu) {
+        if(config_.autoSpawnGpu && dt>0.0f) {
             const bool scheduled=scheduler_.tick(dt,origin_,direction_,
                 spectraFxSpawnQualityScale(config_.quality)*lodSpawnScale_,
                 [this](render::float3 pos,render::float3 vel,float life) {
@@ -155,7 +155,7 @@ public:
             if(!scheduled) {status_="Invalid GPU emission frame";return false;}
         }
         if(slots_.step(dt,config_.environment)) {
-            if(config_.gpuSortAlpha) {
+            if(config_.gpuSortAlpha && slots_.activeCount()>0) {
                 if(!sortCameraValid_ ||
                    !alphaSort_.prepare(slots_.evolution(),
                                        sortCameraEye_,sortCameraForward_)) {
@@ -214,7 +214,8 @@ public:
     // GPU only, inside the scene render pass after updateGpu completed.
     bool renderGpu(const render::mat4& viewProj,render::float3 cameraRight,
                    render::float3 cameraUp) {
-        if(gpuActive() && !suspended_ && !lodVisible_) return true;
+        if(gpuActive() && !suspended_ &&
+           (!lodVisible_ || slots_.activeCount()==0)) return true;
         return gpuActive() && !suspended_ && rendererOwner_ &&
                rendererOwner_->draw(slots_.evolution(),viewProj,cameraRight,
                                     cameraUp,config_.appearance,
