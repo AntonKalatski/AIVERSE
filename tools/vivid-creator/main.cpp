@@ -11,6 +11,7 @@
 #include "engine/character/vivid/SkinnedWeightPick.h"
 #include "engine/character/vivid/SkinWeightLodTransfer.h"
 #include "engine/character/vivid/SkinSeamSplit.h"
+#include "engine/character/vivid/SkinLodSeamRemap.h"
 #include "engine/character/vivid/RigAuthoring.h"
 #include "engine/character/vivid/BindPoseRebind.h"
 #include "engine/character/vivid/SkinWeightAuthoring.h"
@@ -496,15 +497,16 @@ struct CreatorApp {
             } else {
                 proposed=generateHumanPreview(session.dna(),groomQuality);
             }
+            SkinSeamSplit::Result seamSplit;
             if(!skinWeightEdits.edits().empty()) {
                 // Split incompatible primitive skin palettes only on the
                 // private candidate, preserving original vertex IDs and
                 // expanding the complete extended facial morph CSR.
                 // Authored LOD sidecars refer to original source/target IDs;
                 // these remain unchanged, while clones append after them.
-                const auto splits=SkinSeamSplit::apply(
+                seamSplit=SkinSeamSplit::apply(
                     *proposed.head,proposed.facialShapes);
-                const auto authored=skinWeightEdits.withSplitClones(splits.clones);
+                const auto authored=skinWeightEdits.withSplitClones(seamSplit.clones);
                 (void)authored.apply(*proposed.head);
             }
             // Transfer edited base-skin weights to every explicitly
@@ -528,9 +530,11 @@ struct CreatorApp {
                     }
                     if(source<0)
                         throw std::runtime_error("VIVID skin LOD: indexed source mesh missing");
+                    const auto candidateMapping=SkinLodSeamRemap::expandTarget(
+                        lod.mapping,seamSplit.clones,std::size_t(lod.targetMesh));
                     (void)SkinWeightLodTransfer::apply(
                         *proposed.head,std::size_t(source),
-                        std::size_t(lod.targetMesh),lod.mapping,lod.sourceIndices);
+                        std::size_t(lod.targetMesh),candidateMapping,lod.sourceIndices);
                 }
             }
             if(authorBindPose && !rigCorrections.edits().empty()) {
