@@ -1091,3 +1091,33 @@ origin feature/texture-rhi-unification`, then verify the
 individual GPU sampling PASS lines. Do not confuse this with
 Shader Graph, GPU ICB or virtual page feedback acceptance.
 
+
+## Stage 10BI — real Metal virtual-page feedback shader acceptance
+
+The opt-in `tests/render/metal_texture_gpu.mm` fixture now checks
+actual `VirtualTextureFeedbackPass` + canonical Metal feedback
+MSL encoder/material helpers, not just the separately proven
+Texture3D shader and blit readback. A fullscreen draw writes
+RGBA8-encoded page IDs to the native offscreen feedback target;
+actual `Device::readTextureAsync` and `VirtualTextureFeedbackDecoder`
+must agree on mip/layer/XY and pixel frequency.
+
+- valid UV `(0.8125,0.5625)`, mip 1, layer 2 of 8×8 tiles
+  emits page (x3,y2,mip1,layer2) for all 16 pixels;
+  priority=16, exactly one page, zero invalid IDs.
+- invalid negative U emits 16 zero RGBA8 pixels and the decoder
+  reports 16 invalid IDs and no page requests.
+- Checks `VirtualTextureFeedbackPass::readyToSubmit()` after
+  GPU command-buffer callback on the owner thread.
+- Exact RGBA8 byte parity is mandatory; unlike sampled float
+  texture colors, encoded IDs never permit ±1 LSB drift.
+
+Only source code and docs have been committed; this new stage
+has NOT been compiled or run on macOS. Source commit:
+`5830d16f8531d462fa02709a0e6a0f8e5c4ef9f1`.
+To run, pull the texture branch and rebuild
+`aiverse_metal_texture_gpu_test`, then CTest
+`-R '^metal_texture_gpu$'`. A passing result covers native
+feedback encoding and decoding but **not** actual disk->GPU
+physical atlas/page-table publication or experimental GPU ICB.
+
