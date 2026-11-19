@@ -175,6 +175,13 @@ public:
         renderer.clearDynamicGiOverlay();
     }
 
+    // Only for external Metal completion sources where readBufferAsync is
+    // unavailable. Vulkan ignores this: its own VkFence serial is mandatory.
+    bool confirmExternalGpuCompletion(uint64_t batchSerial,bool successful) {
+        return mode_==GiTransportMode::GpuCompute &&
+               gpu_.confirmExternalCompletion(batchSerial,successful);
+    }
+
     // CPU reference for diagnostics; null for GPU transport (no CPU readback).
     const GiDynamicRuntime* cpuRuntime() const {
         return mode_==GiTransportMode::CpuProbes ? &cpu_ : nullptr;
