@@ -201,7 +201,7 @@ private:
         }
 
         const float dpi = ImGui::GetIO().DisplayFramebufferScale.x;
-        vp_.ensure(*dev_, int(w * dpi), int(h * dpi), ed.viewportRetirement());
+        vp_.ensure(*dev_, int(w * dpi), int(h * dpi), ed.viewportRetirement(), "FX");
         auto& r = ed.renderer();
         r.beginScene(cam_, vp_.w, vp_.h);
         const uint32_t grid = render::rgba(80, 84, 92, 255), axis = render::rgba(120, 126, 136, 255);
