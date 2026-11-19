@@ -18,6 +18,14 @@ add_library(AIVERSE::vivid_render ALIAS aiverse_vivid_render)
 target_link_libraries(aiverse_vivid_render PUBLIC aiverse_vivid aiverse_models)
 target_compile_features(aiverse_vivid_render PUBLIC cxx_std_20)
 
+# MotionWeave owns the complete skeleton/animation graph and presentation ECS.
+# VIVID adds only a post-animation facial composition adapter.
+add_library(aiverse_vivid_motionweave STATIC MotionWeaveBridge.cpp)
+add_library(AIVERSE::vivid_motionweave ALIAS aiverse_vivid_motionweave)
+target_link_libraries(aiverse_vivid_motionweave PUBLIC aiverse_vivid_render AIVERSE::MotionWeave)
+target_compile_features(aiverse_vivid_motionweave PUBLIC cxx_std_20)
+
+
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_vivid_face_tests ${PROJECT_SOURCE_DIR}/tests/vivid/face.cpp)
     target_link_libraries(aiverse_vivid_face_tests PRIVATE aiverse_vivid)
@@ -34,6 +42,10 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_vivid_gpu_contract_tests ${PROJECT_SOURCE_DIR}/tests/vivid/gpu_contract.cpp)
     target_link_libraries(aiverse_vivid_gpu_contract_tests PRIVATE aiverse_vivid_gpu)
     add_test(NAME vivid_gpu_contract COMMAND aiverse_vivid_gpu_contract_tests)
+
+    add_executable(aiverse_vivid_motionweave_tests ${PROJECT_SOURCE_DIR}/tests/vivid/motionweave_bridge.cpp)
+    target_link_libraries(aiverse_vivid_motionweave_tests PRIVATE aiverse_vivid_motionweave aiverse_zstd_dec)
+    add_test(NAME vivid_motionweave_bridge COMMAND aiverse_vivid_motionweave_tests)
 
     add_executable(aiverse_vivid_morph_tests ${PROJECT_SOURCE_DIR}/tests/vivid/morph_binding.cpp)
     target_link_libraries(aiverse_vivid_morph_tests PRIVATE aiverse_vivid_render aiverse_zstd_dec)
