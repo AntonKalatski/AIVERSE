@@ -509,3 +509,22 @@ git fetch origin main && git merge origin/main
 - **Compatibility:** opt-in presentation layer. The native project supplies a file reader; no runtime/global CMake/GameModule rewrite, no RTS/FPS dependency, no PRISMA ownership changes.
 - **Actual verification:** **NOT RUN** by user's features-first instruction; no compiler/CTest, asset IO, hot-reload, GPU/Metal/Vulkan, native Editor or CI evidence.
 - **Next:** add a renderer-thread manager connecting asset names, cue instances, `SpectraFxHybridEmitter`, and scene frame ordering with explicit safe-point requirements. Defer tests until requested feature completion.
+
+
+## 2026-11-19 — Stage 30: project hybrid GPU/CPU presentation manager
+- **Branch:** `feature/spectrafx-generic-cue-queue`, main `d71c6d47e532b25fb816a8bb1f96c41e5275a165` at last comparison, 0 behind.
+- **Implementation commit:** `6fc3dbd720675ae166b4e9a46c9002f0618d3177`.
+- **New API:** `engine/fx/SpectraFxHybridPlayback.h`. A project host supplies `gfx::Device`, the shared `ParticleSystem`, and `SpectraFxGpuEmitterLibrary`; route arbitrary cue IDs to `fx/gpu/*.gpu.json` assets. `dispatch/dispatchAll` handles generation-safe, nonzero keyed Play/Move/Stop/Kill; Play reloads/validates an asset, starts a new `SpectraFxHybridEmitter`, and replaces the old instance only on successful startup. Bounded to 64 active emitter objects. `updateGpu` runs their compute stages outside passes, `renderGpu` submits GPU draws inside the current render pass. `reset` releases only managed instances at rollback/scene unload. The host updates its shared CPU ParticleSystem once per frame separately and must explicitly call `reset` before device teardown.
+- **Safety/ownership:** refuses zero-key one-shots until an autonomous retirement policy is implemented, preventing unbounded orphaned GPU emitter resources. The library uses stable asset names and last-good fallback; no CPU/GPU double stepping of one managed emitter. No genre hardcoding, no ECS save or simulation state changes. No automatic hook into current RTS/FPS Editor/Game scene loops yet: host must install and drive this API explicitly.
+- **Verification:** **NOT RUN**, per the user's functions-first requirement. No compilation, native CI, CTest, RHI GPU work, real editor integration, screenshots or functional game-loop checks executed. This stage is source only.
+- **Limitations:** GPU emitter instances each allocate private buffers/shader/pipeline; high emitter count needs a pooled batched backend before performance acceptance. No GPU one-shot automatic retirement, particle collision callbacks or sorting. Render order is unordered_map iteration; alpha-sorted transparent effects remain CPU by current policy. GPU fallback on mid-frame failure currently suspends rather than transfers particle state.
+- **Next:** add editor/project authoring integration for `fx/gpu/*.gpu.json` assets and a bounded one-shot expiry owner; then tune GPU pooling/collisions/LOD and integrate an opt-in native scene. Test after features as requested.
+
+Pull-first:
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main && git merge origin/main
+```
