@@ -7,7 +7,9 @@
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
+#include <optional>
 #include <set>
+#include "modules/rts/view/RtsModelSourceDependencies.h"
 #include "../Editor.h"
 #include "../EditorUtil.h"
 #include "modules/rts/view/RtsPortrait.h"
@@ -231,38 +233,87 @@ public:
             tried_.clear();
             pendingFiles_.clear();
         }
-        for (const auto& f : ed.view().modelFiles()) {
-            bool changed = false;
-            std::error_code ec;
-            const fs::path src = fs::path(dir) / f;
-            const auto t = fs::last_write_time(src, ec);
-            if (ec) continue;
-            if (!render::isNativeModelFormat(f)) {
-                const fs::path side = fs::path(src.string() + ".glb");
-                std::error_code e2;
-                if ((!fs::exists(side, e2) || fs::last_write_time(side, e2) < t) &&
-                    convert(ed, src.string())) changed = true;
-            }
-            auto it = stamps_.find(f);
-            if (it == stamps_.end()) stamps_[f] = t;
-            else if (it->second != t) {
-                it->second = t;
-                changed = true;
-                ed.ws().log("view", "модель изменена: " + f);
-            }
-            if (changed) pendingFiles_.insert(f);
+        // Index ALL authored visual resources, not just loaded TypeLooks.
+        // No background asset loads are triggered by this enumeration.
+        game::view_adapter::ModelSourceDependencyIndex dependencies;
+        dependencies.rebuild(ed.rules().types,ed.view().materialLibrary());
+        const auto& cache=ed.view().modelResources();
+        for(const auto& [key,model]:cache.models()) {
+            if(key.rfind("shape:",0)==0)continue;
+            const std::string modelSource=
+                game::view_adapter::RtsModelResourceCache::sourceForKey(key);
+            dependencies.addResidentModel(modelSource);
+            if(model)for(const auto& image:model->images)
+                if(!image.textureKey.empty())
+                    dependencies.addResidentTexture(modelSource,image.textureKey);
         }
-        // The renderer and active presentation worlds may borrow these
-        // resources during play. Reload only after play ends, coalescing all
-        // changes without reparsing rules or restarting the effect system.
-        if (!pendingFiles_.empty() && !ed.playing() && !ed.clientPlaying()) {
-            const std::vector<std::string> files(
-                pendingFiles_.begin(),pendingFiles_.end());
-            const size_t invalidated=ed.reloadVisualModelSources(files);
-            ed.ws().log("view", "обновлено ключей моделей: " +
-                        std::to_string(invalidated) +
-                        "; изменённых исходников: " +
-                        std::to_string(pendingFiles_.size()));
+        std::set<std::string> observed;
+        for(const auto& [file,entry]:dependencies.sources()) {
+            (void)entry;
+            if(file.empty())continue;
+            const fs::path path(file);
+            // Model source paths are authored relative to the project.
+            // Never watch arbitrary absolute locations or parent traversal.
+            if(path.is_absolute())continue;
+            bool outside=false;
+            for(const auto& part:path)if(part==".."){outside=true;break;}
+            if(outside)continue;
+            observed.insert(file);
+            std::error_code ec;
+            const fs::path src=fs::path(dir)/path;
+            const auto timestamp=fs::last_write_time(src,ec);
+            const std::optional<fs::file_time_type> stamp=
+                ec?std::nullopt:std::optional<fs::file_time_type>(timestamp);
+            bool changed=false;
+            auto [it,inserted]=stamps_.try_emplace(file,stamp);
+            if(!inserted && it->second!=stamp) {
+                it->second=stamp;
+                changed=true; // includes deletion and missing-file recovery
+                ed.ws().log("view","визуальный источник изменён: "+file);
+            }
+            if(stamp && entry.has(game::view_adapter::ModelSourceKind::Model)
+               && !render::isNativeModelFormat(file)) {
+                const fs::path side=fs::path(src.string()+".glb");
+                std::error_code e2;
+                if((!fs::exists(side,e2) ||
+                    fs::last_write_time(side,e2)<*stamp) &&
+                   convert(ed,src.string()))changed=true;
+            }
+            if(changed)pendingFiles_.insert(file);
+        }
+        for(auto it=stamps_.begin();it!=stamps_.end();)
+            if(!observed.contains(it->first))it=stamps_.erase(it);
+            else ++it;
+
+        // Change notifications remain pending during play, including for
+        // missing-file recovery. Keep model-only reloads selective; graph
+        // JSON and shared material library changes use the safe full-view
+        // compatibility barrier until independent graph/material owners land.
+        if(!pendingFiles_.empty() && !ed.playing() && !ed.clientPlaying()) {
+            const auto impact=dependencies.resolve(pendingFiles_);
+            if(impact.requiresWholeView() ||
+               (impact.texture && impact.models.empty())) {
+                ed.reloadVisualAssets();
+                ed.ws().log("view","полное обновление графов/материалов: "+
+                            std::to_string(pendingFiles_.size())+" источников");
+            } else if(!impact.empty()) {
+                if(impact.texture) {
+                    const auto textures=ed.view().textureCache();
+                    for(const auto& file:pendingFiles_) {
+                        const auto* source=dependencies.lookup(file);
+                        if(source &&
+                           source->has(game::view_adapter::ModelSourceKind::Texture))
+                            textures->invalidateSource(file);
+                    }
+                }
+                const std::vector<std::string> models(
+                    impact.models.begin(),impact.models.end());
+                const size_t invalidated=ed.reloadVisualModelSources(models);
+                ed.ws().log("view","обновлено ключей моделей: "+
+                            std::to_string(invalidated)+
+                            "; изменённых источников: "+
+                            std::to_string(pendingFiles_.size()));
+            }
             pendingFiles_.clear();
         }
     }
@@ -309,7 +360,7 @@ private:
     double time_ = 0, sinceCheck_ = 0;
     bool portraitInit_ = false, opRegistered_ = false;
     game::Portrait portrait_;
-    std::map<std::string, fs::file_time_type> stamps_;
+    std::map<std::string, std::optional<fs::file_time_type>> stamps_;
     std::set<std::string> pendingFiles_;
     std::string watchedProject_;
 };
