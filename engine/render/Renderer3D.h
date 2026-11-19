@@ -340,6 +340,8 @@ public:
         uint32_t reactiveAnimatedDraws = 0;
         uint32_t reactiveCallbacks = 0;
         uint32_t reactiveMeshDraws = 0; // includes RTS water sheets
+        uint32_t cutoutReactiveDraws = 0; // per-pixel alpha cutout + rigid dissolve
+        uint32_t dissolveReactiveDraws = 0; // object-space noise mask
         uint32_t lodReactiveDraws = 0;
         uint32_t rejected = 0;
         bool submitted = false; // actual object velocity draw, NEVER reactive-only
@@ -716,6 +718,8 @@ private:
     gfx::PipelineHandle objectMotionMaskedPipeline_;
     gfx::ShaderHandle objectMotionReactiveShader_;
     gfx::PipelineHandle objectMotionReactivePipeline_;
+    gfx::ShaderHandle objectMotionReactiveCutoutShader_;
+    gfx::PipelineHandle objectMotionReactiveCutoutPipeline_;
     gfx::PipelineHandle objectMotionReactiveMeshPipeline_; // MeshVertex water/translucency
     gfx::ShaderHandle objectMotionReactiveSkinShader_;
     gfx::PipelineHandle objectMotionReactiveSkinPipeline_;
