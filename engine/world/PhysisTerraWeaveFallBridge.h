@@ -47,8 +47,11 @@ inline terraweave::PlantFallEvent terraFallEvent(
 inline std::pair<std::int32_t,std::int32_t> fractureFallDirection(
         const physis::NatureFractureEvent& event,
         const terraweave::RootState& root) {
-    const auto x = event.aerodynamicForceN.x.raw;
-    const auto z = event.aerodynamicForceN.z.raw;
+    // PHYSIS force publisher clamps inputs at 200000 N; repeat the clamp
+    // for trusted native callers that synthesize events directly.
+    constexpr std::int64_t cap = 200000 * Fixed::kOne;
+    const auto x = std::clamp(event.aerodynamicForceN.x.raw,-cap,cap);
+    const auto z = std::clamp(event.aerodynamicForceN.z.raw,-cap,cap);
     const auto absX = x >= 0 ? x : -x;
     const auto absZ = z >= 0 ? z : -z;
     const auto maxAxis = std::max(absX, absZ);
@@ -150,6 +153,7 @@ struct NatureFallReconcileStats {
 // Never call from PHYSIS deterministic simulation jobs.
 class NatureFallBox3DReconciler {
 public:
+    explicit NatureFallBox3DReconciler(physics::Scene& scene) : scene_(scene) {}
     template<class SpeciesSpec>
     NatureFallReconcileStats reconcile(
             const World& world, terraweave::FallenPlantPhysics& bodies,
@@ -163,28 +167,29 @@ public:
             if (!fall.active) continue;
             const auto id = terraPlantId(fall.plant);
             desired.insert(id);
-            const auto existing = bodies.body(id);
             auto managed = owned_.find(id);
             if (managed != owned_.end() && managed->second != fall.eventKey) {
-                // New repair/rebreak cycle; only remove a body we own.
+                // A repaired stem has a new PHYSIS event identity.
                 bodies.erase(id,forest,false);
                 owned_.erase(managed);
-            } else if (existing != physics::kNoBody) {
-                ++stats.reused;
-                if (forest) forest->removeTree({id.key,id.speciesId});
-                continue;
             }
+            const auto currentBody = bodies.body(id);
+            const bool hadLiveBody = currentBody != physics::kNoBody &&
+                                     scene_.valid(currentBody);
             try {
                 const auto spec = resolveSpec(id.speciesId);
                 if (!spec) {++stats.failed;continue;}
-                const auto spawned=bodies.spawn(terraFallEvent(fall),*spec,forest);
-                if (spawned==physics::kNoBody) {++stats.failed;continue;}
-                // A prior soil-driven body must not become PHYSIS-owned just
-                // because PHYSIS later observed the same rooted plant.
-                if (existing==physics::kNoBody)owned_[id]=fall.eventKey;
-                ++stats.spawned;
+                // spawn() is idempotent for a live body and repairs stale
+                // handles after external Scene reset.
+                const auto handle=bodies.spawn(terraFallEvent(fall),*spec,forest);
+                if (handle==physics::kNoBody) {++stats.failed;continue;}
+                if (!hadLiveBody)
+                    owned_[id]=fall.eventKey;
+                if (forest) forest->removeTree({id.key,id.speciesId});
+                if (hadLiveBody) ++stats.reused;
+                else ++stats.spawned;
             } catch (...) {
-                // Leave durable fall record intact for the next owner barrier.
+                // Leave authoritative fall record intact for a later retry.
                 ++stats.failed;
             }
         }
@@ -212,6 +217,7 @@ public:
     // transient handles; next reconcile will rebuild from ECS authority.
     void forgetDerivedBodies() {owned_.clear();}
 private:
+    physics::Scene& scene_;
     std::map<terraweave::AnchoredPlantId,std::uint64_t> owned_;
 };
 
