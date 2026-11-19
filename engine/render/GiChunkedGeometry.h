@@ -36,6 +36,20 @@ public:
         return total;
     }
 
+    // Offline/scene-change-only extraction for small GPU reference scenes.
+    // Stable chunk-ID order; per-chunk geometry retains original surface/material IDs.
+    // Production GPU BVH/clipmap path must NOT flatten large worlds per frame.
+    template<class Fn> void forEachTriangle(Fn&& visitor) const {
+        for (const auto& chunk : chunks_) {
+            for (const auto& t : chunk.geometry->triangles) {
+                const auto& albedos = chunk.geometry->albedos;
+                const float3 color = t.surface < albedos.size()
+                    ? albedos[t.surface] : float3{};
+                visitor(t, color);
+            }
+        }
+    }
+
     // Stable chunk ownership is useful when verifying incremental rebuilds.
     const StaticShadowGeometry* findChunk(uint64_t id) const {
         auto it = std::lower_bound(chunks_.begin(), chunks_.end(), id,
