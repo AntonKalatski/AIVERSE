@@ -301,6 +301,45 @@ void rejectAlternateInstallers() {
         CHECK(sim->checksum()==checksum);
     }
 }
+void staticSaveRestoreGuards() {
+    const auto map=setupMap();
+    const auto makeStatic=[&]() {
+        auto sim=std::make_unique<Simulation>(
+            SimConfig{},std::make_unique<AlternateInstallHost>(false));
+        sim->setup(Json::object(),map);
+        return sim;
+    };
+    auto source=makeStatic();
+    CHECK(source->world().resourceConst<State>()!=nullptr);
+    CHECK(source->world().resourceConst<FieldRuntimeState>()==nullptr);
+    CHECK(source->world().resourceConst<RuntimeFieldRegistry>()==nullptr);
+    const auto saved=source->serialize();
+    auto restored=makeStatic();
+    std::string error;
+    CHECK(restored->deserialize(saved,&error));
+    CHECK(restored->checksum()==source->checksum());
+    const auto baseline=restored->checksum();
+    // No persistent field registry exists in Static mode. The restored
+    // climate State alone must block every competing installer.
+    bool rejected=false;
+    try { (void)installFromMap(*restored,map); }
+    catch(const std::logic_error&) { rejected=true; }
+    CHECK(rejected);
+    CHECK(restored->checksum()==baseline);
+    rejected=false;
+    try { (void)installTrackedFromMap(*restored,map); }
+    catch(const std::logic_error&) { rejected=true; }
+    CHECK(rejected);
+    CHECK(restored->checksum()==baseline);
+    rejected=false;
+    try { (void)installEditableFromMap(*restored,map); }
+    catch(const std::logic_error&) { rejected=true; }
+    CHECK(rejected);
+    CHECK(restored->checksum()==baseline);
+    source->step();
+    restored->step();
+    CHECK(restored->checksum()==source->checksum());
+}
 void trackedSaveRestoreGuards() {
     const auto map=setupMap();
     auto makeTracked=[]() {
@@ -412,6 +451,7 @@ int main() {
     rejectCompetingInstallers();
     rejectAlternateInstallers();
     trackedSaveRestoreGuards();
+    staticSaveRestoreGuards();
     std::printf("PHYSIS field runtime: %s\n",failures?"FAIL":"PASS");
     return failures?1:0;
 }
