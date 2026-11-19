@@ -148,7 +148,7 @@ public:
         if(!gpuActive() || suspended_) return false;
         if(config_.autoSpawnGpu && dt>0.0f) {
             const bool scheduled=scheduler_.tick(dt,origin_,direction_,
-                spectraFxSpawnQualityScale(config_.quality)*lodSpawnScale_,
+                spectraFxSpawnQualityScale(config_.quality)*lodSpawnScale_*externalSpawnScale_,
                 [this](render::float3 pos,render::float3 vel,float life) {
                     return slots_.emit({pos,vel,0,life}).valid();
                 });
@@ -187,6 +187,13 @@ public:
         sortCameraEye_=eye;
         sortCameraForward_=forward;
         sortCameraValid_=true;
+    }
+
+    // External GPU load governor only scales new visual spawns, never
+    // existing particle state/lifetime, gameplay events or emitter transforms.
+    void setExternalSpawnScale(float scale) {
+        if(std::isfinite(scale))
+            externalSpawnScale_=std::clamp(scale,0.0f,1.0f);
     }
 
     // Update only presentation LOD; the particle state and its clock still
@@ -246,6 +253,7 @@ public:
         suspended_=false;
         scheduler_.reset();
         lodSpawnScale_=1;
+        externalSpawnScale_=1;
         lodVisible_=true;
         sortCameraValid_=false;
         backend_=SpectraFxExecutionBackend::Cpu;
@@ -307,6 +315,7 @@ private:
     std::string status_;
     bool suspended_=false;
     float lodSpawnScale_=1.0f;
+    float externalSpawnScale_=1.0f;
     bool lodVisible_=true;
     uint64_t sortedFrames_=0;
     bool sortCameraValid_=false;
