@@ -104,7 +104,7 @@ public:
             pf.stats().temporalFallback ? "used" : "not needed");
         if (pf.stats().adaptiveResolution) {
             constexpr double kMiB=1024.0*1024.0;
-            ImGui::TextDisabled("Prisma + directly-owned Renderer3D known GPU: %.1f / %.1f MiB (%s)",
+            ImGui::TextDisabled("Prisma + Renderer3D owners + geometry pool (known minimum): %.1f / %.1f MiB (%s)",
                 double(pf.stats().adaptiveKnownGpuBytes)/kMiB,
                 double(pf.stats().adaptiveMemoryLimitBytes)/kMiB,
                 pf.stats().adaptiveMemoryPressure ? "pressure" : "within budget");
