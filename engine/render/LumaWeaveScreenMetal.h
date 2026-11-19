@@ -8,6 +8,7 @@
 #pragma once
 #include "LumaWeaveGpuPacket.h"
 #include "LumaWeaveFullscreenMetalShader.h"
+#include "LumaWeavePbrMetalShader.h"
 #include "LumaWeaveDenoiseMetalShader.h"
 #include "GiGpuBvh.h"
 #include "../gfx/Gfx.h"
@@ -59,6 +60,13 @@ public:
     static_assert(sizeof(ScreenParams)==176);
     static_assert(sizeof(DenoiseParams)==272);
 
+    struct SurfaceInputs {
+        gfx::TextureHandle material{};      // RGB baseColor, A metallic
+        gfx::TextureHandle normalRoughness{}; // signed world normal, roughness
+        gfx::TextureHandle depth{};         // same view, independent receiver depth
+        bool any() const {return material.valid()||normalRoughness.valid()||depth.valid();}
+        bool complete() const {return material.valid()&&normalRoughness.valid()&&depth.valid();}
+    };
     struct Submission {
         bool encoded=false,fenceQueued=false;
         uint64_t serial=0;
@@ -66,6 +74,7 @@ public:
         uint32_t width=0,height=0,samples=0;
         uint64_t maximumShadowRays=0;
         uint64_t maximumCandidateEvaluations=0;
+        bool materialShaded=false; // true = already BRDF reflected, no albedo multiply
     };
     struct Completion {
         bool completed=false,success=false;
@@ -88,7 +97,10 @@ public:
         auto denoise=dev.createCompute({AIVERSE_MSL_LUMAWEAVE_DENOISE,nullptr,
                                         "LumaWeave screen denoiser"});
         if(!denoise.valid()){dev.destroyCompute(direct);return false;}
-        dev_=&dev;direct_=direct;denoise_=denoise;settings_=settings;
+        // Optional PBR shader: failure does not disable existing diffuse path.
+        auto pbr=dev.createCompute({AIVERSE_MSL_LUMAWEAVE_SCREEN_PBR,nullptr,
+                                     "LumaWeave screen direct GGX"});
+        dev_=&dev;direct_=direct;denoise_=denoise;pbr_=pbr;settings_=settings;
         const uint32_t marker=kMarker;
         marker_=allocate(sizeof marker,&marker);
         lightBuffer_=allocate(sizeof(LumaGpuLight),nullptr);
@@ -113,13 +125,15 @@ public:
                 if(t.valid())dev_->destroyTexture(t);
             if(direct_.valid())dev_->destroyCompute(direct_);
             if(denoise_.valid())dev_->destroyCompute(denoise_);
+            if(pbr_.valid())dev_->destroyCompute(pbr_);
         }
-        dev_=nullptr;direct_={};denoise_={};marker_={};
+        dev_=nullptr;direct_={};denoise_={};pbr_={};marker_={};
         lightBuffer_={};clusterBuffer_={};indexBuffer_={};
         triangleBuffer_={};nodeBuffer_={};
         raw_={};filtered_={};normalDepth_={};
         sourcePacket_={};settings_={};
         sourcesReady_=geometryReady_=historyValid_=false;
+        confirmedShaded_=pendingShaded_=false;
         sourceRevision_=geometryRevision_=serial_=pendingSerial_=0;
         pendingProducesHistory_=false;
         width_=height_=confirmedWidth_=confirmedHeight_=0;
@@ -128,6 +142,8 @@ public:
     }
 
     bool ready() const{return dev_ && direct_.valid() && denoise_.valid();}
+    bool pbrAvailable() const{return ready() && pbr_.valid();}
+    bool confirmedShaded() const{return historyValid_ && confirmedShaded_;}
     bool busy() const{return bool(pending_);}
     uint64_t sourceRevision() const{return sourceRevision_;}
     uint64_t geometryRevision() const{return geometryRevision_;}
@@ -227,6 +243,7 @@ public:
         normalDepth_[0]=created[3];normalDepth_[1]=created[4];
         width_=w;height_=h;confirmedWidth_=confirmedHeight_=0;
         confirmedIndex_=0;historyValid_=false;
+        confirmedShaded_=pendingShaded_=false;
         return true;
     }
 
@@ -236,8 +253,10 @@ public:
     Submission dispatch(gfx::TextureHandle sceneDepth,
                         uint32_t sceneWidth,uint32_t sceneHeight,
                         const mat4& inverseVP,const mat4& currentVP,
-                        float3 eye,uint32_t samples,uint32_t frameSeed) {
+                        float3 eye,uint32_t samples,uint32_t frameSeed,
+                        SurfaceInputs surface={}) {
         Submission result;
+        if(surface.any() && !surface.complete())return result;
         if(!ready()||busy()||!sourcesReady_||!geometryReady_||
            !raw_.valid()||!sceneDepth.valid()||!sceneWidth||!sceneHeight||
            !finite3(eye)||samples<1||samples>settings_.maxSamples||
@@ -259,7 +278,11 @@ public:
         p.grid.limits[2]=uint32_t(pixels);
         p.grid.limits[3]=samples;
         p.control={nodeCount_,frameSeed,width_,0};
-        if(!dev_->beginCompute(direct_))return result;
+        const bool shaded=surface.complete() && pbr_.valid();
+        // A diffuse history is not compatible with a newly material-reflected
+        // GGX output, nor vice versa. Never reproject across mode switches.
+        if(historyValid_ && confirmedShaded_!=shaded)historyValid_=false;
+        if(!dev_->beginCompute(shaded?pbr_:direct_))return result;
         dev_->setComputeBuffer(0,lightBuffer_);
         dev_->setComputeBuffer(1,clusterBuffer_);
         dev_->setComputeBuffer(2,indexBuffer_);
@@ -268,6 +291,11 @@ public:
         dev_->setComputeUniforms(&p,sizeof(p));
         dev_->setComputeTexture(0,raw_);
         dev_->setComputeTexture(1,sceneDepth);
+        if(shaded) {
+            dev_->setComputeTexture(2,surface.material);
+            dev_->setComputeTexture(3,surface.normalRoughness);
+            dev_->setComputeTexture(4,surface.depth);
+        }
         dev_->dispatch(uint32_t(pixels));
         dev_->endCompute();
 
@@ -297,9 +325,10 @@ public:
         dev_->endCompute();
 
         const bool async=queueFence(currentVP,eye,dst,true);
+        pendingShaded_=shaded;
         result={true,async,pendingSerial_,sourceRevision_,geometryRevision_,
                 width_,height_,samples,pixels*samples,
-                pixels*(uint64_t(samples)+1u)*sources};
+                pixels*(uint64_t(samples)+1u)*sources,shaded};
         return result;
     }
 
@@ -352,6 +381,7 @@ public:
             previousEye_=pendingEye_;
             confirmedWidth_=width_;confirmedHeight_=height_;
             historyValid_=true;
+            confirmedShaded_=pendingShaded_;
         } else if(!result.success) {
             historyValid_=false;
         }
@@ -417,7 +447,7 @@ private:
     }
 
     gfx::Device* dev_=nullptr;
-    gfx::ComputeHandle direct_{},denoise_{};
+    gfx::ComputeHandle direct_{},denoise_{},pbr_{};
     gfx::TextureHandle raw_{},filtered_[2]{},normalDepth_[2]{};
     gfx::BufferHandle marker_{},lightBuffer_{},clusterBuffer_{},
                       indexBuffer_{},triangleBuffer_{},nodeBuffer_{};
@@ -430,6 +460,7 @@ private:
     float3 previousEye_{},pendingEye_{};
     bool sourcesReady_=false,geometryReady_=false,historyValid_=false;
     bool pendingProducesHistory_=false;
+    bool confirmedShaded_=false,pendingShaded_=false;
     std::shared_ptr<Fence> pending_;
 };
 
