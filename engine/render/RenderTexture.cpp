@@ -58,6 +58,8 @@ bool RenderTexture::init(gfx::Device& dev,int w,int h){
   ownedRetirement_=std::make_unique<CanvasGpuRetirement>(dev,gpuLease_);
   retirement_=ownedRetirement_.get();
  }
+ if(!retirement_->validFor(dev))
+  throw std::logic_error("RenderTexture init: stale or foreign GPU retirement owner");
  dev_=&dev;width_=w;height_=h;
  try {
   gfx::TextureDesc td;td.width=w;td.height=h;td.renderTarget=true;td.label="Lua render texture";
