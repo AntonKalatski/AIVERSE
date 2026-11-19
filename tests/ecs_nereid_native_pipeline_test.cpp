@@ -58,8 +58,8 @@ template<class Tag> uint64_t exercise(bool cow) {
         linear->step();indexed->step();
         const auto first=static_cast<Host<Tag>&>(linear->module()).probe;
         const auto second=static_cast<Host<Tag>&>(indexed->module()).probe;
-        const auto& a=linear->world().get<nw::WaterContactComponent>(first);
-        const auto& b=indexed->world().get<nw::WaterContactComponent>(second);
+        const auto& a=linear->world().template get<nw::WaterContactComponent>(first);
+        const auto& b=indexed->world().template get<nw::WaterContactComponent>(second);
         check(a.sample.found && b.sample.found && a.sample.depth==2_fx &&
               a.sample.body==b.sample.body && a.sample.flow==b.sample.flow &&
               a.sampledTick==b.sampledTick,"adaptive water contact parity");
@@ -74,17 +74,17 @@ template<class Tag> uint64_t exercise(bool cow) {
     SimSnapshot a,b;linear->saveState(a);indexed->saveState(b);
     const Entity e=static_cast<Host<Tag>&>(linear->module()).probe;
     const Entity f=static_cast<Host<Tag>&>(indexed->module()).probe;
-    linear->world().get<Transform>(e).pos.y=12_fx;
-    indexed->world().get<Transform>(f).pos.y=12_fx;
+    linear->world().template get<Transform>(e).pos.y=12_fx;
+    indexed->world().template get<Transform>(f).pos.y=12_fx;
     linear->step();indexed->step();
-    check(!linear->world().get<nw::WaterContactComponent>(e).sample.submerged &&
-          !indexed->world().get<nw::WaterContactComponent>(f).sample.submerged,
+    check(!linear->world().template get<nw::WaterContactComponent>(e).sample.submerged &&
+          !indexed->world().template get<nw::WaterContactComponent>(f).sample.submerged,
           "water contact not cleared above surface");
     const uint64_t after=linear->checksum();
     check(after==indexed->checksum() && after!=initial,"adaptive replay parity");
     linear->loadState(a);indexed->loadState(b);
-    linear->world().get<Transform>(e).pos.y=12_fx;
-    indexed->world().get<Transform>(f).pos.y=12_fx;
+    linear->world().template get<Transform>(e).pos.y=12_fx;
+    indexed->world().template get<Transform>(f).pos.y=12_fx;
     linear->step();indexed->step();
     check(linear->checksum()==after && indexed->checksum()==after,
           "adaptive rollback divergence");

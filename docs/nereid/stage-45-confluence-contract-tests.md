@@ -43,3 +43,12 @@ If C++ compiler/CI exposes a failure, fix the actual issue before marking the PR
 Inspected exact definitions: `worldInteger` and `worldVector` are implemented (not inline) in `engine/world/WorldAssets.cpp`. Both renderer contract and confluence contract include NEREID manifest parsing and therefore need those symbols. The existing CMake targets linked only `aiverse_engine` plus the NEREID header-only package, missing `aiverse_world` (which owns `WorldAssets.cpp`). Updated BOTH CMake test link libraries to include `aiverse_world`. The standalone `tests/run_ecs_experiment_suite.sh` now compiles `engine/world/WorldAssets.cpp` and `engine/pack/Sha256.cpp` for both tests; the latter resolves references from `WorldAssets::verifiedReader` even though the fixture itself does not call it.
 
 **Actually performed:** read CMake targets, `modules/fps/CMakeLists.txt` world library ownership and WorldAssets/Sha256 source via GitHub connector; applied guarded source patch/atomic commit. **Not performed:** native compile/link, CTest, shell execution or green CI. Git clone of repo from the local container failed (GitHub hostname DNS resolution unavailable); observed GitHub Actions for old SHAs remained queued/cancelled. Do not claim test PASS. **Next:** run the two CPU contracts on a checkout with network/source, resolve any compiler/logic failures, then full suite.
+
+
+### Stage 45.2 — macOS Clang template parsing correction (reported by owner)
+
+**Reported actual failure:** local macOS C++ build, `tests/ecs_nereid_native_pipeline_test.cpp` lines 61, 62, 77, 78, 80, 81, 86 and 87: Clang `use 'template' keyword to treat 'get' as a dependent template name`.
+
+**Fix:** in templated `exercise<Tag>`, all eight `linear->world().get<T>()` and `indexed->world().get<T>()` expressions now use the required dependent-member disambiguator: `linear->world().template get<T>()` / `indexed->world().template get<T>()`. No water API, ECS semantics, runtime logic or other module changed. The source was verified to contain exactly eight such calls and all eight were replaced.
+
+**Actually verified:** user-provided Clang diagnostic and connected GitHub source inspection, exact guarded transformation and committed branch update. **NOT verified:** a new compile/CTest run after the fix; no claim of PASS. Next: `cmake --build build/nereid-test --parallel 4`, then `ctest --test-dir build/nereid-test --output-on-failure --parallel 4`. If the build fails elsewhere, record first error and repair; PR #23 remains Draft.
