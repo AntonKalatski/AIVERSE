@@ -197,6 +197,7 @@ public:
     // reference model/texture resources. Never infer GPU completion from
     // frameSerial(): the explicit backend barrier is mandatory.
     bool collectRetired(gfx::Device& dev) {
+        if(retired_.empty())return true;
         const bool ok=retired_.collect(
             [&]{return dev.waitForResourceIdle();},
             [&](std::unique_ptr<Model>& model) {
