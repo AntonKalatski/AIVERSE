@@ -7,10 +7,12 @@
 #include <aiverselib/motionweave/MotionWeave.h>
 #include "engine/render/Renderer3D.h"
 #include "SceneLayerProviders.h"
+#include "ModelComposition.h"
 #include <cmath>
 #include <cstdint>
 #include <memory>
 #include <span>
+#include <unordered_map>
 #include <type_traits>
 #include <variant>
 #include <vector>
@@ -23,11 +25,24 @@ namespace aiverse::view {
 struct Object {
     uint64_t id=0,generation=0;
     render::ModelDraw draw;
+    // The graph's source rig is stable even if a whole-asset visual LOD
+    // replaces draw.model. Null uses draw.model as before (compatible API).
+    const render::Model* animationModel=nullptr;
     std::shared_ptr<const render::AnimationGraph> graph;
     render::AnimationParameters parameters;
     lib::animation::AnimationSignificanceComponent significance;
+    // Optional whole-model visual LOD. Native Renderer3D mesh LOD stays active.
+    // Switching these never creates, resets or advances an animation player.
+    std::vector<ModelLod> lods;
+    float lodHysteresis=0.1f;
+    // Child model draws attached to named/indexed nodes of animationModel.
+    // Attachments reuse the parent's already evaluated pose, no extra update.
+    std::vector<ModelAttachment> attachments;
     bool visible=true;
 };
+inline const render::Model* animationSourceModel(const Object& obj) noexcept {
+    return obj.animationModel?obj.animationModel:obj.draw.model;
+}
 // Any host may submit geometry without assuming a Model or skeleton.
 // Mesh ownership/lifetime remains external; this packet has no genre data.
 struct MeshObject {
@@ -126,24 +141,37 @@ public:
     // generic scene for characters, buildings, props and cinematics.
     Stats update(std::span<const Object> objects,float dt) {
         stats_={};
+        if(++frameStamp_==0) { frameStamp_=1; lodState_.clear(); }
         std::vector<lib::animation::AnimationSourceFrame> sources;
         sources.reserve(objects.size());
         for(const auto& obj:objects) {
             if(obj.visible)++stats_.visible;
             if(obj.draw.model && obj.visible)++stats_.drawable;
-            if(!obj.graph || !obj.draw.model)continue;
+            if(obj.id!=0 && !obj.lods.empty()) {
+                auto& selection=lodState_[obj.id];
+                if(selection.generation!=obj.generation)
+                    selection.level=0;
+                selection.generation=obj.generation;
+                selection.seen=frameStamp_;
+            }
+            const auto* animationModel=animationSourceModel(obj);
+            if(!obj.graph || !animationModel)continue;
             ++stats_.animated;
             lib::animation::AnimationSourceFrame input;
             input.sourceId=obj.id;
             input.generation=obj.generation;
-            input.model=obj.draw.model;
+            input.model=animationModel;
             input.graph=obj.graph;
             input.inputs=obj.parameters;
             sources.push_back(std::move(input));
         }
         stats_.source=bridge_.sync(presentation_,sources);
+        for(auto it=lodState_.begin();it!=lodState_.end();) {
+            if(it->second.seen!=frameStamp_)it=lodState_.erase(it);
+            else ++it;
+        }
         for(const auto& obj:objects) {
-            if(!obj.graph || !obj.draw.model)continue;
+            if(!obj.graph || !animationSourceModel(obj))continue;
             const Entity e=bridge_.find(obj.id);
             if(!presentation_.alive(e))continue;
             if(!presentation_.has<lib::animation::AnimationSignificanceComponent>(e))
@@ -194,21 +222,86 @@ public:
     // One draw packet from any host. This is the same renderer pipeline
     // used for streamed, procedural, static and animated objects.
     void submitOne(render::Renderer3D& renderer,const Object& obj) const {
-        if(!obj.visible || !obj.draw.model)return;
-        render::ModelDraw draw=obj.draw;
-        if(obj.graph) {
+        if(!obj.visible)return;
+        const render::Model* rig=animationSourceModel(obj);
+        const lib::animation::AnimationPoseComponent* animatedPose=nullptr;
+        if(obj.graph && rig && obj.graph->model()==rig) {
             const Entity e=bridge_.find(obj.id);
             if(presentation_.alive(e)) {
+                const auto* link=presentation_.tryGetConst<
+                    lib::animation::AnimationSourceLinkComponent>(e);
+                const auto* asset=presentation_.tryGetConst<
+                    lib::animation::AnimationAssetComponent>(e);
                 const auto* pose=presentation_.tryGetConst<
                     lib::animation::AnimationPoseComponent>(e);
-                if(pose && pose->valid) {
-                    draw.pose=&pose->local;
-                    draw.nodeWorld=&pose->matrices;
-                }
+                if(link && link->generation==obj.generation &&
+                   asset && asset->model==rig && asset->graph==obj.graph &&
+                   pose && pose->valid &&
+                   pose->local.size()==rig->nodes.size() &&
+                   pose->matrices.size()==rig->nodes.size())
+                    animatedPose=pose;
             }
         }
-        if(!draw.persistentId)draw.persistentId=obj.id;
-        submitModel(renderer,draw);
+        render::ModelDraw draw=obj.draw;
+        if(draw.model && !obj.lods.empty()) {
+            const render::float3 origin=draw.world.transformPoint({0,0,0});
+            const float distance=render::length(renderer.cameraPos()-origin);
+            size_t prior=0;
+            LodSelection* saved=nullptr;
+            if(obj.id!=0) {
+                auto& state=lodState_[obj.id];
+                if(state.generation!=obj.generation) {
+                    state.level=0;
+                    state.generation=obj.generation;
+                }
+                saved=&state;
+                prior=state.level;
+            }
+            const size_t level=selectModelLodLevel(obj.lods,distance,prior,
+                                                   saved?obj.lodHysteresis:0.f);
+            if(saved)saved->level=level;
+            // Missing, asynchronously streamed distant LODs retain the
+            // nearest available representation; animation still advances.
+            size_t visual=level;
+            while(visual>0 && !obj.lods[visual-1].model)--visual;
+            if(visual>0)draw.model=obj.lods[visual-1].model;
+        }
+        if(draw.model!=obj.draw.model) {
+            // Base-model overrides and cached GPU geometry may reference
+            // an incompatible asset generation; never reuse them for a LOD.
+            draw.geometry={};
+            draw.staticCache=nullptr;
+            draw.materials=nullptr;
+            draw.nodeMaterial=nullptr;
+            draw.variant=-1;
+            draw.pose=nullptr;
+            draw.nodeWorld=nullptr;
+            draw.baked=nullptr;
+        }
+        if(animatedPose && draw.model &&
+           compatibleModelPose(*rig,*draw.model)) {
+            draw.pose=&animatedPose->local;
+            draw.nodeWorld=&animatedPose->matrices;
+        }
+        if(draw.model) {
+            if(!draw.persistentId)draw.persistentId=obj.id;
+            submitModel(renderer,draw);
+        }
+        if(!rig || obj.attachments.empty())return;
+        const std::span<const render::mat4> socketMatrices=
+            animatedPose ? std::span<const render::mat4>(
+                animatedPose->matrices.data(),animatedPose->matrices.size())
+                         : std::span<const render::mat4>();
+        // Always anchor on the animation source rig, not on a coarse
+        // render LOD that may remove or reorder socket nodes.
+        for(size_t i=0;i<obj.attachments.size();++i) {
+            render::ModelDraw attached;
+            if(!composeAttachment(obj.draw,*rig,socketMatrices,
+                                  obj.attachments[i],attached))continue;
+            if(!attached.persistentId && obj.id)
+                attached.persistentId=attachmentDrawId(obj.id,obj.generation,i);
+            submitModel(renderer,attached);
+        }
     }
     void submit(render::Renderer3D& renderer,
                 std::span<const Object> objects) const {
@@ -298,15 +391,35 @@ public:
     World& presentation() noexcept{return presentation_;}
     void clear() {
         bridge_.clear(presentation_);
+        lodState_.clear();
         stats_={};
     }
 private:
+    struct LodSelection {
+        uint64_t generation=0;
+        size_t level=0;
+        uint64_t seen=0;
+    };
+    static uint64_t attachmentDrawId(uint64_t id,uint64_t generation,
+                                     size_t attachmentIndex) noexcept {
+        uint64_t x=id*0x9e3779b97f4a7c15ULL ^
+                   generation*0xbf58476d1ce4e5b9ULL ^
+                   (uint64_t(attachmentIndex)+1)*0x94d049bb133111ebULL;
+        x^=x>>30;
+        x*=0xbf58476d1ce4e5b9ULL;
+        x^=x>>27;
+        x*=0x94d049bb133111ebULL;
+        x^=x>>31;
+        return x?x:1;
+    }
     World presentation_;
     lib::animation::MotionWeaveSourceBridge bridge_;
     std::unique_ptr<lib::animation::MotionWeaveScheduler> scheduler_;
     lib::animation::AnimationBudgetPolicy budgets_;
     size_t workerCount_=0,minimumParallelActors_=16;
     Stats stats_;
+    uint64_t frameStamp_=0;
+    mutable std::unordered_map<uint64_t,LodSelection> lodState_;
     std::vector<Object> packetObjects_;
 };
 } // namespace aiverse::view
