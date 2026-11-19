@@ -395,6 +395,12 @@ result arrives and never queues these into authoritative ECS.
 
 ### Multiple independent Terra VT domains
 
+- In multi-domain mode call
+  `TerraWeaveVirtualTextureFeedback::initializeForDomains(dev,renderer,
+  depthAttachment=true)` instead of allocating a dummy legacy feedback
+  target. All domain feedback passes must have the same depth mode as
+  the installed model feedback programs. The manager validates this
+  when attaching and adding domains.
 - Use `render::TerraWeaveVirtualAtlasDomains` for separate Horizon,
   Forest and impostor atlases. Register stable numeric DomainIds,
   each with a matching immutable versioned page archive and its own
