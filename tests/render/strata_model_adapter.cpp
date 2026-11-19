@@ -90,4 +90,47 @@ int main() {
     model.clips.clear();
     assert(buildModelAsset(model, {}, asset, &error));
     assert(asset.primitives.size() == 1);
+
+    // Scene staging is keyed by immutable source model ID: it must not build
+    // separate representations for each repeated GeometryScene instance.
+    SceneStaging staging;
+    assert(staging.find("shared/model.glb") == nullptr);
+    assert(staging.stage("shared/model.glb", model));
+    assert(staging.find("shared/model.glb") != nullptr);
+    assert(staging.stats().stagedSources == 1);
+    assert(staging.stats().stagedPrimitives == 1);
+    assert(staging.stats().skippedPrimitives == 1);
+    assert(staging.stats().clusterNodes > 0);
+    assert(staging.stats().meshlets > 0);
+    const auto beforeStats = staging.stats();
+    const std::vector<uint32_t> stagedIndices =
+        staging.find("shared/model.glb")->primitives.front().geometry.indices;
+    assert(staging.stage("shared/model.glb", model));
+    assert(staging.stats().stagedSources == beforeStats.stagedSources);
+    assert(staging.stats().clusterNodes == beforeStats.clusterNodes);
+    assert(staging.find("shared/model.glb")->primitives.front().geometry.indices ==
+           stagedIndices);
+
+    // Staging owns its CPU representation independent of subsequent source
+    // changes, and a failed additional source cannot destroy earlier assets.
+    model.indices[0] = UINT32_MAX;
+    assert(!staging.stage("broken/model.glb", model));
+    assert(staging.stats().failedSources == 1);
+    assert(!staging.warnings().empty());
+    assert(staging.find("shared/model.glb")->primitives.front().geometry.indices ==
+           stagedIndices);
+    model.indices = original;
+    SceneStaging bounded;
+    bounded.setLimits({4, 6});
+    assert(!bounded.stage("oversized.glb", model));
+    assert(bounded.stats().skippedSources == 1);
+    assert(bounded.find("oversized.glb") == nullptr);
+    assert(!bounded.warnings().empty());
+
+    staging.clear();
+    assert(staging.find("shared/model.glb") == nullptr);
+    assert(staging.stats().stagedSources == 0);
+    assert(staging.stats().failedSources == 0);
+    assert(staging.warnings().empty());
+    assert(staging.stage("shared/model.glb", model));
 }
