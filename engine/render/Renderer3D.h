@@ -236,6 +236,20 @@ public:
     void circleXZ(float3 c, float radius, uint32_t color, int segments = 40, float y = 0.03f);
     bool warmModelPipelines(const Model& model, const std::vector<Material>* materials = nullptr);
     void drawModel(const ModelDraw& d);
+    // Opt-in CPU cache of per-node rigid bind transforms for stationary objects
+    // with stable persistentId. Does NOT cache visibility, LOD, materials or draws.
+    struct StaticModelCacheStats {
+        uint64_t hits = 0, rebuilds = 0, declined = 0, evicted = 0;
+        size_t live = 0;
+    };
+    StaticModelCacheStats staticModelCacheStats() const {
+        auto stats = staticModelCacheStats_;
+        stats.live = staticModelCaches_.size();
+        return stats;
+    }
+    // Call before/after in-place model geometry or bind-hierarchy edits, or
+    // after an asset reload retaining the same model pointer and GPU handles.
+    void invalidateStaticModelCaches() { staticModelCaches_.clear(); }
     // Diagnostic, opt-in persistent scene upload stats. This staging path is
     // not yet bound to model shaders or used for GPU culling.
     struct PersistentSceneStats {
@@ -545,6 +559,15 @@ private:
     int geometryShadowSize_=0;
     MaterialQuality matQuality_ = MaterialQuality::High;
     std::vector<ModelItem> modelItems_;
+    struct StaticCacheEntry {
+        StaticModelCache cache;
+        uint64_t seen = 0;
+        uint32_t vertexBuffer = 0, indexBuffer = 0;
+    };
+    std::unordered_map<uint64_t, StaticCacheEntry> staticModelCaches_;
+    uint64_t staticModelCacheEpoch_ = 0;
+    bool staticModelCacheEnabled_ = false;
+    StaticModelCacheStats staticModelCacheStats_{};
     // Material GPU-state equivalence is pass-independent within one scene.
     // Resolve each distinct (model, material) once for shadows, colour,
     // reflection and outline. All containers are cleared at beginScene(),
