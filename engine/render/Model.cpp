@@ -797,7 +797,9 @@ int addImage(gfx::Device& dev, Model& m, Image img) {
     m.images.reserve(m.images.size()+1);
     uploadImage(dev, img);
     if (!img.tex.valid()) return -1; // never publish an invalid material index
-    img.rgba.clear(); img.rgba.shrink_to_fit();
+    // Empty-vector swap frees CPU pixels without a potentially throwing
+    // shrink_to_fit after the new GPU resource has been allocated.
+    std::vector<uint8_t>{}.swap(img.rgba);
     m.images.push_back(std::move(img));
     return int(m.images.size() - 1);
 }
