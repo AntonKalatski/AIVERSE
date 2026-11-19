@@ -4,6 +4,7 @@
 #pragma once
 #include "engine/render/TerraWeaveVertexWind.h"
 #include "engine/world/TerraWeaveWindField.h"
+#include "engine/world/TerraWeaveWindUploadPolicy.h"
 #include "engine/render/Model.h"
 #include "engine/gfx/Gfx.h"
 #include "engine/world/TerraWeaveHorizon.h"
@@ -163,7 +164,9 @@ inline HorizonForestWindPatchResult applyHorizonForestWindOverlay(
         const ForestWindField* field,
         const ForestWindState& fallback,
         uint64_t desiredRevision,
-        size_t remainingUploadBytes) {
+        size_t remainingUploadBytes,
+        const HorizonWindUploadPolicy& policy={}) {
+    validateHorizonWindUploadPolicy(policy);
     if(overlay.appliedRevision==desiredRevision)
         return {true,false,0};
     const size_t count=overlay.vertices.size();
@@ -198,8 +201,10 @@ inline HorizonForestWindPatchResult applyHorizonForestWindOverlay(
         }
     }
     const auto plan=planHorizonForestWindUpload(
-        overlay.vertices,replacement);
-    if(!plan || plan->updatedBytes>remainingUploadBytes)
+        overlay.vertices,replacement,policy.maxSparseRanges,
+        policy.fullFallbackPercent);
+    if(!plan || plan->updatedBytes>remainingUploadBytes ||
+       plan->updatedBytes>policy.maxBytesPerUpdate)
         return {};
     // All ranges have already been bounded/validated by the planner; check
     // absolute byte offsets before performing the first RHI write.
