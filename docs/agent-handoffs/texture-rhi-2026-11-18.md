@@ -6117,3 +6117,42 @@ CTest, shader compiler and GPU tests NOT RUN per user request.
 Next: wire viewport mapping values in material binders; implement
 concrete deformed-model feedback GPU shaders, Terra producers,
 and complete backend feature parity.
+
+
+## Stage 9W — GPU pooled indices, pixel-grid binding, model-only/terrain-only scheduling (2026-11-19)
+
+Source commits: fe20912660008151c9d42eb6bf8c2ed2d16f9361,
+cd146e893650067a411288248aa2a3c1f97bbfc0.
+Files: engine/render/Renderer3D.h, engine/render/Renderer3D.cpp.
+Fixed regular rigid ModelItem feedback drawing to pass
+`firstIndex + model->gpuFirstIndex` and
+`int32_t(model->gpuBaseVertex)` to Device::drawIndexed(),
+matching Renderer3DModels.cpp's actual GPU geometry pool path.
+Expanded FeedbackDeformedModel with gpuFirstIndex/gpuBaseVertex
+so callbacks can issue an equivalent indexed draw.
+Added Renderer3D::FeedbackPixelGrid (scaleX/Y, offsetX/Y)
+and feedbackPixelGrid(pass), derived from sceneW_/sceneH_
+and pass target dimensions; offsets use 0.5*(1-scale) to
+map feedback fragment centers onto scene fragment centers.
+FeedbackLodBinder now receives the computed grid as an extra
+final argument; FeedbackDeformedModel includes this grid.
+Callbacks must pass the grid into the LOD shader's uniforms
+uFeedbackToSceneScale/Offset or the matching MSL struct.
+
+The automatic Renderer3D::render() feedback scheduling no
+longer wrongly depends on a configured immediate-mesh
+pipeline: model-only, deformed-model-only, and custom terrain
+feedback producer configurations are supported. The mesh
+collection helper treats no mesh pipeline/binder as opt-out.
+Only an initialized, idle feedback pass is used.
+
+API migration: FeedbackLodBinder's signature changed from
+(...,float threshold,bool invert) to (...,float threshold,
+bool invert,const FeedbackPixelGrid&); downstream custom
+callbacks must update. No automatic streamer ownership.
+Verification: source committed to branch through GitHub;
+NO native compilation, CTest, GLSL/MSL validation or GPU test
+run (user requested functions first, tests later).
+Next: provide RHI-compatible GPU shader program creation
+with real U0 std140/MSL buffer(1) and correct vertex semantics;
+connect Terra producers and deformed model shader paths.
