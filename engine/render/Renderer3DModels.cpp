@@ -8,6 +8,7 @@
 #include "ModelVisibility.h"
 #include "ModelLodTransition.h"
 #include "GpuIcbPolicy.h"
+#include "StaticModelCachePolicy.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -402,13 +403,42 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         for (size_t i = 0; i < pose.size(); ++i) nodeWorld[i] = d.world * pose[i];
         capture_(d, nodeWorld);
     }
-    const auto* cache=d.staticCache;
-    if(cache&&(cache->model!=m||cache->transforms.size()!=m->nodes.size()||cache->primitiveOffsets.size()!=m->meshes.size()||std::memcmp(cache->world.m,d.world.m,sizeof d.world.m)!=0||d.nodeWorld||d.materials||d.nodeMaterial||d.pose||d.baked||!m->skins.empty()||!m->clips.empty()))cache=nullptr;
-    if(cache)++profile_.cachedModels;
-    // whole-model culling with the bind-pose bounds (padded: animation moves limbs outside them)
-    float3 c = (m->boundsMin + m->boundsMax) * 0.5f, e = (m->boundsMax - m->boundsMin) * 0.75f + float3{0.1f, 0.1f, 0.1f};
-    const auto& graphMaterials=d.materials && d.materials->size()>=m->materials.size()?*d.materials:m->materials;
-    const bool displaced=cache?cache->displaced:std::any_of(graphMaterials.begin(),graphMaterials.end(),[this](const Material& mat){return mat.shaderGraph && int(matQuality_)>=mat.shaderGraph->minQuality && mat.shaderGraph->outputs.count("vertexOffset");});
+    const auto& graphMaterials = d.materials && d.materials->size() >= m->materials.size()
+        ? *d.materials : m->materials;
+    const bool activeDisplacement = std::any_of(
+        graphMaterials.begin(), graphMaterials.end(), [this](const Material& mat) {
+            return mat.shaderGraph && int(matQuality_) >= mat.shaderGraph->minQuality &&
+                   mat.shaderGraph->outputs.count("vertexOffset");
+        });
+    const StaticModelCache* cache = d.staticCache;
+    if (cache && !staticModelCacheGeometryCompatible(*cache, d, activeDisplacement))
+        cache = nullptr;
+    if (!cache && staticModelCacheEnabled_) {
+        if (staticModelCacheCandidate(d, activeDisplacement)) {
+            auto& entry = staticModelCaches_[d.persistentId];
+            const bool unchanged =
+                entry.vertexBuffer == m->vb.id &&
+                entry.indexBuffer == m->ib.id &&
+                staticModelCacheGeometryCompatible(entry.cache, d, false);
+            if (!unchanged) {
+                entry.cache.prepare(*m, d.world);
+                entry.vertexBuffer = m->vb.id;
+                entry.indexBuffer = m->ib.id;
+                ++staticModelCacheStats_.rebuilds;
+            } else {
+                ++staticModelCacheStats_.hits;
+            }
+            entry.seen = staticModelCacheEpoch_;
+            cache = &entry.cache;
+        } else {
+            ++staticModelCacheStats_.declined;
+        }
+    }
+    if (cache) ++profile_.cachedModels;
+    // Whole-model culling continues to use the current camera / shadow frusta.
+    float3 c = (m->boundsMin + m->boundsMax) * 0.5f,
+           e = (m->boundsMax - m->boundsMin) * 0.75f + float3{0.1f, 0.1f, 0.1f};
+    const bool displaced = cache ? cache->displaced : activeDisplacement;
     const bool inView = displaced || (cache?modelBoxVisible(viewProj_,cache->min,cache->max):modelBoxVisible(viewProj_ * d.world, c - e, c + e));
     const bool inShadow = quality_ != ShadowQuality::Off && !(d.flags & kDrawNoCastShadow) && (d.tint.w >= 0.99f || (d.flags & kDrawKeepShadow)) && d.dissolve <= 0 &&
                           (displaced || (cache?modelBoxVisible(lightViewProj_,cache->min,cache->max):modelBoxVisible(lightViewProj_ * d.world, c - e, c + e)));
