@@ -9,6 +9,7 @@
 #include "SpectraEcsRenderPose.h"
 #include "SpectraGpuRecoveryHost.h"
 #include "SpectraGpuCaptureHost.h"
+#include "engine/fx/SpectraDiagnosticReport.h"
 
 namespace aiverse::spectra {
 
