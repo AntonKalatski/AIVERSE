@@ -175,23 +175,33 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
             // Reuse the exact same explicit retarget rules as native
             // aiverse::View. New target-local matrices respect its authored
             // bind pose instead of copying unrelated source world matrices.
-            if(ch.model && lod->poseRetarget &&
-               st.pose.size()==ch.model->nodes.size() &&
-               ::aiverse::view::retargetModelPose(
-                   *ch.model,*lod->model,
-                   std::span<const NodePose>(st.pose.data(),st.pose.size()),
-                   *lod->poseRetarget,lodRetargetPose,lodWorld)) {
-                d.pose=&lodRetargetPose;
+            if(ch.model && lod->compiledPoseRetarget) {
+                // Use the plan's precomputed validation/target bind data.
+                // A stale source or visual generation must NEVER fall back
+                // to copying old node matrices into a replacement skeleton.
+                if(st.pose.size()==ch.model->nodes.size() &&
+                   ::aiverse::view::retargetCompiledModelPose(
+                       *ch.model,*lod->model,
+                       ch.modelGeneration,lod->modelGeneration,
+                       std::span<const NodePose>(
+                           st.pose.data(),st.pose.size()),
+                       *lod->compiledPoseRetarget,lodRetargetPose,lodWorld)) {
+                    d.pose=&lodRetargetPose;
+                    d.nodeWorld=&lodWorld;
+                }else {
+                    d.pose=nullptr;
+                    d.nodeWorld=nullptr; // safe bind pose on stale asset
+                }
+            }else {
+                // Compatibility fallback ONLY for legacy LODs that have
+                // never received a compiled plan. Record real visual parity
+                // before migrating these to source-rig retargeting.
+                lodWorld=lod->model->bindWorld;
+                for(size_t n=0;n<lodWorld.size() && n<lod->nodeMap.size();++n)
+                    if(lod->nodeMap[n]>=0 &&
+                       size_t(lod->nodeMap[n])<st.world.size())
+                        lodWorld[n]=st.world[size_t(lod->nodeMap[n])];
                 d.nodeWorld=&lodWorld;
-            } else {
-                // Legacy fallback for authored LODs without a validated map.
-                // Keep historical appearance until explicit remapping is
-                // provided; no changes to the source gameplay/graph clock.
-                lodWorld = lod->model->bindWorld;
-                for (size_t n = 0; n < lodWorld.size() && n < lod->nodeMap.size(); ++n)
-                    if (lod->nodeMap[n] >= 0 && size_t(lod->nodeMap[n]) < st.world.size())
-                        lodWorld[n] = st.world[size_t(lod->nodeMap[n])];
-                d.nodeWorld = &lodWorld;
             }
         }
     } else if (stage && stage->choice.model == ch.model && ch.needsPose && !st.world.empty()) {
