@@ -212,6 +212,10 @@ public:
     }
 
     void update(Editor& ed, double dt) override {
+        // Dock-hidden and closed tabs do not need live 3D preview resources.
+        // Archive the complete previous Portrait until backend GPU completion.
+        if (portraitInit_ && (!open || !ed.isWindowInFront(this)))
+            retirePortrait();
         if (!opRegistered_) {
             opRegistered_ = true;
             ed.ws().registerOp({"model_info", "Contents of the model of a unit type (clips, nodes, materials, variants) and its view warnings.",
