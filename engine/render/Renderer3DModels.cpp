@@ -83,15 +83,38 @@ void Renderer3D::shutdownModels() {
     for (auto t : {white_, black_, flatNormal_}) dev_->destroyTexture(t);
 }
 
+void Renderer3D::retireModelPrograms() {
+    if(!dev_)return;
+    checkGpuDevice(*dev_);
+    if(!programRetirement_)
+        throw std::logic_error("Renderer3D shader retirement owner unavailable");
+    // Reserve BEFORE detaching any renderer pipeline/shader handles. An
+    // allocation failure leaves the previous material cache usable.
+    GpuProgramBatch resources;
+    resources.pipelines.reserve(modelPipes_.size());
+    resources.shaders.reserve(modelShaders_.size());
+    for(const auto& [key,pipeline]:modelPipes_) {
+        (void)key;
+        if(pipeline.valid())resources.pipelines.push_back(pipeline);
+    }
+    for(const auto& [key,shader]:modelShaders_) {
+        (void)key;
+        if(shader.shader.valid())resources.shaders.push_back(shader.shader);
+    }
+    // Pending native compiler jobs own their own cancellation semantics.
+    // They are never mistaken for completed shader handles.
+    pendingModelPipes_.clear();
+    modelPipes_.clear();
+    modelShaders_.clear();
+    programRetirement_->retire(std::move(resources));
+}
+
 void Renderer3D::setInstanceLimit(uint32_t limit) {
     const auto maximum=dev_?uint32_t(std::clamp<size_t>(dev_->maxUniformBytes()/144,1,256)):32u;
     const auto next=limit?std::clamp(limit,1u,maximum):maximum;
     if(next==instanceLimit_)return;
+    if(dev_)retireModelPrograms();
     instanceLimit_=next;
-    if(!dev_)return;
-    for(auto& [key,p]:modelPipes_)dev_->destroyPipeline(p);
-    for(auto& [key,s]:modelShaders_)if(s.shader.valid())dev_->destroyShader(s.shader);
-    pendingModelPipes_.clear(); modelPipes_.clear();modelShaders_.clear();
 }
 void StaticModelCache::prepare(const Model& source,const mat4& transform) {
     model=&source;world=transform;transforms.clear();primitiveOffsets.clear();
@@ -103,12 +126,9 @@ void StaticModelCache::prepare(const Model& source,const mat4& transform) {
     for(int i=0;i<8;++i){auto p=world.transformPoint({c.x+(i&1?e.x:-e.x),c.y+(i&2?e.y:-e.y),c.z+(i&4?e.z:-e.z)});min=min3(min,p);max=max3(max,p);}
 }
 void Renderer3D::setMaterialQuality(MaterialQuality q) {
-    if (q == matQuality_) return;
-    matQuality_ = q;
-    if (!dev_) return;
-    for (auto& [k, p] : modelPipes_) dev_->destroyPipeline(p);
-    for (auto& [k, s] : modelShaders_) if (s.shader.valid()) dev_->destroyShader(s.shader);
-    pendingModelPipes_.clear(); modelPipes_.clear(); modelShaders_.clear();
+    if(q==matQuality_)return;
+    if(dev_)retireModelPrograms();
+    matQuality_=q;
 }
 
 gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bool instanced,
