@@ -86,8 +86,10 @@ public:
 
     // Must be called at the owning host's frame boundary, NOT from a
     // Renderer3D draw callback or while command recording an in-flight draw.
-    // Safe when pending()==0; when a backend has no async tokens, this may
-    // use the explicit full-idle fallback only while retirements are pending.
+    // Safe when pending()==0. Backends without async tokens retain
+    // resources until the queue crosses its advisory backpressure count,
+    // then use one explicit full-idle fallback instead of stalling on
+    // every minor terrain/weather edit. Shutdown always requires GPU idle.
     bool collect(gfx::Device& device) {
         if(!bind(device))return false;
         if(!queue_ || queue_->empty())return true;
@@ -102,7 +104,13 @@ public:
                     else
                         device.abandonRetirementTokenAfterIdle(token);
                 },
-                [&]{return device.waitForResourceIdle();},
+                [&]{
+                    // Unavailable GPU tokens must not cause a full-GPU
+                    // stall on each rebuild. Keep pending until a bounded
+                    // pressure point (or the explicit shutdown barrier).
+                    return queue_->pending()>=kIdleBackpressureCount &&
+                           device.waitForResourceIdle();
+                },
                 [&](Resource& resource){release(device,resource);},
                 [&](uint64_t token) {
                     return device.resourceRetirementStatus(token)==
@@ -136,6 +144,7 @@ public:
     }
 
 private:
+    static constexpr size_t kIdleBackpressureCount=128;
     static void release(gfx::Device& device,Resource& resource) {
         if(resource.model) {
             releaseModel(device,*resource.model);
