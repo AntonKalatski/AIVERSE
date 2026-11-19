@@ -67,6 +67,45 @@ public:
         }
         return result;
     }
+    // Localized ocean/box tile selection. Excludes impulses whose current
+    // annular wavefront cannot touch this tile; scores overlapping waves by
+    // proximity to the tile centre. Work per tile is bounded by 256 pulses.
+    std::array<render::float4,16> shaderRipplesForTile(
+            uint64_t waterId,double originX,double originZ,
+            double minX,double maxX,double minZ,double maxZ) const {
+        std::array<render::float4,16> result{};
+        if(waterId==0 || !(minX<=maxX && minZ<=maxZ))return result;
+        struct Candidate {double distance=0;size_t index=0;};
+        std::vector<Candidate> candidates;
+        candidates.reserve(ripples_.size());
+        const double centerX=(minX+maxX)*0.5,centerZ=(minZ+maxZ)*0.5;
+        for(size_t i=0;i<ripples_.size();++i) {
+            const auto& r=ripples_[i];
+            if(r.waterId==UINT64_MAX || waterId!=r.waterId+1)continue;
+            const double dx=std::max({minX-r.x,0.0,r.x-maxX});
+            const double dz=std::max({minZ-r.z,0.0,r.z-maxZ});
+            const double nearest=std::hypot(dx,dz);
+            const double farthest=std::hypot(
+                std::max(std::abs(minX-r.x),std::abs(maxX-r.x)),
+                std::max(std::abs(minZ-r.z),std::abs(maxZ-r.z)));
+            const double ring=double(r.initialRadius)+double(r.speed)*double(r.age);
+            constexpr double band=2.5; // Gaussian support in metres
+            if(nearest>ring+band || farthest<ring-band)continue;
+            const double dist=std::abs(std::hypot(r.x-centerX,r.z-centerZ)-ring);
+            candidates.push_back({dist,i});
+        }
+        std::sort(candidates.begin(),candidates.end(),[](const auto& a,const auto& b) {
+            return a.distance==b.distance?a.index<b.index:a.distance<b.distance;
+        });
+        for(size_t i=0;i<std::min(size_t(16),candidates.size());++i) {
+            const auto& r=ripples_[candidates[i].index];
+            const float fade=std::clamp(1.f-r.age/r.lifetime,0.f,1.f);
+            result[i]={float(r.x-originX),float(r.z-originZ),
+                       r.initialRadius+r.speed*r.age,
+                       std::min(r.amplitude*fade*0.12f,2.f)};
+        }
+        return result;
+    }
     // Supplying the same simulated tick twice must not duplicate VFX events.
     // Call in ascending tick order; a rollback starts a new visual timeline.
     template<class EventCallback>
