@@ -2398,3 +2398,51 @@ echo "AUTO gate exit=$?"
 ```
 
 Require 35 CPU checks, `changed_channels=0`, exit 0, and inspect **all** `[auto-cpu-gate]` lines. If `allowed=0`, use the printed gate conditions to fix the specific blocker without bypassing compatibility/Metal safe paths. If `allowed=1` while scans remain zero, investigate `order_.size()-i >= minIndirectCommands` and any shadow/opaque early-return; add stage-level instrumentation as needed. Native build/Metal tests and potential performance improvement at Stage 73 are NOT YET VERIFIED. GPU timestamps/Vulkan/CI still pending. PR Draft, experimental flags OFF.
+
+
+---
+
+## Stage 74 — fix AUTO Metal CPU MDI capability opt-in (2026-11-19)
+
+**Branch:** `perf/incremental-static-model-cache`, Draft PR #34. **Implementation:** `3bbc3d1f93256f76d5462bb91903a081fb3f8b2a` in `engine/gfx/metal/GfxMetal.mm`; regression fixture: `92ec320dae7496ef432933afae0b59f2c879ca68` in `tests/render/material_batches.cpp`. Documentation update follows as its own commit.
+
+### Actual owner Mac Studio results and confirmed root cause
+
+Owner successfully compiled Stage 73 and ran the 1,024-unique-primitive AUTO stress trace. `material palette CPU checks=35 result=passed`, image parity `changed_channels=0`, process `AUTO gate exit=0`. On the first six traced probes for BOTH sun shadow and opaque phases:
+
+```text
+[auto-cpu-gate] phase=0 items=1024 permit=1 allowed=0 multiDraw=1 adaptiveGpuFallback=0 groupAdaptive=0 renderSafe=0 indirectOff=0 supported=0 minCommands=16 instanceLimit=227 gpuGroups=0
+[auto-cpu-gate] phase=1 items=1024 permit=1 allowed=0 multiDraw=1 adaptiveGpuFallback=0 groupAdaptive=0 renderSafe=0 indirectOff=0 supported=0 minCommands=16 instanceLimit=227 gpuGroups=0
+```
+
+All 106 opportunities led to zero actual MDI scans, attempts, or submissions; direct EWMA was learned but MDI samples remained zero. The Stage 73 CPU medians were Direct 0.9780ms (66 samples), AUTO 1.4525ms (81 samples), but both were effectively Direct and therefore do not compare Direct versus working MDI. Real Metal output remained byte-identical.
+
+**Confirmed cause from backend source:** `GfxMetal.mm::supportsMultiDrawIndirect()` required explicit `AIVERSE_METAL_CPU_MDI=1` or `AIVERSE_EXPERIMENTAL_METAL_ICB=1`. The owner invoked `AIVERSE_BATCH_AUTO=1` only; it enabled renderer policy selection but did not enable the Metal CPU MDI capability. This was a configuration mismatch, **not** an underlying Metal driver/pipeline failure. Prior successes had passed either CPU MDI or experimental ICB flags explicitly.
+
+### Implementation and safety
+
+- Metal CPU MDI capability now accepts any of these **explicit opt-ins**: `AIVERSE_METAL_CPU_MDI=1`, `AIVERSE_EXPERIMENTAL_METAL_ICB=1`, or `AIVERSE_BATCH_AUTO=1`; it still checks the actual Metal GPU family. Default remains OFF with no flags.
+- The stricter `supportsGpuEncodedIcb()` continues requiring **both** `AIVERSE_EXPERIMENTAL_METAL_ICB=1` and `AIVERSE_GPU_ENCODED_ICB=1`. AUTO alone never enables GPU compute-authored ICB; shader/geometry safety gates and MDI resource lifetime stay unchanged.
+- For `auto_stress` on a Metal device with AUTO requested, the test fixture now reports an error and returns failure if `supportsMultiDrawIndirect()` is false. This prevents an all-Direct pass from silently masquerading as a valid CPU MDI learning run. The CPU policy's zero-submission fallback and retry logic remain, as actual candidate incompatibility can still prevent MDI submissions.
+
+### Verification status
+
+GitHub connector confirmed source inspection, file writes and new commit IDs. **NOT RUN for Stage 74:** native compilation, Metal CPU MDI submissions, per-path learned median, screenshot parity after capability change, Vulkan/full CTest/CI. Do NOT claim Stage 74 is tested or that CPU MDI is faster. Keep PR #34 Draft and production defaults OFF.
+
+### Exact next Mac Studio command
+
+```sh
+cd /Users/aleksandrfeer/Projects/AIVERSE || exit 1
+git fetch origin
+git switch perf/incremental-static-model-cache
+git pull --ff-only origin perf/incremental-static-model-cache
+cmake --build build/batching-gpu-verify --target aiverse_material_batches --parallel 8 || exit 1
+mkdir -p build/batching-gpu-verify/captures
+AIVERSE_BATCH_AUTO_TRACE=1 AIVERSE_PALETTE_TEST_CASE=auto_stress \
+ AIVERSE_BATCH_STRESS_ITEMS=1024 AIVERSE_BATCH_AUTO=1 AIVERSE_BATCH_CPU_TIMING=1 \
+ build/batching-gpu-verify/aiverse_material_batches \
+ unused.obj build/batching-gpu-verify/captures/auto-stress-auto-enabled-1k
+echo "AUTO 1k exit=$?"
+```
+
+Expected: traced `supported=1` and `allowed=1` when `permit=1`, nonzero **cumulative MDI scans** during AUTO probes. Real MDI submissions are not guaranteed until group/command compatibility is verified; report cumulative scans/attempts/submissions, both EWMA sample types, draw counts, `changed_channels=0`, and exit 0. If no submitted commands, use counters to diagnose next eligibility stage instead of bypassing it. Do not jump to 10k/100k until this gate and parity are proven.
