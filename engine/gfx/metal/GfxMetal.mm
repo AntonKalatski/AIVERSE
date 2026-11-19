@@ -1672,6 +1672,30 @@ public:
             gpuArguments,vertexBuffer,indexBuffer,sourceSlots,count,
             instanceData,instanceBytes,materials);
     }
+    uint32_t prepareGpuEncodedIndexedIcbWithPbrMaterials(
+        BufferHandle gpuArguments, BufferHandle vertexBuffer,
+        BufferHandle indexBuffer, const uint32_t* sourceSlots, uint32_t count,
+        const void* instanceData, size_t instanceBytes,
+        const GpuIcbPbrMaterial* materials) override {
+        static const bool enabled=[] {
+            const char* flag=std::getenv("AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR");
+            return flag && std::strcmp(flag,"1")==0;
+        }();
+        if (!enabled || !materials || count<2 || count>256) return 0;
+        std::vector<GpuIcbVirtualMaterial> entries(count);
+        for (uint32_t i=0;i<count;++i) {
+            if (!materials[i].valid()) return 0;
+            auto& entry=entries[i];
+            entry.hasVirtualTexture=false;
+            entry.hasPbr=true;
+            entry.pbrTextures=materials[i].textures;
+            entry.pbrU2=materials[i].u2;
+            if (!entry.valid()) return 0;
+        }
+        return prepareGpuEncodedIndexedIcbInternal(
+            gpuArguments,vertexBuffer,indexBuffer,sourceSlots,count,
+            instanceData,instanceBytes,entries.data());
+    }
     uint32_t prepareGpuEncodedIndexedIcbInternal(
         BufferHandle gpuArguments, BufferHandle vertexBuffer, BufferHandle indexBuffer,
         const uint32_t* sourceSlots, uint32_t count,
@@ -1826,37 +1850,39 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             resources.virtualMaterials.reserve(count);
             for (uint32_t i=0;i<count;++i) {
                 if (!materials[i].valid() ||
-                    materials[i].hasPbr != materials[0].hasPbr) return 0;
-                const auto* atlas=textures_.get(materials[i].physicalAtlas.id);
-                const auto* table=textures_.get(materials[i].pageTable.id);
-                const auto* alpha=materials[i].alphaCoverage.valid() ?
-                    textures_.get(materials[i].alphaCoverage.id) : nullptr;
-                // The stage's physical atlas and page table use RGBA8
-                // array slices. R8 alpha is the separately allocated full-
-                // resolution cutout mask. Fail closed for incompatible
-                // textures rather than encoding invalid Metal arguments.
-                if (!atlas || !table || !atlas->tex || !table->tex ||
-                    atlas->dimension != TextureDimension::Texture2DArray ||
-                    table->dimension != TextureDimension::Texture2DArray ||
-                    atlas->fmt != PixelFormat::RGBA8 ||
-                    table->fmt != PixelFormat::RGBA8 ||
-                    !atlas->tex.arrayLength || !table->tex.arrayLength ||
-                    (alpha && (!alpha->tex ||
-                     alpha->dimension != TextureDimension::Texture2D ||
-                     alpha->fmt != PixelFormat::R8)) ||
-                    (materials[i].alphaCoverage.valid() && !alpha) ||
-                    materials[i].params[0] >= float(table->tex.arrayLength) ||
-                    2.0f*materials[i].params[1]+1.0f >=
-                        float(std::min(atlas->tex.width,atlas->tex.height)))
-                    return 0;
+                    materials[i].hasPbr != materials[0].hasPbr ||
+                    materials[i].hasVirtualTexture !=
+                        materials[0].hasVirtualTexture) return 0;
                 GpuIcbNativeVtMaterial native;
-                native.atlasHandle=materials[i].physicalAtlas;
-                native.tableHandle=materials[i].pageTable;
-                native.alphaHandle=materials[i].alphaCoverage;
-                native.atlas=atlas->tex;
-                native.table=table->tex;
-                native.alpha=alpha ? alpha->tex : nil;
-                std::memcpy(native.u6,materials[i].params,sizeof(native.u6));
+                native.hasVt=materials[i].hasVirtualTexture;
+                if (native.hasVt) {
+                    const auto* atlas=textures_.get(materials[i].physicalAtlas.id);
+                    const auto* table=textures_.get(materials[i].pageTable.id);
+                    const auto* alpha=materials[i].alphaCoverage.valid() ?
+                        textures_.get(materials[i].alphaCoverage.id) : nullptr;
+                    // VT uses RGBA8 2D arrays and optional R8 alpha.
+                    if (!atlas || !table || !atlas->tex || !table->tex ||
+                        atlas->dimension != TextureDimension::Texture2DArray ||
+                        table->dimension != TextureDimension::Texture2DArray ||
+                        atlas->fmt != PixelFormat::RGBA8 ||
+                        table->fmt != PixelFormat::RGBA8 ||
+                        !atlas->tex.arrayLength || !table->tex.arrayLength ||
+                        (alpha && (!alpha->tex ||
+                         alpha->dimension != TextureDimension::Texture2D ||
+                         alpha->fmt != PixelFormat::R8)) ||
+                        (materials[i].alphaCoverage.valid() && !alpha) ||
+                        materials[i].params[0] >= float(table->tex.arrayLength) ||
+                        2.0f*materials[i].params[1]+1.0f >=
+                            float(std::min(atlas->tex.width,atlas->tex.height)))
+                        return 0;
+                    native.atlasHandle=materials[i].physicalAtlas;
+                    native.tableHandle=materials[i].pageTable;
+                    native.alphaHandle=materials[i].alphaCoverage;
+                    native.atlas=atlas->tex;
+                    native.table=table->tex;
+                    native.alpha=alpha ? alpha->tex : nil;
+                    std::memcpy(native.u6,materials[i].params,sizeof(native.u6));
+                }
                 native.hasPbr=materials[i].hasPbr;
                 if (native.hasPbr) {
                     // The six ordinary built-in PBR sources are bound as
@@ -1887,8 +1913,9 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         constexpr size_t kPerCommandVtStride = 256;
         constexpr size_t kPerCommandU2Stride = 256;
         const bool commandPbr = materials && materials[0].hasPbr;
+        const bool commandVt = materials && materials[0].hasVirtualTexture;
         for (int slot = 1; slot < 8; ++slot) {
-            const size_t bytes = (materials && slot==6) ?
+            const size_t bytes = (commandVt && slot==6) ?
                 size_t(count)*kPerCommandVtStride :
                 (commandPbr && slot==2) ?
                 size_t(count)*kPerCommandU2Stride :
@@ -1906,11 +1933,13 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                 pbrBytes options:MTLResourceStorageModeShared];
         if (!resources.pbrArgs) return 0;
         if (materials) {
-            auto* destination=static_cast<uint8_t*>(resources.uniforms[6].contents);
-            if (!destination) return 0;
-            for(uint32_t i=0;i<count;++i)
-                std::memcpy(destination+size_t(i)*kPerCommandVtStride,
-                            resources.virtualMaterials[i].u6,16);
+            if (commandVt) {
+                auto* destination=static_cast<uint8_t*>(resources.uniforms[6].contents);
+                if (!destination) return 0;
+                for(uint32_t i=0;i<count;++i)
+                    std::memcpy(destination+size_t(i)*kPerCommandVtStride,
+                                resources.virtualMaterials[i].u6,16);
+            }
             if (commandPbr) {
                 auto* u2Destination=static_cast<uint8_t*>(
                     resources.uniforms[2].contents);
@@ -1964,7 +1993,7 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         if (indexCount > UINT32_MAX) return 0;
         Params params{count,uint32_t(indexCount),
             materials ? uint32_t(kPerCommandPbrStride) : 0u,
-            materials ? uint32_t(kPerCommandVtStride) : 0u,
+            commandVt ? uint32_t(kPerCommandVtStride) : 0u,
             commandPbr ? uint32_t(kPerCommandU2Stride) : 0u};
         [encoder setBytes:&params length:sizeof(params) atIndex:17];
         [encoder useResource:resources.icb usage:MTLResourceUsageWrite];
@@ -2040,7 +2069,8 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                 !resources.virtualMaterials.empty() &&
                 resources.virtualMaterials.front().hasPbr;
             const bool perCommandU6 = slot==6 &&
-                !resources.virtualMaterials.empty();
+                !resources.virtualMaterials.empty() &&
+                resources.virtualMaterials.front().hasVt;
             if (!stable || !stable.contents ||
                 (!(perCommandU2 || perCommandU6) &&
                  snapshot.size() > stable.length))
@@ -2399,7 +2429,7 @@ private:
         TextureHandle atlasHandle, tableHandle, alphaHandle;
         id<MTLTexture> atlas = nil, table = nil, alpha = nil;
         float u6[4] = {};
-        bool hasPbr = false;
+        bool hasVt = true, hasPbr = false;
         std::array<TextureHandle,6> pbrHandles{};
         std::array<id<MTLTexture>,6> pbrTextures{};
         std::array<id<MTLSamplerState>,6> pbrSamplers{};
