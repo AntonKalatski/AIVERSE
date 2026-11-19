@@ -3,6 +3,7 @@
 #include "engine/render/Renderer3D.h"
 #include "engine/world/NereidWaterScene.h"
 #include "engine/world/NereidUnderwaterView.h"
+#include "engine/world/NereidRipples.h"
 
 namespace aiverse::world {
 // CPU model decode/terrain tessellation in the worker; GPU publication on update's thread.
@@ -17,6 +18,21 @@ public:
     void setNereidSurfaces(std::vector<NereidSceneSurface> surfaces);
     size_t nereidVisibleSurfaceCount()const;
     NereidUnderwaterView nereidUnderwaterAt(Vec3 camera)const;
+    // Explicit presentation read barrier: consume one ECS tick of events.
+    void ingestNereidInteractions(
+        const std::vector<lib::nereid::WaterPresentationEvent>& events,
+        uint32_t completedTick) {ripples_.ingest(events,completedTick);}
+    template<class Callback> void ingestNereidInteractions(
+        const std::vector<lib::nereid::WaterPresentationEvent>& events,
+        uint32_t completedTick,Callback&& onSpectraFxOrAudio) {
+        ripples_.ingest(events,completedTick,
+                        std::forward<Callback>(onSpectraFxOrAudio));
+    }
+    void advanceNereidRipples(float deltaSeconds) {
+        ripples_.advance(deltaSeconds);
+    }
+    const NereidRippleField& nereidRipples()const{return ripples_;}
+
     const AsyncChunkStream::Status& status()const{return stream_->status();}
 private:
     struct Instance { size_t model=0;render::mat4 transform; };
@@ -36,6 +52,7 @@ private:
     std::map<Cell,std::shared_ptr<Prepared>> resident_;
     std::unique_ptr<AsyncChunkStream> stream_;
     NereidWaterScene nereidWater_;
+    NereidRippleField ripples_;
     std::shared_ptr<Prepared> prepare(Cell,const AssetReader&);
 };
 }
