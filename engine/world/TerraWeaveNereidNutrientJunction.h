@@ -39,25 +39,36 @@ struct NereidNutrientCandidate {
 // inside its 32m nutrient tile is covered by the ACTUAL authored NEREID
 // footprint (polygon, river spline, box, disc, ocean).
 inline bool nereidBodyTouchesNutrientCell(
-        const World& world,Entity waterBody,int64_t cellX,int64_t cellZ,
-        Fixed altitude,uint32_t samplesPerAxis) {
+        const World& world,const EarthworksLayer& terrain,
+        const lib::nereid::WaterQueryIndex& water,Entity waterBody,
+        int64_t cellX,int64_t cellZ,
+        uint32_t samplesPerAxis) {
     if(!world.alive(waterBody))return false;
     const auto* body=world.tryGetConst<lib::nereid::WaterBodyComponent>(waterBody);
     if(!body || !lib::nereid::validWaterBody(*body))return false;
     const auto* shape=world.tryGetConst<lib::nereid::WaterGeometryComponent>(
         waterBody);
     const int64_t cm=ForestDeadwoodResource::kNutrientCellCm;
+    const int64_t edge=kWorldLimitCm-terrain.spacingCm();
     for(uint32_t j=0;j<samplesPerAxis;++j)
         for(uint32_t i=0;i<samplesPerAxis;++i){
             const int64_t x=cellX*cm+
                 (int64_t(2*i+1)*cm)/int64_t(2*samplesPerAxis);
             const int64_t z=cellZ*cm+
                 (int64_t(2*j+1)*cm)/int64_t(2*samplesPerAxis);
-            if(x<=-kWorldLimitCm || x>=kWorldLimitCm ||
-               z<=-kWorldLimitCm || z>=kWorldLimitCm)continue;
+            if(x<=-edge || x>=edge || z<=-edge || z>=edge)
+                continue;
             const Vec3 point{
-                Fixed::fromRatio(x,100),altitude,Fixed::fromRatio(z,100)};
-            if(lib::nereid::coversWaterBody(*body,shape,point))
+                Fixed::fromRatio(x,100),
+                Fixed::fromRatio(terrain.sampleHeightCm(x,z),100),
+                Fixed::fromRatio(z,100)};
+            if(!lib::nereid::coversWaterBody(*body,shape,point))
+                continue;
+            // Water footprint is NOT enough after erosion/landslides.
+            // NEREID owns wetness, base surface and flood: only actual
+            // submerged samples of the expected body admit a transfer.
+            const auto wet=water.sample(point);
+            if(wet.found && wet.submerged && wet.body==waterBody)
                 return true;
         }
     return false;
@@ -65,7 +76,9 @@ inline bool nereidBodyTouchesNutrientCell(
 
 inline std::vector<NereidNutrientCandidate>
 nereidNutrientCandidates(
-        const World& world,Entity body,Vec3 anchor,
+        const World& world,const EarthworksLayer& terrain,
+        const lib::nereid::WaterQueryIndex& water,
+        Entity body,Vec3 anchor,
         NereidNutrientJunctionSettings settings) {
     std::vector<NereidNutrientCandidate> out;
     const int64_t cm=ForestDeadwoodResource::kNutrientCellCm;
@@ -82,7 +95,7 @@ nereidNutrientCandidates(
             dx<=int64_t(settings.searchRadiusCells);++dx){
             const int64_t x=x0+dx,z=z0+dz;
             if(!nereidBodyTouchesNutrientCell(
-                    world,body,x,z,anchor.y,settings.samplesPerAxis))
+                    world,terrain,water,body,x,z,settings.samplesPerAxis))
                 continue;
             const int64_t cx=x*cm+cm/2,cz=z*cm+cm/2;
             const int64_t ddx=cx-wx,ddz=cz-wz;
@@ -98,7 +111,9 @@ nereidNutrientCandidates(
 
 inline std::optional<ForestNutrientJunctionLink>
 nereidNutrientLinkedCells(
-        const World& world,Entity source,Entity target,
+        const World& world,const EarthworksLayer& terrain,
+        const lib::nereid::WaterQueryIndex& water,
+        Entity source,Entity target,
         Vec3 sourceAnchor,Vec3 targetAnchor,
         NereidNutrientJunctionSettings settings) {
     if(source==target || source==kNullEntity || target==kNullEntity ||
@@ -116,9 +131,9 @@ nereidNutrientLinkedCells(
            targetAnchor))
         return std::nullopt;
     const auto sources=nereidNutrientCandidates(
-        world,source,sourceAnchor,settings);
+        world,terrain,water,source,sourceAnchor,settings);
     const auto targets=nereidNutrientCandidates(
-        world,target,targetAnchor,settings);
+        world,terrain,water,target,targetAnchor,settings);
     // Small-stream cells are preferred near the actual junction mouth, not
     // arbitrary nearby regions. 32m same-cell body overlaps are ambiguous:
     // never invent two reservoirs in one existing water-cell record.
@@ -129,11 +144,11 @@ nereidNutrientLinkedCells(
                // also contains the opposite body is ambiguous, so do
                // NOT debit it into another river: fail closed.
                !nereidBodyTouchesNutrientCell(
-                   world,target,a.x,a.z,
-                   sourceAnchor.y,settings.samplesPerAxis) &&
+                   world,terrain,water,target,a.x,a.z,
+                   settings.samplesPerAxis) &&
                !nereidBodyTouchesNutrientCell(
-                   world,source,b.x,b.z,
-                   targetAnchor.y,settings.samplesPerAxis)){
+                   world,terrain,water,source,b.x,b.z,
+                   settings.samplesPerAxis)){
                 ForestNutrientJunctionLink link;
                 link.sourceX=a.x;link.sourceZ=a.z;
                 link.targetX=b.x;link.targetZ=b.z;
@@ -149,14 +164,16 @@ nereidNutrientLinkedCells(
 // footprints. All emitted links have a unique sorted (ECS id, slot) key.
 inline std::vector<ForestNutrientJunctionLink>
 buildNereidNutrientJunctionPlan(
-        const World& world,NereidNutrientJunctionSettings settings={}) {
+        const World& world,const EarthworksLayer& terrain,
+        const lib::nereid::WaterQueryIndex& water,
+        NereidNutrientJunctionSettings settings={}) {
     validateNereidNutrientJunctionSettings(settings);
     using Slot=std::pair<uint64_t,uint8_t>;
     std::vector<std::pair<Slot,ForestNutrientJunctionLink>> planned;
     const auto append=[&](Entity source,Entity target,
                           Vec3 from,Vec3 to,Slot id) {
         if(const auto link=nereidNutrientLinkedCells(
-                world,source,target,from,to,settings))
+                world,terrain,water,source,target,from,to,settings))
             planned.emplace_back(id,*link);
         if(planned.size()>settings.maxLinks)
             throw std::length_error("TerraWeave NEREID nutrient junction budget");
