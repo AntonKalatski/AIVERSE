@@ -977,7 +977,15 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     prisma_.collectGpuRetirements();
     r3d_.collectCompletedObjectMotion(dev.gpuCompletedFence());
     const auto frameStarted = std::chrono::steady_clock::now();
-    if (mapLoading_) { frameMapLoading(dev, dt); return; }
+    if (mapLoading_) {
+        // This frame does not render camera 3: retire stale motion/exposure
+        // history from the previous scene using the GPU submission token.
+        prisma_.retireUnregisteredViews({});
+        r3d_.retireUnregisteredObjectMotionViews({});
+        prisma_.retireUnreferencedSizeCaches();
+        frameMapLoading(dev, dt);
+        return;
+    }
     if (mapJustLoaded_) { dt = 0; mapJustLoaded_ = false; }
     if (sim_ && screen_ == Screen::Playing) updateBackgroundLoading();
     const double backgroundMs = std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-frameStarted).count();
@@ -1089,7 +1097,14 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         if (screen_ == Screen::Playing) { topDownPresent(dt, alpha); topDownCamera(dt); }
     }
 
-    if (sim_ && ensureLocalAssets()) { frameMapLoading(dev, dt); return; }
+    if (sim_ && ensureLocalAssets()) {
+        // Asset-loading output has no active 3D presentation camera.
+        prisma_.retireUnregisteredViews({});
+        r3d_.retireUnregisteredObjectMotionViews({});
+        prisma_.retireUnreferencedSizeCaches();
+        frameMapLoading(dev, dt);
+        return;
+    }
 
     luaTick(dt);   // game.on("update", fn) in UI scripts
     updateAudio(dt);
@@ -1217,6 +1232,13 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     ui_.setTarget(hostColor_, hostDepth_);   // linear UI blending reopens this pass
     ui_.render();
     dev.endPass();
+    if (!sim_) {
+        // Menu-only output: no active camera view; avoid keeping the
+        // previous match's private histories and size caches indefinitely.
+        prisma_.retireUnregisteredViews({});
+        r3d_.retireUnregisteredObjectMotionViews({});
+        prisma_.retireUnreferencedSizeCaches();
+    }
     if (std::getenv("AIVERSE_STREAM_TRACE") && sim_ && !mapLoading_) {
         static auto previous = frameStarted;
         const double interval = std::chrono::duration<double,std::milli>(frameStarted-previous).count(); previous=frameStarted;
