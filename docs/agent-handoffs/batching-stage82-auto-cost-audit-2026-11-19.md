@@ -649,3 +649,56 @@ build/batching-stage91/aiverse_material_batches unused.obj \
 Require `checks=38 passed`, actual MDI pixel parity 0, final pixel parity 0, real MDI frame count 81/81 and process exit 0. For a more informative answer with **no further GPU runs**, request the three already created `mdi-1-frames.csv`, `mdi-2-frames.csv`, `mdi-3-frames.csv` for the CPU stage time series. In particular, compare same frame ranges and whether both shadow and opaque backend submit costs increase together. Do not equate backend CPU wall with GPU execution. PR #39 stays Draft; experimental flags remain OFF by default.
 
 **Validation truth:** owner-provided Mac native logs were analyzed; GitHub handoff updated. Assistant did not compile/run Mac renderer or perform GPU timing.
+
+
+---
+
+## Stage 94 — direct analysis of three uploaded 106-frame forced-MDI timelines (2026-11-19)
+
+**Branch:** `perf/auto-batch-cost-metrics-20261119`, Draft PR #39. **Source evidence:** user uploaded `mdi-1-frames.csv`, `mdi-2-frames.csv`, `mdi-3-frames.csv` from `build/batching-stage91/late-probes/`, each 106 rows covering frames 90..195. All three parsed successfully in Python/pandas in the assistant runtime and have the ten expected columns (frame, renderer CPU, MDI submissions/commands, shadow/opaque draws, shadow/opaque CPU pass time, shadow/opaque backend CPU submission). This stage is **data analysis and documentation only**. No renderer/RHI, test harness or policy code changed.
+
+### Owner native correctness results already established
+
+All three underlying Mac Studio Stage 92 forced-MDI processes printed `material palette CPU checks=38 result=passed`, `actual MDI pixel parity frame=100 changed_channels=0`, `changed_channels=0` for final capture, and recorded 81 of 81 measured frames with 810 submitted CPU MDI groups. Across every CSV frame in the measured interval 115..195, the submission counts are consistently **10 CPU-MDI batches, 2048 indirect commands, five shadow plus five opaque draw calls**. Thus mode/group-count variance is **not** the explanation for the observed performance differences. The synthetic scene and byte-identical raster parity do not prove real-game or cross-platform correctness; timings are synchronous CPU wall only.
+
+### Actual CSV calculations, measured 81 frames (115..195)
+
+```text
+                             run1          run2         run3
+render median ms             1.3936        1.3699       0.8277
+backend (shadow+opaque) med  0.7241        0.7365       0.4745
+other CPU median ms          0.6326        0.6176       0.3531
+shadow backend median ms     0.4490        0.4657       0.2302
+opaque backend median ms     0.2577        0.2622       0.2400
+shadow phase median ms       0.7578        0.7495       0.3675
+opaque phase median ms       0.3598        0.3561       0.3233
+CPU outside 2 model phases   0.1693        0.1939       0.1352
+frames render >1.2 ms        44/81         50/81         0/81
+```
+
+`backend` is computed **per frame** as `shadow_backend_ms+opaque_backend_ms`. `other CPU` is per-frame `render_cpu_ms-backend`, not GPU idle time. The medians of different columns need not sum exactly. Correlation of full render CPU with backend CPU across frames 115..195 is approximately **0.985 / 0.984 / 0.889** for run1/run2/run3 respectively, and with other CPU approximately **0.979 / 0.976 / 0.799**. These are mathematical correlations, not causal attribution.
+
+To avoid comparing entire process baselines where fast/slow populations mix, each of the first two processes was also partitioned by **measured frame render_cpu_ms>1.2** (diagnostic threshold, not production SLA):
+
+```text
+                         run1 fast  run1 slow   run2 fast   run2 slow
+frames                      37         44         31          50
+render median ms           0.8386     1.6950     0.8150      1.6403
+backend median ms          0.4759     0.9517     0.4798      0.9475
+other CPU median ms        0.3616     0.7557     0.3333      0.6957
+shadow backend median ms   0.2315     0.4803     0.2319      0.4883
+opaque backend median ms   0.2441     0.4924     0.2426      0.4246
+shadow phase median ms     0.3745     0.8243     0.3587      0.7950
+opaque phase median ms     0.3293     0.6977     0.3197      0.6150
+CPU outside model passes    0.1324     0.2102     0.1301      0.2200
+```
+
+**Key inference:** both CPU submit time and CPU remainder increase roughly twofold in slow frames, across both shadow and opaque passes, without any change in MDI command count. Thus the late spikes are **not isolated to the CPU ICB encode loop**. It is reasonable to investigate CPU thread scheduling, CPU frequency/thermal behavior, app/process co-tenancy, driver CPU contention and GPU queue waits. None has been directly measured; do not assert causation. The quick run3 provides a useful control showing a consistent ~0.83ms median, backend ~0.47ms and remainder ~0.35ms with exactly the same MDI workload.
+
+Time-window patterns indicate bursts and recoveries within a run rather than an irreversible warmup change. Example run1 10-frame render medians: 115–124 ~0.844ms, 135–144 ~1.578ms, 145–154 ~1.643ms, 165–174 ~0.837ms, 185–194 ~1.50ms. Run2 115–124 ~1.542ms, 165–174 ~0.832ms, 185–194 ~1.559ms. Run3 windows remain ~0.82–0.85ms throughout.
+
+### Validation and next step
+
+**Actually performed:** loaded the exact three owner-uploaded CSVs and computed all tables directly in Python; updated this GitHub handoff. **Not performed:** native compilation/test on assistant side, OS thread state/frequency tracing, native Metal command buffer GPU durations, Vulkan parity, CI. No code change or promise of guaranteed speedup. PR #39 remains Draft and opt-in CPU MDI/AUTO defaults stay OFF.
+
+**Best next experiment:** acquire a macOS Instruments Time Profiler + System Trace (or equivalent signposted CPU dispatch/wait + GPU timeline), ideally alongside the same 1k fixture, **for both a slow and fast run**. Quantify CPU thread on-CPU vs waiting and GPU queue backpressure. Separate direct stopwatch data from actual scheduling and GPU submission latency before performing further low-level Metal optimizations. If a capture is too invasive, add low-overhead, per-frame CPU thread-time versus wall-time counters plus opt-in GPU completion timestamps in another isolated branch stage with handoff and pixel parity tests. Avoid excessive per-submission log I/O in the hot loop, and test only with reusable, driver-safe Metal bindings.
