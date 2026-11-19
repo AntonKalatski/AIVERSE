@@ -565,6 +565,8 @@ private:
         std::array<float, size_t(kMaxPaletteJoints) * 12> joints{};
         std::array<float, kMaxMorphTargets> weights{};
         bool hasSkin = false;
+        bool baked = false;
+        float4 animation{}; // baked clip A/B rows and interpolation for this view
     };
     struct ObjectMotionHistory {
         gfx::TextureHandle target;
@@ -581,6 +583,8 @@ private:
     gfx::PipelineHandle objectMotionInstancedPipeline_;
     gfx::ShaderHandle objectMotionDeformedShader_;
     gfx::PipelineHandle objectMotionDeformedPipeline_;
+    gfx::ShaderHandle objectMotionBakedShader_;
+    gfx::PipelineHandle objectMotionBakedPipeline_;
 
     // Material GPU-state equivalence is pass-independent within one scene.
     // Resolve each distinct (model, material) once for shadows, colour,
