@@ -6,6 +6,7 @@
 #include "../core/FxOps.h"
 #include "engine/fx/SpectraFX.h"
 #include "libraries/include/aiverselib/genre/SpectraGpuCaptureMailbox.h"
+#include "libraries/include/aiverselib/genre/SpectraGpuRecoveryHost.h"
 #include "engine/fx/SpectraModuleSchema.h"
 #include "engine/fx/SpectraAuthoring.h"
 #include <string_view>
@@ -1071,6 +1072,42 @@ private:
                             "missing",
                         selected.checkpoint.pending?"pending readback":
                             (selectedReady?"export ready":"not exportable"));
+                }
+                if(const auto* recovery=ed.spectraGpuRecoveryHost()) {
+                    const auto state=recovery->inspect(); // no Device mutation
+                    const char* action="none";
+                    switch(state.next) {
+                    case spectra::PoolRecoveryAction::None:action="ready";break;
+                    case spectra::PoolRecoveryAction::InitPool:action="initialize VFX pool";break;
+                    case spectra::PoolRecoveryAction::RetryResetInGraphicsFrame:
+                        action="retry visual reset at next safe host frame";break;
+                    case spectra::PoolRecoveryAction::RecreateGraphicsDevice:
+                        action="re-create graphics Device in native host";break;
+                    case spectra::PoolRecoveryAction::InspectFailure:
+                        action="inspect renderer failure";break;
+                    }
+                    ImGui::Text("Native recovery: %s (transition %llu)",
+                        action,static_cast<unsigned long long>(state.transitionSequence));
+                    if(state.consecutiveResetFailures)
+                        ui::toneText(ui::Tone::Warn,
+                            "GPU reset failures: %u; earliest owner frame: %llu",
+                            state.consecutiveResetFailures,
+                            static_cast<unsigned long long>(
+                                state.retryNotBeforeOwnerFrame));
+                    if(state.next==spectra::PoolRecoveryAction::RecreateGraphicsDevice)
+                        ui::toneText(ui::Tone::Error,
+                            "Native renderer must recreate a NEW graphics Device");
+                    if(!state.reason.empty())
+                        ImGui::TextWrapped("Recovery details: %s",state.reason.c_str());
+                    ImGui::BeginDisabled(
+                        state.next!=spectra::PoolRecoveryAction::None ||
+                        pool->presentationBlocked());
+                    if(ImGui::Button("Queue native VFX-only reset") &&
+                       !ed.queueSpectraExternalVisualReset())
+                        message_="Native renderer refused the visual reset intent";
+                    ImGui::EndDisabled();
+                    ImGui::TextDisabled(
+                        "Native owner handles reset; editor never encodes GPU work.");
                 }
                 if(const auto* mailbox=ed.spectraGpuCaptureMailbox()) {
                     const auto& state=mailbox->status();
