@@ -311,9 +311,9 @@ void Rts2DView::decalShape(const TextureRef& tex, float4 uv, float3 o, float3 aU
     }
 }
 
-void Rts2DView::emit(const SpriteLook& L, float3 ground, float3 facing, int act, double t0, uint32_t team, uint32_t tint, bool corpse, float fade) {
+void Rts2DView::emit(const SpriteLook& L, float3 ground, float3 facing, int act, double t0, uint32_t team, uint32_t tint, bool corpse, float fade, const SpriteLook* sourceLook) {
     if (!replayingPrepared_)
-        preparedSprites_.push_back({L, ground, facing, act, t0, team, tint, corpse, fade});
+        preparedSprites_.push_back({sourceLook, L.width, L.height, ground, facing, act, t0, team, tint, corpse, fade});
     const SpriteLook::Anim& an = L.anims[act];
     int k = an.fps > 0 ? int(std::floor((time_ - t0) * an.fps)) : 0;
     k = an.loop ? ((k % an.count) + an.count) % an.count : std::clamp(k, 0, an.count - 1);
@@ -424,13 +424,13 @@ void Rts2DView::addObject(const SceneObject& o, float groundY, const EntityFxVal
         if (fx->scale(0) != 1 || fx->scale(1) != 1) {
             SpriteLook S = L;
             S.width *= fx->scale(0); S.height *= fx->scale(1);
-            emit(S, ground, o.facing, act, t0, team, tint, false, a);
+            emit(S, ground, o.facing, act, t0, team, tint, false, a, &L);
             return;
         }
-        emit(L, ground, o.facing, act, t0, team, tint, false, a);
+        emit(L, ground, o.facing, act, t0, team, tint, false, a, &L);
         return;
     }
-    emit(L, ground, o.facing, act, t0, team, tint, false, std::clamp(o.fade, 0.0f, 1.0f));   // route end fade
+    emit(L, ground, o.facing, act, t0, team, tint, false, std::clamp(o.fade, 0.0f, 1.0f), &L);   // route end fade
 }
 
 void Rts2DView::endFrame(const MapGrid&) {
@@ -447,7 +447,7 @@ void Rts2DView::endFrame(const MapGrid&) {
         if (age > len + L.corpseTime + 1.0) { it = corpses_.erase(it); continue; }
         float fade = age < len + L.corpseTime ? 1.0f : float(1.0 - (age - len - L.corpseTime));
         float4 tc = RtsView::playerColor(it->owner);
-        emit(L, it->pos, it->facing, kActDie, it->start, L.team ? rgbaf({tc.x, tc.y, tc.z, 1}) : 0, rgba(255, 255, 255), true, fade);
+        emit(L, it->pos, it->facing, kActDie, it->start, L.team ? rgbaf({tc.x, tc.y, tc.z, 1}) : 0, rgba(255, 255, 255), true, fade, &L);
         ++it;
     }
     if (corpses_.size() > 256) corpses_.erase(corpses_.begin(), corpses_.begin() + 64);
@@ -517,9 +517,21 @@ void Rts2DView::submitPrepared(Renderer3D& r) {
     quality_=r.shadowQuality();
     replayingPrepared_=true;
     emittingBatch_=&secondaryBatch_;
-    for(const auto& packet:preparedSprites_)
-        emit(packet.look,packet.ground,packet.facing,packet.action,
-             packet.startTime,packet.team,packet.tint,packet.corpse,packet.fade);
+    for(const auto& packet:preparedSprites_) {
+        if(!packet.look)continue;
+        if(packet.width==packet.look->width && packet.height==packet.look->height) {
+            emit(*packet.look,packet.ground,packet.facing,packet.action,
+                 packet.startTime,packet.team,packet.tint,packet.corpse,packet.fade,packet.look);
+        } else {
+            // Scale is the only per-entity override to the canonical look.
+            // Construct this inexpensive temporary only when necessary.
+            SpriteLook scaled=*packet.look;
+            scaled.width=packet.width;
+            scaled.height=packet.height;
+            emit(scaled,packet.ground,packet.facing,packet.action,
+                 packet.startTime,packet.team,packet.tint,packet.corpse,packet.fade,packet.look);
+        }
+    }
     emittingBatch_=&batch_;
     replayingPrepared_=false;
     cam_=previousCam;
