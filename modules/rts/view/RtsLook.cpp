@@ -792,8 +792,41 @@ Model* RtsView::loadModelCached(gfx::Device& dev, const UnitType& t, const std::
     try { policy = parseGeometryPolicy(t.view["geometry"]); }
     catch (const std::exception& e) { warn(t, e.what()); }
     const std::string key = path + ((policy.clusters || policy.shadowClusters || policy.occluder) ? "#geometry" : "");
+    if(activeStagedModels_) {
+        // Return a speculative Model for repeated choices/attachments in
+        // this transaction without creating a resident cache entry.
+        const auto pending=activeStagedModels_->find(key);
+        if(pending!=activeStagedModels_->end())
+            return pending->second.get();
+    }
     auto it = resources_.models().find(key);
     if (it == resources_.models().end()) {
+        if(activeStagedModels_) {
+            std::unique_ptr<Model> m;
+            try {
+                std::vector<std::string> warnings;
+                // CPU decode can read the shared decoded cache; speculative
+                // GPU upload may BORROW resident texture leases, but never
+                // insert a new key into ModelTextureCache::gpu_.
+                m=loadModel(path,read_,&warnings,resources_.textures());
+                if(!m)throw std::runtime_error("appearance Model import failed: "+path);
+                for(const auto& message:warnings)warn(t,message);
+                if(policy.clusters||policy.shadowClusters||policy.occluder)
+                    prepareGeometry(*m);
+                if(!uploadModel(dev,*m,false,false))
+                    throw std::runtime_error("appearance Model GPU upload failed: "+path);
+                auto [staged,inserted]=activeStagedModels_->try_emplace(
+                    key,std::move(m));
+                (void)inserted;
+                return staged->second.get();
+            }catch(...) {
+                // Failed/partially uploaded scratch Models still own GPU
+                // geometry, imported images and morph targets. They must be
+                // retired behind a token, never freed by unique_ptr reset.
+                if(m)resources_.retireUnpublished(dev,m);
+                throw;
+            }
+        }
         std::unique_ptr<Model> m;
         try {
             std::vector<std::string> w;
