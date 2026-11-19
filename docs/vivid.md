@@ -287,3 +287,13 @@ Public API: `AIVERSE::vivid_mesh`, `GpuMorphMeshStream::initialize(device, span<
 The real Metal RHI test `vivid_metal_rhi` was **extended (source only)** to dispatch VIVID's sparse gather then stream conversion in one GPU frame across four weight profiles; compare all deformed position/normal/tangent components against `SparseMorphLibrary::evaluateGather` and require UV, tangent.w, colour, joint IDs and joint weights to match the original 60-byte vertices byte-for-byte. The previous `vivid_metal_rhi` passed on user Mac at `22b60c471`, **before this extension**; therefore extended vertex-stream test is NOT YET VERIFIED.
 
 **Still NOT wired into normal draw calls.** `ModelDraw` does not yet accept an opt-in per-instance GPU vertex-buffer override. `GpuMorphMeshStream::vertexBuffer()` is now a storage buffer with model-compatible bytes, but the renderer must explicitly handle lifetime across colour, depth, shadows, instancing, geometry pooling/ICB and LOD before binding it for production. The 8-target compatibility path remains unchanged. MotionWeave still owns the finished pose, skin matrices and animation scheduling; VIVID only prepares input vertices for existing skin shaders.
+
+## Stage 5B — Apple Metal MSL keyword / mesh compute diagnostics (2026-11-19)
+
+**Source fix committed, Metal GPU test NOT RUN after fix.** The user successfully built the added 60B GPU stream target and the real Metal RHI test, but the `vivid_metal_rhi` CTest **FAILED** before submitting the new mesh conversion kernel, reporting only `VIVID RHI 60-byte mesh stream initialization failed`. The separate `vivid_metal_gpu` direct Metal kernel test remained **Passed**. The combined selection was **1/2 Passed**, not 2/2.
+
+The new `kVividMeshStreamMSL` kernel incorrectly used `vertex` as a C++/Metal parameter name (`uint vertex [[thread_position_in_grid]]`), colliding with Metal's `vertex` stage qualifier keyword. It now uses `vertexIndex` consistently in the MSL source. The GLSL compute shader and all buffer layouts are unchanged.
+
+The real `tests/vivid/metal_rhi.mm` error path now emits `GpuMorphMeshStream::lastError()` and `gfx::Device::lastError()` when `initialize` fails, making any remaining shader compile or allocation error actionable instead of hiding the cause behind a generic assertion. Further MSL/API compiler behavior must be verified by the next macOS run; **this is a root-cause hypothesis supported by source inspection, not yet proof of a passing shader compile**.
+
+Run `aiverse_vivid_metal_rhi_tests` and `aiverse_vivid_metal_gpu_tests` on Mac again before changing `Renderer3D`. No changes were made to `MotionWeave`, `ModelVertex`, the general RHI or game save/network data.
