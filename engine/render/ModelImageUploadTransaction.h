@@ -42,8 +42,14 @@ public:
             // texture. If native idle cannot be proven, leak the orphan
             // allocation until device teardown instead of a GPU use-after-free.
             ++enqueueFailures_;
-            if(device.waitForResourceIdle())destroyImages(device,images);
-            else ++unrecoverableBatches_;
+            try {
+                if(device.waitForResourceIdle())destroyImages(device,images);
+                else ++unrecoverableBatches_;
+            }catch(...) {
+                // noexcept abort paths must not terminate the host. Keep GPU
+                // handles orphaned rather than risk freeing in-flight work.
+                ++unrecoverableBatches_;
+            }
         }
     }
     bool collect(gfx::Device& device) {
