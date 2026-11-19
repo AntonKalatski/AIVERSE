@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <set>
 #include <tuple>
 
 namespace aiverse::render {
@@ -358,6 +359,81 @@ void Renderer3D::bindLitFrame() {
 void Renderer3D::bindTraceTextures() {
     bindTrace(3);
     bindSceneTextures(4, 5);
+}
+
+Renderer3D::ResidentMemoryStats Renderer3D::residentMemoryStats() const {
+    ResidentMemoryStats out;
+    if (!dev_) return out;
+    std::set<uint32_t> seenTextures, seenBuffers;
+    auto bytesOfTexture=[](const gfx::TextureInfo& info) -> uint64_t {
+        if (info.width<=0 || info.height<=0) return 0;
+        uint64_t bpp=0;
+        switch (info.format) {
+        case gfx::PixelFormat::RGBA16F: bpp=8; break;
+        case gfx::PixelFormat::RGBA32F: bpp=16; break;
+        case gfx::PixelFormat::R8: bpp=1; break;
+        case gfx::PixelFormat::RGBA8:
+        case gfx::PixelFormat::RGBA8_sRGB:
+        case gfx::PixelFormat::Depth: bpp=4; break;
+        default: break; // block-compressed formats need exact mip metadata
+        }
+        return uint64_t(info.width)*uint64_t(info.height)*bpp;
+    };
+    auto addTexture=[&](gfx::TextureHandle h,uint64_t* category) {
+        if (!h.valid() || !seenTextures.insert(h.id).second) return;
+        ++out.liveTextures;
+        gfx::TextureInfo info{};
+        if (!dev_->textureInfo(h,info) || info.width<=0 || info.height<=0) {
+            ++out.unknownTextures; return;
+        }
+        const uint64_t bytes=bytesOfTexture(info);
+        if (!bytes) { ++out.unknownTextures;return; }
+        out.liveTextureKnownBytes+=bytes;
+        if (category) *category+=bytes;
+    };
+    auto addBuffer=[&](gfx::BufferHandle h) {
+        if (!h.valid() || !seenBuffers.insert(h.id).second) return;
+        ++out.liveBuffers;
+        gfx::BufferInfo info{};
+        if (!dev_->bufferInfo(h,info) || !info.logicalBytes) {
+            ++out.unknownBuffers;return;
+        }
+        out.liveBufferKnownBytes+=uint64_t(info.logicalBytes);
+        if (info.versions>1) ++out.multiVersionBuffers;
+    };
+    // Renderer-owned scene/render targets (NOT shared by Prisma).
+    addTexture(shadowMap_,nullptr);
+    addTexture(sceneSelectionMask_,nullptr);
+    addTexture(dummyDepth_,nullptr);
+    addTexture(dummyHeight_,nullptr);
+    addTexture(white_,nullptr);
+    addTexture(black_,nullptr);
+    addTexture(flatNormal_,nullptr);
+    for (const auto& size : sceneTargets_) {
+        addTexture(size.color,&out.sceneCaptureKnownBytes);
+        addTexture(size.depth,&out.sceneCaptureKnownBytes);
+    }
+    // Aliases of sceneTargets_ are intentionally NOT counted again:
+    // sceneColor_ and sceneDepth_ reference handles in that cache.
+    // Motion targets and reactive masks are private to one view.
+    for (const auto& [viewId, view] : objectMotionViews_) {
+        (void)viewId;
+        addTexture(view.target,&out.objectMotionKnownBytes);
+        addTexture(view.depth,&out.objectMotionKnownBytes);
+        addTexture(view.reactive,&out.objectMotionKnownBytes);
+    }
+    addBuffer(lineVB_);
+    addBuffer(triVB_);
+    addBuffer(sceneSelectionTriangle_);
+    addBuffer(blitVB_);
+    addBuffer(indirectCommands_);
+    out.pendingMotionKnownBytes=motionRetirementStats().knownPendingBytes;
+    // Exclusions: external asset Model meshes/textures, Lighting/LightSystem
+    // reflection + spot shadow targets, PersistentGpuScene/geometry pooling,
+    // upload snapshots, pipeline/shader driver memory and Prisma caches.
+    // RHI TextureInfo lacks mip count and physical alignment: all values
+    // are intentionally lower bounds, not complete device VRAM.
+    return out;
 }
 
 Renderer3D::MotionRetirementStats Renderer3D::motionRetirementStats() const {
