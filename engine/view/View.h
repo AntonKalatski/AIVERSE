@@ -324,11 +324,27 @@ public:
             draw.nodeWorld=nullptr;
             draw.baked=nullptr;
         }
-        // Renderer3D::drawModel resolves all incoming pose/matrix data
-        // synchronously during submitModel. This per-call scratch never
-        // escapes into the delayed draw or RHI completion queues.
-        render::Pose retargetPose;
-        std::vector<render::mat4> retargetMatrices;
+        // Renderer3D::drawModel consumes pose/matrices synchronously and
+        // copies the GPU draw items by value. Keep scratch capacity across
+        // thousands of draws in the same View, without sharing buffers
+        // between Editor, FPS or native View instances.
+        //
+        // A Model capture callback may reenter submitOne; its nested draw
+        // must use independent stack scratch rather than overwrite pointers
+        // still being read by the outer synchronous submission.
+        RetargetScratch reentrantScratch;
+        struct ReleaseScratch {
+            bool* busy=nullptr;
+            ~ReleaseScratch(){if(busy)*busy=false;}
+        } releaseScratch;
+        RetargetScratch* scratch=&reentrantScratch;
+        if(!retargetScratchBusy_) {
+            retargetScratchBusy_=true;
+            releaseScratch.busy=&retargetScratchBusy_;
+            scratch=&retargetScratch_;
+        }
+        auto& retargetPose=scratch->pose;
+        auto& retargetMatrices=scratch->matrices;
         if(sourcePose && sourceMatrices && rig && draw.model) {
             if(chosenLod && chosenLod->compiledRetarget) {
                 // Compiled maps are bound to BOTH model identity and
@@ -488,8 +504,16 @@ public:
         lodState_.clear();
         stats_={};
         retargetStats_={};
+        // Never preserve transient model-space poses across a View owner
+        // reset; subsequent draw will repopulate from its new rig.
+        retargetScratch_.pose.clear();
+        retargetScratch_.matrices.clear();
     }
 private:
+    struct RetargetScratch {
+        render::Pose pose;
+        std::vector<render::mat4> matrices;
+    };
     struct LodSelection {
         uint64_t generation=0;
         size_t level=0;
@@ -514,6 +538,9 @@ private:
     size_t workerCount_=0,minimumParallelActors_=16;
     Stats stats_;
     mutable ModelRetargetStats retargetStats_;
+    // Render-owner thread only, never accessed by the ECS worker pool.
+    mutable RetargetScratch retargetScratch_;
+    mutable bool retargetScratchBusy_=false;
     uint64_t frameStamp_=0;
     mutable std::unordered_map<uint64_t,LodSelection> lodState_;
     std::vector<Object> packetObjects_;
