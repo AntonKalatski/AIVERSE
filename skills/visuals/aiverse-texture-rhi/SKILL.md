@@ -1736,3 +1736,58 @@ Guide: `docs/texture-rhi.md` Stage 10CG.
 still unverified** after this change; do not call it
 PASS until the user supplies a successful Mac log.
 Do not switch branches just to satisfy the runner.
+
+## Stage 10CH — do not trust CTest PASS with native FAIL assertions
+
+The first **real user** unified one-shot Metal run reached
+`metal_renderer_graph_vt_gutter_gpu` and observed all five
+nonuniform-gutter GPU ICB draw phases submitted correctly
+(`graph=1 mixedGraph=1 vt=1 mixedVt=1 commands=2
+rejected=0 errors=0`); direct/ICB full-frame parity
+was byte-identical in all five pairs. However, the
+fixture emitted **10 FAIL lines** for distinct source
+material regions: its inherited solid-color delta
+threshold of 35 exceeded actual nearby-gradient ROI
+deltas of 16–19. The scene-level independent CPU
+bilinear oracle was consequently skipped. AppKit
+terminated with process code 0, so raw CTest incorrectly
+reported `1/1 Passed`. The one-shot runner correctly
+stopped on the absent required final success marker;
+`acceptance.txt` was intentionally absent.
+
+**Fixes:**
+- `7a50a4c82462407596195b4dc1ea748af9545c3e`:
+  new test uses threshold >12 for these actual nearby
+  source gradients while retaining original-source
+  independent bilinear ROI oracle, nontrivial channel
+  gradient and full RGBA8 parity checks. On any failure,
+  `callbacks.shutdown` uses `std::_Exit(1)` after
+  cleanup so macOS does not turn assertion failure into
+  exit status 0.
+- `035b6b81c8126a0ea9478ac5b194f9cf3b11561c`:
+  CMake adds `FAIL_REGULAR_EXPRESSION "FAIL:"` to
+  all seven registered native Metal GPU CTests; the
+  guttered production scene also requires its final
+  exact PASS output through CTest.
+- `65b32f968ed2089c313d51cfb1e3fe89df850069`:
+  the one-shot shell runner greps every native GPU CTest
+  verbose log for `FAIL:`, independently of CTest's
+  process exit status.
+- `465967cbfd84384b768c62e68d5adc71e39e4d8a`:
+  failed one-shot runs create
+  `build/texture-final-logs/failure.txt` containing
+  failing SHA, exit code, logs directory. No
+  `acceptance.txt` exists without a fully green run.
+- `290b2532cde3d43a3410cb3ef82ef0cff30bc6d7`:
+  `docs/texture-rhi.md` Stage 10CH documents exact
+  real Mac evidence and new fail-fast retry.
+
+**Native verification after fix remains PENDING.**
+Existing CTest's `1/1 Passed` with FAIL assertions is
+**NOT** a valid Stage 10CD success. After pulling latest
+feature SHA on the existing task-named verification
+worktree, run `bash -n tools/texture-rhi-final-verify.sh`
+and `bash tools/texture-rhi-final-verify.sh --jobs 4`.
+Check that the full nonuniform scene independent CPU
+oracle prints a real PASS and that all native GPU
+CTest logs contain no `FAIL:` diagnostics.
