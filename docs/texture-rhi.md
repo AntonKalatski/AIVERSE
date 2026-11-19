@@ -1509,3 +1509,36 @@ normalized 0–1 UV rectangles; arbitrary wrapped UV rectangles require
 an upstream split/wrap visibility adapter. GPU feedback captures use
 the new policy. Native builds, GLSL/MSL compilation and readback/GPU
 fidelity remain **NOT RUN**.
+
+
+## Bounded wrapped CPU VT visibility/prefetch (Stage 10R)
+
+The standalone header `engine/gfx/VirtualTexturePrefetchWrap.h` adds
+`gfx::normalizeWrappedVirtualTextureRegions(sourceRegions,
+addressU,addressV,output,maxOutputRegions)`.
+The helper splits each potentially negative/out-of-range visibility
+rectangle on repeat/mirror integer UV seams, maps each monotonic piece
+into normalized [0,1], and returns only bounded half-open
+`VirtualTextureVisibleRegion` rectangles. Full repeated periods
+collapse to one [0,1] interval, preventing unbounded CPU expansion.
+Clamp retains the original normalized-range clipping behavior.
+
+`gfx::prefetchWrappedVirtualPages(streamer,planner,views,addressU,addressV)`
+in `VirtualTexturePrefetchAdapter.h` runs the normal exact-residency,
+coarse-first budgeted disk prefetch only after successful expansion.
+On invalid/non-finite coordinates, unsupported address modes, excessive
+raw UV magnitude or output region-count overflow, it submits *no*
+partial work and returns `VirtualTexturePrefetchDispatch::wrapRejected`.
+The existing `prefetchVisibleVirtualPages` entry point and result
+fields remain compatible.
+
+This is independent of camera/world/game genre. Callers must provide
+actual projected UV rectangles for a known archive domain and use its
+active version U/V policy. One domain's regions must not be sent to
+another domain's streamer. The helper does not fetch files on worker
+threads and never updates ECS authoritative game state.
+
+**Validation:** source changes committed; C++ build/CTest and
+project-level wrapped UV visibility tests NOT RUN. Limitations include
+CPU-side rectangular overfetch for highly rotated/nonrectangular visible
+surfaces and no GPU filtering/seam parity proof yet.
