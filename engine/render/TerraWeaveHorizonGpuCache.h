@@ -24,9 +24,6 @@ struct HorizonGpuRegion {
     std::shared_ptr<const HorizonBake> bake;
     std::vector<render::ModelVertex> vertices; // optional patch reference
     std::vector<uint32_t> indices;             // optional patch reference
-    // Compact forest-only vertex shadow for exact PHYSIS wind colour
-    // patches. GPU cache ownership moves it together with the model.
-    HorizonForestWindOverlay forestWind;
     int64_t originXcm=0, originZcm=0;
     size_t clusters=0, terrainQuads=0;
     size_t atlasBytes=0, vertexCount=0, triangleCount=0;
@@ -41,6 +38,9 @@ struct HorizonGpuRegion {
     bool nearNormalProvenanceAvailable=false;
     bool nearWeldSlopeFallback=false;
     size_t estimatedGpuBytes=0; // only texture+VB/IB, conservative mip allowance
+    // Trailing field preserves existing positional aggregate users.
+    // Moves with the GPU model through LRU and transition ownership.
+    HorizonForestWindOverlay forestWind;
 };
 
 inline size_t estimateHorizonGpuResidencyBytes(
