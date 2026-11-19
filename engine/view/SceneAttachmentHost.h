@@ -135,6 +135,21 @@ public:
     }
     size_t size() const noexcept{return instances_.size();}
 
+    // Stable, pointer-free attachment export for a host scene manifest.
+    // Scene/object keys are saved; raw presentation Entity handles are not.
+    // The host rebinds each object to a FRESH parent Entity on activation.
+    Json saveScene(uint64_t scene) const {
+        Json objects=Json::array();
+        for(auto it=instances_.lower_bound(Key{scene,{}});it!=instances_.end()
+            && it->first.scene==scene;++it) {
+            Json entry=Json::object();
+            entry.set("object",Json::string(it->first.object));
+            entry.set("layout",EcsAttachmentScene::save(it->second));
+            objects.push(std::move(entry));
+        }
+        return objects;
+    }
+
     Json save(uint64_t scene,const std::string& object) const {
         const auto it=instances_.find(Key{scene,object});
         if(it==instances_.end())
@@ -156,7 +171,7 @@ public:
     }
 
     const EcsAttachmentScene::Instance* find(
-            uint64_t scene,const std::string& object) const noexcept {
+            uint64_t scene,const std::string& object) const {
         const auto it=instances_.find(Key{scene,object});
         return it==instances_.end()?nullptr:&it->second;
     }
