@@ -11295,3 +11295,167 @@ remaining acceptance gates pass. For each
 bounded code stage, first commit source, then
 separate append-only handoff with exact SHA,
 modified files, actual tests and next step.
+
+## Stage 10CB — canonical bilinear physical gutters + independent native Metal oracle (2026-11-19)
+
+**Branch / PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Prior verified hardware:** Stage 10CA user-provided Apple M3 Ultra
+`metal_renderer_graph_vt_seam_gpu` **1/1 PASS**, all seven
+Renderer3D graph+VT mixed ICB image pairs byte-identical and
+eight expected page-wrap color oracles PASS. That test used
+**solid 4×4 virtual pages with zero physical gutters**; it
+cannot establish true bilinear continuity for nonuniform tiles.
+
+**Production issue found by code analysis:** the shared
+`engine/gfx/VirtualTextureSampling.h` MSL/GLSL code used
+an inset of `(gutterPixels+0.5)/pageDimension`.
+For `gutterPixels>0` the physical atlas sample was constrained
+to **interior texel centers** at a virtual page seam.
+It could never blend across the first interior texel and
+its neighboring gutter texel. A texture with constant page
+colors hides the error; gradients and adjacent page content
+are sensitive to it. For each virtual tile's UV coordinate
+0 or 1, correct bilinear coverage is between gutter texel
+and first/last interior texel; the normalized inset must
+be `gutterPixels/pageDimension`. We retained the existing
+0.5-pixel inset for `gutterPixels==0` (old behavior).
+
+**Source fix commit**
+`1af66f86a754958f6bacf84d279b14a163fca831`:
+only `engine/gfx/VirtualTextureSampling.h` changed.
+Both `gfx::kVirtualTextureGLSL` and `gfx::kVirtualTextureMSL`
+now compute a conditional `sampleInset` for positive
+vs zero physical gutter. Public API, page table encoding,
+streaming queue and resource slot ABI unchanged.
+The exact helper is reused by actual production
+`Renderer3D` material graph shaders; the isolated test
+uses that same canonical MSL literal.
+
+**New native acceptance source commit**
+`4787302de05704c2c48e7c9fede9a4813b5d2a33`:
+`tests/render/metal_vt_bilinear_gpu.mm` (real Metal RHI,
+macOS Objective-C++). It constructs two independent
+**12×6 logical RGB gradients**, one for Repeat-U and one
+for MirrorRepeat-U, both ClampToEdge-V. Each domain
+uses two 8×8 RGBA8 **physical pages** containing a 6×6
+interior and one neighboring-gutter texel on each edge.
+The authored gutter bytes are computed from the adjacent
+original logical texels, including the outer U wrap and
+MirrorRepeat reflected boundary; they are not duplicated
+from the local page interior. Each page is written to a
+temporary file under an isolated directory and loaded
+by the production `gfx::VirtualTextureFileStreamer`;
+the test verifies two page GPU uploads per domain and
+exact resident table bytes/slice mapping. Temporary
+files and GPU streaming resources are released.
+
+A real Metal render target shader embeds
+`gfx::kVirtualTextureMSL`, samples the native physical
+atlas with linear filtering through
+`aiverse_sample_virtual`, and makes actual async
+`Device::readTextureAsync` readbacks after each probe.
+CPU expected colors are computed **independently** in
+original full-resolution virtual-image logical space:
+compute `address(uv)*logicalExtent - 0.5`, integer
+Repeat/MirrorRepeat/Clamp source texel lookup, bilinear
+blend of four known source texels. Crucially this oracle
+does not use the shader's physical atlas, page-table,
+tile UV, `inset`, or GPU results. A separate source
+sensitivity guard requires the old 0.5-texel center-inset
+mapping to differ by >=4 RGBA8 levels at the page seam;
+a flat or incorrectly generated fixture cannot silently
+pass. 17 U values × 4 V values × 2 wrap modes yields
+**136 independent native fragment probe samples**,
+including internal tile seam at U=0.5, Repeat/Mirror
+outer UV boundaries, negative and >1 U, V=0/1.
+Each 4×4 output is also checked spatially uniform;
+each RGBA8 channel must match CPU expected by ≤2.
+GPU errors, bad upload, unresolved pages, readback
+timeouts or nonuniform render targets fail closed.
+
+**CMake commit**
+`f2778b19f29817b94c48e73ed65c6465fbf86a27`:
+`AIVERSE_TEXTURE_METAL_VT_BILINEAR_GPU_TESTS=OFF`
+(default) adds only on explicit macOS opt-in:
+binary `aiverse_metal_vt_bilinear_gpu_test`,
+CTest `metal_vt_bilinear_gpu`, 120-second timeout,
+appropriate Metal/QuartzCore/Foundation/Threads links.
+Does not include the new test in previous safe/default
+CMake or risky GPU-ICB acceptance caches. The test
+checks canonical Metal page sampling maths but does
+NOT itself encode GPU indirect draw commands.
+
+**Guide / reusable skill commits:**
+`57d6b55187e6e2f2903df97194d60a772e6cb450`
+(`docs/texture-rhi.md` Stage 10CB mathematical rationale,
+test contract, commands, remaining matrix);
+`42a7af375d32d154a9bf24d8ac5abcf59358a37e`
+(`skills/visuals/aiverse-texture-rhi/SKILL.md`
+handoff instructions); this append-only Stage 10CB
+handoff is a **separate commit**.
+
+**Actual verification in this agent environment:**
+read production Metal VT fragment test, sampler, streamer
+and model shader integration via connected GitHub;
+reviewed all three changed sources and CMake registration.
+A standalone pure JavaScript numerical model evaluated
+the same 17 U × 4 V × 2 address-mode **mathematical cases**,
+comparing original logical-texel bilinear values against
+the new positive-gutter atlas mapping and the old legacy
+center-inset mapping. The new mapping matched the source
+bilinear model at the tested coordinates, while old
+mapping showed substantial errors. This is only a
+math/preflight check: **native macOS C++/ObjC++ compilation,
+linking, MSL compilation, GPU execution, actual disk worker
+and GPU page-table publication, asynchronous RGBA8 readback,
+CTest and performance have NOT BEEN RUN** here.
+Do not report Stage 10CB hardware PASS until the user
+supplies the actual successful Mac Studio log.
+
+**Exact next step on isolated Mac Studio texture worktree**
+(`/Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819`,
+NOT primary checkout with unrelated incomplete rebase):
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+cmake -S . -B build/texture-vt-bilinear-gpu \
+  -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_RENDERER_GRAPH_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_GRAPH_VT_ICB_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_GRAPH_VT_SEAM_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_VT_BILINEAR_GPU_TESTS=ON
+cmake --build build/texture-vt-bilinear-gpu \
+  --target aiverse_metal_vt_bilinear_gpu_test --parallel 4
+ctest --test-dir build/texture-vt-bilinear-gpu \
+  --verbose --output-on-failure --no-tests=error \
+  -R '^metal_vt_bilinear_gpu$'
+```
+
+**Acceptance gate:** native Mac successful build and
+`Metal canonical VT bilinear: Apple ...` device banner;
+`VT bilinear independent CPU oracle: samples=136
+seam_samples=[positive] max_delta=[0..2]`;
+`PASS: native Metal canonical VT bilinear nonuniform gutter
+seam and Repeat/MirrorRepeat CPU pixel oracle`, CTest
+**1/1 PASS**. On any first compiler or Metal
+renderer/worker/oracle mismatch, capture exact diagnostic,
+fix source, append next-stage handoff separately.
+Do not run a stale executable after a failed build.
+
+**Remaining / next agent:** after native PASS, rerun
+10BX/10BY zero-gutter Shader Graph+VT mixed GPU ICB
+tests to validate no regression from the shared shader
+change, then add a production `Renderer3D` scene with
+nonuniform authored edge gutters under mixed Metal GPU
+ICB and independently predicted pixels; extend to
+mip transitions and high-quality filtering. Vulkan/GL/
+WebGL/mobile actual hardware acceptance, scale/stress
+tests and representative GPU time/FPS remain open.
+PR #21 stays **Draft**; experimental GPU ICB flags
+remain OFF by default. New CMake test remains
+default-OFF pending real native validation.
