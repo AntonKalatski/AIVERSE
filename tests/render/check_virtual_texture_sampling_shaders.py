@@ -6,6 +6,8 @@ and, when explicitly requested on macOS, the production Metal MSL helper.
 It does not pretend that shader compilation establishes GPU pixel parity.
 No mocks: the embedded source is read from VirtualTextureSampling.h.
 """
+from __future__ import annotations
+
 import argparse
 import pathlib
 import re
