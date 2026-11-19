@@ -305,6 +305,33 @@ void appliedReceiptAfterRollback() {
     CHECK(client.status()==ClientStatus::Conflict);
     CHECK(registry(*sim).revision==0);
 }
+void queuedReceiptInvalidatedByRollback() {
+    auto sim=make();
+    SimSnapshot checkpoint;
+    sim->saveState(checkpoint);
+    ServerGateway gateway;
+    RemoteClient client(83917);
+    CHECK(client.begin(edit(Fixed::fromInt(37)),kEdit,4));
+    auto [c1,s1]=net::makeLoopbackPair();
+    // Deliver the request but do not advance Simulation: receipt is Queued.
+    for(std::uint64_t ms=0;ms<400;ms+=40) {
+        client.poll(*c1,ms);
+        gateway.poll(*sim,*s1,"trusted-editor",readAcl,writeAcl,ms);
+        client.poll(*c1,ms+1);
+    }
+    CHECK(registry(*sim).revision==0);
+    CHECK(client.status()!=ClientStatus::Applied);
+    c1->close();s1->close();
+    client.disconnected();
+    // Roll back before the command commits; the old in-memory queue and
+    // scheduled tick must not be treated as an Applied acknowledgement.
+    sim->loadState(checkpoint);
+    gateway.observe(*sim);
+    auto [c2,s2]=net::makeLoopbackPair();
+    drive(client,gateway,*sim,*c2,*s2,500,1900,false);
+    CHECK(client.status()!=ClientStatus::Applied);
+    CHECK(registry(*sim).revision==0);
+}
 void initialRevisionProbe() {
     auto sim=make();
     ServerGateway gateway;
@@ -356,6 +383,7 @@ int main() {
     latencyAndReorderSimulation();
     initialRevisionProbe();
     appliedReceiptAfterRollback();
+    queuedReceiptInvalidatedByRollback();
     denied();
     conflictAfterServerRestart();
     std::printf("PHYSIS remote edit: %s\n",fails?"FAIL":"PASS");
