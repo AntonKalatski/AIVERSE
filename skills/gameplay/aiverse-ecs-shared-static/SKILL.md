@@ -119,7 +119,8 @@ The actual CTest integration source is
 `aiverse_ecs_static_scene_integration_test`. It spans real
 `SceneRuntime`, `SceneLoadCoordinator`, two ECS Worlds, persistent
 additive scenes, unload, replace, failure/cancel, native save/COW
-and static alias mismatch. **The combined integration target has
-not yet been compiled/run natively**. Read handoff
+and static alias mismatch. **The combined targeted integration was compiled and passed 7/7 CTests
+on Mac Studio (2026-11-19)**; full engine/FPS/RTS and GPU validation
+remain outstanding. Read handoff
 `docs/agent-handoffs/ecs-static-scene-stage4-2026-11-19.md` before
 continuation. Keep the original feature branches intact.
