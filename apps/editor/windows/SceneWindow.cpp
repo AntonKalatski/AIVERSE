@@ -644,8 +644,9 @@ private:
                             (unsigned long long)packets.hits,
                             (unsigned long long)packets.rebuilds,
                             (unsigned long long)packets.declined);
-                ImGui::Text("Live packets: %zu | Evicted: %llu",
-                            packets.live, (unsigned long long)packets.evicted);
+                ImGui::Text("Live packets: %zu | Evicted: %llu | Stored: %.2f MiB",
+                            packets.live, (unsigned long long)packets.evicted,
+                            double(packets.retainedBytes) / (1024.0 * 1024.0));
                 ImGui::TextDisabled("Requires explicit nonzero ModelDraw::staticPacketRevision.");
                 ImGui::TextDisabled("Camera / shadow visibility and depth are still evaluated each frame.");
                 ImGui::TreePop();
