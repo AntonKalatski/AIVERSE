@@ -7,6 +7,8 @@
 // inside), keys while the Game window has focus. On a touch device profile the left button is a finger.
 #pragma once
 #include <memory>
+#include <vector>
+#include <cstdint>
 #include <string>
 #include "engine/gfx/Gfx.h"
 #include "engine/platform/Platform.h"
@@ -23,6 +25,14 @@ public:
     // projectDir: content root; engineAssets: folder with the engine's assets ("engine/..." paths)
     void start(gfx::Device& dev, const std::string& projectDir, const std::string& engineAssets);
     void stop();
+    // A stopped hosted client may still own GPU handles referenced by a
+    // submitted editor frame. Retire its GPU allocations only when the
+    // backend confirms that frame's GPU fence. Never guess CPU frame age.
+    size_t collectGpuRetirements();
+    // Caller has explicitly synchronized *all* previously submitted GPU
+    // work and is outside any render pass. Used at host teardown/pressure.
+    size_t drainAfterGpuIdle();
+    size_t pendingRetiredClients() const { return retired_.size(); }
     bool active() const { return client_ != nullptr; }
     bool loading() const { return active() && step_ < kSteps; }
     float progress() const;   // 0..1 while loading
@@ -44,6 +54,14 @@ private:
     struct Scope;
     static constexpr int kSteps = 6;   // GameClient::kInitSteps
     std::unique_ptr<client::GameClient> client_;
+    struct RetiredClient {
+        std::unique_ptr<client::GameClient> client;
+        platform::HostedView view;
+        gfx::Device* device = nullptr;
+        uint64_t completionToken = 0; // zero means quarantine until GPU idle
+        bool initialized = false;
+    };
+    std::vector<RetiredClient> retired_;
     platform::HostedView view_;
     gfx::Device* dev_ = nullptr;
     int step_ = 0;
