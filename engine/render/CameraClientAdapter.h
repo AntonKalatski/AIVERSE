@@ -8,6 +8,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <type_traits>
 
 namespace aiverse::render {
 class CameraClientAdapter {
@@ -80,16 +81,17 @@ public:
     // Consume one already-prepared, immutable presentation frame in all
     // scheduled ECS cameras. The caller updates animation/visual events ONCE
     // before invoking this function; this does not run animation updates.
-    template<class PreparedFrame,class SubmitFn>
+    template<class PreparedFrame,class SubmitFn,
+             class AfterScene=std::nullptr_t>
     CameraExecutionResult renderPrepared(const PreparedFrame& frame,
             CameraVisualFrameId id,float dt,SubmitFn&& submit,
-            Vec3 renderOrigin={}) {
+            Vec3 renderOrigin={},AfterScene&& afterScene=nullptr) {
         if(!loaded_ || !id.valid())return {};
         auto visual=makeCameraVisualFrame(frame,id,std::forward<SubmitFn>(submit));
         return host_.render(++frame_,id.seconds,dt,
             [&](const EcsCameraView& camera,Renderer3D& renderer) {
                 (void)visual.submit(camera,renderer);
-            },renderOrigin);
+            },renderOrigin,std::forward<AfterScene>(afterScene));
     }
     bool loaded()const{return loaded_;}
     CameraRuntimeHost& host(){return host_;}
