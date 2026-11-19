@@ -22,6 +22,14 @@ ComputeHandle VulkanDevice::createCompute(const ComputeDesc& d) {
     VCompute c;
     c.shader=createModule(words);
     if (!c.shader) { error_="Vulkan GI compute: shader module failed"; return {}; }
+    const auto fail=[&]() -> ComputeHandle {
+        error_="Vulkan GI compute: descriptor layout/pipeline creation failed";
+        if(c.pipeline)vkDestroyPipeline(device_,c.pipeline,nullptr);
+        if(c.layout)vkDestroyPipelineLayout(device_,c.layout,nullptr);
+        if(c.setLayout)vkDestroyDescriptorSetLayout(device_,c.setLayout,nullptr);
+        if(c.shader)vkDestroyShaderModule(device_,c.shader,nullptr);
+        return {};
+    };
 
     VkDescriptorSetLayoutBinding bindings[5]{};
     for(uint32_t slot=0;slot<5;++slot) {
@@ -35,7 +43,7 @@ ComputeHandle VulkanDevice::createCompute(const ComputeDesc& d) {
     sl.bindingCount=5;
     sl.pBindings=bindings;
     if(vkCreateDescriptorSetLayout(device_,&sl,nullptr,&c.setLayout)!=VK_SUCCESS)
-        goto fail;
+        return fail();
 
     VkPushConstantRange push{};
     push.stageFlags=VK_SHADER_STAGE_COMPUTE_BIT;
@@ -48,7 +56,7 @@ ComputeHandle VulkanDevice::createCompute(const ComputeDesc& d) {
         layout.pushConstantRangeCount=1;
         layout.pPushConstantRanges=&push;
         if(vkCreatePipelineLayout(device_,&layout,nullptr,&c.layout)!=VK_SUCCESS)
-            goto fail;
+            return fail();
     }
     {
         auto pi=vkStruct<VkComputePipelineCreateInfo>(VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO);
@@ -58,17 +66,10 @@ ComputeHandle VulkanDevice::createCompute(const ComputeDesc& d) {
         pi.stage.pName="main";
         pi.layout=c.layout;
         if(vkCreateComputePipelines(device_,pipelineCache_,1,&pi,nullptr,&c.pipeline)!=VK_SUCCESS)
-            goto fail;
+            return fail();
     }
     return {computes_.add(c)};
 
-fail:
-    error_="Vulkan GI compute: descriptor layout/pipeline creation failed";
-    if(c.pipeline)vkDestroyPipeline(device_,c.pipeline,nullptr);
-    if(c.layout)vkDestroyPipelineLayout(device_,c.layout,nullptr);
-    if(c.setLayout)vkDestroyDescriptorSetLayout(device_,c.setLayout,nullptr);
-    if(c.shader)vkDestroyShaderModule(device_,c.shader,nullptr);
-    return {};
 }
 
 void VulkanDevice::destroyCompute(ComputeHandle h) {
