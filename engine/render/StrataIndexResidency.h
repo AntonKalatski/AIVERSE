@@ -73,8 +73,11 @@ public:
     // each path (parent->children). Rejected requests retain a drawable
     // resident ancestor. Existing generation is unchanged on GPU failure.
     // Can evict unrequested descendants; never evicts pinned roots.
+    // Additional per-call cap applies to incremental GPU writes only. Full
+    // immutable GLES3 fallback preserves its existing atomic swap semantics.
     bool update(const std::vector<IndexDemand>& demands,
-                std::string* error = nullptr);
+                std::string* error = nullptr,
+                size_t uploadAllowanceBytes = SIZE_MAX);
 
     IndexSpan span(uint32_t primitive, uint32_t node) const;
     bool resident(uint32_t primitive, uint32_t node) const {
@@ -103,7 +106,8 @@ private:
     bool initializeIncremental(size_t uploadBudgetBytes, std::string* error);
     bool updateIncremental(const std::vector<std::vector<uint8_t>>& wanted,
                            const std::vector<IndexDemand>& priorities,
-                           uint64_t deferred, std::string* error);
+                           uint64_t deferred, std::string* error,
+                           size_t uploadAllowanceBytes);
     void shutdownIncremental(gfx::Device& device);
     IndexResidencyStats stats_{};
 };
