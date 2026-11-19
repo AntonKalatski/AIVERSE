@@ -659,3 +659,26 @@ ASan, UBSan), with code blobs
 No journal schema, ECS component, native game genre, network
 authority or NEREID/TerraWeave/Box3D ownership changed. See
 `docs/agent-handoffs/physis-stage51-pinned-startup-2026-11-19.md`.
+
+### Stage 52 — lock validation after startup load; post-rename fsync errors
+
+The canonical `LoopbackAdminEndpoint::open` now checks the live
+`JournalProcessLock::valid()` again after `loadPinned` and before
+binding its privileged loopback listener. A path/lock mutation during
+load must stop startup and release ownership, even if receipt decoding
+succeeded. Reconcile the World checkpoint separately from the v1
+receipt sidecar; do not report false Applied.
+
+The stand-alone `physis_journal_posix_io` CTest now contains a
+Linux `O_PATH` failure-injection case: the atomic rename succeeds
+but `fsync(parentFd)` is unavailable, so the writer returns false.
+A visible new file is NOT proof of crash durability. Do not
+silently retry with a new request ID.
+
+The exact updated test blob
+`c9c7063481b15d9e3d96fc3c8b022e86a32f30ff` passed
+isolated GCC 14.2 CMake/CTest 1/1, Clang 17 strict warnings, and
+GCC ASan/UBSan on Linux. Full AIVERSE, admin server CTest,
+macOS and Windows remain UNVERIFIED.
+Handoff:
+`docs/agent-handoffs/physis-stage52-startup-revalidation-fsync-2026-11-19.md`.
