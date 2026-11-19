@@ -74,8 +74,19 @@ bool Rts2DView::init(gfx::Device& dev, const Rules& rules, const std::string& ba
     base_ = base;
     defaults_ = defaults;
     textures_.init(dev);
-    if (!batch_.init(dev)) { std::fprintf(stderr, "[sprites] pipeline: %s\n", dev.lastError().c_str()); return false; }
-    if (!secondaryBatch_.init(dev)) { batch_.shutdown(); return false; }
+    if (!batch_.init(dev)) {
+        std::fprintf(stderr, "[sprites] pipeline: %s\n", dev.lastError().c_str());
+        textures_.shutdown();
+        return false;
+    }
+    if (!secondaryBatch_.init(dev)) {
+        // The failed SpriteBatch init has established its own idle barrier
+        // before releasing partial resources.
+        batch_.shutdown();
+        textures_.shutdown();
+        return false;
+    }
+    try {
     // soft round shadow blob, generated: no file needed
     const int S = 32;
     std::vector<uint32_t> px(size_t(S * S));
@@ -91,6 +102,14 @@ bool Rts2DView::init(gfx::Device& dev, const Rules& rules, const std::string& ba
     if (!deferTypes) for (size_t i = 0; i < rules.types.size(); ++i) loadType(uint16_t(i));
     ready_ = true;
     return true;
+    } catch (...) {
+        // Textures and uploaded sprite meshes may already be referenced by
+        // a submitted frame: GPU idle must precede any destruction.
+        if (!dev.waitForResourceIdle())
+            throw std::runtime_error("Rts2DView init rollback: GPU idle barrier failed");
+        shutdown(dev);
+        throw;
+    }
 }
 
 void Rts2DView::loadType(uint16_t type) {
@@ -101,7 +120,7 @@ void Rts2DView::loadType(uint16_t type) {
 }
 
 void Rts2DView::shutdown(gfx::Device& dev) {
-    if (!ready_) return;
+    // Also clean partially initialized resources after an init failure.
     batch_.destroyMesh(dev, tileMesh_);
     batch_.shutdown();
     secondaryBatch_.shutdown();
@@ -109,7 +128,8 @@ void Rts2DView::shutdown(gfx::Device& dev) {
     secondaryGeometryValid_ = false;
     emittingBatch_ = nullptr;
     textures_.shutdown();
-    looks_.clear(); seen_.clear(); corpses_.clear();
+    looks_.clear(); loadedTypes_.clear(); seen_.clear(); corpses_.clear();
+    shadowTex_={}; rules_=nullptr;
     ready_ = false;
 }
 
