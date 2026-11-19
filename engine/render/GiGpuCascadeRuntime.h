@@ -179,9 +179,33 @@ public:
         return result;
     }
 
-    // The following is a conservative SINGLE-source fallback, not true
-    // cascaded shading: choose the finest fully complete level. A separate
-    // shader-composition stage is required for pixel-space transition blends.
+    // Dual-cascade shader: use the fine level (possibly only partly complete,
+    // with its R8 validity mask) and the finest COMPLETE coarser level.
+    // A third cascade acts as an optional fallback until 3-atlas shader
+    // permutations have real sampler/Metal compatibility verification.
+    bool bindCascades(Renderer3D& renderer) const {
+        if(!ready() || levels_.size()<2 || !levels_[0]->hasRenderableProbes())
+            return bindFinestComplete(renderer);
+        size_t coarse=levels_.size();
+        for(size_t i=1;i<levels_.size();++i) {
+            if(levels_[i]->fullyValid()) { coarse=i; break; }
+        }
+        if(coarse==levels_.size())return bindFinestComplete(renderer);
+        if(!levels_[0]->bind(renderer))return false;
+        const auto& far=*levels_[coarse];
+        const auto dims=far.volume().dimensions();
+        const auto ring=far.volume().ringOffset();
+        if(!renderer.setDynamicGiCascadeOverlay(&far.backend().atlas(),
+            far.volume().originWorld(),far.volume().spacing(),
+            dims[0],dims[1],dims[2],ring[0],ring[1],ring[2])) {
+            renderer.clearDynamicGiOverlay();
+            return false;
+        }
+        return true;
+    }
+
+    // Compatibility fallback: choose the finest currently renderable level
+    // (it can be partially valid if an R8 mask has already been uploaded).
     bool bindFinestComplete(Renderer3D& renderer) const {
         if (!ready()) {
             renderer.clearDynamicGiOverlay();
