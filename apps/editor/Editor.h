@@ -33,6 +33,7 @@
 #include "engine/render/PostFx.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/render/RenderDeviceLifetime.h"
+#include "engine/render/NativePresentationRetirement.h"
 #include "engine/render/RetirementDiagnosticRing.h"
 #include "engine/render/OffscreenTargetLifetime.h"
 #include "engine/sim/Simulation.h"
@@ -124,6 +125,13 @@ public:
         return gpuRetirementRing_.get();
     }
     render::Renderer3D& renderer() { return r3d_; }
+    // Editor-owned native preview Model GPU retirement. Panels may replace
+    // Models while the editor is recording offscreen windows in the same
+    // frame; never destroy those Models until a later GPU completion token.
+    void retirePreviewModel(std::unique_ptr<render::Model>& model) noexcept;
+    size_t pendingPreviewRetirements() const noexcept {
+        return previewModelRetirement_.pending();
+    }
     render::PostFx& postFx() { return postFx_; }   // post effects of Scene / Game views (PostFxWindow configures it)
     bool postFxInScene = true;                     // false: only the Game view is post-processed
     game::RtsView& view() { return view_; }
@@ -367,6 +375,7 @@ private:
     render::ImGuiLayer ui_;
     ClientHost clientHost_;   // after ui_: shut down first (its ImGui context, RmlUi)
     render::Renderer3D r3d_;
+    render::NativePresentationRetirement previewModelRetirement_;
     render::Mesh fpsPreviewMesh_;
     std::vector<SceneRenderable> fpsSceneObjects_;
     Json fpsRuntimeCache_;
