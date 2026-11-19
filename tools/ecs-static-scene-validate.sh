@@ -46,6 +46,8 @@ tests=(
     ecs_multiworld_test
     ecs_scene_load_coordinator_test
     ecs_scene_resource_pipeline_test
+    ecs_scene_collision_namespaces_test
+    ecs_scene_collision_bridge_test
     ecs_scene_hierarchy_test
     ecs_scene_hierarchy_simulation_test
     ecs_cow_snapshot_test
