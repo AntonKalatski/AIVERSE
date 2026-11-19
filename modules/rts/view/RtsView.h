@@ -174,6 +174,27 @@ public:
     // Independent from type residency: the editor requests full appearance
     // variants for any type it opens, while clients may stream alternatives.
     void setDeferAppearanceVariants(bool on) { deferAppearanceVariants_ = on; }
+    // Safe migration switch for legacy authored whole-model LODs without
+    // a validated compiled bone map. Preserve historical visual behavior
+    // until native GPU parity is established, or opt into bind-pose fallback
+    // immediately. This affects only RTS adapter presentation, not sim ECS.
+    enum class LegacyLodFallbackMode : uint8_t {
+        PreserveWorldMatrices, BindPose
+    };
+    void setLegacyLodFallbackMode(LegacyLodFallbackMode mode) noexcept {
+        legacyLodFallbackMode_=mode;
+    }
+    LegacyLodFallbackMode legacyLodFallbackMode() const noexcept {
+        return legacyLodFallbackMode_;
+    }
+    struct LegacyLodFallbackStats {
+        uint64_t worldMatrixFallbacks=0;
+        uint64_t bindPoseFallbacks=0;
+        uint64_t rejectedCompiledPlans=0;
+    };
+    LegacyLodFallbackStats legacyLodFallbackStats() const noexcept {
+        return legacyLodFallbackStats_;
+    }
     struct AssetResidencyStats {
         size_t loadedTypes = 0, cachedModels = 0, gpuTextures = 0, decodedCpuBytes = 0;
         size_t retiredModels=0,retirementBatches=0,retirementPeak=0;
@@ -699,6 +720,9 @@ private:
     // scratch shared between Editor Scene, GameClient or native hosts.
     render::Pose lodRetargetPoseScratch_;
     std::vector<render::mat4> lodWorldScratch_;
+    LegacyLodFallbackMode legacyLodFallbackMode_=
+        LegacyLodFallbackMode::PreserveWorldMatrices;
+    LegacyLodFallbackStats legacyLodFallbackStats_;
     std::unique_ptr<::aiverse::view::View> genericView_;
     bool genericViewEnabled_=true; // opt-in per-object safety predicate
     render::Mesh projectile_;
