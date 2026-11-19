@@ -800,3 +800,19 @@ GCC ASan+UBSan passed. Full AIVERSE, macOS runners, authenticated
 admin test and Windows are still UNVERIFIED.
 See docs/agent-handoffs/physis-stage59-process-crash-recovery-2026-11-19.md.
 
+### Stage 60 — avoid cancelling native CI with documentation-only changes
+
+The full PHYSIS `.github/workflows/physis.yml` includes a NEGATIVE
+path filter `!engine/physis/AGENTS.md` after the positive
+`engine/physis/**` pattern in both push and PR triggers. Updating
+this handoff policy file alone must no longer enqueue a new full
+native matrix and cancel queued actual code checks. Continue writing
+AGENTS.md and a dedicated docs/agent-handoffs/ file after EVERY
+stage; the other code/test paths still trigger normal validation.
+
+The independent journal workflow
+`.github/workflows/physis-journal.yml` remains separate.
+Current isolated Linux journal tests re-ran successfully (3/3),
+strict Clang 17 all 3 PASS and GCC ASan/UBSan SIGKILL test PASS.
+This is not full engine/macOS/Windows CI. Handoff:
+`docs/agent-handoffs/physis-stage60-ci-doc-filter-2026-11-19.md`.

@@ -740,3 +740,24 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   process/IO boundary, not exactly-once gameplay effects.
 - Handoff: docs/agent-handoffs/physis-stage59-process-crash-recovery-2026-11-19.md.
 
+### Stage 60 — prevent agent documentation commits cancelling PHYSIS CI (2026-11-19)
+
+- `.github/workflows/physis.yml` previously included the entire
+  `engine/physis/**` path in both push and PR triggers. Each mandatory
+  handoff update to `engine/physis/AGENTS.md` retriggered full CI
+  and `cancel-in-progress` cancelled queued Ubuntu/macOS jobs.
+- Excluded ONLY `!engine/physis/AGENTS.md` AFTER its positive
+  `engine/physis/**` pattern for BOTH push and pull_request
+  path lists. Changes to actual PHYSIS C++, tests, CMake and the
+  workflow itself still trigger the native matrix. The standalone
+  journal workflow stays independent and already excludes docs.
+- Code commit: `96b1efb210f9f4f9f050415e5e936b2707c1a500`.
+- ACTUAL isolated Linux test re-run using exact current repository
+  source blobs: CMake/CTest 3/3 PASS. Clang 17 strict native C++20
+  builds/runs all 3 PASS; GCC 14.2 ASan/UBSan crash recovery PASS.
+  The workflow exclusion was verified from fetched source; its real
+  GitHub trigger behavior is still awaiting a runner event.
+- Full engine, `physis_admin_journal`, `physis_remote_edit`,
+  `physis_field_runtime` and real Ubuntu/macOS CI are NOT PASSED.
+- Per-stage handoff:
+  `docs/agent-handoffs/physis-stage60-ci-doc-filter-2026-11-19.md`.
