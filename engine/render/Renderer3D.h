@@ -585,6 +585,8 @@ private:
     gfx::PipelineHandle objectMotionDeformedPipeline_;
     gfx::ShaderHandle objectMotionBakedShader_;
     gfx::PipelineHandle objectMotionBakedPipeline_;
+    gfx::ShaderHandle objectMotionMaskedShader_;
+    gfx::PipelineHandle objectMotionMaskedPipeline_;
 
     // Material GPU-state equivalence is pass-independent within one scene.
     // Resolve each distinct (model, material) once for shadows, colour,
