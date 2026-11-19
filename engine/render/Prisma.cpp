@@ -1565,8 +1565,12 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 source = mip.tex;
             } else valid = false;
         }
-        // Avoid running the history filter with a partially reduced image.
+        // Avoid allocating or writing exposure history after a failed
+        // mip reduction: a partially encoded pyramid must not be sampled.
         valid = valid && pw == 1 && ph == 1;
+        if (!valid) {
+            resetAutoExposure(viewId_);
+        } else {
         auto& exposureView = exposureViews_[viewId_];
         // History belongs to the stable view ID, not to the shared 1x1
         // Sized cache: same-resolution Scene/Game views never ping-pong
@@ -1610,6 +1614,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         } else {
             exposureView.valid = false;
         }
+        } // complete metering pyramid only
     } else if (!automaticExposure.valid()) {
         // No authored/usable meter this frame: preserve allocated storage,
         // but invalidate previous luminance for the next cold frame.
