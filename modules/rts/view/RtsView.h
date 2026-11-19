@@ -21,6 +21,7 @@ namespace kingston { struct CabinResidentDraw; }
 #include <algorithm>
 #include <map>
 #include <memory>
+#include <set>
 #ifndef __EMSCRIPTEN__
 #include <future>
 #endif
