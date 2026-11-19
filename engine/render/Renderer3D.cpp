@@ -394,9 +394,14 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         (feedbackLodModelPipeline_.valid() && feedbackLodModelBinder_) ||
         (feedbackMaskedLodModelPipeline_.valid() && feedbackMaskedLodModelBinder_) ||
         feedbackDeformedModelDraw_ || !customFeedback_.empty();
-    if (feedbackPass_ && feedbackPass_->ready() &&
-        !feedbackPass_->pending() && !feedbackPass_->readyToSubmit() &&
-        feedbackProducerConfigured) {
+    if (feedbackScheduler_) {
+        // A multi-domain coordinator owns its individual feedback passes,
+        // filters model page IDs by domain, and routes readback only to the
+        // matching streamer. Never submit the legacy single pass as well.
+        feedbackScheduler_(*this);
+    } else if (feedbackPass_ && feedbackPass_->ready() &&
+               !feedbackPass_->pending() && !feedbackPass_->readyToSubmit() &&
+               feedbackProducerConfigured) {
         renderVirtualTextureFeedback(*feedbackPass_,
                                      feedbackMeshPipeline_,
                                      feedbackMeshBinder_);
