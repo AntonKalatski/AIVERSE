@@ -763,6 +763,12 @@ int main() {
         draw.model = &model;
         draw.persistentId = 41;
         draw.flags = kDrawStatic;
+        // The CPU cache requires bindWorld matrices from finalized assets.
+        // Imported models always call finalize(); this synthetic fixture must
+        // do so too. Missing bind matrices are correctly ineligible.
+        CHECK(!staticModelCacheCandidate(draw, false));
+        model.finalize();
+        CHECK(model.bindWorld.size() == model.nodes.size());
         CHECK(staticModelCacheCandidate(draw, false));
         draw.materials = &model.materials;
         std::vector<int> nodeOverrides(1, -1);
@@ -794,9 +800,16 @@ int main() {
         model.nodes[0].runtimeMutable = true;
         CHECK(!staticModelCacheCandidate(draw, false));
         model.nodes[0].runtimeMutable = false;
+        // Authored clips on disk do not mean this *instance* is animated.
+        // Bind-pose static instances remain eligible; an active pose does not.
         model.clips.emplace_back();
+        CHECK(staticModelCacheCandidate(draw, false));
+        CHECK(staticModelCacheGeometryCompatible(cache, draw, false));
+        std::vector<NodePose> activePose(1);
+        draw.pose = &activePose;
         CHECK(!staticModelCacheCandidate(draw, false));
         CHECK(!staticModelCacheGeometryCompatible(cache, draw, false));
+        draw.pose = nullptr;
         model.clips.clear();
         model.geometry = std::make_shared<GeometryData>();
         CHECK(!staticModelCacheCandidate(draw, false));
@@ -816,6 +829,8 @@ int main() {
         draw.flags = kDrawStatic;
         CHECK(!staticRenderPacketCandidate(draw, false, false, false));
         draw.staticPacketRevision = 1;
+        CHECK(!staticRenderPacketCandidate(draw, false, false, false)); // missing bindWorld
+        model.finalize();
         CHECK(staticRenderPacketCandidate(draw, false, false, false));
         CHECK(!staticRenderPacketCandidate(draw, true, false, false));
         CHECK(!staticRenderPacketCandidate(draw, false, true, false));
