@@ -1,3 +1,4 @@
+#include <optional>
 #include "ClientFx.h"
 #include <cstdio>
 #include <cstdlib>
