@@ -28,6 +28,13 @@ inline NereidCascadeManifest parseNereidCascadeManifest(const Json& root) {
         if(!item.isObject())throw JsonError("nereidCascades: expected source object");
         NereidCascadeSource source;
         if(item.has("id"))source.id=uint64_t(worldInteger(item,"id",0,1,2147483647));
+        if(item.has("inletWaterId"))
+            source.inletWaterId=uint64_t(worldInteger(item,"inletWaterId",0,1,2147483647));
+        if(item.has("outletWaterId"))
+            source.outletWaterId=uint64_t(worldInteger(item,"outletWaterId",0,1,2147483647));
+        if(item.has("joinLength"))
+            source.joinLength=nereid_manifest_detail::scalar(
+                item["joinLength"],"cascade.joinLength",0.1f,50.f);
         auto& c=source.cascade;
         c.enabled=item.getBool("enabled",true);
         if(item.has("foam"))
