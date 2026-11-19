@@ -261,6 +261,85 @@ before claiming the new checks have passed. The two SceneHierarchy tests
 reported Passed without these warnings. The separate Shared/Static
 regression test already used AlwaysCheck and passed 1/1.
 
+## Stage 3 — prefab Static catalog (implemented, native execution pending)
+
+`engine/sim/PrefabStaticCatalog.h` provides a reusable
+`PrefabStaticCatalogBuilder<T>` and immutable `PrefabStaticCatalog<T>`.
+The builder takes prefab keys and native, field-wise-serializable config
+values. On `seal()` it sorts prefab keys, interns equal values into one
+contiguous `StaticTable<T>` and creates a stable key-to-`StaticRef<T>`
+mapping. Import order does not affect the catalog's fingerprint or slot
+assignments.
+
+A `PrefabStaticCatalog<T>` can be shared through a
+`std::shared_ptr<const ...>` by the main game, editor preview, and
+independent multiplayer Simulations. Only four bytes of `StaticRef<T>`
+payload are stored per entity (plus existing Sparse Set overhead).
+
+```cpp
+#include "engine/sim/PrefabStaticCatalog.h"
+namespace st = aiverse::storage;
+
+st::PrefabStaticCatalogBuilder<UnitConfig> builder;
+builder.add("units/knight", knightConfig);
+builder.add("units/archer", archerConfig);
+auto catalog = builder.seal();
+
+// GameModule::setup() before persistence registry sealing:
+st::registerPrefabStaticPersistence<UnitConfig>(
+    simulation, "game.unit.definition", 1);
+if (!catalog->bindWorld(simulation.world()))
+    throw std::runtime_error("unit config revision mismatch");
+
+// SceneLoadCoordinator::SpawnPrefab callback (after integrating the
+// verified scene branch), or an ordinary native game's entity spawner:
+auto spawn = [catalog](aiverse::World& world, aiverse::Entity entity,
+                      const auto& sceneObject, std::string& error) {
+    if (!catalog->attach(world, entity, sceneObject.prefab)) {
+        error = "unknown prefab or wrong immutable catalog";
+        return false;
+    }
+    return true;
+};
+```
+
+`bindWorld` records the `StaticTableBinding<T>` value fingerprint plus
+a **separate `PrefabCatalogBinding<T>` fingerprint** that hashes the
+entire sorted prefab-key-to-slot mapping. This closes a subtle save hazard:
+two versions may contain the exact same unique config values but assign
+a different config to a particular prefab key. The second fingerprint
+detects that mismatch after load.
+
+`catalog->attach(world, entity, prefabKey)` binds one immutable config
+per new Entity; `catalog->read(world, entity)` returns `const T*`.
+`catalog->validateWorld(world)` checks both fingerprints and all
+existing StaticRef values. An already-bound entity cannot be rebound
+through this API. Prefab key lookup is a spawn-time ordered-map lookup;
+**per-tick** hot loops continue using `StaticReadView<T>` (O(1), no
+string/hash lookup per entity).
+
+The catalog remains external immutable content, not a mutable ECS World
+resource. Only the two small binding fingerprints and the per-entity
+StaticRefs enter snapshots/save/checksum. Call
+`registerPrefabStaticPersistence<T>` **instead of** a second
+`registerStaticPersistence<T>` for the same T, otherwise duplicate
+component registrations are invalid.
+
+The new `tests/ecs_prefab_static_catalog_test.cpp` covers sorted
+deterministic registration, deduplicated config aliases, two simulated
+additive scenes (10,000 entities) and a second World, COW/deep restore,
+native Simulation save/load and changed-alias rejection. Its CMake
+target is `aiverse_ecs_prefab_static_catalog_test`. This source has
+been committed but **not compiled or executed natively**; the separate
+base Shared/Static and corrected COW tests are already reported passing
+on the Mac Studio.
+
+**Integration boundary:** this stage intentionally does not pull or merge
+`feature/scene-runtime-multiworld`. The example callback is the
+intended bridge API, but the actual `SceneLoadCoordinator` production
+runtime is not connected yet. Do not claim scene integration complete
+or compare actual process RSS without measuring it.
+
 ## Integration roadmap
 
 1. Compile and correct native test/benchmark, measure cache behavior on
