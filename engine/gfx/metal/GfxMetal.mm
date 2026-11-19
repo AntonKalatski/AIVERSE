@@ -652,7 +652,7 @@ public:
                            withBytes:pixels bytesPerRow:row];
             } else if (d.dimension == TextureDimension::Texture3D) {
                 [t.tex replaceRegion:MTLRegionMake3D(0, 0, 0, NSUInteger(d.width), NSUInteger(d.height), NSUInteger(d.depth))
-                          mipmapLevel:0 withBytes:pixels bytesPerRow:row bytesPerImage:sliceBytes];
+                          mipmapLevel:0 slice:0 withBytes:pixels bytesPerRow:row bytesPerImage:sliceBytes];
             } else if (d.dimension == TextureDimension::Texture2D) {
                 [t.tex replaceRegion:MTLRegionMake2D(0, 0, NSUInteger(d.width), NSUInteger(d.height))
                           mipmapLevel:0 withBytes:pixels bytesPerRow:row];
@@ -722,7 +722,7 @@ public:
         } else if (t->dimension == TextureDimension::Texture3D) {
             [t->tex replaceRegion:MTLRegionMake3D(NSUInteger(u.x), NSUInteger(u.y), NSUInteger(u.z),
                     NSUInteger(u.width), NSUInteger(u.height), NSUInteger(u.depth))
-                       mipmapLevel:NSUInteger(u.mipLevel) withBytes:u.data
+                       mipmapLevel:NSUInteger(u.mipLevel) slice:0 withBytes:u.data
                        bytesPerRow:NSUInteger(u.rowPitchBytes) bytesPerImage:NSUInteger(imagePitch)];
         } else if (t->dimension == TextureDimension::Texture2D) {
             [t->tex replaceRegion:MTLRegionMake2D(NSUInteger(u.x), NSUInteger(u.y), NSUInteger(u.width), NSUInteger(u.height))
