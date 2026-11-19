@@ -22,6 +22,9 @@ public:
         ++revision_;
     }
     size_t size() const noexcept {return lastUsed_.size();}
+    double lastUsed(size_t type) const noexcept {
+        return type<lastUsed_.size()?lastUsed_[type]:-1.0e30;
+    }
     uint64_t revision() const noexcept {return revision_;}
     void invalidate() {
         pending_.clear();
