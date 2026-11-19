@@ -174,7 +174,7 @@ struct App {
              [this](const std::string& p,std::string& out) {
                  return platform::readContentFile(projectRoot+"/"+p,out);
              },projectRoot+"/")) {
-            std::fprintf(stderr,"SpectraFX FPS scene: %s\\n",
+            std::fprintf(stderr,"SpectraFX FPS scene: %s\n",
                          fxScene.lastError().c_str());
         }
         if (const auto file=map.getStr("geometryScene"); !file.empty()) {
