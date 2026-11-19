@@ -144,6 +144,7 @@ void Model::finalize() {
         }
     }
     if (boundsMin.x > boundsMax.x) boundsMin = boundsMax = {0, 0, 0};
+    markGeometryChanged(); // regenerated hierarchy, node transforms and bounds
 }
 
 namespace {
@@ -547,6 +548,7 @@ void prepareModelUpload(Model& m) {
         const char* materialBatches = std::getenv("AIVERSE_AUTO_MATERIAL_BATCHES");
         if (!materialBatches || std::string(materialBatches) != "off") prepareMaterialBatches(m);
     m.uploadPrepared = true;
+    m.markGeometryChanged(); // runtime LOD / static / shadow / material batches
 }
 
 bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
@@ -622,6 +624,7 @@ void releaseModel(gfx::Device& dev, Model& m) {
     if (m.morphTex.valid()) dev.destroyTexture(m.morphTex);
     if (m.baked.tex.valid()) dev.destroyTexture(m.baked.tex);
     m.morphTex = {}; m.baked = Model::Baked{};
+    m.markGeometryChanged(); // later upload may reuse the same GPU handle values
 }
 
 } // namespace aiverse::render
