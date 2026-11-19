@@ -2,7 +2,7 @@
 // engine/data/Json.cpp and JsonCompose.cpp.
 #include "engine/sim/SceneHierarchySystem.h"
 #include "engine/render/SceneHierarchyRender.h"
-#include <cassert>
+#include "tests/AlwaysCheck.h"
 #include <iostream>
 #include <memory>
 using namespace aiverse;
@@ -29,7 +29,7 @@ public:
     void applyCommand(Simulation&,const Command&) override {}
     void hashState(Simulation& sim,Hasher& h) override {
         auto* pos=sim.world().tryGetConst<WorldTransform>(child);
-        assert(pos);h.fx(pos->position.x);
+        AIVERSE_TEST_CHECK(pos);h.fx(pos->position.x);
     }
     int result(Simulation&) override {return 0;}
 };
@@ -38,12 +38,12 @@ int main(){
     auto* game=module.get();
     Simulation sim({1,20,0,true},std::move(module));
     sim.setup(Json::object(),Json::object());
-    assert(game->hierarchy->lastUpdated()==2);
+    AIVERSE_TEST_CHECK(game->hierarchy->lastUpdated()==2);
     auto check=[&](int x) {
         const auto* world=sim.world().tryGetConst<WorldTransform>(game->child);
-        assert(world && world->position.x==Fixed::fromInt(x));
+        AIVERSE_TEST_CHECK(world && world->position.x==Fixed::fromInt(x));
         auto matrix=render::hierarchyMatrix(*world);
-        assert(matrix.at(0,3)==float(x));
+        AIVERSE_TEST_CHECK(matrix.at(0,3)==float(x));
     };
     check(12);
     SimSnapshot before;
@@ -53,9 +53,9 @@ int main(){
     check(22);
     sim.loadState(before); // automatic hierarchy rebuild and recomputation
     check(12);
-    assert(game->hierarchy->lastUpdated()==2);
+    AIVERSE_TEST_CHECK(game->hierarchy->lastUpdated()==2);
     sim.step();
     check(12);
-    assert(game->hierarchy->lastUpdated()==0);
+    AIVERSE_TEST_CHECK(game->hierarchy->lastUpdated()==0);
     std::cout<<"PASS Simulation parent transforms, presentation matrix and snapshot restoration\n";
 }

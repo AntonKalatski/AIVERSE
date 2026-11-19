@@ -1058,3 +1058,12 @@ GitHub branch/source inspection and exact source transformation only. **Native c
 ### Next step
 
 Feature-first: audit the remaining non-editor integrations and ensure all relevant model batching policies are accessible through renderer-level, genre-neutral APIs without needing environment changes or requiring per-game-specific code. Once all functionality is complete, run a comprehensive compile/test/parity cycle and fix failures. Keep each stage handoff current and avoid launching tests until instructed.
+
+
+---
+
+## Sync only current main into batching branch — 2026-11-19
+
+Before sync: `main=d71c6d47e532b25fb816a8bb1f96c41e5275a165`, batching feature head `2e9661a300122b610d9da7394ce999ec9fdfefa6` and common ancestor `9ee6ff6fbf390bd45363bc92c838f492dfe92eee`, behind by 409 main commits. Only `main` was merged, not individual competing feature branches. Github tree comparison found 114 changed main paths and 23 independent batching paths, with exactly three overlapping files: `AGENTS.md`, `engine/render/Renderer3D.cpp`, `engine/render/Renderer3D.h`. The two renderer files were merged by nonoverlapping base-relative changes; `AGENTS.md` appended NEREID and batching guidance at the same EOF coordinate, preserved both sections with main content before batching content. Every main-added or modified path was overlaid by its exact Git blob SHA. The resulting merge commit has two parents (batching feature and main). No unrelated feature branches were manually merged.
+
+Architectural effect: integrated NEREID renderer water/reflection fields, engine/world scene integration, water systems/tests, SpectraFX/VFX public interfaces from main while preserving the renderer-local static-cross-model MDI opt-in and all prior batching APIs, shader/LOD checks, cache owners, pipeline decisions, and Scene UI overrides. Actual verification: GitHub tree/readback/merge-parent/invariant inspection only; native CMake, CTest, Metal visual/GPU checks and benchmarking NOT RUN at user request (features first). Keep PR #34 Draft and experimental modes OFF. Next: expose remaining CPU MDI policies (adaptive decision, layout cache) as renderer-level per-view controls without global env changes, with corresponding Scene UI. Tests only after all features are complete.

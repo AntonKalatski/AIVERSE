@@ -2648,6 +2648,106 @@
       "packageDependencies": [
         "ecs-ordered-impact"
       ]
+    },
+    {
+      "id": "nereid-water",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "experimental",
+      "source": "libraries/include/aiverselib/water/NereidWaterSystems.h",
+      "skill": "skills/gameplay/aiverse-nereid-water/SKILL.md",
+      "summary": "NEREID deterministic fixed-point ECS water volume sampling across game genres",
+      "notes": "Stages 1-6: fixed-point bodies/probes, polygon/spline footprints, indexed/adaptive sampling, optional native setup and read-only legacy raster import. Legacy RTS/editor remains authoritative; no production runtime or water rendering adoption. Native tests unverified.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_nereid_water",
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": []
+    },
+    {
+      "id": "nereid-buoyancy",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "experimental",
+      "source": "libraries/include/aiverselib/water/NereidBuoyancySystems.h",
+      "skill": "skills/gameplay/aiverse-nereid-buoyancy/SKILL.md",
+      "summary": "NEREID shared deterministic buoyancy and flow drag output for host physics",
+      "notes": "Stage 2 policy only; host owns gravity, canonical velocity, collision and force integration. Requires same-tick contact sample. Unverified native tests.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_nereid_buoyancy",
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": [
+        "nereid-water"
+      ]
+    },
+    {
+      "id": "nereid-interactions",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "experimental",
+      "source": "libraries/include/aiverselib/water/NereidInteractions.h",
+      "skill": "skills/gameplay/aiverse-nereid-interactions/SKILL.md",
+      "summary": "NEREID deterministic ECS entry/exit/wake events with ordered read-only VFX/audio presentation snapshots",
+      "notes": "Optional native pipeline stage after same-tick water contact sampling; outputs are single-tick events, host owns physics and VFX/audio playback. Native execution has not been verified.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_nereid_interactions",
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": [
+        "nereid-water"
+      ]
+    },
+    {
+      "id": "nereid-cascades",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "experimental",
+      "source": "libraries/include/aiverselib/water/NereidCascades.h",
+      "skill": "skills/gameplay/aiverse-nereid-cascades/SKILL.md",
+      "summary": "NEREID genre-independent waterfall/cascade ECS geometry, persistence and visual ribbon mesh",
+      "notes": "Stage 27: opt-in descending cascade components, double-sided CPU ribbons and WorldScene graphics; host owns terrain, physics and particle effects. Build/GPU tests deferred by owner.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_nereid_cascades",
+      "runtime": "header",
+      "linkDependencies": ["aiverse_engine"],
+      "packageDependencies": ["nereid-water"]
+    },
+    {
+      "id": "nereid-currents",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "experimental",
+      "source": "libraries/include/aiverselib/water/NereidCurrentField.h",
+      "skill": "skills/gameplay/aiverse-nereid-currents/SKILL.md",
+      "summary": "NEREID fixed-point per-river spatial flow field with downstream, lateral and shear currents",
+      "notes": "Optional NEREID WaterCurrentFieldComponent: one profile node per RiverSpline point; reference and indexed ECS sampling share deterministic flow. Build/tests deferred.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_nereid_currents",
+      "runtime": "header",
+      "linkDependencies": ["aiverse_engine"],
+      "packageDependencies": ["nereid-water"]
+    },
+    {
+      "id": "nereid-vortices",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "experimental",
+      "source": "libraries/include/aiverselib/water/NereidVortices.h",
+      "skill": "skills/gameplay/aiverse-nereid-vortices/SKILL.md",
+      "summary": "NEREID deterministic bounded vortex/eddy currents for water contacts and visuals",
+      "notes": "Optional per-water body WaterVortexFieldComponent, fixed-point additive swirl and radial current with shared reference/indexed sampling. Tests deferred.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_nereid_vortices",
+      "runtime": "header",
+      "linkDependencies": ["aiverse_engine"],
+      "packageDependencies": ["nereid-water"]
     }
   ]
 }
