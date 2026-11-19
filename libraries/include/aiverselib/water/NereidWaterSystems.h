@@ -55,8 +55,9 @@ inline WaterSample sampleWater(const World& world,Vec3 position) {
 inline void addWaterProbeFromTransformSystem(Simulation& sim,std::string name) {
     sim.addSystem(std::move(name),[](Simulation& current) {
         World& world=current.world();
-        auto* probes=world.prepareExistingWrite<WaterProbeComponent>();
-        if(!probes)return;
+        if(!world.countExisting<WaterProbeComponent>())return;
+        // Detach the shared COW pool before publishing probe positions.
+        auto* probes=&world.pool<WaterProbeComponent>();
         const World& read=world;
         for(size_t i=0;i<probes->size();++i) {
             const Entity e=probes->entityAt(i);
