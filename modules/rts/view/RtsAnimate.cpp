@@ -170,16 +170,8 @@ RtsView::EntityAnim& RtsView::stateFor(uint64_t key, const SceneObject& o) {
                 st.yaw=previous.yaw;
                 st.speed=previous.speed;
                 st.lastPos=previous.lastPos;
-                if(st.graph.graph() && !previous.graph.state.empty()) {
-                    try {
-                        (void)st.graph.restorePlayback(previous.graph);
-                    }catch(...) {
-                        // Named clock preservation is cosmetic. A memory
-                        // error must not interrupt a valid new Model frame.
-                        // restorePlayback prepares the matches before
-                        // mutating the graph clocks, so defaults stay valid.
-                    }
-                }
+                if(!previous.graph.state.empty())
+                    st.pendingReloadPlayback=std::move(previous.graph);
             }
         }
         // Source hot reload is not a gameplay spawn. No duplicate
@@ -382,6 +374,20 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
         updatePose=true;
     }
     st.wasGenericViewPose=st.genericViewPose;
+    if(st.pendingReloadPlayback) {
+        // An entity may select a programmable/Lua override instead of its
+        // TypeLook default graph. Restore ONLY after the final program has
+        // been selected, and never seed the independent generic ECS writer.
+        if(program && !st.genericViewPose && st.graph.graph()==program.get()) {
+            try {
+                (void)st.graph.restorePlayback(*st.pendingReloadPlayback);
+            }catch(...) {
+                // Optional cosmetic clock recovery must not break a newly
+                // published and GPU-safe Model/graph frame.
+            }
+        }
+        st.pendingReloadPlayback.reset();
+    }
     if (program && !st.genericViewPose) {
         // Rebuild defaults each frame so removing a Lua override restores automatic inputs.
         auto& p = st.graph.parameters();
