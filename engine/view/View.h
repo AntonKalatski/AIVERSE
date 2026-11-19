@@ -119,6 +119,10 @@ struct Stats {
 struct ModelRetargetStats {
     uint64_t compiledUsed=0,compiledRejected=0;
     uint64_t exactPoseReused=0,legacyValidated=0,bindPoseFallback=0;
+    uint64_t compiledMissingGeneration=0;
+    uint64_t compiledExpiredGeneration=0;
+    uint64_t compiledModelMismatch=0;
+    uint64_t compiledInvalidPoseOrShape=0;
     // Capacity trims are per-frame diagnostics; CPU profiling required
     // before interpreting them as measured allocation savings.
     uint64_t scratchTrims=0;
@@ -393,6 +397,25 @@ public:
                     draw.pose=nullptr;
                     draw.nodeWorld=nullptr;
                     ++retargetStats_.compiledRejected;
+                    // These checks use pointer identity + generation only;
+                    // they never access the retired compiled plan's model
+                    // pointers or revalidate the authored node hierarchy.
+                    const auto status=chosenLod->compiledRetarget->status(
+                        *rig,*draw.model,obj.animationModelGeneration,
+                        chosenLod->visualModelGeneration);
+                    switch(status) {
+                        case CompiledRetargetStatus::MissingSourceGeneration:
+                        case CompiledRetargetStatus::MissingVisualGeneration:
+                            ++retargetStats_.compiledMissingGeneration;break;
+                        case CompiledRetargetStatus::SourceGenerationChanged:
+                        case CompiledRetargetStatus::VisualGenerationChanged:
+                            ++retargetStats_.compiledExpiredGeneration;break;
+                        case CompiledRetargetStatus::SourceModelChanged:
+                        case CompiledRetargetStatus::VisualModelChanged:
+                            ++retargetStats_.compiledModelMismatch;break;
+                        default:
+                            ++retargetStats_.compiledInvalidPoseOrShape;break;
+                    }
                 }
             }else if(compatibleModelPose(*rig,*draw.model)) {
                 draw.pose=sourcePose;
