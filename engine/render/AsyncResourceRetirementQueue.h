@@ -14,12 +14,35 @@ namespace aiverse::render {
 template<class Resource>
 class AsyncResourceRetirementQueue final {
 public:
+    struct Stats {
+        size_t pendingResources=0;
+        size_t pendingBatches=0;
+        size_t unsubmittedResources=0;
+        size_t highWatermark=0;
+        uint64_t completedResources=0;
+        uint64_t completedBatches=0;
+        uint64_t pendingPolls=0;
+        uint64_t tokenFailures=0;
+        uint64_t idleFallbackFailures=0;
+    };
     void enqueue(Resource resource) {
         pending_.push_back(std::move(resource));
         ++count_;
+        if(count_>highWatermark_)highWatermark_=count_;
     }
     size_t pending() const noexcept {return count_;}
+    size_t pendingBatches() const noexcept {return batches_.size();}
     bool empty() const noexcept {return count_==0;}
+    // Advisory backpressure for new allocations, never a reason to
+    // destroy a model before its own GPU token completes.
+    bool saturated(size_t limit) const noexcept {
+        return limit!=0 && count_>=limit;
+    }
+    Stats stats() const noexcept {
+        return {count_,batches_.size(),pending_.size(),highWatermark_,
+                completedResources_,completedBatches_,pendingPolls_,
+                tokenFailures_,idleFallbackFailures_};
+    }
 
     // Invoke only at a real host frame boundary after previous GPU work has
     // been submitted. Callbacks: begin()->token (0=unsupported), completed
@@ -31,12 +54,17 @@ public:
         // ahead of an older uncompleted batch.
         while(!batches_.empty()) {
             auto& batch=batches_.front();
-            if(!completed(batch.token))break;
+            if(!completed(batch.token)) {
+                ++pendingPolls_;
+                break;
+            }
             close(batch.token);
             for(auto& resource:batch.resources) {
                 destroy(resource);
                 --count_;
+                ++completedResources_;
             }
+            ++completedBatches_;
             batches_.pop_front();
         }
         if(pending_.empty())return empty();
@@ -51,7 +79,11 @@ public:
         }
         // Unsupported token backend: fall back to one explicit completion
         // barrier; never silently delete potentially GPU-visible resources.
-        if(!waitIdle())return false;
+        ++tokenFailures_;
+        if(!waitIdle()) {
+            ++idleFallbackFailures_;
+            return false;
+        }
         drainKnownCompleted(close,destroy);
         return true;
     }
@@ -61,7 +93,10 @@ public:
     template<class Wait,class Close,class Destroy>
     bool drain(Wait&& waitIdle,Close&& close,Destroy&& destroy) {
         if(empty())return true;
-        if(!waitIdle())return false;
+        if(!waitIdle()) {
+            ++idleFallbackFailures_;
+            return false;
+        }
         drainKnownCompleted(close,destroy);
         return true;
     }
@@ -78,16 +113,21 @@ private:
             for(auto& resource:batch.resources) {
                 destroy(resource);
                 --count_;
+                ++completedResources_;
             }
+            ++completedBatches_;
         }
         batches_.clear();
         for(auto& resource:pending_) {
             destroy(resource);
             --count_;
+            ++completedResources_;
         }
         pending_.clear();
     }
-    size_t count_=0;
+    size_t count_=0,highWatermark_=0;
+    uint64_t completedResources_=0,completedBatches_=0;
+    uint64_t pendingPolls_=0,tokenFailures_=0,idleFallbackFailures_=0;
     std::vector<Resource> pending_;
     std::deque<Batch> batches_;
 };
