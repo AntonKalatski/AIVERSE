@@ -1785,3 +1785,29 @@ heterogeneity needs additional per-command U2/source texture ABI.
 Metal command-encoder compilation and real GPU execution are
 **NOT RUN**; do not enable these flags in release builds or
 treat this as a verified performance optimization.
+
+
+## Executed mixed-VT ICB diagnostics — Stage 10Z
+
+`Renderer3D::gpuModelDrawStats()` now includes two additional
+execution-only counters:
+`perCommandVtExecutions` and `mixedVtExecutions`.
+They count successful GPU ICB submissions after the device's
+`executeGpuEncodedIndexedIcb` call reports success, **not**
+mere candidate groups, buffer preparations or fallback draws.
+The mixed counter increments only when that accepted command
+group contains two or more non-identical
+`ModelVirtualTextureBinding` values. The per-command counter
+includes both mixed and homogeneous opt-in GPU batches.
+
+The renderer resets these counts each `prepareGpuModelDraws`
+cycle. Existing `gpuIcbPrepared`, `gpuIcbRejected` and
+`gpuIcbExecuteFailed` remain available to distinguish
+staging, validity gate rejection and actual execution failures.
+Reading a nonzero new counter is NOT evidence of image
+correctness or GPU performance improvement: a real backend
+A/B capture is still required.
+
+This stage is a diagnostics/API addition only. No native C++
+compilation, Metal shader compilation, real ICB execution or GPU
+performance tests were run in this environment.
