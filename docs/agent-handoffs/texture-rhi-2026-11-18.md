@@ -7974,3 +7974,50 @@ PBR descriptor, 256-byte U2 slice, per-command fragment texture
 slots 1..6 and sampler states, and source-side per-draw U2
 packing/revalidation before ICB submission. Keep legacy grouping
 and CPU fallback unchanged until that feature is ready.
+
+
+## Stage 10AC — per-command Metal PBR U2 and source texture ABI (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`, PR #21 Draft.
+**Code commits:**
+- `638c45bada0486845641526c14ea030c5788dd50`
+  `engine/gfx/Gfx.h` expands the optional
+  `GpuIcbVirtualMaterial` resource record with
+  `hasPbr`, six source TextureHandles, and 36 U2 floats;
+  checks all handles and finite factors.
+- `df6968dcb56d681e21e2ce11392c7fb75db768a3`
+  `engine/gfx/metal/GfxMetal.mm` extends the source-level
+  Metal GPU ICB encoder kernel `Params` with
+  `pbrU2Stride`, binds per-command U2 fragment buffer(3),
+  captures exact six native source textures + samplers,
+  allocates 256-byte U2 stride when hasPbr, and binds
+  per-command fragment argument-buffer IDs 2..13 for
+  PBR sources 1..6. Uses a 4096-byte argument-buffer
+  slice per command and revalidates texture/sampler identity
+  before execution. Legacy zero-stride behavior preserved.
+
+**Docs commits:** `461010756be999510b0f6007023144f9a44c8683` in `docs/texture-rhi.md`;
+`20b0dfd58283ce5e5cf85bba2c77a9fb54faf5a4` in `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Architecture/API:** RHI descriptor remains opt-in, with
+original VT atlas/table required. PBR path is validated
+all-or-none per GPU group; U2 and source textures may vary
+per command, but the GPU pipeline and geometry remain shared.
+The existing renderer has not yet populated these fields.
+This ABI is independent of FPS/RTS and uses no authoritative
+ECS material state.
+
+**Checks actually performed:** examined ModelShaders' U2 and
+ICB PBR argument buffer indices, existing kernel
+pbrArguments binding and RHI texture interfaces. GitHub
+code/docs commits accepted. **Objective-C++ build NOT RUN;
+MSL compiler NOT RUN; CTest NOT RUN; actual GPU execution
+NOT RUN; screenshot parity/performance NOT RUN**.
+
+**Next:** add Renderer3D material U2 pack helper preserving
+legacy material path, populate exact PBR handles/U2 for all
+eligible commands behind a separate `AIVERSE_EXPERIMENTAL_ICB_MIXED_PBR`
+flag, and ensure full U2/source texture identity revalidation
+before execution. Only group materials with matching pipeline
+traits from Stage 10AB; keep alpha-mask/transparent/graphs out.
+Keep PR Draft, experiment flags OFF by default.
