@@ -129,6 +129,18 @@ public:
         stats_.quality={};
         stats_.geometryRevision=geometryRevision;
 
+        // Never build GPU-only source CSR/camera clusters on GLES3 or
+        // Vulkan raster-only frames. A crowded 4096-source registry can make
+        // that CPU work substantial even though the legacy map never uses it.
+        stats_.clusters={};
+        // Default remain disabled until all source publication + separate
+        // material capture is supported by current GPU and PostProcess.
+        gpu_.setEnabled(false);
+        // GPU capture requires an actually active linear HDR downstream.
+        // Otherwise choose the legacy mobile path instead of suppressing
+        // legacy lights for a postprocess wrapper that will never run.
+        if(requestedQuality!=LumaWeaveQuality::Off && geometry && gpu_.ready() &&
+           existing_.active() && existing_.linearScene()) {
         // World-grid candidate coverage follows the actual camera instead of
         // staying forever at origin (0,0,0). Snap to whole cluster cells to
         // avoid rebuilding on every sub-metre camera movement. A host-supplied
@@ -159,14 +171,6 @@ public:
             clustersReady_=true;
         }
 
-        // Default remain disabled until all source publication + separate
-        // material capture is supported by current GPU and PostProcess.
-        gpu_.setEnabled(false);
-        // GPU capture requires an actually active linear HDR downstream.
-        // Otherwise choose the legacy mobile path instead of suppressing
-        // legacy lights for a postprocess wrapper that will never run.
-        if(requestedQuality!=LumaWeaveQuality::Off && geometry && gpu_.ready() &&
-           existing_.active() && existing_.linearScene()) {
             stats_.quality=LumaWeaveQualityPolicy::choose(
                 requestedQuality,viewW,viewH,registry_.lights().size(),
                 gpu_.screen().settings());
