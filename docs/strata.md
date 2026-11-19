@@ -17,8 +17,11 @@ the shared renderer. The current implementation has no GPU rendering path.
   `SelectionOutput`, `validate()`, CPU reference `select()`.
 - `engine/render/StrataBuilder.h`: `BuildInput`, `BuildOptions`,
   `Meshlet`, `ClusterBounds`, `Asset`, `build()`.
-- Link `aiverse_strata_builder` in project CMake when
-  `AIVERSE_BUILD_STRATA=ON` (ON by default). The target reuses the pinned
+- `engine/render/StrataModelAdapter.h`: `ModelAsset`,
+  `ModelPrimitiveAsset`, `ModelPrimitiveSkip`, `buildModelAsset()`.
+  This is a read-only, opt-in adapter for CPU `Model` assets, not a renderer hook.
+- Link `aiverse_strata_builder` or `aiverse_strata_model_adapter` in project
+  CMake when `AIVERSE_BUILD_STRATA=ON` (ON by default). Both reuse the pinned
   `aiverse_meshoptimizer_lod` dependency. There is **no render integration**.
 - `build()` accepts **one material partition per invocation**; vertex
   positions begin with three floats and may be interleaved. Source indices
@@ -32,8 +35,9 @@ the shared renderer. The current implementation has no GPU rendering path.
   `indexCount` reference the asset's flat index array. Children are
   contiguous and listed after parents (breadth-first reordering).
   `Asset::bounds` aligns one-to-one with `Asset::nodes`.
-- Parent clusters are produced by `meshopt_simplify` using
-  `meshopt_SimplifyLockBorder | meshopt_SimplifyErrorAbsolute`.
+- Parent clusters use `meshopt_simplify` (position-only inputs) or
+  `meshopt_simplifyWithAttributes` (optional 1..32 weighted float attributes),
+  with `meshopt_SimplifyLockBorder | meshopt_SimplifyErrorAbsolute`.
   The parent's geometric error is conservatively accumulated from its
   children. A group with under 10% reduction stays unmerged; multiple roots
   are permitted. Max levels, target ratio and relative error are configurable.
@@ -43,9 +47,15 @@ the shared renderer. The current implementation has no GPU rendering path.
   refinement of its parent; budget pressure retains the parent.
   The caller supplies a valid projected error for every node. The implementation
   is a CPU reference selector, not GPU culling or residency.
-- The current builder is position-only (no normal/UV/color weighting).
-  Do not route skinned, morphed, masked/transparent, displaced or shader-graph
-  surfaces through it without explicit authoring and A/B parity work.
+- `buildModelAsset()` projects 15 attribute components per vertex from `Model`
+  (normal xyz, UV0, tangent xyzw, vertex RGBA, packed lightmap UV1), with
+  weighted seam-aware simplification. It does not mutate source Model or LOD0.
+  It skips mutable nodes, skinned/morphed, already uploaded, meshes with existing
+  authored/generated LODs, material variants and alpha/custom-shader materials.
+  It returns explicit skip reasons and fails transactionally on invalid eligible
+  geometry. The adapter is not hooked up to GeometryScene draw calls yet.
+- This is still experimental: no verified cracks/material parity, GPU streaming
+  or per-pass culling. Do not automatically route displaced surfaces here.
   Importers should preserve existing meshes and exact LOD0 as a fallback.
 
 ## Architectural constraints
@@ -67,10 +77,25 @@ the shared renderer. The current implementation has no GPU rendering path.
   require distinct culling/error metrics and shadow caster inclusion.
 
 ## Known shortcomings / next steps
-1. Make tests compile and pass. Command:
+1. Make both focused test targets compile and pass. Command:
    `cmake -S . -B build/strata -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_STRATA=ON`
-   then `cmake --build build/strata --target aiverse_strata_builder_tests`
-   then `ctest --test-dir build/strata -R '^strata_builder$' --output-on-failure`.
+   then `cmake --build build/strata --target aiverse_strata_builder_tests aiverse_strata_model_adapter_tests`
+   then `ctest --test-dir build/strata -R '^strata_(builder|model_adapter)
+2. Add explicit material/attribute seam, silhouette and vertex displacements
+   regression fixtures. Attribute-aware simplification is implemented for
+   Model adapters, but locked borders are not a guarantee against cracks
+   at all heterogeneous LOD frontiers.
+3. Validate meshlet locality; consider importing full upstream meshoptimizer
+   clustering/partition implementation in a versioned dependency update.
+4. Add a feature-gated, single `GeometryScene` adapter and per-pass bounds
+   tests before any GPU Scene/culling path.
+5. Build independent CPU and GPU benchmark references; measure quality,
+   memory, streaming stalls, frame time and fallback behavior.
+
+## Verification policy
+Compiler, CTest, GPU timing and screenshots must be reported only after
+actual execution with logs/CI URLs. An opened or queued CI run is not a PASS.
+ --output-on-failure`.
 2. Add explicit material/attribute seam and silhouette policies; use
    `meshopt_simplifyWithAttributes` once vertex attributes are available.
    Current locked borders are not a universal guarantee against cracks
