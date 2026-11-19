@@ -164,10 +164,16 @@ struct CreatorApp {
     }
     void regenerate() {
         if(!device)return;
+        // Two-phase publication: prepare and upload an entirely new human
+        // before retiring the last-good visible model. A shader compile,
+        // malformed import or failed GPU allocation never clears the scene.
+        HumanPreviewAsset proposed;
+        std::unique_ptr<GpuActorStream> candidateActor;
+        std::unique_ptr<World> candidateWorld;
+        std::shared_ptr<const AnimationGraph> candidateGraph;
+        std::vector<mat4> candidatePose;
+        bool uploaded=false;
         try {
-            // Build/validate in CPU scratch first, keeping last-good visual
-            // data if DNA or shader-graph authoring fails.
-            HumanPreviewAsset proposed;
             if(externalMode) {
                 const auto manifest=readManifest(importedManifest);
                 auto imported=importHumanAsset(manifest,readerFor(importedManifest));
@@ -182,9 +188,11 @@ struct CreatorApp {
                 }
                 proposed.groom.generate(session.dna(),groomQuality);
                 proposed.hair=proposed.groom.makeCardModel(session.dna());
-            } else {
+            }else {
                 proposed=generateHumanPreview(session.dna(),groomQuality);
             }
+            if(!proposed.head || !proposed.hair)
+                throw std::runtime_error("VIVID Creator: incomplete generated human");
             AnimClip idle;
             idle.name="vivid_idle";
             idle.duration=2.0f;
@@ -198,53 +206,85 @@ struct CreatorApp {
             idle.channels.push_back(std::move(headMove));
             proposed.head->clips.push_back(std::move(idle));
             proposed.head->uploadPrepared=true;
-            auto newGraph=AnimationGraph::compile(*proposed.head,Json::parse(
+            candidateGraph=AnimationGraph::compile(*proposed.head,Json::parse(
                 R"({"nodes":[{"id":"idle","kind":"clip","clip":"vivid_idle"}],"output":"idle"})"));
-            if(!releaseHuman())return;
-            human=std::move(proposed);
-            if(!uploadModel(*device,*human.head,true))
-                throw std::runtime_error("VIVID Creator: head GPU upload failed");
-            // Vertex cards are mutable (secondary motion), so use a ringed
-            // Dynamic buffer instead of the loader's Immutable model buffer.
+
+            // No pending frame can reference staged buffers yet. Waiting for
+            // previous GPU work guarantees the old character remains valid
+            // and prevents unsafe sharing of in-flight renderer resources.
+            if(!device->waitForResourceIdle())
+                throw std::runtime_error("VIVID Creator: GPU idle barrier failed before asset swap");
+            uploaded=true;
+            if(!uploadModel(*device,*proposed.head,true))
+                throw std::runtime_error("VIVID Creator: staged head GPU upload failed");
             gfx::BufferDesc vb;
             vb.type=gfx::BufferType::Vertex;
             vb.usage=gfx::Usage::Dynamic;
             vb.snapshotUpdates=true;
-            vb.size=human.hair->vertices.size()*sizeof(ModelVertex);
-            vb.data=human.hair->vertices.data();
+            vb.size=proposed.hair->vertices.size()*sizeof(ModelVertex);
+            vb.data=proposed.hair->vertices.data();
             vb.label="VIVID dynamic groom cards";
-            human.hair->vb=device->createBuffer(vb);
+            proposed.hair->vb=device->createBuffer(vb);
             gfx::BufferDesc ib;
             ib.type=gfx::BufferType::Index;
-            ib.size=human.hair->indices.size()*sizeof(std::uint32_t);
-            ib.data=human.hair->indices.data();
-            human.hair->ib=device->createBuffer(ib);
-            if(!human.hair->vb.valid() || !human.hair->ib.valid())
-                throw std::runtime_error("VIVID Creator: groom buffer upload failed");
-            auto gpu=cache->acquire(human.facialShapes,human.head->vertices);
+            ib.size=proposed.hair->indices.size()*sizeof(std::uint32_t);
+            ib.data=proposed.hair->indices.data();
+            proposed.hair->ib=device->createBuffer(ib);
+            if(!proposed.hair->vb.valid() || !proposed.hair->ib.valid())
+                throw std::runtime_error("VIVID Creator: staged groom GPU upload failed");
+
+            auto gpu=cache->acquire(proposed.facialShapes,proposed.head->vertices);
             if(!gpu)throw std::runtime_error("VIVID Creator: shared morph CSR upload failed");
-            actor=std::make_unique<GpuActorStream>();
-            if(!actor->initializeShared(*device,*human.head,gpu))
-                throw std::runtime_error("VIVID Creator: "+actor->lastError());
-            world=std::make_unique<World>();
-            entity=world->create();
-            auto& anim=world->add<motionweave::AnimationAssetComponent>(entity);
-            anim.model=human.head.get();
-            anim.graph=newGraph;
-            world->add<motionweave::AnimationPlayerComponent>(entity);
-            world->add<motionweave::AnimationPoseComponent>(entity);
-            graph=std::move(newGraph);
-            facePose.resize(human.head->nodes.size());
+            candidateActor=std::make_unique<GpuActorStream>();
+            if(!candidateActor->initializeShared(*device,*proposed.head,gpu))
+                throw std::runtime_error("VIVID Creator: "+candidateActor->lastError());
+
+            candidateWorld=std::make_unique<World>();
+            const Entity newEntity=candidateWorld->create();
+            auto& anim=candidateWorld->add<motionweave::AnimationAssetComponent>(newEntity);
+            anim.model=proposed.head.get();
+            anim.graph=candidateGraph;
+            candidateWorld->add<motionweave::AnimationPlayerComponent>(newEntity);
+            candidateWorld->add<motionweave::AnimationPoseComponent>(newEntity);
+            candidatePose.resize(proposed.head->nodes.size());
+
+            // All GPU allocations, rig graph and World are now valid.
+            // This is the only point allowed to retire the last-good actor.
+            if(!releaseHuman())
+                throw std::runtime_error("VIVID Creator: cannot safely retire previous character");
+
+            human=std::move(proposed);
+            actor=std::move(candidateActor);
+            world=std::move(candidateWorld);
+            entity=newEntity;
+            graph=std::move(candidateGraph);
+            facePose=std::move(candidatePose);
             displayedRevision=session.revision();
             pendingRebuild=false;
             status="Loaded "+session.dna().displayName+" / "+
                    std::to_string(human.head->vertices.size())+" vertices / "+
                    std::to_string(human.groom.stats().guides)+" hair guides";
-        }catch(const std::exception& e){
+            return;
+        }catch(const std::exception& e) {
             status=e.what();
-            // Do not publish an invalid partial character or hide the
-            // diagnostics. It can be rebuilt after the next valid edit.
             pendingRebuild=false;
+        }
+        if(uploaded) {
+            // The staged assets were never submitted for rendering. A GPU
+            // completion barrier protects any initial uploads and prevents
+            // leaking half-created models, actor streams or shader resources.
+            if(!device->waitForResourceIdle()) {
+                status+="; failed to retire staged GPU allocations";
+                return;
+            }
+            if(candidateActor && !candidateActor->shutdownAfterIdle()) {
+                status+="; failed to retire staged morph actor";
+                return;
+            }
+            candidateActor.reset();
+            if(proposed.hair)releaseModel(*device,*proposed.hair);
+            if(proposed.head)releaseModel(*device,*proposed.head);
+            cache->pruneExpired();
         }
     }
     void editCommit() {
