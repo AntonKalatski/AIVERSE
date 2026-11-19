@@ -100,6 +100,18 @@ void WorldScene::setVegetationClearings(
     vegetationClearings_=std::move(clearings);
     vegetationClearingsDirty_=true;
 }
+
+void WorldScene::setVegetationPhenology(terraweave::CanopyPhenology state) {
+    terraweave::validateCanopyPhenology(state);
+    if(state==vegetationPhenology_)return;
+    vegetationPhenology_=state;
+    // Near foliage changes materials in place, without respawning stable
+    // foliage keys or invalidating asynchronous scatter workers.
+    if(terraForest_)terraForest_->setPhenology(state);
+    // Horizon atlas colour/coverage requires a worker rebake, on the next
+    // owner-thread WorldScene update. No mutable worker callback captures.
+    vegetationPhenologyDirty_=bool(terraHorizon_);
+}
 std::shared_ptr<WorldScene::Prepared> WorldScene::prepare(Cell cell,const AssetReader& reader) {
     const auto& asset=assets_.chunks.at(cell);std::string text;
     if(!reader(asset.file,text))throw JsonError("world.scene: read/hash failure: "+asset.file);
@@ -228,7 +240,8 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
         resident_.erase(it);
     },uploadBytes_);
     if((terraForest_ || terraHorizon_) &&
-       (landscapeChanged || vegetationClearingsDirty_)){
+       (landscapeChanged || vegetationClearingsDirty_ ||
+        vegetationPhenologyDirty_)){
         // Cleared patches may extend far beyond resident collision tiles.
         // Include BOTH old and new rectangles so an old canopy silhouette
         // is invalidated when a clearing is restored or moved.
@@ -291,7 +304,8 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
             std::move(mutableHeights);
         std::shared_ptr<const terraweave::FoliageExclusionMask> mask;
         if(boxes)mask=std::move(mutableMask);
-        if(terraForest_){
+        if(terraForest_ &&
+           (landscapeChanged || vegetationClearingsDirty_)){
             const terraweave::TerrainSettings fallback=
                 terraForest_->settings().terrain;
             terraForest_->setLandscapeSources(
@@ -309,6 +323,7 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
             // generator's own procedural terrain seed.
             const auto fallback=terraHorizon_->terrainSettings();
             auto surface=std::make_shared<terraweave::HorizonSurfaceSources>();
+            surface->phenology=vegetationPhenology_;
             surface->heightAtCm=[heights,fallback](int64_t x,int64_t z){
                 if(const auto sample=heights->sample(x,z))return *sample;
                 return terraweave::heightAtCm(fallback,x,z);
@@ -347,6 +362,7 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
                     editedLandscape.data(),editedLandscape.size()));
         }
         vegetationClearingsDirty_=false;
+        vegetationPhenologyDirty_=false;
         previousVegetationClearings_.clear();
     }
     if(terraForest_){
