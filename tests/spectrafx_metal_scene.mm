@@ -16,6 +16,7 @@
 #include <vector>
 #include "engine/gfx/Gfx.h"
 #include "engine/render/Renderer3D.h"
+#include "engine/render/PostFx.h"
 #include "engine/fx/SpectraFxSceneHost.h"
 
 namespace {
@@ -295,6 +296,89 @@ int aiverseMain(int,char**) {
         expect(fx.playback()&&fx.playback()->retiringGpuSlots()==0,
                "GPU resources retired after completed three-frame window");
         expect(device->gpuHealthy(),"Renderer3D + SpectraFX GPU healthy");
+        // Stage 107: PRISMA owns postprocessing. SpectraFX is drawn into
+        // Renderer3D's HDR scene BEFORE resolvePostFx, never added as a
+        // post-tonemap UI overlay. Use real production RHI / pipelines.
+        aiverse::render::PostFx prisma;
+        expect(prisma.init(*device),
+               "production PRISMA postprocessor initializes on Metal");
+        prisma.setQuality(aiverse::render::PostFxQuality::High);
+        prisma.configure(aiverse::Json::parse(R"JSON({
+            "hdr":"on",
+            "effects":[{"type":"bloom","threshold":0.35,"intensity":0.7},
+                       {"type":"colorGrade","exposure":0}]
+        })JSON"),aiverse::Json{});
+        expect(prisma.active() && prisma.hdrRequested(),
+               "PRISMA HDR and Bloom configured for FX scene");
+
+        // Emit one fresh scene after the rollback test; the old generation
+        // cannot be revived by the previous cue epoch.
+        const auto hdrRender=[&](Target target,bool drawFx) {
+            if(drawFx)
+                expect(fx.prepareRenderView(va),
+                       "alpha/LOD prepared before PRISMA HDR scene encoder");
+            renderer.beginScene(cameraA,kSide,kSide);
+            renderer.drawMesh(opaque,aiverse::render::mat4::translate({0,0,1}),
+                              {0.04f,0.08f,0.38f,1},
+                              aiverse::render::kDrawUnlit);
+            renderer.render(pass(target),&prisma);
+            expect(prisma.linearScene(),
+                   "Renderer3D opened PRISMA linear HDR scene target");
+            // The particle quad must render into the same HDR depth-tested
+            // scene as opaque geometry, before bloom/tonemap/composition.
+            if(drawFx) fx.render(renderer.lighting,va);
+            renderer.resolvePostFx();
+            device->endPass(); // PRISMA leaves final output pass open
+        };
+        device->beginFrame(kSide,kSide);
+        expect(fx.enqueueCue(cue,true,fx.cueEpoch()),
+               "new scene can enqueue GPU effect after reset");
+        fx.prepareGpu(0.016f,va);
+        fx.prepareCpu(0.016f,va);
+        expect(fx.playback() &&
+               fx.playback()->backendSnapshot().dedicatedGpu==1,
+               "new PRISMA scene owns a live GPU emitter");
+        hdrRender(baselineB,false);
+        hdrRender(effectB,true);
+        device->endFrame();
+
+        std::vector<uint8_t> hdrBaseline,hdrEffect;
+        expect(device->readColorRGBA8(baselineB.color,hdrBaseline) &&
+               device->readColorRGBA8(effectB.color,hdrEffect),
+               "PRISMA HDR/Bloom output is readable after Metal completion");
+        const auto hdrDiff=differences(hdrBaseline,hdrEffect);
+        expect(prisma.stats().passes>0,
+               "PRISMA executed actual postprocessing passes");
+        expect(hdrDiff.changed>12 && hdrDiff.maxDifference>8,
+               "SpectraFX contributes to resolved HDR/Bloom output");
+        expect(std::abs(redDifference(hdrBaseline,hdrEffect,
+                                      kSide/2,kSide/2))<=5,
+               "foreground depth occludes SpectraFX before HDR postprocessing");
+        expect(capture("prisma-baseline-a",hdrBaseline) &&
+               capture("prisma-effect-a",hdrEffect),
+               "optional PRISMA FX-vs-baseline screenshots");
+        std::printf("[spectrafx-metal-scene] prisma_hdr=%d passes=%d "
+                    "fx_pixels=%d max_red_delta=%d depth_delta=%d\n",
+                    int(prisma.hdrRequested()),prisma.stats().passes,
+                    hdrDiff.changed,hdrDiff.maxDifference,
+                    redDifference(hdrBaseline,hdrEffect,kSide/2,kSide/2));
+
+        // Keep the live FX owning its GPU buffers until an RHI-safe reset.
+        device->beginFrame(kSide,kSide);
+        expect(fx.resetScene(),"post-PRISMA scene reset at safe frame point");
+        device->endFrame();
+        for(int frame=0;frame<4;++frame){
+            device->beginFrame(kSide,kSide);
+            fx.prepareGpu(0.016f,va);
+            device->endFrame();
+        }
+        expect(fx.playback()&&fx.playback()->retiringGpuSlots()==0,
+               "PRISMA-era GPU particles retired safely");
+        // Debug-only readback serializes the queue before any GPU teardown.
+        expect(device->readColorRGBA8(effectB.color,hdrEffect),
+               "PRISMA source and output GPU work completed");
+        prisma.shutdown();
+
         // Ensure every submitted GPU buffer completes before owner teardown.
         std::vector<uint8_t> finalRead;
         expect(device->readColorRGBA8(effectA.color,finalRead),
