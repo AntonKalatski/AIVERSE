@@ -121,3 +121,47 @@ jobs:
           name: texture-rhi-vulkan-logs
           path: build/texture-rhi-vulkan/verify-logs/
           if-no-files-found: warn
+
+  gles-gpu:
+    name: GLES3 real EGL array and legacy upload readback
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      EGL_PLATFORM: surfaceless
+      LIBGL_ALWAYS_SOFTWARE: "1"
+      MESA_LOADER_DRIVER_OVERRIDE: llvmpipe
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Install Mesa EGL / GLES3 development and software driver
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build g++ python3 \
+            libx11-dev libegl1-mesa-dev libgles2-mesa-dev libgl1-mesa-dri
+      - name: Configure native production GLES3 Texture2DArray GPU test
+        run: |
+          cmake -S . -B build/texture-gles-gpu -G Ninja \
+            -DAIVERSE_BUILD_TESTS=ON \
+            -DAIVERSE_BUILD_CLIENT=OFF \
+            -DAIVERSE_BUILD_EDITOR=OFF \
+            -DAIVERSE_BUILD_HEADLESS=OFF \
+            -DAIVERSE_BUILD_SERVER=OFF \
+            -DAIVERSE_BUILD_TOOLS=OFF \
+            -DAIVERSE_TEXTURE_GLES_GPU_TESTS=ON
+      - name: Compile native GLES3 array and legacy texture GPU fixture
+        run: cmake --build build/texture-gles-gpu --target aiverse_gles_texture_array_gpu_test --parallel 4
+      - name: Execute real Mesa GLES3 GPU readback (failure is not SKIP)
+        run: |
+          ctest --test-dir build/texture-gles-gpu --verbose --no-tests=error \
+            -R '^gles_texture_array_gpu$' 2>&1 | tee build/texture-gles-gpu/gles-gpu-test.log
+          grep -F 'PASS: native GLES3 texture-array mip/layer padded upload and state isolation' \
+            build/texture-gles-gpu/gles-gpu-test.log
+          ! grep -Eq '(^|[[:space:]])FAIL:' build/texture-gles-gpu/gles-gpu-test.log
+      - name: Upload real-GLES test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: texture-rhi-gles-gpu
+          path: build/texture-gles-gpu/gles-gpu-test.log
+          if-no-files-found: warn
