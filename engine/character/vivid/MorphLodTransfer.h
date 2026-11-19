@@ -3,6 +3,9 @@
 #pragma once
 #include "SparseMorph.h"
 #include <cstdint>
+#include "engine/render/Math3D.h"
+#include <cmath>
+#include <limits>
 #include <span>
 #include <stdexcept>
 #include <vector>
@@ -10,6 +13,41 @@
 namespace aiverse::vivid {
 class MorphLodTransfer {
 public:
+    // Exact/near-exact vertex correspondence only. Ambiguous matches,
+    // generated unrelated vertices and nonfinite positions fail closed.
+    static std::vector<std::uint32_t> matchPositions(
+            std::span<const render::float3> source,
+            std::span<const render::float3> lod,
+            float tolerance=1.e-5f) {
+        if(source.empty() || lod.empty() ||
+           source.size()>16'000'000 || lod.size()>16'000'000 ||
+           !std::isfinite(tolerance) || tolerance<=0 ||
+           tolerance>0.01f)
+            throw std::invalid_argument("VIVID morph LOD: invalid geometric mapping budget");
+        std::vector<std::uint32_t> mapping;
+        mapping.reserve(lod.size());
+        for(const auto& vertex:lod) {
+            if(!std::isfinite(vertex.x)||!std::isfinite(vertex.y)||
+               !std::isfinite(vertex.z))
+                throw std::invalid_argument("VIVID morph LOD: nonfinite output");
+            std::uint32_t matched=UINT32_MAX;
+            for(std::size_t i=0;i<source.size();++i) {
+                const auto p=source[i];
+                if(!std::isfinite(p.x)||!std::isfinite(p.y)||
+                   !std::isfinite(p.z))
+                    throw std::invalid_argument("VIVID morph LOD: nonfinite source");
+                const auto delta=vertex-p;
+                if(render::dot(delta,delta)>tolerance*tolerance)continue;
+                if(matched!=UINT32_MAX)
+                    throw std::invalid_argument("VIVID morph LOD: ambiguous vertex correspondence");
+                matched=std::uint32_t(i);
+            }
+            if(matched==UINT32_MAX)
+                throw std::invalid_argument("VIVID morph LOD: missing geometric source correspondence");
+            mapping.push_back(matched);
+        }
+        return mapping;
+    }
     // Each target LOD vertex references a source vertex. Invalid IDs are
     // rejected instead of applying approximate facial deformation silently.
     // Authoring tools can generate the mapping externally via surface bake.
