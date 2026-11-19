@@ -3230,3 +3230,69 @@ cascade/step identities, bounded handles, and correct update/stop/
 rollback behavior. Then provide an optional PHYSIS wind presentation
 adapter without linking NEREID to a particular weather engine
 module. Always append handoff after each stage.
+
+## Stage 31 — waterfall spray at intermediate cascade drops
+
+**Branch:** `feature/nereid-water-core`, Draft PR #23.
+**Starting head:** Stage 30 handoff
+`afdc9de1307025d05922aaf5b450d5f15ea9a8f5`.
+**Owner priority:** features first. No tests authored or run.
+No unrelated branches or main merged.
+
+### Changes / commits
+
+- `68701c4e1f00ab8eafc152c3aa74e89f4dc7ba4d` —
+  `engine/world/NereidCascadeSprayBridge.h`:
+  adds independent `setStepGraph(graph,scale,minDrop)`, up to
+  eight intermediate step emitters per cascade, stable
+  `(cascade-id,point-index)` ownership keys, cached particle
+  handles, and removal/reset cleanup. The existing
+  `setGraph(graph,scale)` foot emitter remains supported and can
+  be disabled independently. Changing the foot graph/scale resets
+  only the foot handles; changing a step graph/threshold resets
+  only the step handles. A step may emit even with no foot graph.
+- `e7fa419d1618f538ca48578a636b4315f2acaaf4` —
+  `skills/gameplay/aiverse-nereid-water/SKILL.md`:
+  agent-facing usage, graph authoring and lifecycle instructions.
+
+### Ownership and API
+
+Existing `NereidCascadeScene` is the read-only authoritative
+presentation snapshot for visual waterfall geometry. The host's
+SpectraFX `ParticleSystem` owns particles. NEREID maps intermediate
+descending segments (all but the final foot) to optional continuous
+spray emitters only when segment vertical drop reaches a configurable
+threshold; cap is eight qualifying intermediate steps per cascade.
+Each step retains the same FxHandle across frames with the same
+stable ID/point index; the real `play`, `move`, `stop`, `kill`
+APIs are used. Removed cascades and steps stop emitting naturally;
+`reset()` kills all handles on rollback/scene replacement. No new
+ECS component, no new shaders/RHI, no genre dependencies or extra
+physics simulation.
+
+```cpp
+world::NereidCascadeSprayBridge spray(particleSystem);
+spray.setGraph("fx/cascade_foot",1.f);       // host-defined graph
+spray.setStepGraph("fx/cascade_step",0.65f,0.75f);
+spray.sync(worldScene);                     // each presentation frame
+spray.reset();                              // scene replacement/rollback
+```
+
+**Actually done:** connected GitHub source modification, native
+API review and agent handoff. **NOT RUN:** C++ build/CTest,
+SpectraFX graph smoke, GPU/visual capture, gameplay regression,
+all intentionally deferred. Keep PR Draft.
+
+Known limitations: eight selected intermediate steps per cascade,
+fixed first-eight eligible ordering (not camera/importance LOD),
+one particle attachment per discrete spline endpoint, and
+simple width/drop-based strength; no true fluid impact, spray
+collisions or bubbles. The game must provide and load SpectraFX
+graph assets and schedule ParticleSystem update/render.
+No editor integration for step graph authoring yet.
+
+**Next stage:** add an *optional*, genre-neutral visual wind input
+for NEREID that a PHYSIS owner/adapter can supply, without NEREID
+referencing genre or non-merged PHYSIS sources. Apply wind to
+water shader normals and presentation ripple advection. Append
+a new handoff when implemented; defer tests until owner requests.
