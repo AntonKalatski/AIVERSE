@@ -4,7 +4,13 @@
 // runtime integration fixtures must prove ticks/save/rollback/Box3D.
 // The primary benefit is detecting broken C++/header/API integration.
 #include "examples/world/terraweave_native/Integration.h"
+// PhysicsIntegration owns Box3D scene handles. The base native smoke
+// must compile with AIVERSE_ENABLE_PHYSICS=OFF, while the separate
+// physics-enabled smoke links AIVERSE::physics and its public include
+// directories (including vendored <box3d/box3d.h>).
+#if defined(AIVERSE_TERRAWEAVE_SMOKE_WITH_PHYSICS)
 #include "examples/world/terraweave_native/PhysicsIntegration.h"
+#endif
 #include "engine/world/TerraWeaveNereidMicroNutrients.h"
 #include "engine/world/TerraWeavePhysisNutrientBridge.h"
 #include <cassert>
