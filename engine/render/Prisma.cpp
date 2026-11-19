@@ -476,6 +476,7 @@ void Prisma::shutdown() {
     adaptivePressure_.clear();
     externalRendererLiveKnownBytes_=externalRendererPendingKnownBytes_=0;
     externalGeometryPoolKnownBytes_=0;
+    externalModelAssetKnownBytes_=0;
     motionViews_.clear();
     viewDimensions_.clear();
     requestedOutputSizes_.clear();
@@ -652,9 +653,11 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
             return a>maximum-b?maximum:a+b;
         };
         const uint64_t liveBytes=saturatingAdd(
-            saturatingAdd(memoryStats().liveKnownBytes,
-                          externalRendererLiveKnownBytes_),
-            externalGeometryPoolKnownBytes_);
+            saturatingAdd(
+                saturatingAdd(memoryStats().liveKnownBytes,
+                              externalRendererLiveKnownBytes_),
+                externalGeometryPoolKnownBytes_),
+            externalModelAssetKnownBytes_);
         const uint64_t pendingBytes=saturatingAdd(
             retirementStats().knownPendingBytes,externalRendererPendingKnownBytes_);
         const uint64_t knownBytes=saturatingAdd(liveBytes,pendingBytes);
