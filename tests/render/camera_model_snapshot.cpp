@@ -78,4 +78,32 @@ int main(){
     assert(fallbacks==1 && preparedCount==1);
     mixed.clear();
     assert(mixed.size()==0 && mixed.preparedCount()==0);
+
+    // Geometry packets are value-owned, except for the host-owned Mesh.
+    // All primitive coordinates and draw parameters survive source mutation.
+    CameraGeometryCommand triangle;
+    triangle.kind=CameraGeometryCommand::Kind::Triangle;
+    triangle.a={1,2,3};triangle.b={4,5,6};triangle.c={7,8,9};
+    triangle.rgba=0xff113355u;
+    mixed.recordGeometry(triangle);
+    triangle.a={100,200,300};
+    CameraGeometryCommand line;
+    line.kind=CameraGeometryCommand::Kind::Line;
+    line.a={0,1,2};line.b={3,4,5};
+    mixed.recordGeometry(line);
+    int geometryVisits=0;
+    mixed.forEachGeometry([&](const CameraGeometryCommand& packet) {
+        if(geometryVisits==0) {
+            assert(packet.kind==CameraGeometryCommand::Kind::Triangle);
+            assert(packet.a.x==1.f && packet.b.y==5.f);
+            assert(packet.rgba==0xff113355u);
+        } else {
+            assert(packet.kind==CameraGeometryCommand::Kind::Line);
+            assert(packet.a.y==1.f && packet.b.z==5.f);
+        }
+        ++geometryVisits;
+    });
+    assert(mixed.geometryCount()==2 && geometryVisits==2);
+    mixed.clear();
+    assert(mixed.geometryCount()==0);
 }
