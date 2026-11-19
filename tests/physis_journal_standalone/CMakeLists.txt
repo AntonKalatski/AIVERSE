@@ -31,3 +31,7 @@ add_physis_journal_standalone_test(
 add_physis_journal_standalone_test(
     aiverse_physis_journal_locked_io_test
     physis_journal_locked_io physis_journal_locked_io_test.cpp)
+
+add_physis_journal_standalone_test(
+    aiverse_physis_journal_crash_recovery_test
+    physis_journal_crash_recovery physis_journal_crash_recovery_test.cpp)

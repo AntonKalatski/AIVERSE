@@ -2315,6 +2315,17 @@ if(AIVERSE_BUILD_TESTS AND UNIX AND NOT EMSCRIPTEN)
         COMMAND aiverse_physis_journal_locked_io_test)
     set_tests_properties(physis_journal_locked_io
         PROPERTIES LABELS "PHYSIS;PERSISTENCE;SECURITY")
+    # Stage 59: real fork/SIGKILL crash recovery with the pinned journal.
+    add_executable(aiverse_physis_journal_crash_recovery_test
+        tests/physis_journal_crash_recovery_test.cpp)
+    target_include_directories(aiverse_physis_journal_crash_recovery_test
+        PRIVATE "${CMAKE_SOURCE_DIR}")
+    target_compile_features(aiverse_physis_journal_crash_recovery_test
+        PRIVATE cxx_std_20)
+    add_test(NAME physis_journal_crash_recovery
+        COMMAND aiverse_physis_journal_crash_recovery_test)
+    set_tests_properties(physis_journal_crash_recovery
+        PROPERTIES LABELS "PHYSIS;PERSISTENCE;SECURITY")
 endif()
 
 # PHYSIS Stage 19: deterministic authored field assets and editor Move gizmo

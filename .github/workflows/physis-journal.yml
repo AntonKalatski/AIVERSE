@@ -9,6 +9,7 @@ on:
       - 'engine/physis/PhysisJournalPosixIO.h'
       - 'tests/physis_journal_posix_io_test.cpp'
       - 'tests/physis_journal_locked_io_test.cpp'
+      - 'tests/physis_journal_crash_recovery_test.cpp'
       - 'tests/physis_journal_standalone/**'
       - '.github/workflows/physis-journal.yml'
   pull_request:
@@ -17,6 +18,7 @@ on:
       - 'engine/physis/PhysisJournalPosixIO.h'
       - 'tests/physis_journal_posix_io_test.cpp'
       - 'tests/physis_journal_locked_io_test.cpp'
+      - 'tests/physis_journal_crash_recovery_test.cpp'
       - 'tests/physis_journal_standalone/**'
       - '.github/workflows/physis-journal.yml'
   workflow_dispatch:
