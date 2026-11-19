@@ -39,6 +39,33 @@ public:
         }
         const auto path=std::filesystem::path(journal.string()+".lock");
 #ifndef _WIN32
+        // Anchor the basename lookup to a verified directory descriptor.
+        // A world/group-writable or symlinked parent can let another user
+        // replace the lock inode and bypass advisory flock ownership.
+        int parentFlags=O_RDONLY;
+#ifdef O_DIRECTORY
+        parentFlags|=O_DIRECTORY;
+#endif
+#ifdef O_CLOEXEC
+        parentFlags|=O_CLOEXEC;
+#endif
+#ifdef O_NOFOLLOW
+        parentFlags|=O_NOFOLLOW;
+#endif
+        const int parentFd=::open(parent.c_str(),parentFlags);
+        if(parentFd<0) {
+            if(error)*error="PHYSIS journal lock parent open failed";
+            return false;
+        }
+        struct stat parentStat{};
+        if(::fstat(parentFd,&parentStat)!=0 ||
+           !S_ISDIR(parentStat.st_mode) ||
+           parentStat.st_uid!=::geteuid() ||
+           (parentStat.st_mode & 0022)!=0) {
+            ::close(parentFd);
+            if(error)*error="PHYSIS journal lock parent is not server-owned or is writable by others";
+            return false;
+        }
         // Nonblocking open is essential before fstat(): a malicious FIFO
         // at the lock path must not hang the privileged admin server.
         // The eventual validated regular-file descriptor is unaffected.
@@ -49,8 +76,10 @@ public:
 #ifdef O_NOFOLLOW
         flags|=O_NOFOLLOW;
 #endif
-        const int fd=::open(path.c_str(),flags,0600);
+        const auto basename=path.filename();
+        const int fd=::openat(parentFd,basename.c_str(),flags,0600);
         if(fd<0) {
+            ::close(parentFd);
             if(error)*error="PHYSIS journal lock file open failed";
             return false;
         }
@@ -62,12 +91,36 @@ public:
            lockStat.st_nlink!=1 || lockStat.st_uid!=::geteuid() ||
            (lockStat.st_mode & 0077)!=0) {
             ::close(fd);
+            ::close(parentFd);
             if(error)*error="PHYSIS journal lock inode is unsafe";
             return false;
         }
         if(::flock(fd,LOCK_EX|LOCK_NB)!=0) {
             ::close(fd);
+            ::close(parentFd);
             if(error)*error="PHYSIS journal is owned by another server";
+            return false;
+        }
+        // Validate the visible name again AFTER locking. If another
+        // actor unlinked/replaced it during acquisition, the lock fd
+        // may protect a different inode than the path future owners open.
+        struct stat visible{};
+        struct stat visibleParent{};
+        const bool samePath=
+            ::fstatat(parentFd,basename.c_str(),&visible,AT_SYMLINK_NOFOLLOW)==0 &&
+            S_ISREG(visible.st_mode) &&
+            visible.st_dev==lockStat.st_dev &&
+            visible.st_ino==lockStat.st_ino &&
+            visible.st_nlink==1 &&
+            ::lstat(parent.c_str(),&visibleParent)==0 &&
+            S_ISDIR(visibleParent.st_mode) &&
+            visibleParent.st_dev==parentStat.st_dev &&
+            visibleParent.st_ino==parentStat.st_ino;
+        ::close(parentFd);
+        if(!samePath) {
+            ::flock(fd,LOCK_UN);
+            ::close(fd);
+            if(error)*error="PHYSIS journal lock path changed during acquisition";
             return false;
         }
         fd_=fd;
