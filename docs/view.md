@@ -1568,3 +1568,115 @@ Shared geometry pool accounting is device-wide, not attributable
 without additional ownership tags. Remaining RtsView type appearance,
 simulation-specific visuals and animated portrait wrappers are still
 not retired.
+
+## Stage 104 — persistent native model workers, shared-page identity and generic mesh selection
+
+### Persistent bounded CPU worker pool
+
+`render::AsyncModelCpuQueue` now runs a *persistent*, lazy-started
+`std::thread` pool instead of creating a new `std::async` thread for
+each imported model. `setWorkerCount(1..8)` is preserved and the
+default stays one worker; no GPU devices, ECS worlds or renderer
+operations are touched by the threads. The main/host thread owns
+`request`, `invalidate`, `pollReady`, `setWorkerCount` and
+`shutdown`; workers share a mutex/condition-variable protected
+priority queue, active source revisions and a ready-to-publish deque.
+Reader callbacks MUST be reentrant when more than one worker runs.
+
+Queued sources retain the Stage 102 priorities
+`Interactive > Visible > Background`, same-priority FIFO,
+priority promotion without duplicate work and an occasional oldest
+pending dispatch after eight priority bypasses. Worker concurrency
+is bounded, existing in-flight imports are never preempted, and
+source revisions prevent invalidated results from being published.
+`pollReady` returns a single valid prepared result without
+waiting for a particular worker; stale results can be skipped.
+`setMaxQueued` limits waiting plus prepared-but-unpublished sources,
+and `setMaxReady` (default 16) applies backpressure to dispatch when
+the ready deque is full (up to a bounded number of concurrently
+finishing jobs can overshoot it). The pool therefore does not keep
+launching imports indefinitely when GPU publication is paused.
+
+`setWorkerCount` joins any in-flight CPU jobs while reconfiguring
+the pool and then restarts persistent threads when work is present:
+this operation can block if a reader is slow, so it is not for
+per-frame tuning. Valid finished results survive this reconfiguration.
+`shutdown()` joins all worker threads, clears their results and
+releases captured FileReader/texture-cache state before the project
+is destroyed. `AsyncModelCpuQueue::Stats` now also reports the
+ready count and number of live persistent threads.
+`ModelAssetProvider` continues to publish GPU models only on the
+render/device owner thread through `publishReady`; its previous
+public priority/budget APIs are source-compatible.
+
+### Shared geometry pages: real identity, no double charging
+
+`render::geometryPoolReferencedStats(gfx::Device&,
+span<const Model* const>)` counts unique `GeometryPoolPage`
+identities referenced by a **combined** set of models, validating
+each page belongs to the passed device. It reports allocated
+and occupied page bytes once per page (plus model-reference count)
+under the device's geometry-pool mutex. The page's GPU buffer is
+never released, reallocated or modified by this statistics function.
+
+`render::ModelResourceCache::geometryPoolModelReferences()`
+supplies models both currently resident and pending retirement
+behind GPU completion tokens. The generic retirement queue exposes
+read-only `forEachPending` so a retired page remains represented
+until the GPU-safe retirement actually happens.
+
+The Editor Statistics window reports the pages referenced by the
+RTS compatibility view as a **subset** of the device-wide
+`geometryPoolStats(device)`, not an additional allocation to
+sum with it. A page can be shared by more than one project host:
+for an accurate combined report, concatenate the hosts' borrowed
+Model pointers and invoke `geometryPoolReferencedStats` ONCE.
+These are allocator capacity/occupancy bytes, not driver VRAM
+heap measurements. Shared texture cache entries are likewise still
+counted once by their resource owner, not multiplied per model.
+
+### Canonical View selection/outline packets
+
+`aiverse::view::MeshObject` has two additive opt-in fields,
+`selectionOutline` and `selectionColor`. When enabled,
+`aiverse::View::submitMesh` forwards the exact legacy selection
+silhouette call to `Renderer3D::drawSelectionMesh`; otherwise it
+retains the original ordinary mesh submission (including flags,
+specular and emissive settings). These are genre-independent
+presentation styles and do not introduce gameplay selection
+components in core View.
+
+`apps/editor/SceneRenderable.h` now sends **all** ordinary and
+selected/hovered mesh submissions through the canonical View.
+The original model `ModelDraw` outline remains intact; the
+selected/hovered mesh silhouette colors, tint, world transforms and
+draw order are unchanged. The existing pickable selection bounds
+edge lines now use `View::submitLine`, while the editor still
+chooses when those edges are needed based on its selection outline
+pass setting. No additional MotionWeave update/evaluation occurs.
+
+### Deferred verification
+
+`tests/render/persistent_model_pool.cpp`, CTest
+`render_persistent_model_pool`, checks bounded worker reuse,
+CPU result publication, worker downsize/upsize and final shutdown.
+`tests/render/geometry_page_owners.cpp`, CTest
+`render_geometry_page_owners`, checks shared page identity across
+two independent resource caches without creating a fake GPU device.
+`tests/view/packets.cpp` has additional assertions on the opt-in
+mesh selection packet (CTest `view_scene_packets`).
+
+These tests are authored and registered but **NOT RUN**, per the
+user's features-before-tests preference. Native compilation, all
+CTest suites, Metal/Vulkan/GL/WebGL2, graphics parity, thread
+sanitizers, editor selection and resource-lifetime hardware checks
+remain unverified. Do not merge to `main` based only on source review.
+
+**Known limitations:** persistent threads are per provider, not a
+process-wide pool; changing concurrency may join a long-running
+reader synchronously; the ready queue limit has a concurrency-sized
+overshoot; global geometry page identities are reliable only for
+models whose page is still owned on the target device. Backend GPU
+completion and multithreaded source parsing still require real
+platform verification. `game::RtsView` remains a compatibility
+host for authored type appearances and advanced animated portraits.
