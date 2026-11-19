@@ -51,7 +51,8 @@ public:
     ~SpectraFxGpuSharedArena() = default; // call shutdown before device destruction
 
     bool init(gfx::Device& device,Config config,
-              gfx::ComputeHandle sharedEvolution={}) {
+              gfx::ComputeHandle sharedEvolution={},
+              gfx::ComputeHandle sharedCompaction={}) {
         shutdown();
         error_.clear();
         const auto& a=config.appearance;
@@ -77,7 +78,8 @@ public:
             slots_.shutdown();
             return false;
         }
-        if(config.gpuIndirectCompaction && !compact_.init(device,config.particles)) {
+        if(config.gpuIndirectCompaction &&
+           !compact_.init(device,config.particles,sharedCompaction)) {
             // Keep the shared GPU arena usable even on Vulkan or when
             // Metal indirect compute resources cannot be created.
             ++stats_.indirectUnavailable;
