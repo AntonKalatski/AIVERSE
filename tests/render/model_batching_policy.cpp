@@ -579,6 +579,61 @@ int main() {
         CHECK(!staticModelCacheCandidate(draw, false));
     }
 
+    // Persistent packet blueprints must never reuse camera/LOD/GI/pose
+    // assumptions or silently ignore caller-visible appearance revisions.
+    {
+        Model model;
+        model.nodes.resize(1);
+        model.nodes[0].mesh = 0;
+        model.meshes.resize(1);
+        model.materials.resize(1);
+        ModelDraw draw;
+        draw.model = &model;
+        draw.persistentId = 42;
+        draw.flags = kDrawStatic;
+        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+        draw.staticPacketRevision = 1;
+        CHECK(staticRenderPacketCandidate(draw, false, false, false));
+        CHECK(!staticRenderPacketCandidate(draw, true, false, false));
+        CHECK(!staticRenderPacketCandidate(draw, false, true, false));
+        CHECK(!staticRenderPacketCandidate(draw, false, false, true));
+
+        ModelDraw snapshot = draw;
+        CHECK(equivalentStaticRenderPacketDraw(snapshot, draw));
+        draw.staticPacketRevision++;
+        CHECK(!equivalentStaticRenderPacketDraw(snapshot, draw));
+        draw.staticPacketRevision = snapshot.staticPacketRevision;
+        draw.outline.w = 0.03f;
+        CHECK(!equivalentStaticRenderPacketDraw(snapshot, draw));
+        draw.outline = snapshot.outline;
+        draw.tint.w = 0.5f;
+        CHECK(!equivalentStaticRenderPacketDraw(snapshot, draw));
+        draw.tint = snapshot.tint;
+        draw.world.m[12] = 15.f;
+        CHECK(!equivalentStaticRenderPacketDraw(snapshot, draw));
+        draw.world = snapshot.world;
+        CHECK(equivalentStaticRenderPacketDraw(snapshot, draw));
+
+        draw.materials = &model.materials;
+        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+        draw.materials = nullptr;
+        std::vector<int> nodeMaterials(1, 0);
+        draw.nodeMaterial = &nodeMaterials;
+        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+        draw.nodeMaterial = nullptr;
+        model.meshes[0].lods.push_back({0, 10.f});
+        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+        model.meshes[0].lods.clear();
+        model.meshes[0].deformable = true;
+        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+        model.meshes[0].deformable = false;
+        model.nodes[0].runtimeMutable = true;
+        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+        model.nodes[0].runtimeMutable = false;
+        model.nodes[0].skin = 0;
+        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+    }
+
     std::puts("engine model batching policy: PASS");
     return 0;
 }
