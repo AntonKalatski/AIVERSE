@@ -178,6 +178,31 @@ void Prisma::retireView(uint64_t id) {
     // compatibility with callers; the next render seeds fresh history.
 }
 
+size_t Prisma::retireUnreferencedSizeCaches() {
+    if (!dev_) return 0;
+    size_t retiredCount = 0;
+    for (auto it = sizes_.begin(); it != sizes_.end();) {
+        bool referenced = false;
+        for (const auto& [id, dimensions] : viewDimensions_) {
+            (void)id;
+            if (dimensions.first == it->w && dimensions.second == it->h) {
+                referenced = true;
+                break;
+            }
+        }
+        if (referenced) { ++it; continue; }
+        RetiredSized retired;
+        retired.resources = std::move(*it);
+        // The current submission token also fences draws already recorded
+        // this frame. GPU completion is checked only by the owner collector.
+        retired.lastSubmittedFence = dev_->gpuSubmissionFence();
+        retiredSizes_.push_back(std::move(retired));
+        it = sizes_.erase(it);
+        ++retiredCount;
+    }
+    return retiredCount;
+}
+
 void Prisma::collectGpuRetirements() {
     if (dev_) collectCompletedSizes(dev_->gpuCompletedFence());
 }
