@@ -2380,6 +2380,101 @@ is not proof of this backend's runtime support. See
 `docs/handoffs/prisma-stage-47.md` for source commits, unknowns
 and exact next steps. PR #26 stays Draft; main unchanged.
 
+## Stage 48 — GPU allocation reporting across LightSystem, persistent GPU scene and shared geometry pages
+
+Stage 48 expands the experimental adaptive-resolution memory-pressure
+input from `Prisma` and directly-owned `Renderer3D` resources
+(Stage 47) to **independently owned lighting and rendering submodules**
+and the **global pooled geometry pages**, without changing the
+existing `postfx` JSON root or any ECS/simulation behavior.
+
+The new header `engine/render/GpuOwnedMemory.h` supplies a reusable
+read-only `GpuOwnedMemoryCounter` using RHI
+`Device::textureInfo` / `Device::bufferInfo`. It de-duplicates
+texture and buffer handles by their typed ID *within an owner*, reports
+texture/buffer known lower-bound byte totals, known allocation counts,
+unknown formats/metadata counts and dynamic multi-version buffer
+warnings. Unlike a GPU allocator, it never calls create/destroy,
+map, GPU wait, readback or query. It uses saturated byte accumulation
+and never equates a missing texture's bytes to real zero physical VRAM.
+Compressed formats without exact allocation metadata are left unknown.
+
+New or expanded direct-owner reporting contracts:
+
+- `LightSystem::ownedGpuMemoryStats()` includes its own light map,
+  depth attachment, static light atlas (RGBA32F), spot shadow, planar
+  reflection color/depth, tiny placeholder texture and dynamic
+  light/halo/beam/decal buffers, without touching `Renderer3D`'s
+  independently owned sun shadow map
+- `PersistentGpuSceneUpload::ownedGpuMemoryStats()` reports GPU
+  staging buffers from all three in-flight upload slots, not CPU
+  mirror contents
+- `GpuSceneCulling::ownedGpuMemoryStats(device)` reports all owned
+  three-frame visibility/compute outputs
+- `GpuSceneDrawCommands::ownedGpuMemoryStats(device)` enumerates
+  GPU-authored input/output/compacted/visible-count buffers for all
+  retained submissions and all three GPU in-flight slots
+- `Renderer3D::residentMemoryStats()` now aggregates those mutually
+  exclusive buckets with its Stage 47 directly-owned sun shadow,
+  selection/trace placeholders, scene capture and object-motion/owned
+  core buffers. It preserves the categories
+  `lightSystemKnownBytes`, `persistentUploadKnownBytes`,
+  `persistentCullKnownBytes`, and `gpuAuthoredKnownBytes`. Old
+  capture/motion subcategories and pending motion totals remain
+  available; pending resources are not added as live GPU resident
+  bytes
+
+The shared `GlobalGeometryPool` is **outside** the Renderer3D
+ownership tree: `geometryPoolStats(device).allocatedBytes` counts
+each allocated shared geometry page once per `gfx::Device`,
+regardless of how many Models or primitives reference that page.
+These pages are intentionally not part of Renderer3D's direct
+buffer enumeration and must not be added per Model. Unpooled
+dedicated model buffers and externally owned material textures
+are still omitted: they need their actual owner to enumerate
+live allocations to avoid duplicates.
+
+**Host integration:** prior to calling
+`Prisma::renderSizeForOutput(outputW,outputH)`, both editor
+Scene/Game and native GameClient pass two independent memory sources:
+`Prisma::setExternalRendererGpuMemory(rendererOwned.liveTextureKnownBytes
++ rendererOwned.liveBufferKnownBytes,
+rendererOwned.pendingMotionKnownBytes)` and
+`Prisma::setExternalGeometryPoolGpuMemory(geometryPoolStats(device).allocatedBytes)`.
+The original `temporalResolve.maxPrismaMemoryMiB` name and API are
+backward compatible but the known-memory pressure calculation now
+uses a saturating sum of **Prisma live+pending**, **Renderer3D directly
+owned + LightSystem + persistent upload/culling/draw buffers live +
+pending motion**, and **GlobalGeometryPool live allocated pages**.
+It remains a lower bound and never causes unsafe GPU resource
+destruction; actual recovery always waits for the previously designed
+GPU-fenced ownership policy.
+
+The editor's Stats panel separates the Renderer3D owner total into
+light, upload, culling and authored-draw categories and shows the
+shared geometry pool only once. The PRISMA window explicitly labels
+its displayed adaptive memory value as the combined known minimum
+rather than complete VRAM. CPU preparation and draw-call batch
+planning remain unchanged.
+
+**Known limitations / nonclaims:** device physical VRAM, driver
+alignment/mips, Metal dynamic buffer versions, shaders/pipelines,
+unpooled model/material resources, external scene render modules,
+offscreen capture bundles and other applications' GPU usage are
+not included. Renderer/LightSystem/Persistent owners are separate
+and do not double count shared geometry buffers. This work does
+not add a global GPU heap allocator, physical budget query or
+automatic GPU memory eviction; the `maxPrismaMemoryMiB` parameter
+is a conservative, optional quality-controller threshold, not a
+strict memory cap.
+
+**Feature sequencing:** further owner integration and functional
+completeness before native compilation/CTest/GPU validation, per
+user requirement. This stage involved code and documentation,
+plus structure-only source inspection; the native tests remain
+deferred. See `docs/handoffs/prisma-stage-48.md` for SHA,
+touched files, actual checks and next functionality.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
