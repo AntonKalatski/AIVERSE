@@ -354,6 +354,15 @@ GPU metadata and compute diagnostics default-OFF, including
 `AIVERSE_BUILD_STRATA=OFF` portable fallback.
 Coordinate with the batching agent: share a single instance/material/indirect
 grouping authority, do not duplicate rendered primitives or transforms.
+Stage 8.2 adds `GpuClusterCulling::requestReadback` (Metal async counters
+plus <=2048 selected cluster records) and `compareGpuSelection` CPU oracle.
+Output is diagnostic and must never be submitted to `Renderer3D`. Any
+invalid/overflow/readback-failed status is not drawable. The real macOS
+`aiverse_strata_metal_parity` fixture is manual and opt-in
+(`AIVERSE_STRATA_METAL_GPU_TESTS=ON`) and requires genuine Metal shader
+execution before GPU parity can be claimed. The owner-confirmed Mac Studio
+run for **previous Stage 8 code** passed 5/5 CPU/mocked CTests in 1.19s;
+that does not prove the newer shader or readback behavior.
 On each bounded Strata step: implementation commit first; append and commit the
 handoff separately, recording unrun tests honestly.
 
