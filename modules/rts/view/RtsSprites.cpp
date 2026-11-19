@@ -106,6 +106,7 @@ void Rts2DView::shutdown(gfx::Device& dev) {
     batch_.shutdown();
     secondaryBatch_.shutdown();
     preparedSprites_.clear();
+    secondaryGeometryValid_ = false;
     emittingBatch_ = nullptr;
     textures_.shutdown();
     looks_.clear(); seen_.clear(); corpses_.clear();
@@ -191,6 +192,7 @@ void Rts2DView::beginFrame(const RTSCamera& cam, double time, const Renderer3D& 
     ++frame_;
     batch_.begin();
     preparedSprites_.clear();
+    secondaryGeometryValid_ = false;
     emittingBatch_ = &batch_;
     replayingPrepared_ = false;
 }
@@ -503,17 +505,30 @@ void Rts2DView::submitPrepared(Renderer3D& r) {
     if(!ready_)return;
     // Rebuild draw-only quads for this camera. No ECS state, corpse lifetime,
     // animation clocks or producer callbacks are modified.
-    secondaryBatch_.begin();
+    const Basis b=basisOf(r.camera());
+    const float3 casterAxis=casterRight(b.gRight,b.gFront,r.lighting.sunDir);
+    const auto equal3=[](float3 a,float3 b) {
+        return a.x==b.x && a.y==b.y && a.z==b.z;
+    };
+    const bool reusable=secondaryGeometryValid_ &&
+        secondaryQuality_==r.shadowQuality() &&
+        equal3(secondaryRight_,b.right) && equal3(secondaryUp_,b.up) &&
+        equal3(secondaryFwd_,b.fwd) &&
+        equal3(secondaryGroundRight_,b.gRight) &&
+        equal3(secondaryGroundFront_,b.gFront) &&
+        equal3(secondaryCasterRight_,casterAxis);
+    if (!reusable) {
+        secondaryBatch_.begin();
     const auto previousCam=cam_;
     const auto previousRight=camRight_,previousUp=camUp_,previousFwd=camFwd_;
     const auto previousGroundRight=groundRight_,previousGroundFront=groundFront_;
     const auto previousCasterRight=casterRight_;
     const auto previousQuality=quality_;
     cam_=r.camera();
-    const Basis b=basisOf(cam_);
+    // Use the already computed basis from this secondary camera.
     camRight_=b.right; camUp_=b.up; camFwd_=b.fwd;
     groundRight_=b.gRight; groundFront_=b.gFront;
-    casterRight_=casterRight(b.gRight,b.gFront,r.lighting.sunDir);
+    casterRight_=casterAxis;
     quality_=r.shadowQuality();
     replayingPrepared_=true;
     emittingBatch_=&secondaryBatch_;
@@ -539,6 +554,11 @@ void Rts2DView::submitPrepared(Renderer3D& r) {
     groundRight_=previousGroundRight; groundFront_=previousGroundFront;
     casterRight_=previousCasterRight;
     quality_=previousQuality;
+        secondaryRight_=b.right; secondaryUp_=b.up; secondaryFwd_=b.fwd;
+        secondaryGroundRight_=b.gRight; secondaryGroundFront_=b.gFront;
+        secondaryCasterRight_=casterAxis; secondaryQuality_=r.shadowQuality();
+        secondaryGeometryValid_=true;
+    }
     if(secondaryBatch_.casterCount()>0 && r.shadowQuality()!=ShadowQuality::Off)
         r.drawCustomShadow([this,&r](gfx::Device& dev) {
             secondaryBatch_.flushCasters(dev,r.lightViewProj());
