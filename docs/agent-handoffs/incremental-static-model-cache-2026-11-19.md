@@ -2734,3 +2734,50 @@ Require all six runs to exit 0, `material palette CPU checks=35 result=passed`, 
 - Add native GPU timestamp / command-buffer duration measurements, separate CPU and GPU execution.
 - Expand samples, run 10k only after reproducible 1k stability, then 100k last.
 - Verify Vulkan pooled MDI, in-flight geometry page safety, real-scene varied materials/LOD, and full relevant CI before default enable or merging Draft PR #34.
+
+
+---
+
+## Stage 81 — six-run 1k Metal crossover PASS; extend CPU AUTO calibration (2026-11-19)
+
+**Repo/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. **Owner tested source:** Stage 80 through `1f2c43ae9a5b4c7ced6d946821088352febc6a29`. **New code:** `58a39c41ae64052ad8d2a8ba9ea5a93b6a0478ab` in `engine/render/AutoCpuBatchPolicy.h`, `e77c74a23cf4bb8cfa34cade3c057bea2df6554d` in `tests/render/material_batches.cpp`. This handoff is a subsequent documentation-only commit. **New Stage 81 source has NOT YET been compiled/executed**; do not attribute the Stage 80 results to it.
+
+### Actual Mac Studio six-run Stage 80 benchmark (owner-provided terminal output)
+
+Owner fast-forwarded from `b03224060` to `1f2c43ae9`, compiled `aiverse_material_batches` including `GfxMetal.mm`, and ran `bash tools/batching-stage80-ab.sh 1024 build/batching-gpu-verify/stage80-1k`. Six program runs completed in rotated order `direct → mdi → auto → auto → mdi → direct`. All 6 showed `material palette CPU checks=35 result=passed`, final `changed_channels=0` and 0 shader pipeline failures. Both forced MDI runs additionally showed **actual MDI pixel parity frame=100 changed_channels=0**. The runner printed `Stage 80 runs completed`.
+
+Per-run **batched-phase renderer.render() CPU median / nearest-rank P95** in ms:
+
+| Mode | Cycle 1 | Cycle 2 |
+| --- | --- | --- |
+| Direct | 1.1545 / 1.2278 | 1.1685 / 1.2148 |
+| Forced CPU MDI | 0.8846 / 0.9449 | 0.8772 / 0.8980 |
+| Learned AUTO | 1.1464 / 1.1890 | 1.1479 / 1.2204 |
+
+The mean of the two medians is 1.1615ms Direct vs 0.8809ms MDI, **~24.2% lower synchronous renderer.render CPU wall-time**. Each forced MDI batched-phase sampled 81 frames with 810 real MDI submissions (10/frame), zero GPU ICB submissions, and terminal draws 5 shadow + 5 opaque vs baseline 1024 + 1024. Both forced Direct tests had 0 MDI submissions. Each AUTO test recorded 3 MDI frames / 78 Direct frames in the 81-frame sampling interval (30 real MDI submissions), learned per-pass samples 95 Direct / 11 MDI, and ended with 0 MDI in last frame. These are two rotated process runs, **not** randomized per-frame A/B/A; platform GPU execution time and FPS are unknown. All six passes have parity evidence only for this synthetic fixed-scene fixture, not real gameplay.
+
+### Root cause of an inefficient learned selection
+
+AUTO's per-pass EWMA estimates still favor Direct, e.g. Cycle 1 shadow Direct `0.51246ms` vs MDI `0.88325ms`, opaque Direct `0.48443ms` vs MDI `0.85352ms`, despite forced MDI steady-state full renderer.render() being consistently faster than forced Direct. The prior policy trusted an MDI EWMA after only 8 samples (first two skipped) and then probed merely once per 32 opportunities, with sparse cold-path samples. This risks entrenching initial MDI setup overhead and comparing unbalanced execution windows. Importantly, per-pass CPU costs and whole-render timings use different boundaries and can disagree for reasons not yet fully characterized. **Do not assume just increasing probes guarantees CPU/GPU throughput gains.**
+
+### Stage 81 implementation
+
+1. `AutoCpuBatchPolicy.h`: Direct warmup to 12 samples, require **32 real submitted MDI samples** before steady policy selection. This ensures a longer consecutive MDI calibration window; the first two samples of each lane remain excluded from EWMA. Increase EWMA adaptation rate from 0.12 to 0.25 for these cost estimates. A winning MDI path requires the existing 8% advantage. When Direct wins, instead of one isolated MDI probe every 32 opportunities, take a contiguous 8-opportunity MDI probe window every 64 opportunities. When MDI wins, run a single Direct control probe every 64. Existing `mdiNoSubmission>=3` safety fallback continues to suppress futile MDI attempts and re-probes at most once per 32 opportunities. This is an **opt-in CPU policy tuning**, not a full GPU load balancer or GPU timestamp measurement.
+2. `tests/render/material_batches.cpp`: added three CPU-only scheduler regression assertions: (a) before 32 MDI samples, learner keeps calibrating; (b) after a warmed simulated MDI cost below Direct, MDI is chosen; (c) opaque lane remains independent. Existing Metal pixel fixtures unchanged. Expected initial invariant count is now **38**, pending native execution. No changes to actual material/geometry eligibility, RHI bindings or default feature flags.
+
+### Actual checks, risks, and next precise step
+
+**Completed:** inspected current GitHub source and Mac owner-provided six-run outputs; two source commits accepted by GitHub connector. **NOT RUN for Stage 81:** CMake build, 38 CPU assertions, Metal raster, MDI training behavior, CI, GPU timestamps, Vulkan. The new longer MDI warmup can cause temporary CPU overhead during scene startup and may still fail to learn if GPU frame/thermal conditions drift; do not enable by default.
+
+Mac Studio:
+
+```sh
+cd /Users/aleksandrfeer/Projects/AIVERSE || exit 1
+git fetch origin
+git switch perf/incremental-static-model-cache
+git pull --ff-only origin perf/incremental-static-model-cache
+cmake --build build/batching-gpu-verify --target aiverse_material_batches --parallel 8 || exit 1
+bash tools/batching-stage80-ab.sh 1024 build/batching-gpu-verify/stage81-1k
+```
+
+Require all 6 run exits 0, `material palette CPU checks=38 result=passed`, pixel parity `changed_channels=0`, actual-MDI-frame parity for both forced MDI modes, and inspect AUTO final mode plus `AUTO CPU learning` EWMA and 81-frame `measured_mdi_frames`. If calibration remains biased toward Direct despite 32+ successfully completed MDI observations, isolate per-pass timing boundaries and training-stage CPU costs *before* further policy changes. GPU timings, 10k and 100k tests remain pending. Document every measured outcome in the next handoff. PR #34 stays Draft and AUTO/Metal ICB defaults OFF.
