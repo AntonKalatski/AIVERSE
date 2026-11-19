@@ -426,6 +426,22 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
             post_->materialReceiverPublished(receiver.colorTarget,sw,sh);
         }
     }
+    // Optional second receiver: physical world normal and roughness. Source
+    // PBR material computations are identical to the primary material pass.
+    // It is never requested by existing PostProcess implementations.
+    if(post_ && hdrFrame_ && post_->wantsSurfaceReceiverPass()) {
+        auto surface=post_->surfaceReceiverPass(sw,sh);
+        if(surface.colorTarget.valid() && surface.depthTarget.valid()) {
+            dev_->beginPass(surface);
+            dev_->setViewport({0,0,sw,sh});
+            lumaSurfaceCapture_=true;
+            uploadFrameUniforms(false);
+            renderModels(1);
+            lumaSurfaceCapture_=false;
+            dev_->endPass();
+            post_->surfaceReceiverPublished(surface.colorTarget,sw,sh);
+        }
+    }
     // Exclude shadow, probe and reflection passes from the visible-colour ID range.
     debugMainDrawId_ = 0;
     // trace tier + water: the opaque scene goes into colour + depth textures first (SSR reads them),
