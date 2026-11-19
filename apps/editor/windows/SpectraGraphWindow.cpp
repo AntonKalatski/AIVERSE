@@ -970,6 +970,9 @@ private:
                 ImGui::Text("GPU killed slots: %u waiting for completion, %llu reclaimed",
                             cp.killedSlotsAwaitingFence,
                             static_cast<unsigned long long>(cp.killedSlotsReclaimed));
+                ImGui::Text("GPU scatter kills: %llu dispatches, %zu KiB indices",
+                            static_cast<unsigned long long>(cp.killScatterDispatches),
+                            cp.killIndexBytes/1024);
                 ImGui::TextWrapped("* Recoverable means a complete current-revision "
                                    "snapshot exists; numerical CPU/Metal parity "
                                    "and uninterrupted visuals are not guaranteed.");
