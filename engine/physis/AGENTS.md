@@ -581,3 +581,33 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
 - Changes are independent of FPS/RTS, Box3D, NEREID and TerraWeave.
   Handoff:
   `docs/agent-handoffs/physis-stage52-startup-revalidation-fsync-2026-11-19.md`.
+
+### Stage 53 — verify the journal inode after atomic replacement (2026-11-19)
+
+- After successful `openat(O_EXCL)` and exact bytes written to the temp
+  receipt file, `posix_journal::write` records its `fstat` identity
+  and checks that the staged inode is regular, single-linked,
+  current effective UID-owned, private, and exactly the expected size.
+- After `renameat`, but before reporting a durable positive
+  receipt, the published basename must still refer to that same
+  device/inode and secure metadata. Any mismatch, directory fsync
+  failure, or loss of parent ownership is an **uncertain** outcome:
+  return false to canonical `FileJournal::savePinned`; the gateway's
+  journal failure policy suppresses positive Queued/Applied ACKs.
+- This is one more acquisition/write boundary check; do NOT claim
+  that same-UID filesystem races or journal+World crash atomicity
+  are eliminated. Trusted private journal directory remains required.
+- Native POSIX `physis_journal_posix_io` CTest now asserts the
+  published atomic replacement has a new inode with correct
+  owner, mode, link count and no remaining temporary file.
+- **ACTUAL PASS**: locally reconstructed exact committed files in
+  `/mnt/data/physis49_smoke`; CMake/CTest 1/1, GCC 14.2 strict,
+  Clang 17 strict, GCC ASan+UBSan. GitHub blob SHAs:
+  `PhysisJournalPosixIO.h` =
+  `2dd114731b498c4156da305915201f97c4848647`;
+  `physis_journal_posix_io_test.cpp` =
+  `7c6cd0ef9e330be5b61bf7935bb8d8b0f025a907`.
+- Full AIVERSE native CMake, `physis_admin_journal`,
+  `physis_remote_edit`, `physis_field_runtime`, macOS and
+  Windows are **NOT RUN/NOT VERIFIED**. See
+  `docs/agent-handoffs/physis-stage53-published-inode-2026-11-19.md`.
