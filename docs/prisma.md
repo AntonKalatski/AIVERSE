@@ -1336,6 +1336,85 @@ memory leak tests. Code and API integrations are source-level only
 and not validated on real hardware.
 See `docs/handoffs/prisma-stage-34.md`.
 
+
+## Stage 35 — editor framebuffer GPU retirement and explicit pressure drain
+
+The editor's actual `Viewport::color` and `Viewport::depth` render
+targets now use the same GPU-completed-fence principles as PRISMA and
+Renderer3D. They are **not** owned by PRISMA: a new
+`apps/editor/ViewportGpuRetirement.h` owner lives in the `Editor`
+instance and outlives its Scene/Game/FX window objects. `Viewport`
+binds that owner during `ensure(dev,w,h,owner)`, and `release()` /
+resize / viewport destruction transfer both GPU handles to the
+owner instead of directly destroying in-flight images.
+
+The old color handle may still be in an ImGui draw command even after
+the window's `Viewport::image()` returns, so it is only destroyed
+after `gfx::Device::gpuCompletedFence()` covers the submission that
+may reference it. Unfenced resources are quarantined until the host
+has explicitly verified GPU idle. The owner also clears the
+viewport's stale `drawnFrame` / hover state when released.
+
+All three editor producers (Scene, Game and FX windows) use this
+shared owner. They release hidden/closed offscreen render targets
+without relying on window destruction; the owner retains resources
+past window lifetime. A hidden/closed tab can later recreate a
+framebuffer with no stale ImGui texture handles.
+
+### Memory pressure policy
+
+`ViewportGpuRetirement` reports pending fenced/unfenced texture
+counts, metadata-derived `knownPendingBytes`, a threshold and an
+`overBudget` indicator. The default shared known-pending budget is
+**128 MiB**, configurable through
+`AIVERSE_PRISMA_RETIRE_BUDGET_MB` (32..4096 MiB). The editor
+checks the sum of *known* pending bytes from Viewport, PRISMA and
+Renderer3D on the **pre-render boundary** of `Editor::frame`,
+before any new GPU draw submission. It normally collects already
+GPU-completed resources with **no wait**.
+
+If that known pending memory exceeds the budget, it can call the
+new explicit `gfx::Device::waitForSubmittedGpuWork()` hook exactly
+at that safe point. On successful synchronization it drains the
+Viewport, PRISMA and Renderer3D GPU retirement queues, including
+unfenced quarantine. It never releases an in-flight texture based
+on the number of elapsed CPU frames.
+
+This explicit pressure-only wait is implemented with `glFinish()`
+on GL33/GLES3 (excluding WebGL), a queued Metal command-buffer
+completion barrier, and `vkQueueWaitIdle` on Vulkan. **These waits
+are not performed every frame**; they can cause a visible one-time
+stall at memory pressure. The WebGL2 backend explicitly returns
+false because a portable synchronous idle barrier is not promised;
+resources remain quarantined until an external safe teardown.
+A positive wait result only covers **previously submitted** GPU
+commands, so the editor must call it before it encodes new frame
+work that uses those resources.
+
+The Statistics tab now shows viewport fenced/unfenced resource
+counts, known pending MiB versus the configured budget, and a
+"Запросить безопасную очистку GPU" button. That button merely
+requests a **one-shot cleanup at the next frame's pre-render
+boundary**, not while the Statistics window's ImGui pass is active.
+
+**The threshold is an advisory pressure budget rather than a global
+hard GPU VRAM cap.** Internal RenderGraph allocations, active resources,
+driver overhead, and unknown/unsupported RHI texture descriptors
+may not be included in the lower-bound estimate. If a backend cannot
+synchronize, the editor deliberately retains memory rather than
+risking GPU use-after-free.
+
+The RHI's prior `gpuSubmissionFence()` /
+`gpuCompletedFence()` APIs are unchanged, and the new
+`waitForSubmittedGpuWork()` is optional. All postprocessing flags
+remain off by default; no ECS/gameplay ownership changes.
+
+**Validation:** source-level inspection and GitHub writes only.
+Native compilation, CTest, Metal/GL/Vulkan/Android/WebGL runtime,
+ImGui texture lifetime, GPU fence pressure smoke and VRAM profiling
+have **NOT RUN**, as requested. See
+`docs/handoffs/prisma-stage-35.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
