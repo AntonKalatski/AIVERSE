@@ -10746,3 +10746,122 @@ After **each** bounded code stage, commit source first and
 then separately append exact SHA, files, API and actual
 tests/next step to this handoff.
 
+
+## Stage 10BW — production graph + two disk VT domains on Metal ICB (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Preceding confirmed hardware:** Stage 10BV Mac Studio Apple M3 Ultra
+`metal_renderer_graph_icb_gpu` 1/1 PASS in 3.73 s, byte-identical
+production Renderer3D 4-texture graph direct/ICB images **without VT**.
+Stage 10BT's lower-level 1/4-source ICB ABI also passed on device.
+Neither result proves the new graph + VT integration.
+
+**Stage 10BW source commits:**
+- `8946de8a03e65a2eefd1b8d40dbb7270f3ad8124`:
+  new `tests/render/metal_renderer_graph_vt_icb_gpu.cpp`
+  originally created from the working Stage 10BU production fixture,
+  replacing its material graph with a real `sampleVirtualTexture`
+  plus four connected regular source samples.
+- `2a4d64c102627aff48f1e7c756260b377f0c9e7f`:
+  correct single anonymous C++ namespace for test helpers, add
+  explicit `<cstddef>` include.
+- `70019a92cf5657c05c3f3e3a749eafcd4061b753`:
+  CMake default-OFF opt-in option
+  `AIVERSE_TEXTURE_METAL_GRAPH_VT_ICB_GPU_TESTS`,
+  separate `aiverse_metal_renderer_graph_vt_icb_gpu_test`,
+  `metal_renderer_graph_vt_icb_gpu` CTest, GPU/VT/graph
+  feature flags restricted to this separate test process.
+- `ed7f9072700e92e792d8e7282807847ab3a07208`:
+  `docs/texture-rhi.md` Stage 10BW usage, scope, acceptance and
+  exact native commands.
+- `a92187df6784c4ce653cc19562eae9603965ba21`:
+  `skills/visuals/aiverse-texture-rhi/SKILL.md` reusable agent recipe.
+
+**Architecture / actual code:**
+1. JSON version-1 Shader Graph `material` is compiled by
+   `render::graph::compile`. All four `sampleTexture` nodes
+   contribute to `color` along with connected `sampleVirtualTexture`.
+   No test-only shader compiler or custom virtual page shader exists.
+2. A two-primitive, opaque rigid `Model` with distinct image
+   textures/U2 per material exercises production
+   `Renderer3D::beginScene / drawModel / render`,
+   per-command graph resource table and GPU ICB. This is
+   genre-independent; RTS/FPS/gameplay is untouched.
+3. Two `gfx::VirtualTextureFileStreamer` instances each own a
+   separate ephemeral raw-RGBA8 disk archive, real Metal
+   physical Texture2DArray atlas and distinct RGBA8 page-table.
+   Material resolver supplies different handles, virtual layers
+   **0 vs 1**, gutter=0, U Repeat vs MirrorRepeat, V ClampToEdge.
+   Existing `engine/render/ModelVirtualTextureSampling.h` and
+   `gfx::kVirtualTextureMSL` handle the shader lookup.
+4. Each atlas has **two physical page slices**: pin mip2 coarse
+   page from disk; request mip0 fine tile (1,1); request
+   replacement mip0 tile (2,2) to force LRU eviction of fine,
+   retaining coarse. The native worker publishes only through
+   `stream.pump()` on the real render thread, no GPU work
+   on disk worker.
+5. For each coarse, fine and LRU phase the test captures ordinary
+   Renderer3D and Metal GPU ICB frame images. It requires two
+   distinct material regions, per-channel full-frame parity
+   within 2 LSB, **>64 changed channels** after both
+   page transitions, nonzero real
+   `shaderGraphIcbSubmissions`,
+   `mixedGraphSourceSubmissions`,
+   `perCommandVtExecutions`,
+   `mixedVtExecutions`, at least two encoded commands,
+   zero failed GPU executes, and both archives' exact resident
+   page / LRU eviction checks. A CPU fallback cannot count as
+   a GPU ICB PASS. Test timeout and unsupported hardware fail.
+6. Temporary disk archives are removed at teardown; streamers
+   and model GPU textures are released; native production
+   `GfxMetal.mm`, RHI, renderer, file streaming and Shader
+   Graph code were NOT changed.
+
+**Validation this stage:** GitHub connector source-level API
+inspection and static file/registration checks only.
+**NOT RUN:** native macOS CMake configure, C++ compilation/link,
+MSL compile, actual Renderer3D VT shader draw, disk worker/GPU
+publication, real CTest, pixel comparison, GPU timing/driver
+stress or other backend tests. No staging code may be called
+production-certified on the basis of source review.
+
+**Next agent exact fail-fast commands** (isolated Mac Studio
+texture worktree ONLY, never primary AIVERSE with unfinished rebase):
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+cmake -S . -B build/texture-graph-vt-icb \
+  -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_RENDERER_GRAPH_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_GRAPH_VT_ICB_GPU_TESTS=ON
+cmake --build build/texture-graph-vt-icb \
+  --target aiverse_metal_renderer_graph_vt_icb_gpu_test --parallel 4
+ctest --test-dir build/texture-graph-vt-icb \
+  --verbose --output-on-failure --no-tests=error \
+  -R '^metal_renderer_graph_vt_icb_gpu$'
+```
+
+**Real success requires:** native compile succeeds, three
+`PASS: Shader Graph+VT [phase] Renderer3D CPU/ICB pixels`,
+two changed-channel transition lines, real nonzero mixed VT
+and graph GPU ICB counters, final
+`PASS: production Renderer3D Shader Graph+disk VT mixed
+Metal GPU ICB coarse/fine/LRU pixel parity`, and CTest
+**1/1 PASS** on the fresh build. This new test is risky, opt-in
+and isolated from earlier green CMake caches. On any failure,
+record the FIRST compiler/MSL/worker/driver/ICB/pixel error and
+fix its root cause in a separate source commit, followed by
+a new append-only handoff. Do not run old CTest binaries
+after failed builds.
+
+**Remaining feature/validation work:** nonresident and
+intentionally missing disk page fallback, address/linear-filter
+seam fidelity at UV outside [0,1], graph 0..4-source variants,
+Vulkan/GL/mobile/WebGL fallback and real performance / driver
+stress. Keep all experimental flags OFF by default and PR #21
+Draft until cross-platform acceptance.
