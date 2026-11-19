@@ -133,4 +133,16 @@ int main() {
     assert(staging.stats().failedSources == 0);
     assert(staging.warnings().empty());
     assert(staging.stage("shared/model.glb", model));
+    // The owning GeometryScene invokes this only after the disk archive
+    // fingerprint was checked and root GPU pages were published.
+    const auto* staged=staging.find("shared/model.glb");
+    assert(staged && staged->primitives.size()==1);
+    const auto bytes=staged->primitives[0].geometry.indices.size()*sizeof(uint32_t);
+    const auto count=staged->primitives[0].geometry.logicalIndexCount();
+    assert(staging.discardArchivedCpuIndices("shared/model.glb")==bytes);
+    staged=staging.find("shared/model.glb");
+    assert(staged->primitives[0].geometry.indices.empty());
+    assert(staged->primitives[0].geometry.logicalIndexCount()==count);
+    assert(staging.discardArchivedCpuIndices("shared/model.glb")==0);
+    assert(staging.discardArchivedCpuIndices("unrelated")==0);
 }
