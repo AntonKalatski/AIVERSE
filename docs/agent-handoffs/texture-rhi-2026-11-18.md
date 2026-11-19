@@ -9976,3 +9976,102 @@ the primary AIVERSE worktree, which still has an unrelated
 unfinished rebase, or merge Draft PR #21 before remaining
 hardware acceptance.
 
+
+## Stage 10BM — real disk worker to native Metal VT atlas source (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Prior confirmed real GPU gate:** Stage 10BL: actual
+`metal_texture_gpu` PASS (1/1) on Mac Studio in 1.62 sec,
+including physical VT atlas/page-table LRU invalidation,
+replacement and fallback with exact RGBA8 GPU readbacks.
+This earlier PASS belongs to source HEAD
+`26f73151a92d0ada0cc76bc918175e3cdffc59b2`,
+before Stage 10BM's disk worker additions.
+
+**Source commits:**
+- `11ad74279ff2bbd348de16e4981efae645d7ab4c` —
+  `tests/render/metal_texture_gpu.mm`: add production
+  `VirtualTextureFileStreamer` integration GPU test,
+  `VtDiskFixture` with temporary RGBA8 page files,
+  bounded `pumpDiskPage` worker callback helper and
+  `gpuDiskBackedVirtualAtlas` full scenario. Native
+  `Device::readTextureAsync` verifies actual Metal bytes.
+- `ebf5f1652c1284eaac6c7be5612def0a78e2c895` —
+  `CMakeLists.txt`: explicitly link
+  `Threads::Threads` for opt-in macOS Metal test target
+  using a real `VirtualTextureDiskQueue` worker.
+- `e8ba85b16a51eaa8794b67f29e2a6ad8503d1893` —
+  `tests/render/metal_texture_gpu.mm`: distinguish
+  fixture-write failure from other global GPU assertions,
+  so unrelated prior test state cannot suppress this stage.
+
+**Documentation commits:**
+- `a07732cacdff9e7d596f7fa5a843be880f891a97` —
+  `docs/texture-rhi.md`
+- `8f01d2fd215d632e6a5c2224dd027f31336358cb` —
+  `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Architecture/behavior:** test-only, genre-independent,
+using existing `gfx::VirtualTextureFileStreamer`,
+`VirtualTextureDiskQueue`, `VirtualTextureStreamer`
+and real `GfxMetal.mm` backend. No new production API,
+binary format, Shader Graph ABI or ECS dependencies.
+
+**Exact test topology:** 4×4 mip0 virtual pages, 3 mips,
+one virtual layer; two physical RGBA8 Texture2DArray atlas
+slices, each 4×4 pixels; 4×4 RGBA8Array GPU page table.
+Temporary `.rgba` files are written in the production
+indexed `m<MIP>/l<LAYER>/x<X>_y<Y>.rgba` layout under a
+uniquely generated OS temp directory; RAII removal.
+The worker is actually started and reads files asynchronously.
+The owner/render thread pumps with bounded 6s timeout per
+ticket, verifying exact key, one callback and explicit
+success/error status, with worker+upload timing/poll counts.
+
+**Acceptance cases:**
+1. Request pinned coarse `{2,0,0,0}`; GPU table
+   readback remains all-zero before owner-thread `pump`;
+   request is pending rather than resident.
+2. Complete worker and GPU upload; physical slot0 contains
+   exactly authored bytes; all 4×4 GPU table cells encode
+   `{0,0,2,255}`, coarse pinned.
+3. Request missing file `{0,1,1,0}`; worker completion
+   reports nonempty failure reason, no new residency;
+   streamer remains healthy and GPU table unchanged.
+4. Load fine `{0,3,3,0}` into physical slot1; GPU
+   page table (3,3) only changes to `{1,0,0,255}`.
+5. Load replacement `{0,0,0,0}`, triggering one
+   LRU eviction; coarse remains resident, old fine is
+   evicted. GPU reads confirm slot0 unchanged,
+   slot1 overwritten with replacement data, GPU table
+   (0,0) maps slot1 while (3,3) falls back to coarse.
+6. Shutdown clears both atlas/table GPU resource
+   handles from live inventory.
+This stage tests disk->GPU ownership and byte parity,
+but not application shader page-table indirection,
+hardware sparse residency, or GPU ICB.
+
+**Actual verification performed by assistant:** inspected the
+production queue and file streamer contracts in the
+current GitHub branch, and committed fixture, CMake,
+docs and skill updates via the connected GitHub tool.
+**NOT RUN on Mac after Stage 10BM:** ObjC++ compile,
+CTest and real disk-worker/native GPU path. Do not
+claim this new stage passes based on Stage 10BL.
+
+**Next exact user-run command in isolated Mac Studio worktree:**
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+cmake -S . -B build/texture-rhi -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_TEXTURE_METAL_GPU_TESTS=ON
+cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parallel 4
+ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
+```
+On failure collect first compiler error or actual
+`FAIL: disk VT ...` / `TIMING VT disk worker` diagnostic,
+fix, and append new handoff. When this passes, create
+fragment shader GPU page-table indirection acceptance,
+then GPU ICB Shader Graph validation. Keep PR #21 Draft
+and do not touch the primary repo's unrelated unfinished
+rebase.
+
