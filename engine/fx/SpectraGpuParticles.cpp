@@ -2,6 +2,7 @@
 #include "SpectraGpuShaders.h"
 #include "SpectraGpuFramePlan.h"
 #include "SpectraGpuProgram.h"
+#include "SpectraGpuMaterial.h"
 #include "ParticleShaders.h"
 #include <algorithm>
 #include <array>
@@ -70,6 +71,20 @@ bool ComputeParticles::init(gfx::Device* dev,const ComputeEmitterDesc& config) {
                                                        candidate,vmReason);
         }
     }
+    if(!desc_.shaderGraph.isNull() || !desc_.graphInputs.isNull()) {
+        if(!desc_.gpuMaterial || desc_.shaderGraph.isNull()) {
+            vmCompatible=false;
+            vmReason="GPU shaderGraph requires an explicit gpuMaterial opt-in and a supported particle graph";
+        } else {
+            gpu_material::Material material;
+            std::string materialReason;
+            if(!gpu_material::compile(desc_.shaderGraph,desc_.graphInputs,
+                                      material,materialReason)) {
+                vmCompatible=false;
+                vmReason=materialReason;
+            }
+        }
+    }
     const bool canGpu=dev&&dev->supportsCompute()&&
                       desc_.quality>=fx::FxQuality::Medium&&vmCompatible;
     const auto selected=dev
@@ -122,6 +137,8 @@ bool ComputeParticles::initCpu() {
     emitter.spread=0;
     emitter.color={{0.f,{1,1,1,1}},{1.f,{1,1,1,0}}};
     if(!desc_.particleProgram.isNull())emitter.particleProgram=desc_.particleProgram;
+    if(!desc_.shaderGraph.isNull())emitter.shaderGraph=desc_.shaderGraph;
+    if(!desc_.graphInputs.isNull())emitter.graphInputs=desc_.graphInputs;
     effect.emitters.push_back(std::move(emitter));
     cpuEffect_=cpu_.define("__spectrafx_compute_cpu_fallback",effect);
     return cpuEffect_>=0;
@@ -136,6 +153,11 @@ bool ComputeParticles::initGpu() {
     gpu_program::Payload vmPayload;
     if(!gpu_program::prepareForMetal(desc_.particleProgram,vmPayload,reason_))
         return false;
+    gpu_material::Material graphMaterial;
+    const bool materialActive=desc_.gpuMaterial&&!desc_.shaderGraph.isNull();
+    if(materialActive && !gpu_material::compile(
+        desc_.shaderGraph,desc_.graphInputs,graphMaterial,reason_))return false;
+    const std::array<uint32_t,4> graphChannels=graphMaterial.sources;
     gpuIndirectActive_=desc_.gpuIndirect && device_->supportsGpuAuthoredIndirectDraw();
     compute_=device_->createCompute({shaders::kMetal,shaders::kGLSL,"SpectraFX Metal particle simulation"});
     if(!compute_.valid()) {reason_=device_->lastError();return false;}
@@ -164,6 +186,8 @@ bool ComputeParticles::initGpu() {
                             "SpectraFX GPU VM particle custom attributes");
     liveSlots_=buffer(*device_,gfx::BufferType::Storage,cap*sizeof(uint32_t),
                       nullptr,"SpectraFX GPU live-slot gather map");
+    graphSources_=buffer(*device_,gfx::BufferType::Storage,sizeof(graphChannels),
+                         graphChannels.data(),"SpectraFX GPU material vertex sources");
     const uint32_t zero=0;
     const gfx::DrawIndexedIndirectCommand zeroArgs{0,1,0,0,0};
     aliveCounter_=buffer(*device_,gfx::BufferType::Storage,sizeof(zero),
@@ -204,10 +228,14 @@ bool ComputeParticles::initGpu() {
     texture_=device_->createTexture(texture);
 
     gfx::ShaderDesc shader;
-    shader.glslVertex=fx::shaders::kParticleVS;
-    shader.glslFragment=fx::shaders::kParticleFS;
-    shader.msl=fx::shaders::kParticleMSL;
-    shader.textureSlots=1;shader.uniformSlots=1;shader.label="SpectraFX GPU billboard";
+    // Shader source storage must outlive createShader() on all RHI backends.
+    gpu_material::Shaders materialShaders;
+    if(materialActive)materialShaders=gpu_material::makeShaders(graphMaterial);
+    shader.glslVertex=materialActive?materialShaders.glslVertex.c_str():fx::shaders::kParticleVS;
+    shader.glslFragment=materialActive?materialShaders.glslFragment.c_str():fx::shaders::kParticleFS;
+    shader.msl=materialActive?materialShaders.msl.c_str():fx::shaders::kParticleMSL;
+    shader.textureSlots=1;shader.uniformSlots=1;
+    shader.label=materialActive?"SpectraFX GPU particle material":"SpectraFX GPU billboard";
     vertexShader_=device_->createShader(shader);
     if(vertexShader_.valid()) {
         gfx::PipelineDesc pd;
@@ -215,7 +243,8 @@ bool ComputeParticles::initGpu() {
         pd.attrs[0]={0,gfx::VertexFormat::Float3,0};
         pd.attrs[1]={1,gfx::VertexFormat::Float2,12};
         pd.attrs[2]={2,gfx::VertexFormat::UByte4N,20};
-        pd.attrCount=3;pd.stride=sizeof(Vertex);
+        if(materialActive)pd.attrs[3]={3,gfx::VertexFormat::Float4,24};
+        pd.attrCount=materialActive?4:3;pd.stride=sizeof(Vertex);
         pd.indexType=gfx::IndexType::UInt16;
         pd.cull=gfx::CullMode::None;pd.blend=gfx::BlendMode::Additive;
         pd.depthTest=true;pd.depthWrite=false;
@@ -223,6 +252,7 @@ bool ComputeParticles::initGpu() {
         pipeline_=device_->createPipeline(pd);
     }
     if(!states_.valid()||!seeds_.valid()||!slots_.valid()||!liveSlots_.valid()||
+       !graphSources_.valid()||
        !aliveCounter_.valid()||!gpuDrawArgs_.valid()||!vmErrors_.valid()||
        !seedProgramParams_.valid()||!stateProgramParams_.valid()||
        !gpuVmPayload_.valid()||!stateAttributes_.valid()||!vertices_.valid()||
@@ -240,7 +270,7 @@ bool ComputeParticles::initGpu() {
     stats_.gpuBytes=size_t(cap)*(sizeof(ParticleState)*2+2*sizeof(uint32_t)+4*sizeof(Vertex)+6*sizeof(uint16_t))
                     +size_t(n*n*4)+2*sizeof(zero)+sizeof(zeroArgs)
                     +size_t(cap)*2*sizeof(ProgramParams)+sizeof(vmPayload)
-                    +size_t(cap)*sizeof(ProgramAttributes);
+                    +size_t(cap)*sizeof(ProgramAttributes)+sizeof(graphChannels);
     return true;
 }
 void ComputeParticles::releaseGpu() {
@@ -254,6 +284,7 @@ void ComputeParticles::releaseGpu() {
         if(seeds_.valid())device_->destroyBuffer(seeds_);
         if(slots_.valid())device_->destroyBuffer(slots_);
         if(liveSlots_.valid())device_->destroyBuffer(liveSlots_);
+        if(graphSources_.valid())device_->destroyBuffer(graphSources_);
         if(aliveCounter_.valid())device_->destroyBuffer(aliveCounter_);
         if(gpuDrawArgs_.valid())device_->destroyBuffer(gpuDrawArgs_);
         if(vmErrors_.valid())device_->destroyBuffer(vmErrors_);
@@ -269,7 +300,7 @@ void ComputeParticles::releaseGpu() {
     vertices_={};indices_={};texture_={};liveSlots_={};
     aliveCounter_={};gpuDrawArgs_={};vmErrors_={};gpuIndirectActive_=false;
     seedProgramParams_={};stateProgramParams_={};gpuVmPayload_={};
-    stateAttributes_={};
+    stateAttributes_={};graphSources_={};
     ages_.clear();freeSlots_.clear();pendingStates_.clear();pendingSlots_.clear();
     pendingProgramParams_.clear();programStateCache_.clear();cpuHandles_.clear();
     programParamsDirty_=false;
@@ -476,6 +507,7 @@ bool ComputeParticles::step(float dt) {
     device_->setComputeBuffer(10,gpuVmPayload_);
     device_->setComputeBuffer(11,stateAttributes_);
     device_->setComputeBuffer(12,vmErrors_);
+    device_->setComputeBuffer(13,graphSources_);
     Uniforms u{};
     u.gravityDt={desc_.gravityY,dt,desc_.drag,0};
     u.rightSize={right_.x,right_.y,right_.z,desc_.size};
