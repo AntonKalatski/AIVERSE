@@ -93,6 +93,25 @@ if [[ "$GUI" -eq 1 ]]; then
         printf 'Renderer3D/MotionWeave preview did not report pass=1.\n' >&2
         exit 1
     fi
+
+    # A second REAL scene validates 12 GPU actors sharing the same immutable
+    # morph data and shader pipelines while producing distinct face streams.
+    CROWD="${AIVERSE_VIVID_CROWD_ACTORS:-12}"
+    CROWD_PREFIX="$LOGDIR/vivid-crowd"
+    run_logged renderer-crowd-preview env \
+        AIVERSE_VIVID_PREVIEW_ACTORS="$CROWD" \
+        AIVERSE_VIVID_PREVIEW_PREFIX="$CROWD_PREFIX" "$PREVIEW"
+    for stage in baseline morph motionweave; do
+        output="$CROWD_PREFIX-$stage.ppm"
+        if [[ ! -s "$output" ]]; then
+            printf 'Missing/empty crowd screenshot: %s\n' "$output" >&2
+            exit 1
+        fi
+    done
+    if ! grep -q 'pass=1' "$LOGDIR/renderer-crowd-preview.log"; then
+        printf 'VIVID multi-actor Renderer3D/MotionWeave preview did not pass.\n' >&2
+        exit 1
+    fi
 else
     printf 'GUI preview intentionally skipped by --no-gui; this is NOT full visual acceptance.\n'
 fi
@@ -102,6 +121,7 @@ fi
     printf 'GPU+MotionWeave CTest=PASS\n'
     if [[ "$GUI" -eq 1 ]]; then
         printf 'Renderer3D colour/shadow/MotionWeave visual preview=PASS\n'
+        printf 'Renderer3D shared GPU asset crowd preview=PASS\n'
     else
         printf 'Renderer3D visual preview=NOT RUN (--no-gui)\n'
     fi
