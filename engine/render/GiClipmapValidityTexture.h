@@ -55,7 +55,7 @@ public:
     gfx::TextureHandle texture() const{return texture_;}
     const gfx::Device* device() const{return device_;}
     size_t size() const{return state_.size();}
-    size_t validCount() const{return validCount();}
+    size_t validCount() const{return validCount_;}
     bool valid(uint32_t id) const{return state_.at(id)!=0;}
 
     struct UploadStats {size_t changed=0,regions=0,bytes=0;};
