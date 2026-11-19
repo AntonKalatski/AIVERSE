@@ -47,13 +47,51 @@ bool PrismaScreenLighting::init(gfx::Device& d, Prisma& post) {
     }
     return triangle_.valid();
 }
+void PrismaScreenLighting::queueTarget(gfx::TextureHandle& target) {
+    if (!target.valid()) return;
+    // Retire using the backend's actual submission token, never a CPU
+    // frame number. If the backend has no token, quarantine until idle.
+    const uint64_t fence = dev_ ? dev_->gpuSubmissionFence() : 0;
+    if (fence) retiredTargets_.retire(target, fence);
+    else unfencedTargets_.push_back(target);
+    target = {};
+}
 void PrismaScreenLighting::releaseTargets() {
-    for(auto* t:{&bounce_,&scatter_,&history_[0],&history_[1],&depth_}){if(t->valid())dev_->destroyTexture(*t);*t={};}
-    w_=h_=0;reset();
+    for (auto* t : {&bounce_,&scatter_,&history_[0],&history_[1],&depth_})
+        queueTarget(*t);
+    // Only clear this adapter's resources/state. The underlying Prisma
+    // scene/history belongs to Prisma and is never retired here.
+    w_=h_=0;current_=0;reset();
+}
+size_t PrismaScreenLighting::collectGpuRetirements() {
+    if (!dev_) return 0;
+    const uint64_t completed = dev_->gpuCompletedFence();
+    if (!completed) return 0;
+    return retiredTargets_.collect(completed,
+        [this](gfx::TextureHandle t) { dev_->destroyTexture(t); });
+}
+size_t PrismaScreenLighting::drainRetiredAfterGpuIdle() {
+    if (!dev_) return 0;
+    // The host MUST have synchronized GPU idle before using this method.
+    size_t count = retiredTargets_.drainAfterGpuIdle(
+        [this](gfx::TextureHandle t) { dev_->destroyTexture(t); });
+    for (const auto t : unfencedTargets_)
+        if (t.valid()) { dev_->destroyTexture(t); ++count; }
+    unfencedTargets_.clear();
+    return count;
+}
+PrismaScreenLighting::RetirementStats PrismaScreenLighting::retirementStats() const {
+    RetirementStats stats;
+    stats.fencedTextures=retiredTargets_.pendingCount();
+    stats.unfencedTextures=unfencedTargets_.size();
+    stats.completedFence=dev_?dev_->gpuCompletedFence():0;
+    return stats;
 }
 void PrismaScreenLighting::shutdown() {
     if(!dev_)return;
+    // Caller-owned GPU idle point required for shaders/triangle as well.
     releaseTargets();
+    drainRetiredAfterGpuIdle();
     for(auto p:pipes_)if(p.valid())dev_->destroyPipeline(p);
     for(auto s:shaders_)if(s.valid())dev_->destroyShader(s);
     if(triangle_.valid())dev_->destroyBuffer(triangle_);
@@ -74,6 +112,9 @@ RTSCamera PrismaScreenLighting::jittered(RTSCamera c,int w,int h) {
     return c;
 }
 gfx::PassDesc PrismaScreenLighting::scenePass(const gfx::PassDesc& out,int w,int h) {
+    // Opportunistically collect backend-confirmed completions even when
+    // lighting is disabled; this does not wait for the graphics queue.
+    collectGpuRetirements();
     scene_=post_->scenePass(out,w,h);
     volumeRan_=false;
     // Canonical Prisma owns the only temporal history and camera jitter.
@@ -87,7 +128,14 @@ gfx::PassDesc PrismaScreenLighting::scenePass(const gfx::PassDesc& out,int w,int
     const bool needScatter=highHdr&&volume_.enabled&&volume_.density>0;
     running_=legacyTemporal_||needBounce||needScatter;
     if(!running_||w<=0||h<=0){
-        running_=false;legacyTemporal_=false;reset();return scene_;
+        running_=false;legacyTemporal_=false;
+        // Runtime disable is a lifecycle transition: retire cached
+        // auxiliary allocations, but never immediately destroy in-flight
+        // render targets. A later re-enable allocates only what it needs.
+        if(w_||h_||bounce_.valid()||scatter_.valid()||
+           history_[0].valid()||history_[1].valid()||depth_.valid())
+            releaseTargets();
+        reset();return scene_;
     }
     if(w_!=w||h_!=h){releaseTargets();w_=w;h_=h;}
     // Lazy allocation: the canonical path never creates this wrapper's
