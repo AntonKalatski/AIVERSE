@@ -604,3 +604,12 @@ This is **numeric/source-ID brush authoring**, not full 3D viewport picking, geo
 VIVID Creator now permits selecting an imported model mesh and arming a 3D viewport click to select the nearest original source vertex on the frontmost intersected indexed triangle of that mesh. A screen marker shows the selected vertex. The non-destructive sparse morph brush now supports optional X=0 bilateral symmetry in source-model coordinates: mirrored X offsets invert direction, other axes keep direction, and the entire stroke participates in one undo/redo transaction. Source model vertices and MotionWeave simulation remain unchanged.
 
 **Current limitation:** selection uses source vertices transformed by pose node matrices, not GPU-morphed or multi-joint skinned final geometry; high-density picking is an O(triangle count) CPU operation. The feature also lacks topology-aware/geodesic brush falloff and per-character symmetry planes. This stage is source-authored, **not yet compiled or GPU/GUI-tested** on Mac. Full technical handoff and commit history: `docs/agent-handoffs/vivid.md` Stage 6Y.
+
+
+## Stage 6Z — rig pose corrections and conservative sparse-morph LOD transfer (2026-11-19)
+
+VIVID Creator now has an opt-in, non-destructive facial rig correction panel for selecting a named model node, authoring a bounded local XYZ translation, undo/redo and versioned JSON save/load. These corrections apply as a hierarchy-aware **presentation pose overlay after MotionWeave**, not as destructive bind-pose or inverse-bind authoring. Imported FBX/glTF source data is preserved.
+
+A separate `MorphLodTransfer` helper carries VIVID sparse facial morph targets to a target LOD when an explicit source-vertex correspondence table is provided. An additional strict reference matcher can infer that table only for original/LOD vertices with unambiguous near-identical positions and a bounded 32K diagnostic budget. Arbitrarily decimated LOD meshes require proper barycentric surface mapping and are not supported by this matcher.
+
+**The code and new regression assertions are not yet natively compiled or tested.** No Metal preview, CTest or production model validation was performed for these features. Outstanding tasks include true bind-pose/skin rebinding, asset-owned rig correction publication, full LOD authoring/bake/editor integration, and physically detailed skin/eyes/strand hair. See Stage 6Z in `docs/agent-handoffs/vivid.md` for implementation commits, caveats and next steps.
