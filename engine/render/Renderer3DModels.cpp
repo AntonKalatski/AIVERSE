@@ -710,9 +710,16 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         }
     }
     if (packetEligible) {
-        // Excessive per-object packet storage can cost more than reassembly.
+        // Bound packet templates separately from the existing geometry pool.
         constexpr size_t kMaxPacketItems = 128;
-        if (modelItems_.size() - packetStart <= kMaxPacketItems) {
+        constexpr size_t kMaxPacketBytes = 64u * 1024u * 1024u;
+        const size_t count = modelItems_.size() - packetStart;
+        const size_t packetBytes = count * sizeof(ModelItem);
+        auto old = staticRenderPackets_.find(d.persistentId);
+        const size_t replacedBytes = old == staticRenderPackets_.end()
+            ? 0 : old->second.items.size() * sizeof(ModelItem);
+        if (count <= kMaxPacketItems &&
+            packetBytes <= kMaxPacketBytes - (staticRenderPacketBytes_ - replacedBytes)) {
             StaticPacketEntry& packet = staticRenderPackets_[d.persistentId];
             packet.draw = d;
             packet.draw.staticCache = nullptr; // the owner may free its cache
@@ -723,10 +730,14 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             packet.materialCount = m->materials.size();
             packet.seen = staticRenderPacketEpoch_;
             packet.items.assign(modelItems_.begin() + packetStart, modelItems_.end());
+            staticRenderPacketBytes_ += packetBytes - replacedBytes;
             ++staticRenderPacketStats_.rebuilds;
         } else {
             ++staticRenderPacketStats_.declined;
-            staticRenderPackets_.erase(d.persistentId);
+            if (old != staticRenderPackets_.end()) {
+                staticRenderPacketBytes_ -= replacedBytes;
+                staticRenderPackets_.erase(old);
+            }
         }
     }
 }
