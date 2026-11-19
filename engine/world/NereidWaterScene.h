@@ -68,6 +68,9 @@ inline bool sameNereidSceneSurface(const NereidSceneSurface& a,
        u.depthTint!=v.depthTint ||
        u.underwaterDistortion!=v.underwaterDistortion ||
        u.underwaterScattering!=v.underwaterScattering ||
+       u.rapidFoamStrength!=v.rapidFoamStrength ||
+       u.rapidFlowThreshold!=v.rapidFlowThreshold ||
+       u.rapidNoiseScale!=v.rapidNoiseScale ||
        u.opacity!=v.opacity ||
        u.specular!=v.specular)return false;
     // Camera coordinates are intentionally excluded: resident ocean patches
