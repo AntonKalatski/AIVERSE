@@ -1073,3 +1073,26 @@ simulation or an authoritative replay checksum.
 
 **NOT RUN:** native CMake/CTest, animation/graphics parity,
 thread-lifetime subprocess fixtures, sanitizers or benchmarks.
+
+## Stage 131 — Model reader lifetime with streaming publication
+
+`MotionWeave` remains single-writer for one native
+presentation source. While its worker jobs and the
+synchronous model submissions read borrowed Model rigs,
+the render-owner-thread `ModelReadLease` /
+`ModelCacheReadScope` prevents the host from evicting
+already resident Models. Stage 131 moves the read thread
+validation in `acquireModelRead(key)` BEFORE cache map
+lookup, eliminating a lookup-before-validation hazard.
+
+Normal new-asset streaming into distinct Model cache keys
+remains allowed during a guard; old Model replacement,
+trim, invalidation and shutdown remain forbidden.
+The source frame's Model publication epoch continues
+to guard against in-place reimports/reused pointers;
+no animation clock, gameplay state or GPU-fence owner
+was changed. The already-registered `render_device_epoch`
+CPU test was expanded for owner-thread and streaming
+invariants, but is **NOT RUN**.
+
+[Stage 131 handoff](agent-handoffs/animation-stage131-streaming-cache-read-regressions-2026-11-19.md).
