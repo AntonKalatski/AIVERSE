@@ -412,9 +412,12 @@ void VulkanDevice::ensureBackBuffer(int w, int h) {
 
 void VulkanDevice::prepareSlot() {
     FrameSlot& s = slots_[size_t(slot_)];
-    if (vkWaitForFences(device_, 1, &s.fence, VK_TRUE, UINT64_MAX) == VK_ERROR_DEVICE_LOST) healthy_ = false;
-    completed_ = std::max(completed_, s.serial);
-    collectGarbage();
+    const VkResult waited = vkWaitForFences(device_, 1, &s.fence, VK_TRUE, UINT64_MAX);
+    if (waited == VK_SUCCESS)
+        completed_ = std::max(completed_, s.serial);
+    else
+        healthy_ = false; // no verified completion on error/device lost
+    if (healthy_) collectGarbage();
     vkResetCommandPool(device_, s.pool, 0);
     for (auto p : s.descriptorPools) vkResetDescriptorPool(device_, p, 0);
     s.descriptorPool = 0;
