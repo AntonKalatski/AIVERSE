@@ -131,7 +131,7 @@ inline void addWaterInteractionSystem(Simulation& sim,std::string name) {
         World& world=current.world();
         auto* outputs=world.prepareExistingWrite<WaterInteractionOutputComponent>();
         auto* states=world.prepareExistingWrite<WaterInteractionStateComponent>();
-        if(!outputs || !states)return;
+        if(!outputs)return;
         const World& read=world;
         for(size_t i=0;i<outputs->size();++i) {
             const Entity entity=outputs->entityAt(i);
@@ -139,7 +139,7 @@ inline void addWaterInteractionSystem(Simulation& sim,std::string name) {
             auto& output=outputs->dataAt(i);
             output={};
             output.tick=current.tick();
-            auto* state=states->tryGet(entity);
+            auto* state=states?states->tryGet(entity.index):nullptr;
             const auto* config=read.tryGetConst<WaterInteractionComponent>(entity);
             const auto* probe=read.tryGetConst<WaterProbeComponent>(entity);
             const auto* contact=read.tryGetConst<WaterContactComponent>(entity);
