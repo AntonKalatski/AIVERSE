@@ -2510,6 +2510,17 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
     target_compile_features(aiverse_vivid_renderer_preview PRIVATE cxx_std_20)
 endif()
 
+# VIVID Creator: interactive DNA + rig/eye/skin/hair authoring with
+# MotionWeave and native Model/ShaderGraph preview. Separate from the
+# general editor and optional for non-desktop builds.
+if(AIVERSE_DESKTOP AND (AIVERSE_BUILD_TOOLS OR AIVERSE_BUILD_TESTS))
+    add_executable(aiverse_vivid_creator tools/vivid-creator/main.cpp)
+    target_link_libraries(aiverse_vivid_creator PRIVATE
+        aiverse_runtime AIVERSE::vivid_human AIVERSE::vivid_actor
+        AIVERSE::MotionWeave aiverse_zstd_dec)
+    target_compile_features(aiverse_vivid_creator PRIVATE cxx_std_20)
+endif()
+
 # Geometry visibility verification uses the same renderer on GL and Metal.
 if(AIVERSE_BUILD_TESTS AND AIVERSE_DESKTOP)
     add_executable(aiverse_geometry_preview tests/geometry/preview.cpp)
