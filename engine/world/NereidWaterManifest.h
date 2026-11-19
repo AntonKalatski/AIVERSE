@@ -106,6 +106,30 @@ inline NereidSceneSurface surface(const Json& j) {
         if(!validWaterGeometry(s.geometry))
             throw JsonError("nereidWater.geometry: insufficient or invalid points");
     }
+    if(j.has("currentField")) {
+        const auto& current=j["currentField"];
+        if(!current.isObject() || !s.useGeometry ||
+           s.geometry.kind!=WaterGeometryKind::RiverSpline)
+            throw JsonError("nereidWater.currentField: expected river spline profile");
+        auto& field=s.currentField;
+        field.enabled=current.getBool("enabled",true);
+        if(current.has("bankFade"))
+            field.bankFade=coordinate(current["bankFade"],"current.bankFade",1_fx);
+        const auto& nodes=current["nodes"];
+        if(!nodes.isArray() || nodes.size()!=s.geometry.points.size())
+            throw JsonError("nereidWater.currentField.nodes: expected one [downstream,lateral,shear] per river point");
+        for(const auto& node:nodes.items()) {
+            if(!node.isArray() || node.size()!=3)
+                throw JsonError("nereidWater.currentField.nodes: expected triple");
+            field.nodes.push_back({
+                coordinate(node[0],"current.downstream",1000_fx),
+                coordinate(node[1],"current.lateral",1000_fx),
+                coordinate(node[2],"current.shear",1000_fx)});
+        }
+        if(field.enabled && !validWaterCurrentField(field,&s.geometry))
+            throw JsonError("nereidWater.currentField: invalid river current profile");
+        s.useCurrentField=true;
+    }
     if(j.has("lod"))s.mesh.lod=lod(j.getStr("lod"));
     if(j.has("autoLod")) {
         if(j["autoLod"].type()!=Json::Type::Bool)
