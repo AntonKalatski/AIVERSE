@@ -68,7 +68,32 @@ public:
         // Metal delivers previous-frame readback callbacks at Device.beginFrame.
         // Poll BEFORE mutating the next GPU revision. While a capture remains
         // queued/in-flight/ready we intentionally keep VFX presentation frozen.
+        // Editor UI only posts to this mailbox. The renderer host resolves
+        // requests here on its single gfx Device owner thread, before step.
+        if(captureMailbox_.consumeRelease()) {
+            if(activeMailboxSequence_!=0)capture_.cancel();
+            activeMailboxSequence_=0;
+        }
+        uint64_t mailboxSequence=0;
+        size_t requestedGroup=0;
+        if(captureMailbox_.claimRequested(mailboxSequence,requestedGroup)) {
+            const auto current=capture_.status().phase;
+            if(current!=spectra::GpuCapturePhase::Idle &&
+               current!=spectra::GpuCapturePhase::Failed) {
+                captureMailbox_.publishFailure(
+                    mailboxSequence,"Native GPU capture host already has a request");
+            } else if(!capture_.request(requestedGroup)) {
+                captureMailbox_.publishFailure(
+                    mailboxSequence,capture_.status().reason);
+            } else activeMailboxSequence_=mailboxSequence;
+        }
         capture_.pollBeforeStep();
+        if(activeMailboxSequence_) {
+            captureMailbox_.publishFromCapture(
+                activeMailboxSequence_,capture_.status());
+            if(capture_.status().phase==spectra::GpuCapturePhase::Failed)
+                activeMailboxSequence_=0;
+        }
         // Surface pending-reset / lost-Device actions to the renderer host
         // BEFORE asking the ECS bridge to stage new particle sources.
         const auto recovery=recovery_.poll();
@@ -137,11 +162,15 @@ public:
     bool queueVisualReset() {
         if(frameOpen_)return false;
         capture_.cancel();
+        captureMailbox_.clearFromHost();
+        activeMailboxSequence_=0;
         return recovery_.requestPresentationReset("explicit visual rollback");
     }
     bool afterRollback() {
         if(frameOpen_)return false;
         capture_.cancel(); // invalidate any old-device in-flight callback
+        captureMailbox_.clearFromHost();
+        activeMailboxSequence_=0;
         if(!recovery_.hasQueuedReset() &&
            !recovery_.requestPresentationReset("committed ECS tick rollback"))
             return false;
@@ -156,6 +185,8 @@ public:
     bool rebuildOnRecoveredDevice(gfx::Device& recoveredDevice) {
         if(frameOpen_)return false;
         capture_.cancel(); // no snapshot crosses Device epochs
+        captureMailbox_.clearFromHost();
+        activeMailboxSequence_=0;
         return recovery_.replaceDevice(recoveredDevice);
     }
 
@@ -195,7 +226,16 @@ public:
         json=spectra::gpuDiagnosticReportJson(inspected,privacy);
         return true; // aggregate JSON; no raw VM or per-particle coordinates
     }
-    void cancelGpuCheckpoint() {capture_.cancel();}
+    void cancelGpuCheckpoint() {
+        capture_.cancel();
+        captureMailbox_.clearFromHost();
+        activeMailboxSequence_=0;
+    }
+    // Non-owning pointer may be attached to the editor UI. Native host MUST
+    // detach it before shutdown. UI may only queue/cancel, not issue GPU calls.
+    spectra::GpuCaptureRequestMailbox& captureMailbox() {
+        return captureMailbox_;
+    }
     // Legacy immediate export remains read-only and cannot request readback.
     bool exportFreshGpuCheckpoint(size_t groupIndex,
                                   std::vector<uint8_t>& bytes) const {
@@ -209,6 +249,8 @@ public:
     void shutdown() {
         if(frameOpen_)finish();
         capture_.cancel(); // RHI callbacks retain only weak capture state
+        captureMailbox_.clearFromHost();
+        activeMailboxSequence_=0;
         pool_.shutdown();
         bridge_.discardTrackingAfterPoolRecreation();
         poseHistory_.resetForRollback();
@@ -224,6 +266,8 @@ private:
     spectra::GpuEcsPoseInterpolator poseHistory_{4096};
     spectra::GpuPoolRecoveryHost recovery_;
     spectra::GpuPoolCaptureHost capture_;
+    spectra::GpuCaptureRequestMailbox captureMailbox_;
+    uint64_t activeMailboxSequence_=0;
     bool frameOpen_=false;
 };
 
