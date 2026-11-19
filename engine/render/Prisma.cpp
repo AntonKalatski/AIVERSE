@@ -213,6 +213,12 @@ void Prisma::acceptObjectMotionVectors(gfx::TextureHandle texture) {
 void Prisma::setObjectMotionVectors(uint64_t id, gfx::TextureHandle texture) {
     motionViews_[id].objectVelocity = texture;
 }
+void Prisma::setMotionReactiveMask(uint64_t id, gfx::TextureHandle texture) {
+    motionViews_[id].reactiveMask = texture;
+}
+void Prisma::acceptMotionReactiveMask(gfx::TextureHandle texture) {
+    setMotionReactiveMask(viewId_, texture);
+}
 void Prisma::resetMotionHistory(uint64_t id) {
     // Epoch is created even if the camera has not rendered before; this
     // prevents a renderer's prior transform history from surviving a cut.
@@ -220,12 +226,14 @@ void Prisma::resetMotionHistory(uint64_t id) {
     view.valid = false;
     ++view.cutEpoch;
     view.objectVelocity = {};
+    view.reactiveMask = {};
 }
 void Prisma::resetMotionHistory() {
     for (auto& [id, view] : motionViews_) {
         view.valid = false;
         ++view.cutEpoch;
         view.objectVelocity = {};
+        view.reactiveMask = {};
     }
 }
 
@@ -680,6 +688,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     motionView.height = h;
     motionView.valid = true;
     motionView.objectVelocity = {};
+    motionView.reactiveMask = {};
 
     // ---- experimental depth of field: device-depth driven defocus
     // The scene depth texture must NEVER be attached for depth writes while
