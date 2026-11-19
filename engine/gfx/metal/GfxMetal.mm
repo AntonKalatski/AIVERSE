@@ -1551,6 +1551,13 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             if (!uniforms[slot] || !uniforms[slot].contents) return false;
             std::memcpy(uniforms[slot].contents, bytes.data(), bytes.size());
         }
+        // Each ICB command uses the same uniform slots. Compact the active
+        // bindings once per submission instead of checking 8 empty slots for
+        // every command (potentially hundreds per submission).
+        int uniformSlots[8] = {};
+        int uniformSlotCount = 0;
+        for (int slot = 0; slot < 8; ++slot)
+            if (uniforms[slot]) uniformSlots[uniformSlotCount++] = slot;
         const auto afterAlloc = std::chrono::steady_clock::now();
         const bool u32 = p->desc.indexType == IndexType::UInt32;
         const size_t indexBytes = u32 ? 4u : 2u;
@@ -1581,7 +1588,8 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             [command setRenderPipelineState:indirectPipeline];
             if (pbr) [command setFragmentBuffer:pbrArgs offset:0 atIndex:8];
             [command setVertexBuffer:vertices offset:vbOffset_ atIndex:0];
-            for (int slot = 0; slot < 8; ++slot) if (uniforms[slot]) {
+            for (int k = 0; k < uniformSlotCount; ++k) {
+                const int slot = uniformSlots[k];
                 [command setVertexBuffer:uniforms[slot] offset:0 atIndex:NSUInteger(1 + slot)];
                 [command setFragmentBuffer:uniforms[slot] offset:0 atIndex:NSUInteger(1 + slot)];
             }
@@ -1616,9 +1624,20 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             totals[2] += ms(afterAlloc, afterEncode);
             totals[3] += ms(afterEncode, std::chrono::steady_clock::now());
             commandsEncoded += drawCount;
-            if (++submissions == 600) {
+            // Override only the reporting interval, never a GPU/CPU path.
+            // Small AUTO probes may submit far fewer than 600 ICBs.
+            static const uint32_t reportEvery = [] {
+                const char* raw = std::getenv("AIVERSE_ICB_PROFILE_REPORT_EVERY");
+                if (!raw || !*raw) return 600u;
+                char* end = nullptr;
+                const long n = std::strtol(raw, &end, 10);
+                return end != raw && *end == '\0' && n >= 1 && n <= 10000
+                    ? uint32_t(n) : 600u;
+            }();
+            if (++submissions == reportEvery) {
                 std::fprintf(stderr,
-                    "[metal-icb] avg/600 submissions args=%.4f alloc=%.4f encode=%.4f residency-execute=%.4f ms commands/submission=%.1f\n",
+                    "[metal-icb] avg/%u submissions args=%.4f alloc=%.4f encode=%.4f residency-execute=%.4f ms commands/submission=%.1f\n",
+                    reportEvery,
                     totals[0] / submissions, totals[1] / submissions,
                     totals[2] / submissions, totals[3] / submissions,
                     double(commandsEncoded) / submissions);
