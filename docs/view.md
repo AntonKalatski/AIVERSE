@@ -2640,3 +2640,27 @@ reflection policy or Prisma's independently owned PostFx targets.
 
 **NOT RUN:** compile, link, CTest, GPU/sanitizer or visual parity.
 See [Stage 118 handoff](agent-handoffs/animation-stage118-gpu-init-rollback-2026-11-19.md).
+
+## Stage 119 — hot reload continuity and orphan-safe RTT fallback
+
+Generic `aiverse::View` still updates one presentation ECS graph
+clock per source. `MotionWeaveSourceBridge` transfers a
+`PlaybackSnapshot` when an authored graph or model changes without
+changing source generation or compatible bone ancestry. The new
+pose is re-evaluated after reset, avoiding stale model matrices;
+LOD draws and static attachments remain synchronous `View::submitModel`
+packets. Changed source generation, graph state/node identity, and
+incompatible rig hierarchies still use restart semantics.
+
+The exceptional unleased `Renderer3D::retireRenderTargets` fallback
+now requires `gfx::Device::waitForResourceIdle` success before
+destroying live GPU textures. Otherwise it retains/orphans those
+handles and counts failed barriers. Normally Renderer3D owns the
+fenced `OffscreenTargetRetirement` and this fallback is unused;
+Editor Stats exposes fallback failures. The separate
+`RenderTexture` canvas transient upload/draw buffers require
+a follow-on GPU lifetime refactor (Stage 120); the current file
+was audited but not modified in Stage 119.
+
+**NOT RUN:** native build/CTest, sanitizers or graphics regressions.
+See [Stage 119 handoff](agent-handoffs/animation-stage119-playback-continuity-2026-11-19.md).
