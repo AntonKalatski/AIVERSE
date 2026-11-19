@@ -360,12 +360,11 @@ struct Viewer {
                 requested.reserve(attachmentSpecs.size());
                 for(const auto& entry:attachmentSpecs) {
                     if(!entry.enabled)continue;
-                    Imported::ChildRequest child;
-                    child.appearance=children.at(entry.modelSource);
-                    child.socketName=entry.socketName;
-                    child.local=entry.local;
-                    child.childWorld=entry.childWorld;
-                    requested.push_back(std::move(child));
+                    requested.push_back(Imported::childFromLayout(
+                        ::aiverse::view::AttachmentLayoutItem{
+                            entry.modelSource,entry.socketName,entry.enabled,
+                            entry.local,entry.childWorld},
+                        children.at(entry.modelSource)));
                 }
                 Imported::Compiled compiled;
                 if(!Imported::compile(parent,provider.resources(),
