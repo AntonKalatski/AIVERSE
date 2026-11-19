@@ -33,13 +33,29 @@ int main() {
     settings.atlasTilePixels=16;
     settings.canopyHeightCm=1000;
 
+    // The conservative budget includes authored near-ground clipping,
+    // its inner lip and the terrain skirt in addition to the two crossed
+    // forest cards per cluster. The old terrain+forest-only bound omitted
+    // these optional triangles and rejected otherwise valid configurations.
+    const auto expectedMaximumTriangles=[](const HorizonSettings& s,
+                                           size_t clusters)->size_t {
+        const size_t terrain=s.distantTerrain ?
+            size_t(s.terrainResolution)*s.terrainResolution*2u +
+            (s.terrainSkirtDepthCm>0 ? size_t(8)*s.terrainResolution : 0u) +
+            (s.innerTerrainLipCm>0 ? 1024u : 0u) +
+            s.maxNearClipTriangles : 0u;
+        return terrain+clusters*4u;
+    };
     const auto budget=estimateHorizonBudget(settings);
     assert(budget.atlasBytes<=16u*1024u*1024u);
-    assert(budget.maxTriangles<=settings.terrainResolution*
-           settings.terrainResolution*2+budget.maxForestClusters*4);
-    const auto defaults=estimateHorizonBudget(HorizonSettings{});
+    assert(budget.maxTriangles==
+           expectedMaximumTriangles(settings,budget.maxForestClusters));
+    const HorizonSettings defaultSettings{};
+    const auto defaults=estimateHorizonBudget(defaultSettings);
     assert(defaults.atlasBytes<=8u*1024u*1024u);
-    assert(defaults.maxTriangles<10000);
+    assert(defaults.maxTriangles==
+           expectedMaximumTriangles(defaultSettings,defaults.maxForestClusters));
+    assert(defaults.maxTriangles==11392u); // terrain + skirt + lip + clip + forest
     assert(defaults.maxForestClusters==832);
     HorizonSettings dualDefault;
     dualDefault.orientationViews=2;
