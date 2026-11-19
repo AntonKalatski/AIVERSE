@@ -34,8 +34,11 @@ int main() {
     AIVERSE_TEST_CHECK(low.find("uniform sampler2D tex4;")!=std::string::npos);
     AIVERSE_TEST_CHECK(low.find("uniform sampler2D tex5;")!=std::string::npos);
     AIVERSE_TEST_CHECK(low.find("uniform sampler2D tex6;")!=std::string::npos);
-    AIVERSE_TEST_CHECK(low.find("texelFetch(tex2")!=std::string::npos ||
-                       rich.find("texelFetch(tex2")!=std::string::npos);
+    // Vertex-stage cell colour and dynamic overlays remain on original
+    // tex2/3 regardless of the low-tier fragment remapping.
+    const std::string vertex=shaders::kTerrainVS;
+    AIVERSE_TEST_CHECK(vertex.find("texelFetch(tex2")!=std::string::npos);
+    AIVERSE_TEST_CHECK(vertex.find("texelFetch(tex3")!=std::string::npos);
 
     // Crucially the rich medium/high GLSL still has the original tex18,
     // tex19, tex20 bindings and can be used unchanged on a capable GPU.
