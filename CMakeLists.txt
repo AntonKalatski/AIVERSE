@@ -926,6 +926,9 @@ if(AIVERSE_BUILD_TOOLS)
     # Offline CPU planner profiler only; does NOT run in CTest and does NOT report GPU timings.
     add_executable(aiverse_lumaweave_bench tools/lumaweave_bench.cpp)
     target_include_directories(aiverse_lumaweave_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    # Produces EXACT concatenated LumaWeave/GI MSL for a single native compiler gate.
+    add_executable(aiverse_lumaweave_shader_dump tools/lumaweave_shader_dump.cpp)
+    target_include_directories(aiverse_lumaweave_shader_dump PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 endif()
 
 if(AIVERSE_BUILD_EDITOR OR AIVERSE_BUILD_TOOLS)
