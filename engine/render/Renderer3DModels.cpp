@@ -77,6 +77,9 @@ void Renderer3D::initModels() {
 }
 
 void Renderer3D::shutdownModels() {
+    // Invalidate CPU staging tickets before any model GPU handles retire.
+    gpuMaterialResources_.reset();
+    gpuEncodedBatches_.clear();
     if (indirectCommands_.valid()) dev_->destroyBuffer(indirectCommands_);
     indirectCommands_ = {};
     modelError_.clear();
