@@ -51,6 +51,8 @@ public:
     }
 
     void update(Editor& ed, double dt) override {
+        if (previewInit_ && (!open || !ed.isWindowInFront(this)))
+            retirePreview();
         time_ += dt;
         if (registered_) return;
         registered_ = true;
