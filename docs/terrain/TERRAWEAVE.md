@@ -2546,3 +2546,84 @@ Metal/Vulkan/GL device validation are **NOT RUN** at the owner's request.
 PR #24 stays Draft. The tester must exercise default parity,
 invalid policies, zero budget, pause/retry, sparse-vs-dense switching,
 and the shared budget with both crossfade models.
+
+## Stage 37 — bounded inactive Horizon wind CPU shadow cache
+
+A Horizon GPU cache hit normally preserves its matching per-region **CPU wind
+overlay** (up to 2 MiB of forest vertex data plus cluster centres). The
+overlay is necessary for Stage35's sparse wind RGB patch planner: the GPU may
+already contain exact PHYSIS metadata rather than baked procedural colours.
+Discarding the overlay *alone* would make future colour comparisons wrong,
+and there is no guaranteed cross-backend RHI vertex-buffer readback.
+
+Stage37 adds a separate **inactive cache** CPU budget via
+`<engine/world/TerraWeaveWindShadowCachePolicy.h>`:
+
+```cpp
+aiverse::terraweave::HorizonWindShadowCachePolicy cpuPolicy{};
+cpuPolicy.maxCachedShadowBytes=1u*1024u*1024u;
+worldScene.setVegetationHorizonWindShadowCachePolicy(cpuPolicy);
+auto configured=worldScene.vegetationHorizonWindShadowCachePolicy();
+```
+
+Direct scene use:
+`TerraWeaveHorizonScene::setWindShadowCachePolicy(cpuPolicy)` and
+`windShadowCachePolicy()`. The default is **16 MiB**, above the maximum
+expected three cached wind overlays so pre-Stage37 default residency is
+preserved. The setting is bounded to 0..16 MiB and validated before
+publication. `0` prevents inactive GPU cache entries from retaining any
+CPU wind overlay; it does **not** disable the active or outgoing transition
+wind animation, nor does it change Stage36's per-update GPU transfer budget.
+This budget measures actual vector **capacities** of `forestWind.vertices`
+and `forestWind.centersCm`, not merely the current logical vector lengths.
+
+`HorizonGpuRegionCache::trimWindShadowBytes(device,budget)` runs only on
+the graphics owner thread. When the cached wind shadow capacity exceeds the
+budget, it retires the **whole least-recently-used shadow-bearing cached GPU
+region**, releasing its matching vertex/index/atlas resources through the
+normal RHI owner path and the associated CPU wind shadow together. It never
+removes a shadow from a retained GPU model, never touches the active model or
+current outgoing fade, and does not evict unrelated zero-shadow entries
+solely to meet this policy. The CPU budget is enforced immediately on
+`retain()` and again at the next `update(device)` after changes to policy
+or terrain-source revisions. It does not require a new GPU allocation, RHI
+readback, shader, asset format or CPU worker.
+
+When a camera returns to a region whose **entire GPU cache entry** was
+evicted under this budget, the existing `AsyncChunkStream` prepare/upload
+path restores the HLOD model and captures a coherent new wind shadow
+**before** uploading. It can reuse a matching CPU Horizon bake/asset archive
+if enabled; otherwise it re-bakes. The old visible proxy is retained while
+streaming. No stale GPU colour bytes are ever mistaken for a fresh CPU
+shadow. If the cache entry was not evicted, it retains both GPU and CPU
+metadata and remains an ordinary instant cache hit. A tight budget trades
+GPU cache hit rate/re-upload work for bounded dormant CPU shadow memory.
+
+`HorizonRuntimeStats::gpuCachedWindShadowBytes` reports the current
+capacity of inactive cached wind metadata, and
+`gpuWindShadowBudgetEvictions` cumulatively counts whole GPU cache
+entries evicted specifically because of this CPU budget (such evictions
+also increment the preexisting general GPU cache eviction count). Active
+and outgoing data, general CPU `HorizonBake` archives, regular vertex
+patch references, model upload staging and GPU memory are **not** included
+in the reported byte count; the feature is intentionally narrow.
+
+**Ownership and compatibility:** PHYSIS/game still publishes an immutable
+`ForestWindField`; no new field sampling, mesh, terrain seams, extra ECS
+entities, GPU shaders/passes or TWH8 archive version. No genre dependency.
+Invoke setters on the owning WorldScene/Horizon update thread; a setter
+cannot safely release RHI buffers itself and applies trimming during the
+next `update(device)`. Existing `HorizonGpuRegionCache::retain` calls
+remain source-compatible via its defaulted final wind-shadow budget.
+
+**Limitations / QA:** This is whole-cached-region eviction rather than
+independent compression/reconstruction of a detached CPU shadow, by
+design: the latter would require a trustworthy GPU readback or full suffix
+reconstruction that Stage35 does not provide. A zero budget can force a
+new model/atlas GPU upload on every revisit, and the general CPU bake
+cache may still consume memory. Compilation, CTest, shader pipelines,
+Metal/Vulkan/OpenGL reentry screenshots, upload timing and memory
+measurements are **NOT RUN** in this feature-first stage. Test LRU
+oldest-first, zero/small/max budget, no-forest model, transition
+completion/reversal, source revision invalidation, cold region reentry,
+active + outgoing preservation and exact/procedural PHYSIS consistency.
