@@ -31,7 +31,11 @@ public:
             if(next.size()>=128 && next.find(name)==next.end())return false;
             next[name]=translation;
         }
-        if(next==edits_)return true;
+        const auto old=edits_.find(name);
+        if(next.size()==edits_.size() &&
+           ((old==edits_.end() && translation.x==0 && translation.y==0 && translation.z==0) ||
+            (old!=edits_.end() && old->second.x==translation.x &&
+             old->second.y==translation.y && old->second.z==translation.z)))return true;
         if(undo_.size()==kHistory)undo_.erase(undo_.begin());
         undo_.push_back(edits_);edits_=std::move(next);redo_.clear();
         return true;
