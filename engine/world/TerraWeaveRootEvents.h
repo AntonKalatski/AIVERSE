@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <map>
+#include <set>
+#include <span>
 #include <optional>
 #include <stdexcept>
 #include <utility>
@@ -106,6 +108,39 @@ public:
         const auto it=plants_.find(id);
         return it==plants_.end()?nullptr:&it->second;
     }
+    // Apply an authoritative server/replay support transition exactly,
+    // without recomputing the soil query on the rendering client.
+    // Validation finishes before any existing map value is modified.
+    void applyAuthoritativeSupportChanges(
+            std::span<const PlantSupportChange> changes) {
+        if(changes.size()>65536u)
+            throw std::length_error("TerraWeave root network update budget");
+        std::set<AnchoredPlantId> seen;
+        for(const auto& change:changes) {
+            if(!seen.insert(change.id).second)
+                throw std::invalid_argument("TerraWeave duplicated root network change");
+            const auto it=plants_.find(change.id);
+            if(it==plants_.end() || !change.id.key ||
+               !change.id.speciesId ||
+               change.support.plantKey!=change.id.key ||
+               change.support.speciesId!=change.id.speciesId ||
+               change.support.habit!=it->second.anchor.roots.habit ||
+               change.support.exposedCm>it->second.anchor.roots.depthCm ||
+               change.support.supportPermille>1000u ||
+               change.support.fallDirectionXPermille < -1000 ||
+               change.support.fallDirectionXPermille > 1000 ||
+               change.support.fallDirectionZPermille < -1000 ||
+               change.support.fallDirectionZPermille > 1000)
+                throw std::invalid_argument(
+                    "TerraWeave invalid/missing rooted plant network state");
+        }
+        for(const auto& change:changes){
+            auto& plant=plants_.at(change.id);
+            plant.support=change.support;
+            plant.fallen=change.fallen;
+        }
+    }
+
     void setEnvironment(AnchoredPlantId id,PlantEnvironment environment) {
         (void)plantAppearance(environment); // pre-validate without mutation
         const auto it=plants_.find(id);
