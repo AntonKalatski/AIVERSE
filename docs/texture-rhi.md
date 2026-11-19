@@ -2178,3 +2178,12 @@ The fourth independently authored Shader Graph fragment texture occupies tex16. 
 `MTTexture` now preserves the source `TextureDesc` sampler semantics (`samplerRepeat`, `samplerLinear`, `samplerCompare`) during `createTexture`. Experimental ICB resource staging validates source slot 16 against those original flags; it rejects nearest, clamp or compare sources rather than drawing with incorrect sampling. Graph sources 13..15 still use their dynamic native sampler states. Rejected ICB groups retain the normal CPU-render fallback.
 
 **Verification:** source-level inspection of `GfxMetal.mm::createTexture` and `Model.cpp` texture upload and native sampler allocation. No Apple MSL compiler, Metal GPU or image parity run.
+
+
+### Stage 10AO — portable GPU ICB material resource CTest
+
+Added `tests/render/gpu_icb_material_contract.cpp` and registered `aiverse_gpu_icb_material_contract_test` / CTest `gpu_icb_material_contract` under the existing `AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN` test target section. The test compiles against actual public engine headers `GpuMaterialResourceTable.h`, `GpuMaterialState.h` and their RHI dependencies.
+
+The executable checks bounded exact deduplication; per-frame generation invalidation, even when a frame serial repeats; source/VT table/wrap/U2 identity changes; graph source counts, missing/tail handles, finite U2; native RHI descriptor validation; conservative opaque/masked/normalmap pipeline grouping; and fragment-only graph equivalence, including different authored source paths with byte-identical shader source. The test uses `std::numeric_limits<float>::quiet_NaN()` instead of a compiler-specific builtin.
+
+**Actual check:** code added to GitHub and verified CMake registration exists. **The test was NOT built or executed in this environment** (the local container cannot resolve github.com and cannot clone the complete AIVERSE source tree); no pass count should be claimed.
