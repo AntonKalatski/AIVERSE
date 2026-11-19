@@ -898,3 +898,16 @@ For gameplay interactions that require identifying a nearby planted tree, call `
 Queries use signed world-centimetre coordinates and are bounded: a nearest radius of 1..10 million cm, or up to 100,000 returned rectangle results (caller should normally request far fewer). Tied distance sorting is deterministic by species/key; rectangle queries sort the result by the same identities. The source does not include remote/unloaded trees. The authoritative game retains collisions, harvesting decisions, inventory, pathfinding, networking and save state; no RTS/FPS-specific runtime is required.
 
 **Features-first policy:** do not start a CTest/GPU troubleshooting loop until feature implementation is complete or the user reprioritizes. Append exact code/docs commits and next step to `docs/terrain/AGENT_HANDOFF.md` at every implementation stage.
+
+## Stage 27 — seasonal canopy policy shared with Horizon
+
+Use the reusable `engine/world/TerraWeavePhenology.h` POD `CanopyPhenology` for biome/year/weather-driven **presentation**. It defines broadleaf/evergreen cover [0,1000] and RGB tint multipliers [0,2000], all integer permille. A fully default-constructed value MUST preserve the previous green, full-canopy output.
+
+- Native `WorldScene::setVegetationPhenology(value)` or directly `TerraWeaveForestScene::setPhenology(value)` applies per-species Arbor leaf-material and shared impostor-override appearance on the caller's render/update thread. No near scatter resample or per-tree ECS entity is needed. Conifers use evergreen cover; other TreeProfiles use broadleaf cover. Bark stays unchanged on near geometry.
+- `HorizonSurfaceSources::phenology` is an immutable value in the same worker snapshot as authored heights, biomes, masks and near seam sources. Horizon CPU baker deterministically thins sampled broadleaf/conifer crowns and adjusts leaf RGB in the **existing** shared atlas; near-ground height and terrain mesh remain unchanged.
+- Changing seasonal policy in `WorldScene` queues one Horizon source revision on the next update, not a terrain edit, and does not cancel Flora workers. Do not mutate `ModelDraw::materials` borrowed vectors after draw submission until the frame finishes.
+- Since TWH8 stores **no season key**, its static disk archives MUST NOT be used for a nondefault policy. Keep the nondefault-season bypass until a deliberate multi-season fingerprint/archive asset migration is implemented. Default archive reuse continues.
+- Seasonal alpha blending can increase GPU overdraw. An impostor billboard combines trunk and leaves in one atlas, so season fade applies to the whole impostor; do **not** claim pixel-accurate leaf-only seasonal impostors or identical near/far morphology. Future improvements need dedicated trunk/leaf channels or an explicit shared shader.
+- PHYSIS/weather/calendar modules are upstream **providers only**. Never introduce direct PHYSIS-to-renderer dependencies or genre-specific seasons inside TerraWeave. The host chooses values and persistence/replication policy.
+
+**Validation intentionally deferred:** no CMake, CTest, graphics backend screenshots or measurable perf evidence yet. User requested features first. Update `docs/terrain/AGENT_HANDOFF.md` after each functional step.
