@@ -106,7 +106,7 @@ fragment float4 fs_main(VOut in [[stage_in]],
 }
 
 // Dither rule copied from the normal opaque ModelShaders LODFADE branch.
-// params.w is fade width; lod=(threshold,invert,enabled,unused).
+// lod=(threshold,invert,enabled,unused); params.z is mask strength.
 // The reactive fallback is rendered only for pixels actually covered by
 // the fading geometry, not its bounding triangle.
 } // namespace aiverse::render::reactive_shaders
