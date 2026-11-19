@@ -156,7 +156,7 @@ inline ArborImpostorAtlas makeArborImpostorAtlas(
     model.materials={std::move(bark),std::move(leaves)};
     for(size_t i=0;i<4;++i){
         auto vertex=model.vertices[i];
-        vertex.pos.z+=0.003f; // face +Z points toward camera
+        vertex.pos.z+=0.02f; // 2cm toward camera reduces far-LOD depth fighting
         model.vertices.push_back(vertex);
     }
     model.indices.insert(model.indices.end(),{4u,5u,6u,4u,6u,7u});
