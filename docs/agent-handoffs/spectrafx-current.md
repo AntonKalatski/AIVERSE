@@ -9,15 +9,20 @@ Metal GPU work pending**. User-provided Mac Studio logs confirm:
 - `ctest -L SpectraFX` **4/4 PASS**, 0 failures, 1.51 seconds:
   `vfx_graph_compiler`, `vfx_ecs_presentation`,
   `spectrafx_contract`, `vfx_graph_assets`
-- No native editor/GPU preview launch, Metal shader execution,
-  GPU resource lifetime or visual fallback has been verified yet
+- Metal Evolution, Alpha Sorting and Compaction compute **PASS** on
+  actual Apple M3 Ultra; Editor GPU Preview, real GPU billboard draw,
+  GPU resource lifetime and visual fallback have **not** been verified.
 
 A new macOS-only **real Metal GPU compute test**
 `aiverse_spectrafx_metal_gpu_test` was added in stage 90.
 It compiles and executes the exact runtime evolution, alpha sorting
 and compaction MSL shaders and verifies the GPU-generated data.
-It has **NOT BEEN RUN** yet on the user's Mac. After refreshing CMake
-from the latest feature branch, it adds a fifth SpectraFX-labeled CTest.
+It **PASSED 1/1 on an Apple M3 Ultra** (user-provided Mac Studio log:
+CMake configured, C++/Objective-C++ compiled, Metal libraries compiled,
+compute dispatched, GPU results verified, 1.63 seconds test, 0 failures).
+Together with the 4/4 earlier CPU/header contracts, this confirms five
+separate native tests; the five have not yet been re-run as one suite
+on the latest commit.
 The new GitHub Actions run `44578278295` was queued at last observation:
 https://github.com/chromealex/AIVERSE/actions/runs/44578278295
 
@@ -107,14 +112,16 @@ The next source review should prioritize remaining metal readback
 callback/resource completion assumptions, the editor viewport frame
 sequence and compatibility with current `gfx::Device` API.
 
-**Immediate next test step (Metal GPU):** in
-`~/Projects/AIVERSE-spectrafx-validation` (detached worktree),
+**Next test step (Metal render):** now that the real M3 Ultra compute
+kernel acceptance has PASSED, build and run the separate offscreen Metal
+billboard raster/blend acceptance added after Stage 91.
+Use `~/Projects/AIVERSE-spectrafx-validation` (detached worktree),
 `git fetch origin && git switch --detach origin/feature/spectrafx-generic-cue-queue`,
 `cmake -S . -B build/spectrafx-validation -DAIVERSE_BUILD_TESTS=ON`,
 `cmake --build build/spectrafx-validation --parallel 4 --target aiverse_spectrafx_metal_gpu_test`,
 then `ctest --test-dir build/spectrafx-validation -L MetalGPU -V --output-on-failure`.
-The new test can report PASS, FAIL with Metal compiler/GPU details, or
-SKIPPED (exit 77, no Metal device). This is a raw Metal compute acceptance
+The prior compute test has already passed. A future render test may report PASS,
+FAIL with Metal compiler/GPU details, or SKIPPED (exit 77, no Metal device). This is a raw Metal compute acceptance
 test **not** an integration test of Renderer3D/RHI draw or 3-frame
 retirement. Save full logs and fix any errors before merging.
 
