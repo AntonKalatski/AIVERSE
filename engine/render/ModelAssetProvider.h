@@ -7,6 +7,7 @@
 #ifndef __EMSCRIPTEN__
 #include "AsyncModelCpuQueue.h"
 #endif
+#include <chrono>
 #include <exception>
 #include <memory>
 #include <stdexcept>
@@ -73,14 +74,26 @@ public:
     CpuStats cpuStats() const noexcept {return cpuQueue_.stats();}
     // Background CPU decoding never touches the device or its buffers.
     // A render-thread caller must publishReady() in a later frame.
-    bool requestAsync(const std::string& source) {
+    bool requestAsync(
+            const std::string& source,
+            ModelLoadPriority priority=ModelLoadPriority::Visible) {
         if(source.empty() || resources_.contains(source) ||
            resources_.publicationBackpressured())return false;
-        return cpuQueue_.request(source,reader_,resources_.textures());
+        return cpuQueue_.request(source,reader_,resources_.textures(),priority);
     }
-    size_t publishReady(gfx::Device& device,size_t maxCount=1) {
+    // A count cap is hard. The elapsed-time cap is advisory: a single
+    // GPU upload may exceed it; never abandon a completed CPU result.
+    // budgetMs<=0 disables the wall-time limit.
+    size_t publishReady(gfx::Device& device,size_t maxCount=1,
+                        double budgetMs=0) {
+        const auto started=std::chrono::steady_clock::now();
         size_t published=0;
         while(published<maxCount && !resources_.publicationBackpressured()) {
+            if(published>0 && budgetMs>0) {
+                const auto elapsed=std::chrono::duration<double,std::milli>(
+                    std::chrono::steady_clock::now()-started).count();
+                if(elapsed>=budgetMs)break;
+            }
             AsyncModelCpuQueue::Prepared prepared;
             if(!cpuQueue_.pollReady(prepared))break;
             for(auto& warning:prepared.warnings)
