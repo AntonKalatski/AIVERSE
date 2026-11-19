@@ -8,6 +8,7 @@
 #include "engine/world/NereidRipples.h"
 #include "engine/world/NereidWindPresentation.h"
 #include "engine/world/NereidWindField.h"
+#include <aiverselib/water/NereidFlowObstacles.h>
 #include <cmath>
 #include <algorithm>
 #include "engine/world/TerraWeave.h"
@@ -23,6 +24,12 @@
 
 namespace aiverse::terraweave { class TerraWeaveForestScene; class TerraWeaveHorizonScene; }
 namespace aiverse::world {
+// Opt-in read-only visual copy of an authoritative ECS water obstruction.
+// sceneWaterId is the water-manifest stable ID (NOT an ECS Entity.index).
+struct NereidSceneFlowObstruction {
+    uint64_t sceneWaterId=0;
+    lib::nereid::WaterFlowObstructionComponent effect{};
+};
 // CPU model decode/terrain tessellation in the worker; GPU publication on update's thread.
 class WorldScene {
 public:
@@ -47,6 +54,28 @@ public:
         confluences_.setConfluences(std::move(sources));
     }
     size_t nereidConfluenceCount()const{return confluences_.count();}
+    // Host captures Box3D trees/soil debris and maps ECS body -> stable
+    // water scene ID at a completed server tick, then publishes here on
+    // WorldScene owner thread. Never query mutable physics/ECS in draw().
+    void setNereidFlowObstructions(
+        std::vector<NereidSceneFlowObstruction> obstructions);
+    size_t nereidFlowObstructionCount()const{
+        return nereidFlowObstructions_.size();
+    }
+    Vec3 resolveNereidFlowObstructions(
+        uint64_t sceneWaterId,Vec3 sampleAt,Vec3 current)const { 
+        const auto* source=nereidWater_.surfaceForId(sceneWaterId);
+        if(!source)return current;
+        for(const auto& obstacle:nereidFlowObstructions_){
+            if(obstacle.sceneWaterId!=sceneWaterId ||
+               obstacle.effect.topY<=source->body.bottomY ||
+               obstacle.effect.bottomY>=source->body.surfaceY)
+                continue;
+            current=lib::nereid::deflectNereidFlow(
+                current,obstacle.effect,sampleAt);
+        }
+        return current;
+    }
     template<class Fn> void forEachNereidCascade(Fn&& fn)const {
         cascades_.forEachSource(std::forward<Fn>(fn));
     }
@@ -250,6 +279,7 @@ private:
     std::map<Cell,std::shared_ptr<Prepared>> resident_;
     std::unique_ptr<AsyncChunkStream> stream_;
     NereidWaterScene nereidWater_;
+    std::vector<NereidSceneFlowObstruction> nereidFlowObstructions_;
     NereidCascadeScene cascades_;
     NereidConfluenceScene confluences_;
     NereidRippleField ripples_;
