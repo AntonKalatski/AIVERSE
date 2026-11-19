@@ -425,6 +425,20 @@ void check() {
         render::MeshDef mesh;
         mesh.primitives={first,second};
         stitched.meshes.push_back(mesh);
+        // Legacy eight-target primitive morph data and old draw batches
+        // must be rebased/invalidated in the cloned primitive.
+        stitched.meshes[0].primitives[1].morphTargets=1;
+        stitched.meshes[0].primitives[1].morphDeltas={
+            10,11,12,13,14,15,
+            20,21,22,23,24,25,
+            30,31,32,33,34,35
+        };
+        stitched.meshes[0].primitives[1].morphTexel=77;
+        stitched.meshes[0].primitives[1].shadowBatched=true;
+        stitched.meshes[0].shadowBatch.indexCount=6;
+        render::MaterialBatch oldBatch;
+        oldBatch.parts={1};
+        stitched.meshes[0].materialBatches.push_back(oldBatch);
         MorphDelta delta;delta.vertex=0;
         delta.position={0.25f,0,0};
         SparseMorphLibrary facial=SparseMorphLibrary::compile(
@@ -440,6 +454,15 @@ void check() {
             stitched.meshes[0].primitives[1].firstVertex==3 &&
             stitched.meshes[0].primitives[1].vertexCount==3,
             "split changed source indices or failed contiguous clone interval");
+        req(stitched.meshes[0].primitives[1].morphTargets==1 &&
+            stitched.meshes[0].primitives[1].morphDeltas.size()==18 &&
+            stitched.meshes[0].primitives[1].morphDeltas[0]==10 &&
+            stitched.meshes[0].primitives[1].morphDeltas[12]==30 &&
+            stitched.meshes[0].primitives[1].morphTexel==0 &&
+            stitched.meshes[0].shadowBatch.indexCount==0 &&
+            stitched.meshes[0].materialBatches.empty() &&
+            !stitched.meshes[0].primitives[1].shadowBatched,
+            "legacy morph repack or stale batch invalidation failed");
         const auto range=facial.gpuRanges()[0];
         req(range.count==2 && facial.gpuDeltas()[range.first].vertex==0 &&
             facial.gpuDeltas()[range.first+1].vertex==3,
