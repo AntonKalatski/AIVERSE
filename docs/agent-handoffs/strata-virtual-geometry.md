@@ -191,3 +191,49 @@ Then add and run a real `GeometryScene` staging fixture with a recording gfx::De
 - No source asset handle/version tracking for dynamic/streamed TerraWeave meshes.
 - GPU culling and indirect draw path are unimplemented, so the presence of staging counters must never be presented as a performance improvement.
 - Concurrent batching changes exist in other branches; do not merge renderer internals without resolving interface ownership.
+
+
+---
+
+## Stage 5 — merge incremental static model cache into Strata (2026-11-19)
+
+**Merge commit**: `0913b82088b63913e1313557de16d85e7c79b89f` in `feature/strata-virtual-geometry`. Two parents:
+1. Pre-merge Strata `4c4a5587b26f3c81e9d33b770c962837db56548f`
+2. Pinned batching `1043a9de747fe89cb42de899c15c6d2f4db8e0e1` from `perf/incremental-static-model-cache`
+
+The merge was constructed on GitHub using the pinned batching tree as base, overlaying exactly the 12 non-overlapping Strata files and manually combining the **Strata ownership section** into the batching branch's latest `AGENTS.md`. Thus all GPU batching, renderer, RHI, geometry pool and its agent documentation remain intact; all Strata files and CPU staging are preserved. GitHub compare confirmed the merged head is descended from both parents. Against pinned batching, the only changed paths are Strata's 13 paths including combined `AGENTS.md`. No changes were sent to the batching feature branch.
+
+**Subsequent engineering documentation commit**: `6c48a4bf9e7b71e021d9b403e1485e8ba06766c2` updates `docs/strata.md` with shared ownership/API policy.
+
+### Integration decisions
+- Reuse `GlobalGeometryPool` and its geometry revision/eligibility contracts. Do not create a second GPU pool for source models.
+- Reuse existing `StaticModelCache`, `StaticModelCachePolicy`, model geometry/material revision paths and existing `EcsStaticModelRender` adapter.
+- `Renderer3D` owns CPU MDI/GPU ICB/material grouping and emits draw commands. Future Strata culling must supply visible cluster ranges through one exclusive rendering path; never double-submit the original source.
+- `GeometryScene` still owns source instances, HLOD and Strata's *opt-in CPU staging*. The existing legacy render route remains authoritative. All experimental render flags retain defaults.
+- Treat the Strata PR as stacked atop batching PR #34 while the latter is draft, to prevent duplicated PR diffs and accidental merge into main before its dependency.
+
+### Evidence and verification
+- Branch and commit ancestry: **verified through GitHub's compare and Git Commit API**.
+- Source integration conflict resolution: only `AGENTS.md` overlapped. Both sections retained in merged tree; all previously unique paths preserved.
+- **Native compile, CTest, Metal screenshots, full Vulkan/GLES checks: NOT RUN in this session**. Assistant container has no mounted AIVERSE checkout; connected GitHub tools cannot execute native builds.
+- Batching PR #34 is still draft and under active development. Its owner's actual 2026-11-19 small synthetic Metal run (handoff Stage 69) passed 33 CPU checks and pixel parity with Direct fallback on that fixture, but *does not validate the Strata merge* or bigger CPU/GPU performance.
+- The batching agent pushed newer feature branch commits while merge planning. Integration deliberately pins `1043a9de`; check `git fetch origin` for further batching updates before depending on newer APIs.
+- There is still no Strata GPU cluster-selection or residency implementation, and no measured frame-time reduction.
+
+### Next exact actions
+1. Fetch both branches and compile the merged Strata feature branch on a Mac Studio:
+   `git fetch origin main perf/incremental-static-model-cache feature/strata-virtual-geometry`
+   `git worktree add --detach ../AIVERSE-strata-merged origin/feature/strata-virtual-geometry`
+   `cmake -S ../AIVERSE-strata-merged -B ../AIVERSE-strata-merged/build/strata -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_STRATA=ON`
+   `cmake --build ../AIVERSE-strata-merged/build/strata --target aiverse_strata_builder_tests aiverse_strata_model_adapter_tests aiverse_material_batches -j 8`
+   `ctest --test-dir ../AIVERSE-strata-merged/build/strata -R '^strata_(builder|model_adapter)$|^model_batching_policy$' --output-on-failure`
+   If `aiverse_material_batches` is not enabled under this configuration, inspect its CMake guard, enable required option explicitly and record it.
+2. Run explicit staging OFF/ON parity on `GeometryScene`, including repeated models, failures, unload/reload, shader/material combinations and moving shadows. Use real Metal validation before enabling experimental ICB.
+3. Add an *exclusive* shared render-command adapter in existing batching; only after step 1+2 pass introduce Strata selection output into the runtime. Gate by backend capabilities and maintain legacy direct rendering.
+4. Before any future batching merge, compare current `perf/incremental-static-model-cache` head against pinned `1043a9de`, inspect its handoff, and merge only after checking concurrent renderer ownership and test status.
+5. Record code and verification in a new handoff appendix and commit separately. Do not mark checks that only queued/cancelled as passing.
+
+### Risks
+- Both branches are experimental and under heavy active development; a clean semantic merge does not prove compiler or GPU compatibility.
+- Batching branch uses large shared renderer and GPU pool; future Strata-specific GPU logic must not fork the pool/command scheduler.
+- Stack PR #35 on PR #34 until batching lands; keep draft and do not merge into main prematurely.
