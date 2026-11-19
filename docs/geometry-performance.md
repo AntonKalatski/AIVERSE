@@ -591,3 +591,55 @@ rendering. Compare `AIVERSE_CPU_MDI_ADAPTIVE=0/1` with the same camera,
 scene and backend on Metal and other supported GPUs, tracking rendered
 pixels, CPU scene time and GPU frame time. Tests and runtime benchmarking
 remain deferred by the user's feature-first request.
+
+
+### Page-local adaptive CPU MDI feedback (Stage 20)
+
+Stage 20 replaces the Stage 19 **pass-wide admission decision** with a
+**per-geometry-page** decision. Enable the existing pair of experimental
+flags, `AIVERSE_STATIC_CROSS_MODEL_BATCHES=1` and
+`AIVERSE_CPU_MDI_ADAPTIVE=1`, to use this path. There is no new default-on
+behavior and no genre-specific policy. The Stage 19 `CpuMdiAdaptiveFeedback`
+EMA remains the same; it is now maintained independently for each live
+GPU geometry page and for the shadow (phase 0) and opaque (phase 1) passes.
+
+The renderer tracks a bounded `CpuMdiPageKey`: the identity of
+`GeometryPoolPage` plus exact GPU VB/IB allocation handles. The value
+holds a `weak_ptr` to the GPU page, a pair of per-pass cost feedback
+objects, and an epoch-local admission decision. On lookup it validates
+the weak lifetime against the model's current `shared_ptr`, so a raw
+address reused after streaming/unloading cannot inherit an old CPU cost.
+At most **256 GPU pages** have retained feedback per renderer; pages not
+tracked because of this cap use the original CPU MDI path, not a
+potentially incorrect global fallback. Idle/expired pages are pruned
+at 64-epoch sweeps after 128 unseen render-scene epochs; whole-scene
+static cache invalidation and renderer shutdown reset page feedback.
+
+After the normal view/LOD/material selection and Stage 18 page-aware
+preflight, each *ready* material/page group consults the page's feedback.
+Only **one** `permit()` decision is made per page, scene epoch and pass,
+even if many groups on that page use different materials. A ready group
+receives one of two local outcomes: **permitted (mode 1)** for special
+cross-model sorting/MDI, or **declined (mode 2)** for ordinary instancing
+and direct drawing. This is a per-item decision bitmap, not a single
+pass-wide Boolean. Therefore a costly page can decline CPU MDI without
+suppressing another eligible, inexpensive page in the **same** shadow
+or opaque pass. Groups below the unique-command threshold remain on
+their existing ordinary path. The global pass average remains available
+for diagnostics only and is **never** used to block a page.
+
+Actual CPU wall time from the *permitted* page's indirect preparation
+and submission is recorded against that page's own feedback, normalized
+by its unique indexed commands. The same two warmup attempts, eight
+usable EMA samples, budget `AIVERSE_CPU_MDI_MAX_US_PER_COMMAND` (default
+25 us) and periodic one-in-32 *page* recovery probe apply. The existing
+exact GPU page, material, shadow, pipeline, command-offset and LOD
+checks remain mandatory. This signal still measures **CPU overhead
+only**, never GPU execution or a guaranteed FPS gain.
+
+Scene → Batching exposes the number of live/created/reused/evicted and
+untracked page feedback records, slow pages separately for shadow/opaque,
+skipped and probed *groups*, and aggregate CPU cost labelled
+diagnostic-only. Experimental flags remain OFF by default. This stage
+has not been compiled or GPU pixel-compared yet because the user
+requested feature work before tests.
