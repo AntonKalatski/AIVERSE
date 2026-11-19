@@ -1,8 +1,9 @@
 # AIVERSE — multiple scenes and multiple ECS worlds
 
-Status: **Stage 1 implementation, native tests pending**, branch
-`feature/scene-runtime-multiworld`. See
-`docs/agent-handoffs/scene-worlds-stage1-2026-11-19.md`.
+Status: **Stage 2 API and async coordinator implemented, native tests pending**, branch
+`feature/scene-runtime-multiworld`. Handoffs:
+`docs/agent-handoffs/scene-worlds-stage1-2026-11-19.md` and
+`docs/agent-handoffs/scene-worlds-stage2-2026-11-19.md`.
 
 ## Key decision: a Scene is not an ECS World
 
@@ -201,3 +202,144 @@ Until a verified migration, do not rewrite RTS/FPS map loading, clone a second
 canonical gameplay state or change the meaning of the legacy world-space
 `Transform`. Follow `docs/ecs-agent-handoff.md` and
 `docs/ecs-scene-hierarchy.md` for concurrent ECS work.
+
+
+## Stage 2 — typed SceneAsset and async CPU loader (implemented, not yet tested)
+
+New public headers:
+- `engine/scene/SceneAsset.h` — strict, stable v1 manifest for logical
+  asset key, dependency keys and prefab instances (scene-local ID, parent
+  ID and JSON properties). Decoding validates key path traversal, missing
+  parents, cycles, duplicate IDs/dependencies and count bounds. Dependencies
+  and objects are sorted into canonical order.
+- `engine/scene/SceneLoadCoordinator.h` — async manifest read and parse on
+  a worker using `std::async`; no ECS writes outside the main-thread barrier.
+  Explicit `poll()`, `ready(ticket)` and `commit(ticket)` API. Manages
+  cancellation and stale worker completions, shared refcounted resource
+  adapters, prefab spawner callbacks and SceneHierarchy parent linking.
+
+### Manifest example (`scenes/city`)
+
+```json
+{
+  "version": 1,
+  "id": "scenes/city",
+  "dependencies": ["models/house.glb", "materials/brick.mat"],
+  "objects": [
+    {"id": 100, "prefab": "prefabs/house", "properties": {"x": 10}},
+    {"id": 200, "parent": 100, "prefab": "prefabs/window",
+     "properties": {"x": 3}}
+  ]
+}
+```
+
+The reader receives the logical `id`; it may resolve it to any content-file
+layout or pack entry. Manifest ID must exactly match the requested key.
+The scene manifest is capped at 4 MiB *after* reading, so an untrusted
+streaming reader must impose its own read limit. Format v1 is deliberately
+minimal: it does not yet prescribe how prefab properties map onto game
+components. The native project supplies this as a callback.
+
+### Native C++ usage
+
+```cpp
+#include "engine/scene/SceneLoadCoordinator.h"
+using namespace aiverse;
+namespace sc = aiverse::scene;
+
+// The module registers aiverse.scene.owner + aiverse.scene.state during setup.
+// Bind this coordinator to the existing World and SceneHierarchy.
+// Reader: worker-thread safe, returns manifest bytes through 'out'.
+// Resource adapter: owner-thread acquire and release by immutable asset key.
+// Spawn: owner-thread instantiation of one prefab on the new Entity.
+sc::SceneLoadCoordinator coordinator(
+    sim.world(),
+    readSceneAsset,
+    sc::SceneResourceAdapter{acquireSharedAsset, releaseSharedAsset},
+    instantiatePrefab,
+    &sceneHierarchy);
+
+auto ticket = coordinator.request("scenes/city", sc::LoadMode::Additive);
+// During normal host frames: coordinator.poll(); observe coordinator.ready(ticket).
+// On an authoritative, deterministic tick/structural barrier, only after all
+// participating peers have content ready:
+if(coordinator.ready(ticket)) {
+    const bool activated = coordinator.commit(ticket);
+    // A failure leaves preexisting scenes intact. Handle error(ticket).
+}
+```
+
+The renderer, model cache, collision, navmesh, TerraWeave, PHYSIS, NEREID,
+Prisma and SpectraFX are **not automatically integrated**. Host adapters
+`acquireSharedAsset`/`releaseSharedAsset` are intended to reference
+these systems; dependency acquisition happens only on the owner thread.
+
+`SceneLoadCoordinator` keeps one reference for each dependency in each
+resident scene, but calls the adapter's `acquire` only for the first
+reference and `release` for the last. Independent Simulations may share
+a common external asset manager via their adapters. The coordinator's
+own refcount table is per ECS World, not a global GPU cache.
+
+### Determinism, loading barriers, rollback
+
+**Never call `commit` immediately when a future finishes on a multiplayer
+client.** Worker completion is only a readiness signal. The host must schedule
+a deterministic scene-transition command/tick, hold the simulation through
+`GameModule::readyToStep` if immutable content is absent, then commit at
+the agreed structural barrier. `poll()` only updates host-owned job status.
+
+When a committed scene replaces another, prefab creation and resource
+acquisition happen first; previous nonpersistent scenes are destroyed only
+after new content has passed preparation. If a prefab callback fails,
+newly-created scene-owned entities and acquired leases are rolled back.
+For this reason, prefab callbacks must touch only the new entity and avoid
+non-transactional effects on external/global gameplay state.
+
+After `Simulation::loadState` or a successful binary `deserialize`, call
+`invalidateAfterRestore()`. This invalidates ticket epochs and discards
+outstanding results from the abandoned rollback timeline, then releases
+non-authoritative resource leases. Use `queueRestoredResidency()` to
+asynchronously reacquire dependencies for Active scenes **without re-spawning
+their already restored ECS entities**. Wait for and commit those residency
+tickets before simulating physics that depends on those resources.
+`SceneHierarchy::rebuild(world)` remains necessary after rollback.
+
+Limitations:
+- An authoritative scene still has an explicit Loading state. A loading
+  scene is not automatically filtered out of arbitrary ECS queries: instantiate
+  at the activation barrier or explicitly gate systems until activation.
+- Scenes loaded before a coordinator's creation must be rehydrated using
+  `queueRestoredResidency`; the coordinator is not an automatic watcher
+  for direct `SceneRuntime` changes.
+- An external `SceneRuntime::unload` performed without the coordinator cannot
+  adjust resource leases. Use `SceneLoadCoordinator::unload` when it owns
+  presentation dependencies.
+- A restore with *incomplete Loading scene records* requires the host to
+  cancel/re-request those scene intents; only Active scenes are rehydrated.
+- `std::async` tasks cannot be forcibly interrupted. Cancel is nonblocking,
+  tombstones are joined by `poll()`, and coordinator destruction can wait
+  for remaining work. Reader callbacks must be thread-safe and lifetime-safe.
+- Asset reader/backend must enforce its own memory budgets and thread limits.
+  The coordinator limits in-flight jobs (default: four) but does not yet
+  impose frame-time or GPU-upload quotas or dependency graph traversal.
+- Production multiworld physical-simulation coupling, replication and
+  editable scene/prefab authoring are later stages.
+
+### Validation
+
+Registered test: `ecs_scene_load_coordinator_test`, covering manifest
+validation, worker/owner thread separation, dependencies shared between
+scenes, parent hierarchies, failed replacement, cancel with late worker,
+COW rollback and scene residency rehydration. Native execution remains
+unverified as of this document.
+
+```sh
+git fetch origin feature/scene-runtime-multiworld
+git switch feature/scene-runtime-multiworld
+git pull --ff-only origin feature/scene-runtime-multiworld
+cmake -S . -B build/scene-worlds -DAIVERSE_BUILD_TESTS=ON
+cmake --build build/scene-worlds --target aiverse_ecs_scene_load_coordinator_test -j8
+ctest --test-dir build/scene-worlds -R '^ecs_scene_load_coordinator_test$' --output-on-failure
+```
+
+For more complete next steps, see the Stage 2 agent handoff.
