@@ -322,3 +322,45 @@ Both existing environment gates remain unchanged and OFF by default:
 with at least one of these paths. Camera/shadow frustum culling, LOD choices,
 per-draw appearance and material GPU state checks continue every frame. No
 GPU indirect submissions, shader output or simulation code is affected.
+
+### Versioned material owner contract (experimental)
+
+`Model::materialRevision` is a separate runtime monotonic revision from
+`geometryRevision`. `Model::markMaterialChanged()` advances it when native
+code changes model-owned material state, shader graphs, image bindings or
+texture **content** that might retain an existing GPU handle. Engine paths
+also advance it when `finalize()` rebuilds the imported material table,
+when `uploadModel()` changes a texture binding, when `addImage()` adds an
+image, and when `releaseModel()` destroys textures. This opt-in revision
+is not part of serialization or authoritative simulation.
+
+`ModelDraw::materialOwnerKey` and `materialOwnerRevision` (both default
+zero) are optional presentation-side fields for independent static objects
+sharing one material-set owner. An owner key must uniquely identify one
+material-set source **within the Model**, and the revision must change
+whenever that owner's material factors, shader graphs, texture bindings,
+content or vector layout mutate. The renderer must not infer material state
+from `Material*` identity. If either value is zero the standard exact
+resolved-GPU-state comparison remains mandatory. The optimization remains
+behind `AIVERSE_PERSISTENT_CPU_PACKETS=1`; providing version fields alone
+never enables caching or bypasses eligibility checks.
+
+Example:
+```cpp
+ModelDraw draw = makeStaticDraw();
+draw.materials = &sharedMaterialSet;
+draw.materialOwnerKey = stableMaterialSetId; // nonzero, same for sharers
+draw.materialOwnerRevision = sharedMaterialSetRevision; // starts nonzero
+// On any sharedMaterialSet in-place edit: ++sharedMaterialSetRevision.
+// On model-owned GPU state change: model.markMaterialChanged().
+renderer.drawModel(draw);
+```
+
+Material owners must outlive the draw currently being submitted; explicit
+revisions are a correctness contract, not an automatic write observer. A
+texture content update behind the same GPU handle must trigger a revision
+even when material pointer, vector size and GPU handle ID do not change.
+`Renderer3D::invalidateModelCachesFor(model)` remains mandatory before
+destroying/replacing a Model. Do not use this fast path for an owner that
+cannot guarantee version propagation; the existing unversioned path is
+available and checks the full material state.
