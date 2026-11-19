@@ -6,6 +6,7 @@
 #include "core/RouteOps.h"
 #include "engine/fx/FxModelMesh.h"
 #include "engine/fx/SpectraGpuPoolWorld.h"
+#include "engine/fx/SpectraDiagnosticReport.h"
 #include "imgui.h"
 #include "imgui_internal.h" // DockBuilder
 
@@ -878,7 +879,8 @@ bool Editor::requestSpectraGpuPreviewCheckpoint() {
     spectraGpuCaptureNote_="Awaiting a frozen graphics pre-pass";
     return true;
 }
-bool Editor::saveFreshSpectraGpuCheckpoint(std::string& output) const {
+bool Editor::saveFreshSpectraGpuCheckpoint(
+    std::string& output,size_t requestedGroup) const {
     const auto* pool=spectraGpuTelemetry_;
     if(!pool || !pool->ready() || pool->presentationBlocked()) {
         output="No healthy active SpectraFX GPU pool is attached";
@@ -890,12 +892,21 @@ bool Editor::saveFreshSpectraGpuCheckpoint(std::string& output) const {
     std::string reason;
     size_t chosen=0;
     bool found=false;
-    for(size_t i=0;i<size_t(pool->stats().gpuGroups);++i) {
-        if(pool->exportFreshCheckpoint(i,bytes,
-                spectra::kGpuCheckpointExportMaxBytes,&reason)) {
-            chosen=i;
-            found=true;
-            break;
+    if(requestedGroup!=static_cast<size_t>(-1)) {
+        if(requestedGroup>=pool->gpuGroupCount()) {
+            output="Selected SpectraFX GPU group is out of range";
+            return false;
+        }
+        chosen=requestedGroup;
+        found=pool->exportFreshCheckpoint(
+            chosen,bytes,spectra::kGpuCheckpointExportMaxBytes,&reason);
+    } else {
+        // Backwards compatible single-argument API: select first ready group.
+        for(size_t i=0;i<pool->gpuGroupCount();++i) {
+            if(pool->exportFreshCheckpoint(
+                i,bytes,spectra::kGpuCheckpointExportMaxBytes,&reason)) {
+                chosen=i;found=true;break;
+            }
         }
     }
     if(!found) {
@@ -944,6 +955,94 @@ bool Editor::saveFreshSpectraGpuCheckpoint(std::string& output) const {
         return false;
     }
     output=destination.string();
+    return true;
+}
+bool Editor::saveSafeSpectraGpuReport(
+    std::string& output,size_t groupIndex,
+    bool includeWorldBounds,bool includeGpuIdentifiers) const {
+    const auto* pool=spectraGpuTelemetry_;
+    if(!pool || !pool->ready() || pool->presentationBlocked() ||
+       groupIndex>=pool->gpuGroupCount()) {
+        output="A healthy SpectraFX pool and valid GPU group are required";
+        return false;
+    }
+    // This is an EXPLICIT local action. It copies one already-completed
+    // checkpoint through the strict Stage-39 freshness gate without RHI reads.
+    std::vector<uint8_t> diagnostic;
+    std::string why;
+    if(!pool->exportFreshCheckpoint(groupIndex,diagnostic,
+            spectra::kGpuCheckpointExportMaxBytes,&why)) {
+        output="No current-revision GPU checkpoint is ready: "+why;
+        return false;
+    }
+    const auto inspected=spectra::inspectGpuCheckpointDiagnostic(diagnostic);
+    if(!inspected.structurallyValid()) {
+        output="SpectraFX diagnostic CRC or header failed integrity check";
+        return false;
+    }
+    const spectra::GpuDiagnosticReportPrivacy privacy{
+        includeWorldBounds,includeGpuIdentifiers
+    };
+    // The JSON report NEVER includes the original GPU blob, individual
+    // particle positions or VM scalar values. Even if includeWorldBounds
+    // is true, only min/max coordinates are included, never per-slot data.
+    Json report=Json::parse(spectra::gpuDiagnosticReportJson(inspected,privacy));
+    report.set("groupIndex",Json::number(int64_t(groupIndex)));
+    Json timeline=Json::array();
+    for(size_t i=0;i<spectraPreviewHistory_.size();++i) {
+        const auto& sample=spectraPreviewHistory_[i];
+        Json row=Json::object();
+        row.set("sample",Json::number(int64_t(i)));
+        row.set("estimatedParticles",
+                Json::number(int64_t(sample.estimatedParticles)));
+        row.set("stepAccepted",Json::fromBool(sample.stepAccepted));
+        row.set("freshGroups",Json::number(int64_t(sample.freshGroups)));
+        row.set("staleGroups",Json::number(int64_t(sample.staleGroups)));
+        row.set("pendingGroups",Json::number(int64_t(sample.pendingGroups)));
+        row.set("killsAwaitingCompletion",
+                Json::number(int64_t(sample.killedSlotsWaiting)));
+        row.set("deviceHealthy",Json::fromBool(sample.deviceHealthy));
+        // No absolute graphics frame serial, visual time or scene pose.
+        timeline.push(std::move(row));
+    }
+    report.set("previewTimelineSummary",std::move(timeline));
+    report.set("automaticUpload",Json::fromBool(false));
+    const std::string serialized=report.dump(2);
+    const fs::path directory=fs::path(platform::userDataDir())/
+                             "spectrafx-diagnostics";
+    std::error_code ec;
+    fs::create_directories(directory,ec);
+    if(ec) {
+        output="Cannot create diagnostics directory: "+ec.message();
+        return false;
+    }
+    const std::string filename="report-"+
+        std::to_string(dev_?dev_->frameSerial():0)+
+        "-group-"+std::to_string(groupIndex)+".json";
+    const fs::path target=directory/filename;
+    const fs::path tmp=directory/(filename+".tmp");
+    {
+        std::ofstream file(tmp,std::ios::binary|std::ios::trunc);
+        if(!file) {
+            output="Cannot open redacted report temporary file";
+            return false;
+        }
+        file.write(serialized.data(),std::streamsize(serialized.size()));
+        file.flush();
+        if(!file) {
+            file.close();
+            fs::remove(tmp,ec);
+            output="Failed to write redacted SpectraFX report";
+            return false;
+        }
+    }
+    fs::rename(tmp,target,ec);
+    if(ec) {
+        fs::remove(tmp);
+        output="Cannot publish redacted report: "+ec.message();
+        return false;
+    }
+    output=target.string();
     return true;
 }
 bool Editor::spectraGpuPreviewActive() const {
