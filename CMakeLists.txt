@@ -649,6 +649,18 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME model_asset_provider_api COMMAND aiverse_model_asset_provider_api_tests)
 endif()
 if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_retirement_pressure_tests
+        tests/render/retirement_pressure.cpp)
+    target_include_directories(aiverse_retirement_pressure_tests
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_test(NAME render_retirement_pressure COMMAND aiverse_retirement_pressure_tests)
+    add_executable(aiverse_async_model_cpu_queue_tests
+        tests/render/async_model_cpu_queue.cpp)
+    target_link_libraries(aiverse_async_model_cpu_queue_tests
+        PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME render_async_model_cpu_queue COMMAND aiverse_async_model_cpu_queue_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_animation_crowd_tests tests/animation/crowd.cpp)
     target_link_libraries(aiverse_animation_crowd_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_crowd_policy COMMAND aiverse_animation_crowd_tests)
