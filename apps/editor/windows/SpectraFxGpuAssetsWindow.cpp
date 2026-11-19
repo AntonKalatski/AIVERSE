@@ -481,8 +481,10 @@ private:
         std::string error;
         const bool valid=fx::SpectraFxGpuEmitterAsset::readText(
             text_,candidate,&error);
+        bool canDraw=valid && previewInitialized_;
         if(!valid) {
             previewMessage_=error;
+            canDraw=false;
             // Do not display stale particles from the previous valid draft.
             if(previewInitialized_) {
                 if(previewHost_.resetScene()) previewHash_=0;
@@ -506,9 +508,16 @@ private:
                             "check CPU effect asset and GPU backend compatibility";
                         previewHash_=hash;
                         previewRestartRequested_=false;
-                    } else previewMessage_="GPU preview reset deferred to safe frame";
+                    } else {
+                        previewMessage_="GPU preview reset deferred to safe frame";
+                        canDraw=false;
+                    }
                 }
-                previewHost_.prepareGpu(dt,previewCamera_);
+                if(canDraw || (previewInitialized_ &&
+                   !previewRestartRequested_ && previewHash_==hash)) {
+                    canDraw=true;
+                    previewHost_.prepareGpu(dt,previewCamera_);
+                }
             }
         }
         const float dpi=ImGui::GetIO().DisplayFramebufferScale.x;
@@ -520,7 +529,7 @@ private:
             renderer.line({float(i),0,-5},{float(i),0,5},grid);
             renderer.line({-5,0,float(i)},{5,0,float(i)},grid);
         }
-        if(valid && previewInitialized_)
+        if(canDraw)
             previewHost_.prepareCpu(dt,previewCamera_,renderer.viewProj(),
                                     previewViewport_.w,previewViewport_.h);
         gfx::PassDesc pass;
@@ -530,7 +539,7 @@ private:
         pass.clearColor[1]=0.13f;
         pass.clearColor[2]=0.16f;
         renderer.render(pass);
-        if(valid && previewInitialized_)
+        if(canDraw)
             previewHost_.render(renderer.lighting,renderer.viewProj(),
                                 previewCamera_);
         previewDevice_->endPass();
