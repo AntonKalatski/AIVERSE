@@ -703,15 +703,30 @@ bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
     }
     if(staged.empty())return true;
     try {
+        // Check all cache keys and prepare shared GPU cache map nodes
+        // BEFORE the first live Model image vector is modified. This
+        // preflights allocations and duplicate scratch texture aliases.
+        std::vector<render::Model*> scratch;
+        scratch.reserve(stagedModels.size());
+        for(const auto& [key,model]:stagedModels) {
+            if(resources_.models().contains(key))
+                throw std::logic_error("staged Model key became resident: "+key);
+            if(model)scratch.push_back(model.get());
+        }
+        auto shared=resources_.textures()->prepareGpuPromotion(scratch);
         // Reserve capacity for ALL affected Model vectors before publishing
         // the first Image. Failure preserves Model image counts and TypeLooks;
         // the transaction destructor queues staged GPU handles for retirement.
         imageTransaction.commit();
-        // Scratch Models were uploaded with shared-cache publication disabled:
-        // the entire node transfer uses allocation-free map node handles.
-        // Existing live Models are still borrowed by old TypeLooks until
-        // the final frame-boundary swap below.
+        // Model ownership moves by preallocated std::map node handles;
+        // original Model* pointers inside staged TypeLooks remain stable.
         resources_.publishStagedModels(*dev_,stagedModels);
+        // Shared-cache hits have already been borrowed during import.
+        // Promote only missing keys from accepted scratch Models without
+        // uploading them again. Duplicate dedicated GPU handles are not
+        // destroyed here: they retire on the image GPU-fence queue.
+        auto duplicates=shared.commit();
+        imageRollback_.retire(*dev_,std::move(duplicates));
     }catch(const std::exception& e) {
         materialLib_=std::move(previousLibrary);
         warnings_.push_back(std::string("appearance image commit: ")+e.what());
