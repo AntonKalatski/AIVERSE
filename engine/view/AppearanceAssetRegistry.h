@@ -494,6 +494,13 @@ public:
             throw std::logic_error(
                 "PinnedAppearanceBatch: missing CPU Model owners for one or more draws");
     }
+    // Opt-in strict path for native shared-ownership clients. Call AFTER
+    // constructing all optional LOD and attachment packets, and use the
+    // returned span for both update() and synchronous submit() before clear().
+    std::span<const Object> validatedSpan() const {
+        requireModelPins();
+        return span();
+    }
     size_t modelPinCount() const noexcept{return modelPins_.size();}
     size_t size() const noexcept{return packets_.size();}
     bool empty() const noexcept{return packets_.empty();}
