@@ -135,6 +135,15 @@ if(AIVERSE_BUILD_TESTS)
         set_tests_properties(vivid_metal_rhi PROPERTIES SKIP_RETURN_CODE 77)
     endif()
 
+    # Whole-character retirement: old Model and GPU actor resources share
+    # the same completed-fence lifetime, not just the per-actor output.
+    add_executable(aiverse_vivid_human_retirement_tests
+        ${PROJECT_SOURCE_DIR}/tests/vivid/human_retirement.cpp)
+    target_link_libraries(aiverse_vivid_human_retirement_tests PRIVATE
+        aiverse_vivid_human aiverse_vivid_actor aiverse_zstd_dec)
+    add_test(NAME vivid_human_retirement
+        COMMAND aiverse_vivid_human_retirement_tests)
+
     # Headless token/failure/idle actor GPU retirement test. Uses the same
     # genre-neutral AsyncResourceRetirementQueue as the renderer.
     # GLES3/WebGL2 CPU fallback: no compute shader or frame serial required.
