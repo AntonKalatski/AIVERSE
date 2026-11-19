@@ -198,3 +198,72 @@ by this diagnostic API.
 This example has not been compiled or exercised on Metal hardware
 for Stage 39. All actions are source implementations pending native
 validation.
+
+## Stage 41 — controlled native checkpoint capture and offline inspection
+
+The native `NativeAttachmentExample` now owns
+`spectra::GpuPoolCaptureHost` alongside its existing ECS bridge,
+interpolated render poses, GPU pool and recovery controller. The new
+capture workflow is **explicit, nonblocking and bounded**. The host
+still owns its single `gfx::Device` and the full rendering lifecycle;
+no new render thread or secondary graphics encoder is introduced.
+
+```cpp
+// Between Device frames:
+if(fx.queueGpuCheckpoint(0)) {
+    // The native example pauses VFX presentation at a stable revision.
+}
+
+// The existing per-frame loop continues normally:
+// Device.beginFrame(...) delivers async RHI callbacks.
+// fx.prepare(...) polls completion BEFORE any GPU state changes.
+// It calls pool.step(0) while capture is pending or ready, then invokes
+// GpuPoolCaptureHost::submitAfterStepBeforePass() between compute and pass.
+// fx.drawInsidePass(...), fx.finish(), Device.endFrame() as usual.
+
+if(fx.gpuCaptureStatus().phase==spectra::GpuCapturePhase::Ready) {
+    std::vector<uint8_t> diagnosticBytes;
+    if(fx.takeGpuCheckpoint(diagnosticBytes)) {
+        const auto summary=
+            spectra::inspectGpuCheckpointDiagnostic(diagnosticBytes);
+        // summary is offline-only diagnostic information, NEVER ECS data.
+    }
+}
+// To discard a pending/ready request and resume regular VFX:
+fx.cancelGpuCheckpoint();
+```
+
+There is at most one capture request per host. The capture controller
+records the `GpuPoolWorld::lifecycleEpoch()` and a request ID, checks
+current GPU revision after a complete callback, stores at most
+`kGpuCheckpointExportMaxBytes` bytes (540,720 bytes for 4096
+physical slots), and stops waiting after 600 owner-thread graphics-frame
+polls. Completion callbacks capture only a **weak pointer** to
+capture state, not the native host or a GPU pool pointer. A callback
+from a cancelled, failed or previously recreated GPU Device cannot
+publish into the latest request.
+
+The same demo calls `capture_.cancel()` BEFORE presentation rollback,
+Device replacement or `shutdown()`. New ECS visual source bindings
+are recreated from committed World state after recovery; old GPU
+particles, capture bytes and renderer source handles are never
+resurrected or fed into gameplay checksums.
+
+To inspect a saved editor `.spfx` file without starting the editor or
+Metal driver, compile and run the offline C++ CLI described in
+`tools/spectrafx/README.md`:
+
+```sh
+c++ -std=c++20 -O2 -I. tools/spectrafx/inspect_spfx.cpp -o inspect_spfx
+./inspect_spfx --json /path/to/checkpoint.spfx
+```
+
+The inspector reports detailed V2 error classes (magic/version,
+header, truncation, bounds, length, CRC) and per-particle semantic
+warnings (live/dead slots, nonfinite data, abnormal ages and lifespan
+mirror mismatches). It does **not** edit the file, reconstruct the
+simulation, import GPU state or make the V2 binary portable.
+
+**Stage 41 status:** GitHub source committed; native/Metal compilation,
+CTest, CLI execution, callback lifetime and restart smoke tests have
+NOT RUN. Treat this as an unverified native integration example.
