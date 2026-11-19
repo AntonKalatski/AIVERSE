@@ -1282,6 +1282,53 @@ See `docs/handoffs/prisma-stage-65.md`.
 Keep PR #26 Draft and main unchanged; never merge
 without explicit user approval.
 
+## Stage 66 — consolidate native validation, never invent GPU pass
+
+Stage 65's 19/19 PRISMA catalog closure is SOURCE-LEVEL ONLY.
+Stage 66 installs a real GitHub Actions workflow
+`.github/workflows/prisma-final-validation.yml` for the
+feature branch. The workflow configures CMake with
+`AIVERSE_BUILD_TESTS=ON`, `AIVERSE_BUILD_HDR_TESTS=ON`,
+`AIVERSE_BUILD_EDITOR=ON`, builds all native targets,
+runs ONE full `ctest --output-on-failure`, then attempts
+the available native HDR test fixture (Linux Xvfb/Mesa
+`aiverse_hdr_scene`, macOS OpenGL `aiverse_hdr_gl`).
+Per-OS configure/build/CTest/GPU logs and any HDR capture
+are uploaded with `if: always()`. Workflow does not
+pretend a remote hosted runner is the user's physical
+Metal-capable Mac Studio.
+
+A GPU-free test expansion in
+`tests/render/prisma_volume.cpp` checks Stage 65
+`sanitizePrismaSettings`: nonnumeric RGB elements,
+strict exception vs non-strict default triplet,
+native NaN/Inf fallback, malformed flattened profile
+length, excess values, large finite number clamp,
+and bool normalization. The test is compiled with
+the existing `prisma_volume` target, not a second
+postprocessor or test-only GPU rendering owner.
+
+**Actual run reference:**
+https://github.com/chromealex/AIVERSE/actions/runs/44595377866
+for head `96da88d098307f10d7745af6b2f880e35d918f9e`.
+At time of publication BOTH Linux and macOS jobs were
+**queued**, with no compiler/CTest/GPU outcome yet.
+Previous run 44595169973 was deliberately cancelled by
+concurrency on test update. Never report PASS or FAIL
+for a queued or cancelled job. Inspect the latest
+GitHub run jobs/steps/logs/artifacts after they execute.
+Report each actual error and fix it in the feature branch;
+re-run consolidated checks until actual pass.
+
+The GitHub workflow triggers when PRISMA/Editor/Client
+source or its workflow definition changes, not when a
+handoff document changes. The existing
+`docs/prisma-feature-closure-stage-65.md` details
+coverage and required per-backend visual cases.
+Use `docs/handoffs/prisma-stage-66.md` as the current
+validation handoff, updating its real results when known.
+No merge to main/base without explicit user permission.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
