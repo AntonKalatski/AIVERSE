@@ -9,6 +9,7 @@
 #include <cerrno>
 #include <fcntl.h>
 #include <sys/file.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #else
 #ifndef NOMINMAX
@@ -48,6 +49,17 @@ public:
         const int fd=::open(path.c_str(),flags,0600);
         if(fd<0) {
             if(error)*error="PHYSIS journal lock file open failed";
+            return false;
+        }
+        // The lock must be an ordinary server-owned inode, not a FIFO,
+        // device or hardlink into another directory. O_NOFOLLOW (where
+        // supported) rejects a final-component symlink at open time.
+        struct stat lockStat{};
+        if(::fstat(fd,&lockStat)!=0 || !S_ISREG(lockStat.st_mode) ||
+           lockStat.st_nlink!=1 || lockStat.st_uid!=::geteuid() ||
+           (lockStat.st_mode & 0077)!=0) {
+            ::close(fd);
+            if(error)*error="PHYSIS journal lock inode is unsafe";
             return false;
         }
         if(::flock(fd,LOCK_EX|LOCK_NB)!=0) {
