@@ -796,6 +796,15 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         COMMAND aiverse_model_image_transaction_tests)
 endif()
 if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_gpu_program_retirement_tests
+        tests/render/gpu_program_retirement.cpp)
+    target_include_directories(aiverse_gpu_program_retirement_tests
+        PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(aiverse_gpu_program_retirement_tests PRIVATE Threads::Threads)
+    add_test(NAME render_gpu_program_retirement
+        COMMAND aiverse_gpu_program_retirement_tests)
+endif()
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_executable(aiverse_device_epoch_tests tests/render/device_epoch.cpp)
     target_link_libraries(aiverse_device_epoch_tests
         PRIVATE aiverse_models aiverse_zstd_dec Threads::Threads)
