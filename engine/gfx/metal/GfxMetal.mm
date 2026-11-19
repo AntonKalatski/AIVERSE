@@ -1654,6 +1654,29 @@ public:
         BufferHandle gpuArguments, BufferHandle vertexBuffer, BufferHandle indexBuffer,
         const uint32_t* sourceSlots, uint32_t count,
         const void* instanceData, size_t instanceBytes) override {
+        return prepareGpuEncodedIndexedIcbInternal(
+            gpuArguments,vertexBuffer,indexBuffer,sourceSlots,count,
+            instanceData,instanceBytes,nullptr);
+    }
+    uint32_t prepareGpuEncodedIndexedIcbWithVirtualMaterials(
+        BufferHandle gpuArguments, BufferHandle vertexBuffer, BufferHandle indexBuffer,
+        const uint32_t* sourceSlots, uint32_t count,
+        const void* instanceData, size_t instanceBytes,
+        const GpuIcbVirtualMaterial* materials) override {
+        static const bool optIn = [] {
+            const char* flag=std::getenv("AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT");
+            return flag && std::strcmp(flag,"1")==0;
+        }();
+        if (!optIn || !materials) return 0;
+        return prepareGpuEncodedIndexedIcbInternal(
+            gpuArguments,vertexBuffer,indexBuffer,sourceSlots,count,
+            instanceData,instanceBytes,materials);
+    }
+    uint32_t prepareGpuEncodedIndexedIcbInternal(
+        BufferHandle gpuArguments, BufferHandle vertexBuffer, BufferHandle indexBuffer,
+        const uint32_t* sourceSlots, uint32_t count,
+        const void* instanceData, size_t instanceBytes,
+        const GpuIcbVirtualMaterial* materials) {
         static const bool enabled = [] {
             const char* flag = std::getenv("AIVERSE_GPU_ENCODED_ICB");
             return flag && std::strcmp(flag, "1") == 0;
@@ -1688,7 +1711,7 @@ struct DrawArgs {
 struct IcbContainer {
     command_buffer commands [[id(0)]];
 };
-struct Params { uint count, indexCapacity, pad0, pad1; };
+struct Params { uint count, indexCapacity, materialStride, vtStride; };
 kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                     device uint* indices [[buffer(1)]],
                     device IcbContainer* container [[buffer(2)]],
@@ -1730,10 +1753,12 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
     command.set_fragment_buffer(uniform3, 4);
     command.set_fragment_buffer(uniform4, 5);
     command.set_fragment_buffer(uniform5, 6);
-    command.set_fragment_buffer(uniform6, 7);
+    // Only the opt-in per-command path changes U6 and the PBR resources.
+    // Legacy commands use zero strides and the original shared buffers.
+    command.set_fragment_buffer(uniform6 + tid*params.vtStride, 7);
     // Fragment slot 8 is reserved for the PBR argument-buffer variant.
-    // U7 is still available at vertex slot 8.
-    command.set_fragment_buffer(pbrArguments, 8);
+    // U7 remains available at vertex slot 8.
+    command.set_fragment_buffer(pbrArguments + tid*params.materialStride, 8);
     command.draw_indexed_primitives(primitive_type::triangle,
                                     args.indexCount,
                                     indices + args.firstIndex,
@@ -1793,21 +1818,65 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             resources.instanceBuffer = [device_ newBufferWithLength:instanceBytes
                                              options:MTLResourceStorageModeShared];
         if (!resources.instanceBuffer || !resources.instanceBuffer.contents) return 0;
+        // Prepare the native VT descriptors BEFORE GPU encoding. Each native
+        // texture is retained by this frame's resource pool and compared
+        // with its original handle again at execute time.
+        resources.virtualMaterials.clear();
+        if (materials) {
+            resources.virtualMaterials.reserve(count);
+            for (uint32_t i=0;i<count;++i) {
+                if (!materials[i].valid()) return 0;
+                const auto* atlas=textures_.get(materials[i].physicalAtlas.id);
+                const auto* table=textures_.get(materials[i].pageTable.id);
+                const auto* alpha=materials[i].alphaCoverage.valid() ?
+                    textures_.get(materials[i].alphaCoverage.id) : nullptr;
+                if (!atlas || !table || !atlas->tex || !table->tex ||
+                    atlas->dimension != TextureDimension::Texture2DArray ||
+                    table->dimension != TextureDimension::Texture2DArray ||
+                    (alpha && (!alpha->tex ||
+                     alpha->dimension != TextureDimension::Texture2D)) ||
+                    (materials[i].alphaCoverage.valid() && !alpha) ||
+                    materials[i].params[0] >= float(table->tex.arrayLength))
+                    return 0;
+                GpuIcbNativeVtMaterial native;
+                native.atlasHandle=materials[i].physicalAtlas;
+                native.tableHandle=materials[i].pageTable;
+                native.alphaHandle=materials[i].alphaCoverage;
+                native.atlas=atlas->tex;
+                native.table=table->tex;
+                native.alpha=alpha ? alpha->tex : nil;
+                std::memcpy(native.u6,materials[i].params,sizeof(native.u6));
+                resources.virtualMaterials.push_back(std::move(native));
+            }
+        }
         // The GPU encoder references persistent uniform allocations, not
         // transient parent setBytes or parent buffer inheritance. The values
         // are filled from the correct render pass at execution time.
         constexpr size_t kGpuIcbUniformCapacity = 4096;
+        constexpr size_t kPerCommandPbrStride = 4096;
+        constexpr size_t kPerCommandVtStride = 256;
         for (int slot = 1; slot < 8; ++slot) {
+            const size_t bytes = materials && slot==6 ?
+                size_t(count)*kPerCommandVtStride : kGpuIcbUniformCapacity;
             if (!resources.uniforms[slot] ||
-                resources.uniforms[slot].length < kGpuIcbUniformCapacity)
+                resources.uniforms[slot].length < bytes)
                 resources.uniforms[slot] = [device_ newBufferWithLength:
-                    kGpuIcbUniformCapacity options:MTLResourceStorageModeShared];
+                    bytes options:MTLResourceStorageModeShared];
             if (!resources.uniforms[slot]) return 0;
         }
-        if (!resources.pbrArgs || resources.pbrArgs.length < kGpuIcbUniformCapacity)
+        const size_t pbrBytes = materials ?
+            size_t(count)*kPerCommandPbrStride : kGpuIcbUniformCapacity;
+        if (!resources.pbrArgs || resources.pbrArgs.length < pbrBytes)
             resources.pbrArgs = [device_ newBufferWithLength:
-                kGpuIcbUniformCapacity options:MTLResourceStorageModeShared];
+                pbrBytes options:MTLResourceStorageModeShared];
         if (!resources.pbrArgs) return 0;
+        if (materials) {
+            auto* destination=static_cast<uint8_t*>(resources.uniforms[6].contents);
+            if (!destination) return 0;
+            for(uint32_t i=0;i<count;++i)
+                std::memcpy(destination+size_t(i)*kPerCommandVtStride,
+                            resources.virtualMaterials[i].u6,16);
+        }
         // The same submission index in a recycled frame slot typically
         // contains the same static instance payload. Avoid rewriting it.
         if (resources.instanceValidBytes != instanceBytes ||
@@ -1845,10 +1914,12 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             [encoder setBuffer:resources.uniforms[slot] offset:0
                       atIndex:NSUInteger(slot + 5)];
         [encoder setBuffer:resources.pbrArgs offset:0 atIndex:13];
-        struct Params { uint32_t count, indexCapacity, padding[2]; };
+        struct Params { uint32_t count, indexCapacity, materialStride, vtStride; };
         const size_t indexCount = indexData->size / sizeof(uint32_t);
         if (indexCount > UINT32_MAX) return 0;
-        Params params{count, uint32_t(indexCount), {0,0}};
+        Params params{count,uint32_t(indexCount),
+            materials ? uint32_t(kPerCommandPbrStride) : 0u,
+            materials ? uint32_t(kPerCommandVtStride) : 0u};
         [encoder setBytes:&params length:sizeof(params) atIndex:17];
         [encoder useResource:resources.icb usage:MTLResourceUsageWrite];
         [encoder dispatchThreadgroups:MTLSizeMake((count + 63u) / 64u, 1, 1)
@@ -1919,14 +1990,20 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         for (int slot = 1; slot < 8; ++slot) {
             const auto& snapshot = indirectUniformSnapshots_[slot];
             id<MTLBuffer> stable = resources.uniforms[slot];
-            if (!stable || !stable.contents || snapshot.size() > stable.length)
+            if (!stable || !stable.contents ||
+                (resources.virtualMaterials.empty() || slot!=6) &&
+                    snapshot.size() > stable.length)
                 return reject("uniform snapshot exceeds encoded GPU ICB buffer");
-            // The command was GPU-encoded to refer to this buffer. Never
-            // replace it after encoding: only update the existing contents.
-            if (!snapshot.empty())
+            // U6 for per-command VT is written at preparation into immutable
+            // 256-byte aligned slices; never overwrite it with the first
+            // material's parent uniform snapshot.
+            if (!(slot==6 && !resources.virtualMaterials.empty()) &&
+                !snapshot.empty())
                 std::memcpy(stable.contents, snapshot.data(), snapshot.size());
             declareIndirectRead(stable, MTLRenderStageVertex | MTLRenderStageFragment);
         }
+        if (!resources.virtualMaterials.empty() && !externalMaterialTextures)
+            return reject("per-command VT requires virtual texture shader variant");
         if (usePbrVariant) {
             if (!pipeline->icbPbrEncoder)
                 return reject("PBR ICB fragment argument encoder missing");
@@ -1942,16 +2019,20 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             for (int slot : pbrSlots)
                 if (!bound(slot))
                     return reject("PBR ICB required texture or sampler not bound");
-            if ((virtualSampling &&
-                 (!icbFragmentTextures_[13] || !icbFragmentTextures_[14])) ||
-                (alphaCoverage && !bound(15)))
+            if (resources.virtualMaterials.empty() &&
+                ((virtualSampling &&
+                  (!icbFragmentTextures_[13] || !icbFragmentTextures_[14])) ||
+                 (alphaCoverage && !bound(15))))
                 return reject("VT atlas/page table or R8 alpha ICB binding missing");
             const NSUInteger size = pipeline->icbPbrEncoder.encodedLength;
             // The compute kernel already recorded this exact buffer pointer.
             // Growing/replacing it here would make the encoded ICB stale.
-            if (!resources.pbrArgs || resources.pbrArgs.length < size)
+            constexpr size_t kPerCommandPbrStride = 4096;
+            if (!resources.pbrArgs || size > kPerCommandPbrStride ||
+                resources.pbrArgs.length <
+                    (resources.virtualMaterials.empty() ? size :
+                     size_t(resources.count)*kPerCommandPbrStride))
                 return reject("PBR ICB argument buffer exceeds encoded capacity");
-            [pipeline->icbPbrEncoder setArgumentBuffer:resources.pbrArgs offset:0];
             const auto bindPbrSlot = [&](int slot, bool sampler = true) {
                 [pipeline->icbPbrEncoder setTexture:icbFragmentTextures_[slot]
                                             atIndex:NSUInteger(slot * 2)];
@@ -1960,11 +2041,48 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                                                      atIndex:NSUInteger(slot * 2 + 1)];
                 declareIndirectRead(icbFragmentTextures_[slot], MTLRenderStageFragment);
             };
-            for (int slot : pbrSlots) bindPbrSlot(slot);
-            // Atlas uses the existing s1; page table uses read() with no
-            // sampler. Do not encode the unused argument indices 27/29.
-            if (virtualSampling) { bindPbrSlot(13,false); bindPbrSlot(14,false); }
-            if (alphaCoverage) bindPbrSlot(15);
+            if (resources.virtualMaterials.empty()) {
+                [pipeline->icbPbrEncoder setArgumentBuffer:resources.pbrArgs offset:0];
+                for (int slot : pbrSlots) bindPbrSlot(slot);
+                // Atlas uses s1; page table uses read(). Never encode
+                // unused argument indices 27/29.
+                if (virtualSampling) { bindPbrSlot(13,false); bindPbrSlot(14,false); }
+                if (alphaCoverage) bindPbrSlot(15);
+            } else {
+                if (!virtualSampling ||
+                    resources.virtualMaterials.size()!=resources.count)
+                    return reject("per-command VT descriptor count/shader mismatch");
+                for (uint32_t i=0;i<resources.count;++i) {
+                    const auto& resource=resources.virtualMaterials[i];
+                    const auto* liveAtlas=textures_.get(resource.atlasHandle.id);
+                    const auto* liveTable=textures_.get(resource.tableHandle.id);
+                    const auto* liveAlpha=resource.alphaHandle.valid() ?
+                        textures_.get(resource.alphaHandle.id) : nullptr;
+                    if (!liveAtlas || !liveTable ||
+                        liveAtlas->tex != resource.atlas ||
+                        liveTable->tex != resource.table ||
+                        (resource.alphaHandle.valid() &&
+                         (!liveAlpha || liveAlpha->tex != resource.alpha)))
+                        return reject("per-command VT material texture changed after preparation");
+                    [pipeline->icbPbrEncoder
+                        setArgumentBuffer:resources.pbrArgs
+                        offset:NSUInteger(size_t(i)*kPerCommandPbrStride)];
+                    for (int slot : pbrSlots) bindPbrSlot(slot);
+                    [pipeline->icbPbrEncoder setTexture:resource.atlas atIndex:26];
+                    [pipeline->icbPbrEncoder setTexture:resource.table atIndex:28];
+                    declareIndirectRead(resource.atlas, MTLRenderStageFragment);
+                    declareIndirectRead(resource.table, MTLRenderStageFragment);
+                    if (alphaCoverage) {
+                        if (!resource.alpha || !icbFragmentSamplers_[15])
+                            return reject("per-command VT alpha mask missing");
+                        [pipeline->icbPbrEncoder
+                            setTexture:resource.alpha atIndex:30];
+                        [pipeline->icbPbrEncoder
+                            setSamplerState:icbFragmentSamplers_[15] atIndex:31];
+                        declareIndirectRead(resource.alpha, MTLRenderStageFragment);
+                    }
+                }
+            }
             declareIndirectRead(resources.pbrArgs, MTLRenderStageFragment);
             [enc_ setRenderPipelineState:icbPipeline];
         }
@@ -2206,7 +2324,13 @@ private:
         id<MTLBuffer> uniforms[8] = {};
         id<MTLBuffer> pbrArgs = nil;
     };
+    struct GpuIcbNativeVtMaterial {
+        TextureHandle atlasHandle, tableHandle, alphaHandle;
+        id<MTLTexture> atlas = nil, table = nil, alpha = nil;
+        float u6[4] = {};
+    };
     struct GpuEncodedIcbResources {
+        std::vector<GpuIcbNativeVtMaterial> virtualMaterials;
         id<MTLIndirectCommandBuffer> icb = nil;
         id<MTLBuffer> argBuffer = nil;
         id<MTLBuffer> pbrArgs = nil;
