@@ -28,6 +28,8 @@ struct SpectraFxGpuEnvironment {
     // World-space horizontal ground plane only; arbitrary terrain, signed
     // distance fields and depth-buffer collision require other modules.
     bool collideGround = false;
+    // Best-effort, nonblocking GPU impact notifications (Metal, <=4096 slots).
+    bool reportImpacts = false;
     float groundHeight = 0;
     float restitution = 0.35f; // vertical bounce [0,1]
     float tangentRetention = 0.8f; // horizontal velocity multiplier [0,1]
