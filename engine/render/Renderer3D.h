@@ -431,6 +431,7 @@ private:
     };
     struct ModelItem {
         const Model* model; const Primitive* prim; const Material* mat;
+        int32_t materialIndex = -1; // remap material pointers on packet replay
         bool rigid = false, castShadow = false;
         GeometryPolicy geometry;
         size_t geometryPrimitive = 0;
@@ -585,10 +586,17 @@ private:
         uint64_t geometryRevision = 0;
         uint32_t vertexBuffer = 0, indexBuffer = 0;
         uint64_t seen = 0;
-        const Material* materialData = nullptr;
-        size_t materialCount = 0;
+        std::vector<Material> materialsSnapshot;
+        std::vector<uint64_t> materialHashes;
+        std::vector<int> selectedMeshes; // by node index; -1 = node without mesh
         std::vector<ModelItem> items;
     };
+    static size_t staticPacketBytes(const StaticPacketEntry& packet) {
+        return packet.items.size() * sizeof(ModelItem) +
+            packet.materialsSnapshot.size() * sizeof(Material) +
+            packet.materialHashes.size() * sizeof(uint64_t) +
+            packet.selectedMeshes.size() * sizeof(int);
+    }
     std::unordered_map<uint64_t, StaticPacketEntry> staticRenderPackets_;
     size_t staticRenderPacketBytes_ = 0;
     StaticRenderPacketStats staticRenderPacketStats_{};
