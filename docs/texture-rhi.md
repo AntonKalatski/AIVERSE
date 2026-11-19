@@ -3782,3 +3782,134 @@ mip0→coarse fallback while page residency changes.
 Require visual error bounds and GPU ICB/direct parity,
 then validate non-Metal backends separately. Keep all
 experimental ICB flags default OFF and PR #21 Draft.
+
+### Stage 10CB — guttered VT bilinear continuity fix and independent Metal GPU oracle (source only)
+
+**Production source fix:** `engine/gfx/VirtualTextureSampling.h`,
+commit `1af66f86a754958f6bacf84d279b14a163fca831`.
+
+Previously both GLSL and Metal MSL computed physical atlas inset as
+`(gutterPixels + 0.5) / physicalPageSize`. When gutters were
+present, this stopped the sample footprint at the **center**
+of the first/last interior texel and never blended through the
+neighbor-authored gutter at a virtual page seam. An image may
+look correct with constant-color pages yet exhibit discontinuities
+with textured pages. For a positive gutter, map the exact
+*boundary* of the logical tile interior instead:
+`sampleInset = gutterPixels > 0 ? gutterPixels : 0.5`,
+`atlasUv = mix(sampleInset / pageSize,
+1 - sampleInset / pageSize, tileUv)`.
+At seam coordinate `tileUv=0` this places the hardware linear
+filter halfway between the neighboring gutter and first interior
+texels; `tileUv=1` gives the analogous last-interior/gutter
+blend. **Zero-gutter resources retain their existing 0.5-pixel
+clamping behavior**, preserving the prior Stage 10BY/10BX
+fixture contracts. Both portable GLSL and native Metal MSL
+are updated symmetrically.
+
+**New isolated native GPU acceptance source:**
+`tests/render/metal_vt_bilinear_gpu.mm`, commit
+`4787302de05704c2c48e7c9fede9a4813b5d2a33`.
+The test uses the real `gfx::Device` Metal backend, a real
+`VirtualTextureFileStreamer` and its on-disk raw RGBA8
+physical pages, their GPU `Texture2DArray` atlas and page
+table, and **the literal production `gfx::kVirtualTextureMSL`
+sampler**. It does not simulate GPU readbacks or replace
+the shader with a hand-coded page lookup.
+
+Two independent test domains use **Repeat** and
+**MirrorRepeat** U-addressing and ClampToEdge V.
+Each logical source is 12×6 RGBA8 with several independent
+channel gradients. Every domain contains two virtual pages
+at mip0 and two physical slices; each 8×8 physical page
+contains a 6×6 nonuniform interior with an actual **1-texel
+gutter** sourced from neighboring *logical* texels across
+both the internal page seam and outer Repeat/MirrorRepeat
+edges. Pages are written to temporary disk archives,
+loaded by real workers and published on Metal only after
+valid callbacks and GPU page-table publication.
+
+The CPU expected-value oracle is deliberately **independent
+of the GPU implementation**: it bilinearly interpolates
+the original full-resolution logical texel grid at
+`addressedUV * textureExtent - 0.5`, applying separate
+integer Repeat/MirrorRepeat/Clamp addressing to both
+horizontal and vertical source texels. It never reads a
+physical atlas, GPU result, page table, physical slice or
+`inset` from the shader. Each of **136 native GPU
+fragment probes** uses 17 U coordinates × 4 V coordinates ×
+2 addressing modes, including internal page seams,
+texture wrap boundaries, negative and greater-than-one U,
+and V=0 and V=1. Every rendered 4×4 pixel probe must be
+uniform and within **2 LSB/channel** of that CPU oracle.
+The test also requires a sensitive nonuniform pattern:
+the old `gutter+0.5` mapping differs from the expected
+midpoint by at least four 8-bit levels and therefore
+cannot accidentally pass this fixture.
+
+**CMake opt-in:** commit
+`f2778b19f29817b94c48e73ed65c6465fbf86a27`
+adds `AIVERSE_TEXTURE_METAL_VT_BILINEAR_GPU_TESTS`
+(default **OFF**) to build only
+`aiverse_metal_vt_bilinear_gpu_test` and register
+`metal_vt_bilinear_gpu` on macOS when explicitly enabled.
+This precision shader test is separate from the already
+hardware-proven `Renderer3D` + mixed graph/VT ICB suites.
+It validates the *shared canonical sampler*, which is the
+one included into production Shader Graph permutations.
+It does not itself execute GPU ICB commands.
+
+**Verification done so far:** GitHub-source/registration review;
+a separate pure numerical model compared full logical-texel
+bilinear reference against the proposed shader mapping at
+the U/V test positions. The expected new mapping agreed
+(in that mathematical model); the old half-texel inset
+showed material discrepancies. This is NOT native
+driver proof. **Native macOS compile/link, Metal GPU
+shader compile, disk worker test, readback, pixel oracle,
+and CTest have not been run** for this stage.
+
+Run fail-fast in the isolated Mac Studio texture worktree
+(primary AIVERSE remains untouched):
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+cmake -S . -B build/texture-vt-bilinear-gpu \
+  -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_RENDERER_GRAPH_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_GRAPH_VT_ICB_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_GRAPH_VT_SEAM_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_VT_BILINEAR_GPU_TESTS=ON
+cmake --build build/texture-vt-bilinear-gpu \
+  --target aiverse_metal_vt_bilinear_gpu_test --parallel 4
+ctest --test-dir build/texture-vt-bilinear-gpu \
+  --verbose --output-on-failure --no-tests=error \
+  -R '^metal_vt_bilinear_gpu$'
+```
+
+**Acceptance:** require a freshly successful build, actual
+`Metal canonical VT bilinear:` native-device banner,
+`VT bilinear independent CPU oracle: samples=136`,
+nonzero seam samples, max channel deviation ≤2,
+`PASS: native Metal canonical VT bilinear nonuniform gutter
+seam and Repeat/MirrorRepeat CPU pixel oracle` and CTest
+1/1 PASS. `set -e` prevents mistakenly running a stale
+binary after compilation failure. On first native error,
+fix it in a source commit and append a new handoff.
+
+**Scope/remaining:** this stage verifies the physical gutter
+bilinear math against an independent logical-texture oracle.
+It does **not** validate texture anisotropy, trilinear mip
+boundary transitions with dissimilar parent/detail page
+residency, alpha/transparency, a full `Renderer3D`
+mixed GPU-ICB capture with nonuniform pages, Vulkan/GL/
+WebGL/mobile hardware parity, or GPU performance/soak.
+Run the existing Stage 10BX/10BY non-gutter GPU acceptance
+again after a native Stage 10CB PASS as a regression gate.
+Keep PR #21 Draft and all experimental GPU ICB flags
+OFF by default.
