@@ -240,3 +240,30 @@ classes. Material preview sphere/box resources in `game::Portrait`
 are the first independently owned real editor consumer. The complete
 RTS scene compatibility adapter is not yet retired. Deferred
 GPU/backend and animation parity tests are **NOT RUN**.
+
+### Nonblocking GPU model retirement (Stage 100)
+
+Model and texture GPU lifetime is independent of MotionWeave player state.
+A native host can own `render::ModelAssetProvider` (from
+`engine/render/ModelAssetProvider.h`) without loading RTS/FPS headers,
+then submit its borrowed model through `aiverse::View::submitModel` or
+the generic ordered `ScenePacketBatch`. After graph/source invalidation,
+detach the owning presentation ECS sources before moving models into
+`render::ModelResourceCache` retirement. Only one animation owner
+evaluates each graph; packet submission must not tick its graph a second
+time.
+
+Stage 100 adds asynchronous per-batch retirement markers via
+`gfx::Device::beginResourceRetirement`,
+`resourceRetirementComplete`, and `endResourceRetirement`.
+`ModelResourceCache::collectRetired` polls rather than waiting for the
+whole GPU on supported backends. The old synchronous wait is only a
+fallback or explicit shutdown barrier. Never use a frame counter,
+fixed delay or time-since-last-use as a GPU completion condition.
+The new `game::Portrait::renderStaticModel` is a direct native-model
+preview consumer using the canonical View, with no game-side owner
+required for that code path. Dynamic RTS models still use compatibility
+presentation and rendering.
+
+**NOT RUN:** deferred native/Metal/Vulkan/GL/WebGL2 build, runtime,
+GPU-lifetime, sanitizer and visual parity checks.
