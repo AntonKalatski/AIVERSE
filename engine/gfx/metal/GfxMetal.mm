@@ -151,18 +151,32 @@ public:
         return {buffers_.add(b)};
     }
     id<MTLBuffer> current(MTBuffer& b) { return b.bufs[b.count == 1 ? 0 : int(frame_ % kFramesInFlight)]; }
+    bool uploadSharedStorage(BufferHandle h, const void* data, size_t size, size_t offset) {
+        auto* b = buffers_.get(h.id);
+        if (!b || !b->storage || !data || !size ||
+            offset > b->size || size > b->size-offset || enc_ || compute_)
+            return false;
+        id<MTLBuffer> upload = [device_ newBufferWithBytes:data length:size options:MTLResourceStorageModeShared];
+        if (!upload) { error_ = "storage upload allocation failed"; gpuHealthy_->store(false); return false; }
+        id<MTLCommandBuffer> cb = cmd_ ? cmd_ : [queue_ commandBuffer];
+        if (!cb) { error_ = "storage command buffer allocation failed"; gpuHealthy_->store(false); return false; }
+        id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
+        if (!blit) { error_ = "storage blit encoder unavailable"; gpuHealthy_->store(false); return false; }
+        [blit copyFromBuffer:upload sourceOffset:0 toBuffer:b->bufs[0]
+          destinationOffset:offset size:size];
+        [blit endEncoding];
+        if (!cmd_) [cb commit];
+        return true;
+    }
+    bool updateSharedBufferChecked(BufferHandle h, const void* data,
+                                   size_t size, size_t offset) override {
+        return uploadSharedStorage(h, data, size, offset);
+    }
     void updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset) override {
         auto* b = buffers_.get(h.id);
         if (!b) return;
         if (b->storage) {
-            if (!data || offset > b->size || size > b->size-offset || enc_ || compute_) return;
-            id<MTLBuffer> upload = [device_ newBufferWithBytes:data length:size options:MTLResourceStorageModeShared];
-            if(!upload){error_="storage upload allocation failed";gpuHealthy_->store(false);return;}
-            id<MTLCommandBuffer> cb = cmd_ ? cmd_ : [queue_ commandBuffer];
-            id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
-            [blit copyFromBuffer:upload sourceOffset:0 toBuffer:b->bufs[0] destinationOffset:offset size:size];
-            [blit endEncoding];
-            if (!cmd_) [cb commit];
+            (void)uploadSharedStorage(h, data, size, offset);
             return;
         }
         if (b->type == BufferType::Indirect && b->snapshot && b->count > 1) {

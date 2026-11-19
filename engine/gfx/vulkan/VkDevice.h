@@ -117,6 +117,8 @@ public:
 
     BufferHandle createBuffer(const BufferDesc& d) override;
     void updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset) override;
+    bool updateSharedBufferChecked(BufferHandle h, const void* data,
+                                   size_t size, size_t offset) override;
     void destroyBuffer(BufferHandle h) override;
     BufferUpdateStats bufferUpdateStats(BufferHandle h) override;
     TextureHandle createTexture(const TextureDesc& d) override;
@@ -166,6 +168,8 @@ private:
     // Null on allocation failure. Never return an in-flight version as a
     // fallback: writing it corrupts commands already submitted to the GPU.
     VBuffer::Version* writableVersion(VBuffer& b, bool keepContents);
+    bool updateBufferChecked(BufferHandle h, const void* data,
+                             size_t size, size_t offset);
     VkBuffer resolveBuffer(uint32_t id, uint64_t serialUse);
     bool createImage(VTexture& t, VkImageUsageFlags usage);
     VkSampler samplerFor(const TextureDesc& d, const VTexture& t);

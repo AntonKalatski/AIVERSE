@@ -233,6 +233,15 @@ public:
     // Resources
     virtual BufferHandle createBuffer(const BufferDesc& d) = 0;
     virtual void updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset = 0) = 0; // grows Dynamic buffers if needed
+    // Checked shared geometry write. Metal/Vulkan report true only when the
+    // complete copy was encoded/mapped; other backends retain their existing
+    // updateBuffer contract. True is NOT a GPU completion fence.
+    virtual bool updateSharedBufferChecked(BufferHandle h, const void* data,
+                                           size_t size, size_t offset = 0) {
+        if (!h.valid() || !data || !size) return false;
+        updateBuffer(h, data, size, offset);
+        return true;
+    }
     virtual void destroyBuffer(BufferHandle h) = 0;
     // Optional per-buffer diagnostics. No GPU stall/readback, and never
     // authoritatively measures GPU memory bandwidth or execution.

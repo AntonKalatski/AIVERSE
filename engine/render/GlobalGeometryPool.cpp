@@ -116,9 +116,10 @@ bool uploadModelToGeometryPool(gfx::Device& dev, Model& m) {
     const size_t vertexBytes = m.vertices.size() * sizeof(ModelVertex);
     const size_t indexBytes = m.indices.size() * sizeof(uint32_t);
 
-    std::lock_guard lock(poolMutex);
+    std::unique_lock lock(poolMutex);
     auto& pages = pools[&dev];
     std::shared_ptr<GeometryPoolPage> target;
+    bool newPage = false;
     for (auto it = pages.begin(); it != pages.end();) {
         auto page = it->lock();
         if (!page) { it = pages.erase(it); continue; }
@@ -141,17 +142,34 @@ bool uploadModelToGeometryPool(gfx::Device& dev, Model& m) {
         target->buffer = buffer;
         target->capacity = capacity;
         target->indexBegin = capacity;
-        pages.push_back(target);
+        newPage = true; // publish only after both writes succeed
     }
     // Vertex base is measured in 60-byte vertices; index base in uint32s.
     const size_t vbOffset = target->vertexEnd;
     const size_t ibOffset = target->indexBegin - indexBytes;
-    if (vbOffset / sizeof(ModelVertex) > std::numeric_limits<uint32_t>::max() ||
-        ibOffset / sizeof(uint32_t) > std::numeric_limits<uint32_t>::max()) return false;
+    const bool offsetsValid =
+        vbOffset / sizeof(ModelVertex) <= std::numeric_limits<uint32_t>::max() &&
+        ibOffset / sizeof(uint32_t) <= std::numeric_limits<uint32_t>::max();
+    // Failed writes remain outside committed ranges. The first successful
+    // copy may occupy an unused slot if the second fails; it is not exposed
+    // to any Model and may safely be overwritten by a future upload.
+    const bool uploaded = offsetsValid &&
+        dev.updateSharedBufferChecked(target->buffer, m.vertices.data(),
+                                      vertexBytes, vbOffset) &&
+        dev.updateSharedBufferChecked(target->buffer, m.indices.data(),
+                                      indexBytes, ibOffset);
+    if (!uploaded) {
+        if (newPage) {
+            const gfx::BufferHandle doomed = target->buffer;
+            if (pages.empty()) pools.erase(&dev);
+            lock.unlock();
+            dev.destroyBuffer(doomed);
+        }
+        return false;
+    }
     target->vertexEnd += vertexBytes;
     target->indexBegin = ibOffset;
-    dev.updateBuffer(target->buffer, m.vertices.data(), vertexBytes, vbOffset);
-    dev.updateBuffer(target->buffer, m.indices.data(), indexBytes, ibOffset);
+    if (newPage) pages.push_back(target);
     m.geometryPoolPage = target;
     m.vb = target->buffer;
     m.ib = target->buffer;
