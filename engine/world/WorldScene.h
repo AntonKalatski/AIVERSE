@@ -51,8 +51,12 @@ public:
                 const double safe=std::clamp(value,-limit,limit);
                 return Fixed::fromRaw(int64_t(std::llround(safe*Fixed::kOne)));
             };
-            return nereidWater_.currentForInteractionWater(
-                waterId,{fixed(x),fixed(y),fixed(z)});
+            const Vec3 position{fixed(x),fixed(y),fixed(z)};
+            const Vec3 bodyFlow=nereidWater_.currentForInteractionWater(
+                waterId,position);
+            if(waterId==UINT64_MAX)return bodyFlow;
+            return cascades_.flowAtConnection(
+                waterId+1,position,bodyFlow,nereidWater_);
         });
         ripples_.applyVisualWind(deltaSeconds,
             [this](double x,double z) {
