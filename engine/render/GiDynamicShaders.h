@@ -8,6 +8,9 @@
 #if defined(DYNAMIC_GI)
 layout(std140) uniform U6 { vec4 u_dynamicGiOrigin; vec4 u_dynamicGiSize; vec4 u_dynamicGiRing; };
 uniform highp sampler2D tex13;
+#if defined(DYNAMIC_GI_VALIDITY)
+uniform highp sampler2D tex14;
+#endif
 vec4 dynamicGiTexel(int index) {
     return texelFetch(tex13, ivec2(index % 384, index / 384), 0);
 }
@@ -38,6 +41,9 @@ vec3 dynamicGiAt(vec3 p, vec3 n) {
         // Convert logical grid coordinates into stable toroidal atlas slots.
         ivec3 physical=(c+ivec3(u_dynamicGiRing.xyz))%ivec3(size);
         int probe=physical.x+int(size.x)*(physical.y+int(size.y)*physical.z), offset=probe*3;
+#if defined(DYNAMIC_GI_VALIDITY)
+        if(texelFetch(tex14,ivec2(probe%128,probe/128),0).r<0.5)continue;
+#endif
         result+=w*max(vec3(dot(dynamicGiTexel(offset),normal),
                            dot(dynamicGiTexel(offset+1),normal),
                            dot(dynamicGiTexel(offset+2),normal)),vec3(0.0));
@@ -53,7 +59,11 @@ struct GiDynamicU { float4 origin; float4 size; float4 ring; };
 static float4 dynamicGiTexel(texture2d<float> tex13,int index) {
     return tex13.read(uint2(uint(index%384),uint(index/384)));
 }
-static float3 dynamicGiAt(texture2d<float> tex13,constant GiDynamicU& u,float3 p,float3 n) {
+static float3 dynamicGiAt(texture2d<float> tex13,constant GiDynamicU& u,
+#if defined(DYNAMIC_GI_VALIDITY)
+                           texture2d<float> tex14,
+#endif
+                           float3 p,float3 n) {
     float3 coord=(p-u.origin.xyz)*u.origin.w-float3(0.5);
     float3 size=u.size.xyz;
     if(any(coord<float3(-0.5)) || any(coord>size-float3(0.5)))return float3(0.0);
@@ -79,6 +89,9 @@ static float3 dynamicGiAt(texture2d<float> tex13,constant GiDynamicU& u,float3 p
         int3 c=clamp(base+corner,int3(0),int3(size)-1);
         int3 physical=(c+int3(u.ring.xyz))%int3(size);
         int probe=physical.x+int(size.x)*(physical.y+int(size.y)*physical.z),offset=probe*3;
+#if defined(DYNAMIC_GI_VALIDITY)
+        if(tex14.read(uint2(uint(probe%128),uint(probe/128))).r<0.5f)continue;
+#endif
         result+=w*max(float3(dot(dynamicGiTexel(tex13,offset),normal),
                              dot(dynamicGiTexel(tex13,offset+1),normal),
                              dot(dynamicGiTexel(tex13,offset+2),normal)),float3(0.0));
