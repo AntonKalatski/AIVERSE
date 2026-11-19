@@ -19,9 +19,11 @@ public:
         uint64_t emitted=0,killed=0,expired=0,refused=0;
     };
 
-    bool init(gfx::Device& device,uint32_t capacity) {
+    bool init(gfx::Device& device,uint32_t capacity,
+              bool enableImpactEvents=false) {
         shutdown();
-        if(!evolution_.initCapacity(device,capacity)) return false;
+        if(!evolution_.initCapacity(device,capacity,enableImpactEvents))
+            return false;
         slots_.assign(capacity,{});
         free_.clear();
         free_.reserve(capacity);
