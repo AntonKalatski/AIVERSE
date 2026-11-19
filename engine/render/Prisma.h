@@ -57,8 +57,10 @@ public:
     // B > 0.5 = valid object pixel. Must match this view's render dimensions.
     // The external texture is borrowed and cleared after each resolve.
     void setObjectMotionVectors(uint64_t view, gfx::TextureHandle velocity);
+    void setObjectMotionVectors(uint64_t view, MotionTextureInput velocity);
     // Optional current-frame R=0..1 reactive coverage; borrowed until resolve.
     void setMotionReactiveMask(uint64_t view, gfx::TextureHandle mask);
+    void setMotionReactiveMask(uint64_t view, MotionTextureInput mask);
 
     void setQuality(PrismaQuality q) {
         if (quality_ != q) { quality_ = q; resetAutoExposure(); resetMotionHistory(); }
@@ -85,7 +87,9 @@ public:
     uint64_t objectMotionEpoch(uint64_t viewId) const override;
     bool objectMotionContext(uint64_t& viewId, mat4& previousViewProj) const override;
     void acceptObjectMotionVectors(gfx::TextureHandle velocity) override;
+    void acceptObjectMotionVectors(MotionTextureInput velocity) override;
     void acceptMotionReactiveMask(gfx::TextureHandle reactive) override;
+    void acceptMotionReactiveMask(MotionTextureInput reactive) override;
 
     const PrismaStats& stats() const { return stats_; }
     const std::string& lastError() const { return error_; }
@@ -111,8 +115,8 @@ private:
         bool valid = false;
         uint64_t cutEpoch = 1;
         int width = 0, height = 0;
-        gfx::TextureHandle objectVelocity; // borrowed for this frame only
-        gfx::TextureHandle reactiveMask; // borrowed for this frame only
+        MotionTextureInput objectVelocity; // borrowed for this frame only
+        MotionTextureInput reactiveMask; // borrowed for this frame only
     };
     struct Lut { gfx::TextureHandle tex; int n = 0; bool failed = false; };
     enum Prog { kPrefilter, kDown, kUp, kBlur, kShaftsPre, kShafts, kFxaa, kDepthOfField, kExposureLog, kExposureReduce, kExposureAdapt, kMotionVectors, kMotionBlur, kProgCount };
