@@ -69,49 +69,88 @@ public:
         return result;
     }
 
-    // Rebuild only if the resident/pending mapping changed, not on every
-    // draw/frame. Touch/pin operations do not alter page-table entries.
-    // For each mip-zero tile, scan resident parents COARSE to FINE once,
-    // carrying forward the nearest resident ancestor for each selected mip.
-    // Complexity is O(baseCells * mipLevels) rather than O(baseCells * mipLevels^2).
+    // Fast no-op on unchanged residency. On a few changed pages, update only
+    // the affected mip-zero virtual rectangles. Excess changes/large coarse
+    // roots transparently fall back to a bounded full rebuild.
+    // Each visited base tile scans its nearest resident parents once,
+    // from coarse to fine, updating every selectable mip slice.
     size_t rebuild(const VirtualTexturePageCache& cache) {
-        if (pixels_.empty() || cache.baseTilesX()!=width_ ||
-            cache.baseTilesY()!=height_ ||
-            cache.mipLevels()!=levels_ || cache.virtualLayers()!=layers_)
-            return 0;
-        if (lastRevision_==cache.mappingRevision()) return 0;
+        if(pixels_.empty() || cache.baseTilesX()!=width_ ||
+           cache.baseTilesY()!=height_ || cache.mipLevels()!=levels_ ||
+           cache.virtualLayers()!=layers_) return 0;
+        if(lastRevision_==cache.mappingRevision()) return 0;
         size_t changed=0;
-        for(int logicalLayer=0;logicalLayer<layers_;++logicalLayer)
-          for(int y=0;y<height_;++y)
-            for(int x=0;x<width_;++x) {
-                VirtualPageAllocation nearest;
-                int residentMip=0;
-                for(int requestedMip=levels_-1;requestedMip>=0;--requestedMip) {
-                    const auto candidate=cache.resolve({
-                        requestedMip,x>>requestedMip,y>>requestedMip,logicalLayer});
-                    if(candidate.valid()) {
-                        nearest=candidate;
-                        residentMip=requestedMip;
-                    }
-                    if(requestedMip>=selectors_) continue;
-                    const int physicalTableLayer=logicalLayer*selectors_+requestedMip;
-                    std::array<uint8_t,4> value{};
-                    if(nearest.valid() && nearest.physicalSlice<65536) {
-                        value[0]=uint8_t(nearest.physicalSlice&255);
-                        value[1]=uint8_t((nearest.physicalSlice>>8)&255);
-                        value[2]=uint8_t(residentMip);
-                        value[3]=255;
-                    }
-                    const size_t row=size_t(physicalTableLayer)*size_t(height_)+
-                                     size_t(y);
-                    const size_t offset=(row*size_t(width_)+size_t(x))*4u;
-                    if(std::memcmp(pixels_.data()+offset,value.data(),4)!=0) {
-                        std::memcpy(pixels_.data()+offset,value.data(),4);
-                        dirtyRows_[row]=1;
-                        ++changed;
-                    }
+        const auto visit=[&](int x,int y,int logicalLayer) {
+            VirtualPageAllocation nearest;
+            int residentMip=0;
+            for(int requestedMip=levels_-1;requestedMip>=0;--requestedMip) {
+                const auto candidate=cache.resolve(
+                    {requestedMip,x>>requestedMip,y>>requestedMip,logicalLayer});
+                if(candidate.valid()) {
+                    nearest=candidate;
+                    residentMip=requestedMip;
+                }
+                if(requestedMip>=selectors_) continue;
+                const int physicalLayer=logicalLayer*selectors_+requestedMip;
+                std::array<uint8_t,4> value{};
+                if(nearest.valid() && nearest.physicalSlice<65536) {
+                    value[0]=uint8_t(nearest.physicalSlice&255);
+                    value[1]=uint8_t((nearest.physicalSlice>>8)&255);
+                    value[2]=uint8_t(residentMip);
+                    value[3]=255;
+                }
+                const size_t row=size_t(physicalLayer)*size_t(height_)+size_t(y);
+                const size_t offset=(row*size_t(width_)+size_t(x))*4u;
+                if(std::memcmp(pixels_.data()+offset,value.data(),4)!=0) {
+                    std::memcpy(pixels_.data()+offset,value.data(),4);
+                    dirtyRows_[row]=1;
+                    ++changed;
                 }
             }
+        };
+        struct Rect {
+            int x0=0,y0=0,x1=0,y1=0,layer=0;
+        };
+        std::vector<VirtualPageKey> recent;
+        std::vector<Rect> rectangles;
+        bool partial=lastRevision_!=std::numeric_limits<uint64_t>::max() &&
+            cache.mappingChangesSince(lastRevision_,recent,128);
+        const size_t fullCells=size_t(width_)*size_t(height_)*size_t(layers_);
+        size_t visitCount=0;
+        if(partial) {
+            rectangles.reserve(recent.size());
+            for(const auto& key:recent) {
+                const int64_t stride=int64_t(1)<<key.mip;
+                const int64_t x0=int64_t(key.x)*stride;
+                const int64_t y0=int64_t(key.y)*stride;
+                const int64_t x1=(int64_t(key.x)+1)*stride;
+                const int64_t y1=(int64_t(key.y)+1)*stride;
+                if(key.layer<0 || key.layer>=layers_ || key.mip<0 ||
+                   key.mip>=levels_ || x0>=width_ || y0>=height_ ||
+                   x1<=0 || y1<=0) {partial=false;break;}
+                Rect r;
+                r.x0=int(std::max<int64_t>(0,x0));r.y0=int(std::max<int64_t>(0,y0));
+                r.x1=int(std::min<int64_t>(width_,x1));
+                r.y1=int(std::min<int64_t>(height_,y1));r.layer=key.layer;
+                const size_t count=size_t(r.x1-r.x0)*size_t(r.y1-r.y0);
+                if(count>fullCells/2 || visitCount>fullCells/2-count) {
+                    partial=false;break;
+                }
+                visitCount+=count;
+                rectangles.push_back(r);
+            }
+        }
+        if(partial) {
+            for(const Rect& r:rectangles)
+                for(int y=r.y0;y<r.y1;++y)
+                    for(int x=r.x0;x<r.x1;++x)
+                        visit(x,y,r.layer);
+        } else {
+            for(int layer=0;layer<layers_;++layer)
+                for(int y=0;y<height_;++y)
+                    for(int x=0;x<width_;++x)
+                        visit(x,y,layer);
+        }
         lastRevision_=cache.mappingRevision();
         return changed;
     }

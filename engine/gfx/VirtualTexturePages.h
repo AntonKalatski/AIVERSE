@@ -8,6 +8,7 @@
 #include "Gfx.h"
 #include <algorithm>
 #include <cstdint>
+#include <deque>
 #include <limits>
 #include <map>
 #include <tuple>
@@ -101,8 +102,10 @@ public:
             return {};
         Slot& s = slots_[size_t(slot)];
         if (s.occupied) {
+            const VirtualPageKey evicted=s.key;
             mappings_.erase(s.key);
             ++evictions_;
+            recordMappingChange(evicted);
         }
         s.key = key;
         s.occupied = true;
@@ -111,7 +114,7 @@ public:
         s.generation = ++nextGeneration_;
         s.lastUsed = tick();
         mappings_.emplace(key, slot);
-        ++mappingRevision_;
+        recordMappingChange(key);
         return {slot, s.generation, false, true};
     }
 
@@ -131,7 +134,7 @@ public:
             s = Slot{};
             mappings_.erase(it);
         }
-        ++mappingRevision_;
+        recordMappingChange(key);
         return true;
     }
 
@@ -165,7 +168,7 @@ public:
         s = Slot{};
         mappings_.erase(it);
         ++evictions_;
-        ++mappingRevision_;
+        recordMappingChange(key);
         return true;
     }
 
@@ -197,6 +200,25 @@ public:
     int virtualLayers() const { return layers_; }
     uint64_t mappingRevision() const { return mappingRevision_; }
 
+    // Bounded change-log for incremental page table refresh. Returns false
+    // when the caller's revision fell out of history or the work cap was
+    // exceeded; consumers MUST perform a full table rebuild then.
+    bool mappingChangesSince(uint64_t revision,
+                             std::vector<VirtualPageKey>& output,
+                             size_t maxKeys=128) const {
+        output.clear();
+        if(revision==mappingRevision_) return true;
+        if(revision>mappingRevision_ || recentChanges_.empty() ||
+           maxKeys==0 || recentChanges_.front().first>revision+1)
+            return false;
+        for(const auto& change:recentChanges_) {
+            if(change.first<=revision)continue;
+            if(output.size()>=maxKeys){output.clear();return false;}
+            output.push_back(change.second);
+        }
+        return !output.empty();
+    }
+
     VirtualPageStats stats() const {
         VirtualPageStats s;
         s.capacity = slots_.size();
@@ -218,10 +240,20 @@ public:
         tilesX_ = tilesY_ = levels_ = layers_ = 0;
         clock_ = 0;
         evictions_ = 0;
-        ++mappingRevision_;
+        mappingRevision_=mappingRevision_==std::numeric_limits<uint64_t>::max() ?
+                         1 : mappingRevision_+1;
+        recentChanges_.clear();
     }
 
 private:
+    void recordMappingChange(VirtualPageKey key) {
+        if(mappingRevision_==std::numeric_limits<uint64_t>::max()) {
+            mappingRevision_=1;
+            recentChanges_.clear();
+        } else ++mappingRevision_;
+        recentChanges_.emplace_back(mappingRevision_,key);
+        if(recentChanges_.size()>512) recentChanges_.pop_front();
+    }
     struct Slot {
         VirtualPageKey key;
         uint64_t generation = 0;
@@ -261,7 +293,8 @@ private:
 
     int tilesX_ = 0, tilesY_ = 0, levels_ = 0, layers_ = 0;
     uint64_t clock_ = 0, nextGeneration_ = 0, evictions_ = 0;
-    uint64_t mappingRevision_ = 0; // map changes only; touches/pins do not dirty GPU rows
+    uint64_t mappingRevision_ = 0; // touches/pins do not dirty GPU rows
+    std::deque<std::pair<uint64_t,VirtualPageKey>> recentChanges_;
     std::vector<Slot> slots_;
     std::map<VirtualPageKey, int> mappings_;
 };
