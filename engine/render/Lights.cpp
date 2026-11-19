@@ -289,6 +289,7 @@ void LightSystem::shutdown() {
 }
 
 void LightSystem::begin(const RTSCamera& cam, float aspect) {
+    contacts_.clear();
     lights_.clear();
     decals_.clear();
     shadowLight_ = -1;
@@ -319,6 +320,31 @@ void LightSystem::begin(const RTSCamera& cam, float aspect) {
     const float texel = extent_ / float(std::max(mapSize_, 16));
     originX_ = std::floor(((minX + maxX) * 0.5f - extent_ * 0.5f) / texel) * texel;
     originZ_ = std::floor(((minZ + maxZ) * 0.5f - extent_ * 0.5f) / texel) * texel;
+}
+
+LightSystem::PreparedFrame LightSystem::capturePrepared() const {
+    PreparedFrame frame;
+    frame.lights=lights_;
+    frame.contacts=contacts_;
+    frame.nightGlow=nightGlow_;
+    frame.unlitTint=unlitTint_;
+    for(int i=0;i<4;++i)frame.cloud[i]=u_.cloud[i];
+    frame.cloudStrength=u_.sky[0];
+    frame.waterReflections=reflectOn_;
+    return frame;
+}
+
+void LightSystem::replayPrepared(const PreparedFrame& frame) {
+    // Called after beginScene(): never replay through a stale light-map or
+    // touch the camera's projection/focus/halo basis.
+    nightGlow_=frame.nightGlow;
+    unlitTint_=frame.unlitTint;
+    for(int i=0;i<4;++i)u_.cloud[i]=frame.cloud[i];
+    u_.sky[0]=frame.cloudStrength;
+    reflectOn_=frame.waterReflections;
+    for(const auto& light:frame.lights)add(light);
+    for(const auto& c:frame.contacts)
+        addContactShadow(c.center,c.halfX,c.halfZ,c.strength,c.box,c.softness);
 }
 
 void LightSystem::add(const PointLight& l) {
@@ -530,6 +556,7 @@ void LightSystem::bind(int uniformSlot, int textureSlot, int reflectionSlot) {
 
 void LightSystem::addContactShadow(float3 c, float hx, float hz, float strength, bool box, float softness) {
     if (!contact_ || strength <= 0 || decals_.size() >= kMaxLights * 6) return;
+    contacts_.push_back({c,hx,hz,strength,box,softness});
     const float y = c.y + 0.025f, s = box ? 1.0f : 0.0f;
     const HaloVertex v0{c.x - hx, y, c.z - hz, -1, -1, s, softness, 0, strength}, v1{c.x + hx, y, c.z - hz, 1, -1, s, softness, 0, strength},
                      v2{c.x + hx, y, c.z + hz, 1, 1, s, softness, 0, strength}, v3{c.x - hx, y, c.z + hz, -1, 1, s, softness, 0, strength};
