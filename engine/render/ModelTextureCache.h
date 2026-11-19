@@ -2,6 +2,7 @@
 #include "Model.h"
 #include <map>
 #include <atomic>
+#include <limits>
 #include <mutex>
 namespace aiverse::render {
 // Per-content session. CPU access is synchronized; GPU methods belong to the render thread.
@@ -18,6 +19,32 @@ public:
     void invalidateSource(const std::string& path);
     size_t decodedCount() const { return decodedCount_.load(); }
     size_t gpuCount() const { return gpu_.size(); } // render thread only
+    struct GpuOwnerEstimate {
+        size_t uniqueTextures=0,compressedTextures=0;
+        uint64_t rgba8BaseMipEquivalentBytes=0;
+    };
+    // Each shared GPU texture cache owner is counted ONCE by its unique
+    // sampler+revision key, never once per Model/Image borrower. This is an
+    // RGBA8 base-mip equivalent, not driver bytes (compressed formats,
+    // mipmaps, padding and backend allocation can differ).
+    GpuOwnerEstimate gpuOwnerEstimate() const {
+        GpuOwnerEstimate result;
+        for(const auto& [key,image]:gpu_) {
+            (void)key;
+            if(!image.tex.valid() || image.width<=0 || image.height<=0)
+                continue;
+            ++result.uniqueTextures;
+            if(image.gpuCompressed)++result.compressedTextures;
+            const auto width=uint64_t(image.width);
+            const auto height=uint64_t(image.height);
+            const auto max=std::numeric_limits<uint64_t>::max();
+            const auto bytes=height>max/width/4u?max:width*height*4u;
+            result.rgba8BaseMipEquivalentBytes=
+                bytes>max-result.rgba8BaseMipEquivalentBytes?max:
+                result.rgba8BaseMipEquivalentBytes+bytes;
+        }
+        return result;
+    }
     // Actual decoded pixel cache allocation (not source file size / GPU textures).
     size_t decodedBytes() const { std::lock_guard lock(mutex_); return bytes_; }
 private:
