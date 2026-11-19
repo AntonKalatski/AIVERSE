@@ -1148,6 +1148,9 @@ void Renderer3D::prepareGpuModelDraws() {
     gpuIcbRejected_ = gpuIcbExecuteFailed_ = 0;
     gpuEncodedBatches_.clear();
     gpuEncodedCovered_.clear();
+    // Invalidate previous-frame resource indices even when GPU ICB is off.
+    // No table resource is owned and this never retires GPU texture handles.
+    gpuMaterialResources_.beginFrame(dev_ ? dev_->frameSerial() : 0);
     gpuAdaptiveInstancingFallback_ = false;
     gpuPreflightGroups_ = gpuBatchCacheHits_ = gpuBatchCacheMisses_ = 0;
     gpuModelSlots_.clear();
@@ -1510,7 +1513,6 @@ void Renderer3D::prepareGpuModelDraws() {
                 sourceSlots.data(), uint32_t(sourceSlots.size()),
                 instanceRecords.data(), instanceRecords.size() * sizeof(float));
             if (token) {
-                ++gpuIcbPrepared_;
                 GpuEncodedBatch group;
                 group.items.assign(indices.begin() + first, indices.begin() + end);
                 group.token = token;
@@ -1522,7 +1524,20 @@ void Renderer3D::prepareGpuModelDraws() {
                     size_t(firstModel.mat->baseTex) < firstModel.model->images.size())
                     group.alphaCoverage = firstModel.model->images[
                         size_t(firstModel.mat->baseTex)].virtualAlphaMask;
-                gpuEncodedBatches_.push_back(std::move(group));
+                GpuMaterialResourceBinding snapshot;
+                snapshot.alphaCoverage = group.alphaCoverage;
+                snapshot.virtualTextureEnabled = group.usesVirtualTexture;
+                if (group.usesVirtualTexture)
+                    snapshot.virtualTexture = group.virtualTexture;
+                group.materialResources = gpuMaterialResources_.intern(snapshot);
+                if (!group.materialResources.valid()) {
+                    // ICB was encoded but will not be submitted. A full or
+                    // invalid staging table must never weaken batch checks.
+                    ++gpuIcbRejected_;
+                } else {
+                    ++gpuIcbPrepared_;
+                    gpuEncodedBatches_.push_back(std::move(group));
+                }
             } else ++gpuIcbRejected_;
             first = end;
         }
@@ -1802,8 +1817,9 @@ void Renderer3D::renderModels(int phase) {
             // A region/atlas revision may have swapped after compute
             // prepared this ICB. Never bind a new texture table to old
             // encoded command uniforms: fall back to per-item CPU draws.
-            bool stable = true;
+            bool stable = group.materialResources.valid();
             for (uint32_t index : group.items) {
+                if (!stable) break;
                 if (index >= modelItems_.size()) { stable=false; break; }
                 const auto& item = modelItems_[index];
                 ModelVirtualTextureBinding current;
@@ -1814,7 +1830,12 @@ void Renderer3D::renderModels(int phase) {
                     item.mat->baseTex >= 0 &&
                     size_t(item.mat->baseTex) < item.model->images.size())
                     alpha=item.model->images[size_t(item.mat->baseTex)].virtualAlphaMask;
-                if (!compatibleModelVirtualTextureBinding(
+                GpuMaterialResourceBinding live;
+                live.virtualTextureEnabled = usesVt;
+                if (usesVt) live.virtualTexture = current;
+                live.alphaCoverage = alpha;
+                if (!gpuMaterialResources_.matches(group.materialResources,live) ||
+                    !compatibleModelVirtualTextureBinding(
                         group.usesVirtualTexture,group.virtualTexture,usesVt,current) ||
                     !(alpha == group.alphaCoverage)) {
                     stable = false;
