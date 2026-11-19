@@ -172,6 +172,9 @@ public:
     }
 
     bool journalHealthy() const {return journalHealthy_;}
+    // Privileged endpoint lost ownership of its lock path. Keep failure
+    // sticky: restarting/reconciling is required before admitting edits.
+    void suspendJournal() {journalHealthy_=false;}
 
 
     template<class ReadAcl,class WriteAcl>
