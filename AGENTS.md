@@ -1507,3 +1507,18 @@ sources are rejected. The host still needs clipmap/LOD streaming if near
 geometry exceeds budget. This is NOT a full world-scale GPU GI solution,
 NOT native built or GPU-tested. Preserve the user's source-authoritative
 TerraWeave/PHYSIS/WorldScene geometry and the pending-event retry contract.
+
+
+## GI Stage 49 — fail-closed world geometry presentation (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage49-deferred-geometry-no-stale-gi-2026-11-20.md`.
+When `GiLightingController` receives a correctly formed newer geometry
+revision but the Metal/Vulkan backend rejects it due to an in-flight job or
+relevant BVH budget, `presentationBlocked()` becomes true and
+`bind(renderer)` refuses/clears stale GI, even if the old GPU queue itself
+has zero pending tickets. `StepStats::canPresent` includes the block.
+The block ends ONLY after an accepted newer geometry revision, then normal
+dirty/GPU-fence probe completion still applies. `GiWorldPresentationSync`
+retains source edits/events on refusal, to retry later. Never bypass
+controller binding and show stale dynamic GI while terrain/PHYSIS updates
+are pending. All new code/tests are source-only, CTest and GPU tests NOT RUN.
