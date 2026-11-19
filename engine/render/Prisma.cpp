@@ -569,8 +569,10 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
     if (previous!=temporalViews_.end()) previous->second.preflightRejected=false;
     if (width<64 || height<64 || !dev_ || !dev_->gpuHealthy() ||
         !enabled_ || !settings_.enabled ||
-        quality_!=PrismaQuality::High || !hdrRequested())
+        quality_!=PrismaQuality::High || !hdrRequested()) {
+        adaptiveViews_.erase(viewId_);
         return {width,height};
+    }
     const auto* effect=settings_.find(PrismaType::TemporalResolve);
     const char* temporal=std::getenv("AIVERSE_PRISMA_TEMPORAL");
     const char* upscale=std::getenv("AIVERSE_PRISMA_UPSCALE");
@@ -579,8 +581,10 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
         !temporal || std::strcmp(temporal,"1")!=0 ||
         !upscale || std::strcmp(upscale,"1")!=0 ||
         !jitter || std::strcmp(jitter,"1")!=0 ||
-        effect->get("historyWeight")<=0 || effect->get("jitterPixels")<=0)
+        effect->get("historyWeight")<=0 || effect->get("jitterPixels")<=0) {
+        adaptiveViews_.erase(viewId_);
         return {width,height};
+    }
 
     const float ceiling=PrismaAdaptiveResolution::quantize(
         std::clamp(effect->get("renderScale"),0.5f,1.0f));
