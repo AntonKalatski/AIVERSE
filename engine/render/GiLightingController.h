@@ -210,6 +210,8 @@ public:
     bool syncRendererEnvironment(const Renderer3D& renderer,
                                  float sunBounceMultiplier=0,
                                  float skyBounceMultiplier=0) {
+        if(!ready())return false;
+        pendingEnvironment_=true; // conversion itself may reject or throw
         return setEnvironment(giEnvironmentFromLighting(
             renderer.lighting,sunBounceMultiplier,skyBounceMultiplier));
     }
