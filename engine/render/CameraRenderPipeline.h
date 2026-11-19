@@ -4,6 +4,7 @@
 // A renderer pass must not sample its own output; all camera-produced RT reads
 // must be declared in CameraDependenciesComponent for DAG validation.
 #pragma once
+#include <type_traits>
 #include "CameraRenderScheduler.h"
 #include "RenderTargetPool.h"
 #include "Renderer3D.h"
@@ -73,10 +74,12 @@ public:
 
     // Modify a transient view after scheduling and target size resolution,
     // before Renderer3D receives it. Suitable for ECS rigs and jitter.
-    template<class Submit,class PostProvider,class Modifier>
+    template<class Submit,class PostProvider,class Modifier,
+             class AfterScene=std::nullptr_t>
     CameraExecutionResult executeWithPostAndModifier(const World& world,uint64_t frame,
              double seconds,Submit&& submit,PostProvider&& postFor,
-             Modifier&& modify,Vec3 renderOrigin={}) {
+             Modifier&& modify,Vec3 renderOrigin={},
+             AfterScene&& afterScene=nullptr) {
         CameraExecutionResult result;
         targets_.collectCompleted();
         result.plan=scheduler_.buildPlan(world,frame,seconds,renderOrigin);
@@ -171,6 +174,10 @@ public:
             renderer_.beginScene(view.camera,width,height);
             submit(view,renderer_); // renderer must be initialized by the host
             renderer_.render(pass,post);
+            // Particle and other forward overlays draw into the live pass
+            // after opaque geometry, before temporal/final post resolution.
+            if constexpr(!std::is_same_v<std::decay_t<AfterScene>,std::nullptr_t>)
+                afterScene(view,renderer_,width,height);
             renderer_.resolvePostFx(); // no-op without an active post chain
             device_.endPass();
             if (!device_.gpuHealthy()) {
@@ -208,11 +215,11 @@ public:
     // owned per-camera temporal histories, capture scheduling and final RT.
     // The World is read-only. GPU post pool must outlive all captures and be
     // shutdown only at a host-confirmed GPU idle point.
-    template<class Submit>
+    template<class Submit,class AfterScene=std::nullptr_t>
     CameraExecutionResult executeManaged(const World& world,uint64_t frame,
              double seconds,float dt,Submit&& submit,
              CameraRigEvaluator& rigs,CameraPostFxPool& post,
-             Vec3 renderOrigin={}) {
+             Vec3 renderOrigin={},AfterScene&& afterScene=nullptr) {
         post.bindWorld(world);
         return executeWithPostAndModifier(world,frame,seconds,
             std::forward<Submit>(submit),
@@ -222,7 +229,7 @@ public:
             [&](EcsCameraView& camera,int width,int height) {
                 rigs.apply(world,camera,seconds,dt,renderOrigin);
                 camera.camera=post.prepare(camera,width,height);
-            },renderOrigin);
+            },renderOrigin,std::forward<AfterScene>(afterScene));
     }
     // Explicit non-ECS captures for cubemap faces, stereo eyes, portals,
     // mirrors and one-shot scene previews. The host supplies distinct keys
