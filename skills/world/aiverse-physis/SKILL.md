@@ -555,3 +555,29 @@ and Stage 46 checks. Full AIVERSE CMake/CTest, macOS and Windows
 endpoint QA are NOT VERIFIED; Windows still requires handle/ACL
 identity validation. See
 `docs/agent-handoffs/physis-stage47-live-lock-integrity-2026-11-19.md`.
+
+### Stage 48 — canonical pinned POSIX journal I/O
+
+Before work, verify that `main` is already included in the current
+PHYSIS branch; a GitHub compare with `main` reported behind=0 at
+stage 48, so do not make an unnecessary merge commit.
+
+On POSIX the canonical `LoopbackAdminEndpoint` now loads via
+`FileJournal::loadPinned(JournalProcessLock::directoryFd(),gateway)`
+and writes via `FileJournal::savePinned(dirfd,entries)`. The
+directory fd is retained from lock acquisition. `openat/renameat`
+keep temp creation and target replacement within the originally
+verified directory even if an ancestor path is subsequently renamed;
+`valid()` fails closed if published lock/parent identity is lost.
+Existing `FileJournal::save/load/attach` are not automatically
+lock-protected, and Windows still needs equivalent handle/ACL checks.
+
+The new POSIX regression sources
+`pinnedJournalSaveDoesNotFollowMovedParent` and
+`pinnedJournalLoadRejectsUnsafeInodes` belong to
+`tests/physis_admin_journal_test.cpp`. An isolated GCC C++20 smoke
+verified the exact lock header SHA
+`2512aefb07f612c808041b92a21da897df4f195b`, and a separate
+native pinned-dirfd `openat/renameat` smoke passed. The full
+FileJournal/AIVERSE CMake/CTest/macOS CI are **NOT VERIFIED**.
+See `docs/agent-handoffs/physis-stage48-pinned-journal-io-2026-11-19.md`.
