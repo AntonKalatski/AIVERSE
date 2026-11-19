@@ -675,6 +675,7 @@ private:
     ModelCapture capture_;
     void bakedItem(ModelItem& it, const ModelDraw& d, int node);
     void bindBakedGI(const ModelItem& it);
+    bool dynamicGiEligible(const ModelItem& it, int phase, bool gpuInstances, bool instancePalette) const;
 };
 
 } // namespace aiverse::render
