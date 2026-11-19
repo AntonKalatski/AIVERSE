@@ -35,6 +35,11 @@ public:
         uint64_t strataStreamingIndexBytes=0, strataStreamingEvictions=0;
         uint64_t strataStreamingPrepareFailures=0;
         uint32_t strataStreamingBudgetDeclined=0;
+        uint32_t strataIncrementalSources=0;
+        // Aggregate active per-source arena reservation, submitted upload
+        // bytes/calls and delayed promotions; not physical VRAM telemetry.
+        uint64_t strataStreamingArenaBytes=0, strataStreamingUploadedBytes=0;
+        uint64_t strataStreamingUploadDeferrals=0, strataStreamingFenceDeferrals=0;
     };
     void load(gfx::Device& dev, const Json& json, const FileReader& reader);
     // Procedural/offline callers may supply immutable CPU models instead of files.
@@ -87,6 +92,22 @@ public:
     }
     size_t strataStreamingSceneBudgetBytes() const {
         return strataStreamingSceneBudgetBytes_;
+    }
+    // Stage 15.2: Metal/Vulkan stable index pages with checked subrange
+    // uploads and fence-retired slot reuse. GLES3/GL33 retain generation
+    // replacement. Zero upload cap means no per-update throttling.
+    // Both settings must be applied before load/loadPrepared.
+    void setStrataIncrementalIndexStreamingEnabled(bool enabled) {
+        strataIncrementalIndexStreamingEnabled_=enabled;
+    }
+    bool strataIncrementalIndexStreamingEnabled() const {
+        return strataIncrementalIndexStreamingEnabled_;
+    }
+    void setStrataStreamingUploadBudgetBytes(size_t bytes) {
+        strataStreamingUploadBudgetBytes_=bytes;
+    }
+    size_t strataStreamingUploadBudgetBytes() const {
+        return strataStreamingUploadBudgetBytes_;
     }
     bool collectStrataGpuInstances(const std::string& sourceKey,
                                    std::vector<strata::GpuSceneInstance>& out) const;
@@ -167,6 +188,8 @@ private:
     bool strataPortableRenderingEnabled_=false;
     size_t strataStreamingIndexBudgetBytes_=0;
     size_t strataStreamingSceneBudgetBytes_=0;
+    bool strataIncrementalIndexStreamingEnabled_=false;
+    size_t strataStreamingUploadBudgetBytes_=0;
     float errorPixels_=2, maxPixels_=256;
     size_t proxyVertices_=0;
 };
