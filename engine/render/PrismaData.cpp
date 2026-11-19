@@ -96,7 +96,8 @@ std::vector<PrismaTypeDef> buildCatalog() {
         num("samples", 8.0f, 2, 16, "blur sample count, rounded to integer", "Число проб"),
         num("shutterScale", 1.0f, 0, 2, "velocity multiplier per frame, 1=one frame displacement", "Выдержка"),
         num("depthThreshold", 0.012f, 0.0005f, 0.05f, "motion blur depth-edge rejection threshold in device-depth units", "Порог глубины"),
-        num("reactiveStrength", 0.85f, 0.0f, 1.0f, "reduce motion blur on uncertain translucent surfaces covered by a reactive mask", "Подавление на прозрачности")}});
+        num("reactiveStrength", 0.85f, 0.0f, 1.0f, "reduce motion blur on uncertain translucent surfaces covered by a reactive mask", "Подавление на прозрачности"),
+        num("velocityDilation", 1.0f, 0.0f, 2.0f, "neighbor search radius in pixels for depth-matched velocity silhouettes, 0 disables", "Расширение векторов")}});
     c.push_back({T::ShaderGraph, "shaderGraph", "Shader Graph", "Custom bounded fragment graph.", C::Medium, PrismaQuality::Medium, {}});
     return c;
 }
@@ -376,7 +377,7 @@ PrismaWork prismaEffectWork(const PrismaEffect& e, PrismaQuality tier, bool igno
     case T::Fxaa: return {6.0f, 1};
     case T::DepthOfField: return {10.0f, 1};
     case T::AutoExposure: return {5.0f, 12};
-    case T::MotionBlur: return {17.0f, 2}; // upper-bound pyramid: size-dependent passes
+    case T::MotionBlur: return {17.0f + (e.get("velocityDilation") > 0 ? 8.0f : 0.0f), 2}; // upper-bound pyramid: size-dependent passes
     case T::Bloom: {
         const BloomPlan b = bloomPlan(tier);
         float a = 1.0f / float(b.startDiv * b.startDiv), u = 4 * a;   // prefilter: 4 taps per output pixel
