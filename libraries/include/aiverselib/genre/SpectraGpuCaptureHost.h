@@ -57,6 +57,7 @@ public:
         status_.requestedPoolEpoch=pool_.lifecycleEpoch();
         status_.groupIndex=groupIndex;
         status_.requestId=++nextRequestId_;
+        shared_->requestId=status_.requestId;
         maxBytes_=maxBytes;
         shared_->received=false;
         shared_->completed=false;
