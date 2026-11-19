@@ -2597,3 +2597,22 @@ Pending/Failed fence and a valid completed token. It also includes
 a failed vertex/index buffer creation check. These tests and all
 CMake/CTest/Metal/Vulkan/OpenGL/sanitizer suites are **NOT RUN**.
 The implementation has not yet been compiled or validated on GPU.
+
+## Stage 117 — explicit HDR GPU warmup status (source-only, 2026-11-19)
+
+`gfx::Device::PipelineColorWarmStatus` and optional `warmPipelineColorStatus`
+provide Ready/Pending/Failed for backend colour-target shader compilation.
+The original bool `warmPipelineColor` remains source-compatible: older
+backends default to Ready/Pending only and cannot claim definitive failure.
+The Metal backend now reports Failed for rejected HDR shaders/pipelines,
+missing source handles and invalidated base pipelines; it reports Pending
+only while a native shader/pipeline job is still incomplete.
+
+`Renderer3D::warmModelPipelinesChecked` rejects a Failed HDR variant and
+retains the previously published View appearance. The renderer tracks
+pending and terminally failed pipeline handles separately, clearing both
+on cache invalidation and preventing repeated polling of a failed variant.
+`GpuWarmStats::colorVariantsFailed` is shown in editor statistics.
+Neither the MotionWeave presentation clock nor the NEREID/Prisma owners
+are modified. This code is **NOT COMPILED OR TESTED**; PR #22 stays Draft.
+Full details: [Stage 117 handoff](agent-handoffs/animation-stage117-hdr-warm-status-2026-11-19.md).
