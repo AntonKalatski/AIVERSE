@@ -75,15 +75,43 @@ inline EcsSedimentTransportResult transportNereidBankSediment(
     read.eachExistingConst<WaterConfluenceComponent>(
         [&](Entity,const WaterConfluenceComponent& junction){
             if(!validWaterConfluence(junction))return;
+            const auto* outlet=read.tryGetConst<WaterBodyComponent>(
+                junction.outlet);
+            if(!outlet || !validWaterBody(*outlet) ||
+               !coversWaterBody(*outlet,
+                    read.tryGetConst<WaterGeometryComponent>(
+                        junction.outlet),junction.mouth))
+                return;
+            // Match NEREID confluence policy: all linked water bodies
+            // must actually cover their authored shared mouth.
+            for(size_t i=0;i<junction.inletCount;++i){
+                const Entity inlet=junction.inlets[i];
+                const auto* body=read.tryGetConst<WaterBodyComponent>(inlet);
+                if(!body || !validWaterBody(*body) ||
+                   !coversWaterBody(*body,
+                        read.tryGetConst<WaterGeometryComponent>(inlet),
+                        junction.mouth))
+                    return;
+            }
             for(size_t i=0;i<junction.inletCount;++i)
                 links.push_back({junction.inlets[i],junction.outlet});
         });
     read.eachExistingConst<WaterCascadeConnectionsComponent>(
-        [&](Entity,const WaterCascadeConnectionsComponent& cascade){
-            if(cascade.enabled && cascade.inlet.valid() &&
-               cascade.outlet.valid() &&
-               cascade.inlet!=cascade.outlet)
-                links.push_back({cascade.inlet,cascade.outlet});
+        [&](Entity junction,const WaterCascadeConnectionsComponent& link){
+            const auto* cascade=read.tryGetConst<WaterCascadeComponent>(
+                junction);
+            if(!link.enabled || !link.inlet.valid() ||
+               !link.outlet.valid() || link.inlet==link.outlet ||
+               !cascade || !validWaterCascade(*cascade))
+                return;
+            const auto* source=read.tryGetConst<WaterBodyComponent>(
+                link.inlet);
+            const auto* target=read.tryGetConst<WaterBodyComponent>(
+                link.outlet);
+            if(!source || !target ||
+               !validWaterBody(*source) || !validWaterBody(*target))
+                return;
+            links.push_back({link.inlet,link.outlet});
         });
     const auto changed=advectSuspendedSediment(
         std::move(samples),spacingCm,dtMs,settings,links);
