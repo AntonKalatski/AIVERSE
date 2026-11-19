@@ -2187,3 +2187,29 @@ Added `tests/render/gpu_icb_material_contract.cpp` and registered `aiverse_gpu_i
 The executable checks bounded exact deduplication; per-frame generation invalidation, even when a frame serial repeats; source/VT table/wrap/U2 identity changes; graph source counts, missing/tail handles, finite U2; native RHI descriptor validation; conservative opaque/masked/normalmap pipeline grouping; and fragment-only graph equivalence, including different authored source paths with byte-identical shader source. The test uses `std::numeric_limits<float>::quiet_NaN()` instead of a compiler-specific builtin.
 
 **Actual check:** code added to GitHub and verified CMake registration exists. **The test was NOT built or executed in this environment** (the local container cannot resolve github.com and cannot clone the complete AIVERSE source tree); no pass count should be claimed.
+
+
+### Stage 10AP — focus verifier executes GPU ICB material and MSL layout tests
+
+The portable `gpu_icb_material_contract` CTest now also includes
+`ModelShaders.h` and checks that the actual generated MSL source has
+matching atlas/page-table argument ID declarations for every Shader Graph
+source count N=0..4 (atlas at 13+N, table at 14+N), and that tex16
+does **not** declare dynamic Metal sampler 16.
+
+The focused verification script `tools/verify-texture-rhi.sh` now
+explicitly builds `aiverse_gpu_icb_material_contract_test` and includes
+`gpu_icb_material_contract` in **both** normal and `--vulkan` CTest
+filters. Merely registering a CMake test did not cause this targeted
+verification script to execute it; this is fixed. The existing Texture
+RHI GitHub Actions workflow invokes this script, so a future run will
+exercise the new portable contract.
+
+**Actual verification performed in this turn:** current GitHub source
+inspection confirmed the build target and CTest name match, both test
+filters include the test, the test includes real headers, and all five
+MSL Shader Graph variant branch strings are present (7/7 static
+registration/source assertions). The GitHub Actions run observed was
+on an older SHA and had queued texture jobs; **the updated test has NOT
+been compiled or executed, Metal MSL has NOT been compiled, and no
+GPU execution/image parity has been recorded**. Stay Draft.
