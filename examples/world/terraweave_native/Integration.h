@@ -4,6 +4,8 @@
 #pragma once
 #include <aiverselib/water/NereidNativeWater.h>
 #include "engine/world/TerraWeaveNativeDriver.h"
+#include "engine/world/TerraWeaveShorelineRaster.h"
+#include "engine/world/TerraWeaveSedimentEcs.h"
 #include <functional>
 #include <string>
 #include <utility>
@@ -21,12 +23,24 @@ inline void registerSystems(
             const terraweave::EcsBankTerrainCommit&)> onEroded={}) {
     lib::nereid::NativeWaterPipelineConfig water{};
     water.enableBankErosion=true;
+    // Geometry and current state belong to NEREID, including polygon/
+    // river-spline shoreline outlines used by automatic bank detection.
+    water.enableGeometry=true;
+    water.enableCurrentField=true;
     // This example gives bank cells explicit WaterProbe positions. A native
     // game that uses Transform-driven probes may choose true instead.
     water.probeFromTransform=false;
     lib::nereid::registerNativeWaterPipeline(sim,"nereid",water);
     terraweave::registerTerraWeaveBankVertexPersistence(sim);
+    terraweave::registerAutoShorelineBankPersistence(sim);
+    terraweave::registerNereidSedimentEcsPersistence(sim);
     terraweave::registerTerraWeaveAuthorityResource(sim,cfg);
+    // NEREID calculates local bank erosion; transport then conserves
+    // suspended sediment between same-water-body neighbouring banks.
+    // TerraWeave applies already computed soil changes LAST.
+    terraweave::addNereidSedimentTransportSystem(
+        sim,"nereid.sediment_transport",cfg.soilGridCm,
+        water.bankErosionTickMs);
     terraweave::addTerraWeaveAuthoritativeBankSystem(
         sim,"terraweave.bank_commit",std::move(cfg),
         [after=std::move(onEroded)](
@@ -71,9 +85,31 @@ inline Entity addShoreCell(
     ecs.add<lib::nereid::WaterBankSoilComponent>(id,source);
     ecs.add<lib::nereid::WaterBankErosionOutputComponent>(
         id,lib::nereid::WaterBankErosionOutputComponent{});
+    ecs.add<lib::nereid::WaterBankSedimentTransportComponent>(
+        id,lib::nereid::WaterBankSedimentTransportComponent{});
     ecs.add<terraweave::BankEarthVertexComponent>(
         id,terraweave::BankEarthVertexComponent{groundVertex});
     return id;
+}
+
+// Call only at a native structural ECS barrier, e.g. map start or after
+// water-body/terrain geometry topology changes. Reads current NEREID ECS
+// bodies/flows (polygon and river-spline aware), then creates/updates the
+// generated bank-cell entities. Manual banks are left untouched.
+inline terraweave::ShorelineRefreshStats refreshDetectedShoreline(
+        World& ecs,
+        const terraweave::TerraWeaveEcsAuthorityConfig& cfg,
+        terraweave::ShorelineRasterSettings settings,
+        terraweave::ShorelineSoilAt soilAt={},
+        terraweave::ShorelineRootsAt rootsAt={}) {
+    const auto* state=ecs.resourceConst<
+        terraweave::TerraWeaveAuthorityResource>();
+    if(!state)throw std::logic_error(
+        "TerraWeave auto-shoreline requires canonical ECS terrain");
+    const auto ground=terraweave::materializeEcsTerrain(*state,cfg);
+    auto banks=terraweave::discoverNereidShoreline(
+        ecs,ground,settings,std::move(soilAt),std::move(rootsAt));
+    return terraweave::refreshAutoShorelineBanks(ecs,banks);
 }
 
 inline terraweave::NativeTerrainPublishResult publishFrame(
