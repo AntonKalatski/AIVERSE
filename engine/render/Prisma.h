@@ -59,6 +59,30 @@ public:
         uint64_t lastGpuCompletedFence = 0;
     };
     RetirementStats retirementStats() const;
+    // CPU-only diagnostics: shared size caches are counted ONCE in totals.
+    // A view reports the shared cache it references, not an allocation it owns.
+    // A missing RHI metadata entry increments unknownTextures (not 0-byte VRAM).
+    struct ViewMemoryStats {
+        uint64_t viewId = 0;
+        int width = 0, height = 0;
+        size_t sharedSizeViews = 0; // >1 means other view IDs reference this same size cache
+        size_t sharedTextures = 0, ownedHistoryTextures = 0;
+        size_t unknownTextures = 0;
+        uint64_t sharedKnownBytes = 0, ownedHistoryKnownBytes = 0;
+        uint64_t graphLiveKnownBytes = 0, graphPendingKnownBytes = 0;
+        size_t graphLiveTextures = 0, graphPendingTextures = 0;
+    };
+    struct MemoryStats {
+        std::vector<ViewMemoryStats> views;
+        size_t activeSizeCaches = 0, unreferencedSizeCaches = 0;
+        size_t liveTextures = 0, unknownTextures = 0;
+        uint64_t liveKnownBytes = 0; // active size caches + per-view exposure + resident LUTs
+        uint64_t sharedSizeKnownBytes = 0;
+        uint64_t viewHistoryKnownBytes = 0;
+        uint64_t otherLiveKnownBytes = 0;
+        uint64_t graphPendingKnownBytes = 0; // belongs to retirement, NOT live bytes
+    };
+    MemoryStats memoryStats() const;
 
     // game.json "postfx" then the map's (either may be null); problems go to `issues`.
     void configure(const Json& game, const Json& map, std::vector<std::string>* issues = nullptr);
@@ -188,6 +212,9 @@ private:
     // Temporal state is keyed by view identity, NOT by render target size.
     std::map<uint64_t, ExposureView> exposureViews_;
     std::map<uint64_t, MotionView> motionViews_;
+    // Last successful postprocess scene pass per stable view ID. A size cache
+    // can be shared by several views; retireView() removes a view reference.
+    std::map<uint64_t, std::pair<int, int>> viewDimensions_;
     uint64_t viewId_ = 0;
     std::map<std::string, Lut> luts_;
     ImageLoader loader_;
