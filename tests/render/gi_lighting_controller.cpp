@@ -43,6 +43,11 @@ int main() {
     AIVERSE_TEST_CHECK(controller.gpuRuntime()==nullptr);
     auto scene=wall();
     AIVERSE_TEST_CHECK(controller.setGeometry(scene,1));
+    GiEnvironmentLight sunSky;
+    sunSky.sunColor={1,0,0};sunSky.sunIntensity=2;
+    sunSky.skyColor={0,0,1};sunSky.skyIntensity=.25f;
+    AIVERSE_TEST_CHECK(controller.setEnvironment(sunSky));
+    AIVERSE_TEST_CHECK(controller.cpuRuntime()->reference().environment()==sunSky);
     AIVERSE_TEST_CHECK(!controller.setGeometry(scene,1)); // monotonic revisions
     PointLight authored{{0,0,0},5,{1,0,0},10};
     authored.key=7;
