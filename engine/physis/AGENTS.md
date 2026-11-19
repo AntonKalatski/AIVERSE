@@ -660,3 +660,27 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   Linux native CTest 2/2 with the existing locked I/O test, GCC 14.2,
   Clang 17, ASan and UBSan PASSED. Full engine CTest/CI did NOT run.
 - Handoff: `docs/agent-handoffs/physis-stage55-interrupted-temp-recovery-2026-11-19.md`.
+
+### Stage 56 — hard 16 MiB POSIX receipt journal bounds (2026-11-19)
+
+- `posix_journal::read/write` now enforce a 16 MiB upper bound,
+  even for direct callers bypassing `FileJournal`.
+  Reject `minBytes>maxBytes`, `maxBytes>kMaxJournalBytes`, empty
+  and oversize writes BEFORE filesystem changes.
+- Canonical `PhysisRemoteJournal.h` now has `static_assert`
+  ensuring serialized `kMaxDiskBytes` and the low-level POSIX cap
+  are equal; preserve this invariant whenever changing formats.
+- `physis_journal_posix_io` asserts oversized writes leave
+  `receipts` and temp paths untouched, and invalid read bounds
+  preserve the output buffer.
+- **ACTUAL PASS**: source-identical isolated GCC 14.2 C++20
+  CMake/CTest 2/2, Clang 17 strict warnings and GCC ASan/UBSan.
+  GitHub blobs: low-level header
+  `ab24c98afebc3dbe45a05244b1a94e6eec977ccf`, test
+  `d3ef56264ab8da3324375e7b8d76bf1a1ea64851`.
+- **NOT RUN**: full AIVERSE CMake and `FileJournal` static_assert
+  compile, `physis_admin_journal`, `physis_remote_edit`,
+  `physis_field_runtime`, macOS/Windows and complete CI.
+  Handoff:
+  `docs/agent-handoffs/physis-stage56-bounded-posix-journal-2026-11-19.md`.
+

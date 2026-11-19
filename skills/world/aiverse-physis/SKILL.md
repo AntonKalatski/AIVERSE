@@ -743,3 +743,19 @@ files by default, as they may be forensic evidence. The
 Actual isolated Linux CTest 2/2 and strict GCC/Clang/ASan/UBSan pass;
 full AIVERSE `physis_admin_journal` remains unverified. Handoff:
 `docs/agent-handoffs/physis-stage55-interrupted-temp-recovery-2026-11-19.md`.
+
+### Stage 56 — bounded pinned journal I/O
+
+Direct calls to `PhysisJournalPosixIO.h` are now bounded to 16 MiB,
+matching the canonical `FileJournal` V1 persistence limit. A caller
+cannot use a larger `maxBytes` read bound, reversed min/max bounds,
+or an oversized/empty write, even if it bypasses serialization.
+`PhysisRemoteJournal.h` statically asserts that the limits match.
+
+The tests prove that invalid writes do not create temp files and
+invalid reads do not modify output. Both isolated native Linux
+journal CTests passed (2/2), as did strict GCC/Clang and ASan/UBSan.
+This does NOT establish a full engine or cross-platform test PASS.
+
+Handoff: `docs/agent-handoffs/physis-stage56-bounded-posix-journal-2026-11-19.md`.
+
