@@ -84,7 +84,10 @@ public:
 
 private:
     struct PreparedSprite {
-        SpriteLook look;
+        // Borrowed from the fixed-size looks_ table, never from a local scaled copy.
+        // Valid until the next shutdown/init; captures are consumed in this frame.
+        const SpriteLook* look = nullptr;
+        float width = 1, height = 1;
         render::float3 ground, facing;
         int action = 0;
         double startTime = 0;
@@ -95,7 +98,7 @@ private:
     struct Corpse { uint16_t type; uint8_t owner; render::float3 pos, facing; double start; };
     struct Seen { uint16_t type; uint8_t owner; render::float3 pos, facing; bool visible; uint32_t frame; };
     void loadLook(SpriteLook& L, const UnitType& t, const Json& s);
-    void emit(const SpriteLook& L, render::float3 ground, render::float3 facing, int act, double t0, uint32_t team, uint32_t tint, bool loopHold, float fade);
+    void emit(const SpriteLook& L, render::float3 ground, render::float3 facing, int act, double t0, uint32_t team, uint32_t tint, bool loopHold, float fade, const SpriteLook* sourceLook);
     void corners(const SpriteLook& L, render::float3 ground, render::float3 (&c)[4], float& sortKey) const;
     int facingIndex(const SpriteLook& L, render::float3 facing, bool& flip) const;
     float groundAt(float x, float z) const;   // the ground decals are cut from (surface_)
