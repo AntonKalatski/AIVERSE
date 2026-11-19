@@ -205,6 +205,67 @@ struct CreatorApp {
             }catch(...){return false;}
         };
     }
+    static std::vector<AuthoredFacialLod> readIndexedLods(
+            const HumanImportManifest& manifest,const render::Model& model,
+            const std::string& path,
+            std::span<const MorphVec3> originalPositions,
+            const SparseMorphLibrary& shapes) {
+        std::vector<AuthoredFacialLod> layers;
+        layers.reserve(manifest.facialLods.size());
+        std::vector<float3> sourcePositions;
+        sourcePositions.reserve(originalPositions.size());
+        for(const auto& p:originalPositions)
+            sourcePositions.push_back({p[0],p[1],p[2]});
+        for(const auto& entry:manifest.facialLods) {
+            const auto sourceId=std::find_if(model.meshes.begin(),model.meshes.end(),
+                [&](const MeshDef& mesh){return mesh.name==entry.sourceMeshName;});
+            const auto targetId=std::find_if(model.meshes.begin(),model.meshes.end(),
+                [&](const MeshDef& mesh){return mesh.name==entry.meshName;});
+            if(sourceId==model.meshes.end()||targetId==model.meshes.end())
+                throw std::runtime_error("VIVID LOD: indexed mesh not found");
+            const int targetMesh=int(targetId-model.meshes.begin());
+            auto collect=[&](const MeshDef& mesh) {
+                std::vector<std::uint32_t> ids;
+                for(const auto& primitive:mesh.primitives) {
+                    const std::size_t first=primitive.firstIndex;
+                    if(first>model.indices.size() ||
+                       primitive.indexCount>model.indices.size()-first)
+                        throw std::runtime_error("VIVID LOD: invalid indexed primitive");
+                    for(std::size_t i=first;i<first+primitive.indexCount;++i)
+                        ids.push_back(model.indices[i]);
+                }
+                return ids;
+            };
+            auto indices=collect(*sourceId);
+            for(auto id:indices)if(id>=originalPositions.size())
+                throw std::runtime_error("VIVID LOD: source mesh no longer has original vertices");
+            auto targets=collect(*targetId);
+            std::sort(targets.begin(),targets.end());
+            targets.erase(std::unique(targets.begin(),targets.end()),targets.end());
+            const auto filename=std::filesystem::absolute(
+                std::filesystem::path(path)).parent_path()/entry.mappingPath;
+            const auto mapping=MorphLodMapping::fromJson(
+                Json::parse(fileContents(filename,64ull*1024ull*1024ull)));
+            if(mapping.targetVertexIds!=targets || targets.empty())
+                throw std::runtime_error("VIVID LOD: indexed target vertex IDs changed");
+            for(auto id:targets)if(id>=model.vertices.size())
+                throw std::runtime_error("VIVID LOD: target vertex index outside model");
+            (void)mapping.transfer(shapes,sourcePositions,indices);
+            layers.push_back({mapping,std::move(indices),targetMesh});
+        }
+        // Preflight cross-layer overlaps before publishing this package.
+        std::vector<SparseMorphLibrary> compact;
+        compact.reserve(layers.size());
+        for(const auto& layer:layers)
+            compact.push_back(layer.mapping.transfer(
+                shapes,sourcePositions,layer.sourceIndices));
+        std::vector<MorphLodGpuAuthoring::Layer> gpuLayers;
+        for(std::size_t i=0;i<compact.size();++i)
+            gpuLayers.push_back({&compact[i],layers[i].mapping.targetVertexIds});
+        if(!gpuLayers.empty())
+            (void)MorphLodGpuAuthoring::combineMany(shapes,gpuLayers);
+        return layers;
+    }
     void loadExternal(const std::string& path) {
         auto manifest=readManifest(path);
         auto imported=importHumanAsset(manifest,readerFor(path));
@@ -219,13 +280,17 @@ struct CreatorApp {
             const auto& p=imported.model->vertices[i].pos;
             morphSourcePositions.push_back({p.x,p.y,p.z});
         }
-        morphDraft=std::make_unique<MorphAuthoring>(
+        auto pendingMorph=std::make_unique<MorphAuthoring>(
             MorphAuthoring::fromCompiled(imported.facialShapes));
+        const auto importedLods=readIndexedLods(
+            manifest,*imported.model,path,morphSourcePositions,
+            imported.facialShapes);
+        morphDraft=std::move(pendingMorph);
         morphTargetIndex=0;
         morphVertexIndex=0;
         morphEditOffset={};
-        lodGpuMorphEnabled=false;
-        authoredFacialLods.clear();
+        authoredFacialLods=importedLods;
+        lodGpuMorphEnabled=!authoredFacialLods.empty();
         sculptMeshIndex=-1;
         sculptPickArmed=false;
         morphDirty=false;
