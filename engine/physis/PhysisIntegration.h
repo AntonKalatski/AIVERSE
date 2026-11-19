@@ -6,6 +6,7 @@
 #include "PhysisGravity.h"
 #include "PhysisStorm.h"
 #include "PhysisForces.h"
+#include "PhysisNatureSampling.h"
 #include "../sim/Simulation.h"
 
 namespace aiverse::physis {
@@ -87,7 +88,8 @@ inline void io(Archive& a, QuakeEvent& v) {
 
 inline void registerPersistence(Simulation& simulation, bool disasters = false,
                                 bool windZones = false, bool gravityFields = false,
-                                bool storms = false, bool forces = false) {
+                                bool storms = false, bool forces = false,
+                                bool natureContacts = false) {
     // Must be called during GameModule::setup before the registry is sealed.
     simulation.registerPersistentComponent<Cell>("physis.cell", 1);
     simulation.registerPersistentComponent<Atmosphere>("physis.atmosphere", 1);
@@ -112,6 +114,14 @@ inline void registerPersistence(Simulation& simulation, bool disasters = false,
         simulation.registerPersistentComponent<ForceReceiver>("physis.force_receiver", 1);
         simulation.registerPersistentComponent<ForceOutput>("physis.force_output", 1);
     }
+    // Additional per-entity nature sampling is opt-in. Do not alter
+    // existing game persistence manifests when the feature is disabled.
+    if (natureContacts) {
+        simulation.registerPersistentComponent<NatureProbeComponent>(
+            "physis.nature_probe", 1);
+        simulation.registerPersistentComponent<NatureContactComponent>(
+            "physis.nature_contact", 1);
+    }
     simulation.registerPersistentResource<State>("physis.state", 1);
     if (disasters) {
         simulation.registerPersistentComponent<HazardCell>("physis.hazard", 1);
@@ -126,6 +136,9 @@ struct InstallOptions {
     bool enableDisasters = false;
     bool enableStorms = false;
     bool enableForces = false;
+    // Publish read-only per-entity weather/gravity/storm snapshots after
+    // each climate tick. Defaults off for strict older-save compatibility.
+    bool enableNatureContacts = false;
     // Enable these when a native host uses WindZone/WindShelter or custom
     // GravityField/GravitySettings and needs them in save/replay.
     bool enableWindZones = false;
@@ -148,7 +161,8 @@ inline void install(Simulation& simulation, const InstallOptions& options = {}) 
         initializeDisasters(simulation.world(), options.disasters);
     registerPersistence(simulation, options.enableDisasters,
                         options.enableWindZones, options.enableGravityFields,
-                        options.enableStorms, options.enableForces);
+                        options.enableStorms, options.enableForces,
+                        options.enableNatureContacts);
     simulation.addSystem("physis.environment",
         [hazards=options.enableDisasters, storms=options.enableStorms,
          flood=options.floodMode](Simulation& sim) {
@@ -161,6 +175,13 @@ inline void install(Simulation& simulation, const InstallOptions& options = {}) 
     if (options.enableForces)
         simulation.addSystem("physis.forces", [](Simulation& sim) {
             advanceForces(sim.world());
+        });
+    // The host creates NatureProbe + NatureContact on interested entities.
+    // This runs only after the authoritative PHYSIS climate update and
+    // deliberately does not integrate movement or modify water bodies.
+    if (options.enableNatureContacts)
+        simulation.addSystem("physis.nature_contacts", [](Simulation& sim) {
+            advanceNatureContacts(sim.world(), sim.tick());
         });
 }
 

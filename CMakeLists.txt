@@ -2274,6 +2274,16 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_physis_integration_test PRIVATE aiverse_engine)
     add_test(NAME physis_integration COMMAND aiverse_physis_integration_test)
     set_tests_properties(physis_integration PROPERTIES LABELS "PHYSIS")
+    # Stage 78: PHYSIS per-entity nature contacts and NEREID canonical
+    # water samples coexist on one genre-independent authoritative World.
+    add_executable(aiverse_physis_nereid_contacts_test
+        tests/physis_nereid_nature_contacts_test.cpp)
+    target_link_libraries(aiverse_physis_nereid_contacts_test PRIVATE
+        aiverse_engine AIVERSE::lib_nereid_water)
+    add_test(NAME physis_nereid_contacts COMMAND
+        aiverse_physis_nereid_contacts_test)
+    set_tests_properties(physis_nereid_contacts PROPERTIES LABELS
+        "PHYSIS;NEREID;ECS")
 endif()
 
 # PHYSIS Stage 8: deterministic spatial wind and seeded gust volumes.
