@@ -202,6 +202,8 @@ void Prisma::retireView(uint64_t id) {
         for (auto& h : exposure->second.history) retireTarget(h);
         exposureViews_.erase(exposure);
     }
+    viewExposureFreeze_.erase(id);
+    viewExposureMeterRegions_.erase(id);
     if (auto it = temporalViews_.find(id); it != temporalViews_.end()) {
         for (auto& h : it->second.history) retireTarget(h);
         temporalViews_.erase(it);
@@ -227,6 +229,8 @@ size_t Prisma::retireUnregisteredViews(
         for (const auto& [id, state]:map) { (void)state; tracked.insert(id); }
     };
     append(exposureViews_);
+    append(viewExposureFreeze_);
+    append(viewExposureMeterRegions_);
     append(temporalViews_);
     append(adaptiveViews_);
     append(viewQualityPolicies_);
@@ -509,6 +513,8 @@ void Prisma::shutdown() {
         for (auto& history : view.history) release(history);
     }
     exposureViews_.clear();
+    viewExposureFreeze_.clear();
+    viewExposureMeterRegions_.clear();
     for (auto& [id, view] : temporalViews_)
         for (auto& h : view.history) release(h);
     temporalViews_.clear();
@@ -573,6 +579,27 @@ void Prisma::applyCameraVolumes(const PrismaVolumeStack& stack, float3 eye, uint
 }
 
 void Prisma::clearCameraVolumes() { settings_ = baseSettings_; }
+
+void Prisma::setViewExposureFreeze(uint64_t id, bool freeze) {
+    viewExposureFreeze_[id] = freeze;
+}
+void Prisma::clearViewExposureFreeze(uint64_t id) {
+    viewExposureFreeze_.erase(id);
+}
+void Prisma::setViewExposureMeterRegion(uint64_t id, ExposureMeterRegion r) {
+    const auto safe = [](float value,float lo,float hi,float fallback) {
+        return std::isfinite(value) ? std::clamp(value,lo,hi) : fallback;
+    };
+    r.centerX = safe(r.centerX,0.0f,1.0f,0.5f);
+    r.centerY = safe(r.centerY,0.0f,1.0f,0.5f);
+    r.radius = safe(r.radius,0.01f,1.0f,0.25f);
+    r.feather = safe(r.feather,0.001f,0.5f,0.10f);
+    r.outsideWeight = safe(r.outsideWeight,0.02f,1.0f,0.05f);
+    viewExposureMeterRegions_[id] = r;
+}
+void Prisma::clearViewExposureMeterRegion(uint64_t id) {
+    viewExposureMeterRegions_.erase(id);
+}
 
 // Allocate everything that an output-size temporal resolve requires BEFORE
 // jittering any world geometry. A failed allocation returns the host to the
