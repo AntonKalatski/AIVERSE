@@ -1188,6 +1188,10 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             history.previousJitterUv=history.currentJitterUv;
             src={targetHistory,w,h,gfx::PixelFormat::RGBA16F};
             temporalResolved=true;
+            stats_.temporalResolved=true;
+            stats_.temporalJittered=history.jitterActive;
+            stats_.jitterPixelX=history.currentJitterUv.x*float(w);
+            stats_.jitterPixelY=history.currentJitterUv.y*float(h);
         } else history.valid=false;
     } else {
         // Release camera-owned HDR history if its effect is off or the
