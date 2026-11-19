@@ -2097,3 +2097,52 @@ loss. Source-derived GPU bytes are still not exact VRAM.
 Dynamic authored appearances still rely on RTS-specific state
 mapping/attachment policy. Real native builds and visual
 tests are required before claiming compatibility or merging.
+
+## Transactional appearance publication (Stage 109)
+
+Native applications can use \`engine/view/AppearanceAssetRegistry.h\` to stage
+model material overrides and an authored \`AnimationGraph\` independent of any
+RTS/FPS/editor module. The registry copies materials and node-material maps,
+owns the immutable graph program, and publishes a new \`shared_ptr<const Asset>\`
+only after material/shader-graph validation and AnimationGraph compilation
+succeed. A compile or texture-resolver failure leaves the previous live Asset
+and its dirty flag intact. For material \`shaderGraph\` overrides, strict
+prevalidation prevents the older best-effort \`applyMaterial\` fallback from
+silently replacing a working shader with an empty program.
+
+Call \`invalidateSources({path})\` at a safe frame boundary after changing a
+model/graph/material-library source listed in \`Request::sources\`. This marks
+dependent appearances dirty without throwing away their previous snapshots.
+A changed external graph path forces recompilation and increments animation
+generation; a material-only rebuild preserves the previous graph and its
+animation generation so a running MotionWeave source does not restart.
+\`Request::graphRevision\` is for changes to in-memory graph inputs with the
+same JSON source. Every new graph-driven asset needs a stable nonzero
+\`sourceId\`. The returned Asset's \`packet(world,out)\` transfers its
+source identity, graph, authored parameters, material pointers and flags into
+the same universal \`view::Object\`; the host calls **one** \`View::update\`
+before submission. Never create another independent animation clock.
+
+A caller must keep the snapshot handle alive through synchronous submission,
+and the imported \`render::Model\`/GPU resources must outlive all snapshots
+borrowing them. Registry snapshots do not own models, texture handles,
+gfx::Device or render-thread fences. Texture loader callbacks may have external
+GPU side effects that the host must roll back/retire; publication is atomic
+for the registry map, not a GPU transaction. Registry mutation remains on the
+owner presentation thread.
+
+The FPS executable now calls the common
+\`AppearanceAuthoringService::compileGraph\` for its reference character
+controller. It also owns an explicit \`RenderDeviceLifetime\` while that
+standalone client uses its GPU resources, guards character loading and
+shutdown against a different/expired generation, and retires the token after
+known resource shutdown. The FPS scene graph still uses its existing
+presentation ECS and animation hot reload; it has no second MotionWeave
+writer. Other native hosts and direct postFX/terrain/FX GPU allocations
+have not yet been migrated to generation-aware owners.
+
+Deferred fixture \`view_appearance_registry\` covers shader-compile rollback,
+material library invalidation, pinned snapshots, animated parameters/source
+identity, stable graph generation on material-only rebuilds, and external
+graph source invalidation. **NOT RUN**: native compile, CTest, GPU visual
+parity, device-loss stress and sanitizer validation.
