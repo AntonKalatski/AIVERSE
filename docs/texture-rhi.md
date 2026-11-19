@@ -2105,3 +2105,27 @@ source-texture arguments for compatible fragment-only graphs.
 C++/Objective-C++ nor MSL pipeline compilation nor actual GPU
 execution/image parity has been tested. This is opt-in,
 experimental functionality, not a release-ready feature.
+
+
+## Stage 10AK — Shader Graph GPU ICB host-accepted diagnostics
+
+`Renderer3D::GpuModelDrawStats` now has two additional
+host-submission counters, `shaderGraphIcbSubmissions`
+and `mixedGraphSourceSubmissions`. They are updated only
+after the Metal ICB execution API returns success, and are
+reset at GPU batch preparation. The second counter requires
+different graph source `TextureHandle` arrays or graph source
+count within a shader-compatible submitted group; different
+ordinary PBR U2 alone does not count as mixed graph resources.
+
+The group snapshot records whether an experimental fragment-only
+Shader Graph pipeline was selected and whether any staged
+per-command graph handles differ. These diagnostics supplement
+`gpuIcbPrepared`, `gpuIcbRejected`,
+`gpuIcbExecuteFailed`, `perCommandPbrSubmissions` and
+`mixedPbrSubmissions`. They are host-accepted submissions
+only, NOT completed GPU fence events, runtime pixel parity
+or measured speedups.
+
+No native code, MSL shader compiler, actual GPU execution
+or benchmark was run for this stage.
