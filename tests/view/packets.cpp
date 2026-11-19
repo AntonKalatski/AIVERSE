@@ -12,6 +12,8 @@ int main() {
     batch.reserve(6);
     Object object;object.id=42;object.generation=7;
     MeshObject mesh;mesh.flags=128;
+    mesh.selectionOutline=true;
+    mesh.selectionColor={0.25f,0.62f,1.0f,1.0f};
     LineObject line{{0,0,0},{0,1,0},0xff};
     TriangleObject triangle{{0,0,0},{1,0,0},{0,1,0},0xffffffff};
     CircleXZObject circle{{3,0,4},.7f,0xff00ff00u,24,.05f};
@@ -28,6 +30,9 @@ int main() {
     assert(std::get<Object>(packets[0]).id==42);
     assert(std::holds_alternative<MeshObject>(packets[1]));
     assert(std::get<MeshObject>(packets[1]).flags==128);
+    assert(std::get<MeshObject>(packets[1]).selectionOutline);
+    assert(std::get<MeshObject>(packets[1]).selectionColor.x==0.25f);
+    assert(std::get<MeshObject>(packets[1]).selectionColor.w==1.0f);
     assert(std::holds_alternative<LineObject>(packets[2]));
     assert(std::get<LineObject>(packets[2]).end.y==1.f);
     assert(std::holds_alternative<TriangleObject>(packets[3]));
@@ -59,6 +64,7 @@ int main() {
     ScenePacketBatch precomputed;
     Object alive;alive.id=5;alive.generation=2;
     MeshObject fallback;fallback.flags=73;
+    assert(!fallback.selectionOutline); // ordinary unselected mesh keeps its old path
     Object dead;dead.id=9;dead.generation=3;
     precomputed.add(alive);
     precomputed.add(fallback);
