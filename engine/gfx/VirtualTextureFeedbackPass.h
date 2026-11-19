@@ -139,6 +139,28 @@ public:
         return readback_.submit(streamer);
     }
 
+    // One owner-thread integration point for a game/editor frame after
+    // Device::beginFrame has delivered asynchronous readback callbacks.
+    // The caller remains responsible for feedback geometry submission and
+    // for ensuring no other render/compute pass is active. The file streamer
+    // is independently owned and must outlive this call.
+    struct FrameResult {
+        VirtualTexturePrefetchDispatch visibility;
+        size_t stagedGpuPages = 0;
+        bool streamingReady = false;
+    };
+    FrameResult updateStreaming(
+        VirtualTextureFileStreamer& streamer,
+        size_t maxNewGpuPages = 8,
+        const VirtualTextureFileStreamer::CompletionFn& completion = {}) {
+        FrameResult result;
+        if (!ready() || active() || !streamer.ready()) return result;
+        result.visibility = submitVisiblePages(streamer);
+        result.stagedGpuPages = streamer.pump(maxNewGpuPages,completion);
+        result.streamingReady = streamer.ready();
+        return result;
+    }
+
     bool ready() const { return device_ != nullptr && targets_.color(0).valid(); }
     bool active() const { return targets_.active(); }
     bool pending() const { return readback_.pending(); }
