@@ -160,6 +160,12 @@ public:
         // Preserve old simulation-pinned collision until ALL newly needed
         // tiles have been published. This is load-first/unload-last, unlike
         // removing old colliders before discovering GPU allocation failure.
+        // A camera/streaming jump can abandon work before publication.
+        // Remove now-unneeded requests so old pending tiles cannot block
+        // the WorldScene snapshot barrier forever.
+        for(auto it=pending_.begin();it!=pending_.end();)
+            if(!needed.contains(it->first))it=pending_.erase(it);
+            else ++it;
         for(const auto& tile:needed)
             if(!residents_.contains(tile) && !pending_.contains(tile))
                 pending_.insert_or_assign(tile,earth_.revision());
