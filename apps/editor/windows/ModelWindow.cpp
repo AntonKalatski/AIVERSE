@@ -103,6 +103,7 @@ public:
 
     ~ModelWindow() override { retirePortrait(); }
     void retirePortrait() {
+        if (!portraitInit_) return;
         auto former = std::move(portrait_);
         portrait_ = std::make_shared<game::Portrait>();
         portraitInit_ = false;
