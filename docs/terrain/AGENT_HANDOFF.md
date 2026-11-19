@@ -2646,3 +2646,17 @@ Added nonserialized `nearNormalProvenanceAvailable` to HorizonBake, runtime stat
 **Actually verified:** GitHub file update commits succeeded. No compiler/build, CTest, editor/game runtime, GPU screenshots or benchmarks. Keep PR Draft.
 
 **Next:** audit full/partial upload, empty-model and source revision paths for stale stats, update TerraWeave design docs/skill, and have separate test agent validate archive miss/hit, GPU cache restoration and all-or-none weld rejection with real CMake/CTest runs.
+
+## Stage 22e — Horizon shutdown diagnostics lifecycle (SOURCE COMMITTED; TESTS NOT RUN)
+
+**Branch:** `feature/terraweave`; PR #24 Draft.
+**Commit:** `2d9501dee12b8d0d9859897933d7a6cc8467ebd5`.
+**Changed:** `engine/render/TerraWeaveHorizonScene.h`.
+
+Audited existing async publication and GPU cache adoption paths, and fixed a definite stale-state path: `shutdown(device)` previously released active model, transition, GPU cache and CPU cache but retained runtime counters and region origin/cluster metadata. It now resets `runtime_={}`, `clusters_=0`, `terrainQuads_=0`, `originXcm_=0`, `originZcm_=0` after releasing resources. This also clears the Stage 22c/d provenance counters/availability so a stopped scene cannot report a retired region as active. No archive, rendering, ECS or GPU geometry change.
+
+**Known remaining concerns:** Existing `runtime_` fields are a mixture of lifetime cumulative counters and active-region counters; clearing on shutdown is intentional but should be documented in telemetry consumers. Source revision changes retain the old GPU proxy until replacement succeeds, so runtime diagnostics still describe the **displayed old region**, not the newly requested revision; consumers should compare active vs source revision before interpreting stats as current terrain. Other patch paths have not been runtime-verified.
+
+**Actual verification:** GitHub commit succeeded. No compilation, CTest, editor/game execution, GPU screenshot or benchmark. Dedicated test agent retains ownership; PR stays Draft.
+
+**Next functionality:** add explicit active/source revision and stale-proxy status to HorizonRuntimeStats (without altering archive or GPU layout), then audit cache-hit/empty-model/failure behavior. Tests later should verify shutdown resets stats, no active model after shutdown, and source revision pending preserves old model without falsely claiming fresh data.
