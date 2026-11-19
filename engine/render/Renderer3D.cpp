@@ -118,6 +118,13 @@ void Renderer3D::setShadowQuality(ShadowQuality q) {
     shadowMap_ = dev_->createTexture(td);
 }
 
+bool Renderer3D::requestSunShadowDepthReadback(
+    gfx::Device::DepthReadFn callback) const {
+    return dev_ && quality_ != ShadowQuality::Off &&
+           shadowMap_.valid() && shadowSize_ > 0 &&
+           dev_->readDepthTextureAsync(shadowMap_, std::move(callback));
+}
+
 void Renderer3D::shutdown() {
     if (!dev_) return;
     gpuModelCommands_.release(*dev_);
