@@ -10660,3 +10660,89 @@ Only after native proof should the next agent expand to
 multiple Shader Graph permutations, VT+graph integrated
 scene draws and separate Vulkan/GL/mobile acceptance.
 **Do not merge PR #21 until independently verified.**
+
+## Stage 10BV — production compiled Renderer3D Shader Graph ICB GPU PASS (2026-11-19)
+
+**Branch / PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Prior implementation:** Stage 10BU source
+`353537d34021690c284689fab5db88eb752cdd2d`,
+CMake `c28699610bee997b7db0c8fd0ac91803b75bd3bd`.
+**Verification documentation source commits:**
+`88e9d8b07f1c1c60f4f371853cc38f394482360f`
+(`docs/texture-rhi.md`, exact hardware logs/results/limitations),
+`55ddd6a8c5cb1852948433fb50346f978784c2d4`
+(`skills/visuals/aiverse-texture-rhi/SKILL.md`).
+
+**Actually executed by user on Apple M3 Ultra:**
+`aiverse_metal_renderer_graph_icb_gpu_test` built and linked
+successfully (100%). The isolated native CTest
+`metal_renderer_graph_icb_gpu` reported **1/1 PASS, zero failed,
+3.73 s**, total CTest elapsed **3.74 s**.
+CTest injected the intended explicit safety-gated environment,
+including `AIVERSE_GPU_AUTHORED_DRAWS=1`,
+`AIVERSE_GPU_ENCODED_ICB=1`,
+`AIVERSE_EXPERIMENTAL_METAL_ICB=1`,
+`AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR=1`,
+`AIVERSE_EXPERIMENTAL_ICB_MIXED_PBR=1` and
+`AIVERSE_EXPERIMENTAL_ICB_SHADER_GRAPH=1`.
+
+**Exact native output:**
+```text
+[metal-assets] libraries=0 sourceMisses=11 pipelines=17 pipelineFailures=0 archive=0 strict=0
+GPU ICB graph stats: eligible=2 candidates=1 prepared=1 submitted=1 mixed=1 gpu_commands=2 rejected=0 errors=0
+Renderer3D Shader Graph regions: left=(196.0,84.0,94.0) right=(87.0,196.0,122.0) delta=249.0
+Renderer3D Shader Graph regions: left=(196.0,84.0,94.0) right=(87.0,196.0,122.0) delta=249.0
+Renderer3D graph CPU/ICB pixels: bad_channels=0 max_delta=0
+PASS: production Renderer3D compiled Shader Graph 4-source mixed Metal GPU ICB pixels
+1/1 Test #122: metal_renderer_graph_icb_gpu ..... Passed 3.73 sec
+```
+
+**Architecture verified in this bounded scenario:** The authored
+JSON Shader Graph goes through real `render::graph::compile`;
+`Model` has two opaque rigid primitives with independent
+four-texture sources and packed per-command material U2.
+`Renderer3D` compiled its production MSL shader and pipeline
+(`pipelineFailures=0`), created one mixed graph ICB group
+containing two GPU-authored commands, and captured real hardware
+pixels. The direct and GPU ICB images differed by **zero channels
+at any location**, max absolute channel delta zero, not merely
+within the <=2 acceptance tolerance. Two material regions
+remained visibly different in both images, so the capture was
+not a blank-screen false positive or accidental material collapse.
+
+**Test boundaries / honesty:** This is a production path test
+for ONE four-source fragment-only, opaque rigid Shader Graph
+material on ONE Metal device, NOT proof that all Shader Graph
+nodes, all sampler/wrap combinations, VT atlas/page-table,
+morph/deformation, alpha modes, WebGL/GL/Vulkan/mobile, driver
+robustness, scene stress or frame performance work. The
+3.73 s CTest duration is NOT GPU draw time or gameplay FPS.
+Experimental ICB remains explicitly OFF by default.
+Keep PR #21 Draft pending cross-backend/VT acceptance.
+
+**Stage 10BV changes:** documentation + skill + this append-only
+handoff; **no production code fix** was required after the user
+reported PASS. The underlying Stage 10BU integration fixture remains
+unchanged. Actual test evidence came from user-provided terminal log,
+not remote CI; do not claim CI passed.
+
+**Next agent / exact next action:** Implement a separate isolated
+macOS GPU test exercising production `ShaderGraph` with
+`sampleVirtualTexture` plus independent graph source
+textures through `Renderer3D`, first with one VT binding and
+then different physical atlas/page-table/layers per command
+(gated `AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT` and
+`AIVERSE_EXPERIMENTAL_ICB_MIXED_VT`). Validate actual
+GPU resource/group counters, direct-draw RGBA8 parity,
+nonresident fallback, coarse/fine disk-backed page publication,
+LRU eviction, and sampler address-mode seams. Avoid
+duplicating `VirtualTextureFileStreamer` or the existing
+`gfx::kVirtualTextureMSL` and `ModelVirtualTextureSampling`
+helpers. Keep GPU ICB tests default-OFF and in separate CMake
+build caches. Do not touch unrelated unfinished rebase in
+primary AIVERSE worktree. Next, Vulkan/GL/mobile tests
+and representative GPU timing/performance.
+After **each** bounded code stage, commit source first and
+then separately append exact SHA, files, API and actual
+tests/next step to this handoff.
+
