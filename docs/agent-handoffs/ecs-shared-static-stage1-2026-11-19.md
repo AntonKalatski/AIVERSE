@@ -3,7 +3,7 @@
 **Date:** 2026-11-19  
 **Repo:** `chromealex/AIVERSE`  
 **Branch:** `feature/ecs-shared-static-components` (created directly from `main`)  
-**Status:** Shared/static targeted Release CTest passed (1/1). Four additional ECS COW/hierarchy tests were reported as passed (4/4), but two legacy COW tests used Release-disabled `assert()`; their results are only provisional until the corrected checks are rebuilt and rerun. Full RTS/FPS integration and RSS remain unverified.
+**Status:** shared/static Release CTest passed 1/1; corrected always-on Release COW/hierarchy suite subsequently reported passing 4/4 (1.50 sec total) on Mac Studio. See `docs/agent-handoffs/ecs-shared-static-stage2-2026-11-19.md` for exact observed results and remaining limits. New prefab catalog Stage 3 is committed but not yet natively compiled/tested. Full RTS/FPS parity and RSS remain unverified.
 
 This branch is independent of `feature/scene-runtime-multiworld`, currently
 being developed by a separate scene-world agent. Do not mix their commits
@@ -105,6 +105,13 @@ snapshots remain intact. No genre-specific implementation.
 The latest handoff update comes after these commits; use `git rev-parse HEAD`
 for the exact branch head. Documentation-only commits after `11568cd16`
 do not alter the tested C++ sources.
+
+## Later verification and new feature
+
+The corrected Release COW/hierarchy 4/4 passing run supersedes the provisional
+COW results described below. See the Stage 2 handoff for the 0.51/0.16/
+0.42/0.40-second results, and Stage 3 handoff for the new PrefabStaticCatalog.
+The new prefab catalog has **no native execution results yet**.
 
 ## Native validation evidence — 2026-11-19
 
