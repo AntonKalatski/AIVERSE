@@ -269,6 +269,14 @@ public:
     uint64_t presentationTick() const { return presentationTick_; }
     void setWind(ForestWindState value) {adapter_.setWind(value);}
     const ForestWindState& wind() const {return adapter_.wind();}
+    // Native hosts may tune the CPU/pose memory budget by quality tier.
+    // Zero disables articulated branches, preserving root-only sway.
+    void setBranchPoseBudgetBytes(size_t bytes) {
+        adapter_.setBranchPoseBudgetBytes(bytes);
+    }
+    size_t branchPoseBudgetBytes() const {
+        return adapter_.branchPoseBudgetBytes();
+    }
     // Global, presentation-only canopy appearance. PHYSIS or a game calendar
     // may translate its weather/season state into this genre-free POD.
     // Material overrides are updated once; resident scatter and async
