@@ -251,6 +251,7 @@ private:
             dl->AddBezierCubic(start,{start.x+55,start.y},
                                {end.x-55,end.y},end,wireColor,2.0f);
         }
+        std::string linkFrom, linkTo;
         // Node titles drag only editor layout, not the canonical particle
         // graph. Port clicks invoke the existing compiler-backed relink().
         for(size_t i=0;i<nodes.size();++i) {
@@ -283,7 +284,7 @@ private:
                 if(ImGui::IsItemClicked() && !pendingLink_.empty()) {
                     const std::string from=pendingLink_;
                     pendingLink_.clear();
-                    if(from!=id) relink(id,from);
+                    if(from!=id) { linkFrom=from; linkTo=id; }
                 }
             }
             if(!isOutput(type)) {
@@ -295,6 +296,7 @@ private:
             }
             ImGui::PopID();
         }
+        if(!linkFrom.empty()) relink(linkTo,linkFrom);
         if(!pendingLink_.empty()) {
             ImGui::SetCursorScreenPos({origin.x+8,origin.y+available.y-22});
             ImGui::Text("Link from %s: click a destination input (Esc cancels)",pendingLink_.c_str());
