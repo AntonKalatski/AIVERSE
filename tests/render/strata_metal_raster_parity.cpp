@@ -157,6 +157,10 @@ struct Fixture {
                  d.lastError());
             return false;
         }
+        // Force the Metal drawable to be readable BEFORE beginFrame acquires
+        // it. Otherwise captureNextFrame() may defer a request by two frames
+        // and unintentionally capture the following Legacy/Strata mode.
+        d.setScreenReadable(true);
         renderer.setProfiling(true); // require actual shadow/opaque draw counters
         renderer.setShadowQuality(ShadowQuality::High);
         renderer.setTraceEnabled(false);
@@ -229,6 +233,9 @@ struct Fixture {
 
     void capture(gfx::Device& d, Mode mode) {
         const auto idx = size_t(mode);
+        std::printf("[strata-raster] capture requested mode=%s frame=%d "
+                    "shadow=%u opaque=%u\n",
+                    modeName(mode),frame,shadowDraws[idx],opaqueDraws[idx]);
         d.captureNextFrame([this,idx](int w,int h,std::vector<uint8_t> rgba) {
             if (w != kWidth || h != kHeight ||
                 rgba.size() != size_t(w*h*4)) {
@@ -250,6 +257,9 @@ struct Fixture {
             }
             captures[idx] = std::move(rgba);
             received[idx] = true;
+            std::printf("[strata-raster] capture received mode=%s "
+                        "callback_frame=%d bytes=%zu\n",
+                        modeName(mode),frame,captures[idx].size());
         });
     }
 
@@ -262,7 +272,15 @@ struct Fixture {
         const auto& a = captures[size_t(Mode::Fine)];
         const auto& b = captures[size_t(Mode::Coarse)];
         if (legacy == empty) {
-            fail("Legacy and empty screenshots identical; test drew no model");
+            std::fprintf(stderr,
+                "[strata-raster] identical Empty/Legacy: "
+                "shadow empty=%u legacy=%u, opaque empty=%u legacy=%u\n",
+                shadowDraws[size_t(Mode::Empty)],
+                shadowDraws[size_t(Mode::Legacy)],
+                opaqueDraws[size_t(Mode::Empty)],
+                opaqueDraws[size_t(Mode::Legacy)]);
+            fail("Legacy and empty screenshots identical; model invisible "
+                 "or screenshot capture phase mismatch");
             return;
         }
         auto countChanged = [](const auto& x,const auto& y) {
@@ -337,10 +355,13 @@ struct Fixture {
         auto stats = renderer.profile();
         shadowDraws[size_t(mode)] = stats.draws[0];
         opaqueDraws[size_t(mode)] = stats.draws[1];
-        if (frame == 8) capture(d,Mode::Empty);
-        if (frame == 19) capture(d,Mode::Legacy);
-        if (frame == 30) capture(d,Mode::Fine);
-        if (frame == 41) capture(d,Mode::Coarse);
+        // Capture in the MIDDLE of each steady mode, not on its final
+        // frame. Even if the backend delays its capture by 1-2 frames,
+        // the captured drawable still belongs to the requested mode.
+        if (frame == 4) capture(d,Mode::Empty);
+        if (frame == 15) capture(d,Mode::Legacy);
+        if (frame == 26) capture(d,Mode::Fine);
+        if (frame == 37) capture(d,Mode::Coarse);
         if (!renderer.modelError().empty()) fail(renderer.modelError());
         d.endPass();
     }
@@ -350,6 +371,7 @@ struct Fixture {
         device->destroyBuffer(floor.vb);
         device->destroyBuffer(floor.ib);
         renderer.shutdown();
+        device->setScreenReadable(false);
         residency.shutdown(*device); // releases sidecar BEFORE source page
         releaseModelGeometryPool(*device,source);
         // Never release borrowed fine/coarse model GPU handles.
