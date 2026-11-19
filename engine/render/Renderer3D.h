@@ -334,6 +334,7 @@ public:
         feedbackModelBinder_ = {};
         clearVirtualTextureMaskedModelFeedback();
         clearVirtualTextureLodModelFeedback();
+        clearVirtualTextureMaskedLodModelFeedback();
     }
 
     // Optional material-aware pipeline for alpha-masked rigid models.
@@ -367,6 +368,19 @@ public:
         feedbackLodModelBinder_ = {};
     }
 
+    // Combined alpha-test + LOD dither feedback variant. The binder must
+    // reproduce both the base-color alpha cutoff and screen-space LOD
+    // coverage of the main material shader.
+    void setVirtualTextureMaskedLodModelFeedback(
+        gfx::PipelineHandle pipeline, FeedbackLodBinder binder) {
+        feedbackMaskedLodModelPipeline_ = pipeline;
+        feedbackMaskedLodModelBinder_ = std::move(binder);
+    }
+    void clearVirtualTextureMaskedLodModelFeedback() {
+        feedbackMaskedLodModelPipeline_ = {};
+        feedbackMaskedLodModelBinder_ = {};
+    }
+
     // Per-scene feedback producers for terrain, foliage and procedural
     // renderers that do not use the immediate Mesh queue. Each producer
     // binds its own compatible feedback pipeline, geometry and uniforms.
@@ -397,7 +411,8 @@ public:
             }
             if ((feedbackModelPipeline_.valid() && feedbackModelBinder_) ||
                 (feedbackMaskedModelPipeline_.valid() && feedbackMaskedModelBinder_) ||
-                (feedbackLodModelPipeline_.valid() && feedbackLodModelBinder_)) {
+                (feedbackLodModelPipeline_.valid() && feedbackLodModelBinder_) ||
+                (feedbackMaskedLodModelPipeline_.valid() && feedbackMaskedLodModelBinder_)) {
                 for (const auto& item : modelItems_) {
                     if (!item.inView || !item.rigid || item.joints >= 0 ||
                         item.baked || item.morph >= 0 || !item.model ||
@@ -410,19 +425,19 @@ public:
                         continue;
                     const bool masked = item.mat->alpha == AlphaMode::Mask;
                     const bool fading = item.lodThreshold < 1.0f;
-                    // A combined alpha-mask + LOD fade shader is not yet
-                    // available. Never render such geometry with a shader
-                    // that only implements one of the discard conditions.
-                    if (masked && fading) continue;
-                    const auto pipeline = fading ? feedbackLodModelPipeline_ :
+                    const auto pipeline = masked && fading ?
+                        feedbackMaskedLodModelPipeline_ :
+                        fading ? feedbackLodModelPipeline_ :
                         masked ? feedbackMaskedModelPipeline_ : feedbackModelPipeline_;
                     if (!pipeline.valid()) continue;
                     device.setPipeline(pipeline);
                     device.setVertexBuffer(item.model->vb);
                     device.setIndexBuffer(item.model->ib);
                     if (fading) {
-                        if (!feedbackLodModelBinder_ ||
-                            !feedbackLodModelBinder_(device,*item.model,
+                        const auto& lodBinder = masked ?
+                            feedbackMaskedLodModelBinder_ : feedbackLodModelBinder_;
+                        if (!lodBinder ||
+                            !lodBinder(device,*item.model,
                                 *item.prim,*item.mat,item.world,
                                 item.lodThreshold,item.lodInvert))
                             return false;
@@ -663,6 +678,8 @@ private:
     FeedbackModelBinder feedbackMaskedModelBinder_;
     gfx::PipelineHandle feedbackLodModelPipeline_;
     FeedbackLodBinder feedbackLodModelBinder_;
+    gfx::PipelineHandle feedbackMaskedLodModelPipeline_;
+    FeedbackLodBinder feedbackMaskedLodModelBinder_;
     RTSCamera cam_;
     mat4 viewProj_, lightViewProj_;
     float3 camPos_;
