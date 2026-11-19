@@ -637,3 +637,16 @@ CI if it remains queued or cancelled.
 - Never reuse high-slot GLSL variants on a device with fewer
   addressable textures, and do not claim Metal ICB resource-table
   support. C++/MSL/GL/Vulkan builds remain NOT RUN.
+
+
+### Model Shader Graph pipeline cache identity — Stage 10U
+
+- `Renderer3D::ModelShaderKey` requires equality across GLSL/MSL
+  fragment+vertex sources, texture paths, material outputs, VT flag,
+  shader domain and quality selector, not only the number of
+  authored source textures. Avoid weakening this comparison when
+  extending the VT resource ABI or Metal ICB grouping.
+- GPU material state hashing is a prefilter, not a substitute for
+  exact resource/version equality. Keep resource lifetime checks
+  at execution after cache lookup.
+- Native renderer builds/GLSL/MSL compilers and GPU parity NOT RUN.
