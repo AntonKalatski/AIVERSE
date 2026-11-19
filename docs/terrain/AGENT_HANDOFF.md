@@ -3663,3 +3663,31 @@ cmake --build build/terraweave-qa --parallel 4 --target aiverse_gpu_timing_route
 ctest --test-dir build/terraweave-qa --output-on-failure -R '^gpu_timing_router$'
 ```
 Then configure a **separate** `build/terraweave-integration` with `-DAIVERSE_BUILD_CLIENT=ON -DAIVERSE_BUILD_FPS_CLIENT=ON -DAIVERSE_BUILD_EDITOR=ON -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_TOOLS=OFF -DAIVERSE_BUILD_SERVER=OFF -DAIVERSE_BUILD_HEADLESS=OFF -DAIVERSE_FBX=OFF`; build `aiverse_client aiverse_fps_client aiverse_editor aiverse_terraweave_editor_test`; run CTest `terraweave_editor`. Record exact first C++/link error and fix feature-branch source only. After native integration, run real Metal graphics screenshot/performance and inspect GPU timing behavior; do not infer real GPU correctness from fake backend tests. Keep PR Draft.
+
+
+## Stage 43 QA follow-up — CMake cache did not contain the new GPU router target (2026-11-19)
+
+**Actual tester output:** after successful `git fetch origin feature/terraweave` and `git pull --ff-only` (`Already up to date`), the command `cmake --build build/terraweave-qa --parallel 4 --target aiverse_gpu_timing_router_test` stopped with `make: *** No rule to make target 'aiverse_gpu_timing_router_test'. Stop.`. The following `ctest --test-dir build/terraweave-qa -R '^gpu_timing_router$'` printed `No tests were found!!!`.
+
+**Diagnosis, bounded to observed evidence:** GitHub branch source inspection confirms that `CMakeLists.txt` registers the new executable and CTest when `AIVERSE_BUILD_TESTS=ON` and `NOT EMSCRIPTEN`, and `tests/gpu_timing_router_test.cpp` exists. The local `build/terraweave-qa` build tree therefore does not currently contain that target: it has not been regenerated for this source/configuration, or its cache disables tests, or it belongs to a different CMake source root. This is **NOT** a compiler failure, failing assertion, or evidence of a source defect. The exact local CMake cache was not provided and the precise cause among these alternatives was not confirmed. Separate NEREID `ctest-full exit=0` applies to NEREID only.
+
+**Corrected non-destructive Mac Studio invocation** (new isolated build tree, preserving the prior 9/9 CPU-tested tree and untouched shared main worktree):
+```sh
+cd ~/Projects/AIVERSE-terraweave-qa
+git fetch origin feature/terraweave
+git pull --ff-only origin feature/terraweave
+cmake -S . -B build/terraweave-router-qa \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_BUILD_EDITOR=OFF \
+  -DAIVERSE_BUILD_CLIENT=OFF \
+  -DAIVERSE_BUILD_FPS_CLIENT=OFF \
+  -DAIVERSE_BUILD_SERVER=OFF \
+  -DAIVERSE_BUILD_HEADLESS=OFF \
+  -DAIVERSE_BUILD_TOOLS=OFF \
+  -DAIVERSE_FBX=OFF
+cmake --build build/terraweave-router-qa --parallel 4 --target aiverse_gpu_timing_router_test
+ctest --test-dir build/terraweave-router-qa --output-on-failure -R '^gpu_timing_router$'
+```
+
+**Status:** Source read-back verified; no code fix needed yet; native execution of the new test remains **NOT RUN**. Record a real compiler error or CTest assertion if either appears after this fresh configuration. Do not mark Stage43 passed prematurely. PR #24 stays Draft.
