@@ -53,6 +53,9 @@ public:
             return nereidWater_.currentForInteractionWater(
                 waterId,{fixed(x),fixed(y),fixed(z)});
         });
+        ripples_.applyVisualWind(deltaSeconds,visualWind_.east,
+                                visualWind_.north,visualWind_.gust,
+                                visualWind_.coupling);
     }
     void setNereidVisualWind(NereidVisualWind wind) {
         visualWind_=normalizeNereidWind(wind);
