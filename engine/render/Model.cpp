@@ -571,6 +571,8 @@ void prepareModelUpload(Model& m) {
 
 bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
     const bool hasCpuVertices = !m.vertices.empty();
+    const bool needsGpuBuffers = hasCpuVertices || !m.indices.empty() ||
+        m.vb.valid() || m.ib.valid() || bool(m.geometryPoolPage);
     // Recover an incomplete previous standalone upload without mistaking its
     // orphan VB/IB for a fully initialized Model. A shared-page Model always
     // acquires both handles together and must be released by its owner.
@@ -636,7 +638,7 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
     // Evaluate against the original CPU upload request: keepCpu=false
     // clears source vectors, which must never turn a GPU allocation failure
     // into a spurious success.
-    return !hasCpuVertices || (m.vb.valid() && m.ib.valid());
+    return !needsGpuBuffers || (m.vb.valid() && m.ib.valid());
 }
 
 int addImage(gfx::Device& dev, Model& m, Image img) {
