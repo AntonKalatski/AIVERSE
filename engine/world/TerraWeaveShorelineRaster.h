@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
+#include <limits>
 #include <map>
 #include <optional>
 #include <stdexcept>
@@ -64,6 +65,9 @@ inline lib::nereid::ShoreSoil biomeShoreSubstrate(Biome biome){
 
 namespace shore_detail {
 inline int64_t cm(Fixed y){
+    if(y.raw>std::numeric_limits<int64_t>::max()/100 ||
+       y.raw<std::numeric_limits<int64_t>::min()/100)
+        throw std::out_of_range("NEREID water elevation outside TerraWeave shoreline range");
     const int64_t scaled=y.raw*100;
     return scaled>=0 ? (scaled+Fixed::kOne/2)/Fixed::kOne
                      : (scaled-Fixed::kOne/2)/Fixed::kOne;
