@@ -1,5 +1,6 @@
 #include "engine/character/vivid/HumanCreatorSession.h"
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <stdexcept>
 #include <string>
@@ -38,6 +39,24 @@ void test() {
     req(!second.loadJson(aiverse::Json::parse(R"({"version":100})"),&error) &&
         second.dna().toJson()==session.dna().toJson(),
         "creator invalid DNA replaced last-good profile");
+    // Failure to replace a destination MUST leave the last-good user
+    // data intact. A directory target makes rename fail on every platform,
+    // even where ordinary file replacement by rename is supported.
+    const auto protectedDir=std::filesystem::temp_directory_path()/
+        "aiverse-vivid-human-creator-protected";
+    std::filesystem::create_directories(protectedDir);
+    const auto sentinel=protectedDir/"last-good-dna.json";
+    {
+        std::ofstream out(sentinel,std::ios::binary|std::ios::trunc);
+        out<<"{\\\"preserve\\\":true}";
+    }
+    req(!session.saveFile(protectedDir.string(),&error) &&
+        std::filesystem::is_directory(protectedDir) &&
+        std::filesystem::exists(sentinel),
+        "failed DNA replace destroyed the existing destination");
+    std::filesystem::remove(protectedDir.string()+".vivid.tmp");
+    std::filesystem::remove(sentinel);
+    std::filesystem::remove(protectedDir);
     std::filesystem::remove(file);
 }
 }
