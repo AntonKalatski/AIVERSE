@@ -240,7 +240,7 @@ struct Fixture {
                 prefix = p;
             std::ofstream ppm(prefix + "-" + modeName(mode) + ".ppm",
                               std::ios::binary);
-            ppm << "P6\\n" << w << " " << h << "\\n255\\n";
+            ppm << "P6\n" << w << " " << h << "\n255\n";
             for (size_t pos = 0; pos < rgba.size(); pos += 4)
                 ppm.write(reinterpret_cast<const char*>(rgba.data()+pos), 3);
             if (!ppm) {
