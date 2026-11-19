@@ -588,7 +588,8 @@ void prepareModelUpload(Model& m) {
     m.uploadPrepared = true;
 }
 
-bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
+bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
+                 bool publishSharedTextures) {
     if (!m.vertices.empty() && !m.vb.valid()) {
         prepareModelUpload(m);
         if (!uploadModelToGeometryPool(dev, m)) {
@@ -599,7 +600,17 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
         }
     }
     for (auto& img : m.images) {
-        if (img.textureCache) img.textureCache->upload(dev, img); else uploadImage(dev, img);
+        if(img.textureCache && publishSharedTextures) {
+            img.textureCache->upload(dev,img);
+        } else if(img.textureCache && img.textureCache->borrowResident(img)) {
+            // Existing shared lease: a speculative model never owns this GPU texture.
+        } else {
+            // Missing from shared GPU residency: create a dedicated
+            // transaction-owned image. Rollback releases it with the Model
+            // behind a genuine completion token, never mutating gpu_.
+            if(!publishSharedTextures)img.textureCache.reset();
+            uploadImage(dev,img);
+        }
         if (!keepCpu) { img.rgba.clear(); img.rgba.shrink_to_fit(); img.compressed.reset(); img.sharedRgba.reset(); }
     }
     // morph deltas of every primitive in one float texture: 2 texels (position, normal) per vertex and target
