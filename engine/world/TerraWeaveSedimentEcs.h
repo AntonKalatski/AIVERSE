@@ -61,7 +61,7 @@ inline EcsSedimentTransportResult transportNereidBankSediment(
                 throw std::length_error("NEREID sediment ECS bank budget");
             samples.push_back({
                 binding.vertex.x,binding.vertex.z,
-                bank->soil.suspendedCm,transport->carryMilliCm,
+                bank->soil.suspendedCm,transport->carryMicroCm,
                 bank->wetContactPermille,contact->sample.flow,
                 contact->sample.body});
         });
@@ -82,7 +82,7 @@ inline EcsSedimentTransportResult transportNereidBankSediment(
             throw std::logic_error(
                 "NEREID sediment bank ECS components disappeared");
         soil->soil.suspendedCm=cell.suspendedCm;
-        fraction->carryMilliCm=cell.carryMilliCm;
+        fraction->carryMicroCm=cell.carryMicroCm;
         fraction->lastTransportTick=tick;
     }
     return {
