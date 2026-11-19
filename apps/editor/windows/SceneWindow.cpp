@@ -630,6 +630,14 @@ private:
                 ImGui::Text("Live entries: %zu | Evicted: %llu",
                             staticCache.live,
                             (unsigned long long)staticCache.evicted);
+                const auto modelEligibility = ed.renderer().staticEligibilityStats();
+                ImGui::Text("Model eligibility: %llu reused / %llu classified",
+                            (unsigned long long)modelEligibility.hits,
+                            (unsigned long long)modelEligibility.misses);
+                ImGui::Text("Eligibility entries: %zu | Evicted: %llu",
+                            modelEligibility.live,
+                            (unsigned long long)modelEligibility.evicted);
+                ImGui::TextDisabled("Static model traits follow geometryRevision; draw eligibility stays live.");
                 ImGui::TextDisabled("Caches bind transforms, not draw commands or camera-dependent LOD.");
                 ImGui::TextDisabled("Asset edits need cache invalidation; benchmark with the same view.");
                 ImGui::TreePop();
