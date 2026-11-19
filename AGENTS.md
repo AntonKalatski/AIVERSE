@@ -37,21 +37,35 @@ re-reading the entire chat or trusting unverifiable status claims.
 
 **Active Metal batching/performance work (2026-11-17):** Before changing the renderer, Scene viewport, GPU pooling, RTS scene building, or macOS frame loop, read [docs/metal-batching-agent-handoff.md](docs/metal-batching-agent-handoff.md), especially its latest continuation section. It records actual Apple Silicon 2×2/4×4 road-merge tests, CPU profile gains, draw-call visualisation limitations, required flags, the Metal ICB crash gate, and the pending incremental scene-cache work. Distinguish direct/indirect GPU submissions from scene objects and per-material primitives. Keep unsafe experimental ICB disabled by default.
 
-**Incremental static CPU render cache and packet replay (2026-11-19, opt-in):**
-Engine renderer has experimental per-`persistentId` rigid transform caching
-(`AIVERSE_PERSISTENT_CPU_MODEL_CACHE=1`) and an independent revisioned
-`ModelItem` packet replay mode (`AIVERSE_PERSISTENT_CPU_PACKETS=1`).
-Packet replay additionally requires explicit nonzero
-`ModelDraw::staticPacketRevision` advanced on caller-owned in-place
-appearance changes; no RTS/FPS host is enrolled by default. Read
-[docs/agent-handoffs/incremental-static-model-cache-2026-11-19.md](docs/agent-handoffs/incremental-static-model-cache-2026-11-19.md)
-before touching `Renderer3D::drawModel`, asset reload or static batching.
-Do not enable either mode by default until Mac A/B + correctness.
-Invalidate both caches on asset reload and call `Model::markGeometryChanged()`
-after in-place bind/geometry changes. Camera culling, depth, dynamic LOD and
-GPU draw submissions remain per-frame; static packets intentionally decline
-LOD/skin/morph/baked GI, mutable materials and other unsafe states.
+**Incremental static CPU cache, LOD-aware packets and ECS presentation (2026-11-19, opt-in):**
+The common `engine/render/Renderer3D` owns experimental per-`persistentId`
+transform reuse (`AIVERSE_PERSISTENT_CPU_MODEL_CACHE=1`) and immutable
+`ModelItem` packet reuse (`AIVERSE_PERSISTENT_CPU_PACKETS=1`). The packet
+requires nonzero `ModelDraw::staticPacketRevision`; it validates resolved
+GPU material state on each hit, including native/RTS per-draw material copies,
+and remaps the material pointer by index. A pointer-stable material mutation
+does not silently reuse the previous GPU material state. Runtime rigid LOD
+is reselected for the current camera and shadow; a changed LOD rebuilds and
+crossfade frames do not use the cache. Animated, skinned, morphed, vertex-
+displaced, baked-GI, mutable-node and cluster models fall back as before.
+`RtsView` opts eligible stationary scenery in at the host boundary, but no
+packet cache runs without the global experimental flag.
 
+`engine/render/EcsStaticModelRender.h` provides the **shared genre-independent
+ECS presentation adapter** using only integer asset/revision state in the ECS
+component and the existing `WorldTransform`; model resolution and namespaced
+nonzero persistent draw IDs are caller-owned. Native FPS, RTS and other projects
+can compose this view without including either genre module. It must run after
+SceneHierarchy's transform update barrier, never in deterministic simulation.
+
+Before editing this feature, read
+[docs/agent-handoffs/incremental-static-model-cache-2026-11-19.md](docs/agent-handoffs/incremental-static-model-cache-2026-11-19.md),
+check current branch/PR #34 and coordinate changes to the shared renderer.
+Do **not** enable production defaults until compilation, cross-platform
+visual checks and same-scene Mac A/B. Call `Model::markGeometryChanged()` for
+in-place geometry/hierarchy edits; `Renderer3D::invalidateStaticModelCaches()`
+before reload/unload. Camera culling, dynamic LOD decisions, sorting and
+GPU submissions still happen each render frame.
 
 ## Genre-independent ECS mechanics contract (2026-11-18)
 
