@@ -94,20 +94,42 @@ int main() {
     desc.mipLevels=2;
     desc.format=PixelFormat::RGBA8;
     desc.filter=Filter::Nearest;
-    auto atlas=dev->createTexture(desc);
-    check(atlas.valid(),"create 2-layer, 2-mip GLES3 texture");
-    if(!atlas.valid())return 1;
+    // Deliberately dirty all unpack states BEFORE resource allocation.
+    // An unsafe glTexImage3D would misinterpret null as offset zero in this
+    // undersized bound PBO, and a region upload could apply SKIP_* offsets.
     GLuint sentinel=0,pbo=0;
     glGenTextures(1,&sentinel);
     glBindTexture(GL_TEXTURE_2D_ARRAY,sentinel);
     glGenBuffers(1,&pbo);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER,pbo);
-    glBufferData(GL_PIXEL_UNPACK_BUFFER,256,nullptr,GL_STREAM_DRAW);
+    glBufferData(GL_PIXEL_UNPACK_BUFFER,4,nullptr,GL_STREAM_DRAW);
     glPixelStorei(GL_UNPACK_ALIGNMENT,8);
+    glPixelStorei(GL_UNPACK_ROW_LENGTH,7);
+    glPixelStorei(GL_UNPACK_IMAGE_HEIGHT,7);
+    glPixelStorei(GL_UNPACK_SKIP_PIXELS,1);
+    glPixelStorei(GL_UNPACK_SKIP_ROWS,1);
+    glPixelStorei(GL_UNPACK_SKIP_IMAGES,1);
     GLint originalTexture=0,originalPbo=0,originalAlign=0;
     glGetIntegerv(GL_TEXTURE_BINDING_2D_ARRAY,&originalTexture);
     glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING,&originalPbo);
     glGetIntegerv(GL_UNPACK_ALIGNMENT,&originalAlign);
+    auto statePreserved=[&]() {
+        GLint tex=0,buffer=0,align=0,row=0,img=0,px=0,rows=0,imgs=0;
+        glGetIntegerv(GL_TEXTURE_BINDING_2D_ARRAY,&tex);
+        glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING,&buffer);
+        glGetIntegerv(GL_UNPACK_ALIGNMENT,&align);
+        glGetIntegerv(GL_UNPACK_ROW_LENGTH,&row);
+        glGetIntegerv(GL_UNPACK_IMAGE_HEIGHT,&img);
+        glGetIntegerv(GL_UNPACK_SKIP_PIXELS,&px);
+        glGetIntegerv(GL_UNPACK_SKIP_ROWS,&rows);
+        glGetIntegerv(GL_UNPACK_SKIP_IMAGES,&imgs);
+        return tex==originalTexture && buffer==originalPbo && align==originalAlign
+            && row==7 && img==7 && px==1 && rows==1 && imgs==1;
+    };
+    auto atlas=dev->createTexture(desc);
+    check(atlas.valid(),"create 2-layer, 2-mip GLES3 texture with dirty PBO");
+    check(statePreserved(),"allocation restores all unpack PBO/skip/row state");
+    if(!atlas.valid())return 1;
     struct Sample {int size,mip,layer,pitch;std::array<uint8_t,4> color;};
     const std::array<Sample,4> samples{{
         {4,0,0,20,{17,31,53,255}},
@@ -128,12 +150,7 @@ int main() {
         upload.data=src.data();
         check(dev->updateTextureRegion(atlas,upload),
               "GLES3 padded row array layer/mip upload");
-        GLint binding=0,buffer=0,align=0;
-        glGetIntegerv(GL_TEXTURE_BINDING_2D_ARRAY,&binding);
-        glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING,&buffer);
-        glGetIntegerv(GL_UNPACK_ALIGNMENT,&align);
-        check(binding==originalTexture && buffer==originalPbo &&
-              align==originalAlign,"upload restores texture/PBO/unpack state");
+        check(statePreserved(),"upload restores texture/PBO/all unpack pixel-store state");
     }
     // Readback uses the production RHI FBO/PBO path, not an independent copy
     // of the texture data or the upload code.
