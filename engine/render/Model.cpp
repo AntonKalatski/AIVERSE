@@ -18,6 +18,8 @@
 #include <cstring>
 #include <cmath>
 #include <stdexcept>
+#include <limits>
+#include <vector>
 
 // stb_image with static linkage: the UI layer has its own copy, both may end up in one binary.
 #define STB_IMAGE_STATIC
@@ -397,7 +399,9 @@ void uploadImage(gfx::Device& dev, Image& img) {
         const auto& pixels = img.sharedRgba ? *img.sharedRgba : img.rgba;
         const size_t w0 = img.width > 0 ? size_t(img.width) : 0;
         const size_t h0 = img.height > 0 ? size_t(img.height) : 0;
-        if (!w0 || !h0 || w0 > std::numeric_limits<size_t>::max()/h0 ||
+        if (!w0 || !h0 || w0 > (size_t(1) << 20) ||
+            h0 > (size_t(1) << 20) ||
+            w0 > std::numeric_limits<size_t>::max()/h0 ||
             w0*h0 > std::numeric_limits<size_t>::max()/4u ||
             pixels.size() != w0*h0*4u)
             return; // No silent full-resolution upload on an invalid VT source.
