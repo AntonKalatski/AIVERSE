@@ -2733,6 +2733,21 @@
       "runtime": "header",
       "linkDependencies": ["aiverse_engine"],
       "packageDependencies": ["nereid-water"]
+    },
+    {
+      "id": "nereid-vortices",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "experimental",
+      "source": "libraries/include/aiverselib/water/NereidVortices.h",
+      "skill": "skills/gameplay/aiverse-nereid-water/SKILL.md",
+      "summary": "NEREID deterministic bounded vortex/eddy currents for water contacts and visuals",
+      "notes": "Optional per-water body WaterVortexFieldComponent, fixed-point additive swirl and radial current with shared reference/indexed sampling. Tests deferred.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_nereid_vortices",
+      "runtime": "header",
+      "linkDependencies": ["aiverse_engine"],
+      "packageDependencies": ["nereid-water"]
     }
   ]
 }
