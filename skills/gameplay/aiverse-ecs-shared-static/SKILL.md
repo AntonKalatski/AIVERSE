@@ -95,3 +95,31 @@ entities, a separate preview ECS World, deterministic importer order,
 alias mapping revision conflicts, snapshot and v10 save/restore.
 Record the actual compiler and CTest output in
 `docs/agent-handoffs/ecs-shared-static-stage3-2026-11-19.md`.
+
+## Real SceneLoadCoordinator integration (Stage 4, 2026-11-19)
+
+Use `engine/scene/PrefabStaticSceneBinding.h` from the isolated
+`feature/ecs-static-prefab-scene-integration` branch. The bridge
+converts `PrefabStaticCatalog<T>` into a
+`SceneLoadCoordinator::SpawnPrefab` callback. Bind the immutable
+catalog and register both Scene and prefab schemas in
+`GameModule::setup`, then use the callback for deterministic
+scene-activation entity creation. Immutable table is external to ECS,
+and survives additive scene unload while other scenes/Worlds reference it.
+
+Use `MissingPrefabConfig::Reject` for required config domains, or
+`Skip` for optional typed domains and compose spawners through
+`PrefabSceneSpawnChain` in stable order. Only write ordinary
+per-entity components during instance initialization; never edit the
+shared/static T payload. On rollback, invalidate scene tickets and
+rehydrate resource leases WITHOUT re-spawning static refs.
+
+The actual CTest integration source is
+`tests/ecs_static_scene_integration_test.cpp`, target
+`aiverse_ecs_static_scene_integration_test`. It spans real
+`SceneRuntime`, `SceneLoadCoordinator`, two ECS Worlds, persistent
+additive scenes, unload, replace, failure/cancel, native save/COW
+and static alias mismatch. **The combined integration target has
+not yet been compiled/run natively**. Read handoff
+`docs/agent-handoffs/ecs-static-scene-stage4-2026-11-19.md` before
+continuation. Keep the original feature branches intact.
