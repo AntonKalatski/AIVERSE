@@ -374,6 +374,46 @@ int main(){
     assert(device.destroyed==oldDestroyed+2);
     assert(device.live.empty());
 
+    // Stage 116: one owner handles different active render-target shapes:
+    // shadow depth only, SSR color+depth and water reflection color+depth.
+    // Each group is created before old handles are retired, and the GPU
+    // completion token—not elapsed frames—authorizes destruction.
+    device.failed=false;device.complete=false;device.idle=false;
+    targetDesc.format=gfx::PixelFormat::Depth;
+    const auto oldShadow=device.createTexture(targetDesc);
+    targetDesc.format=gfx::PixelFormat::RGBA8;
+    const auto oldSceneColor=device.createTexture(targetDesc);
+    targetDesc.format=gfx::PixelFormat::Depth;
+    const auto oldSceneDepth=device.createTexture(targetDesc);
+    targetDesc.format=gfx::PixelFormat::RGBA16F;
+    const auto oldReflectionColor=device.createTexture(targetDesc);
+    targetDesc.format=gfx::PixelFormat::Depth;
+    const auto oldReflectionDepth=device.createTexture(targetDesc);
+    const int beforeMulti=device.destroyed;
+    targets.retire(oldShadow,{});
+    targets.retire(oldSceneColor,oldSceneDepth);
+    targets.retire(oldReflectionColor,oldReflectionDepth);
+    assert(targets.pendingPairs()==3);
+    assert(device.live.size()==5);
+    assert(!targets.collect());
+    assert(device.destroyed==beforeMulti);
+    device.complete=true;
+    assert(targets.collect());
+    assert(targets.pendingPairs()==0);
+    assert(device.destroyed==beforeMulti+5);
+    assert(device.live.empty());
+
+    // A failed partial two-attachment allocation still enters the same
+    // fenced queue with only its valid first handle.
+    device.complete=false;
+    const auto orphanColor=device.createTexture(targetDesc);
+    targets.retire(orphanColor,{});
+    assert(!targets.collect());
+    assert(device.live.contains(orphanColor.id));
+    device.complete=true;
+    assert(targets.collect());
+    assert(device.live.empty());
+
     epoch.retire();
     bool stale=false;
     try {
