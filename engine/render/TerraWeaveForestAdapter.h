@@ -10,6 +10,7 @@
 #include "engine/render/Renderer3D.h"
 #include "engine/world/TerraWeaveFlora.h"
 #include "engine/world/TerraWeavePhenology.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <map>
