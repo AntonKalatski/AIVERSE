@@ -493,15 +493,17 @@ void killedEndpointRecoversQueuedJournal() {
         // when its authoritative checkpoint has also been restored.
         auto restored=make();
         CHECK(restored->deserialize(sim->serialize(),&error));
-        LoopbackAdminEndpoint again(journalPath);
-        const bool restarted=again.open(0,kEdit,lookup,reader,writer,&error);
-        CHECK(restarted);
-        if(restarted) {
-            again.afterTick(*restored);
-            CHECK(again.gateway().entries().size()==1);
-            CHECK(again.gateway().entries().begin()->second.receipt.result==Result::Applied);
-            CHECK(restored->world().resourceConst<FieldRuntimeState>()->revision==1);
-        }
+        {
+            LoopbackAdminEndpoint again(journalPath);
+            const bool restarted=again.open(0,kEdit,lookup,reader,writer,&error);
+            CHECK(restarted);
+            if(restarted) {
+                again.afterTick(*restored);
+                CHECK(again.gateway().entries().size()==1);
+                CHECK(again.gateway().entries().begin()->second.receipt.result==Result::Applied);
+                CHECK(restored->world().resourceConst<FieldRuntimeState>()->revision==1);
+            }
+        } // release lock before deleting journal directory
     }
     std::filesystem::remove_all(dir);
 }
