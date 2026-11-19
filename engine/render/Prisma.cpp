@@ -172,6 +172,10 @@ void Prisma::retireView(uint64_t id) {
         for (auto& h : exposure->second.history) retireTarget(h);
         exposureViews_.erase(exposure);
     }
+    if (auto it = temporalViews_.find(id); it != temporalViews_.end()) {
+        for (auto& h : it->second.history) retireTarget(h);
+        temporalViews_.erase(it);
+    }
     motionViews_.erase(id); // only matrix state + borrowed GPU handles
     viewDimensions_.erase(id); // the shared size cache itself stays resident
     // If the current presentation view was closed, keep its stable ID for
@@ -213,6 +217,7 @@ Prisma::RetirementStats Prisma::retirementStats() const {
     stats.retiredSizes = retiredSizes_.size();
     stats.exposureViews = exposureViews_.size();
     stats.motionViews = motionViews_.size();
+    stats.temporalViews = temporalViews_.size();
     stats.fencedTextures = retiredTargets_.pendingCount();
     stats.unfencedTextures = unfencedTargets_.size();
     stats.lastGpuCompletedFence = dev_ ? dev_->gpuCompletedFence() : 0;
@@ -418,6 +423,9 @@ void Prisma::shutdown() {
         for (auto& history : view.history) release(history);
     }
     exposureViews_.clear();
+    for (auto& [id, view] : temporalViews_)
+        for (auto& h : view.history) release(h);
+    temporalViews_.clear();
     motionViews_.clear();
     viewDimensions_.clear();
     for (auto& [p, l] : luts_) release(l.tex);
@@ -530,6 +538,8 @@ void Prisma::resetMotionHistory(uint64_t id) {
     ++view.cutEpoch;
     view.objectVelocity = {};
     view.reactiveMask = {};
+    if (auto it = temporalViews_.find(id); it != temporalViews_.end())
+        it->second.valid = false;
 }
 void Prisma::resetMotionHistory() {
     for (auto& [id, view] : motionViews_) {
@@ -538,6 +548,7 @@ void Prisma::resetMotionHistory() {
         view.objectVelocity = {};
         view.reactiveMask = {};
     }
+    for (auto& [id, view] : temporalViews_) view.valid = false;
 }
 
 void Prisma::resetAutoExposure() {
