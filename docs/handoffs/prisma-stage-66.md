@@ -159,3 +159,51 @@ image/readback/fences under its actual GPU, and platform
 GLES/Vulkan/WebGL must be tested when runners/devices
 are available. Never claim these happened based on
 a successful Linux or hosted macOS CTest.
+
+## Stage 66 continuation — compiler-backed source regression tests
+
+**Additional source commit:** `aa262d6b44546985429c0cda0abf0338f270c693`,
+`tests/render/prisma_graph.cpp`.
+
+Added two functions to the existing registered `prisma_graph`
+CTest executable (already declared in CMake; no new build target):
+
+- `reactiveShaderVariantContract()` invokes
+  `reactive_shaders::animatedVertexGlsl` and
+  `animatedMsl` with the actual unchanged
+  `motion_shaders::kDeformed* / kBaked*` source
+  (skinned/morph + baked × GLSL + MSL), checking
+  all FOUR generated variants, current-deformed
+  coordinates, UV, vertex-alpha, preserved prior
+  motion output, and fail-closed behavior when
+  template source anchors do not match. It also
+  checks animated reactive alpha-cutout, dissolve,
+  and Actor Reveal fragment source presence.
+- `compositeTextureLayoutContract()` exercises
+  the real C++ `PrismaCompositeTextureLayout::plan`
+  for 0–4 Shader Graph inputs both with and
+  without GPU Auto Exposure, including the
+  TEX8/TEX9 transition, 9/10 bound-slot count
+  and rejection of 5 input textures.
+
+**Actually performed for this continuation:** GitHub
+readback of the test source and **11/11 static
+source-contract checks** of the committed test.
+These are NOT the CTest results. GitHub accepted
+a new push workflow run
+[44597082684](https://github.com/chromealex/AIVERSE/actions/runs/44597082684)
+for `aa262d6b44546985429c0cda0abf0338f270c693`.
+The prior run `44595377866` was **cancelled**
+automatically when source tests were added.
+The newest run was **queued** at the last observed
+check. No native C++ compile or GPU run can be
+claimed PASS at this point.
+
+The next agent MUST check the **latest** run ID,
+rather than relying on the originally queued one
+in section 2 above. The Linux/macOS runners have
+not begun running at the time recorded. Do not
+automatically retry or cancel these jobs merely
+to refresh documentation; no further source pushes
+are necessary until actual compiler feedback arrives.
+
