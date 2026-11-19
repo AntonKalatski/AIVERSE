@@ -5,6 +5,7 @@
 #include "RtsView.h"
 #include "engine/render/AnimationLod.h"
 #include "engine/view/View.h"
+#include "engine/view/AppearanceAuthoringService.h"
 #include "../RtsModule.h"
 
 #include <algorithm>
@@ -288,7 +289,8 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
             if(found==cache.end()){
                 if(cache.size()>=64)cache.erase(cache.begin());
                 AnimationCached compiled;
-                try{auto traits=animationTraits_;for(const auto& [name,trait]:control->graph->traits)traits[name]=trait;compiled.graph=AnimationGraph::compile(m,control->graph->definition,animationOperations_,traits);}
+                try{auto traits=animationTraits_;for(const auto& [name,trait]:control->graph->traits)traits[name]=trait;compiled.graph=view::AppearanceAuthoringService::compileGraph(
+                    m,control->graph->definition,read_,animationOperations_,traits);}
                 catch(const std::exception& e){compiled.error=e.what();}
                 found=cache.emplace(control->graph,std::move(compiled)).first;
             }
