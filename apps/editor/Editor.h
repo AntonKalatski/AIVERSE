@@ -72,6 +72,8 @@ struct Viewport {
     float pointsW = 0, pointsH = 0;   // logical size in the window
     float originX = 0, originY = 0;   // top-left on screen (points)
     bool hovered = false;
+    render::RenderDeviceLifetime::Lease gpuDeviceLease;
+    void setGpuDeviceLease(render::RenderDeviceLifetime::Lease lease) {gpuDeviceLease=std::move(lease);}
     int drawnFrame = -100;            // ImGui frame the owning window last drew it (hidden tab: stale)
     void ensure(gfx::Device& dev, int pw, int ph);
     void release(gfx::Device& dev);
