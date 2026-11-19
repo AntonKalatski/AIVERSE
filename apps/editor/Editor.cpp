@@ -46,6 +46,8 @@ FileReader projectReader(const std::string& dir) {
 // ============================ viewport ============================
 
 void Viewport::ensure(gfx::Device& dev, int pw, int ph) {
+    if(gpuDeviceLease.device() && !gpuDeviceLease.validFor(dev))
+        throw std::logic_error("Editor viewport GPU generation expired");
     pw = std::max(pw, 8); ph = std::max(ph, 8);
     if (pw == w && ph == h && color.valid()) return;
     release(dev);
@@ -61,6 +63,8 @@ void Viewport::ensure(gfx::Device& dev, int pw, int ph) {
 }
 
 void Viewport::release(gfx::Device& dev) {
+    if(gpuDeviceLease.device() && !gpuDeviceLease.validFor(dev))
+        throw std::logic_error("Editor viewport release GPU generation expired");
     if (color.valid()) dev.destroyTexture(color);
     if (depth.valid()) dev.destroyTexture(depth);
     color = depth = {};
@@ -68,6 +72,8 @@ void Viewport::release(gfx::Device& dev) {
 }
 
 void Viewport::image(gfx::Device& dev, float wPts, float hPts) {
+    if(gpuDeviceLease.device() && !gpuDeviceLease.validFor(dev))
+        throw std::logic_error("Editor viewport image GPU generation expired");
     ImVec2 p = ImGui::GetCursorScreenPos();
     originX = p.x; originY = p.y;
     pointsW = wPts; pointsH = hPts;
