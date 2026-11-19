@@ -10,6 +10,7 @@
 #include <memory>
 #include "../../../engine/platform/Platform.h"
 #include "RtsTerrainShaders.h"
+#include "../../../engine/render/GiCustomShaderSource.h"
 #include "RtsTerrainSurface.h"
 
 namespace aiverse::game {
@@ -169,7 +170,7 @@ void TerrainRenderer::shutdown(gfx::Device& dev) {
     cellTex_ = dynTex_ = splatTex_ = visionTex_ = white_ = flatN_ = gray_ = {};
     heightField_ = {};
     heightDirty_ = true;
-    for (int i = 0; i < 3; ++i) {
+    for (int i = 0; i < 12; ++i) {
         if (pipes_[i].valid()) dev.destroyPipeline(pipes_[i]);
         if (shaders_[i].valid()) dev.destroyShader(shaders_[i]);
         pipes_[i] = {}; shaders_[i] = {}; shaderFailed_[i] = false;
@@ -766,17 +767,41 @@ int TerrainRenderer::tierFor(const Renderer3D& r) const {
     return std::min(tier(r.materialQuality()), deviceTier);
 }
 
-gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant) {
+gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant, bool dynamicGi) {
     const int dbase = variant >= 3 ? 3 : 0;
     for (int tier = variant - dbase; tier >= 0; --tier) {
-        const int slot = dbase + tier;
+        const int slot = (dynamicGi ? 6 : 0) + dbase + tier;
         if (pipes_[slot].valid()) return pipes_[slot];
         if (shaderFailed_[slot]) continue;
         const std::string def = "#define TERRAIN_TIER " + std::to_string(tier) + "\n#define TERRAIN_DETAIL " + std::to_string(dbase ? 1 : 0) + "\n";
-        const std::string vs = def + shaders::kTerrainVS, fs = def + shaders::kTerrainFS, msl = def + shaders::kTerrainMSL;
+        const std::string vs = def + shaders::kTerrainVS;
+        std::string fs = def;
+        std::string msl = def + shaders::kTerrainMSL;
+        if (dynamicGi) {
+            // The base terrain pass already uses tex0..20. Place GI at tex21
+            // and only compile this permutation on a device with >=22 slots.
+            fs += render::giCustomGlslFunctions(render::GiCustomShaderMode::Single,21);
+            const std::string prelude=render::giCustomMslFunctions(
+                render::GiCustomShaderMode::Single);
+            const std::string namespaceMarker="using namespace metal;\n";
+            const size_t pos=msl.find(namespaceMarker);
+            const size_t lastTexture=msl.find("texture2d<float> tex20 [[texture(20)]]");
+            const size_t endArgs=lastTexture==std::string::npos ?
+                std::string::npos : msl.find(") {",lastTexture);
+            if (pos==std::string::npos || endArgs==std::string::npos) {
+                shaderFailed_[slot]=true;
+                continue;
+            }
+            msl.insert(endArgs,render::giCustomMslFragmentArguments(
+                render::GiCustomShaderMode::Single,21));
+            msl.insert(pos+namespaceMarker.size(),prelude);
+        }
+        fs += shaders::kTerrainFS;
         gfx::ShaderDesc sd;
         sd.glslVertex = vs.c_str(); sd.glslFragment = fs.c_str(); sd.msl = msl.c_str();
-        sd.uniformSlots = 4; sd.textureSlots = 21; sd.label = "terrain";   // tex18: height field (traced shadows); U3 + tex19/20: baked lightmap
+        sd.uniformSlots = dynamicGi ? 7 : 4;
+        sd.textureSlots = dynamicGi ? 22 : 21;
+        sd.label = dynamicGi ? "terrain GI" : "terrain";   // tex18: height field (traced shadows); U3 + tex19/20: baked lightmap
         shaders_[slot] = dev.createShader(sd);
         if (!shaders_[slot].valid()) {
             std::fprintf(stderr, "[terrain] tier %d%s shader: %s\n", tier, dbase ? " detail" : "", dev.lastError().c_str());
@@ -791,7 +816,7 @@ gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant) {
         p.attrs[3] = {3, gfx::VertexFormat::Float2, 28};
         p.attrCount = 4; p.stride = sizeof(TV);
         p.indexType = gfx::IndexType::UInt32;
-        p.label = "terrain";
+        p.label = dynamicGi ? "terrain GI" : "terrain";
         pipes_[slot] = dev.createPipeline(p);
         if (pipes_[slot].valid()) return pipes_[slot];
         shaderFailed_[slot] = true;
