@@ -2025,7 +2025,8 @@ if(AIVERSE_BUILD_STRATA)
     # Renderer3D/GlobalGeometryPool; no second Strata vertex allocator.
     add_library(aiverse_strata_portable STATIC
         engine/render/StrataPortableRender.cpp
-        engine/render/StrataIndexResidency.cpp)
+        engine/render/StrataIndexResidency.cpp
+        engine/render/StrataIndexPages.cpp)
     target_link_libraries(aiverse_strata_portable PUBLIC
         aiverse_strata_view aiverse_models)
     target_include_directories(aiverse_strata_portable PUBLIC
