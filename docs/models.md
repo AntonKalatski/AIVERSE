@@ -1094,3 +1094,31 @@ is no new gameplay authority, clip clock, save format, or GPU model
 ownership. **NOT RUN:** native build, real model LOD/skin/morph
 comparison, CTest, editor/RTS/FPS screenshots or sanitizers.
 [Stage 121 handoff](agent-handoffs/animation-stage121-universal-lod-attachments-2026-11-19.md).
+
+## Stage 122 — explicit skeleton/morph LOD correspondence
+
+For genre-neutral native C++ projects, optional
+`view::ModelLod::retarget` points to an immutable
+`view::ModelPoseRetarget` profile authored for the specific base
+and visual Models. `sourceNodeForVisual[i]` selects the source
+skeleton node driving visual node i, or -1 to preserve its bind
+pose. Its optional `sourceMorphForVisual[i][channel]` selects a
+source morph channel for that visual channel; initialize all
+unmapped entries to -1 before adding mappings. The validator
+rejects duplicate/invalid node mappings, incompatible ancestry,
+invalid morph slots or nonfinite translation scale.
+
+Retargeting computes source local T/R/S changes relative to
+the source rest pose and applies them to the LOD's own bind
+pose, then recomputes target Model world matrices; the visual
+uses its own skin, mesh geometry and inverse binds. This is
+not automatic inverse-kinematic/twist/body-proportion retargeting,
+and mapping correctness requires an authored profile. If the
+mapping is invalid or absent, the target remains in bind pose.
+The base MotionWeave graph and source-rig attachments continue
+to animate. FPS prepared character poses and eligible RTS LODs
+share the generic helper without a second graph update.
+
+This Stage 122 is **source-only** and has NOT been compiled,
+linked, GPU-tested, benchmarked or validated with real visual
+LOD assets. See [Stage 122 handoff](agent-handoffs/animation-stage122-rig-retarget-2026-11-19.md).
