@@ -4,9 +4,11 @@
 #pragma once
 
 #include "engine/render/Renderer3D.h"
+#include "ModelPoseRetarget.h"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <memory>
 #include <span>
 #include <string>
 #include <vector>
@@ -19,6 +21,10 @@ namespace aiverse::view {
 struct ModelLod {
     const render::Model* model=nullptr;
     float minDistance=0.f;
+    // Optional explicit target-bone -> source-bone mapping, authored by
+    // the LOD exporter. Without it, only exact compatible layouts can
+    // share the source pose; otherwise the LOD remains in bind pose.
+    std::shared_ptr<const ModelPoseRetarget> retarget;
 };
 
 inline bool validModelLods(std::span<const ModelLod> levels) noexcept {
