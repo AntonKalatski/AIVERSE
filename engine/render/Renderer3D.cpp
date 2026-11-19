@@ -380,6 +380,18 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     lights.renderMap();
 
 
+    // Virtual-texture feedback must run between render passes: the main
+    // scene pass stays open for UI and must never be interrupted.
+    // Skip when an asynchronous readback is outstanding; streaming
+    // completion/pumping is owned by the application frame coordinator.
+    if (feedbackPass_ && feedbackPass_->ready() &&
+        !feedbackPass_->pending() && !feedbackPass_->readyToSubmit() &&
+        feedbackMeshPipeline_.valid() && feedbackMeshBinder_) {
+        renderVirtualTextureFeedback(*feedbackPass_,
+                                     feedbackMeshPipeline_,
+                                     feedbackMeshBinder_);
+    }
+
     // ---- main pass (left open for the caller's UI; with a post hook: the hook's scene target)
     post_ = post && post->active() ? post : nullptr;
     postOut_ = screenPass;
