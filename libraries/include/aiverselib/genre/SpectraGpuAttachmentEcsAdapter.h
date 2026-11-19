@@ -6,6 +6,7 @@
 #include "EcsVfxPresentation.h"
 #include "engine/fx/SpectraGpuPoolWorld.h"
 #include <cstdint>
+#include <cmath>
 #include <functional>
 #include <map>
 #include <string>
@@ -29,7 +30,10 @@ public:
     // Pooled continuous effects MUST be explicitly configured by native game
     // presentation code. No genre-specific ECS fields or implicit emitters.
     bool bindEffect(std::string effect,PoolContinuousEmission emission) {
-        if(effect.empty() || emission.burstsPerSecond<0.f ||
+        if(effect.empty() || !std::isfinite(emission.burstsPerSecond) ||
+           !std::isfinite(emission.metresPerBurst) ||
+           !std::isfinite(emission.lifetimeSeconds) ||
+           emission.burstsPerSecond<0.f ||
            emission.burstsPerSecond>120.f ||
            emission.metresPerBurst<0.f || emission.metresPerBurst>1.e5f ||
            emission.lifetimeSeconds<0.f ||
@@ -103,7 +107,7 @@ public:
             // The old CPU SourceComponent supports scale, but the strict pooled
             // GPU billboard subset does not. Refuse silent size/velocity parity
             // loss rather than ignoring a non-unit authored multiplier.
-            if(want.scaleRaw!=1_fx.raw) {
+            if(want.scaleRaw!=(1_fx).raw) {
                 reason_="SpectraFX pooled ECS attachment requires unit scale: "+want.effect;
                 return false;
             }
@@ -161,6 +165,22 @@ public:
             return false;
         }
         attached_.clear();
+        reason_.clear();
+        return true;
+    }
+
+    // Use when presenter stops but the pool remains alive. Existing particles
+    // may age naturally (killLiving=false) or be explicitly invalidated.
+    // Must be called at a safe graphics phase for GPU selective kills.
+    bool detachAll(bool killLiving=false) {
+        for(auto it=attached_.begin();it!=attached_.end();) {
+            if(!pool_.stopSource(it->second.handle,killLiving) ||
+               !pool_.retireSource(it->second.handle)) {
+                reason_="SpectraFX ECS detachAll failed: "+pool_.reason();
+                return false;
+            }
+            it=attached_.erase(it);
+        }
         reason_.clear();
         return true;
     }
