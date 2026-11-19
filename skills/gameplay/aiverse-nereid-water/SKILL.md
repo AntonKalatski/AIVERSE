@@ -375,3 +375,35 @@ spray. Keep ECS force, geometry, presentation, Prisma and SpectraFX
 responsibilities separate. The owner requests features before tests;
 no builds/tests should be claimed PASS without execution. See the
 newest sections of `docs/nereid/HANDOFF.md`.
+
+## Stage 28 — visual wave advection and persistent SpectraFX cascade spray
+
+`WorldScene::advanceNereidRipples(dt)` now advects each visual
+ripple's world X/Z centre using the matching `WaterBodyComponent::flow`
+from the scene's copied NEREID water sources. Flow is clamped for
+presentation; there is **no ECS mutation**, new physics integrator or
+network side effect. If a matching source has disappeared the ripple
+continues to decay without advection. Genre-neutral and independent
+of PHYSIS.
+
+To add continuous spray at a waterfall's foot, include
+`engine/world/NereidCascadeSprayBridge.h` in a native project's
+presentation layer:
+```cpp
+world::NereidCascadeSprayBridge spray(particleSystem);
+spray.setGraph("fx/waterfall_spray",1.0f); // host-defined SpectraFX graph
+// Each presentation frame:
+spray.sync(worldScene);
+// On reset/rollback, after stopping the scene:
+spray.reset();
+```
+The bridge obtains a read-only `WorldScene::forEachNereidCascade`
+snapshot and maintains a bounded map of `FxHandle` per stable
+cascade ID. It calls the REAL `ParticleSystem::play/move/stop/kill`
+APIs; particle graph assets are not bundled or magically defined.
+The host owns the particle runtime and its rendering order. Spawning
+spray is optional and never modifies a water ECS component. See
+`docs/nereid/HANDOFF.md` for ownership/limits/next work.
+
+**Verification:** implementation only; compilation, GPU visuals and
+tests deferred by explicit user direction.
