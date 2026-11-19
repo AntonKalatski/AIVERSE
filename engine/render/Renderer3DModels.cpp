@@ -899,8 +899,13 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         mu.misc[0] = mt.alpha == AlphaMode::Mask ? mt.alphaCutoff : 0.0f;
         mu.misc[1] = float(int(mt.team)); mu.misc[2] = mt.teamStrength; mu.misc[3] = (mt.vertexColors ? 1.0f : 0.0f) + (mt.vertexOcclusion ? 2.0f : 0.0f) + (mt.vertexOcclusion && mt.backOcclusion ? 4.0f : 0.0f);
         mu.uv0[0] = mt.uvOffset.x; mu.uv0[1] = mt.uvOffset.y; mu.uv0[2] = mt.uvScale.x; mu.uv0[3] = mt.uvScale.y;
-        mu.uv1[0] = mt.uvRotation; mu.uv1[1] = mt.shading == ShadingModel::Unlit ? 1.0f : 0.0f;
-        mu.uv1[2] = mt.fixedShade.x; mu.uv1[3] = mt.fixedShade.y;
+        mu.uv1[0] = mt.uvRotation;
+        mu.uv1[1] = float(int(mt.shading));  // 0 PBR, 1 Unlit, 2 Skin, 3 Eye, 4 Hair
+        if (mt.shading == ShadingModel::Pbr || mt.shading == ShadingModel::Unlit) {
+            mu.uv1[2] = mt.fixedShade.x; mu.uv1[3] = mt.fixedShade.y;
+        } else {
+            mu.uv1[2] = mt.humanProfile.x; mu.uv1[3] = mt.humanProfile.y;
+        }
         mu.light[0] = mt.fixedLight.x; mu.light[1] = mt.fixedLight.y; mu.light[2] = mt.fixedLight.z; mu.light[3] = mt.fixedLight.w;
         if (phase != 0 && geometryMainView_ && (it.flags & kDrawActorReveal) && actorReveal.w > 0) {
             mu.reveal[0]=actorReveal.x;mu.reveal[1]=actorReveal.y;mu.reveal[2]=actorReveal.z;mu.reveal[3]=actorReveal.w;
