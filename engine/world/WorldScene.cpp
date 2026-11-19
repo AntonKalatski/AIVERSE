@@ -112,6 +112,17 @@ void WorldScene::setVegetationPhenology(terraweave::CanopyPhenology state) {
     // owner-thread WorldScene update. No mutable worker callback captures.
     vegetationPhenologyDirty_=bool(terraHorizon_);
 }
+void WorldScene::setVegetationWind(terraweave::ForestWindState wind) {
+    terraweave::validateForestWind(wind);
+    if(wind==vegetationWind_)return;
+    vegetationWind_=wind;
+    // Pure presentation: no near re-scatter, no Horizon atlas rebuild.
+    if(terraForest_)terraForest_->setWind(wind);
+}
+void WorldScene::setVegetationPresentationTick(uint64_t tick) {
+    vegetationPresentationTick_=tick;
+    if(terraForest_)terraForest_->setPresentationTick(tick);
+}
 std::shared_ptr<WorldScene::Prepared> WorldScene::prepare(Cell cell,const AssetReader& reader) {
     const auto& asset=assets_.chunks.at(cell);std::string text;
     if(!reader(asset.file,text))throw JsonError("world.scene: read/hash failure: "+asset.file);
