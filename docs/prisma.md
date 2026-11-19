@@ -1381,8 +1381,9 @@ unfenced quarantine. It never releases an in-flight texture based
 on the number of elapsed CPU frames.
 
 This explicit pressure-only wait is implemented with `glFinish()`
-on GL33/GLES3 (excluding WebGL), a queued Metal command-buffer
-completion barrier, and `vkQueueWaitIdle` on Vulkan. **These waits
+on GL33/GLES3 (excluding WebGL), waiting the last **actually
+committed** Metal command buffer (never the uncommitted buffer for the
+current frame), and `vkQueueWaitIdle` on Vulkan. **These waits
 are not performed every frame**; they can cause a visible one-time
 stall at memory pressure. The WebGL2 backend explicitly returns
 false because a portable synchronous idle barrier is not promised;
