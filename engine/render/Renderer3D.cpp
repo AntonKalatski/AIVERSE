@@ -153,6 +153,8 @@ void Renderer3D::shutdown() {
     if (objectMotionMaskedShader_.valid()) dev_->destroyShader(objectMotionMaskedShader_);
     if (objectMotionReactivePipeline_.valid()) dev_->destroyPipeline(objectMotionReactivePipeline_);
     if (objectMotionReactiveMeshPipeline_.valid()) dev_->destroyPipeline(objectMotionReactiveMeshPipeline_);
+    if (objectMotionReactiveCutoutPipeline_.valid()) dev_->destroyPipeline(objectMotionReactiveCutoutPipeline_);
+    if (objectMotionReactiveCutoutShader_.valid()) dev_->destroyShader(objectMotionReactiveCutoutShader_);
     if (objectMotionReactiveShader_.valid()) dev_->destroyShader(objectMotionReactiveShader_);
     objectMotionPipeline_ = {}; objectMotionShader_ = {};
     objectMotionInstancedPipeline_ = {}; objectMotionInstancedShader_ = {};
@@ -160,6 +162,7 @@ void Renderer3D::shutdown() {
     objectMotionBakedPipeline_ = {}; objectMotionBakedShader_ = {};
     objectMotionMaskedPipeline_ = {}; objectMotionMaskedShader_ = {};
     objectMotionReactivePipeline_ = {}; objectMotionReactiveShader_ = {};
+    objectMotionReactiveCutoutPipeline_ = {}; objectMotionReactiveCutoutShader_ = {};
     objectMotionReactiveMeshPipeline_ = {};
     if (objectMotionReactiveSkinPipeline_.valid()) dev_->destroyPipeline(objectMotionReactiveSkinPipeline_);
     if (objectMotionReactiveSkinShader_.valid()) dev_->destroyShader(objectMotionReactiveSkinShader_);
@@ -601,7 +604,10 @@ void Renderer3D::renderCurrentFrameReactiveMask(
         // reactive so these LOD boundaries cannot smear the background.
         const bool fade = (it.lodThreshold < 1.0f || it.lodInvert) &&
             it.mat->alpha == AlphaMode::Opaque;
-        return translucent || fade;
+        // Alpha-mask silhouettes (foliage/grilles) require precise material
+        // texture cutout; dissolving objects require object-space noise.
+        const bool cutout = it.mat->alpha == AlphaMode::Mask;
+        return translucent || fade || cutout || it.dissolve > 0.0f;
     };
     auto reactiveAnimatedEligible = [](const ModelItem& it) {
         if (!it.inView || !it.model || !it.prim || !it.mat ||
@@ -629,8 +635,12 @@ void Renderer3D::renderCurrentFrameReactiveMask(
     for (const auto& item : items_)
         meshReactiveNeeded |= meshReactiveEligible(item);
     bool rigidReactiveNeeded = false, animatedReactiveNeeded = false;
+    bool cutoutReactiveNeeded = false;
     for (const auto& it : modelItems_) {
-        rigidReactiveNeeded |= reactiveEligible(it);
+        const bool rigid = reactiveEligible(it);
+        rigidReactiveNeeded |= rigid;
+        cutoutReactiveNeeded |= rigid &&
+            (it.mat->alpha == AlphaMode::Mask || it.dissolve > 0.0f);
         animatedReactiveNeeded |= reactiveAnimatedEligible(it);
     }
     const bool reactiveNeeded = rigidReactiveNeeded ||
@@ -678,6 +688,37 @@ void Renderer3D::renderCurrentFrameReactiveMask(
             pipeline.colorFormat = gfx::PixelFormat::RGBA8;
             pipeline.label = "prisma motion reactive coverage";
             objectMotionReactivePipeline_ = dev_->createPipeline(pipeline);
+        }
+    }
+    // Dedicated rigid pass recreates the SAME material alpha cutout and
+    // object-space dissolve discard as normal ModelShaders. The simpler
+    // untextured shader remains for water and ordinary blended materials.
+    if (cutoutReactiveNeeded && !objectMotionReactiveCutoutShader_.valid()) {
+        gfx::ShaderDesc shader{};
+        shader.glslVertex = reactive_shaders::kCutoutVS;
+        shader.glslFragment = reactive_shaders::kCutoutFS;
+        shader.msl = reactive_shaders::kCutoutMSL;
+        shader.textureSlots = 2; // TEX0 scene depth, TEX1 model base alpha
+        shader.uniformSlots = 1;
+        shader.label = "prisma rigid alpha/dissolve reactive coverage";
+        objectMotionReactiveCutoutShader_ = dev_->createShader(shader);
+        if (objectMotionReactiveCutoutShader_.valid()) {
+            gfx::PipelineDesc pd{};
+            pd.shader = objectMotionReactiveCutoutShader_;
+            pd.attrs[0] = {0,gfx::VertexFormat::Float3,0};
+            pd.attrs[1] = {2,gfx::VertexFormat::Float2,
+                           uint32_t(offsetof(ModelVertex,uv))};
+            pd.attrs[2] = {4,gfx::VertexFormat::UByte4N,
+                           uint32_t(offsetof(ModelVertex,color))};
+            pd.attrCount = 3;
+            pd.stride = sizeof(ModelVertex);
+            pd.indexType = gfx::IndexType::UInt32;
+            pd.cull = gfx::CullMode::None; // alpha-cutout foliage may be two-sided
+            pd.depthTest = false; pd.depthWrite = false;
+            pd.blend = gfx::BlendMode::Screen;
+            pd.colorFormat = gfx::PixelFormat::RGBA8;
+            pd.label = shader.label;
+            objectMotionReactiveCutoutPipeline_ = dev_->createPipeline(pd);
         }
     }
     if (meshReactiveNeeded && !objectMotionReactiveMeshPipeline_.valid() &&
@@ -752,6 +793,7 @@ void Renderer3D::renderCurrentFrameReactiveMask(
     if (reactiveNeeded && history.reactive.valid() &&
         history.depth.valid() && sceneDepth.valid() &&
         (objectMotionReactivePipeline_.valid() ||
+         objectMotionReactiveCutoutPipeline_.valid() ||
          objectMotionReactiveSkinPipeline_.valid() ||
          objectMotionReactiveBakedPipeline_.valid() ||
          objectMotionReactiveMeshPipeline_.valid() ||
@@ -760,6 +802,10 @@ void Renderer3D::renderCurrentFrameReactiveMask(
             float mvp[16], params[4], lod[4];
         };
         static_assert(sizeof(ReactiveUniforms) == 96);
+        struct ReactiveCutoutUniforms {
+            float mvp[16], params[4], lod[4], uv0[4], uv1[4], maskInfo[4];
+        };
+        static_assert(sizeof(ReactiveCutoutUniforms) == 144);
         struct ReactiveMorphU {
             float currentW[8] = {}, previousW[8] = {};
             float info[4] = {}, info2[4] = {};
@@ -775,20 +821,55 @@ void Renderer3D::renderCurrentFrameReactiveMask(
         dev_->setViewport({0,0,w,h});
         dev_->setTexture(0,sceneDepth);
         for (const auto& it : modelItems_) {
-            if (!objectMotionReactivePipeline_.valid() || !reactiveEligible(it))
-                continue;
-            dev_->setPipeline(objectMotionReactivePipeline_);
+            if (!reactiveEligible(it)) continue;
+            const bool cutout = it.mat->alpha == AlphaMode::Mask;
+            const bool dissolve = it.dissolve > 0.0f;
+            const bool detailed = cutout || dissolve;
+            const auto pipeline = detailed ? objectMotionReactiveCutoutPipeline_ :
+                                             objectMotionReactivePipeline_;
+            if (!pipeline.valid()) { ++objectMotionStats_.rejected; continue; }
+            dev_->setPipeline(pipeline);
             const mat4 mvp = viewProj_ * it.world;
-            ReactiveUniforms u{};
-            std::memcpy(u.mvp,mvp.m,sizeof u.mvp);
-            u.params[0] = float(w); u.params[1] = float(h);
-            u.params[2] = 1.0f; // conservative coverage, not alpha parity
             const bool fade = it.lodThreshold < 1.0f || it.lodInvert;
-            u.lod[0] = it.lodThreshold;
-            u.lod[1] = it.lodInvert ? 1.0f : 0.0f;
-            u.lod[2] = fade ? 1.0f : 0.0f;
             if (fade) ++objectMotionStats_.lodReactiveDraws;
-            dev_->setUniforms(0,&u,sizeof u);
+            if (detailed) {
+                ReactiveCutoutUniforms u{};
+                std::memcpy(u.mvp,mvp.m,sizeof u.mvp);
+                u.params[0] = float(w); u.params[1] = float(h);
+                u.params[2] = 1.0f;
+                u.lod[0] = it.lodThreshold;
+                u.lod[1] = it.lodInvert ? 1.0f : 0.0f;
+                u.lod[2] = fade ? 1.0f : 0.0f;
+                u.uv0[0] = it.mat->uvOffset.x;
+                u.uv0[1] = it.mat->uvOffset.y;
+                u.uv0[2] = it.mat->uvScale.x;
+                u.uv0[3] = it.mat->uvScale.y;
+                u.uv1[0] = it.mat->uvRotation;
+                u.maskInfo[0] = it.mat->baseColor.w;
+                u.maskInfo[1] = it.mat->vertexColors &&
+                    !it.mat->vertexOcclusion ? 1.0f : 0.0f;
+                u.maskInfo[2] = cutout ? it.mat->alphaCutoff : -1.0f;
+                u.maskInfo[3] = dissolve ? std::clamp(it.dissolve,0.0f,1.0f) : 0.0f;
+                gfx::TextureHandle base = white_;
+                if (it.mat->baseTex >= 0 &&
+                    size_t(it.mat->baseTex) < it.model->images.size()) {
+                    const auto t=it.model->images[size_t(it.mat->baseTex)].tex;
+                    if (t.valid()) base=t;
+                }
+                dev_->setUniforms(0,&u,sizeof u);
+                dev_->setTexture(1,base);
+                ++objectMotionStats_.cutoutReactiveDraws;
+                if (dissolve) ++objectMotionStats_.dissolveReactiveDraws;
+            } else {
+                ReactiveUniforms u{};
+                std::memcpy(u.mvp,mvp.m,sizeof u.mvp);
+                u.params[0] = float(w); u.params[1] = float(h);
+                u.params[2] = 1.0f; // conservative coverage, not alpha parity
+                u.lod[0] = it.lodThreshold;
+                u.lod[1] = it.lodInvert ? 1.0f : 0.0f;
+                u.lod[2] = fade ? 1.0f : 0.0f;
+                dev_->setUniforms(0,&u,sizeof u);
+            }
             dev_->setVertexBuffer(it.model->vb);
             dev_->setIndexBuffer(it.model->ib);
             dev_->drawIndexed(it.indexCount,
