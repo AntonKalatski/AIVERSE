@@ -100,7 +100,14 @@ public:
         // Optional PBR shader: failure does not disable existing diffuse path.
         auto pbr=dev.createCompute({AIVERSE_MSL_LUMAWEAVE_SCREEN_PBR,nullptr,
                                      "LumaWeave screen direct GGX"});
-        dev_=&dev;direct_=direct;denoise_=denoise;pbr_=pbr;settings_=settings;
+        gfx::ComputeHandle pbrDenoise{};
+        if(pbr.valid()) {
+            pbrDenoise=dev.createCompute({AIVERSE_MSL_LUMAWEAVE_DENOISE_PBR,
+                nullptr,"LumaWeave GGX surface-normal temporal resolve"});
+            if(!pbrDenoise.valid()){dev.destroyCompute(pbr);pbr={};}
+        }
+        dev_=&dev;direct_=direct;denoise_=denoise;
+        pbr_=pbr;pbrDenoise_=pbrDenoise;settings_=settings;
         const uint32_t marker=kMarker;
         marker_=allocate(sizeof marker,&marker);
         lightBuffer_=allocate(sizeof(LumaGpuLight),nullptr);
@@ -126,8 +133,9 @@ public:
             if(direct_.valid())dev_->destroyCompute(direct_);
             if(denoise_.valid())dev_->destroyCompute(denoise_);
             if(pbr_.valid())dev_->destroyCompute(pbr_);
+            if(pbrDenoise_.valid())dev_->destroyCompute(pbrDenoise_);
         }
-        dev_=nullptr;direct_={};denoise_={};pbr_={};marker_={};
+        dev_=nullptr;direct_={};denoise_={};pbr_={};pbrDenoise_={};marker_={};
         lightBuffer_={};clusterBuffer_={};indexBuffer_={};
         triangleBuffer_={};nodeBuffer_={};
         raw_={};filtered_={};normalDepth_={};
@@ -142,7 +150,7 @@ public:
     }
 
     bool ready() const{return dev_ && direct_.valid() && denoise_.valid();}
-    bool pbrAvailable() const{return ready() && pbr_.valid();}
+    bool pbrAvailable() const{return ready() && pbr_.valid() && pbrDenoise_.valid();}
     bool confirmedShaded() const{return historyValid_ && confirmedShaded_;}
     bool busy() const{return bool(pending_);}
     uint64_t sourceRevision() const{return sourceRevision_;}
@@ -278,7 +286,7 @@ public:
         p.grid.limits[2]=uint32_t(pixels);
         p.grid.limits[3]=samples;
         p.control={nodeCount_,frameSeed,width_,0};
-        const bool shaded=surface.complete() && pbr_.valid();
+        const bool shaded=surface.complete() && pbrAvailable();
         // A diffuse history is not compatible with a newly material-reflected
         // GGX output, nor vice versa. Never reproject across mode switches.
         if(historyValid_ && confirmedShaded_!=shaded)historyValid_=false;
@@ -307,7 +315,7 @@ public:
                          settings_.normalAgreement,settings_.depthThreshold};
         denoise.spatial={settings_.spatialDepthTolerance,settings_.historyColorClamp,
                          settings_.cameraCutMetres,0};
-        if(!dev_->beginCompute(denoise_)) {
+        if(!dev_->beginCompute(shaded?pbrDenoise_:denoise_)) {
             // The DIRECT encoder was already submitted. Even on denoiser
             // failure, fence its raw input/output before another dispatch or
             // source reallocation. Do not mark an unfinished image renderable.
@@ -320,6 +328,7 @@ public:
         dev_->setComputeTexture(3,filtered_[confirmedIndex_]);
         dev_->setComputeTexture(4,normalDepth_[confirmedIndex_]);
         dev_->setComputeTexture(5,sceneDepth);
+        if(shaded)dev_->setComputeTexture(6,surface.normalRoughness);
         dev_->setComputeUniforms(&denoise,sizeof(denoise));
         dev_->dispatch(uint32_t(pixels));
         dev_->endCompute();
@@ -447,7 +456,7 @@ private:
     }
 
     gfx::Device* dev_=nullptr;
-    gfx::ComputeHandle direct_{},denoise_{},pbr_{};
+    gfx::ComputeHandle direct_{},denoise_{},pbr_{},pbrDenoise_{};
     gfx::TextureHandle raw_{},filtered_[2]{},normalDepth_[2]{};
     gfx::BufferHandle marker_{},lightBuffer_{},clusterBuffer_{},
                       indexBuffer_{},triangleBuffer_{},nodeBuffer_{};
