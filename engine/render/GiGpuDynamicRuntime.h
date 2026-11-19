@@ -101,10 +101,9 @@ public:
 
     // Stable IDs are required: changed and removed source influence is invalidated.
     bool setLights(std::vector<GiMovingLight> next) {
-        if(!ready() || busy())return false;
+        if(!ready())return false;
         std::sort(next.begin(),next.end(),
                   [](const GiMovingLight& a,const GiMovingLight& b){return a.key<b.key;});
-        if(!queue_.setLights(gpu_,next))return false;
         auto same=[](const GiMovingLight& a,const GiMovingLight& b) {
             return a.position.x==b.position.x && a.position.y==b.position.y &&
                    a.position.z==b.position.z && a.radius==b.radius &&
@@ -115,6 +114,14 @@ public:
                    a.direction.z==b.direction.z &&
                    a.cosInner==b.cosInner && a.cosOuter==b.cosOuter;
         };
+        // Games may publish the same immutable direct light snapshot every
+        // frame, including while a prior GPU job is still in flight. An
+        // unchanged snapshot is already uploaded and must not be refused.
+        // Changed sources still wait for the prior GPU job's real fence.
+        if(next.size()==lights_.size() &&
+           std::equal(next.begin(),next.end(),lights_.begin(),same))
+            return true;
+        if(busy() || !queue_.setLights(gpu_,next))return false;
         auto find=[](const std::vector<GiMovingLight>& list,uint64_t key) {
             return std::lower_bound(list.begin(),list.end(),key,
                    [](const GiMovingLight& l,uint64_t value){return l.key<value;});
