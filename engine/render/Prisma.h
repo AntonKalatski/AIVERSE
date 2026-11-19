@@ -183,6 +183,20 @@ public:
     // Set before rendering a view, even when two views have equal dimensions.
     void setViewId(uint64_t id) { viewId_ = id; }
     uint64_t viewId() const { return viewId_; }
+    // Native cinematic camera controls, indexed ONLY by stable viewId.
+    // Overrides take precedence over authored postfx/volume parameters,
+    // including an explicit false; clear to restore profile inheritance.
+    // These affect presentation state only, never authoritative ECS.
+    void setViewExposureFreeze(uint64_t viewId, bool freeze);
+    void clearViewExposureFreeze(uint64_t viewId);
+    struct ExposureMeterRegion {
+        bool enabled = false;
+        float centerX = 0.5f, centerY = 0.5f; // normalized bottom-up screen UV
+        float radius = 0.25f, feather = 0.10f; // relative to frame height
+        float outsideWeight = 0.05f; // strictly >0, prevents empty metering
+    };
+    void setViewExposureMeterRegion(uint64_t viewId, ExposureMeterRegion region);
+    void clearViewExposureMeterRegion(uint64_t viewId);
     // Optional subpixel jitter for a COPY of the current render camera.
     // Call after setViewId/applyCameraVolumes and BEFORE Renderer3D::beginScene;
     // retain the original camera for gameplay picking and 2D overlays.
@@ -369,6 +383,8 @@ private:
     std::vector<gfx::TextureHandle> unfencedTargets_;
     // Temporal state is keyed by view identity, NOT by render target size.
     std::map<uint64_t, ExposureView> exposureViews_;
+    std::map<uint64_t, bool> viewExposureFreeze_;
+    std::map<uint64_t, ExposureMeterRegion> viewExposureMeterRegions_;
     std::map<uint64_t, MotionView> motionViews_;
     std::map<uint64_t, TemporalView> temporalViews_;
     std::map<uint64_t, PrismaAdaptiveResolution> adaptiveViews_;
