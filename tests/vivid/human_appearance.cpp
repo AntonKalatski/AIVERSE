@@ -105,6 +105,40 @@ void test() {
         expect(stats.triangles==human.hair->indices.size()/3,
                "groom card triangle stats mismatch");
     }
+    auto originalDNA=HumanDNA{};
+    auto sculptedDNA=originalDNA;
+    sculptedDNA.skin.wrinkleStrength=0.95f;
+    sculptedDNA.eyes.corneaIor=1.43f;
+    sculptedDNA.groom.melanin=0.04f;
+    const auto skinA=humanMaterial(HumanSurface::Skin,originalDNA);
+    const auto skinB=humanMaterial(HumanSurface::Skin,sculptedDNA);
+    const auto hairA=humanMaterial(HumanSurface::Hair,originalDNA);
+    const auto hairB=humanMaterial(HumanSurface::Hair,sculptedDNA);
+    const auto eye=humanMaterial(HumanSurface::Cornea,sculptedDNA);
+    expect(skinA.shaderGraph->glsl!=skinB.shaderGraph->glsl &&
+           hairA.shaderGraph->msl!=hairB.shaderGraph->msl &&
+           eye.humanProfile.x==1.43f &&
+           std::string(render::shaders::kModelMSL).find("cornealIor")!=std::string::npos,
+           "DNA wrinkles/melanin/cornea-IOR did not reach real shader programs");
+    auto sparseHair=originalDNA;
+    sparseHair.groom.density=0.15f;
+    auto denseHair=originalDNA;
+    denseHair.groom.density=1.0f;
+    HumanGroomRuntime lowDensity,highDensity;
+    lowDensity.generate(sparseHair);
+    highDensity.generate(denseHair);
+    expect(lowDensity.guides().size()<highDensity.guides().size(),
+           "DNA hair density slider does not alter generated strands");
+    auto sculptedBust=originalDNA;
+    sculptedBust.anatomy.shoulderWidth=0.85f;
+    sculptedBust.anatomy.heightMeters=2.1f;
+    auto bust=generateHumanPreview(sculptedBust,GroomQuality::Low);
+    expect(bust.head->findNode("torso")>=0 &&
+           bust.head->findNode("neck")>=0 &&
+           bust.head->findNode("shoulder.L")>=0 &&
+           bust.head->nodes[std::size_t(bust.head->findNode("torso"))].parent==0,
+           "DNA body reference did not generate independent upper torso/neck");
+
     auto high=generateHumanPreview(HumanDNA{},GroomQuality::High);
     auto low=generateHumanPreview(HumanDNA{},GroomQuality::Low);
     expect(low.groom.triangleCount()<high.groom.triangleCount(),
