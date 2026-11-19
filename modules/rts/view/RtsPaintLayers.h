@@ -21,6 +21,12 @@ public:
     uint64_t gpuRetirementOrphans() const noexcept {
         return retirement_?retirement_->orphans():0;
     }
+    render::CanvasGpuRetirement::Stats gpuRetirementStats() const noexcept {
+        return retirement_?retirement_->stats():render::CanvasGpuRetirement::Stats{};
+    }
+    uint64_t gpuRetirementEnqueueFailures() const noexcept {
+        return retirement_?retirement_->enqueueFailures():0;
+    }
     void draw(render::Renderer3D&,gfx::Device&,const std::shared_ptr<render::PaintLayers>&,
               const MapGrid&,const RtsView&,const std::vector<uint8_t>* vision,double time,uint8_t viewer);
     void shutdown();
