@@ -198,3 +198,11 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
   cmake --build ../AIVERSE-vivid/build/vivid --target aiverse_vivid_face_tests aiverse_vivid_sparse_tests aiverse_vivid_shape_tests aiverse_vivid_morph_tests aiverse_vivid_gpu_contract_tests -j 4
   ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^vivid_'
   ```
+
+## Native validation — 2026-11-19 — user confirms Stage 4A 5/5
+
+- **Source revision**: `b256a1ec35da33cc8f2a484551cc02e7b50ab822` (`feature/vivid-digital-humans` as last reported to user). Exact local `HEAD` not reprinted in this log, so the revision is inferred from the supplied pull/build instructions, not independently obtained from the Mac.
+- **User-provided macOS build evidence**: `[100%] Built target aiverse_vivid_gpu`, compiled and linked `aiverse_vivid_gpu_contract_tests`; five CTest results PASS: `vivid_face` (0.15 s), `vivid_sparse_morph` (0.16 s), `vivid_shape_binding` (0.16 s), `vivid_gpu_contract` (0.53 s), `vivid_morph_binding` (0.16 s); **5/5 passed; total real time 1.18 s**. No warning/error lines in supplied excerpt.
+- **Scope**: this validates CPU/reference and a **fake gfx::Device** recording contract. It does not validate shader compilation on Apple Metal hardware, GPU numerical parity, graphical face deformation, MotionWeave integration, cross-platform output or the full engine suite.
+- **Actor of verification**: tests executed by user on Mac; this agent recorded the result, did not rerun CTest locally.
+- **No runtime changes** for this checkpoint. Next: implement a macOS-only real-device Metal compute CTest, compare output readback after `endFrame` to `SparseMorphLibrary::evaluateGather`, preserve previous five tests.
