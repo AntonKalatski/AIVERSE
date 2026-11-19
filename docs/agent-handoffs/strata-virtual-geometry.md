@@ -722,3 +722,70 @@ These results supersede the preceding 'not run' statements **for these focused n
 
 ### Immediate next verification
 From the existing `~/Projects/AIVERSE-strata-validation` worktree, first confirm the real-Metal executable exists; if it does not, configure with `-DAIVERSE_STRATA_METAL_GPU_TESTS=ON` and build target `aiverse_strata_metal_parity`. Run it outside CTest because it opens a macOS window. Record all five scenario outcomes and the final `cases=5/5 status=PASSED` line only if observed. Preserve any failing Metal compiler or GPU error verbatim for the next implementation patch.
+
+
+---
+
+## Stage 10 verification update — real Mac Studio Metal GPU parity PASS (2026-11-19)
+
+**Source:** user-supplied terminal output from
+`~/Projects/AIVERSE-strata-validation/build/strata`.
+On the then-current `feature/strata-virtual-geometry` worktree,
+CMake configured and built `aiverse_strata_metal_parity` successfully
+(including `aiverse_strata_gpu_culling`, `aiverse_strata_render_routing`,
+and `aiverse_runtime`). The runner compiled a real Metal compute
+pipeline, dispatched GPU work, asynchronously read GPU-selected cluster
+ranges/counters and compared against CPU `planView()`. The **observed**
+results are:
+
+| Actual real-Metal GPU fixture | Result |
+| --- | --- |
+| `fine-LOD-two-instances` | **PASS**, selected=4, examined=6 |
+| `coarse-LOD` | **PASS**, selected=2, examined=2 |
+| `frustum-rejection` | **PASS**, selected=0, examined=6 |
+| `disabled-instance` | **PASS**, selected=2, examined=3 |
+| `bounded-output` | **PASS**, overflow correctly rejected |
+| Final | **`cases=5/5 status=PASSED`** |
+
+The runner also printed
+`[metal-assets] libraries=0 sourceMisses=0 pipelines=0 pipelineFailures=0 archive=0 strict=0`;
+this is not itself a measure of GPU performance or a renderer screenshot
+comparison. In the same conversation, the owner separately supplied
+all six focused native Strata CPU/recording-RHI CTests **PASS (6/6)**
+on Mac Studio.
+
+**Scope of proof:** Real Metal GPU compute creation, dispatch,
+asynchronous readback, basic LOD/frustum/disabled-instance selection,
+and overflow reporting match the CPU oracle for the five fixture
+cases. This does **NOT** establish pixel/shadow/reflection/transparent
+raster parity, arbitrary models, randomized transforms, mesh seams,
+stable performance, streaming or an exclusive live renderer route.
+Stage 10 `Renderer3D` is still only dry-run; default legacy drawing
+and all opt-in safety boundaries remain unchanged.
+
+**Separate unrelated test results:**
+The user also supplied `AIVERSE-static-scene` aggregate CTest
+results `125/127`, with `skill_catalog` and `skill_routing`
+failing on:
+`unregistered or missing skills:
+['skills/gameplay/aiverse-ecs-shared-static/SKILL.md']`.
+This failure occurred in a **different worktree/feature**; it is not a
+Strata GPU failure. The correct owner of the static-scene/skills
+manifest must reconcile its skill registration and handoff, not
+silently modify Strata or attribute 127-test results to Strata.
+
+**Next explicit gate:** Add a real Metal raster fixture to render
+Strata-selected source ranges through the existing `Renderer3D`
+material/shadow state under a mutually exclusive scoped feature flag.
+Compare before/after screenshots bytewise or with documented
+per-channel tolerance, test main view, sun shadows and reflections,
+and verify the same source primitive is submitted **once per pass**.
+Reject unsupported material/LOD/buffer conditions and route to legacy.
+Only once this is proven should Strata be allowed to drive production
+indexed draws or GPU-encoded indirect commands. Preserve one shared
+GPU geometry pool and the original staging/ownership model.
+
+The exact output did not print the `git rev-parse HEAD` of the tested
+checkout. The user had previously been instructed to fetch and switch
+to the branch, but **do not falsely claim an SHA-level GPU PASS**
+without that SHA being observed in an owner-provided log.
