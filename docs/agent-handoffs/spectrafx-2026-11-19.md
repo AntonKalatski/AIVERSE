@@ -57,3 +57,29 @@ cmake -S . -B build/spectrafx-validation -DCMAKE_BUILD_TYPE=Debug
 cmake --build build/spectrafx-validation --parallel
 ctest --test-dir build/spectrafx-validation --output-on-failure -R 'fx|particle|vfx'
 ```
+
+
+## 2026-11-19: Stage 3 — read-only native Simulation collector
+
+- **Branch:** `feature/spectrafx-generic-cue-queue`, still based on `main` `9ee6ff6fbf390bd45363bc92c838f492dfe92eee` (no newer main identified).
+- **Implementation commit:** `d41cbae6ea5ac5c6aa3864125441578c135a77ed`.
+- **Changed paths:** `engine/fx/SpectraFxSimulationBridge.h` (new header).
+- **API:** `fx::spectraFxPosition(const aiverse::Vec3&)` converts fixed-point positions strictly for presentation; `fx::installSpectraFxCollector(sim, bridge, queue, translator)` registers `spectrafx.collect`, a read-only `Simulation::events()` translator and FIFO command submitter. The system naming suffix `.collect` follows the documented `Simulation::present()` mirror/event collector mechanism. Runtime owner is responsible for binding cue IDs, invoking queue.flush before particle update and for reset on rollback/new match. Modules can provide their own translators without modifying ECS schemas or engine core.
+- **Compatibility:** opt-in and additive. No FPS/RTS source rewrites; no save/rollback format or authoritative ECS modifications. No external dependencies beyond existing engine headers.
+- **Verification:** **NOT RUN**: C++ compilation/CTest/macOS/editor visual QA/CI. Header was authored through GitHub connector; do not claim it builds until native validation succeeds.
+- **Limitations:** registration captures the bridge and queue by reference; they must outlive the Simulation system. Events are not deduplicated across rollback; host must explicitly reset VFX presentation, not replay discarded events. No concrete FPS/RTS consumer wiring or authored config importer yet.
+- **Next actionable step:** create host-level integration example and add focused CTest for a real Simulation + two different translators; verify .collect order under `step()` and `present()`. Then wire actual game adapters while preserving gameplay checksum parity.
+
+### Pull / verification
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main
+git merge origin/main
+cmake -S . -B build/spectrafx-validation -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/spectrafx-validation --parallel
+ctest --test-dir build/spectrafx-validation --output-on-failure -R 'fx|particle|vfx'
+```
