@@ -71,6 +71,9 @@ public:
     }
 
     void update(Editor& ed, double) override {
+        if ((!open || vp_.drawnFrame < ImGui::GetFrameCount()-1) &&
+            vp_.color.valid())
+            vp_.release(ed.device());
         if (ed.fxRevision != revision_) {   // an agent changed fx files: list, open effect (unless being edited), bindings
             revision_ = ed.fxRevision;
             listDirty_ = true;
