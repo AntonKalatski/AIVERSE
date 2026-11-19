@@ -2135,6 +2135,23 @@ if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/render/virtual_texture_pack.py)
 endif()
 
+# Opt-in real Linux EGL/GLES3 texture-array GPU acceptance. No mock driver
+# and no silent SKIP: failure to create ES3 context exits nonzero.
+option(AIVERSE_TEXTURE_GLES_GPU_TESTS
+    "Enable native Linux EGL/GLES3 Texture2DArray GPU readback acceptance" OFF)
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "linux"
+   AND AIVERSE_TEXTURE_GLES_GPU_TESTS)
+    add_executable(aiverse_gles_texture_array_gpu_test
+        tests/render/gles_texture_array_gpu.cpp)
+    target_include_directories(aiverse_gles_texture_array_gpu_test
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_gles_texture_array_gpu_test
+        PRIVATE aiverse_runtime EGL GLESv2)
+    add_test(NAME gles_texture_array_gpu COMMAND aiverse_gles_texture_array_gpu_test)
+    set_tests_properties(gles_texture_array_gpu PROPERTIES
+        LABELS "TextureRHI;GLES;GPU" TIMEOUT 45)
+endif()
+
 # GPU-independent descriptor validation; a foundation for subsequent texture backends.
 if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_executable(aiverse_texture_contract_test tests/render/texture_contract.cpp)
