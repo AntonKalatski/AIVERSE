@@ -29,6 +29,18 @@ public:
         return preparation_;
     }
 #endif
+    // Publish a CPU-prepared model on the render thread. A synchronous
+    // load may have installed this key while the worker ran; do not
+    // overwrite that resource or upload its duplicate.
+    template<class Prepared>
+    bool publishPrepared(gfx::Device& dev,const std::string& key,
+                         Prepared&& prepared) {
+        if(models_.count(key))return false;
+        if(prepared.model)render::uploadModel(dev,*prepared.model);
+        models_.emplace(key,std::move(prepared.model));
+        return true;
+    }
+
     ModelMap& models() noexcept {return models_;}
     const ModelMap& models() const noexcept {return models_;}
     std::shared_ptr<render::ModelTextureCache> textures() const noexcept {
