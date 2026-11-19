@@ -11,6 +11,7 @@
 #include "engine/character/vivid/RigAuthoring.h"
 #include "engine/character/vivid/ScalpSkinning.h"
 #include "engine/character/vivid/GpuActorStream.h"
+#include "engine/character/vivid/CpuActorStream.h"
 #include "engine/character/vivid/GpuMorphAssetCache.h"
 #include "engine/platform/Platform.h"
 #include "engine/render/Renderer3D.h"
@@ -48,6 +49,7 @@ struct CreatorApp {
     HumanPreviewAsset human;
     std::unique_ptr<GpuMorphAssetCache> cache;
     std::unique_ptr<GpuActorStream> actor;
+    std::unique_ptr<CpuActorStream> cpuActor;
     std::unique_ptr<World> world;
     Entity entity{};
     std::shared_ptr<const AnimationGraph> graph;
@@ -162,7 +164,12 @@ struct CreatorApp {
             status=actor->lastError();
             return false;
         }
+        if(cpuActor && !cpuActor->shutdownAfterIdle()) {
+            status="VIVID CPU actor: GPU idle barrier failed";
+            return false;
+        }
         actor.reset();
+        cpuActor.reset();
         if(human.hair)releaseModel(*device,*human.hair);
         if(human.head)releaseModel(*device,*human.head);
         human={};
@@ -498,11 +505,19 @@ struct CreatorApp {
             if(!human.hair->vb.valid() || !human.hair->ib.valid())
                 throw std::runtime_error("VIVID Creator: groom buffer upload failed");
             }
-            auto gpu=cache->acquire(human.facialShapes,human.head->vertices);
-            if(!gpu)throw std::runtime_error("VIVID Creator: shared morph CSR upload failed");
-            actor=std::make_unique<GpuActorStream>();
-            if(!actor->initializeShared(*device,*human.head,gpu))
-                throw std::runtime_error("VIVID Creator: "+actor->lastError());
+            if(device->supportsCompute() && device->frameSerial()) {
+                auto gpu=cache->acquire(human.facialShapes,human.head->vertices);
+                if(!gpu)throw std::runtime_error(
+                    "VIVID Creator: shared morph CSR upload failed");
+                actor=std::make_unique<GpuActorStream>();
+                if(!actor->initializeShared(*device,*human.head,gpu))
+                    throw std::runtime_error("VIVID Creator: "+actor->lastError());
+            }else{
+                cpuActor=std::make_unique<CpuActorStream>();
+                if(!cpuActor->initialize(*device,*human.head,
+                                        human.facialShapes,human.head->vertices))
+                    throw std::runtime_error("VIVID Creator: "+cpuActor->lastError());
+            }
             world=std::make_unique<World>();
             entity=world->create();
             auto& anim=world->add<motionweave::AnimationAssetComponent>(entity);
@@ -1285,7 +1300,9 @@ struct CreatorApp {
         ui.newFrame(dt);
         guiControls();
         if(pendingRebuild)regenerate();
-        if(!human.head||!actor||!world||!actor->ready()) {
+        if(!human.head||(!actor&&!cpuActor)||!world||
+           (actor&&!actor->ready())||
+           (cpuActor&&!cpuActor->ready())) {
             gfx::PassDesc empty;
             dev.beginPass(empty);ui.render();dev.endPass();
             return;
@@ -1318,8 +1335,13 @@ struct CreatorApp {
                 status="VIVID rig correction invalid: last-good pose retained";
             else facePose.swap(rigPoseScratch);
         }
-        if(!actor->dispatch(controller.frame(),human.facialBinding))
-            status=actor->lastError();
+        if(actor) {
+            if(!actor->dispatch(controller.frame(),human.facialBinding))
+                status=actor->lastError();
+        }else if(cpuActor) {
+            if(!cpuActor->dispatch(controller.frame(),human.facialBinding))
+                status=cpuActor->lastError();
+        }
         // Picking uses the actual camera ray and rendered node-world pose,
         // never a guessed nearest projected vertex behind the head.
         if(externalMode && sculptPickArmed && morphDraft && human.head &&
@@ -1409,7 +1431,8 @@ struct CreatorApp {
         ModelDraw draw;
         draw.model=human.head.get();
         draw.nodeWorld=&facePose;
-        if(actor->attach(draw))
+        if((actor&&actor->attach(draw))||
+           (cpuActor&&cpuActor->attach(draw)))
             renderer.drawModel(draw);
         const int headIndex=human.rig.head;
         const mat4& poseHead=facePose[std::size_t(headIndex)];
