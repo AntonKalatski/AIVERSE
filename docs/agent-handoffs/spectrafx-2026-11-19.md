@@ -238,3 +238,13 @@ git fetch origin main && git merge origin/main
 - **Actual checks**: **NOT RUN**; no local build/CTest/CI/GPU/editor QA because user explicitly requested all feature implementation before testing.
 - **Limits**: no direct per-particle collision/death callbacks (ParticleSystem continues handling its own subemitters). Completion routing must use a key bound by the host; generation-safe keys needed; bounded router may drop events under overload. No automatic graph authoring UI or GPU compute backend.
 - **Next step**: implement graph authoring and stage-program serialization, then integrate configurable stage orchestration into native editor/host. Keep a dedicated handoff for each stage.
+
+
+## 2026-11-19 — Stage 13: stage-program JSON codec
+- **Code SHA** `e47b28a51a55f69b828e39f913d0bc4a68655dc3`; branch `feature/spectrafx-generic-cue-queue`.
+- **File added:** `engine/fx/SpectraFxEmitterAsset.h`.
+- **API:** `SpectraFxEmitterAssetCodec::read/readText/write`. Versioned JSON v1 with ordered `stages` array and `spawn/initialize/update/render` names; optional enabled/effect/scale/tint. Strict field/type checking, full `SpectraFxEmitterProgram::validate` before atomic commit to output; deferred effect name resolution by existing ParticleSystem. `write` emits normalized v1 JSON for editor authoring/export.
+- **Scope:** feature-only authoring data. No ECS deterministic state changes, no JSON graph schema change, no new CPU particle solver, no post-processing ownership changes.
+- **Verification:** **NOT RUN** (user requested all functions first, tests later). Native build, CTest, editor integration and asset roundtrip are unverified.
+- **Current limitations:** stage Update/Render are declarative placeholders delegating to legacy ParticleSystem, not configurable stages or new GPU shader passes; no automatic file watcher/editor panel yet. The new asset parser must be covered by the later compile+negative-validation pass.
+- **Next actionable feature step:** runtime asset loader, editor graph UI and GPU capability-specific implementations; preserve old CPU fallback. All future functionality requires per-stage handoff commits and an eventual full focused/native validation pass.
