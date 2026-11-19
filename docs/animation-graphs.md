@@ -699,3 +699,28 @@ second animation evaluator or make the Renderer3D shader cache fully
 transactional. Speculative Model and material texture GPU handles
 still require retirement using their own completion fences on abort.
 The implementation is not compiled or GPU-verified.
+
+## Stage 115 — asynchronous GPU compiler progress without repeated Model imports
+
+`Renderer3D::warmModelPipelinesChecked` still distinguishes
+`Ready`, `Pending`, and `Failed`. Stage 115 additionally
+exposes `hasPendingModelPipelineJobs()` and
+`pollPendingModelPipelineJobs()` so the renderer's already
+submitted native shader/pipeline jobs can progress independently
+of a repeated authored model import. An Editor hot appearance
+update marked `gpuAppearancePending` does not reupload
+speculative Models and textures while those jobs are still
+in-flight. After they complete, the Editor retries the original
+authoring transaction and publishes only the validated candidate.
+This does not add a second ECS animation evaluator, reset
+locomotion/attack clocks on material-only changes, or change
+simulation ownership.
+
+The optimization currently covers pending native shader/pipeline
+jobs. A renderer whose `warmPipelineColor` variant remains
+pending but exposes no native job may still trigger another
+candidate staging attempt. Different file edits during a pending
+job may also require another authoring attempt. Do not infer
+successful GPU compilation until the real backend returns Ready.
+The branch now includes NEREID main changes, but native and
+GPU cross-system parity has not been tested.
