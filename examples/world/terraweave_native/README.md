@@ -393,6 +393,7 @@ root-supported trees at a safe ECS structural barrier:
 
 ```cpp
 #include "engine/world/TerraWeaveForestDeadwoodEcs.h"
+#include "examples/world/terraweave_native/PhysicsIntegration.h"
 
 // Use the authoritative Earthworks root-support fall events from a
 // completed dig/landslide/erosion transaction. Do not step physics here.
@@ -401,7 +402,6 @@ const size_t newlySeeded=terraweave::seedFallenForestDeadwoodEventsEcs(
 
 // After the ECS decay callback enqueues its outcome, run this on the
 // Box3D owner thread, outside ECS simulation:
-#include "examples/world/terraweave_native/PhysicsIntegration.h"
 const size_t bodiesRemoved=
     examples::terraweave_native::removeFullyDecayedFallenBodies(
         completedDecay,fallenTrees);
