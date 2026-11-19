@@ -945,6 +945,7 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
                 trilinear.heightPixels=vt.virtualHeightPixels;
                 trilinear.mipLevels=float(vt.virtualMipLevels);
                 trilinear.mipBias=vt.virtualMipBias;
+                trilinear.anisotropyTaps=float(vt.virtualAnisotropyTaps);
                 dev_->setUniforms(6,&trilinear,sizeof(trilinear));
             } else dev_->setUniforms(6,&params,sizeof(params));
         }

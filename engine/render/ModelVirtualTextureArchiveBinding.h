@@ -13,7 +13,7 @@ inline bool makeModelVirtualTextureArchiveBinding(
     const gfx::VirtualTextureArchiveVersion& archive,
     const gfx::VirtualTextureStreamer& streamer,
     int logicalLayer, ModelVirtualTextureBinding& out,
-    float mipBias=0.0f) {
+    float mipBias=0.0f,int anisotropyTaps=1) {
     out={};
     if(!archive.valid() || !streamer.ready() ||
        !std::isfinite(mipBias) ||
@@ -41,6 +41,7 @@ inline bool makeModelVirtualTextureArchiveBinding(
         candidate.virtualWidthPixels=float(archive.width);
         candidate.virtualHeightPixels=float(archive.height);
         candidate.virtualMipBias=mipBias;
+        candidate.virtualAnisotropyTaps=anisotropyTaps;
     }
     if(!candidate.valid()) return false;
     out=candidate;
@@ -51,11 +52,11 @@ inline bool makeModelVirtualTextureArchiveBinding(
     const gfx::VirtualTextureArchiveVersion& archive,
     const gfx::VirtualTextureFileStreamer& streamer,
     int logicalLayer, ModelVirtualTextureBinding& out,
-    float mipBias=0.0f) {
+    float mipBias=0.0f,int anisotropyTaps=1) {
     out={};
     return streamer.ready() &&
         makeModelVirtualTextureArchiveBinding(
-            archive,streamer.atlasStreamer(),logicalLayer,out,mipBias);
+            archive,streamer.atlasStreamer(),logicalLayer,out,mipBias,anisotropyTaps);
 }
 
 } // namespace aiverse::render

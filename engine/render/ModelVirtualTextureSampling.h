@@ -27,6 +27,7 @@ struct ModelVirtualTextureBinding {
     int virtualMipLevels = 1;
     float virtualWidthPixels = 0, virtualHeightPixels = 0;
     float virtualMipBias = 0;
+    int virtualAnisotropyTaps = 1; // 1/2/4/8, each tap resolves page independently
     // Match the original material's U/V sampler modes. ClampToBorder
     // cannot be represented by the current RGBA8 page-table layout.
     gfx::SamplerAddressMode addressU = gfx::SamplerAddressMode::ClampToEdge;
@@ -39,7 +40,10 @@ struct ModelVirtualTextureBinding {
                 (virtualMipLevels >= 1 && virtualMipLevels <= 30 &&
                  std::isfinite(virtualWidthPixels) && virtualWidthPixels > 0 &&
                  std::isfinite(virtualHeightPixels) && virtualHeightPixels > 0 &&
-                 std::isfinite(virtualMipBias))) &&
+                 std::isfinite(virtualMipBias) &&
+                 (virtualAnisotropyTaps==1 || virtualAnisotropyTaps==2 ||
+                  virtualAnisotropyTaps==4 || virtualAnisotropyTaps==8))) &&
+               (indexedMipTable || virtualAnisotropyTaps==1) &&
                addressU <= gfx::SamplerAddressMode::MirrorRepeat &&
                addressV <= gfx::SamplerAddressMode::MirrorRepeat;
     }
@@ -66,6 +70,7 @@ inline uint64_t modelVirtualTextureBindingHash(const ModelVirtualTextureBinding&
         mix(std::bit_cast<uint32_t>(b.virtualWidthPixels));
         mix(std::bit_cast<uint32_t>(b.virtualHeightPixels));
         mix(b.virtualMipBias == 0 ? 0u : std::bit_cast<uint32_t>(b.virtualMipBias));
+        mix(uint32_t(b.virtualAnisotropyTaps));
     }
     return hash;
 }
@@ -83,8 +88,9 @@ static_assert(sizeof(ModelVirtualTextureUniforms) == 16);
 struct ModelVirtualTextureTrilinearUniforms {
     ModelVirtualTextureUniforms base;
     float widthPixels = 0, heightPixels = 0, mipLevels = 0, mipBias = 0;
+    float anisotropyTaps = 1, reserved0 = 0, reserved1 = 0, reserved2 = 0;
 };
-static_assert(sizeof(ModelVirtualTextureTrilinearUniforms) == 32);
+static_assert(sizeof(ModelVirtualTextureTrilinearUniforms) == 48);
 
 // Shared expression generator for built-in base colour and Shader Graph
 // SG_SAMPLE_VIRTUAL. Do not diverge the two paths' page-table/mip semantics.
@@ -104,16 +110,15 @@ inline std::string modelVirtualSampleExpression(
     }
     const std::string dx=(metal?"dfdx(":"dFdx(")+coord+")";
     const std::string dy=(metal?"dfdy(":"dFdy(")+coord+")";
-    const std::string lod=metal ?
-        "aiverse_virtual_mip_lod("+dx+","+dy+",uModelVtExtra.xy,uModelVtExtra.w)" :
-        "aiverseVirtualMipLod("+dx+","+dy+",uModelVtExtra.xy,uModelVtExtra.w)";
     return metal ?
-       "aiverse_sample_virtual_trilinear("+atlas+","+table+",s1,"+coord+
-         ",uint(uModelVt.x),uModelVt.y,"+fallback+","+dx+","+dy+","+
-         lod+",uint(uModelVtExtra.z),uint(uModelVt.z),uint(uModelVt.w))" :
-       "aiverseSampleVirtualTrilinear("+atlas+","+table+","+coord+
-         ",int(uModelVt.x),uModelVt.y,"+fallback+","+dx+","+dy+","+
-         lod+",int(uModelVtExtra.z),int(uModelVt.z),int(uModelVt.w))";
+       "aiverse_sample_virtual_anisotropic("+atlas+","+table+",s1,"+coord+
+         ",uint(uModelVt.x),uModelVt.y,"+fallback+","+dx+","+dy+
+         ",uModelVtExtra.xy,uModelVtExtra.w,uint(uModelVtExtra.z),"+
+         "uint(uModelVtQuality.x),uint(uModelVt.z),uint(uModelVt.w))" :
+       "aiverseSampleVirtualAnisotropic("+atlas+","+table+","+coord+
+         ",int(uModelVt.x),uModelVt.y,"+fallback+","+dx+","+dy+
+         ",uModelVtExtra.xy,uModelVtExtra.w,int(uModelVtExtra.z),"+
+         "int(uModelVtQuality.x),int(uModelVt.z),int(uModelVt.w))";
 }
 
 // Source graph samplers occupy slots 13..16. Metal's RHI has 32 fragment
@@ -192,7 +197,7 @@ inline bool injectModelVirtualTextureSampling(std::string& fragmentGLSL,
 
     fragmentGLSL.insert(0,
         std::string(trilinear ?
-            "layout(std140) uniform U6 { vec4 uModelVt; vec4 uModelVtExtra; };\n" :
+            "layout(std140) uniform U6 { vec4 uModelVt; vec4 uModelVtExtra; vec4 uModelVtQuality; };\n" :
             "layout(std140) uniform U6 { vec4 uModelVt; };\n")
         + "uniform highp sampler2DArray "+atlasName+";\n"
         + "uniform highp sampler2DArray "+tableName+";\n"
@@ -223,10 +228,11 @@ inline bool injectModelVirtualTextureSampling(std::string& fragmentGLSL,
     if(trilinear)
         msl.insert(bodyAfter+std::string(") {\n").size(),
             "#define uModelVt uModelVtParams.base\n"
-            "#define uModelVtExtra uModelVtParams.extra\n");
+            "#define uModelVtExtra uModelVtParams.extra\n"
+            "#define uModelVtQuality uModelVtParams.quality\n");
     msl.insert(metalNamespace+ns.size(),
         "\n"+std::string(trilinear ?
-            "struct AiverseModelVtUniforms { float4 base; float4 extra; };\n" :
+            "struct AiverseModelVtUniforms { float4 base; float4 extra; float4 quality; };\n" :
             "")+std::string(gfx::kVirtualTextureMSL));
     return true;
 }
