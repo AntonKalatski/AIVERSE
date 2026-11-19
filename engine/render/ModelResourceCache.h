@@ -308,7 +308,17 @@ public:
         const bool done=retired_.collect(
             [&]{return dev.beginResourceRetirement();},
             [&](uint64_t token){return dev.resourceRetirementComplete(token);},
-            [&](uint64_t token){dev.endResourceRetirement(token);},
+            [&](uint64_t token) {
+                // On normal completed batches close the native marker.
+                // If a later unsupported-marker fallback proved full
+                // device idle, a previous FAILED marker can be abandoned
+                // without freeing any in-flight resource prematurely.
+                if(dev.resourceRetirementStatus(token)==
+                   gfx::ResourceRetirementStatus::Complete)
+                    dev.endResourceRetirement(token);
+                else
+                    dev.abandonRetirementTokenAfterIdle(token);
+            },
             [&]{return dev.waitForResourceIdle();},
             [&](std::unique_ptr<Model>& model) {
                 if(model)render::releaseModel(dev,*model);
@@ -340,7 +350,10 @@ public:
         // The successful barrier above makes every token safe to close,
         // including callbacks whose status notification is still queued.
         if(!retired_.drain([]{return true;},
-            [&](uint64_t token){dev.endResourceRetirement(token);},
+            [&](uint64_t token) {
+                // A successful waitForResourceIdle already proved safety.
+                dev.abandonRetirementTokenAfterIdle(token);
+            },
             [&](std::unique_ptr<Model>& model) {
                 if(model)render::releaseModel(dev,*model);
             }))
