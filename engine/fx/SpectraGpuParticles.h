@@ -7,6 +7,7 @@
 
 #include "ParticleSystem.h"
 #include "SpectraGpuCheckpoint.h"
+#include "SpectraCheckpointReadbackBudget.h"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -53,6 +54,9 @@ struct ComputeEmitterDesc {
     // Opt-in async checkpoint cadence (0 = disabled). One full capture is
     // at most 512 KiB / eight 64 KiB reads at capacity 4096.
     uint32_t checkpointEveryFrames = 0;
+    // Optional shared readback budget; all GPU emitters on one Device should
+    // share it. If absent, legacy independent checkpoint behavior is retained.
+    std::shared_ptr<CheckpointReadbackBudget> checkpointBudget;
 };
 
 bool validComputeEmitter(const ComputeEmitterDesc&, std::string* reason = nullptr);
@@ -81,6 +85,8 @@ struct ComputeStats {
     uint32_t gpuFallbacks = 0, lostOnFallback = 0;
     uint32_t recoveredOnFallback=0;
     uint32_t checkpointRequests=0, checkpointCompleted=0, checkpointFailed=0;
+    uint32_t checkpointBudgetDenied=0;
+    size_t checkpointBytesReturned=0; // valid callback payload bytes, not DMA profiling
     uint32_t gpuCompactDispatches = 0, gpuIndirectDraws = 0;
     uint32_t gpuVmErrorsLastRead = 0;
     bool gpuVmErrorsKnown = false; // unknown until a successful diagnostic read
