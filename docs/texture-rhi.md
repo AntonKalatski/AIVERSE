@@ -2324,3 +2324,42 @@ fix, not confirmation of real GPU readback behavior.
 **Post-fix CTest NOT RUN.** Run the focused texture verifier on macOS and
 examine `ctest.log` for `virtual_texture_file_streamer`.
 
+
+### Stage 10AX — macOS editor and remaining CPU CTest regression fixes
+
+The second real macOS verifier run of the previous texture branch successfully
+compiled all 20 focused texture targets, but failed `aiverse_editor` in
+`Renderer3DModels.cpp:2137` (undeclared
+`pipelineMaterialCompatible`) and three of 23 CTests:
+`texture_asset`, `virtual_texture_file_streamer`, and
+`virtual_texture_feedback_pass`.
+
+The editor's GPU ICB submission path now performs the equivalent
+pipeline-only compatibility test **within its own scope**, using
+`equivalentGpuIcbGraphPipelineMaterial` for graph variants and
+`equivalentGpuIcbPbrPipelineMaterial` for non-graph variants. It
+remains fail-closed if a staged material has changed before ICB execution.
+The original local grouping gate in `prepareGpuModelDraws` is unchanged.
+
+The texture importer test clears its mock `failUpload` fault injection
+immediately after verifying GPU rollback, so a later successful
+compressed-to-RGBA8 fallback is not inadvertently forced to fail.
+The file-streamer test explicitly empties a callback member after
+`std::move` hands it to a simulated in-flight GPU completion, allowing a
+new capture after runtime reinitialization. The feedback-pass test checks
+all successfully created textures have been destroyed, including the
+allocation from an intentionally rejected intermediate initialization,
+instead of expecting exactly one destruction over the entire test.
+
+These are narrowly scoped changes to one renderer source file and three
+CPU test fixtures. Existing GPU / ECS ABI, file formats, and public APIs
+are unchanged; test assertions are preserved or strengthened.
+
+**Actual evidence:** user-provided native Clang error and CTest stderr,
+plus source-level review of the current GitHub files; source/test changes
+committed to the branch. **Post-fix native compile and CTest have NOT RUN**
+in this environment. The PR remains Draft until Mac tests and cross-backend
+GPU acceptance pass. Run
+`bash tools/verify-texture-rhi.sh --editor --jobs 4` in the isolated
+texture verification worktree after pulling the latest feature branch.
+
