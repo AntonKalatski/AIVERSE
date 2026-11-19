@@ -475,3 +475,31 @@ normal/foam response. No new textures, passes, physics integration
 or genre dependency. GPU shader validation remains deferred by
 explicit owner instruction. Exact file/commit list is in
 `docs/nereid/HANDOFF.md`.
+
+## Stage 31 — SpectraFX emitters at intermediate waterfall steps
+
+`NereidCascadeSprayBridge` now supports two independent, optional
+continuous particle graph mappings, supplied by the **native game**:
+`setGraph(graph,scale)` for the final cascade foot and
+`setStepGraph(graph,scale,minDropMetres)` for qualifying
+intermediate segment endpoints (the last point is reserved for the
+existing foot emitter). Up to eight intermediate emitters are
+presented per cascade, each keyed by `(stable cascade id, step index)`.
+
+```cpp
+world::NereidCascadeSprayBridge spray(particles);
+spray.setGraph("fx/cascade_foot",1.f);
+spray.setStepGraph("fx/cascade_step",0.65f,0.75f);
+// Each presentation frame, using the read-only WorldScene snapshot:
+spray.sync(worldScene);
+// On rollback/new scene:
+spray.reset();
+```
+
+The bridge uses the REAL SpectraFX `play/move/stop/kill` calls,
+keeps existing handles alive on unchanged geometry, stops removed
+steps, and kills only handles it owns on reset. Both graph keys
+above are placeholders: load/define them in the project first.
+NEREID does not allocate a separate particle runtime or change
+`WaterCascadeComponent` persistence. No tests/builds were run,
+per owner direction; see HANDOFF Stage 31.
