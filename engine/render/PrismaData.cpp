@@ -209,6 +209,35 @@ PrismaEffect defaultPrismaEffect(PrismaType t) {
     return e;
 }
 
+void sanitizePrismaSettings(PrismaSettings& settings) {
+    // GPU-free native path uses the same limits and defaults as the
+    // strict/non-strict JSON parser. Direct C++ or ECS-backed profiles
+    // may have truncated vectors or NaN/Inf from scripted math.
+    for (auto& effect : settings.effects) {
+        const PrismaTypeDef& def = prismaType(effect.type);
+        const PrismaEffect defaults = defaultPrismaEffect(effect.type);
+        if (effect.values.size() != defaults.values.size()) {
+            std::vector<float> normalized = defaults.values;
+            const size_t count = std::min(normalized.size(), effect.values.size());
+            std::copy_n(effect.values.begin(), count, normalized.begin());
+            effect.values = std::move(normalized);
+        }
+        size_t offset = 0;
+        for (const auto& param : def.params) {
+            const int width = floatsOf(param); // 0 for Text, 3 for Color
+            for (int i = 0; i < width; ++i) {
+                float& value = effect.values[offset++];
+                if (!std::isfinite(value))
+                    value = param.def[i];
+                else if (param.kind == PrismaParamKind::Bool)
+                    value = value > 0.5f ? 1.0f : 0.0f;
+                else
+                    value = std::clamp(value,param.lo,param.hi);
+            }
+        }
+    }
+}
+
 PrismaEffect parsePrismaEffect(const Json& j, bool strict, std::vector<std::string>* issues) {
     auto problem = [&](const std::string& m) {
         if (strict) throw std::runtime_error(m);
