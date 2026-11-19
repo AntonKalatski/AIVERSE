@@ -116,6 +116,9 @@ public:
     bool captureGpuCheckpoint(GpuCheckpoint& out) {
         return useComputeWrapper_ && gpu_.captureGpuCheckpoint(out);
     }
+    GpuCheckpointStatus checkpointStatus() const {
+        return useComputeWrapper_ ? gpu_.checkpointStatus() : GpuCheckpointStatus{};
+    }
     bool requestGpuCheckpoint(std::function<void(bool)> callback = {}) {
         return useComputeWrapper_ &&
             gpu_.requestGpuCheckpoint(std::move(callback));
