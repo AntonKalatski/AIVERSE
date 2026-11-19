@@ -311,6 +311,10 @@ public:
     const spectra::GpuPoolWorld* spectraGpuTelemetry() const {
         return spectraGpuTelemetry_;
     }
+    // Exports a FULL, CURRENT-revision GPU checkpoint from an attached pool,
+    // if available. Writes one <=529 KiB diagnostic file under userDataDir.
+    // out receives a path on success or a reason on failure.
+    bool saveFreshSpectraGpuCheckpoint(std::string& out) const;
     void reloadFx();                           // after fx files changed (Effects window, agents)
     std::vector<std::string> fxWarnings;       // from the last reloadFx()
     int fxRevision = 0;                        // bumped when fx files change (agents): the Effects window re-reads
