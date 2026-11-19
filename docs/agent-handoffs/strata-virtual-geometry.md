@@ -1985,3 +1985,73 @@ geometry or Vulkan GPU-driven compute.
 pressure control, then backend Vulkan compute/GPU-driven selector as
 a separate Stage 16. Maintain the one-Renderer3D-draw-per-source
 contract and keep default-OFF Legacy compatibility.
+
+
+---
+
+## Stage 15.1 — scene-wide active GPU index cap (2026-11-19)
+
+**Implemented, committed, NOT compiled/tested**. Build/test remains deferred
+to the owner-requested final native pass.
+
+### New API and semantics
+
+`GeometryScene::setStrataStreamingSceneBudgetBytes(size_t)` is an
+optional scene-wide aggregate **active index residency** cap.
+`setStrataStreamingIndexBudgetBytes(size_t)` remains the per-source
+maximum. If the scene cap is positive and the per-source cap is
+zero, streaming is automatically enabled; each source cap becomes
+the lesser of its full Strata index bytes and the hard 64 MiB/source
+safety limit. If both caps are zero, the Stage 14 eager route remains
+unchanged. Both settings are configured **before scene load**.
+
+At load, the scene counts each source's complete pinned-root indices
+and its possible maximum index bytes, then calls the pure, independent
+`strata::apportionSceneIndexBudget` helper. The helper deterministically
+sorts by root byte cost and stable source key, admits as many root sets
+as possible under severe pressure, and distributes remaining memory
+in proportion to admitted-source headroom with integer rounding
+remainder. Invalid root or insufficient per-source cap causes
+decline. Sources not admitted stay entirely **Legacy** (no partial
+stripped surface and no wasted GPU Strata index buffer).
+
+For admitted sources, the sum of their fixed active caps is <= the
+scene cap; runtime `IndexResidency` updates cannot exceed these
+individual limits. This bounds active Strata index allocations across
+multiple models **inside one GeometryScene**, not across separately
+constructed worlds, devices, or simultaneously in-flight retired RHI
+buffer generations. The latter remain the backend's deferred
+reclamation responsibility.
+
+New scene metric: `Stats::strataStreamingBudgetDeclined` (sources
+left Legacy because the mandatory root reservation was not granted).
+
+### Changed files / commits
+
+- `engine/render/GeometryScene.h`:
+  `253090f99c65a83bb01f8ff41de513cadcc2dc32`
+- `engine/render/GeometryScene.cpp` initial inline allocator:
+  `c2fd2af484da7be76d57f4834ac8aca29407bf62`;
+  factored into independently testable helper:
+  `67a5c885444c191e00fac85c48bccb79fc988478`
+- `engine/render/StrataIndexResidency.h`:
+  `f7171e34004ffdbd616ff4ce7d5e9b38dc65591d`
+- `engine/render/StrataIndexResidency.cpp`:
+  `7916a9025378807aca62ec3f17e3975062cfbc58`
+- `tests/render/strata_index_residency.cpp`:
+  `6573c96d26f85e1744673e934a81bce9811f2410`
+
+### Deferred tests and next work
+
+The new **unexecuted** regression covers three competing source
+budgets, fair admission/decline, deterministic tie order, scene-wide
+cap preservation, tiny-budget Legacy outcomes, unlimited cap mode,
+root > per-source max, and `UINT64_MAX` input overflow safety.
+All Stage 15 tests remain planned for the combined native build.
+
+**Next**: per-frame upload bandwidth throttling and dirty-page
+incremental uploads (avoid complete immutable buffer repacks), a
+scene/world-wide active+in-flight physical residency budget,
+then actual Vulkan compute selection + final visual/performance parity.
+The current manager does not claim async SSD streaming, hardware
+sparse bindings or cross-GeometryScene global pooling.
