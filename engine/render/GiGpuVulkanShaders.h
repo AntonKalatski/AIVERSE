@@ -28,6 +28,9 @@ layout(push_constant) uniform GIParams {
     uint nodes;
     float pad1;
     float pad2;
+    vec4 sunDirectionIntensity;
+    vec4 sunColorSkyIntensity;
+    vec4 skyColor;
 } p;
 struct Hit { float distance; vec3 normal; vec3 albedo; };
 
@@ -131,6 +134,24 @@ void main() {
             }
             float energy=light.colorIntensity.w*ndl*cone*falloff*falloff/(1.0+distanceSquared);
             outgoing+=light.colorIntensity.xyz*first.albedo*energy;
+        }
+        // Explicit opt-in first-bounce sun and overhead sky on the hit
+        // surface. Mirrors the CPU/Metal transport; not receiver direct light.
+        if(p.sunDirectionIntensity.w>0.0) {
+            float nds=max(0.0,dot(normal,p.sunDirectionIntensity.xyz));
+            if(nds>0.0 &&
+               traceBvh(surface,p.sunDirectionIntensity.xyz,p.traceDistance).distance>=
+                   p.traceDistance-0.03)
+                outgoing+=p.sunColorSkyIntensity.xyz*first.albedo*
+                          (p.sunDirectionIntensity.w*nds);
+        }
+        if(p.sunColorSkyIntensity.w>0.0) {
+            float skyCos=max(0.0,normal.y);
+            if(skyCos>0.0 &&
+               traceBvh(surface,vec3(0.0,1.0,0.0),p.traceDistance).distance>=
+                   p.traceDistance-0.03)
+                outgoing+=p.skyColor.xyz*first.albedo*
+                          (p.sunColorSkyIntensity.w*skyCos);
         }
         vec3 v=outgoing/float(p.samples);
         coefficient+=v;
