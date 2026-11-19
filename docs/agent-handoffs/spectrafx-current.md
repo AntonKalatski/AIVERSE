@@ -2,9 +2,13 @@
 
 Updated: 2026-11-19. Branch: `feature/spectrafx-generic-cue-queue`.
 Repository: `chromealex/AIVERSE`.
-Status: **feature implementation/source review only**. No native C++ builds,
-CTest, editor execution, Metal GPU rendering, shader compilation or CPU/GPU
-fallback verification were actually run for stages 1–85 in this branch.
+Status: **native validation in progress**. The user provided a Mac Studio
+build/CTest log for the native `aiverse_spectrafx_contract_tests` target:
+`spectrafx_contract` **PASSED 1/1** (0.32 seconds, no failed tests),
+in the separate `AIVERSE-spectrafx-validation` worktree. This is the
+only new native test PASS evidenced so far. The full SpectraFX CTest
+suite, editor/FPS/RTS client compilation, MSL shader/runtime, GPU memory
+lifetime, and visual CPU/GPU fallback are **not yet validated**.
 Do not claim release readiness or merge to `main` without validation.
 
 ## Where to start
@@ -88,7 +92,15 @@ The next source review should prioritize remaining metal readback
 callback/resource completion assumptions, the editor viewport frame
 sequence and compatibility with current `gfx::Device` API.
 
-Only **after feature scope has been closed**, validate:
+**Immediate next test step:** from an updated detached SpectraFX
+validation worktree, build `aiverse_spectrafx_header_smoke`,
+`aiverse_vfx_graph_tests`, `aiverse_vfx_ecs_tests`,
+`aiverse_vfx_assets_tests`, `aiverse_editor`,
+`aiverse_fps_client` and `aiverse_client`; then run
+`ctest --test-dir build/spectrafx-validation -L SpectraFX --output-on-failure`.
+Record real logs and fix errors before proceeding.
+
+After this first validated native contract, continue with:
 - CMake configure/build including `aiverse_editor`,
   `aiverse_fps_client`, and RTS native client
 - C++ header smoke for all new `engine/fx/SpectraFx*.h`
