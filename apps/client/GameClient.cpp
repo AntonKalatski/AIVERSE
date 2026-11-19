@@ -998,6 +998,8 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         view_.collectRetiredModels();
     if(r3d_.pendingProgramRetirements()!=0)
         r3d_.collectRetiredPrograms();
+    if(r3d_.pendingTargetRetirements()!=0)
+        r3d_.collectRetiredTargets();
     if(r3d_.hasPendingModelPipelineJobs())
         r3d_.pollPendingModelPipelineJobs();
     if(postFx_.pendingTargetRetirements()!=0)
