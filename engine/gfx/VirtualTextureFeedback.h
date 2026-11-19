@@ -217,6 +217,43 @@ inline float4 aiverse_material_feedback(float2 uv, int mip, int layer,
 }
 )VTF";
 
+// Optional fragment-only automatic mip policy. The caller supplies the
+// virtual texture's logical texel extent, not the feedback target extent.
+// The derivatives must be evaluated in uniform fragment control flow
+// (before conditional discard/early return) to avoid undefined LOD.
+// Bias permits coarser/finer streaming without changing the page codec.
+inline constexpr const char* kVirtualTextureFeedbackAutoMipGLSL = R"VTF(
+int aiverseFeedbackMipFromDerivatives(
+    vec2 uv, vec2 virtualTexels, int mipLevels, float mipBias) {
+    if (any(isnan(uv)) || any(isinf(uv)) ||
+        any(isnan(virtualTexels)) || any(isinf(virtualTexels)) ||
+        any(lessThanEqual(virtualTexels,vec2(0.0))) ||
+        isnan(mipBias) || isinf(mipBias) ||
+        mipLevels<1 || mipLevels>30) return -1;
+    vec2 dx=dFdx(uv)*virtualTexels;
+    vec2 dy=dFdy(uv)*virtualTexels;
+    float footprint=max(dot(dx,dx),dot(dy,dy));
+    if (isnan(footprint) || isinf(footprint)) return -1;
+    float lod=0.5*log2(max(footprint,1.0))+mipBias;
+    return int(floor(clamp(lod,0.0,float(mipLevels-1))));
+}
+)VTF";
+
+inline constexpr const char* kVirtualTextureFeedbackAutoMipMSL = R"VTF(
+inline int aiverse_feedback_mip_from_derivatives(
+    float2 uv, float2 virtualTexels, int mipLevels, float mipBias) {
+    if (!all(isfinite(uv)) || !all(isfinite(virtualTexels)) ||
+        any(virtualTexels<=float2(0.0)) || !isfinite(mipBias) ||
+        mipLevels<1 || mipLevels>30) return -1;
+    float2 dx=dfdx(uv)*virtualTexels;
+    float2 dy=dfdy(uv)*virtualTexels;
+    float footprint=max(dot(dx,dx),dot(dy,dy));
+    if (!isfinite(footprint)) return -1;
+    float lod=0.5*log2(max(footprint,1.0))+mipBias;
+    return int(floor(clamp(lod,0.0,float(mipLevels-1))));
+}
+)VTF";
+
 inline constexpr const char* kVirtualTextureFeedbackGLSL = R"VTF(
 vec4 aiverseEncodeFeedback(ivec4 page) {
     // page = (x,y,mip,virtualLayer); negatives mean invalid.
