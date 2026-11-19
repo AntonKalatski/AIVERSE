@@ -978,6 +978,70 @@ void ParticleSystem::emitManual(FxHandle h) {
     for (const auto& p : I.particles) if (p.owner == h.id) I.queueSub(p, FxSubEvent::Manual, p.pos);
 }
 
+bool ParticleSystem::importLiveParticles(
+    int effect,const std::vector<FxImportedParticle>& input) {
+    auto& I=*impl_;
+    if(effect<0 || size_t(effect)>=I.effects.size() ||
+       !I.effects[size_t(effect)].valid ||
+       I.effects[size_t(effect)].def.emitters.size()!=1 ||
+       I.effects[size_t(effect)].em.empty())return false;
+    if(input.size()>size_t(I.limits.maxParticles) ||
+       I.particles.size()>size_t(I.limits.maxParticles)-input.size())
+        return false;
+    // Strictly restrict imported checkpoint particles to the simple GPU
+    // emitter subset. No trailing instance, sub-emitter, ribbons or geometry
+    // ownership may be created implicitly.
+    const auto& emitter=I.effects[size_t(effect)].def.emitters[0];
+    if(emitter.trail.enabled || emitter.collision.enabled ||
+       emitter.trigger.enabled || !emitter.subEmitters.empty() ||
+       !emitter.meshes.empty() || !emitter.sprites.empty() ||
+       emitter.localSpace || emitter.ringBuffer)return false;
+    const auto valid=[](float v) {
+        return std::isfinite(v) && std::abs(v)<=1.0e7f;
+    };
+    const auto valid3=[&](float3 v) {
+        return valid(v.x)&&valid(v.y)&&valid(v.z);
+    };
+    const auto valid4=[&](float4 v) {
+        return valid(v.x)&&valid(v.y)&&valid(v.z)&&valid(v.w);
+    };
+    std::vector<Impl::Particle> staged;
+    staged.reserve(input.size());
+    for(const auto& src:input) {
+        if(!valid3(src.pos) || !valid3(src.vel) ||
+           !valid4(src.tint) || src.age<0 || !valid(src.age) ||
+           !valid(src.lifetime) || src.lifetime<=0.0f ||
+           src.age>=src.lifetime || !valid(src.size) || src.size<0)
+            return false;
+        for(float v:src.programParams)if(!valid(v))return false;
+        for(float v:src.customAttributes)if(!valid(v))return false;
+        Impl::Particle p{};
+        p.pos=src.pos;
+        p.vel=p.vtot=src.vel;
+        p.age=src.age;
+        p.invLife=1.0f/src.lifetime;
+        p.size=src.size;
+        p.tint=src.tint;
+        p.programParams=src.programParams;
+        p.customAttributes=src.customAttributes;
+        p.scale=p.nsize=p.aspect=p.depthK=p.grav=1.0f;
+        p.effect=uint16_t(effect);
+        p.emitter=0;
+        p.batch=I.effects[size_t(effect)].em[0].batch;
+        p.owner=0; // no emitter instance is revived or allowed to emit
+        p.trail=-1;
+        p.dir0={0,1,0};
+        staged.push_back(p);
+    }
+    // No changes to the CPU pool occur before all input has validated.
+    I.particles.reserve(I.particles.size()+staged.size());
+    for(auto& particle:staged) {
+        particle.uid=++I.nextUid;
+        I.particles.push_back(std::move(particle));
+    }
+    return true;
+}
+
 void ParticleSystem::snapshot(std::vector<FxParticleInfo>& out) const {
     const auto& I = *impl_;
     out.clear();
