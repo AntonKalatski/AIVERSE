@@ -428,12 +428,14 @@ inline std::string virtualTextureLodFeedbackFragmentGLSL(
     shader +=
         "uniform float uLodThreshold;\n"
         "uniform bool uLodInvert;\n"
+        "uniform vec2 uFeedbackToSceneScale;\n"
+        "uniform vec2 uFeedbackToSceneOffset;\n"
         "void main(){\n";
     if (automaticMip)
         shader += " int mip=aiverseFeedbackMipFromDerivatives("
                   "vVirtualUV,uVirtualTexels,uVirtualMipLevels,uVirtualMipBias);\n";
     shader +=
-        " ivec2 lp=ivec2(floor(gl_FragCoord.xy)) & ivec2(3);\n"
+        " ivec2 lp=ivec2(floor(gl_FragCoord.xy * uFeedbackToSceneScale + uFeedbackToSceneOffset)) & ivec2(3);\n"
         " int rank=((lp.x & 1) ^ (lp.y & 1))*8+(lp.y & 1)*4+"
         "((lp.x>>1) ^ (lp.y>>1))*2+(lp.y>>1);\n"
         " float noise=(float(rank)+0.5)/16.0;\n"
@@ -451,7 +453,7 @@ inline std::string virtualTextureLodFeedbackFragmentMSL(
     if (entry==std::string::npos) return {};
     shader.erase(entry);
     shader +=
-        "struct AiverseLodFeedbackParams { float threshold; uint invert; };\n"
+        "struct AiverseLodFeedbackParams { float threshold; uint invert; float2 sceneScale; float2 sceneOffset; };\n"
         "fragment float4 aiverseVirtualFeedbackFragment(\n"
         " AiverseFeedbackInput in [[stage_in]],\n"
         " constant AiverseFeedbackParams& p [[buffer(0)]],\n"
@@ -460,7 +462,7 @@ inline std::string virtualTextureLodFeedbackFragmentMSL(
         shader += " int mip=aiverse_feedback_mip_from_derivatives("
                   "in.uv,p.texels,p.mipLevels,p.mipBias);\n";
     shader +=
-        " int2 lp=int2(floor(in.position.xy)) & int2(3);\n"
+        " int2 lp=int2(floor(in.position.xy * lod.sceneScale + lod.sceneOffset)) & int2(3);\n"
         " int rank=((lp.x & 1) ^ (lp.y & 1))*8+(lp.y & 1)*4+"
         "((lp.x>>1) ^ (lp.y>>1))*2+(lp.y>>1);\n"
         " float noise=(float(rank)+0.5)/16.0;\n"
@@ -486,7 +488,7 @@ inline std::string virtualTextureMaskedLodFeedbackFragmentGLSL(
     if (alpha==std::string::npos) return {};
     const size_t after=alpha+std::string(" if(alpha<uAlphaCutoff) discard;\n").size();
     shader.insert(after,
-        " ivec2 lp=ivec2(floor(gl_FragCoord.xy)) & ivec2(3);\n"
+        " ivec2 lp=ivec2(floor(gl_FragCoord.xy * uFeedbackToSceneScale + uFeedbackToSceneOffset)) & ivec2(3);\n"
         " int rank=((lp.x & 1) ^ (lp.y & 1))*8+(lp.y & 1)*4+"
         "((lp.x>>1) ^ (lp.y>>1))*2+(lp.y>>1);\n"
         " float noise=(float(rank)+0.5)/16.0;\n"
@@ -500,7 +502,7 @@ inline std::string virtualTextureMaskedLodFeedbackFragmentMSL(
     const size_t entry=shader.find("fragment float4 aiverseVirtualFeedbackFragment(");
     if (entry==std::string::npos) return {};
     shader.insert(entry,
-        "struct AiverseLodFeedbackParams { float threshold; uint invert; };\n");
+        "struct AiverseLodFeedbackParams { float threshold; uint invert; float2 sceneScale; float2 sceneOffset; };\n");
     const size_t sampler=shader.find(" sampler baseSampler [[sampler(0)]]) {");
     if (sampler==std::string::npos) return {};
     shader.replace(sampler,
@@ -511,7 +513,7 @@ inline std::string virtualTextureMaskedLodFeedbackFragmentMSL(
     if (alpha==std::string::npos) return {};
     const size_t after=alpha+std::string(" if(alpha<a.alphaCutoff) discard_fragment();\n").size();
     shader.insert(after,
-        " int2 lp=int2(floor(in.position.xy)) & int2(3);\n"
+        " int2 lp=int2(floor(in.position.xy * lod.sceneScale + lod.sceneOffset)) & int2(3);\n"
         " int rank=((lp.x & 1) ^ (lp.y & 1))*8+(lp.y & 1)*4+"
         "((lp.x>>1) ^ (lp.y>>1))*2+(lp.y>>1);\n"
         " float noise=(float(rank)+0.5)/16.0;\n"
