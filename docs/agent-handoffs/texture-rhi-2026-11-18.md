@@ -8881,3 +8881,60 @@ into the isolated macOS worktree and rerun
 `bash tools/verify-texture-rhi.sh --editor --jobs 4`.
 Keep PR #21 Draft until native tests and real GPU results are verified.
 
+
+## Stage 10AV — completed feedback mock-slot regression on macOS (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / Draft PR #21.
+**Evidence:** Mac Studio focused verifier at
+`ddd09697901bb69a4a874a6f54ec337a0759160a`:
+`virtual_texture_file_streamer` genuinely **executed and failed**
+at `capture next frame after consuming result`, unlike seven
+`Not Run` cases from missing test binaries. Read the uploaded
+`aiverse-texture-logs.tar.gz` CTest log and fetched the exact
+`tests/render/virtual_texture_file_streamer.cpp` / real
+`engine/gfx/VirtualTextureFeedbackRuntime.h` for diagnosis.
+
+**Source commits:**
+- `1f1fdc4887954ad537fe8b681e1a42d66cc031e6` —
+  `tests/render/virtual_texture_file_streamer.cpp`:
+  mock `finishFeedback` explicitly empties its
+  `TextureReadFn feedbackCompletion` member after moving it to a
+  local callback and **before invoking** it. No longer relies on the
+  unspecified moved-from `std::function` state for clearing
+  the one-outstanding-readback slot. Adds immediate assertion
+  that mock callback slot was released after first completion.
+- `1031e9e55a4f598615e63bcfeeb81e51c0e3cada` —
+  same file: if repeated `runtime.capture` is still rejected,
+  throw an error with the real `runtime.lastError()` and whether
+  the mock callback slot is occupied; include `<string>`.
+- `fa72cf48ba679f3eb9cf9f3e8ef1f6d53974881f` —
+  `docs/texture-rhi.md` describes the mock callback state and
+  verification status.
+
+**Behavior/compatibility:** test fixture only, not production
+RHI/runtime behavior, GPU API, ECS gameplay or serialization.
+Callback lifetime remains weak-state invalidation safe for
+owner shutdown. Mock reset models a device callback slot
+becoming available at completion. The older assertion about
+a second capture is retained and enriched with diagnostics.
+No assertion was weakened.
+
+**Actual checks:** full user-provided `ctest.log` was inspected;
+current GitHub source was re-fetched and matching changes
+confirmed. This is static verification of changed source text.
+**NOT RUN after fix:** local/native C++ compilation, `ctest`
+execution, macOS Metal GPU feedback, Vulkan/GL backend capture
+or image parity. Do not mark test PASS or change PR Draft
+without the Mac Studio rerun.
+
+**Next exact action:** in the isolated verification worktree
+`/Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819`
+(which tracks `origin/feature/texture-rhi-unification` through
+local `verify-texture-rhi-20261119-150819` branch), run
+`git pull --ff-only origin feature/texture-rhi-unification`,
+`bash -n tools/verify-texture-rhi.sh`, then
+`bash tools/verify-texture-rhi.sh --editor --jobs 4`.
+If a build/test fails, inspect the new `build.log` and
+`ctest.log` and append another exact handoff.
+Do NOT use the original primary worktree with unresolved rebase.
+
