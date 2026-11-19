@@ -1,6 +1,6 @@
 # Strata — AIVERSE virtual geometry
 
-Status (2026-11-19): **experimental, import-time implementation only**.
+Status (2026-11-19): **experimental CPU staging and per-pass planning, not GPU draw submission**.
 Working branch: `feature/strata-virtual-geometry`.
 Agent resume log: [strata-virtual-geometry handoff](agent-handoffs/strata-virtual-geometry.md).
 
@@ -136,6 +136,52 @@ with Strata's new `ClusterNode` hierarchy. Strata staging currently stores
 auxiliary CPU data; it is NOT a substitute for pooled GPU pages and must not
 double-submit scene primitives.
 
+## Stage 6 — per-pass Strata selection contract
+
+`engine/render/StrataView.h/.cpp` introduces a CPU-only per-pass reference
+selector. The selected geometry uses **Asset-local index ranges**; ranges
+are not GPU draw commands and MUST NOT be passed to
+`gfx::Device::drawIndexedIndirect` without first arranging the auxiliary
+index stream through the shared geometry residency/allocator and correct
+material/instance grouping.
+
+```cpp
+#include "engine/render/StrataView.h"
+render::strata::ViewConfig pass{};
+pass.objectToClip = cameraViewProj * instanceWorld * bindNodeWorld;
+pass.width = renderTargetWidth;
+pass.height = renderTargetHeight;
+pass.clipDepthZeroToOne = device.info().clipDepthZeroToOne;
+pass.errorThresholdPixels = 1.0f;
+pass.maxSelectedNodes = 65536;
+render::strata::ViewPlan selected;
+std::string error;
+bool ok = scene.planStrataView(
+    "models/stone.glb", /* mesh */ 0, /* primitive */ 0,
+    pass, selected, &error);
+// Existing Renderer3D remains the sole draw issuer regardless of 'ok'.
+```
+
+`planStrataView` resolves the already-staged source once and calls the
+independent `strata::planView(asset, pass, result, error)`.
+The caller must supply the correct mesh-to-clip matrix **for each node and
+pass**. The API does not silently reuse the main view for shadows,
+reflections, portals or stereo. `strata::planView` validates bounds,
+index ranges, matrix and viewport; projects the existing per-cluster
+geometric error with `geometryErrorPixels`, runs the resident-parent
+fallback selector, then conservatively rejects offscreen selected nodes
+through `geometryBoxVisible`. Errors leave prior output unchanged.
+The resulting ranges identify node ID, firstIndex, indexCount and material
+group in their individual `strata::Asset` index stream; stats include
+tested/cut nodes, triangles, residency misses and budget pressure.
+
+The planner is packaged as `aiverse_strata_view`, using the existing
+`aiverse_models` geometry helpers. The CTest target is
+`aiverse_strata_view_tests` / `strata_view`. Neither test execution nor
+Metal/Vulkan validation has been claimed. The implementation remains a
+CPU reference path to compare eventual compute culling against; there is
+**no GPU scene buffer, RHI command upload or Strata draw path** yet.
+
 ## Architectural constraints
 - **One scene/instance truth**: `GeometryScene` owns static render instances
   and HLOD; do not create separate Strata transforms or introduce gameplay
@@ -155,38 +201,30 @@ double-submit scene primitives.
   require distinct culling/error metrics and shadow caster inclusion.
 
 ## Known shortcomings / next steps
-1. Make both focused test targets compile and pass (including new staging test cases). Command:
-   `cmake -S . -B build/strata -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_STRATA=ON`
-   then `cmake --build build/strata --target aiverse_strata_builder_tests aiverse_strata_model_adapter_tests`
-   then `ctest --test-dir build/strata -R '^strata_(builder|model_adapter)
-2. Add explicit material/attribute seam, silhouette and vertex displacements
-   regression fixtures. Attribute-aware simplification is implemented for
-   Model adapters, but locked borders are not a guarantee against cracks
-   at all heterogeneous LOD frontiers.
-3. Validate meshlet locality; consider importing full upstream meshoptimizer
-   clustering/partition implementation in a versioned dependency update.
-4. CPU-only `GeometryScene` staging is available behind an explicit opt-in
-   switch, but requires full native validation and visual/performance A/B.
-   Only then add a per-pass selected-range submission adapter; retain legacy
-   material and batching ownership and prevent double submission.
-5. Build independent CPU and GPU benchmark references; measure quality,
-   memory, streaming stalls, frame time and fallback behavior.
+
+1. Compile and execute focused tests on a native project checkout:
+   ```sh
+   cmake -S . -B build/strata -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_STRATA=ON
+   cmake --build build/strata --target aiverse_strata_builder_tests aiverse_strata_model_adapter_tests aiverse_strata_view_tests -j 8
+   ctest --test-dir build/strata -R '^strata_(builder|model_adapter|view)$' --output-on-failure
+   ```
+2. Add a recording-device scene fixture comparing Strata staging OFF/ON,
+   instance deduplication, material/LOD/shadow draw parity and unload/reload.
+3. Validate silhouette and seam quality for different LOD depths and attribute
+   discontinuities; parent simplification and locked borders alone do not
+   guarantee crack-free transitions.
+4. Integrate Strata auxiliary index-stream allocation with the **existing**
+   `GlobalGeometryPool`, including versioned GPU lifetime and frame fences.
+   Never publish `SelectedRange::firstIndex` as an index into the original
+   `Model::ib`. It references `Strata::Asset::indices` only.
+5. Build a capability-gated GPU scene/cluster selection path using the
+   CPU planner as a correctness oracle. Submit visible ranges through one
+   existing `Renderer3D` batching/MDI owner, or fall back to normal models.
+6. Benchmark CPU and GPU time separately, validate view-dependent shadows,
+   reflection views and multi-world lifetime, then pursue streaming.
 
 ## Verification policy
-Compiler, CTest, GPU timing and screenshots must be reported only after
-actual execution with logs/CI URLs. An opened or queued CI run is not a PASS.
- --output-on-failure`.
-2. Add explicit material/attribute seam and silhouette policies; use
-   `meshopt_simplifyWithAttributes` once vertex attributes are available.
-   Current locked borders are not a universal guarantee against cracks
-   at all heterogeneous LOD frontiers.
-3. Validate meshlet locality; consider importing full upstream meshoptimizer
-   clustering/partition implementation in a versioned dependency update.
-4. Add a feature-gated, single `GeometryScene` adapter and per-pass bounds
-   tests before any GPU Scene/culling path.
-5. Build independent CPU and GPU benchmark references; measure quality,
-   memory, streaming stalls, frame time and fallback behavior.
 
-## Verification policy
-Compiler, CTest, GPU timing and screenshots must be reported only after
-actual execution with logs/CI URLs. An opened or queued CI run is not a PASS.
+Compiler, CTest, screenshots, GPU timing and benchmarks must be reported only
+after **actual execution** with exact logs or CI URLs. Queued/cancelled runs
+are not passing results.
