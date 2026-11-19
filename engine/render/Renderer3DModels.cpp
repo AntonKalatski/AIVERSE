@@ -360,9 +360,20 @@ Renderer3D::warmModelPipelinesChecked(
         if(std::find(pendingColorWarms_.begin(),pendingColorWarms_.end(),
                      pipe)!=pendingColorWarms_.end()) {
             warmingPending_=true;
-        }else if(!dev_->warmPipelineColor(pipe,gfx::PixelFormat::RGBA16F)) {
-            warmingPending_=true;
-            pendingColorWarms_.push_back(pipe);
+        }else {
+            switch(dev_->warmPipelineColorStatus(pipe,gfx::PixelFormat::RGBA16F)) {
+            case gfx::Device::PipelineColorWarmStatus::Ready:
+                break;
+            case gfx::Device::PipelineColorWarmStatus::Pending:
+                warmingPending_=true;
+                pendingColorWarms_.push_back(pipe);
+                break;
+            case gfx::Device::PipelineColorWarmStatus::Failed:
+                warmingFailed_=true;
+                ++colorWarmFailed_;
+                modelError_="model HDR pipeline: "+dev_->lastError();
+                break;
+            }
         }
     };
     const auto& mats = materials ? *materials : model.materials;
@@ -408,6 +419,7 @@ Renderer3D::GpuWarmStats Renderer3D::gpuWarmStats() const noexcept {
     out.colorVariants=pendingColorWarms_.size();
     out.colorPollAttempts=colorWarmPollAttempts_;
     out.colorVariantsReady=colorWarmReady_;
+    out.colorVariantsFailed=colorWarmFailed_;
     for(const auto& [key,shader]:modelShaders_) {
         (void)key;
         if(shader.job)++out.shaderJobs;
@@ -432,10 +444,20 @@ bool Renderer3D::pollPendingModelPipelineJobs() {
     // advance GPU compiler jobs that have already been submitted.
     for(auto it=pendingColorWarms_.begin();it!=pendingColorWarms_.end();) {
         ++colorWarmPollAttempts_;
-        if(dev_->warmPipelineColor(*it,gfx::PixelFormat::RGBA16F)) {
+        switch(dev_->warmPipelineColorStatus(*it,gfx::PixelFormat::RGBA16F)) {
+        case gfx::Device::PipelineColorWarmStatus::Ready:
             ++colorWarmReady_;
             it=pendingColorWarms_.erase(it);
-        }else ++it;
+            break;
+        case gfx::Device::PipelineColorWarmStatus::Failed:
+            ++colorWarmFailed_;
+            modelError_="model HDR pipeline: "+dev_->lastError();
+            it=pendingColorWarms_.erase(it);
+            break;
+        case gfx::Device::PipelineColorWarmStatus::Pending:
+            ++it;
+            break;
+        }
     }
     for(auto& [key,entry]:modelShaders_) {
         (void)key;
