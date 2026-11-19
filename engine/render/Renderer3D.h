@@ -15,6 +15,7 @@
 #include "Math3D.h"
 #include "Model.h"
 #include "ModelStaticEligibility.h"
+#include "CpuMdiAdaptivePolicy.h"
 #include "PersistentGpuSceneUpload.h"
 #include "GpuSceneCulling.h"
 #include "GpuSceneDrawCommands.h"
@@ -217,6 +218,9 @@ struct ModelRenderStats {
     uint64_t staticCrossModelPreflightReady = 0;
     uint64_t staticCrossModelPreflightRejected = 0;
     uint64_t staticCrossModelPreflightItems = 0;
+    uint64_t staticCrossModelAdaptiveSkippedPasses = 0;
+    uint64_t staticCrossModelAdaptiveProbePasses = 0;
+    uint64_t staticCrossModelAdaptiveMeasuredAttempts = 0;
     // A subset of CPU MDI submissions: different rigid meshes and materials
     // share shader/texture state, with per-command base/PBR factors in U3.
     uint64_t mdiPaletteSubmissions = 0, mdiPaletteCommands = 0;
@@ -426,6 +430,12 @@ public:
     void setGpuAuthoredDrawEnabled(bool on) { gpuAuthoredDrawEnabled_ = on; }
     bool modelMultiDrawSupported() const { return dev_ && dev_->supportsMultiDrawIndirect(); }
     const ModelRenderStats& modelStats() const { return modelStats_; }
+    // 0 = sun shadow, 1 = opaque main view; CPU time only, no GPU timestamps.
+    const std::array<CpuMdiAdaptiveFeedback, 2>& cpuMdiAdaptiveFeedback() const {
+        return cpuMdiAdaptive_;
+    }
+    bool cpuMdiAdaptiveEnabled() const { return cpuMdiAdaptiveEnabled_; }
+    double cpuMdiAdaptiveBudgetUs() const { return cpuMdiAdaptiveBudgetUs_; }
     struct RenderProfile {
         double submitMs=0,occlusionMs=0;
         std::array<double,5> selectMs{},sortMs{},drawMs{};
@@ -621,6 +631,11 @@ private:
     // Optional CPU MDI sorter for static rigid meshes sharing one GPU arena.
     // Never bypass per-object culling, LOD, material or shader compatibility.
     bool staticCrossModelBatchesEnabled_ = false;
+    bool cpuMdiAdaptiveEnabled_ = false;
+    double cpuMdiAdaptiveBudgetUs_ = 25.0;
+    // Lifetime CPU submission feedback by pass, not GPU elapsed time.
+    // Only the opt-in pooled static MDI path reads or writes this state.
+    std::array<CpuMdiAdaptiveFeedback, 2> cpuMdiAdaptive_{};
     bool gpuAuthoredDrawEnabled_ = true;
     bool modelCullingEnabled_ = true, modelInstancingEnabled_ = true;
     bool auxiliaryModelPass_ = false;
