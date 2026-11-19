@@ -83,15 +83,16 @@ bool HumanCreatorSession::saveFile(const std::string& path,std::string* error) {
             out.flush();
             if(!out)throw std::runtime_error("VIVID creator: save write failed");
         }
-        // On some desktop platforms replace-via-rename needs the old target
-        // removed first. A failed replacement leaves staging for recovery.
+        // Preserve the last-good saved DNA on EVERY failed replacement.
+        // On platforms where rename cannot atomically replace an existing
+        // file, fail with a readable diagnostic instead of deleting the
+        // original first. The staging file remains for manual recovery.
         std::error_code ec;
         std::filesystem::rename(staging,destination,ec);
-        if(ec) {
-            std::filesystem::remove(destination,ec);
-            if(ec)throw std::runtime_error("VIVID creator: cannot replace destination");
-            std::filesystem::rename(staging,destination);
-        }
+        if(ec)
+            throw std::runtime_error(
+                "VIVID creator: cannot atomically replace destination: "+
+                ec.message());
         dirty_=false;
         if(error)error->clear();
         return true;
