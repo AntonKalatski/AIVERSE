@@ -19,6 +19,8 @@ struct Node {
 struct Lamp {
     float4 posRadius;
     float4 colorIntensity;
+    float4 spotDirectionOuter;
+    float4 spotInner;
 };
 struct Job {
     uint index;
@@ -137,7 +139,14 @@ kernel void cs_main(uint thread [[thread_position_in_grid]],
             if(ndl==0.0f)continue;
             if(traceBvh(surface,L,d,tris,nodes,p.nodes).distance<d-.03f)continue;
             float falloff=1.0f-d2/(radius*radius);
-            float energy=light.colorIntensity.w*ndl*falloff*falloff/(1.0f+d2);
+            float cone=1.0f;
+            if(light.spotDirectionOuter.w>-1.5f) {
+                const float angle=dot(light.spotDirectionOuter.xyz,-L);
+                cone=clamp((angle-light.spotDirectionOuter.w)/
+                           max(light.spotInner.x-light.spotDirectionOuter.w,1e-5f),0.0f,1.0f);
+                if(cone<=0.0f)continue;
+            }
+            float energy=light.colorIntensity.w*ndl*cone*falloff*falloff/(1.0f+d2);
             outgoing+=light.colorIntensity.xyz*first.albedo*energy;
         }
         float3 v=outgoing/float(p.samples);
