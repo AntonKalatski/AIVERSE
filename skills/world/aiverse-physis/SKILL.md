@@ -1007,3 +1007,21 @@ branch and compile/test `aiverse_physis_remote_edit_test`, then
 `aiverse_editor` on macOS; keep PR #25 Draft until actual logs.
 Handoff:
 `docs/agent-handoffs/physis-stage70-ternary-net-qualification-2026-11-19.md`.
+
+### Stage 71 — macOS AiverseEditor compiles after Stage69/70 fixes
+
+The user provided **actual** `physis_remote_edit` CTest **1/1 PASS**
+(0.08s) and **`[100%] Built target aiverse_editor`** on the
+PHYSIS feature branch after `4817aaad`. This is native compiler
+evidence that `::aiverse::net` type resolution and the ternary
+separator are repaired. No C++ change in this stage.
+
+The UI has not yet been launched/inspected. Open the freshly built
+macOS bundle found beneath `build/physis-gui-validation`; PHYSIS
+window is `Мир → PHYSIS · Природа` and closed by default.
+Without a live GameModule PHYSIS installation, the standalone demo
+is safe and opt-in; the Scene overlay requires the real ECS field.
+Save observations/screenshots and then a new agent handoff. Do not
+mark full GUI, cross-platform CI or production admin security PASS.
+Handoff:
+`docs/agent-handoffs/physis-stage71-macos-gui-build-green-2026-11-19.md`.

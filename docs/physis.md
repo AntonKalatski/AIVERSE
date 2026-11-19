@@ -939,3 +939,17 @@ remains unchanged. Post-fix native CTest and GUI build are NOT RUN;
 the previous headless 24/24 and editor authoring 2/2 remain
 historical prior-test evidence, not validation of new source.
 Handoff: `docs/agent-handoffs/physis-stage70-ternary-net-qualification-2026-11-19.md`.
+
+### Stage 71 — macOS GUI editor native build now passes
+
+After Stage69 namespace qualification and Stage70 ternary fix,
+the user rebuilt the actual macOS editor. The PHYSIS
+`physis_remote_edit` CTest **PASSED 1/1**, 0.08s, followed by a
+complete `aiverse_editor` build to **100%** with editor core,
+network, game view and runtime. This is actual compilation evidence,
+not a GUI runtime test. PHYSIS headless 24/24 and editor authoring
+2/2 were also user-reported passing in earlier separate builds.
+No runtime C++ change this stage. Interactive Scene gizmos,
+Inspector Undo/Redo, visual overlays, admin connection, broad
+regressions and completed CI remain unverified. See
+`docs/agent-handoffs/physis-stage71-macos-gui-build-green-2026-11-19.md`.

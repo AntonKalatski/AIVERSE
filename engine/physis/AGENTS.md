@@ -991,3 +991,22 @@ ctest --test-dir build/physis-editor-validation --output-on-failure -R '^physis_
 - Re-fetched bridge header and checked that no `:::` remains in `PhysisRemoteEdit.h`, `PhysisWindow.cpp` or `tests/physis_remote_edit_test.cpp`. **Actual post-fix native compilation/CTest/GUI build NOT RUN**. Previously reported PHYSIS 24/24 and editor authoring 2/2 were obtained before these Stage69/70 source edits.
 - Existing `physis_remote_edit` translation unit has a deliberate `aiverse::editor::net` namespace shadow fixture to cover the bridge's qualified symbols, but must actually be compiled on macOS to confirm.
 - Handoff: `docs/agent-handoffs/physis-stage70-ternary-net-qualification-2026-11-19.md`.
+
+### Stage 71 — native macOS editor GUI build succeeds (2026-11-19)
+
+- **ACTUAL user-reported native results after Stage70:** `physis_remote_edit` CTest **1/1 PASS** (0.08 sec), then `aiverse_editor` built successfully to **100%**. The build includes `aiverse_editor_core`, `aiverse_net`, runtime, rendering and FPS dependencies. This confirms the Stage69 net namespace shadow and Stage70 ternary parser errors no longer block compilation/linking.
+- Earlier native runs passed PHYSIS headless 24/24 (with Box3D) and editor MapDoc authoring 2/2. They were run before Stage69/70 changes; current native compile/regression evidence is the fresh 1/1 plus GUI editor build.
+- **No new C++ source code changed** in this stage; this is the mandatory documentation/handoff stage.
+- The PHYSIS editor window is registered under `world`, titled `PHYSIS · Природа`, **closed by default**. Its demo runs in a private World. Real PHYSIS nature sampling requires a GameModule that installs PHYSIS. A 3D scene overlay only reads a live PHYSIS world. Remote editing requires explicit authenticated host attachment.
+- **NOT verified:** launching the GUI, visual layout, mouse selection/marquee, field gizmos/snap/group transform, Undo/Redo, remote admin login, full repository-wide CTest, completed CI, Windows and TLS/WSS. Keep PR #25 DRAFT.
+- Next: launch app from `build/physis-gui-validation` and perform manual visual checks; do not claim GUI QA success without evidence. Use:
+```sh
+cd ~/Projects/AIVERSE &&
+git fetch origin &&
+git switch feature/physis-nature-simulation &&
+git pull --ff-only origin feature/physis-nature-simulation &&
+APP="$(find build/physis-gui-validation -name AiverseEditor.app -type d -prune -print -quit)" &&
+test -n "$APP" &&
+open "$APP"
+```
+- Handoff: `docs/agent-handoffs/physis-stage71-macos-gui-build-green-2026-11-19.md`.
