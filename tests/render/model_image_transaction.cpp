@@ -1,5 +1,6 @@
 // Stage 112 deferred native test: rollback survives pending/failed GPU fence.
 #include "engine/render/ModelImageUploadTransaction.h"
+#include "engine/render/ModelResourceCache.h"
 #include <cassert>
 #include <set>
 #include <string>
@@ -92,6 +93,69 @@ int main(){
     render::releaseModel(device,first);
     render::releaseModel(device,second);
     assert(device.destroyed==4&&device.live.empty());
+    // Stage 113: speculative Model import may reuse an ALREADY resident
+    // shared texture but must never add a missing GPU key to that cache.
+    auto shared=std::make_shared<render::ModelTextureCache>();
+    auto resident=makeImage("shared.png");
+    resident.textureKey="textures/shared.png";
+    resident.textureCache=shared;
+    shared->upload(device,resident);
+    assert(resident.tex.valid() && shared->gpuCount()==1);
+    auto scratch=std::make_unique<render::Model>();
+    auto hit=makeImage("shared.png");
+    hit.textureKey="textures/shared.png";
+    hit.textureCache=shared;
+    scratch->images.push_back(std::move(hit));
+    auto miss=makeImage("fresh.png");
+    miss.textureKey="textures/fresh.png";
+    miss.textureCache=shared;
+    scratch->images.push_back(std::move(miss));
+    assert(render::uploadModel(device,*scratch,false,false));
+    assert(scratch->images[0].borrowedTexture);
+    assert(scratch->images[0].tex==resident.tex);
+    assert(!scratch->images[1].borrowedTexture);
+    assert(scratch->images[1].tex.valid());
+    assert(shared->gpuCount()==1); // failed import cannot pollute shared residency
+
+    // An unpublished Model with borrowed/dedicated textures must be
+    // released only after its OWN GPU completion marker, not at abort.
+    render::ModelResourceCache owner;
+    owner.bindResourceDevice(device,epoch.lease());
+    device.idle=false;
+    device.complete=false;
+    const int before=device.destroyed;
+    owner.retireUnpublished(device,scratch);
+    assert(!scratch && owner.pendingRetirements()==1);
+    assert(!owner.collectRetired(device)); // submit marker
+    assert(device.destroyed==before);
+    shared->trim(device); // lease held by retired Model, still resident
+    assert(shared->gpuCount()==1);
+    device.complete=true;
+    assert(owner.collectRetired(device));
+    assert(owner.pendingRetirements()==0);
+    assert(device.destroyed==before+1); // dedicated miss destroyed, alias borrowed
+    shared->trim(device);
+    assert(shared->gpuCount()==0 && device.live.empty());
+
+    // Commit moves scratch map nodes into the live cache without changing
+    // the stable Model*; duplicate cache keys reject the whole transfer.
+    render::ModelResourceCache::ModelMap stagedModels;
+    auto stable=std::make_unique<render::Model>();
+    auto* ptr=stable.get();
+    stagedModels.emplace("models/stable.glb",std::move(stable));
+    owner.publishStagedModels(stagedModels);
+    assert(stagedModels.empty());
+    assert(owner.find("models/stable.glb")==ptr);
+    render::ModelResourceCache::ModelMap duplicate;
+    duplicate.emplace("models/stable.glb",std::make_unique<render::Model>());
+    bool rejectedDuplicate=false;
+    try {owner.publishStagedModels(duplicate);}
+    catch(const std::logic_error&){rejectedDuplicate=true;}
+    assert(rejectedDuplicate && duplicate.size()==1);
+    duplicate.clear();
+    device.idle=true;
+    owner.shutdown(device);
+
     epoch.retire();
     bool stale=false;
     try {
