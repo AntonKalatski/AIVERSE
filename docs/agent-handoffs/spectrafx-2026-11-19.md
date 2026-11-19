@@ -500,3 +500,12 @@ git switch feature/spectrafx-generic-cue-queue
 git pull --ff-only origin feature/spectrafx-generic-cue-queue
 git fetch origin main && git merge origin/main
 ```
+
+
+## 2026-11-19 — Stage 29: project GPU emitter asset loading
+- **Branch:** `feature/spectrafx-generic-cue-queue`, latest GitHub main comparison at start: `d71c6d47e532b25fb816a8bb1f96c41e5275a165`, 0 commits behind.
+- **Implementation commit:** `6f3ee511f0e0cbeacb956c2f6f8ef820b04fd00d`.
+- **New file:** `engine/fx/SpectraFxGpuEmitterLibrary.h`. A generic caller-owned FileReader resolves `fx/gpu/<safe-name>.gpu.json`, checks path-safe asset names, hashes source bytes for hot reload, and uses the existing v1 `SpectraFxGpuEmitterAsset` parser. `load` performs validation before an atomic cache revision; invalid/missing reload keeps last known good configuration with explicit `fallback` result. `find/invalidate/invalidateAll/clear` expose cache control. No effect handle or GPU resource ownership in this class.
+- **Compatibility:** opt-in presentation layer. The native project supplies a file reader; no runtime/global CMake/GameModule rewrite, no RTS/FPS dependency, no PRISMA ownership changes.
+- **Actual verification:** **NOT RUN** by user's features-first instruction; no compiler/CTest, asset IO, hot-reload, GPU/Metal/Vulkan, native Editor or CI evidence.
+- **Next:** add a renderer-thread manager connecting asset names, cue instances, `SpectraFxHybridEmitter`, and scene frame ordering with explicit safe-point requirements. Defer tests until requested feature completion.
