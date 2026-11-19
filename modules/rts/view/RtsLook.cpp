@@ -462,6 +462,32 @@ void RtsView::trimTypes(const std::vector<bool>& keep, bool compact) {
     if(std::getenv("AIVERSE_STREAM_TRACE"))std::fprintf(stderr,"[residency] released=%zu models=%zu textures=%zu\n",released,resources_.models().size(),resources_.textures()->gpuCount());
 }
 
+// A hot reload is a new GPU/Model publication, not a new gameplay spawn.
+// Capture only named playback clocks and presentation event ages; old
+// Graph, Animator, pose, rig and Model* must be destroyed before eviction.
+// Bounded even if the host repeatedly reloads sources for unseen entities.
+void RtsView::rememberReloadPlayback(uint64_t key,const EntityAnim& state) {
+    constexpr size_t kMaxPending=8192;
+    if(reloadPlayback_.size()>=kMaxPending &&
+       !reloadPlayback_.contains(key))return;
+    ReloadPlayback snapshot;
+    snapshot.type=state.type;
+    snapshot.choice=state.choice;
+    snapshot.capturedFrame=frame_;
+    if(!state.genericViewPose && !state.wasGenericViewPose)
+        snapshot.graph=state.graph.snapshotPlayback();
+    std::copy(std::begin(state.eventAge),std::end(state.eventAge),
+              std::begin(snapshot.eventAge));
+    snapshot.castAge=state.castAge;
+    snapshot.deathAge=state.deathAge;
+    snapshot.phase=state.phase;
+    snapshot.yaw=state.yaw;
+    snapshot.speed=state.speed;
+    snapshot.lastPos=state.lastPos;
+    snapshot.dead=state.dead;
+    reloadPlayback_.insert_or_assign(key,std::move(snapshot));
+}
+
 // Invalidate model-source dependencies as one render-thread transaction.
 // No affected Model/Graph pointers may survive the release barrier. Keep
 // unaffected TypeLooks and MotionWeave players alive to preserve their clocks.
@@ -529,9 +555,10 @@ size_t RtsView::reloadModelSources(const std::vector<std::string>& sources) {
                 genericView_->forgetSources(sourceIds);
             for(auto it=anims_.begin();it!=anims_.end();) {
                 if(it->second.type<typeAffected.size() &&
-                   typeAffected[it->second.type])
+                   typeAffected[it->second.type]) {
+                    rememberReloadPlayback(it->first,it->second);
                     it=anims_.erase(it);
-                else ++it;
+                } else ++it;
             }
             for(auto it=streamingChoices_.begin();it!=streamingChoices_.end();) {
                 if(it->second.first<typeAffected.size() &&
@@ -813,8 +840,10 @@ bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
     if(genericView_ && !graphSources.empty())
         genericView_->forgetSources(graphSources);
     for(auto it=anims_.begin();it!=anims_.end();) {
-        if(affected.contains(it->second.type))it=anims_.erase(it);
-        else ++it;
+        if(affected.contains(it->second.type)) {
+            rememberReloadPlayback(it->first,it->second);
+            it=anims_.erase(it);
+        } else ++it;
     }
     for(auto it=streamingChoices_.begin();it!=streamingChoices_.end();) {
         if(affected.contains(it->second.first))it=streamingChoices_.erase(it);
@@ -848,7 +877,10 @@ void RtsView::loadType(uint16_t type) {
     if(!(replacing && ready.shape && !looks_[type].shape))looks_[type]=std::move(ready);
     loadedModels_[type]=requestedModels_[type];
     if(replacing)for(auto it=anims_.begin();it!=anims_.end();) {
-        if(it->second.type==type)it=anims_.erase(it);else ++it;
+        if(it->second.type==type) {
+            rememberReloadPlayback(it->first,it->second);
+            it=anims_.erase(it);
+        } else ++it;
     }
     if (twoD_) twoD_->loadType(type);
     loadedTypes_[type] = true;
