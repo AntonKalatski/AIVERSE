@@ -679,3 +679,95 @@ Deformed objects whose required bone/morph GPU state is
 incomplete are skipped conservatively rather than drawn
 undeformed. Multi-backend compilation and visual parity
 have **not yet been tested**.
+
+
+## TerraWeave integration (model queue, forest, impostors, Horizon)
+
+`engine/render/TerraWeaveVirtualTextureFeedback.h` provides a
+genre-independent VT material mapping bridge. The current
+`feature/terraweave` implementation uses
+`render::Renderer3D::drawModel()` for
+`ArborForestAdapter::submit()` / `forEachDraw()` (near trees and
+far impostor quads) and for `TerraWeaveHorizonScene::submit()`
+(distant terrain + forest horizon). Therefore **no separate Terra
+geometry renderer or duplicate feedback draw queue is necessary**.
+The bridge depends only on `ModelDraw`, `Model`, `Material`,
+`Renderer3D` and the generic gfx feedback program. It remains
+compilable on `feature/texture-rhi-unification` *before* Terra's
+separate branch is merged.
+
+Initialize after the feedback target has been allocated:
+
+```cpp
+render::TerraWeaveVirtualTextureFeedback terraFeedback;
+bool ok = terraFeedback.initialize(dev, feedbackPass, renderer);
+// Optional: enable future skinned/morphed Terra prototypes with true.
+// The existing Terra-generated forest/horizon models are rigid.
+```
+
+There are **two methods for assigning existing VT pages**:
+
+1. Explicit registration before `Renderer3D::render()`:
+   `terraFeedback.registerMaterial(model, material, mapping)`,
+   `registerModel(model, mapper)` or `registerDraw(draw, mapper)`.
+   `registerDraw` also registers per-azimuth impostor material overrides
+   (`ModelDraw::materials`). A forest integration after the Terra branch
+   is merged can submit the exact same draw once:
+
+   ```cpp
+   terraFeedback.beginFrame(); // invalidate stale pointer keys from last frame
+   forest.forEachDraw(batches, origin, [&](const render::ModelDraw& draw) {
+       terraFeedback.registerDraw(draw, lookUpExistingVirtualPages);
+       renderer.drawModel(draw);
+   }, cameraCm);
+   // normal Renderer3D::render() performs feedback and scene rendering
+   ```
+
+2. For `TerraWeaveHorizonScene`, whose active/replacement models are
+   intentionally private, call
+   `terraFeedback.setLiveMaterialMapper(lookUpExistingVirtualPages)`.
+   The feedback binder receives the *actual* Model and Material
+   pointers when `Renderer3D` submits them; it can match active
+   region revision, forest atlas/material, and exact VT allocation
+   without modifying Terra's API or duplicating `submit(renderer)`.
+   The callback runs on the render thread during GPU feedback
+   submission. It must only **look up existing allocations**, not
+   allocate GPU resources, generate pages or block on disk IO.
+
+`VirtualTextureMaterialMapping` includes virtual base tile counts,
+layer, mip policy, logical texture dimensions, and optional UV
+scale/offset. The bridge rejects malformed/non-finite mappings.
+Unregistered Terra materials still write **depth with zero feedback**
+and correctly occlude virtualized surfaces behind them. This is
+intentional: not every bark, foliage or impostor material needs VT.
+
+The host owns the physical atlas, page-table lifetime, packed page
+archives and `VirtualTextureFileStreamer`. The new bridge does not
+automatically transcode Terra image atlases or assign virtual pages.
+It only connects actual VT allocations to the existing shared
+shader/readback/streaming pipeline. Continue calling
+`feedbackPass.updateStreaming(streamer, budget)` when no render pass
+is active, and consume its visibility result.
+
+At teardown, call `terraFeedback.shutdown()` before destroying the
+Renderer3D, `feedbackPass` or `gfx::Device`. The bridge clears the
+renderer feedback configuration and destroys the shader resources
+it owns, but does not delete the caller-owned feedback pass or
+file streamer. `beginFrame()` must occur before re-registering
+Forest/Horizon materials after asset reloads/region replacement.
+
+**Branch coordination:** Terra's source currently lives in
+`feature/terraweave`; the VT bridge lives in
+`feature/texture-rhi-unification`. The Terra agent should use this
+adapter after the two branches are merged. Do not duplicate the
+VT system in `engine/world` or modify genre-specific RTS terrain
+just to integrate Terra. Existing Terra `ModelDraw` visibility,
+LOD, material overrides and the engine's virtual feedback queue
+are the shared integration seam.
+
+**Not yet verified:** native C++ build, GLSL/MSL/Vulkan shader
+compilation, visual alpha/LOD parity, real packed archive
+integration, distant Horizon region transitions, and GPU/IO
+performance. Terra's independently developed custom material
+paths or transparent transition draws may need additional
+feedback policies beyond this rigid-model bridge.
