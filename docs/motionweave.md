@@ -440,3 +440,36 @@ player or render-side animation tick is introduced.
 GPU fence/device loss recovery, renderer/portrait screenshot
 parity, FPS/RTS tests and thread sanitizers are deferred by
 the user. Follow Stage 105 in the animation handoff.
+
+### Stage 106 — expiring GPU owner references and verified failure states
+
+Multiple native model/resource owners can be observed through
+`render::RenderResourceOwnerGroup`. Its registrations now carry
+the caches' `weak_ptr` lifetime tokens, so a destroyed cache
+is skipped rather than accessed. The group is still
+device-owner-thread-only; a weak reference does not make
+simultaneous GPU resource teardown and snapshot thread-safe.
+The group doesn't own or shut down render resources.
+
+GPU retirement now distinguishes a normal outstanding fence
+from an actual failed completion token via
+`gfx::Device::resourceRetirementStatus`. A failed Model
+retirement batch remains alive, even when newer tokens signal
+success. Only a successful full-device GPU idle barrier
+permits cleanup and `abandonRetirementTokenAfterIdle`.
+`RenderResourceGroupStats::health` reports
+`RetirementFenceFailed` separately from
+`PendingGpuRetirement` and `DeviceUnhealthy`.
+These statuses only affect NEW resource admission, never
+authoritative gameplay or existing MotionWeave graph clocks.
+
+The model material-preview shape now delegates offscreen draw
+to the same generic `Portrait::renderAppearance` +
+`aiverse::View::submitModel` path as native static models
+and precomputed poses. Material authoring still happens through
+the old RTS-compatible host; dynamic/complex animation fallback
+has not been removed and retains exactly one animation writer.
+
+**NOT RUN:** compilation, CTest, GPU/device-loss tests,
+editor screenshots, FPS/RTS parity, thread sanitizer and CI.
+Stage 106 handoff lists exact source refs and next step.
