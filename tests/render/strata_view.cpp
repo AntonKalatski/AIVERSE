@@ -114,5 +114,21 @@ int main() {
     asset.bounds[2].max[0] = 0.7f;
     config.width = 0;
     assert(!planView(asset, config, result, &error));
+
+    // Stage 15.4: after verified disk source admission the duplicate
+    // source index vector can be freed while immutable node ranges still
+    // preserve meaningful LOD selection, shadows and reflection plans.
+    config.width=1280;
+    config.objectToClip=mat4::identity();
+    assert(planView(asset,config,result,&error));
+    const auto reference=result;
+    const size_t originalIndices=asset.indices.size();
+    const size_t released=asset.discardCpuIndexPayload();
+    assert(released==originalIndices*sizeof(uint32_t));
+    assert(asset.indices.empty() && asset.logicalIndexCount()==originalIndices);
+    assert(planView(asset,config,result,&error));
+    assert(result.ranges.size()==reference.ranges.size());
+    assert(result.triangles==reference.triangles);
+    assert(asset.discardCpuIndexPayload()==0); // no double-release
     return 0;
 }
