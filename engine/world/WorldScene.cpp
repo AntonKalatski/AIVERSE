@@ -160,7 +160,7 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
         }catch(...){releaseChunk(device,*prepared);throw;}
     },[&](Cell cell){auto it=resident_.find(cell);if(it==resident_.end())return;releaseChunk(device,*it->second);resident_.erase(it);},uploadBytes_);
     nereidWater_.update(device,observers.empty()?nullptr:&observers.front());
-    cascades_.update(device);
+    cascades_.update(device,&nereidWater_);
     if(textures_)textures_->trim(device);
 }
 void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
