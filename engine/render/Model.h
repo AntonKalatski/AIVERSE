@@ -16,6 +16,7 @@
 #include "../gfx/Gfx.h"
 #include "Math3D.h"
 #include "TextureCodec.h"
+#include "GpuOwnedMemory.h"
 #include "graph/ShaderGraph.h"
 
 namespace aiverse::render {
@@ -303,6 +304,10 @@ void prepareModelUpload(Model& m); // CPU only: safe before main-thread upload
 bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu = false);
 bool readModelImage(const std::string& path, const FileReader& read, Image& image);
 int addImage(gfx::Device& dev, Model& m, Image img);   // extra texture for material overrides; returns index
+// Unique owned model data (dedicated non-pooled vb/ib, nonborrowed images,
+// morph/baked textures). Shared model texture cache and pooled geometry pages
+// belong to their own owners and MUST NOT be counted through Model.
+void appendModelOwnedGpuMemory(const Model& m, GpuOwnedMemoryCounter& counter);
 void releaseModel(gfx::Device& dev, Model& m);
 
 } // namespace aiverse::render
