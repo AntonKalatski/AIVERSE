@@ -102,6 +102,40 @@ All counters are diagnostics and are not part of a public save/network schema.
 GPU-encoded indirect draws, software rasterization, per-pass Strata selection,
 actual Strata render submission, or terrain/foliage integration.
 
+## Stage 5 — shared GPU batching foundation (pinned integration)
+
+A genuine two-parent merge commit `0913b82088b63913e1313557de16d85e7c79b89f`
+integrates the pinned `perf/incremental-static-model-cache` head
+`1043a9de747fe89cb42de899c15c6d2f4db8e0e1` into the Strata feature.
+The batching branch/PR #34 remains separately owned by its agent.
+
+**Reused existing systems** (do not recreate them in Strata):
+- `GlobalGeometryPool`, eligibility checks and geometry revisions: shared GPU
+  source buffers and safe invalidation. Strata's future resident pages must
+  coordinate allocator lifetime and buffer handles with this pool.
+- `StaticModelCache`, `StaticModelCachePolicy.h` and persistent render
+  packets: existing per-draw transform/primitive reuse; never add a second
+  static transform cache to Strata.
+- `StaticCrossModelBatchPolicy` and CPU MDI/GPU ICB paths:
+  `Renderer3D` remains the single owner of material grouping/indirect
+  submissions. A future Strata culler supplies selected cluster ranges to
+  the same render submission path, with source selection mutually exclusive.
+- `EcsStaticModelRender.h`: the common ECS-to-presentation adapter. No Strata
+  ECS components are necessary to render static instances.
+
+**Current behavior remains unchanged:** `GeometryScene` Strata staging is
+OFF unless explicitly enabled; CPU/GPU batching experimental flags retain
+their existing defaults. No Strata GPU culling, selected-cluster draw,
+streaming or residency path has been activated or validated. PR #35 is a
+stacked draft based on the batching work until PR #34 is merged or replaced.
+The batching agent may push new commits after the pinned snapshot; explicitly
+review and merge those changes before relying on later APIs.
+
+Do not conflate the already existing `GeometryCluster`/static pooling path
+with Strata's new `ClusterNode` hierarchy. Strata staging currently stores
+auxiliary CPU data; it is NOT a substitute for pooled GPU pages and must not
+double-submit scene primitives.
+
 ## Architectural constraints
 - **One scene/instance truth**: `GeometryScene` owns static render instances
   and HLOD; do not create separate Strata transforms or introduce gameplay
