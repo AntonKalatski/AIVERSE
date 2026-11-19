@@ -190,6 +190,7 @@ void Prisma::retireView(uint64_t id) {
         temporalViews_.erase(it);
     }
     requestedOutputSizes_.erase(id);
+    adaptiveViews_.erase(id);
     motionViews_.erase(id); // only matrix state + borrowed GPU handles
     viewDimensions_.erase(id); // the shared size cache itself stays resident
     // If the current presentation view was closed, keep its stable ID for
@@ -463,6 +464,7 @@ void Prisma::shutdown() {
     for (auto& [id, view] : temporalViews_)
         for (auto& h : view.history) release(h);
     temporalViews_.clear();
+    adaptiveViews_.clear();
     motionViews_.clear();
     viewDimensions_.clear();
     requestedOutputSizes_.clear();
@@ -514,6 +516,49 @@ void Prisma::applyCameraVolumes(const PrismaVolumeStack& stack, float3 eye, uint
 }
 
 void Prisma::clearCameraVolumes() { settings_ = baseSettings_; }
+
+// Allocate everything that an output-size temporal resolve requires BEFORE
+// jittering any world geometry. A failed allocation returns the host to the
+// original full-resolution camera and disables subpixel jitter for this view.
+// No GPU wait and no destruction of in-flight targets occurs here.
+bool Prisma::preflightUpscale(int outputW,int outputH,int renderW,int renderH) {
+    if (!dev_ || !dev_->gpuHealthy() ||
+        !dev_->supports(gfx::PixelFormat::RGBA16F)) return false;
+    if (!program(kTemporalResolve).valid() ||
+        !program(kMotionVectors).valid()) return false;
+    auto& history=temporalViews_[viewId_];
+    if (history.width!=outputW || history.height!=outputH ||
+        history.inputWidth!=renderW || history.inputHeight!=renderH) {
+        for (auto& handle:history.history) retireTarget(handle);
+        history.width=outputW;history.height=outputH;
+        history.inputWidth=renderW;history.inputHeight=renderH;
+        history.current=0;history.valid=false;
+    }
+    for (auto& handle:history.history) {
+        if (handle.valid()) continue;
+        gfx::TextureDesc desc{};
+        desc.width=outputW;desc.height=outputH;
+        desc.format=gfx::PixelFormat::RGBA16F;
+        desc.renderTarget=true;
+        desc.filter=gfx::Filter::Nearest;
+        desc.label="prisma temporal camera history";
+        handle=dev_->createTexture(desc);
+    }
+    // Sized is keyed by internal scene resolution; its scratch depth for
+    // output is separately keyed by output dimensions within this cache.
+    Sized& cache=sized(renderW,renderH);
+    const bool previousHdr=hdrFrame_;
+    hdrFrame_=true;
+    const auto color=target(cache,kScene,renderW,renderH).tex;
+    const auto velocity=target(cache,kMotionVelocity,renderW,renderH).tex;
+    hdrFrame_=previousHdr;
+    const auto depth=depthFor(cache,renderW,renderH);
+    const auto internalScratch=depthFor(cache,renderW,renderH,true);
+    const auto outputScratch=depthFor(cache,outputW,outputH,true);
+    return history.history[0].valid() && history.history[1].valid() &&
+           color.valid() && velocity.valid() && depth.valid() &&
+           internalScratch.valid() && outputScratch.valid();
+}
 
 std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
     // Pure host-side size choice; no implicit scaling of current projects.
