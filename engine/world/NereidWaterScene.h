@@ -51,6 +51,7 @@ inline bool sameNereidSceneSurface(const NereidSceneSurface& a,
        m.lod!=n.lod || m.uvScale!=n.uvScale ||
        m.foamWidth!=n.foamWidth || m.oceanPatchRadius!=n.oceanPatchRadius ||
        m.maxVertices!=n.maxVertices ||
+       m.rippleTileGrid!=n.rippleTileGrid ||
        a.autoLod!=b.autoLod ||
        a.mediumDistance!=b.mediumDistance || a.farDistance!=b.farDistance ||
        a.lodHysteresis!=b.lodHysteresis ||
