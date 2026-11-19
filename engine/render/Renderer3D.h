@@ -342,7 +342,9 @@ public:
         uint32_t reactiveMeshDraws = 0; // includes RTS water sheets
         uint32_t lodReactiveDraws = 0;
         uint32_t rejected = 0;
-        bool submitted = false;
+        bool submitted = false; // actual object velocity draw, NEVER reactive-only
+        bool velocitySeedOnly = false; // cut/first/resize, do not fabricate prior pose
+        bool reactiveSubmitted = false; // independent current-frame mask encoded
     };
     const ObjectMotionStats& objectMotionStats() const { return objectMotionStats_; }
     struct MotionRetirementStats {
@@ -556,6 +558,12 @@ private:
     void prepareGpuModelDraws();
     void renderModels(int phase);   // 0 shadow, 1 opaque, 2 blended, 3 outlines, 4 depth of transparent objects
     void renderObjectMotionVectors(PostProcess& post); // RHI pass, rigid + deformed models
+    // Camera-current reactive coverage is NOT motion history: still encode
+    // it on first frame, camera cut, resize or unavailable RGBA16F velocity.
+    // Borrowed scene depth is only sampled; never owned by this renderer.
+    void renderCurrentFrameReactiveMask(PostProcess& post,
+        ObjectMotionHistory& history, gfx::TextureHandle sceneDepth,
+        int width, int height);
     bool initSelectionOutline();
     void renderSelectionOutline(const gfx::PassDesc& scenePass, int width, int height);
 
