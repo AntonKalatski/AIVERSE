@@ -911,3 +911,14 @@ Use the reusable `engine/world/TerraWeavePhenology.h` POD `CanopyPhenology` for 
 - PHYSIS/weather/calendar modules are upstream **providers only**. Never introduce direct PHYSIS-to-renderer dependencies or genre-specific seasons inside TerraWeave. The host chooses values and persistence/replication policy.
 
 **Validation intentionally deferred:** no CMake, CTest, graphics backend screenshots or measurable perf evidence yet. User requested features first. Update `docs/terrain/AGENT_HANDOFF.md` after each functional step.
+
+## Stage 28 — PHYSIS-neutral per-tree wind presentation
+
+Use `engine/world/TerraWeaveWind.h` and `ForestWindState` to pass optional wind from a game's PHYSIS/weather adapter; do not link TerraWeave directly against any genre or physical-weather solver. The caller provides horizontal world X/Z velocities in **cm/s** and a simulation tick. Reject magnitude beyond 5000cm/s, gust outside [0,1000], cycle outside [8,4096] ticks or max lean beyond 3000 millidegrees. Default zero velocity preserves previous rendering.
+
+- Native `WorldScene::setVegetationWind(value)` and `setVegetationPresentationTick(tick)`, or direct `TerraWeaveForestScene::setWind` / `setPresentationTick`, feed `ArborForestAdapter`.
+- `forestTreeLean(state,tick,stableKey)` returns bounded signed milli-degree X/Z lean using integer piecewise-linear waves with stable hashed phase. Root sway transforms are applied in world space before local tree yaw, after origin rebasing. Do not feed renderer sway transforms into authoritative collision, navmesh, physics, networking, replay checksums or harvest calculations.
+- This is **whole-tree cosmetic lean**, not animation of individual branches, leaves or trunk deformation. Impostor quad leans as a unit; far Horizon is intentionally static. Zero-wind path is unchanged; no new GPU models, passes, procedural chunk rescatter or Horizon archive migration.
+- Host must not update wind state during `Renderer3D` submission/rendering. Use deterministic tick values and make scene setup/update single-thread-owned. Tree-model GPU buffers are only touched by the existing upload/release lifecycle.
+
+**Testing is postponed by user instruction.** The later agent should benchmark large forest draw rates, camera motion and origin rebasing, verify zero-wind parity, amplitude bounds, negative wind, different tree keys and native PHYSIS integration, plus real Metal/GL/Vulkan visuals. After each feature commit, record exact source SHA, API, actual checks, limitations and next agent task in `docs/terrain/AGENT_HANDOFF.md`.
