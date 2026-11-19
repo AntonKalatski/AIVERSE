@@ -326,6 +326,39 @@ is not general sorted GPU transparency, GPU-side collision meshes or
 global multi-material batching. Measure actual GPU cost and memory
 before enabling it in production.
 
+## Shared compute programs, failure recovery and CPU encode profiling
+
+`SpectraFxHybridPlayback` now owns one lazily created GPU evolution
+compute program, and — on Metal, only when requested — one alpha-sort
+and one live-slot compaction program. Dedicated emitters and shared
+arenas borrow those programs instead of recompiling the same source
+for every effect. Private GPU particle buffers and transient sorted/
+compacted textures are still independently allocated; the playback
+releases borrowed resources before destroying shared programs and
+before the rendering device is destroyed.
+
+On compute dispatch failure or when the RHI reports an unhealthy GPU,
+a dedicated hybrid emitter tries to restart its authored `cpuEffect`
+and tears down its GPU resources. On success it will not also render
+or simulate the GPU effect in that frame. Without an allowed and
+available CPU fallback, the failed GPU emitter is suspended. The CPU
+fallback starts at the emitter origin rather than attempting an
+unsupported transfer of particle positions and ages. Shared arenas
+still need further pooled-failure recovery work.
+
+With `AIVERSE_FX_DEBUG` the client emits
+`[spectrafx-cpu-encode]` counters for average/peak microseconds spent
+in the playback's update/compute submission and draw submission.
+These measurements are **CPU wall-clock encoding time only**, not GPU
+render time, GPU-compute duration or full-frame application CPU time.
+They also list successfully created shared evolution/sorting/compaction
+compute programs and GPU-to-CPU runtime recoveries.
+
+For custom hosts, `SpectraFxHybridPlayback::setCpuEncodeProfiling(true)`
+enables these CPU counters; leave it off to avoid instrumentation cost.
+The source is still experimental. Native shader, GPU/CPU fallback and
+rendering tests have not yet run for these new features.
+
 ## API boundaries and known work
 
 `SpectraFxHybridPlayback` now shares billboard pipelines and quad
