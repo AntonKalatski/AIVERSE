@@ -179,3 +179,19 @@ PR #22 must remain Draft until full feature completion and testing.
   Vulkan/GL editor/UI visual parity and sanitizer benchmarks;
   fix errors and warnings before PR #22 can leave Draft.
 - Append a separate Stage 121 handoff and update `AGENTS.md`.
+
+## Final Stage 120 owner-device preflight
+
+After the initial handoff and documentation commits, two small safety
+corrections were committed:
+
+- `fe28951d0e65006f910246553287b53a7a2e56d4`:
+  `CanvasGpuRetirement::validFor(const gfx::Device&)` verifies the
+  exact Device identity and any optional, still-live host epoch.
+- `b966ab4615b340e5185f3d2589765ced71f1f2e7`:
+  `RenderTexture::init` now rejects an expired/foreign owner before
+  allocating a new canvas texture or pipeline. A canvas cannot reuse
+  the previous Device's retired GPU queue after device recreation.
+
+Both are GitHub source updates only, without native build/CTest/GPU
+validation. Continue Stage 121 after refreshing the branch head.
