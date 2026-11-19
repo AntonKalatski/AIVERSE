@@ -5,6 +5,7 @@
 #pragma once
 #include "engine/world/TerraWeaveEcsAuthority.h"
 #include "engine/world/TerraWeaveForestEcology.h"
+#include "engine/world/TerraWeaveForestDeadwood.h"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
@@ -85,6 +86,7 @@ struct NativeForestHarvestOutcome {
     bool removedRoot=false;
     bool removedEcology=false;
     bool wasRecruited=false;
+    uint64_t exportedDeadwoodUnits=0; // remaining organic matter carried away
     AnchoredPlantId id{};
     uint64_t tick=0;
     uint64_t authoritativeStateRevision=0;
@@ -161,6 +163,12 @@ inline NativeForestHarvestOutcome harvestNativeForestTree(
         }
     }
     inserted->wasRecruited=out.wasRecruited;
+    std::optional<ForestDeadwoodResource> updatedDeadwood;
+    if(const auto* wood=ecs.resourceConst<ForestDeadwoodResource>()){
+        updatedDeadwood=*wood;
+        out.exportedDeadwoodUnits=extractForestDeadwood(
+            *updatedDeadwood,id);
+    }
     ++updated.stateRevision;
     out.authoritativeStateRevision=updated.stateRevision;
 
@@ -170,6 +178,9 @@ inline NativeForestHarvestOutcome harvestNativeForestTree(
     if(updatedEcology)
         staged.setResource<ForestEcologyResource>(
             std::move(*updatedEcology));
+    if(updatedDeadwood)
+        staged.setResource<ForestDeadwoodResource>(
+            std::move(*updatedDeadwood));
     ecs=std::move(staged);
     out.changed=true;
     return out;
@@ -243,6 +254,30 @@ inline bool restoreHarvestedForestTree(
             id,updatedEcology->lastStepTick,0,0,0,0,false,true});
         ++updatedEcology->revision;
     }
+    // Replanting an identity begins a NEW organic life cycle. Keep the
+    // historical nutrient/export/respiration ledgers intact while removing
+    // only a fully spent old deadwood identity, so its future death can be
+    // registered again without double-counting prior wood.
+    std::optional<ForestDeadwoodResource> updatedDeadwood;
+    if(const auto* wood=ecs.resourceConst<ForestDeadwoodResource>()){
+        updatedDeadwood=*wood;
+        validateForestDeadwoodResource(*updatedDeadwood);
+        const auto log=std::lower_bound(
+            updatedDeadwood->logs.begin(),updatedDeadwood->logs.end(),id,
+            [](const ForestDeadwoodRecord& record,AnchoredPlantId key){
+                return record.id<key;
+            });
+        if(log!=updatedDeadwood->logs.end() && log->id==id){
+            if(log->remainingUnits)
+                throw std::logic_error(
+                    "TerraWeave replant needs deadwood export/cleanup");
+            if(updatedDeadwood->revision==UINT64_MAX)
+                throw std::overflow_error(
+                    "TerraWeave replant deadwood revision overflow");
+            updatedDeadwood->logs.erase(log);
+            ++updatedDeadwood->revision;
+        }
+    }
     ForestHarvestResource updatedHarvest=*harvest;
     const auto it=std::lower_bound(
         updatedHarvest.records.begin(),updatedHarvest.records.end(),id,
@@ -258,6 +293,9 @@ inline bool restoreHarvestedForestTree(
     if(updatedEcology)
         staged.setResource<ForestEcologyResource>(
             std::move(*updatedEcology));
+    if(updatedDeadwood)
+        staged.setResource<ForestDeadwoodResource>(
+            std::move(*updatedDeadwood));
     ecs=std::move(staged);
     return true;
 }
