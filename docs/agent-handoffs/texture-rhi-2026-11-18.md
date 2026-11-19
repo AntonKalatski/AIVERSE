@@ -7172,3 +7172,67 @@ address-mode validation during Terra archive activation
 material sampler settings), or proceed with the heterogeneous
 Metal ICB descriptor-table strategy. Keep PR draft until
 native/Metal/Vulkan/GL compilation and the release gate pass.
+
+
+## Stage 10N — native archive address policy and TerraWeave propagation (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`; Draft PR #21.
+**Source commits:**
+- `f7efaff6568a49d2d00fea394c1267fdc86c5c0c`:
+  `engine/gfx/VirtualTexturePageArchiveWriter.h` adds
+  `VirtualTextureArchivePackConfig::addressU/addressV` and
+  `VirtualTextureArchiveVersion::addressU/addressV` typed policy,
+  per-axis Repeat/MirrorRepeat for gutters and odd-mip filtering,
+  fail-closed ClampToBorder rejection, and immutable content hashing
+  keyed by non-clamp address policy. Clamp-only hashes/manifest fields
+  remain backward-compatible.
+- `af38ddd2d0ef2e7eb601fa3524302d2dc53a34c4`:
+  `engine/render/TerraWeaveVirtualAtlasArchive.h` single-domain
+  sampling resolver forwards active archive U/V policy into
+  `ModelVirtualTextureBinding`.
+- `6e7551131024e4a7b4655c55e32b2c7cc8c60787`:
+  `engine/render/TerraWeaveVirtualAtlasDomains.h` multi-domain
+  `resolveSampling` forwards independent active session U/V policy.
+**Documentation commits:**
+- `8f72346478eb5d2d02373d60f218a935c68135fe`: `docs/texture-rhi.md`.
+- `437e21e335d3a41c72c9f454523e8fe96a6c0039`:
+  `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Public API / mechanics:** Producer chooses per-axis
+`gfx::SamplerAddressMode::ClampToEdge`, `Repeat` or
+`MirrorRepeat` in `VirtualTextureArchivePackConfig`.
+The native archive writer stores that policy in its typed Version,
+packs matching physical page gutters and mip samples, and includes
+it in its immutable revision identity. The TerraWeave session
+promotes an all-or-nothing typed version. Both model VT resolvers
+now bind the active archive addressing when preparing a draw.
+No ECS/gameplay dependency. Source fallback `tex1` must
+use the corresponding conventional material sampler. Existing
+default clamp archives remain stable.
+
+**Verification actually performed:** Fetched and inspected the
+native page writer and both Terra resolvers, strict per-file
+transform checks, committed C++ source and canonical docs. Re-fetched
+and inspected emitted C++ manifest formatting. **No C++ compile,
+CTest, native sample fixture, Metal/GLSL compiler, runtime GPU
+seam verification or performance test was run.** CI not counted as
+passing.
+
+**Known risks / limitations:** Standalone Python manifest import
+is not automatically integrated into the typed
+`VirtualTextureArchiveVersion`; an external loader must map
+manifest strings to the enum, validate and supply those fields.
+Built-in/native C++ packer passes the complete typed Version
+to the Terra resolver. Border-color addressing and arbitrary
+anisotropic seam fidelity are explicitly unavailable. Multi-domain
+GPU readback and real device verification still required.
+
+**Next stage:** optionally add a safe format-specific parser of
+Python `manifest.json` into `VirtualTextureArchiveVersion`
+with bounded paths/dimensions and immutable page-directory
+validation (must fail closed and not change the active atlas),
+or complete heterogeneous ICB/graph material table. During
+deferred testing, add native packer and Python parity checks for
+negative/positive seams, mixed U/V and odd dimensions, then
+GPU image A/B for source vs VT across actual supported backends.
+Keep PR draft until all compile/CTest/GPU gates are evidenced.
