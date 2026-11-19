@@ -2,6 +2,7 @@
 // batch completion, failure retention and fallback WITHOUT actual GPU stalls.
 // Real Metal device parity is covered by the vivid_metal_rhi fixture.
 #include "engine/character/vivid/GpuActorRetirement.h"
+#include "engine/character/vivid/GpuMorphAssetCache.h"
 
 #include <cassert>
 #include <cstdint>
@@ -197,8 +198,12 @@ void completePendingBatch() {
 void sharedImmutableGpuAsset() {
     FakeMetal device;
     Fixture fixture;
-    auto asset=GpuMorphSharedAsset::create(device,fixture.library,fixture.original);
-    require(bool(asset) && asset->ready(),"shared GPU morph asset initialization failed");
+    GpuMorphAssetCache cache(device);
+    auto asset=cache.acquire(fixture.library,fixture.original);
+    auto cacheHit=cache.acquire(fixture.library,fixture.original);
+    require(asset && asset->ready() && cacheHit.get()==asset.get() &&
+            cache.cachedKeys()==1,
+            "GPU asset content cache failed to reuse immutable resources");
     auto first=std::make_unique<GpuActorStream>();
     auto second=std::make_unique<GpuActorStream>();
     require(first->initializeShared(device,fixture.model,asset),
@@ -236,8 +241,22 @@ void sharedImmutableGpuAsset() {
             device.destroyedComputes==0 && asset->ready(),
             "shared immutable asset destroyed while still externally owned");
     asset.reset();
-    require(device.buffers.empty() && device.destroyedComputes==2,
-            "last shared immutable GPU asset reference leaked resources");
+    require(device.buffers.size()==5 &&
+            device.destroyedComputes==0 && cacheHit->ready(),
+            "GPU asset destroyed while another cache caller holds it");
+    cacheHit.reset();
+    require(device.buffers.empty() && device.destroyedComputes==2 &&
+            cache.pruneExpired()==1 && cache.cachedKeys()==0,
+            "last shared asset release failed to expire weak cache entry");
+
+    auto altered=fixture.original;
+    altered[0].pos.x+=0.125f;
+    auto changed=cache.acquire(fixture.library,altered);
+    require(changed && changed->ready() && cache.cachedKeys()==1,
+            "changed model revision did not create an independent GPU asset");
+    changed.reset();
+    require(cache.pruneExpired()==1 && device.buffers.empty(),
+            "new GPU asset revision leaked after release");
 }
 
 void failedTokenAndRecovery() {
