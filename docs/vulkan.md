@@ -122,3 +122,16 @@ and other RHI clients keep their historical behavior.
 Do not change the shader translator or force all draws to the
 canonical path. Validate real Vulkan pixels/validation layers
 before enabling. CPU feature stage NOT TESTED.
+
+
+### GPU completion and Vulkan buffer lifetime safety (Stage 50)
+
+Vulkan slot completion tracking now rejects all
+`vkWaitForFences` failures, not just device loss, before
+advancing its `completed_` serial. `completedFrameSerial()`
+is therefore no longer elevated by a failed fence wait;
+it returns 0 for unhealthy devices. This is necessary for
+GPU-fence-gated geometry suballocation reuse. It does not
+fix other higher-level device recovery paths or change
+Vulkan base-vertex semantics. Not yet validated by fault
+injection on a real driver.

@@ -1831,3 +1831,13 @@ No additional CMake target. Recycling is enabled by test-process
 environment only, not engine default. Native compilation and CTest
 have NOT RUN; never describe authored assertions as passing.
 PR #34 remains Draft pending actual CI/Metal/Vulkan parity.
+
+
+## Stage 50 — Vulkan fence result checked before recycling
+
+Only a successful Vulkan queue fence wait proves
+`completed_`. `GfxVulkan.cpp::prepareSlot()` now
+checks `VK_SUCCESS` before updating `completed_`;
+non-success marks RHI unhealthy, disallowing completed-serial
+recycling. Keep this contract through any device-loss recovery.
+No new GPU stalls/changes to batching output; native tests NOT RUN.

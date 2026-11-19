@@ -1635,3 +1635,15 @@ not a passing CTest result and does not replace real Metal/Vulkan
 raster, completion fence, validation layer or A/B/A checks. The
 test sets the recycle opt-in only within its own process;
 runtime production defaults remain OFF.
+
+
+### Stage 50 — Vulkan completed fence contract
+
+In `VulkanDevice::prepareSlot()` the `completed_` high-water
+serial advances **only** after a `VK_SUCCESS` result from
+`vkWaitForFences`. All other return codes mark Vulkan unhealthy
+so `completedFrameSerial()` returns 0 and Stage 45 pooled
+geometry cannot recycle unproven GPU memory. This is correctness
+hardening, not new frame waits or a latency optimization.
+Device-loss recovery remains caller-owned. Native Vulkan
+fault injection/CTest has NOT RUN.

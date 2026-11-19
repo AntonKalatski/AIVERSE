@@ -1457,3 +1457,20 @@ The new `verifyGeometryPoolRetirementAndUploadRecovery()` exercises:
 **Next actionable:** Inspect PR #34 `GPU batching focused regression` and CI for this SHA once Actions leave queued state; if failures arise, fix on this branch with new handoff. On user's Mac run
 `git fetch origin && git switch perf/incremental-static-model-cache && git pull --ff-only origin perf/incremental-static-model-cache && cmake --build build-metal --target aiverse_model_batching_policy_tests -j8 && ctest --test-dir build-metal -R '^model_batching_policy$' --output-on-failure`.
 Then run real Metal/Vulkan pixel parity with opt-ins independently OFF/ON; do not enable recycling or Vulkan canonical MDI in production before successful hardware validation.
+
+
+---
+
+## Stage 50 — Vulkan completed serial cannot advance on failed fence wait (2026-11-19)
+
+**Repository:** `chromealex/AIVERSE`, branch `perf/incremental-static-model-cache`, Draft PR #34. **Code:** `b4745d8e469c9e0f55ae088fc3e418b3fdb18b95`; parent Stage 49 docs `4a551d93d2becd57ca04b828316ff02b90d6b798`.
+
+**Bug:** `engine/gfx/vulkan/GfxVulkan.cpp::prepareSlot()` previously advanced `completed_ = max(completed_, slot.serial)` **unconditionally** after `vkWaitForFences`. It only marked `healthy_=false` on `VK_ERROR_DEVICE_LOST`. A different fence-wait failure could therefore appear as a completed serial even though the queue had not been proven finished. That conflicts with Stage 44's new `completedFrameSerial` contract used for Stage 45's experimental recycled GPU spans.
+
+**Fix:** capture `VkResult waited` and advance `completed_` **only** when `waited == VK_SUCCESS`; for any non-success mark the device unhealthy so `completedFrameSerial()` returns 0 and allocator re-use remains disabled. The normal successful fence wait, resource collection, staging reset and command slot lifecycle remain unchanged. This does not add a synchronous wait (the wait was already present) or change GPU command ABI, Vulkan direct/indirect addressing, shaders or ECS.
+
+**Limit:** An unhealthy Vulkan device still requires its existing higher-level recovery/device-loss handling. Stage 50 prevents false-positive completion announcements; it does not implement comprehensive recovery from all Vulkan errors.
+
+**Actually checked:** Connected GitHub current source and unique replacement, atomic one-file code commit and expected-SHA branch fast-forward. **Native CMake/CTest: NOT RUN; Vulkan fault injection: NOT RUN; Metal/Vulkan raster: NOT RUN; CPU/GPU A/B/A: NOT RUN**. PR stays Draft and all experimental recycling flags default OFF.
+
+**Next:** Watch latest CI for Stage 49–50 once jobs complete, and fix compiler/runtime failures with new stage handoff. Owner hardware: capture Vulkan validation output for mid-flight destroy/recycling/fence errors, and Metal pixel parity. Never report a queued/cancelled job as passed.
