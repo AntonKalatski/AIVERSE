@@ -1446,6 +1446,8 @@ void Editor::frame(gfx::Device& dev, double dt) {
         offscreenTargets_->collect();
     if(r3d_.pendingProgramRetirements()!=0)
         r3d_.collectRetiredPrograms();
+    if(r3d_.pendingTargetRetirements()!=0)
+        r3d_.collectRetiredTargets();
     // Poll previously submitted native GPU compiler jobs once per owner
     // frame. Scratch authoring resumes only when they have completed.
     if(r3d_.hasPendingModelPipelineJobs())
