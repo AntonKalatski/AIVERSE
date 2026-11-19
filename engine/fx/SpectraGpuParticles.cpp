@@ -353,6 +353,10 @@ void ComputeParticles::clear() {
     freeSlots_.clear();
     for(uint32_t i=cap;i>0;--i)freeSlots_.push_back(i-1);
     stats_.alive=0;
+    // Clear invalidates even a completed checkpoint from this revision.
+    // In-flight readbacks can finish, but their revision cannot match.
+    lastCheckpoint_={};checkpointRevision_=0;
+    ++vmFrameRevision_;
     stats_.gpuVmErrorsKnown=false;
     drawCount_=0;stats_.submittedSlots=0;
 }
@@ -706,7 +710,7 @@ bool ComputeParticles::requestGpuCheckpoint(std::function<void(bool)> callback) 
        !readbackLifetime_ || asyncCheckpointPending_ ||
        !states_.valid() || !stateProgramParams_.valid() ||
        !stateAttributes_.valid() || ages_.empty() ||
-       !pendingStates_.empty())return false;
+       !pendingStates_.empty() || !pendingKillSlots_.empty())return false;
 
     // At most eight 64 KiB chunks for the existing 4096-slot GPU backend.
     // Every callback carries bytes from a single ordered Metal command buffer.
@@ -854,7 +858,7 @@ GpuCheckpointStatus ComputeParticles::checkpointStatus() const {
         status.fresh=status.currentRevision==status.capturedRevision;
     }
     status.restoreEligible=status.gpuActive && status.fresh &&
-        !status.unsentBirths &&
+        !status.unsentBirths && pendingKillSlots_.empty() &&
         lastCheckpoint_.slots.size()==ages_.size() &&
         lastCheckpoint_.remainingLifetime.size()==ages_.size();
     return status;
@@ -925,7 +929,9 @@ void ComputeParticles::switchToCpu(const std::string& why) {
             restored.push_back(p);
         }
     }
-    const uint32_t owned=uint32_t(ages_.size()-freeSlots_.size());
+    // A slot intentionally queued for selective kill is not a lost particle.
+    const uint32_t owned=uint32_t(ages_.size()-freeSlots_.size()-
+                                  pendingKillSlots_.size());
     releaseGpu();backend_=ComputeBackend::Cpu;
     const bool ok=initCpu();
     bool imported=false;
