@@ -296,8 +296,14 @@ bool HumanGroomRuntime::step(float dt,render::float3 wind) {
     if(!std::isfinite(dt)||dt<0||dt>0.05f||!good(wind))return false;
     if(dt==0||guides_.empty())return true;
     const auto start=std::chrono::steady_clock::now();
-    const float dt2=dt*dt, friction=1.0f-damping_*0.65f;
+    // Repeatable bounded integration on variable presentation frame rates.
+    // 1/120 seconds is the maximum internal step; avoid one large impulse.
+    const int substeps=std::max(1,int(std::ceil(dt*120.0f)));
+    const float h=dt/float(substeps);
+    const float dt2=h*h;
+    const float friction=std::pow(1.0f-damping_*0.65f,h*60.0f);
     const float3 force=wind*windStrength_+float3{0,-9.81f*gravity_,0};
+    for(int substep=0;substep<substeps;++substep) {
     for(auto& guide:guides_) {
         guide.position[0]=guide.previous[0]=guide.root;
         for(std::size_t j=1;j<guide.position.size();++j) {
@@ -339,6 +345,7 @@ bool HumanGroomRuntime::step(float dt,render::float3 wind) {
                 guide.previous[j]=guide.position[j];
         }
         for(auto v:guide.position)if(!good(v))return false;
+    }
     }
     lastStepMs_=float(std::chrono::duration<double,std::milli>(
         std::chrono::steady_clock::now()-start).count());
