@@ -2684,6 +2684,25 @@
       "packageDependencies": [
         "nereid-water"
       ]
+    },
+    {
+      "id": "nereid-interactions",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "experimental",
+      "source": "libraries/include/aiverselib/water/NereidInteractions.h",
+      "skill": "skills/gameplay/aiverse-nereid-water/SKILL.md",
+      "summary": "NEREID deterministic ECS entry/exit/wake events with ordered read-only VFX/audio presentation snapshots",
+      "notes": "Optional native pipeline stage after same-tick water contact sampling; outputs are single-tick events, host owns physics and VFX/audio playback. Native execution has not been verified.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_nereid_interactions",
+      "runtime": "header",
+      "linkDependencies": [
+        "aiverse_engine"
+      ],
+      "packageDependencies": [
+        "nereid-water"
+      ]
     }
   ]
 }
