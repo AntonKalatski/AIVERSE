@@ -7,6 +7,7 @@
 #include "engine/render/ImGuiLayer.h"
 #include "engine/character/vivid/HumanCreatorSession.h"
 #include "engine/character/vivid/HumanPreview.h"
+#include "engine/character/vivid/GpuActorStream.h"
 #include "engine/character/vivid/Face.h"
 #include "imgui.h"
 
@@ -29,6 +30,8 @@ struct Creator {
     render::RTSCamera camera;
     render::Mesh floor;
     gfx::Device* device=nullptr;
+    std::unique_ptr<vivid::GpuActorStream> faceActor;
+    std::vector<render::mat4> facialNodes;
     char filename[512]="vivid-human.json";
     bool initialized=false;
     bool needRebuild=false;
@@ -49,6 +52,7 @@ struct Creator {
             return;
         }
         vivid::HumanPreviewAsset candidate;
+        std::unique_ptr<vivid::GpuActorStream> newFaceActor;
         try {
             candidate=vivid::generateHumanPreview(session.dna(),groomQuality);
             if(!candidate.head || !candidate.hair)
@@ -56,15 +60,35 @@ struct Creator {
             if(!render::uploadModel(*device,*candidate.head,true) ||
                !render::uploadModel(*device,*candidate.hair,true))
                 throw std::runtime_error("VIVID creator: head or hair upload failed");
+            if(device->info().backend==gfx::Backend::Metal &&
+               device->supportsCompute()) {
+                newFaceActor=std::make_unique<vivid::GpuActorStream>();
+                if(!newFaceActor->initialize(*device,*candidate.head,
+                                           candidate.facialShapes,
+                                           candidate.head->vertices))
+                    throw std::runtime_error(
+                        "VIVID Creator face GPU init: "+newFaceActor->lastError());
+            }
         } catch(const std::exception& ex) {
+            if(newFaceActor && !newFaceActor->shutdownAfterIdle())
+                error="VIVID creator: GPU initialization rollback failed to reach idle";
             if(candidate.head)render::releaseModel(*device,*candidate.head);
             if(candidate.hair)render::releaseModel(*device,*candidate.hair);
             error=ex.what();
             return;
         }
+        if(faceActor && !faceActor->shutdownAfterIdle()) {
+            error="VIVID creator: old actor GPU buffer retirement failed";
+            if(newFaceActor)newFaceActor->shutdownAfterIdle();
+            if(candidate.head)render::releaseModel(*device,*candidate.head);
+            if(candidate.hair)render::releaseModel(*device,*candidate.hair);
+            return;
+        }
+        faceActor.reset();
         if(asset.head)render::releaseModel(*device,*asset.head);
         if(asset.hair)render::releaseModel(*device,*asset.hair);
         asset=std::move(candidate);
+        faceActor=std::move(newFaceActor);
         error.clear();
         needRebuild=false;
     }
@@ -222,6 +246,22 @@ struct Creator {
             render::ModelDraw draw;
             draw.model=asset.head.get();
             draw.world=render::mat4::translate({0,0,0});
+            face.set(vivid::Layer::Tracking,vivid::Channel::JawOpen,jawOpen);
+            face.set(vivid::Layer::Tracking,vivid::Channel::EyeBlinkLeft,blink);
+            face.set(vivid::Layer::Tracking,vivid::Channel::EyeBlinkRight,blink);
+            face.set(vivid::Layer::Tracking,vivid::Channel::MouthSmileLeft,smile);
+            face.set(vivid::Layer::Tracking,vivid::Channel::MouthSmileRight,smile);
+            face.snap();
+            if(faceActor) {
+                if(!faceActor->dispatch(face.frame(),asset.facialBinding))
+                    error=faceActor->lastError();
+                else if(!faceActor->attach(draw))
+                    error="VIVID creator: facial GPU buffer not ready for draw";
+            }
+            facialNodes.resize(asset.head->bindWorld.size());
+            if(asset.rig.compose(asset.head->bindWorld,facialNodes,
+                                 face.frame(),1.0f))
+                draw.nodeWorld=&facialNodes;
             renderer.drawModel(draw);
         }
         if(asset.hair && asset.hair->vb.valid()) {
