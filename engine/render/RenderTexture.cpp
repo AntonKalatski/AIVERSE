@@ -178,24 +178,29 @@ bool RenderTexture::blit(gfx::TextureHandle source,float x,float y,float w,float
  return true;
 }
 
-void RenderTexture::upload(int x,int y,int w,int h,const void* p,int pitch){
- if(!dev_||!p||x<0||y<0||w<=0||h<=0||x>width_-w||y>height_-h||pitch<w*4)return;
- // Stage CPU bytes into a separate texture; an ordered GPU copy avoids a deferred clear or
- // brush pass overwriting an immediate replaceRegion upload later in the same frame.
+bool RenderTexture::upload(int x,int y,int w,int h,const void* p,int pitch){
+ if(!dev_||!p||x<0||y<0||w<=0||h<=0||x>width_-w||y>height_-h||pitch<w*4)
+  return false;
+ // Stage CPU bytes into a separate texture; ordered GPU copy avoids
+ // a deferred brush clear overwriting a later partial upload.
  std::vector<uint8_t> bytes(size_t(w)*h*4);
- for(int row=0;row<h;++row)std::copy_n(static_cast<const uint8_t*>(p)+size_t(row)*pitch,w*4,bytes.data()+size_t(row)*w*4);
- gfx::TextureDesc td;td.width=w;td.height=h;td.data=bytes.data();td.label="canvas upload";
+ for(int row=0;row<h;++row)
+  std::copy_n(static_cast<const uint8_t*>(p)+size_t(row)*pitch,
+              w*4,bytes.data()+size_t(row)*w*4);
+ gfx::TextureDesc td;td.width=w;td.height=h;td.data=bytes.data();
+ td.label="canvas upload";
  auto source=dev_->createTexture(td);
- if(source.valid()){
-  try{
-   blit(source,float(x)/width_,float(y)/height_,float(w)/width_,float(h)/height_);
-  }catch(...){
-   retirement_->retire(source);
-   throw;
-  }
-  // Source may still be sampled by this frame's GPU blit, even after
-  // endPass. Release through the same owner as the blit vertex buffer.
+ if(!source.valid())return false;
+ bool applied=false;
+ try{
+  applied=blit(source,float(x)/width_,float(y)/height_,
+               float(w)/width_,float(h)/height_);
+ }catch(...){
   retirement_->retire(source);
+  throw;
  }
+ // The GPU may still be sampling this texture when blit has returned.
+ retirement_->retire(source);
+ return applied;
 }
 }
