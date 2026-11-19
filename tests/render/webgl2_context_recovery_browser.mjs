@@ -28,7 +28,7 @@ try {
     return m && typeof m._aiverse_web_test_generation === "function"
       && m._aiverse_web_test_generation() === 1
       && m._aiverse_web_test_frames() > 2;
-  }, { timeout: 30000 });
+  }, null, { timeout: 30000 });
   const initialFrames = await metric("frames");
   assert(initialFrames > 2, "AIVERSE rendering started");
 
