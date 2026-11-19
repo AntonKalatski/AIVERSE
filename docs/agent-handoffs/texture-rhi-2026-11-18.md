@@ -8644,3 +8644,58 @@ and run `bash tools/verify-texture-rhi.sh --editor --jobs 4` (add
 and `gpu_icb_material_contract` compile/pass, then validate actual
 Metal graph/VT variants N=0..4 and CPU/GPU parity; resolve errors before
 promoting PR #21 from Draft.
+
+
+## Stage 10AR — sequential one-mip CPU fallback staging (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / Draft PR #21.
+
+**Source commit:** `e570785a41a8e62db2193c8f65a889c086ab8ec1`,
+`engine/render/TextureAsset.h`. **Documentation commits:**
+`c2743e0df35799dc5dc05d1523055faca5ff7a99`
+(`docs/texture-rhi.md`) and
+`0ff39020d7b901e13a513535145ee86aa25636bc`
+(`skills/visuals/aiverse-texture-rhi/SKILL.md`).
+
+**Architecture / public API:** Generic DDS/KTX2 `uploadContainerTexture`
+(and both public aliases) now decodes at most one full mip of RGBA8 fallback
+data at a time instead of keeping a vector per mip. The whole logical decoded
+mip-chain is still bounded by Stage 10AQ `maxCpuDecodedBytes` preflight
+before CPU fallback allocation. The base mip, including all array/cube faces
+and 3D volume slices, initializes the GPU texture; subsequent mips are
+decoded, uploaded via `updateTextureRegion`, and the same scratch buffer
+is reused. If later decoding or GPU upload fails, the partially created GPU
+handle is destroyed and invalid returned. The native RHI methods must
+synchronously consume source pointers, as required by their existing
+contracts. Public API, source container layout, file formats, ECS and game
+save semantics are unchanged. Peak retained CPU data should be no more
+than the largest decoded mip, plus one slice decoder scratch and native
+backend staging; this is **not measured**.
+
+**Actual checks performed:** re-fetched the real updated branch header
+and regression test source. Eight repository source consistency assertions
+passed (single mip vector, no all-mip vector, preflight present, decode and
+upload cleanup paths, base level allocation, 12-face mip coverage test, and
+aggregate budget regression). This was static inspection **only**.
+
+**NOT RUN:** any C++/Objective-C++ build, existing `texture_asset` CTest,
+Metal/GL/Vulkan device execution, shader compilation, address/UB sanitizer,
+peak RAM telemetry, image parity or performance measurement. The current
+Linux execution container still cannot resolve github.com to clone AIVERSE;
+successful GitHub file writes do not imply a passing native build or CI run.
+PR #21 remains Draft.
+
+**Known risk:** callers/backends violating the documented synchronous
+source-byte consumption contract could retain a pointer into the reused
+scratch buffer. Validate platform backends with sanitizer/device runs.
+Compressed native uploads remain independent and unchanged. An individual
+mip can still require up to the prior 512 MiB limit; no allocator telemetry
+is exposed.
+
+**Next concrete action:** pull `feature/texture-rhi-unification` on macOS,
+run `bash tools/verify-texture-rhi.sh --editor --jobs 4`, verify the
+`texture_asset` and `gpu_icb_material_contract` CTests, then capture
+Metal/GL/Vulkan base-layer and authored-mip upload/readback parity with
+a multi-face cube array and a volume image. Fix compiler or device errors
+before promoting the PR; do not treat source assertions as test passes.
+
