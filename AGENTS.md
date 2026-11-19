@@ -1401,3 +1401,21 @@ new GPU resources or TWH8 format changes. See
 `docs/terrain/TERRAWEAVE.md` Stage36 and
 `docs/terrain/AGENT_HANDOFF.md`. User prioritizes features before QA;
 do not claim native/Metal/GL/Vulkan verification.
+
+### TerraWeave Stage37 — safe inactive wind CPU shadow budget
+
+Use `engine/world/TerraWeaveWindShadowCachePolicy.h` and public
+`WorldScene::setVegetationHorizonWindShadowCachePolicy` for a
+0..16MiB budget on **inactive GPU cache wind overlay capacity**.
+It is separate from Stage36 `HorizonWindUploadPolicy` and does not
+cap active/outgoing wind overlays. When cached shadow capacity
+exceeds the policy, `HorizonGpuRegionCache` evicts the entire oldest
+shadow-bearing **GPU model plus CPU overlay** via the RHI owning
+thread; never detach the CPU shadow from a live GPU model whose
+RGB bytes may already hold exact PHYSIS data. Re-entry rebuilds
+via the existing Horizon worker/CPU bake/asset archive and uploads
+a coherent new model/shadow, not a fabricated GPU readback.
+`gpuCachedWindShadowBytes` and `gpuWindShadowBudgetEvictions` in
+`HorizonRuntimeStats` expose current dormant capacity and specific
+evictions. Update `docs/terrain/AGENT_HANDOFF.md` each stage;
+CMake/CTest/Metal/Vulkan/GL **NOT RUN** under feature-first request.
