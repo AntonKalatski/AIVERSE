@@ -85,15 +85,21 @@ public:
             if(composeDepth_.valid())dev_->destroyTexture(composeDepth_);
             if(materialTarget_.valid())dev_->destroyTexture(materialTarget_);
             if(materialDepth_.valid())dev_->destroyTexture(materialDepth_);
+            if(surfaceTarget_.valid())dev_->destroyTexture(surfaceTarget_);
+            if(surfaceDepth_.valid())dev_->destroyTexture(surfaceDepth_);
             if(pipeline_.valid())dev_->destroyPipeline(pipeline_);
             if(shader_.valid())dev_->destroyShader(shader_);
         }
         dev_=nullptr;vertex_={};pipeline_={};shader_={};scene_={};
         composeDepth_={};depthWidth_=depthHeight_=0;
         materialTarget_={};materialDepth_={};
+        surfaceTarget_={};surfaceDepth_={};
         receiverWidth_=receiverHeight_=0;
+        surfaceWidth_=surfaceHeight_=0;
         material_={};receiverDepth_={};materialWidth_=materialHeight_=0;
-        sceneToken_=materialToken_=0;frameCounter_=0;
+        surface_={};surfaceReceiverDepth_={};
+        surfaceMaterialWidth_=surfaceMaterialHeight_=0;
+        sceneToken_=materialToken_=surfaceToken_=0;frameCounter_=0;
         sourcesPublished_=geometryPublished_=enabled_=false;
         requestedQuality_=quality_=LumaWeaveQuality::Balanced;
         adaptiveEnabled_=false;
@@ -168,7 +174,8 @@ public:
         if(!sceneToken)throw std::invalid_argument("LumaWeave requires nonzero view serial");
         sceneToken_=sceneToken;
         material_={};receiverDepth_={};
-        materialToken_=0;
+        surface_={};surfaceReceiverDepth_={};
+        materialToken_=surfaceToken_=0;
     }
     bool setReceiverMaterial(gfx::TextureHandle albedoMetallic,
                              gfx::TextureHandle receiverDepth,uint32_t width,
@@ -181,6 +188,23 @@ public:
         receiverDepth_=receiverDepth;
         materialWidth_=width;materialHeight_=height;
         materialToken_=sceneToken;
+        return true;
+    }
+
+    // Optional full-resolution world normal.xyz / roughness.w from a custom
+    // opaque renderer. Only accepted for the same explicitly begun scene
+    // token as the original material buffer and an independent depth buffer.
+    bool setReceiverSurface(gfx::TextureHandle normalRoughness,
+                            gfx::TextureHandle surfaceDepth,uint32_t width,
+                            uint32_t height,uint64_t sceneToken) {
+        if(!ready()||!normalRoughness.valid()||!surfaceDepth.valid()||
+           !sceneToken||sceneToken!=sceneToken_||!width||!height||
+           width>16384||height>16384)return false;
+        surface_=normalRoughness;
+        surfaceReceiverDepth_=surfaceDepth;
+        surfaceMaterialWidth_=width;
+        surfaceMaterialHeight_=height;
+        surfaceToken_=sceneToken;
         return true;
     }
 
@@ -216,12 +240,46 @@ public:
         }
     }
 
+    bool wantsSurfaceReceiverPass() const override {
+        return frame_.eligible && !legacy_.count() &&
+               !legacy_.staticPointLightsActive() &&
+               (quality_==LumaWeaveQuality::High ||
+                quality_==LumaWeaveQuality::Ultra) &&
+               !(surface_.valid() && surfaceToken_==sceneToken_);
+    }
+
+    gfx::PassDesc surfaceReceiverPass(int w,int h) override {
+        if(!wantsSurfaceReceiverPass() || !ensureSurfaceTarget(w,h))return {};
+        gfx::PassDesc p;
+        p.colorTarget=surfaceTarget_;
+        p.depthTarget=surfaceDepth_;
+        p.clearColorEnabled=true;
+        p.clearDepthEnabled=true;
+        p.clearColor[0]=p.clearColor[1]=p.clearColor[2]=0;
+        p.clearColor[3]=1;
+        return p;
+    }
+    void surfaceReceiverPublished(gfx::TextureHandle texture,int w,int h) override {
+        if(texture.valid() && texture.id==surfaceTarget_.id &&
+           w==surfaceWidth_ && h==surfaceHeight_ && sceneToken_) {
+            surface_=surfaceTarget_;
+            surfaceReceiverDepth_=surfaceDepth_;
+            surfaceMaterialWidth_=uint32_t(w);
+            surfaceMaterialHeight_=uint32_t(h);
+            surfaceToken_=sceneToken_;
+        }
+    }
+
     gfx::PassDesc scenePass(const gfx::PassDesc& out,int w,int h) override {
         if(!sceneToken_)sceneToken_=++autoViewSerial_;
         // Each view must explicitly populate its material side channel; a
         // different viewport's cached albedo must never be reused.
         if(materialToken_!=sceneToken_) {
             material_={};receiverDepth_={};materialWidth_=materialHeight_=0;materialToken_=0;
+        }
+        if(surfaceToken_!=sceneToken_) {
+            surface_={};surfaceReceiverDepth_={};
+            surfaceMaterialWidth_=surfaceMaterialHeight_=0;surfaceToken_=0;
         }
         scene_=downstream_.scenePass(out,w,h);
         viewWidth_=w;viewHeight_=h;
@@ -322,6 +380,30 @@ private:
         receiverWidth_=w;receiverHeight_=h;
         return true;
     }
+    bool ensureSurfaceTarget(int w,int h) {
+        if(!dev_||w<=0||h<=0)return false;
+        if(surfaceTarget_.valid() && surfaceDepth_.valid() &&
+           surfaceWidth_==w && surfaceHeight_==h)return true;
+        if(producer_.busy())return false;
+        gfx::TextureDesc desc;
+        desc.width=w;desc.height=h;
+        desc.format=gfx::PixelFormat::RGBA16F;
+        desc.filter=gfx::Filter::Nearest;
+        desc.renderTarget=true;
+        desc.label="LumaWeave PBR surface normal and roughness";
+        const auto next=dev_->createTexture(desc);
+        if(!next.valid())return false;
+        desc.format=gfx::PixelFormat::Depth;
+        desc.label="LumaWeave PBR surface receiver depth";
+        const auto depth=dev_->createTexture(desc);
+        if(!depth.valid()){dev_->destroyTexture(next);return false;}
+        if(surfaceTarget_.valid())dev_->destroyTexture(surfaceTarget_);
+        if(surfaceDepth_.valid())dev_->destroyTexture(surfaceDepth_);
+        surfaceTarget_=next;surfaceDepth_=depth;
+        surfaceWidth_=w;surfaceHeight_=h;
+        return true;
+    }
+
     bool makeComposeDepth(int w,int h) {
         if(!dev_ || producer_.busy() || w<=0 || h<=0)return false;
         gfx::TextureDesc td;
@@ -368,13 +450,17 @@ private:
     gfx::PipelineHandle pipeline_{};
     gfx::BufferHandle vertex_{};
     gfx::TextureHandle composeDepth_{},materialTarget_{},materialDepth_{};
+    gfx::TextureHandle surfaceTarget_{},surfaceDepth_{};
     int depthWidth_=0,depthHeight_=0;
     int receiverWidth_=0,receiverHeight_=0;
+    int surfaceWidth_=0,surfaceHeight_=0;
     gfx::PassDesc scene_{};
     gfx::TextureHandle material_{},receiverDepth_{};
+    gfx::TextureHandle surface_{},surfaceReceiverDepth_{};
     uint32_t materialWidth_=0,materialHeight_=0;
+    uint32_t surfaceMaterialWidth_=0,surfaceMaterialHeight_=0;
     int viewWidth_=0,viewHeight_=0;
-    uint64_t sceneToken_=0,materialToken_=0,frameCounter_=0,autoViewSerial_=0;
+    uint64_t sceneToken_=0,materialToken_=0,surfaceToken_=0,frameCounter_=0,autoViewSerial_=0;
     bool enabled_=false,sourcesPublished_=false,geometryPublished_=false;
     LumaWeaveQuality quality_=LumaWeaveQuality::Balanced;
     LumaWeaveQuality requestedQuality_=LumaWeaveQuality::Balanced;
