@@ -1269,7 +1269,9 @@ void Renderer3D::prepareGpuModelDraws() {
         return command && std::strcmp(command,"1")==0;
     }();
     const auto mayMixPbr = [&](uint32_t index) {
-        return mixedPbrGroups && (!vtEnabled[index] || pbrVtAvailable);
+        const auto& material=*modelItems_[index].mat;
+        return mixedPbrGroups && (!vtEnabled[index] || pbrVtAvailable) &&
+               equivalentGpuIcbPbrPipelineMaterial(material,material);
     };
     const auto vtCompatible = [&](uint32_t left, uint32_t right) {
         if (mixedVtGroups && vtEnabled[left] && vtEnabled[right])
