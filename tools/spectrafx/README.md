@@ -110,3 +110,77 @@ authoritative simulation ECS.
 **Verification:** Source committed in GitHub only. Native compiler,
 CTest, file corruption tests, Metal readback callback cancellation
 and editor integration have NOT RUN for Stage 41.
+
+## Stage 42 — privacy-by-default output and explicit report bundles
+
+The offline inspector now **redacts world bounds, exact GPU frame
+serials, revisions and content CRC fingerprints by default** in
+both text and JSON output. It never prints raw particle positions
+or VM scalar inputs. This matters when attaching a diagnostic report
+to an issue tracker or sharing with an external AI agent.
+
+```sh
+# Default output is safe aggregate counts with no scene coordinates.
+./inspect_spfx --json checkpoint.spfx
+
+# Explicitly save a LOCAL privacy-redacted JSON report:
+./inspect_spfx --report report.safe.json checkpoint.spfx
+
+# Opt in to coordinate bounds or device identifiers, individually:
+./inspect_spfx --json --include-coordinates checkpoint.spfx
+./inspect_spfx --json --include-identifiers checkpoint.spfx
+
+# All options can be combined, but raw particle/VM arrays are NEVER
+# included in this JSON report by any flag.
+./inspect_spfx --report private-debug.json --include-coordinates \
+  --include-identifiers checkpoint.spfx
+```
+
+The command refuses to overwrite the checkpoint input path,
+checks the 540,720-byte input bound before allocating, uses a
+temporary output file and a rename to publish the explicitly
+requested report. It does **not** upload data, scan arbitrary
+directories or create background monitoring tasks. The source
+`.spfx` file is itself **sensitive RAW GPU state** and must not be
+included in a support bundle unless the user separately chooses
+to share it.
+
+For other native programs, use
+`engine/fx/SpectraDiagnosticReport.h`:
+
+```cpp
+GpuDiagnosticInspection checked=inspectGpuCheckpointDiagnostic(raw);
+GpuDiagnosticReportPrivacy privacy{}; // EVERYTHING sensitive off by default
+std::string safeJson=gpuDiagnosticReportJson(checked,privacy);
+```
+
+The editor's SpectraFX window now supports indexed GPU-group
+selection. **Save safe JSON report** writes only aggregate per-slot
+counts and a summarized preview history; individual particle
+positions, VM scalars, absolute graphics frame serials and source
+filenames are omitted unless the user explicitly checks the
+separate bounds/identifiers options. The adjacent
+**Save RAW GPU checkpoint (sensitive)** action is a distinct
+opt-in, not part of safe report generation. Both actions require
+a full, fresh, current-revision capture and save only locally.
+
+Native capture selection also supports
+`GpuPoolCaptureHost::requestNext(policy)` with
+RoundRobin (default), LargestEstimatedGroup, or
+MissingOrStalestCheckpoint. This still queues ONE GPU group
+request and respects the Stage 32 shared GPU readback budget.
+The owner-thread frame loop MUST freeze VFX mutation until the
+result is taken or cancelled.
+
+Native recovery events now distinguish an explicit
+`PoolRecoveryPhase::ResetRequested` from
+`ResetRetryRequired` and `DeviceRecreationRequired`.
+`GpuPoolRecoveryHost::requestPresentationReset(reason)` only
+requests work; the host later calls `retryPresentationReset()`
+inside an active graphics frame outside encoders. Events have
+a stable `transitionSequence` and expose device-replacement
+attempt counts and whether an authored-effect recovery catalog
+is retained. No callback silently creates a graphics Device.
+
+**Verification:** Source/commit readback only in Stage 42.
+The CLI is NOT YET compiled or executed on real/corrupt files.
