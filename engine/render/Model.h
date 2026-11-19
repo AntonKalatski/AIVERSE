@@ -86,6 +86,12 @@ struct Image {
     // into immutable virtual pages. Do not set on images also sampled by
     // non-VT materials or alpha-sensitive shader paths.
     int virtualFallbackMaxDimension = 0;
+    // Alpha-preserving masked VT images keep original-resolution R8
+    // coverage separately from the downsampled RGBA8 colour fallback.
+    // Only configured before upload and owned by the model; the normal
+    // TextureCache must never receive either reduced texture.
+    bool virtualFallbackPreserveAlpha = false;
+    gfx::TextureHandle virtualAlphaMask;
 };
 
 // 60 bytes, one interleaved stream for every model (unskinned meshes leave joints/weights zero).
