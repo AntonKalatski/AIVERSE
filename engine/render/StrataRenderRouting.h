@@ -39,6 +39,7 @@ struct GeometryDrawRange {
     uint32_t nodeId = invalidNode; // local within this primitive hierarchy
 };
 struct RenderCandidate {
+    const Model* source = nullptr; // borrowed identity, never dereference after scene unload
     gfx::BufferHandle vertexBuffer, indexBuffer;
     uint32_t mesh = 0, primitive = 0, material = 0;
     uint64_t geometryRevision = 0, materialRevision = 0;
@@ -62,7 +63,8 @@ bool prepareRenderCandidate(const Model& source, const ModelAsset& staged,
 // RHI-compatible indirect argument bytes. Even these bytes are *not*
 // submitted: pipeline/material/command ownership stays with Renderer3D.
 // If a zero-range cull is correct, the output is an empty command vector.
-bool encodeRendererCommands(const RenderCandidate& candidate,
+bool encodeRendererCommands(const Model& liveSource,
+                            const RenderCandidate& candidate,
                             uint32_t rendererInstanceSlot,
                             const RenderRouteGate& gate,
                             std::vector<gfx::DrawIndexedIndirectCommand>& out);
