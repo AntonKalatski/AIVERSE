@@ -171,6 +171,17 @@ public:
                 case CameraGeometryCommand::Kind::Triangle:
                     renderer.triangle(packet.a,packet.b,packet.c,packet.rgba);
                     break;
+                case CameraGeometryCommand::Kind::Water:
+                    if(packet.mesh)renderer.drawNereidRippleMesh(
+                        *packet.mesh,packet.world,packet.tint,
+                        packet.specular,packet.emissive,packet.ripples,
+                        packet.firstIndex,packet.indexCount,packet.wakes,
+                        packet.wind,packet.hydraulics,packet.rapidColor);
+                    break;
+                case CameraGeometryCommand::Kind::Selection:
+                    if(packet.mesh)renderer.drawSelectionMesh(
+                        *packet.mesh,packet.world,packet.tint,packet.selection);
+                    break;
             }
         });
         forEachFallback([&](const ModelDraw& d){renderer.drawModel(d);});
