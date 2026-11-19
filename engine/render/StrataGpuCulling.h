@@ -1,7 +1,9 @@
 #pragma once
-// Experimental Metal Strata selection: GPU-visible indexed ranges only.
-// Deliberately NO draw submission, GPU readback or ECS/world ownership.
-// The shared Renderer3D remains the only authority for rendering.
+// Experimental Metal/Vulkan STRATA GPU hierarchy selection.
+// Metal produces diagnostic indexed ranges; Vulkan additionally produces
+// guarded GPU-authored indirect argument candidates. Neither path bypasses
+// Renderer3D's material, transform or exclusive draw ownership.
+
 #include "StrataGpuScene.h"
 #include "StrataView.h"
 #include <array>
