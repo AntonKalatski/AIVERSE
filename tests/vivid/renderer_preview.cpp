@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <memory>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -63,17 +64,19 @@ vivid::SparseMorphLibrary morphsFromModel(const render::Model& model) {
     jaw.name = "jawOpen";
     vivid::MorphTargetInput blink;
     blink.name = "blinkRight";
-    for (std::uint32_t i = 0; i < model.vertices.size(); ++i) {
+    require(model.vertices.size() <= std::numeric_limits<std::uint32_t>::max(),
+            "preview model vertex count exceeds VIVID index ABI");
+    for (std::size_t i = 0; i < model.vertices.size(); ++i) {
         const auto& vertex = model.vertices[i];
         if (vertex.pos.y < -0.12f) {
             vivid::MorphDelta d;
-            d.vertex = i;
+            d.vertex = static_cast<std::uint32_t>(i);
             d.position = {0.0f,-0.7f,0.12f};
             jaw.deltas.push_back(d);
         }
         if (vertex.pos.x > 0.18f) {
             vivid::MorphDelta d;
-            d.vertex = i;
+            d.vertex = static_cast<std::uint32_t>(i);
             d.position = {0.65f,0.0f,0.08f};
             blink.deltas.push_back(d);
         }
