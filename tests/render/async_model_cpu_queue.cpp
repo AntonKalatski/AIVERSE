@@ -18,6 +18,17 @@ int main() {
     assert(queue.request("missing/a.glb",absent,textures));
     assert(queue.contains("missing/a.glb"));
     assert(!queue.request("missing/a.glb",absent,textures)); // dedupe
+    const auto startDeadline=std::chrono::steady_clock::now()+
+                             std::chrono::seconds(2);
+    while(!queue.stats().workerActive &&
+          std::chrono::steady_clock::now()<startDeadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    // If the malformed source finished immediately, drain its result so
+    // this fixture measures the waiting queue rather than scheduler timing.
+    AsyncModelCpuQueue::Prepared initial;
+    if(!queue.stats().workerActive) {
+        queue.pollReady(initial);
+    }
     assert(queue.request("missing/b.glb",absent,textures));  // one queued
     assert(!queue.request("missing/c.glb",absent,textures)); // bounded
     queue.invalidate("missing/a.glb"); // running import becomes stale
