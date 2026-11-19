@@ -7,10 +7,10 @@
 // Material/pipeline equivalence is checked separately by Renderer3D.
 #include "Model.h"
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <vector>
 
 namespace aiverse::render {
 
@@ -56,25 +56,29 @@ struct StaticCrossModelPreflightGroup {
     bool mixedModels = false;
     bool ready = false; // evaluated once after all visible candidates are known
     size_t items = 0;
-    // Keep only the first threshold distinct primitives, not every instance
-    // in a city. The backend still does exact adjacent primitive-run counting.
-    std::vector<const Primitive*> distinctPrimitives;
+    // The supported backend command threshold is at most 32 (Metal env
+    // tuning), or 4 on other platforms. Fixed storage avoids one heap
+    // allocation per material/page group in dense scenes.
+    std::array<const Primitive*, 32> distinctPrimitives{};
+    size_t distinctCount = 0;
 
     void observe(const Model* model, const Primitive* primitive, size_t threshold) {
         if (!model || !primitive || !threshold) return;
         if (!firstModel) firstModel = model;
         else if (model != firstModel) mixedModels = true;
         ++items;
-        if (distinctPrimitives.size() < threshold &&
-            std::find(distinctPrimitives.begin(), distinctPrimitives.end(),
-                      primitive) == distinctPrimitives.end())
-            distinctPrimitives.push_back(primitive);
+        const size_t limit = std::min(threshold, distinctPrimitives.size());
+        if (distinctCount < limit &&
+            std::find(distinctPrimitives.begin(),
+                      distinctPrimitives.begin() + distinctCount,
+                      primitive) == distinctPrimitives.begin() + distinctCount)
+            distinctPrimitives[distinctCount++] = primitive;
     }
 
     bool opportunity(size_t threshold, size_t maxItemsPerSubmission) const {
         return mixedModels && items >= threshold &&
             maxItemsPerSubmission >= threshold &&
-            distinctPrimitives.size() >= threshold;
+            distinctCount >= threshold;
     }
 };
 
