@@ -26,9 +26,8 @@ struct CameraXrFrame {
     double predictedDisplayTime=0;
 };
 
-// Return false without modifying output on invalid runtime data. In particular,
-// normal Camera::proj derives horizontal scale from target pixel aspect, so
-// unsupported FOV/size combinations must not silently distort XR images.
+// Return false without modifying output on invalid runtime data.
+// Exact frustum tangents avoid relying on eye-target pixel aspect.
 inline bool makeXrCameraViews(const CameraXrFrame& frame,
                               const Camera& cameraTemplate,
                               std::array<CameraCaptureView,2>& output) {
@@ -53,16 +52,13 @@ inline bool makeXrCameraViews(const CameraXrFrame& frame,
         if (!finite(q2)||q2<1.e-8f || !(horizontal>0) || !(vertical>0) ||
             !(eye.leftTan<0 && eye.rightTan>0 && eye.downTan<0 && eye.upTan>0))
             return false;
-        const float requiredAspect=horizontal/vertical;
-        const float pixelAspect=float(eye.width)/float(eye.height);
-        if (!finite(requiredAspect)||!finite(pixelAspect)||
-            std::abs(requiredAspect/pixelAspect-1.f)>0.01f) return false;
-        Camera camera=cameraTemplate;
+         Camera camera=cameraTemplate;
         camera.setPose(eye.position,eye.orientation);
         camera.ortho=false;
         camera.fovY=2.f*std::atan(vertical*.5f);
-        camera.lensShift={-(eye.rightTan+eye.leftTan)/horizontal,
-                          -(eye.upTan+eye.downTan)/vertical};
+        camera.lensShift={};
+        if (!camera.setFrustumTangents(eye.leftTan,eye.rightTan,eye.downTan,eye.upTan))
+            return false;
         camera.jitter={};
         camera.obliqueClip=false;
         if (!(camera.zNear>0.f) || !(camera.zFar>camera.zNear)) return false;
