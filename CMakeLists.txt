@@ -2025,6 +2025,12 @@ if(AIVERSE_BUILD_STRATA)
     add_library(aiverse_strata_gpu_scene STATIC engine/render/StrataGpuScene.cpp)
     target_link_libraries(aiverse_strata_gpu_scene PUBLIC aiverse_strata_model_adapter)
     target_include_directories(aiverse_strata_gpu_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    # Metal-only diagnostic cluster compute. Not linked to Renderer3D and
+    # never used as a second draw-submission authority.
+    add_library(aiverse_strata_gpu_culling STATIC engine/render/StrataGpuCulling.cpp)
+    target_link_libraries(aiverse_strata_gpu_culling PUBLIC
+        aiverse_strata_gpu_scene aiverse_strata_view)
+    target_include_directories(aiverse_strata_gpu_culling PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
     # GeometryScene is still the only instance owner. This option exposes
     # opt-in CPU staging at scene load, not a second draw submission path.
     target_link_libraries(aiverse_runtime PUBLIC aiverse_strata_view aiverse_strata_gpu_scene)
@@ -2044,6 +2050,10 @@ if(AIVERSE_BUILD_STRATA)
         target_link_libraries(aiverse_strata_gpu_scene_tests PRIVATE
             aiverse_strata_gpu_scene aiverse_zstd_dec)
         add_test(NAME strata_gpu_scene COMMAND aiverse_strata_gpu_scene_tests)
+        add_executable(aiverse_strata_gpu_culling_tests tests/render/strata_gpu_culling.cpp)
+        target_link_libraries(aiverse_strata_gpu_culling_tests PRIVATE
+            aiverse_strata_gpu_culling aiverse_zstd_dec)
+        add_test(NAME strata_gpu_culling COMMAND aiverse_strata_gpu_culling_tests)
     endif()
 endif()
 if(AIVERSE_RUNTIME_AUTOLOD)
