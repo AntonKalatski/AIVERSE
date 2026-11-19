@@ -34,9 +34,9 @@ struct SimpleU { float px[4]; float p0[4]; float sun[4]; };
 // Only the HDR luminance prefilter needs the camera-authored region.
 // Reduction/adaptation and all other postFX retain their original UBOs.
 struct ExposureMeterU {
-    float px[4], p0[4], sun[4], region[4];
+    float px[4], p0[4], sun[4], region[4], regionBox[4];
 };
-const char* kExposureMeterFields[] = {"px", "p0", "sun", "region"};
+const char* kExposureMeterFields[] = {"px", "p0", "sun", "region", "regionBox"};
 // Keep the legacy SimpleU field prefix untouched. New camera-linear DoF
 // uniforms are present only in the separate DepthOfField shader program.
 struct DepthOfFieldU {
@@ -598,6 +598,8 @@ void Prisma::setViewExposureMeterRegion(uint64_t id, ExposureMeterRegion r) {
     r.radius = safe(r.radius,0.01f,1.0f,0.25f);
     r.feather = safe(r.feather,0.001f,0.5f,0.10f);
     r.outsideWeight = safe(r.outsideWeight,0.02f,1.0f,0.05f);
+    r.halfWidth = safe(r.halfWidth,0.01f,0.5f,0.25f);
+    r.halfHeight = safe(r.halfHeight,0.01f,0.5f,0.25f);
     viewExposureMeterRegions_[id] = r;
 }
 void Prisma::clearViewExposureMeterRegion(uint64_t id) {
@@ -1187,7 +1189,7 @@ gfx::PipelineHandle Prisma::program(Prog p) {
         : p == kMotionBlur
             ? buildProgram(kMotionBlurFields, 4, d.tex, "", d.helpers, d.body, sampledDepth)
             : p == kExposureLog
-            ? buildProgram(kExposureMeterFields, 4, d.tex, "", d.helpers, d.body, sampledDepth)
+            ? buildProgram(kExposureMeterFields, 5, d.tex, "", d.helpers, d.body, sampledDepth)
             : p == kDepthOfField
             ? buildProgram(kDepthOfFieldFields, 4, d.tex, "",
                 prisma::kDepthOfFieldHelpers, d.body, sampledDepth)
@@ -1386,6 +1388,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     effectReport.autoExposureRegionMetered = false;
     effectReport.manualExposureEncoded = false;
     effectReport.manualExposureEV = 0.0f;
+    effectReport.autoExposureBoxMetered = false;
     effectReport.effects.clear();
     if (!sceneReady_) {
         for (const auto& e : settings_.effects) {
@@ -1486,6 +1489,9 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         meterRegion.radius = autoEffect->get("meterRadius");
         meterRegion.feather = autoEffect->get("meterFeather");
         meterRegion.outsideWeight = autoEffect->get("meterOutsideWeight");
+        meterRegion.box = autoEffect->get("meterBox") > 0.5f;
+        meterRegion.halfWidth = autoEffect->get("meterHalfWidth");
+        meterRegion.halfHeight = autoEffect->get("meterHalfHeight");
     }
     if (const auto override = viewExposureMeterRegions_.find(viewId_);
         override != viewExposureMeterRegions_.end())
@@ -1535,6 +1541,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                     meterRegion.centerY,
                     regionRequested ? meterRegion.radius : -1.0f,
                     meterRegion.feather);
+                put(measure.regionBox, meterRegion.halfWidth,
+                    meterRegion.halfHeight, meterRegion.box ? 1.0f : 0.0f, 0);
             }
             draw(set, mip, pipes_[level == 0 ? kExposureLog : kExposureReduce],
                  &measure, level == 0 ? sizeof measure : sizeof(SimpleU),
@@ -1560,6 +1568,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                     meterRegion.centerY,
                     regionRequested ? meterRegion.radius : -1.0f,
                     meterRegion.feather);
+                put(measure.regionBox, meterRegion.halfWidth,
+                    meterRegion.halfHeight, meterRegion.box ? 1.0f : 0.0f, 0);
                 draw(set, mip, pipes_[kExposureLog], &measure, sizeof measure,
                      {{0, scene.tex}});
                 source = mip.tex;
@@ -2526,6 +2536,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             autoEffect ? autoEffect->get("highlightRejection") : 0.0f;
         effectReport.autoExposureFrozen = exposureFrozenThisFrame;
         effectReport.autoExposureRegionMetered = exposureRegionMeteredThisFrame;
+        effectReport.autoExposureBoxMetered =
+            exposureRegionMeteredThisFrame && meterRegion.box;
     }
     // TAA and FXAA are mutually exclusive for the same HDR presentation.
     const PrismaEffect* finalAa = hdrFrame_ && !temporalResolved ? find(PrismaType::Fxaa) : nullptr;
