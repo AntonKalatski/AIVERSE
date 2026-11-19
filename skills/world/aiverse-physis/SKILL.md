@@ -703,3 +703,29 @@ Full AIVERSE root build, macOS and authenticated admin tests remain
 UNVERIFIED. This is not a distributed fence or cross-file transaction.
 
 Handoff: `docs/agent-handoffs/physis-stage53-published-inode-2026-11-19.md`.
+
+
+### Stage 54 — real journal lock + pinned POSIX I/O test
+
+The isolated `physis_journal_locked_io` CTest compiles
+`PhysisJournalProcessLock.h` and `PhysisJournalPosixIO.h`
+together without ECS, net or editor dependencies. It verifies that
+a valid `JournalProcessLock::directoryFd()` supports
+`posix_journal::read/write`, that a competing owner fails, and
+that renaming a live lock inode invalidates `valid()` and
+`directoryFd()` even though a separate owner can now acquire
+the replacement inode. Never use the low-level I/O helpers directly
+from an authenticated admin endpoint after lock ownership is lost;
+the canonical endpoint must fail closed before persistent writes.
+
+The test is registered in CMake and the PHYSIS Linux/macOS workflow.
+An isolated source-identical native Linux GCC C++20 CTest passed
+1/1, with Clang 17 strict warnings and GCC ASan/UBSan also passing.
+Source hashes: lock `2512aefb07f612c808041b92a21da897df4f195b`,
+I/O `2dd114731b498c4156da305915201f97c4848647`,
+test `db075dd14dd47f77a719fa47a86cce4adbac71ae`.
+This is NOT a full engine CTest PASS; macOS and the integrated
+authenticated `physis_admin_journal` CTest remain unverified.
+
+Handoff:
+`docs/agent-handoffs/physis-stage54-locked-io-test-2026-11-19.md`.
