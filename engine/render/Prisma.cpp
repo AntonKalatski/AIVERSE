@@ -635,7 +635,8 @@ RTSCamera Prisma::jitteredCamera(RTSCamera camera, int width, int height) {
     const auto* effect = settings_.find(PrismaType::TemporalResolve);
     const char* temporal = std::getenv("AIVERSE_PRISMA_TEMPORAL");
     const char* jitter = std::getenv("AIVERSE_PRISMA_JITTER");
-    bool eligible = enabled_ && settings_.enabled &&
+    bool eligible = dev_ && dev_->gpuHealthy() &&
+        enabled_ && settings_.enabled &&
         quality_ == PrismaQuality::High && hdrRequested() &&
         temporal && std::strcmp(temporal,"1") == 0 &&
         jitter && std::strcmp(jitter,"1") == 0 &&
