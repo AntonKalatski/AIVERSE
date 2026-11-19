@@ -415,4 +415,61 @@ inline std::string virtualTextureMaskedFeedbackFragmentMSL(
     return shader;
 }
 
+// Matches Renderer3D ModelShaders.h LODFADE 4x4 ordered screen-space
+// coverage. Supply the same threshold/invert as the visible model pass.
+// The feedback viewport must use the same pixel grid as the scene, or
+// coverage will differ (downsampled feedback needs explicit coordinate map).
+inline std::string virtualTextureLodFeedbackFragmentGLSL(
+    bool automaticMip=true) {
+    std::string shader=virtualTextureFeedbackFragmentGLSL(automaticMip);
+    const size_t main=shader.find("void main(){");
+    if (main==std::string::npos) return {};
+    shader.erase(main);
+    shader +=
+        "uniform float uLodThreshold;\n"
+        "uniform bool uLodInvert;\n"
+        "void main(){\n";
+    if (automaticMip)
+        shader += " int mip=aiverseFeedbackMipFromDerivatives("
+                  "vVirtualUV,uVirtualTexels,uVirtualMipLevels,uVirtualMipBias);\n";
+    shader +=
+        " ivec2 lp=ivec2(floor(gl_FragCoord.xy)) & ivec2(3);\n"
+        " int rank=((lp.x & 1) ^ (lp.y & 1))*8+(lp.y & 1)*4+"
+        "((lp.x>>1) ^ (lp.y>>1))*2+(lp.y>>1);\n"
+        " float noise=(float(rank)+0.5)/16.0;\n"
+        " if(uLodInvert ? noise<uLodThreshold : noise>=uLodThreshold) discard;\n"
+        " outFeedback=aiverseMaterialFeedback(vVirtualUV,";
+    shader += automaticMip ? "mip" : "uVirtualMip";
+    shader += ",uVirtualLayer,uVirtualBaseTiles);\n}\n";
+    return shader;
+}
+
+inline std::string virtualTextureLodFeedbackFragmentMSL(
+    bool automaticMip=true) {
+    std::string shader=virtualTextureFeedbackFragmentMSL(automaticMip);
+    const size_t entry=shader.find("fragment float4 aiverseVirtualFeedbackFragment(");
+    if (entry==std::string::npos) return {};
+    shader.erase(entry);
+    shader +=
+        "struct AiverseLodFeedbackParams { float threshold; uint invert; };\n"
+        "fragment float4 aiverseVirtualFeedbackFragment(\n"
+        " AiverseFeedbackInput in [[stage_in]],\n"
+        " constant AiverseFeedbackParams& p [[buffer(0)]],\n"
+        " constant AiverseLodFeedbackParams& lod [[buffer(1)]]) {\n";
+    if (automaticMip)
+        shader += " int mip=aiverse_feedback_mip_from_derivatives("
+                  "in.uv,p.texels,p.mipLevels,p.mipBias);\n";
+    shader +=
+        " int2 lp=int2(floor(in.position.xy)) & int2(3);\n"
+        " int rank=((lp.x & 1) ^ (lp.y & 1))*8+(lp.y & 1)*4+"
+        "((lp.x>>1) ^ (lp.y>>1))*2+(lp.y>>1);\n"
+        " float noise=(float(rank)+0.5)/16.0;\n"
+        " if(lod.invert!=0 ? noise<lod.threshold : noise>=lod.threshold)"
+        " discard_fragment();\n"
+        " return aiverse_material_feedback(in.uv,";
+    shader += automaticMip ? "mip" : "p.mip";
+    shader += ",p.layer,p.baseTiles);\n}\n";
+    return shader;
+}
+
 } // namespace aiverse::gfx
