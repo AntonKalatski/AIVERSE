@@ -123,13 +123,45 @@ bool Prisma::init(gfx::Device& dev) {
 
 void Prisma::release(gfx::TextureHandle& t) { if (t.valid() && dev_) dev_->destroyTexture(t); t = {}; }
 
+void Prisma::destroySized(Sized& s) {
+    // Only when the last GPU submission that may reference these targets
+    // has completed (or the host has confirmed a fully idle device).
+    if (s.graphExecutor) s.graphExecutor->resetAfterGpuIdle();
+    s.graphExecutor.reset();
+    for (auto& [r, t] : s.targets) release(t.tex);
+    for (auto& [k, d] : s.depths) release(d);
+    s.targets.clear();
+    s.depths.clear();
+    s.bloomGraph.clear();
+}
+void Prisma::collectCompletedSizes(uint64_t completedGpuFence) {
+    if (!dev_ || completedGpuFence == 0) return;
+    for (auto it = retiredSizes_.begin(); it != retiredSizes_.end();) {
+        if (it->lastSubmittedFence &&
+            it->lastSubmittedFence <= completedGpuFence) {
+            destroySized(it->resources);
+            it = retiredSizes_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+    for (auto& s : sizes_)
+        if (s.graphExecutor)
+            s.graphExecutor->collectCompleted(completedGpuFence);
+}
+void Prisma::releaseRetiredSizesAfterGpuIdle() {
+    if (!dev_) return;
+    // Explicit host guarantee: GPU queue is idle (all render encoders and
+    // submissions referencing the archived resources have completed).
+    for (auto& item : retiredSizes_) destroySized(item.resources);
+    retiredSizes_.clear();
+}
 void Prisma::shutdown() {
     if (!dev_) return;
-    for (auto& s : sizes_) {
-        if (s.graphExecutor) s.graphExecutor->resetAfterGpuIdle();
-        for (auto& [r, t] : s.targets) release(t.tex);
-        for (auto& [k, d] : s.depths) release(d);
-    }
+    // Existing host teardown must synchronize the GPU before shutdown.
+    // Unlike per-frame resize, shutdown is a full GPU idle safe point.
+    releaseRetiredSizesAfterGpuIdle();
+    for (auto& s : sizes_) destroySized(s);
     sizes_.clear();
     for (auto& [id, view] : exposureViews_) {
         for (auto& history : view.history) release(history);
@@ -283,17 +315,29 @@ bool Prisma::active() const {
 }
 
 Prisma::Sized& Prisma::sized(int w, int h) {
-    ++frame_;
-    for (auto& s : sizes_) if (s.w == w && s.h == h) { s.lastUse = frame_; return s; }
-    if (sizes_.size() >= 3) {   // drop the least recently used set (window resized, view closed)
-        auto it = std::min_element(sizes_.begin(), sizes_.end(), [](const Sized& a, const Sized& b) { return a.lastUse < b.lastUse; });
-        if (it->graphExecutor) it->graphExecutor->resetAfterGpuIdle();
-        for (auto& [r, t] : it->targets) release(t.tex);
-        for (auto& [k, d] : it->depths) release(d);
+    ++frame_; // ONLY LRU ordering, NEVER a proxy for GPU completion
+    if (dev_) collectCompletedSizes(dev_->gpuCompletedFence());
+    for (auto& s : sizes_)
+        if (s.w == w && s.h == h) {
+            s.lastUse = frame_;
+            return s;
+        }
+    if (sizes_.size() >= 3) {
+        auto it = std::min_element(sizes_.begin(), sizes_.end(),
+            [](const Sized& a, const Sized& b) {
+                return a.lastUse < b.lastUse;
+            });
+        // Save the complete viewport context, including its graph pool.
+        // A fence for the CURRENT GPU frame safely covers this older view's
+        // last use on the same graphics queue; no token means quarantine.
+        RetiredSized retired;
+        retired.resources = std::move(*it);
+        retired.lastSubmittedFence = dev_ ? dev_->gpuSubmissionFence() : 0;
+        retiredSizes_.push_back(std::move(retired));
         sizes_.erase(it);
     }
     sizes_.reserve(3);
-    sizes_.push_back({});
+    sizes_.emplace_back();
     Sized& s = sizes_.back();
     s.w = w; s.h = h; s.lastUse = frame_;
     return s;
