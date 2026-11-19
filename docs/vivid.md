@@ -123,3 +123,28 @@ const float jaw = face.frame().value(aiverse::vivid::Channel::JawOpen);
 ```
 
 The `face.frame()` result is a semantic vector only. **Nothing applies it to meshes or draws a face yet.** No save format, ECS registry or network schema was added. Stage 2 will bridge this data to existing `render::Pose` morph slots while leaving their current 8-target limit explicit.
+
+## Implemented stage 2 — legacy pose bridge (2026-11-19)
+
+Source available, **native build/test not yet executed**.
+
+- `engine/character/vivid/MorphBinding.h/.cpp` adds `aiverse::vivid::MorphRoute` and `MorphBinding::compile(model, routes)`. Compile-time validation checks the face channel, owning model node, target slot and actual mesh primitive morph count, finite scale and duplicate destinations.
+- `MorphBinding::apply(frame, pose, influence, MorphApply::Override | Additive)` composes a facial frame **after** `render::Animator::evaluate` or `AnimationGraphInstance::evaluate`, maintaining unrelated bone transforms and morph slots. Invalid input/pose length returns false **without partial modifications**.
+- Target `AIVERSE::vivid_render` links the pure semantic core and existing `aiverse_models`; `vivid_morph_binding` CTest source covers rejected routes, interpolation, additive clamping, preservation and invalid inputs.
+- Only the **already supported 0..7 pose morph slots** are writable; binding 52 semantic controls to different slots is possible in data, but it does not give a mesh 52 simultaneously usable morph targets. This adapter is *not* the Stage 3 extended GPU morph deformer.
+
+Native host example:
+
+```cpp
+#include "engine/character/vivid/MorphBinding.h"
+std::vector<aiverse::vivid::MorphRoute> routes {
+    {aiverse::vivid::Channel::JawOpen, faceNodeIndex, jawMorphSlot, 1.0f}
+};
+auto binding = aiverse::vivid::MorphBinding::compile(model, routes);
+aiverse::render::Pose pose;
+animGraphInstance.evaluate(pose);
+face.advance(dt);
+binding.apply(face.frame(), pose); // before model renderer consumes pose
+```
+
+Next: Stage 3 must add a separately versioned, scalable blend-shape storage/deformation path; do not raise `kMaxMorphTargets` globally or bypass RHI without profiling.
