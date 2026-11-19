@@ -30,6 +30,7 @@
 #include "engine/render/BakedLighting.h"
 #include "engine/render/QualityGovernor.h"
 #include "engine/render/Renderer3D.h"
+#include "engine/render/CameraClientAdapter.h"
 #include "engine/services/Store.h"
 #include "engine/sim/Simulation.h"
 #include "engine/ui/UiLayer.h"
