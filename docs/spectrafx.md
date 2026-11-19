@@ -1355,6 +1355,69 @@ Linux, or other platforms in this stage. No Metal image output,
 CPU/GPU numeric parity or performance evidence is available.
 Do not enable `gpuProgram` by default before real-device tests.
 
+## GPU VM custom scalar attributes (Stage 23 — functional source, tests deferred)
+
+The optional Metal `ComputeParticles` GPU VM now supports **eight
+persistent per-particle custom floats** (`attribute0` through
+`attribute7`) as both expression inputs and writable Spawn/Update
+targets, matching the corresponding subset of the mature CPU
+`SpectraParticleProgram`. This extends the prior Stage-22 interpreter;
+it is **not** a new renderer, GPU-only free-list allocator or an
+automatic production switch for native FPS/RTS clients.
+
+- The fixed `ParticleState` stays **64 bytes**; the billboard
+  `Vertex` stays **40 bytes**. GPU attributes live in a **separate,
+  32-byte-per-physical-particle storage buffer**, bound at Metal
+  compute slot **11**, with two `float4` values.
+- On the GPU Spawn dispatch, each reused physical slot receives a
+  fresh zero-initialized attribute record; the Spawn VM may write
+  its registers before the result is stored. Every later Update
+  dispatch reads the same slot's values, executes its bounded
+  expression statements sequentially, and writes them back.
+- The existing Stage-22 GPU payload enum ABI remains **version 1**.
+  Fields 16–23 are `attribute0..7`; fields 24–31 remain
+  `param0..7`. The CPU capability gate permits these fields for
+  the integrated Metal kernel. All other unsupported fields,
+  instructions and non-Spawn/Update stages keep the original
+  full-effect CPU fallback.
+- Initialization, `clear()` and `shutdown()` allocate/reset/release
+  this additional buffer. `ComputeStats::gpuBytes` now accounts for
+  its full capacity. No per-frame GPU-to-CPU attribute readback
+  is required.
+
+Authoring example:
+`examples/spectrafx/gpu_vm_custom_attributes_v2.vfx.json`.
+It captures a named instance `intensity` into `attribute0` on
+Spawn, then reads the stored attribute on Update to drive
+`tint.a` and `size`. With `GraphRuntimeOptions::gpuProgram=true`,
+this program fits the **restricted additive billboard GPU VM**
+schema, subject to actual device and shader capability. The
+same graph also executes under the established CPU VM.
+Actual numerical/image parity has **not** been verified.
+
+**Important separation:** standalone
+`gpu_program::MetalVmPass` is a distinct experimental compute
+utility with a different shader. It does **not** yet have a custom
+attribute buffer. Its initializer explicitly rejects payloads
+reading or writing fields 16–23, rather than silently producing
+incorrect values. Only the integrated `ComputeParticles` kernel
+has the new register storage.
+
+The Stage-21 CPU-only `graphInputs` shader material mapping is
+**not yet implemented in the GPU sprite renderer**. GPU custom
+attributes can currently influence visible GPU output indirectly
+through supported VM writes to `tint`, `size`, position or
+velocity; arbitrary `shaderGraph` remains CPU-only. Event-stage
+VM programs (collision, trigger, death), custom rotations, subemitters,
+mesh/ribbon outputs, complex material graphs, alpha sorting and
+Vulkan/GLES/WebGL GPU execution remain outside this GPU subset.
+
+**Verification:** by explicit user instruction, functionality is
+being implemented before testing. This stage has **NOT RUN**
+CMake, CTest, MSL compilation, real Apple GPU rendering or
+performance parity checks. The commits establish source changes,
+not confirmed production behavior.
+
 ## Validation checklist
 
 ```bash
