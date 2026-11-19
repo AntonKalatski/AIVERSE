@@ -5,6 +5,7 @@
 #pragma once
 #include "engine/world/TerraWeaveEcsAuthority.h"
 #include "engine/world/TerraWeaveForestEcology.h"
+#include "engine/world/TerraWeaveForestHarvestEcs.h"
 #include <aiverselib/water/NereidQueryIndex.h>
 #include <functional>
 #include <stdexcept>
@@ -88,6 +89,19 @@ inline ForestEcologyEcsOutcome advanceForestEcologyEcs(
     auto ground=materializeEcsTerrain(*authority,cfg);
     lib::nereid::WaterQueryIndex water(ecs);
     auto rooted=authority->rooted;
+    // A native caller must explicitly restore a harvested ID before
+    // registering new roots with that identity. Otherwise a hidden tree
+    // could keep producing seeds or shade live neighbours.
+    if(const auto* harvested=
+           ecs.resourceConst<ForestHarvestResource>()){
+        validateForestHarvestResource(*harvested);
+        for(const auto& plant:rooted){
+            if(isForestHarvested(*harvested,{
+                    plant.anchor.speciesId,plant.anchor.plantKey}))
+                throw std::logic_error(
+                    "TerraWeave harvested rooted plant must be restored");
+        }
+    }
     ForestEcologyResult result=advanceForestEcology(
         ecology,rooted,tick,species,
         [&ground](int64_t x,int64_t z)->std::optional<int32_t>{
