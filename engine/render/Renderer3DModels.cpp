@@ -1984,8 +1984,7 @@ void Renderer3D::renderModels(int phase) {
     // Workspace memory and group slots persist across shadow/main passes,
     // but a beginPass epoch prevents leaking any visibility or stale pointer
     // decisions from the preceding camera or model asset revision.
-    auto& staticCrossModes = staticCrossPreflight_.modes();
-    staticCrossModes.clear();
+    staticCrossPreflight_.clearModes();
     if (staticCrossModelSort) {
         const size_t threshold = dev_->info().backend == gfx::Backend::Metal
             ? indirectCommandThreshold() : size_t{4};
@@ -2083,7 +2082,7 @@ void Renderer3D::renderModels(int phase) {
                     const auto& group = workspace.groups()[groupIndex].group;
                     if (!group.ready) continue;
                     const uint8_t mode = group.permitted ? 1u : 2u;
-                    staticCrossModes[itemIndex] = mode;
+                    workspace.rememberMode(itemIndex, mode);
                     if (mode == 1u)
                         ++modelStats_.staticCrossModelPreflightItems;
                 }
@@ -2099,8 +2098,10 @@ void Renderer3D::renderModels(int phase) {
     } else {          // group by state so identical primitives end up next to each other (instancing)
         std::sort(order_.begin(), order_.end(), [&](uint32_t a, uint32_t b) {
             const ModelItem &x = modelItems_[a], &y = modelItems_[b];
-            const bool crossX = staticCrossModelSort && staticCrossModes[a] == 1u;
-            const bool crossY = staticCrossModelSort && staticCrossModes[b] == 1u;
+            const bool crossX = staticCrossModelSort &&
+                staticCrossPreflight_.modeOf(a) == 1u;
+            const bool crossY = staticCrossModelSort &&
+                staticCrossPreflight_.modeOf(b) == 1u;
             if (crossX != crossY) return crossX; // only preflight-ready static groups
             if ((x.joints >= 0) != (y.joints >= 0)) return x.joints < y.joints;
             if (x.baked != y.baked) return x.baked < y.baked;
@@ -2255,7 +2256,7 @@ void Renderer3D::renderModels(int phase) {
         // ordinary MDI candidates (including dynamic and nonpooled models)
         // retain their existing selection logic.
         const bool preferInstancing = cpuMdiAdaptiveEnabled_ &&
-            !staticCrossModes.empty() && staticCrossModes[order_[i]] == 2u;
+            staticCrossPreflight_.modeOf(order_[i]) == 2u;
         if (allowIndirect && !preferInstancing &&
             order_.size() - i >= minIndirectCommands) {
             ++modelStats_.mdiScans;
@@ -2268,7 +2269,7 @@ void Renderer3D::renderModels(int phase) {
                 !first.baked && first.joints < 0 && first.morph < 0 &&
                 !first.paletteMaterials && first.tint.w >= .99f;
             const bool pooledStatic = staticCrossModelSort &&
-                staticCrossModes[firstIndex] == 1u;
+                staticCrossPreflight_.modeOf(firstIndex) == 1u;
             auto compatible = [&](uint32_t candidateIndex) {
                 const auto& y = modelItems_[candidateIndex];
                 // Each indirect command selects its own world/tint/team/etc
@@ -2276,7 +2277,7 @@ void Renderer3D::renderModels(int phase) {
                 // Pipeline, geometry buffers, textures and material uniforms
                 // must remain compatible across the entire command group.
                 return (!pooledStatic ||
-                    (staticCrossModes[candidateIndex] == 1u &&
+                    (staticCrossPreflight_.modeOf(candidateIndex) == 1u &&
                      eligibleStaticPage(y) &&
                      (first.model == y.model ||
                       staticCrossModelPageCompatible(*first.model, *y.model)))) &&
