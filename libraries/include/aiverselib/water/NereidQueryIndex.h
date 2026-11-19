@@ -101,6 +101,7 @@ public:
         WaterSample out;
         for(Entity entity:infinite_)consider(entity,position,out);
         if(!nodes_.empty())visit(0,position,out);
+        applyWaterCascadeFlow(world_,position,out);
         return out;
     }
     size_t finiteBodyCount() const {return finite_.size();}
