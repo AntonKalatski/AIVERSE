@@ -41,3 +41,5 @@ Source committed through connected GitHub; file readbacks and static API review 
 
 - `e340654a2e834170db5945f5b25070b35c81f034`: backward-compatible tree-age handling: imported `PlantEnvironment` with `matureTicks==0` was historically *already mature*, so its initial `ageTicks==0` is interpreted as mature under a newly enabled ecology policy rather than unexpectedly making a previously mature tree tiny. Explicit newly recruited seedlings have nonzero `matureTicks` and age zero, so they still grow from sapling size.
 - This is a GitHub source fix; **no compiler, simulation tests, save/load roundtrip or GPU visual QA were run**.
+
+- `482e78168d03ee76819a75e6be9beaf1c3bcc0b3`: tightened the legacy maturity guard for ALL imported trees with `matureTicks==0`, including nonzero historical age: set age to at least the species maturity age before enabling explicit `matureTicks`. This retains the original already-mature visual scale; explicitly authored seedlings with nonzero maturity remain unaffected. No test run.
