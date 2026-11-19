@@ -91,6 +91,14 @@ public:
             if(slide.movedCm>500 || slide.from==slide.to ||
                slide.soil==lib::nereid::ShoreSoil::Rock)
                 throw std::invalid_argument("TerraWeave invalid debris source slide");
+            const int64_t spacing=ground.spacingCm();
+            const int64_t limit=(kWorldLimitCm-spacing)/spacing;
+            if(slide.from.x<-limit || slide.from.x>limit ||
+               slide.from.z<-limit || slide.from.z>limit ||
+               slide.to.x<-limit || slide.to.x>limit ||
+               slide.to.z<-limit || slide.to.z>limit)
+                throw std::out_of_range(
+                    "TerraWeave debris source outside terrain grid");
             const SlopeDebrisId id{completedTick,slide.from,slide.to};
             if(auto it=bodies_.find(id);it!=bodies_.end()){
                 if(scene_.valid(it->second.body))continue;
@@ -98,8 +106,8 @@ public:
             }
             if(completedTick>UINT64_MAX-policy_.lifetimeTicks)
                 throw std::overflow_error("TerraWeave debris lifetime tick overflow");
-            const int64_t sx=slide.to.x*int64_t(ground.spacingCm());
-            const int64_t sz=slide.to.z*int64_t(ground.spacingCm());
+            const int64_t sx=slide.to.x*spacing;
+            const int64_t sz=slide.to.z*spacing;
             if(sx<=-10000000 || sx>=10000000 ||
                sz<=-10000000 || sz>=10000000)continue;
             const int32_t y=ground.heightAt(slide.to);
