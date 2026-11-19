@@ -2594,3 +2594,51 @@ AUTO's per-pass EWMA continues to favor Direct: shadow 0.52689 vs MDI 0.89578 ms
 4. GPU timestamps/command-buffer timing and representative scene scaling to 10k/100k remain unverified. Do not enable default AUTO or merge Draft PR #34 on this evidence.
 
 **Verification performed for this stage:** owner Mac-native build and single fixture run as provided; assistant GitHub documentation write only. Keep all experimental flags OFF by default and PR Draft.
+
+
+---
+
+## Stage 78 — actual MDI-frame raster capture + Metal ICB encoding CPU preparation (2026-11-19)
+
+**Repository:** `chromealex/AIVERSE`. **Branch:** `perf/incremental-static-model-cache`, Draft PR #34. **Commits:** `4e124ba40598082e8335bba6fc90be0b76dc3d65` in `tests/render/material_batches.cpp`; `9a3c14ca3da7db2dd90accfe070aab8507afbee0` in `engine/gfx/metal/GfxMetal.mm`. Main/default experimental flags unchanged. This separate handoff records what was implemented and exact next checks.
+
+### Problem and previous evidence
+
+The owner Stage 76 Mac Studio benchmark passed 35 CPU invariants and final `changed_channels=0`, exit 0. Successful MDI frames (n=6) were labelled and timed: renderer.render median 0.8815 ms vs Direct-only fallback n=90 median 1.1550 ms, without balanced A/B/A; shadow backend CPU submit averaged 0.24863ms and opaque 0.26778ms over six submitted-MDI frames. However the second screenshot was on the final **Direct** frame, not a frame on which MDI was executed; it did not prove that the unique-1k-primitive output remained identical during actual MDI. Metal's ICB routine was also looking at 8 uniform slot checks for each indirect command, and its existing `AIVERSE_ICB_PROFILE=1` summary printed only after 600 submissions, much larger than one AUTO test's ~110 submissions.
+
+### Code changes
+
+1. **Real MDI parity:** `AIVERSE_CAPTURE_SUCCESSFUL_MDI=1` (only meaningful with `auto_stress`) arms an extra `captureNextFrame` immediately after the first successful CPU-MDI submission after frame 100. Its callback compares all 960*640*4 captured channel values against the unbatched baseline already saved at frame 75, prints `actual MDI pixel parity frame=... changed_channels=...`, writes `-mdi-after.ppm`, and fails on any changed channel, bad image size, I/O error, or missing required capture by the last AUTO fixture frame. The final Direct-vs-AUTO capture and parity assertion remain unchanged.
+2. **Metal CPU work:** `drawIndexedIndirect` now enumerates non-nil per-submission uniform buffers into at most 8 local slot indices once, instead of repeatedly branching on empty slots in every indirect command's loop. Every originally active slot still binds the identical vertex/fragment MTLBuffer at the identical indices; no changes to individual command arguments, pipeline, ICB index or range, PBR argument buffer, GPU resource residency, or fence safety.
+3. **Profile interval:** under existing `AIVERSE_ICB_PROFILE=1`, optional `AIVERSE_ICB_PROFILE_REPORT_EVERY=32` (valid 1..10000, default 600) prints the existing CPU Metal `args`, `alloc`, `encode`, `residency-execute` aggregate breakdown every 32 real CPU ICB submissions. No per-command high-frequency clocks and no GPU timestamp implied.
+
+### Validation truth
+
+GitHub connector successfully read and updated code. **NOT RUN:** Mac/native CMake, CTest, actual MDI-frame capture, pixel equality, Metal backend compilation/raster, CPU speedup A/B/A, GPU timestamps or Vulkan. CPU and GPU experimental flags remain off by default. Do not claim successful parity of the newly captured MDI frame or verified speedup until the Mac test finishes. An extra capture callback may add asynchronous readback overhead; timed intervals end immediately after `renderer.render()` and before capture scheduling but later frames can still be influenced by GPU capture work. Consider checking exact callback/frame identity on the native platform.
+
+### Next exact Mac Studio command
+
+```sh
+cd /Users/aleksandrfeer/Projects/AIVERSE || exit 1
+git fetch origin
+git switch perf/incremental-static-model-cache
+git pull --ff-only origin perf/incremental-static-model-cache
+cmake --build build/batching-gpu-verify --target aiverse_material_batches --parallel 8 || exit 1
+mkdir -p build/batching-gpu-verify/captures
+AIVERSE_PALETTE_TEST_CASE=auto_stress \
+AIVERSE_BATCH_STRESS_ITEMS=1024 \
+AIVERSE_BATCH_AUTO=1 \
+AIVERSE_BATCH_CPU_TIMING=1 \
+AIVERSE_CAPTURE_SUCCESSFUL_MDI=1 \
+AIVERSE_ICB_PROFILE=1 \
+AIVERSE_ICB_PROFILE_REPORT_EVERY=32 \
+build/batching-gpu-verify/aiverse_material_batches \
+  unused.obj build/batching-gpu-verify/captures/auto-stress-1k-mdi-capture
+echo "Stage 78 exit=$?"
+```
+
+Require (a) `material palette CPU checks=35 result=passed`, (b) actual MDI `stress AUTO cumulative submitted>0`, (c) `actual MDI pixel parity ... changed_channels=0`, (d) final `changed_channels=0`, (e) exit 0. Inspect `[metal-icb] avg/32` lines (if >=32 per-process CPU-ICB submissions), and new `successful MDI CPU stage` breakdowns. If the intermediate captured MDI image differs from the baseline, treat as a correctness regression and do NOT tune thresholds or merge. If a capture callback returns the following frame rather than the just submitted frame, adjust fixture scheduling/validation before trusting its equality. Record exact hardware, elapsed CPU only, and GPU time as unmeasured.
+
+### Next tasks
+
+After raster correctness, collect ~60+ CPU MDI samples with a forced mode vs Direct in balanced repeated orders and profile true GPU time using backend-supported timestamps. Prioritize actual CPU Metal ICB encode/bind stages if their measured aggregate dominates; no changes to shader semantics or compatibility guards without GPU pixel regression. Then increase workload to 10k and eventually 100k with memory monitoring, run Vulkan parity and full CTest before any default enable.
