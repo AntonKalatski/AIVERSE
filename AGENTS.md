@@ -1764,3 +1764,37 @@ uncompiled GPU/resource/animation source into main.
   transactions or actual device-loss recovery. See the exact
   commits, limitations and next action in
   `docs/agent-handoffs/animation-universal.md` Stage 112.
+
+### Animation/View Stage 113 — scratch Model and GPU alias transaction rules
+
+- For RTS appearance reload, new Models, LOD alternatives, stage
+  replacements and attachments must be staged in a temporary
+  `ModelResourceCache::ModelMap`. Do not insert new resident
+  Models or failed-load tombstones before the full transaction
+  commits. Preserve Model* identity through `std::map` node transfer.
+- Speculative `uploadModel(dev,model,false,false)` may
+  `borrowResident` existing GPU textures from
+  `ModelTextureCache` but **must not** publish new shared
+  cache keys. Misses use dedicated staged GPU image allocation.
+  This protects shared residency on abort; it does **not**
+  yet deduplicate newly staged texture misses across Models.
+- Rejected scratch Models belong to the GPU-fenced
+  `ModelResourceCache::retireUnpublished` path, never plain
+  `unique_ptr::reset` after partial uploads. Use
+  `AsyncResourceRetirementQueue::enqueueFrom` when preserving
+  caller ownership after an allocation failure matters.
+  If a full idle barrier fails, retain/leak an orphan handle
+  rather than using unsafe GPU destruction. Expose and review
+  orphan diagnostic counts before attempting a device recreation.
+- `Renderer3D` now has an optional shared
+  `RenderDeviceLifetime::Lease`; editor, hosted/standalone
+  GameClient and FPS supply their existing host epoch. Never
+  mint a second generation for the same gfx::Device. Epoch
+  checks prevent stale access but are not GPU fences.
+- The editor's bounded `RetirementDiagnosticRing` tags
+  Model and Image events. GPU source-event counts are
+  informational only; Model/Texture release still needs
+  backend completion. Deferred native tests have **NOT RUN**;
+  Stage 113 code is unverified for compilation/runtime and
+  PR #22 stays Draft. See the separate Stage 113 agent handoff
+  for exact commits, unfinished work and next stage.
