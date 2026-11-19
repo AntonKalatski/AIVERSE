@@ -490,6 +490,80 @@ void unsafeJournalLockParentsRejected() {
     std::filesystem::remove_all(dir);
 }
 
+// flock protects an open inode, not its pathname. A same-UID actor could
+// rename the locked file away and create a second one at the original path.
+// The live endpoint must detect this before any privileged journal write.
+void replacedLiveLockSuspendsAdmin() {
+    const auto dir=tempPath();
+    std::filesystem::create_directories(dir);
+    const auto journal=dir/"receipts";
+    const auto lock=std::filesystem::path(journal.string()+".lock");
+    const auto renamed=dir/"old.lock";
+    std::string error;
+    auto sim=make();
+    {
+        LoopbackAdminEndpoint first(journal);
+        CHECK(first.open(0,kEdit,
+            [](const std::string& name)->std::optional<net::Key>{
+                return name=="admin"?std::optional<net::Key>(key()):std::nullopt;
+            },reader,writer,&error));
+        CHECK(first.journalHealthy());
+        CHECK(std::filesystem::exists(lock));
+        std::filesystem::rename(lock,renamed);
+        CHECK(!first.journalHealthy());
+        // Another process could lock a newly created inode even while
+        // the old endpoint still holds flock on its renamed inode.
+        JournalProcessLock replacement;
+        CHECK(replacement.acquire(journal,&error));
+        CHECK(replacement.valid());
+        CHECK(!first.journalHealthy());
+        first.afterTick(*sim);
+        CHECK(!first.gateway().journalHealthy());
+        CHECK(!first.gateway().persistJournal(&error));
+        // The admin gateway must reject a fresh edit rather than append
+        // to the now-ambiguous durable journal path.
+        auto [client,server]=net::makeLoopbackPair();
+        net::Bytes frame;
+        CHECK(encode(packet(51,943,7),frame));
+        client->send(frame);
+        first.gateway().poll(*sim,*server,"admin",reader,writer,20);
+        client->update(20);
+        net::Bytes responseFrame;
+        Packet reply;
+        CHECK(client->recv(responseFrame));
+        CHECK(decode(responseFrame,reply));
+        CHECK(reply.receipt.result==Result::Rejected);
+        CHECK(sim->world().resourceConst<FieldRuntimeState>()->revision==0);
+    }
+    std::filesystem::remove_all(dir);
+}
+
+// Also monitor the parent after admission: chmod can invalidate
+// the trust boundary without changing the directory's dev/inode.
+void liveParentPermissionChangeSuspendsAdmin() {
+    const auto dir=tempPath();
+    std::filesystem::create_directories(dir);
+    const auto journal=dir/"receipts";
+    std::string error;
+    auto sim=make();
+    {
+        LoopbackAdminEndpoint endpoint(journal);
+        CHECK(endpoint.open(0,kEdit,
+            [](const std::string& name)->std::optional<net::Key>{
+                return name=="admin"?std::optional<net::Key>(key()):std::nullopt;
+            },reader,writer,&error));
+        CHECK(endpoint.journalHealthy());
+        CHECK(::chmod(dir.c_str(),0777)==0);
+        CHECK(!endpoint.journalHealthy());
+        endpoint.afterTick(*sim);
+        CHECK(!endpoint.gateway().journalHealthy());
+        CHECK(!endpoint.gateway().persistJournal(&error));
+        CHECK(::chmod(dir.c_str(),0700)==0);
+        // Fatal journal suspension is sticky even after fixing the mode.
+        CHECK(!endpoint.journalHealthy());
+    }
+    std::filesystem::remove_all(dir);
+}
 void killedProcessReleasesJournalLock() {
     const auto dir=tempPath();
     std::filesystem::create_directories(dir);
@@ -792,6 +866,8 @@ int main(){
     killedProcessReleasesJournalLock();
     unsafeJournalLockInodesRejected();
     unsafeJournalLockParentsRejected();
+    replacedLiveLockSuspendsAdmin();
+    liveParentPermissionChangeSuspendsAdmin();
     killedEndpointRecoversQueuedJournal();
 #endif
 #ifndef __EMSCRIPTEN__
