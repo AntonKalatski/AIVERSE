@@ -72,6 +72,11 @@ public:
 #ifndef __EMSCRIPTEN__
     using CpuStats=AsyncModelCpuQueue::Stats;
     CpuStats cpuStats() const noexcept {return cpuQueue_.stats();}
+    void setCpuWorkerCount(size_t count) {cpuQueue_.setWorkerCount(count);}
+    size_t cpuWorkerCount() const noexcept {return cpuQueue_.workerCount();}
+    void setCpuMaxQueued(size_t count) noexcept {
+        cpuQueue_.setMaxQueued(count);
+    }
     // Background CPU decoding never touches the device or its buffers.
     // A render-thread caller must publishReady() in a later frame.
     bool requestAsync(
