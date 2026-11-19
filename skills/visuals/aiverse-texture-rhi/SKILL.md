@@ -1121,3 +1121,36 @@ To run, pull the texture branch and rebuild
 feedback encoding and decoding but **not** actual disk->GPU
 physical atlas/page-table publication or experimental GPU ICB.
 
+
+## Stage 10BK — real Metal VT atlas and page-table publication
+
+The native opt-in `metal_texture_gpu` fixture has a new
+`gpuPhysicalVirtualAtlas` test using the production
+`VirtualTextureStreamer`, actual Metal Texture2DArray
+physical atlas and GPU page table (no fake Device).
+It checks pinned coarse residency, exact RGBA8 physical page
+bytes, fine-mip override, and crucially **GPU table invalidation
+BEFORE an LRU-reused physical slot can be overwritten**.
+Then it checks the new page-table entry and physical bytes
+after drain, explicit eviction fallback, and complete GPU
+texture destruction.
+
+Production data contract: RGBA8 page-table texel = 
+`{physicalSliceLow, physicalSliceHigh, residentMip, 255}`.
+Invalid texels are `{0,0,0,0}`. The test reads back
+the full 4×4 GPU table and physical atlas slices, not only
+the CPU cache's encoded table. It uses a two-page atlas,
+a pinned mip-2 coarse page, an unpinned mip-0 detail page
+and a third mip-0 page forcing LRU reuse.
+
+Commits `d8b498d31d3b421261825048ab313bfefa13c6ee`
+and `3ca4b1cf872bab4a06d533aa75c4052d036ea41b`.
+The prior on-device VT feedback test passed 1/1 in 0.45s,
+but this added physical page-table acceptance is **NOT RUN**.
+Pull `feature/texture-rhi-unification`, build
+`aiverse_metal_texture_gpu_test` and run
+`ctest --test-dir build/texture-rhi --verbose --output-on-failure
+--no-tests=error -R '^metal_texture_gpu$'` on the Mac Studio.
+Next after GPU acceptance: file-backed disk->GPU worker path
+and real shader page-table indirection/ICB as separate tests.
+
