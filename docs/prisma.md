@@ -1806,6 +1806,66 @@ fence policy are unchanged.
 fence tests and CI (features-first direction). See
 `docs/handoffs/prisma-stage-40.md` for committed source SHAs and next step.
 
+## Stage 41 — memory residency by view, shared graph pools, and fenced idle-cache eviction
+
+Stage 41 adds **GPU-free/read-only diagnostic calls** to the Prisma
+presentation owner without changing shader outputs or game ECS state:
+
+- `Prisma::memoryStats()`: reports active size-scoped framebuffer targets,
+  depth attachments, live RenderGraph texture pools, view-private Auto Exposure
+  history, persistent LUT/graph-image inputs and missing RHI metadata.
+  `MemoryStats::liveKnownBytes` counts each actual size cache **once**,
+  even when Scene and Game have identical width/height. Repeated per-view
+  `ViewMemoryStats::sharedKnownBytes` is an explanatory *reference* to
+  that cache, **not an additive view allocation**.
+- `ViewMemoryStats` records the latest successfully allocated postprocessing
+  scene-pass resolution for each stable view ID (Scene=1, Game=2 in the editor;
+  native users may supply their own IDs). Its per-view `ownedHistoryKnownBytes`
+  is private exposure history, while the RenderGraph pool belongs to `Sized`
+  and may be shared by multiple view IDs.
+- `PrismaRhiExecutor::GpuMemoryStats` now differentiates unknown **live**
+  textures from unknown **pending** textures. Mips, multisample copies,
+  compression, backend-alignment and shader/pipeline driver allocations are
+  not inferable from the current `TextureInfo` interface: numbers are lower
+  bounds, not a VRAM budget or GPU-residency certificate.
+- `GpuResourceRetirement::Stats` separately exposes deferred owner bundles
+  (including ShaderGraph/Portrait preview bundles) with **no reliable byte
+  estimate**. A zero estimate never means a zero-cost bundle.
+- `ViewportGpuRetirement` has a non-owning live-framebuffer registry for
+  Scene/Game/FX windows. `Viewport::ensure()` publishes color+depth handles
+  and size, and `Viewport::release()` unregisters them before fence-retiring
+  the textures. `liveStats()` gives a lower-bound per-window memory reading;
+  it does **not** grant ownership of these RHI handles.
+- `StatsWindow` now shows active shared postprocessing cache bytes,
+  private per-camera exposure bytes, Scene/Game/FX framebuffer bytes,
+  stale/unreferenced caches, graph pending bytes and missing byte estimates,
+  without summing repeated shared-per-view figures.
+
+**Idle size cache lifetime:** `Prisma::retireView(id)` removes the stable
+view's reference but does not destroy shared scene targets. At the end of
+the editor's viewport work, `Prisma::retireUnreferencedSizeCaches()` scans
+up to the small size cache and moves only sizes referenced by **no** live
+view into `RetiredSized` using the graphics submission fence. Resources
+are actually freed only in the existing nonblocking confirmed-GPU-completion
+collector or an explicit verified GPU-idle path. When post-processing is
+disabled for one camera, Editor now marks that view inactive and retires its
+old reference; it no longer retains a stale cache just because the Game tab
+continues to render without effects. This may cause fresh allocations on
+reopen, trading cache warmth for bounded editor idle memory.
+
+These diagnostics and retirement paths are opt-in/presentation-only; PRISMA
+continues to own post-processing. FX emitters remain SpectraFX, and runtime
+games not using the editor remain free to choose their own cache retention.
+No gameplay/ECS components, FPS/RTS-specific camera modules or `postfx`
+JSON schemas were changed.
+
+**Verification:** GitHub source readback and static call-site inspection only.
+**NOT RUN** (features-first): native builds, CTest, GPU fence/driver run,
+Metal/GL/Vulkan/WebGL smoke, GUI tab-switch/resize and VRAM profiling. Never
+interpret a missing metadata counter as a completed benchmark. Full path
+and SHA inventory, dependencies and next steps:
+`docs/handoffs/prisma-stage-41.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
