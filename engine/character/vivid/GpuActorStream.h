@@ -71,6 +71,7 @@ public:
 
 private:
     friend class GpuActorRetirementQueue;
+    friend class HumanRetirementQueue;
     // Only a successful GPU completion token or device-wide idle barrier
     // authorizes destroying this actor's output/weights or final asset ref.
     void releaseAfterGpuCompletion() noexcept;
