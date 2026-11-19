@@ -2,6 +2,7 @@
 
 Scope: `engine/scene/`. Read `docs/scene-worlds.md`,
 `docs/agent-handoffs/scene-worlds-stage1-2026-11-19.md`,
+`docs/agent-handoffs/scene-worlds-stage2-2026-11-19.md`,
 `docs/ecs-agent-handoff.md` and `docs/ecs-scene-hierarchy.md`
 before modifying scene/world lifecycle code.
 
@@ -39,3 +40,33 @@ before modifying scene/world lifecycle code.
 
 Do not claim asset/physics/navmesh/render scene streaming is implemented in
 Stage 1; this stage supplies deterministic ECS ownership and lifecycle APIs.
+
+## Stage 2 coordinator ownership (2026-11-19)
+
+- `SceneAsset.h` is the strict canonical v1 scene manifest. Do not accept
+  `Json::integer()` for IDs: it converts via Fixed and can truncate 1.5.
+  `decodeId` validates the exact integer literal. Future schema changes
+  need explicit version migrations and malformed-input tests.
+- `SceneLoadCoordinator.h` is a **host-only bridge**, not an ECS resource.
+  `ReadAsset` may execute on a worker; callbacks for resource acquire,
+  release, prefab spawn, scene activation and hierarchy changes run only on
+  the host simulation owner thread. `poll` never changes authoritative ECS.
+- Load at request time, but instantiate/publish only from an explicit
+  deterministic tick-barrier commit. A future finishing does NOT decide the
+  gameplay tick. Use `GameModule::readyToStep` for required-content gating.
+- Use `SceneLoadCoordinator::unload` to coordinate resource lease release
+  with ECS scene ownership. Do not bypass it with direct `SceneRuntime`
+  calls for managed scenes.
+- On rollback/cold restore, discard all old async tickets via
+  `invalidateAfterRestore`, rebuild SceneHierarchy, and use
+  `queueRestoredResidency` to reacquire non-authoritative dependencies of
+  Active scenes. Never respawn the restored gameplay entities.
+- SceneResourceAdapter keys are immutable dependency identities. Refcounting
+  is per coordinator; cross-world shared GPU assets require an external
+  cache. Resource `release` must not throw. Bound the incoming byte stream
+  in the Reader before accepting untrusted files.
+- Native validation target: `aiverse_ecs_scene_load_coordinator_test`.
+  Keep it green together with Stage 1 and hierarchy tests; actual native
+  results are still outstanding. Do not describe Stage 2 as tested.
+- Next stage should integrate existing world streaming and presentation
+  facilities via adapters, *not* fork a second renderer/physics/terrain cache.
