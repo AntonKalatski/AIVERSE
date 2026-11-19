@@ -3,9 +3,12 @@
 // PRISMA reactive coverage for translucent rigid, animated and mesh draws.
 // Stage 63's cutout variant reproduces rigid-model alpha texture cutoffs,
 // UV transform, material team alpha, screen-space LOD dither and 3D dissolve.
-// The animated variant reuses current-pose skin/morph/baked vertex shaders
-// and exact LOD dither, but still conservatively covers animated dissolve;
-// its material alpha cutout/actor aperture needs a future dedicated variant.
+// Stage 64 adds an explicit reactive-only skin/morph/baked vertex variant
+// with current-deformed model-space position, UV and vertex alpha varyings.
+// Animated reactive fragments now reproduce material alpha cutout,
+// object-space dissolve, screen-space LOD dither and Actor Reveal aperture.
+// Normal motion shaders are NOT mutated; true GPU pixel parity is still
+// pending native GLSL/MSL and on-device verification.
 // The mask never writes borrowed scene depth; it samples scene depth and
 // attaches Renderer3D's own private depth scratch.
 namespace aiverse::render::reactive_shaders {
@@ -449,8 +452,7 @@ fragment float4 fs_main(VOut in [[stage_in]],
     return code;
 }
 
-// Dither rule copied from the normal opaque ModelShaders LODFADE branch.
-// lod=(threshold,invert,enabled,unused); params.z is mask strength.
-// The reactive fallback is rendered only for pixels actually covered by
-// the fading geometry, not its bounding triangle.
+// Dither and actor-aperture patterns are copied from ModelShaders.
+// U1 is per reactive draw (material/LOD/reveal) and is never a temporal
+// history. Rigid and animated variants encode only current-frame coverage.
 } // namespace aiverse::render::reactive_shaders
