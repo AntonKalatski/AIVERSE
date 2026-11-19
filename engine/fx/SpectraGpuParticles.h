@@ -78,6 +78,7 @@ struct GpuCheckpointStatus {
     uint64_t frameSerial = 0;
     uint64_t framesBehind = 0; // valid only when complete
     uint32_t physicalSlots = 0;
+    uint32_t killsAwaitingGpuFence = 0;
     uint32_t checkpointIntervalFrames = 0;
     uint64_t nextCheckpointRevision = 0;
 };
@@ -92,6 +93,8 @@ struct ComputeStats {
     uint32_t checkpointBudgetDenied=0;
     uint32_t checkpointAdaptiveBackoffs=0, checkpointAdaptiveRecoveries=0;
     uint32_t selectivelyKilled=0;
+    uint32_t killedSlotsReclaimed=0;
+    uint32_t gpuKillFencesPending=0; // host estimate, not GPU observed
     size_t checkpointBytesReturned=0; // valid callback payload bytes, not DMA profiling
     uint32_t gpuCompactDispatches = 0, gpuIndirectDraws = 0;
     uint32_t gpuVmErrorsLastRead = 0;
@@ -203,6 +206,11 @@ private:
     uint32_t drawCount_ = 0; // dense vertices emitted this frame (<= alive)
     std::vector<uint32_t> freeSlots_, pendingSlots_, aliveSlots_;
     std::vector<uint32_t> pendingKillSlots_;
+    struct KilledSlotAwaitingFrame {
+        uint32_t slot=0;
+        uint64_t submittedFrame=0;
+    };
+    std::vector<KilledSlotAwaitingFrame> killedSlotsAwaitingFrame_;
     std::vector<uint64_t> slotSourceTokens_;
     std::vector<ParticleState> pendingStates_;
     std::vector<ProgramParams> pendingProgramParams_, programStateCache_;
