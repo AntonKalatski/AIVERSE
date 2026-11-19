@@ -13,6 +13,10 @@ struct GeometryPoolStats {
 GeometryPoolStats geometryPoolStats(gfx::Device& dev);
 bool globalGeometryPoolingEnabled();
 void setGlobalGeometryPoolingEnabled(bool enabled);
+// Opt-in for immutable rigid LOD meshes; changes affect subsequent uploads,
+// NOT models already uploaded to dedicated or shared GPU buffers.
+bool rigidLodGeometryPoolingEnabled();
+void setRigidLodGeometryPoolingEnabled(bool enabled);
 bool uploadModelToGeometryPool(gfx::Device& dev, Model& m);
 void releaseModelGeometryPool(gfx::Device& dev, Model& m);
 }

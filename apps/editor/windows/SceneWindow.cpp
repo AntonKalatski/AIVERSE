@@ -510,6 +510,12 @@ private:
                 render::setGlobalGeometryPoolingEnabled(sceneGeometryPool_);
                 ed.reloadRules(); // reupload original models; never toggle existing GPU buffers in place
             }
+            if (ImGui::Checkbox("Rigid LOD geometry pooling (experimental)",
+                                &sceneRigidLodPooling_)) {
+                render::setRigidLodGeometryPoolingEnabled(sceneRigidLodPooling_);
+                ed.reloadRules(); // only asset upload can change geometry page membership
+            }
+            ImGui::TextDisabled("Allows immutable rigid LODs; skin/morph/clip models remain dedicated.");
             if (!mdiBackend) {
                 ImGui::EndDisabled();
                 ImGui::TextDisabled("Geometry Pool inactive: Multi-Draw Indirect is unavailable on this backend.");
@@ -1846,6 +1852,7 @@ private:
     ModelRenderStats lastSceneLodStats_{};
     Renderer3D::LodDebugSample lastSelectedLod_{};
     bool sceneGeometryPool_ = render::globalGeometryPoolingEnabled();
+    bool sceneRigidLodPooling_ = render::rigidLodGeometryPoolingEnabled();
     int sceneInstanceLimit_ = 0;
     bool sceneInstanceLimitDirty_ = true;
     bool sceneProfiling_ = false;

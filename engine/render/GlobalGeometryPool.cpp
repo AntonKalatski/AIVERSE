@@ -1,7 +1,9 @@
 #include "GlobalGeometryPool.h"
+#include "GeometryPoolEligibility.h"
 #include <algorithm>
 #include <atomic>
 #include <cstdlib>
+#include <cstring>
 #include <limits>
 #include <map>
 #include <mutex>
@@ -25,17 +27,16 @@ std::map<gfx::Device*, std::vector<std::weak_ptr<GeometryPoolPage>>> pools;
 // Oversized models still get a dedicated power-of-two page below.
 constexpr size_t kDefaultPageSize = 2 * 1024 * 1024;
 constexpr size_t kMaximumPooledModelSize = 16 * 1024 * 1024;
-bool canPool(const Model& m) {
-    // Keep skin/morph/LOD/cluster paths on dedicated buffers because those
-    // paths can reference original GPU vertex IDs or expanded index ranges.
-    if (m.geometry || !m.skins.empty() || !m.clips.empty() ||
-        !m.variants.empty() || m.morphTex.valid()) return false;
-    for (const auto& mesh : m.meshes) {
-        if (mesh.deformable || !mesh.lods.empty()) return false;
-        for (const auto& p : mesh.primitives)
-            if (p.morphTargets || !p.jointPalette.empty() || !p.variantMaterial.empty()) return false;
-    }
-    return true;
+// -1 inherits the one-time environment setting; editor/native hosts may
+// override it before asset (re)upload without mutating existing pooled data.
+std::atomic<int> rigidLodPoolingOverride{-1};
+bool rigidLodPoolAllowed() {
+    static const bool envEnabled = [] {
+        const char* value = std::getenv("AIVERSE_GEOMETRY_POOL_RIGID_LOD");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    const int overrideValue = rigidLodPoolingOverride.load(std::memory_order_relaxed);
+    return overrideValue < 0 ? envEnabled : overrideValue != 0;
 }
 bool disabled() {
     if (const char* safe = std::getenv("AIVERSE_RENDER_SAFE"); safe && std::string(safe) == "1") return true;
@@ -63,12 +64,17 @@ GeometryPoolStats geometryPoolStats(gfx::Device& dev) {
 
 bool globalGeometryPoolingEnabled() { return !disabled(); }
 void setGlobalGeometryPoolingEnabled(bool enabled) { poolEnabled.store(enabled, std::memory_order_relaxed); }
+bool rigidLodGeometryPoolingEnabled() { return rigidLodPoolAllowed(); }
+void setRigidLodGeometryPoolingEnabled(bool enabled) {
+    rigidLodPoolingOverride.store(enabled ? 1 : 0, std::memory_order_relaxed);
+}
 
 bool uploadModelToGeometryPool(gfx::Device& dev, Model& m) {
     // Pooling is primarily for MDI across assets. On GLES/WebGL/legacy GL,
     // retain compact per-model buffers instead of allocating unused large pages.
     if (disabled() || !dev.supportsMultiDrawIndirect() ||
-        !dev.canUpdateSharedBuffers() || !canPool(m) ||
+        !dev.canUpdateSharedBuffers() ||
+        !rigidGeometryPoolCandidate(m, rigidLodPoolAllowed()) ||
         m.vertices.empty() || m.indices.empty()) return false;
     // Guard size arithmetic before allocating or calculating page offsets.
     if (m.vertices.size() > kMaximumPooledModelSize / sizeof(ModelVertex) ||
