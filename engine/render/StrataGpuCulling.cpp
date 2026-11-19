@@ -1,8 +1,13 @@
 #include "StrataGpuCulling.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <memory>
+#include <set>
+#include <utility>
 
 namespace aiverse::render::strata {
 namespace {
@@ -239,6 +244,166 @@ ViewConfig cpuReferenceView(const GpuPassConfig& pass,
     reference.errorThresholdPixels = pass.errorThresholdPixels;
     reference.maxSelectedNodes = pass.maxOutputClusters;
     return reference;
+}
+
+bool compareGpuSelection(const ModelAsset& source,
+                         const std::vector<GpuSceneInstance>& instances,
+                         const GpuPassConfig& pass,
+                         uint32_t pooledFirstIndex,
+                         const GpuSelectionReadback& gpu,
+                         std::string* error) {
+    if (error) error->clear();
+    auto fail = [&](const std::string& reason) {
+        if (error) *error = reason;
+        return false;
+    };
+    if (!gpu.valid() || gpu.counters.overflow || gpu.counters.invalid ||
+        gpu.counters.produced != gpu.ranges.size())
+        return fail("GPU range readback was incomplete, invalid or overflowed");
+    if (source.primitives.empty() || instances.empty())
+        return fail("empty Strata source or instance set");
+    using Key = std::array<uint32_t, 7>;
+    std::vector<Key> expected;
+    std::vector<Key> actual;
+    std::set<uint32_t> tokens;
+
+    for (const auto& item : gpu.ranges) {
+        actual.push_back({item.instanceToken, item.gpuFirstIndex,
+                          item.indexCount, item.materialGroup,
+                          item.nodeIndex, item.primitiveIndex,
+                          item.localFirstIndex});
+    }
+    std::vector<uint64_t> primitiveIndexOffsets(source.primitives.size());
+    std::vector<uint64_t> primitiveNodeOffsets(source.primitives.size());
+    uint64_t indexCursor = 0, nodeCursor = 0;
+    for (size_t i = 0; i < source.primitives.size(); ++i) {
+        primitiveIndexOffsets[i] = indexCursor;
+        primitiveNodeOffsets[i] = nodeCursor;
+        indexCursor += source.primitives[i].geometry.indices.size();
+        nodeCursor += source.primitives[i].geometry.nodes.size();
+        if (indexCursor + uint64_t(pooledFirstIndex) >
+                std::numeric_limits<uint32_t>::max() ||
+            nodeCursor > std::numeric_limits<uint32_t>::max())
+            return fail("Strata source exceeds GPU index/node address range");
+    }
+    for (const auto& instance : instances) {
+        if (!instance.enabled) continue;
+        if (!instance.instanceToken ||
+            !tokens.insert(instance.instanceToken).second ||
+            instance.primitiveIndex >= source.primitives.size())
+            return fail("GPU instance token or primitive reference invalid");
+        const auto& p = source.primitives[instance.primitiveIndex];
+        ViewPlan cpu;
+        std::string reason;
+        if (!planView(p.geometry, cpuReferenceView(pass, instance),
+                      cpu, &reason))
+            return fail("CPU reference selection failed: " + reason);
+        // CPU can decide to retain a resident parent under budget pressure.
+        // GPU emits overflow instead, so those cases are not equivalent.
+        if (cpu.budgetExceeded)
+            return fail("CPU reference used a budget fallback; not GPU-parity comparable");
+        for (const auto& range : cpu.ranges) {
+            const uint64_t offset = uint64_t(pooledFirstIndex) +
+                primitiveIndexOffsets[instance.primitiveIndex] + range.firstIndex;
+            const uint64_t node = primitiveNodeOffsets[instance.primitiveIndex] +
+                range.node;
+            if (offset > std::numeric_limits<uint32_t>::max() ||
+                node > std::numeric_limits<uint32_t>::max())
+                return fail("CPU reference output address overflow");
+            expected.push_back({
+                instance.instanceToken, uint32_t(offset), range.indexCount,
+                range.materialGroup, uint32_t(node), instance.primitiveIndex,
+                range.firstIndex
+            });
+        }
+    }
+    std::sort(expected.begin(), expected.end());
+    std::sort(actual.begin(), actual.end());
+    if (expected != actual)
+        return fail("Strata GPU/CPU visible cluster mismatch: expected " +
+                    std::to_string(expected.size()) + " vs GPU " +
+                    std::to_string(actual.size()) + " ranges");
+    return true;
+}
+
+bool GpuClusterCulling::requestReadback(
+    gfx::Device& dev, const GpuSelectionSubmission& submission,
+    GpuSelectionReadbackFn callback) {
+    if (!callback) return false;
+    const auto reject = [&]() {
+        GpuSelectionReadback failed;
+        callback(std::move(failed));
+        return false;
+    };
+    if (dev.info().backend != gfx::Backend::Metal ||
+        !submission.valid() || submission.capacity > 2048 ||
+        submission.frameSerial != dev.frameSerial())
+        return reject();
+    const size_t frameSlot = submission.frameSerial % kFramesInFlight;
+    if (epochs_[frameSlot] != submission.frameSerial ||
+        submission.submission >= cursors_[frameSlot] ||
+        submission.submission >= slots_[frameSlot].size())
+        return reject();
+    const auto& slot = slots_[frameSlot][submission.submission];
+    if (submission.ranges != slot.ranges ||
+        submission.counters != slot.counters)
+        return reject();
+
+    struct Pending {
+        GpuSelectionReadbackFn callback;
+        std::vector<uint8_t> counters;
+        std::vector<uint8_t> ranges;
+        bool countersReady = false, rangesReady = false, delivered = false;
+    };
+    auto pending = std::make_shared<Pending>();
+    pending->callback = std::move(callback);
+    const auto maybeComplete = [](const std::shared_ptr<Pending>& state) {
+        if (!state->countersReady || !state->rangesReady ||
+            state->delivered) return;
+        state->delivered = true;
+        GpuSelectionReadback result;
+        if (state->counters.size() == sizeof(GpuSelectionCounters)) {
+            std::memcpy(&result.counters, state->counters.data(),
+                        sizeof(result.counters));
+            const size_t produced = result.counters.produced;
+            if (result.counters.invalid) {
+                result.status = GpuSelectionReadback::Status::Invalid;
+            } else if (result.counters.overflow ||
+                       produced > state->ranges.size() /
+                           sizeof(GpuSelectedCluster)) {
+                result.status = GpuSelectionReadback::Status::Overflow;
+            } else if (state->ranges.size() % sizeof(GpuSelectedCluster) == 0) {
+                result.status = GpuSelectionReadback::Status::Valid;
+                result.ranges.resize(produced);
+                if (produced)
+                    std::memcpy(result.ranges.data(), state->ranges.data(),
+                                produced * sizeof(GpuSelectedCluster));
+            }
+        }
+        state->callback(std::move(result));
+    };
+    const bool first = dev.readBufferAsync(
+        slot.counters, sizeof(GpuSelectionCounters),
+        [pending, maybeComplete](std::vector<uint8_t> bytes) {
+            pending->counters = std::move(bytes);
+            pending->countersReady = true;
+            maybeComplete(pending);
+        });
+    const bool second = first && dev.readBufferAsync(
+        slot.ranges, size_t(submission.capacity) * sizeof(GpuSelectedCluster),
+        [pending, maybeComplete](std::vector<uint8_t> bytes) {
+            pending->ranges = std::move(bytes);
+            pending->rangesReady = true;
+            maybeComplete(pending);
+        });
+    if (!second) {
+        pending->countersReady = pending->rangesReady = true;
+        pending->counters.clear();
+        pending->ranges.clear();
+        maybeComplete(pending);
+        return false;
+    }
+    return true;
 }
 
 bool GpuClusterCulling::allocate(gfx::Device& dev, gfx::BufferHandle& h,
