@@ -5,6 +5,7 @@
 #include "engine/world/TerraWeaveEcsAuthority.h"
 #include "engine/world/TerraWeaveForestDeadwood.h"
 #include <functional>
+#include <iterator>
 #include <map>
 #include <set>
 #include <span>
@@ -121,14 +122,51 @@ inline size_t seedFallenForestDeadwoodEventsEcs(
             throw std::invalid_argument(
                 "TerraWeave falling deadwood has no fallen rooted plant");
     }
+    // Existing + new logs are merged in stable ID order in O(N+E),
+    // avoiding quadratic vector insertions for a large storm/landslide.
+    validateForestDeadwoodResource(*previous);
+    if(previous->initialized && completedTick<previous->lastStepTick)
+        throw std::invalid_argument("TerraWeave reversed fall tick");
     ForestDeadwoodResource next=*previous;
-    size_t newlySeeded=0;
+    std::vector<ForestDeadwoodRecord> additions;
+    additions.reserve(seen.size());
+    uint64_t totalUnits=0;
     for(const auto& id:seen){
+        const auto it=std::lower_bound(next.logs.begin(),next.logs.end(),
+            id,[](const ForestDeadwoodRecord& log,AnchoredPlantId key){
+                return log.id<key;
+            });
+        if(it!=next.logs.end() && it->id==id)continue;
         const AnchoredPlant& plant=*byId.at(id);
-        if(seedForestDeadwood(next,plant,completedTick,true))
-            ++newlySeeded;
+        const uint64_t units=deadwoodOrganicUnits(plant);
+        if(totalUnits>UINT64_MAX-units)
+            throw std::overflow_error("TerraWeave deadwood batch mass overflow");
+        totalUnits+=units;
+        ForestDeadwoodRecord log;
+        log.id=id;
+        log.xCm=plant.anchor.xCm;log.zCm=plant.anchor.zCm;
+        log.createdTick=log.lastEvaluatedTick=completedTick;
+        log.remainingUnits=units;
+        log.fromFall=true;
+        additions.push_back(log);
     }
-    if(!newlySeeded)return 0;
+    if(additions.empty())return 0;
+    if(next.logs.size()+additions.size()>ForestDeadwoodResource::kMaxLogs)
+        throw std::length_error("TerraWeave deadwood batch budget");
+    if(next.totalInitialUnits>UINT64_MAX-totalUnits ||
+       next.revision==UINT64_MAX)
+        throw std::overflow_error("TerraWeave deadwood batch revision/mass");
+    std::vector<ForestDeadwoodRecord> merged;
+    merged.reserve(next.logs.size()+additions.size());
+    std::merge(next.logs.begin(),next.logs.end(),
+               additions.begin(),additions.end(),
+               std::back_inserter(merged),
+               [](const ForestDeadwoodRecord& x,
+                  const ForestDeadwoodRecord& y){return x.id<y.id;});
+    next.logs.swap(merged);
+    next.totalInitialUnits+=totalUnits;
+    ++next.revision;
+    const size_t newlySeeded=additions.size();
     World staged=ecs;
     staged.setResource<ForestDeadwoodResource>(std::move(next));
     ecs=std::move(staged);
