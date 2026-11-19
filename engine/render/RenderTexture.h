@@ -37,7 +37,18 @@ public:
     bool blit(gfx::TextureHandle source, float x=0, float y=0, float w=1, float h=1);
     void clear(std::array<float,4> color = {});
     bool stroke(const Stroke& stroke);
-    void flush();
+    // Checked version for native hosts: false means GPU brush geometry
+    // allocation failed; queued commands are retained for retry.
+    bool flushChecked();
+    // Legacy API preserves source compatibility; call flushChecked when
+    // deciding whether CPU authored state may be acknowledged.
+    void flush() { (void)flushChecked(); }
+    struct SubmissionStats {
+        uint64_t failedBrushBuffers=0;
+        uint64_t failedBlitBuffers=0;
+        uint64_t failedUploadTextures=0;
+    };
+    SubmissionStats submissionStats() const noexcept {return submitStats_;}
     // Rectangular upload uses top-to-bottom logical UV rows (no backend-specific caller flip).
     // Returns false if staging or GPU blit allocation failed. Callers may
     // retain CPU source bytes and retry on the following presentation frame.
@@ -57,5 +68,6 @@ private:
     bool clear_ = true;
     std::array<float,4> clearColor_{};
     std::vector<Stroke> strokes_;
+    SubmissionStats submitStats_{};
 };
 }
