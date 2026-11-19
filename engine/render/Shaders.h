@@ -437,7 +437,7 @@ void main() {
         vec2 dn = vec2(mix(h10 - h00, h11 - h01, qu.y), mix(h01 - h00, h11 - h10, qu.x)) * 6.0 * qf * (1.0 - qf);
         g += dn * 0.09;
         float windSpeed=length(u_waterWind.xy);
-        float gust=clamp(u_waterWind.z,0.0,1.0)*windCoupling;
+        float gust=(0.4+0.6*clamp(u_waterWind.z,0.0,1.0))*windCoupling;
         float windSlope=clamp(windSpeed*0.006,0.0,0.32)*gust;
         vec2 windDir=u_waterWind.xy/max(windSpeed,0.001);
         g+=windDir*windSlope;
@@ -631,7 +631,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
         float2 dn = float2(mix(h10 - h00, h11 - h01, qu.y), mix(h01 - h00, h11 - h10, qu.x)) * 6.0 * qf * (1.0 - qf);
         g += dn * 0.09;
         float windSpeed=length(u.waterWind.xy);
-        float gust=clamp(u.waterWind.z,0.0,1.0)*windCoupling;
+        float gust=(0.4+0.6*clamp(u.waterWind.z,0.0,1.0))*windCoupling;
         float windSlope=clamp(windSpeed*0.006,0.0,0.32)*gust;
         float2 windDir=u.waterWind.xy/max(windSpeed,0.001);
         g+=windDir*windSlope;
