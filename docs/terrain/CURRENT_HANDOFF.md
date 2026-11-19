@@ -1,5 +1,22 @@
 # TerraWeave — current agent handoff entry point
 
+## Latest main-integration staging branch — QA not yet green
+
+**Read first:** [2026-11-20 TerraWeave + main two-parent merge and full native QA](qa-2026-11-20-main-integration-handoff.md).
+Branch `integration/terraweave-main-20261120` contains a genuine
+merge of TerraWeave `d9de76dcd8aa4e7b4e01a42e183a0b9c98c4854b`
+and main `d7d9b3f4180dcba98b9238fd56eedc7ccb420bb1`
+in `ad982326f6b52e728a689f0c53c43d50f5ad9e02`,
+resolving 11 overlapping source paths while retaining both histories.
+GitHub Actions [new merged native check](https://github.com/chromealex/AIVERSE/actions/runs/44619590001)
+was queued at creation; no CMake/full CTest result on this
+merged source is yet confirmed.
+Prior Mac `136/136` is for pre-merge TerraWeave only.
+The original `main` and `feature/terraweave` were not modified.
+Do not merge PR #24 before fresh native/editor/GPU and combined
+NEREID/PHYSIS/Box3D QA.
+
+
 Last source stage: **70** (2026-11-19), branch `feature/terraweave`.
 PR #24 is Draft, and must not merge to `main` before native QA and
 cross-branch conflict reconciliation.
