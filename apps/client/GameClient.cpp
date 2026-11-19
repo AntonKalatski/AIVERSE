@@ -961,6 +961,10 @@ void GameClient::runViewScripts(float dt) {
 }
 
 void GameClient::frame(gfx::Device& dev, double dt) {
+    // Previous-frame model uploads can remain GPU-visible after their
+    // TypeLooks detach. Drain only before this frame's render submissions;
+    // if a backend refuses the idle barrier, retain them for the next frame.
+    if(view_.pendingModelRetirements()!=0)view_.collectRetiredModels();
     const auto frameStarted = std::chrono::steady_clock::now();
     if (mapLoading_) { frameMapLoading(dev, dt); return; }
     if (mapJustLoaded_) { dt = 0; mapJustLoaded_ = false; }
