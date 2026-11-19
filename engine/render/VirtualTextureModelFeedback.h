@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstring>
 #include <functional>
+#include <utility>
 
 namespace aiverse::render {
 
@@ -31,6 +32,15 @@ public:
     bool initialize(gfx::Device& dev, bool depthAttachment) {
         if (device_) return false;
         device_ = &dev;
+        const uint8_t white[4] = {255,255,255,255};
+        gfx::TextureDesc whiteDesc;
+        whiteDesc.width = whiteDesc.height = 1;
+        whiteDesc.format = gfx::PixelFormat::RGBA8;
+        whiteDesc.filter = gfx::Filter::Nearest;
+        whiteDesc.data = white;
+        whiteDesc.label = "VT feedback alpha fallback";
+        ownedWhite_ = dev.createTexture(whiteDesc);
+        if (!ownedWhite_.valid()) { shutdown(); return false; }
         gfx::VirtualTextureFeedbackVertexLayout vertex;
         vertex.stride = sizeof(ModelVertex);
         vertex.positionOffset = offsetof(ModelVertex,pos);
@@ -64,7 +74,7 @@ public:
         if (!ready() || attached_) return false;
         renderer_ = &renderer;
         resolve_ = std::move(resolve);
-        fallbackWhite_ = fallbackWhite;
+        fallbackWhite_ = fallbackWhite.valid() ? fallbackWhite : ownedWhite_;
         renderer.setVirtualTextureModelFeedback(
             programs_[0][0][0].pipeline(),
             [this](gfx::Device& dev,const Model& model,
@@ -117,6 +127,8 @@ public:
             for (auto& fades : masks)
                 for (auto& program : fades)
                     program.shutdown(*device_);
+        if (ownedWhite_.valid()) device_->destroyTexture(ownedWhite_);
+        ownedWhite_ = {};
         device_ = nullptr;
     }
 
@@ -183,6 +195,7 @@ private:
     bool attached_ = false;
     VirtualTextureMaterialResolver resolve_;
     gfx::TextureHandle fallbackWhite_;
+    gfx::TextureHandle ownedWhite_;
     gfx::VirtualTextureFeedbackProgram programs_[2][2][2];
 };
 
