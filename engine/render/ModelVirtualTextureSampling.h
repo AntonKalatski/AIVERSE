@@ -59,7 +59,15 @@ static_assert(sizeof(ModelVirtualTextureUniforms) == 16);
 // Returns false if a shader source contract changes: never silently
 // generate a broken pipeline.
 inline bool injectModelVirtualTextureSampling(std::string& fragmentGLSL,
-                                              std::string& msl) {
+                                              std::string& msl,
+                                              int atlasSlot = 13,
+                                              int tableSlot = 14) {
+    // Graph resources begin at slot 13. At most one graph texture can
+    // coexist with the two VT arrays on GL33/GLES3/Metal (0..15).
+    if (atlasSlot < 13 || tableSlot != atlasSlot+1 ||
+        tableSlot > 15) return false;
+    const std::string atlasName="tex"+std::to_string(atlasSlot);
+    const std::string tableName="tex"+std::to_string(tableSlot);
     const std::string sourceFragment =
         "    vec4 tb = texture(tex1, v_uv);";
     const auto glSample = fragmentGLSL.find(sourceFragment);
@@ -89,17 +97,17 @@ inline bool injectModelVirtualTextureSampling(std::string& fragmentGLSL,
     // only in a dedicated shader permutation and after both resources
     // are validated. Studio debug and shadow paths stay unchanged.
     fragmentGLSL.replace(glSample,sourceFragment.size(),
-        "    vec4 tb = aiverseSampleVirtual(tex13,tex14,v_uv,"
-        "int(uModelVt.x),uModelVt.y,texture(tex1,v_uv));");
+        "    vec4 tb = aiverseSampleVirtual("+atlasName+","+tableName+
+        ",v_uv,int(uModelVt.x),uModelVt.y,texture(tex1,v_uv));");
     msl.replace(metalSample,sourceMetal.size(),
-        "    float4 tb = aiverse_sample_virtual("
-        "tex13,tex14,s1,in.uv,uint(uModelVt.x),uModelVt.y,"
+        "    float4 tb = aiverse_sample_virtual("+atlasName+","+
+        tableName+",s1,in.uv,uint(uModelVt.x),uModelVt.y,"
         "tex1.sample(s1,in.uv));");
 
     fragmentGLSL.insert(0,
         std::string("layout(std140) uniform U6 { vec4 uModelVt; };\n")
-        + "uniform highp sampler2DArray tex13;\n"
-        + "uniform highp sampler2DArray tex14;\n"
+        + "uniform highp sampler2DArray "+atlasName+";\n"
+        + "uniform highp sampler2DArray "+tableName+";\n"
         + gfx::kVirtualTextureGLSL + "\n");
 
     // Metal fragment resource arguments are appended after GI_FARGS so
@@ -109,14 +117,16 @@ inline bool injectModelVirtualTextureSampling(std::string& fragmentGLSL,
         "                        GI_FARGS\n"
         "                        , constant float4& uModelVt [[buffer(7)]]\n"
         "#if !defined(AIVERSE_ICB_PBR)\n"
-        "                        , texture2d_array<float, access::sample> tex13 [[texture(13)]]\n"
-        "                        , texture2d_array<float, access::read> tex14 [[texture(14)]]\n"
+        "                        , texture2d_array<float, access::sample> "+
+            atlasName+" [[texture("+std::to_string(atlasSlot)+")]]\n"
+        "                        , texture2d_array<float, access::read> "+
+            tableName+" [[texture("+std::to_string(tableSlot)+")]]\n"
         "#endif\n");
     const auto bodyAfter=msl.find(bodyAnchor,signature);
     if (bodyAfter==std::string::npos) return false;
     msl.insert(bodyAfter+bodyAnchor.size(),
-        "#define tex13 icbTextures.tex13\n"
-        "#define tex14 icbTextures.tex14\n");
+        "#define "+atlasName+" icbTextures."+atlasName+"\n"
+        "#define "+tableName+" icbTextures."+tableName+"\n");
     msl.insert(metalNamespace+ns.size(),"\n"+std::string(gfx::kVirtualTextureMSL));
     return true;
 }
