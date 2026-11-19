@@ -130,6 +130,14 @@ public:
                 previewHash_=0;
                 previewRestartRequested_=true;
             }
+            ImGui::SameLine();
+            if(ImGui::Button(previewPaused_?"Resume":"Pause"))
+                previewPaused_=!previewPaused_;
+            ImGui::SameLine();
+            if(ImGui::Button("Step 1/60 s")) {
+                previewPaused_=true;
+                previewStepRequested_=true;
+            }
             drawPreview(ed,std::max(200.0f,ImGui::GetContentRegionAvail().x),230.0f);
             ImGui::Separator();
         }
@@ -418,6 +426,8 @@ private:
         previewInitialized_=false;
         previewRestartRequested_=true;
         previewLastTime_=-1;
+        previewPaused_=false;
+        previewStepRequested_=false;
         previewMessage_.clear();
     }
     static uint64_t previewHash(const std::string& text) {
@@ -463,6 +473,10 @@ private:
         float dt=previewLastTime_<0?0:float(now-previewLastTime_);
         previewLastTime_=now;
         dt=std::clamp(dt,0.0f,0.05f);
+        if(previewStepRequested_) {
+            dt=1.0f/60.0f;
+            previewStepRequested_=false;
+        } else if(previewPaused_) dt=0.0f;
         fx::SpectraFxHybridEmitter::Config candidate;
         std::string error;
         const bool valid=fx::SpectraFxGpuEmitterAsset::readText(
@@ -536,12 +550,20 @@ private:
         if(!previewMessage_.empty())
             ImGui::TextWrapped("%s",previewMessage_.c_str());
         if(previewInitialized_ && previewHost_.playback()) {
-            const auto* playback=previewHost_.playback();
+            const auto snapshot=previewHost_.playback()->backendSnapshot();
             ImGui::TextDisabled(
-                "FX preview: attached %zu | GPU slots %llu | retained KiB %llu",
-                playback->attached(),
-                static_cast<unsigned long long>(playback->usedGpuSlots()),
-                static_cast<unsigned long long>(playback->nominalGpuBytes()/1024));
+                "Backend: GPU %zu | CPU %zu | pooled %zu | suspended %zu",
+                snapshot.dedicatedGpu,snapshot.dedicatedCpu,
+                snapshot.pooledSources,snapshot.suspendedGpu);
+            ImGui::TextDisabled(
+                "GPU slots: active %llu | retiring %llu | nominal KiB %llu",
+                static_cast<unsigned long long>(snapshot.activeGpuSlots),
+                static_cast<unsigned long long>(snapshot.retiredGpuSlots),
+                static_cast<unsigned long long>(snapshot.nominalGpuBytes/1024));
+            if(previewPaused_)
+                ImGui::TextDisabled(
+                    "Paused: existing GPU particle state is re-rendered; "
+                    "new spawns need a nonzero frame step");
         }
     }
 
@@ -703,6 +725,7 @@ private:
     uint64_t previewHash_=0;
     double previewLastTime_=-1;
     bool previewInitialized_=false,previewRestartRequested_=true;
+    bool previewPaused_=false,previewStepRequested_=false;
     std::string previewMessage_;
 };
 AIVERSE_EDITOR_WINDOW(SpectraFxGpuAssetsWindow);
