@@ -35,6 +35,22 @@ void check(bool ok, const char* why) {
     if (!ok) { ++failures; std::fprintf(stderr, "FAIL: %s\n", why); }
 }
 using Color = std::array<uint8_t, 4>;
+using Clock = std::chrono::steady_clock;
+double elapsedMs(Clock::time_point start, Clock::time_point end) {
+    return std::chrono::duration<double,std::milli>(end-start).count();
+}
+struct ProbeTiming {
+    double submitMs = 0;
+    double completeMs = 0;
+    double compareMs = 0;
+    double gpuCommandMs = 0;
+    bool gpuCommandValid = false;
+    unsigned frames = 0;
+};
+uint64_t nextGpuTimingTag() {
+    static uint64_t index=0;
+    return 0x54584d4554414c00ULL + ++index;
+}
 
 std::vector<uint8_t> solid(int w, int h, Color color) {
     std::vector<uint8_t> rgba(size_t(w)*size_t(h)*4);
@@ -54,9 +70,13 @@ struct Read {
     TextureReadbackResult output;
     bool done = false;
 };
-void verifyReads(Device& dev, const std::vector<std::shared_ptr<Read>>& probes) {
-    // The Metal backend queues blits on the current frame command buffer.
-    // Completions must be delivered on the owner thread in a later beginFrame.
+void verifyReads(Device& dev, const std::vector<std::shared_ptr<Read>>& probes,
+                 const char* group) {
+    // Report wall-clock scheduling separately from the GPU command interval.
+    // The latter measures the entire Metal command buffer, not only blit
+    // throughput; short transfers cannot be benchmarked with CTest time.
+    ProbeTiming timing;
+    const auto submitStart=Clock::now();
     dev.beginFrame(16,16);
     bool queued = true;
     for (const auto& p : probes) {
@@ -71,19 +91,35 @@ void verifyReads(Device& dev, const std::vector<std::shared_ptr<Read>>& probes) 
                          p->label.c_str(),dev.lastError().c_str());
         }
     }
+    const uint64_t timingTag=nextGpuTimingTag();
+    const bool gpuTimingRequested=dev.timeGpuFrame(timingTag);
     dev.endFrame();
+    const auto submitEnd=Clock::now();
+    timing.submitMs=elapsedMs(submitStart,submitEnd);
     check(queued, "all native GPU readbacks accepted");
     // Never report a skipped GPU test as passed. A timeout/failure is red.
-    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(10);
-    while (std::chrono::steady_clock::now()<deadline) {
+    const auto deadline=Clock::now()+std::chrono::seconds(10);
+    while (Clock::now()<deadline) {
         dev.beginFrame(16,16);
         dev.endFrame();
+        ++timing.frames;
         const bool all=std::all_of(probes.begin(),probes.end(),
             [](const auto& p) {return p->done;});
         if (all) break;
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
+    const auto completionEnd=Clock::now();
+    timing.completeMs=elapsedMs(submitEnd,completionEnd);
+    if (gpuTimingRequested) {
+        for (const auto& gpu : dev.takeGpuTimings()) {
+            if (gpu.tag == timingTag && gpu.valid) {
+                timing.gpuCommandMs=gpu.milliseconds;
+                timing.gpuCommandValid=true;
+            }
+        }
+    }
     check(dev.gpuHealthy(),"Metal command buffers completed without GPU error");
+    const auto compareStart=Clock::now();
     for (const auto& p : probes) {
         if (!p->done) {
             ++failures;
@@ -112,6 +148,13 @@ void verifyReads(Device& dev, const std::vector<std::shared_ptr<Read>>& probes) 
         } else std::printf("PASS: %s (%dx%d GPU RGBA8 bytes)\n",
                            p->label.c_str(),p->width,p->height);
     }
+    timing.compareMs=elapsedMs(compareStart,Clock::now());
+    std::printf("TIMING %s readbacks=%zu submit_ms=%.3f callback_wait_ms=%.3f "
+                "poll_frames=%u compare_ms=%.3f gpu_command_ms=",
+                group,probes.size(),timing.submitMs,timing.completeMs,
+                timing.frames,timing.compareMs);
+    if (timing.gpuCommandValid) std::printf("%.3f\n",timing.gpuCommandMs);
+    else std::puts("unavailable");
 }
 std::shared_ptr<Read> probe(TextureHandle h,int mip,int layer,int w,int height,
                             std::vector<uint8_t> expected,std::string label) {
@@ -122,6 +165,7 @@ std::shared_ptr<Read> probe(TextureHandle h,int mip,int layer,int w,int height,
     return p;
 }
 void volume(Device& dev) {
+    const auto setupStart=Clock::now();
     TextureDesc d;
     d.dimension=TextureDimension::Texture3D;
     d.width=4;d.height=4;d.depth=4;d.mipLevels=2;d.filter=Filter::Nearest;
@@ -159,11 +203,13 @@ void volume(Device& dev) {
     for (int y=1;y<=2;++y) for(int x=1;x<=2;++x)
         std::copy_n(patch.data()+size_t((y-1)*2+(x-1))*4,4,
                     changed.data()+size_t(y*4+x)*4);
+    std::printf("TIMING Texture3D create_and_upload_ms=%.3f\n",
+                elapsedMs(setupStart,Clock::now()));
     verifyReads(dev,{
         probe(h,0,0,4,4,untouched,"3D base z0 unchanged"),
         probe(h,0,2,4,4,changed,"3D base z2 partial rectangle"),
         probe(h,1,1,2,2,slice,"3D mip1 z1 partial depth selection")
-    });
+    },"Texture3D");
     const auto before=dev.textureResources();
     check(std::any_of(before.begin(),before.end(),[&](const auto& r) {
         return r.handle==h && r.dimension==TextureDimension::Texture3D &&
@@ -177,6 +223,7 @@ void volume(Device& dev) {
 }
 void layered(Device& dev, TextureDimension dimension,int layers,
              const char* name) {
+    const auto setupStart=Clock::now();
     TextureDesc d;
     d.dimension=dimension;d.width=4;d.height=4;
     d.arrayLayers=layers;d.mipLevels=2;d.filter=Filter::Nearest;
@@ -200,6 +247,8 @@ void layered(Device& dev, TextureDimension dimension,int layers,
     check(dev.updateTextureRegion(h,mip),
           "Metal uploads selected array/cube face and authored mip");
 
+    std::printf("TIMING %s create_and_upload_ms=%.3f\n",
+                name,elapsedMs(setupStart,Clock::now()));
     verifyReads(dev,{
         probe(h,0,0,4,4,solid(4,4,{10,70,33,255}),
               std::string(name)+" face/layer0"),
@@ -208,13 +257,14 @@ void layered(Device& dev, TextureDimension dimension,int layers,
               std::string(name)+" last face/layer"),
         probe(h,1,last,2,2,mipData,
               std::string(name)+" authored mip1")
-    });
+    },name);
     dev.destroyTexture(h);
 }
 } // namespace
 
 int main() {
     @autoreleasepool {
+        const auto testStart=Clock::now();
         id<MTLDevice> metal=MTLCreateSystemDefaultDevice();
         if (!metal) {
             std::fprintf(stderr,"FAIL: no Metal GPU available; opt-in test cannot skip\n");
@@ -230,11 +280,17 @@ int main() {
             std::fprintf(stderr,"FAIL: AIVERSE Metal backend unavailable\n");
             return 2;
         }
+        const auto deviceReady=Clock::now();
         std::printf("Metal GPU acceptance device: %s\n",device->info().name.c_str());
+        std::printf("TIMING Metal device_and_layer_init_ms=%.3f\n",
+                    elapsedMs(testStart,deviceReady));
         volume(*device);
         layered(*device,TextureDimension::Texture2DArray,2,"Texture2DArray");
         layered(*device,TextureDimension::Cube,6,"Cube");
         layered(*device,TextureDimension::CubeArray,12,"CubeArray");
+        std::printf("TIMING Metal fixture_total_ms=%.3f gpu_test_body_ms=%.3f\n",
+                    elapsedMs(testStart,Clock::now()),
+                    elapsedMs(deviceReady,Clock::now()));
         if (failures)
             std::fprintf(stderr,"FAIL: %d Metal texture GPU acceptance checks\n",failures);
         else std::puts("PASS: Metal GPU Texture3D/array/cube mip and async readback parity");
