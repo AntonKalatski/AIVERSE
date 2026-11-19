@@ -1040,25 +1040,68 @@ private:
                             cp.freshGroups,cp.staleGroups,cp.missingGroups);
                 ImGui::Text("Pending: %u  Recoverable*: %u",
                             cp.pendingGroups,cp.restoreEligibleGroups);
-                ImGui::Text("Binary export ready: %u group(s)",
-                            cp.exportReadyGroups);
-                ImGui::BeginDisabled(!ed.spectraGpuPreviewActive());
-                if(ImGui::Button("Freeze & capture GPU state")) {
+                ImGui::Text("Binary export ready: %u / %zu group(s)",
+                            cp.exportReadyGroups,pool->gpuGroupCount());
+                const int groupCount=int(std::min<size_t>(pool->gpuGroupCount(),64));
+                gpuCheckpointGroup_=groupCount>0?
+                    std::clamp(gpuCheckpointGroup_,0,groupCount-1):0;
+                ImGui::BeginDisabled(groupCount<=1);
+                ImGui::SetNextItemWidth(95);
+                if(ImGui::InputInt("GPU group index",&gpuCheckpointGroup_))
+                    gpuCheckpointGroup_=groupCount>0?
+                        std::clamp(gpuCheckpointGroup_,0,groupCount-1):0;
+                ImGui::EndDisabled();
+                spectra::PoolGpuGroupSummary selected{};
+                const bool selectedValid=pool->gpuGroupSummary(
+                    size_t(gpuCheckpointGroup_),selected);
+                const bool selectedReady=selectedValid && selected.exportReady;
+                if(selectedValid) {
+                    ImGui::Text("Selected group %zu: %u estimated particles, %.1f KiB",
+                        selected.index,selected.estimatedAlive,
+                        double(selected.allocatedGpuBytes)/1024.0);
+                    ImGui::Text("Snapshot %s / %s",
+                        selected.checkpoint.complete?
+                            (selected.checkpoint.fresh?"fresh":"stale"):
+                            "missing",
+                        selected.checkpoint.pending?"pending readback":
+                            (selectedReady?"export ready":"not exportable"));
+                }
+                ImGui::BeginDisabled(!ed.spectraGpuPreviewActive() ||
+                                    gpuCheckpointGroup_!=0);
+                if(ImGui::Button("Freeze & capture preview group 0")) {
                     if(!ed.requestSpectraGpuPreviewCheckpoint())
                         message_="Metal GPU preview is not active";
                 }
                 ImGui::EndDisabled();
                 if(!ed.spectraGpuCaptureNote().empty())
                     ImGui::TextWrapped("%s",ed.spectraGpuCaptureNote().c_str());
-                ImGui::BeginDisabled(cp.exportReadyGroups==0);
-                if(ImGui::Button("Save fresh GPU checkpoint")) {
+                ImGui::Separator();
+                ImGui::TextDisabled("Safe summary excludes raw particles, VM scalars, "
+                                    "world coordinates and GPU IDs by default.");
+                ImGui::Checkbox("Include world bounds (sensitive)",
+                                &gpuReportIncludeBounds_);
+                ImGui::SameLine();
+                ImGui::Checkbox("Include GPU identifiers",
+                                &gpuReportIncludeIdentifiers_);
+                ImGui::BeginDisabled(!selectedReady);
+                if(ImGui::Button("Save safe JSON report")) {
                     std::string fileOrReason;
-                    const bool ok=ed.saveFreshSpectraGpuCheckpoint(fileOrReason);
-                    message_=(ok?"GPU diagnostic saved: ":"GPU export unavailable: ")+
-                             fileOrReason;
+                    const bool ok=ed.saveSafeSpectraGpuReport(
+                        fileOrReason,size_t(gpuCheckpointGroup_),
+                        gpuReportIncludeBounds_,gpuReportIncludeIdentifiers_);
+                    message_=(ok?"Redacted GPU report saved: ":
+                                "GPU report unavailable: ")+fileOrReason;
+                }
+                ImGui::SameLine();
+                if(ImGui::Button("Save RAW GPU checkpoint (sensitive)")) {
+                    std::string fileOrReason;
+                    const bool ok=ed.saveFreshSpectraGpuCheckpoint(
+                        fileOrReason,size_t(gpuCheckpointGroup_));
+                    message_=(ok?"RAW GPU diagnostic saved: ":
+                                "GPU export unavailable: ")+fileOrReason;
                 }
                 ImGui::EndDisabled();
-                ImGui::TextDisabled("Diagnostic binary V2: CRC32 + current GPU revision only. "
+                ImGui::TextDisabled("SPFX V2 binary contains full positions/VM inputs. "
                                     "No GPU rewind or ECS save.");
                 ImGui::Text("Readbacks: %llu / %llu complete, %llu failed",
                             static_cast<unsigned long long>(cp.requests),
@@ -1104,6 +1147,9 @@ private:
     }
 
     float gpuAdvanceSeconds_=0.5f;
+    int gpuCheckpointGroup_=0;
+    bool gpuReportIncludeBounds_=false;
+    bool gpuReportIncludeIdentifiers_=false;
     std::string project_,name_="new_spectra",message_,propertyText_,parametersText_,functionText_,instanceSchemaText_,functionLibraryName_="common_math",pendingFrom_,pendingDataFrom_,linkPort_;
     Json previewInstanceValues_=Json::object();
     std::vector<std::string> names_,draftNames_,errors_;
