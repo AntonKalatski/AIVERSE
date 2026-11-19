@@ -160,8 +160,9 @@ public:
         for (const auto& pending : gpuFences_) glDeleteSync(pending.second);
         gpuFences_.clear();
 #if defined(__APPLE__) || defined(_WIN32)
-        if (queryActive_) glEndQuery(GL_TIME_ELAPSED);
+        if (queryActive_ || scopeActive_) glEndQuery(GL_TIME_ELAPSED);
         for (const auto& t:timedQueries_) glDeleteQueries(1,&t.query);
+        for (const auto& t:scopedQueries_) glDeleteQueries(1,&t.query);
 #endif
 #if defined(__EMSCRIPTEN__) || defined(__APPLE__)
         glDeleteBuffers(kMaxUniformSlots, slotUbos_);
@@ -404,9 +405,11 @@ public:
 #if defined(__APPLE__) || defined(_WIN32)
     struct TimedQuery { uint64_t tag; GLuint query; };
     std::vector<TimedQuery> timedQueries_;
-    bool queryActive_ = false;
+    std::vector<TimedQuery> scopedQueries_;
+    bool queryActive_ = false, scopeActive_ = false;
     bool timeGpuFrame(uint64_t tag) override {
-        if (info_.backend != Backend::GL33 || queryActive_ || timedQueries_.size() >= 64) return false;
+        if (info_.backend != Backend::GL33 || queryActive_ || scopeActive_ ||
+            timedQueries_.size() >= 64) return false;
         GLuint q=0; glGenQueries(1,&q); glBeginQuery(GL_TIME_ELAPSED,q);
         timedQueries_.push_back({tag,q}); queryActive_=true; return true;
     }
@@ -423,6 +426,43 @@ public:
         return out;
     }
 #endif
+    // Desktop GL33 can measure one bounded region using the native elapsed
+    // GPU query. Do NOT use while a whole-frame GL_TIME_ELAPSED query runs:
+    // OpenGL prohibits overlapping queries of the same target.
+    bool beginGpuScope(uint64_t tag) override {
+        if (info_.backend != Backend::GL33 || !frameActive_ ||
+            queryActive_ || scopeActive_ || scopedQueries_.size() >= 64)
+            return false;
+        GLuint q=0;
+        glGenQueries(1,&q);
+        if (!q) return false;
+        glBeginQuery(GL_TIME_ELAPSED,q);
+        scopedQueries_.push_back({tag,q});
+        scopeActive_=true;
+        return true;
+    }
+    void endGpuScope() override {
+        if (!scopeActive_) return;
+        glEndQuery(GL_TIME_ELAPSED);
+        scopeActive_=false;
+        glFlush(); // submit query progress without CPU/GPU synchronization
+    }
+    std::vector<GpuTiming> takeGpuScopeTimings() override {
+        std::vector<GpuTiming> out;
+        for (size_t i=0;i<scopedQueries_.size();) {
+            const auto q=scopedQueries_[i];
+            if (scopeActive_ && i+1==scopedQueries_.size()) {++i;continue;}
+            GLuint ready=0;
+            glGetQueryObjectuiv(q.query,GL_QUERY_RESULT_AVAILABLE,&ready);
+            if (!ready) {++i;continue;}
+            GLuint64 ns=0;
+            glGetQueryObjectui64v(q.query,GL_QUERY_RESULT,&ns);
+            out.push_back({q.tag,double(ns)/1000000.0,true});
+            glDeleteQueries(1,&q.query);
+            scopedQueries_.erase(scopedQueries_.begin()+i);
+        }
+        return out;
+    }
     void beginFrame(int w, int h) override {
         pollCompletedGpuFences();
         frameActive_ = true;
@@ -437,6 +477,7 @@ public:
     }
     void endFrame() override { // swap is done by the platform layer (EGL/WGL/browser)
 #if defined(__APPLE__) || defined(_WIN32)
+        if (scopeActive_) endGpuScope();
         if (queryActive_) {glEndQuery(GL_TIME_ELAPSED);queryActive_=false;glFlush();}
 #endif
         if (frameActive_) {
