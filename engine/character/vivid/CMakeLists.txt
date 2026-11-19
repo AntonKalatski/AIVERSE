@@ -21,7 +21,7 @@ target_compile_features(aiverse_vivid_mesh PUBLIC cxx_std_20)
 
 # Per-character GPU presentation owner. Each actor owns independent writable
 # compute/model vertex streams, with no second animation scheduler.
-add_library(aiverse_vivid_actor STATIC GpuActorStream.cpp GpuActorRetirement.cpp GpuMorphSharedAsset.cpp)
+add_library(aiverse_vivid_actor STATIC GpuActorStream.cpp GpuActorRetirement.cpp GpuMorphSharedAsset.cpp GpuMorphAssetCache.cpp)
 add_library(AIVERSE::vivid_actor ALIAS aiverse_vivid_actor)
 target_link_libraries(aiverse_vivid_actor PUBLIC aiverse_vivid_mesh)
 target_compile_features(aiverse_vivid_actor PUBLIC cxx_std_20)
