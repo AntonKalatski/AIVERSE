@@ -273,6 +273,11 @@ void VulkanDevice::destroyDeviceObjects() {
     destroySwapchain();
     completed_ = ~uint64_t(0);
     collectGarbage();
+    for(const auto& [token,fence]:retirementFences_) {
+        (void)token;
+        if(fence)vkDestroyFence(device_,fence,nullptr);
+    }
+    retirementFences_.clear();
     buffers_.each([&](VBuffer& b) { for (auto& v : b.versions) { vkDestroyBuffer(device_, v.buffer, nullptr); memory_.release(v.alloc); } });
     auto killTex = [&](VTexture& t) { if (t.view) vkDestroyImageView(device_, t.view, nullptr); if (t.image) vkDestroyImage(device_, t.image, nullptr); memory_.release(t.alloc); };
     textures_.each(killTex);
@@ -424,6 +429,41 @@ bool VulkanDevice::waitForResourceIdle() {
     completed_=std::max(completed_,serial_-1);
     collectGarbage();
     return true;
+}
+
+uint64_t VulkanDevice::beginResourceRetirement() {
+    // Enqueue an empty ordered queue submission. The fence completes only
+    // after earlier submitted graphics/transfer work on this same queue.
+    // Recorded-but-unsubmitted current-frame commands are NOT included.
+    if(!device_ || !healthy_ || inPass_ || !queue_)return 0;
+    VkFence fence=VK_NULL_HANDLE;
+    const auto info=vkStruct<VkFenceCreateInfo>(VK_STRUCTURE_TYPE_FENCE_CREATE_INFO);
+    if(vkCreateFence(device_,&info,nullptr,&fence)!=VK_SUCCESS)return 0;
+    const VkResult result=vkQueueSubmit(queue_,0,nullptr,fence);
+    if(result!=VK_SUCCESS) {
+        if(result==VK_ERROR_DEVICE_LOST)healthy_=false;
+        vkDestroyFence(device_,fence,nullptr);
+        return 0;
+    }
+    const uint64_t token=nextRetirementToken_++;
+    retirementFences_.emplace(token,fence);
+    return token;
+}
+
+bool VulkanDevice::resourceRetirementComplete(uint64_t token) {
+    const auto it=retirementFences_.find(token);
+    if(it==retirementFences_.end() || !device_)return false;
+    const VkResult result=vkGetFenceStatus(device_,it->second);
+    if(result==VK_ERROR_DEVICE_LOST)healthy_=false;
+    return result==VK_SUCCESS;
+}
+
+void VulkanDevice::endResourceRetirement(uint64_t token) {
+    const auto it=retirementFences_.find(token);
+    if(it==retirementFences_.end() || !device_)return;
+    if(vkGetFenceStatus(device_,it->second)!=VK_SUCCESS)return;
+    vkDestroyFence(device_,it->second,nullptr);
+    retirementFences_.erase(it);
 }
 
 void VulkanDevice::prepareSlot() {
