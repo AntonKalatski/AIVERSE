@@ -281,6 +281,46 @@ public:
         if(draw.model)renderer.drawModel(draw);
     }
 
+    // This is independently testable without GPU or Renderer3D. It is the
+    // only write to per-camera LOD hysteresis during a model submission.
+    // Camera scope zero is the legacy single-camera state map.
+    size_t selectCameraLodLevel(const Object& obj,float distance,
+                                uint64_t cameraScope=0) const {
+        if(obj.lods.empty())return 0;
+        size_t prior=0;
+        LodSelection* saved=nullptr;
+        const auto* rig=animationSourceModel(obj);
+        if(obj.id!=0) {
+            auto& state=cameraScope
+                ? cameraLodState_[cameraScope][obj.id]
+                : lodState_[obj.id];
+            const bool revised=state.generation!=obj.generation ||
+                state.sourcePublication!=obj.animationModelGeneration ||
+                state.sourceModel!=rig ||
+                state.baseModel!=obj.draw.model ||
+                state.hysteresis!=obj.lodHysteresis ||
+                !matchesLodRevisions(state.revisions,obj.lods);
+            if(revised) {
+                state.level=0;
+                captureLodRevisions(state.revisions,obj.lods);
+            }
+            state.generation=obj.generation;
+            state.sourcePublication=obj.animationModelGeneration;
+            state.sourceModel=rig;
+            state.baseModel=obj.draw.model;
+            state.hysteresis=obj.lodHysteresis;
+            saved=&state;
+            prior=state.level;
+        }
+        const size_t level=selectModelLodLevel(obj.lods,distance,prior,
+                                              saved?obj.lodHysteresis:0.f);
+        if(saved) {
+            saved->level=level;
+            saved->seen=frameStamp_;
+        }
+        return level;
+    }
+
     // Call only AFTER update(), before borrowed ModelDraw storage expires.
     // The renderer does not interpret source identity, movement or genre.
     // One draw packet from any host. This is the same renderer pipeline
@@ -329,39 +369,8 @@ public:
         if(draw.model && !obj.lods.empty()) {
             const render::float3 origin=draw.world.transformPoint({0,0,0});
             const float distance=render::length(renderer.cameraPos()-origin);
-            size_t prior=0;
-            LodSelection* saved=nullptr;
-            if(obj.id!=0) {
-                auto& state=cameraScope
-                    ? cameraLodState_[cameraScope][obj.id]
-                    : lodState_[obj.id];
-                const bool revised=state.generation!=obj.generation ||
-                    state.sourcePublication!=obj.animationModelGeneration ||
-                    state.sourceModel!=rig ||
-                    state.baseModel!=obj.draw.model ||
-                    state.hysteresis!=obj.lodHysteresis ||
-                    !matchesLodRevisions(state.revisions,obj.lods);
-                if(revised) {
-                    state.level=0;
-                    // Complete, collision-free comparison of every authored
-                    // level, including UNSELECTED LODs and retarget plans.
-                    // Updated only on configuration change, not per draw.
-                    captureLodRevisions(state.revisions,obj.lods);
-                }
-                state.generation=obj.generation;
-                state.sourcePublication=obj.animationModelGeneration;
-                state.sourceModel=rig;
-                state.baseModel=obj.draw.model;
-                state.hysteresis=obj.lodHysteresis;
-                saved=&state;
-                prior=state.level;
-            }
-            const size_t level=selectModelLodLevel(obj.lods,distance,prior,
-                                                   saved?obj.lodHysteresis:0.f);
-            if(saved) {
-                saved->level=level;
-                saved->seen=frameStamp_;
-            }
+            const size_t level=selectCameraLodLevel(
+                obj,distance,cameraScope);
             // Missing streamed distant LODs retain the nearest available
             // representation. The base graph still advances every frame.
             size_t visual=level;
