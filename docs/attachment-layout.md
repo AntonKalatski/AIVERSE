@@ -101,3 +101,25 @@ backend. Full CMake/CTest, Studio/ModelView visual parity, Metal/Vulkan/GLES,
 file roundtrip/negative test cases, sanitizers and crowd benchmarks remain
 scheduled for the user's coordinated final validation pass. See
 [Stage 158 handoff](agent-handoffs/animation-stage158-universal-attachment-layout-transform-2026-11-20.md).
+
+
+
+## Stage 160 — optional stable prefab child ID
+
+Every attachment entry can now include `"id": "left-hand-tool"`.
+A nonempty ID is a stable authored child key within its parent prefab
+(maximum 128 characters, unique among entries). Both
+`AttachmentLayoutCodec::read` and `write` reject duplicate IDs and wrong
+JSON types before changing an existing authored document. An omitted
+`id` preserves Stage 158 legacy positional layout behavior.
+
+Studio and ModelView preserve this field during Save/Load and offer a
+**Prefab child ID** input. `EcsAttachmentScene::resolveChild` /
+`SceneAttachmentHost::resolveChild` resolve the CURRENT Entity generation
+from an authored key after reimport; old Entity handles cannot be persisted.
+For a whole scene, `SceneAttachmentHost::saveScene(sceneId)` exports the
+ordered object keys and pointer-free layouts. Refer to
+[SceneAttachmentHost contract](scene-attachment-host.md) and
+[Stage 160 handoff](agent-handoffs/animation-stage160-scene-attachment-host-stable-identity-2026-11-20.md).
+These features are source-only; native compilation and runtime tests
+have NOT been run.
