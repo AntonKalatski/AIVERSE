@@ -108,6 +108,7 @@ void Viewport::image(gfx::Device& dev, float wPts, float hPts) {
 
 void Editor::init(gfx::Device& dev) {
     dev_ = &dev;
+    captureLifetime_ = std::make_shared<std::atomic<bool>>(true);
     ws_.engineDir = opt_.engineDir;
     editor::setEditorLanguage(ws_.engineDir + "/engine/assets/lang");   // editor messages (map checks)
     ws_.buildTool = opt_.buildTool;
@@ -188,6 +189,10 @@ void Editor::init(gfx::Device& dev) {
 
 void Editor::shutdown() {
     if (!dev_) return;
+    // Invalidate any captureNextFrame callbacks still owned by the RHI.
+    captureLifetime_->store(false,std::memory_order_release);
+    captureArmed_ = false;
+    shots_.clear();
     clientHost_.stop();
     // A hosted GameClient may have submitted resources in an earlier GUI
     // frame. Its GPU handles must survive until a true graphics completion
