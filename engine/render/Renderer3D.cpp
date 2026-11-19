@@ -1249,8 +1249,13 @@ void Renderer3D::resolvePrisma() {
     post_ = nullptr;
     dev_->endPass();
     renderObjectMotionVectors(*post);
-    PostFrame f{viewProj_, camPos_, lighting, sceneW_ > 0 ? sceneW_ : dev_->framebufferWidth(), sceneH_ > 0 ? sceneH_ : dev_->framebufferHeight(),
-                quality_ != ShadowQuality::Off ? shadowMap_ : gfx::TextureHandle{}, lightViewProj_};
+    PostFrame f{viewProj_, camPos_, lighting,
+                sceneW_ > 0 ? sceneW_ : dev_->framebufferWidth(),
+                sceneH_ > 0 ? sceneH_ : dev_->framebufferHeight(),
+                quality_ != ShadowQuality::Off ? shadowMap_ : gfx::TextureHandle{},
+                lightViewProj_,
+                cam_.ortho ? -200.0f : cam_.zNear,
+                cam_.ortho ? 1000.0f : cam_.zFar, cam_.ortho};
     post->resolve(*dev_, postOut_, f);
     motionReactiveDraws_.clear();
     hdrFrame_ = false;
