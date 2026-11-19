@@ -24,6 +24,8 @@ bool sourceCompatible(const Model& model, uint32_t mesh, uint32_t primitive,
         return false;
     const auto& definition = model.meshes[mesh];
     if (definition.deformable || !definition.lods.empty() ||
+        !definition.materialBatches.empty() ||
+        definition.shadowBatch.indexCount != 0 ||
         primitive >= definition.primitives.size())
         return false;
     const auto& sourcePrimitive = definition.primitives[primitive];
@@ -31,6 +33,7 @@ bool sourceCompatible(const Model& model, uint32_t mesh, uint32_t primitive,
         sourcePrimitive.morphTargets ||
         !sourcePrimitive.jointPalette.empty() ||
         !sourcePrimitive.variantMaterial.empty() ||
+        sourcePrimitive.shadowBatched ||
         sourcePrimitive.indexCount == 0)
         return false;
     for (const auto& node : model.nodes)
