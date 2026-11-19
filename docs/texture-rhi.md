@@ -1472,3 +1472,40 @@ must still match the source addressing.
 This is a *synchronous staging API*, not a GPU streaming/background
 filesystem mount. The source remains uncompiled and untested on native
 devices in this conversation.
+
+
+## Wrap-aware GPU virtual texture feedback (Stage 10Q)
+
+The **virtual page feedback** path now shares the same per-axis
+ClampToEdge/Repeat/MirrorRepeat addressing used by physical VT sampling.
+`gfx::virtualTextureFeedbackPageAtUV(u,v,mip,layer,tilesX,tilesY,
+addressU,addressV)` is the CPU selection equivalent; its historical
+six-argument overload retains normalized-only rejection for backward
+compatibility. Both GLSL and Metal `aiverseMaterialFeedback` helpers
+also retain their original five-argument functions while adding
+per-axis address-mode arguments.
+
+`VirtualTextureMaterialMapping::addressU/addressV` default to clamp.
+TerraWeave's single- and multi-domain archive mapping inherits these
+from the active typed `VirtualTextureArchiveVersion`. The rigid model
+feedback U0 now has an appended 16-byte `addressModes` vector
+(total `sizeof(VirtualTextureFeedbackUniforms)==192`). Deformed model
+feedback U6 appends the same vector (total 112 bytes). Its GLSL/MSL
+shader implementations use those modes when calculating page feedback
+IDs. Unsupported border modes fail closed instead of indexing a
+different physical page.
+
+Automatic mip derivation intentionally uses the **unwrapped** UV
+derivatives to avoid discontinuities in `fract` at tile borders;
+addressing is applied only to page-ID selection afterward. This is
+crucial for UVs greater than one, negative UVs, and mirrored repeats.
+Shader ABI changes affect only the dedicated feedback pipeline, not
+authoritative ECS or the regular material uniforms. The existing
+legacy helper overloads remain compatible, but native shader
+recompilation for the new U0/U6 layouts is required.
+
+**Known scope limit:** direct CPU visible-region prefetch still assumes
+normalized 0–1 UV rectangles; arbitrary wrapped UV rectangles require
+an upstream split/wrap visibility adapter. GPU feedback captures use
+the new policy. Native builds, GLSL/MSL compilation and readback/GPU
+fidelity remain **NOT RUN**.
