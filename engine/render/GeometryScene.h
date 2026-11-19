@@ -6,7 +6,7 @@
 #include <string>
 
 namespace aiverse::render {
-namespace strata { struct ModelAsset; class SceneStaging; }
+namespace strata { struct ModelAsset; class SceneStaging; struct ViewConfig; struct ViewPlan; }
 class Renderer3D;
 // Static presentation geometry, never collision or simulation objects. HLOD proxies merge
 // compatible materials and use bounded-error cluster simplification. Sources stay available.
@@ -31,6 +31,12 @@ public:
     bool strataStagingEnabled() const { return strataStagingEnabled_; }
     bool strataStagingSupported() const;
     const strata::ModelAsset* strataAsset(const std::string& sourceKey) const;
+    // Explicit, read-only CPU reference plan for one source primitive.
+    // Caller supplies the correct pass-specific node-to-clip transform.
+    // Neither this method nor its result submits GPU draw calls.
+    bool planStrataView(const std::string& sourceKey, uint32_t mesh,
+                        uint32_t primitive, const strata::ViewConfig& config,
+                        strata::ViewPlan& out, std::string* error = nullptr) const;
     const Stats& stats() const { return stats_; }
     const std::vector<std::string>& warnings() const { return warnings_; }
     static void validate(const Json& json);
