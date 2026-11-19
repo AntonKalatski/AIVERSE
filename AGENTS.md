@@ -1260,3 +1260,15 @@ Never merge this branch into `main` without reconciling the diverged histories
 and compiling/validating all required backends.
 
 Stage 29 safety checkpoint: `docs/agent-handoffs/gi-stage29-bind-safety-and-rhi-audit-2026-11-19.md` documents why `GiDynamicRuntime::bind()` must *actively unbind* a previous frame's borrowed overlay when zero-upload invalidation is pending or the new texture is rejected. Vulkan/GLES RHI texture code was inspected only: **native GPU verification remains NOT RUN**.
+
+
+## Vulkan GI compute path — source stage 30 (2026-11-19)
+
+See `docs/agent-handoffs/gi-stage30-vulkan-compute-rhi-2026-11-19.md` on
+`feature/gi-lighting-portable-backends-20261119` before touching Vulkan RHI,
+Metal GI, probe tickets, storage-image barriers or GPU completion. Vulkan now
+has an opt-in native compute implementation (SPIR-V + std430 BVH buffers +
+rgba16f storage atlas + frame-fence ACK), but it has **NOT BEEN COMPILED OR
+GPU-TESTED**. Do not conflate source support with hardware validation.
+GLES3/WebGL2 continue using the no-compute CPU GI path. Preserve any
+other agents' texture-RHI and renderer changes when rebasing.
