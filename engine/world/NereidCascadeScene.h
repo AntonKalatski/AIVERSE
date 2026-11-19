@@ -21,6 +21,8 @@ struct NereidCascadeSource {
     uint64_t id=0; // stable positive ID; 0 gets a legacy index ID
     uint64_t inletWaterId=0,outletWaterId=0; // optional stable NEREID IDs
     float joinLength=2.f; // X/Z overlap extension in metres (0.1..50)
+    float joinWidthBlend=1.f; // 0..1 cascade width -> linked bank width
+    bool requireFootprint=true; // reject joins outside source water geometry
     lib::nereid::WaterCascadeComponent cascade;
     lib::nereid::WaterSurfaceStyle style{};
     lib::nereid::WaterCascadeMeshOptions options{};
@@ -33,6 +35,8 @@ inline bool sameNereidCascadeSource(const NereidCascadeSource& a,
     if(a.inletWaterId!=b.inletWaterId ||
        a.outletWaterId!=b.outletWaterId ||
        a.joinLength!=b.joinLength ||
+       a.joinWidthBlend!=b.joinWidthBlend ||
+       a.requireFootprint!=b.requireFootprint ||
        x.enabled!=y.enabled || x.widthAxis!=y.widthAxis ||
        x.foam!=y.foam || x.speed!=y.speed ||
        x.points.size()!=y.points.size() ||
@@ -149,6 +153,8 @@ public:
                source.options.maxVertices>65536 ||
                !std::isfinite(source.joinLength) ||
                source.joinLength<0.1f || source.joinLength>50.f ||
+               !std::isfinite(source.joinWidthBlend) ||
+               source.joinWidthBlend<0.f || source.joinWidthBlend>1.f ||
                !std::isfinite(source.options.uvScale) ||
                source.options.uvScale<=0)
                 throw std::invalid_argument("nereid.cascade: invalid source");
