@@ -5788,3 +5788,37 @@ Next: identify and integrate the engine's actual shared
 renderer visibility queue with this adapter, then implement
 per-material virtual texture parameter binding and remaining
 backend RenderTexture/storage parity.
+
+
+## Stage 9K — Renderer3D opaque mesh queue bridge (2026-11-19)
+
+Source commit: 0f1ed98c646f1068f4de83a21c1d34bcef7afc4d.
+Changed file: engine/render/Renderer3D.h.
+Added an additive Renderer3D::collectMeshFeedbackDraws(out,pipeline,
+FeedbackMeshBinder) method. It walks the existing items_ immediate
+mesh queue and emits VirtualTextureFeedbackDraw commands for
+opaque valid indexed meshes, copying each model transform into
+a per-draw prepare callback. The binder is responsible for
+setting virtual texture UV mapping and material uniforms; it
+receives the mesh and model matrix. No GPU work occurs during
+collection. The caller can submit the resulting vector via
+VirtualTextureFeedbackPass::renderDrawsAndCapture() while no
+other pass is active.
+
+Important limitations: this bridge currently excludes ModelItem
+model/animation/LOD batches and customOpaque_ terrain renderers.
+The built-in MeshVertex has no UV attribute; binders must use a
+compatible feedback vertex shader and a real UV source (e.g.
+procedural/world-space mapping) rather than assuming UV0 exists.
+The bridge does not auto-run in Renderer3D::render(), since
+that function owns scene/shadow passes and leaves the main pass
+active for later drawing. Scene culling is not independently
+recomputed by this bridge; items_ may contain offscreen meshes,
+so the GPU rasterization clips them but CPU collection includes
+them. Feedback is not yet complete for all scene content.
+
+Verification: GitHub source commit succeeded. No native compile,
+CTest, shader validation or GPU tests run, per user's instruction.
+Next: add ModelItem and custom terrain feedback registration
+with correct material UVs, integrate feedback scheduling before
+the main pass, then finish backend parity and validate.
