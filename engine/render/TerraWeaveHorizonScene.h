@@ -61,7 +61,8 @@ struct HorizonRuntimeStats {
     size_t localFallbackNearNormalSamples=0;
     bool nearNormalProvenanceAvailable=false;
     uint64_t sourceRevision=0, activeRevision=0;
-    bool activeRegionPresent=false, staleProxy=false;
+    bool activeRegionPresent=false, activeRegionResolved=false;
+    bool activeRegionEmpty=false, staleProxy=false;
     bool requestedRegionPresent=false, requestedRegionPending=false;
     int32_t requestedCellX=0, requestedCellZ=0;
     int32_t activeCellX=0, activeCellZ=0;
@@ -596,19 +597,22 @@ public:
         out.sourceRevision=sourceRevision_;
         out.activeRevision=activeRevision_;
         out.activeRegionPresent=bool(model_) && activeCell_.has_value();
-        out.staleProxy=out.activeRegionPresent &&
+        // An accepted empty bake resolves the cell without a GPU model.
+        out.activeRegionResolved=activeCell_.has_value();
+        out.activeRegionEmpty=out.activeRegionResolved && !bool(model_);
+        out.staleProxy=out.activeRegionResolved &&
                        out.activeRevision!=out.sourceRevision;
         out.requestedRegionPresent=requestedCell_.has_value();
         if(requestedCell_){
             out.requestedCellX=requestedCell_->x;
             out.requestedCellZ=requestedCell_->z;
         }
-        if(out.activeRegionPresent){
+        if(out.activeRegionResolved){
             out.activeCellX=activeCell_->x;
             out.activeCellZ=activeCell_->z;
         }
         out.requestedRegionPending=out.requestedRegionPresent &&
-            (!out.activeRegionPresent ||
+            (!out.activeRegionResolved ||
              !(*requestedCell_==*activeCell_) || out.staleProxy);
         if(stream_) {
             const auto& s=stream_->status();
