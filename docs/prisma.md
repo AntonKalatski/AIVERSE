@@ -3180,6 +3180,122 @@ Vulkan/WebGL execution, pixel/temporal parity, perf, CI.
 См. `docs/handoffs/prisma-stage-57.md` для точных коммитов
 и следующего функционального этапа.
 
+## Stage 58 — cinematic Exposure Freeze и круговая область HDR metering
+
+PRISMA по-прежнему использует **один** глобальный алгоритм
+Auto Exposure: HDR scene luminance → `kExposureLog` →
+`kExposureReduce` → `kExposureAdapt` → 1×1 per-view
+exposure history → final HDR composite до tonemapping/UI.
+Stage 58 добавляет управление его уже существующими
+GPU-проходами, без новой ECS-системы, второго шейдерного
+Exposure owner или обязательных параметров JSON.
+
+### Новые необязательные поля `postfx.effects[].type=autoExposure`
+
+| Поле | Default | Семантика |
+|---|---|---|
+| `freezeExposure` | false | Удержать последнее валидное значение 1×1 Auto Exposure этой камеры |
+| `meterRegionEnabled` | false | Включить локальное взвешивание яркости круговой области кадра |
+| `meterCenterX`, `meterCenterY` | 0.5, 0.5 | Нормализованный центр области, X слева направо, Y снизу вверх |
+| `meterRadius` | 0.25 | Радиус круга относительно **высоты** кадра, с поправкой на aspect |
+| `meterFeather` | 0.10 | Плавная ширина края круга, в долях высоты кадра |
+| `meterOutsideWeight` | 0.05 | Вес пикселей вне круга; гарантированно больше 0 (минимум 0.02) |
+
+Все поля добавлены в конец прежнего каталога Auto Exposure:
+старые offsets и значения не сдвигаются. Generic
+`PrismaData` parser/serialization, editor, MCP и
+`PrismaVolumeStack` автоматически получают новые поля.
+Для игр без новых ключей прежняя обработка остаётся
+функционально неизменной; оба режима выключены по умолчанию.
+Существующий эффект всё ещё требует HDR, соответствующий tier
+и `AIVERSE_PRISMA_AUTO_EXPOSURE=1`.
+
+**Freeze:** при валидной истории `ExposureView.history[current]`
+предыдущая 1×1 GPU-текстура просто подключается к final
+composite. На этом кадре не создаются дополнительные mip
+targets, не запускаются `kExposureLog`, `kExposureReduce`
+или `kExposureAdapt`; GPU history не читается и не
+записывается одновременно. Внутреннее время адаптации
+обновляется, чтобы разморозка не давала большой delta-time.
+На первой активной камере, после завершения camera view,
+сброса настроек или Camera Cut история невалидна; freeze
+делает **один новый метеринг / адаптацию** текущей сцены,
+после чего снова удерживает результат. Явные camera cuts
+сохраняют контракт Stage 57 — заново захватывать экспозицию,
+а не навсегда держать прежний кадр. Само выключение эффекта
+инвалидирует его историю, не уничтожая ресурсы немедленно.
+
+**Region:** `kExposureLog` получил дополнительный
+`vec4 region` только в собственной UBO (`ExposureMeterU`).
+`SimpleU` и интерфейсы других проходов не изменились.
+`region.z < 0` отключает область без влияния на старую
+формулу. При включении каждый из четырёх исходных sample UV
+переводится обратно из backend texture orientation в
+bottom-up экранные координаты `TUV(q)`; X масштабируется
+отношением width/height. Веса вычисляются по
+`smoothstep(radius,radius+feather,physicalDistance)`,
+после чего перемножаются со старым `centerWeight` и
+Stage 57 `highlightRejection`. Outside weight никогда не
+равен нулю. Редукция пирамиды сохраняет
+`(weightedLogL, totalWeight)` и не зависит от маски;
+все прочие шейдеры/UBO остаются прежними.
+Это **дешёвое area-weighted metering**, не GPU histogram,
+segmentation, текстурная пользовательская маска или
+локальная экспозиция по разным частям экрана.
+
+### Отдельные настройки для native-камер
+
+`Prisma.h` предоставляет GPU-free presentation API,
+ключованный **stable view ID**, а не координатами камеры
+или размером viewport:
+
+```cpp
+prisma.setViewExposureFreeze(viewId, true);
+prisma.setViewExposureMeterRegion(viewId, {
+    true, 0.5f, 0.5f, 0.25f, 0.10f, 0.05f
+});
+// Чтобы вернуться к наследованию postfx/PrismaVolumeStack:
+prisma.clearViewExposureFreeze(viewId);
+prisma.clearViewExposureMeterRegion(viewId);
+```
+
+Также `setViewExposureFreeze(id,false)` явно
+переопределяет `freezeExposure=true` из профиля.
+`setViewExposureMeterRegion` проверяет finite и clamping
+координат, radius, feather и outsideWeight при поступлении.
+Таким образом две камеры в одной географической точке
+могут иметь независимые freeze и region параметры.
+После окончания всех camera passes host передаёт полный
+набор живых идентификаторов в
+`Prisma::retireUnregisteredViews`; новые overrides
+включены в unionTracked и удаляются `retireView`/
+`shutdown` вместе с пер-камерным state. Это
+presentation-only, не authoritative ECS и не изменение
+глобального базового профиля.
+
+`ViewEffectReport.autoExposureFrozen` и
+`autoExposureRegionMetered` обновляются только если
+**конечный encoded composite** реально применяет
+Auto Exposure. Frozen означает «в этом кадре повторно
+взята валидная история, meter не запущен»; RegionMetered
+означает «в этом кадре выполнен замер с областью».
+При отсутствии exposure в финальном fallback оба false.
+Окно редактора показывает их по каждому viewId и даёт
+подсказки по новым generic-полям; GUI-чтение не вызывает
+GPU-созданий.
+
+**Проверка:** после source commits и GitHub readback
+**36/36 структурных source checks** по каталогу, shader,
+CPU-плану, native API, lifecycle, UI и final fallback.
+**NOT RUN:** CMake/clang, CTest, GLSL/MSL/SPIR-V shader
+compiler, Metal/OpenGL/GLES/Vulkan/WebGL GPU, редактор
+на устройстве, luminance readback, alpha/pixel parity,
+latency/FPS, GPU fences и CI. Структурные проверки не
+доказывают сборку и correctness RHI.
+Точные SHA и следующий этап —
+`docs/handoffs/prisma-stage-58.md`.
+
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
