@@ -97,11 +97,12 @@ if stage configure cmake "${opts[@]}"; then
             stage metal_evidence python3 "$ROOT/tools/spectrafx/verify_metal_ctest.py" "${metal_args[@]}" || true
         else
             skip ctest_metal "no Apple Metal on this OS"
+            skip metal_evidence "no Apple Metal on this OS"
         fi
     else
         skip ctest_spectrafx "targeted build failed"
         skip ctest_metal "targeted build failed"
-    skip metal_evidence "targeted build failed"
+        skip metal_evidence "targeted build failed"
     fi
 else
     skip spectrafx_core_build "configure failed"
