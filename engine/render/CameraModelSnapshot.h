@@ -51,6 +51,25 @@ public:
     void endCapture(Renderer3D& renderer) {
         renderer.setModelPacketTap({});
     }
+    class CaptureGuard {
+        CameraModelSnapshot* snapshot_=nullptr;
+        Renderer3D* renderer_=nullptr;
+    public:
+        CaptureGuard(CameraModelSnapshot& snapshot,Renderer3D& renderer)
+            :snapshot_(&snapshot),renderer_(&renderer) {
+            snapshot_->beginCapture(renderer);
+        }
+        CaptureGuard(const CaptureGuard&)=delete;
+        CaptureGuard& operator=(const CaptureGuard&)=delete;
+        ~CaptureGuard(){end();}
+        void end() {
+            if(snapshot_&&renderer_)snapshot_->endCapture(*renderer_);
+            snapshot_=nullptr;renderer_=nullptr;
+        }
+    };
+    CaptureGuard capture(Renderer3D& renderer) {
+        return CaptureGuard(*this,renderer);
+    }
     // The caller must first endCapture(), then beginScene() with each
     // secondary camera. Model/texture resources are borrowed from the host;
     // do not invalidate them until all camera submissions are complete.
