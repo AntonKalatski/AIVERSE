@@ -322,3 +322,41 @@ The host ID must be stable, unique across all concurrently rendered Worlds and *
 **Actual validation:** GitHub connector read/updated source + docs and returned successful commits. **Native CMake compilation NOT RUN, CTest NOT RUN, Metal screenshot parity NOT RUN, A/B benchmark NOT RUN**, per user priority (and no local repo). Existing policy tests set up synthetic models with nodes but no `bindWorld`, so their expectations will need updating to finalize or populate `bindWorld` during the later dedicated test phase. The old test expecting `clips` to decline also must be updated to assert that a static no-pose draw with clip metadata is eligible, while active animation poses remain ineligible. Test debt from Stage 10 (node material/variant eligibility) likewise remains. Do not call this validated.
 
 **Next feature before tests:** improve packet lifetime correctness and predictable memory pressure for large scenes, or extend per-pass packet reuse in a bounded way without caching GPU submissions. Keep strict dirty generation and no unsafe pointer reuse. Once feature work is complete, update `tests/render/model_batching_policy.cpp` and the real Metal `static_packets` fixture, let CI run to completion, and benchmark a real urban scene.
+
+
+---
+
+## Stage 12 — targeted cache invalidation for entity and asset lifetime (2026-11-19)
+
+**User direction:** prioritize remaining features, defer test execution and new test-writing to the later test phase. **Branch:** `perf/incremental-static-model-cache` (PR #34 Draft), based on main `9ee6ff6fbf390bd45363bc92c838f492dfe92eee` at the most recent ancestry check. **Code HEAD before this handoff:** `fa435954a9f84ca45d002de6a8eb26e7d5d6a7e0`.
+
+### Feature commits / paths
+- `b1c025c8b8f23159a0b60cd5e3b1e10f7fd2499d` — `engine/render/Renderer3D.h` publishes two explicit targeted invalidation APIs:
+  `void invalidateStaticModelCache(uint64_t persistentId)` and
+  `void invalidateModelCachesFor(const Model* model)`.
+- `cb88bd3c66f60ae413d1d0c98763de3ad550f613` — `engine/render/Renderer3D.cpp` implements exact-ID removal for a single stable draw identity, and model identity removal for all transform/packet cache entries using the given `Model*`. Both update the retained packet byte counter and eviction diagnostic; no GPU resources are owned or released by either cache. Code never dereferences the potentially soon-to-be-unloaded model.
+- `c60022be34f65894b348bee1be1bd5d1048d90e8` — `engine/render/EcsStaticModelRender.h` adds `invalidateEcsStaticModel(renderer, entity, stableKey)` as a public native ECS presentation helper, for an entity despawn or asset replacement using the same stable namespaced ID callback as `drawEcsStaticModels`.
+- `a3726479aab974fba76e61ca6230a0abf3ad3a02` and `fa435954a9f84ca45d002de6a8eb26e7d5d6a7e0` — usage contract, memory and lifetime notes in `docs/geometry-performance.md` and `AGENTS.md`.
+
+### API / lifecycle contract
+Call either targeted invalidation on the **renderer submission thread, between drawModel calls**, before the corresponding model's memory or GPU buffers are released or an ID is reused. Already enqueued `ModelItem` data for the current frame is not retroactively removed; ensure ownership extends through any frame containing queued draws. Full `invalidateStaticModelCaches()` remains appropriate for whole-scene reload. Per-ID invalidation does not invalidate unrelated models sharing one GPU geometry pool page; per-model invalidation does not dereference model contents. The adapter never mutates authoritative simulation, and the ECS component remains data-only with integer asset/revision identifiers.
+
+Example native integration:
+```cpp
+// Before removing the visual component/entity, while its stable key is known:
+render::invalidateEcsStaticModel(renderer, entity, stableKey);
+world.destroyLater(entity);
+
+// Before a streaming cache releases a Model shared by multiple entities:
+renderer.invalidateModelCachesFor(model);
+render::releaseModel(device, *model);
+// Keep source Model alive through any draws already queued in the active frame.
+```
+
+**Compatibility:** No shader/gfx changes, ECS authoritative or serialized state modifications, genre checks or newly enabled defaults. Only new render APIs/helper and docs. No change to Metal ICB.
+
+### Actual validation (do not overstate)
+- GitHub connector fetched current renderer headers/implementation and ECS adapter, then wrote all feature/documentation commits successfully. **CMake/compile NOT RUN; CTest NOT RUN; Metal raster NOT RUN; A/B FPS NOT MEASURED.** Test-writing and execution deliberately deferred by user; earlier lack of local AIVERSE checkout still applies. New APIs have not been exercised in a native runtime.
+- Known risk: existing tests from prior stages still assert the old conservative cache policy, and a full real GPU parity fixture is pending. Validate targeted removal, bytes accounting, model reuse, current-scene draw lifetimes, clip-bearing rigid models, node overrides and variants when tests resume.
+
+**Next feature-first step:** further reduce per-view CPU preparation, ideally with safe generation-aware per-model eligibility memoization (without raw pointer-only caching) and camera-independent static draw subpacket representation. Keep material GPU equality exact, support concurrent render viewports without reentrancy assumptions, and do not enable default flags before actual Metal validation. In the later test phase, repair/update `tests/render/model_batching_policy.cpp` and run comprehensive focused CI and real city A/B/A.
