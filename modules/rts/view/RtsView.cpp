@@ -119,10 +119,11 @@ void RtsView::shutdown(gfx::Device& dev) {
     preparing_ = {}; prepareType_ = -1; preparingResource_.clear();
 #endif
     geometryScene_.shutdown(dev);
-    for (auto& [k, m] : resources_.models()) if (m) releaseModel(dev, *m);
-    resources_.textures()->shutdown(dev);
+    // All model GPU buffers and textures are now released by the same
+    // per-host resource owner, after any asynchronous preparation joined.
+    resources_.shutdown(dev);
     if(genericView_) { genericView_->clear(); genericView_.reset(); }
-    resources_.models().clear(); looks_.clear(); actorRevealTypes_.clear(); loadedTypes_.clear(); anims_.clear(); streamingChoices_.clear(); animationCache_.clear(); tracers_.clear();
+    looks_.clear(); actorRevealTypes_.clear(); loadedTypes_.clear(); anims_.clear(); streamingChoices_.clear(); animationCache_.clear(); tracers_.clear();
     drawTypeStamps_.clear(); drawTypes_.clear(); drawTypeEpoch_ = 0;
     for (Mesh* m : {&projectile_}) { dev.destroyBuffer(m->vb); dev.destroyBuffer(m->ib); *m = Mesh{}; }
     terrain_.shutdown(dev);
