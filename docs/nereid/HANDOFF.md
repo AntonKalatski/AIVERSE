@@ -2912,3 +2912,107 @@ NEREID flow without writing back to ECS, optionally derive cascade
 waterfall spray events for SpectraFX, improve river->cascade
 connections, and finally run the deferred native/GL/Metal suite.
 Append a new handoff section after every feature.
+
+## Stage 28 — visual ripple advection by ECS water current + continuous waterfall spray
+
+**Branch:** `feature/nereid-water-core`, NEREID PR #23 Draft.
+**Stage baseline:** Stage 27 handoff
+`92c9e80c6933d1fb63c51a8c8450c51834a513ed`.
+**User priority:** implement all missing features first; do not
+write/run tests or change main. No branch merges in this stage.
+
+### Commits / files
+
+- `4c825b93636dcd33819ef3c00af2bcf1ed3997fa` —
+  `engine/world/NereidRipples.h`: overload
+  `advance(deltaSeconds, resolveCurrent)` with a fixed source
+  ID-to-current lookup. Integrates X/Z visual ripple centres using
+  copied water flow while retaining the original no-current overload
+  for standalone/native callers.
+- `02cb5da96387e9fcdb804149292c65a73eaafad7` —
+  `engine/world/NereidWaterScene.h`:
+  `currentForInteractionWater(packedEntityId)` looks up an enabled
+  water body's copied Fixed flow from its stable scene ID
+  (`packed+1`) without touching live ECS.
+- `5b251c6e674b6af80a2e1b910dcb2fc4437fe68e` —
+  `engine/world/WorldScene.h`: existing
+  `advanceNereidRipples(deltaSeconds)` automatically resolves
+  each visual pulse's current from the NEREID scene snapshot.
+- `cfb574ce7edffd429155543d08e72dc9f6640cfd` —
+  `engine/world/NereidCascadeScene.h`: read-only
+  `forEachSource` for continuous waterfall spray presentation.
+- `73c217bc947dfbaaed98214b9edf3df36ca60b24` —
+  `engine/world/WorldScene.h`: read-only
+  `forEachNereidCascade` bridge; native genres need no direct
+  access to internal GPU residency slots.
+- `345c0a206155f685f1e79d73b3b6b64690537b43` —
+  NEW `engine/world/NereidCascadeSprayBridge.h`:
+  opt-in continuous SpectraFX emitter per stable cascade ID, creates
+  /moves active emitters and stops disappeared ones; `reset()`
+  kills the adapter's own live handles on rollback/scene replacement.
+- `093aa715de890f0601e67ea0631b6c3b0dd13037` —
+  `skills/gameplay/aiverse-nereid-water/SKILL.md` appended native
+  integration/ownership guidance.
+
+### Architecture and native API
+
+The Stage-22 water contacts, force sampling and water body flows
+remain authoritative Fixed ECS data. The Stage-23/24 ripple field
+exists **only in presentation**. At each render frame its position
+is advanced by `clamp(body.flow.xz,-100,+100)*clamp(dt,0,0.25)`
+in metres, preserving world-double coordinates until the RHI
+relative-origin conversion. Unknown/removed water IDs default to
+zero current. The source data comes from
+`WorldScene::setNereidSurfaces` / static manifest, which still
+must be refreshed by the host after authoritative changes.
+No checksum, save state, physics forces, Box3D or PHYSIS data
+is changed by advection.
+
+`NereidCascadeSprayBridge` is constructed from an existing
+`spectra::Runtime&` (`fx::ParticleSystem`), and a game explicitly
+sets the name of a **previously loaded** particle graph. It uses
+`WorldScene::forEachNereidCascade` and waterfall foot position,
+width and downstream direction to call SpectraFX
+`play(graph,position,direction,scale)`,
+`move(handle,position,direction)`, `stop(handle)` and
+`kill(handle)`. Identity is stable across reordered sources
+and frame updates. A missing/disabled/removed cascade stops its
+emitter; `reset()` kills all handles owned by this bridge.
+ParticleSystem owns particles and GPU rendering; NEREID neither
+simulates particles nor manages effects owned by other games.
+
+```cpp
+#include "engine/world/NereidCascadeSprayBridge.h"
+world::NereidCascadeSprayBridge spray(particleSystem);
+spray.setGraph("fx/waterfall_spray", 1.f); // host-provided asset
+// Per presentation frame AFTER ECS snapshot publication:
+worldScene.advanceNereidRipples(deltaSeconds);
+spray.sync(worldScene);
+// Before reuse of the view after rollback or new level:
+spray.reset();
+```
+
+### Verification / limitations / next feature
+
+**Actually performed:** reviewed connected GitHub source of NEREID
+scene, event representation and real SpectraFX runtime API,
+committed new C++ integration, skill and this handoff.
+**NOT DONE:** test authoring, native C++ compilation, CTest, GLSL
+or Metal validation, real GPU preview, FPS/RTS parity, full test
+suite, SpectraFX graphs running on a device, all at user request.
+Do not mark this stage verified; keep PR Draft.
+
+**Limitations:** flow is a uniform vector per water body; no
+spatial gradient, turbulence or shallow bank drag. It advects only
+visual ripple centres, not authoritative geometry or physical forces.
+Cascade spray graph assets must be supplied/loaded by each native
+project; the bridge does not ship an art pack. It uses only the foot
+of the waterfall ribbon, not an emitter per step. Effects are
+continuous and not physically simulated spray momentum.
+Waterfall ribbon shading and winding are not verified on devices.
+
+**Next functional stage:** optional splash emitters along multiple
+cascade steps, flow-aware wakes with directional anisotropy,
+and a bounded per-water current field for rivers/rapids.
+No tests until user requests feature completion, then run native
+and GPU tests and record actual results.
