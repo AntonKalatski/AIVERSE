@@ -94,6 +94,10 @@ struct ComputeStats {
     uint32_t checkpointAdaptiveBackoffs=0, checkpointAdaptiveRecoveries=0;
     uint32_t selectivelyKilled=0;
     uint32_t killedSlotsReclaimed=0;
+    uint32_t gpuDeviceUnhealthy=0;
+    uint32_t gpuKillUploadFailures=0;
+    uint32_t gpuComputeBeginFailures=0;
+    uint32_t gpuPassOrderRejections=0;
     uint32_t gpuKillScatterDispatches=0;
     size_t gpuKillIndexBytes=0;
     uint32_t gpuKillFencesPending=0; // host estimate, not GPU observed
