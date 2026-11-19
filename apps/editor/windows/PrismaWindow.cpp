@@ -141,6 +141,9 @@ public:
                     if (report->manualExposureEncoded)
                         ImGui::TextDisabled("Manual HDR exposure: %+.2f EV (fixed, no AE history)",
                             double(report->manualExposureEV));
+                    if (report->shaderGraphFallback)
+                        ui::toneText(ui::Tone::Warn,
+                            "Shader Graph пропущен: сохранены доступные обычные эффекты PRISMA.");
                     if (report->shaderGraphTextures > 0 ||
                         report->autoExposureTextureSlot >= 0) {
                         ImGui::TextDisabled("Shader Graph textures: %d | HDR exposure slot: %d (-1=inactive)",
