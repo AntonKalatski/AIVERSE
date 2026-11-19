@@ -161,6 +161,13 @@ public:
     // never overlap worker animation updates. Hosts may use the same
     // generic scene for characters, buildings, props and cinematics.
     Stats update(std::span<const Object> objects,float dt) {
+        // Anonymous objects may be submitted with host-computed poses,
+        // but a View-owned Graph must have a durable, nonzero source ID.
+        // Validate the complete batch before advancing any ECS clocks.
+        for(const auto& obj:objects)
+            if(obj.graph && animationSourceModel(obj) && obj.id==0)
+                throw std::invalid_argument(
+                    "View animation requires a stable nonzero object ID");
         stats_={};
         retargetStats_={};
         if(++frameStamp_==0) { frameStamp_=1; lodState_.clear(); }
@@ -171,9 +178,15 @@ public:
             if(obj.draw.model && obj.visible)++stats_.drawable;
             if(obj.id!=0 && !obj.lods.empty()) {
                 auto& selection=lodState_[obj.id];
-                if(selection.generation!=obj.generation)
+                if(selection.generation!=obj.generation ||
+                   selection.sourcePublication!=obj.animationModelGeneration) {
                     selection.level=0;
+                    selection.lodCount=0;
+                    selection.visualModel=nullptr;
+                    selection.visualPublication=0;
+                }
                 selection.generation=obj.generation;
+                selection.sourcePublication=obj.animationModelGeneration;
                 selection.seen=frameStamp_;
             }
             const auto* animationModel=animationSourceModel(obj);
@@ -304,16 +317,38 @@ public:
             LodSelection* saved=nullptr;
             if(obj.id!=0) {
                 auto& state=lodState_[obj.id];
-                if(state.generation!=obj.generation) {
-                    state.level=0;
-                    state.generation=obj.generation;
+                bool revised=state.generation!=obj.generation ||
+                    state.sourcePublication!=obj.animationModelGeneration ||
+                    state.lodCount!=obj.lods.size();
+                if(!revised && state.level>0 && state.level<=obj.lods.size()) {
+                    const auto& previousLod=obj.lods[state.level-1];
+                    revised=previousLod.model!=state.visualModel ||
+                        previousLod.visualModelGeneration!=state.visualPublication ||
+                        previousLod.minDistance!=state.visualDistance;
                 }
+                if(revised)state.level=0;
+                state.generation=obj.generation;
+                state.sourcePublication=obj.animationModelGeneration;
                 saved=&state;
                 prior=state.level;
             }
             const size_t level=selectModelLodLevel(obj.lods,distance,prior,
                                                    saved?obj.lodHysteresis:0.f);
-            if(saved){saved->level=level;saved->seen=frameStamp_;}
+            if(saved) {
+                saved->level=level;
+                saved->seen=frameStamp_;
+                saved->lodCount=obj.lods.size();
+                if(level>0) {
+                    const auto& chosen=obj.lods[level-1];
+                    saved->visualModel=chosen.model;
+                    saved->visualPublication=chosen.visualModelGeneration;
+                    saved->visualDistance=chosen.minDistance;
+                } else {
+                    saved->visualModel=nullptr;
+                    saved->visualPublication=0;
+                    saved->visualDistance=0.f;
+                }
+            }
             // Missing streamed distant LODs retain the nearest available
             // representation. The base graph still advances every frame.
             size_t visual=level;
@@ -600,8 +635,14 @@ private:
     };
     struct LodSelection {
         uint64_t generation=0;
+        uint64_t sourcePublication=0;
         size_t level=0;
         uint64_t seen=0;
+        size_t lodCount=0;
+        // Comparison-only metadata, never dereference a retired Model.
+        const render::Model* visualModel=nullptr;
+        uint64_t visualPublication=0;
+        float visualDistance=0.f;
     };
     static uint64_t attachmentDrawId(uint64_t id,uint64_t generation,
                                      size_t attachmentIndex) noexcept {
