@@ -15,7 +15,7 @@ void main() {
 }
 )";
 inline const char* kFS = R"(
-layout(std140) uniform U0 { mat4 mvp; vec4 params; };
+layout(std140) uniform U0 { mat4 mvp; vec4 params; vec4 lod; };
 uniform sampler2D tex0;
 out vec4 o_color;
 void main() {
