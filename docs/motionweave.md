@@ -299,3 +299,34 @@ The raw-model inspection path is not a parity replacement.
 native/editor preview, sanitizers and simulation/animation visual
 regressions. Keep stages independent and do not claim the old RtsView
 has been removed.
+
+### Stage 102: model source priorities and estimated GPU-retirement memory
+
+The host owns one `render::ModelAssetProvider`, or a separate provider
+per presentation scope, not one per animated actor. For native model
+imports, `requestAsync(source, ModelLoadPriority)` selects
+`Background`, `Visible` or `Interactive` for queued CPU jobs; an
+active worker is never preempted. Call
+`publishReady(device,maxCount,budgetMs)` at the render-thread frame
+boundary, with a hard model-count cap and an advisory elapsed-time cap.
+The first GPU upload may exceed `budgetMs`; nothing is published from
+inside a worker. Preserve source revisions, and detach any old
+`AnimationSourceFrame`, graph, pose and borrowed `Model*` before
+invalidation. No second MotionWeave evaluation is introduced.
+
+`ModelResourceCache` can now estimate the *known, model-owned*
+retirement footprint and apply an optional byte-derived admission
+limit. `ModelResidentEstimate` deliberately does not charge borrowed
+texture leases or shared geometry pages and is NOT an exact VRAM
+reading. Never release an object because a limit is reached; only
+its own completed GPU fence authorizes destruction.
+
+The standalone `aiverse_modelview --provider --no-merge` is a second
+real generic `aiverse::View` consumer for static raw assets, alongside
+the editor's opt-in independent raw preview. Precomputed poses on the
+legacy animated modelview path remain authored by the existing host;
+View only submits them once. The game-specific `RtsView` adapter is
+still in use elsewhere and has not been retired.
+
+**NOT RUN:** all CMake, CTest, native modelview/editor, GPU backend,
+sanitizer, snapshot and visual parity checks remain deferred.
