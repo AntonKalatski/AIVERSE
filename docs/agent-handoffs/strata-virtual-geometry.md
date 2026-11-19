@@ -2642,3 +2642,32 @@ Further functionality: physical backend allocation telemetry including
 in-flight bytes, cross-world page cache deduplication by archive
 fingerprint, and GPU-driven Vulkan Stage 16. Record exact source
 SHA and real results; do not label any work as passed until then.
+
+
+### Stage 15.4 final audit notes
+
+After the initial handoff:
+- Device-global upload frame limit was connected in `GeometryScene`
+  commit `63b50d0663a9f689da80b85687c6b45f4d406dd8`.
+- `clearIdleDeviceIndexBudget()` and its scene-shutdown hook were
+  added in `a9516efc8b051e899aba5736fd26748c173e0e3b`,
+  `b0fc3705e0369f8f47d8614a845f1274e413833d` and
+  `c5ec323f4fe77bfab2966b5dfa95811f7710402e`.
+- Exception handling for a failed worker read/allocation was recorded
+  in `StrataDiskPages.cpp` commit
+  `0c7c2b7c00084acd17f67f094e195c10436be7b5`.
+- Public `docs/strata.md` records the new configuration at
+  `bb602302c5c8042db416c56e69d5ddd915b2f64e`.
+  Agent routing was updated in `AGENTS.md` commit
+  `439dbbd5ae4f0b9eafe2427559e8d860536cd2b3`.
+
+**Remaining correctness/performance caveat:** a global ready-cache cap
+counts individually finished pages, not atomically reserved sibling
+groups. If global cache pressure admits many partial sibling sets
+from many worlds, LOD promotion can remain deferred until another
+view changes or ready pages are consumed. Parents remain drawable,
+but stage 16/streaming tuning needs grouped cache admission or
+priority-aware eviction to guarantee forward progress under sustained
+pressure. The aggregate GPU-index cap counts only reserved source
+arena bytes and NOT real RHI in-flight memory copies. No native
+acceptance was conducted here. Keep the PR Draft.
