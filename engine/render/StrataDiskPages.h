@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace aiverse::render::strata {
@@ -41,6 +42,11 @@ public:
                   std::vector<uint32_t>& result, std::string* error=nullptr);
     // Nonblocking frame-thread APIs. request() schedules IO, ready() copies
     // verified bytes if available, consume() frees cache after GPU publication.
+    // Drop obsolete queued/ready pages when camera demands change. A
+    // currently executing IO read is allowed to finish, then discarded if
+    // no longer wanted. Prevents old views from filling the staging cache.
+    void retainRequested(
+        const std::vector<std::pair<uint32_t,uint32_t>>& wanted);
     bool request(uint32_t primitive, uint32_t node);
     bool ready(uint32_t primitive, uint32_t node,
                std::vector<uint32_t>& out) const;
