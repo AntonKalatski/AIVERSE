@@ -8436,3 +8436,61 @@ sampler 16, and fallback on shader/pipeline failure.
 Record any source-level guard fixes separately; then
 run the deferred native/macOS shader and GPU test phase
 when requested. Keep the PR Draft.
+
+
+## Stage 10AL — Shader Graph fragment resource slot guard + source matrix (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, Draft #21.
+**Source commits:**
+- `4506cc8cb3571d7050bb0a9ff14bb0c3a5e61115`
+  `engine/render/Renderer3DModels.cpp`: GPU Graph eligibility
+  rejects a graph when its fragment source indices or the
+  optional VT atlas/table would exceed
+  `Device::maxFragmentTextureSlots()`. Ordinary CPU
+  drawing remains the fallback.
+- `ef1014669efe1b05843b55afcef7b2cfaa1fefbb`
+  `engine/gfx/metal/GfxMetal.mm`: independent native
+  preflight checks the same max fragment texture budget
+  for all optional 0..4 graph sources and VT arrays.
+
+**Documentation commits:** `678f2bac22cf1b5801fec14acdccf5b765449015` docs/texture-rhi.md;
+`5e57233e5f19ba421a415f98dad1deeb74f66eb7`
+skills/visuals/aiverse-texture-rhi/SKILL.md.
+
+**Source-level audit actually performed:** fetched the actual
+`ModelShaders.h`, `GfxMetal.mm`, `Renderer3DModels.cpp`,
+`Gfx.h` and `GpuMaterialResourceTable.h` HEAD blobs.
+Compared the five explicit source-count MSL conditional
+layouts N=0/1/2/3/4 to host atlas=13+N, table=14+N
+and argument IDs twice the texture slot. All five
+checks returned true; high-slot tex16 is constexpr
+sampler only, native argument slot bounds and
+graphTextureCount<=4 are present, ResourceTable hash
+includes every graph TextureHandle.
+
+**Important non-checks:** **C++ compilation NOT RUN;
+Objective-C++ NOT RUN; MSL shader compiler NOT RUN;
+CTest NOT RUN; Metal ICB execution NOT RUN; image
+parity/performance NOT RUN**. Static source matching
+does not validate MSL compiler or actual Metal resource
+binding correctness. Do not advertise this as tests passing.
+
+**Architecture / limits:** experimental graph ICB still
+supports fragment-only opaque Shader Graph materials with
+up to four source textures (plus up to two VT arrays).
+GPU pipeline and geometry must remain compatible;
+per-command handles are exact ticket/native-checked.
+Graph vertex stage, masked/transparent graph materials,
+more than four source textures and multi-graph shader
+permutation heterogeneity remain outside this ABI.
+Default is disabled.
+
+**Next:** the functional graph ICB source/renderer/native
+integration stages are present. Before merging, execute
+native macOS builds and MSL compilation for graph source
+counts N=0..4, both with and without VT. Test graph
+resources with different sampler states, texture hot
+reload, archive promotion/fence safety, non-graph PBR
+parity and CPU/GPU same-frame screenshot diff. Use the
+new host-accepted counters but require real GPU completion.
+Keep Draft until evidence is green.
