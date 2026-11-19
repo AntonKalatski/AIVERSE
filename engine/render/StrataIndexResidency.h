@@ -12,6 +12,21 @@
 #include <vector>
 
 namespace aiverse::render::strata {
+// Pure load-time aggregate budget arbitration. Each request already has
+// its per-source cap applied; sources that cannot pin roots are declined.
+// A sceneBudget of zero grants each compatible source its cap.
+struct SceneIndexBudgetRequest {
+    std::string key;
+    uint64_t rootBytes = 0, maxBytes = 0;
+};
+struct SceneIndexBudgetGrant {
+    std::string key;
+    uint64_t bytes = 0; // zero => keep this source on Legacy
+};
+std::vector<SceneIndexBudgetGrant> apportionSceneIndexBudget(
+    std::vector<SceneIndexBudgetRequest> requests,
+    uint64_t sceneBudgetBytes);
+
 struct IndexDemand {
     uint32_t primitive = 0; // ordinal in ModelAsset::primitives
     uint32_t node = 0;
