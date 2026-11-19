@@ -924,3 +924,9 @@ CI if it remains queued or cancelled.
 
 - Under `VK_NO_PROTOTYPES`, every physical-device Vulkan query needs a function pointer entry in `AIVERSE_VK_INSTANCE_FUNCS`. The MSAA image-format query `vkGetPhysicalDeviceImageFormatProperties` was added after CI arm64 GCC failed at `VkResources.cpp:577`.
 - GitHub CI from an older SHA diagnosed the issue. Post-fix build and CTest are pending. Do not claim CI is green based on a source-level fix.
+
+
+### Metal Shader Graph 4th source sampler parity (Stage 10AN)
+
+- In graph ICB, tex16 uses constexpr repeat/linear sampler s16, not a native sampler(16). The Metal texture allocation now records repeat/linear/compare flags; an incompatible fourth graph source fails ICB preparation and uses ordinary CPU drawing.
+- Do not enable mixed Shader Graph ICB for clamp/nearest tex16 and expect pixel parity. Real Metal verification remains pending.
