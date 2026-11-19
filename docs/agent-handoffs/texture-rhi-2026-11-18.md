@@ -9840,3 +9840,86 @@ eviction and coarser fallback. No mock GPU and no
 silently skipped CTest. After source commit, append
 a separate handoff and ask for Mac Studio execution.
 
+
+## Stage 10BK — native GPU physical VT atlas publication (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Preceding confirmed acceptance:** Stage 10BJ: Apple M3 Ultra,
+native opt-in `metal_texture_gpu` PASS (1/1) in 0.45 sec,
+VT GPU feedback render/readback `gpu_command_ms=0.005`,
+`callback_wait_ms=19.502`, stage `74.085 ms`.
+This test did NOT yet include physical atlas/page-table publication.
+
+**Source commits:**
+- `d8b498d31d3b421261825048ab313bfefa13c6ee` —
+  `tests/render/metal_texture_gpu.mm`: include
+  `engine/gfx/VirtualTextureStreamer.h` and implement
+  `gpuPhysicalVirtualAtlas(Device&)`, executing against
+  actual Metal RHI `gfx::Device` (no mock).
+- `3ca4b1cf872bab4a06d533aa75c4052d036ea41b` —
+  refine the fixture's final PASS line to reflect
+  physical VT atlas and page-table acceptance.
+
+**Documentation commits:**
+- `e072e71eecf19c23466db0f411a641bf3469ec35` —
+  `docs/texture-rhi.md`.
+- `8f55ceafdfb5e490a3047b0037d4ef381da461b5` —
+  `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Architecture/API:** Uses existing genre-independent
+`gfx::VirtualTextureStreamer`, which composes
+`VirtualTexturePageCache`, `TextureStreamQueue` and
+`VirtualTexturePageTable`. A 4×4 physical page, two-slice
+RGBA8 Texture2DArray atlas and 4×4×1 RGBA8 page-table
+Texture2DArray are created on **real Metal**.
+The test validates:
+1. `stage` of a pinned coarsest page
+   `VirtualPageKey{2,0,0,0}`: before drain, no resident
+   CPU page and actual GPU table remains all-zero invalid;
+2. after `drain`, physical slot 0 bytes equal the authored
+   page (RGBA8), GPU table all cells = `{0,0,2,255}`;
+3. `stage/drain` detail `{0,3,3,0}`: physical slot 1
+   bytes match source, GPU table contains `{1,0,0,255}`
+   **only** at tile (3,3), with coarse fallback elsewhere;
+4. `stage` replacement `{0,0,0,0}` with both physical
+   slots occupied: pinned coarse survives, unpinned fine
+   is LRU-evicted; **before** draining the new upload the
+   actual GPU table has removed the stale fine mapping
+   and points to coarse fallback;
+5. after drain, the reused physical slot and new GPU table
+   entry (0,0) contain replacement data, while tile (3,3)
+   still falls back to coarse;
+6. explicit eviction reverts the GPU table to coarse
+   fallback; GPU resource inventory includes atlas/table
+   before `shutdown` and excludes them after.
+Exact-byte native async readbacks are used after each stage,
+not just CPU cache state checks. A `TIMING VT physical atlas
+publication_total_ms` marker is added.
+
+**Actual verification:** fetched the exact production
+`VirtualTextureStreamer.h`, `VirtualTexturePageTable.h`,
+`VirtualTexturePages.h`, `TextureStreaming.h`, and Metal
+fixture; GitHub accepted the updates.
+**NOT RUN for this new stage:** native Mac compile, GPU
+CTest, actual texture parity and post-change editor build.
+No claim of GPU pass until the user's next CTest report.
+The earlier 0.45 s PASS applies strictly to the previous
+fixture that did not contain this code.
+
+**Next on Mac Studio, isolated worktree only:**
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parallel 4
+ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
+```
+Look for `PASS: VT GPU table invalidated before slot reuse`,
+`PASS: VT GPU table after LRU republish` and
+`PASS: VT GPU page table falls back after explicit eviction`.
+Collect compiler error/CTest stderr and actual timing if failure;
+repair and append a new separate handoff. Future tests:
+actual disk file backed publication and fragment page-table
+indirection / Shader Graph GPU ICB. Keep PR #21 Draft.
+The primary AIVERSE worktree still has unrelated
+unfinished rebase; do not touch it.
+
