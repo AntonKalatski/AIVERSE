@@ -226,11 +226,15 @@ render::Material humanMaterialFromSource(HumanSurface surface,
     dst.emissive=source.emissive;
     dst.emissiveStrength=source.emissiveStrength;
     dst.name=source.name;
-    if(surface==HumanSurface::Hair || surface==HumanSurface::Eyelash)
+    if(surface==HumanSurface::Hair || surface==HumanSurface::Eyelash) {
         dst.doubleSided=true;
-    // Alpha surface semantics come from VIVID (transparent cornea, solid
-    // flesh and sclera); never allow an imported cutout to turn the cornea
-    // into an opaque depth-writing model.
+        dst.alpha=source.alpha;   // preserve artist alpha-masked hair cards
+        dst.alphaCutoff=source.alphaCutoff;
+        dst.transparent=source.transparent;
+        dst.baseColor.w=source.baseColor.w;
+    }
+    // Cornea always retains the DNA tear-film transparent material; imported
+    // alpha modes do not turn the corneal shell into an opaque depth writer.
     return dst;
 }
 
