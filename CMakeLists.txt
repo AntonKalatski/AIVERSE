@@ -2020,6 +2020,15 @@ if(AIVERSE_BUILD_STRATA)
     add_library(aiverse_strata_view STATIC engine/render/StrataView.cpp)
     target_link_libraries(aiverse_strata_view PUBLIC aiverse_strata_model_adapter aiverse_models)
     target_include_directories(aiverse_strata_view PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    # Portable Vulkan/GLES3/WebGL2 fallback: CPU-selected LOD frontiers and
+    # immutable auxiliary INDEX-only data. Original Model VB stays owned by
+    # Renderer3D/GlobalGeometryPool; no second Strata vertex allocator.
+    add_library(aiverse_strata_portable STATIC
+        engine/render/StrataPortableRender.cpp)
+    target_link_libraries(aiverse_strata_portable PUBLIC
+        aiverse_strata_view aiverse_models)
+    target_include_directories(aiverse_strata_portable PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR})
     # GPU metadata is a non-drawing, source-revision-checked storage buffer.
     # Original GPU geometry MUST remain owned by GlobalGeometryPool.
     add_library(aiverse_strata_gpu_scene STATIC engine/render/StrataGpuScene.cpp)
@@ -2043,7 +2052,8 @@ if(AIVERSE_BUILD_STRATA)
     # opt-in CPU staging at scene load, not a second draw submission path.
     target_link_libraries(aiverse_runtime PUBLIC
         aiverse_strata_view aiverse_strata_gpu_scene
-        aiverse_strata_gpu_culling aiverse_strata_render_routing)
+        aiverse_strata_gpu_culling aiverse_strata_render_routing
+        aiverse_strata_portable)
     target_compile_definitions(aiverse_runtime PRIVATE AIVERSE_STRATA_STAGING_ENABLED=1)
     if(AIVERSE_BUILD_TESTS)
         add_executable(aiverse_strata_builder_tests tests/render/strata_builder.cpp)
