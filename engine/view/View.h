@@ -571,6 +571,12 @@ public:
     size_t forgetSources(std::span<const uint64_t> ids) {
         return bridge_.forget(presentation_,ids);
     }
+    // Opt-in source reimport, while the old CPU Model and compiled Graph
+    // remain readable. Keeps only a bounded portable named playback seed;
+    // subsequent compatible new-epoch sync consumes it once or restarts.
+    size_t forgetSourcesForReimport(std::span<const uint64_t> ids) {
+        return bridge_.forgetForReimport(presentation_,ids);
+    }
     const World& presentation() const noexcept{return presentation_;}
     // For controlled host-only effects such as montage slots. Never
     // snapshot this World or mutate it while update() is running.
