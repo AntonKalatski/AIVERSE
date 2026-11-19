@@ -496,6 +496,80 @@ public:
             read->callback(read->width, read->height,
                            std::move(read->bytes));
     }
+    // Diagnostic only: copy the *actual offscreen reflection render target*
+    // (not the presented drawable) as native RGBA8. Same GPU queue and
+    // owner-thread completion rules as readDepthTextureAsync().
+    struct ColorRead {
+        int width = 0, height = 0;
+        std::vector<uint8_t> bytes;
+        ColorReadFn callback;
+        std::atomic<bool> ready{false};
+    };
+    std::vector<std::shared_ptr<ColorRead>> colorReads_;
+    bool readColorTextureAsync(TextureHandle h,ColorReadFn callback) override {
+        auto* t = textures_.get(h.id);
+        if (!cmd_ || enc_ || compute_ || !t || !callback ||
+            t->fmt != PixelFormat::RGBA8 ||
+            t->tex.pixelFormat != MTLPixelFormatBGRA8Unorm ||
+            t->tex.textureType != MTLTextureType2D ||
+            t->tex.sampleCount != 1 ||
+            !(t->tex.usage & MTLTextureUsageRenderTarget) ||
+            !t->tex.width || !t->tex.height ||
+            t->tex.width > 4096 || t->tex.height > 4096 ||
+            colorReads_.size() >= 8)
+            return false;
+        const NSUInteger w=t->tex.width, hgt=t->tex.height;
+        const NSUInteger rowBytes=((w*4u+255u)/256u)*256u;
+        const NSUInteger length=rowBytes*hgt;
+        if (length > 64u*1024u*1024u) return false;
+        id<MTLBuffer> dst=[device_ newBufferWithLength:length
+                               options:MTLResourceStorageModeShared];
+        if (!dst) return false;
+        auto read=std::make_shared<ColorRead>();
+        read->width=int(w);
+        read->height=int(hgt);
+        read->bytes.resize(size_t(w*hgt)*4u);
+        read->callback=std::move(callback);
+        id<MTLBlitCommandEncoder> blit=[cmd_ blitCommandEncoder];
+        if (!blit) return false;
+        [blit copyFromTexture:t->tex sourceSlice:0 sourceLevel:0
+                 sourceOrigin:MTLOriginMake(0,0,0)
+                   sourceSize:MTLSizeMake(w,hgt,1)
+                     toBuffer:dst destinationOffset:0
+         destinationBytesPerRow:rowBytes
+       destinationBytesPerImage:length];
+        [blit endEncoding];
+        [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+            if (completed.status != MTLCommandBufferStatusCompleted)
+                read->bytes.clear();
+            else {
+                const uint8_t* src=static_cast<const uint8_t*>(dst.contents);
+                for (NSUInteger y=0;y<hgt;++y)
+                    for (NSUInteger x=0;x<w;++x) {
+                        const size_t from=size_t(y*rowBytes+x*4u);
+                        const size_t to=size_t((y*w+x)*4u);
+                        read->bytes[to+0]=src[from+2];
+                        read->bytes[to+1]=src[from+1];
+                        read->bytes[to+2]=src[from+0];
+                        read->bytes[to+3]=src[from+3];
+                    }
+            }
+            read->ready.store(true,std::memory_order_release);
+        }];
+        colorReads_.push_back(std::move(read));
+        return true;
+    }
+    void deliverColorReads() {
+        std::vector<std::shared_ptr<ColorRead>> ready;
+        for (auto it=colorReads_.begin();it!=colorReads_.end();) {
+            if ((*it)->ready.load(std::memory_order_acquire)) {
+                ready.push_back(*it);
+                it=colorReads_.erase(it);
+            } else ++it;
+        }
+        for (auto& read:ready)
+            read->callback(read->width,read->height,std::move(read->bytes));
+    }
     bool gpuHealthy() const override { return gpuHealthy_->load(); }
     double gpuFrameMs() const override { return gpuMs_->load(); }
 
@@ -925,6 +999,7 @@ public:
         dispatch_semaphore_wait(frameSemaphore_, DISPATCH_TIME_FOREVER);
         deliverBufferReads();
         deliverDepthReads();
+        deliverColorReads();
         deliverCapture(); // the previous frame's GPU work is done here
         ++frame_;
         // The semaphore guarantees this slot is no longer in flight.
