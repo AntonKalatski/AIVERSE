@@ -3045,3 +3045,150 @@ CTest, offline redacted-report CLI, actual editor report export,
 Metal multi-group capture, fault-injected device reset, UI
 screenshots, CPU/GPU parity or performance benchmarks. These
 are experimental source APIs pending executable validation.
+
+## Stage 43 — explicit local safe ZIP bundles, native capture mailbox and bounded GPU recovery retries
+
+### Safe local ZIP support package (no raw GPU state)
+
+A new header `engine/fx/SpectraDiagnosticBundle.h` provides
+`makeSafeGpuDiagnosticZip(inspection,frames,output)`. This creates
+one bounded, deterministic **ZIP STORE** archive containing
+only three fixed filename entries:
+
+```text
+manifest.json
+checkpoint_summary.json
+preview_timeline.json
+```
+
+No zlib or other compression library is required: each ZIP member
+contains strictly generated JSON and a CRC32. Only a structurally
+valid V2 inspection and up to **180** renderer-side aggregate
+`GpuSafeTimelineFrame` values are accepted. The total ZIP size
+is capped at **128 KiB**, and invalid/oversized requests return
+false without modifying the caller's output.
+
+The manifest declares the privacy restrictions explicitly:
+`redacted=true`, `containsRawCheckpoint=false`,
+`containsWorldCoordinates=false`,
+`containsVmScalars=false`,
+`containsGpuIdentifiers=false`, and
+`uploadedAutomatically=false`. The ZIP builder deliberately
+has **no input argument for raw SPFX bytes, authoring graph
+paths or arbitrary ZIP entry names**. Calling the builder
+cannot package a raw GPU snapshot accidentally. Even when
+a developer enables world bounds or GPU identifiers for a
+separate Stage 42 JSON report, the ZIP remains fully
+redacted. This is a local support artifact, not an ECS save,
+GPU replay or cross-build SPFX importer.
+
+The editor's `Save SAFE ZIP bundle` action creates one
+`.zip` under `platform::userDataDir()/spectrafx-diagnostics/`
+only after the user presses the button and an eligible
+current-revision V2 checkpoint is ready. It uses a local
+`safe-bundle-group-N-M.zip` filename, **not** a GPU frame
+serial, and refuses to overwrite an existing safe bundle.
+The related safe JSON report also uses serial-free
+filename numbering. Only when the report belongs to the
+editor's **own** GPU preview are its last 180 sanitized
+sample counters included; external GPU pools do not
+inherit unrelated editor preview history.
+
+The offline `tools/spectrafx/inspect_spfx.cpp` utility now
+also supports:
+
+```sh
+./inspect_spfx --bundle /path/to/support.safe.zip /path/to/checkpoint.spfx
+```
+
+The offline ZIP has an empty preview timeline. The binary
+SPFX source is **never** added as an archive entry. There is
+no implicit upload, email, issue creation or external
+sharing. The existing `Save RAW GPU checkpoint
+(sensitive)` button is deliberately a separate user action.
+
+### Non-owning native capture mailbox
+
+The public `<aiverselib/genre/SpectraFX.h>` includes
+`GpuCaptureRequestMailbox` from
+`libraries/include/aiverselib/genre/SpectraGpuCaptureMailbox.h`.
+The mailbox is a same-owner-thread intent/status holder
+with states
+`Idle / Requested / Claimed / InFlight / Ready / Failed /
+ReleaseRequested`. It stores one requested group index,
+a monotonically increasing sequence and bounded failure
+information; it performs **no GPU commands** and carries
+no particle data, graphics handles, ECS mutation or
+background scheduling.
+
+The native render host may expose a non-owning mailbox
+pointer to the editor through
+`Editor::setSpectraGpuCaptureMailbox(mailbox)`.
+The UI can call
+`Editor::queueSpectraExternalGpuCapture(groupIndex)`
+or `Editor::releaseSpectraExternalGpuCapture()` on
+that mailbox, but cannot access `gfx::Device` or run
+`readBufferAsync` itself. The native presentation owner
+claims a request in its next safe pre-render phase,
+uses the existing one-at-a-time `GpuPoolCaptureHost`,
+keeps VFX state frozen while an async checkpoint is
+pending, and publishes the same request's state back
+to the UI. Release is consumed by the native host on
+the next presentation frame, not during ImGui drawing.
+
+`examples/spectrafx/native_ecs_attachments.h` now
+demonstrates this integration and exposes
+`captureMailbox()`, `poolTelemetry()` and
+`recoveryHost()`. The application must detach all
+non-owning pointers from the editor **before** destroying
+the native host/graphics Device. If the pool is reset,
+recovered or shut down, the native host clears the
+mailbox and cancels the capture; late Metal callbacks
+cannot reattach to an obsolete source generation.
+
+### Recovery status and bounded retries
+
+`GpuPoolRecoveryHost::serviceQueuedResetAtSafeFrame(ownerFrameOrdinal)`
+adds an **optional owner-thread** reset retry pump. The host
+calls it only after `gfx::Device::beginFrame`, outside
+render/compute encoders. On a recoverable failed reset,
+the next attempt is spaced by a bounded exponential
+number of host frames (max **32**); this avoids busy
+reset writes every frame. The returned
+`PoolRecoveryServiceResult` distinguishes NoWork,
+Deferred, ResetSucceeded, ResetFailed and NeedsNewDevice.
+A lost Device must be rebuilt by the native platform
+host; it is not retried as an ordinary reset.
+
+The existing `PoolRecoveryEvent` adds
+`consecutiveResetFailures` and
+`retryNotBeforeOwnerFrame`, making retry/cooldown
+status visible without timers. Its transition counter
+changes on observable recovery state changes rather
+than spinning duplicate callbacks during the same
+recovery service call. The updated native example
+invokes this bounded service in its safe frame before
+beginning normal presentation and cancels any pending
+capture before GPU rollback. An optional non-owning
+`Editor::setSpectraGpuRecoveryHost()` attachment
+lets the editor show this status and enqueue a
+VFX-only reset intent. The editor **never**
+executes the actual GPU reset.
+
+### Privacy and execution limitations
+
+The editor resets both sensitive report opt-ins
+when the selected GPU group **or GPU telemetry pool**
+changes, preventing consent from carrying over to
+a different renderer. A safe ZIP never includes
+raw particle state or exact GPU device serials.
+Raw SPFX still contains scene positions/VM values
+and remains a deliberately sensitive export.
+
+**Verification performed:** SHA-guarded GitHub source
+commits and source readbacks. **NOT RUN:** native
+C++/ObjC++/MSL compilation, ZIP validity extraction,
+CLI output/privacy/corruption tests, CTest, editor
+UI launch/screenshots, real Metal capture and owner
+thread callback/device-loss tests. This stage is
+source-implemented, not production-verified.
