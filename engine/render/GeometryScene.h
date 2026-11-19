@@ -96,6 +96,7 @@ private:
     std::shared_ptr<strata::SceneStaging> strataStaging_; // null unless explicitly staged
     std::shared_ptr<strata::GpuMetadataScene> strataGpuMetadata_;
     std::shared_ptr<strata::GpuClusterCulling> strataGpuCulling_;
+    gfx::Device* strataGpuDevice_ = nullptr; // borrowed owner-thread validation
     std::vector<Instance> instances_;
     std::vector<Group> groups_;
     std::vector<std::string> warnings_;
