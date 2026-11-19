@@ -923,14 +923,37 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                 it.baked || it.morph >= 0 || it.model->geometry ||
                 it.mat->shaderGraph || it.materialRole == 1 ||
                 it.shadowRole == 2) return false;
-            return it.tint.w < 0.99f || it.mat->transparent ||
-                   it.mat->alpha == AlphaMode::Blend ||
-                   (it.flags & kDrawTransparent) != 0;
+            const bool translucent = it.tint.w < 0.99f ||
+                it.mat->transparent || it.mat->alpha == AlphaMode::Blend ||
+                (it.flags & kDrawTransparent) != 0;
+            // Fade parts are skipped by the velocity overlay until their
+            // coverage is reproduced. Mark only actual dithered fragments
+            // reactive so these LOD boundaries cannot smear the background.
+            const bool fade = (it.lodThreshold < 1.0f || it.lodInvert) &&
+                it.mat->alpha == AlphaMode::Opaque;
+            return translucent || fade;
         };
-        bool reactiveNeeded = false;
+        auto reactiveAnimatedEligible = [](const ModelItem& it) {
+            if (!it.inView || !it.model || !it.prim || !it.mat ||
+                !it.model->vb.valid() || !it.model->ib.valid() ||
+                !it.indexCount || it.model->geometry ||
+                it.materialRole == 1 || it.shadowRole == 2 ||
+                it.mat->shaderGraph) return false;
+            const bool deform = it.joints >= 0 || it.baked ||
+                (it.prim->morphTargets > 0 && it.model->morphTex.valid());
+            const bool translucent = it.tint.w < 0.99f ||
+                it.mat->transparent || it.mat->alpha == AlphaMode::Blend ||
+                (it.flags & kDrawTransparent) != 0;
+            return deform && translucent &&
+                (!it.baked || it.model->baked.tex.valid());
+        };
+        bool rigidReactiveNeeded = false, animatedReactiveNeeded = false;
         for (const auto& it : modelItems_) {
-            if (reactiveEligible(it)) { reactiveNeeded = true; break; }
+            rigidReactiveNeeded |= reactiveEligible(it);
+            animatedReactiveNeeded |= reactiveAnimatedEligible(it);
         }
+        const bool reactiveNeeded = rigidReactiveNeeded ||
+            animatedReactiveNeeded || !motionReactiveDraws_.empty();
         if (reactiveNeeded && !history.reactive.valid()) {
             gfx::TextureDesc target;
             target.width = w; target.height = h;
@@ -940,7 +963,7 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
             target.label = "prisma motion reactive mask";
             history.reactive = dev_->createTexture(target);
         }
-        if (reactiveNeeded && !objectMotionReactiveShader_.valid()) {
+        if (rigidReactiveNeeded && !objectMotionReactiveShader_.valid()) {
             gfx::ShaderDesc shader;
             shader.glslVertex = reactive_shaders::kVS;
             shader.glslFragment = reactive_shaders::kFS;
