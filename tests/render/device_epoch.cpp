@@ -39,7 +39,12 @@ public:
     const gfx::DeviceInfo& info() const override{return d;}
     const std::string& lastError() const override{return error;}
     bool waitForResourceIdle() override{return true;}
-    gfx::BufferHandle createBuffer(const gfx::BufferDesc&) override{return {};}
+    bool throwOnBufferCreation=false;
+    gfx::BufferHandle createBuffer(const gfx::BufferDesc&) override{
+        if(throwOnBufferCreation)
+            throw std::runtime_error("injected Model buffer allocation failure");
+        return {}; // force geometry allocation failure in the CPU fixture
+    }
     void updateBuffer(gfx::BufferHandle,const void*,size_t,size_t) override{}
     void destroyBuffer(gfx::BufferHandle) override{}
     gfx::TextureHandle createTexture(const gfx::TextureDesc&) override{return {};}
@@ -226,6 +231,111 @@ static void verifyOwnerThreadMapReadContracts() {
     CHECK(cache.models().size()==1);
     CHECK(cache.modelFiles().size()==1);
     CHECK(cache.affectedBySource("models/read.glb").size()==1);
+    cache.shutdown(dev);
+}
+
+// Stage 136: a failed worker-prepared GPU upload must NEVER publish a
+// partially resident Model. Allocation/throw paths must retain ownership
+// until a verified GPU retirement barrier, not an ordinary destructor.
+static void verifyPreparedModelUploadRollback() {
+    struct PreparedForTest {
+        std::unique_ptr<render::Model> model;
+    };
+    StubDevice dev;
+    render::ModelResourceCache cache;
+    cache.bindResourceDevice(dev);
+    const auto originalGeneration=cache.generation();
+
+    PreparedForTest empty;
+    empty.model=std::make_unique<render::Model>();
+    CHECK(cache.publishPrepared(dev,"models/ready.glb",std::move(empty)));
+    CHECK(!empty.model);
+    CHECK(cache.contains("models/ready.glb"));
+    CHECK(cache.preparedUploadFailures()==0);
+
+    // A synchronous load wins an async race: avoid any GPU upload and
+    // preserve the still-CPU-only prepared model owned by the caller.
+    PreparedForTest duplicate;
+    duplicate.model=std::make_unique<render::Model>();
+    duplicate.model->vertices.resize(3);
+    duplicate.model->indices={0,1,2};
+    CHECK(!cache.publishPrepared(dev,"models/ready.glb",std::move(duplicate)));
+    CHECK(duplicate.model);
+    CHECK(cache.preparedUploadFailures()==0);
+    CHECK(cache.pendingRetirements()==0);
+
+    // The stub deliberately rejects all Buffer allocations. Previously
+    // uploadModel(false) was ignored and this unusable model was admitted.
+    PreparedForTest failed;
+    failed.model=std::make_unique<render::Model>();
+    failed.model->vertices.resize(3);
+    failed.model->indices={0,1,2};
+    CHECK(!cache.publishPrepared(dev,"models/fail.glb",std::move(failed)));
+    CHECK(!failed.model); // ownership moved to GPU retirement queue
+    CHECK(!cache.contains("models/fail.glb"));
+    CHECK(cache.pendingRetirements()==1);
+    CHECK(cache.preparedUploadFailures()==1);
+    CHECK(cache.generation()==originalGeneration+1);
+
+    // An actual allocation exception uses the SAME guarded rollback path
+    // and must not leave the partially uploaded Model in a local unique_ptr.
+    dev.throwOnBufferCreation=true;
+    PreparedForTest throwing;
+    throwing.model=std::make_unique<render::Model>();
+    throwing.model->vertices.resize(3);
+    throwing.model->indices={0,1,2};
+    bool caught=false;
+    try {
+        (void)cache.publishPrepared(dev,"models/throw.glb",std::move(throwing));
+    }catch(const std::runtime_error&){caught=true;}
+    CHECK(caught);
+    CHECK(!throwing.model);
+    CHECK(!cache.contains("models/throw.glb"));
+    CHECK(cache.pendingRetirements()==2);
+    CHECK(cache.preparedUploadFailures()==2);
+    dev.throwOnBufferCreation=false;
+    cache.shutdown(dev); // StubDevice's idle barrier proves safe retirement
+    CHECK(cache.pendingRetirements()==0);
+}
+
+static void verifyRetirementDiagnosticObserverIsolation() {
+    StubDevice dev;
+    render::ModelResourceCache cache;
+    cache.bindResourceDevice(dev);
+    auto* original=cache.insertIfAbsent(
+        "models/old.glb",std::make_unique<render::Model>());
+    CHECK(original);
+    unsigned notifications=0,blocked=0;
+    cache.setRetirementDiagnosticObserver(
+        [&](const render::RetirementDiagnosticEvent& event) {
+            if(event.kind!=render::RetirementDiagnosticKind::Enqueued &&
+               event.kind!=render::RetirementDiagnosticKind::RecoveredAfterIdle)
+                return;
+            ++notifications;
+            CHECK(cache.models().size()==1);
+            // An observer can inspect Model residency but never mutate the
+            // resident map/retirement queue while the event is emitted.
+            try {
+                cache.insertIfAbsent("models/illegal.glb",
+                                     std::make_unique<render::Model>());
+            }catch(const std::logic_error&){++blocked;}
+            try {
+                (void)cache.collectRetired(dev);
+            }catch(const std::logic_error&){++blocked;}
+        });
+    auto replacement=std::make_unique<render::Model>();
+    CHECK(cache.replace(dev,"models/old.glb",std::move(replacement),
+                        [](const render::Model*){}));
+    CHECK(notifications==1);
+    CHECK(blocked==2);
+    CHECK(cache.find("models/illegal.glb")==nullptr);
+    CHECK(cache.pendingRetirements()==1);
+    CHECK(!cache.publicationBackpressured());
+    CHECK(cache.collectRetired(dev)); // fallback emits RecoveredAfterIdle
+    CHECK(notifications==2);
+    CHECK(blocked==4);
+    CHECK(cache.pendingRetirements()==0);
+    CHECK(cache.find("models/old.glb")!=original);
     cache.shutdown(dev);
 }
 
@@ -440,6 +550,8 @@ int main(int argc,char** argv) {
     verifyReadLeaseContracts();
     verifyReadOwnerRebind();
     verifyOwnerThreadMapReadContracts();
+    verifyPreparedModelUploadRollback();
+    verifyRetirementDiagnosticObserverIsolation();
     verifyModelOwnershipVisitorContracts();
     verifyDetachCallbackReentrancyContracts();
 #if defined(__APPLE__) || defined(__unix__)
