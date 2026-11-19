@@ -2500,6 +2500,16 @@ if(AIVERSE_ENABLE_PHYSICS AND NOT EMSCRIPTEN)
     endif()
 endif()
 
+# VIVID stage 5D: real macOS scene/renderer visual acceptance preview.
+# GUI-driven, NOT a CTest (requires drawable, snapshots and actual shadows).
+# The runtime object library owns the platform entry point (aiverseMain).
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_executable(aiverse_vivid_renderer_preview tests/vivid/renderer_preview.cpp)
+    target_link_libraries(aiverse_vivid_renderer_preview PRIVATE
+        aiverse_runtime AIVERSE::vivid_mesh AIVERSE::MotionWeave aiverse_zstd_dec)
+    target_compile_features(aiverse_vivid_renderer_preview PRIVATE cxx_std_20)
+endif()
+
 # Geometry visibility verification uses the same renderer on GL and Metal.
 if(AIVERSE_BUILD_TESTS AND AIVERSE_DESKTOP)
     add_executable(aiverse_geometry_preview tests/geometry/preview.cpp)
