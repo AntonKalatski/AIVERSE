@@ -1293,3 +1293,12 @@ observed cost; it is intended for GLES3/WebGL2 and Vulkan without compute
 storage-image support. Defaults are initial policy, NOT measured target
 hardware timings. Call `update(0,camera)` to clear invalidation with a
 paused trace budget. Source and tests are NOT RUN in this stage.
+
+
+## Stage 33 — Vulkan storage upload visibility (2026-11-19)
+
+See `docs/agent-handoffs/gi-stage33-vulkan-upload-synchronization-2026-11-19.md`.
+Vulkan immutable storage buffer creation and update now have explicit
+TRANSFER_WRITE -> COMPUTE_SHADER_READ dependencies on compute-capable queues,
+and avoid compute stage bits on graphics-only devices. This is a source fix,
+NOT a GPU validation PASS. Do not remove barriers during RHI refactoring.
