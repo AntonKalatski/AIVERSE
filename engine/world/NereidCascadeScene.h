@@ -4,11 +4,13 @@
 #pragma once
 #include "engine/render/NereidWaterRenderer.h"
 #include "engine/world/WorldAssets.h"
+#include "engine/world/NereidWaterScene.h"
 #include <aiverselib/water/NereidCascades.h>
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <map>
+#include <optional>
 #include <stdexcept>
 #include <vector>
 #include <utility>
@@ -17,6 +19,8 @@ namespace aiverse::world {
 
 struct NereidCascadeSource {
     uint64_t id=0; // stable positive ID; 0 gets a legacy index ID
+    uint64_t inletWaterId=0,outletWaterId=0; // optional stable NEREID IDs
+    float joinLength=2.f; // X/Z overlap extension in metres (0.1..50)
     lib::nereid::WaterCascadeComponent cascade;
     lib::nereid::WaterSurfaceStyle style{};
     lib::nereid::WaterCascadeMeshOptions options{};
@@ -26,7 +30,10 @@ inline bool sameNereidCascadeSource(const NereidCascadeSource& a,
                                    const NereidCascadeSource& b) {
     const auto& x=a.cascade;const auto& y=b.cascade;
     const auto& s=a.style;const auto& t=b.style;
-    if(x.enabled!=y.enabled || x.widthAxis!=y.widthAxis ||
+    if(a.inletWaterId!=b.inletWaterId ||
+       a.outletWaterId!=b.outletWaterId ||
+       a.joinLength!=b.joinLength ||
+       x.enabled!=y.enabled || x.widthAxis!=y.widthAxis ||
        x.foam!=y.foam || x.speed!=y.speed ||
        x.points.size()!=y.points.size() ||
        a.options.uvScale!=b.options.uvScale ||
@@ -43,6 +50,54 @@ inline bool sameNereidCascadeSource(const NereidCascadeSource& a,
         if(x.points[i].position!=y.points[i].position ||
            x.points[i].halfWidth!=y.points[i].halfWidth)return false;
     return true;
+}
+
+// Build transition geometry ONLY on a presentation-owned copy. When a
+// linked water body exists, extend the top or foot ribbon into its horizontal
+// surface at the body's current elevation. No changes to ECS source points.
+inline lib::nereid::WaterCascadeComponent connectedNereidCascade(
+        const NereidCascadeSource& source,
+        std::optional<Fixed> inletLevel,
+        std::optional<Fixed> outletLevel) {
+    auto result=source.cascade;
+    if(result.points.size()<2 || result.points.size()>126 ||
+       !std::isfinite(source.joinLength) ||
+       source.joinLength<=0 || source.joinLength>50.f)
+        return result;
+    const auto dir=[&](size_t i,size_t j) {
+        const auto& a=result.points[i].position;
+        const auto& b=result.points[j].position;
+        Vec2 d{b.x-a.x,b.z-a.z};
+        const Fixed len=d.length();
+        if(len>Fixed{})return d/len;
+        // Purely vertical drop: pick the forward direction perpendicular
+        // to the cascade's authored horizontal ribbon-width axis.
+        d={-result.widthAxis.y,result.widthAxis.x};
+        const Fixed fallback=d.length();
+        return fallback>Fixed{} ? d/fallback : Vec2{1_fx,0_fx};
+    };
+    const Fixed extension=Fixed::fromRaw(
+        int64_t(std::llround(double(source.joinLength)*Fixed::kOne)));
+    // Compute directions before changing the source-point indices.
+    const Vec2 firstDir=dir(0,1);
+    const Vec2 lastDir=dir(result.points.size()-2,result.points.size()-1);
+    if(source.inletWaterId && inletLevel &&
+       *inletLevel>=result.points.front().position.y) {
+        auto first=result.points.front();
+        first.position.x-=firstDir.x*extension;
+        first.position.z-=firstDir.y*extension;
+        first.position.y=*inletLevel;
+        result.points.insert(result.points.begin(),first);
+    }
+    if(source.outletWaterId && outletLevel &&
+       *outletLevel<=result.points.back().position.y) {
+        auto last=result.points.back();
+        last.position.x+=lastDir.x*extension;
+        last.position.z+=lastDir.y*extension;
+        last.position.y=*outletLevel;
+        result.points.push_back(last);
+    }
+    return result;
 }
 
 inline render::Mesh uploadNereidCascade(gfx::Device& device,
@@ -72,6 +127,7 @@ class NereidCascadeScene final {
         render::Mesh mesh{};
         bool resident=false;
         bool dirty=true;
+        std::optional<Fixed> inletLevel,outletLevel;
         double originX=0,originY=0,originZ=0;
     };
 public:
@@ -91,6 +147,8 @@ public:
                source.options.stepsPerSegment>16 ||
                source.options.maxVertices<8 ||
                source.options.maxVertices>65536 ||
+               !std::isfinite(source.joinLength) ||
+               source.joinLength<0.1f || source.joinLength>50.f ||
                !std::isfinite(source.options.uvScale) ||
                source.options.uvScale<=0)
                 throw std::invalid_argument("nereid.cascade: invalid source");
@@ -106,6 +164,8 @@ public:
                 !sameNereidCascadeSource(slot.source,old->second.source);
             slot.mesh=old->second.mesh;
             slot.resident=old->second.resident;
+            slot.inletLevel=old->second.inletLevel;
+            slot.outletLevel=old->second.outletLevel;
             slot.originX=old->second.originX;
             slot.originY=old->second.originY;
             slot.originZ=old->second.originZ;
@@ -133,7 +193,8 @@ public:
         size_t n=0;for(const auto& [id,s]:slots_) { (void)id;if(s.resident)++n; }
         return n;
     }
-    void update(gfx::Device& device) {
+    void update(gfx::Device& device,
+                const NereidWaterScene* water=nullptr) {
         for(auto& old:retired_)render::releaseNereidWaterSurface(device,old);
         retired_.clear();
         uint32_t attempts=0;
@@ -144,6 +205,16 @@ public:
                 slot.resident=false;slot.dirty=true;
                 continue;
             }
+            const auto inlet=water && slot.source.inletWaterId?
+                water->surfaceLevelForId(slot.source.inletWaterId):
+                std::optional<Fixed>{};
+            const auto outlet=water && slot.source.outletWaterId?
+                water->surfaceLevelForId(slot.source.outletWaterId):
+                std::optional<Fixed>{};
+            if(inlet!=slot.inletLevel || outlet!=slot.outletLevel)
+                slot.dirty=true;
+            slot.inletLevel=inlet;
+            slot.outletLevel=outlet;
             if(!slot.dirty || attempts>=maxUploadsPerFrame_)continue;
             ++attempts;
             if(!lib::nereid::validWaterCascade(slot.source.cascade))continue;
@@ -152,8 +223,9 @@ public:
             opts.originX=first.x.toDouble();
             opts.originY=first.y.toDouble();
             opts.originZ=first.z.toDouble();
-            const auto cpu=lib::nereid::buildWaterCascadeMesh(
-                slot.source.cascade,opts);
+            const auto joined=connectedNereidCascade(
+                slot.source,inlet,outlet);
+            const auto cpu=lib::nereid::buildWaterCascadeMesh(joined,opts);
             if(cpu.empty())continue;
             auto replacement=uploadNereidCascade(device,cpu,slot.source.style);
             if(!replacement.vb.valid() || !replacement.ib.valid() ||
