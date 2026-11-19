@@ -321,6 +321,13 @@ Renderer3D::warmModelPipelinesChecked(
         const Model& model,const std::vector<Material>* materials) {
     if(dev_)checkGpuDevice(*dev_);
     warmingPipelines_=true;
+    // Shader/pipeline jobs or user-authored graph generation may throw;
+    // never let an exception leak the temporary warming mode into the
+    // regular frame renderer.
+    struct WarmingScope {
+        bool& enabled;
+        ~WarmingScope(){enabled=false;}
+    } scope{warmingPipelines_};
     warmingPending_=warmingFailed_=false;
     auto warm=[&](const ModelItem& item,int phase,bool instanced) {
         const auto pipe=modelPipeline(item,phase,instanced);
@@ -353,7 +360,6 @@ Renderer3D::warmModelPipelinesChecked(
             }
         }
     }
-    warmingPipelines_=false;
     return warmingFailed_ ? PipelineWarmStatus::Failed :
            warmingPending_ ? PipelineWarmStatus::Pending :
                              PipelineWarmStatus::Ready;
