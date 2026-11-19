@@ -161,6 +161,46 @@ int main() {
                     size_t(i)*sizeof(command),sizeof(command));
         assert(command.indexCount==0);
     }
+    // With a strictly validated full-primitive fallback contract, invalid
+    // GPU selection must submit ONE original source command instead of
+    // leaving an empty frame. This test only checks GPU command bytes; the
+    // material and transform gate is tested independently by the router.
+    auto guarded=view;
+    guarded.gpuFallbackEnabled=true;
+    guarded.gpuFallbackFirstIndex=123;
+    guarded.gpuFallbackIndexCount=3;
+    guarded.gpuFallbackBaseVertex=7;
+    device->beginFrame(64,64);
+    GpuSelectionSubmission fallback;
+    assert(culling.dispatch(*device,gpuMetadata,{invalidInstance},guarded,
+                            device->frameSerial(),fallback));
+    assert(fallback.gpuIndirectPrepared());
+    bool fallbackReady=false;
+    std::vector<uint8_t> fallbackCommands;
+    assert(device->readBufferAsync(fallback.indirect,
+        sizeof(gfx::DrawIndexedIndirectCommand)*guarded.maxOutputClusters,
+        [&](std::vector<uint8_t> bytes){
+            fallbackReady=true;
+            fallbackCommands=std::move(bytes);
+        }));
+    device->endFrame();
+    for(int frame=0;frame<3 && !fallbackReady;++frame){
+        device->beginFrame(64,64);
+        device->endFrame();
+    }
+    assert(fallbackReady && fallbackCommands.size()==
+           guarded.maxOutputClusters*sizeof(gfx::DrawIndexedIndirectCommand));
+    gfx::DrawIndexedIndirectCommand original{};
+    std::memcpy(&original,fallbackCommands.data(),sizeof(original));
+    assert(original.indexCount==3 && original.instanceCount==1);
+    assert(original.firstIndex==123 && original.baseVertex==7);
+    for(uint32_t i=1;i<guarded.maxOutputClusters;++i){
+        gfx::DrawIndexedIndirectCommand empty{};
+        std::memcpy(&empty,fallbackCommands.data()+
+                    size_t(i)*sizeof(empty),sizeof(empty));
+        assert(empty.indexCount==0 && empty.instanceCount==0);
+    }
+
     culling.shutdown(*device);
     device->destroyBuffer(gpuMetadata);
     std::cout<<"[strata-vulkan] compute GPU selection parity PASS\n";
