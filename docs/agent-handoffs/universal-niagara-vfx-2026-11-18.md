@@ -1510,3 +1510,69 @@ During the later requested test phase, run the repository's unified `./run-tests
 1. **Stage 29:** add generation-safe logical GPU source handles, selective stop/kill/restart semantics for attached ECS emitters, and presentation rollback checkpointing without clearing unrelated sources sharing the same GPU group. This requires tracking source ownership of individual physical particle slots and resetting/releasing individual slots only when GPU render commands have finished, rather than just naming aliases of the same group.
 2. Extend group-level LOD/culling and pooled GPU quality budgets (distance, importance, screen-size, memory/fill targets), then integrate with Terra/PHYSIS/Water via **genre-neutral visual event adapters**, not by hardcoding FPS/RTS rules.
 3. Verify the actual Metal shader/material/compiler and all previous stages after functional completion, as the user explicitly postponed tests. Keep the next stage handoff separate with exact SHA and truthfully recorded verification results.
+
+## Stage 29 — shared GPU-pool committed-tick VFX bridge (SOURCE COMMITTED, TESTS DEFERRED)
+
+**Date:** 2026-11-19. **Branch:** `feature/universal-entity-inspector-fps`.  
+**Goal:** connect any genre's committed gameplay events to the now-available shared `GpuPoolWorld`, with bounded one-shot queues, tick de-duplication and explicit rollback reset. Reuse already-implemented Stage-27 GPU fragment shader materials and Stage-28 shared GPU grouping rather than rewriting them. Do not mutate gameplay/ECS state or switch existing native client renderers automatically.
+
+### Exact implementation commits
+
+| SHA | Changed file | Implementation |
+|---|---|---|
+| `17e2d624513012e05c80034e9174adae5d93f5b7` | `engine/fx/SpectraGpuCueBridge.h` | `GpuCueBridge`, `GpuCueBudgets`, `GpuCueEvent`, `GpuCueStats` for generic committed one-shot events and queue |
+| `71c0f3feb55e22476e5bbb5e27666d5a42116aa1` | `engine/fx/SpectraGpuCueBridge.cpp` | Bounded per-tick admissions/frame flush, no duplicate tick replay, event name binding snapshots, strict pool-level rejected launch telemetry, rollback |
+| `369b91665e143eba5974d9c38fa609184cc07de1` | `CMakeLists.txt` | Compile bridge into existing `aiverse_fx` / `AIVERSE::spectrafx` target |
+| `c8974c3b40f99572b9513881826834cf698d17a1` | `engine/fx/SpectraFX.h` | Export `SpectraGpuCueBridge.h` from canonical native engine SpectraFX entry |
+| `d0fe1e21a05ec8fa053c4ae3047775d3d15ec2ac` | `libraries/include/aiverselib/genre/SpectraGpuCueEcsAdapter.h` | Read-only `acceptSimGpuCueTick(bridge,tick,span<SimEvent>)` bridge without genre-specific logic |
+| `aea65019e48dd8e7e3a8865a9d52f59c48a2bc58` | `libraries/include/aiverselib/genre/SpectraFX.h` | Export ECS one-shot adapter to native game modules |
+| `1b6f27a88701f270c07b961bbc08119dddb773bc` | `docs/spectrafx.md` | Stage-29 native usage, queue/rollback contract and explicit limitations |
+| `d9d9bdbf939585f36a3f63f559ace9a1d96d357d` | `skills/visuals/aiverse-spectrafx/SKILL.md` | Agent usage and user-deferred verification instructions |
+| `d7b15e28133d4d59520c73dae97552022f02e4f7` | `AGENTS.md` | Owner, ECS purity, one-shot limitation and per-stage handoff requirement |
+
+### Architecture / API and runtime lifecycle
+
+`GpuCueBridge(GpuPoolWorld&, GpuCueBudgets)` does not allocate a new `ParticleSystem`, own GPU state, or create another materials system. It references the caller-owned `GpuPoolWorld` which already groups compatible GPU graph definitions and preserves complete unsupported effects through its shared CPU `BatchWorld`. The pool **must outlive** the bridge and the graphics `Device` must outlive the pool.
+
+`bind(gameEventKind,registeredEffectName)` is a purely presentation-level map. `accept(tick,span<GpuCueEvent>)` accepts only monotonically increasing **committed** ticks; duplicate or decreased ticks are ignored until a rollback reset. Every accepted event captures its current effect name, so rebinding a kind later doesn't change queued work. A cue optionally carries a generation-safe `source` ID, tint, direction and eight per-burst scalar VM values. The queue is bounded (`queued`, `acceptedPerTick`, `dispatchedPerFrame`) and the underlying pool has an independent global `maxBurstsPerFrame` budget. `flush()` sends bounded queued events only between pool `beginPresentationFrame` and `step`. World failures are counted and dropped, not declared successfully emitted.
+
+`resetForRollback()` calls the pooled world's **full visual reset first** and clears bridge queue/tick counters only on success; if reset is unsafe inside an active RHI pass, error is propagated and the bridge is left intact so the host may retry safely. **Full-pool ownership is required**: unlike the CPU CueScheduler which can kill only its own handles, this GPU bridge resets all effects of the shared pool. Don't use independent rollback owners in the same pool expecting unaffected particles.
+
+Native ECS helper `acceptSimGpuCueTick` is read-only and converts the existing `SimEvent::type` and fixed-point world positions into the generic `GpuCueEvent`. It does not retain ECS references or write VFX renderer handles into ECS. No FPS/RTS/other genre code is imported by the engine bridge.
+
+### Example host scheduling
+
+```cpp
+#include <aiverselib/genre/SpectraFX.h>
+aiverse::spectra::GpuPoolWorld pool;
+pool.init(device);
+pool.defineGraph("impact", impactGraph, aiverse::Json::object(), options);
+aiverse::spectra::GpuCueBridge bridge(pool);
+bridge.bind(gameImpactEvent, "impact");
+
+// Once after a committed deterministic tick:
+aiverse::spectra::acceptSimGpuCueTick(bridge, committedTick, simEvents);
+// One presentation frame, device frame already open:
+pool.beginPresentationFrame(cam, viewProjection, fbWidth, fbHeight);
+bridge.flush();
+pool.step(dt);
+// Inside scene render pass:
+pool.draw(fog);
+// After scene render pass:
+pool.endPresentationFrame();
+// On rollback outside render/compute pass:
+if(!bridge.resetForRollback()) { /* retry safely when device allows */ }
+```
+
+### Verification actually performed
+
+**SOURCE INSPECTION, GITHUB CONNECTOR COMMITS ONLY. NO TESTS RUN.** The user explicitly directed finishing functionality first and testing later. No CMake, CTest, MSL compile/execution, editor UI interaction, GPU readback, native FPS/RTS integration, graphics profiling or actual render screenshots were run. No PASS result or release-ready claim is justified by the recorded code commits.
+
+When testing is requested later, run the unified `./run-tests.sh` as specified in AGENTS.md; cover duplicate/out-of-order tick refusal, queue/tick/frame budgets, event rebinding while queued, named instance snapshots, unsupported CPU effect fallback, graphics pass ordering, failure telemetry, rollback reset retry, two unrelated genres using the same event adapter, and actual Metal visual parity.
+
+### Known limitations / precise next functionality
+
+1. **One-shot only.** The existing `ComputeParticles` and `GpuPoolWorld` APIs only spawn additive bursts and can clear all effects, but do not expose a per-source GPU emitter handle with selective kill/stop/retarget. The bridge therefore does NOT claim lifecycle management of persistent ECS-attached GPU effects. Use the already-existing CPU `CueScheduler` for continuous sources. Implement generation-safe GPU emitter ownership/selector buffers before making that claim.
+2. Whole-pool rollback is intentionally destructive to all visual effects in this pool. Multiple independent rollback scopes need separate pools or a future per-source GPU kill mechanism.
+3. No auto-migration of existing RTS/FPS native clients, no new gameplay ECS system, and no complete Unreal Niagara material/shader parity. Current Metal feature path remains experimental; GPU material support is already owned by a parallel agent and should not be duplicated.
+4. **Next bounded Stage 30:** add CPU-owned, generation-safe GPU source IDs and GPU-buffer source tags plus per-source selective kill/retarget without resetting unrelated particles; integrate this with pooled continuous emitter scheduling and event-born particle provenance. Keep controls opt-in, continue user-deferred tests and commit a new handoff afterward.
