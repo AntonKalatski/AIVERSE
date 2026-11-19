@@ -1355,8 +1355,10 @@ void Editor::frame(gfx::Device& dev, double dt) {
     // The previous frame's model buffers may still be read by Metal/Vulkan.
     // Retire on the owner thread before recording this frame's view passes.
     // An unavailable/failed fence retains retired resources for a retry.
-    if(view_.pendingModelRetirements()!=0 && !view_.collectRetiredModels())
-        ws_.log("view","GPU пока не подтвердил освобождение старых моделей");
+    // A false result is expected while an asynchronous retirement token
+    // is still in flight, not necessarily a GPU error. Poll silently.
+    if(view_.pendingModelRetirements()!=0)
+        view_.collectRetiredModels();
     pollAgentLink();
     applyChanges();
     // Poll changed presentation assets before any new frame submissions.
