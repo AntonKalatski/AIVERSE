@@ -187,6 +187,13 @@ public:
         return device_ && shader_.valid() && items_.valid() && sorted_.valid();
     }
     const std::string& lastError() const {return error_;}
+    uint64_t nominalGpuBytes() const {
+        if(!ready()) return 0;
+        const uint64_t cells=uint64_t(SpectraFxGpuEvolution::kTextureWidth)*
+            ((uint64_t(count_)+SpectraFxGpuEvolution::kTextureWidth-1)/
+             SpectraFxGpuEvolution::kTextureWidth);
+        return uint64_t(padded_)*8u + cells*sizeof(render::float4);
+    }
     uint32_t capacity() const {return count_;}
 
     void release() {
