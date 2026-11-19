@@ -7712,3 +7712,84 @@ textures per GPU command without changing existing homogeneous
 parent argument-buffer layout. Retain safe runtime fallback and
 do not enable by default until real Metal shader compilation and
 frame-fence/device tests pass.
+
+
+## Stage 10X — opt-in GPU ICB per-command VT fragment ABI (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / Draft #21.
+**Feature commits:**
+- `a6c6630c3a82397a2b66e1989424a7d872f0cb99` —
+  `engine/gfx/Gfx.h`: optional RHI descriptor
+  `GpuIcbVirtualMaterial` and
+  `prepareGpuEncodedIndexedIcbWithVirtualMaterials`; unsupported
+  implementations return zero and leave old API unchanged.
+- `f9b5e0f80da5daa68bfce9d9f531163c6270d179` —
+  `engine/gfx/metal/GfxMetal.mm`: a source-level opt-in
+  per-command VT path. The compute shader records per-command
+  fragment buffer index8 (PBR argument table) and index7 (U6)
+  pointers using aligned strides; legacy zero strides use old
+  inherited data. CPU prepares native VT texture snapshots and
+  validates handles, expected dimensions and atlas table layer.
+  Execution fills per-command fragment argument-buffer offsets
+  with the correct VT resource pair and optional R8 alpha, and
+  rechecks native handle identity before submitting ICB.
+- `16ec7c0fee754ec4c817306a4782c7e8f59e5943` —
+  `engine/gfx/metal/GfxMetal.mm`: clarify bounds guard for
+  per-command U6 uniform handling.
+- `267c94221325f47b23e78a8b46154b9924e739a3` —
+  `engine/render/Renderer3DModels.cpp`: explicit
+  `AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT=1` opt-in;
+  for already homogeneous VT groups submit a parallel array
+  of `GpuIcbVirtualMaterial` descriptors; preserve legacy
+  submission when flag is absent.
+- `75ae78cd01c36c3f8db39265216516fea4ced9ec` —
+  `engine/render/Renderer3D.h`: track per-command mode.
+**Documentation commits:**
+- `7601bbc03dc1b2299749d349780e8d7aea52dee4` `docs/texture-rhi.md`.
+- `77511b72bf52ab39e5778a606a4e025ab7e10cee`
+  `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**API and architecture:** This introduces a separate opt-in Metal
+GPU command-fragment binding layout that can point each encoded
+command to independent PBR argument-buffer/U6 slices. It uses
+PBR fragment texture argument IDs 26/28 for atlas/table, optional
+30/31 for R8 alpha, and existing s1 material sampler. Each
+material descriptor is validated before GPU encoding and again
+against native TextureHandles immediately before execution. The
+GPU compute kernel uses materialStride=4096 and vtStride=256
+only when descriptors are present; otherwise both are zero,
+preserving the established homogeneous ICB. No authoritative ECS,
+genre dependency or new shader graph source texture binding.
+
+**IMPORTANT:** The current group builder remains homogeneous and
+the feature flag is disabled by default. The new GPU ABI has NOT
+been exercised successfully on actual Metal, and source presence
+alone does NOT establish a working heterogeneous batch.
+The existing CPU `GpuMaterialResourceTable` ticket guard and
+fallback remain active.
+
+**Actually performed:** GitHub source inspection of Metal command
+encoder and fragment resource packing; RHI/Metal/Renderer code
+committed; static spot checks of changed method names, source
+snippets and buffer offsets. **Objective-C++ native build NOT RUN;
+MSL compile NOT RUN; CTest NOT RUN; GPU frame capture/ICB execution
+NOT RUN; performance measurement NOT RUN.** Container cannot
+resolve github.com for native checkout. Keep PR Draft.
+
+**Risks:** Metal argument-buffer offsets and generated ICB buffer
+pointer arithmetic have not been compiler/device verified. The
+Metal hardware has historically crashed with experimental ICB,
+so DO NOT turn the new flag on by default. Frame semaphore retains
+per-command buffer resources; application still owns native
+texture lifetimes and old VT revision GPU fence retirement.
+Large group per-command PBR storage is bounded to 256 * 4096
+bytes and U6 to 256 * 256 bytes; these are source-level bounds.
+
+**Next stage:** after native MSL compiler / GPU ABI checks, allow
+different *VT atlas/table bindings* inside one otherwise
+pipeline/material-compatible group, using per-command resource
+table tickets and retaining strict source-material equality.
+Only then attempt different ordinary PBR/ShaderGraph source
+textures, which require a separate material-state/graph ABI.
+Any failure must use normal CPU per-item rendering without
+dropping geometry.
