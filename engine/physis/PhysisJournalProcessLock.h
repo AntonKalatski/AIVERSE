@@ -124,6 +124,10 @@ public:
             return false;
         }
         fd_=fd;
+        lockPath_=path;
+        parentPath_=parent;
+        parentDev_=parentStat.st_dev;
+        parentIno_=parentStat.st_ino;
 #else
         HANDLE handle=CreateFileW(path.wstring().c_str(),GENERIC_READ|GENERIC_WRITE,
             FILE_SHARE_READ|FILE_SHARE_WRITE,nullptr,OPEN_ALWAYS,
@@ -153,6 +157,36 @@ public:
 #endif
     }
 
+    // Verify that the currently published path is still the inode we
+    // locked, and that the directory is still the trusted one. POSIX
+    // advisory flock does NOT protect an unlinked/replaced pathname.
+    // Call before every privileged admission and durable journal write.
+    bool valid() const {
+        if(!held())return false;
+#ifndef _WIN32
+        struct stat locked{}, named{}, parent{};
+        return ::fstat(fd_,&locked)==0 &&
+               S_ISREG(locked.st_mode) &&
+               locked.st_nlink==1 &&
+               locked.st_uid==::geteuid() &&
+               (locked.st_mode & 0077)==0 &&
+               ::lstat(lockPath_.c_str(),&named)==0 &&
+               S_ISREG(named.st_mode) &&
+               named.st_dev==locked.st_dev &&
+               named.st_ino==locked.st_ino &&
+               named.st_nlink==1 &&
+               ::lstat(parentPath_.c_str(),&parent)==0 &&
+               S_ISDIR(parent.st_mode) &&
+               parent.st_uid==::geteuid() &&
+               (parent.st_mode & 0022)==0 &&
+               parent.st_dev==parentDev_ &&
+               parent.st_ino==parentIno_;
+#else
+        // TODO: validate Windows path identity and ACL/reparse-point policy.
+        return held();
+#endif
+    }
+
     void release() {
 #ifndef _WIN32
         if(fd_>=0) {
@@ -160,6 +194,10 @@ public:
             ::close(fd_);
             fd_=-1;
         }
+        lockPath_.clear();
+        parentPath_.clear();
+        parentDev_=0;
+        parentIno_=0;
 #else
         if(handle_!=INVALID_HANDLE_VALUE) {
             OVERLAPPED overlapped{};
@@ -172,6 +210,10 @@ public:
 private:
 #ifndef _WIN32
     int fd_=-1;
+    std::filesystem::path lockPath_;
+    std::filesystem::path parentPath_;
+    dev_t parentDev_=0;
+    ino_t parentIno_=0;
 #else
     HANDLE handle_=INVALID_HANDLE_VALUE;
 #endif
