@@ -2,6 +2,7 @@
 // snapshots. Rendering and AnimationGraph clocks remain in a single View.
 #pragma once
 #include "AppearanceAuthoringService.h"
+#include "AppearanceChoiceAuthoring.h"
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -26,6 +27,9 @@ public:
         const render::Model* model=nullptr;
         Json materialLibrary=Json::object();
         std::vector<Json> materialOverrides; // by imported model material index
+        // Optional shared rule keys: materials("*"/named), assign(node glob), variant.
+        // Exact same CPU policy is used by the RTS legacy adapter and native FPS.
+        Json appearance;
         std::vector<int> nodeMaterial;
         Json animationGraph; // null: no graph, string: external asset, object: inline
         render::FileReader graphReader;
@@ -154,19 +158,36 @@ public:
                          next->graphSource)==next->sources.end())
                 next->sources.push_back(next->graphSource);
 
-            for(size_t i=0;i<request.materialOverrides.size();++i) {
-                const Json& ref=request.materialOverrides[i];
-                if(ref.isNull())continue;
+            const auto applyStrict=[&](render::Material& material,const Json& ref) {
+                if(ref.isNull())return;
                 const Json resolved=AppearanceAuthoringService::resolveMaterial(
                     request.materialLibrary,ref,warn);
-                // The generic best-effort material API warns and discards a
-                // failed shaderGraph; hot publication must instead roll back.
+                // Precompile a shaderGraph before the best-effort material API
+                // can discard a broken graph; this is a CPU transaction only.
                 if(resolved.has("shaderGraph"))
                     (void)render::graph::compile(resolved["shaderGraph"],"material");
                 AppearanceAuthoringService::applyMaterial(
-                    next->materials[i],request.materialLibrary,ref,
-                    textureLoader,warn);
+                    material,request.materialLibrary,ref,textureLoader,warn);
+            };
+            if(request.appearance.isObject()) {
+                const auto choice=AppearanceChoiceAuthoring::resolve(
+                    *request.model,request.appearance,warn);
+                for(size_t i=0;i<choice.materialLayers.size();++i)
+                    for(const auto& layer:choice.materialLayers[i])
+                        applyStrict(next->materials[i],layer);
+                for(const auto& extra:choice.extraMaterials) {
+                    render::Material material;
+                    material.name=extra.name;
+                    applyStrict(material,extra.reference);
+                    next->materials.push_back(std::move(material));
+                }
+                if(request.nodeMaterial.empty())
+                    next->nodeMaterial=choice.nodeMaterial;
+                if(request.variant<0)
+                    next->variant=choice.variant;
             }
+            for(size_t i=0;i<request.materialOverrides.size();++i)
+                applyStrict(next->materials[i],request.materialOverrides[i]);
 
             const auto previous=find(key);
             if(!request.animationGraph.isNull()) {
