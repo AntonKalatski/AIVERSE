@@ -393,6 +393,40 @@ result arrives and never queues these into authoritative ECS.
   or visual correctness until targeted Metal ICB and CPU MDI
   shader compilation, output-parity and perf data exist.
 
+### Multiple independent Terra VT domains
+
+- Use `render::TerraWeaveVirtualAtlasDomains` for separate Horizon,
+  Forest and impostor atlases. Register stable numeric DomainIds,
+  each with a matching immutable versioned page archive and its own
+  `TerraWeaveVirtualAtlasSession` / GPU feedback pass.
+- **Never decode combined 32-bit page IDs from two archives in one
+  GPU readback.** The codec has tile/mip/layer but no domain index.
+  The manager filters one domain per capture, preserves occluder
+  depth from all other models, and submits readback only to its
+  matching streamer via `pumpActive()`. Other domains can use
+  `requestPage(domain,key,pin)` for CPU visibility prefetch.
+- `beginFrame()` clears previous model/material pointer registrations;
+  call `registerDraw` before ordinary `Renderer3D::drawModel`.
+  Use `setLiveDomainLookup` to resolve private Horizon models,
+  using their real object/revision identity, not their path alone.
+- `promote(domain)` requires the candidate fallback pages resident,
+  a compatible new feedback decoder, and no pending/unconsumed
+  domain readback. The application controls the GPU fence before
+  `retireCompletedGpuWork(domain)`. Call `detach()` before
+  destroying Renderer3D/feedback objects; the manager's callbacks
+  capture its address.
+- The manager installs `Renderer3D::setVirtualTextureFeedbackScheduler`
+  and uses the original shared model feedback shader programs.
+  Independent domains can sample their own VT atlas in one colour
+  scene; GPU ICB/MDI still require homogeneity within each group.
+- Historical code fix: `injectModelVirtualTextureSampling` must match
+  current `ModelShaders.h` Metal signature, including the optional
+  R8 `VIRTUAL_ALPHA_MASK` arguments after `GI_FARGS`.
+  Do not restore the obsolete `GI_FARGS) {` assumption.
+- New functionality is committed but uncompiled; compile C++,
+  validate Metal shaders and GPU readback routing during the
+  explicitly deferred test phase, not before the user requests it.
+
 ### Verification gates — don't invent passes
 
 ```sh
