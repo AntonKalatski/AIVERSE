@@ -1,4 +1,5 @@
 #include "HumanGroom.h"
+#include "GroomSelfCollision.h"
 #include "HumanMaterials.h"
 #include <algorithm>
 #include <array>
@@ -393,6 +394,11 @@ render::float3 HumanGroomRuntime::resolveCollision(
         ? p*(1.001f/radius)
         : guide.root+guide.normal*0.001f;
 }
+bool HumanGroomRuntime::setSelfCollision(GroomSelfCollisionConfig config) noexcept {
+    if(!GroomSelfCollision::validate(config))return false;
+    selfCollision_=config;
+    return true;
+}
 void HumanGroomRuntime::generate(const HumanDNA& dna,GroomQuality quality) {
     dna.validate();
     const auto& g=dna.groom;
@@ -449,6 +455,7 @@ void HumanGroomRuntime::generate(const HumanDNA& dna,GroomQuality quality) {
         guides_.push_back(std::move(guide));
     }
     lastStepMs_=0;
+    selfCollisionStats_={};
 }
 bool HumanGroomRuntime::step(float dt,render::float3 wind) {
     using namespace render;
@@ -462,6 +469,7 @@ bool HumanGroomRuntime::step(float dt,render::float3 wind) {
     const float dt2=h*h;
     const float friction=std::pow(1.0f-damping_*0.65f,h*60.0f);
     const float3 force=wind*windStrength_+float3{0,-9.81f*gravity_,0};
+    selfCollisionStats_={};
     for(int substep=0;substep<substeps;++substep) {
     for(auto& guide:guides_) {
         guide.position[0]=guide.previous[0]=guide.root;
@@ -504,6 +512,24 @@ bool HumanGroomRuntime::step(float dt,render::float3 wind) {
                 guide.previous[j]=guide.position[j];
         }
         for(auto v:guide.position)if(!good(v))return false;
+    }
+    if(selfCollision_.enabled) {
+        GroomSelfCollisionStats collisions;
+        if(!GroomSelfCollision::resolve(guides_,selfCollision_,collisions))
+            return false;
+        selfCollisionStats_.pairChecks+=collisions.pairChecks;
+        selfCollisionStats_.contacts+=collisions.contacts;
+        selfCollisionStats_.budgetHit|=
+            collisions.budgetHit;
+        // The collision solver resolves inter-guide contacts, but the
+        // scalp proxy and the ellipsoidal fallback remain authoritative.
+        for(auto& guide:guides_)
+            for(std::size_t j=1;j<guide.position.size();++j) {
+                const auto before=guide.position[j];
+                guide.position[j]=resolveCollision(before,guide);
+                if(length(guide.position[j]-before)>1e-6f)
+                    guide.previous[j]=guide.position[j];
+            }
     }
     }
     lastStepMs_=float(std::chrono::duration<double,std::milli>(
