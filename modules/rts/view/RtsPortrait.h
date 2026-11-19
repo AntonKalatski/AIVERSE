@@ -7,6 +7,7 @@
 #include "RtsView.h"
 #include "engine/view/View.h"
 #include "engine/render/ModelResourceCache.h"
+#include "engine/render/ModelAssetProvider.h"
 
 namespace aiverse::game {
 
@@ -19,6 +20,10 @@ public:
     // A material (library name or override object, docs/models.md) on a sphere (shape 0) or a box
     // (shape 1), slowly turning; textures resolve like in rules.json.
     void renderPose(const render::Model&, const render::Pose&, float yaw=0.5f);
+    // Draw a source model provided by any native project, without RtsView,
+    // gameplay types or an extra MotionWeave animation evaluation.
+    bool renderStaticModel(render::ModelAssetProvider& provider,
+                           const std::string& source,float yaw=0.5f);
     void renderMaterial(RtsView& view, const Json& material, int shape, double time);
     gfx::TextureHandle texture() const { return color_; }
     int size() const { return size_; }
