@@ -4,6 +4,7 @@
 #pragma once
 
 #include "TextureStreaming.h"
+#include "VirtualTexturePhysicalMips.h"
 #include "VirtualTexturePageTable.h"
 
 #include <algorithm>
@@ -22,6 +23,7 @@ struct VirtualTextureStreamConfig {
     int mipLevels = 0, virtualLayers = 1;
     int physicalPages = 0;
     int physicalPageSize = 128; // including caller-provided edge gutters
+    int physicalMipLevels = 1; // opt-in complete mip chain per physical array slice
     PixelFormat physicalFormat = PixelFormat::RGBA8;
     size_t pageTableBytesPerFlush = size_t(4) << 20;
 };
@@ -40,7 +42,10 @@ public:
 
     bool initialize(VirtualTextureStreamConfig cfg) {
         shutdown();
-        if (!device_ || cfg.physicalPageSize < 4 || cfg.physicalPages < 1 ||
+        if (!device_ || cfg.physicalPageSize < 4 || cfg.physicalPageSize > 4096 ||
+            cfg.physicalMipLevels < 1 ||
+            cfg.physicalMipLevels > maxTextureMipLevels(cfg.physicalPageSize,cfg.physicalPageSize) ||
+            cfg.physicalPages < 1 ||
             cfg.physicalPages > 65535 || cfg.pageTableBytesPerFlush < 4 ||
             (cfg.physicalFormat != PixelFormat::RGBA8 &&
              cfg.physicalFormat != PixelFormat::RGBA8_sRGB) ||
@@ -58,8 +63,9 @@ public:
             error_ = "virtual texture page dimensions or metadata budget invalid";
             return false;
         }
-        const TextureDesc atlasDesc =
+        TextureDesc atlasDesc =
             pages_.atlasDescriptor(cfg.physicalPageSize,cfg.physicalFormat);
+        atlasDesc.mipLevels = cfg.physicalMipLevels;
         atlas_ = uploads_.createTexture(atlasDesc);
         if (!atlas_.valid()) {
             error_ = uploads_.lastError();
@@ -80,83 +86,153 @@ public:
         return true;
     }
 
-    // Input contains one complete, tightly packed *physical* page image.
-    // Page gutters/border texels are supplied by the asset system; no
-    // automatic gutter expansion, downsampling or transcoding happens here.
-    // A pending or already resident key is not scheduled twice.
-    TextureUploadTicket stage(VirtualPageKey key, const void* packed,
-                              size_t bytes, bool pin = false) {
-        if (!ready() || !packed) {
-            error_ = "virtual texture not ready or source pixels absent";
+
+    // Atomic *publication* across every authored mip of a physical page.
+    // View memory is snapshotted immediately by TextureStreamQueue::enqueue.
+    // The first returned ticket identifies the entire mip batch for cancel().
+    // No physical slice becomes sampleable until all its subresources succeed.
+    TextureUploadTicket stageMipChain(
+        VirtualPageKey key,const std::vector<VirtualTextureMipView>& levels,
+        bool pin=false) {
+        if (!ready() || levels.size()!=size_t(config_.physicalMipLevels)) {
+            error_="virtual texture unavailable or incorrect physical mip count";
             return {};
         }
-        const size_t size = size_t(config_.physicalPageSize);
-        const size_t expected = size*size*4u;
-        if (bytes != expected || expected > size_t(std::numeric_limits<int>::max())) {
-            error_ = "virtual texture page payload size does not match physical atlas";
+        const int side=config_.physicalPageSize;
+        for(size_t mip=0;mip<levels.size();++mip) {
+            const size_t s=size_t(std::max(1,side>>int(mip)));
+            const size_t expected=s*s*4u;
+            if (!levels[mip].data || levels[mip].bytes!=expected ||
+                expected>size_t(std::numeric_limits<int>::max())) {
+                error_="physical mip chain has missing or incorrect payload";
+                return {};
+            }
+        }
+        const VirtualPageAllocation allocation=pages_.reserve(key,pin);
+        if(!allocation.valid() || !allocation.needsUpload) {
+            error_="physical page invalid, pending, resident or atlas slots pinned";
             return {};
         }
-        const VirtualPageAllocation allocation = pages_.reserve(key,pin);
-        if (!allocation.valid() || !allocation.needsUpload) {
-            error_ = "virtual texture page invalid, pending, resident or all slots pinned";
-            return {};
+        // Before the first overwrite, remove any evicted previous slot alias.
+        if(!synchronizeTable()) { failed_=true; return {}; }
+        std::vector<TextureUploadTicket> tickets;
+        tickets.reserve(levels.size());
+        for(size_t mip=0;mip<levels.size();++mip) {
+            const size_t s=size_t(std::max(1,side>>int(mip)));
+            TextureUploadDesc update;
+            update.mipLevel=int(mip);
+            update.arrayLayer=allocation.physicalSlice;
+            update.width=int(s);update.height=int(s);
+            update.rowPitchBytes=int(s*4u);
+            update.slicePitchBytes=int(s*s*4u);
+            const TextureUploadTicket ticket=uploads_.enqueue(
+                atlas_,update,levels[mip].data,levels[mip].bytes);
+            if(!ticket.valid()) {
+                const std::string enqueueError=uploads_.lastError();
+                for(const auto& t:tickets) uploads_.cancel(t);
+                pages_.abandon(key,allocation);
+                if(!synchronizeTable()) failed_=true;
+                error_=enqueueError.empty() ?
+                    "physical page mip staging failed" : enqueueError;
+                return {};
+            }
+            tickets.push_back(ticket);
         }
-        // A reserve may evict an LRU physical slot. Invalidate the stale
-        // shader mapping BEFORE the slot can be overwritten by the new upload.
-        if (!synchronizeTable()) {
-            failed_ = true; // never expose aliasing/corrupt mapping on the GPU
-            return {};
-        }
-        TextureUploadDesc update;
-        update.mipLevel = 0;
-        update.arrayLayer = allocation.physicalSlice;
-        update.width = config_.physicalPageSize;
-        update.height = config_.physicalPageSize;
-        update.rowPitchBytes = int(size*4u);
-        update.slicePitchBytes = int(expected);
-        const TextureUploadTicket ticket =
-            uploads_.enqueue(atlas_,update,packed,bytes);
-        if (!ticket.valid()) {
-            pages_.abandon(key,allocation);
-            if (!synchronizeTable()) failed_ = true;
-            error_ = uploads_.lastError();
-            return {};
-        }
-        pending_.emplace(ticket.value, Pending{key,allocation});
+        const uint64_t root=tickets.front().value;
+        PendingBatch batch;
+        batch.key=key;batch.allocation=allocation;
+        batch.remaining=tickets.size();
+        batch.tickets=std::move(tickets);
+        batches_.emplace(allocation.generation,std::move(batch));
+        roots_.emplace(root,allocation.generation);
+        for(const auto& ticket:batches_.at(allocation.generation).tickets)
+            pending_.emplace(ticket.value,allocation.generation);
         error_.clear();
-        return ticket;
+        return {root};
     }
 
-    // Returns submitted GPU transfers, not completed disk operations.
-    // Publish pages in the shader table only after the GPU upload succeeded.
-    size_t drain(const CompletionFn& onCompletion = {}) {
+    // Compatibility API: existing one-mip pages work without changes.
+    // With physicalMipLevels>1 the supplied *guttered* RGBA8 physical page
+    // gets a complete alpha-correct CPU mip chain before enqueue. For authored
+    // mips use stageMipChain() directly instead.
+    TextureUploadTicket stage(VirtualPageKey key, const void* packed,
+                              size_t bytes, bool pin=false) {
+        const size_t side=config_.physicalPageSize>0 ?
+                          size_t(config_.physicalPageSize) : 0u;
+        if(!ready() || !packed || side*side*4u!=bytes) {
+            error_="virtual texture unavailable or base physical page payload invalid";
+            return {};
+        }
+        if(config_.physicalMipLevels==1)
+            return stageMipChain(key,{{packed,bytes}},pin);
+        std::vector<VirtualTextureMipLevel> generated;
+        if(!buildVirtualTexturePhysicalMips(packed,bytes,config_.physicalPageSize,
+               config_.physicalMipLevels,config_.physicalFormat==PixelFormat::RGBA8_sRGB,
+               generated)) {
+            error_="unable to generate physical mip chain";
+            return {};
+        }
+        std::vector<VirtualTextureMipView> views;
+        views.reserve(generated.size());
+        for(const auto& level:generated)
+            views.push_back({level.rgba.data(),level.rgba.size()});
+        return stageMipChain(key,views,pin);
+    }
+
+
+    // Returns submitted subresource GPU transfers, not complete pages.
+    // Exactly one page event is published only after *every* mip succeeds.
+    size_t drain(const CompletionFn& onCompletion={}) {
         std::vector<std::pair<VirtualPageKey,bool>> events;
-        const size_t submitted = uploads_.drain(
-            [&](TextureUploadTicket ticket,TextureStreamId id,bool success) {
-                auto it = pending_.find(ticket.value);
-                if (it==pending_.end() || id!=atlas_) return;
-                Pending context=it->second;
+        const size_t submitted=uploads_.drain(
+            [&](TextureUploadTicket ticket,TextureStreamId resource,bool success) {
+                if(resource!=atlas_) return;
+                auto it=pending_.find(ticket.value);
+                if(it==pending_.end()) return;
+                const uint64_t generation=it->second;
                 pending_.erase(it);
-                if (!pages_.complete(context.key,context.allocation,success)) return;
-                events.emplace_back(context.key,success);
-                if (!success) failed_=true; // entire atlas quarantined by queue
+                auto group=batches_.find(generation);
+                if(group==batches_.end()) return;
+                PendingBatch& batch=group->second;
+                if(!success || --batch.remaining==0) {
+                    const bool ok=success;
+                    pages_.complete(batch.key,batch.allocation,ok);
+                    events.emplace_back(batch.key,ok);
+                    roots_.erase(batch.tickets.front().value);
+                    batches_.erase(group);
+                    if(!success) failed_=true;
+                }
             });
-        if (!failed_ && !synchronizeTable()) failed_=true;
-        if (uploads_.failed(atlas_)) failed_=true;
-        if (failed_) pending_.clear(); // underlying queue cancelled further work
-        if (onCompletion)
-            for (const auto& item:events)
-                onCompletion(item.first,item.second && !failed_);
+        if(!failed_ && !synchronizeTable()) failed_=true;
+        if(uploads_.failed(atlas_)) failed_=true;
+        if(failed_) {
+            pending_.clear(); batches_.clear(); roots_.clear();
+        }
+        if(onCompletion)
+            for(const auto& event:events)
+                onCompletion(event.first,event.second && !failed_);
         return submitted;
     }
 
-    bool cancel(TextureUploadTicket ticket) {
-        auto it=pending_.find(ticket.value);
-        if (it==pending_.end() || !uploads_.cancel(ticket)) return false;
-        const Pending context=it->second;
-        pending_.erase(it);
-        pages_.abandon(context.key,context.allocation);
-        if (!synchronizeTable()) failed_=true;
+    // Cancels every as-yet-unsubmitted mip in the batch. Earlier updates
+    // completed on the device thread but have not been published in the table.
+    bool cancel(TextureUploadTicket rootTicket) {
+        auto root=roots_.find(rootTicket.value);
+        if(root==roots_.end()) return false;
+        auto batch=batches_.find(root->second);
+        if(batch==batches_.end()) return false;
+        for(const auto& ticket:batch->second.tickets) {
+            auto pending=pending_.find(ticket.value);
+            if(pending==pending_.end()) continue; // mip already submitted
+            if(!uploads_.cancel(ticket)) return false;
+            pending_.erase(pending);
+        }
+        const VirtualPageKey key=batch->second.key;
+        const VirtualPageAllocation allocation=batch->second.allocation;
+        roots_.erase(root);
+        batches_.erase(batch);
+        pages_.abandon(key,allocation);
+        if(!synchronizeTable()) failed_=true;
         return true;
     }
 
@@ -203,7 +279,7 @@ public:
     const std::string& lastError() const {return error_;}
 
     void shutdown() {
-        pending_.clear();
+        pending_.clear(); batches_.clear(); roots_.clear();
         if (atlas_.valid()) uploads_.destroy(atlas_);
         atlas_ = {};
         if (tableGpu_.valid() && device_) device_->destroyTexture(tableGpu_);
@@ -214,9 +290,11 @@ public:
     }
 
 private:
-    struct Pending {
+    struct PendingBatch {
         VirtualPageKey key;
         VirtualPageAllocation allocation;
+        size_t remaining = 0;
+        std::vector<TextureUploadTicket> tickets;
     };
     bool synchronizeTable() {
         table_.rebuild(pages_);
@@ -248,7 +326,9 @@ private:
     TextureStreamId atlas_;
     TextureHandle tableGpu_;
     bool failed_ = false;
-    std::map<uint64_t,Pending> pending_;
+    std::map<uint64_t,uint64_t> pending_; // queued ticket -> allocation generation
+    std::map<uint64_t,PendingBatch> batches_; // generation -> atomic page batch
+    std::map<uint64_t,uint64_t> roots_; // first ticket -> allocation generation
     std::string error_;
 };
 
