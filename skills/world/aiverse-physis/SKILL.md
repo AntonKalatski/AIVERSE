@@ -816,3 +816,23 @@ Current isolated Linux journal tests re-ran successfully (3/3),
 strict Clang 17 all 3 PASS and GCC ASan/UBSan SIGKILL test PASS.
 This is not full engine/macOS/Windows CI. Handoff:
 `docs/agent-handoffs/physis-stage60-ci-doc-filter-2026-11-19.md`.
+
+
+### Stage 61 — run full PHYSIS validation with retained logs
+
+Use the new Bash 3.2-compatible
+`bash tools/physis-validate-native.sh --full --jobs 4`
+on a full macOS/Linux checkout of the PHYSIS branch. It configures a
+focused headless Debug CMake build, builds the PHYSIS native target
+list and runs `ctest -R '^physis_'`, preserving
+`configure.log`, `build.log`, `ctest.log` and `summary.txt`
+under `build/physis-validation-full/physis-reports/`.
+Failures return nonzero and MUST be reported with actual logs.
+
+For no-dependency filesystem testing use
+`bash tools/physis-validate-native.sh --standalone --jobs 2`.
+That exact script passed Linux native CTest 3/3 with GCC 14.2 after a
+syntax check. FULL engine mode, macOS, and editor-core authoring
+checks have NOT been run. The default full mode includes Box3D;
+`--no-physics` excludes that optional target.
+See `docs/agent-handoffs/physis-stage61-native-validation-runner-2026-11-19.md`.

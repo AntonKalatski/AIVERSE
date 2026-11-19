@@ -761,3 +761,32 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   `physis_field_runtime` and real Ubuntu/macOS CI are NOT PASSED.
 - Per-stage handoff:
   `docs/agent-handoffs/physis-stage60-ci-doc-filter-2026-11-19.md`.
+
+
+### Stage 61 — reproducible focused native PHYSIS test runner (2026-11-19)
+
+- New executable `tools/physis-validate-native.sh` provides a
+  macOS Bash 3.2-compatible one-command validation path. Default
+  `--full` configures root AIVERSE with tests and physics ON, builds
+  all headless PHYSIS targets explicitly, and runs CTest
+  `-R '^physis_'`. It excludes editor-core authoring fixtures by
+  design; these need a separate editor-enabled run.
+- `--standalone` configures the real
+  `tests/physis_journal_standalone` project and builds/runs its
+  three POSIX journal tests. Options include `--jobs N`,
+  `--no-physics` (full only) and `--build-dir DIR`.
+  It never deletes a build directory and always records stage logs,
+  failure exit statuses and a summary under
+  `<build-dir>/physis-reports/<timestamp>-<pid>/`.
+- **ACTUAL PASS**: ran `bash -n` on the exact source and invoked
+  `--standalone --jobs 2 --build-dir build/scriptcheck` from outside
+  the repo. GCC 14.2 native CMake/CTest **3/3 Passed**, exit 0.
+  The script blob SHA `9880c7aefc0ddf4791e69d729abf289729a3a96b`
+  matches the GitHub commit.
+- **NOT RUN**: `--full`, AIVERSE engine CMake, integrated admin
+  gateway, macOS, Box3D and full PHYSIS CTests: the current container
+  cannot resolve github.com for full checkout and GitHub Actions
+  native jobs remain queued. Do not interpret standalone PASS as
+  an engine PASS.
+- Handoff:
+  `docs/agent-handoffs/physis-stage61-native-validation-runner-2026-11-19.md`.
