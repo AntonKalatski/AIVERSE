@@ -85,6 +85,10 @@ inline const char* kTerrainFS =
     AIVERSE_TERRAIN_GLSL_U0 AIVERSE_GLSL_FRAME AIVERSE_GLSL_SHADOW AIVERSE_GLSL_LIGHTS AIVERSE_GLSL_TRACE_AT("tex18")
     AIVERSE_GLSL_BAKED_TERRAIN("U3", "tex19", "tex20")
     R"(
+// Tier 0 never uses splat/normal/cliff maps. Keep their declarations out
+// of the strict GLES3 16-slot compact variant, where tex4/5/6 are rebound
+// to baked lightmap, shadow mask, and terrain heightfield trace respectively.
+#if TERRAIN_TIER >= 1
 uniform sampler2D tex4;
 uniform sampler2D tex5;
 uniform sampler2D tex6;
@@ -96,6 +100,7 @@ uniform sampler2D tex11;
 uniform sampler2D tex12;
 uniform sampler2D tex13;
 uniform sampler2D tex14;
+#endif
 uniform mediump sampler2D tex15;
 #if TERRAIN_DETAIL
 uniform sampler2D tex16;   // detail normals: rg = n.xz, b = cavity, a = macro variation
