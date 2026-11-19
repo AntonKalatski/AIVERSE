@@ -5,6 +5,7 @@
 #pragma once
 
 #include "engine/render/Model.h"
+#include "engine/render/TerraWeaveHorizonWindPatch.h"
 #include "engine/world/AsyncChunkStream.h"
 #include "engine/world/TerraWeaveHorizon.h"
 #include <algorithm>
@@ -23,6 +24,9 @@ struct HorizonGpuRegion {
     std::shared_ptr<const HorizonBake> bake;
     std::vector<render::ModelVertex> vertices; // optional patch reference
     std::vector<uint32_t> indices;             // optional patch reference
+    // Compact forest-only vertex shadow for exact PHYSIS wind colour
+    // patches. GPU cache ownership moves it together with the model.
+    HorizonForestWindOverlay forestWind;
     int64_t originXcm=0, originZcm=0;
     size_t clusters=0, terrainQuads=0;
     size_t atlasBytes=0, vertexCount=0, triangleCount=0;
