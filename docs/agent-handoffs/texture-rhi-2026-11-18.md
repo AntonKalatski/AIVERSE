@@ -6012,3 +6012,29 @@ per user's functions-first instruction.
 Next: implement LOD-dither feedback fragment shader matching
 the main renderer, combined masked+LOD variant, then address
 deformed models and Terra integration.
+
+
+## Stage 9S — LOD ordered-dither feedback fragment shader (2026-11-19)
+
+Source commit: d253390bb6955d596d285e68376146b45e81e656.
+File: engine/gfx/VirtualTextureFeedback.h.
+Added virtualTextureLodFeedbackFragmentGLSL/MSL(bool automaticMip)
+which compose the existing material feedback shader and insert
+the 4x4 ordered coverage pattern used by Renderer3D's
+ModelShaders.h LODFADE. Both support threshold and invert
+selection, optional derivative-based mip and packed page ID
+output. GLSL uniforms: uLodThreshold/uLodInvert. MSL binds
+AiverseLodFeedbackParams at buffer(1), threshold and uint invert.
+The exact coverage parity requires matching viewport pixel
+coordinates; a downsampled feedback target will not preserve
+the original main-pass dither coverage unless coordinates
+are explicitly mapped. Masked+LOD combined variant is still
+not implemented, nor are skinned/morph geometry or Terra
+material bindings.
+
+Verification: GitHub source commit succeeded. Native build,
+GLSL/MSL shader compilation, CTest and GPU rendering NOT RUN
+per user's functional-first request.
+Next: implement combined masked+LOD feedback shader and
+parameter bindings; account for main viewport-to-feedback
+pixel coordinates, then finish deformed model and Terra paths.
