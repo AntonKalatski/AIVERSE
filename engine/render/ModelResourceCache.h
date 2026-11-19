@@ -226,7 +226,7 @@ public:
         for(const auto& item:affected) {
             const auto it=models_.find(item.key);
             if(it==models_.end())continue;
-            if(it->second)retired_.enqueue(std::move(it->second));
+            if(it->second)retired_.enqueueFrom(it->second);
             models_.erase(it);
             ++generation_;
         }
@@ -294,7 +294,7 @@ public:
                 // The enqueue diagnostic observer must not recursively
                 // modify this cache while the resident iterator is live.
                 ModelDetachCallbackScope retirementCallback(*this);
-                retired_.enqueue(std::move(it->second));
+                retired_.enqueueFrom(it->second);
             }
             it->second=std::move(replacement);
             ++generation_;
@@ -451,7 +451,7 @@ public:
                 }
                 requireNoModelReaders("trimUnused");
                 ModelDetachCallbackScope retirementCallback(*this);
-                retired_.enqueue(std::move(it->second));
+                retired_.enqueueFrom(it->second);
             }
             it=models_.erase(it);
             ++released;
