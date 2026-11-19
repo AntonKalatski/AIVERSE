@@ -99,6 +99,7 @@ bool prepareRenderCandidate(const Model& source, const ModelAsset& staged,
         return fail(error, "Strata candidate output capacity exceeded");
 
     RenderCandidate candidate;
+    candidate.source = &source;
     candidate.vertexBuffer = source.vb;
     candidate.indexBuffer = resident.buffer;
     candidate.mesh = mesh;
@@ -134,12 +135,19 @@ bool prepareRenderCandidate(const Model& source, const ModelAsset& staged,
     return true;
 }
 
-bool encodeRendererCommands(const RenderCandidate& candidate,
+bool encodeRendererCommands(const Model& liveSource,
+                            const RenderCandidate& candidate,
                             uint32_t rendererInstanceSlot,
                             const RenderRouteGate& gate,
                             std::vector<gfx::DrawIndexedIndirectCommand>& out) {
     if (chooseExclusiveRenderRoute(gate) != RenderRoute::Strata ||
         rendererInstanceSlot == invalidNode ||
+        candidate.source != &liveSource ||
+        !liveSource.geometryPoolPage ||
+        candidate.geometryRevision != liveSource.geometryRevision ||
+        candidate.materialRevision != liveSource.materialRevision ||
+        candidate.vertexBuffer != liveSource.vb ||
+        candidate.indexBuffer != liveSource.ib ||
         !candidate.vertexBuffer.valid() || !candidate.indexBuffer.valid())
         return false;
     std::vector<gfx::DrawIndexedIndirectCommand> commands;
