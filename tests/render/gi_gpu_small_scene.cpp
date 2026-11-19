@@ -58,6 +58,15 @@ int main() {
     AIVERSE_TEST_CHECK(gpu.triangleCount()==2);
     AIVERSE_TEST_CHECK(gpu.setLights({GiMovingLight{1,{0,0,0},{1,0,0},5,20}}));
     AIVERSE_TEST_CHECK(gpu.lightCount()==1);
+    GiEnvironmentLight env;
+    env.sunDirection={0,1,0};
+    env.sunColor={1,0,0};
+    env.sunIntensity=3;
+    env.skyColor={0,0,1};
+    env.skyIntensity=2;
+    AIVERSE_TEST_CHECK(gpu.setEnvironment(env));
+    AIVERSE_TEST_CHECK(gpu.environment()==env);
+    AIVERSE_TEST_CHECK(sizeof(GiGpuSmallScene::Uniforms)==80);
     AIVERSE_TEST_CHECK(!gpu.setLights({GiMovingLight{2,{0,0,0},{1,0,0},5,20},
                                       GiMovingLight{2,{1,0,0},{1,0,0},5,20}}));
     AIVERSE_TEST_CHECK(gpu.lightCount()==1); // failed update retains previous lights
@@ -101,6 +110,8 @@ int main() {
     AIVERSE_TEST_CHECK(vulkanShader.find("job.index*3u")!=std::string::npos);
     AIVERSE_TEST_CHECK(vulkanShader.find("spotDirectionOuter")!=std::string::npos);
     AIVERSE_TEST_CHECK(vulkanShader.find("spotInner.x")!=std::string::npos);
+    AIVERSE_TEST_CHECK(vulkanShader.find("sunDirectionIntensity")!=std::string::npos);
+    AIVERSE_TEST_CHECK(vulkanShader.find("skyColor")!=std::string::npos);
     AIVERSE_TEST_CHECK(sizeof(GiGpuSmallScene::GpuLamp)==64);
 
     std::string shader=gi_gpu::kMetalSmallScene;
@@ -110,6 +121,8 @@ int main() {
     AIVERSE_TEST_CHECK(shader.find("job.index*3u")!=std::string::npos);
     AIVERSE_TEST_CHECK(shader.find("spotDirectionOuter")!=std::string::npos);
     AIVERSE_TEST_CHECK(shader.find("spotInner.x")!=std::string::npos);
+    AIVERSE_TEST_CHECK(shader.find("sunDirectionIntensity")!=std::string::npos);
+    AIVERSE_TEST_CHECK(shader.find("skyColor")!=std::string::npos);
 
     gpu.shutdown();
     AIVERSE_TEST_CHECK(d.textures.empty() && d.buffers.empty());
