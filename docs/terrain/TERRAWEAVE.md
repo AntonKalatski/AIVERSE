@@ -2226,3 +2226,36 @@ Far Horizon uses the same immutable `CanopyPhenology` captured in `HorizonSurfac
 **TWH8 cache safety:** the current static archive format/fingerprint does *not* serialize the season. The Horizon worker therefore deliberately **disables static disk atlas read/write while a non-default phenology is active**, avoiding false summer archive hits. Default state retains the existing TWH8 path. No archive version/layout migration occurs. Native projects wanting prebaked multiple seasons would need an explicit future archive key and asset naming policy.
 
 **Remaining limitations:** Per-tree `ForestRegrowthSchedule` still controls individual growth scale, independent from seasonal leaf cover. Spring/autumn transitions are immediate material/atlas policy changes rather than continuous blended dual-atlas animations; near impostor cards fade trunk as well as canopy; distant HLOD crown types are procedural/bio-climate approximations, not identities of actual nearby species. Individual harvested trees remain near-only until far HLOD supports individual tree metadata, while rectangular clearings are already shared across near/far. This stage is **features first** — no compiler, CTest, GPU screenshot or performance pass was observed.
+
+## Stage 28 — genre-neutral wind presentation for Arbor forest
+
+**Code committed, tests intentionally deferred.** The wind motion API is a presentation-only adapter: games or PHYSIS supply wind vectors and simulation ticks; TerraWeave does not run its own weather, physics forces, collision, ECS or platform-time timers.
+
+The new `engine/world/TerraWeaveWind.h` defines:
+
+```cpp
+struct ForestWindState {
+    int32_t xCmPerSec = 0, zCmPerSec = 0;
+    uint32_t gustPermille = 350;
+    uint32_t cycleTicks = 120;
+    uint32_t maxLeanMilliDegrees = 1500;
+};
+ForestLeanMilliDegrees forestTreeLean(
+    const ForestWindState& state, uint64_t tick, uint64_t stableTreeKey);
+```
+
+Both wind components use signed **world X/Z centimetres per second**. A state is valid when the horizontal magnitude is no more than 5000cm/s (50m/s), `gustPermille` in 0..1000, `cycleTicks` in 8..4096 and `maxLeanMilliDegrees` in 0..3000. The helper computes a bounded integer triangle-wave phase using `mix64(stableTreeKey)`; each tree has a stable offset instead of the entire forest tilting in lockstep. The zero-wind default preserves identical model transforms.
+
+```cpp
+aiverse::terraweave::ForestWindState wind;
+wind.xCmPerSec = 900;   // 9 m/s toward +X
+wind.zCmPerSec = -300;
+worldScene.setVegetationWind(wind);
+worldScene.setVegetationPresentationTick(gameplayTick);
+```
+
+`WorldScene` forwards those values to its optional `TerraWeaveForestScene`; native projects using the forest independently may call `forest.setWind(wind)` and `forest.setPresentationTick(tick)` directly. For an opt-in renderer, the `ArborForestAdapter` computes a small world-space lean about the base of the model, before the tree's local yaw, then uses existing `Renderer3D::drawModel`. Stable tree identity, origin-rebased centimetres, per-species LOD, shared meshes and billboard atlas remain unchanged. Per-tree phases and angles are computed on the presentation side; changes to wind/tick do **not** rescatters, restart workers, or force Horizon atlas uploads.
+
+**Important limitations:** this is a low-cost root/whole-tree sway approximation, not branch/leaf skinning or vertex-shader wind deformation. Distant Horizon HLOD remains static (moving 12km forest atlases per tick would be excessive); the very far treeline therefore does not individually sway. Billboard impostors lean as one quad. The final float transform is cosmetic and not guaranteed bit-for-bit identical between rendering backends; authoritative physics or harvest logic must never use it. PHYSIS can map its velocity field into this POD from the owning game host without linking the TerraWeave engine to PHYSIS.
+
+**Performance and correctness:** no new model geometry or draw calls are introduced; however CPU transform math is performed per submitted tree when wind is nonzero, so actual frame cost and visual quality still require the separately scheduled benchmarking and GPU test phase. A future optional vertex deformation shader could preserve stable roots while bending crowns more naturally. Neither compiler nor GPU/CTest has been run during this features-first stage.
