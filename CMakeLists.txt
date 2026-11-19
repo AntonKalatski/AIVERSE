@@ -2220,6 +2220,16 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     target_link_libraries(aiverse_terraweave_test PRIVATE aiverse_engine Threads::Threads)
     target_compile_options(aiverse_terraweave_test PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
     add_test(NAME terraweave COMMAND aiverse_terraweave_test)
+    # Stage70 sparse 4m per-NEREID-body nutrient and v2 archive migration.
+    # Source fixtures authored; first real C++ compile/CTest owned by QA.
+    add_executable(aiverse_terraweave_micro_nutrient_test
+        tests/terraweave_micro_nutrient_test.cpp)
+    target_link_libraries(aiverse_terraweave_micro_nutrient_test PRIVATE
+        aiverse_engine Threads::Threads)
+    target_compile_options(aiverse_terraweave_micro_nutrient_test PRIVATE
+        $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
+    add_test(NAME terraweave_micro_nutrient
+        COMMAND aiverse_terraweave_micro_nutrient_test)
     add_executable(aiverse_terraweave_arbor_test tests/terraweave_arbor_test.cpp)
     target_link_libraries(aiverse_terraweave_arbor_test PRIVATE aiverse_engine Threads::Threads)
     target_compile_options(aiverse_terraweave_arbor_test PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
