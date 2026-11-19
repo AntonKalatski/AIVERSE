@@ -94,6 +94,7 @@ private:
     bool initializeIncremental(size_t uploadBudgetBytes, std::string* error);
     bool updateIncremental(const std::vector<std::vector<uint8_t>>& wanted,
                            uint64_t deferred, std::string* error);
+    void shutdownIncremental(gfx::Device& device);
     IndexResidencyStats stats_{};
 };
 } // namespace aiverse::render::strata
