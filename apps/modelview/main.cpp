@@ -296,20 +296,26 @@ struct Viewer {
     }
 
     void saveAttachmentConfig() {
-        if(attachmentConfigPath.empty())
-            attachmentConfigPath=files.empty()?"attachments.json":
-                files.front().first+".attachments.json";
-        ::aiverse::view::AttachmentLayout document;
-        document.parent=files.empty()?std::string{}:files.front().first;
-        for(const auto& entry:attachmentSpecs)
-            document.attachments.push_back({
-                entry.modelSource,entry.socketName,entry.enabled,
-                entry.local,entry.childWorld,entry.id});
-        const auto root=::aiverse::view::AttachmentLayoutCodec::write(document);
-        std::ofstream file(attachmentConfigPath,std::ios::binary|std::ios::trunc);
-        if(!file || !(file<<root.dump(2)))
-            log.push_back("failed to save attachment config: "+attachmentConfigPath);
-        else log.push_back("saved attachment config: "+attachmentConfigPath);
+        try {
+            if(attachmentConfigPath.empty())
+                attachmentConfigPath=files.empty()?"attachments.json":
+                    files.front().first+".attachments.json";
+            ::aiverse::view::AttachmentLayout document;
+            document.parent=files.empty()?std::string{}:files.front().first;
+            for(const auto& entry:attachmentSpecs)
+                document.attachments.push_back({
+                    entry.modelSource,entry.socketName,entry.enabled,
+                    entry.local,entry.childWorld,entry.id});
+            // Validate duplicate authored IDs and transform matrices BEFORE
+            // opening/truncating a previously valid on-disk layout file.
+            const auto root=::aiverse::view::AttachmentLayoutCodec::write(document);
+            std::ofstream file(attachmentConfigPath,std::ios::binary|std::ios::trunc);
+            if(!file || !(file<<root.dump(2)))
+                log.push_back("failed to save attachment config: "+attachmentConfigPath);
+            else log.push_back("saved attachment config: "+attachmentConfigPath);
+        }catch(const std::exception& e) {
+            log.push_back(std::string("attachment save rejected: ")+e.what());
+        }
     }
 
     // Compile an entire attachment configuration in any provider generation.
