@@ -74,6 +74,26 @@ int main() {
     AIVERSE_TEST_CHECK(runtime.pendingProbes()==0);
     device.endFrame();
 
+    // A lighting/world event can invalidate the completed GPU atlas without
+    // changing geometry. Only the dirty probe is rescheduled; no old radiance
+    // can be exposed before the matching completion callback is polled.
+    GiWorldDirtyAccumulator worldChanges;
+    worldChanges.submit({GiDirtyReason::Lighting,
+                         {{.5f,.5f,.5f},{.5f,.5f,.5f}}});
+    const auto changed=runtime.applyWorldChanges(worldChanges);
+    AIVERSE_TEST_CHECK(changed.events==1 && changed.probeMarks==1);
+    AIVERSE_TEST_CHECK(runtime.pendingProbes()==1);
+    device.beginFrame(400,300);
+    frame=runtime.updateFrame(4,{0,0,0});
+    AIVERSE_TEST_CHECK(frame.submitted.submitted && frame.submitted.probes==1);
+    AIVERSE_TEST_CHECK(!frame.safeForPresentation);
+    device.endFrame();
+    device.finish();
+    device.beginFrame(400,300);
+    frame=runtime.updateFrame(0,{0,0,0});
+    AIVERSE_TEST_CHECK(frame.completed.accepted==1 && frame.safeForPresentation);
+    device.endFrame();
+
     auto empty=scene(false);
     const GiBounds edit{{0,-4,2},{4,4,2}};
     AIVERSE_TEST_CHECK(runtime.setGeometryRegion(empty,2,edit));
