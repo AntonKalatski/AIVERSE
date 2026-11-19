@@ -1,4 +1,5 @@
 #include "engine/render/ModelTextureCache.h"
+#include "engine/render/RenderDeviceLifetime.h"
 // LEGACY compatibility adapter for historical RTS/editor scene presentation.
 // Generic game-agnostic View is now <engine/view/View.h> / aiverse::View.
 // Keep genre-specific authoring/overlays here temporarily; do NOT add new
@@ -209,6 +210,12 @@ public:
         stats.unresolvedFailedFences=retired.unresolvedFailedFences;
         stats.publicationBackpressured=resources_.publicationBackpressured();
         return stats;
+    }
+    // An optional host-owned device generation protects cached models even
+    // when a gfx::Device address is recycled. The lease never owns the Device.
+    // Supply it before init; hosted clients share the editor's generation.
+    void setGpuDeviceLease(render::RenderDeviceLifetime::Lease lease) {
+        gpuDeviceLease_=std::move(lease);
     }
     bool typeLoaded(uint16_t type) const { return type < loadedTypes_.size() && loadedTypes_[type]; }
     void loadType(uint16_t type);
@@ -589,6 +596,7 @@ private:
     view_adapter::RtsModelResourceCache resources_;
     Json materialLib_ = Json::object();   // materials.json "materials"
     gfx::Device* dev_ = nullptr;
+    render::RenderDeviceLifetime::Lease gpuDeviceLease_;
 
     render::GeometryScene geometryScene_;
     std::vector<TypeLook> looks_;
