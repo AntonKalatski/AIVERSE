@@ -14,6 +14,7 @@
 #include "Lights.h"
 #include "Math3D.h"
 #include "Model.h"
+#include "ModelStaticEligibility.h"
 #include "PersistentGpuSceneUpload.h"
 #include "GpuSceneCulling.h"
 #include "GpuSceneDrawCommands.h"
@@ -251,11 +252,23 @@ public:
         stats.live = staticModelCaches_.size();
         return stats;
     }
+    // Invariant model eligibility is classified once per geometry revision
+    // instead of traversing node and primitive arrays for every instance.
+    struct StaticEligibilityStats {
+        uint64_t hits = 0, misses = 0, evicted = 0;
+        size_t live = 0;
+    };
+    StaticEligibilityStats staticEligibilityStats() const {
+        auto stats = staticEligibilityStats_;
+        stats.live = staticModelEligibility_.size();
+        return stats;
+    }
     // Call before/after in-place model geometry or bind-hierarchy edits, or
     // after an asset reload retaining the same model pointer and GPU handles.
     void invalidateStaticModelCaches() {
         staticModelCaches_.clear();
         staticRenderPackets_.clear();
+        staticModelEligibility_.clear();
         staticRenderPacketBytes_ = 0;
     }
     // Targeted cache retirement for native ECS entity destruction/streaming.
@@ -631,6 +644,19 @@ private:
     uint64_t staticModelCacheEpoch_ = 0;
     bool staticModelCacheEnabled_ = false;
     StaticModelCacheStats staticModelCacheStats_{};
+    struct StaticEligibilityEntry {
+        ModelStaticEligibility eligibility{};
+        uint64_t geometryRevision = 0;
+        uint64_t seen = 0;
+        uint32_t vb = 0, ib = 0;
+        size_t nodes = 0, meshes = 0, bindNodes = 0;
+        size_t skins = 0, materials = 0;
+        const GeometryData* geometry = nullptr;
+    };
+    std::unordered_map<const Model*, StaticEligibilityEntry> staticModelEligibility_;
+    uint64_t staticEligibilityEpoch_ = 0;
+    StaticEligibilityStats staticEligibilityStats_{};
+    ModelStaticEligibility cachedStaticModelEligibility(const Model& source);
     // Material GPU-state equivalence is pass-independent within one scene.
     // Resolve each distinct (model, material) once for shadows, colour,
     // reflection and outline. All containers are cleared at beginScene(),
