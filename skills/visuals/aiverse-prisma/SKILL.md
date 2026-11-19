@@ -340,6 +340,72 @@ runtime, GPU timing calibration and VRAM profiling have NOT RUN.**
 Apple hardware-counter support and GPU calibration must be verified on
 real devices before shipping; see `docs/handoffs/prisma-stage-47.md`.
 
+## Cross-owner GPU memory budget (Stage 48)
+
+Stage 48 expands the Stage 47 **source-level** lower-bound memory path
+while preserving the established no-double-counting ownership rules.
+`engine/render/GpuOwnedMemory.h` defines a read-only
+`GpuOwnedMemoryCounter` and `GpuOwnedMemoryStats`. It samples RHI
+`textureInfo/bufferInfo` only; it never reads back, waits on,
+destroys or transfers GPU objects. It deduplicates exact texture and
+buffer handle IDs per owner. Known formats are counted using minimum
+bytes/pixel and unrecognized compressed/missing RHI metadata as
+**unknown**, never guessed. Per-backend buffer versions and mips can
+make actual physical VRAM larger than the known lower bound.
+
+All of these GPU owners now provide a **read-only allocation estimate**:
+- `LightSystem::ownedGpuMemoryStats()`: light map and depth, static
+  light atlas, spot shadow, planar reflection color/depth, black
+  placeholder and light map/halo/beam/decal buffers
+- `PersistentGpuSceneUpload::ownedGpuMemoryStats()`: every in-flight
+  per-frame GPU scene upload slot, not just the current one
+- `GpuSceneCulling::ownedGpuMemoryStats(device)`: each allocated
+  per-frame visibility/compute buffer
+- `GpuSceneDrawCommands::ownedGpuMemoryStats(device)`: each
+  input/output/compaction/visible-count buffer across all in-flight
+  GPU submission slots
+
+`Renderer3D::residentMemoryStats()` now includes these **mutually
+exclusive owners** alongside its previous shadow/capture/selection/
+motion buffers. Per-owner known byte subtotals allow the editor to
+explain the total. Borrowed geometry/model/material buffers are
+explicitly excluded. The global `GlobalGeometryPool` lives outside
+Renderer3D; its `geometryPoolStats(device).allocatedBytes` counts
+each shared RHI geometry page once, independent of how many Models
+reference it. Geometry pages are NOT also enumerated as independent
+Renderer3D buffers.
+
+The host sets both sources **before** requesting render resolution:
+
+```cpp
+const auto owned = renderer.residentMemoryStats();
+prisma.setExternalRendererGpuMemory(
+    owned.liveTextureKnownBytes + owned.liveBufferKnownBytes,
+    owned.pendingMotionKnownBytes);
+prisma.setExternalGeometryPoolGpuMemory(
+    geometryPoolStats(device).allocatedBytes);
+auto [renderW, renderH] = prisma.renderSizeForOutput(outputW, outputH);
+```
+
+Both Editor Scene/Game and native GameClient use this flow. The existing
+`temporalResolve.maxPrismaMemoryMiB` name remains for JSON/editor/MCP
+backward compatibility but the Stage 48 threshold now applies to the
+known resident/pending lower bound of **Prisma + Renderer3D subowners
++ GlobalGeometryPool pages** (saturating arithmetic). It is NOT a
+device-wide VRAM budget or a promise to stay under the threshold.
+Other geometry owners, dedicated external model buffers/material
+textures, other apps using the same GPU, driver heap alignment and
+mips remain unobservable. Do not double count those when new owner
+telemetry is subsequently added.
+
+**Work sequencing:** finish remaining functional owners, integration,
+fallback and capabilities **before** beginning the separate build/
+GPU validation/repair phase, per user instruction. After each feature
+stage, commit a dedicated handoff. Stage 48 source was structurally
+inspected, not natively compiled or GPU-tested. See
+`docs/handoffs/prisma-stage-48.md` for the complete owner boundary
+and subsequent feature scope.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
