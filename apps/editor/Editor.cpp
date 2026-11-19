@@ -845,6 +845,10 @@ void Editor::stopSpectraGpuPreview() {
     spectraPreviewRequest_.pending=false;
     spectraPreviewStop_=true; // resources release before a future scene pass
 }
+void Editor::setSpectraGpuPreviewSpeed(float speed) {
+    if(std::isfinite(speed))
+        spectraPreviewSpeed_=std::clamp(speed,0.1f,2.0f);
+}
 bool Editor::spectraGpuPreviewActive() const {
     return spectraPreviewGpu_ && spectraPreviewGpu_->ready();
 }
@@ -856,6 +860,7 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
         spectraPreviewStop_=false;
         spectraPreviewLoop_=false;
         spectraPreviewPaused_=spectraPreviewFrozen_=false;
+        spectraPreviewStepRequests_=0;
     }
     if(spectraPreviewRequest_.pending && spectraPreviewRequest_.inGame==game) {
         auto pending=std::move(spectraPreviewRequest_);
@@ -881,6 +886,8 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
             spectraPreviewInGame_=game;
             spectraPreviewLoop_=pending.loop;
             spectraPreviewPaused_=spectraPreviewFrozen_=false;
+            spectraPreviewSpeed_=1.f;
+            spectraPreviewStepRequests_=0;
             spectraPreviewParams_=pending.params;
             spectraPreviewPosition_=pending.position;
             spectraPreviewNextBurst_=-1; // guaranteed first-frame spawn
@@ -905,8 +912,12 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
     }
     // Freeze stops visual time; Pause only blocks future births while living
     // particles continue updating. Neither state changes gameplay simulation.
-    const float dt=spectraPreviewFrozen_?0.f:
-        std::clamp(ImGui::GetIO().DeltaTime,0.f,0.1f);
+    float dt=spectraPreviewFrozen_?0.f:
+        std::clamp(ImGui::GetIO().DeltaTime*spectraPreviewSpeed_,0.f,0.1f);
+    if(spectraPreviewFrozen_ && spectraPreviewStepRequests_>0) {
+        dt=1.f/60.f; // one simulation frame, no new bursts while frozen
+        --spectraPreviewStepRequests_;
+    }
     if(!spectraPreviewGpu_->step(dt))
         ws_.log("spectrafx","Metal preview step: "+spectraPreviewGpu_->reason(),true);
 }
