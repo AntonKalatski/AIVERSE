@@ -27,3 +27,8 @@ GitHub writes succeeded. **No shader compiler, CMake configure/build, Metal GPU 
 
 ## Architecture and agent coordination
 Generic `engine/gfx` texture functionality stays independent of game genres. Do not claim that compiling source to SPIR-V proves Vulkan descriptor binding compatibility, page-table upload visibility or render parity. Keep Draft PR #21 and experimental GPU ICB default OFF until measured acceptance.
+
+## Runner integration (same stage)
+- `tools/texture-rhi-final-verify.sh` at `b35c87f8e958b314392981f0718c9404c3bdcf2c` includes the optional `virtual_texture_sampling_vulkan_spirv` CTest in the final one-shot shader source compile gate.
+- `tools/verify-texture-rhi.sh` at `0abb5175483d12572bf224337641bee6c2e35cc9` includes the Vulkan SPIR-V shader compiler check in focused filters (also with `--vulkan`) and optional-validator discovery logging.
+- Neither runner has been executed after these changes. Validate `bash -n` and then the agreed final one-pass run before declaring PASS.
