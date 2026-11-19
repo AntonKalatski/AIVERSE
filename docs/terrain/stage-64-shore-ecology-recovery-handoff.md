@@ -28,3 +28,10 @@ This stage recovers **grass and surface cover**, not the whole long-lived tree/s
 **Verification actually performed:** source creation, GitHub commit and static source inspection only. **NOT RUN:** native CMake/AppleClang, CTest, 1000-tick flood/dry ecosystem replay, ECS COW save/restore tests, NEREID erosion-cover parity, Metal/GL/Vulkan screenshots, physics or large-forest benchmarks. Earlier 9/9 TerraWeave CPU and 1/1 GPU timer success are older revisions only; do not claim Stage64 tested. PR #24 must stay Draft.
 
 **Next:** Stage65 root tree/shrub aging, canopy light competition and seed regeneration; then full native build/test/fix/performance validation. Always append a new self-contained agent handoff with actual commits and tests/limits before handing over.
+
+
+## Stage64 source review follow-ups
+
+- `3f67c3467994486c1e43ab5d19b72c807dc0bdd9` — `engine/world/TerraWeaveNativeWorldBinding.h` now checks `state->earth.revision` separately from `stateRevision`: an ecology-only grass coverage/age change invalidates `GrassPatchRenderer` and refreshes plant conditions, **without** invalidating the terrain GPU heightfield/SpatialWorld collision/NavMesh/Horizon snapshot. A real soil edit or explicit rollback still invalidates all ground. This prevents costly terrain reuploads every time grass regrows.
+- `af6ff85212736d522ca8e8cff50b405713ccb1d1` — `sampleShorePatchClimate` counts water exposure only when existing NEREID `WaterSample` reports `found && submerged`, not merely an overlapping water-body XZ footprint at an incompatible depth; removed unused shallow-water sample counter.
+- **Status:** Reviewed as source changes committed on GitHub; still no native compiler, CTest, Metal/Box3D or ecological replay run. Stage64 remains subject to end-to-end testing before PR #24 may leave Draft.
