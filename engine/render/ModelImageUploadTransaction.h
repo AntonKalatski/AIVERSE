@@ -143,6 +143,22 @@ public:
         for(const auto& entry:entries_)n+=entry.images.size();
         return n;
     }
+    struct PendingImageReference {
+        Model* model=nullptr;
+        size_t appendIndex=0;
+        const Image* staged=nullptr;
+    };
+    // Refer only during the outer authoring transaction's preparation.
+    // References become invalid after commit()/abort() moves staged Images.
+    std::vector<PendingImageReference> pendingImageReferences() const {
+        std::vector<PendingImageReference> result;
+        result.reserve(pendingImages());
+        for(const auto& entry:entries_)
+            for(size_t i=0;i<entry.images.size();++i)
+                result.push_back({
+                    entry.model,entry.original+i,&entry.images[i]});
+        return result;
+    }
     size_t commit() {
         checkDevice();
         if(committed_)throw std::logic_error("image transaction already committed");
