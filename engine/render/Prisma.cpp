@@ -1406,6 +1406,9 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     effectReport.manualExposureEncoded = false;
     effectReport.manualExposureEV = 0.0f;
     effectReport.autoExposureBoxMetered = false;
+    effectReport.reactiveInputSupplied = false;
+    effectReport.reactiveInputAccepted = false;
+    effectReport.motionBlurReactiveEdgesEnabled = false;
     effectReport.effects.clear();
     if (!sceneReady_) {
         for (const auto& e : settings_.effects) {
@@ -1671,6 +1674,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                                          gfx::PixelFormat::RGBA16F);
     const bool validReactive = validInput(motionView.reactiveMask,
                                          gfx::PixelFormat::RGBA8);
+    effectReport.reactiveInputSupplied = motionView.reactiveMask.texture.valid();
+    effectReport.reactiveInputAccepted = validReactive;
     stats_.reactiveUsed=validReactive;
     bool motionBlurEncoded = false;
     bool depthOfFieldEncoded = false;
@@ -1770,6 +1775,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             ++stats_.passes;
             src=blurred;
             motionBlurEncoded = true;
+            effectReport.motionBlurReactiveEdgesEnabled = validReactive &&
+                motionEffect->get("reactiveTapRejection") > 0.001f;
         }
     }
     // ---- experimental Depth of Field: opt-in camera-linear focus plane
@@ -2597,7 +2604,9 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     }
     // TAA and FXAA are mutually exclusive for the same HDR presentation.
     const PrismaEffect* finalAa = hdrFrame_ && !temporalResolved ? find(PrismaType::Fxaa) : nullptr;
-    bool aaAfter = finalAa && program(kFxaa).valid();
+    // Do not schedule the HDR final FXAA output pass if the preceding
+    // composite could not be created. It would sample unwritten pixels.
+    bool aaAfter = pipe.valid() && finalAa && program(kFxaa).valid();
     gfx::PassDesc compositeOut = out;
     Target aaTarget;
     if (aaAfter) {
