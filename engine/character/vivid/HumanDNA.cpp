@@ -201,11 +201,15 @@ HumanDNA HumanDNA::fromJson(const Json& src) {
     if(src["groom"].has("guideCount"))d.groom.guideCount=getCount(src["groom"]["guideCount"],"groom.guideCount");
     if(src["groom"].has("segments"))d.groom.segments=getCount(src["groom"]["segments"],"groom.segments");
     if(src["rig"].has("revision"))d.rig.revision=getCount(src["rig"]["revision"],"rig.revision");
-    for(const std::pair<const char*,std::string*> entry : {
-        std::pair<const char*,std::string*>{"rootBone",&d.rig.rootBone},
-        {"headBone",&d.rig.headBone},{"jawBone",&d.rig.jawBone},
-        {"leftEyeBone",&d.rig.leftEyeBone},{"rightEyeBone",&d.rig.rightEyeBone}}) {
-        auto [key,out]=entry;
+    if(src.has("rig"))unknownFields(src["rig"],"rig",
+        {"rootBone","headBone","jawBone","leftEyeBone",
+         "rightEyeBone","revision","optionalBones"});
+    const std::array<std::pair<const char*,std::string*>,5> rigKeys{{
+        {"rootBone",&d.rig.rootBone},{"headBone",&d.rig.headBone},
+        {"jawBone",&d.rig.jawBone},{"leftEyeBone",&d.rig.leftEyeBone},
+        {"rightEyeBone",&d.rig.rightEyeBone}
+    }};
+    for(const auto& [key,out]:rigKeys) {
         if(src["rig"].has(key)) {
             if(!src["rig"][key].isString())throw std::invalid_argument("VIVID DNA bone field type");
             *out=src["rig"][key].str();
