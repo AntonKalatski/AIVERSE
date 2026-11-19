@@ -65,7 +65,8 @@ public:
             error_="SpectraFX shared arena capacity/appearance invalid";
             return false;
         }
-        if(!slots_.init(device,config.particles)) {
+        if(!slots_.init(device,config.particles,
+                        config.environment.reportImpacts)) {
             error_="SpectraFX shared arena GPU storage initialization failed";
             return false;
         }
