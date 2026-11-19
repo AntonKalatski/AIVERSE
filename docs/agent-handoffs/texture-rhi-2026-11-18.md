@@ -8327,3 +8327,70 @@ graph source handle arrays and generation-aware tickets
 for both normal and VT-enabled graph layouts, and preserve
 the existing CPU/legacy safe fallback. Then explicitly
 exclude graph stages requiring direct vertex textures.
+
+
+## Stage 10AJ — Renderer3D experimental fragment Shader Graph GPU ICB (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / Draft #21.
+**Code commits:**
+- `eeea5b1c7e4905d4ab4c87b8642153b3590dcc30`
+  `engine/render/GpuMaterialState.h`: fragment-only shader
+  graph eligibility; strict shader program/layout/output
+  equivalence and a nonauthoritative hash prefilter for GPU ICB.
+- `465f58a488a038efa0d235d758e8886adf2aa4f1`
+  `engine/render/Renderer3DModels.cpp`: new explicit opt-in
+  `AIVERSE_EXPERIMENTAL_ICB_SHADER_GRAPH=1`; conditional
+  source graph admissibility, normal/VT graph source resolution
+  and 0–4 command texture handles, shader pipeline-equivalent
+  graph grouping, source ticket capture, exact per-item
+  revalidation before ICB execution. No relaxation of ordinary
+  CPU/MDI batch grouping.
+- `86fb63821c446e481cf278c1b8d3259c13739c5b`:
+  `engine/gfx/metal/GfxMetal.mm` explicitly includes
+  `<string_view>` used for shader graph slot metadata.
+- `be2c4fa02835f3c62eaefcdcb9bfc6530c73aa6b`:
+  `engine/render/GpuMaterialResourceTable.h` rejects graph
+  source handles without PBR/U2 binding.
+- `75f8f4f6c934b99f1b979efe687ef0a40437b5d4`:
+  `engine/render/Renderer3DModels.cpp` suppresses unused
+  Metal vertex texture arguments for fragment-only graph
+  variants, preserving GPU ICB vertex buffer ABI.
+**Docs:** `cf6bb6625bf84cc21ba860a283ff9537fa7cffdf` docs/texture-rhi.md,
+`b3d3a6ab83eb42bbb75415aed486ca11e969c94c` skills/visuals/aiverse-texture-rhi/SKILL.md.
+
+**Architecture:** model material GPU ICB is still restricted
+to opaque rigid geometry sharing compatible native pipeline
+and geometry/index buffers. Fragment graph variants may
+differ in texture resource *paths*, PBR source textures and
+U2, but require byte-equivalent compiled graph program
+code, source slot count, and output/quality/VT convention.
+Up to four graph source handles are staged in the same
+per-command descriptor and frame-scoped ticket; native
+Metal captures and checks both texture and sampler objects.
+VT-enabled graph atlas/table indices follow the source
+count N as prepared by Stage 10AI. Vertex-output graphs
+remain excluded; no new editor/genre-specific APIs.
+
+**Actual checks:** compared real code for Renderer3D graph
+permutation, source texture bindings, Metal argument-buffer
+layout, and exact ResourceTable ticket validation; all
+source/doc commits accepted in GitHub.
+**C++ compilation NOT RUN, Objective-C++ NOT RUN,
+MSL shader compilation NOT RUN, CTest NOT RUN, GPU ICB
+execution NOT RUN, image parity NOT RUN, benchmark NOT RUN**.
+No assertion of release readiness or GPU success.
+
+**Known risks:** Metal pipeline compilation for experimental
+graph ICB, vertex-program resource optimization and 4th
+source constexpr-sampler behavior are still unverified.
+If a shader variant cannot be prepared or submitted, the
+existing CPU fallback must render the scene. The flags
+remain OFF by default. Graph source paths must never be
+used as a substitute for exact live resource handles.
+
+**Next stage:** expose graph-specific accepted-submission
+and genuinely different-source diagnostic counters. Add
+RHI/Metal graph argument-table format/slot/layout assertions,
+and audit shader code generation for 0/1/2/3/4 sources
+and optional VT before running a native Metal compiler.
+Do not move PR out of Draft without native and GPU evidence.
