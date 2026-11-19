@@ -406,3 +406,37 @@ Full `game::RtsView` retirement is still unfinished.
 **NOT RUN:** native build, CTest, desktop/mobile GPU tests, editor
 selection visual parity, CPU thread sanitizer and geometry pool
 GPU-lifetime checks. See Stage 104 agent handoff.
+
+### Stage 105 — cross-host GPU resources and generic authored portrait packets
+
+`render::RenderResourceOwnerGroup` is a non-owning aggregation
+facade over multiple independent native `ModelResourceCache` hosts.
+A group computes unique model and shared texture ownership, includes
+retired models waiting on GPU fences and deduplicates shared geometry
+pages by their device-global identity. Its `Ready`,
+`PendingGpuRetirement` and `DeviceUnhealthy` statuses are
+diagnostics/admission policy, not a license to free resources early.
+Pending GPU work is expected, not an error. Estimates use known
+source geometry and RGBA8-equivalent texture metadata; never call
+them exact driver VRAM occupancy.
+
+Native editor raw-model preview now groups the main scene,
+portrait preview and raw-source provider, with an optional
+group-wide estimated admission budget. Failed GPU health pauses
+new model publication, leaving all GPU-retired models alive
+until correct fence completion can be established.
+
+`game::Portrait::renderAppearance(const render::ModelDraw&,
+RTSCamera,background)` is a generic synchronous offscreen
+consumer that keeps the host-selected material override,
+node-material mapping, geometry policy, team tint, variant
+and any precomputed pose. Raw-model, precomputed-pose and
+RTS-resolved **static** portraits delegate to it. Complex
+animated portraits retain their existing RTS compatibility
+fallback and its one MotionWeave graph evaluator; no second
+player or render-side animation tick is introduced.
+
+**Validation NOT RUN:** new CTest contracts, native compiler,
+GPU fence/device loss recovery, renderer/portrait screenshot
+parity, FPS/RTS tests and thread sanitizers are deferred by
+the user. Follow Stage 105 in the animation handoff.
