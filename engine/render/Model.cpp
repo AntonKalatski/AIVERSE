@@ -144,6 +144,8 @@ void Model::finalize() {
         }
     }
     if (boundsMin.x > boundsMax.x) boundsMin = boundsMax = {0, 0, 0};
+    markGeometryChanged(); // regenerated hierarchy, node transforms and bounds
+    markMaterialChanged(); // default/imported material table may have changed
 }
 
 namespace {
@@ -185,6 +187,23 @@ void applyModelBatchingSidecar(Model& model, const std::string& path, const File
     if (config.has("autoLod") && config["autoLod"].type() != Json::Type::Bool)
         throw std::runtime_error(path + ".batching.json: autoLod must be boolean");
     model.batching.autoLod = config.getBool("autoLod", true);
+    // Optional per-asset policy for native importers and project sidecars.
+    // It is applied before GPU upload; editing it requires asset reupload.
+    if (config.has("geometryPool")) {
+        const Json& setting = config["geometryPool"];
+        if (!setting.isString())
+            throw std::runtime_error(path + ".batching.json: geometryPool must be a string");
+        const std::string value = setting.str();
+        using PoolPolicy = Model::Batching::GeometryPoolPolicy;
+        if (value == "inherit")
+            model.batching.geometryPoolPolicy = PoolPolicy::Inherit;
+        else if (value == "dedicated")
+            model.batching.geometryPoolPolicy = PoolPolicy::Dedicated;
+        else if (value == "rigidLod")
+            model.batching.geometryPoolPolicy = PoolPolicy::AllowRigidLods;
+        else
+            throw std::runtime_error(path + ".batching.json: geometryPool must be inherit, dedicated or rigidLod");
+    }
     if (config.has("maxExtent")) {
         const float extent = float(config["maxExtent"].toDouble());
         if (!std::isfinite(extent) || extent <= 0.0f || extent > 1000000.0f)
@@ -547,20 +566,44 @@ void prepareModelUpload(Model& m) {
         const char* materialBatches = std::getenv("AIVERSE_AUTO_MATERIAL_BATCHES");
         if (!materialBatches || std::string(materialBatches) != "off") prepareMaterialBatches(m);
     m.uploadPrepared = true;
+    m.markGeometryChanged(); // runtime LOD / static / shadow / material batches
 }
 
 bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
-    if (!m.vertices.empty() && !m.vb.valid()) {
+    const bool hasCpuVertices = !m.vertices.empty();
+    const bool needsGpuBuffers = hasCpuVertices || !m.indices.empty() ||
+        m.vb.valid() || m.ib.valid() || bool(m.geometryPoolPage);
+    // Recover an incomplete previous standalone upload without mistaking its
+    // orphan VB/IB for a fully initialized Model. A shared-page Model always
+    // acquires both handles together and must be released by its owner.
+    if (m.vb.valid() != m.ib.valid()) {
+        if (m.geometryPoolPage) return false;
+        if (m.vb.valid()) dev.destroyBuffer(m.vb);
+        if (m.ib.valid()) dev.destroyBuffer(m.ib);
+        m.vb = {}; m.ib = {};
+    }
+    if (hasCpuVertices && !m.vb.valid()) {
         prepareModelUpload(m);
         if (!uploadModelToGeometryPool(dev, m)) {
             gfx::BufferDesc vb; vb.type = gfx::BufferType::Vertex; vb.size = m.vertices.size() * sizeof(ModelVertex); vb.data = m.vertices.data(); vb.label = m.path.c_str();
-            m.vb = dev.createBuffer(vb);
+            const gfx::BufferHandle newVb = dev.createBuffer(vb);
+            if (!newVb.valid()) return false; // keep CPU arrays for retry
             gfx::BufferDesc ib; ib.type = gfx::BufferType::Index; ib.size = m.indices.size() * sizeof(uint32_t); ib.data = m.indices.data();
-            m.ib = dev.createBuffer(ib);
+            const gfx::BufferHandle newIb = dev.createBuffer(ib);
+            if (!newIb.valid()) {
+                dev.destroyBuffer(newVb);
+                return false; // do not publish a half-uploaded Model
+            }
+            m.vb = newVb;
+            m.ib = newIb;
         }
     }
+    if (hasCpuVertices && (!m.vb.valid() || !m.ib.valid())) return false;
     for (auto& img : m.images) {
+        const auto previousTexture = img.tex;
         if (img.textureCache) img.textureCache->upload(dev, img); else uploadImage(dev, img);
+        if (!(previousTexture == img.tex))
+            m.markMaterialChanged(); // texture binding changed during upload
         if (!keepCpu) { img.rgba.clear(); img.rgba.shrink_to_fit(); img.compressed.reset(); img.sharedRgba.reset(); }
     }
     // morph deltas of every primitive in one float texture: 2 texels (position, normal) per vertex and target
@@ -592,7 +635,10 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
         m.vertices.clear(); m.vertices.shrink_to_fit();
         m.indices.clear(); m.indices.shrink_to_fit();
     }
-    return m.vertices.empty() || m.vb.valid();
+    // Evaluate against the original CPU upload request: keepCpu=false
+    // clears source vectors, which must never turn a GPU allocation failure
+    // into a spurious success.
+    return !needsGpuBuffers || (m.vb.valid() && m.ib.valid());
 }
 
 int addImage(gfx::Device& dev, Model& m, Image img) {
@@ -600,6 +646,7 @@ int addImage(gfx::Device& dev, Model& m, Image img) {
     uploadImage(dev, img);
     img.rgba.clear(); img.rgba.shrink_to_fit();
     m.images.push_back(std::move(img));
+    m.markMaterialChanged(); // new texture may be selected by model materials
     return int(m.images.size() - 1);
 }
 
@@ -622,6 +669,8 @@ void releaseModel(gfx::Device& dev, Model& m) {
     if (m.morphTex.valid()) dev.destroyTexture(m.morphTex);
     if (m.baked.tex.valid()) dev.destroyTexture(m.baked.tex);
     m.morphTex = {}; m.baked = Model::Baked{};
+    m.markGeometryChanged(); // later upload may reuse the same GPU handle values
+    m.markMaterialChanged(); // texture bindings removed; handles may be reused
 }
 
 } // namespace aiverse::render

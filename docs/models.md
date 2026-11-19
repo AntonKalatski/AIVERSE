@@ -874,3 +874,36 @@ cost are intentionally excluded. Geometry pooling stays at upload-time
 configuration in both passes. The 382.9/384 MiB scene observation indicates
 high page occupancy, so simply shrinking page sizes will not materially reduce
 geometry storage for that workload.
+
+
+## GPU geometry pool asset-sidecar policy
+
+`<model-path>.batching.json` accepts optional string `geometryPool`:
+`"inherit"`, `"dedicated"`, `"rigidLod"`. The value is strict,
+case-sensitive and must be a string.
+
+```json
+{
+  "mergeRigid": false,
+  "autoLod": true,
+  "geometryPool": "rigidLod"
+}
+```
+
+Native C++ use (before GPU upload):
+
+```cpp
+auto model = render::loadModel(path, readFile);
+model->batching.geometryPoolPolicy =
+    render::Model::Batching::GeometryPoolPolicy::AllowRigidLods;
+render::uploadModel(device, *model);
+```
+
+`Inherit` is the default and defers to global pooling,
+`Dedicated` forces dedicated VB/IB even for a rigid model, and
+`AllowRigidLods` permits a *valid* rigid LOD asset to enter the shared
+geometry pool if the global pool/backend gates allow it. This policy
+does not disable GPU material/LOD correctness checks, allow skins/
+morphs/deformable geometry, or mutate existing GPU buffers. Editing
+the sidecar requires unloading/reloading the model; call cache
+invalidation on the renderer before destroying the old asset.
