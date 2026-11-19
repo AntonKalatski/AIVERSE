@@ -113,6 +113,19 @@ public:
 
     // Supports non-water authoritative edits (replay, roadworks, removal of
     // buildings) and keeps the same scene publication policy.
+    // Rebind a canonical ECS resource after rollback/load. Existing GPU
+    // models and collision remain pinned until the rebuilt replacement
+    // succeeds; every resident tile receives the current soil revision.
+    void invalidateAllResident(){
+        auto next=pending_;
+        for(const auto& [cell,patch]:residents_){
+            (void)patch;
+            next.insert_or_assign(cell,earth_.revision());
+        }
+        pending_.swap(next);
+        grassRhi_.invalidateAll();
+    }
+
     void notifyExternalEarthwork(const EarthworkChange& change){
         if(!change.vertices.empty() && change.revision>earth_.revision())
             throw std::invalid_argument("TerraWeave external soil revision in future");
