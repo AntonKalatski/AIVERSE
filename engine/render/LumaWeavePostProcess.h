@@ -81,10 +81,12 @@ public:
         if(!producer_.shutdown())return false;
         if(dev_) {
             if(vertex_.valid())dev_->destroyBuffer(vertex_);
+            if(composeDepth_.valid())dev_->destroyTexture(composeDepth_);
             if(pipeline_.valid())dev_->destroyPipeline(pipeline_);
             if(shader_.valid())dev_->destroyShader(shader_);
         }
         dev_=nullptr;vertex_={};pipeline_={};shader_={};scene_={};
+        composeDepth_={};depthWidth_=depthHeight_=0;
         material_={};materialWidth_=materialHeight_=0;
         sceneToken_=materialToken_=0;frameCounter_=0;
         sourcesPublished_=geometryPublished_=enabled_=false;
@@ -155,7 +157,13 @@ public:
         viewWidth_=w;viewHeight_=h;
         frame_={};
         frame_.lastGpuCompletion=producer_.poll();
-        frame_.eligible=enabled_ && quality_!=LumaWeaveQuality::Off &&
+        // Metal compositor must NEVER sample the source depth texture while
+        // it is simultaneously attached as a depth target. Use a separate,
+        // throwaway depth attachment with compatible dimensions.
+        const bool depthReady=(composeDepth_.valid() &&
+            depthWidth_==w && depthHeight_==h) ||
+            makeComposeDepth(w,h);
+        frame_.eligible=depthReady && enabled_ && quality_!=LumaWeaveQuality::Off &&
                         ready() && downstream_.linearScene() &&
                         scene_.colorTarget.valid() && scene_.depthTarget.valid() &&
                         w>0 && h>0 && uint32_t(w)<=16384 && uint32_t(h)<=16384 &&
@@ -208,14 +216,30 @@ public:
     }
 
 private:
+    bool makeComposeDepth(int w,int h) {
+        if(!dev_ || producer_.busy() || w<=0 || h<=0)return false;
+        gfx::TextureDesc td;
+        td.width=w;td.height=h;
+        td.format=gfx::PixelFormat::Depth;
+        td.filter=gfx::Filter::Nearest;
+        td.renderTarget=true;
+        td.label="LumaWeave HDR compositing depth (not sampled)";
+        const auto next=dev_->createTexture(td);
+        if(!next.valid())return false;
+        if(composeDepth_.valid())dev_->destroyTexture(composeDepth_);
+        composeDepth_=next;depthWidth_=w;depthHeight_=h;
+        return true;
+    }
+
     bool additiveCompose(gfx::Device& d,gfx::TextureHandle direct) const {
         if(!pipeline_.valid()||!scene_.colorTarget.valid()||
            !scene_.depthTarget.valid()||!direct.valid())return false;
         struct Params {float4 options;};
         const Params opts{{d.info().renderTargetFlipY?1.f:0.f,.008f,1.f,0.f}};
         gfx::PassDesc p=scene_;
+        p.depthTarget=composeDepth_; // must differ from sampled scene_.depthTarget
         p.clearColorEnabled=false;
-        p.clearDepthEnabled=false;
+        p.clearDepthEnabled=true;
         d.beginPass(p);
         d.setViewport({0,0,viewWidth_,viewHeight_});
         d.setPipeline(pipeline_);
@@ -236,6 +260,8 @@ private:
     gfx::ShaderHandle shader_{};
     gfx::PipelineHandle pipeline_{};
     gfx::BufferHandle vertex_{};
+    gfx::TextureHandle composeDepth_{};
+    int depthWidth_=0,depthHeight_=0;
     gfx::PassDesc scene_{};
     gfx::TextureHandle material_{};
     uint32_t materialWidth_=0,materialHeight_=0;
