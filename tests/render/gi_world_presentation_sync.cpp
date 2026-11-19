@@ -86,7 +86,7 @@ int main() {
     const auto blocked=scene.publish(gpu);
     AIVERSE_TEST_CHECK(blocked.deferred && !blocked.geometry.published);
     AIVERSE_TEST_CHECK(scene.geometry().hasPendingChanges());
-    AIVERSE_TEST_CHECK(scene.pendingRegions()==1);
+    AIVERSE_TEST_CHECK(scene.pendingRegions()==2); // old and new Y bounds do not overlap
     AIVERSE_TEST_CHECK(scene.geometry().revision()==1); // original still published
     device.endFrame();
     device.finish();
