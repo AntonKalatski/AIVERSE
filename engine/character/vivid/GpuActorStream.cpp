@@ -32,9 +32,9 @@ bool GpuActorStream::initializeShared(gfx::Device& device,
     }
     error_.clear();
     if(!asset || !asset->ready() || asset->device()!=&device ||
-       device.info().backend!=gfx::Backend::Metal ||
-       !device.gpuHealthy()) {
-        error_="VIVID actor: shared GPU asset missing or wrong/unhealthy Metal device";
+       !device.supportsCompute() || !device.gpuHealthy() ||
+       !device.frameSerial()) {
+        error_="VIVID actor: shared GPU asset missing or compute/frame serial unavailable";
         return false;
     }
     if(asset->vertexCount()==0 ||
