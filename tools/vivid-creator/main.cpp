@@ -6,6 +6,7 @@
 #include "engine/character/vivid/HumanImport.h"
 #include "engine/character/vivid/MorphAuthoring.h"
 #include "engine/character/vivid/ViewportSculptPick.h"
+#include "engine/character/vivid/RigAuthoring.h"
 #include "engine/character/vivid/ScalpSkinning.h"
 #include "engine/character/vivid/GpuActorStream.h"
 #include "engine/character/vivid/GpuMorphAssetCache.h"
@@ -49,6 +50,11 @@ struct CreatorApp {
     Entity entity{};
     std::shared_ptr<const AnimationGraph> graph;
     std::vector<mat4> facePose;
+    std::vector<mat4> rigPoseScratch;
+    RigAuthoring rigCorrections;
+    int selectedRigNode=0;
+    float rigOffset[3]={0,0,0};
+    char rigCorrectionFile[512]="/tmp/vivid-rig-corrections.json";
     FaceController controller{0.04f};
     Camera3D camera;
     bool pendingRebuild=true, rendererReady=false, uiReady=false;
@@ -490,6 +496,67 @@ struct CreatorApp {
             slider("Body build",&draft.anatomy.bodyBuild,0,1);
             slider("Height metres",&draft.anatomy.heightMeters,0.8f,2.6f);
         }
+        if(ImGui::CollapsingHeader("Rig correction authoring")) {
+            ImGui::TextWrapped("Non-destructive local bone translations are applied "
+                "after MotionWeave. Source inverse-bind matrices remain intact.");
+            if(human.head && !human.head->nodes.empty()) {
+                selectedRigNode=std::clamp(selectedRigNode,0,int(human.head->nodes.size())-1);
+                const char* selected=human.head->nodes[std::size_t(selectedRigNode)].name.c_str();
+                if(ImGui::BeginCombo("Rig node",selected)) {
+                    for(std::size_t i=0;i<human.head->nodes.size();++i)
+                        if(ImGui::Selectable(human.head->nodes[i].name.c_str(),
+                                            selectedRigNode==int(i))) {
+                            selectedRigNode=int(i);
+                            const auto found=rigCorrections.edits().find(
+                                human.head->nodes[i].name);
+                            rigOffset[0]=rigOffset[1]=rigOffset[2]=0;
+                            if(found!=rigCorrections.edits().end()) {
+                                rigOffset[0]=found->second.x;
+                                rigOffset[1]=found->second.y;
+                                rigOffset[2]=found->second.z;
+                            }
+                        }
+                    ImGui::EndCombo();
+                }
+                ImGui::DragFloat3("Local translation",rigOffset,0.002f,-1.0f,1.0f);
+                if(ImGui::Button("Apply rig correction")) {
+                    if(rigCorrections.setTranslation(selected,
+                        {rigOffset[0],rigOffset[1],rigOffset[2]}))
+                        status="Rig correction applied";
+                    else status="Rig correction rejected";
+                }
+                ImGui::SameLine();
+                if(ImGui::Button("Undo rig"))(void)rigCorrections.undo();
+                ImGui::SameLine();
+                if(ImGui::Button("Redo rig"))(void)rigCorrections.redo();
+            }
+            ImGui::InputText("Rig correction JSON",rigCorrectionFile,
+                             sizeof(rigCorrectionFile));
+            if(ImGui::Button("Save rig corrections")) {
+                try {
+                    const auto data=rigCorrections.toJson().dump(2);
+                    const auto temp=std::string(rigCorrectionFile)+".vivid.tmp";
+                    {std::ofstream output(temp,std::ios::binary|std::ios::trunc);
+                     if(!output)throw std::runtime_error("Unable to stage rig file");
+                     output.write(data.data(),std::streamsize(data.size()));
+                     output.flush();
+                     if(!output)throw std::runtime_error("Rig file write failed");}
+                    std::error_code error;
+                    std::filesystem::rename(temp,rigCorrectionFile,error);
+                    if(error)throw std::runtime_error(error.message());
+                    status="Rig corrections saved";
+                }catch(const std::exception& e){status=e.what();}
+            }
+            ImGui::SameLine();
+            if(ImGui::Button("Load rig corrections")) {
+                try {
+                    auto next=RigAuthoring::fromJson(Json::parse(
+                        fileContents(rigCorrectionFile,1024*1024)));
+                    rigCorrections=std::move(next);
+                    status="Rig corrections loaded";
+                }catch(const std::exception& e){status=e.what();}
+            }
+        }
         if(ImGui::CollapsingHeader("Rig / imported bone names")) {
             boneAlias("Root bone",rootBone,&HumanRigDNA::rootBone);
             boneAlias("Head bone",headBone,&HumanRigDNA::headBone);
@@ -855,8 +922,16 @@ struct CreatorApp {
         controller.set(Layer::Tracking,Channel::MouthSmileLeft,smile);
         controller.set(Layer::Tracking,Channel::MouthSmileRight,smile);
         controller.advance(step);
-        if(!human.rig.compose(pose.matrices,facePose,controller.frame()))
+        if(!human.rig.compose(pose.matrices,facePose,controller.frame())) {
             status="VIVID facial rig: invalid composition";
+            return;
+        }
+        if(!rigCorrections.edits().empty()) {
+            rigPoseScratch.resize(facePose.size());
+            if(!rigCorrections.apply(*human.head,facePose,rigPoseScratch))
+                status="VIVID rig correction invalid: last-good pose retained";
+            else facePose.swap(rigPoseScratch);
+        }
         if(!actor->dispatch(controller.frame(),human.facialBinding))
             status=actor->lastError();
         // Picking uses the actual camera ray and rendered node-world pose,
