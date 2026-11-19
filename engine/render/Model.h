@@ -302,6 +302,9 @@ void generateTangents(std::vector<ModelVertex>& v, const std::vector<uint32_t>& 
 void prepareModelUpload(Model& m); // CPU only: safe before main-thread upload
 bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu = false);
 bool readModelImage(const std::string& path, const FileReader& read, Image& image);
+// Upload one host-staged image without touching any live Model::images vector.
+// Returns false if the GPU did not create a valid texture handle.
+bool uploadStandaloneImage(gfx::Device& dev, Image& image);
 int addImage(gfx::Device& dev, Model& m, Image img);   // extra texture for material overrides; returns index
 void releaseModel(gfx::Device& dev, Model& m);
 
