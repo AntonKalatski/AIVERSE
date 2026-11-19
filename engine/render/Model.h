@@ -80,6 +80,12 @@ struct Image {
     gfx::TextureHandle tex;
     bool borrowedTexture = false; // owner must outlive this image; never released here
     bool gpuCompressed = false;     // uploaded as GPU blocks (KTX2)
+    // Opt-in VT base-colour coarse fallback. When >0, uploadImage() uploads
+    // ONLY a downsampled RGBA8 version, not the full source texture.
+    // Configure before the first GPU upload and after packing the source
+    // into immutable virtual pages. Do not set on images also sampled by
+    // non-VT materials or alpha-sensitive shader paths.
+    int virtualFallbackMaxDimension = 0;
 };
 
 // 60 bytes, one interleaved stream for every model (unskinned meshes leave joints/weights zero).
