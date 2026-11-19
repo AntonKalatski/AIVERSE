@@ -138,6 +138,7 @@ void Renderer3D::shutdown() {
     staticModelCacheEpoch_ = 0;
     staticRenderPacketEpoch_ = 0;
     staticEligibilityEpoch_ = 0;
+    cpuMdiAdaptive_ = {};
     shutdownModels();
     lights.shutdown();
     shutdownTrace();
@@ -234,6 +235,23 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
         return value && std::strcmp(value, "1") == 0;
     }();
     staticCrossModelBatchesEnabled_ = enableStaticCrossModelBatches;
+    // Adaptive feedback affects only the Stage 17 static pooled sort, not
+    // ordinary CPU MDI or the separate GPU-authored ICB path.
+    static const bool enableCpuMdiAdaptive = [] {
+        const char* value = std::getenv("AIVERSE_CPU_MDI_ADAPTIVE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    static const double cpuMdiMaxUsPerCommand = [] {
+        const char* value = std::getenv("AIVERSE_CPU_MDI_MAX_US_PER_COMMAND");
+        if (!value || !*value) return 25.0; // conservative, tunable experiment
+        char* end = nullptr;
+        const double parsed = std::strtod(value, &end);
+        return end != value && *end == '\0' &&
+            std::isfinite(parsed) && parsed >= 1.0 && parsed <= 1000.0
+            ? parsed : 25.0;
+    }();
+    cpuMdiAdaptiveEnabled_ = enableCpuMdiAdaptive && enableStaticCrossModelBatches;
+    cpuMdiAdaptiveBudgetUs_ = cpuMdiMaxUsPerCommand;
     staticRenderPacketStats_ = {};
     staticEligibilityStats_ = {};
     sharedMaterialStateStats_ = {};
