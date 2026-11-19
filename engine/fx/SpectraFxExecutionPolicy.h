@@ -76,6 +76,8 @@ inline SpectraFxBackendDecision chooseSpectraFxBackend(
                            uint32_t(SpectraFxFeature::GpuDepthSort);
     if((mask&~allowed)!=0 || !hasFeature(request.required,SpectraFxFeature::Billboard))
         return cpu("requested particle modules require CPU fallback");
+    if(!device.gpuHealthy())
+        return cpu("RHI GPU reported unhealthy; use authored CPU effect");
     if(!device.supportsCompute() || !device.supports(gfx::PixelFormat::RGBA32F))
         return cpu("RHI compute or RGBA32F storage unavailable");
     const auto backend=device.info().backend;
