@@ -1920,3 +1920,24 @@ Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. 
   `docs/agent-handoffs/animation-stage116-render-targets-2026-11-19.md`
   before any next step. Keep PR #22 Draft until full native
   validation passes.
+
+## Animation / MotionWeave Stage 117 — terminal HDR warmup contract
+
+- Current branch: `feature/universal-ecs-animation-pipeline`; Draft PR #22.
+  First inspect [Stage 117 handoff](docs/agent-handoffs/animation-stage117-hdr-warm-status-2026-11-19.md).
+- A backend HDR variant is **Ready**, **Pending** or **Failed** through
+  `gfx::Device::warmPipelineColorStatus`. The bool API remains compatible;
+  default bool-only backends CANNOT prove failure. Never infer readiness from
+  a timeout or return true-on-terminal as success.
+- Metal explicitly reports terminal shader and pipeline rejection.
+  `Renderer3D::warmModelPipelinesChecked` must reject Failed appearances;
+  its `pendingColorWarms_` and `failedColorWarms_` belong to ONE cache
+  generation and are invalidated together with the pipeline owner.
+  An invalid appearance must never replace the last-good View/MotionWeave graph.
+- GPU warmups remain device-owner work at safe frame boundaries. Do not
+  add FPS/RTS/physics/AI dependencies to MotionWeave or create another
+  presentation graph clock.
+- **NOT RUN:** native configure/build/compiler, CTest, Metal/Vulkan/GL,
+  editor visual checks, sanitizers and benchmarks. Stage 117 is source-only,
+  PR #22 remains Draft. Continue Stage 118 resource-init/rollback audit
+  before validation; append its own separate handoff.
