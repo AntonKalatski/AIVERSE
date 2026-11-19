@@ -1514,3 +1514,30 @@ or an incomplete GPU token.
 [Stage 141 handoff](agent-handoffs/animation-stage141-explicit-frame-boundary-preview-lifetime-2026-11-19.md).
 **NOT RUN:** CMake, native C++, CTest, Metal/GL/Vulkan, GPU-failure fixtures,
 editor/portrait/FPS/RTS visual comparisons, sanitizers or profiling.
+
+
+## Stage 142 — editor preview Model GPU retirement
+
+The AIVERSE Editor now owns a per-Device
+`render::NativePresentationRetirement` for direct ModelingWindow,
+AnimationGraph and AnimationRig preview Models, in addition to
+`ModelResourceCache` and other existing per-host resource owners.
+When a preview reloads, switches project, fails GPU upload, or closes
+its ImGui tab, the current `unique_ptr<Model>` moves into the
+Editor-owned pending GPU queue rather than invoking direct
+`releaseModel` while a previous preview/offscreen pass may still
+use it. `Editor::frame` polls at its explicit pre-render owner hook.
+
+Editor shutdown first proves full GPU idle before destroying dock
+windows and their remaining Portrait/Viewport targets, then drains
+the Editor preview queue before destroying renderer and Device owners.
+An unprovable GPU barrier stops destructive teardown. Modeling
+replacement stages a graph and bind pose against the new CPU Model
+before swapping; AnimationEditor persists its Portrait target across
+graph edits and only shuts it down at window destruction.
+
+The Stage 142 feature is **source-only** and the broader GPU/reimport
+contracts in GeometryScene, WorldScene and other native hosts remain
+open. [Stage 142 handoff](agent-handoffs/animation-stage142-editor-preview-model-ownership-2026-11-19.md).
+**NOT RUN** native CMake, CTest, real GPU, visual screenshots, sanitizer or
+benchmarks per user's feature-first workflow.
