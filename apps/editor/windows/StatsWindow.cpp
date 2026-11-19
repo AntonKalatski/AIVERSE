@@ -97,6 +97,13 @@ public:
                     post.graphRetiredTextures);
         ImGui::Text("Renderer motion: %zu fenced + %zu unfenced textures",
                     motion.fencedTextures, motion.unfencedTextures);
+        ImGui::Text("Hosted GameClient ожидают GPU: %zu  ·  ShaderGraph pools: %zu активных / %zu ожидают",
+                    ed.clientHost().pendingRetiredClients(),
+                    post.graphLiveTextures, post.graphRetiredTextures);
+        ImGui::Text("RenderGraph GPU: %.2f MiB активных, %.2f MiB ожидают, %zu не учтено",
+                    double(post.graphLiveKnownBytes) / mib,
+                    double(post.graphPendingKnownBytes) / mib,
+                    post.graphUnknownTextures);
         ImGui::Text("Viewport Scene / Game / FX: %zu fenced + %zu без fence",
                     viewport.fenced,viewport.unfenced);
         const uint64_t totalRetired = post.knownPendingBytes +
