@@ -902,3 +902,14 @@ registered only when `aiverse_editor_core` exists; they still
 require an editor-core enabled CMake configuration and CTest.
 Do not claim those editor tests or GUI QA passed. See handoff:
 `docs/agent-handoffs/physis-stage67-headless-green-2026-11-19.md`.
+
+### Stage 68 — native PHYSIS editor authoring tests PASS
+
+With `aiverse_editor_core` present, user-reported native macOS
+`physis_authoring` PASS (3.28s) and `physis_field_authoring`
+PASS (2.70s), **2/2, zero failures**, with EDITOR/PHYSIS label
+5.99 sec*proc. Together with prior headless/Box3D 24/24, this
+confirms 26 PHYSIS test executions over two distinct builds.
+This does not verify interactive GUI usage, full-engine CTest
+or completed cross-platform CI. Stage-specific handoff:
+`docs/agent-handoffs/physis-stage68-editor-authoring-green-2026-11-19.md`.

@@ -963,3 +963,16 @@ ctest --test-dir build/physis-editor-validation --output-on-failure -R '^physis_
 ```
 If native compiler or CTest fails, report the first actual error.
 Handoff: `docs/agent-handoffs/physis-stage67-headless-green-2026-11-19.md`.
+
+### Stage 68 — Editor MapDoc authoring CTests are now verified on macOS
+
+User-provided real native `build/physis-editor-validation` results:
+`physis_authoring` PASS (3.28s) and `physis_field_authoring`
+PASS (2.70s), 2/2, 0 failures, EDITOR/PHYSIS label total
+5.99 sec*proc. This was a separate editor-core enabled CMake build,
+not part of the previously confirmed 24/24 headless `--full` run.
+Combined, the user has provided 26 PASS executions across two runs.
+No code changes or additional local test execution in this stage.
+The actual editor UI/mouse/Undo/Redo, full repo-wide CTest, and
+cross-platform CI are still not verified. Retain PR #25 Draft.
+See `docs/agent-handoffs/physis-stage68-editor-authoring-green-2026-11-19.md`.

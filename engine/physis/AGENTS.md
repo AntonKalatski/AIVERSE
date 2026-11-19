@@ -962,3 +962,15 @@ ctest --test-dir build/physis-editor-validation --output-on-failure -R '^physis_
 ```
 - The authoring suite, GUI interaction, full repository-wide CTest and completed cross-platform CI remain unverified. PR #25 stays Draft until remaining integration and review.
 - Standalone handoff: `docs/agent-handoffs/physis-stage67-headless-green-2026-11-19.md`.
+
+### Stage 68 — macOS PHYSIS Editor authoring native CTests PASS (2026-11-19)
+
+- User ran the editor-core enabled native configuration `build/physis-editor-validation` after pulling PHYSIS branch at Stage 67. The two PHYSIS MapDoc authoring CTests both PASSED:
+  - `physis_authoring` (#119), 3.28s.
+  - `physis_field_authoring` (#128), 2.70s.
+  - **2/2 Passed; 0 failed**; CTest label summaries EDITOR and PHYSIS both 5.99 sec*proc.
+  - The `aiverse_physis_field_authoring_test` target explicitly compiled and linked successfully.
+- Together with the previous actual macOS `--full` run (24/24 PASS), **26 PHYSIS test executions passed across two distinct CMake builds**. Do not misrepresent this as one 26-test CTest run.
+- No runtime or editor C++ code was changed this stage; this is test evidence/documentation only. GUI mouse interaction, Scene Gizmo visual behavior, Inspector Undo/Redo clicks, full repository-wide CTest, completed platform CI, native external admin TLS remain NOT VERIFIED.
+- Next: build/launch the actual macOS editor with PHYSIS enabled and manually validate authoring Scene Gizmos, MapProps/Inspector Undo/Redo, and read-only overlays. Then collect complete CI/check results; keep PR #25 Draft until validation and review.
+- Handoff: `docs/agent-handoffs/physis-stage68-editor-authoring-green-2026-11-19.md`.
