@@ -57,6 +57,7 @@ public:
         uint64_t pooledCpuRecoveries=0,pooledRecoveryDropped=0;
         uint64_t pooledRenderFaults=0;
         uint64_t pooledResourceRetired=0,pooledResourceReleased=0;
+        uint64_t dedicatedGpuRetired=0,dedicatedGpuReleased=0;
         uint64_t cpuUpdateSamples=0,cpuDrawSamples=0;
         uint64_t cpuUpdateEncodeUs=0,cpuDrawEncodeUs=0;
         uint64_t cpuUpdatePeakUs=0,cpuDrawPeakUs=0;
@@ -126,8 +127,10 @@ public:
                 it->second->moveOrigin(cue.position,cue.direction);
                 ++stats_.moved;return true;
             }
-            it->second->stop(cue.action==SpectraFxCue::Action::Kill);
+            auto retired=std::move(it->second);
             active_.erase(it);
+            retireDedicatedEmitter(std::move(retired),
+                                   cue.action==SpectraFxCue::Action::Kill);
             if(cue.action==SpectraFxCue::Action::Kill) ++stats_.killed;
             else ++stats_.stopped;
             return true;
@@ -255,8 +258,9 @@ public:
             // Retire exactly once; GPU and CPU resources are bounded by the
             // authored deadline, independent of whether particles remain.
             if(shot.elapsed+dt>=shot.duration) {
-                shot.emitter->stop();
+                auto retired=std::move(shot.emitter);
                 oneShots_.erase(oneShots_.begin()+std::ptrdiff_t(i));
+                retireDedicatedEmitter(std::move(retired),true);
                 ++stats_.retired;
                 continue;
             }
@@ -442,6 +446,9 @@ public:
         pools_.clear();
         for(auto& pool:retiringPools_) pool.arena->shutdown();
         retiringPools_.clear();
+        for(auto& retired:retiringDedicated_)
+            retired.emitter->stop();
+        retiringDedicated_.clear();
         retiringGpuSlots_=0;
         totalPoolCapacity_=0;
     }
@@ -461,6 +468,8 @@ public:
             bytes+=entry.second.arena->nominalGpuBytes();
         for(const auto& entry:retiringPools_)
             bytes+=entry.arena->nominalGpuBytes();
+        for(const auto& entry:retiringDedicated_)
+            bytes+=entry.emitter->nominalGpuBytes();
         return bytes;
     }
 
@@ -509,6 +518,27 @@ private:
         uint32_t reservedSlots=0;
         uint64_t lastSubmittedSerial=0;
     };
+    struct RetiringEmitter {
+        std::unique_ptr<SpectraFxHybridEmitter> emitter;
+        uint32_t reservedSlots=0;
+        uint64_t lastSubmittedSerial=0;
+    };
+    void retireDedicatedEmitter(
+            std::unique_ptr<SpectraFxHybridEmitter> emitter,
+            bool killCpu) {
+        if(!emitter) return;
+        // CPU effects can be stopped immediately. The GPU storage and
+        // textures remain alive until the Metal frame slot is completed.
+        if(!emitter->gpuActive()) {
+            emitter->stop(killCpu);
+            return;
+        }
+        const auto slots=emitter->config().backend.particles;
+        retiringGpuSlots_+=slots;
+        retiringDedicated_.push_back({std::move(emitter),slots,
+                                      device_.frameSerial()});
+        ++stats_.dedicatedGpuRetired;
+    }
 
     std::unique_ptr<SpectraFxHybridEmitter> makePooledCpuFallback(
             const PooledRef& source) {
@@ -573,6 +603,19 @@ private:
             retiringGpuSlots_-=retired.reservedSlots;
             retiringPools_.erase(retiringPools_.begin()+std::ptrdiff_t(i));
             ++stats_.pooledResourceReleased;
+        }
+        for(size_t i=0;i<retiringDedicated_.size();) {
+            auto& retired=retiringDedicated_[i];
+            if(!retired.lastSubmittedSerial ||
+               serial<retired.lastSubmittedSerial ||
+               serial-retired.lastSubmittedSerial<kMetalRetireFrameSlots) {
+                ++i;continue;
+            }
+            retired.emitter->stop();
+            retiringGpuSlots_-=retired.reservedSlots;
+            retiringDedicated_.erase(
+                retiringDedicated_.begin()+std::ptrdiff_t(i));
+            ++stats_.dedicatedGpuReleased;
         }
     }
 
@@ -642,8 +685,9 @@ private:
         }
         auto direct=active_.find(key);
         if(direct!=active_.end()) {
-            direct->second->stop();
+            auto retired=std::move(direct->second);
             active_.erase(direct);
+            retireDedicatedEmitter(std::move(retired),true);
         }
         return true;
     }
@@ -739,6 +783,7 @@ private:
     std::vector<OneShot> oneShots_;
     std::map<std::string,PoolGroup> pools_;
     std::vector<RetiringPool> retiringPools_;
+    std::vector<RetiringEmitter> retiringDedicated_;
     uint64_t retiringGpuSlots_=0;
     std::unordered_map<uint64_t,PooledRef> pooledActive_;
     std::vector<PooledShot> pooledShots_;
