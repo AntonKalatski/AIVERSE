@@ -152,6 +152,24 @@ public:
                 (unsigned long long)canvasRetirement.idleFallbackFailures,
                 canvasRetirement.unresolvedFailedFences,
                 (unsigned long long)ed.view().paintGpuRetirementEnqueueFailures());
+        // Comparison mode for historical authored LODs without an
+        // accepted retarget plan. Visuals are unchanged by default.
+        bool strictLegacyLod=ed.view().legacyLodFallbackMode()==
+            game::RtsView::LegacyLodFallbackMode::BindPose;
+        if(ImGui::Checkbox("RTS LOD: bind pose для несовместимых скелетов",
+                           &strictLegacyLod))
+            ed.view().setLegacyLodFallbackMode(
+                strictLegacyLod
+                    ?game::RtsView::LegacyLodFallbackMode::BindPose
+                    :game::RtsView::LegacyLodFallbackMode::PreserveWorldMatrices);
+        const auto legacyLod=ed.view().legacyLodFallbackStats();
+        if(legacyLod.worldMatrixFallbacks || legacyLod.bindPoseFallbacks ||
+           legacyLod.rejectedCompiledPlans)
+            ImGui::TextDisabled(
+                "RTS LOD: legacy %llu · bind %llu · rejected compiled %llu",
+                (unsigned long long)legacyLod.worldMatrixFallbacks,
+                (unsigned long long)legacyLod.bindPoseFallbacks,
+                (unsigned long long)legacyLod.rejectedCompiledPlans);
         ImGui::TextDisabled("GPU программы Renderer3D: %zu партий ждут fence",
             ed.renderer().pendingProgramRetirements());
         ImGui::TextDisabled("GPU RenderTargets: %zu пар ждут fence",
