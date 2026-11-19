@@ -1922,22 +1922,36 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             if (!pipeline->icbPbrEncoder)
                 return reject("PBR ICB fragment argument encoder missing");
             constexpr int pbrSlots[] = {0,1,2,3,4,5,6,9,10,11,12};
+            const auto* pbrShader = shaders_.get(pipeline->desc.shader.id);
+            const bool virtualSampling = pbrShader &&
+                pbrShader->source.find("#define AIVERSE_MODEL_VT 1") != std::string::npos;
+            const bool alphaCoverage = pbrShader &&
+                pbrShader->source.find("#define VIRTUAL_ALPHA_MASK 1") != std::string::npos;
+            const auto bound = [&](int slot) {
+                return icbFragmentTextures_[slot] && icbFragmentSamplers_[slot];
+            };
             for (int slot : pbrSlots)
-                if (!icbFragmentTextures_[slot] || !icbFragmentSamplers_[slot])
+                if (!bound(slot))
                     return reject("PBR ICB required texture or sampler not bound");
+            if ((virtualSampling && (!bound(13) || !bound(14))) ||
+                (alphaCoverage && !bound(15)))
+                return reject("VT atlas/page table or R8 alpha ICB binding missing");
             const NSUInteger size = pipeline->icbPbrEncoder.encodedLength;
             // The compute kernel already recorded this exact buffer pointer.
             // Growing/replacing it here would make the encoded ICB stale.
             if (!resources.pbrArgs || resources.pbrArgs.length < size)
                 return reject("PBR ICB argument buffer exceeds encoded capacity");
             [pipeline->icbPbrEncoder setArgumentBuffer:resources.pbrArgs offset:0];
-            for (int slot : pbrSlots) {
+            const auto bindPbrSlot = [&](int slot) {
                 [pipeline->icbPbrEncoder setTexture:icbFragmentTextures_[slot]
                                             atIndex:NSUInteger(slot * 2)];
                 [pipeline->icbPbrEncoder setSamplerState:icbFragmentSamplers_[slot]
                                                  atIndex:NSUInteger(slot * 2 + 1)];
                 declareIndirectRead(icbFragmentTextures_[slot], MTLRenderStageFragment);
-            }
+            };
+            for (int slot : pbrSlots) bindPbrSlot(slot);
+            if (virtualSampling) { bindPbrSlot(13); bindPbrSlot(14); }
+            if (alphaCoverage) bindPbrSlot(15);
             declareIndirectRead(resources.pbrArgs, MTLRenderStageFragment);
             [enc_ setRenderPipelineState:icbPipeline];
         }
@@ -2002,20 +2016,35 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         // encode the individual texture/sampler bindings used by direct draws.
         id<MTLBuffer> pbrArgs = nil;
         constexpr int pbrSlots[] = {0,1,2,3,4,5,6,9,10,11,12};
+        const auto* indirectShader = shaders_.get(p->desc.shader.id);
+        const bool virtualSampling = indirectShader &&
+            indirectShader->source.find("#define AIVERSE_MODEL_VT 1") != std::string::npos;
+        const bool alphaCoverage = indirectShader &&
+            indirectShader->source.find("#define VIRTUAL_ALPHA_MASK 1") != std::string::npos;
         if (pbr) {
             if (!p->icbPbrEncoder) return false;
+            const auto bound = [&](int slot) {
+                return icbFragmentTextures_[slot] && icbFragmentSamplers_[slot];
+            };
             for (int slot : pbrSlots)
-                if (!icbFragmentTextures_[slot] || !icbFragmentSamplers_[slot]) return false;
+                if (!bound(slot)) return false;
+            if ((virtualSampling && (!bound(13) || !bound(14))) ||
+                (alphaCoverage && !bound(15))) return false;
             const NSUInteger bytes = p->icbPbrEncoder.encodedLength;
             if (!resources.pbrArgs || resources.pbrArgs.length < bytes)
                 resources.pbrArgs = [device_ newBufferWithLength:bytes options:MTLResourceStorageModeShared];
             pbrArgs = resources.pbrArgs;
             if (!pbrArgs) return false;
             [p->icbPbrEncoder setArgumentBuffer:pbrArgs offset:0];
-            for (int slot : pbrSlots) {
-                [p->icbPbrEncoder setTexture:icbFragmentTextures_[slot] atIndex:NSUInteger(slot * 2)];
-                [p->icbPbrEncoder setSamplerState:icbFragmentSamplers_[slot] atIndex:NSUInteger(slot * 2 + 1)];
-            }
+            const auto bindPbrSlot = [&](int slot) {
+                [p->icbPbrEncoder setTexture:icbFragmentTextures_[slot]
+                                    atIndex:NSUInteger(slot * 2)];
+                [p->icbPbrEncoder setSamplerState:icbFragmentSamplers_[slot]
+                                    atIndex:NSUInteger(slot * 2 + 1)];
+            };
+            for (int slot : pbrSlots) bindPbrSlot(slot);
+            if (virtualSampling) { bindPbrSlot(13); bindPbrSlot(14); }
+            if (alphaCoverage) bindPbrSlot(15);
         }
 
         const auto afterArgs = std::chrono::steady_clock::now();
