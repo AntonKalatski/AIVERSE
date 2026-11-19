@@ -3,6 +3,7 @@
 // MotionWeave animation systems; no duplicate game simulation.
 #include "engine/character/vivid/HumanCreatorSession.h"
 #include "engine/character/vivid/HumanPreview.h"
+#include "engine/character/vivid/HumanImport.h"
 #include "engine/character/vivid/GpuActorStream.h"
 #include "engine/character/vivid/GpuMorphAssetCache.h"
 #include "engine/platform/Platform.h"
@@ -17,6 +18,8 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <filesystem>
+#include <iterator>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -54,6 +57,10 @@ struct CreatorApp {
     float wind=0.15f;
     int draftGuides=512,draftSegments=8;
     char recipeFile[512]="/tmp/aiverse-vivid-human.json";
+    char manifestFile[512]="/tmp/aiverse-human-package.json";
+    std::string importedManifest;
+    bool externalMode=false;
+    bool commandLineAsset=false;
     std::string status;
     std::size_t displayedRevision=0;
 
@@ -92,6 +99,8 @@ struct CreatorApp {
         floor=ground.upload(dev);
         if(!floor.vb.valid()||!floor.ib.valid())
             throw std::runtime_error("VIVID Creator: floor upload failed");
+        if(commandLineAsset)
+            loadExternal(manifestFile);
         regenerate();
     }
     bool releaseHuman() {
@@ -113,17 +122,76 @@ struct CreatorApp {
         cache->pruneExpired();
         return true;
     }
+    static std::string fileContents(const std::filesystem::path& file,
+                                    std::size_t maxSize) {
+        std::ifstream in(file,std::ios::binary);
+        if(!in)throw std::runtime_error("VIVID Creator: unable to open "+file.string());
+        std::string bytes((std::istreambuf_iterator<char>(in)),
+                           std::istreambuf_iterator<char>());
+        if(bytes.size()>maxSize)
+            throw std::runtime_error("VIVID Creator: file budget exceeded");
+        return bytes;
+    }
+    static HumanImportManifest readManifest(const std::string& path) {
+        return HumanImportManifest::fromJson(Json::parse(
+            fileContents(path,1024*1024)));
+    }
+    static render::FileReader readerFor(const std::string& path) {
+        const auto directory=std::filesystem::absolute(
+            std::filesystem::path(path)).parent_path();
+        return [directory](const std::string& relative,std::string& bytes) {
+            if(relative.empty() || relative[0]=='/' ||
+               relative.find("..")!=std::string::npos ||
+               relative.find('\\')!=std::string::npos ||
+               relative.find(':')!=std::string::npos)return false;
+            try {
+                bytes=fileContents(directory/relative,64ull*1024ull*1024ull);
+                return true;
+            }catch(...){return false;}
+        };
+    }
+    void loadExternal(const std::string& path) {
+        auto manifest=readManifest(path);
+        auto imported=importHumanAsset(manifest,readerFor(path));
+        std::string error;
+        if(!session.loadJson(imported.dna.toJson(),&error))
+            throw std::runtime_error("VIVID Creator: imported DNA invalid: "+error);
+        syncDraft();
+        importedManifest=path;
+        externalMode=true;
+        pendingRebuild=true;
+        status="Imported open human package: "+path;
+    }
     void regenerate() {
         if(!device)return;
         try {
             // Build/validate in CPU scratch first, keeping last-good visual
             // data if DNA or shader-graph authoring fails.
-            auto proposed=generateHumanPreview(session.dna(),groomQuality);
+            HumanPreviewAsset proposed;
+            if(externalMode) {
+                const auto manifest=readManifest(importedManifest);
+                auto imported=importHumanAsset(manifest,readerFor(importedManifest));
+                proposed.head=std::move(imported.model);
+                proposed.rig=imported.rig;
+                proposed.facialShapes=std::move(imported.facialShapes);
+                proposed.facialBinding=std::move(imported.facialBinding);
+                for(const auto& [name,surface]:manifest.materials) {
+                    const auto index=proposed.head->findMaterial(name);
+                    if(index>=0)proposed.head->materials[std::size_t(index)]=
+                        humanMaterial(surface,session.dna());
+                }
+                proposed.groom.generate(session.dna(),groomQuality);
+                proposed.hair=proposed.groom.makeCardModel(session.dna());
+            } else {
+                proposed=generateHumanPreview(session.dna(),groomQuality);
+            }
             AnimClip idle;
             idle.name="vivid_idle";
             idle.duration=2.0f;
             AnimChannel headMove;
-            headMove.node=proposed.head->findNode("head");
+            headMove.node=proposed.head->findNode(session.dna().rig.headBone);
+            if(headMove.node<0)
+                throw std::runtime_error("VIVID Creator: imported head joint missing");
             headMove.path=AnimChannel::Translation;
             headMove.times={0,1,2};
             headMove.values={0,0,0,0,0.055f,0,0,0,0};
@@ -211,11 +279,11 @@ struct CreatorApp {
                     session.dirty()?"*unsaved":"saved");
         ImGui::TextWrapped("%s",status.c_str());
         if(ImGui::Button("Undo") && session.undo()) {
-            draft=session.dna();pendingRebuild=true;
+            syncDraft();pendingRebuild=true;
         }
         ImGui::SameLine();
         if(ImGui::Button("Redo") && session.redo()) {
-            draft=session.dna();pendingRebuild=true;
+            syncDraft();pendingRebuild=true;
         }
         ImGui::Separator();
         commitPreset("neutral");ImGui::SameLine();commitPreset("warm");
@@ -308,13 +376,28 @@ struct CreatorApp {
         ImGui::SameLine();
         if(ImGui::Button("Load DNA JSON")) {
             if(session.loadFile(recipeFile,&status)) {
-                draft=session.dna();pendingRebuild=true;
+                syncDraft();pendingRebuild=true;
                 status="Loaded "+std::string(recipeFile);
             }
         }
-        ImGui::TextWrapped("Reference procedural geometry is not a scanned human. "
-                           "Imported skinned FBX/glTF heads can use the same rig, "
-                           "DNA materials and VIVID face binding.");
+        ImGui::Separator();
+        ImGui::InputText("Package manifest",manifestFile,sizeof(manifestFile));
+        if(ImGui::Button("Import glTF/FBX/OBJ + DNA + morphs")) {
+            try {loadExternal(manifestFile);}
+            catch(const std::exception& e){status=e.what();}
+        }
+        ImGui::SameLine();
+        if(ImGui::Button("Use procedural reference")) {
+            externalMode=false;
+            importedManifest.clear();
+            pendingRebuild=true;
+        }
+        ImGui::TextWrapped("%s",externalMode ?
+            "Imported head: edit material DNA, morph expressions and groom. "
+            "Mesh proportions remain authored in the original glTF/FBX asset." :
+            "Procedural head: all geometric proportions are editable. "
+            "For realistic scanned characters import a glTF/FBX package.");
+
         ImGui::End();
     }
     void frame(gfx::Device& dev,double dt) {
@@ -426,6 +509,15 @@ int aiverseMain(int argc,char** argv) {
             application->smoke=true;
             if(const char* path=std::getenv("AIVERSE_VIVID_CREATOR_CAPTURE"))
                 application->smokePath=path;
+        }else if(std::strcmp(argv[i],"--asset")==0 && i+1<argc) {
+            const auto& path=argv[++i];
+            if(std::strlen(path)>=sizeof(application->manifestFile)) {
+                std::fprintf(stderr,"VIVID Creator: package path too long\n");
+                return 2;
+            }
+            std::strncpy(application->manifestFile,path,
+                         sizeof(application->manifestFile)-1);
+            application->commandLineAsset=true;
         }else{
             std::fprintf(stderr,"VIVID Creator: unsupported argument %s\n",argv[i]);
             return 2;
