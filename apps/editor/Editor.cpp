@@ -162,6 +162,10 @@ void Editor::init(gfx::Device& dev) {
     view_.init(dev, rules(), projectReader(ws_.project.dir));
     for (auto& w : view_.warnings()) ws_.log("view", w, true);
     fxTextures_.init(dev);
+    // ShaderGraph/FX hot reload can occur while the previous frame still
+    // samples the old atlases and pipelines. The editor owns the fence queue.
+    fxTextures_.setGpuResourceRetirement(&gpuResourceRetirement_);
+    gameFx_.setGpuResourceRetirement(&gpuResourceRetirement_);
     gameFx_.setQuality(fx::defaultQualityFor(dev, false));
     gameFx_.setFileReader([this](const std::string& path, std::string& out) { return projectReader(ws_.project.dir)(path, out); });
     gameFx_.setTextureLoader([this](const std::string& name, fx::FxTexture& out) {
