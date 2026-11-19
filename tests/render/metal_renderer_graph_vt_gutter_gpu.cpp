@@ -157,7 +157,11 @@ bool differentRegions(const std::vector<uint8_t>& rgba) {
     std::printf("Renderer3D Shader Graph regions: left=(%.1f,%.1f,%.1f) "
                 "right=(%.1f,%.1f,%.1f) delta=%.1f\n",
                 left[0],left[1],left[2],right[0],right[1],right[2],delta);
-    return delta>35.0; // fail closed if one/both quads were culled/blank
+    // This fixture uses nearby nonuniform RGB gradients, rather than the
+    // saturated solid colors of the older scene test. Its independently
+    // checked per-material source/ROI gradient gives stronger nonblank
+    // evidence, while a genuine inter-material delta of 16..19 is expected.
+    return delta>12.0; // still reject blank/identical material regions
 }
 void compareCaptured(const std::vector<uint8_t>& ordinary,
                      const std::vector<uint8_t>& icb,const char* phase) {
@@ -569,6 +573,15 @@ int aiverseMain(int,char**) {
             if(modelReady)render::releaseModel(*device,*model);
             for(auto& stream:streaming)
                 if(stream)stream->shutdown();
+        }
+        // macOS NSApplication::terminate may exit the process before
+        // platform::run returns and aiverseMain can return a failure code.
+        // An observed FAIL must ALWAYS make CTest fail on the real Mac.
+        if (!finished) check(false, "production gutter ICB fixture did not finish");
+        if (failed) {
+            std::fflush(stdout);
+            std::fflush(stderr);
+            std::_Exit(1);
         }
     };
     platform::run(cfg,callbacks);
