@@ -49,6 +49,37 @@ public:
                 throw std::invalid_argument("VIVID seam split: conflict primitive missing");
             sourceByPrimitive.try_emplace(key);
         }
+        // The same MeshDef cannot be rebound to different skin owners
+        // through a single global vertex stream. A shared index interval
+        // cannot be rewritten for just one primitive either.
+        std::vector<std::size_t> owners(model.meshes.size(),0);
+        for(const auto& node:model.nodes)
+            if(node.mesh>=0 && node.skin>=0) {
+                if(std::size_t(node.mesh)>=owners.size())
+                    throw std::invalid_argument("VIVID seam split: invalid mesh owner");
+                ++owners[std::size_t(node.mesh)];
+            }
+        for(const auto& [key,unused]:sourceByPrimitive) {
+            (void)unused;
+            if(owners[key.mesh]!=1)
+                throw std::invalid_argument("VIVID seam split: multi-owner skinned mesh");
+            const auto& target=meshes[key.mesh].primitives[key.primitive];
+            const auto begin=std::uint64_t(target.firstIndex);
+            const auto end=begin+target.indexCount;
+            for(std::size_t meshIndex=0;meshIndex<meshes.size();++meshIndex)
+                for(std::size_t primitiveIndex=0;
+                    primitiveIndex<meshes[meshIndex].primitives.size();
+                    ++primitiveIndex) {
+                    if(meshIndex==key.mesh && primitiveIndex==key.primitive)
+                        continue;
+                    const auto& other=meshes[meshIndex].primitives[primitiveIndex];
+                    const auto otherBegin=std::uint64_t(other.firstIndex);
+                    const auto otherEnd=otherBegin+other.indexCount;
+                    if(begin<otherEnd && otherBegin<end)
+                        throw std::invalid_argument(
+                            "VIVID seam split: overlapping primitive index intervals");
+                }
+        }
         Result result;
         for(auto& [key,unused]:sourceByPrimitive) {
             (void)unused;
