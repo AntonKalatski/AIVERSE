@@ -164,7 +164,39 @@ static void exercise(gfx::Backend backend) {
     cache.shutdown(dev);
     assert(dev.buffers_.empty());
 }
+static void sceneBudget() {
+    const std::vector<SceneIndexBudgetRequest> sources{
+        {"alpha",24,96},{"beta",24,96},{"large",128,192}
+    };
+    auto grants=apportionSceneIndexBudget(sources,120);
+    uint64_t allocated=0;
+    for(const auto& g:grants)allocated+=g.bytes;
+    assert(allocated<=120);
+    // Both small-root sources can be admitted, the large one cannot.
+    assert(grants.size()==3);
+    assert(grants[0].key=="alpha" && grants[0].bytes>=24);
+    assert(grants[1].key=="beta" && grants[1].bytes>=24);
+    assert(grants[2].key=="large" && grants[2].bytes==0);
+    assert(grants[0].bytes<=96 && grants[1].bytes<=96);
+    // No aggregate cap grants each valid source its individual maximum.
+    grants=apportionSceneIndexBudget(sources,0);
+    assert(grants[0].bytes==96 && grants[1].bytes==96 &&
+           grants[2].bytes==192);
+    // A tiny scene budget reserves roots deterministically by stable key.
+    grants=apportionSceneIndexBudget(sources,30);
+    assert(grants[0].bytes==30 && grants[1].bytes==0 &&
+           grants[2].bytes==0);
+    // Huge external budgets cannot overflow proportional division/casts.
+    grants=apportionSceneIndexBudget(sources,UINT64_MAX);
+    assert(grants[0].bytes==96 && grants[1].bytes==96 &&
+           grants[2].bytes==192);
+    // Roots larger than the per-source cap never enter a GPU cache.
+    grants=apportionSceneIndexBudget({{"invalid",40,24}},100);
+    assert(grants.size()==1 && grants[0].bytes==0);
+}
+
 int main() {
+    sceneBudget();
     exercise(gfx::Backend::Metal);
     exercise(gfx::Backend::Vulkan);
     exercise(gfx::Backend::GLES3);
