@@ -5955,3 +5955,32 @@ Verification: GitHub commit succeeded. No native compilation,
 CTest, GLSL/MSL compilation or GPU tests run, per user request.
 Next: implement alpha-mask feedback shader variant, LOD fade
 and deforming model support; wire Terra feedback producers.
+
+
+## Stage 9Q — alpha-tested virtual feedback fragment shaders (2026-11-19)
+
+Source commits: 12712e0d412b12750d19d7202a8ffb4ca44ceb10,
+7127a18a6586fc7d29263269093124da772492bd.
+File: engine/gfx/VirtualTextureFeedback.h.
+Added virtualTextureMaskedFeedbackFragmentGLSL(bool automaticMip)
+and virtualTextureMaskedFeedbackFragmentMSL(bool automaticMip).
+Both derive from existing full fragment source builders, replace
+the entry point, and sample base-color alpha with two affine UV
+rows, an alpha factor and cutoff before writing packed feedback.
+Automatic mip selection occurs before the alpha discard.
+GLSL uniforms: uBaseColor, uAlphaUvRow0, uAlphaUvRow1,
+uBaseAlphaFactor, uAlphaCutoff; MSL uses baseColor texture(0),
+baseSampler sampler(0), AiverseAlphaFeedbackParams buffer(1).
+The second commit fixed source newline escaping.
+
+Important: alpha UV transform, texture sampling state, material
+alpha factor and cutoff must match the main material shader.
+GLSL and MSL fragment sources are not yet integrated into
+actual pipeline creation or verified against shader compilers.
+Some material paths may use additional alpha semantics (vertex
+colors, custom graph, dissolve); these are not covered.
+Verification: GitHub commits succeeded. Native build, CTest,
+GLSL/MSL compilation and GPU readback NOT RUN, as requested.
+Next: bind masked shaders in model material renderer, support
+LOD transition and deformed geometry, wire Terra and finish
+backend feature parity.
