@@ -1033,3 +1033,74 @@ editor-only. Targeted reload still depends on RtsView for appearance
 rebuild and must run between GPU submissions. Model-derived external
 materials/texture lease lifetimes and render synchronization require
 real platform verification before production deployment.
+
+## Window-independent visual reload and staged appearance transactions (Stage 98)
+
+The editor now owns `VisualAssetDependencyService`
+(`apps/editor/core/VisualAssetDependencyService.h`) directly as a member of
+`Editor`. `Editor::pollVisualAssets(dt)` runs once during the normal
+`Editor::frame` lifecycle after document changes and **before** any viewport
+render submission. It is not contingent on `ModelWindow::open` or on any
+individual window callback. `ModelWindow` is now strictly a UI and
+`model_info` presenter; its former watcher state and process launcher have
+been removed.
+
+The service keeps the active project, 1-second scan clock, optional file
+timestamps (including missing sources), per-file source conversion attempts,
+pending changed paths and a `ModelSourceDependencyIndex`. It rebuilds its
+dependency snapshot using authored rules/material library and the resident
+model cache at each scan. It never mutates renderer resources. Deferred
+changes survive editor or client play until an editor-frame safe boundary;
+`reset` runs on rules/project changes and removes old timestamps/requests.
+The old `modelconv` invocation now belongs to the Editor host as
+`Editor::convertVisualModelSource`, with source modification-based deduping.
+External graph file paths nested in authored model choices are now watched
+as well as top-level graph references.
+
+For graph-only or `materials.json`-only modifications,
+`RtsView::reloadAppearanceTypes(types,reloadMaterialLibrary,&count)`
+implements a staged appearance update. The host joins any pending CPU
+model-preparation task, parses the new material library transactionally if
+requested, builds candidate `TypeLook` resources for all affected **loaded**
+types while retaining old looks, and rejects the batch if a previously
+present model/graph would disappear or candidate building throws. A rejected
+edit keeps existing animation playback and prior material library contents.
+After successful staging, affected MotionWeave presentation source IDs are
+unlinked via `View::forgetSources`, only their `EntityAnim` and streaming
+choice state is cleared, and only affected `TypeLook` records are swapped.
+Unrelated models and animation players keep their old cache residency,
+player entities and clocks. Previously unloaded types naturally use the
+latest file/library when loaded later.
+
+Mixed source changes involving a graph/material together with model/texture,
+or texture changes with no resolvable model source, retain the earlier
+whole-view compatibility fallback. Model-only and recognized texture-only
+changes still use Stage 96/97 selective model cache invalidation and
+revisioned texture leases. This is deliberately not an attempt to mix GPU
+model destruction with appearance graph swapping in one transaction.
+
+**Public surfaces:** `VisualAssetDependencyService::due/scan/impact/
+changedSources/acknowledge/reset` are editor-only; the generic
+`ModelSourceDependencyIndex` and MotionWeave source bridge retain the same
+engine boundaries. `RtsView::reloadAppearanceTypes` is an additive
+compatibility-adapter API. No simulation ECS, save/checksum, networking,
+render packet or authored JSON format changes. The `RtsView` compatibility
+owner is NOT removed.
+
+**GPU lifetime caveat:** this stage does NOT introduce a GPU completion
+fence. It provides the CPU/presentation-thread staging boundary, but the
+backend's asynchronous use of GPU buffer and texture allocations still
+requires platform-specific lifetime validation, and shared material images
+may remain in the resident model until that model is evicted. Stage 98's
+selective appearance updates avoid destroying resident GPU model buffers,
+but full-view/model-source fallback paths retain their previous
+destruction policy.
+
+**NOT RUN**, per user instruction: no local clone/native CMake compiler,
+CTest, sanitizers, Metal/editor/FPS/RTS screenshots or GPU resource fence
+verification. Deferred test source
+`tests/animation/editor_visual_asset_service.cpp` exercises service
+ownership independent of a window, initial timestamp seeding,
+external graph detection, deletion/recovery, pending retention and project
+switch reset. `CMakeLists.txt` registers
+`animation_editor_visual_asset_watcher` for future native execution.
