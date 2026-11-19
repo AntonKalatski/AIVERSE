@@ -718,6 +718,30 @@ required on a native build; Stage 10 has not been executed by this
 assistant. The user's earlier Stage 8 Mac Studio 5/5 CTest PASS remains
 a confirmed **older** code snapshot, not Stage 10 verification.
 
+## Stage 10 verified Metal selection (owner Mac Studio, 2026-11-19)
+
+Native macOS focused suite: **6/6 CTest PASS**, 0 failed, including
+`strata_gpu_culling` and `strata_render_routing`.
+Owner also compiled and ran the actual `aiverse_strata_metal_parity`
+executable on Mac Studio. The real GPU created the Strata Metal compute
+pipeline, dispatched it, copied visible clusters asynchronously and
+compared them to the CPU oracle. All five supplied fixture cases passed:
+fine LOD (selected 4, examined 6), coarse LOD (2/2), frustum rejection
+(0/6), disabled instance (2/3), and bounded-output overflow correctly
+rejected. Final output: `[strata-metal] cases=5/5 status=PASSED`.
+
+The tested checkout SHA was not included in the supplied terminal output.
+These results **do not** yet establish screenshot parity of legacy and
+Strata raster geometry; they do not enable Strata draws in Renderer3D.
+Production still renders exactly the legacy model once, and the Stage 10
+preview remains opt-in. The next required gate is real Metal raster/image
+parity with the source geometry and sun shadow/reflective passes, with
+no duplicate primitive submission and a conservative fallback.
+
+A separate `AIVERSE-static-scene` full CTest run reported 125/127 PASS;
+its two skill-registration failures were unrelated to this Strata
+GPU fixture and should not be conflated with Strata's 6/6 focused tests.
+
 ## Architectural constraints
 - **One scene/instance truth**: `GeometryScene` owns static render instances
   and HLOD; do not create separate Strata transforms or introduce gameplay
