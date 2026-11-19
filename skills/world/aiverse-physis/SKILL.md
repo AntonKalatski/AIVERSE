@@ -500,3 +500,29 @@ An **isolated Linux GCC 14.2 C++20 header smoke** passed with exact
 source blob SHA `835cfb9630e66d7918ed91ef06f97f590c2007b5`.
 This is NOT a full engine CMake/CTest or platform validation. See
 `docs/agent-handoffs/physis-stage45-fifo-lock-hardening-2026-11-19.md`.
+
+### Stage 46 — trusted directory anchored journal lock
+
+On POSIX, PHYSIS admin journal lock acquisition now opens the DIRECT
+parent as a verified directory fd with `O_DIRECTORY|O_NOFOLLOW`
+where supported, rejects directories not owned by the effective UID
+or group/world writable, and resolves the lock basename using
+`openat`. After `flock`, it checks that visible lock and parent
+device/inode identities still match the opened descriptors; any
+mismatch fails closed. Preserve Stage 45 nonblocking FIFO and
+regular inode/single-link/no-shared-permissions guards.
+
+These checks protect the **acquisition boundary**, not against
+post-acquisition malicious same-user rename/unlink. Never grant
+untrusted users write access to the journal parent; do not claim
+distributed fencing or parity with Windows ACL/reparse protections.
+
+Source fixture: `unsafeJournalLockParentsRejected` in
+`tests/physis_admin_journal_test.cpp` on POSIX. The exact current
+header blob `3fcd9f029bc7cc71f939c4471828acfbc358b843` passed an
+isolated GCC 14.2 C++20 harness for owner/mode, symlink parent, FIFO,
+lock modes and hardlinks, cross-process exclusion and SIGKILL release.
+Full AIVERSE CMake/CTest/macOS/Windows tests remain UNVERIFIED.
+
+Stage handoff:
+`docs/agent-handoffs/physis-stage46-lock-parent-integrity-2026-11-19.md`.
