@@ -8760,3 +8760,69 @@ If there is another failure, collect
 and fix the first real error; always preserve user/other-agent changes
 and append a new handoff after each bounded stage.
 
+
+## Stage 10AT — first real macOS focused verifier failure inventory (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / Draft #21.
+**Source tested:** `ddd09697901bb69a4a874a6f54ec337a0759160a`.
+**User machine:** Mac Studio, isolated worktree
+`/Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819`;
+separate from the primary AIVERSE worktree, which remains mid-rebase.
+**User-executed command:** `bash tools/verify-texture-rhi.sh --editor --jobs 4`,
+after worktree `git pull --ff-only`, which reported already up to date.
+
+**Observed real native run (reported terminal output):**
+CMake `CONFIGURE PASS`.
+13 focused targets reported `BUILD PASS`:
+`aiverse_texture_contract_test`,
+`aiverse_render_target_set_test`,
+`aiverse_texture_streaming_test`,
+`aiverse_texture_mip_residency_test`,
+`aiverse_texture_resident_streamer_test`,
+`aiverse_virtual_texture_pages_test`,
+`aiverse_virtual_texture_page_table_test`,
+`aiverse_virtual_texture_streamer_test`,
+`aiverse_virtual_texture_disk_queue_test`,
+`aiverse_virtual_texture_file_streamer_test`,
+`aiverse_virtual_texture_prefetch_test`,
+`aiverse_virtual_texture_feedback_test`,
+`aiverse_exr_texture_test`.
+
+8 targets reported `BUILD FAIL (exit 2)`:
+`aiverse_virtual_texture_feedback_pass_test`,
+`aiverse_gpu_icb_material_contract_test`,
+`aiverse_ktx2_layers_test`,
+`aiverse_ktx2_transcode_test`,
+`aiverse_dds_layers_test`,
+`aiverse_texture_asset_test`,
+`aiverse_hdr_texture_test`,
+`aiverse_editor`.
+`CTEST FAIL (exit 8)`; `OVERALL FAIL: 9 build/test gates failed`.
+`glslangValidator` and `xcrun` were both found on the host.
+No claim of successful shader compilation or test execution.
+
+**What is *not* yet known:** The user provided only the terminal
+verifier summary, not the compiler diagnostics in
+`build/texture-rhi/verify-logs/build.log` or the test failures in
+`ctest.log`. Exit codes 2/8 are not root causes. It is premature
+to rewrite texture source in response to the summary: multiple targets
+may fail due to one shared compiler error, and CTest can fail because
+test binaries were not built.
+
+**Actions this stage:** checked GitHub PR #21 and workflow runs for
+tested commit; no PR-triggered workflow runs for that exact SHA.
+Confirmed local repository checkout is unavailable in this execution
+environment (github.com DNS unavailable); GitHub connector can read
+source files but cannot inspect the user's local logs.
+No engine source changed in this inventory-only stage.
+This entry itself is the required durable handoff.
+
+**Next exact step:** inspect the FIRST build compiler/linker error
+(with at least 10 lines of context), ideally each failing target
+section in `build.log`, and the failing test diagnostic in
+`ctest.log`. Correct the shared root cause in
+`feature/texture-rhi-unification`, then append a new handoff and
+re-run focused verifier in the isolated worktree; never disturb the
+original mid-rebase AIVERSE checkout. Do not merge PR #21 until
+native/GPU acceptance passes.
+
