@@ -49,6 +49,21 @@ struct Asset {
     std::vector<ClusterBounds> bounds; // one per node
     std::vector<uint32_t> roots;
     std::vector<uint32_t> indices; // global vertex ids for indexed raster
+    // Stage 15.4: once the full .strataidx archive has been authenticated
+    // against this import asset and the GPU pinned roots are resident, the
+    // owner may discard the duplicate CPU index payload. The hierarchy
+    // retains its original logical range for view/LOD validation.
+    uint32_t archivedIndexCount = 0;
+    size_t logicalIndexCount() const {
+        return indices.empty() ? size_t(archivedIndexCount) : indices.size();
+    }
+    size_t discardCpuIndexPayload() {
+        const size_t bytes=indices.size()*sizeof(uint32_t);
+        if(indices.empty() || indices.size()>UINT32_MAX)return 0;
+        archivedIndexCount=uint32_t(indices.size());
+        std::vector<uint32_t>().swap(indices);
+        return bytes;
+    }
     std::vector<Meshlet> meshlets; // one per leaf
     std::vector<uint32_t> meshletVertices;
     std::vector<uint8_t> meshletTriangles;
