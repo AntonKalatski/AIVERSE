@@ -66,3 +66,32 @@ before integrating it. Also read `docs/ecs-agent-handoff.md`,
   Do not duplicate config objects during additive level loading.
 - Keep skill, architecture doc, AGENTS rules and stage handoff updated
   after each implementation step. Never mark unrun tests as passing.
+
+## Prefab config catalog (Stage 3)
+
+Use `engine/sim/PrefabStaticCatalog.h` for stable reusable configs
+assigned by prefab ID. The builder accepts prefab keys in any order
+and seals sorted key-to-`StaticRef<T>` bindings plus an immutable
+`StaticTable<T>`. Identical config values are deduplicated.
+
+`PrefabStaticCatalog<T>::bindWorld(world)` ensures two versioned
+fingerprints match: unique config table content and prefab key-to-slot
+mapping. `attach(world,entity,prefabKey)` works at entity creation;
+`read(world,entity)` is const. On save/load, the native host must
+use `registerPrefabStaticPersistence<T>(simulation,stableId,version)`
+during GameModule setup, and call `catalog.validateWorld(world)`
+after load/restore before stepping the World. Do **not** also
+register static persistence for the same T a second time.
+
+The scene loader has a typed `SceneObjectAsset::prefab` string that
+an integration adapter can forward to `attach`. Keep that bridge
+an opt-in native callback until both scene and ECS feature branches
+have passed their native tests. Do not merge the scene branch
+implicitly or duplicate immutable T values per spawned instance.
+
+New native fixture: `ecs_prefab_static_catalog_test` (source only;
+native execution still pending). Its test cases cover 10k cross-scene
+entities, a separate preview ECS World, deterministic importer order,
+alias mapping revision conflicts, snapshot and v10 save/restore.
+Record the actual compiler and CTest output in
+`docs/agent-handoffs/ecs-shared-static-stage3-2026-11-19.md`.
