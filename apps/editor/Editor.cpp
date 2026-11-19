@@ -103,6 +103,7 @@ void Editor::init(gfx::Device& dev) {
     io.IniFilename = iniPath.c_str();
     resetLayout_ = !fs::exists(iniPath, fec);
     r3d_.init(dev);
+    postFx_.setGpuDeviceLease(gpuDeviceLease());
     postFx_.init(dev);
     postFx_.setQuality(render::PostFx::defaultQualityFor(dev, false));
     r3d_.setShadowQuality(Renderer3D::defaultQualityFor(dev, false));
