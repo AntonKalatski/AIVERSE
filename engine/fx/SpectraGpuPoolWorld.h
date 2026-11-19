@@ -118,6 +118,9 @@ public:
     bool resumeSource(PoolSourceId source);
     bool retireSource(PoolSourceId source);
     bool stopSource(PoolSourceId source,bool killLiving);
+    // Read-only preflight for atomic ECS source staging. RHI health may still
+    // change after checking; runtime operations always verify again.
+    bool canStopSource(PoolSourceId source,bool killLiving) const;
     bool killSourceParticles(PoolSourceId source);
     bool setSourceTransform(PoolSourceId source,fx::float3 position,
                             fx::float3 direction={0,1,0},
