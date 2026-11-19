@@ -138,6 +138,7 @@ public:
     bool supportsCompute() const override { return healthy_ && device_ &&
         queueSupportsCompute_ &&
         gpuProps_.limits.maxComputeWorkGroupInvocations>=64 &&
+        gpuProps_.limits.maxComputeWorkGroupSize[0]>=64 &&
         gpuProps_.limits.maxPushConstantsSize>=128; }
     ComputeHandle createCompute(const ComputeDesc& desc) override;
     void destroyCompute(ComputeHandle handle) override;
