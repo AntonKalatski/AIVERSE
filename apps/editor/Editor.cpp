@@ -981,6 +981,12 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
             options.preference=spectra::ComputePreference::RequireGpu;
             options.quality=fx::FxQuality::High;
             options.gpuProgram=true;options.gpuMaterial=true;
+            // The Metal preview is opt-in. Bound periodic checkpoints make
+            // freshness/restore diagnostics and the Stage 39 export useful;
+            // all normal native projects retain checkpointEveryFrames=0.
+            options.checkpointEveryFrames=15;
+            options.adaptiveCheckpoint.enabled=true;
+            options.adaptiveCheckpoint.maxIntervalFrames=120;
             ok=candidate->defineEffect("__editor_gpu_preview",pending.effect,options);
         }
         if(!ok) {
