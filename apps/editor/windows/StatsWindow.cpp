@@ -113,7 +113,7 @@ public:
                     post.graphRetiredTextures);
         ImGui::Text("Renderer motion: %zu fenced + %zu unfenced textures",
                     motion.fencedTextures, motion.unfencedTextures);
-        ImGui::Text("Renderer3D directly owned: %.2f MiB textures + %.2f MiB buffers (%zu/%zu handles)",
+        ImGui::Text("Renderer3D + owned submodules: %.2f MiB textures + %.2f MiB buffers (%zu/%zu handles)",
             double(rendererOwned.liveTextureKnownBytes) / mib,
             double(rendererOwned.liveBufferKnownBytes) / mib,
             rendererOwned.liveTextures,rendererOwned.liveBuffers);
@@ -126,9 +126,9 @@ public:
             double(rendererOwned.persistentUploadKnownBytes) / mib,
             double(rendererOwned.persistentCullKnownBytes) / mib,
             double(rendererOwned.gpuAuthoredKnownBytes) / mib);
+        const auto geometryPages=render::geometryPoolStats(ed.device());
         ImGui::TextDisabled("GlobalGeometryPool %.2f MiB (%zu shared pages, counted separately from model handles)",
-            double(render::geometryPoolStats(ed.device()).allocatedBytes) / mib,
-            render::geometryPoolStats(ed.device()).pages);
+            double(geometryPages.allocatedBytes) / mib,geometryPages.pages);
         if (rendererOwned.unknownTextures || rendererOwned.unknownBuffers ||
             rendererOwned.multiVersionBuffers)
             ImGui::TextDisabled("Renderer unknown: %zu textures, %zu buffers; %zu multi-version buffer(s)",
