@@ -3135,13 +3135,26 @@ configure/build/run the separate risky target:
 ```bash
 cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
 git pull --ff-only origin feature/texture-rhi-unification
-cmake -S . -B build/texture-rhi \
+# Keep experimental ICB validation out of the already-green
+# build/texture-rhi CMake cache and its ordinary CTest registration.
+cmake -S . -B build/texture-icb-gpu \
   -DAIVERSE_BUILD_TESTS=ON \
-  -DAIVERSE_TEXTURE_METAL_GPU_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_GPU_TESTS=OFF \
   -DAIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=ON
-cmake --build build/texture-rhi --target aiverse_metal_texture_icb_graph_gpu_test --parallel 4
-ctest --test-dir build/texture-rhi --verbose --output-on-failure \
-  --no-tests=error -R '^metal_texture_icb_graph_gpu$'
+cmake --build build/texture-icb-gpu --target aiverse_metal_texture_icb_graph_gpu_test --parallel 4
+ctest --test-dir build/texture-icb-gpu --verbose --output-on-failure \
+  --no-tests=error -R '^metal_texture_icb_graph_gpu
+```
+
+To disable the experimental test again, reconfigure with
+`-DAIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=OFF`. Keep
+PR #21 Draft until the actual GPU result, further
+Shader Graph production integration and cross-platform
+acceptance are recorded. Mac drivers with known AGX
+ICB instability may reject or abort the test; record the
+real diagnostic rather than reporting a synthetic pass.
+
+
 ```
 
 To disable the experimental test again, reconfigure with
