@@ -817,3 +817,28 @@ presentation-only. Canvas owner source changes are independent
 from those graph/model generation semantics. **NOT COMPILED OR
 TESTED** for this Stage 120.
 See [Stage 120 handoff](agent-handoffs/animation-stage120-canvas-gpu-retirement-2026-11-19.md).
+
+## Stage 121 — MotionWeave clocks independent from whole-model LOD
+
+The new optional `view::Object::animationModel` identifies the
+immutable graph rig separately from `draw.model` and any
+`view::Object::lods` visual replacements. `View::update` sends
+the source rig, stable ID, generation and named graph inputs to the
+ONE MotionWeave presentation ECS player. `View::submitOne` selects
+a camera-distance visual LOD without re-evaluating or resetting the
+animation. Per-View hysteresis is source-ID/generation scoped and
+no animation update occurs during draw submission.
+
+Only a visual LOD whose skeleton, bind TRS and skin matrices match
+the source consumes its evaluated pose. Distinct morph meshes need
+explicit channel maps; incompatible whole-model LODs use bind pose
+while the source rig and its socket attachments remain animated.
+The host continues to own model/graph lifetime through the worker
+join and synchronous draw. The RTS attachment pass now composes
+socket draws through the generic View algorithm without migrating
+RTS gameplay filters into the animation library.
+
+**NOT RUN:** actual CMake build, animation/LOD CTests, GPU visual
+parity, sanitizer or performance tests. Do not claim functional
+validation from GitHub-only source commits.
+[Stage 121 handoff](agent-handoffs/animation-stage121-universal-lod-attachments-2026-11-19.md).
