@@ -203,7 +203,11 @@ void Editor::shutdown() {
     sim_.reset();
     gameFx_.shutdown();
     fxTextures_.shutdown();
-    windows_.clear(); // Viewport dtors retire GPU handles into Editor-owned queue.
+    windows_.clear(); // All windows (including ShaderGraph previews) retire owned resources.
+    // The last submitted GPU frame may still reference ShaderGraph
+    // pipelines/buffers/portrait resources queued by window destruction.
+    if (dev_->waitForSubmittedGpuWork())
+        gpuResourceRetirement_.drainAfterGpuIdle(*dev_);
     // Shut down after last frame submission. Only an actual successful
     // graphics-queue idle barrier permits destroying ImGui-referenced
     // viewport handles; otherwise leave them owned by the device until
@@ -1266,14 +1270,17 @@ void Editor::frame(gfx::Device& dev, double dt) {
     }();
     viewportRetirement_.setBudgetBytes(retirementBudgetBytes);
     viewportRetirement_.collect(dev);
+    gpuResourceRetirement_.collect(dev);
     clientHost_.collectGpuRetirements();
     prisma_.collectGpuRetirements();
     r3d_.collectCompletedObjectMotion(dev.gpuCompletedFence());
     const auto vpStats = viewportRetirement_.stats(dev);
     const auto postStats = prisma_.retirementStats();
     const auto motionStats = r3d_.motionRetirementStats();
+    const auto genericStats = gpuResourceRetirement_.stats(dev);
     const uint64_t pendingKnownBytes = vpStats.knownPendingBytes +
-        postStats.knownPendingBytes + motionStats.knownPendingBytes;
+        postStats.knownPendingBytes + motionStats.knownPendingBytes +
+        genericStats.knownPendingBytes;
     const bool flushRequested = gpuRetirementFlushRequested_;
     gpuRetirementFlushRequested_ = false; // one attempt, no repeated UI stalls
     if (flushRequested ||
@@ -1289,6 +1296,7 @@ void Editor::frame(gfx::Device& dev, double dt) {
         gpuRetirementLastFlushSucceeded_ = dev.waitForSubmittedGpuWork();
         if (gpuRetirementLastFlushSucceeded_) {
             viewportRetirement_.drainAfterGpuIdle(dev);
+            gpuResourceRetirement_.drainAfterGpuIdle(dev);
             clientHost_.drainAfterGpuIdle();
             prisma_.releaseRetiredSizesAfterGpuIdle();
             r3d_.drainObjectMotionAfterGpuIdle();
