@@ -265,6 +265,7 @@ bool ComputeParticles::initGpu() {
     ages_.assign(cap,-1.f);
     slotSourceTokens_.assign(cap,0);
     pendingKillSlots_.clear();
+    killedSlotsAwaitingFrame_.clear();
     freeSlots_.clear();freeSlots_.reserve(cap);
     for(uint32_t i=cap;i>0;--i)freeSlots_.push_back(i-1);
     pendingStates_.reserve(cap);
@@ -307,7 +308,8 @@ void ComputeParticles::releaseGpu() {
     seedProgramParams_={};stateProgramParams_={};gpuVmPayload_={};
     stateAttributes_={};graphSources_={};
     ages_.clear();freeSlots_.clear();pendingStates_.clear();pendingSlots_.clear();
-    pendingKillSlots_.clear();slotSourceTokens_.clear();
+    pendingKillSlots_.clear();killedSlotsAwaitingFrame_.clear();
+    slotSourceTokens_.clear();
     pendingProgramParams_.clear();programStateCache_.clear();cpuHandles_.clear();
     programParamsDirty_=false;
     aliveSlots_.clear();
@@ -335,7 +337,8 @@ void ComputeParticles::clear() {
         return;
     }
     pendingStates_.clear();pendingSlots_.clear();pendingProgramParams_.clear();
-    pendingKillSlots_.clear();
+    pendingKillSlots_.clear();killedSlotsAwaitingFrame_.clear();
+    stats_.gpuKillFencesPending=0;
     std::fill(slotSourceTokens_.begin(),slotSourceTokens_.end(),0);
     aliveSlots_.clear();verticesReady_=false;
     const uint32_t cap=desc_.capacity;
@@ -457,7 +460,8 @@ bool ComputeParticles::killSourceParticles(uint64_t sourceToken) {
         }
     }
     stats_.alive=uint32_t(ages_.size()-freeSlots_.size()-
-                          pendingKillSlots_.size());
+                          pendingKillSlots_.size()-
+                          killedSlotsAwaitingFrame_.size());
     verticesReady_=false;
     return true;
 }
@@ -495,6 +499,21 @@ bool ComputeParticles::step(float dt) {
         reason_="SpectraFX GPU step must be before the render pass";
         return false;
     }
+    // Recycle only after a successful Metal frame completion callback,
+    // never just an encoded/submitted blit.
+    const uint64_t completed=device_->completedFrameSerial();
+    if(completed!=0) {
+        auto end=std::remove_if(killedSlotsAwaitingFrame_.begin(),
+                              killedSlotsAwaitingFrame_.end(),
+            [&](const KilledSlotAwaitingFrame& entry) {
+                if(entry.submittedFrame>completed)return false;
+                freeSlots_.push_back(entry.slot);
+                ++stats_.killedSlotsReclaimed;
+                return true;
+            });
+        killedSlotsAwaitingFrame_.erase(end,killedSlotsAwaitingFrame_.end());
+    }
+    stats_.gpuKillFencesPending=uint32_t(killedSlotsAwaitingFrame_.size());
     const uint32_t count=uint32_t(pendingStates_.size());
     stats_.gpuVmErrorsKnown=false;
     // Keep the physical state pool stable, but gather all surviving physical
@@ -534,9 +553,13 @@ bool ComputeParticles::step(float dt) {
                 p.positionAge={0,0,0,-1};
                 p.velocityLife={0,0,0,1};
             }
-            device_->updateBuffer(states_,dead.data(),
+            if(!device_->updateStorageBufferChecked(states_,dead.data(),
                 dead.size()*sizeof(ParticleState),
-                size_t(pendingKillSlots_[at])*sizeof(ParticleState));
+                size_t(pendingKillSlots_[at])*sizeof(ParticleState))) {
+                reason_="SpectraFX checked GPU kill upload rejected: "+
+                        device_->lastError();
+                return false;
+            }
             at=end;
         }
         if(!device_->gpuHealthy()) {
@@ -605,9 +628,13 @@ bool ComputeParticles::step(float dt) {
     // is now stale and may not be used for automatic recovery.
     ++vmFrameRevision_;
     pendingStates_.clear();pendingSlots_.clear();pendingProgramParams_.clear();
-    // Recycle killed physical slots only after the ordered GPU submission.
-    for(const uint32_t slot:pendingKillSlots_)freeSlots_.push_back(slot);
+    // Keep killed slots quarantined until their Metal frame completes.
+    // On unsupported RHI completion serial, conservatively do not recycle.
+    const uint64_t submittedFrame=device_->frameSerial();
+    for(const uint32_t slot:pendingKillSlots_)
+        killedSlotsAwaitingFrame_.push_back({slot,submittedFrame});
     pendingKillSlots_.clear();
+    stats_.gpuKillFencesPending=uint32_t(killedSlotsAwaitingFrame_.size());
     // Commit CPU lifespan/free-slot changes only after GPU dispatch submission.
     for(uint32_t i=0;i<desc_.capacity;++i) {
         if(ages_[i]<=0.f)continue;
@@ -710,7 +737,8 @@ bool ComputeParticles::requestGpuCheckpoint(std::function<void(bool)> callback) 
        !readbackLifetime_ || asyncCheckpointPending_ ||
        !states_.valid() || !stateProgramParams_.valid() ||
        !stateAttributes_.valid() || ages_.empty() ||
-       !pendingStates_.empty() || !pendingKillSlots_.empty())return false;
+       !pendingStates_.empty() || !pendingKillSlots_.empty() ||
+        !killedSlotsAwaitingFrame_.empty())return false;
 
     // At most eight 64 KiB chunks for the existing 4096-slot GPU backend.
     // Every callback carries bytes from a single ordered Metal command buffer.
@@ -849,6 +877,7 @@ GpuCheckpointStatus ComputeParticles::checkpointStatus() const {
     status.currentRevision=vmFrameRevision_;
     status.capturedRevision=checkpointRevision_;
     status.physicalSlots=static_cast<uint32_t>(ages_.size());
+    status.killsAwaitingGpuFence=uint32_t(killedSlotsAwaitingFrame_.size());
     status.checkpointIntervalFrames=checkpointCadence_.intervalFrames();
     status.nextCheckpointRevision=checkpointCadence_.nextDueRevision();
     if(status.complete) {
@@ -859,6 +888,7 @@ GpuCheckpointStatus ComputeParticles::checkpointStatus() const {
     }
     status.restoreEligible=status.gpuActive && status.fresh &&
         !status.unsentBirths && pendingKillSlots_.empty() &&
+        killedSlotsAwaitingFrame_.empty() &&
         lastCheckpoint_.slots.size()==ages_.size() &&
         lastCheckpoint_.remainingLifetime.size()==ages_.size();
     return status;
@@ -870,7 +900,8 @@ bool ComputeParticles::captureGpuCheckpoint(GpuCheckpoint& out) {
        !device_->gpuHealthy() || !device_->canUpdateSharedBuffers() ||
        !states_.valid() || !stateProgramParams_.valid() ||
        !stateAttributes_.valid() || ages_.empty() ||
-       !pendingStates_.empty() || !pendingKillSlots_.empty())return false;
+       !pendingStates_.empty() || !pendingKillSlots_.empty() ||
+        !killedSlotsAwaitingFrame_.empty())return false;
     const size_t n=ages_.size();
     // A checkpoint must include all physical slots, not merely those that
     // survived the previous draw or the CPU-estimated indirect draw count.
@@ -931,7 +962,8 @@ void ComputeParticles::switchToCpu(const std::string& why) {
     }
     // A slot intentionally queued for selective kill is not a lost particle.
     const uint32_t owned=uint32_t(ages_.size()-freeSlots_.size()-
-                                  pendingKillSlots_.size());
+                                  pendingKillSlots_.size()-
+                                  killedSlotsAwaitingFrame_.size());
     releaseGpu();backend_=ComputeBackend::Cpu;
     const bool ok=initCpu();
     bool imported=false;
