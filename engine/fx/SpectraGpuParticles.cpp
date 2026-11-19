@@ -147,7 +147,7 @@ bool ComputeParticles::initGpu() {
     readbackLifetime_=std::make_shared<uint64_t>(0);
     vmFrameRevision_=0;
     checkpointRevision_=0;
-    checkpointFrameCounter_=0;
+    checkpointCadence_.configure(desc_.checkpointEveryFrames,desc_.adaptiveCheckpoint);
     asyncCheckpointPending_=false;
     lastCheckpoint_={};
     if(!device_) {reason_="no RHI Device";return false;}
@@ -316,7 +316,7 @@ void ComputeParticles::shutdown() {
     drawCount_=0;
     programParams_={};
     lastCheckpoint_={};checkpointRevision_=0;
-    checkpointFrameCounter_=0;
+    checkpointCadence_={};
     backend_=ComputeBackend::Cpu;stats_={};reason_.clear();
 }
 void ComputeParticles::clear() {
@@ -548,10 +548,13 @@ bool ComputeParticles::step(float dt) {
     verticesReady_=true;reason_.clear();
     // Queue chunked readback only after the VM/integration/compact dispatches.
     // This is optional; never block the render loop on checkpoint collection.
-    if(desc_.checkpointEveryFrames>0 &&
-       ++checkpointFrameCounter_%desc_.checkpointEveryFrames==0 &&
-       !asyncCheckpointPending_)
-        (void)requestGpuCheckpoint();
+    if(checkpointCadence_.due(vmFrameRevision_)) {
+        const bool accepted=!asyncCheckpointPending_ && requestGpuCheckpoint();
+        if(accepted)checkpointCadence_.accepted(vmFrameRevision_);
+        else checkpointCadence_.deferred(vmFrameRevision_);
+        stats_.checkpointAdaptiveBackoffs=checkpointCadence_.backoffs();
+        stats_.checkpointAdaptiveRecoveries=checkpointCadence_.recoveries();
+    }
     return true;
 }
 void ComputeParticles::draw(const fx::FxFog& fog) {
@@ -737,6 +740,11 @@ bool ComputeParticles::requestGpuCheckpoint(std::function<void(bool)> callback) 
                         checkpointRevision_=pending->frameRevision;
                         ++stats_.checkpointCompleted;
                     } else if(pending->acceptedAll) ++stats_.checkpointFailed;
+                    if(pending->acceptedAll) {
+                        checkpointCadence_.completed(complete);
+                        stats_.checkpointAdaptiveBackoffs=checkpointCadence_.backoffs();
+                        stats_.checkpointAdaptiveRecoveries=checkpointCadence_.recoveries();
+                    }
                     if(pending->completion)pending->completion(complete);
                 });
             if(!accepted) {allAccepted=false;break;}
@@ -767,6 +775,8 @@ GpuCheckpointStatus ComputeParticles::checkpointStatus() const {
     status.currentRevision=vmFrameRevision_;
     status.capturedRevision=checkpointRevision_;
     status.physicalSlots=static_cast<uint32_t>(ages_.size());
+    status.checkpointIntervalFrames=checkpointCadence_.intervalFrames();
+    status.nextCheckpointRevision=checkpointCadence_.nextDueRevision();
     if(status.complete) {
         status.frameSerial=lastCheckpoint_.frameSerial;
         status.framesBehind=status.currentRevision>=status.capturedRevision
