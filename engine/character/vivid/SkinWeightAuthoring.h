@@ -68,6 +68,28 @@ public:
         return true;
     }
     const std::map<std::uint32_t,Edit>& edits() const noexcept {return edits_;}
+    // Clone any authored edit when seam splitting duplicates a model-global
+    // vertex. This is only a candidate-side derivative; source authoring IDs
+    // and undo history retain their original imported vertex identities.
+    template<class CloneRange>
+    SkinWeightAuthoring withSplitClones(const CloneRange& clones) const {
+        SkinWeightAuthoring next=*this;
+        if(strokeStart_)throw std::invalid_argument(
+            "VIVID skin weights: cannot split while a paint gesture is active");
+        for(const auto& clone:clones) {
+            const auto found=edits_.find(clone.source);
+            if(found==edits_.end())continue;
+            if(next.edits_.size()>=65536 || next.edits_.count(clone.target))
+                throw std::invalid_argument(
+                    "VIVID skin weights: cloned edit budget/identity conflict");
+            auto copy=found->second;
+            copy.vertex=clone.target;
+            next.edits_.emplace(clone.target,std::move(copy));
+        }
+        next.undo_.clear();
+        next.redo_.clear();
+        return next;
+    }
     // A drag gesture is one reversible history operation, regardless of
     // how many ray hits were sampled. In-progress edits are used only by
     // the editor and never applied to the uploaded Model until mouse-up.
