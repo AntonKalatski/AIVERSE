@@ -528,10 +528,10 @@ ctest --test-dir build/strata \
    shared-buffer writes, reupload/revision invalidation, in-flight retirement,
    surrounding rigid models, and all original fallback paths before enabling
    submission. Default staging remains OFF.
-5. Stage 8.2 adds asynchronous Metal diagnostic readback, an exact
-   CPU/GPU comparison oracle and a manual real Metal GPU parity runner.
-   Execute the new fixture and randomized camera/LOD/material variants
-   before accepting output; previous mock/CPU test passes do not prove GPU parity.
+5. Stage 9 adds an explicit exclusive route/candidate command preflight.
+   Execute the Stage 8.2 real Metal parity runner and the sixth route test,
+   then randomized camera/LOD/material variants before accepting GPU output;
+   previous mock/CPU tests do not establish raster parity.
 6. Add mutually exclusive Renderer3D selected-range submission only after
    GPU/CPU selection AND screenshot parity. Preserve legacy fallback on all
    unsupported devices; then pursue Hi-Z, streaming and independent CPU/GPU
@@ -583,6 +583,78 @@ handling, camera thresholds and geometry quality, explicit GPU/CPU parity
 over randomized transformations and materials, per-pass shadows/reflections,
 and a one-owner, non-double-submitted Renderer3D integration. Vulkan compute,
 Hi-Z and streaming remain future work.
+
+## Stage 9 — exclusive renderer routing preflight (no GPU draws)
+
+After Stage 8.2, the batching PR #34 was merged into `main` at
+`58e29ab052458fffcdebebffe27022b53adb9367`. Strata synchronizes
+this `main` through a two-parent merge `a77cd830e8dee751658028786066111bc8e65f6a`
+while preserving the independent batching changes and handoff.
+Renderer3D, StaticModelCache, GlobalGeometryPool and CPU MDI/GPU ICB still
+belong to the existing batching implementation.
+
+`engine/render/StrataRenderRouting.h/.cpp` defines an explicit **candidate
+preflight and exclusive source route decision** (not a live submission path).
+
+```cpp
+using namespace aiverse::render;
+strata::RenderCandidate candidate;
+strata::ViewConfig view; // pass object-to-clip, viewport & error budget
+// Scene must have been staged with both CPU and pooled-GPU Strata enabled.
+const bool prepared = scene.prepareStrataRenderCandidate(
+    "models/stone.glb", 0, 0, strata::RenderPass::MainOpaque,
+    view, candidate);
+
+// Renderer3D owns final material/pipeline validation and the real uniform slot.
+strata::RenderRouteGate gate;
+gate.requested = true;
+// DO NOT set proof flags speculatively: real Metal CPU/GPU and raster parity
+// must be established first, for the applicable pass/material.
+gate.sourceAndMaterialSafe = prepared;
+gate.sourceResident = prepared;
+gate.cpuGpuSelectionParityVerified = false; // unverified in production
+gate.rasterParityVerified = false; // unverified in production
+gate.rendererOwnsSubmission = false;
+auto route = strata::chooseExclusiveRenderRoute(gate);
+// route == Legacy; original Renderer3D draws stay authoritative.
+```
+
+The CPU preflight validates an exact source model, primitive and material,
+checks a **fresh** `GpuMetadataScene::indexBinding` shared-pool sidecar
+lease, live source/model GPU handles, geometry and material revisions,
+no animation/skin/morph/vertex displacement/custom shader, no alpha
+blending, existing model LOD, shadow batch, material batch or variant
+ownership. It calls CPU `planView` with the correct pass projection and
+converts selected primitive-local indices into absolute shared GPU
+index offsets. For fully offscreen primitives it may return an empty
+candidate; this is a valid pass-specific cull, **not** an instruction
+to also draw the original primitive.
+
+`encodeRendererCommands(liveModel, liveResidency, candidate, slot, gate,
+commands)` converts the geometry ranges into the shared 20-byte
+`gfx::DrawIndexedIndirectCommand` ABI **only if** every route gate is
+explicitly satisfied. It independently rechecks the live material/geometry
+revisions, source pointer identity, GPU buffers and *current* sidecar lease
+(including bounds). The real `firstInstance` uniform slot must be
+provided by Renderer3D; Strata never allocates a second transform table,
+pipeline or material grouping authority. On failure it leaves output
+untouched. This is still diagnostic command construction, NOT dispatch.
+
+**Important:** merely setting every `RenderRouteGate` boolean does not
+constitute genuine GPU or raster parity. The production renderer does not
+currently call this encoder or suppress legacy draws. Do not wire in a
+Strata-only branch until the Stage 8.2 real Metal runner and full OFF/ON
+visual parity pass, including sun shadows, reflections, material/LOD
+transitions and multiple instances. Never submit a Strata candidate in
+addition to the corresponding `ModelDraw`.
+
+A new `aiverse_strata_render_routing` static target and focused CTest
+`strata_render_routing` cover the gate, pooled index translation,
+per-pass parent/leaf choices, fully culled primitives, live source
+mutation, revoked/invalid GPU leases and absence of actual raster/
+indirect draws. Tests are not considered passing until executed.
+The `.github/workflows/strata-focused.yml` workflow builds this sixth
+contract suite on Linux/macOS.
 
 ## Architectural constraints
 - **One scene/instance truth**: `GeometryScene` owns static render instances
