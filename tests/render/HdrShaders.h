@@ -31,18 +31,26 @@ inline bool checkHdrShaders(gfx::Device& device) {
         gfx::ShaderDesc sd;sd.glslVertex=vs.c_str();sd.glslFragment=fs.c_str();sd.msl=msl.c_str();sd.linearTarget=hdr;sd.uniformSlots=3;sd.textureSlots=20;
         auto shader=device.createShader(sd);
         if(!shader.valid() && std::string(source.name)=="terrain high") {
-            // The production TerrainRenderer falls back from detailed
-            // terrain to its non-detail variant on sampler-limited GL.
-            // Validate that precise fallback instead of failing the
-            // entire HDR fixture on a supported lower capability tier.
-            const std::string fallbackDef="#define TERRAIN_TIER 2\n#define TERRAIN_DETAIL 0\n";
-            vs=fallbackDef+source.vs; fs=fallbackDef+source.fs;
-            msl=fallbackDef+source.msl;
-            sd.glslVertex=vs.c_str(); sd.glslFragment=fs.c_str();
-            sd.msl=msl.c_str();
-            shader=device.createShader(sd);
-            if(shader.valid())
-                std::fprintf(stderr,"terrain high (%s): detail variant unavailable, non-detail fallback PASS\n",hdr?"HDR":"LDR");
+            // Match the production terrain quality fallback: prefer full
+            // detail, then try non-detail high / medium / low, since high
+            // without detail can still exceed a GL3.3 16-sampler limit.
+            const std::string firstError=device.lastError();
+            for(int tier=2; tier>=0 && !shader.valid(); --tier) {
+                const std::string defs="#define TERRAIN_TIER "+
+                    std::to_string(tier)+"\n#define TERRAIN_DETAIL 0\n";
+                vs=defs+source.vs;
+                fs=defs+source.fs;
+                msl=defs+source.msl;
+                sd.glslVertex=vs.c_str();
+                sd.glslFragment=fs.c_str();
+                sd.msl=msl.c_str();
+                shader=device.createShader(sd);
+                if(shader.valid())
+                    std::fprintf(stderr,
+                        "terrain high (%s): preferred shader unavailable (%s); "
+                        "fallback tier=%d detail=0 PASS\n",
+                        hdr?"HDR":"LDR",firstError.c_str(),tier);
+            }
         }
         if(!shader.valid()) {std::fprintf(stderr,"%s (%s): %s\n",source.name,hdr?"HDR":"LDR",device.lastError().c_str());return false;}
         device.destroyShader(shader);
