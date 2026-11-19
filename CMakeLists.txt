@@ -2024,7 +2024,8 @@ if(AIVERSE_BUILD_STRATA)
     # immutable auxiliary INDEX-only data. Original Model VB stays owned by
     # Renderer3D/GlobalGeometryPool; no second Strata vertex allocator.
     add_library(aiverse_strata_portable STATIC
-        engine/render/StrataPortableRender.cpp)
+        engine/render/StrataPortableRender.cpp
+        engine/render/StrataIndexResidency.cpp)
     target_link_libraries(aiverse_strata_portable PUBLIC
         aiverse_strata_view aiverse_models)
     target_include_directories(aiverse_strata_portable PUBLIC
@@ -2083,6 +2084,11 @@ if(AIVERSE_BUILD_STRATA)
         target_link_libraries(aiverse_strata_portable_tests PRIVATE
             aiverse_strata_portable aiverse_zstd_dec)
         add_test(NAME strata_portable COMMAND aiverse_strata_portable_tests)
+        add_executable(aiverse_strata_index_residency_tests
+            tests/render/strata_index_residency.cpp)
+        target_link_libraries(aiverse_strata_index_residency_tests PRIVATE
+            aiverse_strata_portable aiverse_zstd_dec)
+        add_test(NAME strata_index_residency COMMAND aiverse_strata_index_residency_tests)
     endif()
     # The GPU parity runner opens a real macOS CAMetalLayer and compiles MSL at
     # runtime. Keep it manual/opt-in: focused CPU/mocked CTests have no window.
