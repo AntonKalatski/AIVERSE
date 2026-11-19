@@ -1449,3 +1449,131 @@ anything, preserve local worktrees, reconcile the latest main
 changes in a separate integration validation, and run the
 focused CTests plus all native Metal parity executables against
 that merged source snapshot.
+
+
+## Stage 14 — actual portable Strata raster path on Vulkan and GLES3 (2026-11-19)
+
+Unlike the earlier Metal-only GPU compute diagnostics, Strata
+now has an **opt-in real raster route** for the existing
+\`Renderer3D\` on Vulkan, GLES3/WebGL2, Metal and desktop GL.
+The route uses **CPU-selected** hierarchical cluster LODs.
+It requires no GPU compute, shader-storage buffers or ICB support.
+All backend-specific shading, index formats, materials,
+sun-shadow, water reflection, draw submission and pipeline ownership
+stay in the **existing backend of Renderer3D**.
+
+### Public API
+
+\`\`\`cpp
+scene.setStrataPortableRenderingEnabled(true); // before load
+scene.load(device, sceneJson, readFile);
+renderer.beginScene(camera, width, height);
+scene.draw(renderer);
+renderer.render(mainPass); // submits one source OR selected Strata
+device.endPass();
+\`\`\`
+
+Default is OFF: exactly the old Legacy path. The option
+automatically requests \`SceneStaging\` and is genre-neutral.
+On upload it uses \`strata::PortableSource\` per eligible rigid
+model and collects per-instance aliases with stable lifetime
+through \`Renderer3D::render\`.
+
+\`engine/render/StrataPortableRender.h/.cpp\` also exposes
+\`PortableSource::stage(device, uploadedSource, sourceAsset)\`,
+\`prepareModel(drawWorld, passViews, forceFinestForUnspecifiedPass,
+outputAlias)\`, \`validFor\` and explicit \`shutdown(device)\` for
+native game or editor callers. The \`outputAlias\` borrows all
+GPU vertex buffers and textures: **never call \`uploadModel\` or
+\`releaseModel\` on this alias**. Keep it alive until the renderer
+has consumed all pass submissions. On failure the output
+is untouched: draw the original source.
+
+### Backend behavior
+
+| Backend | Visible geometry path | Indices | GPU compute LOD |
+| --- | --- | --- | --- |
+| Metal | existing Renderer3D Metal PBR/main/shadow/reflection | existing GlobalGeometryPool pooled sidecar where possible, else index-only IB | optional diagnostic GPU compute (separate, not authoritative) |
+| Vulkan | existing Renderer3D Vulkan indexed draws / CPU MDI | same source pool sidecar where Vulkan supports shared indexed MDI, otherwise one immutable index-only IB | **CPU selection**; Vulkan RHI's compute dispatch is not currently implemented |
+| GLES3/WebGL2 | existing GLES3 \`glDrawElements\`, GL RHI baseVertex emulation | immutable index-only IB borrowing source VB | CPU selection, no compute/SSBO requirement |
+| GL33 | existing GL indexed draws | pooled if supported, else immutable index-only IB | CPU selection |
+
+**No second Strata vertex buffer, no second geometry pool, no
+separate renderer or duplicate source + Strata draw.**
+The source vertex buffer remains the only GPU vertex allocation.
+A standalone index-only sidecar on GLES3 is intentional: the
+existing GlobalGeometryPool was MDI-gated and ES3.0/WebGL2 do
+not support the required GPU-indirect features. The index buffer
+reuses the original source's vertex indices and base vertex.
+
+### Multi-pass LOD and fallback
+
+\`PortableSource::prepareModel\` builds a conservative
+frontier across every source-node transform and all supplied
+camera/shadow pass view-projections. It merges paths by
+selecting the finest required cluster (rather than drawing
+a parent AND child over the same geometry). It delegates
+actual per-pass visibility/culling to \`Renderer3D\` and
+does not discard triangles simply because they are absent
+from the main camera. Because the planar reflection view
+is selected later by the existing renderer, the portable
+route selects the **finest resident frontier** whenever
+reflection may use the same model. This may draw more
+clusters but avoids incorrect missing geometry.
+
+Only rigid, opaque, non-skinned, non-morphing models
+with complete Strata source primitive coverage are
+accepted. Unsupported shader graphs, transparent or
+animated materials, stale source geometry/material
+revisions, invalid resident hierarchies, index bounds,
+source uploads and budget failures cause **Legacy fallback**
+for that instance. Original HLOD/surface proxy draws remain
+Legacy. The \`GeometryScene::Stats\` report staged/declined
+portable sources, actual portable draws/fallbacks and
+selected cluster counts.
+
+### Full CPU preparation before import-time staging
+
+The normal \`uploadModel()\` may generate LODs, tangents,
+shadow/material batches and even perform opt-in rigid
+compaction, altering source indices after early staging.
+Portable geometry now explicitly runs
+\`prepareModelUpload(source)\` **before building Strata assets**
+so the CPU model, source GPU upload and sidecar index
+stream share the same finalized vertex/index layout.
+Portable \`SceneStaging\` stages only root meshes actually
+referenced by live model nodes and can stage a prepared
+LOD0 root even when authored/generated alternate LOD
+meshes exist. Those alternate meshes stay untouched for
+Legacy fallback; the alias has no secondary built-in
+LOD chain, which prevents two independent LOD selections.
+This opt-in behavior does not change the older
+diagnostic-only staging default.
+
+### Validation status
+
+**Code committed; Vulkan, GLES3 and new Metal portable
+runtime/visual parity have NOT yet been built or tested.**
+The owner explicitly requested **no intermediate tests**:
+finish functionality, then perform one final build/error
+check and one native Mac Studio validation pass. The
+existing Stage 8–13 results refer to earlier fixtures,
+not the new portable draw route.
+
+New test targets staged for the final run:
+\`aiverse_strata_portable_tests\` (recording GLES3/Vulkan/
+Metal/GL backend index+LOD/lease contract) and
+\`aiverse_strata_metal_portable_parity\` (actual native Metal
+same Renderer3D raster path). Source and target
+in \`tests/render/strata_portable.cpp\`,
+\`tests/render/strata_metal_portable_parity.cpp\`,
+\`CMakeLists.txt\`. No tests have been executed by the agent.
+The focused CI builds the portable test but does not run
+its new case until final validation.
+
+**Remaining Vulkan optimization:** native Vulkan GPU
+compute culling, SSBO selected-range compaction and GPU-authored
+indirect submission are not part of the current Vulkan RHI;
+the completed CPU-selected raster fallback remains usable and
+correctness-first. Vulkan GPU compute parity requires additional
+Vulkan RHI compute API, GLSL/SPIR-V shader and hardware evidence.
