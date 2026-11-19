@@ -160,3 +160,26 @@ Next: Stage 3 must add a separately versioned, scalable blend-shape storage/defo
 - New pure-core test `vivid_sparse_morph`; sources are under `tests/vivid/sparse_morph.cpp`. **CTest not run** on this revision.
 
 This stage does **not** replace the legacy `render::Model` eight-target path, import MetaHuman DNA, bind arbitrary names to semantic channels or produce rendered character pixels. Next stages must generate per-vertex *gather* adjacency to avoid race-prone GPU scattering, wire the new deform buffer into the RHI skinning path, and keep legacy loads identical unless explicit VIVID assets are present.
+
+## Implemented Stage 3B — facial semantics to named morph targets (2026-11-19)
+
+**Source authored, native build/CTest NOT RUN in this stage.**
+- `FaceShapeBinding.h/.cpp`: immutable `ShapeRoute{Channel,targetName,gain}` compiled against a `SparseMorphLibrary`. Many distinct morph targets may be controlled by one semantic channel; unknown names and duplicate destination names rejected, with explicit finite/clamped scales. This bypasses the *semantic* 8-target bottleneck without modifying the existing renderer.
+- `FaceShapeBinding::evaluate(face, weights, influence)`: per-character weight buffer must be sized to all packed targets; all mapped weights updated in one pass, unused targets zero, invalid input leaves output unmodified. No heap allocations during evaluation.
+- `tests/vivid/shape_binding.cpp` test exercises 97 routes (96 jaw corrections + one smile), 97 named shapes in one library, full `FaceController -> FaceShapeBinding -> SparseMorphLibrary::evaluate` chain, parameter validation and instance isolation.
+- `aiverse_vivid_shape_tests` and CTest `vivid_shape_binding` registered. **These tests are authored, not yet run**.
+
+Example:
+
+```cpp
+std::vector<aiverse::vivid::ShapeRoute> routes{
+    {aiverse::vivid::Channel::JawOpen, "jawOpen_primary", 1.0f},
+    {aiverse::vivid::Channel::JawOpen, "jawOpen_corrective", 0.4f}
+};
+auto shapeBinding = aiverse::vivid::FaceShapeBinding::compile(library, routes);
+std::vector<float> shapeWeights(library.targets());
+shapeBinding.evaluate(face.frame(), shapeWeights);
+library.evaluate(baseMesh, shapeWeights, deformedMesh); // CPU reference only
+```
+
+Performance: current code evaluates targets on CPU, not on the GPU; do not claim production facial rendering. Next: Stage 3C produce a deterministic per-vertex gather table for a compute/vertex GPU pass without unordered float atomics.
