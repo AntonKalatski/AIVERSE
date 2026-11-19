@@ -9,6 +9,7 @@ public:
     Json dispatch(const Json& request);
     const editor::Workspace& workspace() const { return ws_; }
     int selectedEntityIndex() const;
+    Json openProject(const std::string& path); // only call with path returned by a trusted native picker
 private:
     Json snapshot() const;
     int indexFor(const std::string& id) const;

@@ -42,6 +42,8 @@
 - (void)zoom:(CGFloat)amount;
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
 - (void)sendStudioEvent:(const char*)event message:(const char*)message;
+- (void)sendStudioReply:(const aiverse::Json&)reply;
+- (void)openProjectSheetForRequestId:(int64_t)requestId;
 @end
 
 @implementation StudioMetalView
@@ -168,6 +170,39 @@
     const aiverse::Json outcome=session_->dispatch(request);
     if (!outcome.has("error")) [self sendStudioEvent:"selection.changed" message:""];
 }
+- (void)sendStudioReply:(const aiverse::Json&)reply {
+    const std::string output=reply.dump(-1);
+    NSString* json=[[NSString alloc] initWithBytes:output.data() length:output.size() encoding:NSUTF8StringEncoding];
+    if (json) [web_ evaluateJavaScript:[NSString stringWithFormat:@"window.__aiverseReceive && window.__aiverseReceive(%@);",json] completionHandler:nil];
+}
+- (void)openProjectSheetForRequestId:(int64_t)requestId {
+    NSOpenPanel* panel=[NSOpenPanel openPanel];
+    panel.canChooseFiles=YES;
+    panel.canChooseDirectories=YES;
+    panel.allowsMultipleSelection=NO;
+    panel.canCreateDirectories=NO;
+    panel.prompt=@"Open Project";
+    [panel beginSheetModalForWindow:window_ completionHandler:^(NSModalResponse result) {
+        aiverse::Json reply=aiverse::Json::object();
+        reply.set("id",aiverse::Json::number(requestId));
+        aiverse::Json payload=aiverse::Json::object();
+        if (result==NSModalResponseOK && panel.URL.path.length) {
+            try {
+                payload.set("cancelled",aiverse::Json::fromBool(false));
+                payload.set("snapshot",session_->openProject(panel.URL.path.UTF8String));
+                if (preview_) preview_->resetCamera();
+                [self sendStudioEvent:"workspace.changed" message:""];
+            } catch (const std::exception& ex) {
+                reply.set("error",aiverse::Json::string(ex.what()));
+            }
+        } else {
+            payload.set("cancelled",aiverse::Json::fromBool(true));
+            payload.set("snapshot",aiverse::Json());
+        }
+        if (!reply.has("error")) reply.set("result",std::move(payload));
+        [self sendStudioReply:reply];
+    }];
+}
 - (void)sendStudioEvent:(const char*)event message:(const char*)message {
     aiverse::Json packet=aiverse::Json::object();
     packet.set("event",aiverse::Json::string(event));
@@ -211,6 +246,11 @@
     try {
         std::string bytes((const char*)data.bytes,(size_t)data.length);
         const aiverse::Json req=aiverse::Json::parse(bytes);
+        if (req.getStr("method")=="studio.openProject" && req["id"].isNumber()) {
+            // Path is chosen by AppKit, never accepted from untrusted JavaScript.
+            [self openProjectSheetForRequestId:req["id"].integer()];
+            return;
+        }
         aiverse::Json reply;
         if (req.getStr("method")=="studio.viewportRect" && req["id"].isNumber()) {
             [self applyViewport:req["params"]];
@@ -222,9 +262,7 @@
         } else {
             reply=session_->dispatch(req);
         }
-        std::string output=reply.dump(-1);
-        NSString* json=[[NSString alloc] initWithBytes:output.data() length:output.size() encoding:NSUTF8StringEncoding];
-        if (json) [web_ evaluateJavaScript:[NSString stringWithFormat:@"window.__aiverseReceive && window.__aiverseReceive(%@);",json] completionHandler:nil];
+        [self sendStudioReply:reply];
     } catch (const std::exception& e) { NSLog(@"AIVERSE bridge exception: %s",e.what()); }
 }
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)app { (void)app; return YES; }

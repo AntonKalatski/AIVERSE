@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Activity, Box, ChevronDown, ChevronRight, CirclePlay, Code2, Command, FileCode2, FolderTree, Layers3, Lightbulb, MonitorPlay, MoreHorizontal, PanelBottom, Plus, Redo2, RefreshCw, Save, Search, Settings2, SlidersHorizontal, Terminal, Undo2, WandSparkles } from 'lucide-react';
+import { Activity, Box, ChevronDown, ChevronRight, CirclePlay, Code2, Command, FileCode2, FolderOpen, FolderTree, Layers3, Lightbulb, MonitorPlay, MoreHorizontal, PanelBottom, Plus, Redo2, RefreshCw, Save, Search, Settings2, SlidersHorizontal, Terminal, Undo2, WandSparkles } from 'lucide-react';
 import { invoke, nativeConnected, onNativeEvent } from './bridge';
 import type { StudioEntity, StudioSnapshot } from './types';
 import PanelTitle from './components/PanelTitle';
@@ -42,6 +42,16 @@ export default function App() {
     catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
+  const openProject = async () => {
+    if (!connected || busy) return;
+    setBusy(true);
+    try {
+      const result = await invoke('studio.openProject', {});
+      if (result.snapshot) setSnapshot(result.snapshot);
+      setError('');
+    } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  };
   const select = async (id: string | null) => {
     setBusy(true);
     try { setSnapshot(await invoke('studio.select', { id })); setError(''); }
@@ -75,7 +85,7 @@ export default function App() {
     <header className="titlebar">
       <div className="wordmark"><div className="brand-logo"><Layers3 size={19}/></div><strong>AIVERSE</strong><span>STUDIO</span></div>
       <div className="project-breadcrumb"><span>Projects</span><ChevronRight size={14}/><b>{snapshot?.project.name ?? 'Loading...'}</b><span className={snapshot?.project.dirty ? 'dirty-dot active' : 'dirty-dot'}/></div>
-      <div className="title-actions"><span className={connected ? 'mode-pill online' : 'mode-pill demo'}>{connected ? 'NATIVE' : 'DEMO · NO ENGINE'}</span><button className="icon-button" title="Refresh from engine" onClick={() => void refresh()}><RefreshCw size={15}/></button><button className="icon-button" aria-label="Settings (not available)" disabled><Settings2 size={17}/></button></div>
+      <div className="title-actions"><button className="tool-button" onClick={() => void openProject()} disabled={!connected || busy} title="Open AIVERSE project"><FolderOpen size={15}/> Open Project</button><span className={connected ? 'mode-pill online' : 'mode-pill demo'}>{connected ? 'NATIVE' : 'DEMO · NO ENGINE'}</span><button className="icon-button" title="Refresh from engine" onClick={() => void refresh()}><RefreshCw size={15}/></button><button className="icon-button" aria-label="Settings (not available)" disabled><Settings2 size={17}/></button></div>
     </header>
     <div className="toolbar">
       <div className="toolbar-left"><span className="toolbar-label"><Box size={16}/> Workspace</span><span className="toolbar-divider"/><button className="tool-button selected"><FolderTree size={15}/> Level Editor</button><button className="tool-button" disabled><Code2 size={15}/> Scripting</button></div>

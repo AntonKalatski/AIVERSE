@@ -18,5 +18,9 @@ int main() {
     assert(call(R"({"id":7,"method":"studio.undo","params":{}})").has("error"));
     assert(call(R"({"id":8,"method":"studio.redo","params":{}})").has("error"));
     assert(session.selectedEntityIndex() == -1);
+    bool openRejected = false;
+    try { session.openProject("/nonexistent/aiverse-project"); }
+    catch (const std::exception&) { openRejected = true; }
+    assert(openRejected);
     std::cout << "studio session contract PASS\n";
 }

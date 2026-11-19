@@ -88,6 +88,14 @@ Json StudioSession::snapshot() const {
     result.set("mode", str("edit"));
     return result;
 }
+Json StudioSession::openProject(const std::string& path) {
+    if (path.empty()) throw std::runtime_error("Project path is empty");
+    std::string error;
+    if (!ws_.openGame(path, &error))
+        throw std::runtime_error(error.empty() ? "Unable to open project" : error);
+    selected_.clear();
+    return snapshot();
+}
 int StudioSession::selectedEntityIndex() const {
     if (selected_.empty()) return -1;
     try { return indexFor(selected_); }

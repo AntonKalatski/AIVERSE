@@ -17,6 +17,7 @@ public:
     int pick(float x, float y, float width, float height, const editor::MapData& map) const;
     void orbit(float dx, float dy);
     void zoom(float wheel);
+    void resetCamera() { cameraInitialized_ = false; }
 private:
     std::unique_ptr<gfx::Device> device_;
     render::Renderer3D renderer_;

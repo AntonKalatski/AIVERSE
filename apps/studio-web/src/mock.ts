@@ -43,6 +43,8 @@ export async function mockInvoke<M extends StudioMethod>(method: M, params: Stud
       { key: 'z', label: 'Position Z', type: 'number', value: 0 },
       { key: 'enabled', label: 'Enabled', type: 'boolean', value: true }
     ];
+  } else if (method === 'studio.openProject') {
+    throw Error('Opening projects requires the native AIVERSE host');
   } else if (method === 'studio.save') {
     throw Error('Saving a project requires the native AIVERSE host');
   } else if (method === 'studio.undo') {
