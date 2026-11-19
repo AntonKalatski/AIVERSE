@@ -216,8 +216,28 @@ render::drawEcsStaticModels(world, renderer,
 
 The host must supply a collision-free nonzero ID across the Worlds and
 multiple draw sources sharing a Renderer3D. `EcsStaticModelRender` carries
-a stable integer `assetKey`, `appearanceRevision`, draw flags and visibility;
-there are no renderer/model pointers or floats in the authoritative ECS
+a stable integer `assetKey`, `appearanceRevision`, draw flags and visibility,
+plus optional **appended** `materialOwnerKey` and `materialOwnerRevision`
+fields (both zero by default). Existing positional four-field aggregate
+initializers remain source-compatible. All owner fields are copied into
+`ModelDraw` by `visitEcsStaticModels` / `drawEcsStaticModels`. Set these
+two fields only when many static Entities share one revision-controlled
+material set; do not populate them from a raw Material pointer hash.
+For an external per-instance material vector, use `visitEcsStaticModels`
+with a presentation submit callback that resolves and attaches the live
+`draw.materials` before calling `renderer.drawModel(draw)`. This avoids
+putting C++ pointers into the ECS component.
+
+Example:
+```cpp
+render::EcsStaticModelRender view{
+    assetKey, 1, 0, true, sharedMaterialSetId, sharedMaterialSetRevision
+};
+world.add<render::EcsStaticModelRender>(entity, view);
+render::drawEcsStaticModels(world, renderer, resolveModel, stableNamespacedDrawId);
+```
+
+There are no renderer/model pointers or floats in the authoritative ECS
 component. `SceneHierarchyRender::hierarchyMatrix` performs fixed-point
 to float conversion with render-origin subtraction. The bridge is optional:
 old projects do not change until they register these components and call
