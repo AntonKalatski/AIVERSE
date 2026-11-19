@@ -7897,3 +7897,43 @@ binding logic. The deferred test gate must include real Metal
 command execution of 2+ VT archive domains and compare same
 frame against CPU draws, including R8 masks, wrap, LOD and
 archive promotion/fence safety.
+
+
+## Stage 10AA — per-command Metal VT native format/extent guard (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, Draft #21.
+**Source commit:** `b1a07b60b04979c93158d45713101c6121e37ebf`
+in `engine/gfx/metal/GfxMetal.mm`.
+**Documentation commits:** `bcb37262fb96e8e50d61e07a6e2cd2443edcba77` in
+`docs/texture-rhi.md`; `23c76582da44c03b69292bf8fa03172c5dd8ded2` in
+`skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**API/invariants:** The experimental per-command Metal ICB path
+checks each physical atlas and page table as native
+`TextureDimension::Texture2DArray` `PixelFormat::RGBA8`,
+full-resolution optional coverage as 2D `PixelFormat::R8`,
+array slice counts, virtual layer range and physical
+gutter interior bounds. Unsupported resource combinations
+return token zero before command encoding; the standard CPU
+fallback stays enabled. No new RHI method or shader argument
+layout is added. Other backends' default rejection remains.
+
+**Checks actually performed:** inspected the native Metal
+resource descriptor field names and added a bounded fail-closed
+preflight check; GitHub accepted code and docs commits.
+**Objective-C++ compiler NOT RUN; CTest NOT RUN; MSL compiler
+NOT RUN; GPU ICB command execution NOT RUN**. No release claim.
+
+**Known limitations:** Metal RGBA8 physical page samples only;
+future half-float/other VT backing formats must have an
+explicit matching shader/descriptor format contract. The path
+is still feature-flagged, not used by default and not
+hardware-certified. The broader heterogenous PBR U2/source
+textures and Shader Graph material table are separate work.
+
+**Next agent:** inspect all modifications from Stage 10W onward;
+compile entire engine/editor against native Metal, run focused
+texture and ICB suites and capture two-domain source-vs-VT
+same-camera image comparison. If a native API/shader ABI
+fails, fix under a new bounded stage and preserve this
+append-only handoff before any merge.
