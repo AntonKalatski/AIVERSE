@@ -1384,6 +1384,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     effectReport.autoExposureHighlightRejection = 0;
     effectReport.autoExposureFrozen = false;
     effectReport.autoExposureRegionMetered = false;
+    effectReport.manualExposureEncoded = false;
+    effectReport.manualExposureEV = 0.0f;
     effectReport.effects.clear();
     if (!sceneReady_) {
         for (const auto& e : settings_.effects) {
@@ -1450,9 +1452,24 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     // composite BEFORE tone mapping; never post-process UI/HUD.
     gfx::TextureHandle automaticExposure;
     const PrismaEffect* autoEffect = find(PrismaType::AutoExposure);
+    // Manual EV replaces the adapted factor but still belongs to the
+    // authored AutoExposure effect. Explicit native false disables even a
+    // profile-authored manual mode; the old GPU auto flag is not required
+    // when the user explicitly selected fixed HDR exposure.
+    const auto manualOverride = viewManualExposure_.find(viewId_);
+    const bool manualSelected = hdrFrame_ && autoEffect &&
+        (manualOverride != viewManualExposure_.end()
+            ? manualOverride->second.enabled
+            : autoEffect->get("manualExposure") > 0.5f);
+    const float manualEV = manualSelected
+        ? (manualOverride != viewManualExposure_.end()
+            ? manualOverride->second.ev
+            : std::clamp(autoEffect->get("manualEV"),-12.0f,12.0f))
+        : 0.0f;
+    if (manualSelected) resetAutoExposure(viewId_);
     const char* autoFlag = std::getenv("AIVERSE_PRISMA_AUTO_EXPOSURE");
-    const bool autoRequested = hdrFrame_ && autoEffect && autoFlag &&
-        std::strcmp(autoFlag, "1") == 0;
+    const bool autoRequested = hdrFrame_ && autoEffect && !manualSelected &&
+        autoFlag && std::strcmp(autoFlag, "1") == 0;
     // Native stable-view overrides take precedence over volume/profile
     // fields, including an explicit false. Two cameras at the SAME world
     // position may therefore use independent cinematic exposure controls.
@@ -2452,6 +2469,11 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         default: break;
         }
     }
+    // Fixed cinematic EV is a scene-linear multiplier in the existing
+    // final HDR composite, BEFORE ACES/sRGB/grade/LUT/Shader Graph.
+    // No exposure history, sampled texture, extra sampler or pipeline
+    // variant is needed. ColorGrade's artistic exposure composes with it.
+    if (manualSelected) u.filt[2] *= std::exp2(manualEV);
     const auto* graphEffect = find(PrismaType::ShaderGraph);
     const Json* graphData = graphEffect ? &graphEffect->shaderGraph : nullptr;
     std::vector<gfx::TextureHandle> graphImages;
@@ -2489,6 +2511,10 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     // Record only the final bound composite variant, not an earlier
     // pipeline that was rejected before the no-exposure fallback.
     effectReport.shaderGraphTextures = static_cast<int>(graphImages.size());
+    if (manualSelected && pipe.valid()) {
+        effectReport.manualExposureEncoded = true;
+        effectReport.manualExposureEV = manualEV;
+    }
     if (pipe.valid() && (mask & kPfAutoExposure)) {
         effectReport.autoExposureTextureSlot = compositeLayout.exposureSlot;
         effectReport.autoExposureHighlightRejection =
