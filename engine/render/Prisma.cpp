@@ -2499,7 +2499,13 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 }
                 break;
             case PrismaType::DepthOfField:
-                if (requireHdrFlag("AIVERSE_PRISMA_DOF")) {
+                // The legacy DoF pass is allowed in SDR as well when a
+                // project explicitly lowers minQuality. Report the actual
+                // runtime gate, not the stricter HDR rule of Temporal AA.
+                if (!optIn("AIVERSE_PRISMA_DOF")) {
+                    state.requested = false;
+                    state.reason = "opt-in disabled: AIVERSE_PRISMA_DOF";
+                } else {
                     if (authored.get("intensity") <= 0 ||
                         authored.get("maxBlur") <= 0) {
                         state.requested = false;
