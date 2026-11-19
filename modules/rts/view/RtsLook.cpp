@@ -258,12 +258,12 @@ void RtsView::buildLook(gfx::Device& dev, const UnitType& t, TypeLook& L) {
     L.shape = L.models.empty();
     if (L.shape) {
         std::string shape = v.getStr("shape", t.structure ? (t.resourceNode >= 0 ? "mine" : "structure") : "generic");
-        if (!models_.count("shape:" + shape)) {
+        if (!resources_.models().count("shape:" + shape)) {
             warn(t, "unknown shape '" + shape + "'");
             shape = t.structure ? "structure" : "generic";
         }
         ModelChoice ch;
-        ch.model = models_["shape:" + shape].get();
+        ch.model = resources_.models()["shape:" + shape].get();
         ch.materials = ch.model->materials;
         configureChoice(dev, t, v, ch, true);
         L.models.push_back(std::move(ch));
@@ -366,7 +366,7 @@ bool RtsView::prepareType(uint16_t type, bool allVariants) {
         auto add = [&](const std::string& path) {
             if (path.empty()) return;
             const auto key = path + (geometry ? "#geometry" : "");
-            if (models_.count(key)) return;
+            if (resources_.models().count(key)) return;
             const auto entry = std::make_pair(path, key);
             if (std::find(preparePaths_.begin(), preparePaths_.end(), entry) == preparePaths_.end()) preparePaths_.push_back(entry);
         };
@@ -396,9 +396,9 @@ bool RtsView::prepareType(uint16_t type, bool allVariants) {
         for (const auto& message : result.warnings) warn(t, message);
         // A runtime spawn can have synchronously cached the same file while the worker ran.
         const auto& key = preparePaths_[prepareCursor_].second;
-        if (!models_.count(key)) {
+        if (!resources_.models().count(key)) {
             if (result.model) uploadModel(*dev_, *result.model);
-            models_.emplace(key, std::move(result.model));
+            resources_.models().emplace(key, std::move(result.model));
         }
         ++prepareCursor_;
     }
@@ -406,7 +406,7 @@ bool RtsView::prepareType(uint16_t type, bool allVariants) {
         const auto path = preparePaths_[prepareCursor_].first;
         preparingResource_ = path;
         const auto reader = asyncReader_;
-        const auto textures = textureCache_;
+        const auto textures = resources_.textures();
         const bool prepareSkin = t.view.getStr("skinning", "auto") != "palette" && !t.view.has("animationGraph") && !t.view.getBool("programmableAnimation");
         preparing_ = std::async(std::launch::async, [path, reader, geometry, prepareSkin, textures] {
             PreparedModel result;
@@ -462,8 +462,8 @@ void RtsView::streamModelVariants(double budgetMs) {
         look.pendingVariants.clear(); look.nextVariant = 0;
 #ifndef __EMSCRIPTEN__
         for (const auto& path : preparePaths_) {
-            auto it = models_.find(path.second);
-            if (it != models_.end() && it->second) std::vector<float>().swap(it->second->baked.pending);
+            auto it = resources_.models().find(path.second);
+            if (it != resources_.models().end() && it->second) std::vector<float>().swap(it->second->baked.pending);
         }
         prepareType_ = -1; preparePaths_.clear(); prepareCursor_ = 0;
 #endif
@@ -496,7 +496,7 @@ void RtsView::trimTypes(const std::vector<bool>& keep, bool compact) {
     // Large projects can keep hundreds of model assets. A hash set makes
     // reclamation linear instead of repeatedly scanning the entire keep list.
     std::unordered_set<const render::Model*> used;
-    used.reserve(models_.size());
+    used.reserve(resources_.models().size());
     auto visit=[&](const ModelChoice& c){
         if(c.model)used.insert(c.model);
         for(const auto& a:c.attach)if(a.model)used.insert(a.model);
@@ -507,13 +507,13 @@ void RtsView::trimTypes(const std::vector<bool>& keep, bool compact) {
         for(const auto& s:look.stages)visit(s.choice);
     }
     size_t released=0;
-    for(auto it=models_.begin();it!=models_.end();) {
+    for(auto it=resources_.models().begin();it!=resources_.models().end();) {
         if(it->first.rfind("shape:",0)==0 || used.contains(it->second.get())){++it;continue;}
         if(it->second){animationCache_.erase(it->second.get());releaseModel(*dev_,*it->second);}
-        it=models_.erase(it);++released;
+        it=resources_.models().erase(it);++released;
     }
-    textureCache_->trim(*dev_);
-    if(std::getenv("AIVERSE_STREAM_TRACE"))std::fprintf(stderr,"[residency] released=%zu models=%zu textures=%zu\n",released,models_.size(),textureCache_->gpuCount());
+    resources_.textures()->trim(*dev_);
+    if(std::getenv("AIVERSE_STREAM_TRACE"))std::fprintf(stderr,"[residency] released=%zu models=%zu textures=%zu\n",released,resources_.models().size(),resources_.textures()->gpuCount());
 }
 
 void RtsView::requestDetail(uint16_t type, bool detailed) {
@@ -544,8 +544,8 @@ void RtsView::loadType(uint16_t type) {
 #ifndef __EMSCRIPTEN__
     if (prepareType_ == int(type)) {
         for (const auto& path : preparePaths_) {
-            auto it = models_.find(path.second);
-            if (it != models_.end() && it->second) std::vector<float>().swap(it->second->baked.pending);
+            auto it = resources_.models().find(path.second);
+            if (it != resources_.models().end() && it->second) std::vector<float>().swap(it->second->baked.pending);
         }
         prepareType_ = -1; preparePaths_.clear(); prepareCursor_ = 0;
     }
@@ -564,12 +564,12 @@ Model* RtsView::loadModelCached(gfx::Device& dev, const UnitType& t, const std::
     try { policy = parseGeometryPolicy(t.view["geometry"]); }
     catch (const std::exception& e) { warn(t, e.what()); }
     const std::string key = path + ((policy.clusters || policy.shadowClusters || policy.occluder) ? "#geometry" : "");
-    auto it = models_.find(key);
-    if (it == models_.end()) {
+    auto it = resources_.models().find(key);
+    if (it == resources_.models().end()) {
         std::unique_ptr<Model> m;
         try {
             std::vector<std::string> w;
-            m = loadModel(path, read_, &w, textureCache_);
+            m = loadModel(path, read_, &w, resources_.textures());
             for (auto& s : w) warn(t, s);
             if (policy.clusters || policy.shadowClusters || policy.occluder) prepareGeometry(*m);
             uploadModel(dev, *m);
@@ -577,7 +577,7 @@ Model* RtsView::loadModelCached(gfx::Device& dev, const UnitType& t, const std::
             warn(t, e.what());
             m.reset();
         }
-        it = models_.emplace(key, std::move(m)).first;
+        it = resources_.models().emplace(key, std::move(m)).first;
     }
     return it->second.get();
 }
@@ -681,12 +681,12 @@ void RtsView::finishChoice(const UnitType& t, ModelChoice& c) {
 
 std::vector<std::string> RtsView::modelFiles() const {
     std::vector<std::string> out;
-    for (const auto& [path, m] : models_) if (path.rfind("shape:", 0) != 0) out.push_back(m ? m->path : path);
+    for (const auto& [path, m] : resources_.models()) if (path.rfind("shape:", 0) != 0) out.push_back(m ? m->path : path);
     return out;
 }
 
 bool RtsView::loadChoice(gfx::Device& dev, const UnitType& t, const Json& view, const std::string& path, ModelChoice& out) {
-    const bool known = models_.count(path) > 0;
+    const bool known = resources_.models().count(path) > 0;
     out.model = loadModelCached(dev, t, path);
     if (!out.model) {
         if (!known) warn(t, path + ": using the built-in shape");
