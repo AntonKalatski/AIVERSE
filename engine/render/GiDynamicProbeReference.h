@@ -61,6 +61,16 @@ public:
     const std::vector<GiDynamicCoefficient>& coefficients() const { return coeffs_; }
     const GiDynamicCoefficient& coefficient(uint32_t index) const { return coeffs_.at(index); }
 
+    // Clear transport invalidated by world changes before shader sampling.
+    // The caller first invalidates the corresponding scheduler tickets and
+    // uploads these zero coefficients before rendering (including budget=0).
+    void clearCoefficients(const std::vector<uint32_t>& ids) {
+        for (uint32_t id:ids) coeffs_.at(id) = {};
+    }
+    void clearAllCoefficients() {
+        std::fill(coeffs_.begin(), coeffs_.end(), GiDynamicCoefficient{});
+    }
+
     // A null BVH makes dynamic bounce zero, not "unchanged/stale".
     void setGeometry(const StaticShadowGeometry* geometry, uint64_t revision) {
         setTraceGeometry(GiTraceGeometryView::fromStatic(geometry), revision);
