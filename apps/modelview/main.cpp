@@ -325,6 +325,15 @@ struct Viewer {
         parents.reserve(actors.size());
         std::map<std::string,::aiverse::view::AppearanceAssetRegistry::Snapshot> children;
         try {
+            // Authoring identity/affine validation happens BEFORE any GPU
+            // import, including disabled entries and duplicate stable IDs.
+            ::aiverse::view::AttachmentLayout check;
+            check.parent=files.empty()?std::string{}:files.front().first;
+            for(const auto& child:attachmentSpecs)
+                check.attachments.push_back({
+                    child.modelSource,child.socketName,child.enabled,
+                    child.local,child.childWorld,child.id});
+            (void)::aiverse::view::AttachmentLayoutCodec::write(check);
             // Import every real child Model before taking any source read
             // lease: the cache cannot evict/replace under active readers.
             for(const auto& entry:attachmentSpecs) {
@@ -686,6 +695,13 @@ struct Viewer {
                     attachmentsDirty=true;
                 ImGui::SameLine();
                 ImGui::Text("%s @ %s",spec.modelSource.c_str(),spec.socketName.c_str());
+                char authoredId[129]{};
+                std::snprintf(authoredId,sizeof(authoredId),"%s",spec.id.c_str());
+                if(ImGui::InputText("Prefab child ID",authoredId,
+                                    sizeof(authoredId))) {
+                    spec.id=authoredId;
+                    attachmentsDirty=true;
+                }
                 float offset[]={spec.local.m[12],spec.local.m[13],spec.local.m[14]};
                 if(ImGui::DragFloat3("Socket offset",offset,0.01f)) {
                     spec.local.m[12]=offset[0];
