@@ -201,3 +201,23 @@ git switch feature/spectrafx-generic-cue-queue
 git pull --ff-only origin feature/spectrafx-generic-cue-queue
 git fetch origin main && git merge origin/main
 ```
+
+
+## 2026-11-19 — Stage 10: bounded cross-emitter event routing
+
+- **Implementation:** `63319c7c0d85935875eb33adfb40565f40649df9`, branch `feature/spectrafx-generic-cue-queue`.
+- **Affected:** `engine/fx/SpectraFxEmitterEvents.h` (new).
+- **API/behavior:** `SpectraFxEmitterEvent` enum Spawned/Completed/Impact/Marker/Manual; `SpectraFxEmitterEventRecord` event payload; `SpectraFxEmitterEventRouter::link/unlink/publish/drain/clear/stats`. Bounded 2,048-event FIFO and per-drain cap (default 512) prevent unbounded presentation-event work; dispatch uses `SpectraFxCommandQueue::play`, not a second particle simulator. Events published during a drain are deferred to the next drain. Depth metadata is limited to 3 for future chained producers; no automatic child event publishing exists yet.
+- **Authority/compatibility:** presentation-only layer, no gameplay state or serialization changes. Existing RTS/FPS modules, FX JSON and PRISMA unchanged.
+- **Tests actually run:** **NOT RUN** by user request; native compilation, CTest, editor and GPU QA unverified.
+- **Known limitations:** this is an external event router, not automatic particle death/collision callbacks from ParticleSystem. `sourceMarker` in the link is presently reserved and not matched by `drain`; thus marker-specific filtering and event-origin propagation must be implemented before claiming full Niagara event-handler parity. External caller is responsible for publishing appropriately ordered signals and generation-safe emitter keys.
+- **Next:** wire emitter lifecycle and ParticleSystem callbacks to router, implement marker filtering and explicit origin propagation, then authored graph/editor controls. Finally tests/CI/Mac Metal profiling, after feature phase.
+
+Pull-first:
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main && git merge origin/main
+```
