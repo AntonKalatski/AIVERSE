@@ -11,6 +11,7 @@
 #include "VirtualTextureDeformedFeedback.h"
 #include "../gfx/VirtualTextureFeedbackPass.h"
 #include <functional>
+#include <cmath>
 #include <cstdint>
 #include <string_view>
 #include <unordered_map>
@@ -55,10 +56,24 @@ public:
         }
         auto resolve = [this](const Model& model,
                               const Material& material, Mapping& mapping) {
+            if (!isTerraWeaveModel(model)) return false;
             const auto it = pages_.find({&model, &material});
-            if (it == pages_.end()) return false;
-            mapping = it->second;
-            return true;
+            if (it != pages_.end()) {
+                mapping = it->second;
+                return true;
+            }
+            // TerraWeaveHorizonScene keeps resident models private. A
+            // read-only resolver can therefore assign their atlas pages
+            // directly during Renderer3D's normal ModelItem submission.
+            if (liveMapper_) {
+                Mapping candidate;
+                if (liveMapper_(model,material,candidate) &&
+                    validMapping(candidate)) {
+                    mapping = candidate;
+                    return true;
+                }
+            }
+            return false;
         };
         if (!rigid_.connect(renderer, resolve) ||
             (includeDeformed && !deformed_.connect(renderer, resolve))) {
@@ -74,6 +89,30 @@ public:
     // keys from region rebuilds, forest unload and editor asset hot-reload.
     void beginFrame() { pages_.clear(); }
 
+    // Optional live lookup for Terra's private/replaced Horizon region
+    // models. Called while rendering on the device thread; MUST be a
+    // lightweight lookup of EXISTING VT allocations, not GPU allocation.
+    // The callback can identify both model identity and material override.
+    void setLiveMaterialMapper(MaterialMapper mapper) {
+        liveMapper_ = std::move(mapper);
+    }
+
+    static bool validMapping(const Mapping& mapping) {
+        return mapping.baseTilesX >= 1 && mapping.baseTilesX <= 2048 &&
+            mapping.baseTilesY >= 1 && mapping.baseTilesY <= 2048 &&
+            mapping.layer >= 0 && mapping.layer < 16 &&
+            mapping.mipLevels >= 1 && mapping.mipLevels <= 30 &&
+            mapping.explicitMip >= 0 &&
+            mapping.explicitMip < mapping.mipLevels &&
+            std::isfinite(mapping.texelWidth) && mapping.texelWidth > 0 &&
+            std::isfinite(mapping.texelHeight) && mapping.texelHeight > 0 &&
+            std::isfinite(mapping.mipBias) &&
+            std::isfinite(mapping.uvScaleX) &&
+            std::isfinite(mapping.uvScaleY) &&
+            std::isfinite(mapping.uvOffsetX) &&
+            std::isfinite(mapping.uvOffsetY);
+    }
+
     // Register only actual per-material page allocations. Unregistered
     // materials still draw into feedback depth and write zero page IDs.
     // The physical atlas/page table and streaming archive are owned by
@@ -81,14 +120,7 @@ public:
     bool registerMaterial(const Model& model, const Material& material,
                           Mapping mapping) {
         if (!renderer_ || !isTerraWeaveModel(model) ||
-            mapping.baseTilesX < 1 || mapping.baseTilesX > 2048 ||
-            mapping.baseTilesY < 1 || mapping.baseTilesY > 2048 ||
-            mapping.layer < 0 || mapping.layer >= 16 ||
-            mapping.mipLevels < 1 || mapping.mipLevels > 30 ||
-            mapping.explicitMip < 0 ||
-            mapping.explicitMip >= mapping.mipLevels ||
-            !(mapping.texelWidth > 0 && mapping.texelHeight > 0))
-            return false;
+            !validMapping(mapping)) return false;
         pages_[{&model, &material}] = mapping;
         return true;
     }
@@ -142,6 +174,7 @@ public:
         deformed_.shutdown();
         rigid_.shutdown();
         pages_.clear();
+        liveMapper_ = {};
         renderer_ = nullptr;
         pass_ = nullptr;
         deformedEnabled_ = false;
@@ -162,6 +195,7 @@ private:
     Renderer3D* renderer_ = nullptr; // non-owning
     gfx::VirtualTextureFeedbackPass* pass_ = nullptr; // non-owning
     bool deformedEnabled_ = false;
+    MaterialMapper liveMapper_;
     std::unordered_map<Key, Mapping, KeyHash> pages_;
     VirtualTextureModelFeedback rigid_;
     VirtualTextureDeformedModelFeedback deformed_;
