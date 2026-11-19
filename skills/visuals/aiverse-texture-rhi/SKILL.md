@@ -335,6 +335,36 @@ result arrives and never queues these into authoritative ECS.
   must be destroyed before `gfx::Device`.
 - Never use GPU float/resource state in authoritative ECS tick/checksum.
 
+### Masked VT with real VRAM savings (post Stage 10G)
+
+- Before upload, pack the Terra/Model source RGBA8 into immutable pages.
+  For `AlphaMode::Mask` models, configure
+  `render::configureModelVirtualMaskedFallback(model,image,archive,...)`
+  or `configureTerraWeavePackedMaskedImageFallback(...)`, then
+  `render::uploadModel(dev,model)`. This creates a downsampled RGBA8
+  `Image::tex` plus a **full-resolution R8** `Image::virtualAlphaMask`
+  with the source image's wrap/filter/mip settings.
+- `ModelShaders.h` uses the `VIRTUAL_ALPHA_MASK` variant and
+  `tex15.r` for full-resolution alpha clipping in colour, shadow,
+  selection and LOD paths. Rigid feedback uses the red-channel
+  `VirtualTextureFeedbackProgram` variant; deformed feedback
+  selects tex15.r through its U6 policy. Never downsample a cutout
+  and then test alpha from the coarse RGBA8 fallback.
+- This optimization is **off by default** and excludes Shader Graph,
+  blended/transparent materials, team modes dependent on base alpha,
+  non-base uses of the same image and images already uploaded/cached.
+  Audit dynamic `ModelDraw::materials` overrides separately.
+  GPU ICB is conservatively disabled for scenes requiring external R8
+  mask bindings because the ICB command ABI does not encode tex15.
+- `VirtualFallbackSavings` estimates base-level source/fallback/R8
+  bytes, not measured VRAM. The full source image is stored in the
+  immutable disk page archive. Model::releaseModel releases both
+  model-owned GPU handles after their safe lifetime.
+- Deferred verification must cover exact alpha silhouette across
+  main/shadow/selection/feedback (GL, Metal, Vulkan), R8 mip
+  filtering, sampler address semantics and resource lifetime.
+  No native build/GPU test was run for this feature stage.
+
 ### Verification gates — don't invent passes
 
 ```sh
