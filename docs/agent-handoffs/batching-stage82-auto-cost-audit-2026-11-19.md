@@ -302,3 +302,61 @@ python3 tools/batching-stage86-analyze.py \
 The output is `build/batching-stage82/stage86-trials/summary.csv`; share that CSV plus any slow-run `auto3-frames.csv`, `mdi1-frames.csv`, `auto2-frames.csv` to diagnose the stages. A direct read of the raw CSV is needed before concluding whether backend encoding, render setup or process scheduling dominates. Keep primary AIVERSE conflict worktree untouched.
 
 **Next engineering action:** if the slow intervals clearly correlate with Metal backend submit CPU stages, add independent opt-in timing around the Metal CPU ICB encoding loop/argument-buffer stage and/or GPU command buffer waits; if they correlate with other CPU work, inspect command submission cadence and renderer preprocessing. Run more clean A/B rotated trials only after locating the dominant cost. Do not enable AUTO by default or merge PR #39 without native checks.
+
+
+---
+
+## Stage 88 — separate slow Direct vs MDI streaks and use row-paired CPU attribution (2026-11-19)
+
+**Branch:** `perf/auto-batch-cost-metrics-20261119` (Draft PR #39). **Change:** `75500fbf58ff1fde862d77af6863d857ceb09d79` in `tools/batching-stage86-analyze.py`. This documentation is a subsequent commit. **No renderer/Metal/CPU policy changes**; all production paths/flags unchanged.
+
+### Actual owner-provided Stage 87 output (updated Stage 86 CSV analyzer)
+
+The owner successfully executed the Stage 87 analyzer in their Mac Studio worktree and pasted:
+
+```text
+Trial    MDI/81    median       p95      late   MDI>1.2  streak  worst frame
+auto1        76    0.8063    1.7736    0.7775        12       6          141
+mdi1         81    1.5965    1.9701    1.6193        59       8          178
+auto2        80    0.8393    1.8285    1.5731        26       5          162
+mdi2         81    0.8620    0.9219    0.8726         0       0          159
+auto3        80    1.3900    1.8787    1.4392        48       8          173
+
+Slow intervals (>1.2ms CPU render; diagnostic threshold, not SLA):
+auto1: longest=134..139, backend_median=0.0000ms non_backend_cpu_median=1.2608ms, worst_backend=0.4898ms worst_non_backend_cpu=1.4717ms
+mdi1: longest=165..172, backend_median=1.0396ms non_backend_cpu_median=0.6619ms, worst_backend=1.2015ms worst_non_backend_cpu=0.8278ms
+auto2: longest=173..177, backend_median=0.8687ms non_backend_cpu_median=0.7193ms, worst_backend=0.6110ms worst_non_backend_cpu=1.7796ms
+mdi2: longest=-1..-1, backend_median=nanms non_backend_cpu_median=nanms, worst_backend=0.6148ms worst_non_backend_cpu=0.3290ms
+auto3: longest=148..155, backend_median=0.8040ms non_backend_cpu_median=0.8042ms, worst_backend=0.4861ms worst_non_backend_cpu=1.7400ms
+```
+
+**Conservative interpretation:** in the forced MDI1 slow interval, ~1.04ms is attributable to two CPU backend submission sub-stages and ~0.66ms to other synchronous CPU work. In AUTO2 and AUTO3 both backend and other CPU work are material. AUTO1's longest slow interval has zero median measured backend CPU submit time: likely the policy chose Direct on many or all those frames, but the previous analyzer did **not** label frame mode in contiguous intervals, so that remains unverified. The worst frame of a run is also not necessarily within its longest interval. Neither the zero backend metric nor the remainder proves GPU idling or waiting. Only the printed derived summary was inspected; raw five CSVs were not available in this agent environment. All values are CPU wall, **not** GPU execution or FPS.
+
+### Root cause of ambiguous diagnostic attribution
+
+Previous `longest_slow_backend_median_ms` used the sum of two independently computed phase medians, which need not equal a median of per-frame total backend CPU time. It also combined contiguous slow Direct and MDI frames into one interval, making `backend=0` ambiguous. The classification needed to be improved before modifying renderer decisions.
+
+### New code
+
+- `mode_name(row)`: classify by `mdi_submissions>0` on **each actual completed frame**.
+- `mode_slow_runs(rows, mode)`: return contiguous slow frames matching exactly that mode; a Direct frame breaks an MDI slow run, and vice versa. The existing overall slow interval and summary columns remain.
+- `median_cost(group)`: computes backend = shadow + opaque on each *same* frame, then takes the median of those row-level sums, plus a separate median of remaining synchronous CPU time. The costs are explicitly **not** GPU stalls and the median of backend plus the median of other need not equal the total frame median.
+- Extended `summary.csv` fields: mode composition of the longest overall interval; longest MDI-only and Direct-only slow intervals with start/end/count and CPU backend/other medians; paired backend median for all MDI frames and for slow MDI frames.
+- Prints a new section `Mode-separated slow intervals (MDI and Direct never share a streak):` after the original diagnostic report.
+- No new benchmark run is required; reuse existing `auto1`, `mdi1`, `auto2`, `mdi2`, `auto3` CSV files.
+
+### Validation truth and exact next Mac command
+
+**Performed:** inspected output pasted by owner, used GitHub connector to read and update analyzer. **NOT PERFORMED:** execution of Stage 88 analyzer on actual 5 CSVs, Python unit tests, native CMake/CTest, Vulkan, GPU timestamp probes. Keep PR #39 Draft.
+
+Avoid changing the checkout because its worktree can have an in-progress rebase: fetch and extract the single Python file from the remote Git object to `/tmp`, preserving all worktrees:
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-batching-stage82 || exit 1
+git fetch origin perf/auto-batch-cost-metrics-20261119 || exit 1
+git show origin/perf/auto-batch-cost-metrics-20261119:tools/batching-stage86-analyze.py \
+  > /tmp/aiverse-stage88-analyze.py || exit 1
+python3 /tmp/aiverse-stage88-analyze.py build/batching-stage82/stage86-trials 1024
+```
+
+Share `Mode-separated slow intervals` and/or regenerated `summary.csv`; this is the next evidence needed to decide whether to instrument Metal ICB CPU encode vs rendering preparation vs OS scheduling. Once mode-specific CPU costs are established, test any hypothesis in a targeted A/B, do not blindly change AUTO thresholds. Maintain per-stage handoff and preserve default-off feature flags.
