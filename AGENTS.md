@@ -2007,3 +2007,41 @@ Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. 
   render/fence failures, sanitizers or visual parity. Do not mark
   PR #22 ready before full features-first validation. Continue
   Stage 121 with remaining View/attachment and ownership work.
+
+## MotionWeave / Universal View — Stage 121 source-rig LOD and socket rules
+
+- Continue from [Stage 121 handoff](docs/agent-handoffs/animation-stage121-universal-lod-attachments-2026-11-19.md).
+  Branch `feature/universal-ecs-animation-pipeline`; PR #22 remains
+  Draft. Inspect `main` and peer branches before updates and never
+  force-push or overwrite NEREID, PHYSIS, Prisma, SpectraFX or TerraWeave.
+- `view::Object::animationModel` is the graph's immutable source rig;
+  optional `draw.model` visual LOD replacements never create a new
+  MotionWeave clock or restart a presentation ECS source.
+  `View::update` runs graph logic once, and `submitOne` only
+  chooses a GPU model. Scene packet data are borrowed until submission.
+- `engine/view/ModelComposition.h` is the shared API for native
+  model distance-LOD choice and socket placement. Reuse it in game
+  hosts: generic View never reads RTS/FPS gameplay fields.
+  Source node matrices are **model-space**. `composeAttachment`
+  transforms a child's local draw by parent world * source socket
+  * local grip. Invalid socket IDs/names fail, never silently root.
+- Only reuse source Pose for a distinct visual Model when node order,
+  hierarchy, bind TRS, skin/inverse bind layout and morph semantics
+  are compatible. Separately authored morph channels have no implicit
+  correspondence; incompatible LODs must use bind pose or explicit
+  future retargeting. Attachments always use source rig, not visual LOD.
+- Existing `view::Object` fields retain their positional aggregate
+  order; append optional fields instead of reordering them.
+  Preserve LOD hysteresis memory by ID/generation; clear stale
+  state when the entity disappears or respawns.
+- `RenderTexture::upload` now returns bool: do not clear a paint
+  layer's dirty flags after a failed GPU staging/blit operation.
+  Territory partial updates must retry from saved CPU bytes;
+  failed `copy_from` must retain its operation order.
+  GPU temporary handles retire through CanvasGpuRetirement only
+  at real owner frame boundaries (Stage 120).
+- **NOT TESTED:** no native CMake/link/CTest, CI, Metal/Vulkan/GL
+  rendering, FPS/RTS/editor visual parity, sanitizer or benchmark
+  run for Stage 121. Do not merge PR #22 or mark it ready.
+  Next Stage 122 continues host integration and explicit LOD remaps,
+  then performs full testing only after feature completion.
