@@ -889,12 +889,12 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
     const int variant=tier+(detailOn_ ? 3 : 0);
     const gfx::PipelineHandle fallbackPipe=pipeline(dev,variant,false);
     if (!fallbackPipe.valid()) return;
-    // Custom terrain already owns tex0..20, so GI uses tex21 and only a
-    // device with >=22 fragment texture slots may compile this permutation.
-    // The actual HDR/atlas readiness is checked inside the deferred pass.
+    // Custom terrain already owns tex0..20. Build the optional tex21 GI
+    // variant only on capable devices. The atlas may be bound AFTER draw()
+    // queues the callback, so availability is checked in the deferred pass,
+    // not at queue time.
     const gfx::PipelineHandle giPipe=
-        tier>=1 && r.dynamicGiOverlayActive() &&
-        dev.maxFragmentTextureSlots()>=22
+        tier>=1 && dev.maxFragmentTextureSlots()>=22
         ? pipeline(dev,variant,true) : gfx::PipelineHandle{};
     TU0 u{};
     u.lod[2] = float(mapW_); u.lod[3] = float(mapH_);
