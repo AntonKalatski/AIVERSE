@@ -1,11 +1,27 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Box } from 'lucide-react';
-import { invoke, nativeConnected } from '../bridge';
+import { invoke, nativeConnected, onNativeEvent } from '../bridge';
 
 /** Layout source of truth for a real native GPU surface. Never streams raster frames to JS. */
 export default function ViewportPlaceholder({ title, active }: { title: string; active: boolean }) {
   const element = useRef<HTMLElement>(null);
   const native = nativeConnected();
+  const [gpuReady, setGpuReady] = useState(false);
+  const [gpuError, setGpuError] = useState('');
+  useEffect(() => {
+    if (!active) { setGpuReady(false); setGpuError(''); }
+  }, [active]);
+  useEffect(() => {
+    if (!native) return;
+    return onNativeEvent((event, payload) => {
+      if (event === 'viewport.ready') { setGpuReady(true); setGpuError(''); }
+      if (event === 'viewport.error') {
+        setGpuReady(false);
+        setGpuError(typeof payload === 'object' && payload !== null && 'message' in payload
+          ? String(payload.message) : 'Native renderer could not initialize');
+      }
+    });
+  }, [native]);
 
   useEffect(() => {
     if (!native) return;
@@ -49,13 +65,13 @@ export default function ViewportPlaceholder({ title, active }: { title: string; 
     };
   }, [active, native]);
 
-  return <section ref={element} className={'viewport' + (native && active ? ' viewport-native' : '')}
+  return <section ref={element} className={'viewport' + (native && active && gpuReady ? ' viewport-native' : '')}
     aria-label={native && active ? 'Native Scene viewport' : 'Viewport placeholder'}>
     <div className="viewport-grid"/>
     <div className="viewport-placeholder">
       <div className="viewport-cube"><Box size={44} strokeWidth={1.1}/></div>
       <h2>{title}</h2>
-      <p>{native ? 'This pane has no native GPU scene until the host reports a render surface.' :
+      <p>{native ? gpuError ? 'Native renderer error: ' + gpuError : 'Starting AIVERSE native GPU renderer…' :
         'The native AIVERSE renderer is not connected to the browser preview.'}</p>
       <span className="viewport-tag">Metal · Vulkan · GLES</span>
     </div>

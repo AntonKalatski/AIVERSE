@@ -35,11 +35,13 @@
     std::unique_ptr<aiverse::studio::StudioSession> session_;
     std::unique_ptr<aiverse::studio::StudioMetalScene> preview_;
     aiverse::studio::NativeViewportPlacement placement_;
+    BOOL readyEmitted_=NO;
 }
 - (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev;
 - (void)orbitX:(CGFloat)dx y:(CGFloat)dy;
 - (void)zoom:(CGFloat)amount;
 - (void)selectAtX:(CGFloat)x y:(CGFloat)y width:(CGFloat)width height:(CGFloat)height;
+- (void)sendStudioEvent:(const char*)event message:(const char*)message;
 @end
 
 @implementation StudioMetalView
@@ -132,8 +134,14 @@
             if (!preview_) preview_=std::make_unique<aiverse::studio::StudioMetalScene>((__bridge void*)viewport_.layer);
             // StudioSession/renderer are owned and called on the main thread.
             preview_->frame(placement_.pixelsW, placement_.pixelsH, session_->workspace().map.data, session_->selectedEntityIndex());
+            if (!readyEmitted_) {
+                [self sendStudioEvent:"viewport.ready" message:"Metal Renderer3D"];
+                readyEmitted_=YES;
+            }
         } catch (const std::exception& e) {
             NSLog(@"AIVERSE native Scene failed: %s",e.what());
+            [self sendStudioEvent:"viewport.error" message:e.what()];
+            readyEmitted_=NO;
             viewport_.hidden=YES;
             placement_.visible=false;
             preview_.reset();
@@ -158,7 +166,17 @@
     else params.set("id",aiverse::Json());
     request.set("params",std::move(params));
     const aiverse::Json outcome=session_->dispatch(request);
-    if (!outcome.has("error")) [web_ evaluateJavaScript:@"window.__aiverseReceive && window.__aiverseReceive({event:'selection.changed'});" completionHandler:nil];
+    if (!outcome.has("error")) [self sendStudioEvent:"selection.changed" message:""];
+}
+- (void)sendStudioEvent:(const char*)event message:(const char*)message {
+    aiverse::Json packet=aiverse::Json::object();
+    packet.set("event",aiverse::Json::string(event));
+    aiverse::Json payload=aiverse::Json::object();
+    payload.set("message",aiverse::Json::string(message ? message : ""));
+    packet.set("payload",std::move(payload));
+    const std::string output=packet.dump(-1);
+    NSString* json=[[NSString alloc] initWithBytes:output.data() length:output.size() encoding:NSUTF8StringEncoding];
+    if (json) [web_ evaluateJavaScript:[NSString stringWithFormat:@"window.__aiverseReceive && window.__aiverseReceive(%@);",json] completionHandler:nil];
 }
 - (void)applyViewport:(const aiverse::Json&)params {
     aiverse::studio::ViewportRect rect;
@@ -171,6 +189,7 @@
     placement_=aiverse::studio::viewportPlacement(rect,
         webBounds.size.width,webBounds.size.height,window_.backingScaleFactor);
     viewport_.hidden=!placement_.visible;
+    if (!placement_.visible) readyEmitted_=NO;
     if (placement_.visible) {
         viewport_.frame=NSMakeRect(placement_.x,placement_.y,placement_.width,placement_.height);
         CAMetalLayer* layer=(CAMetalLayer*)viewport_.layer;
