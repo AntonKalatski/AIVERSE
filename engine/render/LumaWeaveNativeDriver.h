@@ -8,6 +8,7 @@
 #include "LumaWeaveNativeCoordinator.h"
 #include "GiGpuCascadeRuntime.h"
 #include "GiDynamicRuntime.h"
+#include "LumaWeaveBackendPolicy.h"
 #include <cstdint>
 #include <span>
 #include <utility>
@@ -49,7 +50,10 @@ enum class LumaIndirectRoute : uint8_t {
 
 struct LumaNativeViewResult {
     LumaNativeFrameStats sources{};
+    LumaLightingBackendCaps backendCapabilities{};
     LumaIndirectRoute indirectRoute=LumaIndirectRoute::Disabled;
+    size_t cpuGiProbeBudgetAdmitted=0;
+    bool cpuGiBudgetClamped=false;
     GiRuntimeStats cpuGiFrame{};        // portable CPU probe trace/upload
     LumaWeaveScreenMetal::Completion priorGpuCompletion{};
     GiCascadeFrame giFrame{};           // submitted/dirty after point sync
@@ -108,6 +112,7 @@ public:
             throw std::invalid_argument(
                 "LumaWeave frame requires nonzero view and coherent optional ray BVH revision");
         LumaNativeViewResult result;
+        result.backendCapabilities=LumaWeaveBackendPolicy::inspect(device_);
         result.priorGpuCompletion=post_.pollGpu(); // callbacks from prior beginFrame
         // The GI adapter caches the accepted registry revision. A new GI
         // runtime may have zero lights despite an identical source revision;
@@ -143,6 +148,7 @@ public:
         const bool gpuGi=device_.info().backend==gfx::Backend::Metal &&
                          input.indirectGi && input.indirectGi->ready();
         const bool cpuGi=!gpuGi && input.indirectCpuGi &&
+                         result.backendCapabilities.portableCpuProbeAtlas &&
                          input.indirectCpuGi->ready();
         if(gpuGi) {
             auto& gi=*input.indirectGi;
@@ -178,7 +184,11 @@ public:
                 result.giSourceSync.accepted=true;
                 result.giSourceSync.publishedSourceRevision=cpuGiSourceRevision_;
             }
-            result.cpuGiFrame=gi.update(input.giProbeBudget,
+            result.cpuGiProbeBudgetAdmitted=LumaWeaveBackendPolicy::cpuBudget(
+                device_.info().backend,input.giProbeBudget);
+            result.cpuGiBudgetClamped=
+                result.cpuGiProbeBudgetAdmitted<input.giProbeBudget;
+            result.cpuGiFrame=gi.update(result.cpuGiProbeBudgetAdmitted,
                                         input.camera.target);
             result.giBound=gi.bind(renderer_);
         } else if(result.giRequested) {
