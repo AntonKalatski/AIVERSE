@@ -108,6 +108,7 @@ void Editor::init(gfx::Device& dev) {
     fs::create_directories(platform::userDataDir(), fec);
     io.IniFilename = iniPath.c_str();
     resetLayout_ = !fs::exists(iniPath, fec);
+    r3d_.setGpuDeviceLease(gpuDeviceLease());
     r3d_.init(dev);
     postFx_.setGpuDeviceLease(gpuDeviceLease());
     postFx_.init(dev);
