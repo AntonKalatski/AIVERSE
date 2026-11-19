@@ -601,3 +601,13 @@ Regression source tests (NOT RUN): gi_world_geometry_bridge verifies collision-f
 ACTUAL verification: inspected GitHub source at the exact branches named above, committed the adapter and test, and registered CTest. NOT RUN: C++ compilation, CTest, full ./run-tests.sh, real TerraWeave branch linkage, Metal/GL shader compilation, device output/parity/perf. Do not report tests PASS.
 
 Next stage: once TerraWeave branch lands or can be safely rebased, instantiate the adapter with actual TerraWeave::TerrainPatch / TerrainChunk in a native test and wire explicit TerrainPatchResident::takeDirty + successful collision publish to GiGeometryScene and GiGpuCascadeRuntime. Ensure old colliders and original terrain visuals are not double counted, include fallen-tree/vegetation proxy revisions and stable geometry owner lifetime. Before any merge to main, compile/build all registered GI tests, run CTest and ./run-tests.sh --quick and actual Apple Metal GPU diagnostics. Write results and exact tested SHA into the next per-stage handoff.
+
+
+## Stages 27–28 — portable light and world invalidation (2026-11-19, SOURCE COMMITTED; NOT RUN)
+
+Continuation is on `feature/gi-lighting-portable-backends-20261119`, forked from this GI branch. Read the
+**separate, complete handoffs**:
+- `docs/agent-handoffs/gi-stage27-portable-light-invalidation-2026-11-19.md`
+- `docs/agent-handoffs/gi-stage28-world-dirty-clearing-2026-11-19.md`
+
+These stages prevent stale CPU probe radiance from remaining in the RHI texture after moving/removed lights, bounded world invalidations, and saturated terrain/vegetation events. They do not implement native Vulkan compute or prove Android GLES hardware compatibility. New regression sources are authored but **not run**. The upstream GI branch was 159 commits ahead and 467 behind `main` at inspection; do not describe this as integrated or merge-ready.
