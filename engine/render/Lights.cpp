@@ -113,32 +113,71 @@ bool LightSystem::setStaticRadiance(float3 points,float3 sun,float3 sky) {
 bool LightSystem::setStaticLightGrid(const StaticLightGrid& grid) {
     if(!dev_ || !dev_->supports(gfx::PixelFormat::RGBA32F))return false;
     if(!grid.texels.empty()&&(grid.size.w!=2048||grid.texels.size()%2048||grid.texels.size()>4194304))return false;
-    if(staticGrid_.valid())dev_->destroyTexture(staticGrid_);
-    staticGrid_={};gridOrigin_={};gridSize_={};
-    if(grid.texels.empty())return true;
-    gfx::TextureDesc td;td.width=int(grid.size.w);td.height=int(grid.texels.size()/size_t(td.width));
-    td.format=gfx::PixelFormat::RGBA32F;td.filter=gfx::Filter::Nearest;td.data=grid.texels.data();td.label="static point light grid";
-    staticGrid_=dev_->createTexture(td);gridOrigin_=grid.origin;gridSize_=grid.size;
-    std::fprintf(stderr,"Static lights: max %d per cell, %d x %d atlas\n",grid.maxCellLights,td.width,td.height);
-    return staticGrid_.valid();
+    if(grid.texels.empty()) {
+        retireTarget(staticGrid_);
+        staticGrid_={};gridOrigin_={};gridSize_={};
+        return true;
+    }
+    gfx::TextureDesc td;
+    td.width=int(grid.size.w);
+    td.height=int(grid.texels.size()/size_t(td.width));
+    td.format=gfx::PixelFormat::RGBA32F;
+    td.filter=gfx::Filter::Nearest;
+    td.data=grid.texels.data();
+    td.label="static point light grid";
+    auto replacement=dev_->createTexture(td);
+    if(!replacement.valid())return false; // old atlas remains usable
+    retireTarget(staticGrid_);
+    staticGrid_=replacement;gridOrigin_=grid.origin;gridSize_=grid.size;
+    std::fprintf(stderr,"Static lights: max %d per cell, %d x %d atlas\n",
+                 grid.maxCellLights,td.width,td.height);
+    return true;
+}
+
+void LightSystem::retireTarget(gfx::TextureHandle color,
+                               gfx::TextureHandle depth) noexcept {
+    if(!color.valid() && !depth.valid())return;
+    if(targetRetirement_) {
+        targetRetirement_->retire(color,depth);
+        return;
+    }
+    // Legacy unleased renderer hosts retain immediate release. Native GPU
+    // retirement ownership requires a renderer-provided owner pool.
+    try {
+        if(dev_ && color.valid())dev_->destroyTexture(color);
+        if(dev_ && depth.valid())dev_->destroyTexture(depth);
+    }catch(...) {
+        // Never throw across cleanup. On a backend failure these orphan
+        // handles survive until actual device destruction.
+    }
 }
 
 void LightSystem::createMap(int size) {
-    if (size == mapSize_ && (size == 0 || map_.valid())) return;
-    if (map_.valid()) dev_->destroyTexture(map_);
-    if (mapDepth_.valid()) dev_->destroyTexture(mapDepth_);
-    map_ = mapDepth_ = {};
-    mapSize_ = size;
-    mapReady_ = false;
-    if (size == 0) return;
-    gfx::TextureDesc td;
-    td.width = td.height = size;
-    td.renderTarget = true; td.filter = gfx::Filter::Linear; td.label = "lightmap";
-    map_ = dev_->createTexture(td);
-    // Metal pipelines always declare a depth attachment, so the pass gets one too (never written).
-    gfx::TextureDesc dd = td;
-    dd.format = gfx::PixelFormat::Depth; dd.filter = gfx::Filter::Nearest; dd.label = "lightmap depth";
-    mapDepth_ = dev_->createTexture(dd);
+    if(size==mapSize_ && (size==0 || (map_.valid() && mapDepth_.valid())))
+        return;
+    gfx::TextureHandle next{}, nextDepth{};
+    if(size>0) {
+        gfx::TextureDesc td;
+        td.width=td.height=size;
+        td.renderTarget=true;
+        td.filter=gfx::Filter::Linear;
+        td.label="lightmap";
+        next=dev_->createTexture(td);
+        // Metal pipelines always declare a depth attachment.
+        gfx::TextureDesc dd=td;
+        dd.format=gfx::PixelFormat::Depth;
+        dd.filter=gfx::Filter::Nearest;
+        dd.label="lightmap depth";
+        if(next.valid())nextDepth=dev_->createTexture(dd);
+        if(!next.valid() || !nextDepth.valid()) {
+            retireTarget(next,nextDepth);
+            return; // retain last-good lightmap on failed replacement
+        }
+    }
+    retireTarget(map_,mapDepth_);
+    map_=next;mapDepth_=nextDepth;
+    mapSize_=size;
+    mapReady_=false;
 }
 
 size_t LightSystem::stream(gfx::BufferHandle buf, size_t& cursor, size_t capacity, const void* data, size_t bytes) {
@@ -154,14 +193,17 @@ size_t LightSystem::stream(gfx::BufferHandle buf, size_t& cursor, size_t capacit
 }
 
 void LightSystem::createSpotShadow(int size) {
-    if (size == spotShadowSize_ && spotShadow_.valid()) return;
-    if (spotShadow_.valid()) dev_->destroyTexture(spotShadow_);
+    if(size==spotShadowSize_ && spotShadow_.valid())return;
     gfx::TextureDesc td;
-    td.width = td.height = size;
-    td.format = gfx::PixelFormat::Depth;
-    td.renderTarget = true; td.compare = true; td.filter = gfx::Filter::Linear; td.label = "spot shadow";
-    spotShadow_ = dev_->createTexture(td);
-    spotShadowSize_ = size;
+    td.width=td.height=size;
+    td.format=gfx::PixelFormat::Depth;
+    td.renderTarget=true;td.compare=true;
+    td.filter=gfx::Filter::Linear;
+    td.label="spot shadow";
+    auto replacement=dev_->createTexture(td);
+    if(!replacement.valid())return; // preserve last-good shadow target
+    retireTarget(spotShadow_);
+    spotShadow_=replacement;spotShadowSize_=size;
 }
 
 void LightSystem::setQuality(LightQuality q) {
@@ -177,13 +219,12 @@ void LightSystem::setQuality(LightQuality q) {
 void LightSystem::shutdown() {
     if (!dev_) return;
     createMap(0);
-    if(staticGrid_.valid())dev_->destroyTexture(staticGrid_);
+    retireTarget(staticGrid_);
     staticGrid_={};
-    if (spotShadow_.valid()) dev_->destroyTexture(spotShadow_);
-    spotShadow_ = {};
-    if (reflColor_.valid()) dev_->destroyTexture(reflColor_);
-    if (reflDepth_.valid()) dev_->destroyTexture(reflDepth_);
-    reflColor_ = reflDepth_ = {};
+    retireTarget(spotShadow_);
+    spotShadow_={};
+    retireTarget(reflColor_,reflDepth_);
+    reflColor_=reflDepth_={};
     dev_->destroyTexture(black_);
     dev_->destroyBuffer(vb_);
     dev_->destroyBuffer(haloVB_);
@@ -374,18 +415,26 @@ void LightSystem::setClouds(float coverage, float strength, float scale, float o
 bool LightSystem::beginReflection(int viewW, int viewH, float3 clear) {
     if (!reflectionsWanted() || viewW <= 0 || viewH <= 0) return false;
     const int w = std::max(viewW / 2, 16), h = std::max(viewH / 2, 16);
-    if (w != reflW_ || h != reflH_ || !reflColor_.valid() || reflectionLinear_ != linearScene_) {
-        if (reflColor_.valid()) dev_->destroyTexture(reflColor_);
-        if (reflDepth_.valid()) dev_->destroyTexture(reflDepth_);
+    if(w!=reflW_ || h!=reflH_ || !reflColor_.valid() ||
+       !reflDepth_.valid() || reflectionLinear_!=linearScene_) {
         gfx::TextureDesc td;
-        td.width = w; td.height = h; td.renderTarget = true; td.filter = gfx::Filter::Linear; td.label = "water reflection";
-        td.format = linearScene_ ? gfx::PixelFormat::RGBA16F : gfx::PixelFormat::RGBA8;
-        reflectionLinear_ = linearScene_;
-        reflColor_ = dev_->createTexture(td);
-        gfx::TextureDesc dd = td;
-        dd.format = gfx::PixelFormat::Depth; dd.filter = gfx::Filter::Nearest; dd.label = "water reflection depth";
-        reflDepth_ = dev_->createTexture(dd);
-        reflW_ = w; reflH_ = h;
+        td.width=w;td.height=h;td.renderTarget=true;
+        td.filter=gfx::Filter::Linear;
+        td.label="water reflection";
+        td.format=linearScene_?gfx::PixelFormat::RGBA16F:gfx::PixelFormat::RGBA8;
+        auto replacement=dev_->createTexture(td);
+        gfx::TextureDesc dd=td;
+        dd.format=gfx::PixelFormat::Depth;
+        dd.filter=gfx::Filter::Nearest;
+        dd.label="water reflection depth";
+        auto replacementDepth=replacement.valid()?dev_->createTexture(dd):gfx::TextureHandle{};
+        if(!replacement.valid() || !replacementDepth.valid()) {
+            retireTarget(replacement,replacementDepth);
+            return false;
+        }
+        retireTarget(reflColor_,reflDepth_);
+        reflColor_=replacement;reflDepth_=replacementDepth;
+        reflW_=w;reflH_=h;reflectionLinear_=linearScene_;
     }
     if (!reflColor_.valid() || !reflDepth_.valid()) return false;
     viewW_ = float(viewW); viewH_ = float(viewH);
