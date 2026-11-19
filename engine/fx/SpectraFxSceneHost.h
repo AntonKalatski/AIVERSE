@@ -14,6 +14,7 @@
 #include "ParticleSystem.h"
 #include "FxModelMesh.h"
 #include "SpectraFxGpuRoutes.h"
+#include "SpectraFxCueInbox.h"
 #include "../render/Renderer3D.h"
 #include "../render/TextureCache.h"
 
@@ -75,8 +76,30 @@ public:
 
     bool enabled() const {return enabled_;}
     const std::string& lastError() const {return lastError_;}
+    // Immediate device-safe submission retained for existing native hosts.
+    // New producers should use enqueueCue and let prepareGpu drain at the
+    // begin-frame safe point. Neither path accesses authoritative gameplay.
     bool dispatch(const SpectraFxCue& cue) {
         return playback_ && playback_->dispatch(cue);
+    }
+    uint64_t cueEpoch() const {return inbox_.epoch();}
+    const SpectraFxCueInbox::Stats& cueStats() const {return inbox_.stats();}
+    size_t pendingCues() const {return inbox_.pending();}
+    bool enqueueCue(SpectraFxCue cue,bool visibleToViewer,
+                    uint64_t expectedEpoch) {
+        return enabled_ &&
+               inbox_.submit(std::move(cue),visibleToViewer,expectedEpoch);
+    }
+    template<class Events,class Translator>
+    void translateCues(const Events& events,Translator&& translator,
+                       uint64_t expectedEpoch) {
+        if(enabled_) inbox_.translate(events,
+                         std::forward<Translator>(translator),expectedEpoch);
+    }
+    bool setMaxCuesPerFrame(size_t count) {
+        if(count==0 || count>1024) return false;
+        maxCuesPerFrame_=count;
+        return true;
     }
     // Presentation discontinuity: rollback/new match/floating-origin shift.
     // Leaves authoring routes and the CPU effect file cache installed.
@@ -88,11 +111,17 @@ public:
             return false;
         }
         if(enabled_) cpu_.clear();
+        inbox_.reset();
         return true;
     }
     // Inside gfx::Device::beginFrame/endFrame and before an open pass.
     void prepareGpu(float dt,const render::RTSCamera& camera) {
         if(!enabled_ || !playback_) return;
+        // Drain a fixed snapshot; callback-generated cues cannot recursively
+        // create more GPU effects in the same frame.
+        inbox_.drain([this](const SpectraFxCue& cue) {
+            return playback_->dispatch(cue);
+        },maxCuesPerFrame_);
         const auto eye=camera.eye();
         const auto forward=render::normalize(camera.target-eye);
         playback_->updateGpu(std::clamp(dt,0.0f,0.1f),eye,forward);
@@ -126,6 +155,7 @@ public:
         if(enabled_) cpu_.shutdown();
         if(enabled_) textures_.shutdown();
         enabled_=false;
+        inbox_.reset();
         reader_={};
         textureBase_.clear();
     }
@@ -134,6 +164,8 @@ public:
     }
 private:
     ParticleSystem cpu_;
+    SpectraFxCueInbox inbox_{1024};
+    size_t maxCuesPerFrame_=256;
     render::TextureCache textures_;
     std::unique_ptr<SpectraFxGpuEmitterLibrary> library_;
     std::unique_ptr<SpectraFxHybridPlayback> playback_;
