@@ -4,6 +4,7 @@
 #pragma once
 #include "engine/world/WorldScene.h"
 #include "engine/render/PostFx.h"
+#include <algorithm>
 
 namespace aiverse::world {
 
@@ -18,6 +19,9 @@ inline void updateNereidPrismaUnderwater(
     input.tintB=water.deepB;
     input.absorption=water.absorption;
     input.depthMetres=float(water.depthMetres);
+    input.surfaceOffset=water.submerged || water.surfaceBlend>0.f ?
+        float(std::clamp(water.waterSurfaceY - cameraWorldPosition.y.toDouble(),
+                         -10000.0,10000.0)) : 0.f;
     input.distortion=water.distortion;
     input.scattering=water.scattering;
     input.surfaceBlend=water.surfaceBlend;
