@@ -462,3 +462,25 @@ CTest remains UNVERIFIED.
 
 Stage handoff:
 `docs/agent-handoffs/physis-stage43-client-journal-backoff-2026-11-19.md`.
+
+### Stage 44 — manual same-ID recovery after journal failure
+
+A journal-failure `Result::Unknown` is not a transient network timeout.
+`RemoteClient::disconnected()` must preserve its Uncertain status across
+reconnect, and delayed Queued/Applied receipts must not reactivate
+automatic retransmission. The `suspendedForJournal_` safety latch is
+cleared only on a new/restored request or explicit `retry()`.
+
+After the authoritative host repairs its journal and restores the
+matching World checkpoint, the operator may explicitly call
+`RemoteClient::retry()`. The client queries the SAME instance/request
+ID and accepts a proven Applied receipt without executing the edit a
+second time. A normal unknown-ID receipt from a healthy server still
+supports automatic same-ID submission.
+
+Test fixtures: `manualRetryAfterJournalRecovery` and
+`ordinaryUnknownStillRetriesOriginal` in
+`tests/physis_remote_edit_test.cpp`. These are AUTHORED; native CTest,
+macOS/Windows validation and true journal+World crash-atomicity are
+NOT VERIFIED. Handoff:
+`docs/agent-handoffs/physis-stage44-manual-retry-2026-11-19.md`.
