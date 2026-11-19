@@ -485,3 +485,26 @@ success until all stages complete.
 - Scene streaming collision namespace issues and GPU/Metal/TerraWeave/
   PHYSIS/NEREID integration remain outside this feature's verified
   scope. They must be coordinated with their owners before main.
+
+## Stage 7 — safe additive collision streams
+
+Added a deterministic per-`SpatialWorld` ID namespace catalog,
+`SceneCollisionNamespaces`, and a real `CollisionStream` dependency
+adapter `SceneCollisionBridge`. They permit simultaneously active
+scene collision streams without sharing or overwriting 32-bit static
+collider IDs. Existing `CollisionStream` high-ID validation remains
+strict in legacy mode; opt-in explicit ranges validate reservation
+sizes and already occupied IDs.
+
+The actual SceneLoadCoordinator may now use collision dependency keys
+alongside static prefab references; per-scene unload releases only
+owned collision resources, while other worlds/scenes retain theirs.
+Host `GameModule::readyToStep` must gate gameplay on
+`collision.prepareRegions(...)`.
+
+New CTests:
+`ecs_scene_collision_namespaces_test` and
+`ecs_scene_collision_bridge_test`, linked to the existing
+`aiverse_world` library. Their source is committed, but native
+build/CTest remain unverified until the user's final single run.
+See `docs/scene-collision-namespaces.md` and Stage 7 handoff.
