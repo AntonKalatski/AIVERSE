@@ -14,9 +14,10 @@
 //   }
 // One effect per type (a later one with the same type replaces an earlier one; a map effect replaces
 // the game's effect of that type, "enabled": false on it switches that effect off for the map).
-// Effects are applied in a fixed order (fxaa -> pixelate -> chromaticAberration -> sharpen ->
-// tiltShift -> bloom -> sunShafts -> colorGrade -> lut -> posterize -> vignette -> grain -> fade ->
-// letterbox), whatever the order in the list. Every effect has "enabled" and "minQuality"
+// Built-in effects execute in PRISMA's fixed shader/render pipeline order
+// (independent of the JSON list), including HDR Auto Exposure, MotionBlur,
+// DoF, TemporalResolve and bounded ShaderGraph; see docs/prisma.md.
+// Every effect has "enabled" and "minQuality"
 // (low | medium | high: the effect is skipped on lower post-processing tiers; the default depends on
 // how heavy the effect is). The tier is chosen per GPU (old Android: low), AIVERSE_POSTFX=off|low|medium|high.
 // The whole post chain costs nothing when no effect is active (the scene renders straight to the screen).
@@ -90,6 +91,13 @@ struct PrismaSettings {
     std::vector<const PrismaEffect*> activeAt(PrismaQuality q) const;
     bool anyActive(PrismaQuality q) const { return !activeAt(q).empty(); }
 };
+
+// Sanitize native/ECS-authored settings before using them for GPU uniforms.
+// Normalizes missing/extra flattened values, non-finite numbers, bounds and
+// bool thresholds using the SAME per-effect catalog as JSON parsing.
+// Does not compile shaders, allocate GPU resources or modify ECS state.
+// Safe to call on the final camera-volume-resolved copy each frame.
+void sanitizePrismaSettings(PrismaSettings& settings);
 
 // game.json block, then the map's block (either may be null). Problems (unknown type / parameter,
 // out-of-range values are clamped) are appended to `issues` when given; the result is always usable.
