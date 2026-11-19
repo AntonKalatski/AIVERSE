@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <limits>
+#include <stdexcept>
 
 namespace aiverse::render {
 
@@ -94,9 +96,13 @@ bool SpriteBatch::init(gfx::Device& dev) {
     }
     gfx::BufferDesc ib; ib.type = gfx::BufferType::Index; ib.size = idx.size() * sizeof(uint16_t); ib.data = idx.data(); ib.label = "sprite quads";
     ib_ = dev.createBuffer(ib);
-    gfx::BufferDesc vb; vb.usage = gfx::Usage::Dynamic; vb.size = 1024 * 4 * sizeof(SpriteVertex); vb.label = "sprites";
+    gfx::BufferDesc vb; vb.usage = gfx::Usage::Dynamic;
+    // Camera captures can upload several vertex versions within one frame.
+    // Keep already submitted GPU reads immutable on snapshot-aware backends.
+    vb.snapshotUpdates = true;
+    vb.size = 1024 * 4 * sizeof(SpriteVertex); vb.label = "sprites";
     vb_ = dev.createBuffer(vb);
-    vb.size = 256 * 4 * sizeof(SpriteVertex); vb.label = "sprite casters";   // own buffer: written in the same frame
+    vb.size = 256 * 4 * sizeof(SpriteVertex); vb.label = "sprite casters";   // distinct snapshot stream
     casterVb_ = dev.createBuffer(vb);
     return blendPipe_.valid() && groundPipe_.valid() && decalPipe_.valid() && ib_.valid() && vb_.valid();
 }
@@ -255,6 +261,8 @@ void SpriteBatch::flushCasters(gfx::Device& dev, const mat4& lightViewProj) {
         casterVerts_.clear();
         casterVerts_.reserve(casters_.size() * 4);
         for (auto& k : casters_) for (auto& v : k.v) casterVerts_.push_back(v);
+        if (casterVerts_.size() > std::numeric_limits<size_t>::max() / sizeof(SpriteVertex))
+            throw std::length_error("SpriteBatch: caster vertex upload size overflow");
         dev.updateBuffer(casterVb_, casterVerts_.data(), casterVerts_.size() * sizeof(SpriteVertex));
         casterUploadValid_ = true;
     }
@@ -307,6 +315,8 @@ void SpriteBatch::flush(gfx::Device& dev, const mat4& viewProj, const SpriteLigh
         verts_.clear();
         verts_.reserve(quads_.size() * 4);
         for (uint32_t i : order_) for (auto& v : quads_[i].v) verts_.push_back(v);
+        if (verts_.size() > std::numeric_limits<size_t>::max() / sizeof(SpriteVertex))
+            throw std::length_error("SpriteBatch: sprite vertex upload size overflow");
         dev.updateBuffer(vb_, verts_.data(), verts_.size() * sizeof(SpriteVertex));
         drawUploadValid_ = true;
     }
