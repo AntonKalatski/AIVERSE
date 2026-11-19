@@ -2045,3 +2045,47 @@ rendering or test gates; new diagnostic binary remains
 unbuilt and exact GPU ICB counts are not yet recorded.
 Leave PR #34 Draft pending Vulkan, recycling, full CI
 and controlled A/B/A timing measurements.
+
+
+## Strata Stage 12 — real Metal shadow Depth32Float + two independent views (2026-11-19)
+
+Implementing `Strata` must remain fully genre-independent: no
+FPS/RTS-specific camera or renderer routing assumptions. There is
+still only one production `Renderer3D` and one
+`GlobalGeometryPool` source geometry owner.
+
+The new **diagnostic-only** `gfx::Device::readDepthTextureAsync`
+has a default-unsupported generic RHI implementation and a bounded
+Metal `Depth32Float` GPU blit implementation. It does not stall the
+GPU; Metal delivers packed 32-bit float depth bytes on the main
+device thread at a later beginFrame. The renderer's
+`requestSunShadowDepthReadback` method delegates readback of its
+own sun shadow map after normal passes finish, without leaking
+ownership of the texture. Never use readback as a runtime
+render decision or allocate a separate Strata GPU pool.
+
+`tests/render/strata_metal_depth_multiview_parity.cpp` is a separate
+macOS GUI test target `aiverse_strata_metal_depth_multiview_parity`
+built with `AIVERSE_STRATA_METAL_GPU_TESTS=ON`.
+It renders Empty, Legacy, Strata Fine and Strata Coarse
+lossless geometry in separate frames for **two distinct cameras**,
+and reads back both real 800x600 RGBA and 512x512 shadow depth.
+Success requires real nonblank color/depth, finite depth, exact
+Legacy-vs-Fine/Coarse equality of both pixel buffers in each view,
+distinct camera images, correct main+sun-shadow draws and
+one ModelDraw per frame. There is NO production Strata draw
+switch, no GPU-selected indirect draw and no claim that lossy
+LOD or reflection parity has been verified.
+
+**Current truth:** Stage 11 owner-verified Metal main-color raster
+A/B is PASS with zero changed channels; real Metal compute
+selection is PASS 5/5; six focused native Strata CPU/mock tests
+were PASS. This **new Stage 12 native C++ compilation and GPU
+runtime verification have NOT been performed** by the agent.
+CI compile-only is not runtime parity. Run the new fixture on
+Mac Studio, record exact output and commit separate handoff.
+No merge to main until shadow-depth, reflection and advanced
+material/LOD gates pass.
+
+Docs: `docs/strata.md`,
+`docs/agent-handoffs/strata-virtual-geometry.md`.
