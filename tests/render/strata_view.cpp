@@ -51,6 +51,22 @@ int main() {
     assert(result.ranges[0].materialGroup == 7);
     assert(result.culledNodes == 0);
 
+    // Physical GPU residency is authoritative even when imported CPU
+    // nodes say resident. Only a complete sibling group can refine.
+    std::vector<uint8_t> rootOnly{1,0,0};
+    assert(planView(asset,config,result,&error,&rootOnly));
+    assert(result.ranges.size()==1 && result.ranges[0].node==0);
+    assert(result.missingRefinements==1);
+    std::vector<uint8_t> oneChild{1,1,0};
+    assert(planView(asset,config,result,&error,&oneChild));
+    assert(result.ranges.size()==1 && result.ranges[0].node==0);
+    std::vector<uint8_t> all{1,1,1};
+    assert(planView(asset,config,result,&error,&all));
+    assert(result.ranges.size()==2);
+    const auto validPlan=result;
+    std::vector<uint8_t> broken{1,1};
+    assert(!planView(asset,config,result,&error,&broken));
+    assert(result.ranges.size()==validPlan.ranges.size());
     // Small projected error selects the resident parent.
     config.objectToClip = mat4::scale({0.001f, 0.001f, 1.f});
     assert(planView(asset, config, result, &error));
