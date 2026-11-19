@@ -18,8 +18,7 @@ namespace aiverse::gfx {
 // Compatible pipeline state for a feedback material draw. Callers retain
 // their own vertex layout, shader and culling policy; the feedback pass
 // always writes one unblended linear RGBA8 color attachment. No MSAA.
-// Depth testing is opt-in because this pass currently has no depth target;
-// enable it only after binding a matching depth attachment.
+// Depth testing is opt-in and requires initialize(..., depthAttachment=true).
 inline PipelineDesc virtualTextureFeedbackPipelineDesc(
     ShaderHandle shader, bool depthAttachment=false) {
     PipelineDesc desc;
@@ -48,15 +47,17 @@ public:
     bool initialize(Device& device, int width, int height,
                     VirtualTextureFeedbackConfig feedback,
                     VirtualTexturePrefetchConfig prefetch,
-                    size_t maxDeferredFrames = 8) {
+                    size_t maxDeferredFrames = 8,
+                    bool depthAttachment = false) {
         shutdown();
         error_.clear();
         // The feedback buffer contains one 32-bit page ID per pixel; it is
-        // not a display surface, and never needs HDR, sRGB, MSAA or depth.
+        // not a display surface, and never needs HDR, sRGB or MSAA.
         if (width < 1 || height < 1 ||
             size_t(width) > std::numeric_limits<size_t>::max() / size_t(height) ||
             size_t(width) * size_t(height) > feedback.maxReadbackPixels ||
             !device.supports(PixelFormat::RGBA8) ||
+            (depthAttachment && !device.supports(PixelFormat::Depth)) ||
             !device.supportsTextureDimension(TextureDimension::Texture2D) ||
             !device.supportsRenderTargetPasses()) {
             error_ = "feedback pass needs a supported bounded RGBA8 2D render target";
@@ -72,7 +73,7 @@ public:
         cfg.sampleCount = 1;
         cfg.colorCount = 1;
         cfg.colorFormat = PixelFormat::RGBA8;
-        cfg.depth = false;
+        cfg.depth = depthAttachment;
         if (!targets_.init(device,cfg)) {
             error_ = targets_.lastError();
             return false;
@@ -88,6 +89,7 @@ public:
         feedbackConfig_ = feedback;
         prefetchConfig_ = prefetch;
         maxDeferredFrames_ = maxDeferredFrames;
+        depthAttachment_ = depthAttachment;
         return true;
     }
 
@@ -106,7 +108,8 @@ public:
         const auto feedback = feedbackConfig_;
         const auto prefetch = prefetchConfig_;
         const size_t deferred = maxDeferredFrames_;
-        return initialize(*device,width,height,feedback,prefetch,deferred);
+        const bool depth = depthAttachment_;
+        return initialize(*device,width,height,feedback,prefetch,deferred,depth);
     }
 
     // Called inside an existing graphics frame, with no active render pass.
@@ -119,7 +122,7 @@ public:
             error_ = "feedback target unavailable or previous sample not consumed";
             return false;
         }
-        if (!targets_.begin(0,0,true,false,{0.f,0.f,0.f,0.f})) {
+        if (!targets_.begin(0,0,true,depthAttachment_,{0.f,0.f,0.f,0.f})) {
             error_ = device_->lastError();
             if (error_.empty()) error_ = "feedback render pass rejected by device";
             return false;
@@ -209,6 +212,8 @@ public:
     bool pending() const { return readback_.pending(); }
     bool readyToSubmit() const { return readback_.readyToSubmit(); }
     TextureHandle texture() const { return ready() ? targets_.sampledColor(0) : TextureHandle{}; }
+    bool hasDepthAttachment() const { return ready() && depthAttachment_; }
+    TextureHandle depthTexture() const { return hasDepthAttachment() ? targets_.depth() : TextureHandle{}; }
     int width() const { return width_; }
     int height() const { return height_; }
     const std::string& lastError() const { return error_; }
@@ -224,6 +229,7 @@ public:
         feedbackConfig_ = {};
         prefetchConfig_ = {};
         maxDeferredFrames_ = 8;
+        depthAttachment_ = false;
     }
 
 private:
@@ -234,6 +240,7 @@ private:
     VirtualTextureFeedbackConfig feedbackConfig_{};
     VirtualTexturePrefetchConfig prefetchConfig_{};
     size_t maxDeferredFrames_ = 8;
+    bool depthAttachment_ = false;
     std::string error_;
 };
 
