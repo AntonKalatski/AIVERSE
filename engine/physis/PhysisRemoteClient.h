@@ -72,6 +72,7 @@ public:
         active_=std::move(packet);
         receipt_=Receipt{};
         status_=ClientStatus::Offline;
+        suspendedForJournal_=false;
         sent_=false;
         query_=false;
         attempts_=0;
@@ -103,6 +104,7 @@ public:
         nextId_=std::max(nextId_,active_->requestId+1);
         receipt_=Receipt{};
         status_=ClientStatus::Offline;
+        suspendedForJournal_=false;
         sent_=true; // query first: an earlier process might have submitted
         query_=true;
         connected_=false;
@@ -125,6 +127,8 @@ public:
     // Original request ID/payload are preserved: retry is idempotent.
     void retry() {
         if(!active_ || terminal(receipt_.result))return;
+        // Only a deliberate user action may lift journal-failure suspension.
+        suspendedForJournal_=false;
         attempts_=0;
         nextSendMs_=0;
         query_=sent_;
@@ -169,6 +173,9 @@ public:
                 continue;
             }
             if(!active_ || message.requestId!=active_->requestId)continue;
+            // Delayed pre-failure Queued/Applied frames must not re-arm
+            // automatic retries after a journal-unavailable Unknown.
+            if(suspendedForJournal_)continue;
             const bool wasVerifying=refreshApplied_;
             refreshApplied_=false;
             receipt_=message.receipt;
@@ -188,6 +195,7 @@ public:
                     // automatically resend or treat this as a lost request.
                     // The user may explicitly retry after journal recovery.
                     status_=ClientStatus::Uncertain;
+                    suspendedForJournal_=true;
                     nextSendMs_=std::numeric_limits<std::uint64_t>::max();
                 } else {
                     status_=ClientStatus::AwaitingReceipt;
@@ -262,6 +270,7 @@ private:
     Receipt receipt_{};
     ClientStatus status_=ClientStatus::Idle;
     bool connected_=false,sent_=false,query_=false,refreshApplied_=false;
+    bool suspendedForJournal_=false;
     unsigned attempts_=0;
     std::uint64_t nextSendMs_=0;
 };
