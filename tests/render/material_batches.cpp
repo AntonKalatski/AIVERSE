@@ -267,8 +267,8 @@ int aiverseMain(int argc, char** argv) {
         renderer.render(pass);
         const auto endCpu = std::chrono::steady_clock::now();
         // Discard pipeline warmup and the transition frame; no readback in sample.
-        if (cpuTiming && ((frame >= 5 && frame <= 12) ||
-                          (frame >= 18 && frame <= 25))) {
+        if (cpuTiming && ((frame >= 3 && frame <= 8) ||
+                          (frame >= 18 && frame <= 23))) {
             const double ms = std::chrono::duration<double, std::milli>(
                 endCpu - startCpu).count();
             (batch ? cpuRenderAfter : cpuRenderBefore).push_back(ms);
@@ -287,7 +287,7 @@ int aiverseMain(int argc, char** argv) {
                 failed = true;
             }
         }
-        if (cpuTiming && frame == 26) {
+        if (cpuTiming && frame == 23) {
             const auto report = [](const char* phase, std::vector<double> samples) {
                 std::sort(samples.begin(), samples.end());
                 if (samples.empty()) return;
