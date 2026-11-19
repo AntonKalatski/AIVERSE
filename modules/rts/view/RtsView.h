@@ -230,6 +230,7 @@ public:
         gpuDeviceLease_=std::move(lease);
         terrain_.setGpuDeviceLease(gpuDeviceLease_);
         groundFx_.setGpuDeviceLease(gpuDeviceLease_);
+        paintLayers_.setGpuDeviceLease(gpuDeviceLease_);
     }
     bool typeLoaded(uint16_t type) const { return type < loadedTypes_.size() && loadedTypes_[type]; }
     void loadType(uint16_t type);
@@ -281,6 +282,17 @@ public:
     }
     size_t pendingRolledBackImages() const noexcept {
         return imageRollback_.pendingImages();
+    }
+    // Generic canvas GPU buffers/images/programs retire at host frame boundaries
+    // alongside model/renderer/PostFx queues, before new render passes.
+    size_t pendingPaintGpuRetirements() const noexcept {
+        return paintLayers_.pendingGpuRetirements();
+    }
+    bool collectRetiredPaintGpuResources() {
+        return paintLayers_.collectRetiredGpuResources();
+    }
+    uint64_t paintGpuRetirementOrphans() const noexcept {
+        return paintLayers_.gpuRetirementOrphans();
     }
     void setImageRetirementDiagnosticObserver(
             render::ModelImageRollbackPool::DiagnosticObserver observer) {
