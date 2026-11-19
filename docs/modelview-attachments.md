@@ -147,3 +147,17 @@ through the full matrices; Studio exposes the full basis editor.
 See [the shared layout schema](attachment-layout.md). Runtime parent/child
 scene ECS instantiation and GPU-token provider shutdown are separate work.
 Full native compile/CTest/Metal-Vulkan-GLES validation **NOT RUN**.
+
+
+
+## Stage 160 — prefab child identity
+
+The Attachments UI now exposes a **Prefab child ID** field for each imported
+child. If set, it persists as `"id"` in the shared attachment layout JSON,
+is unique within that document (max 128 chars), and may be resolved into the
+CURRENT ECS child Entity when hosted in a presentation scene. Legacy entries
+without an ID are still accepted but cannot be referenced stably after
+reimport/reordering. Duplicate IDs fail layout compilation before importing
+Models and fail Save before opening/truncating a previously valid JSON file.
+See [SceneAttachmentHost](scene-attachment-host.md). Native GUI/CTest/GPU
+validation remains NOT RUN.
