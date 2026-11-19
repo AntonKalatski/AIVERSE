@@ -568,11 +568,15 @@ private:
         bool baked = false;
         float4 animation{}; // baked clip A/B rows and interpolation for this view
     };
+    struct MotionRigidPose {
+        const Model* sourceModel = nullptr;
+        mat4 world;
+    };
     struct ObjectMotionHistory {
         gfx::TextureHandle target;
         gfx::TextureHandle depth;
         int width = 0, height = 0;
-        std::map<std::pair<uint64_t, int>, mat4> previous;
+        std::map<std::pair<uint64_t, int>, MotionRigidPose> previous;
         // Same node can draw different primitives with distinct skin palettes.
         std::map<std::tuple<uint64_t, int, size_t>, MotionDeformPose> previousDeformed;
     };
