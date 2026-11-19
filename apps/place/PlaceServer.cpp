@@ -465,8 +465,21 @@ void PlaceServer::syncCharacters() {
 }
 
 void PlaceServer::update(uint64_t nowMs) {
-    auto t0 = std::chrono::steady_clock::now();
+    using TickClock = std::chrono::steady_clock;
+    const auto t0 = TickClock::now();
+    auto sampleStart = t0;
+    const bool samplePhases = tickPhaseProfiling_;
+    // No allocations, network I/O or logging during measurement; all
+    // values are diagnostic-only sums over the same real server ticks.
+    auto phase = [&](double& totalMs) {
+        if (!samplePhases) return;
+        const auto t = TickClock::now();
+        totalMs += std::chrono::duration<double,std::milli>(
+            t - sampleStart).count();
+        sampleStart = t;
+    };
     server_.poll(nowMs);                 // input frames (onInput, queued per player), messages
+    phase(stats_.phases.pollMs);
     for (auto it = kicking_.begin(); it != kicking_.end();) {
         if (tick_ < it->second) { ++it; continue; }
         uint8_t slot = it->first;
@@ -496,7 +509,9 @@ void PlaceServer::update(uint64_t nowMs) {
     for (const auto& m : movers_) {
         scene_->moveKinematic(m.handle, moverPosition(m.start, m.offset, m.period, tick_ + 1, dt), m.rot);
     }
+    phase(stats_.phases.playersMs);
     scene_->step();
+    phase(stats_.phases.physicsMs);
     ++tick_;
     syncBodies();
     syncCharacters();
@@ -505,9 +520,13 @@ void PlaceServer::update(uint64_t nowMs) {
         server_.set(game_, Schema::kGamePlayers, integer(int64_t(players_.size())));
         server_.set(game_, Schema::kGameBodies, integer(int64_t(reps_.size())));
     }
+    phase(stats_.phases.syncMs);
     server_.tick();
     server_.broadcast(nowMs);
-    double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    phase(stats_.phases.broadcastMs);
+    const double ms = std::chrono::duration<double, std::milli>(
+        TickClock::now() - t0).count();
+    if (samplePhases) ++stats_.phases.samples;
     ++stats_.ticks;
     stats_.tickMsSum += ms;
     stats_.tickMsWorst = std::max(stats_.tickMsWorst, ms);
