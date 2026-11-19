@@ -149,10 +149,13 @@ excavateAuthoritativeEcs(World& world,
 template<class OnCommit>
 inline void addTerraWeaveAuthoritativeBankSystem(
         Simulation& sim,std::string name,
-        TerraWeaveEcsAuthorityConfig cfg,OnCommit&& callback){
+        TerraWeaveEcsAuthorityConfig cfg,OnCommit&& callback,
+        bool enableSlopeFailures=false,
+        SlopeFailureSettings slopeSettings={}){
     validateEcsAuthorityConfig(cfg);
+    if(enableSlopeFailures)validateSlopeFailureSettings(slopeSettings);
     sim.addSystem(std::move(name),
-        [cfg=std::move(cfg),
+        [cfg=std::move(cfg),enableSlopeFailures,slopeSettings,
          onCommit=std::forward<OnCommit>(callback)]
         (Simulation& current)mutable{
             World& ecs=current.world();
@@ -179,17 +182,43 @@ inline void addTerraWeaveAuthoritativeBankSystem(
             roots.setSnapshot(existing->rooted);
             grass.setSnapshot(existing->grass);
             auto change=commitNereidBankTerrain(
-                ecs,current.tick(),ground,&roots,&grass);
-            if(change.earth.vertices.empty())return;
+                ecs,current.tick(),ground,&roots,&grass,
+                enableSlopeFailures,slopeSettings);
+            if(change.earth.vertices.empty() &&
+               change.bankGroundCorrections.empty())return;
             TerraWeaveAuthorityResource updated=*existing;
             updated.earth=ground.snapshot();
-    if(updated.stateRevision==UINT64_MAX)
-        throw std::overflow_error("TerraWeave ECS state revision overflow");
-    ++updated.stateRevision;
+            if(updated.stateRevision==UINT64_MAX)
+                throw std::overflow_error(
+                    "TerraWeave ECS state revision overflow");
+            ++updated.stateRevision;
             updated.rooted=roots.snapshot();
             updated.grass=grass.snapshot();
+            // Ensure every affected existing bank cell can be updated
+            // without COW detachment/allocation AFTER the canonical ECS
+            // terrain resource has already committed.
+            using Bank=lib::nereid::WaterBankSoilComponent;
+            Pool<Bank>* writableBanks=nullptr;
+            if(!change.bankGroundCorrections.empty()){
+                writableBanks=&ecs.pool<Bank>();
+                writableBanks->prepareParallelWrite();
+                for(const auto& [entity,height]:
+                    change.bankGroundCorrections){
+                    (void)height;
+                    if(!ecs.alive(entity) ||
+                       !writableBanks->tryGet(entity.index))
+                        throw std::invalid_argument(
+                            "TerraWeave bank disappeared before slope commit");
+                }
+            }
             ecs.setResource<TerraWeaveAuthorityResource>(
                 std::move(updated));
+            // NEREID's own local bank-erosion ECS stage already updated
+            // its soil and sediment. Apply only EXTRA slope displacement
+            // at bank vertices; preserve suspended sediment and carry.
+            for(const auto& [entity,height]:
+                change.bankGroundCorrections)
+                writableBanks->tryGet(entity.index)->soil.groundCm=height;
             // Host callback must not mutate the ECS or access gfx/Box3D
             // directly, and must avoid throwing after the ECS commit.
             onCommit(change);
