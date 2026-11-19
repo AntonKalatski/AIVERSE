@@ -182,3 +182,22 @@ git switch feature/spectrafx-generic-cue-queue
 git pull --ff-only origin feature/spectrafx-generic-cue-queue
 git fetch origin main && git merge origin/main
 ```
+
+
+## 2026-11-19 — Stage 9: emitter lifecycle and CPU adapter
+
+- **Implementation commit:** `6ccda1813bfc433214aadc316870851416c2dbf0`; branch `feature/spectrafx-generic-cue-queue`; remote main comparison at stage start: base `9ee6ff6`, 0 behind.
+- **Changed:** `engine/fx/SpectraFxEmitterRuntime.h` (new).
+- **Functionality:** `SpectraFxStage` declares ordered Spawn, Initialize, Update, Render stages. `SpectraFxEmitterProgram::validate/find` validates uniqueness, order, legal scale/color and required Spawn effect name. Spawn delegates to existing `ParticleSystem::play`; Initialize applies scale/tint. Update/Render are descriptive contracts owned by existing `ParticleSystem` and **not** an independent executable particle update/shader pipeline. `SpectraFxCpuEmitterRuntime::start/move/stop/reset/owns/activeCount/stats` controls session-keyed instances, supports atomic replacement after a new handle was obtained, and resets only owned instances. Keys must be generation-safe across despawn and rollback.
+- **Ownership/compatibility:** only presentation state; no gameplay authority, existing particles/collision/sub-emitter/graphics path remains the sole CPU backend. No changes to saves, ECS data formats, PRISMA, RTS or FPS.
+- **Tests actually run:** **NOT RUN** (user instruction: implement features before tests); native compilation, CTest, CI, GPU and editor runtime all unverified.
+- **Limitations:** no stage program JSON format, no sub-graph bindings, no command queue integration, no GPU compute execution, no per-stage update/render custom behaviors. CPU runtime's Stop stops emitting but particles can continue fading as existing API specifies.
+- **Next:** add an emitter asset codec and configurable effect-stage rendering backend contract; then authoring/editor integrations. After feature phase, compile/test all headers and verify real host integrations.
+- **Pull commands:**
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main && git merge origin/main
+```
