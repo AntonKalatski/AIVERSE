@@ -1,5 +1,20 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 100 — GPU impact callback lifetime (NOT RUN)
+
+**Code:** `dcd0d38481561c5e5fc85cb1e7881893e5d9ba69` and
+`a232c4535d221ff684ca81435bedeb97f35d1b36`.
+Real Metal RHI fixture now checks async impact readback invalidation after
+scene reset and rejects impacts for a recycled particle generation.
+Production `HybridPlayback` calls
+`SpectraFxHybridEmitter::invalidateGpuImpacts()` immediately when GPU
+resources retire, while retaining the buffers for the 3-slot Metal
+retirement policy. No gameplay or genre dependencies.
+**Stage 98–100 native tests have NOT RUN**. Do not reuse the Stage 97
+8/8 all-green result for these changes.
+See `docs/agent-handoffs/spectrafx-stage100-impact-retirement-2026-11-19.md`.
+
+
 ## Stage 99 — multi-camera rendering without multiple simulation steps
 
 Added `SpectraFxSceneHost::prepareRenderView(const SpectraFxView&)` and

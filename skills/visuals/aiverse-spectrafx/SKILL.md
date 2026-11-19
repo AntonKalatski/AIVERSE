@@ -8,7 +8,7 @@ description: Author and integrate AIVERSE SpectraFX visual effects: versioned gr
 **Canonical documentation:** `docs/spectrafx.md`.  
 **Exact stage history:** `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.  
 **Engineering rules:** `AGENTS.md`.
-**Latest handoff:** `docs/agent-handoffs/spectrafx-stage99-multiview-2026-11-19.md`.
+**Latest handoff:** `docs/agent-handoffs/spectrafx-stage100-impact-retirement-2026-11-19.md`.
 
 ## Fast path (current supported capabilities)
 
@@ -53,3 +53,15 @@ inside that pass with `render(lighting,view)`. Each new camera may
 replace the alpha sort index map: do not prepare multiple cameras up
 front and then render them out of order. New API is committed, still
 awaiting hardware acceptance; see Stage 99 handoff.
+
+
+## Stage 100: delayed GPU feedback after live scene reset
+
+GPU impact notifications are presentation-only. `HybridPlayback`
+automatically invalidates emitter callback epochs on GPU retirement
+(Stop/Kill/key replacement/rollback) without prematurely destroying
+Metal storage referenced by in-flight commands. Never call teardown
+`reset()` in the middle of a live GPU frame.
+The third MetalGPU test `spectrafx_metal_rhi` covers deferred callback
+invalidations and particle-generation rejection; run it before claiming
+native acceptance. Stage 98–100 tests have NOT RUN as of this handoff.

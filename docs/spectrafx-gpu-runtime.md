@@ -1,5 +1,22 @@
 # SpectraFX — opt-in GPU emitter playback in native AIVERSE projects
 
+## Stage 100 — async GPU impact lifetime contract
+
+When an emitter is retired or a live scene is reset,
+`SpectraFxHybridPlayback` invalidates GPU impact readbacks **immediately**
+using epoch guards, but keeps GPU buffers alive until the completed
+Metal frame slots allow destruction. Delayed callbacks can no longer
+produce events from the old emitter. Recycled particle handles also
+carry a generation, which `SpectraFxGpuImpactFeedback::drain()`
+checks before publishing presentation events. No ECS authority changes.
+
+`spectrafx_metal_rhi` now includes an actual Metal collision/readback
+fixture for both cases, in addition to Stage 98 offscreen RHI pixels
+and 24-frame resource churn. **Native validation of Stages 98–100 is
+still pending**; the previous 2/2 Metal tests were on Stage 97.
+See the Stage 100 dedicated handoff.
+
+
 ## Multiple camera outputs without duplicated particle simulation (Stage 99)
 
 SpectraFX has no genre-specific camera dependency. For two or more views
