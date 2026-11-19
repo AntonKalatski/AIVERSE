@@ -80,6 +80,7 @@ public:
     void resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame& frame) override;
     bool wantsObjectMotionVectors() const override;
     gfx::TextureHandle objectMotionSceneDepth() const override { return sceneDepthForMotion_; }
+    uint64_t objectMotionEpoch(uint64_t viewId) const override;
     bool objectMotionContext(uint64_t& viewId, mat4& previousViewProj) const override;
     void acceptObjectMotionVectors(gfx::TextureHandle velocity) override;
 
@@ -105,6 +106,7 @@ private:
     struct MotionView {
         mat4 previousViewProj;
         bool valid = false;
+        uint64_t cutEpoch = 1;
         int width = 0, height = 0;
         gfx::TextureHandle objectVelocity; // borrowed for this frame only
     };
