@@ -583,336 +583,336 @@ void Renderer3D::renderCurrentFrameReactiveMask(
     gfx::TextureHandle sceneDepth, int w, int h) {
     if (!dev_ || !sceneDepth.valid()) return;
     struct MotionU { float current[16], previous[16], params[4]; };
-        // Conservative translucent coverage: surfaces whose true motion
-        // cannot be reconstructed suppress blur locally via a reactive mask.
-        // No previous-pose approximation, no readback, no ECS state changes.
-        auto reactiveEligible = [](const ModelItem& it) {
-            if (!it.inView || !it.model || !it.prim || !it.mat ||
-                !it.model->vb.valid() || !it.model->ib.valid() ||
-                it.indexCount == 0 || !it.rigid || it.joints >= 0 ||
-                it.baked || it.morph >= 0 || it.model->geometry ||
-                it.mat->shaderGraph || it.materialRole == 1 ||
-                it.shadowRole == 2) return false;
-            const bool translucent = it.tint.w < 0.99f ||
-                it.mat->transparent || it.mat->alpha == AlphaMode::Blend ||
-                (it.flags & kDrawTransparent) != 0;
-            // Fade parts are skipped by the velocity overlay until their
-            // coverage is reproduced. Mark only actual dithered fragments
-            // reactive so these LOD boundaries cannot smear the background.
-            const bool fade = (it.lodThreshold < 1.0f || it.lodInvert) &&
-                it.mat->alpha == AlphaMode::Opaque;
-            return translucent || fade;
-        };
-        auto reactiveAnimatedEligible = [](const ModelItem& it) {
-            if (!it.inView || !it.model || !it.prim || !it.mat ||
-                !it.model->vb.valid() || !it.model->ib.valid() ||
-                !it.indexCount || it.model->geometry ||
-                it.materialRole == 1 || it.shadowRole == 2 ||
-                it.mat->shaderGraph) return false;
-            const bool deform = it.joints >= 0 || it.baked ||
-                (it.prim->morphTargets > 0 && it.model->morphTex.valid());
-            const bool translucent = it.tint.w < 0.99f ||
-                it.mat->transparent || it.mat->alpha == AlphaMode::Blend ||
-                (it.flags & kDrawTransparent) != 0;
-            return deform && translucent &&
-                (!it.baked || it.model->baked.tex.valid());
-        };
-        // Water sheets and other immediate MeshVertex draws use DrawItem
-        // rather than ModelItem. Their opacity is part of DrawItem::color;
-        // the reactive pass reuses those same GPU buffers and transforms.
-        const auto meshReactiveEligible = [](const DrawItem& item) {
-            return item.mesh && item.mesh->vb.valid() &&
-                item.mesh->ib.valid() && item.mesh->indexCount &&
-                item.color.w > 0.001f && item.color.w < 0.99f;
-        };
-        bool meshReactiveNeeded = false;
-        for (const auto& item : items_)
-            meshReactiveNeeded |= meshReactiveEligible(item);
-        bool rigidReactiveNeeded = false, animatedReactiveNeeded = false;
-        for (const auto& it : modelItems_) {
-            rigidReactiveNeeded |= reactiveEligible(it);
-            animatedReactiveNeeded |= reactiveAnimatedEligible(it);
-        }
-        const bool reactiveNeeded = rigidReactiveNeeded ||
-            animatedReactiveNeeded || meshReactiveNeeded ||
-            !motionReactiveDraws_.empty();
-        // A reactive-only first frame/cut needs its own private scratch
-        // depth even when no RGBA16F velocity target can be prepared.
-        if (reactiveNeeded && !history.depth.valid()) {
-            gfx::TextureDesc scratch{};
-            scratch.width = w; scratch.height = h;
-            scratch.renderTarget = true;
-            scratch.format = gfx::PixelFormat::Depth;
-            scratch.filter = gfx::Filter::Nearest;
-            scratch.label = "prisma reactive scratch depth";
-            history.depth = dev_->createTexture(scratch);
-        }
-        if (reactiveNeeded && !history.reactive.valid()) {
-            gfx::TextureDesc target;
-            target.width = w; target.height = h;
-            target.renderTarget = true;
-            target.format = gfx::PixelFormat::RGBA8;
-            target.filter = gfx::Filter::Nearest;
-            target.label = "prisma motion reactive mask";
-            history.reactive = dev_->createTexture(target);
-        }
-        if ((rigidReactiveNeeded || meshReactiveNeeded) && !objectMotionReactiveShader_.valid()) {
-            gfx::ShaderDesc shader;
-            shader.glslVertex = reactive_shaders::kVS;
-            shader.glslFragment = reactive_shaders::kFS;
-            shader.msl = reactive_shaders::kMSL;
-            shader.textureSlots = 1;
-            shader.uniformSlots = 1;
-            shader.label = "prisma motion reactive coverage";
-            objectMotionReactiveShader_ = dev_->createShader(shader);
-            if (objectMotionReactiveShader_.valid()) {
-                gfx::PipelineDesc pipeline;
-                pipeline.shader = objectMotionReactiveShader_;
-                pipeline.attrs[0] = {0,gfx::VertexFormat::Float3,0};
-                pipeline.attrCount = 1;
-                pipeline.stride = sizeof(ModelVertex);
-                pipeline.indexType = gfx::IndexType::UInt32;
-                pipeline.cull = gfx::CullMode::Back;
-                pipeline.depthTest = false;
-                pipeline.depthWrite = false;
-                pipeline.colorFormat = gfx::PixelFormat::RGBA8;
-                pipeline.label = "prisma motion reactive coverage";
-                objectMotionReactivePipeline_ = dev_->createPipeline(pipeline);
-            }
-        }
-        if (meshReactiveNeeded && !objectMotionReactiveMeshPipeline_.valid() &&
-            objectMotionReactiveShader_.valid()) {
+    // Conservative translucent coverage: surfaces whose true motion
+    // cannot be reconstructed suppress blur locally via a reactive mask.
+    // No previous-pose approximation, no readback, no ECS state changes.
+    auto reactiveEligible = [](const ModelItem& it) {
+        if (!it.inView || !it.model || !it.prim || !it.mat ||
+            !it.model->vb.valid() || !it.model->ib.valid() ||
+            it.indexCount == 0 || !it.rigid || it.joints >= 0 ||
+            it.baked || it.morph >= 0 || it.model->geometry ||
+            it.mat->shaderGraph || it.materialRole == 1 ||
+            it.shadowRole == 2) return false;
+        const bool translucent = it.tint.w < 0.99f ||
+            it.mat->transparent || it.mat->alpha == AlphaMode::Blend ||
+            (it.flags & kDrawTransparent) != 0;
+        // Fade parts are skipped by the velocity overlay until their
+        // coverage is reproduced. Mark only actual dithered fragments
+        // reactive so these LOD boundaries cannot smear the background.
+        const bool fade = (it.lodThreshold < 1.0f || it.lodInvert) &&
+            it.mat->alpha == AlphaMode::Opaque;
+        return translucent || fade;
+    };
+    auto reactiveAnimatedEligible = [](const ModelItem& it) {
+        if (!it.inView || !it.model || !it.prim || !it.mat ||
+            !it.model->vb.valid() || !it.model->ib.valid() ||
+            !it.indexCount || it.model->geometry ||
+            it.materialRole == 1 || it.shadowRole == 2 ||
+            it.mat->shaderGraph) return false;
+        const bool deform = it.joints >= 0 || it.baked ||
+            (it.prim->morphTargets > 0 && it.model->morphTex.valid());
+        const bool translucent = it.tint.w < 0.99f ||
+            it.mat->transparent || it.mat->alpha == AlphaMode::Blend ||
+            (it.flags & kDrawTransparent) != 0;
+        return deform && translucent &&
+            (!it.baked || it.model->baked.tex.valid());
+    };
+    // Water sheets and other immediate MeshVertex draws use DrawItem
+    // rather than ModelItem. Their opacity is part of DrawItem::color;
+    // the reactive pass reuses those same GPU buffers and transforms.
+    const auto meshReactiveEligible = [](const DrawItem& item) {
+        return item.mesh && item.mesh->vb.valid() &&
+            item.mesh->ib.valid() && item.mesh->indexCount &&
+            item.color.w > 0.001f && item.color.w < 0.99f;
+    };
+    bool meshReactiveNeeded = false;
+    for (const auto& item : items_)
+        meshReactiveNeeded |= meshReactiveEligible(item);
+    bool rigidReactiveNeeded = false, animatedReactiveNeeded = false;
+    for (const auto& it : modelItems_) {
+        rigidReactiveNeeded |= reactiveEligible(it);
+        animatedReactiveNeeded |= reactiveAnimatedEligible(it);
+    }
+    const bool reactiveNeeded = rigidReactiveNeeded ||
+        animatedReactiveNeeded || meshReactiveNeeded ||
+        !motionReactiveDraws_.empty();
+    // A reactive-only first frame/cut needs its own private scratch
+    // depth even when no RGBA16F velocity target can be prepared.
+    if (reactiveNeeded && !history.depth.valid()) {
+        gfx::TextureDesc scratch{};
+        scratch.width = w; scratch.height = h;
+        scratch.renderTarget = true;
+        scratch.format = gfx::PixelFormat::Depth;
+        scratch.filter = gfx::Filter::Nearest;
+        scratch.label = "prisma reactive scratch depth";
+        history.depth = dev_->createTexture(scratch);
+    }
+    if (reactiveNeeded && !history.reactive.valid()) {
+        gfx::TextureDesc target;
+        target.width = w; target.height = h;
+        target.renderTarget = true;
+        target.format = gfx::PixelFormat::RGBA8;
+        target.filter = gfx::Filter::Nearest;
+        target.label = "prisma motion reactive mask";
+        history.reactive = dev_->createTexture(target);
+    }
+    if ((rigidReactiveNeeded || meshReactiveNeeded) && !objectMotionReactiveShader_.valid()) {
+        gfx::ShaderDesc shader;
+        shader.glslVertex = reactive_shaders::kVS;
+        shader.glslFragment = reactive_shaders::kFS;
+        shader.msl = reactive_shaders::kMSL;
+        shader.textureSlots = 1;
+        shader.uniformSlots = 1;
+        shader.label = "prisma motion reactive coverage";
+        objectMotionReactiveShader_ = dev_->createShader(shader);
+        if (objectMotionReactiveShader_.valid()) {
             gfx::PipelineDesc pipeline;
             pipeline.shader = objectMotionReactiveShader_;
             pipeline.attrs[0] = {0,gfx::VertexFormat::Float3,0};
             pipeline.attrCount = 1;
-            pipeline.stride = sizeof(MeshVertex);
-            pipeline.indexType = gfx::IndexType::UInt32;
-            pipeline.cull = gfx::CullMode::None; // water sheets are two-sided
-            pipeline.depthTest = false;
-            pipeline.depthWrite = false;
-            pipeline.blend = gfx::BlendMode::Screen;
-            pipeline.colorFormat = gfx::PixelFormat::RGBA8;
-            pipeline.label = "prisma mesh water reactive coverage";
-            objectMotionReactiveMeshPipeline_ = dev_->createPipeline(pipeline);
-        }
-        // Deformable translucent models use the same GPU current-pose
-        // vertex deformation as their motion shaders, but a coverage-only
-        // fragment. The Metal fragment is swapped at shader creation time.
-        auto prepareAnimatedReactive = [&](bool baked) {
-            auto& shaderHandle = baked ? objectMotionReactiveBakedShader_
-                                       : objectMotionReactiveSkinShader_;
-            auto& pipelineHandle = baked ? objectMotionReactiveBakedPipeline_
-                                         : objectMotionReactiveSkinPipeline_;
-            if (shaderHandle.valid()) return;
-            const char* vertex = baked ? motion_shaders::kBakedVS :
-                                           motion_shaders::kDeformedVS;
-            const char* vertexMsl = baked ? motion_shaders::kBakedMSL :
-                                              motion_shaders::kDeformedMSL;
-            const std::string msl = reactive_shaders::animatedMsl(vertexMsl);
-            if (msl.empty()) return;
-            gfx::ShaderDesc shader;
-            shader.glslVertex = vertex;
-            shader.glslFragment = reactive_shaders::kAnimatedFS;
-            shader.msl = msl.c_str();
-            shader.textureSlots = 9; // scene depth 0 + morph atlas 8 / baked 7
-            shader.uniformSlots = 6;
-            shader.label = baked ? "prisma animated baked reactive" :
-                                   "prisma animated skin reactive";
-            shaderHandle = dev_->createShader(shader);
-            if (!shaderHandle.valid()) return;
-            gfx::PipelineDesc pipeline;
-            pipeline.shader = shaderHandle;
-            pipeline.attrs[0] = {0,gfx::VertexFormat::Float3,0};
-            pipeline.attrs[1] = {5,gfx::VertexFormat::UByte4,
-                                 uint32_t(offsetof(ModelVertex,joints))};
-            pipeline.attrs[2] = {6,gfx::VertexFormat::UByte4N,
-                                 uint32_t(offsetof(ModelVertex,weights))};
-            pipeline.attrCount = 3;
             pipeline.stride = sizeof(ModelVertex);
             pipeline.indexType = gfx::IndexType::UInt32;
             pipeline.cull = gfx::CullMode::Back;
             pipeline.depthTest = false;
             pipeline.depthWrite = false;
-            pipeline.blend = gfx::BlendMode::Screen;
             pipeline.colorFormat = gfx::PixelFormat::RGBA8;
-            pipeline.label = shader.label;
-            pipelineHandle = dev_->createPipeline(pipeline);
+            pipeline.label = "prisma motion reactive coverage";
+            objectMotionReactivePipeline_ = dev_->createPipeline(pipeline);
+        }
+    }
+    if (meshReactiveNeeded && !objectMotionReactiveMeshPipeline_.valid() &&
+        objectMotionReactiveShader_.valid()) {
+        gfx::PipelineDesc pipeline;
+        pipeline.shader = objectMotionReactiveShader_;
+        pipeline.attrs[0] = {0,gfx::VertexFormat::Float3,0};
+        pipeline.attrCount = 1;
+        pipeline.stride = sizeof(MeshVertex);
+        pipeline.indexType = gfx::IndexType::UInt32;
+        pipeline.cull = gfx::CullMode::None; // water sheets are two-sided
+        pipeline.depthTest = false;
+        pipeline.depthWrite = false;
+        pipeline.blend = gfx::BlendMode::Screen;
+        pipeline.colorFormat = gfx::PixelFormat::RGBA8;
+        pipeline.label = "prisma mesh water reactive coverage";
+        objectMotionReactiveMeshPipeline_ = dev_->createPipeline(pipeline);
+    }
+    // Deformable translucent models use the same GPU current-pose
+    // vertex deformation as their motion shaders, but a coverage-only
+    // fragment. The Metal fragment is swapped at shader creation time.
+    auto prepareAnimatedReactive = [&](bool baked) {
+        auto& shaderHandle = baked ? objectMotionReactiveBakedShader_
+                                   : objectMotionReactiveSkinShader_;
+        auto& pipelineHandle = baked ? objectMotionReactiveBakedPipeline_
+                                     : objectMotionReactiveSkinPipeline_;
+        if (shaderHandle.valid()) return;
+        const char* vertex = baked ? motion_shaders::kBakedVS :
+                                       motion_shaders::kDeformedVS;
+        const char* vertexMsl = baked ? motion_shaders::kBakedMSL :
+                                          motion_shaders::kDeformedMSL;
+        const std::string msl = reactive_shaders::animatedMsl(vertexMsl);
+        if (msl.empty()) return;
+        gfx::ShaderDesc shader;
+        shader.glslVertex = vertex;
+        shader.glslFragment = reactive_shaders::kAnimatedFS;
+        shader.msl = msl.c_str();
+        shader.textureSlots = 9; // scene depth 0 + morph atlas 8 / baked 7
+        shader.uniformSlots = 6;
+        shader.label = baked ? "prisma animated baked reactive" :
+                               "prisma animated skin reactive";
+        shaderHandle = dev_->createShader(shader);
+        if (!shaderHandle.valid()) return;
+        gfx::PipelineDesc pipeline;
+        pipeline.shader = shaderHandle;
+        pipeline.attrs[0] = {0,gfx::VertexFormat::Float3,0};
+        pipeline.attrs[1] = {5,gfx::VertexFormat::UByte4,
+                             uint32_t(offsetof(ModelVertex,joints))};
+        pipeline.attrs[2] = {6,gfx::VertexFormat::UByte4N,
+                             uint32_t(offsetof(ModelVertex,weights))};
+        pipeline.attrCount = 3;
+        pipeline.stride = sizeof(ModelVertex);
+        pipeline.indexType = gfx::IndexType::UInt32;
+        pipeline.cull = gfx::CullMode::Back;
+        pipeline.depthTest = false;
+        pipeline.depthWrite = false;
+        pipeline.blend = gfx::BlendMode::Screen;
+        pipeline.colorFormat = gfx::PixelFormat::RGBA8;
+        pipeline.label = shader.label;
+        pipelineHandle = dev_->createPipeline(pipeline);
+    };
+    if (animatedReactiveNeeded) {
+        bool needBaked = false, needSkin = false;
+        for (const auto& item : modelItems_)
+            if (reactiveAnimatedEligible(item)) {
+                needBaked |= item.baked;
+                needSkin |= !item.baked;
+            }
+        if (needBaked) prepareAnimatedReactive(true);
+        if (needSkin) prepareAnimatedReactive(false);
+    }
+    if (reactiveNeeded && history.reactive.valid() &&
+        history.depth.valid() && sceneDepth.valid() &&
+        (objectMotionReactivePipeline_.valid() ||
+         objectMotionReactiveSkinPipeline_.valid() ||
+         objectMotionReactiveBakedPipeline_.valid() ||
+         objectMotionReactiveMeshPipeline_.valid() ||
+         !motionReactiveDraws_.empty())) {
+        struct ReactiveUniforms {
+            float mvp[16], params[4], lod[4];
         };
-        if (animatedReactiveNeeded) {
-            bool needBaked = false, needSkin = false;
-            for (const auto& item : modelItems_)
-                if (reactiveAnimatedEligible(item)) {
-                    needBaked |= item.baked;
-                    needSkin |= !item.baked;
-                }
-            if (needBaked) prepareAnimatedReactive(true);
-            if (needSkin) prepareAnimatedReactive(false);
+        static_assert(sizeof(ReactiveUniforms) == 96);
+        struct ReactiveMorphU {
+            float currentW[8] = {}, previousW[8] = {};
+            float info[4] = {}, info2[4] = {};
+        };
+        gfx::PassDesc maskPass;
+        maskPass.colorTarget = history.reactive;
+        maskPass.depthTarget = history.depth;
+        maskPass.clearColor[0] = maskPass.clearColor[1] =
+            maskPass.clearColor[2] = maskPass.clearColor[3] = 0.0f;
+        maskPass.clearColorEnabled = true;
+        maskPass.clearDepthEnabled = true;
+        dev_->beginPass(maskPass);
+        dev_->setViewport({0,0,w,h});
+        dev_->setTexture(0,sceneDepth);
+        for (const auto& it : modelItems_) {
+            if (!objectMotionReactivePipeline_.valid() || !reactiveEligible(it))
+                continue;
+            dev_->setPipeline(objectMotionReactivePipeline_);
+            const mat4 mvp = viewProj_ * it.world;
+            ReactiveUniforms u{};
+            std::memcpy(u.mvp,mvp.m,sizeof u.mvp);
+            u.params[0] = float(w); u.params[1] = float(h);
+            u.params[2] = 1.0f; // conservative coverage, not alpha parity
+            const bool fade = it.lodThreshold < 1.0f || it.lodInvert;
+            u.lod[0] = it.lodThreshold;
+            u.lod[1] = it.lodInvert ? 1.0f : 0.0f;
+            u.lod[2] = fade ? 1.0f : 0.0f;
+            if (fade) ++objectMotionStats_.lodReactiveDraws;
+            dev_->setUniforms(0,&u,sizeof u);
+            dev_->setVertexBuffer(it.model->vb);
+            dev_->setIndexBuffer(it.model->ib);
+            dev_->drawIndexed(it.indexCount,
+                it.firstIndex + it.model->gpuFirstIndex,
+                int32_t(it.model->gpuBaseVertex));
+            ++objectMotionStats_.reactiveDraws;
         }
-        if (reactiveNeeded && history.reactive.valid() &&
-            history.depth.valid() && sceneDepth.valid() &&
-            (objectMotionReactivePipeline_.valid() ||
-             objectMotionReactiveSkinPipeline_.valid() ||
-             objectMotionReactiveBakedPipeline_.valid() ||
-             objectMotionReactiveMeshPipeline_.valid() ||
-             !motionReactiveDraws_.empty())) {
-            struct ReactiveUniforms {
-                float mvp[16], params[4], lod[4];
-            };
-            static_assert(sizeof(ReactiveUniforms) == 96);
-            struct ReactiveMorphU {
-                float currentW[8] = {}, previousW[8] = {};
-                float info[4] = {}, info2[4] = {};
-            };
-            gfx::PassDesc maskPass;
-            maskPass.colorTarget = history.reactive;
-            maskPass.depthTarget = history.depth;
-            maskPass.clearColor[0] = maskPass.clearColor[1] =
-                maskPass.clearColor[2] = maskPass.clearColor[3] = 0.0f;
-            maskPass.clearColorEnabled = true;
-            maskPass.clearDepthEnabled = true;
-            dev_->beginPass(maskPass);
-            dev_->setViewport({0,0,w,h});
+
+        // Actual water/transparent immediate mesh submissions. This
+        // includes RTS TerrainRenderer water surfaces, which queue
+        // Renderer3D::drawMesh(water_, ..., waterColor) before render.
+        // We reuse exactly the submitted mesh GPU geometry and matrix.
+        if (objectMotionReactiveMeshPipeline_.valid()) {
+            dev_->setPipeline(objectMotionReactiveMeshPipeline_);
             dev_->setTexture(0,sceneDepth);
-            for (const auto& it : modelItems_) {
-                if (!objectMotionReactivePipeline_.valid() || !reactiveEligible(it))
-                    continue;
-                dev_->setPipeline(objectMotionReactivePipeline_);
-                const mat4 mvp = viewProj_ * it.world;
-                ReactiveUniforms u{};
-                std::memcpy(u.mvp,mvp.m,sizeof u.mvp);
-                u.params[0] = float(w); u.params[1] = float(h);
-                u.params[2] = 1.0f; // conservative coverage, not alpha parity
-                const bool fade = it.lodThreshold < 1.0f || it.lodInvert;
-                u.lod[0] = it.lodThreshold;
-                u.lod[1] = it.lodInvert ? 1.0f : 0.0f;
-                u.lod[2] = fade ? 1.0f : 0.0f;
-                if (fade) ++objectMotionStats_.lodReactiveDraws;
-                dev_->setUniforms(0,&u,sizeof u);
-                dev_->setVertexBuffer(it.model->vb);
-                dev_->setIndexBuffer(it.model->ib);
-                dev_->drawIndexed(it.indexCount,
-                    it.firstIndex + it.model->gpuFirstIndex,
-                    int32_t(it.model->gpuBaseVertex));
-                ++objectMotionStats_.reactiveDraws;
+            for (const DrawItem& item : items_) {
+                if (!meshReactiveEligible(item)) continue;
+                ReactiveUniforms uniforms{};
+                const mat4 mvp = viewProj_ * item.model;
+                std::memcpy(uniforms.mvp,mvp.m,sizeof uniforms.mvp);
+                uniforms.params[0] = float(w);
+                uniforms.params[1] = float(h);
+                uniforms.params[2] = std::clamp(item.color.w,0.0f,1.0f);
+                dev_->setUniforms(0,&uniforms,sizeof uniforms);
+                dev_->setVertexBuffer(item.mesh->vb);
+                dev_->setIndexBuffer(item.mesh->ib);
+                dev_->drawIndexed(item.mesh->indexCount);
+                ++objectMotionStats_.reactiveMeshDraws;
             }
-
-            // Actual water/transparent immediate mesh submissions. This
-            // includes RTS TerrainRenderer water surfaces, which queue
-            // Renderer3D::drawMesh(water_, ..., waterColor) before render.
-            // We reuse exactly the submitted mesh GPU geometry and matrix.
-            if (objectMotionReactiveMeshPipeline_.valid()) {
-                dev_->setPipeline(objectMotionReactiveMeshPipeline_);
-                dev_->setTexture(0,sceneDepth);
-                for (const DrawItem& item : items_) {
-                    if (!meshReactiveEligible(item)) continue;
-                    ReactiveUniforms uniforms{};
-                    const mat4 mvp = viewProj_ * item.model;
-                    std::memcpy(uniforms.mvp,mvp.m,sizeof uniforms.mvp);
-                    uniforms.params[0] = float(w);
-                    uniforms.params[1] = float(h);
-                    uniforms.params[2] = std::clamp(item.color.w,0.0f,1.0f);
-                    dev_->setUniforms(0,&uniforms,sizeof uniforms);
-                    dev_->setVertexBuffer(item.mesh->vb);
-                    dev_->setIndexBuffer(item.mesh->ib);
-                    dev_->drawIndexed(item.mesh->indexCount);
-                    ++objectMotionStats_.reactiveMeshDraws;
-                }
-            }
-            // Animated translucent current-pose silhouettes. We intentionally
-            // use the current pose for both vertex parameters: the fragment
-            // writes coverage, NOT velocity. Thus this works without an ID.
-            for (const auto& it : modelItems_) {
-                if (!reactiveAnimatedEligible(it)) continue;
-                const bool baked = it.baked;
-                const auto pipeline = baked ? objectMotionReactiveBakedPipeline_
-                                             : objectMotionReactiveSkinPipeline_;
-                if (!pipeline.valid()) continue;
-                const bool morph = it.prim->morphTargets > 0 &&
-                                   it.model->morphTex.valid();
-                const bool skin = it.joints >= 0;
-                if (skin &&
-                    (it.joints < 0 ||
-                     size_t(it.joints) + size_t(kMaxPaletteJoints) * 12 >
-                         jointData_.size())) {
-                    ++objectMotionStats_.rejected;
-                    continue;
-                }
-                if (morph && it.morph >= 0 &&
-                    size_t(it.morph) + size_t(kMaxMorphTargets) >
-                        morphData_.size()) {
-                    ++objectMotionStats_.rejected;
-                    continue;
-                }
-                MotionU position{};
-                const mat4 mvp = viewProj_ * it.world;
-                std::memcpy(position.current,mvp.m,sizeof position.current);
-                std::memcpy(position.previous,mvp.m,sizeof position.previous);
-                position.params[0] = float(w);
-                position.params[1] = float(h);
-                position.params[2] = baked ? (morph ? 1.0f : 0.0f) :
-                                             (skin ? 1.0f : 0.0f);
-                position.params[3] = !baked && morph ? 1.0f : 0.0f;
-
-                ReactiveMorphU mo{};
-                if (morph) {
-                    if (it.morph >= 0) {
-                        std::memcpy(mo.currentW,morphData_.data()+it.morph,
-                                    sizeof mo.currentW);
-                        std::memcpy(mo.previousW,mo.currentW,sizeof mo.previousW);
-                    }
-                    mo.info[0] = float(it.prim->morphTexel);
-                    mo.info[1] = float(it.prim->firstVertex);
-                    mo.info[2] = float(it.prim->vertexCount);
-                    mo.info[3] = float(it.prim->morphTargets);
-                    mo.info2[0] = float(it.model->morphTexWidth);
-                }
-
-                dev_->setPipeline(pipeline);
-                dev_->setUniforms(0,&position,sizeof position);
-                dev_->setTexture(0,sceneDepth);
-                if (baked) {
-                    float palette[80] = {};
-                    for (size_t j=0;j<it.prim->jointPalette.size() && j<80;++j)
-                        palette[j] = float(it.prim->jointPalette[j]);
-                    float animation[8] = {
-                        it.anim.x,it.anim.y,it.anim.z,it.anim.w,
-                        it.anim.x,it.anim.y,it.anim.z,it.anim.w
-                    };
-                    dev_->setUniforms(3,palette,sizeof palette);
-                    dev_->setUniforms(4,animation,sizeof animation);
-                    dev_->setUniforms(5,&mo,sizeof mo);
-                    dev_->setTexture(7,it.model->baked.tex);
-                } else {
-                    float joints[size_t(kMaxPaletteJoints)*12] = {};
-                    if (skin)
-                        std::memcpy(joints,jointData_.data()+it.joints,
-                                    sizeof joints);
-                    dev_->setUniforms(3,joints,sizeof joints);
-                    dev_->setUniforms(4,joints,sizeof joints);
-                    dev_->setUniforms(5,&mo,sizeof mo);
-                }
-                dev_->setTexture(8,morph ? it.model->morphTex : white_);
-                dev_->setVertexBuffer(it.model->vb);
-                dev_->setIndexBuffer(it.model->ib);
-                dev_->drawIndexed(it.indexCount,
-                    it.firstIndex + it.model->gpuFirstIndex,
-                    int32_t(it.model->gpuBaseVertex));
-                ++objectMotionStats_.reactiveAnimatedDraws;
-            }
-
-            // Optional water/particles/custom extensions. The GPU pass and
-            // viewport are already active. Clients must blend coverage over
-            // previous layers (Screen union) and must not end the pass.
-            for (auto& renderReactive : motionReactiveDraws_) {
-                renderReactive(*dev_,sceneDepth,w,h);
-                ++objectMotionStats_.reactiveCallbacks;
-            }
-            dev_->endPass();
-            post.acceptMotionReactiveMask(MotionTextureInput::declared(
-                history.reactive,w,h,gfx::PixelFormat::RGBA8));
-            objectMotionStats_.reactiveSubmitted = true;
         }
+        // Animated translucent current-pose silhouettes. We intentionally
+        // use the current pose for both vertex parameters: the fragment
+        // writes coverage, NOT velocity. Thus this works without an ID.
+        for (const auto& it : modelItems_) {
+            if (!reactiveAnimatedEligible(it)) continue;
+            const bool baked = it.baked;
+            const auto pipeline = baked ? objectMotionReactiveBakedPipeline_
+                                         : objectMotionReactiveSkinPipeline_;
+            if (!pipeline.valid()) continue;
+            const bool morph = it.prim->morphTargets > 0 &&
+                               it.model->morphTex.valid();
+            const bool skin = it.joints >= 0;
+            if (skin &&
+                (it.joints < 0 ||
+                 size_t(it.joints) + size_t(kMaxPaletteJoints) * 12 >
+                     jointData_.size())) {
+                ++objectMotionStats_.rejected;
+                continue;
+            }
+            if (morph && it.morph >= 0 &&
+                size_t(it.morph) + size_t(kMaxMorphTargets) >
+                    morphData_.size()) {
+                ++objectMotionStats_.rejected;
+                continue;
+            }
+            MotionU position{};
+            const mat4 mvp = viewProj_ * it.world;
+            std::memcpy(position.current,mvp.m,sizeof position.current);
+            std::memcpy(position.previous,mvp.m,sizeof position.previous);
+            position.params[0] = float(w);
+            position.params[1] = float(h);
+            position.params[2] = baked ? (morph ? 1.0f : 0.0f) :
+                                         (skin ? 1.0f : 0.0f);
+            position.params[3] = !baked && morph ? 1.0f : 0.0f;
+
+            ReactiveMorphU mo{};
+            if (morph) {
+                if (it.morph >= 0) {
+                    std::memcpy(mo.currentW,morphData_.data()+it.morph,
+                                sizeof mo.currentW);
+                    std::memcpy(mo.previousW,mo.currentW,sizeof mo.previousW);
+                }
+                mo.info[0] = float(it.prim->morphTexel);
+                mo.info[1] = float(it.prim->firstVertex);
+                mo.info[2] = float(it.prim->vertexCount);
+                mo.info[3] = float(it.prim->morphTargets);
+                mo.info2[0] = float(it.model->morphTexWidth);
+            }
+
+            dev_->setPipeline(pipeline);
+            dev_->setUniforms(0,&position,sizeof position);
+            dev_->setTexture(0,sceneDepth);
+            if (baked) {
+                float palette[80] = {};
+                for (size_t j=0;j<it.prim->jointPalette.size() && j<80;++j)
+                    palette[j] = float(it.prim->jointPalette[j]);
+                float animation[8] = {
+                    it.anim.x,it.anim.y,it.anim.z,it.anim.w,
+                    it.anim.x,it.anim.y,it.anim.z,it.anim.w
+                };
+                dev_->setUniforms(3,palette,sizeof palette);
+                dev_->setUniforms(4,animation,sizeof animation);
+                dev_->setUniforms(5,&mo,sizeof mo);
+                dev_->setTexture(7,it.model->baked.tex);
+            } else {
+                float joints[size_t(kMaxPaletteJoints)*12] = {};
+                if (skin)
+                    std::memcpy(joints,jointData_.data()+it.joints,
+                                sizeof joints);
+                dev_->setUniforms(3,joints,sizeof joints);
+                dev_->setUniforms(4,joints,sizeof joints);
+                dev_->setUniforms(5,&mo,sizeof mo);
+            }
+            dev_->setTexture(8,morph ? it.model->morphTex : white_);
+            dev_->setVertexBuffer(it.model->vb);
+            dev_->setIndexBuffer(it.model->ib);
+            dev_->drawIndexed(it.indexCount,
+                it.firstIndex + it.model->gpuFirstIndex,
+                int32_t(it.model->gpuBaseVertex));
+            ++objectMotionStats_.reactiveAnimatedDraws;
+        }
+
+        // Optional water/particles/custom extensions. The GPU pass and
+        // viewport are already active. Clients must blend coverage over
+        // previous layers (Screen union) and must not end the pass.
+        for (auto& renderReactive : motionReactiveDraws_) {
+            renderReactive(*dev_,sceneDepth,w,h);
+            ++objectMotionStats_.reactiveCallbacks;
+        }
+        dev_->endPass();
+        post.acceptMotionReactiveMask(MotionTextureInput::declared(
+            history.reactive,w,h,gfx::PixelFormat::RGBA8));
+        objectMotionStats_.reactiveSubmitted = true;
+    }
 
 }
 
