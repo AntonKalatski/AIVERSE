@@ -3616,3 +3616,22 @@ On a further failure, capture and report the *first new failing assertion/compil
 **Actually verified by agent:** read source of test, `TerraWeaveForestAdapter.h`, `TerraWeaveImpostorAtlas.h` and `TerraWeaveArborBillboard.h`, committed source test correction. **NOT YET RUN after this commit:** local C++ build / CTest, real graphics tests. PR #24 remains Draft; never claim 9/9 until tester supplies a new result.
 
 **Next QA command:** in isolated `~/Projects/AIVERSE-terraweave-qa`, `git fetch origin feature/terraweave && git pull --ff-only origin feature/terraweave`; compile `aiverse_terraweave_model_test` then rerun `ctest --test-dir build/terraweave-qa --output-on-failure -R '^terraweave_model$'`. If successful, rerun all nine named TerraWeave tests. Continue keeping main checkout's unrelated rebases/merge conflicts untouched.
+
+## Mac Studio isolated TerraWeave QA complete — all nine CPU tests green (2026-11-19)
+
+**Actual user-reported complete result, after fixing the split bark/foliage impostor test:** `cmake --build build/terraweave-qa --parallel 4 --target` (nine TerraWeave targets) **succeeded**. `ctest --test-dir build/terraweave-qa --output-on-failure -R '^terraweave(_arbor|_flora|_model|_heightmap|_ops|_preview|_forest_scene|_horizon)?$'` in the isolated macOS `~/Projects/AIVERSE-terraweave-qa` worktree passed **9/9, 0 failures, 1.01 seconds**. Exact tests:
+- #93 `terraweave`: PASSED 0.04s
+- #94 `terraweave_arbor`: PASSED 0.03s
+- #95 `terraweave_flora`: PASSED 0.03s
+- #96 `terraweave_model`: PASSED 0.72s
+- #97 `terraweave_heightmap`: PASSED 0.03s
+- #98 `terraweave_ops`: PASSED 0.03s
+- #99 `terraweave_preview`: PASSED 0.03s
+- #100 `terraweave_forest_scene`: PASSED 0.04s
+- #101 `terraweave_horizon`: PASSED 0.05s
+
+This validates the native CPU suites including the Stage29 legacy assertions updated in `terraweave_horizon_test.cpp` (`a1128bab`, `36479dc3`) and `terraweave_model_test.cpp` (`eb8ca745`). **No further code changes were necessary in this verification stage**. Independent Linux CI, full native Editor/RTS/FPS client integration build, optional `terraweave_editor` integration test, Metal GPU rendering and performance tests have **NOT** been reported/run at this stage.
+
+**Git safety:** the main `~/Projects/AIVERSE` checkout still has an unrelated VFX/PHYSIS rebase conflict as previously reported; use only `~/Projects/AIVERSE-terraweave-qa`, whose pull from `origin/feature/terraweave` fast-forwarded successfully. Do not automatically rebase, reset or clean the main checkout.
+
+**Next step: native integration build in a separate build directory (avoid changing current tested configuration):** fetch/pull `feature/terraweave` in the QA worktree; configure `build/terraweave-integration` with `AIVERSE_BUILD_CLIENT=ON`, `AIVERSE_BUILD_FPS_CLIENT=ON`, `AIVERSE_BUILD_EDITOR=ON`, `AIVERSE_BUILD_TESTS=ON`, server/headless/tools/FBX OFF; compile `aiverse_client`, `aiverse_fps_client`, `aiverse_editor`, and `aiverse_terraweave_editor_test`, then run `ctest --test-dir build/terraweave-integration --output-on-failure -R '^terraweave_editor$'`. The actual CMake targets and options were inspected in `CMakeLists.txt` and `modules/fps/CMakeLists.txt`. Capture the first actual compile error on Mac and keep PR #24 Draft until integration and graphics acceptance.
