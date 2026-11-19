@@ -168,25 +168,7 @@ fi
 if [[ "$want_metal" -eq 1 ]]; then
     echo "Running native Metal GPU acceptance... (see $logs/metal-gpu.log)"
     ctest --test-dir "$build" --verbose --output-on-failure --no-tests=error \
-        -R '^metal_texture_gpu
-    metal_status=$?
-    if [[ "$metal_status" -eq 0 ]]; then
-        echo "METAL GPU PASS (inspect real readback evidence)" | tee -a "$summary"
-    else
-        echo "METAL GPU FAIL (exit $metal_status; see $logs/metal-gpu.log)" | tee -a "$summary"
-        failures=$((failures+1))
-    fi
-fi
-if [[ "$failures" -gt 0 ]]; then
-    echo "OVERALL FAIL: $failures build/test gates failed" | tee -a "$summary"
-    exit 1
-fi
-if [[ "$want_metal" -eq 1 ]]; then
-    echo "OVERALL SOURCE AND METAL TEXTURE GPU TESTS PASS (other GPU validation remains separate)" | tee -a "$summary"
-else
-    echo "OVERALL SOURCE TESTS PASS (GPU validation remains separate)" | tee -a "$summary"
-fi
- >"$logs/metal-gpu.log" 2>&1
+        -R '^metal_texture_gpu$' >"$logs/metal-gpu.log" 2>&1
     metal_status=$?
     if [[ "$metal_status" -eq 0 ]]; then
         echo "METAL GPU PASS (inspect real readback evidence)" | tee -a "$summary"
