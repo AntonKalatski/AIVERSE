@@ -10865,3 +10865,93 @@ seam fidelity at UV outside [0,1], graph 0..4-source variants,
 Vulkan/GL/mobile/WebGL fallback and real performance / driver
 stress. Keep all experimental flags OFF by default and PR #21
 Draft until cross-platform acceptance.
+
+## Stage 10BX — observed native dual-disk VT + Shader Graph + GPU ICB PASS (2026-11-19)
+
+**Branch / PR:** `feature/texture-rhi-unification`, PR #21 Draft.
+**Implemented fixture:** Stage 10BW
+`tests/render/metal_renderer_graph_vt_icb_gpu.cpp` from
+source commits `8946de8a03e65a2eefd1b8d40dbb7270f3ad8124` and
+`2a4d64c102627aff48f1e7c756260b377f0c9e7f`; CMake
+`70019a92cf5657c05c3f3e3a749eafcd4061b753`.
+This stage adds result documentation, not new engine behavior.
+
+**User-confirmed real Apple M3 Ultra/Metal execution:**
+`metal_renderer_graph_vt_icb_gpu` **1/1 CTest PASS**,
+test **4.57 s**, total elapsed **4.58 s**, zero failures.
+The test ran with explicit flags for Metal GPU ICB,
+GPU-authored commands, heterogeneous PBR source resources,
+per-command VT, mixed VT and Shader Graph; the experimental
+features remain OFF by default for released builds.
+
+**Exact observed GPU state in all THREE phases:**
+`eligible=2 prepared=1 graph=1 mixedGraph=1 vt=1
+mixedVt=1 commands=2 rejected=0 errors=0`.
+The ordinary and GPU-encoded ICB Renderer3D captured images
+matched **exactly (bad_channels=0, max_delta=0)** on all three
+distinct residency states:
+
+1. Pinned coarse: distinct image regions
+   left `(140.0,121.0,151.0)`,
+   right `(125.0,149.0,103.0)`,
+   region delta `91.0`.
+2. Fine detail: left `(151.6,114.3,141.2)`,
+   right `(119.4,150.7,116.0)`,
+   region delta `93.7`.
+   Transition altered **1392 captured channels**.
+3. LRU recycled: left `(138.4,130.6,143.7)`,
+   right `(134.5,146.3,114.7)`,
+   region delta `48.5`.
+   Transition altered **2886 captured channels**.
+
+**Observed acceptance markers:**
+```text
+PASS: Shader Graph+VT pinned coarse Renderer3D CPU/ICB pixels
+PASS: Shader Graph+VT fine detail Renderer3D CPU/ICB pixels
+PASS: Shader Graph+VT LRU recycled Renderer3D CPU/ICB pixels
+PASS: production Renderer3D Shader Graph+disk VT mixed Metal GPU ICB coarse/fine/LRU pixel parity
+1/1 Test #122: metal_renderer_graph_vt_icb_gpu ... Passed 4.57 sec
+```
+
+**What is actually verified:** A real compiled `render::graph::Program`
+with four connected Shader Graph source textures and
+`sampleVirtualTexture`, two independently owned disk-backed VT
+archives, distinct GPU atlas/page-table handles and virtual layers,
+pin/coarse publication, fine publication and LRU slot reuse,
+per-command material resource binding, real native GPU ICB
+submission and full-screen RGBA8 CPU/ICB pixel parity.
+The two material regions are visibly distinct, so a blank frame
+could not satisfy the test. The measured CTest duration is
+**not** a gameplay GPU frame time or ICB performance gain.
+
+**Code changes for this verification stage:** none.
+**Documentation commits:** `2f7ed7b43a309e7ac5489fb405beaa85be71edbe`
+(`docs/texture-rhi.md`, Stage 10BX evidence and scope),
+`1acf0a7a07cf26ce66277fe1764405c5f11e0b25`
+(`skills/visuals/aiverse-texture-rhi/SKILL.md`,
+hardware-verification status, next steps), plus this
+append-only handoff commit. The native log is user-supplied;
+do not misstate it as GitHub Actions CI success.
+
+**Still unverified:** intentionally missing/corrupt disk pages,
+GPU shader nonresident and coarse fallback in the combined
+Renderer3D ICB path; seam/filtering parity around UV < 0 / > 1
+for Repeat/MirrorRepeat, non-4 graph source layouts, graph
+vertex displacement, alpha blends/masks, stressed/stalled disk
+I/O or GPU driver stability, platform Vulkan/GL/WebGL/mobile
+fallbacks and realistic frame-time performance.
+
+**Next agent action:** Work on isolated texture verification
+branch/worktree, not primary AIVERSE checkout with unresolved
+rebase. Add a **separately gated** test for missing-page failure
+and UV seams, using `VirtualTextureFileStreamer`,
+`VirtualTextureSampling` and `Renderer3D` in their existing
+production paths. Validate fail-closed page-table state after
+missing-file errors, correct coarse fallback for unresolved
+fine detail, and Repeat/MirrorRepeat texture results at
+UV boundaries (including negative/out-of-range UV).
+Require actual scene GPU ICB graph+VT counters, CPU/ICB
+pixel match and independent expected-color/oracle checks.
+Document exact native CMake/CTest commands and outcomes.
+Do not merge PR #21 or enable experimental GPU ICB by
+default until multi-backend and stress acceptance is complete.
