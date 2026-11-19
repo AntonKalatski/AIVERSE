@@ -110,6 +110,11 @@ public:
     // Set before rendering a view, even when two views have equal dimensions.
     void setViewId(uint64_t id) { viewId_ = id; }
     uint64_t viewId() const { return viewId_; }
+    // Optional subpixel jitter for a COPY of the current render camera.
+    // Call after setViewId/applyCameraVolumes and BEFORE Renderer3D::beginScene;
+    // retain the original camera for gameplay picking and 2D overlays.
+    // Active only with HDR temporalResolve + AIVERSE_PRISMA_JITTER=1.
+    RTSCamera jitteredCamera(RTSCamera camera, int width, int height);
     void resetAutoExposure(uint64_t id);
     // Camera cut/teleport: stop motion blur on the next rendered frame.
     void resetMotionHistory(uint64_t id);
@@ -180,6 +185,9 @@ private:
         int width = 0, height = 0;
         int current = 0; // most recently written history index
         bool valid = false;
+        uint64_t jitterSequence = 0;
+        float2 currentJitterUv{}, previousJitterUv{}; // NDC jitter / 2, unflipped UV
+
     };
     struct MotionView {
         mat4 previousViewProj;
