@@ -17,6 +17,8 @@
 #include "engine/atlas/AtlasFormat.h"
 
 namespace aiverse::render {
+class GpuResourceRetirement;
+
 
 // An atlased image drawn straight from its pages (TextureCache::resolveSprite): per frame of the
 // frame grid (cols x rows over the logical image; 1 x 1 for a whole image) its region (trim,
@@ -46,6 +48,11 @@ struct TextureRef {
 class TextureCache {
 public:
     void init(gfx::Device& dev) { dev_ = &dev; }
+    // Optional editor hot-reload owner; retained by Editor across TextureCache
+    // asset reloads. Doesn't own borrowed atlased sprite references.
+    void setGpuResourceRetirement(GpuResourceRetirement* owner) {
+        gpuRetirement_ = owner;
+    }
     void shutdown();
     // `base` is prefixed to the path when reading (editor: "<project dir>/", game: "").
     // `tiling`: a repeating world-space texture (terrain splat layers): never taken from an atlas
@@ -72,6 +79,7 @@ private:
     std::string atlasBase_;             // base the manifest was loaded for
     std::map<std::string, gfx::TextureHandle> atlasPages_;
     gfx::Device* dev_ = nullptr;
+    GpuResourceRetirement* gpuRetirement_ = nullptr;
     std::map<std::string, TextureRef> cache_;
     std::string error_;
 };
