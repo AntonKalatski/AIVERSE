@@ -7,6 +7,7 @@
 #include "PhysisStorm.h"
 #include "PhysisForces.h"
 #include "PhysisNatureSampling.h"
+#include "PhysisNatureStress.h"
 #include "../sim/Simulation.h"
 
 namespace aiverse::physis {
@@ -89,7 +90,8 @@ inline void io(Archive& a, QuakeEvent& v) {
 inline void registerPersistence(Simulation& simulation, bool disasters = false,
                                 bool windZones = false, bool gravityFields = false,
                                 bool storms = false, bool forces = false,
-                                bool natureContacts = false) {
+                                bool natureContacts = false,
+                                bool natureStress = false) {
     // Must be called during GameModule::setup before the registry is sealed.
     simulation.registerPersistentComponent<Cell>("physis.cell", 1);
     simulation.registerPersistentComponent<Atmosphere>("physis.atmosphere", 1);
@@ -122,6 +124,12 @@ inline void registerPersistence(Simulation& simulation, bool disasters = false,
         simulation.registerPersistentComponent<NatureContactComponent>(
             "physis.nature_contact", 1);
     }
+    if (natureStress) {
+        simulation.registerPersistentComponent<NatureStressReceiverComponent>(
+            "physis.nature_stress_receiver", 1);
+        simulation.registerPersistentComponent<NatureStressOutputComponent>(
+            "physis.nature_stress_output", 1);
+    }
     simulation.registerPersistentResource<State>("physis.state", 1);
     if (disasters) {
         simulation.registerPersistentComponent<HazardCell>("physis.hazard", 1);
@@ -139,6 +147,9 @@ struct InstallOptions {
     // Publish read-only per-entity weather/gravity/storm snapshots after
     // each climate tick. Defaults off for strict older-save compatibility.
     bool enableNatureContacts = false;
+    // Requires enableForces AND enableNatureContacts: derives deterministic
+    // structural load/fatigue without calculating a second wind force.
+    bool enableNatureStress = false;
     // Enable these when a native host uses WindZone/WindShelter or custom
     // GravityField/GravitySettings and needs them in save/replay.
     bool enableWindZones = false;
@@ -153,6 +164,10 @@ inline void install(Simulation& simulation, const InstallOptions& options = {}) 
     if (options.floodMode != FloodMode::LocalShallow &&
         options.floodMode != FloodMode::ExternalAuthority)
         throw std::invalid_argument("invalid PHYSIS flood authority");
+    if (options.enableNatureStress &&
+        (!options.enableForces || !options.enableNatureContacts))
+        throw std::invalid_argument(
+            "PHYSIS nature stress requires forces and nature contacts");
     // Universal one-line native project integration. Never call in render code.
     // Install during GameModule::setup; SimSnapshot and file saves use the same
     // authoritative World. The host controls the order of systems it registers.
@@ -162,7 +177,7 @@ inline void install(Simulation& simulation, const InstallOptions& options = {}) 
     registerPersistence(simulation, options.enableDisasters,
                         options.enableWindZones, options.enableGravityFields,
                         options.enableStorms, options.enableForces,
-                        options.enableNatureContacts);
+                        options.enableNatureContacts, options.enableNatureStress);
     simulation.addSystem("physis.environment",
         [hazards=options.enableDisasters, storms=options.enableStorms,
          flood=options.floodMode](Simulation& sim) {
@@ -182,6 +197,12 @@ inline void install(Simulation& simulation, const InstallOptions& options = {}) 
     if (options.enableNatureContacts)
         simulation.addSystem("physis.nature_contacts", [](Simulation& sim) {
             advanceNatureContacts(sim.world(), sim.tick());
+        });
+    // Damage/fracture policy reads force + nature contact snapshots after
+    // their barriers; host/Box3D/TerraWeave own the actual consequences.
+    if (options.enableNatureStress)
+        simulation.addSystem("physis.nature_stress", [](Simulation& sim) {
+            advanceNatureStress(sim.world());
         });
 }
 

@@ -2284,6 +2284,13 @@ if(AIVERSE_BUILD_TESTS)
         aiverse_physis_nereid_contacts_test)
     set_tests_properties(physis_nereid_contacts PROPERTIES LABELS
         "PHYSIS;NEREID;ECS")
+    # Stage 79: structural load/fracture exposure reuses PHYSIS force output
+    # and nature contacts, without runtime Box3D/TerraWeave dependency.
+    add_executable(aiverse_physis_nature_stress_test
+        tests/physis_nature_stress_test.cpp)
+    target_link_libraries(aiverse_physis_nature_stress_test PRIVATE aiverse_engine)
+    add_test(NAME physis_nature_stress COMMAND aiverse_physis_nature_stress_test)
+    set_tests_properties(physis_nature_stress PROPERTIES LABELS "PHYSIS;ECS")
 endif()
 
 # PHYSIS Stage 8: deterministic spatial wind and seeded gust volumes.
