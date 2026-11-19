@@ -99,7 +99,8 @@ inline std::vector<AutoShorelineBank> discoverNereidShoreline(
        cfg.splashHeightCm<0 || cfg.splashHeightCm>500 ||
        cfg.maxWaterDepthCm<1 || cfg.maxWaterDepthCm>50000 ||
        cfg.minWetBedDepthCm<0 || cfg.minWetBedDepthCm>5000 ||
-       cfg.minWetBedDepthCm>cfg.maxWaterDepthCm ||
+       (cfg.includeWetBedCells &&
+        cfg.minWetBedDepthCm>cfg.maxWaterDepthCm) ||
        cfg.waveEnergyPermille>1000 ||
        cfg.minContactPermille==0 || cfg.minContactPermille>1000 ||
        cfg.maxBankCells==0 || cfg.maxBankCells>16384)
