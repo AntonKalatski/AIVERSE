@@ -67,34 +67,34 @@ void HumanDNA::validate() const {
     stringID(id,"id",true);
     if(displayName.empty()||displayName.size()>128)
         throw std::invalid_argument("VIVID DNA displayName invalid");
-    limit(anatomy.heightMeters,0.8.0f,2.6.0f,"anatomy.heightMeters");
-    limit(anatomy.headScale,0.5.0f,1.8.0f,"anatomy.headScale");
-    limit(anatomy.headWidth,0.5.0f,1.8.0f,"anatomy.headWidth");
-    limit(anatomy.jawWidth,0.5.0f,1.8.0f,"anatomy.jawWidth");
-    limit(anatomy.jawLength,0.5.0f,1.8.0f,"anatomy.jawLength");
+    limit(anatomy.heightMeters,0.8f,2.6f,"anatomy.heightMeters");
+    limit(anatomy.headScale,0.5f,1.8f,"anatomy.headScale");
+    limit(anatomy.headWidth,0.5f,1.8f,"anatomy.headWidth");
+    limit(anatomy.jawWidth,0.5f,1.8f,"anatomy.jawWidth");
+    limit(anatomy.jawLength,0.5f,1.8f,"anatomy.jawLength");
     limit(anatomy.cheekFullness,0.0f,1.0f,"anatomy.cheekFullness");
     limit(anatomy.noseLength,0.0f,1.0f,"anatomy.noseLength");
     limit(anatomy.noseWidth,0.0f,1.0f,"anatomy.noseWidth");
     limit(anatomy.eyeSpacing,0.0f,1.0f,"anatomy.eyeSpacing");
-    limit(anatomy.eyeScale,0.5.0f,1.8.0f,"anatomy.eyeScale");
+    limit(anatomy.eyeScale,0.5f,1.8f,"anatomy.eyeScale");
     limit(anatomy.browHeight,0.0f,1.0f,"anatomy.browHeight");
     limit(anatomy.mouthWidth,0.0f,1.0f,"anatomy.mouthWidth");
     limit(anatomy.lipFullness,0.0f,1.0f,"anatomy.lipFullness");
-    limit(anatomy.earScale,0.5.0f,1.8.0f,"anatomy.earScale");
+    limit(anatomy.earScale,0.5f,1.8f,"anatomy.earScale");
     limit(anatomy.neckLength,0.0f,1.0f,"anatomy.neckLength");
     limit(anatomy.shoulderWidth,0.0f,1.0f,"anatomy.shoulderWidth");
     limit(anatomy.bodyBuild,0.0f,1.0f,"anatomy.bodyBuild");
     limit(skin.melanin,0.0f,1.0f,"skin.melanin");
     limit(skin.hemoglobin,0.0f,1.0f,"skin.hemoglobin");
-    limit(skin.scatteringMm,0.01.0f,6.0f,"skin.scatteringMm");
-    limit(skin.roughness,0.02.0f,1.0f,"skin.roughness");
+    limit(skin.scatteringMm,0.01f,6.0f,"skin.scatteringMm");
+    limit(skin.roughness,0.02f,1.0f,"skin.roughness");
     limit(skin.oiliness,0.0f,1.0f,"skin.oiliness");
     limit(skin.poreScale,0.0f,2.0f,"skin.poreScale");
     limit(skin.wrinkleStrength,0.0f,1.0f,"skin.wrinkleStrength");
     limit(skin.wetness,0.0f,1.0f,"skin.wetness");
-    limit(eyes.irisRadius,0.15.0f,0.75.0f,"eyes.irisRadius");
-    limit(eyes.pupil,0.05.0f,0.95.0f,"eyes.pupil");
-    limit(eyes.corneaIor,1.25.0f,1.45.0f,"eyes.corneaIor");
+    limit(eyes.irisRadius,0.15f,0.75f,"eyes.irisRadius");
+    limit(eyes.pupil,0.05f,0.95f,"eyes.pupil");
+    limit(eyes.corneaIor,1.25f,1.45f,"eyes.corneaIor");
     limit(eyes.limbus,0.0f,1.0f,"eyes.limbus");
     limit(eyes.scleraRedness,0.0f,1.0f,"eyes.scleraRedness");
     limit(eyes.tearFilm,0.0f,1.0f,"eyes.tearFilm");
@@ -104,7 +104,7 @@ void HumanDNA::validate() const {
     limit(groom.curl,0.0f,1.0f,"groom.curl");
     limit(groom.clump,0.0f,1.0f,"groom.clump");
     limit(groom.melanin,0.0f,1.0f,"groom.melanin");
-    limit(groom.roughness,0.05.0f,1.0f,"groom.roughness");
+    limit(groom.roughness,0.05f,1.0f,"groom.roughness");
     limit(groom.stiffness,0.0f,1.0f,"groom.stiffness");
     limit(groom.damping,0.0f,1.0f,"groom.damping");
     limit(groom.gravity,0.0f,3.0f,"groom.gravity");
@@ -165,7 +165,7 @@ HumanDNA HumanDNA::fromJson(const Json& src) {
     if(src["anatomy"].has("neckLength")) d.anatomy.neckLength=getFloat(src["anatomy"]["neckLength"],"anatomy.neckLength");
     if(src["anatomy"].has("shoulderWidth")) d.anatomy.shoulderWidth=getFloat(src["anatomy"]["shoulderWidth"],"anatomy.shoulderWidth");
     if(src["anatomy"].has("bodyBuild")) d.anatomy.bodyBuild=getFloat(src["anatomy"]["bodyBuild"],"anatomy.bodyBuild");
-    unknownFields(src["anatomy"],"anatomy",{"heightMeters","headScale","headWidth","jawWidth","jawLength","cheekFullness","noseLength","noseWidth","eyeSpacing","eyeScale","browHeight","mouthWidth","lipFullness","earScale","neckLength","shoulderWidth","bodyBuild"});
+    if(src.has("anatomy"))unknownFields(src["anatomy"],"anatomy",{"heightMeters","headScale","headWidth","jawWidth","jawLength","cheekFullness","noseLength","noseWidth","eyeSpacing","eyeScale","browHeight","mouthWidth","lipFullness","earScale","neckLength","shoulderWidth","bodyBuild"});
     if(src["skin"].has("melanin")) d.skin.melanin=getFloat(src["skin"]["melanin"],"skin.melanin");
     if(src["skin"].has("hemoglobin")) d.skin.hemoglobin=getFloat(src["skin"]["hemoglobin"],"skin.hemoglobin");
     if(src["skin"].has("scatteringMm")) d.skin.scatteringMm=getFloat(src["skin"]["scatteringMm"],"skin.scatteringMm");
@@ -174,7 +174,7 @@ HumanDNA HumanDNA::fromJson(const Json& src) {
     if(src["skin"].has("poreScale")) d.skin.poreScale=getFloat(src["skin"]["poreScale"],"skin.poreScale");
     if(src["skin"].has("wrinkleStrength")) d.skin.wrinkleStrength=getFloat(src["skin"]["wrinkleStrength"],"skin.wrinkleStrength");
     if(src["skin"].has("wetness")) d.skin.wetness=getFloat(src["skin"]["wetness"],"skin.wetness");
-    unknownFields(src["skin"],"skin",{"melaninColor","melanin","hemoglobin","scatteringMm","roughness","oiliness","poreScale","wrinkleStrength","wetness"});
+    if(src.has("skin"))unknownFields(src["skin"],"skin",{"melaninColor","melanin","hemoglobin","scatteringMm","roughness","oiliness","poreScale","wrinkleStrength","wetness"});
     if(src["eyes"].has("irisRadius")) d.eyes.irisRadius=getFloat(src["eyes"]["irisRadius"],"eyes.irisRadius");
     if(src["eyes"].has("pupil")) d.eyes.pupil=getFloat(src["eyes"]["pupil"],"eyes.pupil");
     if(src["eyes"].has("corneaIor")) d.eyes.corneaIor=getFloat(src["eyes"]["corneaIor"],"eyes.corneaIor");
@@ -182,7 +182,7 @@ HumanDNA HumanDNA::fromJson(const Json& src) {
     if(src["eyes"].has("scleraRedness")) d.eyes.scleraRedness=getFloat(src["eyes"]["scleraRedness"],"eyes.scleraRedness");
     if(src["eyes"].has("tearFilm")) d.eyes.tearFilm=getFloat(src["eyes"]["tearFilm"],"eyes.tearFilm");
     if(src["eyes"].has("gazeLimitDegrees")) d.eyes.gazeLimitDegrees=getFloat(src["eyes"]["gazeLimitDegrees"],"eyes.gazeLimitDegrees");
-    unknownFields(src["eyes"],"eyes",{"irisColor","irisRadius","pupil","corneaIor","limbus","scleraRedness","tearFilm","gazeLimitDegrees"});
+    if(src.has("eyes"))unknownFields(src["eyes"],"eyes",{"irisColor","irisRadius","pupil","corneaIor","limbus","scleraRedness","tearFilm","gazeLimitDegrees"});
     if(src["groom"].has("lengthMeters")) d.groom.lengthMeters=getFloat(src["groom"]["lengthMeters"],"groom.lengthMeters");
     if(src["groom"].has("density")) d.groom.density=getFloat(src["groom"]["density"],"groom.density");
     if(src["groom"].has("curl")) d.groom.curl=getFloat(src["groom"]["curl"],"groom.curl");
@@ -193,7 +193,7 @@ HumanDNA HumanDNA::fromJson(const Json& src) {
     if(src["groom"].has("damping")) d.groom.damping=getFloat(src["groom"]["damping"],"groom.damping");
     if(src["groom"].has("gravity")) d.groom.gravity=getFloat(src["groom"]["gravity"],"groom.gravity");
     if(src["groom"].has("wind")) d.groom.wind=getFloat(src["groom"]["wind"],"groom.wind");
-    unknownFields(src["groom"],"groom",{"color","guideCount","segments","lengthMeters","density","curl","clump","melanin","roughness","stiffness","damping","gravity","wind"});
+    if(src.has("groom"))unknownFields(src["groom"],"groom",{"color","guideCount","segments","lengthMeters","density","curl","clump","melanin","roughness","stiffness","damping","gravity","wind"});
 
     if(src["skin"].has("melaninColor"))d.skin.melaninColor=readRgb(src["skin"]["melaninColor"],"skin.melaninColor");
     if(src["eyes"].has("irisColor"))d.eyes.irisColor=readRgb(src["eyes"]["irisColor"],"eyes.irisColor");
@@ -201,16 +201,17 @@ HumanDNA HumanDNA::fromJson(const Json& src) {
     if(src["groom"].has("guideCount"))d.groom.guideCount=getCount(src["groom"]["guideCount"],"groom.guideCount");
     if(src["groom"].has("segments"))d.groom.segments=getCount(src["groom"]["segments"],"groom.segments");
     if(src["rig"].has("revision"))d.rig.revision=getCount(src["rig"]["revision"],"rig.revision");
-    for(auto [key,out]:{
+    for(const std::pair<const char*,std::string*> entry : {
         std::pair<const char*,std::string*>{"rootBone",&d.rig.rootBone},
         {"headBone",&d.rig.headBone},{"jawBone",&d.rig.jawBone},
         {"leftEyeBone",&d.rig.leftEyeBone},{"rightEyeBone",&d.rig.rightEyeBone}}) {
+        auto [key,out]=entry;
         if(src["rig"].has(key)) {
             if(!src["rig"][key].isString())throw std::invalid_argument("VIVID DNA bone field type");
             *out=src["rig"][key].str();
         }
     }
-    if(src["rig"].has("optionalBones")) {
+    if(src.has("rig") && src["rig"].has("optionalBones")) {
         if(!src["rig"]["optionalBones"].isArray())throw std::invalid_argument("VIVID DNA optionalBones array");
         d.rig.optionalBones.clear();
         for(const auto& bone:src["rig"]["optionalBones"].items()) {
