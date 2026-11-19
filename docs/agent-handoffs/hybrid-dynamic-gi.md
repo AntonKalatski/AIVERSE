@@ -71,3 +71,23 @@ Required next steps:
    Record exact tested SHA and any compiler warnings/failing inputs in the NEXT handoff; run ./run-tests.sh --quick when feasible.
 2. Build a shared explicit GI composition contract, including baked base versus dynamic delta and sky occlusion, so static lightmaps and dynamic transport never double-count point lights, sun or ambient. Add test-only CPU compose fixtures before hooking it to material shaders.
 3. Implement GPU update/upload via a capability-checked backend, beginning on Metal. Need independent dynamic probe texture, per-frame budget and asynchronous-safe publish; do NOT upload the entire RGBA32F static atlas each frame. Add device-free RHI fake tests, then GL/MSL visual parity. Only after that integrate renderer, ECS dirty events, TerraWeave and cascade clipmaps.
+
+
+## Stage 3 - 2026-11-19 - sparse GPU upload of dynamic-only probe coefficients (committed, NOT VERIFIED)
+
+Implementation commits:
+- 0bd0a8722a514eef2534df2e2bcc6967f33eb2bc - engine/render/GiDynamicProbeTexture.h
+- 51b4ec1d5faeb70524f569babb6507e9ce99a0a9 - engine/render/GiDynamicProbeReference.h, optional list of successfully published probe indices
+- bc199b50ff180b6288177d47d4f963ac23a07222 - tests/render/gi_dynamic_probe_texture.cpp, FakeDevice-based upload boundary cases
+- d532068a0a82a2edcad27c6fb02b30054fb8155b - CMakeLists.txt, registers gi_dynamic_probe_texture as default CTest target
+
+API/behavior: GiDynamicProbeTexture::initialize(gfx::Device&, probeCount) allocates a separate RGBA32F nearest data texture with 384 texels per row (128 probes, 3 float4 RGB L1 coefficient rows per probe). This data is DYNAMIC INDIRECT ONLY, never the existing StaticLightGrid atlas. GiDynamicProbeReference::update(budget,focus,&publishedIndices) appends only successfully published probe IDs. GiDynamicProbeTexture::upload(reference, ids) sorts and deduplicates, merges adjacent ids within a row into one Device::updateTexture call, and reports probes / regions / bytes; uploadAll() rehydrates after device recreation. The maximum volume remains 20,000 probes (~1 MiB raw texture storage); no full-atlas upload on normal incremental updates. Release destroys the GPU texture.
+
+Compatibility: no change to old lightmap or AVGIC005 storage, shader permutations, render quality default, ECS save format or direct light. This only provides upload-ready data. The renderer DOES NOT YET SAMPLE the dynamic texture. It does not implement GPU ray tracing or compute, and the current probe reference still uses bounded CPU BVH rays.
+
+Actual validation: GitHub write/fetch operations succeeded. **NOT RUN:** native C++ build/CTest, GLES/Metal texture update verification, shaders, GPU performance, ./run-tests.sh. The CTest target uses existing tests/cloth/FakeDevice.h to inspect packed coefficients and adjacent-row grouping; it must be compiled and checked in Debug and Release.
+
+Next agent actions:
+1. From this branch run cmake --build build/gi --target aiverse_gi_update_scheduler_test aiverse_gi_dynamic_probe_reference_test aiverse_gi_dynamic_probe_texture_test -j8 after configuring with AIVERSE_BUILD_TESTS=ON. Then ctest --test-dir build/gi --output-on-failure -R '^gi_(update_scheduler|dynamic_probe_reference|dynamic_probe_texture)$'. Fix all warnings, failures and native portability issues; append exact tested commit SHA and report in separate handoff commit.
+2. Design and test the SINGLE indirect composition point in lit shaders for baked static base (lightmap OR legacy probes OR scalable field), plus dynamic-only L1 texture and optional SSGI near-field term. Explicitly allocate a safe sampler slot for GLSL/MSL, validate Metal 16 sampler slots and shader-graph material variants. Ensure static point direct lighting never leaks into the bounced delta, and no double-addition under the prior LightSystem static grid. Do not silently enable across all materials.
+3. Once shaders are verified, publish dynamic source / geometry change events from read-only ECS presentation snapshots and implement capability-backed GPU probe tracing instead of this CPU reference for large-volume 30/60 FPS operation; then hierarchical clipmaps, visibility/relocation, and real Android/iOS profiling.
