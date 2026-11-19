@@ -15,6 +15,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace aiverse::render {
@@ -57,7 +58,7 @@ inline bool packTerraWeaveModelImage(
     const Model& model, size_t imageIndex,
     const gfx::VirtualTextureArchivePackConfig& config,
     gfx::VirtualTextureArchiveVersion& out, std::string& error) {
-    if (model.path.compare(0,10,"terraweave/") != 0 ||
+    if (std::string_view(model.path).rfind("terraweave/",0) != 0 ||
         imageIndex >= model.images.size()) {
         error = "not a TerraWeave model or image index out of range";
         out = {};
