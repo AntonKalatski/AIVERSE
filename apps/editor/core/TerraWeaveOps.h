@@ -3,6 +3,7 @@
 #pragma once
 #include "apps/editor/core/TerraWeaveMapAdapter.h"
 #include "apps/editor/core/Workspace.h"
+#include "apps/editor/core/TerraWeaveEarthworksOps.h"
 #include <algorithm>
 #include <cstdint>
 #include <limits>
@@ -116,6 +117,7 @@ inline Json preview(const terraweave::TerrainSettings& t,
 } // namespace terraweave_ops_detail
 
 inline void registerTerraWeaveOps(Workspace& ws) {
+    registerTerraWeaveEarthworksOps(ws);
     const char* schema = R"({
       "properties": {
         "seed":{"type":"integer","minimum":0},
