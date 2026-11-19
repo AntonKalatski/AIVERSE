@@ -154,7 +154,8 @@ public:
                     const bool freshModel=old.publication!=source.modelPublicationGeneration &&
                         old.modelAddress!=newAddress;
                     const bool sameModelGraphReload=old.publication==source.modelPublicationGeneration &&
-                        old.modelAddress==newAddress;
+                        old.modelAddress==newAddress &&
+                        old.graphAddress!=reinterpret_cast<std::uintptr_t>(source.graph.get());
                     const bool compatible=old.generation==source.generation &&
                         old.publication!=0 &&
                         source.modelPublicationGeneration!=0 &&
@@ -206,6 +207,7 @@ public:
                     const bool eligible=link.generation==source.generation &&
                         rigMatches && epochSafe && asset.model && asset.graph &&
                         !player.restart && player.instance &&
+                        player.instance->healthy() &&
                         player.active==asset.graph &&
                         player.instance->graph()==asset.graph.get();
                     if(eligible) {
@@ -324,6 +326,7 @@ private:
         uint64_t generation=0;
         uint64_t publication=0;
         std::uintptr_t modelAddress=0;
+        std::uintptr_t graphAddress=0; // equality guard only; never dereference
         std::shared_ptr<const RigHierarchy> rig;
         render::AnimationGraphInstance::PlaybackSnapshot playback;
         uint64_t syncSerial=0;
@@ -370,6 +373,7 @@ private:
             retired.generation=link->generation;
             retired.publication=link->modelPublicationGeneration;
             retired.modelAddress=reinterpret_cast<std::uintptr_t>(asset->model);
+            retired.graphAddress=reinterpret_cast<std::uintptr_t>(asset->graph.get());
             retired.rig=rig->second;
             retired.playback=std::move(snapshot);
             retired.syncSerial=syncSerial_;
