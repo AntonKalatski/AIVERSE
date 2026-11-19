@@ -41,7 +41,7 @@ public:
     void shutdown() {
         atlas_.release();
         reference_ = GiDynamicProbeReference{};
-        geometry_ = nullptr;
+        geometry_ = {};
         geometryRevision_ = 0;
         clearPending_ = false;
         pendingRegionalClear_.clear();
@@ -56,11 +56,16 @@ public:
     // The geometry snapshot must remain immutable and alive until the next setGeometry call.
     // Changed topology requires a rebuilt traceable geometry snapshot, not only a new revision.
     void setGeometry(const StaticShadowGeometry* geometry, uint64_t revision) {
+        setTraceGeometry(GiTraceGeometryView::fromStatic(geometry), revision);
+    }
+
+    void setTraceGeometry(GiTraceGeometryView geometry, uint64_t revision) {
         ensureReady();
         if (geometry_==geometry && geometryRevision_==revision) return;
+        // On validation failure the previous valid view remains active.
+        reference_.setTraceGeometry(geometry,revision);
         geometry_=geometry;
         geometryRevision_=revision;
-        reference_.setGeometry(geometry,revision);
         clearPending_=true; // zero stale atlas before publishing fresh geometry results
         pendingRegionalClear_.clear();
     }
@@ -71,10 +76,16 @@ public:
     // With no prior geometry, call setGeometry() for an initial full reset instead.
     size_t setGeometryRegion(const StaticShadowGeometry* geometry, uint64_t revision,
                              GiBounds changed, float influenceRadius = 0) {
+        return setTraceGeometryRegion(GiTraceGeometryView::fromStatic(geometry),
+                                      revision, changed, influenceRadius);
+    }
+
+    size_t setTraceGeometryRegion(GiTraceGeometryView geometry, uint64_t revision,
+                                  GiBounds changed, float influenceRadius = 0) {
         ensureReady();
         if (geometry_ == geometry && geometryRevision_ == revision) return 0;
         std::vector<uint32_t> cleared;
-        const size_t affected = reference_.setGeometryRegion(
+        const size_t affected = reference_.setTraceGeometryRegion(
             geometry, revision, changed, influenceRadius, &cleared);
         geometry_ = geometry;
         geometryRevision_ = revision;
@@ -147,7 +158,7 @@ private:
     float3 origin_{};
     float spacing_=1;
     int nx_=0,ny_=0,nz_=0;
-    const StaticShadowGeometry* geometry_=nullptr;
+    GiTraceGeometryView geometry_{};
     uint64_t geometryRevision_=0;
     bool clearPending_=false;
     std::vector<uint32_t> pendingRegionalClear_;
