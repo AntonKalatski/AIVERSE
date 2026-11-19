@@ -916,7 +916,8 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
         }
         dev_->endPass();
         objectMotionStats_.submitted = true;
-        post.acceptObjectMotionVectors(history.target);
+        post.acceptObjectMotionVectors(MotionTextureInput::declared(
+            history.target,w,h,gfx::PixelFormat::RGBA16F));
         } // optional object-velocity rendering
 
         // Conservative translucent coverage: surfaces whose true motion
@@ -1233,7 +1234,8 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                 ++objectMotionStats_.reactiveCallbacks;
             }
             dev_->endPass();
-            post.acceptMotionReactiveMask(history.reactive);
+            post.acceptMotionReactiveMask(MotionTextureInput::declared(
+                history.reactive,w,h,gfx::PixelFormat::RGBA8));
         }
     }
     history.previous = std::move(current);
