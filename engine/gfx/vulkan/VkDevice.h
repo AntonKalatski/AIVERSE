@@ -136,6 +136,7 @@ public:
     // Portable opt-in Vulkan compute RHI: GLSL450 shader storage descriptors
     // 0..7, <=128-byte push constants at slot 8 and 64 local X threads.
     bool supportsCompute() const override { return healthy_ && device_ &&
+        queueSupportsCompute_ &&
         gpuProps_.limits.maxComputeWorkGroupInvocations>=64 &&
         gpuProps_.limits.maxPushConstantsSize>=128; }
     ComputeHandle createCompute(const ComputeDesc& desc) override;
@@ -218,6 +219,7 @@ private:
     DeviceInfo info_;
     std::string error_;
     bool multiDrawIndirect_ = false;
+    bool queueSupportsCompute_ = false;
     bool healthy_ = true;
     VkInstance instance_ = VK_NULL_HANDLE;
     VkPhysicalDevice gpu_ = VK_NULL_HANDLE;
