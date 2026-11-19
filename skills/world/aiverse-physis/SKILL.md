@@ -1147,3 +1147,14 @@ Owner then reported `AIVERSE: PASS` (20s, zero warnings/errors).
 Inspect the actual report's `ctest.log` for per-test results.
 Handoff: `docs/agent-handoffs/physis-stage80-const-world-native-2026-11-19.md`.
 
+### Stage 81 — actual macOS NatureContacts/NatureStress CTests PASS
+
+Owner supplied full per-test CTest evidence after the
+`const World` fix, source `4d9c1adb94f88c7aefef58e3320afda9297e0b48`:
+`physis_nereid_contacts` 0.85s PASS and
+`physis_nature_stress` 1.01s PASS; **2/2, 0 failed**, full
+build monitor PASS in 20.71s with 0 diagnostic warnings/errors.
+This verifies the standalone same-World PHYSIS/NEREID contact
+fixture and deterministic stress tests; NOT full game
+TerraWeave/tree falling integration. See
+`docs/agent-handoffs/physis-stage81-nature-tests-green-2026-11-19.md`.

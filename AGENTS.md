@@ -1665,3 +1665,21 @@ See `docs/agent-handoffs/physis-stage79-nature-stress-2026-11-19.md`.
 - Prior combined PHYSIS/NEREID/SpectraFX 40/40 was on older source. Full current-branch repository-wide tests, interactive editor, Box3D/TerraWeave fracture handoff and CI are not verified. PR #25 stays Draft.
 - Standalone handoff: `docs/agent-handoffs/physis-stage80-const-world-native-2026-11-19.md`.
 
+### Stage 81 — Stage78/79 confirmed native macOS CTest 2/2 PASS (2026-11-19)
+
+The user supplied the complete AIVERSE Build Monitor JSON and native
+`ctest.log` from `build/physis-nereid-validation`,
+report `20261119-181448-67558`, on source commit
+`4d9c1adb94f88c7aefef58e3320afda9297e0b48`:
+`configure` exit=0, `build` exit=0, `ctest` exit=0,
+**completed=2, failures=0**, aggregate exit=0, 0 warnings,
+0 diagnostic errors, 20.71 seconds for the full command.
+Native CTest:
+- `physis_nereid_contacts` (#123) PASS 0.85s.
+- `physis_nature_stress` (#124) PASS 1.01s.
+- 100% PASS 2/2, 0 failed; CTest wall time 1.02s.
+This supersedes Stage80's note that the named test results were
+not yet available. **It does not establish full AIVERSE suite or
+TerraWeave/Box3D physical falling integration.**
+No code change; documentation checkpoint only.
+Handoff: `docs/agent-handoffs/physis-stage81-nature-tests-green-2026-11-19.md`.
