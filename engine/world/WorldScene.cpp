@@ -132,6 +132,19 @@ void WorldScene::setVegetationTerrainSnapshot(
     vegetationTerrainDirty_=true;
 }
 
+void WorldScene::setReplacedTerrainTiles(
+        std::vector<Cell> residentReplacementCells) {
+    if(residentReplacementCells.size()>512u)
+        throw std::length_error("TerraWeave replacement tile budget");
+    std::set<Cell> next;
+    for(const auto cell:residentReplacementCells) {
+        if(cell.y!=0)
+            throw std::invalid_argument("TerraWeave replacement cell must be X/Z column");
+        next.insert(cell);
+    }
+    replacedTerrainTiles_.swap(next);
+}
+
 // A caller-owned, serializable set of runtime clearings shared by both
 // Flora instances and distant Horizon canopy silhouettes. Only the first
 // state and the latest replacement matter until the next WorldScene update.
@@ -630,8 +643,23 @@ void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
     cascades_.draw(renderer,origin,size);
     // Shader-normal ripples replace the old overlay rings for surfaces
     // using NEREID. The overlay remains available via ripples().draw().
-    for(const auto& [cell,chunk]:resident_){const auto offset=render::mat4::translate(visual(relativeTo(assets_.origin(cell),origin,size)));
-        for(const auto& instance:chunk->instances){render::ModelDraw draw;draw.model=chunk->models[instance.model].get();draw.world=offset*instance.transform;renderer.drawModel(draw);}}
+    for(const auto& [cell,chunk]:resident_){
+        const auto offset=render::mat4::translate(
+            visual(relativeTo(assets_.origin(cell),origin,size)));
+        const bool dynamicGround=replacedTerrainTiles_.contains(cell) &&
+            chunk->terrainResolution!=0;
+        for(const auto& instance:chunk->instances){
+            // prepare() pushes the static terrain model first whenever the
+            // chunk has terrain. Hide only that draw after the native host
+            // published a complete dynamic terrain replacement.
+            // Other authored models and water remain untouched.
+            if(dynamicGround && instance.model==0)continue;
+            render::ModelDraw draw;
+            draw.model=chunk->models[instance.model].get();
+            draw.world=offset*instance.transform;
+            renderer.drawModel(draw);
+        }
+    }
     if(terraForest_&&terraForestReady_) {
         const int64_t factor=int64_t(size)*100;
         terraForest_->submit(renderer,{
