@@ -9,6 +9,7 @@
 #include "engine/character/vivid/MorphLodGpuAuthoring.h"
 #include "engine/character/vivid/ViewportSculptPick.h"
 #include "engine/character/vivid/SkinnedWeightPick.h"
+#include "engine/character/vivid/SkinWeightLodTransfer.h"
 #include "engine/character/vivid/RigAuthoring.h"
 #include "engine/character/vivid/BindPoseRebind.h"
 #include "engine/character/vivid/SkinWeightAuthoring.h"
@@ -498,6 +499,32 @@ struct CreatorApp {
                 // Apply only to the fresh, private pre-upload Model. Invalid
                 // weight/palette edits cannot corrupt the active character.
                 (void)skinWeightEdits.apply(*proposed.head);
+            }
+            // Transfer edited base-skin weights to every explicitly
+            // authored LOD. Keep the same indexed correspondence used by
+            // facial morph baking; no silent transfer to generated LODs.
+            if(!skinWeightEdits.edits().empty() &&
+               !authoredFacialLods.empty()) {
+                for(const auto& lod:authoredFacialLods) {
+                    if(lod.targetMesh<0 ||
+                       std::size_t(lod.targetMesh)>=proposed.head->meshes.size())
+                        throw std::runtime_error("VIVID skin LOD: target mesh missing");
+                    int source=-1;
+                    for(const auto& indexed:importedPackage.facialLods) {
+                        if(indexed.meshName!=proposed.head->meshes[
+                            std::size_t(lod.targetMesh)].name)continue;
+                        const auto found=std::find_if(
+                            proposed.head->meshes.begin(),proposed.head->meshes.end(),
+                            [&](const MeshDef& mesh){return mesh.name==indexed.sourceMeshName;});
+                        if(found!=proposed.head->meshes.end())
+                            source=int(found-proposed.head->meshes.begin());
+                    }
+                    if(source<0)
+                        throw std::runtime_error("VIVID skin LOD: indexed source mesh missing");
+                    (void)SkinWeightLodTransfer::apply(
+                        *proposed.head,std::size_t(source),
+                        std::size_t(lod.targetMesh),lod.mapping,lod.sourceIndices);
+                }
             }
             if(authorBindPose && !rigCorrections.edits().empty()) {
                 // Stage all bind / inverse-bind changes on this candidate
