@@ -167,6 +167,106 @@ void missingJournalFailsClosed() {
     for(int i=0;i<4;++i)sim->step();
     CHECK(sim->world().resourceConst<FieldRuntimeState>()->revision==0);
 }
+
+void queuedReceiptBeforeCrash() {
+    // The sidecar has a durable Queued receipt, but a crashed process lost
+    // the in-memory Simulation.pending command. The same original request
+    // must be retryable after World state is restored.
+    const auto dir=tempPath();
+    std::filesystem::create_directories(dir);
+    const auto filePath=dir/"journal";
+    const auto original=packet(23,101,11);
+    net::Bytes bytes;
+    CHECK(encode(original,bytes));
+    {
+        auto preCrash=make();
+        ServerGateway server;
+        FileJournal file(filePath);
+        std::string error;
+        CHECK(file.attach(server,&error));
+        auto [client,conn]=net::makeLoopbackPair();
+        client->send(bytes);
+        server.poll(*preCrash,*conn,"admin",reader,writer,5);
+        CHECK(server.entries().size()==1);
+        CHECK(server.entries().begin()->second.receipt.result==Result::Queued);
+        CHECK(preCrash->world().resourceConst<FieldRuntimeState>()->revision==0);
+        // No Simulation::step: client and old server die with a pending
+        // command; the journal has already been fsynced.
+    }
+    {
+        auto recovered=make();
+        ServerGateway server;
+        FileJournal file(filePath);
+        std::string error;
+        CHECK(file.attach(server,&error));
+        CHECK(server.entries().size()==1);
+        CHECK(server.entries().begin()->second.receipt.result==Result::Unknown);
+        server.observe(*recovered);
+        CHECK(server.entries().begin()->second.receipt.result==Result::Unknown);
+        // Query returns Unknown, not the stale Queued receipt from before
+        // the crash. The editor then retransmits its ORIGINAL packet.
+        auto [client,conn]=net::makeLoopbackPair();
+        Packet query;
+        query.kind=Message::Query;
+        query.clientInstance=101;
+        query.requestId=11;
+        net::Bytes question,replyBytes;
+        CHECK(encode(query,question));
+        client->send(question);
+        server.poll(*recovered,*conn,"admin",reader,writer,100);
+        client->update(100);
+        Packet answer;
+        CHECK(client->recv(replyBytes));
+        CHECK(decode(replyBytes,answer));
+        CHECK(answer.receipt.result==Result::Unknown);
+        client->send(bytes);
+        server.poll(*recovered,*conn,"admin",reader,writer,101);
+        CHECK(server.entries().begin()->second.receipt.result==Result::Queued);
+        for(int i=0;i<4;++i)recovered->step();
+        server.observe(*recovered);
+        CHECK(server.entries().begin()->second.receipt.result==Result::Applied);
+        CHECK(recovered->world().resourceConst<FieldRuntimeState>()->revision==1);
+    }
+    std::filesystem::remove_all(dir);
+}
+
+void queuedReceiptAlreadyAppliedBeforeCrash() {
+    // Crash after World commit but before post-tick gateway.observe() has
+    // persisted Applied: on restart the saved World proves the outcome.
+    const auto dir=tempPath();
+    std::filesystem::create_directories(dir);
+    const auto filePath=dir/"journal";
+    auto preCrash=make();
+    {
+        ServerGateway server;
+        FileJournal file(filePath);
+        std::string error;
+        CHECK(file.attach(server,&error));
+        auto [client,conn]=net::makeLoopbackPair();
+        net::Bytes bytes;
+        CHECK(encode(packet(27,102,12),bytes));
+        client->send(bytes);
+        server.poll(*preCrash,*conn,"admin",reader,writer,5);
+        CHECK(server.entries().begin()->second.receipt.result==Result::Queued);
+        for(int i=0;i<4;++i)preCrash->step();
+        CHECK(preCrash->world().resourceConst<FieldRuntimeState>()->revision==1);
+        // Intentionally omit server.observe(): journal remains Queued.
+    }
+    const auto checkpoint=preCrash->serialize();
+    auto recovered=make();
+    std::string error;
+    CHECK(recovered->deserialize(checkpoint,&error));
+    ServerGateway server;
+    FileJournal journal(filePath);
+    CHECK(journal.attach(server,&error));
+    CHECK(server.entries().begin()->second.receipt.result==Result::Unknown);
+    server.observe(*recovered);
+    CHECK(server.entries().begin()->second.receipt.result==Result::Applied);
+    CHECK(server.entries().begin()->second.receipt.revision==1);
+    CHECK(recovered->world().resourceConst<FieldRuntimeState>()->revision==1);
+    std::filesystem::remove_all(dir);
+}
+
 void recoveredIntent() {
     auto sim=make();
     const auto dir=tempPath();
@@ -284,6 +384,8 @@ void realLoopbackWebSocket() {
 int main(){
     codecAndCorruption();
     durableIntentAndReload();
+    queuedReceiptBeforeCrash();
+    queuedReceiptAlreadyAppliedBeforeCrash();
     missingJournalFailsClosed();
     recoveredIntent();
     authProof();
