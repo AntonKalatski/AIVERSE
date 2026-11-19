@@ -117,7 +117,23 @@ int main() {
     assert(model->images[0].rgba==bake.atlasRgba);
     assert(model->materials[1].alpha==aiverse::render::AlphaMode::Mask);
     assert(model->meshes[0].primitives.size()==2);
-    assert(model->vertices.size()<(13*13)+bake.clusters.size()*8+8);
+    // The terrain primitive may include an outer skirt, bounded inner
+    // seam lip, or clipped near-ground triangles; the historical
+    // (n+1)^2 + 8*clusters + 8 bound ignored those valid vertices.
+    // Verify actual forest layout and the configured conservative
+    // whole-model budget instead of assuming no terrain additions.
+    const auto& groundPart=model->meshes[0].primitives.front();
+    const auto& canopyPart=model->meshes[0].primitives.back();
+    assert(groundPart.material==0);
+    assert(canopyPart.material==1);
+    assert(groundPart.firstVertex==0);
+    assert(canopyPart.firstVertex==groundPart.vertexCount);
+    assert(canopyPart.vertexCount==bake.clusters.size()*8u);
+    assert(model->vertices.size()==
+           size_t(canopyPart.firstVertex)+canopyPart.vertexCount);
+    assert(model->vertices.size()>=
+           bake.terrainVertices.size()+bake.clusters.size()*8u);
+    assert(model->vertices.size()<=budget.maxVertices);
     for(const auto& p:model->meshes[0].primitives) {
         assert(p.indexCount>0);
         assert(p.indexCount%3==0);
