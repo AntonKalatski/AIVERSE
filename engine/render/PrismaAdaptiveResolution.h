@@ -27,22 +27,27 @@ struct PrismaAdaptiveResolution {
     // A true completed fence advancing is required for every new sample:
     // duplicate last-completed GPU timings must NOT be counted repeatedly.
     bool observe(double gpuMs, uint64_t completedFence, float targetGpuMs,
-                 float floor, float ceiling) {
+                 float floor, float ceiling, bool memoryPressure = false) {
         if (!initialized) reset(ceiling);
         const float hi=quantize(ceiling);
         const float lo=std::min(hi,quantize(floor));
         scale=std::clamp(scale,lo,hi);
+        // A completed scoped GPU query has its own monotonic sample
+        // sequence; whole-frame fallback uses a genuine completed GPU fence.
+        // Memory pressure alone may step DOWN only with a fresh verified GPU
+        // completion; it never promotes quality without valid GPU timing.
         if (!completedFence || completedFence<=lastCompletedFence ||
-            !std::isfinite(gpuMs) || gpuMs<=0.0 || gpuMs>250.0 ||
             !std::isfinite(targetGpuMs) || targetGpuMs<4.0f ||
             targetGpuMs>50.0f) return false;
+        const bool validMs=std::isfinite(gpuMs) && gpuMs>0.0 && gpuMs<=250.0;
+        if (!validMs && !memoryPressure) return false;
         lastCompletedFence=completedFence;
         if (cooldown) { --cooldown; slowSamples=fastSamples=0; return false; }
         // 15% slowdown is required for a downward step, but recovery
         // requires 20% GPU headroom for considerably longer.
-        if (gpuMs>double(targetGpuMs)*1.15) {
+        if (memoryPressure || (validMs && gpuMs>double(targetGpuMs)*1.15)) {
             ++slowSamples; fastSamples=0;
-        } else if (gpuMs<double(targetGpuMs)*0.80) {
+        } else if (validMs && gpuMs<double(targetGpuMs)*0.80) {
             ++fastSamples;slowSamples=0;
         } else { slowSamples=fastSamples=0; }
         float next=scale;
