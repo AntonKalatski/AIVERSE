@@ -34,8 +34,8 @@ bool PrismaScreenLighting::init(gfx::Device& d, Prisma& post) {
     dev_=&d;post_=&post;
     const float tri[]={-1,-1,3,-1,-1,3};gfx::BufferDesc vb;vb.data=tri;vb.size=sizeof tri;vb.label="screen lighting";
     triangle_=d.createBuffer(vb);
-    const char* bodies[]={prismalighting::bounce,prismalighting::temporal,prismalighting::copy,prismalighting::scatter};
-    for(int i=0;i<4;++i) {
+    const char* bodies[]={prismalighting::bounce,prismalighting::temporal,prismalighting::copy,prismalighting::scatter,prismalighting::copyLinear};
+    for(int i=0;i<5;++i) {
         auto source=shader(bodies[i],i==3);gfx::ShaderDesc desc;desc.uniformSlots=1;desc.textureSlots=i==3?4:3;desc.label="screen lighting";
         desc.glslVertex=source.glslVertex.c_str();desc.glslFragment=source.glslFragment.c_str();desc.msl=source.msl.c_str();
         shaders_[i]=d.createShader(desc);
@@ -64,6 +64,7 @@ RTSCamera PrismaScreenLighting::jittered(RTSCamera c,int w,int h) {
     // Temporal Resolve exclusively owns reconstruction when enabled.
     if (post_ && post_->canonicalTemporalRequested()) {
         reset();
+        jitter_={};previousJitter_={}; // no legacy reprojection offsets in lighting-only passes
         return post_->jitteredCamera(c,w,h);
     }
     if(enabled_&&post_&&post_->hdrRequested()&&post_->quality()==PostFxQuality::High&&w>0&&h>0) {
@@ -74,46 +75,92 @@ RTSCamera PrismaScreenLighting::jittered(RTSCamera c,int w,int h) {
 }
 gfx::PassDesc PrismaScreenLighting::scenePass(const gfx::PassDesc& out,int w,int h) {
     scene_=post_->scenePass(out,w,h);
-    running_=enabled_&&post_->linearScene()&&post_->quality()==PostFxQuality::High &&
-        !post_->canonicalTemporalRequested();
-    if(!running_){reset();return scene_;}
-    if(w_!=w||h_!=h){
-        releaseTargets();w_=w;h_=h;
-        gfx::TextureDesc t;t.width=w;t.height=h;t.renderTarget=true;t.filter=gfx::Filter::Linear;t.format=gfx::PixelFormat::RGBA16F;t.label="screen lighting HDR";
-        bounce_=dev_->createTexture(t);scatter_=dev_->createTexture(t);history_[0]=dev_->createTexture(t);history_[1]=dev_->createTexture(t);
-        t.format=gfx::PixelFormat::Depth;t.filter=gfx::Filter::Nearest;depth_=dev_->createTexture(t);
-        if(!bounce_.valid()||!scatter_.valid()||!history_[0].valid()||!history_[1].valid()||!depth_.valid()){
-            error_="screen lighting allocation failed";running_=false;releaseTargets();
-        }
+    volumeRan_=false;
+    // Canonical Prisma owns the only temporal history and camera jitter.
+    // Lighting-only passes can still run before its HDR/temporal resolve.
+    const bool highHdr=enabled_&&post_->linearScene()&&post_->quality()==PostFxQuality::High;
+    const bool canonical=highHdr&&post_->canonicalTemporalRequested();
+    const bool wasLegacy=legacyTemporal_;
+    legacyTemporal_=highHdr&&!canonical;
+    if(wasLegacy!=legacyTemporal_)reset();
+    const bool needBounce=highHdr&&diffuseBounce_;
+    const bool needScatter=highHdr&&volume_.enabled&&volume_.density>0;
+    running_=legacyTemporal_||needBounce||needScatter;
+    if(!running_||w<=0||h<=0){
+        running_=false;legacyTemporal_=false;reset();return scene_;
     }
+    if(w_!=w||h_!=h){releaseTargets();w_=w;h_=h;}
+    // Lazy allocation: the canonical path never creates this wrapper's
+    // duplicate TAA histories or legacy depth attachment. Existing handles
+    // remain cached when switching modes to avoid destroying in-flight GPU
+    // resources merely because a setting changed.
+    gfx::TextureDesc t;t.width=w;t.height=h;t.renderTarget=true;
+    t.filter=gfx::Filter::Linear;t.format=gfx::PixelFormat::RGBA16F;t.label="screen lighting HDR";
+    if(needBounce&&!bounce_.valid())bounce_=dev_->createTexture(t);
+    if(needScatter&&!scatter_.valid())scatter_=dev_->createTexture(t);
+    if(legacyTemporal_){
+        if(!history_[0].valid())history_[0]=dev_->createTexture(t);
+        if(!history_[1].valid())history_[1]=dev_->createTexture(t);
+        t.format=gfx::PixelFormat::Depth;t.filter=gfx::Filter::Nearest;
+        if(!depth_.valid())depth_=dev_->createTexture(t);
+    }
+    if((needBounce&&!bounce_.valid())||(needScatter&&!scatter_.valid())||
+        (legacyTemporal_&&(!history_[0].valid()||!history_[1].valid()||!depth_.valid()))){
+        error_="screen lighting allocation failed";
+        running_=false;legacyTemporal_=false;reset();
+    }else error_.clear();
     return scene_;
 }
 void PrismaScreenLighting::resolve(gfx::Device& d,const gfx::PassDesc& out,const PostFrame& f) {
     if(running_) {
-        if(length(f.cameraPos-previousEye_)>2.0f)valid_=false;
+        if(legacyTemporal_&&length(f.cameraPos-previousEye_)>2.0f)valid_=false;
         Uniforms u{f.viewProj.inverse(),previous_,{f.cameraPos.x,f.cameraPos.y,f.cameraPos.z,0},
             {previousEye_.x,previousEye_.y,previousEye_.z,0},
             {1.0f/float(w_),1.0f/float(h_),d.info().renderTargetFlipY?1.0f:0.0f,d.info().clipDepthZeroToOne?1.0f:2.0f},
-            {valid_?1.0f:0.0f,0,0,0},{jitter_.x,jitter_.y,previousJitter_.x,previousJitter_.y},f.lightViewProj,{},{},{},{}};
+            {legacyTemporal_&&valid_?1.0f:0.0f,0,0,0},
+            {legacyTemporal_?jitter_.x:0.0f,legacyTemporal_?jitter_.y:0.0f,
+             legacyTemporal_?previousJitter_.x:0.0f,legacyTemporal_?previousJitter_.y:0.0f},
+            f.lightViewProj,{},{},{},{}};
         const auto& L=f.lighting;const float3 toSun=normalize(L.sunDir);
         u.sun={toSun.x,toSun.y,toSun.z,std::clamp(volume_.anisotropy,-.95f,.95f)};
         u.sunColor={L.sunColor.x*L.sunIntensity*volume_.tint.x,L.sunColor.y*L.sunIntensity*volume_.tint.y,L.sunColor.z*L.sunIntensity*volume_.tint.z,std::max(volume_.density,0.0f)};
-        // Golden-ratio frame offset decorrelates the per-pixel march jitter for temporal accumulation.
-        u.volume={std::max(volume_.maxDistance,.1f),float(volume_.steps),float(frame_++%64)*.618034f,volume_.ambientStart};
+        // Without THIS wrapper's history keep volume sampling deterministic.
+        // Canonical temporal preflight can reject jitter on a given frame;
+        // animated noise must not require its history to hide flicker.
+        const float noisePhase=legacyTemporal_?float(frame_++%64)*.618034f:0.0f;
+        u.volume={std::max(volume_.maxDistance,.1f),float(volume_.steps),noisePhase,volume_.ambientStart};
         u.ambient={std::max(volume_.ambient.x,0.0f),std::max(volume_.ambient.y,0.0f),std::max(volume_.ambient.z,0.0f),std::max(volume_.ambientDensity,0.0f)};
         volumeRan_=volume_.enabled&&volume_.density>0&&f.sunShadow.valid()&&L.sunIntensity>0;
         auto draw=[&](int program,gfx::TextureHandle target,gfx::TextureHandle source){
-            gfx::PassDesc p;p.colorTarget=target;p.depthTarget=depth_;p.clearColorEnabled=false;p.clearDepthEnabled=false;
+            gfx::PassDesc p;p.colorTarget=target;
+            // The scene depth is only sampled, never modified. The old
+            // resolver retains its historical private depth attachment.
+            if(legacyTemporal_)p.depthTarget=depth_;
+            p.clearColorEnabled=false;p.clearDepthEnabled=false;
             d.beginPass(p);d.setViewport({0,0,w_,h_});d.setPipeline(pipes_[program]);d.setUniforms(0,&u,sizeof u);
-            d.setTexture(0,source);d.setTexture(1,scene_.depthTarget);d.setTexture(2,history_[1-current_]);
+            d.setTexture(0,source);d.setTexture(1,scene_.depthTarget);
+            // Bind a valid non-target sampler in lighting-only mode even
+            // though only the legacy temporal shader reads HISTORY().
+            d.setTexture(2,legacyTemporal_?history_[1-current_]:source);
             if(program==3)d.setTexture(3,f.sunShadow);
             d.setVertexBuffer(triangle_);d.draw(3);d.endPass();
         };
         gfx::TextureHandle source=scene_.colorTarget;
-        if(diffuseBounce_){draw(0,bounce_,source);source=bounce_;}
-        if(volumeRan_){draw(3,scatter_,source);source=scatter_;}
-        draw(1,history_[current_],source);draw(2,scene_.colorTarget,history_[current_]);
-        previous_=f.viewProj;previousEye_=f.cameraPos;previousJitter_=jitter_;valid_=true;current_=1-current_;
+        bool contributed=false;
+        if(diffuseBounce_){draw(0,bounce_,source);source=bounce_;contributed=true;}
+        if(volumeRan_){draw(3,scatter_,source);source=scatter_;contributed=true;}
+        if(legacyTemporal_){
+            draw(1,history_[current_],source);
+            // The temporal history stores receiver distance in alpha:
+            // legacy copy deliberately writes opaque alpha to scene.
+            draw(2,scene_.colorTarget,history_[current_]);
+            previous_=f.viewProj;previousEye_=f.cameraPos;previousJitter_=jitter_;
+            valid_=true;current_=1-current_;
+        }else if(contributed){
+            // Linear HDR lighting -> scene -> canonical Prisma resolve.
+            // Unlike legacy TAA, this copy preserves scene alpha.
+            draw(4,scene_.colorTarget,source);
+        }
     }
     post_->resolve(d,out,f);
 }
