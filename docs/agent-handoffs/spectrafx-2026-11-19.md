@@ -1081,3 +1081,12 @@ git merge origin/main
 - **Source-only RHI audit observations:** current Metal `gfx::Device::setTexture` binds vertex and fragment textures, and `setUniforms(0)` binds MSL buffer 1 for vertex/fragment, as required by the GPU billboard shader. RHI Metal's GPU-author-written indirect draw requires Storage arguments, matching the compaction buffer. These were read from source, **not executed on GPU**. No code change was required for those bindings.
 - **Actually executed:** **NOT RUN** — native C++ build, focused CTests, MSL/Vulkan compilation, GPU render, editor/FPS integration, sanitizers, CI and benchmark all deferred by the user's features-first directive.
 - **Next:** perform any last small source-level correctness fixes (not speculative features), then with user approval transition from functional development to native validation and fix all build/test warnings. Never claim preview or Metal GPU path works until it has actually run.
+
+
+## 2026-11-19 — Stage 85: avoid repeated bad-draft GPU preview resets
+- **Branch** `feature/spectrafx-generic-cue-queue`; last main ancestor `d71c6d47e532b25fb816a8bb1f96c41e5275a165`.
+- **Code SHA:** `9a485d66ecd94d05b780d691e1356aa2de03ea0e`, `apps/editor/windows/SpectraFxGpuAssetsWindow.cpp`.
+- **Problem:** when the selected emitter JSON became syntactically/schema invalid, `drawPreview` called `SceneHost::resetScene()` on *every* editor frame. Even after old effects had been successfully cleared, this continuously reset CPU particles, advanced the cue-epoch and retriggered the deferred retirement loop.
+- **Fix:** `previewInvalidated_` records that the last invalid-draft transition already cleared the preview. The first invalid draft safely attempts reset, then suppresses further redundant resets on subsequent invalid frames. If the RHI refuses the safe reset, it still retries next frame instead of showing stale particles. After valid JSON is restarted successfully, the invalidation marker is cleared. Project change/teardown also clears it. Paused/stepped preview, backend selection, undo-less raw JSON and authoring API remain unchanged.
+- **Actual verification:** **NOT RUN** by user's features-first request. No native Editor compile, UI invalidation/reset iteration test, Metal GPU execution, CTest or CI. Source-only reasoning and commits; do not claim pass.
+- **Next:** perform full native compilation and GPU/editor acceptance when the feature freeze is approved, or address any remaining source-level correctness problems identified before tests. Update this log after each change.
