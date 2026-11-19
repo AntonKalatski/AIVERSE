@@ -50,6 +50,10 @@ struct PointLight {
     float beam = 0;              // spot: strength of the visible light shaft (display space, additive)
     uint32_t key = 0;            // stable id across frames (0 = none): keeps a per-pixel slot (hysteresis)
     float rank = -1;             // importance for the per-pixel slots (>= 0: instead of intensity, e.g. without flicker)
+    // Opt-in indirect contribution of THIS realtime source to dynamic GI.
+    // Zero prevents inadvertently rebaking static/baked lamps twice.
+    // The direct lightmap and material shader are completely unaffected.
+    float indirectMultiplier = 0;
 
     void makeSpot(float3 direction, float coneAngleDeg, float softness = 0.6f) {
         dir = normalize(direction);
