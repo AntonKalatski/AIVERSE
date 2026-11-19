@@ -82,6 +82,16 @@ public:
     void route(uint32_t cueId,Route value) {routes_[cueId]=std::move(value);}
     void unroute(uint32_t cueId) {routes_.erase(cueId);}
     void clearRoutes() {routes_.clear();}
+    // Presentation tier caps per-asset authored quality. Off prevents NEW
+    // GPU spawns while old GPU particles continue aging to completion;
+    // the host owns CPU ParticleSystem::setQuality for a shared CPU backend.
+    void setGlobalQuality(FxQuality quality) {
+        globalQuality_=quality;
+        for(auto& entry:active_) entry.second->setGlobalQuality(quality);
+        for(auto& shot:oneShots_) shot.emitter->setGlobalQuality(quality);
+        for(auto& pool:pools_) pool.second.arena->setGlobalQuality(quality);
+    }
+    FxQuality globalQuality() const {return globalQuality_;}
     // Disabled unless explicitly requested by a host/debugger.
     // CPU wall time spent issuing commands, NOT asynchronous GPU time.
     void setCpuEncodeProfiling(bool enabled) {cpuEncodeProfiling_=enabled;}
@@ -254,6 +264,7 @@ public:
                         sharedCompute,sharedSort,sharedCompact)) {
             ++stats_.failed;return false;
         }
+        next->setGlobalQuality(globalQuality_);
         if(oneShot) {
             oneShots_.push_back({std::move(next),0,route->second.oneShotSeconds});
             ++stats_.oneShots;
@@ -804,6 +815,7 @@ private:
                 ++stats_.pooledFailures;
                 return false;
             }
+            arena->setGlobalQuality(globalQuality_);
             it=pools_.emplace(route.sharedPool,
                               PoolGroup{cfg,std::move(arena)}).first;
             totalPoolCapacity_+=route.sharedPoolCapacity;
@@ -865,6 +877,7 @@ private:
     render::float3 lastCameraEye_{};
     bool cpuEncodeProfiling_=false;
     SpectraFxGpuBudgetGovernor gpuGovernor_{};
+    FxQuality globalQuality_=FxQuality::High;
     Stats stats_{};
 };
 
