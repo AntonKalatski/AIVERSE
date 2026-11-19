@@ -26,6 +26,13 @@ public:
     // Fixed-bounded verlet + constraint projection and coarse scalp
     // collision. Steps at most 1/20 second and never mutates simulation ECS.
     bool step(float dt,render::float3 wind={});
+    // Optional bounded closed triangle collider in the groom's local space.
+    // Call after generate(); all triangles are validated before publication.
+    // For imported meshes, caller owns model-to-groom coordinate conversion.
+    bool setCollisionMesh(std::span<const render::float3> vertices,
+                          std::span<const std::uint32_t> triangles);
+    void clearCollisionMesh() noexcept;
+    bool hasCollisionMesh() const noexcept {return !collisionTriangles_.empty();}
     std::unique_ptr<render::Model> makeCardModel(const HumanDNA& dna) const;
     bool updateCardVertices(std::span<render::ModelVertex> output) const;
     std::size_t vertexCount() const noexcept {return guides_.size()*(segments_+1)*2;}
@@ -39,6 +46,10 @@ private:
     // Scalp ellipsoid matches the DNA-generated guide root geometry.
     // Stored per instance, not inferred from a fixed human head preset.
     render::float3 scalpRadii_{0.72f,0.90f,0.75f};
+    struct CollisionTriangle {render::float3 a,b,c;};
+    std::vector<CollisionTriangle> collisionTriangles_;
+    render::float3 resolveCollision(render::float3 p,
+                                    const GroomGuide& guide) const;
     float lastStepMs_=0;
 };
 } // namespace aiverse::vivid
