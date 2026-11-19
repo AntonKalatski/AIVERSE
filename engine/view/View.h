@@ -185,6 +185,7 @@ public:
             input.model=animationModel;
             input.graph=obj.graph;
             input.inputs=obj.parameters;
+            input.modelPublicationGeneration=obj.animationModelGeneration;
             sources.push_back(std::move(input));
         }
         stats_.source=bridge_.sync(presentation_,sources);
@@ -271,6 +272,8 @@ public:
                 const auto* pose=presentation_.tryGetConst<
                     lib::animation::AnimationPoseComponent>(e);
                 if(link && link->generation==obj.generation &&
+                   link->modelPublicationGeneration==
+                       obj.animationModelGeneration &&
                    asset && asset->model==rig && asset->graph==obj.graph &&
                    pose && pose->valid &&
                    pose->local.size()==rig->nodes.size() &&
