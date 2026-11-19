@@ -26,6 +26,10 @@ public:
             catch(...) {} // GPU owner must not destruct live resources
         }
     }
+    // An ImGui dock tab can close without destroying its EditorWindow.
+    // Free its CPU graph and GPU Model while keeping the reusable portrait
+    // target for the next open (shutdown does the final full GPU barrier).
+    void suspendPreview() {if(model_)release();}
     void update(Editor& ed,double dt){owner_=&ed;dt_=float(std::min(dt,.1));if(registered_)return;registered_=true;
       ed.ws().registerOp({rigMode_ ? "rig_editor_open" : "animation_editor_open",
                           "Open an animation asset in the visual editor; refuses unsaved replacement.",
