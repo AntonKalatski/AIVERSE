@@ -55,7 +55,11 @@ terraweave::EarthworkBrush dig;
 dig.centerXcm=1000; dig.centerZcm=0;
 dig.radiusCm=150; dig.depthCm=50;
 auto changed=terraweave::excavateAuthoritativeEcs(
-    sim.world(),cfg,dig,sim.tick());
+    sim.world(),cfg,dig,sim.tick(),
+    /*enableSlopeFailures=*/true);
+// changed.slope.slides contains deterministic moved-soil events.
+// changed.rooted.fell can become Box3D fallen-tree events at the host
+// physics barrier; changed.grass is aggregated patch damage.
 // Save/replay/rollback is canonical through TerraWeaveAuthorityResource.
 // Do not also run a separate standalone NEREID Earthworks bridge on the
 // same soil vertices; choose ECS outputs OR the standalone bridge.
@@ -127,3 +131,12 @@ Prefer an **authored soil-material map** over the fallback biome→substrate map
 A former bank that becomes dry is disabled but keeps its suspended sediment in saved ECS state; moving water cannot silently discard that material. The terrain owner must rerasterize when river course/water geometry changes (NOT every frame), and all generated cells must remain under the configured 16,384 sample budget. Deposition on a low-flow wet-bed cell raises its height. Once it emerges above the surface, subsequent topology refresh can turn it into a new sandbar/shoreline. This is a bounded sediment policy, not a solved full 3D Navier–Stokes sediment model.
 
 **Stage57–59 source is committed, but this example and the new kernels have NOT been compiled or run in a native game or CTest yet.** The native host still owns the terrain mesh/collision/NavMesh publication, visual terrain LOD, physics and replication barriers.
+
+
+## Stage 60–61 — slumping banks and excavation-driven collapse
+
+The opt-in example `registerSystems` enables unstable-slope resolution by default. A material's effective angle of repose comes from `SlopeSoil` (NEREID bank soil class and wetness, with optional caller-provided nonbank soil maps). Water saturation weakens sand/silt/clay; root binding strengthens plant-covered ground. After NEREID bank erosion and downstream suspended sediment transfer, `TerraWeaveEcsAuthority` stages a slope failure preview, merges downhill soil movements with the original bank erosion outputs and publishes ONE `Earthworks` soil revision. Existing NEREID bank ECS groundCm values at landslide vertices are synchronized to the final height, so the next water tick sees the same terrain. Sediment suspension/carry is preserved, never recomputed by the terrain system.
+
+A player dig may use `excavateAuthoritativeEcs(ecs,cfg,brush,tick,true,slopeSettings)` to trigger the same local slide without any water. The returned `TerraWeaveAuthoritativeEcsChange` contains `slope.slides`, `rooted.fell` and `grass`. Route each fall event to the existing optional Box3D `FallenPlantPhysics` on the native server owner thread; do not step Box3D within ECS. The same final soil revision is consumed by GPU/SpatialWorld/NavMesh and near/far vegetation via `NativeTerraWeaveWorldBinding`.
+
+`SlopeFailureSettings` bounds max slides per tick and soil moved per slide, default max 4096 disjoint source/destination pairs and 40cm displacement each. Genuine caves, overhangs, granular avalanche dynamics, debris bodies and secondary effects on water flow are not implemented by this bounded heightfield policy. New Stage60–61 sources have NOT been compiled or tested yet; PR stays Draft. Read `docs/terrain/stage-60-wet-slope-failure-handoff.md` and `docs/terrain/stage-61-nereid-slopes-ecs-handoff.md`.
