@@ -329,7 +329,7 @@ void Renderer3D::drawMesh(const Mesh& m, const mat4& model, float4 color, uint32
     items_.push_back({&m, model, color, flags, specular, emissive});
     // Specialized water/selection draw variants carry extra state that a
     // plain mesh packet cannot replay; skip those until their own packets exist.
-    if(geometryPacketTap_ && !(flags&kDrawWaterSurface))
+    if(geometryPacketTap_ && !suppressGeometryTap_ && !(flags&kDrawWaterSurface))
         geometryPacketTap_({CameraGeometryCommand::Kind::Mesh,&m,model,
                             color,flags,specular,emissive});
 }
@@ -341,6 +341,17 @@ void Renderer3D::drawNereidRippleMesh(const Mesh& mesh,const mat4& model,
         float4 hydraulics,float4 rapidColor) {
     drawMesh(mesh,model,color,kDrawNoCastShadow|kDrawWaterSurface,
              specular,refraction);
+    if(geometryPacketTap_ && !suppressGeometryTap_) {
+        CameraGeometryCommand packet;
+        packet.kind=CameraGeometryCommand::Kind::Water;
+        packet.mesh=&mesh;packet.world=model;packet.tint=color;
+        packet.flags=kDrawNoCastShadow|kDrawWaterSurface;
+        packet.specular=specular;packet.emissive=refraction;
+        packet.ripples=ripples;packet.wakes=wakeShapes;packet.wind=wind;
+        packet.hydraulics=hydraulics;packet.rapidColor=rapidColor;
+        packet.firstIndex=firstIndex;packet.indexCount=indexCount;
+        geometryPacketTap_(packet);
+    }
     if(!items_.empty()) {
         items_.back().waterRipples=ripples;
         items_.back().waterWakeShapes=wakeShapes;
@@ -354,8 +365,22 @@ void Renderer3D::drawNereidRippleMesh(const Mesh& mesh,const mat4& model,
 
 void Renderer3D::drawSelectionMesh(const Mesh& mesh, const mat4& model,
                                    float4 tint, float4 selection) {
-    drawMesh(mesh, model, tint);
+    // The plain Mesh tap lacks the mask/outline state; capture only the
+    // complete specialized selection command, not a duplicate base mesh.
+    const bool previous=suppressGeometryTap_;
+    suppressGeometryTap_=true;
+    try {drawMesh(mesh,model,tint);}catch(...){
+        suppressGeometryTap_=previous;throw;
+    }
+    suppressGeometryTap_=previous;
     if (!items_.empty()) items_.back().selection = selection;
+    if(geometryPacketTap_ && !suppressGeometryTap_) {
+        CameraGeometryCommand packet;
+        packet.kind=CameraGeometryCommand::Kind::Selection;
+        packet.mesh=&mesh;packet.world=model;packet.tint=tint;
+        packet.selection=selection;
+        geometryPacketTap_(packet);
+    }
 }
 
 
