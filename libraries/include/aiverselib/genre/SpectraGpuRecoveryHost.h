@@ -64,7 +64,9 @@ public:
     // retryPresentationReset after Device.beginFrame and before render pass.
     bool requestPresentationReset(const std::string& purpose="visual rollback") {
         if(!pool_.ready() || recoveryRecipe_ ||
-           pool_.resetReport().deviceLost) {
+           pool_.resetReport().deviceLost ||
+           (pool_.presentationBlocked() &&
+            !pool_.resetReport().retryRequired)) {
             reason_="SpectraFX cannot queue reset on missing or lost Device";
             poll();
             return false;
