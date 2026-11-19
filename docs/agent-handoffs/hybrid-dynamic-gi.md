@@ -659,3 +659,21 @@ Added transfer-write to compute-read memory dependencies for initial immutable
 BVH buffers as well as updates, conditioned on queue compute capability.
 Updated Vulkan API docs and comments. Build/CTest/validation/device execution
 are NOT RUN; preserve feature opt-in and conflict-aware integration.
+
+
+## Stages 34–36 — 2026-11-20 — GLES LDR, unified transport owner and point/spot GI (SOURCE; NOT RUN)
+
+Source-only continuations on `feature/gi-lighting-portable-backends-20261119`:
+- `docs/agent-handoffs/gi-stage34-gles-ldr-cpu-gi-2026-11-20.md`
+- `docs/agent-handoffs/gi-stage35-unified-transport-owner-2026-11-20.md`
+- `docs/agent-handoffs/gi-stage36-point-spot-indirect-2026-11-20.md`
+
+34 enables the sampled RGBA32F CPU GI fallback in ordinary LDR/GL ES3 PBR
+scenes (no HDR render-target extension requirement). 35 provides a
+genre-neutral transport controller choosing Metal/Vulkan compute or
+GLES3/Vulkan CPU with stable immutable geometry ownership. 36 adds
+explicit opt-in point/spot bounce from the common direct lighting sources;
+the GPU Lamp SSBO layout is now 64 bytes in Metal and Vulkan, with CPU/GPUs
+using the same cone fade. New CTest source files and CMake entries exist.
+**NATIVE BUILD, SPIR-V/MSL, GLES3, METAL/VULKAN HARDWARE, FULL CTEST AND
+PERFORMANCE: NOT RUN.** Do not promote to main or mark feature complete.
