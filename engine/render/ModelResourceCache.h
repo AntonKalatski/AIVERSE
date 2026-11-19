@@ -211,6 +211,13 @@ public:
             retired_.enqueueFrom(model);
         }catch(...) {
             ++stagingQueueFailures_;
+            if(!boundToResourceDevice(dev)) {
+                // The render host's generation was already invalidated:
+                // do not even ask a potentially destroyed Device to wait.
+                (void)model.release();
+                ++stagingOrphanModels_;
+                return;
+            }
             try {
                 if(dev.waitForResourceIdle()) {
                     render::releaseModel(dev,*model);
