@@ -475,8 +475,29 @@ public:
         for(auto& shot:oneShots_) emit(*shot.emitter);
     }
 
-    // Rollback/scene unload: prevents stale generation-safe keys from
-    // retaining resources across authoritative state discontinuities.
+    // Non-destructive presentation reset for a live running frame, e.g.
+    // FPS floating-origin change or rollback. No old GPU effect is drawn
+    // after this call. GPU buffers are released after completed frame
+    // slots, not immediately. Call ONLY outside render/compute encoders.
+    // Returns false with NO state changes if the device is not safe.
+    bool resetPresentation() {
+        if(!device_.canUpdateSharedBuffers()) return false;
+        for(auto& item:active_)
+            retireDedicatedEmitter(std::move(item.second),true);
+        active_.clear();
+        for(auto& item:oneShots_)
+            retireDedicatedEmitter(std::move(item.emitter),true);
+        oneShots_.clear();
+        pooledActive_.clear();
+        pooledShots_.clear();
+        for(auto& item:pools_)
+            retirePoolResources(item.second);
+        pools_.clear();
+        return true;
+    }
+
+    // Host teardown only: device is no longer submitting draws and the
+    // RHI owner guarantees it is safe to destroy all resources now.
     void reset() {
         for(auto& pair:active_) pair.second->stop();
         active_.clear();
