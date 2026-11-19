@@ -4,8 +4,10 @@
 No third-party dependencies. Source pixels are row-major RGBA8, top to bottom.
 The output layout matches gfx::VirtualTextureDiskQueue::relativePath:
     <root>/m<MIP>/l<LAYER>/x<X>_y<Y>.rgba
-Physical pages include edge-clamped gutters; image mips use deterministic
-2x2 RGBA8 box filtering with edge clamping. Not GPU feedback/sparse texturing.
+Physical pages include configurable per-axis Clamp/Repeat/MirrorRepeat gutters;
+image mips use deterministic 2x2 RGBA8 box filtering with the same addressing.
+The default Clamp mode keeps the existing page and manifest format unchanged.
+Not GPU feedback/sparse texturing.
 """
 import argparse
 import hashlib
@@ -15,8 +17,19 @@ import tempfile
 from pathlib import Path
 
 
-def downsample_rgba(image, width, height):
-    """Deterministic edge-clamped 2x2 filter (including alpha)."""
+def address_texel(index, extent, mode):
+    """Map a texel coordinate using the chosen source image address mode."""
+    if mode == "repeat":
+        return index % extent
+    if mode == "mirror":
+        # MirrorRepeat duplicates the edge texel at the turn.
+        folded = index % (2 * extent)
+        return min(folded, 2 * extent - 1 - folded)
+    return min(extent - 1, max(0, index))
+
+
+def downsample_rgba(image, width, height, address_u="clamp", address_v="clamp"):
+    """Deterministic per-axis-addressed 2x2 filter (including alpha)."""
     new_width = max(1, (width + 1) // 2)
     new_height = max(1, (height + 1) // 2)
     result = bytearray(new_width * new_height * 4)
@@ -24,9 +37,9 @@ def downsample_rgba(image, width, height):
         for x in range(new_width):
             total = [0, 0, 0, 0]
             for oy in (0, 1):
-                sy = min(height - 1, y * 2 + oy)
+                sy = address_texel(y * 2 + oy, height, address_v)
                 for ox in (0, 1):
-                    sx = min(width - 1, x * 2 + ox)
+                    sx = address_texel(x * 2 + ox, width, address_u)
                     pos = (sy * width + sx) * 4
                     for c in range(4):
                         total[c] += image[pos + c]
@@ -36,13 +49,14 @@ def downsample_rgba(image, width, height):
     return bytes(result), new_width, new_height
 
 
-def make_page(image, width, height, tile_x, tile_y, page_size, gutter):
+def make_page(image, width, height, tile_x, tile_y, page_size, gutter,
+              address_u="clamp", address_v="clamp"):
     interior = page_size - 2 * gutter
     result = bytearray(page_size * page_size * 4)
     for y in range(page_size):
-        sy = min(height - 1, max(0, tile_y * interior + y - gutter))
+        sy = address_texel(tile_y * interior + y - gutter, height, address_v)
         for x in range(page_size):
-            sx = min(width - 1, max(0, tile_x * interior + x - gutter))
+            sx = address_texel(tile_x * interior + x - gutter, width, address_u)
             src = (sy * width + sx) * 4
             dst = (y * page_size + x) * 4
             result[dst:dst + 4] = image[src:src + 4]
@@ -50,7 +64,8 @@ def make_page(image, width, height, tile_x, tile_y, page_size, gutter):
 
 
 def pack_pages(inputs, width, height, page_size, gutter, destination,
-               max_pixels=32 * 1024 * 1024):
+               max_pixels=32 * 1024 * 1024,
+               address_u="clamp", address_v="clamp"):
     """Return manifest; fail transactionally without overwriting a destination."""
     inputs = [Path(path) for path in inputs]
     destination = Path(destination)
@@ -60,6 +75,8 @@ def pack_pages(inputs, width, height, page_size, gutter, destination,
         raise ValueError("invalid input pixel dimensions")
     if width > max_pixels // height:
         raise ValueError("RGBA8 source exceeds pixel budget")
+    if address_u not in ("clamp", "repeat", "mirror") or address_v not in ("clamp", "repeat", "mirror"):
+        raise ValueError("texture address modes must be clamp, repeat or mirror")
     if page_size < 4 or page_size > 4096 or gutter < 0 or gutter * 2 >= page_size:
         raise ValueError("physical page size or gutter invalid")
     if page_size * page_size * 4 > 512 * 1024 * 1024:
@@ -83,6 +100,10 @@ def pack_pages(inputs, width, height, page_size, gutter, destination,
         "interiorPageSize": interior,
         "sourceSha256": [],
     }
+    # Opt-in fields: no change to the manifest for legacy clamp-only assets.
+    if address_u != "clamp" or address_v != "clamp":
+        manifest["addressU"] = address_u
+        manifest["addressV"] = address_v
     destination.parent.mkdir(parents=True, exist_ok=True)
     staging = Path(tempfile.mkdtemp(prefix=".aiverse-vt-pack-",
                                      dir=str(destination.parent)))
@@ -102,10 +123,12 @@ def pack_pages(inputs, width, height, page_size, gutter, destination,
                 mip_dir.mkdir(parents=True, exist_ok=True)
                 for y in range(count_y):
                     for x in range(count_x):
-                        page = make_page(image, mip_w, mip_h, x, y, page_size, gutter)
+                        page = make_page(image, mip_w, mip_h, x, y, page_size,
+                                         gutter, address_u, address_v)
                         (mip_dir / ("x{}_y{}.rgba".format(x, y))).write_bytes(page)
                 if mip + 1 < mip_levels:
-                    image, mip_w, mip_h = downsample_rgba(image, mip_w, mip_h)
+                    image, mip_w, mip_h = downsample_rgba(
+                        image, mip_w, mip_h, address_u, address_v)
         (staging / "manifest.json").write_text(
             json.dumps(manifest, sort_keys=True, indent=2) + "\n",
             encoding="utf-8")
@@ -124,10 +147,15 @@ def main(argv=None):
     parser.add_argument("--height", type=int, required=True)
     parser.add_argument("--page-size", type=int, default=128)
     parser.add_argument("--gutter", type=int, default=2)
+    parser.add_argument("--address-u", choices=("clamp", "repeat", "mirror"),
+                        default="clamp", help="U-axis virtual texture address mode")
+    parser.add_argument("--address-v", choices=("clamp", "repeat", "mirror"),
+                        default="clamp", help="V-axis virtual texture address mode")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     info = pack_pages(args.layers, args.width, args.height, args.page_size,
-                      args.gutter, args.output)
+                      args.gutter, args.output,
+                      address_u=args.address_u, address_v=args.address_v)
     print(json.dumps(info, sort_keys=True))
     return 0
 
