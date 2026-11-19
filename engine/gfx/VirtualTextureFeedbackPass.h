@@ -55,6 +55,18 @@ struct VirtualTextureFeedbackDraw {
     std::function<bool(Device&)> prepare;
 };
 
+// Adapter for the renderer's existing visibility queue. Implementations
+// traverse their already-culled material/mesh batches and append feedback
+// draw commands, without the feedback subsystem depending on scene types.
+// The callback is called outside the render pass so CPU culling and command
+// allocation never occur while the GPU pass is active.
+class VirtualTextureFeedbackDrawSource {
+public:
+    virtual ~VirtualTextureFeedbackDrawSource() = default;
+    virtual bool collectFeedbackDraws(
+        std::vector<VirtualTextureFeedbackDraw>& out) = 0;
+};
+
 class VirtualTextureFeedbackPass {
 public:
     VirtualTextureFeedbackPass() = default;
@@ -208,6 +220,24 @@ public:
             }
             return true;
         });
+    }
+
+    // Entry point for any renderer with a visibility queue. Collect first,
+    // then validate and render, then request asynchronous readback. No
+    // coupling to the engine's optional terrain, RTS, FPS or editor modules.
+    // The source owns visibility ordering, compatible pipelines and
+    // per-material uniforms. Empty visibility is a valid cleared capture.
+    bool renderVisibleAndCapture(VirtualTextureFeedbackDrawSource& source) {
+        if (!ready() || active() || pending() || readyToSubmit()) {
+            error_ = "feedback pass unavailable for visible draw collection";
+            return false;
+        }
+        std::vector<VirtualTextureFeedbackDraw> draws;
+        if (!source.collectFeedbackDraws(draws)) {
+            error_ = "feedback visible draw collection failed";
+            return false;
+        }
+        return renderDrawsAndCapture(draws);
     }
 
     // End the current render pass, then stage a nonblocking texture readback.
