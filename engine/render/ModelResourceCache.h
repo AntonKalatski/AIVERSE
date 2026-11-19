@@ -143,7 +143,7 @@ public:
     template<class Prepared>
     bool publishPrepared(gfx::Device& dev,const std::string& key,
                          Prepared&& prepared) {
-        if(models_.count(key) || publicationBackpressured())return false;
+        if(models_.count(key))return false; // in-flight worker results cannot be silently lost
         if(prepared.model)render::uploadModel(dev,*prepared.model);
         insertIfAbsent(key,std::move(prepared.model));
         return true;
