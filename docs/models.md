@@ -1185,3 +1185,35 @@ No measured speedup or native correctness is claimed.
 See [Stage 124 handoff](agent-handoffs/animation-stage124-pose-scratch-authoring-2026-11-19.md).
 
 **NOT RUN:** compiler, CTest, GPU visual parity or sanitizers.
+
+## Stage 125 — Model publication revision and safe legacy LOD migration
+
+Compiled LOD retarget maps must be keyed by nonzero host-owned
+source AND visual Model publication generations, not only
+the C++ pointer, model path, animation clock, or entity life.
+Use `view::ModelPublicationEpoch::next()` on each new
+Model publication. The generic
+`AppearanceAssetRegistry` now assigns a new revision on
+each successful publish/publishPrepared and its packets
+forward `Object::animationModelGeneration`. Any existing
+compiled visual retarget plan must be rebuilt when the source
+asset revision changes, even if the underlying Model pointer
+is unchanged. The approach favors safety over preserving maps
+through materials-only appearance updates.
+
+`CompiledRetargetStatus` diagnoses missing/expired
+source or visual revisions, pointer changes and invalid
+map shapes with constant-time identity checks. A rejected
+compiled plan uses target bind pose; no stale source
+bone matrices are applied to another Model. RTS-authored
+LOD models with no valid compiled map still default to
+their historical legacy nodeWorld presentation until
+visual parity is verified. Opt in to bind fallback using
+`RtsView::LegacyLodFallbackMode::BindPose`, exposed in
+Editor Stats for side-by-side comparison. Legacy/bind/
+rejected-plan counts are available on the adapter.
+
+Retarget scratch capacity is capped for retention (512 KiB
+per View by default), NOT current draw memory. No CPU/GPU
+benchmark or real model comparison was run. See
+[Stage 125 handoff](agent-handoffs/animation-stage125-scratch-budget-model-epochs-2026-11-19.md).
