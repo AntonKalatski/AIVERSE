@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <span>
 #include <stdexcept>
@@ -17,6 +18,9 @@ struct MorphLodMapping {
     std::uint32_t sourceTriangles=0;
     std::string sourceFingerprint; // hexadecimal FNV64 over source vertex bits and triangle indices
     std::vector<LodSurfaceSample> samples;
+    // Model-relative vertex IDs, in the exact order of the LOD morph CSR.
+    // Optional for legacy generated maps; required for Creator publication.
+    std::vector<std::uint32_t> targetVertexIds;
 
     static std::string fingerprint(std::span<const render::float3> points,
                                    std::span<const std::uint32_t> indices) {
@@ -60,6 +64,11 @@ struct MorphLodMapping {
            sourceFingerprint.size()!=16 ||
            samples.empty()||samples.size()>16'000'000)
             throw std::invalid_argument("VIVID LOD mapping: invalid dimensions");
+        if(!targetVertexIds.empty() && targetVertexIds.size()!=samples.size())
+            throw std::invalid_argument("VIVID LOD mapping: target ID count mismatch");
+        for(std::size_t i=1;i<targetVertexIds.size();++i)
+            if(targetVertexIds[i]<=targetVertexIds[i-1])
+                throw std::invalid_argument("VIVID LOD mapping: target IDs not strictly ordered");
         for(char c:sourceFingerprint)
             if(!((c>='0'&&c<='9')||(c>='a'&&c<='f')))
                 throw std::invalid_argument("VIVID LOD mapping: invalid fingerprint");
@@ -97,6 +106,12 @@ struct MorphLodMapping {
             records.push(std::move(record));
         }
         root.set("samples",std::move(records));
+        if(!targetVertexIds.empty()) {
+            Json ids=Json::array();
+            for(const auto id:targetVertexIds)
+                ids.push(Json::number(std::int64_t(id)));
+            root.set("targetVertexIds",std::move(ids));
+        }
         return root;
     }
     static MorphLodMapping fromJson(const Json& root) {
@@ -118,6 +133,20 @@ struct MorphLodMapping {
         result.sourceTriangles=std::uint32_t(triangles);
         result.sourceFingerprint=root["sourceFingerprint"].str();
         result.samples.reserve(root["samples"].size());
+        if(root.has("targetVertexIds")) {
+            const auto& ids=root["targetVertexIds"];
+            if(!ids.isArray() || ids.size()!=root["samples"].size())
+                throw std::invalid_argument("VIVID LOD mapping: malformed target IDs");
+            result.targetVertexIds.reserve(ids.size());
+            for(const auto& value:ids.items()) {
+                if(!value.isNumber())
+                    throw std::invalid_argument("VIVID LOD mapping: invalid target ID");
+                const auto id=value.integer(-1);
+                if(id<0 || id>std::numeric_limits<std::uint32_t>::max())
+                    throw std::invalid_argument("VIVID LOD mapping: out-of-range target ID");
+                result.targetVertexIds.push_back(std::uint32_t(id));
+            }
+        }
         for(const auto& record:root["samples"].items()) {
             if(!record.isObject() || !record["triangle"].isNumber() ||
                !record["bary"].isArray() || record["bary"].size()!=3 ||
