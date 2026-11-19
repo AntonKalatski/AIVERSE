@@ -310,17 +310,10 @@ public:
     }
     // Host frame-boundary retirement: call before beginning render submissions
     // for this frame. No draw happens here; previous GPU work must complete.
-    size_t pendingModelRetirements() const noexcept {
-        return resources_.pendingRetirements();
-    }
-    bool collectRetiredModels() {
-        if(!dev_)return false;
-        // Both caches use real GPU completion tokens and never retire on
-        // frame counters or elapsed time alone.
-        const bool models=resources_.collectRetired(*dev_);
-        const bool images=imageRollback_.collect(*dev_);
-        return models && images;
-    }
+    // Includes road/shore Models AND SpriteMesh buffers so existing client/
+    // editor frame hooks automatically poll every View-owned resource queue.
+    size_t pendingModelRetirements() const;
+    bool collectRetiredModels();
     size_t pendingRolledBackImages() const noexcept {
         return imageRollback_.pendingImages();
     }
