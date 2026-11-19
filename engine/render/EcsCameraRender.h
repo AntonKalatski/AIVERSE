@@ -8,7 +8,6 @@
 #include "Math3D.h"
 #include <cmath>
 #include <cstdint>
-#include <utility>
 
 namespace aiverse::render {
 
@@ -71,7 +70,7 @@ size_t visitEcsCameras(const aiverse::World& world, Submit&& submit,
         [&](aiverse::Entity entity, const CameraComponent&) {
             EcsCameraView view;
             if (!resolveEcsCamera(world, entity, view, renderOrigin)) return;
-            std::forward<Submit>(submit)(view);
+            submit(view);
             ++count;
         });
     return count;

@@ -1,12 +1,11 @@
-# AIVERSE LENS — genre-independent multi-camera and capture architecture (design proposal)
+# AIVERSE LENS — genre-independent ECS cameras and multi-camera capture
 Date: 2026-11-19
 Branch: `feature/universal-multicamera-render-targets`
 
-> **Status: DESIGN ONLY. Not yet implemented, built, or validated.** This proposal follows `docs/agent-handoffs/universal-multicamera-stage1-2026-11-19.md`.
-> Confirm the owner wants each priority tier before expanding scope. Keep ownership in `engine` and never reference genre modules from common camera code.
+> **Status: PARTIALLY IMPLEMENTED, NOT BUILD-VALIDATED.** Stage 1 renamed `render::Camera`; Stage 2 extracted `render::PortraitRenderer`; Stage 3 added native ECS camera components and read-only snapshots. Scheduling, output allocation, RenderGraph integration and all P1/P2 features below are still proposals. See the dated handoffs; keep common engine code genre-independent.
 
 ## 1. Requirements
-1. An arbitrary number of cameras simultaneously present in one scene, each addressable with a stable generation-checked `CameraHandle` and optional ECS entity.
+1. An arbitrary number of cameras simultaneously present in one scene, each defined by a native ECS `Entity` (existing generation-safe identity), with normal scene hierarchy `Parent`, `LocalTransform`, and `WorldTransform`.
 2. Each camera can render to swapchain, external or managed render texture (color/depth, HDR), viewport sub-rectangle, or an offscreen capture; independent clear/load/store and layer masks.
 3. A camera need not be active on screen to capture. A sampleable RT remains valid until the host explicitly releases it; GPU lifetime and inter-frame ownership must be respected.
 4. Scheduled capture: every frame, fixed Hz, every N frames, dirty-driven, once, manual. Priorities and per-frame budgets must not starve essential output.
@@ -21,13 +20,15 @@ Branch: `feature/universal-multicamera-render-targets`
 - `Renderer3D::beginScene(camera, w, h) -> draw* -> render(gfx::PassDesc, PostProcess*) -> [resolvePostFx()] -> gfx::Device::endPass()`.
 - `gfx::PassDesc` already supports separate `colorTarget` / `depthTarget` textures.
 - `apps/editor/Editor.h::Viewport` already contains independent render-target pair for Scene/Game windows.
-- `modules/rts/view/RtsPortrait.cpp` is an existing isolated offscreen Renderer3D pattern but contains RTS-specific material/model logic. Extract a reusable general portrait/model preview renderer first.
+- `engine/render/PortraitRenderer.h` is a genre-free offscreen Renderer3D + model-pose capture host (Stage 2); `modules/rts/view/RtsPortrait.cpp` is its RTS-specific adapter.
 - `engine/render/PostFx`, `ScreenLighting`, `Lights`, existing Metal, GL, Vulkan RHI are reused rather than replaced.
 - Shared `aiverselib/gameplay/Camera.h` is a camera controller helper, not a render/capture scheduler; avoid conflating the concepts.
 
-## 3. Proposed engine modules (new API; not implemented)
-- `engine/camera/CameraRegistry.h/.cpp` — stable `CameraHandle`, create/destroy/enable, state and explicit ownership; camera source may be ECS entity or direct C++.
-- `engine/camera/CameraComponents.h` — serializable `CameraComponent`, `CameraTargetComponent` / `CameraRigComponent`, entity transform association. Cameras do not own simulation time.
+## 3. Implemented foundations and proposed modules
+- **Implemented Stage 3:** `engine/sim/CameraComponents.h` — native ECS `CameraComponent`, `CameraOutputComponent` and `CameraUpdateComponent` with fixed-point lens values and stable output asset keys, never RHI handles. All authored cameras are ECS entities in `World`; `SceneHierarchy` owns their transforms.
+- **Implemented Stage 3:** `engine/render/EcsCameraRender.h` — read-only `visitEcsCameras` / `resolveEcsCamera` after hierarchy update; creates transient `EcsCameraView`/`render::Camera` snapshots with full positional/rotational pose (including roll).
+- **Planned:** `engine/camera/CameraPresentationState.h/.cpp` — *not* another entity registry; keeps non-authoritative GPU/temporal/update bookkeeping keyed by `(World identity, Entity::packed(), view variant)`. Entity generation must be checked against `World` before every use. Transient native C++ callers may submit `RenderView` directly without creating a persistent camera entity.
+- **Planned:** `CameraTargetComponent` / `CameraRigComponent` and explicit stable persistence schema registration; defaults are not auto-persisted without `PersistentEcs` registration. Cameras do not own simulation time.
 - `engine/camera/CameraDirector.h/.cpp` — active view selection, priorities, virtual cameras, cuts and interpolated blends.
 - `engine/camera/CameraRig.h/.cpp` — orthographic/perspective targets, follow, look-at, orbit, free-fly, spring arm, rail/dolly, constraints and deterministic damping.
 - `engine/render/CameraRenderScheduler.h/.cpp` — capture requests, topological ordering of RT dependencies, policy/budget, debug stats, per-view save/restore.
@@ -50,12 +51,12 @@ Branch: `feature/universal-multicamera-render-targets`
 ## 4. Rendering sequence (conceptual)
 1. Simulation completes one presentation snapshot; gather camera ECS state and controller/director outputs.
 2. Resolve output sizes, policies and target ownership; schedule camera DAG by priorities/dependencies.
-3. For each camera: immutable `RenderView`; scoped renderer policies; bind temporal history keyed by `CameraHandle` + view variant; `beginScene`; submit shared world data using camera-specific culling and LOD; render to selected `PassDesc`; resolve PostFX if needed; finish pass; publish produced texture.
+3. For each camera: immutable `RenderView`; scoped renderer policies; bind temporal history keyed by world identity + `Entity::packed()` + view variant; `beginScene`; submit shared world data using camera-specific culling and LOD; render to selected `PassDesc`; resolve PostFX if needed; finish pass; publish produced texture.
 4. Composite screen and overlays; finish GPU frame; retain targets and history until safe to recycle. Handle camera removal and resize without use-after-free.
 
 ## 5. Roadmap
-- **P0**: generic `Camera` (stage 1 source migration, not compile validated), portrait extraction, camera registry, RenderTarget asset, camera-to-RT, independent screen camera, manual/every-frame capture, two-camera output example, tests.
-- **P1**: policy scheduler, camera stack, director and rigs, ECS/serialization, editor camera window, per-view PostFX and temporal state, layer masks/culling and profiling, split-screen.
+- **P0**: generic `Camera` (stage 1 source migration, not compile validated), portrait extraction, ECS camera entities (Stage 3 snapshot bridge), RenderTarget asset, camera-to-RT, independent screen camera, manual/every-frame capture, two-camera output example, tests.
+- **P1**: policy scheduler, camera stack, director and rigs, persistent ECS schema/serialization, editor camera window, per-view PostFX and temporal state, layer masks/culling and profiling, split-screen.
 - **P2**: physical lens/DOF, cubemap and panoramas, HDR EXR/capture sequences, planar mirrors/portals, camera shakes and cinematic rails, stereo/OpenXR.
 - Capture output should support environment-dependent clear/load/store, MSAA resolve, high-DPI size, orientation and backend Y-flip rules.
 

@@ -1,4 +1,4 @@
-// Forward renderer for RTS scenes: lit meshes with real-time sun shadows, plus immediate-mode
+// Universal forward renderer: lit meshes with real-time sun shadows, plus immediate-mode
 // colored lines/triangles for overlays (selection, roads, fog). Built only on the RHI, so it runs on
 // every backend unchanged.
 //
