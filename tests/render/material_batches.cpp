@@ -242,6 +242,22 @@ int aiverseMain(int argc, char** argv) {
     uint64_t stressAutoMdiFailed = 0;
     uint64_t stressAutoGeometryBreaks = 0, stressAutoMaterialBreaks = 0;
     uint64_t stressAutoStateBreaks = 0;
+    const std::string stressPolicy = stress && std::getenv("AIVERSE_BATCH_STRESS_POLICY")
+        ? std::getenv("AIVERSE_BATCH_STRESS_POLICY") : "auto";
+    if (stress && stressPolicy != "auto" && stressPolicy != "mdi" &&
+        stressPolicy != "direct") {
+        std::fprintf(stderr, "Invalid AIVERSE_BATCH_STRESS_POLICY: %s\n",
+                     stressPolicy.c_str());
+        return 2;
+    }
+    if (stress && stressPolicy == "mdi" &&
+        std::getenv("AIVERSE_BATCH_AUTO") &&
+        std::string(std::getenv("AIVERSE_BATCH_AUTO")) == "1") {
+        std::fprintf(stderr, "Forced MDI benchmark requires AUTO disabled\n");
+        return 2;
+    }
+    uint64_t stressMeasuredMdiFrames = 0, stressMeasuredDirectFrames = 0;
+    uint64_t stressMeasuredMdiSubmissions = 0;
     const int captureBeforeFrame = stress ? 75 : 8;
     const int captureAfterFrame = stress ? 195 : 23;
     const int startBatchFrame = stress ? 90 : 15;
@@ -309,7 +325,8 @@ int aiverseMain(int argc, char** argv) {
         renderer.setModelMultiDrawEnabled(scenario == "static_packets"
             ? false : ((scenario != "indirect" &&
                         scenario != "indirect_palette" &&
-                        scenario != "auto_stress") || batch));
+                        scenario != "auto_stress") || batch) &&
+                (!stress || !batch || stressPolicy != "direct"));
         // Keep CPU packet primitive source pointers stable for the lifetime of
         // the fixture. Other scenarios deliberately toggle material batches.
         if (scenario != "static_packets" && !stress)
@@ -413,6 +430,13 @@ int aiverseMain(int argc, char** argv) {
             // Late AUTO frames, clearly separate from exploratory warmup.
             if (frame >= 160) stressSteadyAutoMs.push_back(ms);
         }
+        if (stress && batch && frame >= 115 && frame <= captureAfterFrame) {
+            const auto& stats = renderer.modelStats();
+            if (stats.multiDrawSubmissions) {
+                ++stressMeasuredMdiFrames;
+                stressMeasuredMdiSubmissions += stats.multiDrawSubmissions;
+            } else ++stressMeasuredDirectFrames;
+        }
         if (stress && batch) {
             const auto& st = renderer.modelStats();
             stressAutoMdiScans += st.mdiScans;
@@ -468,6 +492,20 @@ int aiverseMain(int argc, char** argv) {
                    "batched", cpuRenderAfter);
             std::printf("CPU render benchmark: synchronous renderer.render() only; not GPU time or FPS\n");
             if (stress) {
+                std::printf("stress benchmark policy=%s measured_mdi_frames=%llu "
+                            "measured_direct_frames=%llu measured_mdi_submissions=%llu\n",
+                    stressPolicy.c_str(),
+                    (unsigned long long)stressMeasuredMdiFrames,
+                    (unsigned long long)stressMeasuredDirectFrames,
+                    (unsigned long long)stressMeasuredMdiSubmissions);
+                if (stressPolicy == "mdi" && !stressMeasuredMdiFrames) {
+                    std::fprintf(stderr, "forced MDI failed: zero submitted frames\n");
+                    failed = true;
+                }
+                if (stressPolicy == "direct" && stressMeasuredMdiFrames) {
+                    std::fprintf(stderr, "forced Direct failed: MDI submitted\n");
+                    failed = true;
+                }
                 report("auto_direct_frames", stressDirectFallbackMs);
                 report("auto_mdi_submitted_frames", stressSuccessfulMdiMs);
                 report("auto_late_frames", stressSteadyAutoMs);
