@@ -3,17 +3,18 @@
 import unittest
 from verify_metal_ctest import parse_results, evaluate
 
-GOOD = """1/3 Test #112: spectrafx_metal_gpu ............ Passed 0.10 sec
-2/3 Test #113: spectrafx_metal_billboard ....... Passed 0.12 sec
-3/3 Test #114: spectrafx_metal_rhi ............ Passed 0.45 sec
+GOOD = """1/4 Test #112: spectrafx_metal_gpu ............ Passed 0.10 sec
+2/4 Test #113: spectrafx_metal_billboard ....... Passed 0.12 sec
+3/4 Test #114: spectrafx_metal_rhi ............ Passed 0.45 sec
+4/4 Test #115: spectrafx_metal_scene .......... Passed 0.52 sec
 """
 SKIP = GOOD.replace("Passed 0.45 sec", "***Skipped 0.45 sec")
-MISSING = GOOD.splitlines()[:2]
+MISSING = GOOD.splitlines()[:3]
 FAIL = GOOD.replace("Passed 0.12 sec", "***Failed 0.12 sec")
 
 class MetalEvidenceTests(unittest.TestCase):
-    def test_all_three_native_passes(self):
-        self.assertEqual(sum(v == "PASS" for v in parse_results(GOOD).values()), 3)
+    def test_all_four_native_passes(self):
+        self.assertEqual(sum(v == "PASS" for v in parse_results(GOOD).values()), 4)
         self.assertEqual(evaluate(GOOD, strict=True), 0)
 
     def test_skips_are_not_reported_as_real_pass(self):

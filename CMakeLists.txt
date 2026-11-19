@@ -2287,6 +2287,24 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_DESKTOP)
         LABELS "SpectraFX;Architecture")
 endif()
 
+# Real Renderer3D + SpectraFxSceneHost offscreen scene acceptance. The
+# platform OBJECT target supplies the production Metal backend and main();
+# the fixture provides aiverseMain and creates its own tiny CAMetalLayer.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_executable(aiverse_spectrafx_metal_scene_test
+        tests/spectrafx_metal_scene.mm $<TARGET_OBJECTS:aiverse_runtime>)
+    target_include_directories(aiverse_spectrafx_metal_scene_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_options(aiverse_spectrafx_metal_scene_test PRIVATE "-fobjc-arc")
+    target_link_libraries(aiverse_spectrafx_metal_scene_test PRIVATE
+        aiverse_runtime aiverse_fx aiverse_render2d)
+    add_test(NAME spectrafx_metal_scene
+        COMMAND aiverse_spectrafx_metal_scene_test)
+    set_tests_properties(spectrafx_metal_scene PROPERTIES
+        LABELS "SpectraFX;MetalGPU;RHI;Renderer3D"
+        SKIP_RETURN_CODE 77)
+endif()
+
 # Versioned VFX graph assets, CPU fallback, exposed parameters and live reload.
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_vfx_assets_tests tests/vfx_graph_assets_test.cpp)

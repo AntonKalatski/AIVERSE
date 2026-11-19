@@ -4,10 +4,11 @@ import argparse
 import re
 from pathlib import Path
 
-EXPECTED = ("spectrafx_metal_gpu", "spectrafx_metal_billboard", "spectrafx_metal_rhi")
+EXPECTED = ("spectrafx_metal_gpu", "spectrafx_metal_billboard",
+            "spectrafx_metal_rhi", "spectrafx_metal_scene")
 TEST_LINE = re.compile(
     r"^\s*\d+/\d+\s+Test\s+#\d+:\s+"
-    r"(spectrafx_metal_(?:gpu|billboard|rhi))\s+(.+)$"
+    r"(spectrafx_metal_(?:gpu|billboard|rhi|scene))\s+(.+)$"
 )
 
 def parse_results(log):
@@ -35,7 +36,7 @@ def evaluate(log, strict=False):
     missing = sum(status == "MISSING" for status in results.values())
     failed = sum(status in ("FAIL", "UNKNOWN") for status in results.values())
     detail = " ".join(f"{name}={status}" for name, status in results.items())
-    print(f"[spectrafx] MetalGPU real PASS={passed}/3 SKIP={skipped} "
+    print(f"[spectrafx] MetalGPU real PASS={passed}/{len(EXPECTED)} SKIP={skipped} "
           f"MISSING={missing} FAIL/UNKNOWN={failed}")
     print("[spectrafx] " + detail)
     if missing or failed:
