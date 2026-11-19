@@ -22,7 +22,8 @@ int main() {
     assert(saved.version==3 && saved.microWater.empty());
     assert(deadwoodLedgerBalanced(saved));
     const ForestMicroKey one{1,0,0};
-    assert(microToCoarse(one)==std::pair<int64_t,int64_t>{0,0});
+    const std::pair<int64_t,int64_t> expected{0,0};
+    assert(microToCoarse(one)==expected);
     // TerraWeave-only Linux build must compile without the PHYSIS
     // header from another agent's feature branch. Native opt-in checks
     // weather availability explicitly and never invents climate state.
