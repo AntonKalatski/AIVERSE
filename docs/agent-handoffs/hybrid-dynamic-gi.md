@@ -139,3 +139,31 @@ Next precise action:
    Run ./run-tests.sh --quick when feasible. Fix every compile warning/assertion and record exact SHA. Critically compile real GLSL and MSL opt-in variants with texture slots 13, uniform 6, HDR PBR and LIGHTMAP/PROBES.
 2. Add lightweight host-side runtime ownership so a game/editor can allocate/reference the volume, apply changed lights and geometry revisions, update <= budget probes/frame and upload only returned dirty IDs; then call setDynamicGiOverlay() before drawModel. Instrument light-to-indirect latency and upload bytes. Make ownership and teardown explicit.
 3. Add GPU compute tracing on Metal behind capabilities and a conservative fallback; integrate terrain, Shader Graph texture-slot remapping, and dynamic occluder BVH/SDF. Never silently enable GPU ICB experimental flags. Full 30 FPS Android claim requires actual device measurements.
+
+
+## Stage 6 - 2026-11-19 - opt-in dynamic GI host runtime/controller, invalidated geometry clears ghosting (source committed; NOT VERIFIED)
+
+Implementation commits:
+- bf654fec4ffa40e34d18ad3a7357b4385ae72755 - engine/render/GiDynamicProbeReference.h clears stale dynamic light coefficients whenever the geometry snapshot/revision changes, instead of retaining transport through a removed obstacle.
+- 29feae08ed84953dd2d96f19b0577a7441c77734 - engine/render/GiDynamicRuntime.h, owner of CPU reference and independent GPU probe atlas.
+- 197735cfe05bb581ef133e1a658b32c962ad73e5 - tests/render/gi_dynamic_runtime.cpp, FakeDevice test for update budget, geometry reset, upload size and shutdown.
+- 3e1198dd9db814864705b0f8d1e9dd87c3c20664 - CMakeLists.txt, gi_dynamic_runtime registered in default ALL / CTest.
+
+Public API:
+- GiDynamicRuntime::initialize(gfx::Device&, origin, spacing, nx,ny,nz, raysPerProbe, bounceDistance) configures a reference GI volume and allocates its own independent RGBA32F texture.
+- setGeometry(const StaticShadowGeometry*, revision) changes the immutable traceable geometry snapshot; resets stale CPU coefficients and marks the full atlas for zeroing before the next update (even budget=0). Host must rebuild a geometry snapshot when triangles change; incrementing revision of an unchanged BVH alone cannot detect new obstacles. setLights(vector<GiMovingLight>) performs source-key stable dirty-region invalidation. invalidate(bounds,reason,radius) supports explicit terrain/foliage/world-change notifications.
+- update(budget,camera) refreshes no more than budget probes using the CPU reference, updates only published probe texels after an optional one-time geometry clear, and reports GiRuntimeStats (probe count, rays, upload bytes/regions, backlog/inflight).
+- bind(Renderer3D&) calls setDynamicGiOverlay; unbind(Renderer3D&) clears the borrowed pointer. Caller MUST unbind before runtime/renderer destruction or device replacement. shutdown() releases texture and CPU state. No GUI/automatic ticking or gameplay activation is added.
+
+Safety/compatibility:
+- The runtime is *opt in* and presentation-side, not authoritative ECS state. Baked/AVGIC005 formats and existing default renderer paths are untouched.
+- Geometry change currently clears the WHOLE dynamic atlas once (avoid ghost illumination through destroyed walls); later stages should support sparse invalidation per clipmap brick and incremental zero upload instead of whole atlas.
+- CPU reference remains a small-scene correctness fallback, not a mobile-performance solver; no GPU ray tracing compute or SDF geometry acceleration yet.
+- Dynamic lighting for shader-graph textures, basic lit meshes, water and TerraWeave terrain still requires dedicated integration. Merely providing invalidate() does not establish an ECS bridge.
+
+Actual verification: Read source, GitHub writes reported success; **NOT RUN**: native build, CTest, shader compile, visual screenshots, hardware timings, ./run-tests.sh. No tests have passed in this execution context.
+
+Next:
+1. Pull branch and configure/build all GI tests including gi_dynamic_runtime, run ctest -R '^gi_' and full ./run-tests.sh --quick; compare CPU references to GPU frames on Metal/GLES; fix any warnings or assertion failures. Record results and exact SHA in the next handoff.
+2. Create an optional simulation-to-render read-only world-change subscription with stable event types (light old/new bounds, destructible changes, terrain, vegetation). The presentation side calls runtime.invalidate with conservative transport influence and republishes a rebuilt geometry snapshot when blockers change. Do not add genre-specific state to GI.
+3. Replace high-cost CPU tracing with bounded GPU compute on supported backends and a robust fallback. Progressive update/clipmap/relocation and material system integration are still needed before claiming production dynamic GI.
