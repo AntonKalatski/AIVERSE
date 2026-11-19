@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <utility>
+#include <type_traits>
 namespace aiverse::render {
 struct CameraVisualFrameId {
     uint64_t simulationTick=0;
