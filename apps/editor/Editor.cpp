@@ -1435,6 +1435,8 @@ void Editor::frame(gfx::Device& dev, double dt) {
         view_.collectRetiredModels();
     if(offscreenTargets_ && offscreenTargets_->pendingPairs()!=0)
         offscreenTargets_->collect();
+    if(r3d_.pendingProgramRetirements()!=0)
+        r3d_.collectRetiredPrograms();
     pollAgentLink();
     applyChanges();
     // Poll changed presentation assets before any new frame submissions.
