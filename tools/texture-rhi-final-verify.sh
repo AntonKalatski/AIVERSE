@@ -19,9 +19,9 @@ while (($#)); do
 done
 ROOT="$(git -C "$(dirname "$0")/.." rev-parse --show-toplevel)"
 cd "$ROOT"
-# This verification worktree is intentionally often in detached HEAD.
-# Require the exact fetched remote commit instead of requiring a local
-# branch name. Never accept an unrelated detached/feature revision.
+# Isolated validation worktrees often use task-specific local branch names
+# (e.g. verify-texture-rhi-...) or detached HEAD. Never gate on that name:
+# require the exact fetched feature revision, regardless of local ref name.
 EXPECTED_BRANCH="feature/texture-rhi-unification"
 CURRENT_BRANCH="$(git symbolic-ref --quiet --short HEAD || true)"
 CURRENT_SHA="$(git rev-parse --verify HEAD)"
@@ -32,10 +32,6 @@ if [[ -z "$REMOTE_SHA" || "$CURRENT_SHA" != "$REMOTE_SHA" ]]; then
   echo "Run: git fetch origin $EXPECTED_BRANCH && git pull --ff-only origin $EXPECTED_BRANCH" >&2
   exit 2
 fi
-if [[ -n "$CURRENT_BRANCH" && "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]]; then
-  echo "FAIL: refusing another local branch: $CURRENT_BRANCH" >&2
-  exit 2
-fi
 printf 'Validated source: %s (%s)\n' "$CURRENT_SHA" "${CURRENT_BRANCH:-detached HEAD}"
 [[ "$(uname -s)" == "Darwin" ]] || {
   echo "FAIL: native Metal Mac required (no silent GPU skip)" >&2; exit 2;
@@ -44,6 +40,8 @@ LOGS="$ROOT/build/texture-final-logs"
 SAFE="$ROOT/build/texture-final-safe"
 GPU="$ROOT/build/texture-final-gpu"
 mkdir -p "$LOGS"
+# A failed/new run must never leave an old PASS manifest visible.
+rm -f "$LOGS/acceptance.txt"
 trap 'echo "FAIL: one-shot texture verification stopped at line $LINENO; logs in build/texture-final-logs" >&2' ERR
 run_logged() {
   local name="$1"
