@@ -2300,3 +2300,62 @@ compilation, CTest, full editor launch, GPU screenshots, real frame
 completion tests, device loss/fault injection, CPU-vs-Metal parity,
 continuous attachment stress, or visual performance benchmarks.
 Do not treat source completion as production readiness.
+
+## Stage 36 — bounded GPU scatter kill and native ECS example
+
+Stage 36 completes a **source-level optimization**, not a new
+authoritative simulation mode. On supported Metal compute devices,
+selective GPU source deletion no longer sends a separate full
+64-byte dead-particle buffer upload per contiguous range. The
+`ComputeParticles` runtime now uploads a compact list of physical
+kill-slot indices (at most `capacity*4` bytes; 16 KiB for capacity
+4096) into an explicit storage buffer. Shader mode **6** invalidates
+only those physical indices before the existing Spawn/Integrate/
+Compaction passes within the *same ordered compute encoder*.
+The MSL implementation is active only on the strict Metal subset;
+the matching GLSL case is future-backend reference code.
+
+On failure of the checked upload, the pending kill slots remain
+quarantined; the compute pass is not submitted and the physical slots
+are not recycled. On successful compute submission, their recorded
+graphics-frame serial is retained. Stage 35's
+`completedFrameSerial()` fence check continues to control
+subsequent recycling. Other source particles remain untouched.
+This is asymptotically one 4-byte/slot index transfer and one
+compute dispatch rather than up to capacity separate dead-state
+blits. **No hardware performance numbers or shader compilation
+have been verified.** Telemetry exposes
+`gpuKillScatterDispatches` / `gpuKillIndexBytes`, aggregated through
+`PoolCheckpointStats` and the editor.
+
+### Native ECS usage
+
+A new reusable native-project reference header lives at
+`examples/spectrafx/native_ecs_attachments.h` with instructions
+in `examples/spectrafx/native_ecs_attachments.md`.
+It demonstrates `GpuEcsAttachmentPresenter`, the existing
+`SpectraSourceComponent` and `Entity::packed()` generation
+identity, read-only fixed-point render-pose resolution, frame pass
+ordering, source retirement, and whole-pool visual reset after a
+gameplay rollback. This is a **host integration example**, not a
+standalone executable or confirmation that a project has been
+built on a GPU. The host still owns gfx Device, its scene pass,
+its own game tick and committed World snapshots.
+
+### Editor GPU preview playback
+
+The experimental **Metal GPU** preview toolbar now offers
+`Step GPU` (while Freeze is on, advances only one visual update
+of `1/60` seconds and does not emit a new burst) and
+`GPU speed` clamped to `0.1x..2.0x`. The existing CPU
+preview is unaffected; these parameters never change gameplay
+time or deterministic ECS state. The diagnostic panel exposes
+the GPU scatter-kill index bytes and dispatches. This preview
+still only supports the strict, one-shot Metal billboard subset,
+not the CPU path's advanced Niagara-style modules.
+
+**Stage 36 verification:** GitHub connector source updates and
+file reads only. Native C++ compilation, Objective-C++/Metal
+shader compilation, CTest, editor rendering and Metal hardware
+verification, source-generation rollback and performance tests
+have **NOT RUN**. The source remains unverified for production.
