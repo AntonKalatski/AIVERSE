@@ -12,6 +12,7 @@
 #include <functional>
 #include <limits>
 #include <map>
+#include <set>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -260,5 +261,60 @@ inline ShoreRecoveryResult advanceShoreRecovery(
     grass=std::move(nextGrass);
     return result;
 }
+
+
+// A 64m bucket lookup makes it possible to apply recovery-derived topsoil
+// shielding to <=16k auto shoreline ECS bank vertices without a 4096x16384
+// grass-patch cross product. This is NOT root-binding and never creates
+// per-blade ECS data. All input arrays are immutable snapshot values.
+class ShoreRecoveryCoverIndex {
+public:
+    explicit ShoreRecoveryCoverIndex(
+            const std::vector<GrassPatch>& grass,
+            const ShoreRecoveryResource& recovery){
+        validateShoreRecoveryResource(recovery);
+        if(grass.size()>GrassCoverRegistry::kMaxPatches)
+            throw std::length_error("TerraWeave cover index patch budget");
+        std::map<uint64_t,ShoreRecoveryPatchState> recover;
+        for(const auto& state:recovery.patches)
+            recover.emplace(state.key,state);
+        for(const auto& patch:grass){
+            (void)prepareGrassPatch(patch);
+            const auto it=recover.find(patch.key);
+            if(it==recover.end())continue;
+            const uint32_t shield=uint32_t(
+                uint64_t(it->second.soilCoverPermille)*
+                patch.coveragePermille/1000);
+            if(!shield)continue;
+            const size_t index=patches_.size();
+            patches_.push_back({patch.bounds,shield});
+            constexpr int64_t spacing=GrassCoverRegistry::kBucketCm;
+            const int64_t x0=detail::floorDiv(patch.bounds.minX,spacing);
+            const int64_t x1=detail::floorDiv(patch.bounds.maxX-1,spacing);
+            const int64_t z0=detail::floorDiv(patch.bounds.minZ,spacing);
+            const int64_t z1=detail::floorDiv(patch.bounds.maxZ-1,spacing);
+            for(int64_t x=x0;x<=x1;++x)
+                for(int64_t z=z0;z<=z1;++z)
+                    buckets_[{x,z}].push_back(index);
+        }
+    }
+    uint32_t shieldAt(int64_t x,int64_t z)const {
+        constexpr int64_t spacing=GrassCoverRegistry::kBucketCm;
+        const auto it=buckets_.find({
+            detail::floorDiv(x,spacing),detail::floorDiv(z,spacing)});
+        if(it==buckets_.end())return 0;
+        uint32_t coverage=0;
+        for(const size_t index:it->second){
+            const auto& p=patches_[index];
+            if(p.bounds.contains(x,z))
+                coverage=std::max(coverage,p.shieldPermille);
+        }
+        return coverage;
+    }
+private:
+    struct Entry {RectCm bounds{};uint32_t shieldPermille=0;};
+    std::vector<Entry> patches_;
+    std::map<std::pair<int64_t,int64_t>,std::vector<size_t>> buckets_;
+};
 
 } // namespace aiverse::terraweave
