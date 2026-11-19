@@ -473,3 +473,45 @@ has not been removed and retains exactly one animation writer.
 **NOT RUN:** compilation, CTest, GPU/device-loss tests,
 editor screenshots, FPS/RTS parity, thread sanitizer and CI.
 Stage 106 handoff lists exact source refs and next step.
+
+### Stage 107 — scoped device owners, deterministic retirement trace and independent authored appearance packet
+
+The generic `render::ModelResourceCache` now explicitly binds to
+one `gfx::Device` and one owning thread via
+`bindResourceDevice(device)`. Cross-device or cross-thread GPU
+model mutation is rejected. `RenderResourceOwnerGroup` supports
+`registerScoped(device,cache)` returning a move-only scoped
+registration. The editor preview uses these scoped registrations
+rather than leaving resource-owner observer pointers in an
+unbounded registry. Resource owners do not outlive the device,
+and a ModelResourceCache may be rebound only after a successful
+GPU-safe shutdown. The old CPU-only `add(cache)` survives for
+existing tools but is not the recommended device-bound route.
+
+New opt-in `RetirementDiagnosticEvent` callbacks on the
+resource retirement queue, and `RetirementStatusReplay`
+with `script/issue/advance/status/events`, allow deterministic
+synthetic GPU token timing and pending/failure/idle-recovery traces.
+Synthetic results never replace a real GPU completion fence and
+cannot authorize GPU resource destruction on hardware. Failed
+markers stay retained until the real backend supplies a successful
+full idle barrier.
+
+`engine/view/AppearancePacket.h` now owns generic visual
+packet composition for material overrides, node-material
+assignment, variant, team/tint, geometry policy and optional
+graph/parameter inputs. The RTS static preview adapter maps
+its typed selection and authored placement into the same
+`view::AppearanceSpec`, then submits the resulting canonical
+`view::Object`. The RTS host still chooses type, placement,
+material library and gameplay policy; no RTS/FPS header enters
+the generic View code. Static/precomputed appearance uses
+`submitPrecomputedAppearance` and MUST have no attached graph.
+For graph appearances, the owning View must call
+`update` exactly once, then `submitOne`; do not create a
+second MotionWeave writer.
+
+**Validation NOT RUN:** native C++ builds, all CTest fixtures,
+metal/Vulkan/GL GPUs, editor/portrait FPS/RTS visual parity,
+sanitizers and CI. New deferred fixtures and the exact next
+stage are recorded in the Stage 107 handoff.
