@@ -133,3 +133,15 @@ Source-level compatibility notes: Current `Renderer3D.h` has the receiver APIs, 
 Actual verification: GitHub source reads, line-level review, source changes and CMake registration only. **NOT RUN:** local compilation, CTest, Metal MSL/Vulkan SPIR-V compile, GLES3/WebGL2 hardware shader validation, pixel readbacks, API Validation or GPU-ms timings. FakeDevice code is authored but not executed. Production merge signoff pending.
 
 Next: audit and fix any remaining shader/backend capability corner cases (GLSL ES3 sampler/uniform limits, Vulkan compiler full instanced variants, LumaWeave exclusivity/fence), implement an actual opted-in native GI+direct visual fixture across platforms, and then run ONE consolidated native acceptance per Metal and Vulkan/GLES. The user explicitly prefers all feature work first, tests afterwards.
+
+## Stage 9 — production GLES3 shader export and strict parser/link gate (SOURCE COMMITTED; TESTS NOT RUN)
+
+Source commits:
+- `cd91a6883f1807de9976707e1a1f2d4b1f0f48e0`: `tools/lumaweave_shader_dump.cpp` now exposes `--gles3-list`, `--gles3-vertex <variant>`, `--gles3-fragment <variant>`, while preserving existing Metal `--list` and MSL variants. Uses the EXACT production `shaders::kModelVS/kModelFS` concatenated GLSL bodies with actual `#version 300 es`, `precision highp` and renderer's GI permutation defines. Variants: single L1 GI, validity L1, dual cascades, instanced GI and material-palette GI; no misleading Metal source for GLES.
+- `ab75958a6f5f86c5f74aafc23436aa678c4bb29f`: `tools/lumaweave_portable_acceptance.sh` now requires the external `glslangValidator` (Linux package often `glslang-tools`), exports each vertex+fragment ES3 permutation, compiles/links with `glslangValidator -l` and stores per-variant logs and status before Vulkan/GLES screenshot smoke. It still fails closed when missing dependencies and remains inert without explicit `--run`.
+
+Why: Vulkan's GLSL-to-SPIR-V adapter is not equivalent to an actual GLES3/WebGL2 shader compile. The prepared acceptance now checks both Vulkan glslang SPIR-V and production GLSL ES 3.00 syntax/link. On-device GLES3/WebGL2 actual drivers and CPU GI/direct game scene visual parity still need real testing.
+
+Actual verification: GitHub reads/creates/updates only. **NOT RUN** the exporter executable, glslangValidator, CTest, Vulkan/GLES runtime, Metal or benchmarks. All tests remain deferred per owner. Keep test SHA and exact failure logs during one final acceptance pass.
+
+Next: audit GLES3 sampler / UBO caps and the renderer's own material receiver/lighting paths on low capability GPUs, then freeze changes and conduct real native validation. Do not call static shader dump 'GLES production signed off'.
