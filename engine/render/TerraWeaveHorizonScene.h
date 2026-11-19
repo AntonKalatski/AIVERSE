@@ -60,6 +60,8 @@ struct HorizonRuntimeStats {
     size_t continuousNearNormalSamples=0;
     size_t localFallbackNearNormalSamples=0;
     bool nearNormalProvenanceAvailable=false;
+    uint64_t sourceRevision=0, activeRevision=0;
+    bool activeRegionPresent=false, staleProxy=false;
     bool nearWeldSlopeFallback=false;
     bool transitioning=false;
     uint32_t transitionProgressPermille=1000;
@@ -586,6 +588,11 @@ public:
     size_t approximateTerrainQuads() const {return terrainQuads_;}
     HorizonRuntimeStats runtimeStats() const {
         auto out=runtime_;
+        out.sourceRevision=sourceRevision_;
+        out.activeRevision=activeRevision_;
+        out.activeRegionPresent=bool(model_) && activeCell_.has_value();
+        out.staleProxy=out.activeRegionPresent &&
+                       out.activeRevision!=out.sourceRevision;
         if(stream_) {
             const auto& s=stream_->status();
             out.preparing=s.preparing;
