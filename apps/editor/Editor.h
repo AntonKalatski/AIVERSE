@@ -39,7 +39,10 @@
 #include "modules/rts/fx/RtsFx.h"
 #include "modules/rts/view/RtsView.h"
 
-namespace aiverse::spectra { class GpuPoolWorld; }
+namespace aiverse::spectra {
+class GpuPoolWorld;
+class GpuCaptureRequestMailbox;
+}
 
 namespace aiverse::editor {
 
@@ -323,6 +326,17 @@ public:
     const spectra::GpuPoolWorld* spectraGpuTelemetry() const {
         return spectraGpuTelemetry_;
     }
+    // Optional native renderer-owner mailbox, NOT a GPU command interface.
+    // The external host must detach this before releasing its mailbox/pool.
+    // Never use this for the Editor's own Metal preview.
+    void setSpectraGpuCaptureMailbox(
+        spectra::GpuCaptureRequestMailbox* mailbox) {
+        spectraGpuMailbox_=mailbox;
+    }
+    const spectra::GpuCaptureRequestMailbox*
+    spectraGpuCaptureMailbox() const {return spectraGpuMailbox_;}
+    bool queueSpectraExternalGpuCapture(size_t groupIndex);
+    bool releaseSpectraExternalGpuCapture();
     // Exports a FULL, CURRENT-revision GPU checkpoint from an attached pool,
     // if available. Writes one <=529 KiB diagnostic file under userDataDir.
     // out receives a path on success or a reason on failure.
@@ -483,6 +497,7 @@ private:
     render::float3 sceneGoal_{};
 
     const spectra::GpuPoolWorld* spectraGpuTelemetry_=nullptr;
+    spectra::GpuCaptureRequestMailbox* spectraGpuMailbox_=nullptr; // non-owning
     std::unique_ptr<spectra::GpuPoolWorld> spectraPreviewGpu_;
     struct SpectraPreviewRequest {
         fx::EffectDef effect;
