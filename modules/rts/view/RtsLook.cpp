@@ -3,7 +3,7 @@
 // type id, never errors: a broken model must not stop a game from starting.
 #include "RtsView.h"
 #include "RtsModelStreaming.h"
-#include "engine/render/AnimationAsset.h"
+#include "engine/view/AppearanceAuthoringService.h"
 
 #include <algorithm>
 #include <chrono>
@@ -92,78 +92,23 @@ bool globMatchCi(const std::string& pat, const std::string& text) {
 } // namespace
 
 Json RtsView::resolveMaterial(const UnitType& t, const Json& ref, int depth) {
-    if (depth > 8) { warn(t, "materials: reference chain too deep (a loop of \"base\" / \"use\"?)"); return Json::object(); }
-    auto overlay = [](Json base, const Json& top, const char* skip) {
-        for (const auto& [k, val] : top.members()) if (k != skip) base.set(k, val);
-        return base;
-    };
-    if (ref.isString()) {
-        const Json& e = materialLib_[ref.str()];
-        if (!e.isObject()) { warn(t, "materials: unknown library material '" + ref.str() + "' (materials.json)"); return Json::object(); }
-        return e.has("base") ? overlay(resolveMaterial(t, e["base"], depth + 1), e, "base") : e;
-    }
-    if (!ref.isObject()) return Json::object();
-    if (ref.has("use")) return overlay(resolveMaterial(t, ref["use"], depth + 1), ref, "use");
-    return ref.has("base") ? overlay(resolveMaterial(t, ref["base"], depth + 1), ref, "base") : ref;   // an unsaved library entry
+    return view::AppearanceAuthoringService::resolveMaterial(
+        materialLib_,ref,[this,&t](const std::string& message) {
+            warn(t,message);
+        },depth);
 }
 
-void RtsView::applyMaterial(gfx::Device& dev, const UnitType& t, Model& m, Material& mt, const Json& ref) {
-    const Json o = resolveMaterial(t, ref);
-    if (o.getBool("replace")) { const std::string keep = mt.name; mt = Material{}; mt.name = keep; }
-    if (const Json& col = o["color"]; col.size() >= 3) mt.baseColor = {num(col[0], 1), num(col[1], 1), num(col[2], 1), col.size() > 3 ? num(col[3], 1) : mt.baseColor.w};
-    if (o.has("shaderGraph")) {
-        try {
-            mt.shaderGraph = std::make_shared<graph::Program>(graph::compile(o["shaderGraph"], "material"));
-            for(size_t i=0;i<mt.shaderGraph->textures.size();++i) mt.graphTextures[i]=loadTexture(dev,t,m,mt.shaderGraph->textures[i]);
-        }
-        catch (const std::exception& e) { warn(t, e.what()); mt.shaderGraph.reset(); }
-    }
-    mt.metallic = num(o["metallic"], mt.metallic);
-    mt.roughness = num(o["roughness"], mt.roughness);
-    if (o.has("emissive")) mt.emissive = vec3(o["emissive"], mt.emissive);
-    mt.emissiveStrength = num(o["emissiveStrength"], mt.emissiveStrength);
-    if (o.has("alpha")) {
-        std::string a = o.getStr("alpha");
-        mt.alpha = a == "mask" ? AlphaMode::Mask : a == "blend" ? AlphaMode::Blend : AlphaMode::Opaque;
-        if (a != "mask" && a != "blend" && a != "opaque") warn(t, "alpha must be opaque, mask or blend");
-    }
-    mt.alphaCutoff = num(o["cutoff"], mt.alphaCutoff);
-    mt.doubleSided = o.getBool("doubleSided", mt.doubleSided);
-    if (o.has("unlit")) mt.shading = o.getBool("unlit") ? ShadingModel::Unlit : ShadingModel::Pbr;
-    if (const Json& fl = o["fixedLight"]; fl.size() == 5) {   // [x, y, z, ambient, diffuse]: unlit, shaded by the world normal
-        float3 d{num(fl[0], 0), num(fl[1], 1), num(fl[2], 0)};
-        const float l = length(d);
-        if (l > 1e-6f) {
-            d = d * (1.0f / l);
-            mt.fixedLight = {d.x, d.y, d.z, 1};
-            mt.fixedShade = {num(fl[3], 1), num(fl[4], 0)};
-            mt.shading = ShadingModel::Unlit;
-        } else warn(t, "fixedLight direction is zero");
-    } else if (o.has("fixedLight")) warn(t, "fixedLight is [x, y, z, ambient, diffuse]");
-    mt.castShadow = o.getBool("castShadow", mt.castShadow);
-    mt.transparent = o.getBool("transparent", mt.transparent);   // render::kDrawTransparent for this material
-    mt.receiveShadow = o.getBool("receiveShadow", mt.receiveShadow);
-    mt.vertexColors = o.getBool("vertexColors", mt.vertexColors);
-    if (o.has("team")) {
-        std::string tm = o.getStr("team");
-        mt.team = tm == "tint" ? TeamMode::Tint : tm == "mask" ? TeamMode::Mask : tm == "alpha" ? TeamMode::BaseAlpha
-                : tm == "vertex" ? TeamMode::VertexAlpha : TeamMode::None;
-        if (tm != "tint" && tm != "mask" && tm != "alpha" && tm != "vertex" && tm != "none") warn(t, "team must be tint, mask, alpha, vertex or none");
-    }
-    mt.teamStrength = num(o["teamStrength"], mt.teamStrength);
-    if (o.has("teamMask")) { mt.teamTex = loadTexture(dev, t, m, o.getStr("teamMask")); if (mt.team == TeamMode::None || mt.team == TeamMode::Tint) mt.team = TeamMode::Mask; }
-    if (o.has("texture")) mt.baseTex = loadTexture(dev, t, m, o.getStr("texture"));
-    if (o.has("normalMap")) {
-        mt.normalTex = loadTexture(dev, t, m, o.getStr("normalMap")); // tangents: from the file or generated for its own normal maps
-    }
-    if (o.has("emissiveMap")) { mt.emissiveTex = loadTexture(dev, t, m, o.getStr("emissiveMap")); if (!o.has("emissive")) mt.emissive = {1, 1, 1}; }
-    // glTF channel layout (G roughness, B metallic; occlusion in R): the Unity importer repacks URP maps into it
-    if (o.has("metallicRoughnessMap")) mt.mrTex = loadTexture(dev, t, m, o.getStr("metallicRoughnessMap"));
-    if (o.has("occlusionMap")) mt.occlusionTex = loadTexture(dev, t, m, o.getStr("occlusionMap"));
-    mt.occlusionStrength = num(o["occlusionStrength"], mt.occlusionStrength);
-    mt.normalScale = num(o["normalScale"], mt.normalScale);
-    if (const Json& uv = o["uvScale"]; uv.size() == 2) mt.uvScale = {num(uv[0], 1), num(uv[1], 1)};
-    if (const Json& uv = o["uvOffset"]; uv.size() == 2) mt.uvOffset = {num(uv[0], 0), num(uv[1], 0)};
+void RtsView::applyMaterial(gfx::Device& dev, const UnitType& t,
+                            Model& model, Material& material,const Json& ref) {
+    // The host decides source reader, GPU texture insertion and warning
+    // scope; generic authoring resolves all material fields consistently
+    // for RTS/FPS/editor/native projects without their genre rules.
+    view::AppearanceAuthoringService::applyMaterial(
+        material,materialLib_,ref,
+        [&](const std::string& path) {
+            return loadTexture(dev,t,model,path);
+        },
+        [this,&t](const std::string& message) {warn(t,message);});
 }
 
 const char* RtsView::animName(int k) {
@@ -875,19 +820,12 @@ void RtsView::configureChoice(gfx::Device& dev, const UnitType& t, const Json& v
     c.programmableAnimation=v.getBool("programmableAnimation")||v.has("animationGraph");
     if (v.has("animationGraph")) {
         try {
-            const Json& authored=v["animationGraph"];
-            Json definition=authored;
-            if(authored.isString()) {
-                // External AnimationGraph assets are independent presentation
-                // resources; existing inline graph JSON stays compatible.
-                std::string bytes;
-                const auto& path=authored.str();
-                if(!read_ || !read_(path,bytes))
-                    throw std::runtime_error("animationGraph file not found: "+path);
-                definition=render::parseAnimationAsset(bytes);
-            }
-            c.graph=AnimationGraph::compile(m,definition,
-                                           animationOperations_,animationTraits_);
+            // Compile the same authored inline/external graph through the
+            // generic authoring service. The single existing MotionWeave
+            // presentation owner still evaluates it exactly once.
+            c.graph=view::AppearanceAuthoringService::compileGraph(
+                m,v["animationGraph"],read_,
+                animationOperations_,animationTraits_);
         }
         catch (const std::exception& e) { warn(t, e.what()); }
     }
