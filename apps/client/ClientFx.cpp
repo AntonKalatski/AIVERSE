@@ -7,6 +7,7 @@
 namespace aiverse::client {
 
 void ClientFx::init(gfx::Device& dev, const game::Rules& rules) {
+    device_=&dev;
     ps_.setQuality(fx::defaultQualityFor(dev, platform::isTouchDevice()));
     ps_.setFileReader([](const std::string& path, std::string& out) { return platform::readContentFile(path, out); });
     textures_.init(dev);
@@ -29,10 +30,36 @@ void ClientFx::init(gfx::Device& dev, const game::Rules& rules) {
     std::string err;
     if (!bridge_.init(ps_, rules, bank, &err)) std::fprintf(stderr, "%s\n", err.c_str());
     for (auto& w : bridge_.warnings()) std::fprintf(stderr, "fx: %s\n", w.c_str());
+    // Optional project asset. Without routes.json all existing CPU RTS FX
+    // keep their original behavior; there is no implicit GPU migration.
+    std::string routesText;
+    if(platform::readContentFile("fx/gpu/routes.json",routesText)) {
+        fx::SpectraFxGpuRouteAsset::Routes routes;
+        std::string issue;
+        if(!fx::SpectraFxGpuRouteAsset::readText(routesText,routes,&issue))
+            std::fprintf(stderr,"SpectraFX GPU routes: %s\n",issue.c_str());
+        else if(!routes.empty()) {
+            gpuRoutes_=std::move(routes);
+            gpuLibrary_=std::make_unique<fx::SpectraFxGpuEmitterLibrary>(
+                [](const std::string& path,std::string& out) {
+                    return platform::readContentFile(path,out);
+                });
+            gpuPlayback_=std::make_unique<fx::SpectraFxHybridPlayback>(
+                dev,ps_,*gpuLibrary_);
+            for(const auto& [type,route]:gpuRoutes_)
+                if(route.playback.enabled)
+                    gpuPlayback_->route(uint32_t(type),route.playback);
+        }
+    }
+
 }
 
 void ClientFx::shutdown() {
     stopMatch();
+    gpuPlayback_.reset(); // destroy RHI handles before ParticleSystem/device
+    gpuLibrary_.reset();
+    gpuRoutes_.clear();
+    device_=nullptr;
     ps_.shutdown();
     textures_.shutdown();
 }
@@ -45,11 +72,47 @@ void ClientFx::startMatch(Simulation& sim, uint8_t viewer, const game::RtsView& 
     bridge_.setAttackOriginFn([&view](Entity e, fx::float3& pos, fx::float3& dir) { return view.muzzleOf(e, pos, dir); });   // shots leave the model's muzzle
     bridge_.attach(sim, viewer);
     attached_ = true;
+    if(gpuPlayback_ && !gpuRoutes_.empty()) {
+        gpuPlayback_->reset();
+        gpuInbox_=std::make_shared<GpuEventInbox>();
+        gpuInbox_->viewer=viewer;
+        gpuInbox_->active=true;
+        for(const auto& [type,route]:gpuRoutes_)
+            if(route.playback.enabled)
+                gpuInbox_->permitted.insert(type);
+        // Capture only weak ownership: a stale Simulation must never call
+        // into a destroyed ClientFx after match teardown.
+        const std::weak_ptr<GpuEventInbox> weak=gpuInbox_;
+        sim.addSystem("spectrafx_gpu.collect",[weak](Simulation& observed) {
+            const auto inbox=weak.lock();
+            if(!inbox || !inbox->active || inbox->viewer==0) return;
+            for(const auto& event:observed.events()) {
+                if(event.player!=inbox->viewer ||
+                   inbox->permitted.find(event.type)==inbox->permitted.end())
+                    continue;
+                if(inbox->pending.size()>=1024) {
+                    ++inbox->dropped;
+                    continue;
+                }
+                fx::SpectraFxCue cue;
+                cue.id=event.type;
+                cue.action=fx::SpectraFxCue::Action::Play;
+                cue.position=fx::spectraFxPosition(event.pos);
+                inbox->pending.push_back(cue);
+            }
+        });
+    }
 }
 
 void ClientFx::stopMatch() {
     if (attached_) bridge_.detach();
     attached_ = false;
+    if(gpuInbox_) {
+        gpuInbox_->active=false;
+        gpuInbox_->pending.clear();
+        gpuInbox_.reset();
+    }
+    if(gpuPlayback_) gpuPlayback_->reset();
     ps_.clear();
 }
 
@@ -60,6 +123,10 @@ void ClientFx::setPlanetView(const game::RtsView* view) {
         return;
     }
     if (!planet_) {
+        // GPU billboards currently use flat world coordinates. Disable them
+        // on planet views until the body-local transform API is supported.
+        if(gpuPlayback_) gpuPlayback_->reset();
+        if(gpuInbox_) gpuInbox_->pending.clear();
         planet_ = view;
         ps_.setUpFunction([](fx::float3 p) { return render::normalize(p); });
         ps_.setAltitudeFunction([this](fx::float3 p) { return planet_->planetFxAltitude(p); });
@@ -78,6 +145,29 @@ void ClientFx::update(Simulation& sim, const game::RtsScene& scene, const render
     static const bool dbg = std::getenv("AIVERSE_FX_DEBUG") != nullptr;
     static int frames = 0;
     if (dbg && ++frames % 30 == 0) std::fprintf(stderr, "[fx] played %d rejected %d particles %d culled %d drawn %d\n", bridge_.played(), bridge_.rejected(), ps_.stats().particles, ps_.stats().culled, ps_.stats().drawn);
+}
+
+void ClientFx::prepareGpuFrame(float dt) {
+    if(!gpuPlayback_ || planet_) return;
+    // Called inside Device::beginFrame, before Renderer3D::beginScene:
+    // GPU buffers and compute are not touched by Simulation::step().
+    if(gpuInbox_) {
+        while(!gpuInbox_->pending.empty()) {
+            const auto cue=gpuInbox_->pending.front();
+            gpuInbox_->pending.pop_front();
+            gpuPlayback_->dispatch(cue);
+        }
+    }
+    gpuPlayback_->updateGpu(dt);
+}
+
+void ClientFx::renderGpu(const render::mat4& viewProj,
+                         const render::RTSCamera& camera) {
+    if(!gpuPlayback_ || planet_) return;
+    const render::mat4 view=camera.view();
+    const render::float3 right{view.at(0,0),view.at(0,1),view.at(0,2)};
+    const render::float3 up{view.at(1,0),view.at(1,1),view.at(1,2)};
+    gpuPlayback_->renderGpu(viewProj,right,up);
 }
 
 void ClientFx::addLights(render::LightSystem& lights) {
