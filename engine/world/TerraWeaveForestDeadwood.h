@@ -261,7 +261,7 @@ inline ForestDeadwoodDecayOutcome advanceForestDeadwood(
         if(!lost)continue;
         log.remainingUnits-=lost;
         if(!log.remainingUnits) {
-            log.decayCarry=0;log.nutrientCarry=0;
+            log.decayCarry=0;
             result.fullyDecayed.push_back(log.id);
         }
         const uint64_t weighted=lost*log.nutrientsPermille+
