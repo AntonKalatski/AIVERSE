@@ -177,6 +177,75 @@ std::shared_ptr<Read> probe(TextureHandle h,int mip,int layer,int w,int height,
     p->tolerance=tolerance;
     return p;
 }
+// Queue successive physical-slice writes and independent GPU readbacks
+// before earlier frames retire. Each readback must retain its own snapshot,
+// even when a later frame overwrites the same array slice.
+void orderedArrayReuse(Device& dev) {
+    TextureDesc d;
+    d.dimension=TextureDimension::Texture2DArray;
+    d.width=d.height=4;
+    d.arrayLayers=2;
+    d.mipLevels=2;
+    d.filter=Filter::Nearest;
+    const auto atlas=dev.createTexture(d);
+    check(atlas.valid(),"ordered array LRU fixture atlas allocation");
+    if(!atlas.valid())return;
+    const auto root=solid(4,4,{18,75,90,255});
+    TextureUploadDesc base;
+    base.width=base.height=4;
+    base.rowPitchBytes=16;
+    base.slicePitchBytes=64;
+    base.arrayLayer=0;
+    base.data=root.data();
+    check(dev.updateTextureRegion(atlas,base),
+          "ordered GPU array upload of pinned root");
+    std::vector<std::shared_ptr<Read>> snapshots;
+    bool submitted=true;
+    for(int frame=0;frame<8;++frame) {
+        const auto pixels=solid(4,4,{uint8_t(30+frame*23),
+                                         uint8_t(200-frame*15),
+                                         uint8_t(17+frame*9),255});
+        auto read=probe(atlas,0,1,4,4,pixels,
+                        "queued atlas slice reuse frame "+std::to_string(frame));
+        dev.beginFrame(16,16);
+        TextureUploadDesc upload=base;
+        upload.arrayLayer=1;
+        upload.data=pixels.data();
+        submitted &= dev.updateTextureRegion(atlas,upload);
+        // Readback is queued after this frame's write. Later writes must not
+        // retroactively change this output, even with multiple frames in flight.
+        submitted &= dev.readTextureAsync(atlas,{0,1},
+            [read](TextureReadbackResult result) {
+                read->output=std::move(result);
+                read->done=true;
+            });
+        dev.endFrame();
+        snapshots.push_back(read);
+    }
+    check(submitted,"all ordered Metal atlas transfers and reads accepted");
+    const auto deadline=Clock::now()+std::chrono::seconds(10);
+    while(Clock::now()<deadline) {
+        const bool complete=std::all_of(snapshots.begin(),snapshots.end(),
+            [](const auto& read){return read->done;});
+        if(complete)break;
+        dev.beginFrame(16,16);
+        dev.endFrame();
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    for(const auto& read:snapshots) {
+        check(read->done && read->output.success() &&
+              read->output.width==4 && read->output.height==4 &&
+              read->output.format==PixelFormat::RGBA8 &&
+              read->output.pixels==read->expected,
+              "GPU array snapshot unchanged by later LRU slice writes");
+    }
+    verifyReads(dev,{probe(atlas,0,0,4,4,root,
+                          "pinned root survives queued LRU overwrites")},
+                "ordered GPU array LRU root");
+    check(dev.gpuHealthy(),"Metal queued atlas reuse GPU healthy");
+    dev.destroyTexture(atlas);
+}
+
 void volume(Device& dev) {
     const auto setupStart=Clock::now();
     TextureDesc d;
@@ -1136,6 +1205,7 @@ int main() {
         std::printf("Metal GPU acceptance device: %s\n",device->info().name.c_str());
         std::printf("TIMING Metal device_and_layer_init_ms=%.3f\n",
                     elapsedMs(testStart,deviceReady));
+        orderedArrayReuse(*device);
         volume(*device);
         layered(*device,TextureDimension::Texture2DArray,2,"Texture2DArray");
         layered(*device,TextureDimension::Cube,6,"Cube");
