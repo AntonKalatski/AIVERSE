@@ -3523,6 +3523,120 @@ GPU smoke, actual HDR pixels, timed GPU frames, screenshots
 и CI. Подробный handoff:
 `docs/handoffs/prisma-stage-60.md`.
 
+
+## Stage 61 — reactive прозрачные края для Motion Blur и безопасный FXAA
+
+В Stage 61 исправлены два конкретных presentation-пути PRISMA:
+SDR FXAA больше не подменяет input невалидной текстурой при
+неудачном создании промежуточного render target, а optional
+Motion Blur умеет подавлять смешивание цветовых проб по
+разнице **reactive coverage** на краях полупрозрачных
+объектов/частиц. Работа остаётся независимой от жанра и
+не затрагивает authoritative ECS или отдельную SpectraFX.
+
+### Motion Blur + reactive input
+
+Новый необязательный параметр существующего `motionBlur`:
+`reactiveTapRejection`, диапазон 0..1, **default 0**.
+Он добавлен **в конце** каталога эффектов
+`PrismaData.cpp`, поэтому все предыдущие numeric offsets,
+старые `postfx` JSON, пресеты и native/volume profiles
+остаются совместимыми. При нуле действует прежний
+шейдерный вес и прежний фильтр.
+
+`MotionBlurU` получил пятый vec4 `tapInfo`. Только
+`kMotionBlur` использует расширенную UBO; остальные
+pass-ы (Temporal, DoF, Bloom, FXAA, ExposureLog) и
+формат reactive texture не менялись.
+`tapInfo.x` получает `reactiveTapRejection`
+**только при валидном входном** `MotionTextureInput`
+(RGBA8, размер текущего scene render target, проверка
+declared metadata и доступного RHI `textureInfo`).
+Когда reactive mask отсутствует/отвергнута, значение
+нулевое, шейдер сохраняет прежнее поведение.
+
+Если фильтр активен, текущий pixel и его соседние
+цветовые пробы читают `TEX3` reactive R. Пробы
+с существенно другим coverage получают уменьшенный
+вес:
+`keep *= 1 - strength * smoothstep(0.1,0.8,abs(tapReactive-centerReactive))`.
+Это **дополнение** к уже существующей глубинной
+фильтрации (hardware или линейная depth), а не её
+замена. Если сумма весов нулевая, применяется
+исходный резкий RGB. При новых HDR прогонах
+Motion Blur возвращает **исходную alpha**
+`centerColor.a`, не `1.0`, поскольку постэффект
+изменяет radiance RGB, не прозрачность сцены.
+Canonical `TemporalResolve` по-прежнему сам
+записывает глубину в собственную history alpha —
+этот контракт не изменён.
+
+Зависимость от реальной reactive geometry: mask
+строится отдельно Renderer3D и дополнительными
+провайдерами (например, particles/water),
+а временное изображение mask НЕ сохраняется
+между кадрами. Данный этап не пытается исправлять
+отсутствующее покрытие у конкретного материала
+или считывать GPU пиксели на CPU.
+
+`ViewEffectReport` по каждому stable `viewId`
+теперь хранит `reactiveInputSupplied`,
+`reactiveInputAccepted` и
+`motionBlurReactiveEdgesEnabled`. Это
+**CPU metadata/RHI acceptance**, а не GPU pixel
+validation: legacy borrowed handle без metadata
+может считаться допустимым, когда backend
+не предоставляет introspection. Последнее поле
+становится true только когда MotionBlur
+фактически закодирован, нужный вход проверен
+и strength больше нуля. Editor PRISMA показывает
+доступность mask и status фильтра.
+
+### Безопасная деградация FXAA
+
+Ранее SDR prepass делал `src=target(kAa)`
+**до** проверки, валиден ли результат создания.
+При failed `RGBA8` target или depth attachment
+composite мог сэмплировать невалидный src.
+Теперь `fxaaInput` сохраняет оригинальную
+scene/post-chain текстуру, `fxaaOutput`
+создаётся отдельно, и prepass исполняется
+только если input/output и depth валидны.
+Graph FXAA (opt-in) и обычный direct draw
+используют те же два проверенных handles,
+а `src=fxaaOutput` назначается **только после
+encoded draw**. Если выделение не удалось,
+остальная цепочка продолжает с прежним src,
+без ложного `fxaaEncoded=true`.
+
+Для HDR fallback FXAA, который применяется
+после финального Composite и только если
+TemporalResolve не сработал, добавлена проверка
+`pipe.valid()` **до** начала промежуточного
+AA target/pass. Это исключает чтение пустого
+composite target, если pipeline вообще не
+удалось получить. Проверка output target/depth
+сохранена. TAA и FXAA остаются взаимоисключающими
+на едином HDR presentation output.
+
+Никаких новых GPU history или shared texture
+owners не введено. Рендер поддерживает текущие
+fence-retirement контракты Stage 54.
+
+**Фактическая проверка:** GitHub readback
+`PrismaData.cpp`, `PrismaShaders.h`,
+`Prisma.cpp`, `Prisma.h`,
+`PrismaWindow.cpp` и
+`PrismaMotionTextureInput.h`,
+**40/40 source-only structural checks** (проверка
+логики и вызовов в исходниках). **NOT RUN:**
+CMake/clang, GLSL/MSL/SPIR-V compilation,
+CTest, Editor/GameClient, Metal/GL/GLES/
+Vulkan/WebGL, screenshot/alpha/historical
+parity, temporal ghosting и performance.
+Следующему агенту читать
+`docs/handoffs/prisma-stage-61.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
