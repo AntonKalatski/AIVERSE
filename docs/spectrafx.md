@@ -2806,3 +2806,126 @@ compilation, CTest, editor startup/screenshots, checkpoint
 CRC corruption/fault tests, real GPU readback, device-loss
 recovery and load-pressure benchmarks. New features are
 source-implemented but **not production-verified**.
+
+## Stage 41 — offline V2 checkpoint inspection and safe native capture requests
+
+### V2 checkpoint inspector: no graphics Device required
+
+The new pure header `engine/fx/SpectraCheckpointInspector.h`
+provides `inspectGpuCheckpointDiagnostic(bytes)` and
+`gpuDiagnosticErrorString(error)`. It validates one bounded
+same-build `.spfx` V2 diagnostic capture without accessing any
+Metal resources, rendering code, ECS state, or GPU readback API.
+
+The inspector distinguishes invalid magic, unsupported V1/other
+versions, truncated headers/payloads, invalid header/physical slot
+counts, mismatched declared sizes, unexpected trailing bytes and
+CRC32 mismatch. Only after the complete bounded structure and
+checksum pass does it read individual 128-byte particle records and
+4-byte CPU lifespan mirrors. A structurally valid file can still
+carry semantic warnings: NaN/nonfinite particle values, invalid
+ages, inconsistent CPU remaining-life mirrors or unusual
+lifetimes. It reports estimated live/dead physical slots and
+bounding coordinates for finite live positions. A structural
+success does NOT certify numerical CPU/Metal parity or a
+correct gameplay state.
+
+The reusable offline CLI `tools/spectrafx/inspect_spfx.cpp`
+requires only a native C++20 compiler and the repository
+headers:
+
+```sh
+c++ -std=c++20 -O2 -I. tools/spectrafx/inspect_spfx.cpp -o inspect_spfx
+./inspect_spfx path/to/checkpoint.spfx
+./inspect_spfx --json path/to/checkpoint.spfx
+```
+
+The CLI checks disk file size **before** allocating and reading,
+caps memory at `kGpuCheckpointExportMaxBytes` (540,720
+bytes at the current 4096-slot maximum), detects files that
+change while being read and emits plain or JSON diagnostics.
+It returns exit 0 for a structurally valid V2 file (even if it
+contains semantic warnings), exit 1 for invalid V2
+format/integrity, and exit 2 for invalid invocation or I/O.
+Full usage and the same-build limitations are documented in
+`tools/spectrafx/README.md`.
+
+The V2 checksum covers the checkpoint **payload**. The header
+and packet layout still depend on the native build's ABI and
+endianness; V1 conversion, arbitrary-version migrations,
+serialization portability, GPU buffer import and reverse
+GPU rewind are intentionally unsupported. Diagnostics may
+include world positions and graph parameters and should be
+treated as project data.
+
+### Native owner-thread capture and callback lifetime
+
+A new public `<aiverselib/genre/SpectraFX.h>` integration
+`spectra::GpuPoolCaptureHost` (implemented in
+`libraries/include/aiverselib/genre/SpectraGpuCaptureHost.h`)
+provides a bounded **one-at-a-time** request API:
+
+```cpp
+GpuPoolCaptureHost captures(pool);
+// Between frames: one requested GPU group with an explicit byte cap.
+captures.request(0);
+// Each frame, AFTER Device.beginFrame delivers earlier readbacks and
+// BEFORE any new pool.step(dt) can invalidate the captured revision:
+auto status=captures.pollBeforeStep();
+// Between pool.step(0) and the scene render pass, on the same owner thread:
+if(captures.status().phase==GpuCapturePhase::Queued)
+    captures.submitAfterStepBeforePass();
+// Once Ready, bytes are already copied and validated (no new GPU read).
+std::vector<uint8_t> bytes;
+if(captures.takeReady(bytes)) { /* offline diagnosis only */ }
+// Always cancel before pool rollback, shutdown or graphics-Device recreation.
+captures.cancel();
+```
+
+The controller maintains an exact `GpuPoolWorld::lifecycleEpoch()`
+and request ID, discards results from a recycled/recreated pool,
+retains at most one bounded byte vector, and permits up to 600
+owner-thread graphics-frame polls before returning a timeout.
+Asynchronous RHI callbacks hold only weak references to
+the request's shared completion state; they do not capture
+a dangling host object or force a second graphics owner.
+Cancellation invalidates publication but cannot forcibly
+cancel already submitted Metal work; Stage 32 shared
+checkpoint budget and RHI callback settlement still apply.
+The status distinguishes Idle, Queued, InFlight, Ready and
+Failed, with a concrete error when a complete GPU readback
+has become stale before export.
+
+The sample `examples/spectrafx/native_ecs_attachments.h`
+now embeds the capture controller into the single native
+render-frame lifecycle. It freezes VFX progression and defers
+read-only ECS source/pose synchronization while the capture is
+Queued/InFlight/Ready. Each frame continues drawing the current
+particles via `pool.step(0)`; the host takes or cancels
+the result before normal presentation resumes. On rollback or
+device loss, the capture is cancelled **before** the Stage
+38/39 recovery workflow, with no lost/old GPU particle state
+published as authoritative ECS data. Recovering a valid GPU
+state still requires the host's existing explicit new-Device
+reconstruction; captured V2 bytes are not imported.
+
+### Recovery hardening
+
+`GpuPoolWorld::boundToDevice(device)` allows the recovery
+controller to explicitly reject an attempted graphics
+Device replacement that supplies the SAME old Device object
+even if it temporarily reports healthy. A true recovery
+requires a different healthy gfx::Device, disposal of old GPU
+resources while the old Device still exists, import of the
+CPU-only effect manifest and fresh generation-safe ECS
+source reattachment. No callback, offline parser or
+checkpoint diagnostic may bypass this protocol.
+
+**Verification performed:** source inspection, SHA-guarded
+GitHub source writes and file existence/readback only.
+**NOT RUN:** native C++/ObjC++/MSL builds, CTest, execution
+of the offline inspector CLI, actual corrupted-payload
+parsing, Metal readback completion/cancellation, editor
+launch, host recovery/fence tests, CPU/GPU parity or
+performance measurements. Stage 41 is source-implemented,
+not production-verified.
