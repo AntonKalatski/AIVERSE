@@ -10,6 +10,7 @@ struct AiverseVirtualPage {
     vec2 uv;
     vec2 gradientScale; // virtual UV derivatives -> physical atlas UV
     int layer;
+    int residentMip;
     bool valid;
 };
 AiverseVirtualPage aiverseLookupVirtual(
@@ -17,7 +18,7 @@ AiverseVirtualPage aiverseLookupVirtual(
     vec2 uv, int virtualLayer, float gutterPixels,
     int addressU, int addressV) {
     AiverseVirtualPage p;
-    p.uv = vec2(0.5); p.gradientScale = vec2(0.0); p.layer = 0; p.valid = false;
+    p.uv = vec2(0.5); p.gradientScale = vec2(0.0); p.layer = 0; p.residentMip = -1; p.valid = false;
     ivec3 tableSize = textureSize(pageTable, 0);
     if (virtualLayer < 0 || virtualLayer >= tableSize.z ||
         tableSize.x <= 0 || tableSize.y <= 0) return p;
@@ -49,7 +50,7 @@ AiverseVirtualPage aiverseLookupVirtual(
     p.uv = mix(inset, vec2(1.0) - inset, tileUv);
     p.gradientScale = (vec2(1.0) - 2.0 * inset) *
                       vec2(tableSize.xy) / exp2(float(bytes.b));
-    p.layer = physicalSlice; p.valid = true;
+    p.layer = physicalSlice; p.residentMip = bytes.b; p.valid = true;
     return p;
 }
 // Legacy callers retain ClampToEdge on both axes.
@@ -102,6 +103,52 @@ vec4 aiverseSampleVirtualGrad(
     return aiverseSampleVirtualGrad(atlas, table, uv, layer, gutterPixels,
                                     fallbackColor, uvDx, uvDy, 0, 0);
 }
+
+    // Indexed page table layout: layer = logicalLayer*mipLevels + requestedMip.
+    // Each slice stores the closest resident page at this requested mip OR
+    // a coarser fallback. Selected mip and page contents remain stable under
+    // LRU eviction because the streamer flushes all table slices before reuse.
+float aiverseVirtualMipLod(vec2 uvDx, vec2 uvDy, vec2 virtualSizePixels,
+                           float bias) {
+    vec2 dims = max(virtualSizePixels,vec2(1.0));
+    float footprint = max(length(uvDx * dims),length(uvDy * dims));
+    return max(0.0,log2(max(footprint,1.0)) + bias);
+}
+vec4 aiverseSampleVirtualTrilinear(
+    highp sampler2DArray atlas, highp sampler2DArray indexedTable,
+    vec2 uv, int logicalLayer, float gutterPixels, vec4 fallbackColor,
+    vec2 uvDx, vec2 uvDy, float virtualMipLod, int virtualMipLevels,
+    int addressU, int addressV) {
+    ivec3 info = textureSize(indexedTable,0);
+    if (virtualMipLevels < 1 || virtualMipLevels > 30 ||
+        logicalLayer < 0 || info.z < virtualMipLevels ||
+        logicalLayer >= info.z / virtualMipLevels ||
+        info.z % virtualMipLevels != 0) return fallbackColor;
+    float lod = clamp(virtualMipLod,0.0,float(virtualMipLevels-1));
+    int lower = int(floor(lod));
+    int upper = min(lower+1,virtualMipLevels-1);
+    AiverseVirtualPage a = aiverseLookupVirtual(atlas,indexedTable,uv,
+        logicalLayer*virtualMipLevels+lower,gutterPixels,addressU,addressV);
+    AiverseVirtualPage b = aiverseLookupVirtual(atlas,indexedTable,uv,
+        logicalLayer*virtualMipLevels+upper,gutterPixels,addressU,addressV);
+    vec2 orientation=aiverseVirtualGradientOrientation(uv,addressU,addressV);
+    vec4 colorA = a.valid ? textureGrad(atlas,vec3(a.uv,float(a.layer)),
+        uvDx * orientation * a.gradientScale,
+        uvDy * orientation * a.gradientScale) : fallbackColor;
+    if (upper == lower) return colorA;
+    vec4 colorB = b.valid ? textureGrad(atlas,vec3(b.uv,float(b.layer)),
+        uvDx * orientation * b.gradientScale,
+        uvDy * orientation * b.gradientScale) : fallbackColor;
+    return mix(colorA,colorB,lod-float(lower));
+}
+vec4 aiverseSampleVirtualTrilinear(
+    highp sampler2DArray atlas, highp sampler2DArray indexedTable,
+    vec2 uv, int logicalLayer, float gutterPixels, vec4 fallbackColor,
+    vec2 uvDx, vec2 uvDy, float virtualMipLod, int virtualMipLevels) {
+    return aiverseSampleVirtualTrilinear(atlas,indexedTable,uv,logicalLayer,
+        gutterPixels,fallbackColor,uvDx,uvDy,virtualMipLod,
+        virtualMipLevels,0,0);
+}
 )AVT";
 
 inline constexpr const char* kVirtualTextureMSL = R"AVT(
@@ -109,6 +156,7 @@ struct AiverseVirtualPage {
     float2 uv;
     float2 gradientScale; // virtual UV derivatives -> physical atlas UV
     uint layer;
+    uint residentMip;
     bool valid;
 };
 inline AiverseVirtualPage aiverse_lookup_virtual(
@@ -117,7 +165,7 @@ inline AiverseVirtualPage aiverse_lookup_virtual(
     float2 uv, uint virtualLayer, float gutterPixels,
     uint addressU, uint addressV) {
     AiverseVirtualPage p;
-    p.uv = float2(0.5); p.gradientScale = float2(0.0); p.layer = 0; p.valid = false;
+    p.uv = float2(0.5); p.gradientScale = float2(0.0); p.layer = 0; p.residentMip = 0u; p.valid = false;
     uint3 tableSize = uint3(pageTable.get_width(),pageTable.get_height(),
                             pageTable.get_array_size());
     if (virtualLayer >= tableSize.z || !tableSize.x || !tableSize.y) return p;
@@ -144,7 +192,7 @@ inline AiverseVirtualPage aiverse_lookup_virtual(
     p.uv = mix(inset,float2(1.0)-inset,tileUv);
     p.gradientScale = (float2(1.0) - 2.0f * inset) *
                       float2(tableSize.xy) / exp2(float(bytes.b));
-    p.layer = physicalSlice; p.valid = true;
+    p.layer = physicalSlice; p.residentMip = bytes.b; p.valid = true;
     return p;
 }
 inline AiverseVirtualPage aiverse_lookup_virtual(
@@ -199,6 +247,50 @@ inline float4 aiverse_sample_virtual_grad(
     float2 uvDx, float2 uvDy) {
     return aiverse_sample_virtual_grad(atlas, table, atlasSampler,
         uv, layer, gutterPixels, fallbackColor, uvDx, uvDy, 0u, 0u);
+}
+
+    // Indexed page-table slices are [logicalLayer * mipLevels + selectedMip].
+inline float aiverse_virtual_mip_lod(float2 uvDx,float2 uvDy,
+                                    float2 virtualSizePixels,float bias) {
+    float2 dims=max(virtualSizePixels,float2(1.0));
+    float footprint=max(length(uvDx*dims),length(uvDy*dims));
+    return max(0.0f,log2(max(footprint,1.0f))+bias);
+}
+inline float4 aiverse_sample_virtual_trilinear(
+    texture2d_array<float, access::sample> atlas,
+    texture2d_array<float, access::read> indexedTable, sampler atlasSampler,
+    float2 uv, uint logicalLayer, float gutterPixels, float4 fallbackColor,
+    float2 uvDx, float2 uvDy, float virtualMipLod, uint virtualMipLevels,
+    uint addressU, uint addressV) {
+    const uint layers=indexedTable.get_array_size();
+    if (virtualMipLevels<1u || virtualMipLevels>30u ||
+        layers<virtualMipLevels || layers%virtualMipLevels!=0u ||
+        logicalLayer>=layers/virtualMipLevels) return fallbackColor;
+    float lod=clamp(virtualMipLod,0.0f,float(virtualMipLevels-1u));
+    uint lower=uint(floor(lod));
+    uint upper=min(lower+1u,virtualMipLevels-1u);
+    AiverseVirtualPage a=aiverse_lookup_virtual(atlas,indexedTable,uv,
+        logicalLayer*virtualMipLevels+lower,gutterPixels,addressU,addressV);
+    AiverseVirtualPage b=aiverse_lookup_virtual(atlas,indexedTable,uv,
+        logicalLayer*virtualMipLevels+upper,gutterPixels,addressU,addressV);
+    float2 orientation=aiverse_virtual_gradient_orientation(uv,addressU,addressV);
+    float4 colorA=a.valid ? atlas.sample(atlasSampler,a.uv,a.layer,
+        gradient2d<float>(uvDx*orientation*a.gradientScale,
+                          uvDy*orientation*a.gradientScale)) : fallbackColor;
+    if (upper==lower) return colorA;
+    float4 colorB=b.valid ? atlas.sample(atlasSampler,b.uv,b.layer,
+        gradient2d<float>(uvDx*orientation*b.gradientScale,
+                          uvDy*orientation*b.gradientScale)) : fallbackColor;
+    return mix(colorA,colorB,lod-float(lower));
+}
+inline float4 aiverse_sample_virtual_trilinear(
+    texture2d_array<float, access::sample> atlas,
+    texture2d_array<float, access::read> indexedTable, sampler atlasSampler,
+    float2 uv, uint logicalLayer, float gutterPixels, float4 fallbackColor,
+    float2 uvDx, float2 uvDy, float virtualMipLod, uint virtualMipLevels) {
+    return aiverse_sample_virtual_trilinear(atlas,indexedTable,atlasSampler,
+        uv,logicalLayer,gutterPixels,fallbackColor,uvDx,uvDy,
+        virtualMipLod,virtualMipLevels,0u,0u);
 }
 )AVT";
 
