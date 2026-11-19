@@ -6318,3 +6318,83 @@ code (be aware Terra is owned by a different agent),
 then address RHI shader/source compatibility and eventual
 GPU tests. Review model vertex-displacement graph parity
 before claiming full animated-model equivalence.
+
+
+## Stage 10A — TerraWeave ModelDraw VT feedback bridge (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification` (PR #21).
+**Source commits:** `2252659bc83cdd31fdb33a87e709810a1fe65a7f`,
+`c92c6110afba66a1d6aea9e9d74ecec93e3cd070`.
+**Docs commit:** `705ffbc2421a93f9fa6ef5271f6f87310cc61aa3`.
+**New file:** `engine/render/TerraWeaveVirtualTextureFeedback.h`.
+**Updated file:** `docs/texture-rhi.md`.
+
+Inspected Terra's **live separate branch** `feature/terraweave`
+using GitHub. Verified from its actual source that
+`engine/render/TerraWeaveForestAdapter.h` sends Arbor/Flora
+models and per-azimuth impostor `ModelDraw` objects through
+`Renderer3D::drawModel`; `TerraWeaveHorizonScene.h` likewise
+uses `Renderer3D::drawModel` for near/far Horizon terrain
+and distant forest clusters. Terra has no divergent GPU
+renderer that needs its own VT raster pass. The Terra branch's
+`engine/world/TerraWeave*.h` files are not present on the
+Texture RHI feature branch; no merge or cherry-pick was
+attempted because Terra is being developed by another agent.
+
+Added `render::TerraWeaveVirtualTextureFeedback`, an
+opt-in adapter that initializes the shared rigid
+`VirtualTextureModelFeedback` (optionally also skinned/baked/
+morph `VirtualTextureDeformedModelFeedback`), installs
+`Renderer3D::setVirtualTextureFeedback(&pass,{},{})`,
+and resolves per-material VT page metadata on the **same
+model draws** already queued by Terra's forest and Horizon
+renderers. No additional Terra-specific shader or second
+draw queue exists. Supported registration:
+`beginFrame()`, `registerMaterial(model,material,mapping)`,
+`registerModel(model,mapper)`,
+`registerDraw(ModelDraw,mapper)`, and
+`setLiveMaterialMapper(mapper)`; the latter enables private
+and replaced `TerraWeaveHorizonScene` region models to
+resolve their allocations while the normal renderer submits
+them. Model/material pointers serve as per-frame keys;
+`beginFrame` drops stale keys across region swaps, forest
+unload and hot reload. `registerDraw` includes per-azimuth
+impostor overrides. Material mappings are validated for
+tile/mip/layer bounds and finite texture dimensions/UVs.
+`shutdown()` disconnects feedback and destroys only bridge-
+owned shader/fallback resources; it does NOT own
+`VirtualTextureFeedbackPass`, `VirtualTextureFileStreamer`,
+Terra model assets or page archive storage.
+
+No actual virtual page archive is generated from Terra
+textures by this feature stage. A material with no allocated
+virtual pages writes zero feedback while preserving feedback
+depth. The host must supply a live allocation lookup (on the
+render thread, no blocking or allocations) and pump
+`feedbackPass.updateStreaming(streamer,budget)`. Atlas
+revisions must be differentiated by the actual Model/Material
+identity, **not** by the generic path
+`terraweave/horizon` alone. Transparent Horizon region
+crossfade draws are currently conservatively skipped by
+the generic opaque feedback loop; this may underrequest
+during transitions and requires a separate visibility policy.
+
+**Verification actually performed:** inspected the Terra
+branch's `ArborForestAdapter::submit/forEachDraw`,
+`TerraWeaveHorizonScene::submit` and generated model/material
+paths/alpha settings; GitHub source commits and docs commit
+succeeded. Native compilation NOT RUN, CTest NOT RUN,
+shader compilation NOT RUN, GPU/streaming execution NOT RUN
+per user's functionality-first instruction. This is an
+implemented integration seam but *not* evidence of tested
+runtime Terra VT rendering.
+
+**Next steps:** coordinate with Terra agent after merging
+`feature/terraweave` and Texture RHI branch: register an
+actual VT allocation provider for Arbor, impostor atlases
+and Horizon texture archive/revisions, connect it during
+Terra scene setup, and validate region swaps. Support
+Terra materials' source texture atlas unpack/packing into
+real VT pages before claiming a full streaming implementation.
+Then finish shader/backend parity and run native/CTest/GPU
+tests on Metal, GL33/GLES3 and Vulkan.
