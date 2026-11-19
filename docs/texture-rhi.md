@@ -1940,3 +1940,33 @@ screenshot parity evidence.
 They reset on GPU draw preparation; existing ICB
 preflight/rejected/failed counters remain unchanged.
 No native compile or GPU test was run for this stage.
+
+
+## Non-VT per-command built-in opaque PBR Metal ICB ABI — Stage 10AF
+
+The optional RHI `GpuIcbPbrMaterial` consists of six sampled
+TextureHandles for built-in fragment slots 1..6 and 36 finite
+float values representing the nine-float4 U2 block.
+`gfx::Device::prepareGpuEncodedIndexedIcbWithPbrMaterials`
+accepts a per-command array and returns zero on unsupported
+backends. It is independent from Virtual Texture atlas/page-table
+resources, though both paths reuse the same experimental Metal
+ICB argument-buffer machinery.
+
+On Metal, the opt-in flag
+`AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR=1`
+permits source-level preparation of a non-VT per-command PBR
+group. The backend converts these descriptors into internal
+records with `hasVirtualTexture=false`, stages independent
+PBR texture/sampler pairs and 256-byte-aligned U2 slices, and
+requires the PBR ICB shader variant during execution even if
+the ordinary pipeline could be used for homogeneous ICB.
+It does **not** bind VT atlas/table arguments or a per-command
+U6; the original non-VT shader remains selected.
+
+Renderer3D has not yet been wired to submit this new API;
+only the optional RHI/Metal implementation is present in this
+stage. The existing VT and legacy shared-resource ICB paths
+are unchanged by default. Full Objective-C++ build, Metal
+shader compilation, actual ICB execution and GPU image parity
+are NOT RUN. This is not production-ready.
