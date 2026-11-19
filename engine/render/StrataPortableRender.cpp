@@ -94,10 +94,6 @@ bool PortableSource::stage(gfx::Device& dev,const Model& source,
            !validate(entry.geometry.nodes,entry.geometry.roots) ||
            entry.geometry.bounds.size()!=entry.geometry.nodes.size())
             return fail(error,"invalid or duplicate staged rigid material primitive");
-        const auto& original=source.meshes[entry.mesh].primitives[entry.primitive];
-        if(original.indexCount>sourceVertexCeiling*3u &&
-           !original.indexCount)
-            return fail(error,"invalid source index count");
         if(entry.geometry.indices.empty() ||
            stagedIndices+entry.geometry.indices.size()>kMaxIndexBytes/sizeof(uint32_t))
             return fail(error,"portable Strata source index budget exceeded");
