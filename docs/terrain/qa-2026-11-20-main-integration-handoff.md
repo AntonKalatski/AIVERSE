@@ -168,6 +168,27 @@ Do not change `place` performance threshold or any native
 feature test. Do not run CTest until CMake build succeeds.
 Do not overwrite another agent's worktree.
 
+## One-command native Mac acceptance utility
+
+- `c5c6a6fd6b36d747b554223175e56fa9b1ca2432` —
+  NEW `tools/terraweave-main-integration-acceptance.sh`. Use from a
+  clean isolated integration worktree via:
+
+  ```bash
+  bash tools/terraweave-main-integration-acceptance.sh
+  ```
+
+  It checks both actual merge ancestors, records the tested Git SHA,
+  effective CMake flags and git status, configures Debug with optimized
+  Place hot paths and editor/physics enabled, performs ONE complete
+  build, lists registered tests and then runs ONE unfiltered CTest.
+  All logs and CTest JUnit output are saved in
+  `build/terraweave-main-acceptance/acceptance-reports/`.
+  `set -euo pipefail` prevents CTest starting after a failed build.
+  It does **not** claim GPU visual or live ECS integration acceptance.
+  Source creation is confirmed; this script has not been run on
+  the new integrated tree by the assistant or user.
+
 ## Next QA owner and integration checklist
 
 1. Inspect [run #44619590001](https://github.com/chromealex/AIVERSE/actions/runs/44619590001)
