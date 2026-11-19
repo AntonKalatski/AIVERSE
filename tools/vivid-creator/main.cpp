@@ -1388,11 +1388,6 @@ struct CreatorApp {
         ImGui::End();
     }
     void frame(gfx::Device& dev,double dt) {
-        // The previous render has been submitted at this frame boundary.
-        // No model/actor is destroyed unless its GPU fence has completed.
-        if(retiredHumans && retiredHumans->pending())
-            (void)retiredHumans->collect();
-        if(cache)cache->pruneExpired();
         ui.newFrame(dt);
         guiControls();
         if(pendingRebuild)regenerate();
@@ -1645,6 +1640,13 @@ int aiverseMain(int argc,char** argv) {
             std::fprintf(stderr,"VIVID Creator frame: %s\n",e.what());
             platform::requestQuit();
         }
+    };
+    callbacks.afterFrame=[application](gfx::Device&) {
+        // Runs AFTER endFrame. The platform RHI completion marker is only
+        // legal after the final draw/compute encoder is submitted.
+        if(application->retiredHumans && application->retiredHumans->pending())
+            (void)application->retiredHumans->collect();
+        if(application->cache)application->cache->pruneExpired();
     };
     callbacks.event=[application](const platform::Event& event) {
         application->ui.handleEvent(event);
