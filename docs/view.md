@@ -1680,3 +1680,85 @@ models whose page is still owned on the target device. Backend GPU
 completion and multithreaded source parsing still require real
 platform verification. `game::RtsView` remains a compatibility
 host for authored type appearances and advanced animated portraits.
+
+## Stage 105 — cross-host resource group and fully-authored generic portrait rendering
+
+`engine/render/RenderResourceOwnerGroup.h` is an additive, genre-free,
+**non-owning** aggregator for several `render::ModelResourceCache` hosts
+(e.g., a scene, a portrait, and a raw-model preview). `add(owner)`
+deduplicates the same cache registration; `clear()` never shuts down
+those caches. `snapshotOwners(gpuHealthy)` is CPU-only, suitable for
+source-level diagnostics without constructing a gfx device.
+`snapshot(gfx::Device&)` enriches it with the GPU-device-global
+geometry pool and uniquely referenced `GeometryPoolPage` allocations.
+
+Model pointers are counted once by identity across all registered
+owners. Each `ModelTextureCache` contributes unique GPU image keys
+only once by cache identity (not once per Model borrower).
+`geometryPoolReferencedStats` counts a page once even when it is
+shared by models owned by different providers; the globally allocated
+device pool is included for comparison but **not added again** in the
+resource group's `estimatedKnownBytes()`. Source-derived model bytes
+and RGBA8-equivalent shared texture bytes are approximate and omit
+driver allocations, mip/alignment, offscreen targets, unknown morph
+texture height and unrelated renderer subsystems.
+
+`RenderResourceGroupStats` reports unique hosts, live and
+GPU-fence-retired Models, shared texture owners/textures, compressed
+texture count, resident and retained model estimates, geometry
+pool ownership, and retirement diagnostic counters. Its health
+status distinguishes `Ready`, `PendingGpuRetirement`, and
+`DeviceUnhealthy` (from `Device::gpuHealthy()`). Pending GPU fences
+are **not** a device error. `setEstimatedBudgetBytes()`/
+`mayAdmitNewSources()` provide optional **new-source admission**
+control only. They never bypass a GPU completion fence, evict
+resident assets forcibly, or claim to recover a lost GPU.
+
+The editor Model window's optional raw-static-model inspection is a
+concrete three-owner consumer: `RtsView::modelResources()`,
+`Portrait::modelResources()`, and its own `ModelAssetProvider`
+are grouped. A 256 MiB **estimated, group-wide** visual admission
+budget is used in this opt-in mode, in addition to the raw provider's
+existing per-owner 64 MiB estimated-retirement limit. The UI shows
+owner/model counts, estimated known bytes, GPU-pending and
+device-unhealthy status. If the backend is unhealthy, new raw
+CPU requests and GPU publication are paused; resident visuals
+remain available when the device can still present them.
+
+**Static portrait migration:** `game::Portrait::renderAppearance(
+const render::ModelDraw&,const render::RTSCamera&,float4 background)`
+accepts *fully authored, borrowed* model packets, including material
+overrides, node-material assignments, geometry policy, team tint,
+variant and optionally already-evaluated pose. It submits through
+the canonical `aiverse::View::submitModel` exactly once and draws
+the offscreen target using a caller-provided camera and clear colour.
+Existing native raw-model `renderStaticModel` and precomputed-pose
+`renderPose` now delegate to this one generic path, retaining
+their original camera/clear-colour/lighting parameters.
+The RTS `Portrait::render(RtsView&, ...)` path first resolves
+`StaticPreviewModel` via the legacy host but passes the resulting
+full `ModelDraw` to `renderAppearance` with the SAME camera for
+static cases. Animated/complex cases still use the original
+`RtsView::drawPreview` fallback; there is no second MotionWeave
+graph writer or extra animation tick.
+
+**Deferred tests:** `tests/render/resource_owner_group.cpp` checks
+independent owner registration, resource model identity counts,
+borrowed-texture exclusion, source-derived budget threshold and
+unhealthy-device admission with no real GPU. New
+`tests/view/portrait_appearance_api.cpp` checks the native
+fully-authored portrait API surface at compile time. Both are
+ordinary registered CTest targets. **NOT RUN**: CMake compiler,
+CTest/unified runner, Metal/Vulkan/GL/GLES/WebGL GPU device,
+resource/fence lifetime, editor portrait visual parity, FPS/RTS
+gameplay, thread sanitizers and CI; no PASS claim or production
+readiness is implied.
+
+**Caveats:** group registration is non-owning and must never outlive
+any included cache; the host alone owns and shuts resources down.
+The reader/GPU device/lifetime scope of all caches in a device
+snapshot must match that device. `gpuHealthy()` defaults to true
+on unsupported backends and is not an exhaustive GPU error probe.
+The estimated budget is advisory and does not replace real backend
+allocation/tracking or force release of unresolved GPU resources.
+Full authored animated character/RTS view retirement is not complete.
