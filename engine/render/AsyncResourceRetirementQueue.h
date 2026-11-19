@@ -43,6 +43,22 @@ public:
                 completedResources_,completedBatches_,pendingPolls_,
                 tokenFailures_,idleFallbackFailures_};
     }
+    // Read-only diagnostic traversal. The estimate callback receives a
+    // const Resource&, may return approximate bytes, and must have no GPU
+    // side effects. Both token-assigned and unsubmitted resources count.
+    template<class Estimate>
+    uint64_t estimatedPendingBytes(Estimate&& estimate) const {
+        uint64_t bytes=0;
+        const auto accumulate=[&](const Resource& resource) {
+            const auto amount=uint64_t(estimate(resource));
+            if(amount>UINT64_MAX-bytes)bytes=UINT64_MAX;
+            else bytes+=amount;
+        };
+        for(const auto& resource:pending_)accumulate(resource);
+        for(const auto& batch:batches_)
+            for(const auto& resource:batch.resources)accumulate(resource);
+        return bytes;
+    }
 
     // Invoke only at a real host frame boundary after previous GPU work has
     // been submitted. Callbacks: begin()->token (0=unsupported), completed
