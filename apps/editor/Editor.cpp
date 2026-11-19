@@ -127,7 +127,7 @@ void Editor::init(gfx::Device& dev) {
     // Escape hatch for diagnosing assets that rely on legacy eager loading.
     const char* eagerAssets = std::getenv("AIVERSE_EDITOR_EAGER_MODELS");
     lazyEditorAssets_ = !(eagerAssets && std::strcmp(eagerAssets, "1") == 0);
-    editorTypeLastUsed_.assign(rules().types.size(), -1.0e30);
+    modelDemand_.resize(rules().types.size());
     view_.setDeferredLoading(lazyEditorAssets_);
     view_.setDeferAppearanceVariants(false); // editing always exposes every variant
     view_.setContentBase(ws_.project.dir.empty() ? "" : ws_.project.dir + "/");
@@ -238,8 +238,8 @@ void Editor::reloadRules() {
     editSceneCacheValid_ = false;
     editSceneCache_.clear();
     view_.shutdown(*dev_);
-    editorTypeLastUsed_.assign(rules().types.size(), -1.0e30);
-    lastEditorTrim_ = time_;
+    modelDemand_.resize(rules().types.size());
+    modelDemand_.markSweep(time_);
     view_.setDeferredLoading(lazyEditorAssets_);
     view_.setDeferAppearanceVariants(false); // editing always exposes every variant
     view_.setContentBase(ws_.project.dir.empty() ? "" : ws_.project.dir + "/");
@@ -255,12 +255,13 @@ void Editor::reloadRules() {
 
 void Editor::retainEditorType(uint16_t type) {
     if (type >= rules().types.size()) return;
-    if (editorTypeLastUsed_.size() != rules().types.size())
-        editorTypeLastUsed_.assign(rules().types.size(), -1.0e30);
-    editorTypeLastUsed_[type] = time_;
+    if (modelDemand_.size() != rules().types.size())
+        modelDemand_.resize(rules().types.size());
+    modelDemand_.touch(type,time_,game::view_adapter::ModelDemandPriority::Interactive);
     // The Model/Materials windows and model_info must work when the type has
     // no instances on the map. The RtsView loader caches this call per type.
-    if (lazyEditorAssets_) view_.loadType(type);
+    if (lazyEditorAssets_) modelDemand_.drain(modelDemand_.pendingCount(),
+        [&](size_t requested){view_.loadType(uint16_t(requested));});
 }
 
 void Editor::reclaimEditorAssets(bool force) {
@@ -268,10 +269,10 @@ void Editor::reclaimEditorAssets(bool force) {
         ws_.project.isFps()) return;
     constexpr double kSweepInterval = 5.0;
     constexpr double kUnusedGrace = 15.0;
-    if (!force && time_ - lastEditorTrim_ < kSweepInterval) return;
-    lastEditorTrim_ = time_;
+    if (!modelDemand_.shouldSweep(time_,kSweepInterval,force)) return;
+    modelDemand_.markSweep(time_);
     const size_t typeCount = rules().types.size();
-    if (editorTypeLastUsed_.size() != typeCount) return;
+    if (modelDemand_.size() != typeCount) return;
     std::vector<bool> keep(typeCount, false);
     // Keep the entire map's authored types, including currently hidden
     // objects: switching an edit layer must never cause a load/unload loop.
@@ -282,7 +283,7 @@ void Editor::reclaimEditorAssets(bool force) {
     // Editor thumbnails, model inspector, dynamic world preview, and ghost
     // placements get a grace period. On-demand loading marks those types.
     for (size_t i = 0; i < typeCount; ++i)
-        if (time_ - editorTypeLastUsed_[i] < kUnusedGrace) keep[i] = true;
+        if (modelDemand_.recentlyUsed(i,time_,kUnusedGrace)) keep[i] = true;
     if (selection.kind == Selection::Type)
         for (size_t i = 0; i < typeCount; ++i)
             if (rules().types[i].id == selection.key) keep[i] = true;
@@ -833,8 +834,8 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
         if (lazyEditorAssets_) {
             // Preserve generated preview types without loading the entire catalog.
             for (const auto& o : scene_.objects)
-                if (!o.isProjectile && o.type < editorTypeLastUsed_.size() &&
-                    editorTypeLastUsed_[o.type] != time_) retainEditorType(o.type);
+                if (!o.isProjectile && o.type < modelDemand_.size() &&
+                    modelDemand_.lastUsed(o.type) != time_) retainEditorType(o.type);
         }
     }
     const auto afterBuild = std::chrono::steady_clock::now();
