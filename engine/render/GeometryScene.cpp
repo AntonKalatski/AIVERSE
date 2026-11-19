@@ -474,6 +474,7 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
             if (staged->second->prepareModel(i.world, views, forceFinest,
                                               *slot, &error)) {
                 d.model=slot.get();
+                d.flags |= kDrawStatic; // eligible rigid Strata, Vulkan MDI may batch it
                 d.staticCache=nullptr;
                 d.persistentId=0; // no stale original static-render packets
                 // The actual draw is STILL authored only by Renderer3D.
