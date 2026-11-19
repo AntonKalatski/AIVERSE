@@ -143,9 +143,14 @@ public:
                         ImGui::TextDisabled("Shader Graph textures: %d | HDR exposure slot: %d (-1=inactive)",
                             report->shaderGraphTextures,
                             report->autoExposureTextureSlot);
-                        if (report->autoExposureTextureSlot >= 0)
+                        if (report->autoExposureTextureSlot >= 0) {
                             ImGui::TextDisabled("HDR highlight rejection: %.2f (0=legacy)",
                                 double(report->autoExposureHighlightRejection));
+                            ImGui::TextDisabled("Exposure: %s | circular region metered this frame: %s",
+                                report->autoExposureFrozen ? "frozen (history reused)" :
+                                                             "adaptation encoded",
+                                report->autoExposureRegionMetered ? "yes" : "no");
+                        }
                     }
                     if (report->effects.empty())
                         ImGui::TextDisabled("Для последнего кадра нет authored эффектов.");
@@ -305,7 +310,7 @@ private:
         if (d.type == PrismaType::DepthOfField)
             ui::help("Старые focusDepth/focusRange: аппаратная глубина 0..1. Включите metricFocus для фокуса по расстоянию вдоль камеры (единицы мира); focusDistance/focusRangeMeters задают плоскость и диапазон, occlusionToleranceMeters ограничивает смешивание на границах объектов. Требуется AIVERSE_PRISMA_DOF=1; стандартный minQuality — High, но его можно переопределить. При некорректной near/far автоматически используется старый режим.");
         if (d.type == PrismaType::AutoExposure)
-            ui::help("HDR High + AIVERSE_PRISMA_AUTO_EXPOSURE=1. highlightRejection=0 сохраняет прежний замер. Значения выше нуля уменьшают вклад очень ярких пикселей, начиная с highlightStartEV (log2 яркости), с переходом highlightSoftnessEV; вклад всегда не меньше 5%, чтобы полностью яркая сцена не приводила к нулевой сумме. Отдельная история адаптации для каждой камеры сбрасывается при camera cut. Замер идёт по линейному HDR до тонмаппинга; Color Grading применяется после.");
+            ui::help("HDR High + AIVERSE_PRISMA_AUTO_EXPOSURE=1. highlightRejection=0 сохраняет прежний замер. Значения выше нуля уменьшают вклад очень ярких пикселей, начиная с highlightStartEV (log2 яркости), с переходом highlightSoftnessEV. freezeExposure удерживает последнее валидное значение экспозиции; первый кадр и camera cut делают один новый замер. meterRegionEnabled включает круговую область: meterCenterX/Y — нормализованные координаты (Y от низа), meterRadius/Feather — доли высоты кадра, meterOutsideWeight — ненулевой вклад вне круга. Всё применяется к отдельной истории данной камеры, до tone mapping и UI.");
         int off = 0;
         for (auto& p : d.params) {
             switch (p.kind) {
