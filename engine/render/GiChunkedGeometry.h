@@ -44,6 +44,14 @@ public:
             visitor(chunk.id, chunk.bounds, *chunk.geometry);
     }
 
+    // Strong immutable ownership for asynchronous GPU BLAS caches. The
+    // callback receives shared_ptr<const ...> without extending its lifetime
+    // past the caller unless it explicitly keeps a copy.
+    template<class Fn> void forEachChunkShared(Fn&& visitor) const {
+        for (const auto& chunk : chunks_)
+            visitor(chunk.id, chunk.bounds, chunk.geometry);
+    }
+
     // Offline/scene-change-only extraction for small GPU reference scenes.
     // Stable chunk-ID order; per-chunk geometry retains original surface/material IDs.
     // Production GPU BVH/clipmap path must NOT flatten large worlds per frame.
