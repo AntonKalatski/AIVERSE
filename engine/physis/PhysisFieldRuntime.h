@@ -399,6 +399,12 @@ inline bool admitAuthorizedFieldEdit(Simulation& authoritative,
 inline bool installEditableFromMap(Simulation& sim,const Json& map) {
     auto options=optionsFromMap(map);
     if(!options) return false;
+    // Both registry paths own the same authored ECS entities. Never install
+    // canonical editing over tracked fields or over a previous canonical host.
+    // Reject BEFORE install() mutates the World or registers persistence.
+    if(sim.world().resourceConst<RuntimeFieldRegistry>() ||
+       sim.world().resourceConst<FieldRuntimeState>())
+        throw std::logic_error("PHYSIS authored field registry already installed; choose exactly one runtime");
     const auto initial=parseFieldAssets(map["physis"],*options);
     options->enableWindZones=true;
     options->enableStorms=true;
