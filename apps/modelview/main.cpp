@@ -393,6 +393,142 @@ struct Viewer {
         return false;
     }
 
+    // A provider generation cannot be freed until its LAST queued draw
+    // is GPU-complete. Both old Animators and every published appearance
+    // snapshot stay with the old provider while completion is uncertain.
+    void deferNativeScene(std::unique_ptr<RetiredNativeScene> scene) noexcept {
+        if(!scene)return;
+        try {retiredNativeScenes.push_back(std::move(scene));}
+        catch(...) {
+            // No proof of completed GPU work: leaking this provider is safer
+            // than its destructor releasing potentially GPU-live buffers.
+            (void)scene.release();
+        }
+    }
+
+    // The owner thread calls this only at a frame boundary, never while a
+    // Renderer3D draw uses Prepared ModelReadLease or an Animator Model*.
+    // The cap is advisory; a failed GPU idle proof keeps old resources.
+    bool collectRetiredNativeScenes(bool force=false) noexcept {
+        if(!dev || retiredNativeScenes.empty())return true;
+        if(!force && retiredNativeScenes.size()<kRetiredNativeLimit)
+            return false;
+        try {
+            if(!dev->waitForResourceIdle()) {
+                nativeReloadError="old Model providers retained: GPU idle unavailable";
+                return false;
+            }
+            for(auto& retired:retiredNativeScenes) {
+                if(!retired)continue;
+                try {
+                    retired->instances.clear();
+                    retired->appearances.reset();
+                    if(retired->provider)
+                        retired->provider->shutdown(*dev);
+                    retired.reset();
+                }catch(...) {
+                    // A provider with failed shutdown still owns GPU models:
+                    // never permit its destructor to destroy those objects.
+                    (void)retired.release();
+                }
+            }
+            retiredNativeScenes.clear();
+            return true;
+        }catch(...) {
+            nativeReloadError="GPU retirement failed; old providers kept";
+            return false;
+        }
+    }
+
+    // Replace the ENTIRE ModelView source generation, never a Model* alone:
+    // the parent Animator, its named clip phase, the child source snapshots
+    // and compiled sockets are all rebound against new CPU Model objects.
+    bool reimportModelFiles() {
+        if(!dev || !attachmentPreview || gallery || !nativeModels)
+            return false;
+        auto candidate=std::make_unique<RetiredNativeScene>();
+        candidate->provider=std::make_unique<ModelAssetProvider>(readFile);
+        candidate->appearances=
+            std::make_unique<::aiverse::view::AppearanceAssetRegistry>();
+        std::string error;
+        try {
+            if(nativeModels->resources().activeModelReaders()!=0)
+                throw std::logic_error(
+                    "source reload requested while old Model readers are active");
+            candidate->instances.reserve(inst.size());
+            for(const auto& old:inst) {
+                if(!old.model)
+                    throw std::runtime_error(
+                        "cannot reload an instance without a valid old Model");
+                Model* replacement=candidate->provider->load(*dev,old.path);
+                if(!replacement)
+                    throw std::runtime_error(
+                        "on-disk Model reload failed: "+old.path);
+                Instance next;
+                next.model=replacement;
+                next.path=old.path;
+                next.fix=old.fix; // keep user-authored world placement
+                next.variant=variantName.empty()
+                    ?old.variant:replacement->findVariant(variantName);
+                const int oldClip=old.clip;
+                if(oldClip>=0 && size_t(oldClip)<old.model->clips.size()) {
+                    const auto& previous=old.model->clips[size_t(oldClip)];
+                    next.clip=replacement->findClip(previous.name);
+                } else next.clip=-1;
+                next.anim.setModel(replacement);
+                if(next.clip>=0) {
+                    Animator::Play playing;
+                    playing.fade=0.f;
+                    playing.restart=true;
+                    next.anim.play(0,next.clip,playing);
+                    const auto oldClipIndex=old.clip;
+                    if(oldClipIndex>=0 &&
+                       size_t(oldClipIndex)<old.model->clips.size()) {
+                        const float oldDuration=
+                            old.model->clips[size_t(oldClipIndex)].duration;
+                        const float newDuration=
+                            replacement->clips[size_t(next.clip)].duration;
+                        if(std::isfinite(oldDuration) && oldDuration>0.f &&
+                           std::isfinite(newDuration) && newDuration>0.f) {
+                            const float phase=std::clamp(
+                                old.anim.time(0)/oldDuration,0.f,0.999999f);
+                            (void)next.anim.seek(0,phase*newDuration);
+                        }
+                    }
+                }
+                next.anim.evaluate(next.pose);
+                worldMatrices(*replacement,next.pose,next.world);
+                candidate->instances.push_back(std::move(next));
+            }
+            if(!buildAttachmentLayout(*candidate->provider,
+                                      *candidate->appearances,
+                                      candidate->instances,error))
+                throw std::runtime_error("compiled attachment reload: "+error);
+            // Allocate the old-session owner BEFORE the atomic move/commit.
+            auto retired=std::make_unique<RetiredNativeScene>();
+            retired->provider=std::move(nativeModels);
+            retired->appearances=std::move(attachmentsRegistry);
+            retired->instances=std::move(inst);
+            nativeModels=std::move(candidate->provider);
+            attachmentsRegistry=std::move(candidate->appearances);
+            inst=std::move(candidate->instances);
+            deferNativeScene(std::move(retired));
+            nativeReloadError.clear();
+            log.push_back("reimported "+
+                          std::to_string(inst.size())+
+                          " ModelView sources and socket attachments from disk");
+            return true;
+        }catch(const std::exception& e) {
+            nativeReloadError=e.what();
+            log.push_back("on-disk reimport rejected; last-good retained: "+
+                          nativeReloadError);
+            // Partially GPU-uploaded scratch Models remain owned until the
+            // same fenced retirement boundary as any old visible source.
+            deferNativeScene(std::move(candidate));
+            return false;
+        }
+    }
+
     void play(Instance& in) {
         if (!in.model || in.clip < 0) return;
         Animator::Play p;
