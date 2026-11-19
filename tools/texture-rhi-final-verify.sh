@@ -100,11 +100,11 @@ run_logged safe-build cmake --build "$SAFE" --target ${safe_targets[@]} --parall
 safe_regex="$(IFS='|'; echo "${safe_tests[*]}")"
 run_logged safe-ctest ctest --test-dir "$SAFE" \
   --output-on-failure --no-tests=error --parallel "$JOBS" -R "^($safe_regex)$"
-if ctest --test-dir "$SAFE" -N -R '^(virtual_texture_pack|virtual_texture_feedback_(shaders|msl)|virtual_texture_sampling_(glsl|msl))$' |
+if ctest --test-dir "$SAFE" -N -R '^(virtual_texture_pack|virtual_texture_feedback_(shaders|msl)|virtual_texture_sampling_(glsl|vulkan_spirv|msl))$' |
    grep -Eq 'Test +#[0-9]'; then
   run_logged safe-optional-vt-ctest ctest --test-dir "$SAFE" \
     --output-on-failure --no-tests=error \
-    -R '^(virtual_texture_pack|virtual_texture_feedback_(shaders|msl)|virtual_texture_sampling_(glsl|msl))$'
+    -R '^(virtual_texture_pack|virtual_texture_feedback_(shaders|msl)|virtual_texture_sampling_(glsl|vulkan_spirv|msl))$'
 fi
 if ((FULL_ENGINE)); then
   run_logged full-engine-build cmake --build "$SAFE" --parallel "$JOBS"
