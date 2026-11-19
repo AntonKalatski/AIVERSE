@@ -682,3 +682,24 @@ GCC ASan/UBSan on Linux. Full AIVERSE, admin server CTest,
 macOS and Windows remain UNVERIFIED.
 Handoff:
 `docs/agent-handoffs/physis-stage52-startup-revalidation-fsync-2026-11-19.md`.
+
+### Stage 53 — publish only the inode that was fsynced
+
+For canonical POSIX journal writes, `posix_journal::write` now records
+the staged temporary inode's `fstat` metadata before close. After
+`renameat`, it uses `fstatat(AT_SYMLINK_NOFOLLOW)` to confirm that
+the visible target still names this exact regular, single-linked,
+server-owned, private and correctly sized inode. A mismatch fails
+closed, as do fsync or parent permission failures; the endpoint
+must not send a durable Applied/Queued receipt in that case.
+
+The existing standalone `physis_journal_posix_io` test additionally
+checks inode replacement, secure ownership/mode and temp cleanup.
+Its exact committed header and test blobs
+`2dd114731b498c4156da305915201f97c4848647` and
+`7c6cd0ef9e330be5b61bf7935bb8d8b0f025a907`
+passed Linux CMake/CTest 1/1, strict GCC/Clang and ASan+UBSan.
+Full AIVERSE root build, macOS and authenticated admin tests remain
+UNVERIFIED. This is not a distributed fence or cross-file transaction.
+
+Handoff: `docs/agent-handoffs/physis-stage53-published-inode-2026-11-19.md`.
