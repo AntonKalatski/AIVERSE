@@ -11190,3 +11190,108 @@ pending native hardware validation. This documentation
 does not change source/test behavior. The complete Stage
 10BZ change set is one test-source fix plus the main guide,
 the agent skill and these append-only handoff entries.
+
+## Stage 10CA — Apple M3 Ultra Shader Graph VT fallback/wrap Metal ICB GPU PASS (2026-11-19)
+
+**Branch / PR:** `feature/texture-rhi-unification`, PR #21 Draft.
+**Prior source:** Stage 10BY fixture
+`tests/render/metal_renderer_graph_vt_seam_gpu.cpp`,
+`694d04531ffd5c1e81efe60b499a0ccd8e096d0d`.
+**Native build fix:** Stage 10BZ commit
+`8fe7265f2124539a36e388255acd1d9fc5ee3887`
+renamed `detail(int)` to `finePageKey(int)` to avoid
+`aiverse::detail` namespace ambiguity.
+
+**Observed native user verification after the fix:**
+`metal_renderer_graph_vt_seam_gpu` on Mac Studio
+**1/1 CTest PASS; 0 failed; 5.65 sec test time,
+5.67 sec CTest wall time**. The user supplied complete
+verbose CTest diagnostics, including actual GPU ICB
+submissions and seven frame comparisons. This is user
+hardware evidence, **not** GitHub Actions CI.
+
+**GPU acceptance results:**
+`graph=1 mixedGraph=1 vt=1 mixedVt=1 commands=2
+rejected=0 errors=0` for each of **seven** states:
+nonresident; pinned coarse; missing-file preserved coarse;
+U=-0.125; U=+1.125; U=-0.0005 seam; U=+1.0005 seam.
+Every direct/Metal GPU ICB full-screen RGBA8 comparison
+was **byte identical**:
+`bad_channels=0 max_delta=0`.
+
+**Independent expected-color / failure tests confirmed:**
+- Nonresident page-table fallback matched the original
+  no-resolver graph `tex1` fallback exactly,
+  `changed_channels=0`.
+- Publishing pinned coarse from actual disk files changed
+  **23,304 image channels** relative to nonresident output.
+- Both virtual disk streams returned the expected errors:
+  `missing page or incorrect RGBA8 page byte count`,
+  one for `side=0` and one for `side=1`. They remained
+  usable; the pinned coarse image was unchanged,
+  `MISSING PAGE ORACLE coarse changed_channels=0`.
+- Four independent expected-page wrap policies succeeded
+  on **both** ordinary and ICB images (8 oracle passes):
+  U=-0.125 and -0.0005 → Repeat selects left fine
+  while right MirrorRepeat stays coarse; left region
+  delta=210, right=0, observed left RGB delta
+  (+104,-101,-5). U=+1.125 and +1.0005 →
+  right MirrorRepeat selects fine and left Repeat stays
+  coarse; right region delta=289, left=0,
+  observed right RGB delta (+108,+67,-114).
+- The native log concluded:
+  `PASS: Renderer3D Shader Graph disk VT missing-page and
+  Repeat/MirrorRepeat seam GPU ICB oracle`.
+
+**Architecture/API actually exercised:** production
+`render::graph::compile`, `Renderer3D` material graph
+injection, per-command Metal GPU ICB with mixed Shader
+Graph and virtual texture resources, disk-backed
+`gfx::VirtualTextureFileStreamer`, native GPU RGBA8
+page tables and physical atlases, two independently
+owned archives/virtual layers, Repeat and MirrorRepeat
+U-addressing, no-page fallback and a recoverable missing
+file read. No CPU draw fallback can be counted as a
+GPU ICB PASS because the fixture requires nonzero
+mixed graph and VT submission counters.
+
+**Change set for Stage 10CA:** no C++ or production
+renderer changes after PASS. Documentation commit
+`7eeb5d1168fa5e7c14d33b505dc7c733524587d2`
+updated `docs/texture-rhi.md`, and
+`578c937126e1cc9e9fa42c184955469581ec8b6a`
+updated `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+This entry is the separate append-only agent handoff
+commit recording actual native evidence.
+
+**Important remaining limitations:** the test used
+small **solid-color** 4x4 physical pages and
+`gutterPixels=0`. It establishes correct page
+selection at out-of-range UVs but does **not**
+validate nonuniform bilinear/anisotropic filtering
+near physical page boundaries, mip transition seams,
+large archive/streaming stress, multiple graph source
+counts, alpha/deformation paths or other GPUs and
+GL/Vulkan/WebGL/mobile RHI parity. Test wall time is
+not a GPU draw-timing or FPS improvement measurement.
+
+**Next bounded feature/acceptance stage:** use the
+current production `VirtualTextureSampling`,
+`VirtualTextureFileStreamer` and native
+`Renderer3D` without rewriting or replacing them.
+Create an opt-in test with nonuniform neighboring
+source tiles and edge-clamped/repeat/mirror gutters;
+implement an **independent CPU bilinear expected-pixel
+oracle** grounded in the original page assets. Sample
+both sides of tile seams and mip0→coarse fallback with
+gutter-aware UVs; require actual GPU pixel tolerances
+and ordinary-vs-ICB parity, track reallocation/LRU.
+Test separately on real Metal, and plan
+GL/Vulkan/WebGL/mobile compatibility and scene
+performance/driver soak. Keep every high-risk
+CMake CTest default-OFF, experimental ICB flags
+OFF in production and PR #21 Draft until the
+remaining acceptance gates pass. For each
+bounded code stage, first commit source, then
+separate append-only handoff with exact SHA,
+modified files, actual tests and next step.
