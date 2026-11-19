@@ -1,4 +1,5 @@
 #include "StrataGpuCulling.h"
+#include "StrataVulkanCullingShaders.h"
 
 #include <algorithm>
 #include <array>
@@ -335,7 +336,8 @@ bool GpuClusterCulling::requestReadback(
         callback(std::move(failed));
         return false;
     };
-    if (dev.info().backend != gfx::Backend::Metal ||
+    if ((dev.info().backend != gfx::Backend::Metal &&
+         dev.info().backend != gfx::Backend::Vulkan) ||
         !submission.valid() || submission.capacity > 2048 ||
         submission.frameSerial != dev.frameSerial())
         return reject();
@@ -428,7 +430,8 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
                                 const std::vector<GpuSceneInstance>& instances,
                                 const GpuPassConfig& config, uint64_t frameSerial,
                                 GpuSelectionSubmission& out) {
-    if (dev.info().backend != gfx::Backend::Metal ||
+    if ((dev.info().backend != gfx::Backend::Metal &&
+         dev.info().backend != gfx::Backend::Vulkan) ||
         !dev.supportsCompute() || !gpuMetadataV2.valid() ||
         !frameSerial || instances.empty() || instances.size() > 4096 ||
         config.maxOutputClusters == 0 || config.maxOutputClusters > 65536 ||
@@ -449,7 +452,9 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
     if (dev.frameSerial() != 0 && dev.frameSerial() != frameSerial)
         return false;
     if (!pipeline_.valid()) {
-        pipeline_ = dev.createCompute({kMetalCulling, nullptr,
+        const bool vulkan=dev.info().backend==gfx::Backend::Vulkan;
+        pipeline_ = dev.createCompute({vulkan ? nullptr : kMetalCulling,
+                                       vulkan ? kVulkanGpuCulling : nullptr,
                                        "Strata diagnostic GPU cluster culling"});
         if (!pipeline_.valid()) return false;
     }
@@ -504,8 +509,9 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
     uniforms.clipDepthZeroToOne = config.clipDepthZeroToOne ? 1u : 0u;
     uniforms.frustumCull = config.frustumCull ? 1u : 0u;
     dev.setComputeUniforms(&uniforms, sizeof(uniforms));
-    dev.dispatch(uint32_t(instances.size()));
+    const bool encoded=dev.dispatchChecked(uint32_t(instances.size()));
     dev.endCompute();
+    if(!encoded) return false;
     GpuSelectionSubmission ready{};
     ready.ranges = slot.ranges;
     ready.counters = slot.counters;
