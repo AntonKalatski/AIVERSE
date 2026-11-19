@@ -59,6 +59,7 @@ void Editor::registerFxPreviewOps() {
             Json r = Json::object();
             if (p.getBool("stop")) {
                 gameFx_.kill(fxPreview_.h);
+                stopSpectraGpuPreview();
                 fxPreview_ = {};
                 fxFrozen_ = false;
                 r.set("ok", Json::fromBool(true));
@@ -141,7 +142,7 @@ void Editor::registerFxPreviewOps() {
         "The current preview is replaced; old fx/*.json files remain untouched.",
         Json::parse(R"({"properties":{"name":{"type":"string"},"graph":{"type":"object"},"overrides":{"type":"object"},
             "x":{"type":"number"},"y":{"type":"number"},"z":{"type":"number"},
-            "advance":{"type":"number"},"loop":{"type":"boolean"},"freeze":{"type":"boolean"},"instanceValues":{"type":"object"}},"required":["graph"]})"),
+            "advance":{"type":"number"},"loop":{"type":"boolean"},"freeze":{"type":"boolean"},"gpu":{"type":"boolean"},"instanceValues":{"type":"object"}},"required":["graph"]})"),
         [this](const Json& p)->Json {
             if(ws_.project.dir.empty())throw std::runtime_error("open a game project first");
             fx::EffectDef compiled;
@@ -188,6 +189,29 @@ void Editor::registerFxPreviewOps() {
             Viewport* vp=playing()?gameViewport:sceneViewport;
             const int width=vp&&vp->w>0?vp->w:1280;
             const int height=vp&&vp->h>0?vp->h:720;
+            if(p.getBool("gpu")) {
+                if(!dev_ || dev_->info().backend!=gfx::Backend::Metal ||
+                   !dev_->supportsCompute())
+                    throw std::runtime_error("SpectraFX GPU preview requires a Metal compute device");
+                spectra::GraphRuntimeOptions options;
+                options.preference=spectra::ComputePreference::RequireGpu;
+                options.gpuProgram=true;options.gpuMaterial=true;
+                const auto eligibility=spectra::inspectGraphGpuEligibility(compiled,options);
+                if(!eligibility.eligible)
+                    throw std::runtime_error("SpectraFX Metal GPU preview rejected: "+eligibility.reason);
+                gameFx_.kill(fxPreview_.h);
+                fxPreview_={};fxFrozen_=false;
+                queueSpectraGpuPreview(compiled,instanceParams,pos,
+                    playing()&&!ws_.project.isFps(),p.getBool("loop"));
+                Json response=Json::object();
+                response.set("ok",Json::fromBool(true));
+                response.set("queued",Json::fromBool(true));
+                response.set("backend",Json::string("Metal"));
+                response.set("view",Json::string(playing()&&!ws_.project.isFps()?"game":"scene"));
+                response.set("summary",Json::string("Metal preview will start before the next scene render pass"));
+                return response;
+            }
+            stopSpectraGpuPreview();
             gameFx_.setView(cam,cam.proj(float(width)/float(height),
                 dev_&&dev_->info().clipDepthZeroToOne)*cam.view(),width,height);
 
