@@ -7,6 +7,7 @@
 #include "engine/render/CameraCaptureViews.h"
 #include "engine/render/EcsCameraRender.h"
 #include "engine/render/CameraRig.h"
+#include "engine/render/CameraFrameRecorder.h"
 #include <algorithm>
 #include <cmath>
 #include <filesystem>
@@ -42,6 +43,8 @@ public:
             return;
         }
         if(project_!=project) {
+            recorder_.stop();
+            captureStatus_=std::make_shared<CaptureStatus>();
             if(device_)preview_.release(*device_);
             device_=&ed.device();project_=project;
             world_=std::make_unique<World>();
@@ -186,17 +189,49 @@ public:
         render::EcsCameraView view;
         if(render::resolveEcsCamera(*world_,selected_,view)) {
             const float side=std::clamp(ImGui::GetContentRegionAvail().x,128.f,400.f);
-            preview_.ensure(ed.device(),int(side),int(side));
+            // Keep the texture allocated at its original size while a GPU
+            // readback is pending; resizing would retire the capture source.
+            if(!recorder_.pending())preview_.ensure(ed.device(),int(side),int(side));
             if(lens && lens->physicalFov && render::validCameraLens(*lens)) {
                 const float sensor=float(lens->sensorHeightMm.toDouble());
                 const float focal=float(lens->focalLengthMm.toDouble());
                 view.camera.fovY=2.f*std::atan(sensor/(2.f*focal));
             }
             ed.renderScene(preview_,view.camera,false);
+            ImGui::TextDisabled("Live GPU RenderTexture preview (%d x %d)",preview_.w,preview_.h);
             preview_.image(ed.device(),side,side);
+            ImGui::Separator();
+            if(ImGui::Button("Capture PNG") && !recorder_.pending()) {
+                const std::filesystem::path directory=std::filesystem::path(project_)/"captures"/"lens";
+                const auto state=captureStatus_;
+                const uint64_t stableId=[&]{
+                    const auto* name=world_->tryGetConst<CameraNameComponent>(selected_);
+                    return name?name->stableId:uint64_t(selected_.packed());
+                }();
+                recorder_.start(1.0,[state,directory,stableId](render::CameraCapturedFrame frame){
+                    std::error_code ec;
+                    std::filesystem::create_directories(directory,ec);
+                    if(ec || !frame.valid()) {
+                        state->message=ec?ec.message():"Camera capture returned no pixels";
+                        return;
+                    }
+                    const auto file=directory/("camera-"+std::to_string(stableId)+".png");
+                    state->message=frame.writePng(file.string())?
+                        ("Saved "+file.string()):("Cannot write "+file.string());
+                });
+                if(!recorder_.tickTexture(ed.device(),preview_.color,ed.time()))
+                    captureStatus_->message="Offscreen RT readback unsupported or busy";
+                else captureStatus_->message="Camera capture queued";
+            }
+            if(recorder_.pending())ImGui::TextDisabled("GPU readback pending...");
+            if(captureStatus_&&!captureStatus_->message.empty())
+                ImGui::TextWrapped("%s",captureStatus_->message.c_str());
         }
     }
 private:
+    struct CaptureStatus { std::string message; };
+    std::shared_ptr<CaptureStatus> captureStatus_=std::make_shared<CaptureStatus>();
+    render::CameraFrameRecorder recorder_;
     std::string project_,error_;
     std::unique_ptr<World> world_;
     std::unique_ptr<SceneHierarchy> hierarchy_;
