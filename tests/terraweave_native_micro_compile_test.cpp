@@ -15,6 +15,7 @@
 #include "engine/world/TerraWeavePhysisNutrientBridge.h"
 #include <cassert>
 #include <cstdint>
+#include <stdexcept>
 #include <type_traits>
 
 int main() {
@@ -36,5 +37,25 @@ int main() {
     (void)terraweavePhysisWeatherAvailable();
     ForestMicroSettings cfg;
     validateForestMicroSettings(cfg);
+#if defined(AIVERSE_TERRAWEAVE_SMOKE_WITH_PHYSICS)
+    // A source-facing regression for the exact Clang precedence warning:
+    // zero/zero is invalid, either nonzero budget is allowed, and
+    // the default budget is valid. No physics Scene construction needed.
+    FlowObstructionCapturePolicy policy;
+    validateFlowObstructionCapture(policy);
+    policy.maxFallenTrees=0;
+    policy.maxSlopeDebris=0;
+    bool rejected=false;
+    try { validateFlowObstructionCapture(policy); }
+    catch(const std::invalid_argument&) { rejected=true; }
+    assert(rejected);
+    policy.maxSlopeDebris=1;
+    validateFlowObstructionCapture(policy);
+    policy.maxFallenTrees=129;
+    rejected=false;
+    try { validateFlowObstructionCapture(policy); }
+    catch(const std::invalid_argument&) { rejected=true; }
+    assert(rejected);
+#endif
     return 0;
 }
