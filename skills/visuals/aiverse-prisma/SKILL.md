@@ -468,6 +468,68 @@ own `docs/handoffs/prisma-stage-XX.md`; Stage 49 details are in
 scoped timers, backend fallback and GPU-fenced resource lifetime are
 not changed.
 
+## External VFX/terrain/planet/world resource owners and native TAA admission (Stage 50)
+
+Stage 50 extends read-only owner-inventory to **presentation render
+modules**, not to gameplay/ECS:
+
+- `ParticleSystem::ownedGpuMemoryStats()` lists ONLY its private
+  vertex/index buffers and builtin particle atlas. Graph textures,
+  imported effect/mesh textures and `FxTexture` instances are
+  **borrowed**, never owned by the particle simulator
+- `ClientFx::ownedGpuMemoryStats()` combines independent
+  `ParticleSystem` buffer/atlas inventory and its own
+  `TextureCache` of resolved effect sprites/atlas pages
+- `TerrainRenderer::ownedGpuMemoryStats()` inventories all
+  resident terrain chunk LOD VBO/IBOs, water/apron geometry,
+  per-cell/vision/heightfield/detail textures and the
+  terrain-private `TextureCache` (its layer/cliff refs are borrowed)
+- `PlanetRenderer::ownedGpuMemoryStats()` inventories resident
+  planet body chunks, per-body vision/detail textures,
+  sphere/atmosphere meshes, placeholders and its independent
+  material texture cache
+- `RtsView::ownedPresentationGpuMemoryStats(device)` combines its
+  unique model/material resource report with terrain and planet
+  owners even when one is not actively drawn this frame
+- `WorldScene::ownedGpuMemoryStats(device)` enumerates unique
+  resident GPU models across shared world chunks. It intentionally
+  **excludes ModelTextureCache** because that cache may be shared
+  with RtsView (GameClient `streamedWorld` uses
+  `view_.textureCache()`); the borrowed cache images are already
+  counted by their owner, while the WorldScene's unique VBO/IBOs
+  and direct model images are counted only once
+
+Host integration is done **before**
+`Prisma::renderSizeForOutput(outputW,outputH)`. Editor combines
+its `view_.ownedPresentationGpuMemoryStats`, independent
+`fxTextures_.ownedGpuMemoryStats()`, and
+`gameFx_.ownedGpuMemoryStats()` with saturating addition.
+Native GameClient combines `view_.ownedPresentationGpuMemoryStats`,
+`fx_.ownedGpuMemoryStats()`, and optional
+`worldScene_->ownedGpuMemoryStats()`. This remains a lower-bound
+quality-pressure metric and **does not confer ownership or allow
+premature resource release**. Separate Renderer3D subowners and
+GlobalGeometryPool pages remain as in Stages 47–49.
+
+**Critical native Temporal Resolve fallback fix:** the
+`ViewQualityPolicy.maxTemporalHistoryMiB` cap now applies to
+*all active HDR Temporal Resolve histories*, including full-resolution
+Stage 42 stabilization **without** subpixel jitter/upscale, rather
+than only scaling modes. For opt-in jittered native 1:1 presentation,
+`renderSizeForOutput` also preflights two output HDR histories,
+scene/depth, velocity and scratch before `jitteredCamera` can shift
+the 3D projection. If preflight fails, jitter is rejected for the view
+and `Prisma::resolve` does not bypass the rejection by reallocating
+that history. Failed preflight retries remain rate limited by the
+Stage 45 cooldown; no new GPU wait or force-destroy is introduced.
+Normal non-temporal renderers and effects are unchanged.
+
+**Explicit user sequencing:** continue implementing missing features
+first; *do not* run CMake, CTest, Metal/GL/Vulkan/GLES/WebGL GPU
+validation until the entire functional backlog is closed.
+`docs/handoffs/prisma-stage-50.md` records exact files, commits,
+actual structural checks, caveats and feature Stage 51.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
