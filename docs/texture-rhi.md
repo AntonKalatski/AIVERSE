@@ -3382,3 +3382,118 @@ page-table identities per command, proper fallback and LRU changes.
 Require GPU ICB submissions, direct rendering parity and actual
 GPU fragment readbacks. Then separately validate GL/Vulkan/mobile
 non-ICB fallbacks and profile larger scenes with representative workloads.
+
+
+### Stage 10BW — two independent disk-backed VT domains + compiled Shader Graph / Metal GPU ICB (source only)
+
+New opt-in **macOS production integration** fixture
+`tests/render/metal_renderer_graph_vt_icb_gpu.cpp` starts from the
+previous Stage 10BU **actually verified** Renderer3D/Shader Graph test.
+It compiles a real version-1 **material JSON graph** through
+`render::graph::compile`, with four connected ordinary texture
+samples plus a connected `sampleVirtualTexture` node, runs the
+production Renderer3D shader injection/lighting path, and retains
+its two distinct textured model primitives. The compiled graph
+uses the production page-table sampler from
+`engine/gfx/VirtualTextureSampling.h`; the test does not duplicate
+the VT shader lookup or invent a custom MSL backend.
+
+The test creates two **distinct, temporary, trusted on-disk raw
+RGBA8 page archives**, each owned by its own production
+`gfx::VirtualTextureFileStreamer`. Different native physical
+atlas handles, page-table handles and virtual layers (0 and 1)
+are assigned through `Renderer3D::setModelVirtualTextureResolver`.
+The left domain uses Repeat-U, the right uses MirrorRepeat-U;
+both clamp V. Each atlas has a two-physical-page budget,
+four-by-four virtual mip-zero tiles and three mip levels.
+
+For each of **three successive page-residency states**,
+the fixture captures both ordinary Renderer3D and opt-in Metal
+GPU-encoded ICB output and compares full-screen RGBA8 pixels:
+1. Coarse page (mip 2) published and pinned from disk.
+2. Fine page (mip 0, tile 1,1) loaded to the remaining physical slice.
+3. A new mip-zero tile (2,2) published after the fine page's
+   physical slot is recycled by LRU. Requires coarse pinned
+   page still resident, evicted fine page absent, and nonzero
+   eviction counters on **both** archives.
+
+The test requires visibly different left/right material
+regions and **more than 64 changed image channels** across
+each residency transition. For every matched pair of ordinary
+and GPU-ICB captures, differences >2 LSB/channel fail. The
+ICB result must have real `shaderGraphIcbSubmissions`,
+`mixedGraphSourceSubmissions`, `perCommandVtExecutions`,
+`mixedVtExecutions`, at least two encoded commands and no
+execution failure. This rules out no-op texture changes,
+unverified CPU draw fallback, or both draws accidentally
+using one VT atlas. A driver/compiler/readback/worker error
+is a hard test failure. Native async worker operations
+remain on the existing file streamer; only its render-thread
+`pump()` touches the RHI. Temporary page files are deleted
+at fixture shutdown.
+
+**Build:** new default-`OFF` flag
+`AIVERSE_TEXTURE_METAL_GRAPH_VT_ICB_GPU_TESTS`. When enabled
+on macOS with tests, executable
+`aiverse_metal_renderer_graph_vt_icb_gpu_test` is registered as
+`metal_renderer_graph_vt_icb_gpu`. This is completely separate
+from the Stage 10BT low-level ABI and Stage 10BV scene tests
+and is **not** included in default or ordinary `--metal` CTests.
+Opt-in CTest injects the necessary GPU ICB, mixed PBR,
+per-command VT, mixed VT and Shader Graph environment flags.
+
+**Source commits:**
+`8946de8a03e65a2eefd1b8d40dbb7270f3ad8124` (new fixture);
+`2a4d64c102627aff48f1e7c756260b377f0c9e7f`
+(correct fixture helper namespace and explicit cstddef);
+`70019a92cf5657c05c3f3e3a749eafcd4061b753`
+(separately gated CMake / CTest).
+No production RHI, shader, streaming, Renderer3D or game code
+was modified.
+
+**Verification boundary:** native macOS C++ compile/link,
+MSL shader compilation, hardware GPU ICB execution,
+disk page transitions, pixel parity and performance for
+this Stage 10BW source are **NOT RUN** in this tool environment.
+The Stage 10BV Apple M3 Ultra **1/1 PASS** proves the prior
+four-source **non-VT** Shader Graph scene, not Stage 10BW.
+This new experimental test may expose an integration defect;
+do not claim it has passed based on static API review.
+
+Run explicitly on the **isolated texture worktree** on Mac Studio
+(primary `AIVERSE` worktree has unrelated unfinished rebase).
+Use a fresh build directory to preserve the last green CMake caches:
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+cmake -S . -B build/texture-graph-vt-icb \
+  -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_RENDERER_GRAPH_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_GRAPH_VT_ICB_GPU_TESTS=ON
+cmake --build build/texture-graph-vt-icb \
+  --target aiverse_metal_renderer_graph_vt_icb_gpu_test --parallel 4
+ctest --test-dir build/texture-graph-vt-icb \
+  --verbose --output-on-failure --no-tests=error \
+  -R '^metal_renderer_graph_vt_icb_gpu$'
+```
+
+Only a fresh successful compile plus **three** per-state
+`PASS: Shader Graph+VT ... Renderer3D CPU/ICB pixels` markers,
+nonzero real GPU mixed VT/graph counters, two changed-pixel
+transition reports and the final
+`PASS: production Renderer3D Shader Graph+disk VT mixed Metal
+GPU ICB coarse/fine/LRU pixel parity`
+**and** CTest 1/1 PASS count as native verification.
+If a compiler/Metal/resource/worker/page-table/pixel check fails,
+capture the first concrete error and fix the root cause in
+a new code commit and append-only handoff. After success,
+extend to nonresident/missing disk page failures, edge-filtering
+seams, mixed wrap modes at UV outside [0,1], and independent
+Vulkan/GL/mobile non-ICB parity. Do not infer any frame-time
+speedup from CTest duration. Keep PR #21 Draft and GPU ICB
+flags OFF in production until further validation.
