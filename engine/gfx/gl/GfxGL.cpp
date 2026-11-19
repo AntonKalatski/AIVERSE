@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cstring>
 #include <cstdio>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -118,6 +119,11 @@ public:
         }
     }
     ~GLDevice() override {
+        for(const auto& [token,sync]:retirementFences_) {
+            (void)token;
+            if(sync)glDeleteSync(sync);
+        }
+        retirementFences_.clear();
 #if defined(__APPLE__) || defined(_WIN32)
         if (queryActive_) glEndQuery(GL_TIME_ELAPSED);
         for (const auto& t:timedQueries_) glDeleteQueries(1,&t.query);
@@ -371,11 +377,35 @@ public:
     }
 #endif
     bool waitForResourceIdle() override {
-        // Portable GL/ES3 path: glFinish waits for commands submitted
-        // from this context before model buffers/textures are recycled.
-        // The host must call between render passes on the context thread.
+        // Fallback for unsupported/failed async sync objects.
         glFinish();
         return glGetError()==GL_NO_ERROR;
+    }
+    uint64_t beginResourceRetirement() override {
+        // Fence is enqueued behind earlier GL commands on this context.
+        // Submission must happen only at a host frame boundary.
+        GLsync sync=glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE,0);
+        if(!sync)return 0;
+        glFlush(); // allows asynchronous progress without glFinish
+        const uint64_t token=nextRetirementToken_++;
+        retirementFences_.emplace(token,sync);
+        return token;
+    }
+    bool resourceRetirementComplete(uint64_t token) override {
+        const auto it=retirementFences_.find(token);
+        if(it==retirementFences_.end())return false;
+        const GLenum status=glClientWaitSync(it->second,0,0);
+        return status==GL_ALREADY_SIGNALED ||
+               status==GL_CONDITION_SATISFIED;
+    }
+    void endResourceRetirement(uint64_t token) override {
+        const auto it=retirementFences_.find(token);
+        if(it==retirementFences_.end())return;
+        const GLenum status=glClientWaitSync(it->second,0,0);
+        if(status!=GL_ALREADY_SIGNALED &&
+           status!=GL_CONDITION_SATISFIED)return;
+        glDeleteSync(it->second);
+        retirementFences_.erase(it);
     }
     void beginFrame(int w, int h) override {
         fbW_ = w; fbH_ = h;
@@ -619,6 +649,8 @@ private:
     std::vector<uint8_t> slotData_[kMaxUniformSlots]; // last data per slot, re-uploaded when the ring is orphaned
     int passW_ = 0, passH_ = 0;
     std::vector<GLFramebuffer> fbos_;
+    uint64_t nextRetirementToken_=1;
+    std::map<uint64_t,GLsync> retirementFences_;
     Pool<GLBuffer> buffers_;
     Pool<GLTexture> textures_;
     Pool<GLShader> shaders_;
