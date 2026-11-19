@@ -159,7 +159,11 @@ void ClientFx::prepareGpuFrame(float dt,const render::RTSCamera& camera) {
             gpuPlayback_->dispatch(cue);
         }
     }
-    gpuPlayback_->updateGpu(dt,camera.eye());
+    // The look direction is required by Metal's back-to-front GPU alpha sort.
+    // Planet rendering is gated above and retains the existing CPU effects.
+    const render::float3 eye=camera.eye();
+    const render::float3 forward=render::normalize(camera.target-eye);
+    gpuPlayback_->updateGpu(dt,eye,forward);
 }
 
 void ClientFx::renderGpu(const render::mat4& viewProj,
