@@ -166,3 +166,38 @@ Stage 1; this stage supplies deterministic ECS ownership and lifecycle APIs.
   1M-entity RSS read benchmark for 16/64/1024 unique configs.
   Record actual results, errors, exact SHA, platform and warnings;
   Stage 6 native run is not yet performed.
+
+## Stage 7 — additive collision namespaces (2026-11-19)
+
+- `SceneCollisionNamespaces` owns canonical, sorted instance-key
+  reservations for the high half of `SpatialWorld`'s uint32 collider ID
+  space. Each 65,536-ID slot allows 65,535 per-chunk colliders.
+  Per-host namespaces are fixed before gameplay and leased through
+  move-only RAII handles. Never assign by async completion order.
+- `world::CollisionStream` remains the real SHA-256-verified async
+  collision source. A new optional `CollisionIdRange` parameter
+  assigns a disjoint range; the original three-argument call keeps
+  its legacy guard. Do not bypass either reservation or occupancy
+  validation.
+- `SceneCollisionBridge` is an opt-in `SceneResourceAdapter`
+  to `SceneLoadCoordinator`. Its `define` registers a stable
+  resource key + scene instance key + existing WorldAssets manifest;
+  `acquire` leases a range and creates the actual CollisionStream;
+  `release` destroys it before returning the lease.
+- Call `SceneCollisionBridge::prepareRegions` before Simulation::step
+  for required physical regions, and hold `readyToStep` false until
+  collision residency is complete. Never decide authoritative ticks
+  based on worker wall-time readiness.
+- Additive stream ID ranges are safe only when every stream in one
+  SpatialWorld uses one host-owned namespace catalog. Multiple
+  instances of the same scene asset require distinct instance keys.
+  Neighboring terrain seam checks across separate streams and a
+  global cross-stream publication budget are not yet provided.
+- Native CTests:
+  `ecs_scene_collision_namespaces_test`,
+  `ecs_scene_collision_bridge_test`. Stage 7 code has NOT yet
+  undergone native compilation or execution; user requested final
+  one-shot full build/CTest after all features.
+- See `docs/scene-collision-namespaces.md` and
+  `docs/agent-handoffs/ecs-static-scene-stage7-2026-11-19.md`
+  for contracts, limits, exact source/test status and continuation.
