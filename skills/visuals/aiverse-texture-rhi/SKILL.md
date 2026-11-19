@@ -502,3 +502,19 @@ CI if it remains queued or cancelled.
 - The wrap policy participates in exact GPU material-group identity and hash.
   Verify GL/Metal/Vulkan UV seams and sampler parity during the deferred GPU
   validation phase. These additions are source-only, not GPU certified.
+
+
+### VT immutable archive wrap-aware packing (Stage 10M)
+
+- Generate periodic foliage/ground textures with `tools/virtual_texture_pack.py
+  --address-u repeat --address-v repeat`, or use `mirror` independently
+  per axis. The default remains `clamp`, including legacy output manifests.
+- The packer applies address modes both to packed edge gutters and to
+  odd-size mip generation. A non-clamp `manifest.json` records `addressU`
+  and `addressV` strings, but the renderer does not automatically infer
+  them from the manifest: set the same `ModelVirtualTextureBinding`
+  `gfx::SamplerAddressMode` values through the game's resolver.
+- Preserve immutable archive versioning and rebuild the full page archive
+  when wrapping changes. Test real GLSL/MSL periodic seams during the
+  deferred validation phase. Python packer tests for these modes are
+  not yet executed/added; do not claim real GPU fidelity.
