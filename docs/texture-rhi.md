@@ -2701,3 +2701,55 @@ on an earlier commit. The timing+fragment GPU run applies
 to the source at the user's test time, before any further
 VT GPU acceptance additions.
 
+
+### Stage 10BI — real Metal virtual-texture feedback acceptance (source only)
+
+An additional opt-in **real Metal GPU acceptance** path has been added
+to `tests/render/metal_texture_gpu.mm`. It exercises the
+**production** `gfx::VirtualTextureFeedbackPass`, the canonical
+`kVirtualTextureFeedbackMSL` and
+`kVirtualTextureFeedbackMaterialMSL` shader helpers, the existing
+`gfx::Device` Metal render pipeline, actual offscreen RGBA8
+rendering and asynchronous GPU readback, and finally the
+`VirtualTextureFeedbackDecoder`.
+
+The test draws a fullscreen triangle to a 4×4 single-sample feedback
+target (with depth attachment to match the pipeline), using
+8×8 base tiles, three mip levels and three virtual layers.
+Two cases must **fail closed** on any error:
+
+- valid UV `(0.8125,0.5625)`, mip `1`, layer `2`,
+  expected tile `(3,2)`: all 16 rendered pixels must equal
+  `encodeVirtualTextureFeedback({1,3,2,2})` as four **exact**
+  RGBA8 bytes. After actual native GPU completion, the generic
+  decoder must return one visible page at UV origin `(0.75,0.5)`,
+  mip `1`, layer `2`, priority `16`, with no invalid IDs.
+- invalid UV `(-0.125,0.5625)`: all 16 pixels must be zero;
+  the decoder must report 16 invalid IDs and no visible region.
+
+The `VirtualTextureFeedbackPass` must also enter
+`readyToSubmit()` after the GPU callback is delivered on the
+graphics device owner thread; no CPU mock substitutes for GPU
+completion. This proves GPU shader feedback ID encoding and
+owner-thread decoding, not disk-backed physical page allocation
+or atlas/page-table streaming. Those are separate future steps.
+
+**Implementation:** source commit
+`5830d16f8531d462fa02709a0e6a0f8e5c4ef9f1`.
+No native library, public RHI API, genre/ECS, CMake option or
+regular CPU test behavior was changed. The new acceptance extends
+the existing `--metal` opt-in test binary.
+
+**Verification:** source inspection and GitHub update performed.
+**Not yet built or run** on Mac Studio for this commit.
+An earlier on-device M3 Ultra test confirmed the previous
+Texture3D fragment shader and 3D/array/cube readback (1/1 CTest
+PASS in 1.14 s), but this is not a PASS for the new feedback test.
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parallel 4
+ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
+```
+
