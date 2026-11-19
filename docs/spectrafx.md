@@ -1355,7 +1355,7 @@ Linux, or other platforms in this stage. No Metal image output,
 CPU/GPU numeric parity or performance evidence is available.
 Do not enable `gpuProgram` by default before real-device tests.
 
-## GPU VM custom scalar attributes (Stage 23 — functional source, tests deferred)
+## GPU VM custom scalar attributes (Stage 26 — functional source, tests deferred)
 
 The optional Metal `ComputeParticles` GPU VM now supports **eight
 persistent per-particle custom floats** (`attribute0` through
