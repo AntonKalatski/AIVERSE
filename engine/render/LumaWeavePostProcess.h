@@ -82,11 +82,15 @@ public:
         if(dev_) {
             if(vertex_.valid())dev_->destroyBuffer(vertex_);
             if(composeDepth_.valid())dev_->destroyTexture(composeDepth_);
+            if(materialTarget_.valid())dev_->destroyTexture(materialTarget_);
+            if(materialDepth_.valid())dev_->destroyTexture(materialDepth_);
             if(pipeline_.valid())dev_->destroyPipeline(pipeline_);
             if(shader_.valid())dev_->destroyShader(shader_);
         }
         dev_=nullptr;vertex_={};pipeline_={};shader_={};scene_={};
         composeDepth_={};depthWidth_=depthHeight_=0;
+        materialTarget_={};materialDepth_={};
+        receiverWidth_=receiverHeight_=0;
         material_={};materialWidth_=materialHeight_=0;
         sceneToken_=materialToken_=0;frameCounter_=0;
         sourcesPublished_=geometryPublished_=enabled_=false;
@@ -152,7 +156,40 @@ public:
     bool linearScene() const override {return downstream_.linearScene();}
     bool temporalShadowResolve() const override {return downstream_.temporalShadowResolve();}
 
+    bool wantsMaterialReceiverPass() const override {
+        return frame_.eligible && !legacy_.count() &&
+               !legacy_.staticPointLightsActive() &&
+               !(material_.valid() && materialToken_==sceneToken_);
+    }
+
+    gfx::PassDesc materialReceiverPass(int w,int h) override {
+        if(!wantsMaterialReceiverPass() || !ensureMaterialTarget(w,h))
+            return {};
+        gfx::PassDesc p;
+        p.colorTarget=materialTarget_;
+        p.depthTarget=materialDepth_;
+        p.clearColorEnabled=true;
+        p.clearDepthEnabled=true;
+        p.clearColor[0]=p.clearColor[1]=p.clearColor[2]=0;
+        p.clearColor[3]=1; // absent fragments have black albedo, no artificial light
+        return p;
+    }
+    void materialReceiverPublished(gfx::TextureHandle texture,int w,int h) override {
+        if(texture.valid() && texture.id==materialTarget_.id &&
+           w==receiverWidth_ && h==receiverHeight_ && sceneToken_) {
+            material_=materialTarget_;
+            materialWidth_=uint32_t(w);materialHeight_=uint32_t(h);
+            materialToken_=sceneToken_;
+        }
+    }
+
     gfx::PassDesc scenePass(const gfx::PassDesc& out,int w,int h) override {
+        if(!sceneToken_)sceneToken_=++autoViewSerial_;
+        // Each view must explicitly populate its material side channel; a
+        // different viewport's cached albedo must never be reused.
+        if(materialToken_!=sceneToken_) {
+            material_={};materialWidth_=materialHeight_=0;materialToken_=0;
+        }
         scene_=downstream_.scenePass(out,w,h);
         viewWidth_=w;viewHeight_=h;
         frame_={};
@@ -213,9 +250,38 @@ public:
         }
         // Do not bypass existing ScreenLighting, PostFx, HUD or UI pipeline.
         downstream_.resolve(device,out,frame);
+        // Reset token so even an automatic caller begins a distinct frame.
+        sceneToken_=0;
+        material_={};materialToken_=0;
     }
 
 private:
+    bool ensureMaterialTarget(int w,int h) {
+        if(!dev_ || w<=0 || h<=0)return false;
+        if(materialTarget_.valid() && materialDepth_.valid() &&
+           receiverWidth_==w && receiverHeight_==h)return true;
+        if(producer_.busy())return false;
+        gfx::TextureDesc materialDesc;
+        materialDesc.width=w;materialDesc.height=h;
+        materialDesc.format=gfx::PixelFormat::RGBA16F;
+        materialDesc.filter=gfx::Filter::Nearest;
+        materialDesc.renderTarget=true;
+        materialDesc.label="LumaWeave linear baseColor and metallic receiver";
+        const auto newMaterial=dev_->createTexture(materialDesc);
+        if(!newMaterial.valid())return false;
+        gfx::TextureDesc depthDesc=materialDesc;
+        depthDesc.format=gfx::PixelFormat::Depth;
+        depthDesc.label="LumaWeave material receiver depth";
+        const auto newDepth=dev_->createTexture(depthDesc);
+        if(!newDepth.valid()) {
+            dev_->destroyTexture(newMaterial);return false;
+        }
+        if(materialTarget_.valid())dev_->destroyTexture(materialTarget_);
+        if(materialDepth_.valid())dev_->destroyTexture(materialDepth_);
+        materialTarget_=newMaterial;materialDepth_=newDepth;
+        receiverWidth_=w;receiverHeight_=h;
+        return true;
+    }
     bool makeComposeDepth(int w,int h) {
         if(!dev_ || producer_.busy() || w<=0 || h<=0)return false;
         gfx::TextureDesc td;
@@ -260,13 +326,14 @@ private:
     gfx::ShaderHandle shader_{};
     gfx::PipelineHandle pipeline_{};
     gfx::BufferHandle vertex_{};
-    gfx::TextureHandle composeDepth_{};
+    gfx::TextureHandle composeDepth_{},materialTarget_{},materialDepth_{};
     int depthWidth_=0,depthHeight_=0;
+    int receiverWidth_=0,receiverHeight_=0;
     gfx::PassDesc scene_{};
     gfx::TextureHandle material_{};
     uint32_t materialWidth_=0,materialHeight_=0;
     int viewWidth_=0,viewHeight_=0;
-    uint64_t sceneToken_=0,materialToken_=0,frameCounter_=0;
+    uint64_t sceneToken_=0,materialToken_=0,frameCounter_=0,autoViewSerial_=0;
     bool enabled_=false,sourcesPublished_=false,geometryPublished_=false;
     LumaWeaveQuality quality_=LumaWeaveQuality::Balanced;
     FrameStats frame_{},last_{};
