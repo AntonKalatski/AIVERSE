@@ -220,7 +220,8 @@ private:
                 return;
             }
             ImGui::TextDisabled("Frame budget 0 disables adaptive scaling.");
-            ImGui::TextDisabled("Edit event mappings in the JSON below.");
+            ImGui::Separator();
+            drawRouteList(doc);
             return;
         }
 
@@ -276,6 +277,115 @@ private:
         }
         ImGui::TextDisabled("Alpha GPU sorting requires additive=false and no compaction.");
         ImGui::TextDisabled("Remaining authoring fields are editable in the JSON below.");
+    }
+
+    // Common route authoring without editing raw JSON. Every changed
+    // field is committed transactionally through applyDraft() and validated
+    // together with all other routes (duplicate IDs/capacity conflicts).
+    void drawRouteList(const Json& source) {
+        const Json& routes=source["routes"];
+        if(!routes.isArray()) return;
+        ImGui::Text("Event routes (%zu / 64)",routes.size());
+        if(ImGui::Button("Add event route")) {
+            if(routes.size()>=64) {
+                message_="At most 64 event routes";
+                return;
+            }
+            uint32_t unused=1;
+            while(unused<=65535) {
+                bool exists=false;
+                for(const auto& entry:routes.items())
+                    if(entry.getInt("eventType",-1)==unused) {
+                        exists=true;break;
+                    }
+                if(!exists) break;
+                ++unused;
+            }
+            if(unused>65535) {
+                message_="No unused event type available";
+                return;
+            }
+            Json next=source;
+            Json row=Json::object();
+            row.set("eventType",Json::number(int64_t(unused)));
+            row.set("asset",Json::string(
+                files_.empty()?"new_effect":files_.front()));
+            row.set("enabled",Json::fromBool(true));
+            row.set("ownPlayerOnly",Json::fromBool(true));
+            row.set("oneShotSeconds",Json::number(3.0,2));
+            next.member("routes").push(std::move(row));
+            applyDraft(std::move(next));
+            return;
+        }
+        for(size_t i=0;i<routes.size();++i) {
+            const Json& entry=routes[i];
+            if(!entry.isObject()) continue;
+            ImGui::PushID(int(i));
+            const int eventId=int(entry.getInt("eventType",0));
+            const std::string label="Event "+std::to_string(eventId)+
+                    " — "+entry.getStr("asset");
+            const bool opened=ImGui::TreeNode(label.c_str());
+            if(opened) {
+                int editedId=eventId;
+                if(ImGui::InputInt("Event type",&editedId)) {
+                    if(editedId<0 || editedId>65535) {
+                        message_="Event ID must be between 0 and 65535";
+                    } else {
+                        Json next=source;
+                        next.member("routes").at(i).set(
+                            "eventType",Json::number(int64_t(editedId)));
+                        applyDraft(std::move(next));
+                    }
+                    ImGui::TreePop();ImGui::PopID();return;
+                }
+                const std::string asset=entry.getStr("asset");
+                if(ImGui::BeginCombo("Emitter asset",asset.c_str())) {
+                    for(const auto& name:files_) {
+                        if(ImGui::Selectable(name.c_str(),name==asset)) {
+                            Json next=source;
+                            next.member("routes").at(i).set(
+                                "asset",Json::string(name));
+                            applyDraft(std::move(next));
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+                if(std::find(files_.begin(),files_.end(),asset)==files_.end())
+                    ImGui::TextDisabled("No matching GPU asset in this project yet.");
+                bool enabled=entry.getBool("enabled",true);
+                if(ImGui::Checkbox("Enabled",&enabled)) {
+                    Json next=source;
+                    next.member("routes").at(i).set(
+                        "enabled",Json::fromBool(enabled));
+                    applyDraft(std::move(next));
+                    ImGui::TreePop();ImGui::PopID();return;
+                }
+                float seconds=float(entry["oneShotSeconds"].toDouble(3));
+                if(ImGui::DragFloat("One-shot seconds",&seconds,
+                                    0.05f,0.05f,60.0f,"%.2f")) {
+                    Json next=source;
+                    next.member("routes").at(i).set(
+                        "oneShotSeconds",Json::number(
+                            double(std::clamp(seconds,0.05f,60.0f)),2));
+                    applyDraft(std::move(next));
+                    ImGui::TreePop();ImGui::PopID();return;
+                }
+                if(ImGui::Button("Remove route")) {
+                    Json next=source;
+                    next.member("routes").eraseAt(i);
+                    applyDraft(std::move(next));
+                    ImGui::TreePop();ImGui::PopID();return;
+                }
+                const std::string pool=entry.getStr("sharedPool");
+                if(!pool.empty())
+                    ImGui::TextDisabled("Pool: %s (capacity %lld)",
+                        pool.c_str(),(long long)entry.getInt(
+                            "sharedPoolCapacity",8192));
+                ImGui::TreePop();
+            }
+            ImGui::PopID();
+        }
+        ImGui::TextDisabled("Pool names and other advanced fields: edit JSON below.");
     }
 
     void refresh() {
