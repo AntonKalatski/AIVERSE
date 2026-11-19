@@ -1419,3 +1419,20 @@ a coherent new model/shadow, not a fabricated GPU readback.
 `HorizonRuntimeStats` expose current dormant capacity and specific
 evictions. Update `docs/terrain/AGENT_HANDOFF.md` each stage;
 CMake/CTest/Metal/Vulkan/GL **NOT RUN** under feature-first request.
+
+### TerraWeave Stage38 — lossless GPU-cache CPU shadow packing
+
+`HorizonWindShadowCachePolicy::compressCachedShadows` is opt-in and
+defaults to false. Inactive Horizon GPU LRU entries may losslessly
+compress their full `ModelVertex` wind CPU shadow with
+`TerraWeaveHorizonWindCompression.h`. Never detach or compress live
+active/outgoing shadows; never infer the GPU's exact PHYSIS RGB from
+a procedural generator. On cache `take`, fully unpack and validate
+the CPU shadow BEFORE the model becomes active or Stage35 sparse RHI
+writes resume. A corrupt compressed stream retires the matching GPU
+model and falls back to ordinary re-stream; failed allocation still
+propagates. Count both raw and packed storage capacity toward Stage37
+inactive CPU budget; do not claim a memory benefit unless measured.
+Source/PHYSIS/TWH8 semantics, signed coordinates, shader graphs and
+all genre-independent ECS ownership remain unchanged. QA is NOT RUN
+under the user's feature-first order; update Stage38 handoff on branch.
