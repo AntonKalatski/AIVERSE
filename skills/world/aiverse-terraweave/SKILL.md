@@ -1012,3 +1012,35 @@ Use the existing `engine/render/TerraWeaveHorizonWindPatch.h` forest-only shadow
 - Testing is explicitly deferred under the owner's instruction. Later testing agent should verify 1/adjacent/8/9 dirty runs, 70% threshold, no-change update, combined active/outgoing budget, negative coordinates, GPU cache restore, shader fallback, Metal/GL/Vulkan snapshots and memory/performance. Existing Stage29 impostor model assertions are still stale.
 
 After the Stage35 source stage, append the exact code/docs commits, tested vs untested status, limitations and next development step to `docs/terrain/AGENT_HANDOFF.md`. Do not mark CTest or GPU measurements as passed unless actually executed.
+
+## Stage 36 — host-tuneable Horizon wind RHI budget
+
+Use `<engine/world/TerraWeaveWindUploadPolicy.h>` and the value
+`terraweave::HorizonWindUploadPolicy`, configured via
+`WorldScene::setVegetationHorizonWindUploadPolicy(policy)` or direct
+`TerraWeaveHorizonScene::setWindUploadPolicy(policy)`.
+Its three bounded fields are `maxBytesPerUpdate` (0..2 MiB, shared across
+active+outgoing regions), `maxSparseRanges` (1..8), and
+`fullFallbackPercent` (1..100). Defaults **2 MiB / 8 / 70%**
+exactly preserve Stage35 behavior. Always validate before publication;
+the setters already do so. Zero budget defers nonempty GPU transfers,
+without changing published PHYSIS data, the atlas or simulation tick.
+Policy writes must happen on the render owner thread, not concurrently
+with `update` / `submit`.
+
+The Stage35 `applyHorizonForestWindOverlay` overload has a trailing
+defaulted policy parameter; its planner must use **both** the policy
+thresholds and the remaining combined frame budget before any GPU
+write. Do not permit one outgoing transition to exceed what the active
+region has left. A small budget may keep the exact field revision
+pending indefinitely until the host raises the limit. Keep the macro
+graph as a safe visual fallback; do not treat a deferred patch as done.
+CPU shadow capture remains independently capped at **2 MiB per GPU model**
+and is not configurable by this policy. No genre, PHYSIS, new RHI
+resource, TWH8 format change, or terrain-seam changes.
+
+**Status:** code/docs committed, compile/CTest/Metal/Vulkan/GL **NOT RUN**
+under the feature-first workflow. Leave PR #24 Draft; append exact SHAs
+to `docs/terrain/AGENT_HANDOFF.md` and provide QA cases for budget=0,
+budget near one cluster, invalid settings, 4/8 sparse runs, dense
+fallback and active/outgoing aggregate accounting.
