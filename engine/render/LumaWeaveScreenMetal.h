@@ -154,6 +154,7 @@ public:
     bool confirmedShaded() const{return historyValid_ && confirmedShaded_;}
     bool busy() const{return bool(pending_);}
     uint64_t sourceRevision() const{return sourceRevision_;}
+    uint64_t clusterGeneration() const{return sourcePacket_.clusterGeneration;}
     uint64_t geometryRevision() const{return geometryRevision_;}
     size_t sourceCount() const{return sourcePacket_.lights.size();}
     uint32_t width() const{return width_;}
