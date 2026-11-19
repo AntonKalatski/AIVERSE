@@ -135,6 +135,11 @@ public:
     // Call after reset(newGraph). Return false without mutating clocks if
     // the old state/clip identities cannot be matched.
     bool restorePlayback(const PlaybackSnapshot& snapshot);
+    // Replace a presentation-only graph while preserving a compatible
+    // named state and clip phases. No old rig/model/pose pointers survive.
+    // Returns true only if the old clock could be restored. A renamed/
+    // incompatible state or clip safely starts the new graph at defaults.
+    bool rebindPlayback(std::shared_ptr<const AnimationGraph> graph);
     // Scoped, cosmetic-only clip clock seeding for CPU/GPU backend migration.
     // Does not synthesize notifies; only valid clip nodes may be queried.
     std::optional<float> clipTime(const std::string& node) const;
