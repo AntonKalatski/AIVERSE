@@ -218,6 +218,14 @@ void RtsView::drawGround(Renderer3D& r, const std::vector<ViewGroundBatch>& batc
 }
 
 void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std::vector<uint8_t>* vision, const MapGrid& grid) {
+    // Earliest presentation boundary, before this frame's layer callbacks
+    // submit any road/shore draws. Complete old GPU retirement tokens and
+    // schedule pending old models/buffers behind a new ordered token.
+    // Never use frame count/elapsed time to free GPU-visible resources.
+    if(dev_) {
+        roads_->collectRetired(*dev_);
+        shores_->collectRetired(*dev_);
+    }
     const bool traceView = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
     const auto viewStart = std::chrono::steady_clock::now();
     // Script spawns, reinforcements and restored entities need not exist at
