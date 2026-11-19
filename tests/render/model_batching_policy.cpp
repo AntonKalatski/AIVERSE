@@ -514,6 +514,22 @@ int main() {
         CHECK(chooseSceneBatchMode({12.100, 12.070, 10.000}, 2) == 0);
     }
 
+    // Model content revisions must distinguish in-place edits even if an
+    // allocator reuses the same address or the GPU reuses the same handle ID.
+    {
+        Model model;
+        const uint64_t initial = model.geometryRevision;
+        model.finalize();
+        CHECK(model.geometryRevision != initial);
+        const uint64_t afterFinalize = model.geometryRevision;
+        model.markGeometryChanged();
+        CHECK(model.geometryRevision != afterFinalize);
+        const uint64_t beforeRelease = model.geometryRevision;
+        MockDevice dev;
+        releaseModel(dev, model);
+        CHECK(model.geometryRevision != beforeRelease);
+    }
+
     // CPU-side cross-frame rigid cache is deliberately narrower than an
     // immediate ModelDraw: visibility and material overrides stay live.
     {
