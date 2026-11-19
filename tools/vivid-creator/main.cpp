@@ -66,6 +66,8 @@ struct CreatorApp {
     HumanImportManifest importedPackage;
     std::unique_ptr<MorphAuthoring> morphDraft;
     std::size_t morphSourceVertices=0;
+    std::vector<MorphVec3> morphSourcePositions;
+    float morphBrushRadius=0.1f;
     int morphTargetIndex=0,morphVertexIndex=0;
     int routeChannelIndex=0;
     char newMorphName[129]="newCorrective";
@@ -190,6 +192,12 @@ struct CreatorApp {
             throw std::runtime_error("VIVID Creator: imported DNA invalid: "+error);
         syncDraft();
         morphSourceVertices=imported.sourceVertexCount;
+        morphSourcePositions.clear();
+        morphSourcePositions.reserve(morphSourceVertices);
+        for(std::size_t i=0;i<morphSourceVertices;++i) {
+            const auto& p=imported.model->vertices[i].pos;
+            morphSourcePositions.push_back({p.x,p.y,p.z});
+        }
         morphDraft=std::make_unique<MorphAuthoring>(
             MorphAuthoring::fromCompiled(imported.facialShapes));
         morphTargetIndex=0;
@@ -710,6 +718,17 @@ struct CreatorApp {
                         pendingRebuild=true;
                         status="VIVID sparse morph vertex edited";
                     }else status="VIVID sparse morph edit rejected";
+                }
+                ImGui::SliderFloat("Brush radius",&morphBrushRadius,
+                                   0.001f,2.0f,"%.3f");
+                if(ImGui::Button("Apply falloff brush")) {
+                    if(morphDraft->brush(std::size_t(morphTargetIndex),
+                        morphSourcePositions,index,morphBrushRadius,
+                        {morphEditOffset.x,morphEditOffset.y,morphEditOffset.z})) {
+                        morphDirty=true;
+                        pendingRebuild=true;
+                        status="VIVID radius-falloff brush stroke applied";
+                    }else status="VIVID brush stroke rejected";
                 }
                 ImGui::SameLine();
                 if(ImGui::Button("Undo sculpt") && morphDraft->undo()) {
