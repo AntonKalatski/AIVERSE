@@ -41,6 +41,22 @@ void test() {
                    material.shaderGraph->outputs.count("color"),
                    "GLSL/Metal material surface graph invalid");
         }
+        render::Material scanned;
+        scanned.name="scan.skin";
+        scanned.baseTex=4;
+        scanned.normalTex=5;
+        scanned.mrTex=6;
+        scanned.occlusionTex=7;
+        scanned.uvOffset={0.2f,0.1f};
+        scanned.uvScale={1.2f,0.9f};
+        scanned.normalScale=0.7f;
+        const auto specialized=humanMaterialFromSource(HumanSurface::Skin,dna,scanned);
+        expect(specialized.shading==render::ShadingModel::Skin &&
+               specialized.name=="scan.skin" &&
+               specialized.baseTex==4 && specialized.normalTex==5 &&
+               specialized.mrTex==6 && specialized.occlusionTex==7 &&
+               specialized.uvOffset.x==0.2f && specialized.normalScale==0.7f,
+               "VIVID skin shader discarded authored albedo/normal/MR texture maps");
         expect(mat.cornea.alpha==render::AlphaMode::Blend &&
                !mat.cornea.castShadow,"cornea incorrectly opaque / shadow casting");
         auto human=generateHumanPreview(dna,GroomQuality::Medium);
