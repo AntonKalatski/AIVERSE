@@ -2117,6 +2117,11 @@ endif()
 # TerraWeave genre-independent deterministic terrain/biome/foliage core.
 # Header-only engine/world API: also usable from native project modules.
 if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    # Shared GPU timing service: hardware-free deterministic fan-out test.
+    add_executable(aiverse_gpu_timing_router_test tests/gpu_timing_router_test.cpp)
+    target_include_directories(aiverse_gpu_timing_router_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_options(aiverse_gpu_timing_router_test PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
+    add_test(NAME gpu_timing_router COMMAND aiverse_gpu_timing_router_test)
     add_executable(aiverse_terraweave_test tests/terraweave_test.cpp)
     target_link_libraries(aiverse_terraweave_test PRIVATE aiverse_engine Threads::Threads)
     target_compile_options(aiverse_terraweave_test PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
