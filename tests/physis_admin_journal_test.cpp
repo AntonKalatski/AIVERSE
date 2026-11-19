@@ -600,6 +600,43 @@ void pinnedJournalSaveDoesNotFollowMovedParent() {
     std::filesystem::remove_all(base);
 }
 
+// On startup, the privileged endpoint must not read a substituted
+// symlink, FIFO or publicly-readable journal. Both journal I/O directions
+// use the same pinned trusted parent dirfd.
+void pinnedJournalLoadRejectsUnsafeInodes() {
+    const auto base=tempPath();
+    std::filesystem::create_directories(base);
+    const auto journal=base/"receipts";
+    std::string error;
+    {
+        JournalProcessLock lock;
+        CHECK(lock.acquire(journal,&error));
+        const int dir=lock.directoryFd();
+        CHECK(dir>=0);
+        if(dir>=0) {
+            FileJournal file(journal);
+            ServerGateway gateway;
+            CHECK(file.loadPinned(dir,gateway,&error)); // absent is fresh
+            const std::map<ServerGateway::Key,ServerGateway::Entry> empty;
+            CHECK(file.savePinned(dir,empty,&error));
+            CHECK(file.loadPinned(dir,gateway,&error));
+            CHECK(::chmod(journal.c_str(),0644)==0);
+            CHECK(!file.loadPinned(dir,gateway,&error));
+            CHECK(::chmod(journal.c_str(),0600)==0);
+            CHECK(std::filesystem::remove(journal));
+            const auto target=base/"other-receipts";
+            CHECK(::symlink(target.c_str(),journal.c_str())==0);
+            CHECK(!file.loadPinned(dir,gateway,&error));
+            CHECK(std::filesystem::remove(journal));
+            CHECK(::mkfifo(journal.c_str(),0600)==0);
+            CHECK(!file.loadPinned(dir,gateway,&error));
+            CHECK(std::filesystem::remove(journal));
+            CHECK(file.loadPinned(dir,gateway,&error));
+        }
+    }
+    std::filesystem::remove_all(base);
+}
+
 void killedProcessReleasesJournalLock() {
     const auto dir=tempPath();
     std::filesystem::create_directories(dir);
@@ -905,6 +942,7 @@ int main(){
     replacedLiveLockSuspendsAdmin();
     liveParentPermissionChangeSuspendsAdmin();
     pinnedJournalSaveDoesNotFollowMovedParent();
+    pinnedJournalLoadRejectsUnsafeInodes();
     killedEndpointRecoversQueuedJournal();
 #endif
 #ifndef __EMSCRIPTEN__
