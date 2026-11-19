@@ -205,6 +205,12 @@ struct ModelRenderStats {
     uint64_t cameraLodBlocked = 0, cameraShadowLimitedLod = 0;
     uint64_t triangles = 0, instancedDraws = 0, drawnInstances = 0;
     uint64_t multiDrawSubmissions = 0, indirectCommands = 0;
+    // CPU MDI groups spanning at least two different Model instances
+    // using the SAME pooled vertex/index arena, after independent LOD and
+    // per-view culling. These are successful submissions, not candidates.
+    uint64_t staticCrossModelSubmissions = 0;
+    uint64_t staticCrossModelCommands = 0;
+    uint64_t staticCrossModelItems = 0;
     // A subset of CPU MDI submissions: different rigid meshes and materials
     // share shader/texture state, with per-command base/PBR factors in U3.
     uint64_t mdiPaletteSubmissions = 0, mdiPaletteCommands = 0;
