@@ -52,7 +52,8 @@ inline bool validNereidWaterStyle(const lib::nereid::WaterSurfaceStyle& s) {
            s.rapidNoiseScale>=0.1f && s.rapidNoiseScale<=8.f &&
            s.rapidFoamR>=0.f && s.rapidFoamR<=1.f &&
            s.rapidFoamG>=0.f && s.rapidFoamG<=1.f &&
-           s.rapidFoamB>=0.f && s.rapidFoamB<=1.f;
+           s.rapidFoamB>=0.f && s.rapidFoamB<=1.f &&
+           uint8_t(s.rapidDetail)<=uint8_t(lib::nereid::WaterRapidDetail::High);
 }
 
 // Upload at content/render setup, not every simulation tick.
@@ -84,7 +85,7 @@ inline void drawNereidWaterSurface(Renderer3D& renderer,const Mesh& mesh,
                        style.specular,style.refractionStrength,ripples,
                        firstIndex,indexCount,wakeShapes,wind,hydraulics,
                         {style.rapidFoamR,style.rapidFoamG,
-                         style.rapidFoamB,1.f});
+                         style.rapidFoamB,float(style.rapidDetail)});
 }
 inline void releaseNereidWaterSurface(gfx::Device& device,Mesh& mesh) {
     if(mesh.vb.valid())device.destroyBuffer(mesh.vb);

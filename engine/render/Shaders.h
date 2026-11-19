@@ -471,15 +471,34 @@ void main() {
         float time=(l_cloud.x+l_cloud.y)*20.0;
         float along=dot(v_wpos.xz,dir)*scale;
         float across=dot(v_wpos.xz,side)*scale;
-        float breakup=sin(along*3.1-time*min(speed,20.0)*0.25+
-                         sin(across*4.2)*0.7);
-        float eddies=sin(across*6.4+along*1.8-time*2.8);
-        float foam=smoothstep(0.22,0.82,abs(breakup*eddies))*
-                   u_waterHydraulics.z;
+        // waterRapidColor.a: Low=0, Medium=1 (legacy), High=2.
+        float quality=u_waterRapidColor.a;
+        float eddies=0.0;
+        float foam=0.0;
+        if(quality<0.5) {
+            // Low: single coherent foam streak, no normal perturbation.
+            float streak=sin(along*3.1-time*min(speed,20.0)*0.25);
+            foam=smoothstep(0.22,0.82,abs(streak))*u_waterHydraulics.z;
+        } else {
+            // Medium: preserve the exact Stage 39 response.
+            float breakup=sin(along*3.1-time*min(speed,20.0)*0.25+
+                             sin(across*4.2)*0.7);
+            eddies=sin(across*6.4+along*1.8-time*2.8);
+            foam=smoothstep(0.22,0.82,abs(breakup*eddies))*
+                 u_waterHydraulics.z;
+            if(quality>1.5) {
+                // High: secondary cross-flow filaments and micro-eddies.
+                float detail=sin(along*9.1+across*5.7-time*4.2)*
+                             sin(across*11.3-time*2.1);
+                foam=clamp(foam*(0.80+0.40*abs(detail)),0.0,1.0);
+                eddies+=detail*0.35;
+            }
+        }
         base=mix(base,u_waterRapidColor.rgb,
                  clamp(foam*0.78,0.0,0.78));
-        n=normalize(n+vec3(side.x*eddies*foam*0.17,
-                           0.0,side.y*eddies*foam*0.17));
+        if(quality>=0.5)
+            n=normalize(n+vec3(side.x*eddies*foam*0.17,
+                               0.0,side.y*eddies*foam*0.17));
     }
     // NEREID: up to four bounded ripple impulses per visible body. The
     // parameters are render-origin-relative, matching v_wpos. A zero
@@ -681,15 +700,30 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
         float time=(l.cloud.x+l.cloud.y)*20.0;
         float along=dot(in.wpos.xz,dir)*scale;
         float across=dot(in.wpos.xz,side)*scale;
-        float breakup=sin(along*3.1-time*min(speed,20.0)*0.25+
-                         sin(across*4.2)*0.7);
-        float eddies=sin(across*6.4+along*1.8-time*2.8);
-        float foam=smoothstep(0.22,0.82,abs(breakup*eddies))*
-                   u.waterHydraulics.z;
+        float quality=u.waterRapidColor.a;
+        float eddies=0.0;
+        float foam=0.0;
+        if(quality<0.5) {
+            float streak=sin(along*3.1-time*min(speed,20.0)*0.25);
+            foam=smoothstep(0.22,0.82,abs(streak))*u.waterHydraulics.z;
+        } else {
+            float breakup=sin(along*3.1-time*min(speed,20.0)*0.25+
+                             sin(across*4.2)*0.7);
+            eddies=sin(across*6.4+along*1.8-time*2.8);
+            foam=smoothstep(0.22,0.82,abs(breakup*eddies))*
+                 u.waterHydraulics.z;
+            if(quality>1.5) {
+                float detail=sin(along*9.1+across*5.7-time*4.2)*
+                             sin(across*11.3-time*2.1);
+                foam=clamp(foam*(0.80+0.40*abs(detail)),0.0,1.0);
+                eddies+=detail*0.35;
+            }
+        }
         base=mix(base,u.waterRapidColor.rgb,
                  clamp(foam*0.78,0.0,0.78));
-        n=normalize(n+float3(side.x*eddies*foam*0.17,
-                             0.0,side.y*eddies*foam*0.17));
+        if(quality>=0.5)
+            n=normalize(n+float3(side.x*eddies*foam*0.17,
+                                 0.0,side.y*eddies*foam*0.17));
     }
     if(u.params.x < -0.5) {
         float2 grad=float2(0.0);

@@ -194,6 +194,15 @@ inline NereidSceneSurface surface(const Json& j) {
         if(v.has("rapidFoamColor"))
             color(v["rapidFoamColor"],s.style.rapidFoamR,
                   s.style.rapidFoamG,s.style.rapidFoamB);
+        if(v.has("rapidDetail")) {
+            if(!v["rapidDetail"].isString())
+                throw JsonError("nereidWater.rapidDetail: expected low, medium or high");
+            const std::string quality=v["rapidDetail"].str();
+            if(quality=="low")s.style.rapidDetail=WaterRapidDetail::Low;
+            else if(quality=="medium")s.style.rapidDetail=WaterRapidDetail::Medium;
+            else if(quality=="high")s.style.rapidDetail=WaterRapidDetail::High;
+            else throw JsonError("nereidWater.rapidDetail: unknown quality");
+        }
     }
     return s;
 }

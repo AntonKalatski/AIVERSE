@@ -16,6 +16,8 @@
 namespace aiverse::lib::nereid {
 
 enum class WaterSurfaceLod : uint8_t { Near, Medium, Far };
+// Presentation-only detail policy; Medium preserves the existing look.
+enum class WaterRapidDetail : uint8_t { Low=0, Medium=1, High=2 };
 struct WaterSurfaceMeshOptions {
     WaterSurfaceLod lod=WaterSurfaceLod::Medium;
     float cameraX=0, cameraZ=0;
@@ -68,6 +70,7 @@ struct WaterSurfaceStyle {
     // Linear RGB for current-driven whitewater, distinct from shoreline foam.
     // Defaults reproduce Stage 38 hard-coded shader colour.
     float rapidFoamR=0.84f, rapidFoamG=0.93f, rapidFoamB=0.94f;
+    WaterRapidDetail rapidDetail=WaterRapidDetail::Medium;
 };
 
 namespace water_mesh_detail {

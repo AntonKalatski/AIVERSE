@@ -3981,3 +3981,9 @@ Full independent agent handoff: [`docs/nereid/stage-39-rapid-foam-color.md`](sta
 New `WaterSurfaceStyle::rapidFoamR/G/B` and scene JSON `style.rapidFoamColor: [r,g,b]` provide 0..1 RGB for animated whitewater. The default `{0.84,0.93,0.94}` retains the prior GLSL/Metal look. Validated by `validNereidWaterStyle`; included in scene/resident cache comparisons. Added `waterRapidColor` float4 at the end of the shared C++/GLSL/MSL U0 draw layout and forwarded from water draw through Renderer3D. Water-body geometry, ECS flow, legacy genres, and PHYSIS/Box3D ownership unchanged.
 
 **Verification performed:** reviewed source and authored code through connected GitHub; committed atomically to feature branch. **NOT RUN:** CMake, CTest, shader compilation, native sample, GPU inspection, regressions. **Limit:** shader-only color currently triggers material residency-key invalidation; U0 grows 16 bytes. **Next:** feature-first detail quality / confluence current; revisit residency split, then run actual verification before merge. See linked per-stage handoff.
+
+
+## Stage 40 — whitewater detail tiers
+
+**Branch** `feature/nereid-water-core`, Draft PR #23. **Code + docs:** same atomic commit. Detailed independent handoff: [Stage 40](stage-40-whitewater-quality.md).
+Added `WaterRapidDetail {Low,Medium,High}` to presentation style (Medium default), scene JSON `style.rapidDetail`, validity and style-cache comparisons. Packed ordinal into existing `waterRapidColor.a` without new uniform bytes. GLSL and Metal use simpler Low, exact prior Medium, richer High. No changes to fixed ECS water, PHYSIS or genre modules. **Verified:** source review and remote commit only; **NOT RUN:** compilation, CTest, shader compiler, GPU visual checks or regressions. **Next:** linked river confluence flow, then style-only residency and verification. PR stays draft.
