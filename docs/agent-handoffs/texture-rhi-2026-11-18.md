@@ -5729,3 +5729,34 @@ GPU rendering and readback NOT RUN.
 Next: connect the depth-enabled pass to generic renderer
 submission and material parameter binding, then close remaining
 RenderTexture/storage image backend parity.
+
+
+## Stage 9I — generic material/mesh feedback draw queue (2026-11-19)
+
+Source commit: 792b6f14ad89c40e26ddc95738142333434e28da.
+Changed file: engine/gfx/VirtualTextureFeedbackPass.h.
+Added VirtualTextureFeedbackDraw (pipeline, vertex/index buffer,
+counts, offsets, instance count and per-draw prepare(Device&)
+callback) plus VirtualTextureFeedbackPass::renderDrawsAndCapture().
+The helper validates draw handles/counts before opening the pass,
+then uses renderAndCapture to bind pipeline and buffers, invoke
+the caller's material/uniform preparation callback and issue
+draw/drawIndexed. Any failed prepare callback ends the pass
+without capture; thrown exceptions use existing exception-safe
+renderAndCapture cleanup. This is genre-independent and can
+accept terrain, static mesh or procedural geometry submissions.
+
+Important: renderer still owns camera culling, material bindings,
+vertex layouts, pipeline creation, depth compatibility and
+visibility ordering. This is a native submission adapter, not
+automatic interception of the engine's scene render queue.
+Non-indexed instancing is intentionally rejected because Device
+draw() exposes no instance count. Invalid draw commands are
+rejected before rendering. Device draw methods return void,
+so post-submit GPU failure cannot be detected here.
+Verification: GitHub source commit succeeded. Native compile,
+CTest, shader compilation, GPU readback and visual tests NOT RUN
+per user request to finish functions first.
+Next: integrate visible render queue construction into the
+engine renderer and expose per-material feedback params; close
+backend render-target/storage image feature gaps.
