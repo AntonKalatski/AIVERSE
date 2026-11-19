@@ -5,7 +5,7 @@
 #pragma once
 #include "Model.h"
 #include "ModelTextureCache.h"
-#include "ResourceRetirementQueue.h"
+#include "AsyncResourceRetirementQueue.h"
 #ifndef __EMSCRIPTEN__
 #include "ModelPreparationService.h"
 #endif
@@ -196,18 +196,23 @@ public:
     }
 
     size_t pendingRetirements() const noexcept{return retired_.pending();}
-    // Call once at a real host frame boundary, before new renderer packets
-    // reference model/texture resources. Never infer GPU completion from
-    // frameSerial(): the explicit backend barrier is mandatory.
+    // Schedule async completion tokens and poll old batches without waiting
+    // for whole-GPU idle. Each batch covers exactly the resources queued
+    // before its marker; newer evictions can NEVER ride an older fence.
+    // Returns true only once all pending resources have been released.
     bool collectRetired(gfx::Device& dev) {
         if(retired_.empty())return true;
-        const bool ok=retired_.collect(
+        const auto before=retired_.pending();
+        const bool done=retired_.collect(
+            [&]{return dev.beginResourceRetirement();},
+            [&](uint64_t token){return dev.resourceRetirementComplete(token);},
+            [&](uint64_t token){dev.endResourceRetirement(token);},
             [&]{return dev.waitForResourceIdle();},
             [&](std::unique_ptr<Model>& model) {
                 if(model)render::releaseModel(dev,*model);
             });
-        if(ok)textures_->trim(dev);
-        return ok;
+        if(retired_.pending()<before)textures_->trim(dev);
+        return done;
     }
 
     // Explicitly release GPU assets before destroying the device.
@@ -226,7 +231,10 @@ public:
         }
         models_.clear();
         ++generation_;
-        if(!retired_.collect([]{return true;},
+        // The successful barrier above makes every token safe to close,
+        // including callbacks whose status notification is still queued.
+        if(!retired_.drain([]{return true;},
+            [&](uint64_t token){dev.endResourceRetirement(token);},
             [&](std::unique_ptr<Model>& model) {
                 if(model)render::releaseModel(dev,*model);
             }))
@@ -239,7 +247,7 @@ private:
 #endif
     uint64_t generation_=0;
     ModelMap models_;
-    ResourceRetirementQueue<std::unique_ptr<Model>> retired_;
+    AsyncResourceRetirementQueue<std::unique_ptr<Model>> retired_;
     std::shared_ptr<render::ModelTextureCache> textures_=
         std::make_shared<render::ModelTextureCache>();
 };
