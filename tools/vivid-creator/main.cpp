@@ -557,6 +557,14 @@ int aiverseMain(int argc,char** argv) {
             application->smoke=true;
             if(const char* path=std::getenv("AIVERSE_VIVID_CREATOR_CAPTURE"))
                 application->smokePath=path;
+        }else if(std::strcmp(argv[i],"--preset")==0 && i+1<argc) {
+            const std::string preset=argv[++i];
+            std::string error;
+            if(!application->session.preset(preset,&error)) {
+                std::fprintf(stderr,"VIVID Creator preset: %s\n",error.c_str());
+                return 2;
+            }
+            application->syncDraft();
         }else if(std::strcmp(argv[i],"--asset")==0 && i+1<argc) {
             const auto& path=argv[++i];
             if(std::strlen(path)>=sizeof(application->manifestFile)) {
