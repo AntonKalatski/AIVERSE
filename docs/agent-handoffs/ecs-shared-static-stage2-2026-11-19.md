@@ -3,7 +3,7 @@
 Date: 2026-11-19  
 Repository: `chromealex/AIVERSE`  
 Branch: `feature/ecs-shared-static-components`  
-Status: **warning/assert correctness fix committed; corrected native COW tests NOT rerun**.
+Status: **corrected Release COW and hierarchy tests confirmed passing on Mac Studio (4/4)**; full RTS/FPS integration and process RSS still pending.
 
 ## Why this stage exists
 
@@ -78,6 +78,34 @@ must be investigated/fixed, **not** reverted to `assert`. Record the
 actual CTest results, warnings, compiler, exact git SHA, and next step
 in this document when logs are available. Then run broader native
 COW/ECS replay/snapshot, FPS/RTS parity and RSS tests before main.
+
+## Corrected Release results — user log, 2026-11-19
+
+After pulling the branch with fixes to the 28 snapshot assertions and
+5 parallel assertions, the user rebuilt and ran the targeted native suite
+on Mac Studio in `~/Projects/AIVERSE-shared-static/build/shared-static`.
+
+| CTest name | Result | Time |
+| --- | --- | ---: |
+| `ecs_scene_hierarchy_test` | Passed | 0.51 s |
+| `ecs_scene_hierarchy_simulation_test` | Passed | 0.16 s |
+| `ecs_cow_snapshot_test` | Passed | 0.42 s |
+| `ecs_cow_parallel_test` | Passed | 0.40 s |
+
+Summary: **100% tests passed, 0 failed out of 4; real total 1.50 s**.
+The supplied excerpt showed successful build/link of
+`aiverse_ecs_cow_parallel_test` and completed targets for the two hierarchy
+tests; CTest also ran the snapshot executable. No compiler warnings were
+visible in the provided excerpt. This is not proof that the entire build
+log is warning-free. The exact checked-out SHA is not printed in this
+latest excerpt; the preceding branch HEAD was `73ec6b89cd219a4a2903f21e9503a238de2bc417`,
+which contains the fixes. Do not invent a precise tested SHA.
+
+Unlike the earlier run, the `AIVERSE_TEST_CHECK` conditions remain
+enabled under `NDEBUG`; `ecs_cow_parallel_test` executes and compares
+the 1/3/7-worker configurations. This closes the targeted Stage 2
+Release assertion gate. Native broader ECS, FPS/RTS lockstep parity,
+long replay, sanitizers and actual process RSS remain to be tested.
 
 ## Architecture preserved
 
