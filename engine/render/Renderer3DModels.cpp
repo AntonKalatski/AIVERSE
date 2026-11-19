@@ -150,6 +150,49 @@ bool Renderer3D::setDynamicGiThirdCascadeOverlay(const GiDynamicProbeTexture* th
     return true;
 }
 
+GiCustomShaderMode Renderer3D::bindDynamicGiForCustomShader(
+        GiCustomShaderMode requested) {
+    if(requested==GiCustomShaderMode::Off || !dev_ || !dynamicGiOverlay_ ||
+       !dynamicGiOverlay_->texture().valid() ||
+       !giCustomModeFits(requested,dev_->maxFragmentTextureSlots(),
+                         dev_->info().backend==gfx::Backend::Metal) ||
+       !giDynamicColorPassAllowed(hdrFrame_,dynamicGiOverlay_->computeWritable()))
+        return GiCustomShaderMode::Off;
+
+    const bool validity=giCustomModeUsesValidity(requested);
+    const bool far=giCustomModeUsesFar(requested);
+    const bool third=giCustomModeUsesThird(requested);
+    // A partial fine clipmap MUST NOT be presented without its validity
+    // mask, even when a caller requested the Single shader permutation.
+    if((dynamicGiValidity_ && !validity) ||
+       (validity && (!dynamicGiValidity_ || !dynamicGiValidity_->ready())) ||
+       (far && (!dynamicGiFarOverlay_ || !dynamicGiFarOverlay_->texture().valid())) ||
+       (third && (!dynamicGiThirdOverlay_ || !dynamicGiThirdOverlay_->texture().valid())))
+        return GiCustomShaderMode::Off;
+
+    const auto bindGrid=[&](int slot,const float4& origin,const float4& size,
+                            const float4& ring) {
+        const float data[12]={
+            origin.x,origin.y,origin.z,origin.w,
+            size.x,size.y,size.z,size.w,
+            ring.x,ring.y,ring.z,ring.w
+        };
+        dev_->setUniforms(slot,data,sizeof(data));
+    };
+    bindGrid(6,dynamicGiOrigin_,dynamicGiSize_,dynamicGiRing_);
+    dev_->setTexture(13,dynamicGiOverlay_->texture());
+    if(validity)dev_->setTexture(14,dynamicGiValidity_->texture());
+    if(far) {
+        bindGrid(7,dynamicGiFarOrigin_,dynamicGiFarSize_,dynamicGiFarRing_);
+        dev_->setTexture(15,dynamicGiFarOverlay_->texture());
+    }
+    if(third) {
+        bindGrid(8,dynamicGiThirdOrigin_,dynamicGiThirdSize_,dynamicGiThirdRing_);
+        dev_->setTexture(16,dynamicGiThirdOverlay_->texture());
+    }
+    return requested;
+}
+
 bool Renderer3D::dynamicGiEligible(const ModelItem& it, int phase,
                                   bool gpuInstances, bool instancePalette) const {
     if ((phase != 1 && phase != 2) || !dynamicGiOverlay_ ||
