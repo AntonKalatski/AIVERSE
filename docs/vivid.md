@@ -763,3 +763,10 @@ Source regression cases cover reversed LOD palettes, barycentric weights, U8 sum
 The safe supported subset requires a unique skinned mesh owner, independent index ranges, CPU-owned source geometry and no legacy per-primitive morph atlas or precompiled material/shadow batches. Affected authored *target* LOD mappings that do not include the cloned new vertices still fail closed, rather than silently producing missing LOD morphs or skin weights. Full rebaking of legacy renderer morphs, target LOD sidecars, material and shadow batches is still outstanding.
 
 Regression source asserts cloned primitive ranges, source ID stability, preservation of extended facial morph CSR deltas and normalized skin weights on source and clone. **No C++ compilation, runtime CTest or actual Metal/Vulkan/GLES GPU comparison has been performed for this stage**. Complete implementation SHAs, restrictions and next-agent steps appear in `docs/agent-handoffs/vivid.md` Stage 7S.
+
+
+## Stage 7T — seam-clone target LOD correspondences (2026-11-20)
+
+`SkinLodSeamRemap::expandTarget` now generates a temporary, sorted barycentric target map for newly appended skinned seam-clone vertex IDs. Each clone inherits its original target vertex's source triangle and barycentric weights, so `SkinWeightLodTransfer` can populate the clone's destination palette without changing saved LOD sidecars or existing source/target IDs. Creator carries the `SkinSeamSplit::Result` forward and passes this expanded map to transfer only for affected target meshes. Incomplete mappings reject the candidate, preserving the last-good character.
+
+This is **not** legacy morph-atlas or material/shadow batching rebake. Those paths still fail closed rather than silently corrupting GPU draws; fully general automatic seam splitting remains incomplete. Source regression scenarios have been committed for cloned correspondence inheritance, stable IDs and missing-sample rollback, but **compilation, CTest and GPU validation have NOT RUN**. See `docs/agent-handoffs/vivid.md` Stage 7T.
