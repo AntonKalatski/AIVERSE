@@ -19,8 +19,9 @@ namespace aiverse::game::view_adapter {
 class RtsModelResourceCache final {
 public:
     using ModelMap=std::map<std::string,std::unique_ptr<render::Model>>;
-    // Incremented on insert, eviction and full shutdown. Borrowed model
-    // pointers become invalid across a generation-changing mutation.
+    // Incremented by publishPrepared, trimUnused and shutdown. Direct
+    // mutation through models() is legacy compatibility and does not
+    // increment generation: hosts must not treat this as a full asset epoch.
     uint64_t generation() const noexcept {return generation_;}
 
     struct Stats {
