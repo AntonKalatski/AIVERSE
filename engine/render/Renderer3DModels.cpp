@@ -36,6 +36,7 @@ constexpr uint32_t kKeyDynamicGIValidity = 1u << 30;
 constexpr uint32_t kKeyDynamicGICascades = 1u << 25;
 constexpr uint32_t kKeyDynamicGITriple = 1u << 31; // only an opt-in Metal shader variant
 constexpr uint32_t kKeyLumaWeaveMaterial = 1u << 24; // opt-in true diffuse material receiver
+constexpr uint32_t kKeyLumaWeaveSurface = 1u << 23; // opt-in signed PBR normal+roughness
 constexpr uint32_t kKeySkinned = 1, kKeyNormalMap = 2, kKeyAlphaMask = 4, kKeyShadow = 8, kKeyBaked = 64, kKeyMorph = 128,
                    kKeyInstanced = 256, kKeyOutline = 512, kKeyLightmap = 2048, kKeyProbes = 4096, kKeyLodFade = 8192, kKeyMaterialPalette = 16384;   // GI keys: agent-lightbake
 struct ProfileTimer {
@@ -211,7 +212,9 @@ void Renderer3D::setMaterialQuality(MaterialQuality q) {
 gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bool instanced,
                                               bool gpuInstances, bool instancePalette) {
     const bool shadow = phase == 0, outline = phase == 3, depthAfter = phase == 4;
-    const bool materialCapture = lumaMaterialCapture_ && (phase==1 || phase==2);
+    const bool surfaceCapture = lumaSurfaceCapture_ && (phase==1 || phase==2);
+    const bool materialCapture = (lumaMaterialCapture_ || surfaceCapture) &&
+                                 (phase==1 || phase==2);
     const bool maskPass = outline && selectionMaskPass_;
     const bool skinned = it.joints >= 0, baked = it.baked, morph = it.morph >= 0;
     const bool materialPalette = phase == 1 && (it.paletteMaterials || instancePalette);
@@ -236,6 +239,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                                     ? uint32_t(studioDebugMode_) << 17 : 0u;
     const uint32_t shaderKey = gpuInstanceShaderBit | (materialCapture?0u:studioShaderBits) |
                                (materialCapture?kKeyLumaWeaveMaterial:0u) |
+                               (surfaceCapture?kKeyLumaWeaveSurface:0u) |
                                (instancePalette ? kKeyMaterialInstancePalette : 0u) | (skinned ? kKeySkinned : 0u) | (normalMap ? kKeyNormalMap : 0u) | (mask ? kKeyAlphaMask : 0u) |
                                (shadow ? kKeyShadow : 0u) | (baked ? kKeyBaked : 0u) | (morph ? kKeyMorph : 0u) |
                                (instanced ? kKeyInstanced : 0u) | (outline ? kKeyOutline : 0u) |
@@ -281,7 +285,8 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         if (outline) defs += "#define OUTLINE 1\n";
         if (shaderKey & kKeyDrawCallView) defs += "#define DRAW_CALL_VIEW 1\n";
         if (studioShaderBits && !materialCapture) defs += "#define STUDIO_DEBUG_VIEW " + std::to_string(studioShaderBits >> 17) + "\n";
-        if (materialCapture) defs += "#define LUMAWEAVE_MATERIAL 1\n";
+        if (materialCapture && !surfaceCapture) defs += "#define LUMAWEAVE_MATERIAL 1\n";
+        if (surfaceCapture) defs += "#define LUMAWEAVE_SURFACE 1\n";
         if (lightmap) defs += "#define LIGHTMAP 1\n";
         if (probes) defs += "#define PROBES 1\n";
         if (dynamicGi) defs += "#define DYNAMIC_GI 1\n";
@@ -408,7 +413,8 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         } else if (depthAfter) {
             pd.colorWrite = false;
         }
-        pd.label = shadow ? "model shadow" : materialCapture ? "LumaWeave model material" :
+        pd.label = shadow ? "model shadow" : surfaceCapture ? "LumaWeave model normal/roughness" :
+                   materialCapture ? "LumaWeave model material" :
                    outline ? "model outline" : depthAfter ? "model depth" : "model";
         if (warmingPipelines_) {
             auto job=dev_->createPipelineAsync(pd);
