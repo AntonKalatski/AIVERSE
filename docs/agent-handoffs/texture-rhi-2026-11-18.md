@@ -9477,3 +9477,66 @@ If pass, optional full verifier:
 If fail, attach first compiler/runtime error and next GPU handoff;
 do not merge PR #21 without a real on-device passing acceptance.
 
+
+## Stage 10BF — Metal GPU timing instrumentation (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Source commit:** `50656c4bd120755e6fa14bf8d2774aeb77b7e752`,
+`tests/render/metal_texture_gpu.mm`.
+**Docs commits:** `4f7c922a29bf923868ad42553035e2c87c7ffcf5`
+(`docs/texture-rhi.md`),
+`f73906577736fe50c7be276f23296dca53966420`
+(`skills/visuals/aiverse-texture-rhi/SKILL.md`).
+
+**Motivation and real baseline:** user reported on Mac Studio
+`metal_texture_gpu` CTest PASS 1/1 in 1.53 seconds and a full
+`--editor --metal` verifier ending with
+`OVERALL SOURCE AND METAL TEXTURE GPU TESTS PASS`.
+They asked why the total was 1.53 s and instructed continued work.
+Those PASS results apply to the **previous** fixture before this
+timing instrumentation; no post-change timings are known.
+
+**Implementation:** added monotonic `Clock` wall-time
+measurement and tagged optional `Device::timeGpuFrame(tag)`
+for each group's GPU readback command buffer.
+Reports:
+- `Metal device_and_layer_init_ms`: Metal device and CAMetalLayer,
+  plus AIVERSE MetalDevice initialization;
+- `Texture3D` and `Texture2DArray`, `Cube`, `CubeArray`
+  `create_and_upload_ms`;
+- one `TIMING` per group's actual GPU readbacks, splitting
+  submit, callback wait, number of frame pumps, CPU comparison,
+  and optional timestamped GPU *command-buffer* duration;
+- `Metal fixture_total_ms` and `gpu_test_body_ms`.
+`gpu_command_ms=unavailable` when no completed valid backend
+timestamp is available. The GPU timing spans the whole command
+buffer; it is **not** a pure upload or blit-throughput benchmark.
+Wall-clock callback wait includes frame semaphore/drawable overhead
+and 10ms sleeps. No fragile timing assertions added.
+All existing byte-exact GPU assertions, CPU negative cases
+and resource-lifetime tests are unchanged.
+
+**Architecture/API:** test fixture only, no engine RHI behavior,
+GPU shader/ICB ABI, ECS, serialized format, or CMake behavior changed.
+
+**Actually performed:** GitHub connector fetched the existing
+production fixture and `Gfx.h`/Metal timing API; created scoped
+source update and inspected the changed source context.
+**Post-commit Mac compile, CTest and GPU timing execution NOT RUN**
+in this assistant environment. Previous 1.53 s cannot be
+decomposed without a fresh instrumented run.
+
+**Next step:** Mac Studio isolated worktree:
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parallel 4
+ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
+```
+Record `TIMING` lines and GPU device name, compiler diagnostics
+or remaining CTest failures; append a new agent handoff after
+actual validation. Separately expand GPU acceptance to real
+fragment shader texture sampling, GPU VT feedback/page-table
+publication and GPU ICB permutations before PR promotion.
+Never touch the main AIVERSE worktree during unrelated rebase.
+
