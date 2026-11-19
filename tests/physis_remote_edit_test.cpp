@@ -378,6 +378,100 @@ void unhealthyJournalStopsAutomaticResubmit() {
         }
     }
 }
+void manualRetryAfterJournalRecovery() {
+    auto sim=make();
+    ServerGateway failing;
+    std::map<ServerGateway::Key,ServerGateway::Entry> durable;
+    int writes=0;
+    // Persist the intent and Queued receipt, then lose receipt writes
+    // after the World edit commits. The process sees Unknown/Uncertain.
+    failing.setJournalWriter([&](const auto& entries,std::string* error) {
+        if(++writes>=3) {
+            if(error)*error="injected Applied receipt disk error";
+            return false;
+        }
+        durable=entries;
+        return true;
+    });
+    RemoteClient client(75511);
+    CHECK(client.begin(edit(Fixed::fromInt(42)),kEdit,4));
+    const auto originalId=client.requestId();
+    const auto originalBytes=client.exportOutstanding();
+    auto [c1,s1]=net::makeLoopbackPair();
+    std::uint64_t uncertainAt=0;
+    for(std::uint64_t ms=0;ms<3000;ms+=40) {
+        client.poll(*c1,ms);
+        failing.poll(*sim,*s1,"trusted-editor",readAcl,writeAcl,ms);
+        sim->step();
+        failing.observe(*sim);
+        client.poll(*c1,ms+1);
+        if(client.status()==ClientStatus::Uncertain) {
+            uncertainAt=ms+1;
+            break;
+        }
+    }
+    CHECK(uncertainAt>0);
+    CHECK(!failing.journalHealthy());
+    CHECK(registry(*sim).revision==1);
+    CHECK(durable.size()==1);
+    CHECK(client.status()==ClientStatus::Uncertain);
+    CHECK(client.exportOutstanding()==originalBytes);
+    if(durable.size()!=1)return;
+    CHECK(durable.begin()->second.receipt.result==Result::Queued);
+
+    // On restart the original Queued journal is no longer evidence
+    // that the pending command survived. Observe the RESTORED ECS World.
+    ServerGateway recovered;
+    std::string error;
+    CHECK(recovered.restoreJournal(durable,&error));
+    CHECK(recovered.entries().begin()->second.receipt.result==Result::Unknown);
+    recovered.setJournalWriter([](const auto&,std::string*){return true;});
+    recovered.observe(*sim);
+    CHECK(recovered.entries().begin()->second.receipt.result==Result::Applied);
+    c1->close();s1->close();
+    client.disconnected();
+    CHECK(client.status()==ClientStatus::Uncertain);
+
+    // Reconnection MUST NOT silently restart application command traffic.
+    auto [c2,s2]=net::makeLoopbackPair();
+    for(std::uint64_t ms=uncertainAt+100;ms<uncertainAt+500;ms+=40) {
+        client.poll(*c2,ms);
+        net::Bytes unexpected;
+        CHECK(!s2->recv(unexpected));
+    }
+    CHECK(client.status()==ClientStatus::Uncertain);
+
+    // Explicit user-initiated retry first Queries the SAME original ID.
+    client.retry();
+    CHECK(client.requestId()==originalId);
+    for(std::uint64_t ms=uncertainAt+600;ms<uncertainAt+2000;ms+=40) {
+        client.poll(*c2,ms);
+        recovered.poll(*sim,*s2,"trusted-editor",readAcl,writeAcl,ms);
+        client.poll(*c2,ms+1);
+        if(client.status()==ClientStatus::Applied)break;
+    }
+    CHECK(client.status()==ClientStatus::Applied);
+    CHECK(registry(*sim).revision==1);
+    CHECK(client.requestId()==originalId);
+    CHECK(client.remoteRevision()==1);
+}
+
+void ordinaryUnknownStillRetriesOriginal() {
+    auto sim=make();
+    RemoteClient original(85511);
+    CHECK(original.begin(edit(Fixed::fromInt(43)),kEdit,4));
+    const auto bytes=original.exportOutstanding();
+    RemoteClient restored(85511);
+    CHECK(restored.restoreOutstanding(bytes));
+    const auto id=restored.requestId();
+    ServerGateway server;
+    auto [c,s]=net::makeLoopbackPair();
+    drive(restored,server,*sim,*c,*s,0,2100);
+    CHECK(restored.status()==ClientStatus::Applied);
+    CHECK(restored.requestId()==id);
+    CHECK(registry(*sim).revision==1);
+    CHECK(server.entries().size()==1);
+}
 void initialRevisionProbe() {
     auto sim=make();
     ServerGateway gateway;
@@ -429,6 +523,8 @@ int main() {
     latencyAndReorderSimulation();
     initialRevisionProbe();
     unhealthyJournalStopsAutomaticResubmit();
+    manualRetryAfterJournalRecovery();
+    ordinaryUnknownStillRetriesOriginal();
     appliedReceiptAfterRollback();
     queuedReceiptInvalidatedByRollback();
     denied();
