@@ -13,6 +13,7 @@
 #include <set>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -34,7 +35,7 @@ public:
                    MissingPrefabConfig missing=MissingPrefabConfig::Reject,
                    uint32_t schemaVersion=1) {
         if(sealed_ || !catalog || !SceneAsset::validKey(domainKey) ||
-           persistenceId.empty() || persistenceId.size()>256 ||
+           !validPersistenceId(persistenceId) ||
            !schemaVersion || domains_.contains(domainKey) ||
            persistenceIds_.contains(persistenceId))
             return false;
@@ -173,6 +174,18 @@ public:
     }
 
 private:
+    // PersistentEcsRegistry accepts up to 128 ASCII chars for the
+    // FINAL schema ID, including the ".prefab_binding" suffix.
+    static bool validPersistenceId(std::string_view id) {
+        if(id.empty() || id.size()>112)return false;
+        for(char c:id) {
+            if((c>='a' && c<='z') || (c>='A' && c<='Z') ||
+               (c>='0' && c<='9') || c=='.' || c=='_' ||
+               c=='-' || c==':') continue;
+            return false;
+        }
+        return true;
+    }
     struct Domain {
         std::function<bool(const World&)> canBind,validate;
         std::function<bool(World&)> bind;
