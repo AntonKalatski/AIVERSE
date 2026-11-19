@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <map>
 #include <set>
+#include <span>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -76,6 +77,28 @@ public:
         buckets_.swap(buckets);
         return true;
     }
+    // Replace sparse aggregate cover from a trusted revision-ordered
+    // server delta. Does NOT iterate/generate any grass blades.
+    void applyAuthoritativeCoverageChanges(
+            std::span<const GrassCoverChange> changes,
+            uint64_t soilRevision) {
+        if(changes.size()>kMaxPatches)
+            throw std::length_error("TerraWeave grass network change budget");
+        std::set<uint64_t> seen;
+        for(const auto& change:changes) {
+            const auto it=patches_.find(change.key);
+            if(!change.key || !seen.insert(change.key).second ||
+               it==patches_.end() ||
+               change.beforeCoveragePermille!=it->second.coveragePermille ||
+               change.afterCoveragePermille>1000u ||
+               change.earthRevision!=soilRevision)
+                throw std::invalid_argument("TerraWeave grass network coverage mismatch");
+        }
+        for(const auto& change:changes)
+            patches_.at(change.key).coveragePermille=
+                change.afterCoveragePermille;
+    }
+
     void setEnvironment(uint64_t key,PlantEnvironment environment){
         (void)plantAppearance(environment);
         const auto it=patches_.find(key);
