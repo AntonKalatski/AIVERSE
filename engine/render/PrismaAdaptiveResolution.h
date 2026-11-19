@@ -13,6 +13,7 @@ namespace aiverse::render {
 struct PrismaAdaptiveResolution {
     float scale = 1.0f;
     uint64_t lastCompletedFence = 0;
+    bool lastSampleSourceScoped = false; // query sequence and GPU fence are different domains
     unsigned slowSamples = 0, fastSamples = 0, cooldown = 0;
     bool initialized = false;
 
@@ -20,6 +21,7 @@ struct PrismaAdaptiveResolution {
         scale = quantize(authoredScale);
         slowSamples = fastSamples = cooldown = 0;
         lastCompletedFence = 0;
+        lastSampleSourceScoped = false;
         initialized = true;
     }
     static float quantize(float s) {
@@ -31,8 +33,17 @@ struct PrismaAdaptiveResolution {
     // full-frame GPU fence, or a new completed GL33 scoped query sequence.
     // Duplicate/queued CPU frame updates never advance the controller.
     bool observe(double gpuMs, uint64_t completedFence, float targetGpuMs,
-                 float floor, float ceiling, bool memoryPressure = false) {
+                 float floor, float ceiling, bool memoryPressure = false,
+                 bool scopedSample = false) {
         if (!initialized) reset(ceiling);
+        // A scoped query sequence may start at 1 while the whole-frame
+        // GPU fence is already large. Never compare tokens from these
+        // distinct domains or the policy can stall permanently.
+        if (lastSampleSourceScoped != scopedSample) {
+            lastCompletedFence = 0;
+            slowSamples = fastSamples = 0;
+            lastSampleSourceScoped = scopedSample;
+        }
         const float hi=quantize(ceiling);
         const float lo=std::min(hi,quantize(floor));
         scale=std::clamp(scale,lo,hi);
