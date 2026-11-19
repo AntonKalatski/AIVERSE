@@ -129,6 +129,12 @@ void RtsView::shutdown(gfx::Device& dev) {
     anims_.clear(); streamingChoices_.clear(); ghostAnim_=EntityAnim{};
     animationCache_.clear();
     looks_.clear(); actorRevealTypes_.clear(); loadedTypes_.clear(); tracers_.clear();
+    // Failed appearance publications may leave uncommitted image GPU
+    // handles queued behind their own completion tokens. Only a proven
+    // full-device idle may drain unresolved/failed markers at shutdown.
+    // Do not destroy the Device or Model cache while retirement is pending.
+    if(!imageRollback_.drain(dev))
+        throw std::runtime_error("RTS staged image rollback: GPU idle barrier failed");
     // All model GPU buffers and textures are now released by the same
     // per-host resource owner, after any asynchronous preparation joined.
     resources_.shutdown(dev);
