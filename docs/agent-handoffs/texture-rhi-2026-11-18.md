@@ -6588,3 +6588,124 @@ material fallback, then run backend-specific tests.
 **Actual verification:** Compared `uploadModel`, `uploadImage`, `ModelTextureCache::upload`, `Model::Image`, `Model::Material` and the Terra archive bridge via GitHub source fetch; connector accepted all code and documentation commits. **Native C++ compilation NOT RUN. CTest NOT RUN. GLSL/MSL compilation NOT RUN. Real GPU rendering, VRAM and profiling NOT RUN** per the user's instruction to finish features before tests. Do not claim build or behavioural parity from these commits.
 
 **Next step:** add alpha-preserving memory reduction for masked Terra Horizon/impostor materials (separate full-resolution alpha mask, robust alpha cutout in main/selection/shadow/feedback), then enable safe GPU ICB batching for VT with per-command atlas/material identity. Afterwards run full native and GPU cross-backend verification.
+
+
+## Stage 10G — merge-main preflight and full-resolution R8 cutout with reduced VT color (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`; PR #21.
+**User instruction:** incorporate current `main` *before* next feature.
+**GitHub ancestry check:** branch `main` HEAD was
+`9ee6ff6fbf390bd45363bc92c838f492dfe92eee`, already the
+merge-base and an ancestor of the feature head (then
+`861e3bcc386658ae82793c4022a233b26b02b236`).
+`compare(main...feature)` reported feature ahead 409,
+behind 0; `compare(feature...main)` main ahead 0.
+Thus `git merge main` would be **already up to date**:
+no merge commit, force-update, rebase, conflict resolution or
+non-ancestral copy was necessary. Continue from the actual
+existing feature branch. This statement is as of the checked
+branch heads, not a claim about any future main updates.
+
+**Feature code commits (chronological):**
+- `36ddfa395b11589900795c4d2b6e49407bc80760`:
+  `engine/render/Model.h`: `Image::virtualFallbackPreserveAlpha`
+  policy and model-owned `Image::virtualAlphaMask` GPU handle.
+- `cee1212732ddd7eb07d32e903d640422b6f81d71`:
+  `engine/render/Model.cpp`: extract original alpha bytes into
+  full-resolution R8 texture (source's wrap/filter/mip settings);
+  independently upload reduced RGBA8 color fallback; clean R8
+  on failed coarse upload; release both owned resources.
+- `d67cb59122c4352ceafc32f02f28494fe293c2dc`:
+  `engine/render/ModelVirtualTextureFallback.h`: allow explicitly
+  masked `configureModelVirtualFallback(...,preserveAlpha=true)`
+  and `configureModelVirtualMaskedFallback`; maintain conservative
+  material safety, add `VirtualFallbackSavings::fullResolutionAlphaBytes`.
+- `d2609ed50b037728aa3f453425194d049c217908`:
+  `engine/render/ModelShaders.h`: GLSL/MSL `VIRTUAL_ALPHA_MASK`
+  permutations sample R8 `tex15.r` in main color, shadow and
+  scene selection mask; original `tex1` color fallback remains.
+- `7ed3fa3bc45913dccde7691a7a471d3636784a8c`:
+  `engine/render/Renderer3DModels.cpp`: dedicated alpha shader key
+  bit 30, model image alpha handle detection, `tex15` binding,
+  shader texture slot count 16. Opt-in only for built-in shaders,
+  no conflict with Shader Graph texture slots.
+- `00f3a62bb685db8368c221d827e205ddef828456`:
+  `engine/render/GpuMaterialState.h`: include R8 alpha handle
+  identity in GPU material equivalence and state hash.
+- `935e3230d964b674fd57888b4f5ca5a12432283a` and
+  `1d68c567fdb2e1265cb16b6d1c07768f44e40591`:
+  `engine/gfx/VirtualTextureFeedbackProgram.h`: optional red
+  channel sampling in masked feedback shaders; second commit
+  scopes generated alpha sampling to masked variants only.
+- `79728bcc90ad7413d0aa8455e862297ee10cf694`:
+  `engine/render/VirtualTextureModelFeedback.h`: create red-mask
+  pipeline variants and use `Image::virtualAlphaMask` instead of
+  reduced `Image::tex` for R8 cutout feedback on rigid models.
+- `27f30c8043ed8a170922667d9f46ff6267e8d895`:
+  `engine/render/VirtualTextureDeformedFeedback.h`: add R8
+  coverage source selector to U6 and `tex15` support for
+  skinned/baked/morph virtual feedback.
+- `21c46ee487d171f52c4b9b0bbc1c6d38582923d3`:
+  `engine/render/TerraWeaveVirtualAtlasArchive.h`: preserve-alpha
+  option and `configureTerraWeavePackedMaskedImageFallback`
+  convenience API for Horizon/Arbor impostors.
+- `7ec1a3fd673eb2293def9d1b3b8d0911f8f48281`:
+  `engine/render/Renderer3D.cpp`: avoid GPU ICB encoded commands
+  in scenes using external R8 alpha masks, since command ABI
+  has no per-command `tex15` resource identity.
+
+**Additional documentation commits:** `94c124e78f5983f75555e0e7cce71f6d9d94b97b`
+(new detailed API section in `docs/texture-rhi.md`),
+`e4c6274c389f25a16e2f06bd7fa6d26ce930215d`
+(mark old 'masked source not supported' paragraph as superseded),
+`f9005b018d1ee5be7e5bd42298a8199baeafdec8`
+(agent skill usage in `skills/visuals/aiverse-texture-rhi/SKILL.md`).
+
+**Architecture & behaviour:** The full-size RGBA8 base source must
+already be packaged to the immutable virtual texture page archive;
+configure masked fallback *before* `uploadModel` while original CPU
+RGBA8 is still available. `Model::Image` owns a small reduced
+RGBA8 `tex` for fallback color and full-res R8 `virtualAlphaMask`
+for alpha-test coverage. `ModelShaders.h` uses `tex15.r` instead
+of the reduced source alpha in built-in color, shadow and selection
+variants; the virtual atlas/page table are still bound to tex13/14.
+The same R8 alpha source drives both rigid and deformed GPU feedback,
+including masked+LOD variants. GPU-state batching accounts for
+R8 resources and GPU ICB falls back conservatively. The source
+upload path is default-off and bypasses full-res texture-cache
+entries instead of replacing them.
+
+**Cost illustration:** original 2048x2048 RGBA8 base = 16 MiB;
+2048x2048 R8 alpha base = 4 MiB plus 64x64 RGBA8 fallback =
+16 KiB. Savings about 75% of source base-level bytes, NOT
+measured total GPU VRAM (mips, page-table/atlas, driver overhead
+and other textures remain). `VirtualFallbackSavings` records
+the alpha channel base bytes separately.
+
+**Constraints:** `AlphaMode::Blend`, custom Shader Graph,
+team modes relying on base alpha, images used for normal/metal/
+emissive/occlusion/masks, already-uploaded or borrowed cached
+textures, and malformed/unarchived CPU RGBA inputs are rejected.
+Future `ModelDraw::materials` overrides are not visible to the
+static asset-policy check; users must audit those separately.
+GL/Metal shader slots 13–15 must remain mutually exclusive
+with Shader Graph's texture bindings. R8 cutout mip/filter
+and alpha cutoff parity across all backends still need GPU
+verification, as does full model selection/shadow correctness.
+Do not claim exact bit-identical rendered alpha until tests.
+
+**Verification actually performed:** GitHub main/feature branch
+head and ancestry comparison, source/API inspection, spot
+inspection of inserted shader macros, feedback modes, image
+ownership and material hash. All GitHub feature and documentation
+commits succeeded. **Native C++ compilation NOT RUN; CTest NOT
+RUN; GLSL/MSL compilation NOT RUN; GPU smoke/VRAM/shadow/selection
+tests NOT RUN**, per user's continuing functionality-first order.
+
+**Immediate next step:** finish per-command VT atlas and R8 mask
+bindings for GPU ICB/MDI so model batching can be restored safely;
+finish shader-graph virtual texture integration without exceeding
+GL/Metal sampler limits (or preserve an explicit no-VT fallback).
+Before merging to main, run targeted C++/shader tests and inspect
+actual Metal, GL33/GLES3, Vulkan readbacks, alpha coverage and VRAM.
+Review branch latest main ancestry again if main has moved.
