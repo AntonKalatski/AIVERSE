@@ -1,4 +1,6 @@
 #include "engine/character/vivid/HumanPreview.h"
+#include "engine/render/GpuMaterialState.h"
+#include "engine/render/ModelShaders.h"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -15,6 +17,22 @@ void test() {
         auto mat=humanMaterials(dna);
         expect(mat.skin.shaderGraph && mat.iris.shaderGraph &&
                mat.hair.shaderGraph,"PBR human shader graphs missing");
+        expect(mat.skin.shading==render::ShadingModel::Skin &&
+               mat.iris.shading==render::ShadingModel::Eye &&
+               mat.cornea.shading==render::ShadingModel::Eye &&
+               mat.hair.shading==render::ShadingModel::Hair,
+               "human materials did not select dedicated PBR modes");
+        expect(std::string(render::shaders::kModelFS).find("human skin")!=std::string::npos &&
+               std::string(render::shaders::kModelMSL).find("human BRDF lobes")!=std::string::npos,
+               "GLSL/Metal human BRDF source missing");
+        render::Model modelA,modelB;
+        const auto original=mat.skin;
+        auto adjusted=original;
+        adjusted.humanProfile.x*=0.2f;
+        expect(!render::equivalentGpuMaterial(modelA,original,modelB,adjusted) &&
+               render::gpuMaterialStateHash(modelA,original)!=
+               render::gpuMaterialStateHash(modelB,adjusted),
+               "GPU batching merged human materials with different subsurface profiles");
         for(const auto& material:{mat.skin,mat.iris,mat.hair}) {
             expect(material.shaderGraph->domain=="material" &&
                    !material.shaderGraph->glsl.empty() &&
