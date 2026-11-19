@@ -4,6 +4,7 @@
 #include "engine/character/vivid/HumanCreatorSession.h"
 #include "engine/character/vivid/HumanPreview.h"
 #include "engine/character/vivid/HumanImport.h"
+#include "engine/character/vivid/ScalpSkinning.h"
 #include "engine/character/vivid/GpuActorStream.h"
 #include "engine/character/vivid/GpuMorphAssetCache.h"
 #include "engine/platform/Platform.h"
@@ -68,6 +69,7 @@ struct CreatorApp {
     std::vector<render::float3> scalpBindPositions;
     std::vector<render::float3> scalpAnimatedPositions;
     int scalpPoseNode=-1;
+    std::unique_ptr<ScalpSkinning> scalpSkinning;
     render::mat4 scalpBindNodeInverse{};
     render::mat4 scalpBindHeadRigid{};
     bool externalMode=false;
@@ -138,6 +140,7 @@ struct CreatorApp {
         scalpBindPositions.clear();
         scalpAnimatedPositions.clear();
         scalpPoseNode=-1;
+        scalpSkinning.reset();
         cache->pruneExpired();
         return true;
     }
@@ -197,6 +200,7 @@ struct CreatorApp {
     struct ScalpPoseBinding {
         std::vector<render::float3> bindPositions;
         int node=-1;
+        std::unique_ptr<ScalpSkinning> skinning;
         render::mat4 nodeBindInverse{};
         render::mat4 headBindRigid{};
     };
@@ -213,10 +217,8 @@ struct CreatorApp {
         for(std::size_t i=0;i<model.nodes.size();++i) {
             const auto& node=model.nodes[i];
             if(node.mesh!=meshId)continue;
-            if(node.skin>=0)
-                throw std::runtime_error("VIVID Creator: skinned scalp proxy requires skinning adapter");
             if(poseNode>=0)
-                throw std::runtime_error("VIVID Creator: proxy must belong to one rigid model node");
+                throw std::runtime_error("VIVID Creator: proxy must belong to one model node");
             poseNode=int(i);
         }
         if(poseNode<0 || !rig.valid() ||
@@ -227,11 +229,13 @@ struct CreatorApp {
         // are already expressed in the groom's local coordinate system.
         std::vector<render::float3> positions;
         std::vector<std::uint32_t> indices;
+        std::vector<std::uint32_t> sourceIds;
+        const bool skinned=model.nodes[std::size_t(poseNode)].skin>=0;
         std::vector<std::uint32_t> remap(model.vertices.size(),
             std::numeric_limits<std::uint32_t>::max());
         for(const auto& primitive:it->primitives) {
-            if(!primitive.jointPalette.empty())
-                throw std::runtime_error("VIVID Creator: scalp proxy has skin joints");
+            if(skinned!=!primitive.jointPalette.empty())
+                throw std::runtime_error("VIVID Creator: scalp proxy skin/palette mismatch");
             const auto begin=std::size_t(primitive.firstIndex);
             const auto end=begin+std::size_t(primitive.indexCount);
             if(begin>model.indices.size() || end>model.indices.size())
@@ -244,19 +248,30 @@ struct CreatorApp {
                 if(mapped==std::numeric_limits<std::uint32_t>::max()) {
                     mapped=std::uint32_t(positions.size());
                     positions.push_back(model.vertices[original].pos);
+                    sourceIds.push_back(original);
                 }
                 indices.push_back(mapped);
             }
+        }
+        ScalpPoseBinding binding;
+        binding.node=poseNode;
+        binding.nodeBindInverse=model.bindWorld[std::size_t(poseNode)].inverse();
+        binding.headBindRigid=rigidHeadMatrix(model.bindWorld[std::size_t(rig.head)]);
+        if(skinned) {
+            binding.skinning=std::make_unique<ScalpSkinning>(
+                ScalpSkinning::compile(model,std::size_t(meshId),
+                                      std::size_t(poseNode),sourceIds));
+            // Skinning produces model-world points. Convert to the same
+            // head-local frame used to draw the procedural hair cards.
+            if(!binding.skinning->evaluate(model.bindWorld,binding.headBindRigid,
+                                           positions))
+                throw std::runtime_error("VIVID Creator: invalid skinned scalp bind pose");
         }
         if(!groom.setCollisionMesh(positions,indices))
             throw std::runtime_error("VIVID Creator: scalp proxy must be a closed nondegenerate mesh within the 16K/32K budget");
         if(!groom.attachRootsToCollisionMesh())
             throw std::runtime_error("VIVID Creator: could not attach groom roots to scalp proxy");
-        ScalpPoseBinding binding;
         binding.bindPositions=std::move(positions);
-        binding.node=poseNode;
-        binding.nodeBindInverse=model.bindWorld[std::size_t(poseNode)].inverse();
-        binding.headBindRigid=rigidHeadMatrix(model.bindWorld[std::size_t(rig.head)]);
         return binding;
     }
     void regenerate() {
@@ -319,6 +334,7 @@ struct CreatorApp {
             scalpBindPositions=std::move(proposedScalp.bindPositions);
             scalpAnimatedPositions.resize(scalpBindPositions.size());
             scalpPoseNode=proposedScalp.node;
+            scalpSkinning=std::move(proposedScalp.skinning);
             scalpBindNodeInverse=proposedScalp.nodeBindInverse;
             scalpBindHeadRigid=proposedScalp.headBindRigid;
             if(!uploadModel(*device,*human.head,true))
@@ -656,21 +672,29 @@ struct CreatorApp {
                std::size_t(scalpPoseNode)<facePose.size()) {
                 const auto frameHead=rigidHeadMatrix(
                     facePose[std::size_t(human.rig.head)]);
-                const auto delta=frameHead.inverse() *
-                    facePose[std::size_t(scalpPoseNode)] *
-                    scalpBindNodeInverse * scalpBindHeadRigid;
-                bool validPose=true;
-                for(float value:delta.m)
-                    validPose=validPose&&std::isfinite(value);
-                if(validPose) {
-                    for(std::size_t i=0;i<scalpBindPositions.size();++i) {
-                        auto p=delta.transformPoint(scalpBindPositions[i]);
-                        if(!std::isfinite(p.x)||!std::isfinite(p.y)||
-                           !std::isfinite(p.z)) {
-                            validPose=false;
-                            break;
+                bool validPose=false;
+                if(scalpSkinning) {
+                    // MotionWeave owns all node matrices; the VIVID adapter
+                    // only performs presentation CPU skinning of scalp proxy.
+                    validPose=scalpSkinning->evaluate(
+                        facePose,frameHead,scalpAnimatedPositions);
+                } else {
+                    const auto delta=frameHead.inverse() *
+                        facePose[std::size_t(scalpPoseNode)] *
+                        scalpBindNodeInverse * scalpBindHeadRigid;
+                    validPose=true;
+                    for(float value:delta.m)
+                        validPose=validPose&&std::isfinite(value);
+                    if(validPose) {
+                        for(std::size_t i=0;i<scalpBindPositions.size();++i) {
+                            auto p=delta.transformPoint(scalpBindPositions[i]);
+                            if(!std::isfinite(p.x)||!std::isfinite(p.y)||
+                               !std::isfinite(p.z)) {
+                                validPose=false;
+                                break;
+                            }
+                            scalpAnimatedPositions[i]=p;
                         }
-                        scalpAnimatedPositions[i]=p;
                     }
                 }
                 if(!validPose ||
