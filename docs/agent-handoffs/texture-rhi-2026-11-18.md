@@ -11110,3 +11110,74 @@ nonuniform physical page edges, or GL/Vulkan/WebGL/mobile
 platform parity, 0–3 graph source counts, stress or scene
 frame-time performance. Keep PR #21 Draft; GPU ICB features
 and risky CTests remain default OFF.
+
+## Stage 10BZ — observed Clang helper-name collision fixed (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, PR #21 Draft.
+**Immediate preceding work:** Stage 10BY new
+`metal_renderer_graph_vt_seam_gpu` missing-page and
+Repeat/MirrorRepeat UV GPU acceptance fixture. The earlier
+Stage 10BX graph+disk-VT coarse/fine/LRU test passed on M3 Ultra,
+but **does not cover Stage 10BY**.
+
+**User-supplied native Mac Studio build failure:**
+`aiverse_runtime` built successfully, but compiling
+`tests/render/metal_renderer_graph_vt_seam_gpu.cpp`
+produced **four Clang errors** at test lines 387, 490, 523
+and 578, all `reference to 'detail' is ambiguous`.
+The candidate `(anonymous namespace)::detail(int)` was
+ambiguous against existing `aiverse::detail` namespace
+declared by `engine/core/Fixed.h:11` and imported by
+`using namespace aiverse;`. The test binary did not link.
+**CTest/GPU execution was not performed for this failure.**
+
+**Source fix commit:**
+`8fe7265f2124539a36e388255acd1d9fc5ee3887`
+only changes `tests/render/metal_renderer_graph_vt_seam_gpu.cpp`:
+rename helper definition to `finePageKey(int)`, update
+three direct calls and the function pointer passed to
+`request(finePageKey,false,...)`. Semantic page address
+remains `{mip=0,x=3,y=1,layer=side}`. Public
+RHI/Streamer/Renderer3D/ShaderGraph/ECS interfaces, production
+GPU/streaming code and material assets are **unchanged**.
+
+**Documentation commit:**
+`bdb3196be2cceeae07b58fcf0469fcbef65aeeab`
+(`docs/texture-rhi.md`, Stage 10BZ with exact observed
+error, fix and fail-fast test commands), followed by this
+append-only handoff record.
+
+**Verification actually performed:** retrieved the source
+through the GitHub connector, found all five `detail`
+identifiers (one declaration, three calls, one function
+pointer) and replaced all five. Refetched source and
+committed fix. **Native macOS recompile, Metal shader
+compile, CTest and GPU pixels after the fix NOT RUN**.
+Do not misreport the previously successful Stage 10BX
+CTest as the new Stage 10BY passing.
+
+**Next command — isolated Mac Studio texture worktree ONLY,
+not primary AIVERSE with unrelated unfinished rebase:**
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+cmake --build build/texture-graph-vt-seam \
+  --target aiverse_metal_renderer_graph_vt_seam_gpu_test --parallel 4
+ctest --test-dir build/texture-graph-vt-seam \
+  --verbose --output-on-failure --no-tests=error \
+  -R '^metal_renderer_graph_vt_seam_gpu$'
+```
+
+**Acceptance:** only count the test if new build succeeds and
+native `metal_renderer_graph_vt_seam_gpu` prints
+`PASS: Renderer3D Shader Graph disk VT missing-page and
+Repeat/MirrorRepeat seam GPU ICB oracle`, all missing-page
+failures/wrap oracle checks, and CTest **1/1 PASS**.
+On further failure, inspect the first native compiler/Metal
+driver/worker/independent RGB oracle error, fix its confirmed
+cause, and append another standalone handoff entry.
+Keep risky ICB tests and feature flags default OFF; keep
+PR #21 Draft pending multi-backend acceptance.
