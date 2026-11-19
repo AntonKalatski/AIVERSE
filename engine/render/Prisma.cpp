@@ -537,11 +537,25 @@ RTSCamera Prisma::jitteredCamera(RTSCamera camera, int width, int height) {
     }
     auto& state = temporalViews_[viewId_];
     const float amplitude = std::clamp(effect->get("jitterPixels"),0.0f,0.5f);
-    if (!state.jitterActive || std::abs(state.lastJitterPixels-amplitude)>1e-6f) {
+    // Projection discontinuities invalidate both color and object-velocity
+    // history, even when camera world position itself has not moved.
+    const bool projectionChanged = state.projectionKnown &&
+        (state.previousOrtho != camera.ortho ||
+         std::abs(state.previousFovY-camera.fovY)>0.002f ||
+         std::abs(state.previousNear-camera.zNear)>0.0001f ||
+         std::abs(state.previousFar-camera.zFar)>0.01f);
+    if (projectionChanged) resetMotionHistory(viewId_);
+    if (projectionChanged || !state.jitterActive ||
+        std::abs(state.lastJitterPixels-amplitude)>1e-6f) {
         state.valid=false;
         state.jitterSequence=0;
         state.previousJitterUv={};
     }
+    state.projectionKnown=true;
+    state.previousOrtho=camera.ortho;
+    state.previousFovY=camera.fovY;
+    state.previousNear=camera.zNear;
+    state.previousFar=camera.zFar;
     const auto halton=[](uint32_t index,uint32_t base) {
         float result=0.0f, factor=1.0f;
         while (index>0) { factor/=float(base); result+=factor*float(index%base); index/=base; }
