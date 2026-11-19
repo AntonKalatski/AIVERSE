@@ -1104,3 +1104,96 @@ ownership independent of a window, initial timestamp seeding,
 external graph detection, deletion/recovery, pending retention and project
 switch reset. `CMakeLists.txt` registers
 `animation_editor_visual_asset_watcher` for future native execution.
+
+## Stage 99 — portable GPU resource retirement and universal model owner
+
+**Renderer API:** `gfx::Device::waitForResourceIdle()` is a new
+synchronous, explicit owner-thread barrier. It returns `true` only
+when all **previously submitted** GPU work has completed; default
+implementations return `false` rather than guessing that a given
+`frameSerial()` represents completion. Call outside render/compute
+encoders, **before** issuing GPU work this frame that could reference
+retired resources. A queue-ordered Metal command buffer is committed
+and waited for; Vulkan uses `vkDeviceWaitIdle` followed by completed
+garbage collection; OpenGL/GLES uses `glFinish` with error inspection.
+These are intentionally blocking correctness barriers, not a low-latency
+async fence/timeline implementation.
+
+**New genre-independent ownership classes:**
+
+- `<engine/render/ModelPreparationService.h>` —
+  `aiverse::render::ModelPreparationService`: host-owned CPU worker,
+  ordered path requests and progress with explicit render-thread GPU
+  publication policy.
+- `<engine/render/ModelResourceCache.h>` —
+  `aiverse::render::ModelResourceCache`: per-host owning source map,
+  texture cache, preparation worker, generation, model variants and
+  resource invalidation. Native FPS, RTS, editor and standalone project
+  code can instantiate this without importing RTS modules.
+- `<engine/render/ResourceRetirementQueue.h>` —
+  generic `render::ResourceRetirementQueue<Resource>` queues move-only
+  resources and invokes destruction only after an explicit fence
+  callback returns success.
+
+Compatibility headers in `modules/rts/view` now alias
+`RtsModelResourceCache` and `RtsModelPreparationService` to those
+generic render classes, preserving old method signatures and
+`view_adapter` names. No conversion of game-authoritative state
+is involved. No special renderer view object or second animation
+clock is created.
+
+**Release lifecycle:** `ModelResourceCache::replace`,
+`invalidateSources` and `trimUnused` first detach host
+`TypeLook`/`EntityAnim`/MotionWeave and then transfer removed
+`unique_ptr<Model>` instances to `retired_`, retaining their GPU
+buffers and shared texture leases. `pendingRetirements()` reports
+the deferred queue. `collectRetired(device)` calls the backend
+completion barrier once for a nonempty queue, releases old models
+only after confirmation, then trims unleased texture-cache entries.
+If a backend cannot prove completion, the full queue remains intact.
+`shutdown` joins pending CPU jobs, waits for previously submitted GPU
+work, then releases resident and retired models and finally textures.
+It **fails closed with an exception** if the GPU barrier fails,
+rather than destroying potentially active resources. It remains
+the host's responsibility to call shutdown at a safe frame boundary
+and not while a current frame has unsubmitted references.
+
+**Real owner integrations:**
+
+- `Editor::frame` collects completed retirements before viewport
+  submissions; live `GameClient::frame` uses the same barrier before
+  rendering RTS scene sources. There is no per-object wait or per-draw
+  GPU stall.
+- `game::Portrait` uses its *own*
+  `render::ModelResourceCache previewModels_` to own the generated
+  sphere and box of material previews, including their GPU lifetime,
+  instead of raw `unique_ptr<Model> shapes_[2]`. This is a concrete
+  independent editor/portrait resource owner. Its offscreen render
+  target, material authoring and complex/animated preview fallback
+  remain as before.
+- Resource cache API is usable from native project C++ by including
+  `engine/render/ModelResourceCache.h` and linking the existing
+  `aiverse_models`/engine rendering target.
+
+**Deferred tests:** source fixtures
+`tests/render/resource_retirement.cpp` and
+`tests/render/model_resource_provider_contract.cpp` are registered
+as `resource_retirement_queue` and
+`model_resource_owner_contract` CTest entries. The former simulates
+a denied then granted completion barrier and verifies FIFO cleanup;
+the latter verifies the generic/compatibility aliases and source
+cache APIs without uploading GPU resources. **NOT RUN:** no local
+compiler, CMake, CTest, screenshots, sanitizer, CI, backend GPU
+execution or memory-life profiling.
+
+**Limits and risks:** the barriers are conservative *blocking* waits
+and can pause a frame when resource retirement is requested. An
+asynchronous completion-token/timeline queue has not been implemented.
+`waitForResourceIdle` does not flush or synchronize unsubmitted
+GPU commands in the **current** frame, so hosts MUST only call it
+before those commands can reference any retired object. Other older
+engine renderers, FX targets and raw device clients still destroy
+GPU handles directly and have not been converted to the universal
+owner. Full legacy `game::RtsView` removal remains incomplete.
+Native compilation and Metal/Vulkan/GL correctness are UNVERIFIED;
+do not merge or claim runtime parity before the deferred checks.
