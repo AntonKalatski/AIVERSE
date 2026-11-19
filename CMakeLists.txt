@@ -2250,3 +2250,27 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos"
     set_tests_properties(metal_texture_gpu PROPERTIES
         LABELS "METAL;GPU;TEXTURE_RHI" TIMEOUT 60)
 endif()
+
+# High-risk experimental GPU-authored Metal ICB must NEVER run in the
+# default 23 source CTests or the ordinary --metal GPU acceptance.
+# Explicit opt-in runs in an isolated process to contain AGX driver faults.
+option(AIVERSE_TEXTURE_METAL_ICB_GPU_TESTS
+    "Opt-in GPU-encoded Metal ICB graph-material ABI acceptance on a native Mac" OFF)
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos"
+   AND AIVERSE_TEXTURE_METAL_ICB_GPU_TESTS)
+    add_executable(aiverse_metal_texture_icb_graph_gpu_test
+        tests/render/metal_icb_graph_gpu.mm
+        engine/gfx/metal/GfxMetal.mm)
+    target_include_directories(aiverse_metal_texture_icb_graph_gpu_test
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    set_source_files_properties(tests/render/metal_icb_graph_gpu.mm
+        PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    target_link_libraries(aiverse_metal_texture_icb_graph_gpu_test PRIVATE
+        "-framework Metal" "-framework QuartzCore" "-framework Foundation")
+    add_test(NAME metal_texture_icb_graph_gpu
+        COMMAND aiverse_metal_texture_icb_graph_gpu_test)
+    set_tests_properties(metal_texture_icb_graph_gpu PROPERTIES
+        LABELS "METAL;GPU;TEXTURE_RHI;EXPERIMENTAL_ICB" TIMEOUT 90
+        ENVIRONMENT "AIVERSE_EXPERIMENTAL_METAL_ICB=1;AIVERSE_GPU_ENCODED_ICB=1;AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR=1;AIVERSE_ICB_TRACE=1")
+endif()
+
