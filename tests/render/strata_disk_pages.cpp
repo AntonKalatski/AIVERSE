@@ -5,6 +5,7 @@
 #endif
 #include "engine/render/StrataDiskPages.h"
 #include "engine/render/StrataIndexResidency.h"
+#include "engine/render/StrataView.h"
 #include <cassert>
 #include <chrono>
 #include <cstdint>
@@ -155,11 +156,25 @@ static void runDisk() {
 
     // Runtime GPU residency uses ARCHIVE roots and the async page bytes.
     {
+        // Runtime copy only: the original import asset remains available
+        // for subsequent stale-archive and corruption tests.
+        auto runtime=makeAsset();
         auto disk=std::make_shared<DiskIndexPages>();
-        assert(disk->open(path.string(),source,48,16,&error));
+        assert(disk->open(path.string(),runtime,48,16,&error));
         DiskRecorder device;
         IndexResidency cache;
-        assert(cache.initialize(device,source,48,&error,true,48,disk));
+        assert(cache.initialize(device,runtime,48,&error,true,48,disk));
+        const auto freed=runtime.primitives[0].geometry.discardCpuIndexPayload();
+        assert(freed==12*sizeof(uint32_t));
+        assert(runtime.primitives[0].geometry.indices.empty());
+        ViewConfig view;
+        view.objectToClip=mat4::identity();
+        view.width=800;
+        view.height=600;
+        view.errorThresholdPixels=.01f;
+        ViewPlan reference;
+        assert(planView(runtime.primitives[0].geometry,view,reference,&error));
+        assert(reference.ranges.size()==2);
         assert(cache.incrementalEnabled());
         assert(cache.stats().diskCompletedReads==1);
         assert(cache.resident(0,0) && !cache.resident(0,1));
