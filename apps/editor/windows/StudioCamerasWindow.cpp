@@ -36,6 +36,13 @@ public:
     const char* dockArea()const override{return "right-bottom";}
     bool openByDefault()const override{return false;}
     int order()const override{return 91;}
+    void shutdownAfterGpuIdle(Editor& ed) override {
+        recorder_.stop();
+        if(preview_.color.valid()||preview_.depth.valid())preview_.release(ed.device());
+        for(auto& retired:retiredPreviews_)retired.viewport.release(ed.device());
+        retiredPreviews_.clear();
+        device_=nullptr;
+    }
     void draw(Editor& ed) override {
         collectRetiredPreviews(ed.device());
         const std::string project=ed.ws().project.dir;
