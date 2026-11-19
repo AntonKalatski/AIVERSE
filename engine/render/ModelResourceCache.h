@@ -25,6 +25,13 @@ namespace aiverse::render {
 
 class ModelResourceCache final {
 public:
+    // Observer registration has an independent lifetime marker. It expires
+    // as soon as destruction begins, before any Model or GPU lease members.
+    // Group snapshots and owner destruction must share the device thread.
+    ~ModelResourceCache() { lifetimeToken_.reset(); }
+    std::weak_ptr<const void> lifetimeToken() const noexcept {
+        return lifetimeToken_;
+    }
     using ModelMap=std::map<std::string,std::unique_ptr<render::Model>>;
     // Incremented by every cache-owned insertion, replacement, eviction,
     // and shutdown; the map is exposed read-only so writes cannot bypass it.
@@ -337,6 +344,8 @@ public:
         textures_->shutdown(dev);
     }
 private:
+    std::shared_ptr<const void> lifetimeToken_=
+        std::make_shared<const uint8_t>(1);
 #ifndef __EMSCRIPTEN__
     ModelPreparationService preparation_;
 #endif
