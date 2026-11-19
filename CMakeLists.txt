@@ -2089,6 +2089,14 @@ if(AIVERSE_BUILD_STRATA)
         target_link_libraries(aiverse_strata_gpu_culling_tests PRIVATE
             aiverse_strata_gpu_culling aiverse_zstd_dec)
         add_test(NAME strata_gpu_culling COMMAND aiverse_strata_gpu_culling_tests)
+        if(AIVERSE_VULKAN AND NOT EMSCRIPTEN)
+            add_executable(aiverse_strata_vulkan_kernel_tests
+                tests/render/strata_vulkan_kernel.cpp)
+            target_link_libraries(aiverse_strata_vulkan_kernel_tests PRIVATE
+                aiverse_strata_gpu_culling aiverse_gfx_vulkan aiverse_zstd_dec)
+            add_test(NAME strata_vulkan_kernel
+                COMMAND aiverse_strata_vulkan_kernel_tests)
+        endif()
         add_executable(aiverse_strata_render_routing_tests
             tests/render/strata_render_routing.cpp)
         target_link_libraries(aiverse_strata_render_routing_tests PRIVATE
