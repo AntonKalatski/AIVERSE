@@ -91,3 +91,19 @@ Next agent actions:
 1. From this branch run cmake --build build/gi --target aiverse_gi_update_scheduler_test aiverse_gi_dynamic_probe_reference_test aiverse_gi_dynamic_probe_texture_test -j8 after configuring with AIVERSE_BUILD_TESTS=ON. Then ctest --test-dir build/gi --output-on-failure -R '^gi_(update_scheduler|dynamic_probe_reference|dynamic_probe_texture)$'. Fix all warnings, failures and native portability issues; append exact tested commit SHA and report in separate handoff commit.
 2. Design and test the SINGLE indirect composition point in lit shaders for baked static base (lightmap OR legacy probes OR scalable field), plus dynamic-only L1 texture and optional SSGI near-field term. Explicitly allocate a safe sampler slot for GLSL/MSL, validate Metal 16 sampler slots and shader-graph material variants. Ensure static point direct lighting never leaks into the bounced delta, and no double-addition under the prior LightSystem static grid. Do not silently enable across all materials.
 3. Once shaders are verified, publish dynamic source / geometry change events from read-only ECS presentation snapshots and implement capability-backed GPU probe tracing instead of this CPU reference for large-volume 30/60 FPS operation; then hierarchical clipmaps, visibility/relocation, and real Android/iOS profiling.
+
+
+## Stage 4 - 2026-11-19 - single-owner GI composition contract (source only; NOT TESTED)
+
+Source commits:
+- be48911eb40a7ecced5d26f8c3695ceb8bbf6ff0 - engine/render/GiLightingComposition.h
+- 68dd085c4446c66642c6f4e0f239c8ba85ad43e2 - tests/render/gi_lighting_composition.cpp
+- 945611e8f9db6e069d9425b2e7f893617253e5f7 - CMakeLists.txt: gi_lighting_composition test in ALL/CTest.
+
+Semantics: GiBaseSource selects exactly one of Hemisphere, BakedLightmap, BakedProbes, ScalableProbes; other base values must not be summed. GiIndirectLayers accepts independent dynamicBounce and optional screenBounce as *incident*, linear, nonnegative indirect RGB and indirectOcclusion [0..1]. composeIndirectGi chooses the one owner, adds dynamic and screen delta exactly once, applies AO once. The direct-sun/point path stays independent and must not be sent into this compositor. Dynamic sources present in an immutable baked base must be explicitly excluded from the dynamic delta, or the bake must be regenerated; this API cannot magically subtract historical baked lighting.
+
+Scope/compatibility: header-only CPU/reference contract and always-on regression assertions. There is no renderer or shader binding yet; old baked/AVGIC formats, gameplay networking, editor and save formats are unchanged. The next shader stage must mirror these semantics; it must preserve the existing default when dynamic GI is unbound.
+
+Actually executed: read existing model shader and RHI source via GitHub and successfully committed the above files. **NOT RUN:** native compile, CTest, GPU shader validation, ./run-tests.sh, device measurement. This remains unverified until owner or an agent can run native commands in a working clone.
+
+Next exact action: implement opt-in model shader sampling of the independent dynamic delta with correct volume mapping and AO exactly once. CAUTION: model fragment textures 13+ are currently shader-graph textures (Renderer3DModels.cpp: kGraphTextureSlot=13), and Metal has sampler limits. Do not collide with graph samplers or corrupt GPU ICB material bindings. A safe first stage is to enable dynamic GI only for models without graph textures while retaining the old path for all others. Reserve an unused uniform slot carefully, bind dynamic data only for color phases, and never force shader permutation changes in the default GI-off configuration. Add always-on sampling contract and shader-variant checks before broadening to shader graphs / terrain / water.
