@@ -331,7 +331,7 @@ gfx::PipelineHandle Prisma::program(Prog p) {
         {prisma::kExposureReduce, nullptr, 1, "prisma exposure reduce"},
         {prisma::kExposureAdapt, nullptr, 3, "prisma exposure adapt"},
         {prisma::kMotionVectors, nullptr, 7, "prisma camera motion vectors"},
-        {prisma::kMotionBlur, nullptr, 7, "prisma shutter motion blur"},
+        {prisma::kMotionBlur, nullptr, 15, "prisma shutter motion blur"},
     };
     const Def& d = defs[p];
     const uint32_t sampledDepth = p == kMotionVectors || p == kDepthOfField
@@ -341,7 +341,7 @@ gfx::PipelineHandle Prisma::program(Prog p) {
         : buildProgram(kSimpleFields, 3, d.tex, "", d.helpers, d.body, sampledDepth);
     gfx::ShaderDesc sd;
     sd.glslVertex = b.vs.c_str(); sd.glslFragment = b.fs.c_str(); sd.msl = b.msl.c_str();
-    sd.textureSlots = p == kMotionVectors || p == kMotionBlur ? 3 : 2;
+    sd.textureSlots = p == kMotionBlur ? 4 : (p == kMotionVectors ? 3 : 2);
     sd.uniformSlots = 1; sd.label = d.label;
     shaders_[p] = dev_->createShader(sd);
     if (!shaders_[p].valid()) {
@@ -663,6 +663,9 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 dev.setTexture(1, input1);
                 if (pipeline == pipes_[kMotionVectors] || pipeline == pipes_[kMotionBlur])
                     dev.setTexture(2, input2);
+                if (pipeline == pipes_[kMotionBlur])
+                    dev.setTexture(3, motionView.reactiveMask.valid()
+                                      ? motionView.reactiveMask : black_);
                 dev.draw(3);
                 dev.endPass();
                 ++stats_.passes;
@@ -675,7 +678,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             put(blur.p0, motionEffect->get("shutterScale"),
                 motionEffect->get("maxPixels"),
                 motionEffect->get("samples"), motionEffect->get("intensity"));
-            put(blur.sun, motionEffect->get("depthThreshold"), 0, 0, 0);
+            put(blur.sun, motionEffect->get("depthThreshold"),
+                motionEffect->get("reactiveStrength"), 0, 0);
             raster(blurred, pipes_[kMotionBlur], &blur, sizeof blur,
                    scene.tex, velocity.tex, sceneDepth);
             src = blurred;
