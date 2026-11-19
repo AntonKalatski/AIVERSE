@@ -235,13 +235,20 @@ void run() {
                 {Channel::JawOpen,"rhi_morph_0",1.0f},
                 {Channel::EyeBlinkRight,"rhi_morph_1",1.0f}};
             const auto mapping=FaceShapeBinding::compile(f.library,routes);
+            // Both actors share the SAME immutable GPU CSR, original mesh
+            // and compute programs; their weights and output VBs remain private.
+            auto sharedAsset=GpuMorphSharedAsset::create(*device,f.library,original);
+            require(sharedAsset && sharedAsset->ready(),
+                    "shared GPU morph library initialization failed");
             GpuActorStream actorA, actorB;
-            require(actorA.initialize(*device,sharedModel,f.library,original),
-                    "multi-actor GPU stream A initialization failed");
-            require(actorB.initialize(*device,sharedModel,f.library,original),
-                    "multi-actor GPU stream B initialization failed");
-            require(actorA.vertexBuffer()!=actorB.vertexBuffer(),
-                    "multi-actor GPU output buffer was shared");
+            require(actorA.initializeShared(*device,sharedModel,sharedAsset),
+                    "multi-actor shared GPU stream A initialization failed");
+            require(actorB.initializeShared(*device,sharedModel,sharedAsset),
+                    "multi-actor shared GPU stream B initialization failed");
+            require(actorA.sharedAsset()==sharedAsset.get() &&
+                    actorB.sharedAsset()==sharedAsset.get() &&
+                    actorA.vertexBuffer()!=actorB.vertexBuffer(),
+                    "multi-actor immutable sharing or writable buffer isolation failed");
             for(std::uint32_t frame=0;frame<3;++frame) {
                 FaceFrame faceA{}, faceB{};
                 faceA.values[static_cast<std::size_t>(Channel::JawOpen)]=0.25f+frame*0.2f;
