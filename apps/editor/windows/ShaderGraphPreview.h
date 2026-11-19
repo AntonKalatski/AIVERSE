@@ -10,6 +10,15 @@ namespace aiverse::editor {
 class ShaderGraphPreview {
 public:
     ~ShaderGraphPreview() { shutdown(); }
+    gfx::Device* activeDevice() const { return dev_; }
+    // Only used by GPU-fence-completed or host-idle owned-bundle callbacks.
+    // The entire preview, including Portrait, Prisma, FX and shaders, can
+    // now be released together after all GPU draws referring to it finish.
+    // Disable secondary color/depth re-retirement at this known safe point.
+    void shutdownAfterGpuCompletion() {
+        retirement_ = nullptr;
+        shutdown();
+    }
     void shutdown() {
         if(!dev_)return;
         portrait_.shutdown();post_.shutdown();particles_.shutdown();textures_.shutdown();
