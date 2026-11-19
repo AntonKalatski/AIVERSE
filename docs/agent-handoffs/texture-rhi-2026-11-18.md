@@ -12649,3 +12649,17 @@ bash tools/texture-rhi-final-verify.sh --jobs 4 --full-engine
 **Actual tests:** NONE on source SHAs; only GitHub source staged and committed. This is intentional features-first development. Old 21 portable + seven Metal GPU PASS at `7494f32d` does NOT verify this stage. Need full-engine build/CTest, native GL330/GLES300/MSL shader compilers, real Metal pixel oracle for repeat/mirror, fractional anisotropy, nonuniform gutters and mixed mip residency, and perf comparison 1/2/4/8 taps.
 
 **Next:** Finish any remaining resource/perf instrumentation and runtime clamps, then write reference image/readback oracle and run the single requested final verification on Mac Studio. Keep PR #21 Draft; no changes to `main`.
+
+## Stage 10CT — reject impossible physical mip chain and combined page table GPU budgets (2026-11-19)
+
+**Source SHA:** `bf327614989b7756d654b590efe46fe51f63b28f`. **Branch:** `feature/texture-rhi-unification`, PR #21 Draft, `main` untouched.
+
+**Changes:**
+- `engine/gfx/VirtualTexturePhysicalMips.h` adds `virtualTexturePhysicalMipChainBytes(side,levels)` for exact uncompressed RGBA8 per-page physical mip storage (sum of sizes from base mip to authored count).
+- `TextureStreamQueue::configuration()` adds read-only access to CPU/GPU/upload budgets already enforced by the queue.
+- `VirtualTextureStreamer::initialize()` rejects configurations where (1) a full base page cannot fit in one frame's upload byte budget, (2) all physical mip subresources cannot fit simultaneously within stagingBytes, (3) the page-table flush budget cannot hold one complete row, (4) the estimated physical atlas PLUS either legacy or indexed table exceeds the configured GPU budget, (5) uploadsPerFrame==0 or metadata arithmetic overflows. This is fail-fast before allocating a GPU atlas or starting disk processing; avoids repeating uploads that are impossible by contract. The existing TextureStreamQueue still enforces limits during staging.
+- `VirtualTextureStreamer::estimatedGpuAllocatedBytes()` includes the directly-owned page-table estimate in addition to queue-owned atlas bytes, unlike `streamStats().gpuAllocatedBytes` which intentionally covers only queue resources. Estimates intentionally exclude driver alignment, extra transient staging, compression and sparse allocation.
+
+**Actual verification:** Source write/blob-tree commit through GitHub only. User requested all functional changes before tests, so no compiler, CMake/CTest, backend, driver, perf or stress tests run on this SHA. The old 21+7 GPU PASS remains evidence only for `7494f32d`.
+
+**Next:** source feature review and necessary fixes, then record exact final feature freeze SHA and run 1 full Mac regression + canonical GLSL/MSL compilers + real native GPU readbacks + CPU reference stress. Full cross-backend/mobile/CI validation remains separate until actually executed. PR Draft, experimental ICB OFF.

@@ -1935,3 +1935,7 @@ The page cache now exposes `mappingChangesSince(revision,out,maxKeys=128)`, back
 ## Stage 10CS — virtual-footprint anisotropic trilinear VT (SHAs f26eaf98, 916896ea)
 
 Canonical GLSL `aiverseSampleVirtualAnisotropic` and MSL `aiverse_sample_virtual_anisotropic` take original UV derivatives, virtual pixel resolution, mip bias/levels, a max tap cap 1..8 and U/V address modes. Each tap independently resolves the indexed virtual page table, unlike hardware within-slice anisotropy. `ModelVirtualTextureBinding.virtualAnisotropyTaps` accepts 1,2,4,8 in indexed mode (default1); 48B indexed U6 now includes a third quality vec4, legacy still16B. `makeModelVirtualTextureArchiveBinding(archive,streamer,layer,out,bias,taps)` fills the binding. High tap count costs multiple page lookups and is unverified. No shader or GPU tests run on new SHAs; keep PR Draft.
+
+## Stage 10CT — fail-fast virtual streaming budgets (SHA bf327614)
+
+`virtualTexturePhysicalMipChainBytes(side,levels)` estimates a full physical RGBA8 mip chain. `VirtualTextureStreamer::initialize` now rejects impossible atomic staging (full chain > staging budget or base page > uploadBytesPerFrame), insufficient page-table row flush budget, and combined atlas+indexed/legacy page-table GPU memory exceeding queue's configured GPU budget. `estimatedGpuAllocatedBytes()` includes the table estimate, unlike queue-only `streamStats()`. Errors remain fail-closed; no native test has run for these changes.
