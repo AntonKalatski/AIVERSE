@@ -123,6 +123,7 @@ public:
     const DeviceInfo& info() const override { return info_; }
     const std::string& lastError() const override { return error_; }
     bool supports(PixelFormat f) const override;
+    int maxFragmentTextureSlots() const override { return textureSlots_; }
 
     BufferHandle createBuffer(const BufferDesc& d) override;
     void updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset) override;
