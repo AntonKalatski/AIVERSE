@@ -3267,3 +3267,71 @@ large-scene stress, GPU driver robustness or performance evidence.
 Keep experimental ICB flags OFF by default and PR #21 **Draft**.
 Next: authored Shader Graph compile plus production Renderer3D
 execution on native hardware, in another opt-in gate.
+
+
+### Stage 10BU — production Renderer3D + compiled four-source Shader Graph GPU-ICB scene fixture (source only)
+
+Unlike the Stage 10BQ/10BR minimal MSL argument-buffer probes, the
+new default-OFF macOS CTest **compiles an authored JSON material graph**
+using the production `render::graph::compile`, allocates eight
+real model image textures, and renders two differently textured opaque
+model primitives with the **real `Renderer3D`**.
+All four graph source texture nodes feed the material output, including
+tex16; each primitive has different source image handles and different
+material base-colour U2 factors. The fixture uses normal
+`render::uploadModel`, native `Renderer3D::beginScene` /
+`drawModel` / `render`, `gfx::Device::captureNextFrame`, and
+`gpuModelDrawStats()`. It is not a handwritten backend MSL shader.
+
+The test first captures ordinary renderer output, then enables the
+existing opt-in Metal GPU-encoded ICB path. It requires the actual
+production Renderer3D counters `shaderGraphIcbSubmissions`,
+`mixedGraphSourceSubmissions`, `perCommandPbrSubmissions`
+and at least two GPU commands with no failed executes.
+It also requires a visibly different left and right material region
+in **both** outputs, and all full-frame captured RGBA8 channels
+matching direct output within 2 LSB. Blank scene, identical material
+for both commands, CPU fallback or stale images must fail.
+
+**Source changes:** `tests/render/metal_renderer_graph_icb_gpu.cpp`
+(new standalone production integration executable),
+`CMakeLists.txt` (opt-in `AIVERSE_TEXTURE_METAL_RENDERER_GRAPH_GPU_TESTS=OFF`
+by default; isolated `metal_renderer_graph_icb_gpu` CTest).
+Only this test receives the experimental GPU/Shader Graph
+environment flags. The previous low-level `metal_texture_icb_graph_gpu`
+test remains separately gated and unchanged.
+
+**Status:** source committed, **NOT yet built, compiled, run or
+hardware pixel-validated on Mac Studio**. The Stage 10BT 1/4-source
+low-level ICB PASS is a different test. This fixture may uncover
+real Renderer3D shader compiler, GPU grouping, camera/capture or
+resource-slot integration bugs. Keep the experimental flags OFF in
+production and PR #21 Draft.
+
+**One-shot fail-fast commands in the isolated Mac Studio texture worktree:**
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+cmake -S . -B build/texture-renderer-graph-icb \
+  -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_RENDERER_GRAPH_GPU_TESTS=ON
+cmake --build build/texture-renderer-graph-icb \
+  --target aiverse_metal_renderer_graph_icb_gpu_test --parallel 4
+ctest --test-dir build/texture-renderer-graph-icb \
+  --verbose --output-on-failure --no-tests=error \
+  -R '^metal_renderer_graph_icb_gpu$'
+```
+
+A valid PASS must print the explicit
+`PASS: production Renderer3D compiled Shader Graph 4-source mixed Metal GPU ICB pixels`
+marker and an actual 1/1 CTest PASS from the same freshly built target.
+A build failure **must stop** before CTest; do not report a stale
+executable as verified. Capture the first native compiler/MSL, image
+mismatch, group counter or driver diagnostic and fix that root cause.
+Do not run this high-risk opt-in process as part of the existing
+green default texture suite.
