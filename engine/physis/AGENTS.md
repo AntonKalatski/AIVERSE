@@ -1090,3 +1090,27 @@ raise the threshold; first test Release performance separately,
 inspect CPU architecture and profile bottlenecks if needed.
 Docs: `docs/aiverse-build-monitor.md`; handoff:
 `docs/agent-handoffs/physis-stage75-progress-monitor-place-2026-11-19.md`.
+
+### Stage 76 — live warning/error panel in AIVERSE monitor (2026-11-19)
+
+- Implemented in universal `tools/aiverse-progress.py`: pinned
+  **Warnings / Errors** panel colored red/yellow in TTY,
+  separate recent error/warning queues, compressed source location
+  labels, stage-spanning counts and an unabridged
+  `diagnostics.log`. `summary.json` records stage/total counts.
+- Source+regression commit
+  `47a320624a118d3f5dd23a7e9d4c81d58e095676`;
+  `tools/tests/test_aiverse_progress.py` registered as native
+  CTest `tool_aiverse_progress` when Python tests are enabled.
+- ACTUAL LOCAL TESTS: Python unittest 3/3; synthetic CMake
+  `tool_aiverse_progress` CTest 1/1; synthetic configure/build/
+  CTest 2/2 PASS with warning log and **0 false errors**. All
+  run on local Linux fixtures (NOT full AIVERSE macOS). Native
+  Terminal/iTerm GUI acceptance is still NOT RUN.
+- User provided a real macOS `Release` Place benchmark
+  `AIVERSE: PASS` in **1:41**, report
+  `build/place-release-validation/aiverse-reports/20261119-172509-59587`;
+  exact Release `tickAvg` not in summary. Prior **Debug**
+  standalone Place 8.110ms FAIL is not evidence Release fails.
+  Do not change the original 5ms threshold.
+- Handoff: `docs/agent-handoffs/physis-stage76-build-monitor-diagnostics-2026-11-19.md`.

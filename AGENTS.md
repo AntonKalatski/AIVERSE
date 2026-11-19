@@ -1581,3 +1581,22 @@ Handoff: `docs/agent-handoffs/physis-stage74-full-ctest-skill-place-2026-11-19.m
   physics, network, ECS or genre API changes. PR #25 remains Draft.
 - Guides: `docs/aiverse-build-monitor.md`,
   `docs/agent-handoffs/physis-stage75-progress-monitor-place-2026-11-19.md`.
+
+## Universal AIVERSE Build Monitor warnings/errors (2026-11-19)
+
+Tool `tools/aiverse-progress.py` now keeps a **pinned colored**
+Warnings/Errors panel in interactive Terminal, a diagnostic count
+for each configure/build/CTest stage and a complete timestamped
+`diagnostics.log` plus `summary.json`. The display retains
+recent compiler errors even if later warning lines arrive.
+Warn/error counts are matching *output lines*, not distinct compiler
+diagnostics. Warnings do not automatically cause build failure.
+Python regression CTest `tool_aiverse_progress` is registered
+when `AIVERSE_BUILD_TESTS` and Python interpreter are available.
+Source commit `47a320624a118d3f5dd23a7e9d4c81d58e095676`.
+Only the monitor/test CMake and docs changed, not engine runtime.
+Local standalone Python unittest 3/3, standalone CMake CTest 1/1
+and CMake warning/success-log integration passed. Actual
+AIVERSE macOS Terminal UI is **NOT RUN**. Guide:
+`docs/aiverse-build-monitor.md`; handoff:
+`docs/agent-handoffs/physis-stage76-build-monitor-diagnostics-2026-11-19.md`.

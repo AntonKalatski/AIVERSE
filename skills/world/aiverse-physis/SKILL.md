@@ -1059,3 +1059,19 @@ rendering remain NOT VERIFIED. Do not infer automatic PHYSIS rain
 to NEREID water levels or authoritative water changes via visual
 wind bridge. Handoff:
 `docs/agent-handoffs/physis-stage73-postmerge-40-green-2026-11-19.md`.
+
+### Stage 76 — inspect warnings/errors during builds
+
+Use `python3 tools/aiverse-progress.py --mode build --build-dir
+build/physis-nereid-validation --jobs 4` to see pinned colored
+Warnings/Errors diagnostics while the CMake build continues.
+Error entries remain visible even after later warnings. Consult
+`<build-dir>/aiverse-reports/<stamp>/diagnostics.log` for
+full paths and `summary.json` for per-stage counts.
+Python monitor regression CTest is `tool_aiverse_progress`.
+Source commit `47a320624a118d3f5dd23a7e9d4c81d58e095676`.
+Standalone Linux fixture checks passed; actual macOS TTY view
+and a full AIVERSE build with the new version remain NOT RUN.
+Release Place runner (prior monitor) was user-reported PASS in
+1:41; exact average tick not provided. See handoff:
+`docs/agent-handoffs/physis-stage76-build-monitor-diagnostics-2026-11-19.md`.

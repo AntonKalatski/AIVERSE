@@ -1023,3 +1023,19 @@ server performance gate, not a PHYSIS/Water simulation assertion.
 No threshold/physics code changed. Next: separate Release Place
 benchmark and phase profiling if it still exceeds 5ms.
 Handoff: `docs/agent-handoffs/physis-stage75-progress-monitor-place-2026-11-19.md`.
+
+### Stage 76 — live terminal warnings/errors and Release Place result
+
+AIVERSE Build Monitor (`tools/aiverse-progress.py`) now has a
+sticky warnings/errors section, priority display of errors,
+colored warnings and complete `diagnostics.log` with per-stage
+counts in `summary.json`. Standalone Python tests 3/3 and
+CMake-registered `tool_aiverse_progress` regression 1/1 PASS;
+the entire source was tested on isolated fixtures, not macOS
+AIVERSE native builds. Real user Release Place benchmark through
+the *previous* Build Monitor reported PASS in 1:41; the actual
+tick average was not included in the short summary, and the
+isolated Debug performance test still failed at 8.110ms. No
+PHYSIS/NEREID gameplay, network or physics code changed.
+Guide: `docs/aiverse-build-monitor.md`.
+Handoff: `docs/agent-handoffs/physis-stage76-build-monitor-diagnostics-2026-11-19.md`.
