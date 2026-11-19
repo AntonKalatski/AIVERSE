@@ -3859,3 +3859,115 @@ policy changes do not require a static mesh re-upload.
 based on local current and vortex magnitude, per-tile water shader
 inputs; preserve NEREID GPU material ownership and default-off
 behavior, then append per-stage handoff before test phase.
+
+## Stage 38 — opt-in current-driven whitewater for fast rivers and cascade outlets
+
+**Branch:** `feature/nereid-water-core`, Draft PR #23.
+**Stage 37 handoff:** `009c6717c0e223429f96e781b329055af4d1b592`.
+**Main synchronization:** before Stage 36, current main was already
+in the branch ancestry (0 behind), no redundant merge required.
+**Priority:** functions before tests. No tests written or executed.
+
+**Implementation commits / files:**
+- `fd85c36b8147687c073aa83f00e9b869dec916b0` —
+  `libraries/include/aiverselib/water/NereidWaterSurfaceMesh.h`;
+  three material parameters, all opt-in:
+  `rapidFoamStrength=0`, `rapidFlowThreshold=3` m/s and
+  `rapidNoiseScale=1`.
+- `00b8ad59d7e33c751c4a0ec52f575184c13adf07` —
+  `engine/render/NereidWaterRenderer.h`: style bounds and finite
+  validation; `47a230446f03d4e1ac731864529b0dd1e3ecfe9f` —
+  `engine/render/NereidSurfaceResident.h`: residency key
+  invalidation on material changes;
+  `b7a17c15ff9b6e9ace21cc94beaaddc35179969a` —
+  `engine/world/NereidWaterScene.h`: scene style comparison;
+  `cc5f120ecb0eef02a7cdd643544a5e82949079ee` —
+  `engine/world/NereidWaterManifest.h`: JSON style controls.
+- `ded57e64bd628a4cafea95aafc0ae64eaa05c36c` —
+  `engine/render/Renderer3D.h`;
+  `c448c9634587f1e32fa8600c7734df7698eefd65` —
+  `engine/render/Renderer3D.cpp`;
+  `6cd08c5d5b12a4631b23793d690b73207dedb4b4` —
+  `engine/render/Renderer3DReflect.cpp`:
+  one additional float4 `waterHydraulics` in the shared
+  deferred draw U0. Other materials' fields default to zero.
+- `1265bc46c049b1670177b51f27a59a668fc01cf6` —
+  `engine/render/NereidWaterRenderer.h`;
+  `30f6ff76a3005235dd605012bc59cf53a6912d6c` —
+  `engine/render/NereidSurfaceResident.h`:
+  carry the rapid current data through ordinary and indexed tile
+  draw submissions.
+- `402c2275efd89cbcd7a4e7bee8995a485e875e94` —
+  `engine/render/Shaders.h`: matching GLSL/MSL shared U0 field;
+  NEREID-only animated directional whitewater breakup, foam tint
+  and local normal perturbation. The branch is inactive when
+  `waterHydraulics.z` intensity is zero.
+- `049fffec03d4ff21ddd557917360a5831076df04` —
+  `engine/world/NereidWaterScene.h`: when enabled, samples local
+  water CurrentField+VortexField at each tile centre/observer,
+  optional callback applies Stage-37 cascade transfer current,
+  then maps X/Z velocity and speed-above-threshold to a
+  four-float GPU parameter vector. Does NOT change ECS bodies or
+  re-upload the water geometry every frame.
+- `c4540c86fd04f5c3e16827dfcf4f20be572e4a27` —
+  `engine/world/WorldScene.cpp`: supplies the existing NEREID
+  cascade transfer function to the water scene presentation draw.
+- `8f899ae8062a1b6659d3fffb6f039908137c2bda` —
+  `skills/gameplay/aiverse-nereid-water/SKILL.md`:
+  agent guidance for Stages 36–38.
+
+**API example:**
+```json
+{
+  "nereidWater": {
+    "surfaces": [{
+      "id": 10, "kind": "river", "shape": "river",
+      "surfaceY": 5, "bottomY": -2,
+      "points": [[0,0,5],[20,0,5],[35,9,4]],
+      "style": {
+        "rapidFoamStrength": 0.9,
+        "rapidFlowThreshold": 3,
+        "rapidNoiseScale": 1.5
+      }
+    }]
+  }
+}
+```
+
+**Architecture:** Authoritative fixed ECS water body, local river flow
+and analytical vortex components remain unchanged. The visual
+scene samples them through the existing read-only NEREID snapshot.
+If this source is linked to cascades with Stage-37
+`flowContinuity`, the optional `WorldScene` callback adds mouth
+flow; otherwise ordinary water current remains. The renderer
+receives `waterHydraulics={currentX,currentZ,intensity,noiseScale}`
+for each water tile/draw. Existing GLSL/MSL water fragments blend
+animated whitewater breakup toward a pale foam shade and gently
+perturb normals for lighting/refraction. Shader complexity is zero
+extra work in the default opt-out branch but the shared U0 is larger
+by another float4. No new render pass, texture, compute shader,
+authoritative fluid integrator or genre coupling.
+
+**Actually performed:** connected GitHub source review, implementation
+commits and documentation. **NOT RUN / UNVERIFIED:** native C++
+compile, full CTest, GLSL and Metal shader compilers, real scenes,
+physical performance or FPS/RTS regression. User requests
+functionality first. **Keep PR Draft**; do not claim completed
+verification or GPU appearance.
+
+**Known limitations:** fixed per-tile/observer flow sampling produces
+an approximate uniform whitewater intensity per draw rather than
+per-pixel current sampling or full navier-stokes whitewater.
+Untiled very large rivers may underrepresent spatial variation.
+The foam tint is currently constant and derived from the animated
+water shader; independent per-body foam RGB tuning would require
+extra material inputs. No actual bubble collision or physical
+turbulence is simulated. Build+shader validation is mandatory
+before merging these changes.
+
+**Next agent:** continue remaining function backlog, including
+optional rapid/turbulence detail quality tiers, confluence handling,
+automatic bank-aware cascade width transitions, and exposing
+configurable whitewater foam colour. Only once feature completion is
+confirmed should native/build/GLSL/MSL/RTS/FPS tests be run and their
+actual results recorded in a new handoff.
