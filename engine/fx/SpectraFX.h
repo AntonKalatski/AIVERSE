@@ -13,6 +13,7 @@
 #include "SpectraGpuProgram.h"
 #include "SpectraGpuVmDispatch.h"
 #include "SpectraGpuSourceParameters.h"
+#include "SpectraGpuParticleSlots.h"
 #include "SpectraGraphRuntime.h"
 #include "SpectraBatchWorld.h"
 #include "SpectraCueScheduler.h"
