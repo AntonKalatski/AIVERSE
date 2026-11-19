@@ -376,6 +376,19 @@ Prisma::MemoryStats Prisma::memoryStats() const {
             out.liveTextures += view.ownedHistoryTextures;
             out.viewHistoryKnownBytes += view.ownedHistoryKnownBytes;
         }
+        if (const auto history = temporalViews_.find(id);
+            history != temporalViews_.end()) {
+            for (const auto& h : history->second.history) {
+                size_t unknown = 0;
+                addTexture(h, view.ownedTemporalKnownBytes,
+                           view.ownedTemporalTextures, unknown);
+                view.unknownTextures += unknown;
+                out.unknownTextures += unknown;
+            }
+            out.liveTextures += view.ownedTemporalTextures;
+            out.temporalHistoryKnownBytes += view.ownedTemporalKnownBytes;
+            out.viewHistoryKnownBytes += view.ownedTemporalKnownBytes;
+        }
         out.views.push_back(view);
     }
     // Exposure history can be allocated before a view's successful scene
@@ -386,6 +399,23 @@ Prisma::MemoryStats Prisma::memoryStats() const {
         for (const auto& h : history.history)
             addTexture(h, out.viewHistoryKnownBytes,
                        out.liveTextures, out.unknownTextures);
+    }
+    for (const auto& [id, history] : temporalViews_) {
+        if (viewDimensions_.count(id)) continue;
+        for (const auto& h : history.history)
+            addTexture(h, out.temporalHistoryKnownBytes,
+                       out.liveTextures, out.unknownTextures);
+    }
+    // Orphan temporal buffers are part of the private-history total too.
+    // The earlier view loop already counted attributed temporal textures.
+    for (const auto& [id, history] : temporalViews_) {
+        if (!viewDimensions_.count(id)) {
+            uint64_t bytes = 0;
+            size_t ignoredCount = 0, ignoredUnknown = 0;
+            for (const auto& h : history.history)
+                addTexture(h, bytes, ignoredCount, ignoredUnknown);
+            out.viewHistoryKnownBytes += bytes;
+        }
     }
     addTexture(black_, out.otherLiveKnownBytes,
                out.liveTextures, out.unknownTextures);
