@@ -210,7 +210,8 @@ void rejectionAndWeakLifetime() {
     gpu.rejectCreate=false;
     pf.virtualLayers=2;
     require(!pass.initialize(gpu,2,2,fb,pf) &&
-            gpu.live.empty(),"incompatible feedback and prefetch geometry rolls back");
+            gpu.live.empty() && gpu.created==gpu.destroyed,
+            "incompatible feedback and prefetch geometry rolls back");
     pf=prefetchCfg();
     require(pass.initialize(gpu,2,2,fb,pf) && pass.begin(),
             "recovery after failed initialization");
