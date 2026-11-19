@@ -80,7 +80,23 @@ public:
                 auto& asset=presentation.get<AnimationAssetComponent>(entity);
                 if(link.generation!=source.generation ||
                    asset.model!=source.model || asset.graph!=source.graph) {
-                    presentation.get<AnimationPlayerComponent>(entity).restart=true;
+                    auto& player=presentation.get<AnimationPlayerComponent>(entity);
+                    player.pendingPlayback.reset();
+                    // Only presentation phases survive a compatible resource
+                    // replacement of the SAME logical source generation.
+                    // Respawns, changed skeleton hierarchies and unhealthy
+                    // graph instances restart from authored defaults.
+                    if(link.generation==source.generation &&
+                       asset.model && asset.graph &&
+                       compatibleHierarchy(*asset.model,*source.model) &&
+                       !player.restart && player.instance &&
+                       player.active==asset.graph &&
+                       player.instance->graph()==asset.graph.get()) {
+                        auto snapshot=player.instance->snapshotPlayback();
+                        if(!snapshot.state.empty())
+                            player.pendingPlayback=std::move(snapshot);
+                    }
+                    player.restart=true;
                     if(auto* overlays=presentation.tryGet<AnimationMontageSlotsComponent>(entity)) {
                         overlays->players.clear();
                         overlays->events.clear();
@@ -135,6 +151,15 @@ public:
         links_.clear();
     }
 private:
+    static bool compatibleHierarchy(const render::Model& a,
+                                    const render::Model& b) {
+        if(a.nodes.size()!=b.nodes.size())return false;
+        for(size_t i=0;i<a.nodes.size();++i) {
+            if(a.nodes[i].name!=b.nodes[i].name ||
+               a.nodes[i].parent!=b.nodes[i].parent)return false;
+        }
+        return true;
+    }
     std::map<uint64_t,Entity> links_;
 };
 } // namespace aiverse::lib::animation
