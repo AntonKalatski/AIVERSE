@@ -2,6 +2,7 @@
 #pragma once
 #include <aiverselib/water/NereidCascadeFlow.h>
 #include <aiverselib/water/NereidConfluenceFlow.h>
+#include <aiverselib/water/NereidFlowObstacles.h>
 #include "engine/sim/CommonComponents.h"
 #include "engine/sim/Simulation.h"
 #include <string>
@@ -47,6 +48,7 @@ inline WaterSample sampleWater(const World& world,Vec3 position) {
     // runs last so drops take local precedence without changing body flow.
     applyWaterConfluenceFlow(world,position,sample);
     applyWaterCascadeFlow(world,position,sample);
+    applyNereidFlowObstructions(world,position,sample);
     return sample;
 }
 
