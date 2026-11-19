@@ -594,6 +594,7 @@ public:
     void setGpuAuthoredDrawEnabled(bool on) { gpuAuthoredDrawEnabled_ = on; }
     bool modelMultiDrawSupported() const { return dev_ && dev_->supportsMultiDrawIndirect(); }
     const ModelRenderStats& modelStats() const { return modelStats_; }
+    const AutoCpuBatchPolicy& autoCpuBatchStats() const { return autoCpuBatch_; }
     static constexpr size_t kCpuMdiRollingWindow = 120;
     // Diagnostic heuristic, not a performance target. Require enough
     // samples and both relative and absolute P95 excursion to avoid
