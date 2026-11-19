@@ -165,7 +165,8 @@ vec4 aiverseSampleVirtualAnisotropic(
     float major=max(dxPixels,dyPixels);
     float minor=max(1.0,min(dxPixels,dyPixels));
     int limit=clamp(maxTaps,1,8);
-    int taps=clamp(int(ceil(major/minor)),1,limit);
+    // Clamp in float before converting: extreme derivatives can overflow int.
+    int taps=int(min(float(limit),max(1.0,ceil(major/minor))));
     vec2 majorDerivative=xMajor?uvDx:uvDy;
     vec2 adjustedDx=xMajor?uvDx/float(taps):uvDx;
     vec2 adjustedDy=xMajor?uvDy:uvDy/float(taps);
@@ -350,7 +351,8 @@ inline float4 aiverse_sample_virtual_anisotropic(
     float major=max(dxPixels,dyPixels);
     float minor=max(1.0f,min(dxPixels,dyPixels));
     uint limit=clamp(maxTaps,1u,8u);
-    uint taps=clamp(uint(ceil(major/minor)),1u,limit);
+    // Clamp before float->uint conversion to avoid overflow on extreme footprints.
+    uint taps=uint(min(float(limit),max(1.0f,ceil(major/minor))));
     float2 majorDerivative=xMajor?uvDx:uvDy;
     float2 adjustedDx=xMajor?uvDx/float(taps):uvDx;
     float2 adjustedDy=xMajor?uvDy:uvDy/float(taps);
