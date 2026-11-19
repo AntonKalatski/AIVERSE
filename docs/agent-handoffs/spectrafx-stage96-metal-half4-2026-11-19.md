@@ -70,3 +70,32 @@ GPU lifetime and other stage 94/95 tests remain unverified.
 **Next agent:** examine any second Metal compiler error (including
 fragment `half4` if the toolchain rejects its all-`half` constructor),
 fix against native diagnostics, then commit a new handoff.
+
+## User-reported post-fix verification — PASS
+
+User subsequently supplied the native focused CTest result on Mac Studio:
+
+```
+The following tests passed:
+    spectrafx_metal_billboard
+
+100% tests passed, 0 tests failed out of 1
+
+Label Time Summary:
+MetalGPU = 1.47 sec*proc (1 test)
+SpectraFX = 1.47 sec*proc (1 test)
+```
+
+**Status change:** the focused `spectrafx_metal_billboard` test has now
+**PASSED 1/1** (0 failures, 1.47 sec) after the explicit component-narrowing
+source fix was pushed. The provided excerpt does not contain the checkout
+HEAD SHA, compilation command output or per-pixel checks, so the tested
+binary's exact source revision and detailed assertions cannot be
+independently reconstructed from this excerpt. Do not call the entire
+122-test suite passed on this basis.
+
+**Outstanding:** one-shot full acceptance on latest source with
+`bash tools/spectrafx/acceptance.sh build/spectrafx-validation`, including
+genre-independent Stage 94/95 changes, combined Metal tests, all host builds,
+and all native CTests; later on-device Renderer3D/Editor Preview, cue playback,
+resource-lifetime and three-frames-in-flight stress.
