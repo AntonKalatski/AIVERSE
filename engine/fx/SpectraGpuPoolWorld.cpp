@@ -639,8 +639,20 @@ bool GpuPoolWorld::resetForRollback() {
         reason_="SpectraFX pool reset must run outside GPU render/compute frame";
         return false;
     }
+    // A reset is valid only after ALL GPU groups accept their ordered
+    // checked uploads. Unlike legacy void clear(), failure is surfaced and
+    // CPU presentation state/source handles are not falsely marked reset.
+    // Hardware failure during a later group can still leave an earlier
+    // group cleared: retry the entire reset at a safe graphics boundary.
+    for(auto& group:gpuGroups_) {
+        group.stepOk=false;
+        if(!group.particles->tryClear()) {
+            reason_="SpectraFX pooled GPU rollback reset incomplete: "+
+                    group.particles->reason();
+            return false;
+        }
+    }
     cpu_.clear();
-    for(auto& group:gpuGroups_)group.particles->clear();
     stats_.frameBursts=stats_.gpuDrawCalls=stats_.cpuDrawCalls=0;
     stats_.cpuParticles=stats_.gpuParticlesEstimated=0;
     // A rollback invalidates all presentation source handles. Generation
