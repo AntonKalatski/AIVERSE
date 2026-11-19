@@ -673,6 +673,16 @@ struct IcbPbrTextures {
     sampler s11 [[id(23)]];
     depth2d<float> tex12 [[id(24)]];
     sampler s12 [[id(25)]];
+#if defined(AIVERSE_MODEL_VT)
+    texture2d_array<float, access::sample> tex13 [[id(26)]];
+    sampler s13 [[id(27)]];
+    texture2d_array<float, access::read> tex14 [[id(28)]];
+    sampler s14 [[id(29)]];
+#endif
+#if defined(VIRTUAL_ALPHA_MASK)
+    texture2d<float> tex15 [[id(30)]];
+    sampler s15 [[id(31)]];
+#endif
 };
 #endif
 
@@ -698,12 +708,16 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
                         depth2d<float> tex12 [[texture(12)]], sampler s12 [[sampler(12)]]
 #endif
                         GI_FARGS
-#if defined(VIRTUAL_ALPHA_MASK)
+#if defined(VIRTUAL_ALPHA_MASK) && !defined(AIVERSE_ICB_PBR)
                         , texture2d<float> tex15 [[texture(15)]],
                           sampler s15 [[sampler(15)]]
 #endif
                         ) {
 #if defined(AIVERSE_ICB_PBR)
+#if defined(VIRTUAL_ALPHA_MASK)
+#define tex15 icbTextures.tex15
+#define s15 icbTextures.s15
+#endif
 #define tex0 icbTextures.tex0
 #define s0 icbTextures.s0
 #define tex1 icbTextures.tex1
