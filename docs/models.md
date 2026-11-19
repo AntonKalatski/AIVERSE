@@ -945,3 +945,42 @@ This path is implemented by RTS `reloadAppearanceTypes`;
 ordinary initial loading and other native host importers have
 not yet been converted. This Stage 113 implementation has
 not been compiled or run on hardware.
+
+## Stage 114 — two-phase shared cache promotion and generic native imports
+
+New native or RTS model appearances can promote already uploaded
+speculative texture misses into a shared cache **only after** all
+authoring and GPU shader preflight checks succeed. Call
+`ModelTextureCache::prepareGpuPromotion(models, appended)` while the
+scratch Models and pending image references are alive, then commit the
+pending Model images, publish any scratch Model map nodes, and finally
+call `PreparedGpuPromotion::commit()`. The plan allocates its shared
+cache owners and leases during preparation; its commit does not upload
+new GPU images. Retire the returned duplicate Image handles using a
+persistent `ModelImageRollbackPool` and real GPU fences. The plan uses
+Model+index identifiers so a pending material append can reallocate
+`Model::images` safely.
+
+`ModelImageUploadTransaction::pendingImageReferences()` exposes
+temporary references for GPU promotion preflight. Do not use their
+`Image*` after that transaction commits or aborts.
+`ModelTextureCache::read()` provides shared decoded CPU data and
+preserves source/sampler identity, but new GPU entries are not visible
+until the whole staged transaction succeeds.
+
+For ordinary non-RTS importers, `ModelStagingTransaction` manages a
+scratch map of newly decoded Models and routes failed partially uploaded
+Model resources to GPU-fenced retirement. `ModelAssetProvider::load`
+and `publishReady` now use this helper. Its `commit` publishes
+Model pointer identities and shared GPU leases without a second upload.
+The native caller still owns the gfx::Device, Model cache, GPU lifetime
+and recurring retirement polling. Errors must not bypass a GPU
+completion marker by directly calling `releaseModel` on in-flight
+Model resources.
+
+ShaderGraph CPU validation and native GPU pipeline preflight are
+separate: `Renderer3D::warmModelPipelinesChecked` returns
+Ready/Pending/Failed; only a Ready candidate is safe to publish when
+a host supplies a pipeline validator. The GPU shader cache is not
+fully transactional and may retain cached failed or prepared pipelines
+until renderer teardown. No physical backend tests have been run.
