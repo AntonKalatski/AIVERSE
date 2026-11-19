@@ -26,7 +26,8 @@ enum class SpectraFxFeature : uint32_t {
     LocalSpace = 1u << 9,
     Flipbook = 1u << 10,
     Ribbons = 1u << 11,
-    PerParticleEvents = 1u << 12
+    PerParticleEvents = 1u << 12,
+    GroundPlaneCollision = 1u << 13 // GPU-supported world Y plane only
 };
 inline constexpr SpectraFxFeature operator|(SpectraFxFeature a,SpectraFxFeature b) {
     return SpectraFxFeature(uint32_t(a)|uint32_t(b));
@@ -48,7 +49,8 @@ struct SpectraFxBackendDecision {
 };
 
 // The implemented GPU backend currently handles only simple world-space,
-// unsorted alpha/additive billboards. Any other particle feature stays CPU.
+// unsorted alpha/additive billboards and simple world-Y ground plane bounce.
+// Mesh/scene/terrain/depth collisions still stay CPU.
 // No D3D12 graphics backend exists in the current AIVERSE RHI.
 inline SpectraFxBackendDecision chooseSpectraFxBackend(
         const gfx::Device& device,const SpectraFxBackendRequest& request) {
@@ -65,7 +67,8 @@ inline SpectraFxBackendDecision chooseSpectraFxBackend(
     const uint32_t mask=uint32_t(request.required);
     const uint32_t allowed=uint32_t(SpectraFxFeature::Billboard) |
                            uint32_t(SpectraFxFeature::Alpha) |
-                           uint32_t(SpectraFxFeature::Additive);
+                           uint32_t(SpectraFxFeature::Additive) |
+                           uint32_t(SpectraFxFeature::GroundPlaneCollision);
     if((mask&~allowed)!=0 || !hasFeature(request.required,SpectraFxFeature::Billboard))
         return cpu("requested particle modules require CPU fallback");
     if(!device.supportsCompute() || !device.supports(gfx::PixelFormat::RGBA32F))
