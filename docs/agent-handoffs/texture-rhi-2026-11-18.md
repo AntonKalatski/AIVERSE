@@ -8938,3 +8938,56 @@ If a build/test fails, inspect the new `build.log` and
 `ctest.log` and append another exact handoff.
 Do NOT use the original primary worktree with unresolved rebase.
 
+
+## Stage 10AW — second native macOS focused verifier result (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / Draft #21.
+**Working copy:** isolated macOS worktree
+`/Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819`
+tracking `origin/feature/texture-rhi-unification`. User reported
+`git pull --ff-only` returned "Already up to date" before running
+`bash tools/verify-texture-rhi.sh --editor --jobs 4`. Last confirmed
+remote HEAD before this report was `e86f9aea5d053b163a730139457c165f6be0f761`,
+but this terminal paste did not include a fresh `git rev-parse HEAD`;
+do not invent an exact local-tested SHA.
+
+**Actual reported results:** `CONFIGURE PASS`; all 20 focused
+test-executable targets printed `BUILD PASS` (including
+`aiverse_virtual_texture_feedback_pass_test`,
+`aiverse_gpu_icb_material_contract_test`,
+`aiverse_ktx2_layers_test`, `aiverse_ktx2_transcode_test`,
+`aiverse_dds_layers_test`, `aiverse_texture_asset_test`,
+`aiverse_hdr_texture_test`, `aiverse_exr_texture_test`).
+`aiverse_editor` printed `BUILD FAIL (exit 2)`.
+GLSL and Metal validator executables were found, but the terminal
+did not show whether validator tests passed. `CTEST FAIL (exit 8)`.
+`OVERALL FAIL: 2 build/test gates failed`.
+
+**Interpretation:** previous Clang compile regressions no longer
+block the *focused texture test target builds* on this Mac.
+This is real compilation evidence for the 20 named targets,
+**not** evidence of passing CTest or the editor. Error code 2
+does not identify the editor compiler/linker error; CTest
+exit 8 does not specify the failed test names or assertions.
+Earlier uploaded `aiverse-texture-logs.tar.gz` belongs to the
+**previous** 13/20-target build, and cannot be used to diagnose
+this new run.
+
+**Changes:** documentation / handoff inventory only; no engine
+or test source files changed to guess at a missing log.
+
+**Needed evidence:** from the above isolated worktree, collect
+`build/texture-rhi/verify-logs/build.log`,
+`ctest.log`, `summary.txt`, `configure.log`.
+Determine the first editor error from the `===== aiverse_editor =====`
+section of `build.log`, and every `***Failed` CTest entry including
+its assertion / stderr. Repair verified root causes in
+`feature/texture-rhi-unification`; append another handoff and
+rerun focused native verification.
+
+**Unverified:** editor compile, all focused CTest results,
+runtime GPU sampling/feedback, graphical parity, and mobile/Windows
+cross-backend builds. Keep PR #21 Draft, do not merge based on
+a successful test-target compilation alone. Do not touch the
+original primary AIVERSE worktree with its unrelated unfinished rebase.
+
