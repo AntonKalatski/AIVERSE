@@ -19,9 +19,9 @@ struct DiskPageStats {
 };
 
 // One archive contains exactly one immutable ModelAsset source. Metadata and
-// source signature are validated at open; every page is CRC-checked on read.
-// Maximum queued requests and cached result bytes are bounded. Threading is
-// intentionally disabled for Emscripten/WebGL2 (fallback to CPU indices).
+// source signature are validated at open; pages use FNV-1a (not CRC/security
+// signatures). The process-wide executor bounds threads and total ready bytes.
+// Native threading is unavailable on Emscripten/WebGL2.
 class DiskIndexPages final {
 public:
     DiskIndexPages();
@@ -54,13 +54,17 @@ public:
     bool failed(uint32_t primitive, uint32_t node) const;
     DiskPageStats stats() const;
     bool valid() const;
-    void close(); // cancels queue and joins worker; call before asset unload.
+    void close(); // cancels queue and shared-worker jobs; call before asset unload.
 
     // Safe deterministic filesystem name from original source key; no path
     // traversal or direct use of model-provided path fragments.
     static std::string archiveFilename(const std::string& sourceKey);
 private:
     struct State;
-    std::unique_ptr<State> state_;
+    // Single flight per source: repeated requests cannot occupy every shared
+    // worker. Called with State::mutex already locked.
+    static bool scheduleLocked(const std::shared_ptr<State>& state);
+    static void serviceOne(const std::shared_ptr<State>& state);
+    std::shared_ptr<State> state_;
 };
 } // namespace aiverse::render::strata
