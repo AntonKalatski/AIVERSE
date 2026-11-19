@@ -5,6 +5,7 @@
 #include <cmath>
 #include <fstream>
 #include <sstream>
+#include <stdexcept>
 
 namespace aiverse::modelview {
 
@@ -52,7 +53,15 @@ bool Gallery::init(gfx::Device& dev, const std::string& dir, const std::vector<s
     return true;
 }
 
-void Gallery::shutdown(gfx::Device& dev) { portrait_.shutdown(); view_.shutdown(dev); }
+void Gallery::shutdown(gfx::Device& dev) {
+    // The gallery's portrait is an offscreen pass that may be referenced
+    // by the previous frame even when the game View has no active Models.
+    // Never destroy its texture before the Device proves completion.
+    if(!dev.waitForResourceIdle())
+        throw std::runtime_error("Gallery portrait GPU shutdown barrier failed");
+    portrait_.shutdown();
+    view_.shutdown(dev);
+}
 
 void Gallery::collectRetiredGpuResources() {
     // The model viewer has one owning Device frame per update but may
