@@ -9391,3 +9391,89 @@ passed. Keep PR #21 Draft, preserve the user's main worktree's
 unrelated incomplete rebase, and append a new handoff for
 the next result.
 
+
+## Stage 10BD — Metal verifier truncated Bash footer repair (2026-11-19)
+
+**Working branch/PR:** `feature/texture-rhi-unification` / Draft PR #21.
+**User test worktree:**
+`/Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819`.
+The separate primary AIVERSE worktree has an unrelated interrupted
+rebase; no attempt to mutate it.
+
+**Evidence of failure (real Mac Studio output):** user fast-forwarded
+from `79e8c04fc` to `a81fdbad9`. `bash -n
+tools/verify-texture-rhi.sh` reported at line 171
+`unexpected EOF while looking for matching '\''` and at line 207
+`syntax error: unexpected end of file`. Executing the malformed
+script nonetheless configured CMake, built **all 20** focused texture
+targets, built `aiverse_editor`, built the new
+`aiverse_metal_texture_gpu_test`, and returned focused `CTEST PASS`.
+It then encountered the same parser failure. No
+`build/texture-rhi/verify-logs/metal-gpu.log` existed.
+**The actual GPU CTest was NOT executed.**
+
+**Root cause:** in `tools/verify-texture-rhi.sh`, line 171 of
+the checked-out source ended with the *unterminated* regex
+`-R '^metal_texture_gpu`, so the line was missing its
+`$'` terminator and the output redirect. Lines 189–206 also
+duplicated the final GPU result and summary block. A code review
+that only checked for expected markers did not catch malformed
+Bash syntax; Bash may execute earlier top-level blocks before
+discovering a later unmatched quote.
+
+**Code/CI commits:**
+- `602fb8ee327146c95612a2b04519a5377796dc57` —
+  `tools/verify-texture-rhi.sh`: replaced everything from the
+  fail-closed Metal GPU CTest section to EOF with a single complete
+  `ctest --test-dir "$build" --verbose --output-on-failure
+  --no-tests=error -R '^metal_texture_gpu$' >"$logs/metal-gpu.log" 2>&1`
+  command, CTest status capture and exactly one final error/summary
+  section. No regular source test filters or target lists changed.
+- `b90d50b0c1849b09790c52a82b4eaa269d37065f` —
+  `.github/workflows/texture-rhi.yml`: run
+  `bash -n tools/verify-texture-rhi.sh` immediately after checkout
+  for Linux and Vulkan jobs, before building.
+- `1a2db49ebd1426543eaab180bd63e913408a9c9a` —
+  `tools/verify-texture-rhi.sh`: preflight full source using
+  `bash -n "${BASH_SOURCE[0]}"` at startup; abort before CMake
+  if a future footer contains a parser error. This is independent
+  of optional `--metal` selection.
+- `6baeded7ef0d42a51752568f9a396a9237a14810` —
+  `docs/texture-rhi.md`: actual failure and exact run instructions.
+- `c31da6a95aa1877a46317ec967546058ebcf5619` —
+  `skills/visuals/aiverse-texture-rhi/SKILL.md`: instructions
+  for syntax preflight and real Metal GPU acceptance.
+
+**Source/behavior compatibility:** no GPU backend, texture asset
+file, ECS/component, public native RHI API or test fixture modifications.
+The `--metal` opt-in remains default OFF, fails closed for missing
+GPU/test, and logs to `metal-gpu.log`. Normal 23-case source CTest
+remains unchanged and does not imply hardware acceptance.
+
+**Actually checked in this assistant environment:** re-fetched the
+broken GitHub script and inspected its exact numbered tail; after
+the fix re-fetched the new numbered tail to confirm the regex,
+single final summary and no duplicate Metal branch. Pure static
+checks confirmed one GPU command, complete regex, one status
+assignment, one final GPU success message and trailing newline.
+The **corrected footer snippet** independently passed
+`bash -n` under Linux Bash (exit 0). The full fixed script was
+not downloaded into this sandbox because GitHub raw content DNS
+was unavailable here; **full-file `bash -n` and native macOS GPU
+test are NOT RUN after the change**. The new CI syntax guards
+were added but CI jobs are not claimed passing.
+
+**Next concrete step:** in the Mac Studio isolated worktree:
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+bash -n tools/verify-texture-rhi.sh
+# The test target was already built in the old malformed-script run.
+ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
+```
+Record device name, exact GPU readback comparisons and test exit code.
+If pass, optional full verifier:
+`bash tools/verify-texture-rhi.sh --editor --metal --jobs 4`.
+If fail, attach first compiler/runtime error and next GPU handoff;
+do not merge PR #21 without a real on-device passing acceptance.
+
