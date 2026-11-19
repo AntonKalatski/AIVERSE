@@ -264,3 +264,12 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
   cmake --build ../AIVERSE-vivid/build/vivid --target aiverse_vivid_motionweave_tests aiverse_motionweave_api_tests -j 4 &&
     ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^(vivid_|motionweave_api$)'
   ```
+
+## macOS native validation — 2026-11-19 — 7/7 integration tests
+
+- **Verified branch state at request:** `feature/vivid-digital-humans` head `5013fe6d96796abaae4f0596d9129dac33f33729`. The user's excerpt does not repeat a local `git rev-parse HEAD`; this is the latest GitHub state given to the user before their run, and the exact tested local SHA should be checked when running subsequent commands.
+- **User-executed build:** `aiverse_engine` and `aiverse_models` targets built; `aiverse_motionweave_api_tests` compiled and linked successfully. No warnings/errors shown in supplied output.
+- **User-executed CTest**, `/Users/aleksandrfeer/Projects/AIVERSE-vivid/build/vivid`: `motionweave_api` PASS (1.03s), `vivid_face` PASS (0.14s), `vivid_sparse_morph` PASS (0.15s), `vivid_shape_binding` PASS (0.15s), `vivid_gpu_contract` PASS (0.16s), `vivid_motionweave_bridge` PASS (0.79s), `vivid_morph_binding` PASS (0.15s). **7/7 tests passed, 0 failed, 2.59 seconds**. These are the first reported passes of the integrated MotionWeave bridge, resolving Stage 4C's previous `World::poolIfExists` compilation failure.
+- **Native/CI status:** Real macOS execution reported by the user. Not rerun by this agent and not a verified GitHub Actions CI run.
+- **Scope:** all seven selected CPU and fake-RHI contract tests passed; this is **not** a native Metal shader compilation/readback result or proof of the full MotionWeave test suite, renderer/skin integration, Vulkan/GL support, or visual correctness.
+- **Next action:** add an isolated macOS Metal shader parity CTest running the real `kVividMorphMSL` kernel against 160 named morph targets; then move to a separate gfx::Device integration test. Keep build status separate for each new commit.
