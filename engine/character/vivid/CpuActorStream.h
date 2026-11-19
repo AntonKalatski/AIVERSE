@@ -106,16 +106,21 @@ public:
     bool shutdownAfterIdle() {
         if(!device_)return true;
         if(!device_->waitForResourceIdle())return false;
-        if(buffer_.valid())device_->destroyBuffer(buffer_);
-        buffer_={};device_=nullptr;model_=nullptr;morphs_=nullptr;
-        base_.clear();output_.clear();originalMorph_.clear();
-        currentMorph_.clear();weights_.clear();lastFrame_=0;
-        hasOutput_=false;
+        releaseAfterGpuCompletion();
         return true;
     }
     bool ready() const noexcept {return device_&&model_&&morphs_&&buffer_.valid();}
     const std::string& lastError() const noexcept{return error_;}
 private:
+    friend class HumanRetirementQueue;
+    // Called ONLY by a completed GPU token or explicit idle barrier.
+    void releaseAfterGpuCompletion() noexcept {
+        if(device_&&buffer_.valid())device_->destroyBuffer(buffer_);
+        buffer_={};device_=nullptr;model_=nullptr;morphs_=nullptr;
+        base_.clear();output_.clear();originalMorph_.clear();
+        currentMorph_.clear();weights_.clear();lastFrame_=0;
+        hasOutput_=false;
+    }
     gfx::Device* device_=nullptr;
     const render::Model* model_=nullptr;
     const SparseMorphLibrary* morphs_=nullptr;
