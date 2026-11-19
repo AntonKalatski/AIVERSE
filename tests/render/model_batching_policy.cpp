@@ -10,6 +10,7 @@
 #include "engine/render/GpuIcbPolicy.h"
 #include "engine/render/StaticModelCachePolicy.h"
 #include "engine/render/ModelLodTransition.h"
+#include "engine/render/EcsStaticModelRender.h"
 #include "engine/render/ModelShaders.h"
 #include <cstdlib>
 #define CHECK(x) do { if (!(x)) { std::fprintf(stderr, "model batching check failed: %s at %d\n", #x, __LINE__); std::exit(1); } } while (0)
@@ -661,6 +662,61 @@ int main() {
         CHECK(far.mesh == 2 && far.incoming < 0);
         const auto transition = selectModelLod(0, levels, 32.f, .15f);
         CHECK(transition.incoming >= 0 && transition.progress > 0.f);
+    }
+
+    // Generic ECS presentation adapter: only integer asset identity and
+    // revision live in ECS; the renderer receives a current fixed->float world
+    // matrix, a stable generation-aware host key, and a live model reference.
+    {
+        aiverse::World world;
+        const auto first = world.create();
+        const auto missingTransform = world.create();
+        aiverse::render::EcsStaticModelRender component;
+        component.assetKey = 7;
+        component.appearanceRevision = 9;
+        component.flags = kDrawNoCastShadow;
+        world.add<aiverse::render::EcsStaticModelRender>(first, component);
+        world.add<aiverse::render::EcsStaticModelRender>(
+            missingTransform, component);
+        aiverse::WorldTransform xf;
+        xf.affine.m[3] = aiverse::Fixed::fromInt(7);
+        world.add<aiverse::WorldTransform>(first, xf);
+        Model model;
+        size_t draws = 0;
+        uint64_t lastId = 0;
+        const auto resolve = [&model](uint32_t asset) -> const Model* {
+            return asset == 7 ? &model : nullptr;
+        };
+        const auto stableId = [](aiverse::Entity entity) {
+            return entity.packed() + uint64_t{1};
+        };
+        auto submit = [&](aiverse::Entity e, const ModelDraw& d) {
+            CHECK(e == first);
+            CHECK(d.model == &model);
+            CHECK(d.staticPacketRevision == 9);
+            CHECK(d.persistentId == stableId(first));
+            CHECK((d.flags & kDrawStatic) != 0);
+            CHECK((d.flags & kDrawNoCastShadow) != 0);
+            CHECK(d.world.at(0,3) == 7.f);
+            lastId = d.persistentId;
+            ++draws;
+        };
+        CHECK(aiverse::render::visitEcsStaticModels(
+            world, resolve, stableId, submit) == 1);
+        CHECK(draws == 1 && lastId);
+        world.get<aiverse::render::EcsStaticModelRender>(first).visible = false;
+        CHECK(aiverse::render::visitEcsStaticModels(
+            world, resolve, stableId, submit) == 0);
+        world.get<aiverse::render::EcsStaticModelRender>(first).visible = true;
+        world.get<aiverse::render::EcsStaticModelRender>(first).appearanceRevision = 0;
+        CHECK(aiverse::render::visitEcsStaticModels(
+            world, resolve, stableId, submit) == 0);
+        // A recycled ECS index gains a generation, so the host's stable
+        // namespaced mapping can distinguish it from the old render packet.
+        world.destroy(first);
+        const auto recycled = world.create();
+        CHECK(recycled.index == first.index && recycled.gen != first.gen);
+        CHECK(stableId(recycled) != lastId);
     }
 
     std::puts("engine model batching policy: PASS");
