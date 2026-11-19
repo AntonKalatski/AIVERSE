@@ -11,6 +11,9 @@
 namespace aiverse::vivid {
 struct GroomGuide {
     render::float3 root{}, normal{};
+    // Optional triangle/barycentric attachment to a deforming scalp proxy.
+    std::uint32_t scalpTriangle=UINT32_MAX;
+    render::float3 scalpBary{1,0,0};
     std::vector<render::float3> rest, position, previous;
 };
 enum class GroomQuality : std::uint8_t { Low, Medium, High };
