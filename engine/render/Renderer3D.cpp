@@ -360,6 +360,30 @@ void Renderer3D::bindTraceTextures() {
     bindSceneTextures(4, 5);
 }
 
+Renderer3D::MotionRetirementStats Renderer3D::motionRetirementStats() const {
+    MotionRetirementStats stats;
+    stats.liveViews = objectMotionViews_.size();
+    stats.fencedTextures = motionRetired_.pendingCount();
+    stats.unfencedTextures = motionUnfenced_.size();
+    stats.lastGpuCompletedFence = dev_ ? dev_->gpuCompletedFence() : 0;
+    auto bytesOf = [this](gfx::TextureHandle handle) -> uint64_t {
+        if (!dev_ || !handle.valid()) return 0;
+        gfx::TextureInfo t{};
+        if (!dev_->textureInfo(handle,t) || t.width <= 0 || t.height <= 0)
+            return 0;
+        const uint64_t bpp =
+            t.format == gfx::PixelFormat::RGBA16F ? 8 :
+            t.format == gfx::PixelFormat::RGBA32F ? 16 :
+            t.format == gfx::PixelFormat::R8 ? 1 : 4;
+        return uint64_t(t.width) * uint64_t(t.height) * bpp;
+    };
+    for (const auto& p : motionRetired_.pending())
+        stats.knownPendingBytes += bytesOf(p.handle);
+    for (const auto& h : motionUnfenced_)
+        stats.knownPendingBytes += bytesOf(h);
+    return stats; // lower bound when RHI cannot describe an allocation
+}
+
 void Renderer3D::queueObjectMotionTexture(
     gfx::TextureHandle& texture, uint64_t lastSubmittedFence) {
     if (!texture.valid()) return;
