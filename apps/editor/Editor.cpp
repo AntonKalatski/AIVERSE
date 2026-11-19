@@ -159,6 +159,7 @@ void Editor::init(gfx::Device& dev) {
 }
 
 void Editor::shutdown() {
+    spectraGpuTelemetry_=nullptr;
     if (!dev_) return;
     clientHost_.stop();
     gameFxBridge_.detach();
