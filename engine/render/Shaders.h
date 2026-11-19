@@ -437,6 +437,19 @@ void main() {
         float patches = 0.5 + 0.5 * sin(m.x * 2.3 + sin(m.y * 1.7) * 2.1) * sin(m.y * 1.9 + sin(m.x * 1.3) * 1.7);
         base *= 0.84 + 0.22 * patches;
     }
+    // NEREID: vertical/stepped cascades remain on the shared water
+    // material path but never sample the horizontal planar reflection.
+    // Fast downstream streaks perturb their ribbon normals and tint.
+    if(u_params.x < -2.5) {
+        float waterfallTime=(l_cloud.x+l_cloud.y)*20.0;
+        float streak=sin(v_wpos.y*8.0+v_wpos.x*1.8 -
+                         waterfallTime*3.6);
+        float crossFlow=sin(v_wpos.z*12.0-v_wpos.y*3.2 -
+                            waterfallTime*4.5);
+        n=normalize(n+vec3(streak*0.12,0.06*crossFlow,
+                           crossFlow*0.12));
+        base *= 0.87+0.13*streak*streak;
+    }
     // NEREID: up to four bounded ripple impulses per visible body. The
     // parameters are render-origin-relative, matching v_wpos. A zero
     // amplitude disables a slot; no extra texture reads or geometry upload.
@@ -593,6 +606,16 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
         float2 m = p * 0.021 + float2(wt * 0.004, 0.0);
         float patches = 0.5 + 0.5 * sin(m.x * 2.3 + sin(m.y * 1.7) * 2.1) * sin(m.y * 1.9 + sin(m.x * 1.3) * 1.7);
         base *= 0.84 + 0.22 * patches;
+    }
+    if(u.params.x < -2.5) {
+        float waterfallTime=(l.cloud.x+l.cloud.y)*20.0;
+        float streak=sin(in.wpos.y*8.0+in.wpos.x*1.8 -
+                         waterfallTime*3.6);
+        float crossFlow=sin(in.wpos.z*12.0-in.wpos.y*3.2 -
+                            waterfallTime*4.5);
+        n=normalize(n+float3(streak*0.12,0.06*crossFlow,
+                             crossFlow*0.12));
+        base *= 0.87+0.13*streak*streak;
     }
     if(u.params.x < -0.5) {
         float2 grad=float2(0.0);
