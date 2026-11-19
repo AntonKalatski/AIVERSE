@@ -868,6 +868,68 @@ bool Editor::restartSpectraGpuPreview() {
     spectraPreviewStepRequests_=0;
     return true;
 }
+bool Editor::saveFreshSpectraGpuCheckpoint(std::string& output) const {
+    const auto* pool=spectraGpuTelemetry_;
+    if(!pool || !pool->ready() || pool->presentationBlocked()) {
+        output="No healthy active SpectraFX GPU pool is attached";
+        return false;
+    }
+    // Export only existing current-revision snapshot bytes. This calls no
+    // blocking RHI readBuffer and never requests a new GPU capture.
+    std::vector<uint8_t> bytes;
+    std::string reason;
+    size_t chosen=0;
+    bool found=false;
+    for(size_t i=0;i<size_t(pool->stats().gpuGroups);++i) {
+        if(pool->exportFreshCheckpoint(i,bytes,
+                spectra::kGpuCheckpointExportMaxBytes,&reason)) {
+            chosen=i;
+            found=true;
+            break;
+        }
+    }
+    if(!found) {
+        output="No fresh and complete GPU checkpoint is ready: "+reason;
+        return false;
+    }
+    const fs::path directory=fs::path(platform::userDataDir())/
+                             "spectrafx-diagnostics";
+    std::error_code ec;
+    fs::create_directories(directory,ec);
+    if(ec) {
+        output="Cannot create SpectraFX diagnostic directory: "+ec.message();
+        return false;
+    }
+    const std::string filename="checkpoint-"+
+        std::to_string(dev_?dev_->frameSerial():0)+
+        "-group-"+std::to_string(chosen)+".spfx";
+    const fs::path destination=directory/filename;
+    const fs::path temporary=directory/(filename+".tmp");
+    {
+        std::ofstream file(temporary,std::ios::binary|std::ios::trunc);
+        if(!file) {
+            output="Cannot open SpectraFX diagnostic temporary file";
+            return false;
+        }
+        file.write(reinterpret_cast<const char*>(bytes.data()),
+                   std::streamsize(bytes.size()));
+        file.flush();
+        if(!file) {
+            file.close();
+            fs::remove(temporary,ec);
+            output="Failed to write complete SpectraFX checkpoint payload";
+            return false;
+        }
+    }
+    fs::rename(temporary,destination,ec);
+    if(ec) {
+        fs::remove(temporary);
+        output="Cannot publish SpectraFX checkpoint: "+ec.message();
+        return false;
+    }
+    output=destination.string();
+    return true;
+}
 bool Editor::spectraGpuPreviewActive() const {
     return spectraPreviewGpu_ && spectraPreviewGpu_->ready();
 }
