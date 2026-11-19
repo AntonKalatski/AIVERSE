@@ -73,7 +73,8 @@ public:
     // Explicit device-lifetime rule; destructor never calls a dead RHI object.
     ~SpectraFxGpuCompaction() = default;
 
-    bool init(gfx::Device& device, uint32_t capacity) {
+    bool init(gfx::Device& device, uint32_t capacity,
+              gfx::ComputeHandle sharedCompute={}) {
         release();
         error_.clear();
         // Only Metal implements drawIndexedGpuIndirect of GPU-authored
@@ -87,8 +88,10 @@ public:
         }
         device_ = &device;
         capacity_ = capacity;
-        compute_ = device.createCompute(
-            {kSpectraFxCompactMetal, nullptr, "SpectraFX GPU live-slot compact"});
+        ownsCompute_=!sharedCompute.valid();
+        compute_=sharedCompute.valid()?sharedCompute:
+            device.createCompute({kSpectraFxCompactMetal,nullptr,
+                                  "SpectraFX GPU live-slot compact"});
         if (!compute_.valid()) {
             error_ = device.lastError();
             release();
@@ -206,12 +209,13 @@ public:
                 if (frame.counter.valid()) device_->destroyBuffer(frame.counter);
                 if (frame.command.valid()) device_->destroyBuffer(frame.command);
             }
-            if (compute_.valid()) device_->destroyCompute(compute_);
+            if (ownsCompute_ && compute_.valid()) device_->destroyCompute(compute_);
         }
         for (auto& frame : frames_) frame = {};
         device_ = nullptr;
         compute_ = {};
         capacity_ = 0;
+        ownsCompute_=false;
     }
 
 private:
@@ -224,6 +228,7 @@ private:
     };
     gfx::Device* device_ = nullptr;
     gfx::ComputeHandle compute_{};
+    bool ownsCompute_=false;
     std::array<Slot, kBufferedFrames> frames_{};
     uint32_t capacity_ = 0;
     std::string error_;
