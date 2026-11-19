@@ -510,10 +510,26 @@ struct App {
                                 motionweave::AnimationAssetComponent>(entity);
                             if(!asset || asset->model!=characterModel.get() ||
                                asset->graph==compiled)continue;
+                            const auto previousGraph=asset->graph;
                             asset->graph=compiled;
                             if(auto* player=characterPresentation.tryGet<
-                                    motionweave::AnimationPlayerComponent>(entity))
+                                    motionweave::AnimationPlayerComponent>(entity)) {
+                                // Same model/skeleton: preserve authored
+                                // state and named clip phase on graph-only
+                                // hot reload. A renamed/removed graph node
+                                // is rejected by restorePlayback and safely
+                                // restarts at the new authored default.
+                                player->pendingPlayback.reset();
+                                if(player->instance && !player->restart &&
+                                   player->active==previousGraph &&
+                                   player->instance->graph()==previousGraph.get()) {
+                                    const auto snapshot=
+                                        player->instance->snapshotPlayback();
+                                    if(!snapshot.state.empty())
+                                        player->pendingPlayback=std::move(snapshot);
+                                }
                                 player->restart=true;
+                            }
                             if(auto* slots=characterPresentation.tryGet<
                                     motionweave::AnimationMontageSlotsComponent>(entity)) {
                                 slots->players.clear();
