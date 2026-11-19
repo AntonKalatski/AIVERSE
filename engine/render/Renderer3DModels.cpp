@@ -6,6 +6,7 @@
 #include "ModelShaders.h"
 #include "GiDynamicProbeTexture.h"
 #include "GiClipmapValidityTexture.h"
+#include "GiTextureBudget.h"
 #include "Animation.h"
 #include "ModelVisibility.h"
 #include "ModelLodTransition.h"
@@ -73,7 +74,9 @@ bool Renderer3D::setDynamicGiOverlay(const GiDynamicProbeTexture* overlay, float
                                      int ringX, int ringY, int ringZ,
                                      const GiClipmapValidityTexture* validity) {
     if (!overlay) { clearDynamicGiOverlay(); return true; }
-    if (!dev_ || !dev_->supports(overlay->computeWritable()
+    if (!dev_ ||
+        !giFragmentTextureBudgetAllows(dev_->maxFragmentTextureSlots(),validity!=nullptr,false,false) ||
+        !dev_->supports(overlay->computeWritable()
                               ? gfx::PixelFormat::RGBA16F : gfx::PixelFormat::RGBA32F) ||
         !overlay->texture().valid() || overlay->device() != dev_ ||
         !std::isfinite(origin.x) || !std::isfinite(origin.y) || !std::isfinite(origin.z) ||
@@ -100,7 +103,8 @@ bool Renderer3D::setDynamicGiCascadeOverlay(const GiDynamicProbeTexture* far,
                                             int nx,int ny,int nz,
                                             int ringX,int ringY,int ringZ) {
     if(!far) { dynamicGiFarOverlay_=nullptr; dynamicGiThirdOverlay_=nullptr; return true; }
-    if(!dev_ || !dynamicGiOverlay_ || !dynamicGiValidity_ ||
+    if(!dev_ || !giFragmentTextureBudgetAllows(dev_->maxFragmentTextureSlots(),true,true,false) ||
+       !dynamicGiOverlay_ || !dynamicGiValidity_ ||
        !far->texture().valid() || !far->computeWritable() ||
        far->device()!=dev_ || !dev_->supports(gfx::PixelFormat::RGBA16F) ||
        !std::isfinite(origin.x) || !std::isfinite(origin.y) ||
@@ -125,6 +129,7 @@ bool Renderer3D::setDynamicGiThirdCascadeOverlay(const GiDynamicProbeTexture* th
                                                   int ringX,int ringY,int ringZ) {
     if(!third) {dynamicGiThirdOverlay_=nullptr;return true;}
     if(!dev_ || dev_->info().backend!=gfx::Backend::Metal ||
+       !giFragmentTextureBudgetAllows(dev_->maxFragmentTextureSlots(),true,true,true) ||
        !dynamicGiOverlay_ || !dynamicGiValidity_ || !dynamicGiFarOverlay_ ||
        !third->computeWritable() || !third->texture().valid() ||
        third->device()!=dev_ || !dev_->supports(gfx::PixelFormat::RGBA16F) ||
@@ -146,6 +151,9 @@ bool Renderer3D::setDynamicGiThirdCascadeOverlay(const GiDynamicProbeTexture* th
 bool Renderer3D::dynamicGiEligible(const ModelItem& it, int phase,
                                   bool gpuInstances, bool instancePalette) const {
     if ((phase != 1 && phase != 2) || !dynamicGiOverlay_ ||
+        !giFragmentTextureBudgetAllows(dev_ ? dev_->maxFragmentTextureSlots() : 0,
+             dynamicGiValidity_!=nullptr,dynamicGiFarOverlay_!=nullptr,
+             dynamicGiThirdOverlay_!=nullptr) ||
         !dynamicGiOverlay_->texture().valid() || gpuInstances ||
         instancePalette || !hdrFrame_ || matQuality_ == MaterialQuality::Low ||
         it.mat->shading == ShadingModel::Unlit)
