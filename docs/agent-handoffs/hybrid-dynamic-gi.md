@@ -639,3 +639,13 @@ resource-binding budgets in Renderer3D; GLES3 dual path fits 16,
 Metal triple requires 17, Vulkan below-cap devices reject unsafe variants.
 Authored `gi_texture_budget` regression and CTest registration.
 Native build, GPU shader/driver, Android and Metal validation: NOT RUN.
+
+
+## Stage 32 — 2026-11-19 — adaptive GLES3/Vulkan CPU GI fallback (SOURCE; NOT RUN)
+
+Read full stage doc `docs/agent-handoffs/gi-stage32-gles-cpu-fallback-budget-2026-11-19.md`.
+Added `GiCpuTraceBudget` and `GiDynamicRuntime::updateAdaptive()` for
+bounded cost-based probe updates, preserving the explicit budget API and
+RHI texture upload. Added `gi_cpu_trace_budget` CTest source and runtime
+FakeDevice coverage. Does not require GLES compute or automatically enable
+dynamic GI in any game. No native build, CTest or mobile GPU/CPU tests run.
