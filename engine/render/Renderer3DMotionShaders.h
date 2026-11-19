@@ -70,4 +70,75 @@ fragment float4 fs_main(
     return float4(current-prior,1.0,1.0);
 }
 )";
+
+// Batched rigid velocity program: one indexed instance per independent
+// ModelDraw rigid node. 16 copies of (current,previous) MVP fit in the
+// portable 4096-byte U0 limit. The fragment mask/depth policy is identical
+// to the single-draw version; instances never share transform history.
+inline const char* kInstancedVS = R"(
+layout(location=0) in vec3 a_pos;
+layout(std140) uniform U0 {
+    mat4 currentMvp[16];
+    mat4 previousMvp[16];
+    vec4 params;
+};
+out vec4 v_prevClip;
+void main() {
+    int index = gl_InstanceID;
+    vec4 local = vec4(a_pos,1.0);
+    gl_Position = currentMvp[index] * local;
+    v_prevClip = previousMvp[index] * local;
+}
+)";
+inline const char* kInstancedFS = R"(
+layout(std140) uniform U0 {
+    mat4 currentMvp[16];
+    mat4 previousMvp[16];
+    vec4 params;
+};
+uniform sampler2D tex0;
+in vec4 v_prevClip;
+out vec4 o_color;
+void main() {
+    vec2 s = gl_FragCoord.xy / params.xy;
+    float sceneZ = texture(tex0,s).r;
+    if (gl_FragCoord.z > sceneZ + 0.0015 || v_prevClip.w <= 0.00001)
+        discard;
+    vec2 prior = v_prevClip.xy / v_prevClip.w * 0.5 + 0.5;
+    o_color = vec4(s-prior,1.0,1.0);
+}
+)";
+inline const char* kInstancedMSL = R"(
+#include <metal_stdlib>
+using namespace metal;
+struct U0 {
+    float4x4 currentMvp[16];
+    float4x4 previousMvp[16];
+    float4 params;
+};
+struct VIn { float3 pos [[attribute(0)]]; };
+struct VOut {
+    float4 position [[position]];
+    float4 previous;
+};
+vertex VOut vs_main(VIn in [[stage_in]],uint iid [[instance_id]],
+                    constant U0& u [[buffer(1)]]) {
+    VOut o;
+    const float4 local = float4(in.pos,1.0);
+    o.position = u.currentMvp[iid]*local;
+    o.previous = u.previousMvp[iid]*local;
+    return o;
+}
+fragment float4 fs_main(VOut in [[stage_in]],
+    constant U0& u [[buffer(1)]],
+    depth2d<float> tex0 [[texture(0)]],
+    sampler tex0_s [[sampler(0)]]) {
+    float2 s = in.position.xy / u.params.xy;
+    float sceneZ = tex0.sample(tex0_s,s);
+    if (in.position.z > sceneZ+0.0015 || in.previous.w <= 0.00001)
+        discard_fragment();
+    float2 prior = in.previous.xy / in.previous.w * 0.5 + 0.5;
+    return float4(float2(s.x,1.0-s.y)-prior,1.0,1.0);
+}
+)";
 } // namespace aiverse::render::motion_shaders
