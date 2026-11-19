@@ -127,6 +127,15 @@ public:
     void destroyPipeline(PipelineHandle h) override;
     bool copyColor(TextureHandle from, TextureHandle to) override;
     bool gpuHealthy() const override { return healthy_; }
+    // serial_ names the currently recording VkFence-backed frame. This is
+    // NOT evidence of completion. completed_ advances only after a real
+    // vkWaitForFences return of VK_SUCCESS for its recorded frame slot.
+    uint64_t gpuSubmissionFence() const override {
+        return recording_ && healthy_ ? serial_ : 0;
+    }
+    uint64_t gpuCompletedFence() const override {
+        return healthy_ ? completed_ : 0;
+    }
 
     void beginFrame(int framebufferWidth, int framebufferHeight) override;
     void endFrame() override;
