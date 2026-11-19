@@ -745,7 +745,7 @@ Prisma::Target& Prisma::target(Sized& s, int role, int w, int h) {
     gfx::TextureDesc td;
     td.width = w; td.height = h;
     td.renderTarget = true;
-    td.filter = gfx::Filter::Linear;
+    td.filter = role == kMotionVelocity ? gfx::Filter::Nearest : gfx::Filter::Linear;
     td.label = "postfx target";
     td.format = format; t.format = format;
     t.tex = dev_->createTexture(td);
@@ -1764,7 +1764,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             // Output-space history taps and input-space current neighborhood
             // are distinct when temporal upscaling is enabled.
             put(uniforms.px,1.0f/float(outW),1.0f/float(outH),flip,0);
-            put(uniforms.inputPx,1.0f/float(w),1.0f/float(h),0,0);
+            put(uniforms.inputPx,1.0f/float(w),1.0f/float(h),
+                temporalEffect->get("reconstructionSharpness"),0);
             const bool useHistory=history.valid && previousValid && velocity.tex.valid();
             put(uniforms.p0,
                 dev.info().clipDepthZeroToOne?1.0f:0.0f,
