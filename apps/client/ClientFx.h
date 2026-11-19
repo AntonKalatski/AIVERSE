@@ -25,6 +25,9 @@ public:
                 int fbW, int fbH, float dt);
     // After update(), before Renderer3D::render(): lights carried by particles ("light" module).
     void addLights(render::LightSystem& lights);
+    // Replays the particle lights captured during the primary update into a
+    // secondary camera light system, without collecting or ticking particles.
+    void addPreparedLights(render::LightSystem& lights) const;
     // After Renderer3D::render(): draws into the still open main pass.
     void render(const render::Lighting& lighting);
     // Reorient and draw already updated particles for another LENS camera.
@@ -45,6 +48,7 @@ private:
     render::TextureCache textures_;   // sprite textures of effects: the same loader (and atlas) as sprites
     bool attached_ = false;
     std::vector<fx::FxPointLight> lightBuf_;
+    bool preparedLightsValid_ = false;
     const game::RtsView* planet_ = nullptr;   // planet maps: the view placing effects (null on flat maps)
     int planetBody_ = -1;
     render::mat4 space_;
