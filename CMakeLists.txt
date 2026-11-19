@@ -2298,6 +2298,15 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_physis_fracture_outbox_test PRIVATE aiverse_engine)
     add_test(NAME physis_fracture_outbox COMMAND aiverse_physis_fracture_outbox_test)
     set_tests_properties(physis_fracture_outbox PROPERTIES LABELS "PHYSIS;ECS;PERSISTENCE")
+    # Stage 87: host-owned root binding and fall ledger persist independently
+    # of the TerraWeave branch. The REAL Box3D bridge is optional until Terra
+    # headers have been integrated by the respective owning agent.
+    add_executable(aiverse_physis_nature_fall_host_test
+        tests/physis_nature_fall_host_test.cpp)
+    target_link_libraries(aiverse_physis_nature_fall_host_test PRIVATE aiverse_engine)
+    add_test(NAME physis_nature_fall_host COMMAND aiverse_physis_nature_fall_host_test)
+    set_tests_properties(physis_nature_fall_host PROPERTIES
+        LABELS "PHYSIS;ECS;PERSISTENCE")
 endif()
 
 # PHYSIS Stage 8: deterministic spatial wind and seeded gust volumes.
