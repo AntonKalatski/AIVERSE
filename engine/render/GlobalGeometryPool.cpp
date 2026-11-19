@@ -5,6 +5,7 @@
 #include <limits>
 #include <map>
 #include <mutex>
+#include <set>
 #include <vector>
 
 namespace aiverse::render {
@@ -59,6 +60,45 @@ GeometryPoolStats geometryPoolStats(gfx::Device& dev) {
         if (owners > 0) stats.liveModels += size_t(owners);
     }
     return stats;
+}
+
+GeometryPoolReferencedStats geometryPoolReferencedStats(
+        gfx::Device& dev,std::span<const Model* const> models) {
+    GeometryPoolReferencedStats result;
+    std::set<const GeometryPoolPage*> requested;
+    std::set<const Model*> visited;
+    for(const Model* model:models) {
+        if(!model || !model->geometryPoolPage || !visited.insert(model).second)
+            continue;
+        ++result.referenceModels;
+        requested.insert(model->geometryPoolPage.get());
+    }
+    std::lock_guard lock(poolMutex);
+    const auto it=pools.find(&dev);
+    if(it==pools.end())return {};
+    for(const auto& weak:it->second) {
+        const auto page=weak.lock();
+        if(!page || requested.erase(page.get())==0)continue;
+        ++result.uniquePages;
+        result.allocatedBytes+=page->capacity;
+        result.occupiedBytes+=page->vertexEnd+
+                              (page->capacity-page->indexBegin);
+    }
+    // Pointers to pages owned by another Device must not appear in this
+    // device's report. Only count model references on matching pages.
+    if(!requested.empty()) {
+        size_t validModels=0;
+        for(const Model* model:visited)
+            if(model->geometryPoolPage &&
+               std::any_of(it->second.begin(),it->second.end(),
+                   [&](const auto& weak) {
+                       const auto page=weak.lock();
+                       return page && page.get()==model->geometryPoolPage.get();
+                   }))
+                ++validModels;
+        result.referenceModels=validModels;
+    }
+    return result;
 }
 
 bool globalGeometryPoolingEnabled() { return !disabled(); }
