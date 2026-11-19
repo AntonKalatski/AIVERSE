@@ -33,6 +33,8 @@ struct PrismaStats {
     bool temporalFallback = false;
     bool adaptiveResolution = false;
     bool adaptiveMemoryPressure = false;
+    bool adaptiveHistoryAdmissionRejected = false;
+    uint8_t adaptiveViewPriority = 128;
     uint64_t adaptiveKnownGpuBytes = 0;
     uint64_t adaptiveMemoryLimitBytes = 0;
     bool adaptiveScopedGpuTiming = false;
@@ -122,6 +124,21 @@ public:
     // once per Prisma device, never for each Model referencing a page.
     void setExternalGeometryPoolGpuMemory(uint64_t livePageBytes) {
         externalGeometryPoolKnownBytes_ = livePageBytes;
+    }
+    // Per-presentation view admission/priority policy; no ECS/genre coupling.
+    // Priority 0 = yield under known memory pressure first, 255 = last.
+    // maxTemporalHistoryMiB=0 means no per-view hard admission limit.
+    // Limit applies only to the camera-private TWO output RGBA16F histories,
+    // NOT the shared scene scratch/cache nor complete device VRAM.
+    struct ViewQualityPolicy {
+        uint8_t priority = 128;
+        uint32_t maxTemporalHistoryMiB = 0;
+    };
+    void setViewQualityPolicy(uint64_t id, ViewQualityPolicy policy) {
+        viewQualityPolicies_[id]=policy;
+    }
+    void clearViewQualityPolicy(uint64_t id) {
+        viewQualityPolicies_.erase(id);
     }
 
     // An actual completed GPU-query interval for one view, NOT a whole
@@ -303,6 +320,8 @@ private:
         double gpuMs = 0;
     };
     std::map<uint64_t, AdaptivePressure> adaptivePressure_;
+    std::map<uint64_t, ViewQualityPolicy> viewQualityPolicies_;
+    std::map<uint64_t, bool> viewHistoryAdmissionRejected_;
     uint64_t externalRendererLiveKnownBytes_ = 0;
     uint64_t externalRendererPendingKnownBytes_ = 0;
     uint64_t externalGeometryPoolKnownBytes_ = 0;
