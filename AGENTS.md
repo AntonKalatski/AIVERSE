@@ -1225,3 +1225,8 @@ Read `docs/nereid/ARCHITECTURE.md`, mandatory living
 `skills/gameplay/aiverse-nereid-water/SKILL.md`.
 After each NEREID implementation commit, append exact SHA, changes, API,
 test status, limits and next step to its handoff as the next separate commit.
+
+
+## Release-mode test assertion contract (2026-11-19)
+
+Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. **Never rely on standard `assert(expr)` for a test requirement, especially if `expr` has side effects or creates fixtures**, because the expression disappears entirely in Release, yielding false-green tests and Clang unused-variable warnings. Use `#include "tests/AlwaysCheck.h"` and `AIVERSE_TEST_CHECK(expr)`, or an equivalent always-on check throwing an informative exception. Tests must enforce invariants identically in Debug and Release; don't use `(void)variable`, `[[maybe_unused]]`, `-Wno-unused-*`, or `#undef NDEBUG` as a substitute for real assertions. Source: `docs/nereid/stage-50-release-assertion-correctness.md`.

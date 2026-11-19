@@ -700,3 +700,8 @@ The core package remains `aiverse-nereid-water`. Specialized native targets now 
 ## Stage 49 — required release gate
 
 Use `bash tools/nereid/validate.sh --focused` for repeated CPU checks of NEREID, SpectraFX compatibility, native ECS and skills; `--full` rebuilds all test targets and runs the entire CTest suite. Override `AIVERSE_NEREID_BUILD_DIR=build/nereid-test` to reuse an existing build directory; logs are written to `<build>/nereid-logs`. The workflow `.github/workflows/nereid-regression.yml` runs focused checks on Linux/macOS. These checks never establish Metal/GLSL GPU visual parity. Stage 49 source code has been committed but no new CI/CTest pass observed in this agent session; see `docs/nereid/stage-49-validation-gate.md`.
+
+
+## Stage 50 — confirmed CPU pass, Release check follow-up
+
+On Mac Studio, Stage 49 `--full` at commit `65346f91` passed all 118 CTest cases and 16 focused checks. A later test-only commit (`8f426376ecb095017cefdd313cca5dd6c2d70186`) replaced 44 `assert()` calls across six unrelated ECS tests with always-on checks, eliminating Release warning root cause and enabling previously skipped invariants. Re-run `bash tools/nereid/validate.sh --full` on new head before accepting the branch; do not assume the previous success covers the strengthened checks. Full handoff: `docs/nereid/stage-50-release-assertion-correctness.md`.

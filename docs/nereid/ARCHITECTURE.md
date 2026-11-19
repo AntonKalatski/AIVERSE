@@ -364,3 +364,8 @@ The precise-world ocean patch API honors `WaterSurfaceMeshOptions.lod`: Far emit
 ## Stage 49 — repeatable NEREID regression gates
 
 The official CPU validation entrypoint is `bash tools/nereid/validate.sh --focused` or `--full`. Focused mode checks generated AI skills and runs all NEREID ECS/cascade/geometry/render-source contracts, VFX ECS and native RTS integration after building the relevant executables. Full mode builds all targets and runs full CTest. Linux/macOS CPU CI mirrors focused mode in `.github/workflows/nereid-regression.yml`. Per-stage logs and Git HEAD are preserved. GPU optical quality, driver behavior, performance and platform visuals remain separate acceptance gates. See `docs/nereid/stage-49-validation-gate.md`.
+
+
+## Stage 50 — evidence and reliable Release tests
+
+Mac Studio at `65346f91`: full Release build and 118/118 CTest PASS, focused NEREID suite 16/16 PASS and skill audit 0 errors/warnings. The build log nevertheless had 18 warnings/3 contextual notes from standard `assert()` disappearing with `NDEBUG` in six ECS test sources. In `8f426376ecb095017cefdd313cca5dd6c2d70186`, converted 44 assertions to always-on `AIVERSE_TEST_CHECK`; no runtime logic changed. The new commit requires a fresh full CPU regression because checks previously compiled out will now execute. GPU/Metal quality and FPS/RTS visuals remain unverified. See `docs/nereid/stage-50-release-assertion-correctness.md`.
