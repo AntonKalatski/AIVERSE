@@ -995,6 +995,12 @@ private:
         }
         if(ImGui::CollapsingHeader("Metal GPU checkpoint — live",ImGuiTreeNodeFlags_DefaultOpen)) {
             const auto* pool=ed.spectraGpuTelemetry();
+            if(pool!=gpuPrivacyPool_) {
+                gpuPrivacyPool_=pool;
+                gpuCheckpointGroup_=0;
+                gpuReportIncludeBounds_=false;
+                gpuReportIncludeIdentifiers_=false;
+            }
             if(pool && pool->ready()) {
                 const auto cp=pool->checkpointStats();
                 const auto& ps=pool->stats();
@@ -1236,6 +1242,7 @@ private:
     int gpuCheckpointGroup_=0;
     bool gpuReportIncludeBounds_=false;
     bool gpuReportIncludeIdentifiers_=false;
+    const spectra::GpuPoolWorld* gpuPrivacyPool_=nullptr; // non-owning identity only
     std::string project_,name_="new_spectra",message_,propertyText_,parametersText_,functionText_,instanceSchemaText_,functionLibraryName_="common_math",pendingFrom_,pendingDataFrom_,linkPort_;
     Json previewInstanceValues_=Json::object();
     std::vector<std::string> names_,draftNames_,errors_;
