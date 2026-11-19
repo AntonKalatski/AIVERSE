@@ -32,6 +32,8 @@ struct HorizonGpuRegion {
     int32_t maxNearWeldDeltaCm=0;
     size_t smoothedNearNormals=0;
     size_t matchedAuthoredNearNormals=0;
+    size_t continuousNearNormalSamples=0;
+    size_t localFallbackNearNormalSamples=0;
     bool nearWeldSlopeFallback=false;
     size_t estimatedGpuBytes=0; // only texture+VB/IB, conservative mip allowance
 };
