@@ -129,6 +129,11 @@ public:
             ImGui::TextDisabled("GPU откат моделей: ошибок очереди %llu · потерянных моделей %llu",
                 (unsigned long long)residency.stagingQueueFailures,
                 (unsigned long long)residency.stagingOrphanModels);
+        ImGui::TextDisabled("GPU canvas/paint: %zu ресурсов ожидают fence",
+            ed.view().pendingPaintGpuRetirements());
+        if(ed.view().paintGpuRetirementOrphans())
+            ImGui::TextDisabled("GPU canvas/paint: сиротских ресурсов %llu",
+                (unsigned long long)ed.view().paintGpuRetirementOrphans());
         ImGui::TextDisabled("GPU программы Renderer3D: %zu партий ждут fence",
             ed.renderer().pendingProgramRetirements());
         ImGui::TextDisabled("GPU RenderTargets: %zu пар ждут fence",
