@@ -8,6 +8,7 @@
 #include "engine/character/vivid/MorphLodMapping.h"
 #include "engine/character/vivid/MorphLodGpuAuthoring.h"
 #include "engine/character/vivid/ViewportSculptPick.h"
+#include "engine/character/vivid/SkinnedWeightPick.h"
 #include "engine/character/vivid/RigAuthoring.h"
 #include "engine/character/vivid/BindPoseRebind.h"
 #include "engine/character/vivid/SkinWeightAuthoring.h"
@@ -65,6 +66,7 @@ struct CreatorApp {
     int skinVertexId=0,skinJointNode=0,skinMeshIndex=-1;
     float skinWeightValue=0.5f,skinBrushRadius=0.12f,skinBrushStrength=0.5f;
     bool skinBrushArmed=false,skinMirrorX=false,skinHeatmap=false;
+    int skinStrokeLastVertex=-1;
     char skinWeightFile[512]="/tmp/vivid-skin-weights.json";
     int selectedRigNode=0;
     float rigOffset[3]={0,0,0};
@@ -838,7 +840,7 @@ struct CreatorApp {
             ImGui::Checkbox("Show skin weight heatmap",&skinHeatmap);
             if(ImGui::Button("Paint weight on next click")) {
                 skinBrushArmed=true;
-                status="VIVID weight paint armed: click a skinned mesh triangle";
+                status="VIVID weight paint armed: hold left mouse and drag over skinned mesh";
             }
             ImGui::SameLine();
             if(ImGui::Button("Undo weights")&&skinWeightEdits.undo())
@@ -1574,79 +1576,92 @@ struct CreatorApp {
             if(!cpuActor->dispatch(controller.frame(),human.facialBinding))
                 status=cpuActor->lastError();
         }
-        if(externalMode && skinBrushArmed && human.head &&
-           ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
-           !ImGui::GetIO().WantCaptureMouse &&
-           skinMeshIndex>=0 &&
-           std::size_t(skinMeshIndex)<human.head->meshes.size() &&
+        // Reconstruct skin-deformed surface for the currently selected
+        // mesh, using MotionWeave node-world matrices and inverse binds.
+        // The CPU reference does not include the GPU facial morph offset.
+        SkinnedWeightSurface skinSurface;
+        const bool skinSurfaceReady=externalMode && human.head &&
+            skinMeshIndex>=0 &&
+            std::size_t(skinMeshIndex)<human.head->meshes.size() &&
+            (skinBrushArmed || skinHeatmap) &&
+            prepareSkinnedWeightSurface(*human.head,
+                std::size_t(skinMeshIndex),facePose,skinSurface);
+
+        if(skinBrushArmed && human.head &&
            skinJointNode>=0 &&
            std::size_t(skinJointNode)<human.head->nodes.size()) {
-            const auto mouse=ImGui::GetMousePos();
-            float3 origin{},direction{};
-            if(camera.screenRay(mouse.x,mouse.y,
-                                float(dev.framebufferWidth()),
-                                float(dev.framebufferHeight()),origin,direction)) {
-                const auto pick=pickSculptVertex(*human.head,
-                    std::size_t(skinMeshIndex),facePose,
-                    origin,direction,human.head->vertices.size());
-                if(pick.hit) {
-                    skinVertexId=int(pick.vertex);
-                    const auto& bone=human.head->nodes[std::size_t(skinJointNode)].name;
-                    if(skinWeightEdits.brush(*human.head,
-                        std::size_t(skinMeshIndex),pick.vertex,bone,
-                        skinWeightValue,skinBrushRadius,skinBrushStrength,skinMirrorX)) {
-                        skinBrushArmed=false;
-                        pendingRebuild=true;
-                        status="Weight stroke committed; replacement character queued";
-                    }else status="Weight stroke rejected: skin/palette/radius incompatible";
-                }else status="No skinned mesh triangle under cursor";
+            const auto& io=ImGui::GetIO();
+            if(ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+               !io.WantCaptureMouse && skinSurfaceReady &&
+               !skinWeightEdits.strokeActive()) {
+                (void)skinWeightEdits.beginStroke();
+                skinStrokeLastVertex=-1;
+            }
+            if(skinWeightEdits.strokeActive() &&
+               ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
+               !io.WantCaptureMouse && skinSurfaceReady) {
+                const auto mouse=ImGui::GetMousePos();
+                float3 origin{},direction{};
+                if(camera.screenRay(mouse.x,mouse.y,
+                                    float(dev.framebufferWidth()),
+                                    float(dev.framebufferHeight()),
+                                    origin,direction)) {
+                    const auto pick=pickSkinnedWeightVertex(
+                        *human.head,skinSurface,origin,direction);
+                    if(pick.hit && skinStrokeLastVertex!=int(pick.vertex)) {
+                        skinVertexId=int(pick.vertex);
+                        skinStrokeLastVertex=int(pick.vertex);
+                        const auto& bone=human.head->nodes[
+                            std::size_t(skinJointNode)].name;
+                        if(!skinWeightEdits.strokeBrush(
+                            *human.head,std::size_t(skinMeshIndex),
+                            pick.vertex,bone,skinWeightValue,skinBrushRadius,
+                            skinBrushStrength,skinMirrorX)) {
+                            // Cancel entire gesture on invalid palette,
+                            // oversized brush or incompatible source.
+                            (void)skinWeightEdits.endStroke(false);
+                            skinBrushArmed=false;
+                            status="Weight paint cancelled: invalid skin/palette/stroke";
+                        }
+                    }
+                }
+            }
+            if(skinWeightEdits.strokeActive() &&
+               !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+                if(skinWeightEdits.endStroke()) {
+                    pendingRebuild=true;
+                    status="Skin weight drag committed as one undoable stroke";
+                }
+                skinBrushArmed=false;
+                skinStrokeLastVertex=-1;
             }
         }
-        // Heatmap is a bounded editor-only screen-space visualization.
-        // Shows source vertex weights on the selected mesh; this is a
-        // bind-space diagnostic, not the final GPU-skinned vertex positions.
-        if(skinHeatmap && human.head && skinMeshIndex>=0 &&
-           std::size_t(skinMeshIndex)<human.head->meshes.size() &&
+        if(skinHeatmap && skinSurfaceReady && human.head &&
            skinJointNode>=0 &&
            std::size_t(skinJointNode)<human.head->nodes.size()) {
-            int owner=-1;
-            for(std::size_t i=0;i<human.head->nodes.size();++i)
-                if(human.head->nodes[i].mesh==skinMeshIndex) {
-                    if(owner>=0){owner=-1;break;}
-                    owner=int(i);
-                }
-            if(owner>=0 && std::size_t(owner)<facePose.size()) {
-                std::vector<std::uint32_t> ids;
-                for(const auto& prim:human.head->meshes[
-                    std::size_t(skinMeshIndex)].primitives) {
-                    const auto first=std::size_t(prim.firstIndex);
-                    if(first>human.head->indices.size() ||
-                       prim.indexCount>human.head->indices.size()-first)continue;
-                    for(std::size_t i=first;i<first+prim.indexCount;++i)
-                        ids.push_back(human.head->indices[i]);
-                }
-                std::sort(ids.begin(),ids.end());
-                ids.erase(std::unique(ids.begin(),ids.end()),ids.end());
-                const std::size_t stride=std::max<std::size_t>(1,(ids.size()+999)/1000);
-                const auto& bone=human.head->nodes[
-                    std::size_t(skinJointNode)].name;
-                for(std::size_t i=0;i<ids.size();i+=stride) {
-                    const auto id=ids[i];
-                    if(id>=human.head->vertices.size())continue;
-                    try {
-                        const float weight=SkinWeightAuthoring::weightAt(
-                            *human.head,std::size_t(skinMeshIndex),id,bone);
-                        float2 screen{};
-                        const auto p=facePose[std::size_t(owner)].transformPoint(
-                            human.head->vertices[id].pos);
-                        if(!camera.worldToScreen(p,
-                            float(dev.framebufferWidth()),
-                            float(dev.framebufferHeight()),screen))continue;
-                        ImGui::GetForegroundDrawList()->AddCircleFilled(
-                            ImVec2(screen.x,screen.y),2.3f,
-                            IM_COL32(int(weight*255),40,int((1-weight)*255),190));
-                    }catch(const std::invalid_argument&){}
-                }
+            const auto& bone=human.head->nodes[
+                std::size_t(skinJointNode)].name;
+            std::size_t visited=0;
+            std::size_t budget=0;
+            for(const auto inside:skinSurface.included)
+                if(inside)++budget;
+            const std::size_t stride=std::max<std::size_t>(1,(budget+999)/1000);
+            for(std::size_t id=0;id<skinSurface.world.size();++id) {
+                if(!skinSurface.included[id])continue;
+                if(visited++%stride)continue;
+                try {
+                    const float weight=SkinWeightAuthoring::weightAt(
+                        *human.head,std::size_t(skinMeshIndex),
+                        std::uint32_t(id),bone);
+                    float2 screen{};
+                    if(!camera.worldToScreen(skinSurface.world[id],
+                        float(dev.framebufferWidth()),
+                        float(dev.framebufferHeight()),screen))continue;
+                    ImGui::GetForegroundDrawList()->AddCircleFilled(
+                        ImVec2(screen.x,screen.y),2.3f,
+                        IM_COL32(int(weight*255),40,
+                                 int((1.f-weight)*255),190));
+                }catch(const std::invalid_argument&) {}
             }
         }
         // Picking uses the actual camera ray and rendered node-world pose,
