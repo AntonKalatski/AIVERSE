@@ -26,6 +26,7 @@ public:
     struct FrameStats {
         bool eligible=false,exclusive=false,composited=false,reusedPrevious=false;
         bool legacyConflict=false,materialMissing=false,gpuBusy=false;
+        bool surfaceAvailable=false,materialShaded=false;
         LumaWeaveDecision quality{};
         LumaWeaveScreenMetal::Submission submission{};
         LumaWeaveScreenMetal::Completion lastGpuCompletion{};
@@ -324,15 +325,29 @@ public:
             last_.quality=LumaWeaveQualityPolicy::choose(quality_,uint32_t(viewWidth_),
                 uint32_t(viewHeight_),producer_.sourceCount(),producer_.settings());
             gfx::TextureHandle direct;
+            bool shaded=false;
+            const bool currentSurface=surface_.valid() && surfaceReceiverDepth_.valid() &&
+                surfaceToken_==sceneToken_ &&
+                surfaceMaterialWidth_==uint32_t(viewWidth_) &&
+                surfaceMaterialHeight_==uint32_t(viewHeight_);
+            last_.surfaceAvailable=currentSurface;
+            LumaWeaveScreenMetal::SurfaceInputs materialSurface;
+            if(currentSurface && producer_.pbrAvailable() &&
+               (quality_==LumaWeaveQuality::High || quality_==LumaWeaveQuality::Ultra)) {
+                materialSurface={material_,surface_,surfaceReceiverDepth_};
+            }
             const auto& decision=last_.quality;
             if(decision.admitted && !producer_.busy() &&
                producer_.resize(decision.width,decision.height)) {
                 last_.submission=producer_.dispatch(scene_.depthTarget,
                     uint32_t(viewWidth_),uint32_t(viewHeight_),
                     frame.viewProj.inverse(),frame.viewProj,
-                    frame.cameraPos,decision.samples,uint32_t(++frameCounter_));
-                if(last_.submission.encoded)
+                    frame.cameraPos,decision.samples,uint32_t(++frameCounter_),
+                    materialSurface);
+                if(last_.submission.encoded) {
                     direct=producer_.encodedOutput(last_.submission.serial);
+                    shaded=last_.submission.materialShaded;
+                }
             } else {
                 // The previous confirmed color is immutable while another
                 // ping-pong slot is in flight. Reuse only for the EXACT view
@@ -340,11 +355,14 @@ public:
                 last_.gpuBusy=producer_.busy();
                 if(producer_.canReuseConfirmedFor(frame.viewProj,frame.cameraPos)) {
                     direct=producer_.confirmedOutput();
+                    shaded=producer_.confirmedShaded();
                     last_.reusedPrevious=direct.valid();
                 }
             }
-            if(direct.valid())
-                last_.composited=additiveCompose(device,direct);
+            if(direct.valid()) {
+                last_.materialShaded=shaded;
+                last_.composited=additiveCompose(device,direct,shaded);
+            }
         }
         // Do not bypass existing ScreenLighting, PostFx, HUD or UI pipeline.
         downstream_.resolve(device,out,frame);
@@ -420,11 +438,13 @@ private:
         return true;
     }
 
-    bool additiveCompose(gfx::Device& d,gfx::TextureHandle direct) const {
+    bool additiveCompose(gfx::Device& d,gfx::TextureHandle direct,
+                         bool materialShaded) const {
         if(!pipeline_.valid()||!scene_.colorTarget.valid()||
            !scene_.depthTarget.valid()||!direct.valid())return false;
         struct Params {float4 options;};
-        const Params opts{{d.info().renderTargetFlipY?1.f:0.f,.008f,1.f,0.f}};
+        const Params opts{{d.info().renderTargetFlipY?1.f:0.f,.008f,1.f,
+                           materialShaded?1.f:0.f}};
         gfx::PassDesc p=scene_;
         p.depthTarget=composeDepth_; // must differ from sampled scene_.depthTarget
         p.clearColorEnabled=false;
