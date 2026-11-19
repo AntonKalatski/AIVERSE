@@ -6,6 +6,22 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 
 ## AIVERSE SpectraFX (universal VFX, in progress)
 
+**Latest implementation handoff (Stage 34, source-only; tests deferred):**
+[docs/agent-handoffs/spectrafx-stage-34-source-kill-continuous-editor-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-34-source-kill-continuous-editor-2026-11-19.md).
+In `SpectraGpuPoolWorld`, persistent presentation sources are generation-safe
+`PoolSourceId` handles with optional transform snapshots and bounded
+rate/distance emissions. `stopSource(id,true)` selectively cancels/invalidates
+that source's GPU physical slots (or tracked CPU FX handles); `retireSource`
+alone does **not** kill existing particles. Tagged GPU slot reuse is deferred
+until an ordered compute step. The editor now has explicit opt-in Metal
+`fx_graph_preview {gpu:true}` for the strict GPU subset; CPU preview remains
+the default. No native C++/Metal compilation, scene preview, GPU fences, CTest
+or loss/parity tests have actually run for this stage. These sources MUST NOT
+be promoted as validated or used in authoritative gameplay/ECS. Independent
+agents must preserve this feature's scene-pass ordering, generation keys,
+pending GPU kills and device lifetime when editing neighboring modules.
+
+
 **Required handoff:** [docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md](docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md).  
 **Official AI skill:** [skills/visuals/aiverse-spectrafx/SKILL.md](skills/visuals/aiverse-spectrafx/SKILL.md).  
 **System documentation:** [docs/spectrafx.md](docs/spectrafx.md).  
