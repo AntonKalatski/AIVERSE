@@ -501,6 +501,7 @@ void Prisma::shutdown() {
     viewQualityPolicies_.clear();
     viewHistoryAdmissionRejected_.clear();
     scopedGpuTimings_.clear();
+    effectReports_.clear();
     adaptivePressure_.clear();
     externalRendererLiveKnownBytes_=externalRendererPendingKnownBytes_=0;
     externalGeometryPoolKnownBytes_=0;
@@ -548,6 +549,7 @@ void Prisma::setSettings(PrismaSettings s) {
     resetMotionHistory();
     baseSettings_ = s;
     settings_ = std::move(s);
+    effectReports_.clear(); // no stale per-view success from a previous profile
     error_.clear();
 }
 
@@ -1293,7 +1295,27 @@ void Prisma::draw(Sized& s, const Target& dst, gfx::PipelineHandle pipe, const v
 
 void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame& f) {
     stats_ = {};
-    if (!sceneReady_) { auto p = out; p.clearColorEnabled = p.clearDepthEnabled = false; dev.beginPass(p); return; }
+    auto& effectReport = effectReports_[viewId_];
+    ++effectReport.sequence;
+    effectReport.viewId = viewId_;
+    effectReport.quality = quality_;
+    effectReport.hdr = hdrFrame_;
+    effectReport.sceneReady = sceneReady_;
+    effectReport.width = f.width;
+    effectReport.height = f.height;
+    effectReport.effects.clear();
+    if (!sceneReady_) {
+        for (const auto& e : settings_.effects) {
+            EffectExecution state{};
+            state.type = e.type;
+            state.authored = true;
+            state.reason = "scene render targets unavailable";
+            effectReport.effects.push_back(std::move(state));
+        }
+        auto p = out; p.clearColorEnabled = p.clearDepthEnabled = false;
+        dev.beginPass(p);
+        return;
+    }
     const int w = std::max(f.width, 1), h = std::max(f.height, 1);
     // The scene/depth/velocity may be lower resolution than the final
     // framebuffer, but this remains the original resolution without opt-in.
@@ -1457,6 +1479,9 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     const bool validReactive = validInput(motionView.reactiveMask,
                                          gfx::PixelFormat::RGBA8);
     stats_.reactiveUsed=validReactive;
+    bool motionBlurEncoded = false;
+    bool depthOfFieldEncoded = false;
+    bool fxaaEncoded = false;
     const PrismaEffect* motionEffect = find(PrismaType::MotionBlur);
     const PrismaEffect* temporalEffect = find(PrismaType::TemporalResolve);
     const char* motionFlag = std::getenv("AIVERSE_PRISMA_MOTION_BLUR");
@@ -1544,6 +1569,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             dev.endPass();
             ++stats_.passes;
             src=blurred;
+            motionBlurEncoded = true;
         }
     }
     // ---- experimental depth of field: device-depth driven defocus
@@ -1580,6 +1606,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 dev.endPass();
                 ++stats_.passes;
                 src = destination;
+                depthOfFieldEncoded = true;
             }
         }
     }
@@ -1639,8 +1666,11 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 else if (error_.empty()) error_ = run.error;
             }
         }
-        if (!graphDrawn)
+        if (!graphDrawn) {
+            const int before = stats_.passes;
             draw(set, src, pipes_[kFxaa], &u, sizeof u, {{0, fxaaInput.tex}});
+            fxaaEncoded = stats_.passes > before;
+        } else fxaaEncoded = true;
     }
 
     // ---- bloom: prefilter -> dual-filter down chain -> up chain
@@ -2287,7 +2317,11 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         mask &= ~kPfAutoExposure;
         pipe = composite(mask, graphData);
     }
-    if (!pipe.valid()) pipe = composite(0);   // a broken variant still shows the scene
+    const bool graphCompositePrepared = graphEffect && pipe.valid();
+    if (!pipe.valid()) {
+        mask = 0; // fixed-effect status must not claim a fallback composite
+        pipe = composite(0);   // a broken variant still shows the scene
+    }
     // TAA and FXAA are mutually exclusive for the same HDR presentation.
     const PrismaEffect* finalAa = hdrFrame_ && !temporalResolved ? find(PrismaType::Fxaa) : nullptr;
     bool aaAfter = finalAa && program(kFxaa).valid();
@@ -2321,6 +2355,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         SimpleU au{}; put(au.px, 1.0f / float(outW), 1.0f / float(outH), flip, 0); put(au.p0, finalAa->get("subpixel"), 0, 0, 0);
         dev.setPipeline(pipes_[kFxaa]); dev.setVertexBuffer(triangle_); dev.setUniforms(0, &au, sizeof au);
         dev.setTexture(0, aaTarget.tex); dev.draw(3); ++stats_.passes;
+        fxaaEncoded = true;
     }
 }
 
