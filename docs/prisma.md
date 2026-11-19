@@ -3432,6 +3432,97 @@ undo, замер HDR parity и производительности, CI.
 `docs/handoffs/prisma-stage-59.md`.
 
 
+
+## Stage 60 — graceful Shader Graph / LUT fallback с сохранением обычных эффектов
+
+Ранее `Prisma::resolve()` при ошибке пользовательского postfx
+Shader Graph (GLSL/MSL компиляция, неподдерживаемый sampler layout
+или невалидные input texture) мог в конечном итоге перейти сразу
+на `composite(0)`, теряя исправные фиксированные Bloom,
+ColorGrade, LUT, Vignette и другие эффекты. Теперь PRISMA
+использует следующую **упорядоченную систему fallback**:
+
+1. Запрошенный вариант со Shader Graph и, при наличии,
+   GPU Auto Exposure.
+2. Тот же Shader Graph, но без Auto Exposure, если
+   первая попытка не создала pipeline.
+3. **Без Shader Graph**: полный fixed-effect mask с Auto Exposure
+   (если подготовленная HDR 1×1 текстура ещё доступна).
+4. Тот же fixed-effect mask без Auto Exposure, если
+   предыдущая pipeline не поддерживается.
+5. Только как последняя возможность — `composite(0)`
+   без фиксированных эффектов. Если даже он недоступен,
+   диагностика не заявляет успешный draw.
+
+Набор фиксированных эффектов сохраняется отдельной копией
+`fixedMask` **до** попыток Shader Graph. Если пользовательская
+текстура Shader Graph отсутствует или не была загружена в GPU,
+весь Shader Graph исключается из текущего composite, а
+исправные fixed effects продолжают работать. Успешное создание
+Shader Graph pipeline само по себе не означает, что input
+textures загрузились: `graphInputsReady` проверяет
+`graphTextures_[path].valid()` для всех используемых путей
+после попытки upload. Отсутствующий input больше не
+представляется молча валидной «чёрной» текстурой внутри
+выполненного Shader Graph.
+
+**Особенно важно после Stage 55:** в graph-варианте с четырьмя
+изображениями Auto Exposure использует `TEX9`.
+Если graph не прошёл и используется fixed-only fallback,
+последняя реально выбранная pipeline требует `TEX8`.
+`PrismaCompositeTextureLayout::plan(...)` теперь
+вычисляется повторно на основании **фактически выбранного**
+Shader Graph, а не исходного авторского списка текстур.
+Точно этот же `exposureSlot` используется в GPU binding,
+`ViewEffectReport` и shader variation. При
+graphless fallback текстуры в slots 5..8 не привязываются
+без необходимости. Сохранены HDR manual EV Stage 59,
+ColorGrade и настройки Auto Exposure, если итоговый
+variant поддерживается. Кэш `composite(mask,graphData)`
+и отложенная GPU-retirement ownership неизменны.
+
+### Диагностика и кэширование ошибок
+
+`ViewEffectReport.shaderGraphFallback` указывает, что
+авторский Shader Graph был пропущен, а остальная цепочка
+смогла быть использована **там, где валидны её pipelines**.
+`EffectExecution` для `ShaderGraph` получает
+`encoded=false` и конкретную причину: отсутствие/upload
+текстуры либо shader compile/composite failure. У
+исправных fixed effects `encoded` определяется итоговым
+GPU mask, а не фактами исходного запроса. В редакторе
+`PRISMA — Постобработка` появилось соответствующее
+предупреждение по стабильному `viewId`.
+
+У `Prisma::lut()` ошибка чтения, некорректная LUT strip
+`N²×N` и ошибка GPU upload теперь устанавливают
+`lastError()` с описанием и project-relative path.
+LUT по-прежнему negative-cached, поэтому остальные
+эффекты могут продолжать работать без него.
+`graphTexture()` теперь negative-caches также ошибки
+**GPU upload**: повторная декодировка и неудачное
+`createTexture` в каждом кадре не нужны. Сброс
+кэша через существующий `setImageLoader()`
+retire-ит успешные texture handles за реальным GPU
+fence и позволяет повторить загрузку; изменение файла
+на диске **без вызова** этой процедуры само по себе
+не является live-reload и не обещается в данном этапе.
+
+Не изменились format `postfx` в `game.json`,
+`PrismaData` каталог, MCP API, ECS gameplay, настройки
+эффектов по умолчанию, SpectraFX, per-view exposure ownership
+или пользовательские Shader Graph форматы.
+
+**Фактическая проверка:** readback из GitHub
+`Prisma.cpp`, `Prisma.h`, `PrismaWindow.cpp`
+и **33/33 source-only checks** логики fallback, GPU
+input availability, final exposure slot, fixed mask и LUT errors.
+**NOT RUN:** clang/CMake, native editor/client, CTest,
+GLSL/MSL/Vulkan shader compiler, Metal/GL/GLES/WebGL/Vulkan
+GPU smoke, actual HDR pixels, timed GPU frames, screenshots
+и CI. Подробный handoff:
+`docs/handoffs/prisma-stage-60.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
