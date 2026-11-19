@@ -71,11 +71,11 @@ inline bool injectModelVirtualTextureSampling(std::string& fragmentGLSL,
     // ModelShaders.h has optional VIRTUAL_ALPHA_MASK arguments between
     // GI_FARGS and the function body. Match the stable GI_FARGS line
     // rather than the obsolete adjacent "GI_FARGS) {" sequence.
-    const std::string parameterAnchor = "                        GI_FARGS\\n";
+    const std::string parameterAnchor = "                        GI_FARGS\n";
     const auto fragEntry=msl.find("fragment float4 fs_main(");
     const auto signature = fragEntry==std::string::npos ?
         std::string::npos : msl.find(parameterAnchor,fragEntry);
-    const auto bodyAnchor = ") {\\n#if defined(AIVERSE_ICB_PBR)\\n";
+    const auto bodyAnchor = ") {\n#if defined(AIVERSE_ICB_PBR)\n";
     const auto body = signature==std::string::npos ?
         std::string::npos : msl.find(bodyAnchor,signature);
     const std::string ns = "using namespace metal;";
