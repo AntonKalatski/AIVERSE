@@ -125,6 +125,10 @@ public:
             ImGui::TextDisabled("GPU откат: ошибок очереди %llu · потерянных партий %llu",
                 (unsigned long long)residency.imageRollbackEnqueueFailures,
                 (unsigned long long)residency.imageRollbackOrphanBatches);
+        if(residency.stagingQueueFailures || residency.stagingOrphanModels)
+            ImGui::TextDisabled("GPU откат моделей: ошибок очереди %llu · потерянных моделей %llu",
+                (unsigned long long)residency.stagingQueueFailures,
+                (unsigned long long)residency.stagingOrphanModels);
         if(const auto* ring=ed.gpuRetirementDiagnostics()) {
             size_t modelEvents=0,imageEvents=0;
             for(const auto& event:ring->snapshot()) {
