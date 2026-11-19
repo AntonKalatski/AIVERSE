@@ -231,6 +231,65 @@ bool PortableSource::stage(gfx::Device& dev,const Model& source,
     return true;
 }
 
+bool PortableSource::collectResidencyDemands(
+        const mat4& instanceWorld,
+        const std::vector<PortablePassView>& passes,
+        bool forceFinestForUnspecifiedPass,
+        std::vector<IndexDemand>& output) const {
+    if (!streaming_ || !source_ || !validFor(*source_) ||
+        (!forceFinestForUnspecifiedPass && passes.empty()) ||
+        passes.size()>8) return false;
+    for(float v:instanceWorld.m)if(!std::isfinite(v))return false;
+    std::vector<IndexDemand> demands;
+    for (size_t i=0;i<asset_->primitives.size();++i) {
+        const auto& entry=asset_->primitives[i];
+        const auto& g=entry.geometry;
+        if(forceFinestForUnspecifiedPass){
+            for(uint32_t n=0;n<g.nodes.size();++n)
+                if(!g.nodes[n].childCount)
+                    demands.push_back({uint32_t(i),n,3.f});
+            continue;
+        }
+        bool used=false;
+        for(size_t node=0;node<source_->nodes.size();++node) {
+            if(source_->nodes[node].mesh!=int(entry.mesh))continue;
+            used=true;
+            for(const auto& pass:passes) {
+                ViewConfig view{};
+                view.objectToClip=pass.viewProjection*instanceWorld*
+                                  source_->bindWorld[node];
+                view.width=pass.width;
+                view.height=pass.height;
+                view.clipDepthZeroToOne=pass.clipDepthZeroToOne;
+                view.errorThresholdPixels=pass.errorThresholdPixels;
+                view.frustumCull=false; // shadow/reflection keep coverage
+                view.maxSelectedNodes=uint32_t(kMaxSelectedPrimitives);
+                ViewPlan plan;
+                if(!planView(g,view,plan,nullptr) || plan.budgetExceeded)
+                    return false;
+                for(const auto& range:plan.ranges)
+                    demands.push_back({uint32_t(i),range.node,2.f});
+            }
+        }
+        if(!used)return false;
+    }
+    output.insert(output.end(),demands.begin(),demands.end());
+    return true;
+}
+
+bool PortableSource::updateResidency(
+        const std::vector<IndexDemand>& demands,std::string* error) {
+    if(!streaming_ || !source_ || !validFor(*source_))
+        return fail(error,"portable Strata index streaming is unavailable");
+    // All instances of this source are preflighted before ANY drawModel()
+    // submission in this epoch. Never repack a buffer mid-Renderer3D render.
+    if(!streaming_->update(demands,error))
+        return false;
+    indexBuffer_=streaming_->buffer();
+    stats_.residentIndexBytes=streaming_->stats().activeBytes;
+    return true;
+}
+
 bool PortableSource::prepareModel(
         const mat4& instanceWorld,
         const std::vector<PortablePassView>& passes,
