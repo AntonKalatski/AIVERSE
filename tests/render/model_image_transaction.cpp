@@ -374,6 +374,16 @@ int main(){
     assert(device.destroyed==oldDestroyed+2);
     assert(device.live.empty());
 
+    // Stage 115/116 native import invariant: a failing GPU Device must not
+    // discard CPU vertex/index data and falsely publish a visible Model.
+    render::Model noGeometryUpload;
+    noGeometryUpload.path="models/gpu-buffer-failure.glb";
+    noGeometryUpload.vertices.resize(3);
+    noGeometryUpload.indices={0,1,2};
+    assert(!render::uploadModel(device,noGeometryUpload,false,false));
+    assert(!noGeometryUpload.vertices.empty());
+    assert(!noGeometryUpload.indices.empty());
+
     // Stage 116: one owner handles different active render-target shapes:
     // shadow depth only, SSR color+depth and water reflection color+depth.
     // Each group is created before old handles are retired, and the GPU
