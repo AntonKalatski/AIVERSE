@@ -66,7 +66,7 @@ public:
     bool init(gfx::Device& dev);
     void shutdown();
 
-    void begin() { quads_.clear(); verts_.clear(); casters_.clear(); }
+    void begin() { quads_.clear(); verts_.clear(); casters_.clear(); drawUploadValid_ = casterUploadValid_ = false; }
     // Corners in order top-left, top-right, bottom-right, bottom-left (as seen on screen);
     // uv = logical rect (u0, v0, u1, v1) inside `tex` (mapped through TextureRef, so atlases work;
     // an atlased sprite draws its spriteShape).
@@ -114,6 +114,9 @@ private:
     std::vector<uint32_t> order_;
     std::vector<SpriteVertex> verts_;
     uint32_t drawCalls_ = 0;
+    // GPU uploads remain valid across repeated draws of unchanged geometry.
+    // Mutation or begin() invalidates them; camera projection is uniforms only.
+    bool drawUploadValid_ = false, casterUploadValid_ = false;
 };
 
 } // namespace aiverse::render
