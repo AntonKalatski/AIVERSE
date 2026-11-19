@@ -297,6 +297,11 @@ struct Creator {
             std::fprintf(stderr,"VIVID Creator GPU barrier failed; retaining GPU resources\n");
             return;
         }
+        if(faceActor && !faceActor->shutdownAfterIdle()) {
+            std::fprintf(stderr,"VIVID Creator facial GPU retirement failed\n");
+            return;
+        }
+        faceActor.reset();
         if(asset.head)render::releaseModel(*device,*asset.head);
         if(asset.hair)render::releaseModel(*device,*asset.hair);
         if(floor.vb.valid())device->destroyBuffer(floor.vb);
