@@ -49,7 +49,7 @@ ComputeHandle VulkanDevice::createCompute(const ComputeDesc& d) {
     VkPushConstantRange push{};
     push.stageFlags=VK_SHADER_STAGE_COMPUTE_BIT;
     push.offset=0;
-    push.size=32; // GiGpuSmallScene::Uniforms / GLSL GIParams
+    push.size=80; // GiGpuSmallScene::Uniforms / GLSL GIParams (sun + sky)
     {
         auto layout=vkStruct<VkPipelineLayoutCreateInfo>(VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO);
         layout.setLayoutCount=1;
@@ -126,7 +126,7 @@ void VulkanDevice::dispatch(uint32_t logicalX,uint32_t logicalY) {
     VCompute* c=computes_.get(activeCompute_);
     VTexture* texture=textures_.get(computeTexture_.id);
     if(!recording_ || inPass_ || !c || !texture || !texture->storage ||
-       logicalX==0 || logicalY!=1 || computeUniformSize_!=32 ||
+       logicalX==0 || logicalY!=1 || computeUniformSize_!=80 ||
        uint64_t(logicalX)>uint64_t(gpuProps_.limits.maxComputeWorkGroupCount[0])*64u)
         return;
     std::array<VkDescriptorBufferInfo,4> buffers{};
