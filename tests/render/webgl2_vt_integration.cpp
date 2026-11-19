@@ -3,6 +3,7 @@
 #include "engine/platform/Platform.h"
 #include "engine/gfx/VirtualTextureStreamer.h"
 #include "engine/gfx/VirtualTextureSampling.h"
+#include "tests/render/WebGL2VtSeamOracle.h"
 #include <algorithm>
 #include <string>
 #include <emscripten.h>
@@ -17,6 +18,7 @@ namespace {
 using namespace aiverse;
 using namespace aiverse::gfx;
 std::unique_ptr<VirtualTextureStreamer> stream;
+std::unique_ptr<aiverse::test::WebGL2VtSeamOracle> seamOracle;
 unsigned generations=0, stages=0, completed=0, failures=0, shutdowns=0;
 unsigned gpuReads=0;
 unsigned outstandingReads=0;
@@ -138,6 +140,8 @@ void init(Device& device) {
     samplerQueued=false;samplerVerified=false;
     samplerShader={};samplerPipeline={};samplerTarget={};
     samplerFragment.clear();
+    seamOracle=std::make_unique<aiverse::test::WebGL2VtSeamOracle>(device);
+    check(seamOracle->initialize(),"initialize independent nonuniform WebGL2 seam GPU fixture");
     setupShader(device);
     TextureStreamConfig limits;
     limits.gpuBudgetBytes=4096;
@@ -229,7 +233,14 @@ void frame(Device& device,double) {
         queueShaderOracle(device);
         stages=4;
     } else if(stages==4 && outstandingReads==0 && samplerVerified && failures==0) {
+        check(seamOracle && seamOracle->queueSamples(),
+              "queue canonical Repeat/MirrorRepeat WebGL2 GPU seam probes");
         stages=5;
+    } else if(stages==5 && seamOracle && seamOracle->failed()) {
+        check(false,"independent GPU seam oracle failed");
+        stages=6;
+    } else if(stages==5 && seamOracle && seamOracle->complete() && failures==0) {
+        stages=6;
         ++completed;
         std::printf("PASS: WebGL2 production VT atlas and table GPU readback generation=%u\n",
                     generations);
@@ -239,6 +250,7 @@ void shutdown() {
     ++shutdowns;
     if(stream) stream->shutdown();
     stream.reset();
+    seamOracle.reset();
     // All GPU objects belong to the current Device generation.
     // Browser context recovery calls shutdown before Device destruction.
     // Cleanup is handled by platform Device destructor for test-owned handles
@@ -252,6 +264,7 @@ EMSCRIPTEN_KEEPALIVE unsigned aiverse_web_vt_generation() { return generations; 
 EMSCRIPTEN_KEEPALIVE unsigned aiverse_web_vt_stage() { return stages; }
 EMSCRIPTEN_KEEPALIVE unsigned aiverse_web_vt_gpu_reads() { return gpuReads; }
 EMSCRIPTEN_KEEPALIVE unsigned aiverse_web_vt_shader_verified() { return samplerVerified ? 1u : 0u; }
+EMSCRIPTEN_KEEPALIVE unsigned aiverse_web_vt_seam_verified() { return seamOracle && seamOracle->complete() ? 1u : 0u; }
 EMSCRIPTEN_KEEPALIVE unsigned aiverse_web_vt_completed() { return completed; }
 EMSCRIPTEN_KEEPALIVE unsigned aiverse_web_vt_shutdowns() { return shutdowns; }
 EMSCRIPTEN_KEEPALIVE unsigned aiverse_web_vt_failures() { return failures; }
