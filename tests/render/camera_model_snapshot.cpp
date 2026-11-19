@@ -43,4 +43,39 @@ int main(){
     assert(snapshot.dropped()==1 && snapshot.size()==1);
     snapshot.clear();
     assert(snapshot.size()==0 && snapshot.dropped()==0);
+
+    // A pre-LOD packet replaces only its matching finalized base draw;
+    // unrelated attachments and legacy draws still replay exactly once.
+    CameraModelSnapshot mixed(8);
+    aiverse::view::View visual(0);
+    aiverse::view::Object prepared;
+    prepared.id=43;prepared.generation=2;
+    prepared.draw.model=&model;
+    prepared.draw.persistentId=73;
+    std::vector<Material> preparedMaterial(1);
+    prepared.draw.materials=&preparedMaterial;
+    mixed.recordPrepared(visual,prepared);
+    mixed.record(prepared.draw);
+    ModelDraw attachment;
+    attachment.model=&model;
+    attachment.persistentId=0;
+    mixed.record(attachment);
+    preparedMaterial.clear();
+    assert(mixed.size()==2 && mixed.preparedCount()==1);
+    assert(mixed.isPreparedDraw(73) && !mixed.isPreparedDraw(74));
+    int fallbacks=0,preparedCount=0;
+    mixed.forEachFallback([&](const ModelDraw& retained){
+        ++fallbacks;
+        assert(retained.persistentId==0);
+    });
+    mixed.forEachPrepared([&](const aiverse::view::View& source,
+                              const aiverse::view::Object& retained){
+        ++preparedCount;
+        assert(&source==&visual);
+        assert(retained.id==43 && retained.draw.persistentId==73);
+        assert(retained.draw.materials && retained.draw.materials->size()==1);
+    });
+    assert(fallbacks==1 && preparedCount==1);
+    mixed.clear();
+    assert(mixed.size()==0 && mixed.preparedCount()==0);
 }
