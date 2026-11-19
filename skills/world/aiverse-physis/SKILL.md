@@ -526,3 +526,32 @@ Full AIVERSE CMake/CTest/macOS/Windows tests remain UNVERIFIED.
 
 Stage handoff:
 `docs/agent-handoffs/physis-stage46-lock-parent-integrity-2026-11-19.md`.
+
+### Stage 47 — live journal lock identity before all admin writes
+
+A POSIX `JournalProcessLock::acquire()` only establishes the initial
+`flock`. Before privileged admin ingress, each committed tick's
+receipt reconciliation, and each FileJournal write, use
+`JournalProcessLock::valid()` to recheck the visible lock's device
+and inode, owner/mode/link count, and the original parent directory
+identity and private permissions. `LoopbackAdminEndpoint` performs
+the checks and invokes sticky `ServerGateway::suspendJournal()` when
+ownership is lost. Do not directly bypass the endpoint's protected
+journal-writer callback.
+
+After a live lock rename/unlink, another process may successfully
+flock a different inode at the old filename. The original endpoint
+must fail closed and NOT advertise Queued/Applied receipt durability.
+This is best-effort verification at admission/write boundaries, not
+a cryptographic or distributed fencing token and NOT protection
+against a same-user pathname race between verification and writing.
+
+Regression fixtures `replacedLiveLockSuspendsAdmin` and
+`liveParentPermissionChangeSuspendsAdmin` were added to
+`tests/physis_admin_journal_test.cpp`. The exact current header
+blob `040fedb623d491428057542eee2f8fae6bcc2a28` passed an
+isolated GCC 14.2 Linux C++20 smoke including live rename/chmod
+and Stage 46 checks. Full AIVERSE CMake/CTest, macOS and Windows
+endpoint QA are NOT VERIFIED; Windows still requires handle/ACL
+identity validation. See
+`docs/agent-handoffs/physis-stage47-live-lock-integrity-2026-11-19.md`.
