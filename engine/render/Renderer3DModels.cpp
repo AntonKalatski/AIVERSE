@@ -1981,8 +1981,9 @@ void Renderer3D::renderModels(int phase) {
     // meet the backend's indirect-command threshold trigger special sorting.
     // Everything else retains the original material/primitive sort order.
     // GPU-state materialGroup IDs were resolved with exact comparisons above.
-    std::vector<uint8_t> staticCrossCandidates;
-    bool adaptivePooledFallback = false;
+    // 0 = normal, 1 = permitted cross-model MDI, 2 = per-page
+    // adaptive fallback to conventional instancing/direct draws.
+    std::vector<uint8_t> staticCrossModes;
     if (staticCrossModelSort) {
         const size_t threshold = dev_->info().backend == gfx::Backend::Metal
             ? indirectCommandThreshold() : size_t{4};
@@ -1994,9 +1995,8 @@ void Renderer3D::renderModels(int phase) {
             std::unordered_map<PreflightKey, PreflightGroup,
                                StaticCrossModelPreflightKeyHash> groups;
             groups.reserve(std::min<size_t>(order_.size(), 256));
-            // Too many one-off pages/materials defeat the point of a cheap
-            // preflight. Fall back to the original sort without unbounded
-            // hash-map growth or work under highly fragmented workloads.
+            // Too many one-off pages/materials defeat cheap preflight:
+            // keep regular sorting when the bounded group budget is exhausted.
             constexpr size_t kMaxPreflightGroups = 2048;
             bool budgetExceeded = false;
             for (uint32_t itemIndex : order_) {
@@ -2027,30 +2027,56 @@ void Renderer3D::renderModels(int phase) {
                     ++modelStats_.staticCrossModelPreflightRejected;
                 }
             }
-            // A prior sun-shadow pass may have qualified other groups.
-            // Never use accumulated scene statistics to enable this pass.
             if (budgetExceeded) {
                 modelStats_.staticCrossModelPreflightRejected += groups.size();
                 staticCrossModelSort = false;
             } else if (readyGroupsThisPass == 0) {
                 staticCrossModelSort = false;
-            } else if (cpuMdiAdaptiveEnabled_ &&
-                       !cpuMdiAdaptive_[size_t(phase)].permit(
-                           cpuMdiAdaptiveBudgetUs_)) {
-                // Material/geometry eligibility can be sufficient but the
-                // measured CPU preparation cost of recent MDI submissions
-                // may be too high. Preserve the ordinary batching order.
-                ++modelStats_.staticCrossModelAdaptiveSkippedPasses;
-                adaptivePooledFallback = true;
-                staticCrossModelSort = false;
             } else {
-                if (cpuMdiAdaptiveEnabled_) {
-                    const auto& feedback = cpuMdiAdaptive_[size_t(phase)];
-                    if (feedback.samples >= 8 &&
-                        feedback.avgUsPerCommand > cpuMdiAdaptiveBudgetUs_)
-                        ++modelStats_.staticCrossModelAdaptiveProbePasses;
+                // Each live GPU page has its own shadow/opaque CPU cost.
+                // A page is decided once per scene epoch/pass, even if it
+                // contributes many materials. Missing tracking capacity
+                // means use original MDI, never decline unknown pages.
+                size_t permittedGroups = 0;
+                bool skippedThisPass = false, probedThisPass = false;
+                for (auto& [key, group] : groups) {
+                    (void)key;
+                    if (!group.ready) continue;
+                    if (cpuMdiAdaptiveEnabled_) {
+                        CpuMdiPageEntry* entry =
+                            cpuMdiPageEntry(*group.firstModel);
+                        if (entry) {
+                            const size_t pass = size_t(phase);
+                            if (entry->decisionEpoch[pass] != cpuMdiPageEpoch_) {
+                                auto& feedback = entry->byPass[pass];
+                                const bool overBudget = feedback.samples >= 8 &&
+                                    feedback.avgUsPerCommand >
+                                        cpuMdiAdaptiveBudgetUs_;
+                                entry->permitted[pass] =
+                                    feedback.permit(cpuMdiAdaptiveBudgetUs_);
+                                entry->decisionEpoch[pass] = cpuMdiPageEpoch_;
+                                if (overBudget && entry->permitted[pass]) {
+                                    ++modelStats_.staticCrossModelAdaptiveProbeGroups;
+                                    probedThisPass = true;
+                                }
+                            }
+                            group.permitted = entry->permitted[pass];
+                        }
+                    }
+                    if (group.permitted) {
+                        ++permittedGroups;
+                    } else {
+                        ++modelStats_.staticCrossModelAdaptiveSkippedGroups;
+                        skippedThisPass = true;
+                    }
                 }
-                staticCrossCandidates.resize(modelItems_.size(), uint8_t{0});
+                if (skippedThisPass)
+                    ++modelStats_.staticCrossModelAdaptiveSkippedPasses;
+                if (probedThisPass)
+                    ++modelStats_.staticCrossModelAdaptiveProbePasses;
+                // Declined groups receive mode 2 even if *all* pages are
+                // over budget, so only those pooled static items skip MDI.
+                staticCrossModes.resize(modelItems_.size(), uint8_t{0});
                 for (uint32_t itemIndex : order_) {
                     const ModelItem& item = modelItems_[itemIndex];
                     if (!eligibleStaticPage(item)) continue;
@@ -2058,11 +2084,14 @@ void Renderer3D::renderModels(int phase) {
                                            materialGroup[itemIndex], item.flags,
                                            item.model->vb.id, item.model->ib.id};
                     const auto found = groups.find(key);
-                    if (found != groups.end() && found->second.ready) {
-                        staticCrossCandidates[itemIndex] = 1;
+                    if (found == groups.end() || !found->second.ready)
+                        continue;
+                    const uint8_t mode = found->second.permitted ? 1u : 2u;
+                    staticCrossModes[itemIndex] = mode;
+                    if (mode == 1u)
                         ++modelStats_.staticCrossModelPreflightItems;
-                    }
                 }
+                staticCrossModelSort = permittedGroups > 0;
             }
         }
     }
@@ -2071,8 +2100,8 @@ void Renderer3D::renderModels(int phase) {
     } else {          // group by state so identical primitives end up next to each other (instancing)
         std::sort(order_.begin(), order_.end(), [&](uint32_t a, uint32_t b) {
             const ModelItem &x = modelItems_[a], &y = modelItems_[b];
-            const bool crossX = staticCrossModelSort && staticCrossCandidates[a] != 0;
-            const bool crossY = staticCrossModelSort && staticCrossCandidates[b] != 0;
+            const bool crossX = staticCrossModelSort && staticCrossModes[a] == 1u;
+            const bool crossY = staticCrossModelSort && staticCrossModes[b] == 1u;
             if (crossX != crossY) return crossX; // only preflight-ready static groups
             if ((x.joints >= 0) != (y.joints >= 0)) return x.joints < y.joints;
             if (x.baked != y.baked) return x.baked < y.baked;
@@ -2226,8 +2255,8 @@ void Renderer3D::renderModels(int phase) {
         // Adaptive fallback only changes the static pooled subgroup. Other
         // ordinary MDI candidates (including dynamic and nonpooled models)
         // retain their existing selection logic.
-        const bool preferInstancing = adaptivePooledFallback &&
-            eligibleStaticPage(modelItems_[order_[i]]);
+        const bool preferInstancing = cpuMdiAdaptiveEnabled_ &&
+            !staticCrossModes.empty() && staticCrossModes[order_[i]] == 2u;
         if (allowIndirect && !preferInstancing &&
             order_.size() - i >= minIndirectCommands) {
             ++modelStats_.mdiScans;
@@ -2240,7 +2269,7 @@ void Renderer3D::renderModels(int phase) {
                 !first.baked && first.joints < 0 && first.morph < 0 &&
                 !first.paletteMaterials && first.tint.w >= .99f;
             const bool pooledStatic = staticCrossModelSort &&
-                staticCrossCandidates[firstIndex] != 0;
+                staticCrossModes[firstIndex] == 1u;
             auto compatible = [&](uint32_t candidateIndex) {
                 const auto& y = modelItems_[candidateIndex];
                 // Each indirect command selects its own world/tint/team/etc
@@ -2248,7 +2277,7 @@ void Renderer3D::renderModels(int phase) {
                 // Pipeline, geometry buffers, textures and material uniforms
                 // must remain compatible across the entire command group.
                 return (!pooledStatic ||
-                    (staticCrossCandidates[candidateIndex] != 0 &&
+                    (staticCrossModes[candidateIndex] == 1u &&
                      eligibleStaticPage(y) &&
                      (first.model == y.model ||
                       staticCrossModelPageCompatible(*first.model, *y.model)))) &&
