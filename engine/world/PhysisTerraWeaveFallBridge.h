@@ -215,6 +215,84 @@ dispatchPhysisTerraWeaveFalls(World& world, std::size_t maxEvents = 64) {
     return stats;
 }
 
+// Trusted authoritative GAME action: replace a previously broken rooted
+// plant, clear PHYSIS stress and retire the active fall record in ONE World
+// transaction. Box3D/forest/navmesh are repaired later by the host barrier.
+// Caller supplies the complete re-established TerraWeave plant (including
+// authored age, root support, species dimensions and location).
+inline bool repairPhysisTerraWeavePlant(
+        World& world, Entity entity, std::uint64_t acknowledgedKey,
+        std::uint64_t acknowledgedTick,
+        const terraweave::AnchoredPlant& repaired) {
+    const auto* clock = world.resourceConst<physis::State>();
+    const auto* ledger = world.resourceConst<NatureFallHostState>();
+    const auto* terrain =
+        world.resourceConst<terraweave::TerraWeaveAuthorityResource>();
+    const auto* outbox = static_cast<const World&>(world)
+        .tryGetConst<physis::NatureFractureOutboxComponent>(entity);
+    if (!clock || !ledger || !terrain || !world.alive(entity) ||
+        !outbox || outbox->delivery != physis::NatureFractureDelivery::Acknowledged ||
+        outbox->eventKey != acknowledgedKey ||
+        outbox->climateTick != acknowledgedTick ||
+        clock->tick <= acknowledgedTick || repaired.fallen)
+        return false;
+
+    const auto packed = entity.packed();
+    const auto bound = std::lower_bound(
+        ledger->bindings.begin(), ledger->bindings.end(), packed,
+        [](const NatureFallBinding& b, std::uint64_t id) {
+            return b.entityPacked < id;
+        });
+    if (bound == ledger->bindings.end() || bound->entityPacked != packed ||
+        bound->plant != NatureFallPlantId{
+            repaired.anchor.speciesId,repaired.anchor.plantKey})
+        return false;
+
+    const auto record = std::find_if(
+        ledger->records.begin(), ledger->records.end(),
+        [&](const NatureFallRecord& item) {
+            return item.entityPacked == packed &&
+                   item.eventKey == acknowledgedKey &&
+                   item.climateTick == acknowledgedTick && item.active;
+        });
+    if (record == ledger->records.end()) return false;
+
+    const auto root = std::find_if(
+        terrain->rooted.begin(), terrain->rooted.end(),
+        [&](const terraweave::AnchoredPlant& plant) {
+            return plant.anchor.speciesId == bound->plant.speciesId &&
+                   plant.anchor.plantKey == bound->plant.plantKey;
+        });
+    if (root == terrain->rooted.end()) return false;
+
+    // Validate the replacement before touching World. Ground/root support
+    // validation is TerraWeave's job, not a second PHYSIS soil solver.
+    terraweave::RootSupportRegistry validator;
+    validator.setSnapshot({repaired});
+    if (terrain->stateRevision == UINT64_MAX)
+        throw std::overflow_error("TerraWeave repair authority revision overflow");
+
+    World staged = world;
+    const auto* priorStress = static_cast<const World&>(staged)
+        .tryGetConst<physis::NatureStressOutputComponent>(entity);
+    if (!priorStress || !priorStress->fractured) return false;
+    staged.get<physis::NatureStressOutputComponent>(entity) =
+        physis::NatureStressOutputComponent{};
+    if (!physis::rearmNatureFractureAfterRepair(
+            staged,entity,acknowledgedKey,acknowledgedTick))
+        return false;
+    if (!retireNatureFall(staged,entity,acknowledgedKey,acknowledgedTick))
+        return false;
+
+    auto updated = *terrain;
+    updated.rooted[std::size_t(root-terrain->rooted.begin())] = repaired;
+    ++updated.stateRevision;
+    staged.setResource<terraweave::TerraWeaveAuthorityResource>(
+        std::move(updated));
+    world = std::move(staged);
+    return true;
+}
+
 struct NatureFallReconcileStats {
     std::size_t spawned = 0;
     std::size_t reused = 0;
