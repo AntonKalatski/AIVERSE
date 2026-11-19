@@ -37,6 +37,7 @@
 #pragma once
 #include "Shaders.h"
 #include "BakedShaders.h"
+#include "GiDynamicShaders.h"
 
 namespace aiverse::render::shaders {
 
@@ -191,7 +192,7 @@ void main() {
 )";
 
 inline const char* kModelFS =
-    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_GLSL_MODEL_BLOCKS AIVERSE_GLSL_SHADOW AIVERSE_GLSL_LIGHTS_AT("U5", "tex9") AIVERSE_GLSL_TRACE_AT("tex10") AIVERSE_GLSL_SSR_AT("tex11", "tex12")
+    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_GLSL_MODEL_BLOCKS AIVERSE_GLSL_SHADOW AIVERSE_GLSL_LIGHTS_AT("U5", "tex9") AIVERSE_GLSL_TRACE_AT("tex10") AIVERSE_GLSL_SSR_AT("tex11", "tex12") AIVERSE_GLSL_DYNAMIC_GI
     R"(
 uniform mediump sampler2D tex1;
 uniform mediump sampler2D tex2;
@@ -357,7 +358,13 @@ void main() {
     sh *= cloudShade(v_wpos);
     vec3 sun = rtsDecodeScene(u_sunColor.rgb) * u_sunDir.w;
     vec3 sky = rtsDecodeScene(u_skyColor.rgb), ground = rtsDecodeScene(u_groundColor.rgb);
-    vec3 dd,ds;float ambientVisibility;dynLight(v_wpos,n,V,rough,dd,ds,ambientVisibility,ao);
+    vec3 dd,ds;float ambientVisibility;
+#if defined(DYNAMIC_GI) && (defined(LIGHTMAP) || defined(PROBES))
+    // One static owner: preserve baked lightmap/probe indirect, keep grid direct lights.
+    dynLight(v_wpos,n,V,rough,dd,ds,ambientVisibility,0.0);
+#else
+    dynLight(v_wpos,n,V,rough,dd,ds,ambientVisibility,ao);
+#endif
     sky*=ambientVisibility;ground*=ambientVisibility;
     vec3 amb = mix(ground, sky, n.y * 0.5 + 0.5);
     float giOcc = 1.0;   // specular occlusion from the baked light
@@ -376,6 +383,11 @@ void main() {
     if (giMode == 2) sh = min(sh, texture(tex8, v_uv2).r);
     giOcc = clamp(luma(lm) / max(luma(amb), 1e-4), 0.0, 1.0);
     amb = lm;
+#endif
+#if defined(DYNAMIC_GI)
+    // Bounced incident radiance only. AO is applied once in the final PBR diffuse sum.
+    // Source lights baked into a static owner must be excluded by the caller.
+    amb += dynamicGiAt(v_wpos,n);
 #endif
     vec3 diff = base.rgb * (1.0 - metallic);
     vec3 F0 = mix(vec3(0.04), base.rgb, metallic);
@@ -568,7 +580,7 @@ void main() {
     "// INSTANCE already defined in GPU_INSTANCE_BUFFER / MU0 branch above.\n"
 
 inline const char* kModelMSL =
-    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_MSL_MODEL_BLOCKS AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_TRACE AIVERSE_MSL_SSR AIVERSE_MSL_MODEL_VERTEX
+    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_MSL_MODEL_BLOCKS AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_TRACE AIVERSE_MSL_SSR AIVERSE_MSL_DYNAMIC_GI AIVERSE_MSL_MODEL_VERTEX
     "#if defined(PROBES)\n" AIVERSE_MSL_PROBES "#endif\n"
     R"(
 struct VOut {
@@ -681,7 +693,12 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
                         texture2d<float> tex11 [[texture(11)]], sampler s11 [[sampler(11)]],
                         depth2d<float> tex12 [[texture(12)]], sampler s12 [[sampler(12)]]
 #endif
-                        GI_FARGS) {
+                        GI_FARGS
+#if defined(DYNAMIC_GI)
+                        , constant GiDynamicU& dgi [[buffer(7)]],
+                        texture2d<float> tex13 [[texture(13)]]
+#endif
+                        ) {
 #if defined(AIVERSE_ICB_PBR)
 #define tex0 icbTextures.tex0
 #define s0 icbTextures.s0
@@ -825,7 +842,12 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     sh *= cloudShade(lu, in.wpos);
     float3 sun = rtsDecodeScene(f.sunColor.rgb) * f.sunDir.w;
     float3 sky = rtsDecodeScene(f.skyColor.rgb), ground = rtsDecodeScene(f.groundColor.rgb);
-    float3 dd,ds;float ambientVisibility;dynLight(lu,tex9,s9,in.wpos,n,V,rough,dd,ds,ambientVisibility,ao);
+    float3 dd,ds;float ambientVisibility;
+#if defined(DYNAMIC_GI) && (defined(LIGHTMAP) || defined(PROBES))
+    dynLight(lu,tex9,s9,in.wpos,n,V,rough,dd,ds,ambientVisibility,0.0);
+#else
+    dynLight(lu,tex9,s9,in.wpos,n,V,rough,dd,ds,ambientVisibility,ao);
+#endif
     sky*=ambientVisibility;ground*=ambientVisibility;
     float3 amb = mix(ground, sky, n.y * 0.5 + 0.5);
     float giOcc = 1.0;
@@ -844,6 +866,9 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     if (giMode == 2) sh = min(sh, tex8.sample(s8, in.uv2).r);
     giOcc = clamp(luma(lm) / max(luma(amb), 1e-4), 0.0, 1.0);
     amb = lm;
+#endif
+#if defined(DYNAMIC_GI)
+    amb += dynamicGiAt(tex13,dgi,in.wpos,n);
 #endif
     float3 diff = base.rgb * (1.0 - metallic);
     float3 F0 = mix(float3(0.04), base.rgb, metallic);
