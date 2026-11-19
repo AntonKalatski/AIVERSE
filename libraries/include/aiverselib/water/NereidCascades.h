@@ -2,7 +2,8 @@
 // Fixed-point source is genre-neutral; floating vertex generation never
 // writes to authoritative water bodies, physics or network checksums.
 #pragma once
-#include <aiverselib/water/NereidWaterSystems.h>
+#include <aiverselib/water/NereidWater.h>
+#include "engine/sim/Simulation.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -38,6 +39,19 @@ struct WaterCascadeJoinPolicyComponent {
     Fixed widthBlend=1_fx; // blend authored cascade width to linked bank
     bool requireFootprint=true;
 };
+// The source of truth for velocities stays in WaterBody + the linked
+// water cascade. This optional policy only changes WaterSample.flow near
+// a cascade mouth, NOT WaterBody.flow, velocity integration or water mass.
+struct WaterCascadeFlowPolicyComponent {
+    Fixed radius=8_fx;                 // mouth influence X/Z metres
+    Fixed blend=Fixed::fromRatio(3,4); // 0..1 local flow matching
+    Fixed speedLimit=30_fx;            // max resulting outflow m/s
+    bool enabled=true;
+};
+inline void io(Archive& a,WaterCascadeFlowPolicyComponent& p) {
+    a(p.radius,p.blend,p.speedLimit,p.enabled);
+}
+
 inline void io(Archive& a,WaterCascadeJoinPolicyComponent& p) {
     a(p.widthBlend,p.requireFootprint);
 }
@@ -167,5 +181,7 @@ inline void registerNereidCascadePersistence(Simulation& sim) {
         "nereid.cascade_connections",1);
     sim.registerPersistentComponent<WaterCascadeJoinPolicyComponent>(
         "nereid.cascade_join_policy",1);
+    sim.registerPersistentComponent<WaterCascadeFlowPolicyComponent>(
+        "nereid.cascade_flow_policy",1);
 }
 } // namespace aiverse::lib::nereid
