@@ -468,8 +468,14 @@ inline const char* kComposite = R"(
     col += TEX3(uv).rgb * shafts.rgb;
 #endif
 #ifdef PF_AUTO_EXPOSURE
-    // HDR-only 1x1 GPU-adapted exposure: sample before ACES/sRGB conversion.
+    // HDR-only 1x1 GPU-adapted exposure, before ACES/sRGB. A fourth
+    // Shader Graph texture occupies slot 8; the composite then reserves
+    // slot 9 for exposure instead. The CPU binding plan matches this flag.
+#ifdef PF_AUTO_EXPOSURE_SLOT9
+    col *= clamp(TEX9(vec2(0.5)).r, 0.00024414, 4096.0);
+#else
     col *= clamp(TEX8(vec2(0.5)).r, 0.00024414, 4096.0);
+#endif
 #endif
     if (filt.x > 0.5) {
         col = max(col * filt.z, vec3(0.0));
