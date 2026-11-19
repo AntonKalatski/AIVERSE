@@ -42,6 +42,7 @@ class AttachmentAuthoringWindow final : public EditorWindow {
     std::vector<AuthoredChild> authored_;
     std::unique_ptr<Session> session_;
     bool dirty_=false;
+    bool pendingReimport_=false;
 
     static bool readAsset(const std::string& path,std::string& result) {
         std::ifstream input(path,std::ios::binary);
@@ -225,7 +226,16 @@ public:
     void update(Editor& ed,double) override {
         device_=&ed.device();
         const auto current=ed.ws().project.dir;
-        if(current==project_)return;
+        if(current==project_) {
+            // Runs at Studio's owner update boundary before windows draw
+            // and before another ImGui/render submission can borrow Models.
+            if(pendingReimport_) {
+                pendingReimport_=false;
+                try { stageAndPublish(ed); }
+                catch(const std::exception& e) { message_=e.what(); }
+            }
+            return;
+        }
         // A project switch must release all old borrowed sources BEFORE
         // letting its content mounts disappear.
         if(!retire(session_)) {
@@ -233,6 +243,7 @@ public:
             return;
         }
         project_=current;
+        pendingReimport_=false;
         authored_.clear();
         sourcePath_.clear();
         layoutPath_="attachments.json";
@@ -289,8 +300,10 @@ public:
             dirty_=true;
         }
         if(ImGui::Button("Reimport & Publish")) {
-            try{stageAndPublish(ed);}
-            catch(const std::exception& e){message_=e.what();}
+            // Never wait for GPU completion from the middle of an active
+            // Studio UI draw. Run import/replace in the NEXT owner update.
+            pendingReimport_=true;
+            message_="Reimport queued for the next pre-draw owner update";
         }
         if(dirty_)ImGui::TextDisabled("Unsaved attachment layout");
         if(session_) {
