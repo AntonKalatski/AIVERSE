@@ -9,6 +9,7 @@
 #include "GiTextureBudget.h"
 #include "GiShaderGraphTextureSlots.h"
 #include "GiPresentationPolicy.h"
+#include "GiModelBatchPolicy.h"
 #include "Animation.h"
 #include "ModelVisibility.h"
 #include "ModelLodTransition.h"
@@ -215,8 +216,8 @@ bool Renderer3D::dynamicGiEligible(const ModelItem& it, int phase,
         !giFragmentTextureBudgetAllows(dev_ ? dev_->maxFragmentTextureSlots() : 0,
              dynamicGiValidity_!=nullptr,dynamicGiFarOverlay_!=nullptr,
              dynamicGiThirdOverlay_!=nullptr) ||
-        !dynamicGiOverlay_->texture().valid() || gpuInstances ||
-        instancePalette ||
+        !dynamicGiOverlay_->texture().valid() ||
+        !giModelBatchMaySample(gpuInstances,instancePalette) ||
         !giDynamicColorPassAllowed(hdrFrame_,dynamicGiOverlay_->computeWritable()) ||
         matQuality_ == MaterialQuality::Low ||
         it.mat->shading == ShadingModel::Unlit)
