@@ -4,9 +4,11 @@
 // without changing NEREID water, Earthworks ground mass or fallen tree state.
 #pragma once
 #include "engine/world/TerraWeaveGrassCover.h"
+#include "engine/core/Archive.h"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <functional>
 #include <limits>
 #include <map>
@@ -188,6 +190,7 @@ inline ShoreRecoveryResult advanceShoreRecovery(
         else state.dryTicks+=elapsed;
 
         auto& env=patch.environment;
+        const PlantEnvironment oldEnvironment=env;
         (void)plantAppearance(env);
         env.ageTicks=std::min<uint64_t>(
             ageLimit,env.ageTicks+std::min<uint64_t>(
@@ -243,11 +246,7 @@ inline ShoreRecoveryResult advanceShoreRecovery(
                     periods*patch.coveragePermille/1000));
             }
         }
-        if(patch.coveragePermille!=before ||
-           env.ageTicks!=grass[&patch-nextGrass.data()].environment.ageTicks ||
-           env.waterPermille!=grass[&patch-nextGrass.data()].environment.waterPermille ||
-           env.lightPermille!=grass[&patch-nextGrass.data()].environment.lightPermille ||
-           env.nutrientsPermille!=grass[&patch-nextGrass.data()].environment.nutrientsPermille)
+        if(patch.coveragePermille!=before || !(env==oldEnvironment))
             result.changed.push_back({
                 patch.key,before,patch.coveragePermille,
                 state.soilCoverPermille,env});
