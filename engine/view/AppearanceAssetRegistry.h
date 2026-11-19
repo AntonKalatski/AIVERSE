@@ -119,11 +119,12 @@ public:
                 if(changed.contains(source)){affected=true;break;}
             if(!affected)continue;
             if(dirty_.insert(key).second)++count;
-            if((!asset->graphSource.empty() &&
-                changed.contains(asset->graphSource)) ||
-               (!asset->modelSource.empty() &&
-                changed.contains(asset->modelSource)))
-                dirtyGraph_.insert(key);
+            const bool changedModel=!asset->modelSource.empty() &&
+                changed.contains(asset->modelSource);
+            const bool changedGraph=!asset->graphSource.empty() &&
+                changed.contains(asset->graphSource);
+            if(changedModel)dirtyModel_.insert(key);
+            if(changedModel || changedGraph)dirtyGraph_.insert(key);
         }
         return count;
     }
@@ -231,7 +232,19 @@ public:
             }
 
             next->version=versionSerial_+1;
-            next->modelPublicationGeneration=ModelPublicationEpoch::next();
+            // Appearance/material/graph edits are NOT new Model assets.
+            // Keep retarget maps valid if both the host Model revision and
+            // borrowed Model identity are unchanged. Source invalidation
+            // explicitly marks in-place reimports even with pointer reuse.
+            const bool sameModel=previous &&
+                previous->model==next->model &&
+                previous->modelRevision==next->modelRevision &&
+                previous->modelSource==next->modelSource &&
+                !dirtyModel_.contains(key) &&
+                previous->modelPublicationGeneration!=0;
+            next->modelPublicationGeneration=sameModel
+                ?previous->modelPublicationGeneration
+                :ModelPublicationEpoch::next();
             // Commit only after every potentially throwing preparation step.
             assets_.insert_or_assign(key,std::move(next));
             ++versionSerial_;
@@ -239,6 +252,7 @@ public:
                 animationSerial_=std::max(animationSerial_,assets_.at(key)->generation);
             dirty_.erase(key);
             dirtyGraph_.erase(key);
+            dirtyModel_.erase(key);
             return true;
         }catch(const std::exception& ex) {
             if(error)*error=ex.what();
@@ -269,7 +283,15 @@ public:
             const auto old=find(key);
             auto next=std::make_shared<Asset>(prepared);
             next->version=versionSerial_+1;
-            next->modelPublicationGeneration=ModelPublicationEpoch::next();
+            const bool sameModel=old &&
+                old->model==next->model &&
+                old->modelRevision==next->modelRevision &&
+                old->modelSource==next->modelSource &&
+                !dirtyModel_.contains(key) &&
+                old->modelPublicationGeneration!=0;
+            next->modelPublicationGeneration=sameModel
+                ?old->modelPublicationGeneration
+                :ModelPublicationEpoch::next();
             if(next->graph) {
                 if(old && old->graph==next->graph &&
                    old->model==next->model &&
@@ -286,7 +308,7 @@ public:
             if(assets_.at(key)->graph)
                 animationSerial_=std::max(animationSerial_,
                                           assets_.at(key)->generation);
-            dirty_.erase(key);dirtyGraph_.erase(key);
+            dirty_.erase(key);dirtyGraph_.erase(key);dirtyModel_.erase(key);
             return true;
         }catch(const std::exception& ex) {
             if(error)*error=ex.what();
@@ -298,9 +320,10 @@ public:
         assets_.erase(key);
         dirty_.erase(key);
         dirtyGraph_.erase(key);
+        dirtyModel_.erase(key);
     }
     void clear() {
-        assets_.clear();dirty_.clear();dirtyGraph_.clear();
+        assets_.clear();dirty_.clear();dirtyGraph_.clear();dirtyModel_.clear();
         // Serial counters intentionally survive clear(), preventing an old
         // animated source from aliasing a new generation in a live View.
     }
@@ -308,7 +331,7 @@ private:
     // Mutation is confined to the owning presentation/render thread. Stable
     // shared snapshots may be read by consumers that hold their own handles.
     std::unordered_map<std::string,Snapshot> assets_;
-    std::unordered_set<std::string> dirty_,dirtyGraph_;
+    std::unordered_set<std::string> dirty_,dirtyGraph_,dirtyModel_;
     uint64_t versionSerial_=0,animationSerial_=0;
 };
 
