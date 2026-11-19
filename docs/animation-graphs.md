@@ -935,3 +935,31 @@ choice and leaves authoritative game logic unchanged.
 **NOT RUN:** native CMake/CTest/linker, Metal/Vulkan/GL,
 performance, animator parity or sanitizers. See
 [Stage 125 handoff](agent-handoffs/animation-stage125-scratch-budget-model-epochs-2026-11-19.md).
+
+## Stage 126 — FPS graph hot reload continuity and independent model epochs
+
+The FPS native presentation host now uses the same
+`AnimationGraphInstance::snapshotPlayback` /
+`AnimationPlayerComponent::pendingPlayback` contract as
+MotionWeave source-bridge hot reload. When the character
+Model remains unchanged and the graph file is recompiled,
+compatible named state and normalized clip phases are
+captured before the one-shot player restart and restored
+by the existing evaluator. Deleted/renamed states or clip
+nodes cannot be restored and restart at authored defaults.
+Notifies, montage events, rig native/contact caches and
+gameplay authority remain discarded.
+
+The FPS prepared View packet forwards the published
+`modelPublicationGeneration`, independent of player
+network life or AnimationGraph generation. Material/graph
+only appearance changes do not invalidate Model-asset
+LOD retarget caches, while actual reimport/model source
+changes require a new Model epoch and compiled plan.
+Generic C++ `AppearanceSpec` and published
+`Asset::packet` use the same epoch propagation API.
+No second AnimationGraph update is introduced.
+
+**NOT RUN:** CMake/C++ compiler, CTest, FPS animation
+visual parity, GPU runtime validation or sanitizers.
+See [Stage 126 handoff](agent-handoffs/animation-stage126-published-lod-hot-reload-2026-11-19.md).
