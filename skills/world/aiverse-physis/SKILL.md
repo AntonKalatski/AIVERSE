@@ -836,3 +836,26 @@ syntax check. FULL engine mode, macOS, and editor-core authoring
 checks have NOT been run. The default full mode includes Box3D;
 `--no-physics` excludes that optional target.
 See `docs/agent-handoffs/physis-stage61-native-validation-runner-2026-11-19.md`.
+
+### Stage 62 — focused admin/edit/journal validation
+
+On a complete AIVERSE macOS/Linux checkout, use:
+```sh
+bash tools/physis-validate-native.sh --integration --no-physics --jobs 4
+```
+This configures the ROOT engine CMake but builds only
+`physis_admin_journal`, `physis_remote_edit`,
+`physis_field_runtime` and the three standalone POSIX journal
+executables, then runs just those six CTests. Use `--full` for
+the entire headless PHYSIS suite including Box3D, or
+`--standalone` to avoid the engine dependency graph entirely.
+
+Actual tests: the script passed `bash -n`; its integration branch
+passed with six fake CMake targets and correctly propagated an
+injected CTest failure (exit 8). This is **runner plumbing QA only**.
+The genuine standalone journal CTest passed 3/3 on Linux. The
+full-engine integration tests are still unverified. Preserve
+configure/build/ctest report logs in the next handoff.
+
+See `docs/agent-handoffs/physis-stage62-targeted-integration-runner-2026-11-19.md`.
+

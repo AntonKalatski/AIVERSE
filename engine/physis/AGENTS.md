@@ -790,3 +790,33 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   an engine PASS.
 - Handoff:
   `docs/agent-handoffs/physis-stage61-native-validation-runner-2026-11-19.md`.
+
+### Stage 62 — targeted integration-mode PHYSIS validation (2026-11-19)
+
+- `tools/physis-validate-native.sh` gained `--integration`, a
+  focused root AIVERSE CMake mode that builds ONLY
+  `aiverse_physis_admin_journal_test`,
+  `aiverse_physis_remote_edit_test`,
+  `aiverse_physis_field_runtime_test`, and the three standalone
+  POSIX journal targets, then executes the six matching
+  `^physis_(...)$` CTests. This avoids building all PHYSIS
+  environmental/disaster/Box3D targets during debugging.
+- For quickest PHYSIS admin tests on a Mac with full checkout:
+  `bash tools/physis-validate-native.sh --integration --no-physics --jobs 4`.
+  Existing `--standalone` and `--full` modes remain.
+  Failure exits nonzero with persistent configure/build/ctest logs.
+- **ACTUAL PASS**: exact script SHA
+  `9125e955165a664e0759b0bdab556e23157783ff`;
+  `bash -n` success. Standalone real POSIX CTest **3/3 pass**.
+  Integration-mode flow was executed in a temporary separate fake
+  CMake fixture with six stub target names: simulated 6/6 PASS;
+  injected failure returned exit 8 and wrote FAIL ctest log.
+  This checks script orchestration ONLY, NOT AIVERSE integration!
+- Checked each actual integration target and six test names exists
+  in repository root `CMakeLists.txt`. Full engine CMake/CTest
+  including `physis_admin_journal` remains NOT RUN because the
+  local container cannot clone GitHub; GitHub Actions Ubuntu/macOS
+  runner jobs still queued.
+- Handoff:
+  `docs/agent-handoffs/physis-stage62-targeted-integration-runner-2026-11-19.md`.
+
