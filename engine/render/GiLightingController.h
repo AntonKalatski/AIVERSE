@@ -168,17 +168,12 @@ public:
         return {};
     }
 
-    size_t invalidate(GiBounds bounds,GiDirtyReason reason,
-                      float influenceRadius=0) {
+    void invalidate(GiBounds bounds,GiDirtyReason reason,
+                    float influenceRadius=0) {
         if(mode_==GiTransportMode::GpuCompute)
-            return gpu_.invalidate(bounds,reason,influenceRadius);
-        if(mode_==GiTransportMode::CpuProbes) {
+            (void)gpu_.invalidate(bounds,reason,influenceRadius);
+        else if(mode_==GiTransportMode::CpuProbes)
             cpu_.invalidate(bounds,reason,influenceRadius);
-            // CPU API doesn't currently return affected count; the scheduled
-            // dirty set is observable from StepStats after updateFrame.
-            return 0;
-        }
-        return 0;
     }
 
     // Call after the per-world publication barrier, between RHI beginFrame and
