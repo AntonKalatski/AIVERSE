@@ -23,6 +23,18 @@ struct WaterCascadeComponent {
     Fixed speed=6_fx;                  // optical flow hint, metres/second
     bool enabled=true;
 };
+// Optional authoritative linkage from a cascade Entity to upstream and
+// downstream water-body Entities. Rendering resolves their current surface
+// levels, but never changes the ECS cascade geometry or water body.
+struct WaterCascadeConnectionsComponent {
+    Entity inlet=kNullEntity;
+    Entity outlet=kNullEntity;
+    Fixed transitionLength=2_fx;
+    bool enabled=true;
+};
+inline void io(Archive& a,WaterCascadeConnectionsComponent& c) {
+    a(c.inlet,c.outlet,c.transitionLength,c.enabled);
+}
 inline constexpr size_t kMaxWaterCascadePoints=128;
 inline bool validWaterCascade(const WaterCascadeComponent& c) {
     if(!c.enabled || c.points.size()<2 || c.points.size()>kMaxWaterCascadePoints ||
@@ -142,5 +154,7 @@ inline void io(Archive& a,WaterCascadeComponent& c) {
 }
 inline void registerNereidCascadePersistence(Simulation& sim) {
     sim.registerPersistentComponent<WaterCascadeComponent>("nereid.cascade",1);
+    sim.registerPersistentComponent<WaterCascadeConnectionsComponent>(
+        "nereid.cascade_connections",1);
 }
 } // namespace aiverse::lib::nereid
