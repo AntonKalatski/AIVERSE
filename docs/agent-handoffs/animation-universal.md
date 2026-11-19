@@ -2716,3 +2716,12 @@ before calling this stage validated.
 - Added deferred test code to existing `render_model_image_transaction` for shadow/SSR/reflection target retirement, failed partial attachment, Pending/Failed/Completed fence and failed GPU vertex/index upload with preserved CPU data.
 - **ACTUAL VALIDATION:** GitHub source inspection and connector commit/readback. **NOT RUN:** CMake, native C++ compiler, CTest, CI, Metal/GL/Vulkan, GPU device-loss, sanitizers, FPS/RTS/editor visual parity. Unverified for compilation and runtime; keep PR Draft.
 - **Next Stage 117:** introduce optional RHI Ready/Pending/Failed color pipeline status with backend support, audit remaining unretired RHI resource owners and partial init failures, complete features then perform full build/graphics/sanitizer suite before merging.
+
+## Stage 117 — terminal GPU HDR warm status (2026-11-19)
+
+- **Detailed separate handoff:** [Stage 117](animation-stage117-hdr-warm-status-2026-11-19.md), including exact source SHAs, changed files, integration boundaries, actual validation, remaining risks and Stage 118.
+- Continued `feature/universal-ecs-animation-pipeline` after Stage 116 `fa314776`; main already merged; branch was ahead 755/behind 0 at starting check and ahead 762/behind 0 after code changes. Main is unchanged and no force push/rebase was performed. PR #22 is still Draft.
+- Added opt-in `gfx::Device::PipelineColorWarmStatus` (Ready/Pending/Failed) with backward-compatible bool default; Metal now distinguishes native HDR ShaderJob/PipelineJob failure from Pending and Ready, including invalid base handles.
+- `Renderer3D` rejects terminally failed HDR variants during transactional appearance preflight, caches failed pipeline handles until GPU generation invalidation and reports `GpuWarmStats::colorVariantsFailed` in editor Stats. Existing View and MotionWeave graphs retain their last-good published state; no new genre dependency or animation clock.
+- **ACTUALLY PERFORMED:** source inspection, GitHub branch/file updates with blob SHAs and branch vs main comparison. **NOT RUN:** local build, linker, CMake/CTest, CI, Metal/GL/Vulkan, sanitizers, screenshots, device-loss or performance. Do not mark this PR ready.
+- **Next Stage 118:** audit failure rollback during partial Renderer3D/LightSystem/trace initialization and additional render-target owners; preserve correct GPU fence lifetimes, add deferred regression sources, then complete all outstanding features before full native build/test/visual parity.
