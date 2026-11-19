@@ -5880,3 +5880,30 @@ Verification: GitHub source commits succeeded; native build,
 CTest, GLSL/MSL compiler and GPU execution NOT RUN by request.
 Next: implement ModelItem feedback bridge, integrate Terra
 feedback callbacks and finish backend parity before testing.
+
+
+## Stage 9N — visible rigid ModelItem feedback (2026-11-19)
+
+Source commit: 9a8676fe48f5528bd778cd06b40b422dd3bb93b9.
+Changed file: engine/render/Renderer3D.h.
+Added setVirtualTextureModelFeedback(pipeline,FeedbackModelBinder)
+and clearVirtualTextureModelFeedback(). Binder receives
+Device, Model, Primitive, Material and world matrix to bind
+virtual UV/material parameters. When configured,
+renderVirtualTextureFeedback() now submits in-view rigid
+ModelItem primitives using the model's GPU vertex/index buffers
+and each primitive's firstIndex/indexCount. This shares the
+same optional depth-enabled pass as immediate meshes and
+terrain custom feedback callbacks. Skinned/baked/morphed,
+transparent/dissolving and shadow-only/suppressed roles are
+excluded to avoid misleading undeformed feedback.
+
+Important: no automatic UV binding, shader creation or
+deformation feedback; the caller must provide a compatible
+model vertex layout/pipeline. LOD transition semantics and
+material alpha masking need further integration. This is a
+partial ModelItem bridge, not complete model VT support.
+Verification: GitHub commit succeeded. Native build, CTest,
+shader compiler and GPU execution NOT RUN per user request.
+Next: handle alpha masks, model LOD/animation parity and
+Terra registration, then finish backend storage/RT parity.
