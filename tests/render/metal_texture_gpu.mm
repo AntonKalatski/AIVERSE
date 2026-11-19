@@ -744,7 +744,7 @@ int main() {
                     elapsedMs(deviceReady,Clock::now()));
         if (failures)
             std::fprintf(stderr,"FAIL: %d Metal texture GPU acceptance checks\n",failures);
-        else std::puts("PASS: Metal GPU Texture3D/array/cube mip and async readback parity");
+        else std::puts("PASS: Metal GPU texture subresources, fragment sampling, VT feedback/page table and async readback parity");
         return failures ? 1 : 0;
     }
 }
