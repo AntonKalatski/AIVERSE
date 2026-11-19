@@ -535,6 +535,7 @@ void revisionProbeStopsOnUnhealthyJournal() {
     CHECK(client.hasRemoteRevision());
     CHECK(client.remoteRevision()==0);
     CHECK(client.status()==ClientStatus::Idle);
+    CHECK(client.receipt().detail.empty());
     CHECK(recovered.entries().empty());
     CHECK(registry(*sim).revision==0);
 }
