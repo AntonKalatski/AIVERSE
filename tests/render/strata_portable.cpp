@@ -184,6 +184,21 @@ static void testBackend(gfx::Backend backend,bool mdi){
     assert(staged.prepareModel(mat4::identity(),{},true,
                                renderModel,&error));
     assert(renderModel.meshes[0].primitives.size()==2);
+    // A source Model can be reuploaded without an explicit revision bump.
+    // Dedicated and pooled sidecars must refuse old VB/IB identities and
+    // old page offsets, leaving the current output alias unchanged.
+    const auto savedVB=original.vb;
+    original.vb=gfx::BufferHandle{savedVB.id+1000};
+    assert(!staged.validFor(original));
+    assert(!staged.prepareModel(mat4::identity(),{fine},false,
+                                renderModel,&error));
+    assert(renderModel.meshes[0].primitives.size()==2);
+    original.vb=savedVB;
+    const uint32_t savedFirstIndex=original.gpuFirstIndex;
+    original.gpuFirstIndex=savedFirstIndex+1;
+    assert(!staged.validFor(original));
+    original.gpuFirstIndex=savedFirstIndex;
+    assert(staged.validFor(original));
     // Ownership is device-local: a foreign device's matching numeric handles
     // must not release this staged source. On device loss, fail closed and
     // leave the caller's last prepared alias unchanged for Legacy fallback.
