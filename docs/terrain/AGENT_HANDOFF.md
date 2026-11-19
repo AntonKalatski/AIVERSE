@@ -3170,3 +3170,48 @@ Sparse transfer permits updating a small set of clusters even when a complete fo
 
 ### Concrete next step for the following agent
 Continue **feature-first** work only where a functional gap remains, e.g. a configurable quality/performance policy for far GPU field sampling/CPU shadow residency, and keep its handoff in this same document. When the owner starts QA, update `tests/terraweave_model_test.cpp` for Stage29 2-layer impostors; add pure Stage35 planner tests for 1 adjacent/8 disjoint/9 disjoint dirty groups, 69%/70% dense transition, identical quantized colours, invalid offsets, shared 2MiB budget with active+outgoing models, cached-region restore, unsafe canUpdateSharedBuffers. Run real GCC+Clang CMake/CTest and GPU Metal/Vulkan/GL screenshots/perf; record exact commands/results/CI run URLs and fix failures without claiming old queued runs passed. Do not merge PR #24 before independent validation.
+
+## Stage 36 — runtime-configurable Horizon wind GPU upload policy (SOURCE COMMITTED; TESTS DEFERRED)
+
+**Date:** 2026-11-19. **Branch:** `feature/terraweave`. **PR:** [#24](https://github.com/chromealex/AIVERSE/pull/24) Draft, target `main`. **Instruction:** continue functional work; independent tester will compile/benchmark afterward. Before starting, GitHub compare indicated `main` is an ancestor of this branch (behind_by=0), so no main merge/rebase was required.
+
+### Source and documentation commits (actual GitHub write responses)
+
+- `7bdce959a8117ab086cc10e620e01706dae6229a` — **new** `engine/world/TerraWeaveWindUploadPolicy.h`. Defines public `HorizonWindUploadPolicy`, defaults 2 MiB combined GPU bytes/update, 8 sparse ranges/region, >=70% dirty cluster full-fallback; `validateHorizonWindUploadPolicy` enforces bytes [0,2MiB], ranges [1,8] and percentage [1,100] with fail-before-publication validation.
+- `674e39eebbe64742d416e9dc6bb8901825b5581a`, comment correction `8ba64d8c8bec9fcf87dba7d480c8d3f50b9358af` — `engine/render/TerraWeaveHorizonWindPatch.h` includes the public policy and adds a trailing backward-compatible defaulted policy argument to `applyHorizonForestWindOverlay`. The existing Stage35 pure planner now receives the configurable fragmentation/density settings and RHI transfer is rejected before the first write when the selected plan exceeds either the caller's remaining frame bytes or the policy's own cap.
+- `af97a891646ebee7d7bae590981c503006ce6b5e`, comment correction `dcfa1c955e9b747c4bb0e88606ddf3a526b1f0b8` — `engine/render/TerraWeaveHorizonScene.h`: `setWindUploadPolicy`/`windUploadPolicy` on the owner thread; the per-update budget now originates from policy rather than a hardcoded 2MiB. Existing active-first/outgoing-second retirement and revision handling remains intact. No revision bump merely for policy changes: pending regions are automatically retried on following updates.
+- `eb532e841d3f42b396ce4b384c6dbd6a8948c9f8` — `engine/world/WorldScene.h` publishes `setVegetationHorizonWindUploadPolicy` and `vegetationHorizonWindUploadPolicy`; stores default value even when the optional Horizon system is absent.
+- `7aaa2ef0b4e5c389a0f18ea88d0b3898b69bba0b` — `engine/world/WorldScene.cpp` validates and forwards policy to the optional Horizon system before changing its stored value. No PHYSIS/ECS/genre-specific includes.
+- `2c140bf77a13bd99d7816c078c60359317602e23` — `docs/terrain/TERRAWEAVE.md` Stage36 public API, sample mobile budget, contracts and limitations.
+- `52b4d4a70ba2986aa448d871aac35ce05f535de4` — `skills/world/aiverse-terraweave/SKILL.md` Stage36 native agent rules, invariants and future QA.
+- `7e9a2273eae21e65075134efe03deb07f9aaf02e` — `AGENTS.md` Stage36 cross-agent owner-thread, policy and validation contract.
+- This separate handoff entry closes the Stage36 functional stage.
+
+### API, behavior and compatibility
+
+```cpp
+terraweave::HorizonWindUploadPolicy policy{};
+policy.maxBytesPerUpdate=256u*1024u; // 256 KiB combined per update
+policy.maxSparseRanges=4;
+policy.fullFallbackPercent=85;
+worldScene.setVegetationHorizonWindUploadPolicy(policy);
+```
+
+`maxBytesPerUpdate=0` intentionally defers nonempty weather VB updates while allowing a zero-colour-difference revision to advance without GPU traffic. Switching back to a larger budget retries pending active/crossfade regions on the next render-owner `update(device)`. If the configured budget is smaller than the full-suffix fallback selection, a dense/fragmented update may remain pending indefinitely; the preexisting macro wind visual fallback stays safe. Stage35 telemetry still counts actual region update batches, RHI ranges and byte totals, not theoretical performance improvements.
+
+Exactly the same default 2MiB/8/70 Stage35 policy is preserved. Terrain+canopy geometry, TWH8 archive, atlas pixels, wind sampling/quantization, shader source, render materials, existing bounded 2MiB **CPU forest shadow per resident GPU model**, GPU cache policy, active/outgoing crossfade ownership, source revision/CPU bake and native PHYSIS input are untouched. This feature is a **runtime adjustable GPU transfer scheduling policy**, not a new CPU-memory cap or different wind solver. Calls must be serialized on the render/WorldScene owner thread; no concurrent setter/update/submit use is supported.
+
+### Actual verification vs not-run work
+
+**Actually verified:** Read Stage35 source, Horizon update/render selection, WorldScene interface and last handoff directly from GitHub; GitHub returned successful separate code/documentation commit SHAs listed above, with comments corrected after initial writes. No local source checkout or native runtime is available from these connector operations.
+
+**NOT RUN (user-requested QA deferral):** C++ compilation, CMake configure/build, GCC/Clang, CTest, CI outcome validation, ShaderGraph GLSL/MSL compilation, Metal/Vulkan/OpenGL GPU tests, PHYSIS runtime publication, performance sampling, screenshot matching and device-loss recovery. **Do not claim passing tests, working rendering, validated memory savings or production readiness.** Keep PR #24 Draft, do not merge to `main` yet.
+
+### Risks and next actionable step
+
+- Tight per-update transfer budgets may starve full-suffix uploads; no automatic budget escalation or GPU region scheduling fairness exists. Sparse planner is per region and maximally eight runs; actual GPU call overhead may make other thresholds better on mobile.
+- CPU field sampling still walks all resident clusters on each field revision and keeps an up-to-2MiB shadow for each GPU model, including cached/outgoing models. Configuring **CPU shadow residency/priority** separately is a possible Stage37 feature, but requires explicit policies for preexisting GPU models, in-flight worker publishes and cache re-adoption. Do not silently discard the only source of exact field RGB while claiming the exact shader is ready.
+- Same known Stage35 device-loss caveat: `gfx::Device::updateBuffer` returns void; an interrupted multi-range write is not hardware-atomic.
+- The Stage29 impostor fixture still contains stale 1-layer/4-vertex expectations. This stage intentionally did not edit tests.
+
+**Next feature-first work (Stage37):** Add a bounded optional CPU shadow residency/selection policy for Horizon's exact-field metadata, with safe fallback for regions lacking a shadow, preserving immutable PHYSIS and active/crossfade shader revision invariants. First audit GPU cache lifecycle before evicting or recapturing any shadow. The later independent testing agent must update Stage29 atlas assertions and exercise Stage35+36 default parity, invalid policy ranges, zero budget/no-change revision, starvation-and-retry, dense threshold at configurable 85%, 4 vs 5 sparse runs, combined active+outgoing bandwidth cap, region LRU restoration, unsafe RHI updates, and real GCC/Clang/CTest/Metal/Vulkan/GL visual performance. Report actual CI run IDs and outcomes in a separate handoff.
