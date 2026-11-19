@@ -26,6 +26,7 @@ struct GpuCaptureStatus {
     size_t groupIndex=0;
     uint64_t requestId=0;
     size_t payloadBytes=0;
+    uint32_t graphicsFramesWaiting=0; // bounded owner-thread polls, not seconds
     uint64_t capturedRevision=0;
     uint64_t gpuFrameSerial=0;
     std::string reason;
@@ -37,7 +38,11 @@ public:
         : pool_(pool),shared_(std::make_shared<CallbackState>()) {}
     GpuPoolCaptureHost(const GpuPoolCaptureHost&)=delete;
     GpuPoolCaptureHost& operator=(const GpuPoolCaptureHost&)=delete;
-    ~GpuPoolCaptureHost() {cancel();}
+    ~GpuPoolCaptureHost() {
+        // No allocation in destructor. Async RHI callbacks hold weak refs
+        // and become inert once this owner's state is gone.
+        shared_.reset();
+    }
 
     // Caller may enqueue ONE request, then use the normal render loop to
     // deliver it. A fresh request never overwrites an in-flight capture.
@@ -101,7 +106,12 @@ public:
             fail("Capture cancelled by graphics Device loss or pool recreation");
             return status_;
         }
-        if(!shared_->received)return status_;
+        if(!shared_->received) {
+            constexpr uint32_t kMaxInFlightGraphicsPolls=600;
+            if(++status_.graphicsFramesWaiting>kMaxInFlightGraphicsPolls)
+                fail("Checkpoint readback exceeded 600 graphics-frame polls");
+            return status_;
+        }
         if(!shared_->completed) {
             fail("Capture readback failed or returned incomplete chunks");
             return status_;
