@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <set>
 #include <utility>
 #include <vector>
 
@@ -37,7 +38,8 @@ std::vector<std::array<float, 15>> attributesFor(const Model& model) {
 } // namespace
 
 bool buildModelAsset(const Model& model, const BuildOptions& options,
-                     ModelAsset& out, std::string* error) {
+                     ModelAsset& out, std::string* error,
+                     bool allowPreparedRootLods) {
     if (error) error->clear();
     ModelAsset next;
     // Presentation-only integration: GeometryScene's immutable rigid CPU
@@ -52,7 +54,15 @@ bool buildModelAsset(const Model& model, const BuildOptions& options,
     }();
     std::vector<std::array<float, 15>> attributes;
     bool builtAttributes = false;
+    std::set<size_t> rootMeshes;
+    if (allowPreparedRootLods)
+        for (const auto& node : model.nodes)
+            if (node.mesh >= 0 && size_t(node.mesh) < model.meshes.size())
+                rootMeshes.insert(size_t(node.mesh));
     for (size_t mi = 0; mi < model.meshes.size(); ++mi) {
+        // After prepareModelUpload, automatically generated LOD alternative
+        // meshes are not original sources unless a real Model node uses them.
+        if (allowPreparedRootLods && !rootMeshes.count(mi)) continue;
         const auto& mesh = model.meshes[mi];
         for (size_t pi = 0; pi < mesh.primitives.size(); ++pi) {
             const auto& p = mesh.primitives[pi];
@@ -60,7 +70,7 @@ bool buildModelAsset(const Model& model, const BuildOptions& options,
             if (!modelEligible) reason = "requires immutable non-uploaded rigid CPU Model";
             else if (hasMutableNodes || mesh.deformable)
                 reason = "mutable/deformable model is not supported";
-            else if (!mesh.lods.empty())
+            else if (!allowPreparedRootLods && !mesh.lods.empty())
                 reason = "existing authored/generated mesh LOD must be preserved";
             else if (!p.jointPalette.empty() || p.morphTargets ||
                      !p.variantMaterial.empty())
@@ -134,7 +144,8 @@ bool SceneStaging::stage(const std::string& key, const Model& model) {
     }
     ModelAsset built;
     std::string error;
-    if (!buildModelAsset(model, options_, built, &error)) {
+    if (!buildModelAsset(model, options_, built, &error,
+                         allowPreparedRootLods_)) {
         ++stats_.failedSources;
         warnings_.push_back("Strata staging failed '" + key + "': " + error);
         return false;
