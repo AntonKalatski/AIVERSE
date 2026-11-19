@@ -101,3 +101,17 @@ Source commits:
 Actual work: source file creates/updates acknowledged in GitHub. **NOT RUN** native compiler, CTest, MSL/SPIR-V GLSL compile, Vulkan device or OpenGL ES3 captures, WebGL2, GPU timing. The one-shot runners are PREPARED ONLY. Main branch still unmerged. Do not call this complete Vulkan GPU compute: Vulkan `Device::supportsCompute()` is not implemented and GLES3/WebGL2 have no compute API in this engine.
 
 Next: prepare and integrate a minimal native lighting visual scene that actually invokes the LumaWeave driver on Metal/Vulkan/GLES, verify GLSL ES3 16 sampler limits, audit material depth and dynamic probe source publication, and reconcile current main renderer interfaces. Then run one consolidated pass per platform on real hardware (including fallback and measured cost), not before source freeze.
+
+## Stage 7 — non-destructive current-main merge (SOURCE MERGED; NATIVE NOT RUN)
+
+- Main source SHA at merge: `d7d9b3f4180dcba98b9238fd56eedc7ccb420bb1`.
+- Pre-merge integration source SHA: `f765dbcb39ac39f41c7182c70e5ee7a2d852084a`, protected by backup branch `backup/gi-lumaweave-pre-main-20261119`.
+- **Actual merge commit:** `6cc3f07711f851d9e32dc3ab88250d1146b6abeb`, two parents (pre-merge feature + main). `main` itself was NOT changed.
+- A temporary GitHub main-to-feature sync PR #44 correctly became closed/merged when the two-parent feature merge landed. Do not merge the GI branch into main before native acceptance.
+- GitHub comparison after merge: `feature/gi-lumaweave-frame-integration-20261119` is `ahead=319, behind=0` relative to main.
+
+Integration method: GitHub Git object merge tree rooted at the exact main tree `49ae6dfc459386f59acdb624e0a38cd67e404e7f`, applied 109 changed feature blob paths, with genuine three-way line merges on the five shared paths `AGENTS.md`, `CMakeLists.txt`, `Renderer3D.cpp`, `Renderer3D.h` and `Renderer3DModels.cpp`. Overlap review identified only two concurrent same-location insertions: both branches appended to `AGENTS.md`, and main inserted `<array>` while GI inserted `<cmath>` in `Renderer3DModels.cpp`. Both sets were retained. The resulting tree `c3f3eba909e8be823ed058e600d5f916626a83ee` was fetched and inspected: 5710 entries, complete (not truncated), with representative GI/backend and main concurrent model/batching/Vulkan files present. No risky force update and no overwrite of `main` were performed.
+
+**Actual verification:** GitHub object writes accepted, two-parent merge ref updated, main ref unchanged, branch diff graph confirmed main ancestor. **NOT RUN:** native Clang/GCC compile, CMake, CTest, Metal MSL, Vulkan SPIR-V, GLES3/OpenGL renderer scenes, GPU timestamps, visual comparisons. A clean Git merge is NOT proof of source compatibility or behavior.
+
+Next: audit merged Renderer3D/ModelShader API interactions, ownership of per-world cameras and lighting quality, and GLES3/Vulkan shader resource slot limits. Fix any source-visible breaks and update the test plan. Only after feature freeze run Mac Metal and Linux Vulkan/GLES acceptance scripts once, then report actual test errors instead of claiming prior 33/33 on this SHA. Earlier statements in this handoff about 467 commits behind main are **historical** and superseded by this stage.
