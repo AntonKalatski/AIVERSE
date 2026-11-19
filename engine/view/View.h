@@ -36,6 +36,11 @@ struct MeshObject {
     render::float4 color{1,1,1,1};
     uint32_t flags=0;
     float specular=.25f,emissive=0.f;
+    // Generic selection/hover silhouette: an opt-in visual style, never
+    // a genre-specific selection component. Uses the renderer's existing
+    // mask/outline pass, preserving native editor parity.
+    bool selectionOutline=false;
+    render::float4 selectionColor{1,1,1,1};
     bool visible=true;
 };
 struct LineObject {
@@ -214,8 +219,13 @@ public:
     static void submitMesh(render::Renderer3D& renderer,
                            const MeshObject& object) {
         if(!object.visible || !object.mesh)return;
-        renderer.drawMesh(*object.mesh,object.world,object.color,
-            object.flags,object.specular,object.emissive);
+        if(object.selectionOutline) {
+            renderer.drawSelectionMesh(*object.mesh,object.world,object.color,
+                                       object.selectionColor);
+        } else {
+            renderer.drawMesh(*object.mesh,object.world,object.color,
+                object.flags,object.specular,object.emissive);
+        }
     }
     static void submitMeshes(render::Renderer3D& renderer,
                              std::span<const MeshObject> objects) {
