@@ -10271,3 +10271,117 @@ GPU ICB validation; must inspect actual
 and `executeGpuEncodedIndexedIcb` and require
 a nonzero GPU token + successful native execute and pixels.
 
+
+## Stage 10BQ — isolated native Metal GPU ICB graph-source ABI test (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Preceding real on-device acceptance:** Stage 10BP, Apple M3 Ultra
+`metal_texture_gpu` **1/1 PASS** in 2.47 s, including eight
+fragment shader samples via production VT page-table lookup
+over real disk-backed physical pages and LRU transitions.
+This prior PASS is NOT evidence for the experimental ICB test
+added in 10BQ.
+
+**Code commits:**
+- `facd011f45efd11a6883b615003435c204c83300` —
+  NEW `tests/render/metal_icb_graph_gpu.mm`.
+  Test runs in its own process against actual AIVERSE
+  `gfx::createMetalDevice` and the same production
+  `engine/gfx/metal/GfxMetal.mm` as the editor.
+- `6d9876960432d2db472e9bce704de014d9eef261` —
+  `CMakeLists.txt`: new
+  `AIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=OFF` option;
+  on macOS with explicit ON, build/link
+  `aiverse_metal_texture_icb_graph_gpu_test`,
+  register `metal_texture_icb_graph_gpu` in CTest,
+  set `METAL;GPU;TEXTURE_RHI;EXPERIMENTAL_ICB` labels,
+  90-second timeout, and CTest-scoped GPU ICB environment.
+- `e577a2e696b24c213d4c9e480d2a5fc0e917722c` —
+  add explicit `<cstddef>` for source pixel offsets.
+
+**Documentation commits:**
+- `731ee5c31c6472b9a8d67e610883d2d953377853` —
+  `docs/texture-rhi.md`: contract, opt-in and exact commands.
+- `5ee67eb7825dcced4ddab442113093a09c6ecebc` —
+  `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Architecture / low-level GPU acceptance:** `GfxMetal.mm`
+supports GPU-authored indexed ICB only under
+`AIVERSE_EXPERIMENTAL_METAL_ICB=1`,
+`AIVERSE_GPU_ENCODED_ICB=1`, plus
+`AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR=1` for
+per-command material sources. The isolated test creates a
+small native Metal device/layer, all six ordinary PBR
+Texture2D handles per material, different source
+`texture1` and `texture13` Shader Graph source colors,
+and two different per-command U2 vectors. It builds
+uint32 indices and two GPU draw-argument commands in a
+real Metal `BufferType::Storage` buffer, and provides
+two `36-float` instance records matching the current
+GPU ICB encoder input contract.
+
+A deliberately minimal graph-like MSL fragment
+declares argument resource IDs `slot*2` for the
+backend `IcbPbrTextures` layout and exact
+`#define AIVERSE_MODEL_SSR 1`,
+`#define AIVERSE_SG_ICB_GRAPH 1` and
+`#define AIVERSE_SG_TEXTURE_COUNT 1` markers.
+This is **not** the production Shader Graph compiler or
+a full renderer/material pipeline; it specifically
+tests **underlying per-command GPU-encoded ICB fragment
+resource and U2 binding ABI** independently of game genre.
+Two indexed quads cover the left/right halves of the
+RGBA8 render target. They must independently produce
+expected colors `{90,0,160,255}` and
+`{100,140,0,255}` (<=1 LSB/channel), rather
+than both inheriting a homogeneous first material.
+Requires **nonzero ICB token**, successful native
+`executeGpuEncodedIndexedIcb`, healthy GPU
+completion and real asynchronous pixel readback.
+Unsupported hardware, invalid resources, GPU faults,
+timeout or mixed-source pixel errors fail; no CPU draw
+fallback counts as success.
+
+**Scope / safety:** intentionally **separate process** and
+default-OFF option because AGX drivers have historically
+failed under experimental GPU-authored ICB. The existing
+`--metal` test stays registered only under its own
+separate `AIVERSE_TEXTURE_METAL_GPU_TESTS`; ordinary
+23 focused CTests and hardware texture source acceptance
+remain unaffected. Public native `gfx::Device` API,
+production renderer/GfxMetal, ECS, serialized assets,
+scene and genre code remain untouched.
+
+**Actually verified for Stage 10BQ:** checked production
+Metal `prepareGpuEncodedIndexedIcbInternal` and
+`executeGpuEncodedIndexedIcb` and `GpuIcbPbrMaterial`
+contracts via GitHub, authored and committed C++/ObjC++
+fixture and separately gated CMake registration.
+**NOT RUN:** native macOS CMake configure, ObjC++
+compilation/linking, experimental GPU ICB CTest,
+real hardware pixel parity, driver stability or CI.
+Do not reuse the previous Stage 10BP PASS as 10BQ success.
+
+**Next exact command in isolated Mac Studio worktree:**
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+cmake -S . -B build/texture-rhi -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_GPU_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=ON
+cmake --build build/texture-rhi \
+  --target aiverse_metal_texture_icb_graph_gpu_test --parallel 4
+ctest --test-dir build/texture-rhi --verbose --output-on-failure \
+  --no-tests=error -R '^metal_texture_icb_graph_gpu$'
+```
+The CTest target automatically scopes experimental
+environment flags to the new binary. If native Clang
+MSL/ObjC++, GPU ICB compute, driver, or pixel validation
+fails, capture the actual first error/CTest output and
+patch only the confirmed root cause in this branch.
+Append a new handoff per fix. Do not touch the unrelated
+unfinished rebase in the primary AIVERSE worktree.
+Keep PR #21 Draft. On success, next stage should test
+the **actual production Shader Graph compiler/material**
+permutations, and separately Vulkan/GL/mobile parity.
+
