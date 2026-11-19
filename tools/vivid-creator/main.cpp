@@ -52,16 +52,25 @@ struct CreatorApp {
     GroomQuality groomQuality=GroomQuality::High;
     float jaw=0.0f, smile=0.0f, blink=0.0f, yaw=0.18f;
     float wind=0.15f;
+    int draftGuides=512,draftSegments=8;
     char recipeFile[512]="/tmp/aiverse-vivid-human.json";
     std::string status;
     std::size_t displayedRevision=0;
 
-    CreatorApp():draft(session.dna()) {}
+    CreatorApp():draft(session.dna()) {
+        draftGuides=int(draft.groom.guideCount);
+        draftSegments=int(draft.groom.segments);
+    }
+    void syncDraft() {
+        draft=session.dna();
+        draftGuides=int(draft.groom.guideCount);
+        draftSegments=int(draft.groom.segments);
+    }
     void init(gfx::Device& dev) {
         device=&dev;
         if(!renderer.init(dev))throw std::runtime_error("VIVID Creator: renderer init failed");
         rendererReady=true;
-        if(!ui.init(dev,"fonts/ui.ttf",16.0f))
+        if(!ui.init(dev,AIVERSE_SOURCE_DIR "/engine/assets/fonts/ui.ttf",16.0f))
             throw std::runtime_error("VIVID Creator: ImGui init failed");
         uiReady=true;
         renderer.setShadowQuality(ShadowQuality::Medium);
@@ -177,7 +186,7 @@ struct CreatorApp {
             pendingRebuild=true;
         }else {
             status=error;
-            draft=session.dna();
+            syncDraft();
         }
     }
     void slider(const char* label,float& value,float lo,float hi) {
@@ -192,7 +201,7 @@ struct CreatorApp {
         if(!ImGui::Button(id))return;
         std::string err;
         if(!session.preset(id,&err))status=err;
-        else {draft=session.dna();pendingRebuild=true;}
+        else {syncDraft();pendingRebuild=true;}
     }
     void guiControls() {
         ImGui::SetNextWindowPos({14,14},ImGuiCond_Once);
@@ -258,16 +267,21 @@ struct CreatorApp {
             slider("Wind response",&draft.groom.wind,0,3);
             ImGui::Text("Guides %u  Segments %u",draft.groom.guideCount,
                         draft.groom.segments);
-            int guides=int(draft.groom.guideCount),segments=int(draft.groom.segments);
-            ImGui::SliderInt("Hair guides",&guides,4,8192);
+            ImGui::SliderInt("Hair guides",&draftGuides,4,8192);
             if(ImGui::IsItemDeactivatedAfterEdit()) {
-                draft.groom.guideCount=std::uint32_t(guides);
-                editCommit();
+                draft.groom.guideCount=std::uint32_t(draftGuides);
+                std::string error;
+                if(session.edit([this](HumanDNA& d){d=draft;},&error))
+                    pendingRebuild=true;
+                else {status=error;syncDraft();}
             }
-            ImGui::SliderInt("Hair segments",&segments,2,32);
+            ImGui::SliderInt("Hair segments",&draftSegments,2,32);
             if(ImGui::IsItemDeactivatedAfterEdit()) {
-                draft.groom.segments=std::uint32_t(segments);
-                editCommit();
+                draft.groom.segments=std::uint32_t(draftSegments);
+                std::string error;
+                if(session.edit([this](HumanDNA& d){d=draft;},&error))
+                    pendingRebuild=true;
+                else {status=error;syncDraft();}
             }
             ImGui::Checkbox("Simulate hair",&inspectGroom);
             ImGui::SliderFloat("Wind",&wind,0,3);
