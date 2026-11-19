@@ -312,6 +312,62 @@ public:
     }
 
 #ifndef _WIN32
+    // Load from the same trusted directory inode that holds the journal lock.
+    // Never follow a substituted journal symlink/FIFO at admin startup.
+    bool loadPinned(int parentFd,ServerGateway& gateway,
+                    std::string* error=nullptr) const {
+        const auto fail=[&](const char* reason) {
+            if(error)*error=reason;
+            return false;
+        };
+        if(parentFd<0)return fail("PHYSIS pinned journal directory missing");
+        const std::string target=file_.filename().string();
+        if(target.empty() || target=="." || target==".." ||
+           target.find('/')!=std::string::npos)
+            return fail("PHYSIS pinned journal filename invalid");
+        int flags=O_RDONLY|O_NONBLOCK;
+#ifdef O_CLOEXEC
+        flags|=O_CLOEXEC;
+#endif
+#ifdef O_NOFOLLOW
+        flags|=O_NOFOLLOW;
+#endif
+        const int fd=::openat(parentFd,target.c_str(),flags);
+        if(fd<0) {
+            if(errno==ENOENT) {
+                if(error)error->clear();
+                return true; // fresh journal
+            }
+            return fail("PHYSIS pinned journal cannot be opened safely");
+        }
+        struct stat state{};
+        const bool safe=::fstat(fd,&state)==0 &&
+            S_ISREG(state.st_mode) && state.st_nlink==1 &&
+            state.st_uid==::geteuid() && (state.st_mode & 0077)==0 &&
+            state.st_size>=18 &&
+            static_cast<std::uint64_t>(state.st_size)<=kMaxDiskBytes;
+        if(!safe) {
+            ::close(fd);
+            return fail("PHYSIS pinned journal inode or size invalid");
+        }
+        net::Bytes bytes(static_cast<std::size_t>(state.st_size),0);
+        std::size_t offset=0;
+        bool good=true;
+        while(offset<bytes.size()) {
+            const auto count=::read(fd,bytes.data()+offset,bytes.size()-offset);
+            if(count<0 && errno==EINTR)continue;
+            if(count<=0) {good=false;break;}
+            offset+=static_cast<std::size_t>(count);
+        }
+        if(::close(fd)!=0)good=false;
+        if(!good)return fail("PHYSIS pinned journal read failed");
+        std::map<ServerGateway::Key,ServerGateway::Entry> decoded;
+        if(!decodeEntries(bytes,decoded,error))return false;
+        return gateway.restoreJournal(std::move(decoded),error);
+    }
+#endif
+
+#ifndef _WIN32
     // The privileged endpoint owns a verified directory fd for its entire
     // lifetime. Perform every filesystem mutation relative to that inode:
     // no temp-file creation or rename may follow a replaced parent path.
