@@ -26,6 +26,8 @@ struct GraphRuntimeOptions {
     // Strict opt-in: only pure, bounded particle-domain shaderGraph nodes.
     // Arbitrary shader/material graphs remain on the original CPU backend.
     bool gpuMaterial = false;
+    // Nonblocking checkpoint requests every N submitted GPU frames (0=off).
+    uint32_t checkpointEveryFrames = 0;
 };
 
 struct GraphGpuEligibility {
