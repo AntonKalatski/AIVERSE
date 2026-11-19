@@ -112,7 +112,10 @@ std::vector<PrismaTypeDef> buildCatalog() {
         num("jitterPixels", 0.5f, 0.0f, 0.5f, "subpixel sample jitter amplitude; additionally requires AIVERSE_PRISMA_JITTER=1", "Субпиксельное смещение"),
         num("historyConfidence", 0.65f, 0.0f, 1.0f, "reduce stale history near color/depth disagreements", "Проверка достоверности истории"),
         num("renderScale", 1.0f, 0.5f, 1.0f, "fraction of output width/height used for 3D render; AIVERSE_PRISMA_UPSCALE=1 required", "Масштаб 3D-рендера"),
-        num("reconstructionSharpness", 0.15f, 0.0f, 0.5f, "mild HDR current-sample reconstruction before temporal confidence blending", "Резкость реконструкции")}});
+        num("reconstructionSharpness", 0.15f, 0.0f, 0.5f, "mild HDR current-sample reconstruction before temporal confidence blending", "Резкость реконструкции"),
+        flag("adaptiveResolution", false, "automatically adjust renderScale only from completed GPU frame timings; AIVERSE_PRISMA_ADAPTIVE=1 required", "Адаптивное разрешение"),
+        num("targetGpuMs", 16.6f, 4.0f, 50.0f, "target completed GPU frame milliseconds; whole frame, not viewport-only", "Целевое время GPU, мс"),
+        num("minRenderScale", 0.5f, 0.5f, 1.0f, "minimum adaptive internal render scale; never exceed authored renderScale", "Минимальный масштаб")}});
     c.push_back({T::ShaderGraph, "shaderGraph", "Shader Graph", "Custom bounded fragment graph.", C::Medium, PrismaQuality::Medium, {}});
     return c;
 }
