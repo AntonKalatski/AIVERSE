@@ -38,6 +38,7 @@ struct WaterSurfaceVertex {
 struct WaterTileRange {
     uint32_t firstIndex=0,indexCount=0;
     double centerX=0,centerZ=0; // world metres; precise relative-origin mapping
+    double minX=0,maxX=0,minZ=0,maxZ=0;
 };
 struct WaterSurfaceMesh {
     std::vector<WaterSurfaceVertex> vertices;
@@ -274,7 +275,8 @@ inline WaterSurfaceMesh buildWaterSurfaceMesh(
                 tri(mesh,ia,ib,ic);tri(mesh,ia,ic,id);
             }
             mesh.tiles.push_back({first,uint32_t(mesh.indices.size())-first,
-                                  (sx0+sx1)*0.5,(sz0+sz1)*0.5});
+                                  (sx0+sx1)*0.5,(sz0+sz1)*0.5,
+                                  sx0,sx1,sz0,sz1});
         }
         boundary.emplace_back(P{x0,z0},P{x0,z1});
         boundary.emplace_back(P{x0,z1},P{x1,z1});
