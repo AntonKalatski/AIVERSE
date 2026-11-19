@@ -1278,3 +1278,14 @@ Draft. Handoff:
 - Host ledger records exact generation-safe PHYSIS event identity + stable TerraWeave `speciesId/plantKey`; replay returns DurablyCommitted only for equal immutable payload; repairs rearm PHYSIS, retire the host record after authoritative repair, then let the derived physics reconcile remove the body. Real grasses remain patch/cluster work, never per-blade Box3D.
 - Stage87 CTest `physis_nature_fall_host` covers persisted host logic on PHYSIS-only; optional `physis_terraweave_fall_bridge` needs both Terra headers and enabled Box3D. **Tests not yet run on this new code**; previous 28/28 PASS belongs to prior branch.
 - Read handoff `docs/agent-handoffs/physis-stage87-terraweave-fall-host-2026-11-19.md` before continuing; do not merge another agent's active branch into this isolated worktree automatically.
+
+## Stage 94 — composed PHYSIS + TerraWeave host-only integration
+
+- Integration branch `integration/physis-terraweave-complete-20261119` has a **two-parent** merge of the pinned PHYSIS fracture host and canonical TerraWeave source. It does NOT change `feature/terraweave`, `feature/physis-nature-simulation`, `main`, or their agents' macOS worktrees.
+- Read `docs/world/physis-terraweave-fall-integration.md` for the exact opt-in native API, World transaction, scheduler/barrier order, persisted rooted.fallen state, Box3D derived body reconciliation, float-only pose snapshots, deliberate repair and tombstone retention.
+- `dispatchPhysisTerraWeaveFalls` builds one root index, stages a World copy ONCE for the batch and commits host ledger, PHYSIS outbox ACK and TerraWeave rooted.fallen + stateRevision together. No out-of-band Box3D work happens inside the fixed-tick PHYSIS simulation.
+- `repairPhysisTerraWeavePlant` is a trusted gameplay action only after acknowledged fracture and later climate tick; it uses TerraWeave RootSupportRegistry validation, PHYSIS rearm and host retire transaction. `pruneNatureFallHistory` is legal only after replication/rollback horizons have elapsed.
+- `NatureFallPhysicsFrame` is a separate host-owned Box3D snapshot (exact float bits/pose/velocities), NOT deterministic PHYSIS ECS or a full Box3D world/contact checkpoint.
+- New source is **NOT YET native-compiled or CTest-verified**. Previous Mac Studio PHYSIS 29/29 passed on an older, uncombined branch only. Do not report a green Terra/Box3D integration before the final real suite.
+- **One-pass acceptance after the full implementation**: run `bash tools/physis-terraweave-final-validation.sh` from an isolated clean worktree. It configures Box3D, builds all desktop tests, confirms the conditional true integration target exists and runs one unfiltered CTest pass with reports. Fix actual failures and append handoffs before requesting main merge.
+- Stage94 handoff: `docs/agent-handoffs/physis-stage94-combined-fall-integration-2026-11-19.md`.
