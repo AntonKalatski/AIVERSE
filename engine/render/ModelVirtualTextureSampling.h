@@ -20,10 +20,16 @@ struct ModelVirtualTextureBinding {
     gfx::TextureHandle pageTable;
     int layer = 0;
     float gutterPixels = 2.0f;
+    // Match the original material's U/V sampler modes. ClampToBorder
+    // cannot be represented by the current RGBA8 page-table layout.
+    gfx::SamplerAddressMode addressU = gfx::SamplerAddressMode::ClampToEdge;
+    gfx::SamplerAddressMode addressV = gfx::SamplerAddressMode::ClampToEdge;
     bool valid() const {
         return physicalAtlas.valid() && pageTable.valid() &&
                layer >= 0 && layer < 16 &&
-               std::isfinite(gutterPixels) && gutterPixels >= 0;
+               std::isfinite(gutterPixels) && gutterPixels >= 0 &&
+               addressU <= gfx::SamplerAddressMode::MirrorRepeat &&
+               addressV <= gfx::SamplerAddressMode::MirrorRepeat;
     }
     bool operator==(const ModelVirtualTextureBinding&) const = default;
 };
@@ -40,6 +46,8 @@ inline uint64_t modelVirtualTextureBindingHash(const ModelVirtualTextureBinding&
     mix(b.pageTable.id);
     mix(uint32_t(b.layer));
     mix(b.gutterPixels == 0 ? 0u : std::bit_cast<uint32_t>(b.gutterPixels));
+    mix(uint32_t(b.addressU));
+    mix(uint32_t(b.addressV));
     return hash;
 }
 inline bool compatibleModelVirtualTextureBinding(
@@ -50,7 +58,7 @@ inline bool compatibleModelVirtualTextureBinding(
 }
 
 struct ModelVirtualTextureUniforms {
-    float layer = 0, gutterPixels = 2, unused0 = 0, unused1 = 0;
+    float layer = 0, gutterPixels = 2, addressU = 0, addressV = 0;
 };
 static_assert(sizeof(ModelVirtualTextureUniforms) == 16);
 
@@ -98,11 +106,12 @@ inline bool injectModelVirtualTextureSampling(std::string& fragmentGLSL,
     // are validated. Studio debug and shadow paths stay unchanged.
     fragmentGLSL.replace(glSample,sourceFragment.size(),
         "    vec4 tb = aiverseSampleVirtual("+atlasName+","+tableName+
-        ",v_uv,int(uModelVt.x),uModelVt.y,texture(tex1,v_uv));");
+        ",v_uv,int(uModelVt.x),uModelVt.y,texture(tex1,v_uv),"
+        "int(uModelVt.z),int(uModelVt.w));");
     msl.replace(metalSample,sourceMetal.size(),
         "    float4 tb = aiverse_sample_virtual("+atlasName+","+
         tableName+",s1,in.uv,uint(uModelVt.x),uModelVt.y,"
-        "tex1.sample(s1,in.uv));");
+        "tex1.sample(s1,in.uv),uint(uModelVt.z),uint(uModelVt.w));");
 
     fragmentGLSL.insert(0,
         std::string("layout(std140) uniform U6 { vec4 uModelVt; };\n")
