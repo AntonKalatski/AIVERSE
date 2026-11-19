@@ -234,6 +234,21 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         if (mask) defs += "#define ALPHAMASK 1\n";
         if (alphaR8) defs += "#define VIRTUAL_ALPHA_MASK 1\n";
         if (vtSampling) defs += "#define AIVERSE_MODEL_VT 1\n";
+        // Only fragment-only, opaque Shader Graph permutations can have
+        // their direct texture slots remapped into the Metal PBR ICB
+        // argument table. Vertex-graph texture arguments stay on CPU draws.
+        const bool graphIcbCandidate = graph && !shadow && !outline &&
+            !depthAfter && !mask && !blend && !lodFade &&
+            !skinned && !baked && !morph && !materialPalette &&
+            graph->vertexMsl.empty() && graph->vertexGlsl.empty() &&
+            !graph->outputs.count("vertexOffset") &&
+            !graph->outputs.count("vertexNormal") &&
+            graph->textures.size() <= 4;
+        if (graphIcbCandidate) {
+            defs += "#define AIVERSE_SG_ICB_GRAPH 1\n";
+            defs += "#define AIVERSE_SG_TEXTURE_COUNT " +
+                std::to_string(graph->textures.size()) + "\n";
+        }
         if (materialPalette) defs += "#define MATERIAL_PALETTE 1\n";
         if (instancePalette) defs += "#define MATERIAL_INSTANCE_PALETTE 1\n";
         if (lodFade) defs += "#define LODFADE 1\n";
@@ -263,11 +278,29 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                         macros+="#define SG_TEXTURE_LOD"+index+"(uv,lod) "+(metal?"tex"+slot+".sample(s"+slot+",uv,level(lod))":"textureLod(tex"+slot+",uv,lod)")+"\n";
                     }
                     if(metal) {
-                        const auto f=source.find("fragment ");const auto at=source.find(") {",f);
-                        if(at!=std::string::npos)source.insert(at,args);
+                        const auto f=source.find("fragment ");
+                        const auto at=source.find(") {",f);
+                        // Direct Metal graph parameters are not valid in a
+                        // GPU-encoded ICB. Its fragment instead reads the
+                        // same resources from IcbPbrTextures [[buffer(8)]].
+                        if(at!=std::string::npos)
+                            source.insert(at,
+                                "#if !defined(AIVERSE_ICB_PBR)\n"+
+                                args+"\n#endif\n");
                     } else source=declarations+source;
                     const auto uv=metal?"in.uv":"v_uv", wp=metal?"in.wpos":"v_wpos", np=metal?"in.nrm":"v_nrm";
-                    std::string code="\n#define SG_SAMPLE(uv) "+std::string(metal?"tex1.sample(s1,uv)":"texture(tex1,uv)")+"\n"+macros;
+                    std::string code;
+                    if(metal && graphIcbCandidate) {
+                        code+="#if defined(AIVERSE_ICB_PBR)\n";
+                        for(size_t i=0;i<graph->textures.size();++i) {
+                            const auto slot=std::to_string(kGraphTextureSlot+int(i));
+                            code+="#define tex"+slot+" icbTextures.tex"+slot+"\n";
+                            if(kGraphTextureSlot+int(i)<16)
+                                code+="#define s"+slot+" icbTextures.s"+slot+"\n";
+                        }
+                        code+="#endif\n";
+                    }
+                    code+="\n#define SG_SAMPLE(uv) "+std::string(metal?"tex1.sample(s1,uv)":"texture(tex1,uv)")+"\n"+macros;
                     if (graph->usesVirtualTexture) {
                         if (vtSampling) {
                             const std::string sampled = metal ?
