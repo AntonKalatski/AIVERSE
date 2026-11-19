@@ -2465,3 +2465,101 @@ array or a renderer-provided ripple texture, plus real SpectraFX
 mapping from event kinds. Prefer the existing RHI and NEREID
 ownership boundaries. Then waterfall/cascade geometry and current
 forces. Update this document after the next implementation stage.
+
+## Stage 24 — ripple normals integrated into existing water shaders
+
+**Branch**: `feature/nereid-water-core`, Draft PR #23.
+**Baseline**: Stage 23 handoff at
+`506ff8c62071f082a2d4568a33b3b6fa81b92cb4`.
+**Instruction**: functional features first; **no tests authored or run**.
+No merge of main or unrelated branches in this stage.
+
+### Commits / changed files
+
+- `27492a76c1d796b5b8ce529598f53fe7f07293f8` —
+  `engine/render/Renderer3D.h`: `drawNereidRippleMesh` accepts four
+  per-surface ripple float4 slots, and each DrawItem retains its own
+  array so deferred rendering does not accidentally reuse parameters
+  from another water body. The existing `drawMesh` API remains intact.
+- `74eee4ba5d23a81e47f93fc879d070ba01b5db9f` —
+  `engine/render/Renderer3D.cpp`: water draw entries capture ripple
+  slots, and U0 uploads now include four vec4 ripple parameters.
+- `28f193abced6cad793077b35803c771f79b05036` —
+  `engine/render/Shaders.h`: enlarged matching GLSL/MSL U0 layout
+  and ripple-gradient normal perturbation.
+- `766f34f9e3c307ae068ee2933294f856f051e7cc`,
+  `8cd860e85f44a75a3d80e59caf5b994322f37872` —
+  `engine/render/Shaders.h`: moved ripple snippets out of the
+  unrelated trace shader source macro into lit water fragment code,
+  and after the existing procedural normal-wave calculation so it
+  cannot be overwritten.
+- `70728d3b959394cf9ca1c42326703575a8bbdb93` —
+  `engine/render/Renderer3DReflect.cpp`: keep U0 upload length
+  equal to the enlarged global shader U0 in reflection passes.
+- `7946097a87eb200aef37f9e2127b798599a3cbe5`,
+  `96097da6c78cd9d5f0600e8b71ca8d0edb7a234e` —
+  `engine/world/NereidRipples.h`: select at most four nearby-origin
+  ripple events per stable water ID. Avoid spatial rejection by
+  origin distance on very large lakes/polygons; fragment shader
+  evaluates distance per pixel.
+- `4232e1a43bd3d6456fdfc92b1fa8b9d6b109de9a` —
+  `engine/render/NereidWaterRenderer.h`: send ripple uniforms in
+  the existing water draw; unchanged water draw API and style.
+- `3ec0e9774d9d44890d7ca5d2cb14d2d8bbb47f81` —
+  `engine/render/NereidSurfaceResident.h`: forward per-surface ripples
+  while retaining the same GPU-resident mesh.
+- `af514c39b81f40a7f08e0bce8c1ac8fe19686dbd` —
+  `engine/world/NereidWaterScene.h`: binds each visible water slot's
+  ripple set to its normal shader, with world-origin-relative X/Z
+  from existing render-origin coordinates.
+- `c028c4f4ef296e17994d1209414a35e9bbe67562` —
+  `engine/world/WorldScene.cpp`: pass the ripple field into
+  `NereidWaterScene::draw`, and stop drawing Stage 23 overlay rings
+  automatically. The Stage-23 `NereidRippleField::draw` remains
+  explicitly callable for debugging or alternate hosts.
+
+### Behavior and ownership
+
+The canonical ECS `WaterInteractionOutputComponent` is unchanged.
+Visual history still comes from Stage 23's read-only, tick-filtered
+events. Each NEREID water draw submits at most four float4 values:
+`(renderRelativeX, renderRelativeZ, radiusMetres, fadedAmplitude)`.
+Unknown/nonmatching water IDs contribute zero. Values are cached
+inside the deferred draw item rather than mutable renderer state.
+GLSL/MSL perturb the resulting procedural normal by the gradient of
+a bounded radial Gaussian envelope centered on each expanding ring.
+Existing lighting, Fresnel/specular, SSR, planar reflection, depth
+optics and Prisma hooks consume the modified normal. No additional
+texture, render target, GPU buffer, ECS component or native genre
+dependency was introduced.
+
+The water U0 block grew by four vec4 entries; this changes shared
+Renderer3D/GLSL/MSL layouts, so ALL lit and reflection shader
+variants must be compiled before production integration. The
+`drawMesh` API and all its existing call sites remain source
+compatible, and new arrays default to zero for non-water items.
+The ring normal effect stays on NEREID-tagged water only; unrelated
+shader effects do not sample these parameters.
+
+**Known limitations:** four ripples per water surface are selected by
+proximity to the mesh's stable origin, not per-tile/per-pixel adaptive
+lists. Very large polygons/oceans with many simultaneous events may
+omit waves away from the origin; the next stage should use per-tile
+ripple selection or a bounded GPU ripple texture. This is only
+visual normal perturbation, not geometry displacement or physical
+wave-force propagation. Stage 23's overlay triangle renderer is
+retained as an opt-in debug facility.
+
+### Verification and next step
+
+**Actually performed:** source API inspection and all GitHub
+implementation/documentation commits. **NOT PERFORMED** (per user):
+new tests, C++ compile, CTest, GLSL/Metal compilation, RHI runtime
+render checks, FPS/RTS regressions. No testing claims should be
+derived from the authored features. Keep PR Draft.
+
+**Next feature stage:** shader-level amplitude/foam response for
+impacts, per-tile multi-ripple field for large open water, and
+auto-mapping interaction event kinds to SpectraFX effects through
+an optional host adapter. Later add cascading water geometry.
+Update handoff after each phase; test only when user requests.
