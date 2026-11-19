@@ -3761,3 +3761,101 @@ Keep PR Draft.
 policy for connected water bodies near cascade mouths, shared by
 reference and indexed NEREID samplers, preserving the canonical
 `WaterBody.flow` and body geometry.
+
+## Stage 37 — optional current continuity through linked cascades
+
+**Branch:** `feature/nereid-water-core`, Draft PR #23.
+**Main sync:** prior Stage 36 confirmed main already an ancestor;
+no merge needed. **Owner priority:** features first, no native build
+or tests this stage.
+
+**Commits / files:**
+- `d26df5fb847b4cc135c3e2e296190d0d918a9da1` —
+  `libraries/include/aiverselib/water/NereidCascades.h`:
+  remove unnecessary dependency on WaterSystems, explicitly include
+  Simulation; add independent persisted v1
+  `WaterCascadeFlowPolicyComponent{radius,blend,speedLimit,enabled}`.
+  Registration is opt-in via existing
+  `registerNereidCascadePersistence`; no existing archives changed.
+- `ab93122ee69093a4fc6aea7bf8e8d71b0f291f7a` —
+  NEW `libraries/include/aiverselib/water/NereidCascadeFlow.h`:
+  bounded deterministic reference ECS policy near a linked
+  inlet/outlet. It steers WaterSample.flow toward the cascade mouth,
+  and downstream combines authored cascade speed with the upstream
+  river/eddy current speed, capped by `speedLimit`.
+  Multiple contributions are resolved by sorted generation-safe
+  cascade IDs (up to 64); no ECS body flow mutations.
+- `50ae5f41d79f052eb3e5a3837c346da3affdcc8e`,
+  `0ad6fa24c7a195a6f385901c4ae610b82f77aaa8` —
+  `libraries/include/aiverselib/water/NereidWaterSystems.h` and
+  `NereidQueryIndex.h` now apply exactly the same post-sampling
+  `applyWaterCascadeFlow(world,position,sample)` for submerged
+  contacts (normal and indexed broadphase).
+- `2be4372785e9d4b393dcd83c3f24799e8d0a2b5f` —
+  `NereidCascadeFlow.h` refactors the shared mouth contribution
+  (`waterCascadeMouthContribution`) and stable reducer
+  (`blendWaterCascadeContributions`) for ECS and presentation.
+- `95ecb740307cc36cdfd9502abc7fdd4bd80a6dca` —
+  `engine/world/NereidCascadeScene.h`:
+  optional `NereidCascadeSource::flowPolicy` +
+  `useFlowPolicy`; read-only `flowAtConnection` reuses same
+  Fixed-point mouth kernel and current profiles in water sources.
+- `4b434200b4851cb27529d507a5b042a48699e80c` —
+  `engine/world/NereidCascadeManifest.h`:
+  optional JSON `flowContinuity` fields.
+- `294213069315c539d42dfa1e0ce4a2f448107a7b` —
+  `engine/world/NereidCascadeEcsPresentation.h`:
+  copy optional ECS flow-policy component into read-only scene source.
+- `7bc06992ae2473d1d8fd451de00269bd0cb01c4b` —
+  `engine/world/WorldScene.h`:
+  presentation ripple advection combines existing local water
+  profile/vortex current with cascade outlet/inlet blending,
+  using exactly the shared Fixed-point contribution kernel.
+
+**API / example:**
+```json
+{
+  "id": 31, "inletWaterId": 10, "outletWaterId": 11,
+  "joinLength": 3,
+  "flowContinuity": {
+    "enabled": true,
+    "radius": 8,
+    "blend": 0.75,
+    "speedLimit": 30
+  }
+}
+```
+
+ECS-native games attach `WaterCascadeConnectionsComponent`,
+`WaterCascadeComponent` and optional
+`WaterCascadeFlowPolicyComponent` to the same cascade Entity.
+Register cascade persistence via
+`NativeWaterPipelineConfig::enableCascades=true`.
+The shared water contact selects a single body as before;
+its `WaterSample.flow` receives an additional **locally blended**
+current around a connected cascade mouth, only while submerged.
+Existing buoyancy/drag therefore observes continuity without
+changing the authoritative `WaterBodyComponent.flow`.
+This is *not mass transfer*: no conservation of fluid volume,
+pressure equation, cascade geometry motion or integration of
+rigid bodies was introduced. Optional scene JSON/immutable
+ECS snapshots supply the same flow to visual ripple drift.
+
+**Actually performed:** GitHub source review and implementation
+commits. **NOT RUN:** compilation, CTest, per-platform shader
+validation, GPU visuals, FPS/RTS/Box3D regression, save/replay
+execution (features-first direction). PR stays Draft.
+
+**Known limitations:** flow near mouths is an analytic radial blend,
+not full Navier–Stokes dynamics; the authored cascade direction and
+position must match its linked water footprint. Up to 64
+generation-safe cascade contributions are considered; if more
+are eligible, the lowest IDs win deterministically. The visual
+side uses the immutable NEREID water snapshot; the host must
+publish changed sources after an ECS read barrier. Scene flow
+policy changes do not require a static mesh re-upload.
+
+**Next stage:** Stage 38 optional rapid/whitewater surface response
+based on local current and vortex magnitude, per-tile water shader
+inputs; preserve NEREID GPU material ownership and default-off
+behavior, then append per-stage handoff before test phase.
