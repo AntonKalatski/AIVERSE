@@ -2775,3 +2775,131 @@ No production Vulkan renderer is switched on in this stage.
 | GPU indirect packet preparation | Stage 16.2 | NOT RUN |
 | Renderer3D exclusive production GPU draw routing | NOT IMPLEMENTED | N/A |
 
+
+---
+
+## Stage 16.2 — GPU-authored Vulkan indexed indirect packets + strict eligibility (2026-11-20)
+
+**Branch:** `feature/strata-virtual-geometry`. **Implemented
+source/test code only; NOT COMPILED, NOT TESTED, NOT ENABLED FOR
+PRODUCTION DRAW SUBMISSION.** Do not merge to main or claim GPU
+raster parity until all required native visual fixtures pass.
+
+### Architecture and implementation
+
+- `StrataVulkanCullingShaders.h` now includes three small Vulkan
+  GLSL450 compute kernels:
+  **clear** the entire fixed-capacity indirect array to zero draws;
+  **select** cluster nodes and GPU-author matched
+  `gfx::DrawIndexedIndirectCommand` (20 bytes each; binding4) while
+  also writing legacy `GpuSelectedCluster` readback records;
+  **safety** reads GPU overflow/invalid counters and either zeros
+  every indirect command or emits exactly one full ORIGINAL indexed
+  primitive fallback command to slot0 when the caller has passed
+  an explicit strict single-material RHI contract. All stages stay
+  GPU-resident and do **not** require a synchronous CPU counter read.
+  Over-capacity or corrupt metadata never publishes a partial
+  production packet as a valid STRATA replacement.
+- `StrataGpuCulling.h/.cpp` carries optional
+  `GpuSelectionSubmission::indirect`, plus
+  `gpuIndirectPrepared()`; dispatching Vulkan additionally allocates
+  one `BufferType::Indirect` RHI buffer of up to 2048 slots per
+  submission in a completed-serial-guarded frame pool, and executes
+  clear/select/safety passes (respectively). Metal remains the
+  original GPU-selection diagnostic path, with no indirect buffer.
+  The Vulkan `GpuPassConfig` adds `baseVertex` and strictly gated
+  fallback fields. Device`::dispatchChecked` rejection leaves the
+  caller's original submission unchanged.
+- `VkResources.cpp` marks `BufferType::Indirect` as both
+  `VK_BUFFER_USAGE_STORAGE_BUFFER_BIT` and
+  `VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT`, and leaves
+  `BufferType::Storage` usable for vertex, index and GPU storage.
+  `VkDraw.cpp` implements
+  `drawIndexedGpuIndirect(arguments,offset)` as an explicit opt-in
+  single-command invocation through existing indexed-indirect draw.
+  No `Renderer3D` material/shader/transform state is replaced by
+  that RHI method.
+- New genre-independent
+  `StrataVulkanIndirectContract.h/.cpp` exposes
+  `prepareVulkanIndirectContract(...)` and
+  `validateVulkanIndirectSubmission(...)`. The caller must prove
+  exactly one static rigid opaque source primitive/material/node, no
+  skin/morph/custom shader/other authored LOD, no active
+  sun-shadow/mirror dependent rendering, pooled original VB/IB
+  sharing the auxiliary STRATA index storage, nonzero frame serial,
+  exact source geometry/material revisions and current GPU handles.
+  It binds an ORIGINAL full-primitive indexed fallback (not a
+  discard/blank frame) for GPU overflow/invalid. Unknown/multiple
+  material or transform sources remain on the existing CPU/Legacy
+  route. The contract itself is read-only: it does not submit draws.
+- **Important routing boundary**: `Renderer3D::drawModel` still
+  submits the original Legacy draw by default. This Stage 16.2
+  produces a hardware-consumable GPU indirect *candidate packet*;
+  it does **not** yet replace the actual Renderer3D raster pass
+  because material state, per-command transforms, shadows,
+  reflections and real pixel parity must be proven first. This is
+  deliberately conservative, not a "finished Nanite" claim.
+
+### Commits / modified files
+
+- Vulkan GLSL: `StrataVulkanCullingShaders.h`
+  `a060861f30f7dd54586bb806274bef4d158cc5ab`
+  (indexed packet output), `62161fbaed5eca16817dfde834d901840f99c68a`
+  (clear), `44c380c7955ff9ab9852686cd09fa395e2439dd6`
+  (optional original-primitive fallback on GPU error).
+- `StrataGpuCulling.h`
+  `4b345f8e9472ea081626542d1f8b58ede2161a5a`,
+  `ae6cdcdce1f4a233dc435d873b82280bd0e51d2c`,
+  `e0422a9825456cb6e8063941e25477cd50660474`
+- `StrataGpuCulling.cpp`
+  `9419a4213c6c679f5901eff9287db191c1497d24`,
+  `bedb285887405cd73687ca1010a606fc315b7825`
+- `VkDevice.h` `8181506519477c0bd7df57c0f82029eb4bb5996a`;
+  `VkDraw.cpp` `6de3aed9da988cecbb2afb07c90e582abc972905`
+- New `StrataVulkanIndirectContract.h/.cpp`
+  `2afa975a1703e2ea4ff52ca6d9955867382608a4`,
+  `c2d9f0688c2ab27ee77723c66c695b763c245abb`
+- `CMakeLists.txt` `ce324ea1fa60cbce2a389c4718faa6da2f889e06`
+  adds eligibility source to `aiverse_strata_render_routing`.
+- `tests/render/strata_gpu_culling.cpp`
+  `ad6934523e582d26cbf9d83bbb84b39f64aa01a7`:
+  3-pass checked Vulkan compute mock, unchanged Metal contract,
+  output-buffer type/capacity, no CPU draw submission.
+- `tests/render/strata_vulkan_kernel.cpp`
+  `fce3a94b65242d3e1913e3208e2d60df43fd0ab2`,
+  `da4ee80dec16f0d8ebdd074eb3007846c58d2730`:
+  optional real Vulkan GPU indirect buffer readback, empty-slot
+  verification, invalid/overflow all-zero safety when no fallback
+  is permitted, and source-original command under explicit fallback.
+- `tests/render/strata_render_routing.cpp`
+  `3a495277b3e3f63055d628e87964feb547fd0d89`:
+  reject unsafe alpha, other passes, multiple instances, stale
+  revision/handles. It does not claim production raster parity.
+
+### Required final test matrix (still NOT RUN)
+
+- `aiverse_strata_vulkan_kernel_tests`: shader SPIR-V compiler;
+  real offscreen Vulkan GPU selection/counters/parity when driver
+  available, indirect byte parity and GPU fallback safety.
+- `aiverse_strata_gpu_culling_tests`: recording Metal/Vulkan
+  three-pass contract and missing-capability rejection.
+- `aiverse_strata_render_routing_tests`: strict one-material
+  contract, source revision and no-double-draw policy.
+- Vulkan RHI regression `aiverse_vulkan_tests`, plus other
+  STRATA stages 1–15 (Metal main/shadow/reflection strict parity,
+  GLES3 compile/device when available). Run all once user requests
+  the combined final verification.
+
+### Next functional stage 16.3 / remaining work
+
+Actual *exclusive* Renderer3D GPU draw authoring for a source requires
+binding the same model pipeline, lighting/material uniforms, source
+VB/IB and per-instance world transforms as the Legacy drawing branch,
+without duplicating its shadow/reflection work. Do not bypass
+Renderer3D with an independent raw RHI draw. Initially gate by
+single rigid opaque material, one instance, one main view and explicit
+parity; then widen to multiple materials/instances, shadows and
+reflections. CPU/GPU selection comparison can be done in diagnostics
+but not as a synchronous production readback. Until verified, keep
+`GeometryScene`'s default-off STRATA GPU route, CPU portable LOD and
+Legacy fallback as authoritative.
