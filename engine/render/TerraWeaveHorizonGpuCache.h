@@ -6,6 +6,7 @@
 
 #include "engine/render/Model.h"
 #include "engine/render/TerraWeaveHorizonWindPatch.h"
+#include "engine/render/TerraWeaveHorizonWindCompression.h"
 #include "engine/world/AsyncChunkStream.h"
 #include "engine/world/TerraWeaveHorizon.h"
 #include "engine/world/TerraWeaveWindShadowCachePolicy.h"
@@ -54,9 +55,12 @@ inline size_t horizonForestWindShadowCapacityBytes(
                              sizeof(render::ModelVertex);
     const size_t centerBytes=shadow.centersCm.capacity()*
                              sizeof(std::pair<int64_t,int64_t>);
-    if(vertexBytes>std::numeric_limits<size_t>::max()-centerBytes)
-        return std::numeric_limits<size_t>::max();
-    return vertexBytes+centerBytes;
+    const size_t compressedBytes=shadow.packedVertices.capacity();
+    constexpr size_t maxBytes=std::numeric_limits<size_t>::max();
+    if(vertexBytes>maxBytes-centerBytes ||
+       compressedBytes>maxBytes-centerBytes-vertexBytes)
+        return maxBytes;
+    return vertexBytes+centerBytes+compressedBytes;
 }
 
 inline size_t estimateHorizonGpuResidencyBytes(
@@ -87,6 +91,16 @@ public:
     size_t bytes() const {return occupiedBytes_;}
     size_t evictions() const {return evictions_;}
     size_t windShadowEvictions() const {return windShadowEvictions_;}
+    size_t windShadowCompressions() const {return windShadowCompressions_;}
+    size_t windShadowRestores() const {return windShadowRestores_;}
+    size_t compressedWindShadowRegions() const {
+        size_t count=0;
+        for(const auto& [cell,entry]:entries_) {
+            (void)cell;
+            if(entry.region.forestWind.packedVertexCount)++count;
+        }
+        return count;
+    }
     size_t cachedWindShadowBytes() const {
         size_t sum=0;
         for(const auto& [cell,entry]:entries_) {
@@ -126,6 +140,11 @@ public:
         auto it=entries_.find(cell);
         if(it==entries_.end()||it->second.revision!=revision)
             return std::nullopt;
+        // Restore exact CPU bytes BEFORE reactivation. If allocation or
+        // decoder validation fails the still-owned cached GPU entry remains
+        // in the LRU; no mismatched partial GPU wind patch can run.
+        if(restoreHorizonForestWindOverlay(it->second.region.forestWind))
+            ++windShadowRestores_;
         HorizonGpuRegion result=std::move(it->second.region);
         occupiedBytes_-=result.estimatedGpuBytes;
         entries_.erase(it);
@@ -155,7 +174,8 @@ public:
 
     void retain(gfx::Device& device,world::Cell cell,uint64_t revision,
                 HorizonGpuRegion region,size_t limit,size_t budgetBytes,
-                size_t windShadowBudgetBytes=16u*1024u*1024u) {
+                size_t windShadowBudgetBytes=16u*1024u*1024u,
+                bool compressCachedShadows=false) {
         if(!region.model)return;
         if(!region.estimatedGpuBytes ||
            region.estimatedGpuBytes>budgetBytes || limit==0){
@@ -179,6 +199,11 @@ public:
             render::releaseModel(device,*region.model);
             return;
         }
+        // No GPU readback or reupload: only inactive shadow bytes are
+        // packed. A non-beneficial stream keeps the raw reference intact.
+        if(compressCachedShadows &&
+           compressHorizonForestWindOverlay(region.forestWind))
+            ++windShadowCompressions_;
         const size_t cost=region.estimatedGpuBytes;
         entries_.emplace(cell,Entry{std::move(region),revision,++stamp_});
         occupiedBytes_+=cost;
@@ -219,6 +244,8 @@ private:
     size_t occupiedBytes_=0;
     size_t evictions_=0; // LRU + invalidated terrain generations
     size_t windShadowEvictions_=0; // subset: CPU budget evicted whole GPU entry
+    size_t windShadowCompressions_=0; // successful inactive lossless packs
+    size_t windShadowRestores_=0; // GPU LRU reactivation with exact unpack
     uint64_t stamp_=0;
 };
 
