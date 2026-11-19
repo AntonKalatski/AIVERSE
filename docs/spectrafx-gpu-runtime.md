@@ -1,5 +1,22 @@
 # SpectraFX — opt-in GPU emitter playback in native AIVERSE projects
 
+## Strict on-device Metal acceptance (Stage 102)
+
+CTest's default success return code can include **skipped** MetalGPU tests.
+The new `metal_evidence` acceptance stage explicitly reports each of the
+three real GPU tests. On Apple M3 Ultra, enforce true native 3/3 PASS:
+
+```bash
+AIVERSE_ACCEPTANCE_REQUIRE_METAL=1 \
+  bash tools/spectrafx/acceptance.sh build/spectrafx-validation
+```
+
+This runs all full acceptance steps, including `spectrafx_retirement` and
+`spectrafx_metal_rhi`, then rejects missing or skipped MetalGPU coverage.
+Parser unit tests passed **4/4 locally**; this is not yet a hardware or
+full-engine PASS for Stage 98–102. See the Stage 102 handoff.
+
+
 ## Stage 101 — production retirement policy regression (not yet executed)
 
 `spectrafx_retirement` is a new desktop CPU-side CTest using the real

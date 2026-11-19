@@ -1,5 +1,18 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 102 — distinguish 3/3 native Metal PASS from SKIPPED (parser PASS)
+
+**Code:** `a6b8617d472b104e660a254d2ed228abc4c81905`,
+`e711c2a955e54a12c6b3aa8136724744cc99726a`.
+New `metal_evidence` acceptance stage parses verbose CTest for
+`spectrafx_metal_gpu`, `spectrafx_metal_billboard` and
+`spectrafx_metal_rhi`. `AIVERSE_ACCEPTANCE_REQUIRE_METAL=1`
+fails the acceptance if any device test is SKIPPED, FAILED or MISSING.
+Hermetic Python parser unit tests: **4/4 PASS in local container**.
+**Not yet run:** Stage 98–102 native C++/Metal/CTest on the current SHA.
+See `docs/agent-handoffs/spectrafx-stage102-metal-evidence-2026-11-19.md`.
+
+
 ## Stage 101 — deterministic production HybridPlayback retire/reset test (NOT RUN)
 
 Code `50df70bd39cf8059c54e75389c81a1c6eb40a306` adds

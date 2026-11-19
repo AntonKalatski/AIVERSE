@@ -8,7 +8,7 @@ description: Author and integrate AIVERSE SpectraFX visual effects: versioned gr
 **Canonical documentation:** `docs/spectrafx.md`.  
 **Exact stage history:** `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.  
 **Engineering rules:** `AGENTS.md`.
-**Latest handoff:** `docs/agent-handoffs/spectrafx-stage101-hybrid-retirement-2026-11-19.md`.
+**Latest handoff:** `docs/agent-handoffs/spectrafx-stage102-metal-evidence-2026-11-19.md`.
 
 ## Fast path (current supported capabilities)
 
@@ -75,3 +75,14 @@ through a controlled fake Metal RHI, while the separate
 `spectrafx_metal_rhi` checks actual Apple Metal GPU execution.
 These newly authored tests have not been run. Keep tested SHAs separate
 from Stage 97's verified 8/8 acceptance.
+
+
+## Stage 102 — strict GPU evidence before release
+
+When validating on a real Apple GPU, use
+`AIVERSE_ACCEPTANCE_REQUIRE_METAL=1 bash tools/spectrafx/acceptance.sh build/spectrafx-validation`.
+Check the `metal_evidence` stage: `spectrafx_metal_gpu`,
+`spectrafx_metal_billboard`, `spectrafx_metal_rhi` must each be
+`PASS`; CTest skip code is not evidence of execution.
+The Python parser tests are portable, but C++/GPU acceptance on
+Stage 98–102 remains unverified until the Mac Studio run is supplied.
