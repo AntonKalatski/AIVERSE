@@ -146,18 +146,22 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         alphaR8 = it.model->images[size_t(it.mat->baseTex)]
                       .virtualAlphaMask.valid();
     }
-    // Built-in material VT starts at fragment slot 13. An explicit
-    // sampleVirtualTexture graph node can use slots after its normal
-    // graph textures, provided at most one texture was authored.
-    // Source-only graph nodes and graph-backed non-VT materials retain
-    // the original shader path with no extra fragment resources.
+    // The graph's four source textures occupy tex13..16 on Metal.
+    // A virtual material sample uses two additional texture slots,
+    // requiring tex17/18 when all four graph sources are present.
+    // This does not consume additional Metal sampler slots (s1 reused).
     const bool graphVirtual = graph && graph->usesVirtualTexture;
-    const int virtualAtlasSlot = graphVirtual ?
-        kGraphTextureSlot+int(graph->textures.size()) : 13;
-    const int virtualTableSlot = virtualAtlasSlot+1;
+    if (graph && !supportsModelGraphSourceTextures(*dev_,graph->textures.size())) {
+        modelError_ = "shader graph source textures exceed RHI fragment slot budget";
+        return {}; // Never bind an unrepresentable tex16 on GL/Vulkan.
+    }
+    int virtualAtlasSlot=13, virtualTableSlot=14;
+    const bool graphVirtualSlots = !graphVirtual ||
+        modelGraphVirtualTextureSlots(*dev_,graph->textures.size(),
+                                     virtualAtlasSlot,virtualTableSlot);
     ModelVirtualTextureBinding vtBinding;
     const bool vtSampling = giPhase && (!graph || graphVirtual) &&
-        !materialPalette && virtualTableSlot < 16 &&
+        !materialPalette && graphVirtualSlots &&
         resolveModelVirtualTexture(*it.model,*it.mat,vtBinding);
     const uint32_t shaderKey = (vtSampling ? kKeyModelVirtualTexture : 0u) |
         (alphaR8 ? kKeyModelVirtualAlpha : 0u) |
@@ -293,7 +297,8 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
             }
         }
         if (vtSampling && !injectModelVirtualTextureSampling(
-                fs,msl,virtualAtlasSlot,virtualTableSlot)) {
+                fs,msl,virtualAtlasSlot,virtualTableSlot,
+                dev_->info().backend == gfx::Backend::Metal)) {
             modelError_ = "model virtual-texture shader insertion failed";
             return {};
         }
@@ -844,19 +849,19 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         !instancePalette && !it.paletteMaterials &&
         (!activeGraph || activeGraph->usesVirtualTexture)) {
         ModelVirtualTextureBinding vt;
-        if (resolveModelVirtualTexture(*it.model,mt,vt)) {
+        int atlasSlot=13,tableSlot=14;
+        const bool canBind = !activeGraph ||
+            modelGraphVirtualTextureSlots(*dev_,activeGraph->textures.size(),
+                                         atlasSlot,tableSlot);
+        if (canBind && resolveModelVirtualTexture(*it.model,mt,vt)) {
             ModelVirtualTextureUniforms params;
             params.layer = float(vt.layer);
             params.gutterPixels = vt.gutterPixels;
             params.addressU = float(uint32_t(vt.addressU));
             params.addressV = float(uint32_t(vt.addressV));
-            const int atlasSlot=activeGraph ?
-                kGraphTextureSlot+int(activeGraph->textures.size()) : 13;
-            if (atlasSlot+1 < 16) {
-                dev_->setTexture(atlasSlot,vt.physicalAtlas);
-                dev_->setTexture(atlasSlot+1,vt.pageTable);
-                dev_->setUniforms(6,&params,sizeof(params));
-            }
+            dev_->setTexture(atlasSlot,vt.physicalAtlas);
+            dev_->setTexture(tableSlot,vt.pageTable);
+            dev_->setUniforms(6,&params,sizeof(params));
         }
     }
     if (newModel) {
