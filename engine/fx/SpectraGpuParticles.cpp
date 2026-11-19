@@ -584,7 +584,8 @@ bool ComputeParticles::captureGpuCheckpoint(GpuCheckpoint& out) {
     if(!initialized_ || backend_!=ComputeBackend::Metal || !device_ ||
        !device_->gpuHealthy() || !device_->canUpdateSharedBuffers() ||
        !states_.valid() || !stateProgramParams_.valid() ||
-       !stateAttributes_.valid() || ages_.empty())return false;
+       !stateAttributes_.valid() || ages_.empty() ||
+       !pendingStates_.empty())return false;
     const size_t n=ages_.size();
     // A checkpoint must include all physical slots, not merely those that
     // survived the previous draw or the CPU-estimated indirect draw count.
