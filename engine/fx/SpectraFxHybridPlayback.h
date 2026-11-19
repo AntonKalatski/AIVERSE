@@ -48,6 +48,7 @@ public:
         uint64_t pooledPlays=0,pooledFallbacks=0,pooledRetired=0,pooledFailures=0;
         uint64_t gpuBudgetCpuFallbacks=0,gpuBudgetRefusals=0;
         uint64_t unusedPoolsReleased=0;
+        uint64_t sharedComputePrograms=0,sharedComputeFailures=0;
     };
 
     SpectraFxHybridPlayback(gfx::Device& device,ParticleSystem& cpu,
@@ -56,8 +57,10 @@ public:
 
     // Destruction should happen before the RHI Device and CPU ParticleSystem.
     ~SpectraFxHybridPlayback() {
-        reset();
+        reset(); // destroys every borrower before either shared RHI handle
         sharedRenderer_.release();
+        if(sharedEvolution_.valid()) device_.destroyCompute(sharedEvolution_);
+        sharedEvolution_={};
     }
 
     void route(uint32_t cueId,Route value) {routes_[cueId]=std::move(value);}
@@ -171,9 +174,15 @@ public:
             sharedRendererAttempted_=true;
             sharedRenderer_.init(device_);
         }
+        // The evolution pipeline is independently shared with every
+        // dedicated emitter and homogeneous arena. A failed creation
+        // leaves the historical owned-per-emitter compute path intact.
+        const gfx::ComputeHandle sharedCompute=gpuRequested?
+            ensureSharedEvolution():gfx::ComputeHandle{};
         auto next=std::make_unique<SpectraFxHybridEmitter>();
         if(!next->begin(device_,cpu_,std::move(selected),cue.position,cue.direction,
-                        gpuRequested ? &sharedRenderer_ : nullptr)) {
+                        gpuRequested ? &sharedRenderer_ : nullptr,
+                        sharedCompute)) {
             ++stats_.failed;return false;
         }
         if(oneShot) {
@@ -434,6 +443,17 @@ private:
                a.additive==b.additive;
     }
 
+    gfx::ComputeHandle ensureSharedEvolution() {
+        if(sharedEvolutionAttempted_) return sharedEvolution_;
+        sharedEvolutionAttempted_=true;
+        sharedEvolution_=device_.createCompute({
+            kSpectraFxComputeMetal,kSpectraFxComputeGLSL,
+            "SpectraFX shared GPU evolution"});
+        if(sharedEvolution_.valid()) ++stats_.sharedComputePrograms;
+        else ++stats_.sharedComputeFailures;
+        return sharedEvolution_;
+    }
+
     SpectraFxGpuSharedArena* poolArena(const std::string& name) {
         auto it=pools_.find(name);
         return it==pools_.end()?nullptr:it->second.arena.get();
@@ -489,7 +509,7 @@ private:
             cfg.appearance=effect.appearance;
             cfg.environment=effect.environment;
             cfg.gpuIndirectCompaction=effect.gpuIndirectCompaction;
-            if(!arena->init(device_,cfg)) {
+            if(!arena->init(device_,cfg,ensureSharedEvolution())) {
                 ++stats_.pooledFailures;
                 return false;
             }
@@ -532,6 +552,8 @@ private:
     SpectraFxGpuEmitterLibrary& library_;
     SpectraFxGpuBillboardRenderer sharedRenderer_{};
     bool sharedRendererAttempted_=false;
+    gfx::ComputeHandle sharedEvolution_{};
+    bool sharedEvolutionAttempted_=false;
     std::unordered_map<uint32_t,Route> routes_;
     std::unordered_map<uint64_t,std::unique_ptr<SpectraFxHybridEmitter>> active_;
     std::vector<OneShot> oneShots_;
