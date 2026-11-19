@@ -10,6 +10,7 @@
 #include "engine/render/Renderer3D.h"
 #include "engine/world/TerraWeaveFlora.h"
 #include "engine/world/TerraWeavePhenology.h"
+#include "engine/world/TerraWeaveWind.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -61,6 +62,14 @@ public:
         rebuildPhenologyMaterials();
     }
     const CanopyPhenology& phenology() const {return phenology_;}
+    // PHYSIS or native gameplay supplies a bounded, presentation-only wind
+    // vector. Stable tick/key controls phase; no tree ECS or GPU buffers.
+    void setWind(ForestWindState value) {
+        validateForestWind(value);
+        wind_=value;
+    }
+    const ForestWindState& wind() const {return wind_;}
+    void setPresentationTick(uint64_t tick) {presentationTick_=tick;}
 
     size_t prototypeCount() const { return models_.size(); }
     render::Model* prototype(uint32_t speciesId) const {
@@ -163,8 +172,23 @@ public:
                 } else if(phenology_!=CanopyPhenology{}) {
                     draw.materials=&seasonalNearMaterials_.at(batch.speciesId);
                 }
-                draw.world = render::mat4::translate(relative) *
-                             render::mat4::rotateY(yaw) *
+                draw.world = render::mat4::translate(relative);
+                if(wind_.maxLeanMilliDegrees &&
+                   (wind_.xCmPerSec || wind_.zCmPerSec)) {
+                    const auto lean=forestTreeLean(
+                        wind_,presentationTick_,
+                        instance.key ^ (uint64_t(instance.speciesId)<<32));
+                    constexpr float millidegToRadians=0.000017453292519943295f;
+                    // Apply lean in WORLD coordinates, before the tree's
+                    // local yaw. Rotating around the trunk root avoids
+                    // sliding the root point across terrain during sway.
+                    draw.world = draw.world *
+                        render::mat4::rotateZ(
+                            -float(lean.towardX)*millidegToRadians) *
+                        render::mat4::rotateX(
+                             float(lean.towardZ)*millidegToRadians);
+                }
+                draw.world = draw.world * render::mat4::rotateY(yaw) *
                              render::mat4::scale({scale, scale, scale});
                 // Namespaced stable per-tree identity; never derive it from
                 // the transient index in the GPU instance buffer.
@@ -237,6 +261,8 @@ private:
         }
     }
     CanopyPhenology phenology_{};
+    ForestWindState wind_{};
+    uint64_t presentationTick_=0;
     std::map<uint32_t,bool> evergreen_;
     std::map<uint32_t,std::vector<render::Material>> seasonalNearMaterials_;
     std::map<uint32_t,std::vector<std::vector<render::Material>>> seasonalBillboardMaterials_;
