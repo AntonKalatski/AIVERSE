@@ -1,12 +1,12 @@
 // Optional dynamic GI L1 probe overlay. Only indirect radiance; no direct or sky term.
-// The 384-texel RGBA32F rows match GiDynamicProbeTexture (128 probes per row, 3 texels/probe).
+// The 384-texel RGBA32F/RGBA16F rows match GiDynamicProbeTexture (128 probes per row, 3 texels/probe).
 // Four-probe tetrahedral interpolation, edge fade, zero outside the volume.
 // Shader variants opt in with DYNAMIC_GI; this header adds no default shader cost.
 #pragma once
 
 #define AIVERSE_GLSL_DYNAMIC_GI R"GI(
 #if defined(DYNAMIC_GI)
-layout(std140) uniform U6 { vec4 u_dynamicGiOrigin; vec4 u_dynamicGiSize; };
+layout(std140) uniform U6 { vec4 u_dynamicGiOrigin; vec4 u_dynamicGiSize; vec4 u_dynamicGiRing; };
 uniform highp sampler2D tex13;
 vec4 dynamicGiTexel(int index) {
     return texelFetch(tex13, ivec2(index % 384, index / 384), 0);
@@ -35,7 +35,9 @@ vec3 dynamicGiAt(vec3 p, vec3 n) {
         float w=i==0?1.0-f[first]:i==1?f[first]-f[middle]:i==2?f[middle]-f[last]:f[last];
         if(w<=0.0)continue;
         ivec3 c=clamp(base+corner,ivec3(0),ivec3(size)-1);
-        int probe=c.x+int(size.x)*(c.y+int(size.y)*c.z), offset=probe*3;
+        // Convert logical grid coordinates into stable toroidal atlas slots.
+        ivec3 physical=(c+ivec3(u_dynamicGiRing.xyz))%ivec3(size);
+        int probe=physical.x+int(size.x)*(physical.y+int(size.y)*physical.z), offset=probe*3;
         result+=w*max(vec3(dot(dynamicGiTexel(offset),normal),
                            dot(dynamicGiTexel(offset+1),normal),
                            dot(dynamicGiTexel(offset+2),normal)),vec3(0.0));
@@ -47,7 +49,7 @@ vec3 dynamicGiAt(vec3 p, vec3 n) {
 
 #define AIVERSE_MSL_DYNAMIC_GI R"GI(
 #if defined(DYNAMIC_GI)
-struct GiDynamicU { float4 origin; float4 size; };
+struct GiDynamicU { float4 origin; float4 size; float4 ring; };
 static float4 dynamicGiTexel(texture2d<float> tex13,int index) {
     return tex13.read(uint2(uint(index%384),uint(index/384)));
 }
@@ -75,7 +77,8 @@ static float3 dynamicGiAt(texture2d<float> tex13,constant GiDynamicU& u,float3 p
         float w=i==0?1.0-f[first]:i==1?f[first]-f[middle]:i==2?f[middle]-f[last]:f[last];
         if(w<=0.0)continue;
         int3 c=clamp(base+corner,int3(0),int3(size)-1);
-        int probe=c.x+int(size.x)*(c.y+int(size.y)*c.z),offset=probe*3;
+        int3 physical=(c+int3(u.ring.xyz))%int3(size);
+        int probe=physical.x+int(size.x)*(physical.y+int(size.y)*physical.z),offset=probe*3;
         result+=w*max(float3(dot(dynamicGiTexel(tex13,offset),normal),
                              dot(dynamicGiTexel(tex13,offset+1),normal),
                              dot(dynamicGiTexel(tex13,offset+2),normal)),float3(0.0));
