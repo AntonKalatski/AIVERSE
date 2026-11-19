@@ -155,6 +155,32 @@ public:
         return setLights(std::move(converted));
     }
 
+    // Geometry, vegetation, material and weather publishers can use one
+    // shared event accumulator. GPU invalidation preserves in-flight revision
+    // safety; CPU invalidation additionally clears its old atlas coefficients.
+    // For changed geometry/material reflectance, republish BVH/albedo first.
+    GiWorldDirtyAccumulator::Stats applyWorldChanges(
+            GiWorldDirtyAccumulator& changes) {
+        if(mode_==GiTransportMode::GpuCompute)
+            return gpu_.applyWorldChanges(changes);
+        if(mode_==GiTransportMode::CpuProbes)
+            return cpu_.applyWorldChanges(changes);
+        return {};
+    }
+
+    size_t invalidate(GiBounds bounds,GiDirtyReason reason,
+                      float influenceRadius=0) {
+        if(mode_==GiTransportMode::GpuCompute)
+            return gpu_.invalidate(bounds,reason,influenceRadius);
+        if(mode_==GiTransportMode::CpuProbes) {
+            cpu_.invalidate(bounds,reason,influenceRadius);
+            // CPU API doesn't currently return affected count; the scheduled
+            // dirty set is observable from StepStats after updateFrame.
+            return 0;
+        }
+        return 0;
+    }
+
     // Call after the per-world publication barrier, between RHI beginFrame and
     // draw passes for GPU. CPU mode is also safe before a render pass.
     StepStats updateFrame(float3 focus,size_t gpuProbeBudget=32) {
