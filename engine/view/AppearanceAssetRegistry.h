@@ -45,6 +45,7 @@ public:
         uint32_t flags=0;
         uint64_t sourceId=0; // mandatory for an animated source
         uint64_t graphRevision=0; // increment for changed in-memory graph inputs
+        uint64_t modelRevision=0; // host increments when the Model is re-imported at a reused address
     };
 
     struct Asset final {
@@ -64,6 +65,8 @@ public:
         uint64_t generation=0; // changes only when graph/model/source identity changes
         uint64_t version=0;    // changes on every successful publication
         uint64_t graphRevision=0;
+        uint64_t modelRevision=0;
+        std::string modelSource;
         std::string graphDefinition;
         std::string graphSource;
         std::vector<std::string> sources;
@@ -110,8 +113,10 @@ public:
                 if(changed.contains(source)){affected=true;break;}
             if(!affected)continue;
             if(dirty_.insert(key).second)++count;
-            if(!asset->graphSource.empty() &&
-               changed.contains(asset->graphSource))
+            if((!asset->graphSource.empty() &&
+                changed.contains(asset->graphSource)) ||
+               (!asset->modelSource.empty() &&
+                changed.contains(asset->modelSource)))
                 dirtyGraph_.insert(key);
         }
         return count;
@@ -148,11 +153,17 @@ public:
             next->sourceId=request.sourceId;
             next->parameters=request.parameters;
             next->graphRevision=request.graphRevision;
+            next->modelRevision=request.modelRevision;
+            next->modelSource=request.model->path;
             next->graphDefinition=request.animationGraph.isNull()?
                 std::string{}:request.animationGraph.dump(0);
             if(request.animationGraph.isString())
                 next->graphSource=request.animationGraph.str();
             next->sources=request.sources;
+            if(!next->modelSource.empty() &&
+               std::find(next->sources.begin(),next->sources.end(),
+                         next->modelSource)==next->sources.end())
+                next->sources.push_back(next->modelSource);
             if(!next->graphSource.empty() &&
                std::find(next->sources.begin(),next->sources.end(),
                          next->graphSource)==next->sources.end())
@@ -196,6 +207,7 @@ public:
                     previous->sourceId==request.sourceId &&
                     previous->graphDefinition==next->graphDefinition &&
                     previous->graphRevision==request.graphRevision &&
+                    previous->modelRevision==request.modelRevision &&
                     !dirtyGraph_.contains(key);
                 if(reuse) {
                     next->graph=previous->graph;
