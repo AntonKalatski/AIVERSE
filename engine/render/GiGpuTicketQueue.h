@@ -70,7 +70,7 @@ public:
 
     // One batch at a time: the current GI compute backend reuses one job buffer
     // and writes directly into one atlas; its storage is NOT safe to reuse
-    // until the preceding Metal command-buffer completion fence is confirmed.
+    // until the preceding Metal/Vulkan GPU completion fence is confirmed.
     // A future multi-batch backend needs per-submission job buffers/atlas lanes.
     //
     // Critical conservative presentation policy: hide the dynamic overlay
