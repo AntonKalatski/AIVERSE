@@ -213,6 +213,14 @@ inline void populateHorizonNearSeamSamples(
     bake.localFallbackNearNormalSamples=0;
     bake.nearNormalProvenanceAvailable=false;
     bake.nearWeldSlopeFallback=false;
+    // No partial diagnostic result may survive a failed all-or-none
+    // height sampling pass or a truncated sample budget.
+    const discardIncompleteSamples=[&bake]() {
+        bake.nearSeamSamples.clear();
+        bake.continuousNearNormalSamples=0;
+        bake.localFallbackNearNormalSamples=0;
+        bake.nearNormalProvenanceAvailable=false;
+    };
     if(!source || (!source->nearGroundHeightAtCm &&
                    !source->nearGroundHeightAtQ16Cm) ||
        bake.nearClipRects.empty() || !bake.maxNearClipTriangles)
@@ -246,7 +254,10 @@ inline void populateHorizonNearSeamSamples(
                 static_cast<int64_t>(std::llround(p.x*65536.0)),
                 static_cast<int64_t>(std::llround(p.z*65536.0))};
             if(samples.contains(key))continue;
-            if(samples.size()>=kMaxSamples)return;
+            if(samples.size()>=kMaxSamples){
+                discardIncompleteSamples();
+                return;
+            }
             // Half-open authored tiles: clamp the exact Q16 position
             // within the SAME known resident rectangle. High edges require
             // only one Q16 unit of inset (1/65536 cm), not the historical
@@ -265,8 +276,10 @@ inline void populateHorizonNearSeamSamples(
                     std::clamp(static_cast<int64_t>(std::llround(p.z)),
                                r.minZ,r.maxZ-1));
             if(!height || *height < -kWorldLimitCm ||
-                          *height > kWorldLimitCm)
-                return; // all-or-none on incomplete authored data
+                          *height > kWorldLimitCm){
+                discardIncompleteSamples();
+                return; // no half-weld or misleading partial provenance
+            }
             samples.emplace(key,*height);
             if(source->nearGroundContinuousSlopeAtQ16Cm){
                 // Prefer continuous neighboring tile normals only when the
@@ -371,6 +384,10 @@ inline void populateHorizonNearSeamSamples(
                (newSlope>double(bake.maxNearWeldSlopePermille) &&
                 newSlope>baseSlope+0.001)){
                 bake.nearWeldSlopeFallback=true;
+                // The sampled data exists, but no seam normal is applied
+                // when the entire height-weld is rejected.
+                bake.continuousNearNormalSamples=0;
+                bake.localFallbackNearNormalSamples=0;
                 return;
             }
         }
