@@ -12,7 +12,7 @@ inline constexpr const char* kVulkanSmallScene = R"GLSL(
 layout(local_size_x=64, local_size_y=1, local_size_z=1) in;
 struct Tri { vec4 a, b, c, albedo; };
 struct Node { vec4 lo, hi; uvec4 meta; };
-struct Lamp { vec4 posRadius, colorIntensity; };
+struct Lamp { vec4 posRadius, colorIntensity, spotDirectionOuter, spotInner; };
 struct Job { uint index; float x, y, z; };
 layout(set=0,binding=0,std430) readonly buffer Triangles { Tri tris[]; };
 layout(set=0,binding=1,std430) readonly buffer Lamps { Lamp lamps[]; };
@@ -122,7 +122,14 @@ void main() {
             if(ndl==0.0) continue;
             if(traceBvh(surface,L,distance).distance<distance-0.03) continue;
             float falloff=1.0-distanceSquared/(reach*reach);
-            float energy=light.colorIntensity.w*ndl*falloff*falloff/(1.0+distanceSquared);
+            float cone=1.0;
+            if(light.spotDirectionOuter.w>-1.5) {
+                float angle=dot(light.spotDirectionOuter.xyz,-L);
+                cone=clamp((angle-light.spotDirectionOuter.w)/
+                           max(light.spotInner.x-light.spotDirectionOuter.w,1e-5),0.0,1.0);
+                if(cone<=0.0)continue;
+            }
+            float energy=light.colorIntensity.w*ndl*cone*falloff*falloff/(1.0+distanceSquared);
             outgoing+=light.colorIntensity.xyz*first.albedo*energy;
         }
         vec3 v=outgoing/float(p.samples);
