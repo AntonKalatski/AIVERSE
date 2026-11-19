@@ -75,6 +75,7 @@ bool Rts2DView::init(gfx::Device& dev, const Rules& rules, const std::string& ba
     defaults_ = defaults;
     textures_.init(dev);
     if (!batch_.init(dev)) { std::fprintf(stderr, "[sprites] pipeline: %s\n", dev.lastError().c_str()); return false; }
+    if (!secondaryBatch_.init(dev)) { batch_.shutdown(); return false; }
     // soft round shadow blob, generated: no file needed
     const int S = 32;
     std::vector<uint32_t> px(size_t(S * S));
@@ -103,6 +104,9 @@ void Rts2DView::shutdown(gfx::Device& dev) {
     if (!ready_) return;
     batch_.destroyMesh(dev, tileMesh_);
     batch_.shutdown();
+    secondaryBatch_.shutdown();
+    preparedSprites_.clear();
+    emittingBatch_ = nullptr;
     textures_.shutdown();
     looks_.clear(); seen_.clear(); corpses_.clear();
     ready_ = false;
@@ -186,6 +190,9 @@ void Rts2DView::beginFrame(const RTSCamera& cam, double time, const Renderer3D& 
     time_ = time;
     ++frame_;
     batch_.begin();
+    preparedSprites_.clear();
+    emittingBatch_ = &batch_;
+    replayingPrepared_ = false;
 }
 
 void Rts2DView::corners(const SpriteLook& L, float3 ground, float3 (&c)[4], float& key) const {
@@ -207,7 +214,7 @@ void Rts2DView::decal(const TextureRef& tex, float4 uv, float3 o, float3 aU, flo
     float3 q[4] = {o, o + aU * lenU, o + aU * lenU + aV * lenV, o + aV * lenV};
     if (!surface_.grid) {   // no ground known: flat quad (as before)
         for (auto& p : q) p.y += 0.02f;
-        batch_.quad(tex, q, uv, color, team, layer, key);
+        emittingBatch_->quad(tex, q, uv, color, team, layer, key);
         return;
     }
     float minX = q[0].x, maxX = q[0].x, minZ = q[0].z, maxZ = q[0].z;
@@ -239,7 +246,7 @@ void Rts2DView::decal(const TextureRef& tex, float4 uv, float3 o, float3 aU, flo
                 p.y = p0.y - (n.x * (p.x - p0.x) + n.z * (p.z - p0.z)) / n.y;
                 v[k] = vert(p);
             }
-            batch_.quadEx(tex.tex, v, layer, key, flags | kSpriteDecal);
+            emittingBatch_->quadEx(tex.tex, v, layer, key, flags | kSpriteDecal);
             return;
         }
     }
@@ -250,7 +257,7 @@ void Rts2DView::decal(const TextureRef& tex, float4 uv, float3 o, float3 aU, flo
         for (int k = 1; k + 1 < n; ++k) {
             const SpriteVertex v0 = vert(poly[0]), v1 = vert(poly[k]), v2 = vert(poly[k + 1]);
             const SpriteVertex v[4] = {v0, v1, v2, v2};   // triangle = quad with a repeated corner
-            batch_.quadEx(tex.tex, v, layer, key, flags | kSpriteDecal);
+            emittingBatch_->quadEx(tex.tex, v, layer, key, flags | kSpriteDecal);
         }
     }
 }
@@ -277,7 +284,7 @@ void Rts2DView::decalShape(const TextureRef& tex, float4 uv, float3 o, float3 aU
                 p.y = planeY(p0, n, p.x, p.z);
                 v[k] = vert(p, sh.ab[k]);
             }
-            batch_.polygon(sh.tex, v, sh.count, layer, key, flags | kSpriteDecal);
+            emittingBatch_->polygon(sh.tex, v, sh.count, layer, key, flags | kSpriteDecal);
             return;
         }
     }
@@ -300,11 +307,13 @@ void Rts2DView::decalShape(const TextureRef& tex, float4 uv, float3 o, float3 aU
             p.y = planeY(tri[0], n, p.x, p.z);
             v[k] = vert(p, cut[k]);
         }
-        batch_.polygon(sh.tex, v, nc, layer, key, flags | kSpriteDecal);
+        emittingBatch_->polygon(sh.tex, v, nc, layer, key, flags | kSpriteDecal);
     }
 }
 
 void Rts2DView::emit(const SpriteLook& L, float3 ground, float3 facing, int act, double t0, uint32_t team, uint32_t tint, bool corpse, float fade) {
+    if (!replayingPrepared_)
+        preparedSprites_.push_back({L, ground, facing, act, t0, team, tint, corpse, fade});
     const SpriteLook::Anim& an = L.anims[act];
     int k = an.fps > 0 ? int(std::floor((time_ - t0) * an.fps)) : 0;
     k = an.loop ? ((k % an.count) + an.count) % an.count : std::clamp(k, 0, an.count - 1);
@@ -364,14 +373,14 @@ void Rts2DView::emit(const SpriteLook& L, float3 ground, float3 facing, int act,
             v[i] = {bilinear(c, sh.ab[i]), st[i], tint, team, {rp.x, rp.y, rp.z, 0.15f}};
             cp[i] = rp;
         }
-        batch_.polygon(sh.tex, v, sh.count, layer, key, litFlag);
+        emittingBatch_->polygon(sh.tex, v, sh.count, layer, key, litFlag);
         if (sd.cast && fade >= 1 && quality_ != ShadowQuality::Off) {
-            batch_.casterPolygon(sh.tex, cp, st, sh.count);
+            emittingBatch_->casterPolygon(sh.tex, cp, st, sh.count);
             if (L.shadow.castDepth > 0) {   // back plane: the footprint casts as a box
                 float3 cb[4];
                 casterAt(offF + lead - L.shadow.castDepth, cb);
                 for (int i = 0; i < sh.count; ++i) cp[i] = bilinear(cb, sh.ab[i]);
-                batch_.casterPolygon(sh.tex, cp, st, sh.count);
+                emittingBatch_->casterPolygon(sh.tex, cp, st, sh.count);
             }
         }
     }
@@ -492,9 +501,35 @@ void Rts2DView::submit(Renderer3D& r, const MapGrid& grid, float lh) {
 // terrain tile rebuilds or visibility updates run a second time.
 void Rts2DView::submitPrepared(Renderer3D& r) {
     if(!ready_)return;
-    if(batch_.casterCount()>0 && r.shadowQuality()!=ShadowQuality::Off)
+    // Rebuild draw-only quads for this camera. No ECS state, corpse lifetime,
+    // animation clocks or producer callbacks are modified.
+    secondaryBatch_.begin();
+    const auto previousCam=cam_;
+    const auto previousRight=camRight_,previousUp=camUp_,previousFwd=camFwd_;
+    const auto previousGroundRight=groundRight_,previousGroundFront=groundFront_;
+    const auto previousCasterRight=casterRight_;
+    const auto previousQuality=quality_;
+    cam_=r.camera();
+    const Basis b=basisOf(cam_);
+    camRight_=b.right; camUp_=b.up; camFwd_=b.fwd;
+    groundRight_=b.gRight; groundFront_=b.gFront;
+    casterRight_=casterRight(b.gRight,b.gFront,r.lighting.sunDir);
+    quality_=r.shadowQuality();
+    replayingPrepared_=true;
+    emittingBatch_=&secondaryBatch_;
+    for(const auto& packet:preparedSprites_)
+        emit(packet.look,packet.ground,packet.facing,packet.action,
+             packet.startTime,packet.team,packet.tint,packet.corpse,packet.fade);
+    emittingBatch_=&batch_;
+    replayingPrepared_=false;
+    cam_=previousCam;
+    camRight_=previousRight; camUp_=previousUp; camFwd_=previousFwd;
+    groundRight_=previousGroundRight; groundFront_=previousGroundFront;
+    casterRight_=previousCasterRight;
+    quality_=previousQuality;
+    if(secondaryBatch_.casterCount()>0 && r.shadowQuality()!=ShadowQuality::Off)
         r.drawCustomShadow([this,&r](gfx::Device& dev) {
-            batch_.flushCasters(dev,r.lightViewProj());
+            secondaryBatch_.flushCasters(dev,r.lightViewProj());
         });
     r.drawCustomOpaque([this,&r](gfx::Device& dev) {
         r.lights.bind(2,1);
@@ -512,7 +547,7 @@ void Rts2DView::submitPrepared(Renderer3D& r) {
         light.bind=[&r]{r.bindLitFrame();};
         light.ref=referenceLight();
         light.receiveShadows=r.shadowQuality()>=ShadowQuality::Medium;
-        batch_.flush(dev,r.viewProj(),&light);
+        secondaryBatch_.flush(dev,r.viewProj(),&light);
     });
 }
 
