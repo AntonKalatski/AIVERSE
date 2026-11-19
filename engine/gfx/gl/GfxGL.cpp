@@ -622,11 +622,20 @@ public:
             t->target == GL_TEXTURE_3D ? kTextureBinding3D :
             t->target == GL_TEXTURE_CUBE_MAP ? kTextureBindingCube :
             kTextureBindingArray;
+        constexpr GLenum kRowLength=0x0CF2,kImageHeight=0x806E;
+        constexpr GLenum kSkipPixels=0x0CF4,kSkipRows=0x0CF3,kSkipImages=0x806D;
         GLint previousBinding = 0, previousUnpackBuffer = 0;
-        GLint previousUnpackAlignment = 4;
+        GLint previousUnpackAlignment = 4, previousRowLength = 0;
+        GLint previousImageHeight = 0, previousSkipPixels = 0;
+        GLint previousSkipRows = 0, previousSkipImages = 0;
         glGetIntegerv(bindingQuery, &previousBinding);
         glGetIntegerv(kUnpackBufferBinding, &previousUnpackBuffer);
         glGetIntegerv(GL_UNPACK_ALIGNMENT, &previousUnpackAlignment);
+        glGetIntegerv(kRowLength,&previousRowLength);
+        glGetIntegerv(kImageHeight,&previousImageHeight);
+        glGetIntegerv(kSkipPixels,&previousSkipPixels);
+        glGetIntegerv(kSkipRows,&previousSkipRows);
+        glGetIntegerv(kSkipImages,&previousSkipImages);
         if (glGetError() != GL_NO_ERROR) {
             error_ = "GL texture region: unable to inspect upload state";
             return false;
@@ -634,6 +643,11 @@ public:
         glBindBuffer(kUnpackBuffer, 0);
         glBindTexture(t->target, t->id);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        glPixelStorei(kRowLength,0);
+        glPixelStorei(kImageHeight,0);
+        glPixelStorei(kSkipPixels,0);
+        glPixelStorei(kSkipRows,0);
+        glPixelStorei(kSkipImages,0);
         const auto* src = static_cast<const uint8_t*>(u.data);
         if (t->dimension == TextureDimension::Texture2D ||
             t->dimension == TextureDimension::Cube) {
@@ -653,6 +667,11 @@ public:
         if (t->mips && u.mipLevel == 0) glGenerateMipmap(t->target);
         const GLenum uploadError = glGetError();
         glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
+        glPixelStorei(kRowLength,previousRowLength);
+        glPixelStorei(kImageHeight,previousImageHeight);
+        glPixelStorei(kSkipPixels,previousSkipPixels);
+        glPixelStorei(kSkipRows,previousSkipRows);
+        glPixelStorei(kSkipImages,previousSkipImages);
         glBindTexture(t->target, static_cast<GLuint>(previousBinding));
         glBindBuffer(kUnpackBuffer, static_cast<GLuint>(previousUnpackBuffer));
         const GLenum restoreError = glGetError();
