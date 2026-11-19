@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <map>
 #include <memory>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -215,6 +216,37 @@ public:
             [](const std::unique_ptr<Model>& model)->uint64_t {
                 return model?estimateModelResident(*model).knownBytes():0;
             });
+    }
+    struct GpuOwnerEstimate {
+        uint64_t residentModelDedicatedEstimate=0;
+        uint64_t retiredModelDedicatedEstimate=0;
+        uint64_t sharedTextureRgba8Equivalent=0;
+        size_t uniqueSharedTextures=0,compressedSharedTextures=0;
+        size_t sharedGeometryResidentModels=0;
+        // Shared geometry-pool bytes belong to the device-level pool,
+        // NOT this host owner. Query geometryPoolStats(device) separately.
+    };
+    GpuOwnerEstimate gpuOwnerEstimate() const {
+        GpuOwnerEstimate result;
+        const auto max=std::numeric_limits<uint64_t>::max();
+        auto add=[max](uint64_t& dst,uint64_t value) {
+            dst=value>max-dst?max:dst+value;
+        };
+        for(const auto& [key,model]:models_) {
+            (void)key;
+            if(!model)continue;
+            const auto estimate=estimateModelResident(*model);
+            add(result.residentModelDedicatedEstimate,
+                estimate.knownBytes());
+            result.sharedGeometryResidentModels+=estimate.sharedGeometryModels;
+        }
+        result.retiredModelDedicatedEstimate=estimatedRetiredGpuBytes();
+        const auto shared=textures_->gpuOwnerEstimate();
+        result.sharedTextureRgba8Equivalent=
+            shared.rgba8BaseMipEquivalentBytes;
+        result.uniqueSharedTextures=shared.uniqueTextures;
+        result.compressedSharedTextures=shared.compressedTextures;
+        return result;
     }
     // 0 disables the estimated-byte admission limit. The estimate excludes
     // shared geometry pages, borrowed textures, morph height, driver padding
