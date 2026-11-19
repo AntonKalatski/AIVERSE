@@ -50,3 +50,9 @@ ctest --test-dir build/lens -R '^(ecs_camera|camera_scheduler|camera_rt_pool)$' 
 3. Implement a per-Entity PostFX/temporal history store keyed by World identity, generation and RT size; reset on cuts/resize/rollback. Add independent-camera TAA/SSR regression.
 4. Editor camera entity creation/inspector, camera stack, director, rigs, physical camera, portals, cubemap and XR remain P1/P2 work, not complete.
 5. Commit implementation, **then** handoff separately on this branch. Respect `AGENTS.md`, `docs/metal-batching-agent-handoff.md`, `docs/editor-unification-handoff.md`.
+
+## Remote verification checkpoint — 2026-11-19
+- Verified working branch HEAD before this checkpoint: `45c6a99d7390df4ae86a28afbf51ccdf4a28d438` and this handoff was present in GitHub.
+- Current `main` at the check: `d7d9b3f4180dcba98b9238fd56eedc7ccb420bb1`; `main` has advanced since this feature branch forked. No merge/rebase has been attempted, so do not mistake an old base for up-to-date integration.
+- GitHub Actions query for this feature branch reported **0 workflow runs**. There is no CI PASS claim or hardware test result.
+- Local container attempted `git ls-remote https://github.com/chromealex/AIVERSE.git HEAD` and DNS lookup for `github.com` failed, preventing local source checkout and actual CMake/CTest.
