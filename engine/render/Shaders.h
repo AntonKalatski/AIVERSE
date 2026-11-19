@@ -442,6 +442,7 @@ void main() {
     // amplitude disables a slot; no extra texture reads or geometry upload.
     if(u_params.x < -0.5) {
         vec2 grad = vec2(0.0);
+        float rippleFoam = 0.0;
         for(int i=0;i<16;++i) {
             vec4 ripple=u_waterRipples[i];
             if(ripple.w<=0.0)continue;
@@ -451,8 +452,12 @@ void main() {
             float envelope=exp(-radial*radial*2.0);
             grad += delta/max(distanceToCenter,0.001) *
                     (-radial*4.0*envelope*ripple.w);
+            rippleFoam += envelope * ripple.w * 0.42;
         }
         n=normalize(n+vec3(-grad.x,0.0,-grad.y));
+        // Impact foam rides the ring rather than an overlay decal.
+        base=mix(base,vec3(0.82,0.92,0.94),
+                 clamp(rippleFoam,0.0,0.65));
     }
 
     vec3 L = normalize(u_sunDir.xyz);
@@ -591,6 +596,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     }
     if(u.params.x < -0.5) {
         float2 grad=float2(0.0);
+        float rippleFoam=0.0;
         for(int i=0;i<16;++i) {
             float4 ripple=u.waterRipples[i];
             if(ripple.w<=0.0)continue;
@@ -600,8 +606,11 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
             float envelope=exp(-radial*radial*2.0);
             grad += delta/max(distanceToCenter,0.001) *
                     (-radial*4.0*envelope*ripple.w);
+            rippleFoam += envelope * ripple.w * 0.42;
         }
         n=normalize(n+float3(-grad.x,0.0,-grad.y));
+        base=mix(base,float3(0.82,0.92,0.94),
+                 clamp(rippleFoam,0.0,0.65));
     }
 
     float3 L = normalize(f.sunDir.xyz);
