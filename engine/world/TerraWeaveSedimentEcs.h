@@ -70,9 +70,10 @@ inline EcsSedimentTransportResult transportNereidBankSediment(
         std::move(samples),spacingCm,dtMs,settings);
     // No callbacks or ECS structural writes during the publication loop.
     // Obtain ALL mutable pools before changing either type.
-    auto* soils=ecs.prepareExistingWrite<WaterBankSoilComponent>();
-    auto* fractions=ecs.prepareExistingWrite<
-        WaterBankSedimentTransportComponent>();
+    // pool<T> detaches COW ownership; tryGet detaches the relevant page.
+    // Using prepareExistingWrite alone would mutate rollback snapshots.
+    auto* soils=&ecs.pool<WaterBankSoilComponent>();
+    auto* fractions=&ecs.pool<WaterBankSedimentTransportComponent>();
     for(const auto& cell:changed.cells){
         const auto id=entityOf.at({cell.gridX,cell.gridZ});
         auto* soil=soils?soils->tryGet(id.index):nullptr;
