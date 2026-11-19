@@ -930,3 +930,9 @@ CI if it remains queued or cancelled.
 
 - In graph ICB, tex16 uses constexpr repeat/linear sampler s16, not a native sampler(16). The Metal texture allocation now records repeat/linear/compare flags; an incompatible fourth graph source fails ICB preparation and uses ordinary CPU drawing.
 - Do not enable mixed Shader Graph ICB for clamp/nearest tex16 and expect pixel parity. Real Metal verification remains pending.
+
+
+### Portable ICB material contract CTest (Stage 10AO)
+
+- New test target `aiverse_gpu_icb_material_contract_test`, CTest name `gpu_icb_material_contract`. It exercises actual C++ headers for frame/generation tickets, source VT/PBR/graph descriptor validation and strict graph/pipeline compatibility.
+- Run `cmake --build <build> --target aiverse_gpu_icb_material_contract_test` and `ctest --test-dir <build> --output-on-failure -R '^gpu_icb_material_contract$'`. This was registered but **not run** in the model's Linux environment.
