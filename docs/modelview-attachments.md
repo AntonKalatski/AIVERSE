@@ -130,3 +130,20 @@ file watching or safe graphics retirement on every backend. See
 
 
 A standalone `aiverse_modelview models/hero.glb --watch-model-files` invocation is also supported without any child attachments. It uses the same native provider-backed source reload, with an empty child socket layout.
+
+
+
+## Stage 158: shared layout, full affine transforms, parent inferred from JSON
+
+`aiverse_modelview --attachments-file assets/hero.attachments.json` now
+opens the saved document's `parent` Model without a separate parent command-line
+argument. Source files are still loaded by the normal native provider. The
+layout file is parsed by the same genre-neutral `AttachmentLayoutCodec` as
+AIVERSE Studio; each child can store optional complete 16-value column-major
+`local` and `childWorld` affine matrices. If absent, they are identity.
+**Socket offset** X/Y/Z is editable directly in the ModelView Attachments UI
+and survives a JSON Save/Load. Rotations, scales and shears may be authored
+through the full matrices; Studio exposes the full basis editor.
+See [the shared layout schema](attachment-layout.md). Runtime parent/child
+scene ECS instantiation and GPU-token provider shutdown are separate work.
+Full native compile/CTest/Metal-Vulkan-GLES validation **NOT RUN**.
