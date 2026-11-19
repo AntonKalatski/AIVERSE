@@ -1727,3 +1727,37 @@ uncompiled GPU/resource/animation source into main.
   native runtime, GPU loss or visual parity validation was performed.
   Read `docs/agent-handoffs/animation-universal.md` Stage 111 for
   exact implementation commits, limitations and next step.
+
+### Animation/View Stage 112 — staged GPU image rollback and render epoch checks
+
+- Hot model-appearance reload must stage new decoded textures with
+  `render::ModelImageUploadTransaction`; do **not** mutate
+  `Model::images` or publish future material indices before all
+  selected types/LODs/stages pass authoring checks and commit.
+- Keep `render::ModelImageRollbackPool` alive on the render host
+  after a staging transaction is destroyed. Call `collect` only at
+  a valid frame boundary, and require a successful full-idle
+  `drain` before device shutdown. Pending/Failed GPU tokens
+  NEVER authorize destroying a texture. If an allocation and
+  GPU-idle fallback both fail, prefer a diagnostic orphaned handle
+  until device teardown rather than an unsafe GPU free.
+- `RtsView::reloadAppearanceTypes` uses the transaction for
+  new material images, retains last-good appearances on staging
+  failure, and calls image `commit()` before swapping TypeLooks.
+  `RtsView::collectRetiredModels` polls both image and model
+  queues; RtsView shutdown drains rolled-back images before
+  releasing Model resources.
+- PostFx, RTS terrain/groundFX, general `fx::ParticleSystem`,
+  and the Editor's Scene/Game Viewports now receive the host-owned
+  `RenderDeviceLifetime::Lease`. Editor and its hosted GameClient
+  must reuse the same generation. Validate before GPU draw/alloc/
+  release operations; an epoch is NOT a GPU completion marker.
+  ParticleSystem shutdown deliberately avoids calling an expired
+  device, possibly leaking orphan handles until actual device
+  destruction; all ordinary shutdowns must run before epoch retire.
+- Deferred native `render_model_image_transaction` test is wired,
+  but **NOT RUN**, alongside all earlier deferred animation GPU
+  tests. Stage 112 does not implement global GPU allocator
+  transactions or actual device-loss recovery. See the exact
+  commits, limitations and next action in
+  `docs/agent-handoffs/animation-universal.md` Stage 112.
