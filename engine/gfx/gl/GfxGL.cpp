@@ -953,7 +953,8 @@ public:
         if (!callback || inPass_ || !t || !t->id || t->renderbuffer ||
             t->compressed || t->samples != 1 ||
             (t->fmt != PixelFormat::RGBA8 && t->fmt != PixelFormat::RGBA8_sRGB) ||
-            t->dimension != TextureDimension::Texture2DArray ||
+            (t->dimension != TextureDimension::Texture2DArray &&
+             t->dimension != TextureDimension::Texture2D) ||
             request.mipLevel < 0 || request.mipLevel >= t->levels ||
             request.arrayLayer < 0 || request.arrayLayer >= t->layers ||
             webTextureReads_.size() >= 16) return false;
@@ -977,8 +978,12 @@ public:
             return false;
         }
         glBindFramebuffer(GL_READ_FRAMEBUFFER,fbo);
-        glFramebufferTextureLayer(GL_READ_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,
-                                  t->id,request.mipLevel,request.arrayLayer);
+        if(t->dimension==TextureDimension::Texture2DArray)
+            glFramebufferTextureLayer(GL_READ_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,
+                                      t->id,request.mipLevel,request.arrayLayer);
+        else
+            glFramebufferTexture2D(GL_READ_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,
+                                   GL_TEXTURE_2D,t->id,request.mipLevel);
         const bool complete=glCheckFramebufferStatus(GL_READ_FRAMEBUFFER)==
                             GL_FRAMEBUFFER_COMPLETE;
         TextureReadbackResult result;
