@@ -106,9 +106,10 @@ activation, or to defer instantiation until ready. Thus `beginLoad` is
 a **scene lifecycle primitive**, not yet full asynchronous level streaming.
 
 There may be only one pending `Replace` request per ECS World; a concurrent
-replacement request is rejected until `activate` or `cancel`. Scene IDs are
-never recycled even after cancel/unload, including after rollback to an older
-snapshot (where IDs are restored as part of the rollback contract).
+replacement request is rejected until `activate` or `cancel`. Scene IDs are never recycled after cancel/unload **within one simulation
+ timeline**. Rollback restores the allocator counter, so external async
+ tickets from an abandoned timeline must also be invalidated by a separate
+ host-owned epoch; Stage 2 must implement that protection.
 
 ## Multiple independent Simulations
 
