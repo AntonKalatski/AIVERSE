@@ -192,12 +192,30 @@ struct Camera {
     float2 jitter{0, 0}; // optional projection offset in NDC (temporal AA)
     float zNear = 0.5f, zFar = 1000.0f;   // perspective clip planes (planet systems need a far plane)
 
+    // Direct world pose for ECS/cinematic cameras, including arbitrary roll.
+    // Legacy target/distance orbit cameras stay fully compatible when usePose=false.
+    bool usePose = false;
+    float3 position{};
+    quat rotation{};
+    float orthoHalfHeightOverride = 0.0f;
+    void setPose(float3 worldPosition, quat worldRotation) {
+        usePose = true;
+        position = worldPosition;
+        rotation = qnormalize(worldRotation);
+    }
+
     float3 eye() const {
+        if (usePose) return position;
         float cp = std::cos(pitch), sp = std::sin(pitch);
         return target + float3{std::sin(yaw) * cp, sp, std::cos(yaw) * cp} * distance;
     }
-    float orthoHalfHeight() const { return distance * std::tan(fovY * 0.5f); }
+    float orthoHalfHeight() const {
+        return orthoHalfHeightOverride > 0.0f ? orthoHalfHeightOverride : distance * std::tan(fovY * 0.5f);
+    }
     mat4 view() const {
+        if (usePose)
+            return mat4::lookAt(position, position + rotation.rotate({0, 0, -1}),
+                                rotation.rotate({0, 1, 0}));
         // straight down (pitch 90°, Red Alert / Dune II): world up is degenerate, use the ground
         // direction the camera faces as screen up
         float3 up = std::cos(pitch) < 1e-3f ? float3{-std::sin(yaw), 0, -std::cos(yaw)} : float3{0, 1, 0};
