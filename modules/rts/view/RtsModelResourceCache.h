@@ -8,6 +8,7 @@
 #ifndef __EMSCRIPTEN__
 #include "RtsModelPreparationService.h"
 #endif
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
