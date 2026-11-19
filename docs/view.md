@@ -2853,3 +2853,38 @@ scratch retention limit. See [Stage 125 handoff](agent-handoffs/animation-stage1
 
 **NOT RUN:** native C++ compiler/CMake, CTest, GPU, sanitizers,
 screenshots or benchmarks. Source-only stage; no speedup claimed.
+
+## Stage 126 — separate Model revisions from appearance/graph hot reload
+
+Published appearance `version`, animation graph `generation`
+and `modelPublicationGeneration` now have distinct semantics.
+The generic `AppearanceAssetRegistry` preserves the Model
+publication epoch across successful graph-only or material-only
+republication when the borrowed Model pointer, host
+`modelRevision` and source path remain the same. It marks a
+separate `dirtyModel_` on `invalidateSources(modelPath)` so an
+in-place reimport with pointer reuse invalidates stale compiled
+LOD retarget plans. Graph-source invalidation alone does not
+invalidate the source Model. Publication failure leaves the
+last-good snapshot and dirty state intact.
+
+Native projects without the registry can set
+`AppearanceSpec::modelPublicationGeneration` and call the
+common `buildAppearancePacket`; registry `Asset::packet`
+uses this same path. For an opt-in whole-model LOD, build an
+immutable compiled plan at the publication boundary with
+`Asset::compileVisualLod(visual,minDistance,map,out,error)`.
+The helper requires both snapshots' nonzero Model generations
+and keeps `out` unchanged if compilation/validation fails.
+Host-owned Models, GPU buffers and the source animation World
+are NEVER owned by the publication snapshot.
+
+The FPS adapter supplies the published Model generation to
+its already evaluated remote-character packets. Compatible
+graph-file-only hot reload can preserve state and clip phases
+while resetting old montage/notify/contact state; no duplicate
+MotionWeave update is introduced.
+
+**NOT RUN:** native compiler/link, CMake, CTest, FPS/RTS/editor
+visual parity, GPU backend tests or sanitizers.
+See [Stage 126 handoff](agent-handoffs/animation-stage126-published-lod-hot-reload-2026-11-19.md).
