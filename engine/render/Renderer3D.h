@@ -180,6 +180,7 @@ enum DrawFlags : uint32_t {
     kDrawStatic = 32,
     kDrawKeepShadow = 64, // preserve opaque shadow casting while the camera image fades
     kDrawWaterSurface = 256, // opt-in NEREID water shader at arbitrary world Y; not a genre flag
+    kDrawNereidCascade = 512, // opt-in vertically flowing water; never a planar reflection source
 };
 
 struct ModelRenderStats {
