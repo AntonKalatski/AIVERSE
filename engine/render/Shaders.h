@@ -51,24 +51,7 @@ namespace aiverse::render::shaders {
     "    if (u_trace1.y <= 0.0) return 1.0;\n" \
     "    vec2 ruv = (wpos.xz - u_trace0.xy) * u_trace0.zw;   /* receivers beyond the map (apron) stay lit */\n" \
     "    if (ruv.x < 0.0 || ruv.y < 0.0 || ruv.x > 1.0 || ruv.y > 1.0) return 1.0;\n" \
-    "    // NEREID: up to four bounded ripple impulses per visible body. The
-    // parameters are render-origin-relative, matching v_wpos. A zero
-    // amplitude disables a slot; no extra texture reads or geometry upload.
-    if(u_params.x < -0.5) {
-        vec2 grad = vec2(0.0);
-        for(int i=0;i<4;++i) {
-            vec4 ripple=u_waterRipples[i];
-            if(ripple.w<=0.0)continue;
-            vec2 delta=v_wpos.xz-ripple.xy;
-            float distanceToCenter=length(delta);
-            float radial=distanceToCenter-ripple.z;
-            float envelope=exp(-radial*radial*2.0);
-            grad += delta/max(distanceToCenter,0.001) *
-                    (-radial*4.0*envelope*ripple.w);
-        }
-        n=normalize(n+vec3(-grad.x,0.0,-grad.y));
-    }
-    vec3 L = normalize(u_sunDir.xyz);\n" \
+    "    vec3 L = normalize(u_sunDir.xyz);\n" \
     "    float horiz = length(L.xz);\n" \
     "    if (L.y <= 0.02 || horiz < 0.05) return 1.0;\n" \
     "    vec2 dir = L.xz / horiz;\n" \
@@ -97,21 +80,7 @@ namespace aiverse::render::shaders {
     "    if (f.trace1.y <= 0.0) return 1.0;\n" \
     "    float2 ruv = (wpos.xz - f.trace0.xy) * f.trace0.zw;\n" \
     "    if (ruv.x < 0.0 || ruv.y < 0.0 || ruv.x > 1.0 || ruv.y > 1.0) return 1.0;\n" \
-    "    if(u.params.x < -0.5) {
-        float2 grad=float2(0.0);
-        for(int i=0;i<4;++i) {
-            float4 ripple=u.waterRipples[i];
-            if(ripple.w<=0.0)continue;
-            float2 delta=in.wpos.xz-ripple.xy;
-            float distanceToCenter=length(delta);
-            float radial=distanceToCenter-ripple.z;
-            float envelope=exp(-radial*radial*2.0);
-            grad += delta/max(distanceToCenter,0.001) *
-                    (-radial*4.0*envelope*ripple.w);
-        }
-        n=normalize(n+float3(-grad.x,0.0,-grad.y));
-    }
-    float3 L = normalize(f.sunDir.xyz);\n" \
+    "    float3 L = normalize(f.sunDir.xyz);\n" \
     "    float horiz = length(L.xz);\n" \
     "    if (L.y <= 0.02 || horiz < 0.05) return 1.0;\n" \
     "    float2 dir = L.xz / horiz;\n" \
@@ -442,6 +411,24 @@ void main() {
                        v_col.a * u_color.a);
     vec3 base = rtsDecodeScene(albedo.rgb);                  // ~sRGB -> linear
     vec3 n = normalize(v_nrm);
+    // NEREID: up to four bounded ripple impulses per visible body. The
+    // parameters are render-origin-relative, matching v_wpos. A zero
+    // amplitude disables a slot; no extra texture reads or geometry upload.
+    if(u_params.x < -0.5) {
+        vec2 grad = vec2(0.0);
+        for(int i=0;i<4;++i) {
+            vec4 ripple=u_waterRipples[i];
+            if(ripple.w<=0.0)continue;
+            vec2 delta=v_wpos.xz-ripple.xy;
+            float distanceToCenter=length(delta);
+            float radial=distanceToCenter-ripple.z;
+            float envelope=exp(-radial*radial*2.0);
+            grad += delta/max(distanceToCenter,0.001) *
+                    (-radial*4.0*envelope*ripple.w);
+        }
+        n=normalize(n+vec3(-grad.x,0.0,-grad.y));
+    }
+
     // Open water (below the road film .045; rain pools keep their own look): six wave trains of different length
     // and heading (ratios that never line up) plus drifting value noise, fading out with distance so nothing
     // aliases into stripes; slow large patches of darker / lighter water.
@@ -576,6 +563,21 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
                            in.col.a * u.color.a);
     float3 base = rtsDecodeScene(albedo.rgb);
     float3 n = normalize(in.nrm);
+    if(u.params.x < -0.5) {
+        float2 grad=float2(0.0);
+        for(int i=0;i<4;++i) {
+            float4 ripple=u.waterRipples[i];
+            if(ripple.w<=0.0)continue;
+            float2 delta=in.wpos.xz-ripple.xy;
+            float distanceToCenter=length(delta);
+            float radial=distanceToCenter-ripple.z;
+            float envelope=exp(-radial*radial*2.0);
+            grad += delta/max(distanceToCenter,0.001) *
+                    (-radial*4.0*envelope*ripple.w);
+        }
+        n=normalize(n+float3(-grad.x,0.0,-grad.y));
+    }
+
     // Open water (below the road film .045; rain pools keep their own look): six wave trains of different length
     // and heading (ratios that never line up) plus drifting value noise, fading out with distance so nothing
     // aliases into stripes; slow large patches of darker / lighter water.
