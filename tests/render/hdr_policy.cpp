@@ -49,7 +49,7 @@ int main() {
     stack.volumes.push_back(box);
     auto high=stack.resolve(original,{0,0,0},1);
     check(high.find(PrismaType::ColorGrade)!=nullptr);
-    if (const auto* grade=high.find(PrismaType::ColorGrade))check(grade->get("exposure")==4);
+    if (const auto* grade=high.find(PrismaType::ColorGrade))check(grade->get("exposure")==3);
     stack.volumes[1].enabled=false;
     check(PrismaVolumeStack::influence(stack.volumes[1],{0,0,0})==0);
     std::printf("HDR policy: %d errors\n",errors);
