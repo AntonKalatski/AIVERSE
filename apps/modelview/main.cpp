@@ -430,6 +430,10 @@ struct Viewer {
                     draw.baked=md.baked;
                     draw.variant=md.variant;
                     draw.team=md.team;
+                    // Stable per-viewer-instance visual draw identity; the
+                    // parent asset's registry key identifies a RESOURCE,
+                    // not every visible instance using that resource.
+                    prepared.object.id=uint64_t(&in-inst.data())+1;
                     attachmentView.submitOne(r3d,prepared.object);
                     presented=true;
                     in.lastAttachmentError.clear();
