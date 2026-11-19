@@ -67,17 +67,16 @@ public:
                (budgetBytes_==0 || stats.estimatedKnownBytes()<budgetBytes_);
     }
 
-    // One device-owner-thread snapshot; no GPU work is submitted. Models
-    // pending retirement are included until their own fence completes.
-    RenderResourceGroupStats snapshot(gfx::Device& device) const {
+    // CPU-only accounting, suitable for native project diagnostics and
+    // deterministic regression fixtures without constructing a gfx Device.
+    // Geometry-page capacity requires the device-level snapshot() below.
+    RenderResourceGroupStats snapshotOwners(bool gpuHealthy=true) const {
         RenderResourceGroupStats stats;
         stats.uniqueOwners=owners_.size();
-        stats.health=device.gpuHealthy() ?
-            RenderResourceHealth::Ready:
-            RenderResourceHealth::DeviceUnhealthy;
+        stats.health=gpuHealthy ? RenderResourceHealth::Ready:
+                                  RenderResourceHealth::DeviceUnhealthy;
         std::set<const Model*> visitedModels;
         std::set<const ModelTextureCache*> visitedTextureOwners;
-        std::vector<const Model*> modelsForPool;
         const auto max=std::numeric_limits<uint64_t>::max();
         auto add=[max](uint64_t& dst,uint64_t amount) {
             dst=amount>max-dst?max:dst+amount;
@@ -101,7 +100,6 @@ public:
                     ++stats.residentModels;
                     add(stats.residentModelKnownBytes,estimate.knownBytes());
                 }
-                if(model.geometryPoolPage)modelsForPool.push_back(&model);
             });
             const auto textures=owner->textures();
             if(textures && visitedTextureOwners.insert(textures.get()).second) {
@@ -112,6 +110,21 @@ public:
                 add(stats.textureOwnerRgba8EquivalentBytes,
                     estimate.rgba8BaseMipEquivalentBytes);
             }
+        }
+        return stats;
+    }
+
+    // Device-owner-thread snapshot: enrich owner accounting with geometry
+    // pages and backend health. No GPU submissions or fences are issued.
+    // The input caches must belong to the supplied gfx Device.
+    RenderResourceGroupStats snapshot(gfx::Device& device) const {
+        auto stats=snapshotOwners(device.gpuHealthy());
+        std::vector<const Model*> modelsForPool;
+        for(const ModelResourceCache* owner:owners_) {
+            if(!owner)continue;
+            owner->forEachOwnedModel([&](const Model& model,bool) {
+                if(model.geometryPoolPage)modelsForPool.push_back(&model);
+            });
         }
         stats.geometryPages=geometryPoolReferencedStats(
             device,std::span<const Model* const>(
