@@ -226,6 +226,9 @@ public:
                (device_ && !device_->gpuHealthy());
     }
 
+    // Read-only generation of this pool's resource lifetime. A native
+    // callback can reject late checkpoint results after Device recreation.
+    uint64_t lifecycleEpoch() const {return sourceWorldEpoch_;}
     bool ready() const {return initialized_;}
     const std::string& reason() const {return reason_;}
     const PoolWorldStats& stats() const {return stats_;}
