@@ -385,4 +385,51 @@ private:
     uint64_t versionSerial_=0,animationSerial_=0;
 };
 
+// Retains published appearance/material/graph snapshots across one
+// View::update() + synchronous View::submit() transaction. Native and
+// cinematic hosts may construct a batch while the asset registry is
+// hot reloading other keys. Pointer fields in ModelDraw refer into the
+// pinned snapshots, not the registry's replaceable current entries.
+//
+// Important: snapshots own ONLY appearance CPU values + shared Graph,
+// NOT a Model or its GPU resources. The host still retains each borrowed
+// Model and its Device epoch through the animation worker join and draw.
+class PinnedAppearanceBatch final {
+public:
+    using Snapshot=AppearanceAssetRegistry::Snapshot;
+    void reserve(size_t count) {
+        // Reserve first for stable, failure-safe packet assembly.
+        pins_.reserve(count);
+        packets_.reserve(count);
+    }
+    bool add(Snapshot asset,const render::mat4& world) {
+        if(!asset)return false;
+        Object packet;
+        if(!asset->packet(world,packet))return false;
+        pins_.push_back(std::move(asset));
+        try {
+            packets_.push_back(std::move(packet));
+        }catch(...) {
+            pins_.pop_back();
+            throw;
+        }
+        return true;
+    }
+    size_t size() const noexcept{return packets_.size();}
+    bool empty() const noexcept{return packets_.empty();}
+    const std::vector<Object>& objects() const noexcept {return packets_;}
+    // Modify model LODs, attachments or significance AFTER constructing the
+    // batch, not while View::update / Render3D submission is in progress.
+    // References to packet elements may be invalidated by subsequent add().
+    Object& edit(size_t index) {return packets_.at(index);}
+    void clear() noexcept {
+        // End of the host's joined update/render transaction only.
+        packets_.clear();
+        pins_.clear();
+    }
+private:
+    std::vector<Snapshot> pins_;
+    std::vector<Object> packets_;
+};
+
 } // namespace aiverse::view
