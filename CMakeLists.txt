@@ -2264,6 +2264,19 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
         SKIP_RETURN_CODE 77)
 endif()
 
+# Real HybridPlayback retirement policy with a controlled Metal-capable RHI.
+# This checks slot/fence ownership and reset semantics, not hardware shaders.
+if(AIVERSE_BUILD_TESTS AND AIVERSE_DESKTOP)
+    add_executable(aiverse_spectrafx_retirement_tests
+        tests/spectrafx_retirement_test.cpp)
+    target_include_directories(aiverse_spectrafx_retirement_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_spectrafx_retirement_tests PRIVATE aiverse_fx)
+    add_test(NAME spectrafx_retirement COMMAND aiverse_spectrafx_retirement_tests)
+    set_tests_properties(spectrafx_retirement PROPERTIES
+        LABELS "SpectraFX;Architecture")
+endif()
+
 # Versioned VFX graph assets, CPU fallback, exposed parameters and live reload.
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_vfx_assets_tests tests/vfx_graph_assets_test.cpp)
