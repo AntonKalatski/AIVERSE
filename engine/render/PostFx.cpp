@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 #include "PostFxShaders.h"
 
 namespace aiverse::render {
@@ -17,19 +18,20 @@ enum : uint32_t {
     kPfPixelate = 1u << 0, kPfCa = 1u << 1, kPfSharpen = 1u << 2, kPfTilt = 1u << 3, kPfBloom = 1u << 4,
     kPfShafts = 1u << 5, kPfGrade = 1u << 6, kPfLut = 1u << 7, kPfPosterize = 1u << 8, kPfVignette = 1u << 9,
     kPfGrain = 1u << 10, kPfFade = 1u << 11, kPfLetterbox = 1u << 12,
+    kPfUnderwater = 1u << 13, kPfUnderwaterDepth = 1u << 14,
 };
 const char* kPfNames[] = {"PF_PIXELATE", "PF_CA", "PF_SHARPEN", "PF_TILT", "PF_BLOOM", "PF_SHAFTS", "PF_GRADE",
-                          "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX"};
+                          "PF_LUT", "PF_POSTERIZE", "PF_VIGNETTE", "PF_GRAIN", "PF_FADE", "PF_LETTERBOX", "PF_UNDERWATER", "PF_UNDERWATER_DEPTH"};
 
 // Target roles inside one Sized set.
 enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41 };
 
 struct SimpleU { float px[4]; float p0[4]; float sun[4]; };
 struct CompositeU {
-    float px[4], grade0[4], grade1[4], lift[4], gamma[4], gain[4], filt[4], vig[4], bloom[4], shafts[4], tilt[4], fade[4], lut[4], lbox[4], graphFrame[4];
+    float px[4], grade0[4], grade1[4], lift[4], gamma[4], gain[4], filt[4], vig[4], bloom[4], shafts[4], tilt[4], fade[4], lut[4], lbox[4], graphFrame[4], underwater0[4], underwater1[4], underwater2[4], inverseViewProj0[4], inverseViewProj1[4], inverseViewProj2[4], inverseViewProj3[4], underwaterCamera[4];
 };
 const char* kSimpleFields[] = {"px", "p0", "sun"};
-const char* kCompositeFields[] = {"px", "grade0", "grade1", "lift", "gamma", "gain", "filt", "vig", "bloom", "shafts", "tilt", "fade", "lut", "lbox", "graphFrame"};
+const char* kCompositeFields[] = {"px", "grade0", "grade1", "lift", "gamma", "gain", "filt", "vig", "bloom", "shafts", "tilt", "fade", "lut", "lbox", "graphFrame", "underwater0", "underwater1", "underwater2", "inverseViewProj0", "inverseViewProj1", "inverseViewProj2", "inverseViewProj3", "underwaterCamera"};
 
 struct Built { std::string vs, fs, msl; };
 
@@ -56,8 +58,13 @@ Built buildProgram(const char* const* fields, size_t fieldCount, uint32_t texMas
         const std::string n = std::to_string(t);
         gTex += "uniform sampler2D tex" + n + ";\n";
         gMacros += "#define TEX" + n + "(p) texture(tex" + n + ", p)\n";
-        mArgs += ", texture2d<float> tex" + n + " [[texture(" + n + ")]], sampler tex" + n + "_s [[sampler(" + n + ")]]";
+        const bool depthSample=(t==5 && defines.find("PF_UNDERWATER_DEPTH")!=std::string::npos);
+        mArgs += std::string(", ") + (depthSample ? "depth2d<float>" : "texture2d<float>") + " tex" + n + " [[texture(" + n + ")]], sampler tex" + n + "_s [[sampler(" + n + ")]]";
         mMacros += "#define TEX" + n + "(p) tex" + n + ".sample(tex" + n + "_s, p)\n";
+    }
+    if(defines.find("PF_UNDERWATER_DEPTH")!=std::string::npos) {
+        gMacros += "#define PF_DEPTH_SAMPLE(p) texture(tex5, p).r\n";
+        mMacros += "#define PF_DEPTH_SAMPLE(p) tex5.sample(tex5_s, p)\n";
     }
     b.fs = defines + block + gTex + "in vec2 v_screen;\nout vec4 o_color;\n" + common + gMacros +
            "#define RETURN(c) { o_color = (c); return; }\n#define PF_FN\n" + (helpers ? helpers : "") +
@@ -126,6 +133,7 @@ void PostFx::shutdown() {
     if (triangle_.valid()) dev_->destroyBuffer(triangle_);
     release(black_);
     triangle_ = {};
+    underwater_ = {}; // never keep previous world's camera volume on reuse
     dev_ = nullptr;
 }
 
@@ -143,6 +151,10 @@ void PostFx::configure(const Json& game, const Json& map, std::vector<std::strin
 
 void PostFx::setSettings(PostFxSettings s) { settings_ = std::move(s); error_.clear(); }
 
+void PostFx::setUnderwater(PostFxUnderwater target,float deltaSeconds) {
+    underwater_=advancePostFxUnderwater(underwater_,target,deltaSeconds);
+}
+
 bool PostFx::hdrRequested() const {
     if (!dev_ || hdrFailed_ || !enabled_ || !settings_.enabled || quality_ <= PostFxQuality::Low || !dev_->supports(gfx::PixelFormat::RGBA16F)) return false;
     HdrMode mode = settings_.hdr;
@@ -156,7 +168,9 @@ bool PostFx::hdrRequested() const {
 }
 
 bool PostFx::active() const {
-    return dev_ && triangle_.valid() && enabled_ && (hdrRequested() || settings_.anyActive(quality_));
+    return dev_ && triangle_.valid() && enabled_ && settings_.enabled &&
+        quality_!=PostFxQuality::Off &&
+        (hdrRequested() || settings_.anyActive(quality_) || underwater_.blend>0.001f);
 }
 
 PostFx::Sized& PostFx::sized(int w, int h) {
@@ -192,8 +206,8 @@ PostFx::Target& PostFx::target(Sized& s, int role, int w, int h) {
     return t;
 }
 
-gfx::TextureHandle PostFx::depthFor(Sized& s, int w, int h) {
-    const uint64_t key = (uint64_t(uint32_t(w)) << 32) | uint32_t(h);
+gfx::TextureHandle PostFx::depthFor(Sized& s, int w, int h, int role) {
+    const auto key = std::make_pair((uint64_t(uint32_t(w)) << 32) | uint32_t(h),role);
     auto it = s.depths.find(key);
     if (it != s.depths.end()) return it->second;
     gfx::TextureDesc td;
@@ -248,8 +262,9 @@ gfx::PipelineHandle PostFx::composite(uint32_t mask, const Json* graphData) {
     if (auto it = composites_.find(key); it != composites_.end()) return it->second.second;
     if (compositeFailed_.count(key)) return {};
     std::string defines;
-    for (int i = 0; i < 13; ++i) if (mask & (1u << i)) defines += std::string("#define ") + kPfNames[i] + " 1\n";
+    for (int i = 0; i < 15; ++i) if (mask & (1u << i)) defines += std::string("#define ") + kPfNames[i] + " 1\n";
     uint32_t tex = 1;
+    if (mask & kPfUnderwaterDepth) tex |= 1u << 5;
     if (mask & kPfBloom) tex |= 2;
     if (mask & kPfTilt) tex |= 4;
     if (mask & kPfShafts) tex |= 8;
@@ -269,14 +284,15 @@ gfx::PipelineHandle PostFx::composite(uint32_t mask, const Json* graphData) {
             body.replace(body.find(marker),marker.size(),macros+"vec2 sg_uv=s,sg_screen=s;vec4 sg_input=vec4(col,1.0);float sg_time=graphFrame.x;\n// SG_CODE\nRETURN("+graphProgram.outputs.at("color")+");\n");
         }catch(const std::exception& ex){error_=ex.what();compositeFailed_[key]=true;return {};}
     }
-    Built b=buildProgram(kCompositeFields,15,tex,defines,postfx::kCompositeHelpers,body.c_str());
+    Built b=buildProgram(kCompositeFields,23,tex,defines,postfx::kCompositeHelpers,body.c_str());
     if(graphData) {
         auto at=b.fs.find("// SG_CODE");b.fs.replace(at,10,graphProgram.glsl);
         at=b.msl.find("// SG_CODE");b.msl.replace(at,10,graphProgram.msl);
     }
     gfx::ShaderDesc sd;
     sd.glslVertex = b.vs.c_str(); sd.glslFragment = b.fs.c_str(); sd.msl = b.msl.c_str();
-    sd.textureSlots = 5+int(graphProgram.textures.size()); sd.uniformSlots = 1; sd.label = "postfx composite";
+    sd.textureSlots = (mask & kPfUnderwaterDepth) ? 6 : 5+int(graphProgram.textures.size());
+    sd.uniformSlots = 1; sd.label = "postfx composite";
     gfx::ShaderHandle sh = dev_->createShader(sd);
     if (!sh.valid()) {
         compositeFailed_[key] = true;
@@ -364,7 +380,9 @@ void PostFx::draw(Sized& s, const Target& dst, gfx::PipelineHandle pipe, const v
     if (!dst.tex.valid() || !pipe.valid()) return; // never redirect a failed effect to the screen
     gfx::PassDesc p;
     p.colorTarget = dst.tex;
-    p.depthTarget = depthFor(s, dst.w, dst.h);
+    // Effect/intermediate passes may clear their depth attachment.
+    // Never reuse the opaque scene depth that PF_UNDERWATER_DEPTH samples.
+    p.depthTarget = depthFor(s, dst.w, dst.h, 2);
     p.clearColor[0] = p.clearColor[1] = p.clearColor[2] = 0; p.clearColor[3] = 1;
     dev_->beginPass(p);
     dev_->setViewport({0, 0, dst.w, dst.h});
@@ -575,8 +593,46 @@ void PostFx::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         default: break;
         }
     }
+    if(underwater_.blend>0.001f && quality_!=PostFxQuality::Off) {
+        mask|=kPfUnderwater;
+        put(u.underwater0,underwater_.tintR,underwater_.tintG,
+            underwater_.tintB,underwater_.blend);
+        const auto budget=postFxUnderwaterBudget(quality_);
+        put(u.underwater1,underwater_.absorption,
+            underwater_.depthMetres,
+            underwater_.distortion*budget.distortion,
+            underwater_.scattering*budget.scattering);
+        put(u.underwater2,budget.crossing,budget.scattering,
+            float(budget.samples),underwater_.surfaceOffset);
+        u.graphFrame[1]=underwater_.crossing*budget.crossing;
+        ++stats_.effects;
+    }
     const auto* graphEffect = find(PostFxType::ShaderGraph);
+    // Depth sampling is enabled only after the scene pass has ended.
+    // ShaderGraph owns tex5+, so avoid conflicting with its inputs.
+    const auto depthTex=depthFor(set,w,h);
+    const bool depthSafe=(mask & kPfUnderwater) &&
+        quality_>=PostFxQuality::Medium && !graphEffect &&
+        depthTex.valid() && depthTex != out.depthTarget;
+    if(depthSafe) {
+        mask |= kPfUnderwaterDepth;
+        const auto inv=f.viewProj.inverse();
+        for(int n=0;n<4;++n) {
+            float* dst=n==0?u.inverseViewProj0:n==1?u.inverseViewProj1:
+                       n==2?u.inverseViewProj2:u.inverseViewProj3;
+            for(int j=0;j<4;++j)dst[j]=inv.m[n*4+j];
+        }
+        put(u.underwaterCamera,f.cameraPos.x,f.cameraPos.y,
+            f.cameraPos.z,dev.info().clipDepthZeroToOne?1.f:0.f);
+    }
     gfx::PipelineHandle pipe = composite(mask, graphEffect ? &graphEffect->shaderGraph : nullptr);
+    if(!pipe.valid() && (mask & kPfUnderwaterDepth)) {
+        // Depth sampling/shader may not be supported by this GPU/backend.
+        // Preserve the normal underwater composite rather than dropping
+        // all postprocessing effects because a depth variant failed.
+        mask &= ~kPfUnderwaterDepth;
+        pipe=composite(mask, graphEffect ? &graphEffect->shaderGraph : nullptr);
+    }
     if (!pipe.valid()) pipe = composite(0);   // a broken variant still shows the scene
     std::vector<gfx::TextureHandle> graphImages;
     if(graphEffect) {
@@ -589,7 +645,7 @@ void PostFx::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     Target aaTarget;
     if (aaAfter) {
         hdrFrame_ = false; aaTarget = target(set, kAa, w, h); hdrFrame_ = true;
-        const auto aaDepth = depthFor(set, w, h);
+        const auto aaDepth = depthFor(set, w, h, 1);
         aaAfter = aaTarget.tex.valid() && aaDepth.valid();
         if (aaAfter) { compositeOut.colorTarget = aaTarget.tex; compositeOut.depthTarget = aaDepth; }
     }
@@ -606,6 +662,7 @@ void PostFx::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         const Lut* l = (mask & kPfLut) ? lut(find(PostFxType::Lut)->text) : nullptr;
         dev.setTexture(4, l ? l->tex : black_);
         for(size_t i=0;i<graphImages.size();++i)dev.setTexture(int(i)+5,graphImages[i]);
+        if(mask & kPfUnderwaterDepth)dev.setTexture(5,depthTex);
         dev.draw(3);
     }
     ++stats_.passes;
