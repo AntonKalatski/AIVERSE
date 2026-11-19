@@ -1020,3 +1020,59 @@ not measured GPU load.
 **Verification status:** GitHub source writes and code inspection
 only; CMake/ObjC++/Metal build, CTest, editor startup, actual GPU
 checkpoint export, device loss and budget stress have NOT RUN.
+
+## Stage 40 — frozen-revision captures, checked staging and VFX pressure hysteresis
+
+For an editor preview, use **Freeze & capture GPU state** on the
+strict opt-in Metal backend. Stage 40 changes the canonical GPU
+frame planner so a `step(0)` with no new births, kills or live
+VM parameter changes performs only camera-facing gather/compact
+(and indirect-arg publication). It does **not** execute Update VM,
+so the GPU particle revision does not advance while the emitter
+is frozen. The editor queues one bounded asynchronous
+`GpuPoolWorld::requestGpuCheckpoint(groupIndex)` after the
+pre-pass step, waits for a complete readback on the RHI owner
+thread, and only enables export when
+`PoolCheckpointStats::exportReadyGroups>0`. This is not
+reverse GPU playback or a gameplay save.
+
+Metal input staging for particles, seeds, VM parameters and
+live-slot gather maps now uses `updateStorageBufferChecked`.
+If an upload or subsequent compute encoder submission rejects
+work, the emitter retains CPU slot/birth queues, marks
+`GpuCheckpointStatus::stagingRecoveryPending`, invalidates
+checkpoint freshness and suppresses stale drawing. The next
+successful GPU step retries staging before committing inputs.
+Never interpret an accepted Metal blit as hardware completion.
+Check `gpuStagingUploadFailures` and
+`stagingRecoveryGroups` in pooled/editor telemetry.
+
+`engine/fx/SpectraCheckpointExport.h` now uses a **48-byte V2**
+diagnostic header with CRC32. Call
+`validateGpuCheckpointDiagnostic(bytes,&header)` to check
+same-build magic, version, slot count, byte length and payload
+integrity. It is not a portable save format or particle-state
+importer. Stage 39's 40-byte V1 is historical and not accepted
+by the new V2 validator. Never expose stale or incomplete
+GPU checkpoints as restorable data.
+
+`GpuPoolRecoveryHost` now retains its CPU-only effect recipe if
+import on a new graphics Device fails. A subsequent explicit
+host-side Device replacement can retry without needing to
+resurrect the lost old GPU pool. Only authored definitions
+and defaults survive; recreate ECS visual sources on success.
+
+`PoolLoadSheddingPolicy::recoverBelowPercent` (default 85,
+valid 1..100) prevents automatic VFX bursts from flapping at
+the estimated particle/readback soft limits. Check
+`particlePressureLatched`, `readbackPressureLatched` and
+`pressureHeldFrames`. This remains opt-in, presentation-only,
+and leaves explicit one-shot bursts on the normal global budget.
+
+**Mandatory next-agent handoff:**
+`docs/agent-handoffs/spectrafx-stage-40-frozen-checkpoint-staging-recovery-2026-11-19.md`.
+
+**Actual verification:** source commits and GitHub re-fetch only;
+C++/ObjC++/MSL, CTest, native editor, readback corruption tests,
+Metal device-loss retries and hardware GPU performance have
+**NOT RUN**.
