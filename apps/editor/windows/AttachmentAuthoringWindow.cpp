@@ -6,6 +6,7 @@
 #include "../EditorUtil.h"
 #include "engine/view/ImportedAttachmentAuthoring.h"
 #include "engine/view/AttachmentLayout.h"
+#include "engine/view/EcsAttachmentScene.h"
 #include "engine/render/Animation.h"
 #include <algorithm>
 #include <cmath>
@@ -36,7 +37,10 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         std::unique_ptr<render::ModelAssetProvider> provider;
         std::unique_ptr<Registry> registry;
         Registry::Snapshot source;
-        Imported::Compiled compiled;
+        // Cosmetic, source-neutral ECS world, never gameplay Simulation.
+        World presentation;
+        Entity parentEntity{};
+        view::EcsAttachmentScene::Instance attachments;
         std::vector<Registry::Snapshot> children;
     };
 
@@ -101,7 +105,8 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         if(!device_)return false;
         try {
             if(!device_->waitForResourceIdle())return false;
-            owned->compiled={};
+            view::EcsAttachmentScene::forget(
+                owned->presentation,owned->attachments);
             owned->children.clear();
             owned->source.reset();
             owned->registry.reset();
@@ -189,10 +194,10 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         renderer_.beginScene(cam,viewport_.w,viewport_.h);
         Imported::Prepared packet;
         std::string error;
-        const bool ready=Imported::prepare(
-            session_->compiled,session_->provider->resources(),
-            render::mat4{},nullptr,packet,
-            Imported::AnimationOwner::HostPrecomputed,&error);
+        const bool ready=view::EcsAttachmentScene::prepare(
+            session_->presentation,session_->attachments,
+            session_->provider->resources(),
+            render::mat4{},packet,&error);
         if(ready) {
             packet.object.id=1; // isolated preview source identity
             packet.object.draw.pose=&previewPose_;
@@ -281,8 +286,12 @@ class AttachmentAuthoringWindow final : public EditorWindow {
                 throw std::runtime_error("Parent appearance: "+error);
             staged->source=staged->registry->find("studio/attachments/parent");
             std::map<std::string,Registry::Snapshot> imported;
-            std::vector<Imported::ChildRequest> requested;
+            view::AttachmentLayout document;
+            document.parent=sourcePath_;
             for(const auto& child:authored_) {
+                document.attachments.push_back({
+                    child.model,child.socket,child.enabled,
+                    child.local,child.childWorld});
                 if(!child.enabled)continue;
                 if(child.socket.empty())
                     throw std::invalid_argument("Child socket name must not be empty");
@@ -298,15 +307,17 @@ class AttachmentAuthoringWindow final : public EditorWindow {
                         throw std::runtime_error("Child appearance: "+error);
                     it=imported.emplace(source,std::move(appearance)).first;
                 }
-                requested.push_back(Imported::childFromLayout(
-                    view::AttachmentLayoutItem{
-                        child.model,child.socket,child.enabled,
-                        child.local,child.childWorld},
-                    it->second));
             }
-            if(!Imported::compile(staged->source,staged->provider->resources(),
-                                  requested,staged->compiled,&error))
-                throw std::runtime_error("Socket compile: "+error);
+            staged->parentEntity=staged->presentation.create();
+            const auto resolver=[&](const std::string& key)->Registry::Snapshot {
+                const auto found=imported.find(withinProject(key));
+                return found==imported.end()?Registry::Snapshot{}:found->second;
+            };
+            if(!view::EcsAttachmentScene::publish(
+                   staged->presentation,staged->parentEntity,
+                   document,staged->source,staged->provider->resources(),
+                   resolver,staged->attachments,&error))
+                throw std::runtime_error("ECS attachment publish: "+error);
             // All new Models and sockets are ready in a SEPARATE cache.
             // Make publication immediately visible and defer the previous
             // provider's destruction; no full-idle wait on common reimport.
@@ -314,8 +325,9 @@ class AttachmentAuthoringWindow final : public EditorWindow {
             auto old=std::move(session_);
             session_=std::move(staged);
             deferSession(old);
-            message_="Published "+std::to_string(session_->compiled.children.size())+
-                     " sockets; pending retired providers: "+
+            message_="Published "+
+                     std::to_string(session_->attachments.bindings.children.size())+
+                     " sockets in presentation ECS; retired providers: "+
                      std::to_string(retiredSessions_.size());
         }catch(...) {
             // Even a partially uploaded scratch provider may be GPU-live.
@@ -480,8 +492,10 @@ public:
             catch(const std::exception& e) {message_=e.what();}
             ImGui::Text("Published source: %s",
                 sourcePath_.c_str());
-            ImGui::Text("Compiled sockets: %zu",
-                session_->compiled.children.size());
+            ImGui::Text("Presentation ECS children: %zu",
+                session_->attachments.children.size());
+            ImGui::Text("Compiled active sockets: %zu",
+                session_->attachments.bindings.children.size());
             ImGui::Text("Retired provider sessions: %zu",
                         retiredSessions_.size());
             ImGui::TextDisabled(
