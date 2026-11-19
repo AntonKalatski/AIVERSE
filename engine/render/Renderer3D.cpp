@@ -358,6 +358,20 @@ void Renderer3D::resetAllObjectMotionHistory() {
     }
 }
 
+void Renderer3D::releaseObjectMotionViewAfterGpuIdle(uint64_t viewId) {
+    // The caller must have waited for all submissions referencing the view.
+    // We cannot infer this from CPU frameSerial() or viewport close events.
+    auto it = objectMotionViews_.find(viewId);
+    if (it == objectMotionViews_.end()) return;
+    if (dev_) {
+        if (it->second.target.valid()) dev_->destroyTexture(it->second.target);
+        if (it->second.depth.valid()) dev_->destroyTexture(it->second.depth);
+        if (it->second.reactive.valid()) dev_->destroyTexture(it->second.reactive);
+    }
+    objectMotionViews_.erase(it);
+    if (objectMotionStats_.viewId == viewId) objectMotionStats_ = {};
+}
+
 void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
     objectMotionStats_ = {};
     if (!post.wantsObjectMotionVectors() || !dev_) return;
@@ -470,6 +484,7 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
     if (history.width != w || history.height != h) {
         if (history.target.valid()) dev_->destroyTexture(history.target);
         if (history.depth.valid()) dev_->destroyTexture(history.depth);
+        if (history.reactive.valid()) dev_->destroyTexture(history.reactive);
         history.target = {}; history.depth = {}; history.reactive = {};
         history.width = w; history.height = h;
     }
