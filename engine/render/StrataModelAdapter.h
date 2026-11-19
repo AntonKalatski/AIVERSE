@@ -34,7 +34,8 @@ struct ModelAsset {
 // Excludes incompatible dynamic, translucent and skin/morph inputs.
 // Does NOT automatically activate Strata in the production renderer.
 bool buildModelAsset(const Model& model, const BuildOptions& options,
-                     ModelAsset& out, std::string* error = nullptr);
+                     ModelAsset& out, std::string* error = nullptr,
+                     bool allowPreparedRootLods = false);
 
 // Per-GeometryScene optional CPU staging. Keeps exactly one Strata asset per
 // *source model*, independent of the number of scene instances. No GPU handles,
@@ -66,10 +67,15 @@ public:
     const StagingStats& stats() const { return stats_; }
     const std::vector<std::string>& warnings() const { return warnings_; }
     void setLimits(Limits value) { limits_ = value; }
+    // Portable mode prepares the CPU model BEFORE staging, then stages only
+    // meshes referenced directly by source nodes, not generated LOD children.
+    // Default false retains older diagnostic import exclusion rules.
+    void setAllowPreparedRootLods(bool value) { allowPreparedRootLods_ = value; }
 private:
     BuildOptions options_{};
     Limits limits_{};
     StagingStats stats_{};
+    bool allowPreparedRootLods_ = false;
     std::map<std::string, ModelAsset> assets_;
     std::vector<std::string> warnings_;
 };
