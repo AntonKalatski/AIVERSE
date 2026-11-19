@@ -2542,3 +2542,39 @@ output or use `ctest --output-log`. For a complete later run, invoke
 A native GPU PASS must be based on measured readback bytes, not
 `BUILD PASS` or source-only CTest success.
 
+
+### Stage 10BE — on-device Metal texture GPU CTest PASS (2026-11-19)
+
+**Actual user-run Mac Studio CTest result:** in the isolated
+`AIVERSE-texture-verify-20261119-150819` worktree, the explicit
+`metal_texture_gpu` test (CTest #122, labels `GPU`, `METAL`,
+`TEXTURE_RHI`) completed **Passed** in **1.53 seconds**.
+The CTest summary reported **1/1 test passed; 0 failed**,
+total elapsed time 1.54 seconds.
+
+This is on-device acceptance evidence for the scope of
+`tests/render/metal_texture_gpu.mm`: creation and RGBA8 data
+upload for Texture3D; selected Z-plane and mip updates;
+2DArray/Cube/CubeArray face/layer updates; asynchronous GPU
+blit readbacks and exact expected byte comparisons;
+negative bound/pitch checks, GPU-health and resource inventory.
+No explicit device model or per-probe byte trace was supplied,
+so neither a precise GPU name nor individual test timestamps
+are asserted here.
+
+**Scope limitation:** This is **one actual hardware GPU CTest PASS**,
+not full validation of shader sampling, Metal ICB,
+fragment-texture Shader Graph, virtual page feedback/page
+publication, rendering visual parity, performance or other
+backends/platforms. User also stated they launched the full
+`--editor --metal` scenario, but its final summary/output was
+**not provided in this turn**; do not mark the combined scenario
+complete until its `OVERALL SOURCE AND METAL TEXTURE GPU TESTS PASS`
+line (or equivalent logs) is observed.
+
+All source gates previously passed on this Mac; Stage 10BB's
+new Metal acceptance binary was reported to build successfully
+in the preceding user run. PR #21 should remain Draft until
+the other explicit GPU scenarios are verified. No production
+engine source modifications were needed for the reported PASS.
+
