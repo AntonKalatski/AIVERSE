@@ -25,6 +25,8 @@ public:
         uint64_t pendingPolls=0;
         uint64_t tokenFailures=0;
         uint64_t idleFallbackFailures=0;
+        uint64_t failedFenceBatches=0;
+        size_t unresolvedFailedFences=0;
     };
     void enqueue(Resource resource) {
         pending_.push_back(std::move(resource));
@@ -40,9 +42,11 @@ public:
         return limit!=0 && count_>=limit;
     }
     Stats stats() const noexcept {
+        size_t failed=0;
+        for(const auto& batch:batches_)if(batch.failed)++failed;
         return {count_,batches_.size(),pending_.size(),highWatermark_,
                 completedResources_,completedBatches_,pendingPolls_,
-                tokenFailures_,idleFallbackFailures_};
+                tokenFailures_,idleFallbackFailures_,failedFenceBatches_,failed};
     }
     // Read-only diagnostic traversal. The estimate callback receives a
     // const Resource&, may return approximate bytes, and must have no GPU
@@ -76,11 +80,27 @@ public:
     template<class Begin,class Completed,class Close,class Wait,class Destroy>
     bool collect(Begin&& begin,Completed&& completed,Close&& close,
                  Wait&& waitIdle,Destroy&& destroy) {
-        // GPU submissions are ordered. Later batches must not be reclaimed
-        // ahead of an older uncompleted batch.
+        return collect(std::forward<Begin>(begin),
+                       std::forward<Completed>(completed),
+                       std::forward<Close>(close),
+                       std::forward<Wait>(waitIdle),
+                       std::forward<Destroy>(destroy),
+                       [](uint64_t){return false;});
+    }
+    // Explicit failure probe is evaluated ONLY when a token has not
+    // completed. A failed marker is retained until a successful full-GPU
+    // idle recovery drain; it can never be freed by a later token.
+    template<class Begin,class Completed,class Close,class Wait,
+             class Destroy,class Failed>
+    bool collect(Begin&& begin,Completed&& completed,Close&& close,
+                 Wait&& waitIdle,Destroy&& destroy,Failed&& failed) {
         while(!batches_.empty()) {
             auto& batch=batches_.front();
-            if(!completed(batch.token)) {
+            if(batch.failed || !completed(batch.token)) {
+                if(!batch.failed && failed(batch.token)) {
+                    batch.failed=true;
+                    ++failedFenceBatches_;
+                }
                 ++pendingPolls_;
                 break;
             }
@@ -131,6 +151,7 @@ private:
     struct Batch {
         uint64_t token=0;
         std::vector<Resource> resources;
+        bool failed=false;
     };
     template<class Close,class Destroy>
     void drainKnownCompleted(Close&& close,Destroy&& destroy) {
@@ -154,6 +175,7 @@ private:
     size_t count_=0,highWatermark_=0;
     uint64_t completedResources_=0,completedBatches_=0;
     uint64_t pendingPolls_=0,tokenFailures_=0,idleFallbackFailures_=0;
+    uint64_t failedFenceBatches_=0;
     std::vector<Resource> pending_;
     std::deque<Batch> batches_;
 };
