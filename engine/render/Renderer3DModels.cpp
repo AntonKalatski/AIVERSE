@@ -2835,7 +2835,9 @@ void Renderer3D::renderModels(int phase) {
         // actually submitted it; otherwise fallbacks must not teach the
         // scheduler that indirect encoding was the measured path.
         const bool mdiSubmitted = modelStats_.multiDrawSubmissions > cpuMdiBefore;
-        if (!autoCpuPermit || mdiSubmitted) {
+        if (autoCpuPermit && !mdiSubmitted) {
+            autoCpuBatch_.recordNoSubmission(size_t(phase), order_.size());
+        } else {
             const double cpuMs = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - passBegin).count();
             autoCpuBatch_.observe(size_t(phase), order_.size(),
