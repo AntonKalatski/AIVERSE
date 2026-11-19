@@ -55,6 +55,7 @@ struct ForestDeadwoodResource {
     uint64_t totalAbsorbedUnits=0,totalRunoffExportUnits=0;
     uint64_t totalLeachedUnits=0; // cumulative diagnostic, NOT a sink
     uint64_t lastNutrientTick=0,soilCursor=0,waterCursor=0;
+    uint64_t lastOutflowCommandId=0; // monotonic native outlet command
     bool nutrientInitialized=false;
     std::vector<ForestDeadwoodRecord> logs; // strictly by species/key
     std::vector<ForestDeadwoodSoilCell> soil; // strictly by x,z
@@ -155,7 +156,7 @@ inline void io(Archive& a,ForestDeadwoodResource& s) {
     if(v2)
         a(s.totalAbsorbedUnits,s.totalRunoffExportUnits,
           s.totalLeachedUnits,s.lastNutrientTick,s.soilCursor,
-          s.waterCursor,s.nutrientInitialized);
+          s.waterCursor,s.lastOutflowCommandId,s.nutrientInitialized);
     uint32_t n=a.count(s.logs.size(),v2?73:65);
     if(!a.ok() || n>ForestDeadwoodResource::kMaxLogs){a.fail();return;}
     if(!a.writing())s.logs.assign(n,{});
@@ -179,6 +180,7 @@ inline void io(Archive& a,ForestDeadwoodResource& s) {
         s.version=2;
         s.totalAbsorbedUnits=s.totalRunoffExportUnits=s.totalLeachedUnits=0;
         s.lastNutrientTick=s.soilCursor=s.waterCursor=0;
+        s.lastOutflowCommandId=0;
         s.nutrientInitialized=false;
         s.water.clear();
     }
