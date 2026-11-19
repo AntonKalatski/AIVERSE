@@ -9,6 +9,7 @@
 #include "engine/character/vivid/GpuMorphMeshStream.h"
 #include "engine/character/vivid/GpuActorStream.h"
 #include "engine/character/vivid/GpuActorRetirement.h"
+#include "engine/character/vivid/GpuMorphAssetCache.h"
 #include "engine/gfx/Gfx.h"
 
 #include <algorithm>
@@ -237,9 +238,13 @@ void run() {
             const auto mapping=FaceShapeBinding::compile(f.library,routes);
             // Both actors share the SAME immutable GPU CSR, original mesh
             // and compute programs; their weights and output VBs remain private.
-            auto sharedAsset=GpuMorphSharedAsset::create(*device,f.library,original);
-            require(sharedAsset && sharedAsset->ready(),
-                    "shared GPU morph library initialization failed");
+            GpuMorphAssetCache cache(*device);
+            auto sharedAsset=cache.acquire(f.library,original);
+            auto cachedAgain=cache.acquire(f.library,original);
+            require(sharedAsset && sharedAsset->ready() &&
+                    sharedAsset.get()==cachedAgain.get() &&
+                    cache.cachedKeys()==1,
+                    "shared Metal morph library was not cached");
             GpuActorStream actorA, actorB;
             require(actorA.initializeShared(*device,sharedModel,sharedAsset),
                     "multi-actor shared GPU stream A initialization failed");
@@ -350,6 +355,12 @@ void run() {
                     "Metal retirement queue did not use a completion token");
             std::cout << "VIVID real Metal async actor retirement PASS\n";
 
+            // All earlier actor work was completed by an idle barrier or
+            // checked GPU token. Retire last shared asset references only now.
+            sharedAsset.reset();
+            cachedAgain.reset();
+            require(cache.pruneExpired()==1 && cache.cachedKeys()==0,
+                    "Metal weak GPU asset cache retained expired geometry");
             device->destroyBuffer(sharedModel.vb);
             device->destroyBuffer(sharedModel.ib);
             std::cout << "VIVID multi-actor GPU 2 independent actors / 3 frames PASS\n";
