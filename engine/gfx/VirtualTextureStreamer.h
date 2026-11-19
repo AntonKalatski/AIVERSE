@@ -73,7 +73,7 @@ public:
             pages_.clear(); table_.clear();
             return false;
         }
-        tableGpu_ = table_.createGpuTexture(*device_);
+        tableGpu_ = table_.createGpuTexture(*device_,cfg.indexedMipTable);
         if (!tableGpu_.valid()) {
             error_ = device_->lastError();
             if (error_.empty()) error_ = "virtual texture page table GPU allocation failed";
@@ -83,6 +83,15 @@ public:
         }
         config_ = cfg;
         failed_ = false;
+        // A newly allocated indexed table has undefined array-slice data.
+        // Clear EVERY slice with bounded row uploads before publication.
+        if(cfg.indexedMipTable && !synchronizeTable()) {
+            const std::string initialError=error_;
+            shutdown();
+            error_=initialError.empty() ?
+                "indexed virtual mip table initialization failed" : initialError;
+            return false;
+        }
         error_.clear();
         return true;
     }

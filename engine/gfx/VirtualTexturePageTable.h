@@ -59,13 +59,19 @@ public:
 
     // Opt-in convenience: create an initialized page-table texture. The GPU
     // handle is owned by the caller; the table never destroys it.
-    TextureHandle createGpuTexture(Device& gpu) {
+    TextureHandle createGpuTexture(Device& gpu,
+                                   bool explicitSliceInitialization=false) {
         if (pixels_.empty() || !gpu.supportsTextureDimension(TextureDimension::Texture2DArray))
             return {};
         TextureDesc d = textureDescriptor();
-        d.data = pixels_.data();
+        // In indexed mode the backend may not initialize all array slices
+        // when given one base pointer. Allocate empty sampled storage and
+        // leave *all* rows dirty for the owning streamer to flush explicitly
+        // before it ever exposes the table to the shader.
+        d.data = explicitSliceInitialization ? nullptr : pixels_.data();
         TextureHandle result = gpu.createTexture(d);
-        if (result.valid()) std::fill(dirtyRows_.begin(), dirtyRows_.end(), uint8_t(0));
+        if (result.valid() && !explicitSliceInitialization)
+            std::fill(dirtyRows_.begin(),dirtyRows_.end(),uint8_t(0));
         return result;
     }
 
