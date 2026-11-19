@@ -1407,3 +1407,18 @@ resource slots U6/tex13, tex14, U7/tex15 and Metal-only U8/tex16.
 Use a compatible shader variant and apply the indirect delta only once; this
 binder does NOT compile or automatically modify terrain/foliage PBR shading.
 All new C++/CTest and GLES/Metal/Vulkan GPU validation remain NOT RUN.
+
+
+## GI Stage 43 — relocatable custom shader atlas bindings (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage43-custom-gi-remappable-atlas-2026-11-20.md`.
+Custom lit terrain/foliage passes need NOT use GI tex13..16 when those
+slots are already occupied. Use `giCustomModeFitsAt` and
+`Renderer3D::availableDynamicGiForCustomShader(mode,firstSlot)` before
+selecting the shader, then `bindDynamicGiForCustomShader(mode,firstSlot)`
+inside the pass. `GiCustomShaderSource.h` generates matching isolated
+GLSL/MSL helpers without rewriting original material tex13..20. For a
+terrain pass with tex0..20, start GI at tex21 if the GPU supports >=22
+fragment bindings; otherwise retain the no-GI terrain permutation.
+GLES3 minimum 16 units cannot satisfy that terrain layout.
+All source/CTest tests authored but **NOT EXECUTED**.
