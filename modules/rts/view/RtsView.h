@@ -211,6 +211,11 @@ public:
     void setTerrainDetail(const terrain::DetailSurface* d, const std::vector<uint8_t>* splat) { terrain_.setDetail(d, splat); }
     const TerrainRenderer& terrainRenderer() const { return terrain_; }
     void draw(render::Renderer3D& r, const RtsScene& s, double time, const std::vector<uint8_t>* vision, const MapGrid& grid);
+    // LENS: emit the last primary-frame animated models for a SECOND camera
+    // without advancing animation clocks or consuming visual events.
+    // The primary draw() MUST have run first. Scene-bound effects, sprites,
+    // projectiles and planet-specific geometry are not part of this pass.
+    size_t drawFrozenModels(render::Renderer3D& renderer,const MapGrid& grid);
     // spline roads (map "roadNetwork", docs/roads.md): set with the map (setTerrainDetail(map) does it too)
     void setRoadMap(const Json& map);
     RtsRoadView& roads() { return *roads_; }
