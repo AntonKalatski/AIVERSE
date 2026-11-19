@@ -333,3 +333,25 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   runtime QA are NOT RUN. PHYSIS Actions had queued/cancelled jobs, no
   verified PASS. Handoff:
   `docs/agent-handoffs/physis-stage43-client-journal-backoff-2026-11-19.md`.
+
+### Stage 44 — sticky journal uncertainty, reconnect and explicit retry (2026-11-19)
+
+- `RemoteClient` MUST keep `ClientStatus::Uncertain` caused by a
+  journal-unavailable Unknown across `disconnected()` and reconnect.
+  Automatic Submit/Query is forbidden until explicit `retry()`.
+- A delayed pre-failure Queued/Applied receipt must not clear this
+  suspension. `suspendedForJournal_` is reset only when starting or
+  restoring a distinct request or on explicit user retry; it is not
+  an ECS-authoritative acknowledgment.
+- Explicit `retry()` retains the original instance/request ID and
+  probes the server first, so a recovered gateway can confirm Applied
+  from journal + authoritative World without reapplying the edit.
+  Ordinary Unknown without a journal-unavailable diagnostic retains
+  existing idempotent same-ID recovery.
+- New source fixtures `manualRetryAfterJournalRecovery` and
+  `ordinaryUnknownStillRetriesOriginal` are in
+  `tests/physis_remote_edit_test.cpp`; the former also injects a
+  late Queued receipt after Uncertain and verifies it is ignored.
+- Full native CMake/CTest, platform CI and editor UI execution are
+  **NOT VERIFIED**; GitHub Actions remains queued/cancelled as inspected.
+  Handoff: `docs/agent-handoffs/physis-stage44-manual-retry-2026-11-19.md`.
