@@ -10,11 +10,24 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <vector>
 
 namespace aiverse::render {
+
+// Temporary correctness gate: enable only after Vulkan direct/indirect pixel
+// parity has been verified for rigid pooled models with nonzero baseVertex.
+// This controls neither arbitrary RHI draws nor Metal GPU ICB.
+inline bool vulkanPooledMdiAddressingEnabled() {
+    static const bool enabled = [] {
+        const char* setting = std::getenv("AIVERSE_VULKAN_POOLED_MDI");
+        return setting && std::strcmp(setting, "1") == 0;
+    }();
+    return enabled;
+}
 
 inline bool staticCrossModelPageCompatible(const Model& a, const Model& b) {
     return &a != &b &&

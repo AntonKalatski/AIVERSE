@@ -148,6 +148,8 @@ public:
     void setUniforms(int slot, const void* data, size_t size) override;
     void draw(uint32_t vertexCount, uint32_t firstVertex) override;
     void drawIndexed(uint32_t indexCount, uint32_t firstIndex, int32_t baseVertex, uint32_t instanceCount) override;
+    void drawIndexedCanonical(uint32_t indexCount, uint32_t firstIndex,
+                              int32_t baseVertex, uint32_t instanceCount) override;
     bool supportsMultiDrawIndirect() const override { return multiDrawIndirect_; }
     bool drawIndexedIndirect(BufferHandle commands, size_t offset,
                              uint32_t drawCount, uint32_t stride) override;

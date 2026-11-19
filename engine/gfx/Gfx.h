@@ -337,6 +337,14 @@ public:
     virtual void setUniforms(int slot, const void* data, size_t size) = 0;
     virtual void draw(uint32_t vertexCount, uint32_t firstVertex = 0) = 0;
     virtual void drawIndexed(uint32_t indexCount, uint32_t firstIndex = 0, int32_t baseVertex = 0, uint32_t instanceCount = 1) = 0;
+    // Canonical indexed base vertex for pooled rigid models: the vertex
+    // offset is added to the fetched index (and shader-visible vertex ID).
+    // Vulkan differs from its historical direct drawIndexed() convention;
+    // unsupported RHI implementations preserve their usual direct path.
+    virtual void drawIndexedCanonical(uint32_t indexCount, uint32_t firstIndex,
+                                      int32_t baseVertex, uint32_t instanceCount) {
+        drawIndexed(indexCount, firstIndex, baseVertex, instanceCount);
+    }
     // One API render submission for several indexed GPU commands. Command buffer
     // must use BufferType::Indirect; count/stride are validated by backend.
     // Unsupported (ES3/WebGL2/legacy GL) returns false and callers use drawIndexed.

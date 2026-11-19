@@ -1359,8 +1359,20 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         }
         return true; // Bind shared state for one indirect multi-draw.
     }
-    dev_->drawIndexed(it.indexCount, it.firstIndex + it.model->gpuFirstIndex,
-                      int32_t(it.model->gpuBaseVertex), count);
+    // Only immutable, static pooled rigid Models use Vulkan-standard indexed
+    // vertexOffset semantics, matching the indirect command path. Other
+    // imported/posed/morphed RHI draws keep their legacy vertex-ID behavior.
+    const bool canonicalVulkan = dev_->info().backend == gfx::Backend::Vulkan &&
+        vulkanPooledMdiAddressingEnabled() && it.model->geometryPoolPage &&
+        (it.flags & kDrawStatic) && it.rigid && it.joints < 0 &&
+        it.morph < 0 && !it.baked && !it.mat->shaderGraph;
+    if (canonicalVulkan)
+        dev_->drawIndexedCanonical(it.indexCount,
+            it.firstIndex + it.model->gpuFirstIndex,
+            int32_t(it.model->gpuBaseVertex), count);
+    else
+        dev_->drawIndexed(it.indexCount, it.firstIndex + it.model->gpuFirstIndex,
+                          int32_t(it.model->gpuBaseVertex), count);
     lastItem_ = &it;
     modelStats_.triangles += uint64_t(it.indexCount / 3) * count;
     if (count > 1) { ++modelStats_.instancedDraws; modelStats_.drawnInstances += count; }
@@ -1410,14 +1422,22 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
             unique[uniqueCount++] = m;
         }
     }
-    // The Vulkan direct-draw path applies gpuBaseVertex as a vertex-buffer offset,
-    // whereas indexed indirect applies vertexOffset to the fetched vertex index.
-    // Until both paths use the same shader-visible vertex addressing convention,
-    // indirect draws with nonzero base vertices would read the wrong geometry.
-    // Preserve correctness by falling back to regular indexed draws for these models.
+    // Vulkan's ordinary direct indexed draw uses a legacy VB binding offset
+    // and cannot match a nonzero indirect vertexOffset. For explicitly opted-in
+    // static pooled rigid items, drawModelBatch selects drawIndexedCanonical,
+    // giving both paths the same Vulkan vertex-index semantics. Other models
+    // keep the old safe fallback, including all nonpooled/deformed callers.
     if (dev_->info().backend == gfx::Backend::Vulkan) {
-        for (uint32_t n = 0; n < count; ++n)
-            if (modelItems_[items[n]].model->gpuBaseVertex != 0) return false;
+        for (uint32_t n = 0; n < count; ++n) {
+            const auto& part = modelItems_[items[n]];
+            if (!part.model->gpuBaseVertex) continue;
+            if (!vulkanPooledMdiAddressingEnabled() ||
+                !part.model->geometryPoolPage || !part.rigid ||
+                !(part.flags & kDrawStatic) || part.joints >= 0 ||
+                part.morph >= 0 || part.baked || !part.mat ||
+                part.mat->shaderGraph)
+                return false;
+        }
     }
     // Start after preflight rejection checks: pack covers exact cache
     // signature validation and building the ordered CPU indexed commands.
@@ -2249,10 +2269,12 @@ void Renderer3D::renderModels(int phase) {
             item.lodThreshold >= 1.0f && !item.lodInvert &&
             item.mat->alpha == AlphaMode::Opaque && !item.mat->transparent &&
             !item.mat->shaderGraph &&
-            // Vulkan indirect draw semantics differ when a pooled model
-            // has a nonzero base vertex. Keep its original direct path.
+            // The optional canonical direct indexed path matches Vulkan's
+            // nonzero indirect vertexOffset for immutable rigid pooled models.
+            // With the opt-in OFF, retain the exact old direct fallback.
             (dev_->info().backend != gfx::Backend::Vulkan ||
-             item.model->gpuBaseVertex == 0);
+             item.model->gpuBaseVertex == 0 ||
+             vulkanPooledMdiAddressingEnabled());
     };
     // Page-aware preflight operates on *already visible* ModelItems. Only
     // groups with distinct source Models AND enough unique primitives to
