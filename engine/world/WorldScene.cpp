@@ -147,6 +147,12 @@ void WorldScene::setVegetationHorizonWindUploadPolicy(
     if(terraHorizon_)terraHorizon_->setWindUploadPolicy(policy);
     vegetationHorizonWindUploadPolicy_=policy;
 }
+void WorldScene::setVegetationHorizonWindShadowCachePolicy(
+        terraweave::HorizonWindShadowCachePolicy policy) {
+    terraweave::validateHorizonWindShadowCachePolicy(policy);
+    if(terraHorizon_)terraHorizon_->setWindShadowCachePolicy(policy);
+    vegetationHorizonWindShadowCachePolicy_=policy;
+}
 std::shared_ptr<WorldScene::Prepared> WorldScene::prepare(Cell cell,const AssetReader& reader) {
     const auto& asset=assets_.chunks.at(cell);std::string text;
     if(!reader(asset.file,text))throw JsonError("world.scene: read/hash failure: "+asset.file);
