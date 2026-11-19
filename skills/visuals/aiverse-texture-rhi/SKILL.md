@@ -621,3 +621,19 @@ CI if it remains queued or cancelled.
   supports per-graph source and virtual texture descriptors. This
   stage modifies source only: C++/MSL/GLSL compile and device tests
   have not run.
+
+
+### Fragment texture capacity query (Stage 10T)
+
+- Query `gfx::Device::maxFragmentTextureSlots()` before allocating
+  material/VT texture slot layouts. It reports addressable fragment
+  *textures*, not separate sampler states. Portable default is 16;
+  Metal advertises 32, Vulkan advertises actual descriptor capacity.
+- `supportsModelGraphSourceTextures` and
+  `modelGraphVirtualTextureSlots` consume that query.
+  MSL extended slots require the Metal backend; on GL/Vulkan,
+  source tex16 fails closed and a VT graph with insufficient
+  remaining texture resources uses its existing tex1 fallback.
+- Never reuse high-slot GLSL variants on a device with fewer
+  addressable textures, and do not claim Metal ICB resource-table
+  support. C++/MSL/GL/Vulkan builds remain NOT RUN.
