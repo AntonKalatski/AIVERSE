@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <initializer_list>
+#include <vector>
 #include <limits>
 #include <stdexcept>
 #include <string_view>
@@ -74,6 +76,27 @@ void allowed(const Json& obj,std::initializer_list<const char*> keys){
         require(it!=keys.end(),"VIVID import: unknown field");
     }
 }
+void fillMissingPrimitiveRanges(render::Model& model) {
+    for(auto& mesh:model.meshes)for(auto& p:mesh.primitives) {
+        if(!p.indexCount || p.vertexCount)continue;
+        const std::size_t begin=p.firstIndex;
+        if(begin>model.indices.size() ||
+           std::size_t(p.indexCount)>model.indices.size()-begin)
+            throw std::invalid_argument("VIVID import: primitive indices exceed model array");
+        std::uint32_t low=std::numeric_limits<std::uint32_t>::max();
+        std::uint32_t high=0;
+        for(std::size_t i=begin;i<begin+p.indexCount;++i) {
+            const auto index=model.indices[i];
+            if(index>=model.vertices.size())
+                throw std::invalid_argument("VIVID import: primitive vertex index out of bounds");
+            low=std::min(low,index);
+            high=std::max(high,index);
+        }
+        p.firstVertex=low;
+        p.vertexCount=high-low+1u; // conservative interval for shared vertices
+    }
+}
+
 std::string file(const render::FileReader& read,
                  const std::string& path,std::size_t limit) {
     std::string source;
@@ -217,7 +240,14 @@ HumanImportedAsset importHumanAsset(const HumanImportManifest& m,
     out.model=render::loadModel(m.modelPath,reader);
     if(!out.model || out.model->vertices.empty())
         throw std::runtime_error("VIVID import: model has no CPU vertices");
+    fillMissingPrimitiveRanges(*out.model);
     const std::size_t importedVertices=out.model->vertices.size();
+    // Input vertex IDs belong to the imported mesh, never a reordered
+    // post-processing mesh. Tangents may be regenerated, positions must not
+    // silently change or a morph can deform the wrong point.
+    std::vector<render::float3> sourcePositions;
+    sourcePositions.reserve(importedVertices);
+    for(const auto& v:out.model->vertices)sourcePositions.push_back(v.pos);
     Json morphJson;
     if(!m.morphPath.empty()) {
         morphJson=Json::parse(file(reader,m.morphPath,64ull*1024ull*1024ull));
@@ -232,6 +262,13 @@ HumanImportedAsset importHumanAsset(const HumanImportManifest& m,
     // facial corrections to the wrong vertices.
     if(out.model->vertices.size()<importedVertices)
         throw std::runtime_error("VIVID import: preparation invalidated source vertices");
+    for(std::size_t i=0;i<importedVertices;++i) {
+        const auto& before=sourcePositions[i];
+        const auto& after=out.model->vertices[i].pos;
+        if(before.x!=after.x || before.y!=after.y || before.z!=after.z)
+            throw std::runtime_error("VIVID import: preparation reordered/deformed source vertex indices");
+    }
+    fillMissingPrimitiveRanges(*out.model);
     if(m.morphPath.empty())
         out.facialShapes=SparseMorphLibrary::compile(out.model->vertices.size(),{});
     else {
