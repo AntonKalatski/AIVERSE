@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <iostream>
+#include <initializer_list>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -17,6 +18,12 @@ template<typename F> void reject(F&& fn) {
     try { fn(); }
     catch (const std::invalid_argument&) { return; }
     throw std::runtime_error("invalid facial shape mapping accepted");
+}
+// std::span<const ShapeRoute> cannot be constructed from a braced list in C++20.
+// Materialize the routes in a typed container before passing a non-owning view.
+void rejectRoutes(const SparseMorphLibrary& library, std::initializer_list<ShapeRoute> routes) {
+    const std::vector<ShapeRoute> owned(routes);
+    reject([&] { (void)FaceShapeBinding::compile(library, owned); });
 }
 SparseMorphLibrary fixture() {
     std::vector<MorphTargetInput> targets;
@@ -34,13 +41,13 @@ SparseMorphLibrary fixture() {
 }
 void validate() {
     const auto library = fixture();
-    reject([&] { FaceShapeBinding::compile(library, {{Channel::Count,"jaw_0",1}}); });
-    reject([&] { FaceShapeBinding::compile(library, {{Channel::JawOpen,"jaw_1000",1}}); });
-    reject([&] { FaceShapeBinding::compile(library, {{Channel::JawOpen,"",1}}); });
-    reject([&] { FaceShapeBinding::compile(library, {{Channel::JawOpen,"jaw_0",-1}}); });
-    reject([&] { FaceShapeBinding::compile(library, {{Channel::JawOpen,"jaw_0",std::numeric_limits<float>::infinity()}}); });
-    reject([&] { FaceShapeBinding::compile(library, {{Channel::JawOpen,"jaw_0",1},
-                                                     {Channel::EyeBlinkLeft,"jaw_0",1}}); });
+    rejectRoutes(library, {{Channel::Count,"jaw_0",1}});
+    rejectRoutes(library, {{Channel::JawOpen,"jaw_1000",1}});
+    rejectRoutes(library, {{Channel::JawOpen,"",1}});
+    rejectRoutes(library, {{Channel::JawOpen,"jaw_0",-1}});
+    rejectRoutes(library, {{Channel::JawOpen,"jaw_0",std::numeric_limits<float>::infinity()}});
+    rejectRoutes(library, {{Channel::JawOpen,"jaw_0",1},
+                           {Channel::EyeBlinkLeft,"jaw_0",1}});
     check(FaceShapeBinding::compile(library, {}).routes()==0, "empty mapping rejected");
 }
 void endToEnd() {
