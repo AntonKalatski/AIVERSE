@@ -1472,3 +1472,20 @@ Those TerraWeave native headers are absent from the old GI feature base:
 do not cherry-pick current main blindly. Reconcile branches carefully
 and test actual grass/terrain model pixels after merge. SOURCE ONLY:
 compiler, CTest, actual GLES/Metal/Vulkan GPU runs NOT DONE.
+
+
+## GI Stage 47 — strict GLES3 low terrain GI (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage47-gles16-terrain-gi-2026-11-20.md`.
+The existing rich RTS terrain pass declares texture bindings through tex20
+and is NOT valid on strict 16-slot GLES3/WebGL2 GPUs. New Low/Compact variant
+omits unused splat/normal/cliff samplers, remaps baked terrain tex19/20 to
+tex4/5 and traced terrain tex18 to tex6, retains vision tex15 and vertex
+cell/dynamic tex2/3, and samples optional CPU dynamic GI at FREE tex7
+(U6). Devices <21 fragment slots use this compact shader; rich high-tier
+Metal/Vulkan keeps GI at tex21. The shader variants are built separately
+and selected inside deferred terrain draw only when the GI atlas is ready;
+fallback never samples an unbound probe texture. GLES3 requires NO compute
+or float HDR render target for CPU-probe GI. New source regression and CTest
+registration exist but native GLSL/GLES/Metal/Vulkan builds and GPU pixel
+validation are NOT RUN. Never claim actual mobile parity without that.
