@@ -31,6 +31,31 @@ void contract() {
         m.validate();
     });
 
+    {
+        auto indexed=manifest;
+        indexed.facialLods.push_back({"head_lod1","head","vivid-lod-1-a1.mapping.json"});
+        indexed.facialLods.push_back({"head_lod2","head","vivid-lod-2-b2.mapping.json"});
+        const auto restored=HumanImportManifest::fromJson(indexed.toJson());
+        expect(restored.facialLods.size()==2 &&
+               restored.facialLods[1].sourceMeshName=="head" &&
+               restored.facialLods[0].mappingPath=="vivid-lod-1-a1.mapping.json",
+               "indexed facial LOD chain did not roundtrip");
+        reject([&] {
+            auto bad=indexed;
+            bad.facialLods[1].meshName="head_lod1";
+            bad.validate();
+        });
+        reject([&] {
+            auto bad=indexed;
+            bad.facialLods[1].mappingPath="../unsafe.mapping.json";
+            bad.validate();
+        });
+        reject([&] {
+            auto bad=indexed;
+            bad.facialLods.resize(9);
+            bad.validate();
+        });
+    }
     expect(manifest.toJson()==HumanImportManifest::fromJson(manifest.toJson()).toJson(),
            "human import manifest canonical JSON lost fields");
     reject([]{HumanImportManifest::fromJson(Json::parse(R"({"version":1,"model":"../bad.obj"})"));});
