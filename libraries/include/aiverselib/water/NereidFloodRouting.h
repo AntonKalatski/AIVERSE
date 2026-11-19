@@ -35,6 +35,7 @@ struct WaterFloodResource {
     int32_t gridCm=100;               // equal square cell size
     int64_t originXcm=0,originZcm=0;  // grid origin, includes negative world
     uint64_t revision=0;
+    uint64_t wetnessRevision=0;       // new wet/dry cells: auto-bank topology trigger
     uint64_t groundRevision=0;        // TerraWeave soil revision sampled by this grid
     uint32_t lastTick=UINT32_MAX;
     std::vector<WaterFloodCell> cells; // sorted strictly by x,z
@@ -52,7 +53,7 @@ struct WaterFloodEdge {
 };
 struct WaterFloodTick {
     uint64_t totalBeforeCm=0,totalAfterCm=0,movedCm=0;
-    uint32_t newlyWetCells=0;
+    uint32_t newlyWetCells=0,newlyDryCells=0;
     std::vector<WaterFloodEdge> edges;  // <=32768 bounded pair evaluations
 };
 
@@ -93,7 +94,7 @@ inline void io(Archive& a,WaterFloodCell& c){
 }
 inline void io(Archive& a,WaterFloodResource& r){
     a(r.version,r.gridCm,r.originXcm,r.originZcm,
-      r.revision,r.groundRevision,r.lastTick);
+      r.revision,r.wetnessRevision,r.groundRevision,r.lastTick);
     // Each cell is exactly 32 persisted bytes (6 int32 fields + Entity).
     uint32_t n=a.count(r.cells.size(),32);
     if(!a.ok() || n>16384u){a.fail();return;}
@@ -171,7 +172,8 @@ inline WaterFloodTick stepNereidFlood(
         if(permeability>1000u)
             throw std::invalid_argument("NEREID flood obstruction permeability");
         potential=potential*permeability/1000u;
-        if(permeability && !potential)potential=1;
+        // Tiny permeability is allowed to block sub-cm flux at this
+        // resolution; do not force an unphysical 1cm transfer through it.
         if(!potential)return;
         const uint32_t sourceRemaining=from.volumeCm-outgoing[source];
         const uint32_t targetSpace=100000u-to.volumeCm-incoming[destination];
@@ -211,6 +213,7 @@ inline WaterFloodTick stepNereidFlood(
     for(size_t i=0;i<n;++i){
         auto& c=candidate.cells[i];
         c.volumeCm=c.volumeCm-outgoing[i]+incoming[i];
+        result.newlyDryCells+=r.cells[i].volumeCm>0 && c.volumeCm==0;
         if(!c.waterBody.valid() && c.volumeCm)
             c.waterBody=newBody[i];
         if(!c.volumeCm)c.waterBody=kNullEntity;
@@ -227,6 +230,11 @@ inline WaterFloodTick stepNereidFlood(
     if(result.totalAfterCm!=result.totalBeforeCm)
         throw std::logic_error("NEREID flood routing did not conserve water");
     candidate.lastTick=tick;
+    if(result.newlyWetCells || result.newlyDryCells){
+        if(candidate.wetnessRevision==UINT64_MAX)
+            throw std::overflow_error("NEREID flood wetness revision overflow");
+        ++candidate.wetnessRevision;
+    }
     if(result.movedCm){
         if(candidate.revision==UINT64_MAX)
             throw std::overflow_error("NEREID flood revision overflow");
