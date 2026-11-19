@@ -148,6 +148,9 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         // owner: even a failed GPU upload cannot evict old published Models.
         auto staged=std::make_unique<Session>();
         staged->provider=std::make_unique<render::ModelAssetProvider>(readAsset);
+        // Share the Editor Device's explicit generation token. Pointer
+        // identity alone is insufficient after graphics device recreation.
+        staged->provider->setGpuDeviceLease(ed.gpuDeviceLease());
         staged->registry=std::make_unique<Registry>();
         std::string error;
         try {
