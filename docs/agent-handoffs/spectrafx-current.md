@@ -1,5 +1,20 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 111 — GPU timing + Metal allocation telemetry and seven-frame visual QA (NOT RUN)
+
+Code `3e56816e991f304bbe4ebe0fe1abc8505523e4d8`
+adds GPU timestamp p50/p95 and device-wide Metal allocation tracking
+to the real 512x256 churn fixture (no production RHI changes).
+Code `65426ea8b551e3a33713109a43c17e990375cd1f` adds a
+stdlib PPM contact sheet + JSON visual comparison tool and CTest.
+Fix `e5aa28f843f7459afa8803a60e4c53d4b12cecc0` makes
+the synthetic camera centroid fixture satisfy strict QA.
+Acceptance now runs a separate `visual_review` stage when PPM capture
+flag is supplied. **New Python/CTest/Metal code NOT yet executed**.
+Last native green source is Stage 110 `b06c6d0f4dc820455d9c7b25dc98aa33397adca7`.
+Read `docs/agent-handoffs/spectrafx-stage111-visual-perf-2026-11-20.md`.
+
+
 ## Stage 110 — full native Stage 106–109 acceptance PASS on M3 Ultra
 
 **Validated source:** `b06c6d0f4dc820455d9c7b25dc98aa33397adca7`.

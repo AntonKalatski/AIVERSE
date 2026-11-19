@@ -1,5 +1,25 @@
 # SpectraFX — opt-in GPU emitter playback in native AIVERSE projects
 
+## Stage 111 — visual QA sheet and GPU performance diagnostics
+
+Set `AIVERSE_SPECTRAFX_SCENE_CAPTURE=/tmp/spectrafx-scene`
+before running the standard acceptance script. After the Metal stage,
+`tools/spectrafx/review_frames.py` creates
+`spectrafx-visual-review.ppm` and `spectrafx-visual-review.json`
+in the acceptance log directory, with seven real captures, three
+difference heatmaps, objective camera/depth/reset/PRISMA checks and
+summary metrics. This is a P6-only Python standard-library utility;
+it never invents missing screenshots.
+
+The native `spectrafx_metal_rhi` test now collects whole-command-buffer
+GPU frame timing p50/p95 through `gfx::Device::timeGpuFrame` and logs
+`MTLDevice.currentAllocatedSize` baseline/peak/post churn. Allocation
+is device-wide and **not** physical GPU residency or a SpectraFX-only
+footprint. Timings are asynchronous and can be unavailable; do not
+interpret absent samples as zero cost. Stage 111 has **not yet passed**
+native test acceptance. See the Stage 111 handoff.
+
+
 ## Stage 109 — extended GPU lifecycle stress (authored, NOT RUN)
 
 `spectrafx_retirement` now covers 1024 keyed Play/replacement/reset
