@@ -1024,10 +1024,15 @@ private:
                         ui::toneText(ui::Tone::Error,
                             "GPU device reported unhealthy; do not trust live capture");
                 } else ImGui::TextDisabled("Metal health: unavailable");
-                ImGui::Text("GPU failures: upload %llu, compute %llu, reset %llu",
+                ImGui::Text("GPU failures: kill %llu, staging %llu, compute %llu, reset %llu",
                     static_cast<unsigned long long>(cp.gpuKillUploadFailures),
+                    static_cast<unsigned long long>(cp.gpuStagingUploadFailures),
                     static_cast<unsigned long long>(cp.gpuComputeBeginFailures),
                     static_cast<unsigned long long>(cp.gpuResetFailures));
+                if(cp.stagingRecoveryGroups)
+                    ui::toneText(ui::Tone::Warn,
+                        "GPU input retry required in %u group(s)",
+                        cp.stagingRecoveryGroups);
                 ImGui::Text("GPU errors: pass-order %llu, device-unhealthy %llu",
                     static_cast<unsigned long long>(cp.gpuPassOrderRejections),
                     static_cast<unsigned long long>(cp.gpuDeviceUnhealthy));
@@ -1053,8 +1058,8 @@ private:
                              fileOrReason;
                 }
                 ImGui::EndDisabled();
-                ImGui::TextDisabled("Only a complete current-revision GPU state; "
-                                    "no historical rewind or ECS save.");
+                ImGui::TextDisabled("Diagnostic binary V2: CRC32 + current GPU revision only. "
+                                    "No GPU rewind or ECS save.");
                 ImGui::Text("Readbacks: %llu / %llu complete, %llu failed",
                             static_cast<unsigned long long>(cp.requests),
                             static_cast<unsigned long long>(cp.completed),
