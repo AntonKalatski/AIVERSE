@@ -10385,3 +10385,25 @@ Keep PR #21 Draft. On success, next stage should test
 the **actual production Shader Graph compiler/material**
 permutations, and separately Vulkan/GL/mobile parity.
 
+
+**Stage 10BQ test-isolation addendum:** the instructions above are
+valid, but a *separate* CMake build directory is preferred so an
+explicitly enabled, potentially unstable GPU ICB test cannot remain
+registered in the already-passing ordinary
+`build/texture-rhi` cache. The recommended **exact** commands
+(also updated in `docs/texture-rhi.md`, commit
+`c6994149aa3729dbe11cf2553f40c4fff2118672`) are:
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+cmake -S . -B build/texture-icb-gpu -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=ON
+cmake --build build/texture-icb-gpu \
+  --target aiverse_metal_texture_icb_graph_gpu_test --parallel 4
+ctest --test-dir build/texture-icb-gpu --verbose --output-on-failure \
+  --no-tests=error -R '^metal_texture_icb_graph_gpu$'
+```
+No additional engine/test source change was made for this isolation
+recommendation; native compile/GPU test remains NOT RUN.
+
