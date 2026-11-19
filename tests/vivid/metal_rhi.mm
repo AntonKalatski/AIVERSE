@@ -244,13 +244,13 @@ void run() {
                 faceA.values[static_cast<std::size_t>(Channel::JawOpen)]=0.25f+frame*0.2f;
                 faceB.values[static_cast<std::size_t>(Channel::EyeBlinkRight)]=0.35f+frame*0.2f;
 
-                // An unrefreshed previous-frame GPU stream is never accepted.
+                device->beginFrame(8,8);
+                // A previous-frame stream must be rejected only after the
+                // new frame serial has advanced at beginFrame().
                 render::ModelDraw before;
                 before.model=&sharedModel;
                 if(frame>0)require(!actorA.attach(before),
                     "VIVID actor accepted stale GPU stream in a new frame");
-
-                device->beginFrame(8,8);
                 require(actorA.dispatch(faceA,mapping), "VIVID actor A dispatch failed");
                 require(actorB.dispatch(faceB,mapping), "VIVID actor B dispatch failed");
                 require(!actorA.dispatch(faceA,mapping),
