@@ -190,6 +190,7 @@ struct Camera {
     // distance * tan(fovY / 2), i.e. the same framing as the perspective camera at that distance.
     bool ortho = false;
     float2 jitter{0, 0}; // optional projection offset in NDC (temporal AA)
+    float2 lensShift{0,0}; // optical projection centre shift in NDC (stereo/physical lens)
     float zNear = 0.5f, zFar = 1000.0f;   // perspective clip planes (planet systems need a far plane)
 
     // Direct world pose for ECS/cinematic cameras, including arbitrary roll.
@@ -202,6 +203,9 @@ struct Camera {
         usePose = true;
         position = worldPosition;
         rotation = qnormalize(worldRotation);
+        // Preserve camera-facing target for legacy shadows, lighting, culling
+        // and systems that still query target instead of the view matrix.
+        target = position + rotation.rotate({0, 0, -1}) * distance;
     }
 
     float3 eye() const {
@@ -224,13 +228,16 @@ struct Camera {
     mat4 proj(float aspect, bool zeroToOne) const {
         if (!ortho) {
             mat4 p = mat4::perspective(fovY, aspect, zNear, zFar, zeroToOne);
-            for (int i = 0; i < 4; ++i) { p.at(0, i) += jitter.x * p.at(3, i); p.at(1, i) += jitter.y * p.at(3, i); }
+            for (int i = 0; i < 4; ++i) {
+                p.at(0, i) += (jitter.x+lensShift.x) * p.at(3, i);
+                p.at(1, i) += (jitter.y+lensShift.y) * p.at(3, i);
+            }
             return p;
         }
         float h = orthoHalfHeight(), w = h * aspect;
         // negative near plane: terrain/sprites taller than the zoom distance are not clipped
         mat4 p = mat4::ortho(-w, w, -h, h, -200.0f, 1000.0f, zeroToOne);
-        p.at(0, 3) += jitter.x; p.at(1, 3) += jitter.y;
+        p.at(0, 3) += jitter.x+lensShift.x; p.at(1, 3) += jitter.y+lensShift.y;
         return p;
     }
 

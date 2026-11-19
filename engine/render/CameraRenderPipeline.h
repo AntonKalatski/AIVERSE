@@ -10,6 +10,7 @@
 #include "CameraRig.h"
 #include "CameraPostFxPool.h"
 #include "CameraCompositor.h"
+#include "CameraCaptureViews.h"
 #include <cstdint>
 #include <unordered_set>
 #include <utility>
@@ -85,7 +86,7 @@ public:
                 compositing=compositing || v.viewport.enabled || v.stack.overlay;
             }
         },renderOrigin);
-        compositing=compositing && screenViews.size()>1;
+        compositing=compositing && !screenViews.empty();
         std::unordered_set<PostProcess*> usedPost;
         std::unordered_set<uint64_t> failedTargets;
         for(const auto& planned: result.plan.jobs) {
@@ -218,6 +219,35 @@ public:
                 rigs.apply(world,camera,seconds,dt,renderOrigin);
                 camera.camera=post.prepare(camera,width,height);
             },renderOrigin);
+    }
+    // Explicit non-ECS captures for cubemap faces, stereo eyes, portals,
+    // mirrors and one-shot scene previews. The host supplies distinct keys
+    // and declares any sampling dependencies; no screen clear is involved.
+    template<class Submit>
+    size_t renderCaptures(const std::vector<CameraCaptureView>& captures,
+                          Submit&& submit) {
+        size_t encoded=0;
+        for(const auto& request:captures) {
+            if(!request.targetAssetKey || request.width<=0 || request.height<=0)
+                continue;
+            const auto* target=targets_.acquire(request.targetAssetKey,
+                request.width,request.height,request.hdr,true);
+            if(!target)continue;
+            gfx::PassDesc pass;
+            pass.colorTarget=target->color;
+            pass.depthTarget=target->depth;
+            renderer_.beginScene(request.camera,request.width,request.height);
+            submit(request,renderer_);
+            renderer_.render(pass);
+            device_.endPass();
+            if(!device_.gpuHealthy()) {
+                targets_.markInvalid(request.targetAssetKey);
+                continue;
+            }
+            targets_.markReady(request.targetAssetKey);
+            ++encoded;
+        }
+        return encoded;
     }
 private:
     gfx::Device& device_;
