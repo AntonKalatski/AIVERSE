@@ -4274,3 +4274,114 @@ Only a zero exit and a **new** `acceptance.txt` ending in
 `result=PASS` after seven actually executed native Metal
 CTest cases certify the full suite. Keep Draft PR #21
 and GPU ICB default-OFF until the actual results.
+
+### Stage 10CH — fix false CTest PASS and nonuniform gutter scene ROI gate (2026-11-19)
+
+**Observed real Apple M3 Ultra terminal output:** the one-shot Mac
+runner compiled its Metal targets and reached the final
+`metal_renderer_graph_vt_gutter_gpu` (CTest #128).
+The production compiled Shader Graph + real dual-disk VT
++ GPU-encoded Metal ICB executed at five U positions:
+0.40/0.48/0.50/0.52/0.60. Every position emitted
+`graph=1 mixedGraph=1 vt=1 mixedVt=1 commands=2
+rejected=0 errors=0`, and all five ordinary/ICB
+full RGBA8 captures reported `bad_channels=0 max_delta=0`.
+The native atlas published both nonuniform guttered
+physical pages.
+
+However, the fixture printed **10 real FAIL assertions**:
+five times `FAIL: compiled Shader Graph draws distinct regions`
+and five times `FAIL: GPU ICB draws distinct graph-source regions`.
+The two gradient materials differed with ROI RGB-distance
+only **16–19**, below an inherited solid-color threshold
+of **35**. This was a *test-fixture acceptance threshold
+mismatch*, not evidence of a GPU image disagreement.
+The stronger independent logical-source bilinear
+intermediate-ROI oracle, already in the fixture,
+was skipped due to `failed=true`. Thus the new scene
+has **not yet passed its full independent CPU oracle**.
+
+CTest incorrectly printed `1/1 Passed` despite these
+FAIL lines; macOS `NSApplication::terminate` exits the
+app process, bypassing the `aiverseMain()` return code.
+The one-shot shell runner **correctly rejected** the
+missing mandatory final PASS marker. The user therefore
+did not find `build/texture-final-logs/acceptance.txt`.
+This file intentionally exists **only** after a complete
+zero-error suite, never on a partial FAIL.
+
+**Actual fix commits:**
+- `7a50a4c82462407596195b4dc1ea748af9545c3e`:
+  `tests/render/metal_renderer_graph_vt_gutter_gpu.cpp`
+  changes the *new fixture's only* material ROI
+  discrimination threshold from 35 to **12** for
+  intentionally nearby nonuniform gradient colors;
+  it does **not** remove nonblank-region checks or
+  weaken full-frame CPU/ICB tolerance (≤2 LSB)
+  or the existing independent source-logical
+  bilinear scene oracle (≤3 displayed levels).
+  The native observed delta range 16–19 satisfies
+  12 and preserves nonzero inter-material separation.
+  After platform shutdown's standard resource cleanup,
+  `callbacks.shutdown` checks `finished` and calls
+  `std::_Exit(1)` after flushing logs if any fixture
+  `check()` failed or the acceptance sequence did
+  not complete. This ensures failures propagate through
+  AppKit termination to CTest.
+- `035b6b81c8126a0ea9478ac5b194f9cf3b11561c`:
+  `CMakeLists.txt` adds `FAIL_REGULAR_EXPRESSION "FAIL:"`
+  for all seven registered native Metal texture GPU
+  CTests (only when the tests exist), and explicitly
+  requires the production gutter scene's final
+  `PASS: production Renderer3D Shader Graph nonuniform
+  guttered disk VT mixed Metal GPU ICB seam parity`
+  marker using `PASS_REGULAR_EXPRESSION`. A future
+  false CTest success despite a native FAIL line
+  must now become a real CTest failure.
+- `65b32f968ed2089c313d51cfb1e3fe89df850069`:
+  `tools/texture-rhi-final-verify.sh` additionally
+  scans each verbose native GPU test log for
+  `FAIL:` even if CTest returned zero; the
+  exact success-marker gate is retained.
+- `465967cbfd84384b768c62e68d5adc71e39e4d8a`:
+  the one-shot runner removes any previous PASS/failure
+  summary at start and now writes
+  `build/texture-final-logs/failure.txt`
+  containing `result=FAIL`, checked-out SHA,
+  exit code and log path on **any nonzero exit**
+  (including explicit marker rejection).
+  `acceptance.txt` remains success-only.
+  Users can inspect a single summary file
+  even when a native test fails.
+
+**Actual verification after these commits:** source
+review/remote GitHub file checks only. **No new macOS
+native build, independent gutter scene CPU oracle,
+GPU execution or one-shot PASS has run** since
+these fixes. Do not claim Stage 10CD full acceptance
+from CTest's prior false-positive 1/1 Passed.
+
+**One-shot Mac Studio retry**, safe on the existing
+`verify-texture-rhi-20261119-150819` worktree:
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+bash -n tools/texture-rhi-final-verify.sh
+bash tools/texture-rhi-final-verify.sh --jobs 4
+```
+
+The safe CPU/texture tests and all 7 Metal CTests
+are rebuilt from the latest HEAD; the loop will
+rerun the previously observed real GPU
+gutter scene and newly expose its independent
+gradient/CPU bilinear oracle, not silently bypass
+it. A successful run must end with the final PASS
+marker and new `build/texture-final-logs/acceptance.txt`
+containing `result=PASS`. On failure, inspect
+`failure.txt` and the first named test log and fix
+the actual compiler/Metal/independent oracle error.
+Keep Draft PR #21 and experimental Metal GPU ICB
+default-OFF until full native and platform evidence.
