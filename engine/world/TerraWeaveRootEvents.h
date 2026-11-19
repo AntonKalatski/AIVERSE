@@ -115,6 +115,9 @@ public:
         const auto it=plants_.find(id);
         if(it==plants_.end())throw std::out_of_range("TerraWeave rooted plant identity");
         it->second.fallen=false;
+        // A replanted stem must be resampled even when the current soil
+        // shape is identical to its last collapsed support snapshot.
+        it->second.support={};
     }
 
     // Soil change is a revisioned terrain edit. Only plants whose root disks
@@ -126,7 +129,15 @@ public:
         if(!ground)throw std::invalid_argument("TerraWeave missing ground snapshot");
         PlantSupportUpdate update;
         if(change.vertices.empty())return update;
-        for(auto& [id,p]:plants_) {
+        // Stage decisions before mutating registry state. A failing height
+        // sampler or allocation cannot produce a half-updated plant set.
+        struct Pending {
+            AnchoredPlantId id{};
+            RootState support{};
+            bool fallen=false;
+        };
+        std::vector<Pending> pending;
+        for(const auto& [id,p]:plants_) {
             const auto& anchor=p.anchor;
             const int64_t radius=anchor.roots.radiusCm;
             if(anchor.xCm+radius<change.dirty.minX ||
@@ -138,10 +149,9 @@ public:
             if(next==p.support)continue;
             // A root visibility change is a lightweight presentation
             // update, independent of whether this tree has fallen.
-            p.support=next;
-            update.changed.push_back({id,next,p.fallen});
-            if(next.uprooted && !p.fallen) {
-                p.fallen=true;
+            bool fallen=p.fallen;
+            if(next.uprooted && !fallen) {
+                fallen=true;
                 int32_t dx=next.fallDirectionXPermille;
                 int32_t dz=next.fallDirectionZPermille;
                 if(!dx && !dz) {
@@ -161,8 +171,14 @@ public:
                     anchor.plantedHeightCm,dx,dz,next.supportPermille,
                     next.exposedCm,change.revision,tick
                 });
-                update.changed.back().fallen=true;
             }
+            pending.push_back({id,next,fallen});
+            update.changed.push_back({id,next,fallen});
+        }
+        for(const auto& item:pending) {
+            auto& original=plants_.at(item.id);
+            original.support=item.support;
+            original.fallen=item.fallen;
         }
         return update;
     }
