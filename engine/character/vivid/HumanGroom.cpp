@@ -20,6 +20,101 @@ bool good(float3 v){
     return std::isfinite(v.x)&&std::isfinite(v.y)&&std::isfinite(v.z) &&
            std::fabs(v.x)<100000.0f&&std::fabs(v.y)<100000.0f&&std::fabs(v.z)<100000.0f;
 }
+
+float3 closestTriangle(float3 p,float3 a,float3 b,float3 c) {
+    // Real-Time Collision Detection, closest point on triangle.
+    const auto ab=b-a, ac=c-a, ap=p-a;
+    const float d1=dot(ab,ap), d2=dot(ac,ap);
+    if(d1<=0&&d2<=0)return a;
+    const auto bp=p-b;
+    const float d3=dot(ab,bp),d4=dot(ac,bp);
+    if(d3>=0&&d4<=d3)return b;
+    const float vc=d1*d4-d3*d2;
+    if(vc<=0&&d1>=0&&d3<=0)return a+ab*(d1/(d1-d3));
+    const auto cp=p-c;
+    const float d5=dot(ab,cp),d6=dot(ac,cp);
+    if(d6>=0&&d5<=d6)return c;
+    const float vb=d5*d2-d1*d6;
+    if(vb<=0&&d2>=0&&d6<=0)return a+ac*(d2/(d2-d6));
+    const float va=d3*d6-d5*d4;
+    if(va<=0&&(d4-d3)>=0&&(d5-d6)>=0)
+        return b+(c-b)*((d4-d3)/((d4-d3)+(d5-d6)));
+    const float denom=1.0f/(va+vb+vc);
+    return a+ab*(vb*denom)+ac*(vc*denom);
+}
+bool rayHits(float3 origin,float3 direction,float3 a,float3 b,float3 c) {
+    const auto e1=b-a,e2=c-a;
+    const auto crossP=cross(direction,e2);
+    const float det=dot(e1,crossP);
+    if(std::fabs(det)<1e-7f)return false;
+    const float inv=1.0f/det;
+    const auto tvec=origin-a;
+    const float u=dot(tvec,crossP)*inv;
+    if(u<=1e-6f || u>=1.0f-1e-6f)return false;
+    const auto qvec=cross(tvec,e1);
+    const float v=dot(direction,qvec)*inv;
+    if(v<=1e-6f || u+v>=1.0f-1e-6f)return false;
+    return dot(e2,qvec)*inv>1e-5f;
+}
+}
+
+bool HumanGroomRuntime::setCollisionMesh(
+        std::span<const render::float3> vertices,
+        std::span<const std::uint32_t> triangles) {
+    if(vertices.empty()||vertices.size()>16384||
+       triangles.empty()||triangles.size()%3||
+       triangles.size()>32768*3)return false;
+    for(const auto p:vertices)if(!good(p))return false;
+    std::vector<CollisionTriangle> proposed;
+    proposed.reserve(triangles.size()/3);
+    for(std::size_t i=0;i<triangles.size();i+=3) {
+        const auto a=triangles[i],b=triangles[i+1],c=triangles[i+2];
+        if(a>=vertices.size()||b>=vertices.size()||c>=vertices.size()||
+           a==b||a==c||b==c)return false;
+        const auto ab=vertices[b]-vertices[a],ac=vertices[c]-vertices[a];
+        if(length(cross(ab,ac))<1e-7f)return false;
+        proposed.push_back({vertices[a],vertices[b],vertices[c]});
+    }
+    collisionTriangles_=std::move(proposed);
+    return true;
+}
+void HumanGroomRuntime::clearCollisionMesh() noexcept {
+    collisionTriangles_.clear();
+}
+render::float3 HumanGroomRuntime::resolveCollision(
+        render::float3 p,const GroomGuide& guide) const {
+    using namespace render;
+    if(!collisionTriangles_.empty()) {
+        // Interior-only constraint. The mesh must be closed; do not infer
+        // inside/outside from arbitrary open triangle fragments.
+        const float3 ray=normalize(float3{1.0f,0.173f,0.091f});
+        std::size_t intersections=0;
+        auto closest=p;
+        float nearest=std::numeric_limits<float>::max();
+        for(const auto& tri:collisionTriangles_) {
+            if(rayHits(p,ray,tri.a,tri.b,tri.c))++intersections;
+            const auto candidate=closestTriangle(p,tri.a,tri.b,tri.c);
+            const auto delta=candidate-p;
+            const float d2=dot(delta,delta);
+            if(d2<nearest){nearest=d2;closest=candidate;}
+        }
+        if(intersections%2==1) {
+            // Move from inside to the nearest surface, then slightly beyond.
+            const auto direction=closest-p;
+            if(length(direction)>1e-6f)
+                return closest+normalize(direction)*0.001f;
+            return closest+guide.normal*0.001f;
+        }
+        return p;
+    }
+    const float3 scaled{p.x/scalpRadii_.x,
+                        p.y/scalpRadii_.y,
+                        p.z/scalpRadii_.z};
+    const float radius=length(scaled);
+    if(radius>=1.0f)return p;
+    return radius>1e-5f
+        ? p*(1.001f/radius)
+        : guide.root+guide.normal*0.001f;
 }
 void HumanGroomRuntime::generate(const HumanDNA& dna,GroomQuality quality) {
     dna.validate();
@@ -105,38 +200,12 @@ bool HumanGroomRuntime::step(float dt,render::float3 wind) {
                     if(j>1)guide.position[j-1]+=displacement*0.30f;
                     guide.position[j]=guide.position[j]-displacement*(j==1?1.0f:0.70f);
                 }
-                // Use the same DNA-scaled ellipsoid as guide generation.
-                // A fixed sphere penetrates wide/tall heads and pushes hair
-                // unnaturally far away from narrow heads.
-                const auto p=guide.position[j];
-                const float3 scaled{p.x/scalpRadii_.x,
-                                    p.y/scalpRadii_.y,
-                                    p.z/scalpRadii_.z};
-                const float radius=length(scaled);
-                if(radius<1.0f) {
-                    if(radius>1e-5f) {
-                        guide.position[j]=p*(1.001f/radius);
-                    } else {
-                        // Degenerate centre contact: project towards the
-                        // guide's outward root normal, never divide by zero.
-                        guide.position[j]=guide.root+guide.normal*0.001f;
-                    }
-                }
+                guide.position[j]=resolveCollision(guide.position[j],guide);
             }
         }
-        // Neighbor constraints may move an already-projected point on the
-        // last iteration. Enforce collision once more on the final pose.
-        for(std::size_t j=1;j<guide.position.size();++j) {
-            const auto p=guide.position[j];
-            const float3 scaled{p.x/scalpRadii_.x,
-                                p.y/scalpRadii_.y,
-                                p.z/scalpRadii_.z};
-            const float radius=length(scaled);
-            if(radius<1.0f)
-                guide.position[j]=(radius>1e-5f)
-                    ? p*(1.001f/radius)
-                    : guide.root+guide.normal*0.001f;
-        }
+        // Final contact pass after segment constraints have converged.
+        for(std::size_t j=1;j<guide.position.size();++j)
+            guide.position[j]=resolveCollision(guide.position[j],guide);
         for(auto v:guide.position)if(!good(v))return false;
     }
     lastStepMs_=float(std::chrono::duration<double,std::milli>(
