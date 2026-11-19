@@ -8,6 +8,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <stdexcept>
 
 namespace aiverse::render {
 
@@ -45,69 +46,95 @@ ShadowQuality Renderer3D::defaultQualityFor(const gfx::Device& dev, bool mobile)
 
 bool Renderer3D::init(gfx::Device& dev) {
     checkGpuDevice(dev);
+    // Reinitializing the same instance without shutdown would overwrite live
+    // GPU handles and the retirement owners borrowed by LightSystem.
+    if(dev_)throw std::logic_error("Renderer3D init: already initialized; call shutdown first");
     if(programRetirement_ && programRetirement_->pendingBatches()!=0)
         throw std::logic_error("Renderer3D cannot reinitialize with pending GPU programs");
+    if(targetRetirement_ && targetRetirement_->pendingPairs()!=0)
+        throw std::logic_error("Renderer3D cannot reinitialize with pending GPU targets");
     programRetirement_=std::make_unique<GpuProgramRetirement>(
         dev,gpuDeviceLease_);
     targetRetirement_=std::make_unique<OffscreenTargetRetirement>(
         dev,gpuDeviceLease_);
     lights.setTargetRetirement(targetRetirement_.get());
     dev_ = &dev;
-    gfx::ShaderDesc ls; ls.glslVertex = shaders::kLitVS; ls.glslFragment = shaders::kLitFS; ls.msl = shaders::kLitMSL;
-    ls.uniformSlots = 3; ls.textureSlots = 6; ls.label = "lit"; // U2/tex1/tex2: Lights (tex2 water reflection); tex3 height field, tex4/tex5 scene (trace)
-    litShader_ = dev.createShader(ls);
-    gfx::ShaderDesc ss; ss.glslVertex = shaders::kShadowVS; ss.glslFragment = shaders::kShadowFS; ss.msl = shaders::kShadowMSL;
-    ss.uniformSlots = 2; ss.label = "shadow";
-    shadowShader_ = dev.createShader(ss);
-    gfx::ShaderDesc cs; cs.glslVertex = shaders::kColorVS; cs.glslFragment = shaders::kColorFS; cs.msl = shaders::kColorMSL;
-    cs.uniformSlots = 2; cs.label = "color";
-    colorShader_ = dev.createShader(cs);
-    if (!litShader_.valid() || !shadowShader_.valid() || !colorShader_.valid()) return false;
 
-    gfx::PipelineDesc mp;
-    mp.shader = litShader_;
-    mp.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
-    mp.attrs[1] = {1, gfx::VertexFormat::Float3, 12};
-    mp.attrs[2] = {2, gfx::VertexFormat::UByte4N, 24};
-    mp.attrCount = 3; mp.stride = sizeof(MeshVertex);
-    mp.indexType = gfx::IndexType::UInt32;
-    litPipe_ = dev.createPipeline(mp);
-    mp.blend = gfx::BlendMode::Alpha; mp.depthWrite = false;
-    litBlendPipe_ = dev.createPipeline(mp);
-
-    gfx::PipelineDesc sp;
-    sp.shader = shadowShader_;
-    sp.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
-    sp.attrCount = 1; sp.stride = sizeof(MeshVertex);
-    sp.indexType = gfx::IndexType::UInt32;
-    sp.depthOnly = true;
-    sp.cull = gfx::CullMode::Back;   // models are closed meshes; back faces would self-shadow less but cost more
-    sp.depthBiasConstant = 2.0f; sp.depthBiasSlope = 2.5f;
-    shadowPipe_ = dev.createPipeline(sp);
-
-    gfx::PipelineDesc lp;
-    lp.shader = colorShader_;
-    lp.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
-    lp.attrs[1] = {1, gfx::VertexFormat::UByte4N, 12};
-    lp.attrCount = 2; lp.stride = sizeof(ColorVertex);
-    lp.indexType = gfx::IndexType::None;
-    lp.primitive = gfx::Primitive::Lines;
-    lp.cull = gfx::CullMode::None;
-    lp.blend = gfx::BlendMode::Alpha;
-    lp.depthWrite = false;
-    linePipe_ = dev.createPipeline(lp);
-    lp.primitive = gfx::Primitive::Triangles;
-    triPipe_ = dev.createPipeline(lp);
-
-    gfx::BufferDesc vb; vb.usage = gfx::Usage::Dynamic; vb.size = 64 * 1024;
-    lineVB_ = dev.createBuffer(vb);
-    triVB_ = dev.createBuffer(vb);
-    setShadowQuality(quality_);
-    initModels();
-    if (!lights.init(dev)) return false;
-    if (!initTrace()) return false;
-    initSelectionOutline();  // optional editor effect: failure must not break the game renderer
-    return litPipe_.valid() && shadowPipe_.valid() && linePipe_.valid() && triPipe_.valid();
+    // Allocate as a single transaction. An unsuccessful shader, buffer,
+    // texture, LightSystem or trace setup must not leave a half-initialized
+    // renderer that a host can mistakenly render or initialize again.
+    // Rollback requires a real GPU idle barrier, even for async backends.
+    bool initialized = false;
+    try {
+        initialized = [&]() -> bool {
+        gfx::ShaderDesc ls; ls.glslVertex = shaders::kLitVS; ls.glslFragment = shaders::kLitFS; ls.msl = shaders::kLitMSL;
+        ls.uniformSlots = 3; ls.textureSlots = 6; ls.label = "lit"; // U2/tex1/tex2: Lights (tex2 water reflection); tex3 height field, tex4/tex5 scene (trace)
+        litShader_ = dev.createShader(ls);
+        gfx::ShaderDesc ss; ss.glslVertex = shaders::kShadowVS; ss.glslFragment = shaders::kShadowFS; ss.msl = shaders::kShadowMSL;
+        ss.uniformSlots = 2; ss.label = "shadow";
+        shadowShader_ = dev.createShader(ss);
+        gfx::ShaderDesc cs; cs.glslVertex = shaders::kColorVS; cs.glslFragment = shaders::kColorFS; cs.msl = shaders::kColorMSL;
+        cs.uniformSlots = 2; cs.label = "color";
+        colorShader_ = dev.createShader(cs);
+        if (!litShader_.valid() || !shadowShader_.valid() || !colorShader_.valid()) return false;
+    
+        gfx::PipelineDesc mp;
+        mp.shader = litShader_;
+        mp.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
+        mp.attrs[1] = {1, gfx::VertexFormat::Float3, 12};
+        mp.attrs[2] = {2, gfx::VertexFormat::UByte4N, 24};
+        mp.attrCount = 3; mp.stride = sizeof(MeshVertex);
+        mp.indexType = gfx::IndexType::UInt32;
+        litPipe_ = dev.createPipeline(mp);
+        mp.blend = gfx::BlendMode::Alpha; mp.depthWrite = false;
+        litBlendPipe_ = dev.createPipeline(mp);
+    
+        gfx::PipelineDesc sp;
+        sp.shader = shadowShader_;
+        sp.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
+        sp.attrCount = 1; sp.stride = sizeof(MeshVertex);
+        sp.indexType = gfx::IndexType::UInt32;
+        sp.depthOnly = true;
+        sp.cull = gfx::CullMode::Back;   // models are closed meshes; back faces would self-shadow less but cost more
+        sp.depthBiasConstant = 2.0f; sp.depthBiasSlope = 2.5f;
+        shadowPipe_ = dev.createPipeline(sp);
+    
+        gfx::PipelineDesc lp;
+        lp.shader = colorShader_;
+        lp.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
+        lp.attrs[1] = {1, gfx::VertexFormat::UByte4N, 12};
+        lp.attrCount = 2; lp.stride = sizeof(ColorVertex);
+        lp.indexType = gfx::IndexType::None;
+        lp.primitive = gfx::Primitive::Lines;
+        lp.cull = gfx::CullMode::None;
+        lp.blend = gfx::BlendMode::Alpha;
+        lp.depthWrite = false;
+        linePipe_ = dev.createPipeline(lp);
+        lp.primitive = gfx::Primitive::Triangles;
+        triPipe_ = dev.createPipeline(lp);
+    
+        gfx::BufferDesc vb; vb.usage = gfx::Usage::Dynamic; vb.size = 64 * 1024;
+        lineVB_ = dev.createBuffer(vb);
+        triVB_ = dev.createBuffer(vb);
+        setShadowQuality(quality_);
+        initModels();
+        if (!lights.init(dev)) return false;
+        if (!initTrace()) return false;
+        initSelectionOutline();  // optional editor effect: failure must not break the game renderer
+        return litPipe_.valid() && litBlendPipe_.valid() &&
+               shadowPipe_.valid() && linePipe_.valid() && triPipe_.valid() &&
+               lineVB_.valid() && triVB_.valid() && white_.valid() &&
+               black_.valid() && flatNormal_.valid() &&
+               (quality_ == ShadowQuality::Off || shadowMap_.valid());
+        }();
+    } catch (...) {
+        // If idle/cleanup is impossible, shutdown throws and preserves the
+        // live owner state instead of freeing potentially in-flight handles.
+        shutdown();
+        throw;
+    }
+    if(!initialized)shutdown();
+    return initialized;
 }
 
 void Renderer3D::retireRenderTargets(gfx::TextureHandle color,
