@@ -59,6 +59,14 @@ struct Instance {
     std::string lastAttachmentError;
 };
 
+// All parent Animator objects and their borrowed Model* stay with the
+// provider that created them until a GPU completion proof permits retirement.
+struct RetiredNativeScene {
+    std::unique_ptr<ModelAssetProvider> provider;
+    std::unique_ptr<::aiverse::view::AppearanceAssetRegistry> appearances;
+    std::vector<Instance> instances;
+};
+
 struct Viewer {
     std::vector<std::pair<std::string, std::string>> files;   // path, clip
     std::string clipAll, variantName;
@@ -82,8 +90,14 @@ struct Viewer {
     ImGuiLayer gui;
     RTSCamera cam;
     std::map<std::string, std::unique_ptr<Model>> models;
-    ModelAssetProvider nativeModels; // independent source owner, not a game::RtsView
-    ::aiverse::view::AppearanceAssetRegistry attachmentsRegistry;
+    std::unique_ptr<ModelAssetProvider> nativeModels=
+        std::make_unique<ModelAssetProvider>();
+    std::unique_ptr<::aiverse::view::AppearanceAssetRegistry> attachmentsRegistry=
+        std::make_unique<::aiverse::view::AppearanceAssetRegistry>();
+    std::vector<std::unique_ptr<RetiredNativeScene>> retiredNativeScenes;
+    static constexpr size_t kRetiredNativeLimit=8;
+    bool reimportRequested=false;
+    std::string nativeReloadError;
     ::aiverse::View attachmentView; // compose borrowed precomputed poses only
     std::vector<AttachmentSpec> attachmentSpecs;
     std::string attachmentConfigPath;
@@ -148,13 +162,13 @@ struct Viewer {
         // The standalone native provider deliberately keeps source geometry
         // untouched. Existing merged/animated comparisons retain their
         // historic loader and all of its authoring/animation semantics.
-        if(providerMode)nativeModels.setReader(readFile);
+        if(providerMode)nativeModels->setReader(readFile);
         float x = -spacing * float(files.size() - 1) * 0.5f, maxH = 1;
         for (auto& [path, clip] : files) {
             Model* resolved=nullptr;
             if(providerMode && !merge && !baked &&
                ((clip.empty() && clipAll.empty()) || attachmentPreview)) {
-                resolved=nativeModels.load(d,path);
+                resolved=nativeModels->load(d,path);
                 if(resolved) {
                     for(auto& mt:resolved->materials) {
                         std::string n=mt.name;
@@ -322,7 +336,7 @@ struct Viewer {
                 auto& instance=inst[i];
                 if(!instance.model)
                     throw std::invalid_argument("parent Model is unavailable");
-                auto lease=nativeModels.resources().acquireModelRead(instance.model);
+                auto lease=nativeModels->resources().acquireModelRead(instance.model);
                 if(!lease)
                     throw std::invalid_argument(
                         "source Model is not owned by the native provider");
@@ -330,9 +344,9 @@ struct Viewer {
                 req.model=instance.model;
                 req.sources.push_back(instance.path);
                 const std::string key="modelview/source/"+std::to_string(i);
-                if(!attachmentsRegistry.publish(key,req,{}, {},&error))
+                if(!attachmentsRegistry->publish(key,req,{}, {},&error))
                     throw std::runtime_error(error);
-                auto parent=attachmentsRegistry.find(key);
+                auto parent=attachmentsRegistry->find(key);
                 std::vector<Imported::ChildRequest> requests;
                 for(const auto& entry:attachmentSpecs) {
                     if(!entry.enabled)continue;
@@ -342,7 +356,7 @@ struct Viewer {
                     requests.push_back(std::move(child));
                 }
                 Imported::Compiled compiled;
-                if(!Imported::compile(parent,nativeModels.resources(),
+                if(!Imported::compile(parent,nativeModels->resources(),
                                       requests,compiled,&error))
                     throw std::runtime_error(error);
                 staged.push_back(std::move(compiled));
@@ -379,9 +393,9 @@ struct Viewer {
         // and scene within ONE RHI frame; neither draw is a safe retirement
         // hook. Poll model and paint token queues before any GPU pass.
         if(gallery)gallery->collectRetiredGpuResources();
-        if(nativeModels.resources().pendingRetirements()!=0 ||
-           nativeModels.pendingRolledBackImages()!=0)
-            nativeModels.collectRetired(d);
+        if(nativeModels->resources().pendingRetirements()!=0 ||
+           nativeModels->pendingRolledBackImages()!=0)
+            nativeModels->collectRetired(d);
         // All UI attachment edits are applied at the next OWNER frame
         // boundary, before any Renderer3D GPU submission and after prior
         // draw-scoped ModelReadLeases have been released.
@@ -421,7 +435,7 @@ struct Viewer {
                 Imported::Prepared prepared;
                 std::string error;
                 if(Imported::prepare(
-                        in.compiledAttachments,nativeModels.resources(),
+                        in.compiledAttachments,nativeModels->resources(),
                         in.fix,nullptr,prepared,
                         Imported::AnimationOwner::HostPrecomputed,&error)) {
                     auto& draw=prepared.object.draw;
@@ -547,7 +561,7 @@ struct Viewer {
             return;
         }
         for (auto& [p, m] : models) if (m) releaseModel(*dev, *m);
-        nativeModels.shutdown(*dev);
+        nativeModels->shutdown(*dev);
         if (gallery) gallery->shutdown(*dev);
         dev->destroyBuffer(ground.vb); dev->destroyBuffer(ground.ib);
         gui.shutdown();
