@@ -1994,10 +1994,11 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_DESKTOP AND TARGET aiverse_modeling)
 endif()
 
 option(AIVERSE_BUILD_AUTOLOD "Build offline meshoptimizer LOD tools" OFF)
+option(AIVERSE_BUILD_STRATA "Build opt-in Strata import-time virtual geometry builder" ON)
 option(AIVERSE_RUNTIME_AUTOLOD "Generate missing rigid-model LODs during upload preparation" ON)
 # meshoptimizer is a portable import-time dependency: not used during a render
 # frame. Share its exact implementation with the optional offline worker.
-if(AIVERSE_RUNTIME_AUTOLOD OR (AIVERSE_BUILD_AUTOLOD AND AIVERSE_DESKTOP))
+if(AIVERSE_RUNTIME_AUTOLOD OR AIVERSE_BUILD_STRATA OR (AIVERSE_BUILD_AUTOLOD AND AIVERSE_DESKTOP))
     if(NOT TARGET aiverse_meshoptimizer_lod)
         add_library(aiverse_meshoptimizer_lod STATIC
             third_party/meshoptimizer/src/allocator.cpp
@@ -2005,6 +2006,16 @@ if(AIVERSE_RUNTIME_AUTOLOD OR (AIVERSE_BUILD_AUTOLOD AND AIVERSE_DESKTOP))
             third_party/meshoptimizer/src/simplifier.cpp
             third_party/meshoptimizer/src/vcacheoptimizer.cpp)
         target_include_directories(aiverse_meshoptimizer_lod PUBLIC third_party/meshoptimizer/src)
+    endif()
+endif()
+if(AIVERSE_BUILD_STRATA)
+    add_library(aiverse_strata_builder STATIC engine/render/StrataBuilder.cpp)
+    target_link_libraries(aiverse_strata_builder PUBLIC aiverse_meshoptimizer_lod)
+    target_include_directories(aiverse_strata_builder PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    if(AIVERSE_BUILD_TESTS)
+        add_executable(aiverse_strata_builder_tests tests/render/strata_builder.cpp)
+        target_link_libraries(aiverse_strata_builder_tests PRIVATE aiverse_strata_builder)
+        add_test(NAME strata_builder COMMAND aiverse_strata_builder_tests)
     endif()
 endif()
 if(AIVERSE_RUNTIME_AUTOLOD)
