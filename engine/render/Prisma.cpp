@@ -44,6 +44,7 @@ struct TemporalUniforms {
     float inv0[4], inv1[4], inv2[4], inv3[4];
     float prev0[4], prev1[4], prev2[4], prev3[4];
     float jitter[4];
+    float inputPx[4]; // reciprocal native 3D scene resolution
 };
 const char* kMotionFields[] = {
     "px", "p0", "sun", "inv0", "inv1", "inv2", "inv3",
@@ -51,7 +52,7 @@ const char* kMotionFields[] = {
 };
 const char* kTemporalFields[] = {
     "px", "p0", "sun", "inv0", "inv1", "inv2", "inv3",
-    "prev0", "prev1", "prev2", "prev3", "jitter"
+    "prev0", "prev1", "prev2", "prev3", "jitter", "inputPx"
 };
 struct CompositeU {
     float px[4], grade0[4], grade1[4], lift[4], gamma[4], gain[4], filt[4], vig[4], bloom[4], shafts[4], tilt[4], fade[4], lut[4], lbox[4], graphFrame[4];
@@ -790,7 +791,7 @@ gfx::PipelineHandle Prisma::program(Prog p) {
         ? (1u << 1) : (p == kMotionBlur ? (1u << 2) :
             (p == kTemporalResolve ? (1u << 3) : 0u));
     Built b = p == kTemporalResolve
-        ? buildProgram(kTemporalFields, 12, d.tex, "", d.helpers, d.body, sampledDepth)
+        ? buildProgram(kTemporalFields, 13, d.tex, "", d.helpers, d.body, sampledDepth)
         : p == kMotionVectors
             ? buildProgram(kMotionFields, 11, d.tex, "", d.helpers, d.body, sampledDepth)
         : p == kMotionBlur
@@ -1835,7 +1836,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     if(graphEpoch_<0)graphEpoch_=now;
     u.graphFrame[0]=float(now-graphEpoch_);
     uint32_t mask = 0;
-    put(u.px, 1.0f / float(w), 1.0f / float(h), flip, seed);
+    put(u.px, 1.0f / float(outW), 1.0f / float(outH), flip, seed);
     put(u.grade1, 1, 1, 1, 1);
     put(u.gamma, 1, 1, 1, 0.5f);
     put(u.gain, 1, 1, 1, 0);
@@ -1933,13 +1934,13 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     gfx::PassDesc compositeOut = out;
     Target aaTarget;
     if (aaAfter) {
-        hdrFrame_ = false; aaTarget = target(set, kAa, w, h); hdrFrame_ = true;
-        const auto aaDepth = depthFor(set, w, h);
+        hdrFrame_ = false; aaTarget = target(set, kAa, outW, outH); hdrFrame_ = true;
+        const auto aaDepth = depthFor(set, outW, outH);
         aaAfter = aaTarget.tex.valid() && aaDepth.valid();
         if (aaAfter) { compositeOut.colorTarget = aaTarget.tex; compositeOut.depthTarget = aaDepth; }
     }
     dev.beginPass(compositeOut);
-    dev.setViewport({0, 0, w, h});
+    dev.setViewport({0, 0, outW, outH});
     if (pipe.valid()) {
         dev.setPipeline(pipe);
         dev.setVertexBuffer(triangle_);
@@ -1956,8 +1957,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     }
     ++stats_.passes;
     if (aaAfter) {
-        dev.endPass(); dev.beginPass(out); dev.setViewport({0, 0, w, h});
-        SimpleU au{}; put(au.px, 1.0f / w, 1.0f / h, flip, 0); put(au.p0, finalAa->get("subpixel"), 0, 0, 0);
+        dev.endPass(); dev.beginPass(out); dev.setViewport({0, 0, outW, outH});
+        SimpleU au{}; put(au.px, 1.0f / float(outW), 1.0f / float(outH), flip, 0); put(au.p0, finalAa->get("subpixel"), 0, 0, 0);
         dev.setPipeline(pipes_[kFxaa]); dev.setVertexBuffer(triangle_); dev.setUniforms(0, &au, sizeof au);
         dev.setTexture(0, aaTarget.tex); dev.draw(3); ++stats_.passes;
     }
