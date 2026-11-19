@@ -49,6 +49,73 @@ float4 tw_offset=float4(I.anim.x*tw_weight*tw_wave,0.0,
     return program;
 }
 
+// Far Horizon cluster wind uses the same per-draw macro vector but a
+// separate program, so one batched forest may have region-varying direction,
+// amplitude and phase. sg_color RGB is a stable 2.4km world-space noise
+// sample (encoded once into forest-card vertices), alpha is canopy weight.
+// This avoids rebuilding atlases or sending per-cluster instance uniforms.
+inline const std::shared_ptr<const render::graph::Program>&
+horizonSpatialWindGraph() {
+    static const auto program=[] {
+        auto p=std::make_shared<render::graph::Program>(*canopyWindGraph());
+        p->vertexGlsl=R"(
+float tw_weight=clamp(sg_color.a,0.0,1.0);
+tw_weight*=tw_weight;
+float tw_angle=(sg_color.r*2.0-1.0)*0.5235987756;
+float tw_amp=0.75+sg_color.g*0.5;
+float tw_cs=cos(tw_angle),tw_sn=sin(tw_angle);
+vec2 tw_wind=vec2(
+    I.anim.x*tw_cs-I.anim.y*tw_sn,
+    I.anim.x*tw_sn+I.anim.y*tw_cs);
+float tw_phase=I.anim.z+sg_color.b*6.28318530718+
+               sg_object.y*0.27;
+float tw_wave=0.62+0.38*sin(tw_phase)+
+              I.anim.w*0.25*sin(tw_phase*2.13);
+vec4 tw_offset=vec4(tw_wind.x*tw_weight*tw_amp*tw_wave,
+                    0.0,tw_wind.y*tw_weight*tw_amp*tw_wave,0.0);
+)";
+        p->vertexMsl=R"(
+float tw_weight=clamp(sg_color.a,0.0,1.0);
+tw_weight*=tw_weight;
+float tw_angle=(sg_color.r*2.0-1.0)*0.5235987756;
+float tw_amp=0.75+sg_color.g*0.5;
+float tw_cs=cos(tw_angle),tw_sn=sin(tw_angle);
+float2 tw_wind=float2(
+    I.anim.x*tw_cs-I.anim.y*tw_sn,
+    I.anim.x*tw_sn+I.anim.y*tw_cs);
+float tw_phase=I.anim.z+sg_color.b*6.28318530718+
+               sg_object.y*0.27;
+float tw_wave=0.62+0.38*sin(tw_phase)+
+              I.anim.w*0.25*sin(tw_phase*2.13);
+float4 tw_offset=float4(tw_wind.x*tw_weight*tw_amp*tw_wave,
+                        0.0,tw_wind.y*tw_weight*tw_amp*tw_wave,0.0);
+)";
+        return std::shared_ptr<const render::graph::Program>(std::move(p));
+    }();
+    return program;
+}
+
+// Stable, SMOOTH spatial metadata. All four card corners of one cluster
+// receive the same RGB, with only A varying from 0 (base) to 255 (crown).
+// Using world-centimetre noise rather than snapped camera region indices
+// prevents direction or gust snapping on camera-region rebases.
+inline uint32_t horizonSpatialWindVertexColor(
+        int64_t worldXcm,int64_t worldZcm,uint64_t terrainSeed,
+        bool canopyTop) {
+    constexpr int32_t kVariationPeriodCm=240000; // 2.4km
+    const auto channel=[&](uint64_t salt)->uint32_t {
+        const int64_t noise=detail::noise(
+            worldXcm,worldZcm,kVariationPeriodCm,terrainSeed^salt);
+        const int64_t encoded=(noise+65535)*255/131070;
+        return static_cast<uint32_t>(std::clamp<int64_t>(encoded,0,255));
+    };
+    const uint32_t direction=channel(0x444952454354494fULL);
+    const uint32_t amplitude=channel(0x414d504c49545544ULL);
+    const uint32_t phase=channel(0x5048415345484c4fULL);
+    return (canopyTop?0xff000000u:0u)|
+           (phase<<16)|(amplitude<<8)|direction;
+}
+
 // Existing rigid-instance I.anim = {local wind X, local wind Z, phase,
 // secondary gust}. Caller supplies PHYSIS-neutral integer wind and tick.
 // Convert world wind into the object's local yaw once, before GPU instancing.
