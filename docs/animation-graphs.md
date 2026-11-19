@@ -1278,3 +1278,28 @@ This is an uncompiled feature stage under the user-approved
 implementation-first workflow. Exact source revisions and remaining
 boundary/owner review:
 [Stage 140 handoff](agent-handoffs/animation-stage140-native-scene-gpu-retirement-2026-11-19.md).
+
+
+## Stage 141 — unified Model, canvas and native scene retirement frame hook
+
+Animation and presentation hosts must separate their View draw call from
+their GPU completion lifetime. `RtsView::draw` no longer schedules GPU
+retirement; it can execute more than once in a Device frame, including
+editor and offscreen preview passes. Existing pre-render client/editor
+`RtsView::collectRetiredModels` now polls the generic Model cache,
+image rollback and native roads/shorelines retirement queues, including
+standalone SpriteMesh buffers. `pendingModelRetirements` aggregates all
+these Model + native scene resource queues, retaining the old API name.
+
+Modelview Gallery and the generic native ModelAssetProvider are now
+polled explicitly before `Device::beginFrame`, not from either portrait
+or main-scene draw. Modelview and Gallery teardown enforce GPU idle
+before freeing still-live preview textures and Models; `RtsView`
+teardown enforces GPU completion before `GeometryScene::shutdown`.
+
+These are source-level contracts, not evidence of correct hardware
+Metal/Vulkan/GL backend fences. They do not alter MotionWeave's single
+presentation ECS animation writer, graph time or gameplay simulation.
+[Stage 141 handoff](agent-handoffs/animation-stage141-explicit-frame-boundary-preview-lifetime-2026-11-19.md).
+**NOT RUN** native compiler/CMake/CTest/CI, GPU fault injection, FPS/RTS/
+editor visual parity, sanitizers or performance benchmarks.
