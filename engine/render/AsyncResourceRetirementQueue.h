@@ -8,6 +8,7 @@
 #include <deque>
 #include <functional>
 #include <limits>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -45,6 +46,13 @@ public:
         size_t unresolvedFailedFences=0;
     };
     void enqueue(Resource resource) {
+        enqueueFrom(resource);
+    }
+    // Preserve caller ownership if pending_ allocation throws. The resource
+    // is moved only after vector storage is available. Safe for move-only
+    // handles used by Model and texture staging transactions.
+    void enqueueFrom(Resource& resource) {
+        static_assert(std::is_nothrow_move_constructible_v<Resource>);
         pending_.push_back(std::move(resource));
         ++count_;
         emit({RetirementDiagnosticKind::Enqueued,0,count_});
