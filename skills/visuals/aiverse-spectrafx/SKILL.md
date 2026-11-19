@@ -793,3 +793,53 @@ No verified native editor/Metal screenshots have been captured.
 **Required handoff:** `docs/agent-handoffs/spectrafx-stage-34-source-kill-continuous-editor-2026-11-19.md`.
 **Verification:** CMake, CTest, editor, MSL, GPU fences, multi-emitter
 stress and actual visuals have NOT RUN. Do not report them as passing.
+
+## Stage 35 — native ECS sources and Metal GPU completion fences
+
+Use `<aiverselib/genre/SpectraFX.h>` to import
+`GpuEcsAttachmentPresenter` for persistent ECS-driven render effects.
+This is a **presentation-only read adapter** to the EXISTING
+`lib::genre::SpectraSourceComponent` and `Entity::packed()` generation
+keys, not another gameplay ECS type or a genre dependency.
+
+Bind an explicit `PoolContinuousEmission` policy per effect name with
+`ecsFx.bindEffect(effectName,emission)`. Native host's render-pose
+resolver supplies interpolated positions/directions, and calls
+`ecsFx.syncCommitted(tick,const World&,resolver)` between the GPU
+pool's `beginPresentationFrame` and `step(dt)`. Same committed tick may
+be synchronized repeatedly for interpolated poses. A decreasing tick
+requires `ecsFx.resetForRollback()` at a safe graphics boundary
+before replay; this clears the **entire** pool, so give each rollback
+scope its own pool. Missing pose pauses source emission; disappeared
+or disabled components retire their sources and obey `killOnDetach`.
+
+The strict pooled GPU path DOES NOT implement the CPU effect's arbitrary
+`scale` semantics; attachments with non-unit
+`SpectraSourceComponent::scale` must fail explicitly, not silently
+change authored visuals. An effect must already be defined in
+`GpuPoolWorld`, and the policy must be bound before sync.
+Use `ecsFx.detachAll(killLiving)` to release renderer-side source
+tracking when the presenter stops while the pool remains alive.
+Do not store `PoolSourceId`, GPU tokens, byte buffers or Metal frame
+serials in gameplay ECS components.
+
+Metal source kills now encode checked storage blits and put killed
+physical slots in a quarantine until `Device::completedFrameSerial()`
+confirms that exact frame's command buffer successfully completed.
+Do not reuse slots merely after `step` submits a compute pass.
+Unsupported RHI completion queries return zero; conservatively
+retain the slots. Observe
+`PoolCheckpointStats::killedSlotsAwaitingFence` and
+`killedSlotsReclaimed`, plus `GpuCheckpointStatus` before claiming
+lossless GPU/CPU fallback. This only applies to the experimental,
+strict Metal billboard subset.
+
+Editor **Metal GPU** preview: opt-in, not the default CPU path. The
+toolbar now has **Play/Pause**, **Freeze**, **Loop**, and **Stop** controls,
+and the checkpoint diagnostics show slots awaiting completion.
+It must be run on a native Metal editor/device; no evidence of real
+Metal device execution or visual parity has been produced.
+
+**Handoff:** `docs/agent-handoffs/spectrafx-stage-35-ecs-attachments-gpu-fences-2026-11-19.md`.
+**Status: functional source committed, all native builds, CTest, actual
+Metal runs and editor screenshots NOT RUN.** Never claim otherwise.
