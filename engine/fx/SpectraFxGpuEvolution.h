@@ -44,16 +44,18 @@ public:
     SpectraFxGpuEvolution(const SpectraFxGpuEvolution&) = delete;
     SpectraFxGpuEvolution& operator=(const SpectraFxGpuEvolution&) = delete;
 
-    bool initCapacity(gfx::Device& device,uint32_t capacity) {
+    bool initCapacity(gfx::Device& device,uint32_t capacity,
+                      bool enableImpactEvents=false) {
         if(capacity==0 || capacity>kMaxParticles) {
             error_="SpectraFX GPU capacity must be 1..65536";return false;
         }
         std::vector<SpectraFxGpuSeed> dormant(capacity);
         for(auto& seed:dormant) seed.lifetime=0;
-        return init(device,dormant);
+        return init(device,dormant,enableImpactEvents);
     }
 
-    bool init(gfx::Device& device, const std::vector<SpectraFxGpuSeed>& seeds) {
+    bool init(gfx::Device& device, const std::vector<SpectraFxGpuSeed>& seeds,
+              bool enableImpactEvents=false) {
         shutdown();
         error_.clear();
         if(!device.supportsCompute()) {
@@ -83,6 +85,7 @@ public:
         }
         device_=&device;
         count_=uint32_t(seeds.size());
+        feedbackEnabled_=enableImpactEvents;
         shader_=device.createCompute({kSpectraFxComputeMetal,kSpectraFxComputeGLSL,
                                       "SpectraFX GPU evolution"});
         if(!shader_.valid()) {
@@ -98,8 +101,12 @@ public:
                                        velocities.data(),"SpectraFX velocities"});
         // xyz=impact position, w=1 if this particle hit the ground this dispatch.
         // Readback is opt-in/asynchronous; evolution never waits on the CPU.
+        // Metal validates every declared compute binding, so keep one
+        // dummy float4 slot when feedback is off. Shader guards all writes
+        // with Params.pad. This saves 16*(capacity-1) GPU buffer bytes.
         impacts_=device.createBuffer({gfx::BufferType::Storage,gfx::Usage::Immutable,
-                                      positions.size()*sizeof(render::float4),
+                                      size_t(enableImpactEvents?count_:1) *
+                                          sizeof(render::float4),
                                       nullptr,"SpectraFX impact events"});
         gfx::TextureDesc texture;
         texture.width=int(kTextureWidth);
@@ -138,6 +145,10 @@ public:
     // a paused or stalled game cannot explode visual-only velocity integration.
     bool step(float dt,const SpectraFxGpuEnvironment& env={}) {
         if(!ready()) {error_="SpectraFX GPU stage not initialized";return false;}
+        if(env.reportImpacts && !feedbackEnabled_) {
+            error_="GPU impact feedback was not allocated at initialization";
+            return false;
+        }
         if(!std::isfinite(dt) || dt<0 || dt>0.1f || !finite(env.acceleration) ||
            !std::isfinite(env.damping) || env.damping<0 || env.damping>1 ||
            !std::isfinite(env.groundHeight) ||
@@ -157,7 +168,8 @@ public:
             render::float4 ground;
         };
         static_assert(sizeof(Parameters)==48);
-        const Parameters params{count_,dt,env.damping,0,
+        const Parameters params{count_,dt,env.damping,
+                                env.reportImpacts?1.0f:0.0f,
                                 {env.acceleration.x,env.acceleration.y,
                                  env.acceleration.z,0},
                                 {env.groundHeight,env.restitution,
@@ -183,7 +195,10 @@ public:
     gfx::BufferHandle velocityBuffer() const {return velocity_;}
     // 16 bytes per particle, bounded to the RHI's 64-KiB async readback.
     gfx::BufferHandle impactBuffer() const {return impacts_;}
-    bool impactReadbackEligible() const {return ready() && count_<=4096;}
+    bool impactReadbackEligible() const {
+        return ready() && feedbackEnabled_ && count_<=4096;
+    }
+    bool impactFeedbackAllocated() const {return feedbackEnabled_;}
     uint32_t count() const {return count_;}
     bool ready() const {return device_ && shader_.valid() && position_.valid() &&
                                velocity_.valid() && impacts_.valid() && output_.valid();}
@@ -199,6 +214,7 @@ public:
         }
         device_=nullptr;
         shader_={};position_={};velocity_={};impacts_={};output_={};count_=0;
+        feedbackEnabled_=false;
     }
 
 private:
@@ -210,6 +226,7 @@ private:
     gfx::BufferHandle position_,velocity_,impacts_;
     gfx::TextureHandle output_;
     uint32_t count_=0;
+    bool feedbackEnabled_=false;
     std::string error_;
 };
 } // namespace aiverse::fx
