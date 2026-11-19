@@ -24,14 +24,17 @@
 #include "imgui.h"
 #include "Gallery.h"
 
+#include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <filesystem>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
 #include <map>
 #include <memory>
 #include <sstream>
+#include <set>
 #include <stdexcept>
 
 using namespace aiverse;
@@ -96,7 +99,9 @@ struct Viewer {
         std::make_unique<::aiverse::view::AppearanceAssetRegistry>();
     std::vector<std::unique_ptr<RetiredNativeScene>> retiredNativeScenes;
     static constexpr size_t kRetiredNativeLimit=8;
-    bool reimportRequested=false;
+    bool reimportRequested=false, watchModelFiles=false;
+    double watchElapsed=0.;
+    std::map<std::string,std::filesystem::file_time_type> sourceStamps;
     std::string nativeReloadError;
     ::aiverse::View attachmentView; // compose borrowed precomputed poses only
     std::vector<AttachmentSpec> attachmentSpecs;
@@ -529,6 +534,35 @@ struct Viewer {
         }
     }
 
+    // Poll on-disk file revisions only when explicitly opted in. An edit
+    // schedules ONE complete staged import at the next owner frame boundary,
+    // never from a file-watcher worker or Renderer3D submission callback.
+    void pollModelSourceChanges(double seconds) {
+        if(!attachmentPreview || !watchModelFiles || gallery)return;
+        watchElapsed+=std::max(0.,seconds);
+        if(watchElapsed<1.)return;
+        watchElapsed=0.;
+        std::set<std::string> observed;
+        for(const auto& actor:inst)observed.insert(actor.path);
+        for(const auto& child:attachmentSpecs)
+            if(child.enabled)observed.insert(child.modelSource);
+        bool changed=false;
+        for(const auto& path:observed) {
+            std::error_code ec;
+            const auto stamp=std::filesystem::last_write_time(path,ec);
+            if(ec)continue; // assets from non-filesystem providers are not watched
+            const auto [it,inserted]=sourceStamps.try_emplace(path,stamp);
+            if(!inserted && it->second!=stamp) {
+                it->second=stamp;
+                changed=true;
+            }
+        }
+        for(auto it=sourceStamps.begin();it!=sourceStamps.end();)
+            if(!observed.count(it->first))it=sourceStamps.erase(it);
+            else ++it;
+        if(changed)reimportRequested=true;
+    }
+
     void play(Instance& in) {
         if (!in.model || in.clip < 0) return;
         Animator::Play p;
@@ -548,6 +582,14 @@ struct Viewer {
         if(nativeModels->resources().pendingRetirements()!=0 ||
            nativeModels->pendingRolledBackImages()!=0)
             nativeModels->collectRetired(d);
+        pollModelSourceChanges(dt);
+        // All staged on-disk imports and old-provider cleanup happen on
+        // this owner boundary, before d.beginFrame or any model draw.
+        if(reimportRequested) {
+            reimportRequested=false;
+            (void)reimportModelFiles();
+        }
+        (void)collectRetiredNativeScenes();
         // All UI attachment edits are applied at the next OWNER frame
         // boundary, before any Renderer3D GPU submission and after prior
         // draw-scoped ModelReadLeases have been released.
@@ -666,9 +708,15 @@ struct Viewer {
             ImGui::SameLine();
             if(ImGui::Button("Rebuild"))attachmentsDirty=true;
             ImGui::SameLine();
+            if(ImGui::Button("Reload model files"))reimportRequested=true;
+            ImGui::Checkbox("Watch source files",&watchModelFiles);
             if(ImGui::Button("Save"))saveAttachmentConfig();
+            ImGui::Text("Retired provider generations: %zu",
+                        retiredNativeScenes.size());
             if(!attachmentConfigPath.empty())
                 ImGui::TextWrapped("Config: %s",attachmentConfigPath.c_str());
+            if(!nativeReloadError.empty())
+                ImGui::TextWrapped("Reload: %s",nativeReloadError.c_str());
             if(!log.empty())
                 ImGui::TextWrapped("%s",log.back().c_str());
             ImGui::End();
@@ -713,7 +761,19 @@ struct Viewer {
             return;
         }
         for (auto& [p, m] : models) if (m) releaseModel(*dev, *m);
-        nativeModels->shutdown(*dev);
+        // Old Animators and published snapshots must be destroyed BEFORE
+        // their owning ModelProvider releases Model CPU/GPU storage.
+        inst.clear();
+        attachmentsRegistry.reset();
+        if(nativeModels) {
+            nativeModels->shutdown(*dev);
+            nativeModels.reset();
+        }
+        (void)collectRetiredNativeScenes(true);
+        // If even full-idle shutdown could not complete, retain old GPU
+        // owners rather than letting unique_ptr destruct GPU-visible Models.
+        for(auto& retired:retiredNativeScenes)(void)retired.release();
+        retiredNativeScenes.clear();
         if (gallery) gallery->shutdown(*dev);
         dev->destroyBuffer(ground.vb); dev->destroyBuffer(ground.ib);
         gui.shutdown();
@@ -762,6 +822,7 @@ int aiverseMain(int argc, char** argv) {
         else if (a == "--native") v.native = true;
         else if (a == "--no-merge") v.merge = false;
         else if (a == "--provider") v.providerMode = true;
+        else if (a == "--watch-model-files")v.watchModelFiles=true;
         else if (a == "--attachments-file") {
             v.attachmentConfigPath=next();
             if(v.attachmentConfigPath.empty()) {
