@@ -76,8 +76,21 @@ public:
                 desired[entity.packed()]=std::move(w);
             });
 
+        // Validate all incoming declarations BEFORE detaching any previously
+        // presented sources. Bad ECS authoring must not cause partial teardown.
+        for(const auto& [key,want]:desired) {
+            (void)key;
+            if(bindings_.find(want.effect)==bindings_.end()) {
+                reason_="SpectraFX ECS effect has no bound continuous policy: "+want.effect;
+                return false;
+            }
+            if(want.scaleRaw!=(1_fx).raw) {
+                reason_="SpectraFX pooled ECS attachment requires unit scale: "+want.effect;
+                return false;
+            }
+        }
         // Release stale bindings first, freeing their bounded source slots for
-        // new entities. On failure retain tracking to permit retry next frame.
+        // new entities. On runtime failure retain tracking for safe retry.
         for(auto it=attached_.begin();it!=attached_.end();) {
             auto want=desired.find(it->first);
             const auto policy=want!=desired.end()?bindings_.find(want->second.effect):bindings_.end();
@@ -157,6 +170,22 @@ public:
         return true;
     }
 
+    // Call at the presentation boundary after a COMMITTED simulation tick.
+    // Repeated frames at the same tick may update interpolated render poses,
+    // but a lower tick is an explicit rollback requiring resetForRollback().
+    bool syncCommitted(uint64_t tick,const World& world,
+                       const ResolvePose& resolver) {
+        if(haveCommittedTick_ && tick<lastCommittedTick_) {
+            reason_="SpectraFX ECS tick moved backward; resetForRollback required";
+            return false;
+        }
+        if(!sync(world,resolver))return false;
+        lastCommittedTick_=tick;
+        haveCommittedTick_=true;
+        return true;
+    }
+    uint64_t lastCommittedTick() const {return lastCommittedTick_;}
+
     // Call outside any active render/compute pass and before replaying ticks.
     // Rejects without clearing tracking if GPU pool cannot reset safely.
     bool resetForRollback() {
@@ -165,6 +194,8 @@ public:
             return false;
         }
         attached_.clear();
+        lastCommittedTick_=0;
+        haveCommittedTick_=false;
         reason_.clear();
         return true;
     }
@@ -181,6 +212,8 @@ public:
             }
             it=attached_.erase(it);
         }
+        lastCommittedTick_=0;
+        haveCommittedTick_=false;
         reason_.clear();
         return true;
     }
@@ -205,7 +238,8 @@ private:
     GpuPoolWorld& pool_;
     std::map<std::string,Policy> bindings_;
     std::map<uint64_t,Attached> attached_;
-    uint64_t nextPolicyRevision_=1;
+    uint64_t nextPolicyRevision_=1,lastCommittedTick_=0;
+    bool haveCommittedTick_=false;
     std::string reason_;
 };
 
