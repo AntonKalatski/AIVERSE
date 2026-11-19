@@ -38,6 +38,7 @@
 #include "Shaders.h"
 #include "BakedShaders.h"
 #include "GiDynamicShaders.h"
+#include "GiCascadeShaders.h"
 
 namespace aiverse::render::shaders {
 
@@ -192,7 +193,7 @@ void main() {
 )";
 
 inline const char* kModelFS =
-    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_GLSL_MODEL_BLOCKS AIVERSE_GLSL_SHADOW AIVERSE_GLSL_LIGHTS_AT("U5", "tex9") AIVERSE_GLSL_TRACE_AT("tex10") AIVERSE_GLSL_SSR_AT("tex11", "tex12") AIVERSE_GLSL_DYNAMIC_GI
+    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_GLSL_MODEL_BLOCKS AIVERSE_GLSL_SHADOW AIVERSE_GLSL_LIGHTS_AT("U5", "tex9") AIVERSE_GLSL_TRACE_AT("tex10") AIVERSE_GLSL_SSR_AT("tex11", "tex12") AIVERSE_GLSL_DYNAMIC_GI AIVERSE_GLSL_CASCADE_GI
     R"(
 uniform mediump sampler2D tex1;
 uniform mediump sampler2D tex2;
@@ -387,7 +388,11 @@ void main() {
 #if defined(DYNAMIC_GI)
     // Bounced incident radiance only. AO is applied once in the final PBR diffuse sum.
     // Source lights baked into a static owner must be excluded by the caller.
+#if defined(DYNAMIC_GI_CASCADES) && defined(DYNAMIC_GI_VALIDITY)
+    amb += dynamicGiCascadedAt(v_wpos,n);
+#else
     amb += dynamicGiAt(v_wpos,n);
+#endif
 #endif
     vec3 diff = base.rgb * (1.0 - metallic);
     vec3 F0 = mix(vec3(0.04), base.rgb, metallic);
@@ -580,7 +585,7 @@ void main() {
     "// INSTANCE already defined in GPU_INSTANCE_BUFFER / MU0 branch above.\n"
 
 inline const char* kModelMSL =
-    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_MSL_MODEL_BLOCKS AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_TRACE AIVERSE_MSL_SSR AIVERSE_MSL_DYNAMIC_GI AIVERSE_MSL_MODEL_VERTEX
+    "#define AIVERSE_MODEL_SSR 1\n" AIVERSE_MSL_MODEL_BLOCKS AIVERSE_MSL_SHADOW AIVERSE_MSL_LIGHTS AIVERSE_MSL_TRACE AIVERSE_MSL_SSR AIVERSE_MSL_DYNAMIC_GI AIVERSE_MSL_CASCADE_GI AIVERSE_MSL_MODEL_VERTEX
     "#if defined(PROBES)\n" AIVERSE_MSL_PROBES "#endif\n"
     R"(
 struct VOut {
@@ -700,6 +705,10 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
 #endif
 #if defined(DYNAMIC_GI_VALIDITY)
                         , texture2d<float> tex14 [[texture(14)]]
+#endif
+#if defined(DYNAMIC_GI_CASCADES)
+                        , constant GiDynamicU& farGi [[buffer(8)]],
+                          texture2d<float> tex15 [[texture(15)]]
 #endif
                         ) {
 #if defined(AIVERSE_ICB_PBR)
@@ -871,7 +880,9 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     amb = lm;
 #endif
 #if defined(DYNAMIC_GI)
-#if defined(DYNAMIC_GI_VALIDITY)
+#if defined(DYNAMIC_GI_CASCADES) && defined(DYNAMIC_GI_VALIDITY)
+    amb += dynamicGiCascadedAt(tex13,tex14,tex15,dgi,farGi,in.wpos,n);
+#elif defined(DYNAMIC_GI_VALIDITY)
     amb += dynamicGiAt(tex13,dgi,tex14,in.wpos,n);
 #else
     amb += dynamicGiAt(tex13,dgi,in.wpos,n);
