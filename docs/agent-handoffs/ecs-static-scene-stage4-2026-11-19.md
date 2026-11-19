@@ -93,6 +93,40 @@ Both original feature branches and `main` remain untouched.
 The handoff itself follows these commits. Fetch the actual HEAD after
 pulling; never report compilation or CTest pass based on committed code.
 
+## Main integration sync — 2026-11-19
+
+After Stage 4 code integration, the target repository's `main` advanced
+305 commits beyond the original source-branch base
+`d71c6d47e532b25fb816a8bb1f96c41e5275a165`.
+We compared changed files before merging. Only two implementation-branch
+paths also changed in main:
+`tests/ecs_cow_parallel_test.cpp` and
+`tests/ecs_cow_snapshot_test.cpp`. The updated `main` uses its own
+`tests/TestCheck.h` for valid always-on Release assertions.
+We intentionally preserved these newer main versions.
+
+The conflict-resolved integration tree was created from the **exact**
+latest main tree at merge time, then overlaying all 32 integration-only
+paths including the reconciled `CMakeLists.txt`. The two overlapping
+COW test files were not overwritten.
+
+Two-parent merge commit:
+`82b4c49753635c23a62beaa4d9ccfa9f4b5e1063`.
+Parents: Stage 4 integration
+`3c0bd924d9bce57c633e447e40a77adfd7569b04` and main
+`58e29ab052458fffcdebebffe27022b53adb9367`.
+
+Post-merge GitHub comparison `main...feature/ecs-static-prefab-scene-integration`:
+**ahead 79, behind 0** at the time of the check. Byte-level GitHub
+blob comparison verified `tests/ecs_cow_parallel_test.cpp`
+is identical to latest main. No source feature-branch/main refs were
+moved by this operation, only the isolated integration branch.
+
+**This is a source merge, NOT a native test result.** Its CMake/Metal,
+runtime and serialization integration must still be compiled and tested
+natively on the user's Mac Studio. The exact current main may advance
+again independently while other agents work.
+
 ## Existing native evidence (source branches only)
 
 - Shared/static base test: 1/1 CTest passed, Mac Studio AppleClang 17
