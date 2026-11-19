@@ -32,6 +32,15 @@ struct WaterCascadeConnectionsComponent {
     Fixed transitionLength=2_fx;
     bool enabled=true;
 };
+// An optional, separately versioned join policy. Keeps existing v1
+// WaterCascadeConnectionsComponent archives compatible.
+struct WaterCascadeJoinPolicyComponent {
+    Fixed widthBlend=1_fx; // blend authored cascade width to linked bank
+    bool requireFootprint=true;
+};
+inline void io(Archive& a,WaterCascadeJoinPolicyComponent& p) {
+    a(p.widthBlend,p.requireFootprint);
+}
 inline void io(Archive& a,WaterCascadeConnectionsComponent& c) {
     a(c.inlet,c.outlet,c.transitionLength,c.enabled);
 }
@@ -156,5 +165,7 @@ inline void registerNereidCascadePersistence(Simulation& sim) {
     sim.registerPersistentComponent<WaterCascadeComponent>("nereid.cascade",1);
     sim.registerPersistentComponent<WaterCascadeConnectionsComponent>(
         "nereid.cascade_connections",1);
+    sim.registerPersistentComponent<WaterCascadeJoinPolicyComponent>(
+        "nereid.cascade_join_policy",1);
 }
 } // namespace aiverse::lib::nereid
