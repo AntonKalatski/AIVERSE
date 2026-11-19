@@ -54,7 +54,8 @@ struct StaticCrossModelPreflightKeyHash {
 struct StaticCrossModelPreflightGroup {
     const Model* firstModel = nullptr;
     bool mixedModels = false;
-    bool ready = false; // evaluated once after all visible candidates are known
+    bool ready = false; // enough visible mixed-model indexed commands
+    bool permitted = true; // optional per-page CPU feedback decision
     size_t items = 0;
     // The supported backend command threshold is at most 32 (Metal env
     // tuning), or 4 on other platforms. Fixed storage avoids one heap
