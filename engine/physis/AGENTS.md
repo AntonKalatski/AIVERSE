@@ -974,3 +974,12 @@ ctest --test-dir build/physis-editor-validation --output-on-failure -R '^physis_
 - No runtime or editor C++ code was changed this stage; this is test evidence/documentation only. GUI mouse interaction, Scene Gizmo visual behavior, Inspector Undo/Redo clicks, full repository-wide CTest, completed platform CI, native external admin TLS remain NOT VERIFIED.
 - Next: build/launch the actual macOS editor with PHYSIS enabled and manually validate authoring Scene Gizmos, MapProps/Inspector Undo/Redo, and read-only overlays. Then collect complete CI/check results; keep PR #25 Draft until validation and review.
 - Handoff: `docs/agent-handoffs/physis-stage68-editor-authoring-green-2026-11-19.md`.
+
+### Stage 69 — PHYSIS GUI editor transport namespace collision (2026-11-19)
+
+- First real macOS GUI-editor build failed at `apps/editor/windows/PhysisWindow.cpp` with **12 errors and one cascading unused-field warning**. `aiverse::editor::net` shadows `aiverse::net` inside `aiverse::editor::physis_remote` / `aiverse::editor`.
+- Production fix: in `apps/editor/PhysisRemoteEdit.h`, explicitly qualify every `::aiverse::net::Key`, `Conn`, `Bytes`, `ConnState`, and `wipe`; in `apps/editor/windows/PhysisWindow.cpp`, qualify `::aiverse::net::nowMs()`. Do not change the separate `editor::net` namespace, network security, or ECS behavior.
+- Compile-regression fixture: `tests/physis_remote_edit_test.cpp` declares a synthetic `aiverse::editor::net` namespace **before** including EditorLink. Its existing native CTest target now detects future accidental unqualified transport symbols in the bridge.
+- Real native PHYSIS headless 24/24 and editor authoring 2/2 passed **before this code fix**. **GUI rebuild and new collision fixture have NOT RUN after the fix**. The new source was inspected, not compiled by this agent. The Stage68 user GUI build is the precise failure evidence.
+- Next: pull PHYSIS branch, rebuild `aiverse_physis_remote_edit_test` and run CTest `physis_remote_edit` in `build/physis-editor-validation`, then rebuild `aiverse_editor` from `build/physis-gui-validation`; preserve real compiler output and report any further failures.
+- Handoff: `docs/agent-handoffs/physis-stage69-editor-net-shadow-2026-11-19.md`.

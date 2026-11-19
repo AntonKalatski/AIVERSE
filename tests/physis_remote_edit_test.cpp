@@ -1,5 +1,9 @@
 #include "engine/physis/PhysisRemoteClient.h"
 #include "engine/physis/PhysisRemoteServer.h"
+// Compile regression: the real Editor declares a separate editor::net namespace.
+// The PHYSIS EditorLink must resolve its connection and crypto types against
+// the engine transport namespace, independent of this shadow declaration.
+namespace aiverse::editor::net { struct PhysisNamespaceCollisionFixture {}; }
 #include "apps/editor/PhysisRemoteEdit.h"
 #include "engine/net/Conn.h"
 #include <algorithm>

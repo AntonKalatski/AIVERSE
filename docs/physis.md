@@ -913,3 +913,16 @@ confirms 26 PHYSIS test executions over two distinct builds.
 This does not verify interactive GUI usage, full-engine CTest
 or completed cross-platform CI. Stage-specific handoff:
 `docs/agent-handoffs/physis-stage68-editor-authoring-green-2026-11-19.md`.
+
+### Stage 69 — actual editor build namespace correction
+
+In `aiverse::editor`, `net::` may mean `aiverse::editor::net`,
+not the engine's network `aiverse::net`. The first GUI-editor macOS
+build revealed errors for `Key`, `Conn`, `Bytes`, `ConnState`,
+`wipe`, and `nowMs` in the PHYSIS remote bridge/window. This stage
+fully qualifies the actual transport references with
+`::aiverse::net::` and adds a compile regression in the existing
+`physis_remote_edit` native test source. There is no networking,
+permission, gameplay, save schema, Box3D, NEREID, or TerraWeave change.
+The full GUI rebuild and new source test are NOT RUN yet. Handoff:
+`docs/agent-handoffs/physis-stage69-editor-net-shadow-2026-11-19.md`.

@@ -233,7 +233,7 @@ private:
         auto& remote=physis_remote::link();
         // Poll the handshake even before EditorLink is fully authenticated.
         // Otherwise a host-started loopback connector could never finish.
-        remote.poll(net::nowMs());
+        remote.poll(::aiverse::net::nowMs());
         if(!remote.attached()) {
             ui::hint(remote.authenticating() ?
                 "Проверяем полномочия и защищённый канал PHYSIS..." :

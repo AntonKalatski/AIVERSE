@@ -1,5 +1,7 @@
 // PHYSIS Stage 25: optional authenticated remote-connection bridge for editor.
-// A project/network host MUST attach an already authenticated net::Conn.
+// A project/network host MUST attach an already authenticated ::aiverse::net::Conn.
+// Explicit global network qualification is REQUIRED here: aiverse::editor
+// also declares its own net namespace, which would shadow aiverse::net.
 // This file intentionally does NOT create anonymous sockets or credentials.
 #pragma once
 #include "engine/physis/PhysisRemoteClient.h"
@@ -30,7 +32,7 @@ public:
     // The native WebSocket client does NOT support WSS yet. This helper only
     // connects to loopback, using challenge-response authentication.
     bool connectLocalAdmin(const std::string& loopbackUrl,
-                           const std::string& principal,net::Key key,
+                           const std::string& principal,::aiverse::net::Key key,
                            std::uint64_t clientInstance,
                            std::uint8_t playerSlot,
                            std::uint16_t commandType,
@@ -41,15 +43,15 @@ public:
              playerSlot!=editorPlayerSlot_ ||
              commandType!=commandType_))) {
             if(error)*error="PHYSIS invalid admin connection identity";
-            net::wipe(key.data(),key.size());
+            ::aiverse::net::wipe(key.data(),key.size());
             return false;
         }
         auto dialer=std::make_unique<physis::remote::admin::LoopbackAdminConnector>();
         if(!dialer->connect(loopbackUrl,principal,key,error)) {
-            net::wipe(key.data(),key.size());
+            ::aiverse::net::wipe(key.data(),key.size());
             return false;
         }
-        net::wipe(key.data(),key.size());
+        ::aiverse::net::wipe(key.data(),key.size());
         pendingInstance_=clientInstance;
         pendingSlot_=playerSlot;
         pendingCommandType_=commandType;
@@ -59,7 +61,7 @@ public:
     }
 #endif
     bool connected() const {
-        return attached() && connection_->state()==net::ConnState::Connected;
+        return attached() && connection_->state()==::aiverse::net::ConnState::Connected;
     }
     const physis::remote::RemoteClient* client() const {return client_.get();}
     std::string_view message() const {return message_;}
@@ -67,7 +69,7 @@ public:
     std::uint16_t commandType() const {return commandType_;}
 
     // Only call after a real host connection handshake/identity check.
-    bool attachAuthenticated(std::unique_ptr<net::Conn> ready,
+    bool attachAuthenticated(std::unique_ptr<::aiverse::net::Conn> ready,
                              std::uint64_t clientInstance,
                              std::uint8_t editorPlayerSlot,
                              std::uint16_t reservedCommandType,
@@ -163,14 +165,14 @@ public:
     void retryOutstanding() {
         if(client_)client_->retry();
     }
-    net::Bytes saveOutstanding() const {
-        return client_?client_->exportOutstanding():net::Bytes{};
+    ::aiverse::net::Bytes saveOutstanding() const {
+        return client_?client_->exportOutstanding():::aiverse::net::Bytes{};
     }
-    bool restoreOutstanding(const net::Bytes& encoded,std::string* error=nullptr) {
+    bool restoreOutstanding(const ::aiverse::net::Bytes& encoded,std::string* error=nullptr) {
         return client_ && client_->restoreOutstanding(encoded,error);
     }
 private:
-    std::unique_ptr<net::Conn> connection_;
+    std::unique_ptr<::aiverse::net::Conn> connection_;
     std::unique_ptr<physis::remote::RemoteClient> client_;
     std::uint8_t editorPlayerSlot_=0;
     std::uint16_t commandType_=0;

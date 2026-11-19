@@ -976,3 +976,17 @@ No code changes or additional local test execution in this stage.
 The actual editor UI/mouse/Undo/Redo, full repo-wide CTest, and
 cross-platform CI are still not verified. Retain PR #25 Draft.
 See `docs/agent-handoffs/physis-stage68-editor-authoring-green-2026-11-19.md`.
+
+### Stage 69 — C++ editor::net shadow guard for PHYSIS EditorLink
+
+When compiling PHYSIS inside the actual AIVERSE editor, `net::` inside
+`namespace aiverse::editor` resolves to `aiverse::editor::net`, NOT
+`::aiverse::net`. The header `apps/editor/PhysisRemoteEdit.h` must
+use explicit `::aiverse::net::` for transport types, crypto wipe and
+connection states. The editor window must call
+`::aiverse::net::nowMs()`. A fake editor::net namespace declared
+before including the bridge in `tests/physis_remote_edit_test.cpp`
+keeps this compile regression exercised in native PHYSIS CTest.
+GUI compilation failed before this fix; after-fix native build/CTest
+remains NOT RUN. Do not claim editor GUI success. See
+`docs/agent-handoffs/physis-stage69-editor-net-shadow-2026-11-19.md`.
