@@ -72,6 +72,31 @@ int main() {
     for (const auto& value:device.textures.at(texture.id).data)
         AIVERSE_TEST_CHECK(value.x==0 && value.y==0 && value.z==0 && value.w==0);
 
+    // An explicit world invalidate must clear even an already-dirty probe in
+    // the GPU atlas when tracing is paused (for example, simulation pause).
+    runtime.invalidate({{-.5f,-.5f,-.5f},{-.5f,-.5f,-.5f}},
+                       GiDirtyReason::Environment);
+    AIVERSE_TEST_CHECK(runtime.update(0,{0,0,0}).upload.probes==1);
+
+    GiWorldDirtyAccumulator worldEvents;
+    worldEvents.submit({GiDirtyReason::Material,
+                        {{.5f,-.5f,-.5f},{.5f,-.5f,-.5f}}});
+    const auto dirty=runtime.applyWorldChanges(worldEvents);
+    AIVERSE_TEST_CHECK(dirty.events==1 && dirty.probeMarks==1 && !dirty.fullVolume);
+    AIVERSE_TEST_CHECK(runtime.update(0,{0,0,0}).upload.probes==1);
+
+    // More than 128 independently authored foliage changes saturate the batch
+    // into a full-volume reset, with no stale transport left for presentation.
+    for (int i=0;i<129;++i) {
+        const float x=1000.f+float(3*i);
+        worldEvents.submit({GiDirtyReason::Geometry,{{x,0,0},{x,0,0}}});
+    }
+    AIVERSE_TEST_CHECK(worldEvents.saturated());
+    const auto fullDirty=runtime.applyWorldChanges(worldEvents);
+    AIVERSE_TEST_CHECK(fullDirty.fullVolume && fullDirty.probeMarks==18);
+    const auto worldReset=runtime.update(0,{0,0,0});
+    AIVERSE_TEST_CHECK(worldReset.trace.claimed==0 && worldReset.upload.probes==18);
+
     // Exercise the generic RHI CPU-probe path using each backend's identity.
     // FakeDevice is NOT real Vulkan/GLES/Metal GPU execution or shader validation.
     for (const auto backend:{gfx::Backend::GLES3,gfx::Backend::Vulkan,gfx::Backend::Metal}) {
