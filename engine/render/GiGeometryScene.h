@@ -100,6 +100,47 @@ public:
         return stats;
     }
 
+    // GPU clipmap host publication. Uses the EXACT same immutable geometry
+    // chunk builder and dirty-region records as the CPU reference path, but
+    // asks an opt-in GPU runtime to accept the snapshot before committing it.
+    // On RHI refusal (e.g. fence still pending), leave both old snapshot and
+    // new dirty records untouched so the caller can retry after completion.
+    // All changed previous/current bounds are united conservatively: the GPU
+    // runtime accepts one atomic geometry revision per published snapshot.
+    template<class GpuRuntime>
+    GiGeometryPublishStats publishGpu(GpuRuntime& runtime) {
+        if (!runtime.ready()) throw std::logic_error("GI GPU runtime not initialized");
+        if (!changed_ && current_)
+            return {false,false,revision_,builder_.chunkCount(),0,0};
+        auto next=std::make_shared<GiChunkedGeometrySnapshot>(builder_.publish());
+        const bool full=!current_ || overflow_ || changedRegions_.empty();
+        const uint64_t newRevision=revision_+1u;
+        bool accepted=false;
+        if (full) {
+            accepted=runtime.setGeometry(next,newRevision);
+        } else {
+            GiBounds united=changedRegions_.front();
+            for(size_t i=1;i<changedRegions_.size();++i) {
+                united.min=min3(united.min,changedRegions_[i].min);
+                united.max=max3(united.max,changedRegions_[i].max);
+            }
+            accepted=runtime.setGeometryRegion(next,newRevision,united);
+        }
+        if (!accepted)
+            return {false,full,revision_,builder_.chunkCount(),
+                    changedRegions_.size(),0};
+        if(current_)retired_.push_back({revision_,current_});
+        current_=std::move(next);
+        revision_=newRevision;
+        const auto regions=changedRegions_.size();
+        changedRegions_.clear();
+        overflow_=false;
+        changed_=false;
+        // GPU cascade updates are async. The exact number of dirty physical
+        // probes belongs to that runtime; 0 here denotes "not measured".
+        return {true,full,revision_,builder_.chunkCount(),regions,0};
+    }
+
     // Only call once the renderer/compute worker no longer references old views.
     // CPU-only reference work is synchronous; future GPU backends need a completion fence.
     void releaseRetiredThrough(uint64_t completedRevision) {
