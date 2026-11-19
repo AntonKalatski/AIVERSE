@@ -695,6 +695,39 @@ private:
                     double(modelStats.mdiIndirectCommandBytes) / 1024.0,
                     (unsigned long long)modelStats.mdiIndirectPrefixOverwrites);
                 ImGui::TextDisabled("CPU payload requested; backend may skip bytes with dirty snapshots.");
+                if (ImGui::TreeNode("CPU MDI stage timings")) {
+                    if (!sceneProfiling_) {
+                        ImGui::TextDisabled("Enable Profile Scene renderer above to collect timings.");
+                    } else {
+                        static constexpr const char* labels[] = {"Sun shadow", "Main opaque"};
+                        for (size_t phase = 0; phase < 2; ++phase) {
+                            const auto& cpu = modelStats.mdiCpuStages[phase];
+                            if (!cpu.passes) {
+                                ImGui::TextDisabled("%s: no timed model pass", labels[phase]);
+                                continue;
+                            }
+                            ImGui::Text("%s: %.3f ms total CPU (%llu passes)",
+                                labels[phase], cpu.totalMs,
+                                (unsigned long long)cpu.passes);
+                            ImGui::Text("  Selection %.3f | material grouping + sort %.3f | candidate scans %.3f ms",
+                                cpu.selectionMs, cpu.groupingSortMs, cpu.candidateScanMs);
+                            ImGui::Text("  Command packing %.3f | pipeline bind %.3f | buffer upload %.3f | backend call %.3f ms",
+                                cpu.commandPackingMs, cpu.pipelineSetupMs,
+                                cpu.bufferUploadMs, cpu.backendSubmitMs);
+                            ImGui::Text("  %llu candidates / %llu pack attempts / %llu GPU MDI submissions",
+                                (unsigned long long)cpu.candidateScans,
+                                (unsigned long long)cpu.indirectAttempts,
+                                (unsigned long long)cpu.submitted);
+                            ImGui::Text("  %llu pipeline warmups / %llu under threshold / %llu backend fallbacks",
+                                (unsigned long long)cpu.pipelineWarmups,
+                                (unsigned long long)cpu.underThreshold,
+                                (unsigned long long)cpu.backendFallbacks);
+                        }
+                        ImGui::TextDisabled("Synchronous CPU time only; overlapping totals are not additive.");
+                        ImGui::TextDisabled("Profile is per beginScene view; reflections and auxiliary passes excluded.");
+                    }
+                    ImGui::TreePop();
+                }
                 const auto transfer = ed.renderer().indirectBufferUpdateStats();
                 if (transfer.available) {
                     ImGui::Text("Backend snapshot writes: %.1f KiB GPU-visible / %.1f KiB CPU shadow",

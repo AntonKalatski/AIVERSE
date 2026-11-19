@@ -908,3 +908,31 @@ Connected GitHub inspection confirmed single `renderModels` outer function, `beg
 ### Next agent action
 
 Feature-first: optionally add per-phase CPU profiling for command selection/packing versus backend mapped copies to pinpoint the remaining bottleneck, keeping cheap counters and preserving semantics. When feature work ends, update old Stage 10/11/13 policy fixtures, add CPU-only monotonic delta/unsupported/reset/first-allocation tests, run Metal and Vulkan shadow/opaque raster comparisons, frame-slot reuse/stress tests, and fixed-city CPU/GPU A/B/A before enabling/merging.
+
+---
+
+## Stage 30 — CPU MDI selection / sort / packing / upload / backend timings (2026-11-19)
+
+**Repository:** `chromealex/AIVERSE`; **branch:** `perf/incremental-static-model-cache`; **PR:** #34 Draft, unmerged. **Before this stage:** `main=9ee6ff6fbf390bd45363bc92c838f492dfe92eee`, feature HEAD `d1e112ded960f2119e4e92d833bafb62c9f1ce02`, `behind=0`; no main merge was needed. User preference remains **features first, tests later**.
+
+### Implementation, APIs, and changed files
+
+- `engine/render/Renderer3D.h`: new `ModelRenderStats::CpuMdiStageProfile` and `mdiCpuStages[2]` accumulators, index 0 for sun shadow, index 1 for main-camera opaque. Fields: qualifying pass count, compatible candidate scans, attempted command packs, successful backend indirect submissions, too-short encoded batches, pipeline warmups, backend fallbacks, and durations in milliseconds for overall model pass, visibility selection, material grouping/sort, candidate scan, exact command packing/cache lookup, pipeline+uniform setup, CPU-to-RHI command buffer create/update and synchronous backend `drawIndexedIndirect` call. Values are reset by existing `modelStats_={}` in `beginScene`, with no new retained pointers.
+- `engine/render/Renderer3DModels.cpp`:
+  - `renderModels` samples selection and combined grouping/sort at existing view-boundary points and measures the whole model pass. For each eligible CPU MDI candidate group it counts scan cost through compatible-item and distinct-primitive threshold selection, stopping the scan timer before entering `drawModelIndirectBatch`. This prevents including expensive indirect packing/upload/backend calls in `candidateScanMs`; successful early `continue` paths are handled explicitly.
+  - `drawModelIndirectBatch` measures exact geometry/layout cache check + packing, the pipeline setup/binding call, GPU-command-buffer create/update CPU duration, and the backend indirect submission call. It counts actual successful calls separately from pipeline warming and backend failures that fall back to direct draws. Timing around a rejected command threshold is attributed to command packing but no GPU submission is claimed.
+  - The gate is `profiling_ && !auxiliaryModelPass_ && (phase==0 || (phase==1 && geometryMainView_))`, so **profiling is OFF by default** and timed views match Stage 29 transfer metrics. No measurement of reflection/auxiliary/pass 2–4 or non-model draw code. Older `AIVERSE_MODEL_BATCH_PROFILE` and `AIVERSE_ICB_PROFILE` logs retain their behavior.
+- `apps/editor/windows/SceneWindow.cpp`: nested **Scene → Batching → Instancing and indirect details → CPU MDI stage timings**, shown when the existing `Profile Scene renderer` checkbox is enabled. It presents both pass breakdowns, total CPU model time, attempts/actual submissions/warmups/fallbacks and explicitly states CPU-only scope.
+- `docs/geometry-performance.md`, `AGENTS.md` and this handoff record scope, exact files, constraints and pending tests.
+
+### Performance and safety interpretation
+
+`selectionMs` covers visible item screening; `groupingSortMs` also includes material GPU-state classification and page-aware preflight, not only `std::sort`. `candidateScanMs` covers contiguous compatibility/run/threshold work before the indirect call. `commandPackingMs` covers signature checks/layout construction and on-miss cached CPU copies; `pipelineSetupMs` includes `drawModelBatch`'s pipeline and uniform/texture binding, `bufferUploadMs` measures the RHI CPU method duration, and `backendSubmitMs` measures only the synchronous API call. GPU execution is asynchronous and is not included. Full model-pass `totalMs` includes normal instancing, any fallback draws and instrument overhead, and should not be reconstructed by adding the listed stages. Per-pass values are summed across repeat qualifying invocations **within the same `beginScene`**, not necessarily one physical GPU frame. No shader/CPU MDI ordering/material compatibility, ECS, GPU fence or indirect draw count rules are modified.
+
+### Verification actually performed
+
+Read current feature source, confirmed `main` is already an ancestor and that scene profiling toggle is wired to `setProfiling`. Used exact source transformations and rechecked critical code paths via GitHub. **Native CMake: NOT RUN. CTest: NOT RUN. Metal screenshot/AGX stability: NOT RUN. Vulkan runtime: NOT RUN. Dense-city CPU/GPU A/B/A: NOT RUN.** No compilation or performance speedup claim; PR remains Draft and experimental flags OFF by default.
+
+### Next step
+
+Feature-first option: persist a small, read-only rolling distribution of per-stage CPU timing (e.g. last 120 eligible scene passes) to compare spikes/P95 without confusing CPU vs GPU and without allocating per frame. When switching to validation, reconcile stale Stage 10/11/13 policy tests and add timed-path coverage for no-items/no-MDI, pipeline warming, backend fallback, mixed geometry pages, order parity and instrumentation OFF. Run Metal/Vulkan visual parity and balanced same-camera A/B/A before considering merge.

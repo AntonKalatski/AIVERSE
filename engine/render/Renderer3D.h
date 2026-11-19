@@ -226,6 +226,27 @@ struct ModelRenderStats {
     // model phases and reflection/auxiliary views are excluded.
     std::array<gfx::BufferUpdateStats, 2> mdiBackendPassTransfers{};
     std::array<uint64_t, 2> mdiBackendPassSamples{};
+    // Opt-in Scene profile timings: shadow = 0, main-camera opaque = 1.
+    // Timed only while profiling_ is enabled; these are synchronous CPU
+    // durations and NEVER GPU execution times. Reset by beginScene().
+    struct CpuMdiStageProfile {
+        uint64_t passes = 0;           // eligible renderModels invocations
+        uint64_t candidateScans = 0;   // MDI candidate groups inspected
+        uint64_t indirectAttempts = 0; // reached exact command packing
+        uint64_t submitted = 0;        // successful indirect API submissions
+        uint64_t pipelineWarmups = 0;  // pipeline not yet ready, no MDI draw
+        uint64_t underThreshold = 0;   // encoded command count too small
+        uint64_t backendFallbacks = 0; // indirect failed, ordinary draws used
+        double totalMs = 0.0;
+        double selectionMs = 0.0;
+        double groupingSortMs = 0.0;
+        double candidateScanMs = 0.0;
+        double commandPackingMs = 0.0;
+        double pipelineSetupMs = 0.0;
+        double bufferUploadMs = 0.0;
+        double backendSubmitMs = 0.0;
+    };
+    std::array<CpuMdiStageProfile, 2> mdiCpuStages{};
     // CPU MDI groups spanning at least two different Model instances
     // using the SAME pooled vertex/index arena, after independent LOD and
     // per-view culling. These are successful submissions, not candidates.

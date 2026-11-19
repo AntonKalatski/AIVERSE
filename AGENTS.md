@@ -169,6 +169,19 @@ and the MDI pipeline still validates full material and geometry state.
 The group-order scratch vector is reused and included in retained memory;
 `staticCrossModelRankedGroups` reports ranked groups, **not draw calls**.
 Do not cache these ranks across passes or change transparency ordering.
+ Stage 30 adds opt-in `ModelRenderStats::mdiCpuStages[0/1]`
+ CPU timing breakdown, controlled by the existing Studio
+ "Profile Scene renderer" (`profiling_`) toggle. The shadow and
+ main-camera opaque views each report selection, material grouping/
+ sorting, compatible-run scanning, command packing/signature validation,
+ pipeline/uniform binding, dynamic buffer creation/update and synchronous
+ backend `drawIndexedIndirect` API time, plus attempt/warmup/fallback
+ counts. The full model-pass wall time includes non-MDI draws and must
+ NOT be derived by summing nested stage numbers. Exclude reflections/
+ auxiliary views and other phases. These are **CPU**, not GPU timings.
+ Do not enable high-frequency timestamps unconditionally, alter fallback
+ semantics, or infer GPU performance improvement without A/B/A.
+ Preserve per-stage handoff and defer tests per current user priority.
  Stage 29 attributes backend indirect-buffer CPU operations to sun shadow
  (`renderModels(0)`) and main-view opaque (`renderModels(1)`) via
  pre/post monotonic-counter snapshots. Use `gfx::bufferUpdateCounterDelta`

@@ -1305,6 +1305,9 @@ static size_t indirectCommandThreshold() {
 bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, int phase,
                                         bool instancePalette) {
     if (count < 2 || !dev_->supportsMultiDrawIndirect()) return false;
+    const bool profileMdiCpu = profiling_ && !auxiliaryModelPass_ &&
+        (phase == 0 || (phase == 1 && geometryMainView_));
+    auto* cpuStages = profileMdiCpu ? &modelStats_.mdiCpuStages[size_t(phase)] : nullptr;
     if (instancePalette) {
         // Fixed 64-entry shader palette: avoid transient heap allocations in
         // this preflight, and preserve its exact material-pointer semantics.
@@ -1327,6 +1330,11 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
         for (uint32_t n = 0; n < count; ++n)
             if (modelItems_[items[n]].model->gpuBaseVertex != 0) return false;
     }
+    // Start after preflight rejection checks: pack covers exact cache
+    // signature validation and building the ordered CPU indexed commands.
+    const auto packStart = cpuStages
+        ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    if (cpuStages) ++cpuStages->indirectAttempts;
     const bool traceIndirect = std::getenv("AIVERSE_ICB_PROFILE") != nullptr;
     const auto indirectStart = std::chrono::steady_clock::now();
     // Exact-signature validation makes this safe across changing visibility,
@@ -1420,11 +1428,28 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     // Building CPU ICB commands on Metal has a measurable setup cost.
     // Avoid switching to indirect for tiny groups where indexed draws win.
     const size_t minimumCommands = dev_->info().backend == gfx::Backend::Metal ? indirectCommandThreshold() : 4u;
-    if (commands.size() < minimumCommands) return false;
     const auto afterGrouping = std::chrono::steady_clock::now();
-    if (!drawModelBatch(items, count, phase, false, false, instancePalette))
+    if (cpuStages) {
+        cpuStages->commandPackingMs += std::chrono::duration<double, std::milli>(
+            afterGrouping - packStart).count();
+    }
+    if (commands.size() < minimumCommands) {
+        if (cpuStages) ++cpuStages->underThreshold;
+        return false;
+    }
+    if (!drawModelBatch(items, count, phase, false, false, instancePalette)) {
+        if (cpuStages) {
+            cpuStages->pipelineSetupMs += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - afterGrouping).count();
+            ++cpuStages->pipelineWarmups;
+        }
         return true; // pipeline warming: no fallback draw
+    }
     const auto afterPipeline = std::chrono::steady_clock::now();
+    if (cpuStages) {
+        cpuStages->pipelineSetupMs += std::chrono::duration<double, std::milli>(
+            afterPipeline - afterGrouping).count();
+    }
     const bool existingIndirectBuffer = indirectCommands_.valid();
     if (!existingIndirectBuffer) {
         gfx::BufferDesc d;
@@ -1441,13 +1466,24 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
         indirectCommands_ = dev_->createBuffer(d);
     } else dev_->updateBuffer(indirectCommands_, commands.data(), commands.size() * sizeof(commands[0]));
     const auto afterUpload = std::chrono::steady_clock::now();
-    if (!indirectCommands_.valid() ||
-        !dev_->drawIndexedIndirect(indirectCommands_, 0, uint32_t(commands.size()))) {
+    if (cpuStages) {
+        cpuStages->bufferUploadMs += std::chrono::duration<double, std::milli>(
+            afterUpload - afterPipeline).count();
+    }
+    const bool indirectSubmitted = indirectCommands_.valid() &&
+        dev_->drawIndexedIndirect(indirectCommands_, 0, uint32_t(commands.size()));
+    const auto afterSubmit = std::chrono::steady_clock::now();
+    if (cpuStages) {
+        cpuStages->backendSubmitMs += std::chrono::duration<double, std::milli>(
+            afterSubmit - afterUpload).count();
+    }
+    if (!indirectSubmitted) {
+        if (cpuStages) ++cpuStages->backendFallbacks;
         for (uint32_t n = 0; n < count; ++n)
             drawModelBatch(items + n, 1, phase);
         return true;
     }
-    const auto afterSubmit = std::chrono::steady_clock::now();
+    if (cpuStages) ++cpuStages->submitted;
     modelStats_.mdiIndirectCommandBytes +=
         commands.size() * sizeof(gfx::DrawIndexedIndirectCommand);
     if (existingIndirectBuffer) ++modelStats_.mdiIndirectPrefixOverwrites;
@@ -1891,7 +1927,10 @@ void Renderer3D::renderModels(int phase) {
     // Reset the per-phase cache cursor, but retain validated layouts across frames.
     indirectLayoutCursor_[size_t(phase)] = 0;
     const bool traceModelPass = std::getenv("AIVERSE_MODEL_BATCH_PROFILE") != nullptr;
+    const bool profileMdiCpu = profiling_ && sampleMdiTransfers;
+    auto* cpuStages = profileMdiCpu ? &modelStats_.mdiCpuStages[size_t(phase)] : nullptr;
     const auto passBegin = std::chrono::steady_clock::now();
+    if (cpuStages) ++cpuStages->passes;
     uint64_t mdiCandidates = 0, mdiAccepted = 0, mdiRejected = 0, mdiShort = 0;
     uint64_t submittedBatches = 0, submittedInstanced = 0, submittedItems = 0;
     double mdiScanMs = 0.0, mdiAttemptMs = 0.0, mdiAcceptedMs = 0.0, mdiRejectedMs = 0.0;
@@ -1932,8 +1971,16 @@ void Renderer3D::renderModels(int phase) {
         if (take) order_.push_back(i);
     }
     if(profiling_){auto now=std::chrono::steady_clock::now();profile_.selectMs[size_t(phase)]+=std::chrono::duration<double,std::milli>(now-started).count();started=now;}
-    if (order_.empty()) return;
     const auto afterSelect = std::chrono::steady_clock::now();
+    if (cpuStages) {
+        cpuStages->selectionMs += std::chrono::duration<double, std::milli>(
+            afterSelect - passBegin).count();
+    }
+    if (order_.empty()) {
+        if (cpuStages) cpuStages->totalMs += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - passBegin).count();
+        return;
+    }
     // Material identity is NOT a batching key. Editor/game code routinely
     // creates per-entity copies with identical GPU state. Each new material
     // must still pass the exact GPU-state comparison (hash is only a prefilter).
@@ -2300,6 +2347,12 @@ void Renderer3D::renderModels(int phase) {
         staticCrossPreflight_.retainedBytes());
     if(profiling_)profile_.sortMs[size_t(phase)]+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();
     const auto afterSort = std::chrono::steady_clock::now();
+    if (cpuStages) {
+        // Material-group resolution and preflight are included here, not
+        // just the final std::sort/order_ operation.
+        cpuStages->groupingSortMs += std::chrono::duration<double, std::milli>(
+            afterSort - afterSelect).count();
+    }
     ProfileTimer timer(profiling_?&profile_.drawMs[size_t(phase)]:nullptr);
     currentPipe_ = {};
     lastItem_ = nullptr;
@@ -2428,6 +2481,8 @@ void Renderer3D::renderModels(int phase) {
             order_.size() - i >= minIndirectCommands) {
             ++modelStats_.mdiScans;
             const auto scanBegin = std::chrono::steady_clock::now();
+            bool cpuScanRecorded = false;
+            if (cpuStages) ++cpuStages->candidateScans;
             ++mdiCandidates;
             const uint32_t firstIndex = order_[i];
             const auto& first = modelItems_[firstIndex];
@@ -2507,6 +2562,13 @@ void Renderer3D::renderModels(int phase) {
                         (!groupAdaptive || shouldUseCpuMultiDraw(
                             uint32_t(end - i), uint32_t(runs),
                             uint32_t(minIndirectCommands)))) {
+                        // The run search and threshold decision are selection
+                        // work, never part of indirect command packing time.
+                        if (cpuStages) {
+                            cpuStages->candidateScanMs += std::chrono::duration<double, std::milli>(
+                                std::chrono::steady_clock::now() - scanBegin).count();
+                            cpuScanRecorded = true;
+                        }
                         const auto attemptBegin = std::chrono::steady_clock::now();
                         const uint64_t submissionsBefore =
                             measureAdaptive ? modelStats_.multiDrawSubmissions : 0;
@@ -2570,6 +2632,10 @@ void Renderer3D::renderModels(int phase) {
                     ++modelStats_.mdiIneligibleDeform;
                 else ++modelStats_.mdiIneligibleAlpha;
             }
+            if (cpuStages && !cpuScanRecorded) {
+                cpuStages->candidateScanMs += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - scanBegin).count();
+            }
         }
         size_t j = i + 1;
         if (batchable(modelItems_[order_[i]]))
@@ -2580,6 +2646,10 @@ void Renderer3D::renderModels(int phase) {
         submittedInstanced += j - i > 1 ? 1u : 0u;
         submittedItems += j - i;
         i = j;
+    }
+    if (cpuStages) {
+        cpuStages->totalMs += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - passBegin).count();
     }
     if (sampleMdiTransfers) {
         const size_t pass = size_t(phase); // only 0 (shadow) or 1 (main opaque)

@@ -1001,3 +1001,48 @@ involved. It excludes non-model uploads and ancillary passes rather
 than claiming to explain total GPU memory use. All flags and actual
 command-buffer behavior are unchanged. **Native build, CTest, Metal/
 Vulkan image validation and frame-time A/B/A were NOT RUN**.
+
+### Stage 30 — opt-in CPU MDI stage breakdown (2026-11-19)
+
+The existing Scene → Batching **Profile Scene renderer** toggle
+(`Renderer3D::setProfiling(true)`) now also collects
+`ModelRenderStats::mdiCpuStages[0/1]` for sun-shadow
+`renderModels(0)` and the primary camera's opaque `renderModels(1)`.
+The new `CpuMdiStageProfile` is reset with `modelStats_={}` at
+`beginScene`, does not retain model/geometry pointers and is backend-
+and genre-independent. It includes the number of qualifying model
+passes, MDI candidate scans, exact command-packing attempts, actual
+successful MDI API submissions, pipeline warmups, under-threshold
+pack attempts and backend submission fallbacks.
+
+The timings are **synchronous CPU wall-clock measurements**:
+`selectionMs` for per-item visibility/order selection;
+`groupingSortMs` for material GPU-state classification, static
+cross-model page preflight, ranking and order sorting;
+`candidateScanMs` for compatible-run/primitive-run search and the
+threshold decision (before command packing begins);
+`commandPackingMs` for exact per-item layout signature lookup and
+building/copying CPU indirect commands;
+`pipelineSetupMs` for `drawModelBatch(... submit=false)` including
+uniform/texture binding;
+`bufferUploadMs` for RHI `createBuffer`/`updateBuffer`;
+and `backendSubmitMs` for the synchronous
+`drawIndexedIndirect` API call, **not** later GPU execution.
+`totalMs` measures the whole model pass, including conventional
+instancing and fallback draws, so the component timings should not
+be summed to recreate it. The old `profile_` totals and opt-in
+`AIVERSE_ICB_PROFILE` log output remain separate.
+
+Normal operation does not add new high-resolution timestamps for
+Stage 30 when `profiling_` is false. The editor displays these two
+pass profiles under **Scene → Batching → Instancing and indirect
+details → CPU MDI stage timings**. Reflection and auxiliary passes,
+blended/outline/depth passes, terrain/water/other non-model renderers
+are excluded from the two tables. No RHI ABI, GPU resource lifetime,
+shader or model batching compatibility rule changes. Stage 29's
+per-buffer CPU memcpy counters remain distinct, useful for comparing
+`bufferUploadMs` against actual CPU memory writes.
+
+**Verification:** source and GitHub write/read checks only; native
+CMake, CTest, Metal/Vulkan raster parity and performance A/B/A **NOT
+RUN**. No frame-time gain or stable production Metal ICB claim.
