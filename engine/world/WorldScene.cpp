@@ -64,6 +64,7 @@ WorldScene::WorldScene(const Json& manifest,AssetReader reader,std::shared_ptr<r
         vegetationHorizonExactWindField_=presentation.exactSpatialWindField;
         vegetationHorizonWindUploadPolicy_=presentation.windUpload;
         vegetationHorizonWindShadowCachePolicy_=presentation.windShadowCache;
+        vegetationHorizonAdaptiveConfig_=terraHorizon_->adaptiveQualityConfig();
     }
     auto verified=assets_.verifiedReader(reader);
     stream_=std::make_unique<AsyncChunkStream>(assets_.limits,assets_.stagingBytes,assets_.maxJobs,[this,verified](Cell cell){return prepare(cell,verified);});
@@ -145,22 +146,26 @@ void WorldScene::setVegetationPresentationTick(uint64_t tick) {
 void WorldScene::setVegetationHorizonSpatialWind(bool enabled) {
     vegetationHorizonSpatialWind_=enabled;
     if(terraHorizon_)terraHorizon_->setSpatialWindVariation(enabled);
+    vegetationHorizonAdaptiveConfig_.enabled=false;
 }
 void WorldScene::setVegetationHorizonExactWindField(bool enabled) {
     vegetationHorizonExactWindField_=enabled;
     if(terraHorizon_)terraHorizon_->setExactSpatialWindField(enabled);
+    vegetationHorizonAdaptiveConfig_.enabled=false;
 }
 void WorldScene::setVegetationHorizonWindUploadPolicy(
         terraweave::HorizonWindUploadPolicy policy) {
     terraweave::validateHorizonWindUploadPolicy(policy);
     if(terraHorizon_)terraHorizon_->setWindUploadPolicy(policy);
     vegetationHorizonWindUploadPolicy_=policy;
+    vegetationHorizonAdaptiveConfig_.enabled=false;
 }
 void WorldScene::setVegetationHorizonWindShadowCachePolicy(
         terraweave::HorizonWindShadowCachePolicy policy) {
     terraweave::validateHorizonWindShadowCachePolicy(policy);
     if(terraHorizon_)terraHorizon_->setWindShadowCachePolicy(policy);
     vegetationHorizonWindShadowCachePolicy_=policy;
+    vegetationHorizonAdaptiveConfig_.enabled=false;
 }
 void WorldScene::setVegetationHorizonPresentationPolicy(
         terraweave::HorizonPresentationPolicy policy) {
@@ -172,11 +177,46 @@ void WorldScene::setVegetationHorizonPresentationPolicy(
     vegetationHorizonWindShadowCachePolicy_=policy.windShadowCache;
     vegetationHorizonSpatialWind_=policy.spatialWindVariation;
     vegetationHorizonExactWindField_=policy.exactSpatialWindField;
+    vegetationHorizonAdaptiveConfig_.enabled=false;
 }
 void WorldScene::setVegetationHorizonPresentationQualityPreset(
         terraweave::HorizonPresentationQualityPreset preset) {
     setVegetationHorizonPresentationPolicy(
         terraweave::horizonPresentationPolicyForQuality(preset));
+}
+void WorldScene::setVegetationHorizonAdaptiveQualityConfig(
+        terraweave::HorizonAdaptiveQualityConfig config) {
+    terraweave::validateHorizonAdaptiveQualityConfig(config);
+    if(terraHorizon_)terraHorizon_->setAdaptiveQualityConfig(config);
+    vegetationHorizonAdaptiveConfig_=config;
+    if(terraHorizon_ && config.enabled) {
+        // Enabling selects its declared initial Stage39 profile now.
+        const auto current=terraHorizon_->presentationPolicy();
+        vegetationHorizonWindUploadPolicy_=current.windUpload;
+        vegetationHorizonWindShadowCachePolicy_=current.windShadowCache;
+        vegetationHorizonSpatialWind_=current.spatialWindVariation;
+        vegetationHorizonExactWindField_=current.exactSpatialWindField;
+    }
+}
+terraweave::HorizonAdaptiveQualityState
+WorldScene::vegetationHorizonAdaptiveQualityState() const {
+    return terraHorizon_?terraHorizon_->adaptiveQualityState():
+           terraweave::initialHorizonAdaptiveQualityState(
+               vegetationHorizonAdaptiveConfig_);
+}
+bool WorldScene::submitVegetationHorizonFrameTiming(
+        terraweave::HorizonFrameTimingSample sample) {
+    if(!terraHorizon_)return false;
+    const auto changed=terraHorizon_->submitAdaptiveFrameTiming(sample);
+    if(!changed)return false;
+    // Keep the WorldScene public getters coherent with internal automatic
+    // Stage39 switches; never copy stale manifest/manual settings.
+    const auto current=terraHorizon_->presentationPolicy();
+    vegetationHorizonWindUploadPolicy_=current.windUpload;
+    vegetationHorizonWindShadowCachePolicy_=current.windShadowCache;
+    vegetationHorizonSpatialWind_=current.spatialWindVariation;
+    vegetationHorizonExactWindField_=current.exactSpatialWindField;
+    return true;
 }
 std::shared_ptr<WorldScene::Prepared> WorldScene::prepare(Cell cell,const AssetReader& reader) {
     const auto& asset=assets_.chunks.at(cell);std::string text;
