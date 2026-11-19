@@ -907,6 +907,44 @@ private:
             }
         }
         ImGui::Separator();
+        if(ImGui::CollapsingHeader("Metal GPU checkpoint — live",ImGuiTreeNodeFlags_DefaultOpen)) {
+            const auto* pool=ed.spectraGpuTelemetry();
+            if(pool && pool->ready()) {
+                const auto cp=pool->checkpointStats();
+                const auto& ps=pool->stats();
+                ImGui::Text("GPU groups: %u    Sources: %u",
+                            ps.gpuGroups,ps.activeSources);
+                ImGui::Text("Fresh: %u  Stale: %u  Missing: %u",
+                            cp.freshGroups,cp.staleGroups,cp.missingGroups);
+                ImGui::Text("Pending: %u  Recoverable*: %u",
+                            cp.pendingGroups,cp.restoreEligibleGroups);
+                ImGui::Text("Readbacks: %llu / %llu complete, %llu failed",
+                            static_cast<unsigned long long>(cp.requests),
+                            static_cast<unsigned long long>(cp.completed),
+                            static_cast<unsigned long long>(cp.failed));
+                ImGui::Text("Denied: %llu  In flight: %zu KiB (%u chunks)",
+                            static_cast<unsigned long long>(cp.budgetDenied),
+                            cp.budget.bytesInFlight/1024,cp.budget.chunksInFlight);
+                ImGui::Text("Payload returned: %zu KiB",cp.bytesReturned/1024);
+                ImGui::Text("Adaptive backoffs: %llu  recoveries: %llu",
+                            static_cast<unsigned long long>(cp.adaptiveBackoffs),
+                            static_cast<unsigned long long>(cp.adaptiveRecoveries));
+                ImGui::Text("Max active checkpoint interval: %u submissions",
+                            cp.maximumCurrentIntervalFrames);
+                ImGui::TextWrapped("* Recoverable means a complete current-revision "
+                                   "snapshot exists; numerical CPU/Metal parity "
+                                   "and uninterrupted visuals are not guaranteed.");
+                if(cp.staleGroups || cp.budgetDenied)
+                    ui::toneText(ui::Tone::Warning,
+                        "Snapshots stale or readback budget exceeded");
+                ImGui::TextDisabled("Telemetry from attached GPU pool, not CPU Scene preview.");
+            } else {
+                ImGui::TextDisabled("No live GPU pool attached.");
+                ImGui::TextWrapped("Current editor Scene VFX preview runs on CPU. "
+                                   "Metal host may attach a GpuPoolWorld via "
+                                   "Editor::setSpectraGpuTelemetry().");
+            }
+        }
         ImGui::Text("CPU emitters: %d",emitters_);
         ImGui::Text("Metal GPU subset: %s",gpuEligible_?"compatible":"CPU fallback");
         if(!gpuReason_.empty())ImGui::TextWrapped("%s",gpuReason_.c_str());
