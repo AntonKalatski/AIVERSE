@@ -139,10 +139,14 @@ public:
                         report->hdr ? "yes" : "no",
                         report->sceneReady ? "ready" : "unavailable");
                     if (report->shaderGraphTextures > 0 ||
-                        report->autoExposureTextureSlot >= 0)
+                        report->autoExposureTextureSlot >= 0) {
                         ImGui::TextDisabled("Shader Graph textures: %d | HDR exposure slot: %d (-1=inactive)",
                             report->shaderGraphTextures,
                             report->autoExposureTextureSlot);
+                        if (report->autoExposureTextureSlot >= 0)
+                            ImGui::TextDisabled("HDR highlight rejection: %.2f (0=legacy)",
+                                double(report->autoExposureHighlightRejection));
+                    }
                     if (report->effects.empty())
                         ImGui::TextDisabled("Для последнего кадра нет authored эффектов.");
                     for (const auto& state : report->effects) {
