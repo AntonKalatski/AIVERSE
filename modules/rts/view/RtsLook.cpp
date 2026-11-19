@@ -492,6 +492,89 @@ void RtsView::trimTypes(const std::vector<bool>& keep, bool compact) {
     if(std::getenv("AIVERSE_STREAM_TRACE"))std::fprintf(stderr,"[residency] released=%zu models=%zu textures=%zu\n",released,resources_.models().size(),resources_.textures()->gpuCount());
 }
 
+// Invalidate model-source dependencies as one render-thread transaction.
+// No affected Model/Graph pointers may survive the release barrier. Keep
+// unaffected TypeLooks and MotionWeave players alive to preserve their clocks.
+size_t RtsView::reloadModelSources(const std::vector<std::string>& sources) {
+    if(!dev_ || !rules_ || sources.empty())return 0;
+    std::unordered_set<std::string> changed;
+    for(const auto& source:sources)
+        if(!source.empty())
+            changed.insert(view_adapter::RtsModelResourceCache::sourceForKey(source));
+    std::vector<uint16_t> rebuild;
+    const size_t invalidated=resources_.invalidateSources(*dev_,sources,
+        [&](const std::vector<view_adapter::RtsModelResourceCache::AffectedModel>& affected) {
+            std::unordered_set<const render::Model*> stale;
+            for(const auto& resource:affected)
+                if(resource.model)stale.insert(resource.model);
+            const auto choiceUsesStale=[&](const ModelChoice& choice) {
+                if(stale.contains(choice.model))return true;
+                for(const auto& attachment:choice.attach)
+                    if(stale.contains(attachment.model))return true;
+                return false;
+            };
+            std::vector<bool> typeAffected(looks_.size(),false);
+            for(size_t i=0;i<looks_.size();++i) {
+                if(!loadedTypes_[i])continue;
+                const auto& look=looks_[i];
+                bool hit=false;
+                for(const auto& choice:look.models)hit |= choiceUsesStale(choice);
+                for(const auto& choice:look.lods)hit |= choiceUsesStale(choice);
+                for(const auto& stage:look.stages)hit |= choiceUsesStale(stage.choice);
+                // A failed/null load may currently render a built-in shape.
+                // Source dependencies are also read from the authored tree,
+                // including LODs, stages and attachments not currently loaded.
+                view_adapter::discoverModelPaths(rules_->types[i].view,false,
+                    [](const std::string&){return false;},
+                    [&](const std::string& path,const std::string&){
+                        if(changed.contains(path))hit=true;
+                    });
+                const auto& streaming=rules_->types[i].view["streaming"];
+                hit |= changed.contains(streaming.getStr("coarseModel"));
+                hit |= changed.contains(streaming.getStr("detailModel"));
+                if(!requestedModels_[i].empty())
+                    hit |= changed.contains(requestedModels_[i]);
+                if(typeAffected[i]=hit)
+                    rebuild.push_back(uint16_t(i));
+            }
+            // Destroy selective ECS pose sources BEFORE the model GPU buffers.
+            std::vector<uint64_t> sourceIds;
+            for(const auto& [id,animation]:anims_) {
+                (void)id;
+                if(animation.type<typeAffected.size() &&
+                   typeAffected[animation.type] &&
+                   (animation.genericViewPose || animation.wasGenericViewPose ||
+                    animation.genericViewId!=0))
+                    sourceIds.push_back(animation.genericViewId);
+            }
+            if(genericView_ && !sourceIds.empty())
+                genericView_->forgetSources(sourceIds);
+            for(auto it=anims_.begin();it!=anims_.end();) {
+                if(it->second.type<typeAffected.size() &&
+                   typeAffected[it->second.type])
+                    it=anims_.erase(it);
+                else ++it;
+            }
+            for(auto it=streamingChoices_.begin();it!=streamingChoices_.end();) {
+                if(it->second.first<typeAffected.size() &&
+                   typeAffected[it->second.first])
+                    it=streamingChoices_.erase(it);
+                else ++it;
+            }
+            // Ghost previews are transient and may reference any choice.
+            ghostAnim_=EntityAnim{};
+            for(const auto* model:stale)animationCache_.erase(model);
+            for(const auto type:rebuild) {
+                looks_[type]=TypeLook{};
+                loadedTypes_[type]=false;
+            }
+        });
+    // Rebind only previously resident appearances. Unloaded editor types
+    // continue to load on demand from fresh sources.
+    for(const auto type:rebuild)loadType(type);
+    return invalidated;
+}
+
 void RtsView::requestDetail(uint16_t type, bool detailed) {
     if(!rules_ || type>=requestedModels_.size())return;
     const auto& t=rules_->types[type];const auto coarse=t.view["streaming"].getStr("coarseModel");
