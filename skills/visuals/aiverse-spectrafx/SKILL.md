@@ -924,3 +924,51 @@ the editor wall clock.
 **Verification:** source commits and GitHub reads only; C++/Objective-C++,
 MSL, CTest, editor screenshots and Metal device/fault testing
 have **NOT RUN**. Never claim GPU correctness without execution.
+
+## Stage 38 — retryable GPU reset, recovery manifest and interpolated ECS poses
+
+Use `GpuPoolWorld::resetReport()` to inspect GPU reset progress.
+A failed multi-group rollback becomes a **fail-closed**
+`presentationBlocked()` state: don't call `beginPresentationFrame`,
+spawn new ECS visual sources or draw last-frame GPU vertices until the
+reset has been retried in an open graphics frame outside encoders.
+The reset's per-group accepted mask tracks **encoded** commands,
+not completed GPU work. Loss of the Metal Device requires explicit
+native graphics-device recreation; do not treat a later healthy
+flag as proof that destroyed resources survived.
+
+Before releasing an unhealthy GPU world, call
+`PoolRecoveryManifest recipe=pool.exportRecoveryManifest()`.
+Keep the old Device alive while `pool.shutdown()` releases old
+resources, then construct a NEW `GpuPoolWorld` on the new Device:
+`recovered.importRecoveryManifest(newDevice,recipe)`.
+The manifest contains compiled effect definitions, options and
+instance defaults, never live GPU particles, checkpoint VM state,
+source handles or authoritative gameplay data. The new ECS presenter
+must re-sync sources from the committed World after import success.
+See `examples/spectrafx/native_ecs_attachments.h` for the explicit
+same-pool replacement variant and device lifetime warning.
+
+To interpolate presentation poses without writing floats or GPU
+handles into gameplay ECS, use `GpuEcsPoseInterpolator` exported from
+`<aiverselib/genre/SpectraFX.h>`. It records two committed
+render-pose snapshots with exact packed entity generations. Call
+`captureCommitted(tick,const World&,resolvePose)` after a committed
+simulation tick, then pass `poses.resolver(alpha)` to
+`GpuEcsAttachmentPresenter::syncCommitted` during presentation.
+Only adjacent ticks of the same entity generation interpolate.
+On rollback, reset both the GPU presenter and pose history, but
+only after successful safe visual reset.
+
+The editor Metal GPU preview now tracks 180 previous preview
+attempts in a **diagnostic-only** CPU-side history. The graph
+window can plot the estimated particle count and copy the
+history to JSON. This is **not** GPU particle snapshot playback
+or backwards timeline seeking.
+
+**Handoff:**
+`docs/agent-handoffs/spectrafx-stage-38-reset-recovery-ecs-interpolation-2026-11-19.md`.
+
+**Verification:** Only GitHub source writes and source inspections.
+Native C++/ObjC++/MSL compilation, CTest, real editor/Metal testing,
+device-loss recovery and CPU-GPU parity have NOT RUN.
