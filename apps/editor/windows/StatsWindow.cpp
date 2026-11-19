@@ -146,6 +146,12 @@ public:
                     objects.textures,objects.bundles);
         ImGui::Text("Другие отложенные GPU: %zu fenced + %zu без fence",
                     objects.fenced,objects.unfenced);
+        if (objects.bundlesWithoutByteEstimate || objects.texturesWithoutByteEstimate ||
+            objects.buffersWithoutByteEstimate)
+            ImGui::TextDisabled("GPU без оценки bytes: %zu Preview/Portrait bundles, %zu textures, %zu buffers",
+                objects.bundlesWithoutByteEstimate,
+                objects.texturesWithoutByteEstimate,
+                objects.buffersWithoutByteEstimate);
         if (objects.abandonedHandles || objects.abandonedBundles)
             ImGui::TextDisabled("GPU device lost: abandoned %zu handles, %zu owner bundles (без GPU destroy)",
                 objects.abandonedHandles,objects.abandonedBundles);
