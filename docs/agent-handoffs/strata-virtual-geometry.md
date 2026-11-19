@@ -941,3 +941,96 @@ with preserved legacy fallback for any unsupported material/
 occlusion/pass/GPU residency. Do not enable GPU-selected indirect
 commands or Hi-Z until independent actual GPU selection AND
 raster/occlusion parity are established.
+
+
+---
+
+## Stage 11.1 — correct delayed Metal raster screenshot capture, do NOT relax A/B oracle (2026-11-19)
+
+### Actual owner evidence
+The owner compiled the new native `aiverse_strata_metal_raster_parity`
+target on Mac Studio, ran it alongside `aiverse_strata_metal_parity`,
+and reported:
+- `[strata-metal] cases=5/5 status=PASSED`, including all real GPU
+  compute cluster-selection scenarios and asynchronously readback ranges.
+- `[strata-raster] FAIL: Legacy and empty screenshots identical; test drew no model`.
+- `[strata-raster] status=FAILED frames=45`.
+- `[metal-assets] libraries=0 sourceMisses=11 pipelines=16 pipelineFailures=0 archive=0 strict=0`.
+Thus **real raster parity FAILED on the prior fixture version**; this
+result must NOT be called PASS. It does NOT by itself establish a
+cluster indexing bug, nor does it invalidate the independently
+confirmed GPU selection pass.
+
+### Diagnosed fixture bug
+The real backend implementation
+`engine/gfx/metal/GfxMetal.mm::captureNextFrame` sets
+`layer_.framebufferOnly=NO` and uses `captureDelay_=1`
+when the current drawable is already framebuffer-only; the
+`endFrame` capture can be deferred for another 1–2 frames.
+The original raster fixture requested its `Empty`, `Legacy`,
+`Fine` and `Coarse` captures on frames **8, 19, 30, 41**,
+the final frames of those modes. Because modes change on
+**9, 20, 31, 42**, the saved image can come from the
+*next mode*. This is sufficient to explain how two apparently
+different labels could carry pixel-identical valid model
+geometry and trip the independent nonblank baseline.
+The hypothesis is source-grounded, but it requires a native
+post-fix run to confirm no other visibility bugs exist.
+
+### Code and documentation commits
+- `bcc471e93c9a4a35f7fda457d4fa15ccbda13fe9`:
+  `tests/render/strata_metal_raster_parity.cpp` enables
+  `gfx::Device::setScreenReadable(true)` at initialization
+  **before** the first test frame acquires the drawable,
+  restores `false` during teardown, and requests screenshots
+  on frames **4, 15, 26, 37** (safely inside each test mode,
+  including if Metal defers by two frames). Captures now print
+  mode, request frame, callback frame, main/shadow draw counts,
+  and identical Empty/Legacy prints pass counters.
+  **No production GPU rendering or shared pool changes.**
+- `16d1c5a0cc1bb08b7f997f8a2894ea03a7bc0933`:
+  `docs/strata.md` records actual failure, capture-deferral
+  root cause, fix and test instructions.
+- `746a56fb92209eb4f99963e7bed7c79ac6dda70b`:
+  `AGENTS.md` documents Stage 11.1, no false PASS, and
+  render-route still OFF.
+
+### Validation status and next exact commands
+- Stage 11.1 source fix has been committed through the connected
+  GitHub API. **Native compile: NOT YET RUN. Corrected raster test:
+  NOT YET RUN.** Earlier Stage 11 A/B fixture was a reported FAIL.
+- Earlier six focused CTest contracts **PASS 6/6**, and
+  real Metal compute/readback comparison **PASS 5/5**
+  (owner-supplied native output), on earlier snapshots.
+- The AIVERSE base renderer still uses the original
+  `Renderer3D::drawModel` for all production draws. Strata only
+  has preflight/preview and test-only alias models.
+
+```sh
+cd ~/Projects/AIVERSE-strata-validation
+git status --short
+git fetch origin feature/strata-virtual-geometry
+# Only when the worktree is clean (or local changes saved):
+git switch --detach origin/feature/strata-virtual-geometry
+cmake --build build/strata \
+  --target aiverse_strata_metal_raster_parity --parallel 8
+./build/strata/aiverse_strata_metal_raster_parity
+```
+
+Corrected fixture must still prove `Empty != Legacy`,
+`Legacy/Fine changed_channels=0`,
+`Legacy/Coarse changed_channels=0`, nonzero main/shadow model
+submission counters, and `status=PASSED`. It writes four PPMs
+for inspection. If it still fails, use new capture timing logs
+and examine PPM images to determine whether model genuinely
+was culled/hidden, rather than relaxing pixel equality or
+enabling unsanctioned Strata production draws.
+
+### Next bounded work after actual PASS
+Real shadow-map *depth texture* comparison, reflection/multiview,
+material variants, independent CPU/GPU selected draw submission
+and randomized LOD/camera transforms are still pending.
+Do not enable production GPU-authored Strata indirect rendering
+or integrate Hi-Z until those validation gates pass. Keep a
+single `Renderer3D` draw authority and one
+`GlobalGeometryPool` GPU source allocator.
