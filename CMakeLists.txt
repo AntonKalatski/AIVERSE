@@ -2160,6 +2160,19 @@ if(AIVERSE_BUILD_TESTS AND TARGET aiverse_editor_core)
     set_tests_properties(vfx_graph_ops PROPERTIES LABELS "SpectraFX")
 endif()
 
+# Stage 44 — pure C++20 SPFX-V2 checkpoint/ZIP/privacy diagnostics, no GPU.
+# Keep this test runnable on headless Linux and macOS without Metal hardware.
+if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_vfx_spfx_diagnostics_test
+        tests/vfx_spfx_diagnostics_test.cpp)
+    target_include_directories(aiverse_vfx_spfx_diagnostics_test
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME vfx_spfx_diagnostics
+        COMMAND aiverse_vfx_spfx_diagnostics_test)
+    set_tests_properties(vfx_spfx_diagnostics
+        PROPERTIES LABELS "SpectraFX")
+endif()
+
 # SpectraFX GPU backend policy and legacy CPU fallback must be testable headlessly.
 # A separate Metal device smoke test is still required for actual compute/draw QA.
 if(AIVERSE_BUILD_TESTS)
