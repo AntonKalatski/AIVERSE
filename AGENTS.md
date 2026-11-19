@@ -2170,3 +2170,33 @@ failure with exact source commit (if available) in
 \`docs/agent-handoffs/strata-virtual-geometry.md\`.
 Then proceed to genuine lossy cluster LOD seam quality,
 GPU-selected draw submission and guarded Legacy fallback.
+
+
+## Strata Stage 13.1 — native Mac Studio reflection RTT parity PASS (2026-11-19)
+
+The owner independently built and ran the real Metal
+`aiverse_strata_metal_reflection_material_parity` fixture in
+the clean isolated `AIVERSE-strata-stage13` worktree.
+**Both cameras passed with exactly ZERO differences** for
+Legacy vs Strata Fine/Coarse in all three actual GPU outputs:
+main 800x600 RGBA, sun shadow 512x512 Depth32Float, and
+offscreen planar reflection 400x300 RTT RGBA.
+The fixture completed 24 real GPU captures, asserted that
+the actual RTT differed from Empty, confirmed two independent
+opaque PBR materials with separate UV/textures and a duplicated
+UV seam, and verified no dual ModelDraw source submissions.
+Observed final `[strata-reflect] status=PASSED views=2 modes=4 frames=89`;
+Metal reported 16 pipelines, 0 failures.
+
+This supersedes the historical Stage 13 pre-execution note.
+The owner's output did not print the checkout commit SHA;
+do not make an SHA-specific hardware validation claim.
+Scope remains intentionally **lossless** cluster triangles:
+real simplified-LOD seam quality, GPU-selected raster commands,
+streaming, Vulkan, HDR reflection and performance remain unverified.
+The branch has diverged from main; this PASS cannot be
+extrapolated to an untested integrated main+Strata tree.
+Keep the PR Draft, one GPU geometry pool and one production
+Renderer3D draw owner. Record and test a separate main
+integration before any merge. Handoff in
+`docs/agent-handoffs/strata-virtual-geometry.md`.
