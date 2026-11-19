@@ -49,7 +49,17 @@ void validatePacking() {
     check(asset.gpuDeltas()[0].vertex==1 && asset.gpuDeltas()[1].vertex==2,
           "GPU deltas not sorted by vertex");
     check(asset.gpuRanges()[1].first==2 && asset.gpuRanges()[1].count==1, "second range wrong");
-    check(asset.bufferBytes()==asset.deltas()*64 + asset.targets()*16, "binary size wrong");
+    check(asset.bufferBytes()==asset.deltas()*64 + asset.targets()*16 +
+          (asset.vertices()+1)*4 + asset.deltas()*8, "binary size wrong");
+    check(asset.gpuVertexOffsets().size()==5 && asset.gpuVertexLinks().size()==3,
+          "CSR buffer counts wrong");
+    check(asset.gpuVertexOffsets()[0]==0 && asset.gpuVertexOffsets()[1]==1 &&
+          asset.gpuVertexOffsets()[2]==2 && asset.gpuVertexOffsets()[3]==3 &&
+          asset.gpuVertexOffsets()[4]==3, "CSR offsets wrong");
+    check(asset.gpuVertexLinks()[0].target==1 &&
+          asset.gpuVertexLinks()[0].delta==2, "jaw CSR reference wrong");
+    check(asset.gpuVertexLinks()[1].target==0 &&
+          asset.gpuVertexLinks()[1].delta==0, "blink CSR reference wrong");
     check(asset.gpuDeltas()[0].position[3]==0 && asset.gpuDeltas()[0].normal[3]==0,
           "reserved components not initialized");
 }
@@ -88,12 +98,24 @@ void verifyManyTargets() {
     std::array<MorphVertex,2> inPlace = base;
     check(library.evaluate(inPlace, weights, inPlace), "in-place CPU deform failed");
     check(close(inPlace[0].position[0], output[0].position[0]), "in-place parity mismatch");
+    std::array<MorphVertex,2> gathered{};
+    check(library.evaluateGather(base, weights, gathered), "GPU-style gather reference failed");
+    check(close(gathered[0].position[0], output[0].position[0]), "scatter/gather numerical parity");
+    check(close(gathered[1].position[0], output[1].position[0]), "unaffected gather vertex moved");
+    check(library.gpuVertexOffsets().size()==3, "gather offsets count");
+    check(library.gpuVertexOffsets()[1]==kCount, "160 contributions not gathered to vertex");
+    check(library.gpuVertexLinks().size()==kCount, "gather links lost");
+    for (std::size_t i = 0; i < kCount; ++i)
+        check(library.gpuVertexLinks()[i].target==i, "gather ordering not deterministic");
+
 
     // Failed input is transactional, including a bad later weight.
     weights.back() = std::numeric_limits<float>::quiet_NaN();
     output[0].position[0] = 456;
     check(!library.evaluate(base, weights, output), "NaN weight accepted");
     check(output[0].position[0] == 456, "invalid weight partially wrote output");
+    check(!library.evaluateGather(base, weights, output), "gather NaN weight accepted");
+    check(output[0].position[0] == 456, "gather partially wrote invalid weights");
     weights.back() = 1.1f;
     check(!library.evaluate(base, weights, output), "out-of-range weight accepted");
     weights.back() = 0.25f;
@@ -122,6 +144,10 @@ void verifyNormalDeltas() {
     check(asset.evaluate(base, weights, out, false), "non-normalized eval failed");
     check(close(out[0].normal[0], 1) && close(out[0].normal[1], 1),
           "optional normalization ignored");
+    std::array<MorphVertex,1> gather{};
+    check(asset.evaluateGather(base, weights, gather, false), "unnormalized gather failed");
+    check(close(gather[0].normal[0], out[0].normal[0]) &&
+          close(gather[0].tangent[1], out[0].tangent[1]), "gather directions not equivalent");
 }
 } // namespace
 
@@ -131,7 +157,7 @@ int main() {
         validateMalformed();
         verifyManyTargets();
         verifyNormalDeltas();
-        std::cout << "VIVID sparse morph PASS (160 targets, validation, stable GPU ABI, CPU reference)\n";
+        std::cout << "VIVID sparse morph PASS (160 targets, stable GPU ABI/CSR gather, CPU parity)\n";
         return 0;
     } catch (const std::exception& ex) {
         std::cerr << "VIVID sparse morph FAIL: " << ex.what() << '\n';
