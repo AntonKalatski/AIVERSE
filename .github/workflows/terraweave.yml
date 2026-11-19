@@ -58,6 +58,7 @@ jobs:
       - name: Build TerraWeave tests
         run: |
           cmake --build build/terraweave-ci --parallel 2 --target \
+            aiverse_gpu_timing_router_test \
             aiverse_terraweave_test \
             aiverse_terraweave_arbor_test \
             aiverse_terraweave_flora_test \
@@ -71,4 +72,5 @@ jobs:
         run: |
           ctest --test-dir build/terraweave-ci \
             --output-on-failure \
-            -R '^terraweave(_arbor|_flora|_model|_heightmap|_ops|_preview|_forest_scene|_horizon)?$'
+            -R '^(gpu_timing_router|terraweave(_arbor|_flora|_model|_heightmap|_ops|_preview|_forest_scene|_horizon)?)
+
