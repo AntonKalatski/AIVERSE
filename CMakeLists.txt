@@ -37,6 +37,13 @@ if(AIVERSE_PLATFORM MATCHES "^(macos|windows|linux)$")
 endif()
 
 option(AIVERSE_BUILD_TESTS "Build unit tests" ${AIVERSE_DESKTOP})
+# Languages must be enabled in the highest common directory of their targets.
+# VIVID's real Metal GPU test is Objective-C++ (.mm); enabling OBJCXX only
+# inside engine/character/vivid left CMAKE_OBJCXX_COMPILE_OBJECT undefined
+# while generating the macOS build. Keep this opt-in for desktop tests only.
+if(AIVERSE_PLATFORM STREQUAL "macos" AND AIVERSE_BUILD_TESTS)
+    enable_language(OBJCXX)
+endif()
 option(AIVERSE_BUILD_HEADLESS "Build headless runner" ${AIVERSE_DESKTOP})
 option(AIVERSE_BUILD_CLIENT "Build the game client" ON)
 option(AIVERSE_BUILD_EDITOR "Build the map editor" ${AIVERSE_DESKTOP})
