@@ -3,6 +3,7 @@
 // state, GPU buffer, or genre-specific VFX implementation.
 #pragma once
 #include "engine/render/Renderer3D.h"
+#include "engine/world/NereidWindPresentation.h"
 #include <aiverselib/water/NereidInteractionPresentation.h>
 #include <algorithm>
 #include <array>
@@ -197,18 +198,27 @@ public:
     }
     // Environmental wind drift is visual only and independent from
     // WaterBody.flow (which remains authoritative for gameplay forces).
+    template<class SampleWind>
+    void applyVisualWind(float deltaSeconds,SampleWind&& sample) {
+        if(!std::isfinite(deltaSeconds) || deltaSeconds<=0)return;
+        const double dt=std::min(double(deltaSeconds),0.25);
+        for(auto& r:ripples_) {
+            const auto wind=sample(r.x,r.z);
+            if(!std::isfinite(wind.east) || !std::isfinite(wind.north) ||
+               !std::isfinite(wind.gust) || !std::isfinite(wind.coupling))
+                continue;
+            const double weight=0.07*
+                std::clamp(double(wind.coupling),0.0,1.0)*
+                (0.35+0.65*std::clamp(double(wind.gust),0.0,1.0));
+            r.x+=std::clamp(double(wind.east),-100.0,100.0)*dt*weight;
+            r.z+=std::clamp(double(wind.north),-100.0,100.0)*dt*weight;
+        }
+    }
     void applyVisualWind(float deltaSeconds,float east,float north,
                          float gust,float coupling) {
-        if(!std::isfinite(deltaSeconds) || deltaSeconds<=0 ||
-           !std::isfinite(east) || !std::isfinite(north) ||
-           !std::isfinite(gust) || !std::isfinite(coupling))return;
-        const double dt=std::min(double(deltaSeconds),0.25);
-        const double weight=0.07*
-            std::clamp(double(coupling),0.0,1.0)*
-            (0.35+0.65*std::clamp(double(gust),0.0,1.0));
-        const double dx=std::clamp(double(east),-100.0,100.0)*dt*weight;
-        const double dz=std::clamp(double(north),-100.0,100.0)*dt*weight;
-        for(auto& r:ripples_) {r.x+=dx;r.z+=dz;}
+        applyVisualWind(deltaSeconds,[=](double,double) {
+            return NereidVisualWind{east,north,gust,coupling};
+        });
     }
     // Alpha-blended annular quads, generated only for currently live ripples.
     // World origin uses double subtraction before conversion to float,
