@@ -62,6 +62,29 @@ struct ModelVirtualTextureUniforms {
 };
 static_assert(sizeof(ModelVirtualTextureUniforms) == 16);
 
+// Source graph samplers occupy slots 13..16. Metal's RHI has 32 fragment
+// texture slots (but 16 dynamic samplers); graph slot 16 already uses a
+// constexpr sampler. The VT atlas/table use the existing s1 sampler and
+// a texel read, respectively, so they can occupy slots 17/18 on Metal.
+// GL33/GLES3/Vulkan remain limited to resource indices 0..15.
+inline bool supportsModelGraphSourceTextures(const gfx::Device& dev,
+                                             size_t sources) {
+    return sources <= (dev.info().backend == gfx::Backend::Metal ? 4u : 3u);
+}
+inline bool modelGraphVirtualTextureSlots(const gfx::Device& dev,
+                                          size_t sources,
+                                          int& atlas, int& table) {
+    atlas = 0;
+    table = 0;
+    if (!supportsModelGraphSourceTextures(dev, sources)) return false;
+    const int next = 13+int(sources);
+    if (next+1 >= (dev.info().backend == gfx::Backend::Metal ? 32 : 16))
+        return false;
+    atlas = next;
+    table = next+1;
+    return true;
+}
+
 // Reuse the canonical virtual page-table shader implementation; do not
 // implement another page lookup with different mip/edge semantics.
 // Returns false if a shader source contract changes: never silently
@@ -69,11 +92,12 @@ static_assert(sizeof(ModelVirtualTextureUniforms) == 16);
 inline bool injectModelVirtualTextureSampling(std::string& fragmentGLSL,
                                               std::string& msl,
                                               int atlasSlot = 13,
-                                              int tableSlot = 14) {
-    // Graph resources begin at slot 13. At most one graph texture can
-    // coexist with the two VT arrays on GL33/GLES3/Metal (0..15).
+                                              int tableSlot = 14,
+                                              bool extendedMetalSlots = false) {
+    // Only Metal can use the graph's tex16 followed by tex17/18
+    // for VT resources; other backends must not overflow 16 slots.
     if (atlasSlot < 13 || tableSlot != atlasSlot+1 ||
-        tableSlot > 15) return false;
+        tableSlot > (extendedMetalSlots ? 18 : 15)) return false;
     const std::string atlasName="tex"+std::to_string(atlasSlot);
     const std::string tableName="tex"+std::to_string(tableSlot);
     const std::string sourceFragment =
