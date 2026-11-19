@@ -5,6 +5,7 @@
 #include "engine/render/Renderer3D.h"
 #include <aiverselib/water/NereidInteractionPresentation.h>
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -33,6 +34,39 @@ public:
     }
     size_t size()const{return ripples_.size();}
     const std::vector<NereidRipple>& ripples()const{return ripples_;}
+    // Select at most four nearest ripple rings for one water body.
+    // A body snapshot uses Entity::packed()+1 as its ID; events contain
+    // Entity::packed() directly. Render coordinates match WorldScene origin.
+    std::array<render::float4,4> shaderRipples(
+            uint64_t waterId,double originX,double originZ,
+            double targetX,double targetZ) const {
+        std::array<render::float4,4> result{};
+        struct Candidate {double distanceSquared=0;size_t index=0;};
+        std::vector<Candidate> candidates;
+        candidates.reserve(ripples_.size());
+        for(size_t i=0;i<ripples_.size();++i) {
+            const auto& r=ripples_[i];
+            if(waterId==0 || waterId!=r.waterId+1)continue;
+            const double dx=r.x-targetX,dz=r.z-targetZ;
+            const double d2=dx*dx+dz*dz;
+            const float radius=r.initialRadius+r.speed*r.age;
+            const double reach=double(radius+8.f);
+            if(d2>reach*reach)continue;
+            candidates.push_back({d2,i});
+        }
+        std::sort(candidates.begin(),candidates.end(),[](auto a,auto b) {
+            if(a.distanceSquared==b.distanceSquared)return a.index<b.index;
+            return a.distanceSquared<b.distanceSquared;
+        });
+        for(size_t i=0;i<std::min(size_t(4),candidates.size());++i) {
+            const auto& r=ripples_[candidates[i].index];
+            const float fade=std::clamp(1.f-r.age/r.lifetime,0.f,1.f);
+            const float radius=r.initialRadius+r.speed*r.age;
+            result[i]={float(r.x-originX),float(r.z-originZ),radius,
+                       std::min(r.amplitude*fade*0.12f,2.f)};
+        }
+        return result;
+    }
     // Supplying the same simulated tick twice must not duplicate VFX events.
     // Call in ascending tick order; a rollback starts a new visual timeline.
     template<class EventCallback>
