@@ -923,6 +923,9 @@ if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_view_core_tests tests/view/view.cpp)
     target_link_libraries(aiverse_view_core_tests PRIVATE AIVERSE::view aiverse_zstd_dec)
     add_test(NAME view_genre_independent COMMAND aiverse_view_core_tests)
+    add_executable(aiverse_view_camera_lod_tests tests/view/camera_lod.cpp)
+    target_link_libraries(aiverse_view_camera_lod_tests PRIVATE AIVERSE::view aiverse_zstd_dec)
+    add_test(NAME view_camera_lod COMMAND aiverse_view_camera_lod_tests)
 endif()
 
 # Enforce that engine-level View never includes genre-specific game modules.
