@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 
 namespace aiverse::game {
 
@@ -342,7 +343,7 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
         // ongoing attack/move/death clip. Preserve only names/phase (never
         // old rig/native state/Model pointers). The generic ECS source has
         // its own sole animation clock and must not be seeded from legacy.
-        if(!st.genericViewPose)
+        if(!st.genericViewPose && !wasGenericViewPose)
             (void)st.graph.rebindPlayback(program);
         else st.graph.reset(program);
         st.poseValid=false;
