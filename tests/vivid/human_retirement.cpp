@@ -59,9 +59,51 @@ void run() {
     check(q.drain()&&q.pending()==0&&d.buffers.empty(),
           "successful recovery drain failed to retire old model");
 }
+
+void backpressure() {
+    FenceDevice d;
+    HumanRetirementQueue q(d);
+    q.setAdmission({2,4096});
+    auto make=[&](std::uint32_t bytes) {
+        auto* entry=q.enqueueEmpty();
+        entry->human.head=std::make_unique<render::Model>();
+        entry->human.head->vertices.resize(bytes/sizeof(render::ModelVertex));
+        gfx::BufferDesc b{};
+        b.type=gfx::BufferType::Vertex;
+        b.size=entry->human.head->vertices.size()*sizeof(render::ModelVertex);
+        entry->human.head->vb=d.createBuffer(b);
+    };
+    check(q.canPublish(120),"first retirement admission unexpectedly blocked");
+    make(120);
+    check(q.pending()==1&&q.canPublish(120),"second admission blocked too early");
+    make(120);
+    check(!q.canPublish(120)&&q.residency().blockedPublications==1,
+          "pending count budget failed to block third publication");
+    const auto before=d.buffers.size();
+    d.beginFrame(16,16);d.endFrame();
+    check(!q.collect() && d.buffers.size()==before &&
+          !q.canPublish(120),"unresolved GPU token incorrectly released backpressure");
+    d.token=gfx::ResourceRetirementStatus::Complete;
+    check(q.collect() && q.pending()==0 && d.buffers.empty() &&
+          q.canPublish(120),"completed token did not restore publication admission");
+
+    HumanRetirementQueue memory(d);
+    memory.setAdmission({8,100});
+    auto* resident=memory.enqueueEmpty();
+    resident->human.head=std::make_unique<render::Model>();
+    resident->human.head->vertices.resize(3);
+    gfx::BufferDesc b{};
+    b.type=gfx::BufferType::Vertex;
+    b.size=3*sizeof(render::ModelVertex);
+    resident->human.head->vb=d.createBuffer(b);
+    check(memory.residency().estimatedBytes>=3*sizeof(render::ModelVertex) &&
+          !memory.canPublish(1),"estimated memory budget did not enforce limit");
+    check(memory.drain() && d.buffers.empty(),
+          "memory admission fixture did not release buffers");
+}
 }
 int main(){
-    try{run();std::cout<<"VIVID whole-human retirement PASS\n";}
+    try{run();backpressure();std::cout<<"VIVID whole-human retirement PASS\n";}
     catch(const std::exception& e){
         std::cerr<<"VIVID whole-human retirement FAIL: "<<e.what()<<"\n";
         return 1;
