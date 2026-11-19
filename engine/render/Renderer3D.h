@@ -612,6 +612,9 @@ private:
     std::vector<IndirectLayoutEntry> indirectLayoutCache_[5];
     size_t indirectLayoutCursor_[5] = {};
     bool modelMultiDrawEnabled_ = true;
+    // Optional CPU MDI sorter for static rigid meshes sharing one GPU arena.
+    // Never bypass per-object culling, LOD, material or shader compatibility.
+    bool staticCrossModelBatchesEnabled_ = false;
     bool gpuAuthoredDrawEnabled_ = true;
     bool modelCullingEnabled_ = true, modelInstancingEnabled_ = true;
     bool auxiliaryModelPass_ = false;
