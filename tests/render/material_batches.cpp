@@ -9,6 +9,8 @@
 #include <filesystem>
 #include <iterator>
 #include <algorithm>
+#include <chrono>
+#include <vector>
 using namespace aiverse;
 // GPU-free invariants, including shared vertices and material overrides.
 static bool unitChecks() {
@@ -179,6 +181,10 @@ int aiverseMain(int argc, char** argv) {
     std::vector<uint8_t> before;
     uint32_t shadowBefore=0, opaqueBefore=0; int frame=0; bool failed=false, finished=false;
     bool packetBuilt=false; // the warm hit must reuse a previously built packet
+    // Opt-in synchronous CPU measurements; never treat these as GPU timing.
+    const bool cpuTiming = std::getenv("AIVERSE_BATCH_CPU_TIMING") &&
+        std::string(std::getenv("AIVERSE_BATCH_CPU_TIMING")) == "1";
+    std::vector<double> cpuRenderBefore, cpuRenderAfter;
     platform::AppConfig cfg; cfg.title="Material palette A/B"; cfg.width=960; cfg.height=640; cfg.highDpi=false;
     platform::AppCallbacks cb;
     cb.init=[&](gfx::Device& d) {
@@ -256,7 +262,17 @@ int aiverseMain(int argc, char** argv) {
             renderer.drawModel(other);
         }
         if(scenario=="instanced"){draw.world=render::mat4::translate({3,0,0})*draw.world;renderer.drawModel(draw);}
-        gfx::PassDesc pass;renderer.render(pass);
+        gfx::PassDesc pass;
+        const auto startCpu = std::chrono::steady_clock::now();
+        renderer.render(pass);
+        const auto endCpu = std::chrono::steady_clock::now();
+        // Discard pipeline warmup and the transition frame; no readback in sample.
+        if (cpuTiming && ((frame >= 5 && frame <= 12) ||
+                          (frame >= 18 && frame <= 25))) {
+            const double ms = std::chrono::duration<double, std::milli>(
+                endCpu - startCpu).count();
+            (batch ? cpuRenderAfter : cpuRenderBefore).push_back(ms);
+        }
         if (scenario == "static_packets" && frame == 15) {
             const auto stats = renderer.staticRenderPacketStats();
             packetBuilt = stats.rebuilds == 1 && stats.hits == 0 &&
@@ -270,6 +286,21 @@ int aiverseMain(int argc, char** argv) {
                     stats.live, stats.retainedBytes);
                 failed = true;
             }
+        }
+        if (cpuTiming && frame == 26) {
+            const auto report = [](const char* phase, std::vector<double> samples) {
+                std::sort(samples.begin(), samples.end());
+                if (samples.empty()) return;
+                const size_t n = samples.size();
+                const double median = (n % 2) ? samples[n / 2]
+                    : (samples[n / 2 - 1] + samples[n / 2]) * 0.5;
+                const size_t p95Index = (95 * n + 99) / 100 - 1;
+                std::printf("CPU render benchmark %s: samples=%zu median_ms=%.4f p95_ms=%.4f min_ms=%.4f max_ms=%.4f\n",
+                    phase, n, median, samples[p95Index], samples.front(), samples.back());
+            };
+            report("direct", cpuRenderBefore);
+            report("batched", cpuRenderAfter);
+            std::printf("CPU render benchmark: synchronous renderer.render() only; not GPU time or FPS\n");
         }
         if(frame==8||frame==23){
             const auto& p=renderer.profile();
