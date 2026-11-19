@@ -2357,6 +2357,160 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         dev.setTexture(0, aaTarget.tex); dev.draw(3); ++stats_.passes;
         fxaaEncoded = true;
     }
+
+    // Final GPU-free status snapshot. This records the ACTUAL last encoded
+    // resolve for this stable view, not a hypothetical prepared shader or a
+    // result from another viewport. GPU completion/pixel validity is unknown.
+    const bool compositeEncoded = pipe.valid();
+    const auto optIn = [](const char* key) {
+        const char* flag = std::getenv(key);
+        return flag && std::strcmp(flag, "1") == 0;
+    };
+    for (const auto& authored : settings_.effects) {
+        EffectExecution state{};
+        state.type = authored.type;
+        state.authored = true;
+        if (!enabled_ || !settings_.enabled || !dev.gpuHealthy()) {
+            state.reason = "Prisma or GPU disabled";
+        } else if (!authored.enabled) {
+            state.reason = "effect disabled in camera profile";
+        } else if (int(quality_) < int(authored.minQuality)) {
+            state.reason = "below effect minimum quality tier";
+        } else {
+            state.requested = true;
+            const auto compositeBit = [&](uint32_t bit) {
+                state.pipelinePrepared = compositeEncoded;
+                state.encoded = compositeEncoded && (mask & bit) != 0;
+                if (!state.encoded)
+                    state.reason = "effect omitted from final composite or fallback variant";
+            };
+            const auto requireHdrFlag = [&](const char* key) {
+                if (!hdrFrame_) {
+                    state.requested = false;
+                    state.reason = "requires linear HDR output";
+                } else if (!optIn(key)) {
+                    state.requested = false;
+                    state.reason = std::string("opt-in disabled: ") + key;
+                }
+                return state.requested;
+            };
+            switch (authored.type) {
+            case PrismaType::Fxaa:
+                state.pipelinePrepared = pipes_[kFxaa].valid();
+                state.encoded = fxaaEncoded;
+                if (hdrFrame_ && temporalResolved)
+                    state.reason = "suppressed by canonical Temporal Resolve";
+                else if (!state.encoded)
+                    state.reason = state.pipelinePrepared ?
+                        "FXAA render target or composite unavailable" : "FXAA pipeline unavailable";
+                break;
+            case PrismaType::Bloom:
+                state.pipelinePrepared = pipes_[kPrefilter].valid() &&
+                    pipes_[kDown].valid() && pipes_[kUp].valid();
+                compositeBit(kPfBloom);
+                if (!state.encoded) state.reason = !state.pipelinePrepared ?
+                    "Bloom GPU pipelines unavailable" : "Bloom target/chain not composited";
+                break;
+            case PrismaType::TiltShift:
+                state.pipelinePrepared = pipes_[kDown].valid() && pipes_[kBlur].valid();
+                compositeBit(kPfTilt);
+                if (!state.encoded) state.reason = !state.pipelinePrepared ?
+                    "tilt/blur GPU pipelines unavailable" : "tilt target not composited";
+                break;
+            case PrismaType::SunShafts:
+                state.pipelinePrepared = pipes_[kShaftsPre].valid() &&
+                    pipes_[kShafts].valid();
+                compositeBit(kPfShafts);
+                if (!state.encoded) state.reason = !shaftTex.valid() ?
+                    "sun unavailable or shaft target not produced" : "shaft composite failed";
+                break;
+            case PrismaType::Lut:
+                compositeBit(kPfLut);
+                if (!state.encoded) state.reason = "LUT missing/invalid or composite unavailable";
+                break;
+            case PrismaType::AutoExposure:
+                if (requireHdrFlag("AIVERSE_PRISMA_AUTO_EXPOSURE")) {
+                    state.pipelinePrepared = pipes_[kExposureLog].valid() &&
+                        pipes_[kExposureReduce].valid() && pipes_[kExposureAdapt].valid();
+                    state.encoded = compositeEncoded && (mask & kPfAutoExposure) != 0;
+                    if (!state.encoded) state.reason = graphImages.size() > 3 ?
+                        "shader graph occupies exposure texture slot 8" :
+                        (!state.pipelinePrepared ? "exposure pipelines unavailable" :
+                         "exposure history/target or composite unavailable");
+                }
+                break;
+            case PrismaType::DepthOfField:
+                if (requireHdrFlag("AIVERSE_PRISMA_DOF")) {
+                    if (authored.get("intensity") <= 0 ||
+                        authored.get("maxBlur") <= 0) {
+                        state.requested = false;
+                        state.reason = "zero defocus intensity/maxBlur";
+                    } else {
+                        state.pipelinePrepared = pipes_[kDepthOfField].valid();
+                        state.encoded = depthOfFieldEncoded;
+                        if (!state.encoded) state.reason = state.pipelinePrepared ?
+                            "DoF depth/target unavailable" : "DoF pipeline unavailable";
+                    }
+                }
+                break;
+            case PrismaType::MotionBlur:
+                if (requireHdrFlag("AIVERSE_PRISMA_MOTION_BLUR")) {
+                    if (authored.get("intensity") <= 0 ||
+                        authored.get("maxPixels") <= 0) {
+                        state.requested = false;
+                        state.reason = "zero shutter intensity/maxPixels";
+                    } else {
+                        state.pipelinePrepared = pipes_[kMotionVectors].valid() &&
+                            pipes_[kMotionBlur].valid();
+                        state.encoded = motionBlurEncoded;
+                        if (!state.encoded) state.reason = !previousValid ?
+                            "no previous valid camera frame (cut/resize/first frame)" :
+                            (!state.pipelinePrepared ? "motion pipelines unavailable" :
+                             "velocity/depth/target unavailable");
+                    }
+                }
+                break;
+            case PrismaType::TemporalResolve:
+                if (requireHdrFlag("AIVERSE_PRISMA_TEMPORAL")) {
+                    if (quality_ != PrismaQuality::High) {
+                        state.requested = false;
+                        state.reason = "requires High tier";
+                    } else if (authored.get("historyWeight") <= 0) {
+                        state.requested = false;
+                        state.reason = "zero temporal history weight";
+                    } else {
+                        state.pipelinePrepared = pipes_[kTemporalResolve].valid();
+                        state.encoded = temporalResolved;
+                        if (!state.encoded) state.reason = rejectedHistory ?
+                            "camera temporal history denied or preflight rejected" :
+                            (!state.pipelinePrepared ? "temporal pipeline unavailable" :
+                             "temporal history/scene/depth/target unavailable");
+                    }
+                }
+                break;
+            case PrismaType::ShaderGraph:
+                state.pipelinePrepared = graphCompositePrepared;
+                state.encoded = graphCompositePrepared && compositeEncoded;
+                if (!state.encoded)
+                    state.reason = "postfx shader graph compile/composite failed";
+                break;
+            case PrismaType::Pixelate: compositeBit(kPfPixelate); break;
+            case PrismaType::ChromaticAberration: compositeBit(kPfCa); break;
+            case PrismaType::Sharpen: compositeBit(kPfSharpen); break;
+            case PrismaType::ColorGrade: compositeBit(kPfGrade); break;
+            case PrismaType::Posterize: compositeBit(kPfPosterize); break;
+            case PrismaType::Vignette: compositeBit(kPfVignette); break;
+            case PrismaType::Grain: compositeBit(kPfGrain); break;
+            case PrismaType::Fade: compositeBit(kPfFade); break;
+            case PrismaType::Letterbox: compositeBit(kPfLetterbox); break;
+            default:
+                state.requested = false;
+                state.reason = "effect has no runtime execution mapping";
+                break;
+            }
+        }
+        effectReport.effects.push_back(std::move(state));
+    }
 }
 
 } // namespace aiverse::render
