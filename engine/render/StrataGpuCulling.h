@@ -160,6 +160,7 @@ private:
     std::array<uint64_t, kFramesInFlight> epochs_{};
     std::array<size_t, kFramesInFlight> cursors_{};
     gfx::ComputeHandle pipeline_{};
+    gfx::ComputeHandle indirectClearPipeline_{};
     gfx::ComputeHandle indirectSafetyPipeline_{};
     static bool allocate(gfx::Device& dev, gfx::BufferHandle& handle,
                          size_t& capacity, size_t requested, const char* label);
