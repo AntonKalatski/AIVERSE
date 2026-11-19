@@ -52,6 +52,26 @@ export default function App() {
     } catch (e) { setError(e instanceof Error ? e.message : String(e)); }
     finally { setBusy(false); }
   };
+  useEffect(() => {
+    const shortcut = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey || busy) return;
+      const key = event.key.toLowerCase();
+      const target = event.target;
+      const editable = target instanceof HTMLElement && !!target.closest('input,textarea,[contenteditable="true"]');
+      if (key === 's' && connected && snapshot?.project.path) {
+        event.preventDefault();
+        if (snapshot.project.dirty) void historyAction('studio.save');
+      } else if (key === 'z' && !editable && !event.shiftKey && snapshot?.history.canUndo) {
+        event.preventDefault();
+        void historyAction('studio.undo');
+      } else if (((key === 'z' && event.shiftKey) || key === 'y') && !editable && snapshot?.history.canRedo) {
+        event.preventDefault();
+        void historyAction('studio.redo');
+      }
+    };
+    window.addEventListener('keydown', shortcut);
+    return () => window.removeEventListener('keydown', shortcut);
+  }, [busy, connected, snapshot]);
   const select = async (id: string | null) => {
     setBusy(true);
     try { setSnapshot(await invoke('studio.select', { id })); setError(''); }

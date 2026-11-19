@@ -44,6 +44,8 @@
 - (void)sendStudioEvent:(const char*)event message:(const char*)message;
 - (void)sendStudioReply:(const aiverse::Json&)reply;
 - (void)openProjectSheetForRequestId:(int64_t)requestId;
+- (void)openProjectSheetForRequestId:(int64_t)requestId confirmedDiscard:(BOOL)confirmedDiscard;
+- (void)sendProjectCancelledReply:(int64_t)requestId;
 @end
 
 @implementation StudioMetalView
@@ -175,7 +177,33 @@
     NSString* json=[[NSString alloc] initWithBytes:output.data() length:output.size() encoding:NSUTF8StringEncoding];
     if (json) [web_ evaluateJavaScript:[NSString stringWithFormat:@"window.__aiverseReceive && window.__aiverseReceive(%@);",json] completionHandler:nil];
 }
+- (void)sendProjectCancelledReply:(int64_t)requestId {
+    aiverse::Json reply=aiverse::Json::object();
+    reply.set("id",aiverse::Json::number(requestId));
+    aiverse::Json payload=aiverse::Json::object();
+    payload.set("cancelled",aiverse::Json::fromBool(true));
+    payload.set("snapshot",aiverse::Json());
+    reply.set("result",std::move(payload));
+    [self sendStudioReply:reply];
+}
 - (void)openProjectSheetForRequestId:(int64_t)requestId {
+    [self openProjectSheetForRequestId:requestId confirmedDiscard:NO];
+}
+- (void)openProjectSheetForRequestId:(int64_t)requestId confirmedDiscard:(BOOL)confirmedDiscard {
+    const auto& ws=session_->workspace();
+    if (!confirmedDiscard && (ws.map.dirty || ws.project.rulesDirty || ws.project.manifestDirty)) {
+        NSAlert* alert=[[NSAlert alloc] init];
+        alert.messageText=@"Discard unsaved AIVERSE changes?";
+        alert.informativeText=@"Opening another project discards unsaved map and project changes.";
+        [alert addButtonWithTitle:@"Discard and Open"];
+        [alert addButtonWithTitle:@"Cancel"];
+        [alert beginSheetModalForWindow:window_ completionHandler:^(NSModalResponse code) {
+            if (code == NSAlertFirstButtonReturn)
+                [self openProjectSheetForRequestId:requestId confirmedDiscard:YES];
+            else [self sendProjectCancelledReply:requestId];
+        }];
+        return;
+    }
     NSOpenPanel* panel=[NSOpenPanel openPanel];
     panel.canChooseFiles=YES;
     panel.canChooseDirectories=YES;
