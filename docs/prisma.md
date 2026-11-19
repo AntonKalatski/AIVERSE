@@ -1040,6 +1040,94 @@ smoke, water/particle image comparison, timing and GPU profiler.
 No verified parity or speedup is claimed. See
 `docs/handoffs/prisma-stage-31.md`.
 
+
+## Stage 32 — specialized SpriteBatch water masks, live RHI texture metadata, and GPU-fence retirement contract
+
+Stage 31 connected actual RTS terrain water through `Renderer3D::drawMesh`.
+For the **separate** sprite/decal water path, Stage 32 adds
+`SpriteBatch::drawWater` alpha-aware reactive rendering: the original
+static `SpriteMesh`, water texture, and view-projection transform are
+recorded and can be registered with the current scene via
+`SpriteBatch::registerWaterReactive(renderer)`. The callback replays
+only the existing mesh buffers into the open reactive pass. A dedicated
+GLSL/MSL shader samples the water sheet's alpha and per-vertex tint
+alpha and discards pixels hidden behind original scene depth.
+It uses `gfx::BlendMode::Screen` so water combines with existing
+model/particle masks rather than erasing them. The specialized
+`drawWater` fallback to lit decals remains unchanged.
+
+**Important integration scope:** repository search found no current
+calls to `SpriteBatch::drawWater` in this branch. The producer support
+is complete at the API/source level, but a native game using specialized
+sprite water must explicitly call `registerWaterReactive` after its
+`drawWater` calls and before `Renderer3D::resolvePrisma()`.
+Ordinary RTS water through `drawMesh` already registers itself
+automatically. `SpriteBatch::begin` clears its captured water draws
+every frame, and registration consumes them; never destroy its textures,
+mesh buffers or SpriteBatch before the synchronous callback finishes.
+
+### Validating externally owned velocity and reactive textures
+
+`PrismaMotionTextureInput.h` adds `MotionTextureInput`, a non-owning
+handle with optional declared width, height and `gfx::PixelFormat`.
+The `PostProcess` bridge has new typed overloads of
+`acceptObjectMotionVectors` and `acceptMotionReactiveMask`; the
+original handle-only overloads remain for existing consumers.
+
+`Renderer3D` now submits typed inputs for its own full-resolution
+RGBA16F velocity and RGBA8 reactive targets.
+In `Prisma::resolve`, both inputs must match the active viewport
+dimensions and required formats. If a mismatch is found, the object
+velocity is ignored and camera reprojection is used; a mismatched
+reactive mask is treated as absent (black fallback). This prevents a
+stale Scene/Game texture of another size being sampled as a valid
+input. The owning renderer retains GPU lifetime responsibility.
+
+The RHI adds `gfx::Device::textureInfo(handle,out)`, a CPU-only
+metadata query that is implemented by GL, Metal, and Vulkan from
+their own live resource tables. PRISMA checks **actual RHI metadata**
+where available, even for a handle-only legacy input. Providers
+whose backends do not expose metadata are checked against any
+declared metadata; the existing untyped legacy path otherwise remains
+trusted for compatibility. This API performs no GPU readback and
+does not make input textures globally self-describing when passed
+outside the RHI.
+
+### Safe handoff for retiring old motion targets
+
+`Renderer3D` now uses the Stage 18
+`PrismaGpuRetirementQueue<gfx::TextureHandle>` for view-motion
+textures. `setObjectMotionSubmittedFence(token)` registers an
+**actual backend-issued** last-submitted fence for subsequent resizes.
+Old velocity/depth/reactive targets are moved to a retirement queue
+rather than immediately destroyed. `collectCompletedObjectMotion(
+completedGpuFence)` destroys only handles whose submission fence
+was **confirmed GPU-complete** by the host. The manual
+`retireObjectMotionView(viewId,lastSubmittedFence)` transfers one
+view's current targets to this queue and discards its CPU history.
+
+If the renderer has no valid submission fence, old targets are put
+into an **unfenced quarantine**, where they are retained until
+`drainObjectMotionAfterGpuIdle()` is called with a proven idle GPU.
+Normal engine shutdown currently assumes the host has reached its
+existing safe teardown point. There is no automatic backend fence
+emission or polling yet, so this conservative default can retain
+GPU memory across many viewport resizes until idle. **CPU frame
+counters and arbitrary N-frame delays do not count as GPU fences.**
+
+The older `releaseObjectMotionViewAfterGpuIdle` remains a separate
+synchronous API and must only be invoked after the GPU is idle.
+These changes do not automatically repair unrelated PRISMA `Sized`
+pool or other rendering-resource release points; those require
+their own GPU-completion-aware integrations.
+
+All added GPU paths are opt-in under
+`AIVERSE_PRISMA_MOTION_BLUR=1`; nothing new is enabled by default.
+**NOT RUN:** native compilation, CTest, GLSL/MSL shader compilation,
+Metal/GL/Vulkan images, GPU-performance measurements, and CI. The
+source is not verified ready for production.
+See `docs/handoffs/prisma-stage-32.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
