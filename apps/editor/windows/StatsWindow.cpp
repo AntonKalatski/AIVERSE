@@ -95,6 +95,18 @@ public:
                     post.activeSizes, post.retiredSizes);
         ImGui::Text("Auto Exposure: %zu камер  ·  Temporal HDR: %zu камер  ·  Motion: %zu камер  ·  Model velocity: %zu видов",
                     post.exposureViews, post.temporalViews, post.motionViews, motion.liveViews);
+        const auto scopedGpu=ed.prisma().viewGpuTimings();
+        if (scopedGpu.empty()) {
+            ImGui::TextDisabled("Per-viewport GPU timing: unavailable / opt-in GL33 only");
+        } else {
+            for (const auto& gpu : scopedGpu) {
+                const char* name=gpu.viewId==1?"Scene":gpu.viewId==2?"Game":"Custom";
+                ImGui::Text("%s GPU render region: %.3f ms (completed, %llu samples)",
+                    name,gpu.lastGpuMs,
+                    (unsigned long long)gpu.sampleSequence);
+            }
+            ImGui::TextDisabled("Per-viewport intervals may include shared shadow passes; do not sum with GPU frame time.");
+        }
         ImGui::Text("PRISMA: %zu fenced + %zu unfenced textures, graph pending %zu",
                     post.fencedTextures, post.unfencedTextures,
                     post.graphRetiredTextures);
