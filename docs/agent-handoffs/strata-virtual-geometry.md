@@ -701,3 +701,24 @@ Also run `AIVERSE_BUILD_STRATA=OFF` compile of `aiverse_runtime` (or a real clie
 - Actual GPU cluster selection output has nondeterministic atomic order; compare sorted records before allowing any renderer routing.
 - Source models with old `Model::geometry` GeometryCluster preparation are rejected by shared-pool admission. Do not bypass this without designing a single owner for legacy cluster buffers and Strata sidecars.
 - Source proxy/HLOD substitutions are not previewed; legacy source draws remain authoritative. Scene JSON/asset formats are unchanged.
+
+
+---
+
+## Stage 10 verification update — native focused CTest 6/6 PASS (2026-11-19)
+
+**User-supplied Mac Studio output** from `~/Projects/AIVERSE-strata-validation/build/strata` reports successful native execution of all **six** focused Strata CTests, with **100% tests passed, 0 tests failed**:
+
+- `strata_builder` — PASS, 0.36 s
+- `strata_model_adapter` — PASS, 0.59 s
+- `strata_view` — PASS, 0.65 s
+- `strata_gpu_scene` — PASS, 0.38 s
+- `strata_gpu_culling` — PASS, 0.17 s
+- `strata_render_routing` — PASS, 0.20 s
+
+These results supersede the preceding 'not run' statements **for these focused native tests**. The exact checkout HEAD used for the native commands is not printed in the log; the report was provided after the stage-10 branch commands. Do not falsely claim a verified specific commit SHA if that was not printed.
+
+**Still NOT verified:** `aiverse_strata_metal_parity` real Metal runtime test, shader compilation/execution on the actual device, async GPU range readback, GPU-vs-CPU parity on hardware, pixel/shadow/reflection screenshot parity, production Strata draw submission, GPU performance and memory timings. The renderer remains legacy-authoritative, with diagnostic dry-run opt-in. No change to main.
+
+### Immediate next verification
+From the existing `~/Projects/AIVERSE-strata-validation` worktree, first confirm the real-Metal executable exists; if it does not, configure with `-DAIVERSE_STRATA_METAL_GPU_TESTS=ON` and build target `aiverse_strata_metal_parity`. Run it outside CTest because it opens a macOS window. Record all five scenario outcomes and the final `cases=5/5 status=PASSED` line only if observed. Preserve any failing Metal compiler or GPU error verbatim for the next implementation patch.
