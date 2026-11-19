@@ -1416,6 +1416,100 @@ ImGui texture lifetime, GPU fence pressure smoke and VRAM profiling
 have **NOT RUN**, as requested. See
 `docs/handoffs/prisma-stage-35.md`.
 
+
+## Stage 36 — hosted GameClient teardown, screenshot lifetime, ShaderGraph preview retirement and graph memory accounting
+
+### Hosted GameClient GPU ownership
+
+The editor's `ClientHost::stop()` now logically stops the hosted client
+immediately (so the UI no longer routes events or frames to it), but moves
+its initialized `GameClient` object, its former HostedView and the
+current graphics submission token into a deferred-retirement list. It
+**does not call `GameClient::shutdown` while its GPU textures may still
+be referenced by the editor's current or previous command buffers.**
+
+`ClientHost::collectGpuRetirements()` checks completion on the same
+`gfx::Device` that owns the archived client. Once the backend has
+actually confirmed its submission fence, the owner restores that
+client's saved hosted platform view and invokes its shutdown on the
+graphics/UI owner thread. The editor calls this collector at the start
+of every GUI frame, including after the Game tab has closed.
+`ClientHost::drainAfterGpuIdle()` is available at a host-confirmed
+GPU-idle point for clients whose submission fence was unavailable.
+The editor includes this drain in the memory-pressure cleanup and
+its graphics-device shutdown path.
+
+If no GPU submission token is available, an archived client is
+quarantined rather than destroyed during an ordinary frame; its
+GPU resources may remain allocated until a safe host teardown.
+The editor Statistics tab reports `ClientHost::pendingRetiredClients()`
+as a count. Its GPU bytes are **not yet** included in the numeric
+pending-memory estimate, so the 128 MiB budget remains a lower-bound
+trigger rather than a hard VRAM cap.
+
+### Editor screenshot callback safety
+
+`Editor::deliverShots` uses the graphics backend's existing
+`Device::captureNextFrame` API, whose ownership includes the
+backend's own staging/capture resources rather than an Editor-owned
+offscreen texture. The callback previously captured an unguarded
+`this`; it now also captures a shared atomic lifetime token.
+`Editor::shutdown` invalidates that token and clears queued
+screenshot requests; a late callback returns without referencing a
+destroyed Editor, sending MCP replies through a closed connection,
+or touching its viewport pointers. A fresh Editor initialization
+creates a fresh token for the new lifetime. The backend still
+owns its capture staging buffers; this guard does not change GPU
+readback policies or invoke GPU synchronization.
+
+### ShaderGraph Preview color/depth buffers
+
+`ShaderGraphPreview` now binds the Editor's shared
+`ViewportGpuRetirement` during initialization, and transfers its
+two 256×256 color/depth render targets into that manager on graph
+replacement or preview shutdown. Those textures may still be
+referenced by an ImGui image or a previous GPU pass; the manager
+releases them only after a verified GPU completion fence, or at an
+explicit host idle drain. The manager outlives all editor window
+objects. Other ShaderGraph preview-owned pipelines, material
+portraits, particle systems and texture caches keep their existing
+lifecycle policies; this stage does **not** claim every preview
+subresource is fully fence-managed.
+
+### RenderGraph memory telemetry
+
+`PrismaRhiExecutor::gpuMemoryStats()` returns:
+`liveTextures`, `pendingTextures`,
+`liveKnownBytes`, `pendingKnownBytes`, and
+`unknownFormatsOrDimensions`. The accounting enumerates
+**actual** `PrismaGraphResourcePool` live allocations and the
+`PrismaGpuRetirementQueue` pending handles using the RHI
+`Device::textureInfo` query. No GPU readback or stalls are required.
+
+`Prisma::retirementStats()` aggregates active and retired
+`Sized` graph pools separately. Resources belonging to an archived
+size set count as pending even if they were live in that set before
+eviction; currently active graph allocations are tracked as *live*,
+not added to the pending budget. The editor Statistics tab reports
+the extra graph live/pending MiB, unknown allocation count and
+deferred hosted-client count.
+
+This improves Stage 35's known-pending memory-pressure estimate,
+but compressed/sparse textures, driver overhead, and resources outside
+the PRISMA graph or hosted client are not a complete total VRAM
+accounting.
+
+All existing `postfx` schema and experimental effect opt-in flags
+are unchanged. No FPS/RTS-specific behavior is introduced into
+PRISMA; hosted-client, screenshot and preview code remain with their
+own owners.
+
+**Verification status:** source inspection and GitHub commits only.
+CMake, C++/Obj-C++, CTest, Metal/GL/Vulkan runtime, screenshot
+capture callbacks, docking/graph-preview smoke, GPU lifetime
+profiling and CI were **NOT RUN**, per user request. Refer to
+`docs/handoffs/prisma-stage-36.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
