@@ -57,7 +57,11 @@ public:
         }
     }
     void clear() { pending_.clear(); links_.clear(); }
+    void discardPending() { pending_.clear(); } // rollback / scene discontinuity
 
+    // Depth is supplied by a parent event producer; events arriving from a
+    // secondary effect should increment it. This router does not synthesize
+    // child events from particles (ParticleSystem already owns subemitters).
     bool publish(SpectraFxEmitterEventRecord event) {
         ++stats_.submitted;
         if (event.depth > kMaxDepth) {
@@ -89,6 +93,8 @@ public:
             if (it==links_.end()) continue;
             for (const auto& link : it->second) {
                 if (!link.enabled || link.effect.empty()) continue;
+                if (record.type == SpectraFxEmitterEvent::Marker &&
+                    link.sourceMarker != 0 && link.sourceMarker != record.marker) continue;
                 if (queue.play(link.effect,record.position,0,record.direction,
                                record.scale*link.scale,record.tint))
                     ++stats_.spawned;
