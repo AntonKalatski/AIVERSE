@@ -161,6 +161,7 @@ bool ComputeParticles::initGpu() {
         desc_.shaderGraph,desc_.graphInputs,graphMaterial,reason_))return false;
     const std::array<uint32_t,4> graphChannels=graphMaterial.sources;
     gpuIndirectActive_=desc_.gpuIndirect && device_->supportsGpuAuthoredIndirectDraw();
+    gpuResetDirty_=false;
     compute_=device_->createCompute({shaders::kMetal,shaders::kGLSL,"SpectraFX Metal particle simulation"});
     if(!compute_.valid()) {reason_=device_->lastError();return false;}
 
@@ -312,6 +313,7 @@ void ComputeParticles::releaseGpu() {
     aliveCounter_={};gpuDrawArgs_={};vmErrors_={};gpuIndirectActive_=false;
     seedProgramParams_={};stateProgramParams_={};gpuVmPayload_={};
     stateAttributes_={};graphSources_={};
+    gpuResetDirty_=false;
     ages_.clear();freeSlots_.clear();pendingStates_.clear();pendingSlots_.clear();
     pendingKillSlots_.clear();killedSlotsAwaitingFrame_.clear();
     slotSourceTokens_.clear();
@@ -330,43 +332,70 @@ void ComputeParticles::shutdown() {
     backend_=ComputeBackend::Cpu;stats_={};reason_.clear();
 }
 void ComputeParticles::clear() {
-    if(!initialized_)return;
-    if(backend_==ComputeBackend::Cpu){
-        cpu_.clear();cpuHandles_.clear();stats_.alive=0;return;
+    (void)tryClear(); // preserve legacy ABI; status is available via reason()
+}
+bool ComputeParticles::tryClear() {
+    if(!initialized_)return false;
+    if(backend_==ComputeBackend::Cpu) {
+        cpu_.clear();cpuHandles_.clear();
+        stats_.alive=stats_.submittedSlots=0;
+        return true;
     }
-    // Storage updates are encoded as blits. Issuing one inside an active
-    // render/compute encoder is silently rejected by the Metal RHI, so never
-    // reset CPU slot bookkeeping unless the GPU buffer can actually be reset.
-    if(!device_->canUpdateSharedBuffers()) {
-        reason_="SpectraFX GPU clear must run outside render/compute passes";
-        return;
+    if(!device_ || !device_->gpuHealthy() ||
+       !device_->canUpdateSharedBuffers() ||
+       !states_.valid() || !stateProgramParams_.valid() ||
+       !stateAttributes_.valid()) {
+        ++stats_.gpuResetFailures;
+        reason_="SpectraFX checked GPU reset requires healthy device, open "
+                "graphics frame and no active render/compute encoder";
+        return false;
     }
-    pendingStates_.clear();pendingSlots_.clear();pendingProgramParams_.clear();
-    pendingKillSlots_.clear();killedSlotsAwaitingFrame_.clear();
-    stats_.gpuKillFencesPending=0;
-    std::fill(slotSourceTokens_.begin(),slotSourceTokens_.end(),0);
-    aliveSlots_.clear();verticesReady_=false;
-    const uint32_t cap=desc_.capacity;
-    std::vector<ParticleState> empty(cap);
-    for(auto& s:empty){s.positionAge={0,0,0,-1};s.velocityLife={0,0,0,1};}
-    device_->updateBuffer(states_,empty.data(),empty.size()*sizeof(ParticleState));
-    programStateCache_.assign(cap,ProgramParams{});
-    device_->updateBuffer(stateProgramParams_,programStateCache_.data(),
-                          programStateCache_.size()*sizeof(ProgramParams));
-    const std::vector<ProgramAttributes> emptyAttributes(cap);
-    device_->updateBuffer(stateAttributes_,emptyAttributes.data(),
-                          emptyAttributes.size()*sizeof(ProgramAttributes));
-    programParamsDirty_=false;
-    ages_.assign(cap,-1.f);
-    freeSlots_.clear();
-    for(uint32_t i=cap;i>0;--i)freeSlots_.push_back(i-1);
-    stats_.alive=0;
-    // Clear invalidates even a completed checkpoint from this revision.
-    // In-flight readbacks can finish, but their revision cannot match.
+    // A partially accepted sequence of uploads MUST NOT allow another GPU
+    // simulation or a new burst until the entire reset is retried. Kill any
+    // retained checkpoint immediately; a partial reset is never a snapshot.
+    gpuResetDirty_=true;
     lastCheckpoint_={};checkpointRevision_=0;
     ++vmFrameRevision_;
+    const uint32_t cap=desc_.capacity;
+    std::vector<ParticleState> empty(cap);
+    for(auto& particle:empty) {
+        particle.positionAge={0,0,0,-1};
+        particle.velocityLife={0,0,0,1};
+    }
+    const std::vector<ProgramParams> resetParams(cap);
+    const std::vector<ProgramAttributes> resetAttributes(cap);
+    const bool stateOk=device_->updateStorageBufferChecked(
+        states_,empty.data(),empty.size()*sizeof(ParticleState));
+    const bool paramOk=stateOk && device_->updateStorageBufferChecked(
+        stateProgramParams_,resetParams.data(),
+        resetParams.size()*sizeof(ProgramParams));
+    const bool attributeOk=paramOk && device_->updateStorageBufferChecked(
+        stateAttributes_,resetAttributes.data(),
+        resetAttributes.size()*sizeof(ProgramAttributes));
+    if(!attributeOk) {
+        ++stats_.gpuResetFailures;
+        reason_="SpectraFX checked GPU reset rejected; previous slot ownership "
+                "retained; retry reset before any new GPU frame: "+
+                device_->lastError();
+        return false;
+    }
+    // Only all-accepted ordered uploads may reset the CPU-owned slot mirror.
+    pendingStates_.clear();pendingSlots_.clear();pendingProgramParams_.clear();
+    pendingKillSlots_.clear();killedSlotsAwaitingFrame_.clear();
+    std::fill(slotSourceTokens_.begin(),slotSourceTokens_.end(),0);
+    programStateCache_.assign(cap,ProgramParams{});
+    programParamsDirty_=false;
+    ages_.assign(cap,-1.f);
+    freeSlots_.clear();freeSlots_.reserve(cap);
+    for(uint32_t i=cap;i>0;--i)freeSlots_.push_back(i-1);
+    aliveSlots_.clear();
+    cpuHandles_.clear();
+    drawCount_=0;verticesReady_=false;
+    stats_.alive=stats_.submittedSlots=stats_.gpuKillFencesPending=0;
     stats_.gpuVmErrorsKnown=false;
-    drawCount_=0;stats_.submittedSlots=0;
+    gpuResetDirty_=false;
+    reason_.clear();
+    return true;
 }
 bool ComputeParticles::setProgramParameter(uint32_t slot,float value,
                                             bool affectExisting) {
@@ -410,6 +439,10 @@ bool ComputeParticles::burstAt(fx::float3 position,fx::float3 direction,fx::floa
         }
         cpuHandles_.push_back(h);
         return true;
+    }
+    if(gpuResetDirty_) {
+        reason_="SpectraFX GPU reset incomplete; retry checked reset";
+        return false;
     }
     if(freeSlots_.size()<desc_.burst) {
         stats_.dropped+=desc_.burst;return false;
@@ -488,6 +521,11 @@ bool ComputeParticles::step(float dt) {
         cpu_.update(dt);
         stats_.alive=uint32_t(cpu_.stats().particles);
         return true;
+    }
+    if(gpuResetDirty_) {
+        verticesReady_=false;drawCount_=0;stats_.submittedSlots=0;
+        reason_="SpectraFX GPU reset incomplete; retry checked reset";
+        return false;
     }
     if(!device_->gpuHealthy()) {
         ++stats_.gpuDeviceUnhealthy;
