@@ -2779,3 +2779,23 @@ Direct cloning from `github.com` into the agent's container failed with `Could n
 **Interpretation:** This stage improves the all-or-none diagnostic **implementation**, not proven rendering quality or measured frame time. Counters record unique CPU seam sample points, not draw/vertex count. An archived TWH8 region intentionally lacks provenance; false availability remains unknown. No TWH8 payload/fingerprint, GPU buffers, draw calls, ECS, terrain collision or shader API changed.
 
 **Next validation agent steps:** Retrieve the first completed workflow for the **latest source HEAD** (not an older queued run), review both GCC/Clang `Build TerraWeave tests` jobs, then `CTest` for `terraweave_horizon` and all isolated TerraWeave tests; fix any compiler or failing assertion and append the exact failing command/output here. Independently test source edits, stale proxy, GPU LRU/empty-region publication, archive roundtrip and live rendering. If GitHub Actions remains queued, report that explicitly; do not mark PR ready or merge.
+
+## Stage 23c — deduplicated TerraWeave CI scheduling (WORKFLOW COMMITTED; CI RESULTS UNCONFIRMED)
+
+**Date:** 2026-11-19. **Branch:** `feature/terraweave`, Draft PR #24.
+**Commit:** `0b06301a02883c4fb440a980df5928b7d8ffb3cc`.
+**Changed:** `.github/workflows/terraweave.yml`.
+
+**Reason:** Since each Stage 22–23 feature and handoff commit triggers the isolated TerraWeave workflow, GitHub Actions accumulated many queued runs for superseded branch commits. The latest Stage 23b source/test fixes have not produced a passing GCC/Clang build or CTest result yet.
+
+**Implementation:**
+- Add top-level `concurrency` group `terraweave-${{ github.workflow }}-${{ github.ref }}` and `cancel-in-progress: true`. This should cancel obsolete **future runs using this workflow configuration** for the same GitHub ref; no guarantee of retroactively canceling already-queued runs created with the old workflow.
+- Remove the `docs/terrain/**` and `skills/world/aiverse-terraweave/**` paths from the **push** trigger. A handoff/docs-only commit no longer schedules a redundant C++ build. The existing `pull_request` paths (source/tests/CMake/workflow) and manual `workflow_dispatch` remain unchanged.
+- Leave GCC and Clang Release builds, `-UNDEBUG` assertions, nine test build targets and CTest invocation unchanged.
+
+**Actual verification:**
+- GitHub source update succeeded with commit `0b06301a...`. The latest workflow run [44478627264](https://github.com/chromealex/AIVERSE/actions/runs/44478627264) for that commit was **queued** at observation, without GCC/Clang results.
+- Older runs [44478385684](https://github.com/chromealex/AIVERSE/actions/runs/44478385684) for `affb6309...` and [44478455786](https://github.com/chromealex/AIVERSE/actions/runs/44478455786) for `a6a09fdc...` were also still **queued** at this observation.
+- GitHub Actions was **not observed** to have canceled obsolete runs yet. No local repository CMake compile or CTest, GPU screenshots, or performance measurement was executed by this agent. Do not claim that CI has passed.
+
+**Limitations and next step:** This is CI orchestration only, not a fix to TerraWeave rendering or algorithm output. Next test agent should inspect the newest completed workflow for the **current source HEAD**, record GCC/Clang `Build TerraWeave tests` and `Run TerraWeave CTest suite` step outcomes and log excerpts, and only then decide whether further code changes are needed. Verify that new pushes of this workflow actually supersede previous runs for the same ref. Keep PR #24 Draft until tests/visuals are verified.
