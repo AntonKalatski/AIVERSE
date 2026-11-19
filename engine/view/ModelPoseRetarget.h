@@ -25,7 +25,7 @@ struct ModelPoseRetarget {
 
 inline bool validModelPoseRetarget(const render::Model& source,
                                   const render::Model& visual,
-                                  const ModelPoseRetarget& map) noexcept {
+                                  const ModelPoseRetarget& map) {
     if(map.sourceNodeForVisual.size()!=visual.nodes.size() ||
        (!map.sourceMorphForVisual.empty() &&
         map.sourceMorphForVisual.size()!=visual.nodes.size()) ||
