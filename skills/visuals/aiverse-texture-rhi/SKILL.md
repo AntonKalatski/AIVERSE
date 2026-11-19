@@ -1915,3 +1915,7 @@ ICB by default without deliberate release gating.
 - Separate `kKeyModelVirtualTrilinear` shader permutation; 32B U6 payload only for new variant, existing 16B U6 remains unchanged. GLSL/MSL built-in colour and graph macro share `modelVirtualSampleExpression` so both sample requested virtual mip floor/ceil and blend resident fallbacks.
 - Texture slots still atlas+table, no new slots; GL/Vulkan slot hard limit and Metal graph slot budget preserved. Metal GPU-ICB graph path intentionally excluded from indexed mode pending tests.
 - No tests run for this stage; do not promote to production until C++ and native GLSL/MSL shader compilers and actual framebuffer oracles pass. PR #21 Draft.
+
+## Stage 10CO — binding archive metadata without manual guesses
+
+Include `engine/render/ModelVirtualTextureArchiveBinding.h` in the caller's model VT resolver. Use `makeModelVirtualTextureArchiveBinding(publishedArchive,fileStreamer,layer,out,mipBias)` or overload with `VirtualTextureStreamer`; this checks archive and active streamer geometry and fills handles, indexed status, virtual resolution/gutters/addressing. When creating a matching streamer: `archive.streamConfig(physicalPages,true,physicalMipLevels)`; prior one-argument callers remain unchanged. This source was not yet compiled or GPU-tested; do not assume it is certified.
