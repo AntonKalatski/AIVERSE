@@ -60,9 +60,8 @@ static_assert(uint32_t(program::Action::Set)==0 &&
               uint32_t(program::Action::Multiply)==3,
               "Metal VM actions changed: update vmRun");
 
-// Deliberately conservative: only data the current simple-billboard state
-// could represent after a matching GPU interpreter has been implemented.
-// Attributes, rotation, and event-only stages require a richer state layout.
+// The Metal VM has a separate per-physical-slot 32-byte attribute buffer.
+// Rotation/uid and event-only stages still require additional GPU semantics.
 inline bool supportedField(program::Field field, bool target) {
     using F=program::Field;
     switch(field) {
@@ -70,6 +69,8 @@ inline bool supportedField(program::Field field, bool target) {
     case F::VelocityX: case F::VelocityY: case F::VelocityZ:
     case F::Size:
     case F::TintR: case F::TintG: case F::TintB: case F::TintA:
+    case F::Attribute0: case F::Attribute1: case F::Attribute2: case F::Attribute3:
+    case F::Attribute4: case F::Attribute5: case F::Attribute6: case F::Attribute7:
         return true;
     case F::Age: case F::AgeNormalized: case F::Dt:
     case F::Param0: case F::Param1: case F::Param2: case F::Param3:
