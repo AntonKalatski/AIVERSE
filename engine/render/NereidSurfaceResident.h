@@ -192,15 +192,18 @@ public:
     const std::vector<lib::nereid::WaterTileRange>& tiles()const{return tiles_;}
     void drawTile(Renderer3D& renderer,const mat4& transform,
                   const lib::nereid::WaterTileRange& tile,
-                  const std::array<float4,16>& ripples={})const {
+                  const std::array<float4,16>& ripples={},
+                  const std::array<float4,16>& wakeShapes={})const {
         if(resident_ && tile.indexCount>0)
             drawNereidWaterSurface(renderer,mesh_,key_.style,transform,
-                                   ripples,tile.firstIndex,tile.indexCount);
+                                   ripples,tile.firstIndex,tile.indexCount,
+                                   wakeShapes);
     }
     void draw(Renderer3D& renderer,const mat4& transform=mat4::identity(),
-              const std::array<float4,16>& ripples={}) const {
+              const std::array<float4,16>& ripples={},
+              const std::array<float4,16>& wakeShapes={}) const {
         if(resident_)drawNereidWaterSurface(renderer,mesh_,key_.style,
-                                          transform,ripples);
+                                          transform,ripples,0,0,wakeShapes);
     }
     void release(gfx::Device& device) {
         releaseNereidWaterSurface(device,mesh_);
