@@ -708,3 +708,11 @@ git merge origin/main
 - **Fallback:** Metal GPU compaction is optional; failure retains full-capacity instanced rendering. The shared arena itself requires GPU capabilities; the **existing** `ParticleSystem`/`HybridPlayback` remains the CPU fallback at a higher host level, not part of this arena. The arena doesn't publish authoritative gameplay state or PRISMA postprocessing.
 - **Validation actually performed:** **NOT RUN** per user request. C++ compilation, shader compilation, Metal indirect draw, Vulkan GPU evolution, allocator generation and visual/performance QA are unverified. No CPU/GPU parity assertion.
 - **Next:** add project-level homogeneous batch routing and a feature flag for the shared arena, plus separate authored groups. In the full validation phase, compile/test lifetime control, frame serial reuse, GPU/CPU path fallback and shader ABI before merging.
+
+
+## 2026-11-19 — Stage 46: user-facing GPU indirect / shared arena integration guide
+
+- **Documentation commit:** `d88a1f55234c241ec586d3cd3b07f26d2a435201`, branch `feature/spectrafx-generic-cue-queue`.
+- **Changed file:** `docs/spectrafx-gpu-runtime.md`; describes v1 GPU asset toggle `gpuIndirectCompaction:true` (default off, **Metal-only**), packed alive-index texture, 20-byte GPU indirect command and full-capacity fallback when unsupported. Adds a native C++ usage sample showing `SpectraFxGpuSharedArena::init/addEmitter/update/render/shutdown` and explicit GPU frame/pass/device-lifetime ordering. The shared arena requires homogeneous appearance/physics, up to 64 sources and 65536 particles; it is not yet automatically selected by `HybridPlayback`. Alpha sorting, multi-material batches, terrain collision and production Metal/Vulkan qualification remain future work.
+- **Tests actually performed:** **NOT RUN** per user requirement: feature work before tests. No native compile, Metal shader or GPU indirect run, performance data, CTest/CI, editor UX. This document is contract guidance, not a validation report.
+- **Next:** optionally wire shared homogeneous arenas into project-level scene host routing, add explicit GPU sorting policy and multi-frame buffer lifetime QA. Only after full functional scope is implemented, run build/test and fix failures; never claim current experimental GPU path is production-ready.
