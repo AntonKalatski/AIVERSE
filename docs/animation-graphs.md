@@ -639,3 +639,22 @@ borrowing animation state and appearance snapshots before the
 ModelResourceCache GPU release barrier. Standalone RTS GameClient and
 the Editor's embedded GameClient now use a host-owned GPU lifetime
 generation, with the embedded client borrowing the Editor generation.
+
+## Stage 112 — model texture rollback without resetting animation clocks
+
+The RTS hot-appearance reload has a separate
+`render::ModelImageUploadTransaction` for newly authored material
+textures. Material indices refer to proposed append slots while
+candidate looks are staged, and only become live with `commit()`
+after all candidate models/LODs/stages and their immutable appearance
+snapshots are prepared. A rejected texture/ShaderGraph/AnimationGraph
+change leaves the last-good Model image count, live TypeLooks and
+existing animation players untouched. GPU allocations created by the
+rejected transaction go to a host-owned, fence-aware rollback queue;
+no graph runtime or second animation ECS is added.
+
+PostFx, terrain, ground effects and native particle rendering now
+take an optional host `RenderDeviceLifetime::Lease` and check it at
+their GPU entrypoints. Editor-embedded clients share the editor's
+generation. These guards cannot prove a GPU fence has completed and
+do not replace explicit resource retirement and shutdown ordering.
