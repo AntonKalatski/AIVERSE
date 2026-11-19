@@ -438,8 +438,12 @@ public:
     void setRetirementDiagnosticObserver(RetirementDiagnosticObserver observer) {
         retired_.setDiagnosticObserver(std::move(observer));
     }
-    size_t pendingRetirements() const noexcept{return retired_.pending();}
-    RetirementStats retirementStats() const noexcept {
+    size_t pendingRetirements() const {
+        requireReadOwnerThread("pendingRetirements");
+        return retired_.pending();
+    }
+    RetirementStats retirementStats() const {
+        requireReadOwnerThread("retirementStats");
         return retired_.stats();
     }
     // 0 disables backpressure. This is an object-count bound, NOT an exact
@@ -451,6 +455,7 @@ public:
         return retirementSoftLimit_;
     }
     uint64_t estimatedRetiredGpuBytes() const {
+        requireReadOwnerThread("estimatedRetiredGpuBytes");
         return retired_.estimatedPendingBytes(
             [](const std::unique_ptr<Model>& model)->uint64_t {
                 return model?estimateModelResident(*model).knownBytes():0;
@@ -472,6 +477,9 @@ public:
     template<class Visit>
     void forEachOwnedModel(Visit&& visit) const {
         requireReadOwnerThread("forEachOwnedModel");
+        // A visitor may inspect and even recursively enumerate Models, but
+        // must not replace/evict/publish while the outer iterator is live.
+        ModelDetachCallbackScope callback(*this);
         for(const auto& [key,model]:models_) {
             (void)key;
             if(model)visit(*model,false); // resident
@@ -529,6 +537,7 @@ public:
         return estimatedByteLimit_;
     }
     bool publicationBackpressured() const {
+        requireReadOwnerThread("publicationBackpressured");
         return retired_.saturated(retirementSoftLimit_) ||
             (estimatedByteLimit_!=0 &&
              estimatedRetiredGpuBytes()>=estimatedByteLimit_);
@@ -538,6 +547,7 @@ public:
     // before its marker; newer evictions can NEVER ride an older fence.
     // Returns true only once all pending resources have been released.
     bool collectRetired(gfx::Device& dev) {
+        requireNoDetachCallback("collectRetired");
         bindResourceDevice(dev);
         if(retired_.empty())return true;
         const auto before=retired_.pending();
@@ -627,25 +637,24 @@ private:
                 std::string("ModelResourceCache ")+operation+
                 " on foreign or expired owner thread");
     }
-    // Detach/release callbacks are allowed to inspect existing Models, but
-    // nested writes (or new reader tokens) would invalidate an iterator or
-    // resurrect a Model about to be moved into GPU retirement.
-    // Unlike a general mutex this is an owner-thread reentrancy guard.
+    // Both host detach/release callbacks AND borrowed-Model enumeration
+    // visitors hold this owner-thread callback guard. Nested read-only
+    // inspection is valid, hence a depth counter rather than a boolean.
+    // Cache writes or fresh CPU reader leases remain forbidden at ANY depth.
     class ModelDetachCallbackScope final {
     public:
-        explicit ModelDetachCallbackScope(ModelResourceCache& cache)
+        explicit ModelDetachCallbackScope(const ModelResourceCache& cache) noexcept
             :cache_(cache) {
-            cache_.requireNoDetachCallback("enter callback");
-            cache_.detachCallbackActive_=true;
+            ++cache_.cacheCallbackDepth_;
         }
-        ~ModelDetachCallbackScope(){cache_.detachCallbackActive_=false;}
+        ~ModelDetachCallbackScope(){--cache_.cacheCallbackDepth_;}
         ModelDetachCallbackScope(const ModelDetachCallbackScope&)=delete;
         ModelDetachCallbackScope& operator=(const ModelDetachCallbackScope&)=delete;
     private:
-        ModelResourceCache& cache_;
+        const ModelResourceCache& cache_;
     };
     void requireNoDetachCallback(const char* operation) const {
-        if(detachCallbackActive_)
+        if(cacheCallbackDepth_!=0)
             throw std::logic_error(
                 std::string("ModelResourceCache cannot ")+operation+
                 " inside Model detach/release callback");
@@ -658,7 +667,7 @@ private:
                 operation + " while Model read leases are active");
         }
     }
-    bool detachCallbackActive_=false; // render-owner-thread only
+    mutable size_t cacheCallbackDepth_=0; // render-owner-thread only
     std::shared_ptr<ModelReadLeaseState> readState_=
         std::make_shared<ModelReadLeaseState>();
     std::shared_ptr<const void> lifetimeToken_=
