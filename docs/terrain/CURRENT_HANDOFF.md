@@ -4,6 +4,19 @@ Last source stage: **70** (2026-11-19), branch `feature/terraweave`.
 PR #24 is Draft, and must not merge to `main` before native QA and
 cross-branch conflict reconciliation.
 
+## Latest Mac Studio evidence: three native TerraWeave checks passed
+
+**Read first:** [Box3D native 3/3 passing smoke and warning QA fix](qa-2026-11-19-box3d-smoke-green-and-warning.md).
+The user-supplied macOS CTest excerpt confirms three actual passes:
+`terraweave_native_micro_compile`,
+`terraweave_native_micro_physics_compile`, and
+`terraweave_model` (100%, 3/3, 1.49 sec). The only Clang warning
+was logical-op precedence in `TerraWeaveNereidObstacleBridge.h`;
+its parentheses and corresponding physics-smoke edge cases are now
+committed. Those latest source commits have **not yet been rebuilt**
+by the user. Full build/full CTest and live Box3D/NEREID/PHYSIS
+integration remain pending; PR #24 stays Draft.
+
 ## Latest QA blocker fixed: optional Box3D native smoke
 
 **Read first:** [Box3D native CMake/header fix and Mac Studio commands](qa-2026-11-19-box3d-native-smoke-fix.md).
