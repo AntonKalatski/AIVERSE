@@ -19,6 +19,21 @@ struct PoolWorldBudgets {
     uint32_t maxGroupCapacity = 1024;  // each ComputeParticles resource (1..4096)
     uint32_t maxBurstsPerFrame = 256;  // global presentation submission limit
     fx::FxQuality quality = fx::FxQuality::High;
+    // Budget is shared across all GPU groups owned by this world. Optionally
+    // supply the SAME external budget to other worlds/GraphRuntime instances
+    // using this Device. The defaults reserve RHI room for other readbacks.
+    CheckpointReadbackLimits checkpointReadback{};
+    std::shared_ptr<CheckpointReadbackBudget> sharedCheckpointBudget;
+};
+
+struct PoolCheckpointStats {
+    uint32_t activeGroups=0, pendingGroups=0, freshGroups=0;
+    uint32_t staleGroups=0, missingGroups=0, restoreEligibleGroups=0;
+    uint64_t requests=0, completed=0, failed=0, budgetDenied=0;
+    size_t bytesReturned=0; // successful callback payload, not GPU DMA metrics
+    // If explicitly shared with other worlds, these budget counters reflect
+    // the full shared scheduler, not only this GpuPoolWorld.
+    CheckpointReadbackStats budget{};
 };
 
 struct PoolWorldStats {
@@ -76,6 +91,11 @@ public:
     bool ready() const {return initialized_;}
     const std::string& reason() const {return reason_;}
     const PoolWorldStats& stats() const {return stats_;}
+    // On-demand, no GPU readback. Reflects callbacks delivered since step().
+    PoolCheckpointStats checkpointStats() const;
+    std::shared_ptr<CheckpointReadbackBudget> checkpointBudget() const {
+        return checkpointBudget_;
+    }
     const BatchWorld& cpuBatchWorld() const {return cpu_;}
     bool isGpuEffect(const std::string& effectName) const;
 private:
@@ -102,6 +122,7 @@ private:
     BatchWorld cpu_;
     PoolWorldBudgets budgets_{};
     PoolWorldStats stats_{};
+    std::shared_ptr<CheckpointReadbackBudget> checkpointBudget_;
     std::vector<Group> gpuGroups_;
     std::map<std::string,Binding> bindings_;
     bool initialized_ = false, frameOpen_ = false, stepped_ = false, drawn_ = false;
