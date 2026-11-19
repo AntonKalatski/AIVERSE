@@ -78,8 +78,8 @@ public:
                 col.size()>3?num(col[3],1):mt.baseColor.w};
         if(o.has("shaderGraph")) {
             try {
-                mt.shaderGraph=std::make_shared<graph::Program>(
-                    graph::compile(o["shaderGraph"],"material"));
+                mt.shaderGraph=std::make_shared<render::graph::Program>(
+                    render::graph::compile(o["shaderGraph"],"material"));
                 for(size_t i=0;i<mt.shaderGraph->textures.size();++i)
                     mt.graphTextures[i]=texture(mt.shaderGraph->textures[i]);
             }catch(const std::exception& error) {
