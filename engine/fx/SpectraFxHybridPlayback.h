@@ -27,6 +27,10 @@ public:
         // One-shot presentation ownership, seconds (hard retire and release).
         // The playing emitter may spawn particles until this deadline.
         float oneShotSeconds=3.0f;
+        // Opt-in homogeneous GPU arena across routes; empty => existing
+        // dedicated hybrid emitter behavior. No change to CPU fallback.
+        std::string sharedPool;
+        uint32_t sharedPoolCapacity=8192;
     };
     struct Stats {
         uint64_t played=0,moved=0,stopped=0,killed=0;
