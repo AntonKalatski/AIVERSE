@@ -299,6 +299,15 @@ public:
         ++windFieldRevision_;
     }
     bool exactSpatialWindField() const {return exactSpatialWindField_;}
+    // May be adjusted on the render owner thread without rebaking a region.
+    // Changes apply to pending wind revisions at the next update(device).
+    void setWindUploadPolicy(HorizonWindUploadPolicy policy) {
+        validateHorizonWindUploadPolicy(policy);
+        windUploadPolicy_=policy;
+    }
+    HorizonWindUploadPolicy windUploadPolicy() const {
+        return windUploadPolicy_;
+    }
     std::shared_ptr<const ForestWindField> windField() const {
         return windField_;
     }
@@ -761,7 +770,7 @@ private:
         // changes. The active and outgoing regions share one 2 MiB
         // render-owner update budget and retain their old safe shader
         // mode until the entire field revision is committed.
-        size_t remaining=2u*1024u*1024u;
+        size_t remaining=windUploadPolicy_.maxBytesPerUpdate;
         const ForestWindField* selectedField=
             exactSpatialWindField_ ? windField_.get() : nullptr;
         const auto refresh=[&](render::Model* model,
@@ -770,7 +779,7 @@ private:
                overlay.appliedRevision==windFieldRevision_)return;
             const auto result=applyHorizonForestWindOverlay(
                 device,*model,overlay,selectedField,wind_,
-                windFieldRevision_,remaining);
+                windFieldRevision_,remaining,windUploadPolicy_);
             if(result.ready && !result.uploaded)
                 ++runtime_.windOverlayNoopRevisions;
             if(result.uploaded) {
@@ -951,6 +960,7 @@ private:
     ForestWindState wind_{};
     bool spatialWindVariation_=true;
     bool exactSpatialWindField_=true;
+    HorizonWindUploadPolicy windUploadPolicy_{};
     bool windFieldHasWind_=false;
     uint64_t windFieldRevision_=1;
     std::shared_ptr<const ForestWindField> windField_;
