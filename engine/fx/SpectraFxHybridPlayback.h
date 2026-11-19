@@ -15,6 +15,7 @@
 
 #include "SpectraFxGpuEmitterLibrary.h"
 #include "SpectraFxGpuSharedArena.h"
+#include "SpectraFxGpuBudgetGovernor.h"
 #include "SpectraFxEmitterEvents.h"
 #include "SpectraFxCueBridge.h"
 
@@ -62,6 +63,14 @@ public:
     void route(uint32_t cueId,Route value) {routes_[cueId]=std::move(value);}
     void unroute(uint32_t cueId) {routes_.erase(cueId);}
     void clearRoutes() {routes_.clear();}
+    // Project/host opt-in. Uses device's WHOLE-FRAME GPU time only as a
+    // conservative spawn throttle, never as a claim about SpectraFX cost.
+    bool configureGpuBudget(const SpectraFxGpuBudgetGovernor::Config& cfg) {
+        return gpuGovernor_.configure(cfg);
+    }
+    const SpectraFxGpuBudgetGovernor::Stats& gpuBudgetStats() const {
+        return gpuGovernor_.stats();
+    }
 
     bool dispatch(const SpectraFxCue& cue) {
         if(cue.action!=SpectraFxCue::Action::Play) {
@@ -195,8 +204,14 @@ public:
     // The host separately updates the shared CPU ParticleSystem ONCE/frame.
     void updateGpu(float dt) {
         if(!std::isfinite(dt)||dt<0||dt>0.1f) {++stats_.failed;return;}
-        for(auto& pair:active_)
+        // Metrics may be unavailable on mobile / Vulkan; the governor then
+        // keeps its last known safe scale (1 by default).
+        gpuGovernor_.observe(float(device_.gpuFrameMs()),dt);
+        const float spawnScale=gpuGovernor_.spawnScale();
+        for(auto& pair:active_) {
+            pair.second->setExternalSpawnScale(spawnScale);
             advanceGpu(*pair.second,dt);
+        }
         for(size_t i=0;i<oneShots_.size();) {
             auto& shot=oneShots_[i];
             // Retire exactly once; GPU and CPU resources are bounded by the
@@ -207,6 +222,7 @@ public:
                 ++stats_.retired;
                 continue;
             }
+            shot.emitter->setExternalSpawnScale(spawnScale);
             advanceGpu(*shot.emitter,dt);
             shot.elapsed+=dt;
             ++i;
@@ -232,6 +248,7 @@ public:
         }
         for(auto it=pools_.begin();it!=pools_.end();) {
             PoolGroup& group=it->second;
+            group.arena->setExternalSpawnScale(spawnScale);
             // No render/compute submission for completely empty groups.
             // Retire their GPU allocations after a short idle grace period,
             // avoiding perpetual memory reservation for one-shot bursts.
@@ -512,6 +529,7 @@ private:
     uint32_t totalPoolCapacity_=0;
     uint64_t nextPoolTicket_=0;
     render::float3 lastCameraEye_{};
+    SpectraFxGpuBudgetGovernor gpuGovernor_{};
     Stats stats_{};
 };
 
