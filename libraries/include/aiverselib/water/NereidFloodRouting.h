@@ -5,12 +5,15 @@
 // The native host seeds initial columns from actual NEREID water footprints,
 // maintains ground heights from authoritative TerraWeave, and owns tick order.
 #pragma once
-#include <aiverselib/water/NereidWater.h>
+#include <aiverselib/water/NereidFlowObstacles.h>
 #include "engine/sim/Simulation.h"
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <exception>
+#include <functional>
 #include <limits>
 #include <map>
 #include <stdexcept>
@@ -32,6 +35,7 @@ struct WaterFloodResource {
     int32_t gridCm=100;               // equal square cell size
     int64_t originXcm=0,originZcm=0;  // grid origin, includes negative world
     uint64_t revision=0;
+    uint64_t groundRevision=0;        // TerraWeave soil revision sampled by this grid
     uint32_t lastTick=UINT32_MAX;
     std::vector<WaterFloodCell> cells; // sorted strictly by x,z
 };
@@ -89,7 +93,7 @@ inline void io(Archive& a,WaterFloodCell& c){
 }
 inline void io(Archive& a,WaterFloodResource& r){
     a(r.version,r.gridCm,r.originXcm,r.originZcm,
-      r.revision,r.lastTick);
+      r.revision,r.groundRevision,r.lastTick);
     uint32_t n=a.count(r.cells.size(),33);
     if(!a.ok() || n>16384u){a.fail();return;}
     if(!a.writing())r.cells.assign(n,{});
@@ -114,6 +118,7 @@ inline WaterFloodTick stepNereidFlood(
        settings.fluxPermille>1000u ||
        settings.minHeadDifferenceCm<2 ||
        settings.minHeadDifferenceCm>1000 ||
+       tick==UINT32_MAX ||
        (r.lastTick!=UINT32_MAX && tick<=r.lastTick))
         throw std::invalid_argument("NEREID invalid/stale flood tick");
 
@@ -150,7 +155,8 @@ inline WaterFloodTick stepNereidFlood(
         // reverse the pressure gradient and produce artificial oscillations.
         const uint64_t gradient=uint64_t(difference/2);
         uint64_t potential=gradient*settings.fluxPermille*dtMs/1000000ull;
-        if(potential==0)potential=1; // centimetre-resolution minimum flux
+        if(potential==0 && settings.fluxPermille)
+            potential=1; // quantized minimum only when routing enabled
         const int64_t ox=r.originXcm+int64_t(a.x)*r.gridCm;
         const int64_t oz=r.originZcm+int64_t(a.z)*r.gridCm;
         const int64_t centerX=ox+(nx-a.x==1 ? r.gridCm : r.gridCm/2);
@@ -240,6 +246,11 @@ inline WaterSample applyNereidFloodSample(
     if(!flood || flood->cells.empty())return base;
     // validateNereidFlood is required at load/structural publication, NOT
     // for every water probe: the resource is immutable during the ECS read.
+    if(point.x.raw>std::numeric_limits<int64_t>::max()/100 ||
+       point.x.raw<std::numeric_limits<int64_t>::min()/100 ||
+       point.z.raw>std::numeric_limits<int64_t>::max()/100 ||
+       point.z.raw<std::numeric_limits<int64_t>::min()/100)
+        return base;
     const int64_t px=point.x.raw*100/Fixed::kOne;
     const int64_t pz=point.z.raw*100/Fixed::kOne;
     const int64_t gx=px-flood->originXcm,gz=pz-flood->originZcm;
