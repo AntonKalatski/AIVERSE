@@ -9,11 +9,19 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace aiverse::editor {
 
 class ViewportGpuRetirement {
+private:
+    struct Live {
+        const void* owner = nullptr;
+        std::string name;
+        int width = 0, height = 0;
+        gfx::TextureHandle color{}, depth{};
+    };
 public:
     struct Pending {
         gfx::TextureHandle handle{};
@@ -145,12 +153,6 @@ public:
         return s;
     }
 private:
-    struct Live {
-        const void* owner = nullptr;
-        std::string name;
-        int width = 0, height = 0;
-        gfx::TextureHandle color{}, depth{};
-    };
     std::vector<Live> live_;
     std::vector<Pending> pending_;
     uint64_t knownPendingBytes_ = 0;
