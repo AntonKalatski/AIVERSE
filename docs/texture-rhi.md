@@ -2581,3 +2581,43 @@ in the preceding user run. PR #21 should remain Draft until
 the other explicit GPU scenarios are verified. No production
 engine source modifications were needed for the reported PASS.
 
+
+### Stage 10BF — Metal GPU fixture phase timing (source only)
+
+Previously the user measured a **1.53 s CTest total** for the native
+`metal_texture_gpu` test and asked why. The wall-clock CTest time is
+**not** the duration of GPU texture uploads: it includes test process
+launch, `MTLCreateSystemDefaultDevice`, `CAMetalLayer`, AIVERSE
+`MetalDevice` construction, texture allocation and uploads, one or
+more queued command buffers, `beginFrame/endFrame`/drawable/semaphore
+overhead, asynchronous readback completion, CPU comparisons and sleeps.
+
+`tests/render/metal_texture_gpu.mm` now logs **measured milliseconds**
+for device/layer startup, Texture3D and each 2DArray/Cube/CubeArray
+create-and-upload segment, each group's readback submission, callback
+wait (includes frame loop and 10ms poll sleeps), the number of
+pumped frames and CPU comparison, and overall fixture runtime. It also
+requests `gfx::Device::timeGpuFrame(tag)` on the readback command buffer,
+then reports the backend's `GpuTiming.milliseconds` if valid.
+The optional GPU command interval measures the **whole readback
+command buffer**, not isolated blit bandwidth. If the GPU timestamp
+is missing, the test prints `unavailable` and does not invent a value.
+
+This stage adds instrumentation only and preserves all exact RGBA8
+GPU parity assertions; it does **not** assert a fragile latency
+threshold or run a GPU microbenchmark. Source commit:
+`50656c4bd120755e6fa14bf8d2774aeb77b7e752`.
+The previous 1.53 s user-run GPU acceptance **PASSED** on the older
+noninstrumented fixture. The new timing source has **not yet been
+compiled or run on macOS**. Actual timing breakdown is pending,
+not inferred from total CTest time.
+
+For a focused rerun in the isolated Mac Studio worktree:
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parallel 4
+ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
+```
+
