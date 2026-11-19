@@ -94,6 +94,8 @@ struct ComputeStats {
     uint32_t checkpointAdaptiveBackoffs=0, checkpointAdaptiveRecoveries=0;
     uint32_t selectivelyKilled=0;
     uint32_t killedSlotsReclaimed=0;
+    uint32_t gpuKillScatterDispatches=0;
+    size_t gpuKillIndexBytes=0;
     uint32_t gpuKillFencesPending=0; // host estimate, not GPU observed
     size_t checkpointBytesReturned=0; // valid callback payload bytes, not DMA profiling
     uint32_t gpuCompactDispatches = 0, gpuIndirectDraws = 0;
@@ -196,6 +198,7 @@ private:
     gfx::ShaderHandle vertexShader_;
     gfx::PipelineHandle pipeline_;
     gfx::BufferHandle states_, seeds_, slots_, vertices_, indices_, liveSlots_;
+    gfx::BufferHandle killSlots_; // 4 bytes per dead physical slot, scatter mode 6
     gfx::BufferHandle aliveCounter_, gpuDrawArgs_;
     gfx::BufferHandle seedProgramParams_, stateProgramParams_, gpuVmPayload_;
     gfx::BufferHandle graphSources_; // 4 uint32 lane selectors, compute slot 13
