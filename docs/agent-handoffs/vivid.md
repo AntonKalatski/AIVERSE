@@ -481,3 +481,8 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
   AIVERSE_VIVID_PREVIEW_PREFIX=/tmp/aiverse-vivid \
     ../AIVERSE-vivid/build/vivid/aiverse_vivid_renderer_preview
   ```
+
+### Stage 5D follow-up — explicit preview index bounds
+
+- Code commit `d6898b98d747fece18416995353b8eae1b84ec6a` updates `tests/vivid/renderer_preview.cpp`: guard `model.vertices.size()` against the GPU uint32 index limit, iterate vertices with `std::size_t` and convert to `uint32_t` only after the bounds check. This keeps synthetic morph target indices compatible with `SparseMorphLibrary` on both 32- and 64-bit builds, without narrowing warnings or changing engine code.
+- Tests after this fix: **NOT RUN**. Still need the user's real macOS GUI compile and colour/shadow/MotionWeave PPM captures before calling Stage 5D visually verified.
