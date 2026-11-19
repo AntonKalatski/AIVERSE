@@ -684,3 +684,12 @@ The VIVID branch now contains the full `feature/universal-ecs-animation-pipeline
 Creator teardown now synchronously drains its GPU actor and then releases MotionWeave ECS / AnimationGraph and copied pose owners **before** releasing the old head/hair Model resources, preventing stale borrowed pointers through the new animation lifetime contract. `HumanRigBinding::compose` now rejects any nonfinite input MotionWeave node-world matrix before modifying the last-good presentation pose. A negative regression source case was authored.
 
 **Validation status:** source committed, but merged-tree native build, CTest, GPU/Creator preview and retirement tests have NOT RUN. Full transactional replacement upload, render-thread retirement performance and animation epoch integration in shared non-Creator asset hosts remain further work. Full source SHAs, handoff and next actions: `docs/agent-handoffs/vivid.md` Stage 7J.
+
+
+## Stage 7K — two-phase Creator model and GPU morph publication (2026-11-20)
+
+VIVID Creator now stages its replacement character before tearing down the old one. All CPU validation, new `AnimationGraph` and MotionWeave `World`, head/groom GPU uploads and selected `GpuActorStream` or GLES `CpuActorStream` creation occur on local candidate state. Only a fully prepared candidate can pass the old-character retirement barrier and publish its Model, ECS animation ownership, facial actor and hair/scalp runtime into the live viewport.
+
+This fixes the earlier unsafe ordering where a new GPU buffer allocation could fail **after** the previous character was already destroyed. With an ordinary failed candidate upload and a working GPU idle barrier, the previous visible character is kept. Shutdown still detaches ECS animation owners before releasing their Model pointers.
+
+**Not production-ready yet:** the operation still uses a synchronous GPU-wide idle barrier at the commit boundary. If the GPU cannot confirm idle after a failure, the candidate's native resource owners are deliberately retained/leaked rather than risking premature GPU destruction; proper device-loss quarantine/recovery and nonblocking retirement remain future work. Authored DNA edits are not rolled back, only the last-good visible GPU character is protected. Source committed but **no integrated native build, CTest, GPU failure injection or Creator visual test was run**. Exact source SHA and next-agent handoff: `docs/agent-handoffs/vivid.md` Stage 7K.
