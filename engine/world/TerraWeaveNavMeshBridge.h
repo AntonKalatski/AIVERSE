@@ -6,6 +6,8 @@
 #include "engine/nav/NavMesh.h"
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
+#include <span>
 #include <functional>
 #include <limits>
 #include <stdexcept>
@@ -64,6 +66,15 @@ public:
                         EarthworksNavConfig config,Blocked blocked={})
         :earth_(earth),cfg_(config),blocked_(std::move(blocked)) {
         validateEarthworksNavConfig(cfg_);
+        const int64_t pad=earth_.spacingCm();
+        if(cfg_.originXcm<-kWorldLimitCm+pad ||
+           cfg_.originZcm<-kWorldLimitCm+pad ||
+           cfg_.originXcm>kWorldLimitCm-pad-
+               int64_t(cfg_.width)*cfg_.cellCm ||
+           cfg_.originZcm>kWorldLimitCm-pad-
+               int64_t(cfg_.depth)*cfg_.cellCm)
+            throw std::invalid_argument(
+                "TerraWeave navmesh grid too close to Earthworks world boundary");
         // Caller may provide a blocked callback for water, buildings and
         // caves. One column may contain no walkable span after digging.
     }
@@ -140,6 +151,10 @@ inline bool refreshEarthworksNav(nav::Mesh& mesh,
                                 const EarthworksNavSource& source,
                                 std::span<const RectCm> edits,
                                 std::string* error=nullptr){
+    if(!mesh.built()){
+        if(error)*error="TerraWeave navmesh must be built before incremental refresh";
+        return false;
+    }
     for(const auto& rect:edits)
         markEarthworksNavDirty(mesh,source,rect);
     return mesh.refresh(source,error);
