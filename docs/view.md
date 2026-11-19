@@ -2927,3 +2927,36 @@ ownership were added. See
 
 **NOT RUN:** CMake/native compiler, CTest, real GPU
 rendering, sanitizer or performance tests.
+
+## Stage 128 — opt-in owned native appearance batches
+
+`view::PinnedAppearanceBatch` now supports two complementary lifetime
+modes. Legacy `add(snapshot,world)` retains immutable appearance
+materials and AnimationGraph snapshots but borrows the raw Model
+from its native host. New `addOwned(snapshot,world,shared_ptr<const
+Model>)` additionally retains a **real strongly-owned CPU Model**
+whose pointer must exactly match the published snapshot.
+
+After optional `edit(index)` adds LODs or attachments, the host may call
+`pinRelatedModel(shared_ptr)` for each referenced Model. The batch
+deduplicates shared CPU model owners across actors. Call
+`missingModelPins`, `requireModelPins` or `validatedSpan()` to
+check all base/animation/LOD/attachment Model pointers are pinned.
+The additional `validatedSpan(device, gpuLifetime.lease())` overload
+verifies the host's current GPU Device epoch and owner thread, not
+GPU command completion. Use the same span for exactly one
+`View::update` and subsequent synchronous `View::submit`, then
+call `batch.clear()` after workers have joined and submission ended.
+
+**Critical:** CPU shared ownership does not make a Model's GPU vertex
+buffers/textures safe to destroy. GPU lifetime remains under the host's
+fenced Model retirement and Device owner. Native
+`ModelResourceCache` still owns `unique_ptr<Model>`; never fake
+ownership with a non-owning shared_ptr. Existing cache-backed hosts
+retain their explicit detach/evict/retire contract until owner-approved
+reader leases are implemented. No animation clocks or genre rules
+changed.
+
+**NOT RUN:** native build/CTest, GPU validation, screenshots,
+sanitizers, large crowds or memory benchmarks.
+[Stage 128 handoff](agent-handoffs/animation-stage128-native-model-lifetime-pins-2026-11-19.md).
