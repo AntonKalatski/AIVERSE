@@ -355,14 +355,23 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     // correctness by using CPU model submission for scenes that actually
     // contain virtualized materials. Once command records carry that
     // binding, GPU-driven VT draws can be enabled without a shader fork.
-    if (modelVirtualTextureResolver_) {
-        for (const auto& item : modelItems_) {
-            if (!item.inView || !item.model || !item.mat) continue;
-            ModelVirtualTextureBinding binding;
-            if (resolveModelVirtualTexture(*item.model,*item.mat,binding)) {
-                gpuModelCommandsReady_ = false;
-                break;
-            }
+    for (const auto& item : modelItems_) {
+        if (!item.inView || !item.model || !item.mat) continue;
+        // R8 cutouts require an additional per-material texture at slot 15.
+        // Existing GPU ICB draw records do not encode that resource either.
+        bool hasExternalCoverage = false;
+        if (item.mat->alpha == AlphaMode::Mask &&
+            item.mat->baseTex >= 0 &&
+            size_t(item.mat->baseTex) < item.model->images.size()) {
+            hasExternalCoverage = item.model->images[size_t(
+                item.mat->baseTex)].virtualAlphaMask.valid();
+        }
+        ModelVirtualTextureBinding binding;
+        if (hasExternalCoverage ||
+            (modelVirtualTextureResolver_ &&
+             resolveModelVirtualTexture(*item.model,*item.mat,binding))) {
+            gpuModelCommandsReady_ = false;
+            break;
         }
     }
     prepareOcclusion();
