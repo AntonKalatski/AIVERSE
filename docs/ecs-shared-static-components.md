@@ -243,6 +243,24 @@ ctest --test-dir build/ecs-shared-static --output-on-failure \
 ./build/ecs-shared-static/aiverse_ecs_shared_static_bench
 ```
 
+## Release COW validation follow-up — 2026-11-19
+
+On Mac Studio, the four requested COW/hierarchy test targets compiled and
+CTest reported **4/4 Passed** (1.94 sec total) after updating to
+`730d22cf8`. However, two of those targets
+(`ecs_cow_snapshot_test`, `ecs_cow_parallel_test`) used standard
+`assert` checks which `NDEBUG` removes in a Release build. AppleClang
+reported 5+3 unused-argument/variable warnings as evidence. The parallel
+test's `assert(exercise(workers)==expected)` also skipped executing
+the 1/3/7-worker cases entirely.
+
+This branch now replaces all **33** such checks with
+`AIVERSE_TEST_CHECK`, including the worker cases; code commits
+`f858af26` and `8b89d584`. **Re-run the two COW tests in Release**
+before claiming the new checks have passed. The two SceneHierarchy tests
+reported Passed without these warnings. The separate Shared/Static
+regression test already used AlwaysCheck and passed 1/1.
+
 ## Integration roadmap
 
 1. Compile and correct native test/benchmark, measure cache behavior on
