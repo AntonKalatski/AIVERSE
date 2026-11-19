@@ -6819,3 +6819,38 @@ budgets; multi-domain Terra atlases and full runtime
 tests. Safe existing CPU fallbacks remain for unsupported
 groups. The user requested feature completion first,
 tests later; do not mark tests passed.
+
+
+## Stage 10I — explicit feedback-domain filter (2026-11-19)
+
+**Source commit:** `b804e5edd7032eaed6860fec7c5333bc36e40fad`.
+**File:** `engine/render/TerraWeaveVirtualTextureFeedback.h`.
+**Branch:** `feature/texture-rhi-unification` (PR #21).
+
+Found a hard ABI constraint: `gfx::encodeVirtualTextureFeedback`
+stores tile X/Y, mip and layer in a 32-bit word, but no archive
+or domain ID. Consequently, mixing independent Terra/Horizon/Forest
+archives into one GPU readback would route otherwise valid page
+IDs to the wrong physical page streamer.
+
+Added `setFeedbackMaterialFilter(FeedbackMaterialFilter)` and
+`resolveFeedbackMaterialMapping`. The callback that the existing
+rigid/deformed feedback adapters receive now checks this filter
+*before* resolving the virtual mapping. The main color/material
+path still uses unfiltered `resolveMaterialMapping`, so all
+active domains may render normally in the same scene. Materials
+outside a selected feedback domain emit zero page IDs but still
+rasterize their depth in the feedback pass. The filter defaults
+to unrestricted for backwards-compatible single-domain usage
+and is cleared on bridge shutdown.
+
+Verification: inspected source shader codec and pass readback/
+file streamer contracts; source committed via GitHub. Native
+build, CTest, Metal/GLSL/Vulkan shader compilation and GPU
+tests NOT RUN (user requested features first).
+
+Next: add an independent archive-domain owner with one
+`VirtualTextureFeedbackPass` per domain, frame-budgeted
+round-robin capture and per-domain `updateStreaming`, while
+preserving ordinary shared Renderer3D color/ICB submissions.
+Never send decoded feedback to another domain's streamer.
