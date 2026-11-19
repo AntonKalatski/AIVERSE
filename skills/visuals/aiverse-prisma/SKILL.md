@@ -947,6 +947,58 @@ exact commit IDs, architecture and next work.
 Retain PR #26 Draft, do not merge into main
 without an explicit user request.
 
+## Stage 60 — preserve ordinary PRISMA when Shader Graph fails
+
+The `Prisma::resolve` final composite must NOT drop working
+Bloom, LUT, ColorGrade, Vignette, Grain and other fixed postFX
+merely because an optional authored Shader Graph fails shader
+compilation, lacks source textures or collides with GPU capabilities.
+
+The CPU fallback policy is now:
+(1) graph + optional Auto Exposure,
+(2) graph without AE,
+(3) **full fixed-effect mask without graph + AE**,
+(4) fixed effects without AE,
+(5) plain composite(0) only as last resort.
+
+Keep the fixed mask snapshot before attempting graph variants.
+Never blindly execute a graph whose image loader returned the
+valid `black_` fallback: verify that EACH authored input path
+has a truly valid uploaded `graphTextures_[path]` resource.
+Missing inputs skip the graph for this resolve while preserving
+the ordinary fixed postprocess chain. `graphTexture` now
+negative-caches failed GPU upload attempts as well as failed
+decode; `Prisma::setImageLoader()` is the existing fence-safe
+owner cache reset, not an automatic filesystem watcher.
+
+Recompute `PrismaCompositeTextureLayout::plan` using the
+actual FINAL selected pipeline, not the authored graph's
+texture count. Stage-55 four-texture graph exposure uses
+`TEX9`; a graphless AE fallback uses `TEX8`.
+Do NOT bind textures 5..8 if the selected composite has no
+graph; do not report graph execution merely because a fixed
+pipeline exists. The CPU-only
+`ViewEffectReport.shaderGraphFallback` flag and
+per-effect `ShaderGraph.reason` record the failure without
+forcing GPU resource creation from the read-only editor.
+The editor warns but reports individual fixed-effect
+`encoded` from the final mask.
+
+LUT decode, incorrect N²×N strip, and texture upload
+errors now populate `Prisma::lastError`, retaining the
+existing per-path failure cache and allowing other effects.
+Cache ownership, shader graph JSON schema, ECS, RHI,
+SpectraFX and manual EV paths are unchanged.
+
+Stage 60 verification: **33/33 source-only structural
+readback checks**, no CMake/C++/shader compilation,
+CTest, Metal/GL/Vulkan/GLES/WebGL GPU smoke, editor
+runtime, screenshots, pixel parity or CI. Do NOT claim
+hardware execution or production-ready correctness.
+Refer to `docs/handoffs/prisma-stage-60.md` for exact
+code commits, limitations, tests NOT RUN and next stage.
+Keep PR #26 Draft; do not merge main without approval.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
