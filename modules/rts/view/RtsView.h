@@ -171,6 +171,9 @@ public:
         size_t retiredModels=0,retirementBatches=0,retirementPeak=0;
         size_t retirementSoftLimit=0;
         uint64_t estimatedRetiredGpuBytes=0,estimatedRetirementByteLimit=0;
+        uint64_t residentModelKnownBytes=0,sharedTextureRgba8Equivalent=0;
+        size_t uniqueSharedTextures=0,compressedSharedTextures=0;
+        size_t sharedGeometryModels=0;
         uint64_t retirementTokenFailures=0,retirementFallbackFailures=0;
         bool publicationBackpressured=false;
     };
@@ -191,6 +194,13 @@ public:
         stats.estimatedRetiredGpuBytes=resources_.estimatedRetiredGpuBytes();
         stats.estimatedRetirementByteLimit=
             resources_.estimatedRetirementByteLimit();
+        const auto owner=resources_.gpuOwnerEstimate();
+        stats.residentModelKnownBytes=owner.residentModelDedicatedEstimate;
+        stats.sharedTextureRgba8Equivalent=
+            owner.sharedTextureRgba8Equivalent;
+        stats.uniqueSharedTextures=owner.uniqueSharedTextures;
+        stats.compressedSharedTextures=owner.compressedSharedTextures;
+        stats.sharedGeometryModels=owner.sharedGeometryResidentModels;
         stats.retirementTokenFailures=retired.tokenFailures;
         stats.retirementFallbackFailures=retired.idleFallbackFailures;
         stats.publicationBackpressured=resources_.publicationBackpressured();
