@@ -3637,6 +3637,112 @@ parity, temporal ghosting и performance.
 Следующему агенту читать
 `docs/handoffs/prisma-stage-61.md`.
 
+
+## Stage 62 — reactive mask на первом кадре, Camera Cut и resize
+
+С этого этапа `Renderer3D` разделяет два **независимых**
+presentation-производителя: (a) объектные velocity vectors,
+требующие предыдущей камеры и истории текущих/прошлых
+transform-ов, и (b) current-frame RGBA8 reactive coverage,
+которой **не нужна** предшествующая поза. Ранее весь reactive
+pass находился внутри `if (history.target.valid() &&
+history.depth.valid())`, а функция выходила с `return`
+на первом кадре, при camera cut и resize. Поэтому
+прозрачность воды, частиц, morph/skinned translucent объектов
+могла не покрываться reactive mask именно там,
+где temporal history недействительна.
+
+### Новая структура Renderer3D
+
+`renderObjectMotionVectors(PostProcess&)` продолжает вызываться
+на завершающем scene frame, до `Prisma::resolve`.
+В нём `velocityHistoryReady` определяется только по
+`previousCameraValid && history.valid && !resize`.
+При отсутствии предыдущих данных никакие ложные/нулевые
+object-motion velocity кадры **не отправляются** в Prisma.
+Текущие rigid/animated transform-позы собираются как прежде;
+после reactive-прохода они сохраняются для следующего
+кадра. Если viewport поменял размер, `target/depth/reactive`
+текстуры *все* помещаются в существующую GPU-fenced очередь
+через `queueObjectMotionTexture(...)`, а не уничтожаются
+синхронно. Это сохраняет Stage 54 ownership contract.
+
+Новый приватный метод
+`Renderer3D::renderCurrentFrameReactiveMask(PostProcess&,
+ObjectMotionHistory&, gfx::TextureHandle sceneDepth,int w,int h)`
+использует только **текущий** `viewProj_`, model poses,
+scene depth и готовые framebuffer размеры. Этот helper
+вызывается **после** условного object velocity прохода
+и не вложен в него. Он сам обеспечивает private depth
+attachment для reactive-only кадров (`Depth`) и
+при наличии нужной геометрии создаёт RGBA8 reactive target.
+Scene depth от `Prisma` передаётся как borrowed sampler
+и никогда не становится writable depth attachment.
+Отсутствие RGBA16F velocity не блокирует **helper на уровне
+Renderer3D**, если native post hook запросил такую
+reactive работу и предоставил scene depth; обычная
+Prisma HDR-политика по-прежнему сама решает, нужен
+ли ей MotionBlur/Temporal Resolve вообще.
+
+Рендер current coverage сохраняет прежние источники:
+rigid прозрачные модели и fading LOD, morph/skinned/baked
+translucent модели с current pose для обеих motion
+матриц, immediate water MeshVertex-геометрию,
+`motionReactiveDraws_` от частиц и custom native
+providers. Маска по-прежнему создаётся/clear-ится
+только на текущем кадре, blending объединяет coverage,
+передаётся в Prisma как
+`MotionTextureInput::declared(reactive,w,h,RGBA8)`.
+Варианты, где нет reactive geometry/callback или
+нет доступного depth/target/pipeline, не объявляются
+успешным reactive pass.
+
+### Раздельная статистика и диагностика
+
+`Renderer3D::ObjectMotionStats` теперь имеет:
+`velocitySeedOnly` — первый кадр / invalid/cut/resize,
+чтобы не выдавать pose initialization за GPU object
+velocity; и `reactiveSubmitted` — отдельный флаг
+**фактически закодированного** current-frame mask.
+Историческое `submitted` остаётся показателем
+object-velocity прохода, не reactive-only.
+
+Камера PRISMA хранит
+`ViewEffectReport.objectVelocityInputAccepted`
+и `reactiveWithoutObjectVelocity` с учётом отдельной
+`MotionTextureInput` проверки: сначала проверяются
+declared width/height/format, затем RHI `textureInfo`,
+если backend поддерживает introspection. Эти поля
+не доказывают содержимое пикселей GPU. Editor показывает
+`mask-only pass` для reactive coverage без валидной
+object velocity texture; отдельный статус MotionBlur
+reactive edge rejection продолжает зависеть от
+реально encoded blur и настроенного параметра.
+
+**Сохраняются без изменений:** стабильная идентичность
+per-view независимо от одинакового разрешения двух
+камер; `resetObjectMotionHistory(viewId)` и camera-cut
+epoch; GPU-fenced retirement; отсутствие ECS mutation;
+`Prisma::resolve` и HDR temporal history как
+единственного color history owner; HUD вне
+постобработки. Reactive mask не становится
+долгоживущим temporal input.
+
+**Фактически выполненные проверки:** readback 6
+исходников из подключённого GitHub,
+42/42 структурных source checks, статический
+баланс C++ brace scopes 2/2.
+**NOT RUN:** CMake/clang/Obj-C++, CTest, shader
+compilation, тесты first frame/cut/resize на реальных
+Metal/GL/GLES/Vulkan/WebGL, pixel capture,
+скриншоты reactive coverage, GPU fences,
+профилирование и CI. Реальные backend outcomes
+должны быть получены в общей фазе валидации,
+а не объявлены PASS по исходникам.
+
+Точные коммиты и следующая задача:
+`docs/handoffs/prisma-stage-62.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
