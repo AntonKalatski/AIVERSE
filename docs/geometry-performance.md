@@ -966,3 +966,38 @@ executed GPU draw cost, driver memory accounting or frame timing. No
 experimental feature is enabled globally. Source checks were performed
 but **native build, CTest, Metal/Vulkan real-GPU validation, screenshot
 parity and CPU/GPU A/B/A were NOT RUN**.
+
+### View-scoped shadow vs opaque indirect CPU upload deltas (Stage 29)
+
+`Renderer3D::renderModels` now samples the Stage 28 backend's
+`indirectBufferUpdateStats()` at entry and exit for **phase 0 sun
+shadow** and **phase 1 main-view opaque**. The renderer ignores
+reflections (`geometryMainView_ == false`), auxiliary model passes
+and phases 2–4 when attributing costs. If a new indirect command
+buffer is created inside a pass, its baseline is zero, so the first
+pass owns the backend's initial version allocations and
+creation-time CPU copies. An existing handle must remain identical
+across both samples; disappeared or unsupported handles produce no
+misleading delta.
+
+`gfx::bufferUpdateCounterDelta(before, after)` subtracts monotonic
+lifetime counters, rejects invalid/reversed snapshots and
+intentionally excludes point-in-time retained-memory capacities.
+`gfx::accumulateBufferUpdateCounters` combines deltas when a model
+pass repeats in one view. `ModelRenderStats::mdiBackendPassTransfers[2]`
+and `mdiBackendPassSamples[2]` reset automatically with the renderer's
+existing `modelStats_ = {}` at `beginScene()`. Editor → Scene →
+Batching → Instancing and indirect details → Backend transfers by
+Scene model pass reports actual backend CPU mapped/shadow memcpy bytes,
+memcmp/dirty-elision/preserved bytes, version/snapshot allocation and
+safe reuse counts and requested logical bytes for each of the two
+passes. It retains Stage 28's separate buffer-lifetime totals.
+
+This is **one beginScene/view's model-pass work**, not necessarily
+one whole GPU frame: Editor Scene/Game, secondary camera targets and
+multiple renderer calls can share a hardware frame. No GPU
+readback, completion fence wait, GPU bandwidth or FPS claim is
+involved. It excludes non-model uploads and ancillary passes rather
+than claiming to explain total GPU memory use. All flags and actual
+command-buffer behavior are unchanged. **Native build, CTest, Metal/
+Vulkan image validation and frame-time A/B/A were NOT RUN**.

@@ -715,6 +715,34 @@ private:
                 } else {
                     ImGui::TextDisabled("Backend indirect snapshot counters unavailable.");
                 }
+                if (ImGui::TreeNode("Backend transfers by Scene model pass")) {
+                    static constexpr const char* labels[] = {"Sun shadow", "Main opaque"};
+                    for (size_t phase = 0; phase < 2; ++phase) {
+                        const auto& delta = modelStats.mdiBackendPassTransfers[phase];
+                        if (!delta.available) {
+                            ImGui::TextDisabled("%s: no instrumented MDI activity", labels[phase]);
+                            continue;
+                        }
+                        ImGui::Text("%s (%llu sampled invocations): %llu updates / %.1f KiB requested",
+                            labels[phase],
+                            (unsigned long long)modelStats.mdiBackendPassSamples[phase],
+                            (unsigned long long)delta.updateCalls,
+                            double(delta.requestedBytes) / 1024.0);
+                        ImGui::Text("  CPU writes: %.1f KiB GPU-visible / %.1f KiB shadow",
+                            double(delta.mappedWriteBytes) / 1024.0,
+                            double(delta.cpuShadowWriteBytes) / 1024.0);
+                        ImGui::Text("  Compared / skipped / preserved: %.1f / %.1f / %.1f KiB",
+                            double(delta.comparedBytes) / 1024.0,
+                            double(delta.skippedWriteBytes) / 1024.0,
+                            double(delta.preservedBytes) / 1024.0);
+                        ImGui::Text("  Buffer allocations / safe reuses: %llu / %llu",
+                            (unsigned long long)delta.allocations,
+                            (unsigned long long)delta.reused);
+                    }
+                    ImGui::TextDisabled("Deltas for this beginScene/view, not per GPU frame.");
+                    ImGui::TextDisabled("Excludes reflection/auxiliary model passes and retained-memory gauges.");
+                    ImGui::TreePop();
+                }
                 const auto layoutCache = ed.renderer().indirectLayoutCacheStats();
                 ImGui::Text("MDI layout CPU cache: %zu entries / %.1f KiB retained",
                     layoutCache.entries, double(layoutCache.retainedBytes) / 1024.0);

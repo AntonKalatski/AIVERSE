@@ -1876,6 +1876,17 @@ void Renderer3D::prepareGpuModelDraws() {
 
 void Renderer3D::renderModels(int phase) {
     if (modelItems_.empty()) return;
+    // Read the same dynamic indirect-buffer handle at both boundaries.
+    // Reflection and other auxiliary view replays are intentionally excluded
+    // from the main-camera opaque metric; phases 2..4 are not shadow/opaque.
+    // A buffer first created *during* this pass has no previous counters,
+    // so its initial versions and CPU creation-time copies belong here.
+    const bool sampleMdiTransfers = !auxiliaryModelPass_ &&
+        (phase == 0 || (phase == 1 && geometryMainView_));
+    const gfx::BufferHandle transferHandleBefore = sampleMdiTransfers
+        ? indirectCommands_ : gfx::BufferHandle{};
+    const gfx::BufferUpdateStats transferBefore = sampleMdiTransfers
+        ? indirectBufferUpdateStats() : gfx::BufferUpdateStats{};
     // A renderModels invocation is one independent visibility/ordering epoch.
     // Reset the per-phase cache cursor, but retain validated layouts across frames.
     indirectLayoutCursor_[size_t(phase)] = 0;
@@ -2569,6 +2580,23 @@ void Renderer3D::renderModels(int phase) {
         submittedInstanced += j - i > 1 ? 1u : 0u;
         submittedItems += j - i;
         i = j;
+    }
+    if (sampleMdiTransfers) {
+        const size_t pass = size_t(phase); // only 0 (shadow) or 1 (main opaque)
+        const gfx::BufferUpdateStats transferAfter = indirectBufferUpdateStats();
+        // A replaced buffer cannot be compared with the previous handle's
+        // lifetime stats. No GPU readback is needed for this identity guard.
+        if ((!transferHandleBefore.valid() ||
+             transferHandleBefore == indirectCommands_) &&
+            transferAfter.available) {
+            const auto delta = gfx::bufferUpdateCounterDelta(
+                transferBefore, transferAfter);
+            if (delta.available) {
+                gfx::accumulateBufferUpdateCounters(
+                    modelStats_.mdiBackendPassTransfers[pass], delta);
+                ++modelStats_.mdiBackendPassSamples[pass];
+            }
+        }
     }
     if (traceModelPass) {
         struct Totals {

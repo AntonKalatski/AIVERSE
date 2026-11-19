@@ -169,6 +169,17 @@ and the MDI pipeline still validates full material and geometry state.
 The group-order scratch vector is reused and included in retained memory;
 `staticCrossModelRankedGroups` reports ranked groups, **not draw calls**.
 Do not cache these ranks across passes or change transparency ordering.
+ Stage 29 attributes backend indirect-buffer CPU operations to sun shadow
+ (`renderModels(0)`) and main-view opaque (`renderModels(1)`) via
+ pre/post monotonic-counter snapshots. Use `gfx::bufferUpdateCounterDelta`
+ and `accumulateBufferUpdateCounters` only for additive counters;
+ NEVER subtract or sum retained-capacity gauges. A buffer born during
+ the pass has a zero baseline; a changed/destroyed buffer handle is
+ not comparable. Exclude reflection/auxiliary model views and all other
+ phases from the two labelled counters. `ModelRenderStats` resets every
+ `beginScene`; these are per-view scene model-pass deltas, **not**
+ whole GPU frame, GPU execution, VRAM residency or FPS. Keep Studio
+ diagnostics read-only and separate from real draw submissions.
  Stage 28 adds an optional read-only `gfx::Device::bufferUpdateStats(BufferHandle)`
  per-buffer diagnostic for Metal/Vulkan dynamic indexed indirect buffers.
  It accumulates actual backend CPU memcpy/memcmp, skipped equal spans,

@@ -100,6 +100,55 @@ struct BufferUpdateStats {
     size_t retainedCpuShadowBytes = 0;
 };
 
+// Compute only monotonic lifetime-counter deltas. Retained capacities are
+// point-in-time gauges, not additive and deliberately remain zero here.
+// An unsupported backend, destroyed handle or counter reset is unavailable.
+inline BufferUpdateStats bufferUpdateCounterDelta(
+    const BufferUpdateStats& before, const BufferUpdateStats& after) {
+    if (!after.available) return {};
+    const BufferUpdateStats empty{};
+    const BufferUpdateStats& previous = before.available ? before : empty;
+    if (after.updateCalls < previous.updateCalls ||
+        after.requestedBytes < previous.requestedBytes ||
+        after.mappedWriteBytes < previous.mappedWriteBytes ||
+        after.cpuShadowWriteBytes < previous.cpuShadowWriteBytes ||
+        after.comparedBytes < previous.comparedBytes ||
+        after.skippedWriteBytes < previous.skippedWriteBytes ||
+        after.preservedBytes < previous.preservedBytes ||
+        after.allocations < previous.allocations ||
+        after.reused < previous.reused) return {};
+    BufferUpdateStats delta{};
+    delta.available = true;
+    delta.updateCalls = after.updateCalls - previous.updateCalls;
+    delta.requestedBytes = after.requestedBytes - previous.requestedBytes;
+    delta.mappedWriteBytes = after.mappedWriteBytes - previous.mappedWriteBytes;
+    delta.cpuShadowWriteBytes = after.cpuShadowWriteBytes - previous.cpuShadowWriteBytes;
+    delta.comparedBytes = after.comparedBytes - previous.comparedBytes;
+    delta.skippedWriteBytes = after.skippedWriteBytes - previous.skippedWriteBytes;
+    delta.preservedBytes = after.preservedBytes - previous.preservedBytes;
+    delta.allocations = after.allocations - previous.allocations;
+    delta.reused = after.reused - previous.reused;
+    return delta;
+}
+
+// Sum deltas from repeated renderModels invocations for a single beginScene.
+// Do not sum retainedBufferBytes/retainedCpuShadowBytes or reinterpret the
+// counters as asynchronous GPU measurements.
+inline void accumulateBufferUpdateCounters(BufferUpdateStats& total,
+                                           const BufferUpdateStats& delta) {
+    if (!delta.available) return;
+    total.available = true;
+    total.updateCalls += delta.updateCalls;
+    total.requestedBytes += delta.requestedBytes;
+    total.mappedWriteBytes += delta.mappedWriteBytes;
+    total.cpuShadowWriteBytes += delta.cpuShadowWriteBytes;
+    total.comparedBytes += delta.comparedBytes;
+    total.skippedWriteBytes += delta.skippedWriteBytes;
+    total.preservedBytes += delta.preservedBytes;
+    total.allocations += delta.allocations;
+    total.reused += delta.reused;
+}
+
 struct TextureDesc {
     int width = 0, height = 0;
     PixelFormat format = PixelFormat::RGBA8;

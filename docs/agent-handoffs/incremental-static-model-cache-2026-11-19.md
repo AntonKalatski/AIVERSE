@@ -882,3 +882,29 @@ Read source from the GitHub connector, confirmed head/main ancestry and applied 
 ### Exact next action
 
 Feature-first option: add per-view **delta snapshots** of these cumulative counters for easier comparison between shadow and opaque phases, but only by sampling at explicit pass boundaries and never pretending per-buffer lifetime allocations measure instantaneous VRAM. Then reconcile stale Stage 10/11/13 test fixtures, add CPU policy tests for upload stats, run real backend correctness and fixed-camera A/B/A before merge.
+
+---
+
+## Stage 29 — scene view shadow/opaque CPU indirect transfer attribution (2026-11-19)
+
+**Repository/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34, unmerged. At beginning `main=9ee6ff6fbf390bd45363bc92c838f492dfe92eee`, feature `67b08ec594c6ce7a9a5d18d80a35ee62adb613b7`, and `main...feature behind=0`. `main` already belongs to the branch history; no merge needed. **User priority:** continue features, tests later.
+
+### API, architecture, files changed
+
+- `engine/gfx/Gfx.h`: two read-only helpers `gfx::bufferUpdateCounterDelta(before,after)` and `gfx::accumulateBufferUpdateCounters(total,delta)`, working on the existing `BufferUpdateStats` Stage 28 data. Compute only additive monotonic lifetime counters (updates, logical requested bytes, mapped/shadow memcpy, memcmp bytes, skipped/preserved copies, new allocations and safe reuse counts). A missing/incompatible/reset snapshot returns `available=false`. Retained allocation capacities remain zero in deltas and are never summed. No new virtual RHI calls or backend behavior.
+- `engine/render/Renderer3D.h`: `ModelRenderStats::mdiBackendPassTransfers` (array of two additive `BufferUpdateStats` deltas) and `mdiBackendPassSamples` (number of sampled invocations) are reset with normal `modelStats_={}` in `beginScene`. Index 0 is sun-shadow `renderModels(0)`, index 1 is the main-view opaque `renderModels(1)`.
+- `engine/render/Renderer3DModels.cpp`: samples `indirectBufferUpdateStats()` directly at model-pass entry and exit. Handles absent at entry use zero baseline (first-pass buffer allocation and initial upload are attributed to that pass); a prior valid handle must match the exit handle, otherwise no delta is emitted. Only normal shadow or main-view opaque passes are sampled; reflection/auxiliary and other phases are excluded. Repeated qualifying renderModels invocations in the same beginScene accumulate in the corresponding phase total. This adds no GPU readback or resource mutation.
+- `apps/editor/windows/SceneWindow.cpp`: nested `Backend transfers by Scene model pass` panel inside Scene → Batching → Instancing and indirect details. For sun shadow and main opaque it shows per-scene-backend update calls, requested bytes, actual mapped/shadow CPU memcpy bytes, memcmp/skipped/preserved copy bytes, new snapshot/version allocations and safe reuses. Stage 28 lifetime counters remain separately visible.
+- `docs/geometry-performance.md`, `AGENTS.md`, and this stage handoff document scope, safety and pending work.
+
+### Lifetime, correctness and definitions
+
+These are deltas for **one `Renderer3D::beginScene` view submission**, not necessarily one hardware GPU frame. Multiple Scene/Game viewports or rerenders may share a GPU frame, and a single scene may render more than one phase call. The helper guards against lifetime counters decreasing and does not treat point-in-time retained resource capacity as additive. The initial dynamic indirect buffer creation may initialize multiple frame-slot buffers, so its mapped bytes and allocation count appear only with the *first* sampled model pass. We report only backend-instrumented **CPU** operations on `indirectCommands_`, not GPU execution time, GPU-driver VRAM residency, non-model renderers or actual PCIe bandwidth. No shader, ECS, per-material grouping, command encoding, GPU fence, RHI resource lifetime or genre behavior changes.
+
+### Verification actually performed
+
+Connected GitHub inspection confirmed single `renderModels` outer function, `beginScene` stats reset, phase-0 sun shadow and phase-1 main opaque calls, reflection main-view flag and Stage 28 per-handle backend instrumentation. Replacements were exact one-match source updates. **Native CMake: NOT RUN. CTest: NOT RUN. Metal GPU raster and Xcode validation: NOT RUN. Vulkan runtime: NOT RUN. Fixed-camera CPU/GPU A/B/A: NOT RUN.** No compilation correctness or performance gain is claimed. Leave PR Draft and all experimental modes off by default.
+
+### Next agent action
+
+Feature-first: optionally add per-phase CPU profiling for command selection/packing versus backend mapped copies to pinpoint the remaining bottleneck, keeping cheap counters and preserving semantics. When feature work ends, update old Stage 10/11/13 policy fixtures, add CPU-only monotonic delta/unsupported/reset/first-allocation tests, run Metal and Vulkan shadow/opaque raster comparisons, frame-slot reuse/stress tests, and fixed-city CPU/GPU A/B/A before enabling/merging.

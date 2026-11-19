@@ -6,6 +6,7 @@
 //         the main pass is left open so the caller can draw UI, then calls device.endPass()]
 #pragma once
 #include "Geometry.h"
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <string>
@@ -218,6 +219,13 @@ struct ModelRenderStats {
     // snapshot/dirty policies may avoid CPU copies; not GPU execution bytes.
     uint64_t mdiIndirectCommandBytes = 0;
     uint64_t mdiIndirectPrefixOverwrites = 0;
+    // Backend-observed CPU operations taken before/after renderModels(0)
+    // sun-shadow and the main-view renderModels(1) opaque pass. Aggregated
+    // within one beginScene; reset with this ModelRenderStats struct.
+    // These are deltas of monotonic counters, not GPU bytes/time. All other
+    // model phases and reflection/auxiliary views are excluded.
+    std::array<gfx::BufferUpdateStats, 2> mdiBackendPassTransfers{};
+    std::array<uint64_t, 2> mdiBackendPassSamples{};
     // CPU MDI groups spanning at least two different Model instances
     // using the SAME pooled vertex/index arena, after independent LOD and
     // per-view culling. These are successful submissions, not candidates.
