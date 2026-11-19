@@ -865,6 +865,94 @@ or CTest were run at the user's request. The new GPU passes and
 lifetime APIs remain opt-in and are not proven production-ready.
 See `docs/handoffs/prisma-stage-29.md`.
 
+
+## Stage 30 — animated reactive coverage, extensible water/particle masks, LOD fallback and velocity dilation
+
+The existing experimental `motionBlur` chain now supports animated,
+current-frame reactive coverage for translucent skinned, morph and
+baked-clip `ModelDraw` geometry. These **reactive** passes do not
+invent previous animation poses or feed object motion velocity: they
+evaluate the *current* GPU-deformed vertex position using the same
+vertex path as the Stage 27/29 motion shaders, sample the read-only
+scene depth for visibility, and mark covered pixels as reactive (R=1).
+The animated Metal shaders reuse the established skinned/baked vertex
+shader source while substituting a coverage-only fragment. This handles
+baked+morph current-pose silhouettes, but does **not** reproduce
+per-pixel transparent material alpha, ShaderGraph vertex displacement,
+screen-space water, or particles automatically. These may be more
+accurately supplied by the owning renderer.
+
+### Reactive coverage extension for all renderers
+
+`Renderer3D::addMotionReactiveDraw(fn)` registers a presentation-only,
+current-scene callback with signature
+
+```cpp
+void(gfx::Device& device, gfx::TextureHandle sceneDepth,
+     int width, int height)
+```
+
+Register **after** `beginScene()` and before `resolvePrisma()` (typically
+after the main scene/color pass has been submitted); callback registration
+is cleared automatically after the current scene's resolve. The
+callback is invoked **inside an already open RGBA8 reactive render
+pass** with a separate scratch depth target; it must never call
+`beginPass/endPass`. The provider binds its own shader, geometry,
+texture/constant state and writes red channel R in [0,1] (0 = no
+reaction, 1 = suppress blur according to the configured strength).
+Use coverage-union-friendly blending, such as
+`gfx::BlendMode::Screen`, so several water/particle/object providers
+combine rather than erase one another. The current sceneDepth handle
+may only be sampled: never rebind that texture as a writable depth
+attachment. The provider must keep any borrowed buffers/textures valid
+through the callback and cannot modify gameplay ECS state.
+
+The generic callback is available for rendering engines and projects
+implementing water, particles, weather or custom presentation. Stage 30
+does **not** automatically instrument existing water/VFX packages;
+those owners must register their respective reactive render callbacks
+to render the correct coverage with their own material/geometry
+semantics. No callbacks are invoked unless HDR MotionBlur is active and
+a valid camera history exists; registration by itself cannot force the
+postprocessing chain to run.
+
+Built-in reactive pipelines now use Screen blending for accumulation
+of multiple overlapping masks. The rigid fallback also reproduces
+the pixel-dither coverage rule of `ModelShaders` for dithered LOD
+crossfades: these pixels mark themselves reactive rather than
+incorrectly receiving normal rigid-object velocities. This is
+coverage-aware blur suppression, **not** full motion-vector
+reconstruction across LOD changes.
+
+### Depth-matched velocity dilation
+
+The new `motionBlur.velocityDilation` parameter (default 1.0,
+range 0..2, 0 disables) samples four neighbouring velocity values at
+the requested radius, selecting a stronger velocity only when its
+device-depth closely matches the center pixel. This helps preserve
+motion around silhouettes without importing motion from clearly
+different depths. It is a local approximate depth check (hardware
+depth units, not metres) and costs up to four additional velocity and
+depth reads per blurred pixel. The cost estimator includes this
+additional work when enabled.
+
+Example:
+```json
+{"type":"motionBlur","intensity":0.65,"maxPixels":20,
+ "samples":8,"depthThreshold":0.012,"reactiveStrength":0.85,
+ "velocityDilation":1}
+```
+
+All additions use the existing `AIVERSE_PRISMA_MOTION_BLUR=1` opt-in
+flag, HDR RGBA16F and appropriate quality tier. Reactive mask
+callbacks are a `Renderer3D` presentation extension, independent of
+FPS, RTS, water or SpectraFX ownership.
+
+**NOT RUN:** CMake/native C++ compilation, CTest, Metal/GLES/GL shader
+compilation, screenshots, memory/performance profiling or CI, per
+the user's features-first instruction. No hardware parity or shipping
+readiness is claimed. See `docs/handoffs/prisma-stage-30.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
