@@ -2453,3 +2453,192 @@ hardware-validation gates. The public system documentation was
 updated in `docs/strata.md` commit
 `b4d2ebb8f666576b666a328078aa4b150608ee0b`.
 All source changes remain **uncompiled/unexecuted** at this stage.
+
+
+---
+
+## Stage 15.4 — multi-world GPU/CPU index budgets, shared disk IO and optional CPU index release (2026-11-20)
+
+**Branch:** `feature/strata-virtual-geometry`; no merge to `main`.
+**Evidence:** changes below are committed source and authored regression fixtures;
+**NO native compile, CTest, GPU raster run or performance benchmark was
+performed** in Stage 15.4. Do not claim full VRAM/in-flight global
+budgeting or production readiness from the authored code.
+
+### Architecture and implemented APIs
+
+1. **Device-wide index allocation ledger**:
+   `engine/render/StrataStreamingCoordinator.h/.cpp` exposes
+   `configureDeviceIndexBudget(device,limitBytes)`,
+   `reserveDeviceIndexBytes(device,bytes,token)`,
+   `releaseDeviceIndexBytes(device,token)`,
+   `deviceIndexBudgetStats(device)` and
+   `clearIdleDeviceIndexBudget(device)`. Tokens are globally
+   monotonically assigned, so a stale duplicate release cannot free a
+   later lease after an earlier world's teardown. The ledger is keyed
+   by a borrowed `gfx::Device*` and protected by a mutex. All
+   GeometryScenes on the same Device count the **full admitted Strata
+   index capacity** before allocating source GPU sidecars. A rejected
+   lease or incompatible concurrently-active budget leaves that source
+   on its original Legacy draw route. On scene shutdown, portable
+   sources destroy index resources first; then the scene releases its
+   tokens, and the last idle device state is discarded. Independent
+   devices have separate caps. **Not included:** source Model VB/IB,
+   transient backend copies, graphics-driver memory allocations or
+   frames that still use retired buffers. This is a logical reserved
+   index-arena cap, not a physical VRAM hard ceiling.
+2. **Process-wide bounded shared async archive I/O**:
+   the same `StrataStreamingCoordinator` owns a configurable
+   `SharedDiskIo` executor, default **2 worker threads**, maximum
+   8 and bounded 2,048 globally enqueued jobs. Default total
+   verified ready-page CPU cache: **64 MiB**; configurable before the
+   first archive dispatch with
+   `configureSharedDiskIo(workers, readyBytes)`.
+   `sharedDiskIoStats()` exposes live workers/queued/active jobs and
+   reserved ready bytes. `StrataDiskPages.cpp` no longer creates
+   a native thread per source. Each archive has **at most one scheduled
+   shared job**: work is rotated through the global queue, while each
+   archive retains its own priority/demand queue and bounded cache.
+   Verified page storage acquires a shared ready-byte reservation;
+   consume, view-change pruning or archive close returns the bytes.
+   A source whose own CPU-ready cache is full stops scheduling until
+   capacity returns instead of blocking all workers. A worker blocked
+   on the *global* quota is woken by release or archive cancellation.
+   Jobs own a `shared_ptr<State>`, not a raw DiskIndexPages or
+   ModelAsset pointer; shutdown marks cancellation, discards ready
+   pages, wakes waiting workers and immediately returns. A late job
+   cannot publish into an unloaded source. Emscripten keeps its
+   explicit no-native-I/O fallback.
+   Global ready bytes are **resident verified payload storage only**;
+   transient copies returned by `ready()` and internal file-read
+   buffers are not counted in that shared cap.
+3. **Device-wide per-frame checked GPU page transfers**:
+   `configureDeviceFrameUploadBudget(device,bytes)`,
+   `deviceFrameUploadAllowance(device,frameSerial)`, and
+   `accountDeviceFrameUpload(device,frameSerial,checkedBytes)`.
+   All GeometryScenes on the same GPU Device consume one allowance
+   for each nonzero RHI frame serial. The second world opening with
+   the same cap **must not reset** the in-progress frame. Conflicting
+   nonzero budgets are rejected while active leases exist; if the
+   device cannot report a serial (0), further incremental promotions
+   are deferred conservatively. The pre-existing per-source and
+   per-scene caps still apply as additional minima. Accounting
+   includes successful checked writes even when later writes in
+   the sibling group fail. Root uploads during scene initialization,
+   immutable GLES fallback, implicit Vulkan version/shadow copies and
+   filesystem bytes are NOT part of this GPU-write governor.
+4. **Opt-in duplicate CPU index payload release**:
+   `StrataBuilder.h` records `Asset::archivedIndexCount` and
+   `logicalIndexCount()` and can release its `std::vector<uint32_t>`
+   with `discardCpuIndexPayload()` while retaining immutable
+   hierarchy/node ranges. `StrataView.cpp` now validates against
+   logical length, so CPU LOD view planning remains usable with
+   disk-resident indices. `SceneStaging::discardArchivedCpuIndices`
+   is called by `GeometryScene` ONLY after a full original source
+   fingerprint check and complete pinned GPU root upload, only when
+   `setStrataDropArchivedCpuIndicesEnabled(true)` is configured before
+   scene load, only for Metal/Vulkan disk-backed incremental sources,
+   and only while all GPU metadata/diagnostic staging/culling/preview
+   switches are off. Normal Legacy and source Model VB/IB/CPU data
+   are untouched; GLES3/GL33 never activate this discard.
+   `GeometryScene::Stats` reports the released staged STRATA CPU
+   index payload bytes and sources. Since archive verification needs
+   original indices at load, this is **steady-state** memory saving,
+   not import-time peak memory saving. Other STRATA consumers that
+   require raw `Asset::indices` must retain data and/or use the
+   explicit diagnostic switches. Archive writer runs *before*
+   the runtime staged payload is discarded.
+5. **Genre-neutral GeometryScene configuration/telemetry**:
+   new setters `setStrataGlobalIndexBudgetBytes(bytes)`,
+   `setStrataGlobalFrameUploadBudgetBytes(bytes)`,
+   `setStrataDropArchivedCpuIndicesEnabled(bool)`.
+   Zero device cap inherits an active policy; all setters apply
+   before load. Existing per-source/scene budgets, incremental
+   streaming and disk directory must also be enabled for archived
+   CPU payload release. Stats now include cross-world reserved bytes
+   / active leases / declined sources, shared IO worker and ready-cache
+   pressure, per-frame uploaded/remaining bytes and CPU index bytes
+   freed. All existing STRATA/Legacy draw routing remains exclusively
+   owned by Renderer3D, with no FPS/RTS dependencies.
+
+### Exact changed paths / commit checkpoints
+
+- `engine/render/StrataStreamingCoordinator.h`:
+  `539ebd9f141a2fed3690710374b01c761a22b40b`,
+  `a364d63cfed1b96758aa1dd743f1f9bad5a23b2c`,
+  `a9516efc8b051e899aba5736fd26748c173e0e3b`.
+- `engine/render/StrataStreamingCoordinator.cpp`:
+  `651b37818386dd863a8801e105624bc59b7a931b`,
+  `789d01e868f673b45da8f17fb76f93b63d145e96`,
+  `8d97deefea6e2cc3104ba75645478db73d581eca`,
+  `1397e0dcaca243338caad2faa9c7a67182a775e6`,
+  `b0fc3705e0369f8f47d8614a845f1274e413833d`.
+- `engine/render/StrataDiskPages.h`: `cc914cf14c005e4c61aa3490d1423b1dd1475635`.
+- `engine/render/StrataDiskPages.cpp`:
+  `e507f416de15bc1b3518b66093687e2104c1daa3`,
+  `6376f3758f14c61c2828236cf81da0ac4e2352bd`,
+  `0c7c2b7c00084acd17f67f094e195c10436be7b5`.
+- `engine/render/GeometryScene.h`:
+  `a750836f4a471290530f3793aa775b92f3702331`,
+  `2e71d838bd7333b6c726d3906b346f0610910c24`,
+  `a5d439e5e13f835efd2afa750d21d7089aea600b`,
+  `b519deada418f6aed18768e8df55c9612f181bd2`.
+- `engine/render/GeometryScene.cpp`:
+  `87ab221adf5f65aa26d854d61bc27026012f5a04`,
+  `8f0f7db507f2ad3467a4d3f81f6b2a3f0c96960e`,
+  `437e2578e28c2f32c5c2c07f6cebb06cd7706268`,
+  `63b50d0663a9f689da80b85687c6b45f4d406dd8`,
+  `c5ec323f4fe77bfab2966b5dfa95811f7710402e`.
+- `engine/render/StrataBuilder.h` `264125905be4ba1e80c774d592b4d7ada42f9b22`;
+  `StrataView.cpp` `9c306240edc4694beb77017af7cd98e3376b2828`.
+- `engine/render/StrataModelAdapter.h/.cpp`:
+  `ce24a3bdbec2fcae51b78a2b817a3a43c80b3dd1`,
+  `e69218ae55ab43db3aee4ea97fbbd0de205f0dd6`.
+- `CMakeLists.txt`:
+  `9b72c514e15c2ca7584fb7b33e0c203df82dd64b`,
+  `a91b3357837090e24a7094238b0e5721de80da39`.
+- New `tests/render/strata_streaming_coordinator.cpp`:
+  `979ebf0415f896ff908e7994ea2dc751d9f81e1d`,
+  `af85c31fa64de8898f574d0d7a81d1c9d78578ac`.
+- Existing tests extended: `strata_view.cpp` `e977ee5533cb3fbc88420ea6edbe2f6549348a9e`;
+  `strata_model_adapter.cpp` `e18b69cef160d74946bf86b5f510510255c20440`;
+  `strata_disk_pages.cpp` `1cbbdbf447f3d93fd5d74ca70e4e5b3b0255c307`.
+
+### Authored final-run verification (NONE executed)
+
+`aiverse_strata_streaming_coordinator_tests` verifies two worlds
+sharing one GPU budget, admission/decline/release/double-release
+safety, independent Device budgets, conflict detection, per-frame
+upload exhaustion/reset, and 24 simultaneous archive instances
+served by just 2 global IO workers with released global CPU-ready
+cache accounting. Extended `strata_view` and
+`strata_model_adapter` regression cases check that the archived CPU
+index vector can be released without invalidating node-range
+planning. `strata_disk_pages` additionally verifies that a copied
+runtime ModelAsset can drop its CPU index payload while actual
+background page reads still feed GPU residency and view planning.
+The existing Strata builder, portable, Metal reflection and
+Vulkan/GLES3 fallback targets remain unrun on this combined branch.
+
+### Stage 15.4 completion tracking
+
+| Component | Code | Hardware/test evidence |
+| --- | --- | --- |
+| Shared bounded IO worker pool | Implemented | NOT COMPILED / NOT RUN |
+| Shared CPU ready-cache budget | Implemented (excludes ephemeral read copies) | NOT RUN |
+| GPU index logical reservation across worlds on one Device | Implemented | NOT RUN |
+| Checked GPU upload cap across worlds per RHI frame | Implemented | NOT RUN |
+| Optional archived staged CPU index payload release | Implemented | NOT RUN |
+| Full original Model CPU/index data release | NOT DONE (Legacy retained) | N/A |
+| Exact physical VRAM incl. in-flight backend buffers | NOT DONE | N/A |
+| Cross-device / entire physical GPU budget | NOT DONE | N/A |
+| Archive IO dedupe between models/worlds sharing identical content | NOT DONE | N/A |
+| Vulkan compute selection / crack-free lossy LOD | NOT DONE | N/A |
+
+**Next bounded step:** verify the new CMake targets and focused CPU tests
+in the owner's *final* clean isolated build, then integrate main
+without clobbering other agents and run real Metal/Vulkan/GLES3 parity.
+Further functionality: physical backend allocation telemetry including
+in-flight bytes, cross-world page cache deduplication by archive
+fingerprint, and GPU-driven Vulkan Stage 16. Record exact source
+SHA and real results; do not label any work as passed until then.
