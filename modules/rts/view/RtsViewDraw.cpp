@@ -213,7 +213,15 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
     }
     if (d.tint.w <= 0.0f && !(d.flags & kDrawKeepShadow)) return;   // fully transparent (view.entity_fx opacity 0): nothing to draw, no anchors
     // immobile, finished, plain placement: scenery the light baker captures / lightmaps (agent-lightbake)
-    if ((t.structure || t.speed <= Fixed{}) && !L.air && !st.dead && o.build >= 1 && !hasFx && !tintOverride && !placement) d.flags |= kDrawStatic;
+    if ((t.structure || t.speed <= Fixed{}) && !L.air && !st.dead && o.build >= 1 && !hasFx && !tintOverride && !placement) {
+        d.flags |= kDrawStatic;
+        // Host adapter only: eligible immutable presentation is permitted to
+        // use the renderer's opt-in revisioned CPU packet cache. ModelDraw
+        // appearance fields and resolved material GPU state are compared on
+        // every hit; LOD, animated or mutable-node models fall back safely.
+        // The renderer itself never depends on RTS types or game rules.
+        d.staticPacketRevision = 1;
+    }
     r.drawModel(d);
 
     // ---- attachments on sockets (weapons, cargo, banners)
