@@ -1404,3 +1404,34 @@ failure and currently uploads the active prefix of snapshots each dispatch.
 Do not claim GPU/CPU parity, performance or error-free execution. No native
 compile, Metal device test or CTest was performed, in accordance with the user's
 instruction to defer testing until feature work is complete.
+
+
+## Stage 25 — GPU VM physical slot lifecycle and incremental snapshot upload (experimental)
+
+The public `gpu_program::ParticleSlots` pairs a renderer-owned physical slot
+with a generation-safe `ParticleId` and `SourceParameters` snapshot. The
+host calls `acquire(sourceId)` before uploading a GPU spawn seed,
+`markSpawnSubmitted(particleId)` only after successful Spawn VM submission,
+and `release(particleId)` **only after GPU work using the old physical slot
+has completed**. `needsSpawn`, `alive`, `physicalPrefix` and `activeCount`
+assist generic native hosts without an FPS/RTS coupling. The adapter does not
+schedule rendering or advance game simulation.
+
+Stage 25 also marks newborn snapshots with `reserved=1`; the experimental
+Metal kernel executes the Spawn VM only on these pending snapshots and skips
+older particles for that stage. The host acknowledges submission to clear the
+pending flag. `Update` remains applicable to all active particles. This
+corrects the previous risk of repeated Spawn execution on all live particles.
+
+`MetalVmPass::dispatchSources` caches its own previous per-particle values and
+uploads only changed contiguous ranges, instead of uploading the entire active
+prefix every call. On Metal, the RHI enqueues storage-buffer blits in command
+order before a compute encoder. `readErrors(uint32_t&)` provides a strictly
+optional RHI diagnostic readback; a failed read is **not** equivalent to zero
+VM errors. Readbacks must be done between completed frames, not in an active
+compute/render encoder. GPU error handling/fallback is not yet automatic.
+
+**Boundary:** there is still no automatic `GraphRuntime` / `ComputeParticles`
+VM integration, no fully GPU-owned multi-source allocator, no proven shader
+compilation, no GPU/CPU numerical parity and no lossless device-failure migration.
+Tests and native builds remain deferred by user instruction.
