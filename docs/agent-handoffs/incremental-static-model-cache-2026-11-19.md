@@ -2159,3 +2159,35 @@ AIVERSE_BATCH_CPU_TIMING=1 AIVERSE_BATCH_AUTO=1 \
 echo "AUTO learning exit=$?"
 ```
 Expect screenshot parity and direct fallback on 32-command fixture; 33 CPU invariants (30 older + 3 added). This small fixture does **not** train buckets >=64, so `AUTO CPU learning` lines may be absent. A dedicated medium/high workload test is the next implementation, followed by repeated A/B/A crossover with actual GPU timestamps. Keep Draft and opt-in default-off.
+
+
+---
+
+## Stage 69 — owner Mac Studio validates Stage 68 CPU learning invariants and small Direct fallback (2026-11-19)
+
+**Branch:** `perf/incremental-static-model-cache`; Draft PR #34. **Tested implementation:** Stage 68, through commit `36fc3a1f6c0db55df41855d72045652bbf37ea56`. Documentation-only stage: production code and test fixture unchanged. Evidence below is owner-provided actual Mac Studio terminal output, not executed by this assistant.
+
+```text
+material palette CPU checks=33 result=passed
+batch=0 shadow=32 opaque=32 total=66 error=
+CPU render benchmark direct: samples=6 median_ms=0.1599 p95_ms=0.1707 min_ms=0.1411 max_ms=0.1707
+CPU render benchmark batched: samples=6 median_ms=0.1476 p95_ms=0.1740 min_ms=0.1327 max_ms=0.1740
+CPU render benchmark: synchronous renderer.render() only; not GPU time or FPS
+batch=1 shadow=32 opaque=32 total=66 error=
+GPU-encoded ICB: supported=1 required=0 submissions=0 commands=0
+GPU ICB diagnostics: candidates=0 prepared=0 rejected=0 executeFailed=0 preflightGroups=0
+AUTO path: direct/instancing (small eligible scene)
+PBR colour indirect active=0 (before 32, after 32)
+CPU MDI: supported=1 submissions=0 commands=0
+CPU MDI stages pass=0 samples=1 scans=0 attempts=0 submitted=0 total_ms=0.03313 selection_ms=0.00179 grouping_ms=0.00737 scan_ms=0.00000 packing_ms=0.00000 pipeline_ms=0.00000 upload_ms=0.00000 submit_ms=0.00000
+CPU MDI stages pass=1 samples=1 scans=0 attempts=0 submitted=0 total_ms=0.02046 selection_ms=0.00033 grouping_ms=0.00154 scan_ms=0.00000 packing_ms=0.00000 pipeline_ms=0.00000 upload_ms=0.00000 submit_ms=0.00000
+changed_channels=0
+[metal-assets] libraries=0 sourceMisses=11 pipelines=16 pipelineFailures=0 archive=0 strict=0
+AUTO learning exit=0
+```
+
+**Interpretation:** New unit checks for the learning policy pass (33 total), and existing small-scene Direct fallback still works on actual Metal: both indirect execution paths have zero submissions, per-pass MDI scan/packing/submission work is zero, screenshots match byte-for-byte, and exit=0. The Direct median 0.1599ms vs AUTO 0.1476ms difference is -0.0123ms (-7.69%) within a six-sample sequential Direct-vs-Direct comparison; it is not evidence of an algorithmic speedup, GPU work reduction, or learned selection improvement. No `AUTO CPU learning` output appeared because the scene is below the 64-item threshold; the policy was only exercised in unit checks, not trained under a medium/large real-GPU workload.
+
+**Still unverified:** actual CPU learned switching on >=64 visible items, GPU ICB in large scenes, stability/p95 in long runs, GPU timestamp comparisons, full CTest/CI and Vulkan parity. Keep opt-in defaults OFF and PR Draft.
+
+**Next action:** add medium/high workload fixtures with independent Direct/CPU MDI/GPU ICB observations and 60+ samples, compare warm steady-state per-pass CPU profile and identical GPU raster captures, then integrate real GPU timing before any general rollout. No change to renderer policy needed on the basis of this small-scene test.
