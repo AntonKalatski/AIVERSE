@@ -232,10 +232,15 @@ void Renderer3D::drawMesh(const Mesh& m, const mat4& model, float4 color, uint32
 }
 void Renderer3D::drawNereidRippleMesh(const Mesh& mesh,const mat4& model,
         float4 color,float specular,float refraction,
-        const std::array<float4,16>& ripples) {
+        const std::array<float4,16>& ripples,
+        uint32_t firstIndex,uint32_t indexCount) {
     drawMesh(mesh,model,color,kDrawNoCastShadow|kDrawWaterSurface,
              specular,refraction);
-    if(!items_.empty())items_.back().waterRipples=ripples;
+    if(!items_.empty()) {
+        items_.back().waterRipples=ripples;
+        items_.back().waterFirstIndex=firstIndex;
+        items_.back().waterIndexCount=indexCount;
+    }
 }
 
 void Renderer3D::drawSelectionMesh(const Mesh& mesh, const mat4& model,
@@ -445,10 +450,11 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         dev_->setUniforms(0, &u, sizeof u);
         dev_->setVertexBuffer(it.mesh->vb);
         dev_->setIndexBuffer(it.mesh->ib);
-        dev_->drawIndexed(it.mesh->indexCount);
+        const uint32_t drawCount=it.waterIndexCount?it.waterIndexCount:it.mesh->indexCount;
+        dev_->drawIndexed(drawCount,it.waterFirstIndex);
         ++drawCalls_;
         // drawItem is only used by the current camera's colour pass.
-        profile_.cameraMeshTriangles += uint64_t(it.mesh->indexCount) / 3;
+        profile_.cameraMeshTriangles += uint64_t(it.waterIndexCount?it.waterIndexCount:it.mesh->indexCount) / 3;
     };
     for (auto& it : items_) if (it.color.w >= 0.99f) drawItem(it);
     // The per-phase profile also includes reflection/SSR replay. Snapshot
