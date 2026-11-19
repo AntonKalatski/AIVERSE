@@ -225,8 +225,9 @@ void rejectionAndWeakLifetime() {
     auto callback=std::move(gpu.onReadback);
     require(bool(callback),"mock GPU callback retained before target destroy");
     pass.shutdown();
-    require(gpu.live.empty() && gpu.destroyed==1,
-            "shutdown destroys feedback target independently of GPU callback");
+    require(gpu.live.empty() && gpu.created==gpu.destroyed &&
+            gpu.destroyed>=2,
+            "shutdown releases target and earlier failed-init allocation independently of callback");
     TextureReadbackResult late;
     late.format=PixelFormat::RGBA8;
     late.width=late.height=1;
