@@ -985,9 +985,11 @@ private:
                         ui::toneText(ui::Tone::Error,
                             "GPU device reported unhealthy; do not trust live capture");
                 } else ImGui::TextDisabled("Metal health: unavailable");
-                ImGui::Text("GPU failures: upload %llu, compute %llu, pass %llu, loss %llu",
+                ImGui::Text("GPU failures: upload %llu, compute %llu, reset %llu",
                     static_cast<unsigned long long>(cp.gpuKillUploadFailures),
                     static_cast<unsigned long long>(cp.gpuComputeBeginFailures),
+                    static_cast<unsigned long long>(cp.gpuResetFailures));
+                ImGui::Text("GPU errors: pass-order %llu, device-unhealthy %llu",
                     static_cast<unsigned long long>(cp.gpuPassOrderRejections),
                     static_cast<unsigned long long>(cp.gpuDeviceUnhealthy));
                 ImGui::Text("Fresh: %u  Stale: %u  Missing: %u",
