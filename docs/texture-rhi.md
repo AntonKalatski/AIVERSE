@@ -1970,3 +1970,37 @@ stage. The existing VT and legacy shared-resource ICB paths
 are unchanged by default. Full Objective-C++ build, Metal
 shader compilation, actual ICB execution and GPU image parity
 are NOT RUN. This is not production-ready.
+
+
+## Renderer3D mixed opaque PBR without Virtual Texture — Stage 10AG
+
+`Renderer3D::prepareGpuModelDraws` can now group GPU-equivalent
+opaque built-in PBR materials with different U2 and fragment
+source textures even when **none** of the draws use a virtual
+texture. This path requires the two opt-ins
+`AIVERSE_EXPERIMENTAL_ICB_MIXED_PBR=1` and
+`AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR=1`, in addition
+to the existing Metal GPU ICB enable/safety flags.
+
+The six source handles and 144-byte U2 are staged for each
+command in a `gfx::GpuIcbPbrMaterial`. The renderer then
+uses `prepareGpuEncodedIndexedIcbWithPbrMaterials`; for
+VT-containing groups it still uses the separate per-command
+VT entry point. In either case, `GpuMaterialResourceTable`
+holds one exact resource ticket per draw, including the
+PBR source handles and full U2. During render execution
+the current source handles and U2 are resolved again,
+checked for exact equality, and pipeline structural flags
+are checked against the staged snapshot. Failed or stale
+submissions remain eligible for standard CPU drawing.
+
+The pipeline group prefilter keeps nonopaque/masked,
+transparent, alpha cutout, Shader Graph and unsupported
+permutation materials on the original exact-equivalence
+path. A non-VT PBR opt-in never bypasses CPU MDI or
+ordinary-instancing compatibility checks. All feature
+flags remain disabled in default builds.
+
+**Validation:** source inspection and GitHub commits only.
+No C++/Objective-C++ build, CTest, MSL shader compilation,
+Metal device frame capture or pixel parity test was run.
