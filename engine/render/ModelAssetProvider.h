@@ -46,6 +46,7 @@ public:
     // invalidating that source. Do not call while renderer submissions
     // reference a model whose source is being replaced.
     Model* load(gfx::Device& device,const std::string& source) {
+        resources_.bindResourceDevice(device);
         if(source.empty())return nullptr;
         if(resources_.contains(source))return resources_.find(source);
         // Backpressure pauses NEW publication only; existing resources
@@ -91,6 +92,7 @@ public:
     // budgetMs<=0 disables the wall-time limit.
     size_t publishReady(gfx::Device& device,size_t maxCount=1,
                         double budgetMs=0) {
+        resources_.bindResourceDevice(device);
         const auto started=std::chrono::steady_clock::now();
         size_t published=0;
         while(published<maxCount && !resources_.publicationBackpressured()) {
