@@ -5590,3 +5590,28 @@ path with correct camera-visible geometry and explicit mip selection;
 provide a safe opt-in lifecycle in renderer/editor, then implement
 remaining cross-backend RenderTexture/storage parity before native
 test and validation phase.
+
+
+## Stage 9D — resizable feedback target and configurable deferred budget (2026-11-19)
+
+Source commit: 94c056b8ce1642d262f20e71899b98b3670e507f.
+File: engine/gfx/VirtualTextureFeedbackPass.h.
+Added optional maxDeferredFrames=8 to initialize, forwarding the
+existing 1..1024 bounded retry budget to VirtualTextureFeedbackRuntime.
+Added resize(width,height), retaining feedback/prefetch configs and
+deferred-frame budget, rebuilding the linear RGBA8 render target and
+decoder for viewport changes. Resize requires an initialized idle
+pass; same-size resize is a no-op. Reallocation invalidates old
+weak readback callback state; the Device still owns any outstanding
+GPU staging. Failure leaves the object uninitialized rather than
+publishing a partial replacement. shutdown clears retained config.
+Existing initialize call sites remain source compatible.
+
+Verification: GitHub source commit succeeded. Per user instruction,
+native compile, CTest, GPU readback and visual tests NOT RUN.
+Limitations: resize is a destructive reallocation, not an atomic
+preserve-on-failure swap; renderer must recreate/retry on failure.
+Next: integrate viewport resize and feedback drawing in a generic
+renderer/material path, then close remaining backend RenderTexture
+and storage image feature gaps. Defer tests until functional phase
+is finished, but do not mark source as validated.
