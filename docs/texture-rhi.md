@@ -4385,3 +4385,109 @@ containing `result=PASS`. On failure, inspect
 the actual compiler/Metal/independent oracle error.
 Keep Draft PR #21 and experimental Metal GPU ICB
 default-OFF until full native and platform evidence.
+
+### Stage 10CI — unified Mac Studio Texture RHI acceptance PASS (2026-11-19)
+
+**Actual user-supplied Mac Studio / Apple M3 Ultra execution:**
+`tools/texture-rhi-final-verify.sh --jobs 4` completed with
+`PASS: all 21 portable texture/graph and 7 native Metal GPU tests`.
+The generated `build/texture-final-logs/acceptance.txt`
+contained the exact *tested* commit:
+
+```text
+sha=7494f32d313a2ac45050be02d25ca3ae97749086
+safe_texture_tests=21
+native_metal_gpu_tests=7
+full_engine=0
+result=PASS
+```
+
+The commit `7494f32d313a2ac45050be02d25ca3ae97749086`
+**does include** the Stage 10CH corrections to
+`tests/render/metal_renderer_graph_vt_gutter_gpu.cpp`:
+the nonuniform-gradient ROI threshold 12 (not the obsolete
+solid-color 35) and fatal-shutdown error propagation.
+The native run therefore applies to the corrected source, not
+an earlier binary or an unrelated checkout. It also ran after
+the CTest failure regex and script PASS-marker fixes.
+The suite builds all targets before CTest, and the success
+manifest is generated only after all required processes
+and markers complete. The user supplied the last test's
+full verbose output and the final one-shot manifest.
+Results for earlier steps are supported by the script's
+fail-fast success conclusion, not independently reproduced
+from each earlier log in this chat.
+
+**Final full Renderer3D scene native Metal result:**
+
+- Test: `metal_renderer_graph_vt_gutter_gpu` (#128),
+  **1/1 PASS**, `1.90 s` CTest test and `1.90 s`
+  total; `pipelineFailures=0`.
+- Two distinct disk-backed nonuniform RGBA8 VT physical
+  page slices published; two separate materials with
+  independent atlas/page-table bindings and 1-pixel gutters.
+- At **U=0.400, 0.480, 0.500, 0.520, 0.600**,
+  real GPU ICB counters were identical:
+  `graph=1 mixedGraph=1 vt=1 mixedVt=1
+  commands=2 rejected=0 errors=0`.
+- Every ordinary Renderer3D / GPU ICB frame comparison
+  returned **`bad_channels=0 max_delta=0`**.
+  Distinct left/right region deltas across the five
+  samples were **18, 19, 17, 18, 16**, all above
+  the corrected nonuniform gradient threshold 12.
+- The separate independent original-logical-source
+  scene bilinear oracle ran on **both** direct and ICB
+  images. All its expected interpolation progress and
+  RGB direction checks succeeded for two material
+  ROIs, three interior U positions, and three color
+  channels. Observed worst interpolated ROI-channel
+  difference from the calibrated original-source
+  prediction was **1.00 displayed RGB level**.
+- The native test printed both mandatory final markers:
+  `PASS: production Renderer3D graph VT nonuniform gutters
+  independent CPU seam oracle`, and
+  `PASS: production Renderer3D Shader Graph nonuniform
+  guttered disk VT mixed Metal GPU ICB seam parity`.
+  There were no native `FAIL:` assertions.
+
+**Accurate coverage statement:** the entire scripted
+Texture RHI acceptance passed at SHA `7494f32d...`:
+21 focused portable CTests and seven separate,
+serial real Metal GPU CTests, including low-level
+texture acceptance, Shader Graph ICB, dual-disk VT
+coarse/fine/LRU, intentionally missing-page fallback,
+Repeat/MirrorRepeat wrap oracles, the absolute
+136-point nonuniform bilinear sampler test (previously
+observed 120 seam points and max delta 1), and this
+new full scene. This is an end-to-end correctness
+milestone on **Apple M3 Ultra / Metal**.
+
+**Not claimed:** the user ran with `full_engine=0`,
+so the **entire unrelated engine CTest suite has not
+been exercised by this one-shot result**.
+Likewise Vulkan/GL/GLES/WebGL/mobile compatibility,
+trilinear transitions and anisotropic filtering,
+memory/streaming soak, GPU frame time/FPS and
+performance scaling remain separate acceptance
+requirements. `1.90 s` is CTest duration, not GPU
+frame time. Metal GPU ICB and high-risk tests remain
+default-OFF in production; PR #21 remains Draft
+until release gating is explicitly resolved.
+
+**Reproduction at the verified source revision:**
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+bash -n tools/texture-rhi-final-verify.sh
+bash tools/texture-rhi-final-verify.sh --jobs 4
+```
+
+After this documentation commit, the branch HEAD
+naturally advances beyond the tested `7494f32d`;
+the source-code acceptance remains tied to the
+actual tested SHA above. Documentation-only changes
+do not retroactively change which commit the Mac
+tested. To also include the whole nonexperimental
+engine test suite, run with `--full-engine`.
