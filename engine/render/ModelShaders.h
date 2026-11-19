@@ -698,6 +698,9 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
                         , constant GiDynamicU& dgi [[buffer(7)]],
                         texture2d<float> tex13 [[texture(13)]]
 #endif
+#if defined(DYNAMIC_GI_VALIDITY)
+                        , texture2d<float> tex14 [[texture(14)]]
+#endif
                         ) {
 #if defined(AIVERSE_ICB_PBR)
 #define tex0 icbTextures.tex0
@@ -868,7 +871,11 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     amb = lm;
 #endif
 #if defined(DYNAMIC_GI)
+#if defined(DYNAMIC_GI_VALIDITY)
+    amb += dynamicGiAt(tex13,dgi,tex14,in.wpos,n);
+#else
     amb += dynamicGiAt(tex13,dgi,in.wpos,n);
+#endif
 #endif
     float3 diff = base.rgb * (1.0 - metallic);
     float3 F0 = mix(float3(0.04), base.rgb, metallic);
