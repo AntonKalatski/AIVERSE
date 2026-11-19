@@ -202,6 +202,12 @@ public:
     const PoolWorldStats& stats() const {return stats_;}
     // On-demand, no GPU readback. Reflects callbacks delivered since step().
     PoolCheckpointStats checkpointStats() const;
+    // Copies an existing CURRENT-revision GPU checkpoint for one pooled
+    // compute group. Does not request GPU readback or allocate unbounded
+    // diagnostic data. Caller chooses where/how to persist bytes.
+    bool exportFreshCheckpoint(size_t groupIndex,std::vector<uint8_t>& bytes,
+        size_t maxBytes=kGpuCheckpointExportMaxBytes,
+        std::string* error=nullptr) const;
     std::shared_ptr<CheckpointReadbackBudget> checkpointBudget() const {
         return checkpointBudget_;
     }
