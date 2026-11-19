@@ -72,3 +72,17 @@ Backend audit from actual GitHub source: `engine/gfx/vulkan/VkDevice.h` does not
 Actual verification: GitHub source update/read only. **NOT RUN** CMake/CTest/Metal/GLSL/SPIR-V compilation, on-device Vulkan/GLES rendering, mobile FPS and visual parity. Existing acceptance script primarily validates Metal+host CTest; add Vulkan lavapipe and GLES3/WebGL2 shader rendering/visual checks at final acceptance. No prior 33/33 test result covers this source.
 
 Next: tighten CPU probe rate and no-geometry safeguards, document backend-specific required features, add a cross-platform source regression/compile target, and reconcile current main changes without destructive blanket overwrite. Complete source functionality FIRST, then one consolidated test/visual validation pass.
+
+## Stage 5 — zero-budget moving-light ghost prevention for portable GI (SOURCE COMMITTED; NOT NATIVE TESTED)
+
+Source commits:
+- `a96f2a7a9c446c88c7dadc5c695c386c963c6b9e` — `GiDynamicProbeReference::setLights(lights,invalidatedProbes)` extends the existing source-change dirty tracking with exact dirty-probe IDs, zeroes stale L1 coefficients immediately and deduplicates overlapping old+new light volumes. Original single-argument API is source compatible.
+- `21401b1d8cf10e43c95af8baa0cd7eebca74db80` — `GiDynamicRuntime::setLights` records invalidated probe indices for texture zeroing on the next `update(0,camera)`, before any budgeted tracing. This prevents yesterday's bounced light persisting for many frames when CPU budgets on Vulkan/GLES are small.
+- `857ef5c9edb218bf9a29eb6edda2fb4e4a2b5a35` — source regression in `tests/render/gi_dynamic_probe_reference.cpp` checks immediate CPU coefficient clearing on source movement and clean eventual rebuild.
+- `cfb93700b226266fae39aa22209d8c306d692ab6` — `tests/render/gi_dynamic_runtime.cpp` checks that no-trace `update(0)` uploads black into stale GPU atlas texels.
+
+No RHI or ECS changes, legacy baked indirect remains independent. New dirty IDs are sorted and deduplicated, reducing upload regions. Source changes outside the probe influence volume cause no invalidation.
+
+Actual checks: GitHub source update acknowledgments only. C++ compile, CTest, Vulkan GLSL/SPIR-V, GLES3 shader/device, Metal GPU readback/visual benchmarks **NOT RUN**. The test assertions have not been observed passing.
+
+Next stage: explicitly bound portable CPU GI work per backend; author compiler/runtime backend policy checks and Vulkan+GLES acceptance harness. Finish functional work and reconcile main before a single execution of test suite.
