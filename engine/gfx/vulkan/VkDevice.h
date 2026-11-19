@@ -169,6 +169,10 @@ public:
     bool supportsMultiDrawIndirect() const override { return multiDrawIndirect_; }
     bool drawIndexedIndirect(BufferHandle commands, size_t offset,
                              uint32_t drawCount, uint32_t stride) override;
+    // Explicit opt-in one-command GPU-written indirect draw. No CPU readback
+    // and no implicit STRATA material/transform state changes.
+    bool drawIndexedGpuIndirect(BufferHandle arguments,
+                                size_t offset) override;
 
 private:
     // GfxVulkan.cpp
