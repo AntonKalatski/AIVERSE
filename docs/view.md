@@ -816,3 +816,37 @@ networking, save data, or renderer packet contract changed.
 
 **NOT RUN**: native build, CTest, sanitizer, GPU visual parity, CI,
 and cross-platform verification remain deferred per user instruction.
+
+## Native editor model demand scheduler (Stage 93)
+
+`modules/rts/view/RtsModelDemandScheduler.h` adds a small host-owned
+policy service for model demand. It tracks per-type last-use times,
+batches and de-duplicates demand requests, upgrades each request to
+the highest priority (`Background`, `Visible`, `Interactive`),
+drains in descending priority and FIFO within each priority,
+and exposes periodic reclamation and recent-use decisions.
+`resize()` resets demand on rules/hot-reload changes and advances
+an independent revision, invalidating queued requests.
+
+`apps/editor/Editor` now owns this scheduler instead of a separate
+last-use vector and trim timestamp. It registers interactive requests,
+drains them immediately so Inspector and material previews remain
+responsive, and uses the scheduler's retained-time policy for its
+existing 5-second sweep and 15-second grace. The original map,
+selection, placement and overlay-preview keep rules still apply.
+Both lazy and eager modes consume the queue; eager mode does not
+reload already-resident models. Rules reload resets scheduler state.
+
+`RtsModelResourceCache::generation()` additionally exposes a
+monotonic counter updated on `publishPrepared`, `trimUnused`
+and `shutdown`. **Important limitation:** the existing legacy
+`models()` mutable map access is still supported and does not
+increment this counter; callers must not interpret it as a complete
+hot-reload epoch until all insertion paths are routed through the
+owner API.
+
+This feature establishes an externally owned scheduling/policy
+component and integrates it with an actual editor host. It does not
+yet move all rules-driven asset selection/hot reload from `RtsView`
+or change MotionWeave. **NOT RUN**: CMake/native compiler, CTest,
+Metal screenshots, sanitizers and CI remain deferred per user request.
