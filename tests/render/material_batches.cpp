@@ -178,6 +178,7 @@ int aiverseMain(int argc, char** argv) {
     std::vector<std::vector<render::MaterialBatch>> batches;
     std::vector<uint8_t> before;
     uint32_t shadowBefore=0, opaqueBefore=0; int frame=0; bool failed=false, finished=false;
+    bool packetBuilt=false; // the warm hit must reuse a previously built packet
     platform::AppConfig cfg; cfg.title="Material palette A/B"; cfg.width=960; cfg.height=640; cfg.highDpi=false;
     platform::AppCallbacks cb;
     cb.init=[&](gfx::Device& d) {
@@ -256,6 +257,20 @@ int aiverseMain(int argc, char** argv) {
         }
         if(scenario=="instanced"){draw.world=render::mat4::translate({3,0,0})*draw.world;renderer.drawModel(draw);}
         gfx::PassDesc pass;renderer.render(pass);
+        if (scenario == "static_packets" && frame == 15) {
+            const auto stats = renderer.staticRenderPacketStats();
+            packetBuilt = stats.rebuilds == 1 && stats.hits == 0 &&
+                          stats.live == 1 && stats.retainedBytes > 0;
+            if (!packetBuilt) {
+                std::fprintf(stderr,
+                    "static packet fixture failed to build a cold packet "
+                    "(rebuilt=%llu hits=%llu live=%zu bytes=%zu)\n",
+                    (unsigned long long)stats.rebuilds,
+                    (unsigned long long)stats.hits,
+                    stats.live, stats.retainedBytes);
+                failed = true;
+            }
+        }
         if(frame==8||frame==23){
             const auto& p=renderer.profile();
             std::printf("batch=%d shadow=%u opaque=%u total=%u error=%s\n",batch,p.draws[0],p.draws[1],renderer.drawCalls(),renderer.modelError().c_str());
@@ -267,8 +282,10 @@ int aiverseMain(int argc, char** argv) {
                     (unsigned long long)stats.rebuilds,
                     (unsigned long long)stats.declined,
                     stats.retainedBytes);
-                if (!stats.hits || p.draws[0] != shadowBefore ||
-                    p.draws[1] != opaqueBefore) failed = true;
+                if (!packetBuilt || stats.hits != 1 || stats.rebuilds != 0 ||
+                    stats.live != 1 || stats.retainedBytes == 0 ||
+                    p.draws[0] != shadowBefore || p.draws[1] != opaqueBefore)
+                    failed = true;
             }
             else if (scenario == "indirect_palette") {
                 const bool supported = d.supportsMultiDrawIndirect();
