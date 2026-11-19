@@ -105,4 +105,6 @@ kernel void cs_main(
 // Identical spatial/temporal algorithm but historical surface normals are
 // read from the current explicit PBR receiver instead of geometric depth.
 #define AIVERSE_MSL_LUMAWEAVE_DENOISE_PBR \
-    R"MSL(#define LUMAWEAVE_PBR_NORMALS 1\n)MSL" AIVERSE_MSL_LUMAWEAVE_DENOISE
+    R"MSL(
+#define LUMAWEAVE_PBR_NORMALS 1
+)MSL" AIVERSE_MSL_LUMAWEAVE_DENOISE
