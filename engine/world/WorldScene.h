@@ -105,8 +105,10 @@ public:
             if(waterId==UINT64_MAX)return bodyFlow;
             const Vec3 joined=confluences_.flowForWater(
                 waterId+1,position,bodyFlow,nereidWater_);
-            return cascades_.flowAtConnection(
+            const Vec3 result=cascades_.flowAtConnection(
                 waterId+1,position,joined,nereidWater_);
+            return resolveNereidFlowObstructions(
+                waterId+1,position,result);
         });
         ripples_.applyVisualWind(deltaSeconds,
             [this](double x,double z) {
