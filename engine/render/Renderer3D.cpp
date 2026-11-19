@@ -409,6 +409,23 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     hdrFrame_ = post_ && post_->linearScene();
     lights.setLinearScene(hdrFrame_);
     renderReflection();
+    // Optional material-receiver side pass. Only explicitly enabled post
+    // processors can request it. The normal rendering path and all existing
+    // PBR shaders are unchanged when the hook is absent. The second material
+    // target owns its OWN depth (the main scene depth has not been drawn yet).
+    if(post_ && hdrFrame_ && post_->wantsMaterialReceiverPass()) {
+        auto receiver=post_->materialReceiverPass(sw,sh);
+        if(receiver.colorTarget.valid() && receiver.depthTarget.valid()) {
+            dev_->beginPass(receiver);
+            dev_->setViewport({0,0,sw,sh});
+            lumaMaterialCapture_=true;
+            uploadFrameUniforms(false);
+            renderModels(1); // opaque models only; custom renderers can supply a buffer explicitly
+            lumaMaterialCapture_=false;
+            dev_->endPass();
+            post_->materialReceiverPublished(receiver.colorTarget,sw,sh);
+        }
+    }
     // Exclude shadow, probe and reflection passes from the visible-colour ID range.
     debugMainDrawId_ = 0;
     // trace tier + water: the opaque scene goes into colour + depth textures first (SSR reads them),
