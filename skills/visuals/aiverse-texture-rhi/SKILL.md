@@ -1519,3 +1519,57 @@ Vulkan/GL/WebGL/mobile acceptance and performance stress.
 Solid-color pages and zero gutter do not establish
 nonuniform filtering continuity. Experimental ICB remains
 OFF by default and PR #21 Draft.
+
+## Stage 10CB — physical-gutter bilinear VT sampling and CPU oracle
+
+**Production shader fix**
+`engine/gfx/VirtualTextureSampling.h`,
+`1af66f86a754958f6bacf84d279b14a163fca831`:
+the old atlas `inset=(gutter+0.5)/pageSize`
+prevented a bilinear filter from reading neighboring gutter
+pixels at the virtual tile border. Both the canonical GLSL
+and MSL samplers now use `inset=gutter/pageSize` for
+**positive gutters**, so tile edges receive the correct
+half-texel footprint and neighboring gutter data.
+When `gutter=0`, they retain the old `0.5/pageSize`
+edge-centre clamp to preserve previous acceptance behavior.
+
+**New isolated native Metal test**:
+`tests/render/metal_vt_bilinear_gpu.mm`,
+`4787302de05704c2c48e7c9fede9a4813b5d2a33`.
+It loads two independent 12×6 logical textures as disk-backed
+8×8 physical pages (6×6 interior + **1 texel gutters**)
+with nonuniform RGB gradients and Repeat/MirrorRepeat
+addressing. Real `VirtualTextureFileStreamer` publishes
+pages to native Metal atlases and RGBA8 page tables.
+The GPU shader embeds the actual `gfx::kVirtualTextureMSL`.
+An independent CPU oracle interpolates **original logical
+texels** at half-texel coordinates and applies source
+addressing; it does not consult physical GPU page mapping.
+136 real GPU fragment samples cover internal seams,
+outer wraps, negative UV, V edges and points outside [0,1].
+Expected max difference ≤2 RGBA8 levels. The fixture
+explicitly asserts that old center-inset mapping would fail.
+
+CMake `AIVERSE_TEXTURE_METAL_VT_BILINEAR_GPU_TESTS=ON`
+(default OFF), executable `aiverse_metal_vt_bilinear_gpu_test`,
+CTest `metal_vt_bilinear_gpu` in separate
+`build/texture-vt-bilinear-gpu` cache. Build registration
+commit `f2778b19f29817b94c48e73ed65c6465fbf86a27`.
+Exact Mac Studio commands / PASS oracle in
+`docs/texture-rhi.md` Stage 10CB, guide commit
+`57d6b55187e6e2f2903df97194d60a772e6cb450`.
+
+**Not yet executed on Apple GPU:** source compile, Metal
+shader compilation, actual 136 samples or CTest 1/1.
+Do not claim Stage 10CB GPU PASS based on source-level
+or mathematical review. The previously observed 10BX and
+10BY tests were on solid-color pages with zero gutter
+and cannot validate this new production shader change.
+
+After native success: rerun Stage 10BX/10BY zero-gutter
+regressions, add a full production `Renderer3D` graph/VT
+GPU-ICB scene with nonuniform gutters and independent
+image oracle, and validate Vulkan/GL/mobile, trilinear/
+anisotropic filtering and real driver/perf behavior.
+All experimental ICB defaults remain OFF; PR #21 Draft.
