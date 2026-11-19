@@ -30,6 +30,24 @@ float3 toF(const Vec3& v) { return {float(v.x.toDouble()), float(v.y.toDouble())
 
 RtsView::RtsView() : roads_(std::make_unique<RtsRoadView>()), shores_(std::make_unique<RtsShoreView>()) {}
 RtsView::~RtsView() = default;
+
+// Called by client/editor/preview owner at the SAME explicit pre-render
+// frame boundary used for ModelResourceCache and ImageRollbackPool. Never
+// generate a GPU retirement token from inside RtsView::draw(): the editor
+// can draw the same View more than once inside one RHI frame.
+size_t RtsView::pendingModelRetirements() const {
+    return resources_.pendingRetirements()+
+           roads_->pendingGpuRetirements()+
+           shores_->pendingGpuRetirements();
+}
+bool RtsView::collectRetiredModels() {
+    if(!dev_)return false;
+    const bool models=resources_.collectRetired(*dev_);
+    const bool images=imageRollback_.collect(*dev_);
+    // Always poll all three queues, even while a previous one is pending.
+    const bool roads=roads_->collectRetired(*dev_), shores=shores_->collectRetired(*dev_);
+    return models && images && roads && shores;
+}
 void RtsView::setRoadMap(const Json& map) { roads_->setMap(map); shores_->setMap(map); }
 
 float4 RtsView::playerColor(int p) { return overlayPlayerColor(p); }   // palette shared with the overlays
@@ -218,14 +236,8 @@ void RtsView::drawGround(Renderer3D& r, const std::vector<ViewGroundBatch>& batc
 }
 
 void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std::vector<uint8_t>* vision, const MapGrid& grid) {
-    // Earliest presentation boundary, before this frame's layer callbacks
-    // submit any road/shore draws. Complete old GPU retirement tokens and
-    // schedule pending old models/buffers behind a new ordered token.
-    // Never use frame count/elapsed time to free GPU-visible resources.
-    if(dev_) {
-        roads_->collectRetired(*dev_);
-        shores_->collectRetired(*dev_);
-    }
+    // Resource retirement is driven by the explicit owner frame hook,
+    // never by this draw function (which can be called several times).
     const bool traceView = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
     const auto viewStart = std::chrono::steady_clock::now();
     // Script spawns, reinforcements and restored entities need not exist at
