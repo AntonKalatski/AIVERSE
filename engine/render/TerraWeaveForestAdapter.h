@@ -63,7 +63,8 @@ public:
         billboards_.emplace(profile.speciesId, std::move(impostor.model));
         branchPivots_.emplace(profile.speciesId,std::move(pivots));
         evergreen_[profile.speciesId]=(profile.shape==CrownShape::Conifer);
-        if(phenology_!=CanopyPhenology{})rebuildPhenologyMaterials();
+        if(phenology_!=CanopyPhenology{} || gpuCrownWindActive())
+            rebuildPhenologyMaterials();
     }
 
     // Update presentation materials once per season/environment revision,
