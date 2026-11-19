@@ -6498,3 +6498,40 @@ functions-first instruction.
 model material shader paths and Terra material bindings; add a
 revision-aware runtime provider for real Terra atlas allocations,
 then finish backend compile tests and visual validation.
+
+
+## Stage 10D — Terra atlas UV subrect mapping and runtime handoff (2026-11-19)
+
+**Source commit:** `52e0396e207ec1eeaf331cc16660dbf899627185`.
+**Documentation commit:** `e1bc4a6a0065af040a28212d50fcb71c3eff3ea2`.
+**Files:** `engine/render/TerraWeaveVirtualAtlasArchive.h`,
+`docs/texture-rhi.md`.
+Extended `TerraWeaveVirtualAtlasArchive.h` with
+`terraWeaveAtlasMappingForMaterial(version,Material&,mapping,layer)`,
+which derives virtual texture UV scale and offset from the
+identical `uvScale`/`uvOffset` used in `ModelShaders.h`.
+The helper rejects nonfinite transforms, wrong layer or
+nonzero UV rotation because `VirtualTextureFeedbackProgram`'s
+virtual-UV U0 representation cannot yet encode an arbitrary
+2x2 rotation; silently dropping rotation would cause the
+feedback pass to request the wrong page. This is especially
+important for Terra's per-azimuth impostor materials.
+
+Documented a concrete call sequence for HorizonBake::atlasRgba:
+pack an immutable version, prepare a candidate file streamer
+alongside the active atlas, pump it until coarsest mip fallback
+is resident, promote only between passes without outstanding
+old feedback readback, swap physical atlas/page-table bindings
+and material resolver atomically, and release retired GPU
+resources only after a true GPU fence. The existing old
+streamer is retained until explicit retirement.
+
+Boundaries: one archive is one VT domain and its layers must
+have matching sizes; the GPU main scene shaders are not yet
+rewired to call `VirtualTextureSampling.h`. Transparent
+Horizon transitions and rotated UVs require further work.
+Verification: GitHub source/doc commits succeeded. Native
+build, CTest and GPU testing NOT RUN per user request.
+Next: implement opt-in virtual page sampling in shared model
+materials (not just feedback), preserve original non-VT
+material fallback, then run backend-specific tests.
