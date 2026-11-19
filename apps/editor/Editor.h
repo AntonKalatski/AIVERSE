@@ -42,6 +42,7 @@
 namespace aiverse::spectra {
 class GpuPoolWorld;
 class GpuCaptureRequestMailbox;
+class GpuPoolRecoveryHost;
 }
 
 namespace aiverse::editor {
@@ -337,6 +338,15 @@ public:
     spectraGpuCaptureMailbox() const {return spectraGpuMailbox_;}
     bool queueSpectraExternalGpuCapture(size_t groupIndex);
     bool releaseSpectraExternalGpuCapture();
+    // Recovery host is also NON-OWNING. UI may enqueue a status-only
+    // visual-reset intent; actual GPU recovery runs in native safe pre-pass.
+    void setSpectraGpuRecoveryHost(spectra::GpuPoolRecoveryHost* host) {
+        spectraGpuRecoveryHost_=host;
+    }
+    const spectra::GpuPoolRecoveryHost* spectraGpuRecoveryHost() const {
+        return spectraGpuRecoveryHost_;
+    }
+    bool queueSpectraExternalVisualReset();
     // Exports a FULL, CURRENT-revision GPU checkpoint from an attached pool,
     // if available. Writes one <=529 KiB diagnostic file under userDataDir.
     // out receives a path on success or a reason on failure.
@@ -502,6 +512,7 @@ private:
 
     const spectra::GpuPoolWorld* spectraGpuTelemetry_=nullptr;
     spectra::GpuCaptureRequestMailbox* spectraGpuMailbox_=nullptr; // non-owning
+    spectra::GpuPoolRecoveryHost* spectraGpuRecoveryHost_=nullptr; // non-owning
     std::unique_ptr<spectra::GpuPoolWorld> spectraPreviewGpu_;
     struct SpectraPreviewRequest {
         fx::EffectDef effect;
