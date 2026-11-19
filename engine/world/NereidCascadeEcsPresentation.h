@@ -44,6 +44,14 @@ inline std::vector<NereidCascadeSource> snapshotNereidEcsCascades(
                     item.joinLength=float(links->transitionLength.toDouble());
                 }
             }
+            if(const auto* policy=ecs.tryGetConst<
+                    lib::nereid::WaterCascadeJoinPolicyComponent>(entity)) {
+                if(policy->widthBlend<0_fx || policy->widthBlend>1_fx)
+                    throw std::invalid_argument(
+                        "nereid.cascade: invalid join width blend");
+                item.joinWidthBlend=float(policy->widthBlend.toDouble());
+                item.requireFootprint=policy->requireFootprint;
+            }
             item.style=options.style;
             item.options=options.mesh;
             out.push_back(std::move(item));
