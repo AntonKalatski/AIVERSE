@@ -146,11 +146,18 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         alphaR8 = it.model->images[size_t(it.mat->baseTex)]
                       .virtualAlphaMask.valid();
     }
-    // Fragment slots 13 and 14 belong to built-in model VT only.
-    // Shader Graph owns those slots, and GPU ICB commands may mix
-    // external VT domains, so both paths remain on source textures.
+    // Built-in material VT starts at fragment slot 13. An explicit
+    // sampleVirtualTexture graph node can use slots after its normal
+    // graph textures, provided at most one texture was authored.
+    // Source-only graph nodes and graph-backed non-VT materials retain
+    // the original shader path with no extra fragment resources.
+    const bool graphVirtual = graph && graph->usesVirtualTexture;
+    const int virtualAtlasSlot = graphVirtual ?
+        kGraphTextureSlot+int(graph->textures.size()) : 13;
+    const int virtualTableSlot = virtualAtlasSlot+1;
     ModelVirtualTextureBinding vtBinding;
-    const bool vtSampling = giPhase && !graph && !materialPalette &&
+    const bool vtSampling = giPhase && (!graph || graphVirtual) &&
+        !materialPalette && virtualTableSlot < 16 &&
         resolveModelVirtualTexture(*it.model,*it.mat,vtBinding);
     const uint32_t shaderKey = (vtSampling ? kKeyModelVirtualTexture : 0u) |
         (alphaR8 ? kKeyModelVirtualAlpha : 0u) |
@@ -224,12 +231,29 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                     } else source=declarations+source;
                     const auto uv=metal?"in.uv":"v_uv", wp=metal?"in.wpos":"v_wpos", np=metal?"in.nrm":"v_nrm";
                     std::string code="\n#define SG_SAMPLE(uv) "+std::string(metal?"tex1.sample(s1,uv)":"texture(tex1,uv)")+"\n"+macros;
+                    if (graph->usesVirtualTexture) {
+                        if (vtSampling) {
+                            const std::string sampled = metal ?
+                                "aiverse_sample_virtual(tex"+std::to_string(virtualAtlasSlot)+
+                                ",tex"+std::to_string(virtualTableSlot)+
+                                ",s1,(uv),uint(uModelVt.x),uModelVt.y,"
+                                "tex1.sample(s1,(uv)))" :
+                                "aiverseSampleVirtual(tex"+std::to_string(virtualAtlasSlot)+
+                                ",tex"+std::to_string(virtualTableSlot)+
+                                ",(uv),int(uModelVt.x),uModelVt.y,"
+                                "texture(tex1,(uv)))";
+                            code+="#define SG_SAMPLE_VIRTUAL(uv) "+sampled+"\n";
+                        } else
+                            code+="#define SG_SAMPLE_VIRTUAL(uv) SG_SAMPLE(uv)\n";
+                    }
                     code+=std::string(metal?"float2":"vec2")+" sg_uv="+uv+"; "+v+" sg_input=base;\n";
                     code+=v3+" sg_world="+wp+", sg_object="+(metal?"in.opos":"v_opos")+", sg_normal="+np+", sg_view="+(metal?"f.camPos.xyz":"u_camPos.xyz")+"-"+wp+";\n";
                     code+=v+" sg_color="+(metal?"in.col":"v_col")+"; float sg_time="+(metal?"f.camPos.w":"u_camPos.w")+";\n";
                     // Projected world position gives the same normalized screen coordinates in colour/shadow passes.
                     code+=v+" sg_clip="+(metal?"f.viewProj":"u_viewProj")+"*"+v+"("+wp+",1.0); "+(metal?"float2":"vec2")+" sg_screen=sg_clip.xy/max(abs(sg_clip.w),0.00001)*0.5+0.5;\n";
-                    code+=graph::statements(*graph,metal)+"base="+graph->outputs.at("color")+";\n#undef SG_SAMPLE\n";
+                    code+=graph::statements(*graph,metal)+"base="+graph->outputs.at("color")+";\n";
+                    if (graph->usesVirtualTexture) code+="#undef SG_SAMPLE_VIRTUAL\n";
+                    code+="#undef SG_SAMPLE\n";
                     replace(source,"// SG_COLOR",code);
                     std::string surface;
                     for(auto name:{"roughness","metallic","emission","normal"}) {
@@ -268,7 +292,8 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                 if(at!=std::string::npos)msl.insert(at+22,"\nconstexpr sampler s"+std::to_string(slot)+"(coord::normalized, address::repeat, filter::linear, mip_filter::linear);");
             }
         }
-        if (vtSampling && !injectModelVirtualTextureSampling(fs,msl)) {
+        if (vtSampling && !injectModelVirtualTextureSampling(
+                fs,msl,virtualAtlasSlot,virtualTableSlot)) {
             modelError_ = "model virtual-texture shader insertion failed";
             return {};
         }
@@ -276,7 +301,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         sd.glslVertex = vs.c_str(); sd.glslFragment = fs.c_str(); sd.msl = msl.c_str();
         // tex11/tex12: SSR scene colour/depth; graph textures follow at kGraphTextureSlot.
         sd.uniformSlots = vtSampling ? 7 : (shadow ? 5 : 6);
-        sd.textureSlots = alphaR8 ? 16 : vtSampling ? 15 :
+        sd.textureSlots = alphaR8 ? 16 : vtSampling ? virtualTableSlot+1 :
             (graph && !graph->textures.empty() ?
             kGraphTextureSlot+int(graph->textures.size()) : shadow ? 9 : 13); sd.label = shadow ? "model shadow" : "model"; // U5/tex9: lights, tex10: height field
         ShaderEntry e;
@@ -812,17 +837,24 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     // the scene may switch a Horizon archive generation between frames.
     // Shader variants use two spare built-in fragment slots (13/14) and
     // one U6 vec4. The original tex1 remains bound as fallback.
+    const auto activeGraph = mt.shaderGraph &&
+        int(matQuality_) >= mt.shaderGraph->minQuality ?
+        mt.shaderGraph.get() : nullptr;
     if ((phase == 1 || phase == 2) &&
-        !instancePalette && !it.paletteMaterials && !(mt.shaderGraph &&
-        int(matQuality_) >= mt.shaderGraph->minQuality)) {
+        !instancePalette && !it.paletteMaterials &&
+        (!activeGraph || activeGraph->usesVirtualTexture)) {
         ModelVirtualTextureBinding vt;
         if (resolveModelVirtualTexture(*it.model,mt,vt)) {
             ModelVirtualTextureUniforms params;
             params.layer = float(vt.layer);
             params.gutterPixels = vt.gutterPixels;
-            dev_->setTexture(13,vt.physicalAtlas);
-            dev_->setTexture(14,vt.pageTable);
-            dev_->setUniforms(6,&params,sizeof(params));
+            const int atlasSlot=activeGraph ?
+                kGraphTextureSlot+int(activeGraph->textures.size()) : 13;
+            if (atlasSlot+1 < 16) {
+                dev_->setTexture(atlasSlot,vt.physicalAtlas);
+                dev_->setTexture(atlasSlot+1,vt.pageTable);
+                dev_->setUniforms(6,&params,sizeof(params));
+            }
         }
     }
     if (newModel) {
