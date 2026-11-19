@@ -636,19 +636,20 @@ void Renderer3D::renderSelectionOutline(const gfx::PassDesc& mainPass,
     }
     if (!any) return;
 
-    if (!sceneSelectionMask_.valid() ||
-        sceneSelectionWidth_ != width || sceneSelectionHeight_ != height) {
-        if (sceneSelectionMask_.valid()) dev_->destroyTexture(sceneSelectionMask_);
-        sceneSelectionMask_ = {};
-        sceneSelectionWidth_ = width;
-        sceneSelectionHeight_ = height;
+    if(!sceneSelectionMask_.valid() ||
+       sceneSelectionWidth_!=width || sceneSelectionHeight_!=height) {
         gfx::TextureDesc td;
-        td.width = width; td.height = height;
-        td.format = gfx::PixelFormat::RGBA8;
-        td.renderTarget = true;
-        td.filter = gfx::Filter::Nearest;
-        td.label = "Scene selected-object depth-tested mask";
-        sceneSelectionMask_ = dev_->createTexture(td);
+        td.width=width;td.height=height;
+        td.format=gfx::PixelFormat::RGBA8;
+        td.renderTarget=true;
+        td.filter=gfx::Filter::Nearest;
+        td.label="Scene selected-object depth-tested mask";
+        const auto replacement=dev_->createTexture(td);
+        if(!replacement.valid())return; // keep old mask for its in-flight work
+        retireRenderTargets(sceneSelectionMask_);
+        sceneSelectionMask_=replacement;
+        sceneSelectionWidth_=width;
+        sceneSelectionHeight_=height;
     }
     if (!sceneSelectionMask_.valid()) return;
 
