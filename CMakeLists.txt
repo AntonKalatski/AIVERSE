@@ -2020,22 +2020,27 @@ if(AIVERSE_BUILD_STRATA)
     add_library(aiverse_strata_view STATIC engine/render/StrataView.cpp)
     target_link_libraries(aiverse_strata_view PUBLIC aiverse_strata_model_adapter aiverse_models)
     target_include_directories(aiverse_strata_view PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    # Offline archive IO is independently linkable by native import/editor
+    # tools without pulling the complete renderer or a gfx::Device.
+    add_library(aiverse_strata_disk STATIC engine/render/StrataDiskPages.cpp)
+    target_link_libraries(aiverse_strata_disk PUBLIC aiverse_strata_model_adapter)
+    target_include_directories(aiverse_strata_disk PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    if(NOT EMSCRIPTEN)
+        find_package(Threads REQUIRED)
+        target_link_libraries(aiverse_strata_disk PUBLIC Threads::Threads)
+    endif()
     # Portable Vulkan/GLES3/WebGL2 fallback: CPU-selected LOD frontiers and
     # immutable auxiliary INDEX-only data. Original Model VB stays owned by
     # Renderer3D/GlobalGeometryPool; no second Strata vertex allocator.
     add_library(aiverse_strata_portable STATIC
         engine/render/StrataPortableRender.cpp
         engine/render/StrataIndexResidency.cpp
-        engine/render/StrataIndexPages.cpp
-        engine/render/StrataDiskPages.cpp)
+        engine/render/StrataIndexPages.cpp)
     target_link_libraries(aiverse_strata_portable PUBLIC
-        aiverse_strata_view aiverse_models)
+        aiverse_strata_view aiverse_models aiverse_strata_disk)
     target_include_directories(aiverse_strata_portable PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR})
-    if(NOT EMSCRIPTEN)
-        find_package(Threads REQUIRED)
-        target_link_libraries(aiverse_strata_portable PUBLIC Threads::Threads)
-    endif()
     # GPU metadata is a non-drawing, source-revision-checked storage buffer.
     # Original GPU geometry MUST remain owned by GlobalGeometryPool.
     add_library(aiverse_strata_gpu_scene STATIC engine/render/StrataGpuScene.cpp)
