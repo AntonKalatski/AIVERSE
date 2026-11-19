@@ -139,6 +139,9 @@ void Renderer3D::shutdown() {
     staticRenderPacketEpoch_ = 0;
     staticEligibilityEpoch_ = 0;
     cpuMdiAdaptive_ = {};
+    cpuMdiPages_.clear();
+    cpuMdiPageEpoch_ = 0;
+    cpuMdiPageStats_ = {};
     shutdownModels();
     lights.shutdown();
     shutdownTrace();
@@ -252,6 +255,22 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     }();
     cpuMdiAdaptiveEnabled_ = enableCpuMdiAdaptive && enableStaticCrossModelBatches;
     cpuMdiAdaptiveBudgetUs_ = cpuMdiMaxUsPerCommand;
+    cpuMdiPageStats_ = {};
+    if (cpuMdiAdaptiveEnabled_) {
+        ++cpuMdiPageEpoch_;
+        // Track shared pages only while their allocation is live/recent.
+        // Weak lifetime prevents address-reuse from inheriting old costs.
+        if (cpuMdiPageEpoch_ % 64u == 0u) {
+            for (auto it = cpuMdiPages_.begin(); it != cpuMdiPages_.end();) {
+                if (it->second.lifetime.expired() ||
+                    (cpuMdiPageEpoch_ > it->second.seen &&
+                     cpuMdiPageEpoch_ - it->second.seen > 128u)) {
+                    it = cpuMdiPages_.erase(it);
+                    ++cpuMdiPageStats_.evicted;
+                } else ++it;
+            }
+        }
+    }
     staticRenderPacketStats_ = {};
     staticEligibilityStats_ = {};
     sharedMaterialStateStats_ = {};
