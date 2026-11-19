@@ -18,6 +18,7 @@
 #include <span>
 #include <stdexcept>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace aiverse::render {
@@ -57,7 +58,7 @@ struct RenderResourceGroupStats {
 
 class RenderResourceOwnerGroup final {
     struct ScopedState {
-        RenderResourceOwnerGroup* owner=nullptr;
+        std::atomic<RenderResourceOwnerGroup*> owner{nullptr};
         std::thread::id thread;
         std::atomic<size_t> wrongThreadReleases{0};
     };
@@ -84,9 +85,10 @@ public:
         void reset() noexcept {
             if(!id_)return;
             if(auto state=state_.lock()) {
-                if(std::this_thread::get_id()==state->thread && state->owner)
-                    state->owner->unregister(id_);
-                else if(state->owner)
+                auto* owner=state->owner.load(std::memory_order_acquire);
+                if(std::this_thread::get_id()==state->thread && owner)
+                    owner->unregister(id_);
+                else if(owner)
                     state->wrongThreadReleases.fetch_add(1,std::memory_order_relaxed);
             }
             id_=0;
@@ -102,14 +104,16 @@ public:
     RenderResourceOwnerGroup()
         :ownerThread_(std::this_thread::get_id()),
          scopedState_(std::make_shared<ScopedState>()) {
-        scopedState_->owner=this;
+        scopedState_->owner.store(this,std::memory_order_release);
         scopedState_->thread=ownerThread_;
     }
     RenderResourceOwnerGroup(const RenderResourceOwnerGroup&)=delete;
     RenderResourceOwnerGroup& operator=(const RenderResourceOwnerGroup&)=delete;
     RenderResourceOwnerGroup(RenderResourceOwnerGroup&&)=delete;
     RenderResourceOwnerGroup& operator=(RenderResourceOwnerGroup&&)=delete;
-    ~RenderResourceOwnerGroup(){scopedState_->owner=nullptr;}
+    ~RenderResourceOwnerGroup(){
+        scopedState_->owner.store(nullptr,std::memory_order_release);
+    }
 
     // Explicit binding: both the group and a cache are confined to one
     // gfx Device and one caller thread. No new asset may be inserted on
