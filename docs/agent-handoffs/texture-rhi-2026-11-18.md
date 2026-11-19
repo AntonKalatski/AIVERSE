@@ -8826,3 +8826,58 @@ re-run focused verifier in the isolated worktree; never disturb the
 original mid-rebase AIVERSE checkout. Do not merge PR #21 until
 native/GPU acceptance passes.
 
+
+## Stage 10AU — native macOS Clang compilation blocker fixes (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / Draft #21.
+**Input:** exact Mac Studio `build.log` and `ctest.log` from
+`aiverse-texture-logs.tar.gz` collected for source HEAD
+`ddd09697901bb69a4a874a6f54ec337a0759160a`.
+Separate worktree
+`/Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819`;
+the main AIVERSE checkout still has an unrelated unresolved rebase.
+
+**Code commits:**
+- `f477dc4873118dcaa1dad326a86d70f837e5a1c4`
+  `engine/render/ModelVirtualTextureSampling.h`:
+  use `std::string` for `bodyAnchor` before calling `.size()`
+  when inserting MSL VT argument-table source. Earlier Clang error:
+  `member reference base type 'const char *const' is not a structure or union`.
+- `ae375203a458c2996af8a527c95cd335235e23b5`
+  `tests/render/virtual_texture_feedback_pass.cpp`:
+  split `auto fb=feedbackCfg(),pf=prefetchCfg()` into two declarations
+  because the return types are not identical (Clang line 199 error).
+- `dd89fce304b4b16e9124771742b178e1c031c5f6`
+  `tests/render/hdr_texture.cpp`:
+  add `rleRun(data,code,value)` to append exactly two raw RLE bytes,
+  replace five invalid calls to the four-component RGBe `pixel` helper.
+  Preserves synthetic HDR fixture intended channel runs and malformed run.
+**Documentation commit:** `6249c16d96fa113301b7ef8f0eb474c53c24fa9b`
+(`docs/texture-rhi.md`).
+
+**Architecture/compatibility:** no public RHI API, serialized data,
+resource ownership, or genre/ECS behavior changed. The MSL source
+generator now compiles as C++ because a `std::string` is used where
+`.size()` is needed. The other changes are strictly in CPU regression
+test sources.
+
+**Actual verification:** read the actual user-supplied build log, grouped
+compiler errors by unique file/line, and re-read the current GitHub source
+before editing each location. GitHub accepted the changes.
+**Post-fix native C++ compilation, HDR regression test, GPU ICB test,
+editor build, CTest and GPU image validation have NOT RUN.**
+The older test run recorded 13 successful builds, 8 failed builds and
+15/23 passing tests; it is NOT a passing verification result for these
+new commits.
+
+**Separate runtime failure still open:** the older CTest log reported
+`virtual_texture_file_streamer` as `FAILED` (not a missing executable),
+reason `capture next frame after consuming result`. Investigate
+the feedback mock/runtime callback lifecycle in the next bounded stage.
+
+**Next:** investigate and fix the actual `virtual_texture_file_streamer`
+runtime failure, record separate handoff; then pull the feature branch
+into the isolated macOS worktree and rerun
+`bash tools/verify-texture-rhi.sh --editor --jobs 4`.
+Keep PR #21 Draft until native tests and real GPU results are verified.
+
