@@ -100,11 +100,151 @@ run_logged safe-build cmake --build "$SAFE" --target ${safe_targets[@]} --parall
 safe_regex="$(IFS='|'; echo "${safe_tests[*]}")"
 run_logged safe-ctest ctest --test-dir "$SAFE" \
   --output-on-failure --no-tests=error --parallel "$JOBS" -R "^($safe_regex)$"
-if ctest --test-dir "$SAFE" -N -R '^(virtual_texture_pack|virtual_texture_feedback_(shaders|msl))$' |
+if ctest --test-dir "$SAFE" -N -R '^(virtual_texture_pack|virtual_texture_feedback_(shaders|msl)|virtual_texture_sampling_(glsl|msl)) |
    grep -Eq 'Test +#[0-9]'; then
   run_logged safe-optional-vt-ctest ctest --test-dir "$SAFE" \
     --output-on-failure --no-tests=error \
     -R '^(virtual_texture_pack|virtual_texture_feedback_(shaders|msl))$'
+fi
+if ((FULL_ENGINE)); then
+  run_logged full-engine-build cmake --build "$SAFE" --parallel "$JOBS"
+  run_logged full-engine-ctest ctest --test-dir "$SAFE" \
+    --output-on-failure --no-tests=error --parallel "$JOBS"
+fi
+
+# The seven real Metal tests are opt-in and compiled from current source
+# before ANY CTest executes. CTest tests run serially, in fresh processes.
+run_logged gpu-configure cmake -S . -B "$GPU" \
+  -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_GPU_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_RENDERER_GRAPH_GPU_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_GRAPH_VT_ICB_GPU_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_GRAPH_VT_SEAM_GPU_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_VT_BILINEAR_GPU_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_GRAPH_VT_GUTTER_GPU_TESTS=ON
+gpu_targets=(
+  aiverse_metal_texture_gpu_test aiverse_metal_texture_icb_graph_gpu_test
+  aiverse_metal_renderer_graph_icb_gpu_test
+  aiverse_metal_renderer_graph_vt_icb_gpu_test
+  aiverse_metal_renderer_graph_vt_seam_gpu_test
+  aiverse_metal_vt_bilinear_gpu_test
+  aiverse_metal_renderer_graph_vt_gutter_gpu_test
+)
+gpu_tests=(
+  metal_texture_gpu metal_texture_icb_graph_gpu
+  metal_renderer_graph_icb_gpu metal_renderer_graph_vt_icb_gpu
+  metal_renderer_graph_vt_seam_gpu metal_vt_bilinear_gpu
+  metal_renderer_graph_vt_gutter_gpu
+)
+markers=(
+  ''
+  'PASS: GPU ICB graph sources=4, per-command textures/U2 pixel parity'
+  'PASS: production Renderer3D compiled Shader Graph 4-source mixed Metal GPU ICB pixels'
+  'PASS: production Renderer3D Shader Graph+disk VT mixed Metal GPU ICB coarse/fine/LRU pixel parity'
+  'PASS: Renderer3D Shader Graph disk VT missing-page and Repeat/MirrorRepeat seam GPU ICB oracle'
+  'PASS: native Metal canonical VT bilinear nonuniform gutter seam and Repeat/MirrorRepeat CPU pixel oracle'
+  'PASS: production Renderer3D Shader Graph nonuniform guttered disk VT mixed Metal GPU ICB seam parity'
+)
+run_logged gpu-build cmake --build "$GPU" --target ${gpu_targets[@]} --parallel "$JOBS"
+for index in "${!gpu_tests[@]}"; do
+  test_name="${gpu_tests[$index]}"
+  run_logged "gpu-$test_name" ctest --test-dir "$GPU" --verbose \
+    --output-on-failure --no-tests=error -R "^$test_name$"
+  # Some macOS NSApplication-hosted tests used to terminate with status 0
+  # even after a fixture check printed FAIL:. Reject all such false PASSes.
+  if grep -Eq '(^|[[:space:]])FAIL:' "$LOGS/gpu-$test_name.log"; then
+    echo "FAIL: $test_name printed a native test assertion error" >&2
+    exit 1
+  fi
+  marker="${markers[$index]}"
+  if [[ -n "$marker" ]] && ! grep -Fq "$marker" "$LOGS/gpu-$test_name.log"; then
+    echo "FAIL: $test_name CTest lacked mandatory execution marker: $marker" >&2
+    exit 1
+  fi
+done
+{
+  echo "sha=$(git rev-parse HEAD)"
+  echo "safe_texture_tests=21"
+  echo "native_metal_gpu_tests=7"
+  echo "full_engine=$FULL_ENGINE"
+  echo "result=PASS"
+} | tee "$LOGS/acceptance.txt"
+echo "PASS: all 21 portable texture/graph and 7 native Metal GPU tests"
+echo "Logs: $LOGS"
+ |
+   grep -Eq 'Test +#[0-9]'; then
+  run_logged safe-optional-vt-ctest ctest --test-dir "$SAFE" \
+    --output-on-failure --no-tests=error \
+    -R '^(virtual_texture_pack|virtual_texture_feedback_(shaders|msl)|virtual_texture_sampling_(glsl|msl))
+fi
+if ((FULL_ENGINE)); then
+  run_logged full-engine-build cmake --build "$SAFE" --parallel "$JOBS"
+  run_logged full-engine-ctest ctest --test-dir "$SAFE" \
+    --output-on-failure --no-tests=error --parallel "$JOBS"
+fi
+
+# The seven real Metal tests are opt-in and compiled from current source
+# before ANY CTest executes. CTest tests run serially, in fresh processes.
+run_logged gpu-configure cmake -S . -B "$GPU" \
+  -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_GPU_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_RENDERER_GRAPH_GPU_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_GRAPH_VT_ICB_GPU_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_GRAPH_VT_SEAM_GPU_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_VT_BILINEAR_GPU_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_GRAPH_VT_GUTTER_GPU_TESTS=ON
+gpu_targets=(
+  aiverse_metal_texture_gpu_test aiverse_metal_texture_icb_graph_gpu_test
+  aiverse_metal_renderer_graph_icb_gpu_test
+  aiverse_metal_renderer_graph_vt_icb_gpu_test
+  aiverse_metal_renderer_graph_vt_seam_gpu_test
+  aiverse_metal_vt_bilinear_gpu_test
+  aiverse_metal_renderer_graph_vt_gutter_gpu_test
+)
+gpu_tests=(
+  metal_texture_gpu metal_texture_icb_graph_gpu
+  metal_renderer_graph_icb_gpu metal_renderer_graph_vt_icb_gpu
+  metal_renderer_graph_vt_seam_gpu metal_vt_bilinear_gpu
+  metal_renderer_graph_vt_gutter_gpu
+)
+markers=(
+  ''
+  'PASS: GPU ICB graph sources=4, per-command textures/U2 pixel parity'
+  'PASS: production Renderer3D compiled Shader Graph 4-source mixed Metal GPU ICB pixels'
+  'PASS: production Renderer3D Shader Graph+disk VT mixed Metal GPU ICB coarse/fine/LRU pixel parity'
+  'PASS: Renderer3D Shader Graph disk VT missing-page and Repeat/MirrorRepeat seam GPU ICB oracle'
+  'PASS: native Metal canonical VT bilinear nonuniform gutter seam and Repeat/MirrorRepeat CPU pixel oracle'
+  'PASS: production Renderer3D Shader Graph nonuniform guttered disk VT mixed Metal GPU ICB seam parity'
+)
+run_logged gpu-build cmake --build "$GPU" --target ${gpu_targets[@]} --parallel "$JOBS"
+for index in "${!gpu_tests[@]}"; do
+  test_name="${gpu_tests[$index]}"
+  run_logged "gpu-$test_name" ctest --test-dir "$GPU" --verbose \
+    --output-on-failure --no-tests=error -R "^$test_name$"
+  # Some macOS NSApplication-hosted tests used to terminate with status 0
+  # even after a fixture check printed FAIL:. Reject all such false PASSes.
+  if grep -Eq '(^|[[:space:]])FAIL:' "$LOGS/gpu-$test_name.log"; then
+    echo "FAIL: $test_name printed a native test assertion error" >&2
+    exit 1
+  fi
+  marker="${markers[$index]}"
+  if [[ -n "$marker" ]] && ! grep -Fq "$marker" "$LOGS/gpu-$test_name.log"; then
+    echo "FAIL: $test_name CTest lacked mandatory execution marker: $marker" >&2
+    exit 1
+  fi
+done
+{
+  echo "sha=$(git rev-parse HEAD)"
+  echo "safe_texture_tests=21"
+  echo "native_metal_gpu_tests=7"
+  echo "full_engine=$FULL_ENGINE"
+  echo "result=PASS"
+} | tee "$LOGS/acceptance.txt"
+echo "PASS: all 21 portable texture/graph and 7 native Metal GPU tests"
+echo "Logs: $LOGS"
+
 fi
 if ((FULL_ENGINE)); then
   run_logged full-engine-build cmake --build "$SAFE" --parallel "$JOBS"
