@@ -130,6 +130,26 @@ inline NereidSceneSurface surface(const Json& j) {
             throw JsonError("nereidWater.currentField: invalid river current profile");
         s.useCurrentField=true;
     }
+    if(j.has("vortices")) {
+        const auto& vortices=j["vortices"];
+        if(!vortices.isArray() || vortices.size()>kMaxWaterVortices)
+            throw JsonError("nereidWater.vortices: expected at most 16 entries");
+        for(const auto& entry:vortices.items()) {
+            if(!entry.isArray() || entry.size()!=5)
+                throw JsonError("nereidWater.vortices: expected [x,z,radius,circulation,radial]");
+            WaterVortex vortex;
+            vortex.center={
+                coordinate(entry[0],"vortex.x"),
+                coordinate(entry[1],"vortex.z")};
+            vortex.radius=positive(entry[2],"vortex.radius",10000_fx);
+            vortex.circulation=coordinate(entry[3],"vortex.circulation",1000_fx);
+            vortex.radial=coordinate(entry[4],"vortex.radial",1000_fx);
+            s.vortices.vortices.push_back(vortex);
+        }
+        s.useVortices=true;
+        if(!validWaterVortexField(s.vortices))
+            throw JsonError("nereidWater.vortices: invalid vortex field");
+    }
     if(j.has("lod"))s.mesh.lod=lod(j.getStr("lod"));
     if(j.has("autoLod")) {
         if(j["autoLod"].type()!=Json::Type::Bool)
