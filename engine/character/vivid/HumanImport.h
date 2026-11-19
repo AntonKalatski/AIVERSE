@@ -9,6 +9,11 @@
 #include <vector>
 
 namespace aiverse::vivid {
+struct HumanLodEntry {
+    std::string meshName;
+    std::string sourceMeshName;
+    std::string mappingPath;
+};
 struct HumanImportManifest {
     std::uint32_t version=1;
     std::string modelPath;
@@ -17,6 +22,7 @@ struct HumanImportManifest {
     // Optional named closed proxy mesh, authored directly in groom-local space.
     // It must have no skin and must not require a node transform.
     std::string scalpColliderMesh;
+    std::vector<HumanLodEntry> facialLods; // 0..8 immutable mapping sidecars
     std::vector<ShapeRoute> routes;
     std::map<std::string,HumanSurface> materials; // imported material name -> type
     void validate() const;
