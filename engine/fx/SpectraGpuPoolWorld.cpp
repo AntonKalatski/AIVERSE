@@ -475,11 +475,96 @@ bool GpuPoolWorld::beginPresentationFrame(const render::RTSCamera& camera,
     return true;
 }
 
+void GpuPoolWorld::tickContinuous(float dt) {
+    // Called once from step, before stepped_ is set. This scheduler is
+    // rendering-only; it never integrates an authoritative gameplay state.
+    for(uint32_t slot=0;slot<uint32_t(sources_.size());++slot) {
+        Source& source=sources_[slot];
+        if(!source.active)continue;
+        if(source.paused || !source.transformAttached) {
+            source.lastStepPosition=source.position;
+            continue;
+        }
+        const auto& cfg=source.continuous;
+        if(cfg.burstsPerSecond<=0.f && cfg.metresPerBurst<=0.f) {
+            source.lastStepPosition=source.position;
+            continue;
+        }
+        float frameDt=dt;
+        if(cfg.lifetimeSeconds>0.f) {
+            frameDt=std::min(dt,std::max(0.f,cfg.lifetimeSeconds-source.elapsed));
+            source.elapsed=std::min(cfg.lifetimeSeconds,source.elapsed+dt);
+        }
+        if(frameDt<=0.f) {
+            source.paused=true;
+            source.lastStepPosition=source.position;
+            continue;
+        }
+        const PoolSourceId handle{sourceWorldEpoch_,slot,source.generation};
+        if(!sourceActive(handle)) {
+            source.paused=true; // a redefined binding cannot start new births
+            source.lastStepPosition=source.position;
+            continue;
+        }
+        const fx::float3 start=source.lastStepPosition;
+        const fx::float3 end=source.position;
+        const fx::float3 displacement=end-start;
+        const float distance=render::length(displacement)*
+            (dt>0.f?frameDt/dt:0.f);
+        const double rateTotal=double(source.accumulatedRate)+
+                               double(frameDt)*cfg.burstsPerSecond;
+        const uint32_t rateCount=uint32_t(std::min(
+            std::floor(rateTotal),double(std::numeric_limits<uint32_t>::max())));
+        source.accumulatedRate=float(rateTotal-std::floor(rateTotal));
+        uint32_t distanceCount=0;
+        const float oldDistance=source.accumulatedDistance;
+        if(cfg.metresPerBurst>0.f) {
+            const double total=double(oldDistance)+double(distance);
+            const double num=std::floor(total/double(cfg.metresPerBurst));
+            distanceCount=uint32_t(std::min(
+                num,double(std::numeric_limits<uint32_t>::max())));
+            source.accumulatedDistance=float(std::fmod(total,
+                double(cfg.metresPerBurst)));
+        } else source.accumulatedDistance=0.f;
+        // Discard excess rather than accumulating an unbounded catch-up queue.
+        const uint64_t wanted=uint64_t(rateCount)+distanceCount;
+        const uint32_t limit=std::min(cfg.maxBurstsPerFrame,
+             budgets_.maxBurstsPerFrame>stats_.frameBursts
+                ?budgets_.maxBurstsPerFrame-stats_.frameBursts:0u);
+        const uint32_t eligible=uint32_t(std::min<uint64_t>(wanted,limit));
+        stats_.continuousSkipped+=wanted-eligible;
+        uint32_t emitted=0;
+        for(uint32_t i=0;i<eligible;++i) {
+            fx::float3 pos=end;
+            if(i>=rateCount && cfg.metresPerBurst>0.f && distance>1e-6f) {
+                const uint32_t j=i-rateCount;
+                const float along=cfg.metresPerBurst-oldDistance+
+                    float(j)*cfg.metresPerBurst;
+                pos=start+displacement*std::clamp(along/distance,0.f,1.f);
+            }
+            if(emitSource(handle,pos,source.direction,source.tint)) {
+                ++emitted;
+                ++stats_.continuousBursts;
+            } else {
+                // No retries this frame; an exhausted group must not delay
+                // simulation or another source's emission.
+                stats_.continuousSkipped+=eligible-i;
+                break;
+            }
+        }
+        (void)emitted;
+        source.lastStepPosition=source.position;
+        if(cfg.lifetimeSeconds>0.f &&
+           source.elapsed>=cfg.lifetimeSeconds)source.paused=true;
+    }
+}
+
 bool GpuPoolWorld::step(float dt) {
     if(!initialized_||!frameOpen_||stepped_||!valid(dt)||dt<0.f||dt>1.f) {
         reason_="SpectraFX pool step must run once before render with dt in [0,1]";
         return false;
     }
+    tickContinuous(dt);
     stepped_=true;
     cpu_.update(dt);
     bool allOk=true;
