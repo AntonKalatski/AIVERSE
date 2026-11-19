@@ -511,4 +511,28 @@ private:
     std::map<terraweave::AnchoredPlantId,std::uint64_t> owned_;
 };
 
+// Convenience entry point for native game modules. Call at a committed
+// authoritative post-simulation barrier, AFTER all PHYSIS and TerraWeave
+// ECS systems, before Box3D::Scene::step(). No genre-specific dependencies.
+// Physics output is derived and must not feed float data back into PHYSIS.
+struct NatureFallHostBarrierResult {
+    physis::NatureFractureDispatchStats delivery{};
+    NatureFallReconcileStats physics{};
+};
+template<class SpeciesSpec>
+inline NatureFallHostBarrierResult advanceNatureFallHostBarrier(
+        World& world,
+        terraweave::FallenPlantPhysics& bodies,
+        NatureFallBox3DReconciler& reconciler,
+        SpeciesSpec&& species,
+        std::size_t maxEvents = 64,
+        terraweave::TerraWeaveForestScene* forest = nullptr) {
+    NatureFallHostBarrierResult result;
+    result.delivery = dispatchPhysisTerraWeaveFalls(world,maxEvents);
+    result.physics = reconciler.reconcile(
+        static_cast<const World&>(world),bodies,
+        std::forward<SpeciesSpec>(species),forest);
+    return result;
+}
+
 } // namespace aiverse::world
