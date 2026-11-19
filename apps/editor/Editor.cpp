@@ -844,10 +844,29 @@ void Editor::queueSpectraGpuPreview(fx::EffectDef effect,
 void Editor::stopSpectraGpuPreview() {
     spectraPreviewRequest_.pending=false;
     spectraPreviewStop_=true; // resources release before a future scene pass
+    spectraPreviewRestart_=false;
+    spectraPreviewStepRequests_=0;
 }
 void Editor::setSpectraGpuPreviewSpeed(float speed) {
     if(std::isfinite(speed))
         spectraPreviewSpeed_=std::clamp(speed,0.1f,2.0f);
+}
+bool Editor::queueSpectraGpuPreviewFrames(uint32_t frames) {
+    // Advance only while frozen, where a frame request has an unambiguous
+    // 1/60-second visual-only meaning. No secret GPU frame replay/scrubbing.
+    constexpr uint32_t kMaxAdvanceFrames=300;
+    if(!spectraGpuPreviewActive() || !spectraPreviewFrozen_ || frames==0 ||
+       frames>kMaxAdvanceFrames ||
+       spectraPreviewStepRequests_>kMaxAdvanceFrames-frames)
+        return false;
+    spectraPreviewStepRequests_+=frames;
+    return true;
+}
+bool Editor::restartSpectraGpuPreview() {
+    if(!spectraGpuPreviewActive() || spectraPreviewStop_)return false;
+    spectraPreviewRestart_=true; // executes before the next scene pass
+    spectraPreviewStepRequests_=0;
+    return true;
 }
 bool Editor::spectraGpuPreviewActive() const {
     return spectraPreviewGpu_ && spectraPreviewGpu_->ready();
@@ -861,6 +880,9 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
         spectraPreviewLoop_=false;
         spectraPreviewPaused_=spectraPreviewFrozen_=false;
         spectraPreviewStepRequests_=0;
+        spectraPreviewRestart_=false;
+        spectraPreviewVisualSeconds_=0;
+        spectraPreviewLastError_.clear();
     }
     if(spectraPreviewRequest_.pending && spectraPreviewRequest_.inGame==game) {
         auto pending=std::move(spectraPreviewRequest_);
@@ -877,7 +899,8 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
             ok=candidate->defineEffect("__editor_gpu_preview",pending.effect,options);
         }
         if(!ok) {
-            ws_.log("spectrafx","Metal preview not available: "+candidate->reason(),true);
+            spectraPreviewLastError_="Metal preview not available: "+candidate->reason();
+            ws_.log("spectrafx",spectraPreviewLastError_,true);
         } else {
             if(spectraGpuTelemetry_==spectraPreviewGpu_.get())
                 spectraGpuTelemetry_=nullptr;
@@ -888,6 +911,9 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
             spectraPreviewPaused_=spectraPreviewFrozen_=false;
             spectraPreviewSpeed_=1.f;
             spectraPreviewStepRequests_=0;
+            spectraPreviewRestart_=false;
+            spectraPreviewVisualSeconds_=0;
+            spectraPreviewLastError_.clear();
             spectraPreviewParams_=pending.params;
             spectraPreviewPosition_=pending.position;
             spectraPreviewNextBurst_=-1; // guaranteed first-frame spawn
@@ -895,6 +921,19 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
     }
     if(!spectraPreviewGpu_ || spectraPreviewInGame_!=game || w<=0 || h<=0)
         return;
+    if(spectraPreviewRestart_) {
+        spectraPreviewRestart_=false;
+        if(!spectraPreviewGpu_->resetForRollback()) {
+            spectraPreviewLastError_="Metal preview restart rejected: "+
+                                    spectraPreviewGpu_->reason();
+            ws_.log("spectrafx",spectraPreviewLastError_,true);
+            return;
+        }
+        spectraPreviewVisualSeconds_=0;
+        spectraPreviewNextBurst_=-1;
+        spectraPreviewStepRequests_=0;
+        spectraPreviewLastError_.clear();
+    }
     const auto viewProjection=cam.proj(float(w)/float(h),
         dev_->info().clipDepthZeroToOne)*cam.view();
     if(!spectraPreviewGpu_->beginPresentationFrame(cam,viewProjection,w,h)) {
@@ -918,8 +957,13 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
         dt=1.f/60.f; // one simulation frame, no new bursts while frozen
         --spectraPreviewStepRequests_;
     }
-    if(!spectraPreviewGpu_->step(dt))
-        ws_.log("spectrafx","Metal preview step: "+spectraPreviewGpu_->reason(),true);
+    if(!spectraPreviewGpu_->step(dt)) {
+        spectraPreviewLastError_="Metal preview step: "+spectraPreviewGpu_->reason();
+        ws_.log("spectrafx",spectraPreviewLastError_,true);
+    } else {
+        spectraPreviewVisualSeconds_+=dt;
+        spectraPreviewLastError_.clear();
+    }
 }
 void Editor::drawSpectraGpuPreview() {
     if(!spectraPreviewFrameOpen_ || !spectraPreviewGpu_)return;
