@@ -6,6 +6,13 @@
 #include <memory>
 #include <string>
 #include <utility>
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+#include <cerrno>
+#include <csignal>
+#include <poll.h>
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
 
 using namespace aiverse;
 using namespace aiverse::physis;
@@ -322,6 +329,97 @@ void exclusiveJournalOwnership() {
     }
     std::filesystem::remove_all(dir);
 }
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+// Two genuinely independent OS processes. The child owns a fresh flock fd;
+// SIGKILL intentionally skips JournalProcessLock's RAII destructor.
+void killedProcessReleasesJournalLock() {
+    const auto dir=tempPath();
+    std::filesystem::create_directories(dir);
+    const auto journal=dir/"journal";
+    int ready[2]={-1,-1};
+    if(::pipe(ready)!=0) {
+        CHECK(false);
+        std::filesystem::remove_all(dir);
+        return;
+    }
+    const pid_t child=::fork();
+    if(child<0) {
+        CHECK(false);
+        ::close(ready[0]);
+        ::close(ready[1]);
+        std::filesystem::remove_all(dir);
+        return;
+    }
+    if(child==0) {
+        ::close(ready[0]);
+        JournalProcessLock held;
+        std::string reason;
+        const char state=held.acquire(journal,&reason)?'Y':'N';
+        (void)::write(ready[1],&state,1);
+        ::close(ready[1]);
+        if(state!='Y')::_exit(42);
+        for(;;)::pause();
+    }
+    ::close(ready[1]);
+    struct pollfd descriptor{ready[0],POLLIN,0};
+    int polled=-1;
+    do {polled=::poll(&descriptor,1,3000);}
+    while(polled<0 && errno==EINTR);
+    char acquired='N';
+    if(polled>0 && (descriptor.revents&POLLIN))
+        (void)::read(ready[0],&acquired,1);
+    ::close(ready[0]);
+    CHECK(polled>0 && acquired=='Y');
+    if(acquired=='Y') {
+        JournalProcessLock competing;
+        std::string reason;
+        CHECK(!competing.acquire(journal,&reason));
+        CHECK(!competing.held());
+    }
+    // Crash: no normal release(), no C++ destruction; the OS must drop
+    // the independent child's lock when the process is killed.
+    (void)::kill(child,SIGKILL);
+    int status=0;
+    CHECK(::waitpid(child,&status,0)==child);
+    CHECK(WIFSIGNALED(status) && WTERMSIG(status)==SIGKILL);
+    if(acquired=='Y') {
+        JournalProcessLock restarted;
+        std::string reason;
+        CHECK(restarted.acquire(journal,&reason));
+        CHECK(restarted.held());
+    }
+    std::filesystem::remove_all(dir);
+}
+#endif
+
+#ifndef __EMSCRIPTEN__
+// A second endpoint must refuse the same authoritative receipt journal
+// until the first endpoint, including its listener, has been destroyed.
+void endpointJournalOwnershipLifecycle() {
+    const auto dir=tempPath();
+    std::filesystem::create_directories(dir);
+    const auto journal=dir/"receipts";
+    const auto lookup=[](const std::string& name)->std::optional<net::Key>{
+        return name=="admin"?std::optional<net::Key>(key()):std::nullopt;
+    };
+    std::string error;
+    {
+        LoopbackAdminEndpoint first(journal);
+        const bool started=first.open(0,kEdit,lookup,reader,writer,&error);
+        CHECK(started);
+        if(started) {
+            LoopbackAdminEndpoint competitor(journal);
+            CHECK(!competitor.open(0,kEdit,lookup,reader,writer,&error));
+        }
+    }
+    {
+        LoopbackAdminEndpoint restarted(journal);
+        CHECK(restarted.open(0,kEdit,lookup,reader,writer,&error));
+    }
+    std::filesystem::remove_all(dir);
+}
+#endif
+
 void authProof() {
     auto [client,server]=net::makeLoopbackPair();
     const auto k=key();
@@ -412,6 +510,12 @@ int main(){
     recoveredIntent();
     authProof();
     exclusiveJournalOwnership();
+#if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
+    killedProcessReleasesJournalLock();
+#endif
+#ifndef __EMSCRIPTEN__
+    endpointJournalOwnershipLifecycle();
+#endif
 #ifndef __EMSCRIPTEN__
     realLoopbackWebSocket();
 #endif
