@@ -164,8 +164,7 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
     if(textures_)textures_->trim(device);
 }
 void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
-    nereidWater_.draw(renderer,origin,size,&ripples_,
-                      visualWind_.shaderUniform());
+    nereidWater_.draw(renderer,origin,size,&ripples_,&windField_);
     cascades_.draw(renderer,origin,size);
     // Shader-normal ripples replace the old overlay rings for surfaces
     // using NEREID. The overlay remains available via ripples().draw().
