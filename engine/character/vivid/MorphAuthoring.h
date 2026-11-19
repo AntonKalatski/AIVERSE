@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -79,6 +80,52 @@ public:
             if(it->position==MorphVec3{} && it->normal==MorphVec3{} &&
                it->tangent==MorphVec3{})deltas.erase(it);
         }
+        try { (void)SparseMorphLibrary::compile(vertices_,next); }
+        catch(...) {return false;}
+        commit(std::move(next));
+        return true;
+    }
+    // One undoable brush stroke in source mesh coordinates.
+    // Radius and offset are intentionally bounded for imported scans.
+    bool brush(std::size_t target,std::span<const MorphVec3> source,
+               std::uint32_t center,float radius,MorphVec3 offset) {
+        if(target>=targets_.size() || source.empty() ||
+           source.size()>vertices_ || center>=source.size() ||
+           !std::isfinite(radius) || radius<=0 || radius>10.0f)
+            return false;
+        for(float v:offset)if(!std::isfinite(v)||std::fabs(v)>10.0f)return false;
+        for(const auto& p:source)
+            for(float v:p)if(!std::isfinite(v))return false;
+        auto next=targets_;
+        auto& deltas=next[target].deltas;
+        const auto& pivot=source[center];
+        std::size_t changed=0;
+        const float radiusSquared=radius*radius;
+        for(std::size_t i=0;i<source.size();++i) {
+            const auto& position=source[i];
+            float distanceSquared=0;
+            for(int axis=0;axis<3;++axis) {
+                const float d=position[std::size_t(axis)]-pivot[std::size_t(axis)];
+                distanceSquared+=d*d;
+            }
+            if(distanceSquared>radiusSquared)continue;
+            const float x=std::sqrt(distanceSquared)/radius;
+            const float falloff=(1.0f-x)*(1.0f-x)*(1.0f+2.0f*x);
+            if(falloff<=0)continue;
+            auto it=std::find_if(deltas.begin(),deltas.end(),
+                [&](const MorphDelta& d){return d.vertex==i;});
+            if(it==deltas.end()) {
+                MorphDelta d;
+                d.vertex=std::uint32_t(i);
+                deltas.push_back(d);
+                it=std::prev(deltas.end());
+            }
+            for(int axis=0;axis<3;++axis)
+                it->position[std::size_t(axis)]+=
+                    offset[std::size_t(axis)]*falloff;
+            ++changed;
+        }
+        if(!changed)return true;
         try { (void)SparseMorphLibrary::compile(vertices_,next); }
         catch(...) {return false;}
         commit(std::move(next));
