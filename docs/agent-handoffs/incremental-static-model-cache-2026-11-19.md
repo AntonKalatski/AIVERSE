@@ -1928,3 +1928,60 @@ These are **independent six-sample A→B experiments**, not a statistically robu
 ### Next recommended code step
 
 Instrument per-pass already-available `modelStats().mdiCpuStages` for the 3 paths with batch-only diagnostics (selection, material sorting, candidate scan, command packing, pipeline setup, buffer upload, submit). Then extend sampling: 60+ per phase, balanced A/B/A and 1k/10k/100k fixed-scene models. Consider adaptive dispatch using cost thresholds only after controlled performance gains are demonstrated. Keep Draft PR #34 and all experimental flags OFF by default. For next Mac commands always `cd /Users/aleksandrfeer/Projects/AIVERSE` because a separate PHYSIS worktree previously entered conflicted rebase.
+
+
+---
+
+## Stage 64 — experimental CPU/GPU auto admission, ICB CPU scratch reuse and stage visibility (2026-11-19)
+
+**Repository:** `chromealex/AIVERSE`. **Branch:** `perf/incremental-static-model-cache` (Draft PR #34). **Implementation commits:** `349e9d82934d0d88b5d55d68f0607234b2fe9071`, `022196230906c64cbe75b4f5e8d9ef786eecea96`, `62b1abd497e326804f9af7bbde6fd8658a481bbb`, `1cc90c9c344c1ab09e871fbc1c3333ccbeeb5b98`. Handoff added separately. Experimental code has NOT been compiled or run on Mac at this stage.
+
+### Intent / exact scope
+
+The owner requested automatic CPU/GPU balancing and an investigation of CPU overhead after real Mac Stage 63 data: CPU MDI +21.3% synchronous render wall-time, GPU ICB+CPU MDI +56.1% in a tiny 32-command-per-pass fixture, despite equal pixels and far fewer draw calls.
+
+This first **opt-in conservative workload router** is activated with `AIVERSE_BATCH_AUTO=1` in conjunction with existing opt-in GPU flags (`AIVERSE_GPU_AUTHORED_DRAWS=1 AIVERSE_GPU_ENCODED_ICB=1 AIVERSE_EXPERIMENTAL_METAL_ICB=1`). It DOES NOT yet measure GPU busy time nor provide a total device-level CPU-vs-GPU load balancer. Do not describe it as one.
+
+### Implementation / changed source
+
+- `engine/render/Renderer3D.h`: renderer-owned scratch vectors `gpuIcbSourceSlotsScratch_` and `gpuIcbInstancesScratch_`, plus `gpuIcbAutoMinimum_` (initially 64 commands) and `gpuIcbAutoMisses_`. These are per-renderer lifetime, not global/static shared data.
+- `engine/render/Renderer3DModels.cpp`: no longer creates new `sourceSlots` and `instanceRecords` vectors for every GPU ICB batch; reuses the scratch vectors and zeros the instance data before packing, preserving the existing bytes handed to `prepareGpuEncodedIndexedIcb`. Scratch is only reused after the device preparation call returns, and device upload retains in-flight resources.
+- Auto mode skips GPU command preparation when eligible model item count is below the conservative min(64..256) threshold; existing CPU MDI/instancing/direct processing handles those objects. Auto implies existing `AIVERSE_GPU_ICB_ADAPTIVE` preflight and no GPU-singleton fallback, so unsuccessful preflight does not pay the GPU compute cost. After 3 rejected candidate preparation passes, minimum doubles up to 256; a successful fully prepared pass decays threshold toward 64. This is feedback on prepared/rejected GPU ICB groups, **not measured CPU or GPU wall time**. Manual/default modes retain their prior routing.
+- `tests/render/material_batches.cpp`: with `AIVERSE_BATCH_CPU_TIMING=1`, prints both shadow/opaque `modelStats().mdiCpuStages` breakdowns (selection, grouping, candidate scan, packing, pipeline, buffer upload, submit) in addition to the existing render() CPU median/p95. Timing is synchronous CPU-only.
+
+### Verification / risks / next steps
+
+Source was read and updated using GitHub connector. **NOT RUN:** local/native build, CTest, Metal raster parity, Auto-mode fixture, performance improvement, full CI, Vulkan. Thus no speedup or correctness assertion for Stage 64. Scratch buffer lifetime/Metal upload safety should be validated on device, and auto must be tested with both tiny (<64) and large (>=64) groups; the existing 32-command fixture with `AIVERSE_EXPECT_GPU_ICB=1` is *incompatible* with the new auto skip-by-design and must be run without that expectation when checking CPU fallback. Do not modify default enablement; PR remains Draft.
+
+Current auto policy addresses **workload admission and repeated GPU preparation failure only**. A genuinely frame-time-aware scheduler should incorporate CPU moving-window stage costs, measured GPU timestamps (if supported), memory pressure, backpressure and hysteresis, then use per-pass thresholds learned from fixed-camera A/B/A data. Do not infer device GPU utilization from draw-call count. Further CPU optimization targets: trace the new breakdown output on Mac first, then concentrate on whichever stage truly dominates; avoid speculative changes to material equivalence or correctness gates.
+
+### Mac Studio verification
+
+```sh
+cd /Users/aleksandrfeer/Projects/AIVERSE || exit 1
+git fetch origin
+git switch perf/incremental-static-model-cache
+git pull --ff-only origin perf/incremental-static-model-cache
+cmake --build build/batching-gpu-verify --target aiverse_material_batches --parallel 8 || exit 1
+mkdir -p build/batching-gpu-verify/captures
+
+# Existing GPU ICB isolation benchmark, without the auto policy.
+AIVERSE_BATCH_CPU_TIMING=1 AIVERSE_BATCH_BENCH_MODE=gpu_icb \
+AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTHORED_DRAWS=1 \
+AIVERSE_GPU_ENCODED_ICB=1 AIVERSE_GPU_ICB_RIGID=1 \
+AIVERSE_GPU_ICB_MIN_COMMANDS=2 AIVERSE_EXPECT_GPU_ICB=1 \
+AIVERSE_PALETTE_TEST_CASE=indirect \
+build/batching-gpu-verify/aiverse_material_batches unused.obj build/batching-gpu-verify/captures/gpu-icb
+echo "gpu-icb exit=$?"
+
+# Automatic workload admission on the same intentionally tiny fixture.
+# Expected: choose CPU/instancing instead of GPU ICB; do NOT set EXPECT_GPU_ICB.
+AIVERSE_BATCH_CPU_TIMING=1 AIVERSE_BATCH_AUTO=1 \
+AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTHORED_DRAWS=1 \
+AIVERSE_GPU_ENCODED_ICB=1 AIVERSE_GPU_ICB_RIGID=1 \
+AIVERSE_PALETTE_TEST_CASE=indirect \
+build/batching-gpu-verify/aiverse_material_batches unused.obj build/batching-gpu-verify/captures/auto-small
+echo "auto-small exit=$?"
+```
+
+For auto-small require `GPU-encoded ICB ... submissions=0 commands=0`, `changed_channels=0`, `exit=0`; capture CPU MDI breakdown and actual CPU MDI submissions. However, this existing fixture also contains legacy MDI assertions; if the new auto route uses ordinary instancing, inspect the fixture assumptions before interpreting a failure. Add a separate >=64-command stress fixture and GPU timestamps before making any claim about automatic performance benefit. Preserve all existing developer handoffs, no merging until acceptance.
