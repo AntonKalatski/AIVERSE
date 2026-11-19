@@ -791,7 +791,7 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_executable(aiverse_model_image_transaction_tests
         tests/render/model_image_transaction.cpp)
     target_link_libraries(aiverse_model_image_transaction_tests
-        PRIVATE aiverse_models aiverse_zstd_dec)
+        PRIVATE aiverse_models aiverse_zstd_dec Threads::Threads)
     add_test(NAME render_model_image_transaction
         COMMAND aiverse_model_image_transaction_tests)
 endif()
