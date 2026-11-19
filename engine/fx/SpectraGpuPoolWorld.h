@@ -55,6 +55,8 @@ struct PoolCheckpointStats {
     uint64_t requests=0, completed=0, failed=0, budgetDenied=0;
     uint64_t adaptiveBackoffs=0, adaptiveRecoveries=0;
     uint32_t maximumCurrentIntervalFrames=0;
+    uint32_t killedSlotsAwaitingFence=0;
+    uint64_t killedSlotsReclaimed=0;
     size_t bytesReturned=0; // successful callback payload, not GPU DMA metrics
     // If explicitly shared with other worlds, these budget counters reflect
     // the full shared scheduler, not only this GpuPoolWorld.
