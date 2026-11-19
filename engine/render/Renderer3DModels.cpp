@@ -2548,7 +2548,9 @@ void Renderer3D::renderModels(int phase) {
     // path; larger buckets independently explore both CPU alternatives.
     const bool autoCpuLearn = autoBatchCpu && phase <= 1 &&
         !auxiliaryModelPass_ && geometryMainView_ &&
-        gpuEncodedBatches_.empty() && modelMultiDrawEnabled_ &&
+        // GPU ICB covers opaque only; shadow CPU samples remain valid.
+        (phase == 0 || gpuEncodedBatches_.empty()) &&
+        modelMultiDrawEnabled_ &&
         order_.size() >= autoCpuMdiMinimum;
     const bool autoCpuPermit = !autoBatchCpu ||
         (autoCpuLearn && autoCpuBatch_.useMdi(size_t(phase), order_.size()));
