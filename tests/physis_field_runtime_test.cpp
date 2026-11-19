@@ -183,6 +183,68 @@ void replayIdentityAndRollback() {
     CHECK(registry(*a).revision==1);
     CHECK(a->checksum()==b->checksum() || a->tick()!=b->tick());
 }
+void multiEditRollbackReplay() {
+    auto sim=make();
+    SimSnapshot checkpoint;
+    sim->saveState(checkpoint);
+    const auto originalChecksum=sim->checksum();
+    const Entity originalWind=bound(*sim,"wind-a");
+    const Entity originalStorm=bound(*sim,"storm-c");
+
+    FieldEditBatch first{0,initial()};
+    for(auto& asset:first.desired) {
+        if(asset.id=="wind-a") {
+            auto zone=std::get<WindZone>(asset.data);
+            zone.velocity.x=Fixed::fromInt(23);
+            asset.data=zone;
+        }
+    }
+    Command a;
+    CHECK(encodeFieldEditCommand(first,kFieldEditCmd,a));
+    a.tick=0;a.seq=1;
+    sim->inject(a);
+    sim->step();
+    CHECK(registry(*sim).revision==1);
+    CHECK(bound(*sim,"wind-a")==originalWind);
+
+    FieldEditBatch second{1,first.desired};
+    second.desired.erase(std::remove_if(second.desired.begin(),
+        second.desired.end(),[](const AuthoredField& field) {
+            return field.id=="storm-c";
+        }),second.desired.end());
+    Command b;
+    CHECK(encodeFieldEditCommand(second,kFieldEditCmd,b));
+    b.tick=1;b.seq=2;
+    sim->inject(b);
+    sim->step();
+    CHECK(registry(*sim).revision==2);
+    CHECK(bound(*sim,"storm-c")==kNullEntity);
+    CHECK(!sim->world().alive(originalStorm));
+    const auto committedChecksum=sim->checksum();
+    const auto committedTick=sim->tick();
+
+    sim->loadState(checkpoint);
+    CHECK(sim->checksum()==originalChecksum);
+    CHECK(registry(*sim).revision==0);
+    CHECK(bound(*sim,"wind-a")==originalWind);
+    CHECK(bound(*sim,"storm-c")==originalStorm);
+    CHECK(sim->world().alive(originalStorm));
+
+    sim->inject(a);
+    sim->step();
+    sim->inject(b);
+    sim->step();
+    CHECK(sim->tick()==committedTick);
+    CHECK(registry(*sim).revision==2);
+    CHECK(sim->checksum()==committedChecksum);
+
+    // A replay of an already consumed revision cannot mutate the World.
+    const auto beforeStale=sim->checksum();
+    std::string error;
+    a.tick=sim->tick();
+    CHECK(!applyFieldEditCommand(*sim,a,kFieldEditCmd,&error));
+    CHECK(sim->checksum()==beforeStale);
+}
 void kindChangeAndSave() {
     auto one=make();
     FieldEditBatch req{0,initial()};
@@ -445,6 +507,7 @@ void authorityAndStale() {
 int main() {
     formatAndValidation();
     replayIdentityAndRollback();
+    multiEditRollbackReplay();
     kindChangeAndSave();
     submitViaSimulationCommandQueue();
     authorityAndStale();
