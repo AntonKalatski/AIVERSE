@@ -129,19 +129,29 @@ public:
             ImGui::TextDisabled("GPU откат моделей: ошибок очереди %llu · потерянных моделей %llu",
                 (unsigned long long)residency.stagingQueueFailures,
                 (unsigned long long)residency.stagingOrphanModels);
+        if(const auto& targets=ed.offscreenTargets();targets) {
+            ImGui::TextDisabled("GPU render targets: %zu пар ждут fence",
+                targets->pendingPairs());
+            if(targets->enqueueFailures() || targets->orphanedPairs())
+                ImGui::TextDisabled("Render targets: ошибок очереди %llu · сиротских пар %llu",
+                    (unsigned long long)targets->enqueueFailures(),
+                    (unsigned long long)targets->orphanedPairs());
+        }
         if(const auto* ring=ed.gpuRetirementDiagnostics()) {
-            size_t modelEvents=0,imageEvents=0;
+            size_t modelEvents=0,imageEvents=0,targetEvents=0;
             for(const auto& event:ring->snapshot()) {
                 if(event.resource==render::RetirementResourceKind::Model)
                     ++modelEvents;
                 else if(event.resource==render::RetirementResourceKind::Image)
                     ++imageEvents;
+                else if(event.resource==render::RetirementResourceKind::Target)
+                    ++targetEvents;
             }
             ImGui::TextDisabled("GPU retirement события: %zu/%zu · переполнений %llu",
                 ring->size(),ring->capacity(),
                 (unsigned long long)ring->overflowCount());
-            ImGui::TextDisabled("Из них GPU модели: %zu · откат текстур: %zu",
-                modelEvents,imageEvents);
+            ImGui::TextDisabled("Из них GPU модели: %zu · откат текстур: %zu · RenderTargets: %zu",
+                modelEvents,imageEvents,targetEvents);
         }
         ImGui::TextDisabled("Общий geometry pool учитывается выше отдельно. Оценки без драйверных mip/padding, FX и RT.");
         ImGui::TextDisabled("Выгрузка моделей редактора: %s (период ожидания 15 с)",
