@@ -940,6 +940,7 @@ struct CreatorApp {
                         MorphLodMapping map;
                         map.sourceVertices=std::uint32_t(originalPositions.size());
                         map.sourceTriangles=std::uint32_t(faceIndices.size()/3);
+                        map.targetVertexIds=targetIds;
                         map.sourceFingerprint=MorphLodMapping::fingerprint(
                             originalPositions,faceIndices);
                         map.samples=MorphLodSurface::projectAccelerated(
