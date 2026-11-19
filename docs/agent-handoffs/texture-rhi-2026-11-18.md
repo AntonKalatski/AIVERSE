@@ -7559,3 +7559,49 @@ conflating historical homogeneous groups. Alternatively, add
 a separate opt-in graph texture-array table if resource
 capacities and source dimensions match. Keep safe legacy
 fallback and postpone release tests until feature completion.
+
+
+## Stage 10U — shader graph cache identity parity (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / #21 Draft.
+**Source commits:**
+- `26e0ca8d83d964a048c545de1a2475b2e25c9580`:
+  `engine/render/Renderer3D.h`, exact ModelShaderKey equality
+  includes MSL fragment/vertex source, GLSL source, texture
+  paths, outputs, graph domain and Virtual Texture feature flag,
+  rather than comparing only GLSL, texture count and outputs.
+- `c3fe1fe172571d66207bd4efd2987373df8e5c2a`:
+  `engine/render/Renderer3D.h`, also include graph minQuality
+  in exact cache identity.
+**Documentation commits:**
+- `8cc3303277c646cf767e8f498ffa6db86fe427cf` — `docs/texture-rhi.md`.
+- `9bfef8fdecce4a31d50f40c4438edf9bb58d7d85` —
+  `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Architecture/compatibility:** shader cache equality is
+pointer-fast for same immutable graph and exact for distinct
+graph instances. The full source and material shader capability
+flags are now checked in renderer cache (not just a metadata
+hash). Previously MSL-specific or VT-only variants with the
+same GLSL snippets could share an incorrect shader entry.
+This change preserves external material API and does not alter
+ICB shader arguments or ECS authoritativeness.
+
+**Checks actually performed:** fetched `ModelShaderKey` and
+updated it through GitHub Contents; both source commits and docs
+accepted. **C++ build NOT RUN, CTest NOT RUN, GLSL/MSL shader
+compile NOT RUN, GPU smoke tests NOT RUN.** Do not infer success.
+
+**Known limitations:** GPU material grouping and ICB commands
+still need full resource identity checks at execution time;
+the existing homogeneous VT grouping is intentionally not
+broadened by this cache-key fix. There is no new per-command
+VT descriptor binding.
+
+**Next:** Stage 10V should add a bounded CPU-side
+`GpuMaterialResourceTable` descriptor identity/payload model
+(including up to four ordinary source textures, optional VT
+atlas/table, layer/gutter/wrap, revision serial). It must support
+deduplication and reject stale index generations. Do not enable
+heterogeneous GPU ICB until Metal argument-buffer command ABI,
+encoder pipeline and hardware checks are implemented together.
