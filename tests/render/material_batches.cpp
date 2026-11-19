@@ -236,6 +236,21 @@ int aiverseMain(int argc, char** argv) {
     const bool cpuTiming = std::getenv("AIVERSE_BATCH_CPU_TIMING") &&
         std::string(std::getenv("AIVERSE_BATCH_CPU_TIMING")) == "1";
     std::vector<double> cpuRenderBefore, cpuRenderAfter;
+    // Opt-in per-frame CPU timeline: buffer data in memory and write once
+    // after the capture window to avoid I/O during measured render frames.
+    const bool frameTimeline = stress && std::getenv("AIVERSE_BATCH_FRAME_TIMELINE") &&
+        std::string(std::getenv("AIVERSE_BATCH_FRAME_TIMELINE")) == "1";
+    struct FrameCpuSample {
+        int index = 0;
+        double renderMs = 0.0;
+        uint64_t mdiSubmissions = 0;
+        uint64_t mdiCommands = 0;
+        uint32_t shadowDraws = 0, opaqueDraws = 0;
+        double shadowCpuMs = 0.0, opaqueCpuMs = 0.0;
+        double shadowBackendMs = 0.0, opaqueBackendMs = 0.0;
+    };
+    std::vector<FrameCpuSample> frameCpuTimeline;
+    if (frameTimeline) frameCpuTimeline.reserve(128);
     // Stage 76: do not conflate AUTO exploration frames with its learned
     // Direct frames. Retain CPU samples for *actual* successful MDI frames.
     std::vector<double> stressDirectFallbackMs, stressSuccessfulMdiMs;
@@ -386,6 +401,19 @@ int aiverseMain(int argc, char** argv) {
         const auto startCpu = std::chrono::steady_clock::now();
         renderer.render(pass);
         const auto endCpu = std::chrono::steady_clock::now();
+        if (frameTimeline && batch && frame <= captureAfterFrame) {
+            const auto& stats = renderer.modelStats();
+            const auto& profile = renderer.profile();
+            frameCpuTimeline.push_back({
+                frame,
+                std::chrono::duration<double, std::milli>(endCpu-startCpu).count(),
+                stats.multiDrawSubmissions, stats.indirectCommands,
+                profile.draws[0], profile.draws[1],
+                stats.mdiCpuStages[0].totalMs, stats.mdiCpuStages[1].totalMs,
+                stats.mdiCpuStages[0].backendSubmitMs,
+                stats.mdiCpuStages[1].backendSubmitMs
+            });
+        }
         if (stress && batch && captureMdi && frame >= 100 &&
             !mdiCaptureRequested && renderer.modelStats().multiDrawSubmissions > 0) {
             // Capture a frame with a *real* CPU MDI submission rather than
@@ -555,6 +583,29 @@ int aiverseMain(int argc, char** argv) {
                 }
             }
 
+        }
+        if (frameTimeline && frame == captureAfterFrame) {
+            const std::string path = prefix + "-frames.csv";
+            std::ofstream csv(path, std::ios::binary);
+            csv << "frame,render_cpu_ms,mdi_submissions,mdi_commands,"
+                   "shadow_draws,opaque_draws,shadow_cpu_ms,opaque_cpu_ms,"
+                   "shadow_backend_ms,opaque_backend_ms\n";
+            for (const auto& sample : frameCpuTimeline) {
+                csv << sample.index << ',' << sample.renderMs << ','
+                    << sample.mdiSubmissions << ',' << sample.mdiCommands << ','
+                    << sample.shadowDraws << ',' << sample.opaqueDraws << ','
+                    << sample.shadowCpuMs << ',' << sample.opaqueCpuMs << ','
+                    << sample.shadowBackendMs << ',' << sample.opaqueBackendMs << '\n';
+            }
+            csv.close();
+            if (!csv) {
+                std::fprintf(stderr, "stress frame timeline CSV write failed: %s\n",
+                             path.c_str());
+                failed = true;
+            } else {
+                std::printf("stress frame timeline samples=%zu path=%s\n",
+                            frameCpuTimeline.size(), path.c_str());
+            }
         }
         if (stress && frame == captureAfterFrame && captureMdi &&
             (!mdiCaptureRequested || !mdiCaptureVerified)) {
