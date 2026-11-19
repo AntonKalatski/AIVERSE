@@ -76,6 +76,11 @@ struct BufferDesc {
     bool snapshotUpdates = false; // Dynamic: preserve earlier updates encoded in this frame
 };
 
+struct TextureInfo {
+    int width = 0, height = 0;
+    PixelFormat format = PixelFormat::RGBA8;
+};
+
 struct TextureDesc {
     int width = 0, height = 0;
     PixelFormat format = PixelFormat::RGBA8;
@@ -166,6 +171,11 @@ public:
     virtual TextureHandle createTexture(const TextureDesc& d) = 0;
     virtual void updateTexture(TextureHandle h, int x, int y, int w, int h2, const void* pixels, int rowPitchBytes) = 0;
     virtual void destroyTexture(TextureHandle h) = 0;
+    // CPU-only RHI metadata lookup; no readback, synchronization or texture
+    // sampling. Unsupported providers return false and leave out unchanged.
+    virtual bool textureInfo(TextureHandle h, TextureInfo& out) const {
+        (void)h; (void)out; return false;
+    }
     virtual ShaderHandle createShader(const ShaderDesc& d) = 0;   // returns invalid handle on failure (see lastError())
     // Start on the device thread, then poll on that same thread. Jobs must not outlive
     // the device. Dropping a job cancels publication; backend callbacks own their data.
