@@ -231,6 +231,15 @@ public:
     virtual double gpuFrameMs() const { return 0; } // last completed frame; asynchronous
     // Zero if backend does not expose a completed-slot-safe frame serial.
     virtual uint64_t frameSerial() const { return 0; }
+    // GPU-completion timeline for safe nonblocking resource retirement.
+    // gpuSubmissionFence() returns a token covering commands encoded in
+    // the CURRENT GPU frame, including commands still to be submitted.
+    // It is valid only during a GPU frame. Zero means unsupported.
+    // gpuCompletedFence() is the greatest *contiguous* GPU-completed
+    // token observed by this device. It must never use a CPU frame index
+    // as a proxy for completion; zero means no verified completion yet.
+    virtual uint64_t gpuSubmissionFence() const { return 0; }
+    virtual uint64_t gpuCompletedFence() const { return 0; }
 
     // Frame (driven by the platform layer)
     virtual void beginFrame(int framebufferWidth, int framebufferHeight) = 0;
