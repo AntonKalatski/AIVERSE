@@ -64,6 +64,7 @@ public:
     size_t invalidateSources(gfx::Device& dev,
                              const std::vector<std::string>& sources,
                              OnDetach&& onDetach) {
+        (void)dev; // destruction is deferred to collectRetired() after a fence
         std::unordered_set<std::string> changed;
         for(const auto& source:sources)
             if(!source.empty() && source.rfind("shape:",0)!=0)
@@ -122,6 +123,7 @@ public:
     render::Model* replace(gfx::Device& dev,std::string key,
                            std::unique_ptr<render::Model> replacement,
                            OnRelease&& onRelease) {
+        (void)dev; // old model moves into GPU-safe retirement queue
         auto it=models_.find(key);
         if(it!=models_.end()) {
             if(it->second) {
@@ -174,6 +176,7 @@ public:
     size_t trimUnused(gfx::Device& dev,
                       const std::unordered_set<const render::Model*>& used,
                       OnRelease&& onRelease) {
+        (void)dev; // release happens at the host frame boundary
         size_t released=0;
         for(auto it=models_.begin();it!=models_.end();) {
             if(it->first.rfind("shape:",0)==0 ||
