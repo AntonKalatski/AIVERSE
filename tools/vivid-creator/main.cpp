@@ -46,6 +46,9 @@ struct CreatorApp {
     Camera3D camera;
     bool pendingRebuild=true, rendererReady=false, uiReady=false;
     bool animate=true, inspectGroom=false, wetPreview=false;
+    bool smoke=false, smokeCaptureRequested=false, smokeCompleted=false;
+    int smokeFrames=0, smokeReady=0;
+    std::string smokePath="/tmp/aiverse-vivid-creator.ppm";
     GroomQuality groomQuality=GroomQuality::High;
     float jaw=0.0f, smile=0.0f, blink=0.0f, yaw=0.18f;
     float wind=0.15f;
@@ -358,6 +361,34 @@ struct CreatorApp {
         gfx::PassDesc pass;
         pass.clearColor[0]=0.075f;pass.clearColor[1]=0.085f;pass.clearColor[2]=0.12f;
         renderer.render(pass);
+        if(smoke) {
+            const auto& p=renderer.profile();
+            if(!renderer.modelError().empty())
+                throw std::runtime_error("VIVID Creator Metal shader error: "+
+                                         renderer.modelError());
+            const bool ready=p.draws[0]>0 && p.draws[1]>0;
+            smokeReady=ready?smokeReady+1:0;
+            if(smokeReady>=4 && !smokeCaptureRequested) {
+                smokeCaptureRequested=true;
+                dev.captureNextFrame([this](int w,int h,std::vector<uint8_t> pixels) {
+                    if(w<128||h<128||pixels.size()!=std::size_t(w*h*4)) {
+                        status="VIVID Creator screenshot is empty";
+                        platform::requestQuit();
+                        return;
+                    }
+                    std::ofstream out(smokePath,std::ios::binary);
+                    out<<"P6\n"<<w<<" "<<h<<"\n255\n";
+                    for(std::size_t i=0;i<pixels.size();i+=4)
+                        out.write(reinterpret_cast<const char*>(pixels.data()+i),3);
+                    smokeCompleted=bool(out);
+                    std::printf("VIVID Creator human skin/eye/groom GPU preview captured: %s shadow=%d colour=%d pass=%d\n",
+                        smokePath.c_str(),1,1,int(smokeCompleted));
+                    platform::requestQuit();
+                });
+            }
+            if(++smokeFrames>300 && !smokeCompleted)
+                throw std::runtime_error("VIVID Creator did not render skin/eyes/groom within 300 frames");
+        }
         ui.render();
         dev.endPass();
     }
@@ -374,8 +405,18 @@ struct CreatorApp {
     }
 };
 }
-int aiverseMain(int,char**) {
+int aiverseMain(int argc,char** argv) {
     auto application=std::make_shared<CreatorApp>();
+    for(int i=1;i<argc;++i) {
+        if(std::strcmp(argv[i],"--smoke")==0) {
+            application->smoke=true;
+            if(const char* path=std::getenv("AIVERSE_VIVID_CREATOR_CAPTURE"))
+                application->smokePath=path;
+        }else{
+            std::fprintf(stderr,"VIVID Creator: unsupported argument %s\n",argv[i]);
+            return 2;
+        }
+    }
     platform::AppConfig config;
     config.title="AIVERSE VIVID Creator - Digital Human";
     config.width=1500;
@@ -400,5 +441,6 @@ int aiverseMain(int,char**) {
         application->ui.handleEvent(event);
     };
     callbacks.shutdown=[application]{application->shutdown();};
-    return platform::run(config,std::move(callbacks));
+    const int code=platform::run(config,std::move(callbacks));
+    return code || (application->smoke && !application->smokeCompleted) ? 1 : 0;
 }
