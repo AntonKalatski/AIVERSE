@@ -130,6 +130,9 @@ struct HorizonBake {
         bool nearNormalValid=false;
     };
     std::vector<NearSeamSample> nearSeamSamples; // capped at 4096 unique points
+    // CPU-only provenance; intentionally excluded from TWH8 serialization.
+    size_t continuousNearNormalSamples=0;
+    size_t localFallbackNearNormalSamples=0;
     uint32_t maxNearWeldSlopePermille = 0; // 0=disable steepness guard
     uint32_t nearSeamNormalBlendPercent = 0; // 0..100; render-only shading
     bool nearWeldSlopeFallback = false; // source heights not welded for excessive wedge
