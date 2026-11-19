@@ -238,7 +238,7 @@ public:
                        branchPoseBytes<=branchPoseBudgetBytes_-bytes) {
                         branchPoseArena_.emplace_back();
                         buildBranchWindPose(*model,pivots,instance,
-                                            branchPoseArena_.back());
+                                            batch.lod,branchPoseArena_.back());
                         draw.nodeWorld=&branchPoseArena_.back();
                         branchPoseBytes+=bytes;
                     }
@@ -283,11 +283,15 @@ private:
     void buildBranchWindPose(
             const render::Model& model,
             const std::vector<render::float3>& pivots,
-            const FoliageInstance& instance,
+            const FoliageInstance& instance,TreeLOD lod,
             std::vector<render::mat4>& pose) const {
         pose.resize(model.nodes.size());
         constexpr float milliRadians=0.000017453292519943295f;
-        const float flex=float(wind_.branchFlexPermille)*0.001f;
+        // Soften articulated sway as distance tiers approach impostor LOD;
+        // the far static HLOD then receives only low-cost root motion.
+        const float lodScale=lod==TreeLOD::High ? 1.0f :
+                             lod==TreeLOD::Medium ? 0.65f : 0.25f;
+        const float flex=float(wind_.branchFlexPermille)*0.001f*lodScale;
         const uint64_t treeKey=instance.key ^
             (uint64_t(instance.speciesId)<<32);
         for(int nodeIndex:model.order){
