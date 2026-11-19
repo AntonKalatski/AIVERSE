@@ -160,3 +160,27 @@ New native fixture: `ecs_static_scene_multidomain_test` (not yet
 executed); extended host validation:
 `bash tools/ecs-static-scene-validate.sh build/static-scene extended 8`.
 Keep the Stage 5 handoff in sync with actual results.
+
+
+## Stage 6 — editor/source assets, static-only Inspector and measured RSS
+
+Use `engine/scene/PrefabStaticAuthoring.h` to load/validate editor
+authored immutable config definitions. Source JSON has
+`version:1`, a stable `domain`, and `prefabs` entries carrying
+`id` and typed `config` object. Native game decoder must reject
+invalid types/fractional integral data and perform fieldwise conversion;
+seal once and share the catalog across scenes and Worlds.
+
+`engine/scene/PrefabStaticInspector.h` generates real
+`NativeModule::inspectComponents` compatible JSON with `editable:false`
+for the selected entity's static configuration. Owning game module
+must call the helper inside its native inspector hook. Never enable
+raw `StaticRef` or sealed table runtime writeback. Editing settings
+belongs to project source JSON and a controlled reimport/migration.
+
+`ecs_static_scene_editor_contract_test` validates the editor-facing
+contract. `aiverse_ecs_shared_static_rss_bench` measures OS resident
+bytes and read time in separate processes for ordinary, shared, static
+modes. One final validation command after *all feature work*:
+`bash tools/ecs-static-scene-validate.sh build/static-scene all 8 1000000`.
+Do not report native Stage 6 tests or RSS results before that run.
