@@ -2775,3 +2775,140 @@ view-projection and scene RHI rather than these tile-local bounds.
 geometry (vertical stream strips, variable widths and falling foam)
 and simple flow-direction wave response, preserving ECS water body
 authority. Per-stage handoff is mandatory; tests remain deferred.
+
+## Stage 27 — descending waterfall/cascade ECS geometry and WorldScene rendering
+
+**Branch:** `feature/nereid-water-core`, PR #23 remains Draft.
+**Base:** completed Stage 26 spatial-tiled ocean work at
+`a9acaaf75057673959450558bd989b50187738ed`.
+**Owner priority:** ship functions first; do not write/run tests now.
+No unrelated branch was merged and main was not modified.
+
+### Implementation commits and files
+
+- `ad154dd94a4500260fc8f449cbf7b4a00e9e3432`,
+  `0860a97570741008baf8c1d677a8f07fb175b1e5` —
+  NEW `libraries/include/aiverselib/water/NereidCascades.h`.
+  Genre-neutral, fixed-point persistent `WaterCascadeComponent`,
+  `WaterCascadePoint`, `validWaterCascade`,
+  `registerNereidCascadePersistence`; pure CPU
+  `buildWaterCascadeMesh` outputs two-sided descending ribbons with
+  interpolated widths, subdivided steps, normals, and toe foam.
+  Archive serializes the width axis explicitly as two Fixed fields.
+- `159bf675c9330f1bcafdb34eb2d8b1abab4b87d1`,
+  `4d08770c4fac8fc15de0af89645fe9cf9386d409` —
+  NEW `engine/world/NereidCascadeScene.h`. Opt-in GPU owner:
+  `setCascades`, `setMaxUploadsPerFrame`, `update`,
+  `draw`, `shutdown`, `residentCount`. Stable ID matching
+  avoids replacing unchanged GPU meshes; removed meshes release
+  on the device thread. Invalid enabled sources are rejected before
+  ownership transfer; failed uploads preserve the previous resident.
+  Caps: 32 cascades and 1..8 attempted uploads/frame.
+- `ca81d0a458bdda30a2b92205027fe7b9b5f61d14` —
+  NEW `engine/world/NereidCascadeManifest.h`, strict optional
+  `nereidCascades` scene configuration and 3D paths.
+- `e3b2b5437b9c29df1799f75f40403138512f9c43`,
+  `1442cc910b37d67c7087c48e0d79d9ede4590d55`,
+  `e5d2a49d7e6578ae9abfb6c1d8484ff69be04182`,
+  `02c6cc184cb482af5f7a9dae358899f6ffa652d8` —
+  `engine/render/Renderer3D.h/.cpp`,
+  `engine/render/Renderer3DReflect.cpp`,
+  `engine/render/Shaders.h`: new `kDrawNereidCascade` tag
+  marks waterfall sheets as water without incorrectly selecting a
+  horizontal planar reflection plane; custom vertical-flow normal
+  streaks in both GLSL and Metal.
+- `274431a17dda8f269d433e89d6ec9363d70eb430`,
+  `e35e9909d4d52cee00d124d6550331cb702e447d` —
+  `engine/world/WorldScene.h/.cpp` opt-in constructor setup,
+  water+waterfall draw, device update/shutdown, and
+  `setNereidCascades` native snapshot override.
+- `d2bd82abe52f6a1dfd387a6c248cb0c893325abf` —
+  NEW `engine/world/NereidCascadeEcsPresentation.h`,
+  read-only generation-safe ECS cascade snapshot adapter.
+- `8887ef94d3f6cb3b70971382e4e2cc1afb582337` —
+  `libraries/include/aiverselib/water/NereidNativeWater.h`
+  adds optional `enableCascades` persistent ECS registration.
+- `6dcd8331b5919d5d031d83661872bedc9acd8cfd` —
+  `libraries/catalog.json`, native-linkable header-only
+  `AIVERSE::lib_nereid_cascades` package.
+- `dd22ea03ceee96c39686bd4bd128b4afb97e2a57` —
+  updated `skills/gameplay/aiverse-nereid-water/SKILL.md`.
+
+### Usage and architecture
+
+`WaterCascadeComponent` is optional game/level geometry, not a
+replacement for `WaterBodyComponent`. It stores a sequence of
+3D Fixed points `{position,halfWidth}`, an X/Z ribbon width axis,
+foam, speed, enabled flag. Each neighboring pair is descending or
+horizontal; total path must descend. Each ribbon is subdivided on
+the presentation CPU, double-sided, with width interpolation and
+static toe foam. The body maintains high-precision position until
+camera/render-origin-relative float conversion, and the host RHI
+continues to own the GPU buffers.
+
+Static authoring:
+```json
+{
+  "nereidCascades": {
+    "maxUploadsPerFrame": 2,
+    "sources": [{
+      "id": 3, "enabled": true,
+      "widthAxis": [1,0], "foam": 0.6, "speed": 7,
+      "stepsPerSegment": 4,
+      "points": [[10,20,0,4], [12,9,0,5], [14,3,0,6]],
+      "style": {
+        "opacity": 0.75, "deepColor": [0.13,0.4,0.52],
+        "foamStrength": 0.8
+      }
+    }]
+  }
+}
+```
+Native ECS projects:
+```cpp
+#include <aiverselib/water/NereidNativeWater.h>
+#include "engine/world/NereidCascadeEcsPresentation.h"
+lib::nereid::NativeWaterPipelineConfig config{};
+config.enableCascades=true;
+lib::nereid::registerNativeWaterPipeline(sim,"water",config);
+// After the ECS structural/read barrier (never inside a write phase):
+worldScene.setNereidCascades(
+    world::snapshotNereidEcsCascades(sim.world()));
+// Existing WorldScene update/draw/shutdown publishes and retires GPU data.
+```
+
+NEREID is responsible for fixed-point cascade data and rendering
+geometry; physical flow, Box3D, PHYSIS, SpectraFX particles and Prisma
+remain separately owned. `kDrawNereidCascade` preserves the normal
+water material path while excluding vertical ribbons from the
+single-plane planar reflection selection. The shared GLSL and Metal
+shaders animate downward streak normals using the existing scene
+time/light inputs; no additional RHI backend or postpass is introduced.
+
+### Verification, limits and next functional stage
+
+**Actually performed:** examined connector-accessible ECS/RHI source,
+authored and committed all library, scene, shader, native integration,
+manifest and handoff files through GitHub.
+
+**NOT PERFORMED:** new tests, local C++ compile, CTest, shader
+compilation, real GPU waterfall captures, FPS/RTS regression or
+SpectraFX playback, as the user explicitly requested features first.
+Never claim PASS; keep PR Draft.
+
+**Limitations:** waterfalls are static/stepped visual sheets with
+animated normal streaks, not liquid mass-conserving fluid simulation
+or actual geometry displacement. Foam uses a vertex tint toward the
+falling foot and at segment divisions; no automatic waterfall-spray
+particle graph or river-to-waterfall fluid continuity yet.
+Physically correct two-sided lighting, transparency sorting, high-Y
+world-origin rebasing and multiple geometry intersections need actual
+GPU checks later. The `speed` value is currently an authored
+optical hint, not a physics velocity integrator or shader uniform.
+Authoring cap: 128 points/cascade; resident cap: 32 cascades.
+
+**Next features:** advect visual ripple centres with authoritative
+NEREID flow without writing back to ECS, optionally derive cascade
+waterfall spray events for SpectraFX, improve river->cascade
+connections, and finally run the deferred native/GL/Metal suite.
+Append a new handoff section after every feature.
