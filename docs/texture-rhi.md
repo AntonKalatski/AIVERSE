@@ -1107,3 +1107,70 @@ implementation-dependent rounding.
 native C++ compilation, GLSL/MSL shader compilation, Metal/
 OpenGL/Vulkan rendering, shadow/selection silhouette tests
 and actual driver VRAM accounting have NOT been run.
+
+
+### Metal GPU-encoded ICB and CPU multi-draw for VT materials
+
+The experimental native model batching paths can now handle **homogeneous**
+VT material groups without disabling GPU-authored model draws for the
+entire scene. The implementation builds on `GpuSceneDrawCommands` and
+the existing Metal argument-buffer PBR ICB variant; it does **not**
+implement a distinct VT render submission API or copy the atlas for
+each command.
+
+A homogeneous group requires the same built-in material GPU state,
+vertex/index buffer bindings and an **exact match** for:
+`ModelVirtualTextureBinding::physicalAtlas`,
+`pageTable`, `layer` and `gutterPixels`.
+The VT identity participates in the GPU material hash and cached group
+signature, but hash collisions are still checked with exact binding
+equality. R8 masked-cutout eligibility requires
+`Image::virtualAlphaMask` and the same full-resolution R8 handle;
+other alpha/blend and Shader Graph variants retain CPU fallback.
+
+Metal's PBR ICB fragment argument buffer now includes the physical
+VT `texture2d_array` (argument ID 26, formerly direct tex13) and
+`texture2d_array` page table (argument ID 28, direct tex14), plus an
+optional R8 alpha texture and sampler (IDs 30/31, direct tex15).
+The physical atlas uses the existing material sampler `s1`; page
+table sampling uses `read()`, so **no extra samplers** are encoded
+for VT slots 13/14. The VT-specific fragment shader also receives
+U6 (Metal buffer 7), holding layer and gutter. These external
+textures are bound once for the complete compatible ICB group,
+not individually for every GPU-encoded indexed command. GPU instance
+matrix U0 remains per-command as before.
+
+`GpuEncodedBatch` snapshots the external binding and R8 alpha
+handle during compute preparation, and revalidates them immediately
+before ICB execution. If a Horizon region switches its page-table
+or physical atlas in between, that group is rejected and falls
+back to normal CPU draws; cached groups are also invalidated when
+VT identity changes. Homogeneous CPU MDI groups can likewise use
+the VT material variant with shared fragment arguments; mixed groups
+return to direct/instanced submission. An incompatible source
+shader or unavailable Metal ICB PBR argument-buffer pipeline is
+still a safe rejection, not a partial virtual draw.
+
+**Experimental enabling:** the existing model batching switches and
+`AIVERSE_GPU_AUTHORED_DRAWS=1`,
+`AIVERSE_GPU_ENCODED_ICB=1` and
+`AIVERSE_EXPERIMENTAL_METAL_ICB=1` (plus
+`AIVERSE_METAL_CPU_MDI=1` for an independent CPU MDI experiment)
+remain in effect. GPU-authored draws also require the renderer's
+`setGpuAuthoredDrawEnabled(true)`, Metal compute support, and
+supported Apple GPU argument buffers. Do not enable these options
+by default or assume driver support from a successful source commit.
+
+The reenabled GPU route currently targets only valid rigid
+opaque or R8 cutout model primitives with conventional material
+state and no shader graphs, GI, skinning, morph, transparency,
+active dissolves or LOD fade. Its fallback maintains the existing
+`Renderer3D` path on other platforms and for unsupported draws.
+A fully general **per-command** VT resource index, heterogeneous
+multi-domain ICB groups and Shader Graph VT are still future work.
+
+**Verification deferred:** native compilation, Metal ICB PBR shader
+compilation, actual GPU encoding/execution, visual comparison and
+performance profiling have NOT run. There is no measured speedup
+claim; this is a restored opt-in code path with conservative
+resource identity checks.
