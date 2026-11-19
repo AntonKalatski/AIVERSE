@@ -39,6 +39,10 @@ struct GpuPassConfig {
     bool frustumCull = true;
     float errorThresholdPixels = 1.f;
     uint32_t maxOutputClusters = 65536;
+    // Vulkan GPU indirect argument vertexOffset for *one compatible rigid
+    // pooled source*. Materials/transforms and presentation remain owned by
+    // Renderer3D. Must be nonnegative (source model gpuBaseVertex).
+    int32_t baseVertex = 0;
 };
 ViewConfig cpuReferenceView(const GpuPassConfig& pass,
                             const GpuSceneInstance& instance);
@@ -82,6 +86,10 @@ static_assert(sizeof(GpuSelectionUniforms) == 96);
 struct GpuSelectionSubmission {
     gfx::BufferHandle ranges;
     gfx::BufferHandle counters;
+    // Stage 16.2 diagnostic GPU-authored VkDrawIndexedIndirectCommand array.
+    // Only allocated by Vulkan. It is NOT automatically safe to render:
+    // per-instance material/transform ownership must first be validated.
+    gfx::BufferHandle indirect;
     uint32_t capacity = 0;
     uint32_t submittedInstances = 0;
     uint64_t frameSerial = 0;
@@ -89,6 +97,9 @@ struct GpuSelectionSubmission {
     bool valid() const {
         return ranges.valid() && counters.valid() && capacity != 0 &&
                frameSerial != 0;
+    }
+    bool gpuIndirectPrepared() const {
+        return valid() && indirect.valid();
     }
 };
 
@@ -140,8 +151,8 @@ public:
     void shutdown(gfx::Device& dev);
 private:
     struct Buffers {
-        gfx::BufferHandle instances, ranges, counters;
-        size_t instancesBytes = 0, rangesBytes = 0;
+        gfx::BufferHandle instances, ranges, counters, indirect;
+        size_t instancesBytes = 0, rangesBytes = 0, indirectBytes = 0;
     };
     static constexpr size_t kFramesInFlight = 3;
     static constexpr size_t kMaxSubmissionsPerFrame = 64;
@@ -149,6 +160,7 @@ private:
     std::array<uint64_t, kFramesInFlight> epochs_{};
     std::array<size_t, kFramesInFlight> cursors_{};
     gfx::ComputeHandle pipeline_{};
+    gfx::ComputeHandle indirectSafetyPipeline_{};
     static bool allocate(gfx::Device& dev, gfx::BufferHandle& handle,
                          size_t& capacity, size_t requested, const char* label);
 };
