@@ -25,6 +25,45 @@ float3 toF(const Vec3& v) { return {float(v.x.toDouble()), float(v.y.toDouble())
 
 RtsView::RtsView() : roads_(std::make_unique<RtsRoadView>()), shores_(std::make_unique<RtsShoreView>()) {}
 RtsView::~RtsView() = default;
+
+render::GpuOwnedMemoryStats RtsView::ownedPresentationGpuMemoryStats(
+        const gfx::Device& device) const {
+        auto result=ownedModelGpuMemoryStats(device);
+        const auto merge=[&](const render::GpuOwnedMemoryStats& owner) {
+            result.textureKnownBytes=
+                render::GpuOwnedMemoryCounter::saturatingAdd(
+                    result.textureKnownBytes,owner.textureKnownBytes);
+            result.bufferKnownBytes=
+                render::GpuOwnedMemoryCounter::saturatingAdd(
+                    result.bufferKnownBytes,owner.bufferKnownBytes);
+            result.textures+=owner.textures;
+            result.buffers+=owner.buffers;
+            result.unknownTextures+=owner.unknownTextures;
+            result.unknownBuffers+=owner.unknownBuffers;
+            result.multiVersionBuffers+=owner.multiVersionBuffers;
+        };
+        // Include resident allocations even while the corresponding
+        // terrain/planet presentation is hidden or inactive this frame.
+        // GPU memory ownership ends at shutdown, not when drawn=false.
+        merge(terrain_.ownedGpuMemoryStats());
+        merge(planets_.ownedGpuMemoryStats());
+        merge(groundFx_.ownedGpuMemoryStats());
+        merge(planetGroundFx_.ownedGpuMemoryStats(device));
+        merge(fog_.ownedGpuMemoryStats());
+        merge(fieldView_.ownedGpuMemoryStats());
+        merge(overlays_.ownedGpuMemoryStats());
+        merge(groundCanvas_.ownedGpuMemoryStats());
+        merge(paintLayers_.ownedGpuMemoryStats());
+        if (twoD_) merge(twoD_->ownedGpuMemoryStats(device));
+        if (roads_) merge(roads_->ownedGpuMemoryStats());
+        if (shores_) merge(shores_->ownedGpuMemoryStats());
+        render::GpuOwnedMemoryCounter direct(device);
+        direct.buffer(projectile_.vb);direct.buffer(projectile_.ib);
+        merge(direct.stats());
+        return result;
+
+}
+
 void RtsView::setRoadMap(const Json& map) { roads_->setMap(map); shores_->setMap(map); }
 
 float4 RtsView::playerColor(int p) { return overlayPlayerColor(p); }   // palette shared with the overlays
