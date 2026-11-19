@@ -984,3 +984,31 @@ Ready/Pending/Failed; only a Ready candidate is safe to publish when
 a host supplies a pipeline validator. The GPU shader cache is not
 fully transactional and may retain cached failed or prepared pipelines
 until renderer teardown. No physical backend tests have been run.
+
+## Stage 115 — GPU geometry upload failure and shader retirement
+
+In native scratch import or standard model upload,
+`uploadModel()` now validates that a required indexed model
+actually obtained its vertex/index GPU buffers (or a shared
+geometry-pool page) before discarding source CPU geometry.
+This closes a false-success path where cleared vertex arrays
+previously made a failed GPU upload appear successful.
+An unsuccessful speculative import remains owned by its
+`ModelStagingTransaction` and is retired with the normal
+GPU completion marker.
+
+The separate generic `GpuProgramRetirement` owner handles
+shader/pipeline cache generations invalidated by
+`Renderer3D::setMaterialQuality` and
+`Renderer3D::setInstanceLimit`. It is not a Model owner and
+must not create its own GPU device epoch. Program eviction is
+deferred until a confirmed completion token or full GPU idle,
+with pipeline handles destroyed before shader handles.
+For the host runtime, call `collectRetiredPrograms()` at a
+safe frame boundary and require successful retirement before
+device teardown. Renderer3D's ordinary live program teardown
+still depends on the host's complete GPU shutdown ordering.
+
+CMake registers `render_gpu_program_retirement`, but it
+and all prior deferred image/model/GPU fixtures remain
+unexecuted pending completion of feature work.
