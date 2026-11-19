@@ -104,6 +104,126 @@ inline lib::nereid::WaterCascadeComponent connectedNereidCascade(
     return result;
 }
 
+// Presentation-only shoreline-aware extension policy. The outer join
+// end must lie within the linked water footprint, and both edges are
+// clipped inward to stay inside the water. Rivers also interpolate their
+// authored bank half-width along the closest spline segment.
+inline double nereidLinkedRiverHalfWidth(const NereidSceneSurface& water,
+                                         Vec3 sample,double fallback) {
+    if(!water.useGeometry || !water.geometry.enabled ||
+       water.geometry.kind!=lib::nereid::WaterGeometryKind::RiverSpline ||
+       !lib::nereid::validWaterGeometry(water.geometry))return fallback;
+    const auto& points=water.geometry.points;
+    double best=std::numeric_limits<double>::infinity();
+    double halfWidth=fallback;
+    const double x=sample.x.toDouble(),z=sample.z.toDouble();
+    for(size_t i=1;i<points.size();++i) {
+        const double ax=points[i-1].x.toDouble(),az=points[i-1].z.toDouble();
+        const double dx=points[i].x.toDouble()-ax;
+        const double dz=points[i].z.toDouble()-az;
+        const double lenSq=dx*dx+dz*dz;
+        if(lenSq<=1e-12)continue;
+        const double t=std::clamp(((x-ax)*dx+(z-az)*dz)/lenSq,0.0,1.0);
+        const double ddx=x-(ax+dx*t),ddz=z-(az+dz*t);
+        const double dist=ddx*ddx+ddz*ddz;
+        if(dist<best) {
+            best=dist;
+            halfWidth=points[i-1].halfWidth.toDouble()*(1.0-t)+
+                      points[i].halfWidth.toDouble()*t;
+        }
+    }
+    return halfWidth;
+}
+inline lib::nereid::WaterCascadeComponent connectedNereidCascade(
+        const NereidCascadeSource& source,
+        const NereidSceneSurface* inlet,
+        const NereidSceneSurface* outlet) {
+    auto result=source.cascade;
+    if(result.points.size()<2 || result.points.size()>126 ||
+       !std::isfinite(source.joinLength) ||
+       source.joinLength<0.1f || source.joinLength>50.f)
+        return result;
+    const auto direction=[&](size_t a,size_t b) {
+        const Vec3 from=result.points[a].position;
+        const Vec3 to=result.points[b].position;
+        Vec2 d{to.x-from.x,to.z-from.z};
+        if(d.length()<=Fixed{})d={
+            -result.widthAxis.y,result.widthAxis.x};
+        const Fixed len=d.length();
+        return len>Fixed{}?d/len:Vec2{1_fx,0_fx};
+    };
+    const Vec2 startDir=direction(0,1);
+    const Vec2 endDir=direction(result.points.size()-2,result.points.size()-1);
+    const Vec2 widthAxis=result.widthAxis/result.widthAxis.length();
+    const Fixed extension=Fixed::fromRaw(int64_t(std::llround(
+        double(source.joinLength)*Fixed::kOne)));
+    const auto fitJoin=[&](const NereidSceneSurface& water,
+                           lib::nereid::WaterCascadePoint p) -> std::optional<
+                           lib::nereid::WaterCascadePoint> {
+        const auto* geometry=water.useGeometry?&water.geometry:nullptr;
+        p.position.y=water.body.surfaceY;
+        const auto covers=[&](Vec3 position) {
+            return lib::nereid::coversWaterBody(water.body,geometry,position);
+        };
+        if(source.requireFootprint && !covers(p.position))
+            return std::nullopt;
+        const double authored=p.halfWidth.toDouble();
+        const double desired=nereidLinkedRiverHalfWidth(water,p.position,authored);
+        const double blended=authored+(desired-authored)*
+                             double(source.joinWidthBlend);
+        const double width=std::clamp(blended,0.10,1000.0);
+        auto asFixed=[](double v) {
+            return Fixed::fromRaw(int64_t(std::llround(v*Fixed::kOne)));
+        };
+        if(!source.requireFootprint) {
+            p.halfWidth=asFixed(width);
+            return p;
+        }
+        const auto fits=[&](Fixed half) {
+            const Vec3 left{
+                p.position.x-widthAxis.x*half,
+                p.position.y,
+                p.position.z-widthAxis.y*half};
+            const Vec3 right{
+                p.position.x+widthAxis.x*half,
+                p.position.y,
+                p.position.z+widthAxis.y*half};
+            return covers(left)&&covers(right);
+        };
+        Fixed upper=asFixed(width),lower=Fixed{};
+        if(!fits(upper)) {
+            // Fixed-point binary search; connected strip cannot protrude
+            // outside the bank at the exterior join cross-section.
+            for(int i=0;i<18;++i) {
+                const Fixed mid=Fixed::fromRaw(lower.raw+
+                    (upper.raw-lower.raw)/2);
+                if(fits(mid))lower=mid;else upper=mid;
+            }
+            upper=lower;
+        }
+        if(upper<Fixed::fromRatio(1,10))return std::nullopt;
+        p.halfWidth=upper;
+        return p;
+    };
+    if(source.inletWaterId && inlet && inlet->body.enabled &&
+       inlet->body.surfaceY>=result.points.front().position.y) {
+        auto candidate=result.points.front();
+        candidate.position.x-=startDir.x*extension;
+        candidate.position.z-=startDir.y*extension;
+        if(const auto matched=fitJoin(*inlet,candidate))
+            result.points.insert(result.points.begin(),*matched);
+    }
+    if(source.outletWaterId && outlet && outlet->body.enabled &&
+       outlet->body.surfaceY<=result.points.back().position.y) {
+        auto candidate=result.points.back();
+        candidate.position.x+=endDir.x*extension;
+        candidate.position.z+=endDir.y*extension;
+        if(const auto matched=fitJoin(*outlet,candidate))
+            result.points.push_back(*matched);
+    }
+    return result;
+}
+
 inline render::Mesh uploadNereidCascade(gfx::Device& device,
         const lib::nereid::WaterCascadeMesh& cpu,
         lib::nereid::WaterSurfaceStyle style) {
@@ -132,6 +252,7 @@ class NereidCascadeScene final {
         bool resident=false;
         bool dirty=true;
         std::optional<Fixed> inletLevel,outletLevel;
+        uint64_t inletRevision=0,outletRevision=0;
         double originX=0,originY=0,originZ=0;
     };
 public:
@@ -171,6 +292,8 @@ public:
             slot.mesh=old->second.mesh;
             slot.resident=old->second.resident;
             slot.inletLevel=old->second.inletLevel;
+            slot.inletRevision=old->second.inletRevision;
+            slot.outletRevision=old->second.outletRevision;
             slot.outletLevel=old->second.outletLevel;
             slot.originX=old->second.originX;
             slot.originY=old->second.originY;
@@ -211,16 +334,26 @@ public:
                 slot.resident=false;slot.dirty=true;
                 continue;
             }
-            const auto inlet=water && slot.source.inletWaterId?
-                water->surfaceLevelForId(slot.source.inletWaterId):
-                std::optional<Fixed>{};
-            const auto outlet=water && slot.source.outletWaterId?
-                water->surfaceLevelForId(slot.source.outletWaterId):
-                std::optional<Fixed>{};
-            if(inlet!=slot.inletLevel || outlet!=slot.outletLevel)
+            const auto* inletSource=water && slot.source.inletWaterId?
+                water->surfaceForId(slot.source.inletWaterId):nullptr;
+            const auto* outletSource=water && slot.source.outletWaterId?
+                water->surfaceForId(slot.source.outletWaterId):nullptr;
+            const std::optional<Fixed> inlet=inletSource?
+                std::optional<Fixed>(inletSource->body.surfaceY):std::nullopt;
+            const std::optional<Fixed> outlet=outletSource?
+                std::optional<Fixed>(outletSource->body.surfaceY):std::nullopt;
+            const uint64_t inletRevision=water && inletSource?
+                water->surfaceRevision(slot.source.inletWaterId):0;
+            const uint64_t outletRevision=water && outletSource?
+                water->surfaceRevision(slot.source.outletWaterId):0;
+            if(inlet!=slot.inletLevel || outlet!=slot.outletLevel ||
+               inletRevision!=slot.inletRevision ||
+               outletRevision!=slot.outletRevision)
                 slot.dirty=true;
             slot.inletLevel=inlet;
             slot.outletLevel=outlet;
+            slot.inletRevision=inletRevision;
+            slot.outletRevision=outletRevision;
             if(!slot.dirty || attempts>=maxUploadsPerFrame_)continue;
             ++attempts;
             if(!lib::nereid::validWaterCascade(slot.source.cascade))continue;
@@ -230,7 +363,7 @@ public:
             opts.originY=first.y.toDouble();
             opts.originZ=first.z.toDouble();
             const auto joined=connectedNereidCascade(
-                slot.source,inlet,outlet);
+                slot.source,inletSource,outletSource);
             auto cpu=lib::nereid::buildWaterCascadeMesh(joined,opts);
             if(cpu.empty())continue;
             // Seam foam masks the material transition between a horizontal
