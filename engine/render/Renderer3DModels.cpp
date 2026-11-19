@@ -79,7 +79,7 @@ void Renderer3D::shutdownModels() {
     modelError_.clear();
     for (auto& [k, p] : modelPipes_) dev_->destroyPipeline(p);
     for (auto& [k, s] : modelShaders_) if (s.shader.valid()) dev_->destroyShader(s.shader);
-    pendingModelPipes_.clear(); pendingColorWarms_.clear();
+    pendingModelPipes_.clear(); pendingColorWarms_.clear(); failedColorWarms_.clear();
     modelPipes_.clear(); modelShaders_.clear();
     for (auto t : {white_, black_, flatNormal_}) dev_->destroyTexture(t);
 }
@@ -106,6 +106,7 @@ void Renderer3D::retireModelPrograms() {
     // They are never mistaken for completed shader handles.
     pendingModelPipes_.clear();
     pendingColorWarms_.clear(); // invalidated pipeline handles must not be polled
+    failedColorWarms_.clear(); // failures belong to this retired pipeline generation
     modelPipes_.clear();
     modelShaders_.clear();
     programRetirement_->retire(std::move(resources));
@@ -357,8 +358,11 @@ Renderer3D::warmModelPipelinesChecked(
         // A pending colour variant has no backend ShaderJob to poll.
         // Record its stable handle exactly once; all later owner frames
         // advance it without regenerating the authored scratch Model.
-        if(std::find(pendingColorWarms_.begin(),pendingColorWarms_.end(),
-                     pipe)!=pendingColorWarms_.end()) {
+        if(std::find(failedColorWarms_.begin(),failedColorWarms_.end(),
+                     pipe)!=failedColorWarms_.end()) {
+            warmingFailed_=true;
+        }else if(std::find(pendingColorWarms_.begin(),pendingColorWarms_.end(),
+                            pipe)!=pendingColorWarms_.end()) {
             warmingPending_=true;
         }else {
             switch(dev_->warmPipelineColorStatus(pipe,gfx::PixelFormat::RGBA16F)) {
@@ -370,6 +374,7 @@ Renderer3D::warmModelPipelinesChecked(
                 break;
             case gfx::Device::PipelineColorWarmStatus::Failed:
                 warmingFailed_=true;
+                failedColorWarms_.push_back(pipe);
                 ++colorWarmFailed_;
                 modelError_="model HDR pipeline: "+dev_->lastError();
                 break;
@@ -450,6 +455,7 @@ bool Renderer3D::pollPendingModelPipelineJobs() {
             it=pendingColorWarms_.erase(it);
             break;
         case gfx::Device::PipelineColorWarmStatus::Failed:
+            failedColorWarms_.push_back(*it);
             ++colorWarmFailed_;
             modelError_="model HDR pipeline: "+dev_->lastError();
             it=pendingColorWarms_.erase(it);
