@@ -62,6 +62,7 @@ struct MTBuffer {
     // Kept in lockstep with indirectSnapshots to avoid comparing uninitialized data.
     std::vector<size_t> indirectSnapshotValid[kFramesInFlight];
     size_t indirectCursor = 0;
+    BufferUpdateStats transferStats{};
 };
 struct MTTexture { id<MTLTexture> tex; id<MTLSamplerState> sampler; PixelFormat fmt = PixelFormat::RGBA8; bool mips = false; };
 struct MTShader { id<MTLFunction> vs; id<MTLFunction> fs; std::string source; bool linear = false; };
@@ -142,6 +143,11 @@ public:
                                : [device_ newBufferWithLength:b.size options:MTLResourceStorageModeShared];
         }
         for(int i=0;i<b.count;++i)if(!b.bufs[i]){error_="buffer allocation failed";return {};}
+        if (b.type == BufferType::Indirect && b.snapshot) {
+            b.transferStats.available = true;
+            b.transferStats.allocations = uint64_t(b.count);
+            if (d.data) b.transferStats.mappedWriteBytes = uint64_t(d.size) * b.count;
+        }
         return {buffers_.add(b)};
     }
     id<MTLBuffer> current(MTBuffer& b) { return b.bufs[b.count == 1 ? 0 : int(frame_ % kFramesInFlight)]; }
@@ -200,10 +206,11 @@ public:
             // No old tail is read by drawIndexedIndirect(drawCount), so skip
             // copying it from the previous submission. Non-opted-in buffers
             // retain their partial-update preservation semantics.
+            size_t preserved = 0;
             if (!discardPrefix && previous && previous != target &&
                 (offset != 0 || size < b->size)) {
-                std::memcpy(target.contents, previous.contents,
-                            std::min(size_t(target.length), size_t(previous.length)));
+                preserved = std::min(size_t(target.length), size_t(previous.length));
+                std::memcpy(target.contents, previous.contents, preserved);
             }
             static const bool dirtyIndirectUpdates = [] {
                 const char* setting = std::getenv("AIVERSE_METAL_ICB_DIRTY_UPDATES");
@@ -211,6 +218,7 @@ public:
             }();
             size_t written = size;
             size_t avoided = 0;
+            size_t compared = 0;
             // Comparing a completed frame-slot snapshot is safe; comparing
             // snapshots from an earlier submission in *this* frame is not
             // permission to overwrite that submission. The cursor always
@@ -225,6 +233,7 @@ public:
                 const auto* src = static_cast<const uint8_t*>(data);
                 for (size_t at = 0; at < size; at += kDirtyChunk) {
                     const size_t length = std::min(kDirtyChunk, size - at);
+                    compared += length;
                     if (std::memcmp(dst + at, src + at, length) != 0) {
                         std::memcpy(dst + at, src + at, length);
                         written += length;
@@ -234,10 +243,14 @@ public:
                 }
             } else if (dirtyIndirectUpdates && !discardPrefix &&
                        offset == 0 && size == b->size &&
-                       valid[cursor] >= size &&
-                       std::memcmp(target.contents, data, size) == 0) {
-                written = 0;
-                avoided = size;
+                       valid[cursor] >= size) {
+                compared += size;
+                if (std::memcmp(target.contents, data, size) == 0) {
+                    written = 0;
+                    avoided = size;
+                } else {
+                    std::memcpy(target.contents, data, size);
+                }
             } else {
                 std::memcpy(static_cast<uint8_t*>(target.contents) + offset, data, size);
             }
@@ -248,6 +261,16 @@ public:
             b->size = capacity;
             b->indirectCursor = cursor + 1;
             b->updatedFrame = frame_;
+            // Count only a completed snapshot update. These are observed CPU
+            // copies, not the bytes fetched by Metal or discrete-GPU traffic.
+            ++b->transferStats.updateCalls;
+            b->transferStats.requestedBytes += size;
+            b->transferStats.mappedWriteBytes += written + preserved;
+            b->transferStats.preservedBytes += preserved;
+            b->transferStats.comparedBytes += compared;
+            b->transferStats.skippedWriteBytes += avoided;
+            b->transferStats.allocations += allocated ? 1u : 0u;
+            b->transferStats.reused += allocated ? 0u : 1u;
             if (std::getenv("AIVERSE_ICB_PROFILE")) {
                 static uint64_t uploads = 0, copied = 0, saved = 0, growths = 0;
                 copied += written;
@@ -284,6 +307,24 @@ public:
         memcpy(static_cast<uint8_t*>(current(*b).contents) + offset, data, size);
     }
     void destroyBuffer(BufferHandle h) override { buffers_.remove(h.id); }
+    BufferUpdateStats bufferUpdateStats(BufferHandle h) override {
+        auto* b = buffers_.get(h.id);
+        if (!b || !b->transferStats.available) return {};
+        auto stats = b->transferStats;
+        // b->bufs[slot] can alias an entry in indirectSnapshots[slot].
+        // Do not double-count those MTLBuffers in retained capacity.
+        for (int slot = 0; slot < b->count; ++slot) {
+            const auto& snapshots = b->indirectSnapshots[slot];
+            for (id<MTLBuffer> snapshot : snapshots)
+                if (snapshot) stats.retainedBufferBytes += size_t(snapshot.length);
+            bool alias = false;
+            for (id<MTLBuffer> snapshot : snapshots)
+                if (snapshot == b->bufs[slot]) { alias = true; break; }
+            if (b->bufs[slot] && !alias)
+                stats.retainedBufferBytes += size_t(b->bufs[slot].length);
+        }
+        return stats;
+    }
     bool canUpdateSharedBuffers() const override { return !enc_ && !compute_; }
 
     bool supportsCompute() const override {

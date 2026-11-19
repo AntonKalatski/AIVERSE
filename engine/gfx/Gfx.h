@@ -81,6 +81,25 @@ struct BufferDesc {
     bool discardOnUpdate = false;
 };
 
+// Read-only diagnostics for one dynamic indexed-indirect buffer, accumulated
+// since its creation. These are actual CPU memcpy/memcmp operations observed
+// in the backend; not GPU execution, bus transfers or driver allocations.
+// Backends without this instrumentation return available=false.
+struct BufferUpdateStats {
+    bool available = false;
+    uint64_t updateCalls = 0;
+    uint64_t requestedBytes = 0;
+    uint64_t mappedWriteBytes = 0;  // CPU memcpy into mapped GPU-visible memory
+    uint64_t cpuShadowWriteBytes = 0; // separate CPU-side shadow memcpy
+    uint64_t comparedBytes = 0;     // per memcmp length (one input span)
+    uint64_t skippedWriteBytes = 0; // verified equal spans not copied
+    uint64_t preservedBytes = 0;    // old GPU-visible data copied to new version
+    uint64_t allocations = 0;       // buffer versions/snapshots incl. initial
+    uint64_t reused = 0;            // existing safe snapshots/versions reused
+    size_t retainedBufferBytes = 0; // sum of live allocation logical capacities
+    size_t retainedCpuShadowBytes = 0;
+};
+
 struct TextureDesc {
     int width = 0, height = 0;
     PixelFormat format = PixelFormat::RGBA8;
@@ -166,6 +185,9 @@ public:
     virtual BufferHandle createBuffer(const BufferDesc& d) = 0;
     virtual void updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset = 0) = 0; // grows Dynamic buffers if needed
     virtual void destroyBuffer(BufferHandle h) = 0;
+    // Optional per-buffer diagnostics. No GPU stall/readback, and never
+    // authoritatively measures GPU memory bandwidth or execution.
+    virtual BufferUpdateStats bufferUpdateStats(BufferHandle) { return {}; }
     // Safe point for shared geometry writes (Metal cannot blit into storage during an encoder).
     virtual bool canUpdateSharedBuffers() const { return true; }
     virtual TextureHandle createTexture(const TextureDesc& d) = 0;

@@ -179,12 +179,20 @@ BufferHandle VulkanDevice::createBuffer(const BufferDesc& d) {
     b.type = d.type; b.usage = d.usage; b.size = std::max<size_t>(d.size, 4);
     b.host = d.usage == Usage::Dynamic;
     b.discardOnUpdate = d.discardOnUpdate;
+    if (b.type == BufferType::Indirect && b.host) {
+        b.transferStats.available = true;
+        b.transferStats.allocations = 1;
+    }
     VBuffer::Version v;
     if (!createBufferObject(b.size, bufferUsage(d.type), b.host, v.buffer, v.alloc)) return {};
     if (b.host) {
         b.shadow.assign(b.size, 0);
-        if (d.data) std::memcpy(b.shadow.data(), d.data, d.size);
+        if (d.data) {
+            std::memcpy(b.shadow.data(), d.data, d.size);
+            if (b.transferStats.available) b.transferStats.cpuShadowWriteBytes += d.size;
+        }
         std::memcpy(v.alloc.mapped, b.shadow.data(), b.size);
+        if (b.transferStats.available) b.transferStats.mappedWriteBytes += b.size;
     } else if (d.data) {
         VkBuffer src; VkDeviceSize off;
         if (void* p = stagingWrite(d.size, src, off)) {
@@ -211,7 +219,13 @@ VBuffer::Version& VulkanDevice::writableVersion(VBuffer& b, bool keepContents) {
         b.current = int(b.versions.size() - 1);
     }
     VBuffer::Version& next = b.versions[size_t(b.current)];
-    if (keepContents) std::memcpy(next.alloc.mapped, b.shadow.data(), b.size);
+    if (keepContents) {
+        std::memcpy(next.alloc.mapped, b.shadow.data(), b.size);
+        if (b.transferStats.available) {
+            b.transferStats.mappedWriteBytes += b.size;
+            b.transferStats.preservedBytes += b.size;
+        }
+    }
     return next;
 }
 
@@ -258,16 +272,33 @@ void VulkanDevice::updateBuffer(BufferHandle h, const void* data, size_t size, s
             std::memcpy(v.alloc.mapped, data, size);
         else
             std::memcpy(v.alloc.mapped, b->shadow.data(), b->size);
+        if (b->transferStats.available) {
+            ++b->transferStats.updateCalls;
+            b->transferStats.requestedBytes += size;
+            b->transferStats.cpuShadowWriteBytes += size;
+            b->transferStats.mappedWriteBytes +=
+                (b->discardOnUpdate && offset == 0) ? size : b->size;
+            ++b->transferStats.allocations;
+        }
         return;
     }
     std::memcpy(b->shadow.data() + offset, data, size);
+    if (b->transferStats.available) b->transferStats.cpuShadowWriteBytes += size;
     // The model indirect buffer reads only the newly written prefix.
     // When a new GPU-safe version is needed, do not first copy an unused
     // shadow tail. Writable-version fencing and serials are unchanged.
     const bool whole = offset == 0 &&
         (b->discardOnUpdate || size >= b->size);
+    const size_t versionCountBefore = b->versions.size();
     VBuffer::Version& v = writableVersion(*b, !whole);
     std::memcpy(static_cast<uint8_t*>(v.alloc.mapped) + offset, data, size);
+    if (b->transferStats.available) {
+        ++b->transferStats.updateCalls;
+        b->transferStats.requestedBytes += size;
+        b->transferStats.mappedWriteBytes += size;
+        if (b->versions.size() > versionCountBefore) ++b->transferStats.allocations;
+        else ++b->transferStats.reused;
+    }
 }
 
 VkBuffer VulkanDevice::resolveBuffer(uint32_t id, uint64_t serialUse) {
@@ -276,6 +307,18 @@ VkBuffer VulkanDevice::resolveBuffer(uint32_t id, uint64_t serialUse) {
     auto& v = b->versions[size_t(b->current)];
     v.usedSerial = serialUse;
     return v.buffer;
+}
+
+BufferUpdateStats VulkanDevice::bufferUpdateStats(BufferHandle h) {
+    auto* b = buffers_.get(h.id);
+    if (!b || !b->transferStats.available) return {};
+    auto stats = b->transferStats;
+    // Allocation::size is the Vulkan suballocation span, not a claim of
+    // unique physical VRAM usage or a driver-specific residency metric.
+    for (const auto& v : b->versions)
+        stats.retainedBufferBytes += size_t(v.alloc.size);
+    stats.retainedCpuShadowBytes = b->shadow.capacity();
+    return stats;
 }
 
 void VulkanDevice::destroyBuffer(BufferHandle h) {

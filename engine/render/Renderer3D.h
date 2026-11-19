@@ -463,6 +463,13 @@ public:
     };
     // Retained CPU layout storage only; does not include GPU command buffers.
     IndirectLayoutCacheStats indirectLayoutCacheStats() const;
+    // Backend-observed CPU memcpy/memcmp and snapshot/version allocation
+    // counts for our own dynamic indirect buffer, cumulative since creation.
+    // Unsupported backends or an as-yet-uncreated buffer return unavailable.
+    gfx::BufferUpdateStats indirectBufferUpdateStats() const {
+        return dev_ && indirectCommands_.valid()
+            ? dev_->bufferUpdateStats(indirectCommands_) : gfx::BufferUpdateStats{};
+    }
     // 0 = sun shadow, 1 = opaque main view; CPU time only, no GPU timestamps.
     const std::array<CpuMdiAdaptiveFeedback, 2>& cpuMdiAdaptiveFeedback() const {
         return cpuMdiAdaptive_;

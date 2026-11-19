@@ -695,6 +695,26 @@ private:
                     double(modelStats.mdiIndirectCommandBytes) / 1024.0,
                     (unsigned long long)modelStats.mdiIndirectPrefixOverwrites);
                 ImGui::TextDisabled("CPU payload requested; backend may skip bytes with dirty snapshots.");
+                const auto transfer = ed.renderer().indirectBufferUpdateStats();
+                if (transfer.available) {
+                    ImGui::Text("Backend snapshot writes: %.1f KiB GPU-visible / %.1f KiB CPU shadow",
+                        double(transfer.mappedWriteBytes) / 1024.0,
+                        double(transfer.cpuShadowWriteBytes) / 1024.0);
+                    ImGui::Text("Backend compared / skipped / preserved: %.1f / %.1f / %.1f KiB",
+                        double(transfer.comparedBytes) / 1024.0,
+                        double(transfer.skippedWriteBytes) / 1024.0,
+                        double(transfer.preservedBytes) / 1024.0);
+                    ImGui::Text("Backend snapshots: %llu allocations / %llu reused / %llu updates",
+                        (unsigned long long)transfer.allocations,
+                        (unsigned long long)transfer.reused,
+                        (unsigned long long)transfer.updateCalls);
+                    ImGui::Text("Backend retained buffers: %.1f KiB (CPU shadow %.1f KiB)",
+                        double(transfer.retainedBufferBytes) / 1024.0,
+                        double(transfer.retainedCpuShadowBytes) / 1024.0);
+                    ImGui::TextDisabled("Cumulative since command-buffer creation; no GPU readback.");
+                } else {
+                    ImGui::TextDisabled("Backend indirect snapshot counters unavailable.");
+                }
                 const auto layoutCache = ed.renderer().indirectLayoutCacheStats();
                 ImGui::Text("MDI layout CPU cache: %zu entries / %.1f KiB retained",
                     layoutCache.entries, double(layoutCache.retainedBytes) / 1024.0);

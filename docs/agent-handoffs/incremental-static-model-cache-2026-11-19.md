@@ -855,3 +855,30 @@ Source/API and exact replacement consistency was checked against GitHub branch a
 Feature-first option: add backend-owned byte-copy statistics exposed via a read-only RHI diagnostic API, so the editor can distinguish 20-byte command payload submissions from actual snapshot CPU copies. Later tests should cover Metal multiple submissions in one GPU frame, frame-slot fence reuse, mixed exact/partial updates, dirty mode, snapshot capacity growth, Vulkan version reuse and growth, unload/reload and LOD/shadow parity. Reconcile old Stage 10/11/13 policy fixtures, run Metal visual A/B/A and fixed-scene CPU/GPU benchmarks before enabling or merging.
 
 **Stage 27 source follow-up:** corrected the opt-in Metal snapshot profiling format string to emit one actual newline; no change to GPU commands or buffer lifetime. Native compilation and runtime tests remain NOT RUN.
+
+---
+
+## Stage 28 — actual CPU upload diagnostics from Metal/Vulkan per indirect buffer (2026-11-19)
+
+**Repo:** `chromealex/AIVERSE`; **branch** `perf/incremental-static-model-cache`; Draft PR #34. At start `main=9ee6ff6fbf390bd45363bc92c838f492dfe92eee`, branch `4483e8fa77db41114733798d485e16d385d85e78`, `main...branch behind=0`, so no merge necessary. User continues features first, tests later.
+
+### Architecture, API, changed files
+
+- `engine/gfx/Gfx.h`: `gfx::BufferUpdateStats` and optional virtual `Device::bufferUpdateStats(BufferHandle)`. Default returns `available=false`. Per-buffer counters are cumulative over the current handle lifetime and do not block the GPU: successful dynamic update calls, requested logical bytes, CPU mapped-memory memcpy bytes, separate CPU-shadow writes, memcmp input span bytes, verified copy-elision bytes, old contents preserved by memcpy, live snapshot/version allocation count and reuse count. Retained backend buffer bytes and CPU-shadow capacity are current estimates, not lifetime sums. **Initial buffer versions and creation-time mapped writes are included** where applicable.
+- `engine/gfx/metal/GfxMetal.mm`: store `BufferUpdateStats` in `MTBuffer`. The existing per-submission fenced indirect-snapshot update path accumulates copied bytes (including old-content preservation), compared bytes, skipped equal dirty chunks, new MTLBuffer snapshots and recycled slots after successful updates. The read-only getter excludes double-counting `bufs[slot]` when it aliases an `indirectSnapshots[slot]` entry. No GPU readback and no change to resource lifetime.
+- `engine/gfx/vulkan/VkDevice.h` and `VkResources.cpp`: store `BufferUpdateStats` in `VBuffer`. Count initial allocation/mapped copies, subsequent host-visible updates, CPU shadow writes, version-preservation writes, version allocations/reuses and retained Vulkan suballocation spans. The existing GPU serial/fence checks are unchanged.
+- `engine/render/Renderer3D.h`: `indirectBufferUpdateStats()` forwards stats for **only** its `indirectCommands_` handle and returns unavailable for an unsupported backend / before creation.
+- `apps/editor/windows/SceneWindow.cpp`: diagnostics for mapped/shadow copies, compared/skipped/preserved data, allocations/reuse/update counts, retained logical capacities. They are explicitly cumulative since indirect GPU command buffer creation.
+- `docs/geometry-performance.md`, `AGENTS.md`, and this handoff describe contracts and pending verification.
+
+### Safety, ownership and interpretation
+
+The API is read-only and cannot change GPU submission, synchronization, draw order, shader/material state, or ECS/genre integration. Existing per-submission Metal snapshots and Vulkan version fences remain. The returned numbers count CPU memory traffic **inside the instrumented backend**; they are NOT external memory-bus/GPU bandwidth counters, GPU frame time, or proof that Stage 27 accelerates any scene. A Metal resource referenced as both the active slot and one pooled snapshot contributes to retained capacity once. Vulkan Allocation::size is a logical memory suballocation span, not actual separately resident physical VRAM. Initial and later transfers are distinguished by `updateCalls` (which excludes create). In particular the Scene panel reports cumulative counters, not a single render-pass delta. No opt-in flags were enabled globally.
+
+### Actual verification (features first)
+
+Read source from the GitHub connector, confirmed head/main ancestry and applied exact unique replacements. Backend status and code consistency should be re-fetched after the commit. **Native compilation: NOT RUN. CTest: NOT RUN. Metal image and Xcode GPU validation: NOT RUN. Vulkan device tests: NOT RUN. Real scene CPU/GPU A/B/A: NOT RUN.** Keep PR #34 Draft.
+
+### Exact next action
+
+Feature-first option: add per-view **delta snapshots** of these cumulative counters for easier comparison between shadow and opaque phases, but only by sampling at explicit pass boundaries and never pretending per-buffer lifetime allocations measure instantaneous VRAM. Then reconcile stale Stage 10/11/13 test fixtures, add CPU policy tests for upload stats, run real backend correctness and fixed-camera A/B/A before merge.

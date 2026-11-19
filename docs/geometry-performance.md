@@ -930,3 +930,39 @@ copy-elision measurements. The command ABI, material/geometry checks,
 per-camera culling/LOD and fallback are unchanged. This stage was
 source-checked only; **CMake, CTest, Metal screenshot parity, Xcode GPU
 validation and A/B timing are NOT RUN**. Metal CPU ICB remains opt-in.
+
+### Per-buffer backend-observed indirect upload diagnostics (Stage 28)
+
+`gfx::Device::bufferUpdateStats(BufferHandle)` is a **read-only optional
+instrumentation API**, returning `gfx::BufferUpdateStats` with
+`available=false` for other backends or missing handles. Metal and Vulkan
+implement it for dynamic indexed indirect buffers. It reports CPU operations
+actually performed by the backend (no GPU fence wait or readback):
+`updateCalls`, `requestedBytes`, `mappedWriteBytes` (CPU memcpy into
+mapped GPU-visible memory), `cpuShadowWriteBytes`, `comparedBytes`
+(bytes passed to memcmp), `skippedWriteBytes` (verified equal byte
+spans skipped), `preservedBytes` (old contents copied into an updated
+version), `allocations`, `reused`, and retained allocation/CPU-shadow
+capacities. These counters are **cumulative since buffer creation** and
+include the initial backend buffer allocations, rather than being per-frame
+numbers. `mappedWriteBytes` includes creation-time writes and version
+preservation where applicable; shadow writes are separate.
+
+Metal's per-submission, per-frame-slot snapshot path counts each successful
+update and exact memcpy/memcmp work. It distinguishes allocating a larger
+snapshot from recycling a fence-safe existing one and computes retained
+capacities without double-counting the current MTLBuffer when it aliases a
+snapshot slot. The existing experimental dirty-byte flag remains off by
+default. Vulkan tracks host-visible mapped copies and CPU shadow copies
+separately, counts GPU-safe version allocations/reuses, and reports each
+Vulkan memory suballocation size as an **allocation capacity estimate**,
+not exact resident physical GPU memory. Renderer3D exposes only its own
+`indirectCommands_` metrics via
+`indirectBufferUpdateStats()`; the editor Scene → Batching panel displays
+them alongside requested logical RHI payload bytes from Stage 27.
+
+None of these data provide actual PCIe bandwidth, GPU copies,
+executed GPU draw cost, driver memory accounting or frame timing. No
+experimental feature is enabled globally. Source checks were performed
+but **native build, CTest, Metal/Vulkan real-GPU validation, screenshot
+parity and CPU/GPU A/B/A were NOT RUN**.

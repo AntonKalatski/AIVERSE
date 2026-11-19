@@ -59,6 +59,7 @@ struct VBuffer {
     size_t size = 0;
     bool host = false;                 // host-visible versions (Dynamic): a write never touches a version the GPU may read
     bool discardOnUpdate = false;      // offset-zero update replaces complete readable prefix
+    BufferUpdateStats transferStats{};
     std::vector<Version> versions;
     int current = 0;
     std::vector<uint8_t> shadow;       // host buffers: the contents, copied into a fresh version
@@ -117,6 +118,7 @@ public:
     BufferHandle createBuffer(const BufferDesc& d) override;
     void updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset) override;
     void destroyBuffer(BufferHandle h) override;
+    BufferUpdateStats bufferUpdateStats(BufferHandle h) override;
     TextureHandle createTexture(const TextureDesc& d) override;
     void updateTexture(TextureHandle h, int x, int y, int w, int h2, const void* pixels, int rowPitchBytes) override;
     void destroyTexture(TextureHandle h) override;

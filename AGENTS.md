@@ -169,6 +169,19 @@ and the MDI pipeline still validates full material and geometry state.
 The group-order scratch vector is reused and included in retained memory;
 `staticCrossModelRankedGroups` reports ranked groups, **not draw calls**.
 Do not cache these ranks across passes or change transparency ordering.
+ Stage 28 adds an optional read-only `gfx::Device::bufferUpdateStats(BufferHandle)`
+ per-buffer diagnostic for Metal/Vulkan dynamic indexed indirect buffers.
+ It accumulates actual backend CPU memcpy/memcmp, skipped equal spans,
+ shadow/preserved copies, version/snapshot allocations/reuses and retained
+ logical capacities from creation onward, not per frame. Renderer3D surfaces
+ this only for its own indirect command buffer in Scene → Batching.
+ Metal's current b->bufs[] can alias an indirectSnapshots[] entry and must
+ not be double counted as retained capacity. Vulkan Allocation::size is
+ only an allocated subrange, not physical GPU residency. No GPU readback,
+ frame-time, bandwidth, or performance improvement is implied by the
+ diagnostic itself; unsupported RHI backends report unavailable.
+ Keep independent in-flight GPU snapshots and optional dirty mode OFF
+ until Metal/Vulkan parity and measured A/B. See Stage 28 handoff.
  Stage 27 introduces the narrow `gfx::BufferDesc::discardOnUpdate`
  contract for dynamic indirect buffers whose offset-zero update replaces
  the complete readable command prefix. Renderer3D alone opts into it.
