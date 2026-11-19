@@ -906,3 +906,15 @@ CI if it remains queued or cancelled.
   counters do not prove GPU completion or pixel correctness.
 - All experimental graph and PBR flags remain disabled by
   default and have NOT been exercised on a Metal device here.
+
+
+### Shader Graph ICB slot fail-closed policy (Stage 10AL)
+
+- Check `Device::maxFragmentTextureSlots()` for graph
+  resources at slots 13..16 and optional VT atlas/table at
+  `13+N`/`14+N`. Renderer and Metal native preflight both
+  reject unsupported layouts, retaining CPU fallback.
+- Source-level layout inspection confirms N=0..4 MSL branches
+  map to argument IDs 26/28 through 34/36, with no dynamic
+  sampler 16. This does **not** substitute for actual Metal
+  shader or GPU tests; leave graph ICB opt-in disabled by default.
