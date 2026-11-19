@@ -259,6 +259,55 @@ void sharedImmutableGpuAsset() {
             "new GPU asset revision leaked after release");
 }
 
+void manyActorStress() {
+    constexpr int count=128;
+    FakeMetal device;
+    Fixture fixture;
+    GpuMorphAssetCache cache(device);
+    auto shared=cache.acquire(fixture.library,fixture.original);
+    require(shared && shared->ready(),"128-actor GPU asset missing");
+    std::vector<std::unique_ptr<GpuActorStream>> actors;
+    actors.reserve(count);
+    for(int i=0;i<count;++i) {
+        auto actor=std::make_unique<GpuActorStream>();
+        require(actor->initializeShared(device,fixture.model,shared),
+                "128-actor shared asset initialization failed");
+        actors.push_back(std::move(actor));
+    }
+    require(device.buffers.size()==5+3*count && device.nextCompute==3,
+            "128 actors duplicated immutable geometry or compute programs");
+    for(int frame=0;frame<4;++frame) {
+        device.beginFrame(32,32);
+        for(int i=0;i<count;++i) {
+            FaceFrame face{};
+            face.values[static_cast<std::size_t>(Channel::JawOpen)] =
+                float((i+frame)%100)/100.0f;
+            require(actors[std::size_t(i)]->dispatch(face,fixture.mapping),
+                    "128-actor compute dispatch failed");
+            render::ModelDraw draw;
+            draw.model=&fixture.model;
+            require(actors[std::size_t(i)]->attach(draw) &&
+                    draw.vertexOverride.valid(),
+                    "128-actor stream binding failed");
+        }
+        device.endFrame();
+    }
+    GpuActorRetirementQueue queue(device);
+    for(auto& actor:actors)require(queue.retire(actor),"128-actor retirement rejected");
+    require(!queue.collect() && queue.pending()==count &&
+            device.issuedTokens==1 && device.waits==0,
+            "128-actor GPU marker batching failed");
+    device.tokens[1]=gfx::ResourceRetirementStatus::Complete;
+    require(queue.collect() && queue.pending()==0 &&
+            device.buffers.size()==5 && device.waits==0 &&
+            queue.stats().completedResources==count,
+            "128-actor resources did not retire in one completed token");
+    shared.reset();
+    require(cache.pruneExpired()==1 && device.buffers.empty() &&
+            device.destroyedComputes==2,
+            "128-actor cache or immutable GPU programs leaked");
+}
+
 void failedTokenAndRecovery() {
     FakeMetal dev;Fixture fixture;
     GpuActorRetirementQueue retirement(dev);
@@ -305,6 +354,7 @@ int main() {
     try {
         completePendingBatch();
         sharedImmutableGpuAsset();
+        manyActorStress();
         failedTokenAndRecovery();
         unsupportedMarkersAndWrongDevice();
         std::cout << "VIVID async GPU actor retirement PASS "
