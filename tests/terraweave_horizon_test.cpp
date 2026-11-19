@@ -1,6 +1,9 @@
 #include "engine/render/TerraWeaveHorizonModel.h"
 #include "engine/render/TerraWeaveHorizonScene.h"
 #include "engine/world/TerraWeaveWorldHeightSource.h"
+#include "engine/render/TerraWeaveHorizonClip.h"
+#include <optional>
+#include <utility>
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
@@ -228,6 +231,81 @@ int main() {
     assert(!archiveRestored.nearNormalProvenanceAvailable);
     assert(archiveRestored.continuousNearNormalSamples==0);
     assert(archiveRestored.localFallbackNearNormalSamples==0);
+
+    // Stage 23: clipped seam provenance is all-or-none. CPU-only fixture
+    // carved inside a distant terrain quad; no live GPU device is required.
+    auto clipped=bake;
+    clipped.nearOwnedQuads.clear();
+    clipped.maxNearClipTriangles=4096;
+    clipped.maxNearWeldSlopePermille=2500;
+    const auto& tl=bake.terrainVertices[0];
+    const auto& tr=bake.terrainVertices[1];
+    const auto& bl=bake.terrainVertices[bake.terrainResolution+1];
+    const int64_t width=int64_t(tr.xCm)-tl.xCm;
+    const int64_t depth=int64_t(bl.zCm)-tl.zCm;
+    assert(width>0 && depth>0);
+    clipped.nearClipRects={RectCm{
+        tl.xCm+width/3,tl.zCm+depth/3,
+        tl.xCm+width*2/3,tl.zCm+depth*2/3}};
+    const auto clipPlan=planHorizonNearGroundClipping(clipped);
+    assert(clipPlan.has_value() && !clipPlan->triangles.empty());
+
+    HorizonSurfaceSources clippedSource;
+    clippedSource.nearGroundHeightAtQ16Cm=[](
+            int64_t,int64_t)->std::optional<int32_t> {
+        return 450; // identical to the source's flat distant terrain
+    };
+    clippedSource.nearGroundContinuousSlopeAtQ16Cm=[](
+            int64_t,int64_t)
+            ->std::optional<std::pair<int32_t,int32_t>> {
+        return std::pair<int32_t,int32_t>{-100,0};
+    };
+    auto continuousSeam=clipped;
+    populateHorizonNearSeamSamples(continuousSeam,&clippedSource);
+    assert(!continuousSeam.nearSeamSamples.empty());
+    assert(continuousSeam.nearNormalProvenanceAvailable);
+    assert(continuousSeam.continuousNearNormalSamples==
+           continuousSeam.nearSeamSamples.size());
+    assert(continuousSeam.localFallbackNearNormalSamples==0);
+
+    auto localOnly=clippedSource;
+    localOnly.nearGroundContinuousSlopeAtQ16Cm={};
+    auto localSeam=clipped;
+    populateHorizonNearSeamSamples(localSeam,&localOnly);
+    assert(localSeam.nearNormalProvenanceAvailable);
+    assert(localSeam.continuousNearNormalSamples==0);
+    assert(localSeam.localFallbackNearNormalSamples==
+           localSeam.nearSeamSamples.size());
+
+    // A missing second height sample must discard the previous valid
+    // sample's diagnostic counts rather than claiming a partial weld.
+    auto incompleteSource=clippedSource;
+    int heightCalls=0;
+    incompleteSource.nearGroundHeightAtQ16Cm=[&heightCalls](
+            int64_t,int64_t)->std::optional<int32_t> {
+        ++heightCalls;
+        if(heightCalls==2)return std::nullopt;
+        return 450;
+    };
+    auto incompleteSeam=clipped;
+    populateHorizonNearSeamSamples(incompleteSeam,&incompleteSource);
+    assert(heightCalls>=2);
+    assert(incompleteSeam.nearSeamSamples.empty());
+    assert(!incompleteSeam.nearNormalProvenanceAvailable);
+    assert(incompleteSeam.continuousNearNormalSamples==0);
+    assert(incompleteSeam.localFallbackNearNormalSamples==0);
+
+    // Reject a steep newly-welded wedge atomically. Its calculated
+    // normals must not be counted as actually applied.
+    auto steepSource=clippedSource;
+    steepSource.nearGroundHeightAtQ16Cm=[](
+            int64_t,int64_t)->std::optional<int32_t> {return 500000;};
+    auto steepSeam=clipped;
+    populateHorizonNearSeamSamples(steepSeam,&steepSource);
+    assert(steepSeam.nearWeldSlopeFallback);
+    assert(steepSeam.nearSeamSamples.empty());
+    assert(steepSeam.continuousNearNormalSamples==0);
+    assert(steepSeam.localFallbackNearNormalSamples==0);
 
     // Constructor should prepare a *bounded* async scheduler without requiring
     // an initialized graphics device. Actual GPU upload has a separate test.
