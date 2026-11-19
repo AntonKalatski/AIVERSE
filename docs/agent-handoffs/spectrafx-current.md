@@ -1,5 +1,22 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 109 — 2048 production GPU-owner retirements + optional Metal stress (NOT RUN)
+
+Code `a5bf5979a17019a2e8e4b4170922698e627d4a89` grows the
+deterministic `spectrafx_retirement` fixture to 1024 repeated
+Play→replacement→reset cycles (>=2048 GPU owners), records peak RHI
+handle/slot budgets and guards against leakage or premature release.
+The real `spectrafx_metal_rhi` accepts
+`AIVERSE_SPECTRAFX_RHI_STRESS_FRAMES=512` and
+`AIVERSE_SPECTRAFX_RHI_STRESS_CAPACITY=256` (default 24x1), with
+outstanding nominal payload and GPU health telemetry. Additional
+code `5310c44c0d500b5b2bb74e5299bd2b458f4f5ded`
+allows realistic post-bloom light spill while retaining Stage 104
+raw depth assertions. **New Stage 106–109 code NOT natively tested.**
+Handoff:
+`docs/agent-handoffs/spectrafx-stage109-stress-2026-11-20.md`.
+
+
 ## Stage 108 — real Metal GPU alpha sort between two cameras (NOT RUN)
 
 Code `9468a46297abbdd846e8a98ccf1df371bba95f17` extends

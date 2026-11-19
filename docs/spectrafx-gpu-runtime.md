@@ -1,5 +1,20 @@
 # SpectraFX — opt-in GPU emitter playback in native AIVERSE projects
 
+## Stage 109 — extended GPU lifecycle stress (authored, NOT RUN)
+
+`spectrafx_retirement` now covers 1024 keyed Play/replacement/reset
+cycles, at least 2048 production GPU-owner retirements, with bounded
+slot and mock-RHI handle checks. Real Apple Metal `spectrafx_metal_rhi`
+can be scaled using `AIVERSE_SPECTRAFX_RHI_STRESS_FRAMES=512` and
+`AIVERSE_SPECTRAFX_RHI_STRESS_CAPACITY=256` (defaults 24, 1).
+Prints peak **nominal** GPU bytes and health. This is not GPU allocator
+residency telemetry. PRISMA's post-Bloom output legitimately permits
+light spilling into foreground pixels; raw depth occlusion is verified
+in the Stage 104 pre-Bloom tests.
+**No native verification exists for Stages 106–109 yet.**
+See Stage 109 handoff for full acceptance command.
+
+
 ## PRISMA postprocessing integration — Stage 107
 
 In any camera view, the only correct render order is:
