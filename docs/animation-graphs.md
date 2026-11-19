@@ -619,3 +619,23 @@ increment `Request::modelRevision` or invalidate its `Model::path`
 before republishing so a graph cannot be reused against stale model
 node/clip storage. This is not protection against destruction of a
 Model while a pinned snapshot or render packet still borrows it.
+
+## Stage 111 — retaining RTS graph clocks during material updates
+
+The RTS compatibility adapter now stores the parsed
+`ModelChoice::graphSignature` (including contents of external
+AnimationGraph files) and a pinned
+`AppearanceAssetRegistry::Snapshot` for hot-reloaded model/LOD/stage
+choices. A material-library-only rebuild may keep its previous graph
+pointer and existing entity animation clocks when every corresponding
+choice still uses the same imported Model, graph signature and runtime
+shape. No new evaluator or timing source is allocated by
+`AppearanceAssetRegistry::publishPrepared`; the original per-entity
+MotionWeave / legacy animation state remains the only pose writer.
+Changed graphs and incompatible choices retain the existing reset path.
+
+`RtsView::shutdown` detaches generic View poses and clears model
+borrowing animation state and appearance snapshots before the
+ModelResourceCache GPU release barrier. Standalone RTS GameClient and
+the Editor's embedded GameClient now use a host-owned GPU lifetime
+generation, with the embedded client borrowing the Editor generation.
