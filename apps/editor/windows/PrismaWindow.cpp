@@ -104,7 +104,7 @@ public:
             pf.stats().temporalFallback ? "used" : "not needed");
         if (pf.stats().adaptiveResolution) {
             constexpr double kMiB=1024.0*1024.0;
-            ImGui::TextDisabled("Prisma known VRAM: %.1f / %.1f MiB (%s)",
+            ImGui::TextDisabled("Prisma + directly-owned Renderer3D known GPU: %.1f / %.1f MiB (%s)",
                 double(pf.stats().adaptiveKnownGpuBytes)/kMiB,
                 double(pf.stats().adaptiveMemoryLimitBytes)/kMiB,
                 pf.stats().adaptiveMemoryPressure ? "pressure" : "within budget");
@@ -113,7 +113,7 @@ public:
                 ImGui::TextDisabled("Adaptive timing: %.3f ms (%s)",
                     pf.stats().adaptiveGpuMs,
                     pf.stats().adaptiveScopedGpuTiming ?
-                        "completed viewport GL33 query" : "completed whole GPU frame");
+                        "completed Metal/GL33 viewport counter" : "completed whole GPU frame");
             else
                 ImGui::TextDisabled("Adaptive timing: unavailable; no CPU/FPS substitute");
         }
