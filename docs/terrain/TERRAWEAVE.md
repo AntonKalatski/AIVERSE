@@ -2389,3 +2389,38 @@ worldScene.setVegetationWindField({});
 **Performance/ownership:** the spatial field adds a handful of bounded CPU integer interpolations per **submitted near-tree**, not per ECS entity or terrain scatter candidate. Horizon performs one sample per submission rather than one per billboard cluster. Live weather updates need a new bounded field snapshot but do not allocate new vertex/texture buffers or recompile ShaderGraph programs. The sampler assumes the caller has validated the immutable field on publication; direct native callers MUST invoke `field.validate()` before sampling, rather than mutating the structure concurrently. Inputs from a high-resolution PHYSIS simulation should be downsampled by the host to this bounded presentation grid.
 
 **Not verified:** Neither C++20 compiler/CMake/CTest nor GPU/PHYSIS integration, visual transition captures, pathological negative-boundary samples, or performance profiling was run at this feature-only stage. Remaining known test debt includes the Stage 29 two-primitive impostor migration and Stage 31 GLSL/Metal Shader Graph rendering.
+
+## Stage 33 — smoothly varying far-Horizon forest-cluster wind
+
+**Source code committed; build/CTest/real GPU checks are deferred.** The far Horizon no longer needs to use one visually identical wind vector for every forest card in a multi-kilometre region. Each baked cluster receives a smooth, signed-world-coordinate variation in direction, gust strength and phase **without adding draw calls, atlas textures, per-cluster ECS entities, or per-tick GPU uploads**.
+
+### What is encoded per cluster
+
+`engine/render/TerraWeaveVertexWind.h` adds `horizonSpatialWindVertexColor(worldXcm,worldZcm,terrainSeed,canopyTop)` and `horizonSpatialWindGraph()`. The former evaluates **three deterministic 2.4 km wavelength world-space noise channels** at a cluster's fixed X/Z centre and packs them into RGB8 in the already-existing `render::ModelVertex::color`. Alpha still holds the Stage 31 crown-weight: zero at the bottom edge, 255 at the top. Each pair of crossed silhouette cards for a cluster uses the **same RGB wind sample**, so the cards cannot diverge. The sampling is independent of observer cell and of how the Horizon region is streamed, including negative world coordinates and transitions between GPU-resident regions. No additional ModelVertex fields or static archive changes.
+
+At runtime, the first-party **GLSL + Metal** `horizonSpatialWindGraph()` uses the same inherited `I.anim` instance data as the Stage 31 crown graph. One shared macro wind vector (from the existing `ForestWindField` sampled at the observer location, or the fallback uniform wind) is rotated by at most **30 degrees** per cluster, scaled between **0.75 and 1.25**, and given a coherent but cluster-dependent phase offset. The exact per-cluster coefficients are fixed by the baked vertex RGB metadata and never require new CPU atlas work when the wind tick changes. Roots stay fixed because alpha is still zero at the card bottom. Direction, amplitude and phase vary *smoothly* across neighbouring clusters in world space rather than jumping between camera tiles.
+
+`makeHorizonModel` writes this metadata only to the distant forest vertices, not authored/coarse terrain. The far forest material already has `vertexColors=false`, ensuring these packed RGB8 values do not unexpectedly tint the foliage or modify opacity. No changes were made to near authored terrain, clipping, Q16 height welding, canopy atlas pixels or TWH8 serialized data.
+
+### Native API and quality switch
+
+```cpp
+// Already supported PHYSIS/game wind setup:
+worldScene.setVegetationWind(baseWind);
+worldScene.setVegetationWindField(immutableSpatialWind);
+worldScene.setVegetationPresentationTick(gameplayTick);
+
+// New optional comparison/quality switch. True by default:
+worldScene.setVegetationHorizonSpatialWind(true);
+
+// Return to Stage 31's identical macro wind for every far card:
+worldScene.setVegetationHorizonSpatialWind(false);
+```
+
+Standalone `TerraWeaveHorizonScene::setSpatialWindVariation(bool)` and `spatialWindVariation()` expose the same switch, while `WorldScene::vegetationHorizonSpatialWind()` returns the current choice. The setting is presentation-only and should be set on the render/update owner thread before calling `submit()`; toggling changes only the *shared ShaderGraph program selection*, not the mesh, atlas, CPU bake or source revision. First use of a variant may incur the renderer's existing pipeline warm-up cost, not shader recompilation every simulation tick. The default is enabled; if zero wind is configured, neither the old nor new wind graph is active.
+
+**Important scope distinction:** The Stage 32 field is sampled exactly at the *near individual tree* and at the *Horizon observer*. Stage 33's independent **far cluster variation is procedural**, applied to that sampled macro vector. It is **not** a direct sample of the upstream PHYSIS field at every far cluster, and therefore is designed to make a 1–12 km treeline feel alive, not to simulate exact kilometre-scale weather boundaries or tornado trajectories. Exact per-cluster PHYSIS fields would require dynamic vertex metadata updates or an extra bounded GPU wind-grid resource, both outside this no-extra-resources mode.
+
+**Bounded visual effect:** The base Horizon GPU crown displacement strength remains 30% of the near-tree graph; the per-cluster amplitude is at most 1.25 and the graph's sine/gust multiplier is bounded. The current `ModelDraw::maxVertexOffsetMetres = 0.65f` remains conservative for the validated host wind bounds. GPU cost is extra vertex shader ALU and shared shader variant, not an additional draw or material per cluster. Real performance, frustum bounds, visual appearance in moving cameras, GLSL/Metal shader compilation and accurate material batching **have not been tested yet**.
+
+**Future work:** A dedicated QA agent must test this against Stage 31 default/no-wind parity, near-to-far velocity continuity, camera origin rebasing, negative coordinates, region crossfades, seasonal forest alpha cutout, Vulkan/GL/Metal render captures and batching. The Stage 29 impostor model test still assumes the old single-layer geometry and must be migrated during the separate testing phase.
