@@ -32,6 +32,8 @@ struct PrismaStats {
     bool temporalUpscaled = false;
     bool temporalFallback = false;
     bool adaptiveResolution = false;
+    bool adaptiveMemoryPressure = false;
+    uint64_t adaptiveKnownGpuBytes = 0;
     float requestedRenderScale = 1.0f;
     bool temporalResolved = false, temporalJittered = false;
     float jitterPixelX = 0, jitterPixelY = 0;
@@ -103,6 +105,17 @@ public:
         uint64_t graphPendingKnownBytes = 0; // belongs to retirement, NOT live bytes
     };
     MemoryStats memoryStats() const;
+
+    // An actual completed GL33 GPU-query interval for one view, NOT a whole
+    // frame metric. The host owns polling, never block for a query result.
+    // Unsupported backends leave this map empty. No FPS/RTS dependency.
+    struct ViewGpuTiming {
+        uint64_t viewId = 0;
+        uint64_t sampleSequence = 0; // increments only on a finished GPU query
+        double lastGpuMs = 0;
+    };
+    void acceptViewGpuTiming(uint64_t viewId, double gpuMs);
+    std::vector<ViewGpuTiming> viewGpuTimings() const;
 
     // game.json "postfx" then the map's (either may be null); problems go to `issues`.
     void configure(const Json& game, const Json& map, std::vector<std::string>* issues = nullptr);
@@ -264,6 +277,7 @@ private:
     std::map<uint64_t, MotionView> motionViews_;
     std::map<uint64_t, TemporalView> temporalViews_;
     std::map<uint64_t, PrismaAdaptiveResolution> adaptiveViews_;
+    std::map<uint64_t, ViewGpuTiming> scopedGpuTimings_;
     // Last successful postprocess scene pass per stable view ID. A size cache
     // can be shared by several views; retireView() removes a view reference.
     std::map<uint64_t, std::pair<int, int>> viewDimensions_;
