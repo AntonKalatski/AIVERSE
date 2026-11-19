@@ -442,3 +442,23 @@ journal and Simulation World checkpoint are separate.
 Stage 42 code/test source is committed but native compilation, CTest,
 macOS and Windows QA are NOT VERIFIED. See
 `docs/agent-handoffs/physis-stage42-durable-receipts-2026-11-19.md`.
+
+### Stage 43 — PHYSIS V1 unavailable-journal client handling
+
+Remote protocol V1 retains its exact packet format. On the server,
+`Result::Unknown` with `kJournalDurabilityUnavailable` or
+`kJournalRetrySuspended` means the durable receipt journal cannot
+confirm deduplication. RemoteClient must enter `ClientStatus::Uncertain`,
+retain the original request payload/instance/ID and **not** schedule
+automatic retransmission. Manual `retry()` after recovery is a
+user-initiated attempt, not proof of success.
+
+Plain Unknown without these diagnostics retains the existing same-ID
+automatic recovery behavior. Do not treat either Unknown variant as
+Applied. The safety test `unhealthyJournalStopsAutomaticResubmit`
+uses real net::Conn loopback and injected journal write failures at
+Queued/Applied receipt persistence. This is authored code; full native
+CTest remains UNVERIFIED.
+
+Stage handoff:
+`docs/agent-handoffs/physis-stage43-client-journal-backoff-2026-11-19.md`.
