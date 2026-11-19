@@ -103,6 +103,17 @@ static bool unitChecks() {
     ok &= check(!stalled.useMdi(0, 1024)); // no repeated unproductive MDI
     for (int i = 0; i < 30; ++i) stalled.useMdi(0, 1024);
     ok &= check(stalled.useMdi(0, 1024)); // periodic re-probe
+    AutoCpuBatchPolicy calibrated;
+    // Explicitly feed comparable completed pass measurements; the learner
+    // must gather a full MDI window before trusting early expensive frames.
+    for (int i = 0; i < 12; ++i)
+        calibrated.observe(0, 1024, false, 1.0);
+    for (int i = 0; i < 31; ++i)
+        calibrated.observe(0, 1024, true, i < 4 ? 2.0 : 0.65);
+    ok &= check(calibrated.useMdi(0, 1024));
+    calibrated.observe(0, 1024, true, 0.65);
+    ok &= check(calibrated.useMdi(0, 1024)); // MDI now wins after warmup
+    ok &= check(!calibrated.useMdi(1, 1024)); // independent opaque lane
 
     std::printf("material palette CPU checks=%d result=%s\n",checks,ok?"passed":"FAILED");
     return ok;
