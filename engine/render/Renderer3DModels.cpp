@@ -4,12 +4,14 @@
 #include "ModelMerge.h"
 #include "GpuMaterialState.h"
 #include "ModelShaders.h"
+#include "GiDynamicProbeTexture.h"
 #include "Animation.h"
 #include "ModelVisibility.h"
 #include "ModelLodTransition.h"
 #include "GpuIcbPolicy.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -27,7 +29,8 @@ constexpr size_t kJointFloats = size_t(kMaxPaletteJoints) * 12; // 3 rows of vec
 static_assert(kJointFloats * 4 <= 4096, "joint palette must fit a 4 KB uniform block");
 
 constexpr uint32_t kKeyDrawCallView = 32768;
-constexpr uint32_t kKeyMaterialInstancePalette = 1u << 27; // editor draw-call diagnostic shader permutation
+constexpr uint32_t kKeyMaterialInstancePalette = 1u << 27;
+constexpr uint32_t kKeyDynamicGI = 1u << 28; // opt-in color-only dynamic probe sampler // editor draw-call diagnostic shader permutation
 constexpr uint32_t kKeySkinned = 1, kKeyNormalMap = 2, kKeyAlphaMask = 4, kKeyShadow = 8, kKeyBaked = 64, kKeyMorph = 128,
                    kKeyInstanced = 256, kKeyOutline = 512, kKeyLightmap = 2048, kKeyProbes = 4096, kKeyLodFade = 8192, kKeyMaterialPalette = 16384;   // GI keys: agent-lightbake
 struct ProfileTimer {
@@ -59,6 +62,35 @@ MaterialQuality Renderer3D::defaultMaterialQualityFor(const gfx::Device& dev, bo
         return MaterialQuality::Medium;
     }
     return MaterialQuality::High;
+}
+
+bool Renderer3D::setDynamicGiOverlay(const GiDynamicProbeTexture* overlay, float3 origin,
+                                     float spacing, int nx, int ny, int nz) {
+    if (!overlay) { clearDynamicGiOverlay(); return true; }
+    if (!dev_ || !dev_->supports(gfx::PixelFormat::RGBA32F) ||
+        !overlay->texture().valid() ||
+        !std::isfinite(origin.x) || !std::isfinite(origin.y) || !std::isfinite(origin.z) ||
+        !std::isfinite(spacing) || spacing < .25f || spacing > 1000.f ||
+        nx < 1 || ny < 1 || nz < 1 || nx > 256 || ny > 256 || nz > 256 ||
+        size_t(nx) * size_t(ny) * size_t(nz) != overlay->probeCount())
+        return false;
+    dynamicGiOverlay_ = overlay; // caller owns it; exact same device required
+    dynamicGiOrigin_ = {origin.x, origin.y, origin.z, 1.0f / spacing};
+    dynamicGiSize_ = {float(nx), float(ny), float(nz), 0.0f};
+    return true;
+}
+
+bool Renderer3D::dynamicGiEligible(const ModelItem& it, int phase,
+                                  bool gpuInstances, bool instancePalette) const {
+    if ((phase != 1 && phase != 2) || !dynamicGiOverlay_ ||
+        !dynamicGiOverlay_->texture().valid() || gpuInstances ||
+        instancePalette || it.mat->shading == ShadingModel::Unlit)
+        return false;
+    const auto& program = it.mat->shaderGraph;
+    // Shader Graph textures start at slot 13, which the opt-in GI overlay uses.
+    // A graph with no textures remains eligible; never steal texture slot 13.
+    return !program || int(matQuality_) < program->minQuality ||
+           program->textures.empty();
 }
 
 void Renderer3D::initModels() {
@@ -127,6 +159,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const bool twoSided = !outline && it.mat->doubleSided;
     const bool giPhase = phase == 1 || phase == 2;
     const bool lightmap = giPhase && it.gi == 1, probes = giPhase && it.gi == 2;
+    const bool dynamicGi = dynamicGiEligible(it, phase, gpuInstances, instancePalette);
     const uint32_t gpuInstanceShaderBit = gpuInstances ? (1u << 26) : 0u;
     const uint32_t studioShaderBits = (geometryMainView_ && (phase == 1 || phase == 2) && studioDebugMode_ >= 2)
                                     ? uint32_t(studioDebugMode_) << 17 : 0u;
@@ -135,7 +168,9 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                                (shadow ? kKeyShadow : 0u) | (baked ? kKeyBaked : 0u) | (morph ? kKeyMorph : 0u) |
                                (instanced ? kKeyInstanced : 0u) | (outline ? kKeyOutline : 0u) |
                                ((drawCallDebug_ && geometryMainView_ && (phase == 1 || phase == 2)) ? kKeyDrawCallView : 0u) |
-                               (lightmap ? kKeyLightmap : 0u) | (probes ? kKeyProbes : 0u) | (lodFade ? kKeyLodFade : 0u) | (materialPalette ? kKeyMaterialPalette : 0u);
+                               (lightmap ? kKeyLightmap : 0u) | (probes ? kKeyProbes : 0u) |
+                               (dynamicGi ? kKeyDynamicGI : 0u) |
+                               (lodFade ? kKeyLodFade : 0u) | (materialPalette ? kKeyMaterialPalette : 0u);
     const bool fadeDepth = blend && !outline && it.mat->alpha != AlphaMode::Blend && (it.flags & kDrawFadeDepth) && !transparentItem(it.flags);
     const uint32_t pipeKey = shaderKey | (blend ? 16u : 0u) | (twoSided ? 32u : 0u) |
         (fadeDepth ? 64u : 0u) | (depthAfter ? 1024u : 0u) | (maskPass ? (1u << 29) : 0u);
@@ -173,6 +208,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         if (studioShaderBits) defs += "#define STUDIO_DEBUG_VIEW " + std::to_string(studioShaderBits >> 17) + "\n";
         if (lightmap) defs += "#define LIGHTMAP 1\n";
         if (probes) defs += "#define PROBES 1\n";
+        if (dynamicGi) defs += "#define DYNAMIC_GI 1\n";
         if (lightmap || probes) defs += "#define AIVERSE_GIQ " + std::to_string(bakedQuality_ == BakedQuality::Low ? 1 : 2) + "\n";
         defs += "#define AIVERSE_Q " + std::to_string(int(matQuality_)) + "\n";
         std::string vs = defs + (shadow ? shaders::kModelShadowVS : shaders::kModelVS);
@@ -246,7 +282,9 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         gfx::ShaderDesc sd;
         sd.glslVertex = vs.c_str(); sd.glslFragment = fs.c_str(); sd.msl = msl.c_str();
         // tex11/tex12: SSR scene colour/depth; graph textures follow at kGraphTextureSlot.
-        sd.uniformSlots = shadow ? 5 : 6; sd.textureSlots = graph && !graph->textures.empty() ? kGraphTextureSlot+int(graph->textures.size()) : shadow ? 9 : 13; sd.label = shadow ? "model shadow" : "model"; // U5/tex9: lights, tex10: height field
+        sd.uniformSlots = shadow ? 5 : dynamicGi ? 7 : 6;
+        sd.textureSlots = graph && !graph->textures.empty()
+            ? kGraphTextureSlot+int(graph->textures.size()) : shadow ? 9 : dynamicGi ? 14 : 13; sd.label = shadow ? "model shadow" : "model"; // U5/tex9: lights, tex10: height field
         ShaderEntry e;
         if (warmingPipelines_) e.job=dev_->createShaderAsync(sd);
         else e.shader = dev_->createShader(sd);
@@ -749,6 +787,16 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         dev_->setTexture(8, it.model->morphTex.valid() ? it.model->morphTex : white_);
     }
     if (it.gi && (phase == 1 || phase == 2)) bindBakedGI(it);
+    if (dynamicGiEligible(it,phase,gpuInstances,instancePalette)) {
+        // U6 / tex13 exist only in the DYNAMIC_GI shader permutation.
+        // This is a *separate* bounced indirect layer: the static atlas stays intact.
+        const float giData[8] = {
+            dynamicGiOrigin_.x, dynamicGiOrigin_.y, dynamicGiOrigin_.z, dynamicGiOrigin_.w,
+            dynamicGiSize_.x, dynamicGiSize_.y, dynamicGiSize_.z, dynamicGiSize_.w
+        };
+        dev_->setUniforms(6, giData, sizeof giData);
+        dev_->setTexture(13, dynamicGiOverlay_->texture());
+    }
     if (instancePalette) {
         float palette[kMaxMaterialPalette * 8] = {};
         for (size_t i = 0; i < instanceMaterialSlots.size(); ++i) {
