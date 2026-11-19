@@ -2121,3 +2121,52 @@ Next independent gate: true planar reflection RTT readback and
 material/UV-boundary parity with multiple cameras, followed by
 lossy LOD seam and GPU-selected drawing tests. Keep PR #35 Draft.
 Stage handoff: `docs/agent-handoffs/strata-virtual-geometry.md`.
+
+
+## Strata Stage 13 — reflection RTT, 2 material groups and UV seams (2026-11-19)
+
+The new \`gfx::Device::readColorTextureAsync(TextureHandle,ColorReadFn)\`
+is a diagnostics-only virtual API with default-unsupported
+behavior on non-Metal backends. Metal implements bounded,
+non-blocking GPU blit of an **actual offscreen LDR RGBA8 render
+target** into owner-thread callback RGBA8 bytes, with
+BGRA swizzle and row-stride repacking. It must NOT fake a
+reflection result by taking a screenshot of the presented
+main camera. It does not change rendering or geometry
+allocation when unused.
+
+\`LightSystem::requestPlanarReflectionColorReadback\` and
+\`Renderer3D::requestPlanarReflectionColorReadback\` provide
+read-only diagnostic access to the existing half-resolution
+LDR reflection RTT after the production reflection pass,
+with the actual renderer and selected water plane.
+\`strata::RenderPass::PlanarReflection\` is a pass-specific
+CPU selection contract, not permission to submit GPU draws.
+
+The manual macOS \`aiverse_strata_metal_reflection_material_parity\`
+test uses one shared source VB/IB, one Strata auxiliary index
+lease, two adjacent opaque materials with **duplicated seam
+vertices, independent UV transforms and separate GPU checker
+textures**. Parent geometry is deliberately LOSSLESS, so
+Legacy/Fine/Coarse should be pixel-identical. It exercises
+two independent cameras and four mutually exclusive modes
+each. The test obtains the actual main image, sun shadow
+Depth32Float map, and half-resolution reflection GPU RTT:
+**24 total GPU captures**. It requires Legacy != Empty for
+all three targets, exact source-vs-cluster parity, distinct
+camera results, separate material/primitive submission
+counts and no doubled ModelDraw. Reflections use the
+existing \`Renderer3D\` water path; there is no second
+raster implementation or Strata GPU allocator.
+
+This test has **NOT YET been compiled or run natively**.
+Mac Studio Stage 12, Stage 11 and cluster-culling
+results were owner-verified PASS in prior steps, but those
+DO NOT prove this newer reflection/multi-material fixture.
+The test is compiled but NOT executed by the focused macOS
+CI workflow. Keep PR #35 Draft and do not change \`main\`.
+After the user runs Stage 13, record every real result and
+failure with exact source commit (if available) in
+\`docs/agent-handoffs/strata-virtual-geometry.md\`.
+Then proceed to genuine lossy cluster LOD seam quality,
+GPU-selected draw submission and guarded Legacy fallback.
