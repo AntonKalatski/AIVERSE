@@ -432,6 +432,51 @@ public:
     std::vector<ForestTreeIdentity> fallenTrees()const{
         return {fallen_.begin(),fallen_.end()};
     }
+    // Natural ecological death is independent of harvesting and uprooting.
+    // A dead tree cannot reappear merely because another tree regrows.
+    void setDeadTrees(const std::vector<ForestTreeIdentity>& dead) {
+        if(dead.size()>1000000u)
+            throw std::length_error("TerraWeave dead forest tree budget");
+        std::set<ForestTreeIdentity> next;
+        for(const auto& id:dead){
+            if(!id.key || !id.speciesId || !next.insert(id).second)
+                throw std::invalid_argument("TerraWeave duplicate/invalid dead tree");
+        }
+        dead_.swap(next);
+    }
+    std::vector<ForestTreeIdentity> deadTrees()const{
+        return {dead_.begin(),dead_.end()};
+    }
+
+    // Spawned saplings reuse the existing per-species Arbor mesh/impostor
+    // and the ordinary Flora LOD batches. A separate sparse, CPU-authored
+    // list survives chunk streaming but no per-tree GPU geometry is made.
+    void setRecruitedPlants(const std::vector<FoliageInstance>& plants) {
+        if(plants.size()>65536u)
+            throw std::length_error("TerraWeave recruited sapling budget");
+        std::map<ForestTreeIdentity,FoliageInstance> next;
+        for(const auto& plant:plants){
+            if(!plant.key || !plant.speciesId ||
+               plant.habit==PlantHabit::Grass ||
+               plant.scalePermille==0 || plant.scalePermille>10000 ||
+               plant.xCm<-kWorldLimitCm || plant.xCm>kWorldLimitCm ||
+               plant.zCm<-kWorldLimitCm || plant.zCm>kWorldLimitCm ||
+               int64_t(plant.heightCm)<-kWorldLimitCm ||
+               int64_t(plant.heightCm)>kWorldLimitCm ||
+               plant.yawMilliDegrees>=360000 ||
+               !std::any_of(species_.begin(),species_.end(),
+                   [&](const FoliageSpecies& sp){
+                       return sp.id==plant.speciesId &&
+                              sp.habit==plant.habit;
+                   }))
+                throw std::invalid_argument("TerraWeave invalid/unregistered sapling");
+            const ForestTreeIdentity id{plant.key,plant.speciesId};
+            if(!next.emplace(id,plant).second)
+                throw std::invalid_argument("TerraWeave duplicated recruited sapling");
+        }
+        recruited_.swap(next);
+    }
+    size_t recruitedPlantCount() const {return recruited_.size();}
 
     // Gameplay systems can call this on the owning update thread when a
     // tree is harvested/destroyed; the stable key survives chunk unloading.
@@ -475,13 +520,21 @@ public:
             count += patch.size();
         }
         std::vector<FoliageInstance> placements;
-        placements.reserve(count);
+        placements.reserve(count+recruited_.size());
         for (const auto& [key, patch] : patches_) {
             (void)key;
             for (const FoliageInstance& instance : patch) {
                 if(auto shown=presentationInstance(instance))
                     placements.push_back(*shown);
             }
+        }
+        // Recruits are sparse, persistent and rendered only by the
+        // existing Arbor prototypes. The normal Flora distance/LOD cull
+        // rejects those outside the visual forest radius.
+        for(const auto& [id,plant]:recruited_){
+            (void)id;
+            if(auto shown=presentationInstance(plant))
+                placements.push_back(*shown);
         }
         FloraView view = settings_.view;
         view.cameraXcm = observer_.x;
@@ -630,7 +683,8 @@ private:
     std::optional<FoliageInstance> presentationInstance(
             const FoliageInstance& instance) const {
         const ForestTreeIdentity id{instance.key,instance.speciesId};
-        if(removed_.contains(id) || fallen_.contains(id))return std::nullopt;
+        if(removed_.contains(id) || fallen_.contains(id) ||
+           dead_.contains(id))return std::nullopt;
         FoliageInstance scaled=instance;
         if(const auto root=rootStates_.find(id);root!=rootStates_.end())
             scaled.heightCm=root->second.plantedHeightCm;
@@ -820,6 +874,8 @@ private:
     std::vector<FoliageSpecies> species_;
     std::set<ForestTreeIdentity> removed_;
     std::set<ForestTreeIdentity> fallen_;
+    std::set<ForestTreeIdentity> dead_;
+    std::map<ForestTreeIdentity,FoliageInstance> recruited_;
     std::map<ForestTreeIdentity,ForestRegrowthSchedule> regrowth_;
     std::map<ForestTreeIdentity,PlantEnvironment> conditions_;
     std::map<ForestTreeIdentity,RootState> rootStates_;
