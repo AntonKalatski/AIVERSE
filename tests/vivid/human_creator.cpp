@@ -192,14 +192,22 @@ void test() {
         MorphLodMapping mappingSidecar;
         mappingSidecar.sourceVertices=3;
         mappingSidecar.sourceTriangles=1;
+        mappingSidecar.sourceFingerprint=MorphLodMapping::fingerprint(sourcePositions,faces);
         mappingSidecar.samples=correspondence;
         const auto restored=MorphLodMapping::fromJson(mappingSidecar.toJson());
         req(restored.samples.size()==2 &&
             std::fabs(restored.samples[0].bary.x-0.5f)<1.e-5f,
             "LOD barycentric sidecar lost mapping data");
-        const auto restoredMorphs=restored.transfer(sourceMorph,faces);
+        const auto restoredMorphs=restored.transfer(sourceMorph,sourcePositions,faces);
         req(restoredMorphs.targets()==1 && restoredMorphs.deltas()==2,
             "LOD sidecar did not reapply stored surface projection");
+        auto alteredSource=sourcePositions;
+        alteredSource[0].x=0.2f;
+        bool fingerprintRejected=false;
+        try {(void)restored.transfer(sourceMorph,alteredSource,faces);}
+        catch(const std::invalid_argument&){fingerprintRejected=true;}
+        req(fingerprintRejected,
+            "LOD sidecar accepted changed same-size source geometry");
         const auto projected=MorphLodSurface::transfer(
             sourceMorph,faces,correspondence);
         req(projected.vertices()==2 && projected.targets()==1 &&
