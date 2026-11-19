@@ -1,5 +1,25 @@
 # SpectraFX — opt-in GPU emitter playback in native AIVERSE projects
 
+## Genre-independent scene/view contract (Stage 94)
+
+SpectraFX is independent of FPS, RTS and Editor. A native scene directly
+supplies an `aiverse::fx::SpectraFxView` containing camera eye, forward,
+right/up axes, `viewProj`, `projectionYScale` and viewport dimensions.
+Pass it to `SpectraFxSceneHost::prepareGpu(dt,view)`, then
+`prepareCpu(dt,view)`, then `render(lighting,view)` in the correct
+RHI frame/pass phases. GPU particles, CPU effects and graph cue IDs do
+not depend on a particular game-camera or scene class.
+
+Existing callers with a camera exposing `eye()/view()/proj()` can retain
+their older overloads during migration. Those are generic C++ adapter
+templates and do not import a genre module. `ParticleSystem::setView`
+now also supports a direct SpectraFX view packet. Automated
+`spectrafx_architecture` CTest guards the engine/fx dependency boundary.
+
+This source change is **not yet native-validated**. See the Stage 94 handoff
+and run the full one-shot acceptance suite before integration.
+
+
 This document describes the source implementation in
 `feature/spectrafx-generic-cue-queue`. The GPU path is **experimental and
 not native-tested**. It is intentionally OFF unless a project authors

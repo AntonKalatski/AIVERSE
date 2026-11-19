@@ -1,5 +1,19 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 94 — no genre/editor camera dependency
+
+The current branch now contains `SpectraFxView`: an explicit, camera-independent
+eye/basis/projection/viewport packet for the FX core. `ParticleSystem` and
+`SpectraFxSceneHost` no longer explicitly mention `RTSCamera`.
+Previous camera-shaped APIs are preserved as templates.
+Core compilation, host integration and full-build acceptance are distinct stages.
+A new `spectrafx_architecture` CTest rejects reintroduced direct genre/Editor
+source dependencies. **Native tests for Stage 94 have NOT RUN**.
+
+See `docs/agent-handoffs/spectrafx-stage94-genre-neutral-camera-2026-11-19.md`
+for exact implementation SHAs, API, test limitations, and next steps.
+
+
 Updated: 2026-11-19. Branch: `feature/spectrafx-generic-cue-queue`.
 Repository: `chromealex/AIVERSE`.
 Status: **native validation in progress; CPU/header/host gates confirmed,

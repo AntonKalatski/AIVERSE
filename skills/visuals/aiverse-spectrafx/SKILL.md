@@ -8,6 +8,7 @@ description: Author and integrate AIVERSE SpectraFX visual effects: versioned gr
 **Canonical documentation:** `docs/spectrafx.md`.  
 **Exact stage history:** `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.  
 **Engineering rules:** `AGENTS.md`.
+**Latest handoff:** `docs/agent-handoffs/spectrafx-stage94-genre-neutral-camera-2026-11-19.md`.
 
 ## Fast path (current supported capabilities)
 
@@ -19,7 +20,9 @@ description: Author and integrate AIVERSE SpectraFX visual effects: versioned gr
 
 ## Boundaries and tests
 
-VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
+VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The v1 graph compiler produces `fx::EffectDef`, while the separate opt-in Metal GPU runtime already has evolution, sorting and compaction kernels. Full graph-programmable GPU simulation, renderer/editor integration, and complete cross-platform GPU QA remain unfinished. Do not duplicate SpectraFX by genre.
+
+**Hard dependency rule:** engine/fx must not include any FPS, RTS, Editor or app module and must not accept a concrete genre camera. Use `SpectraFxView` and the generic `SpectraFxSceneHost` API instead; old camera APIs are source-compatible template adapters. The `spectrafx_architecture` CTest enforces direct source boundaries. Host builds are optional integration regressions, not requirements for using core.
 
 Use CMake target `AIVERSE::spectrafx` in a native project. Validate with:
 
@@ -32,4 +35,4 @@ python3 tools/skills/catalog.py check
 
 **Verification status:** these tests are committed, not proven passing. Never mark them successful based on source presence.
 
-**Handoff requirement:** every bounded implementation stage must end with a separate dated append to `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` in the SAME branch, including implementation/test commit SHA, exact tests executed and their outputs, API/format changes, risks and the next step.
+**Handoff requirement:** every stage needs a dated file in `docs/agent-handoffs/` and an update to `spectrafx-current.md` in the SAME branch, including code SHA, exact tests run/results, API/format contracts, risks and the next step. Do not claim a test PASS until the log exists.
