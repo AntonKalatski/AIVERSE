@@ -5560,3 +5560,33 @@ Next: execute bash tools/verify-texture-rhi.sh --editor on macOS
 with Xcode Metal tools, and on Linux with glslangValidator;
 inspect verify-logs/summary.txt and ctest.log. Fix actual
 shader compiler errors before enabling renderer integration.
+
+
+## Stage 9C — frame-level virtual texture streaming coordinator (2026-11-19)
+
+Source commit: ecfd2bd13891d630741aa1aa5b989dbc109ed8d8.
+Changed file: engine/gfx/VirtualTextureFeedbackPass.h.
+Added VirtualTextureFeedbackPass::FrameResult and updateStreaming(
+VirtualTextureFileStreamer&, size_t maxNewGpuPages=8,
+const VirtualTextureFileStreamer::CompletionFn&={}).
+The method is called on the RHI owner thread after beginFrame
+delivers async feedback callbacks. It first submits decoded and
+deferred visibility via the existing bounded prefetch planner,
+then pumps the independently owned file streamer to stage physical
+page uploads and publish page-table updates. FrameResult exposes
+the dispatch, staged page count and whether streaming remains ready.
+It does nothing if the pass is uninitialized, active, or the file
+streamer is unavailable. The existing explicit submitVisiblePages
+and streamer.pump APIs remain available.
+
+Compatibility: additive native C++ convenience API; no ECS, genre,
+renderer shader, asset format or backend ABI changes. No automatic
+scene/material feedback drawing is implied.
+Verification: GitHub source commit succeeded. Native compile,
+CTest, GPU render/readback and editor integration NOT RUN, per
+user request to prioritize functions before tests.
+Next: wire feedback rendering into the generic material submission
+path with correct camera-visible geometry and explicit mip selection;
+provide a safe opt-in lifecycle in renderer/editor, then implement
+remaining cross-backend RenderTexture/storage parity before native
+test and validation phase.
