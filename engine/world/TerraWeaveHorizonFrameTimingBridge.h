@@ -23,14 +23,14 @@ public:
     // Return false when the optional horizon/adaptation is absent.
     bool begin(gfx::Device& device, world::WorldScene* scene) {
         if(!scene || !scene->vegetationHorizonAdaptiveQualityConfig().enabled) {
-            discard();
+            detach(device);
             return false;
         }
         if(capturing_)return false;
         if(!subscriber_)
             subscriber_=device.gpuTimingRouter().subscribe();
         collectGpu(device);
-        deliver(*scene);
+        deliver(*scene,&device);
         ++frameId_;
         Frame pending;
         pending.id=frameId_;
@@ -106,7 +106,7 @@ private:
             }
         }
     }
-    void deliver(world::WorldScene& scene) {
+    void deliver(world::WorldScene& scene,gfx::Device* device=nullptr) {
         while(!frames_.empty()) {
             const auto& first=frames_.front();
             if(!first.cpuReady)break;
@@ -116,6 +116,11 @@ private:
             // CPU-only fallback on unsupported/timed-out GPU providers.
             // Emit each frame ID only once, strictly in increasing order.
             const bool gpuValid=first.gpuReady && first.gpuUs!=0;
+            // Reclaim the router's request budget after the eight-frame
+            // timeout; the backend result may arrive later but is ignored.
+            if(device && subscriber_ && first.gpuRequested &&
+               !first.gpuReady)
+                device->gpuTimingRouter().cancel(subscriber_,first.id);
             scene.submitVegetationHorizonFrameTiming({
                 first.id,first.cpuUs,gpuValid?first.gpuUs:0u});
             if(gpuValid)++deliveredGpuFrames_;
