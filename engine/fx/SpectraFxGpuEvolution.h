@@ -25,6 +25,12 @@ struct SpectraFxGpuSeed {
 struct SpectraFxGpuEnvironment {
     render::float3 acceleration{0,-9.81f,0};
     float damping = 1;
+    // World-space horizontal ground plane only; arbitrary terrain, signed
+    // distance fields and depth-buffer collision require other modules.
+    bool collideGround = false;
+    float groundHeight = 0;
+    float restitution = 0.35f; // vertical bounce [0,1]
+    float tangentRetention = 0.8f; // horizontal velocity multiplier [0,1]
 };
 
 class SpectraFxGpuEvolution {
@@ -126,7 +132,11 @@ public:
     bool step(float dt,const SpectraFxGpuEnvironment& env={}) {
         if(!ready()) {error_="SpectraFX GPU stage not initialized";return false;}
         if(!std::isfinite(dt) || dt<0 || dt>0.1f || !finite(env.acceleration) ||
-           !std::isfinite(env.damping) || env.damping<0 || env.damping>1) {
+           !std::isfinite(env.damping) || env.damping<0 || env.damping>1 ||
+           !std::isfinite(env.groundHeight) ||
+           !std::isfinite(env.restitution) || env.restitution<0 || env.restitution>1 ||
+           !std::isfinite(env.tangentRetention) ||
+           env.tangentRetention<0 || env.tangentRetention>1) {
             error_="SpectraFX invalid GPU evolution parameters";
             return false;
         }
@@ -136,11 +146,15 @@ public:
             float damping;
             float pad;
             render::float4 acceleration;
+            // x=floorY, y=restitution, z=tangent retention, w=enabled
+            render::float4 ground;
         };
-        static_assert(sizeof(Parameters)==32);
+        static_assert(sizeof(Parameters)==48);
         const Parameters params{count_,dt,env.damping,0,
                                 {env.acceleration.x,env.acceleration.y,
-                                 env.acceleration.z,0}};
+                                 env.acceleration.z,0},
+                                {env.groundHeight,env.restitution,
+                                 env.tangentRetention,env.collideGround?1.0f:0.0f}};
         if(!device_->beginCompute(shader_)) {
             error_="SpectraFX compute must run inside frame, outside render pass";
             return false;
