@@ -196,6 +196,9 @@ public:
                 double(group.estimatedKnownBytes())/(1024.0*1024.0));
             if(group.health==render::RenderResourceHealth::DeviceUnhealthy)
                 ImGui::TextDisabled("GPU сообщил об ошибке; новые источники не загружаются");
+            else if(group.health==render::RenderResourceHealth::RetirementFenceFailed)
+                ImGui::TextDisabled("Ошибка GPU fence (%zu): ресурсы удерживаются, новые импорты отложены",
+                                    group.unresolvedFailedFences);
             else if(!admission)
                 ImGui::TextDisabled("Бюджет визуальных ресурсов занят, загрузка отложена");
             else if(group.health==render::RenderResourceHealth::PendingGpuRetirement)
