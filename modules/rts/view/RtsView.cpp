@@ -36,8 +36,7 @@ float4 RtsView::playerColor(int p) { return overlayPlayerColor(p); }   // palett
 
 bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
 #ifndef __EMSCRIPTEN__
-    if (preparing_.valid()) preparing_.wait();
-    preparing_ = {}; prepareType_ = -1; preparingResource_.clear();
+    preparation_.reset();
 #endif
     rules_ = &rules;
     dev_ = &dev;
@@ -115,8 +114,7 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
 
 void RtsView::shutdown(gfx::Device& dev) {
 #ifndef __EMSCRIPTEN__
-    if (preparing_.valid()) preparing_.wait();
-    preparing_ = {}; prepareType_ = -1; preparingResource_.clear();
+    preparation_.reset();
 #endif
     geometryScene_.shutdown(dev);
     // All model GPU buffers and textures are now released by the same
