@@ -277,6 +277,11 @@ public:
     uint64_t gpuCompactionFallbacks() const {return compactionFallbacks_;}
     const std::string& status() const {return status_;}
     uint32_t gpuActiveParticles() const {return slots_.activeCount();}
+    uint64_t nominalGpuBytes() const {
+        if(!gpuActive()) return 0;
+        return slots_.evolution().nominalGpuBytes()+
+               compaction_.nominalGpuBytes()+alphaSort_.nominalGpuBytes();
+    }
 
 private:
     bool switchToCpuFallback() {
