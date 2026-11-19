@@ -34,6 +34,10 @@ struct VirtualTextureArchiveLayer {
 struct VirtualTextureArchivePackConfig {
     int pageSize = 128;  // including gutters
     int gutter = 2;
+    // Optional per-axis address mode for source mips and physical gutters.
+    // ClampToBorder is unavailable in the current virtual page-table shader.
+    SamplerAddressMode addressU = SamplerAddressMode::ClampToEdge;
+    SamplerAddressMode addressV = SamplerAddressMode::ClampToEdge;
     size_t maxSourceBytes = size_t(64) << 20;
     size_t maxArchiveBytes = size_t(512) << 20;
     size_t maxPages = 262144;
@@ -46,11 +50,16 @@ struct VirtualTextureArchiveVersion {
     int baseTilesX = 0, baseTilesY = 0;
     int mipLevels = 0, virtualLayers = 0;
     int pageSize = 0, gutter = 0;
+    // Immutable shader sampling policy; part of revision identity.
+    SamplerAddressMode addressU = SamplerAddressMode::ClampToEdge;
+    SamplerAddressMode addressV = SamplerAddressMode::ClampToEdge;
     size_t pageCount = 0, archiveBytes = 0;
     bool valid() const {
         return !directory.empty() && width > 0 && height > 0 &&
                baseTilesX > 0 && baseTilesY > 0 && mipLevels > 0 &&
-               virtualLayers > 0 && pageSize > 0;
+               virtualLayers > 0 && pageSize > 0 &&
+               addressU <= SamplerAddressMode::MirrorRepeat &&
+               addressV <= SamplerAddressMode::MirrorRepeat;
     }
     VirtualDiskPageConfig diskConfig(size_t outstanding = 128,
                                      size_t readyBytes = size_t(16)<<20) const {
@@ -97,7 +106,9 @@ public:
                 cfg.pageSize < 4 || cfg.pageSize > 4096 ||
                 cfg.gutter < 0 || cfg.gutter*2 >= cfg.pageSize ||
                 cfg.maxPages == 0 || cfg.maxArchiveBytes == 0 ||
-                cfg.maxSourceBytes == 0)
+                cfg.maxSourceBytes == 0 ||
+                cfg.addressU > SamplerAddressMode::MirrorRepeat ||
+                cfg.addressV > SamplerAddressMode::MirrorRepeat)
                 return fail(error,"invalid VT archive layout, gutter or budget");
             const auto width = layers.front().width;
             const auto height = layers.front().height;
@@ -114,6 +125,13 @@ public:
             hashWord(hash,uint64_t(height));
             hashWord(hash,uint64_t(cfg.pageSize));
             hashWord(hash,uint64_t(cfg.gutter));
+            // Preserve existing clamp-only archive paths. Non-clamp mode
+            // changes the immutable content identity even when RGBA matches.
+            if (cfg.addressU != SamplerAddressMode::ClampToEdge ||
+                cfg.addressV != SamplerAddressMode::ClampToEdge) {
+                hashWord(hash,uint64_t(cfg.addressU));
+                hashWord(hash,uint64_t(cfg.addressV));
+            }
             for (const auto& layer : layers) {
                 if (layer.width != width || layer.height != height ||
                     layer.rgba.size() != bytes)
@@ -151,6 +169,7 @@ public:
             value.baseTilesX=tilesX; value.baseTilesY=tilesY;
             value.mipLevels=levels; value.virtualLayers=int(layers.size());
             value.pageSize=cfg.pageSize; value.gutter=cfg.gutter;
+            value.addressU=cfg.addressU; value.addressV=cfg.addressV;
             value.pageCount=pages; value.archiveBytes=pages*pageBytes;
             const auto label=std::string("v")+std::to_string(revision)+
                              "-"+hex(hash);
@@ -205,9 +224,9 @@ public:
                     for(int y=0;y<cy;++y)
                         for(int x=0;x<cx;++x) {
                             for(int iy=0;iy<cfg.pageSize;++iy) {
-                                const int sy=std::clamp(y*interior+iy-cfg.gutter,0,h-1);
+                                const int sy=addressTexel(y*interior+iy-cfg.gutter,h,cfg.addressV);
                                 for(int ix=0;ix<cfg.pageSize;++ix) {
-                                    const int sx=std::clamp(x*interior+ix-cfg.gutter,0,w-1);
+                                    const int sx=addressTexel(x*interior+ix-cfg.gutter,w,cfg.addressU);
                                     const size_t source=(size_t(sy)*size_t(w)+size_t(sx))*4u;
                                     const size_t dest=(size_t(iy)*size_t(cfg.pageSize)+
                                                        size_t(ix))*4u;
@@ -227,8 +246,8 @@ public:
                                 unsigned total[4]={0,0,0,0};
                                 for(int oy=0;oy<2;++oy)
                                     for(int ox=0;ox<2;++ox) {
-                                        const int sy=std::min(h-1,y*2+oy);
-                                        const int sx=std::min(w-1,x*2+ox);
+                                        const int sy=addressTexel(y*2+oy,h,cfg.addressV);
+                                        const int sx=addressTexel(x*2+ox,w,cfg.addressU);
                                         const size_t k=(size_t(sy)*size_t(w)+size_t(sx))*4u;
                                         for(int c=0;c<4;++c) total[c]+=mipImage[k+size_t(c)];
                                     }
@@ -256,6 +275,26 @@ public:
     }
 
 private:
+    // The mirror period duplicates the outermost texel at each turn,
+    // exactly like SamplerAddressMode::MirrorRepeat nearest addressing.
+    static int addressTexel(int pixel, int extent, SamplerAddressMode mode) {
+        if (mode == SamplerAddressMode::Repeat) {
+            const int index = pixel % extent;
+            return index < 0 ? index + extent : index;
+        }
+        if (mode == SamplerAddressMode::MirrorRepeat) {
+            const int period = 2 * extent;
+            int folded = pixel % period;
+            if (folded < 0) folded += period;
+            return std::min(folded, period - 1 - folded);
+        }
+        return std::clamp(pixel, 0, extent - 1);
+    }
+    static const char* addressName(SamplerAddressMode mode) {
+        if (mode == SamplerAddressMode::Repeat) return "repeat";
+        if (mode == SamplerAddressMode::MirrorRepeat) return "mirror";
+        return "clamp";
+    }
     static bool fail(std::string& dst,const std::string& message) {
         dst=message;
         return false;
@@ -284,7 +323,13 @@ private:
           <<"  \"physicalPageSize\": "<<a.pageSize<<", \"gutter\": "<<a.gutter<<",\n"
           <<"  \"interiorPageSize\": "<<interior<<",\n"
           <<"  \"pageCount\": "<<a.pageCount<<",\n"
-          <<"  \"archiveBytes\": "<<a.archiveBytes<<"\n}\n";
+          <<"  \"archiveBytes\": "<<a.archiveBytes;
+        if (a.addressU != SamplerAddressMode::ClampToEdge ||
+            a.addressV != SamplerAddressMode::ClampToEdge) {
+            ss<<",\n  \"addressU\": \""<<addressName(a.addressU)
+              <<"\",\n  \"addressV\": \""<<addressName(a.addressV)<<"\"";
+        }
+        ss<<"\n}\n";
         return ss.str();
     }
     static void writeBytes(const std::filesystem::path& file,
