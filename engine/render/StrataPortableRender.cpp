@@ -72,7 +72,8 @@ bool PortableSource::validFor(const Model& source) const {
 
 bool PortableSource::stage(gfx::Device& dev,const Model& source,
                            const ModelAsset& asset,std::string* error,
-                           size_t indexBudgetBytes){
+                           size_t indexBudgetBytes,bool preferIncremental,
+                           size_t uploadBudgetBytes){
     if(error)error->clear();
     if(device_ || source_ || indexBuffer_.valid() || pooledIndices_.valid())
         return fail(error,"portable Strata source already staged; shutdown first");
@@ -183,7 +184,8 @@ bool PortableSource::stage(gfx::Device& dev,const Model& source,
     std::unique_ptr<IndexResidency> streaming;
     if(indexBudgetBytes){
         streaming=std::make_unique<IndexResidency>();
-        if(!streaming->initialize(dev,asset,indexBudgetBytes,error))
+        if(!streaming->initialize(dev,asset,indexBudgetBytes,error,
+                                  preferIncremental,uploadBudgetBytes))
             return false;
         buffer=streaming->buffer();
         // The residency manager owns this dedicated index-only buffer.
