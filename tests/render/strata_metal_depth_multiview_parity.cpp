@@ -275,6 +275,13 @@ struct Fixture {
                     fail("invalid asynchronous Depth32Float GPU readback");
                     return;
                 }
+                std::string prefix="strata-depth";
+                if (const char* p=std::getenv("AIVERSE_STRATA_DEPTH_CAPTURE_PREFIX")) prefix=p;
+                std::ofstream raw(prefix+"-view"+std::to_string(view)+"-"+modeName(mode)+
+                                  "-shadow.f32",std::ios::binary);
+                raw.write(reinterpret_cast<const char*>(bytes.data()),
+                          std::streamsize(bytes.size()));
+                if (!raw) {fail("cannot write raw Metal sun shadow depth samples");return;}
                 depthCaptures[idx]=std::move(bytes);
                 depthReceived[idx]=true;
                 std::printf("[strata-depth] DEPTH received view=%d mode=%s callback_frame=%d samples=%zu\n",
