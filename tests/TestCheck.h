@@ -6,7 +6,7 @@
 
 #define AIVERSE_TEST_CHECK(condition) do {                                   \
     if (!(condition)) {                                                       \
-        std::fprintf(stderr, "AIVERSE test check failed: %s (%s:%d)\\n",     \
+        std::fprintf(stderr, "AIVERSE test check failed: %s (%s:%d)\n",     \
                      #condition, __FILE__, __LINE__);                        \
         std::abort();                                                         \
     }                                                                         \
