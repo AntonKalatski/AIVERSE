@@ -36,6 +36,12 @@ bool HumanRigBinding::compose(std::span<const render::mat4> input,
        !std::isfinite(strength)||strength<0||strength>1)
         return false;
     for(float w:face.values)if(!std::isfinite(w)||w<0||w>1)return false;
+    // The animation backend can reject a stale/invalid source publication
+    // without modifying the previous pose. Never propagate nonfinite node
+    // matrices into the VIVID skinning and groom pipeline.
+    for(const auto& matrix:input)
+        for(float value:matrix.m)
+            if(!std::isfinite(value))return false;
     for(int b:{jaw,leftEye,rightEye})if(b>=int(input.size()))return false;
     if(input.data()==out.data())return false; // preserve MotionWeave source
     std::copy(input.begin(),input.end(),out.begin());
