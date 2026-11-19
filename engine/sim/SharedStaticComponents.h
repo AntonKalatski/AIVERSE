@@ -165,6 +165,42 @@ template<class T> bool validateShared(const World& world) {
     });
     return valid;
 }
+// Optional deterministic reclamation at a structural tick barrier.
+// Rebuilds in ascending old-slot order, remaps only the authoritative
+// SharedRef<T> components, and leaves prior World snapshots unchanged.
+// No active jobs, external cached SharedRef IDs, or raw read views may survive
+// this call. It is NOT safe during each() or while snapshots are written.
+template<class T>
+size_t compactShared(World& world) {
+    const auto* old=world.resourceConst<SharedStore<T>>();
+    if(!old) return 0;
+    const size_t count=old->uniqueCount();
+    std::vector<uint8_t> used(count+1,0);
+    bool good=true;
+    world.eachExistingConst<SharedRef<T>>([&](Entity e,const SharedRef<T>& ref) {
+        if(!world.alive(e) || !old->tryGet(ref))good=false;
+        else used[ref.slot]=1;
+    });
+    if(!good) throw std::logic_error("cannot compact invalid shared references");
+    SharedStore<T> next;
+    std::vector<uint32_t> remap(count+1,0);
+    for(size_t oldId=1;oldId<=count;++oldId)
+        if(used[oldId]) {
+            const auto created=next.intern(old->get(SharedRef<T>{uint32_t(oldId)}));
+            remap[oldId]=created.slot;
+        }
+    const size_t removed=count-next.uniqueCount();
+    if(!removed)return 0;
+    // Detach snapshots before touching the pool, while old handles still
+    // refer to the old store. All remapping below writes trivially.
+    world.prepareExistingWrite<SharedRef<T>>();
+    world.setResource<SharedStore<T>>(std::move(next));
+    world.eachExisting<SharedRef<T>>([&](Entity,SharedRef<T>& ref) {
+        ref.slot=remap[ref.slot];
+    });
+    return removed;
+}
+
 // Hot-loop API: resolve the shared registry once, then perform exactly one
 // indexed immutable lookup per entity (no hashing or per-entity allocations).
 template<class T> class SharedReadView {
@@ -248,7 +284,7 @@ public:
     std::shared_ptr<const StaticTable<T>> seal() {
         if(sealed_) throw std::logic_error("static table already sealed");
         auto result=std::shared_ptr<const StaticTable<T>>(
-            new StaticTable<T>(std::vector<T>(values_)));
+            new StaticTable<T>(std::move(values_)));
         sealed_=true;
         values_.clear();
         byHash_.clear();
