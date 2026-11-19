@@ -109,6 +109,20 @@ struct mat4 {
         else { r.at(2, 2) = (zf + zn) / (zn - zf); r.at(2, 3) = 2 * zf * zn / (zn - zf); }
         return r;
     }
+    // Right-handed off-center perspective; l/r/b/t are near-plane coordinates.
+    // Shared by XR, portals and virtual production; framebuffer aspect is irrelevant.
+    static mat4 frustum(float l, float rgt, float b, float t, float zn, float zf, bool zeroToOne) {
+        mat4 p{};
+        p.at(0,0)=2.f*zn/(rgt-l);
+        p.at(1,1)=2.f*zn/(t-b);
+        p.at(0,2)=(rgt+l)/(rgt-l);
+        p.at(1,2)=(t+b)/(t-b);
+        p.at(3,2)=-1.f;
+        p.at(0,3)=p.at(1,3)=p.at(3,0)=p.at(3,1)=p.at(3,3)=0.f;
+        if (zeroToOne) {p.at(2,2)=zf/(zn-zf);p.at(2,3)=zn*zf/(zn-zf);}
+        else {p.at(2,2)=(zf+zn)/(zn-zf);p.at(2,3)=2.f*zn*zf/(zn-zf);}
+        return p;
+    }
     static mat4 ortho(float l, float rgt, float b, float t, float zn, float zf, bool zeroToOne) {
         mat4 r;
         r.at(0, 0) = 2 / (rgt - l); r.at(1, 1) = 2 / (t - b);
@@ -191,6 +205,21 @@ struct Camera {
     bool ortho = false;
     float2 jitter{0, 0}; // optional projection offset in NDC (temporal AA)
     float2 lensShift{0,0}; // optical projection centre shift in NDC (stereo/physical lens)
+    // Optional exact asymmetric perspective frustum, slopes relative to the near plane.
+    // Unlike fovY/lensShift, these bounds do not depend on output pixel aspect.
+    bool useFrustumTangents=false;
+    float frustumLeftTan=-1.f, frustumRightTan=1.f;
+    float frustumDownTan=-1.f, frustumUpTan=1.f;
+    bool setFrustumTangents(float left,float right,float down,float up) {
+        if (!(std::isfinite(left)&&std::isfinite(right)&&std::isfinite(down)&&std::isfinite(up)) ||
+            !(left<right&&down<up&&left<0.f&&right>0.f&&down<0.f&&up>0.f))
+            return false;
+        frustumLeftTan=left;frustumRightTan=right;
+        frustumDownTan=down;frustumUpTan=up;
+        useFrustumTangents=true;
+        return true;
+    }
+    void clearFrustumTangents() {useFrustumTangents=false;}
     bool obliqueClip=false; // opt-in world-plane clipping for mirrors/portals
     float4 clipWorldPlane{}; // keep dot(worldPlane, float4(worldPos,1)) >= 0
     float zNear = 0.5f, zFar = 1000.0f;   // perspective clip planes (planet systems need a far plane)
@@ -230,7 +259,11 @@ struct Camera {
     mat4 proj(float aspect, bool zeroToOne) const {
         mat4 p;
         if (!ortho) {
-            p = mat4::perspective(fovY, aspect, zNear, zFar, zeroToOne);
+            p = useFrustumTangents
+                ? mat4::frustum(frustumLeftTan*zNear,frustumRightTan*zNear,
+                                frustumDownTan*zNear,frustumUpTan*zNear,
+                                zNear,zFar,zeroToOne)
+                : mat4::perspective(fovY, aspect, zNear, zFar, zeroToOne);
             for (int i = 0; i < 4; ++i) {
                 p.at(0, i) += (jitter.x+lensShift.x) * p.at(3, i);
                 p.at(1, i) += (jitter.y+lensShift.y) * p.at(3, i);
