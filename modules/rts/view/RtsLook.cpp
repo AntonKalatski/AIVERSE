@@ -3,6 +3,7 @@
 // type id, never errors: a broken model must not stop a game from starting.
 #include "RtsView.h"
 #include "RtsModelStreaming.h"
+#include "engine/render/AnimationAsset.h"
 
 #include <algorithm>
 #include <chrono>
@@ -768,7 +769,21 @@ void RtsView::configureChoice(gfx::Device& dev, const UnitType& t, const Json& v
     Model& m = *c.model;
     c.programmableAnimation=v.getBool("programmableAnimation")||v.has("animationGraph");
     if (v.has("animationGraph")) {
-        try { c.graph = AnimationGraph::compile(m, v["animationGraph"], animationOperations_, animationTraits_); }
+        try {
+            const Json& authored=v["animationGraph"];
+            Json definition=authored;
+            if(authored.isString()) {
+                // External AnimationGraph assets are independent presentation
+                // resources; existing inline graph JSON stays compatible.
+                std::string bytes;
+                const auto& path=authored.str();
+                if(!read_ || !read_(path,bytes))
+                    throw std::runtime_error("animationGraph file not found: "+path);
+                definition=render::parseAnimationAsset(bytes);
+            }
+            c.graph=AnimationGraph::compile(m,definition,
+                                           animationOperations_,animationTraits_);
+        }
         catch (const std::exception& e) { warn(t, e.what()); }
     }
     try { c.geometry = parseGeometryPolicy(t.view["geometry"]); }
