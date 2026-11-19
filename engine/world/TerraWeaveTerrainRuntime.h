@@ -3,6 +3,7 @@
 // topology. No duplicate water solver, implicit ECS scheduler or backend RHI.
 #pragma once
 #include "engine/render/TerraWeaveTerrainPatchRender.h"
+#include "engine/render/TerraWeaveGrassRender.h"
 #include "engine/world/TerraWeaveNereidErosionBridge.h"
 #include <algorithm>
 #include <cstddef>
@@ -50,6 +51,8 @@ public:
     size_t pendingTiles()const{return pending_.size();}
     size_t residentTiles()const{return residents_.size();}
     uint64_t soilRevision()const{return earth_.revision();}
+    GrassPatchRenderer& grassRenderer(){return grassRhi_;}
+    const GrassPatchRenderer& grassRenderer()const{return grassRhi_;}
 
     // Optional saved root/grass registries remain caller-owned, so native
     // games decide what to persist and how to replicate each plant/area.
@@ -63,6 +66,7 @@ public:
         if(roots_)out.vegetation=roots_->applyGroundChange(
             soilSnapshot(),out.earth,tick);
         schedule(out.earth);
+        grassRhi_.notifyTerrainEdited(out.earth);
         return out;
     }
 
@@ -72,6 +76,7 @@ public:
         auto out=water_.step(probes,completedTick,dtMs,
                              roots_,settings,grass_);
         schedule(out.earth);
+        grassRhi_.notifyTerrainEdited(out.earth);
         return out;
     }
 
@@ -81,6 +86,7 @@ public:
         if(!change.vertices.empty() && change.revision>earth_.revision())
             throw std::invalid_argument("TerraWeave external soil revision in future");
         schedule(change);
+        grassRhi_.notifyTerrainEdited(change);
     }
 
     // A live, immutable-height callback must only be consumed on the owner
@@ -165,6 +171,47 @@ public:
         return published;
     }
 
+    // Cosmetic grass follows the same staged terrain heights. Patches are
+    // proximity-sorted and bounded to the quality's GPU residency budget;
+    // each is one batched Model, never an ECS entity/draw per blade.
+    // Call on gfx::Device's owner thread after ECS/soil publication.
+    size_t publishGrass(gfx::Device& device,RectCm area){
+        if(!grass_)return 0;
+        if(area.minX>=area.maxX || area.minZ>=area.maxZ ||
+           area.minX<-kWorldLimitCm || area.minZ<-kWorldLimitCm ||
+           area.maxX>kWorldLimitCm || area.maxZ>kWorldLimitCm)
+            throw std::invalid_argument("TerraWeave grass visibility bounds");
+        auto patches=grass_->snapshot();
+        patches.erase(std::remove_if(patches.begin(),patches.end(),
+            [area](const GrassPatch& p){
+                return p.bounds.minX>=area.maxX ||
+                       p.bounds.maxX<=area.minX ||
+                       p.bounds.minZ>=area.maxZ ||
+                       p.bounds.maxZ<=area.minZ;
+            }),patches.end());
+        const int64_t cx=area.minX+(area.maxX-area.minX)/2;
+        const int64_t cz=area.minZ+(area.maxZ-area.minZ)/2;
+        const auto distance=[&](const GrassPatch& patch)->uint64_t{
+            const int64_t x=patch.bounds.minX+
+                (patch.bounds.maxX-patch.bounds.minX)/2;
+            const int64_t z=patch.bounds.minZ+
+                (patch.bounds.maxZ-patch.bounds.minZ)/2;
+            const int64_t dx=x-cx,dz=z-cz;
+            return uint64_t(dx*dx)+uint64_t(dz*dz);
+        };
+        std::sort(patches.begin(),patches.end(),
+            [&](const GrassPatch& a,const GrassPatch& b){
+                const uint64_t da=distance(a),db=distance(b);
+                return da==db?a.key<b.key:da<db;
+            });
+        if(patches.size()>grassRhi_.quality().maxGpuPatches)
+            patches.resize(grassRhi_.quality().maxGpuPatches);
+        return grassRhi_.update(device,patches,
+            [this](int64_t x,int64_t z){
+                return earth_.sampleHeightCm(x,z);
+            });
+    }
+
     // Both the graphics pass and the collision publisher see the same mesh
     // revision. The original baked terrain draw must be suppressed by host
     // when a live patch is drawn, or z-fighting will occur.
@@ -173,6 +220,7 @@ public:
         for(const auto& [cell,patch]:residents_){
             (void)cell;patch.submit(renderer,origin);
         }
+        grassRhi_.draw(renderer,{origin.x,origin.y,origin.z});
     }
 
     std::vector<TerrainPatchDirtyRegion> takeTerrainDirty(){
@@ -196,6 +244,7 @@ public:
             (void)cell;resident.shutdown(device,spatial,colliders_);
         }
         residents_.clear();
+        grassRhi_.shutdown(device);
         // Preserve pending dirties/earthwater simulation data for reload.
     }
 
@@ -236,6 +285,7 @@ private:
     int32_t cellSizeMetres_=256;
     uint32_t resolution_=33;
     TerrainCollisionPublisher colliders_;
+    GrassPatchRenderer grassRhi_{};
     std::map<world::Cell,TerrainPatchResident> residents_;
     std::map<world::Cell,uint64_t> pending_;
 };
