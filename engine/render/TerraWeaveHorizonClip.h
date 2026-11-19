@@ -210,13 +210,16 @@ inline void populateHorizonNearSeamSamples(
         HorizonBake& bake,const HorizonSurfaceSources* source) {
     bake.nearSeamSamples.clear();
     bake.nearWeldSlopeFallback=false;
-    if(!source || !source->nearGroundHeightAtCm ||
+    if(!source || (!source->nearGroundHeightAtCm &&
+                   !source->nearGroundHeightAtQ16Cm) ||
        bake.nearClipRects.empty() || !bake.maxNearClipTriangles)
         return;
     const auto planned=planHorizonNearGroundClipping(bake);
     if(!planned)return; // geometric limit, old full-quad path is used
     constexpr size_t kMaxSamples=4096;
     std::map<std::pair<int64_t,int64_t>,int32_t> samples;
+    std::map<std::pair<int64_t,int64_t>,std::pair<int32_t,int32_t>>
+        nearSlopes;
     for(const HorizonClipTriangle& tri:planned->triangles) {
         for(const HorizonClipPoint& p:tri.corners) {
             const RectCm* rectAtEdge=nullptr;
@@ -240,21 +243,53 @@ inline void populateHorizonNearSeamSamples(
                 static_cast<int64_t>(std::llround(p.z*65536.0))};
             if(samples.contains(key))continue;
             if(samples.size()>=kMaxSamples)return;
-            // On a half-open tile's east/south edge, the exact border
-            // coordinate may resolve to an unloaded neighboring tile.
-            // Sample at most 1 cm inside the known resident rectangle.
+            // Half-open authored tiles: clamp the exact Q16 position
+            // within the SAME known resident rectangle. High edges require
+            // only one Q16 unit of inset (1/65536 cm), not the historical
+            // full-centimetre offset which produced height errors on slopes.
             const auto& r=*rectAtEdge;
-            const int64_t sx=std::clamp(
-                static_cast<int64_t>(std::llround(p.x)),
-                r.minX,r.maxX-1);
-            const int64_t sz=std::clamp(
-                static_cast<int64_t>(std::llround(p.z)),
-                r.minZ,r.maxZ-1);
-            const auto height=source->nearGroundHeightAtCm(sx,sz);
+            constexpr int64_t scale=65536;
+            const int64_t loX=r.minX*scale,hiX=r.maxX*scale-1;
+            const int64_t loZ=r.minZ*scale,hiZ=r.maxZ*scale-1;
+            const int64_t xq=std::clamp(key.first,loX,hiX);
+            const int64_t zq=std::clamp(key.second,loZ,hiZ);
+            const auto height=source->nearGroundHeightAtQ16Cm ?
+                source->nearGroundHeightAtQ16Cm(xq,zq) :
+                source->nearGroundHeightAtCm(
+                    std::clamp(static_cast<int64_t>(std::llround(p.x)),
+                               r.minX,r.maxX-1),
+                    std::clamp(static_cast<int64_t>(std::llround(p.z)),
+                               r.minZ,r.maxZ-1));
             if(!height || *height < -kWorldLimitCm ||
                           *height > kWorldLimitCm)
-                return; // no partial snapping on incomplete source data
+                return; // all-or-none on incomplete authored data
             samples.emplace(key,*height);
+            if(source->nearGroundHeightAtQ16Cm){
+                // One-sided derivatives stay inside the same authored
+                // triangle mesh at the tile edge. The Q16 stencil is
+                // wide enough to avoid 1cm height quantization noise.
+                constexpr int64_t stencil=200*scale; // +/- 2 metres
+                const int64_t xl=std::max(loX,xq-stencil);
+                const int64_t xr=std::min(hiX,xq+stencil);
+                const int64_t zl=std::max(loZ,zq-stencil);
+                const int64_t zr=std::min(hiZ,zq+stencil);
+                const auto hx0=source->nearGroundHeightAtQ16Cm(xl,zq);
+                const auto hx1=source->nearGroundHeightAtQ16Cm(xr,zq);
+                const auto hz0=source->nearGroundHeightAtQ16Cm(xq,zl);
+                const auto hz1=source->nearGroundHeightAtQ16Cm(xq,zr);
+                if(xr>xl && zr>zl && hx0 && hx1 && hz0 && hz1){
+                    const auto slope=[scale](int32_t left,int32_t right,
+                                             int64_t distanceQ16) {
+                        const int64_t diff=(int64_t(left)-right)*1000*scale;
+                        return static_cast<int32_t>(std::clamp<int64_t>(
+                            diff/distanceQ16,-1000000,1000000));
+                    };
+                    nearSlopes.emplace(key,std::pair<int32_t,int32_t>{
+                        slope(*hx0,*hx1,xr-xl),
+                        slope(*hz0,*hz1,zr-zl)
+                    });
+                }
+            }
         }
     }
     // Preflight all would-be welded triangles before committing a SINGLE
@@ -323,9 +358,15 @@ inline void populateHorizonNearSeamSamples(
         }
     }
     bake.nearSeamSamples.reserve(samples.size());
-    for(const auto& [key,height]:samples)
-        bake.nearSeamSamples.push_back({
-            key.first,key.second,height});
+    for(const auto& [key,height]:samples){
+        HorizonBake::NearSeamSample sample{key.first,key.second,height};
+        if(const auto s=nearSlopes.find(key);s!=nearSlopes.end()){
+            sample.nearSlopeXPermille=s->second.first;
+            sample.nearSlopeZPermille=s->second.second;
+            sample.nearNormalValid=true;
+        }
+        bake.nearSeamSamples.push_back(sample);
+    }
 }
 
 } // namespace aiverse::terraweave
