@@ -87,6 +87,7 @@ public:
         const auto post = ed.prisma().retirementStats();
         const auto motion = ed.renderer().motionRetirementStats();
         const auto viewport = ed.viewportRetirement().stats(ed.device());
+        const auto objects = ed.gpuResourceRetirement().stats(ed.device());
         ImGui::Text("GPU completed fence: %llu  ·  сцены: %zu активных + %zu ожидают",
                     (unsigned long long)post.lastGpuCompletedFence,
                     post.activeSizes, post.retiredSizes);
@@ -106,8 +107,14 @@ public:
                     post.graphUnknownTextures);
         ImGui::Text("Viewport Scene / Game / FX: %zu fenced + %zu без fence",
                     viewport.fenced,viewport.unfenced);
+        ImGui::Text("GPU FX/ShaderGraph: %zu pipeline, %zu shader, %zu buffers, %zu textures, %zu bundles",
+                    objects.pipelines,objects.shaders,objects.buffers,
+                    objects.textures,objects.bundles);
+        ImGui::Text("Другие отложенные GPU: %zu fenced + %zu без fence",
+                    objects.fenced,objects.unfenced);
         const uint64_t totalRetired = post.knownPendingBytes +
-            motion.knownPendingBytes + viewport.knownPendingBytes;
+            motion.knownPendingBytes + viewport.knownPendingBytes +
+            objects.knownPendingBytes;
         ImGui::Text("Удерживается GPU (известный минимум): %.2f MiB / %.0f MiB",
                     double(totalRetired) / mib,double(viewport.budgetBytes) / mib);
         if (viewport.budgetBytes && totalRetired > viewport.budgetBytes)
