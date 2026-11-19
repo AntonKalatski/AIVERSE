@@ -498,8 +498,7 @@ ModelTextureCache::prepareGpuPromotion(
     PreparedGpuPromotion plan(*this);
     // Both existing scratch Model images and future material-override slots
     // participate in ONE preallocated set of GPU-cache owner nodes.
-    const auto include=[&](const Image& image,Image* live,
-                           Model* future,size_t futureIndex) {
+    const auto include=[&](const Image& image,Model* target,size_t index) {
         if(image.textureCache.get()!=this || image.borrowedTexture ||
            !image.tex.valid() || image.textureKey.empty())
             return;
@@ -524,18 +523,18 @@ ModelTextureCache::prepareGpuPromotion(
             }
             owner=&it->second;
         }
-        plan.bindings_.push_back({live,future,futureIndex,owner});
+        plan.bindings_.push_back({target,index,owner});
     };
     for(Model* model:models) {
         if(!model)continue;
-        for(auto& image:model->images)
-            include(image,&image,nullptr,0);
+        for(size_t i=0;i<model->images.size();++i)
+            include(model->images[i],model,i);
     }
     for(const auto& proposed:appended) {
         if(!proposed.model || !proposed.staged ||
            proposed.appendIndex<proposed.model->images.size())
             throw std::invalid_argument("invalid speculative material image reference");
-        include(*proposed.staged,nullptr,proposed.model,proposed.appendIndex);
+        include(*proposed.staged,proposed.model,proposed.appendIndex);
     }
     plan.redundant_.reserve(plan.bindings_.size());
     return plan;
@@ -554,16 +553,14 @@ std::vector<Image> ModelTextureCache::PreparedGpuPromotion::commit() {
     // Material image slots are appended immediately before commit().
     // Validate all indices BEFORE mutating shared GPU residency.
     for(const auto& binding:bindings_)
-        if(binding.appendModel &&
-           binding.appendIndex>=binding.appendModel->images.size())
+        if(!binding.model ||
+           binding.index>=binding.model->images.size())
             throw std::logic_error("speculative material image was not committed");
     // Merging preallocated std::map nodes does not create a new GPU object.
     // Image* pointers into moved map nodes remain stable.
     cache_->gpu_.merge(pending_);
     for(const auto& binding:bindings_) {
-        Image& image=binding.appendModel
-            ?binding.appendModel->images[binding.appendIndex]
-            :*binding.modelImage;
+        Image& image=binding.model->images[binding.index];
         const Image& owner=*binding.sharedOwner;
         if(image.tex.valid() && image.tex!=owner.tex) {
             Image retired;
