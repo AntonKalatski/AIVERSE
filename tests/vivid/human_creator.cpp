@@ -3,6 +3,7 @@
 #include "engine/character/vivid/ViewportSculptPick.h"
 #include "engine/character/vivid/MorphLodTransfer.h"
 #include "engine/character/vivid/MorphLodSurface.h"
+#include "engine/character/vivid/MorphLodMapping.h"
 #include "engine/character/vivid/HumanImport.h"
 #include <filesystem>
 #include <array>
@@ -188,6 +189,17 @@ void test() {
         b.vertex=1;b.position={0,2,0};
         shape.deltas={a,b};
         const auto sourceMorph=SparseMorphLibrary::compile(3,{shape});
+        MorphLodMapping mappingSidecar;
+        mappingSidecar.sourceVertices=3;
+        mappingSidecar.sourceTriangles=1;
+        mappingSidecar.samples=correspondence;
+        const auto restored=MorphLodMapping::fromJson(mappingSidecar.toJson());
+        req(restored.samples.size()==2 &&
+            std::fabs(restored.samples[0].bary.x-0.5f)<1.e-5f,
+            "LOD barycentric sidecar lost mapping data");
+        const auto restoredMorphs=restored.transfer(sourceMorph,faces);
+        req(restoredMorphs.targets()==1 && restoredMorphs.deltas()==2,
+            "LOD sidecar did not reapply stored surface projection");
         const auto projected=MorphLodSurface::transfer(
             sourceMorph,faces,correspondence);
         req(projected.vertices()==2 && projected.targets()==1 &&
