@@ -331,24 +331,27 @@ Strata development is isolated on `feature/strata-virtual-geometry`.
 Before editing mesh/LOD/geometry import, GeometryScene, GPU scene, RHI or
 indirect batching, read `docs/strata.md` and
 `docs/agent-handoffs/strata-virtual-geometry.md`, plus the latest
-`docs/metal-batching-agent-handoff.md`. Stages 2–7B build CPU meshlet/LOD assets, a read-only `Model`
-adapter, opt-in `GeometryScene` staging, a per-view CPU selection oracle
-(`StrataView.h`) and shared-pool Strata index residency with GPU
-cluster metadata version 2 (Metal/Vulkan, default OFF).
-**No Strata GPU compute culling or draw submission path is operational.**
-`Renderer3D` is the sole draw owner. `SelectedRange::firstIndex` and
-`GpuNode::sourceFirstIndex` remain **local** to the primitive's
-`Strata::Asset::indices`; on successful GPU staging, the absolute index
-offset is `GpuPrimitive::gpuFirstIndex + GpuNode::sourceFirstIndex`.
-The `GpuPrimitive::gpuFirstIndex` mapping is valid ONLY for v2 GPU
-metadata held by the same source revision/lease. Do not use CPU v1
-metadata offsets or original `Model::gpuFirstIndex` interchangeably.
-Stage 7B reserves auxiliary index spans inside **the original**
-`GlobalGeometryPool` page: no second source geometry pool, and failed
-admission never triggers another GPU page. Explicitly retire spans before
-destroying the `gfx::Device`; reuse only after completed GPU frame serial.
-Keep CPU staging and GPU metadata upload default-OFF, and preserve legacy
-draw/shadow/LOD behavior without double submission.
+`docs/metal-batching-agent-handoff.md`. Stages 2–8 build CPU meshlet/LOD assets, opt-in static
+`GeometryScene` staging, per-pass CPU reference selection, auxiliary
+source-attached `GlobalGeometryPool` indices and version-2 GPU metadata.
+Stage 8 adds **diagnostic Metal compute culling** through
+`StrataGpuCulling.h` and `GeometryScene::dispatchStrataGpuView`, default
+OFF. It is **NOT a GPU render submission path**: `Renderer3D` is still
+the only draw authority. Never use GPU selection buffers to draw until
+real Metal shader execution + CPU oracle selection parity, overflow
+checks and full screenshot parity are verified.
+`GpuPassConfig::viewProjection` is VIEW PROJECTION only; each
+`GpuSceneInstance::objectToWorld` already includes the source node bind
+transform. `cpuReferenceView` composes the two. Treat GPU output order
+as nondeterministic and any overflow/invalid flag as non-drawable.
+`GpuPrimitive::gpuFirstIndex` (version 2 only) is the absolute shared
+GPU index base for a primitive; `GpuNode::sourceFirstIndex` is only
+primitive-local and never directly a `Model::gpuFirstIndex`.
+Do not fork the underlying GPU geometry pool, ECS scene or batching
+submission. GPU selection slots are explicit frame-serial scoped and
+cannot be recycled until prior GPU completion. Keep all Strata staging,
+GPU metadata and compute diagnostics default-OFF, including
+`AIVERSE_BUILD_STRATA=OFF` portable fallback.
 Coordinate with the batching agent: share a single instance/material/indirect
 grouping authority, do not duplicate rendered primitives or transforms.
 On each bounded Strata step: implementation commit first; append and commit the
