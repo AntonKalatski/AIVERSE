@@ -45,17 +45,19 @@ public:
     SpectraFxGpuEvolution& operator=(const SpectraFxGpuEvolution&) = delete;
 
     bool initCapacity(gfx::Device& device,uint32_t capacity,
-                      bool enableImpactEvents=false) {
+                      bool enableImpactEvents=false,
+                      gfx::ComputeHandle sharedCompute={}) {
         if(capacity==0 || capacity>kMaxParticles) {
             error_="SpectraFX GPU capacity must be 1..65536";return false;
         }
         std::vector<SpectraFxGpuSeed> dormant(capacity);
         for(auto& seed:dormant) seed.lifetime=0;
-        return init(device,dormant,enableImpactEvents);
+        return init(device,dormant,enableImpactEvents,sharedCompute);
     }
 
     bool init(gfx::Device& device, const std::vector<SpectraFxGpuSeed>& seeds,
-              bool enableImpactEvents=false) {
+              bool enableImpactEvents=false,
+              gfx::ComputeHandle sharedCompute={}) {
         shutdown();
         error_.clear();
         if(!device.supportsCompute()) {
@@ -86,8 +88,14 @@ public:
         device_=&device;
         count_=uint32_t(seeds.size());
         feedbackEnabled_=enableImpactEvents;
-        shader_=device.createCompute({kSpectraFxComputeMetal,kSpectraFxComputeGLSL,
-                                      "SpectraFX GPU evolution"});
+        // Shared compute program is borrowed, not owned by this batch.
+        // Its owner must outlive every emitter and release after their
+        // storage resources have been destroyed.
+        ownsShader_=!sharedCompute.valid();
+        shader_=sharedCompute.valid()?sharedCompute:
+                 device.createCompute({kSpectraFxComputeMetal,
+                                       kSpectraFxComputeGLSL,
+                                       "SpectraFX GPU evolution"});
         if(!shader_.valid()) {
             error_=device.lastError();
             shutdown();
@@ -220,11 +228,12 @@ public:
             if(output_.valid()) device_->destroyTexture(output_);
             if(position_.valid()) device_->destroyBuffer(position_);
             if(velocity_.valid()) device_->destroyBuffer(velocity_);
-            if(shader_.valid()) device_->destroyCompute(shader_);
+            if(ownsShader_ && shader_.valid()) device_->destroyCompute(shader_);
         }
         device_=nullptr;
         shader_={};position_={};velocity_={};impacts_={};output_={};count_=0;
         feedbackEnabled_=false;
+        ownsShader_=false;
     }
 
 private:
@@ -237,6 +246,7 @@ private:
     gfx::TextureHandle output_;
     uint32_t count_=0;
     bool feedbackEnabled_=false;
+    bool ownsShader_=false;
     std::string error_;
 };
 } // namespace aiverse::fx
