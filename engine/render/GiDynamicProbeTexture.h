@@ -26,24 +26,32 @@ public:
 
     bool initialize(gfx::Device& device, size_t probeCount, bool computeWritable = false) {
         release();
-        if (!probeCount || probeCount > 20000 || !device.supports(gfx::PixelFormat::RGBA32F) ||
+        if (!probeCount || probeCount > 20000 ||
+            !device.supports(computeWritable ? gfx::PixelFormat::RGBA16F : gfx::PixelFormat::RGBA32F) ||
             (computeWritable && !device.supportsCompute()))
             return false;
         const int rows = int((probeCount + kProbesPerRow - 1) / kProbesPerRow);
-        std::vector<float4> zeroes(size_t(kTextureWidth) * size_t(rows));
+        std::vector<float4> zeroes;
+        std::vector<uint16_t> zeroesHalf;
+        if (computeWritable) zeroesHalf.resize(size_t(kTextureWidth) * size_t(rows) * 4);
+        else zeroes.resize(size_t(kTextureWidth) * size_t(rows));
         gfx::TextureDesc desc;
         desc.width = kTextureWidth;
         desc.height = rows;
-        desc.format = gfx::PixelFormat::RGBA32F;
+        // The texture-RHI branch currently permits RGBA16F, not RGBA32F, writable storage.
+        // Sampling is float on both; CPU RGBA32F upload remains the legacy/default path.
+        desc.format = computeWritable ? gfx::PixelFormat::RGBA16F : gfx::PixelFormat::RGBA32F;
         desc.filter = gfx::Filter::Nearest;
         desc.storage = computeWritable; // Metal: shader read + shader write; legacy default stays read-only.
-        desc.data = zeroes.data();
+        desc.data = computeWritable ? static_cast<const void*>(zeroesHalf.data())
+                                    : static_cast<const void*>(zeroes.data());
         desc.label = "dynamic GI probe overlay (3 float4/probe)";
         auto texture = device.createTexture(desc);
         if (!texture.valid()) return false;
         dev_ = &device;
         handle_ = texture;
         count_ = probeCount;
+        computeWritable_ = computeWritable;
         return true;
     }
 
@@ -52,11 +60,13 @@ public:
         dev_ = nullptr;
         handle_ = {};
         count_ = 0;
+        computeWritable_ = false;
     }
 
     const gfx::Device* device() const { return dev_; }
     gfx::TextureHandle texture() const { return handle_; }
     size_t probeCount() const { return count_; }
+    bool computeWritable() const { return computeWritable_; }
     int height() const { return int((count_ + kProbesPerRow - 1) / kProbesPerRow); }
 
     struct UploadStats { size_t probes=0, regions=0, bytes=0; };
@@ -64,6 +74,8 @@ public:
     // Stable sorted ids are grouped into row-contiguous updates to avoid a full
     // (possibly 1 MB) atlas upload each frame. Does not change immutable baked GI.
     UploadStats upload(const GiDynamicProbeReference& gi, std::vector<uint32_t> updated) {
+        if (computeWritable_)
+            throw std::logic_error("compute-writable half-float GI atlas requires GPU updates");
         if (!dev_ || !handle_.valid() || gi.coefficients().size() != count_)
             throw std::logic_error("dynamic GI probe texture not configured");
         for (auto id : updated) if (id >= count_) throw std::out_of_range("GI upload probe ID");
@@ -108,6 +120,7 @@ private:
     gfx::Device* dev_ = nullptr;
     gfx::TextureHandle handle_{};
     size_t count_ = 0;
+    bool computeWritable_ = false;
 };
 
 } // namespace aiverse::render
