@@ -142,7 +142,17 @@ bool VulkanDevice::createBufferObject(size_t size, VkBufferUsageFlags usage, boo
     vkGetBufferMemoryRequirements(device_, buf, &req);
     const VkMemoryPropertyFlags want = host ? VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT : VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
     if (!memory_.allocate(req, want, true, alloc)) { vkDestroyBuffer(device_, buf, nullptr); buf = VK_NULL_HANDLE; error_ = "out of GPU memory"; return false; }
-    vkBindBufferMemory(device_, buf, alloc.memory, alloc.offset);
+    // A successfully created VkBuffer is not usable unless its memory bind
+    // succeeds. Model uploaders must never observe an apparently valid handle
+    // whose storage is unbound.
+    const VkResult bound = vkBindBufferMemory(device_, buf, alloc.memory, alloc.offset);
+    if (bound != VK_SUCCESS) {
+        vkDestroyBuffer(device_, buf, nullptr);
+        buf = VK_NULL_HANDLE;
+        memory_.release(alloc);
+        error_ = "vkBindBufferMemory failed";
+        return false;
+    }
     return true;
 }
 
@@ -195,11 +205,19 @@ BufferHandle VulkanDevice::createBuffer(const BufferDesc& d) {
         if (b.transferStats.available) b.transferStats.mappedWriteBytes += b.size;
     } else if (d.data) {
         VkBuffer src; VkDeviceSize off;
-        if (void* p = stagingWrite(d.size, src, off)) {
-            std::memcpy(p, d.data, d.size);
-            VkBufferCopy c{off, 0, d.size};
-            vkCmdCopyBuffer(transferCmd(), src, v.buffer, 1, &c);
+        void* staged = stagingWrite(d.size, src, off);
+        if (!staged) {
+            // Incomplete immutable uploads previously returned a valid RHI
+            // handle with uninitialized contents. This is especially unsafe
+            // for the fallback VB/IB pair after pooled uploads are rejected.
+            vkDestroyBuffer(device_, v.buffer, nullptr);
+            memory_.release(v.alloc);
+            error_ = "immutable buffer staging allocation failed";
+            return {};
         }
+        std::memcpy(staged, d.data, d.size);
+        VkBufferCopy c{off, 0, d.size};
+        vkCmdCopyBuffer(transferCmd(), src, v.buffer, 1, &c);
     }
     b.versions.push_back(v);
     return {buffers_.add(std::move(b))};
