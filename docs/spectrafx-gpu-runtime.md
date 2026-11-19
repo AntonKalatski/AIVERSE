@@ -275,6 +275,69 @@ CPU particles update after camera setup, and the combined VFX draw
 happens in the existing scene pass. This does not modify the
 authoritative FPS motor, weapon fire, replication or hit detection.
 
+## Universal presentation event inbox and scene quality
+
+The genre-independent `SpectraFxCueInbox` accepts translated
+`SpectraFxCue` records from any gameplay module or presentation
+adapter. It is **not an ECS event bus** and never reads world state
+itself. A caller supplies the presentation cue ID, action
+(`Play/Move/Stop/Kill`), generation-safe instance key (zero for a
+one-shot), world/render-relative position and direction, and an
+explicit `visibleToViewer` decision from the game/view adapter.
+
+The queue is bounded (1024 pending items in the generic scene host,
+256 dispatched per frame by default). It coalesces keyed Move records
+until the next lifecycle barrier and prioritizes Stop/Kill cleanup
+when an overfull inbox would otherwise discard it. Invalid coordinates,
+hidden events and events carrying an outdated scene epoch are rejected.
+It is **not thread safe**: merge events from multiple workers into a
+stable, caller-chosen sequence before submitting. Callback-generated
+cues are only dispatched in a subsequent frame, never recursively.
+
+Example using a native client that owns `SpectraFxSceneHost sceneFx`:
+
+```cpp
+// A presentation adapter has already checked visibility.
+aiverse::fx::SpectraFxCue cue{};
+cue.id = 1; // project-owned cue mapping, not a global game event ID
+cue.action = aiverse::fx::SpectraFxCue::Action::Play;
+cue.position = {0, 1, 0};
+sceneFx.enqueueCue(cue, true, sceneFx.cueEpoch());
+
+// After gfx::Device::beginFrame, before opening scene render passes:
+sceneFx.prepareGpu(dt, camera);
+```
+
+`sceneFx.cueEpoch()` changes after `resetScene()` or shutdown,
+ensuring that producer callbacks from previous scene/match generations
+cannot resurrect effects. Host-authored translator functions can use
+`SpectraFxSceneHost::translateCues` to convert a range of module-defined
+events without introducing a genre dependency into the engine.
+
+The optional route-root setting
+
+```json
+"sceneQuality": "medium"
+```
+
+selects a presentation tier of `off`, `low`, `medium` or
+`high`. It caps the authored quality of **new GPU particle spawns**,
+rather than raising an individual effect's authored quality. The
+generic native host applies the same tier to its existing CPU particle
+system. RTS ClientFx applies the setting only when it is explicitly
+present; without it, the legacy CPU quality remains unchanged.
+Applications can change quality at runtime using
+`SpectraFxSceneHost::setQuality(FxQuality)` or
+`SpectraFxHybridPlayback::setGlobalQuality(FxQuality)` (when the
+app separately owns the CPU particle system). Quality Off does not
+undo previous GPU effects: existing GPU particles age normally and
+retire through the regular resource lifecycle.
+
+The FPS floating-origin adapter retries a rejected `resetScene()`
+and suppresses FX enqueue/update/draw until it can safely reset
+outside all RHI encoders. It never draws particle positions from a
+previous origin in a newly shifted render coordinate system.
+
 ## Runtime integration order
 
 The existing generic RTS client has opt-in hooks:
