@@ -204,6 +204,7 @@ void Prisma::retireView(uint64_t id) {
     }
     viewExposureFreeze_.erase(id);
     viewExposureMeterRegions_.erase(id);
+    viewManualExposure_.erase(id);
     if (auto it = temporalViews_.find(id); it != temporalViews_.end()) {
         for (auto& h : it->second.history) retireTarget(h);
         temporalViews_.erase(it);
@@ -231,6 +232,7 @@ size_t Prisma::retireUnregisteredViews(
     append(exposureViews_);
     append(viewExposureFreeze_);
     append(viewExposureMeterRegions_);
+    append(viewManualExposure_);
     append(temporalViews_);
     append(adaptiveViews_);
     append(viewQualityPolicies_);
@@ -515,6 +517,7 @@ void Prisma::shutdown() {
     exposureViews_.clear();
     viewExposureFreeze_.clear();
     viewExposureMeterRegions_.clear();
+    viewManualExposure_.clear();
     for (auto& [id, view] : temporalViews_)
         for (auto& h : view.history) release(h);
     temporalViews_.clear();
@@ -599,6 +602,17 @@ void Prisma::setViewExposureMeterRegion(uint64_t id, ExposureMeterRegion r) {
 }
 void Prisma::clearViewExposureMeterRegion(uint64_t id) {
     viewExposureMeterRegions_.erase(id);
+}
+void Prisma::setViewManualExposure(uint64_t id, bool enabled, float ev) {
+    // Clamp on ingress so NaNs and extreme scripted camera values never
+    // enter the HDR pre-tone-map composite or destabilize the scene.
+    viewManualExposure_[id] = {
+        enabled, std::isfinite(ev) ? std::clamp(ev,-12.0f,12.0f) : 0.0f
+    };
+    if (enabled) resetAutoExposure(id); // force fresh meter on later auto resume
+}
+void Prisma::clearViewManualExposure(uint64_t id) {
+    if (viewManualExposure_.erase(id)) resetAutoExposure(id);
 }
 
 // Allocate everything that an output-size temporal resolve requires BEFORE
