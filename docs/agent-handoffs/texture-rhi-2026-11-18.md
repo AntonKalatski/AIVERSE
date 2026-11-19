@@ -10483,3 +10483,61 @@ Vulkan/GL/mobile parity, filtering fidelity and performance.
 Do not merge PR #21 based on source-only changes or prior
 non-ICB hardware PASS.
 
+
+## Stage 10BS — fix native Mac Studio GPU-ICB fixture compilation (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`. PR #21 **Draft**.
+**Previous source:** Stage 10BR `50969517f9fdd4a15b38103c378232459520d2a5`.
+**Observed native user log:** CMake macOS configuration succeeded. Clang
+then failed at `tests/render/metal_icb_graph_gpu.mm:237`:
+`shDesc.msl=shaderSource;` cannot convert `std::string`
+to `const char*`. The subsequent CTest **1/1 PASS** used an old
+executable because build failed; its single generic PASS line is
+**NOT** validation of the new four-source fixture.
+
+**Source commit** `3243fc67157187e087c68048e388dfae15bed05b`:
+- Change `shDesc.msl=shaderSource.c_str();` in
+  `tests/render/metal_icb_graph_gpu.mm`.
+- Keep `shaderSource` alive through synchronous
+  `Device::createShader(shDesc)`, which copies the source in
+  `GfxMetal.mm`.
+- Print per-case `PASS: GPU ICB graph sources=1` and
+  `PASS: GPU ICB graph sources=4` on correct readback so
+  stale 1-source-only executables are easy to distinguish.
+- Production RHI, renderer, Shader Graph compiler and platform
+  code are unchanged. Experimental Metal GPU ICB stays opt-in.
+
+**Documentation source commit:**
+`c8160e84fb57b62cde5a72196401d257dd7ffed6`
+(`docs/texture-rhi.md`): observed failure, why old CTest
+PASS is insufficient, exact fail-fast commands, dual expected
+pixel output markers.
+
+**Tests/verification actually performed:** native compiler failure
+and old-binary PASS were supplied in the user log. The code fix was
+authored and pushed via GitHub connector and its updated source
+reviewed. The newly fixed source has **NOT** been compiled,
+linked, run on Metal or visually/performance validated.
+Do not report a Stage 10BR/10BS GPU PASS until a fresh successful
+build and both per-source-case pixel markers are observed.
+
+**Next exact step** — run only in isolated Mac Studio worktree,
+not primary AIVERSE checkout (unrelated unfinished rebase):
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+cmake --build build/texture-icb-gpu --target aiverse_metal_texture_icb_graph_gpu_test --parallel 4
+ctest --test-dir build/texture-icb-gpu --verbose --output-on-failure --no-tests=error -R '^metal_texture_icb_graph_gpu$'
+```
+`set -e` prevents CTest from running a stale executable after
+a build failure. Inspect output for **both**:
+`PASS: GPU ICB graph sources=1, per-command textures/U2 pixel parity`,
+`PASS: GPU ICB graph sources=4, per-command textures/U2 pixel parity`,
+and 1/1 native CTest PASS. On failure, inspect the actual first
+MSL/driver/pixel error, fix in a new code commit and create the
+next handoff. After genuine GPU PASS, proceed to production compiled
+Shader Graph/Renderer3D integration and cross-platform fidelity.
+Do not merge PR #21 until all required gates succeed.
+
