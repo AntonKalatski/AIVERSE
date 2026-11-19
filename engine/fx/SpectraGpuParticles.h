@@ -94,6 +94,10 @@ private:
     struct ProgramParams {
         render::float4 p0{}, p1{};
     };
+    // Extra GPU VM storage, not part of the 64-byte ParticleState ABI.
+    struct ProgramAttributes {
+        render::float4 a0{}, a1{};
+    };
     struct Vertex {
         float x,y,z,u,v;
         uint32_t rgba;
@@ -109,6 +113,7 @@ private:
     };
     static_assert(sizeof(ParticleState)==64);
     static_assert(sizeof(ProgramParams)==32);
+    static_assert(sizeof(ProgramAttributes)==32);
     static_assert(sizeof(Vertex)==40);
     static_assert(sizeof(Uniforms)==64);
     static_assert(sizeof(DrawUniforms)==112);
@@ -128,6 +133,7 @@ private:
     gfx::BufferHandle states_, seeds_, slots_, vertices_, indices_, liveSlots_;
     gfx::BufferHandle aliveCounter_, gpuDrawArgs_;
     gfx::BufferHandle seedProgramParams_, stateProgramParams_, gpuVmPayload_;
+    gfx::BufferHandle stateAttributes_; // compute slot 11, 8 scalar VM registers/particle
     gfx::TextureHandle texture_;
     std::vector<float> ages_;
     uint32_t drawCount_ = 0; // dense vertices emitted this frame (<= alive)
