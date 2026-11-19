@@ -265,9 +265,10 @@ inline bool retargetCompiledModelPose(
         render::Pose& out,std::vector<render::mat4>& world) {
     if(!plan.matches(source,visual,sourceGeneration,visualGeneration) ||
        sourcePose.size()!=source.nodes.size())return false;
-    render::Pose next=plan.visualBind;
-    for(size_t i=0;i<plan.steps.size();++i) {
-        const auto& step=plan.steps[i];
+    // Validate dynamic input before overwriting any reusable output.
+    // The plan's bind transforms, mapping bounds and morph channels were
+    // checked once at publication time.
+    for(const auto& step:plan.steps) {
         if(step.source<0)continue;
         if(size_t(step.source)>=sourcePose.size())return false;
         const auto& pose=sourcePose[size_t(step.source)];
@@ -275,7 +276,18 @@ inline bool retargetCompiledModelPose(
                      pose.r.x,pose.r.y,pose.r.z,pose.r.w,
                      pose.s.x,pose.s.y,pose.s.z})
             if(!std::isfinite(f))return false;
-        auto& dst=next[i];
+        for(int from:step.morph)
+            if(from>=0 && (from>=render::kMaxMorphTargets ||
+                           !std::isfinite(pose.w[from])))return false;
+    }
+    // Assignment reuses the output's vector capacity from earlier draws.
+    // Renderer3D consumes it before the next synchronous submitModel.
+    out=plan.visualBind;
+    for(size_t i=0;i<plan.steps.size();++i) {
+        const auto& step=plan.steps[i];
+        if(step.source<0)continue;
+        const auto& pose=sourcePose[size_t(step.source)];
+        auto& dst=out[i];
         dst.t=step.targetBindT +
               (pose.t-step.sourceBindT)*plan.translationScale;
         dst.r=render::qnormalize(step.targetBindR*
@@ -295,10 +307,8 @@ inline bool retargetCompiledModelPose(
             dst.w[k]=value;
         }
     }
-    std::vector<render::mat4> matrices;
-    render::worldMatrices(visual,next,matrices);
-    out=std::move(next);
-    world=std::move(matrices);
+    // worldMatrices resizes in place, preserving matrix capacity as well.
+    render::worldMatrices(visual,out,world);
     return true;
 }
 
