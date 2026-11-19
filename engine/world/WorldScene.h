@@ -3,6 +3,7 @@
 #include "engine/render/Renderer3D.h"
 #include "engine/world/TerraWeave.h"
 #include "engine/world/TerraWeavePhenology.h"
+#include "engine/world/TerraWeaveWind.h"
 
 namespace aiverse::terraweave { class TerraWeaveForestScene; class TerraWeaveHorizonScene; }
 namespace aiverse::world {
@@ -27,6 +28,12 @@ public:
     const terraweave::CanopyPhenology& vegetationPhenology() const {
         return vegetationPhenology_;
     }
+    // PHYSIS-neutral wind bridge: pass snapshot wind velocities in cm/s.
+    // Tick is the host's deterministic simulation/presentation frame count.
+    void setVegetationWind(terraweave::ForestWindState wind);
+    terraweave::ForestWindState vegetationWind() const {return vegetationWind_;}
+    void setVegetationPresentationTick(uint64_t tick);
+    uint64_t vegetationPresentationTick() const {return vegetationPresentationTick_;}
     const AsyncChunkStream::Status& status()const{return stream_->status();}
     // Optional genre-independent presentation forest. Native hosts may feed
     // a deterministic tick and schedule sparse harvest/regrowth without
@@ -65,6 +72,8 @@ private:
     bool vegetationClearingsDirty_=false;
     terraweave::CanopyPhenology vegetationPhenology_{};
     bool vegetationPhenologyDirty_=false;
+    terraweave::ForestWindState vegetationWind_{};
+    uint64_t vegetationPresentationTick_=0;
     float overhang_=0;                                        // "meshOverhang": units a mesh may reach past its chunk
     void releaseChunk(gfx::Device&,Prepared&);
     size_t uploadBytes_=16*1024*1024;
