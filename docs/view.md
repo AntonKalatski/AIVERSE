@@ -2888,3 +2888,42 @@ MotionWeave update is introduced.
 **NOT RUN:** native compiler/link, CMake, CTest, FPS/RTS/editor
 visual parity, GPU backend tests or sanitizers.
 See [Stage 126 handoff](agent-handoffs/animation-stage126-published-lod-hot-reload-2026-11-19.md).
+
+## Stage 127 — Model-publication-aware MotionWeave bridge and pinned native batches
+
+`AnimationSourceFrame::modelPublicationGeneration` now carries
+the host's Model asset revision into the presentation ECS
+`AnimationSourceLinkComponent`, separately from the actor's
+logical entity `generation`. `View::update` forwards
+`Object::animationModelGeneration`, and `View::submitOne`
+only uses an evaluated graph-owned Pose when the last synced
+source ID, logical generation, Model epoch, graph and Model
+pointer are all consistent.
+
+When a hot reload changes a known nonzero Model epoch, the
+bridge restarts the presentation player without migrating old
+clip/state clocks, even if the C++ pointer has been recycled.
+The bridge rejects an in-place Model change where the old
+compiled AnimationGraph pointer is reused with a new Model
+epoch, BEFORE mutating the World. A compatible graph-only
+reload with constant Model epoch may still migrate named
+playback. Zero remains a legacy Model-epoch opt-out.
+
+Native/cinematic projects can use `PinnedAppearanceBatch`
+to hold immutable `AppearanceAssetRegistry::Snapshot`
+objects and their `view::Object` packets through one
+`View::update(batch.span(),dt)` +
+`View::submit(renderer,batch.span())` transaction. This
+protects borrowed material/graph snapshot pointers against
+registry replacement but DOES NOT own the underlying
+Model or its GPU resources. The host still needs a joined
+animation worker barrier, Model lifetime pin and real GPU
+retirement before destruction. Avoid editing/clearing a
+batch during synchronous submission.
+
+No authoritative gameplay changes, new graph clock or GPU
+ownership were added. See
+[Stage 127 handoff](agent-handoffs/animation-stage127-model-epoch-bridge-pinned-appearance-2026-11-19.md).
+
+**NOT RUN:** CMake/native compiler, CTest, real GPU
+rendering, sanitizer or performance tests.
