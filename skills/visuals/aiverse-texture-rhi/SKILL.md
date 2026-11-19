@@ -1573,3 +1573,33 @@ GPU-ICB scene with nonuniform gutters and independent
 image oracle, and validate Vulkan/GL/mobile, trilinear/
 anisotropic filtering and real driver/perf behavior.
 All experimental ICB defaults remain OFF; PR #21 Draft.
+
+## Stage 10CC — real-device nonuniform 1-pixel gutter bilinear PASS
+
+The user ran the new `metal_vt_bilinear_gpu` test
+on Apple M3 Ultra after the canonical shared
+`VirtualTextureSampling.h` Metal/GLSL inset correction.
+**1/1 CTest PASS** (6.07 s test; 6.08 s full CTest),
+`samples=136 seam_samples=120 max_delta=1`,
+Metal shader pipeline failures=0. All GPU RGBA8
+samples agreed to within one 8-bit channel level with
+an **independent original-logical-texel CPU bilinear
+reference**, including nonuniform physical gutters,
+inner tile seams, outer Repeat/MirrorRepeat boundaries
+and U/V edge coordinates.
+
+This is **actual hardware proof for the canonical Metal
+virtual sampler**, not a full Renderer3D ICB acceptance
+or a Vulkan/GL pass. Do not call CTest wall duration
+GPU render time. The reciprocal GLSL code still needs
+independent platform validation.
+
+The Stage 10BX and Stage 10BY graph+disk VT ICB tests
+passed **before** the shared shader fix; rerun and
+rebuild both on the new head before claiming post-fix
+zero-gutter regression freedom. Use the exact existing
+build-directory commands in `docs/texture-rhi.md`
+Stage 10CC, then implement full production Renderer3D
+nonuniform-gutter graph+VT mixed Metal ICB pixel
+oracle and trilinear/anisotropic validation.
+Do not merge Draft PR #21 or enable ICB by default.
