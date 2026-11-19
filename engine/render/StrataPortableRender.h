@@ -65,7 +65,8 @@ public:
     // Called BEFORE any Renderer3D::drawModel in the new submission epoch,
     // once per source after merging demands from all its instances/passes.
     bool updateResidency(const std::vector<IndexDemand>& demands,
-                         std::string* error = nullptr);
+                         std::string* error = nullptr,
+                         size_t uploadAllowanceBytes = SIZE_MAX);
     // Predict ideal clusters from immutable CPU hierarchy (NOT current GPU
     // mask). Does not submit, allocate or mutate; appends only valid demands.
     bool collectResidencyDemands(const mat4& instanceWorld,
