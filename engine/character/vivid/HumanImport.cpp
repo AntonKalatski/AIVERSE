@@ -114,6 +114,23 @@ void HumanImportManifest::validate() const {
     require(scalpColliderMesh.size()<=128 &&
             scalpColliderMesh.find_first_of("\n\r") == std::string::npos,
             "VIVID import: invalid scalp collider mesh name");
+    require(facialLods.size()<=8,"VIVID import: too many facial LODs");
+    std::vector<std::string> lodMeshes;
+    std::vector<std::string> lodPaths;
+    for(const auto& lod:facialLods) {
+        require(!lod.meshName.empty() && lod.meshName.size()<=128 &&
+                !lod.sourceMeshName.empty() && lod.sourceMeshName.size()<=128 &&
+                lod.meshName!=lod.sourceMeshName &&
+                lod.meshName.find_first_of("\n\r") == std::string::npos &&
+                lod.sourceMeshName.find_first_of("\n\r") == std::string::npos,
+                "VIVID import: invalid LOD mesh name");
+        relativePath(lod.mappingPath,true);
+        require(std::find(lodMeshes.begin(),lodMeshes.end(),lod.meshName)==lodMeshes.end() &&
+                std::find(lodPaths.begin(),lodPaths.end(),lod.mappingPath)==lodPaths.end(),
+                "VIVID import: duplicate facial LOD");
+        lodMeshes.push_back(lod.meshName);
+        lodPaths.push_back(lod.mappingPath);
+    }
     require(routes.size()<=4096 && materials.size()<=512,
             "VIVID import: route/material budget exceeded");
     for(const auto& route:routes) {
@@ -129,7 +146,7 @@ void HumanImportManifest::validate() const {
     }
 }
 HumanImportManifest HumanImportManifest::fromJson(const Json& src) {
-    allowed(src,{"version","model","dna","morphs","routes","materials","scalpColliderMesh"});
+    allowed(src,{"version","model","dna","morphs","routes","materials","scalpColliderMesh","facialLods"});
     HumanImportManifest m;
     require(src.has("version"),"VIVID import: missing manifest version");
     m.version=integer(src["version"]);
@@ -147,6 +164,21 @@ HumanImportManifest HumanImportManifest::fromJson(const Json& src) {
         require(src["scalpColliderMesh"].isString(),
                 "VIVID import: scalp collider mesh name must be string");
         m.scalpColliderMesh=src["scalpColliderMesh"].str();
+    }
+    if(src.has("facialLods")) {
+        const auto& list=src["facialLods"];
+        require(list.isArray() && list.size()<=8,
+                "VIVID import: invalid facial LOD list");
+        for(const auto& item:list.items()) {
+            allowed(item,{"mesh","sourceMesh","mapping"});
+            require(item["mesh"].isString() &&
+                    item["sourceMesh"].isString() &&
+                    item["mapping"].isString(),
+                    "VIVID import: malformed facial LOD entry");
+            m.facialLods.push_back({item["mesh"].str(),
+                                   item["sourceMesh"].str(),
+                                   item["mapping"].str()});
+        }
     }
     if(src.has("routes")) {
         const auto& routes=src["routes"];
@@ -188,6 +220,17 @@ Json HumanImportManifest::toJson() const {
     if(!morphPath.empty())j.set("morphs",Json::string(morphPath));
     if(!scalpColliderMesh.empty())
         j.set("scalpColliderMesh",Json::string(scalpColliderMesh));
+    if(!facialLods.empty()) {
+        auto levels=Json::array();
+        for(const auto& lod:facialLods) {
+            auto level=Json::object();
+            level.set("mesh",Json::string(lod.meshName));
+            level.set("sourceMesh",Json::string(lod.sourceMeshName));
+            level.set("mapping",Json::string(lod.mappingPath));
+            levels.push(std::move(level));
+        }
+        j.set("facialLods",std::move(levels));
+    }
     auto routesJson=Json::array();
     for(const auto& route:routes){
         auto r=Json::object();
