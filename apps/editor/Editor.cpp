@@ -276,6 +276,23 @@ void Editor::reloadVisualAssets() {
     reclaimEditorAssets(true); // requeue authored/selected types, not the full catalog
 }
 
+size_t Editor::reloadVisualModelSources(
+        const std::vector<std::string>& paths) {
+    if(!dev_ || playing() || clientPlaying() || paths.empty())return 0;
+    // The caller runs at the editor frame boundary, after the previous
+    // render submission. TypeLook/animation sources are detached by RtsView
+    // before the independent resource owner destroys GPU allocations.
+    const size_t invalidated=view_.reloadModelSources(paths);
+    if(invalidated) {
+        editSceneCacheValid_=false;
+        editSceneCache_.clear();
+        // Scene-dependent previews rebind to the newly loaded model
+        // geometry. Do not reparse rules, restart FX or rebuild terrain.
+        ++rulesRevision_;
+    }
+    return invalidated;
+}
+
 void Editor::retainEditorType(uint16_t type) {
     if (type >= rules().types.size()) return;
     if (modelDemand_.size() != rules().types.size())
