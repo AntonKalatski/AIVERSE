@@ -107,7 +107,8 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
             const auto& st = strataStaging_->stats();
             stats_.strataSources = st.stagedSources;
             stats_.strataPrimitives = st.stagedPrimitives;
-            stats_.strataSkipped = st.skippedPrimitives + st.skippedSources;
+            stats_.strataSkippedSources = st.skippedSources;
+            stats_.strataSkippedPrimitives = st.skippedPrimitives;
             stats_.strataFailures = st.failedSources;
             stats_.strataNodes = st.clusterNodes;
             stats_.strataMeshlets = st.meshlets;
