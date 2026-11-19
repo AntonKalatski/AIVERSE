@@ -69,6 +69,7 @@ struct CreatorApp {
     std::size_t morphSourceVertices=0;
     std::vector<MorphVec3> morphSourcePositions;
     float morphBrushRadius=0.1f;
+    bool sculptMirrorX=false;
     int sculptMeshIndex=-1;
     bool sculptPickArmed=false;
     int morphTargetIndex=0,morphVertexIndex=0;
@@ -745,10 +746,12 @@ struct CreatorApp {
                 }
                 ImGui::SliderFloat("Brush radius",&morphBrushRadius,
                                    0.001f,2.0f,"%.3f");
+                ImGui::Checkbox("Mirror brush across X=0",&sculptMirrorX);
                 if(ImGui::Button("Apply falloff brush")) {
                     if(morphDraft->brush(std::size_t(morphTargetIndex),
                         morphSourcePositions,index,morphBrushRadius,
-                        {morphEditOffset.x,morphEditOffset.y,morphEditOffset.z})) {
+                        {morphEditOffset.x,morphEditOffset.y,morphEditOffset.z},
+                        sculptMirrorX)) {
                         morphDirty=true;
                         pendingRebuild=true;
                         status="VIVID radius-falloff brush stroke applied";
