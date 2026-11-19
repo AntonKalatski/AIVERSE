@@ -508,3 +508,14 @@ New CTests:
 `aiverse_world` library. Their source is committed, but native
 build/CTest remain unverified until the user's final single run.
 See `docs/scene-collision-namespaces.md` and Stage 7 handoff.
+
+
+### Additive collision namespace save identity
+
+Opt-in `SceneCollisionPersistence.h` registers and saves the
+canonical collision namespace layout fingerprint in the ECS World.
+The host validates it on rollback/cold deserialize before physics
+ticks. Actual collision lease/stream residency stays host-only and
+must be independently rebuilt after restore. Native source test
+covers layout save/checksum and mismatch rejection. Native
+execution is pending the final full CTest.
