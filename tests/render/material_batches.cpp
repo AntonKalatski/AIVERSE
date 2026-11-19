@@ -319,12 +319,19 @@ int aiverseMain(int argc, char** argv) {
                 std::printf("GPU-encoded ICB: supported=%d required=%d submissions=%u commands=%u\n",
                             int(d.supportsGpuEncodedIcb()), int(expectGpu),
                             gpuDraw.gpuEncodedSubmissions, gpuDraw.gpuEncodedCommands);
+                // Report eligibility/preflight separately from actual GPU execution.
+                // Nonzero candidates alone are never evidence of GPU-authored draws.
+                std::printf("GPU ICB diagnostics: candidates=%u prepared=%u rejected=%u "
+                            "executeFailed=%u preflightGroups=%u\n",
+                            gpuDraw.gpuIcbCandidates, gpuDraw.gpuIcbPrepared,
+                            gpuDraw.gpuIcbRejected, gpuDraw.gpuIcbExecuteFailed,
+                            gpuDraw.preflightGroups);
                 // CPU-encoded MDI and GPU-encoded ICB account for separate
                 // command counters. Do not reject a successful GPU ICB draw
                 // merely because the CPU indirect-command counter is zero.
                 if (expectGpu && !d.supportsGpuEncodedIcb()) {
                     std::fprintf(stderr,
-                        "[metal-gpu-icb] GPU-encoded ICB is unavailable on the CI device; cannot claim GPU validation\\n");
+                        "[metal-gpu-icb] GPU-encoded ICB is unavailable on the CI device; cannot claim GPU validation\n");
                     failed = true;
                 }
                 if (expectGpu && d.supportsGpuEncodedIcb()) {
@@ -333,7 +340,7 @@ int aiverseMain(int argc, char** argv) {
                         uint64_t(p.draws[0]) + p.draws[1] >=
                             uint64_t(shadowBefore) + opaqueBefore) {
                         std::fprintf(stderr,
-                            "[metal-gpu-icb] expected actual GPU submissions, got submissions=%u commands=%u shadow=%u opaque=%u\\n",
+                            "[metal-gpu-icb] expected actual GPU submissions, got submissions=%u commands=%u shadow=%u opaque=%u\n",
                             gpuDraw.gpuEncodedSubmissions, gpuDraw.gpuEncodedCommands,
                             p.draws[0], p.draws[1]);
                         failed = true;
