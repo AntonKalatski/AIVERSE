@@ -59,6 +59,9 @@ public:
     static constexpr size_t kMaxAnchors=1000000;
 
     size_t size() const {return plants_.size();}
+    void exchangeSnapshotState(RootSupportRegistry& other) noexcept {
+        plants_.swap(other.plants_);
+    }
     std::vector<AnchoredPlant> snapshot() const {
         std::vector<AnchoredPlant> out;
         out.reserve(plants_.size());
