@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <compare>
 #include <limits>
+#include <set>
 #include <stdexcept>
 #include <vector>
 
@@ -107,11 +108,10 @@ inline void io(Archive& a, NatureFallHostState& value) {
         }
         // Reject aliasing the same rooted plant to multiple ECS entities.
         // Corrupt imported state must never allow duplicate physical bodies.
-        for (std::size_t i = 0; i < value.bindings.size(); ++i) {
-            for (std::size_t j = i + 1; j < value.bindings.size(); ++j) {
-                if (value.bindings[i].plant == value.bindings[j].plant) {
-                    a.fail(); return;
-                }
+        std::set<NatureFallPlantId> seenPlants;
+        for (const auto& binding : value.bindings) {
+            if (!seenPlants.insert(binding.plant).second) {
+                a.fail(); return;
             }
         }
         for (std::size_t i = 0; i < value.records.size(); ++i) {
