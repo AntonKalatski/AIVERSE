@@ -1378,3 +1378,90 @@ visually from a fully authored type by design. Backend device-loss
 recovery and GPU-fence error states still require real hardware
 validation. The generic resource owner is suitable for native projects,
 but the full legacy `game::RtsView` scene adapter is not retired.
+
+## Stage 102 — estimated GPU retirement footprint and prioritized native asset publication
+
+### Source-derived GPU footprint (not driver VRAM)
+
+`engine/render/ModelResidentEstimate.h` offers
+`render::estimateModelResident(const render::Model&)`. It approximates
+dedicated model vertex/index buffers using model or authored primitive
+counts (even after CPU vertex/index arrays are freed), counts base-level
+bytes of **owned, non-borrowed** model images, and estimates RGBA32F
+baked-pose matrices from joint/row counts. It intentionally excludes
+shared geometry-pool pages, borrowed shared textures, unknown morph
+texture height, mip/driver alignment and other backend allocations.
+The estimate is **not** exact VRAM, and differing loader batching or
+compressed formats can make it over- or under-estimate usage.
+
+`AsyncResourceRetirementQueue::estimatedPendingBytes(estimate)` walks
+both unsubmitted resources and existing GPU-token batches; totals are
+saturated rather than overflowing. The generic
+`ModelResourceCache::estimatedRetiredGpuBytes()` sums the known-model
+estimates and exposes
+`setEstimatedRetirementByteLimit(bytes)` and
+`estimatedRetirementByteLimit()`. This is an optional, default-disabled
+(0) source-derived **admission** limit for NEW
+`ModelAssetProvider` loads, combined with the previous retired-object
+soft limit. No estimate, backlog or device-error status ever authorizes
+early GPU destruction. The editor Statistics panel displays estimated
+retired model MiB with an explicit shared-pool exclusion.
+
+### Priority and render-thread upload pacing
+
+`AsyncModelCpuQueue::request` accepts an optional
+`ModelLoadPriority::Background/Visible/Interactive`; jobs already
+queued can be upgraded (not duplicated), and work at equal priority
+retains insertion order. One CPU worker continues to run at a time,
+with its original revision rejection, bounded queue and worker-thread
+reader contract. Priority applies to **pending** jobs; an already
+executing CPU decode is not preempted.
+
+`ModelAssetProvider::requestAsync(source,priority)` forwards priority.
+`publishReady(device,maxCount,budgetMs)` adds an advisory time limit:
+it checks elapsed wall time before starting each subsequent GPU upload
+and never drops a ready model. The first upload may exceed budgetMs,
+so this is not a hard GPU upload time guarantee. Count remains a hard
+per-call cap. GPU uploads and publication continue to run only on the
+owning render thread, never in CPU workers.
+
+The Editor Model window's optional raw static preview now requests
+`Interactive` priority and publishes at most one model with a nominal
+1 ms budget per frame. Its independent provider uses an advisory
+64 MiB *estimated-retirement* limit. This does not change the default
+type/character portrait path, nor its authored material, graph or
+placement semantics.
+
+### Second real native View consumer
+
+The standalone `aiverse_modelview` tool has an opt-in
+`--provider --no-merge` path for ordinary raw static assets with no
+requested animation clip and no baked-skinning mode. It loads those
+models through its own `render::ModelAssetProvider` instead of the
+legacy raw ownership map. Both the opt-in and legacy paths now submit
+their existing `ModelDraw` (world transform, imported materials,
+variants, team colour and precomputed animation pose) through canonical
+`aiverse::View::submitModel` without a second graph tick.
+The option intentionally excludes merge and animated-model paths,
+which retain their previous import/motion logic. It is a comparable
+static source inspection path, NOT a blanket switch of all games to a
+new renderer or a claim that `RtsView` is retired.
+
+### Deferred verification
+
+New tests registered through ordinary CMake/CTest targets:
+`tests/render/model_estimate.cpp` (`render_model_estimate`) checks
+geometry/owned-image/baked-pose estimates and shared-texture exclusion;
+`tests/render/model_priority.cpp` (`render_model_priority`, native-only)
+checks queue ordering, promotion, bounded priority and non-preemption.
+They are **NOT RUN**, along with all native C++ builds, editor/modelview
+smoke runs, Metal/Vulkan/GL/WebGL2 tests, sanitizers, screen captures,
+GPU heap metrics and performance profiling, per the requested
+features-first workflow. No PASS or parity claim is made.
+
+The model footprint is not a driver memory reading; estimated-byte
+admission control does not bound global GPU memory. A priority queue
+does not preempt the active worker, and upload time budgets remain
+advisory. Standalone modelview and raw editor preview are explicitly
+separate from full authored graph/appearance simulation and need
+real native verification before production use.
