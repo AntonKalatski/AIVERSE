@@ -45,6 +45,7 @@ jobs:
           aiverse_strata_gpu_scene_tests
           aiverse_strata_gpu_culling_tests
           aiverse_strata_render_routing_tests
+          aiverse_strata_portable_tests
           --parallel 4
       - name: Test Strata contracts
         run: >
