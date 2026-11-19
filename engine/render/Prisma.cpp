@@ -525,7 +525,8 @@ bool Prisma::preflightUpscale(int outputW,int outputH,int renderW,int renderH) {
     if (!dev_ || !dev_->gpuHealthy() ||
         !dev_->supports(gfx::PixelFormat::RGBA16F)) return false;
     if (!program(kTemporalResolve).valid() ||
-        !program(kMotionVectors).valid()) return false;
+        !program(kMotionVectors).valid() ||
+        !composite(0).valid()) return false;
     auto& history=temporalViews_[viewId_];
     if (history.width!=outputW || history.height!=outputH ||
         history.inputWidth!=renderW || history.inputHeight!=renderH) {
