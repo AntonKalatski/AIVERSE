@@ -273,3 +273,27 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
 - **Native/CI status:** Real macOS execution reported by the user. Not rerun by this agent and not a verified GitHub Actions CI run.
 - **Scope:** all seven selected CPU and fake-RHI contract tests passed; this is **not** a native Metal shader compilation/readback result or proof of the full MotionWeave test suite, renderer/skin integration, Vulkan/GL support, or visual correctness.
 - **Next action:** add an isolated macOS Metal shader parity CTest running the real `kVividMorphMSL` kernel against 160 named morph targets; then move to a separate gfx::Device integration test. Keep build status separate for each new commit.
+
+## Stage 4D — 2026-11-19 — real Apple Metal shader/CSR CPU parity fixture
+
+- **Branch:** `feature/vivid-digital-humans`. This stage starts after the user's successful 7/7 VIVID + MotionWeave native tests on the pre-test branch HEAD `5013fe6d96796abaae4f0596d9129dac33f33729`; validation record commit `b27728c6cd01029b7d10570eb947a9ce9a5fe14f`.
+- **Implementation commits / changed paths:**
+  - `ba6bfcdbbe5a95ab2da279adcfb83804d4b618f6` — new `tests/vivid/metal_gpu.mm` runtime MSL kernel compilation, GPU buffers and 3 parity passes with 160 morph targets / 137 vertices.
+  - `ff7eaa56292b91d79333a2c30e31a38e82435a4e` — add required standard C++ includes to Objective-C++ fixture.
+  - `a296aaf3b1d3992873d2bb49612ca0dc44ae84f5` — CMake macOS-only `aiverse_vivid_metal_gpu_tests` and `vivid_metal_gpu` registration, Metal/Foundation frameworks, Objective-C++ and ARC, SKIP_RETURN_CODE=77 when no Metal device.
+  - `c35b6a576900b008d0f225d241aa164b7c9ea210` — `docs/vivid.md` stage 4D design/status.
+- **Architecture / behavior:** The direct macOS Metal test compiles the unchanged `kVividMorphMSL` from `engine/character/vivid/VividComputeShaders.h`, constructs `SparseMorphLibrary` CSR with three sparse deltas per target, creates native Metal shared buffers, dispatches 64 threads per group and compares GPU bytes after `waitUntilCompleted` against the CPU `evaluateGather` oracle. 137 vertices forces tail-thread bounds checking. The three passes verify normalised directions, raw directions and zero weights. All vertex positions, normals and tangents require max absolute error ≤ 5e-4; nonfinite values/pipeline errors fail.
+- **Public API, persistence, compatibility:** no changes to VIVID core ABI, MotionWeave, Renderer3D, gfx::Device, model asset layout, ECS components, save/network formats. This is an isolated opt-in test target on macOS; other platforms do not compile Objective-C++ or link Metal.
+- **Tests actually executed in this stage:** **NOT RUN**. No macOS Metal device is attached to this connected-GitHub coding session. Previous 7/7 user-reported CTests are real but predate this stage; **do not** report `vivid_metal_gpu` as passing. Native GPU test binary and MSL compilation remain unverified.
+- **CI:** NOT RUN / not checked for this new commit.
+- **Known risks:** Direct MTLDevice dispatch tests the shader and packed ABI independently of the RHI; it does not exercise `GpuMorphDeformer` inside `gfx::Device` begin/endFrame or readBuffer. Host GPU availability/compilers vary; the test allows a skip on machines without a Metal device and fails for genuine shader/command errors. Any Xcode compile warning/error must be fixed at the first primary diagnostic; do not silence warnings globally.
+- **Next exact step:** macOS owner should fetch this VIVID branch, configure, build `aiverse_vivid_metal_gpu_tests` and run `ctest -R '^(vivid_|motionweave_api$)'`. Expect **8 tests registered** (7 previous + native Metal parity). If the Metal GPU test passes, add a separate real `gfx::Device` Metal dispatch/readback fixture and then integrate output into model render/skinning, while reusing MotionWeave's pose ownership. Append a new handoff recording actual Mac results.
+- **Exact commands (NOT RUN here):**
+  ```sh
+  cd ~/Projects/AIVERSE
+  git fetch origin feature/vivid-digital-humans
+  git -C ../AIVERSE-vivid switch --detach origin/feature/vivid-digital-humans
+  cmake -S ../AIVERSE-vivid -B ../AIVERSE-vivid/build/vivid -DAIVERSE_BUILD_TESTS=ON
+  cmake --build ../AIVERSE-vivid/build/vivid --target aiverse_vivid_metal_gpu_tests aiverse_vivid_gpu_contract_tests aiverse_vivid_motionweave_tests aiverse_motionweave_api_tests -j 4
+  ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^(vivid_|motionweave_api$)'
+  ```
