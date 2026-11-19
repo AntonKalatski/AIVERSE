@@ -39,6 +39,19 @@ struct LumaClusterCandidates {
     uint32_t potentialCount=0;
 };
 
+// ABI suitable for a Metal/Vulkan read-only structured buffer.
+// Flags bit0: the fast list was truncated, MUST use full light registry.
+struct LumaGpuClusterEntry {
+    uint32_t first=0,count=0,total=0,flags=0;
+};
+static_assert(sizeof(LumaGpuClusterEntry)==16);
+struct LumaClusterCsrPacket {
+    LumaClusterConfig config{};
+    uint64_t sourceRevision=0;
+    std::vector<LumaGpuClusterEntry> cells;
+    std::vector<uint32_t> indices;
+};
+
 class LumaWeaveClusters {
 public:
     static constexpr size_t kMaxCells=16384;
@@ -133,6 +146,19 @@ public:
     uint64_t sourceRevision() const {return revision_;}
     LumaClusterConfig config() const {return config_;}
     size_t references() const {return fast_.size();}
+
+    LumaClusterCsrPacket exportCsr(const LumaWeaveRegistry& registry) const {
+        if (!ready() || registry.revision()!=revision_)
+            throw std::logic_error("cannot export stale/unconfigured LumaWeave clusters");
+        LumaClusterCsrPacket result;
+        result.config=config_;
+        result.sourceRevision=revision_;
+        result.indices=fast_;
+        result.cells.reserve(cells_.size());
+        for(const auto& c:cells_) result.cells.push_back(
+            {c.first,c.count,c.total,c.overflow?1u:0u});
+        return result;
+    }
 
     LumaClusterCandidates query(float3 p,const LumaWeaveRegistry& sources) const {
         if(sources.revision()!=revision_)
