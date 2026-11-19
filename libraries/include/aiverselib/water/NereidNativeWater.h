@@ -22,6 +22,7 @@ struct NativeWaterPipelineConfig {
     bool enableCurrentField=false;
     bool enableVortices=false;
     bool enableBankErosion=false;
+    bool enableFlowObstructions=false;
     uint32_t bankErosionTickMs=16;
     bool probeFromTransform=true;
     AdaptiveWaterSamplingConfig adaptive{};
@@ -40,6 +41,8 @@ inline void registerNativeWaterPipeline(Simulation& sim,
     if(config.enableCurrentField)registerNereidCurrentPersistence(sim);
     if(config.enableVortices)registerNereidVortexPersistence(sim);
     if(config.enableBankErosion)registerNereidBankErosionPersistence(sim);
+    if(config.enableFlowObstructions)
+        registerNereidFlowObstructionPersistence(sim);
     if(config.probeFromTransform)
         addWaterProbeFromTransformSystem(sim,prefix+".probe");
     addAdaptiveWaterSamplingSystem(sim,prefix+".sample",config.adaptive);
