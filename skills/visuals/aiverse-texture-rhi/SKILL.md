@@ -799,3 +799,15 @@ CI if it remains queued or cancelled.
   structural flags. Masked/transparent and Shader Graph are
   excluded; CPU MDI/direct batching remains unchanged.
 - All native builds, shader compiler/device GPU tests NOT RUN.
+
+
+### Mixed PBR ICB host-submission counters (Stage 10AE)
+
+- Check `gpuModelDrawStats().perCommandPbrSubmissions`
+  and `.mixedPbrSubmissions` after the scene pass to see
+  host-accepted per-command GPU ICB work. Mixed means the
+  group actually had differing U2 or PBR texture handles.
+- These counters do not prove GPU completion or visual
+  correctness; still require Metal command-buffer status,
+  GPU capture, screenshot A/B and performance evaluation.
+- Flags are experimental OFF by default; tests NOT RUN.
