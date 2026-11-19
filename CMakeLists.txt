@@ -2095,6 +2095,14 @@ if(AIVERSE_BUILD_STRATA)
         target_link_libraries(aiverse_strata_metal_depth_multiview_parity PRIVATE
             aiverse_runtime aiverse_strata_render_routing
             aiverse_strata_gpu_scene)
+        # Stage 13: actual Metal planar-reflection RTT + textured material
+        # and UV-boundary parity, still no production Strata raster route.
+        add_executable(aiverse_strata_metal_reflection_material_parity
+            tests/render/strata_metal_reflection_material_parity.cpp
+            $<TARGET_OBJECTS:aiverse_runtime>)
+        target_link_libraries(aiverse_strata_metal_reflection_material_parity PRIVATE
+            aiverse_runtime aiverse_strata_render_routing
+            aiverse_strata_gpu_scene)
     endif()
 endif()
 if(AIVERSE_RUNTIME_AUTOLOD)
