@@ -125,6 +125,9 @@ private:
     std::shared_ptr<CheckpointReadbackBudget> checkpointBudget_;
     std::vector<Group> gpuGroups_;
     std::map<std::string,Binding> bindings_;
+    // Round-robin dispatch start prevents persistent budget starvation when
+    // several GPU groups request checkpoint captures in the same cadence.
+    size_t nextGroupStart_ = 0;
     bool initialized_ = false, frameOpen_ = false, stepped_ = false, drawn_ = false;
     std::string reason_;
 };
