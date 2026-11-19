@@ -134,6 +134,58 @@ inline uint64_t gpuIcbPbrPipelineHash(const Material& m) {
     return h;
 }
 
+// Experimental fragment-only Shader Graph compatibility for Metal GPU ICB.
+// Nodes may differ in texture *path* only if their compiled shader source,
+// graph wiring, output map and sampler count are identical. Actual source
+// textures and U2 are distinct per-command resource-table signatures.
+inline bool gpuIcbFragmentGraphEligible(const Material& m) {
+    if (!m.shaderGraph || m.alpha != AlphaMode::Opaque || m.transparent)
+        return false;
+    const auto& g=*m.shaderGraph;
+    return g.domain == "material" && g.textures.size() <= 4 &&
+           g.vertexGlsl.empty() && g.vertexMsl.empty() &&
+           !g.outputs.count("vertexOffset") &&
+           !g.outputs.count("vertexNormal") &&
+           g.outputs.count("color") != 0;
+}
+inline bool equivalentGpuIcbGraphPipelineMaterial(const Material& a,
+                                                   const Material& b) {
+    if (!gpuIcbFragmentGraphEligible(a) ||
+        !gpuIcbFragmentGraphEligible(b)) return false;
+    if (a.doubleSided != b.doubleSided ||
+        a.castShadow != b.castShadow ||
+        a.receiveShadow != b.receiveShadow ||
+        (a.normalTex>=0) != (b.normalTex>=0)) return false;
+    const auto& x=*a.shaderGraph;
+    const auto& y=*b.shaderGraph;
+    return x.domain == y.domain && x.minQuality == y.minQuality &&
+           x.glsl == y.glsl && x.msl == y.msl &&
+           x.vertexGlsl == y.vertexGlsl &&
+           x.vertexMsl == y.vertexMsl &&
+           x.outputs == y.outputs &&
+           x.usesVirtualTexture == y.usesVirtualTexture &&
+           x.textures.size() == y.textures.size();
+}
+inline uint64_t gpuIcbGraphPipelineHash(const Material& material) {
+    uint64_t h=gpuIcbPbrPipelineHash(material);
+    if (!gpuIcbFragmentGraphEligible(material)) return h;
+    const auto& g=*material.shaderGraph;
+    const auto mix=[&](uint64_t n) {
+        h^=n;h*=1099511628211ull;
+    };
+    const auto str=[&](std::string_view v) {
+        mix(v.size());for(unsigned char c:v)mix(c);
+    };
+    str(g.domain);str(g.glsl);str(g.msl);
+    str(g.vertexGlsl);str(g.vertexMsl);
+    mix(uint64_t(g.minQuality));mix(g.usesVirtualTexture ? 1u : 0u);
+    mix(g.textures.size());
+    for(const auto& [name,value]:g.outputs) {
+        str(name);str(value);
+    }
+    return h;
+}
+
 // Indirect per-instance material palette: those three scalar factors travel
 // with each indexed command instead of being inherited from U2. Every other
 // shader factor, texture handle, sampler/alpha mode and graph remains part of
