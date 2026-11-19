@@ -124,3 +124,39 @@ on Mac Studio (2026-11-19)**; full engine/FPS/RTS and GPU validation
 remain outstanding. Read handoff
 `docs/agent-handoffs/ecs-static-scene-stage4-2026-11-19.md` before
 continuation. Keep the original feature branches intact.
+
+
+## Multi-domain prefab configuration recipe (Stage 5)
+
+For a single prefab with separate Weapon, AI and Inventory immutable
+configuration, prefer `engine/scene/PrefabStaticDomainRegistry.h`:
+
+```cpp
+auto registry = std::make_shared<aiverse::scene::PrefabStaticDomainRegistry>();
+registry->addDomain<WeaponConfig>(
+    "combat/weapon", "game.prefab.weapon", weapons);
+registry->addDomain<AIConfig>(
+    "ai/brain", "game.prefab.ai", brains);
+registry->addDomain<InventoryConfig>(
+    "items/inventory", "game.prefab.inventory", inventories,
+    aiverse::scene::MissingPrefabConfig::Skip);
+registry->seal();
+// During GameModule setup, before native ECS registry seal:
+registry->registerPersistence(sim);
+registry->bindWorld(sim.world());
+// SceneLoadCoordinator owns entity creation at deterministic tick barrier:
+auto spawn = registry->callback(mutableInstanceInitializer);
+```
+
+Each catalog has its own shared sealed table and 4-byte Entity
+`StaticRef<T>`. The registry validates all required domains before
+attaching any of them, supports optional types, rejects duplicate
+`StaticRef<T>` types and binds every table against saved fingerprints.
+Never store mutable instance HP/ammo inside StaticTable; give each
+Entity an ordinary ECS component instead. Do not use scene I/O
+completion to choose deterministic gameplay tick.
+
+New native fixture: `ecs_static_scene_multidomain_test` (not yet
+executed); extended host validation:
+`bash tools/ecs-static-scene-validate.sh build/static-scene extended 8`.
+Keep the Stage 5 handoff in sync with actual results.
