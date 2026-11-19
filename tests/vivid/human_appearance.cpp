@@ -1,5 +1,6 @@
 #include "engine/character/vivid/HumanPreview.h"
 #include "engine/character/vivid/ScalpSkinning.h"
+#include "engine/character/vivid/GroomSelfCollision.h"
 #include "engine/render/GpuMaterialState.h"
 #include "engine/render/ModelShaders.h"
 #include <algorithm>
@@ -136,6 +137,35 @@ void test() {
         }
     }
 
+    {
+        std::array<GroomGuide,2> guides;
+        for(auto& guide:guides) {
+            guide.root={0,1,0};
+            guide.rest={{0,1,0},{0,1.1f,0}};
+            guide.position=guide.rest;
+            guide.previous=guide.rest;
+        }
+        guides[1].root={0.001f,1,0};
+        guides[1].rest[0]=guides[1].position[0]=
+            guides[1].previous[0]=guides[1].root;
+        guides[1].rest[1]=guides[1].position[1]=
+            guides[1].previous[1]={0.001f,1.1f,0};
+        GroomSelfCollisionConfig config;
+        config.enabled=true;
+        config.separation=0.02f;
+        config.response=1.0f;
+        GroomSelfCollisionStats stats;
+        const float before=render::length(
+            guides[0].position[1]-guides[1].position[1]);
+        expect(GroomSelfCollision::resolve(guides,config,stats) &&
+               stats.contacts==1 && stats.pairChecks==1,
+               "groom self collision did not discover overlapping strands");
+        const float after=render::length(
+            guides[0].position[1]-guides[1].position[1]);
+        expect(after>before && guides[0].position[0].y==1.f &&
+               guides[1].position[0].x==0.001f,
+               "groom contact correction moved roots or failed separation");
+    }
     // Inter-guide self collision is opt-in, deterministic and does not
     // move fixed roots. The spatial neighbor search has a strict pair cap.
     {
