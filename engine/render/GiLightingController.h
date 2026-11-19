@@ -9,6 +9,7 @@
 #include "GiGpuDynamicRuntime.h"
 #include "GiLightBridge.h"
 #include "GiEnvironmentBridge.h"
+#include "GiGpuResidencyPlanner.h"
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -29,6 +30,10 @@ struct GiTransportConfig {
     bool preferGpu=true;
     double cpuFrameBudgetMs=1.25;
     size_t cpuMaxProbes=4;
+    // Conservative maximum range of GPU local point/spot secondary shadow
+    // rays. A larger source is rejected rather than silently dropping
+    // relevant occluder chunks beyond the resident GPU BVH volume.
+    float maxGpuMovingLightRadius=64;
 };
 
 class GiLightingController {
@@ -55,13 +60,16 @@ public:
         mode_=GiTransportMode::Off;
         device_=nullptr;
         revision_=0;
+        gpuResidency_={};
         return true;
     }
 
     bool initialize(gfx::Device& device, GiTransportConfig cfg) {
         if (!shutdown()) return false;
         if (cfg.cpuMaxProbes==0 || cfg.cpuMaxProbes>1024 ||
-            cfg.raysPerProbe<8 || cfg.raysPerProbe>GiGpuSmallScene::kMaxSamples)
+            cfg.raysPerProbe<8 || cfg.raysPerProbe>GiGpuSmallScene::kMaxSamples ||
+            !std::isfinite(cfg.maxGpuMovingLightRadius) ||
+            cfg.maxGpuMovingLightRadius<0 || cfg.maxGpuMovingLightRadius>1000)
             return false;
         // The same config/dimensions must be used when failing over to CPU,
         // preserving the geometric location of each probe.
@@ -99,6 +107,7 @@ public:
                mode_==GiTransportMode::CpuProbes ? 64 : 0;
     }
     const GiTransportConfig& config() const { return config_; }
+    const GiGpuResidencyPlan& gpuResidency() const { return gpuResidency_; }
 
     // Publisher owns a read-barrier-frozen immutable scene snapshot. The
     // controller retains its shared ownership across all CPU pointer borrows.
@@ -107,7 +116,13 @@ public:
                      uint64_t revision) {
         if (!ready() || !next || revision==0 || revision<=revision_) return false;
         if (mode_==GiTransportMode::GpuCompute) {
-            if (!gpu_.setGeometry(next,revision)) return false;
+            auto resident=planGpuResident(*next);
+            if(!resident.admitted) {
+                gpuResidency_=std::move(resident);
+                return false;
+            }
+            if(!gpu_.setGeometry(resident.selected,revision))return false;
+            gpuResidency_=std::move(resident);
         } else {
             cpu_.setTraceGeometry(next->traceView(),revision);
         }
@@ -122,8 +137,15 @@ public:
         if (!ready() || !next || !scene_ || revision==0 ||
             revision<=revision_) return false;
         if (mode_==GiTransportMode::GpuCompute) {
-            if (!gpu_.setGeometryRegion(next,revision,changed,extraRadius))
+            auto resident=planGpuResident(*next);
+            if(!resident.admitted) {
+                gpuResidency_=std::move(resident);
                 return false;
+            }
+            if (!gpu_.setGeometryRegion(resident.selected,revision,changed,
+                                        extraRadius))
+                return false;
+            gpuResidency_=std::move(resident);
         } else {
             cpu_.setTraceGeometryRegion(next->traceView(),revision,
                                         changed,extraRadius);
@@ -137,8 +159,13 @@ public:
     // incoming authored sources and change the actual lighting design.
     bool setLights(std::vector<GiMovingLight> lights) {
         if (!ready() || lights.size()>maxMovingLights()) return false;
-        if (mode_==GiTransportMode::GpuCompute)
+        if (mode_==GiTransportMode::GpuCompute) {
+            for(const auto& light:lights)
+                if(!std::isfinite(light.radius) ||
+                   light.radius>config_.maxGpuMovingLightRadius)
+                    return false; // GPU resident bounds are not guaranteed
             return gpu_.setLights(std::move(lights));
+        }
         cpu_.setLights(std::move(lights));
         return true;
     }
@@ -260,6 +287,14 @@ public:
     }
 
 private:
+    GiGpuResidencyPlan planGpuResident(
+            const GiChunkedGeometrySnapshot& scene) const {
+        return GiGpuResidencyPlanner::plan(
+            scene,config_.origin,config_.spacing,config_.nx,
+            config_.ny,config_.nz,config_.traceDistance,
+            config_.maxGpuMovingLightRadius);
+    }
+
     gfx::Device* device_=nullptr;
     GiTransportMode mode_=GiTransportMode::Off;
     GiTransportConfig config_{};
@@ -267,6 +302,7 @@ private:
     std::shared_ptr<const GiChunkedGeometrySnapshot> scene_;
     GiDynamicRuntime cpu_;
     GiGpuDynamicRuntime gpu_;
+    GiGpuResidencyPlan gpuResidency_;
 };
 
 } // namespace aiverse::render
