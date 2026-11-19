@@ -447,4 +447,25 @@ void DiskIndexPages::close() {
     if(state_->worker.joinable())state_->worker.join();
     state_.reset();
 }
+bool SceneStaging::writeDiskArchives(
+        const std::string& directory,
+        std::vector<std::string>* failures) const {
+    if(failures)failures->clear();
+    if(directory.empty())return false;
+    std::error_code ec;
+    std::filesystem::create_directories(directory,ec);
+    if(ec)return false;
+    bool success=true;
+    for(const auto& [key,asset]:assets_) {
+        const auto path=(std::filesystem::path(directory) /
+            DiskIndexPages::archiveFilename(key)).string();
+        std::string reason;
+        if(!DiskIndexPages::writeArchive(path,asset,&reason)) {
+            success=false;
+            if(failures)
+                failures->push_back(key+": "+reason);
+        }
+    }
+    return success;
+}
 } // namespace aiverse::render::strata
