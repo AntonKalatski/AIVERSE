@@ -118,3 +118,83 @@ completed the work.
 
 No native sample, test suite or Metal device run has been executed
 for this stage.
+
+## Stage 39 — recovery host events and bounded GPU checkpoint export
+
+The native C++ example now owns `GpuPoolRecoveryHost` next to its
+`GpuPoolWorld`, `GpuEcsAttachmentPresenter` and renderer-only
+`GpuEcsPoseInterpolator`. Before each presentation frame,
+`recoveryStatus()` / `recovery_.poll()` detects whether the pool is
+ready, needs another GPU-group reset, or requires an explicitly
+recreated graphics Device.
+
+The host may register a change callback:
+
+```cpp
+fx.onRecoveryEvent([](const spectra::PoolRecoveryEvent& event) {
+    // Host handles this synchronously on its presentation thread.
+    // event.phase, event.next, event.resetGroupsAccepted,
+    // event.resetGroupsTotal, event.resetAttempts, event.reason
+});
+// No callback creates an OS graphics Device automatically.
+auto state=fx.recoveryStatus();
+if(state.next==spectra::PoolRecoveryAction::RecreateGraphicsDevice) {
+    // The platform host creates a replacement gfx::Device.
+    // Keep old Device valid until fx releases GPU resources.
+    bool ok=fx.rebuildOnRecoveredDevice(recoveredDevice);
+    // Old GPU particles and renderer source IDs are intentionally gone.
+}
+```
+
+`fx.afterRollback()` now uses the recovery controller's
+`retryPresentationReset()`. A reset still requires a graphics frame
+that has begun and **no active encoder**. Do not present an ECS frame
+while `PoolRecoveryEvent::next` requests reset or graphics recreation.
+Renderer reattachment resumes from the committed World snapshot
+after a successful rebuild.
+
+### Optional automatic VFX pressure policy
+
+```cpp
+spectra::PoolLoadSheddingPolicy policy;
+policy.enabled=true;
+policy.maxContinuousBurstsPerFrame=48;
+policy.reserveManualBursts=16;
+policy.estimatedParticleSoftLimit=8000;
+policy.maxReadbackBytesInFlight=1024u*1024u;
+fx.setLoadShedding(policy);
+```
+
+Only continuously emitting sources are throttled. Explicit `burst`
+calls retain their normal global frame limit. Source scheduling uses
+a rotating first-source cursor, preventing persistent index-order
+starvation. Particle occupancy is the *previous step's CPU/GPU
+estimate*, not measured exact Metal alive count. On saturation or
+readback budget pressure, continuous births can drop entirely for
+that presentation frame. Skipped bursts are not queued for huge
+catch-up work. This is opt-in; default policy disabled.
+
+### Real diagnostic checkpoint bytes (not rollback snapshots)
+
+`fx.exportFreshGpuCheckpoint(groupIndex,bytes)` calls
+`GpuPoolWorld::exportFreshCheckpoint` and copies an existing
+completed GPU capture only if its revision matches the current GPU
+revision, no unsent births/kills/fences are pending, the Device is
+healthy and the readback is complete. It performs **no GPU readback**
+itself. An export consists of a 40-byte versioned header, up to
+512 KiB of particle + VM data, and up to 16 KiB of CPU lifespan
+mirrors (total <= `kGpuCheckpointExportMaxBytes`). The binary is
+for same-build diagnostics, **NOT** a portable savegame format,
+deterministic gameplay state or a GPU timeline rewind point.
+
+The editor now offers **Save fresh GPU checkpoint** for an eligible
+connected Metal pool. It writes `.spfx` data under the platform's
+`userDataDir()/spectrafx-diagnostics/` directory. If the async
+checkpoint is stale, incomplete or in progress, the button is
+disabled or export fails explicitly. Reproducing the snapshot
+requires a complete GPU/CPU restoration pipeline that is not claimed
+by this diagnostic API.
+
+This example has not been compiled or exercised on Metal hardware
+for Stage 39. All actions are source implementations pending native
+validation.
