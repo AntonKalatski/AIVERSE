@@ -282,6 +282,11 @@ public:
     // scratch Models/textures every time a GPU compiler is still Pending.
     bool hasPendingModelPipelineJobs() const noexcept;
     bool pollPendingModelPipelineJobs();
+    struct GpuWarmStats {
+        size_t shaderJobs=0,pipelineJobs=0,colorVariants=0;
+        uint64_t colorPollAttempts=0,colorVariantsReady=0;
+    };
+    GpuWarmStats gpuWarmStats() const noexcept;
     bool warmModelPipelines(const Model& model, const std::vector<Material>* materials = nullptr);
     void drawModel(const ModelDraw& d);
     // Diagnostic, opt-in persistent scene upload stats. This staging path is
@@ -705,6 +710,7 @@ private:
     // Backend colour-target warmup may be asynchronous even when it returns
     // no ShaderJob/PipelineJob. Poll these handles without reloading Models.
     std::vector<gfx::PipelineHandle> pendingColorWarms_;
+    uint64_t colorWarmPollAttempts_=0,colorWarmReady_=0;
     std::vector<std::pair<ModelShaderKey, ShaderEntry>> modelShaders_;
     std::vector<std::pair<ModelShaderKey, gfx::PipelineHandle>> modelPipes_;
     gfx::TextureHandle white_, black_, flatNormal_;
