@@ -179,10 +179,18 @@ public:
                 attempts_=0; // received a positive receipt, keep polling
                 nextSendMs_=nowMs+250;
             } else if(receipt_.result==Result::Unknown) {
-                status_=ClientStatus::AwaitingReceipt;
-                query_=false; // server lost the request; resubmit same ID
-                attempts_=0;
-                nextSendMs_=nowMs;
+                if(journalRetrySuspended(receipt_.detail)) {
+                    // The server cannot durably dedupe requests. Do not
+                    // automatically resend or treat this as a lost request.
+                    // The user may explicitly retry after journal recovery.
+                    status_=ClientStatus::Uncertain;
+                    nextSendMs_=std::numeric_limits<std::uint64_t>::max();
+                } else {
+                    status_=ClientStatus::AwaitingReceipt;
+                    query_=false; // server reports missing ID; retry same ID
+                    attempts_=0;
+                    nextSendMs_=nowMs;
+                }
             } else if(receipt_.result==Result::Applied) {
                 status_=ClientStatus::Applied;
                 knownRemoteRevision_=true;
