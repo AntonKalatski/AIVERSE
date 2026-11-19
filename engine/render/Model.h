@@ -216,6 +216,15 @@ struct Model {
     void markGeometryChanged() noexcept {
         if (++geometryRevision == 0) ++geometryRevision;
     }
+    // Explicit identity revision for the materials, texture bindings, and
+    // shader graphs belonging to this Model. Call after in-place edits or
+    // texture content updates that preserve GPU handle IDs. Needed only for
+    // the opt-in versioned material-owner cache; ordinary batching still
+    // validates live GPU state each draw.
+    uint64_t materialRevision = 1;
+    void markMaterialChanged() noexcept {
+        if (++materialRevision == 0) ++materialRevision;
+    }
     std::shared_ptr<GeometryData> geometry;
     std::string path;
     std::vector<Node> nodes;
