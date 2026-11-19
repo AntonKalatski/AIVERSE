@@ -225,6 +225,11 @@ public:
 
     void beginScene(const RTSCamera& cam, int fbW, int fbH);
     void drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags = 0, float specular = 0.25f, float emissive = 0.0f);
+    // Opt-in per-surface ripple normals. Positions are render-origin-relative
+    // X/Z; z = propagating radius, w = signed amplitude. No new RHI buffers.
+    void drawNereidRippleMesh(const Mesh& mesh,const mat4& model,float4 color,
+                              float specular,float refraction,
+                              const std::array<float4,4>& ripples);
     // Editor Scene only: render selected geometry into a depth-tested mask
     // and composite its exterior silhouette in screen pixels.
     void setSceneSelectionOutline(bool enabled) { sceneSelectionOutline_ = enabled; }
@@ -397,6 +402,7 @@ private:
         const Mesh* mesh; mat4 model; float4 color;
         uint32_t flags; float specular, emissive;
         float4 selection{0, 0, 0, 0};
+        std::array<float4,4> waterRipples{};
     };
     struct ModelItem {
         const Model* model; const Primitive* prim; const Material* mat;
