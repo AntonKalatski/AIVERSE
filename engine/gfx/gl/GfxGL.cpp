@@ -341,6 +341,49 @@ public:
         const GLenum format = uncompressedExternal(d.format);
         const GLenum type = uncompressedType(d.format);
         const size_t bpp = size_t(uncompressedTexturePixelBytes(d.format));
+        // GLES3/WebGL2 share pixel-unpack state across all upload paths.
+        // GL_PIXEL_UNPACK_BUFFER changes host pointers into byte offsets;
+        // UNPACK_SKIP_* can shift even one-row uploads. Scope every state
+        // mutation, including error returns and missing compressed payloads.
+        struct ScopedUnpack {
+            GLenum target;
+            GLenum bindingQuery;
+            GLint texture=0,pbo=0,alignment=4,rowLength=0,
+                  imageHeight=0,skipPixels=0,skipRows=0,skipImages=0;
+            static constexpr GLenum kPbo=0x88EC,kPboBinding=0x88EF;
+            static constexpr GLenum kRowLength=0x0CF2,kImageHeight=0x806E;
+            static constexpr GLenum kSkipPixels=0x0CF4,kSkipRows=0x0CF3;
+            static constexpr GLenum kSkipImages=0x806D;
+            explicit ScopedUnpack(GLenum t):target(t),
+              bindingQuery(t==GL_TEXTURE_3D?0x806A:
+                           t==GL_TEXTURE_CUBE_MAP?0x8514:0x8C1D) {
+                glGetIntegerv(bindingQuery,&texture);
+                glGetIntegerv(kPboBinding,&pbo);
+                glGetIntegerv(GL_UNPACK_ALIGNMENT,&alignment);
+                glGetIntegerv(kRowLength,&rowLength);
+                glGetIntegerv(kImageHeight,&imageHeight);
+                glGetIntegerv(kSkipPixels,&skipPixels);
+                glGetIntegerv(kSkipRows,&skipRows);
+                glGetIntegerv(kSkipImages,&skipImages);
+                glBindBuffer(kPbo,0);
+                glPixelStorei(GL_UNPACK_ALIGNMENT,1);
+                glPixelStorei(kRowLength,0);
+                glPixelStorei(kImageHeight,0);
+                glPixelStorei(kSkipPixels,0);
+                glPixelStorei(kSkipRows,0);
+                glPixelStorei(kSkipImages,0);
+            }
+            ~ScopedUnpack() {
+                glBindTexture(target,GLuint(texture));
+                glBindBuffer(kPbo,GLuint(pbo));
+                glPixelStorei(GL_UNPACK_ALIGNMENT,alignment);
+                glPixelStorei(kRowLength,rowLength);
+                glPixelStorei(kImageHeight,imageHeight);
+                glPixelStorei(kSkipPixels,skipPixels);
+                glPixelStorei(kSkipRows,skipRows);
+                glPixelStorei(kSkipImages,skipImages);
+            }
+        } scopedUnpack(target);
         GLTexture t;
         t.fmt = d.format; t.dimension = d.dimension; t.target = target;
         t.w = d.width; t.h = d.height; t.depth = d.depth; t.layers = d.arrayLayers;
@@ -349,7 +392,6 @@ public:
         glGenTextures(1, &t.id);
         if (!t.id) { error_ = "GL: texture allocation failed"; return {}; }
         glBindTexture(target, t.id);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         for (int l = 0; l < levels; ++l) {
             const int w = std::max(1, d.width >> l), h = std::max(1, d.height >> l);
             const int slices = d.dimension == TextureDimension::Texture3D ? std::max(1, d.depth >> l) : z;
