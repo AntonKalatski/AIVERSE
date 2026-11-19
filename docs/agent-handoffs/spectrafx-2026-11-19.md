@@ -366,3 +366,21 @@ git switch feature/spectrafx-generic-cue-queue
 git pull --ff-only origin feature/spectrafx-generic-cue-queue
 git fetch origin main && git merge origin/main
 ```
+
+
+## 2026-11-19 — Stage 21: Simulation events to canonical particle graph playback
+- **Implementation commit:** `83a07a485b5f7a3b728d2188f2cabd89424e25a0`, branch `feature/spectrafx-generic-cue-queue`, based on merged current main `d71c6d47e532b25fb816a8bb1f96c41e5275a165`.
+- **File:** `engine/fx/SpectraFxGraphCollector.h` (new).
+- **API:** `fx::installSpectraFxGraphCollector(simulation,playback,translator)` installs read-only `spectrafx.graph.collect` after gameplay systems; uses the existing `Simulation::events()` presentation records, calls host's converter to `SpectraFxCue` and sends them into `SpectraFxGraphPlayback` (canonical `SpectraGraphAssets` and `ParticleSystem` backend). `installSpectraFxOneShotGraphCollector` uses `SpectraFxEventMap::translateOneShot` for built-in event mapping. Both are opt-in, no RTS/FPS hardcoding. Header documents presentation frame order and rollback reset obligations.
+- **Boundaries:** this new collector must not be registered alongside duplicate FX consumers for the same events; caller retains map/playback and translator resources until Simulation teardown. This is source integration API, not an automatic switch of existing RTS/FPS host modules.
+- **Checks actually run:** **NOT RUN** per user's features-before-tests request. No native compilation, CTest, CI, editor screenshots, hardware GPU validation; implementation remains unverified until the dedicated validation phase.
+- **Next functionality:** production host opt-in configuration, particle callback forwarding, GPU backend implementations and a richer editor canvas; once all features are finished run targeted then full CTests and native editor QA.
+
+Pull-first:
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main && git merge origin/main
+```
