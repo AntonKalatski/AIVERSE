@@ -34,6 +34,9 @@ public:
     // One-shot bind-pose transfer of procedural roots onto the authored proxy.
     // Keeps each guide's rest/previous offsets coherent after relocation.
     bool attachRootsToCollisionMesh();
+    // Refit animated proxy vertex positions while preserving stable BVH
+    // topology and last-good state on rejection.
+    bool refitCollisionMesh(std::span<const render::float3> vertices);
     void clearCollisionMesh() noexcept;
     bool hasCollisionMesh() const noexcept {return !collisionTriangles_.empty();}
     std::unique_ptr<render::Model> makeCardModel(const HumanDNA& dna) const;
@@ -56,6 +59,8 @@ private:
     };
     std::vector<CollisionTriangle> collisionTriangles_;
     std::vector<std::uint32_t> collisionOrder_;
+    std::vector<std::uint32_t> collisionSourceIndices_;
+    std::size_t collisionSourceVertexCount_=0;
     std::vector<CollisionNode> collisionNodes_;
     static constexpr std::uint32_t kCollisionLeafSize=8;
     render::float3 resolveCollision(render::float3 p,
