@@ -474,3 +474,30 @@ If native tests and GPU shader parity are clean, implement a single mutually exc
 
 ### Live batching dependency
 PR #34 has advanced independently. Its newer commits are **not automatically merged** into this Stage 8 snapshot. Fetch current batching HEAD, compare changed GPU renderer files and notes, resolve any conflicting semantics and preserve its handoff before syncing. Neither agent should force-push or merge to main without shared native regression results.
+
+
+---
+
+## Stage 8.1 — Mac Studio compilation fix in Strata GPU culling test (2026-11-19)
+
+**Branch:** `feature/strata-virtual-geometry`; draft PR #35 stacked on batching PR #34.
+**Implementation commit:** `d71aa7790ca74260b2280b0ddd440bc238acc3a8`.
+**Changed file:** `tests/render/strata_gpu_culling.cpp` only. Replaced three invalid `compute.computeCalls` / `compute.dispatchCount` field accesses with `dev.computeCalls` / `dev.dispatchCount`. Counters belong to the `RecordingComputeDevice` fake RHI; `GpuClusterCulling` has no such public counters. No production GPU code, rendering logic, CMake, ABI or asset formats changed.
+
+### Actual native evidence supplied by owner
+The user compiled on a Mac Studio using AppleClang / MacOSX26.2 SDK from worktree `~/Projects/AIVERSE-strata-stage8`:
+- `aiverse_strata_builder`, `aiverse_strata_model_adapter`, `aiverse_strata_gpu_scene`, `aiverse_strata_view` and `aiverse_strata_gpu_culling` library targets: **BUILT** according to owner-provided output.
+- Test executables: `strata_builder` **PASS 0.83s**, `strata_model_adapter` **PASS 0.38s**, `strata_view` **PASS 0.39s**, `strata_gpu_scene` **PASS 0.46s** (owner-reported CTest log, previous source snapshot).
+- `aiverse_strata_gpu_culling_tests` **failed to compile** from exactly three invalid field accesses on lines 129 and 151; `strata_gpu_culling` was **NOT RUN**, CTest reported 4/5 passed. This patch addresses those exact compiler diagnostics.
+- **Post-fix native build / `strata_gpu_culling` CTest: NOT YET RUN.** No new Metal compute execution, shader compilation/parity or screenshot evidence. Do not convert owner-provided pre-fix passes into post-fix claims.
+
+### Next exact verification action (existing detached worktree)
+```sh
+cd ~/Projects/AIVERSE-strata-stage8
+git status --short
+git fetch origin feature/strata-virtual-geometry
+git switch --detach origin/feature/strata-virtual-geometry
+cmake --build build/strata --target aiverse_strata_gpu_culling_tests -j 8
+ctest --test-dir build/strata -R '^strata_(builder|model_adapter|view|gpu_scene|gpu_culling)$' --output-on-failure
+```
+Do not discard uncommitted work if `git status` is nonempty. On success, append the actual output and test commit/OS to a fresh handoff section; then address real Metal kernel compile and GPU-vs-CPU selection parity. Keep Strata diagnostics OFF by default and main unchanged.
