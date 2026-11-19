@@ -128,9 +128,13 @@ public:
         // Validate the entire harvested set BEFORE exchanging live soil,
         // roots or grass. A malformed saved tombstone must never produce a
         // partially published frame.
+        const auto* harvest=
+            ecs.resourceConst<ForestHarvestResource>();
+        const bool harvestChanged=harvest &&
+            (!initialized_ || force || !harvestRevision_ ||
+             *harvestRevision_!=harvest->revision);
         std::optional<std::vector<ForestTreeIdentity>> harvestedIds;
-        if(const auto* harvest=
-               ecs.resourceConst<ForestHarvestResource>()){
+        if(harvestChanged){
             validateForestHarvestResource(*harvest);
             harvestedIds.emplace();
             harvestedIds->reserve(harvest->records.size());
@@ -171,6 +175,8 @@ public:
             runtime_.grassRenderer().invalidateAll();
         }
         stateRevision_=state->stateRevision;
+        harvestRevision_=harvest?
+            std::optional<uint64_t>(harvest->revision):std::nullopt;
         initialized_=true;
         return true;
     }
@@ -188,6 +194,7 @@ public:
         world_.reset(scene);
         initialized_=false;
         stateRevision_=0;
+        harvestRevision_.reset();
     }
 
 private:
@@ -198,6 +205,7 @@ private:
     TerrainMutationCoordinator& runtime_;
     WorldSceneEarthworksBinding world_;
     uint64_t stateRevision_=0;
+    std::optional<uint64_t> harvestRevision_;
     bool initialized_=false;
 };
 
