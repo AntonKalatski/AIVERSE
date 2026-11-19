@@ -524,6 +524,24 @@ void Rts2DView::submitPrepared(Renderer3D& r) {
         const auto previousGroundRight=groundRight_,previousGroundFront=groundFront_;
         const auto previousCasterRight=casterRight_;
         const auto previousQuality=quality_;
+        // Restore primary camera state even if sprite geometry allocation or
+        // a texture/atlas callback throws. The temporary state is never
+        // allowed to leak into a subsequent primary or secondary view.
+        struct RestoreCamera {
+            Rts2DView& self;
+            RTSCamera cam;
+            float3 right, up, fwd, groundRight, groundFront, casterRight;
+            ShadowQuality quality;
+            ~RestoreCamera() noexcept {
+                self.emittingBatch_=&self.batch_;
+                self.replayingPrepared_=false;
+                self.cam_=cam;
+                self.camRight_=right; self.camUp_=up; self.camFwd_=fwd;
+                self.groundRight_=groundRight; self.groundFront_=groundFront;
+                self.casterRight_=casterRight; self.quality_=quality;
+            }
+        } restore{*this,previousCam,previousRight,previousUp,previousFwd,
+                  previousGroundRight,previousGroundFront,previousCasterRight,previousQuality};
         cam_=r.camera();
         // Use the already computed basis from this secondary camera.
         camRight_=b.right; camUp_=b.up; camFwd_=b.fwd;
@@ -547,13 +565,7 @@ void Rts2DView::submitPrepared(Renderer3D& r) {
                      packet.startTime,packet.team,packet.tint,packet.corpse,packet.fade,packet.look);
             }
         }
-        emittingBatch_=&batch_;
-        replayingPrepared_=false;
-        cam_=previousCam;
-        camRight_=previousRight; camUp_=previousUp; camFwd_=previousFwd;
-        groundRight_=previousGroundRight; groundFront_=previousGroundFront;
-        casterRight_=previousCasterRight;
-        quality_=previousQuality;
+        // Primary state is restored by RestoreCamera at scope exit.
         secondaryRight_=b.right; secondaryUp_=b.up; secondaryFwd_=b.fwd;
         secondaryGroundRight_=b.gRight; secondaryGroundFront_=b.gFront;
         secondaryCasterRight_=casterAxis; secondaryQuality_=r.shadowQuality();
