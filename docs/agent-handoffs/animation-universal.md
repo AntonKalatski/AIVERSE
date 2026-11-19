@@ -2786,3 +2786,13 @@ before calling this stage validated.
 - Native `View::modelRetargetStats` exposes per-frame compiled hits/rejections, exact pose reuse, legacy dynamic validation and bind fallbacks for follow-up profiling.
 - **ACTUALLY PERFORMED:** GitHub branch/PR/ancestry and source inspection, specific blob-SHA commits and readback. **NOT RUN:** CMake/C++ build/link, CTest, CI, real GPU/visual comparison, sanitizers or benchmarks. Keep PR Draft.
 - **Next Stage 124:** finish other legacy LOD/attachment adapters and investigate reusable visual Pose scratch, retarget authoring diagnostics; only then run complete features-first validation and fix build/test/warning failures.
+
+## Stage 124 — reusable pose scratch, failed-map diagnostics (2026-11-19)
+
+- **Detailed separate handoff:** [Stage 124](animation-stage124-pose-scratch-authoring-2026-11-19.md) includes exact source commits, changed files, ownership, actual validation and Stage 125.
+- Continued Stage 123 HEAD `e04f6ec3` in `feature/universal-ecs-animation-pipeline`; `main` `d71c6d47` already ancestor. Source commits brought compare from ahead 882/behind 0 to ahead 888/behind 0. No force push/rebase/main modification. PR #22 Draft.
+- `retargetCompiledModelPose` now reuses caller-provided Pose and matrix output capacity. `View::submitOne` shares a per-instance transient retarget scratch on the render owner thread, with RAII reentrancy guard to preserve outer pose during nested Renderer3D capture callbacks. Source review verified Renderer3D consumes pose/nodeWorld pointers synchronously and `worldMatrices` resizes the passed output vector.
+- Added generic `makeNamedModelPoseRetarget` and `ModelPoseRetargetIssue/Report` diagnostics for failed map publication. RTS `RtsLook` uses the shared name-map helper and emits deduplicated warnings on invalid skeletal/morph LOD mappings, retaining historical LOD fallback pending native visual parity checks.
+- MotionWeave single source graph, ECS authority, native renderer Device owners, PHYSIS/NEREID/TerraWeave and Prisma/SpectraFX unchanged.
+- **ACTUAL:** connected GitHub branch/PR/source comparison, Renderer3D and Animation.cpp lifetime inspection, exact commits and readback. **NOT RUN:** local CMake/native compiler/CTest/CI, GPU/sanitizer visuals or benchmarks. No measured speedup or compile success; PR must remain Draft.
+- **Next Stage 125:** explicit scratch lifetime/budget policies, safe legacy LOD migration and rig authoring profiles; finish features, then run full build/tests/warnings before merge.
