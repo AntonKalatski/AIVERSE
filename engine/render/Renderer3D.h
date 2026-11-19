@@ -320,6 +320,12 @@ public:
         motionLastSubmittedFence_ = lastSubmittedFence;
     }
     void retireObjectMotionView(uint64_t viewId, uint64_t lastSubmittedFence = 0);
+    // Call at the end of a host frame with ALL live presentation camera IDs.
+    // Retire orphaned per-view motion targets behind backend submission fence
+    // (or quarantine until confirmed idle if the backend supplies no token).
+    // Cameras sharing pixel dimensions remain independent by ID.
+    size_t retireUnregisteredObjectMotionViews(
+        const std::vector<uint64_t>& liveViewIds);
     size_t collectCompletedObjectMotion(uint64_t completedGpuFence);
     // Valid only after the host has explicitly confirmed GPU idle.
     size_t drainObjectMotionAfterGpuIdle();
