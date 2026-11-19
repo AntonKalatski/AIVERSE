@@ -495,3 +495,20 @@ Test fixture source uses FakeDevice Metal with explicit completion callbacks and
 ACTUAL verification: GitHub fetch/write acknowledgements, code inspection and CTest registration only. Native C++ configure/build, CTest, full ./run-tests.sh, Apple MSL compile/readback, Vulkan/Android and benchmark: NOT RUN. Do not call this production-ready.
 
 Limitations/next step: implement real pixel-space blending at clipmap borders using two or three separately sampled cascade atlases and independent validity. Existing model shader tex13 is the one-level atlas; Shader Graph textures start at slot 13 and must remain excluded until resolved. Avoid claiming bindFinestComplete already blends. Prefer adding an independent CPU reference blend-policy test, then a guarded dual-cascade shader permutation (Metal fragment textures 13/15; extra data/mask 14/16) and explicit renderer state. Later permit 3 cascades with a controlled sampler/texture budget. The in-place GPU atlas cannot be presented with dirty probes without per-cell validity tracking; implement sparse validity next. Do not merge into main. Complete an independent handoff after each next code stage.
+
+## Stage 22 - 2026-11-19 - CPU reference for smooth cascade blending and validity fallback (SOURCE; NOT RUN)
+
+Source commits:
+- 5412d22116eecf17c817839219a99610207f3739 - engine/render/GiCascadeBlend.h
+- 1d7001bf349b7fbbbb40384867de2de8f1c2d33b - tests/render/gi_cascade_blend.cpp
+- 7ffb63785cb68db086ac7ab16938b6c41addf22a - CMakeLists.txt, registered gi_cascade_blend under standard ALL/CTest.
+
+Design: GiCascadeBlendLevel includes a world-grid origin, spacing, 3D dimensions, already evaluated linear indirect radiance, effective validFraction and fadeCells border width. giCascadeCoverage() computes smoothstep(0..1) based on the minimum world-space distance from receiver to a level's bounding volume, normalized by the desired probe-cell fade. composeCascadeGi(levels,count,receiverPosition) visits finest -> coarsest, assigns each level at most uncoveredWeight * coverage * validFraction, adds RGB only once, and reports levelWeights/uncovered. Outer absence deliberately contributes zero delta GI, leaving the separate baked/ambient base unmodified. Source light/direct sun must not be double-counted inside cascade inputs.
+
+Tests authored but NOT RUN: center fine-only, edge mixing of fine and medium without overcounting, incomplete fine replaced by medium, 3-level fallback near outer boundary, zero outside coverage, invalid dimensions/validity. All use always-on AIVERSE_TEST_CHECK. Existing renderer still binds one complete level at a time; this CPU blend policy is NOT yet a GPU per-fragment blend and MUST NOT be presented as one.
+
+Compatibility: header-only additive opt-in utility; no shader, GPU texture, legacy lightmap, ECS persistence or default quality changes. Bounded 1..3 level policy; it is a reference for the following shader implementation.
+
+ACTUAL validation: GitHub source writes/CMake test registration. C++ compilation, CTest, full run-tests.sh, real Vulkan/Metal shader results and performance: NOT RUN.
+
+Next bounded stage: implement compact GPU validity mask per level, update mask from GiClipmapVolume physical slot validity after confirmed GPU fence (and immediately invalidate mask on new dirty regions), and add a dedicated opt-in GLSL/MSL shader variant that samples two cascades, weights their incident indirect using the same smoothstep/validFraction policy, and does not steal shader-graph material texture bindings. Validate real Metal/GLES format/texture-slot limits. Do not merge to main.
