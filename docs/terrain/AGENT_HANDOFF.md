@@ -2829,3 +2829,20 @@ Previous handoff reported PR #24 as nonmergeable with `main`. That was inaccurat
 2. Obtain complete GCC and Clang build + CTest logs for the **latest cleanup commit**; repair compiler/test regressions with a separate stage/commit and handoff. Do not use results from previous VFX-contaminated commits.
 3. Run editor/native-WorldScene integration and actual GPU captures/benchmarks; audit catalog registration and stale skill references.
 4. Keep Draft until all required results are real and recorded, then decide on a tested squash merge into `main`.
+
+## Stage 23e — register TerraWeave AI skill after SpectraFX scope cleanup (CATALOG SOURCE COMMITTED; RUNTIME TESTS NOT RUN)
+
+**Date:** 2026-11-19. **Branch:** `feature/terraweave`. **PR #24 target:** `main` (Draft).
+
+**Code commits and changed files:**
+- `689209b46235220a4b04591a8d1cc521fc6378a1`: `tools/skills/catalog.py`. Added `aiverse-terraweave` to `WORKFLOWS`, sourced from `docs/terrain/TERRAWEAVE.md`, and added mixed English/Russian search vocabulary in `WORKFLOW_ALIASES`. Did NOT restore any unrelated SpectraFX skills after the Stage 23d cleanup.
+- `2e214b088082260f9a11fe4deee8e53946233acd`: `skills/catalog.json`. Added the matching `aiverse-terraweave` workflow/tool entry for the existing `skills/world/aiverse-terraweave/SKILL.md`, preserving alphabetical ID ordering and the generator's JSON formatting. Existing catalog contained 211 skills; new catalog has 212.
+- This handoff documents the catalog stage.
+
+**Why needed:** The Stage 23d VFX scope cleanup restored shared skill registry files to their main versions. The TerraWeave skill already existed on this branch but had **never been registered** in the old shared catalog, so `tools/skills/catalog.py check` would reject it as unregistered against `skills/world/*/SKILL.md`.
+
+**Verification actually done:** GitHub source reads confirmed the Python recipe row and alias exist exactly once each, JSON entry exists exactly once, catalog IDs are sorted, `JSON.stringify(data,null,2)+"\\n"` reproduces the stored 2-space JSON representation, and `.github/workflows/terraweave.yml` still contains the nine isolated targets plus concurrency settings. Successful GitHub commits were returned for both files.
+
+**NOT RUN:** Actual Python `tools/skills/catalog.py check`, `tools/skills/audit.py`, CMake/CTest on full repository, GCC/Clang builds, macOS/Windows builds, GPU/editor/game runtime. A full local checkout was not available because network `github.com` resolution is blocked in the agent container. No test suite may be marked passing.
+
+**Next agent action:** Run `python3 tools/skills/catalog.py check` and `python3 tools/skills/audit.py` in the checked-out branch, then full isolated TerraWeave CI and CTest; verify no stale catalog and no SpectraFX references from TerraWeave-only PR. Check PR mergeability against latest `main` and test shared renderer + WorldScene/editor integration. Keep PR Draft pending real results and GPU visual checks.
