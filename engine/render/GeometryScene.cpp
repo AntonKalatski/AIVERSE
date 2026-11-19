@@ -325,12 +325,18 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                 if (!asset) { ++stats_.strataPortableDeclined; continue; }
                 auto source=std::make_shared<strata::PortableSource>();
                 std::string error;
-                if (!source->stage(dev, *model, *asset, &error)) {
+                if (!source->stage(dev, *model, *asset, &error,
+                                   strataStreamingIndexBudgetBytes_)) {
                     ++stats_.strataPortableDeclined;
                     if (!error.empty())
                         warnings_.push_back("portable Strata source " + key +
                                             ": " + error);
                     continue;
+                }
+                if(source->streamingEnabled()){
+                    ++stats_.strataStreamedSources;
+                    if(const auto* status=source->residencyStats())
+                        stats_.strataStreamingIndexBytes+=status->activeBytes;
                 }
                 strataPortableSources_.emplace(model.get(), std::move(source));
                 ++stats_.strataPortableSources;
@@ -440,7 +446,58 @@ void GeometryScene::drawGroup(Renderer3D& r,int index){auto& g=groups_[size_t(in
     if(g.left>=0){drawGroup(r,g.left);drawGroup(r,g.right);return;}
     for(auto id:g.instances)drawInstance(r,instances_[id]);
 }
-void GeometryScene::draw(Renderer3D& r){stats_.submitted=0;stats_.surfaceProxiesSubmitted=0;if(hlod_&&!groups_.empty())drawGroup(r,0);else for(auto& i:instances_)drawInstance(r,i);}
+void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    if(!strataPortableRenderingEnabled_ || !strataStreamingIndexBudgetBytes_ ||
+       strataPortableSources_.empty() ||
+       r.sceneWidth()<=0 || r.sceneHeight()<=0)return;
+    std::vector<strata::PortablePassView> views;
+    views.push_back({r.viewProj(),r.sceneWidth(),r.sceneHeight(),
+                     r.clipDepthZeroToOne(),errorPixels_});
+    if(r.shadowQuality()!=ShadowQuality::Off && r.shadowMapSize()>0)
+        views.push_back({r.lightViewProj(),r.shadowMapSize(),
+                         r.shadowMapSize(),r.clipDepthZeroToOne(),errorPixels_});
+    const bool forceFinest=r.lights.reflectionsWanted();
+    std::map<const Model*,std::vector<strata::IndexDemand>> requests;
+    std::set<const Model*> failed;
+    // Preflight ALL instances before submitting ANY Renderer3D ModelDraw.
+    // One shared source buffer generation covers the complete draw epoch,
+    // including independent main, shadow and reflection passes.
+    for(const auto& instance:instances_){
+        const auto it=strataPortableSources_.find(instance.model);
+        if(it==strataPortableSources_.end() || !it->second ||
+           !it->second->streamingEnabled() ||
+           failed.count(instance.model))continue;
+        auto& list=requests[instance.model];
+        if(!it->second->collectResidencyDemands(
+               instance.world,views,forceFinest,list)){
+            failed.insert(instance.model);
+            list.clear(); // keep roots; don't promote a partial view plan
+        }
+    }
+    stats_.strataStreamingIndexBytes=0;
+    stats_.strataStreamingEvictions=0;
+    for(auto& [model,source]:strataPortableSources_){
+        if(!source || !source->streamingEnabled())continue;
+        std::string error;
+        if(failed.count(model) ||
+           !source->updateResidency(requests[model],&error))
+            ++stats_.strataStreamingPrepareFailures;
+        if(const auto* status=source->residencyStats()){
+            stats_.strataStreamingIndexBytes+=status->activeBytes;
+            stats_.strataStreamingEvictions+=status->evictions;
+        }
+    }
+#else
+    (void)r;
+#endif
+}
+void GeometryScene::draw(Renderer3D& r){
+    stats_.submitted=0;stats_.surfaceProxiesSubmitted=0;
+    updateStrataStreamingBeforeDraw(r);
+    if(hlod_&&!groups_.empty())drawGroup(r,0);
+    else for(auto& i:instances_)drawInstance(r,i);
+}
 void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
     ModelDraw d;d.model=i.model;d.world=i.world;d.geometry=geometryEnabled_?i.policy:GeometryPolicy{};d.staticCache=cacheEnabled_?&i.cache:nullptr;
     if(i.surfaceProxy&&surfacesEnabled_){
