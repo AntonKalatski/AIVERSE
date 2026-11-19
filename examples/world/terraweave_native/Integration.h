@@ -10,6 +10,7 @@
 #include "engine/world/TerraWeaveFloodShorelineSystem.h"
 #include "engine/world/TerraWeaveShoreRecoveryEcs.h"
 #include "engine/world/TerraWeaveForestEcologyEcs.h"
+#include "engine/world/TerraWeaveForestHarvestEcs.h"
 #include "engine/world/TerraWeaveFlowObstructionEcs.h"
 #include <functional>
 #include <optional>
@@ -38,7 +39,8 @@ inline void registerSystems(
             rootedForestSpecies={},
         terraweave::ForestEcologySettings rootedForestSettings={},
         std::function<void(const terraweave::ForestEcologyEcsOutcome&)>
-            onForestEcology={}) {
+            onForestEcology={},
+        bool enableForestHarvest=false) {
     lib::nereid::NativeWaterPipelineConfig water{};
     water.enableBankErosion=true;
     // Geometry and current state belong to NEREID, including polygon/
@@ -70,6 +72,11 @@ inline void registerSystems(
     // instance procedural forest or individual grass blades.
     if(!rootedForestSpecies.empty())
         terraweave::registerTerraWeaveForestEcologyPersistence(sim);
+    // Persistent harvest is separately opt-in. With it enabled, native
+    // games call harvestNativeForestTree at a structural/command barrier
+    // and present the resulting tombstones through the existing forest.
+    if(enableForestHarvest)
+        terraweave::registerTerraWeaveForestHarvestPersistence(sim);
     // NEREID calculates local bank erosion; transport then conserves
     // suspended sediment between same-water-body neighbouring banks.
     // TerraWeave applies already computed soil changes LAST.
