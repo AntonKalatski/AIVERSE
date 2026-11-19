@@ -255,7 +255,7 @@ public:
                 growths += allocated ? 1u : 0u;
                 if (++uploads == 600) {
                     std::fprintf(stderr,
-                        "[metal-indirect-snapshots] /600 updates copied=%.1f KiB dirty-elided=%.1f KiB allocations=%llu (slot fenced)\\n",
+                        "[metal-indirect-snapshots] /600 updates copied=%.1f KiB dirty-elided=%.1f KiB allocations=%llu (slot fenced)\n",
                         double(copied) / 1024.0, double(saved) / 1024.0,
                         (unsigned long long)growths);
                     uploads = copied = saved = growths = 0;

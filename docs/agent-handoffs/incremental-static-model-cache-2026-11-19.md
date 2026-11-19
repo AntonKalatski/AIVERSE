@@ -853,3 +853,5 @@ Source/API and exact replacement consistency was checked against GitHub branch a
 ### Next work
 
 Feature-first option: add backend-owned byte-copy statistics exposed via a read-only RHI diagnostic API, so the editor can distinguish 20-byte command payload submissions from actual snapshot CPU copies. Later tests should cover Metal multiple submissions in one GPU frame, frame-slot fence reuse, mixed exact/partial updates, dirty mode, snapshot capacity growth, Vulkan version reuse and growth, unload/reload and LOD/shadow parity. Reconcile old Stage 10/11/13 policy fixtures, run Metal visual A/B/A and fixed-scene CPU/GPU benchmarks before enabling or merging.
+
+**Stage 27 source follow-up:** corrected the opt-in Metal snapshot profiling format string to emit one actual newline; no change to GPU commands or buffer lifetime. Native compilation and runtime tests remain NOT RUN.
