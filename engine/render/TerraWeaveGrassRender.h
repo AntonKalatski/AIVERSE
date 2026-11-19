@@ -19,6 +19,10 @@
 
 namespace aiverse::terraweave {
 
+struct GrassRenderOriginCm {
+    int64_t x=0,y=0,z=0;
+};
+
 struct GrassRenderQuality {
     uint32_t maxBladesPerPatch=1024; // 1..8192, stable bounded samples
     bool crossedBlades=true;         // 2 triangles instead of 1 per blade
@@ -253,7 +257,7 @@ public:
     }
 
     void draw(render::Renderer3D& renderer,
-              TerrainPatchRenderOriginCm origin={})const{
+              GrassRenderOriginCm origin={})const{
         for(const auto& [id,resident]:resident_){
             (void)id;
             if(!resident.model)continue;
