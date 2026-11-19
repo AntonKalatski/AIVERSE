@@ -254,6 +254,12 @@ public:
     // Release a COMPLETED token after checking resourceRetirementComplete().
     // No backend may free a still-in-flight native fence here.
     virtual void endResourceRetirement(uint64_t token) { (void)token; }
+    // Call ONLY after a successful waitForResourceIdle() barrier. This
+    // disposes native marker bookkeeping even when its status callback
+    // failed. Never use it to justify deleting an in-flight GPU resource.
+    virtual void abandonRetirementTokenAfterIdle(uint64_t token) {
+        (void)token;
+    }
 
     // Frame (driven by the platform layer)
     virtual void beginFrame(int framebufferWidth, int framebufferHeight) = 0;
