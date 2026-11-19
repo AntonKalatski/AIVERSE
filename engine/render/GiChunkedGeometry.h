@@ -4,7 +4,7 @@
 // Suitable for terrain tiles, fallen-tree proxies, buildings and cave segments.
 // This is render-presentation data, not an authoritative ECS state.
 #pragma once
-#include "StaticPointShadows.h"
+#include "GiTraceGeometry.h"
 #include "GiUpdateScheduler.h"
 #include <algorithm>
 #include <cmath>
@@ -28,6 +28,7 @@ public:
     };
     struct QueryStats { uint32_t nodes = 0, chunks = 0; };
 
+    GiTraceGeometryView traceView() const { return {this, &queryView}; }
     size_t chunkCount() const { return chunks_.size(); }
     size_t triangleCount() const {
         size_t total = 0;
@@ -62,6 +63,11 @@ public:
 
 private:
     friend class GiChunkedGeometryBuilder;
+    static float queryView(const void* user, float3 origin, float3 direction,
+                           float limit, float3* normal, float3* albedo) {
+        return static_cast<const GiChunkedGeometrySnapshot*>(user)->distance(
+            origin,direction,limit,normal,albedo);
+    }
     struct Node {
         GiBounds bounds{};
         uint32_t left = 0, right = 0;
