@@ -24,6 +24,15 @@ public:
     // gameplay types or an extra MotionWeave animation evaluation.
     bool renderStaticModel(render::ModelAssetProvider& provider,
                            const std::string& source,float yaw=0.5f);
+    // Generic fully-authored offscreen ModelDraw path. The host owns model,
+    // material override vectors, node assignments, variant and transform.
+    // No RtsView, gameplay ECS, second animation evaluation or file import.
+    bool renderAppearance(const render::ModelDraw& draw,
+                          const render::RTSCamera& camera);
+    // Borrowed resource-owner view for cross-host GPU accounting.
+    const render::ModelResourceCache& modelResources() const noexcept {
+        return previewModels_;
+    }
     void renderMaterial(RtsView& view, const Json& material, int shape, double time);
     gfx::TextureHandle texture() const { return color_; }
     int size() const { return size_; }
