@@ -677,3 +677,13 @@ the GPU Lamp SSBO layout is now 64 bytes in Metal and Vulkan, with CPU/GPUs
 using the same cone fade. New CTest source files and CMake entries exist.
 **NATIVE BUILD, SPIR-V/MSL, GLES3, METAL/VULKAN HARDWARE, FULL CTEST AND
 PERFORMANCE: NOT RUN.** Do not promote to main or mark feature complete.
+
+
+## Stage 37 — 2026-11-20 — unified CPU/GPU world dirty events (SOURCE; NOT RUN)
+
+See `docs/agent-handoffs/gi-stage37-world-change-gpu-cpu-2026-11-20.md`.
+`GiLightingController` now forwards external presentation world dirties to
+both GLES CPU transport and Metal/Vulkan single-volume compute, with
+revision-safe stale ticket rejection and explicit geometry-snapshot boundary.
+`gi_gpu_dynamic_runtime` and `gi_lighting_controller` test sources updated.
+No real C++ build, shader compilation, CTest or GPU parity run.
