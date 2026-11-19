@@ -2755,3 +2755,13 @@ before calling this stage validated.
 - **ACTUAL:** GitHub branch/source review, direct commits using current blob SHAs, re-read of edited source and inspection confirming no direct `destroy*` calls in `RenderTexture.cpp` or `RtsPaintLayers.cpp`.
 - **NOT RUN:** local checkout/native build/link/CMake/CTest/CI, GPU Metal/GL/Vulkan, sanitizers, game/editor visual parity or benchmarks. All Stage 120 changes remain compile/runtime unverified; PR Draft.
 - **Next Stage 121:** finish universal View model/LOD/attachment adapters and canvas upload retry diagnostics; audit independent owner fallback contracts; then build/test after features are complete and fix failures/warnings.
+
+## Stage 121 — source-rig LOD, socket attachments and retryable paint uploads (2026-11-19)
+
+- **Detailed separate handoff:** [Stage 121](animation-stage121-universal-lod-attachments-2026-11-19.md), including exact feature commit SHAs, touched files, APIs, owner boundaries, actually performed checks, risks and Stage 122.
+- Continued Stage 120 HEAD `1e1153ed`. GitHub compare after feature commits was ahead 833 / behind 0 relative to `main` `d71c6d47`. No main mutation/rebase/force push. PR #22 remains Draft.
+- Added genre-neutral `engine/view/ModelComposition.h` with deterministic distance-based visual LOD selection, strict pose-compatible skeleton checks, and source-rig socket composition for native C++ projects. New optional `view::Object::animationModel/lods/attachments` fields keep ONE MotionWeave clock on the base graph even when drawing a different Model. Stable LOD hysteresis is entity-generation scoped; missing distant assets fall back; mismatched skeleton/morph LODs do NOT reuse stale matrices. New fields preserve existing Object aggregate source field order.
+- The legacy RTS weapon/cargo/banner socket pass now calls the same generic `view::composeAttachment`, leaving gameplay-gated choice entirely in the RTS host.
+- `RenderTexture::upload` returns success/failure and RtsPaintLayers retries failed categorical, territory and manual copy operations without acknowledging stale GPU data.
+- **ACTUAL VALIDATION:** linked GitHub branch/PR, ancestry comparison, exact file reads/writes and source inspection. **NOT RUN:** local native compiler/build/link, CTest/CI, real Metal/Vulkan/GL, FPS/RTS/editor screenshots, TSAN/ASAN or benchmarks. This is source-only, not release ready.
+- **Next Stage 122:** migrate remaining host-specific whole-asset LOD/attachment paths, consider explicit morph/rig remap, finish canvas retry diagnostic API, then build/test and fix after the feature set is complete.
