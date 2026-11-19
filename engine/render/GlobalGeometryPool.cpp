@@ -11,8 +11,10 @@
 
 namespace aiverse::render {
 
-// Pages intentionally have no GPU destructor. The last owning Model releases
-// the buffer explicitly while its gfx::Device is still alive, like releaseModel().
+// Pages intentionally have no GPU destructor. The last pooled Model OR
+// auxiliary index-span owner explicitly releases the buffer while the
+// gfx::Device is still alive. In-flight RHI uses survive backend destruction
+// via its deferred device release contract.
 struct GeometryPoolPage {
     gfx::BufferHandle buffer;
     size_t capacity = 0;
@@ -96,9 +98,10 @@ GeometryPoolStats geometryPoolStats(gfx::Device& dev) {
             for (const auto& span : page->retired)
                 if (span.retireFrame != 0 && span.retireFrame <= completed)
                     ++stats.reusablePairs;
-            for (const auto& span : page->retiredIndices)
-                if (span.retireFrame != 0 && span.retireFrame <= completed)
-                    ++stats.reusableAuxiliarySpans;
+            if (recyclingEnabled())
+                for (const auto& span : page->retiredIndices)
+                    if (span.retireFrame != 0 && span.retireFrame <= completed)
+                        ++stats.reusableAuxiliarySpans;
         }
     }
     return stats;
