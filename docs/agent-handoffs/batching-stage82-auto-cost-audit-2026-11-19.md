@@ -202,3 +202,53 @@ The immediate high-confidence conclusion is that the cold first 3 MDI samples he
 **Next tasks:** collect three independent Stage 84 CSV files using distinct `<prefix>` values in the same isolated worktree, preferably logging hardware/thermal state separately, and compare timelines by frame, especially whether spikes occur in `shadow_backend_ms`, `opaque_backend_ms` or the remainder. Collect GPU command-buffer or timestamp timing separately. Before changing the policy or declaring performance ready, repeat forced MDI alongside AUTO under different process order and capture actual GPU parity and no-submission guards. Keep experimental flags OFF by default and Draft PR #39 open. Handoff must report any new code commits and Mac test outcomes.
 
 **Verification truth:** Python-loaded uploaded CSV successfully parsed, shape (106,10). This is analysis/handoff only; no native compilation, CTest, CI or GPU run was performed in this stage.
+
+
+---
+
+## Stage 86 — independent AUTO frame-time replication with forced CPU MDI controls (2026-11-19)
+
+**Repository:** `chromealex/AIVERSE`; **branch:** `perf/auto-batch-cost-metrics-20261119`; **PR:** #39 Draft. **New files:** `tools/batching-stage86-trials.sh` and `tools/batching-stage86-analyze.py`. **Commits:** `af30bc0cfe32283b5ab3d0bb19fef60260564084` (runner), `c340235033f437602bd7fa2861818fceed4cf4d6` (analyzer), `abb0bc55fc85e3651323fce5d1e36400a0fcd315` (shell output-variable initialization fix). This handoff is a separate subsequent commit. **No runtime renderer/RHI/policy change.** Existing flags OFF by default.
+
+### Prior measurements motivating this work
+
+Stage 83 clean Mac Studio rotated 1k-primitive benchmark showed:
+- Direct `renderer.render()` CPU median: 1.1802 / 1.1677 ms.
+- Forced CPU MDI median: 0.8303 / 0.8201 ms, real MDI screenshot byte equality in both trials.
+- AUTO median: 0.8488 / 1.4638 ms; while AUTO selected MDI for 80/81 and 79/81 measured frames in successive runs. Performance is therefore variable and cannot be explained by frequent Direct fallback.
+- A subsequent owner-provided Stage 84 CSV, 106 frames (90..195), had 93 MDI frames and MDI median ~0.850792ms; after initial cold MDI frames 91,93,95, no successful-MDI frame after 97 exceeded 1.2ms. This single healthy run does not explain why another process had sustained late high times.
+
+### New benchmark implementation
+
+- `bash tools/batching-stage86-trials.sh [ITEMS=1024] [OUTPUT=build/batching-stage82/stage86-trials]` runs **five separate processes** in order `AUTO1, forced-MDI1, AUTO2, forced-MDI2, AUTO3`. Each has isolated process-local shader/Metal caches, baseline warmup and capture prefix. This is not randomized per-frame A/B/A, but interleaving provides a contemporary control for environmental performance drift.
+- Every mode sets `AIVERSE_PALETTE_TEST_CASE=auto_stress`, `AIVERSE_BATCH_CPU_TIMING=1`, `AIVERSE_BATCH_FRAME_TIMELINE=1`, `AIVERSE_CAPTURE_SUCCESSFUL_MDI=1` and its explicit policy. Inherited GPU ICB, AUTO trace, GPU authored path and other conflicting benchmark flags are removed from the child environment. AUTO alone enables `AIVERSE_BATCH_AUTO=1`; forced-MDI alone enables `AIVERSE_METAL_CPU_MDI=1`.
+- The runner requires successful executable exit via `set -euo pipefail`, 38-or-current-count CPU `result=passed`, an actual-MDI pixel-equality message, final byte equality, 106 CSV rows logged, CSV file existence, and real forced-MDI samples. Log and CSV files are unique per trial.
+- New Python 3 standard-library analyzer reads the five CSVs, strictly validates header, numeric fields and frames 90..195, and writes `summary.csv` with measured-frame CPU median, P95, last-36-frame median, MDI/Direct frame counts, actual submissions, warmed MDI frames exceeding 1.2ms, longest consecutive slow run, per-pass CPU-stage and backend-submit median, and the worst frame's stage costs. Also prints a compact run comparison. The 1.2ms threshold is a diagnostic reference from prior 1k results, **not** a production latency requirement or an adaptive decision threshold.
+- Bash issue found during static review: `local label=... prefix=... ` expanded prefix before label assignment with `set -u`. It was corrected in `abb0bc55`. No native execution reported.
+
+### Validation status
+
+**Implemented and committed** via GitHub connector. Inspected the live runner/CSV output contract. **NOT RUN** after these new Stage 86 changes: Mac shell, Python analyzer against generated five-run files, CMake/CTest, Metal raster, Vulkan or GPU timers. Prior Stage 83/84 owner results remain the only actual native evidence. No claim of 3 independent runs or stability verification should be made until owner logs arrive.
+
+### Exact next owner Mac Studio command (isolated worktree)
+
+```bash
+ROOT=/Users/aleksandrfeer/Projects/AIVERSE
+WT=/Users/aleksandrfeer/Projects/AIVERSE-batching-stage82
+
+git -C "$ROOT" fetch origin perf/auto-batch-cost-metrics-20261119 || exit 1
+git -C "$WT" status --short
+git -C "$WT" switch --detach origin/perf/auto-batch-cost-metrics-20261119 || exit 1
+
+# Only the Python/shell scripts changed since Stage 84; reuse Stage 82 binary.
+cd "$WT" || exit 1
+AIVERSE_BATCH_BENCH_BIN=build/batching-stage82/aiverse_material_batches \
+  bash tools/batching-stage86-trials.sh \
+  1024 build/batching-stage82/stage86-trials
+```
+
+The scripts print `Stage 86 PASS` only after all five child executables and CSV summary succeed. Share `build/batching-stage82/stage86-trials/summary.csv` and optionally the three AUTO CSVs if there are slow frames. Review outlier provenance against interleaved forced-MDI CPU controls before retuning the CPU AUTO policy or touching Metal. Keep Draft PR #39 until native verification. The main user's conflicted worktree remains untouched.
+
+### Following tasks
+
+If all three AUTO runs are stable near forced MDI and only first-cold MDI frames spike, quantify cold-start versus settled performance and consider GPU-timestamp instrumentation next; do not unconditionally enable AUTO. If AUTO sometimes runs slowly but forced MDI controls do not, use the per-pass backend timings in CSVs to isolate which phase changes. If both are slow together, prioritize system/device contention and native GPU completion instrumentation over policy changes. Verify shader/geometry permutations, Vulkan cross-platform parity, and full CI before release.
