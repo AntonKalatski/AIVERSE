@@ -27,6 +27,7 @@ struct HorizonModelBuildStats {
     size_t weldedVertices=0;
     int32_t maxWeldHeightDeltaCm=0;
     size_t smoothedNearNormals=0;
+    size_t matchedAuthoredNearNormals=0; // exact Q16 source normals at seam
     bool nearWeldSlopeFallback=false;
 };
 
@@ -154,10 +155,16 @@ inline std::unique_ptr<render::Model> makeHorizonModel(
             // live WorldScene or physics in model build/render stages.
             using SeamKey=std::pair<int64_t,int64_t>;
             std::map<SeamKey,int32_t> nearEdgeHeights;
-            for(const auto& entry:b.nearSeamSamples)
-                nearEdgeHeights.emplace(
-                    SeamKey{entry.xQ16cm,entry.zQ16cm},
-                    entry.nearHeightCm);
+            std::map<SeamKey,render::float3> authoredNearNormals;
+            for(const auto& entry:b.nearSeamSamples) {
+                const SeamKey key{entry.xQ16cm,entry.zQ16cm};
+                nearEdgeHeights.emplace(key,entry.nearHeightCm);
+                if(entry.nearNormalValid)
+                    authoredNearNormals.emplace(key,render::normalize(
+                        render::float3{
+                            float(entry.nearSlopeXPermille)*0.001f,1.0f,
+                            float(entry.nearSlopeZPermille)*0.001f}));
+            }
             // Only polygons clipped from the two ORIGINAL source triangles
             // are emitted. Barycentric interpolation stays on each triangle's
             // surface plane, so clipping does not invent a new height seam.
@@ -310,17 +317,27 @@ inline std::unique_ptr<render::Model> makeHorizonModel(
                         const auto face=render::normalize(it->second.sum);
                         const auto [x,z,y]=key;
                         (void)y;
-                        // The seam itself can use more of the repaired
-                        // geometric normal, while interior shared vertices
-                        // stay close to their original far-grid normals.
-                        const float mix=nearEdgeHeights.contains({x,z}) ?
-                            strength : strength*0.25f;
+                        // On the X/Z seam, prefer an authored source normal
+                        // computed from the SAME immutable near triangle
+                        // field as the welded Y. Interior points still use
+                        // area-weighted geometric far-triangle normals.
+                        // Both preserve the previous no-extra-geometry path.
+                        const SeamKey seamKey{x,z};
+                        const bool seam=nearEdgeHeights.contains(seamKey);
+                        const auto source=authoredNearNormals.find(seamKey);
+                        const bool nearNormal=seam &&
+                            source!=authoredNearNormals.end();
+                        const auto target=nearNormal ? source->second : face;
+                        const float mix=seam ? strength : strength*0.25f;
                         v.nrm=render::normalize(render::float3{
-                            v.nrm.x*(1.0f-mix)+face.x*mix,
-                            v.nrm.y*(1.0f-mix)+face.y*mix,
-                            v.nrm.z*(1.0f-mix)+face.z*mix
+                            v.nrm.x*(1.0f-mix)+target.x*mix,
+                            v.nrm.y*(1.0f-mix)+target.y*mix,
+                            v.nrm.z*(1.0f-mix)+target.z*mix
                         });
-                        if(stats)++stats->smoothedNearNormals;
+                        if(stats) {
+                            ++stats->smoothedNearNormals;
+                            if(nearNormal)++stats->matchedAuthoredNearNormals;
+                        }
                     }
             }
         }
