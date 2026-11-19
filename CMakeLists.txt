@@ -2022,7 +2022,9 @@ if(AIVERSE_BUILD_STRATA)
     target_include_directories(aiverse_strata_view PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
     # Offline archive IO is independently linkable by native import/editor
     # tools without pulling the complete renderer or a gfx::Device.
-    add_library(aiverse_strata_disk STATIC engine/render/StrataDiskPages.cpp)
+    add_library(aiverse_strata_disk STATIC
+        engine/render/StrataDiskPages.cpp
+        engine/render/StrataStreamingCoordinator.cpp)
     target_link_libraries(aiverse_strata_disk PUBLIC aiverse_strata_model_adapter)
     target_include_directories(aiverse_strata_disk PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR})
