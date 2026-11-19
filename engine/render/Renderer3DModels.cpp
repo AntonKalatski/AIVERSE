@@ -795,7 +795,8 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     const bool instanced = count > 1;
     gfx::PipelineHandle ph = modelPipeline(it, phase, instanced, gpuInstances, instancePalette);
     if (!ph.valid()) return false;
-    if (!(ph == currentPipe_)) {
+    const bool pipelineChanged=!(ph==currentPipe_);
+    if (pipelineChanged) {
         dev_->setPipeline(ph); currentPipe_ = ph;
         if (phase != 0) { lights.bind(5, 9); bindTrace(10); bindSceneTextures(11, 12); }   // U5 / tex9: dynamic lights; tex10: height field (traced terrain shadows)
     }
@@ -833,6 +834,13 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         dev_->setUniforms(0, instData_.data(), instData_.size() * sizeof(float));
     const auto afterInstanceUpload = tracePreparation ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     const Material& mt = *it.mat;
+    const bool boundGi=dynamicGiEligible(it,phase,gpuInstances,instancePalette);
+    const bool boundValidity=boundGi && dynamicGiValidity_!=nullptr;
+    const bool boundCascades=boundValidity && dynamicGiFarOverlay_!=nullptr;
+    const bool boundTriple=boundCascades && dynamicGiThirdOverlay_!=nullptr &&
+                            dev_->info().backend==gfx::Backend::Metal;
+    const int graphBaseSlot=giGraphTextureStart(boundGi,boundValidity,
+                                                boundCascades,boundTriple);
     // GI draws rebind tex7 / tex8 (lightmap, mask or probes): restore the model's own textures after them
     const bool newModel = !lastItem_ || lastItem_->model != it.model || (phase != 0 && lastItem_->gi != 0);
     // As in a state-oriented render batch, Material* identity does not decide
@@ -865,7 +873,10 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
         }
         dev_->setUniforms(2, &mu, sizeof mu);
     }
-    if (materialStateChanged || newModel) {
+    // A pipeline switch can change the Shader Graph's texture base (tex13
+    // without GI versus tex14..17 after GI). Rebind even when Material*
+    // identity and model geometry have not changed.
+    if (materialStateChanged || newModel || (pipelineChanged && mt.shaderGraph)) {
         auto tex = [&](int idx, gfx::TextureHandle def) {
             return idx >= 0 && idx < int(it.model->images.size()) && it.model->images[size_t(idx)].tex.valid() ? it.model->images[size_t(idx)].tex : def;
         };
