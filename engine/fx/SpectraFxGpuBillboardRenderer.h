@@ -12,6 +12,7 @@
 #include "../gfx/Gfx.h"
 #include "../render/Math3D.h"
 #include "SpectraFxGpuEvolution.h"
+#include "SpectraFxGpuCompaction.h"
 
 namespace aiverse::fx {
 namespace gpu_render_shaders {
@@ -25,12 +26,18 @@ layout(std140) uniform U0 {
     vec4 u_meta;
 };
 uniform highp sampler2D tex0;
+uniform highp sampler2D tex1;
 out mediump vec2 v_uv;
 out lowp vec4 v_color;
 void main() {
     int instance=gl_InstanceID;
     int width=int(u_meta.x);
-    vec4 p=texelFetch(tex0,ivec2(instance%width,instance/width),0);
+    // GPU compaction maps packed instance indices to live particle slots.
+    // The fallback uses the original full-capacity slot ID.
+    int slot=u_meta.y>0.5
+        ? int(texelFetch(tex1,ivec2(instance%width,instance/width),0).x+0.5)
+        : instance;
+    vec4 p=texelFetch(tex0,ivec2(slot%width,slot/width),0);
     vec3 world=p.xyz+(u_cameraRight.xyz*a_corner.x+
                        u_cameraUp.xyz*a_corner.y)*u_colorSize.w;
     gl_Position=u_viewProj*vec4(world,1.0);
@@ -64,9 +71,13 @@ struct VOut { float4 position [[position]]; float2 uv; half4 color; };
 vertex VOut vs_main(VIn in [[stage_in]],
                     uint instance [[instance_id]],
                     constant U0& u [[buffer(1)]],
-                    texture2d<float> tex0 [[texture(0)]]) {
+                    texture2d<float> tex0 [[texture(0)]],
+                    texture2d<float> tex1 [[texture(1)]]) {
     const uint width=uint(u.meta.x);
-    const float4 p=tex0.read(uint2(instance%width,instance/width));
+    const uint slot=u.meta.y>0.5f
+        ? uint(tex1.read(uint2(instance%width,instance/width)).x+0.5f)
+        : instance;
+    const float4 p=tex0.read(uint2(slot%width,slot/width));
     const float3 world=p.xyz+(u.cameraRight.xyz*in.corner.x+
                                u.cameraUp.xyz*in.corner.y)*u.colorSize.w;
     VOut o;
@@ -102,7 +113,7 @@ public:
         shader.glslVertex=gpu_render_shaders::kVS;
         shader.glslFragment=gpu_render_shaders::kFS;
         shader.msl=gpu_render_shaders::kMetal;
-        shader.textureSlots=1;
+        shader.textureSlots=2;
         shader.uniformSlots=1;
         shader.label="SpectraFX GPU billboards";
         vertexShader_=device.createShader(shader);
@@ -145,7 +156,8 @@ public:
     // and up (normalized by caller). No CPU readback of positions.
     bool draw(const SpectraFxGpuEvolution& particles,
               const render::mat4& viewProj,render::float3 cameraRight,
-              render::float3 cameraUp,const Appearance& appearance) {
+              render::float3 cameraUp,const Appearance& appearance,
+              const SpectraFxGpuCompaction* compaction=nullptr) {
         if(!ready()||!particles.ready()||!particles.count()||
            !particles.positionTexture().valid()) return false;
         auto finite=[](render::float3 v) {
@@ -167,12 +179,27 @@ public:
         u.cameraUp={cameraUp.x,cameraUp.y,cameraUp.z,0};
         u.colorSize={appearance.color.x,appearance.color.y,
                      appearance.color.z,appearance.radius};
-        u.metadata={float(SpectraFxGpuEvolution::kTextureWidth),0,0,0};
+        const bool compacted=compaction && compaction->preparedFor(particles);
+        u.metadata={float(SpectraFxGpuEvolution::kTextureWidth),
+                    compacted?1.0f:0.0f,0,0};
         device_->setPipeline(appearance.additive?additive_:alpha_);
         device_->setVertexBuffer(vertex_);
         device_->setIndexBuffer(index_);
         device_->setTexture(0,particles.positionTexture());
+        // Bind tex1 even in legacy draw mode: native shader resources
+        // are declared unconditionally, while the selection branch is not.
+        device_->setTexture(1,compacted?compaction->denseIndexTexture()
+                                   :particles.positionTexture());
         device_->setUniforms(0,&u,sizeof(u));
+        if(compacted && device_->drawIndexedGpuIndirect(
+                          compaction->indirectArguments(),0)) return true;
+        // Failed/unsupported Metal indirect submission: restore original
+        // full-capacity indexing before issuing the existing safe draw.
+        if(compacted) {
+            u.metadata.y=0;
+            device_->setTexture(1,particles.positionTexture());
+            device_->setUniforms(0,&u,sizeof(u));
+        }
         device_->drawIndexed(6,0,0,particles.count());
         return true;
     }
