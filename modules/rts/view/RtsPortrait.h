@@ -28,7 +28,8 @@ public:
     // material override vectors, node assignments, variant and transform.
     // No RtsView, gameplay ECS, second animation evaluation or file import.
     bool renderAppearance(const render::ModelDraw& draw,
-                          const render::RTSCamera& camera);
+                          const render::RTSCamera& camera,
+                          render::float4 background={0.16f,0.18f,0.22f,1.f});
     // Borrowed resource-owner view for cross-host GPU accounting.
     const render::ModelResourceCache& modelResources() const noexcept {
         return previewModels_;
