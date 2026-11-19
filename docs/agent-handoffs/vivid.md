@@ -324,3 +324,12 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
     ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^vivid_metal_gpu$'
   ```
   If stale generation persists: substitute a *new* `-B ../AIVERSE-vivid/build/vivid-metal-clean` for both configure/build/CTest paths. Run the 8-test `^(vivid_|motionweave_api$)` selection only after building the corresponding targets. Append exact results to this handoff.
+
+## User macOS validation — 2026-11-19 — real Metal kernel PASS
+
+- **Revision tested:** `424e8382144511c1b453ce9d3234cc813734356c` confirmed explicitly by the user's `git switch --detach` output from `origin/feature/vivid-digital-humans`.
+- **Actual user-provided evidence:** CMake configured in 5.7 seconds and generated in 1.1 seconds; `aiverse_vivid_gpu` and Objective-C++ `aiverse_vivid_metal_gpu_tests` compiled and linked. `ctest -R '^vivid_metal_gpu$'`: `vivid_metal_gpu` **Passed** (0.66 s), 1/1 tests passed, 0 failed, total real time **0.68 s**. No compiler note/warning/error diagnostics appeared in the supplied output.
+- **What this verifies:** native Apple Metal compiler and execution accepted `kVividMorphMSL`, with 160 sparse targets, 137 vertices, three dispatch modes and readback comparison to `SparseMorphLibrary::evaluateGather`. This was executed by the user on macOS, not independently by this agent.
+- **Still NOT RUN / NOT VERIFIED:** real `gfx::Device` RHI-backed dispatch/readback; gfx vertex stream + MotionWeave skinning; visual render, shadows, memory/latency benchmark, Vulkan/GL; full merged 8-test suite at revision `424e838` (previous VIVID+MotionWeave 7/7 were separately confirmed on earlier commit).
+- **API/persistence:** no production code changes from this validation checkpoint; `main` and MotionWeave source branch untouched.
+- **Next exact step:** build isolated macOS real `gfx::Device` lifecycle/dispatch/readback parity test on new source commit, record exact results and warnings. Do not treat direct native Metal parity as automatically proving RHI integration.
