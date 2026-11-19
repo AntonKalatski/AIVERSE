@@ -2690,3 +2690,19 @@ Added owner-thread `requestedCell_` updated after camera hysteresis chooses `des
 **Tester acceptance:** initial/no observer, active same cell, camera hysteresis, cross-cell streaming, teleport, GPU LRU hit, transition reversal, source revision invalidation, empty model, invalid camera and shutdown. Check that requested pending does not masquerade as `preparing>0`; verify cache hit restores active cell and no stale coordinate after shutdown.
 
 **Next implementation:** refine pending semantics for intentionally empty regions with explicit `activeRegionResolved` if needed; update public TerraWeave docs/skill, then separate agent executes full tests and benchmarks.
+
+## Stage 22h — resolved empty Horizon region status (SOURCE COMMITTED; TESTS NOT RUN)
+
+**Branch:** `feature/terraweave`, PR #24 Draft.
+**Commit:** `f7d9b14ed159ab891ad8cbb8fa060687b1b3a0ab`.
+**Changed:** `engine/render/TerraWeaveHorizonScene.h`.
+
+`HorizonRuntimeStats` now exposes `activeRegionResolved` and `activeRegionEmpty` alongside `activeRegionPresent`. `activeRegionResolved` is true when `activeCell_` is set, including a successfully published empty bake; `activeRegionEmpty` is true when that resolved cell has no GPU model. `staleProxy` now detects an outdated active cell revision even for resolved empty cells. `requestedRegionPending` is true only when the requested cell is unresolved, differs from active cell, or has an outdated source revision. Active cell coordinates are published for resolved empty cells as well. No extra GPU allocations, TWH8 archive changes, ECS changes or draw calls.
+
+**Semantics:** `activeRegionPresent` still means a drawable GPU model; `activeRegionResolved` means accepted region result (possibly empty). `requestedRegionPending` is not synonymous with an executing worker; consult stream `preparing` separately. `shutdown` resets both cells, preventing a false resolved status. No new persistent state was introduced; the existing active cell/revision already tracks accepted empty bakes.
+
+**Actual verification:** GitHub source commit success only. No CMake/compiler, CTest, editor/game launch, GPU screenshots or benchmarks. Keep PR Draft.
+
+**Tester acceptance:** first update before worker completion, successful empty bake, repeated same empty region (no requeue), camera move to nonempty cell, source revision invalidation of empty cell, GPU LRU restore, transition reversal and shutdown. Verify pending=false for resolved empty same-revision cell, and pending=true for requested different/unresolved or stale cell.
+
+**Next:** update public TERRAWEAVE.md and skill docs to explain diagnostics, then independent test agent performs CMake/CTest and runtime validation.
