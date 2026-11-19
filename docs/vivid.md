@@ -745,3 +745,12 @@ Source-level regression assertions cover symmetric brush influence, bounded fall
 The implementation preserves the existing single source skeleton evaluator and stable model-global vertex IDs. Limitations remain significant: GPU facial morph displacement and cloth deformation are not represented in CPU picking, and this is not a GPU depth/object-ID selection pass. Selected skinned mesh must have exactly one owning Model node and consistent primitive palette mappings; ambiguous instancing/shared seams fail closed. The current CPU scratch surface is recomputed while painting/heatmap is active, so high-poly acceleration remains an optimization task.
 
 Tests for translated-joint picking, invalid-pose staging, multi-dab undo history and cancelled drag rollback have been added as source only. **No C++ build, CTest, GUI or GPU parity run has been executed.** Exact commits and next-agent handoff are in `docs/agent-handoffs/vivid.md` Stage 7Q.
+
+
+## Stage 7R — authored skin-weight LOD transfer and palette seam diagnostics (2026-11-20)
+
+`SkinWeightLodTransfer` now projects source skinned weights to existing authored LOD mesh vertices using the same validated barycentric `MorphLodMapping` used for facial morph authoring. It resolves source joint palette indices into stable skeleton node IDs, blends up to four incoming per-vertex weights at each projected source triangle, then maps the strongest four back to the destination LOD joint palette and normalizes them to exact U8 sum 255. It validates the mapping's source geometry fingerprint and target vertex set, stages all updated `ModelVertex` data and only commits after full validation. The Creator uses this before GPU upload for LODs whose source/target meshes are explicitly recorded in the imported package.
+
+`SkinSeamAnalysis` provides non-mutating diagnostics of shared global vertices that resolve to incompatible bone palettes across skinned primitives. **Automatic seam splitting remains open**, since cloning shared vertices requires a coordinated update of geometry IDs, morph CSR, multiple LOD mappings and primitive ranges. No speculative vertex duplication is attempted.
+
+Source regression cases cover reversed LOD palettes, barycentric weights, U8 sum-255, invalid LOD palette rollback and seam-conflict detection. **No C++ compilation, CTest, native GPU skinning comparison or Creator visual acceptance has been performed.** Exact commits and next-agent handoff are recorded in `docs/agent-handoffs/vivid.md` Stage 7R.
