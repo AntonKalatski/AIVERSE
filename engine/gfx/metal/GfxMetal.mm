@@ -93,7 +93,15 @@ public:
         if(!barrier)return false;
         [barrier commit];
         [barrier waitUntilCompleted];
-        return barrier.status==MTLCommandBufferStatusCompleted;
+        if(barrier.status!=MTLCommandBufferStatusCompleted)return false;
+        // A successfully completed queue-tail marker proves that all older
+        // retirement markers have finished. Their completion-handler atomics
+        // can still be waiting for callback dispatch on another thread.
+        for(auto& [token,state]:retirementTokens_) {
+            (void)token;
+            state->store(1);
+        }
+        return true;
     }
     uint64_t beginResourceRetirement() override {
         // This marker is ordered after previously committed GPU work, but
