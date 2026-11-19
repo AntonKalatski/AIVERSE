@@ -65,6 +65,16 @@ public:
                  const render::RTSCamera& camera,const render::mat4& viewProj,
                  int width,int height,float dt,float alpha=1.f) {
         if(frameOpen_)return false;
+        ++ownerFrameOrdinal_;
+        // Optional bounded reset retry service, only in the native owner's
+        // already-open graphics frame and before active GPU encoders.
+        if(recovery_.inspect().next==
+           spectra::PoolRecoveryAction::RetryResetInGraphicsFrame) {
+            capture_.cancel();
+            captureMailbox_.clearFromHost();
+            activeMailboxSequence_=0;
+            (void)recovery_.serviceQueuedResetAtSafeFrame(ownerFrameOrdinal_);
+        }
         // Metal delivers previous-frame readback callbacks at Device.beginFrame.
         // Poll BEFORE mutating the next GPU revision. While a capture remains
         // queued/in-flight/ready we intentionally keep VFX presentation frozen.
@@ -215,7 +225,12 @@ public:
         return capture_.status();
     }
     bool takeGpuCheckpoint(std::vector<uint8_t>& bytes) {
-        return capture_.takeReady(bytes); // explicit sensitive RAW .spfx bytes
+        const bool taken=capture_.takeReady(bytes);
+        if(taken && activeMailboxSequence_) {
+            captureMailbox_.clearFromHost();
+            activeMailboxSequence_=0;
+        }
+        return taken; // explicit sensitive RAW .spfx bytes
     }
     bool takeSafeGpuDiagnosticReport(
         std::string& json,spectra::GpuDiagnosticReportPrivacy privacy={}) {
@@ -224,6 +239,10 @@ public:
         const auto inspected=spectra::inspectGpuCheckpointDiagnostic(bytes);
         if(!inspected.structurallyValid())return false;
         json=spectra::gpuDiagnosticReportJson(inspected,privacy);
+        if(activeMailboxSequence_) {
+            captureMailbox_.clearFromHost();
+            activeMailboxSequence_=0;
+        }
         return true; // aggregate JSON; no raw VM or per-particle coordinates
     }
     void cancelGpuCheckpoint() {
@@ -268,6 +287,7 @@ private:
     spectra::GpuPoolCaptureHost capture_;
     spectra::GpuCaptureRequestMailbox captureMailbox_;
     uint64_t activeMailboxSequence_=0;
+    uint64_t ownerFrameOrdinal_=0; // presentation frames, never gameplay ticks
     bool frameOpen_=false;
 };
 
