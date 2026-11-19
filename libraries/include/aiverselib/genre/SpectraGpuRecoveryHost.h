@@ -6,6 +6,7 @@
 
 #include "SpectraGpuAttachmentEcsAdapter.h"
 #include "SpectraEcsRenderPose.h"
+#include <algorithm>
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -22,6 +23,9 @@ enum class PoolRecoveryAction : uint8_t {
     None, InitPool, RetryResetInGraphicsFrame, RecreateGraphicsDevice,
     InspectFailure
 };
+enum class PoolRecoveryServiceResult : uint8_t {
+    NoWork, Deferred, ResetSucceeded, ResetFailed, NeedsNewDevice
+};
 struct PoolRecoveryEvent {
     PoolRecoveryPhase phase=PoolRecoveryPhase::Uninitialized;
     PoolRecoveryAction next=PoolRecoveryAction::InitPool;
@@ -31,6 +35,8 @@ struct PoolRecoveryEvent {
     uint64_t hostResetRequests=0, deviceReplacementAttempts=0;
     bool explicitResetPending=false;
     bool recoveryCatalogRetained=false;
+    uint32_t consecutiveResetFailures=0;
+    uint64_t retryNotBeforeOwnerFrame=0;
     bool deviceHealthKnown=false, deviceHealthy=false;
     bool presentationBlocked=false;
     std::string reason;
@@ -72,6 +78,8 @@ public:
             return false;
         }
         explicitResetPending_=true;
+        consecutiveResetFailures_=0;
+        retryNotBeforeOwnerFrame_=0;
         resetPurpose_=purpose.substr(0,128);
         ++resetRequestCount_;
         reason_.clear();
@@ -79,6 +87,40 @@ public:
         return true;
     }
     bool hasQueuedReset() const {return explicitResetPending_;}
+    // Optional bounded retry pump for the native presentation owner. This
+    // must be called AFTER gfx::Device::beginFrame, BEFORE GPU encoders.
+    // ownerFrameOrdinal counts local host frames, not wall time, GPU serials
+    // or ECS ticks. It never spins/sleeps/starts asynchronous work.
+    PoolRecoveryServiceResult serviceQueuedResetAtSafeFrame(
+        uint64_t ownerFrameOrdinal) {
+        const PoolRecoveryEvent before=inspect();
+        if(before.next==PoolRecoveryAction::RecreateGraphicsDevice)
+            return PoolRecoveryServiceResult::NeedsNewDevice;
+        if(before.next!=PoolRecoveryAction::RetryResetInGraphicsFrame)
+            return PoolRecoveryServiceResult::NoWork;
+        if(ownerFrameOrdinal<retryNotBeforeOwnerFrame_)
+            return PoolRecoveryServiceResult::Deferred;
+        if(retryPresentationReset()) {
+            consecutiveResetFailures_=0;
+            retryNotBeforeOwnerFrame_=0;
+            poll();
+            return PoolRecoveryServiceResult::ResetSucceeded;
+        }
+        if(inspect().next==PoolRecoveryAction::RecreateGraphicsDevice)
+            return PoolRecoveryServiceResult::NeedsNewDevice;
+        // Exponential retry spacing avoids issuing failing Metal reset
+        // blits every frame. Max 32 host frames between safe-point attempts.
+        consecutiveResetFailures_=std::min<uint32_t>(
+            consecutiveResetFailures_+1,16u);
+        const uint32_t shift=std::min(consecutiveResetFailures_,5u);
+        const uint64_t delay=uint64_t(1)<<shift;
+        retryNotBeforeOwnerFrame_=
+            ownerFrameOrdinal>UINT64_MAX-delay?UINT64_MAX:
+            ownerFrameOrdinal+delay;
+        poll();
+        return PoolRecoveryServiceResult::ResetFailed;
+    }
+
 
 
     // Retry at a graphics safe point AFTER Device::beginFrame (Metal has an
@@ -150,6 +192,8 @@ public:
         }
         recoveryRecipe_.reset();
         explicitResetPending_=false;
+        consecutiveResetFailures_=0;
+        retryNotBeforeOwnerFrame_=0;
         resetPurpose_.clear();
         reason_.clear();
         poll();
@@ -162,6 +206,8 @@ public:
         out.deviceReplacementAttempts=deviceReplacementAttempts_;
         out.explicitResetPending=explicitResetPending_;
         out.recoveryCatalogRetained=bool(recoveryRecipe_);
+        out.consecutiveResetFailures=consecutiveResetFailures_;
+        out.retryNotBeforeOwnerFrame=retryNotBeforeOwnerFrame_;
         if(!pool_.ready()) {
             out.phase=recoveryRecipe_?
                 PoolRecoveryPhase::DeviceRecreationRequired:
@@ -217,6 +263,8 @@ private:
             a.deviceReplacementAttempts!=b.deviceReplacementAttempts ||
             a.explicitResetPending!=b.explicitResetPending ||
             a.recoveryCatalogRetained!=b.recoveryCatalogRetained ||
+            a.consecutiveResetFailures!=b.consecutiveResetFailures ||
+            a.retryNotBeforeOwnerFrame!=b.retryNotBeforeOwnerFrame ||
             a.deviceHealthKnown!=b.deviceHealthKnown ||
             a.deviceHealthy!=b.deviceHealthy ||
             a.presentationBlocked!=b.presentationBlocked ||
@@ -233,6 +281,8 @@ private:
     bool explicitResetPending_=false;
     uint64_t transitionSequence_=0,resetRequestCount_=0;
     uint64_t deviceReplacementAttempts_=0;
+    uint32_t consecutiveResetFailures_=0;
+    uint64_t retryNotBeforeOwnerFrame_=0;
     std::string resetPurpose_;
 };
 
