@@ -11763,3 +11763,97 @@ evidence of an immediate universal
 production-ready Metal ICB.
 PR #21 remains Draft; all experimental
 GPU ICB defaults remain OFF.
+
+## Stage 10CE — one-shot shell integrity fix and Mac syntax preflight (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`, Draft PR #21.
+**Relevant prior source:** Stage 10CD full nonuniform guttered
+production `Renderer3D` Shader Graph + disk VT + Metal GPU
+ICB fixture `tests/render/metal_renderer_graph_vt_gutter_gpu.cpp`,
+source `1c4a3be68f829775c5af4894c1e15f1d265a08e0`,
+CMake gate `ed9a707e0f48102bd60c1b0640fd408cfb384325`.
+The one-shot runner is in
+`tools/texture-rhi-final-verify.sh`.
+
+**Specific defect identified before user execution:**
+after a first optional Python VT pack / shader syntax
+test-selector edit, a remote GitHub refetch revealed
+that the runner unexpectedly contained 333 lines,
+duplicated its entire GPU-build/test block and
+had an unterminated single-quoted optional-test
+regex. This was a script editing error, NOT a
+Metal or texture runtime failure. No Mac test
+was invoked on the corrupted source.
+
+**Corrective code commit:**
+`6a6bb9f2a18cb494a93d44eb232907c0df2ad8fe`.
+Regenerated the shell script from original clean
+commit `04e9612189b9e10e4a218bce326af405bc8ddd37`
+and replaced the entire optional-test condition
+in one bounded source edit (including
+`virtual_texture_pack` and optional
+`virtual_texture_feedback_shaders/msl`).
+The repaired script was fetched back from
+the feature branch; it contains **142 lines**,
+one optional-test CTest block, one `--full-engine`
+block, one `gpu-build` block and one sequential
+GPU tests loop. Its documented required success
+markers for all seven tests are intact.
+No production shader, RHI, streamer or test
+C++ file changed in this bounded repair.
+
+**Documentation/skill commits:**
+`1dbca3c2306482d80e5c1c5b5bf1c752166b0285`
+added Stage 10CE integrity/repro instructions in
+`docs/texture-rhi.md`;
+`81348a29171e4bc5fbfe14e9c29c5edec3e1f425`
+updated `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+This is the separate append-only handoff commit
+for the repair stage.
+
+**Actual verification:** connector-side remote script
+refetch and block-count/expected-source inspection
+only. A model execution container could not access
+the repo over DNS/network to run local Bash syntax
+or CMake; the user's macOS shell/GPU has not run
+the updated one-shot script. The user-provided
+older Stage 10BT/10BV/10BX/10CA/10CC PASS
+logs remain separate evidence of their original
+source revisions; the new Stage 10CD source and
+final runner remain **UNTESTED** on native hardware.
+
+**Next exact user/agent command** (only the isolated
+Mac Studio texture worktree, primary AIVERSE
+has an unrelated unresolved rebase):
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+bash -n tools/texture-rhi-final-verify.sh
+bash tools/texture-rhi-final-verify.sh --jobs 4
+# Add --full-engine to also compile/test the full
+# nonexperimental engine, not only the texture domain.
+```
+
+**Pass gate:** Bash syntax preflight 0; the
+complete runner compiles and runs the portable
+21-test texture suite plus any registered
+packing/feedback checks, builds seven distinct
+native Metal GPU test targets and runs them
+serially. All actual CTest codes and required
+native markers must PASS, especially
+`PASS: production Renderer3D Shader Graph
+nonuniform guttered disk VT mixed Metal GPU
+ICB seam parity`. A successful suite emits
+`build/texture-final-logs/acceptance.txt`
+with the current feature SHA and `result=PASS`.
+If syntax, compilation, GPU, ICB or independent
+oracle fails, inspect the first actual log,
+correct that code in a new commit and append
+a further handoff. Do not skip or silently
+mark broken tests green.
+Keep experimental ICB OFF by default and
+PR #21 Draft pending cross-platform/driver
+and performance validation.
