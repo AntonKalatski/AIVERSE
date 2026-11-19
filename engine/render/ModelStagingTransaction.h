@@ -19,9 +19,11 @@ public:
                             RenderDeviceLifetime::Lease lease={})
         :device_(device),resources_(resources),
          imageRollback_(imageRollback),lease_(std::move(lease)) {
-        if(lease_.device() && !lease_.validFor(device_))
-            throw std::logic_error("Model staging GPU device generation expired");
-        resources_.bindResourceDevice(device_);
+        if(lease_.device()) {
+            if(!lease_.validFor(device_))
+                throw std::logic_error("Model staging GPU device generation expired");
+            resources_.bindResourceDevice(device_,lease_);
+        }else resources_.bindResourceDevice(device_);
     }
     ModelStagingTransaction(const ModelStagingTransaction&)=delete;
     ModelStagingTransaction& operator=(const ModelStagingTransaction&)=delete;
