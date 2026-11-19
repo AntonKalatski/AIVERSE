@@ -8234,3 +8234,41 @@ run native Metal shader compilation and two-material
 same-camera GPU vs CPU capture tests, with a normal
 map and different sampler states. Do not merge until
 real hardware validation passes.
+
+
+## Stage 10AH — per-command Shader Graph source identities (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / #21 Draft.
+**Source commits:**
+- `a05cb086e5252beabd80da04fa9cc89296405e6f` in
+  `engine/gfx/Gfx.h`: graphTextureCount+up to four exact graph
+  source TextureHandles in `GpuIcbVirtualMaterial` and
+  `GpuIcbPbrMaterial`. Bounded validation, no sparse slots.
+- `9a08dc8d87c009f89b5c75778238bd2cf5e73ad4` in
+  `engine/gfx/metal/GfxMetal.mm`: native preparation validates
+  and snapshots source `Texture2D`, sampler state and original
+  handles per command. The no-VT RHI entrypoint forwards the
+  same fields; resource pool now stores the native graph pair arrays.
+
+**Documentation commits:** `64d68c7920eaeeb2d6bf3bbe49431c1b1c18f6c6` in `docs/texture-rhi.md`
+and `58d816cb83bcc2d9f7e4581596334cac5a95644a` in `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Architecture:** descriptive CPU/native-resource staging only.
+Stage 10AH does not yet expose graph resources to GPU fragment MSL,
+does not loosen Renderer3D eligibility, and does not enable a
+graph pipeline in ICB. The existing genre-independent ResourceTable
+tracks graph handles in exact equality and hash. RHI and native
+resource limits remain bounded to four graph sources, with samples
+limited by existing graph compiler policy.
+
+**Actual checks:** GitHub file inspection, source commits accepted.
+**C++/Objective-C++ compilation NOT RUN, CTest NOT RUN,
+MSL compilation NOT RUN, GPU execution NOT RUN.** Do not
+enable any graph ICB by default or imply visual correctness.
+
+**Next:** create a distinct conditional AIVERSE_SG_ICB_GRAPH
+Metal fragment argument buffer declaration for source slots 13..16
+and variable VT atlas/table slots 13+N / 14+N; preserve the
+legacy non-graph ICB layout. Source injection must hide direct
+graph fragment arguments in an ICB variant and keep constexpr
+sampler 16. Only then permit graph ICB shader preparation.
