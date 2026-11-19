@@ -647,18 +647,21 @@ gfx::PipelineHandle Prisma::program(Prog p) {
         {prisma::kExposureAdapt, nullptr, 3, "prisma exposure adapt"},
         {prisma::kMotionVectors, nullptr, 7, "prisma camera motion vectors"},
         {prisma::kMotionBlur, prisma::kMotionBlurHelpers, 15, "prisma shutter motion blur"},
+        {prisma::kTemporalResolve, prisma::kTemporalResolveHelpers, 31, "prisma HDR temporal resolve"},
     };
     const Def& d = defs[p];
     const uint32_t sampledDepth = p == kMotionVectors || p == kDepthOfField
-        ? (1u << 1) : (p == kMotionBlur ? (1u << 2) : 0u);
-    Built b = (p == kMotionVectors)
+        ? (1u << 1) : (p == kMotionBlur ? (1u << 2) :
+            (p == kTemporalResolve ? (1u << 3) : 0u));
+    Built b = (p == kMotionVectors || p == kTemporalResolve)
         ? buildProgram(kMotionFields, 11, d.tex, "", d.helpers, d.body, sampledDepth)
         : p == kMotionBlur
             ? buildProgram(kMotionBlurFields, 4, d.tex, "", d.helpers, d.body, sampledDepth)
             : buildProgram(kSimpleFields, 3, d.tex, "", d.helpers, d.body, sampledDepth);
     gfx::ShaderDesc sd;
     sd.glslVertex = b.vs.c_str(); sd.glslFragment = b.fs.c_str(); sd.msl = b.msl.c_str();
-    sd.textureSlots = p == kMotionBlur ? 4 : (p == kMotionVectors ? 3 : 2);
+    sd.textureSlots = p == kTemporalResolve ? 5 :
+        (p == kMotionBlur ? 4 : (p == kMotionVectors ? 3 : 2));
     sd.uniformSlots = 1; sd.label = d.label;
     shaders_[p] = dev_->createShader(sd);
     if (!shaders_[p].valid()) {
