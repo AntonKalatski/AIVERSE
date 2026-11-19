@@ -7,6 +7,7 @@
 #include "GiDynamicProbeTexture.h"
 #include "GiClipmapValidityTexture.h"
 #include "GiTextureBudget.h"
+#include "GiPresentationPolicy.h"
 #include "Animation.h"
 #include "ModelVisibility.h"
 #include "ModelLodTransition.h"
@@ -155,7 +156,9 @@ bool Renderer3D::dynamicGiEligible(const ModelItem& it, int phase,
              dynamicGiValidity_!=nullptr,dynamicGiFarOverlay_!=nullptr,
              dynamicGiThirdOverlay_!=nullptr) ||
         !dynamicGiOverlay_->texture().valid() || gpuInstances ||
-        instancePalette || !hdrFrame_ || matQuality_ == MaterialQuality::Low ||
+        instancePalette ||
+        !giDynamicColorPassAllowed(hdrFrame_,dynamicGiOverlay_->computeWritable()) ||
+        matQuality_ == MaterialQuality::Low ||
         it.mat->shading == ShadingModel::Unlit)
         return false;
     const auto& program = it.mat->shaderGraph;
