@@ -83,6 +83,9 @@ public:
 
     const DeviceInfo& info() const override { return info_; }
     uint64_t frameSerial() const override { return frame_; }
+    uint64_t completedFrameSerial() const override {
+        return completedFrameSerial_->load(std::memory_order_acquire);
+    }
     bool supports(PixelFormat f) const override {
         bool apple = false, bc = false;
 #if TARGET_OS_IPHONE
@@ -130,6 +133,29 @@ public:
         return {buffers_.add(b)};
     }
     id<MTLBuffer> current(MTBuffer& b) { return b.bufs[b.count == 1 ? 0 : int(frame_ % kFramesInFlight)]; }
+    bool updateStorageBufferChecked(BufferHandle h,const void* data,
+                                    size_t size,size_t offset=0) override {
+        auto* b=buffers_.get(h.id);
+        if(!b || !b->storage || !cmd_ || enc_ || compute_ ||
+           gpuIcbEncoder_ || !gpuHealthy_->load() || !data || size==0 ||
+           offset>b->size || size>b->size-offset)return false;
+        id<MTLBuffer> upload=[device_ newBufferWithBytes:data length:size
+                                               options:MTLResourceStorageModeShared];
+        if(!upload) {
+            error_="checked SpectraFX storage upload allocation failed";
+            gpuHealthy_->store(false);
+            return false;
+        }
+        id<MTLBlitCommandEncoder> blit=[cmd_ blitCommandEncoder];
+        if(!blit) {
+            error_="checked SpectraFX storage upload blit encoder unavailable";
+            return false;
+        }
+        [blit copyFromBuffer:upload sourceOffset:0
+                   toBuffer:b->bufs[0] destinationOffset:offset size:size];
+        [blit endEncoding];
+        return true;
+    }
     void updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset) override {
         auto* b = buffers_.get(h.id);
         if (!b) return;
@@ -826,6 +852,18 @@ public:
                 c->ready = true; // read on the main thread in the next beginFrame (after the semaphore)
             }];
         }
+        // Release renderer physical slots only after this ordered command
+        // buffer has finished successfully, never when it was merely encoded.
+        auto completedSerial=completedFrameSerial_;
+        const uint64_t submittedSerial=frame_;
+        [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> finished) {
+            if(finished.status!=MTLCommandBufferStatusCompleted)return;
+            uint64_t observed=completedSerial->load(std::memory_order_relaxed);
+            while(observed<submittedSerial &&
+                  !completedSerial->compare_exchange_weak(
+                      observed,submittedSerial,
+                      std::memory_order_release,std::memory_order_relaxed)) {}
+        }];
         if (drawable_) [cmd_ presentDrawable:drawable_];
         [cmd_ commit];
         cmd_ = nil;
@@ -1525,6 +1563,8 @@ private:
     Pool<id<MTLComputePipelineState>> computes_;
     std::shared_ptr<std::atomic<bool>> gpuHealthy_=std::make_shared<std::atomic<bool>>(true);
     std::shared_ptr<std::atomic<double>> gpuMs_=std::make_shared<std::atomic<double>>(0);
+    std::shared_ptr<std::atomic<uint64_t>> completedFrameSerial_=
+        std::make_shared<std::atomic<uint64_t>>(0);
     id<CAMetalDrawable> drawable_;
     id<MTLTexture> depth_;
     dispatch_semaphore_t frameSemaphore_;
