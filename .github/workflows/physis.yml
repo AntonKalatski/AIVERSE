@@ -26,6 +26,39 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Decoupled journal security regression: requires only a C++20 compiler.
+  # A failure in engine/third-party configuration must not hide these tests.
+  physis-journal-standalone:
+    name: PHYSIS journal standalone (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure independent PHYSIS journal tests
+        shell: bash
+        run: cmake -S tests/physis_journal_standalone -B build/physis-journal-standalone -DCMAKE_BUILD_TYPE=Debug
+      - name: Build independent PHYSIS journal tests
+        shell: bash
+        run: |
+          set -o pipefail
+          cmake --build build/physis-journal-standalone --parallel 2 2>&1 | tee build/physis-journal-standalone/build.log
+      - name: CTest independent PHYSIS journal
+        shell: bash
+        run: ctest --test-dir build/physis-journal-standalone --output-on-failure
+      - name: Upload independent test logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: physis-journal-standalone-${{ matrix.os }}
+          path: |
+            build/physis-journal-standalone/build.log
+            build/physis-journal-standalone/Testing/
+          if-no-files-found: ignore
+
   physis-native:
     name: PHYSIS CPU and optional Box3D (${{ matrix.os }})
     strategy:
