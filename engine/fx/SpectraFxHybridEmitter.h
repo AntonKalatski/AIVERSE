@@ -273,6 +273,11 @@ public:
     const SpectraFxGpuImpactFeedback::Stats& impactStats() const {
         return impactFeedback_.stats();
     }
+    // On Stop/Kill/rollback, invalidate callbacks immediately while
+    // retaining the underlying Metal storage for safe frame retirement.
+    // Callback weak ownership + epoch prevents a delayed GPU buffer read
+    // from publishing an impact after its emitter leaves the active scene.
+    void invalidateGpuImpacts() { impactFeedback_.reset(); }
 
     // GPU only, inside the scene render pass after updateGpu completed.
     bool renderGpu(const render::mat4& viewProj,render::float3 cameraRight,

@@ -669,6 +669,9 @@ private:
             emitter->stop(killCpu);
             return;
         }
+        // Retired emitters cannot emit callbacks into a new presentation
+        // epoch even while their GPU storage survives in-flight frames.
+        emitter->invalidateGpuImpacts();
         if(emitter->cpuActive()) emitter->stopCpuOnly(killCpu);
         const auto slots=emitter->config().backend.particles;
         retiringGpuSlots_+=slots;

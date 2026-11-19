@@ -38,6 +38,10 @@ void spectraFxCompileSmoke() {
     SpectraFxGpuLodSettings lod;
     SpectraFxHybridEmitter::Config emitter;
     SpectraFxGpuRouteAsset::Routes routes;
+    // Verify the render-only callback invalidation API is exposed to native
+    // hosts without an Editor or genre module (no RHI call is made here).
+    auto cancelImpacts=&SpectraFxHybridEmitter::invalidateGpuImpacts;
+    (void)cancelImpacts;
     (void)inbox;
     (void)governor;
     (void)lod;
