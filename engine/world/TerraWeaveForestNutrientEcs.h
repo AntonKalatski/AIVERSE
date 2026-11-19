@@ -111,7 +111,10 @@ inline ForestNutrientCycleOutcome advanceForestNutrientCycleEcs(
                 Fixed::fromRatio(z,100)});
             if(resolved.found && resolved.submerged){
                 result.submergedPermille=1000;
-                result.waterBodyKey=resolved.body.packed();
+                // Flood-only samples without a canonical body must not invent
+                // a common transport path across isolated pools.
+                result.waterBodyKey=resolved.body.valid()?
+                    resolved.body.packed():0;
                 const auto cmPerSec=[](Fixed speed)->int32_t{
                     const int64_t cap=100ll*Fixed::kOne;
                     return int32_t(std::clamp<int64_t>(
