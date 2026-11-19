@@ -148,6 +148,9 @@ int main() {
         dev.failUpload=1;
         h=render::uploadKtx2Image(dev,image,{},err);
         check(!h.valid() && dev.destroyed==4, "failed mip upload destroys texture");
+        // Scoped fault injection: later native-compressed rejection must
+        // exercise the successful RGBA fallback, not this forced mip error.
+        dev.failUpload=0;
 
         image = {};
         check(!render::uploadKtx2Image(dev,image,{},err).valid() && !err.empty(),
