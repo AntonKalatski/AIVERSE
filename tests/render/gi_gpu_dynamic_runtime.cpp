@@ -94,6 +94,38 @@ int main() {
     AIVERSE_TEST_CHECK(frame.completed.accepted==1 && frame.safeForPresentation);
     device.endFrame();
 
+    // The sun/sky changes while Metal (or Vulkan) computes an old revision.
+    // The completed old frame must be rejected, then the new environment
+    // sampled only after the next genuine fence/callback is accepted.
+    GiEnvironmentLight firstSky;
+    firstSky.sunColor={1,0,0};
+    firstSky.sunIntensity=2;
+    AIVERSE_TEST_CHECK(runtime.setEnvironment(firstSky));
+    AIVERSE_TEST_CHECK(runtime.pendingProbes()==4);
+    device.beginFrame(400,300);
+    frame=runtime.updateFrame(4,{0,0,0});
+    AIVERSE_TEST_CHECK(frame.submitted.submitted && !frame.safeForPresentation);
+    GiEnvironmentLight nextSky=firstSky;
+    nextSky.sunIntensity=0;
+    nextSky.skyColor={0,0,1};
+    nextSky.skyIntensity=3;
+    AIVERSE_TEST_CHECK(runtime.setEnvironment(nextSky));
+    AIVERSE_TEST_CHECK(runtime.pendingProbes()==4);
+    device.endFrame();
+    device.finish();
+    device.beginFrame(400,300);
+    frame=runtime.updateFrame(0,{0,0,0});
+    AIVERSE_TEST_CHECK(frame.completed.stale==4);
+    AIVERSE_TEST_CHECK(!frame.safeForPresentation);
+    frame=runtime.updateFrame(4,{0,0,0});
+    AIVERSE_TEST_CHECK(frame.submitted.submitted);
+    device.endFrame();
+    device.finish();
+    device.beginFrame(400,300);
+    frame=runtime.updateFrame(0,{0,0,0});
+    AIVERSE_TEST_CHECK(frame.completed.accepted==4 && frame.safeForPresentation);
+    device.endFrame();
+
     auto empty=scene(false);
     const GiBounds edit{{0,-4,2},{4,4,2}};
     AIVERSE_TEST_CHECK(runtime.setGeometryRegion(empty,2,edit));
