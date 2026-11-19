@@ -12598,3 +12598,16 @@ bash tools/texture-rhi-final-verify.sh --jobs 4 --full-engine
 **Other files:** `VirtualTextureArchiveVersion::streamConfig(physicalPages=128,indexedMipTable=false,physicalMipLevels=1)` preserves existing calls; native streamer exposes read-only `configuration()` and disk facade exposes `atlasStreamer()`, `indexedMipPageTableTexture()`, `indexedMipTableLevels()`. The helper does not change ownership, mutate GPU state, or auto-enable indexed VT.
 **Actual checks:** GitHub API staged blobs/tree/commit and branch ref success only. No CMake, compile, CTest, GPU or CI run because user requested all features before tests. Stage 10CO is **unverified**. Prior old 21+7 Metal GPU PASS applies only to SHA `7494f32d`.
 **Limitations and next:** Renderer is still opt-in, and table/physical sampler capabilities remain GPU-untested. Guard archive metadata against pathological gutter overflow; optimize `VirtualTexturePageTable::rebuild` to avoid repeated O(tiles*mips^2) cache queries and full rescans when mappings are unchanged. Verify backend array mips, sampler anisotropy, sRGB visual parity and LRU before merging PR #21. Experimental ICB remains OFF.
+
+## Stage 10CP — avoid full VT table rebuild every frame; linear mip scan (2026-11-19)
+
+**Code SHA:** `9eabd01129657b1687ad843e8ed763dc835298ac`. **Branch:** `feature/texture-rhi-unification`; PR #21 Draft; main untouched.
+
+**Changes:**
+- `engine/gfx/VirtualTexturePages.h`: new monotonic `mappingRevision()`. Incremented when physical slot mapping or READY state changes on accepted reserve, complete, eviction or clear. Does not increment for touch/pin, which do not change shader page lookup.
+- `engine/gfx/VirtualTexturePageTable.h`: `rebuild` fast-returns if the cache mapping revision is unchanged. On a change, scan parent mip levels coarse-to-fine once per base tile to retain nearest-ready parent for each requested virtual mip; changes complexity of indexed table resolution from O(baseTiles * virtualMipLevels^2) to O(baseTiles * virtualMipLevels). Maintains exact RGBA8 entry encoding, dirtyRows behavior and upload budgets. Clear invalidates cached revision.
+- `engine/render/ModelVirtualTextureArchiveBinding.h`: overflow-safe gutter validation using 64-bit arithmetic.
+
+**Actual validation:** Source staged via GitHub API and committed to branch; no compile, tests, shader compile or GPU work executed (features-first instruction). Runtime/perf characteristics are theoretical complexity, not measured timings.
+
+**Open work and next:** This is still a full CPU rebuild on each residency change. For high churn, add bounded dirty-region updates per changed page and track cross-frame upload budgets; verify correctness against full-rebuild oracle in final tests. Check multi-frame batch publication/cancellation and indexed mip blending with real Metal framebuffer pixel results. Analyze texture sampler caps, virtual gutter quality and cross-backend compatibility. Final CTest only after functional stages are ready; keep PR Draft.

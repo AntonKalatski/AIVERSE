@@ -1919,3 +1919,7 @@ ICB by default without deliberate release gating.
 ## Stage 10CO — binding archive metadata without manual guesses
 
 Include `engine/render/ModelVirtualTextureArchiveBinding.h` in the caller's model VT resolver. Use `makeModelVirtualTextureArchiveBinding(publishedArchive,fileStreamer,layer,out,mipBias)` or overload with `VirtualTextureStreamer`; this checks archive and active streamer geometry and fills handles, indexed status, virtual resolution/gutters/addressing. When creating a matching streamer: `archive.streamConfig(physicalPages,true,physicalMipLevels)`; prior one-argument callers remain unchanged. This source was not yet compiled or GPU-tested; do not assume it is certified.
+
+## Stage 10CP — revision-gated indexed page-table refresh (SHA 9eabd011)
+
+`VirtualTexturePageCache::mappingRevision()` changes on actual mapping/READY state changes, not touches/pins. `VirtualTexturePageTable::rebuild(cache)` now skips identical revisions and scans coarse-to-fine once to resolve all requested mip slices per base tile: O(baseCells * mipLevels). GPU dirty-row flushing and legacy ABI unchanged; still requires GPU and CPU test oracles. Model archive helper now guards gutter multiplication overflow. Do not claim benchmarks; none run.
