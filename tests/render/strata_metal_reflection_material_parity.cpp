@@ -69,10 +69,12 @@ struct Fixture {
     void makeSource() {
         source.path="strata-reflection-two-material-quads";
         source.batching.autoLod=false;
-        // Two 4-vertex opaque panels, separated by a small UV/material
-        // boundary. Each primitive has its own material and UV transform.
-        const float left[2]={-1.12f,.08f};
-        const float right[2]={-.08f,1.12f};
+        // Two 4-vertex opaque panels share the exact x=0 edge, but
+        // DUPLICATE the seam vertices. They have distinct materials,
+        // texture images and UV transforms: this tests a real UV seam,
+        // not two unrelated disconnected panels.
+        const float left[2]={-1.12f,0.f};
+        const float right[2]={0.f,1.12f};
         source.vertices.resize(8);
         source.indices.resize(12);
         MeshDef mesh;
