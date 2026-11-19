@@ -1948,7 +1948,11 @@ private:
 } // namespace
 
 void RtsRoadView::init(gfx::Device& dev, const Json& roadTypes, FileReader reader) {
-    shutdown(dev);
+    if(dev_) {
+        shutdown(*dev_);
+        if(dev_)throw std::runtime_error(
+            "road View cannot rebind before verified GPU retirement");
+    }
     dev_ = &dev;
     read_ = std::move(reader);
     warnings_.clear();
@@ -2049,29 +2053,42 @@ float RtsRoadView::surfaceAt(float x, float z, float terrain) const {
 }
 
 void RtsRoadView::release(gfx::Device& dev) {
-    if (decalMesh_.vb.valid()) decalBatch_.destroyMesh(dev, decalMesh_);
-    if (vergeMesh_.vb.valid()) decalBatch_.destroyMesh(dev, vergeMesh_);
-    decalMesh_ = {}; vergeMesh_ = {};
-    if (filmMesh_.vb.valid()) decalBatch_.destroyMesh(dev, filmMesh_);
-    if (puddleMesh_.vb.valid()) decalBatch_.destroyMesh(dev, puddleMesh_);
-    filmMesh_ = {}; puddleMesh_ = {};
+    // These resource handles may still be referenced by the previous
+    // frame. Queue them instead of invoking immediate GPU destruction.
+    retireSpriteBuffer(dev,decalMesh_);
+    retireSpriteBuffer(dev,vergeMesh_);
+    retireSpriteBuffer(dev,filmMesh_);
+    retireSpriteBuffer(dev,puddleMesh_);
     wetStep_ = puddleStep_ = -1;
-    for (auto& c : chunks_) if (c.model) releaseModel(dev, *c.model);
+    for (auto& c : chunks_) retirement_.retireModel(dev,c.model);
     chunks_.clear();
     batchStats_ = {};
     surface_.clear();
     props_.clear();
-    if (ghostModel_) { releaseModel(dev, *ghostModel_); ghostModel_.reset(); }
+    retirement_.retireModel(dev,ghostModel_);
 }
 
 void RtsRoadView::shutdown(gfx::Device& dev) {
+    if(!dev_)return;
+    if(dev_!=&dev)throw std::logic_error("road View GPU owner mismatch");
     release(dev);
-    for (auto& p : propModels_) if (p.model) releaseModel(dev, *p.model);
+    for (auto& p : propModels_) retirement_.retireModel(dev,p.model);
     propModels_.clear();
-    for (auto& img : images_) if (img.tex.valid()) { dev.destroyTexture(img.tex); img.tex = {}; }
+    // A single full-GPU-idle proof at shutdown protects all remaining
+    // kit images, SpriteBatch pipelines, paint cache and retired assets.
+    // If the Device cannot prove completion, DO NOT destroy any handle.
+    if(!retirement_.completeForShutdown(dev)) {
+        warnings_.push_back(
+            "road View shutdown: GPU idle unproven, resources held fail-closed");
+        return;
+    }
+    for (auto& img : images_) if (img.tex.valid()) {
+        dev.destroyTexture(img.tex); img.tex = {};
+    }
     images_.clear();
     painted_.clear();
-    if (dev_) { decalBatch_.shutdown(); paintTex_.shutdown(); }
+    decalBatch_.shutdown();
+    paintTex_.shutdown();
     paint_ = {}; verge_ = {};
     dev_ = nullptr;
 }
@@ -2370,7 +2387,7 @@ void RtsRoadView::rebuild(gfx::Device& dev, const std::function<float(float, flo
 
 void RtsRoadView::buildGhost(gfx::Device& dev, const std::function<float(float, float)>& heightAt) {
     ghostDirty_ = false;
-    if (ghostModel_) { releaseModel(dev, *ghostModel_); ghostModel_.reset(); }
+    retirement_.retireModel(dev,ghostModel_);
     if (!ghost_.on || ghost_.net.empty()) return;
     try {
         const float cm = cellMeters_;
@@ -2407,7 +2424,7 @@ void RtsRoadView::buildWeather(gfx::Device& dev) {
     const int ws = int(std::lround(wet_ * 32)), ps = int(std::lround(puddles_ * 32));
     if (ws != wetStep_) {
         wetStep_ = ws;
-        if (filmMesh_.vb.valid()) decalBatch_.destroyMesh(dev, filmMesh_);
+        retireSpriteBuffer(dev,filmMesh_);
         filmMesh_ = {};
         if (ws > 0 && !film_.empty()) {
             // wet asphalt / dirt: darker and a little cooler (the sky's colour in the water film)
@@ -2419,7 +2436,7 @@ void RtsRoadView::buildWeather(gfx::Device& dev) {
     }
     if (ps != puddleStep_) {
         puddleStep_ = ps;
-        if (puddleMesh_.vb.valid()) decalBatch_.destroyMesh(dev, puddleMesh_);
+        retireSpriteBuffer(dev,puddleMesh_);
         puddleMesh_ = {};
         const float level = float(ps) / 32.0f;
         std::vector<SpriteVertex> v;
