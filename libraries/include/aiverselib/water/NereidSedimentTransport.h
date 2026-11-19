@@ -18,7 +18,7 @@ namespace aiverse::lib::nereid {
 struct SedimentTransportCell {
     int64_t gridX=0,gridZ=0;
     uint32_t suspendedCm=0;   // canonical WaterBankSoilComponent field
-    uint32_t carryMilliCm=0;  // persisted fractional sediment-transfer work
+    uint32_t carryMicroCm=0;  // persisted 1/1,000,000-cm fractional mass
     uint32_t wetContactPermille=0;
     Vec3 flow{};              // from WaterContactComponent, Fixed m/s
     Entity waterBody=kNullEntity;
@@ -69,7 +69,7 @@ inline SedimentTransportStep advectSuspendedSediment(
     for(size_t i=0;i<result.cells.size();++i){
         const auto& cell=result.cells[i];
         if(cell.suspendedCm>1000000u ||
-           cell.carryMilliCm>=1000u ||
+           cell.carryMicroCm>=1000000u ||
            cell.wetContactPermille>1000u ||
            cell.gridX<-100000000 || cell.gridX>100000000 ||
            cell.gridZ<-100000000 || cell.gridZ>100000000 ||
@@ -102,18 +102,24 @@ inline SedimentTransportStep advectSuspendedSediment(
            target.waterBody!=source.waterBody ||
            !target.wetContactPermille)continue;
 
-        const uint32_t speed=sediment_detail::absoluteFlowCmPerSec(
-            alongX?source.flow.x:source.flow.z);
-        // speed(cm/s) * dt(ms) / spacing(cm) = fraction * 1000;
-        // cap at 1000 permille per tick, independent of FPS.
-        const uint64_t fraction=std::min<uint64_t>(
-            1000,uint64_t(speed)*dtMs/gridSpacingCm);
+        // Avoid integer "dead zones" at low flow (e.g. 1 cm/s at a
+        // 100cm cell and 16ms tick). Keep sub-centimetre mass in MICRO-cm
+        // units, using Fixed raw velocity before rounding to cm/s.
+        // 1m/s on a 1m grid over 16ms -> fraction 16000/1e6.
+        constexpr uint64_t kMicro=1000000ull;
+        const uint64_t raw=sediment_detail::absoluteRaw(
+            alongX?source.flow.x.raw:source.flow.z.raw);
+        const uint64_t bounded=std::min<uint64_t>(
+            raw,50000ull*Fixed::kOne/100);
+        const uint64_t fraction=std::min<uint64_t>(kMicro,
+            bounded*100ull*dtMs*1000ull/
+            (uint64_t(Fixed::kOne)*uint64_t(gridSpacingCm)));
         const uint64_t request=
             uint64_t(source.suspendedCm)*fraction+
-            source.carryMilliCm;
+            source.carryMicroCm;
         const uint32_t desired=uint32_t(std::min<uint64_t>(
-            settings.maxTransferCmPerTick,request/1000u));
-        source.carryMilliCm=uint32_t(request%1000u);
+            settings.maxTransferCmPerTick,request/kMicro));
+        source.carryMicroCm=uint32_t(request%kMicro);
         // Conservative target capacity, intentionally not counting its
         // simultaneous outgoing transfer as free space. This costs some
         // throughput at a full estuary but guarantees no overflow.
@@ -142,11 +148,11 @@ inline SedimentTransportStep advectSuspendedSediment(
 // WaterBankSoilComponent schema. The native ECS stage stores one value per
 // bank-cell entity, NEVER per blade/plant. Register before Simulation setup.
 struct WaterBankSedimentTransportComponent {
-    uint32_t carryMilliCm=0;
+    uint32_t carryMicroCm=0;
     uint32_t lastTransportTick=UINT32_MAX;
 };
 inline void io(Archive& a,WaterBankSedimentTransportComponent& c){
-    a(c.carryMilliCm,c.lastTransportTick);
+    a(c.carryMicroCm,c.lastTransportTick);
 }
 
 } // namespace aiverse::lib::nereid
