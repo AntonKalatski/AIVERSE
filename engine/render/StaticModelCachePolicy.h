@@ -2,6 +2,7 @@
 // CPU-only eligibility contract for an optional per-entity rigid transform cache.
 // The renderer still performs per-view culling, LOD, material selection and submission.
 #include "Renderer3D.h"
+#include "ModelStaticEligibility.h"
 #include "GpuMaterialState.h"
 #include <algorithm>
 #include <cstring>
@@ -12,15 +13,20 @@ namespace aiverse::render {
 // An explicit stable identity is mandatory. Models may *contain authored*
 // animation clips while a particular static instance remains at its bind
 // pose. Never cache an active pose, baked animation, skin or mutable hierarchy.
+inline bool staticModelCacheDrawCandidate(const ModelDraw& d,
+                                          bool activeDisplacement,
+                                          ModelStaticEligibility model) {
+    return model.transforms && d.model && d.persistentId &&
+        (d.flags & kDrawStatic) && !activeDisplacement &&
+        !d.nodeWorld && !d.pose && !d.baked;
+}
+
+// Public pure function for standalone callers. Renderer3D uses the identical
+// draw policy with a per-model geometryRevision memo for the invariant part.
 inline bool staticModelCacheCandidate(const ModelDraw& d, bool activeDisplacement) {
-    const Model* m = d.model;
-    if (!m || !d.persistentId || !(d.flags & kDrawStatic) || activeDisplacement ||
-        d.nodeWorld || d.pose || d.baked || !m->skins.empty() ||
-        m->geometry || m->nodes.empty() ||
-        m->bindWorld.size() != m->nodes.size())
-        return false;
-    return std::none_of(m->nodes.begin(), m->nodes.end(),
-                        [](const Node& node) { return node.runtimeMutable; });
+    return d.model &&
+        staticModelCacheDrawCandidate(
+            d, activeDisplacement, classifyModelStaticEligibility(*d.model));
 }
 
 // The cache contains only geometry-derived transforms, bounds and offsets.
@@ -42,24 +48,22 @@ inline bool staticModelCacheGeometryCompatible(const StaticModelCache& cache,
 // resolved GPU material states, even for pointer-stable per-draw material copies.
 // Any non-material caller-side mutations still require staticPacketRevision.
 // Runtime LOD is selected again for each camera and checked before reuse.
+inline bool staticRenderPacketDrawCandidate(
+    const ModelDraw& d, bool activeDisplacement, bool bakedLighting,
+    bool lodDiagnostics, ModelStaticEligibility model) {
+    // Per-node material overrides and KHR material variants are draw inputs:
+    // their selected state is validated separately against each saved packet.
+    return model.packets && d.staticPacketRevision &&
+        !bakedLighting && !lodDiagnostics &&
+        staticModelCacheDrawCandidate(d, activeDisplacement, model);
+}
+
 inline bool staticRenderPacketCandidate(const ModelDraw& d,
                                         bool activeDisplacement, bool bakedLighting,
                                         bool lodDiagnostics) {
-    const Model* m = d.model;
-    // Per-node material overrides and KHR material variants are static
-    // packet inputs, not a reason to decline the entire model. The renderer
-    // snapshots override indices and compares the selected variant each draw.
-    if (!d.staticPacketRevision || bakedLighting || lodDiagnostics ||
-        !staticModelCacheCandidate(d, activeDisplacement)) return false;
-    for (const auto& node : m->nodes)
-        if (node.skin >= 0 || (node.mesh >= 0 &&
-            size_t(node.mesh) >= m->meshes.size())) return false;
-    for (const auto& mesh : m->meshes) {
-        if (mesh.deformable) return false;
-        for (const auto& p : mesh.primitives)
-            if (p.morphTargets || !p.jointPalette.empty()) return false;
-    }
-    return !m->materials.empty() && !m->meshes.empty();
+    return d.model && staticRenderPacketDrawCandidate(
+        d, activeDisplacement, bakedLighting, lodDiagnostics,
+        classifyModelStaticEligibility(*d.model));
 }
 
 // Capture resolved state rather than Material* identity. Hashes cheaply reject
