@@ -6,6 +6,7 @@
 #pragma once
 #include "engine/world/TerraWeaveEcsBankBridge.h"
 #include <aiverselib/water/NereidQueryIndex.h>
+#include <aiverselib/water/NereidSedimentTransport.h>
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
@@ -201,7 +202,7 @@ inline void registerAutoShorelineBankPersistence(Simulation& sim){
 }
 
 struct ShorelineRefreshStats {
-    uint32_t created=0,updated=0,disabled=0;
+    uint32_t created=0,updated=0,disabled=0,manualSkipped=0;
 };
 
 // Native structural-write barrier (NOT inside WaterQueryIndex read phase).
@@ -213,6 +214,13 @@ inline ShorelineRefreshStats refreshAutoShorelineBanks(
     if(discovered.size()>16384u)
         throw std::length_error("TerraWeave auto-bank discovery budget");
     std::map<EarthVertex,Entity> known;
+    std::map<EarthVertex,Entity> occupied;
+    world.eachExistingConst<BankEarthVertexComponent>(
+        [&](Entity entity,const BankEarthVertexComponent& cell){
+            if(!occupied.emplace(cell.vertex,entity).second)
+                throw std::invalid_argument(
+                    "TerraWeave duplicate manual/automatic bank vertex");
+        });
     world.eachExistingConst<AutoShorelineBankComponent>(
         [&](Entity entity,const AutoShorelineBankComponent& mark){
             if(mark.generatorVersion!=1)
@@ -245,6 +253,23 @@ inline ShorelineRefreshStats refreshAutoShorelineBanks(
         lib::nereid::WaterBankSoilComponent>();
     auto* probePool=world.prepareExistingWrite<
         lib::nereid::WaterProbeComponent>();
+    // Validate ALL existing bank data before any mutation; preserve both
+    // native authored bank entities and previously carried sediment.
+    for(const auto& [vertex,record]:requested){
+        const auto it=known.find(vertex);
+        if(it==known.end())continue;
+        const Entity entity=it->second;
+        const auto* soil=world.tryGetConst<
+            lib::nereid::WaterBankSoilComponent>(entity);
+        const auto* probe=world.tryGetConst<
+            lib::nereid::WaterProbeComponent>(entity);
+        if(!soil || !probe ||
+           !world.has<lib::nereid::WaterContactComponent>(entity) ||
+           !world.has<lib::nereid::WaterBankErosionOutputComponent>(entity) ||
+           soil->soil.groundCm!=record->groundCm)
+            throw std::invalid_argument(
+                "TerraWeave auto-bank ECS stale/incomplete before refresh");
+    }
     ShorelineRefreshStats stats;
     for(const auto& [vertex,entity]:known){
         if(requested.contains(vertex))continue;
@@ -257,6 +282,12 @@ inline ShorelineRefreshStats refreshAutoShorelineBanks(
     for(const auto& [vertex,record]:requested){
         auto existing=known.find(vertex);
         if(existing==known.end()) {
+            // Never duplicate or modify a manually authored bank at this
+            // vertex: it remains the authoritative soil/water owner.
+            if(occupied.contains(vertex)){
+                ++stats.manualSkipped;
+                continue;
+            }
             lib::nereid::WaterBankSoilComponent soil{};
             soil.soil.groundCm=record->groundCm;
             soil.soil.bedrockCm=record->bedrockCm;
@@ -278,6 +309,8 @@ inline ShorelineRefreshStats refreshAutoShorelineBanks(
             world.add<lib::nereid::WaterBankSoilComponent>(entity,soil);
             world.add<lib::nereid::WaterBankErosionOutputComponent>(
                 entity,lib::nereid::WaterBankErosionOutputComponent{});
+            world.add<lib::nereid::WaterBankSedimentTransportComponent>(
+                entity,lib::nereid::WaterBankSedimentTransportComponent{});
             ++stats.created;
         } else {
             const Entity entity=existing->second;
@@ -297,6 +330,9 @@ inline ShorelineRefreshStats refreshAutoShorelineBanks(
             soil->bankSlopePermille=record->bankSlopePermille;
             soil->enabled=true;
             probe->position=record->wetProbePosition;
+            if(!world.has<lib::nereid::WaterBankSedimentTransportComponent>(entity))
+                world.add<lib::nereid::WaterBankSedimentTransportComponent>(
+                    entity,lib::nereid::WaterBankSedimentTransportComponent{});
             ++stats.updated;
         }
     }
