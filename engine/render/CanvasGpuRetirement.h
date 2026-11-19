@@ -34,6 +34,9 @@ public:
     void retire(gfx::PipelineHandle h) noexcept { if(h.valid())enqueue(Resource{h}); }
     void retire(gfx::ShaderHandle h) noexcept { if(h.valid())enqueue(Resource{h}); }
 
+    bool validFor(const gfx::Device& device) const noexcept {
+        return device_==&device && deviceValid();
+    }
     size_t pending() const noexcept {return queue_.pending();}
     Stats stats() const noexcept {return queue_.stats();}
     uint64_t orphans() const noexcept{return orphanedResources_;}
