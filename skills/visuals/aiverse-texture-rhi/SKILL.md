@@ -588,3 +588,19 @@ CI if it remains queued or cancelled.
 - CPU visibility prefetch rectangles remain normalized; for wrapped
   large UV domains use GPU feedback or split regions before prefetch.
   No native compiler/driver tests have been run for this stage.
+
+
+### Wrapped CPU virtual page prefetch (Stage 10R)
+
+- Use `gfx::prefetchWrappedVirtualPages(streamer,planner,views,
+  activeArchive.addressU,activeArchive.addressV)` when UV visibility
+  crosses repeat/mirror boundaries. It splits at integer seams,
+  bounds output to `planner.config().maxRegions` and reuses ordinary
+  coarse-to-fine exact-page demand loading.
+- `dispatch.wrapRejected` means no request was sent; reduce UV
+  coverage, subdivide scene visibility, or use GPU feedback rather
+  than continuing with partial incorrect pages. Clamp-only callers
+  may retain the old `prefetchVisibleVirtualPages` API.
+- The helper is genre independent and does not discover camera
+  geometry. Do not mix multiple VT domain IDs in one planner.
+  Compilation and runtime CPU/GPU validation have NOT RUN.
