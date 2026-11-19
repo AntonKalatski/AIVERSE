@@ -237,3 +237,59 @@ The merge was constructed on GitHub using the pinned batching tree as base, over
 - Both branches are experimental and under heavy active development; a clean semantic merge does not prove compiler or GPU compatibility.
 - Batching branch uses large shared renderer and GPU pool; future Strata-specific GPU logic must not fork the pool/command scheduler.
 - Stack PR #35 on PR #34 until batching lands; keep draft and do not merge into main prematurely.
+
+
+---
+
+## Stage 6 — per-pass CPU cluster selection oracle (2026-11-19)
+
+### Branch, upstream sync and exact implementation commits
+**Branch:** `feature/strata-virtual-geometry`, draft PR #35, stacked on `perf/incremental-static-model-cache` PR #34. Main unchanged.
+
+- `d9c4dd4f55b8b15ce31d7921f4995f79ac530b17` — two-parent merge of fresh batching `29f6cb3c7cd8965b5123bfbf17f09d2164e45dbb` into Strata. The batching difference since pinned `1043a9de` was its handoff doc (not a renderer implementation change). The merge tree initially had that doc's earlier blob.
+- `38abceaa6cf30f028fb9df5e9d3074ca602349e5` — **corrective update** copying exactly the new batching handoff blob into Strata. Do not drop this fix or falsely describe the diff as a material_batches fixture change.
+- `799686566cef85411e15d9ab88cb0ef161aa3ac4` — `engine/render/StrataView.h`, read-only `ViewConfig`, `SelectedRange`, `ViewPlan`, `planView` public API.
+- `288c15c90170fe87cb37ca7ad71e4d03e167b620` — `engine/render/StrataView.cpp`: validating source topology and node bounds/indices, projecting errors via existing `geometryErrorPixels`, using residency-aware hierarchy selection, conservative frustum rejection, transactional output.
+- `76ce342609a42877a1be9f4d0c9ca78c1da5e688` — `tests/render/strata_view.cpp`: main vs scaled pass, parent/child detail choice, root fallback on missing residency, budget restriction, frustum exclusion and malformed-asset rejection.
+- `a07c002f4e4684897331c451c4a870df2300a564` — `CMakeLists.txt`: `aiverse_strata_view` library and `aiverse_strata_view_tests`/`strata_view` CTest registration.
+- `596c5292c6603a5b3c4afdb9173002c3666ca4d2` — `engine/render/GeometryScene.h`: read-only `planStrataView(sourceKey, mesh, primitive, config, out, error)`.
+- `226c240e9214ca7c104db79fe73ce348b77211e6` — `engine/render/GeometryScene.cpp`: delegates source-local selection to staged `ModelPrimitiveAsset`; reports absent/ineligible source without changing scene or output. Compiles to no-op if `AIVERSE_BUILD_STRATA=OFF`.
+- `7eb22c2737df70d488de8dadcace1704ca7985e8` — `CMakeLists.txt` links runtime to `aiverse_strata_view` instead of only the Model adapter.
+- `95cb5c4c62927edc35f3afbd9bebecbeee402b12` — `docs/strata.md`: Stage 6 planner API and caveats; repairs malformed/duplicated 'Known shortcomings' section inherited from previous doc edits.
+- `bd3ecb7a9101826a781a6512cf71b6d2ea1f6f19` — `engine/render/StrataView.cpp` adds explicit `<utility>` header.
+- `fb35f10072bfaf270e6e8e4c4f3bd1becc6fe9a1` — `AGENTS.md` update with source-local index-offset safety.
+
+### What Stage 6 actually implements
+- `strata::planView` takes **one already-built primitive asset** and a pass-specific object-to-clip transform, target dimensions, depth convention, pixel threshold and max node budget. It returns a list of selected node index ranges in **that Strata asset's own** index vector, plus selection/visibility diagnostic stats. It never creates gfx buffers or submits draws.
+- The implementation reuses `strata::select` and existing `render::geometryErrorPixels` / `render::geometryBoxVisible`. CPU plan results for main, sun shadows, reflections and portals are intentionally independent. Caller supplies objectToClip including the correct bound node transform. Non-uniform model transforms are part of that matrix.
+- Frustum testing occurs AFTER choosing resident hierarchical detail. Near-plane conservative error can prevent refinement but does not cause holes; missing child residency keeps the parent. No GPU Hi-Z, occlusion history or runtime geometry compression has been added.
+- `GeometryScene` now exposes `planStrataView`, which uses its existing staging cache, picks a source material partition by mesh/primitive ID, and delegates to the same planner. Must enable staging before scene load to retrieve any asset. No draw list or instance owner is duplicated.
+
+### Ownership, compatibility and blocker
+- **Critical:** `SelectedRange::firstIndex` refers to `strata::Asset::indices`, never `Model::indices` or a pooled `Model::ib`. The caller cannot submit this range until the auxiliary Strata index stream is uploaded and offset correctly into a shared-pool page. Do not insert these offsets directly into the existing MDI command path. A dedicated versioned residency/allocation contract with `GlobalGeometryPool` is the next design/implementation gate.
+- Public APIs are additive, opt-in and read-only. Existing scene JSON, saves, ECS, material groups, shadows and `Renderer3D::drawModel` remain unchanged. No D3D/Metal/Vulkan shader or index-buffer format change.
+- The planner CPU implementation is a reference oracle, not an optimized production GPU path; it visits all nodes and reruns hierarchy validation. It is useful for correctness tests but should not be run unconditionally each frame.
+- CPU view selection currently uses conservative frustum planes and projected geometric errors; cross-LOD cracks, material seams, dynamic deformation, GPU timestamps and real frustum test parity remain unverified.
+
+### Real verification evidence
+- GitHub connector successfully created and updated code and documentation commits; two-parent branch ancestry verified in previous stages.
+- **Native compilation: NOT RUN. CTest: NOT RUN. GPU/Metal/Vulkan visual parity: NOT RUN.** This assistant does not have the AIVERSE source mounted in a build-capable environment.
+- Checked GitHub Actions: CI for `38abceaa` and `a07c002f` was observed **cancelled**; at `95cb5c4c` it was **pending** and other workflows **queued**. No passing status has been observed. A queued/absent status is not a pass.
+
+### Exact next steps, in order
+1. On native Mac Studio:
+   ```sh
+   cd ~/Projects/AIVERSE
+   git fetch origin main perf/incremental-static-model-cache feature/strata-virtual-geometry
+   git worktree add --detach ../AIVERSE-strata-stage6 origin/feature/strata-virtual-geometry
+   cmake -S ../AIVERSE-strata-stage6 -B ../AIVERSE-strata-stage6/build/strata -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_STRATA=ON
+   cmake --build ../AIVERSE-strata-stage6/build/strata --target aiverse_strata_builder_tests aiverse_strata_model_adapter_tests aiverse_strata_view_tests -j 8
+   ctest --test-dir ../AIVERSE-strata-stage6/build/strata -R '^strata_(builder|model_adapter|view)$' --output-on-failure
+   ```
+2. Fix compiler/test issues and record native results, including exact logs and platform, with implementation commit and separate handoff commit.
+3. Add `GeometryScene` recording-Device OFF/ON draw parity tests, including source-node transforms and shadow-only visibility; ensure root-fallback coverage never draws a source primitive twice.
+4. Design and implement a versioned auxiliary index/cluster metadata allocation managed by existing `GlobalGeometryPool` and RHI lifetime fences. Keep batch material/indirect command ownership in `Renderer3D`, with an exclusive Strata/legacy decision per eligible primitive.
+5. Add GPU frustum/LOD/Hi-Z compute path with CPU `strata::planView` parity oracle, platform capability gates and CPU fallback. Only then performance benchmarks for >=1k/10k/100k instances.
+
+### Development coordination
+Batching branch ownership is separate. Its live head can advance after this Stage 6 snapshot; verify newest PR #34/head before another merge. Keep feature flags default OFF and PR #35 Draft; do not merge either experimental code path into main until native and cross-platform validation is complete.
