@@ -216,6 +216,9 @@ int aiverseMain(int argc, char** argv) {
     std::vector<render::Material> materials;
     std::vector<std::vector<render::MaterialBatch>> batches;
     std::vector<uint8_t> before;
+    bool mdiCaptureRequested=false, mdiCaptureVerified=false;
+    const bool captureMdi = std::getenv("AIVERSE_CAPTURE_SUCCESSFUL_MDI") &&
+        std::string(std::getenv("AIVERSE_CAPTURE_SUCCESSFUL_MDI")) == "1";
     uint32_t shadowBefore=0, opaqueBefore=0; int frame=0; bool failed=false, finished=false;
     bool packetBuilt=false; // the warm hit must reuse a previously built packet
     // Opt-in synchronous CPU measurements; never treat these as GPU timing.
@@ -355,6 +358,33 @@ int aiverseMain(int argc, char** argv) {
         const auto startCpu = std::chrono::steady_clock::now();
         renderer.render(pass);
         const auto endCpu = std::chrono::steady_clock::now();
+        if (stress && batch && captureMdi && frame >= 100 &&
+            !mdiCaptureRequested && renderer.modelStats().multiDrawSubmissions > 0) {
+            // Capture a frame with a *real* CPU MDI submission rather than
+            // comparing baseline against the final AUTO Direct fallback.
+            mdiCaptureRequested = true;
+            d.captureNextFrame([&, capturedFrame=frame](int w, int h,
+                                                         std::vector<uint8_t> px) {
+                if (w != 960 || h != 640 || before.size() != px.size()) {
+                    std::fprintf(stderr, "MDI pixel capture invalid size at frame=%d\n",
+                                 capturedFrame);
+                    failed = true;
+                    return;
+                }
+                size_t changed = 0;
+                for (size_t i = 0; i < px.size(); ++i)
+                    changed += px[i] != before[i];
+                std::printf("actual MDI pixel parity frame=%d changed_channels=%zu\n",
+                            capturedFrame, changed);
+                if (changed) failed = true;
+                std::ofstream output(prefix + "-mdi-after.ppm", std::ios::binary);
+                output << "P6\n" << w << " " << h << "\n255\n";
+                for (size_t i = 0; i < px.size(); i += 4)
+                    output.write(reinterpret_cast<const char*>(px.data()+i), 3);
+                if (!output) failed = true;
+                mdiCaptureVerified = true;
+            });
+        }
         if (stress && batch && cpuTiming && frame >= 100 &&
             frame <= captureAfterFrame) {
             const auto& st = renderer.modelStats();
@@ -476,6 +506,11 @@ int aiverseMain(int argc, char** argv) {
                 }
             }
 
+        }
+        if (stress && frame == captureAfterFrame && captureMdi &&
+            (!mdiCaptureRequested || !mdiCaptureVerified)) {
+            std::fprintf(stderr, "actual MDI parity capture missing at AUTO end\n");
+            failed = true;
         }
         if(frame==captureBeforeFrame||frame==captureAfterFrame){
             const auto& p=renderer.profile();
