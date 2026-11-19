@@ -1352,6 +1352,11 @@ void Editor::frame(gfx::Device& dev, double dt) {
     auto t0 = std::chrono::steady_clock::now();
     const bool traceEditor = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
     time_ += dt;
+    // The previous frame's model buffers may still be read by Metal/Vulkan.
+    // Retire on the owner thread before recording this frame's view passes.
+    // An unavailable/failed fence retains retired resources for a retry.
+    if(view_.pendingModelRetirements()!=0 && !view_.collectRetiredModels())
+        ws_.log("view","GPU пока не подтвердил освобождение старых моделей");
     pollAgentLink();
     applyChanges();
     // Poll changed presentation assets before any new frame submissions.
