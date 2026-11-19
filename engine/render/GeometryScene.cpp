@@ -403,6 +403,23 @@ void GeometryScene::drawInstance(Renderer3D& r,const Instance& i){
             ++stats_.surfaceProxiesSubmitted;d.model=i.surfaceProxy;d.staticCache=cacheEnabled_?&i.proxyCache:nullptr;d.geometry.clusters=false;d.geometry.shadowClusters=false;d.geometry.occluder=false;
         }
     }
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    // No duplicate geometry: preview only; always execute the exact legacy
+    // draw below. Source proxies and HLOD substitutes are intentionally
+    // excluded from this diagnostic path. Source key is borrowed only for
+    // the synchronous preview call; no Renderer3D packet stores it.
+    if (strataRenderPreviewEnabled_ && strataStagingEnabled_ &&
+        strataGpuMetadataEnabled_ && strataStaging_ &&
+        strataGpuMetadata_ && d.model == i.model) {
+        for (const auto& [key, model] : models_) {
+            if (model.get() != d.model) continue;
+            const auto* prepared = strataStaging_->find(key);
+            if (prepared && strataGpuMetadata_->find(key, *d.model).valid())
+                r.previewStrataModel(d, *prepared, *strataGpuMetadata_, key);
+            break;
+        }
+    }
+#endif
     r.drawModel(d);++stats_.submitted;
 }
 
