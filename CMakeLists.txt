@@ -2049,8 +2049,9 @@ if(AIVERSE_BUILD_STRATA)
     add_library(aiverse_strata_gpu_scene STATIC engine/render/StrataGpuScene.cpp)
     target_link_libraries(aiverse_strata_gpu_scene PUBLIC aiverse_strata_model_adapter)
     target_include_directories(aiverse_strata_gpu_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-    # Metal-only diagnostic cluster compute. Not linked to Renderer3D and
-    # never used as a second draw-submission authority.
+    # Metal/Vulkan diagnostic GPU cluster selection. Vulkan also writes
+    # guarded indexed indirect candidates, but Renderer3D is still the
+    # exclusive production draw owner (no automatic GPU raster switch).
     add_library(aiverse_strata_gpu_culling STATIC engine/render/StrataGpuCulling.cpp)
     target_link_libraries(aiverse_strata_gpu_culling PUBLIC
         aiverse_strata_gpu_scene aiverse_strata_view)
