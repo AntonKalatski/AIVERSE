@@ -140,3 +140,47 @@ The opt-in example `registerSystems` enables unstable-slope resolution by defaul
 A player dig may use `excavateAuthoritativeEcs(ecs,cfg,brush,tick,true,slopeSettings)` to trigger the same local slide without any water. The returned `TerraWeaveAuthoritativeEcsChange` contains `slope.slides`, `rooted.fell` and `grass`. Route each fall event to the existing optional Box3D `FallenPlantPhysics` on the native server owner thread; do not step Box3D within ECS. The same final soil revision is consumed by GPU/SpatialWorld/NavMesh and near/far vegetation via `NativeTerraWeaveWorldBinding`.
 
 `SlopeFailureSettings` bounds max slides per tick and soil moved per slide, default max 4096 disjoint source/destination pairs and 40cm displacement each. Genuine caves, overhangs, granular avalanche dynamics, debris bodies and secondary effects on water flow are not implemented by this bounded heightfield policy. New Stage60–61 sources have NOT been compiled or tested yet; PR stays Draft. Read `docs/terrain/stage-60-wet-slope-failure-handoff.md` and `docs/terrain/stage-61-nereid-slopes-ecs-handoff.md`.
+
+
+## Stage 62 — fallen logs, landslide debris and NEREID flow feedback
+
+`Integration.h::registerSystems` enables optional persistence for `nereid.flow_obstruction` and `terraweave.auto_flow_obstruction` without requiring Box3D to be linked by ordinary native water users. Only the native server that actually uses Box3D includes [PhysicsIntegration.h](PhysicsIntegration.h).
+
+A completed authoritative soil tick may produce `EcsBankTerrainCommit::slope.slides` and `EcsBankTerrainCommit::vegetation.fell` (or `TerraWeaveAuthoritativeEcsChange::slope/rooted.fell` for player digging). At the Box3D owner-thread barrier, consume these ONCE:
+
+```cpp
+#include "examples/world/terraweave_native/PhysicsIntegration.h"
+
+// PhysicsScene is your existing server-owned physics::Scene.
+// Allocate these one time; they keep stable event IDs and bounded handles:
+terraweave::FallenPlantPhysics fallenTrees(physicsScene);
+terraweave::SlopeDebrisPhysics slopeDebris(physicsScene);
+
+// Once per completed soil tick, outside ECS systems:
+auto effects = examples::terraweave_native::applySlideAndTreePhysics(
+    sim.world(), cfg, commit.slope, commit.vegetation.fell,
+    commit.completedTick, slopeDebris, fallenTrees, forestScene);
+// effects: dynamic debris bodies and actual fallen tree bodies created.
+// The source soil mass has ALREADY moved in Earthworks.
+// Debris bodies are collision/visual proxies, not a second ground-mass store.
+
+// On the authoritative Box3D step:
+physicsScene.step();
+// At the next ECS structural barrier, BEFORE NEREID samples water:
+auto obstructionChanges =
+    examples::terraweave_native::publishObstructionsAfterPhysics(
+        sim.world(), worldScene, physicsScene,
+        &fallenTrees, &slopeDebris,
+        [&](Entity waterBody)->std::optional<uint64_t> {
+            // Map canonical ECS body to NereidSceneSurface.id
+            return sceneIdForWaterEntity(waterBody);
+        });
+```
+
+NEREID's existing `sampleWater` and `WaterQueryIndex::sample` now both apply the exact same **Fixed-point** local obstruction policy AFTER river currents, vortices, confluences and cascades: debris and tree trunks slow water, with bounded lateral deflection based on which side of the obstruction a probe lies. This affects bank erosion, sediment advection and water interactions **on the following authoritative tick**. A mirrored immutable copy of those obstruction records is sent into `WorldScene`; water whitewater shader packets and ripple drift use the same deflection. Manual NEREID flow-obstruction entities are not overwritten by the generated tree/debris publisher.
+
+**Important:** The real water solver/geometry is still owned exclusively by NEREID. This is a local obstruction current approximation: it does NOT integrate hydrodynamic pressure, raise upstream water levels, flood new terrain or reroute the water body mesh. `WorldScene` needs an explicit ECS body → stable scene-water ID mapping; never assume ECS index equals the scene ID. Physics poses are float/server-only and must be replicated; clients only use authoritative water/terrain and rendered transforms. Transient Box3D debris has a bounded lifetime and count and does NOT create a new terrain mass source. Do not generate a physics body for every grain of sand or grass blade.
+
+On shutdown, call `slopeDebris.shutdown()` and `fallenTrees.shutdown()` **before** destroying their `physics::Scene`. Refresh generated water obstacles to an empty snapshot if physics sources disappear. After ECS rollback/load, the native host must restore/recreate authoritative physical bodies before recapturing water obstruction records.
+
+**Verification:** Stage62 source is committed, but no Clang/GCC, CMake, CTest, native ECS replay, Box3D scene, Metal/GL/Vulkan screenshot or performance test was run. Keep PR #24 Draft; the next agent should validate the first native compile before integration sign-off.
