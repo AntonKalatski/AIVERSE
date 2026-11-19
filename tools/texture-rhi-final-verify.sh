@@ -41,7 +41,21 @@ SAFE="$ROOT/build/texture-final-safe"
 GPU="$ROOT/build/texture-final-gpu"
 mkdir -p "$LOGS"
 # A failed/new run must never leave an old PASS manifest visible.
-rm -f "$LOGS/acceptance.txt"
+rm -f "$LOGS/acceptance.txt" "$LOGS/failure.txt"
+record_failure() {
+  local status="$?"
+  if ((status != 0)); then
+    {
+      printf 'result=FAIL\n'
+      printf 'sha=%s\n' "$(git rev-parse HEAD)"
+      printf 'exit_code=%s\n' "$status"
+      printf 'logs=%s\n' "$LOGS"
+    } > "$LOGS/failure.txt"
+    echo "FAIL: one-shot texture check exited $status; see $LOGS/failure.txt" >&2
+  fi
+}
+# EXIT also catches an explicit 'exit 1' after a CTest marker mismatch.
+trap record_failure EXIT
 trap 'echo "FAIL: one-shot texture verification stopped at line $LINENO; logs in build/texture-final-logs" >&2' ERR
 run_logged() {
   local name="$1"
