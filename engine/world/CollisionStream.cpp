@@ -16,8 +16,36 @@ bool seams(Cell cell,const TerrainTile& tile,const std::map<Cell,TerrainTile>& n
     return true;
 }
 }
-CollisionStream::CollisionStream(const Json& manifest,AssetReader reader,SpatialWorld& target):assets_(WorldAssets::parse(manifest)),target_(target) {
-    for(const auto& [id,c]:target.colliders()){(void)c;if(id>=0x80000000u)throw JsonError("world: static collider IDs must be below 2147483648");}
+CollisionStream::CollisionStream(const Json& manifest,AssetReader reader,
+                                 SpatialWorld& target,CollisionIdRange idRange)
+    :assets_(WorldAssets::parse(manifest)),target_(target) {
+    if(idRange.slotCount) {
+        // Each explicit namespace reserves whole 65,536-ID chunks. Ranges
+        // are assigned by the host from a sorted immutable catalog before
+        // async loads, never by worker completion order.
+        if(!idRange.valid() || assets_.chunks.size()>idRange.slotCount)
+            throw JsonError("world: invalid or undersized collision namespace");
+        uint32_t offset=0;
+        for(auto& [cell,chunk]:assets_.chunks) {
+            (void)cell;
+            chunk.idBase=uint32_t(0x80000000ull+
+                (uint64_t(idRange.firstSlot)+offset++)*65536ull);
+        }
+        const uint64_t first=0x80000000ull+uint64_t(idRange.firstSlot)*65536ull;
+        const uint64_t end=first+uint64_t(idRange.slotCount)*65536ull;
+        for(const auto& [id,c]:target.colliders()) {
+            (void)c;
+            if(uint64_t(id)>=first && uint64_t(id)<end)
+                throw JsonError("world: collision namespace overlaps existing collider");
+        }
+    } else {
+        // Preserve legacy single-world behavior and its high-ID guard.
+        for(const auto& [id,c]:target.colliders()) {
+            (void)c;
+            if(id>=0x80000000u)
+                throw JsonError("world: static collider IDs must be below 2147483648");
+        }
+    }
     auto verified=assets_.verifiedReader(reader);
     stream_=std::make_unique<AsyncChunkStream>(assets_.limits,assets_.stagingBytes,assets_.maxJobs,[this,verified](Cell cell){
         const auto& asset=assets_.chunks.at(cell);std::string bytes;
