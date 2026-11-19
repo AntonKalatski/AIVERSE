@@ -2,6 +2,7 @@
 #include "WorldAssets.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/world/NereidWaterScene.h"
+#include "engine/world/NereidCascadeScene.h"
 #include "engine/world/NereidUnderwaterView.h"
 #include "engine/world/NereidRipples.h"
 
@@ -18,6 +19,11 @@ public:
     void setNereidSurfaces(std::vector<NereidSceneSurface> surfaces);
     size_t nereidVisibleSurfaceCount()const;
     NereidUnderwaterView nereidUnderwaterAt(Vec3 camera)const;
+    // Native projects may override static waterfall manifest from ECS.
+    void setNereidCascades(std::vector<NereidCascadeSource> cascades) {
+        cascades_.setCascades(std::move(cascades));
+    }
+    size_t nereidCascadeCount()const{return cascades_.residentCount();}
     // Explicit presentation read barrier: consume one ECS tick of events.
     void ingestNereidInteractions(
         const std::vector<lib::nereid::WaterPresentationEvent>& events,
@@ -52,6 +58,7 @@ private:
     std::map<Cell,std::shared_ptr<Prepared>> resident_;
     std::unique_ptr<AsyncChunkStream> stream_;
     NereidWaterScene nereidWater_;
+    NereidCascadeScene cascades_;
     NereidRippleField ripples_;
     std::shared_ptr<Prepared> prepare(Cell,const AssetReader&);
 };
