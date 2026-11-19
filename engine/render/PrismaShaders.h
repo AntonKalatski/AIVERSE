@@ -208,27 +208,43 @@ inline const char* kMotionVectors = R"(
     RETURN(vec4(velocity, 0.0, 1.0));
 )";
 
+// Returns device-depth by default for compatibility. In linear mode it
+// reconstructs positive perspective view depth in metres, or orthographic
+// camera depth in its projection's world units. The engine uses the standard
+// (non-reversed) 0..1 window depth on both GL and Metal.
+inline const char* kMotionBlurHelpers = R"(
+PF_FN float prismaDepthMetric(float d, vec4 info) {
+    if (info.w < 0.5) return d;
+    float nearPlane = info.x, farPlane = info.y;
+    if (info.z > 0.5)
+        return mix(nearPlane,farPlane,d);
+    float denominator = max(farPlane - d * (farPlane-nearPlane),0.0001);
+    return nearPlane * farPlane / denominator;
+}
+)";
+
 // Full-resolution temporal shutter blur; velocity is from the corresponding
 // previous frame and is expressed as current-minus-previous normalized UV.
 // Uses current frame samples only (not temporal color accumulation), so no
 // ghost-producing history reads and no persistent color state.
 inline const char* kMotionBlur = R"(
     vec2 uv = TUV(s);
-    float centerDepth = TEX2(uv).r;
+    float centerDepth = prismaDepthMetric(TEX2(uv).r,depthInfo);
+    float depthLimit = depthInfo.w > 0.5 ? max(sun.w,0.01) :
+                                           max(sun.x,0.0005);
     vec2 velocity = TEX1(uv).rg;
     // Depth-matched velocity dilation: preserve foreground motion along
     // silhouettes without importing unrelated background velocity.
     if (sun.z > 0.001) {
         vec2 delta = px.xy * sun.z;
-        float limit = max(sun.x,0.0005);
         for (int i=0; i<4; ++i) {
             vec2 axis = i==0 ? vec2(delta.x,0.0) :
                         i==1 ? vec2(-delta.x,0.0) :
                         i==2 ? vec2(0.0,delta.y) : vec2(0.0,-delta.y);
             vec2 neighbor = TUV(clamp(s+axis,vec2(0.0),vec2(1.0)));
-            float depthDifference = abs(TEX2(neighbor).r-centerDepth);
+            float depthDifference = abs(prismaDepthMetric(TEX2(neighbor).r,depthInfo)-centerDepth);
             vec2 candidate = TEX1(neighbor).rg;
-            if (depthDifference < limit*0.25 &&
+            if (depthDifference < depthLimit*0.25 &&
                 dot(candidate,candidate)>dot(velocity,velocity))
                 velocity=candidate;
         }
@@ -241,8 +257,8 @@ inline const char* kMotionBlur = R"(
     int n = int(clamp(floor(p0.z + 0.5),2.0,16.0));
     // Scene depth is supplied as TEX2. Reject far-away samples where a
     // near silhouette would otherwise smear their color over foreground.
-    // Device-depth threshold is intentionally conservative, independent of
-    // the camera near/far planes; exact linear-depth filtering comes later.
+    // Optional linear-depth mode compares metric view distance instead of
+    // nonlinear hardware depth. The default legacy threshold is unchanged.
     vec3 accum = vec3(0.0);
     float weight = 0.0;
     for (int i = 0; i < 16; ++i) {
@@ -251,8 +267,8 @@ inline const char* kMotionBlur = R"(
         vec2 q = clamp(s + velocity * t,vec2(0.0),vec2(1.0));
         vec2 sampleUv = TUV(q);
         float sampleDepth = TEX2(sampleUv).r;
-        float depthDelta = abs(sampleDepth - centerDepth);
-        float threshold = max(sun.x,0.0005);
+        float depthDelta = abs(prismaDepthMetric(sampleDepth,depthInfo) - centerDepth);
+        float threshold = depthLimit;
         float keep = 1.0 - smoothstep(threshold * 0.125,
                                       threshold, depthDelta);
         accum += TEX0(sampleUv).rgb * keep;
