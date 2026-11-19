@@ -390,6 +390,44 @@ bool Renderer3D::warmModelPipelines(
     return warmModelPipelinesChecked(model,materials)==PipelineWarmStatus::Ready;
 }
 
+bool Renderer3D::hasPendingModelPipelineJobs() const noexcept {
+    if(!pendingModelPipes_.empty())return true;
+    for(const auto& [key,entry]:modelShaders_) {
+        (void)key;
+        if(entry.job)return true;
+    }
+    return false;
+}
+
+bool Renderer3D::pollPendingModelPipelineJobs() {
+    if(!dev_)return false;
+    checkGpuDevice(*dev_);
+    // Do not allocate or upload a Model, texture, or material merely to
+    // advance native GPU compiler jobs that have already been submitted.
+    for(auto& [key,entry]:modelShaders_) {
+        (void)key;
+        if(!entry.job)continue;
+        if(!entry.job(entry.shader))continue;
+        entry.job={};
+        if(!entry.shader.valid()) {
+            entry.failed=true;
+            modelError_="model shader: "+dev_->lastError();
+        }
+    }
+    // Reserve room for all completed programs before polling a backend job:
+    // if vector allocation fails, the job is still in its original slot.
+    modelPipes_.reserve(modelPipes_.size()+pendingModelPipes_.size());
+    for(auto it=pendingModelPipes_.begin();it!=pendingModelPipes_.end();) {
+        gfx::PipelineHandle pipeline{};
+        if(!it->second(pipeline)) {++it;continue;}
+        if(!pipeline.valid())
+            modelError_="model pipeline: "+dev_->lastError();
+        modelPipes_.push_back({it->first,pipeline});
+        it=pendingModelPipes_.erase(it);
+    }
+    return hasPendingModelPipelineJobs();
+}
+
 void Renderer3D::recordPersistentModel(const ModelDraw& d) {
     if (!persistentSceneEnabled_ || !d.persistentId || !d.model) return;
     GpuSceneRecord record{};
