@@ -93,7 +93,12 @@ packet cache runs without the global experimental flag.
 `engine/render/EcsStaticModelRender.h` provides the **shared genre-independent
 ECS presentation adapter** using only integer asset/revision state in the ECS
 component and the existing `WorldTransform`; model resolution and namespaced
-nonzero persistent draw IDs are caller-owned. Native FPS, RTS and other projects
+nonzero persistent draw IDs are caller-owned. The component now also offers
+appended `materialOwnerKey` and `materialOwnerRevision` integer fields
+(default zero) forwarded into `ModelDraw`, preserving old four-field aggregate
+initializers. Set them only for revision-controlled shared material owners;
+external material pointers belong in the presentation submit callback, never
+in ECS simulation data. Native FPS, RTS and other projects
 can compose this view without including either genre module. It must run after
 SceneHierarchy's transform update barrier, never in deterministic simulation.
 
