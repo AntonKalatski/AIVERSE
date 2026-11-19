@@ -23,4 +23,12 @@ struct SpirvProgram {
 // Compiles and links both stages (varyings get matching locations by name). Thread-safe.
 bool compileProgram(const std::string& vertexBody, const std::string& fragmentBody, bool linearTarget, SpirvProgram& out);
 
+// Separate GLSL450 compute compiler. The source is a complete shader with
+// #version and explicit layout(set=0,binding=N) storage buffers. No legacy
+// vertex/fragment translation is applied (critical for std430 byte parity).
+// Compilation is CPU-only, shared by Vulkan RHI and shader validation tests.
+bool compileComputeProgram(const std::string& source,
+                           std::vector<uint32_t>& spirv,
+                           std::string* error = nullptr);
+
 } // namespace aiverse::gfx::vk
