@@ -118,6 +118,38 @@ void Portrait::renderMaterial(RtsView& view, const Json& material, int shape, do
     dev_->endPass();
 }
 
+bool Portrait::renderStaticModel(render::ModelAssetProvider& provider,
+                                const std::string& source,float yaw) {
+    if(!dev_ || !color_.valid())return false;
+    // The provider retains the Model; this portrait only borrows it for a
+    // synchronous packet and does not create a second animation World.
+    const Model* model=provider.load(*dev_,source);
+    if(!model)return false;
+    RTSCamera cam;
+    cam.target=(model->boundsMin+model->boundsMax)*0.5f;
+    const auto extent=model->boundsMax-model->boundsMin;
+    cam.distance=std::max({extent.x,extent.y,extent.z,0.3f})*2.1f;
+    cam.minDistance=0.01f;
+    cam.pitch=0.15f;
+    cam.yaw=yaw;
+    cam.fovY=0.6f;
+    sceneView_.beginScene(r3d_,cam,size_,size_);
+    ModelDraw draw;
+    draw.model=model;
+    draw.world=mat4::identity();
+    ::aiverse::View::submitModel(r3d_,draw);
+    gfx::PassDesc pass;
+    pass.colorTarget=color_;
+    pass.depthTarget=depth_;
+    pass.clearColor[0]=0.12f;
+    pass.clearColor[1]=0.14f;
+    pass.clearColor[2]=0.18f;
+    pass.clearColor[3]=1.f;
+    r3d_.render(pass);
+    dev_->endPass();
+    return true;
+}
+
 void Portrait::renderPose(const Model& model,const Pose& pose,float yaw) {
     if(!dev_||!color_.valid()||pose.size()!=model.nodes.size())return;
     std::vector<mat4> world;worldMatrices(model,pose,world);
