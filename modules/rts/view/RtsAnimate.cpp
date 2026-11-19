@@ -125,13 +125,23 @@ RtsView::EntityAnim& RtsView::stateFor(uint64_t key, const SceneObject& o) {
     if (!st.initialized || st.type != o.type) {
         const TypeLook& L = looks_[o.type];
         const uint64_t h = mix64(key);
+        auto resumed=reloadPlayback_.find(key);
+        const bool compatibleReload=resumed!=reloadPlayback_.end() &&
+            resumed->second.type==o.type &&
+            frame_>=resumed->second.capturedFrame &&
+            frame_-resumed->second.capturedFrame<=120;
         st.type = o.type;
         st.choice = int(h % L.models.size());
         auto saved = streamingChoices_.find(key);
-        if (saved != streamingChoices_.end() && saved->second.first == o.type)
+        if (saved != streamingChoices_.end() && saved->second.first == o.type &&
+            saved->second.second>=0 &&
+            size_t(saved->second.second)<L.models.size())
             st.choice = saved->second.second;
         else if (L.nextVariant < L.pendingVariants.size())
             streamingChoices_[key] = {o.type, st.choice};
+        if(compatibleReload && resumed->second.choice>=0 &&
+           size_t(resumed->second.choice)<L.models.size())
+            st.choice=resumed->second.choice;
         st.anim.setModel(L.models[size_t(st.choice)].model);
         st.graph.reset(L.models[size_t(st.choice)].graph);
         st.yaw = yawOf(o.facing);
@@ -141,7 +151,32 @@ RtsView::EntityAnim& RtsView::stateFor(uint64_t key, const SceneObject& o) {
         st.rt.clear();
         st.poseValid = false;
         st.initialized = true;
-        if (st.eventAge[kProcEvSpawn] < 1) events_.push_back({"spawn", o.entity, o.type, o.owner, o.pos});
+        if(resumed!=reloadPlayback_.end()) {
+            // Consume once: an entity recycled with a different generation,
+            // missing for >120 frames, or changed type must not inherit
+            // playback. Compatible reimports restore only scalar clocks,
+            // never obsolete Model/rig/pose/native solver resources.
+            auto previous=std::move(resumed->second);
+            reloadPlayback_.erase(resumed);
+            if(compatibleReload) {
+                std::copy(std::begin(previous.eventAge),
+                          std::end(previous.eventAge),
+                          std::begin(st.eventAge));
+                st.castAge=previous.castAge;
+                st.dead=previous.dead;
+                st.deathAge=previous.deathAge;
+                st.phase=previous.phase;
+                st.yaw=previous.yaw;
+                st.speed=previous.speed;
+                st.lastPos=previous.lastPos;
+                if(st.graph.graph() && !previous.graph.state.empty())
+                    (void)st.graph.restorePlayback(previous.graph);
+            }
+        }
+        // Source hot reload is not a gameplay spawn. No duplicate
+        // presentation "spawn" event is emitted on a valid rebind.
+        if(!compatibleReload && st.eventAge[kProcEvSpawn] < 1)
+            events_.push_back({"spawn", o.entity, o.type, o.owner, o.pos});
     }
     st.seen = frame_;
     return st;
