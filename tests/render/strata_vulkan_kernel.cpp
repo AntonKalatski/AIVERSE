@@ -60,11 +60,16 @@ int main() {
     const auto asset=sample();
     std::vector<uint8_t> metadata;
     assert(packGpuMetadata(asset,metadata,&error));
-    auto* header=reinterpret_cast<GpuMetadataHeader*>(metadata.data());
-    header->version=2;
-    auto* primitive=reinterpret_cast<GpuPrimitive*>(
-        metadata.data()+header->primitivesByteOffset);
-    primitive->gpuFirstIndex=400;
+    GpuMetadataHeader header{};
+    std::memcpy(&header,metadata.data(),sizeof(header));
+    header.version=2;
+    std::memcpy(metadata.data(),&header,sizeof(header));
+    GpuPrimitive primitive{};
+    std::memcpy(&primitive,metadata.data()+header.primitivesByteOffset,
+                sizeof(primitive));
+    primitive.gpuFirstIndex=400;
+    std::memcpy(metadata.data()+header.primitivesByteOffset,
+                &primitive,sizeof(primitive));
     gfx::BufferDesc desc{};
     desc.type=gfx::BufferType::Storage;
     desc.usage=gfx::Usage::Immutable;
