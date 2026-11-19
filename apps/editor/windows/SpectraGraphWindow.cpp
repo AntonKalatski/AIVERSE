@@ -5,6 +5,7 @@
 #include "../EditorUtil.h"
 #include "../core/FxOps.h"
 #include "engine/fx/SpectraFX.h"
+#include "libraries/include/aiverselib/genre/SpectraGpuCaptureMailbox.h"
 #include "engine/fx/SpectraModuleSchema.h"
 #include "engine/fx/SpectraAuthoring.h"
 #include <string_view>
@@ -1071,6 +1072,41 @@ private:
                         selected.checkpoint.pending?"pending readback":
                             (selectedReady?"export ready":"not exportable"));
                 }
+                if(const auto* mailbox=ed.spectraGpuCaptureMailbox()) {
+                    const auto& state=mailbox->status();
+                    const char* phase="idle";
+                    switch(state.phase) {
+                    case spectra::GpuCaptureMailboxPhase::Idle:phase="idle";break;
+                    case spectra::GpuCaptureMailboxPhase::Requested:phase="queued";break;
+                    case spectra::GpuCaptureMailboxPhase::Claimed:phase="accepted by host";break;
+                    case spectra::GpuCaptureMailboxPhase::InFlight:phase="GPU readback pending";break;
+                    case spectra::GpuCaptureMailboxPhase::Ready:phase="ready";break;
+                    case spectra::GpuCaptureMailboxPhase::Failed:phase="failed";break;
+                    case spectra::GpuCaptureMailboxPhase::ReleaseRequested:phase="release requested";break;
+                    }
+                    ImGui::Text("Native renderer capture: %s (request %llu)",
+                        phase,static_cast<unsigned long long>(state.sequence));
+                    if(!state.reason.empty())
+                        ImGui::TextWrapped("%s",state.reason.c_str());
+                    ImGui::BeginDisabled(!selectedValid ||
+                        !selected.gpuActive ||
+                        (state.phase!=spectra::GpuCaptureMailboxPhase::Idle &&
+                         state.phase!=spectra::GpuCaptureMailboxPhase::Failed));
+                    if(ImGui::Button("Request selected group from render host") &&
+                       !ed.queueSpectraExternalGpuCapture(size_t(gpuCheckpointGroup_)))
+                        message_="Native render host declined or is not connected";
+                    ImGui::EndDisabled();
+                    ImGui::SameLine();
+                    ImGui::BeginDisabled(
+                        state.phase!=spectra::GpuCaptureMailboxPhase::Ready &&
+                        state.phase!=spectra::GpuCaptureMailboxPhase::Failed &&
+                        state.phase!=spectra::GpuCaptureMailboxPhase::Requested &&
+                        state.phase!=spectra::GpuCaptureMailboxPhase::InFlight);
+                    if(ImGui::Button("Release native capture"))
+                        (void)ed.releaseSpectraExternalGpuCapture();
+                    ImGui::EndDisabled();
+                    ImGui::TextDisabled("UI queues intent only; native owner executes the GPU readback.");
+                }
                 ImGui::BeginDisabled(!ed.spectraGpuPreviewActive() ||
                                     gpuCheckpointGroup_!=0);
                 if(ImGui::Button("Freeze & capture preview group 0")) {
@@ -1089,6 +1125,14 @@ private:
                 ImGui::Checkbox("Include GPU identifiers",
                                 &gpuReportIncludeIdentifiers_);
                 ImGui::BeginDisabled(!selectedReady);
+                if(ImGui::Button("Save SAFE ZIP bundle")) {
+                    std::string fileOrReason;
+                    const bool ok=ed.saveSafeSpectraGpuBundle(
+                        fileOrReason,size_t(gpuCheckpointGroup_));
+                    message_=(ok?"Sanitized ZIP bundle saved: ":
+                                "Safe ZIP unavailable: ")+fileOrReason;
+                }
+                ImGui::SameLine();
                 if(ImGui::Button("Save safe JSON report")) {
                     std::string fileOrReason;
                     const bool ok=ed.saveSafeSpectraGpuReport(
