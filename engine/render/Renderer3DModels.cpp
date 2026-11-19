@@ -41,6 +41,20 @@ inline MaterialUniforms packGpuPbrMaterialU2(const Material& mt) {
         mu.light[0] = mt.fixedLight.x; mu.light[1] = mt.fixedLight.y; mu.light[2] = mt.fixedLight.z; mu.light[3] = mt.fixedLight.w;
     return mu;
 }
+inline std::array<gfx::TextureHandle,4> gpuGraphSourceTextures(
+    const Model& model, const Material& material,
+    gfx::TextureHandle white) {
+    std::array<gfx::TextureHandle,4> result{};
+    if (!material.shaderGraph) return result;
+    const size_t count=std::min(size_t(4),material.shaderGraph->textures.size());
+    for(size_t i=0;i<count;++i) {
+        const int index=material.graphTextures[i];
+        result[i]=index>=0 && size_t(index)<model.images.size() &&
+            model.images[size_t(index)].tex.valid() ?
+            model.images[size_t(index)].tex : white;
+    }
+    return result;
+}
 inline std::array<gfx::TextureHandle,6> gpuPbrSourceTextures(
     const Model& model, const Material& mt, gfx::TextureHandle white,
     gfx::TextureHandle black, gfx::TextureHandle flatNormal) {
@@ -1233,6 +1247,10 @@ void Renderer3D::prepareGpuModelDraws() {
         const char* value = std::getenv("AIVERSE_GPU_ICB_RIGID");
         return value && std::strcmp(value, "1") == 0;
     }();
+    static const bool graphIcbEnabled=[] {
+        const char* flag=std::getenv("AIVERSE_EXPERIMENTAL_ICB_SHADER_GRAPH");
+        return flag && std::strcmp(flag,"1")==0;
+    }();
     std::vector<uint32_t> eligibleIndices;
     eligibleIndices.reserve(modelItems_.size() / 4);
     for (uint32_t i = 0; i < modelItems_.size(); ++i) {
@@ -1244,7 +1262,10 @@ void Renderer3D::prepareGpuModelDraws() {
             (!includeRigidDynamic && !(it.flags & kDrawStatic)) ||
             (it.flags & (kDrawTransparent | kDrawFadeDepth | kDrawActorReveal)) ||
             it.tint.w < .99f || it.mat->transparent ||
-            it.mat->shaderGraph ||
+            (it.mat->shaderGraph &&
+             (!graphIcbEnabled ||
+              int(matQuality_)<it.mat->shaderGraph->minQuality ||
+              !gpuIcbFragmentGraphEligible(*it.mat))) ||
             it.joints >= 0 || it.morph >= 0 || it.baked ||
             it.gi != 0 || it.materialRole || it.shadowRole || it.paletteMaterials ||
             // Current GPU compute only does frustum culling; do not bypass
@@ -1303,8 +1324,19 @@ void Renderer3D::prepareGpuModelDraws() {
     }();
     const auto mayMixPbr = [&](uint32_t index) {
         const auto& material=*modelItems_[index].mat;
-        return mixedPbrGroups && (!vtEnabled[index] || pbrVtAvailable) &&
-               equivalentGpuIcbPbrPipelineMaterial(material,material);
+        if (!mixedPbrGroups || (vtEnabled[index] && !pbrVtAvailable))
+            return false;
+        if (material.shaderGraph)
+            return graphIcbEnabled && gpuIcbFragmentGraphEligible(material) &&
+                int(matQuality_)>=material.shaderGraph->minQuality;
+        return equivalentGpuIcbPbrPipelineMaterial(material,material);
+    };
+    const auto pipelineMaterialCompatible=[&](const Material& a,
+                                               const Material& b) {
+        if (a.shaderGraph || b.shaderGraph)
+            return graphIcbEnabled &&
+                   equivalentGpuIcbGraphPipelineMaterial(a,b);
+        return equivalentGpuIcbPbrPipelineMaterial(a,b);
     };
     const auto vtCompatible = [&](uint32_t left, uint32_t right) {
         if (mixedVtGroups && vtEnabled[left] && vtEnabled[right])
@@ -1318,13 +1350,15 @@ void Renderer3D::prepareGpuModelDraws() {
         const auto& b=modelItems_[right];
         if (vtEnabled[left] == vtEnabled[right] &&
             mayMixPbr(left) && mayMixPbr(right))
-            return equivalentGpuIcbPbrPipelineMaterial(*a.mat,*b.mat);
+            return pipelineMaterialCompatible(*a.mat,*b.mat);
         return equivalentGpuMaterial(*a.model,*a.mat,*b.model,*b.mat);
     };
     const auto externalMaterialHash = [&](uint32_t index) {
         const auto& item=modelItems_[index];
         uint64_t hash=mayMixPbr(index) ?
-            gpuIcbPbrPipelineHash(*item.mat) :
+            (item.mat->shaderGraph ?
+                gpuIcbGraphPipelineHash(*item.mat) :
+                gpuIcbPbrPipelineHash(*item.mat)) :
             gpuMaterialStateHash(*item.model,*item.mat);
         // Exact comparison below remains authoritative, even on a hash
         // collision. The special no-VT tag distinguishes the two modes.
@@ -1620,7 +1654,7 @@ void Renderer3D::prepareGpuModelDraws() {
             // ticket validation below remains mandatory at execution.
             const bool materialMode = perCommandVt && vtEnabled[indices[first]];
             const bool pbrMode = mayMixPbr(indices[first]) &&
-                equivalentGpuIcbPbrPipelineMaterial(
+                pipelineMaterialCompatible(
                     *modelItems_[indices[first]].mat,
                     *modelItems_[indices[first]].mat);
             std::vector<gfx::GpuIcbVirtualMaterial> commandMaterials;
@@ -1638,7 +1672,7 @@ void Renderer3D::prepareGpuModelDraws() {
                     if (vtEnabled[index] != uint8_t(materialMode) ||
                         (materialMode && !binding.valid()) ||
                         (pbrMode &&
-                         !equivalentGpuIcbPbrPipelineMaterial(
+                         !pipelineMaterialCompatible(
                              *modelItems_[indices[first]].mat,*item.mat))) {
                         materialSnapshotValid=false;
                         break;
@@ -1664,10 +1698,20 @@ void Renderer3D::prepareGpuModelDraws() {
                         const auto u2=packGpuPbrMaterialU2(*item.mat);
                         std::memcpy(ordinaryDescriptor.u2.data(),&u2,sizeof(u2));
                         ordinaryDescriptor.textures=textures;
+                        if (item.mat->shaderGraph) {
+                            ordinaryDescriptor.graphTextureCount=uint32_t(
+                                item.mat->shaderGraph->textures.size());
+                            ordinaryDescriptor.graphTextures=gpuGraphSourceTextures(
+                                *item.model,*item.mat,white_);
+                        }
                         if (materialMode) {
                             virtualDescriptor.hasPbr=true;
                             virtualDescriptor.pbrTextures=textures;
                             virtualDescriptor.pbrU2=ordinaryDescriptor.u2;
+                            virtualDescriptor.graphTextureCount=
+                                ordinaryDescriptor.graphTextureCount;
+                            virtualDescriptor.graphTextures=
+                                ordinaryDescriptor.graphTextures;
                         }
                     }
                     GpuMaterialResourceBinding snapshot;
@@ -1680,6 +1724,8 @@ void Renderer3D::prepareGpuModelDraws() {
                     if (pbrMode) {
                         snapshot.pbrTextures=ordinaryDescriptor.textures;
                         snapshot.pbrU2=ordinaryDescriptor.u2;
+                        snapshot.graphTextureCount=ordinaryDescriptor.graphTextureCount;
+                        snapshot.graphTextures=ordinaryDescriptor.graphTextures;
                     }
                     const auto ticket=gpuMaterialResources_.intern(snapshot);
                     if (!ticket.valid() ||
@@ -1738,7 +1784,9 @@ void Renderer3D::prepareGpuModelDraws() {
                         GpuMaterialResourceBinding candidate;
                         if (!gpuMaterialResources_.resolve(commandTickets[j],candidate) ||
                             firstSignature.pbrTextures != candidate.pbrTextures ||
-                            firstSignature.pbrU2 != candidate.pbrU2) {
+                            firstSignature.pbrU2 != candidate.pbrU2 ||
+                            firstSignature.graphTextureCount != candidate.graphTextureCount ||
+                            firstSignature.graphTextures != candidate.graphTextures) {
                             group.mixedPbrResources=true;
                             break;
                         }
@@ -2073,7 +2121,7 @@ void Renderer3D::renderModels(int phase) {
                 if (usesVt) live.virtualTexture = current;
                 live.alphaCoverage = alpha;
                 if (group.perCommandPbr) {
-                    if (!equivalentGpuIcbPbrPipelineMaterial(
+                    if (!pipelineMaterialCompatible(
                             group.pbrPipelineSnapshot,*item.mat)) {
                         stable=false;
                         break;
@@ -2083,6 +2131,12 @@ void Renderer3D::renderModels(int phase) {
                         *item.model,*item.mat,white_,black_,flatNormal_);
                     const auto u2=packGpuPbrMaterialU2(*item.mat);
                     std::memcpy(live.pbrU2.data(),&u2,sizeof(u2));
+                    if (item.mat->shaderGraph) {
+                        live.graphTextureCount=uint32_t(
+                            item.mat->shaderGraph->textures.size());
+                        live.graphTextures=gpuGraphSourceTextures(
+                            *item.model,*item.mat,white_);
+                    }
                 }
                 const auto ticket = (group.perCommandVt || group.perCommandPbr) ?
                     group.perCommandTickets[itemOrdinal] : group.materialResources;
