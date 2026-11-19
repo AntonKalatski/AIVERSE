@@ -79,7 +79,7 @@ public:
             // Any graph edit may replace materials, shaders, palettes, FX
             // pipelines or GPU textures. Keep the COMPLETE former preview
             // bundle alive until its last GPU submission completes.
-            const std::string nextPreviewKey = doc_.dump(-1);
+            const std::string nextPreviewKey = ShaderGraphPreview::resourceKey(doc_);
             if (!previewKey_.empty() && previewKey_ != nextPreviewKey)
                 retirePreview();
             previewKey_ = nextPreviewKey;
