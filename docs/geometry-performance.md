@@ -697,3 +697,44 @@ groups and actually submitted mixed-model MDI groups.
 This is a **source-level optimization, not yet a measured performance
 gain**. Compile/CTest and a same-scene Metal CPU/GPU off/on/off comparison
 remain a later phase per the user's instructions.
+
+
+### Sparse epoch-stamped preflight items (Stage 22)
+
+The Stage 21 `StaticCrossModelPreflightWorkspace` now avoids clearing the
+**entire current ModelItem index and mode arrays** at each shadow or opaque
+render pass. `beginPass(itemCount)` advances a separate 32-bit *item
+generation*, clears only the actual ready-group records and keeps the
+previous item scratch buffer capacity. The first scan writes a group index
+and its generation stamp **only for actually eligible static items**.
+`groupForItem(index)` returns the invalid sentinel for any entry with an
+older generation; an unvisited item never inherits last pass's group.
+
+After at least one group qualifies, `activateModes(itemCount)` makes the
+mode map available without zero-filling every element. The promotion scan
+calls `rememberMode(index, mode)` for touched eligible items; the sort,
+CPU MDI candidate scan and adaptive instancing fallback now all use
+`modeOf(index)`, which returns zero unless both the current generation
+and active-mode flag match. Thus stale `1=MDI` or `2=instancing` from
+previous shadow/main camera views is never read. When a pass has no
+qualifying group, `clearModes()` performs a constant-time logical
+invalidation rather than a linear array fill.
+
+The item generation uses 32-bit stamps for compactness. At the extremely
+rare wrap to zero, it resets **both stamp arrays once**, then resumes from
+generation 1; the independent 64-bit open-addressed directory generation
+continues its own existing wrap handling. `release()` on whole-scene
+cache invalidation or renderer shutdown frees the index/mode/stamp
+storage and resets both generations.
+
+**Memory/performance tradeoff:** Each retained ModelItem slot now requires
+2 bytes for the group index, 1 byte for its mode, and 4 bytes for **each**
+of the group and mode generation stamps (11 bytes per high-water ModelItem
+instead of the earlier 3 bytes, excluding vector capacity overhead).
+This is intentionally more retained CPU memory to avoid repeated
+full-scene zeroing on passes with few eligible objects. The editor's
+`Preflight workspace retained` diagnostic includes all additional
+stamp capacities. A scene that reuses nearly every item every pass may
+not be faster; only same-camera CPU/GPU A/B can establish the benefit.
+No shader, GPU command ABI, geometry, LOD, culling, or model ownership
+behavior changes, and experimental flags remain disabled by default.
