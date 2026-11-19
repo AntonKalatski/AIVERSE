@@ -700,6 +700,8 @@ private:
                         (unsigned long long)modelStats.staticCrossModelPreflightRejected);
                     ImGui::Text("Page preflight selected: %llu visible items",
                         (unsigned long long)modelStats.staticCrossModelPreflightItems);
+                    ImGui::Text("Pre-ranked pooled state groups: %llu",
+                        (unsigned long long)modelStats.staticCrossModelRankedGroups);
                     ImGui::Text("Preflight workspace retained: %.1f KiB",
                         double(modelStats.staticCrossModelPreflightWorkspaceBytes) / 1024.0);
                     ImGui::TextDisabled("Reusable across views; cleared on scene reload, no retained GPU data.");
