@@ -220,6 +220,34 @@ int main() {
     assert(aiverse::render::geometryPoolStats(dev).occupiedBytes == priorBytes);
     dev.rejectSharedWrites = false;
 
+    // Capacity pressure must not allocate a second shared GPU page for the
+    // sidecar or overwrite a neighboring rigid Model allocation.
+    std::vector<uint32_t> tooLarge(2 * 1024 * 1024 / sizeof(uint32_t), 0u);
+    aiverse::render::GeometryPoolIndexSpan rejected;
+    assert(!aiverse::render::uploadAuxiliaryGeometryIndices(
+        dev, sourceModel, tooLarge.data(), tooLarge.size(), rejected));
+    assert(!rejected.valid());
+    assert(aiverse::render::geometryPoolStats(dev).pages == 1);
+    assert(aiverse::render::geometryPoolStats(dev).occupiedBytes == priorBytes);
+
+    aiverse::render::Model neighboringModel;
+    neighboringModel.vertices.resize(3);
+    neighboringModel.indices = {0, 1, 2};
+    assert(aiverse::render::uploadModelToGeometryPool(dev, neighboringModel));
+    assert(neighboringModel.vb == sourceModel.vb);
+    assert(neighboringModel.gpuFirstIndex != sourceModel.gpuFirstIndex);
+    const auto& neighborBuffer = dev.buffers[neighboringModel.ib.id];
+    for (uint32_t i = 0; i < neighboringModel.indices.size(); ++i)
+        assert(read<uint32_t>(neighborBuffer,
+               (size_t(neighboringModel.gpuFirstIndex) + i) * 4) ==
+               neighboringModel.indices[i]);
+    // Sidecar bytes remain intact after another compatible Model uploads.
+    for (uint32_t i = 0; i < binding.indexCount; ++i)
+        assert(read<uint32_t>(neighborBuffer,
+               (size_t(binding.firstIndex) + i) * 4) ==
+               asset.primitives[i / 9].geometry.indices[i % 9]);
+    aiverse::render::releaseModelGeometryPool(dev, neighboringModel);
+
     // Ownership and revision invalidation are separate from metadata
     // allocation. A source revision change must not preserve stale bindings.
     sourceModel.markGeometryChanged();
