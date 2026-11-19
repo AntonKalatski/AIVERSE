@@ -149,12 +149,23 @@ public:
         ingest(events,completedTick,[](const auto&){});
     }
     // Independent render-time ageing: never feeds a simulation checksum.
-    void advance(float deltaSeconds) {
+    template<class ResolveCurrent>
+    void advance(float deltaSeconds,ResolveCurrent&& current) {
         if(!std::isfinite(deltaSeconds) || deltaSeconds<=0)return;
-        const float dt=std::min(deltaSeconds,0.25f);
-        for(auto& r:ripples_)r.age+=dt;
+        const double dt=double(std::min(deltaSeconds,0.25f));
+        for(auto& r:ripples_) {
+            r.age+=float(dt);
+            const Vec3 flow=current(r.waterId);
+            // Use flow from the copied ECS water snapshot only; never
+            // integrate physical actor velocity or modify simulation.
+            r.x+=std::clamp(flow.x.toDouble(),-100.0,100.0)*dt;
+            r.z+=std::clamp(flow.z.toDouble(),-100.0,100.0)*dt;
+        }
         ripples_.erase(std::remove_if(ripples_.begin(),ripples_.end(),
             [](const NereidRipple& r){return r.age>=r.lifetime;}),ripples_.end());
+    }
+    void advance(float deltaSeconds) {
+        advance(deltaSeconds,[](uint64_t){return Vec3{};});
     }
     // Alpha-blended annular quads, generated only for currently live ripples.
     // World origin uses double subtraction before conversion to float,
