@@ -221,6 +221,49 @@ int main() {
     assert(waterCursorState.microWater[2].x==3);
     assert(deadwoodLedgerBalanced(waterCursorState));
 
+    // Full persisted 4m cap: process bounded slices over 65,536
+    // distinct body-tagged cells without changing any organic mass.
+    // This is a correctness/limit fixture, NOT a performance benchmark.
+    ForestDeadwoodResource capacity;
+    capacity.totalInitialUnits=ForestDeadwoodResource::kMaxMicroWaterCells;
+    capacity.microWater.reserve(
+        ForestDeadwoodResource::kMaxMicroWaterCells+1);
+    for(int64_t x=0;
+        x<int64_t(ForestDeadwoodResource::kMaxMicroWaterCells);++x)
+        capacity.microWater.push_back({1,x,0,1});
+    assert(deadwoodLedgerBalanced(capacity));
+    ForestMicroSettings capacitySettings;
+    capacitySettings.maxWaterPerStep=1024;
+    const auto stationaryRiver=[](int64_t,int64_t,uint64_t expected){
+        return expected==1?
+            ForestMicroSample{1,true,0,0}:ForestMicroSample{};
+    };
+    const auto firstSlice=advanceForestMicroNutrients(
+        capacity,256,soil,stationaryRiver,capacitySettings);
+    assert(firstSlice.due && firstSlice.waterProcessed==1024);
+    assert(capacity.microWaterCursor==1024);
+    const auto secondSlice=advanceForestMicroNutrients(
+        capacity,512,soil,stationaryRiver,capacitySettings);
+    assert(secondSlice.due && secondSlice.waterProcessed==1024);
+    assert(capacity.microWaterCursor==2048);
+    assert(capacity.microWater.size()==
+           ForestDeadwoodResource::kMaxMicroWaterCells);
+    assert(capacity.totalInitialUnits==
+           ForestDeadwoodResource::kMaxMicroWaterCells);
+    assert(deadwoodLedgerBalanced(capacity));
+    // An oversized saved reservoir is rejected BEFORE any processing.
+    capacity.microWater.push_back({
+        1,int64_t(ForestDeadwoodResource::kMaxMicroWaterCells),0,1});
+    capacity.totalInitialUnits++;
+    rejected=false;
+    try{
+        advanceForestMicroNutrients(
+            capacity,768,soil,stationaryRiver,capacitySettings);
+    }catch(const std::invalid_argument&){rejected=true;}
+    assert(rejected && capacity.microWater.size()==
+           ForestDeadwoodResource::kMaxMicroWaterCells+1);
+    assert(capacity.lastNutrientTick==512);
+
     // Bad NEREID body link and old tick must fail without mutation.
     const std::vector<ForestMicroJunction> wrong={
         {1,{1,0,0},{1,1,0},32}
