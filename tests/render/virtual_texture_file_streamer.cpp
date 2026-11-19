@@ -10,6 +10,7 @@
 #include <fstream>
 #include <map>
 #include <stdexcept>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -416,7 +417,13 @@ void asynchronousGpuFeedbackRuntime() {
     const auto completed=runtime.submit(stream);
     require(completed.submittedNewRequests==0,
             "no duplicate disk requests after all visible mips are pending");
-    require(runtime.capture(target),"capture next frame after consuming result");
+    if (!runtime.capture(target)) {
+        throw std::runtime_error(
+            std::string("capture next frame after consuming result: ") +
+            runtime.lastError() +
+            (gpu.feedbackCompletion ? " (mock callback slot occupied)" :
+                                      " (mock callback slot free)"));
+    }
     const auto pending=std::move(gpu.feedbackCompletion);
     require(bool(pending),"second GPU callback remains in flight");
     runtime.shutdown(); // user closes the preview/streamer before completion
