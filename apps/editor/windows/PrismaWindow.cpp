@@ -102,9 +102,10 @@ public:
             pf.stats().adaptiveHistoryAdmissionRejected ?
                 "rejected by per-camera quota" : "allowed / not requested");
         const auto capability=pf.runtimeCapabilities();
-        ImGui::TextDisabled("GPU capability: %s | HDR RGBA16F: %s | HDR requested: %s",
+        ImGui::TextDisabled("GPU capability: %s | RGBA16F: %s | HDR authored: %s | usable: %s",
             capability.deviceHealthy ? "ready" : "unavailable / disabled",
             capability.hdrFormatSupported ? "supported" : "unsupported",
+            capability.hdrAuthoredRequested ? "yes" : "no",
             capability.hdrRequested ? "yes" : "no");
         ImGui::TextDisabled("Temporal: requested %s, shader %s, last resolve %s",
             capability.temporalRequested ? "yes" : "no",
