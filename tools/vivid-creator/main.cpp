@@ -67,6 +67,7 @@ struct CreatorApp {
     std::unique_ptr<MorphAuthoring> morphDraft;
     std::size_t morphSourceVertices=0;
     int morphTargetIndex=0,morphVertexIndex=0;
+    char newMorphName[129]="newCorrective";
     render::float3 morphEditOffset{};
     bool morphDirty=false;
     std::array<char,129> scalpProxyName{};
@@ -631,8 +632,16 @@ struct CreatorApp {
                 if(ImGui::IsItemDeactivatedAfterEdit())pendingRebuild=true;
                 ImGui::PopID();
             }
-            if(morphDraft && morphDraft->targets()>0 &&
-               ImGui::TreeNode("Sparse morph vertex sculpt")) {
+            if(morphDraft && ImGui::TreeNode("Sparse morph vertex sculpt")) {
+                ImGui::InputText("New morph name",newMorphName,sizeof(newMorphName));
+                if(ImGui::Button("Add named target")) {
+                    if(morphDraft->addTarget(newMorphName)) {
+                        morphTargetIndex=int(morphDraft->targets())-1;
+                        morphDirty=true;pendingRebuild=true;
+                        status="VIVID named corrective added";
+                    } else status="VIVID target creation rejected";
+                }
+                if(morphDraft->targets()>0) {
                 ImGui::TextWrapped("Edit one source vertex position delta in "
                     "the chosen target. Source head geometry stays unchanged.");
                 const int maxTarget=int(morphDraft->targets())-1;
@@ -640,6 +649,13 @@ struct CreatorApp {
                 morphTargetIndex=std::clamp(morphTargetIndex,0,maxTarget);
                 const auto& target=morphDraft->shapes()[std::size_t(morphTargetIndex)];
                 ImGui::Text("Target: %s",target.name.c_str());
+                if(ImGui::Button("Delete selected target")) {
+                    if(morphDraft->removeTarget(std::size_t(morphTargetIndex))) {
+                        morphTargetIndex=0;
+                        morphDirty=true;pendingRebuild=true;
+                        status="VIVID corrective target deleted";
+                    }
+                }
                 const int maxVertex=int(morphSourceVertices)-1;
                 ImGui::SliderInt("Source vertex",&morphVertexIndex,0,
                                  std::max(0,maxVertex));
@@ -701,6 +717,7 @@ struct CreatorApp {
                         status="VIVID morph sidecar saved; save manifest to publish path";
                     }catch(const std::exception& e){status=e.what();}
                 }
+                } // nonempty morph targets
                 ImGui::TreePop();
             }
             if(ImGui::Button("Save imported manifest")) {
