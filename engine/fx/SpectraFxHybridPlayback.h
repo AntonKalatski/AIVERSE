@@ -136,6 +136,14 @@ public:
         }
     }
 
+    // Camera-aware update used by native clients. The no-camera overload
+    // remains for standalone hosts and preserves LOD settings from last view.
+    void updateGpu(float dt,render::float3 cameraEye) {
+        for(auto& pair:active_) pair.second->updateLod(cameraEye);
+        for(auto& shot:oneShots_) shot.emitter->updateLod(cameraEye);
+        updateGpu(dt);
+    }
+
     // Call during a compatible open render pass after the compute stage.
     // This submits only GPU-owned emitters, never duplicates CPU draws.
     void renderGpu(const render::mat4& viewProj,render::float3 cameraRight,
