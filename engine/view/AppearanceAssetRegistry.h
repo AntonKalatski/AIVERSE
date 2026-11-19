@@ -4,11 +4,14 @@
 #include "AppearanceAuthoringService.h"
 #include "AppearanceChoiceAuthoring.h"
 #include "ModelPublicationEpoch.h"
+#include "engine/render/RenderDeviceLifetime.h"
+#include "engine/render/ModelReadLease.h"
 #include <algorithm>
 #include <cstdint>
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -134,6 +137,163 @@ public:
                 candidate.visualModelGeneration=
                     visual.modelPublicationGeneration;
                 out=std::move(candidate);
+                return true;
+            }catch(const std::exception& ex) {
+                if(error)*error=ex.what();
+                return false;
+            }
+        }
+
+        // Generic authoring requests. Published appearance snapshots remain
+        // host-owned; these descriptions are used only during compilation.
+        struct VisualLodRequest {
+            const Asset* visual=nullptr;
+            float minDistance=0.f;
+            // Explicit map for complex rigs; null + matchByName enables
+            // generic importer-name matching, never index guessing.
+            std::shared_ptr<const ModelPoseRetarget> mapping;
+            bool matchByName=false;
+        };
+        struct SocketBindingRequest {
+            size_t attachmentIndex=0;
+            std::string socketName;
+            int socket=-1;
+        };
+        struct CompiledPresentationBindings {
+            struct SocketBinding {
+                size_t attachmentIndex=0;
+                std::string socketName;
+                int socket=-1;
+                std::shared_ptr<const CompiledModelSocket> compiled;
+            };
+            const render::Model* sourceModel=nullptr; // comparison only
+            uint64_t sourcePublication=0;
+            std::vector<ModelLod> lods;
+            std::vector<SocketBinding> sockets;
+
+            // Transactional packet application. No graph evaluation, GPU
+            // allocation, old Model dereference or ownership transfer.
+            // All authored selectors and source publication must match.
+            bool apply(Object& packet) const {
+                if(!sourceModel || !sourcePublication ||
+                   animationSourceModel(packet)!=sourceModel ||
+                   packet.animationModelGeneration!=sourcePublication)
+                    return false;
+                for(const auto& binding:sockets) {
+                    if(!binding.compiled ||
+                       binding.attachmentIndex>=packet.attachments.size())
+                        return false;
+                    const auto& attachment=packet.attachments[binding.attachmentIndex];
+                    if(attachment.socketName!=binding.socketName ||
+                       attachment.socket!=binding.socket ||
+                       binding.compiled->rig!=sourceModel ||
+                       binding.compiled->publication!=sourcePublication ||
+                       binding.compiled->socketName!=binding.socketName ||
+                       binding.compiled->authoredSocket!=binding.socket)
+                        return false;
+                }
+                Object next=packet;
+                next.lods=lods;
+                // Replace the entire authored socket layout: never leave
+                // a compiled binding from an earlier publication behind.
+                for(auto& attachment:next.attachments)
+                    attachment.compiledSocket.reset();
+                for(const auto& binding:sockets)
+                    next.attachments[binding.attachmentIndex].compiledSocket=
+                        binding.compiled;
+                packet=std::move(next);
+                return true;
+            }
+        };
+
+        // Compile a whole authored visual configuration atomically against
+        // this already-published immutable source asset. If any LOD or
+        // socket fails, out is untouched (the prior last-good configuration
+        // remains usable). No render-thread or gameplay state is changed.
+        bool compilePresentationBindings(
+                std::span<const VisualLodRequest> authoredLods,
+                std::span<const SocketBindingRequest> authoredSockets,
+                CompiledPresentationBindings& out,
+                std::string* error=nullptr) const {
+            if(error)error->clear();
+            try {
+                if(!model || modelPublicationGeneration==0)
+                    throw std::invalid_argument(
+                        "presentation bindings need a published source Model");
+                CompiledPresentationBindings candidate;
+                candidate.sourceModel=model;
+                candidate.sourcePublication=modelPublicationGeneration;
+                candidate.lods.reserve(authoredLods.size());
+                float previousDistance=0.f;
+                for(const auto& authored:authoredLods) {
+                    if(!authored.visual || !authored.visual->model ||
+                       !std::isfinite(authored.minDistance) ||
+                       authored.minDistance<=previousDistance)
+                        throw std::invalid_argument(
+                            "visual LOD needs a published Model and strictly increasing distance");
+                    auto mapping=authored.mapping;
+                    if(!mapping) {
+                        if(!authored.matchByName)
+                            throw std::invalid_argument(
+                                "visual LOD needs explicit map or opt-in named matching");
+                        mapping=std::make_shared<const ModelPoseRetarget>(
+                            makeNamedModelPoseRetarget(*model,*authored.visual->model));
+                    }
+                    ModelLod lod;
+                    if(!compileVisualLod(*authored.visual,authored.minDistance,
+                                         *mapping,lod,error))
+                        return false;
+                    lod.retarget=std::move(mapping);
+                    candidate.lods.push_back(std::move(lod));
+                    previousDistance=authored.minDistance;
+                }
+                candidate.sockets.reserve(authoredSockets.size());
+                std::unordered_set<size_t> seen;
+                for(const auto& authored:authoredSockets) {
+                    if(!seen.insert(authored.attachmentIndex).second)
+                        throw std::invalid_argument(
+                            "duplicate attachment binding index");
+                    auto compiled=compileModelSocket(
+                        *model,modelPublicationGeneration,
+                        authored.socketName,authored.socket);
+                    if(!compiled)
+                        throw std::invalid_argument(
+                            "invalid attachment socket or unpublished rig");
+                    candidate.sockets.push_back({
+                        authored.attachmentIndex,authored.socketName,
+                        authored.socket,std::move(compiled)});
+                }
+                out=std::move(candidate);
+                return true;
+            }catch(const std::exception& ex) {
+                if(error)*error=ex.what();
+                return false;
+            }
+        }
+
+        // One native packet entry point for an already-published appearance,
+        // optional compiled LODs/sockets and host-authored child attachments.
+        // A caller with its own presentation animation owner must clear
+        // packet.graph before submitting a PRECOMPUTED pose to generic View.
+        // Failure leaves the previously valid output packet untouched.
+        bool packetWithBindings(
+                const render::mat4& world,
+                std::span<const ModelAttachment> attachments,
+                const CompiledPresentationBindings* bindings,
+                Object& out,std::string* error=nullptr) const {
+            if(error)error->clear();
+            try {
+                Object next;
+                if(!packet(world,next)) {
+                    if(error)*error="appearance has no published Model";
+                    return false;
+                }
+                next.attachments.assign(attachments.begin(),attachments.end());
+                if(bindings && !bindings->apply(next)) {
+                    if(error)*error="compiled appearance binding revision or attachment mismatch";
+                    return false;
+                }
+                out=std::move(next);
                 return true;
             }catch(const std::exception& ex) {
                 if(error)*error=ex.what();
@@ -383,6 +543,217 @@ private:
     std::unordered_map<std::string,Snapshot> assets_;
     std::unordered_set<std::string> dirty_,dirtyGraph_,dirtyModel_;
     uint64_t versionSerial_=0,animationSerial_=0;
+};
+
+// Retains published appearance/material/graph snapshots across one
+// View::update() + synchronous View::submit() transaction. Native and
+// cinematic hosts may construct a batch while the asset registry is
+// hot reloading other keys. Pointer fields in ModelDraw refer into the
+// pinned snapshots, not the registry's replaceable current entries.
+//
+// Important: snapshots own ONLY appearance CPU values + shared Graph,
+// NOT a Model or its GPU resources. The host still retains each borrowed
+// Model and its Device epoch through the animation worker join and draw.
+class PinnedAppearanceBatch final {
+public:
+    using Snapshot=AppearanceAssetRegistry::Snapshot;
+    void reserve(size_t count) {
+        // Reserve first for stable, failure-safe packet assembly.
+        pins_.reserve(count);
+        packets_.reserve(count);
+    }
+    bool add(Snapshot asset,const render::mat4& world) {
+        if(!asset)return false;
+        Object packet;
+        if(!asset->packet(world,packet))return false;
+        pins_.push_back(std::move(asset));
+        try {
+            packets_.push_back(std::move(packet));
+        }catch(...) {
+            pins_.pop_back();
+            throw;
+        }
+        return true;
+    }
+
+    // Optional STRONG CPU ownership for a host whose Model is managed by
+    // shared_ptr. The exact pointer must match the borrowed published Asset.
+    // The shared_ptr's custom deleter must NEVER destroy in-flight GPU
+    // handles; GPU completion/retirement remains owned by the renderer host.
+    //
+    // ModelResourceCache currently stores unique_ptr<Model> and cannot
+    // produce this strong pin without a separate owner transaction.
+    // Such cache-backed hosts should keep using add() plus their explicit
+    // cache detach/retire boundary; do not fabricate non-owning aliases.
+    bool addOwned(Snapshot asset,const render::mat4& world,
+                  std::shared_ptr<const render::Model> modelOwner) {
+        if(!asset || !modelOwner || asset->model!=modelOwner.get())
+            return false;
+        // Thousands of actors may share one Model. Keep ONE strong CPU pin
+        // per distinct Model pointer, not one shared_ptr ref per instance.
+        const bool newPin=std::none_of(modelPins_.begin(),modelPins_.end(),
+            [&](const auto& existing){return existing.get()==modelOwner.get();});
+        if(newPin)modelPins_.push_back(std::move(modelOwner));
+        try {
+            if(add(std::move(asset),world))return true;
+            if(newPin)modelPins_.pop_back();
+            return false;
+        }catch(...) {
+            if(newPin)modelPins_.pop_back();
+            throw;
+        }
+    }
+    // An alternative for native ModelResourceCache's UNIQUE Model ownership:
+    // acquire an actual cache read lease from ModelResourceCache on its
+    // owner thread, then transfer the lease into this batch. The lease
+    // blocks cache eviction/replacement until clear(); it does NOT own GPU
+    // handles or change ModelMap's unique_ptr semantics.
+    bool addCacheOwned(Snapshot asset,const render::mat4& world,
+                       render::ModelReadLease lease) {
+        if(!asset || !lease || asset->model!=lease.get())return false;
+        const auto* raw=lease.get();
+        const bool newPin=std::none_of(cacheModelPins_.begin(),cacheModelPins_.end(),
+            [&](const auto& existing){return existing.get()==raw;});
+        if(newPin)cacheModelPins_.push_back(std::move(lease));
+        try {
+            if(add(std::move(asset),world))return true;
+            if(newPin)cacheModelPins_.pop_back();
+            return false;
+        }catch(...) {
+            if(newPin)cacheModelPins_.pop_back();
+            throw;
+        }
+    }
+    // Check a new authored LOD/attachment before accepting a cache
+    // lease. Do not acquire leases for arbitrary unused cache Models.
+    bool pinCacheRelatedModel(render::ModelReadLease lease) {
+        if(!lease)return false;
+        const auto* raw=lease.get();
+        bool referenced=false;
+        for(const auto& packet:packets_) {
+            if(packet.draw.model==raw ||
+               animationSourceModel(packet)==raw)
+                {referenced=true;break;}
+            for(const auto& lod:packet.lods)
+                if(lod.model==raw){referenced=true;break;}
+            if(referenced)break;
+            for(const auto& child:packet.attachments)
+                if(child.draw.model==raw){referenced=true;break;}
+            if(referenced)break;
+        }
+        if(!referenced)return false;
+        for(const auto& existing:cacheModelPins_)
+            if(existing.get()==raw)return true;
+        cacheModelPins_.push_back(std::move(lease));
+        return true;
+    }
+
+    // Additional owned LOD, animation-source or attachment Models can be
+    // pinned after editing packets. Reject unrelated pointers, so the
+    // owner check is auditable rather than a decorative shared_ptr.
+    bool pinRelatedModel(std::shared_ptr<const render::Model> owner) {
+        if(!owner)return false;
+        const auto* model=owner.get();
+        bool referenced=false;
+        for(const auto& packet:packets_) {
+            if(packet.draw.model==model ||
+               animationSourceModel(packet)==model)
+                {referenced=true;break;}
+            for(const auto& lod:packet.lods)
+                if(lod.model==model){referenced=true;break;}
+            if(referenced)break;
+            for(const auto& attachment:packet.attachments)
+                if(attachment.draw.model==model){referenced=true;break;}
+            if(referenced)break;
+        }
+        if(!referenced)return false;
+        for(const auto& pin:modelPins_)
+            if(pin.get()==model)return true;
+        modelPins_.push_back(std::move(owner));
+        return true;
+    }
+    // Strict opt-in validation, BEFORE any View::update/submit. This does
+    // not inspect RHI Device state or guarantee that Model GPU handles
+    // outlive an async submission: the host still owns those fences.
+    size_t missingModelPins() const noexcept {
+        const auto held=[this](const render::Model* model) {
+            if(!model)return true; // unloaded optional visual LOD
+            for(const auto& pin:modelPins_)
+                if(pin.get()==model)return true;
+            for(const auto& lease:cacheModelPins_)
+                if(lease.get()==model)return true;
+            return false;
+        };
+        size_t missing=0;
+        for(const auto& packet:packets_) {
+            if(!held(packet.draw.model))++missing;
+            const auto* rig=animationSourceModel(packet);
+            if(rig!=packet.draw.model && !held(rig))++missing;
+            for(const auto& lod:packet.lods)
+                if(!held(lod.model))++missing;
+            for(const auto& attachment:packet.attachments)
+                if(!held(attachment.draw.model))++missing;
+        }
+        return missing;
+    }
+    bool allModelsPinned() const noexcept {
+        return missingModelPins()==0;
+    }
+    void requireModelPins() const {
+        if(!allModelsPinned())
+            throw std::logic_error(
+                "PinnedAppearanceBatch: missing CPU Model owners for one or more draws");
+    }
+    // Opt-in strict path for native shared-ownership clients. Call AFTER
+    // constructing all optional LOD and attachment packets, and use the
+    // returned span for both update() and synchronous submit() before clear().
+    std::span<const Object> validatedSpan() const {
+        requireModelPins();
+        return span();
+    }
+    // Optional GPU owner-epoch preflight for native hosts that keep
+    // a RenderDeviceLifetime lease. Checks thread + Device generation,
+    // but DOES NOT retire or pin GPU buffer/image handles. A successful
+    // lease check is NOT proof that a queued draw has finished on GPU.
+    std::span<const Object> validatedSpan(
+            gfx::Device& device,
+            const render::RenderDeviceLifetime::Lease& lease) const {
+        if(!lease.validFor(device))
+            throw std::logic_error(
+                "PinnedAppearanceBatch: expired or foreign GPU Device epoch");
+        return validatedSpan();
+    }
+    size_t modelPinCount() const noexcept{
+        return modelPins_.size()+cacheModelPins_.size();
+    }
+    size_t cacheReadLeaseCount() const noexcept{return cacheModelPins_.size();}
+    size_t size() const noexcept{return packets_.size();}
+    bool empty() const noexcept{return packets_.empty();}
+    const std::vector<Object>& objects() const noexcept {return packets_;}
+    std::span<const Object> span() const noexcept {
+        return {packets_.data(),packets_.size()};
+    }
+    // Modify model LODs, attachments or significance AFTER constructing the
+    // batch, not while View::update / Render3D submission is in progress.
+    // References to packet elements may be invalidated by subsequent add().
+    Object& edit(size_t index) {return packets_.at(index);}
+    void clear() noexcept {
+        // End of the host's joined update/render transaction only.
+        packets_.clear();
+        pins_.clear();
+        // Releasing model CPU owners does NOT release any in-flight GPU
+        // allocations. Shared model deleters must cooperate with the
+        // host's separately fenced GPU retirement queue.
+        modelPins_.clear();
+        // Release read leases LAST, after packet+snapshot pointers cease
+        // being referenced. Host may now evict/retire unique-owned Models.
+        cacheModelPins_.clear();
+    }
+private:
+    std::vector<Snapshot> pins_;
+    std::vector<Object> packets_;
+    std::vector<std::shared_ptr<const render::Model>> modelPins_;
+    std::vector<render::ModelReadLease> cacheModelPins_;
 };
 
 } // namespace aiverse::view

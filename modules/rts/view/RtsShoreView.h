@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 #include "../../../engine/render/Model.h"
+#include "../../../engine/render/NativePresentationRetirement.h"
 #include "../../../engine/render/Renderer3D.h"
 #include "RtsWater.h"
 
@@ -19,6 +20,10 @@ class RtsShoreView {
 public:
     void init(gfx::Device& dev, const Json& shoreTypes, render::FileReader reader);
     void shutdown(gfx::Device& dev);
+    // Called only at a frame boundary, BEFORE this frame's scene submissions.
+    // Polls actual GPU retirement tokens, never frame-count heuristics.
+    void collectRetired(gfx::Device& dev) { (void)retirement_.collect(dev); }
+    size_t pendingGpuRetirements() const noexcept {return retirement_.pending();}
     void setMap(const Json& map);   // its "waterNetwork"; rebuilt on the next draw
     void invalidateGround() { dirty_ = true; }
     // heightAt in world units; waterY: the water surface (world units); w, h: the map size in cells
@@ -46,6 +51,7 @@ private:
     bool dirty_ = false;
     float builtWaterY_ = 0;
     int builtW_ = 0, builtH_ = 0;
+    render::NativePresentationRetirement retirement_;
     std::vector<std::unique_ptr<render::Model>> chunks_, transparent_;
     std::vector<PropModel> propModels_;
     std::vector<PropInstance> props_;

@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <span>
 #include <string>
@@ -107,6 +108,34 @@ inline bool compatibleModelPose(const render::Model& source,
     return true;
 }
 
+// A socket lookup compiled against an IMMUTABLE, specifically published
+// source rig. No ownership of Model or GPU resources is retained.
+// Native hosts can share the same compiled binding across many instances.
+struct CompiledModelSocket {
+    const render::Model* rig=nullptr; // equality only, never dereferenced
+    uint64_t publication=0;
+    std::string socketName;
+    int authoredSocket=-1;
+    int resolvedSocket=-1;
+    bool matches(const render::Model& current,uint64_t epoch,
+                 const std::string& name,int authored) const noexcept {
+        return rig==&current && publication!=0 && epoch==publication &&
+               socketName==name && authoredSocket==authored &&
+               resolvedSocket>=-1;
+    }
+};
+inline std::shared_ptr<const CompiledModelSocket> compileModelSocket(
+        const render::Model& rig,uint64_t publication,
+        const std::string& socketName,int socket=-1) {
+    if(publication==0 || socket< -1)return {};
+    const int resolved=socketName.empty()?socket:rig.findNode(socketName);
+    if(resolved< -1 || (resolved>=0 &&
+                      size_t(resolved)>=rig.nodes.size()) ||
+       (!socketName.empty() && resolved<0))return {};
+    return std::make_shared<const CompiledModelSocket>(
+        CompiledModelSocket{&rig,publication,socketName,socket,resolved});
+}
+
 struct ModelAttachment {
     // The child is a standalone synchronous draw. Its own world matrix
     // is local to the socket, after attachment.local. It does not receive
@@ -116,6 +145,10 @@ struct ModelAttachment {
     std::string socketName;      // optional name resolved on BASE animation rig
     render::mat4 local;
     bool visible=true;
+    // Optional precompiled socket binding (append-only aggregate field).
+    // If expired or incompatible, skip instead of silently using an
+    // old bone index or an unrelated root transform.
+    std::shared_ptr<const CompiledModelSocket> compiledSocket;
 };
 
 // Compose an already evaluated socket pose from any host. This API is
@@ -159,6 +192,27 @@ inline bool composeAttachment(const render::ModelDraw& parent,
     }
     return composeAttachment(parent,rig,nodeWorld,
                              attachment.draw,socket,attachment.local,output);
+}
+
+// A published-revision-aware overload: checks a precompiled binding's
+// exact rig, epoch and authored socket identity before using its index.
+// No per-frame name lookup for compiled sockets; the legacy name/index
+// overload remains supported for sources without a compiled binding.
+inline bool composeAttachment(const render::ModelDraw& parent,
+                              const render::Model& rig,
+                              std::span<const render::mat4> nodeWorld,
+                              const ModelAttachment& attachment,
+                              uint64_t rigPublication,
+                              render::ModelDraw& output) {
+    if(!attachment.visible)return false;
+    if(!attachment.compiledSocket)
+        return composeAttachment(parent,rig,nodeWorld,attachment,output);
+    const auto& compiled=*attachment.compiledSocket;
+    if(!compiled.matches(rig,rigPublication,
+                         attachment.socketName,attachment.socket))
+        return false;
+    return composeAttachment(parent,rig,nodeWorld,attachment.draw,
+                             compiled.resolvedSocket,attachment.local,output);
 }
 
 } // namespace aiverse::view

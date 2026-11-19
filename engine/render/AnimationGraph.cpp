@@ -337,6 +337,16 @@ bool AnimationGraphInstance::restorePlayback(const PlaybackSnapshot& snapshot) {
     }
     return true;
 }
+bool AnimationGraphInstance::rebindPlayback(
+        std::shared_ptr<const AnimationGraph> nextGraph) {
+    if(graph_.get()==nextGraph.get())return bool(graph_);
+    // A pure playback snapshot contains only names, phases and a scalar
+    // state clock. Never retain a pointer into an unloaded source Model.
+    const bool previousValid=bool(graph_) && healthy_;
+    const auto old=previousValid?snapshotPlayback():PlaybackSnapshot{};
+    reset(std::move(nextGraph));
+    return previousValid && restorePlayback(old);
+}
 std::optional<float> AnimationGraphInstance::clipTime(const std::string& node) const {
     if(!graph_)return std::nullopt;
     for(size_t i=0;i<graph_->nodes().size();++i)

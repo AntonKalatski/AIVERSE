@@ -501,44 +501,16 @@ struct App {
                     characterAppearance=characterAppearanceRegistry.find("fpsCharacter");
                     const auto compiled=characterAppearance->graph;
                     if(compiled!=characterGraph) {
-                        characterGraph=compiled;
-                        // No second animation evaluator: update ONLY the
-                        // existing ECS graph assets and restart their players.
+                        // MotionWeave owns graph rebind semantics for ANY
+                        // presentation source, independent of host genre.
+                        // This does not create a second player or evaluator.
                         for(const auto& [slot,entity]:characterEntities) {
                             (void)slot;
-                            auto* asset=characterPresentation.tryGet<
-                                motionweave::AnimationAssetComponent>(entity);
-                            if(!asset || asset->model!=characterModel.get() ||
-                               asset->graph==compiled)continue;
-                            const auto previousGraph=asset->graph;
-                            asset->graph=compiled;
-                            if(auto* player=characterPresentation.tryGet<
-                                    motionweave::AnimationPlayerComponent>(entity)) {
-                                // Same model/skeleton: preserve authored
-                                // state and named clip phase on graph-only
-                                // hot reload. A renamed/removed graph node
-                                // is rejected by restorePlayback and safely
-                                // restarts at the new authored default.
-                                player->pendingPlayback.reset();
-                                if(player->instance && !player->restart &&
-                                   player->active==previousGraph &&
-                                   player->instance->graph()==previousGraph.get()) {
-                                    const auto snapshot=
-                                        player->instance->snapshotPlayback();
-                                    if(!snapshot.state.empty())
-                                        player->pendingPlayback=std::move(snapshot);
-                                }
-                                player->restart=true;
-                            }
-                            if(auto* slots=characterPresentation.tryGet<
-                                    motionweave::AnimationMontageSlotsComponent>(entity)) {
-                                slots->players.clear();
-                                slots->events.clear();
-                            }
-                            if(auto* notifies=characterPresentation.tryGet<
-                                    motionweave::AnimationGraphNotifiesComponent>(entity))
-                                notifies->events.clear();
+                            (void)motionweave::rebindAnimationPresentationGraph(
+                                characterPresentation,entity,
+                                *characterModel,compiled);
                         }
+                        characterGraph=compiled;
                     }
                 } else
                     std::fprintf(stderr,
@@ -822,6 +794,12 @@ struct App {
             if(server){server->poll(now);if(!server->step()){accumulated=0;break;}client->poll(now);}
             accumulated-=1.0/config.tickRate;
         }
+        // Streamed WorldScene GPU ownership is retired only at this
+        // real device-frame boundary, before any new scene submissions.
+        if(streamedScene && streamedScene->pendingGpuRetirements()!=0)
+            (void)streamedScene->collectRetired(device);
+        if(staticGeometry.pendingGpuRetirements()!=0)
+            (void)staticGeometry.collectRetired(device);
         device.beginFrame(platform::framebufferWidth(),platform::framebufferHeight());gui.newFrame(dt);
         auto actor=client->predicted();viewTime+=dt;
         updateCharacterAnimations(dt,actor);
@@ -914,20 +892,31 @@ struct App {
                     draw.team=remote.team==actor.team?render::float3{.1f,.5f,.9f}:render::float3{.9f,.2f,.1f};
                     const auto submitCharacter=[&](const render::ModelDraw& packetDraw) {
                         ::aiverse::view::Object packet;
+                        // The generic published Asset is the source of
+                        // material, geometry and Model revision identity.
+                        // The native host supplies only the current resolved
+                        // pose/bake, world transform and appearance overrides.
+                        const bool published=characterAppearance &&
+                            characterAppearance->model==characterModel.get() &&
+                            characterAppearance->packetWithBindings(
+                                packetDraw.world,{},nullptr,packet);
+                        if(published) {
+                            packet.draw.persistentId=packetDraw.persistentId;
+                            packet.draw.team=packetDraw.team;
+                            packet.draw.pose=packetDraw.pose;
+                            packet.draw.nodeWorld=packetDraw.nodeWorld;
+                            packet.draw.baked=packetDraw.baked;
+                        } else packet.draw=packetDraw; // old unbound fallback
                         packet.id=remote.slot;
                         packet.generation=remote.life;
-                        packet.draw=packetDraw;
                         packet.animationModel=characterModel.get();
-                        // The published appearance (not the actor life)
-                        // identifies a reimported source rig. Graph-only
-                        // reload preserves this generation; a replacement
-                        // Model reissues it before any compiled LOD is used.
                         packet.animationModelGeneration=characterAppearance
                             ?characterAppearance->modelPublicationGeneration:0;
-                        // Precomputed pose/baked sample: no graph attached;
-                        // View consumes the source rig without a second
-                        // MotionWeave update. Optional LOD retarget maps
-                        // can be supplied by this host in future.
+                        // Animation was evaluated ONCE in the host's
+                        // presentation World. A published Asset may contain
+                        // a Graph, but prepared packets must not create a
+                        // competing View-owned evaluator.
+                        packet.graph.reset();
                         remotePackets.add(std::move(packet));
                     };
                     if(characterBakedCrowd) {

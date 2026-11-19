@@ -12,6 +12,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <utility>
 namespace aiverse::lib::animation {
 // All components belong in an independent presentation World.
 // The model must outlive its graph and all instances.
@@ -85,6 +86,61 @@ struct AnimationDiagnosticsComponent {
     bool healthy = true;
     uint64_t updates = 0, evaluations = 0;
 };
+
+// A reusable, source-neutral graph-only hot-reload transaction. A host
+// supplies its immutable Model and newly compiled Graph; no gameplay state
+// or host-specific meaning enters the presentation ECS.
+// This must run on the presentation owner, after worker join, and while
+// the previous compiled Graph and CPU Model remain readable.
+struct AnimationGraphRebindResult {
+    bool replaced=false;
+    bool playbackCaptured=false; // not a guarantee of named restore success
+};
+inline AnimationGraphRebindResult rebindAnimationPresentationGraph(
+        World& presentation, Entity source, const render::Model& model,
+        std::shared_ptr<const render::AnimationGraph> next) {
+    if(!presentation.alive(source) || !next || next->model()!=&model)
+        return {};
+    auto* asset=presentation.tryGet<AnimationAssetComponent>(source);
+    if(!asset || asset->model!=&model)return {};
+    if(asset->graph==next)return {};
+    auto* player=presentation.tryGet<AnimationPlayerComponent>(source);
+    if(!player)return {};
+    // Drop any pending older publication seed before trying to retain the
+    // current healthy graph's named state+clip phases. The old Graph remains
+    // the active writer until the next normal MotionWeave update.
+    player->pendingPlayback.reset();
+    bool captured=false;
+    if(asset->graph && !player->restart && player->instance &&
+       player->instance->healthy() &&
+       player->active==asset->graph &&
+       player->instance->graph()==asset->graph.get()) {
+        try {
+            auto snapshot=player->instance->snapshotPlayback();
+            if(!snapshot.state.empty()) {
+                player->pendingPlayback=std::move(snapshot);
+                captured=true;
+            }
+        }catch(...) {
+            // Optional presentation continuity must never block a valid
+            // compiled-graph publication.
+            player->pendingPlayback.reset();
+        }
+    }
+    asset->graph=std::move(next);
+    player->restart=true;
+    if(auto* pose=presentation.tryGet<AnimationPoseComponent>(source))
+        pose->valid=false;
+    if(auto* overlays=presentation.tryGet<AnimationMontageSlotsComponent>(source)) {
+        overlays->players.clear();
+        overlays->events.clear();
+    }
+    if(auto* stream=presentation.tryGet<AnimationGraphNotifiesComponent>(source))
+        stream->events.clear();
+    // Physical pose recovery and clip evaluation state are reset by the
+    // existing MotionWeave worker on its next player initialization.
+    return {true,captured};
+}
 // Use once per presentation frame after reading the latest gameplay snapshot.
 // Graph state updates every frame; pose work may be throttled independently.
 // All writer pools are detached/uniquified BEFORE dispatching any worker.
@@ -156,9 +212,19 @@ inline void evaluateAnimationPresentationRange(World& world,
             player.active=asset->graph;
             player.instance=std::make_shared<render::AnimationGraphInstance>();
             player.instance->reset(asset->graph);
-            if(player.pendingPlayback)
-                player.instance->restorePlayback(*player.pendingPlayback);
-            player.pendingPlayback.reset();
+            if(player.pendingPlayback) {
+                try {
+                    // One-shot portable state/clip clocks only. A missing
+                    // renamed state/clip or allocation failure simply
+                    // leaves the freshly reset graph at authored defaults.
+                    // Never replay old notifies, contacts or root motion.
+                    (void)player.instance->restorePlayback(*player.pendingPlayback);
+                }catch(...) {
+                    // CPU-only cosmetic handoff is optional. The new graph's
+                    // rig/pose must remain valid even after a failed restore.
+                }
+                player.pendingPlayback.reset();
+            }
             player.restart=false;
             pose->valid=false;
             if(recovery)recovery->inertializer.reset();

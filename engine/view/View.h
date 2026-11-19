@@ -161,6 +161,13 @@ public:
     // never overlap worker animation updates. Hosts may use the same
     // generic scene for characters, buildings, props and cinematics.
     Stats update(std::span<const Object> objects,float dt) {
+        // Anonymous objects may be submitted with host-computed poses,
+        // but a View-owned Graph must have a durable, nonzero source ID.
+        // Validate the complete batch before advancing any ECS clocks.
+        for(const auto& obj:objects)
+            if(obj.graph && animationSourceModel(obj) && obj.id==0)
+                throw std::invalid_argument(
+                    "View animation requires a stable nonzero object ID");
         stats_={};
         retargetStats_={};
         if(++frameStamp_==0) { frameStamp_=1; lodState_.clear(); }
@@ -169,12 +176,26 @@ public:
         for(const auto& obj:objects) {
             if(obj.visible)++stats_.visible;
             if(obj.draw.model && obj.visible)++stats_.drawable;
-            if(obj.id!=0 && !obj.lods.empty()) {
-                auto& selection=lodState_[obj.id];
-                if(selection.generation!=obj.generation)
-                    selection.level=0;
-                selection.generation=obj.generation;
-                selection.seen=frameStamp_;
+            if(obj.id!=0) {
+                if(obj.lods.empty()) {
+                    // No whole-model LOD configuration is published now.
+                    // A later reintroduction must start fresh.
+                    lodState_.erase(obj.id);
+                } else {
+                    auto& selection=lodState_[obj.id];
+                    if(selection.generation!=obj.generation ||
+                       selection.sourcePublication!=obj.animationModelGeneration ||
+                       selection.sourceModel!=animationSourceModel(obj) ||
+                       selection.baseModel!=obj.draw.model) {
+                        selection.level=0;
+                        selection.revisions.clear();
+                    }
+                    selection.generation=obj.generation;
+                    selection.sourcePublication=obj.animationModelGeneration;
+                    selection.sourceModel=animationSourceModel(obj);
+                    selection.baseModel=obj.draw.model;
+                    selection.seen=frameStamp_;
+                }
             }
             const auto* animationModel=animationSourceModel(obj);
             if(!obj.graph || !animationModel)continue;
@@ -185,6 +206,7 @@ public:
             input.model=animationModel;
             input.graph=obj.graph;
             input.inputs=obj.parameters;
+            input.modelPublicationGeneration=obj.animationModelGeneration;
             sources.push_back(std::move(input));
         }
         stats_.source=bridge_.sync(presentation_,sources);
@@ -271,6 +293,8 @@ public:
                 const auto* pose=presentation_.tryGetConst<
                     lib::animation::AnimationPoseComponent>(e);
                 if(link && link->generation==obj.generation &&
+                   link->modelPublicationGeneration==
+                       obj.animationModelGeneration &&
                    asset && asset->model==rig && asset->graph==obj.graph &&
                    pose && pose->valid &&
                    pose->local.size()==rig->nodes.size() &&
@@ -301,16 +325,33 @@ public:
             LodSelection* saved=nullptr;
             if(obj.id!=0) {
                 auto& state=lodState_[obj.id];
-                if(state.generation!=obj.generation) {
+                const bool revised=state.generation!=obj.generation ||
+                    state.sourcePublication!=obj.animationModelGeneration ||
+                    state.sourceModel!=rig ||
+                    state.baseModel!=obj.draw.model ||
+                    state.hysteresis!=obj.lodHysteresis ||
+                    !matchesLodRevisions(state.revisions,obj.lods);
+                if(revised) {
                     state.level=0;
-                    state.generation=obj.generation;
+                    // Complete, collision-free comparison of every authored
+                    // level, including UNSELECTED LODs and retarget plans.
+                    // Updated only on configuration change, not per draw.
+                    captureLodRevisions(state.revisions,obj.lods);
                 }
+                state.generation=obj.generation;
+                state.sourcePublication=obj.animationModelGeneration;
+                state.sourceModel=rig;
+                state.baseModel=obj.draw.model;
+                state.hysteresis=obj.lodHysteresis;
                 saved=&state;
                 prior=state.level;
             }
             const size_t level=selectModelLodLevel(obj.lods,distance,prior,
                                                    saved?obj.lodHysteresis:0.f);
-            if(saved){saved->level=level;saved->seen=frameStamp_;}
+            if(saved) {
+                saved->level=level;
+                saved->seen=frameStamp_;
+            }
             // Missing streamed distant LODs retain the nearest available
             // representation. The base graph still advances every frame.
             size_t visual=level;
@@ -458,9 +499,11 @@ public:
         for(size_t i=0;i<obj.attachments.size();++i) {
             render::ModelDraw attached;
             if(!composeAttachment(obj.draw,*rig,socketMatrices,
-                                  obj.attachments[i],attached))continue;
+                                  obj.attachments[i],
+                                  obj.animationModelGeneration,attached))continue;
             if(!attached.persistentId && obj.id)
-                attached.persistentId=attachmentDrawId(obj.id,obj.generation,i);
+                attached.persistentId=attachmentDrawId(
+                    obj.id,obj.generation,obj.animationModelGeneration,i);
             submitModel(renderer,attached);
         }
     }
@@ -566,7 +609,19 @@ public:
     // Detach selected presentation sources before their host-owned models
     // are evicted; other graph players keep their clocks and pose state.
     size_t forgetSources(std::span<const uint64_t> ids) {
-        return bridge_.forget(presentation_,ids);
+        const size_t removed=bridge_.forget(presentation_,ids);
+        for(const auto id:ids)lodState_.erase(id);
+        return removed;
+    }
+    // Opt-in source reimport, while the old CPU Model and compiled Graph
+    // remain readable. Keeps only a bounded portable named playback seed;
+    // subsequent compatible new-epoch sync consumes it once or restarts.
+    size_t forgetSourcesForReimport(std::span<const uint64_t> ids) {
+        const size_t removed=bridge_.forgetForReimport(presentation_,ids);
+        // The next published source starts with a fresh visual-LOD state,
+        // independently of optional named animation-clock continuity.
+        for(const auto id:ids)lodState_.erase(id);
+        return removed;
     }
     const World& presentation() const noexcept{return presentation_;}
     // For controlled host-only effects such as montage slots. Never
@@ -589,15 +644,58 @@ private:
         render::Pose pose;
         std::vector<render::mat4> matrices;
     };
+    // Exact layout identity, including levels not currently selected.
+    // Pointers are comparison-only and never dereferenced after retirement.
+    struct LodRevision {
+        const render::Model* model=nullptr;
+        float minDistance=0.f;
+        uint64_t publication=0;
+        const ModelPoseRetarget* retarget=nullptr;
+        const CompiledModelPoseRetarget* compiledRetarget=nullptr;
+    };
+    static bool matchesLodRevisions(
+            const std::vector<LodRevision>& cached,
+            std::span<const ModelLod> authored) noexcept {
+        if(cached.size()!=authored.size())return false;
+        for(size_t i=0;i<authored.size();++i) {
+            const auto& a=authored[i];
+            const auto& c=cached[i];
+            if(c.model!=a.model || c.minDistance!=a.minDistance ||
+               c.publication!=a.visualModelGeneration ||
+               c.retarget!=a.retarget.get() ||
+               c.compiledRetarget!=a.compiledRetarget.get())return false;
+        }
+        return true;
+    }
+    static void captureLodRevisions(
+            std::vector<LodRevision>& cached,
+            std::span<const ModelLod> authored) {
+        // Reserve first so an allocation failure does not commit partial
+        // changes to the previous snapshot.
+        std::vector<LodRevision> next;
+        next.reserve(authored.size());
+        for(const auto& a:authored)
+            next.push_back({a.model,a.minDistance,
+                            a.visualModelGeneration,a.retarget.get(),
+                            a.compiledRetarget.get()});
+        cached.swap(next);
+    }
     struct LodSelection {
         uint64_t generation=0;
+        uint64_t sourcePublication=0;
+        const render::Model* sourceModel=nullptr;
+        const render::Model* baseModel=nullptr;
+        float hysteresis=0.1f;
         size_t level=0;
         uint64_t seen=0;
+        std::vector<LodRevision> revisions;
     };
     static uint64_t attachmentDrawId(uint64_t id,uint64_t generation,
+                                     uint64_t modelPublication,
                                      size_t attachmentIndex) noexcept {
         uint64_t x=id*0x9e3779b97f4a7c15ULL ^
                    generation*0xbf58476d1ce4e5b9ULL ^
+                   modelPublication*0xd6e8feb86659fd93ULL ^
                    (uint64_t(attachmentIndex)+1)*0x94d049bb133111ebULL;
         x^=x>>30;
         x*=0xbf58476d1ce4e5b9ULL;

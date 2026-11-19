@@ -1,6 +1,7 @@
 #pragma once
 #include "WorldAssets.h"
 #include "engine/render/Renderer3D.h"
+#include "engine/render/AsyncResourceRetirementQueue.h"
 #include "engine/world/NereidWaterScene.h"
 #include "engine/world/NereidCascadeScene.h"
 #include "engine/world/NereidConfluenceScene.h"
@@ -20,6 +21,13 @@ public:
     void update(gfx::Device&,std::span<const Vec3> observers,int radius=2);
     void draw(render::Renderer3D&,Cell renderOrigin,int originCellSize);
     void shutdown(gfx::Device&);
+    // Call at the explicit owning Device frame boundary, BEFORE new draws.
+    // Shared CPU/worker references must drop before a Model can acquire
+    // its final GPU retirement marker.
+    bool collectRetired(gfx::Device&);
+    size_t pendingGpuRetirements() const noexcept {
+        return deferredModels_.size()+retiredModels_.pending();
+    }
     // Opt-in presentation-only water; call before update. Never mutates ECS.
     void setNereidSurfaces(std::vector<NereidSceneSurface> surfaces);
     size_t nereidVisibleSurfaceCount()const;
@@ -97,6 +105,11 @@ private:
     bool shareModels_=false;
     float overhang_=0;                                        // "meshOverhang": units a mesh may reach past its chunk
     void releaseChunk(gfx::Device&,Prepared&);
+    // Candidate registry retains one shared_ptr per GPU Model, including
+    // after its last render chunk disappears. Weak worker cache entries are
+    // invalidated atomically only when the final candidate is enqueued.
+    std::map<render::Model*,std::shared_ptr<render::Model>> deferredModels_;
+    render::AsyncResourceRetirementQueue<std::shared_ptr<render::Model>> retiredModels_;
     size_t uploadBytes_=16*1024*1024;
     std::map<Cell,std::shared_ptr<Prepared>> resident_;
     std::unique_ptr<AsyncChunkStream> stream_;

@@ -1246,3 +1246,395 @@ modelRevision updates or source invalidation.
 **NOT RUN:** native C++ build/CTest, hot reload fault injection,
 GPU visual parity and performance tests. See
 [Stage 126 handoff](agent-handoffs/animation-stage126-published-lod-hot-reload-2026-11-19.md).
+
+## Stage 127 — Asset publication revision controls animated source lifetime
+
+The Model's `modelPublicationGeneration` is now validated
+not only by compiled visual LOD retarget maps, but also
+by the MotionWeave presentation source bridge itself.
+A changed Model asset epoch invalidates the current
+animation player and cached Pose even when the same
+`Model*` is reused by an in-place reimport. Submitting
+the old compiled AnimationGraph with the newly published
+Model at the same C++ address is rejected before ECS
+mutations. Native hosts MUST recompile the graph when
+a Model is reimported; graph-only edits with unchanged
+Model epoch may still restore compatible clip clocks.
+
+`PinnedAppearanceBatch` keeps material overrides,
+node assignments and immutable AnimationGraph snapshots
+alive across `View::update` and synchronous
+`View::submit` if an `AppearanceAssetRegistry` publishes
+a replacement key. It does NOT own or extend the
+underlying Model CPU/GPU lifetime; a host ModelResourceCache
+and its fence retirement remain responsible for that
+storage. Use `batch.add(snapshot,world)`,
+`batch.span()` and `batch.clear()` at the correct
+owner-thread boundaries.
+
+The source Model publication epoch, gameplay entity life,
+graph generation and GPU Device epoch are four separate
+concepts; never substitute one for another.
+[Stage 127 handoff](agent-handoffs/animation-stage127-model-epoch-bridge-pinned-appearance-2026-11-19.md).
+
+**NOT RUN:** native CMake/C++ build/link, CTest,
+GPU visual tests, sanitizers or benchmarks.
+
+## Stage 128 — native CPU Model pinning versus GPU retirement
+
+The existing `AppearanceAssetRegistry::Snapshot` pins appearance
+materials and graph CPU values but does NOT own its borrowed Model.
+Native projects with genuine `shared_ptr<const Model>` owners can
+now use `PinnedAppearanceBatch::addOwned` to keep Models alive
+through their `View::update` and `View::submit` transaction.
+When packets reference other source/LOD/attachment Models, call
+`pinRelatedModel` and `validatedSpan()` before drawing. Strong
+Model pins are deduplicated for crowds referencing shared assets.
+
+This is **CPU ownership only**. A `RenderDeviceLifetime::Lease`
+may be checked with `validatedSpan(device,lease)` to reject a
+foreign/expired Device epoch, but it does not prove completed GPU
+work. Release Model GPU resources only through the host's actual
+fenced retirement and after its own resource owner confirms safety.
+The generic `ModelResourceCache` continues to use `unique_ptr`,
+so its native clients cannot conjure an owning shared_ptr alias
+to satisfy this API; they must keep the original explicit
+detach/retire barrier.
+
+No new Model importer, LOD authoring format, morph solver or
+GPU device resource owner was introduced.
+**NOT RUN:** native CMake/CTest, real Model replacement or GPU fault
+injection, sanitizers or FPS/RTS/editor visual parity.
+[Stage 128 handoff](agent-handoffs/animation-stage128-native-model-lifetime-pins-2026-11-19.md).
+
+## Stage 129 — cache-owned Model read guards without shared-ownership conversion
+
+`ModelResourceCache` continues to own Models as
+`std::unique_ptr<Model>`. To protect borrowed Model pointers
+while a native View evaluates and submits a frame, acquire an
+owner-thread `ModelReadLease` for a resident Model or a coarse
+`ModelCacheReadScope` around an existing legacy View draw.
+Until the read guards are released, cache eviction/replacement/
+shutdown is rejected by a `logic_error` before any borrowed
+Model CPU memory is destroyed. Cache destruction with a live
+read lease terminates because there is no safe way to keep
+unique-owned raw Model pointers valid after that destructor.
+Never allow a cache read lease to outlive its owner.
+
+`PinnedAppearanceBatch::addCacheOwned` and
+`pinCacheRelatedModel` accept genuine cache-issued read
+tokens, complementing Stage 128's true `shared_ptr<const Model>`
+CPU owners. The batch validates source/visual/LOD/attachment
+Model coverage via `validatedSpan`, then releases tokens in
+`clear()` after a synchronous draw. Do not use fake shared
+ownership aliases, change Model pointers in-place during a
+lease, or confuse this CPU guard with the GPU retirement fence.
+`ModelResourceCache::collectRetired` continues to own actual
+GPU resource completion and deferred destruction.
+
+The RTS adapter now protects the complete render/animation
+phase with one cache read scope after loading its active types.
+No Model importer, skinning format, source graph or genre
+specific system moved into the generic View.
+**NOT RUN:** CMake/C++ build, CTest, GPU visual tests,
+ASan/TSan, eviction failure-injection or benchmarks.
+[Stage 129 handoff](agent-handoffs/animation-stage129-model-cache-read-leases-2026-11-19.md).
+
+## Stage 130 — Model cache read guard diagnostics and device rebind
+
+`ModelResourceCache::ModelReadSafetyStats` reports
+`activeReaders`, `peakReaders` and
+`blockedMutations`. This is a CPU owner-lifecycle
+diagnostic, not resource residency or GPU completion.
+The count increments when a mutation is attempted
+while read leases are active; denied operations include
+source invalidation, `replace`, `trimUnused`
+and `shutdown`. Active readers prevent unique-owned
+CPU Model destruction; GPU Device safety remains
+under the existing fenced retirement queue.
+
+After a FULL successful shutdown, the cache clears
+the previous read-owner thread ID so it can be
+bound on a new render thread with a new Device.
+Reader leases MUST NOT survive this boundary. Both
+`ModelReadLease` and `ModelCacheReadScope`
+fail closed with process termination if released
+from a different thread, rather than silently
+decrementing readers while a Model may still
+be borrowed. Model assets are not made thread-safe
+for concurrent mutation.
+
+This is a Stage 130 source-only change:
+**NOT RUN** native compiler, CTest, Metal GPU, fault injection
+or sanitizer tests. [Stage 130 handoff](agent-handoffs/animation-stage130-read-lease-lifecycle-diagnostics-2026-11-19.md).
+
+## Stage 131 — Model cache owner-thread lookup and streaming tests
+
+Native `ModelResourceCache::acquireModelRead(key)` checks
+the cache's read/GPU thread ownership before reading
+`models_`, avoiding the previous order where a foreign
+thread could touch the map before the pointer-based guard
+rejected it. A read lease/scope is still a temporary CPU
+lifetime contract, NOT a GPU retirement fence or a
+cross-thread general-purpose lock.
+
+This scope blocks existing-Model eviction/replacement/
+invalidation/shutdown, but intentionally allows NEW-key
+`insertIfAbsent` and `publishStagedModels` publication,
+since `std::map` keeps existing element/pointer stability.
+The existing `render_device_epoch` native CTest now
+contains source regressions for this split, plus active/
+peak reader and blocked-mutation counters, move-only
+leases, owner-thread lookup rejection and post-shutdown
+thread rebinding.
+
+**NOT RUN:** CMake/compiler/linker, CTest, real GPU
+streaming, Metal/GL/Vulkan visuals, sanitizer or CPU
+profiling. [Stage 131 handoff](agent-handoffs/animation-stage131-streaming-cache-read-regressions-2026-11-19.md).
+
+
+## Stage 138 — Model image/morph GPU upload admission contract
+
+`render::uploadModel` now checks the created handle of every dimensioned
+Model image in both shared and speculative GPU cache modes and rejects a
+failed morph texture allocation (RGBA32F). On a failed morph GPU create,
+CPU `Primitive::morphDeltas` remain available for diagnostic/retry. After
+successful upload, image, mesh and morph CPU arrays are released via
+allocation-free swaps rather than potentially throwing `shrink_to_fit`.
+
+`ModelTextureCache::upload` allocates a shared lease and map node before
+creating the device texture; it does not publish an invalid GPU texture.
+`addImage` reserves Model image-vector capacity before texture allocation
+and reports GPU upload failure as `-1`, not an apparently valid image index.
+
+This is a **boolean upload-result contract**, not an automatic GPU
+retirement policy for every native Model owner. Each host must handle
+`false` and any thrown GPU allocation without immediately destroying a
+Model that may hold in-flight GPU handles. The native synchronous RTS
+import now queues partial Models via `ModelResourceCache::retireUnpublished`;
+the Stage 136 asynchronous prepared publisher already does so.
+Other direct host upload call-sites require continued audit and completion.
+
+[Stage 138 handoff](agent-handoffs/animation-stage138-image-morph-gpu-admission-2026-11-19.md).
+**NOT RUN:** native compiler, CMake/CTest, Metal/GL/Vulkan, sanitizer,
+GPU-fence fault injection or perf/visual regressions. Tests will be run
+only after all remaining functionality is implemented as requested.
+
+
+## Stage 139 — safety for native direct Model uploads without a cache owner
+
+Some lightweight native hosts import `render::Model` directly rather than
+through `ModelResourceCache`. Their call to `uploadModel(Device&,Model&)`
+must check its boolean result and handle any Device exception. A failed
+upload may already have created vertex/index/image/morph GPU handles:
+calling `unique_ptr<Model>::reset()` or publishing a broken draw is unsafe.
+
+New generic `engine/render/FailedModelUpload.h` provides
+`abortFailedModelUpload(Device&,std::unique_ptr<Model>&) noexcept`. On a
+failed/throwing partial GPU upload, it releases the Model only after a
+successful full `Device::waitForResourceIdle()` barrier. If completion
+cannot be proved, it deliberately abandons the CPU Model instead of freeing
+GPU-visible resources (an intentional leak/fail-closed path). Use only for
+rare failures, on the native render owner thread with a live Device.
+Ordinary replacement/rebuild must use nonblocking owner-fenced retirement,
+not a per-frame global GPU-idle wait.
+
+The RTS road/shore Model loaders, generated geometry and ghost/foam
+paths, plus standalone `aiverse_modelview` raw imports, now check
+`uploadModel` and use this helper for partial failures. They also reserve
+Model list/map capacity before allocation where applicable and avoid
+rendering incomplete uploaded Models. This **does not** yet fix routine
+`RtsRoadView::release` / `RtsShoreView::release` or preview teardown after
+successful uploads; Stage 140 must handle those separately.
+
+[Stage 139 handoff](agent-handoffs/animation-stage139-direct-host-failed-model-uploads-2026-11-19.md).
+**NOT RUN:** CMake/compiler/CTest/CI, real Metal/GL/Vulkan, sanitizer,
+partial GPU failure injection or visuals. Feature-first workflow keeps
+validation until after all remaining functionality is complete.
+
+
+## Stage 140 — GPU-fenced native Model replacement for scene hosts
+
+Native road and shoreline scene hosts previously called `releaseModel`
+on Models that might still have GPU submissions in flight, and road
+SpriteMesh buffers were destroyed immediately on rebuild/weather changes.
+New `render::NativePresentationRetirement` (header under `engine/render`)
+owns a per-host, render-thread-only ordered completion-token queue for
+`unique_ptr<Model>` and `gfx::BufferHandle`. It accepts
+`retireModel`/`retireBuffer` on removal from draw lists and
+`collect` only at a true host frame boundary. Completion requires an
+actual backend token or explicit `waitForResourceIdle`, never frame age.
+
+`RtsRoadView` queues old chunks, editor ghosts and decal/verge/wet/puddle
+sprite vertex buffers. `RtsShoreView` queues terrain chunks and foam
+Models. The scene entry in `RtsView::draw` polls queues *before*
+the draw providers; this location must be verified against actual
+graphics frame boundaries (including editor multiple-draw/offscreen
+cases) before production. Backends lacking async tokens defer full
+idle until an advisory 128 retired resources, or shutdown; this is
+NOT an exact VRAM memory bound.
+
+Both native hosts now require an explicit full GPU idle barrier before
+shutdown destroys their still-live shared kit textures, texture caches,
+and SpriteBatch resources. An unproven barrier fails closed. The helper
+is not a general cross-thread ownership mechanism, does not replace
+ModelResourceCache's GPU-fenced retirement and does not own host
+simulation state.
+
+[Stage 140 handoff](agent-handoffs/animation-stage140-native-scene-gpu-retirement-2026-11-19.md).
+**NOT RUN:** native build, CTest, real Metal/Vulkan/GL, editor/FPS/RTS
+visual or GPU fence fault injection, sanitizers and benchmarks.
+
+
+## Stage 141 — explicit native host frame-boundary GPU retirement
+
+Do NOT call `NativePresentationRetirement::collect` during an arbitrary
+`RtsView::draw`: one Editor frame can submit multiple scene/game and
+offscreen portrait draws. The generic `RtsView` now aggregates
+`ModelResourceCache`, image rollback, road and shoreline retirement
+inside the existing explicit `collectRetiredModels()` owner hook. The
+associated `pendingModelRetirements()` now includes road/shore
+`SpriteMesh` buffers as well as Models, despite the legacy name. Existing
+GameClient/Editor frame hooks poll this once before any new passes.
+
+Standalone modelview Gallery explicitly polls the same queues before
+`gfx::Device::beginFrame`, covering the offscreen portrait and main
+gallery in the same frame. Its `ModelAssetProvider` rollback is also
+polled when nonempty. Raw modelview and Gallery portrait teardown require
+real full-Device GPU idle before native destruction; an unproven barrier
+stops release. `RtsView::shutdown` now also establishes GPU completion
+before releasing standalone GeometryScene Models.
+
+`ModelAssetProvider::find` and `publicationBackpressured` correctly
+propagate exceptions on cache-owner misuse; they are not `noexcept`.
+Third-party clients using `RtsView` must call its owner retirement hook
+at a genuine frame boundary. Resource retirement never trusts frame age
+or an incomplete GPU token.
+
+[Stage 141 handoff](agent-handoffs/animation-stage141-explicit-frame-boundary-preview-lifetime-2026-11-19.md).
+**NOT RUN:** CMake, native C++, CTest, Metal/GL/Vulkan, GPU-failure fixtures,
+editor/portrait/FPS/RTS visual comparisons, sanitizers or profiling.
+
+
+## Stage 142 — editor preview Model GPU retirement
+
+The AIVERSE Editor now owns a per-Device
+`render::NativePresentationRetirement` for direct ModelingWindow,
+AnimationGraph and AnimationRig preview Models, in addition to
+`ModelResourceCache` and other existing per-host resource owners.
+When a preview reloads, switches project, fails GPU upload, or closes
+its ImGui tab, the current `unique_ptr<Model>` moves into the
+Editor-owned pending GPU queue rather than invoking direct
+`releaseModel` while a previous preview/offscreen pass may still
+use it. `Editor::frame` polls at its explicit pre-render owner hook.
+
+Editor shutdown first proves full GPU idle before destroying dock
+windows and their remaining Portrait/Viewport targets, then drains
+the Editor preview queue before destroying renderer and Device owners.
+An unprovable GPU barrier stops destructive teardown. Modeling
+replacement stages a graph and bind pose against the new CPU Model
+before swapping; AnimationEditor persists its Portrait target across
+graph edits and only shuts it down at window destruction.
+
+The Stage 142 feature is **source-only** and the broader GPU/reimport
+contracts in GeometryScene, WorldScene and other native hosts remain
+open. [Stage 142 handoff](agent-handoffs/animation-stage142-editor-preview-model-ownership-2026-11-19.md).
+**NOT RUN** native CMake, CTest, real GPU, visual screenshots, sanitizer or
+benchmarks per user's feature-first workflow.
+
+
+## Stage 143 — GPU-safe HLOD reload and shared streamed Model eviction
+
+`render::GeometryScene` now holds static source Models and generated
+HLOD proxies in a dedicated `NativePresentationRetirement` owner.
+Source/rules `clear(device)` and `loadImpl` rollback detach old
+`Model*` scene references and enqueue prior GPU allocations; they do
+not immediately call `releaseModel` during live reload.
+`GeometryScene::collectRetired` and `pendingGpuRetirements` expose
+explicit pre-render owner hooks. Final `shutdown` requires one
+verified GPU idle barrier before draining pending resources.
+The existing RtsView and FPS owner frame hooks poll this queue.
+
+`world::WorldScene` owns streaming Model data via
+`shared_ptr<Model>`, potentially across multiple resident cells and
+in-progress CPU decoding jobs. Removing a cell is not permission to
+free native GPU handles: the Model moves into a manager-owned deferred
+registry (one entry per unique pointer). A candidate may be queued for
+ordered GPU retirement only when all other CPU refs have gone and the
+matching weak cache entry has been erased under the worker's mutex.
+A delayed worker ref no longer permanently loses the final GPU release.
+The host calls `WorldScene::collectRetired(device)` at an explicit
+Device owner frame boundary; both GameClient and FPS clients have been
+updated. After stream shutdown joins workers, one full-device idle
+proof authorizes draining any pending models/NEREID assets.
+
+These guarantees are SOURCE LEVEL only. An unsupported GPU fence
+backend may defer retirement until a 128-resource count threshold or
+final shutdown; it is not a VRAM-byte budget. Shader, image, material
+and geometry asset ownership must still be audited with other owners.
+[Stage 143 handoff](agent-handoffs/animation-stage143-geometry-world-streamed-model-retirement-2026-11-19.md).
+**NOT RUN:** native CMake/compiler/CTest/CI, Metal/Vulkan/GL,
+worker-thread sanitizer, GPU fence fault injection, visuals or benchmarks.
+
+
+## Stage 144 — portable animation playback across compatible Model revisions
+
+A Model/LOD/source/graph publication must detach old borrowed Model,
+skin, rig and pose references before GPU retirement. Existing RTS
+source/appearance reload performs that detach, and now optionally
+keeps one **Model-pointer-free** `ReloadPlayback` snapshot per entity,
+with a limit of 8192 records and expiry after 120 View frames.
+
+The new `AnimationGraphInstance::rebindPlayback` helper restores
+only named state and clip phases into a newly compiled graph,
+allowing compatible visual reimports without an apparent restart.
+Legacy clip-only actors may also retain one unblended base clip
+via its **name, new authored animation kind, loop mode and normalized
+phase** — never by the old Model's numeric clip index. A renamed
+clip, incompatible graph, new logical entity generation or changed
+type resets to safe default playback. Old animation events/notifies,
+rig contacts, native operation state and root motion are not copied.
+
+The per-entity programmable graph override must be resolved before
+the saved graph clock is restored; generic ECS MotionWeave animation
+remains a separate sole playback owner. Model editing and Graph/Rig
+previews use the same portable named playback idea.
+
+[Stage 144 handoff](agent-handoffs/animation-stage144-named-playback-source-reload-2026-11-19.md).
+**NOT RUN:** native CMake/C++/CTest, GPU/driver source reload,
+FPS/RTS/editor playback screenshot parity or sanitizer/performance.
+
+
+## Stage 145 — generic ECS playback through validated Model asset epochs
+
+The generic presentation-only `MotionWeaveSourceBridge` now checks
+logical entity `generation` separately from Model publication
+`modelPublicationGeneration`. During a source change, the bridge uses
+an immutable, exact copy of old node names and parent indices rather
+than dereferencing the retired Model to compare rigs. New sources
+publish a fresh copied signature, shared among actors referencing the
+same authored Model during that sync. Absent/forgotten sources discard
+their copied signature.
+
+Compatible named Graph states and clip phases may carry to a NEW
+nonzero Model epoch when the previous epoch was also nonzero, the
+logical entity generation stayed fixed, the hierarchy matches and the
+new Model has a distinct pointer. An in-place same-pointer reimport
+must restart, because old compiled graph clip metadata cannot be
+trusted after mutation. Graph changes at unchanged Model epoch retain
+their existing compatible playback contract. ECS creates one new
+GraphInstance for the replacement and consumes its portable one-shot
+clock; failure restarts and drops the old clock, with no native solver,
+event, root-motion or GPU pointer transfer.
+
+The prior CPU Model and compiled Graph MUST outlive the synchronous
+bridge `sync` snapshot operation: the graph still reads its own
+old clip names/durations while capturing time. This bridge does not
+own CPU Model leases or GPU retirement tokens. For a host that calls
+`forget()` before replacing the Model, Stage 146 must provide a
+pre-retirement clock capture API rather than reading an already
+destroyed old Model.
+
+[Stage 145 handoff](agent-handoffs/animation-stage145-generic-ecs-source-epoch-playback-2026-11-19.md).
+**NOT RUN:** native CMake/C++/CTest, Metal/Vulkan/GL, sanitizer, source
+hot-reload visual test, GPU failure injection or benchmarks.

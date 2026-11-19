@@ -14,6 +14,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <functional>
+#include <iterator>
 #include <stdexcept>
 #include <unordered_set>
 
@@ -345,7 +346,17 @@ bool RtsView::prepareType(uint16_t type, bool allVariants) {
         for (const auto& message : result.warnings) warn(t, message);
         // A runtime spawn can have synchronously cached the same file while the worker ran.
         const auto& key = resources_.preparation().current().second;
-        resources_.publishPrepared(*dev_,key,std::move(result));
+        try {
+            const bool published=resources_.publishPrepared(
+                *dev_,key,std::move(result));
+            if(!published && !resources_.contains(key))
+                warn(t,"async Model upload failed for "+key);
+        }catch(const std::exception& e) {
+            // publishPrepared has already queued any partially uploaded
+            // Model for GPU-safe retirement; do not retry the same worker
+            // result or leave preparation stalled on its failed key.
+            warn(t,std::string("async Model publish: ")+e.what());
+        }
         resources_.preparation().advance();
     }
     if (resources_.preparation().hasRemaining()) {
@@ -452,6 +463,70 @@ void RtsView::trimTypes(const std::vector<bool>& keep, bool compact) {
     if(std::getenv("AIVERSE_STREAM_TRACE"))std::fprintf(stderr,"[residency] released=%zu models=%zu textures=%zu\n",released,resources_.models().size(),resources_.textures()->gpuCount());
 }
 
+// A hot reload is a new GPU/Model publication, not a new gameplay spawn.
+// Capture only named playback clocks and presentation event ages; old
+// Graph, Animator, pose, rig and Model* must be destroyed before eviction.
+// Bounded even if the host repeatedly reloads sources for unseen entities.
+void RtsView::rememberReloadPlayback(uint64_t key,const EntityAnim& state) noexcept {
+    // State preservation is best-effort, never a prerequisite for a safe
+    // source/graph transaction. Allocation failure falls back to restart
+    // rather than interrupting committed GPU/publication cleanup.
+    try {
+    constexpr size_t kMaxPending=8192;
+    constexpr uint64_t kMaxAgeFrames=120;
+    if(reloadPlayback_.size()>=kMaxPending &&
+       !reloadPlayback_.contains(key)) {
+        // Preserve a strict memory bound across repeated source imports
+        // when some deleted entities never return to consume their state.
+        for(auto it=reloadPlayback_.begin();it!=reloadPlayback_.end();) {
+            if(frame_>=it->second.capturedFrame &&
+               frame_-it->second.capturedFrame>kMaxAgeFrames)
+                it=reloadPlayback_.erase(it);
+            else ++it;
+        }
+        if(reloadPlayback_.size()>=kMaxPending)return;
+    }
+    ReloadPlayback snapshot;
+    snapshot.type=state.type;
+    snapshot.choice=state.choice;
+    snapshot.capturedFrame=frame_;
+    if(!state.genericViewPose && !state.wasGenericViewPose) {
+        snapshot.graph=state.graph.snapshotPlayback();
+        // Legacy Animator publishes no independent ECS graph clock.
+        // Capture ONLY a stable, unblended base clip; cross-fades and
+        // secondary layers must restart safely on different model rigs.
+        const auto* oldModel=state.anim.model();
+        const int oldClip=state.anim.clip(0);
+        const auto sampled=state.anim.baseSample();
+        if(oldModel && state.baseKind>=0 && state.baseKind<kAnimCount &&
+           oldClip>=0 && size_t(oldClip)<oldModel->clips.size() &&
+           sampled.clipA==oldClip && sampled.clipB<0 &&
+           oldModel->clips[size_t(oldClip)].duration>0.f &&
+           std::isfinite(state.anim.time(0))) {
+            snapshot.baseClip=oldModel->clips[size_t(oldClip)].name;
+            snapshot.basePhase=std::clamp(
+                state.anim.time(0)/
+                    oldModel->clips[size_t(oldClip)].duration,
+                0.f,1.f);
+            snapshot.baseLoop=sampled.loopA;
+            snapshot.baseKind=state.baseKind;
+        }
+    }
+    std::copy(std::begin(state.eventAge),std::end(state.eventAge),
+              std::begin(snapshot.eventAge));
+    snapshot.castAge=state.castAge;
+    snapshot.deathAge=state.deathAge;
+    snapshot.phase=state.phase;
+    snapshot.yaw=state.yaw;
+    snapshot.speed=state.speed;
+    snapshot.lastPos=state.lastPos;
+    snapshot.dead=state.dead;
+    reloadPlayback_.insert_or_assign(key,std::move(snapshot));
+    }catch(...) {
+        // Graph/Model source invalidation remains safe with no snapshot.
+    }
+}
+
 // Invalidate model-source dependencies as one render-thread transaction.
 // No affected Model/Graph pointers may survive the release barrier. Keep
 // unaffected TypeLooks and MotionWeave players alive to preserve their clocks.
@@ -516,12 +591,13 @@ size_t RtsView::reloadModelSources(const std::vector<std::string>& sources) {
                     sourceIds.push_back(animation.genericViewId);
             }
             if(genericView_ && !sourceIds.empty())
-                genericView_->forgetSources(sourceIds);
+                genericView_->forgetSourcesForReimport(sourceIds);
             for(auto it=anims_.begin();it!=anims_.end();) {
                 if(it->second.type<typeAffected.size() &&
-                   typeAffected[it->second.type])
+                   typeAffected[it->second.type]) {
+                    rememberReloadPlayback(it->first,it->second);
                     it=anims_.erase(it);
-                else ++it;
+                } else ++it;
             }
             for(auto it=streamingChoices_.begin();it!=streamingChoices_.end();) {
                 if(it->second.first<typeAffected.size() &&
@@ -801,10 +877,12 @@ bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
             graphSources.push_back(state.genericViewId);
     }
     if(genericView_ && !graphSources.empty())
-        genericView_->forgetSources(graphSources);
+        genericView_->forgetSourcesForReimport(graphSources);
     for(auto it=anims_.begin();it!=anims_.end();) {
-        if(affected.contains(it->second.type))it=anims_.erase(it);
-        else ++it;
+        if(affected.contains(it->second.type)) {
+            rememberReloadPlayback(it->first,it->second);
+            it=anims_.erase(it);
+        } else ++it;
     }
     for(auto it=streamingChoices_.begin();it!=streamingChoices_.end();) {
         if(affected.contains(it->second.first))it=streamingChoices_.erase(it);
@@ -838,7 +916,10 @@ void RtsView::loadType(uint16_t type) {
     if(!(replacing && ready.shape && !looks_[type].shape))looks_[type]=std::move(ready);
     loadedModels_[type]=requestedModels_[type];
     if(replacing)for(auto it=anims_.begin();it!=anims_.end();) {
-        if(it->second.type==type)it=anims_.erase(it);else ++it;
+        if(it->second.type==type) {
+            rememberReloadPlayback(it->first,it->second);
+            it=anims_.erase(it);
+        } else ++it;
     }
     if (twoD_) twoD_->loadType(type);
     loadedTypes_[type] = true;
@@ -905,12 +986,19 @@ Model* RtsView::loadModelCached(gfx::Device& dev, const UnitType& t, const std::
             std::vector<std::string> w;
             m = loadModel(path, read_, &w, resources_.textures());
             for (auto& s : w) warn(t, s);
+            if (!m)throw std::runtime_error("Model load failed: "+path);
             if (policy.clusters || policy.shadowClusters || policy.occluder) prepareGeometry(*m);
-            uploadModel(dev, *m);
+            if (!uploadModel(dev, *m))
+                throw std::runtime_error("Model GPU upload failed: "+path);
         } catch (const std::exception& e) {
             warn(t, e.what());
-            m.reset();
+            // Upload may have allocated geometry or earlier images before a
+            // later texture/morph allocation failed. Never call m.reset()
+            // while those handles may still be in flight on the GPU.
+            if(m)resources_.retireUnpublished(dev,m);
         }
+        // Preserve the existing failed-load tombstone (null Model) so this
+        // authored type can choose a safe fallback instead of a broken draw.
         return resources_.insertIfAbsent(key,std::move(m));
     }
     return it->second.get();

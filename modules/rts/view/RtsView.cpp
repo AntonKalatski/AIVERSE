@@ -30,6 +30,26 @@ float3 toF(const Vec3& v) { return {float(v.x.toDouble()), float(v.y.toDouble())
 
 RtsView::RtsView() : roads_(std::make_unique<RtsRoadView>()), shores_(std::make_unique<RtsShoreView>()) {}
 RtsView::~RtsView() = default;
+
+// Called by client/editor/preview owner at the SAME explicit pre-render
+// frame boundary used for ModelResourceCache and ImageRollbackPool. Never
+// generate a GPU retirement token from inside RtsView::draw(): the editor
+// can draw the same View more than once inside one RHI frame.
+size_t RtsView::pendingModelRetirements() const {
+    return resources_.pendingRetirements()+
+           roads_->pendingGpuRetirements()+
+           shores_->pendingGpuRetirements()+
+           geometryScene_.pendingGpuRetirements();
+}
+bool RtsView::collectRetiredModels() {
+    if(!dev_)return false;
+    const bool models=resources_.collectRetired(*dev_);
+    const bool images=imageRollback_.collect(*dev_);
+    // Always poll all three queues, even while a previous one is pending.
+    const bool roads=roads_->collectRetired(*dev_), shores=shores_->collectRetired(*dev_);
+    const bool geometry=geometryScene_.collectRetired(*dev_);
+    return models && images && roads && shores && geometry;
+}
 void RtsView::setRoadMap(const Json& map) { roads_->setMap(map); shores_->setMap(map); }
 
 float4 RtsView::playerColor(int p) { return overlayPlayerColor(p); }   // palette shared with the overlays
@@ -68,7 +88,10 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
     if (twoD_) { twoD_->shutdown(dev); twoD_.reset(); }
     looks_.clear();
     warnings_.clear();
-    geometryScene_.shutdown(dev);
+    // A live rules/project reload must not stall the whole GPU or destroy
+    // static/HLOD Models still referenced by an earlier rendered frame.
+    // Final teardown continues to call the blocking shutdown barrier.
+    geometryScene_.clear(dev);
     try {
         std::string text;
         if (read_("game.json", text)) {
@@ -92,7 +115,7 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
     }
     for (auto& w : overlays_.set().warnings) warnings_.push_back(w);
     if(genericView_)genericView_->clear();
-    anims_.clear(); streamingChoices_.clear(); animationCache_.clear();
+    anims_.clear(); streamingChoices_.clear(); reloadPlayback_.clear(); animationCache_.clear();
     tracers_.clear();
     looks_.resize(rules.types.size());
     actorRevealTypes_.resize(rules.types.size());
@@ -129,12 +152,19 @@ void RtsView::shutdown(gfx::Device& dev) {
 #ifndef __EMSCRIPTEN__
     resources_.preparation().reset();
 #endif
+    // GeometryScene's standalone meshes and the road/shore/portrait/paint
+    // owners may still be GPU-visible. The Model cache's own shutdown idle
+    // barrier used to run AFTER GeometryScene had freed its GPU handles.
+    // Establish a single full-device completion proof BEFORE tearing down
+    // any presentation resource. A failed barrier leaves all owners intact.
+    if(!dev.waitForResourceIdle())
+        throw std::runtime_error("RtsView shutdown: GPU idle barrier failed");
     geometryScene_.shutdown(dev);
     // IMPORTANT: detach borrowed Model, graph, skin pose and material
     // references before the cache can release their CPU/GPU storage.
     // The lease stays live until the host successfully completes teardown.
     if(genericView_) { genericView_->clear(); genericView_.reset(); }
-    anims_.clear(); streamingChoices_.clear(); ghostAnim_=EntityAnim{};
+    anims_.clear(); streamingChoices_.clear(); reloadPlayback_.clear(); ghostAnim_=EntityAnim{};
     animationCache_.clear();
     looks_.clear(); actorRevealTypes_.clear(); loadedTypes_.clear(); tracers_.clear();
     // Failed appearance publications may leave uncommitted image GPU
@@ -218,6 +248,8 @@ void RtsView::drawGround(Renderer3D& r, const std::vector<ViewGroundBatch>& batc
 }
 
 void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std::vector<uint8_t>* vision, const MapGrid& grid) {
+    // Resource retirement is driven by the explicit owner frame hook,
+    // never by this draw function (which can be called several times).
     const bool traceView = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
     const auto viewStart = std::chrono::steady_clock::now();
     // Script spawns, reinforcements and restored entities need not exist at
@@ -240,6 +272,12 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         drawTypes_.push_back(o.type);
         if (!streamingTypes_) loadType(o.type);
     }
+    // All synchronous Model loads above must finish BEFORE this scope.
+    // The cache owns unique_ptr<Model>; the reader guard blocks
+    // replace/invalidate/trim/shutdown until the View's graph evaluation
+    // and synchronous Renderer3D model submissions have completed.
+    // GPU work remains owned by the separate fenced retirement queue.
+    [[maybe_unused]] const auto modelReadScope=resources_.acquireFrameReadScope();
     RtsScene resolved;
     const bool hierarchy=input.entityFx && !input.entityFx->hierarchy.parents.empty();
     if(hierarchy) {
@@ -395,6 +433,10 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         genericObjects.reserve(s.objects.size());
         for(size_t oi=0;oi<s.objects.size();++oi) {
             const auto& o=s.objects[oi];
+            // A fallback render-array index is not a stable logical
+            // identity: a different object could reuse it after reload.
+            // Keep those objects on the existing legacy animation path.
+            if(!o.entity.valid())continue;
             if(!o.visible || o.isProjectile || o.parented || o.body!=-1 ||
                o.type>=looks_.size() || !typeLoaded(o.type))continue;
             if(twoD_ && twoD_->hasSprite(o.type))continue;
@@ -406,6 +448,7 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
             auto& st=stateFor(key,o);
             const auto& ch=look.models[size_t(st.choice)];
             if(!ch.graph || !ch.model || !ch.needsPose ||
+               ch.modelGeneration==0 ||
                ch.baked || !ch.procs.empty() || !ch.legs.empty() ||
                !ch.additive.empty() || !ch.attach.empty() ||
                !ch.fx.empty() || !ch.weaponPoses.empty() ||
@@ -434,6 +477,9 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
             packet.id=key;packet.generation=(uint64_t(o.type)<<32)|
                 uint32_t(st.choice);
             packet.draw.model=ch.model;
+            // Preserve the authored asset-publication epoch across graph
+            // edits; a new Model upload receives a fresh epoch in RtsLook.
+            packet.animationModelGeneration=ch.modelGeneration;
             packet.graph=ch.graph;
             packet.parameters=ch.graph->defaults();
             packet.parameters.set("speed",st.speed);

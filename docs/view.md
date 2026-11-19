@@ -2888,3 +2888,222 @@ MotionWeave update is introduced.
 **NOT RUN:** native compiler/link, CMake, CTest, FPS/RTS/editor
 visual parity, GPU backend tests or sanitizers.
 See [Stage 126 handoff](agent-handoffs/animation-stage126-published-lod-hot-reload-2026-11-19.md).
+
+## Stage 127 — Model-publication-aware MotionWeave bridge and pinned native batches
+
+`AnimationSourceFrame::modelPublicationGeneration` now carries
+the host's Model asset revision into the presentation ECS
+`AnimationSourceLinkComponent`, separately from the actor's
+logical entity `generation`. `View::update` forwards
+`Object::animationModelGeneration`, and `View::submitOne`
+only uses an evaluated graph-owned Pose when the last synced
+source ID, logical generation, Model epoch, graph and Model
+pointer are all consistent.
+
+When a hot reload changes a known nonzero Model epoch, the
+bridge restarts the presentation player without migrating old
+clip/state clocks, even if the C++ pointer has been recycled.
+The bridge rejects an in-place Model change where the old
+compiled AnimationGraph pointer is reused with a new Model
+epoch, BEFORE mutating the World. A compatible graph-only
+reload with constant Model epoch may still migrate named
+playback. Zero remains a legacy Model-epoch opt-out.
+
+Native/cinematic projects can use `PinnedAppearanceBatch`
+to hold immutable `AppearanceAssetRegistry::Snapshot`
+objects and their `view::Object` packets through one
+`View::update(batch.span(),dt)` +
+`View::submit(renderer,batch.span())` transaction. This
+protects borrowed material/graph snapshot pointers against
+registry replacement but DOES NOT own the underlying
+Model or its GPU resources. The host still needs a joined
+animation worker barrier, Model lifetime pin and real GPU
+retirement before destruction. Avoid editing/clearing a
+batch during synchronous submission.
+
+No authoritative gameplay changes, new graph clock or GPU
+ownership were added. See
+[Stage 127 handoff](agent-handoffs/animation-stage127-model-epoch-bridge-pinned-appearance-2026-11-19.md).
+
+**NOT RUN:** CMake/native compiler, CTest, real GPU
+rendering, sanitizer or performance tests.
+
+## Stage 128 — opt-in owned native appearance batches
+
+`view::PinnedAppearanceBatch` now supports two complementary lifetime
+modes. Legacy `add(snapshot,world)` retains immutable appearance
+materials and AnimationGraph snapshots but borrows the raw Model
+from its native host. New `addOwned(snapshot,world,shared_ptr<const
+Model>)` additionally retains a **real strongly-owned CPU Model**
+whose pointer must exactly match the published snapshot.
+
+After optional `edit(index)` adds LODs or attachments, the host may call
+`pinRelatedModel(shared_ptr)` for each referenced Model. The batch
+deduplicates shared CPU model owners across actors. Call
+`missingModelPins`, `requireModelPins` or `validatedSpan()` to
+check all base/animation/LOD/attachment Model pointers are pinned.
+The additional `validatedSpan(device, gpuLifetime.lease())` overload
+verifies the host's current GPU Device epoch and owner thread, not
+GPU command completion. Use the same span for exactly one
+`View::update` and subsequent synchronous `View::submit`, then
+call `batch.clear()` after workers have joined and submission ended.
+
+**Critical:** CPU shared ownership does not make a Model's GPU vertex
+buffers/textures safe to destroy. GPU lifetime remains under the host's
+fenced Model retirement and Device owner. Native
+`ModelResourceCache` still owns `unique_ptr<Model>`; never fake
+ownership with a non-owning shared_ptr. Existing cache-backed hosts
+retain their explicit detach/evict/retire contract until owner-approved
+reader leases are implemented. No animation clocks or genre rules
+changed.
+
+**NOT RUN:** native build/CTest, GPU validation, screenshots,
+sanitizers, large crowds or memory benchmarks.
+[Stage 128 handoff](agent-handoffs/animation-stage128-native-model-lifetime-pins-2026-11-19.md).
+
+## Stage 129 — cache reader leases for native View transactions
+
+Generic `render::ModelResourceCache` retains its `unique_ptr<Model>`
+and independent GPU-fenced retirement, but now provides real
+owner-thread CPU read guards. `ModelReadLease` pins a specific
+resident cache Model against eviction/replacement, while
+`ModelCacheReadScope` guards an entire legacy multi-model frame.
+While guards are active, `ModelResourceCache::invalidateSources`,
+`replace`, `trimUnused`, and `shutdown` fail closed rather than
+destroying CPU Model objects that MotionWeave / Renderer3D are
+still reading. A host must release every guard before cache teardown;
+destruction with live guards is a fatal ownership error.
+
+Native code can assemble `PinnedAppearanceBatch` using genuine
+`cache.acquireModelRead(model)` tokens passed to
+`batch.addCacheOwned(snapshot,world,std::move(lease))`. Visual
+LODs, base animation rigs and attachments use
+`pinCacheRelatedModel`. `validatedSpan` checks CPU owners from
+either real `shared_ptr<Model>` pins or cache read leases, and
+can optionally validate a GPU Device epoch lease. The Model
+itself remains cache-owned; the View batch does not adopt the
+Model, allocate GPU buffers or alter the animation clock.
+`batch.clear()` releases the read tokens only after the joined
+animation update and synchronous draw.
+
+The legacy RTS adapter takes a coarse cache read scope after its
+upfront model loads in `RtsView::draw`, covering animation
+evaluation and scene submission. Editor Stats reports active
+cache readers when any exist. GPU command completion STILL
+requires the owner's independent deferred retirement queue;
+a read lease or GPU Device epoch cannot replace a real GPU fence.
+[Stage 129 handoff](agent-handoffs/animation-stage129-model-cache-read-leases-2026-11-19.md).
+
+**NOT RUN:** CMake/native compiler, CTest, real GPU backend,
+hot reload fault-injection, sanitizers or benchmarks.
+
+## Stage 130 — cache read lease owner rebind and diagnostic counters
+
+`ModelResourceCache`'s GPU owner and CPU Model read owner are
+related but independent. Read guards still block cache mutation
+while a View evaluates a Model or submits its synchronous
+draw. After a successful `ModelResourceCache::shutdown`
+(no active reader, GPU idle proved and Model resources freed),
+the former read-owner thread ID is reset: the host may
+reinitialize the empty cache against a NEW Device owner
+on a different render thread. No existing reader is ever
+rebound.
+
+Both `ModelReadLease` and `ModelCacheReadScope`
+are strictly owner-thread-only. Releasing either on
+another thread terminates rather than allowing cache
+eviction to race with borrowed data use. The cache
+exposes `modelReadSafetyStats()` with active readers,
+historical peak readers and cumulative blocked mutation
+attempts (`invalidateSources`, `replace`, `trimUnused`,
+`shutdown`). RTS forwards this to Editor Statistics;
+no simulation ECS state or GPU fence owner changes.
+
+This is NOT a cross-thread reader-writer lock or GPU
+completion fence. Host Model data must remain immutable
+while read, and MotionWeave workers must join before
+the owner releases its guard. See
+[Stage 130 handoff](agent-handoffs/animation-stage130-read-lease-lifecycle-diagnostics-2026-11-19.md).
+
+**NOT RUN:** native compiler/CMake/CTest,
+GPU visual parity, sanitizers or benchmarks.
+
+## Stage 131 — streamed Model publication while View is reading
+
+`ModelResourceCache::acquireModelRead(key)` now verifies the owner
+thread and active cache lifetime BEFORE accessing its non-threadsafe
+Model map. A foreign-thread lookup rejects with `logic_error`;
+this is not a cross-thread reader-writer lock and does not make
+the underlying Model memory concurrently mutable.
+
+`RtsView::draw` continues to guard Model lifetime with a
+coarse `ModelCacheReadScope` acquired after upfront type
+loads and held until synchronous Renderer3D submission returns.
+NEW Model keys may still be published by the owner thread
+using `insertIfAbsent`, `publishPrepared` or
+`publishStagedModels`, preserving the streaming design.
+Replacing, trimming, invalidating or shutting down the
+unique-owned cache while readers are active fails closed.
+
+The existing native CTest `render_device_epoch` has new
+CPU-only regression scenarios for lease lifecycle, denied
+mutations, new-key streaming and owner-thread rebind.
+These source tests are **authored but NOT RUN**; no measured
+runtime verification or GPU frame safety is claimed.
+See [Stage 131 handoff](agent-handoffs/animation-stage131-streaming-cache-read-regressions-2026-11-19.md).
+
+
+
+## Stage 149 — animated identity and LOD publication safety
+
+Generic `aiverse::View::update` requires an immutable animation source Model and a **stable nonzero** `Object::id` whenever `Object::graph` is supplied. It rejects anonymous Graph+Model objects before animation ECS update; graphless model draws, precomputed poses and ordinary meshes remain valid without an ID. The `Object::generation` is logical source identity, independent of `Object::animationModelGeneration` for authored asset publication.
+
+The View's per-ID Model LOD hysteresis now invalidates when that source generation/publication changes, the last selected visual LOD model address/visual epoch/threshold changes or the number of LOD levels changes. Source detach via either `forgetSources` or `forgetSourcesForReimport` drops the visual LOD cache entry. Render metadata compares old addresses without dereferencing retired resources. For generic `ModelAttachment` draws, View-generated `persistentId` values incorporate the parent's Model-publication epoch as well as logical identity and index; explicit host-provided IDs are retained. LODs do not start extra animation graph instances or tick a pose source.
+
+These are source-level changes; the full authoring/retargeting integration still needs final native validation. **NOT RUN:** compile, CTest, real Metal/GLES/Vulkan, screenshots, performance/sanitizers. Details in [Stage 149 handoff](agent-handoffs/animation-stage149-source-identity-lod-attachment-reimport-2026-11-19.md).
+
+
+
+## Stage 150 — exact complete Model LOD revisions and compiled attachment sockets
+
+Generic `aiverse::View` now tracks **all** authored `view::ModelLod` entries for hysteresis invalidation, including currently unselected levels. Comparison-only metadata records each LOD Model address, asset publication generation, threshold and retarget/compiled-plan identity, plus the base Model/source rig and original asset revision. No old Model pointer is dereferenced. An edited LOD or changed hysteresis configuration resets the previous selection; the new revision vector is allocated only when the authored configuration changes. Native hosts should benchmark high-crowd memory/CPU during the final validation pass.
+
+For frequently repeated named or indexed child-model sockets, an authoring/import step can call `view::compileModelSocket(*sourceRig, nonzeroPublicationEpoch, "Hand.R", -1)`, retaining a shared immutable `CompiledModelSocket` on each `ModelAttachment::compiledSocket`. `View::submitOne` supplies the current `Object::animationModelGeneration` and checks the compiled binding against that rig, nonzero publication epoch, authored socket name and optional index before using the cached node index. A mismatch skips the attachment instead of silently using an old skeleton's bone. If no compiled socket is provided, earlier runtime name/index composition remains supported. No game-genre logic or additional animation graph evaluation is introduced.
+
+The source Model is still owned by the host; compiled socket objects and cached LOD metadata are NOT CPU Model read leases or GPU retirement tokens. Recompile bindings after importing a replacement rig. Source code and exact commits: [Stage 150](agent-handoffs/animation-stage150-complete-lod-signatures-compiled-sockets-2026-11-19.md). **NOT RUN:** CMake/compiler/CTest, Metal/GLES/Vulkan parity, stress or sanitizer tests.
+
+
+
+## Stage 151 — atomic authored LOD and socket binding publication
+
+Native hosts can now compile a complete presentation configuration on a published `AppearanceAssetRegistry::Asset` through `compilePresentationBindings(lodRequests, socketRequests, out, error)`. An `Asset::VisualLodRequest` supplies a published visual Asset, increasing finite distance and a shared immutable `ModelPoseRetarget` map; an `Asset::SocketBindingRequest` supplies a unique attachment index and named/indexed socket definition. All LOD plans are compiled with the source and visual Models' nonzero publication epochs, and all sockets with the source's epoch. Any invalid entry aborts without modifying `out`.
+
+The resulting `Asset::CompiledPresentationBindings::apply(View::Object&)` requires the same source Model and published epoch plus matching socket selectors, then replaces all LODs and compiled sockets in one packet copy/move. Older socket caches are cleared before installing the current bindings. Compiled Model pointers are comparison-only and cannot extend CPU/GPU lifetime. Previously existing uncompiled sockets/LODs and all generic rendering APIs remain supported. This authoring contract is independent of genre, simulation ECS, gameplay or network state, and does not evaluate animation. See [Stage 151 handoff](agent-handoffs/animation-stage151-transactional-presentation-authoring-2026-11-19.md). **NOT RUN:** CMake/C++/CTest, current CI green, Metal/GLES/Vulkan, runtime/visual parity, benchmarks or sanitizers.
+
+
+
+## Stage 152 — native published packet and importer-name LOD mapping
+
+`AppearanceAssetRegistry::Asset::VisualLodRequest` now appends `matchByName` (false by default). When explicitly true and `mapping` is null, the importer creates a source-to-visual `ModelPoseRetarget` using exact node **names**, never array indices; it then validates and compiles that mapping against both published immutable Model epochs. Complex rigs/morph channels still require explicit authored maps.
+
+`Asset::packetWithBindings(world,span<ModelAttachment>,bindings,Object&,error)` is a transactional presentation packet builder. It produces the already-published base appearance fields, copies caller child model attachments, optionally validates and installs Stage 151 compiled LOD+socket bindings, and replaces its output only on complete success. It does not retain GPU/CPU Model ownership or evaluate an animation graph. For View-owned graph players, pass this packet to View::update once. For a native host with its **own** MotionWeave presentation World, attach its precomputed pose and set `packet.graph=nullptr` before submitting to generic View; never create a second evaluator.
+
+The reference native FPS client now uses this published packet path for real material/geometry/Model-publication fields instead of recreating everything by hand, but has not yet imported authored separate LOD/child asset Models. Editor Modeling/Graph preview is still an independent AnimationGraphInstance owner, not migrated. See [Stage 152 handoff](agent-handoffs/animation-stage152-native-appearance-packet-integration-2026-11-19.md). **NOT RUN**: native compile/CTest, real Metal/GLES/Vulkan, FPS/editor pixel parity, sanitizers and crowd benchmarks.
+
+
+
+## Stage 153 — real imported child Models and frame-bound read leases
+
+Common native projects may use `engine/view/ImportedAttachmentAuthoring.h` to import real static child files via `render::ModelAssetProvider::load`, publish them with the existing `AppearanceAssetRegistry`, and compile named/indexed socket bindings against a live published parent Model. The source and every child must belong to the same `render::ModelResourceCache`. No RTS/FPS/gameplay types exist in the API. `ImportedAttachmentAuthoring::compile` holds short-lived owner-thread read leases during socket compilation, preserving last-good compiled layout on failure.
+
+`ImportedAttachmentAuthoring::prepare` produces a move-only `Prepared` with a `View::Object`, strong appearance snapshots (for materials) and fresh `ModelReadLease` guards for the parent, every real child and optional visual LOD. Keep `Prepared` alive until `View::submitOne/submitPackets` synchronously returns, then release it on the cache owner thread before invalidating models. The model provider and separate GPU retirement queues still own CPU/GPU resource lifetime; read leases are NOT GPU fences. A stale/missing cache-resident resource fails the transaction instead of submitting dangling Models.
+
+`AnimationOwner::ViewEvaluates` (View-owned Graph) or `HostPrecomputed` (graph explicitly cleared for an existing external Pose owner) makes single-writer behavior explicit. Animated child models should be emitted as their own View Object rather than attached as a silent extra Graph. This is generic source implementation, not full editor/FPS authored child integration; [Stage 153 handoff](agent-handoffs/animation-stage153-imported-child-attachments-read-leases-2026-11-19.md) lists exact commits and remaining work. Native compile/CTest/Metal/GLES/Vulkan, sanitizer, failure injection and high-crowd benchmarks **NOT RUN**.
+
+
+
+## Stage 154 — ModelView imported attachment authoring consumer
+
+The existing native `aiverse_modelview` application now integrates the generic `ImportedAttachmentAuthoring` API, rather than only leaving attachment authoring as an unused library helper. It can load a real static child Model on a named source socket through `--attach child.glb@SocketName`, read/write `--attachments-file file.json`, and manage the layout through an Attachments window (toggle, attach, detach, rebuild, save). Parent and child Models live in the SAME generic `ModelAssetProvider` cache. New authored configurations are compiled at the next Device-owner preframe boundary, preserving the previous compiled layout if a new imported child/socket is invalid. The parent Animator computes pose once; `ImportedAttachmentAuthoring::prepare(...,HostPrecomputed)` gets per-model CPU read leases, and `View::submitOne` draws its socket children without ticking another AnimationGraph.
+
+Note: **Detach** removes a child from the authored layout but leaves its Model resident in the provider cache until normal retirement/shutdown. Rebuild uses current cached Models; it does not re-read changed child file bytes, since proper source-file hot reimport must coordinate CPU and GPU barriers. AIVERSE Studio Modeling/AnimationEditor previews are still separate owners and have NOT been integrated. Source code and limitations: [Stage 154 handoff](agent-handoffs/animation-stage154-modelview-attachment-workflow-2026-11-19.md); user workflow: [ModelView attachments](modelview-attachments.md). Actual native compiler/CTest/Metal/GLES/Vulkan/visual parity/sanitizer/perf **NOT RUN**.

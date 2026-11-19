@@ -173,6 +173,13 @@ public:
         ImGui::TextDisabled("MotionWeave retarget CPU scratch: %.1f / %.1f KiB",
             double(ed.view().genericRetargetScratchCapacityBytes())/1024.0,
             double(ed.view().genericRetargetScratchBudgetBytes())/1024.0);
+        const auto cacheReaders=ed.view().modelReadSafetyStats();
+        if(cacheReaders.activeReaders || cacheReaders.peakReaders ||
+           cacheReaders.blockedMutations)
+            ImGui::TextDisabled(
+                "Model cache read guards: %zu active / %zu peak / %llu blocked mutations",
+                cacheReaders.activeReaders,cacheReaders.peakReaders,
+                (unsigned long long)cacheReaders.blockedMutations);
         ImGui::TextDisabled("GPU программы Renderer3D: %zu партий ждут fence",
             ed.renderer().pendingProgramRetirements());
         ImGui::TextDisabled("GPU RenderTargets: %zu пар ждут fence",

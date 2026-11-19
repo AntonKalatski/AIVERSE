@@ -554,3 +554,79 @@ policies. Full dynamic genre-neutral appearance state
 migration and real visual parity remain open.
 **NOT RUN**: native compiler, CTest, renderer/GPU validation,
 FPS/RTS screenshots, sanitizer and CI.
+
+
+
+## Source model reimport without losing compatible playback (Stage 146)
+
+`MotionWeaveSourceBridge::forgetForReimport(World&, sourceIds)`, surfaced as `View::forgetSourcesForReimport(ids)`, is a synchronous, optional pre-retirement handshake. Call **before** old CPU Model/compiled Graph destruction; the bridge first captures named graph state and clip phases from a valid presentation player, then forgets its ECS entity. The next `sync` can consume the seed once when logical source ID/generation, exact copied rig names/parents, explicit **different nonzero** old/new publication epochs and a distinct Model address all match. No old pointer is retained/dereferenced; the old address is a value-only conservative rejection guard. The record is bounded to 8192 sources and expires after 120 source-sync calls. The existing `forget` and `clear` APIs intentionally discard continuity, suitable for despawns or session resets.
+
+The adapter does **not** own CPU/GPU leases, cannot reconstruct an already-destroyed Graph, does not transfer root motion, authored event streams, IK/ragdoll/native solver state or gameplay ECS, and must not run during animation worker dispatch. RTS Model and graph invalidation paths opt in; FPS and editor parity need separate audit. Native compiler/CTest/GPU validation **NOT RUN** for this source-only stage; see [Stage 146 handoff](agent-handoffs/animation-stage146-pre-retirement-playback-rebind-2026-11-19.md).
+
+
+
+## Stage 147 host epochs and graph-only publication
+
+The original legacy RTS path had omitted `View::Object::animationModelGeneration` even though `ModelChoice` already tracked a nonzero `view::ModelPublicationEpoch`. It now passes the true published epoch and uses only stable packed ECS IDs for accelerated generic animation; otherwise it retains the legacy path. The pre-retirement named playback seed additionally accepts same immutable Model/same nonzero epoch **graph-only** recompile, not just a new-Model/new-epoch publication. All variants require exact unchanged logical generation and copied rig hierarchy; ambiguous mixed address/epoch cases restart and old Model/Graph never survive the detach. Native tests and end-to-end rendering still **NOT RUN**; see [Stage 147](agent-handoffs/animation-stage147-rts-publication-epoch-and-graph-rebind-2026-11-19.md).
+
+
+
+## Stage 148 — universal ECS Graph-only replacement and single source owner
+
+For any host with an existing presentation ECS Graph player, use `aiverse::motionweave::rebindAnimationPresentationGraph(world, entity, *immutableModel, nextGraph)` on the presentation thread after workers join, while the previous CPU Model/Graph are readable. Returns `AnimationGraphRebindResult {replaced, playbackCaptured}`. The new compiled Graph must target the same immutable Model as the current asset. The helper tries to preserve compatible named state/clip phases, fails closed to authored defaults, invalidates old skin pose immediately and clears obsolete montage and graph-notify queues; it never touches simulation ECS or invokes a second evaluator. Only the next normal MotionWeave update evaluates the replaced graph.
+
+Source replacement remains `MotionWeaveSourceBridge::forgetForReimport`, not graph-only helper. A detached same-Model/same-nonzero-epoch graph replacement must have a distinct compiled Graph identity (integer-only old pointer guard, never dereferenced); different Model requires a genuinely advanced nonzero publication epoch and different Model address. The core always invalidates stale poses when a source asset changes, even if the following animation tick is skipped.
+
+Reference clients may either own an independent MotionWeave ECS presentation world or use generic View-owned presentation; they must never evaluate the SAME visual source twice. Host-only physics, gameplay, network or genre actions are adapted outside animation. Editor preview panels with their own standalone generic `render::AnimationGraphInstance` are separate presentation owners, not candidates for an additional ECS player. More details and actual code commits: [Stage 148](agent-handoffs/animation-stage148-genre-neutral-graph-rebind-native-owners-2026-11-19.md). **NOT RUN** native build/CTest/Metal/GL/Vulkan, current green CI, sanitizer, benchmarks.
+
+
+
+## Stage 149 — safe source IDs, Model epochs and render LOD invalidation
+
+A `MotionWeaveSourceBridge::sync(world,sources)` source must have a **stable nonzero** `sourceId`. A graph-owned `View::update(objects,dt)` Object with a valid Graph+Model must likewise have a durable `id!=0`; invalid inputs fail before the presentation animation step. Static geometry and **graphless** precomputed pose/baked packets may remain anonymous, because View does not evaluate them. A host must not reuse arbitrary draw-array positions as identity across frames, reimports or entity respawns.
+
+A newly published `Model*` requires a different nonzero `modelPublicationGeneration` from the old one to carry portable named playback on hot reload; same Model/same epoch may retain compatible phase when only the compiled Graph changes. Otherwise the new player safely restarts. `forgetForReimport` is idempotent for duplicate IDs in the SAME detach span, while ordinary `forget` cancels any saved phase. Both View forget APIs erase visual LOD hysteresis for detached source IDs. Cached selected LOD state includes source publication, visual Model address/epoch, selected threshold and level count, and is reset when those tracked revisions change (the entire LOD list is NOT fully fingerprinted). Default attachment persistent IDs incorporate the source Model epoch; explicit IDs are unchanged.
+
+No genre/gameplay/network dependencies were added; there remains a single graph evaluator per source. Full compile, CTest and Metal/GLES/Vulkan runtime checks **NOT RUN** under the agreed feature-first workflow. See [Stage 149 handoff](agent-handoffs/animation-stage149-source-identity-lod-attachment-reimport-2026-11-19.md).
+
+
+
+## Stage 150 — visual LOD authoring revisions and immutable socket bindings
+
+Every `View::Object` continues to use exactly one MotionWeave graph/pose writer independently of its chosen visual Model LOD or attachments. The View now invalidates render-only hysteresis based on complete authored LOD configuration revisions (all levels' Model address/epoch, threshold and optional retarget/compiled-plan identity), not just the previously selected level. Comparison snapshots are rebuilt only when the layout changes and contain no live Model ownership.
+
+A generic native host may compile a named or indexed attachment with `aiverse::view::compileModelSocket(rig, epoch, socketName, socketIndex)` at asset publication time, then share that immutable `CompiledModelSocket` through appended `ModelAttachment::compiledSocket`. The View's revision-aware `composeAttachment` checks exact rig/epoch/authored selector; expired compiled sockets fail closed and require recompilation. Legacy uncompiled sockets and root attachments remain available. Host owns CPU Model/GPU retirement and must not mutate a published Model in place without a new epoch. The animation core has no FPS/RTS/RPG dependencies.
+
+See [Stage 150 handoff](agent-handoffs/animation-stage150-complete-lod-signatures-compiled-sockets-2026-11-19.md). **NOT RUN:** compiler, native CTest, current passing CI, real Metal/Vulkan/GLES visuals, sanitizers or benchmarks pending the user's feature-first single validation pass.
+
+
+
+## Stage 151 — authored presentation binding transaction
+
+A universal native project can now use `AppearanceAssetRegistry::Asset::compilePresentationBindings` to compile a whole set of visual Model LOD retarget plans and socket bindings against immutable published source/visual snapshots. Successful `CompiledPresentationBindings::apply(View::Object&)` installs the configuration atomically after validating the source Model epoch and authored socket selectors. Invalid input preserves the last-good candidate; old compiled sockets are removed on complete replacement instead of silently carrying incorrect bone indices across a reimport.
+
+This is **publication/authoring only**, not another animation evaluator, gameplay action system, RHI allocation or host-specific rule. The single MotionWeave presentation owner continues updating the source Graph, while the generic View uses the precompiled LOD and sockets for rendering. Caller retains CPU Model/Graph/GPU resource lifetime responsibility. Detailed APIs, exact code commits and final validation cases are in [Stage 151 handoff](agent-handoffs/animation-stage151-transactional-presentation-authoring-2026-11-19.md). Local native compiler/CTest/real Metal-GLES-Vulkan GPU/sanitizers/performance are **NOT RUN**.
+
+
+
+## Stage 152 — published appearance packet ownership across native projects
+
+A published `AppearanceAssetRegistry::Asset` can now build an entire `View::Object` transactionally with optional precompiled LOD/socket bindings using `packetWithBindings`. LOD importer-name matching is explicit via `VisualLodRequest::matchByName`, validated by the normal generic retarget compiler; it never guesses a bone index or morph map. Invalid binding or Model epoch leaves the previous output unchanged.
+
+Reference native FPS presentation consumes this common published packet path for real remote character renders but still owns and evaluates the single animation graph in its own presentation ECS. Its precomputed pose/bake packet **clears the graph** before passing through `View::beginPreparedFrame`/submit, so generic View cannot evaluate it twice. Genre-specific decisions remain exclusively in the client. Editor preview, specialized host assets and full real child-model import/bundles remain partial. See [Stage 152 handoff and status table](agent-handoffs/animation-stage152-native-appearance-packet-integration-2026-11-19.md). Native compiler, CTest, CI green for new head, actual Metal/GLES/Vulkan and sanitizer/performance validation **NOT RUN**.
+
+
+
+## Stage 153 — imported attachments safely share one generic animation owner
+
+The genre-neutral `ImportedAttachmentAuthoring` helper in `engine/view/ImportedAttachmentAuthoring.h` makes real `ModelAssetProvider` child Model import, static `AppearanceAssetRegistry` publication and compiled socket composition available to any native project. Its move-only `Prepared` keeps source/child published appearance snapshots and short-lived `ModelResourceCache::acquireModelRead` leases for source, visual LOD and child Models until synchronous render submission. Host still owns GPU barriers, old model retirement and source generation changes.
+
+Choose `ViewEvaluates` when `View::update` is the ONE animation graph owner, or `HostPrecomputed` when another presentation World has already evaluated a Pose (its render packet graph is reset to prevent a second evaluator). Animated child Graph assets are deliberately rejected from the *static* attachment pathway and need independent source IDs/updates if animated. Current editors and reference clients are not yet wired to import an authored child set using the helper; Stage 154 will address that separately. [Stage 153 handoff](agent-handoffs/animation-stage153-imported-child-attachments-read-leases-2026-11-19.md) contains API, source SHAs, readiness matrix and test backlog. **NOT RUN:** native C++ build/CTest/current CI green, Metal/Vulkan/GLES GPU, sanitizers and performance.
+
+
+
+## Stage 154 — ModelView real imported child attachment workflow
+
+The reusable `ImportedAttachmentAuthoring` is now called by the native `aiverse_modelview` asset preview. Real child Model files and the parent share the same `ModelAssetProvider` owner, while published Appearance snapshots provide materials/epochs and compiled named sockets provide bone placement. CLI `--attach child.glb@SocketName` and `--attachments-file config.json` are backed by an Attachments ImGui window with add, toggle, Detach, Rebuild and Save. Owner thread applies edits between completed frames, with short-lived source/child read leases held until synchronous `View::submitOne`.
+
+ModelView's existing Animator is the only animation writer; its already evaluated Pose is handed to generic View with `HostPrecomputed`, so the View will not schedule an extra MotionWeave Graph. No host/game genre types entered MotionWeave or engine View. This is not yet full AIVERSE Studio authoring and does not hot-reimport changed on-disk child bytes; provider GPU cache and deferred retirement remain host-owned. [Stage 154 handoff](agent-handoffs/animation-stage154-modelview-attachment-workflow-2026-11-19.md) / [user workflow](modelview-attachments.md). Native build/CTest/actual GPU Metal/Vulkan/GLES/sanitizers/benchmarks **NOT RUN**, deferred to genuine feature freeze.

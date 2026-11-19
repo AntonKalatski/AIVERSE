@@ -25,6 +25,7 @@ namespace kingston { struct CabinResidentDraw; }
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #ifndef __EMSCRIPTEN__
 #include <future>
@@ -195,6 +196,15 @@ public:
     LegacyLodFallbackStats legacyLodFallbackStats() const noexcept {
         return legacyLodFallbackStats_;
     }
+    // Legacy RTS renderer holds one cache read scope during draw().
+    // The counter is normally zero after the draw has returned;
+    // use for host frame-lifetime and teardown diagnostics only.
+    size_t activeModelReadLeases() const noexcept {
+        return resources_.activeModelReaders();
+    }
+    render::ModelResourceCache::ModelReadSafetyStats modelReadSafetyStats() const noexcept {
+        return resources_.modelReadSafetyStats();
+    }
     // Budget only retained transient Pose/matrix capacity in the generic
     // MotionWeave View. The largest single actor still renders normally.
     void setGenericRetargetScratchBudgetBytes(size_t bytes);
@@ -301,17 +311,10 @@ public:
     }
     // Host frame-boundary retirement: call before beginning render submissions
     // for this frame. No draw happens here; previous GPU work must complete.
-    size_t pendingModelRetirements() const noexcept {
-        return resources_.pendingRetirements();
-    }
-    bool collectRetiredModels() {
-        if(!dev_)return false;
-        // Both caches use real GPU completion tokens and never retire on
-        // frame counters or elapsed time alone.
-        const bool models=resources_.collectRetired(*dev_);
-        const bool images=imageRollback_.collect(*dev_);
-        return models && images;
-    }
+    // Includes road/shore Models AND SpriteMesh buffers so existing client/
+    // editor frame hooks automatically poll every View-owned resource queue.
+    size_t pendingModelRetirements() const;
+    bool collectRetiredModels();
     size_t pendingRolledBackImages() const noexcept {
         return imageRollback_.pendingImages();
     }
@@ -590,6 +593,11 @@ private:
         int choice = 0;
         render::Animator anim;
         render::AnimationGraphInstance graph;
+        // One-shot named clock snapshot from model/source reload. Restore
+        // only AFTER resolving a possible per-entity programmable override,
+        // never prematurely against the TypeLook's default graph.
+        std::optional<render::AnimationGraphInstance::PlaybackSnapshot>
+            pendingReloadPlayback;
         bool genericViewPose=false,wasGenericViewPose=false;
         uint64_t genericViewId=0;
         render::Pose pose;
@@ -640,6 +648,28 @@ private:
         bool launched = false;
         double lastSeenTime = -1;                 // previews keep their own clock
     };
+
+    // Short-lived, Model-pointer-free presentation clock handoff while a
+    // source/graph/visual LOD reimport destroys and rebuilds a TypeLook.
+    // Indexed by full entity generation ID, not genre-specific Model paths.
+    // The old Graph/Animator/pose/native solver state never escapes.
+    struct ReloadPlayback {
+        uint16_t type=0;
+        int choice=0;
+        uint64_t capturedFrame=0;
+        render::AnimationGraphInstance::PlaybackSnapshot graph;
+        // Legacy clip-only actors can preserve one unblended base-layer
+        // phase by stable clip NAME, never by the previous Model's index.
+        std::string baseClip;
+        float basePhase=0.f;
+        bool baseLoop=true;
+        int baseKind=-1;
+        float eventAge[render::kProcEvCount] = {};
+        float castAge=1e9f,deathAge=0.f,phase=0.f,yaw=0.f,speed=0.f;
+        render::float3 lastPos{};
+        bool dead=false;
+    };
+    void rememberReloadPlayback(uint64_t key,const EntityAnim& state) noexcept;
 
     struct Tracer { SceneObject from, to; float age = 0; };
     std::vector<Tracer> tracers_;
@@ -722,6 +752,7 @@ private:
     // Only entities first seen while variants stream need a stable choice override.
     std::unordered_map<uint64_t, std::pair<uint16_t, int>> streamingChoices_;
     std::unordered_map<uint64_t, EntityAnim> anims_;   // presentation only: iteration order never matters
+    std::unordered_map<uint64_t, ReloadPlayback> reloadPlayback_;
     EntityAnim ghostAnim_; // transient placement preview state; never shared across Views
     // Reused on the device-owning presentation thread. No global/static
     // scratch shared between Editor Scene, GameClient or native hosts.

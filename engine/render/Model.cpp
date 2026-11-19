@@ -488,11 +488,34 @@ void ModelTextureCache::upload(gfx::Device& dev, Image& image) {
     const auto key=gpuKey(image);
     auto it = gpu_.find(key);
     if (it == gpu_.end()) {
-        Image owner = image; owner.textureCache.reset(); owner.borrowedTexture = false;
-        uploadImage(dev, owner);
-        if (!owner.tex.valid()) return;
-        owner.rgba.clear(); owner.sharedRgba.reset(); owner.compressed.reset(); owner.textureLease=std::make_shared<int>(0);
-        it = gpu_.emplace(key, std::move(owner)).first;
+        // Allocate the CPU lease/control block and map node BEFORE creating
+        // a GPU texture. An allocation failure after createTexture would
+        // otherwise destroy a local Image while its GPU handle is live,
+        // bypassing explicit Device retirement and GPU completion fences.
+        Image owner = image;
+        owner.textureCache.reset();
+        owner.borrowedTexture = false;
+        owner.textureLease = std::make_shared<int>(0);
+        auto [inserted, fresh] = gpu_.try_emplace(key, std::move(owner));
+        it = inserted;
+        if (fresh) {
+            try {
+                uploadImage(dev, it->second);
+            } catch (...) {
+                // uploadImage assigns a new handle only after a successful
+                // createTexture; no potentially live handle is destroyed on
+                // a failed Device allocation.
+                if (!it->second.tex.valid()) gpu_.erase(it);
+                throw;
+            }
+            if (!it->second.tex.valid()) {
+                gpu_.erase(it);
+                return;
+            }
+            it->second.rgba.clear();
+            it->second.sharedRgba.reset();
+            it->second.compressed.reset();
+        }
     }
     image.textureLease = it->second.textureLease; image.tex = it->second.tex; image.gpuCompressed = it->second.gpuCompressed; image.borrowedTexture = true;
 }
@@ -713,13 +736,19 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
             // the shared cache; an aborted Model is retired normally.
             uploadImage(dev,img);
         }
-        // A speculative import is never allowed to publish an incompletely
-        // GPU-uploaded Model. The outer transaction retires every allocation
-        // that succeeded earlier in this loop behind its own completion token.
-        if(!publishSharedTextures && img.width>0 && img.height>0 &&
-           !img.tex.valid())
+        // Both shared-texture and speculative upload paths must reject an
+        // image with known nonzero dimensions but no GPU handle. On partial
+        // failure, the owning host retires earlier allocations behind a
+        // real GPU completion token instead of publishing a broken Model.
+        if(img.width>0 && img.height>0 && !img.tex.valid())
             return false;
-        if (!keepCpu) { img.rgba.clear(); img.rgba.shrink_to_fit(); img.compressed.reset(); img.sharedRgba.reset(); }
+        if (!keepCpu) {
+            // Non-throwing release of CPU pixels AFTER successful GPU upload.
+            // shrink_to_fit may throw on some vector implementations.
+            std::vector<uint8_t>{}.swap(img.rgba);
+            img.compressed.reset();
+            img.sharedRgba.reset();
+        }
     }
     // morph deltas of every primitive in one float texture: 2 texels (position, normal) per vertex and target
     size_t texels = 0;
@@ -735,7 +764,6 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
                 p.morphTexel = uint32_t(at);
                 for (size_t i = 0; i + 2 < p.morphDeltas.size(); i += 3, ++at)
                     for (int k = 0; k < 3; ++k) data[at * 4 + size_t(k)] = p.morphDeltas[i + size_t(k)];
-                if (!keepCpu) { p.morphDeltas.clear(); p.morphDeltas.shrink_to_fit(); }
             }
         gfx::TextureDesc td;
         td.width = width; td.height = height;
@@ -744,11 +772,22 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
         td.data = data.data();
         td.label = "morph targets";
         m.morphTex = dev.createTexture(td);
+        if (!m.morphTex.valid()) return false;
         m.morphTexWidth = width;
     }
     if (!keepCpu) {
-        m.vertices.clear(); m.vertices.shrink_to_fit();
-        m.indices.clear(); m.indices.shrink_to_fit();
+        // Never discard morph deltas before a successful GPU morph texture
+        // allocation. Failed uploads retain their CPU source for diagnostics
+        // and safe retry/rollback by the host.
+        if (m.morphTex.valid()) {
+            for (auto& mesh : m.meshes)
+                for (auto& p : mesh.primitives)
+                    if (p.morphTargets > 0 && !p.morphDeltas.empty()) {
+                        std::vector<float>{}.swap(p.morphDeltas);
+                    }
+        }
+        std::vector<ModelVertex>{}.swap(m.vertices);
+        std::vector<uint32_t>{}.swap(m.indices);
     }
     return !hasGeometry || bool(m.geometryPoolPage) ||
            (m.vb.valid() && m.ib.valid());
@@ -760,9 +799,17 @@ bool uploadStandaloneImage(gfx::Device& dev, Image& image) {
 }
 
 int addImage(gfx::Device& dev, Model& m, Image img) {
-    for (size_t i = 0; i < m.images.size(); ++i) if (!img.name.empty() && m.images[i].name == img.name) return int(i);
+    for (size_t i = 0; i < m.images.size(); ++i)
+        if (!img.name.empty() && m.images[i].name == img.name)
+            return int(i);
+    // Preallocate Model storage before allocating a GPU texture; a vector
+    // growth failure after createTexture could otherwise drop a live handle.
+    m.images.reserve(m.images.size()+1);
     uploadImage(dev, img);
-    img.rgba.clear(); img.rgba.shrink_to_fit();
+    if (!img.tex.valid()) return -1; // never publish an invalid material index
+    // Empty-vector swap frees CPU pixels without a potentially throwing
+    // shrink_to_fit after the new GPU resource has been allocated.
+    std::vector<uint8_t>{}.swap(img.rgba);
     m.images.push_back(std::move(img));
     return int(m.images.size() - 1);
 }

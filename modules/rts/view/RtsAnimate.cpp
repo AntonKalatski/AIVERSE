@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 
 namespace aiverse::game {
 
@@ -125,13 +126,23 @@ RtsView::EntityAnim& RtsView::stateFor(uint64_t key, const SceneObject& o) {
     if (!st.initialized || st.type != o.type) {
         const TypeLook& L = looks_[o.type];
         const uint64_t h = mix64(key);
+        auto resumed=reloadPlayback_.find(key);
+        const bool compatibleReload=resumed!=reloadPlayback_.end() &&
+            resumed->second.type==o.type &&
+            frame_>=resumed->second.capturedFrame &&
+            frame_-resumed->second.capturedFrame<=120;
         st.type = o.type;
         st.choice = int(h % L.models.size());
         auto saved = streamingChoices_.find(key);
-        if (saved != streamingChoices_.end() && saved->second.first == o.type)
+        if (saved != streamingChoices_.end() && saved->second.first == o.type &&
+            saved->second.second>=0 &&
+            size_t(saved->second.second)<L.models.size())
             st.choice = saved->second.second;
         else if (L.nextVariant < L.pendingVariants.size())
             streamingChoices_[key] = {o.type, st.choice};
+        if(compatibleReload && resumed->second.choice>=0 &&
+           size_t(resumed->second.choice)<L.models.size())
+            st.choice=resumed->second.choice;
         st.anim.setModel(L.models[size_t(st.choice)].model);
         st.graph.reset(L.models[size_t(st.choice)].graph);
         st.yaw = yawOf(o.facing);
@@ -141,7 +152,65 @@ RtsView::EntityAnim& RtsView::stateFor(uint64_t key, const SceneObject& o) {
         st.rt.clear();
         st.poseValid = false;
         st.initialized = true;
-        if (st.eventAge[kProcEvSpawn] < 1) events_.push_back({"spawn", o.entity, o.type, o.owner, o.pos});
+        if(resumed!=reloadPlayback_.end()) {
+            // Consume once: an entity recycled with a different generation,
+            // missing for >120 frames, or changed type must not inherit
+            // playback. Compatible reimports restore only scalar clocks,
+            // never obsolete Model/rig/pose/native solver resources.
+            auto previous=std::move(resumed->second);
+            reloadPlayback_.erase(resumed);
+            if(compatibleReload) {
+                std::copy(std::begin(previous.eventAge),
+                          std::end(previous.eventAge),
+                          std::begin(st.eventAge));
+                st.castAge=previous.castAge;
+                st.dead=previous.dead;
+                st.deathAge=previous.deathAge;
+                st.phase=previous.phase;
+                st.yaw=previous.yaw;
+                st.speed=previous.speed;
+                st.lastPos=previous.lastPos;
+                if(!previous.graph.state.empty())
+                    st.pendingReloadPlayback=std::move(previous.graph);
+                // The new Model may have reordered clips or changed its
+                // animation duration. Restore by authored name + normalized
+                // phase only when the same semantic base kind still maps to
+                // that clip. Never transfer old Animator layer indices,
+                // masks, crossfade/IK or stale Model pointers.
+                const auto& choice=L.models[size_t(st.choice)];
+                const auto* model=choice.model;
+                if(!st.graph.graph() && model &&
+                   !previous.baseClip.empty() &&
+                   previous.baseKind>=0 &&
+                   previous.baseKind<kAnimCount &&
+                   choice.hasClip[previous.baseKind] &&
+                   choice.clips[previous.baseKind].loop==previous.baseLoop &&
+                   std::isfinite(previous.basePhase) &&
+                   previous.basePhase>=0.f && previous.basePhase<=1.f) {
+                    const int clip=model->findClip(previous.baseClip);
+                    if(clip>=0 && size_t(clip)<model->clips.size() &&
+                       model->clips[size_t(clip)].duration>0.f &&
+                       std::find(
+                           choice.clips[previous.baseKind].clips.begin(),
+                           choice.clips[previous.baseKind].clips.end(),clip)!=
+                           choice.clips[previous.baseKind].clips.end()) {
+                        Animator::Play play;
+                        play.fade=0;
+                        play.restart=true;
+                        play.loop=previous.baseLoop;
+                        play.speed=choice.clips[previous.baseKind].speed;
+                        st.anim.play(0,clip,play);
+                        if(st.anim.seek(0,previous.basePhase*
+                                       model->clips[size_t(clip)].duration))
+                            st.baseKind=previous.baseKind;
+                    }
+                }
+            }
+        }
+        // Source hot reload is not a gameplay spawn. No duplicate
+        // presentation "spawn" event is emitted on a valid rebind.
+        if(!compatibleReload && st.eventAge[kProcEvSpawn] < 1)
+            events_.push_back({"spawn", o.entity, o.type, o.owner, o.pos});
     }
     st.seen = frame_;
     return st;
@@ -302,7 +371,17 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
     // passed validation below. Otherwise an invalid View pose switches to
     // legacy animation without restarting its stale clocks in this frame.
     const bool wasGenericViewPose=st.wasGenericViewPose;
-    if(st.graph.graph()!=program.get()){st.graph.reset(program);st.poseValid=false;updatePose=true;}
+    if(st.graph.graph()!=program.get()){
+        // A compatible authoring/Lua graph replacement must not restart an
+        // ongoing attack/move/death clip. Preserve only names/phase (never
+        // old rig/native state/Model pointers). The generic ECS source has
+        // its own sole animation clock and must not be seeded from legacy.
+        if(!st.genericViewPose && !wasGenericViewPose)
+            (void)st.graph.rebindPlayback(program);
+        else st.graph.reset(program);
+        st.poseValid=false;
+        updatePose=true;
+    }
     if(st.genericViewPose && genericView_) {
         const Entity presentation=genericView_->presentationEntity(st.genericViewId);
         const auto* evaluated=genericView_->presentation().tryGetConst<
@@ -328,6 +407,20 @@ void RtsView::animate(EntityAnim& st, const SceneObject& o, float dt, const MapG
         updatePose=true;
     }
     st.wasGenericViewPose=st.genericViewPose;
+    if(st.pendingReloadPlayback) {
+        // An entity may select a programmable/Lua override instead of its
+        // TypeLook default graph. Restore ONLY after the final program has
+        // been selected, and never seed the independent generic ECS writer.
+        if(program && !st.genericViewPose && st.graph.graph()==program.get()) {
+            try {
+                (void)st.graph.restorePlayback(*st.pendingReloadPlayback);
+            }catch(...) {
+                // Optional cosmetic clock recovery must not break a newly
+                // published and GPU-safe Model/graph frame.
+            }
+        }
+        st.pendingReloadPlayback.reset();
+    }
     if (program && !st.genericViewPose) {
         // Rebuild defaults each frame so removing a Lua override restores automatic inputs.
         auto& p = st.graph.parameters();

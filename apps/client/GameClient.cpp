@@ -990,6 +990,11 @@ void GameClient::runViewScripts(float dt) {
 }
 
 void GameClient::frame(gfx::Device& dev, double dt) {
+    // WorldScene unloads can retain a Model after its last resident cell
+    // leaves; only the real Device owner frame hook can enqueue a final GPU
+    // retirement token, never a streaming worker or View draw callback.
+    if(worldScene_ && worldScene_->pendingGpuRetirements()!=0)
+        (void)worldScene_->collectRetired(dev);
     // Previous-frame model uploads can remain GPU-visible after their
     // TypeLooks detach. Drain only before this frame's render submissions;
     // if a backend refuses the idle barrier, retain them for the next frame.
