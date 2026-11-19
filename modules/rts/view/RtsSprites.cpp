@@ -487,6 +487,35 @@ void Rts2DView::submit(Renderer3D& r, const MapGrid& grid, float lh) {
     });
 }
 
+// LENS: re-encode the current sprite batch for another camera.
+// This is a render-only path: no animated sprite state, corpse transitions,
+// terrain tile rebuilds or visibility updates run a second time.
+void Rts2DView::submitPrepared(Renderer3D& r) {
+    if(!ready_)return;
+    if(batch_.casterCount()>0 && r.shadowQuality()!=ShadowQuality::Off)
+        r.drawCustomShadow([this,&r](gfx::Device& dev) {
+            batch_.flushCasters(dev,r.lightViewProj());
+        });
+    r.drawCustomOpaque([this,&r](gfx::Device& dev) {
+        r.lights.bind(2,1);
+        SpriteLighting light;
+        light.bind=[&r]{r.bindLitFrame();};
+        light.ref=referenceLight();
+        light.receiveShadows=r.shadowQuality()>=ShadowQuality::Medium;
+        if(tileMesh_.vb.valid()&&atlas_.valid())
+            batch_.drawMesh(dev,tileMesh_,atlas_.tex,r.viewProj(),
+                            defaults_.lit?&light:nullptr);
+    });
+    r.drawCustom([this,&r](gfx::Device& dev) {
+        r.lights.bind(2,1);
+        SpriteLighting light;
+        light.bind=[&r]{r.bindLitFrame();};
+        light.ref=referenceLight();
+        light.receiveShadows=r.shadowQuality()>=ShadowQuality::Medium;
+        batch_.flush(dev,r.viewProj(),&light);
+    });
+}
+
 float3 Rts2DView::barPoint(const SceneObject& o, float groundY) const {
     const SpriteLook& L = looks_[o.type];
     float3 c[4];
