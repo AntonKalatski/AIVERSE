@@ -1436,3 +1436,25 @@ inactive CPU budget; do not claim a memory benefit unless measured.
 Source/PHYSIS/TWH8 semantics, signed coordinates, shader graphs and
 all genre-independent ECS ownership remain unchanged. QA is NOT RUN
 under the user's feature-first order; update Stage38 handoff on branch.
+
+### TerraWeave Stage39 — runtime Horizon presentation quality profiles
+
+AIVERSE already has `HorizonSettings` geometry quality
+`Minimal|Mobile|Balanced|High`. Stage39 adds an **independent**
+`HorizonPresentationPolicy` from
+`engine/world/TerraWeaveHorizonPresentationQuality.h` with
+`BatterySaver|Mobile|Balanced|Desktop` presets. Compose existing
+exact/procedural wind shader controls, Stage36 sparse GPU transfer
+budget and Stage37/38 inactive wind CPU shadow/cache compression;
+do not create parallel renderers, terrain bakes or PHYSIS solvers.
+The *optional* manifest `terraweaveHorizon.presentationQuality`
+(`battery-saver|mobile|balanced|desktop`) must not alter the
+preexisting geometry `quality` key or TWH8 cache fingerprints.
+No new field = Stage38 defaults. Native game code may set the whole
+policy on `WorldScene` or `TerraWeaveHorizonScene` and override
+individual components later. Validate all fields before mutation
+and use scene-owner threading. Report effective settings (not
+assumed named presets) and do not claim measured speed/battery
+improvement; CMake/CTest/GPU QA remains **NOT RUN** until the
+separate testing stage. Record the actual code SHAs and continuation
+in the per-stage `docs/terrain/AGENT_HANDOFF.md`.
