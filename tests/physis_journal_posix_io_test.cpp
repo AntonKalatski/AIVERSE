@@ -107,6 +107,22 @@ int main() {
     CHECK(!fs::exists(parent/"receipts"));
     CHECK(io::read(dir,"receipts",1,1024,readback,missing,&reason));
     CHECK(readback==data);
+#ifdef O_PATH
+    // Linux fault injection: O_PATH can resolve openat()/renameat()
+    // and pass fstat(), but cannot fsync() its directory descriptor.
+    // The atomic rename may already have happened; save must return
+    // false rather than positively acknowledging crash durability.
+    const int noSync=::open(moved.c_str(),O_PATH|O_DIRECTORY);
+    CHECK(noSync>=0);
+    if(noSync>=0) {
+        const std::vector<std::uint8_t> pending{7,6,5,4,3,2,1,0};
+        CHECK(!io::write(noSync,"receipts",pending,"no-fsync",&reason));
+        CHECK(reason.find("fsync")!=std::string::npos);
+        CHECK(io::read(dir,"receipts",1,1024,readback,missing,&reason));
+        CHECK(readback==pending); // visible != confirmed crash-durable
+        CHECK(::close(noSync)==0);
+    }
+#endif
     CHECK(::close(dir)==0);
     fs::remove_all(root);
     std::printf("PHYSIS POSIX journal I/O: %s\n",failures?"FAIL":"PASS");
