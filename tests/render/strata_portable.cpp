@@ -23,6 +23,7 @@ public:
         : info_{backend,true,false,"Portable Strata recorder"}, mdi_(mdi) {}
     gfx::DeviceInfo info_{};
     bool mdi_=false;
+    bool healthy_=true;
     uint32_t next_=1;
     uint32_t draws=0, allocs=0, releases=0;
     std::map<uint32_t,std::vector<uint8_t>> data_;
@@ -30,6 +31,7 @@ public:
     const gfx::DeviceInfo& info() const override {return info_;}
     const std::string& lastError() const override {return error_;}
     bool supportsMultiDrawIndirect() const override {return mdi_;}
+    bool gpuHealthy() const override {return healthy_;}
     gfx::BufferHandle createBuffer(const gfx::BufferDesc& d) override {
         if(!d.size || d.size>32u*1024u*1024u)return {};
         gfx::BufferHandle h{next_++};
@@ -170,6 +172,20 @@ static void testBackend(gfx::Backend backend,bool mdi){
     assert(staged.prepareModel(mat4::identity(),{},true,
                                renderModel,&error));
     assert(renderModel.meshes[0].primitives.size()==2);
+    // Ownership is device-local: a foreign device's matching numeric handles
+    // must not release this staged source. On device loss, fail closed and
+    // leave the caller's last prepared alias unchanged for Legacy fallback.
+    Recorder foreign(backend,mdi);
+    staged.shutdown(foreign);
+    assert(staged.validFor(original));
+    assert(foreign.releases==0);
+    dev.healthy_=false;
+    assert(!staged.validFor(original));
+    assert(!staged.prepareModel(mat4::identity(),{fine},false,
+                                renderModel,&error));
+    assert(renderModel.meshes[0].primitives.size()==2);
+    dev.healthy_=true;
+    assert(staged.validFor(original));
     // A material swap that disables the opaque source is a strict fallback:
     // rejected prepare does not clobber the last valid alias.
     original.materials[0].alpha=AlphaMode::Blend;
