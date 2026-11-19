@@ -59,17 +59,15 @@ public:
     // After Device.beginFrame and BEFORE host starts the scene pass.
     bool prepare(const World& committedWorld,uint64_t committedTick,
                  const render::RTSCamera& camera,const render::mat4& viewProj,
-                 int width,int height,float dt) {
+                 int width,int height,float dt,float alpha=1.f) {
         if(frameOpen_)return false;
-        if(!pool_.beginPresentationFrame(camera,viewProj,width,height))
-            return false;
-        frameOpen_=true;
-        // Resolve only fixed ECS data. Presentation may substitute an
-        // interpolated native render pose here without writing it to World.
+        // Capture only immutable committed fixed-point poses, once per tick.
+        // A new Entity generation is automatically snapped rather than
+        // interpolated against the previous occupant of the same slot.
         const auto resolve=[](const World& world,Entity entity,
                               fx::float3& pos,fx::float3& dir) {
             const DemoPose* pose=world.tryGetConst<DemoPose>(entity);
-            if(!pose)return false; // temporarily missing => pause emission
+            if(!pose)return false;
             pos={float(pose->position.x.toDouble()),
                  float(pose->position.y.toDouble()),
                  float(pose->position.z.toDouble())};
@@ -78,7 +76,13 @@ public:
                  float(pose->forward.z.toDouble())};
             return true;
         };
-        if(!bridge_.syncCommitted(committedTick,committedWorld,resolve) ||
+        if(!poseHistory_.captureCommitted(committedTick,committedWorld,resolve))
+            return false;
+        if(!pool_.beginPresentationFrame(camera,viewProj,width,height))
+            return false;
+        frameOpen_=true;
+        if(!bridge_.syncCommitted(
+                committedTick,committedWorld,poseHistory_.resolver(alpha)) ||
            !pool_.step(dt)) {
             pool_.endPresentationFrame();
             frameOpen_=false;
@@ -106,13 +110,16 @@ public:
     // Host separately owns restoring the authoritative World snapshot.
     bool afterRollback() {
         if(frameOpen_)return false;
-        return bridge_.resetForRollback();
+        if(!bridge_.resetForRollback())return false;
+        poseHistory_.resetForRollback();
+        return true;
     }
 
     // Explicitly release resources while Device is still alive.
     void shutdown() {
         if(frameOpen_)finish();
         pool_.shutdown();
+        poseHistory_.resetForRollback();
     }
 
     const spectra::PoolWorldStats& stats() const {return pool_.stats();}
@@ -122,6 +129,7 @@ public:
 private:
     spectra::GpuPoolWorld pool_;
     spectra::GpuEcsAttachmentPresenter bridge_;
+    spectra::GpuEcsPoseInterpolator poseHistory_{4096};
     bool frameOpen_=false;
 };
 
@@ -130,7 +138,7 @@ private:
 //   fx.init(device,compiledEffect);
 //   World world; auto flame=spawnDemoSource(world,"demo_flame",{});
 //   Device.beginFrame();
-//   fx.prepare(world,lastCommittedTick,camera,viewProj,w,h,dt);
+//   fx.prepare(world,lastCommittedTick,camera,viewProj,w,h,dt,alpha);
 //   Device.beginPass(scenePass); ... draw geometry ...
 //   fx.drawInsidePass(); Device.endPass();
 //   fx.finish(); Device.endFrame();
