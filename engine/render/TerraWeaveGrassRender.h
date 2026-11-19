@@ -185,6 +185,15 @@ public:
     }
 
     // Mark only grass whose footprint intersects disturbed ground.
+    // Native ECS rollback/save restore invalidates all retained render
+    // geometry without touching authoritative grass coverage.
+    void invalidateAll(){
+        for(const auto& [id,patch]:resident_){
+            (void)patch;
+            dirty_.insert(id);
+        }
+    }
+
     void notifyTerrainEdited(const EarthworkChange& change){
         if(change.vertices.empty())return;
         for(const auto& [id,resident]:resident_)
