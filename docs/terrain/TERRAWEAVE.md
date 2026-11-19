@@ -2491,3 +2491,58 @@ If more than eight disjoint runs are dirty, or at least 70% of clusters changed,
 The algorithm operates on the same already-uploaded Horizon forest primitive, signed world-centimetre PHYSIS sample centres and quantized RG8/B8+A8 wind metadata as Stage34. No changes to `WorldScene::setVegetationWindField`, `setVegetationHorizonExactWindField`, season policy, terrain height/near weld/clip geometry, shared atlas or TWH8 format. `HorizonGpuRegion` still owns its matching compact vertex shadow through LRU and crossfade. Camera ticks alone do not trigger vertex uploads. CPU work still visits/samples all resident clusters to detect which quantized colours changed; only the GPU transfer is sparse. A pathological checkerboard of changed clusters intentionally uses the full-range fallback rather than issuing hundreds of RHI updates.
 
 **Validation intentionally deferred:** source commits and source inspection only; the new planner and RHI code have not been compiled, CTest has not run, and no Metal/Vulkan/GL backend or PHYSIS integration screenshots/performance data have been obtained. A later tester must verify one dirty cluster, adjacent clusters, eight vs nine disjoint runs, the 70% threshold, negative world coordinates, identical quantized samples, reduced bandwidth, active/outgoing combined budgets, disabled buffer updates, old cached GPU-region reactivation, and full-fallback correctness before release. Stage29's outdated impostor tests also remain pending.
+
+## Stage 36 — configurable far-Horizon wind upload quality policy
+
+`engine/world/TerraWeaveWindUploadPolicy.h` exposes a small, genre-neutral
+`HorizonWindUploadPolicy` for C++ games. Default values retain Stage35
+behavior: `maxBytesPerUpdate=2*1024*1024` (one combined RHI bandwidth budget
+for active + outgoing crossfade GPU regions), `maxSparseRanges=8` and
+`fullFallbackPercent=70`. Set it from the WorldScene owner/render update
+thread or directly on the optional `TerraWeaveHorizonScene`:
+
+```cpp
+aiverse::terraweave::HorizonWindUploadPolicy policy;
+policy.maxBytesPerUpdate = 256u * 1024u; // e.g. mobile: 256 KiB/update
+policy.maxSparseRanges = 4;              // <= 4 runs per region
+policy.fullFallbackPercent = 85;         // full range if >=85% dirty
+worldScene.setVegetationHorizonWindUploadPolicy(policy);
+auto applied = worldScene.vegetationHorizonWindUploadPolicy();
+```
+
+The Horizon native API is `setWindUploadPolicy(policy)` /
+`windUploadPolicy()`. `validateHorizonWindUploadPolicy` rejects uploads
+larger than 2 MiB, ranges outside [1,8] or density outside [1,100]
+**before changing the live policy**. Upload bytes may be **zero**: this
+explicitly pauses *changed* GPU wind metadata while allowing zero-byte
+identical-quantization revisions to advance. Raising it later retries the
+pending revision; no terrain or forest rebake is required.
+
+`applyHorizonForestWindOverlay` retains its backward-compatible default
+policy argument after `remainingUploadBytes`. It now passes the policy's
+range/density settings to the existing pure
+`planHorizonForestWindUpload` and enforces both the caller's remaining
+budget and the policy's own maximum before any RHI write. The
+`TerraWeaveHorizonScene::refreshForestWindGpu` owner-thread updater
+starts from the configured budget and consumes it across active and outgoing
+models, active first. A plan that does not fit is deferred **as a complete
+region revision**, with the existing macro wind shader fallback.
+
+This is a **GPU traffic / update scheduling policy**, not a CPU-cache
+quality selector: each GPU-resident model may still keep up to 2 MiB of
+forest vertex CPU shadow, and active/cached model residency remains
+controlled by the existing Horizon settings. There is no new
+vertex/index/texture allocation, HLOD topology change, shader, PHYSIS
+dependency, ECS/gameplay data, atlas format or TWH8 archive version.
+The host must not set the policy concurrently with `update`/`submit`.
+
+**Limitations:** A too-small budget can permanently defer a dense
+full-suffix update, leaving the safe macro presentation. Fragmentation
+thresholds and actual RHI cost must be tuned after GPU measurement;
+`gfx::Device::updateBuffer` remains void-returning, so multi-range
+writes have no device-loss atomicity guarantee. Static source inspection
+and GitHub writes only — CMake, GCC/Clang, CTest, shader compilation and
+Metal/Vulkan/GL device validation are **NOT RUN** at the owner's request.
+PR #24 stays Draft. The tester must exercise default parity,
+invalid policies, zero budget, pause/retry, sparse-vs-dense switching,
+and the shared budget with both crossfade models.
