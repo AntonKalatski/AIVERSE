@@ -733,3 +733,14 @@ Shader Graph textures, with fallback to graph-only shading when GPU/GLES
 resource caps are insufficient. Model draw path rebinds graph textures
 after pipeline variant changes. GI texture budget source tests extended;
 native C++, CTest, MSL/GLSL/SPIR-V shader runs and device pixels NOT RUN.
+
+
+## Stage 42 — 2026-11-20 — custom terrain / foliage GI resource binding (SOURCE; NOT RUN)
+
+Read `docs/agent-handoffs/gi-stage42-custom-terrain-foliage-bindings-2026-11-20.md`.
+Added `GiCustomShaderMode` and a portable Renderer3D hook to bind
+dynamic-only GI atlases into opt-in custom PBR shaders without stealing
+texture slots; exact Single/Validity/Dual/Metal Triple modes and GPU caps
+are enforced. Reuses the existing GiDynamicShaders/GiCascadeShaders ABI.
+This is not yet automatic GI receiving by all terrain/foliage shaders.
+Compiler, CTest, GPU pixel tests and full acceptance NOT RUN.
