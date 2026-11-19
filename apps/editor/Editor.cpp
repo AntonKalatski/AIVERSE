@@ -6,6 +6,7 @@
 #include "core/RouteOps.h"
 #include "engine/fx/FxModelMesh.h"
 #include "engine/render/PrismaVolumeData.h"
+#include "engine/render/GlobalGeometryPool.h"
 #include "imgui.h"
 #include "imgui_internal.h" // DockBuilder
 
@@ -908,6 +909,8 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
         sceneRendererMemory.liveTextureKnownBytes+
         sceneRendererMemory.liveBufferKnownBytes,
         sceneRendererMemory.pendingMotionKnownBytes);
+    prisma_.setExternalGeometryPoolGpuMemory(
+        render::geometryPoolStats(*dev_).allocatedBytes);
     const bool postEnabledForScene = !r3d_.studioDebugMode() && postFxInScene;
     // Only the renderer's camera receives jitter. UI, picking, overlays,
     // camera navigation and authored scene positions use the stable useCam.
@@ -1022,6 +1025,8 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
         gameRendererMemory.liveTextureKnownBytes+
         gameRendererMemory.liveBufferKnownBytes,
         gameRendererMemory.pendingMotionKnownBytes);
+    prisma_.setExternalGeometryPoolGpuMemory(
+        render::geometryPoolStats(*dev_).allocatedBytes);
     const auto [renderW,renderH]=prisma_.renderSizeForOutput(vp.w,vp.h);
     const RTSCamera renderCam=prisma_.jitteredCamera(cam,renderW,renderH);
     r3d_.beginScene(renderCam,renderW,renderH);
