@@ -608,7 +608,10 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
             // Missing from shared GPU residency: create a dedicated
             // transaction-owned image. Rollback releases it with the Model
             // behind a genuine completion token, never mutating gpu_.
-            if(!publishSharedTextures)img.textureCache.reset();
+            // Keep textureCache and textureKey on a speculative miss.
+            // The texture remains Model-owned (borrowedTexture=false)
+            // until an outer successful transaction promotes it into
+            // the shared cache; an aborted Model is retired normally.
             uploadImage(dev,img);
         }
         if (!keepCpu) { img.rgba.clear(); img.rgba.shrink_to_fit(); img.compressed.reset(); img.sharedRgba.reset(); }
