@@ -57,7 +57,7 @@ vertex VOut vs_main(VIn in [[stage_in]], constant U0& u [[buffer(1)]]) {
 fragment float4 fs_main(
     VOut in [[stage_in]],
     constant U0& u [[buffer(1)]],
-    texture2d<float> tex0 [[texture(0)]],
+    depth2d<float> tex0 [[texture(0)]],
     sampler tex0_s [[sampler(0)]]) {
     float2 s=in.position.xy/u.params.xy;
     // Metal raster pixels and render target textures both use top-left UV.\n    float2 uv=s;
