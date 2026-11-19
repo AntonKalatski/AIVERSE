@@ -335,6 +335,7 @@ public:
         clearVirtualTextureMaskedModelFeedback();
         clearVirtualTextureLodModelFeedback();
         clearVirtualTextureMaskedLodModelFeedback();
+        clearVirtualTextureDeformedModelFeedback();
     }
 
     // Optional material-aware pipeline for alpha-masked rigid models.
@@ -381,6 +382,36 @@ public:
         feedbackMaskedLodModelBinder_ = {};
     }
 
+    // Deformed model feedback is submitted through a dedicated callback,
+    // because skinning palettes, baked animation and morph targets use
+    // distinct vertex layouts and GPU resources. The callback must draw
+    // the same deformed silhouette as the visible model pass.
+    struct FeedbackDeformedModel {
+        const Model& model;
+        const Primitive& primitive;
+        const Material& material;
+        const mat4& world;
+        int32_t jointOffset;
+        int32_t morphOffset;
+        bool baked;
+        float4 animation;
+        float lodThreshold;
+        bool lodInvert;
+        uint32_t firstIndex;
+        uint32_t indexCount;
+        const std::vector<float>& jointData;
+        const std::vector<float>& morphData;
+    };
+    using FeedbackDeformedModelDraw = std::function<bool(
+        gfx::Device&, const FeedbackDeformedModel&)>;
+    void setVirtualTextureDeformedModelFeedback(
+        FeedbackDeformedModelDraw draw) {
+        feedbackDeformedModelDraw_ = std::move(draw);
+    }
+    void clearVirtualTextureDeformedModelFeedback() {
+        feedbackDeformedModelDraw_ = {};
+    }
+
     // Per-scene feedback producers for terrain, foliage and procedural
     // renderers that do not use the immediate Mesh queue. Each producer
     // binds its own compatible feedback pipeline, geometry and uniforms.
@@ -412,10 +443,10 @@ public:
             if ((feedbackModelPipeline_.valid() && feedbackModelBinder_) ||
                 (feedbackMaskedModelPipeline_.valid() && feedbackMaskedModelBinder_) ||
                 (feedbackLodModelPipeline_.valid() && feedbackLodModelBinder_) ||
-                (feedbackMaskedLodModelPipeline_.valid() && feedbackMaskedLodModelBinder_)) {
+                (feedbackMaskedLodModelPipeline_.valid() && feedbackMaskedLodModelBinder_) ||
+                feedbackDeformedModelDraw_) {
                 for (const auto& item : modelItems_) {
-                    if (!item.inView || !item.rigid || item.joints >= 0 ||
-                        item.baked || item.morph >= 0 || !item.model ||
+                    if (!item.inView || !item.model ||
                         !item.prim || !item.mat || !item.indexCount ||
                         !item.model->vb.valid() || !item.model->ib.valid() ||
                         item.tint.w < 0.99f || item.dissolve > 0.0f ||
@@ -423,6 +454,19 @@ public:
                         item.mat->transparent ||
                         item.materialRole == 1 || item.shadowRole == 2)
                         continue;
+                    if (!item.rigid || item.joints >= 0 ||
+                        item.baked || item.morph >= 0) {
+                        if (!feedbackDeformedModelDraw_) continue;
+                        const FeedbackDeformedModel info{
+                            *item.model,*item.prim,*item.mat,item.world,
+                            item.joints,item.morph,item.baked,item.anim,
+                            item.lodThreshold,item.lodInvert,
+                            item.firstIndex,item.indexCount,
+                            jointData_,morphData_};
+                        if (!feedbackDeformedModelDraw_(device,info))
+                            return false;
+                        continue;
+                    }
                     const bool masked = item.mat->alpha == AlphaMode::Mask;
                     const bool fading = item.lodThreshold < 1.0f;
                     const auto pipeline = masked && fading ?
@@ -680,6 +724,7 @@ private:
     FeedbackLodBinder feedbackLodModelBinder_;
     gfx::PipelineHandle feedbackMaskedLodModelPipeline_;
     FeedbackLodBinder feedbackMaskedLodModelBinder_;
+    FeedbackDeformedModelDraw feedbackDeformedModelDraw_;
     RTSCamera cam_;
     mat4 viewProj_, lightViewProj_;
     float3 camPos_;
