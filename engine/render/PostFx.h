@@ -30,6 +30,7 @@ struct PostFxUnderwater {
     float depthMetres=0;
     float distortion=0, scattering=0;
     float surfaceBlend=-1; // negative: legacy binary; otherwise 0..1 near boundary
+    float surfaceOffset=0; // signed water plane height relative to camera Y
 };
 struct PostFxUnderwaterState {
     float blend=0;
@@ -39,6 +40,7 @@ struct PostFxUnderwaterState {
     float crossing=0;
     bool wasSubmerged=false;
     float surfaceBlend=0;
+    float surfaceOffset=0;
 };
 
 // Pure presentation transition policy, testable without a GPU device.
@@ -64,12 +66,25 @@ inline PostFxUnderwaterState advancePostFxUnderwater(
         smooth(state.tintB,finite(target.tintB,0.f,1.f));
         smooth(state.absorption,finite(target.absorption,0.f,4.f));
         smooth(state.depthMetres,finite(target.depthMetres,0.f,10000.f));
+        // Signed distance is required by the depth compositor to clip each
+        // scene ray against the water plane instead of tinting air segments.
+        state.surfaceOffset=finite(target.surfaceOffset,-10000.f,10000.f);
         smooth(state.distortion,finite(target.distortion,0.f,1.f));
         smooth(state.scattering,finite(target.scattering,0.f,1.f));
     }
     if(state.blend<0.0001f && state.crossing<0.0001f && !target.submerged)
         state={};
     return state;
+}
+
+// Fraction of a camera-to-scene segment below the water plane.
+// a/b are signed (surfaceY - endpointY). Handles partial crossings in
+// either direction, a fully submerged ray, and a fully airborne ray.
+inline float postFxUnderwaterRayFraction(float a,float b) {
+    if(!std::isfinite(a)||!std::isfinite(b))return 0.f;
+    if(a>=0.f&&b>=0.f)return 1.f;
+    if(a<=0.f&&b<=0.f)return 0.f;
+    return std::clamp(std::max(a,b)/(std::abs(a)+std::abs(b)),0.f,1.f);
 }
 
 struct PostFxUnderwaterBudget {
