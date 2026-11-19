@@ -122,3 +122,40 @@ until the new test passes; previous separate 40/40 results
 pre-date the new code.
 Handoff:
 `docs/agent-handoffs/physis-stage78-ecs-nature-contacts-2026-11-19.md`.
+
+## Stage 79 — natural loading and fracture handoff (written, not native-tested)
+
+The PHYSIS project added optional ECS
+`NatureStressReceiverComponent` / `NatureStressOutputComponent`
+under `engine/physis/PhysisNatureStress.h`. This is a
+genre-independent **read-and-publish** layer over existing
+PHYSIS `ForceOutput` and `NatureContactComponent`. It records
+aerodynamic force, bending moment, load ratio, fire/quake wear,
+fatigue and fracture state, but does NOT itself deform terrain,
+remove trees or apply Box3D impulses. No duplicate wind solver
+or water flow authority was introduced.
+
+- **PHYSIS owner:** stress/condition outputs and deterministic
+  environmental causes. Separate opt-in persistence and scheduling.
+- **TerraWeave owner:** maps an authored flora/species/root
+  resistance and age to stress receiver data; decides when the
+  trunk/root breaks, generates roots, removes foliage/grass
+  proxies and spawns a fallen tree representation.
+- **Box3D/physics owner:** rigid-body/constraint integration
+  after a fracture, never by PHYSIS itself.
+- **NEREID owner:** bank erosion and undermining effects;
+  must report terrain/anchor changes through an authorized
+  host event rather than writing PHYSIS damage directly.
+- **Large-scale grass:** aggregate sampling over clusters or
+  cells; do not instantiate tens of thousands of per-blade
+  authoritative stress outputs.
+- **VFX owner:** presentation of wind, falling foliage, fire
+  and dust; does not own deterministic damage.
+- **Test scope:** Stages 78/79 author native CTests
+  `physis_nereid_contacts` and `physis_nature_stress`,
+  including one-world save/rollback and condition transitions.
+  **Neither is natively verified yet**. A real host integration
+  acceptance still must validate actual tree fall/Box3D transitions
+  plus gameplay state after rollback.
+
+See `docs/agent-handoffs/physis-stage79-nature-stress-2026-11-19.md`.

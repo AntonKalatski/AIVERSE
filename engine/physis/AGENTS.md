@@ -1144,3 +1144,40 @@ be cited as testing Nature Contacts. Review possible compile or
 runtime errors in the new test rather than claiming readiness.
 
 Handoff: `docs/agent-handoffs/physis-stage78-ecs-nature-contacts-2026-11-19.md`.
+
+### Stage 79 — deterministic structural stress from existing nature fields
+
+- **Source commits:** `fa0b00d6d60a4fb6b6057610806c1d040fab6897`
+  (Stage78 bridge freshness: reject old same-stamp contacts if PHYSIS
+  climate has already advanced), `21c016ede31107f48c50ecc5247cfc0cf98ae56a`
+  (new structural nature stress policy and test).
+- `engine/physis/PhysisNatureStress.h` defines two opt-in ECS
+  components (`NatureStressReceiverComponent`,
+  `NatureStressOutputComponent`) and
+  `advanceNatureStress(World&)`. It consumes only the existing
+  `ForceOutput::result.aerodynamicForce` (no re-simulated
+  wind, no gravity double-load), matched `ForceReceiver` position
+  and same-tick `NatureContactComponent` fire/quake data.
+- Output records wind load in Newtons, horizontal bending moment
+  in N·m, force-vs-strength ratio, accumulated damage and a single
+  fracture transition. Fatigue/recovery/fire/quake coefficients are
+  **per PHYSIS climate tick**. Fracture latches; no implicit repair.
+  Duplicate same-tick sampling is idempotent and stale/disabled
+  inputs invalidate the instant load without clearing prior damage.
+- Enable via `InstallOptions::enableNatureStress` ONLY together
+  with `enableForces` and `enableNatureContacts`. Both
+  stress ECS schemas are opt-in so prior save manifests remain
+  unchanged. A native project creates all input and output
+  components on interested entities. Host owns movement, physical
+  constraints, actual collapse/spawn/destruction and idempotent
+  event consumption. Use one stress proxy per foliage cluster
+  where necessary, NOT one per grass blade.
+- CMake test: `aiverse_physis_nature_stress_test` /
+  `physis_nature_stress` with deterministic overload, fire,
+  one-time fracture, COW and save/rollback checks.
+- **Verification:** code/registration inspected from GitHub;
+  no full checkout in execution container (github.com DNS
+  unavailable), **no new native compile or CTest executed**.
+  Previous 40/40 focused run predates Stages 78/79. Never claim
+  code is green until actual tests.
+- Handoff: `docs/agent-handoffs/physis-stage79-nature-stress-2026-11-19.md`.

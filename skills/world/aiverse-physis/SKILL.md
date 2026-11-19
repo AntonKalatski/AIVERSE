@@ -1099,3 +1099,31 @@ New test `tests/physis_nereid_nature_contacts_test.cpp`,
 CTest `physis_nereid_contacts`: authored, NOT EXECUTED; compile,
 run and fix actual failures before production use. Handoff:
 `docs/agent-handoffs/physis-stage78-ecs-nature-contacts-2026-11-19.md`.
+
+### Stage 79 — reusable nature structural stress
+
+`NatureStressReceiverComponent` describes resistance (shear
+Newton limit, bending Newton-metres limit, lever arm, catastrophic
+ratio, fatigue/recovery/fire/quake per-tick coefficients).
+`NatureStressOutputComponent` publishes aerodynamic force,
+bending load, normalized overload, persistent accumulated damage
+and a latched `newlyFractured` transition. Use the independent
+PHYSIS system `advanceNatureStress(World&)` through
+`InstallOptions::enableNatureStress=true`, which requires
+`enableForces` and `enableNatureContacts`.
+
+The system must NEVER apply Box3D forces, move foliage, spawn a
+falling tree, alter NEREID water or mutate TerraWeave terrain.
+The host consumes the fracture transition at the authoritative
+commit barrier, deduplicated by `(Entity, sampledClimateTick)`,
+to enable its appropriate physical/foliage response. Grass
+should be sampled as a cluster/batched stand-in, not per blade.
+Only ECS data is persisted; neither wind particles nor graphics
+state becomes deterministic gameplay state. A separate
+opt-in same-world water bridge is in
+`engine/world/PhysisNereidNatureBridge.h`.
+
+Native tests `physis_nereid_contacts` and
+`physis_nature_stress` are **WRITTEN but NOT RUN** on the
+latest source. Handoff:
+`docs/agent-handoffs/physis-stage79-nature-stress-2026-11-19.md`.

@@ -1630,3 +1630,29 @@ be cited as testing Nature Contacts. Review possible compile or
 runtime errors in the new test rather than claiming readiness.
 
 Handoff: `docs/agent-handoffs/physis-stage78-ecs-nature-contacts-2026-11-19.md`.
+
+## PHYSIS Stage 79 — generic wind/fire/quake structural stress (2026-11-19)
+
+PHYSIS now publishes opt-in, deterministic environmental structural
+stress **without** duplicating the existing wind force solver. Use
+`engine/physis/PhysisNatureStress.h`:
+`NatureStressReceiverComponent` for resistance, lever arm, fatigue,
+recovery, fire/quake sensitivity, and
+`NatureStressOutputComponent` for aerodynamic force, bending moment,
+normalized load, accumulated damage and the latched fracture transition.
+`InstallOptions::enableNatureStress=true` requires both
+`enableForces=true` and `enableNatureContacts=true`. Systems run
+climate -> forces -> nature contacts -> nature stress. Source:
+`21c016ede31107f48c50ecc5247cfc0cf98ae56a`.
+
+PHYSIS calculates generic **damage potential** only. It never
+creates Box3D bodies, uproots trees, rewrites TerraWeave vegetation,
+transforms meshes or runs a duplicate water authority. The host
+reacts to `newlyFractured` once per (entity, climate tick); the
+host must implement its own idempotent transition to fallen
+vegetation/rigid bodies. For large grass fields use ECS **cluster**
+proxies rather than a component per blade. A dedicated CTest
+`physis_nature_stress` and the earlier
+`physis_nereid_contacts` test are authored but **NOT RUN** natively.
+No new feature may be declared validated until actual macOS CTest.
+See `docs/agent-handoffs/physis-stage79-nature-stress-2026-11-19.md`.

@@ -1069,3 +1069,35 @@ be cited as testing Nature Contacts. Review possible compile or
 runtime errors in the new test rather than claiming readiness.
 
 Handoff: `docs/agent-handoffs/physis-stage78-ecs-nature-contacts-2026-11-19.md`.
+
+### Stage 79 — structural environmental impacts without genre coupling
+
+Implemented `engine/physis/PhysisNatureStress.h` with an opt-in
+ECS receiver/output pair and `advanceNatureStress(World&)`.
+It derives per-entity aerodynamic load from PHYSIS's canonical
+`ForceOutput`, computes horizontal bending moment
+`|Fxz| × leverArm`, compares against authored force and
+moment strength limits, and deterministically accumulates
+damage from overload, local fire and earthquake intensity
+while permitting bounded recovery in safe conditions.
+Catastrophic overload or accumulated damage reaching one
+latches `fractured`; `newlyFractured` marks the transition
+for the host. It publishes data only — **no physical tree fall,
+Box3D step, foliage mutation or water change**.
+
+`InstallOptions::enableNatureStress=false` by default, with
+explicit dependency on `enableForces` and
+`enableNatureContacts`. The opt-in receiver/output types
+use v1 persistence IDs `physis.nature_stress_receiver` and
+`physis.nature_stress_output`; previous saves are unchanged
+when disabled. Source commits:
+`fa0b00d6d60a4fb6b6057610806c1d040fab6897` and
+`21c016ede31107f48c50ecc5247cfc0cf98ae56a`.
+The first also rejects outdated nature+water snapshots after
+a newer PHYSIS climate tick.
+
+Native test `physis_nature_stress` and prior Stage78
+`physis_nereid_contacts` are registered but **NOT RUN** on
+the latest branch. Do not label them passing based on Stage73's
+older 40/40 result. Follow
+`docs/agent-handoffs/physis-stage79-nature-stress-2026-11-19.md`.
