@@ -649,3 +649,13 @@ bounded cost-based probe updates, preserving the explicit budget API and
 RHI texture upload. Added `gi_cpu_trace_budget` CTest source and runtime
 FakeDevice coverage. Does not require GLES compute or automatically enable
 dynamic GI in any game. No native build, CTest or mobile GPU/CPU tests run.
+
+
+## Stage 33 — 2026-11-19 — Vulkan initial BVH upload barrier fix (SOURCE; NOT RUN)
+
+Source and full handoff:
+`docs/agent-handoffs/gi-stage33-vulkan-upload-synchronization-2026-11-19.md`.
+Added transfer-write to compute-read memory dependencies for initial immutable
+BVH buffers as well as updates, conditioned on queue compute capability.
+Updated Vulkan API docs and comments. Build/CTest/validation/device execution
+are NOT RUN; preserve feature opt-in and conflict-aware integration.
