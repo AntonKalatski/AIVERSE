@@ -28,6 +28,7 @@
 #include "engine/fx/SpectraFxHybridPlayback.h"
 #include "engine/fx/SpectraFxGpuRoutes.h"
 #include "engine/fx/SpectraFxSceneHost.h"
+#include "engine/fx/SpectraFxView.h"
 
 // The names below must be valid public API types in a standalone TU.
 namespace aiverse::fx {
@@ -44,3 +45,33 @@ void spectraFxCompileSmoke() {
     (void)routes;
 }
 } // namespace aiverse::fx
+
+// Prove the public SpectraFX host can compile with a camera that belongs
+// to no built-in genre or editor module, and with raw camera data.
+namespace {
+struct CinemaCamera {
+    aiverse::render::float3 eye() const {return {1,2,3};}
+    aiverse::render::mat4 view() const {
+        return aiverse::render::mat4::lookAt({1,2,3},{0,0,0},{0,1,0});
+    }
+    aiverse::render::mat4 proj(float a,bool z) const {
+        return aiverse::render::mat4::perspective(.75f,a,.1f,1000.0f,z);
+    }
+};
+void compileGenreNeutralSceneHost(aiverse::fx::SpectraFxSceneHost& host,
+                                  aiverse::fx::ParticleSystem& particles,
+                                  const aiverse::render::Lighting& lighting) {
+    const CinemaCamera camera{};
+    const auto raw=aiverse::fx::SpectraFxView::fromCamera(
+        camera,aiverse::render::mat4::identity(),1920,1080);
+    host.prepareGpu(.016f,raw);
+    host.prepareCpu(.016f,raw);
+    host.render(lighting,raw);
+    particles.setView(raw);
+    // Previous camera-shaped APIs remain source compatible.
+    host.prepareGpu(.016f,camera);
+    host.prepareCpu(.016f,camera,raw.viewProj,1920,1080);
+    host.render(lighting,raw.viewProj,camera);
+    particles.setView(camera,raw.viewProj,1920,1080);
+}
+} // namespace

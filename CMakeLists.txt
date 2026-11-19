@@ -2174,6 +2174,14 @@ if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
     add_test(NAME rules_files COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tools/rules/test_rules.py)
 endif()
 
+# Enforce the SpectraFX core/consumer direction independently of FPS/RTS/Editor.
+if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
+    add_test(NAME spectrafx_architecture
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/spectrafx/check_boundaries.py)
+    set_tests_properties(spectrafx_architecture PROPERTIES LABELS "SpectraFX;Architecture")
+endif()
+
 # Genre-neutral Niagara-style graph compiler: headless CPU fallback contract.
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_vfx_graph_tests tests/vfx_graph_compiler_test.cpp)

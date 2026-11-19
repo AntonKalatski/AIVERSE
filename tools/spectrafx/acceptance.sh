@@ -60,16 +60,19 @@ if [[ "${AIVERSE_ACCEPTANCE_WARNINGS_AS_ERRORS:-0}" == 1 ]]; then
 fi
 
 if stage configure cmake "${opts[@]}"; then
+    # Compile genre-neutral SpectraFX first. Host binaries are a separate
+    # integration gate and cannot suppress core's focused CTest results.
     targets=(
         aiverse_spectrafx_header_smoke aiverse_spectrafx_contract_tests
         aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests
-        aiverse_editor aiverse_fps_client aiverse_client
     )
     if [[ "$OS" == Darwin ]]; then
         targets+=(aiverse_spectrafx_metal_gpu_test aiverse_spectrafx_metal_billboard_test)
     fi
     target_ok=0
-    stage targeted_build cmake --build "$BUILD" --config Debug --parallel "$JOBS" --target "${targets[@]}" && target_ok=1 || true
+    stage spectrafx_core_build cmake --build "$BUILD" --config Debug --parallel "$JOBS" --target "${targets[@]}" && target_ok=1 || true
+    stage architecture python3 "$ROOT/tools/spectrafx/check_boundaries.py" || true
+    stage host_integration_build cmake --build "$BUILD" --config Debug --parallel "$JOBS" --target aiverse_editor aiverse_fps_client aiverse_client || true
     full_ok=0
     stage full_build cmake --build "$BUILD" --config Debug --parallel "$JOBS" && full_ok=1 || true
     if (( full_ok )); then
@@ -89,7 +92,9 @@ if stage configure cmake "${opts[@]}"; then
         skip ctest_metal "targeted build failed"
     fi
 else
-    skip targeted_build "configure failed"
+    skip spectrafx_core_build "configure failed"
+    skip architecture "configure failed"
+    skip host_integration_build "configure failed"
     skip full_build "configure failed"
     skip ctest_full "configure failed"
     skip ctest_spectrafx "configure failed"

@@ -128,39 +128,50 @@ public:
         return true;
     }
     // Inside gfx::Device::beginFrame/endFrame and before an open pass.
-    void prepareGpu(float dt,const render::RTSCamera& camera) {
-        if(!enabled_ || !playback_) return;
+    void prepareGpu(float dt,const SpectraFxView& view) {
+        if(!enabled_ || !playback_ || !view.valid()) return;
         // Drain a fixed snapshot; callback-generated cues cannot recursively
         // create more GPU effects in the same frame.
         inbox_.drain([this](const SpectraFxCue& cue) {
             return playback_->dispatch(cue);
         },maxCuesPerFrame_);
-        const auto eye=camera.eye();
-        const auto forward=render::normalize(camera.target-eye);
-        playback_->updateGpu(std::clamp(dt,0.0f,0.1f),eye,forward);
+        playback_->updateGpu(std::clamp(dt,0.0f,0.1f),
+                             view.eye,render::normalize(view.forward));
+    }
+    // Compatibility for existing camera types, independent of their genre.
+    template<class Camera>
+    void prepareGpu(float dt,const Camera& camera) {
+        prepareGpu(dt,SpectraFxView::fromCamera(
+            camera,render::mat4::identity(),1,1));
     }
     // After renderer.beginScene, before the open scene render pass begins.
     // The CPU particle system owns its own effect updates exactly once.
-    void prepareCpu(float dt,const render::RTSCamera& camera,
-                    const render::mat4& viewProj,int width,int height) {
-        if(!enabled_) return;
-        cpu_.setView(camera,viewProj,width,height);
+    void prepareCpu(float dt,const SpectraFxView& view) {
+        if(!enabled_ || !view.valid()) return;
+        cpu_.setView(view);
         if(playback_) playback_->playGpuImpactEffects(32);
         cpu_.update(std::clamp(dt,0.0f,0.1f));
     }
+    template<class Camera>
+    void prepareCpu(float dt,const Camera& camera,
+                    const render::mat4& viewProj,int width,int height) {
+        prepareCpu(dt,SpectraFxView::fromCamera(
+            camera,viewProj,width,height));
+    }
     // With the main colour/depth pass open, after Renderer3D::render.
     void render(const render::Lighting& lighting,
-                const render::mat4& viewProj,
-                const render::RTSCamera& camera) {
-        if(!enabled_) return;
+                const SpectraFxView& view) {
+        if(!enabled_ || !view.valid()) return;
         cpu_.setLightDir(lighting.sunDir);
         cpu_.render({lighting.fogColor,lighting.fogDensity});
-        if(playback_) {
-            const auto view=camera.view();
-            playback_->renderGpu(viewProj,
-                {view.at(0,0),view.at(0,1),view.at(0,2)},
-                {view.at(1,0),view.at(1,1),view.at(1,2)});
-        }
+        if(playback_)
+            playback_->renderGpu(view.viewProj,view.right,view.up);
+    }
+    template<class Camera>
+    void render(const render::Lighting& lighting,
+                const render::mat4& viewProj,const Camera& camera) {
+        render(lighting,SpectraFxView::fromCamera(
+            camera,viewProj,1,1));
     }
     void shutdown() {
         if(playback_) playback_.reset(); // all GPU resources before RHI
