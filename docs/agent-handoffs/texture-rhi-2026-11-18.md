@@ -9712,3 +9712,80 @@ acceptance using production `VirtualTextureFeedbackPass`
 and canonical MSL encoder, then verify on Mac Studio. Keep
 Draft PR and append a handoff after new source/actual tests.
 
+
+## Stage 10BI — real Metal feedback shader RGBA8 acceptance (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / Draft PR #21.
+**Source commit:** `5830d16f8531d462fa02709a0e6a0f8e5c4ef9f1`,
+`tests/render/metal_texture_gpu.mm`.
+**Docs:** `981f73fc2279c61d0b4a2baa74838bb160d035ca`,
+`docs/texture-rhi.md`; and
+`0db01c5e46f6b3c72a8f777060e7e2361e2757b1`,
+`skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Prior real GPU evidence:** Mac Studio Apple M3 Ultra,
+`metal_texture_gpu` 1/1 PASS in 1.14 s; all exact Texture3D,
+2DArray, Cube and CubeArray GPU readbacks and direct fragment
+Texture3D sampling passed. This stage **adds new coverage** and is
+NOT included in that previous successful run.
+
+**Implementation/architecture:** Same opt-in real `GfxMetal.mm`
+production backend fixture, no mock. New
+`gpuVirtualTextureFeedback(Device&)` in
+`tests/render/metal_texture_gpu.mm` uses:
+1. Real `VirtualTextureFeedbackPass` with 4×4 RGBA8
+   render target, depth attachment and bounded 8×8 base-page
+   topology / 3 mip levels / 3 virtual layers;
+2. New MSL fullscreen vertex shader + **canonical**
+   `kVirtualTextureFeedbackMSL` and
+   `kVirtualTextureFeedbackMaterialMSL` helpers,
+   not a copy of the encoder;
+3. Native `createShader`/`createPipeline` with
+   `virtualTextureFeedbackPipelineDesc`; scene-independent
+   rendering `pass.renderAndCapture`, including async
+   Metal `readTextureAsync` readback and owner-thread
+   `pass.readyToSubmit()`;
+4. Additional explicit GPU `Read` probe to validate exact
+   32-bit packed RGBA8 ID bytes (zero LSB tolerance) for
+   `VirtualPageKey{1,3,2,2}` and the negative-U
+   invalid/zero case;
+5. CPU `VirtualTextureFeedbackDecoder` over those
+   **actually GPU-rendered** pixels: 16 samples, one
+   unique page with expected layer/mip/UV and priority16,
+   or 16 invalid IDs/zero regions.
+
+**Acceptance separation:** this verifies GPU feedback
+shader encoding, RGBA8 color target and asynchronous
+decoder behavior. It does NOT stage actual disk-page files,
+allocate physical VT atlas pages, publish actual page
+table textures, verify runtime GPU ICB multi-material
+execution, or measure production frame-rate. No engine
+ABI, ECS component, terrain, CMake or native shader graph
+production code changed; only opt-in test and docs.
+
+**Actually verified:** fetched the current
+`VirtualTextureFeedback.h`,
+`VirtualTextureFeedbackPass.h`, prefetch config,
+and the native Metal backend's render pass, pipeline
+and readback contract via connected GitHub, then
+committed the concrete fixture. **NOT RUN for this stage:**
+native macOS ObjC++ compilation, real Metal feedback
+pixel test, GPU driver validation, source regression,
+streaming acceptance or benchmark. Do not claim 10BI PASS
+based on the earlier 10BH device results.
+
+**Next step in isolated Mac Studio worktree (original main
+worktree still has unrelated incomplete rebase):**
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parallel 4
+ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
+```
+Collect first compiler error or real `FAIL` lines and
+`TIMING` output for each GPU test; fix confirmed
+failures in subsequent source stage and append another
+handoff. When GPU VT encoding+decoding passes,
+extend actual page-table / atlas publication and
+Shader Graph ICB as separate opt-in gates.
+
