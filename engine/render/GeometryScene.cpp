@@ -323,11 +323,7 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
             const bool streamingRequested = strataStreamingIndexBudgetBytes_ ||
                                             strataStreamingSceneBudgetBytes_;
             if (streamingRequested) {
-                struct BudgetSource {
-                    std::string key;
-                    uint64_t roots=0, cap=0, allocated=0;
-                };
-                std::vector<BudgetSource> candidates;
+                std::vector<strata::SceneIndexBudgetRequest> candidates;
                 constexpr uint64_t kSourceMaximum=64ull*1024ull*1024ull;
                 for (const auto& [key,model]:models_) {
                     if (!model) continue;
@@ -347,61 +343,12 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                     if(strataStreamingIndexBudgetBytes_)
                         cap=std::min(cap,uint64_t(strataStreamingIndexBudgetBytes_));
                     if(!roots || roots>cap) continue;
-                    candidates.push_back({key,roots,cap,0});
+                    candidates.push_back({key,roots,cap});
                 }
-                if (strataStreamingSceneBudgetBytes_) {
-                    // Prefer admitting more small-root sources under severe
-                    // pressure, with a stable key tie-break. The remainder
-                    // is then apportioned proportional to source headroom.
-                    std::sort(candidates.begin(),candidates.end(),
-                        [](const BudgetSource& a,const BudgetSource& b){
-                            return a.roots==b.roots ? a.key<b.key
-                                                    : a.roots<b.roots;
-                        });
-                    uint64_t remaining=strataStreamingSceneBudgetBytes_;
-                    for(auto& candidate:candidates)
-                        if(candidate.roots<=remaining){
-                            candidate.allocated=candidate.roots;
-                            remaining-=candidate.roots;
-                        }
-                    uint64_t headroom=0;
-                    for(const auto& candidate:candidates)
-                        if(candidate.allocated)
-                            headroom+=candidate.cap-candidate.roots;
-                    const uint64_t spare=remaining;
-                    if(headroom)
-                        for(auto& candidate:candidates){
-                            if(!candidate.allocated)continue;
-                            const uint64_t room=candidate.cap-candidate.allocated;
-                            // No integer multiplication overflow even for
-                            // callers supplying arbitrarily large budgets.
-                            const auto portion=uint64_t(
-                                (static_cast<long double>(spare)*
-                                 static_cast<long double>(room))/
-                                 static_cast<long double>(headroom));
-                            const uint64_t grant=std::min(
-                                room,std::min(portion,remaining));
-                            candidate.allocated+=grant;
-                            remaining-=grant;
-                        }
-                    // Use any leftover rounding remainder without exceeding
-                    // either the per-source cap or aggregate scene budget.
-                    for(auto& candidate:candidates){
-                        if(!remaining)break;
-                        if(!candidate.allocated)continue;
-                        const uint64_t grant=std::min(
-                            remaining,candidate.cap-candidate.allocated);
-                        candidate.allocated+=grant;
-                        remaining-=grant;
-                    }
-                } else {
-                    for(auto& candidate:candidates)
-                        candidate.allocated=candidate.cap;
-                }
-                for(const auto& candidate:candidates)
-                    if(candidate.allocated)
-                        streamingBudgets[candidate.key]=
-                            size_t(candidate.allocated);
+                for(const auto& grant:strata::apportionSceneIndexBudget(
+                        std::move(candidates),strataStreamingSceneBudgetBytes_))
+                    if(grant.bytes)
+                        streamingBudgets[grant.key]=size_t(grant.bytes);
             }
             // CPU-selected raster fallback works without compute or MDI.
             // Only index data is streamed; source VB/material ownership
