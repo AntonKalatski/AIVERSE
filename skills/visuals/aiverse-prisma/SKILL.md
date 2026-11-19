@@ -530,6 +530,71 @@ validation until the entire functional backlog is closed.
 `docs/handoffs/prisma-stage-50.md` records exact files, commits,
 actual structural checks, caveats and feature Stage 51.
 
+## Cross-module owner closure, runtime support report and temporal conflict policy (Stage 51)
+
+Stage 51 extends `RtsView::ownedPresentationGpuMemoryStats(device)`
+with graphics-owner read-only GPU resource reporting by **real owners**:
+`FogOfWar` (private sheet VB/IB/texture),
+`RtsFieldView` (field sheet buffers and per-field textures),
+`RtsOverlays` (owned overlay buffers/white texture and its texture cache),
+`RtsGroundFx` (owned mesh buffers, white placeholder and texture cache),
+`Rts2DView` (sprite-batch VB/IB/casters, tile mesh and image cache),
+`RtsRoadView` and `RtsShoreView` (resident kit images,
+unique owned model VBO/IBOs, road decal meshes and road texture cache),
+`RtsPlanetGroundFx` (owned tile/lane meshes),
+`RtsGroundCanvas` (owned sprite batch and texture cache),
+`RtsPaintLayers` (paint canvas, coastline atlas and owned mesh buffers).
+`SpriteBatch::ownedGpuMemoryStats()` explicitly excludes borrowed
+`TextureRef` images and static caller-owned `SpriteMesh` buffers,
+which those callers enumerate themselves. All these queries use only
+`GpuOwnedMemoryCounter` RHI metadata and do not read back or change GPU
+resources. Shader/pipeline allocations, driver overhead, uncounted
+mip/physical buffer versions and other unrelated owners remain unknown.
+
+**Temporal requested/capability/actual diagnostic:**
+`Prisma::runtimeCapabilities() const` is a pure read-only report of
+device health, RGBA16F HDR format support, effective HDR request,
+authored+flagged Temporal Resolve, whether temporal/velocity shader
+pipeline handles are prepared, requested jitter/upscaling/adaptive
+options, and successful last-frame HDR/TAA/jitter/upscale/reactive usage.
+`fallbackReason` names a concrete missing requirement or failed
+history admission/preflight where available. The editor's existing
+PRISMA panel shows requested vs supported/prepared vs actually
+performed, never claims that a pipeline prepared flag is a successful
+real GPU execution. The report is per Prisma owner, with last-frame
+statistics of the latest render; it does not allocate textures/pipelines.
+
+**Legacy temporal owner conflict:** `Prisma::canonicalTemporalRequested()`
+returns true when authored canonical HDR Temporal Resolve is requested
+and High quality is effective, independently of whether its lazy GPU
+pipeline has compiled. In that case the optional historical
+`PrismaScreenLighting` wrapper MUST skip its own TAA/history passes
+and route its camera-jitter request to `Prisma::jitteredCamera` instead.
+No simultaneous accumulation with different history and jitter
+sequences. The legacy optional wrapper's bounce/volumetric additions
+are also skipped while canonical temporal owns the resolve path;
+the next functional stage can separate lighting contributions from
+legacy TAA as a dedicated subfeature. Do not silently layer them.
+
+**Custom camera lifecycle:** `Prisma::retireUnregisteredViews(liveViewIds)`
+lets a host pass exactly its active stable camera identities at the END
+of the frame. The routine unions tracked exposure, temporal, quality,
+motion, scoped timing and size-reference IDs and calls the existing
+`retireView` for every identity not in the live list. It ONLY retires
+per-camera allocations by real GPU fence and leaves size-shared caches
+to `retireUnreferencedSizeCaches`. Hosts must separately retire
+Renderer3D object-motion view targets, as the editor already does for
+Scene/Game. Editor calls the generic Prisma live-view cleanup after
+its existing Scene/Game close transition. There is no guessed CPU-frame
+or implicit GPU idle.
+
+**User instruction:** complete functional stages before launching
+native build/CTest/GPU/performance validation. Stage 51 source was
+inspected with 59/59 static checks only; never report compilation
+or GPU runtime PASS. Continue from
+`docs/handoffs/prisma-stage-51.md` and keep Draft PR #26 untouched
+until explicit merge approval.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
