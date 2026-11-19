@@ -57,6 +57,23 @@ struct ComputeEmitterDesc {
 
 bool validComputeEmitter(const ComputeEmitterDesc&, std::string* reason = nullptr);
 
+// Read-only checkpoint state. Fresh means the most recent completed capture
+// matches the latest submitted GPU frame; it does not guarantee numerical
+// CPU/Metal parity or restoration of emitter identity.
+struct GpuCheckpointStatus {
+    bool gpuActive = false;
+    bool pending = false;
+    bool complete = false;
+    bool fresh = false;
+    bool restoreEligible = false;
+    bool unsentBirths = false;
+    uint64_t currentRevision = 0;
+    uint64_t capturedRevision = 0;
+    uint64_t frameSerial = 0;
+    uint64_t framesBehind = 0; // valid only when complete
+    uint32_t physicalSlots = 0;
+};
+
 struct ComputeStats {
     uint32_t alive = 0, dropped = 0;
     uint32_t gpuDispatches = 0, drawCalls = 0;
@@ -113,6 +130,8 @@ public:
     bool requestGpuCheckpoint(std::function<void(bool)> callback = {});
     const std::string& reason() const { return reason_; }
     const ComputeStats& stats() const { return stats_; }
+    // No GPU readback; status is a snapshot of local bookkeeping only.
+    GpuCheckpointStatus checkpointStatus() const;
     const fx::ParticleSystem& cpuFallback() const { return cpu_; }
 private:
     struct ParticleState {
