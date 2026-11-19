@@ -80,19 +80,15 @@ inline void submitSceneRenderables(render::Renderer3D& renderer,
             else if (object.hovered) draw.outline = {0.75f, 0.8f, 0.85f, 0.025f};
             ::aiverse::View::submitModel(renderer,draw);
         } else if (object.mesh) {
-            if (object.selected || object.hovered) {
-                const render::float4 selection = object.selected
-                    ? render::float4{0.25f, 0.62f, 1.0f, 1.0f}
-                    : render::float4{0.75f, 0.8f, 0.85f, 1.0f};
-                renderer.drawSelectionMesh(*object.mesh, object.world,
-                                           object.tint, selection);
-            } else {
-                ::aiverse::view::MeshObject packet;
-                packet.mesh=object.mesh;
-                packet.world=object.world;
-                packet.color=object.tint;
-                ::aiverse::View::submitMesh(renderer,packet);
-            }
+            ::aiverse::view::MeshObject packet;
+            packet.mesh=object.mesh;
+            packet.world=object.world;
+            packet.color=object.tint;
+            packet.selectionOutline=object.selected || object.hovered;
+            packet.selectionColor=object.selected
+                ? render::float4{0.25f, 0.62f, 1.0f, 1.0f}
+                : render::float4{0.75f, 0.8f, 0.85f, 1.0f};
+            ::aiverse::View::submitMesh(renderer,packet);
             if (!renderer.sceneSelectionOutlineEnabled() && object.pickable &&
                 (object.selected || object.hovered)) {
                 const auto lo = object.boundsMin, hi = object.boundsMax;
@@ -104,7 +100,10 @@ inline void submitSceneRenderables(render::Renderer3D& renderer,
                                               {4,5},{5,6},{6,7},{7,4},
                                               {0,4},{1,5},{2,6},{3,7}};
                 const uint32_t color = object.selected ? render::rgba(64,158,255) : render::rgba(180,190,205);
-                for (const auto& edge : edges) renderer.line(corners[edge[0]], corners[edge[1]], color);
+                for (const auto& edge:edges) {
+                    ::aiverse::View::submitLine(renderer,
+                        {corners[edge[0]],corners[edge[1]],color});
+                }
             }
         }
     }
