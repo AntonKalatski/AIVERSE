@@ -865,3 +865,16 @@ contracts, see `docs/terrain/TERRAWEAVE.md` Stage 22.
   Metal/GL/Vulkan screenshots and benchmark overdraw/frame time.
 
 **Feature-agent validation state: NOT RUN** (code/docs committed only).
+
+## Stage 24 — forest harvesting and regrowth lifecycle rules
+
+**Source feature committed; tests intentionally deferred.** Native projects can use the existing `ForestTreeIdentity{key,speciesId}` and the new sparse `ForestRegrowthSchedule` to restore harvested decorative trees without allocating one ECS entity per tree, rebuilding scatter patches or uploading new models.
+
+- `TerraWeaveForestScene::removeTree(id)` hides a tree and cancels its regrowth schedule. `restoreTree(id)` clears both hidden and scheduled state; `setRemovedTrees(ids)` replaces saved removal data and overrides any matching schedules.
+- `scheduleRegrowth({id,regrowAtTick,matureAtTick,initialScalePermille})` atomically replaces that key's schedule and clears its explicit removal. The tree is not rendered until `regrowAtTick`; thereafter its *presentation-scale copy* interpolates from 1..1000 permille to the generator's full scale. `matureAtTick==regrowAtTick` is instant.
+- `setPresentationTick(gameplayTick)` uses authoritative simulation/replay time; do **not** use wall time, worker elapsed milliseconds, global RNG, floats or genre-specific components. Tick changes do not invalidate async chunks. Persist sorted `regrowthSchedules()` separately from `removedTrees()` in native save/replication; `setRegrowthSchedules` validates/restores bulk schedules.
+- Bounded max 1,000,000 records and max 1e12 tick interval prevent unbounded work and integer arithmetic overflow. Duplicate saved keys, invalid scales/ticks and zero species must be rejected.
+- `world::WorldScene::forestScene()` returns the optional generic forest pointer (null when the world manifest did not opt in). For host-side manipulation include `engine/world/TerraWeaveForestScene.h` explicitly; avoid genre adapters in engine/world.
+- `ForestSceneStats::scheduledRegrowth` and `presentationTick` are trailing diagnostics. Regrowth is **visual**: the gameplay authority owns resources, collision, destruction, navmesh, persistence and replication. Far Horizon cluster HLOD does not yet reflect per-tree removals; do not claim forest-wide harvest parity.
+
+**Next functional work** before the separate test phase: add bounded harvested-area masks / multi-tree clearings in Horizon from authoritative world patches, or a compatible seasonal growth/dormancy source shared by Flora and Horizon. Do not add tests or run CTest in this feature-first phase unless the user changes priorities. Always append an exact per-stage handoff record after coding.
