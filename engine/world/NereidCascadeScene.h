@@ -102,7 +102,8 @@ public:
         for(auto& [id,slot]:next) {
             auto old=slots_.find(id);
             if(old==slots_.end())continue;
-            slot.dirty=!sameNereidCascadeSource(slot.source,old->second.source);
+            slot.dirty=old->second.dirty ||
+                !sameNereidCascadeSource(slot.source,old->second.source);
             slot.mesh=old->second.mesh;
             slot.resident=old->second.resident;
             slot.originX=old->second.originX;
