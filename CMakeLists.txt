@@ -586,6 +586,11 @@ if(AIVERSE_VULKAN)
 endif()
 target_link_libraries(aiverse_runtime PUBLIC aiverse_engine aiverse_models aiverse_imgui aiverse_pack aiverse_zstd_dec aiverse_plugins)
 target_link_libraries(aiverse_runtime PUBLIC aiverse_postfx_data aiverse_shader_graph)   # postfx agent
+# WorldScene.cpp and the public WorldScene/NEREID presentation headers include
+# <aiverselib/water/...>. The header-only package owns its include dirs; an
+# OBJECT runtime must carry that usage requirement on its own target.
+# PUBLIC also propagates it to clients/editor targets using WorldScene.h.
+target_link_libraries(aiverse_runtime PUBLIC AIVERSE::lib_nereid_water)
 if(APPLE)
     set_source_files_properties(engine/platform/macos/PlatformMac.mm engine/platform/ios/PlatformIOS.mm
         engine/gfx/metal/GfxMetal.mm engine/platform/apple/PluginsApple.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
@@ -1613,6 +1618,68 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         aiverse_engine aiverse_world AIVERSE::libraries)
     add_test(NAME ecs_hitscan_resolution_test
         COMMAND aiverse_ecs_hitscan_resolution_test)
+    # NEREID Water stage 1: native shared ECS sampling in unrelated host modules.
+    add_executable(aiverse_ecs_nereid_water_test tests/ecs_nereid_water_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_water_test PRIVATE
+        aiverse_engine AIVERSE::lib_nereid_water)
+    add_test(NAME ecs_nereid_water_test COMMAND aiverse_ecs_nereid_water_test)
+    # NEREID stage 2: shared deterministic buoyancy/drag policy.
+    add_executable(aiverse_ecs_nereid_buoyancy_test tests/ecs_nereid_buoyancy_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_buoyancy_test PRIVATE
+        aiverse_engine AIVERSE::lib_nereid_buoyancy)
+    add_test(NAME ecs_nereid_buoyancy_test COMMAND aiverse_ecs_nereid_buoyancy_test)
+    # NEREID stage 3: deterministic polygon/spline shapes and native persistence.
+    add_executable(aiverse_ecs_nereid_geometry_test tests/ecs_nereid_geometry_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_geometry_test PRIVATE
+        aiverse_engine AIVERSE::lib_nereid_water)
+    add_test(NAME ecs_nereid_geometry_test COMMAND aiverse_ecs_nereid_geometry_test)
+    # NEREID stage 4: transient spatial query index, parity and rollback.
+    add_executable(aiverse_ecs_nereid_query_index_test tests/ecs_nereid_query_index_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_query_index_test PRIVATE
+        aiverse_engine AIVERSE::lib_nereid_water)
+    add_test(NAME ecs_nereid_query_index_test COMMAND aiverse_ecs_nereid_query_index_test)
+    # NEREID stage 5: read-only legacy waterNetwork raster import parity.
+    # Link only legacy water's data source rather than all RTS/editor/renderer.
+    add_executable(aiverse_ecs_nereid_legacy_raster_test
+        tests/ecs_nereid_legacy_raster_test.cpp
+        modules/rts/view/RtsWater.cpp)
+    target_link_libraries(aiverse_ecs_nereid_legacy_raster_test PRIVATE
+        aiverse_engine AIVERSE::lib_nereid_water)
+    add_test(NAME ecs_nereid_legacy_raster_test
+        COMMAND aiverse_ecs_nereid_legacy_raster_test)
+    # NEREID stage 6: adaptive/indexed sampling parity and native-game setup.
+    add_executable(aiverse_ecs_nereid_native_pipeline_test
+        tests/ecs_nereid_native_pipeline_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_native_pipeline_test PRIVATE
+        aiverse_engine AIVERSE::lib_nereid_buoyancy)
+    add_test(NAME ecs_nereid_native_pipeline_test
+        COMMAND aiverse_ecs_nereid_native_pipeline_test)
+    # Diagnostic only: performance timings must not be a CI correctness gate.
+    add_executable(aiverse_ecs_nereid_sampling_bench
+        tests/ecs_nereid_sampling_bench.cpp)
+    target_link_libraries(aiverse_ecs_nereid_sampling_bench PRIVATE
+        aiverse_engine AIVERSE::lib_nereid_water)
+    # NEREID stage 7B: presentation-only surface mesh, no gfx dependency.
+    add_executable(aiverse_ecs_nereid_surface_mesh_test
+        tests/ecs_nereid_surface_mesh_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_surface_mesh_test PRIVATE
+        aiverse_engine AIVERSE::lib_nereid_water)
+    add_test(NAME ecs_nereid_surface_mesh_test COMMAND aiverse_ecs_nereid_surface_mesh_test)
+    # NEREID stage 7C: Renderer3D source/GLSL/MSL bridge contract.
+    add_executable(aiverse_ecs_nereid_renderer_contract_test
+        tests/ecs_nereid_renderer_contract_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_renderer_contract_test PRIVATE
+        aiverse_engine aiverse_world AIVERSE::lib_nereid_water)
+    add_test(NAME ecs_nereid_renderer_contract_test
+        COMMAND aiverse_ecs_nereid_renderer_contract_test)
+    # NEREID stages 41-44: JSON links, reference/indexed/scene flow parity
+    # and shader-only water mesh upload identity (CPU-only).
+    add_executable(aiverse_ecs_nereid_confluence_contract_test
+        tests/ecs_nereid_confluence_contract_test.cpp)
+    target_link_libraries(aiverse_ecs_nereid_confluence_contract_test PRIVATE
+        aiverse_engine aiverse_world AIVERSE::lib_nereid_water)
+    add_test(NAME ecs_nereid_confluence_contract_test
+        COMMAND aiverse_ecs_nereid_confluence_contract_test)
     # Real NativeModule instantiated by RtsModule, exercising RtsSave and COW.
     add_executable(aiverse_ecs_native_rts_integration_test tests/ecs_native_rts_integration_test.cpp)
     target_link_libraries(aiverse_ecs_native_rts_integration_test PRIVATE aiverse_game)

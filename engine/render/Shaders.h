@@ -24,14 +24,14 @@ namespace aiverse::render::shaders {
     "  vec4 u_skyColor; vec4 u_groundColor; vec4 u_fog; vec4 u_camPos; vec4 u_shadow; vec4 u_quality;\n" \
     "  vec4 u_trace0; vec4 u_trace1; vec4 u_trace2; vec4 u_trace3; };\n"
 #define AIVERSE_GLSL_BLOCKS \
-    "layout(std140) uniform U0 { mat4 u_model; vec4 u_color; vec4 u_params; };\n" AIVERSE_GLSL_FRAME
+    "layout(std140) uniform U0 { mat4 u_model; vec4 u_color; vec4 u_params; vec4 u_waterRipples[16]; vec4 u_waterWakeShapes[16]; vec4 u_waterWind; vec4 u_waterHydraulics; vec4 u_waterRapidColor; };\n" AIVERSE_GLSL_FRAME
 
 #define AIVERSE_MSL_FRAME \
     "struct U1 { float4x4 viewProj; float4x4 lightViewProj; float4x4 invViewProj; float4 sunDir; float4 sunColor;\n" \
     "  float4 skyColor; float4 groundColor; float4 fog; float4 camPos; float4 shadow; float4 quality;\n" \
     "  float4 trace0; float4 trace1; float4 trace2; float4 trace3; };\n"
 #define AIVERSE_MSL_BLOCKS \
-    "struct U0 { float4x4 model; float4 color; float4 params; };\n" AIVERSE_MSL_FRAME
+    "struct U0 { float4x4 model; float4 color; float4 params; float4 waterRipples[16]; float4 waterWakeShapes[16]; float4 waterWind; float4 waterHydraulics; float4 waterRapidColor; };\n" AIVERSE_MSL_FRAME
 
 // Traced terrain shadows (Renderer3D "trace" tier, needs U1 and the height field in slot TEX):
 // the sun ray is marched over a 16-bit height map of the whole map (R high byte, G low byte; built by
@@ -405,16 +405,23 @@ void main() {
         if (mode == 9) { o_color = vec4(fract(abs(v_wpos) * .05), 1.0); return; }
     }
     if (u_params.x > 1.5 && u_params.x < 9.5) { o_color = vec4(rtsEncodeScene(u_color.rgb), 1.0); return; }
-    vec4 albedo = u_color * v_col;
+    // NEREID tags repurpose u_color.rgb as optical coefficients; old
+    // non-water draws preserve their tint without changing uniform layouts.
+    vec4 albedo = vec4(v_col.rgb * (u_params.x < -0.5 ? vec3(1.0) : u_color.rgb),
+                       v_col.a * u_color.a);
     vec3 base = rtsDecodeScene(albedo.rgb);                  // ~sRGB -> linear
     vec3 n = normalize(v_nrm);
     // Open water (below the road film .045; rain pools keep their own look): six wave trains of different length
     // and heading (ratios that never line up) plus drifting value noise, fading out with distance so nothing
     // aliases into stripes; slow large patches of darker / lighter water.
-    bool openWater = u_params.y >= 0.85 && v_wpos.y < 0.04 && n.y > 0.9;
+    bool openWater = (u_params.x < -0.5 || (u_params.y >= 0.85 && v_wpos.y < 0.04)) && n.y > 0.9;
     if (openWater) {
-        vec2 p = v_wpos.xz;
         float wt = (l_cloud.x + l_cloud.y) * 20.0;
+        // PHYSIS/weather owner supplies world-space wind through NEREID's
+        // generic presentation API; legacy untagged water is unchanged.
+        float windCoupling=u_params.x < -0.5 ? u_waterWind.w : 0.0;
+        vec2 p = v_wpos.xz -
+                 u_waterWind.xy * wt * (0.02 * windCoupling);
         float fade = clamp(1.0 - length(u_camPos.xyz - v_wpos) / 160.0, 0.3, 1.0);
         const vec4 wv[6] = vec4[6](vec4(0.951, 0.309, 0.61, 0.060), vec4(-0.454, 0.891, 0.97, 0.045), vec4(0.588, -0.809, 1.63, 0.036),
                                    vec4(-0.978, -0.208, 2.71, 0.026), vec4(0.139, 0.990, 4.37, 0.018), vec4(0.743, 0.669, 6.91, 0.012));
@@ -429,11 +436,110 @@ void main() {
         float h01 = fract(sin(dot(qi + vec2(0, 1), vec2(127.1, 311.7))) * 43758.5), h11 = fract(sin(dot(qi + vec2(1, 1), vec2(127.1, 311.7))) * 43758.5);
         vec2 dn = vec2(mix(h10 - h00, h11 - h01, qu.y), mix(h01 - h00, h11 - h10, qu.x)) * 6.0 * qf * (1.0 - qf);
         g += dn * 0.09;
+        float windSpeed=length(u_waterWind.xy);
+        float gust=(0.4+0.6*clamp(u_waterWind.z,0.0,1.0))*windCoupling;
+        float windSlope=clamp(windSpeed*0.006,0.0,0.32)*gust;
+        vec2 windDir=u_waterWind.xy/max(windSpeed,0.001);
+        g+=windDir*windSlope;
         n = normalize(vec3(-g.x * fade, 1.0, -g.y * fade));
         vec2 m = p * 0.021 + vec2(wt * 0.004, 0.0);
         float patches = 0.5 + 0.5 * sin(m.x * 2.3 + sin(m.y * 1.7) * 2.1) * sin(m.y * 1.9 + sin(m.x * 1.3) * 1.7);
         base *= 0.84 + 0.22 * patches;
     }
+    // NEREID: vertical/stepped cascades remain on the shared water
+    // material path but never sample the horizontal planar reflection.
+    // Fast downstream streaks perturb their ribbon normals and tint.
+    if(u_params.x < -2.5) {
+        float waterfallTime=(l_cloud.x+l_cloud.y)*20.0;
+        float streak=sin(v_wpos.y*8.0+v_wpos.x*1.8 -
+                         waterfallTime*3.6);
+        float crossFlow=sin(v_wpos.z*12.0-v_wpos.y*3.2 -
+                            waterfallTime*4.5);
+        n=normalize(n+vec3(streak*0.12,0.06*crossFlow,
+                           crossFlow*0.12));
+        base *= 0.87+0.13*streak*streak;
+    }
+    // NEREID opt-in whitewater: sample locally resolved X/Z river,
+    // vortex and cascade-mouth currents from the presentation snapshot.
+    // No extra RHI resource; zero intensity preserves old water materials.
+    if(u_params.x < -0.5 && u_waterHydraulics.z > 0.001 && n.y > 0.5) {
+        vec2 flow=u_waterHydraulics.xy;
+        float speed=length(flow);
+        vec2 dir=flow/max(speed,0.001);
+        vec2 side=vec2(-dir.y,dir.x);
+        float scale=u_waterHydraulics.w;
+        float time=(l_cloud.x+l_cloud.y)*20.0;
+        float along=dot(v_wpos.xz,dir)*scale;
+        float across=dot(v_wpos.xz,side)*scale;
+        // waterRapidColor.a: Low=0, Medium=1 (legacy), High=2.
+        float quality=u_waterRapidColor.a;
+        float eddies=0.0;
+        float foam=0.0;
+        if(quality<0.5) {
+            // Low: single coherent foam streak, no normal perturbation.
+            float streak=sin(along*3.1-time*min(speed,20.0)*0.25);
+            foam=smoothstep(0.22,0.82,abs(streak))*u_waterHydraulics.z;
+        } else {
+            // Medium: preserve the exact Stage 39 response.
+            float breakup=sin(along*3.1-time*min(speed,20.0)*0.25+
+                             sin(across*4.2)*0.7);
+            eddies=sin(across*6.4+along*1.8-time*2.8);
+            foam=smoothstep(0.22,0.82,abs(breakup*eddies))*
+                 u_waterHydraulics.z;
+            if(quality>1.5) {
+                // High: secondary cross-flow filaments and micro-eddies.
+                float detail=sin(along*9.1+across*5.7-time*4.2)*
+                             sin(across*11.3-time*2.1);
+                foam=clamp(foam*(0.80+0.40*abs(detail)),0.0,1.0);
+                eddies+=detail*0.35;
+            }
+        }
+        base=mix(base,u_waterRapidColor.rgb,
+                 clamp(foam*0.78,0.0,0.78));
+        if(quality>=0.5)
+            n=normalize(n+vec3(side.x*eddies*foam*0.17,
+                               0.0,side.y*eddies*foam*0.17));
+    }
+    // NEREID: up to four bounded ripple impulses per visible body. The
+    // parameters are render-origin-relative, matching v_wpos. A zero
+    // amplitude disables a slot; no extra texture reads or geometry upload.
+    if(u_params.x < -0.5) {
+        vec2 grad = vec2(0.0);
+        float rippleFoam = 0.0;
+        for(int i=0;i<16;++i) {
+            vec4 ripple=u_waterRipples[i];
+            if(ripple.w<=0.0)continue;
+            vec2 delta=v_wpos.xz-ripple.xy;
+            float distanceToCenter=length(delta);
+            vec2 gradientDirection=delta/max(distanceToCenter,0.001);
+            float wakeMask=1.0;
+            vec4 shape=u_waterWakeShapes[i];
+            if(shape.w>0.5) {
+                vec2 heading=normalize(shape.xy);
+                vec2 side=vec2(-heading.y,heading.x);
+                float along=dot(delta,heading);
+                float across=dot(delta,side);
+                float transverse=max(shape.z,1.0);
+                vec2 elliptical=vec2(along*0.75,across*transverse);
+                distanceToCenter=length(elliptical);
+                gradientDirection=(heading*(along*0.5625)+
+                    side*(across*transverse*transverse))/
+                    max(distanceToCenter,0.001);
+                wakeMask=smoothstep(-0.1,0.55,
+                    -along/max(ripple.z,0.001));
+            }
+            float radial=distanceToCenter-ripple.z;
+            float envelope=exp(-radial*radial*2.0)*wakeMask;
+            grad += gradientDirection *
+                    (-radial*4.0*envelope*ripple.w);
+            rippleFoam += envelope * ripple.w * 0.42;
+        }
+        n=normalize(n+vec3(-grad.x,0.0,-grad.y));
+        // Impact foam rides the ring rather than an overlay decal.
+        base=mix(base,vec3(0.82,0.92,0.94),
+                 clamp(rippleFoam,0.0,0.65));
+    }
+
     vec3 L = normalize(u_sunDir.xyz);
     vec3 V = normalize(u_camPos.xyz - v_wpos);
     float ndl = max(dot(n, L), 0.0);
@@ -450,17 +556,57 @@ void main() {
     float rim = pow(1.0 - max(dot(n, V), 0.0), 3.0) * 0.25;
     vec3 col = base * (amb + sun * ndl * sh) + sun * spec * sh + amb * rim * base;
     col += base * local;
-    col = mix(col, base, u_params.x) + base * (u_params.w * (1.0 + nightGlow()));
+    col = mix(col, base, clamp(u_params.x, 0.0, 1.0)) + base * ((u_params.x < -0.5 ? 0.0 : u_params.w) * (1.0 + nightGlow()));
     float dist = length(u_camPos.xyz - v_wpos);
     col = mix(col, rtsDecodeScene(u_fog.rgb), 1.0 - exp(-dist * u_fog.w));
     col = rtsToneScene(col, u_skyColor.w > 0.5); // ACES fit
-    vec3 outc = waterReflect(rtsEncodeScene(col), v_wpos, n, V, u_params.y);   // planar reflection (water, High)
-    if (u_params.y >= 0.85 && v_wpos.y >= 0.04 && u_trace2.w > 0.5) {                     // screen-space reflection (trace tier)
+    vec3 outc = waterReflect(rtsEncodeScene(col), v_wpos, n, V,
+                             u_params.x < -1.5 ? 0.0 : u_params.y);   // planar reflection (water, High)
+    if (u_params.y >= 0.85 && (v_wpos.y >= 0.04 || u_params.x < -0.5) && u_trace2.w > 0.5) {                     // screen-space reflection (trace tier)
         vec3 nn = normalize(n + vec3(sin(v_wpos.z * 3.0 + l_cloud.x * 11.0), 0.0, sin(v_wpos.x * 2.6 - l_cloud.y * 9.0)) * 0.02);
         float hit;
         vec3 rc = ssrWater(v_wpos, nn, V, hit);
         float fres = (v_wpos.y < 0.04 ? 0.12 : 0.08) + 0.45 * pow(1.0 - max(dot(n, V), 0.0), 3.0);
         outc = mix(outc, mix(rtsEncodeScene(col), rc, fres), hit);
+    }
+    // NEREID optics: sample the existing opaque colour/depth capture only.
+    // u_color.rgb = absorption(m^-1), foam depth(m), depth tint strength.
+    // Captured background depth must be below the water plane.
+    if (u_params.x < -0.5 && u_trace2.w > 0.5 &&
+        (u_params.w > 0.001 || u_color.r > 0.001 ||
+         u_color.g > 0.001 || u_color.b > 0.001)) {
+        vec4 projected = u_viewProj * vec4(v_wpos, 1.0);
+        if (projected.w > 0.0) {
+            vec2 screen = projected.xy / projected.w * 0.5 + 0.5;
+            vec2 distorted = screen + n.xz * (0.009 * u_params.w);
+            if (all(greaterThan(distorted, vec2(0.005))) &&
+                all(lessThan(distorted, vec2(0.995)))) {
+                vec2 sampleUV = u_shadow.x > 0.5 ?
+                    vec2(distorted.x, 1.0 - distorted.y) : distorted;
+                float sampledDepth = texture(tex5, sampleUV).r;
+                if (sampledDepth < 0.9999) {
+                    vec3 opaquePos = ssrUnproject(distorted, sampledDepth);
+                    float thickness = v_wpos.y - opaquePos.y;
+                    if (thickness > 0.02 && thickness < 1000.0) {
+                        vec3 background = texture(tex4, sampleUV).rgb;
+                        float transmission = exp(-thickness * u_color.r);
+                        vec3 absorbed = background * transmission +
+                            rtsEncodeScene(base) * (1.0 - transmission) * u_color.b;
+                        float blendAmount = clamp(u_params.w * 0.85 +
+                            u_color.b * (1.0-transmission), 0.0, 0.85);
+                        outc = mix(outc, absorbed, blendAmount);
+                        // Depth-derived shore foam: shallow intersections only.
+                        // Vertex-tinted foam remains as the authored fallback.
+                        if (u_color.g > 0.001) {
+                            float shallow = clamp(1.0 - thickness / u_color.g, 0.0, 1.0);
+                            float foamWeight = shallow * shallow * (3.0 - 2.0 * shallow);
+                            outc = mix(outc, vec3(0.82, 0.91, 0.92),
+                                       clamp(foamWeight * 0.65, 0.0, 0.65));
+                        }
+                    }
+                }
+            }
+        }
     }
     o_color = vec4(outc, albedo.a);
 }
@@ -498,16 +644,19 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
         if (mode == 9) return float4(fract(abs(in.wpos) * .05), 1.0);
     }
     if (u.params.x > 1.5 && u.params.x < 9.5) return float4(rtsEncodeScene(u.color.rgb), 1.0);
-    float4 albedo = u.color * in.col;
+    float4 albedo = float4(in.col.rgb * (u.params.x < -0.5 ? float3(1.0) : u.color.rgb),
+                           in.col.a * u.color.a);
     float3 base = rtsDecodeScene(albedo.rgb);
     float3 n = normalize(in.nrm);
     // Open water (below the road film .045; rain pools keep their own look): six wave trains of different length
     // and heading (ratios that never line up) plus drifting value noise, fading out with distance so nothing
     // aliases into stripes; slow large patches of darker / lighter water.
-    bool openWater = u.params.y >= 0.85 && in.wpos.y < 0.04 && n.y > 0.9;
+    bool openWater = (u.params.x < -0.5 || (u.params.y >= 0.85 && in.wpos.y < 0.04)) && n.y > 0.9;
     if (openWater) {
-        float2 p = in.wpos.xz;
         float wt = (l.cloud.x + l.cloud.y) * 20.0;
+        float windCoupling=u.params.x < -0.5 ? u.waterWind.w : 0.0;
+        float2 p = in.wpos.xz -
+                   u.waterWind.xy * wt * (0.02 * windCoupling);
         float fade = clamp(1.0 - length(f.camPos.xyz - in.wpos) / 160.0, 0.3, 1.0);
         const float4 wv[6] = {float4(0.951, 0.309, 0.61, 0.060), float4(-0.454, 0.891, 0.97, 0.045), float4(0.588, -0.809, 1.63, 0.036),
                                    float4(-0.978, -0.208, 2.71, 0.026), float4(0.139, 0.990, 4.37, 0.018), float4(0.743, 0.669, 6.91, 0.012)};
@@ -522,11 +671,96 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
         float h01 = fract(sin(dot(qi + float2(0, 1), float2(127.1, 311.7))) * 43758.5), h11 = fract(sin(dot(qi + float2(1, 1), float2(127.1, 311.7))) * 43758.5);
         float2 dn = float2(mix(h10 - h00, h11 - h01, qu.y), mix(h01 - h00, h11 - h10, qu.x)) * 6.0 * qf * (1.0 - qf);
         g += dn * 0.09;
+        float windSpeed=length(u.waterWind.xy);
+        float gust=(0.4+0.6*clamp(u.waterWind.z,0.0,1.0))*windCoupling;
+        float windSlope=clamp(windSpeed*0.006,0.0,0.32)*gust;
+        float2 windDir=u.waterWind.xy/max(windSpeed,0.001);
+        g+=windDir*windSlope;
         n = normalize(float3(-g.x * fade, 1.0, -g.y * fade));
         float2 m = p * 0.021 + float2(wt * 0.004, 0.0);
         float patches = 0.5 + 0.5 * sin(m.x * 2.3 + sin(m.y * 1.7) * 2.1) * sin(m.y * 1.9 + sin(m.x * 1.3) * 1.7);
         base *= 0.84 + 0.22 * patches;
     }
+    if(u.params.x < -2.5) {
+        float waterfallTime=(l.cloud.x+l.cloud.y)*20.0;
+        float streak=sin(in.wpos.y*8.0+in.wpos.x*1.8 -
+                         waterfallTime*3.6);
+        float crossFlow=sin(in.wpos.z*12.0-in.wpos.y*3.2 -
+                            waterfallTime*4.5);
+        n=normalize(n+float3(streak*0.12,0.06*crossFlow,
+                             crossFlow*0.12));
+        base *= 0.87+0.13*streak*streak;
+    }
+    if(u.params.x < -0.5 && u.waterHydraulics.z > 0.001 && n.y > 0.5) {
+        float2 flow=u.waterHydraulics.xy;
+        float speed=length(flow);
+        float2 dir=flow/max(speed,0.001);
+        float2 side=float2(-dir.y,dir.x);
+        float scale=u.waterHydraulics.w;
+        float time=(l.cloud.x+l.cloud.y)*20.0;
+        float along=dot(in.wpos.xz,dir)*scale;
+        float across=dot(in.wpos.xz,side)*scale;
+        float quality=u.waterRapidColor.a;
+        float eddies=0.0;
+        float foam=0.0;
+        if(quality<0.5) {
+            float streak=sin(along*3.1-time*min(speed,20.0)*0.25);
+            foam=smoothstep(0.22,0.82,abs(streak))*u.waterHydraulics.z;
+        } else {
+            float breakup=sin(along*3.1-time*min(speed,20.0)*0.25+
+                             sin(across*4.2)*0.7);
+            eddies=sin(across*6.4+along*1.8-time*2.8);
+            foam=smoothstep(0.22,0.82,abs(breakup*eddies))*
+                 u.waterHydraulics.z;
+            if(quality>1.5) {
+                float detail=sin(along*9.1+across*5.7-time*4.2)*
+                             sin(across*11.3-time*2.1);
+                foam=clamp(foam*(0.80+0.40*abs(detail)),0.0,1.0);
+                eddies+=detail*0.35;
+            }
+        }
+        base=mix(base,u.waterRapidColor.rgb,
+                 clamp(foam*0.78,0.0,0.78));
+        if(quality>=0.5)
+            n=normalize(n+float3(side.x*eddies*foam*0.17,
+                                 0.0,side.y*eddies*foam*0.17));
+    }
+    if(u.params.x < -0.5) {
+        float2 grad=float2(0.0);
+        float rippleFoam=0.0;
+        for(int i=0;i<16;++i) {
+            float4 ripple=u.waterRipples[i];
+            if(ripple.w<=0.0)continue;
+            float2 delta=in.wpos.xz-ripple.xy;
+            float distanceToCenter=length(delta);
+            float2 gradientDirection=delta/max(distanceToCenter,0.001);
+            float wakeMask=1.0;
+            float4 shape=u.waterWakeShapes[i];
+            if(shape.w>0.5) {
+                float2 heading=normalize(shape.xy);
+                float2 side=float2(-heading.y,heading.x);
+                float along=dot(delta,heading);
+                float across=dot(delta,side);
+                float transverse=max(shape.z,1.0);
+                float2 elliptical=float2(along*0.75,across*transverse);
+                distanceToCenter=length(elliptical);
+                gradientDirection=(heading*(along*0.5625)+
+                    side*(across*transverse*transverse))/
+                    max(distanceToCenter,0.001);
+                wakeMask=smoothstep(-0.1,0.55,
+                    -along/max(ripple.z,0.001));
+            }
+            float radial=distanceToCenter-ripple.z;
+            float envelope=exp(-radial*radial*2.0)*wakeMask;
+            grad += gradientDirection *
+                    (-radial*4.0*envelope*ripple.w);
+            rippleFoam += envelope * ripple.w * 0.42;
+        }
+        n=normalize(n+float3(-grad.x,0.0,-grad.y));
+        base=mix(base,float3(0.82,0.92,0.94),
+                 clamp(rippleFoam,0.0,0.65));
+    }
+
     float3 L = normalize(f.sunDir.xyz);
     float3 V = normalize(f.camPos.xyz - in.wpos);
     float ndl = max(dot(n, L), 0.0);
@@ -542,17 +776,54 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
     float rim = pow(1.0 - max(dot(n, V), 0.0), 3.0) * 0.25;
     float3 col = base * (amb + sun * ndl * sh) + sun * spec * sh + amb * rim * base;
     col += base * local;
-    col = mix(col, base, u.params.x) + base * (u.params.w * (1.0 + l.info.w));
+    col = mix(col, base, clamp(u.params.x, 0.0, 1.0)) + base * ((u.params.x < -0.5 ? 0.0 : u.params.w) * (1.0 + l.info.w));
     float dist = length(f.camPos.xyz - in.wpos);
     col = mix(col, rtsDecodeScene(f.fog.rgb), 1.0 - exp(-dist * f.fog.w));
     col = rtsToneScene(col, f.skyColor.w > 0.5);
-    float3 outc = waterReflect(l, tex2, s2, in.pos.xy, rtsEncodeScene(col), in.wpos, n, V, u.params.y);
-    if (u.params.y >= 0.85 && in.wpos.y >= 0.04 && f.trace2.w > 0.5) {
+    float3 outc = waterReflect(l, tex2, s2, in.pos.xy, rtsEncodeScene(col),
+                               in.wpos, n, V, u.params.x < -1.5 ? 0.0 : u.params.y);
+    if (u.params.y >= 0.85 && (in.wpos.y >= 0.04 || u.params.x < -0.5) && f.trace2.w > 0.5) {
         float3 nn = normalize(n + float3(sin(in.wpos.z * 3.0 + l.cloud.x * 11.0), 0.0, sin(in.wpos.x * 2.6 - l.cloud.y * 9.0)) * 0.02);
         float hit;
         float3 rc = ssrWater(f, tex4, s4, tex5, s5, in.wpos, nn, V, hit);
         float fres = (in.wpos.y < 0.04 ? 0.12 : 0.08) + 0.45 * pow(1.0 - max(dot(n, V), 0.0), 3.0);
         outc = mix(outc, mix(rtsEncodeScene(col), rc, fres), hit);
+    }
+    // NEREID optics: share captured opaque tex4/tex5 with SSR, no feedback.
+    // u.color.rgb = absorption(m^-1), foam depth(m), depth tint strength.
+    if (u.params.x < -0.5 && f.trace2.w > 0.5 &&
+        (u.params.w > 0.001 || u.color.r > 0.001 ||
+         u.color.g > 0.001 || u.color.b > 0.001)) {
+        float4 projected = f.viewProj * float4(in.wpos, 1.0);
+        if (projected.w > 0.0) {
+            float2 screen = projected.xy / projected.w * 0.5 + 0.5;
+            float2 distorted = screen + n.xz * (0.009 * u.params.w);
+            if (all(distorted > float2(0.005)) &&
+                all(distorted < float2(0.995))) {
+                float2 sampleUV = f.shadow.x > 0.5 ?
+                    float2(distorted.x, 1.0 - distorted.y) : distorted;
+                float sampledDepth = tex5.sample(s5, sampleUV);
+                if (sampledDepth < 0.9999) {
+                    float3 opaquePos = ssrUnproject(f, distorted, sampledDepth);
+                    float thickness = in.wpos.y - opaquePos.y;
+                    if (thickness > 0.02 && thickness < 1000.0) {
+                        float3 background = tex4.sample(s4, sampleUV).rgb;
+                        float transmission = exp(-thickness * u.color.r);
+                        float3 absorbed = background * transmission +
+                            rtsEncodeScene(base) * (1.0 - transmission) * u.color.b;
+                        float blendAmount = clamp(u.params.w * 0.85 +
+                            u.color.b * (1.0-transmission), 0.0, 0.85);
+                        outc = mix(outc, absorbed, blendAmount);
+                        if (u.color.g > 0.001) {
+                            float shallow = clamp(1.0 - thickness / u.color.g, 0.0, 1.0);
+                            float foamWeight = shallow * shallow * (3.0 - 2.0 * shallow);
+                            outc = mix(outc, float3(0.82, 0.91, 0.92),
+                                       clamp(foamWeight * 0.65, 0.0, 0.65));
+                        }
+                    }
+                }
+            }
+        }
     }
     return float4(outc, albedo.a);
 }
