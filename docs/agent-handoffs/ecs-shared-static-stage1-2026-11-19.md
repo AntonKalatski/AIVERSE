@@ -92,6 +92,8 @@ snapshots remain intact. No genre-specific implementation.
 - `5c3b61817fee667558624e3d50a6762628265fb1` — CMake registration.
 - `29c296a7f1fbb7466f7fd9d526b102c73c026c37` — architecture/API doc.
 - `2ebb71e8fc21a6db8d3cfc3eed30577a44a64926` — agent skill.
+- `77f79689d6b8cd89533d787cfc1e689e3e27719f` — initial stage-1 handoff.
+- `08d0227c540fed21a9a9b875f343db3951a0c746` — benchmark accepts entity count, uses atomic checksum sink.
 
 The handoff commit comes after the above list; get the authoritative
 branch head with `git rev-parse HEAD`.
