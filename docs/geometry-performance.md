@@ -88,3 +88,42 @@ Measured benefits and regressions are retained in
 Palette-skinned draws with a current pose and node-world matrices select embedded AutoLODs, retaining animation graphs, per-instance shoulder edits and sockets. Selection bounds conservatively enclose transformed source primitive boxes for every influencing joint; main-camera and sun-shadow size both constrain detail. Original LOD0 remains available. Baked-only draws without current pose bounds retain LOD0 (no claim of skeletal AutoLOD in that mode). Material overrides stay on the shared material indices. Morph LODs remain unsupported.
 
 `aiverse_modelview model.glb@Run --time 0.16 --distance 20 --lod-report` prints actual selected LOD-node count and main/shadow submitted triangles. `--no-lod` supplies a LOD0 A/B reference.
+
+
+### Incremental rigid CPU transform cache (opt-in)
+
+`AIVERSE_PERSISTENT_CPU_MODEL_CACHE=1` enables an engine-level, backend- and
+genre-independent `Renderer3D` cache for `ModelDraw` submissions with a
+nonzero stable `persistentId` and `kDrawStatic`. The first eligible draw
+precomputes the existing `StaticModelCache` (model-space bind transforms
+multiplied by world, primitive offsets and conservative bounds). Later draws
+reuse these values when the model pointer, GPU vertex/index buffers, hierarchy
+sizes and the **exact 4x4 world matrix** match. A changed model or transform
+rebuilds the entry. Entries unused for several Scene/Game viewports are evicted
+at the next 64-scene sweep. Disabling the flag preserves the previous draw path.
+
+This cache is not a persistent render queue: callers still visit each object,
+and the renderer still performs camera/light frustum culling, per-node/LOD
+selection, material grouping, depth sorting and GPU submissions every frame.
+Material overrides and per-node material choices are allowed because the
+cache contains geometric transforms rather than colour/material state; active
+vertex-displacement graphs force the ordinary uncached path. Animated,
+skinned, posed, baked, runtime-mutable-node and clustered geometry models are
+excluded from automatic caching. Externally prepared `ModelDraw::staticCache`
+still takes precedence when valid. Different draw IDs (including attachments)
+must not accidentally reuse one another.
+
+**Asset lifetime/invalidation:** the cache is not an owner of Model data.
+Call `Renderer3D::invalidateStaticModelCaches()` before in-place edits to
+bind transforms, hierarchy or geometry that could retain the model pointer and
+GPU buffer IDs. The editor calls this API from `reloadRules()`; native games
+and other asset-reload paths must do the same. Do not modify model data
+concurrently with `drawModel`. Runtime model mutation without a stable
+revision signal is why this feature is initially off by default.
+
+The Scene → Batching popup exposes hits/rebuilds/declines, live entries and
+evictions (counters are per Scene invocation). Measure unchanged view/camera,
+with a warmup, comparing separate processes with flag absent vs `=1`.
+Compare `[scene-stages]` and `[view-stages]` as well as visual consistency:
+these cache counters do **not** prove a frame-time improvement. MDI / GPU ICB
+is independent and should stay disabled during the initial A/B on Metal.
