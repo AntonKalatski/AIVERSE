@@ -1338,6 +1338,35 @@ bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, i
     }
     ++modelStats_.multiDrawSubmissions;
     modelStats_.indirectCommands += commands.size();
+    // Count only *successful* mixed-Model CPU MDI submissions. All models
+    // must share the same GPU geometry page and retain their per-instance
+    // source geometry ranges; a same-model instanced batch is not cross-model.
+    if (staticCrossModelBatchesEnabled_ && phase <= 1 && count > 1) {
+        const Model* anchor = modelItems_[items[0]].model;
+        bool differentModels = false, compatiblePage = anchor != nullptr;
+        for (uint32_t n = 0; n < count && compatiblePage; ++n) {
+            const auto& part = modelItems_[items[n]];
+            if (!part.model || !part.rigid ||
+                !(part.flags & kDrawStatic) || !part.model->geometryPoolPage ||
+                part.joints >= 0 || part.morph >= 0 || part.baked ||
+                part.gi != 0 || part.materialRole || part.shadowRole ||
+                part.paletteMaterials || part.lodThreshold < 1.0f ||
+                part.lodInvert) {
+                compatiblePage = false;
+                break;
+            }
+            if (part.model != anchor) {
+                differentModels = true;
+                if (!staticCrossModelPageCompatible(*anchor, *part.model))
+                    compatiblePage = false;
+            }
+        }
+        if (differentModels && compatiblePage) {
+            ++modelStats_.staticCrossModelSubmissions;
+            modelStats_.staticCrossModelCommands += commands.size();
+            modelStats_.staticCrossModelItems += count;
+        }
+    }
     if (instancePalette) {
         ++modelStats_.mdiPaletteSubmissions;
         modelStats_.mdiPaletteCommands += commands.size();
