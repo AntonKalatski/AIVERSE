@@ -7793,3 +7793,61 @@ Only then attempt different ordinary PBR/ShaderGraph source
 textures, which require a separate material-state/graph ABI.
 Any failure must use normal CPU per-item rendering without
 dropping geometry.
+
+
+## Stage 10Y — opt-in mixed VT archive GPU ICB grouping (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / Draft PR #21.
+**Source commits:**
+- `e58c4907655a3c72eecec9a21704a850e2fc2ba1`
+  `engine/render/Renderer3D.h`: per-command resource ticket vector
+  and scoped GPU-ICB-only material binding flag.
+- `1e1f226c5bc3124f4e92b313cbb199ba9e58b74e`
+  `engine/render/Renderer3DModels.cpp`: second opt-in
+  `AIVERSE_EXPERIMENTAL_ICB_MIXED_VT=1`; hashed grouping can ignore
+  per-draw VT external resource identity only when the per-command
+  VT ABI flag is also enabled and both items require valid VT.
+  Other source PBR/geometry/material/alpha state still goes through
+  strict `equivalentGpuMaterial`.
+  Per-command `GpuIcbVirtualMaterial` and CPU `GpuMaterialResourceTicket`
+  snapshots are collected prior to GPU command encoding.
+  Render revalidation compares every current draw against its own
+  captured ticket; only prevalidated per-command ICB submission
+  bypasses the original `drawModelBatch` homogeneous VT check.
+**Docs commits:** `a20f9a063cb99da138216cdf7b4852a2ce419c3e` `docs/texture-rhi.md`,
+`c9c51cd48c4e4b3cd3bf6817213b663ff7ee9958` `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**API/architecture:** mixed VT is an optional new GPU batching
+policy, independent of game genre/ECS authority. It is strict
+about default paths: CPU MDI/instancing and legacy Metal ICB
+still group only identical VT resources. Both feature gates
+must be enabled *in addition* to the existing GPU ICB flags.
+A group can contain multiple physical atlas/table pairs,
+layers, gutters and address modes but shares the same built-in
+material GPU state/geometry/pipeline. The Metal ICB kernel uses
+Stage10X's per-command PBR argument-buffer and U6 pointers.
+The CPU table tickets are also checked one-for-one immediately
+before execution, including archive promotion and R8 alpha masks.
+
+**Actual checks:** GitHub source inspection of group building,
+cache preflight, per-command ticket staging, draw batch
+homogeneous gate and execution path. Code and docs committed.
+**Native C++ build NOT RUN; Metal MSL compiler NOT RUN; actual
+Metal ICB GPU rendering NOT RUN; image parity and performance
+NOT RUN.** No claim of production-grade batching; feature flags
+MUST remain disabled by default.
+
+**Remaining:** Different conventional PBR source textures/U2
+material constants still are NOT mixed; Shader Graph is excluded
+from GPU-authored ICB and retained on CPU. The new per-command
+Metal buffer pointers and argument encoders must be compiled
+and tested on hardware before claims of correctness/performance.
+Experimental Metal ICB has a known historical AGX crash risk.
+
+**Next:** introduce a fully bounded per-command Material U2/PBR
+source texture resource ABI (or a resource palette) if practical,
+without bypassing exact material-state grouping for unsupported
+shader permutations. Instrument actual mixed/legacy ICB counters
+and fallback reasons; after features close, run macOS Metal
+Shader Compiler and GPU A/B tests on multiple Terra archive
+domains. Keep draft until verified.
