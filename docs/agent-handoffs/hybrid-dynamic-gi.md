@@ -782,3 +782,15 @@ Extends `gi_world_geometry_bridge` source fixture with proxy insert,
 trace and removal preserving the terrain sources. Native C++/CTest and
 Metal/Vulkan/GLES GPU execution NOT RUN. Full TerraWeave receiver
 integration depends on reconciling active divergent branches.
+
+
+## Stage 46 — 2026-11-20 — GI for TerraWeave's generic PBR ModelDraw batches (SOURCE; NOT RUN)
+
+Full handoff `docs/agent-handoffs/gi-stage46-terraweave-model-batch-2026-11-20.md`.
+Current main TerraWeave terrain/grass do not have separate receiving shaders;
+they already submit generic `Renderer3D::drawModel`. This stage removes
+the unnecessary block on CPU MDI/material instance palettes while keeping
+unverified GPU-authored instance buffers excluded. New genre-neutral
+`GiModelBatchPolicy` and source CTest `gi_model_batch_policy`.
+No actual native compilation/CTest, PBR pixel parity or branch reconciliation
+performed. Keep all other GI acceptance gates and GPU fence safety.
