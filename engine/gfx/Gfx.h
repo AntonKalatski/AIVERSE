@@ -228,6 +228,19 @@ public:
     // A false result MUST prevent hot-reload destruction; frameSerial()
     // alone does not prove completion. May stall; never call per draw.
     virtual bool waitForResourceIdle() { return false; }
+    // Nonblocking retirement token: enqueue an ordered GPU completion marker
+    // after all PREVIOUSLY SUBMITTED work. Call at a frame boundary before
+    // current-frame commands can reference retired objects.
+    // 0 means unsupported/failed: hosts may use waitForResourceIdle().
+    virtual uint64_t beginResourceRetirement() { return 0; }
+    // Poll on the device thread. False means pending OR failed; NEVER
+    // destroy resources based solely on frameSerial() or elapsed time.
+    virtual bool resourceRetirementComplete(uint64_t token) {
+        (void)token; return false;
+    }
+    // Release a COMPLETED token after checking resourceRetirementComplete().
+    // No backend may free a still-in-flight native fence here.
+    virtual void endResourceRetirement(uint64_t token) { (void)token; }
 
     // Frame (driven by the platform layer)
     virtual void beginFrame(int framebufferWidth, int framebufferHeight) = 0;
