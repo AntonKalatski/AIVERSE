@@ -275,6 +275,11 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
                     int64_t xQ16cm,int64_t zQ16cm)->std::optional<int32_t>{
                 return heights->sampleQ16(xQ16cm,zQ16cm);
             };
+            surface->nearGroundContinuousSlopeAtQ16Cm=[heights](
+                    int64_t xQ16cm,int64_t zQ16cm)
+                    ->std::optional<std::pair<int32_t,int32_t>>{
+                return heights->continuousSlopeQ16(xQ16cm,zQ16cm);
+            };
             if(mask)surface->allowsCanopyAt=[mask](int64_t x,int64_t z){
                 return !mask->excludes(x,z);
             };
