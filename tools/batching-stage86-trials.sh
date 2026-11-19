@@ -16,7 +16,8 @@ if [[ ! -x "$BIN" ]]; then
 fi
 mkdir -p "$OUT"
 run_case() {
-  local label="$1" mode="$2" prefix="$OUT/$label" log="$OUT/$label.log"
+  local label="$1" mode="$2"
+  local prefix="$OUT/$label" log="$OUT/$label.log"
   echo "===== Stage 86 $label ($mode) ====="
   local -a flags=(AIVERSE_PALETTE_TEST_CASE=auto_stress
     AIVERSE_BATCH_STRESS_ITEMS="$ITEMS"
