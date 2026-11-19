@@ -419,11 +419,13 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             const bool unchanged =
                 entry.vertexBuffer == m->vb.id &&
                 entry.indexBuffer == m->ib.id &&
+                entry.geometryRevision == m->geometryRevision &&
                 staticModelCacheGeometryCompatible(entry.cache, d, false);
             if (!unchanged) {
                 entry.cache.prepare(*m, d.world);
                 entry.vertexBuffer = m->vb.id;
                 entry.indexBuffer = m->ib.id;
+                entry.geometryRevision = m->geometryRevision;
                 ++staticModelCacheStats_.rebuilds;
             } else {
                 ++staticModelCacheStats_.hits;
