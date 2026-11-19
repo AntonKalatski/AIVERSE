@@ -51,6 +51,16 @@ public:
             return false;
         }
 #endif
+        // Loading may take time or traverse a large (bounded) journal.
+        // A same-user process could rename/unlink the live lock or parent
+        // during that read. Do not bind a privileged listener unless the
+        // verified directory/lock identity is still intact afterwards.
+        if(!journalLock_.valid()) {
+            gateway_.suspendJournal();
+            journalLock_.release();
+            if(error)*error="PHYSIS journal lock ownership changed during startup";
+            return false;
+        }
         // A previous lock inode can be unlinked while flock is still
         // held. Validate path ownership before EVERY journal write.
         gateway_.setJournalWriter([this](
