@@ -1951,6 +1951,7 @@ void Renderer3D::renderModels(int phase) {
     // Everything else retains the original material/primitive sort order.
     // GPU-state materialGroup IDs were resolved with exact comparisons above.
     std::vector<uint8_t> staticCrossCandidates;
+    bool adaptivePooledFallback = false;
     if (staticCrossModelSort) {
         const size_t threshold = dev_->info().backend == gfx::Backend::Metal
             ? indirectCommandThreshold() : size_t{4};
@@ -2009,6 +2010,7 @@ void Renderer3D::renderModels(int phase) {
                 // measured CPU preparation cost of recent MDI submissions
                 // may be too high. Preserve the ordinary batching order.
                 ++modelStats_.staticCrossModelAdaptiveSkippedPasses;
+                adaptivePooledFallback = true;
                 staticCrossModelSort = false;
             } else {
                 if (cpuMdiAdaptiveEnabled_) {
@@ -2190,7 +2192,13 @@ void Renderer3D::renderModels(int phase) {
         // Try MDI before conventional instancing, only when every command can
         // legally inherit the SAME uniforms/textures and rigid transform.
         // Draw-call colour mode uses one colour per indirect submission.
-        if (allowIndirect && order_.size() - i >= minIndirectCommands) {
+        // Adaptive fallback only changes the static pooled subgroup. Other
+        // ordinary MDI candidates (including dynamic and nonpooled models)
+        // retain their existing selection logic.
+        const bool preferInstancing = adaptivePooledFallback &&
+            eligibleStaticPage(modelItems_[order_[i]]);
+        if (allowIndirect && !preferInstancing &&
+            order_.size() - i >= minIndirectCommands) {
             ++modelStats_.mdiScans;
             const auto scanBegin = std::chrono::steady_clock::now();
             ++mdiCandidates;
