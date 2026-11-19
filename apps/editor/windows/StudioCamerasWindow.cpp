@@ -131,6 +131,7 @@ public:
                 stack->opacity=fixedFromUi(opacity);
         }
         if(rig && ImGui::CollapsingHeader("Camera Rig")) {
+            ImGui::Checkbox("Rig Enabled",&rig->enabled);
             int mode=int(rig->mode);
             if(ImGui::Combo("Rig Mode",&mode,"Static\0Look At\0Follow\0Orbit\0Rail\0"))
                 rig->mode=CameraRigMode(mode);
@@ -186,6 +187,11 @@ public:
         if(render::resolveEcsCamera(*world_,selected_,view)) {
             const float side=std::clamp(ImGui::GetContentRegionAvail().x,128.f,400.f);
             preview_.ensure(ed.device(),int(side),int(side));
+            if(lens && lens->physicalFov && render::validCameraLens(*lens)) {
+                const float sensor=float(lens->sensorHeightMm.toDouble());
+                const float focal=float(lens->focalLengthMm.toDouble());
+                view.camera.fovY=2.f*std::atan(sensor/(2.f*focal));
+            }
             ed.renderScene(preview_,view.camera,false);
             preview_.image(ed.device(),side,side);
         }
