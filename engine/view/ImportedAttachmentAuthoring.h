@@ -1,0 +1,216 @@
+// AIVERSE generic imported child-model attachment authoring.
+// Genre-neutral: real cache-resident Model assets, authored appearance
+// snapshots, compiled sockets, and short-lived owner-thread read leases.
+// Never touches gameplay state, simulation, animation clock or GPU fences.
+#pragma once
+#include "AppearanceAssetRegistry.h"
+#include "engine/render/ModelResourceCache.h"
+#include <cstdint>
+#include <exception>
+#include <memory>
+#include <span>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace aiverse::view {
+
+class ImportedAttachmentAuthoring final {
+public:
+    using Asset = AppearanceAssetRegistry::Asset;
+    using Snapshot = AppearanceAssetRegistry::Snapshot;
+
+    // Child appearances are REAL, separately imported, published Models.
+    // The host first loads them through ModelAssetProvider/ModelResourceCache,
+    // then publishes their material/Model snapshot in AppearanceAssetRegistry.
+    // Child graphs are deliberately not evaluated by attachments: animate
+    // such a child as its own View::Object with its own independent source ID.
+    struct ChildRequest {
+        Snapshot appearance;
+        std::string socketName;
+        int socket=-1;
+        render::mat4 local;
+        render::mat4 childWorld;
+        bool visible=true;
+    };
+    struct Compiled {
+        struct Child {
+            Snapshot appearance;
+            std::shared_ptr<const CompiledModelSocket> socketBinding;
+            std::string socketName;
+            int socket=-1;
+            render::mat4 local;
+            render::mat4 childWorld;
+            bool visible=true;
+        };
+        Snapshot source;
+        std::vector<Child> children;
+
+        bool matches(const Snapshot& current) const noexcept {
+            return source && current &&
+                source->model && source->modelPublicationGeneration!=0 &&
+                source->model==current->model &&
+                source->modelPublicationGeneration==
+                    current->modelPublicationGeneration &&
+                source.get()==current.get();
+        }
+    };
+
+    // A prepared packet and its short-lived CPU read leases must stay on
+    // the render/asset owner thread until AFTER synchronous View submission.
+    // Destruction releases the leases, allowing the host to invalidate the
+    // cache and retire GPU resources at its own safe frame boundary.
+    struct Prepared {
+        std::vector<render::ModelReadLease> modelReads;
+        Snapshot source;
+        std::vector<Snapshot> childAppearances;
+        Object object;
+        Prepared()=default;
+        Prepared(const Prepared&)=delete;
+        Prepared& operator=(const Prepared&)=delete;
+        Prepared(Prepared&&)=default;
+        Prepared& operator=(Prepared&&)=default;
+    };
+
+    // Never compile against a retired Model. All assets must live in this
+    // host's SAME ModelResourceCache, so read leases protect the entire
+    // source+child rig transaction. No code is run on animation workers.
+    static bool compile(const Snapshot& source,
+                        const render::ModelResourceCache& cache,
+                        std::span<const ChildRequest> authored,
+                        Compiled& out,std::string* error=nullptr) {
+        if(error)error->clear();
+        try {
+            if(!source || !source->model ||
+               source->modelPublicationGeneration==0)
+                throw std::invalid_argument(
+                    "imported attachments require a published source rig");
+            auto sourceRead=cache.acquireModelRead(source->model);
+            if(!sourceRead)
+                throw std::invalid_argument(
+                    "source rig has no live Model cache read lease");
+            Compiled next;
+            next.source=source;
+            next.children.reserve(authored.size());
+            for(const auto& entry:authored) {
+                const auto& child=entry.appearance;
+                if(!child || !child->model ||
+                   child->modelPublicationGeneration==0)
+                    throw std::invalid_argument(
+                        "child attachment requires a published Model");
+                if(child->graph)
+                    throw std::invalid_argument(
+                        "animated child requires its own View source, not a static attachment");
+                auto childRead=cache.acquireModelRead(child->model);
+                if(!childRead)
+                    throw std::invalid_argument(
+                        "child Model has no live Model cache read lease");
+                auto socket=compileModelSocket(
+                    *sourceRead.get(),source->modelPublicationGeneration,
+                    entry.socketName,entry.socket);
+                if(!socket)
+                    throw std::invalid_argument(
+                        "attachment socket missing or incompatible with published rig");
+                next.children.push_back({
+                    child,std::move(socket),entry.socketName,entry.socket,
+                    entry.local,entry.childWorld,entry.visible
+                });
+            }
+            out=std::move(next);
+            return true;
+        }catch(const std::exception& ex) {
+            if(error)*error=ex.what();
+            return false;
+        }
+    }
+
+    // Make a frame-local packet and pin each borrowed Model in the cache.
+    // Optional published LODs are pinned too; all must reside in this cache.
+    // The source and child appearance snapshots keep MATERIAL pointer data
+    // alive, while ModelReadLease prevents CPU Model eviction until draw.
+    // Never submit on a different thread or use this packet after Prepared
+    // (and its move-safe leases) has been destroyed.
+    static bool prepare(const Compiled& compiled,
+                        const render::ModelResourceCache& cache,
+                        const render::mat4& world,
+                        const Asset::CompiledPresentationBindings* bindings,
+                        Prepared& out,std::string* error=nullptr) {
+        if(error)error->clear();
+        try {
+            if(!compiled.source || !compiled.source->model ||
+               compiled.source->modelPublicationGeneration==0)
+                throw std::invalid_argument(
+                    "attachment source snapshot is missing or unpublished");
+            Prepared next;
+            next.source=compiled.source;
+            auto pin=[&](const render::Model* model) {
+                if(!model)
+                    throw std::invalid_argument("null imported Model");
+                auto read=cache.acquireModelRead(model);
+                if(!read)
+                    throw std::invalid_argument(
+                        "imported Model no longer resident in the owner cache");
+                next.modelReads.push_back(std::move(read));
+            };
+            pin(compiled.source->model);
+            if(bindings) {
+                // Validate source revision before accessing any child or
+                // potentially stale visual LOD Model memory.
+                if(bindings->sourceModel!=compiled.source->model ||
+                   bindings->sourcePublication!=
+                       compiled.source->modelPublicationGeneration)
+                    throw std::invalid_argument(
+                        "compiled LOD configuration source epoch changed");
+                for(const auto& lod:bindings->lods)
+                    if(lod.model)pin(lod.model);
+            }
+            std::vector<ModelAttachment> attachments;
+            attachments.reserve(compiled.children.size());
+            next.childAppearances.reserve(compiled.children.size());
+            for(const auto& child:compiled.children) {
+                if(!child.appearance || !child.appearance->model ||
+                   !child.socketBinding ||
+                   !child.socketBinding->matches(
+                       *compiled.source->model,
+                       compiled.source->modelPublicationGeneration,
+                       child.socketName,child.socket))
+                    throw std::invalid_argument(
+                        "compiled attachment missing or source rig revision changed");
+                pin(child.appearance->model);
+                Object childPacket;
+                if(!child.appearance->packet(child.childWorld,childPacket))
+                    throw std::invalid_argument(
+                        "child published appearance cannot form a draw packet");
+                ModelAttachment a;
+                a.draw=childPacket.draw;
+                a.socket=child.socket;
+                a.socketName=child.socketName;
+                a.local=child.local;
+                a.visible=child.visible;
+                a.compiledSocket=child.socketBinding;
+                attachments.push_back(std::move(a));
+                next.childAppearances.push_back(child.appearance);
+            }
+            if(!compiled.source->packetWithBindings(
+                   world,attachments,bindings,next.object,error))
+                return false;
+            // Stage 151 replaces the full authored binding list. For
+            // attached child appearances, recover compiled socket identity
+            // for entries NOT included in optional LOD/socket bundle.
+            for(size_t i=0;i<compiled.children.size();++i) {
+                auto& attachment=next.object.attachments[i];
+                if(!attachment.compiledSocket)
+                    attachment.compiledSocket=
+                        compiled.children[i].socketBinding;
+            }
+            out=std::move(next);
+            return true;
+        }catch(const std::exception& ex) {
+            if(error)*error=ex.what();
+            return false;
+        }
+    }
+};
+
+} // namespace aiverse::view
