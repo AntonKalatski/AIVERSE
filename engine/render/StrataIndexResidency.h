@@ -8,6 +8,7 @@
 #include "../gfx/Gfx.h"
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -38,6 +39,12 @@ struct IndexSpan {
 };
 struct IndexResidencyStats {
     uint64_t activeBytes = 0, pinnedRootBytes = 0, budgetBytes = 0;
+    // Stage 15.2: the arena is a fixed GPU allocation, activeBytes counts
+    // live pages, arenaBytes counts its full reserved capacity. Vulkan RHI
+    // may still retain multiple device versions and a CPU shadow.
+    uint64_t arenaBytes = 0, uploadedBytes = 0, uploadCalls = 0;
+    uint64_t uploadBudgetDeferrals = 0, fenceReuseDeferrals = 0;
+    bool incremental = false;
     uint64_t generations = 0, uploads = 0, evictions = 0;
     uint64_t deferredDemands = 0, failedUploads = 0;
     uint32_t residentNodes = 0;
@@ -47,13 +54,16 @@ public:
     IndexResidency() = default;
     IndexResidency(const IndexResidency&) = delete;
     IndexResidency& operator=(const IndexResidency&) = delete;
-    ~IndexResidency() = default; // call shutdown(device) while RHI is alive
+    ~IndexResidency(); // call shutdown(device) while RHI is alive
 
     // Performs a real root-only index upload, not a virtual residency flag.
     // Roots are pinned; if budget cannot contain them, returns false without
     // allocating/publishing any GPU state.
     bool initialize(gfx::Device& device, const ModelAsset& asset,
-                    size_t budgetBytes, std::string* error = nullptr);
+                    size_t budgetBytes, std::string* error = nullptr,
+                    bool preferIncremental = false,
+                    size_t uploadBudgetBytes = 0);
+    bool incrementalEnabled() const { return bool(incremental_); }
     // Atomic compact/repack: requests promote complete sibling groups along
     // each path (parent->children). Rejected requests retain a drawable
     // resident ancestor. Existing generation is unchanged on GPU failure.
@@ -76,6 +86,14 @@ private:
     gfx::BufferHandle buffer_{};
     std::vector<std::vector<IndexSpan>> spans_;
     std::vector<std::vector<uint32_t>> parent_;
+    // Implementation lives in StrataIndexPages.cpp. Only Metal/Vulkan with
+    // checked storage uploads use stable index offsets. GLES3/GL33 retain
+    // the Stage 15 immutable buffer-generation fallback.
+    struct IncrementalStorage;
+    std::unique_ptr<IncrementalStorage> incremental_;
+    bool initializeIncremental(size_t uploadBudgetBytes, std::string* error);
+    bool updateIncremental(const std::vector<std::vector<uint8_t>>& wanted,
+                           uint64_t deferred, std::string* error);
     IndexResidencyStats stats_{};
 };
 } // namespace aiverse::render::strata
