@@ -117,6 +117,14 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
     return true;
 }
 
+void RtsView::setGenericRetargetScratchBudgetBytes(size_t bytes) {
+    genericRetargetScratchBudgetBytes_=bytes;
+    if(genericView_)genericView_->setRetargetScratchBudgetBytes(bytes);
+}
+size_t RtsView::genericRetargetScratchCapacityBytes() const noexcept {
+    return genericView_?genericView_->retargetScratchCapacityBytes():0;
+}
+
 void RtsView::shutdown(gfx::Device& dev) {
 #ifndef __EMSCRIPTEN__
     resources_.preparation().reset();
@@ -441,9 +449,12 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
     // Remove presentation entities for no-longer-eligible objects every
     // frame. No model draws here; RtsViewDraw still applies materials,
     // terrain height, outlines, shadow, effects and other scene features.
-    if(!genericObjects.empty() && !genericView_)
+    if(!genericObjects.empty() && !genericView_) {
         genericView_=std::make_unique<::aiverse::view::View>(
             ::aiverse::lib::animation::MotionWeaveWorkerPool::recommendedWorkers());
+        genericView_->setRetargetScratchBudgetBytes(
+            genericRetargetScratchBudgetBytes_);
+    }
     if(genericView_)genericView_->update(genericObjects,dt);
     for (auto& b : shadowDraws_) b.verts.clear();
     // objects the spline roads stand in for (roadNetwork.replaces: tags or type id prefixes) are not drawn
