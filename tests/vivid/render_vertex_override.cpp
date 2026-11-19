@@ -62,6 +62,36 @@ void test() {
     verify(modelVertexOverrideStatus(model,stream,16) ==
            ModelVertexOverrideStatus::InvalidVertexCount, "mesh range overflow accepted");
 
+    // Regression for procedural modelFromParts: this routine previously left
+    // Primitive::firstVertex/vertexCount at zero even with valid vertex data,
+    // causing the VIVID stream safety policy to reject the entire model.
+    MeshBuilder partA, partB;
+    for (float x : {-0.3f, 0.3f, 0.0f})
+        partA.addVertex({x, 0.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, 0xffffffffu);
+    partA.addTriangle(0, 1, 2);
+    for (float x : {-0.5f, 0.5f, 0.0f})
+        partB.addVertex({x, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, 0xffffffffu);
+    partB.addTriangle(0, 1, 2);
+    const Material material{};
+    auto procedural = modelFromParts("vivid-vertex-ranges",
+        {{"part_a", &partA, material, {}}, {"part_b", &partB, material, {}}});
+    verify(bool(procedural) && procedural->vertices.size() == 6 &&
+           procedural->meshes.size() == 2, "procedural model source incomplete");
+    const auto& first = procedural->meshes[0].primitives[0];
+    const auto& second = procedural->meshes[1].primitives[0];
+    verify(first.firstVertex == 0 && first.vertexCount == 3 &&
+           second.firstVertex == 3 && second.vertexCount == 3,
+           "procedural mesh part vertex range metadata missing");
+    procedural->vb = {21};
+    procedural->ib = {22};
+    verify(modelVertexOverrideStatus(*procedural, stream, 6) ==
+           ModelVertexOverrideStatus::Ready,
+           "valid procedural model override rejected");
+    procedural->vertices.clear();
+    verify(modelVertexOverrideStatus(*procedural, stream, 6) ==
+           ModelVertexOverrideStatus::Ready,
+           "procedural model override broken after CPU vertex data eviction");
+
     // Compile-time check: the public per-instance override handle defaults
     // off, and never changes the existing ModelVertex layout.
     ModelDraw draw;
