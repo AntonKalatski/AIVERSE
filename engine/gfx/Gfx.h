@@ -139,7 +139,24 @@ static_assert(sizeof(DrawIndexedIndirectCommand) == 20);
 struct GpuIcbVirtualMaterial {
     TextureHandle physicalAtlas, pageTable, alphaCoverage;
     float params[4] = {};
+    // Optional experimental per-command material U2 and fragment source
+    // textures 1..6. All six must be bound (fallback 1x1 textures are valid).
+    // The nine float4 rows match the existing std140/Metal MU2 layout.
+    bool hasPbr = false;
+    std::array<TextureHandle,6> pbrTextures{};
+    std::array<float,36> pbrU2{};
     bool valid() const {
+        if (hasPbr) {
+            for (const auto texture : pbrTextures)
+                if (!texture.valid()) return false;
+            for (const float value : pbrU2)
+                if (!std::isfinite(value)) return false;
+        } else {
+            for (const auto texture : pbrTextures)
+                if (texture.valid()) return false;
+            for (const float value : pbrU2)
+                if (value != 0.0f) return false;
+        }
         return physicalAtlas.valid() && pageTable.valid() &&
                std::isfinite(params[0]) && params[0] >= 0 &&
                params[0] < 16 && std::floor(params[0]) == params[0] &&
