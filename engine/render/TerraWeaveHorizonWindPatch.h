@@ -26,6 +26,11 @@ struct HorizonForestWindOverlay {
     std::vector<render::ModelVertex> vertices; // contiguous forest-only copy
     std::vector<std::pair<int64_t,int64_t>> centersCm;
     uint64_t appliedRevision=0; // render presentation field revision, not bake
+    // Stage38: storage exclusively while INACTIVE in the GPU LRU. The packed
+    // byte stream is restored to EXACT ModelVertex bytes before reactivation.
+    // Never drop vertices on an active or crossfading GPU model.
+    std::vector<uint8_t> packedVertices;
+    size_t packedVertexCount=0;
 };
 
 inline uint32_t horizonFieldWindVertexColor(
