@@ -8991,3 +8991,82 @@ cross-backend builds. Keep PR #21 Draft, do not merge based on
 a successful test-target compilation alone. Do not touch the
 original primary AIVERSE worktree with its unrelated unfinished rebase.
 
+
+## Stage 10AX — macOS editor compiler and 3 remaining CTest regressions (2026-11-19)
+
+**Working branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Observed baseline:** user ran `bash tools/verify-texture-rhi.sh --editor --jobs 4`
+in isolated worktree `/Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819`.
+CMake configuration and all 20 texture test target builds PASSED; editor
+build FAILED (Clang `Renderer3DModels.cpp:2137:26: use of undeclared identifier
+'pipelineMaterialCompatible'`). CTest executed 23 tests: 20 PASS, 3 FAIL:
+`texture_asset` (failed native compressed allocation falls back to RGBA8),
+`virtual_texture_file_streamer` (capture with single-frame budget),
+`virtual_texture_feedback_pass` (shutdown destroys feedback target
+independently of GPU callback). GLSL/MSL feedback shader tests PASSED
+in the baseline run. No GPU-device visual parity was established.
+
+**Source code commits:**
+- `31184ad6ba0b86e611554d5c87c4e05f7b515c0d` —
+  `engine/render/Renderer3DModels.cpp`: the original
+  `pipelineMaterialCompatible` is a lambda local to
+  `prepareGpuModelDraws()`, but the call at line 2137 is in another
+  method. Replace that out-of-scope call with exact graph vs non-graph
+  functions `equivalentGpuIcbGraphPipelineMaterial` and
+  `equivalentGpuIcbPbrPipelineMaterial` for the frozen snapshot and
+  current material. Still rejects incompatible GPU ICB submissions;
+  no new opt-in flags or unchecked pipeline sharing.
+- `a83c2b2644b470b039435d6acecf4699ebc8afb7` —
+  `tests/render/texture_asset.cpp`: reset the injected
+  `dev.failUpload` immediately after the intended mip-upload failure
+  and leak rollback assertion. The later successful BC5 native-failure
+  fallback must not inherit a prior artificial upload failure.
+- `49ada8f7021ed136580c50a3387aeeac4e3c7542` —
+  `tests/render/virtual_texture_file_streamer.cpp`: after extracting
+  the pending callback with `std::move` for a late-after-shutdown
+  delivery fixture, explicitly clear the mock callback member,
+  asserting its pending slot is released. The subsequent reinitialize
+  and next-frame capture should not depend on unspecified state of a
+  moved-from `std::function`.
+- `f51ba98628c65be0e57e4b433e6baf385753698f` and
+  `f269126d3ac950bb01b7ed78e9d083e6f7824306` —
+  `tests/render/virtual_texture_feedback_pass.cpp`: assert
+  `gpu.created == gpu.destroyed` immediately after a deliberately
+  rejected mismatched-config initialization; final shutdown checks
+  no live texture handles, full creation/destruction balance, and
+  at least the two known allocations (failed-init rollback and
+  successful retry). The old literal `destroyed == 1` ignored
+  the earlier valid allocation and rollback, producing a false failure.
+- `2c5544edd6449023d87f020a3fa3bae3f8069b4f` —
+  `docs/texture-rhi.md` describes fixes and unverified status.
+
+**Architecture/API:** one renderer-path compile fix; three
+regression fixture repairs. Public native RHI APIs, ECS, serialized
+asset formats, production async callback lifecycle and material
+fidelity requirements remain unchanged. The renderer still validates
+pipeline equivalence on the GPU-encoded submission path and falls
+back if resource snapshots no longer match.
+
+**Actual verification:** fetched complete current source files in
+GitHub for all four files, inspected control flow and the user's Clang
+and CTest errors, applied exact edits, re-fetched each new blob and
+checked 12/12 static source markers, all present. GitHub accepted all
+source and docs commits.
+
+**Post-fix NOT RUN:** native C++/ObjC++ compiler, editor link,
+CTests including the three failures, GPU capture, image-parity tests,
+memory/performance measurements. The *previous* 20/23 CTest result
+does not verify the new commits. Keep PR #21 Draft.
+
+**Next exact step:** in the **separate** texture-verify worktree,
+execute:
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+bash -n tools/verify-texture-rhi.sh
+bash tools/verify-texture-rhi.sh --editor --jobs 4
+```
+Read `build/texture-rhi/verify-logs/{build.log,ctest.log,summary.txt}`
+if any test fails. Do not enter/modify the primary AIVERSE worktree
+during its unrelated interrupted rebase.
+
