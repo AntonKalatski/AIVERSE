@@ -68,7 +68,7 @@ inline float projectError(float4x4 clip, Node node, Params params) {
         (nearW * (nearW - delta));
     return isfinite(pixels) ? pixels : 1.0e30f;
 }
-inline bool outsideFrustum(float4x4 clip, Node n, bool z01) {
+inline bool outsideFrustum(float4x4 clip, Node n) {
     uint allOutside = 63u;
     for (uint c = 0; c < 8; ++c) {
         float3 p = float3((c & 1) ? n.hi.x : n.lo.x,
@@ -81,7 +81,7 @@ inline bool outsideFrustum(float4x4 clip, Node n, bool z01) {
         if (q.x >  q.w) outside |= 2u;
         if (q.y < -q.w) outside |= 4u;
         if (q.y >  q.w) outside |= 8u;
-        if (q.z < (z01 ? 0.0f : -q.w)) outside |= 16u;
+        if (q.z < -q.w) outside |= 16u; // match current geometryBoxVisible oracle
         if (q.z >  q.w) outside |= 32u;
         allOutside &= outside;
     }
@@ -182,8 +182,7 @@ kernel void cs_main(device const uchar* metadata [[buffer(0)]],
                 continue;
             }
             if (params.frustumCull &&
-                outsideFrustum(objectToClip, node,
-                               params.clipDepthZeroToOne != 0u))
+                outsideFrustum(objectToClip, node))
                 continue;
             if (!node.sourceIndexCount ||
                 primitive.gpuFirstIndex >
