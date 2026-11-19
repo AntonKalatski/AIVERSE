@@ -103,19 +103,14 @@ void Portrait::renderMaterial(RtsView& view, const Json& material, int shape, do
     cam.pitch = 0.42f;
     cam.yaw = 0.6f;
     cam.fovY = 0.6f;
-    sceneView_.beginScene(r3d_,cam, size_, size_);
-    ModelDraw d;
-    d.model = &m;
-    d.world = mat4::rotateY(float(time) * 0.4f);
-    d.materials = &mats_;
-    d.team = {0.8f, 0.1f, 0.08f};
-    ::aiverse::View::submitModel(r3d_,d);
-    gfx::PassDesc pass;
-    pass.colorTarget = color_;
-    pass.depthTarget = depth_;
-    pass.clearColor[0] = 0.16f; pass.clearColor[1] = 0.18f; pass.clearColor[2] = 0.22f; pass.clearColor[3] = 1;
-    r3d_.render(pass);
-    dev_->endPass();
+    ModelDraw draw;
+    draw.model=&m;
+    draw.world=mat4::rotateY(float(time)*0.4f);
+    draw.materials=&mats_;
+    draw.team={0.8f,0.1f,0.08f};
+    // Material authoring remains with the old host, while the GPU
+    // submission and offscreen target live in one generic View path.
+    (void)renderAppearance(draw,cam);
 }
 
 // Canonical View portrait consumer for any native host's fully-authored,
