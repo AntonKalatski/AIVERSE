@@ -36,6 +36,7 @@ public:
 
     ~MaterialsWindow() override { retirePreview(); }
     void retirePreview() {
+        if (!previewInit_) return;
         auto former = std::move(preview_);
         preview_ = std::make_shared<game::Portrait>();
         previewInit_ = false;
