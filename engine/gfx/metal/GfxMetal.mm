@@ -1991,8 +1991,8 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             const auto& snapshot = indirectUniformSnapshots_[slot];
             id<MTLBuffer> stable = resources.uniforms[slot];
             if (!stable || !stable.contents ||
-                (resources.virtualMaterials.empty() || slot!=6) &&
-                    snapshot.size() > stable.length)
+                ((resources.virtualMaterials.empty() || slot!=6) &&
+                 snapshot.size() > stable.length))
                 return reject("uniform snapshot exceeds encoded GPU ICB buffer");
             // U6 for per-command VT is written at preparation into immutable
             // 256-byte aligned slices; never overwrite it with the first
