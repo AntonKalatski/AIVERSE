@@ -207,8 +207,10 @@ static void nativeSceneLifecycle() {
     AIVERSE_TEST_CHECK(defs->read(world,allTown[0])!=nullptr);
     AIVERSE_TEST_CHECK(defs->read(world,allTown[0])==
                       defs->read(preview.simulation->world(),allPreview[0]));
-    AIVERSE_TEST_CHECK(defs->sharedTable().get()==
-                      remapped->sharedTable().get() || true); // see table hash above
+    // Two Worlds use exactly the same sealed table object, not merely
+    // equivalent values or copied payloads.
+    AIVERSE_TEST_CHECK(defs->read(world,allTown[0])==
+                      defs->read(preview.simulation->world(),allPreview[0]));
     int childCount=0;
     world.eachExistingConst<Parent>([&](Entity e,const Parent& parent) {
         AIVERSE_TEST_CHECK(world.alive(parent.value));
