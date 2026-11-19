@@ -7,6 +7,7 @@
 #include "engine/view/ImportedAttachmentAuthoring.h"
 #include "engine/view/AttachmentLayout.h"
 #include "engine/view/EcsAttachmentScene.h"
+#include "engine/view/SceneAttachmentHost.h"
 #include "engine/render/Animation.h"
 #include <algorithm>
 #include <cmath>
@@ -32,6 +33,7 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         bool enabled=true;
         render::mat4 local{};
         render::mat4 childWorld{};
+        std::string id; // optional stable prefab child key
     };
     struct Session {
         std::unique_ptr<render::ModelAssetProvider> provider;
@@ -40,7 +42,7 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         // Cosmetic, source-neutral ECS world, never gameplay Simulation.
         World presentation;
         Entity parentEntity{};
-        view::EcsAttachmentScene::Instance attachments;
+        std::unique_ptr<view::SceneAttachmentHost> attachmentHost;
         std::vector<Registry::Snapshot> children;
     };
 
@@ -105,8 +107,9 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         if(!device_)return false;
         try {
             if(!device_->waitForResourceIdle())return false;
-            view::EcsAttachmentScene::forget(
-                owned->presentation,owned->attachments);
+            if(owned->attachmentHost)
+                owned->attachmentHost->clear();
+            owned->attachmentHost.reset();
             owned->children.clear();
             owned->source.reset();
             owned->registry.reset();
@@ -194,10 +197,10 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         renderer_.beginScene(cam,viewport_.w,viewport_.h);
         Imported::Prepared packet;
         std::string error;
-        const bool ready=view::EcsAttachmentScene::prepare(
-            session_->presentation,session_->attachments,
-            session_->provider->resources(),
-            render::mat4{},packet,&error);
+        const bool ready=session_->attachmentHost &&
+            session_->attachmentHost->prepare(
+                1,"preview",session_->provider->resources(),
+                render::mat4{},packet,&error);
         if(ready) {
             packet.object.id=1; // isolated preview source identity
             packet.object.draw.pose=&previewPose_;
@@ -236,7 +239,7 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         for(const auto& entry:layout.attachments) {
             (void)withinProject(entry.model);
             next.push_back({entry.model,entry.socket,entry.enabled,
-                            entry.local,entry.childWorld});
+                            entry.local,entry.childWorld,entry.id});
         }
         const auto parent=layout.parent.empty()?sourcePath_:layout.parent;
         if(!parent.empty())(void)withinProject(parent);
@@ -253,7 +256,7 @@ class AttachmentAuthoringWindow final : public EditorWindow {
         for(const auto& child:authored_)
             layout.attachments.push_back({
                 child.model,child.socket,child.enabled,
-                child.local,child.childWorld});
+                child.local,child.childWorld,child.id});
         const Json root=view::AttachmentLayoutCodec::write(layout);
         std::ofstream output(path,std::ios::binary|std::ios::trunc);
         if(!output || !(output<<root.dump(2)))
@@ -291,7 +294,7 @@ class AttachmentAuthoringWindow final : public EditorWindow {
             for(const auto& child:authored_) {
                 document.attachments.push_back({
                     child.model,child.socket,child.enabled,
-                    child.local,child.childWorld});
+                    child.local,child.childWorld,child.id});
                 if(!child.enabled)continue;
                 if(child.socket.empty())
                     throw std::invalid_argument("Child socket name must not be empty");
@@ -309,15 +312,19 @@ class AttachmentAuthoringWindow final : public EditorWindow {
                 }
             }
             staged->parentEntity=staged->presentation.create();
+            staged->attachmentHost=
+                std::make_unique<view::SceneAttachmentHost>(
+                    staged->presentation);
             const auto resolver=[&](const std::string& key)->Registry::Snapshot {
                 const auto found=imported.find(withinProject(key));
                 return found==imported.end()?Registry::Snapshot{}:found->second;
             };
-            if(!view::EcsAttachmentScene::publish(
-                   staged->presentation,staged->parentEntity,
-                   document,staged->source,staged->provider->resources(),
-                   resolver,staged->attachments,&error))
-                throw std::runtime_error("ECS attachment publish: "+error);
+            if(!staged->attachmentHost->activate(
+                   {1,"preview"},staged->parentEntity,
+                   view::AttachmentLayoutCodec::write(document),
+                   staged->source,staged->provider->resources(),
+                   resolver,&error))
+                throw std::runtime_error("Scene attachment activate: "+error);
             // All new Models and sockets are ready in a SEPARATE cache.
             // Make publication immediately visible and defer the previous
             // provider's destruction; no full-idle wait on common reimport.
@@ -325,8 +332,9 @@ class AttachmentAuthoringWindow final : public EditorWindow {
             auto old=std::move(session_);
             session_=std::move(staged);
             deferSession(old);
+            const auto* active=session_->attachmentHost->find(1,"preview");
             message_="Published "+
-                     std::to_string(session_->attachments.bindings.children.size())+
+                     std::to_string(active?active->bindings.children.size():0)+
                      " sockets in presentation ECS; retired providers: "+
                      std::to_string(retiredSessions_.size());
         }catch(...) {
@@ -421,6 +429,7 @@ public:
             if(ImGui::Checkbox("Enabled",&child.enabled))dirty_=true;
             if(ui::inputString("Child Model",child.model))dirty_=true;
             if(ui::inputString("Socket",child.socket))dirty_=true;
+            if(ui::inputString("Prefab child ID",child.id))dirty_=true;
             float position[]={
                 child.local.m[12],child.local.m[13],child.local.m[14]};
             if(ImGui::DragFloat3("Socket offset",position,0.01f)) {
@@ -492,10 +501,12 @@ public:
             catch(const std::exception& e) {message_=e.what();}
             ImGui::Text("Published source: %s",
                 sourcePath_.c_str());
+            const auto* active=session_->attachmentHost
+                ?session_->attachmentHost->find(1,"preview"):nullptr;
             ImGui::Text("Presentation ECS children: %zu",
-                session_->attachments.children.size());
+                active?active->children.size():0);
             ImGui::Text("Compiled active sockets: %zu",
-                session_->attachments.bindings.children.size());
+                active?active->bindings.children.size():0);
             ImGui::Text("Retired provider sessions: %zu",
                         retiredSessions_.size());
             ImGui::TextDisabled(
