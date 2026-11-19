@@ -627,6 +627,13 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME resource_retirement_queue COMMAND aiverse_resource_retirement_tests)
 endif()
 if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_model_resource_owner_tests
+        tests/render/model_resource_provider_contract.cpp)
+    target_link_libraries(aiverse_model_resource_owner_tests
+        PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME model_resource_owner_contract COMMAND aiverse_model_resource_owner_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_animation_crowd_tests tests/animation/crowd.cpp)
     target_link_libraries(aiverse_animation_crowd_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_crowd_policy COMMAND aiverse_animation_crowd_tests)
