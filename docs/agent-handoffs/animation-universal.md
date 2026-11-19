@@ -3099,3 +3099,13 @@ before calling this stage validated.
 - ModelView's existing Animator remains the ONLY pose evaluator. Each draw uses `ImportedAttachmentAuthoring::prepare(...,HostPrecomputed)`, frame-local ModelReadLeases for real parent/child Models, host pose/node matrices and generic `View::submitOne`. The Model provider owns GPU memory; detach removes scene composition but does not prematurely release resident GPU Models. Generated visual IDs are unique per viewer instance. ModelView's legacy non-attachment path and Gallery remain unchanged.
 - **Limitations:** this is ModelView authoring, NOT full Studio Modeling/Graph/Rig integration. Rebuild only recompiles CURRENT resident cached Models, not changed on-disk Model bytes. Actual native compiler, CMake/CTest, running ModelView screenshots, Metal/Vulkan/GLES, GPU retirement tests and performance/sanitizers remain **NOT RUN**. PR #22 stays Draft; no feature freeze/merge claim.
 - **Next Stage 155:** Studio adoption using a proven native Model owner, and hot source-file reimport with scoped CPU leases + GPU retirement; continue generic Morph/LOD/retarget closure before the agreed one-pass Mac tests. Maintain standalone handoffs and user-visible status tables.
+
+
+## 2026-11-20 — Prisma/MotionWeave merge checkpoint
+
+Integration branch `integration/prisma-motionweave-view`; merge `fc46059ee6523cbc1f04f8c412d44e4fdae9398a`.
+See [complete merge handoff](../handoffs/prisma-stage-82-motionweave-merge-completed.md).
+Existing 21 resolutions preserved, final 10 reconciled; one Prisma postprocess
+owner and one editor viewport target owner, both animation playback APIs and GPU
+fence/retirement lifetimes retained. Build/CTest/GPU: **NOT RUN**, user requested
+merge only. Remote documentation and latest MotionWeave merge/push remain next.

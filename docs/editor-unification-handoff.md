@@ -2054,3 +2054,13 @@ After EVERY stage or substantial commit, update the sections above **and append*
 ### 2026-11-18 — Mac Studio CTest 106/106 PASS, extras unverified
 - Owner's uploaded `configure(3).log`, `build(3).log`, `ctest(2).log`, JUnit XML and `summary(3).txt` confirm local tested SHA `dd711f5e`: configure/build PASS, CTest 106 passed / 0 failed in 869.69s. All previous seven CTest failures are resolved. Current incremental build log has no warning/error diagnostics; not evidence for a clean rebuild.
 - Summary ends immediately after `PASS ctest`; standalone `extra-*` results **NOT VERIFIED**. No game or test code changes. See `docs/agent-handoffs/unified-test-runner.md` for exact evidence and next validation.
+
+
+## 2026-11-20 — Prisma/MotionWeave merge checkpoint
+
+Integration branch `integration/prisma-motionweave-view`; merge `fc46059ee6523cbc1f04f8c412d44e4fdae9398a`.
+See [complete merge handoff](../handoffs/prisma-stage-82-motionweave-merge-completed.md).
+Existing 21 resolutions preserved, final 10 reconciled; one Prisma postprocess
+owner and one editor viewport target owner, both animation playback APIs and GPU
+fence/retirement lifetimes retained. Build/CTest/GPU: **NOT RUN**, user requested
+merge only. Remote documentation and latest MotionWeave merge/push remain next.
