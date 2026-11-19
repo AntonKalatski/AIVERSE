@@ -9,13 +9,15 @@ build="${AIVERSE_TEXTURE_BUILD_DIR:-$repo/build/texture-rhi}"
 jobs="${AIVERSE_TEXTURE_JOBS:-4}"
 want_editor=0
 want_vulkan=0
+want_metal=0
 cmake_flags=()
 
 usage() {
     cat <<'USAGE'
-Usage: tools/verify-texture-rhi.sh [--editor] [--vulkan] [--jobs N] [--build-dir PATH] [-DCMAKE_VAR=value ...]
+Usage: tools/verify-texture-rhi.sh [--editor] [--vulkan] [--metal] [--jobs N] [--build-dir PATH] [-DCMAKE_VAR=value ...]
   --editor    Build aiverse_editor after focused CPU tests
   --vulkan    Build aiverse_vulkan_tests and run vulkan_backend (inspect skips)
+  --metal     Build and RUN native Metal Texture3D/array/cube GPU readbacks (macOS only)
   --jobs N    Parallel compilation tasks (default 4)
   --build-dir PATH  Independent CMake build directory
 Outputs: <build-dir>/verify-logs/{configure,build,ctest,summary}.log/txt
@@ -26,6 +28,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --editor) want_editor=1; shift ;;
         --vulkan) want_vulkan=1; shift ;;
+        --metal) want_metal=1; shift ;;
         --jobs)
             [[ $# -ge 2 ]] || { echo "--jobs requires a value" >&2; exit 2; }
             jobs="$2"; shift 2 ;;
@@ -39,6 +42,11 @@ while [[ $# -gt 0 ]]; do
 done
 if ! [[ "$jobs" =~ ^[0-9]+$ ]] || [[ "$jobs" -lt 1 ]]; then
     echo "--jobs must be a positive integer" >&2
+    exit 2
+fi
+
+if [[ "$want_metal" -eq 1 && "$(uname -s)" != "Darwin" ]]; then
+    echo "--metal requires macOS with a native Metal GPU" >&2
     exit 2
 fi
 
@@ -91,6 +99,7 @@ targets=(
 )
 if [[ "$want_editor" -eq 1 ]]; then targets+=(aiverse_editor); fi
 if [[ "$want_vulkan" -eq 1 ]]; then targets+=(aiverse_vulkan_tests); fi
+if [[ "$want_metal" -eq 1 ]]; then targets+=(aiverse_metal_texture_gpu_test); fi
 
 failures=0
 for target in "${targets[@]}"; do
@@ -146,8 +155,26 @@ if [[ "$want_vulkan" -eq 1 ]]; then
     echo "VULKAN NOTE: CTest may return success while a missing GPU driver causes a skip." | tee -a "$summary"
     echo "VULKAN NOTE: Read $logs/ctest.log and confirm real Vulkan rendering/readbacks." | tee -a "$summary"
 fi
+# Separate fail-closed opt-in CTest GPU gate. --no-tests=error prevents
+# missing test registration from masquerading as a successful run.
+if [[ "$want_metal" -eq 1 ]]; then
+    echo "Running native Metal GPU acceptance... (see $logs/metal-gpu.log)"
+    ctest --test-dir "$build" --output-on-failure --no-tests=error \
+        -R '^metal_texture_gpu$' >"$logs/metal-gpu.log" 2>&1
+    metal_status=$?
+    if [[ "$metal_status" -eq 0 ]]; then
+        echo "METAL GPU PASS (inspect real readback evidence)" | tee -a "$summary"
+    else
+        echo "METAL GPU FAIL (exit $metal_status; see $logs/metal-gpu.log)" | tee -a "$summary"
+        failures=$((failures+1))
+    fi
+fi
 if [[ "$failures" -gt 0 ]]; then
     echo "OVERALL FAIL: $failures build/test gates failed" | tee -a "$summary"
     exit 1
 fi
-echo "OVERALL SOURCE TESTS PASS (GPU validation remains separate)" | tee -a "$summary"
+if [[ "$want_metal" -eq 1 ]]; then
+    echo "OVERALL SOURCE AND METAL TEXTURE GPU TESTS PASS (other GPU validation remains separate)" | tee -a "$summary"
+else
+    echo "OVERALL SOURCE TESTS PASS (GPU validation remains separate)" | tee -a "$summary"
+fi
