@@ -219,7 +219,7 @@ struct DiskFixture {
 
 constexpr gfx::VirtualPageKey coarse(int side) {return {2,0,0,side};}
 constexpr gfx::VirtualPageKey missing(int side) {return {0,2,1,side};}
-constexpr gfx::VirtualPageKey detail(int side) {return {0,3,1,side};}
+constexpr gfx::VirtualPageKey finePageKey(int side) {return {0,3,1,side};}
 using Pixel=std::array<uint8_t,4>;
 
 void validateTable(gfx::VirtualTextureFileStreamer& stream,int side,
@@ -384,7 +384,7 @@ int aiverseMain(int,char**) {
         check(disk.write(side,coarse(side),side==0?
               Pixel{22,185,35,255}:Pixel{35,65,210,255}),
               "known coarse disk page written");
-        check(disk.write(side,detail(side),side==0?
+        check(disk.write(side,finePageKey(side),side==0?
               Pixel{245,25,30,255}:Pixel{225,215,15,255}),
               "known fine disk page written");
         // Intentionally DO NOT write missing(side): the async worker must
@@ -487,7 +487,7 @@ int aiverseMain(int,char**) {
             check(stream.ready() && stream.exactResidentPage(coarse(side)) &&
                   stream.stats().pages.pinned==1,
                   "pinned coarse survives missing page and fine residency");
-            check(stream.exactResidentPage(detail(side))==detailed,
+            check(stream.exactResidentPage(finePageKey(side))==detailed,
                   "exact tile (3,1) residency matches phase");
             validateTable(*streams[size_t(side)],side,
                           detailed?Pixel{1,0,0,255}:Pixel{0,0,2,255},
@@ -520,7 +520,7 @@ int aiverseMain(int,char**) {
             std::printf("MISSING PAGE ORACLE coarse changed_channels=%zu\n",change);
             check(change==0,"missing page cannot change pinned coarse shading");
             validateCoarse(false);
-            request(detail,false,"queue fine tile (3,1) disk page");
+            request(finePageKey,false,"queue fine tile (3,1) disk page");
             phase=Phase::WaitFine;
         } else {
             validateCoarse(true);
@@ -575,7 +575,7 @@ int aiverseMain(int,char**) {
             for(int side=0;side<2;++side) {
                 auto& stream=*streams[size_t(side)];
                 if(phase==Phase::WaitCoarse && !stream.exactResidentPage(coarse(side)))ready=false;
-                if(phase==Phase::WaitFine && !stream.exactResidentPage(detail(side)))ready=false;
+                if(phase==Phase::WaitFine && !stream.exactResidentPage(finePageKey(side)))ready=false;
                 if(phase==Phase::WaitMissing && !missingFailed[size_t(side)])ready=false;
             }
             if(ready) {
