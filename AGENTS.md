@@ -169,6 +169,17 @@ and the MDI pipeline still validates full material and geometry state.
 The group-order scratch vector is reused and included in retained memory;
 `staticCrossModelRankedGroups` reports ranked groups, **not draw calls**.
 Do not cache these ranks across passes or change transparency ordering.
+ Stage 32 annotates the Stage 31 read-only CPU rolling summary with
+ conservative P95 variability warnings: at least 30 eligible samples,
+ P95 >= 0.25 ms, absolute excess over mean >= 0.15 ms, and P95 at
+ least 1.8x mean. Evaluate this only on summary/UI read; do NOT scan,
+ allocate, sort or classify spikes in the render hot path. Metric 0
+ is the overlapping full model pass and must NOT be named as an MDI
+ stage. DominantStage is chosen only from indices 1..7; if only
+ total varies say the source is unassigned. Label all warnings as
+ possible CPU latency variability, NOT a measured regression, FPS
+ loss or GPU time. Continue to keep full scene history invalidation,
+ genre independence and stage handoff. Metal/Vulkan validation remains.
  Stage 31 retains the last 120 Stage 30 CPU MDI pass-timing samples
  for shadow and main opaque in a renderer-owned fixed ring OUTSIDE
  `ModelRenderStats`. Per-pass samples are deltas against the existing

@@ -731,13 +731,37 @@ private:
                                     "Candidate scan", "Command packing", "Pipeline setup",
                                     "Buffer upload", "Backend submit"
                                 };
+                                if (!rolling.hasBaseline) {
+                                    ImGui::TextDisabled("  Spike detection collecting baseline: %zu/%zu samples",
+                                        rolling.samples, ed.renderer().kCpuMdiSpikeMinSamples);
+                                } else if (rolling.dominantStage >= 0) {
+                                    const size_t dominant = size_t(rolling.dominantStage);
+                                    ImGui::TextColored(ImVec4(1.0f, 0.69f, 0.32f, 1.0f),
+                                        "  CPU P95 spike candidate: %s (%.3f ms above mean, %zu flagged stages)",
+                                        metrics[dominant], rolling.dominantExcessMs,
+                                        rolling.highlightedStages);
+                                } else if (rolling.spike[0]) {
+                                    ImGui::TextColored(ImVec4(1.0f, 0.69f, 0.32f, 1.0f),
+                                        "  Total model-pass CPU P95 varies; no individual MDI stage crossed the threshold.");
+                                } else {
+                                    ImGui::TextDisabled("  No P95 CPU spike candidates in the sampled stages.");
+                                }
                                 for (size_t metric = 0; metric < rolling.meanMs.size(); ++metric) {
-                                    ImGui::Text("    %s: %.3f / %.3f ms",
-                                        metrics[metric], rolling.meanMs[metric],
-                                        rolling.p95Ms[metric]);
+                                    if (rolling.spike[metric]) {
+                                        ImGui::TextColored(ImVec4(1.0f, 0.69f, 0.32f, 1.0f),
+                                            "    %s: %.3f / %.3f ms [P95 variability]",
+                                            metrics[metric], rolling.meanMs[metric],
+                                            rolling.p95Ms[metric]);
+                                    } else {
+                                        ImGui::Text("    %s: %.3f / %.3f ms",
+                                            metrics[metric], rolling.meanMs[metric],
+                                            rolling.p95Ms[metric]);
+                                    }
                                 }
                             }
                         }
+                        ImGui::TextDisabled("Spike heuristic: >=30 samples; P95 >=0.25 ms, >=mean+0.15 ms, >=1.8x mean.");
+                        ImGui::TextDisabled("Highlights CPU timing variability, not GPU stalls or confirmed regressions.");
                         ImGui::TextDisabled("Synchronous CPU time only; overlapping totals are not additive.");
                         ImGui::TextDisabled("P95 is nearest-rank over eligible model-pass samples, not whole frames.");
                         ImGui::TextDisabled("Profile is per beginScene view; reflections and auxiliary passes excluded.");

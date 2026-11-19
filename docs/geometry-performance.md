@@ -1084,3 +1084,43 @@ memory bandwidth, GPU synchronization or batching behavior changes.
 
 **Build/CTest/Metal/Vulkan visual and CPU/GPU A/B/A validation:
 NOT RUN**, per feature-first direction.
+
+### Automatic P95 CPU MDI variability warnings (Stage 32)
+
+`Renderer3D::cpuMdiRollingSummary(phase)` now classifies **potential
+intermittent CPU latency spikes** during the existing read-only
+Stage 31 mean/P95 computation. It is a conservative **heuristic**:
+wait until at least **30** eligible model-pass samples, and flag a metric
+only when its nearest-rank `P95 >= 0.25 ms`,
+`P95 - mean >= 0.15 ms`, and `P95 >= 1.8 * mean`.
+All three numerical conditions must hold. The first 30 samples are a
+warm-up baseline, not a guaranteed stable workload; slowly changing
+cameras or editor operations can still produce legitimate variation.
+
+The summary exposes `hasBaseline`, `spike[8]`,
+`highlightedStages`, `dominantStage` and
+`dominantExcessMs`. Metric index 0 is **total model-pass CPU time**,
+including conventional instancing/fallback; indexes 1–7 are tracked
+sub-stages. `highlightedStages` excludes overlapping total;
+`dominantStage` selects the flagged sub-stage with the largest
+absolute `P95 - mean` difference, breaking ties by existing metric
+order. If only the total pass varies, the UI explicitly says no
+individual MDI stage crossed the threshold, avoiding false attribution.
+
+Studio Scene → Batching → Instancing and indirect details → CPU MDI
+stage timings now highlights flagged rows in warm warning text and
+shows the highest-excess stage, sample count, and threshold
+explanation for **Sun shadow** and **Main opaque** independently.
+Before 30 measurements it shows progress toward the baseline.
+The existing `Profile Scene renderer` toggle still gates collection;
+turning it off pauses history. No new per-draw timestamps, dynamic
+allocations, GPU readbacks or extra sorting are added to the render
+loop; classification runs only when a rolling summary is requested.
+Scene invalidation/shutdown still clears history as in Stage 31.
+
+Warnings identify **CPU P95 variability**, not proven bottlenecks,
+regressions, GPU stalls, FPS loss or hardware time. Their thresholds
+are diagnostic defaults, not optimization budgets, and a stable slow
+stage will not be classified as a spike by this method. **Native
+compile/CTest, Metal and Vulkan correctness, GPU parity and real
+CPU/GPU timing A/B/A: NOT RUN** under feature-first priority.

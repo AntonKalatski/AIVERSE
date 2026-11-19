@@ -93,6 +93,27 @@ Renderer3D::CpuMdiRollingSummary Renderer3D::cpuMdiRollingSummary(
         result.meanMs[metric] = sum / double(result.samples);
         result.p95Ms[metric] = sorted[rank];
     }
+    // Variance diagnosis runs on the same explicit summary/UI read as
+    // Stage 31's bounded sorting, never in the renderer hot loop. A high
+    // P95 only indicates intermittent CPU latency, not a regression.
+    result.hasBaseline = result.samples >= kCpuMdiSpikeMinSamples;
+    if (result.hasBaseline) {
+        for (size_t metric = 0; metric < result.spike.size(); ++metric) {
+            const double excess = result.p95Ms[metric] - result.meanMs[metric];
+            result.spike[metric] =
+                result.p95Ms[metric] >= kCpuMdiSpikeMinP95Ms &&
+                excess >= kCpuMdiSpikeMinExcessMs &&
+                result.p95Ms[metric] >=
+                    result.meanMs[metric] * kCpuMdiSpikeP95ToMeanRatio;
+            if (metric > 0 && result.spike[metric]) {
+                ++result.highlightedStages;
+                if (excess > result.dominantExcessMs) {
+                    result.dominantStage = int(metric);
+                    result.dominantExcessMs = excess;
+                }
+            }
+        }
+    }
     return result;
 }
 

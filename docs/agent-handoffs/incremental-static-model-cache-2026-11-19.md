@@ -963,3 +963,28 @@ This does not change render order, LOD, material checks, indirect command ABI, E
 ### Next exact action
 
 Feature-first option: add spike/threshold highlighting using the rolling P95 and count when profiling is explicitly on, without conflating model-pass CPU times with GPU times or treating a threshold as a benchmark. When changing to test phase, reconcile stale Stage 10/11/13 test expectations, add 120-sample wrap/eviction/empty/inactive/scene-clear and P95 nearest-rank cases, verify backend parity and run the dense-city fixed-camera A/B/A before merging.
+
+---
+
+## Stage 32 — automatic P95 CPU MDI spike candidate highlighting (2026-11-19)
+
+**Repo/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`; Draft PR #34, not merged. Before work `main=9ee6ff6fbf390bd45363bc92c838f492dfe92eee`, feature HEAD `311e84c879d2a604a53419de0d99feac851ca952`, `main...feature behind=0`; no main merge required. User continues **features first, tests later**.
+
+### Changes, architecture and API
+
+- `engine/render/Renderer3D.h`: extends the Stage 31 `CpuMdiRollingSummary` with `spike[8]`, `highlightedStages`, `dominantStage` (1–7 or -1), `dominantExcessMs` and `hasBaseline`. Adds four compile-time diagnostics thresholds: `kCpuMdiSpikeMinSamples=30`, `kCpuMdiSpikeMinP95Ms=0.25`, `kCpuMdiSpikeMinExcessMs=0.15`, `kCpuMdiSpikeP95ToMeanRatio=1.8`. No change to ring storage or renderer hotpath.
+- `engine/render/Renderer3DModels.cpp`: during the existing read-only `Renderer3D::cpuMdiRollingSummary(phase)` call, *after* Stage 31 mean/P95 calculations, flags a CPU stage only when enough samples exist and **all three** P95 magnitude / excess / ratio conditions hold. Detects total model-pass wall-time variation independently; index 0 is excluded from `highlightedStages` and `dominantStage` to prevent falsely blaming MDI for ordinary draw-call work. Chooses the flagged sub-stage with largest absolute excess, retaining natural stage-index tie order.
+- `apps/editor/windows/SceneWindow.cpp`: under Scene → Batching → Instancing and indirect details → CPU MDI stage timings, shows sample collection progress until 30 samples, then either no spike warning, per-stage warm-colored P95 variability warnings with top candidate, or a total-only warning without incorrectly attributing it to indirect stages. Displays all original mean/P95 values and the diagnostic thresholds for shadow and main opaque. The existing opt-in `Profile Scene renderer` still controls measurement and history writes.
+- `docs/geometry-performance.md`, `AGENTS.md` and this handoff document exact changes, restrictions, verification and next step.
+
+### Interpretation, safety and non-goals
+
+This is a **heuristic CPU P95 variability indicator**, not objective evidence of a regression, slow GPU, bad frame time, sustained expensive work or required optimization. A stage with consistently high CPU time but no P95 excursion will not flag; workloads with camera movements/editor actions may legitimately vary. The initial >=30-sample guard reduces first-frame noise but does not guarantee stationarity. No new runtime timestamps, allocations or GPU operations are performed by renderModels; classification runs only on the same bounded read-only UI summary query. History and full scene invalidation remain exactly as Stage 31. ECS/genre independence, render order, GPU resource ownership and indirect command compatibility unchanged. Experimental flags are OFF by default.
+
+### Verification actually performed
+
+GitHub connector re-fetched main ancestry, Stage 31 summary code and Studio UI, applied exact unique modifications, and checked source invariants prior to commit. **Native CMake: NOT RUN. CTest: NOT RUN. Metal/Vulkan raster parity: NOT RUN. GPU device validation: NOT RUN. Fixed-camera CPU/GPU A/B/A: NOT RUN.** No claim of compilation or measured speedup; PR #34 remains Draft.
+
+### Next action
+
+When switching to tests, validate threshold boundaries (29 vs 30 samples; exactly 0.25 ms P95 / 0.15 ms excess / 1.8x ratio), stable-high stages, total-only spikes, dominant-stage tie behavior, wrap at 120 observations, disabled profiling, view separation, and scene-invalidation reset. Then reconcile older Stages 10/11/13 policy fixtures and perform Metal/Vulkan visual parity and balanced CPU/GPU performance A/B/A before enabling or merging. If more features are desired first, the next useful addition is identifying sustained CPU bottlenecks separately from P95 spikes, without using those classifications for automatic batch control.

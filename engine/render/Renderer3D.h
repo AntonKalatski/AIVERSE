@@ -489,6 +489,13 @@ public:
     bool modelMultiDrawSupported() const { return dev_ && dev_->supportsMultiDrawIndirect(); }
     const ModelRenderStats& modelStats() const { return modelStats_; }
     static constexpr size_t kCpuMdiRollingWindow = 120;
+    // Diagnostic heuristic, not a performance target. Require enough
+    // samples and both relative and absolute P95 excursion to avoid
+    // alarming about nanosecond-scale noise on otherwise quiet stages.
+    static constexpr size_t kCpuMdiSpikeMinSamples = 30;
+    static constexpr double kCpuMdiSpikeMinP95Ms = 0.25;
+    static constexpr double kCpuMdiSpikeMinExcessMs = 0.15;
+    static constexpr double kCpuMdiSpikeP95ToMeanRatio = 1.8;
     // The eight independent CPU durations are: total model pass,
     // visibility selection, material grouping+sort, candidate scanning,
     // CPU command packing, pipeline setup, indirect buffer update, backend
@@ -498,6 +505,13 @@ public:
         size_t samples = 0;
         std::array<double, 8> meanMs{};
         std::array<double, 8> p95Ms{};
+        // Index 0 is total model-pass wall time; indexes 1..7 are the
+        // specific CPU stages. Total may spike without any tracked stage.
+        std::array<bool, 8> spike{};
+        size_t highlightedStages = 0; // excludes overlapping total
+        int dominantStage = -1;       // 1..7, -1 if none
+        double dominantExcessMs = 0.0;
+        bool hasBaseline = false;     // at least 30 eligible samples
     };
     CpuMdiRollingSummary cpuMdiRollingSummary(size_t phase) const;
     // Read-only history reset for a new world/scene. Does not touch any
