@@ -6,6 +6,7 @@
 #include "engine/world/TerraWeaveNereidObstacleBridge.h"
 #include <functional>
 #include <span>
+#include <set>
 #include <stdexcept>
 #include <utility>
 
@@ -60,6 +61,27 @@ inline SlopePhysicsEvents applySlideAndTreePhysics(
             ++result.fallenPlantsCreated;
     }
     return result;
+}
+
+// Call after the completed Stage67 ECS decay tick on the Box3D owner
+// thread. Fully rotten deadwood cannot remain a solid collidable log. The
+// physics owner should then recapture the existing FallenNavigationSnapshot,
+// mark changed rectangles dirty and refresh NEREID flow obstructions.
+inline size_t removeFullyDecayedFallenBodies(
+        const terraweave::ForestDeadwoodDecayOutcome& decay,
+        terraweave::FallenPlantPhysics& falling) {
+    if(decay.fullyDecayed.size()>
+       terraweave::ForestDeadwoodDecaySettings{}.maxLogsPerStep &&
+       decay.fullyDecayed.size()>1024)
+        throw std::length_error("TerraWeave deadwood cleanup budget");
+    std::set<terraweave::AnchoredPlantId> unique;
+    for(const auto& id:decay.fullyDecayed)
+        if(!id.key || !id.speciesId || !unique.insert(id).second)
+            throw std::invalid_argument("TerraWeave duplicate decay cleanup");
+    size_t removed=0;
+    for(const auto& id:unique)
+        if(falling.erase(id,nullptr,false))++removed;
+    return removed;
 }
 
 // After authoritative Box3D::step(), before NEXT NEREID ECS water sample.
