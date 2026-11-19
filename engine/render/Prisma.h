@@ -251,7 +251,7 @@ public:
         bool pipelinePrepared = false; // cached RHI handle, not device validation
         bool encoded = false;        // an applicable pass actually issued draw(s)
         bool degraded = false;       // encoded but had to use a lower-quality fallback
-        std::string reason;          // skipped/degraded explanation, empty if encoded
+        std::string reason;          // skip/degraded explanation; empty for full-success
     };
     struct ViewEffectReport {
         uint64_t viewId = 0;
