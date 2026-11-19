@@ -47,7 +47,14 @@ private:
     // Stored per instance, not inferred from a fixed human head preset.
     render::float3 scalpRadii_{0.72f,0.90f,0.75f};
     struct CollisionTriangle {render::float3 a,b,c;};
+    struct CollisionNode {
+        render::float3 min{},max{};
+        std::uint32_t left=0,right=0,begin=0,count=0;
+    };
     std::vector<CollisionTriangle> collisionTriangles_;
+    std::vector<std::uint32_t> collisionOrder_;
+    std::vector<CollisionNode> collisionNodes_;
+    static constexpr std::uint32_t kCollisionLeafSize=8;
     render::float3 resolveCollision(render::float3 p,
                                     const GroomGuide& guide) const;
     float lastStepMs_=0;
