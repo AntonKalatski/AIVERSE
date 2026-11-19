@@ -317,6 +317,40 @@ public:
     // Opaque custom renderers (terrain): run first in the main pass, before meshes and models, so
     // translucent meshes (water) blend over them. Same lifetime rules as drawCustom.
     void drawCustomOpaque(CustomDraw fn) { customOpaque_.push_back(std::move(fn)); }
+    // Per-scene feedback producers for terrain, foliage and procedural
+    // renderers that do not use the immediate Mesh queue. Each producer
+    // binds its own compatible feedback pipeline, geometry and uniforms.
+    // Unlike the main scene's CustomDraw, these callbacks execute only
+    // when renderVirtualTextureFeedback() is explicitly invoked.
+    using FeedbackCustomDraw = std::function<bool(gfx::Device&)>;
+    void drawCustomFeedback(FeedbackCustomDraw fn) {
+        if (fn) customFeedback_.push_back(std::move(fn));
+    }
+
+    // Must be called after beginScene/geometry submission and outside
+    // any render pass. This combines the regular opaque mesh queue with
+    // custom terrain/foliage feedback producers in one depth-tested pass.
+    // ModelItem geometry still requires its own feedback bridge.
+    bool renderVirtualTextureFeedback(
+        gfx::VirtualTextureFeedbackPass& pass,
+        gfx::PipelineHandle meshPipeline,
+        const FeedbackMeshBinder& bind) {
+        std::vector<gfx::VirtualTextureFeedbackDraw> meshes;
+        if (!collectMeshFeedbackDraws(meshes,meshPipeline,bind)) return false;
+        return pass.renderAndCapture([&](gfx::Device& device) {
+            for (const auto& draw : meshes) {
+                device.setPipeline(draw.pipeline);
+                device.setVertexBuffer(draw.vertexBuffer,draw.vertexOffset);
+                device.setIndexBuffer(draw.indexBuffer,draw.indexOffset);
+                if (draw.prepare && !draw.prepare(device)) return false;
+                device.drawIndexed(draw.count,draw.first,draw.baseVertex,draw.instances);
+            }
+            for (const auto& custom : customFeedback_)
+                if (!custom(device)) return false;
+            return true;
+        });
+    }
+
     // Extra shadow casters (sprites): run inside the sun shadow pass (only when shadows are on) with
     // the target bound; draw depth with lightViewProj(). Same lifetime rules as drawCustom.
     void drawCustomShadow(CustomDraw fn) { customShadow_.push_back(std::move(fn)); }
@@ -507,6 +541,7 @@ private:
     std::vector<DrawItem> items_;
     std::vector<ColorVertex> lines_, tris_;
     std::vector<CustomDraw> custom_, customOpaque_, customShadow_;
+    std::vector<FeedbackCustomDraw> customFeedback_;
     RTSCamera cam_;
     mat4 viewProj_, lightViewProj_;
     float3 camPos_;
