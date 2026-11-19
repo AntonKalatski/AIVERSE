@@ -270,6 +270,11 @@ void GameClient::configurePrisma(const Json& map) {
 
 void GameClient::startMatch(size_t idx, const Json& initialVars) {
     if (idx >= maps_.size() || netMatch_) return;
+    // A new map/game is a camera cut. Retire the old view's private
+    // exposure + motion history without releasing shared render sizes.
+    prisma_.retireView(3ULL);
+    r3d_.retireObjectMotionView(3ULL,
+        dev_ ? dev_->gpuSubmissionFence() : 0);
     std::string text;
     if (!platform::readContentFile(maps_[idx].file, text)) { error_ = "map not found: " + maps_[idx].file; return; }
     Json map;
@@ -966,6 +971,10 @@ void GameClient::runViewScripts(float dt) {
 }
 
 void GameClient::frame(gfx::Device& dev, double dt) {
+    // Even on menus/loading screens there may be previous per-view motion
+    // textures awaiting the GPU completion fence from an old match.
+    prisma_.collectGpuRetirements();
+    r3d_.collectCompletedObjectMotion(dev.gpuCompletedFence());
     const auto frameStarted = std::chrono::steady_clock::now();
     if (mapLoading_) { frameMapLoading(dev, dt); return; }
     if (mapJustLoaded_) { dt = 0; mapJustLoaded_ = false; }
