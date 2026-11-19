@@ -231,7 +231,8 @@ public:
     void drawNereidRippleMesh(const Mesh& mesh,const mat4& model,float4 color,
                               float specular,float refraction,
                               const std::array<float4,16>& ripples,
-                              uint32_t firstIndex=0,uint32_t indexCount=0);
+                              uint32_t firstIndex=0,uint32_t indexCount=0,
+                              const std::array<float4,16>& wakeShapes={});
     // Editor Scene only: render selected geometry into a depth-tested mask
     // and composite its exterior silhouette in screen pixels.
     void setSceneSelectionOutline(bool enabled) { sceneSelectionOutline_ = enabled; }
@@ -405,6 +406,7 @@ private:
         uint32_t flags; float specular, emissive;
         float4 selection{0, 0, 0, 0};
         std::array<float4,16> waterRipples{};
+        std::array<float4,16> waterWakeShapes{};
         uint32_t waterFirstIndex=0,waterIndexCount=0;
     };
     struct ModelItem {
