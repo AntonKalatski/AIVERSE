@@ -802,3 +802,18 @@ and never run presentation ECS mutation during MotionWeave worker
 dispatch. This is not a simulation snapshot or authority transfer.
 **NOT RUN:** build, CTest, GPU editor, FPS/RTS visual parity, sanitizers.
 See [Stage 119 handoff](agent-handoffs/animation-stage119-playback-continuity-2026-11-19.md).
+
+## Stage 120 — canvas lifetime remains outside MotionWeave ECS
+
+Stage 120 changes `RenderTexture` and the generic GPU resource
+retirement owner used for native canvases and view paint layers.
+Its GPU buffers, textures and shader programs retire via GPU
+completion tokens at host frame boundaries. No AnimationGraph
+parameters, source generations, pose evaluators, montage players,
+root-motion authority or MotionWeave scheduler clocks were changed.
+
+Compatible hot-reload playback introduced in Stage 119 remains
+presentation-only. Canvas owner source changes are independent
+from those graph/model generation semantics. **NOT COMPILED OR
+TESTED** for this Stage 120.
+See [Stage 120 handoff](agent-handoffs/animation-stage120-canvas-gpu-retirement-2026-11-19.md).
