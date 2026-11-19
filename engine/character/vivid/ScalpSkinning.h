@@ -73,9 +73,22 @@ public:
                 // be rejected instead of silently mis-skinning the vertex.
                 auto& vertex=out.vertices_[std::size_t(local)];
                 if(assigned[std::size_t(local)]) {
-                    // Identical vertex sharing across triangles is normal;
-                    // palette consistency is checked using a per-vertex
-                    // palette signature below.
+                    // A shared vertex is only safe if every nonzero
+                    // influence still resolves to the same joint nodes.
+                    const auto& src=model.vertices[source];
+                    std::size_t influence=0;
+                    for(int j=0;j<4;++j) {
+                        if(!src.weights[j])continue;
+                        const auto slot=std::size_t(src.joints[j]);
+                        if(slot>=primitive.jointPalette.size())
+                            throw std::invalid_argument("VIVID scalp skin: inconsistent palette slot");
+                        const auto jointId=std::size_t(primitive.jointPalette[slot]);
+                        if(jointId>=skin.joints.size() ||
+                           influence>=vertex.count ||
+                           skin.joints[jointId]!=int(vertex.weights[influence].joint))
+                            throw std::invalid_argument("VIVID scalp skin: conflicting shared vertex palettes");
+                        ++influence;
+                    }
                     continue;
                 }
                 const auto& src=model.vertices[source];
