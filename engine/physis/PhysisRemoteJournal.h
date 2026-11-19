@@ -38,6 +38,10 @@ public:
     static constexpr std::uint32_t kJournalMagic=0x4a485950u;
     static constexpr std::uint16_t kJournalVersion=1;
     static constexpr std::size_t kMaxDiskBytes=16u*1024u*1024u;
+#ifndef _WIN32
+    static_assert(kMaxDiskBytes==posix_journal::kMaxJournalBytes,
+                  "PHYSIS journal serialization and POSIX I/O bounds must match");
+#endif
     explicit FileJournal(std::filesystem::path file):file_(std::move(file)){}
     const std::filesystem::path& path() const {return file_;}
 
