@@ -217,7 +217,7 @@ void TerrainRenderer::loadTextures(gfx::Device&) {
             layerNormalAtlas_=dev_->createTexture(td);
             if (layerNormalAtlas_.valid()) {
                 layerNormalAtlasSize_=tile;
-                std::fprintf(stderr,"[terrain] GL33 layer normal atlas %dx%d, four source normals\\n",
+                std::fprintf(stderr,"[terrain] GL33 layer normal atlas %dx%d, four source normals\n",
                              extent,extent);
             }
         }
