@@ -966,3 +966,16 @@ The earlier independent 512 MiB *per-mip* bound remains in place.
 The registered `texture_asset` CTest now includes cumulative-budget
 boundary cases; their C++ execution is **NOT RUN** in this environment.
 Do not infer native GPU decode safety or production readiness from source.
+
+
+## Stage 10AR — sequential CPU mip uploads
+
+The generic container uploader now decodes/uploads CPU fallback mip levels
+sequentially rather than retaining every mip in RAM. The complete *logical*
+chain is preflighted against `maxCpuDecodedBytes` first, so reduced peak
+memory does not remove the source asset's safety budget. Each mip still
+contains every array face/layer and 3D depth slice. If a later level cannot
+be decoded or uploaded, the helper destroys the partially initialized GPU
+texture before returning invalid. The RHI synchronous source-byte copy
+contract is required. Actual C++/GPU tests of this refactor are NOT RUN.
+
