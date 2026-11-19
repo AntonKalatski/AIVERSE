@@ -115,6 +115,13 @@ private:
     render::SpriteBatch* emittingBatch_ = nullptr;
     std::vector<PreparedSprite> preparedSprites_;
     bool replayingPrepared_ = false;
+    // Reuse the most recent secondary geometry when another camera differs
+    // only by translation/projection. The last renderer still supplies its
+    // own view-projection, light map, and post-processing.
+    bool secondaryGeometryValid_ = false;
+    render::float3 secondaryRight_{}, secondaryUp_{}, secondaryFwd_{};
+    render::float3 secondaryGroundRight_{}, secondaryGroundFront_{}, secondaryCasterRight_{};
+    render::ShadowQuality secondaryQuality_ = render::ShadowQuality::Off;
     render::TextureRef shadowTex_;
     std::vector<SpriteLook> looks_;
     std::vector<bool> loadedTypes_;
