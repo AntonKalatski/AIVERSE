@@ -1,7 +1,8 @@
-// SpectraFX Stage 22: CPU-side preparation of a bounded GPU VM payload.
-// This is NOT an executable Metal kernel. A successful prepare() only means
-// the program can be represented by this ABI; the GPU backend MUST continue
-// using the full CPU effect until a matching kernel and parameter buffers exist.
+// SpectraFX: CPU-side preparation of the bounded, opt-in Metal VM ABI.
+// A successful prepare() only validates the representable program subset;
+// actual GPU execution additionally needs the matching Metal compute kernel,
+// persistent particle-register storage and a compatible RHI device.
+// Unsupported complete effects MUST retain the full CPU fallback.
 #pragma once
 #include "SpectraParticleProgram.h"
 #include <array>
