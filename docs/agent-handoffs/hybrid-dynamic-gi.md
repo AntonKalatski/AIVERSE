@@ -251,3 +251,29 @@ Next exact step:
 1. Compile/run gi_chunked_geometry + gi_regional_geometry and all other gi_* CTests in native Debug and Release, repair any compile errors or logic failures, and record tested SHA + logs.
 2. Introduce a narrowly scoped ray-query adapter so GiDynamicProbeReference can consume GiChunkedGeometrySnapshot without changing the public static-geometry call sites. GiDynamicRuntime must retain snapshot ownership or mandate borrowed snapshot lifetime. Demonstrate a door/wall opening changed only one chunk BVH; unaffected probe texture values remain unchanged while local visibility/radiance updates.
 3. Only after regression/performance checks: incremental top-level tree refinements, clipmaps, and GPU tracing/compute with capability checks (Metal first). Keep O(chunks) CPU allocations and mesh ownership out of authoritative ECS simulation.
+
+
+## Stage 10 - 2026-11-19 - chunked geometry ray-query adapter and dynamic GI runtime wiring (source committed; NOT VERIFIED)
+
+Code commits:
+- c0d732985f2baafd08aa1a60412e4f3e5fe714e2 - engine/render/GiTraceGeometry.h, non-owning ray-query view
+- 7064426b59526876adcce5cf3fa670ec4dac1c50 - engine/render/GiChunkedGeometry.h, immutable chunk snapshot traceView() with callback
+- a57ca895784c791c9c36efd13e68f15004318243 - engine/render/GiDynamicProbeReference.h, common ray-query callbacks for both monolithic and chunked scenes
+- 4e7152f02dce19bd161ca4d715d66d2cfb9243b7 - engine/render/GiDynamicRuntime.h, setTraceGeometry / setTraceGeometryRegion
+- ef92890b23038ce822c98caa6ac11b98f3f409b9 - tests/render/gi_chunked_runtime.cpp
+- cf5e49fe257cfd75c72433c4fe318416d46a413e - CMakeLists.txt, new gi_chunked_runtime regression in ALL/CTest
+
+Architecture/API: GiTraceGeometryView is a value-type, borrowed {source pointer, ray query callback} wrapping StaticShadowGeometry::distance() or GiChunkedGeometrySnapshot::distance() with the same normal/albedo closest-hit contract. Existing GiDynamicProbeReference::setGeometry and ::setGeometryRegion keep their prior concrete signatures, forwarding to setTraceGeometry and setTraceGeometryRegion; GiDynamicRuntime does likewise. A new chunk snapshot exposes traceView(), which is accepted directly by GiDynamicRuntime and uses the same budgeted dynamic bounce solver. There are no virtual allocations per ray, only one indirect function-pointer call. A null view clears the dynamic layer through the existing full-reset path.
+
+Lifetime/ordering contract: GiTraceGeometryView is borrowed. Store a published GiChunkedGeometrySnapshot in owner-controlled stable memory, keep it alive during trace/update, and only release older snapshots after no readers depend on them. Replacing a chunk uses builder.replace/remove, then builder.publish, then runtime.setTraceGeometryRegion(newSnapshot.traceView(), incrementedGeometryRevision, worldDirtyBounds); update(0) clears affected GPU texels before rendering, update(budget>0) retraces a bounded subset. Publishing a snapshot is not a GPU upload and does not automatically notify ECS/renderer. Never call setTraceGeometryRegion with an unbuilt empty previous view.
+
+Test source: gi_chunked_runtime builds two distant wall chunks / separately colored moving lights, then removes one chunk, checks BVH pointer sharing, asserts affected probes < full volume, verifies sparse zero upload with no rays, tests that only near bounce is removed and far blue bounce is preserved, and checks both old/new immutable snapshots can be queried. All assertions are always-on. No runtime compilation or test execution has been performed here.
+
+Compatibility: no modification to save/network, old baker, AVGIC005, default renderer quality, shader bindings, TerraWeave/NEREID ownership or native ECS state. The CPU dynamic reference can now use a chunked world but remains single-threaded and DOES NOT provide GPU compute ray tracing; a global top-level chunk BVH is rebalanced when publish() is called.
+
+Verification ACTUALLY performed: GitHub file read/commit acknowledgements only. **NOT RUN:** CMake/Clang/GCC compilation, CTest, full ./run-tests.sh, real Metal/GLES shader validation, GPU benchmarks or mobile profiling.
+
+Next agent steps:
+1. Fetch this branch and compile/run all TEN gi_* CTest targets, especially gi_chunked_geometry, gi_chunked_runtime and gi_regional_geometry. On failure, repair actual code, record exact SHA and log; do not claim unverified source tests passed.
+2. Create a host-facing lifetime-safe geometry owner wrapping GiChunkedGeometryBuilder/published snapshots with staged per-chunk edits and generation tracking, without calling the editor or gameplay systems in the GI module. Hook opt-in terrain/foliage/destruction adapters after verifying concrete interfaces in current main.
+3. Extend probe volumes with scrolling clipmap/cascades and prioritize camera-adjacent dirty probes. Build a capability-gated GPU compute path for relighting/tracing and compare against CPU reference. Test visual parity for wall-open/closed, camera motion and stale in-flight jobs.
