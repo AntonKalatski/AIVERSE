@@ -4,6 +4,7 @@
 #pragma once
 
 #include "VfxGraph.h"
+#include "ParticleSystem.h"
 #include <cstdint>
 #include <functional>
 #include <map>
