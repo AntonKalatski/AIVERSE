@@ -2094,7 +2094,7 @@ flow, a reactive-mask G-buffer for all translucent content, or proof of
 visual/performance quality. Source-level cost estimation is heuristic;
 actual GPU cost, bandwidth, ghosting and savings are unmeasured here.
 
-**Checks actually run:** GitHub source readback and 28/28 static call-site
+**Checks actually run:** GitHub source readback and 39/39 static call-site
 presence checks, including temporal-after-Bloom ordering, output-sized
 history/scratch target and Scene/Game/GameClient scaled beginScene.
 **NOT RUN:** CMake/C++/Metal/GLSL build, CTest, Metal/GL/GLES/Vulkan GPU
