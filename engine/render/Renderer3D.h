@@ -13,6 +13,7 @@
 #include "../gfx/Gfx.h"
 #include "Lights.h"
 #include "Math3D.h"
+#include "PrismaMotionTextureInput.h"
 #include "Model.h"
 #include "PersistentGpuSceneUpload.h"
 #include "GpuSceneCulling.h"
@@ -140,8 +141,16 @@ public:
         (void)viewId; (void)previousViewProj; return false;
     }
     virtual void acceptObjectMotionVectors(gfx::TextureHandle) {}
+    // Typed bridge: newer producers declare full-size signed RGBA16F.
+    // By default, forward to old implementations for compatibility.
+    virtual void acceptObjectMotionVectors(MotionTextureInput input) {
+        acceptObjectMotionVectors(input.texture);
+    }
     // Optional borrowed current-frame reactive coverage (R=0..1).
     virtual void acceptMotionReactiveMask(gfx::TextureHandle) {}
+    virtual void acceptMotionReactiveMask(MotionTextureInput input) {
+        acceptMotionReactiveMask(input.texture);
+    }
 };
 
 // Baked skinning sample (Animator::baseSample()): clip A blends to clip B by `mix`; clip -1 = bind pose.
