@@ -1456,3 +1456,19 @@ sources; never silently clip. The current GI experiment lacks newer
 TerraWeaveTerrainPatchRender/TerraWeaveGrassRender branch files, so
 their shader integration remains pending conflict-aware main merge.
 New tests are SOURCE ONLY, NOT EXECUTED.
+
+
+## GI Stage 46 — TerraWeave ModelDraw batch receiver (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage46-terraweave-model-batch-2026-11-20.md`.
+Current main's live `TerrainPatchResident::submit` and
+`GrassPatchRenderer::draw` BOTH use generic `Renderer3D::drawModel`,
+so the engine's existing PBR dynamic-GI shader is their receiver. Do not
+add a duplicate TerraWeave-specific PBR shader or make the shared engine
+depend on TerraWeave. `GiModelBatchPolicy` now permits CPU MDI
+per-instance PBR palettes (U3) with GI transport U6/tex13, retaining
+restrictions for experimental Metal GPU-authored/ICB instance buffers.
+Those TerraWeave native headers are absent from the old GI feature base:
+do not cherry-pick current main blindly. Reconcile branches carefully
+and test actual grass/terrain model pixels after merge. SOURCE ONLY:
+compiler, CTest, actual GLES/Metal/Vulkan GPU runs NOT DONE.
