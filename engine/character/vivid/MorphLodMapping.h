@@ -4,6 +4,9 @@
 #include "engine/data/Json.h"
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <string>
+#include <span>
 #include <stdexcept>
 #include <vector>
 
@@ -12,13 +15,54 @@ struct MorphLodMapping {
     static constexpr std::uint32_t kVersion=1;
     std::uint32_t sourceVertices=0;
     std::uint32_t sourceTriangles=0;
+    std::string sourceFingerprint; // hexadecimal FNV64 over source vertex bits and triangle indices
     std::vector<LodSurfaceSample> samples;
+
+    static std::string fingerprint(std::span<const render::float3> points,
+                                   std::span<const std::uint32_t> indices) {
+        if(points.empty()||indices.empty()||indices.size()%3)
+            throw std::invalid_argument("VIVID LOD mapping: invalid source fingerprint input");
+        std::uint64_t hash=14695981039346656037ull;
+        auto add=[&](std::uint32_t value) {
+            for(int i=0;i<4;++i) {
+                hash^=(value>>(8*i))&0xffu;
+                hash*=1099511628211ull;
+            }
+        };
+        add(std::uint32_t(points.size()));
+        add(std::uint32_t(indices.size()));
+        for(const auto& p:points) {
+            for(float v:{p.x,p.y,p.z}) {
+                if(!std::isfinite(v))
+                    throw std::invalid_argument("VIVID LOD mapping: nonfinite source");
+                std::uint32_t bits=0;
+                std::memcpy(&bits,&v,sizeof(bits));
+                add(bits);
+            }
+        }
+        for(auto index:indices) {
+            if(index>=points.size())
+                throw std::invalid_argument("VIVID LOD mapping: invalid triangle index");
+            add(index);
+        }
+        const char digits[]="0123456789abcdef";
+        std::string hex(16,'0');
+        for(int i=15;i>=0;--i) {
+            hex[std::size_t(i)]=digits[hash&15u];
+            hash>>=4;
+        }
+        return hex;
+    }
 
     void validate() const {
         if(!sourceVertices || sourceVertices>16'000'000 ||
            !sourceTriangles || sourceTriangles>5'000'000 ||
+           sourceFingerprint.size()!=16 ||
            samples.empty()||samples.size()>16'000'000)
             throw std::invalid_argument("VIVID LOD mapping: invalid dimensions");
+        for(char c:sourceFingerprint)
+            if(!((c>='0'&&c<='9')||(c>='a'&&c<='f')))
+                throw std::invalid_argument("VIVID LOD mapping: invalid fingerprint");
         for(const auto& sample:samples) {
             if(sample.triangle>=sourceTriangles ||
                !std::isfinite(sample.bary.x)||
@@ -40,6 +84,7 @@ struct MorphLodMapping {
         root.set("version",Json::number(std::int64_t(kVersion)));
         root.set("sourceVertices",Json::number(std::int64_t(sourceVertices)));
         root.set("sourceTriangles",Json::number(std::int64_t(sourceTriangles)));
+        root.set("sourceFingerprint",Json::string(sourceFingerprint));
         Json records=Json::array();
         for(const auto& sample:samples) {
             Json record=Json::object();
@@ -59,6 +104,7 @@ struct MorphLodMapping {
            root["version"].integer(-1)!=kVersion ||
            !root["sourceVertices"].isNumber()||
            !root["sourceTriangles"].isNumber()||
+           !root["sourceFingerprint"].isString()||
            !root["samples"].isArray()||
            root["samples"].size()>16'000'000)
             throw std::invalid_argument("VIVID LOD mapping: invalid schema/version");
@@ -70,6 +116,7 @@ struct MorphLodMapping {
         MorphLodMapping result;
         result.sourceVertices=std::uint32_t(vertices);
         result.sourceTriangles=std::uint32_t(triangles);
+        result.sourceFingerprint=root["sourceFingerprint"].str();
         result.samples.reserve(root["samples"].size());
         for(const auto& record:root["samples"].items()) {
             if(!record.isObject() || !record["triangle"].isNumber() ||
@@ -95,11 +142,14 @@ struct MorphLodMapping {
         return result;
     }
     SparseMorphLibrary transfer(const SparseMorphLibrary& morphs,
+                                std::span<const render::float3> sourcePositions,
                                 std::span<const std::uint32_t> indices) const {
         validate();
         if(morphs.vertices()!=sourceVertices ||
+           sourcePositions.size()!=sourceVertices ||
            indices.size()/3!=sourceTriangles ||
-           indices.size()%3)
+           indices.size()%3 ||
+           fingerprint(sourcePositions,indices)!=sourceFingerprint)
             throw std::invalid_argument("VIVID LOD mapping: source topology mismatch");
         return MorphLodSurface::transfer(morphs,indices,samples);
     }
