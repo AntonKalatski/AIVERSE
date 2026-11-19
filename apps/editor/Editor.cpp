@@ -236,6 +236,9 @@ void Editor::reloadFx() {
 void Editor::reloadRules() {
     editSceneCacheValid_ = false;
     editSceneCache_.clear();
+    // The view can destroy/recreate Model objects while reusing allocator
+    // addresses and GPU handles. Never carry their CPU bind caches forward.
+    r3d_.invalidateStaticModelCaches();
     view_.shutdown(*dev_);
     editorTypeLastUsed_.assign(rules().types.size(), -1.0e30);
     lastEditorTrim_ = time_;
