@@ -1,5 +1,16 @@
 # TerraWeave — current agent handoff entry point
 
+> **Integration QA checkpoint (2026-11-20):** On the staging-only
+> `integration/terraweave-main-20261120` branch, the sparse Stage70
+> soil/water scheduler resume-key fix is committed in `34b557ad`,
+> with negative-coordinate, v3 migration and compaction tests in
+> `d6d03d74`. See
+> [Stage70 sparse cursor QA handoff](qa-2026-11-20-stage70-sparse-resume-cursors-handoff.md).
+> **No completed CI/native build on this integration head yet.**
+> Previous pre-merge 136/136 CTest does not validate this change.
+> Do not merge to main before full native/runtime acceptance.
+>
+
 ## Latest main-integration staging branch — QA not yet green
 
 **Read first:** [2026-11-20 TerraWeave + main two-parent merge and full native QA](qa-2026-11-20-main-integration-handoff.md).
