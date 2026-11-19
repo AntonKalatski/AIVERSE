@@ -935,7 +935,7 @@ private:
                                    "snapshot exists; numerical CPU/Metal parity "
                                    "and uninterrupted visuals are not guaranteed.");
                 if(cp.staleGroups || cp.budgetDenied)
-                    ui::toneText(ui::Tone::Warning,
+                    ui::toneText(ui::Tone::Warn,
                         "Snapshots stale or readback budget exceeded");
                 ImGui::TextDisabled("Telemetry from attached GPU pool, not CPU Scene preview.");
             } else {
