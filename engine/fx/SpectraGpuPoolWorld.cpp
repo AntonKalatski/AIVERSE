@@ -886,6 +886,9 @@ PoolCheckpointStats GpuPoolWorld::checkpointStats() const {
         else if(state.fresh)++result.freshGroups;
         else ++result.staleGroups;
         if(state.restoreEligible)++result.restoreEligibleGroups;
+        if(!presentationBlocked() && state.restoreEligible && !state.pending &&
+           device_ && device_->gpuHealthy())
+            ++result.exportReadyGroups;
     }
     return result;
 }
