@@ -330,3 +330,44 @@ still in use elsewhere and has not been retired.
 
 **NOT RUN:** all CMake, CTest, native modelview/editor, GPU backend,
 sanitizer, snapshot and visual parity checks remain deferred.
+
+### Stage 103 — multi-worker source preparation and single-authority View display
+
+The general model resource owner can now prepare multiple independent
+model files on CPU workers without involving the ECS World or GPU:
+`render::ModelAssetProvider::setCpuWorkerCount(1..8)`,
+`setCpuMaxQueued`, and `requestAsync(source,priority)` forward to
+`AsyncModelCpuQueue`. The default remains one worker; an editor or
+native host can opt into more. Workers have no knowledge of genre,
+FPS/RTS player types, scene packets or MotionWeave graph evaluation.
+Only `ModelAssetProvider::publishReady(device,...)` may upload a
+prepared Model on the render/device owner thread.
+
+Priorities are `Interactive`, `Visible`, `Background`. Pending
+jobs of equal priority are FIFO; after sustained high-priority
+dispatches, an oldest queued request gets scheduled to reduce
+background starvation. No executing job is preempted. Each CPU
+result contains its source revision; on asset invalidation it is
+discarded rather than publishing a stale Model, and on shutdown all
+worker futures are joined before the reader/texture cache is released.
+Caller-provided `FileReader` callbacks must be reentrant when more
+than one worker is configured.
+
+Shared GPU texture ownership is measured once by
+`ModelTextureCache::gpuOwnerEstimate()`, never per borrower. The
+device-global geometry pool remains a separate resource owner; these
+figures are source-derived RGBA8-equivalent diagnostics, not exact
+driver VRAM usage.
+
+The editor `SceneRenderable` source now uses the canonical
+`aiverse::View::submitModel` and `submitMesh` for ordinary model
+and mesh submissions. Selected/hovered specialized mesh silhouettes
+retain their previous renderer-specific path. The owner still
+constructs the ModelDraw transformation, tint and outline; View
+does not run graph animations a second time. The legacy RTS
+portrait/type-appearance compatibility layer remains active.
+
+**Validation NOT RUN:** native CMake compiler, CTest, sanitizer,
+actual GPU/Metal/Vulkan/GL/WebGL, FPS/RTS/editor screenshots,
+multithreaded loader contention and visual parity have not been
+verified. See the Stage 103 handoff for exact SHA and next action.
