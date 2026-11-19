@@ -1225,6 +1225,63 @@ limits, next step and host pull commands.
 Draft PR #26 remains unmerged; do not merge main/base
 without user's approval.
 
+## Stage 65 — source-level catalog closure and numeric safety
+
+The implemented PRISMA catalog has exactly 19
+`PrismaType` entries. The Stage 65 audit cross-checked
+all 19 against `PrismaData::buildCatalog`,
+`prismaEffectWork` and `Prisma::resolve`
+(including per-effect execution status). The engine
+Editor Scene/Game and native GameClient use
+stable presentation view IDs 1/2/3 and maintain
+per-view GPU history/retirement rather than sharing
+by resolution. This is **source/API implementation
+coverage only**, NOT a verified native renderer.
+
+All authoring paths must reject nonfinite numeric GPU
+parameters. `parsePrismaEffect` in strict mode throws
+for NaN, infinity or nonnumeric RGB components;
+in non-strict mode it reports the issue and retains
+the default parameter or all-default RGB triplet.
+Use double precision to clamp native Json numbers
+BEFORE casting to float, so huge finite numbers
+cannot overflow shader values.
+
+For direct C++/ECS profiles (which bypass JSON),
+call the GPU-free
+`sanitizePrismaSettings(PrismaSettings&)`.
+It normalizes missing/extra flattened values,
+nonfinite defaults, catalog numeric/color ranges
+and booleans. `Prisma::setSettings` already does
+this before storing a base profile, and
+`PrismaVolumeStack::resolve` does it after
+native-volume interpolation so invalid inputs
+cannot pollute a live camera's shader uniforms.
+Do not implement a second sanitizer in
+FPS/RTS/other genres.
+
+**Acceptance/feature manifest:** consult
+`docs/prisma-feature-closure-stage-65.md`.
+The next phase is ONE consolidated native
+CMake/CTest, shader compilation, Metal/GL and
+available GLES/Vulkan/WebGL rendering/pixel
+parity, GPU fence/memory and performance
+verification/fix cycle. Actual outcomes must be
+logged in a separate Stage 66 handoff.
+CMake registers `prisma_graph`,
+`prisma_volume`, `shader_graph`,
+`hdr_policy` (HDR option and desktop only)
+and `aiverse_tests`; built-in GPU fixture
+binaries may need explicit invocations.
+
+**Stage 65 actual checks:** 19/19 catalog mappings
+and 36/36 static source/host/test registrations.
+**NOT RUN:** any native compile, shader compiler,
+CTest, GPU runtime, screenshots, perf or CI.
+See `docs/handoffs/prisma-stage-65.md`.
+Keep PR #26 Draft and main unchanged; never merge
+without explicit user approval.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
