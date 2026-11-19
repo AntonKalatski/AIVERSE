@@ -1,5 +1,6 @@
 #include "engine/render/GiTextureBudget.h"
 #include "engine/render/GiShaderGraphTextureSlots.h"
+#include "engine/render/GiCustomShaderPolicy.h"
 #include "engine/render/GiPresentationPolicy.h"
 #include "tests/AlwaysCheck.h"
 
@@ -12,6 +13,19 @@ static_assert(giFragmentTextureSlotsRequired(false,true,false)==0);
 static_assert(giFragmentTextureSlotsRequired(true,false,true)==0);
 
 int main() {
+    // Terrain, foliage and arbitrary custom shader bindings must match
+    // the exact GLSL/MSL permutation; no silent downgrade of a dual shader.
+    AIVERSE_TEST_CHECK(giCustomModeTextureSlots(GiCustomShaderMode::Single)==14);
+    AIVERSE_TEST_CHECK(giCustomModeTextureSlots(GiCustomShaderMode::Validity)==15);
+    AIVERSE_TEST_CHECK(giCustomModeTextureSlots(GiCustomShaderMode::DualCascade)==16);
+    AIVERSE_TEST_CHECK(giCustomModeTextureSlots(GiCustomShaderMode::TripleCascade)==17);
+    AIVERSE_TEST_CHECK(giCustomModeFits(GiCustomShaderMode::Single,14,false));
+    AIVERSE_TEST_CHECK(!giCustomModeFits(GiCustomShaderMode::DualCascade,15,false));
+    AIVERSE_TEST_CHECK(giCustomModeFits(GiCustomShaderMode::DualCascade,16,false));
+    AIVERSE_TEST_CHECK(!giCustomModeFits(GiCustomShaderMode::TripleCascade,16,false));
+    AIVERSE_TEST_CHECK(!giCustomModeFits(GiCustomShaderMode::TripleCascade,32,false));
+    AIVERSE_TEST_CHECK(giCustomModeFits(GiCustomShaderMode::TripleCascade,31,true));
+
     // Shader Graph's legacy tex13 base is retained without dynamic GI.
     AIVERSE_TEST_CHECK(giGraphTextureStart(false)==13);
     AIVERSE_TEST_CHECK(giGraphTextureStart(true)==14);
