@@ -414,6 +414,13 @@ public:
         glDeleteSync(it->second);
         retirementFences_.erase(it);
     }
+    void abandonRetirementTokenAfterIdle(uint64_t token) override {
+        // The host first completed glFinish successfully on this context.
+        const auto it=retirementFences_.find(token);
+        if(it==retirementFences_.end())return;
+        glDeleteSync(it->second);
+        retirementFences_.erase(it);
+    }
     void beginFrame(int w, int h) override {
         fbW_ = w; fbH_ = h;
         uboOffset_ = 0;
