@@ -655,6 +655,14 @@ private:
                 ImGui::Text("Live packets: %zu | Evicted: %llu | Stored: %.2f MiB",
                             packets.live, (unsigned long long)packets.evicted,
                             double(packets.retainedBytes) / (1024.0 * 1024.0));
+                const auto materialMemo = ed.renderer().sharedMaterialStateStats();
+                ImGui::Text("Shared material state: %llu reused / %llu refreshed",
+                            (unsigned long long)materialMemo.hits,
+                            (unsigned long long)materialMemo.misses);
+                ImGui::Text("Material owners: %zu | Evicted: %llu | Stored: %.2f MiB",
+                            materialMemo.live, (unsigned long long)materialMemo.evicted,
+                            double(materialMemo.retainedBytes) / (1024.0 * 1024.0));
+                ImGui::TextDisabled("Shared material signature reuse needs owner ID and revision.");
                 ImGui::TextDisabled("Requires explicit nonzero ModelDraw::staticPacketRevision.");
                 ImGui::TextDisabled("Camera / shadow visibility and depth are still evaluated each frame.");
                 ImGui::TreePop();
