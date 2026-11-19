@@ -2888,6 +2888,77 @@ GitHub readback. **NOT RUN:** локальный CMake/clang/CTest, редакт
 Metal/GL/GLES/Vulkan, shader compile, screenshots, GPU passes, CI.
 Проверку производительности/пикселей не заявлять до отдельной test phase.
 
+## Stage 54 — безопасное закрытие камер и deferred GPU retirement
+
+В PRISMA camera `viewId` обозначает устойчивую идентичность
+presentation-камеры, **не** её размер, поэтому две камеры 1920×1080
+имеют независимые temporal/velocity histories.
+
+`Renderer3D::retireUnregisteredObjectMotionViews(liveViewIds)`
+(новый публичный genre-independent API) принимает полный набор
+активных stable view IDs **после** отправки всех camera passes текущего
+кадра. Для каждого отсутствующего ID вызывается уже существующий
+`retireObjectMotionView(id,device.gpuSubmissionFence())`;
+в очередь помещаются только Renderer3D-owned `target/depth/reactive`
+текстуры. Их высвобождение происходит через
+`collectCompletedObjectMotion(device.gpuCompletedFence())`.
+Нулевой submission token сохраняет ресурсы в `motionUnfenced_` до
+явно подтверждённого GPU idle. **CPU frameSerial и время не могут
+заменить GPU fence**. Активные камеры и size-shared targets не
+освобождаются.
+
+Editor после Scene/Game render использует один
+`activePrismaViews` для
+`Prisma::retireUnregisteredViews(...)` и
+`Renderer3D::retireUnregisteredObjectMotionViews(...)`, затем
+`Prisma::retireUnreferencedSizeCaches()`. Старые переходы закрытия
+Scene/Game сохранены и являются no-op, если generic cleanup уже
+удалил ID; custom-camera cleanup больше не пропускает независимые
+Renderer3D velocity textures. GameClient оставляет 3D view 3 живым,
+когда рендерит `sim_`; если кадр содержит только меню или загрузку,
+он удаляет частные Prisma/Renderer3D состояния и невостребованные
+size caches. `startMatch` по-прежнему явно завершает предыдущую
+камеру. При следующем рендере камера создаёт чистую историю.
+
+`PrismaScreenLighting` сохраняет исключительное владение своими
+`bounce_`, `scatter_`, `history_[2]` и `depth_`.
+`releaseTargets()` при resize или в `scenePass()` после
+`setEnabled(false)` теперь перемещает их в
+`PrismaGpuRetirementQueue<gfx::TextureHandle>`, привязанную к
+`Device::gpuSubmissionFence()`. Пока устройство не сообщило
+`gpuCompletedFence()`, фактического `destroyTexture` нет.
+Если backend не дал submission token, ресурс сохраняется в
+`unfencedTargets_` и освобождается только через
+`drainRetiredAfterGpuIdle()` после явного ожидания GPU idle
+владельцем устройства.
+
+Публичный API адаптера:
+`collectGpuRetirements()` — неблокирующий сбор по
+подтверждённому completion fence;
+`retirementStats()` — CPU/GPU-free статистика количества
+fenced/unfenced текстур и последнего GPU completion token;
+`drainRetiredAfterGpuIdle()` — **только при известном GPU idle**;
+`shutdown()` также **требует GPU idle** для безопасного удаления
+пайплайнов/шейдеров/vertex buffer, как и исторический адаптер.
+
+Общий `Prisma` и `Renderer3D` владеют собственными GPU queues;
+ScreenLighting **никогда** не удаляет чужие targets, depth или
+history. Отключение адаптера удаляет его текущие auxiliary resources
+на *следующем вызове* `scenePass`, а не немедленно при
+`setEnabled(false)`. Если adapter больше никогда не вызывается,
+его GPU owner должен продолжать `collectGpuRetirements()` и
+в конце жизненного цикла завершить `shutdown()` после idle.
+
+**Ограничения/проверки:** только readback исходников с GitHub и
+30/30 структурных проверок целевых переходов/методов. **NOT RUN:**
+CMake/clang, CTest, Metal/GL/GLES/Vulkan/WebGL, GPU fence overlap,
+интеграционный Editor/GameClient runtime, memory stress и image
+parity. Корректность сигнальных backend tokens в реальных RHI и
+наличие у всех custom camera hosts полного live-ID roster должны
+быть подтверждены отдельно. Exact source commits и следующий
+этап — `docs/handoffs/prisma-stage-54.md`.
+
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
