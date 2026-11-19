@@ -38,7 +38,12 @@ AiverseVirtualPage aiverseLookupVirtual(
     if (physicalSlice < 0 || physicalSlice >= atlasSize.z ||
         atlasSize.x <= 0 || atlasSize.y <= 0) return p;
     vec2 tileUv = fract(bounded * vec2(tableSize.xy) / exp2(float(bytes.b)));
-    vec2 inset = (vec2(max(0.0, gutterPixels)) + vec2(0.5)) / vec2(atlasSize.xy);
+    // With physical gutters, sample through the gutter/interior boundary.
+    // At tileUv=0 or 1 this blends the neighboring gutter texel with the
+    // first/last interior texel, as a continuous virtual texture must.
+    // Zero-gutter archives retain the legacy edge-centre clamp path.
+    float sampleInset = gutterPixels > 0.0 ? gutterPixels : 0.5;
+    vec2 inset = vec2(sampleInset) / vec2(atlasSize.xy);
     if (any(greaterThanEqual(inset, vec2(0.5)))) return p;
     p.uv = mix(inset, vec2(1.0) - inset, tileUv);
     p.layer = physicalSlice; p.valid = true;
@@ -96,7 +101,10 @@ inline AiverseVirtualPage aiverse_lookup_virtual(
                             atlas.get_array_size());
     if (physicalSlice >= atlasSize.z || !atlasSize.x || !atlasSize.y) return p;
     float2 tileUv = fract(bounded * float2(tableSize.xy) / exp2(float(bytes.b)));
-    float2 inset = (float2(max(0.0,gutterPixels))+0.5)/float2(atlasSize.xy);
+    // Physical gutters must participate in the bilinear footprint at the
+    // virtual tile boundary. Keep the legacy zero-gutter edge clamp.
+    float sampleInset = gutterPixels > 0.0f ? gutterPixels : 0.5f;
+    float2 inset = float2(sampleInset)/float2(atlasSize.xy);
     if (any(inset >= float2(0.5))) return p;
     p.uv = mix(inset,float2(1.0)-inset,tileUv);
     p.layer = physicalSlice; p.valid = true;
