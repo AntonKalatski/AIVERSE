@@ -86,6 +86,12 @@ public:
             modelOwnerMemory.textures,modelOwnerMemory.buffers,
             modelOwnerMemory.unknownTextures+modelOwnerMemory.unknownBuffers);
         ImGui::TextDisabled("Dedicated non-pooled geometry + owner textures only; shared geometry pages excluded.");
+        const auto presentationAssets=ed.view().ownedPresentationGpuMemoryStats(ed.device());
+        const auto particleAssets=ed.gameFx().ownedGpuMemoryStats();
+        ImGui::TextDisabled("Terrain/planet + model presentation: %.2f MiB; SpectraFX core: %.2f MiB",
+            double(presentationAssets.knownBytes())/mib,
+            double(particleAssets.knownBytes())/mib);
+        ImGui::TextDisabled("SpectraFX shader/graph textures are borrowed from their texture-cache owner; VRAM remains a lower bound.");
         ImGui::TextDisabled("Учтён только asset pool; отдельные render targets и FX указаны ниже частично.");
         ImGui::TextDisabled("Выгрузка моделей редактора: %s (период ожидания 15 с)",
                             ed.lazyEditorAssetsEnabled() ? "по требованию" : "отключена");
