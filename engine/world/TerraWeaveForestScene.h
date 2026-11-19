@@ -416,6 +416,23 @@ public:
         return out;
     }
 
+    // Dedicated fallen-tree visibility channel, independent of harvested
+    // removals/regrowth. A rollback from fallen->standing cannot accidentally
+    // resurrect a tree that gameplay harvested for another reason.
+    void setFallenTrees(const std::vector<ForestTreeIdentity>& fallen) {
+        if(fallen.size()>1000000u)
+            throw std::length_error("TerraWeave fallen tree visibility budget");
+        std::set<ForestTreeIdentity> next;
+        for(const auto& id:fallen){
+            if(!id.key || !id.speciesId || !next.insert(id).second)
+                throw std::invalid_argument("TerraWeave duplicate/invalid fallen tree");
+        }
+        fallen_.swap(next);
+    }
+    std::vector<ForestTreeIdentity> fallenTrees()const{
+        return {fallen_.begin(),fallen_.end()};
+    }
+
     // Gameplay systems can call this on the owning update thread when a
     // tree is harvested/destroyed; the stable key survives chunk unloading.
     // This is a presentation filter, NOT a substitute for authoritative ECS
@@ -613,7 +630,7 @@ private:
     std::optional<FoliageInstance> presentationInstance(
             const FoliageInstance& instance) const {
         const ForestTreeIdentity id{instance.key,instance.speciesId};
-        if(removed_.contains(id))return std::nullopt;
+        if(removed_.contains(id) || fallen_.contains(id))return std::nullopt;
         FoliageInstance scaled=instance;
         if(const auto root=rootStates_.find(id);root!=rootStates_.end())
             scaled.heightCm=root->second.plantedHeightCm;
@@ -802,6 +819,7 @@ private:
     ArborForestAdapter adapter_;
     std::vector<FoliageSpecies> species_;
     std::set<ForestTreeIdentity> removed_;
+    std::set<ForestTreeIdentity> fallen_;
     std::map<ForestTreeIdentity,ForestRegrowthSchedule> regrowth_;
     std::map<ForestTreeIdentity,PlantEnvironment> conditions_;
     std::map<ForestTreeIdentity,RootState> rootStates_;
