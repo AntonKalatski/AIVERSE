@@ -188,8 +188,19 @@ struct CreatorApp {
                             surface,session.dna(),
                             proposed.head->materials[std::size_t(index)]);
                 }
-                proposed.groom.generate(session.dna(),groomQuality);
-                proposed.hair=proposed.groom.makeCardModel(session.dna());
+                const bool hasAuthoredHair=std::any_of(
+                    manifest.materials.begin(),manifest.materials.end(),
+                    [](const auto& pair) {
+                        return pair.second==HumanSurface::Hair ||
+                               pair.second==HumanSurface::Eyelash;
+                    });
+                if(!hasAuthoredHair) {
+                    proposed.groom.generate(session.dna(),groomQuality);
+                    proposed.hair=proposed.groom.makeCardModel(session.dna());
+                }
+                // Artist-authored hair meshes are already in proposed.head,
+                // with their original strand/UV/alpha maps preserved by
+                // humanMaterialFromSource. Never overlay a second wig.
             } else {
                 proposed=generateHumanPreview(session.dna(),groomQuality);
             }
@@ -214,6 +225,7 @@ struct CreatorApp {
                 throw std::runtime_error("VIVID Creator: head GPU upload failed");
             // Vertex cards are mutable (secondary motion), so use a ringed
             // Dynamic buffer instead of the loader's Immutable model buffer.
+            if(human.hair) {
             gfx::BufferDesc vb;
             vb.type=gfx::BufferType::Vertex;
             vb.usage=gfx::Usage::Dynamic;
@@ -229,6 +241,7 @@ struct CreatorApp {
             human.hair->ib=device->createBuffer(ib);
             if(!human.hair->vb.valid() || !human.hair->ib.valid())
                 throw std::runtime_error("VIVID Creator: groom buffer upload failed");
+            }
             auto gpu=cache->acquire(human.facialShapes,human.head->vertices);
             if(!gpu)throw std::runtime_error("VIVID Creator: shared morph CSR upload failed");
             actor=std::make_unique<GpuActorStream>();
@@ -459,7 +472,7 @@ struct CreatorApp {
             status="VIVID facial rig: invalid composition";
         if(!actor->dispatch(controller.frame(),human.facialBinding))
             status=actor->lastError();
-        if(inspectGroom) {
+        if(inspectGroom && human.hair) {
             human.groom.step(step,{wind,0,wind*0.3f});
             human.groom.updateCardVertices(human.hair->vertices);
             dev.updateBuffer(human.hair->vb,human.hair->vertices.data(),
@@ -484,10 +497,12 @@ struct CreatorApp {
             const float inv=1.0f/std::sqrt(std::max(lengthSq,0.00001f));
             for(int row=0;row<3;++row)headRigid.at(row,col)*=inv;
         }
-        ModelDraw hair;
-        hair.model=human.hair.get();
-        hair.world=headRigid;
-        renderer.drawModel(hair);
+        if(human.hair) {
+            ModelDraw hair;
+            hair.model=human.hair.get();
+            hair.world=headRigid;
+            renderer.drawModel(hair);
+        }
         gfx::PassDesc pass;
         pass.clearColor[0]=0.075f;pass.clearColor[1]=0.085f;pass.clearColor[2]=0.12f;
         renderer.render(pass);
