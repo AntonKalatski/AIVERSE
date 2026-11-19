@@ -659,6 +659,59 @@ Do not mark the feature shipping-ready until these pass.
 After this bounded stage append a separate Stage-27 handoff
 to the canonical running handoff file.
 
+## Pooled GPU emitter definitions with shared CPU fallback (Stage 28)
+
+Native use: `spectra::GpuPoolWorld` from the canonical
+`engine/fx/SpectraFX.h` (target `AIVERSE::spectrafx`).
+This is presentation-only and genre independent.
+Initialize once with a `gfx::Device*` and
+`PoolWorldBudgets` (maxGpuGroups/maxGroupCapacity/
+maxBurstsPerFrame/quality). Register one full
+`fx::EffectDef` or compiled v2 `graph` per
+logical effect name via `defineEffect` or
+`defineGraph`, passing `GraphRuntimeOptions`
+for GPU capability/quality/material/VM selection.
+
+Two names sharing the **identical complete definition**
+and effective GPU options share **one** persistent
+`ComputeParticles` GPU resource group. Do not merge
+different effect logic merely because textures match.
+GPU-ineligible definitions retain the full effect via the
+single internal `BatchWorld`; `RequireGpu` rejects
+instead of downgrading.
+
+Frame protocol: after device beginFrame, call
+`pool.beginPresentationFrame(camera,viewProj,w,h)`,
+submit bounded one-shot `pool.burst(name,pos,dir,tint,
+optionalEightScalarParams)` calls, invoke `pool.step(dt)`
+**once**, draw with `pool.draw(fog)` **once** inside
+the RHI render pass, then call `pool.endPresentationFrame()`.
+Use `pool.stats()` for group/draw/byte counts.
+`pool.resetForRollback()` wipes this **pool's**
+visual effects between frames without touching external
+renderer owners. Do not call during active compute/render
+encoders. Destroy pool before device teardown.
+
+Instance defaults from graph v2 `instanceParameters`
+remain per logical source name, even for shared GPU groups.
+`setNamedParameter` is bounded by schema; each burst
+snapshots its own `param0..7`, so one source cannot
+silently change already alive particles from another
+source. Material-only shaderGraph inputs to these
+parameters are supported by the strict Stage-27
+GPU material path even without a particle VM program.
+
+**Limitation:** This is resource grouping for *identical*
+one-shot GPU effects. There is no single cross-material
+GPU physical pool, per-source GPU kill/stop, persistent
+attached GPU emitters, global alpha sorting or multi-
+material indirect batching. Keep the existing
+`CueScheduler` / shared CPU `BatchWorld` for persistent
+ECS attachments. No RTS/FPS production loop migration
+is automatic. Stage-28 native build, CTest, MSL and
+GPU screenshot checks are NOT RUN at the user's request.
+Record separate Stage-28 handoff with exact SHAs.
+
 ## Boundaries and tests
 
 VFX are **presentation-only**, never deterministic damage, collision authority, or gameplay rules. The current graph compiler produces `fx::EffectDef`; it is not yet a GPU compute graph. Node canvas, graph MCP CRUD, GPU simulation, GPU collision and automatic FPS/RTS production wiring are **unfinished**. Avoid separate genre implementations.
