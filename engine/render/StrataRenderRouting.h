@@ -11,7 +11,7 @@
 
 namespace aiverse::render::strata {
 
-enum class RenderPass : uint8_t { MainOpaque, SunShadow };
+enum class RenderPass : uint8_t { MainOpaque, SunShadow, PlanarReflection };
 enum class RenderRoute : uint8_t { Legacy, Strata };
 
 // The arbiter is deliberately independent of any rendering backend.
