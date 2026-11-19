@@ -1,0 +1,228 @@
+// AIVERSE Studio: project-authored ECS cameras. This preview World is separate
+// from the gameplay simulation; cameras.json can be loaded by any native game.
+// Generic Lens components only, no RTS/FPS camera type or renderer dependency.
+#include "../Editor.h"
+#include "../EditorUtil.h"
+#include "engine/sim/CameraSceneAsset.h"
+#include "engine/render/CameraCaptureViews.h"
+#include "engine/render/EcsCameraRender.h"
+#include "engine/render/CameraRig.h"
+#include <algorithm>
+#include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <memory>
+#include <string>
+#include <vector>
+
+namespace aiverse::editor {
+namespace {
+Fixed fixedFromUi(double value) {
+    if(!std::isfinite(value))return {};
+    const double bounded=std::clamp(value,-1000000.,1000000.);
+    return Fixed::fromRaw(int64_t(std::llround(bounded*Fixed::kOne)));
+}
+Rotation rotationFromCamera(const render::Camera& camera) {
+    const auto q=render::cameraPoseRotation(camera);
+    return {fixedFromUi(q.x),fixedFromUi(q.y),fixedFromUi(q.z),fixedFromUi(q.w)};
+}
+}
+class StudioCamerasWindow final : public EditorWindow {
+public:
+    const char* id()const override{return "lens_cameras";}
+    const char* title()const override{return "LENS / Cameras";}
+    const char* group()const override{return "scene";}
+    const char* dockArea()const override{return "right-bottom";}
+    bool openByDefault()const override{return false;}
+    int order()const override{return 91;}
+    void draw(Editor& ed) override {
+        const std::string project=ed.ws().project.dir;
+        if(project.empty()) {
+            ImGui::TextDisabled("Open a project to edit camera entities.");
+            return;
+        }
+        if(project_!=project) {
+            if(device_)preview_.release(*device_);
+            device_=&ed.device();project_=project;
+            world_=std::make_unique<World>();
+            hierarchy_=std::make_unique<SceneHierarchy>();
+            cameras_.clear();selected_={};
+            load();
+        }
+        ImGui::TextDisabled("ECS Camera entities — cameras.json (game/project asset)");
+        if(ImGui::Button("New Camera"))createFromScene(ed.sceneCam);
+        ImGui::SameLine();
+        if(ImGui::Button("Save"))save();
+        ImGui::SameLine();
+        if(ImGui::Button("Reload"))load();
+        if(!error_.empty())ImGui::TextWrapped("%s",error_.c_str());
+        ImGui::Separator();
+        for(Entity entity:cameras_) {
+            if(!world_->alive(entity))continue;
+            const auto* name=world_->tryGetConst<CameraNameComponent>(entity);
+            ImGui::PushID(int(entity.index));
+            const std::string title=name?name->name:"Camera";
+            if(ImGui::Selectable(title.c_str(),entity==selected_))selected_=entity;
+            ImGui::PopID();
+        }
+        if(!world_||!world_->alive(selected_))return;
+        auto* camera=world_->tryGet<CameraComponent>(selected_);
+        auto* output=world_->tryGet<CameraOutputComponent>(selected_);
+        auto* update=world_->tryGet<CameraUpdateComponent>(selected_);
+        auto* vp=world_->tryGet<CameraViewportComponent>(selected_);
+        if(!camera||!output||!update||!vp)return;
+        ImGui::Separator();
+        bool enabled=camera->enabled;
+        if(ImGui::Checkbox("Enabled",&enabled))camera->enabled=enabled;
+        bool ortho=camera->projection==CameraProjection::Orthographic;
+        if(ImGui::Checkbox("Orthographic",&ortho))
+            camera->projection=ortho?CameraProjection::Orthographic:CameraProjection::Perspective;
+        float fov=float(camera->verticalFov.toDouble())*180.f/render::cameraPi;
+        if(ImGui::SliderFloat("Vertical FOV",&fov,5,150,"%.1f deg"))
+            camera->verticalFov=fixedFromUi(fov*render::cameraPi/180.);
+        float nearPlane=float(camera->nearPlane.toDouble()),farPlane=float(camera->farPlane.toDouble());
+        if(ImGui::DragFloat("Near",&nearPlane,.01f,.01f,1000.f))
+            camera->nearPlane=fixedFromUi(std::min(nearPlane,farPlane-.01f));
+        if(ImGui::DragFloat("Far",&farPlane,1.f,.05f,100000.f))
+            camera->farPlane=fixedFromUi(std::max(farPlane,nearPlane+.01f));
+        int priority=camera->priority;
+        if(ImGui::DragInt("Priority",&priority,1,-10000,10000))camera->priority=priority;
+        int targetType=output->kind==CameraOutputKind::Texture?1:0;
+        if(ImGui::Combo("Output",&targetType,"Screen\0Render Texture\0"))
+            output->kind=targetType?CameraOutputKind::Texture:CameraOutputKind::Screen;
+        if(targetType) {
+            int key=int(std::min<uint64_t>(output->targetAssetKey,INT32_MAX));
+            if(ImGui::InputInt("RT Asset Key",&key))
+                output->targetAssetKey=uint64_t(std::max(1,key));
+            int w=output->width,h=output->height;
+            if(ImGui::InputInt("Width",&w))output->width=uint16_t(std::clamp(w,1,8192));
+            if(ImGui::InputInt("Height",&h))output->height=uint16_t(std::clamp(h,1,8192));
+            ImGui::Checkbox("HDR",&output->hdr);
+            ImGui::Checkbox("Depth",&output->depth);
+        }
+        int policy=int(update->mode);
+        if(ImGui::Combo("Refresh",&policy,"Every Frame\0Every N Frames\0Fixed Hz\0On Dirty\0Manual\0"))
+            update->mode=CameraUpdateMode(policy);
+        int n=update->everyNFrames;
+        if(update->mode==CameraUpdateMode::EveryNFrames && ImGui::InputInt("Interval",&n))
+            update->everyNFrames=uint16_t(std::clamp(n,1,65535));
+        int hz=update->rateHz;
+        if(update->mode==CameraUpdateMode::FixedRate && ImGui::InputInt("Hz",&hz))
+            update->rateHz=uint16_t(std::clamp(hz,1,240));
+        ImGui::Checkbox("Custom viewport",&vp->enabled);
+        if(vp->enabled) {
+            float x=float(vp->x.toDouble()),y=float(vp->y.toDouble());
+            float w=float(vp->width.toDouble()),h=float(vp->height.toDouble());
+            if(ImGui::SliderFloat("Viewport X",&x,0,1))vp->x=fixedFromUi(x);
+            if(ImGui::SliderFloat("Viewport Y",&y,0,1))vp->y=fixedFromUi(y);
+            if(ImGui::SliderFloat("Viewport W",&w,.01f,1))vp->width=fixedFromUi(w);
+            if(ImGui::SliderFloat("Viewport H",&h,.01f,1))vp->height=fixedFromUi(h);
+        }
+        if(ImGui::Button("Use in Scene"))useInScene(ed);
+        ImGui::SameLine();
+        if(ImGui::Button("Delete Camera")) {
+            hierarchy_->detach(*world_,selected_);
+            world_->destroy(selected_);
+            cameras_.erase(std::remove(cameras_.begin(),cameras_.end(),selected_),cameras_.end());
+            selected_={};return;
+        }
+        hierarchy_->update(*world_);
+        render::EcsCameraView view;
+        if(render::resolveEcsCamera(*world_,selected_,view)) {
+            const float side=std::clamp(ImGui::GetContentRegionAvail().x,128.f,400.f);
+            preview_.ensure(ed.device(),int(side),int(side));
+            ed.renderScene(preview_,view.camera,false);
+            preview_.image(ed.device(),side,side);
+        }
+    }
+private:
+    std::string project_,error_;
+    std::unique_ptr<World> world_;
+    std::unique_ptr<SceneHierarchy> hierarchy_;
+    std::vector<Entity> cameras_;
+    Entity selected_{};
+    gfx::Device* device_=nullptr;
+    Viewport preview_;
+    uint64_t nextId_=1;
+
+    std::filesystem::path assetPath()const{
+        return std::filesystem::path(project_)/"cameras.json";
+    }
+    void createFromScene(const render::Camera& camera) {
+        if(!world_||!hierarchy_)return;
+        const Entity e=world_->create();
+        LocalTransform local;
+        const auto eye=camera.eye();
+        local.position={fixedFromUi(eye.x),fixedFromUi(eye.y),fixedFromUi(eye.z)};
+        local.rotation=rotationFromCamera(camera);
+        if(!hierarchy_->attach(*world_,e,local))return;
+        CameraComponent comp;
+        comp.verticalFov=fixedFromUi(camera.fovY);
+        comp.nearPlane=fixedFromUi(camera.zNear);
+        comp.farPlane=fixedFromUi(camera.zFar);
+        comp.projection=camera.ortho?CameraProjection::Orthographic:CameraProjection::Perspective;
+        comp.orthographicHalfHeight=fixedFromUi(camera.orthoHalfHeight());
+        world_->add<CameraComponent>(e,comp);
+        world_->add<CameraOutputComponent>(e,CameraOutputComponent{});
+        world_->add<CameraUpdateComponent>(e,CameraUpdateComponent{});
+        world_->add<CameraViewportComponent>(e,CameraViewportComponent{});
+        world_->add<CameraNameComponent>(e,CameraNameComponent{nextId_,"Camera "+std::to_string(nextId_)});
+        ++nextId_;cameras_.push_back(e);selected_=e;
+        hierarchy_->update(*world_);
+    }
+    void load() {
+        error_.clear();
+        auto replacement=std::make_unique<World>();
+        auto hierarchy=std::make_unique<SceneHierarchy>();
+        std::vector<Entity> entities;
+        try {
+            if(std::filesystem::exists(assetPath())) {
+                const Json data=Json::parseFile(assetPath().string());
+                if(!loadCameraScene(*replacement,*hierarchy,data,&entities,&error_))return;
+            }
+        } catch(const std::exception& e) {error_=e.what();return;}
+        world_=std::move(replacement);hierarchy_=std::move(hierarchy);
+        cameras_=std::move(entities);
+        selected_=cameras_.empty()?Entity{}:cameras_.front();
+        nextId_=1;
+        for(Entity e:cameras_)
+            if(const auto* name=world_->tryGetConst<CameraNameComponent>(e))
+                nextId_=std::max(nextId_,name->stableId+1);
+    }
+    void save(){
+        if(!world_||project_.empty())return;
+        error_.clear();
+        try {
+            const auto dest=assetPath();
+            const auto temp=dest.string()+".tmp";
+            std::ofstream out(temp,std::ios::trunc);
+            if(!out){error_="Cannot write cameras.json";return;}
+            out<<cameraSceneToJson(*world_).dump(2);
+            out.flush();
+            if(!out){error_="Camera save failed";return;}
+            out.close();
+            std::error_code ec;
+            std::filesystem::rename(temp,dest,ec);
+            if(ec){
+                std::filesystem::remove(dest,ec);
+                ec.clear();std::filesystem::rename(temp,dest,ec);
+            }
+            if(ec)error_=ec.message();
+        }catch(const std::exception& e){error_=e.what();}
+    }
+    void useInScene(Editor& ed) {
+        render::EcsCameraView v;
+        if(!render::resolveEcsCamera(*world_,selected_,v))return;
+        const auto eye=v.camera.eye(),f=v.camera.rotation.rotate({0,0,-1});
+        auto& cam=ed.sceneCam;
+        cam.usePose=false;cam.distance=std::clamp(12.f,cam.minDistance,cam.maxDistance);
+        cam.target=eye+f*cam.distance;
+        const auto toEye=eye-cam.target;
+        cam.yaw=std::atan2(toEye.x,toEye.z);
+        cam.pitch=std::asin(std::clamp(toEye.y/std::max(.01f,cam.distance),-1.f,1.f));
+        cam.fovY=v.camera.fovY;cam.ortho=v.camera.ortho;
+        ed.focusWindow("scene");
+    }
+};
+AIVERSE_EDITOR_WINDOW(StudioCamerasWindow);
+} // namespace aiverse::editor
