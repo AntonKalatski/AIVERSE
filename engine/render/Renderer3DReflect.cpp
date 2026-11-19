@@ -21,14 +21,16 @@ void Renderer3D::renderReflection() {
     // original first-glossy-water fallback when no tagged NEREID water exists.
     const DrawItem* water = nullptr;
     for (const auto& it : items_) {
-        if ((it.flags & kDrawWaterSurface) && it.color.w < 0.99f &&
+        if ((it.flags & kDrawWaterSurface) &&
+            !(it.flags & kDrawNereidCascade) && it.color.w < 0.99f &&
             it.specular >= 0.85f && !(it.flags & kDrawUnlit)) {
             water = &it; break;
         }
     }
     if (!water) {
         for (const auto& it : items_) {
-            if (it.color.w < 0.99f && it.specular >= 0.85f &&
+            if (it.color.w < 0.99f && !(it.flags & kDrawNereidCascade) &&
+                it.specular >= 0.85f &&
                 !(it.flags & kDrawUnlit)) {water = &it;break;}
         }
     }
