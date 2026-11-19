@@ -305,10 +305,25 @@ public:
         uint32_t skinnedDraws = 0;
         uint32_t bakedDraws = 0;
         uint32_t reactiveDraws = 0;
+        uint32_t reactiveAnimatedDraws = 0;
+        uint32_t reactiveCallbacks = 0;
+        uint32_t lodReactiveDraws = 0;
         uint32_t rejected = 0;
         bool submitted = false;
     };
     const ObjectMotionStats& objectMotionStats() const { return objectMotionStats_; }
+    // Generic presentation-only reactive-mask hook for water, particles and
+    // user render modules. Register AFTER beginScene() and BEFORE resolvePrisma().
+    // Called once with the reactive RGBA8 render pass already open. The callback
+    // only submits draws (do not beginPass/endPass), writes R=coverage [0..1],
+    // binds its own pipeline/buffers and may sample the READ-ONLY scene depth.
+    // Prefer blending which preserves earlier coverage; keep all owned GPU
+    // resources alive through resolvePrisma. Zero callbacks => no extra pass.
+    using MotionReactiveDraw = std::function<void(gfx::Device&, gfx::TextureHandle sceneDepth,
+                                                   int width, int height)>;
+    void addMotionReactiveDraw(MotionReactiveDraw fn) {
+        if (fn) motionReactiveDraws_.push_back(std::move(fn));
+    }
     void resolvePostFx() { resolvePrisma(); } // legacy API
     // Extra renderers (sprites, tiles) that draw with their own pipelines inside the main pass: run
     // after opaque and translucent meshes, before overlays (fog of war stays on top).
@@ -609,6 +624,7 @@ private:
     };
     std::map<uint64_t, ObjectMotionHistory> objectMotionViews_;
     ObjectMotionStats objectMotionStats_{};
+    std::vector<MotionReactiveDraw> motionReactiveDraws_;
     gfx::ShaderHandle objectMotionShader_;
     gfx::PipelineHandle objectMotionPipeline_;
     gfx::ShaderHandle objectMotionInstancedShader_;
@@ -621,6 +637,10 @@ private:
     gfx::PipelineHandle objectMotionMaskedPipeline_;
     gfx::ShaderHandle objectMotionReactiveShader_;
     gfx::PipelineHandle objectMotionReactivePipeline_;
+    gfx::ShaderHandle objectMotionReactiveSkinShader_;
+    gfx::PipelineHandle objectMotionReactiveSkinPipeline_;
+    gfx::ShaderHandle objectMotionReactiveBakedShader_;
+    gfx::PipelineHandle objectMotionReactiveBakedPipeline_;
 
     // Material GPU-state equivalence is pass-independent within one scene.
     // Resolve each distinct (model, material) once for shadows, colour,
