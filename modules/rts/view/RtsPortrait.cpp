@@ -82,7 +82,12 @@ void Portrait::renderMaterial(RtsView& view, const Json& material, int shape, do
     Model* resident = previewModels_.find(key);
     if(!resident) {
         auto generated=previewShape(shape);
-        if(!uploadModel(*dev_,*generated,true))return;
+        if(!uploadModel(*dev_,*generated,true)) {
+            // Failed publication has no consumers; release any partially
+            // created GPU allocations before dropping this temporary Model.
+            releaseModel(*dev_,*generated);
+            return;
+        }
         resident=previewModels_.insertIfAbsent(key,std::move(generated));
     }
     if(!resident)return;
