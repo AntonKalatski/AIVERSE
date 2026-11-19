@@ -9,6 +9,7 @@
 #include "engine/render/TerraWeaveHorizonGpuCache.h"
 #include "engine/render/TerraWeaveVertexWind.h"
 #include "engine/world/TerraWeaveWindField.h"
+#include "engine/world/TerraWeaveHorizonPresentationQuality.h"
 #include "engine/world/TerraWeaveHorizonArchive.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/world/AsyncChunkStream.h"
@@ -323,6 +324,27 @@ public:
     }
     HorizonWindShadowCachePolicy windShadowCachePolicy() const {
         return windShadowCachePolicy_;
+    }
+    // A single validated owner-thread operation configures the existing
+    // Stage33/34 shader switches, Stage36 GPU upload budget and Stage37/38
+    // inactive CPU wind shadow memory. Terrain/atlas settings are immutable.
+    void setPresentationPolicy(HorizonPresentationPolicy policy) {
+        validateHorizonPresentationPolicy(policy);
+        setWindUploadPolicy(policy.windUpload);
+        setWindShadowCachePolicy(policy.windShadowCache);
+        setSpatialWindVariation(policy.spatialWindVariation);
+        setExactSpatialWindField(policy.exactSpatialWindField);
+    }
+    HorizonPresentationPolicy presentationPolicy() const {
+        HorizonPresentationPolicy policy;
+        policy.exactSpatialWindField=exactSpatialWindField_;
+        policy.spatialWindVariation=spatialWindVariation_;
+        policy.windUpload=windUploadPolicy_;
+        policy.windShadowCache=windShadowCachePolicy_;
+        return policy;
+    }
+    void setPresentationQualityPreset(HorizonPresentationQualityPreset preset) {
+        setPresentationPolicy(horizonPresentationPolicyForQuality(preset));
     }
     std::shared_ptr<const ForestWindField> windField() const {
         return windField_;
