@@ -30,6 +30,7 @@ struct PrismaStats {
     int passes = 0, effects = 0, width = 0, height = 0;
     int outputWidth = 0, outputHeight = 0;
     bool temporalUpscaled = false;
+    bool reactiveUsed = false;
     bool temporalFallback = false;
     bool adaptiveResolution = false;
     bool adaptiveMemoryPressure = false;
