@@ -424,6 +424,34 @@ int aiverseMain(int argc, char** argv) {
                     (unsigned long long)cpu.multiDrawSubmissions,
                     (unsigned long long)cpu.indirectCommands,
                     gpu.gpuEncodedSubmissions, gpu.gpuEncodedCommands);
+                std::printf("stress MDI decisions: scans=%llu short=%llu below=%llu "
+                            "ineligible=%llu failed=%llu geometryBreaks=%llu "
+                            "materialBreaks=%llu stateBreaks=%llu\n",
+                    (unsigned long long)cpu.mdiScans,
+                    (unsigned long long)cpu.mdiShort,
+                    (unsigned long long)cpu.mdiBelowThreshold,
+                    (unsigned long long)cpu.mdiIneligible,
+                    (unsigned long long)cpu.mdiFailed,
+                    (unsigned long long)cpu.mdiGeometryBreaks,
+                    (unsigned long long)cpu.mdiMaterialBreaks,
+                    (unsigned long long)cpu.mdiStateBreaks);
+                if (cpuTiming)
+                    for (size_t phase = 0; phase < 2; ++phase) {
+                        const auto& st = cpu.mdiCpuStages[phase];
+                        std::printf("stress MDI pass=%zu scans=%llu attempts=%llu "
+                                    "submitted=%llu warmups=%llu threshold=%llu "
+                                    "fallbacks=%llu total=%.5fms "
+                                    "grouping=%.5fms packing=%.5fms "
+                                    "pipeline=%.5fms submit=%.5fms\n",
+                            phase, (unsigned long long)st.candidateScans,
+                            (unsigned long long)st.indirectAttempts,
+                            (unsigned long long)st.submitted,
+                            (unsigned long long)st.pipelineWarmups,
+                            (unsigned long long)st.underThreshold,
+                            (unsigned long long)st.backendFallbacks,
+                            st.totalMs, st.groupingSortMs, st.commandPackingMs,
+                            st.pipelineSetupMs, st.backendSubmitMs);
+                    }
                 // AUTO can correctly choose any valid renderer path.
                 // Pixel parity and exit status remain mandatory below.
             }
