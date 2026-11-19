@@ -354,3 +354,8 @@ Far-LOD river surface generation deliberately suppresses shore foam to avoid whi
 ## Stage 47 — library/skill catalog identity
 
 Each registered NEREID CMake package has a distinct skill ID; core water skill remains the common ECS ownership and architecture contract. The packages for buoyancy, interactions, cascades, currents and vortices have separate brief skills and still declare core `nereid-water` as their dependency. The generated skill catalog contains independent references so automated routing does not collide. No water runtime C++ code changes; Python check/CTest not run. See `docs/nereid/stage-47-skill-catalog.md`.
+
+
+## Stage 48 — large-world ocean LOD test contract
+
+The precise-world ocean patch API honors `WaterSurfaceMeshOptions.lod`: Far emits one unsubdivided quad (four vertices), while default Medium subdivides. Tests must set Far explicitly before asserting vertex count and must test Medium's local-coordinate preservation separately. No runtime changes; rebuild and run native CTest. See `docs/nereid/stage-48-ocean-lod-fixture.md`.

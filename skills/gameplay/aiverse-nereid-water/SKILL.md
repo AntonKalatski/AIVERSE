@@ -690,3 +690,8 @@ Run `ctest --test-dir build/ecs-test --output-on-failure -R '^ecs_nereid_conflue
 ## Stage 47 — one skill per registered NEREID library package
 
 The core package remains `aiverse-nereid-water`. Specialized native targets now have their own AI routing skills: `aiverse-nereid-buoyancy`, `aiverse-nereid-interactions`, `aiverse-nereid-cascades`, `aiverse-nereid-currents`, `aiverse-nereid-vortices`. All reference the shared NEREID architecture/handoff and depend on `aiverse-nereid-water` in the generated catalog. This preserves each library's own CMake target, avoids duplicate skill IDs in `tools/skills/catalog.py validate`, and lets agents request only the required mechanic. Do not reintroduce one SKILL.md path across multiple package records. Refer to `docs/nereid/stage-47-skill-catalog.md`.
+
+
+## Stage 48 — ocean LOD fixture verification
+
+`ecs_nereid_renderer_contract_test` now tests a four-vertex ocean patch using explicit Far LOD, and additionally tests Medium's subdivided geometry and precise local basis. Defaults remain Medium; no renderer or ECS code changed. Fix was source-reviewed and committed, NOT compiled or run. Full handoff: `docs/nereid/stage-48-ocean-lod-fixture.md`.

@@ -364,6 +364,9 @@ int main() {
     seaOptions.cameraX64=100000000.25;
     seaOptions.cameraZ64=-100000000.25;
     seaOptions.oceanPatchRadius=1.f;
+    // This fixture expects a single unsubdivided quad (four vertices).
+    // WaterSurfaceMeshOptions defaults to Medium, which subdivides it.
+    seaOptions.lod=lib::nereid::WaterSurfaceLod::Far;
     seaOptions.originX=100000000.0;
     seaOptions.originZ=-100000001.0;
     const auto preciseKey=render::makeNereidSurfaceKey(55,true,seaOptions);
@@ -380,6 +383,19 @@ int main() {
           oceanPrepared->cpu.vertices[0].x==-1.f &&
           oceanPrepared->cpu.vertices[0].z==-1.f,
           "large-world ocean patch vertices must be local and stable");
+    // Medium LOD must retain the same local basis even though it creates
+    // more vertices. Do not weaken the real generator's LOD policy.
+    auto mediumSeaOptions=seaOptions;
+    mediumSeaOptions.lod=lib::nereid::WaterSurfaceLod::Medium;
+    const auto mediumOceanPrepared=render::NereidSurfaceResident::prepare(
+        infiniteBody,nullptr,55,mediumSeaOptions);
+    check(mediumOceanPrepared &&
+          mediumOceanPrepared->cpu.vertices.size()>4 &&
+          mediumOceanPrepared->cpu.vertices[0].x==-1.f &&
+          mediumOceanPrepared->cpu.vertices[0].z==-1.f &&
+          mediumOceanPrepared->key.patchX==100000000.0 &&
+          mediumOceanPrepared->key.patchZ==-100000001.0,
+          "medium ocean LOD must preserve precise local patch coordinates");
     seaOptions.cameraX64=100000001.25;
     const auto nextPatch=render::makeNereidSurfaceKey(55,true,seaOptions);
     check(nextPatch.patchX==100000001.0 &&
