@@ -30,6 +30,7 @@ static_assert(kJointFloats * 4 <= 4096, "joint palette must fit a 4 KB uniform b
 constexpr uint32_t kKeyDrawCallView = 32768;
 constexpr uint32_t kKeyMaterialInstancePalette = 1u << 27; // editor draw-call diagnostic shader permutation
 constexpr uint32_t kKeyModelVirtualTexture = 1u << 28;
+constexpr uint32_t kKeyModelVirtualAlpha = 1u << 30;
 constexpr uint32_t kKeySkinned = 1, kKeyNormalMap = 2, kKeyAlphaMask = 4, kKeyShadow = 8, kKeyBaked = 64, kKeyMorph = 128,
                    kKeyInstanced = 256, kKeyOutline = 512, kKeyLightmap = 2048, kKeyProbes = 4096, kKeyLodFade = 8192, kKeyMaterialPalette = 16384;   // GI keys: agent-lightbake
 struct ProfileTimer {
@@ -136,6 +137,15 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         int(matQuality_) >= it.mat->shaderGraph->minQuality ?
         it.mat->shaderGraph : nullptr;
     const auto* graph = selectedGraph.get();
+    // The original full-size base alpha was extracted to an R8 image.
+    // Keep colour/shadow/selection on the same full-resolution coverage.
+    // Slot 15 is intentionally not used with shader-graph variants.
+    bool alphaR8 = false;
+    if (mask && !graph && it.mat->baseTex >= 0 &&
+        size_t(it.mat->baseTex) < it.model->images.size()) {
+        alphaR8 = it.model->images[size_t(it.mat->baseTex)]
+                      .virtualAlphaMask.valid();
+    }
     // Fragment slots 13 and 14 belong to built-in model VT only.
     // Shader Graph owns those slots, and GPU ICB commands may mix
     // external VT domains, so both paths remain on source textures.
@@ -144,6 +154,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         !gpuInstances &&
         resolveModelVirtualTexture(*it.model,*it.mat,vtBinding);
     const uint32_t shaderKey = (vtSampling ? kKeyModelVirtualTexture : 0u) |
+        (alphaR8 ? kKeyModelVirtualAlpha : 0u) |
         gpuInstanceShaderBit | studioShaderBits |
                                (instancePalette ? kKeyMaterialInstancePalette : 0u) | (skinned ? kKeySkinned : 0u) | (normalMap ? kKeyNormalMap : 0u) | (mask ? kKeyAlphaMask : 0u) |
                                (shadow ? kKeyShadow : 0u) | (baked ? kKeyBaked : 0u) | (morph ? kKeyMorph : 0u) |
@@ -178,6 +189,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         if (morph) defs += "#define MORPH 1\n";
         if (normalMap) defs += "#define NORMALMAP 1\n";
         if (mask) defs += "#define ALPHAMASK 1\n";
+        if (alphaR8) defs += "#define VIRTUAL_ALPHA_MASK 1\n";
         if (materialPalette) defs += "#define MATERIAL_PALETTE 1\n";
         if (instancePalette) defs += "#define MATERIAL_INSTANCE_PALETTE 1\n";
         if (lodFade) defs += "#define LODFADE 1\n";
@@ -264,7 +276,8 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         sd.glslVertex = vs.c_str(); sd.glslFragment = fs.c_str(); sd.msl = msl.c_str();
         // tex11/tex12: SSR scene colour/depth; graph textures follow at kGraphTextureSlot.
         sd.uniformSlots = vtSampling ? 7 : (shadow ? 5 : 6);
-        sd.textureSlots = vtSampling ? 15 : (graph && !graph->textures.empty() ?
+        sd.textureSlots = alphaR8 ? 16 : vtSampling ? 15 :
+            (graph && !graph->textures.empty() ?
             kGraphTextureSlot+int(graph->textures.size()) : shadow ? 9 : 13); sd.label = shadow ? "model shadow" : "model"; // U5/tex9: lights, tex10: height field
         ShaderEntry e;
         if (warmingPipelines_) e.job=dev_->createShaderAsync(sd);
@@ -778,6 +791,12 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
             return idx >= 0 && idx < int(it.model->images.size()) && it.model->images[size_t(idx)].tex.valid() ? it.model->images[size_t(idx)].tex : def;
         };
         dev_->setTexture(1, tex(mt.baseTex, white_));
+        if (mt.alpha == AlphaMode::Mask && mt.baseTex >= 0 &&
+            size_t(mt.baseTex) < it.model->images.size() &&
+            !(mt.shaderGraph && int(matQuality_) >= mt.shaderGraph->minQuality)) {
+            const auto coverage = it.model->images[size_t(mt.baseTex)].virtualAlphaMask;
+            if (coverage.valid()) dev_->setTexture(15,coverage);
+        }
         if(mt.shaderGraph)for(size_t i=0;i<mt.shaderGraph->textures.size();++i)dev_->setTexture(kGraphTextureSlot+int(i),tex(mt.graphTextures[i],white_));
         if (phase != 0) {
             dev_->setTexture(2, tex(mt.mrTex, white_));
