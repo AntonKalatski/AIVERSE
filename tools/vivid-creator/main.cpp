@@ -411,6 +411,21 @@ struct CreatorApp {
     }
     void regenerate() {
         if(!device)return;
+        // Admission occurs before any new CPU mesh or GPU asset is built.
+        // An unresolved completion marker retains the old character; it
+        // never authorizes additional unbounded residency.
+        if(retiredHumans && (human.head || human.hair || actor || cpuActor)) {
+            const auto retiredBytes=HumanRetirementQueue::estimatedCurrentBytes(
+                human,actor.get(),cpuActor.get());
+            if(!retiredHumans->canPublish(retiredBytes)) {
+                const auto usage=retiredHumans->residency();
+                status="VIVID Creator: character rebuild deferred; "+
+                       std::to_string(usage.pending)+" pending old characters / "+
+                       std::to_string(usage.estimatedBytes/1024/1024)+
+                       " MiB estimated retired GPU residency";
+                return; // retain pendingRebuild until fences complete
+            }
+        }
         try {
             // Build/validate in CPU scratch first, keeping last-good visual
             // data if DNA or shader-graph authoring fails.
@@ -671,6 +686,15 @@ struct CreatorApp {
         ImGui::Text("Revision %zu %s",session.revision(),
                     session.dirty()?"*unsaved":"saved");
         ImGui::TextWrapped("%s",status.c_str());
+        if(retiredHumans) {
+            const auto memory=retiredHumans->residency();
+            ImGui::Text("GPU retirement: %zu pending / %zu peak",
+                memory.pending,memory.highWatermark);
+            ImGui::Text("Estimated retired GPU: %llu MiB, deferred rebuilds: %llu",
+                static_cast<unsigned long long>(
+                    memory.estimatedBytes/(1024ull*1024ull)),
+                static_cast<unsigned long long>(memory.blockedPublications));
+        }
         if(ImGui::Button("Undo") && session.undo()) {
             syncDraft();pendingRebuild=true;
         }
