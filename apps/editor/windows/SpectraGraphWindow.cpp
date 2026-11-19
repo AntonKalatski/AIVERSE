@@ -252,7 +252,7 @@ private:
         if(checkResult(result)) {
             message_=gpu?"Metal GPU preview queued (strict subset)."
                         :"CPU preview in Scene.";
-            ed.focusWindow("scene");
+            ed.focusWindow(result.getStr("view","scene"));
         }
     }
     void toolbar(Editor& ed) {
