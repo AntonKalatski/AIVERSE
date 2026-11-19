@@ -2034,7 +2034,8 @@ if(AIVERSE_BUILD_STRATA)
     # Shared-gfx indirect argument preflight. No live draw path is selected:
     # renderer ownership/parity gates are explicit and default Legacy.
     add_library(aiverse_strata_render_routing STATIC
-        engine/render/StrataRenderRouting.cpp)
+        engine/render/StrataRenderRouting.cpp
+        engine/render/StrataRendererPreview.cpp)
     target_link_libraries(aiverse_strata_render_routing PUBLIC
         aiverse_strata_gpu_scene aiverse_strata_view)
     target_include_directories(aiverse_strata_render_routing PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
