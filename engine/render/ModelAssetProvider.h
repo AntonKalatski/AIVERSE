@@ -4,6 +4,7 @@
 #pragma once
 #include "Model.h"
 #include "ModelResourceCache.h"
+#include "ModelStagingTransaction.h"
 #ifndef __EMSCRIPTEN__
 #include "AsyncModelCpuQueue.h"
 #endif
@@ -30,6 +31,9 @@ public:
 #endif
         reader_=std::move(reader);
     }
+    void setGpuDeviceLease(RenderDeviceLifetime::Lease lease) {
+        gpuLease_=std::move(lease);
+    }
     ModelResourceCache& resources() noexcept {return resources_;}
     const ModelResourceCache& resources() const noexcept {return resources_;}
     const std::vector<std::string>& warnings() const noexcept {return warnings_;}
@@ -46,28 +50,29 @@ public:
     // invalidating that source. Do not call while renderer submissions
     // reference a model whose source is being replaced.
     Model* load(gfx::Device& device,const std::string& source) {
-        resources_.bindResourceDevice(device);
+        bindDevice(device);
         if(source.empty())return nullptr;
         if(resources_.contains(source))return resources_.find(source);
         // Backpressure pauses NEW publication only; existing resources
         // and GPU-in-flight retirement leases must not be dropped.
         if(resources_.publicationBackpressured())return nullptr;
-        std::unique_ptr<Model> model;
         try {
             if(!reader_)throw std::runtime_error("missing model file reader");
-            model=loadModel(source,reader_,&warnings_,resources_.textures());
-            if(model) {
-                prepareModelUpload(*model);
-                if(!uploadModel(device,*model))
-                    throw std::runtime_error("model GPU upload failed");
-            }
+            auto model=loadModel(source,reader_,&warnings_,resources_.textures());
+            if(!model)throw std::runtime_error("model import returned no Model");
+            prepareModelUpload(*model);
+            // No Model/shared GPU cache key becomes resident until the
+            // scratch import, GPU preflight, and shared promotion succeed.
+            ModelStagingTransaction staging(device,resources_,imageRollback_,gpuLease_);
+            staging.stage(source,std::move(model));
+            staging.commit();
+            return resources_.find(source);
         }catch(const std::exception& e) {
             warnings_.push_back(source+": "+e.what());
-            // Failed GPU upload may leave temporary allocations.
-            if(model)releaseModel(device,*model);
-            model.reset();
+            // Preserve legacy failed-load tombstone behavior, but partial
+            // GPU uploads are retired via the staging transaction first.
+            return resources_.insertIfAbsent(source,{});
         }
-        return resources_.insertIfAbsent(source,std::move(model));
     }
 
 #ifndef __EMSCRIPTEN__
@@ -92,7 +97,7 @@ public:
     // budgetMs<=0 disables the wall-time limit.
     size_t publishReady(gfx::Device& device,size_t maxCount=1,
                         double budgetMs=0) {
-        resources_.bindResourceDevice(device);
+        bindDevice(device);
         const auto started=std::chrono::steady_clock::now();
         size_t published=0;
         while(published<maxCount && !resources_.publicationBackpressured()) {
@@ -106,13 +111,17 @@ public:
             for(auto& warning:prepared.warnings)
                 warnings_.push_back(std::move(warning));
             if(resources_.contains(prepared.source))continue;
-            if(prepared.model && !uploadModel(device,*prepared.model)) {
-                warnings_.push_back(prepared.source+": model GPU upload failed");
-                releaseModel(device,*prepared.model);
-                prepared.model.reset();
+            try {
+                if(!prepared.model)
+                    throw std::runtime_error("async model import returned no Model");
+                ModelStagingTransaction staging(
+                    device,resources_,imageRollback_,gpuLease_);
+                staging.stage(prepared.source,std::move(prepared.model));
+                staging.commit();
+            }catch(const std::exception& e) {
+                warnings_.push_back(prepared.source+": "+e.what());
+                resources_.insertIfAbsent(prepared.source,{});
             }
-            resources_.insertIfAbsent(prepared.source,
-                                      std::move(prepared.model));
             ++published;
         }
         return published;
@@ -132,15 +141,32 @@ public:
                                             std::forward<OnDetach>(onDetach));
     }
     bool collectRetired(gfx::Device& device) {
-        return resources_.collectRetired(device);
+        bindDevice(device);
+        const bool models=resources_.collectRetired(device);
+        const bool images=imageRollback_.collect(device);
+        return models && images;
+    }
+    size_t pendingRolledBackImages() const noexcept {
+        return imageRollback_.pendingImages();
     }
     void shutdown(gfx::Device& device) {
 #ifndef __EMSCRIPTEN__
         cpuQueue_.shutdown(); // CPU source data never outlives texture cache
 #endif
+        bindDevice(device);
+        if(!imageRollback_.drain(device))
+            throw std::runtime_error("ModelAssetProvider rollback GPU barrier failed");
         resources_.shutdown(device);
     }
 private:
+    void bindDevice(gfx::Device& device) {
+        if(gpuLease_.device())
+            resources_.bindResourceDevice(device,gpuLease_);
+        else
+            resources_.bindResourceDevice(device);
+    }
+    RenderDeviceLifetime::Lease gpuLease_;
+    ModelImageRollbackPool imageRollback_;
     FileReader reader_;
     ModelResourceCache resources_;
 #ifndef __EMSCRIPTEN__
