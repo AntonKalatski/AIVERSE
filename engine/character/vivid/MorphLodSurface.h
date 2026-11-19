@@ -201,11 +201,12 @@ public:
             const float dz=std::max({node.lo.z-p.z,0.0f,p.z-node.hi.z});
             return dx*dx+dy*dy+dz*dz;
         };
+        std::vector<std::uint32_t> stack;
+        stack.reserve(64);
         for(const auto point:lod) {
             LodSurfaceSample best;
             best.distanceSquared=std::numeric_limits<float>::max();
-            std::vector<std::uint32_t> stack;
-            stack.reserve(64);
+            stack.clear();
             stack.push_back(0);
             while(!stack.empty()) {
                 const auto id=stack.back();stack.pop_back();
