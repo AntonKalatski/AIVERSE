@@ -435,12 +435,15 @@ VkSampler VulkanDevice::samplerFor(const TextureDesc& d, const VTexture& t) {
     return s;
 }
 
-void VulkanDevice::uploadImage(VTexture& t, int level, int x, int y, int w, int h,
+bool VulkanDevice::uploadImage(VTexture& t, int level, int x, int y, int w, int h,
                                const void* data, size_t bytes, VkCommandBuffer cb,
                                int z, int depth, int baseArrayLayer, int layerCount) {
     VkBuffer src; VkDeviceSize off;
     void* p = stagingWrite(bytes, src, off);
-    if (!p) return;
+    if (!p) {
+        if (error_.empty()) error_ = "Vulkan texture staging allocation failed";
+        return false;
+    }
     std::memcpy(p, data, bytes);
     VkBufferImageCopy c{};
     c.bufferOffset = off;
@@ -449,6 +452,7 @@ void VulkanDevice::uploadImage(VTexture& t, int level, int x, int y, int w, int 
     c.imageOffset = {x, y, z};
     c.imageExtent = {uint32_t(w), uint32_t(h), uint32_t(depth)};
     vkCmdCopyBufferToImage(cb, src, t.image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &c);
+    return true;
 }
 
 void VulkanDevice::generateMips(VTexture& t, VkCommandBuffer cb) {
@@ -588,6 +592,17 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
     }
     if (!createImage(t, usage)) return {};
     t.sampler = samplerFor(d, t);
+    // The image may already be referenced by recorded barriers/copies.
+    // On upload failure defer its destruction until that frame has retired.
+    auto failUpload = [&]() -> TextureHandle {
+        VTexture rejected = t;
+        deferDestroy([this, rejected]() mutable {
+            if (rejected.view) vkDestroyImageView(device_, rejected.view, nullptr);
+            if (rejected.image) vkDestroyImage(device_, rejected.image, nullptr);
+            memory_.release(rejected.alloc);
+        });
+        return {};
+    };
     VkCommandBuffer cb = transferCmd();
     if (d.levelCount > 0 && d.levelData) {
         barrierImage(cb, t.image, false, VK_IMAGE_LAYOUT_UNDEFINED,
@@ -597,8 +612,8 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
             const int z = std::max(1, t.volumeDepth >> l);
             const size_t bytes = t.compressed ? d.levelSize[l] :
                                  size_t(w) * size_t(h) * size_t(z) * size_t(t.layers) * texelBytes(d.format);
-            uploadImage(t, l, 0, 0, w, h, d.levelData[l], bytes, cb,
-                        0, z, 0, t.layers);
+            if (!uploadImage(t, l, 0, 0, w, h, d.levelData[l], bytes, cb,
+                             0, z, 0, t.layers)) return failUpload();
         }
         barrierImage(cb, t.image, false, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                      VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_REMAINING_MIP_LEVELS, 0, uint32_t(t.layers));
@@ -607,8 +622,8 @@ TextureHandle VulkanDevice::createTexture(const TextureDesc& d) {
                      VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_REMAINING_MIP_LEVELS, 0, uint32_t(t.layers));
         const size_t bytes = size_t(t.width) * size_t(t.height) *
                              size_t(t.volumeDepth) * size_t(t.layers) * texelBytes(d.format);
-        uploadImage(t, 0, 0, 0, t.width, t.height, d.data, bytes, cb,
-                    0, t.volumeDepth, 0, t.layers);
+        if (!uploadImage(t, 0, 0, 0, t.width, t.height, d.data, bytes, cb,
+                         0, t.volumeDepth, 0, t.layers)) return failUpload();
         if (t.generateMips) generateMips(t, cb);
         else barrierImage(cb, t.image, false, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                           VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_REMAINING_MIP_LEVELS, 0, uint32_t(t.layers));
@@ -675,23 +690,26 @@ bool VulkanDevice::readTextureAsync(TextureHandle h, TextureReadbackDesc request
     return true;
 }
 
-void VulkanDevice::updateTexture(TextureHandle h, int x, int y, int w, int hh, const void* pixels, int rowPitch) {
-    VTexture* t = textures_.get(h.id);
-    if (!t || t->samples > 1 || t->dimension != TextureDimension::Texture2D ||
-        t->compressed || t->depth || w <= 0 || hh <= 0) return;
-    const size_t bpp = texelBytes(t->format), row = size_t(w) * bpp;
-    std::vector<uint8_t> packed;
-    const void* src = pixels;
-    if (size_t(rowPitch) != row) {
-        packed.resize(row * size_t(hh));
-        for (int r = 0; r < hh; ++r) std::memcpy(packed.data() + size_t(r) * row, static_cast<const uint8_t*>(pixels) + size_t(r) * size_t(rowPitch), row);
-        src = packed.data();
+void VulkanDevice::updateTexture(TextureHandle h, int x, int y, int w, int hh,
+                                 const void* pixels, int rowPitch) {
+    // Reuse the checked region-upload path. A failed staging allocation
+    // must never leave a command buffer with only a layout transition.
+    if (!pixels || rowPitch < 0) {
+        error_ = "Vulkan texture update has invalid source or row pitch";
+        return;
     }
-    VkCommandBuffer cb = transferCmd();
-    barrierImage(cb, t->image, false, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
-    uploadImage(*t, 0, x, y, w, hh, src, row * size_t(hh), cb);
-    if (t->generateMips) generateMips(*t, cb);
-    else barrierImage(cb, t->image, false, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    const VTexture* t = textures_.get(h.id);
+    if (!t || t->samples > 1 || t->dimension != TextureDimension::Texture2D ||
+        t->compressed || t->depth || w <= 0 || hh <= 0)
+        return;
+    TextureUploadDesc u{};
+    u.x=x; u.y=y; u.width=w; u.height=hh;
+    u.mipLevel=0; u.arrayLayer=0;
+    u.rowPitchBytes=rowPitch;
+    u.slicePitchBytes=0;
+    u.data=pixels;
+    if (!updateTextureRegion(h,u) && error_.empty())
+        error_="Vulkan texture update failed";
 }
 
 bool VulkanDevice::updateTextureRegion(TextureHandle handle, const TextureUploadDesc& u) {
