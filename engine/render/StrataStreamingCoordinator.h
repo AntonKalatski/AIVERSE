@@ -28,6 +28,10 @@ bool configureDeviceIndexBudget(gfx::Device& device, uint64_t limitBytes);
 bool reserveDeviceIndexBytes(gfx::Device& device, uint64_t bytes,
                              uint64_t& outToken);
 void releaseDeviceIndexBytes(gfx::Device& device, uint64_t token);
+// Call before gfx::Device destruction; never discards any active lease.
+// Prevents an idle ledger from leaking its limit to a new device that
+// happens to reuse the same C++ pointer address.
+void clearIdleDeviceIndexBudget(gfx::Device& device);
 DeviceIndexBudgetStats deviceIndexBudgetStats(gfx::Device& device);
 
 // Stage 15.4: single GPU upload-byte limit shared by ALL scenes/worlds
