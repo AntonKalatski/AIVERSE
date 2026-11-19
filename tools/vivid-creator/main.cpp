@@ -924,9 +924,21 @@ struct CreatorApp {
                         pendingRebuild=true;
                     ImGui::Text("Prepared facial LODs: %zu / 8",
                                 authoredFacialLods.size());
-                    for(const auto& lod:authoredFacialLods)
+                    for(std::size_t level=0;level<authoredFacialLods.size();++level) {
+                        const auto& lod=authoredFacialLods[level];
                         ImGui::BulletText("Mesh %d: %zu vertices",
                             lod.targetMesh,lod.mapping.samples.size());
+                        ImGui::SameLine();
+                        ImGui::PushID(int(level));
+                        if(ImGui::SmallButton("Remove level")) {
+                            authoredFacialLods.erase(authoredFacialLods.begin()+std::ptrdiff_t(level));
+                            if(authoredFacialLods.empty())lodGpuMorphEnabled=false;
+                            pendingRebuild=true;
+                            ImGui::PopID();
+                            break;
+                        }
+                        ImGui::PopID();
+                    }
                     ImGui::TextWrapped("Actor deforms both source and LOD "
                         "vertices in one full-model GPU stream; Renderer3D "
                         "chooses the authored mesh LOD.");
@@ -940,7 +952,7 @@ struct CreatorApp {
                             throw std::runtime_error("VIVID LOD: select source and target meshes first");
                         const auto path=std::filesystem::absolute(
                             std::filesystem::path(importedManifest)).parent_path()/
-                            "vivid-facial-lod.mapping.json";
+                            ("vivid-facial-lod-"+std::to_string(targetLodMesh)+".mapping.json");
                         const auto restored=MorphLodMapping::fromJson(
                             Json::parse(fileContents(path,64ull*1024ull*1024ull)));
                         std::vector<std::uint32_t> sourceIndices;
@@ -1052,8 +1064,9 @@ struct CreatorApp {
                             .toJson(lodPositions.size()).dump(2);
                         const auto directory=std::filesystem::absolute(
                             std::filesystem::path(importedManifest)).parent_path();
-                        const auto mappingFile=directory/"vivid-facial-lod.mapping.json";
-                        const auto morphFile=directory/"vivid-facial-lod.morphs.json";
+                        const auto name="vivid-facial-lod-"+std::to_string(targetLodMesh);
+                        const auto mappingFile=directory/(name+".mapping.json");
+                        const auto morphFile=directory/(name+".morphs.json");
                         auto save=[&](const std::filesystem::path& file,
                                       const std::string& contents) {
                             const auto tmp=std::filesystem::path(file.string()+".vivid.tmp");
