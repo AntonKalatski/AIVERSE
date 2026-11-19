@@ -1620,3 +1620,60 @@ Stage 14.1 commits, changed files, limitations and next validation
 plan. `main` is not merged into this unfinished feature branch;
 retain the default-OFF switch and do not treat this as hardware
 Vulkan/GLES3 certification.
+
+
+## Stage 15 — opt-in budgeted GPU index residency (implementation, not yet validated)
+
+For sources that should not keep their entire Strata parent+leaf index
+hierarchy resident in GPU memory, the portable Metal/Vulkan/GLES3 path
+now supports a compact **index-only** residency cache. The original
+Model vertex buffer is always reused and kept by the existing renderer.
+
+```cpp
+render::GeometryScene scene;
+scene.setStrataPortableRenderingEnabled(true);
+scene.setStrataStreamingIndexBudgetBytes(256 * 1024); // bytes PER source
+scene.load(device, json, fileReader);
+// Renderer3D::beginScene(...)
+scene.draw(renderer); // preflight all instances, then submit one draw/source
+// renderer.render(...)
+```
+
+A positive budget selects the streamed path; zero preserves the Stage 14
+fully resident pooled/dedicated index sidecar. Must be configured before
+scene load. Each CPU model retains an immutable complete Strata hierarchy.
+Only the GPU index stream is compacted/streamed; mesh vertex data,
+textures, animations, material ownership and node/world transforms
+are unchanged.
+
+Root clusters are pinned. Demands are merged across main camera,
+sun-shadow, multiple scene instances and unknown future planar reflection
+views. Complete sibling groups can be promoted when budget allows; on
+pressure, earlier resident parent geometry remains drawable. Each GPU
+rebuild uploads a **new immutable** index-buffer generation before
+atomically publishing it. Invalid assets, allocations that fail,
+incomplete available children or stale source GPU handles cannot
+produce partial submissions. The same Renderer3D still issues all
+raster, shadow and reflection draws, with Legacy fallback available.
+
+`StrataIndexResidency` can also be used by native callers directly:
+`initialize(device, modelAsset, budgetBytes)`,
+`update(demands)`, `span(primitive,node)`, `stats()` and
+`shutdown(device)`. `PortableSource` additionally supports
+`collectResidencyDemands` and `updateResidency`. A positive budget
+is currently limited to at most 64 MiB per source; pinned-root size is
+the minimum. `GeometryScene::Stats` exposes live streamed index bytes,
+source counts, preparation failures and eviction counts.
+
+**Important limits:** per-source GPU index *active allocation* budget,
+not an aggregate scene/multi-world budget; old in-flight GPU buffers can
+temporarily exceed the active budget until their RHI release completes.
+The system does not yet stream indices from disk/network, compact the
+original CPU assets, implement GPU sparse pages, perform Vulkan compute
+meshlet culling or guarantee crack-free *lossy* cluster transitions.
+Repeated buffer repacking is correctness-first rather than optimized
+small page upload. Tests were authored but **not executed**; Stage 15
+has no verified real Metal/Vulkan/GLES3 visual or performance results.
+
+Detailed commit-level handoff:
+`docs/agent-handoffs/strata-virtual-geometry.md` (Stage 15).
