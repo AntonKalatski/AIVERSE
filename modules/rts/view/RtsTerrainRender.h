@@ -108,7 +108,7 @@ public:
         counter.buffer(water_.ib);
         for (auto texture : {cellTex_,dynTex_,splatTex_,visionTex_,
                 white_,flatN_,gray_,heightField_.tex,
-                detailNrmTex_,detailSplatTex_})
+                detailNrmTex_,detailSplatTex_,layerNormalAtlas_})
             counter.texture(texture);
         // TextureCache owns layers/cliffs. TextureRef aliases are borrowed.
         const auto cache = textures_.ownedGpuMemoryStats();
@@ -184,7 +184,7 @@ private:
     bool visionInit_ = false;
     std::vector<uint8_t> materialLayer_;
     render::TextureRef layerTex_[4], layerNrm_[4], cliffTex_, cliffNrm_;
-    bool texturesLoaded_ = false;
+    // GL33: four repeatable layer normals packed into one atlas sampler.\n    gfx::TextureHandle layerNormalAtlas_;\n    int layerNormalAtlasSize_ = 0;\n    bool texturesLoaded_ = false;
 
     std::vector<Chunk> chunks_;
     int cw_ = 0, ch_ = 0, mapW_ = 0, mapH_ = 0, lodLevels_ = 1;
