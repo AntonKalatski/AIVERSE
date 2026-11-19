@@ -534,8 +534,8 @@ size_t RtsView::reloadModelSources(const std::vector<std::string>& sources) {
                 hit |= changed.contains(streaming.getStr("detailModel"));
                 if(!requestedModels_[i].empty())
                     hit |= changed.contains(requestedModels_[i]);
-                if(typeAffected[i]=hit)
-                    rebuild.push_back(uint16_t(i));
+                typeAffected[i]=hit;
+                if(hit)rebuild.push_back(uint16_t(i));
             }
             // Destroy selective ECS pose sources BEFORE the model GPU buffers.
             std::vector<uint64_t> sourceIds;
