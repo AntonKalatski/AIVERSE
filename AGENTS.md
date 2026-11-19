@@ -1668,3 +1668,30 @@ uncompiled GPU/resource/animation source into main.
 - A returned `Asset` owns material overrides and immutable graph, but borrows `Model` and external texture indices. Keep its shared snapshot alive through `Asset::packet` and View submission. Retire/release GPU resources only after the last borrowed render packet and snapshot are gone. TextureLoader callbacks must manage their own side-effect rollback. Only the host-owned View/MotionWeave may advance an animated source once.
 - Standalone FPS now uses `AppearanceAuthoringService::compileGraph` and a host-owned `RenderDeviceLifetime` for GPU character load/shutdown; do not multiply AnimationGraph clocks. Do not assume the RTS GameClient, editor-hosted FPS, postFX or other direct GPU owners are fully epoch protected.
 - Stage 109 regression `tests/view/appearance_registry.cpp` / `view_appearance_registry` is registered but **NOT RUN**. CMake/CTest/graphics/sanitizer checks remain deferred at user request (implement features first). For exact commits/risks/next task see `docs/agent-handoffs/animation-universal.md` Stage 109.
+
+### Animation/View Stage 110: appearance choice and hot reload contract
+
+- AIVERSE scene/animation modules are **genre-neutral**. Material
+  `materials`, node `assign`, and `variant` are now authored through
+  `engine/view/AppearanceChoiceAuthoring.h`, not copied into each RTS/FPS
+  game. Retain `*`-before-named layer ordering, case-insensitive descendant
+  node matching, late-node-rule precedence, and warning policy.
+- The FPS animated-character load and `graphFile` hot-reload path use
+  `AppearanceAssetRegistry` directly. Its snapshot owns the draw
+  materials/node-material vector and immutable graph. Pin that snapshot for
+  the synchronous frame. Only the current FPS presentation ECS owns the
+  actual graph clock. On successful graph change, restart existing ECS
+  players once; on failure do not change players or model draw materials.
+- `Request::modelRevision` and explicit `invalidateSources({Model::path})`
+  prevent graph program reuse against a replaced Model at the same address.
+  Host GPU teardown must still detach all packets/snapshots before Model
+  shutdown, and texture loader side effects require host cleanup.
+- The legacy RTS adapter consumes the generic choice plan for materials and
+  variants, while preserving live animations/IK/attachments/LOD/stages.
+  **Do not** assume the adapter is ready for removal or that model textures
+  are GPU-transactional.
+- Deferred CTest `view_appearance_choice` in
+  `tests/view/appearance_choice.cpp`, and prior
+  `view_appearance_registry`, are registered but **NOT RUN**. No build,
+  CTest, TSAN, FPS/RTS/editor screenshot validation was performed. Follow
+  Stage 110 handoff for specific commits, risks and exact next step.
