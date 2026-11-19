@@ -9129,3 +9129,63 @@ record a new code SHA and separate stage handoff, then rerun the
 `--editor` gate. Main AIVERSE worktree remains blocked in unrelated
 unfinished rebase and must be left untouched.
 
+
+## Stage 10AZ — Metal Texture3D CPU upload selector compile fix (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Source commit:** `094bfe7c602fd57b8defa6bae2474a28cd04c3de`,
+`engine/gfx/metal/GfxMetal.mm`.
+**Docs commits:** `73045601bebf233adb3e315d136ff158834d63a0`
+(`docs/texture-rhi.md`);
+`5a5df0c21b167af1ff9034a2a56e8d8dd8499d16`
+(`skills/visuals/aiverse-texture-rhi/SKILL.md`).
+
+**Observed real macOS result at prior HEAD:** user supplied the end of
+`build/texture-rhi/verify-logs/build.log` from isolated Mac Studio worktree
+`/Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819`.
+`aiverse_editor` failed building `engine/gfx/metal/GfxMetal.mm.o`
+on Clang errors at lines 654 and 723:
+`no known instance method for selector
+'replaceRegion:mipmapLevel:withBytes:bytesPerRow:bytesPerImage:'`.
+All 23 named focused CTests (including GLSL and MSL validation)
+**PASSED** in the same user's actual run; CTest output explicitly says
+100% tests passed, 0 failed, 23/23, 14.99 s. All 20 test executables
+were built. The editor was NOT built successfully.
+
+**Root cause:** Metal `MTLTexture` provides
+`replaceRegion:mipmapLevel:slice:withBytes:bytesPerRow:bytesPerImage:`
+for 3D uploads, not the legacy-looking selector without `slice:`.
+Per Apple's documented API, for non-array/cube texture types (including
+3D) the `slice` argument is 0. For a volume subregion, `origin.z`
+and `depth` remain in `MTLRegionMake3D`; `bytesPerImage` is
+the per-depth-slice stride. The initial level-zero 3D volume upload
+and the `updateTextureRegion` 3D branch now explicitly include
+`slice:0`. Existing 1D, 2D, 2D arrays and cube faces are unchanged.
+
+**Compatibility:** no public RHI signature, texture format, serialization,
+ECS or gameplay logic changes. The fix ensures native Objective-C selectors
+match Metal's required interface while retaining existing depth-plane
+pitch and mip/offset behavior. Not a proof of GPU-visible texel fidelity.
+
+**Actually performed:** inspected the user-provided Clang diagnostics
+and exact current GitHub `GfxMetal.mm` source; checked Apple's
+Objective-C MTLTexture API documentation for the required selector,
+slice semantics and `bytesPerImage`; GitHub accepted the source and
+docs changes. **Post-fix C++/Objective-C++ compilation, editor link,
+CTest and real-device texture3D update/readback were NOT RUN** in
+this environment. No fabricated GPU or CI acceptance.
+
+**Next exact step:** in the existing separate Mac Studio worktree
+(not the primary repository, which is in an unrelated rebase):
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+cmake --build build/texture-rhi --target aiverse_editor --parallel 4
+# If it passes, rerun the focused verifier:
+bash tools/verify-texture-rhi.sh --editor --jobs 4
+```
+Inspect the new compiler/linker output if the editor still fails.
+After macOS native validation, perform Metal 3D volume mip + partial
+z-region upload/readback on an actual GPU, and separately validate
+GL/Vulkan, Windows/mobile/WebGL2 support before marking PR ready.
+
