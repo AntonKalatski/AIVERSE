@@ -744,3 +744,13 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
 - Actual native Creator compile, GUI and pixel acceptance: **NOT RUN**. No new dedicated UI automation or display screenshot exists for this change; the prior Stage 5J passes do not verify it.
 - Limits: 52-channel authoring changes semantic weights, not the imported vertex-to-morph `ShapeRoute` map, skeletal bind pose, 3D morph sculpt geometry, shape LOD topology, or animation retargeting. Current Hair High/Med/Low buttons select pre-existing groom quality, rather than authoring production mesh LOD assets.
 - Next: add visual inspector/editor for `ShapeRoute` and joint-to-morph binding, editable preview LOD and external asset publishing, then cross-backend tests. Never claim full MetaHuman Creator parity from channel sliders alone.
+
+
+## Stage 6K — 2026-11-19 — bounded CPU triangle-collider BVH
+
+- Branch `feature/vivid-digital-humans`; **no merge** into `main`.
+- Implementation commits: `ae224b5f64650e5b1675ad9b8a0d135bb38e7673` (`HumanGroom.h` indexed BVH nodes) and `376f4adcd4adf08f8fd087e25face07e1284ebe6` (`HumanGroom.cpp` build/traversal).
+- `setCollisionMesh` now rejects open or non-manifold topology using an undirected edge-incidence count (each edge must appear twice); only fully validated meshes replace the previous collision cache. Deterministic median-centroid axis splits produce a fixed leaf budget of 8 triangles. `resolveCollision` uses nonallocating BVH traversal for nearest surface and ray-parity inside/outside queries; the former brute-force triangle scan is retired.
+- API unchanged from Stage 6H. `clearCollisionMesh` now releases triangle, order and node data. Legacy DNA ellipsoid remains fallback.
+- **Tests actually run: NOT RUN** by request. Existing `vivid_human_appearance` source fixture contains a closed box collider; no native compiler/CTest or actual performance measurements have occurred for 6K.
+- Limitations: this static BVH is rebuilt on collision mesh replacement; not refitted per skinned frame. Odd-ray parity near shared edge/vertex boundaries can still be ambiguous, and mesh must be closed. Root transfer/attachment, self-collision and hair/cloth collisions are not solved by this stage. Next: explicit user-specified scalp proxy selection via import manifest and Creator, with coordinate-space validation; then long-hair fixed stepping and authoring workflow.
