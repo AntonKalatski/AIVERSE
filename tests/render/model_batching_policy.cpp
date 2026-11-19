@@ -754,6 +754,28 @@ int main() {
         CHECK(model.geometryRevision != beforeRelease);
     }
 
+    // Stage103 post-main-merge regression: production GPU admission must
+    // preserve the mutable CPU-vertex opt-out from the PHYSIS/Terra branch
+    // alongside main's per-asset rigid-LOD admission policy.
+    {
+        MockDevice dev;
+        Model model;
+        model.vertices.resize(3);
+        model.indices = {0, 1, 2};
+        model.batching.allowGeometryPool = false;
+        const auto mutableAdmission = geometryPoolAdmission(dev, model);
+        CHECK(!mutableAdmission.eligible());
+        if (globalGeometryPoolingEnabled())
+            CHECK(mutableAdmission.reason == GeometryPoolAdmissionReason::DedicatedAsset);
+        // Dedicated assets must never fall through to shared geometry pages.
+        model.batching.allowGeometryPool = true;
+        model.batching.geometryPoolPolicy = Model::Batching::GeometryPoolPolicy::Dedicated;
+        const auto dedicatedAdmission = geometryPoolAdmission(dev, model);
+        CHECK(!dedicatedAdmission.eligible());
+        if (globalGeometryPoolingEnabled())
+            CHECK(dedicatedAdmission.reason == GeometryPoolAdmissionReason::DedicatedAsset);
+    }
+
     // CPU-side cross-frame rigid cache is deliberately narrower than an
     // immediate ModelDraw: visibility and material overrides stay live.
     {
@@ -784,6 +806,18 @@ int main() {
         cache.primitiveOffsets.resize(model.meshes.size());
         CHECK(staticModelCacheGeometryCompatible(cache, draw, false));
         CHECK(!staticModelCacheGeometryCompatible(cache, draw, true));
+        // Runtime vertex parameters and filtered-material baker draws are
+        // not safe to reuse via static transforms or packet blueprints.
+        draw.useVertexParameters = true;
+        CHECK(!staticModelCacheCandidate(draw, false));
+        CHECK(!staticModelCacheGeometryCompatible(cache, draw, false));
+        draw.useVertexParameters = false;
+        draw.primitiveMaterialFilter = 0;
+        CHECK(!staticModelCacheCandidate(draw, false));
+        CHECK(!staticModelCacheGeometryCompatible(cache, draw, false));
+        draw.primitiveMaterialFilter = -1;
+        CHECK(staticModelCacheCandidate(draw, false));
+        CHECK(staticModelCacheGeometryCompatible(cache, draw, false));
         draw.world.m[12] += 2.0f;
         CHECK(!staticModelCacheGeometryCompatible(cache, draw, false));
         draw.world = cache.world;
