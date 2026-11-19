@@ -95,6 +95,8 @@ public:
         material_={};receiverDepth_={};materialWidth_=materialHeight_=0;
         sceneToken_=materialToken_=0;frameCounter_=0;
         sourcesPublished_=geometryPublished_=enabled_=false;
+        requestedQuality_=quality_=LumaWeaveQuality::Balanced;
+        adaptiveEnabled_=false;
         frame_={};last_={};
         return true;
     }
@@ -103,14 +105,26 @@ public:
     void setEnabled(bool on){enabled_=on;}
     bool enabled() const{return enabled_;}
     void setQuality(LumaWeaveQuality q) {
+        // Called by the native coordinator EVERY frame. Never reset the
+        // adaptive controller merely because the requested upper tier stays
+        // the same; that would prevent hysteresis from ever converging.
+        if(q==requestedQuality_) {
+            if(!adaptiveEnabled_)quality_=q;
+            return;
+        }
+        requestedQuality_=q;
         quality_=q;
         if(adaptiveEnabled_ && q!=LumaWeaveQuality::Off)adaptive_.setQuality(q);
     }
     LumaWeaveQuality quality() const{return quality_;}
     void setAdaptiveBudgetEnabled(bool on) {
+        if(adaptiveEnabled_==on)return;
         adaptiveEnabled_=on;
-        if(on && quality_!=LumaWeaveQuality::Off)
-            adaptive_.setQuality(quality_);
+        if(!on) {
+            quality_=requestedQuality_;
+        } else if(requestedQuality_!=LumaWeaveQuality::Off) {
+            adaptive_.setQuality(requestedQuality_);
+        }
     }
     bool adaptiveBudgetEnabled() const{return adaptiveEnabled_;}
     const LumaWeaveAdaptiveBudget& adaptiveBudget() const{return adaptive_;}
@@ -363,6 +377,7 @@ private:
     uint64_t sceneToken_=0,materialToken_=0,frameCounter_=0,autoViewSerial_=0;
     bool enabled_=false,sourcesPublished_=false,geometryPublished_=false;
     LumaWeaveQuality quality_=LumaWeaveQuality::Balanced;
+    LumaWeaveQuality requestedQuality_=LumaWeaveQuality::Balanced;
     LumaWeaveAdaptiveBudget adaptive_{};
     bool adaptiveEnabled_=false;
     FrameStats frame_{},last_{};
