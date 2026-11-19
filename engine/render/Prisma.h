@@ -40,6 +40,10 @@ public:
     // Exposure history is owned per view; borrowed velocity/reactive handles
     // are not destroyed. The current GPU submission fences owned textures.
     void retireView(uint64_t viewId);
+    // At a graphics-owner frame boundary, retire size-keyed targets that NO
+    // recorded view currently references. Never destroys active/in-flight GPU
+    // resources synchronously. The caller keeps any desired view IDs live.
+    size_t retireUnreferencedSizeCaches();
     // When Scene/Game is hidden and no new post frame is rendered, the
     // editor still polls verified GPU completions each UI frame.
     void collectGpuRetirements();
