@@ -708,6 +708,54 @@ CI tests were actually run**. Read exact commits and next features
 in `docs/handoffs/prisma-stage-55.md`. Keep PR #26 Draft and
 complete functionality before the dedicated verification phase.
 
+## Stage 56 — opt-in metric Depth of Field (camera view-plane focus)
+
+The `depthOfField` catalog retains legacy `focusDepth` and
+`focusRange` as device-depth [0,1] parameters. A new optional
+`metricFocus` boolean defaults to **false**, preserving old
+postfx JSON, MCP, native and PrismaVolume behavior. When enabled,
+`focusDistance` is the view-space focus plane in world units
+(not radial Euclidean eye distance), `focusRangeMeters` the
+sharp interval around that plane, and
+`occlusionToleranceMeters` the depth-difference tap rejection
+threshold. Defaults are 12, 4 and 0.35 respectively. If a project's
+world unit is one metre these values are metres.
+
+The renderer already provides `PostFrame.depthNear/depthFar` and
+`orthographic`. For valid camera metadata:
+perspective `z=near*far/(far-depth*(far-near))`,
+orthographic `z=lerp(near,far,depth)`.
+Orthographic clip near may be negative (currently -200..1000),
+and perspective near must be positive. If metadata is invalid,
+the shader is told to execute its unchanged legacy hardware-depth
+path; an encoded-but-degraded `EffectExecution` row records this
+fallback for the stable camera ID.
+
+Metric DoF uses the same 8-neighbour RGB filter while sampling
+neighbour device-depth taps, rejecting sky and foreground/background
+silhouette discontinuities. It preserves the source HDR alpha in
+the metric path and samples scene depth through TEX1 **without
+attaching it for writes**: use a separate scratch depth target.
+The legacy shader branch retains its original CoC, blend/kernel
+and alpha semantics. This is not a true lens/bokeh renderer and
+cannot restore occluded colors or fully resolve transparency.
+
+`PrismaData.cpp::prismaEffectWork` conservatively changes its
+DoF estimate from 10 to 18 pixel-read units when `metricFocus`
+is authored. This is not a GPU timing. The editor exposes new
+catalog fields through its generic effect/volume editors, explains
+their meaning and shows `degraded fallback` when relevant.
+`AIVERSE_PRISMA_DOF=1` remains necessary, normal
+`minQuality=High` remains the default; explicit project tier
+overrides can run DoF in SDR, and the status report should match
+actual runtime execution rather than falsely requiring HDR.
+
+Read `docs/handoffs/prisma-stage-56.md` for exact commits and
+continuation. Readback confirmed source-level invariants only;
+native CMake, shader compiler, GPU parity and CI are NOT RUN.
+Continue feature work before the dedicated test phase and leave
+Draft PR #26 unmerged without user instruction.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
