@@ -33,13 +33,16 @@ struct FramePlan {
 // is RHI command-encoder order, not an independently reordered graph.
 inline FramePlan plan(uint32_t capacity,uint32_t births,
                       uint32_t activePrefix,uint32_t survivors,
-                      bool gpuIndirect) {
+                      bool gpuIndirect,bool integrate=true) {
     FramePlan p;
     if(!capacity || births>capacity || activePrefix>capacity ||
        survivors>activePrefix)return p; // invalid; caller checks inputs
     if(gpuIndirect)p.push(Phase::ResetCounter,1,3);
     if(births)p.push(Phase::Spawn,births,0);
-    if(activePrefix)p.push(Phase::Integrate,activePrefix,1);
+    // A frozen frame can refresh camera-dependent vertices WITHOUT running
+    // update VM (which can mutate registers even with dt=0). Keep the GPU
+    // particle revision stable for a fresh asynchronous checkpoint export.
+    if(activePrefix && integrate)p.push(Phase::Integrate,activePrefix,1);
     if(gpuIndirect) {
         if(activePrefix)p.push(Phase::Compact,activePrefix,4);
         p.push(Phase::PublishIndirectArgs,1,5);
