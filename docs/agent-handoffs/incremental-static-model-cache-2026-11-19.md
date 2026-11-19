@@ -1527,3 +1527,29 @@ Connected GitHub source retrieval, read user-provided attached log, inspected `M
 ### Exact next user/CI action
 
 Avoid using stale `build-metal` targets: reconfigure it with `cmake -S . -B build-metal -DAIVERSE_BUILD_TESTS=ON` after fetching and switching to this branch, then explicitly build `aiverse_model_batching_policy_tests` and all four `aiverse_ecs_*_test` executables. Run `ctest --test-dir build-metal -R '^(model_batching_policy|ecs_cow_snapshot_test|ecs_cow_exception_test|ecs_cow_parallel_test|ecs_guarded_parallel_test)$' --output-on-failure`. If the existing CMakeCache has incompatible generator/dependencies, create a **separate** clean `build/batching-verify` tree, not a destructive reset of other agents' build output. Keep PR #34 Draft and all experiment flags OFF until native/GPU parity and CI succeed.
+
+
+---
+
+## Stage 53 — correct per-node material override packet eligibility regression (2026-11-19)
+
+**Repository/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. **Code commit:** `0fa0a268c4de27ec8921ac4ce4f78aaa70531077`, parent `ec0f723678b91f7d40c5b6ee12e07f51e3c40446`. Continue the same branch and keep experimental rendering flags OFF pending native tests.
+
+### Actual user Mac verification
+
+After `cmake -S . -B build-metal -DAIVERSE_BUILD_TESTS=ON`, the owner compiled all five requested test targets successfully. Four ECS CTest cases `ecs_cow_snapshot_test`, `ecs_cow_exception_test`, `ecs_cow_parallel_test`, and `ecs_guarded_parallel_test` **PASSED** (0.38 s, 0.47 s, 0.19 s, 0.34 s respectively). `model_batching_policy` **FAILED** (0.22 s), reporting `model batching check failed: !staticRenderPacketCandidate(draw, false, false, false) at 875`. Thus **4/5 passed, 1 failed**; this does not establish all tests passing.
+
+### Root cause and code change
+
+`tests/render/model_batching_policy.cpp` contained a stale negative assertion after setting `draw.nodeMaterial = &nodeMaterials`. Current `engine/render/StaticModelCachePolicy.h::staticRenderPacketDrawCandidate` intentionally allows per-node material overrides and KHR variants as candidate inputs, with a nonzero staticPacketRevision and valid immutable model. The renderer's `engine/render/Renderer3DModels.cpp` replay validation separately checks `packet.hasNodeMaterialOverride == (d.nodeMaterial != nullptr)` **and exact** `packet.nodeMaterialSnapshot == *d.nodeMaterial` before using a saved packet. Other resolved material state is also validated and requires explicit revisions for owner-side mutation. The test expectation did not match this contract: candidate eligibility need not be false merely because per-node material input is present.
+
+- Change only `tests/render/model_batching_policy.cpp`: assert `staticRenderPacketCandidate(...)` stays **true** with per-node material override, including when the caller-side override vector changes (the renderer must detect a snapshot mismatch on actual packet replay). Explicitly comment that packet **eligibility** is separate from saved-packet **validation**.
+- Production renderer, RHI, ECS, GPU state, material equality and packet replay validation are unchanged. No implicit weakening of eligibility or material matching.
+
+### Verification and next steps
+
+Read user-provided full CMake and CTest logs and checked both the actual eligibility function and renderer exact override snapshot comparison on live GitHub. Applied a single exact test fixture replacement and pushed implementation by atomic Git tree/commit + expected-SHA fast forward. **Revised Mac CTest: NOT RUN YET. GitHub Actions on new commit: not verified completed. Metal/Vulkan pixel parity and A/B/A benchmarks: NOT RUN.** Do not declare this stage a test pass until owner/CI confirms.
+
+Re-run after fetching branch:
+`cmake --build build-metal --target aiverse_model_batching_policy_tests --parallel 8 && ctest --test-dir build-metal -R '^model_batching_policy$' --output-on-failure`.
+If successful, run the five-case focused CTest again. Preserve all handoffs and keep PR #34 Draft until GPU parity and the full relevant CI gate are successful.

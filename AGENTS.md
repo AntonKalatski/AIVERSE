@@ -1873,3 +1873,16 @@ Reconfigure `build-metal` with `-DAIVERSE_BUILD_TESTS=ON`
 and explicitly build their targets, or use a fresh independent
 build directory. All CTest/Mac/GPU outcomes after this stage
 remain unverified. PR #34 stays Draft, no experimental defaults.
+
+
+## Stage 53 — nodeMaterial packet eligibility regression
+
+`staticRenderPacketDrawCandidate` may accept a per-node material
+override: `Renderer3D` validates the current override contents
+against the saved packet's exact `nodeMaterialSnapshot` before
+replay. Keep eligibility and replay checks distinct. The Mac owner
+reported 4/5 focused tests passing, one `model_batching_policy`
+failure at its stale negative assert line 875. The test assertion
+has been updated, engine behavior not changed. No subsequent
+Mac/CI result is available yet; leave PR #34 Draft and continue
+handoff protocol.

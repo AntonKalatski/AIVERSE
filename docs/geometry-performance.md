@@ -1670,3 +1670,22 @@ the branch's CMakeLists.txt defines them under
 `AIVERSE_BUILD_TESTS=ON`. Reconfigure CMake and build targets
 before rerunning CTest. Neither Mac rerun nor real GPU validation
 has yet been reported.
+
+
+### Static render packet + per-node material override eligibility (Stage 53)
+
+The `staticRenderPacketCandidate` predicate intentionally accepts
+rigid static draws with `draw.nodeMaterial` overrides. **Eligibility
+is not cache-hit validity**: before reusing a saved packet, renderer
+checks the presence of an override and exact equality against the
+packet's retained `nodeMaterialSnapshot`, alongside resolved
+material state and required revisions. A source regression incorrectly
+expected `!staticRenderPacketCandidate` at line 875; Stage 53
+updates this **test only** and confirms the candidate remains
+eligible even when the caller changes its per-node selection.
+Do not add a blanket `!d.nodeMaterial` gate in production.
+
+Actual Mac CTest before the fix: all four ECS cases PASSED,
+`model_batching_policy` FAILED on that assertion (4/5).
+Revised test has NOT RUN yet. Real Metal/Vulkan parity and
+performance checks remain pending; PR #34 is still Draft.
