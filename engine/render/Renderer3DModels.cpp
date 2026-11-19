@@ -951,8 +951,10 @@ void Renderer3D::drawModel(const ModelDraw& d) {
             packet.selectedMeshes = std::move(packetSelectedMeshes);
             if (sharedMaterials) {
                 // Fingerprints are shared across all objects with this owner.
-                packet.materialHashes.clear();
-                packet.materialsSnapshot.clear();
+                // Free prior unversioned snapshot allocations on migration;
+                // clear() alone would retain capacity outside the 64 MiB cap.
+                std::vector<uint64_t>().swap(packet.materialHashes);
+                std::vector<Material>().swap(packet.materialsSnapshot);
             } else {
                 packet.materialHashes = staticPacketMaterialHashes(*m, mats);
                 packet.materialsSnapshot = mats;
