@@ -31,6 +31,26 @@ the feature base while other agents work. Keep the validated detached
 worktree isolated; do not merge `main` into it or into this feature
 branch until runtime acceptance and conflict review.
 Do not claim release readiness or merge to `main` without validation.
+## One-shot acceptance gate (Stage 93)
+
+Use `bash tools/spectrafx/acceptance.sh build/spectrafx-validation`
+from the project's existing detached Mac Studio SpectraFX validation
+worktree. It runs **configure, all required target builds, full native
+build, complete CTest suite, focused SpectraFX CTests and real Metal
+compute/billboard CTests in one invocation**, with per-stage logs and
+`build/spectrafx-validation/spectrafx-acceptance/summary.md`.
+
+The same script is now invoked by `.github/workflows/spectrafx-validation.yml`
+on Linux and macOS, with errors-as-warnings and acceptance artifacts
+uploaded from every run. The first full GitHub run was **44582216785**
+(queued when last checked):
+https://github.com/chromealex/AIVERSE/actions/runs/44582216785
+
+**Do not claim full acceptance PASSED** without the new run's actual
+results. Hosted macOS may skip Metal if no GPU is available. This
+does not replace a live Editor Preview/FPS screenshot and frame-retire
+stress on the user's Apple M3 Ultra.
+
 ## Latest GPU rendering gate (Stage 92)
 
 The separate macOS `aiverse_spectrafx_metal_billboard_test` was added
@@ -136,7 +156,7 @@ The next source review should prioritize remaining metal readback
 callback/resource completion assumptions, the editor viewport frame
 sequence and compatibility with current `gfx::Device` API.
 
-**Next test step (Metal render):** now that the real M3 Ultra compute
+**Hardware-only follow-up if CI lacks Metal:** now that the real M3 Ultra compute
 kernel acceptance has PASSED, build and run the separate offscreen Metal
 billboard raster/blend acceptance added after Stage 91.
 Use `~/Projects/AIVERSE-spectrafx-validation` (detached worktree),
