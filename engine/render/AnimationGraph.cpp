@@ -270,6 +270,73 @@ const std::string& AnimationGraphInstance::state() const {
     static const std::string empty;
     return graph_?graph_->states()[size_t(state_)].id:empty;
 }
+AnimationGraphInstance::PlaybackSnapshot
+AnimationGraphInstance::snapshotPlayback() const {
+    PlaybackSnapshot out;
+    if(!graph_ || !healthy_)return out;
+    out.state=state();
+    out.stateTime=time_;
+    out.clips.reserve(graph_->nodes().size());
+    for(size_t i=0;i<graph_->nodes().size();++i) {
+        const auto& node=graph_->nodes()[i];
+        if(node.kind!=AnimationGraph::Kind::Clip || node.clip<0 ||
+           size_t(node.clip)>=graph_->model()->clips.size())continue;
+        const auto& clip=graph_->model()->clips[size_t(node.clip)];
+        if(!(clip.duration>0.f) || !std::isfinite(clip.duration) ||
+           !std::isfinite(clocks_[i]))continue;
+        out.clips.push_back({node.id,clip.name,
+            std::clamp(float(clocks_[i]/double(clip.duration)),0.f,1.f),
+            node.loop});
+    }
+    return out;
+}
+
+bool AnimationGraphInstance::restorePlayback(const PlaybackSnapshot& snapshot) {
+    if(!graph_ || snapshot.state.empty() ||
+       !std::isfinite(snapshot.stateTime) || snapshot.stateTime<0.f)return false;
+    size_t targetState=graph_->states().size();
+    for(size_t i=0;i<graph_->states().size();++i)
+        if(graph_->states()[i].id==snapshot.state) {
+            targetState=i;
+            break;
+        }
+    if(targetState>=graph_->states().size())return false;
+    std::vector<std::pair<size_t,double>> matched;
+    matched.reserve(snapshot.clips.size());
+    for(size_t i=0;i<graph_->nodes().size();++i) {
+        const auto& node=graph_->nodes()[i];
+        if(node.kind!=AnimationGraph::Kind::Clip || node.clip<0 ||
+           size_t(node.clip)>=graph_->model()->clips.size())continue;
+        const auto& clip=graph_->model()->clips[size_t(node.clip)];
+        if(!(clip.duration>0.f) || !std::isfinite(clip.duration))continue;
+        const auto prev=std::find_if(snapshot.clips.begin(),snapshot.clips.end(),
+            [&](const PlaybackSnapshot::Clip& candidate) {
+                return candidate.node==node.id && candidate.clip==clip.name &&
+                       candidate.loop==node.loop &&
+                       std::isfinite(candidate.phase) && candidate.phase>=0.f &&
+                       candidate.phase<=1.f;
+            });
+        if(prev==snapshot.clips.end())continue;
+        const double seconds=std::clamp(double(prev->phase),0.,
+                              node.loop?0.999999:1.)*double(clip.duration);
+        matched.emplace_back(i,seconds);
+    }
+    // A graph with entirely renamed/removed clips must restart, not
+    // accidentally restore only its state clock.
+    if(!snapshot.clips.empty() && matched.empty())return false;
+    // The previous source's poses, native state, events and contact caches
+    // remain discarded. Only the current named state and clip phases survive.
+    state_=int(targetState);
+    time_=std::clamp(snapshot.stateTime,0.f,1000000.f);
+    fadeTime_=fadeDuration_=0.f;
+    notifies_.clear();
+    for(const auto& [i,seconds]:matched) {
+        clocks_[i]=seconds;
+        unwrappedClocks_[i]=seconds;
+        clipStarted_[i]=0; // do not synthesize time-zero notify on reload
+    }
+    return true;
+}
 std::optional<float> AnimationGraphInstance::clipTime(const std::string& node) const {
     if(!graph_)return std::nullopt;
     for(size_t i=0;i<graph_->nodes().size();++i)
