@@ -44,6 +44,22 @@ int main() {
     gi.setLights({red});
     AIVERSE_TEST_CHECK(gi.scheduler().pending() == 0);
 
+    // New/removed light radiance is invalidated before the next tracing
+    // budget, rather than ghosting in the old GPU atlas for several frames.
+    std::vector<uint32_t> invalidated;
+    auto moved=red;
+    moved.position={100,0,0};
+    gi.setLights({moved},&invalidated);
+    AIVERSE_TEST_CHECK(!invalidated.empty());
+    AIVERSE_TEST_CHECK(gi.scheduler().pending()>0);
+    for(const uint32_t id:invalidated) {
+        for(const auto& sh:gi.coefficient(id).irradiance)
+            AIVERSE_TEST_CHECK(sh.x==0 && sh.y==0 && sh.z==0 && sh.w==0);
+    }
+    invalidated.clear();
+    gi.setLights({red},&invalidated);
+    while(gi.scheduler().pending())gi.update(16,{0,0,0});
+
     // Turning off a moving light erases the independent dynamic indirect overlay.
     auto off = red; off.intensity = 0;
     gi.setLights({off});
