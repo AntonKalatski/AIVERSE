@@ -341,8 +341,9 @@ public:
         uint32_t reactiveCallbacks = 0; // invoked by the current-frame mask pass
         uint32_t reactiveCallbacksDropped = 0; // scene/post/depth or pipeline unavailable
         uint32_t reactiveMeshDraws = 0; // includes RTS water sheets
-        uint32_t cutoutReactiveDraws = 0; // per-pixel alpha cutout + rigid dissolve
-        uint32_t dissolveReactiveDraws = 0; // object-space noise mask
+        uint32_t cutoutReactiveDraws = 0; // per-pixel alpha cutout on rigid/animated
+        uint32_t dissolveReactiveDraws = 0; // current-deformed object-space discard
+        uint32_t actorRevealReactiveDraws = 0; // camera-local aperture mask
         uint32_t lodReactiveDraws = 0;
         uint32_t rejected = 0;
         bool submitted = false; // actual object velocity draw, NEVER reactive-only
