@@ -481,6 +481,12 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
             const auto shared=strata::deviceIndexBudgetStats(dev);
             stats_.strataDeviceReservedIndexBytes=shared.reservedBytes;
             stats_.strataDeviceIndexLeases=shared.activeLeases;
+            const auto io=strata::sharedDiskIoStats();
+            stats_.strataSharedIoWorkers=io.workers;
+            stats_.strataSharedIoQueuedJobs=io.queuedJobs;
+            stats_.strataSharedIoActiveJobs=io.activeJobs;
+            stats_.strataSharedCpuReadyBytes=io.readyBytes;
+            stats_.strataSharedCpuReadyBudgetBytes=io.readyLimitBytes;
         }
         if (strataGpuMetadataEnabled_ && strataStaging_) {
             strataGpuDevice_ = &dev;
@@ -682,6 +688,17 @@ void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
             }
         }
     }
+    if(strataPortableDevice_){
+        const auto shared=strata::deviceIndexBudgetStats(*strataPortableDevice_);
+        stats_.strataDeviceReservedIndexBytes=shared.reservedBytes;
+        stats_.strataDeviceIndexLeases=shared.activeLeases;
+    }
+    const auto io=strata::sharedDiskIoStats();
+    stats_.strataSharedIoWorkers=io.workers;
+    stats_.strataSharedIoQueuedJobs=io.queuedJobs;
+    stats_.strataSharedIoActiveJobs=io.activeJobs;
+    stats_.strataSharedCpuReadyBytes=io.readyBytes;
+    stats_.strataSharedCpuReadyBudgetBytes=io.readyLimitBytes;
 #else
     (void)r;
 #endif
