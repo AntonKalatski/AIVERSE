@@ -13,6 +13,7 @@
 #include <limits>
 #include <map>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -52,6 +53,16 @@ public:
           resources_(std::move(resources)), spawn_(std::move(spawn)),
           hierarchy_(hierarchy), maxPreparing_(maxPreparing) {}
 
+    // Release presentation leases owned by this coordinator on the owner thread.
+    // Pending std::async futures join when jobs_ is destroyed; reader callbacks
+    // must not depend on an external object already being destroyed.
+    ~SceneLoadCoordinator() {
+        for(const auto& [id, leases] : resident_) {
+            (void)id;
+            release(leases);
+        }
+    }
+
     SceneLoadCoordinator(const SceneLoadCoordinator&) = delete;
     SceneLoadCoordinator& operator=(const SceneLoadCoordinator&) = delete;
 
@@ -82,8 +93,12 @@ public:
                 ++it;
                 continue;
             }
-            if(!job.future.valid() ||
-               job.future.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+            if(!job.future.valid()) {
+                if(job.status == SceneLoadStatus::Cancelled) it = jobs_.erase(it);
+                else ++it;
+                continue;
+            }
+            if(job.future.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
                 ++it;
                 continue;
             }
@@ -98,7 +113,10 @@ public:
                 continue;
             }
             if(!result.error.empty()) {
-                fail(job, result.error);
+                // Poll is non-authoritative: leave SceneState untouched until
+                // cancel()/commit() at the host's structural barrier.
+                job.error = std::move(result.error);
+                job.status = SceneLoadStatus::Failed;
             } else {
                 job.manifest = std::move(result.asset);
                 job.status = SceneLoadStatus::Ready;
@@ -171,7 +189,9 @@ public:
                         if(errorMessage.empty()) errorMessage = "prefab spawn rejected";
                         break;
                     }
-                    if(hierarchy_ && !hierarchy_->attach(world_, entity)) {
+                    const LocalTransform local = world_.has<LocalTransform>(entity)
+                        ? *world_.tryGetConst<LocalTransform>(entity) : LocalTransform{};
+                    if(hierarchy_ && !hierarchy_->attach(world_, entity, local)) {
                         errorMessage = "failed to attach scene hierarchy entity";
                         break;
                     }
@@ -289,7 +309,7 @@ public:
         if(!state) return result;
         for(const auto& [id, record] : state->scenes) {
             if(record.phase != ScenePhase::Active || resident_.contains(id) ||
-               inFlight() >= maxPreparing_ ||
+               hasActiveResidencyJob(id) || inFlight() >= maxPreparing_ ||
                serial_ == std::numeric_limits<uint64_t>::max())
                 continue;
             const SceneTicket ticket{{id}, epoch_, ++serial_};
@@ -353,6 +373,17 @@ private:
             jobs_.emplace(ticket.serial, std::move(job));
             return true;
         } catch(...) { return false; }
+    }
+    bool hasActiveResidencyJob(uint64_t sceneId) const {
+        for(const auto& [serial, job] : jobs_) {
+            (void)serial;
+            if(job.ticket.epoch == epoch_ && job.ticket.scene.value == sceneId &&
+               job.residencyOnly &&
+               (job.status == SceneLoadStatus::Preparing ||
+                job.status == SceneLoadStatus::Ready ||
+                job.status == SceneLoadStatus::Committed)) return true;
+        }
+        return false;
     }
     size_t inFlight() const {
         size_t count = 0;
