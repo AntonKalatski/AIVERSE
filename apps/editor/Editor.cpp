@@ -902,6 +902,12 @@ bool Editor::saveFreshSpectraGpuCheckpoint(std::string& output) const {
         output="No fresh and complete GPU checkpoint is ready: "+reason;
         return false;
     }
+    // Same-build diagnostic file integrity is independently verifiable.
+    // Never write bytes that fail the V2 length/magic/CRC contract.
+    if(!spectra::validateGpuCheckpointDiagnostic(bytes)) {
+        output="SpectraFX checkpoint export failed V2 header/CRC validation";
+        return false;
+    }
     const fs::path directory=fs::path(platform::userDataDir())/
                              "spectrafx-diagnostics";
     std::error_code ec;
