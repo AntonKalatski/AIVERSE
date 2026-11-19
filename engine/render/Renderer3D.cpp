@@ -482,6 +482,34 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
             objectMotionInstancedPipeline_ = dev_->createPipeline(pipeline);
         }
     }
+    if (!objectMotionDeformedShader_.valid()) {
+        gfx::ShaderDesc shader;
+        shader.glslVertex = motion_shaders::kDeformedVS;
+        shader.glslFragment = motion_shaders::kFS;
+        shader.msl = motion_shaders::kDeformedMSL;
+        shader.textureSlots = 9; // original morph delta texture at slot 8
+        shader.uniformSlots = 6; // U0 plus current/previous palette U3/U4 and morph U5
+        shader.label = "prisma skinned morph velocity";
+        objectMotionDeformedShader_ = dev_->createShader(shader);
+        if (objectMotionDeformedShader_.valid()) {
+            gfx::PipelineDesc pipeline;
+            pipeline.shader = objectMotionDeformedShader_;
+            pipeline.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
+            pipeline.attrs[1] = {5, gfx::VertexFormat::UByte4,
+                                 uint32_t(offsetof(ModelVertex,joints))};
+            pipeline.attrs[2] = {6, gfx::VertexFormat::UByte4N,
+                                 uint32_t(offsetof(ModelVertex,weights))};
+            pipeline.attrCount = 3;
+            pipeline.stride = sizeof(ModelVertex);
+            pipeline.indexType = gfx::IndexType::UInt32;
+            pipeline.cull = gfx::CullMode::Back;
+            pipeline.depthTest = false;
+            pipeline.depthWrite = false;
+            pipeline.colorFormat = gfx::PixelFormat::RGBA16F;
+            pipeline.label = "prisma skinned morph velocity";
+            objectMotionDeformedPipeline_ = dev_->createPipeline(pipeline);
+        }
+    }
     if (history.target.valid() && history.depth.valid() &&
         objectMotionPipeline_.valid()) {
         struct MotionU {
@@ -557,6 +585,65 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                     int32_t(sample.model->gpuBaseVertex),
                     static_cast<uint32_t>(n));
                 first += n;
+            }
+        }
+        // Re-evaluate vertex deformation for BOTH poses. Current and prior
+        // palette buffers are independent U3/U4 blocks (each <= 4KB).
+        // Morph deltas are read from the same immutable model texture, with
+        // current and previous weights in U5. No CPU mesh readback.
+        if (objectMotionDeformedPipeline_.valid()) {
+            struct MorphU {
+                float currentW[8] = {};
+                float previousW[8] = {};
+                float info[4] = {};
+                float info2[4] = {};
+            };
+            static_assert(sizeof(MorphU) <= 4096);
+            dev_->setPipeline(objectMotionDeformedPipeline_);
+            for (const auto& it : modelItems_) {
+                if (!deformEligible(it)) continue;
+                const DeformKey key{it.motionPersistentId,it.motionNodeIndex,
+                                    it.geometryPrimitive};
+                const auto prior = history.previousDeformed.find(key);
+                const auto now = currentDeformed.find(key);
+                if (prior == history.previousDeformed.end() ||
+                    now == currentDeformed.end() ||
+                    prior->second.hasSkin != now->second.hasSkin) continue;
+                const auto& cur = now->second;
+                const auto& prev = prior->second;
+                const mat4 currentMvp = viewProj_ * cur.world;
+                const mat4 previousMvp = previousCamera * prev.world;
+                MotionU u{};
+                std::memcpy(u.current,currentMvp.m,sizeof u.current);
+                std::memcpy(u.previous,previousMvp.m,sizeof u.previous);
+                u.params[0] = float(w);
+                u.params[1] = float(h);
+                u.params[2] = cur.hasSkin ? 1.0f : 0.0f;
+                const bool morph = it.prim->morphTargets > 0 &&
+                                   it.model->morphTex.valid();
+                u.params[3] = morph ? 1.0f : 0.0f;
+                MorphU mo{};
+                std::memcpy(mo.currentW,cur.weights.data(),sizeof mo.currentW);
+                std::memcpy(mo.previousW,prev.weights.data(),sizeof mo.previousW);
+                if (morph) {
+                    mo.info[0] = float(it.prim->morphTexel);
+                    mo.info[1] = float(it.prim->firstVertex);
+                    mo.info[2] = float(it.prim->vertexCount);
+                    mo.info[3] = float(it.prim->morphTargets);
+                    mo.info2[0] = float(it.model->morphTexWidth);
+                }
+                dev_->setUniforms(0,&u,sizeof u);
+                dev_->setUniforms(3,cur.joints.data(),
+                                  cur.joints.size()*sizeof(float));
+                dev_->setUniforms(4,prev.joints.data(),
+                                  prev.joints.size()*sizeof(float));
+                dev_->setUniforms(5,&mo,sizeof mo);
+                if (morph) dev_->setTexture(8,it.model->morphTex);
+                dev_->setVertexBuffer(it.model->vb);
+                dev_->setIndexBuffer(it.model->ib);
+                dev_->drawIndexed(it.indexCount,
+                    it.firstIndex + it.model->gpuFirstIndex,
+                    int32_t(it.model->gpuBaseVertex));
             }
         }
         dev_->endPass();
