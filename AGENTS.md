@@ -139,8 +139,21 @@ Nonpooled/nonstatic MDI and GPU ICB are unaffected. This does **not**
 measure GPU time or prove a speedup; keep all flags default OFF until
 Metal pixel tests and same-scene CPU/GPU A/B/A. Scene → Batching shows
 page counts, shadow/opaque slow pages, per-page skipped/probed groups
-and global CPU averages. See `docs/geometry-performance.md` and the
-latest batching-agent handoff before editing these paths.
+and global CPU averages. Stage 21 moves cross-model preflight groups into a
+**renderer-owned reusable workspace** in
+`engine/render/StaticCrossModelBatchPolicy.h`. It uses an epoch-stamped
+4096-slot open-addressed directory, exact key equality, <=2048 groups,
+and temporary 16-bit group indices by ModelItem to skip repeated page/
+material lookups during the promotion pass. Group/model/page pointers
+are valid **only during the current render pass**; beginPass resets the
+generation and group contents without releasing high-water capacity.
+The 8-bit mode array is filled only when preflight finds ready groups.
+`invalidateStaticModelCaches()` and `shutdown()` release this workspace.
+Scene → Batching reports its retained CPU memory in KiB. Do not retain
+camera, visibility, material equivalence or LOD results across passes, or
+change the already mandatory per-draw/final MDI state checks. See
+`docs/geometry-performance.md` and the latest batching-agent handoff
+before editing these paths.
 
 `engine/render/EcsStaticModelRender.h` provides the **shared genre-independent
 ECS presentation adapter** using only integer asset/revision state in the ECS
