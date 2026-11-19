@@ -16,7 +16,17 @@ class AnimationEditorPanel {
 public:
     explicit AnimationEditorPanel(bool rig):rigMode_(rig){}
     ~AnimationEditorPanel(){release();}
-    void update(Editor& ed,double dt){dt_=float(std::min(dt,.1));if(registered_)return;registered_=true;
+    // GPU lifecycle owner belongs to Editor and outlives both Animation and
+    // Rig editor windows. This does not own or reset the user's graph JSON.
+    void suspendPreview() {
+        if (model_ || (portrait_ && portrait_->texture().valid()))
+            release();
+    }
+    void update(Editor& ed,double dt){
+        gpuResourceOwner_ = &ed.gpuResourceRetirement();
+        dt_=float(std::min(dt,.1));
+        if(registered_)return;
+        registered_=true;
       ed.ws().registerOp({rigMode_ ? "rig_editor_open" : "animation_editor_open",
                           "Open an animation asset in the visual editor; refuses unsaved replacement.",
                           Json::parse(R"({"properties":{"name":{"type":"string"},"graph":{"type":"object"}}})"),
@@ -119,7 +129,56 @@ private:
     std::string text(const char* key)const{return genreText(*ws_,("animationEditor."+std::string(key)).c_str());}
     Json& graph(){if(scope_.empty()||!doc_["graphs"].has(scope_)){scope_.clear();return doc_;}return doc_.member("graphs").member(scope_);}
     static Json* node(Json& g,const std::string& id){for(auto& n:g.member("nodes").itemsMut())if(n.getStr("id")==id)return &n;return nullptr;}
-    void release(){instance_.reset({});if(model_&&dev_)render::releaseModel(*dev_,*model_);model_.reset();portrait_.shutdown();modelKey_.clear();programKey_.clear();ready_=false;}
+    // Retire the ENTIRE old GPU preview, including its model buffer,
+    // compiled graph referencing Model, and Portrait's Renderer3D + targets.
+    // The Editor keeps the archive alive until a real GPU fence completes.
+    struct PreviewGpuBundle {
+        gfx::Device* device = nullptr;
+        std::unique_ptr<render::Model> model;
+        std::shared_ptr<game::Portrait> portrait;
+        render::AnimationGraphInstance graph;
+        void destroyAfterGpuCompletion() {
+            graph.reset({}); // graph holds Model* and must die before Model
+            if (portrait) portrait->shutdown();
+            if (model && device) render::releaseModel(*device,*model);
+            model.reset();
+            portrait.reset();
+        }
+    };
+    void release(){
+        const bool gpuOwned = dev_ && (model_ ||
+            (portrait_ && portrait_->texture().valid()));
+        if (gpuOwned) {
+            auto archived = std::make_shared<PreviewGpuBundle>();
+            archived->device = dev_;
+            archived->model = std::move(model_);
+            archived->portrait = std::move(portrait_);
+            archived->graph = std::move(instance_);
+            portrait_ = std::make_shared<game::Portrait>();
+            instance_ = render::AnimationGraphInstance{};
+            if (gpuResourceOwner_)
+                gpuResourceOwner_->retireOwned(*dev_,[archived] {
+                    archived->destroyAfterGpuCompletion();
+                });
+            else if (dev_->gpuHealthy() && dev_->waitForSubmittedGpuWork())
+                archived->destroyAfterGpuCompletion();
+            else {
+                // Standalone owner with no safe GPU completion proof: do not
+                // run old model/Portrait destructors while GPU work may be
+                // pending. Keep the whole capture inert until process exit.
+                static auto* orphans = new std::vector<std::shared_ptr<PreviewGpuBundle>>();
+                orphans->push_back(std::move(archived));
+            }
+        } else {
+            instance_.reset({});
+            model_.reset();
+            if (portrait_) portrait_->shutdown();
+            portrait_ = std::make_shared<game::Portrait>();
+        }
+        modelKey_.clear(); programKey_.clear(); ready_=false;
+        // Keep doc_, saved_, undo/redo, selected, controls, pose, yaw,
+        // playback, camera and canvas state intact across GPU retirement.
+    }
     void reset(){release();undo_.clear();redo_.clear();scope_.clear();selected_.clear();error_.clear();controls_={};}
     void remember(){remember(doc_);}void remember(const Json& before){if(undo_.size()>=64)undo_.erase(undo_.begin());undo_.push_back(before);redo_.clear();dirty_=true;}
     bool check(const Json& r){if(r.has("error")){error_=r.getStr("error");return false;}error_.clear();return true;}
@@ -181,7 +240,7 @@ private:
     void preview(Editor& ed){
         ready_=false;std::string path=doc_.getStr("model");std::string modelKey=project_+"/"+path;
         try{
-            if(modelKey_!=modelKey){release();modelKey_=modelKey;dev_=&ed.device();model_=loadAnimationModel(ed.ws(),path);if(!render::uploadModel(*dev_,*model_,true))throw std::runtime_error("model upload failed");if(!portrait_.init(*dev_,320))throw std::runtime_error("preview initialization failed");}
+            if(modelKey_!=modelKey){release();modelKey_=modelKey;dev_=&ed.device();model_=loadAnimationModel(ed.ws(),path);if(!render::uploadModel(*dev_,*model_,true))throw std::runtime_error("model upload failed");if(!portrait_->init(*dev_,320))throw std::runtime_error("preview initialization failed");}
             if(!model_)return;
             std::string key=graph().dump(-1)+doc_["graphs"].dump(-1);if(programKey_!=key){programKey_=key;render::AnimationGraphs graphs;for(auto& [name,g]:doc_["graphs"].members())graphs[name]=g;auto previewGraph=graph();animation::sort(previewGraph);instance_.reset(render::AnimationGraph::compile(*model_,previewGraph,{}, {},graphs));controls_=instance_.parameters();error_.clear();}
             if(!instance_.graph())return;
@@ -190,9 +249,9 @@ private:
             instance_.parameters()=controls_;if(playing_)instance_.update(dt_);instance_.evaluate(pose_);if(!instance_.healthy())error_=instance_.error();
             if(instance_.locomotionReport().active){const auto c=instance_.locomotionReport();ImGui::TextWrapped(text("climbReport").c_str(),c.supports,c.stepping,c.footError);ImGui::TextUnformatted(text(c.attached?"attached":"detached").c_str());}
             else if(instance_.hasContacts()){const auto r=instance_.contactReport();ImGui::TextUnformatted(text(r.stable?"stable":r.supported?"unstable":"unsupported").c_str());ImGui::TextWrapped(text("contactReport").c_str(),r.supports,r.supportError,r.penetration,r.balanceError);}
-            auto displayPose=pose_;auto climb=instance_.locomotionReport();if(climb.active){auto center=(model_->boundsMin+model_->boundsMax)*.5f;auto shift=climb.position-center;for(size_t i=0;i<displayPose.size();++i)if(model_->nodes[i].parent<0)displayPose[i].t=displayPose[i].t-shift;}portrait_.renderPose(*model_,displayPose,yaw_);ready_=portrait_.texture().valid()&&instance_.healthy();
+            auto displayPose=pose_;auto climb=instance_.locomotionReport();if(climb.active){auto center=(model_->boundsMin+model_->boundsMax)*.5f;auto shift=climb.position-center;for(size_t i=0;i<displayPose.size();++i)if(model_->nodes[i].parent<0)displayPose[i].t=displayPose[i].t-shift;}portrait_->renderPose(*model_,displayPose,yaw_);ready_=portrait_->texture().valid()&&instance_.healthy();
             float size=std::min({230.f,ImGui::GetContentRegionAvail().x*.45f,std::max(80.f,ImGui::GetContentRegionAvail().y-26.f)});auto flip=ed.device().info().renderTargetFlipY;
-            ImGui::Image(ImTextureRef(ImTextureID(portrait_.texture().id)),{size,size},{0,flip?0.f:1.f},{1,flip?1.f:0.f});ImGui::SameLine();skeleton({std::max(80.f,ImGui::GetContentRegionAvail().x),size});
+            ImGui::Image(ImTextureRef(ImTextureID(portrait_->texture().id)),{size,size},{0,flip?0.f:1.f},{1,flip?1.f:0.f});ImGui::SameLine();skeleton({std::max(80.f,ImGui::GetContentRegionAvail().x),size});
             const char* planes[]={"XY","XZ","YZ"};ImGui::SetNextItemWidth(100);ImGui::Combo("##plane",&plane_,planes,3);ImGui::SameLine();
             if(ImGui::Button(text("keepControls").c_str())){remember();auto& params=graph().member("parameters");for(auto& [name,v]:controls_.values)params.set(name,Json::number(double(v),6));for(auto& [name,v]:controls_.vectors){Json a=Json::array();for(float f:{v.x,v.y,v.z})a.push(Json::number(double(f),6));params.set(name,a);}}
             for (auto &[name, v] : controls_.values)
@@ -226,6 +285,11 @@ private:
     Workspace* ws_=nullptr;gfx::Device* dev_=nullptr;float previewGround_=0,dt_=0,yaw_=.5f,zoom_=1;int plane_=0,unit_=0;ImVec2 pan_{};
     Json doc_=animation::makeGraph(),saved_=doc_;std::vector<Json> undo_,redo_;struct Draft{Json document,saved;std::string name;bool dirty=false;};std::map<std::string,Draft> drafts_;std::map<ImGuiID,std::string> fields_;
     std::string project_,name_="untitled",scope_,subName_="subgraph",selected_,target_,modelKey_,programKey_,error_,message_;
-    std::unique_ptr<render::Model> model_;render::AnimationGraphInstance instance_;render::AnimationParameters controls_;render::Pose pose_;game::Portrait portrait_;
+    std::unique_ptr<render::Model> model_;
+    render::AnimationGraphInstance instance_;
+    render::AnimationParameters controls_;
+    render::Pose pose_;
+    std::shared_ptr<game::Portrait> portrait_ = std::make_shared<game::Portrait>();
+    render::GpuResourceRetirement* gpuResourceOwner_ = nullptr;
 };
 }
