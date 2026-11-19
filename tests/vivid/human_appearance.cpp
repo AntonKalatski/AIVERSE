@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cmath>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 using namespace aiverse;
@@ -197,6 +198,16 @@ void test() {
                 expect(finite(p)&&extent>=1.399f,
                        "hair segment remained inside closed import collider");
             }
+        auto translated=verts;
+        for(auto& v:translated)v.x+=0.25f;
+        expect(groom.refitCollisionMesh(translated),
+               "valid animated scalp proxy BVH refit rejected");
+        auto nonfinite=translated;
+        nonfinite[0].x=std::numeric_limits<float>::quiet_NaN();
+        expect(!groom.refitCollisionMesh(nonfinite)&&groom.hasCollisionMesh(),
+               "nonfinite scalp refit destroyed last-good BVH");
+        expect(groom.refitCollisionMesh(verts),
+               "scalp proxy failed to restore original bind pose");
         groom.clearCollisionMesh();
         expect(!groom.hasCollisionMesh(),"groom collision reset failed");
     }
