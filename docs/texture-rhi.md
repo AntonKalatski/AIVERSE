@@ -3236,3 +3236,34 @@ If Metal shader compilation, execution or image comparison fails,
 record the first real native error before continuing.
 **This corrected source has not yet been built or executed
 in this tool environment.** Keep PR #21 Draft.
+
+### Stage 10BT — Apple M3 Ultra four-source GPU-ICB ABI PASS (observed)
+
+The user supplied the native Mac Studio `ctest --verbose` result
+after pulling Stage 10BS `3243fc67157187e087c68048e388dfae15bed05b`.
+`metal_texture_icb_graph_gpu`: **1/1 PASS, 0 failures**,
+CTest test duration **1.06 s**, full CTest real elapsed **1.07 s**.
+Both separate native Metal Apple M3 Ultra cases completed:
+
+- `graph sources=1`: production GPU-encoded ICB submitted
+  two material commands; independent Shader Graph source/U2
+  **RGBA8 pixel parity PASS**. Fixture operation **240.116 ms**.
+- `graph sources=4`: same real GPU-encoded ICB path, distinct
+  per-command graph textures 13–16 / packed U2; **RGBA8 pixel
+  parity PASS**. Fixture operation **151.826 ms**.
+
+The test did **not** use CPU fallback. These reported fixture
+intervals are not isolated GPU draw time or gameplay FPS.
+The output showed `[metal-assets] libraries=0 sourceMisses=1
+pipelines=2 pipelineFailures=0 archive=0 strict=0` for each run;
+no actual Metal shader compilation errors were reported.
+
+**Proof boundary:** Both layouts of the low-level per-command
+Metal argument-buffer / fragment resource-binding ABI are now
+hardware-verified. This is not yet a full production
+`render::graph::compile` + `Renderer3D` scene material integration
+test, nor Vulkan/GL/mobile parity, source/VT filtering seam coverage,
+large-scene stress, GPU driver robustness or performance evidence.
+Keep experimental ICB flags OFF by default and PR #21 **Draft**.
+Next: authored Shader Graph compile plus production Renderer3D
+execution on native hardware, in another opt-in gate.
