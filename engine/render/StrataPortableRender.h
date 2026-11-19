@@ -7,6 +7,9 @@
 #include "StrataModelAdapter.h"
 #include "StrataView.h"
 #include "GlobalGeometryPool.h"
+#include "StrataIndexResidency.h"
+
+#include <memory>
 
 #include <cstdint>
 #include <string>
@@ -29,6 +32,8 @@ struct PortableRenderStats {
     uint64_t fallbackPreparations = 0;
     bool pooledIndices = false;
     bool dedicatedIndices = false;
+    bool streamingIndices = false;
+    uint64_t residentIndexBytes = 0;
     bool forcedFinest = false;
 };
 
@@ -45,8 +50,22 @@ public:
     PortableSource& operator=(const PortableSource&) = delete;
     ~PortableSource() = default; // device must be passed to shutdown explicitly
 
+    // indexBudgetBytes==0 preserves the fully resident Stage 14 index path.
+    // Positive budgets opt in to real, root-first compact GPU index residency.
     bool stage(gfx::Device& device, const Model& source,
-               const ModelAsset& asset, std::string* error = nullptr);
+               const ModelAsset& asset, std::string* error = nullptr,
+               size_t indexBudgetBytes = 0);
+    bool streamingEnabled() const { return bool(streaming_); }
+    // Called BEFORE any Renderer3D::drawModel in the new submission epoch,
+    // once per source after merging demands from all its instances/passes.
+    bool updateResidency(const std::vector<IndexDemand>& demands,
+                         std::string* error = nullptr);
+    // Predict ideal clusters from immutable CPU hierarchy (NOT current GPU
+    // mask). Does not submit, allocate or mutate; appends only valid demands.
+    bool collectResidencyDemands(const mat4& instanceWorld,
+                     const std::vector<PortablePassView>& passes,
+                     bool forceFinestForUnspecifiedPass,
+                     std::vector<IndexDemand>& out) const;
     bool prepareModel(const mat4& instanceWorld,
                       const std::vector<PortablePassView>& passes,
                       bool forceFinestForUnspecifiedPass,
@@ -69,6 +88,7 @@ private:
     gfx::BufferHandle sourceVertexBuffer_{}, sourceIndexBuffer_{};
     uint32_t sourceFirstIndex_ = 0;
     GeometryPoolIndexSpan pooledIndices_;
+    std::unique_ptr<IndexResidency> streaming_;
     bool dedicated_ = false;
     uint32_t firstIndex_ = 0, indexCount_ = 0;
     uint32_t baseVertex_ = 0;
