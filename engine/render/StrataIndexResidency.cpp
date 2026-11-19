@@ -33,6 +33,68 @@ bool validGeometry(const Asset& g) {
 }
 } // namespace
 
+std::vector<SceneIndexBudgetGrant> apportionSceneIndexBudget(
+        std::vector<SceneIndexBudgetRequest> requests,
+        uint64_t sceneBudgetBytes) {
+    // Admit as many pinned-root sources as possible under pressure.
+    // Stable identity ordering makes load repeatable across sessions.
+    std::stable_sort(requests.begin(), requests.end(),
+        [](const SceneIndexBudgetRequest& a,
+           const SceneIndexBudgetRequest& b) {
+            return a.rootBytes==b.rootBytes
+                ? a.key<b.key : a.rootBytes<b.rootBytes;
+        });
+    std::vector<SceneIndexBudgetGrant> grants;
+    grants.reserve(requests.size());
+    uint64_t remaining=sceneBudgetBytes;
+    for(const auto& request:requests){
+        uint64_t allocated=0;
+        if(!request.key.empty() && request.rootBytes &&
+           request.rootBytes<=request.maxBytes){
+            if(!sceneBudgetBytes)
+                allocated=request.maxBytes;
+            else if(request.rootBytes<=remaining){
+                allocated=request.rootBytes;
+                remaining-=request.rootBytes;
+            }
+        }
+        grants.push_back({request.key,allocated});
+    }
+    if(!sceneBudgetBytes)return grants;
+    uint64_t headroom=0;
+    for(size_t i=0;i<requests.size();++i){
+        if(!grants[i].bytes)continue;
+        const uint64_t room=requests[i].maxBytes-grants[i].bytes;
+        headroom=room>UINT64_MAX-headroom ? UINT64_MAX : headroom+room;
+    }
+    const uint64_t spare=remaining;
+    if(headroom)
+        for(size_t i=0;i<requests.size();++i){
+            if(!grants[i].bytes)continue;
+            const uint64_t room=requests[i].maxBytes-grants[i].bytes;
+            // Bound the floating-point intermediate BEFORE conversion to
+            // uint64; giant external budgets must not cause UB.
+            const long double scaled=
+                (static_cast<long double>(spare)*
+                 static_cast<long double>(room))/
+                static_cast<long double>(headroom);
+            const uint64_t share=scaled>=static_cast<long double>(room)
+                ? room : uint64_t(scaled);
+            const uint64_t added=std::min(remaining,share);
+            grants[i].bytes+=added;
+            remaining-=added;
+        }
+    // Distribute integer rounding leftovers, never exceeding a cap.
+    for(size_t i=0;i<requests.size() && remaining;++i){
+        if(!grants[i].bytes)continue;
+        const uint64_t room=requests[i].maxBytes-grants[i].bytes;
+        const uint64_t added=std::min(remaining,room);
+        grants[i].bytes+=added;
+        remaining-=added;
+    }
+    return grants;
+}
+
 bool IndexResidency::initialize(gfx::Device& device, const ModelAsset& asset,
                                 size_t budgetBytes, std::string* error) {
     if (error) error->clear();
