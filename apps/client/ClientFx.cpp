@@ -91,4 +91,15 @@ void ClientFx::render(const render::Lighting& lighting) {
     ps_.render({lighting.fogColor, lighting.fogDensity});
 }
 
+void ClientFx::renderPrepared(const render::Camera3D& camera,
+                              const render::mat4& viewProj,
+                              int width,int height,
+                              const render::Lighting& lighting) {
+    // Particles have already advanced exactly once in update(). This path
+    // redoes camera-dependent culling/billboards and GPU draw submission only.
+    ps_.setView(camera,viewProj,width,height);
+    ps_.setLightDir(lighting.sunDir);
+    ps_.render({lighting.fogColor,lighting.fogDensity});
+}
+
 } // namespace aiverse::client
