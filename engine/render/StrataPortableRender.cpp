@@ -36,7 +36,11 @@ bool safePrimitive(const Model& source,uint32_t mesh,uint32_t primitive,
            !mat.shaderGraph;
 }
 bool safeSource(const Model& source){
-    if(!source.vb.valid()||!source.ib.valid()||source.geometry||
+    // Existing legacy GeometryData is optional source-side acceleration
+    // metadata. The portable alias deliberately does NOT borrow that data,
+    // so its cluster LOD cannot be applied twice. Many GeometryScene sources
+    // have prepareGeometry() enabled before portable Strata staging.
+    if(!source.vb.valid()||!source.ib.valid()||
        !source.skins.empty()||!source.clips.empty()||
        !source.variants.empty()||source.morphTex.valid()||
        source.nodes.empty()||source.meshes.empty()||
