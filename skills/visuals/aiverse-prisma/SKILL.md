@@ -5,7 +5,7 @@ description: PRISMA — universal AIVERSE post-processing, HDR, tone mapping, bl
 
 # PRISMA — AIVERSE universal image post-processing
 
-**Read first:** `AGENTS.md` (mandatory PRISMA vs SpectraFX ownership matrix), `docs/prisma.md`, `docs/postfx.md`, `docs/hdr.md`, the latest `docs/handoffs/prisma-stage-XX.md`.
+**Read first:** `AGENTS.md` (mandatory PRISMA vs SpectraFX ownership matrix), `docs/prisma.md`, `docs/postfx.md`, `docs/hdr.md`, the latest `docs/handoffs/prisma-stage-66.md`.
 
 ## Choose the right owner
 
@@ -463,7 +463,7 @@ VRAM cap or an allocator.
 **No tests yet** per project sequencing: code and source readback
 first, then standalone build/CTest/backend GPU validation only after
 all functions are finished. Every implementation stage requires its
-own `docs/handoffs/prisma-stage-XX.md`; Stage 49 details are in
+own `docs/handoffs/prisma-stage-66.md`; Stage 49 details are in
 `docs/handoffs/prisma-stage-49.md`. Prior stage ownership, Metal/GL
 scoped timers, backend fallback and GPU-fenced resource lifetime are
 not changed.
@@ -1269,7 +1269,7 @@ parity, GPU fence/memory and performance
 verification/fix cycle. Actual outcomes must be
 logged in a separate Stage 66 handoff.
 CMake registers `prisma_graph`,
-`prisma_volume`, `shader_graph`,
+`prisma_volume`, the Shader Graph CTest target,
 `hdr_policy` (HDR option and desktop only)
 and `aiverse_tests`; built-in GPU fixture
 binaries may need explicit invocations.
@@ -1350,4 +1350,4 @@ No merge to main/base without explicit user permission.
 
 Run `./run-tests.sh --quick` plus targeted HDR policy/GPU pixel tests once a native checkout is available; on macOS build `aiverse_hdr_policy`, `aiverse_hdr_scene`, `aiverse_hdr_gl`, editor/client and check the Metal path. Report actual commands and PASS/FAIL/NOT RUN, never infer success from source files or queued CI.
 
-After **each** bounded code stage, commit `docs/handoffs/prisma-stage-XX.md` on the same branch: exact SHA, architecture and API, all changed paths, actual tests/results, limitations, and the next actionable step. Keep PRISMA handoffs separate from `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` maintained by SpectraFX.
+After **each** bounded code stage, commit `docs/handoffs/prisma-stage-66.md` on the same branch: exact SHA, architecture and API, all changed paths, actual tests/results, limitations, and the next actionable step. Keep PRISMA handoffs separate from `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md` maintained by SpectraFX.
