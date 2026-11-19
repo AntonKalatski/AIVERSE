@@ -36,6 +36,15 @@ public:
     SpectraFxGpuEvolution(const SpectraFxGpuEvolution&) = delete;
     SpectraFxGpuEvolution& operator=(const SpectraFxGpuEvolution&) = delete;
 
+    bool initCapacity(gfx::Device& device,uint32_t capacity) {
+        if(capacity==0 || capacity>kMaxParticles) {
+            error_="SpectraFX GPU capacity must be 1..65536";return false;
+        }
+        std::vector<SpectraFxGpuSeed> dormant(capacity);
+        for(auto& seed:dormant) seed.lifetime=0;
+        return init(device,dormant);
+    }
+
     bool init(gfx::Device& device, const std::vector<SpectraFxGpuSeed>& seeds) {
         shutdown();
         error_.clear();
@@ -57,7 +66,7 @@ public:
         for(const auto& seed:seeds) {
             if(!finite(seed.position) || !finite(seed.velocity) ||
                !std::isfinite(seed.age) || !std::isfinite(seed.lifetime) ||
-               seed.age<0 || seed.lifetime<=0 || seed.age>seed.lifetime) {
+               seed.age<0 || seed.lifetime<0 || seed.age>seed.lifetime) {
                 error_="SpectraFX GPU seeds must be finite with valid lifetimes";
                 return false;
             }
@@ -73,10 +82,10 @@ public:
             shutdown();
             return false;
         }
-        position_=device.createBuffer({gfx::BufferType::Storage,gfx::Usage::Immutable,
+        position_=device.createBuffer({gfx::BufferType::Storage,gfx::Usage::Dynamic,
                                        positions.size()*sizeof(render::float4),
                                        positions.data(),"SpectraFX positions"});
-        velocity_=device.createBuffer({gfx::BufferType::Storage,gfx::Usage::Immutable,
+        velocity_=device.createBuffer({gfx::BufferType::Storage,gfx::Usage::Dynamic,
                                        velocities.size()*sizeof(render::float4),
                                        velocities.data(),"SpectraFX velocities"});
         gfx::TextureDesc texture;
@@ -92,6 +101,23 @@ public:
             shutdown();
             return false;
         }
+        return true;
+    }
+
+    // Write/recycle one slot. Caller must perform this at a GPU-buffer update
+    // safe point, before compute dispatch and with no render/compute pass open.
+    // Lifetime zero marks the slot dormant (billboard alpha zero).
+    bool writeSlot(uint32_t slot,const SpectraFxGpuSeed& seed) {
+        if(!ready() || slot>=count_ || !device_->canUpdateSharedBuffers())
+            return false;
+        if(!finite(seed.position) || !finite(seed.velocity) ||
+           !std::isfinite(seed.age)||!std::isfinite(seed.lifetime)||
+           seed.age<0||seed.lifetime<0||seed.age>seed.lifetime)
+            return false;
+        const render::float4 a{seed.position.x,seed.position.y,seed.position.z,seed.age};
+        const render::float4 v{seed.velocity.x,seed.velocity.y,seed.velocity.z,seed.lifetime};
+        device_->updateBuffer(position_,&a,sizeof(a),size_t(slot)*sizeof(a));
+        device_->updateBuffer(velocity_,&v,sizeof(v),size_t(slot)*sizeof(v));
         return true;
     }
 
