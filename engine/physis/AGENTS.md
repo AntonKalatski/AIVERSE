@@ -709,3 +709,11 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
 - Handoff:
   `docs/agent-handoffs/physis-stage57-standalone-ci-2026-11-19.md`.
 
+### Stage 58 — journal workflow isolation (2026-11-19)
+
+- The Stage 57 journal test job was inside `.github/workflows/physis.yml` and thus shared its workflow-level concurrency cancellation group with the full-engine PHYSIS job. A new code/doc push repeatedly cancelled BOTH jobs before runners started. This was not truly independent CI.
+- Stage 58 moves the standalone journal Ubuntu/macOS test job to `.github/workflows/physis-journal.yml`, with its own concurrency group and triggers specific to journal sources/tests and its CMake. The original `physis.yml` retains the complete native PHYSIS/Box3D matrix unchanged.
+- New workflow source commit: `0d213e8f91a08b81eadd0d0f2eb847474444ad34`. GitHub created TWO distinct queued workflow runs at this SHA: `44495750669` (journal standalone) and `44495750438` (full PHYSIS).
+- ACTUAL PASS: local Linux CMake/CTest using exact standalone project, `physis_journal_posix_io` and `physis_journal_locked_io` **2/2**. GitHub runner jobs are still QUEUED, not PASS; full engine, Ubuntu/macOS CI and editor integration remain unverified.
+- Keep per-stage handoff at `docs/agent-handoffs/physis-stage58-independent-ci-2026-11-19.md`. PR #25 remains DRAFT and has merge conflicts with its target feature branch; main is already included and must not be remerged unnecessarily.
+

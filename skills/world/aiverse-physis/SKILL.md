@@ -777,3 +777,11 @@ blobs passed a local Linux GCC 14.2 CMake/CTest 2/2. GitHub Actions
 runners were still queued; do NOT report Ubuntu/macOS CI as passed.
 See `docs/agent-handoffs/physis-stage57-standalone-ci-2026-11-19.md`.
 
+### Stage 58 — independent native journal CI workflow
+
+Use `.github/workflows/physis-journal.yml` for the two standalone native journal tests on Ubuntu and macOS. It is an independent workflow with a separate concurrency group; a source or documentation push cancelling `physis.yml` must no longer cancel journal checks. The original `physis.yml` remains responsible for full PHYSIS engine, network, persistence, Box3D and CTest coverage.
+
+Local standalone build and CTest completed with **2/2 PASS** under Linux GCC. The newly created GitHub workflow runs for journal and complete engine were QUEUED when last inspected. Do not equate a queued GitHub run with successful macOS/Ubuntu tests.
+
+Stage handoff: `docs/agent-handoffs/physis-stage58-independent-ci-2026-11-19.md`.
+
