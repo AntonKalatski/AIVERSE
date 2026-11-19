@@ -127,12 +127,27 @@ Without `sharedPool`, playback uses its existing dedicated
 CPU/GPU emitter behavior.
 
 Automatic shared grouping is currently restricted to **additive**
-billboards. Alpha-blended effects require back-to-front sorting.
-Because GPU sorting is not yet implemented, alpha effects default to
-the existing sorted **CPU fallback**. An author can deliberately set
-`"allowUnsortedAlpha": true` in an emitter asset to use the older
-unsorted dedicated GPU alpha path for effects whose order is irrelevant,
-but this never enables automatic shared pooling for alpha. GPU impact
+billboards. Alpha-blended effects require back-to-front sorting and
+default to the existing sorted **CPU fallback**. A dedicated emitter
+can opt into **Metal-only GPU alpha sorting** by authoring
+`"gpuSortAlpha": true` with `"appearance": {"additive": false, ...}`.
+This is supported for 1..4096 particles and requires GPU compute,
+RGBA32F and a valid camera-forward direction on every update; the
+renderer performs back-to-front bitonic sorting on GPU before its
+normal instanced alpha draw.
+
+GPU alpha sorting is deliberately **not enabled by default** because
+the sorting network performs multiple Metal compute dispatches and may
+cost more than CPU for small effects. It cannot be combined with
+`"gpuIndirectCompaction": true` (the latter packs unsorted indices).
+On unsupported GPUs/Metal-sort initialization or runtime failure, the
+effect uses the authored CPU fallback, if available. An author can
+alternatively set `"allowUnsortedAlpha": true` to use the older
+unsorted dedicated GPU alpha path for effects whose visual order is
+irrelevant. Shared auto-pooling remains additive-only even if either
+alpha override is enabled. Sorting is per dedicated emitter, **not**
+globally back-to-front across multiple emitters, scene transparents
+or different particle materials. GPU impact
 readback/`impactEffect` also remains on dedicated emitters. If
 the pool cannot initialize, becomes incompatible or fills up, the
 existing dedicated path is attempted, retaining its authored CPU
@@ -194,6 +209,24 @@ not guaranteed to fade naturally.
 
 ## Experimental GPU live-slot compaction and shared arena
 
+For a separately authored, transparent GPU-sorted effect, the following
+root-level settings are available:
+
+```json
+{
+  "gpuSortAlpha": true,
+  "gpuIndirectCompaction": false,
+  "allowCpuFallback": true,
+  "particles": 2048
+}
+```
+
+These settings supplement the other required v1 fields, including
+`cpuEffect` and a non-additive `appearance`. The alpha index sort
+does not use indirect count compaction, and it does not sort across
+separate effects or scene geometry. Paused GPU emitters do not generate
+new startup bursts; fully empty batches skip GPU sorting/draw.
+
 The optional top-level emitter asset property
 
 ```json
@@ -251,8 +284,8 @@ retains that fallback. Source removal can preserve existing particles
 until expiry or kill them at a safe point.
 
 The GPU compaction uses atomics and is **unsorted**. Transparent alpha
-effects that need depth ordering use CPU unless explicitly opted into
-unsorted alpha; this
+effects requiring back-to-front ordering use the CPU path by default
+or the explicit Metal GPU sort described above; this
 is not general sorted GPU transparency, GPU-side collision meshes or
 global multi-material batching. Measure actual GPU cost and memory
 before enabling it in production.
