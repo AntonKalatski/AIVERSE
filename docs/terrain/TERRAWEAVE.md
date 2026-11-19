@@ -1907,3 +1907,76 @@ Implementation stages and exact commit hashes are in
 CTest, platform screenshots or CPU/GPU performance tests
 were executed by the feature agent; a separate agent owns
 those validations.
+
+## Stage 21 — precise Q16 seam sampling and authored near normals (TWH8)
+
+Stage 20 already implemented an **all-or-none welded-slope guard** and
+area-weighted geometric normal smoothing. The current stage improves the
+precision and source agreement of the underlying near terrain data.
+
+`AuthoredWorldHeightSnapshot::sampleQ16(xQ16cm,zQ16cm)` samples the
+same immutable authored two-triangle height tiles as the existing
+integer-centimetre `sample` method, but at signed fractional
+world-centimetre Q16 coordinates. Integral inputs retain the exact
+old integer-height result. Fractional points use bounded fixed-point
+barycentric weights, not floating GPU interpolation.
+
+`HorizonSurfaceSources::nearGroundHeightAtQ16Cm` is **optional**.
+`WorldScene` supplies it from the same immutable near-ground snapshot
+that provides `collectNearTerrainRects` and
+`ownsNearTerrainRect`. A native authored provider may omit it and
+retain the legacy whole-centimetre height path.
+
+During `populateHorizonNearSeamSamples`, exact clipped polygon
+coordinates are sampled at Q16 precision. At the high side of a
+half-open tile the query moves only **one Q16 unit**
+(1/65536 cm) into the already resident tile, rather than shifting
+by up to 1 cm. A bounded +/-200cm stencil entirely inside the
+same tile derives near-surface `slopeXPermille` and
+`slopeZPermille`. Missing derivative data merely marks the
+normal unavailable; missing height still disables the
+entire seam height weld for that region.
+
+Each baked `NearSeamSample` now contains:
+- `xQ16cm`, `zQ16cm` (the same seam identity as Stage 19);
+- `nearHeightCm` (exact authored Q16-sampled near height,
+  rounded to signed centimetres);
+- `nearSlopeXPermille`, `nearSlopeZPermille`, plus
+  `nearNormalValid`.
+
+`makeHorizonModel` continues using the existing bounded
+clipped far triangles. At a welded point with
+`nearNormalValid=true`, lighting normals blend toward
+the **authored near-source normal**, under the existing
+`nearSeamNormalBlendPercent` setting. Interior clipped
+far triangles retain the Stage 20 area-weighted face-normal
+blending. Neither clipping topology, vertex/triangle
+counts, materials nor draw submissions increase.
+
+`HorizonRuntimeStats::matchedAuthoredNearNormals` counts
+the clipped render vertices where an authored Q16 surface
+normal was actually blended. Existing
+`smoothedNearNormals` includes the geometric normal
+path. Both counters survive GPU LRU restoration.
+The strict atlas-only patch planner refuses modified
+seam heights/gradients; safe index-compatible edits can
+still use the combined partial vertex upload or
+full-model fallback.
+
+**Current archive: TWH8**. The `.twh` payload now stores
+32 bytes per near-seam point (Q16 X/Z, height, two
+slopes and encoded validity). The bounded 4096-point
+table adds at most 48KiB of normal metadata compared
+to TWH7; no new GPU memory allocation is required
+beyond existing model vertex attributes. TWH1–TWH7
+archives are intentionally stale and should be
+rebaked with `aiverse_horizon_bake` or regenerated
+through the existing worker fallback. Old version
+sections below/above are historical only.
+
+**Not yet validated:** compiled native targets, TWH8
+roundtrip, 0/65/100% normal interpolation,
+device-specific lighting captures, cross-compiler Q16
+rounding or GPU performance. All are owned by
+the dedicated testing agent; the feature source
+has been committed but testing is **NOT RUN**.
