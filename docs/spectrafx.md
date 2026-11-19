@@ -1716,3 +1716,46 @@ instance, and a formerly live effect may stop emitting. The term *lossless*
 is not warranted until parity, all emitter categories and fault injection
 are verified. No native compiler, CTest, Metal test or GUI smoke was run for
 this stage; code remains unverified.
+
+
+## Stage 30 — opt-in chunked asynchronous Metal checkpoint capture (source committed, not validated)
+
+`GraphRuntimeOptions::checkpointEveryFrames` (or the direct
+`ComputeEmitterDesc::checkpointEveryFrames`) controls a **disabled-by-default**
+periodic checkpoint request. Every N successful Metal compute submissions the
+runtime may enqueue a snapshot *after* Spawn/Integration/Update/Compaction,
+without waiting for completion. `GraphRuntime::requestGpuCheckpoint(callback)`
+and `ComputeParticles::requestGpuCheckpoint(callback)` allow explicit manual
+requests. The callback reports `bool complete`, not a mutable GPU buffer
+pointer. A failed scheduling attempt returns `false` and must not yield a
+usable partial checkpoint.
+
+For each physical GPU slot the snapshot includes 64 bytes particle state,
+32 bytes per-particle VM inputs and 32 bytes custom registers — maximum
+512 KiB at the current 4096 GPU slots. The Metal RHI now implements
+`readBufferRangeAsync(handle,offset,size,callback)` for reads of up to
+64 KiB each. The checkpoint splits the three buffers into at most eight
+small requests, assembles them only after all replies have succeeded, and
+uses a renderer-lifetime token to cancel callbacks after teardown. At most
+one checkpoint capture per ComputeParticles instance is pending. A partially
+queued batch is rejected and never published.
+
+The GPU frame revision is incremented **on successful compute submission**,
+fixing the earlier non-incrementing freshness token. The async result stores
+its originating revision; `switchToCpu` may restore it only if it still
+matches the latest GPU frame and there are no pending unsent particles. A
+periodic snapshot from an earlier frame can remain for diagnostics but is
+not eligible for a supposedly lossless restoration. Missing, incomplete or
+stale snapshots retain the explicit loss-counting CPU fallback.
+
+`ComputeStats` exposes cumulative `checkpointRequests`,
+`checkpointCompleted` and `checkpointFailed`. An automatic request never
+blocks render submission with a synchronous read, but enqueues device copies;
+the callback and CPU assembly still consume resources. The full 512 KiB
+capture is opt-in and can be costly on mobile. Captures from complex effects
+are not guaranteed to reproduce an exact CPU trajectory, since GPU/CPU VM
+and renderer numerical parity has not been demonstrated.
+
+**NOT RUN:** Clang/CMake, CTest, Metal shader compilation, real GPU
+checkpoint/recovery, fault injection and performance analysis. This API
+is experimental and not a production-safe guarantee of recovery.
