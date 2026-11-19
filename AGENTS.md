@@ -1302,3 +1302,25 @@ Vulkan immutable storage buffer creation and update now have explicit
 TRANSFER_WRITE -> COMPUTE_SHADER_READ dependencies on compute-capable queues,
 and avoid compute stage bits on graphics-only devices. This is a source fix,
 NOT a GPU validation PASS. Do not remove barriers during RHI refactoring.
+
+
+## GI stages 34–36: GLES LDR + backend transport + point/spot bounce (2026-11-20)
+
+Before modifying AIVERSE direct light sources, model shaders, portable GI or
+Vulkan compute, read:
+- `docs/agent-handoffs/gi-stage34-gles-ldr-cpu-gi-2026-11-20.md`
+- `docs/agent-handoffs/gi-stage35-unified-transport-owner-2026-11-20.md`
+- `docs/agent-handoffs/gi-stage36-point-spot-indirect-2026-11-20.md`
+
+The opt-in `GiLightingController` prefers real Metal/Vulkan compute when
+supported, falls back to CPU-probed RGBA32F data textures on GLES3/WebGL2 and
+unsupported Vulkan, and holds immutable geometry snapshots across dispatches.
+A sampled CPU GI atlas can shade LDR PBR models without an HDR render target.
+`PointLight::indirectMultiplier` defaults to ZERO: direct/static/baked sources
+are not implicitly counted twice. `GiLightBridge` converts stable-key point
+and spot cones into independent dynamic-only incident transport, with
+per-publisher key namespace and explicit overflow policy. All GPU Lamp
+uniforms now use 64-byte ABI in BOTH MSL and SPIR-V (not 32); keep buffers
+aligned across any future shader changes. Never treat FakeDevice source
+fixtures as GPU hardware tests. Native CMake/CTest and real GPU tests remain
+NOT RUN, and main is NOT merged.
