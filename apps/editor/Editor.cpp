@@ -142,8 +142,18 @@ void Editor::init(gfx::Device& dev) {
     view_.setContentBase(ws_.project.dir.empty() ? "" : ws_.project.dir + "/");
     view_.init(dev, rules(), projectReader(ws_.project.dir));
     gpuRetirementRing_=std::make_shared<render::RetirementDiagnosticRing>(128);
+    const auto gpuTrace=render::RetirementDiagnosticRing::observe(
+        gpuRetirementRing_);
     view_.modelResources().setRetirementDiagnosticObserver(
-        render::RetirementDiagnosticRing::observe(gpuRetirementRing_));
+        [gpuTrace](render::RetirementDiagnosticEvent event) {
+            event.resource=render::RetirementResourceKind::Model;
+            gpuTrace(event);
+        });
+    view_.setImageRetirementDiagnosticObserver(
+        [gpuTrace](render::RetirementDiagnosticEvent event) {
+            event.resource=render::RetirementResourceKind::Image;
+            gpuTrace(event);
+        });
     for (auto& w : view_.warnings()) ws_.log("view", w, true);
     fxTextures_.init(dev);
     gameFx_.setQuality(fx::defaultQualityFor(dev, false));
