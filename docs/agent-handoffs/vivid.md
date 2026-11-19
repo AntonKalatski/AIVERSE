@@ -61,3 +61,12 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
   ctest --test-dir build/vivid --output-on-failure -R '^(vivid_face|vivid_morph_binding)$'
   ```
 - **Next exact step**: Stage 3 investigation/implementation of sparse >8-target morph buffer layout with backends and animation channel ABI compatibility, or first add validated asset-authored per-character route mapping and a CPU modelview preview. Test Stage 1+2 in the real checkout before changing shared renderer/animation sources. Follow root `AGENTS.md` build protocol and record measured numerical/visual results.
+
+## Native validation checkpoint — 2026-11-19 — user-provided macOS run
+
+- **Branch tested by user**: checkout at `/Users/aleksandrfeer/Projects/AIVERSE-vivid/build/vivid`, created from `origin/feature/vivid-digital-humans`. Exact tested SHA not included in terminal output; the test results should NOT be attributed to a later commit.
+- **User-reported build**: `[100%] Built target aiverse_vivid_morph_tests`.
+- **User-reported CTest**: `vivid_face` PASS (0.69 s), `vivid_morph_binding` PASS (0.38 s), **2/2 tests passed**, total real 1.08 s. These are the first actual native test results reported for Stages 1-2. Not independently rerun by this agent.
+- **Unrelated shell errors**: after successful CTest, zsh attempted to execute pasted diagnostic/prompt text, generating `no matches found` and `command not found`; not a build/test failure.
+- **GPU/visual**: NOT RUN. No rendering acceptance or MetaHuman import demonstrated.
+- **Next**: stage 3 implementing an extensible CPU-reference facial morph representation and GPU-ready offline sparse buffers, without changing existing `Model` ABI or claiming that the engine's GPU render backend accepts >8 morphs.
