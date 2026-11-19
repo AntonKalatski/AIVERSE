@@ -4,6 +4,14 @@
 # its existence is NOT evidence that the texture branch passed validation.
 set -uo pipefail
 
+# Bash reads a script incrementally: without a full-file syntax preflight,
+# a broken tail can still configure/build many targets before the parser
+# discovers an unmatched quote. Refuse to perform any work in that case.
+if ! bash -n "${BASH_SOURCE[0]}"; then
+    echo "Texture RHI verifier: Bash syntax check failed; no build started" >&2
+    exit 2
+fi
+
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 build="${AIVERSE_TEXTURE_BUILD_DIR:-$repo/build/texture-rhi}"
 jobs="${AIVERSE_TEXTURE_JOBS:-4}"
