@@ -1,5 +1,6 @@
 #include "SpectraGpuParticles.h"
 #include "SpectraGpuShaders.h"
+#include "SpectraGpuFramePlan.h"
 #include "SpectraGpuProgram.h"
 #include "ParticleShaders.h"
 #include <algorithm>
@@ -465,37 +466,19 @@ bool ComputeParticles::step(float dt) {
     u.rightSize={right_.x,right_.y,right_.z,desc_.size};
     u.up={up_.x,up_.y,up_.z,0};
     u.meta={0,desc_.capacity,count,compactCount};
-    if(gpuIndirectActive_) {
-        // Reset the atomic counter in a separate dispatch. The RHI inserts
-        // a Metal compute barrier between dispatches on this command encoder.
-        u.meta[0]=3;
+    // Canonical phase order: Spawn VM runs inside mode 0, Update VM
+    // inside mode 1, and vertex publication follows integration. No
+    // separate Stage-23 VM pass must run on these same physical particles.
+    const auto frame=gpu_pipeline::plan(desc_.capacity,count,updatePrefix,
+                                        compactCount,gpuIndirectActive_);
+    for(uint32_t i=0;i<frame.count;++i) {
+        const auto& phase=frame.dispatches[i];
+        u.meta[0]=phase.shaderMode;
         device_->setComputeUniforms(&u,sizeof(u));
-        device_->dispatch(1);++stats_.gpuDispatches;
-    }
-    if(count){
-        u.meta[0]=0;
-        device_->setComputeUniforms(&u,sizeof(u));
-        device_->dispatch(count);++stats_.gpuDispatches;
-    }
-    if(updatePrefix>0) {
-        u.meta[0]=1;
-        device_->setComputeUniforms(&u,sizeof(u));
-        device_->dispatch(updatePrefix);++stats_.gpuDispatches;
-    }
-    if(gpuIndirectActive_) {
-        if(updatePrefix>0) {
-            u.meta[0]=4; // per-physical-slot atomic dense vertex append
-            device_->setComputeUniforms(&u,sizeof(u));
-            device_->dispatch(updatePrefix);++stats_.gpuDispatches;
+        device_->dispatch(phase.threads);
+        ++stats_.gpuDispatches;
+        if(phase.phase==gpu_pipeline::Phase::Compact)
             ++stats_.gpuCompactDispatches;
-        }
-        u.meta[0]=5; // write indexed args from GPU-owned atomic counter
-        device_->setComputeUniforms(&u,sizeof(u));
-        device_->dispatch(1);++stats_.gpuDispatches;
-    } else if(compactCount>0) {
-        u.meta[0]=2; // legacy CPU-published live gather
-        device_->setComputeUniforms(&u,sizeof(u));
-        device_->dispatch(compactCount);++stats_.gpuDispatches;
     }
     device_->endCompute();
     pendingStates_.clear();pendingSlots_.clear();pendingProgramParams_.clear();
