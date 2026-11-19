@@ -64,6 +64,7 @@ struct PoolWorldBudgets {
 struct PoolCheckpointStats {
     uint32_t activeGroups=0, pendingGroups=0, freshGroups=0;
     uint32_t staleGroups=0, missingGroups=0, restoreEligibleGroups=0;
+    uint32_t exportReadyGroups=0; // complete, same revision, no pending reads or kills
     uint64_t requests=0, completed=0, failed=0, budgetDenied=0;
     uint64_t adaptiveBackoffs=0, adaptiveRecoveries=0;
     uint32_t maximumCurrentIntervalFrames=0;
