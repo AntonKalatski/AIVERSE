@@ -209,6 +209,13 @@ struct Model {
         std::string reason; // e.g. source already has LOD, unsupported model
     } autoLod;
     bool uploadPrepared = false;
+    // Monotonic content revision used by opt-in CPU caches. In-place changes to
+    // bind transforms, nodes or geometry must call markGeometryChanged().
+    // Material factors alone do not alter cached geometric transforms.
+    uint64_t geometryRevision = 1;
+    void markGeometryChanged() noexcept {
+        if (++geometryRevision == 0) ++geometryRevision;
+    }
     std::shared_ptr<GeometryData> geometry;
     std::string path;
     std::vector<Node> nodes;
