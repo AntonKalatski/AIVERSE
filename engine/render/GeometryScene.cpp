@@ -5,6 +5,7 @@
 #include "StrataView.h"
 #include "StrataGpuScene.h"
 #include "StrataGpuCulling.h"
+#include "StrataRenderRouting.h"
 #endif
 #include <algorithm>
 #include <numeric>
@@ -164,6 +165,33 @@ const strata::ModelAsset* GeometryScene::strataAsset(const std::string& sourceKe
 #else
     (void)sourceKey;
     return nullptr;
+#endif
+}
+
+bool GeometryScene::prepareStrataRenderCandidate(
+    const std::string& sourceKey, uint32_t mesh, uint32_t primitive,
+    strata::RenderPass pass, const strata::ViewConfig& view,
+    strata::RenderCandidate& out, std::string* error) const {
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    if (!strataStagingEnabled_ || !strataGpuMetadataEnabled_ ||
+        !strataStaging_ || !strataGpuMetadata_) {
+        if (error) *error = "Strata CPU/GPU staging is disabled";
+        return false;
+    }
+    const auto it = models_.find(sourceKey);
+    const auto* asset = strataStaging_->find(sourceKey);
+    if (it == models_.end() || !it->second || !asset) {
+        if (error) *error = "Strata source is not staged";
+        return false;
+    }
+    return strata::prepareRenderCandidate(*it->second, *asset,
+        *strataGpuMetadata_, sourceKey, mesh, primitive, pass,
+        view, out, error);
+#else
+    (void)sourceKey; (void)mesh; (void)primitive; (void)pass;
+    (void)view; (void)out;
+    if (error) *error = "Strata is disabled at build time";
+    return false;
 #endif
 }
 
