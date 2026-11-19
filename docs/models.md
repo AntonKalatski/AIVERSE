@@ -1419,3 +1419,35 @@ Other direct host upload call-sites require continued audit and completion.
 **NOT RUN:** native compiler, CMake/CTest, Metal/GL/Vulkan, sanitizer,
 GPU-fence fault injection or perf/visual regressions. Tests will be run
 only after all remaining functionality is implemented as requested.
+
+
+## Stage 139 — safety for native direct Model uploads without a cache owner
+
+Some lightweight native hosts import `render::Model` directly rather than
+through `ModelResourceCache`. Their call to `uploadModel(Device&,Model&)`
+must check its boolean result and handle any Device exception. A failed
+upload may already have created vertex/index/image/morph GPU handles:
+calling `unique_ptr<Model>::reset()` or publishing a broken draw is unsafe.
+
+New generic `engine/render/FailedModelUpload.h` provides
+`abortFailedModelUpload(Device&,std::unique_ptr<Model>&) noexcept`. On a
+failed/throwing partial GPU upload, it releases the Model only after a
+successful full `Device::waitForResourceIdle()` barrier. If completion
+cannot be proved, it deliberately abandons the CPU Model instead of freeing
+GPU-visible resources (an intentional leak/fail-closed path). Use only for
+rare failures, on the native render owner thread with a live Device.
+Ordinary replacement/rebuild must use nonblocking owner-fenced retirement,
+not a per-frame global GPU-idle wait.
+
+The RTS road/shore Model loaders, generated geometry and ghost/foam
+paths, plus standalone `aiverse_modelview` raw imports, now check
+`uploadModel` and use this helper for partial failures. They also reserve
+Model list/map capacity before allocation where applicable and avoid
+rendering incomplete uploaded Models. This **does not** yet fix routine
+`RtsRoadView::release` / `RtsShoreView::release` or preview teardown after
+successful uploads; Stage 140 must handle those separately.
+
+[Stage 139 handoff](agent-handoffs/animation-stage139-direct-host-failed-model-uploads-2026-11-19.md).
+**NOT RUN:** CMake/compiler/CTest/CI, real Metal/GL/Vulkan, sanitizer,
+partial GPU failure injection or visuals. Feature-first workflow keeps
+validation until after all remaining functionality is complete.
