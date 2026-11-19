@@ -56,7 +56,10 @@ public:
         }
         auto resolve = [this](const Model& model,
                               const Material& material, Mapping& mapping) {
-            return resolveMaterialMapping(model,material,mapping);
+            // The shared 32-bit GPU page ID has no VT-domain field.
+            // Multiple atlases must be captured in separate domain passes;
+            // nonselected materials still write depth but zero page IDs.
+            return resolveFeedbackMaterialMapping(model,material,mapping);
         };
         if (!rigid_.connect(renderer, resolve) ||
             (includeDeformed && !deformed_.connect(renderer, resolve))) {
@@ -71,6 +74,22 @@ public:
     // Call before new Terra submissions each frame to prevent stale pointer
     // keys from region rebuilds, forest unload and editor asset hot-reload.
     void beginFrame() { pages_.clear(); }
+
+    // Optional feedback-domain selection; default accepts every mapped
+    // material for the legacy single-domain use case. Does NOT affect
+    // the main material sampler resolver.
+    using FeedbackMaterialFilter = std::function<bool(const Model&,const Material&)>;
+    void setFeedbackMaterialFilter(FeedbackMaterialFilter filter) {
+        feedbackMaterialFilter_ = std::move(filter);
+    }
+    bool resolveFeedbackMaterialMapping(const Model& model,
+                                       const Material& material,
+                                       Mapping& mapping) const {
+        mapping = {};
+        if (feedbackMaterialFilter_ && !feedbackMaterialFilter_(model,material))
+            return false;
+        return resolveMaterialMapping(model,material,mapping);
+    }
 
     // Exact mapping used by both feedback and main-frame VT sampling.
     // Keep these in sync across atlas revisions and impostor overrides.
@@ -184,6 +203,7 @@ public:
         rigid_.shutdown();
         pages_.clear();
         liveMapper_ = {};
+        feedbackMaterialFilter_ = {};
         renderer_ = nullptr;
         pass_ = nullptr;
         deformedEnabled_ = false;
@@ -205,6 +225,7 @@ private:
     gfx::VirtualTextureFeedbackPass* pass_ = nullptr; // non-owning
     bool deformedEnabled_ = false;
     MaterialMapper liveMapper_;
+    FeedbackMaterialFilter feedbackMaterialFilter_;
     std::unordered_map<Key, Mapping, KeyHash> pages_;
     VirtualTextureModelFeedback rigid_;
     VirtualTextureDeformedModelFeedback deformed_;
