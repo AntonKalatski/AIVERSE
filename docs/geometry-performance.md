@@ -1192,3 +1192,25 @@ selection and `gfx::bufferUpdateCounterDelta` / accumulator behavior.
 An actual Vulkan allocation-failure regression requires a separately
 instrumented/fault-injecting Vulkan device; these CPU tests do not
 simulate GPU OOM or certify Metal image parity.
+
+### Scene viewport runtime toggle for pooled static CPU MDI
+
+The Studio Scene Batching popup exposes **Static cross-model CPU MDI**
+with three modes: **Inherit env (default OFF)**, **Enable in Scene
+only**, and **Disable in Scene only**. The renderer's corresponding
+`StaticCrossModelBatchMode` value is evaluated at `beginScene()`.
+Game and other views retain the environment-controlled opt-in because
+Scene restores the override after rendering. This avoids setting
+`AIVERSE_STATIC_CROSS_MODEL_BATCHES` for the whole editor process
+just to inspect static grouped batching. The Scene-only mode does
+not enable GPU-authored ICB, switch shared geometry pooling on, bypass
+normal MDI disable/safety flags, alter PBR/material equivalence or
+change rigid/LOD/transparent eligibility. Adaptive per-page CPU
+feedback remains gated by its own environment setting *and* the
+effective cross-model mode. The existing preflight/ranked-group
+stats are shown when either the process or Scene opt-in is active.
+
+This is a **feature-only implementation**. Native build/CTest,
+Metal/Vulkan raster parity and performance A/B/A were not run under
+the user's explicit requirement to finish all batching functionality
+before starting tests.

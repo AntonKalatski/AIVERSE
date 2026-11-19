@@ -483,6 +483,23 @@ public:
     void setModelCullingEnabled(bool on) { modelCullingEnabled_ = on; }
     void setModelInstancingEnabled(bool on) { modelInstancingEnabled_ = on; }
     void setModelMultiDrawEnabled(bool on) { modelMultiDrawEnabled_ = on; }
+    // Explicit editor-view override for the opt-in pooled static CPU MDI
+    // feature. Environment preserves the process-level opt-in (OFF by
+    // default), and Forbid/Enable are scoped by the caller to one view.
+    // This affects only eligible static CPU MDI ordering/admission; the
+    // authoritative geometry/material/LOD/backend checks remain.
+    enum class StaticCrossModelBatchMode : uint8_t {
+        Environment = 0, Enable = 1, Forbid = 2
+    };
+    void setStaticCrossModelBatchMode(StaticCrossModelBatchMode mode) {
+        staticCrossModelBatchMode_ = mode;
+    }
+    StaticCrossModelBatchMode staticCrossModelBatchMode() const {
+        return staticCrossModelBatchMode_;
+    }
+    bool staticCrossModelBatchesEnabled() const {
+        return staticCrossModelBatchesEnabled_;
+    }
     // Independently control GPU-authored draws for 3-way Scene benchmarking.
     // The process-wide experimental environment flag remains mandatory.
     void setGpuAuthoredDrawEnabled(bool on) { gpuAuthoredDrawEnabled_ = on; }
@@ -794,6 +811,8 @@ private:
     // Optional CPU MDI sorter for static rigid meshes sharing one GPU arena.
     // Never bypass per-object culling, LOD, material or shader compatibility.
     bool staticCrossModelBatchesEnabled_ = false;
+    StaticCrossModelBatchMode staticCrossModelBatchMode_ =
+        StaticCrossModelBatchMode::Environment;
     // Per-renderer reusable hash directory, group storage and item mode map.
     // All records are invalidated at each independent render pass.
     StaticCrossModelPreflightWorkspace staticCrossPreflight_;

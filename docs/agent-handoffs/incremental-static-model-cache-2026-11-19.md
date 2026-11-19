@@ -1037,3 +1037,24 @@ GitHub connector read working source, inspected the CI workflow and found GitHub
 ### Next
 
 Inspect the latest PR #34 CI `model-policy` + Linux/macOS editor jobs as they actually complete. Fix any compiler diagnostics and test failures on the branch with an additional handoff entry and re-run validation. Later add a fault-injection test for Vulkan failed buffer allocation, Metal in-flight snapshot reuse and an actual renderer-backed 120-sample mean/P50/P95/spike classification test; then owner Metal/Vulkan OFF/ON raster parity and same-camera GPU/CPU benchmark. Leave PR Draft until proven.
+
+---
+
+## Feature continuation — Scene-only pooled static CPU MDI control (2026-11-19)
+
+**Repository:** `chromealex/AIVERSE`; **branch:** `perf/incremental-static-model-cache`, Draft PR #34. **At start:** `main=9ee6ff6fbf390bd45363bc92c838f492dfe92eee`, branch `91ac7c23f0e2a80804c36b01f3cb1b8d489ccb49`, `behind=0`. The user explicitly clarified **finish the batching features before any testing**. Do not add/execute additional tests in a feature stage; existing queued CI may execute independently.
+
+### Feature and API
+
+- `engine/render/Renderer3D.h`: `StaticCrossModelBatchMode : uint8_t` (`Environment`, `Enable`, `Forbid`), public setter/getter and read-only effective-state getter. Default is `Environment` so previous opt-in OFF-by-default and `AIVERSE_STATIC_CROSS_MODEL_BATCHES=1` process configuration are unchanged. Stored per renderer, not in gameplay components or GPU resources.
+- `engine/render/Renderer3D.cpp`: `beginScene` resolves the effective pooled cross-model CPU MDI mode from the explicit override or process environment for that view. Independent `AIVERSE_CPU_MDI_ADAPTIVE=1` only enables per-page feedback when the **effective** cross-model mode is enabled. Existing regular CPU MDI, compatible pooled geometry checks, shader/texture/material signatures, per-item LOD and view selection, shadow/opaque-only condition and backend/fallback safety remain mandatory.
+- `apps/editor/windows/SceneWindow.cpp`: Batching popup's three-way Scene-only control; applies before any Scene renderer calls, restores `Environment` after Scene draw and before the Game window's use of the same renderer. Both the on-screen preflight diagnostics and opt-in controls work without setting a global env flag. Benchmark mode does not override safety flags or force shared geometry pooling. The opt-in is intentionally not serialized to project/game data.
+- `AGENTS.md` and `docs/geometry-performance.md`: new ownership/use instructions. This handoff records actual verification, changed files and next action.
+
+### Verification and limits
+
+GitHub branch/source inspection and exact source transformation only. **Native compilation NOT RUN, CTest NOT RUN, Metal/Vulkan raster parity NOT RUN and CPU/GPU timing A/B/A NOT RUN.** No visual correctness or performance speedup claimed. PR #34 remains Draft. Do not accidentally use the editor's UI mode to enable GPU-encoded ICB, or let the Scene choice leak to non-Scene views.
+
+### Next step
+
+Feature-first: audit the remaining non-editor integrations and ensure all relevant model batching policies are accessible through renderer-level, genre-neutral APIs without needing environment changes or requiring per-game-specific code. Once all functionality is complete, run a comprehensive compile/test/parity cycle and fix failures. Keep each stage handoff current and avoid launching tests until instructed.

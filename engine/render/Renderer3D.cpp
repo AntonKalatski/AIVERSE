@@ -241,7 +241,13 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
         const char* value = std::getenv("AIVERSE_STATIC_CROSS_MODEL_BATCHES");
         return value && std::strcmp(value, "1") == 0;
     }();
-    staticCrossModelBatchesEnabled_ = enableStaticCrossModelBatches;
+    // Studio may explicitly opt a single Scene viewport in/out without
+    // changing the process env or the Game view. Re-evaluate at each
+    // beginScene (the view boundary), not during individual draw calls.
+    staticCrossModelBatchesEnabled_ =
+        staticCrossModelBatchMode_ == StaticCrossModelBatchMode::Enable ||
+        (staticCrossModelBatchMode_ == StaticCrossModelBatchMode::Environment &&
+         enableStaticCrossModelBatches);
     // Adaptive feedback affects only the Stage 17 static pooled sort, not
     // ordinary CPU MDI or the separate GPU-authored ICB path.
     static const bool enableCpuMdiAdaptive = [] {
@@ -257,7 +263,8 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
             std::isfinite(parsed) && parsed >= 1.0 && parsed <= 1000.0
             ? parsed : 25.0;
     }();
-    cpuMdiAdaptiveEnabled_ = enableCpuMdiAdaptive && enableStaticCrossModelBatches;
+    cpuMdiAdaptiveEnabled_ = enableCpuMdiAdaptive &&
+        staticCrossModelBatchesEnabled_;
     cpuMdiAdaptiveBudgetUs_ = cpuMdiMaxUsPerCommand;
     cpuMdiPageStats_ = {};
     if (cpuMdiAdaptiveEnabled_) {

@@ -60,6 +60,12 @@ public:
         renderer.setLodDebugTarget(lodTarget);
         renderer.setStudioDebugMode(studioDebugMode_);
         renderer.setProfiling(sceneProfiling_);
+        renderer.setStaticCrossModelBatchMode(
+            sceneCrossModelMode_ == 1
+                ? Renderer3D::StaticCrossModelBatchMode::Enable
+                : sceneCrossModelMode_ == 2
+                    ? Renderer3D::StaticCrossModelBatchMode::Forbid
+                    : Renderer3D::StaticCrossModelBatchMode::Environment);
         const bool measuredMode = benchmarkActive_ || autoBatchChoice_ >= 0;
         const int activeMode = benchmarkActive_ ? benchmarkMode_ : autoBatchChoice_;
         renderer.setModelInstancingEnabled(measuredMode ? true : sceneInstancing_);
@@ -173,6 +179,8 @@ public:
         renderer.setModelInstancingEnabled(true);
         renderer.setModelMultiDrawEnabled(true);
         renderer.setGpuAuthoredDrawEnabled(true);
+        renderer.setStaticCrossModelBatchMode(
+            Renderer3D::StaticCrossModelBatchMode::Environment);
         renderer.setModelCullingEnabled(true);
         renderer.setModelLodEnabled(true);
         renderer.setModelLodFadeWidth(0.15f);
@@ -495,6 +503,12 @@ private:
             if (ImGui::Checkbox("Multi-Draw Indirect", &sceneIndirect_))
                 autoBatchChoice_ = -1;
             ImGui::SameLine(); ImGui::TextDisabled(ed.renderer().modelMultiDrawSupported() ? "GPU supported" : "fallback");
+            if (ImGui::Combo("Static cross-model CPU MDI##scene",
+                    &sceneCrossModelMode_,
+                    "Inherit env (default OFF)\0Enable in Scene only\0Disable in Scene only\0"))
+                autoBatchChoice_ = -1;
+            ImGui::TextDisabled("Experimental: requires shared pooled GPU geometry, supported CPU MDI and compatible static models.");
+            ImGui::TextDisabled("This Scene override is restored to the environment mode before Game renders.");
             ImGui::Checkbox("Model culling", &sceneCulling_);
             ImGui::Checkbox("Auto-select fastest mode after benchmark", &autoBatchEnabled_);
             if (!autoBatchEnabled_) autoBatchChoice_ = -1;
@@ -849,8 +863,12 @@ private:
                     (unsigned long long)layoutCache.retired,
                     (unsigned long long)modelStats.mdiLayoutCacheBypassed);
                 ImGui::TextDisabled("Per-pass 96-entry cap, 256 items/layout; stale after 120 scenes.");
-                if (const char* shared = std::getenv("AIVERSE_STATIC_CROSS_MODEL_BATCHES");
-                    shared && std::strcmp(shared, "1") == 0) {
+                if (sceneCrossModelMode_ == 1 ||
+                    (sceneCrossModelMode_ == 0 &&
+                     [] {
+                         const char* enabled = std::getenv("AIVERSE_STATIC_CROSS_MODEL_BATCHES");
+                         return enabled && std::strcmp(enabled, "1") == 0;
+                     }())) {
                     ImGui::Text("Static cross-model MDI: %llu submissions / %llu commands / %llu items",
                         (unsigned long long)modelStats.staticCrossModelSubmissions,
                         (unsigned long long)modelStats.staticCrossModelCommands,
@@ -1775,6 +1793,9 @@ private:
     float gizmoGroundX_ = 0.0f, gizmoGroundZ_ = 0.0f;
     float gizmoLastScreenX_ = 0.0f;
     bool sceneInstancing_ = true, sceneCulling_ = true, sceneIndirect_ = true;
+    // 0: follow process environment (OFF by default), 1: opt-in only for
+    // Scene viewport, 2: force off for Scene viewport. Never persists to Game.
+    int sceneCrossModelMode_ = 0;
     bool sceneLodEnabled_ = true;
     bool lodPopupVisible_ = false;
     float sceneLodFadeWidth_ = 0.15f;

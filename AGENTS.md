@@ -1513,3 +1513,20 @@ preflight rank/bucket/generation behavior and Stage 28–29 monotonic
 RHI buffer stats; these are CPU tests, not Metal/Vulkan GPU validation.
 CI results must be reported only when the corresponding workflow run
 actually completes, not inferred from test source or staging.
+
+## Scene-only CPU cross-model MDI override (feature continuation)
+
+The pooled static CPU MDI opt-in no longer requires a process restart
+when testing **Scene viewport** features in the editor. The renderer
+has `Renderer3D::StaticCrossModelBatchMode` with `Environment`,
+`Enable` and `Forbid`; the default is `Environment`, preserving
+`AIVERSE_STATIC_CROSS_MODEL_BATCHES=1` behavior and default OFF.
+`SceneWindow` explicitly sets this before `ed.renderScene` and
+restores `Environment` after Scene rendering, before Game.
+`Renderer3D::beginScene` resolves the effective mode once per view.
+The optional `AIVERSE_CPU_MDI_ADAPTIVE=1` feedback only runs if the
+*effective* cross-model mode is enabled. UI preflight counters must
+work for the Scene-only Enable mode, not just an environment flag.
+Do not auto-enable GPU ICB, change global geometry pooling or skip
+shader/material/VB/IB/LOD/indirect safety gates. Keep it genre-neutral.
+Add a separate feature-stage handoff; defer native tests per request.
