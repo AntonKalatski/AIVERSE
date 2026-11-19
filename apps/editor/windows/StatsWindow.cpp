@@ -118,6 +118,11 @@ public:
             ImGui::TextDisabled("GPU fence ERROR: %zu удерживаемых партий (ошибок всего %llu)",
                 residency.unresolvedFailedFences,
                 (unsigned long long)residency.retirementFailedFenceBatches);
+        if(const auto* ring=ed.gpuRetirementDiagnostics()) {
+            ImGui::TextDisabled("GPU retirement события: %zu/%zu · переполнений %llu",
+                ring->size(),ring->capacity(),
+                (unsigned long long)ring->overflowCount());
+        }
         ImGui::TextDisabled("Общий geometry pool учитывается выше отдельно. Оценки без драйверных mip/padding, FX и RT.");
         ImGui::TextDisabled("Выгрузка моделей редактора: %s (период ожидания 15 с)",
                             ed.lazyEditorAssetsEnabled() ? "по требованию" : "отключена");
