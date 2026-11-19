@@ -56,6 +56,15 @@ WorldScene::WorldScene(const Json& manifest,AssetReader reader,std::shared_ptr<r
     // manifest has no terraweaveForest block.
     terraForest_=forestSceneFromManifest(manifest);
     terraHorizon_=horizonSceneFromManifest(manifest,terraForest_.get(),reader);
+    if(terraHorizon_) {
+        // Honor optional manifest presentationQuality in the WorldScene
+        // getters as well as the direct HorizonScene runtime policies.
+        const auto presentation=terraHorizon_->presentationPolicy();
+        vegetationHorizonSpatialWind_=presentation.spatialWindVariation;
+        vegetationHorizonExactWindField_=presentation.exactSpatialWindField;
+        vegetationHorizonWindUploadPolicy_=presentation.windUpload;
+        vegetationHorizonWindShadowCachePolicy_=presentation.windShadowCache;
+    }
     auto verified=assets_.verifiedReader(reader);
     stream_=std::make_unique<AsyncChunkStream>(assets_.limits,assets_.stagingBytes,assets_.maxJobs,[this,verified](Cell cell){return prepare(cell,verified);});
     for(const auto& [cell,asset]:assets_.chunks){if(asset.bytes>uploadBytes_)throw JsonError("world.chunk: reservation exceeds maxUploadBytes");if(!stream_->add(cell,asset.bytes))throw JsonError("world.chunk: staging budget too small");}
@@ -152,6 +161,22 @@ void WorldScene::setVegetationHorizonWindShadowCachePolicy(
     terraweave::validateHorizonWindShadowCachePolicy(policy);
     if(terraHorizon_)terraHorizon_->setWindShadowCachePolicy(policy);
     vegetationHorizonWindShadowCachePolicy_=policy;
+}
+void WorldScene::setVegetationHorizonPresentationPolicy(
+        terraweave::HorizonPresentationPolicy policy) {
+    // Validate the entire bundle before modifying *any* live policy;
+    // all four existing setters are safe and owner-thread-only.
+    terraweave::validateHorizonPresentationPolicy(policy);
+    if(terraHorizon_)terraHorizon_->setPresentationPolicy(policy);
+    vegetationHorizonWindUploadPolicy_=policy.windUpload;
+    vegetationHorizonWindShadowCachePolicy_=policy.windShadowCache;
+    vegetationHorizonSpatialWind_=policy.spatialWindVariation;
+    vegetationHorizonExactWindField_=policy.exactSpatialWindField;
+}
+void WorldScene::setVegetationHorizonPresentationQualityPreset(
+        terraweave::HorizonPresentationQualityPreset preset) {
+    setVegetationHorizonPresentationPolicy(
+        terraweave::horizonPresentationPolicyForQuality(preset));
 }
 std::shared_ptr<WorldScene::Prepared> WorldScene::prepare(Cell cell,const AssetReader& reader) {
     const auto& asset=assets_.chunks.at(cell);std::string text;
