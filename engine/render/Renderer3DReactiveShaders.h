@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 // PRISMA Stage 29: conservative reactive coverage for translucent rigid models.
 // A full-color postprocess uses this mask to reduce motion blur on glass,
 // ghost surfaces, water-like alpha blends and other uncertain velocities.
@@ -43,4 +44,53 @@ fragment float4 fs_main(VOut in [[stage_in]],constant U0& u [[buffer(1)]],
     return float4(u.params.z,0.0,0.0,1.0);
 }
 )";
+
+// Animated reactive coverage shares the precise CURRENT deformation vertex
+// stage from Renderer3DMotionShaders, but replaces its velocity fragment.
+// No prior animation pose is necessary because this mask only suppresses
+// unreliable blur on the current visible translucent silhouette.
+inline const char* kAnimatedFS = R"(
+layout(std140) uniform U0 {
+    mat4 currentMvp;
+    mat4 previousMvp;
+    vec4 params;
+};
+uniform sampler2D tex0;
+in vec4 v_prevClip;
+out vec4 o_color;
+void main() {
+    vec2 uv = gl_FragCoord.xy / params.xy;
+    if (gl_FragCoord.z > texture(tex0,uv).r + 0.0015)
+        discard;
+    o_color = vec4(1.0,0.0,0.0,1.0);
+}
+)";
+
+// The motion MSL source already defines its vertex entry, deformation
+// helpers, U0 and VOut types. Replace only the end fragment: it is a
+// PRESENTATION-only reactive path that emits full current-frame coverage.
+inline std::string animatedMsl(const char* motionMsl) {
+    if (!motionMsl) return {};
+    std::string code(motionMsl);
+    const auto fragment = code.find("fragment float4 fs_main");
+    if (fragment == std::string::npos) return {};
+    code.resize(fragment);
+    code += R"(
+fragment float4 fs_main(VOut in [[stage_in]],
+    constant U0& u [[buffer(1)]],
+    depth2d<float> tex0 [[texture(0)]],
+    sampler tex0_s [[sampler(0)]]) {
+    const float2 uv = in.position.xy/u.params.xy;
+    if (in.position.z > tex0.sample(tex0_s,uv)+0.0015)
+        discard_fragment();
+    return float4(1.0,0.0,0.0,1.0);
+}
+)";
+    return code;
+}
+
+// Dither rule copied from the normal opaque ModelShaders LODFADE branch.
+// params.w is fade width; lod=(threshold,invert,enabled,unused).
+// The reactive fallback is rendered only for pixels actually covered by
+// the fading geometry, not its bounding triangle.
 } // namespace aiverse::render::reactive_shaders
