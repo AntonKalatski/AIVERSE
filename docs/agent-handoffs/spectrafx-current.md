@@ -1,5 +1,17 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 99 — multi-camera rendering without multiple simulation steps
+
+Added `SpectraFxSceneHost::prepareRenderView(const SpectraFxView&)` and
+corresponding HybridPlayback/Emitter methods: host updates GPU and CPU
+**once per frame**, then prepares/sorts each camera independently
+between offscreen render passes. No FPS/RTS/Editor dependency. Code
+commit `8f9777c17df9c4b22d2104927ef949a925ede6b3`.
+**NOT RUN:** Stage 98/99 native tests, Metal offscreen, full acceptance.
+Read `docs/agent-handoffs/spectrafx-stage99-multiview-2026-11-19.md`
+for API ordering and remaining limits.
+
+
 ## Stage 98 — real Metal RHI multi-view + retirement test authored (NOT RUN)
 
 **Code SHAs:** `59605eea446f0c26533ea839b6074b7729d3d73f`,

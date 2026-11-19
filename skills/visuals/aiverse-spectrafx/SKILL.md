@@ -8,7 +8,7 @@ description: Author and integrate AIVERSE SpectraFX visual effects: versioned gr
 **Canonical documentation:** `docs/spectrafx.md`.  
 **Exact stage history:** `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.  
 **Engineering rules:** `AGENTS.md`.
-**Latest handoff:** `docs/agent-handoffs/spectrafx-stage98-metal-rhi-2026-11-19.md`.
+**Latest handoff:** `docs/agent-handoffs/spectrafx-stage99-multiview-2026-11-19.md`.
 
 ## Fast path (current supported capabilities)
 
@@ -41,3 +41,15 @@ python3 tools/skills/catalog.py check
 **Verification status:** these tests are committed, not proven passing. Never mark them successful based on source presence.
 
 **Handoff requirement:** every stage needs a dated file in `docs/agent-handoffs/` and an update to `spectrafx-current.md` in the SAME branch, including code SHA, exact tests run/results, API/format contracts, risks and the next step. Do not claim a test PASS until the log exists.
+
+
+## Multiple views (Stage 99)
+
+Update a `SpectraFxSceneHost` only once per frame through
+`prepareGpu(dt,firstView)` and `prepareCpu(dt,firstView)`.
+Before **each** sequential camera render pass, call
+`prepareRenderView(view)` *outside* the encoder; render the effect
+inside that pass with `render(lighting,view)`. Each new camera may
+replace the alpha sort index map: do not prepare multiple cameras up
+front and then render them out of order. New API is committed, still
+awaiting hardware acceptance; see Stage 99 handoff.

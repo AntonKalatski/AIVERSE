@@ -1,5 +1,28 @@
 # SpectraFX — opt-in GPU emitter playback in native AIVERSE projects
 
+## Multiple camera outputs without duplicated particle simulation (Stage 99)
+
+SpectraFX has no genre-specific camera dependency. For two or more views
+(camera, mirror, reflection, security monitor, minimap or render-to-texture),
+advance the presentation timeline **only once** by calling
+`SpectraFxSceneHost::prepareGpu(dt,firstView)` then
+`prepareCpu(dt,firstView)` after `beginFrame`. For **each** camera:
+
+1. Outside render/compute encoders, call
+   `host.prepareRenderView(view)` to update CPU camera basis and re-sort
+   GPU alpha particles from this camera's eye and forward.
+2. Open that camera's compatible scene pass, then call
+   `host.render(lighting,view)` inside the pass.
+3. End the scene pass before calling `prepareRenderView(nextView)`.
+
+The new method never advances particle age/time and never emits cues.
+Do not call `prepareGpu/prepareCpu` once per viewport: they still
+advance simulation on **every** call. Shared additive GPU arenas can
+reuse their particle state; alpha sorted emitters re-sort between
+viewports. This authoring change has **NOT** yet passed native Metal
+multi-view or Editor tests. See the dedicated Stage 99 handoff.
+
+
 ## Real Metal RHI acceptance (Stage 98; authored, unverified)
 
 `spectrafx_metal_rhi` is a new macOS CTest exercising actual
