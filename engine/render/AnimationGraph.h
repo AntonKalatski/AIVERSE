@@ -6,6 +6,7 @@
 #include "../data/Json.h"
 #include <map>
 #include <memory>
+#include <optional>
 #include <span>
 #include <functional>
 
@@ -108,6 +109,24 @@ public:
     void evaluate(Pose& result);
     const std::string& state() const;
     float stateTime() const { return time_; }
+    // CPU-only preview clock checkpoint. Explicitly refuses nodes with stateful
+    // native/rig/motion/controller/trait data or an unfinished transition fade.
+    // The caller must additionally compare its authored graph program key.
+    struct PreviewClockSnapshot {
+        struct ClipClock {
+            std::string nodeId, clipName;
+            double duration = 0, clock = 0;
+            bool loop = true;
+        };
+        std::string state;
+        float stateTime = 0;
+        std::vector<std::string> stateIds;
+        std::vector<std::pair<std::string, int>> skeleton;
+        std::vector<std::pair<std::string, AnimationGraph::Kind>> nodeKinds;
+        std::vector<ClipClock> clips;
+    };
+    std::optional<PreviewClockSnapshot> snapshotPreviewClocks() const;
+    bool restorePreviewClocks(const PreviewClockSnapshot& snapshot);
     AnimationGraphInstance* child(const std::string& node);
     const MotionPlayer* motion(const std::string& node) const;
     const AnimationControllerPlayer* controller(const std::string& node) const;
