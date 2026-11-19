@@ -256,8 +256,12 @@ public:
         // resources during play. Reload only after play ends, coalescing all
         // changes without reparsing rules or restarting the effect system.
         if (!pendingFiles_.empty() && !ed.playing() && !ed.clientPlaying()) {
-            ed.reloadVisualAssets();
-            ed.ws().log("view", "визуальные ресурсы обновлены; источников: " +
+            const std::vector<std::string> files(
+                pendingFiles_.begin(),pendingFiles_.end());
+            const size_t invalidated=ed.reloadVisualModelSources(files);
+            ed.ws().log("view", "обновлено ключей моделей: " +
+                        std::to_string(invalidated) +
+                        "; изменённых исходников: " +
                         std::to_string(pendingFiles_.size()));
             pendingFiles_.clear();
         }
