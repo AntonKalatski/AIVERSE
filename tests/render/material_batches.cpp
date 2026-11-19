@@ -222,6 +222,12 @@ int aiverseMain(int argc, char** argv) {
     const bool cpuTiming = std::getenv("AIVERSE_BATCH_CPU_TIMING") &&
         std::string(std::getenv("AIVERSE_BATCH_CPU_TIMING")) == "1";
     std::vector<double> cpuRenderBefore, cpuRenderAfter;
+    uint64_t stressAutoMdiScans = 0, stressAutoMdiAttempts = 0;
+    uint64_t stressAutoMdiSubmitted = 0, stressAutoMdiShort = 0;
+    uint64_t stressAutoMdiBelow = 0, stressAutoMdiIneligible = 0;
+    uint64_t stressAutoMdiFailed = 0;
+    uint64_t stressAutoGeometryBreaks = 0, stressAutoMaterialBreaks = 0;
+    uint64_t stressAutoStateBreaks = 0;
     const int captureBeforeFrame = stress ? 75 : 8;
     const int captureAfterFrame = stress ? 195 : 23;
     const int startBatchFrame = stress ? 90 : 15;
@@ -327,6 +333,20 @@ int aiverseMain(int argc, char** argv) {
         const auto startCpu = std::chrono::steady_clock::now();
         renderer.render(pass);
         const auto endCpu = std::chrono::steady_clock::now();
+        if (stress && batch) {
+            const auto& st = renderer.modelStats();
+            stressAutoMdiScans += st.mdiScans;
+            stressAutoMdiAttempts += st.mdiCpuStages[0].indirectAttempts +
+                                     st.mdiCpuStages[1].indirectAttempts;
+            stressAutoMdiSubmitted += st.multiDrawSubmissions;
+            stressAutoMdiShort += st.mdiShort;
+            stressAutoMdiBelow += st.mdiBelowThreshold;
+            stressAutoMdiIneligible += st.mdiIneligible;
+            stressAutoMdiFailed += st.mdiFailed;
+            stressAutoGeometryBreaks += st.mdiGeometryBreaks;
+            stressAutoMaterialBreaks += st.mdiMaterialBreaks;
+            stressAutoStateBreaks += st.mdiStateBreaks;
+        }
         // Discard pipeline warmup and the transition frame; no readback in sample.
         if (cpuTiming && (stress
                 ? ((frame >= 10 && frame <= captureBeforeFrame) ||
@@ -424,6 +444,20 @@ int aiverseMain(int argc, char** argv) {
                     (unsigned long long)cpu.multiDrawSubmissions,
                     (unsigned long long)cpu.indirectCommands,
                     gpu.gpuEncodedSubmissions, gpu.gpuEncodedCommands);
+                std::printf("stress AUTO cumulative: scans=%llu attempts=%llu "
+                            "submitted=%llu short=%llu below=%llu ineligible=%llu "
+                            "failed=%llu geometryBreaks=%llu materialBreaks=%llu "
+                            "stateBreaks=%llu\\n",
+                    (unsigned long long)stressAutoMdiScans,
+                    (unsigned long long)stressAutoMdiAttempts,
+                    (unsigned long long)stressAutoMdiSubmitted,
+                    (unsigned long long)stressAutoMdiShort,
+                    (unsigned long long)stressAutoMdiBelow,
+                    (unsigned long long)stressAutoMdiIneligible,
+                    (unsigned long long)stressAutoMdiFailed,
+                    (unsigned long long)stressAutoGeometryBreaks,
+                    (unsigned long long)stressAutoMaterialBreaks,
+                    (unsigned long long)stressAutoStateBreaks);
                 std::printf("stress MDI decisions: scans=%llu short=%llu below=%llu "
                             "ineligible=%llu failed=%llu geometryBreaks=%llu "
                             "materialBreaks=%llu stateBreaks=%llu\n",
