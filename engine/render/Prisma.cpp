@@ -1599,7 +1599,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             motionBlurEncoded = true;
         }
     }
-    // ---- experimental depth of field: device-depth driven defocus
+    // ---- experimental Depth of Field: opt-in camera-linear focus plane
+    // while preserving the existing device-depth result for old profiles.
     // The scene depth texture must NEVER be attached for depth writes while
     // sampled, so a separate scratch depth attachment is used for this pass.
     if (const PrismaEffect* dof = find(PrismaType::DepthOfField)) {
@@ -1611,7 +1612,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             const auto sceneDepth = depthFor(set, w, h);
             const auto scratchDepth = depthFor(set, w, h, true);
             if (sceneDepth.valid() && scratchDepth.valid() &&
-                destination.tex.valid() && scene.tex.valid()) {
+                destination.tex.valid() && src.tex.valid()) {
                 DepthOfFieldU dofU{};
                 put(dofU.px, 1.0f / float(w), 1.0f / float(h), flip, 0);
                 put(dofU.p0, dof->get("focusDepth"),
