@@ -179,6 +179,9 @@ void test() {
                              std::fabs(guide.root.y),
                              std::fabs(guide.root.z)})>=1.399f,
                    "groom root remained inside imported scalp proxy");
+        const std::array<std::uint32_t,3> open{0,2,1};
+        expect(!groom.setCollisionMesh(verts,open)&&groom.hasCollisionMesh(),
+               "open scalp surface wrongly accepted as parity collider");
         const std::array<std::uint32_t,3> bad{0,0,1};
         expect(!groom.setCollisionMesh(verts,bad) && groom.hasCollisionMesh(),
                "invalid collider replaced last-good imported geometry");
