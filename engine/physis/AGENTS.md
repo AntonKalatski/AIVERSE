@@ -431,3 +431,38 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   checks only `held()`; handle identity/reparse/ACL still needs QA.
 - Handoff:
   `docs/agent-handoffs/physis-stage47-live-lock-integrity-2026-11-19.md`.
+
+### Stage 48 — pinned-dirfd privileged journal reads and writes (2026-11-19)
+
+- Main integration prerequisite: verified `main` commit
+  `9ee6ff6fbf390bd45363bc92c838f492dfe92eee` is an ancestor of
+  `feature/physis-nature-simulation` (GitHub compare: behind 0).
+  No redundant merge commit was created and `main` was untouched.
+- POSIX `JournalProcessLock` now retains its verified parent directory
+  descriptor for the whole lock lifetime; `directoryFd()` returns it
+  only while the lock and path identity remain valid.
+- `FileJournal::savePinned(dirfd,...)` creates an exclusive random
+  temporary file with `openat`, flushes it, performs `renameat` in
+  the SAME directory inode and `fsync`s the pinned directory.
+  `FileJournal::loadPinned(dirfd,...)` safely opens without symlink
+  following, rejects FIFO/non-regular, multi-linked, wrong-owner,
+  group/other-accessible and malformed receipt journal files.
+- Canonical `LoopbackAdminEndpoint` uses these pinned POSIX journal
+  paths for startup and for every persistence write, with a
+  `JournalProcessLock::valid()` guard before/after I/O. Windows
+  retains the previous path-based journal implementation pending
+  ACL/reparse handle-based hardening.
+- Direct `FileJournal::save/load/attach` still exist for legacy callers;
+  they DO NOT receive endpoint lock ownership. Never bypass the
+  canonical endpoint's protected writer in privileged hosts.
+- An isolated Linux GCC C++20 smoke compiled the exact new
+  `JournalProcessLock` header (blob SHA
+  `2512aefb07f612c808041b92a21da897df4f195b`) and PASSED
+  the old lock security suite plus pinned directory identity and
+  path-rename redirection smoke. This test does NOT compile the full
+  `FileJournal` or AIVERSE integration.
+- New `pinnedJournalSaveDoesNotFollowMovedParent` and
+  `pinnedJournalLoadRejectsUnsafeInodes` fixtures are authored in
+  `tests/physis_admin_journal_test.cpp`; native CMake/CTest have
+  NOT RUN. Handoff:
+  `docs/agent-handoffs/physis-stage48-pinned-journal-io-2026-11-19.md`.
