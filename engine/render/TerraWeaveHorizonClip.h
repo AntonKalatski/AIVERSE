@@ -264,7 +264,15 @@ inline void populateHorizonNearSeamSamples(
                           *height > kWorldLimitCm)
                 return; // all-or-none on incomplete authored data
             samples.emplace(key,*height);
-            if(source->nearGroundHeightAtQ16Cm){
+            if(source->nearGroundContinuousSlopeAtQ16Cm){
+                // Prefer continuous neighboring tile normals only when the
+                // authored source verifies the entire stencil is seamless.
+                if(auto slope=source->nearGroundContinuousSlopeAtQ16Cm(
+                        xq,zq))nearSlopes.emplace(key,*slope);
+            }
+            if(source->nearGroundHeightAtQ16Cm &&
+               !nearSlopes.contains(key)){
+                // Fallback to tile-local derivatives at missing/cliff edges.
                 // One-sided derivatives stay inside the same authored
                 // triangle mesh at the tile edge. The Q16 stencil is
                 // wide enough to avoid 1cm height quantization noise.
