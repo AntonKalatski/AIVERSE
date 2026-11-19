@@ -134,6 +134,15 @@ public:
         if(ed.view().paintGpuRetirementOrphans())
             ImGui::TextDisabled("GPU canvas/paint: сиротских ресурсов %llu",
                 (unsigned long long)ed.view().paintGpuRetirementOrphans());
+        const auto canvasSubmissions=ed.view().paintGpuCanvasSubmitStats();
+        if(canvasSubmissions.failedBrushBuffers ||
+           canvasSubmissions.failedBlitBuffers ||
+           canvasSubmissions.failedUploadTextures)
+            ImGui::TextDisabled(
+                "GPU canvas: brush OOM %llu · blit OOM %llu · staging OOM %llu",
+                (unsigned long long)canvasSubmissions.failedBrushBuffers,
+                (unsigned long long)canvasSubmissions.failedBlitBuffers,
+                (unsigned long long)canvasSubmissions.failedUploadTextures);
         const auto canvasRetirement=ed.view().paintGpuRetirementStats();
         if(canvasRetirement.idleFallbackFailures ||
            canvasRetirement.unresolvedFailedFences ||
