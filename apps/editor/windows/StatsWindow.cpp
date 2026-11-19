@@ -170,6 +170,9 @@ public:
                 (unsigned long long)legacyLod.worldMatrixFallbacks,
                 (unsigned long long)legacyLod.bindPoseFallbacks,
                 (unsigned long long)legacyLod.rejectedCompiledPlans);
+        ImGui::TextDisabled("MotionWeave retarget CPU scratch: %.1f / %.1f KiB",
+            double(ed.view().genericRetargetScratchCapacityBytes())/1024.0,
+            double(ed.view().genericRetargetScratchBudgetBytes())/1024.0);
         ImGui::TextDisabled("GPU программы Renderer3D: %zu партий ждут fence",
             ed.renderer().pendingProgramRetirements());
         ImGui::TextDisabled("GPU RenderTargets: %zu пар ждут fence",
