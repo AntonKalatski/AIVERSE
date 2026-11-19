@@ -764,3 +764,26 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
 - Authoring requirement: the named proxy must be a **closed, nondegenerate bind-pose mesh authored directly in groom-local coordinates**; mesh node transforms are NOT baked by this hook. Animated head/scalp collision proxies, skinning or arbitrary coordinate conversion remain unsupported. CPU model vertex availability is required before renderer upload; unchanged after GPU publication.
 - Tests/builds actually run: **NOT RUN** at user's request. No native macOS build, CTest, smoke preview or BVH performance claim. The first run must validate imported manifest with a real eligible proxy and avoid silent incorrect coordinate alignment.
 - Next: add retargeted/scalp attachment mode with explicit coordinate transform, fixed timestep/substepping and controlled mesh refit; build full editing/publishing workflow for joints, shapes and LOD. UI still does not sculpt arbitrary face geometry, and measured multilayer SSS/cornea optics remain separate shader research.
+
+
+## Stage 6M — 2026-11-19 — frame-independent groom stepping
+
+- Commits: `f0369ff5617cfb3c3ef2e931752ebf0da8f9e780` (`HumanGroom.cpp`), `0e32259dc2724222fa41fc2cfd5d4772c1fa5bc8` (`tests/vivid/human_appearance.cpp`). Branch `feature/vivid-digital-humans`; main/MotionWeave untouched.
+- `step(dt,wind)` now divides accepted variable presentation dt (at most 0.05s) into at most six equal intervals bounded by 1/120s. Damping is scaled by the actual substep duration, while the existing 5-iteration length/contact solver is applied per substep. This reduces frame spikes and keeps 30/60/120 Hz preview updates more consistent.
+- Added (not executed) regression comparing a 1/30s call against four 1/120s calls with equivalent forces, verifying finite positions and near-equal results.
+- **Actual tests: NOT RUN**, per user request to implement features before one final verification run. No claim of determinism across different floating-point architectures or of cloth/hair stability on full production assets.
+- Next: if performance requires it, factor fixed substeps into an amortized accumulator with max catch-up budget and report their count in stats. Keep MotionWeave presentation-only ownership.
+
+## Stage 6N — 2026-11-19 — imported morph-route authoring
+
+- Commit `1edc7b64d12f3c51024547a159e7147ceaeda0b8` (`tools/vivid-creator/main.cpp`), import regression `5e9bdfe944b8c2e73ed619d831a7badeb8dfad6d` (`tests/vivid/human_import.cpp`).
+- Creator retains the validated imported v1 manifest in memory and exposes an `Imported facial morph bindings` panel listing actual ARKit semantic channel → imported shape. Gains are adjustable from 0–4 and the scene rebuilds after editing. `Save imported manifest` validates and writes via staging plus atomic rename (no delete-of-last-good fallback). Rebuilds use the edited in-memory manifest rather than discarding changes by rereading the file. Morph vertex data and channels are not edited; only route gains.
+- Import contract now includes optional `scalpColliderMesh` name and tests cover its roundtrip and invalid type. **Tests/build/GUI: NOT RUN**.
+
+## Stage 6O — 2026-11-19 — explicit scalp root transfer
+
+- Source commits: `b76b4acb83b0b655b416817f2de9f877ee20f68b` (new `attachRootsToCollisionMesh()` API), `5ee65ce212f8b0e4f039bb6f0ef56c52f4808a5e` (one-time closest-triangle root projection, outward normal and rest/position/previous translation), `ac000bfdc099d4aaec67a722b05598786d0837ea` (Creator hook), `2bfc39b3140777e145ba45d601fec948dc7a6618` (authored regression).
+- Roots are attached to the authored closed scalp proxy before hair-card mesh creation, keeping each guide's offsets coherent. This is one-time bind-pose placement; BVH still handles per-frame collisions.
+- Constraints: outward normal orientation uses mesh AABB centre, suitable for simple closed convex-like scalp proxies only. Complex concave/self-intersecting collider and moving/skinned scalp need robust signed-distance normals and per-frame skinning/refit. The one-time attachment still scans triangles per root, not an accelerated nearest traversal. Automatically generated cards do not replace externally authored hair.
+- **Actual tests: NOT RUN**. Do not treat the implementation as integrated MetaHuman quality or production-ready until Mac C++ build, 16 CTests, actual imported closed proxy GUI preview and full-engine regression.
+- Follow-up: build one small closed proxy fixture for Creator smoke, run `bash tools/vivid-validate.sh --full` once, resolve concrete diagnostics, then review gameplay-neutral rig/LOD mesh authoring and physically measured eye/skin/hair material parity.
