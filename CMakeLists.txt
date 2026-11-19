@@ -2506,7 +2506,7 @@ endif()
 if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
     add_executable(aiverse_vivid_renderer_preview tests/vivid/renderer_preview.cpp)
     target_link_libraries(aiverse_vivid_renderer_preview PRIVATE
-        aiverse_runtime AIVERSE::vivid_mesh AIVERSE::MotionWeave aiverse_zstd_dec)
+        aiverse_runtime AIVERSE::vivid_actor AIVERSE::MotionWeave aiverse_zstd_dec)
     target_compile_features(aiverse_vivid_renderer_preview PRIVATE cxx_std_20)
 endif()
 
