@@ -895,6 +895,80 @@ so a green compile job alone is not evidence of GPU raster parity.
 Keep the feature PR Draft and production renderer unchanged until
 exact visual and shadow/reflection parity is demonstrated on hardware.
 
+## Stage 11.1 — Metal raster capture alignment fix (2026-11-19)
+
+The owner compiled the real Metal `aiverse_strata_metal_raster_parity`
+fixture and ran it on Mac Studio. The prior GPU cluster compute parity
+**remains PASS (5/5)**, but the raster fixture reported:
+
+```text
+[strata-raster] FAIL: Legacy and empty screenshots identical; test drew no model
+[strata-raster] status=FAILED frames=45
+[metal-assets] ... pipelines=16 pipelineFailures=0
+```
+
+This does **not** prove a vertex/index geometry bug. Inspection of
+`GfxMetal.mm` revealed a test scheduling defect: when the current
+drawable is `framebufferOnly`, `captureNextFrame` sets
+`captureDelay_=1` and the requested image is copied in a *later*
+frame. The fixture requested its captures on frames 8, 19, 30 and
+41, exactly before transitions at 9, 20, 31 and 42. Thus an
+"Empty" request could capture the following Legacy geometry, a
+"Legacy" request the following Fine/Strata geometry, etc. Identical
+"Empty/Legacy" screenshots may therefore be a false attribution
+even when valid geometry was rendered. Do not weaken the independent
+blank-baseline requirement to hide this test failure.
+
+Fix `bcc471e93c9a4a35f7fda457d4fa15ccbda13fe9` in
+`tests/render/strata_metal_raster_parity.cpp`:
+
+- Explicitly use `Device::setScreenReadable(true)` at fixture
+  initialization, before the platform begins drawing, so drawable
+  textures can be captured in the intended frame. Reset the flag
+  before shutdown.
+- Request each image in the middle of its steady test mode:
+  **frame 4 Empty, 15 Legacy, 26 Strata Fine, 37 Strata Coarse**.
+  These slots remain safe even if a supported RHI adds up to two
+  capture frames of delay.
+- Print requested mode/frame and actual callback frame, with
+  main/shadow pass counters. If Empty and Legacy remain identical,
+  print captured mode counters before failing, to distinguish model
+  invisibility from screenshot phase errors.
+- Retain strict `Empty != Legacy`, `Legacy == Fine` and
+  `Legacy == Coarse` bytewise GPU screenshot checks. Do not
+  alter production renderer, shadow pipelines, asset builder,
+  global GPU source pool or the indexed sidecar.
+
+**Validation:** This fix is committed in GitHub but has
+**NOT yet been compiled or run by the assistant**. The owner's
+pre-fix Stage 11 raster result is FAIL, not PASS. The owner-confirmed
+six focused CPU/mock tests and five real Metal compute parity scenarios
+remain independently PASS on their prior tested snapshot.
+Real main/shadow screenshot parity remains unverified until a
+post-fix successful Mac run; a pure CMake build or queued CI is not
+proof of visual correctness.
+
+From the existing worktree, after making sure local changes are
+preserved:
+
+```sh
+cd ~/Projects/AIVERSE-strata-validation
+git status --short
+git fetch origin feature/strata-virtual-geometry
+git switch --detach origin/feature/strata-virtual-geometry
+cmake --build build/strata --target aiverse_strata_metal_raster_parity --parallel 8
+./build/strata/aiverse_strata_metal_raster_parity
+```
+
+If the corrected baseline still fails, inspect the new
+`capture requested` / `capture received` frame indices,
+the `shadow/opaque` counters, and four saved PPM files. Confirm
+actual model visibility/culling and valid source pooled base offsets
+before changing Strata geometry or relaxing screenshot parity.
+Future real raster parity still needs separate shadow-map depth
+readback, water reflection view, multi-material and simplified
+LOD error-budget tests before production draw routing.
+
 ## Architectural constraints
 - **One scene/instance truth**: `GeometryScene` owns static render instances
   and HLOD; do not create separate Strata transforms or introduce gameplay
