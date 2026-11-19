@@ -117,9 +117,16 @@ must not accidentally reuse one another.
 Call `Renderer3D::invalidateStaticModelCaches()` before in-place edits to
 bind transforms, hierarchy or geometry that could retain the model pointer and
 GPU buffer IDs. The editor calls this API from `reloadRules()`; native games
-and other asset-reload paths must do the same. Do not modify model data
-concurrently with `drawModel`. Runtime model mutation without a stable
-revision signal is why this feature is initially off by default.
+and other asset-reload paths must do the same. The Model also exposes
+`geometryRevision` and `markGeometryChanged()`; `finalize()`, CPU upload
+preparation and `releaseModel()` bump it automatically. A matching pointer,
+GPU handles, hierarchy dimensions and world matrix alone cannot authorize a
+cache hit if the revision has changed. Call `markGeometryChanged()` after any
+custom in-place edit to bind matrices, hierarchy, primitive geometry or model
+bounds that bypasses these engine APIs. External static caches still follow
+their caller-owned invalidation contract. Do not modify model data concurrently
+with `drawModel`. The remaining native streaming / editor life-cycle coverage
+and real GPU validation are why this feature is initially off by default.
 
 The Scene → Batching popup exposes hits/rebuilds/declines, live entries and
 evictions (counters are per Scene invocation). Measure unchanged view/camera,
