@@ -289,6 +289,18 @@ public:
     // consumed per actual scene-render frame; no backward GPU scrubbing.
     bool queueSpectraGpuPreviewFrames(uint32_t frames);
     bool restartSpectraGpuPreview();
+    enum class SpectraGpuCaptureState : uint8_t {
+        Idle, Queued, InFlight, Ready, Failed
+    };
+    // Freeze before enqueueing. The request is performed ONLY at next safe
+    // pre-pass graphics phase and serviced asynchronously by the RHI.
+    bool requestSpectraGpuPreviewCheckpoint();
+    SpectraGpuCaptureState spectraGpuCaptureState() const {
+        return spectraGpuCaptureState_;
+    }
+    const std::string& spectraGpuCaptureNote() const {
+        return spectraGpuCaptureNote_;
+    }
     double spectraGpuPreviewVisualSeconds() const {
         return spectraPreviewVisualSeconds_;
     }
@@ -482,6 +494,8 @@ private:
     bool spectraPreviewRestart_=false;
     double spectraPreviewVisualSeconds_=0;
     std::string spectraPreviewLastError_;
+    SpectraGpuCaptureState spectraGpuCaptureState_=SpectraGpuCaptureState::Idle;
+    std::string spectraGpuCaptureNote_;
     std::deque<SpectraGpuPreviewFrameRecord> spectraPreviewHistory_;
     double spectraPreviewNextBurst_=0;
     std::array<float,8> spectraPreviewParams_{};
