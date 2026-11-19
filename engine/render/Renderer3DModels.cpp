@@ -4,6 +4,7 @@
 #include "ModelMerge.h"
 #include "GpuMaterialState.h"
 #include "ModelShaders.h"
+#include "ModelVirtualTextureSampling.h"
 #include "Animation.h"
 #include "ModelVisibility.h"
 #include "ModelLodTransition.h"
@@ -28,6 +29,7 @@ static_assert(kJointFloats * 4 <= 4096, "joint palette must fit a 4 KB uniform b
 
 constexpr uint32_t kKeyDrawCallView = 32768;
 constexpr uint32_t kKeyMaterialInstancePalette = 1u << 27; // editor draw-call diagnostic shader permutation
+constexpr uint32_t kKeyModelVirtualTexture = 1u << 28;
 constexpr uint32_t kKeySkinned = 1, kKeyNormalMap = 2, kKeyAlphaMask = 4, kKeyShadow = 8, kKeyBaked = 64, kKeyMorph = 128,
                    kKeyInstanced = 256, kKeyOutline = 512, kKeyLightmap = 2048, kKeyProbes = 4096, kKeyLodFade = 8192, kKeyMaterialPalette = 16384;   // GI keys: agent-lightbake
 struct ProfileTimer {
@@ -130,7 +132,19 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const uint32_t gpuInstanceShaderBit = gpuInstances ? (1u << 26) : 0u;
     const uint32_t studioShaderBits = (geometryMainView_ && (phase == 1 || phase == 2) && studioDebugMode_ >= 2)
                                     ? uint32_t(studioDebugMode_) << 17 : 0u;
-    const uint32_t shaderKey = gpuInstanceShaderBit | studioShaderBits |
+    const auto selectedGraph = it.mat->shaderGraph &&
+        int(matQuality_) >= it.mat->shaderGraph->minQuality ?
+        it.mat->shaderGraph : nullptr;
+    const auto* graph = selectedGraph.get();
+    // Fragment slots 13 and 14 belong to built-in model VT only.
+    // Shader Graph owns those slots, and GPU ICB commands may mix
+    // external VT domains, so both paths remain on source textures.
+    ModelVirtualTextureBinding vtBinding;
+    const bool vtSampling = giPhase && !graph && !instancePalette &&
+        !gpuInstances &&
+        resolveModelVirtualTexture(*it.model,*it.mat,vtBinding);
+    const uint32_t shaderKey = (vtSampling ? kKeyModelVirtualTexture : 0u) |
+        gpuInstanceShaderBit | studioShaderBits |
                                (instancePalette ? kKeyMaterialInstancePalette : 0u) | (skinned ? kKeySkinned : 0u) | (normalMap ? kKeyNormalMap : 0u) | (mask ? kKeyAlphaMask : 0u) |
                                (shadow ? kKeyShadow : 0u) | (baked ? kKeyBaked : 0u) | (morph ? kKeyMorph : 0u) |
                                (instanced ? kKeyInstanced : 0u) | (outline ? kKeyOutline : 0u) |
@@ -139,8 +153,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const bool fadeDepth = blend && !outline && it.mat->alpha != AlphaMode::Blend && (it.flags & kDrawFadeDepth) && !transparentItem(it.flags);
     const uint32_t pipeKey = shaderKey | (blend ? 16u : 0u) | (twoSided ? 32u : 0u) |
         (fadeDepth ? 64u : 0u) | (depthAfter ? 1024u : 0u) | (maskPass ? (1u << 29) : 0u);
-    const auto selectedGraph=it.mat->shaderGraph && int(matQuality_)>=it.mat->shaderGraph->minQuality?it.mat->shaderGraph:nullptr;
-    const auto* graph = selectedGraph.get();
+
     const ModelShaderKey skey{shaderKey, selectedGraph};
     const ModelShaderKey pkey{pipeKey, selectedGraph};
     for (auto& [k, p] : modelPipes_) if (k == pkey) return p;
@@ -243,10 +256,16 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                 if(at!=std::string::npos)msl.insert(at+22,"\nconstexpr sampler s"+std::to_string(slot)+"(coord::normalized, address::repeat, filter::linear, mip_filter::linear);");
             }
         }
+        if (vtSampling && !injectModelVirtualTextureSampling(fs,msl)) {
+            modelError_ = "model virtual-texture shader insertion failed";
+            return {};
+        }
         gfx::ShaderDesc sd;
         sd.glslVertex = vs.c_str(); sd.glslFragment = fs.c_str(); sd.msl = msl.c_str();
         // tex11/tex12: SSR scene colour/depth; graph textures follow at kGraphTextureSlot.
-        sd.uniformSlots = shadow ? 5 : 6; sd.textureSlots = graph && !graph->textures.empty() ? kGraphTextureSlot+int(graph->textures.size()) : shadow ? 9 : 13; sd.label = shadow ? "model shadow" : "model"; // U5/tex9: lights, tex10: height field
+        sd.uniformSlots = vtSampling ? 7 : (shadow ? 5 : 6);
+        sd.textureSlots = vtSampling ? 15 : (graph && !graph->textures.empty() ?
+            kGraphTextureSlot+int(graph->textures.size()) : shadow ? 9 : 13); sd.label = shadow ? "model shadow" : "model"; // U5/tex9: lights, tex10: height field
         ShaderEntry e;
         if (warmingPipelines_) e.job=dev_->createShaderAsync(sd);
         else e.shader = dev_->createShader(sd);
