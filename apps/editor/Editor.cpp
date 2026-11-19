@@ -886,7 +886,16 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     r3d_.render(pass, r3d_.studioDebugMode() ? nullptr : (postFxInScene ? &prisma_ : nullptr));
     const auto afterRender = std::chrono::steady_clock::now();
     r3d_.setSceneSelectionOutline(false);
-    if (!ws_.project.isFps() && !r3d_.studioDebugMode()) gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
+    if (!ws_.project.isFps() && !r3d_.studioDebugMode()) {
+        gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
+        // Scene-view particle reactive coverage; per-scene callback is
+        // consumed synchronously by resolvePrisma and never persists.
+        if (gameFx_.hasReactiveGeometry())
+            r3d_.addMotionReactiveDraw([this](gfx::Device& gpu,
+                    gfx::TextureHandle sceneDepth, int width, int height) {
+                gameFx_.renderReactive(gpu,sceneDepth,width,height);
+            });
+    }
     r3d_.resolvePrisma();
     prisma_.clearCameraVolumes();
     dev_->endPass();
@@ -953,6 +962,11 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam) {
     prisma_.applyCameraVolumes(prismaVolumes_, cam.eye());
     r3d_.render(pass, &prisma_);
     gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
+    if (gameFx_.hasReactiveGeometry())
+        r3d_.addMotionReactiveDraw([this](gfx::Device& gpu,
+                gfx::TextureHandle sceneDepth, int width, int height) {
+            gameFx_.renderReactive(gpu,sceneDepth,width,height);
+        });
     r3d_.resolvePrisma();
     prisma_.clearCameraVolumes();
     dev_->endPass();
