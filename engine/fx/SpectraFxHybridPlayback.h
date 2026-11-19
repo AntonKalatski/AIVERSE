@@ -259,8 +259,12 @@ public:
             gpuRequested && selected.gpuIndirectCompaction?
                 ensureSharedCompaction():gfx::ComputeHandle{};
         auto next=std::make_unique<SpectraFxHybridEmitter>();
+        // A failed shared billboard pipeline must not prevent the legacy
+        // per-emitter renderer path from being attempted. Only lend a
+        // resource that actually initialized successfully.
         if(!next->begin(device_,cpu_,std::move(selected),cue.position,cue.direction,
-                        gpuRequested ? &sharedRenderer_ : nullptr,
+                        gpuRequested && sharedRenderer_.ready()
+                            ? &sharedRenderer_ : nullptr,
                         sharedCompute,sharedSort,sharedCompact)) {
             ++stats_.failed;return false;
         }
