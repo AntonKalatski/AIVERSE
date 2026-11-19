@@ -368,7 +368,7 @@ inline ForestEcologyResult advanceForestEcology(
             // Opting such a tree into ecology must not unexpectedly shrink
             // it to a tiny seedling on its first processed tick. Explicit
             // seedling records always carry a nonzero matureTicks value.
-            if(env.ageTicks==0)env.ageTicks=policy.matureTicks;
+            env.ageTicks=std::max(env.ageTicks,policy.matureTicks);
             env.matureTicks=policy.matureTicks;
         }
         if(env.lifespanTicks==0)env.lifespanTicks=policy.lifespanTicks;
