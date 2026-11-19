@@ -2322,3 +2322,27 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos"
         TIMEOUT 120
         ENVIRONMENT "AIVERSE_EXPERIMENTAL_METAL_ICB=1;AIVERSE_GPU_ENCODED_ICB=1;AIVERSE_GPU_AUTHORED_DRAWS=1;AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR=1;AIVERSE_EXPERIMENTAL_ICB_MIXED_PBR=1;AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT=1;AIVERSE_EXPERIMENTAL_ICB_MIXED_VT=1;AIVERSE_EXPERIMENTAL_ICB_SHADER_GRAPH=1;AIVERSE_GPU_ICB_ADAPTIVE=0;AIVERSE_ADAPTIVE_DRAW_GROUPS=0;AIVERSE_GPU_ICB_MIN_COMMANDS=2;AIVERSE_ICB_TRACE=1")
 endif()
+
+
+# Isolated, high-risk production Shader Graph + VT missing-page and UV
+# Repeat/MirrorRepeat seam pixel oracle on real Metal GPU-encoded ICB.
+# Remains OFF for ordinary CTest and --metal acceptance; configure in a
+# dedicated build cache because GPU ICB driver faults are not recoverable.
+option(AIVERSE_TEXTURE_METAL_GRAPH_VT_SEAM_GPU_TESTS
+    "Opt-in real Renderer3D graph VT missing-page and Repeat/MirrorRepeat Metal GPU ICB pixel oracle" OFF)
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos"
+   AND AIVERSE_TEXTURE_METAL_GRAPH_VT_SEAM_GPU_TESTS)
+    add_executable(aiverse_metal_renderer_graph_vt_seam_gpu_test
+        tests/render/metal_renderer_graph_vt_seam_gpu.cpp
+        $<TARGET_OBJECTS:aiverse_runtime>)
+    target_include_directories(aiverse_metal_renderer_graph_vt_seam_gpu_test
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_metal_renderer_graph_vt_seam_gpu_test PRIVATE
+        aiverse_runtime aiverse_shader_graph Threads::Threads)
+    add_test(NAME metal_renderer_graph_vt_seam_gpu
+        COMMAND aiverse_metal_renderer_graph_vt_seam_gpu_test)
+    set_tests_properties(metal_renderer_graph_vt_seam_gpu PROPERTIES
+        LABELS "METAL;GPU;TEXTURE_RHI;EXPERIMENTAL_ICB;RENDERER3D;SHADER_GRAPH;VIRTUAL_TEXTURE"
+        TIMEOUT 120
+        ENVIRONMENT "AIVERSE_EXPERIMENTAL_METAL_ICB=1;AIVERSE_GPU_ENCODED_ICB=1;AIVERSE_GPU_AUTHORED_DRAWS=1;AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR=1;AIVERSE_EXPERIMENTAL_ICB_MIXED_PBR=1;AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT=1;AIVERSE_EXPERIMENTAL_ICB_MIXED_VT=1;AIVERSE_EXPERIMENTAL_ICB_SHADER_GRAPH=1;AIVERSE_GPU_ICB_ADAPTIVE=0;AIVERSE_ADAPTIVE_DRAW_GROUPS=0;AIVERSE_GPU_ICB_MIN_COMMANDS=2;AIVERSE_ICB_TRACE=1")
+endif()
