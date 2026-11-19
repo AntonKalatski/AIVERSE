@@ -147,8 +147,14 @@ public:
         return scopedState_->wrongThreadReleases.load(std::memory_order_relaxed);
     }
 
-    void setEstimatedBudgetBytes(uint64_t bytes) noexcept {budgetBytes_=bytes;}
-    uint64_t estimatedBudgetBytes() const noexcept {return budgetBytes_;}
+    void setEstimatedBudgetBytes(uint64_t bytes) {
+        checkThread();
+        budgetBytes_=bytes;
+    }
+    uint64_t estimatedBudgetBytes() const {
+        checkThread();
+        return budgetBytes_;
+    }
     bool mayAdmitNewSources(const RenderResourceGroupStats& stats) const noexcept {
         return stats.health!=RenderResourceHealth::DeviceUnhealthy &&
                stats.health!=RenderResourceHealth::RetirementFenceFailed &&
@@ -219,10 +225,13 @@ public:
         checkThread();
         if(boundDevice_ && boundDevice_!=&device)
             throw std::logic_error("RenderResourceOwnerGroup snapshot device mismatch");
-        for(const auto& entry:owners_)
-            if(!entry.lifetime.expired() && entry.device &&
-               entry.device!=&device)
-                throw std::logic_error("RenderResourceOwnerGroup mixed devices");
+        for(const auto& entry:owners_) {
+            if(entry.lifetime.expired() || !entry.device)continue;
+            if(entry.device!=&device ||
+               !entry.cache->boundToResourceDevice(device))
+                throw std::logic_error(
+                    "RenderResourceOwnerGroup stale or mixed-device registration");
+        }
         auto stats=snapshotOwners(device.gpuHealthy());
         std::vector<const Model*> modelsForPool;
         for(const auto& entry:owners_) {
