@@ -4,6 +4,7 @@
 // Call only on a Mac with a real Metal device. No silent device skip.
 #include "engine/gfx/Gfx.h"
 #include "engine/gfx/VirtualTextureFeedbackPass.h"
+#include "engine/gfx/VirtualTextureStreamer.h"
 #include "engine/platform/Platform.h"
 #import <Metal/Metal.h>
 #import <QuartzCore/CAMetalLayer.h>
@@ -550,6 +551,163 @@ fragment float4 fs_main(FeedbackVertexOut in [[stage_in]],
                 elapsedMs(start,Clock::now()));
 }
 
+
+// Physical virtual texture publication in the real Metal backend:
+// the shader-visible RGBA8 page table must never expose a pending or
+// overwritten physical slice. No mock GPU, disk I/O or test-only cache.
+void gpuPhysicalVirtualAtlas(Device& dev) {
+    const auto start=Clock::now();
+    VirtualTextureStreamConfig cfg;
+    cfg.tilesX=cfg.tilesY=4;
+    cfg.mipLevels=3;
+    cfg.virtualLayers=1;
+    cfg.physicalPages=2;
+    cfg.physicalPageSize=4;
+    cfg.physicalFormat=PixelFormat::RGBA8;
+    cfg.pageTableBytesPerFlush=64;
+    VirtualTextureStreamer pages(dev);
+    if (!pages.initialize(cfg)) {
+        ++failures;
+        std::fprintf(stderr,"FAIL: native VT atlas initialize: %s\n",
+                     pages.lastError().c_str());
+        return;
+    }
+    const auto atlas=pages.physicalAtlas();
+    const auto table=pages.pageTableTexture();
+    check(atlas.valid() && table.valid() && pages.ready(),
+          "Metal physical atlas and page table have live GPU handles");
+    if (!atlas.valid() || !table.valid()) { pages.shutdown(); return; }
+
+    const VirtualPageKey coarse{2,0,0,0};
+    const VirtualPageKey fine{0,3,3,0};
+    const VirtualPageKey replacement{0,0,0,0};
+    const Color invalid{0,0,0,0};
+    const auto coarseData=solid(4,4,{23,42,63,255});
+    const auto fineData=solid(4,4,{101,54,12,255});
+    const auto replacementData=solid(4,4,{209,24,76,255});
+
+    auto expectedTable=[&](int slot,int mip,int x,int y,
+                           int overrideSlot=-1,int overrideMip=0) {
+        std::vector<uint8_t> rgba=solid(4,4,
+            {uint8_t(slot),0,uint8_t(mip),255});
+        if (overrideSlot>=0) {
+            const size_t offset=size_t(y*4+x)*4;
+            rgba[offset]=uint8_t(overrideSlot);
+            rgba[offset+1]=0;
+            rgba[offset+2]=uint8_t(overrideMip);
+            rgba[offset+3]=255;
+        }
+        return rgba;
+    };
+    const auto baseTable=expectedTable(0,2,0,0);
+    const auto first=pages.stage(coarse,coarseData.data(),
+                                 coarseData.size(),true);
+    check(first.valid() && !pages.resolveExact(coarse).valid() &&
+          pages.encodedPageTable(3,3,0)==invalid,
+          "VT coarse page remains invisible while upload is pending");
+    verifyReads(dev,{
+        probe(table,0,0,4,4,solid(4,4,invalid),
+              "VT GPU table invalid before first publish")
+    },"VT GPU unpublished page");
+
+    int coarseEvents=0;
+    const auto firstDrain=pages.drain([&](VirtualPageKey key,bool ok) {
+        if (key==coarse && ok) ++coarseEvents;
+    });
+    const auto coarseSlot=pages.resolveExact(coarse);
+    check(firstDrain==1 && coarseEvents==1 &&
+          coarseSlot.valid() && coarseSlot.ready &&
+          coarseSlot.physicalSlice==0,
+          "VT coarse upload publishes only after successful Metal transfer");
+    check(pages.encodedPageTable(3,3,0)==(Color{0,0,2,255}),
+          "VT page table encodes coarse fallback mip and physical slot");
+    verifyReads(dev,{
+        probe(atlas,0,0,4,4,coarseData,"VT physical pinned coarse page"),
+        probe(table,0,0,4,4,baseTable,"VT GPU coarse fallback table")
+    },"VT coarse publication");
+
+    const auto second=pages.stage(fine,fineData.data(),
+                                  fineData.size(),false);
+    check(second.valid() && !pages.resolveExact(fine).valid(),
+          "VT detail page is pending before GPU publication");
+    int fineEvents=0;
+    const auto secondDrain=pages.drain([&](VirtualPageKey key,bool ok) {
+        if (key==fine && ok) ++fineEvents;
+    });
+    const auto fineSlot=pages.resolveExact(fine);
+    check(secondDrain==1 && fineEvents==1 &&
+          fineSlot.valid() && fineSlot.physicalSlice==1,
+          "VT fine mip published into second physical page");
+    check(pages.encodedPageTable(3,3,0)==(Color{1,0,0,255}),
+          "VT fine page overrides pinned coarse fallback");
+    auto tableWithFine=expectedTable(0,2,3,3,1,0);
+    verifyReads(dev,{
+        probe(atlas,0,1,4,4,fineData,"VT physical fine page"),
+        probe(table,0,0,4,4,tableWithFine,"VT GPU fine-page override")
+    },"VT fine publication");
+
+    // Both atlas slots are occupied. The pinned coarse page must survive,
+    // while unpinned fine is displaced. Invalidation must hit GPU table
+    // before this physical slice can be written by the replacement page.
+    const auto third=pages.stage(replacement,replacementData.data(),
+                                 replacementData.size(),false);
+    check(third.valid() && !pages.resolveExact(fine).valid() &&
+          !pages.resolveExact(replacement).valid() &&
+          pages.resolveExact(coarse).valid(),
+          "VT LRU replacement evicts fine but not pinned coarse");
+    check(pages.pageStats().evictions==1 &&
+          pages.encodedPageTable(3,3,0)==(Color{0,0,2,255}),
+          "VT GPU mapping invalidated before replacing physical slot");
+    verifyReads(dev,{
+        probe(table,0,0,4,4,baseTable,
+              "VT GPU table invalidated before slot reuse")
+    },"VT pre-overwrite invalidation");
+
+    int replacementEvents=0;
+    const auto thirdDrain=pages.drain([&](VirtualPageKey key,bool ok) {
+        if (key==replacement && ok) ++replacementEvents;
+    });
+    const auto newSlot=pages.resolveExact(replacement);
+    check(thirdDrain==1 && replacementEvents==1 &&
+          newSlot.valid() && newSlot.physicalSlice==1,
+          "VT recycled physical slot published after replacement upload");
+    check(pages.encodedPageTable(0,0,0)==(Color{1,0,0,255}) &&
+          pages.encodedPageTable(3,3,0)==(Color{0,0,2,255}),
+          "VT GPU table redirects replacement tile, preserves coarse fallback");
+    auto tableWithReplacement=expectedTable(0,2,0,0,1,0);
+    verifyReads(dev,{
+        probe(atlas,0,1,4,4,replacementData,
+              "VT overwritten physical page contains replacement"),
+        probe(table,0,0,4,4,tableWithReplacement,
+              "VT GPU table after LRU republish")
+    },"VT replacement publication");
+
+    check(pages.evict(replacement) &&
+          !pages.resolveExact(replacement).valid() &&
+          pages.resolveExact(coarse).valid(),
+          "VT explicit eviction keeps coarse physical slice resident");
+    verifyReads(dev,{
+        probe(table,0,0,4,4,baseTable,
+              "VT GPU page table falls back after explicit eviction")
+    },"VT explicit eviction");
+
+    const auto before=dev.textureResources();
+    check(std::any_of(before.begin(),before.end(),[&](const auto& x) {
+        return x.handle==atlas && x.dimension==TextureDimension::Texture2DArray &&
+               x.arrayLayers==2 && x.width==4 && x.height==4;
+    }) && std::any_of(before.begin(),before.end(),[&](const auto& x) {
+        return x.handle==table && x.dimension==TextureDimension::Texture2DArray &&
+               x.arrayLayers==1 && x.width==4 && x.height==4;
+    }),"VT real Metal atlas and page table inventory matches topology");
+    pages.shutdown();
+    const auto after=dev.textureResources();
+    check(std::none_of(after.begin(),after.end(),[&](const auto& x) {
+        return x.handle==atlas || x.handle==table;
+    }),"VT shutdown releases physical atlas and page table GPU objects");
+    std::printf("TIMING VT physical atlas publication_total_ms=%.3f\n",
+                elapsedMs(start,Clock::now()));
+}
+
 } // namespace
 
 int main() {
@@ -580,6 +738,7 @@ int main() {
         layered(*device,TextureDimension::CubeArray,12,"CubeArray");
         shaderSampleVolume(*device);
         gpuVirtualTextureFeedback(*device);
+        gpuPhysicalVirtualAtlas(*device);
         std::printf("TIMING Metal fixture_total_ms=%.3f gpu_test_body_ms=%.3f\n",
                     elapsedMs(testStart,Clock::now()),
                     elapsedMs(deviceReady,Clock::now()));
