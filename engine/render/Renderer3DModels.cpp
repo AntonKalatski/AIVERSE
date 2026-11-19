@@ -1474,6 +1474,14 @@ void Renderer3D::prepareGpuModelDraws() {
                 GpuEncodedBatch group;
                 group.items.assign(indices.begin() + first, indices.begin() + end);
                 group.token = token;
+                group.usesVirtualTexture = vtEnabled[indices[first]] != 0;
+                group.virtualTexture = vtBindings[indices[first]];
+                const auto& firstModel = modelItems_[indices[first]];
+                if (firstModel.mat->alpha == AlphaMode::Mask &&
+                    firstModel.mat->baseTex >= 0 &&
+                    size_t(firstModel.mat->baseTex) < firstModel.model->images.size())
+                    group.alphaCoverage = firstModel.model->images[
+                        size_t(firstModel.mat->baseTex)].virtualAlphaMask;
                 gpuEncodedBatches_.push_back(std::move(group));
             } else ++gpuIcbRejected_;
             first = end;
@@ -1751,6 +1759,29 @@ void Renderer3D::renderModels(int phase) {
         !drawCallDebug_ && gpuModelCommandsReady_) {
         for (auto& group : gpuEncodedBatches_) {
             if (group.items.size() < 2) continue;
+            // A region/atlas revision may have swapped after compute
+            // prepared this ICB. Never bind a new texture table to old
+            // encoded command uniforms: fall back to per-item CPU draws.
+            bool stable = true;
+            for (uint32_t index : group.items) {
+                if (index >= modelItems_.size()) { stable=false; break; }
+                const auto& item = modelItems_[index];
+                ModelVirtualTextureBinding current;
+                const bool usesVt=resolveModelVirtualTexture(
+                    *item.model,*item.mat,current);
+                gfx::TextureHandle alpha;
+                if (item.mat->alpha == AlphaMode::Mask &&
+                    item.mat->baseTex >= 0 &&
+                    size_t(item.mat->baseTex) < item.model->images.size())
+                    alpha=item.model->images[size_t(item.mat->baseTex)].virtualAlphaMask;
+                if (!compatibleModelVirtualTextureBinding(
+                        group.usesVirtualTexture,group.virtualTexture,usesVt,current) ||
+                    !(alpha == group.alphaCoverage)) {
+                    stable = false;
+                    break;
+                }
+            }
+            if (!stable) { ++gpuIcbRejected_; continue; }
             // Force all inherited parent state to be bound from this group.
             // Previous direct draws may have used transient setBytes blocks.
             currentPipe_ = {};
