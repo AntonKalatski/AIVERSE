@@ -1034,3 +1034,82 @@ Do not enable production GPU-authored Strata indirect rendering
 or integrate Hi-Z until those validation gates pass. Keep a
 single `Renderer3D` draw authority and one
 `GlobalGeometryPool` GPU source allocator.
+
+
+---
+
+## Stage 11.2 verification handoff — real Metal raster A/B PASSED (2026-11-19)
+
+### Current status and branch
+Branch: `feature/strata-virtual-geometry`; PR #35 Draft against
+`main`. **No merge to main, no production Strata render switch.**
+The Stage 11.1 capture-synchronization implementation commit
+`bcc471e93c9a4a35f7fda457d4fa15ccbda13fe9` is now confirmed
+to resolve the Mac Studio fixture failure.
+
+### User-supplied native evidence (exact values)
+The owner built `aiverse_strata_metal_raster_parity` and executed
+the real Metal runner. All four screenshots returned 1,920,000 bytes
+at the intended steady-mode capture points:
+
+| Mode | Request frame | Callback frame | Shadow draws | Opaque draws |
+| --- | ---: | ---: | ---: | ---: |
+| Empty | 4 | 6 | 0 | 0 |
+| Legacy | 15 | 17 | 1 | 1 |
+| Strata Fine | 26 | 28 | 2 | 2 |
+| Strata Coarse | 37 | 39 | 1 | 1 |
+
+The observed diagnostic lines include:
+```text
+[strata-raster] Legacy/Fine changed_channels=0
+[strata-raster] Legacy/Coarse changed_channels=0
+[strata-raster] PASS: real Renderer3D legacy vs fine/coarse source-page pixel parity
+[strata-raster] PASS: sun shadow and main passes submitted through same renderer
+[strata-raster] PASS: exclusive one-ModelDraw-per-frame, no second GPU geometry pool
+[strata-raster] status=PASSED frames=44
+[metal-assets] libraries=0 sourceMisses=11 pipelines=16 pipelineFailures=0 archive=0 strict=0
+```
+
+**Validation claim supported by these logs:** lossless parent/leaf
+cluster ranges in the shared pooled IB reproduce identical actual
+main-camera RGBA pixels to the Legacy source (zero changed channels),
+while the same production Renderer3D's main and sun-shadow phases
+submit draws; only one ModelDraw is queued per candidate test frame.
+The old blank-baseline failure does **not** persist in this owner run.
+
+**Limitations:** The test checks *shadow-pass submission counters*,
+not the actual depth texture or separate shadow-map screenshot
+equivalence. It does not test reflection camera, multiple distinct
+materials, UV seams, real lossy simplified geometry, dynamic skinning,
+LOD transitions, GPU-selected indirect raster commands, Hi-Z,
+streaming, or Vulkan. All opt-in Strata production drawing remains
+disabled; its dry-run remains purely diagnostic. No performance
+claim was established. The owner-supplied log does not contain an
+explicit `git rev-parse HEAD`; this result is associated with the
+post-capture-fix branch testing, not independently SHA-verified.
+
+The prior owner supplied focused CTest result remains **6/6 PASS**,
+and real Metal GPU culling + async readback parity **5/5 PASS**.
+Those earlier validations are separate tests and were not
+reexecuted in this specific raster terminal log.
+
+### Files / commits / changes in this verification stage
+- `docs/strata.md` updated to reflect actual PASS with strict
+  evidence scope: `cab2c671b1c795153414e530e75fc8c68f8e6035`.
+- `AGENTS.md` updated to mark Stage 11.1 as actually verified:
+  `1297d44c96b0740ce1bec43d93e36c9c556f4dea`.
+- This handoff is the separate stage record; no C++ code changes
+  were necessary following the successful owner test.
+- Underlying C++ screenshot fix `bcc471e9` remains unchanged.
+
+### Next bounded stage for the next AI agent
+Implement separate actual GPU **shadow depth-texture equivalence**
+between Legacy and selected Strata, with verified nonconstant depth
+rather than relying on counters; then add main/reflection multi-view
+capture parity and at least two material/UV-boundary cases.
+Preserve one shared `GlobalGeometryPool` source geometry owner and
+exclusive single `Renderer3D` draw submission. Keep strict visual
+oracles and explicit unsupported-material fallback. Only after
+native real-Metal evidence for those gates should a scoped production
+Strata/Legacy route be considered. Update this handoff after the
+next implementation stage with exact commits and test results.
