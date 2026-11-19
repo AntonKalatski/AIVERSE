@@ -43,9 +43,12 @@ jobs:
           aiverse_strata_view_tests
           aiverse_strata_gpu_scene_tests
           aiverse_strata_gpu_culling_tests
+          aiverse_strata_render_routing_tests
           --parallel 4
       - name: Test Strata contracts
         run: >
           ctest --test-dir build/strata-focused
-          -R '^strata_(builder|model_adapter|view|gpu_scene|gpu_culling)$'
+          -R '^strata_(builder|model_adapter|view|gpu_scene|gpu_culling|render_routing)
+          --output-on-failure
+
           --output-on-failure
