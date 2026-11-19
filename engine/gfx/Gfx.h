@@ -189,6 +189,13 @@ public:
     // render target of the same size. Only between passes. False when the backend can't (the screen is not
     // readable: see setScreenReadable, sizes differ); the caller then takes another path.
     virtual bool copyColor(TextureHandle from, TextureHandle to) { (void)from; (void)to; return false; }
+    // Optional diagnostics only: synchronously read a completed RGBA8 render
+    // target into top-down RGBA bytes. Must be called BETWEEN frames (never
+    // during gameplay rendering); unsupported backends return false.
+    // No CPU readback is involved in normal SpectraFX GPU rendering.
+    virtual bool readColorRGBA8(TextureHandle target, std::vector<uint8_t>& rgba) {
+        (void)target; rgba.clear(); return false;
+    }
     // The screen may be a copyColor source (Metal: drawables stop being framebuffer-only from the next frame).
     virtual void setScreenReadable(bool readable) { (void)readable; }
 

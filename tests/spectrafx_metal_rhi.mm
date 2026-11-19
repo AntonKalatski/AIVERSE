@@ -1,0 +1,217 @@
+// SpectraFX Stage 98: exercise the real gfx::Device Metal RHI with two
+// independent offscreen cameras, GPU-written particles, and 3-slot retirement.
+// No FPS/RTS/Editor code. This fixture links production GfxMetal.mm.
+// Tests should SKIP (77), never claim PASS, when no usable Metal device exists.
+#import <Foundation/Foundation.h>
+#import <Metal/Metal.h>
+#import <QuartzCore/CAMetalLayer.h>
+#include <cmath>
+#include <cstdint>
+#include <cstdio>
+#include <deque>
+#include <memory>
+#include <string>
+#include <vector>
+
+#include "engine/gfx/Gfx.h"
+#include "engine/fx/SpectraFxView.h"
+#include "engine/fx/SpectraFxGpuEvolution.h"
+#include "engine/fx/SpectraFxGpuBillboardRenderer.h"
+
+// The production backend's optional shader-archive loader only needs this
+// platform file-reader symbol. In a standalone headless test no game bundle
+// or resource pack exists, so compile runtime Metal sources from MSL.
+namespace aiverse::platform {
+bool readContentFile(const std::string&, std::string&) { return false; }
+}
+
+namespace {
+constexpr int kWidth=128;
+constexpr int kHeight=128;
+int failures=0;
+void check(bool ok,const char* what) {
+    if (!ok) {
+        std::fprintf(stderr,"FAIL [spectrafx-metal-rhi] %s\n",what);
+        ++failures;
+    }
+}
+uint8_t red(const std::vector<uint8_t>& rgba,int x,int y) {
+    if (rgba.size()!=size_t(kWidth)*kHeight*4u) return 0;
+    return rgba[(size_t(y)*kWidth+size_t(x))*4u];
+}
+aiverse::gfx::TextureHandle texture(aiverse::gfx::Device& device,
+                                    aiverse::gfx::PixelFormat format) {
+    aiverse::gfx::TextureDesc desc{};
+    desc.width=kWidth;desc.height=kHeight;desc.format=format;
+    desc.renderTarget=true;
+    desc.label="SpectraFX RHI offscreen test";
+    return device.createTexture(desc);
+}
+aiverse::fx::SpectraFxGpuSeed seed(float x) {
+    aiverse::fx::SpectraFxGpuSeed s;
+    s.position={x,0,0.5f};s.velocity={0,0,0};
+    s.age=0;s.lifetime=10;
+    return s;
+}
+struct Retiring {
+    std::unique_ptr<aiverse::fx::SpectraFxGpuEvolution> particles;
+    uint64_t lastDrawSerial=0;
+};
+} // namespace
+
+int main() {
+    @autoreleasepool {
+        const id<MTLDevice> metal=MTLCreateSystemDefaultDevice();
+        if (!metal) {
+            std::puts("SKIP [spectrafx-metal-rhi] no Metal device");
+            return 77;
+        }
+        CAMetalLayer* layer=[CAMetalLayer layer];
+        layer.device=metal;
+        layer.frame=CGRectMake(0,0,kWidth,kHeight);
+        auto device=aiverse::gfx::createMetalDevice((__bridge void*)layer);
+        if (!device || !device->supportsCompute()) {
+            std::puts("SKIP [spectrafx-metal-rhi] RHI compute unavailable");
+            return 77;
+        }
+        std::printf("[spectrafx-metal-rhi] device=%s\n",
+                    device->info().name.c_str());
+        auto colorA=texture(*device,aiverse::gfx::PixelFormat::RGBA8);
+        auto colorB=texture(*device,aiverse::gfx::PixelFormat::RGBA8);
+        auto depth=texture(*device,aiverse::gfx::PixelFormat::Depth);
+        check(colorA.valid() && colorB.valid() && depth.valid(),
+              "two render-to-texture color targets and depth");
+        if (failures) return 1;
+
+        const auto sharedCompute=device->createCompute(
+            {aiverse::fx::kSpectraFxComputeMetal,nullptr,
+             "SpectraFX RHI shared GPU evolution"});
+        check(sharedCompute.valid(),"production Metal compute pipeline");
+        aiverse::fx::SpectraFxGpuBillboardRenderer renderer;
+        check(renderer.init(*device),"production gfx::Device billboard pipelines");
+        if (failures) {
+            std::fprintf(stderr,"[spectrafx-metal-rhi] RHI init: %s / %s\n",
+                device->lastError().c_str(),renderer.lastError().c_str());
+            return 1;
+        }
+
+        aiverse::fx::SpectraFxGpuEvolution particles;
+        check(particles.init(*device,{seed(-0.45f)},false,sharedCompute),
+              "production GPU particle buffers and RGBA32F storage");
+        if (failures) return 1;
+        aiverse::fx::SpectraFxGpuEnvironment env{};
+        env.acceleration={0,0,0};env.damping=1;
+
+        aiverse::fx::SpectraFxView cameraA;
+        cameraA.eye={0,0,2};cameraA.forward={0,0,-1};
+        cameraA.projectionYScale=1;cameraA.width=kWidth;cameraA.height=kHeight;
+        aiverse::fx::SpectraFxView cameraB=cameraA;
+        cameraB.viewProj=aiverse::render::mat4::translate({0.9f,0,0});
+        cameraB.right={0,1,0};cameraB.up={-1,0,0}; // 90-degree camera roll
+        check(cameraA.valid() && cameraB.valid(),"two arbitrary camera packets");
+
+        const aiverse::fx::SpectraFxGpuBillboardRenderer::Appearance appearance{
+            {0.9f,0.2f,0.05f},0.2f,false};
+        auto pass=[&](aiverse::gfx::TextureHandle target) {
+            aiverse::gfx::PassDesc d{};
+            d.colorTarget=target;d.depthTarget=depth;
+            d.clearColor[0]=d.clearColor[1]=d.clearColor[2]=0;
+            d.clearColor[3]=0;
+            return d;
+        };
+        device->beginFrame(kWidth,kHeight);
+        check(particles.step(0.01f,env),"RHI compute command encodes before render pass");
+        device->beginPass(pass(colorA));
+        device->setViewport({0,0,kWidth,kHeight});
+        check(renderer.draw(particles,cameraA.viewProj,cameraA.right,
+                            cameraA.up,appearance),"camera A RHI instanced draw");
+        device->endPass();
+        device->beginPass(pass(colorB));
+        device->setViewport({0,0,kWidth,kHeight});
+        check(renderer.draw(particles,cameraB.viewProj,cameraB.right,
+                            cameraB.up,appearance),"camera B rotated RHI draw");
+        device->endPass();
+        // Debug readback is deliberately forbidden while an RHI frame exists.
+        std::vector<uint8_t> frameA,frameB;
+        check(!device->readColorRGBA8(colorA,frameA),
+              "diagnostic readback rejects in-flight recording");
+        device->endFrame();
+        check(device->readColorRGBA8(colorA,frameA) &&
+              device->readColorRGBA8(colorB,frameB),
+              "RHI offscreen texture GPU->CPU diagnostic readback");
+        check(red(frameA,35,64)>100 && red(frameA,93,64)<10,
+              "first camera has visible billboard on left only");
+        check(red(frameB,93,64)>100 && red(frameB,35,64)<10,
+              "second camera shifts billboard to right only");
+        check(red(frameA,0,0)==0 && red(frameB,0,0)==0,
+              "both render targets preserve clear outside billboard");
+        std::printf("[spectrafx-metal-rhi] A left/right=%u/%u B left/right=%u/%u\n",
+            unsigned(red(frameA,35,64)),unsigned(red(frameA,93,64)),
+            unsigned(red(frameB,35,64)),unsigned(red(frameB,93,64)));
+        check(device->gpuHealthy(),"GPU healthy after two independent RHI passes");
+        // Finished raw readback also fences the first GPU storage use.
+        particles.shutdown();
+
+        // Create/churn GPU particle allocations across three Metal command
+        // buffers in flight. A resource is destroyed only at the next safe
+        // beginFrame after >=3 newer serials; never immediately after draw.
+        std::deque<Retiring> retiring;
+        auto retire=[&]() {
+            const uint64_t serial=device->frameSerial();
+            for (auto it=retiring.begin();it!=retiring.end();) {
+                if (serial>=it->lastDrawSerial &&
+                    serial-it->lastDrawSerial>=3) {
+                    it->particles->shutdown();
+                    it=retiring.erase(it);
+                } else ++it;
+            }
+        };
+        constexpr int kChurnFrames=24;
+        for (int i=0;i<kChurnFrames;++i) {
+            device->beginFrame(kWidth,kHeight);
+            retire();
+            auto next=std::make_unique<aiverse::fx::SpectraFxGpuEvolution>();
+            check(next->init(*device,{seed((i%2==0)?-0.45f:0.45f)},
+                             false,sharedCompute),
+                  "churn allocation of production GPU resources");
+            if (!next->ready()) {device->endFrame();break;}
+            check(next->step(0.016f,env),"churn GPU evolution dispatch");
+            device->beginPass(pass(colorA));
+            device->setViewport({0,0,kWidth,kHeight});
+            check(renderer.draw(*next,cameraA.viewProj,cameraA.right,
+                                cameraA.up,appearance),"churn GPU RHI draw");
+            device->endPass();
+            retiring.push_back({std::move(next),device->frameSerial()});
+            device->endFrame();
+            if (failures) break;
+        }
+        for (int i=0;i<4;++i) {
+            device->beginFrame(kWidth,kHeight);
+            retire();
+            device->endFrame();
+        }
+        check(retiring.empty(),"all retired resources released only after safe 3-frame grace");
+        check(device->readColorRGBA8(colorA,frameA),
+              "finished churn frame readable through RHI");
+        check(device->gpuHealthy(),"GPU healthy after 24 emitter churn frames");
+        std::printf("[spectrafx-metal-rhi] churn_frames=%d retire_remaining=%zu "
+                    "gpu_healthy=%d\n",kChurnFrames,retiring.size(),
+                    device->gpuHealthy()?1:0);
+
+        // Teardown order: the standalone RHI device outlives all dependent
+        // particle textures, shaders, render targets and shared compute state.
+        renderer.release();
+        device->destroyCompute(sharedCompute);
+        device->destroyTexture(colorA);
+        device->destroyTexture(colorB);
+        device->destroyTexture(depth);
+        if(failures) {
+            std::fprintf(stderr,
+                "SpectraFX real Metal RHI acceptance: %d failures\n",failures);
+            return 1;
+        }
+        std::puts("PASS [spectrafx-metal-rhi] production RHI offscreen cameras, "
+                  "pixel parity, compute->draw and 3-frame resource retirement");
+        return 0;
+    }
+}

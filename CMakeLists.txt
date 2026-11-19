@@ -2246,6 +2246,23 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
         SKIP_RETURN_CODE 77)
 endif()
 
+# Production Metal RHI acceptance: two independent offscreen camera views,
+# real compute->gfx::Device draw, RGBA pixel readback and 3-in-flight resource churn.
+# Explicitly compiles the production Metal backend without linking PlatformMac's main().
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
+    add_executable(aiverse_spectrafx_metal_rhi_test
+        tests/spectrafx_metal_rhi.mm engine/gfx/metal/GfxMetal.mm)
+    target_include_directories(aiverse_spectrafx_metal_rhi_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR})
+    target_link_libraries(aiverse_spectrafx_metal_rhi_test PRIVATE
+        "-framework Metal" "-framework Foundation"
+        "-framework QuartzCore" "-framework CommonCrypto")
+    add_test(NAME spectrafx_metal_rhi COMMAND aiverse_spectrafx_metal_rhi_test)
+    set_tests_properties(spectrafx_metal_rhi PROPERTIES
+        LABELS "SpectraFX;MetalGPU;RHI"
+        SKIP_RETURN_CODE 77)
+endif()
+
 # Versioned VFX graph assets, CPU fallback, exposed parameters and live reload.
 if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_vfx_assets_tests tests/vfx_graph_assets_test.cpp)

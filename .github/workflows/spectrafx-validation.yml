@@ -9,6 +9,8 @@ on:
       - "tools/spectrafx/**"
       - "CMakeLists.txt"
       - "engine/fx/**"
+      - "engine/gfx/Gfx.h"
+      - "engine/gfx/metal/GfxMetal.mm"
       - "apps/client/ClientFx*"
       - "apps/fps/client.cpp"
       - "apps/editor/windows/SpectraFx*"

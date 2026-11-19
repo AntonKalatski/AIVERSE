@@ -67,7 +67,8 @@ if stage configure cmake "${opts[@]}"; then
         aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests
     )
     if [[ "$OS" == Darwin ]]; then
-        targets+=(aiverse_spectrafx_metal_gpu_test aiverse_spectrafx_metal_billboard_test)
+        targets+=(aiverse_spectrafx_metal_gpu_test aiverse_spectrafx_metal_billboard_test
+                  aiverse_spectrafx_metal_rhi_test)
     fi
     target_ok=0
     stage spectrafx_core_build cmake --build "$BUILD" --config Debug --parallel "$JOBS" --target "${targets[@]}" && target_ok=1 || true
