@@ -317,6 +317,23 @@ public:
     // Opaque custom renderers (terrain): run first in the main pass, before meshes and models, so
     // translucent meshes (water) blend over them. Same lifetime rules as drawCustom.
     void drawCustomOpaque(CustomDraw fn) { customOpaque_.push_back(std::move(fn)); }
+    // Optional rigid-model feedback. Animated/skinned/morphed model
+    // primitives require a matching deformation pipeline and are excluded
+    // until such a pipeline is registered. Callback supplies UV/material
+    // uniforms for the exact visible primitive and world transform.
+    using FeedbackModelBinder = std::function<bool(
+        gfx::Device&, const Model&, const Primitive&, const Material&,
+        const mat4&)>;
+    void setVirtualTextureModelFeedback(gfx::PipelineHandle pipeline,
+                                        FeedbackModelBinder binder) {
+        feedbackModelPipeline_ = pipeline;
+        feedbackModelBinder_ = std::move(binder);
+    }
+    void clearVirtualTextureModelFeedback() {
+        feedbackModelPipeline_ = {};
+        feedbackModelBinder_ = {};
+    }
+
     // Per-scene feedback producers for terrain, foliage and procedural
     // renderers that do not use the immediate Mesh queue. Each producer
     // binds its own compatible feedback pipeline, geometry and uniforms.
@@ -344,6 +361,24 @@ public:
                 device.setIndexBuffer(draw.indexBuffer,draw.indexOffset);
                 if (draw.prepare && !draw.prepare(device)) return false;
                 device.drawIndexed(draw.count,draw.first,draw.baseVertex,draw.instances);
+            }
+            if (feedbackModelPipeline_.valid() && feedbackModelBinder_) {
+                for (const auto& item : modelItems_) {
+                    if (!item.inView || !item.rigid || item.joints >= 0 ||
+                        item.baked || item.morph >= 0 || !item.model ||
+                        !item.prim || !item.mat || !item.indexCount ||
+                        !item.model->vb.valid() || !item.model->ib.valid() ||
+                        item.tint.w < 0.99f || item.dissolve > 0.0f ||
+                        item.materialRole == 1 || item.shadowRole == 2)
+                        continue;
+                    device.setPipeline(feedbackModelPipeline_);
+                    device.setVertexBuffer(item.model->vb);
+                    device.setIndexBuffer(item.model->ib);
+                    if (!feedbackModelBinder_(device,*item.model,*item.prim,
+                                               *item.mat,item.world))
+                        return false;
+                    device.drawIndexed(item.indexCount,item.firstIndex);
+                }
             }
             for (const auto& custom : customFeedback_)
                 if (!custom(device)) return false;
@@ -564,6 +599,8 @@ private:
     gfx::VirtualTextureFeedbackPass* feedbackPass_ = nullptr; // non-owning
     gfx::PipelineHandle feedbackMeshPipeline_;
     FeedbackMeshBinder feedbackMeshBinder_;
+    gfx::PipelineHandle feedbackModelPipeline_;
+    FeedbackModelBinder feedbackModelBinder_;
     RTSCamera cam_;
     mat4 viewProj_, lightViewProj_;
     float3 camPos_;
