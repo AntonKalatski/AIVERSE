@@ -19,6 +19,10 @@ namespace aiverse::game::view_adapter {
 class RtsModelResourceCache final {
 public:
     using ModelMap=std::map<std::string,std::unique_ptr<render::Model>>;
+    // Incremented on insert, eviction and full shutdown. Borrowed model
+    // pointers become invalid across a generation-changing mutation.
+    uint64_t generation() const noexcept {return generation_;}
+
     struct Stats {
         size_t models=0,textures=0,decodedCpuBytes=0;
     };
@@ -38,6 +42,7 @@ public:
         if(models_.count(key))return false;
         if(prepared.model)render::uploadModel(dev,*prepared.model);
         models_.emplace(key,std::move(prepared.model));
+        ++generation_;
         return true;
     }
 
@@ -77,6 +82,7 @@ public:
             }
             it=models_.erase(it);
             ++released;
+            ++generation_;
         }
         textures_->trim(dev);
         return released;
@@ -93,12 +99,14 @@ public:
             if(model)render::releaseModel(dev,*model);
         }
         models_.clear();
+        ++generation_;
         textures_->shutdown(dev);
     }
 private:
 #ifndef __EMSCRIPTEN__
     RtsModelPreparationService preparation_;
 #endif
+    uint64_t generation_=0;
     ModelMap models_;
     std::shared_ptr<render::ModelTextureCache> textures_=
         std::make_shared<render::ModelTextureCache>();
