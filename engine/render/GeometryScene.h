@@ -13,7 +13,8 @@ class Renderer3D;
 class GeometryScene {
 public:
     struct Stats { uint32_t instances=0, groups=0, proxies=0, submitted=0, surfaceProxiesSubmitted=0;
-        uint32_t strataSources=0, strataPrimitives=0, strataSkipped=0, strataFailures=0;
+        uint32_t strataSources=0, strataPrimitives=0, strataSkippedSources=0,
+                 strataSkippedPrimitives=0, strataFailures=0;
         uint64_t strataNodes=0, strataMeshlets=0, strataIndexBytes=0;
     };
     void load(gfx::Device& dev, const Json& json, const FileReader& reader);
