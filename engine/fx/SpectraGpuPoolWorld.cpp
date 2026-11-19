@@ -46,7 +46,7 @@ void GpuPoolWorld::shutdown() {
     gpuGroups_.clear();
     bindings_.clear();
     sources_.clear();freeSourceSlots_.clear();
-    sourceWorldEpoch_=0;nextBindingRevision_=1;
+    sourceWorldEpoch_=0;nextBindingRevision_=1;nextSourceToken_=1;
     checkpointBudget_.reset();
     cpu_.shutdown();
     device_=nullptr;
@@ -230,6 +230,9 @@ PoolSourceId GpuPoolWorld::createSource(const std::string& effectName) {
         reason_="SpectraFX createSource: unknown effect or pool not initialized";
         return {};
     }
+    if(nextSourceToken_==0) {
+        reason_="SpectraFX source token counter exhausted";return {};
+    }
     uint32_t slot=0;
     while(!freeSourceSlots_.empty()) {
         slot=freeSourceSlots_.back();freeSourceSlots_.pop_back();
@@ -239,11 +242,16 @@ PoolSourceId GpuPoolWorld::createSource(const std::string& effectName) {
             continue;
         }
         Source& source=sources_[slot];
-        ++source.generation;
-        source.active=true;source.paused=false;
+        const uint32_t generation=source.generation+1;
+        source=Source{};
+        source.generation=generation;
+        source.active=true;
         source.effectName=effectName;
         source.bindingRevision=binding->second.revision;
         source.values=binding->second.defaults;
+        source.token=nextSourceToken_++;
+        source.gpu=binding->second.gpu;
+        source.gpuIndex=binding->second.gpuIndex;
         ++stats_.activeSources;
         reason_.clear();
         return {sourceWorldEpoch_,slot,source.generation};
@@ -260,6 +268,9 @@ PoolSourceId GpuPoolWorld::createSource(const std::string& effectName) {
     source.effectName=effectName;
     source.bindingRevision=binding->second.revision;
     source.values=binding->second.defaults;
+    source.token=nextSourceToken_++;
+    source.gpu=binding->second.gpu;
+    source.gpuIndex=binding->second.gpuIndex;
     ++stats_.activeSources;
     reason_.clear();
     return {sourceWorldEpoch_,slot,source.generation};
@@ -274,7 +285,9 @@ bool GpuPoolWorld::sourceActive(PoolSourceId id) const {
 bool GpuPoolWorld::pauseSource(PoolSourceId id) {
     Source* source=getSource(id);
     if(!source)return false;
-    source->paused=true;return true;
+    source->paused=true;source->accumulatedRate=0;
+    source->accumulatedDistance=0;source->lastStepPosition=source->position;
+    return true;
 }
 bool GpuPoolWorld::resumeSource(PoolSourceId id) {
     Source* source=getSource(id);
@@ -289,9 +302,66 @@ bool GpuPoolWorld::retireSource(PoolSourceId id) {
     if(!source)return false;
     source->active=false;source->paused=false;
     source->effectName.clear();source->bindingRevision=0;
-    source->values={};
+    source->values={};source->token=0;source->cpuHandles.clear();
+    source->continuous={};source->transformAttached=false;
     if(!source->exhausted)freeSourceSlots_.push_back(id.slot);
     if(stats_.activeSources>0)--stats_.activeSources;
+    return true;
+}
+bool GpuPoolWorld::killSourceParticles(PoolSourceId id) {
+    Source* source=getSource(id);
+    if(!source)return false;
+    if(source->gpu) {
+        if(source->gpuIndex>=gpuGroups_.size() ||
+           !gpuGroups_[source->gpuIndex].particles->killSourceParticles(source->token)) {
+            reason_="SpectraFX selective GPU kill must be before the scene render pass";
+            return false;
+        }
+    } else {
+        for(const fx::FxHandle h:source->cpuHandles)cpu_.kill(h);
+        source->cpuHandles.clear();
+    }
+    ++stats_.selectiveKillRequests;
+    reason_.clear();
+    return true;
+}
+bool GpuPoolWorld::stopSource(PoolSourceId id,bool killLiving) {
+    Source* source=getSource(id);
+    if(!source)return false;
+    if(killLiving && !killSourceParticles(id))return false;
+    source->paused=true;
+    source->accumulatedRate=0;source->accumulatedDistance=0;
+    source->lastStepPosition=source->position;
+    return true;
+}
+bool GpuPoolWorld::setSourceTransform(PoolSourceId id,fx::float3 position,
+                                      fx::float3 direction,fx::float4 tint) {
+    Source* source=getSource(id);
+    if(!source || !valid(position) || !valid(direction) || !valid(tint))return false;
+    if(!source->transformAttached)source->lastStepPosition=position;
+    source->position=position;source->direction=direction;source->tint=tint;
+    source->transformAttached=true;
+    return true;
+}
+bool GpuPoolWorld::detachSourceTransform(PoolSourceId id) {
+    Source* source=getSource(id);
+    if(!source)return false;
+    source->transformAttached=false;
+    source->accumulatedRate=source->accumulatedDistance=0;
+    return true;
+}
+bool GpuPoolWorld::configureContinuous(PoolSourceId id,
+                                       PoolContinuousEmission emission) {
+    Source* source=getSource(id);
+    if(!source || !valid(emission.burstsPerSecond) ||
+       !valid(emission.metresPerBurst) || !valid(emission.lifetimeSeconds) ||
+       emission.burstsPerSecond<0 || emission.burstsPerSecond>120 ||
+       emission.metresPerBurst<0 || emission.metresPerBurst>1.0e5f ||
+       emission.lifetimeSeconds<0 || emission.lifetimeSeconds>86400 ||
+       emission.maxBurstsPerFrame<1 || emission.maxBurstsPerFrame>64)return false;
+    source->continuous=emission;
+    source->accumulatedRate=source->accumulatedDistance=source->elapsed=0;
+    source->lastStepPosition=source->position;
     return true;
 }
 bool GpuPoolWorld::setSourceNamedParameter(
@@ -313,16 +383,29 @@ bool GpuPoolWorld::emitSource(PoolSourceId id,fx::float3 position,
         reason_="SpectraFX emission rejected: retired, paused or stale source";
         return false;
     }
-    const Source& source=sources_[id.slot];
-    // Copy values so parameter mutation cannot affect this burst while it
-    // is registered into the GPU's per-physical-slot spawn snapshots.
+    Source& source=sources_[id.slot];
+    // The source can be reallocated only by explicit retire; no reference is
+    // invalidated by burstImpl, which does not mutate the sources vector.
     const auto values=source.values;
-    return burst(source.effectName,position,direction,tint,&values);
+    fx::FxHandle cpuHandle{};
+    const bool emitted=burstImpl(source.effectName,position,direction,tint,
+                                  &values,source.token,&cpuHandle);
+    if(emitted && !source.gpu && cpuHandle.valid()) {
+        if(source.cpuHandles.size()==65536)source.cpuHandles.erase(source.cpuHandles.begin());
+        source.cpuHandles.push_back(cpuHandle);
+    }
+    return emitted;
 }
 
 bool GpuPoolWorld::burst(const std::string& effectName,fx::float3 position,
                          fx::float3 direction,fx::float4 tint,
                          const std::array<float,8>* sourceParams) {
+    return burstImpl(effectName,position,direction,tint,sourceParams,0,nullptr);
+}
+bool GpuPoolWorld::burstImpl(const std::string& effectName,fx::float3 position,
+                            fx::float3 direction,fx::float4 tint,
+                            const std::array<float,8>* sourceParams,
+                            uint64_t sourceToken,fx::FxHandle* cpuHandle) {
     const auto it=bindings_.find(effectName);
     if(!initialized_||!frameOpen_||stepped_||it==bindings_.end()||
        stats_.frameBursts>=budgets_.maxBurstsPerFrame||
@@ -359,12 +442,13 @@ bool GpuPoolWorld::burst(const std::string& effectName,fx::float3 position,
                     break;
                 }
         }
-        if(ok)ok=particles.burstAt(position,direction,tint);
+        if(ok)ok=particles.burstAt(position,direction,tint,sourceToken);
         if(!ok && reason_.empty())reason_=particles.reason();
     } else {
         const fx::FxHandle handle=cpu_.playWithProgramParameters(
             binding.cpuId,position,direction,1.f,tint,params);
         ok=handle.valid();
+        if(ok && cpuHandle)*cpuHandle=handle;
         if(!ok)reason_="shared CPU pooled one-shot was rejected";
     }
     if(ok) {
