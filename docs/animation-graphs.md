@@ -724,3 +724,28 @@ job may also require another authoring attempt. Do not infer
 successful GPU compilation until the real backend returns Ready.
 The branch now includes NEREID main changes, but native and
 GPU cross-system parity has not been tested.
+
+## Stage 116 — HDR pipeline warmup without reimporting animation sources
+
+The single `Renderer3D` shader cache now tracks asynchronous
+`warmPipelineColor` requests in addition to ShaderJob and
+PipelineJob callbacks. A variant that has not completed is recorded
+as `pendingColorWarms_`. Later presentation-owner frames poll the
+existing native handle; `hasPendingModelPipelineJobs()` remains
+true while any shader, pipeline or HDR colour variant is pending.
+This lets the editor keep an authored appearance transaction
+unpublished and retain last-good MotionWeave player clocks without
+reimporting Models solely to retry the identical GPU program.
+
+Quality or instance-limit changes clear the outdated variant
+polling list and retire old pipeline/shader handles behind actual
+GPU fences. Native GPU API colour-warm readiness is currently
+boolean, not a precise Failed/Pending status; persistent false
+readiness is visible through `gpuWarmStats()` and requires backend
+diagnostics for definitive failure classification.
+
+NEREID water reflection rendering retains its own scene policy
+while sharing the same generic GPU target retirement pool. This
+stage changes no animation clock, ECS writer or gameplay state.
+Source changes are committed to the feature branch but were not
+compiled or GPU-tested.
