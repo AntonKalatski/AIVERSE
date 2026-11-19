@@ -2616,3 +2616,27 @@ on cache invalidation and preventing repeated polling of a failed variant.
 Neither the MotionWeave presentation clock nor the NEREID/Prisma owners
 are modified. This code is **NOT COMPILED OR TESTED**; PR #22 stays Draft.
 Full details: [Stage 117 handoff](agent-handoffs/animation-stage117-hdr-warm-status-2026-11-19.md).
+
+## Stage 118 — partial GPU initialization rollback
+
+Renderer3D initialization is now transactional: a failed native shader,
+pipeline, vertex/index buffer, model fallback texture, shadow target,
+LightSystem or trace resource triggers safe partial teardown after a
+successful Device::waitForResourceIdle() barrier. The renderer rejects
+reinit over a live owner and refuses to discard outstanding retirement
+queues. Main, blend, shadow, line/triangle pipelines and buffers and
+fallback textures are checked before publication. A failed idle barrier
+throws rather than deleting in-flight GPU resources.
+
+LightSystem validates every necessary map, spot, halo, decal and beam
+GPU handle, rolls back unsuccessful initialization (including standalone
+hosts), and guards invalid handles during shutdown. Standalone target
+release without a borrowed retirement owner now requires proven idle;
+otherwise it intentionally retains an orphan and exposes counters.
+Trace initialization stops at the first failed allocation; renderer
+rollback cleans resources already created. These changes preserve the
+single View/MotionWeave presentation owner and do not change NEREID
+reflection policy or Prisma's independently owned PostFx targets.
+
+**NOT RUN:** compile, link, CTest, GPU/sanitizer or visual parity.
+See [Stage 118 handoff](agent-handoffs/animation-stage118-gpu-init-rollback-2026-11-19.md).
