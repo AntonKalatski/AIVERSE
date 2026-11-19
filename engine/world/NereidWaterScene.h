@@ -467,7 +467,7 @@ public:
                 float(basis.originX-worldOriginX),
                 float(basis.originY-worldOriginY),
                 float(basis.originZ-worldOriginZ)});
-            std::array<render::float4,4> waves{};
+            std::array<render::float4,16> waves{};
             if(ripples) {
                 const double targetX=basis.originX;
                 const double targetZ=basis.originZ;
