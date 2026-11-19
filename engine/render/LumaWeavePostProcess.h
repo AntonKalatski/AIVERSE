@@ -351,6 +351,7 @@ public:
         // Reset token so even an automatic caller begins a distinct frame.
         sceneToken_=0;
         material_={};receiverDepth_={};materialToken_=0;
+        surface_={};surfaceReceiverDepth_={};surfaceToken_=0;
     }
 
 private:
