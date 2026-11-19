@@ -175,6 +175,8 @@ public:
         size_t uniqueSharedTextures=0,compressedSharedTextures=0;
         size_t sharedGeometryModels=0;
         uint64_t retirementTokenFailures=0,retirementFallbackFailures=0;
+        uint64_t retirementFailedFenceBatches=0;
+        size_t unresolvedFailedFences=0;
         bool publicationBackpressured=false;
     };
     // Excludes the terrain, special renderers, FX, dedicated buffers and
@@ -203,6 +205,8 @@ public:
         stats.sharedGeometryModels=owner.sharedGeometryResidentModels;
         stats.retirementTokenFailures=retired.tokenFailures;
         stats.retirementFallbackFailures=retired.idleFallbackFailures;
+        stats.retirementFailedFenceBatches=retired.failedFenceBatches;
+        stats.unresolvedFailedFences=retired.unresolvedFailedFences;
         stats.publicationBackpressured=resources_.publicationBackpressured();
         return stats;
     }
