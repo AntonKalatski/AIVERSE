@@ -24,7 +24,6 @@ struct EarthworksNavConfig {
     int32_t maxStepCm=35;   // 0..1000cm
     uint32_t maxSlopePermille=550; // rise/run <= 8000
     int32_t tileColumns=32;
-    bool allowWater=false;  // game may override via blocked callback
 };
 
 inline void validateEarthworksNavConfig(const EarthworksNavConfig& c) {
