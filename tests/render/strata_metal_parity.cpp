@@ -10,6 +10,7 @@
 #include <cstdlib>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace aiverse;
@@ -25,6 +26,7 @@ struct Fixture {
     GpuClusterCulling culling;
     uint32_t frameCount = 0;
     int requested = 0, received = 0;
+    uint32_t pooledIndexBase = 0;
     bool failed = false, submitted = false;
     std::string failure;
 
@@ -86,6 +88,13 @@ struct Fixture {
             fail("version-2 shared-pool metadata staging failed");
             return false;
         }
+        GpuMetadataScene::IndexBinding binding;
+        if (!gpu.indexBinding("fixture", model, binding) ||
+            !binding.valid()) {
+            fail("no pooled auxiliary Strata index binding");
+            return false;
+        }
+        pooledIndexBase = binding.firstIndex;
         return true;
     }
 
@@ -123,9 +132,7 @@ struct Fixture {
                 }
                 std::string reason;
                 if (!compareGpuSelection(source, instances, pass,
-                        gpu.indexBinding("fixture", model, bindingScratch_)
-                          ? bindingScratch_.firstIndex : 0,
-                        readback, &reason)) {
+                        pooledIndexBase, readback, &reason)) {
                     fail(name + ": GPU/CPU mismatch: " + reason);
                     return;
                 }
@@ -135,8 +142,6 @@ struct Fixture {
             });
         if (!accepted) fail(std::string(name) + ": async readback scheduling failed");
     }
-
-    GpuMetadataScene::IndexBinding bindingScratch_{};
 
     void frame(gfx::Device& dev) {
         ++frameCount;
