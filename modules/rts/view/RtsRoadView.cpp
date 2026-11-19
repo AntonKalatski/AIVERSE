@@ -2080,7 +2080,9 @@ void RtsRoadView::shutdown(gfx::Device& dev) {
     if(!retirement_.completeForShutdown(dev)) {
         warnings_.push_back(
             "road View shutdown: GPU idle unproven, resources held fail-closed");
-        return;
+        // Do not let RtsView::shutdown() continue and tear down other GPU
+        // owners after this host failed to establish a completion barrier.
+        throw std::runtime_error("road View GPU retirement barrier failed");
     }
     for (auto& img : images_) if (img.tex.valid()) {
         dev.destroyTexture(img.tex); img.tex = {};
