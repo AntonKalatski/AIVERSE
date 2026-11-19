@@ -1,5 +1,6 @@
 #include "engine/render/TerraWeaveHorizonModel.h"
 #include "engine/render/TerraWeaveHorizonScene.h"
+#include "engine/world/TerraWeaveWorldHeightSource.h"
 #include <algorithm>
 #include <cassert>
 #include <cstdint>
@@ -166,6 +167,68 @@ int main() {
     catch(const std::out_of_range&){rejected=true;}
     assert(rejected);
 
+    // Stage 22 regression: signed authored Q16 sampling and normals spanning
+    // two resident tiles must agree with the same two-triangle collision
+    // surface. Heights increase by 100 cm per 1000 cm along world X.
+    constexpr int64_t q16=65536;
+    AuthoredWorldHeightSnapshot neighborHeights(10); // 1000 cm per tile
+    neighborHeights.setTile({0,0,0},AuthoredHeightTileCm{
+        2,{0,100,0,100}});
+    neighborHeights.setTile({1,0,0},AuthoredHeightTileCm{
+        2,{100,200,100,200}});
+    const auto continuous=neighborHeights.continuousSlopeQ16(
+        1000*q16,500*q16);
+    assert(continuous.has_value());
+    assert(continuous->first==-100 && continuous->second==0);
+    assert(neighborHeights.sampleQ16(1000*q16,500*q16)==100);
+    assert(!neighborHeights.continuousSlopeQ16(1000*q16,500*q16,0));
+    assert(!neighborHeights.continuousSlopeQ16(1000*q16,500*q16,4097));
+    assert(!neighborHeights.continuousSlopeQ16(1000*q16,500*q16,200,101));
+
+    AuthoredWorldHeightSnapshot missingNeighbor(10);
+    missingNeighbor.setTile({0,0,0},AuthoredHeightTileCm{
+        2,{0,100,0,100}});
+    assert(!missingNeighbor.continuousSlopeQ16(999*q16,500*q16));
+
+    AuthoredWorldHeightSnapshot cliff(10);
+    cliff.setTile({0,0,0},AuthoredHeightTileCm{
+        2,{0,100,0,100}});
+    cliff.setTile({1,0,0},AuthoredHeightTileCm{
+        2,{500,600,500,600}});
+    assert(!cliff.continuousSlopeQ16(1000*q16,500*q16));
+
+    // A negative tile boundary is not special: floor-div and Q16
+    // interpolation must preserve the signed world coordinate convention.
+    AuthoredWorldHeightSnapshot negativeNeighbor(10);
+    negativeNeighbor.setTile({-1,0,0},AuthoredHeightTileCm{
+        2,{-100,0,-100,0}});
+    negativeNeighbor.setTile({0,0,0},AuthoredHeightTileCm{
+        2,{0,100,0,100}});
+    const auto negativeSlope=negativeNeighbor.continuousSlopeQ16(
+        0,500*q16);
+    assert(negativeSlope.has_value());
+    assert(negativeSlope->first==-100 && negativeSlope->second==0);
+    assert(negativeNeighbor.sampleQ16(-500*q16,500*q16)==-50);
+    assert(negativeNeighbor.sampleQ16(-500*q16,500*q16)==
+           negativeNeighbor.sample(-500,500));
+
+    // TWH8 intentionally stores the normal values but not whether they
+    // came from the neighbor stencil or tile-local fallback. Archive hits
+    // must report unknown provenance rather than an observed zero.
+    auto provenanceBake=bake;
+    provenanceBake.nearNormalProvenanceAvailable=true;
+    provenanceBake.continuousNearNormalSamples=3;
+    provenanceBake.localFallbackNearNormalSamples=2;
+    const uint64_t fingerprint=horizonArchiveFingerprint(
+        terrain,climate,settings);
+    const auto archiveBytes=encodeHorizonArchive(
+        provenanceBake,fingerprint);
+    const auto archiveRestored=decodeHorizonArchive(
+        archiveBytes,fingerprint);
+    assert(!archiveRestored.nearNormalProvenanceAvailable);
+    assert(archiveRestored.continuousNearNormalSamples==0);
+    assert(archiveRestored.localFallbackNearNormalSamples==0);
+
     // Constructor should prepare a *bounded* async scheduler without requiring
     // an initialized graphics device. Actual GPU upload has a separate test.
     TerraWeaveHorizonScene scene(terrain,climate,settings);
@@ -177,4 +240,11 @@ int main() {
     assert(uninitialized.triangles==0);
     assert(uninitialized.cpuPrepareMs==0.0);
     assert(uninitialized.gpuUploadMs==0.0);
+    assert(!uninitialized.requestedRegionPresent);
+    assert(!uninitialized.requestedRegionPending);
+    assert(!uninitialized.activeRegionPresent);
+    assert(!uninitialized.activeRegionResolved);
+    assert(!uninitialized.activeRegionEmpty);
+    assert(!uninitialized.staleProxy);
+    assert(!uninitialized.nearNormalProvenanceAvailable);
 }
