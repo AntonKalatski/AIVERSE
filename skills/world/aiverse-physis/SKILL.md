@@ -410,3 +410,16 @@ separate process test coverage. An isolated Linux GCC 14.2 C++20
 header smoke passed; full native AIVERSE CTest, macOS/Windows editor and
 real external authenticated transport have **NOT** run. See
 `docs/agent-handoffs/physis-stage40-cross-process-journal-2026-11-19.md`.
+
+### Stage 41 — native validation handoff and CI discipline
+
+Before marking PHYSIS ready, run the existing `physis.yml` job on both
+Ubuntu and macOS. For each failure, inspect the uploaded
+`physis-build.log` and `Testing/Temporary/LastTest.log`. The workflow
+now cancels superseded runs for a single ref and preserves failures with
+Bash `pipefail`. Source changes and queued jobs are **not** test passes.
+
+When authoring crash/restart fixtures, keep a journal's `.lock` inode
+alive until the final `LoopbackAdminEndpoint` destructor runs. Never
+remove a temporary journal directory while a service is open. See
+`docs/agent-handoffs/physis-stage41-ci-validation-2026-11-19.md`.
