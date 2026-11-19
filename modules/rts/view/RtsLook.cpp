@@ -584,6 +584,103 @@ size_t RtsView::reloadModelSources(const std::vector<std::string>& sources) {
     return invalidated;
 }
 
+// Rebuild authored appearances for external graph/material-library changes.
+// Keep GPU Model resources resident and stage all replacement looks BEFORE
+// unlinking any old animation state, so malformed edits preserve last-good.
+bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
+                                    bool reloadMaterialLibrary,
+                                    size_t* refreshed) {
+    if(refreshed)*refreshed=0;
+    if(!dev_ || !rules_)return false;
+#ifndef __EMSCRIPTEN__
+    resources_.preparation().reset(); // no worker may publish during staging
+#endif
+    Json previousLibrary=materialLib_;
+    if(reloadMaterialLibrary) {
+        try {
+            std::string text;
+            Json next=Json::object();
+            if(read_ && read_("materials.json",text)) {
+                next=Json::parse(text)["materials"];
+                if(!next.isObject())
+                    throw std::runtime_error("materials.json must have a materials object");
+            }
+            materialLib_=std::move(next);
+        } catch(const std::exception& e) {
+            warnings_.push_back(std::string("material reload: ")+e.what());
+            return false;
+        }
+    }
+
+    std::map<size_t,TypeLook> staged;
+    try {
+        for(const size_t index:types) {
+            if(index>=loadedTypes_.size() || !loadedTypes_[index])continue;
+            const auto& authored=rules_->types[index];
+            TypeLook candidate;
+            const std::string path=requestedModels_[index].empty()
+                ?authored.view["streaming"].getStr("detailModel")
+                :requestedModels_[index];
+            if(path.empty())
+                buildLook(*dev_,authored,candidate);
+            else {
+                auto selected=authored;
+                selected.view.set("model",Json::string(path));
+                buildLook(*dev_,selected,candidate);
+            }
+            // If a previously working graph fails compilation, leave every
+            // old TypeLook and its running players intact. This applies to
+            // original choices, LODs and stage-specific appearances.
+            const auto invalidGraph=[](const ModelChoice& oldChoice,
+                                       const ModelChoice& nextChoice) {
+                return bool(oldChoice.graph) && !nextChoice.graph;
+            };
+            const auto& previous=looks_[index];
+            bool invalid=false;
+            for(size_t i=0;i<previous.models.size() && i<candidate.models.size();++i)
+                invalid|=invalidGraph(previous.models[i],candidate.models[i]);
+            for(size_t i=0;i<previous.lods.size() && i<candidate.lods.size();++i)
+                invalid|=invalidGraph(previous.lods[i],candidate.lods[i]);
+            for(size_t i=0;i<previous.stages.size() && i<candidate.stages.size();++i)
+                invalid|=invalidGraph(previous.stages[i].choice,candidate.stages[i].choice);
+            if(candidate.models.size()<previous.models.size() ||
+               candidate.lods.size()<previous.lods.size() ||
+               candidate.stages.size()<previous.stages.size() || invalid)
+                throw std::runtime_error(
+                    "appearance reload declined: a model/graph was lost");
+            staged.emplace(index,std::move(candidate));
+        }
+    } catch(const std::exception& e) {
+        materialLib_=std::move(previousLibrary);
+        warnings_.push_back(std::string("appearance reload: ")+e.what());
+        return false;
+    }
+    if(staged.empty())return true;
+    std::set<size_t> affected;
+    for(const auto& [index,look]:staged){(void)look;affected.insert(index);}
+    std::vector<uint64_t> graphSources;
+    for(const auto& [entity,state]:anims_) {
+        (void)entity;
+        if(affected.contains(state.type) && state.genericViewId!=0)
+            graphSources.push_back(state.genericViewId);
+    }
+    if(genericView_ && !graphSources.empty())
+        genericView_->forgetSources(graphSources);
+    for(auto it=anims_.begin();it!=anims_.end();) {
+        if(affected.contains(it->second.type))it=anims_.erase(it);
+        else ++it;
+    }
+    for(auto it=streamingChoices_.begin();it!=streamingChoices_.end();) {
+        if(affected.contains(it->second.first))it=streamingChoices_.erase(it);
+        else ++it;
+    }
+    if(affected.contains(ghostAnim_.type))ghostAnim_=EntityAnim{};
+    for(auto& [index,look]:staged)
+        looks_[index]=std::move(look);
+    if(refreshed)*refreshed=staged.size();
+    return true;
+}
+
 void RtsView::requestDetail(uint16_t type, bool detailed) {
     if(!rules_ || type>=requestedModels_.size())return;
     const auto& t=rules_->types[type];const auto coarse=t.view["streaming"].getStr("coarseModel");
