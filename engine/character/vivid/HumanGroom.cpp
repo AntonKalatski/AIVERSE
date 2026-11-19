@@ -15,7 +15,6 @@ namespace aiverse::vivid {
 namespace {
 using namespace render;
 constexpr float kGolden=2.39996322972865332f;
-float clampFloat(float x,float a,float b){return std::clamp(x,a,b);}
 float3 cardSide(float3 tangent) {
     auto axis=std::fabs(tangent.z)<0.92f?float3{0,0,1}:float3{1,0,0};
     return normalize(cross(tangent,axis));
