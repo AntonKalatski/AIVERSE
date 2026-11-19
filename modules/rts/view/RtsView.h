@@ -25,6 +25,7 @@ namespace kingston { struct CabinResidentDraw; }
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #ifndef __EMSCRIPTEN__
 #include <future>
@@ -592,6 +593,11 @@ private:
         int choice = 0;
         render::Animator anim;
         render::AnimationGraphInstance graph;
+        // One-shot named clock snapshot from model/source reload. Restore
+        // only AFTER resolving a possible per-entity programmable override,
+        // never prematurely against the TypeLook's default graph.
+        std::optional<render::AnimationGraphInstance::PlaybackSnapshot>
+            pendingReloadPlayback;
         bool genericViewPose=false,wasGenericViewPose=false;
         uint64_t genericViewId=0;
         render::Pose pose;
