@@ -108,8 +108,17 @@ public:
         uint64_t graphPendingKnownBytes = 0; // belongs to retirement, NOT live bytes
     };
     MemoryStats memoryStats() const;
+    // Optional directly-owned Renderer3D lower-bound estimate supplied by
+    // this Prisma instance's host BEFORE renderSizeForOutput. Caller must
+    // exclude Prisma-owned textures/targets and not duplicate pending motion
+    // with live motion. This does not imply complete hardware VRAM.
+    void setExternalRendererGpuMemory(uint64_t liveKnownBytes,
+                                      uint64_t pendingKnownBytes) {
+        externalRendererLiveKnownBytes_ = liveKnownBytes;
+        externalRendererPendingKnownBytes_ = pendingKnownBytes;
+    }
 
-    // An actual completed GL33 GPU-query interval for one view, NOT a whole
+    // An actual completed GPU-query interval for one view, NOT a whole
     // frame metric. The host owns polling, never block for a query result.
     // Unsupported backends leave this map empty. No FPS/RTS dependency.
     struct ViewGpuTiming {
@@ -287,6 +296,8 @@ private:
         double gpuMs = 0;
     };
     std::map<uint64_t, AdaptivePressure> adaptivePressure_;
+    uint64_t externalRendererLiveKnownBytes_ = 0;
+    uint64_t externalRendererPendingKnownBytes_ = 0;
     // Last successful postprocess scene pass per stable view ID. A size cache
     // can be shared by several views; retireView() removes a view reference.
     std::map<uint64_t, std::pair<int, int>> viewDimensions_;
