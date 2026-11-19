@@ -99,9 +99,11 @@ public:
         frameOpen_=false;
     }
 
-    // On a network rollback/replay: first finish the current render frame,
-    // then reset visual state outside encoders, before replaying the new tick.
-    // Host owns restoring the authoritative World snapshot.
+    // On rollback: finish any previous presentation frame. The host must
+    // then begin a NEW Device graphics frame and call this outside encoders,
+    // BEFORE beginPresentationFrame / scene rendering. GPU checked reset
+    // requires an active RHI command buffer. On false, do not replay visuals.
+    // Host separately owns restoring the authoritative World snapshot.
     bool afterRollback() {
         if(frameOpen_)return false;
         return bridge_.resetForRollback();
@@ -135,8 +137,10 @@ private:
 //   // Later, to demonstrate generation safety:
 //   world.destroy(flame);
 //   auto replacement=spawnDemoSource(world,"demo_flame",newPosition);
-//   // After a gameplay rollback at a safe graphics boundary:
+//   // After a gameplay rollback, at a safe graphics-frame boundary:
+//   Device.beginFrame(); // requires a real active graphics command buffer
 //   if(fx.afterRollback()) { world.copyFrom(savedAuthoritativeSnapshot); }
+//   Device.endFrame();
 //   // Never restart presentation replay unless visual reset succeeded.
 
 } // namespace aiverse::examples::spectrafx
