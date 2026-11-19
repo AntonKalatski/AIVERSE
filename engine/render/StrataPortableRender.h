@@ -56,6 +56,9 @@ public:
                const ModelAsset& asset, std::string* error = nullptr,
                size_t indexBudgetBytes = 0);
     bool streamingEnabled() const { return bool(streaming_); }
+    const IndexResidencyStats* residencyStats() const {
+        return streaming_ ? &streaming_->stats() : nullptr;
+    }
     // Called BEFORE any Renderer3D::drawModel in the new submission epoch,
     // once per source after merging demands from all its instances/passes.
     bool updateResidency(const std::vector<IndexDemand>& demands,
