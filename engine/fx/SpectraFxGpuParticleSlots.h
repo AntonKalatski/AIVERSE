@@ -80,6 +80,12 @@ public:
                slots_[handle.index].active &&
                slots_[handle.index].generation==handle.generation;
     }
+    // Snapshot the generation when requesting GPU async feedback. A recycled
+    // slot is rejected by alive(handle) before delivery to presentation.
+    SpectraFxGpuParticleHandle handleAt(uint32_t index) const {
+        if(index>=slots_.size() || !slots_[index].active) return {};
+        return {index,slots_[index].generation};
+    }
     uint32_t activeCount() const {return active_;}
     uint32_t capacity() const {return uint32_t(slots_.size());}
     const Stats& stats() const {return stats_;}
