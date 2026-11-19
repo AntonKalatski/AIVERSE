@@ -512,6 +512,31 @@ void Prisma::applyCameraVolumes(const PrismaVolumeStack& stack, float3 eye, uint
 
 void Prisma::clearCameraVolumes() { settings_ = baseSettings_; }
 
+std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
+    // Pure host-side size choice; no implicit scaling of current projects.
+    width=std::max(1,width);
+    height=std::max(1,height);
+    if (width<64 || height<64 || !dev_ || !enabled_ || !settings_.enabled ||
+        quality_ != PrismaQuality::High || !hdrRequested())
+        return {width,height};
+    const auto* effect=settings_.find(PrismaType::TemporalResolve);
+    const char* temporal=std::getenv("AIVERSE_PRISMA_TEMPORAL");
+    const char* upscale=std::getenv("AIVERSE_PRISMA_UPSCALE");
+    const char* jitter=std::getenv("AIVERSE_PRISMA_JITTER");
+    if (!effect || !effect->enabled || int(quality_)<int(effect->minQuality) ||
+        !temporal || std::strcmp(temporal,"1")!=0 ||
+        !upscale || std::strcmp(upscale,"1")!=0 ||
+        !jitter || std::strcmp(jitter,"1")!=0 ||
+        effect->get("historyWeight")<=0 || effect->get("jitterPixels")<=0)
+        return {width,height};
+    const float scale=std::clamp(effect->get("renderScale"),0.5f,1.0f);
+    if (scale>=0.999f || !program(kTemporalResolve).valid())
+        return {width,height};
+    const int renderW=std::clamp(int(std::lround(double(width)*scale)),32,width);
+    const int renderH=std::clamp(int(std::lround(double(height)*scale)),32,height);
+    return {renderW,renderH};
+}
+
 // Stage 43: projection-only Halton jitter. Keep the caller's unjittered camera
 // for selection, UI and gameplay. History tracks per-view jitter in stable
 // unflipped UV coordinates; this helper performs no GPU work.
