@@ -5,6 +5,7 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include <initializer_list>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -98,16 +99,23 @@ inline LegacyRebaseResult rebaseLegacyHeightfield(
             const size_t ix=x/size_t(detailScale);
             const size_t ix1=ix<size_t(widthCells)?ix+1u:ix;
             const int64_t dx=int64_t(x%size_t(detailScale));
-            const int64_t a=displacement[iz*width+ix];
-            const int64_t b=displacement[iz*width+ix1];
-            const int64_t c=displacement[iz1*width+ix];
-            const int64_t d=displacement[iz1*width+ix1];
-            const int64_t numerator=
-                a*(k-dx)*(k-dz)+b*dx*(k-dz)+
-                c*(k-dx)*dz+d*dx*dz;
-            // C++ integer division truncates toward zero; round ties away.
-            const int64_t delta=(numerator>=0 ?
-                numerator+denominator/2 : numerator-denominator/2)/denominator;
+            // Round each base independently before subtracting. This makes
+            // authored fine-detail residuals EXACTLY invariant over repeated
+            // A->B->C generator edits (round(B)-round(A) telescopes), unlike
+            // rounding the interpolated difference on each regeneration.
+            const auto interpolate=[&](const std::vector<int16_t>& base) {
+                const int64_t a=base[iz*width+ix];
+                const int64_t b=base[iz*width+ix1];
+                const int64_t c=base[iz1*width+ix];
+                const int64_t d=base[iz1*width+ix1];
+                const int64_t numerator=
+                    a*(k-dx)*(k-dz)+b*dx*(k-dz)+
+                    c*(k-dx)*dz+d*dx*dz;
+                // C++ division truncates toward zero; round ties away.
+                return (numerator>=0 ?
+                    numerator+denominator/2 : numerator-denominator/2)/denominator;
+            };
+            const int64_t delta=interpolate(newBase)-interpolate(oldBase);
             output.shiftedDetail+=delta!=0;
             const size_t pos=z*fineWidth+x;
             const int64_t value=int64_t(compositeDetail[pos])+delta;
