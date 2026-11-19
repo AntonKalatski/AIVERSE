@@ -224,17 +224,30 @@ Prisma::RetirementStats Prisma::retirementStats() const {
             }
         }
         if (item.resources.graphExecutor) {
-            const auto& exec = *item.resources.graphExecutor;
-            stats.graphRetiredTextures += exec.retiredCount();
-            for (const auto& entry : exec.pool().entries()) {
-                ++stats.graphRetiredTextures;
-                stats.knownPendingBytes += bytesOf(entry.handle);
-            }
+            const auto gpu = item.resources.graphExecutor->gpuMemoryStats();
+            // A sized context is fully retired; even its formerly live graph
+            // resources must count toward pending memory until fence completes.
+            stats.graphRetiredTextures += gpu.liveTextures + gpu.pendingTextures;
+            stats.graphUnknownTextures += gpu.unknownFormatsOrDimensions;
+            stats.graphPendingKnownBytes += gpu.liveKnownBytes + gpu.pendingKnownBytes;
+            stats.knownPendingBytes += gpu.liveKnownBytes + gpu.pendingKnownBytes;
+            if (item.lastSubmittedFence)
+                stats.fencedTextures += gpu.liveTextures + gpu.pendingTextures;
+            else
+                stats.unfencedTextures += gpu.liveTextures + gpu.pendingTextures;
         }
     }
-    for (const auto& s : sizes_)
-        if (s.graphExecutor) stats.graphRetiredTextures += s.graphExecutor->retiredCount();
-    return stats; // lower bound excludes internal retired graph handles
+    for (const auto& s : sizes_) {
+        if (!s.graphExecutor) continue;
+        const auto gpu = s.graphExecutor->gpuMemoryStats();
+        stats.graphLiveTextures += gpu.liveTextures;
+        stats.graphRetiredTextures += gpu.pendingTextures;
+        stats.graphUnknownTextures += gpu.unknownFormatsOrDimensions;
+        stats.graphLiveKnownBytes += gpu.liveKnownBytes;
+        stats.graphPendingKnownBytes += gpu.pendingKnownBytes;
+        stats.knownPendingBytes += gpu.pendingKnownBytes;
+    }
+    return stats; // known bytes exclude actual driver allocation overhead
 }
 
 void Prisma::releaseRetiredSizesAfterGpuIdle() {
