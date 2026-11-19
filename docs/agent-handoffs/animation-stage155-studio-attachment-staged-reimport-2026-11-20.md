@@ -81,3 +81,9 @@ The JSON is *source-neutral layout authoring*, not gameplay save/load or seriali
 3. Add source-file refresh/reimport to ModelView (currently only layout Rebuild), plus safe rejection of stale source/visual caches.
 4. Continue universal complex skeleton/morph retarget authoring, any missing attachment/LOD parity and editor scene/prefab persistence. None of these belong in a genre-specific MotionWeave core.
 5. Only after genuine feature closure, coordinate a disposable integration worktree and run the user's one full native Mac test suite/Metal/Vulkan/GLES/ASan-TSan benchmarks; fix compiler/runtime issues before moving PR #22 from Draft. Maintain one stage-specific handoff and user-visible readiness table every stage. No auto-merge, rebase or force-push of concurrent branches.
+
+
+## Stage 155 follow-up — pre-draw owner-update dispatch
+
+- `6074a10c7c8f6d859db7568c01db0fb7f9b32303` — `apps/editor/windows/AttachmentAuthoringWindow.cpp`: UI `Reimport & Publish` now sets `pendingReimport_` only. The subsequent Studio `EditorWindow::update()` on the render owner thread performs full staged resource upload, socket compilation and explicit GPU idle proof **before drawing windows**. On project change, stale pending reload requests are dropped. This avoids invoking a potentially blocking GPU wait from the middle of the active ImGui attachment window draw.
+- Source inspection confirmed `Editor::frame` calls all window `update` hooks before `ui_.newFrame()` and any `window::draw` hooks. It does **not** independently prove whether the platform has already begun its graphics Device frame before calling `Editor::frame`; confirm GPU backend semantics during final native validation. No background work, native test or nonblocking completion claim is made.
