@@ -533,7 +533,10 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
         !jitter || std::strcmp(jitter,"1")!=0 ||
         effect->get("historyWeight")<=0 || effect->get("jitterPixels")<=0)
         return {width,height};
-    const float scale=std::clamp(effect->get("renderScale"),0.5f,1.0f);
+    // Quantize authored/volume-blended scale to avoid reallocating
+    // temporal targets at every subpixel camera motion across a volume.
+    const float authoredScale=std::clamp(effect->get("renderScale"),0.5f,1.0f);
+    const float scale=std::round(authoredScale*16.0f)/16.0f;
     if (scale>=0.999f || !program(kTemporalResolve).valid())
         return {width,height};
     const int renderW=std::clamp(int(std::lround(double(width)*scale)),32,width);
