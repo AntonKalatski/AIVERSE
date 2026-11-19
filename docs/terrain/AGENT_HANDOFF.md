@@ -3534,3 +3534,25 @@ router.unsubscribe(owner);          // before owner lifetime ends
 **Fix implemented:** store the member as `std::shared_ptr<const GenerationSnapshot> asyncSnapshot_` and access it **exclusively** via standard `std::atomic_store_explicit` (memory_order_release) and `std::atomic_load_explicit` (memory_order_acquire) free functions, including shutdown's typed empty pointer. The two release publications, one acquire worker read and shutdown release were all updated. No plain concurrent read/write is introduced. The snapshot is still immutable and ref-counted for worker lifetime. No API, generation revision, ECS/PHYSIS, render, archive or game behavior changes intended.
 
 **Verification:** exact source pattern counts checked prior to source replacement and GitHub commit returned successfully; recompile/test on user machine **NOT RUN by this agent**. Next local action: pull `feature/terraweave`, run `cmake --build build/terraweave-qa --parallel 4 --target aiverse_terraweave_forest_scene_test`, then `ctest --test-dir build/terraweave-qa --output-on-failure -R '^terraweave_forest_scene$'`. If further failures, capture full compile/CTest logs and report the first error; never mark test passing without actual output. Keep PR #24 Draft.
+
+## Mac Studio Horizon Clang QA fix — near seam lambda / portable atomic shared_ptr (2026-11-19)
+
+**User-provided actual failure log:** `cmake --build build/terraweave-qa --parallel 4 --target aiverse_terraweave_horizon_test` under Mac Studio Xcode/macOS26.2 SDK stopped while compiling `tests/terraweave_horizon_test.cpp`. `engine/render/TerraWeaveHorizonClip.h:218` declared `const discardIncompleteSamples=[&bake]() { ... }` with no `auto` (hard C++ error); same file around line 309 had `const auto slope=[scale]` where `scale` is a local `constexpr` and clang emitted `-Wunused-lambda-capture`. `engine/render/TerraWeaveHorizonScene.h:1118` declared `std::atomic<std::shared_ptr<const SourceGeneration>>`, which this Apple libc++ rejects because the atomic specialization is not available. CTest subsequently printed `Unable to find executable`; this was **Not Run** due to failed compilation, not a failing test assertion.
+
+**Fix source commits:**
+- `30679da09fe7311e254251e2a8ea8f265db96b0b` — `engine/render/TerraWeaveHorizonClip.h`: `const auto discardIncompleteSamples=[&bake]() { ... }` and remove the unnecessary `[scale]` capture from the non-capturing slope lambda (`scale` is a compile-time integral constant used directly).
+- `15c134077a8ae8f84b9e9f597e09d8ae5e721233` — `engine/render/TerraWeaveHorizonScene.h`: convert `sources_` to `std::shared_ptr<const SourceGeneration>` and use `std::atomic_load_explicit(&sources_,std::memory_order_acquire)` at BOTH worker reads, plus `std::atomic_store_explicit(&sources_,std::shared_ptr<const SourceGeneration>(generation),std::memory_order_release)` at publication. Retains immutable snapshot ownership, shared_ptr reference accounting and acquire/release synchronization. Explicit const conversion is necessary for free-function template deduction; no plain concurrent accesses remain.
+
+**Actually verified:** GitHub source read and source-write commits; read-back source confirms `const auto` lambda, no unnecessary capture, both atomic load sites and one atomic store; no remaining specialized atomic shared_ptr field in HorizonScene. **NOT RUN by agent:** Mac compilation after fix, CTest, GPU shader validation, engine integration, runtime visual tests. PR #24 remains Draft; do not assert those tests pass until tester provides output.
+
+**Next command on isolated user worktree (always fetch/pull the feature branch, no interaction with main repo's rebase):**
+
+```bash
+cd ~/Projects/AIVERSE-terraweave-qa
+git fetch origin feature/terraweave
+git pull --ff-only origin feature/terraweave
+cmake --build build/terraweave-qa --parallel 4 --target aiverse_terraweave_horizon_test
+ctest --test-dir build/terraweave-qa --output-on-failure -R '^terraweave_horizon$'
+```
+
+If compilation fails again, capture the **first primary compiler error**, not just the secondary CTest "Unable to find executable" output. Keep the QA worktree separate from any conflicted PHYSIS rebase.
