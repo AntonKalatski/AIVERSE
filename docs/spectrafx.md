@@ -2704,3 +2704,105 @@ CTest, editor launch, on-device Metal simulation, complete/fresh
 checkpoint export at various revisions, GPU reset/device loss
 fault injection, pressure/starvation validation or performance
 benchmarks. The implementation is not production-verified.
+
+## Stage 40 — frozen-revision GPU snapshots, checked input staging and VFX hysteresis
+
+### GPU Freeze retains the particle revision without freezing the camera
+
+Stage 39 async checkpoint captures were often obsolete by the time Metal
+delivered the readback callback because `ComputeParticles::step(0)`
+still dispatched the Update VM, even though the emitter was frozen.
+Stage 40 adds `gpu_pipeline::plan(...,bool integrate=true)`.
+When `dt==0` and there are **no pending births, source kills or
+live VM parameter edits**, a GPU step skips Update VM mode 1,
+but still executes camera-facing vertex gather/atomic compaction and
+indirect-argument publication. The particle state revision is not
+incremented during this graphics-only redraw. An existing complete
+checkpoint can therefore remain fresh across several frozen
+rendered frames, even while the editor camera moves.
+
+The new `GpuPoolWorld::requestGpuCheckpoint(groupIndex,callback)`
+forwards a bounded asynchronous capture to a valid GPU group. It
+never performs a blocking GPU read. The editor's **Freeze & capture
+GPU state** button sets Freeze, cancels queued visual-time steps,
+then requests the GPU capture at the next safe pre-render phase.
+It tracks `Queued / InFlight / Ready / Failed`; a pending or stale
+capture does **not** enable binary export. Only once a complete
+snapshot of the currently retained particle revision arrives can
+the editor save the checkpoint diagnostic. If an earlier scheduled
+capture is already in flight, the editor waits for it rather than
+enqueueing an overlapping GPU readback.
+
+### Checked Metal input staging with safe retry
+
+The Metal compute emitter now uses
+`gfx::Device::updateStorageBufferChecked()` for its per-frame
+VM diagnostic reset, per-slot VM parameters, spawn states,
+spawn-slot IDs, spawn VM parameters and CPU-authored live-slot
+gather map. A rejected checked upload or compute-encoder
+submission **retains** pending births and slot ownership,
+sets `gpuStagingDirty_`, invalidates previously captured
+checkpoint data/revision and suppresses stale GPU drawing.
+The next accepted `ComputeParticles::step` retries the
+complete set of input transfers; only after a successful compute
+submission are dirty upload flags and CPU birth queues consumed.
+
+This is an intentionally conservative strategy against partially
+accepted Metal blits. Any already accepted graphics commands
+remain ordered in the device's command buffer; it is not an atomic
+rollback of earlier GPU DMA operations, and hardware completion
+still requires the RHI's Metal command-buffer health/fence contract.
+`GpuCheckpointStatus::stagingRecoveryPending`,
+`ComputeStats::gpuStagingUploadFailures` and
+`PoolCheckpointStats::stagingRecoveryGroups /
+gpuStagingUploadFailures` expose the state in the editor. No
+gameplay ECS data is affected.
+
+### Diagnostic checkpoint format V2 (supersedes Stage 39 V1)
+
+`engine/fx/SpectraCheckpointExport.h` now writes an explicit
+**48-byte V2 header** containing a CRC32 over the payload. The
+bounded raw-body size remains 512 KiB of GPU particle/VM state
+plus 16 KiB of CPU lifespan mirrors at 4096 slots. The
+`validateGpuCheckpointDiagnostic()` function checks header
+magic, version, exact byte count, slot count and CRC32 without
+touching graphics hardware. The editor uses this validator before
+writing a `.spfx` file.
+
+The earlier **40-byte V1** export is historical and superseded
+by V2; `validateGpuCheckpointDiagnostic` intentionally validates
+only the current V2 format. Neither V1 nor V2 is a portable
+savegame, stable across arbitrary compiler ABIs, replayable GPU
+history or authoritative ECS serialization. The binary can be
+inspected for integrity but does not provide a GPU state import.
+
+### Recovery retry and load-shedding hysteresis
+
+The native `GpuPoolRecoveryHost` retains its CPU-only
+`PoolRecoveryManifest` if importing effects on a newly created
+graphics Device fails. The host can supply a different healthy
+replacement Device and retry without requiring the original GPU
+pool to remain alive. Failed imports remain visibly in
+`DeviceRecreationRequired` state; live GPU particles and
+renderer-owned source handles are never resurrected.
+
+The optional `PoolLoadSheddingPolicy::recoverBelowPercent`
+(default **85**, range 1..100) introduces hysteresis for
+estimated particle-count pressure and Stage 32 readback
+bytes-in-flight pressure. Once automatic bursts are throttled,
+they stay throttled until the corresponding estimate reaches
+the lower recovery threshold. This avoids frame-to-frame
+on/off oscillation near a soft limit. Updating the policy
+between frames clears both hysteresis latches. Metrics include
+`particlePressureLatched`, `readbackPressureLatched` and
+`pressureHeldFrames`. The policy still does **not** apply to
+manual one-shot VFX, never queues skipped bursts, and is disabled
+by default.
+
+**Actual Stage 40 verification:** GitHub source edits, source
+re-fetch and manual callsite/contract inspection only.
+**NOT RUN:** native C++/Objective-C++ compilation, Metal shader
+compilation, CTest, editor startup/screenshots, checkpoint
+CRC corruption/fault tests, real GPU readback, device-loss
+recovery and load-pressure benchmarks. New features are
+source-implemented but **not production-verified**.
