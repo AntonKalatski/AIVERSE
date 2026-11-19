@@ -31,6 +31,12 @@ const char* kPfNames[] = {"PF_PIXELATE", "PF_CA", "PF_SHARPEN", "PF_TILT", "PF_B
 enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41, kDof = 50, kExposureMip = 80, kExposureHistory = 100, kMotionVelocity = 130, kMotionColor = 131 };
 
 struct SimpleU { float px[4]; float p0[4]; float sun[4]; };
+// Keep the legacy SimpleU field prefix untouched. New camera-linear DoF
+// uniforms are present only in the separate DepthOfField shader program.
+struct DepthOfFieldU {
+    float px[4], p0[4], depthInfo[4], focusInfo[4];
+};
+const char* kDepthOfFieldFields[] = {"px", "p0", "depthInfo", "focusInfo"};
 struct MotionBlurU {
     float px[4], p0[4], sun[4], depthInfo[4];
 };
@@ -1129,6 +1135,9 @@ gfx::PipelineHandle Prisma::program(Prog p) {
             ? buildProgram(kMotionFields, 11, d.tex, "", d.helpers, d.body, sampledDepth)
         : p == kMotionBlur
             ? buildProgram(kMotionBlurFields, 4, d.tex, "", d.helpers, d.body, sampledDepth)
+            : p == kDepthOfField
+            ? buildProgram(kDepthOfFieldFields, 4, d.tex, "",
+                prisma::kDepthOfFieldHelpers, d.body, sampledDepth)
             : buildProgram(kSimpleFields, 3, d.tex, "", d.helpers, d.body, sampledDepth);
     gfx::ShaderDesc sd;
     sd.glslVertex = b.vs.c_str(); sd.glslFragment = b.fs.c_str(); sd.msl = b.msl.c_str();
@@ -1601,11 +1610,26 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             const auto scratchDepth = depthFor(set, w, h, true);
             if (sceneDepth.valid() && scratchDepth.valid() &&
                 destination.tex.valid() && scene.tex.valid()) {
-                SimpleU dofU{};
+                DepthOfFieldU dofU{};
                 put(dofU.px, 1.0f / float(w), 1.0f / float(h), flip, 0);
                 put(dofU.p0, dof->get("focusDepth"),
                     dof->get("focusRange"), dof->get("maxBlur"),
                     dof->get("intensity"));
+                // RHI depth uses non-reversed window [0,1] on GL/Metal.
+                // Orthographic bounds may be signed (e.g. -200..1000);
+                // perspective near must be positive to linearize safely.
+                const bool projectionValid =
+                    std::isfinite(f.depthNear) && std::isfinite(f.depthFar) &&
+                    f.depthFar > f.depthNear + 0.0001f &&
+                    (f.orthographic || f.depthNear > 0.0f);
+                const bool metricRequested = dof->get("metricFocus") > 0.5f;
+                const bool useMetricFocus = metricRequested && projectionValid;
+                put(dofU.depthInfo, f.depthNear, f.depthFar,
+                    f.orthographic ? 1.0f : 0.0f, 0.0f);
+                put(dofU.focusInfo, dof->get("focusDistance"),
+                    dof->get("focusRangeMeters"),
+                    dof->get("occlusionToleranceMeters"),
+                    useMetricFocus ? 1.0f : 0.0f);
                 gfx::PassDesc pass;
                 pass.colorTarget = destination.tex;
                 pass.depthTarget = scratchDepth;
