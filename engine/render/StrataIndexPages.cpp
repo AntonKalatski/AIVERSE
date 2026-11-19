@@ -135,13 +135,12 @@ bool IndexResidency::updateIncremental(
     }
     free = std::move(holes);
 
-    uint64_t evicted = 0, oldBytes = 0;
+    uint64_t evicted = 0;
     std::vector<Range> newlyRetired;
     for (size_t p = 0; p < next.size(); ++p)
         for (size_t n = 0; n < next[p].size(); ++n) {
             const auto span = next[p][n];
             if (!span.valid()) continue;
-            oldBytes += uint64_t(span.indexCount) * sizeof(uint32_t);
             if (wanted[p][n]) continue;
             // Never make this memory available for current-epoch uploads:
             // the old geometry may be read by an in-flight GPU submission.
@@ -196,7 +195,7 @@ bool IndexResidency::updateIncremental(
             for (uint32_t child = 0; child < parent.childCount; ++child) {
                 const uint32_t id = parent.firstChild + child;
                 if (!wanted[p][id]) { allWanted = false; break; }
-                if (!next[p][id])
+                if (!next[p][id].valid())
                     bytes += uint64_t(nodes[id].indexCount) * sizeof(uint32_t);
             }
             if (!allWanted) break;
