@@ -903,6 +903,11 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     refreshPrismaVolumes();
     prisma_.setViewId(1ULL);
     prisma_.applyCameraVolumes(prismaVolumes_, useCam.eye());
+    const auto sceneRendererMemory=r3d_.residentMemoryStats();
+    prisma_.setExternalRendererGpuMemory(
+        sceneRendererMemory.liveTextureKnownBytes+
+        sceneRendererMemory.liveBufferKnownBytes,
+        sceneRendererMemory.pendingMotionKnownBytes);
     const bool postEnabledForScene = !r3d_.studioDebugMode() && postFxInScene;
     // Only the renderer's camera receives jitter. UI, picking, overlays,
     // camera navigation and authored scene positions use the stable useCam.
@@ -1012,6 +1017,11 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
     refreshPrismaVolumes();
     prisma_.setViewId(prismaViewId);
     prisma_.applyCameraVolumes(prismaVolumes_, cam.eye());
+    const auto gameRendererMemory=r3d_.residentMemoryStats();
+    prisma_.setExternalRendererGpuMemory(
+        gameRendererMemory.liveTextureKnownBytes+
+        gameRendererMemory.liveBufferKnownBytes,
+        gameRendererMemory.pendingMotionKnownBytes);
     const auto [renderW,renderH]=prisma_.renderSizeForOutput(vp.w,vp.h);
     const RTSCamera renderCam=prisma_.jitteredCamera(cam,renderW,renderH);
     r3d_.beginScene(renderCam,renderW,renderH);
