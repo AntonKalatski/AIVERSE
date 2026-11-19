@@ -618,6 +618,11 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
     return m.vertices.empty() || m.vb.valid();
 }
 
+bool uploadStandaloneImage(gfx::Device& dev, Image& image) {
+    uploadImage(dev,image);
+    return image.tex.valid();
+}
+
 int addImage(gfx::Device& dev, Model& m, Image img) {
     for (size_t i = 0; i < m.images.size(); ++i) if (!img.name.empty() && m.images[i].name == img.name) return int(i);
     uploadImage(dev, img);
