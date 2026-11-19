@@ -158,6 +158,17 @@ Only current-view selected items may be marked; never preserve group
 or mode decisions across camera/shadow passes. This costs 8 extra bytes
 per retained ModelItem in two generation-stamp arrays, counted in
 `retainedBytes()`, in exchange for fewer full-scene writes.
+Stage 23 adds `prepareSortRanks()`: after preflight and page-adaptive
+admission, accepted groups receive a compact 16-bit rank ordered by
+`materialGroup, geometryPage, GPU VB, GPU IB, drawFlags`. When *both*
+items are accepted cross-model candidates, the sorter compares that rank
+instead of re-reading model/page/material handles on each comparison.
+For a shared rank it keeps the original `lmPage, primitive, itemIndex`
+tie ordering. All other items continue through the original comparator,
+and the MDI pipeline still validates full material and geometry state.
+The group-order scratch vector is reused and included in retained memory;
+`staticCrossModelRankedGroups` reports ranked groups, **not draw calls**.
+Do not cache these ranks across passes or change transparency ordering.
 `invalidateStaticModelCaches()` and `shutdown()` release this workspace.
 Scene → Batching reports its retained CPU memory in KiB. Do not retain
 camera, visibility, material equivalence or LOD results across passes, or
