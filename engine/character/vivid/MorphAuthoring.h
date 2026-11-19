@@ -88,8 +88,11 @@ public:
     }
     // One undoable brush stroke in source mesh coordinates.
     // Radius and offset are intentionally bounded for imported scans.
+    // One undoable stroke with optional X-axis bilateral symmetry.
+    // Mirroring is in the source mesh's local coordinates (X=0 plane).
     bool brush(std::size_t target,std::span<const MorphVec3> source,
-               std::uint32_t center,float radius,MorphVec3 offset) {
+               std::uint32_t center,float radius,MorphVec3 offset,
+               bool mirrorX=false) {
         if(target>=targets_.size() || source.empty() ||
            source.size()>vertices_ || center>=source.size() ||
            !std::isfinite(radius) || radius<=0 || radius>10.0f)
@@ -100,30 +103,41 @@ public:
         auto next=targets_;
         auto& deltas=next[target].deltas;
         const auto& pivot=source[center];
-        std::size_t changed=0;
+        const MorphVec3 reflected{-pivot[0],pivot[1],pivot[2]};
+        const MorphVec3 reflectedOffset{-offset[0],offset[1],offset[2]};
         const float radiusSquared=radius*radius;
+        std::size_t changed=0;
         for(std::size_t i=0;i<source.size();++i) {
             const auto& position=source[i];
-            float distanceSquared=0;
-            for(int axis=0;axis<3;++axis) {
-                const float d=position[std::size_t(axis)]-pivot[std::size_t(axis)];
-                distanceSquared+=d*d;
-            }
-            if(distanceSquared>radiusSquared)continue;
-            const float x=std::sqrt(distanceSquared)/radius;
-            const float falloff=(1.0f-x)*(1.0f-x)*(1.0f+2.0f*x);
-            if(falloff<=0)continue;
+            auto falloffAt=[&](const MorphVec3& point) {
+                float distanceSquared=0;
+                for(int axis=0;axis<3;++axis) {
+                    const float d=position[std::size_t(axis)]-point[std::size_t(axis)];
+                    distanceSquared+=d*d;
+                }
+                if(distanceSquared>=radiusSquared)return 0.0f;
+                const float t=std::sqrt(distanceSquared)/radius;
+                return (1.0f-t)*(1.0f-t)*(1.0f+2.0f*t);
+            };
+            const float direct=falloffAt(pivot);
+            // Suppress a double stroke when the sculpt center is on the
+            // symmetry plane. Otherwise blend mirrored contributions.
+            const float mirrored=(mirrorX&&std::fabs(pivot[0])>1e-6f)
+                ? falloffAt(reflected) : 0.0f;
+            if(direct<=0.0f && mirrored<=0.0f)continue;
             auto it=std::find_if(deltas.begin(),deltas.end(),
                 [&](const MorphDelta& d){return d.vertex==i;});
             if(it==deltas.end()) {
-                MorphDelta d;
-                d.vertex=std::uint32_t(i);
-                deltas.push_back(d);
+                MorphDelta delta;
+                delta.vertex=std::uint32_t(i);
+                deltas.push_back(delta);
                 it=std::prev(deltas.end());
             }
-            for(int axis=0;axis<3;++axis)
-                it->position[std::size_t(axis)]+=
-                    offset[std::size_t(axis)]*falloff;
+            for(int axis=0;axis<3;++axis) {
+                const auto ax=std::size_t(axis);
+                it->position[ax]+=offset[ax]*direct+
+                                  reflectedOffset[ax]*mirrored;
+            }
             ++changed;
         }
         if(!changed)return true;
