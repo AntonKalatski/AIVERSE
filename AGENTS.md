@@ -1458,3 +1458,29 @@ assumed named presets) and do not claim measured speed/battery
 improvement; CMake/CTest/GPU QA remains **NOT RUN** until the
 separate testing stage. Record the actual code SHAs and continuation
 in the per-stage `docs/terrain/AGENT_HANDOFF.md`.
+
+### TerraWeave Stage40 — host-fed adaptive Horizon runtime quality
+
+`engine/world/TerraWeaveHorizonAdaptiveQuality.h` defines an
+opt-in, strictly bounded controller over Stage39
+BatterySaver/Mobile/Balanced/Desktop **presentation** policies.
+The user requires reusable genre-independent runtime mechanics:
+do not modify Horizon terrain/forest geometry, TWH8 archives, GPU
+buffer types, PHYSIS source ownership or ECS simulation to adapt.
+A native host must feed actual CPU and/or completed GPU frame times
+in **microseconds** with monotonically increasing frame IDs via
+`WorldScene::submitVegetationHorizonFrameTiming`. Zero denotes
+unavailable measurements, not a fabricated 0ms frame.
+`gfx::Device::gpuFrameMs()` may be zero/delayed; always respect
+the actual backend timing availability and sample ordering.
+The backend-free policy requires sustained threshold violations
+(30 downgrade frames / 240 upgrade frames by default), 240-frame
+cooldown, and one-level bounded transitions; gaps and invalid
+samples cannot drive switches. Manual Stage39 policy/preset changes
+must disable adaptation, environmental/PHYSIS inputs do not.
+`terraweaveHorizon.adaptiveQuality.enabled` explicitly opts in
+at startup but does not instrument the host's frame.
+Keep source-only unverified stages marked **NOT RUN**, document
+exact code commits/risks/next step in
+`docs/terrain/AGENT_HANDOFF.md`, keep PR #24 Draft until
+a separate tester compiles and profiles real platforms.
