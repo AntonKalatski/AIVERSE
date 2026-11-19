@@ -129,9 +129,11 @@ void Renderer3D::shutdown() {
     persistentScene_ = {};
     staticModelCaches_.clear();
     staticRenderPackets_.clear();
+    staticModelEligibility_.clear();
     staticRenderPacketBytes_ = 0;
     staticModelCacheEpoch_ = 0;
     staticRenderPacketEpoch_ = 0;
+    staticEligibilityEpoch_ = 0;
     shutdownModels();
     lights.shutdown();
     shutdownTrace();
@@ -168,6 +170,8 @@ void Renderer3D::invalidateStaticModelCache(uint64_t persistentId) {
 
 void Renderer3D::invalidateModelCachesFor(const Model* model) {
     if (!model) return;
+    if (staticModelEligibility_.erase(model))
+        ++staticEligibilityStats_.evicted;
     // Compare pointer identity only, never dereference a model being released.
     for (auto it = staticModelCaches_.begin(); it != staticModelCaches_.end();) {
         if (it->second.cache.model == model) {
@@ -203,6 +207,21 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     }();
     staticRenderPacketsEnabled_ = enablePackets;
     staticRenderPacketStats_ = {};
+    staticEligibilityStats_ = {};
+    if (staticModelCacheEnabled_ || staticRenderPacketsEnabled_) {
+        ++staticEligibilityEpoch_;
+        // Memo is model-scoped, not per visible entity; keep entries alive
+        // across transient Scene/Game viewports and prune abandoned assets.
+        if ((staticEligibilityEpoch_ % 64u) == 0u) {
+            for (auto it = staticModelEligibility_.begin();
+                 it != staticModelEligibility_.end();) {
+                if (staticEligibilityEpoch_ > it->second.seen + 128u) {
+                    it = staticModelEligibility_.erase(it);
+                    ++staticEligibilityStats_.evicted;
+                } else ++it;
+            }
+        }
+    }
     if (staticRenderPacketsEnabled_) {
         ++staticRenderPacketEpoch_;
         // Bound packet templates by retiring long-unseen object identities.
