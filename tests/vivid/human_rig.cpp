@@ -3,6 +3,7 @@
 #include "engine/character/vivid/BindPoseRebind.h"
 #include "engine/character/vivid/SkinWeightAuthoring.h"
 #include "engine/character/vivid/SkinnedWeightPick.h"
+#include "engine/character/vivid/SkinWeightLodTransfer.h"
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -321,6 +322,68 @@ void check() {
             stroke.strokeBrush(painted,0,0,"jaw",0.2f,0.16f,0.5f,true) &&
             !stroke.endStroke(false) && stroke.toJson()==saved,
             "cancelled weight drag changed committed authored weights");
+    }
+    {
+        render::Model lod;
+        lod.nodes.resize(4);
+        lod.nodes[0].name="root";
+        lod.nodes[1].name="jointA";lod.nodes[1].parent=0;
+        lod.nodes[2].name="jointB";lod.nodes[2].parent=0;
+        lod.nodes[3].name="skinSource";lod.nodes[3].skin=0;lod.nodes[3].mesh=0;
+        render::Node targetNode;
+        targetNode.name="skinLod";targetNode.skin=0;targetNode.mesh=1;
+        lod.nodes.push_back(targetNode);
+        render::Skin skin;
+        skin.joints={1,2};skin.inverseBind.resize(2);
+        lod.skins.push_back(skin);
+        lod.vertices.resize(4);
+        lod.vertices[0].pos={0,0,0};
+        lod.vertices[1].pos={1,0,0};
+        lod.vertices[2].pos={0,1,0};
+        lod.vertices[3].pos={0.25f,0.25f,0};
+        lod.vertices[0].weights[0]=255;lod.vertices[0].joints[0]=0;
+        lod.vertices[1].weights[0]=255;lod.vertices[1].joints[0]=1;
+        lod.vertices[2].weights[0]=255;lod.vertices[2].joints[0]=0;
+        lod.indices={0,1,2,3,3,3};
+        render::Primitive source;
+        source.firstIndex=0;source.indexCount=3;
+        source.firstVertex=0;source.vertexCount=3;
+        source.jointPalette={0,1};
+        render::Primitive dest;
+        dest.firstIndex=3;dest.indexCount=3;
+        dest.firstVertex=3;dest.vertexCount=1;
+        dest.jointPalette={1,0}; // reversed compared to base
+        render::MeshDef baseMesh,lodMesh;
+        baseMesh.primitives.push_back(source);
+        lodMesh.primitives.push_back(dest);
+        lod.meshes.push_back(baseMesh);
+        lod.meshes.push_back(lodMesh);
+        MorphLodMapping mapping;
+        mapping.sourceVertices=3;mapping.sourceTriangles=1;
+        const std::array<std::uint32_t,3> indices{{0,1,2}};
+        const std::array<render::float3,3> positions{{
+            lod.vertices[0].pos,lod.vertices[1].pos,lod.vertices[2].pos}};
+        mapping.sourceFingerprint=MorphLodMapping::fingerprint(positions,indices);
+        mapping.targetVertexIds={3};
+        LodSurfaceSample sample;
+        sample.triangle=0;sample.bary={0.25f,0.5f,0.25f};
+        mapping.samples={sample};
+        const auto result=SkinWeightLodTransfer::apply(lod,0,1,mapping,indices);
+        req(result.transferred==1 &&
+            lod.vertices[3].joints[0]==0 &&
+            lod.vertices[3].weights[0]>=126 &&
+            lod.vertices[3].weights[0]<=129 &&
+            lod.vertices[3].weights[0]+lod.vertices[3].weights[1]==255,
+            "LOD skin transfer did not remap palette and barycentric weights");
+        const auto before=lod.vertices[3];
+        lod.meshes[1].primitives[0].jointPalette={0};
+        bool rejected=false;
+        try{(void)SkinWeightLodTransfer::apply(lod,0,1,mapping,indices);}
+        catch(const std::invalid_argument&){rejected=true;}
+        req(rejected &&
+            lod.vertices[3].weights[0]==before.weights[0] &&
+            lod.vertices[3].joints[0]==before.joints[0],
+            "LOD transfer modified target after missing-joint failure");
     }
     model.nodes.resize(2); // missing jaw and eyes must be legal for morph-only rigs
     const auto fallback=HumanRigBinding::compile(model,HumanDNA{}.rig);
