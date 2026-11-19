@@ -5,6 +5,7 @@
 #include "AppearanceChoiceAuthoring.h"
 #include "ModelPublicationEpoch.h"
 #include "engine/render/RenderDeviceLifetime.h"
+#include "engine/render/ModelReadLease.h"
 #include <algorithm>
 #include <cstdint>
 #include <cmath>
@@ -445,6 +446,51 @@ public:
             throw;
         }
     }
+    // An alternative for native ModelResourceCache's UNIQUE Model ownership:
+    // acquire an actual cache read lease from ModelResourceCache on its
+    // owner thread, then transfer the lease into this batch. The lease
+    // blocks cache eviction/replacement until clear(); it does NOT own GPU
+    // handles or change ModelMap's unique_ptr semantics.
+    bool addCacheOwned(Snapshot asset,const render::mat4& world,
+                       render::ModelReadLease lease) {
+        if(!asset || !lease || asset->model!=lease.get())return false;
+        const auto* raw=lease.get();
+        const bool newPin=std::none_of(cacheModelPins_.begin(),cacheModelPins_.end(),
+            [&](const auto& existing){return existing.get()==raw;});
+        if(newPin)cacheModelPins_.push_back(std::move(lease));
+        try {
+            if(add(std::move(asset),world))return true;
+            if(newPin)cacheModelPins_.pop_back();
+            return false;
+        }catch(...) {
+            if(newPin)cacheModelPins_.pop_back();
+            throw;
+        }
+    }
+    // Check a new authored LOD/attachment before accepting a cache
+    // lease. Do not acquire leases for arbitrary unused cache Models.
+    bool pinCacheRelatedModel(render::ModelReadLease lease) {
+        if(!lease)return false;
+        const auto* raw=lease.get();
+        bool referenced=false;
+        for(const auto& packet:packets_) {
+            if(packet.draw.model==raw ||
+               animationSourceModel(packet)==raw)
+                {referenced=true;break;}
+            for(const auto& lod:packet.lods)
+                if(lod.model==raw){referenced=true;break;}
+            if(referenced)break;
+            for(const auto& child:packet.attachments)
+                if(child.draw.model==raw){referenced=true;break;}
+            if(referenced)break;
+        }
+        if(!referenced)return false;
+        for(const auto& existing:cacheModelPins_)
+            if(existing.get()==raw)return true;
+        cacheModelPins_.push_back(std::move(lease));
+        return true;
+    }
+
     // Additional owned LOD, animation-source or attachment Models can be
     // pinned after editing packets. Reject unrelated pointers, so the
     // owner check is auditable rather than a decorative shared_ptr.
@@ -477,6 +523,8 @@ public:
             if(!model)return true; // unloaded optional visual LOD
             for(const auto& pin:modelPins_)
                 if(pin.get()==model)return true;
+            for(const auto& lease:cacheModelPins_)
+                if(lease.get()==model)return true;
             return false;
         };
         size_t missing=0;
@@ -518,7 +566,10 @@ public:
                 "PinnedAppearanceBatch: expired or foreign GPU Device epoch");
         return validatedSpan();
     }
-    size_t modelPinCount() const noexcept{return modelPins_.size();}
+    size_t modelPinCount() const noexcept{
+        return modelPins_.size()+cacheModelPins_.size();
+    }
+    size_t cacheReadLeaseCount() const noexcept{return cacheModelPins_.size();}
     size_t size() const noexcept{return packets_.size();}
     bool empty() const noexcept{return packets_.empty();}
     const std::vector<Object>& objects() const noexcept {return packets_;}
@@ -537,11 +588,15 @@ public:
         // allocations. Shared model deleters must cooperate with the
         // host's separately fenced GPU retirement queue.
         modelPins_.clear();
+        // Release read leases LAST, after packet+snapshot pointers cease
+        // being referenced. Host may now evict/retire unique-owned Models.
+        cacheModelPins_.clear();
     }
 private:
     std::vector<Snapshot> pins_;
     std::vector<Object> packets_;
     std::vector<std::shared_ptr<const render::Model>> modelPins_;
+    std::vector<render::ModelReadLease> cacheModelPins_;
 };
 
 } // namespace aiverse::view
