@@ -29,6 +29,8 @@ struct NereidSceneSurface {
     bool useGeometry=false;
     lib::nereid::WaterCurrentFieldComponent currentField{};
     bool useCurrentField=false;
+    lib::nereid::WaterVortexFieldComponent vortices{};
+    bool useVortices=false;
     lib::nereid::WaterSurfaceMeshOptions mesh{};
     lib::nereid::WaterSurfaceStyle style{};
     // Optional camera-distance LOD; fixed thresholds are presentation-only.
@@ -179,9 +181,10 @@ public:
         for(const auto& slot:slots_)if(slot.source.id==stableId &&
                                          slot.source.body.enabled) {
             const auto& src=slot.source;
-            return lib::nereid::waterCurrentAt(
+            return lib::nereid::waterCurrentWithVortices(
                 src.body,src.useGeometry?&src.geometry:nullptr,
-                src.useCurrentField?&src.currentField:nullptr,position);
+                src.useCurrentField?&src.currentField:nullptr,
+                src.useVortices?&src.vortices:nullptr,position);
         }
         return {};
     }
