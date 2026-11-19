@@ -44,9 +44,9 @@ struct DepthOfFieldU {
 };
 const char* kDepthOfFieldFields[] = {"px", "p0", "depthInfo", "focusInfo"};
 struct MotionBlurU {
-    float px[4], p0[4], sun[4], depthInfo[4];
+    float px[4], p0[4], sun[4], depthInfo[4], tapInfo[4];
 };
-const char* kMotionBlurFields[] = {"px", "p0", "sun", "depthInfo"};
+const char* kMotionBlurFields[] = {"px", "p0", "sun", "depthInfo", "tapInfo"};
 struct MotionUniforms {
     float px[4], p0[4], sun[4];
     float inv0[4], inv1[4], inv2[4], inv3[4];
@@ -1187,7 +1187,7 @@ gfx::PipelineHandle Prisma::program(Prog p) {
         : p == kMotionVectors
             ? buildProgram(kMotionFields, 11, d.tex, "", d.helpers, d.body, sampledDepth)
         : p == kMotionBlur
-            ? buildProgram(kMotionBlurFields, 4, d.tex, "", d.helpers, d.body, sampledDepth)
+            ? buildProgram(kMotionBlurFields, 5, d.tex, "", d.helpers, d.body, sampledDepth)
             : p == kExposureLog
             ? buildProgram(kExposureMeterFields, 5, d.tex, "", d.helpers, d.body, sampledDepth)
             : p == kDepthOfField
@@ -1746,6 +1746,11 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 (f.orthographic || f.depthNear>0.0f);
             put(blur.depthInfo,f.depthNear,f.depthFar,
                 f.orthographic?1.0f:0.0f,linearDepth?1.0f:0.0f);
+            // No reactive texture? Keep the historical shutter filter.
+            // When supplied, optionally suppress neighboring samples
+            // belonging to a different transparency coverage layer.
+            put(blur.tapInfo,validReactive?
+                    motionEffect->get("reactiveTapRejection"):0.0f,0,0,0);
             gfx::PassDesc pass{};
             pass.colorTarget=blurred.tex;
             pass.depthTarget=scratchDepth;
