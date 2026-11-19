@@ -2349,3 +2349,43 @@ worldScene.setVegetationPresentationTick(gameplayTick);
 **Boundaries/limitations:** This is *procedural render-only* crown flutter, not physical leaf/branch simulation; wind affects shader vertex positions but not collision, navmesh, authoritative tree positions or gameplay ECS. The effect intentionally retains existing root/branch transforms and only adds a small extra vertex displacement. Spatial phases are deterministic functions of the host tick and model-space/rebased world coordinates but GPU sine/floating math is not promised bitwise-identical across devices. Bounded graph models now continue to participate in node/LOD culling; confirm conservativeness with high-wind screenshots. Raw `ModelDraw::vertexParameters` is incompatible with concurrently using the packed `Inst.anim` slot for baked clips or lightmaps. The far forest motion is whole-card canopy shear, not individually simulated distant branches. Renderer pipeline/material changes, shadows, PHYSIS integration, large-area transition and CPU/GPU timings are **not yet validated**.
 
 **Tests intentionally deferred:** The independent testing agent must update Stage 29 impostor expectations, compile GCC/Clang and backend shader pipelines, validate U0 payload/vertex colors on Metal, Vulkan and GL, test 0 and maximum wind, season + GPU flutter, crossfade compatibility, vertex bounds and culling, and measure material pipeline counts/frame cost. Do not treat source commits as passing tests.
+
+## Stage 32 — spatial wind grid and near-to-Horizon transition
+
+**Feature source committed, build and tests deferred** per the project owner's feature-first priority.
+
+Native games/PHYSIS can publish one bounded, **immutable spatial wind snapshot** for near Arbor trees and far Horizon, without linking PHYSIS to the forest renderer. The new `engine/world/TerraWeaveWindField.h` defines `ForestWindField` as a regular X/Z lattice of `ForestWindSample {xCmPerSec,zCmPerSec,gustPermille}`, all in signed **world centimetres** and cm/sec. The caller owns sampling from its actual PHYSIS wind/weather field; TerraWeave performs only the render-side interpolation:
+
+```cpp
+using namespace aiverse::terraweave;
+auto mutableField=std::make_shared<ForestWindField>();
+mutableField->originXcm=-12800;
+mutableField->originZcm=-12800;
+mutableField->spacingCm=6400;
+mutableField->columns=5;
+mutableField->rows=5;
+mutableField->samples.assign(25,{800,0,400});
+// Optionally fill specific nodes with different PHYSIS velocities.
+mutableField->samples[12]={-100,550,750};
+mutableField->validate(); // reject invalid geometry/oversized winds
+std::shared_ptr<const ForestWindField> published=mutableField;
+worldScene.setVegetationWindField(published);
+worldScene.setVegetationPresentationTick(gameplayTick);
+// Publish a NEW immutable object when the weather field changes:
+worldScene.setVegetationWindField({});
+```
+
+**Do not mutate** a field after publishing it, even if a mutable shared pointer alias still exists. Create and publish a new snapshot for each update. `WorldScene::vegetationWindField()` returns the active const shared snapshot (or null). Native projects using the forest/Horizon directly can call their `setWindField(shared_ptr<const ForestWindField>)` methods. The uniform fallback still comes from the existing `ForestWindState` (`setVegetationWind`) and supplies the authoritative wind animation period, strength/flex, and limits. The grid overrides only local X/Z wind velocities and gust intensity.
+
+### Sampling and transition semantics
+
+- Limits: either empty/default field or 2..64 nodes per axis, at most **4096** node samples; spacing 100..10,000,000cm; all node coordinates within `+/-kWorldLimitCm`. Each node is validated using `validateForestWind` (horizontal magnitude <=5000cm/s; gust 0..1000). Invalid input fails before replacing the active world snapshot.
+- `sampleForestWindField(field,xCm,zCm,fallback)` uses Q16 bilinear interpolation in absolute signed world centimetres, including negative positions. Outside the lattice it returns `fallback`; a half-node-spacing **interior feather** blends border values back to the fallback to prevent sudden direction/speed jumps at the field edge. No shader texture, RHI buffer, global mutable state or wall-time dependency.
+- `blendForestWind(local,macro,macroPermille)` is a bounded integer interpolation of velocity and gust. Branch flex, period and lean maximum remain those of the fallback source.
+- The near `ArborForestAdapter` samples the immutable field at **each resident tree's stable world position**. Its geometric root lean, hierarchical CPU branch poses, and Stage 31 GPU leaf displacement all use that same effective per-tree wind. For consistency near distant render tiers, wind is blended toward the **observer-position macro sample**, continuously between `FloraView.mediumRangeCm` and `FloraView.cullRangeCm` (using a conservative X/Z Chebyshev distance and bounded permille interpolation). The forest scene configures these boundaries once; an unchanged/no-field setup retains its old execution path.
+- The far `TerraWeaveHorizonScene` takes one observer-space macro wind sample in `submit`, shared by active and outgoing region draws during crossfade. This prevents a wind-vector discontinuity when the Horizon region changes and keeps HLOD geometry/atlas batched. It does **not** yet produce a separate PHYSIS wind vector for every statistical distant forest cluster. A later optional coarse GPU wind field or per-cluster baked vector feature can improve microvariation at kilometre scale if warranted.
+- `WorldScene::setVegetationWindField` forwards the **same** `shared_ptr<const ForestWindField>` to its optional forest and Horizon modules, with no terrain worker invalidation or TWH8 archive changes. Repeated pointer identity is a no-op; passing null clears the field so only uniform wind remains.
+
+**Performance/ownership:** the spatial field adds a handful of bounded CPU integer interpolations per **submitted near-tree**, not per ECS entity or terrain scatter candidate. Horizon performs one sample per submission rather than one per billboard cluster. Live weather updates need a new bounded field snapshot but do not allocate new vertex/texture buffers or recompile ShaderGraph programs. The sampler assumes the caller has validated the immutable field on publication; direct native callers MUST invoke `field.validate()` before sampling, rather than mutating the structure concurrently. Inputs from a high-resolution PHYSIS simulation should be downsampled by the host to this bounded presentation grid.
+
+**Not verified:** Neither C++20 compiler/CMake/CTest nor GPU/PHYSIS integration, visual transition captures, pathological negative-boundary samples, or performance profiling was run at this feature-only stage. Remaining known test debt includes the Stage 29 two-primitive impostor migration and Stage 31 GLSL/Metal Shader Graph rendering.
