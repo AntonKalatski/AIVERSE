@@ -2191,3 +2191,112 @@ requires native Metal and an open Scene or Game viewport.
 CMake compilation, editor startup, Metal shader compilation, CTest,
 GPU selective-kill/fence validation, multi-source compaction, editor
 screenshots, fallback parity or performance profiling.
+
+## Stage 35 — completed-frame GPU kill fencing and ECS attachments
+
+**Main integration status:** At the start of Stage 35,
+`main=9ee6ff6fbf390bd45363bc92c838f492dfe92eee` was already
+an ancestor of `feature/universal-entity-inspector-fps`, whose starting
+HEAD was `4a50d05329840e713d6179a1519fb2f16a8d8604`. No merge or
+rebase was needed or performed. The feature branch was 450 commits ahead
+of main; main was zero commits ahead of the feature branch.
+
+The Metal-only `gfx::Device` API now optionally exposes
+`updateStorageBufferChecked(handle,data,size,offset)` and
+`completedFrameSerial()`. Other RHIs default to unsupported. Checked
+Metal uploads must be encoded in the active frame outside graphics/compute
+encoders and report whether the ordered copy was accepted. Metal stores
+the highest **successfully completed** command-buffer frame serial
+in a separate lifetime-safe atomic. A device with an unhealthy GPU or
+no completion support must never be treated as though a fence passed.
+
+`ComputeParticles::killSourceParticles(token)` still cancels unsent births
+and uploads dead state into only the physical slots owned by the source.
+Stage 35 now enqueues the kill writes through the error-reporting RHI
+method and retains submitted physical-slot IDs in a per-frame quarantine.
+It returns them to the spawn free list **only after**
+`completedFrameSerial() >= submittedFrame`. If a checked upload fails,
+the pending slots are retained rather than being reused. The
+`GpuCheckpointStatus::killsAwaitingGpuFence`,
+`ComputeStats::gpuKillFencesPending/killedSlotsReclaimed`, and
+`PoolCheckpointStats::killedSlotsAwaitingFence/killedSlotsReclaimed`
+diagnostics expose the CPU-side state. While any source kills await
+completion, fresh checkpoints are not eligible for fallback and blocking
+or async captures are rejected.
+
+### Generic native ECS attachment bridge
+
+`<aiverselib/genre/SpectraFX.h>` now exports the header-only
+`spectra::GpuEcsAttachmentPresenter`, implemented in
+`libraries/include/aiverselib/genre/SpectraGpuAttachmentEcsAdapter.h`.
+It reads the **existing**
+`lib::genre::SpectraSourceComponent` from `const World&` using
+`eachExistingConst`. Each source is keyed by `Entity::packed()`, so
+recycled ECS IDs cannot inherit another entity's VFX handle.
+The caller supplies the same genre-neutral
+`SpectraPresentationSystem::ResolvePose` used by the CPU path.
+
+```cpp
+using namespace aiverse::spectra;
+GpuPoolWorld pool;
+pool.init(device);
+pool.defineEffect("engine_flame",compiledEffect,gpuOptions);
+GpuEcsAttachmentPresenter ecsFx(pool);
+PoolContinuousEmission rate{};
+rate.burstsPerSecond=15;
+rate.maxBurstsPerFrame=6;
+ecsFx.bindEffect("engine_flame",rate);
+
+// Once per presentation frame, after Device::beginFrame:
+pool.beginPresentationFrame(cam,viewProj,width,height);
+// Only the committed (or immutable copied) authoritative ECS snapshot
+// is read; renderer pose resolver may interpolate visual positions.
+if(!ecsFx.syncCommitted(committedTick,world,resolveRenderPose)) {
+    // Handle ecsFx.reason(); never pretend that emission succeeded.
+}
+pool.step(dt); // GPU/CPU group simulation once BEFORE render pass.
+// pool.draw(fog) once INSIDE open render pass.
+// pool.endPresentationFrame() after render pass.
+
+// When a rollback is observed: at a safe point outside active encoders,
+// before replaying committed ticks or new presentation frames:
+bool cleared=ecsFx.resetForRollback();
+```
+
+`syncCommitted(tick,...)` is idempotent for source creation at a repeated
+tick but can update a render pose multiple times; decreasing ticks are
+rejected until explicit `resetForRollback()`. Missing/disabled components
+are retired; if `killOnDetach` is set, their existing particles are killed
+selectively. A temporarily unresolved pose pauses new births and resumes
+without recreating the handle when valid again. Effect/revision/policy
+changes detach obsolete sources and create new ones. Policies are explicitly
+registered with `bindEffect`; there are no genre-default rules.
+The adapter exposes `detachAll(killLiving)` for explicit teardown.
+
+**No silent scale mismatch:** The original `SpectraSourceComponent::scale`
+has semantics the current GPU pooled billboard subset cannot fully
+preserve. This bridge currently requires unit scale and reports an
+error for any non-unit value. It never mutates ECS components, inserts
+`PoolSourceId` into a simulation component, writes gameplay state or
+uses GPU particles for authoritative collisions. A dedicated pool per
+rollback scope is required because `GpuPoolWorld::resetForRollback()`
+resets *all* its effects.
+
+### Metal GPU preview controls
+
+The SpectraFX editor window now has **Pause GPU/Play GPU**,
+**Freeze GPU**, **Loop GPU** and **Stop GPU** for an explicitly opted-in
+Metal preview. Pause stops future births while existing particles
+continue to age; Freeze advances at zero visual delta and does not
+advance existing particles. Loop repeatedly bursts the same strict
+Metal-compatible graph. Preview and frame ordering are still
+presentation-only, and the default CPU preview is not replaced.
+The live panel now also reports physical slots waiting for GPU
+completion and those safely reclaimed.
+
+**Verification:** GitHub source writes and branch ancestry inspection
+only. **NOT RUN:** local CMake/Clang build, Objective-C++/Metal shader
+compilation, CTest, full editor launch, GPU screenshots, real frame
+completion tests, device loss/fault injection, CPU-vs-Metal parity,
+continuous attachment stress, or visual performance benchmarks.
+Do not treat source completion as production readiness.
