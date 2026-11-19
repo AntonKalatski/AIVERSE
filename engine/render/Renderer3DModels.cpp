@@ -75,6 +75,7 @@ constexpr uint32_t kKeyDrawCallView = 32768;
 constexpr uint32_t kKeyMaterialInstancePalette = 1u << 27; // editor draw-call diagnostic shader permutation
 constexpr uint32_t kKeyModelVirtualTexture = 1u << 28;
 constexpr uint32_t kKeyModelVirtualAlpha = 1u << 30;
+constexpr uint32_t kKeyModelVirtualTrilinear = 1u << 31; // opt-in indexed page-table permutation
 constexpr uint32_t kKeySkinned = 1, kKeyNormalMap = 2, kKeyAlphaMask = 4, kKeyShadow = 8, kKeyBaked = 64, kKeyMorph = 128,
                    kKeyInstanced = 256, kKeyOutline = 512, kKeyLightmap = 2048, kKeyProbes = 4096, kKeyLodFade = 8192, kKeyMaterialPalette = 16384;   // GI keys: agent-lightbake
 struct ProfileTimer {
@@ -210,7 +211,9 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const bool vtSampling = giPhase && (!graph || graphVirtual) &&
         !materialPalette && graphVirtualSlots &&
         resolveModelVirtualTexture(*it.model,*it.mat,vtBinding);
+    const bool vtTrilinear = vtSampling && vtBinding.indexedMipTable;
     const uint32_t shaderKey = (vtSampling ? kKeyModelVirtualTexture : 0u) |
+        (vtTrilinear ? kKeyModelVirtualTrilinear : 0u) |
         (alphaR8 ? kKeyModelVirtualAlpha : 0u) |
         gpuInstanceShaderBit | studioShaderBits |
                                (instancePalette ? kKeyMaterialInstancePalette : 0u) | (skinned ? kKeySkinned : 0u) | (normalMap ? kKeyNormalMap : 0u) | (mask ? kKeyAlphaMask : 0u) |
@@ -257,7 +260,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
             graph->vertexMsl.empty() && graph->vertexGlsl.empty() &&
             !graph->outputs.count("vertexOffset") &&
             !graph->outputs.count("vertexNormal") &&
-            graph->textures.size() <= 4;
+            graph->textures.size() <= 4 && !vtTrilinear;
         if (graphIcbCandidate) {
             defs += "#define AIVERSE_SG_ICB_GRAPH 1\n";
             defs += "#define AIVERSE_SG_TEXTURE_COUNT " +
@@ -317,15 +320,12 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                     code+="\n#define SG_SAMPLE(uv) "+std::string(metal?"tex1.sample(s1,uv)":"texture(tex1,uv)")+"\n"+macros;
                     if (graph->usesVirtualTexture) {
                         if (vtSampling) {
-                            const std::string sampled = metal ?
-                                "aiverse_sample_virtual(tex"+std::to_string(virtualAtlasSlot)+
-                                ",tex"+std::to_string(virtualTableSlot)+
-                                ",s1,(uv),uint(uModelVt.x),uModelVt.y,"
-                                "tex1.sample(s1,(uv)),uint(uModelVt.z),uint(uModelVt.w))" :
-                                "aiverseSampleVirtual(tex"+std::to_string(virtualAtlasSlot)+
-                                ",tex"+std::to_string(virtualTableSlot)+
-                                ",(uv),int(uModelVt.x),uModelVt.y,"
-                                "texture(tex1,(uv)),int(uModelVt.z),int(uModelVt.w))";
+                            const std::string sampled =
+                                modelVirtualSampleExpression(metal,vtTrilinear,
+                                    "tex"+std::to_string(virtualAtlasSlot),
+                                    "tex"+std::to_string(virtualTableSlot),
+                                    "uv",metal ? "tex1.sample(s1,(uv))" :
+                                                 "texture(tex1,(uv))");
                             code+="#define SG_SAMPLE_VIRTUAL(uv) "+sampled+"\n";
                         } else
                             code+="#define SG_SAMPLE_VIRTUAL(uv) SG_SAMPLE(uv)\n";
@@ -382,7 +382,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         if (vtSampling && !injectModelVirtualTextureSampling(
                 fs,msl,virtualAtlasSlot,virtualTableSlot,
                 dev_->info().backend == gfx::Backend::Metal &&
-                dev_->maxFragmentTextureSlots() > 16)) {
+                dev_->maxFragmentTextureSlots() > 16,vtTrilinear)) {
             modelError_ = "model virtual-texture shader insertion failed";
             return {};
         }
@@ -938,7 +938,15 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
             params.addressV = float(uint32_t(vt.addressV));
             dev_->setTexture(atlasSlot,vt.physicalAtlas);
             dev_->setTexture(tableSlot,vt.pageTable);
-            dev_->setUniforms(6,&params,sizeof(params));
+            if(vt.indexedMipTable) {
+                ModelVirtualTextureTrilinearUniforms trilinear;
+                trilinear.base=params;
+                trilinear.widthPixels=vt.virtualWidthPixels;
+                trilinear.heightPixels=vt.virtualHeightPixels;
+                trilinear.mipLevels=float(vt.virtualMipLevels);
+                trilinear.mipBias=vt.virtualMipBias;
+                dev_->setUniforms(6,&trilinear,sizeof(trilinear));
+            } else dev_->setUniforms(6,&params,sizeof(params));
         }
     }
     if (newModel) {
