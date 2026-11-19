@@ -315,6 +315,7 @@ inline ForestDeadwoodDecayOutcome advanceForestDeadwood(
         ++next.revision;
     }
     result.revision=next.revision;
+    validateForestDeadwoodResource(next);
     resource=std::move(next);
     return result;
 }
@@ -343,20 +344,13 @@ inline uint64_t extractForestDeadwood(
 }
 
 inline bool deadwoodLedgerBalanced(
-        const ForestDeadwoodResource& s) {
-    validateForestDeadwoodResource(s);
-    uint64_t sum=s.totalRespiredUnits;
-    if(sum>UINT64_MAX-s.totalExportedUnits)return false;
-    sum+=s.totalExportedUnits;
-    for(const auto& log:s.logs){
-        if(sum>UINT64_MAX-log.remainingUnits)return false;
-        sum+=log.remainingUnits;
+        const ForestDeadwoodResource& state) {
+    try {
+        validateForestDeadwoodResource(state);
+        return true;
+    }catch(const std::exception&){
+        return false;
     }
-    for(const auto& cell:s.soil){
-        if(sum>UINT64_MAX-cell.availableUnits)return false;
-        sum+=cell.availableUnits;
-    }
-    return sum==s.totalInitialUnits;
 }
 
 } // namespace aiverse::terraweave
