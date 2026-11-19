@@ -281,4 +281,69 @@ inline float4 aiverse_encode_feedback(int4 page) {
 }
 )VTF";
 
+// Production-ready fragment source assembly for the generic feedback pass.
+// Callers provide a vertex shader that outputs vVirtualUV at location 0,
+// and bind the uniforms below with their existing material binding path.
+// The fragment shader is deliberately standalone and contains no genre,
+// terrain, camera or ECS dependency. It computes derivatives before any
+// conditional page rejection. Render with depth testing matching the
+// camera visibility pass, opaque blending and linear RGBA8 output.
+inline std::string virtualTextureFeedbackFragmentGLSL(bool automaticMip=true) {
+    std::string shader =
+        "precision highp float;\\nprecision highp int;\\n"
+        "in vec2 vVirtualUV;\\n"
+        "layout(location=0) out vec4 outFeedback;\\n"
+        "uniform ivec2 uVirtualBaseTiles;\\n"
+        "uniform int uVirtualLayer;\\n"
+        "uniform int uVirtualMip;\\n"
+        "uniform int uVirtualMipLevels;\\n"
+        "uniform vec2 uVirtualTexels;\\n"
+        "uniform float uVirtualMipBias;\\n";
+    shader += kVirtualTextureFeedbackGLSL;
+    shader += kVirtualTextureFeedbackMaterialGLSL;
+    if (automaticMip) shader += kVirtualTextureFeedbackAutoMipGLSL;
+    shader += automaticMip
+        ? "void main(){\\n"
+          " int mip=aiverseFeedbackMipFromDerivatives("
+          "vVirtualUV,uVirtualTexels,uVirtualMipLevels,uVirtualMipBias);\\n"
+          " outFeedback=aiverseMaterialFeedback(vVirtualUV,mip,"
+          "uVirtualLayer,uVirtualBaseTiles);\\n}\\n"
+        : "void main(){\\n"
+          " outFeedback=aiverseMaterialFeedback(vVirtualUV,uVirtualMip,"
+          "uVirtualLayer,uVirtualBaseTiles);\\n}\\n";
+    return shader;
+}
+
+// Metal source fragment entry point. Use with a vertex stage that writes
+// UV at user(locn0); set one constant buffer containing the parameters
+// below at fragment buffer(0). The host must match Metal's natural
+// float2/int2 alignment when uploading this struct.
+inline std::string virtualTextureFeedbackFragmentMSL(bool automaticMip=true) {
+    std::string shader =
+        "#include <metal_stdlib>\\nusing namespace metal;\\n"
+        "struct AiverseFeedbackParams {\\n"
+        " int2 baseTiles; int layer; int mip;\\n"
+        " int mipLevels; float2 texels; float mipBias;\\n"
+        "};\\n"
+        "struct AiverseFeedbackInput {\\n"
+        " float4 position [[position]];\\n"
+        " float2 uv [[user(locn0)]];\\n"
+        "};\\n";
+    shader += kVirtualTextureFeedbackMSL;
+    shader += kVirtualTextureFeedbackMaterialMSL;
+    if (automaticMip) shader += kVirtualTextureFeedbackAutoMipMSL;
+    shader += automaticMip
+        ? "fragment float4 aiverseVirtualFeedbackFragment("
+          "AiverseFeedbackInput in [[stage_in]],"
+          "constant AiverseFeedbackParams& p [[buffer(0)]]) {\\n"
+          " int mip=aiverse_feedback_mip_from_derivatives("
+          "in.uv,p.texels,p.mipLevels,p.mipBias);\\n"
+          " return aiverse_material_feedback(in.uv,mip,p.layer,p.baseTiles);\\n}\\n"
+        : "fragment float4 aiverseVirtualFeedbackFragment("
+          "AiverseFeedbackInput in [[stage_in]],"
+          "constant AiverseFeedbackParams& p [[buffer(0)]]) {\\n"
+          " return aiverse_material_feedback(in.uv,p.mip,p.layer,p.baseTiles);\\n}\\n";
+    return shader;
+}
+
 } // namespace aiverse::gfx
