@@ -598,3 +598,11 @@ Every `View::Object` continues to use exactly one MotionWeave graph/pose writer 
 A generic native host may compile a named or indexed attachment with `aiverse::view::compileModelSocket(rig, epoch, socketName, socketIndex)` at asset publication time, then share that immutable `CompiledModelSocket` through appended `ModelAttachment::compiledSocket`. The View's revision-aware `composeAttachment` checks exact rig/epoch/authored selector; expired compiled sockets fail closed and require recompilation. Legacy uncompiled sockets and root attachments remain available. Host owns CPU Model/GPU retirement and must not mutate a published Model in place without a new epoch. The animation core has no FPS/RTS/RPG dependencies.
 
 See [Stage 150 handoff](agent-handoffs/animation-stage150-complete-lod-signatures-compiled-sockets-2026-11-19.md). **NOT RUN:** compiler, native CTest, current passing CI, real Metal/Vulkan/GLES visuals, sanitizers or benchmarks pending the user's feature-first single validation pass.
+
+
+
+## Stage 151 — authored presentation binding transaction
+
+A universal native project can now use `AppearanceAssetRegistry::Asset::compilePresentationBindings` to compile a whole set of visual Model LOD retarget plans and socket bindings against immutable published source/visual snapshots. Successful `CompiledPresentationBindings::apply(View::Object&)` installs the configuration atomically after validating the source Model epoch and authored socket selectors. Invalid input preserves the last-good candidate; old compiled sockets are removed on complete replacement instead of silently carrying incorrect bone indices across a reimport.
+
+This is **publication/authoring only**, not another animation evaluator, gameplay action system, RHI allocation or host-specific rule. The single MotionWeave presentation owner continues updating the source Graph, while the generic View uses the precompiled LOD and sockets for rendering. Caller retains CPU Model/Graph/GPU resource lifetime responsibility. Detailed APIs, exact code commits and final validation cases are in [Stage 151 handoff](agent-handoffs/animation-stage151-transactional-presentation-authoring-2026-11-19.md). Local native compiler/CTest/real Metal-GLES-Vulkan GPU/sanitizers/performance are **NOT RUN**.
