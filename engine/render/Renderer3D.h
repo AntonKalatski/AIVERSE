@@ -280,7 +280,9 @@ public:
         staticModelCaches_.clear();
         staticRenderPackets_.clear();
         staticModelEligibility_.clear();
+        staticMaterialOwners_.clear();
         staticRenderPacketBytes_ = 0;
+        staticMaterialOwnerBytes_ = 0;
     }
     // Targeted cache retirement for native ECS entity destruction/streaming.
     // Invoke on the renderer thread before Model resources are released and
@@ -291,6 +293,16 @@ public:
         uint64_t hits = 0, rebuilds = 0, declined = 0, evicted = 0;
         size_t live = 0, retainedBytes = 0;
     };
+    struct SharedMaterialStateStats {
+        uint64_t hits = 0, misses = 0, evicted = 0;
+        size_t live = 0, retainedBytes = 0;
+    };
+    SharedMaterialStateStats sharedMaterialStateStats() const {
+        auto stats = sharedMaterialStateStats_;
+        stats.live = staticMaterialOwners_.size();
+        stats.retainedBytes = staticMaterialOwnerBytes_;
+        return stats;
+    }
     StaticRenderPacketStats staticRenderPacketStats() const {
         auto s = staticRenderPacketStats_;
         s.live = staticRenderPackets_.size();
@@ -613,6 +625,10 @@ private:
     struct StaticPacketEntry {
         ModelDraw draw;
         uint64_t geometryRevision = 0;
+        uint64_t materialRevision = 0;
+        // 0: conservative per-packet GPU-state equality. Nonzero: shared
+        // versioned-owner signature, checked via a monotonic renderer serial.
+        uint64_t sharedMaterialSerial = 0;
         uint32_t vertexBuffer = 0, indexBuffer = 0;
         uint64_t seen = 0;
         std::vector<Material> materialsSnapshot;
@@ -640,6 +656,37 @@ private:
         bool transitioning = false;
     };
     std::vector<StaticPacketNodeState> staticPacketNodeScratch_;
+    // Immutable GPU material signatures shared by many static draw packets.
+    // Key is an explicit owner token scoped to a Model, never Material* or a
+    // temporary vector allocation address. Revisions are owner supplied.
+    struct MaterialOwnerKey {
+        const Model* model = nullptr;
+        uint64_t ownerKey = 0;
+        bool operator==(const MaterialOwnerKey&) const = default;
+    };
+    struct MaterialOwnerKeyHash {
+        size_t operator()(const MaterialOwnerKey& p) const {
+            const size_t a = std::hash<const Model*>{}(p.model);
+            const size_t b = std::hash<uint64_t>{}(p.ownerKey);
+            return a ^ (b + size_t(0x9e3779b9) + (a << 6) + (a >> 2));
+        }
+    };
+    struct SharedMaterialEntry {
+        uint64_t ownerRevision = 0, modelMaterialRevision = 0;
+        uint64_t geometryRevision = 0, serial = 0, seen = 0;
+        size_t count = 0;
+        int minVertexOffsetQuality = 2147483647; // INT_MAX = no displacement
+        std::vector<uint64_t> hashes; // resolved GPU state, computed once/revision
+    };
+    std::unordered_map<MaterialOwnerKey, SharedMaterialEntry, MaterialOwnerKeyHash>
+        staticMaterialOwners_;
+    uint64_t staticMaterialOwnerSerial_ = 0;
+    uint64_t staticMaterialOwnerEpoch_ = 0;
+    size_t staticMaterialOwnerBytes_ = 0;
+    SharedMaterialStateStats sharedMaterialStateStats_{};
+    const SharedMaterialEntry* cachedSharedMaterialState(
+        const Model& model, const ModelDraw& draw,
+        const std::vector<Material>& materials);
     std::unordered_map<uint64_t, StaticPacketEntry> staticRenderPackets_;
     size_t staticRenderPacketBytes_ = 0;
     StaticRenderPacketStats staticRenderPacketStats_{};
