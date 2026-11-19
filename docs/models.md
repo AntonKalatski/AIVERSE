@@ -1306,3 +1306,36 @@ GPU device resource owner was introduced.
 **NOT RUN:** native CMake/CTest, real Model replacement or GPU fault
 injection, sanitizers or FPS/RTS/editor visual parity.
 [Stage 128 handoff](agent-handoffs/animation-stage128-native-model-lifetime-pins-2026-11-19.md).
+
+## Stage 129 — cache-owned Model read guards without shared-ownership conversion
+
+`ModelResourceCache` continues to own Models as
+`std::unique_ptr<Model>`. To protect borrowed Model pointers
+while a native View evaluates and submits a frame, acquire an
+owner-thread `ModelReadLease` for a resident Model or a coarse
+`ModelCacheReadScope` around an existing legacy View draw.
+Until the read guards are released, cache eviction/replacement/
+shutdown is rejected by a `logic_error` before any borrowed
+Model CPU memory is destroyed. Cache destruction with a live
+read lease terminates because there is no safe way to keep
+unique-owned raw Model pointers valid after that destructor.
+Never allow a cache read lease to outlive its owner.
+
+`PinnedAppearanceBatch::addCacheOwned` and
+`pinCacheRelatedModel` accept genuine cache-issued read
+tokens, complementing Stage 128's true `shared_ptr<const Model>`
+CPU owners. The batch validates source/visual/LOD/attachment
+Model coverage via `validatedSpan`, then releases tokens in
+`clear()` after a synchronous draw. Do not use fake shared
+ownership aliases, change Model pointers in-place during a
+lease, or confuse this CPU guard with the GPU retirement fence.
+`ModelResourceCache::collectRetired` continues to own actual
+GPU resource completion and deferred destruction.
+
+The RTS adapter now protects the complete render/animation
+phase with one cache read scope after loading its active types.
+No Model importer, skinning format, source graph or genre
+specific system moved into the generic View.
+**NOT RUN:** CMake/C++ build, CTest, GPU visual tests,
+ASan/TSan, eviction failure-injection or benchmarks.
+[Stage 129 handoff](agent-handoffs/animation-stage129-model-cache-read-leases-2026-11-19.md).
