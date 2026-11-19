@@ -27,6 +27,7 @@ public:
             if(pair.first!="version" && pair.first!="cpuEffect" &&
                pair.first!="impactEffect" &&
                pair.first!="preference" && pair.first!="particles" &&
+               pair.first!="gpuIndirectCompaction" &&
                pair.first!="allowCpuFallback" && pair.first!="quality" &&
                pair.first!="spawn" && pair.first!="appearance" &&
                pair.first!="environment" && pair.first!="lod")
@@ -36,6 +37,11 @@ public:
            doc["cpuEffect"].str().size()>128)
             return fail("cpuEffect must be an effect name string (<=128)");
         next.cpuEffect=doc["cpuEffect"].str();
+        if(doc.has("gpuIndirectCompaction")) {
+            if(doc["gpuIndirectCompaction"].type()!=Json::Type::Bool)
+                return fail("gpuIndirectCompaction must be boolean");
+            next.gpuIndirectCompaction=doc["gpuIndirectCompaction"].boolean();
+        }
         if(doc.has("impactEffect")) {
             const Json& effect=doc["impactEffect"];
             if(!effect.isString() || effect.str().size()>64)
