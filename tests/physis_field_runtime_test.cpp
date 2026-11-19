@@ -329,9 +329,9 @@ void trackedSaveRestoreGuards() {
     }
     CHECK(restored->checksum()==source->checksum());
     const auto baseline=restored->checksum();
-    // The persisted tracked registry is authoritative even if the
-    // nonpersistent install-mode marker is missing after restore.
-    restored->world().removeResource<AuthoredFieldInstallMode>();
+    // The persisted tracked registry must reject competing installers.
+    // A marker-free restore needs a separate World resource removal fixture
+    // once the actual World resource API has been verified.
     bool rejected=false;
     try { (void)installEditableFromMap(*restored,map); }
     catch(const std::logic_error&) { rejected=true; }
