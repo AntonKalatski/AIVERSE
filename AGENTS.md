@@ -6,6 +6,35 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 
 ## AIVERSE SpectraFX (universal VFX, in progress)
 
+**Latest implementation handoff (Stage 40, source committed; execution NOT verified):**
+[docs/agent-handoffs/spectrafx-stage-40-frozen-checkpoint-staging-recovery-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-40-frozen-checkpoint-staging-recovery-2026-11-19.md).
+A truly frozen Metal frame with no births/kills/live VM parameter
+changes now performs geometry gather without Update VM and without
+advancing the GPU particle-state revision. The opt-in SpectraFX editor
+can **Freeze & capture GPU state** using async per-group
+`requestGpuCheckpoint` and only offers binary export for complete,
+current-revision data. V2 diagnostic `.spfx` binaries use a 48-byte
+header and CRC32 validator; legacy V1 was 40 bytes and is superseded.
+These are NOT native game saves or GPU replay/timeline state.
+
+Metal Spawn/VM/Gather input buffers now use checked storage uploads.
+A partial upload/compute-begin failure keeps pending births/slots,
+invalidates checkpoints, disables stale draws/VM-error diagnostics
+and retries inputs on the next GPU step. The State-32 shared readback
+budget and State-35 completed-fence quarantine remain mandatory.
+`GpuPoolRecoveryHost` preserves its CPU-only effect catalog across
+failed replacement-Device imports; the platform host owns the
+actual new graphics Device and old GPU particles are NOT restored.
+The opt-in VFX load policy now uses hysteresis with a recovery
+threshold (default 85%) instead of flapping near particle/readback
+limits. Never store renderer state in gameplay ECS or add FPS/RTS
+special cases. Do not assert GPU parity or performance from source.
+Stage 40 C++/Metal compile, CTest, editor screenshots, checkpoint
+CRC fault checks, GPU readback and Device-loss recovery have NOT RUN.
+Do not modify main or force-push another agent's branch without
+explicit request. Read the dated Stage 40 handoff before further work.
+
+
 **Latest implementation handoff (Stage 39; functional source, verification deferred):**
 [docs/agent-handoffs/spectrafx-stage-39-host-recovery-fresh-export-load-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-39-host-recovery-fresh-export-load-2026-11-19.md).
 The new `GpuPoolRecoveryHost` is a **native renderer-owned**
