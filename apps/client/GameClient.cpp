@@ -1120,6 +1120,11 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         }
         prisma_.setViewId(3ULL);
         prisma_.applyCameraVolumes(prismaVolumes_, cam_.eye());
+        const auto rendererMemory=r3d_.residentMemoryStats();
+        prisma_.setExternalRendererGpuMemory(
+            rendererMemory.liveTextureKnownBytes+
+            rendererMemory.liveBufferKnownBytes,
+            rendererMemory.pendingMotionKnownBytes);
         // Presentation-only Halton jitter: gameplay aiming, viewport picking,
         // UI and input continue to use the original unjittered cam_.
         const auto [renderW,renderH]=prisma_.renderSizeForOutput(fbW(),fbH());
