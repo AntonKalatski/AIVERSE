@@ -117,6 +117,23 @@ public:
     uint64_t gpuCompletedFence() const override {
         return completedGpuToken_;
     }
+    bool waitForSubmittedGpuWork() override {
+#if defined(__EMSCRIPTEN__)
+        // WebGL2 cannot promise a portable synchronous GPU-idle barrier.
+        // Retain quarantined textures until an explicit host-safe teardown.
+        return false;
+#else
+        // ONLY at the owner's pre-render pressure point; never every frame.
+        glFinish();
+        // All previously submitted commands are GPU-complete now.
+        for (const auto& entry : gpuFences_) {
+            completedGpuToken_ = std::max(completedGpuToken_,entry.first);
+            glDeleteSync(entry.second);
+        }
+        gpuFences_.clear();
+        return true;
+#endif
+    }
     void pollCompletedGpuFences() {
         while (!gpuFences_.empty()) {
             auto& front = gpuFences_.front();
