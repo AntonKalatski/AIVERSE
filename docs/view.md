@@ -2685,3 +2685,42 @@ SpectraFX resource owners remain separate.
 
 **NOT RUN:** CMake, native C++ compilation, CTest, GPU validation or
 sanitizers. [Stage 120 handoff](agent-handoffs/animation-stage120-canvas-gpu-retirement-2026-11-19.md).
+
+## Stage 121 — whole-asset LOD, source rig and generic socket attachments
+
+Canonical `aiverse::View` now has opt-in whole-model LOD and socket
+attachment composition, independent of FPS/RTS and separate from the
+existing renderer's per-mesh projected-pixel LOD.
+
+- `engine/view/ModelComposition.h` exports
+  `view::ModelLod`, `selectModelLodLevel` (deterministic distance
+  hysteresis), `compatibleModelPose`, `view::ModelAttachment`
+  and `view::composeAttachment`. Native projects can reuse these
+  directly without creating any genre-specific simulation.
+- `view::Object::animationModel` holds the canonical source rig for
+  one MotionWeave graph. `draw.model` remains the base render asset.
+  Optional `lods` provide additional distance-selected visual Models;
+  changing the selected visual model never resets/steps the graph.
+  The selection is cached by stable object ID + generation and pruned
+  as objects leave the View.
+- A different visible Model receives current `Pose`/node matrices
+  only when its hierarchy/rest/skin layout matches the source.
+  Different morph targets cannot be blindly remapped across models.
+  An incompatible visual LOD uses its own bind pose while the source
+  graph clock and source-rig sockets continue correctly.
+- `view::Object::attachments` are synchronous ModelDraw packets
+  anchored by named/indexed node on the **source** animated rig,
+  not by potentially simplified LOD nodes. No extra graph player.
+  The RTS weapon/cargo/banner adapter now calls the same
+  `view::composeAttachment` math after its host-owned gameplay filters.
+- All new Object fields are appended after the original fields,
+  preserving existing aggregate source initialization order.
+  Lifetimes of Model/Graph/Material/GPU resources remain host-owned.
+
+A separate canvas reliability change makes `RenderTexture::upload`
+return success/failure; categorical and territory paint layers preserve
+CPU source bytes/dirty flags for retry when GPU upload fails.
+See [Stage 121 handoff](agent-handoffs/animation-stage121-universal-lod-attachments-2026-11-19.md).
+
+**NOT RUN:** CMake compiler/linker, CTest, GPU visual parity, sanitizers
+or performance benchmarks. This source-only stage is not release validated.
