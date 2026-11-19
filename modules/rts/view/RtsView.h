@@ -386,6 +386,8 @@ public:
                                 const MapGrid& grid,
                                 const std::vector<uint8_t>* vision,
                                 double seconds);
+    // Same-frame sprite/tile draw-only pass, without sprite state changes.
+    void drawPreparedSprites(render::Renderer3D& renderer);
     // Optional LENS one-frame capture of pre-LOD MotionWeave model packets.
     // Owner must disable this before resources can be reimported or destroyed.
     void setCameraPreparedCapture(render::CameraModelSnapshot* target) noexcept {
