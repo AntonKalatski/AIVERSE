@@ -114,6 +114,10 @@ public:
     render::Renderer3D& renderer() { return r3d_; }
     ViewportGpuRetirement& viewportRetirement() { return viewportRetirement_; }
     const ViewportGpuRetirement& viewportRetirement() const { return viewportRetirement_; }
+    // Request a GPU-idle drain at NEXT frame's safe pre-render boundary;
+    // never synchronize inside an active ImGui/window render pass.
+    void requestGpuRetirementFlush() { gpuRetirementFlushRequested_ = true; }
+    bool lastGpuRetirementFlushSucceeded() const { return gpuRetirementLastFlushSucceeded_; }
     render::Prisma& prisma() { return prisma_; } // canonical PRISMA editor API
     render::Prisma& postFx() { return prisma(); } // legacy alias; existing tools depend on it
     bool postFxInScene = true;                     // false: only the Game view is post-processed
@@ -371,6 +375,8 @@ private:
     std::vector<std::string> pendingFocus_;   // openWorkspace: tabs to bring to front once docked
     int pendingFocusFrames_ = 0;
     ViewportGpuRetirement viewportRetirement_; // outlives all window Viewports
+    bool gpuRetirementFlushRequested_ = false;
+    bool gpuRetirementLastFlushSucceeded_ = false;
     std::vector<std::unique_ptr<EditorWindow>> windows_;
     // Only the GUI owner can decide whether Scene/Game postprocess views
     // actually rendered in the current frame, including dock-hidden tabs.
