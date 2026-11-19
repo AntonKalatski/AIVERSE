@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <deque>
 #include <map>
 #include <memory>
 #include <optional>
@@ -44,10 +45,22 @@ public:
         BranchLodSettings settings;
         settings.mesh = mesh;
         auto model = makeArborBranchLodModel(profile, meshSeed, settings);
+        // BranchLOD nodes and the skeleton use the same ordered seed. Store
+        // compact branch origins once per SPECIES, never per cosmetic tree.
+        const TreeSkeleton skeleton=generateTree(profile,meshSeed,TreeLOD::High);
+        std::vector<render::float3> pivots;
+        pivots.reserve(skeleton.branches.size());
+        for(const TreeBranch& branch:skeleton.branches)
+            pivots.push_back({float(branch.x0)*0.01f,
+                              float(branch.y0)*0.01f,
+                              float(branch.z0)*0.01f});
+        if(pivots.size()!=model->nodes.size())
+            throw std::logic_error("TerraWeave branch pose/skeleton mismatch");
         auto impostor = makeArborImpostorAtlas(profile, meshSeed);
         models_.emplace(profile.speciesId, std::move(model));
         billboardMaterials_.emplace(profile.speciesId, std::move(impostor.viewMaterials));
         billboards_.emplace(profile.speciesId, std::move(impostor.model));
+        branchPivots_.emplace(profile.speciesId,std::move(pivots));
         evergreen_[profile.speciesId]=(profile.shape==CrownShape::Conifer);
         if(phenology_!=CanopyPhenology{})rebuildPhenologyMaterials();
     }
@@ -70,6 +83,14 @@ public:
     }
     const ForestWindState& wind() const {return wind_;}
     void setPresentationTick(uint64_t tick) {presentationTick_=tick;}
+    // Bounded per-frame temporary pose arena. 0 disables branch poses,
+    // preserving the original low-cost whole-tree lean fallback.
+    void setBranchPoseBudgetBytes(size_t bytes) {
+        if(bytes>8u*1024u*1024u)
+            throw std::invalid_argument("TerraWeave branch pose budget");
+        branchPoseBudgetBytes_=bytes;
+    }
+    size_t branchPoseBudgetBytes() const {return branchPoseBudgetBytes_;}
 
     size_t prototypeCount() const { return models_.size(); }
     render::Model* prototype(uint32_t speciesId) const {
@@ -123,6 +144,11 @@ public:
     void forEachDraw(const std::vector<FloraBatch>& batches,
                      ForestRenderOriginCm origin, Emit&& emit,
                      std::optional<ForestCameraCm> camera = std::nullopt) const {
+        // Renderer3D::drawModel consumes nodeWorld synchronously and copies
+        // node transforms into render items. For callbacks collecting draws,
+        // pointers stay valid until the next forEachDraw() invocation.
+        branchPoseArena_.clear();
+        size_t branchPoseBytes=0;
         const auto inside = [](int64_t v) {
             return v >= -kWorldLimitCm && v <= kWorldLimitCm;
         };
@@ -196,6 +222,27 @@ public:
                 }
                 draw.world = draw.world * render::mat4::rotateY(yaw) *
                              render::mat4::scale({scale, scale, scale});
+                // Nearby BranchLOD has independent rigid nodes for trunk
+                // and branches. Bend each child around its own stable
+                // branch pivot while preserving parent hierarchy. More
+                // distant impostors remain on the cheap whole-tree sway.
+                if(batch.lod!=TreeLOD::Impostor &&
+                   wind_.branchFlexPermille>0 &&
+                   wind_.maxLeanMilliDegrees>0 &&
+                   (wind_.xCmPerSec||wind_.zCmPerSec)) {
+                    const auto& pivots=branchPivots_.at(batch.speciesId);
+                    const size_t bytes=model->nodes.size()*
+                        sizeof(render::mat4);
+                    if(model->nodes.size()>1 &&
+                       bytes<=branchPoseBudgetBytes_ &&
+                       branchPoseBytes<=branchPoseBudgetBytes_-bytes) {
+                        branchPoseArena_.emplace_back();
+                        buildBranchWindPose(*model,pivots,instance,
+                                            branchPoseArena_.back());
+                        draw.nodeWorld=&branchPoseArena_.back();
+                        branchPoseBytes+=bytes;
+                    }
+                }
                 // Namespaced stable per-tree identity; never derive it from
                 // the transient index in the GPU instance buffer.
                 draw.persistentId = detail::mix64(
@@ -229,6 +276,45 @@ public:
     }
 
 private:
+    // All Arbor branch geometry is authored in model-space centimetres
+    // converted to metres, not re-centered around a local branch origin.
+    // Therefore compose cumulative model-space transforms around each
+    // branch's ORIGINAL start pivot; children inherit their parent's pose.
+    void buildBranchWindPose(
+            const render::Model& model,
+            const std::vector<render::float3>& pivots,
+            const FoliageInstance& instance,
+            std::vector<render::mat4>& pose) const {
+        pose.resize(model.nodes.size());
+        constexpr float milliRadians=0.000017453292519943295f;
+        const float flex=float(wind_.branchFlexPermille)*0.001f;
+        const uint64_t treeKey=instance.key ^
+            (uint64_t(instance.speciesId)<<32);
+        for(int nodeIndex:model.order){
+            const size_t n=static_cast<size_t>(nodeIndex);
+            const int parent=model.nodes[n].parent;
+            const render::mat4 parentPose=parent>=0 ?
+                pose[size_t(parent)] : render::mat4::identity();
+            if(n==0 || n>=pivots.size()) {
+                pose[n]=parentPose; // keep trunk stable under root sway
+                continue;
+            }
+            const uint64_t phaseKey=detail::mix64(treeKey ^
+                detail::mix64(uint64_t(n)+0x4252414e43485744ULL));
+            const auto lean=forestTreeLean(
+                wind_,presentationTick_,phaseKey);
+            const auto pivot=pivots[n];
+            const render::float3 neg{-pivot.x,-pivot.y,-pivot.z};
+            const render::mat4 bend=
+                render::mat4::translate(pivot) *
+                render::mat4::rotateZ(
+                    -float(lean.towardX)*milliRadians*flex) *
+                render::mat4::rotateX(
+                     float(lean.towardZ)*milliRadians*flex) *
+                render::mat4::translate(neg);
+            pose[n]=parentPose*bend;
+        }
+    }
     void rebuildPhenologyMaterials() {
         seasonalNearMaterials_.clear();
         seasonalBillboardMaterials_.clear();
@@ -273,6 +359,11 @@ private:
     CanopyPhenology phenology_{};
     ForestWindState wind_{};
     uint64_t presentationTick_=0;
+    size_t branchPoseBudgetBytes_=4u*1024u*1024u;
+    // Stable deque element addresses for ModelDraw::nodeWorld borrowed
+    // pointers, valid until the next forEachDraw call on this adapter.
+    mutable std::deque<std::vector<render::mat4>> branchPoseArena_;
+    std::map<uint32_t,std::vector<render::float3>> branchPivots_;
     std::map<uint32_t,bool> evergreen_;
     std::map<uint32_t,std::vector<render::Material>> seasonalNearMaterials_;
     std::map<uint32_t,std::vector<std::vector<render::Material>>> seasonalBillboardMaterials_;
