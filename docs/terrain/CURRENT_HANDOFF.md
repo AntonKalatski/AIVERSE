@@ -4,6 +4,21 @@ Last source stage: **70** (2026-11-19), branch `feature/terraweave`.
 PR #24 is Draft, and must not merge to `main` before native QA and
 cross-branch conflict reconciliation.
 
+## Latest PHYSIS-proven Place performance QA backport
+
+**Read first:** [2026-11-19 PHYSIS Stage100/101 Place performance backport and replica parity](qa-2026-11-19-physis-place-performance-backport.md).
+The user's complete native CTest found a `place` server timing regression
+(**8.256ms mean, 5ms limit**) despite successful gameplay convergence.
+PHYSIS Stage101 already reported **0.789ms average, 1.905ms worst**
+for the SAME scenario on optimized Debug, with batch replica field
+updates, allocation-free viewer, and opt-in `-O2` hot modules.
+Those source changes are now selectively backported into this
+TerraWeave branch, along with five-phase diagnostics, a replica-wire
+parity regression and a dedicated Linux/macOS Place workflow.
+**This backport is source-only and has not yet passed new native
+compiler/CTest on this branch**. PHYSIS's previous PASS does not prove
+the backport is passing. Do not change the 5ms limit or merge main.
+
 ## Latest Mac Studio evidence: three native TerraWeave checks passed
 
 **Read first:** [Box3D native 3/3 passing smoke and warning QA fix](qa-2026-11-19-box3d-smoke-green-and-warning.md).
