@@ -57,6 +57,14 @@ struct PoolCheckpointStats {
     uint32_t maximumCurrentIntervalFrames=0;
     uint32_t killedSlotsAwaitingFence=0;
     uint64_t killedSlotsReclaimed=0;
+    // The supported Metal compute Device reports health; other RHIs are
+    // "unknown", NOT healthy by assertion.
+    bool gpuDeviceHealthKnown=false;
+    bool gpuDeviceHealthy=false;
+    uint64_t gpuDeviceUnhealthy=0;
+    uint64_t gpuKillUploadFailures=0;
+    uint64_t gpuComputeBeginFailures=0;
+    uint64_t gpuPassOrderRejections=0;
     uint64_t killScatterDispatches=0;
     size_t killIndexBytes=0;
     size_t bytesReturned=0; // successful callback payload, not GPU DMA metrics
