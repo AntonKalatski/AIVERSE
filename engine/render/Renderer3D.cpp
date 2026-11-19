@@ -136,6 +136,10 @@ void Renderer3D::shutdown() {
         if (history.reactive.valid()) dev_->destroyTexture(history.reactive);
     }
     objectMotionViews_.clear();
+    // Renderer shutdown must occur at the existing host's confirmed
+    // GPU-idle teardown point. Quarantined textures are not discarded.
+    drainObjectMotionAfterGpuIdle();
+    motionLastSubmittedFence_ = 0;
     if (objectMotionPipeline_.valid()) dev_->destroyPipeline(objectMotionPipeline_);
     if (objectMotionShader_.valid()) dev_->destroyShader(objectMotionShader_);
     if (objectMotionInstancedPipeline_.valid()) dev_->destroyPipeline(objectMotionInstancedPipeline_);
@@ -353,6 +357,47 @@ void Renderer3D::bindTraceTextures() {
     bindSceneTextures(4, 5);
 }
 
+void Renderer3D::queueObjectMotionTexture(
+    gfx::TextureHandle& texture, uint64_t lastSubmittedFence) {
+    if (!texture.valid()) return;
+    if (lastSubmittedFence)
+        motionRetired_.retire(texture,lastSubmittedFence);
+    else
+        motionUnfenced_.push_back(texture); // not safe to release yet
+    texture = {};
+}
+
+void Renderer3D::retireObjectMotionView(
+    uint64_t viewId, uint64_t lastSubmittedFence) {
+    auto it = objectMotionViews_.find(viewId);
+    if (it == objectMotionViews_.end()) return;
+    // The caller must provide a backend-submitted fence token that covers
+    // ALL work referencing this view. A zero token quarantines until GPU idle.
+    queueObjectMotionTexture(it->second.target,lastSubmittedFence);
+    queueObjectMotionTexture(it->second.depth,lastSubmittedFence);
+    queueObjectMotionTexture(it->second.reactive,lastSubmittedFence);
+    objectMotionViews_.erase(it);
+    if (objectMotionStats_.viewId == viewId) objectMotionStats_ = {};
+}
+
+size_t Renderer3D::collectCompletedObjectMotion(
+    uint64_t completedGpuFence) {
+    if (!dev_ || !completedGpuFence) return 0;
+    // completedGpuFence MUST come from an actual signaled backend fence.
+    return motionRetired_.collect(completedGpuFence,
+        [this](gfx::TextureHandle h) { dev_->destroyTexture(h); });
+}
+
+size_t Renderer3D::drainObjectMotionAfterGpuIdle() {
+    if (!dev_) return 0;
+    size_t removed = motionRetired_.drainAfterGpuIdle(
+        [this](gfx::TextureHandle h) { dev_->destroyTexture(h); });
+    for (auto h : motionUnfenced_)
+        if (h.valid()) { dev_->destroyTexture(h); ++removed; }
+    motionUnfenced_.clear();
+    return removed;
+}
+
 void Renderer3D::resetObjectMotionHistory(uint64_t viewId) {
     auto it = objectMotionViews_.find(viewId);
     if (it == objectMotionViews_.end()) return;
@@ -478,10 +523,9 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
         history.previous = std::move(current);
         history.previousDeformed = std::move(currentDeformed);
         if (resize) {
-            if (history.target.valid()) dev_->destroyTexture(history.target);
-            if (history.depth.valid()) dev_->destroyTexture(history.depth);
-            if (history.reactive.valid()) dev_->destroyTexture(history.reactive);
-            history.target = {}; history.depth = {}; history.reactive = {};
+            queueObjectMotionTexture(history.target,motionLastSubmittedFence_);
+            queueObjectMotionTexture(history.depth,motionLastSubmittedFence_);
+            queueObjectMotionTexture(history.reactive,motionLastSubmittedFence_);
         }
         history.width = w; history.height = h;
         return;
@@ -494,10 +538,9 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
     }
 
     if (history.width != w || history.height != h) {
-        if (history.target.valid()) dev_->destroyTexture(history.target);
-        if (history.depth.valid()) dev_->destroyTexture(history.depth);
-        if (history.reactive.valid()) dev_->destroyTexture(history.reactive);
-        history.target = {}; history.depth = {}; history.reactive = {};
+        queueObjectMotionTexture(history.target,motionLastSubmittedFence_);
+        queueObjectMotionTexture(history.depth,motionLastSubmittedFence_);
+        queueObjectMotionTexture(history.reactive,motionLastSubmittedFence_);
         history.width = w; history.height = h;
     }
     if (!history.target.valid()) {
