@@ -134,6 +134,25 @@ void test() {
         }
     }
 
+    // Variable presentation frame rates must use small bounded substeps.
+    {
+        auto dna=HumanDNA::preset("neutral");
+        HumanGroomRuntime batched,individual;
+        batched.generate(dna,GroomQuality::Low);
+        individual.generate(dna,GroomQuality::Low);
+        expect(batched.step(1.0f/30.0f,{1.5f,0,0.4f}),
+               "substepped groom simulation rejected a valid frame");
+        for(int i=0;i<4;++i)
+            expect(individual.step(1.0f/120.0f,{1.5f,0,0.4f}),
+                   "fixed groom substep rejected");
+        for(std::size_t i=0;i<batched.guides().size();++i)
+            for(std::size_t j=0;j<batched.guides()[i].position.size();++j) {
+                const auto a=batched.guides()[i].position[j];
+                const auto b=individual.guides()[i].position[j];
+                expect(finite(a)&&finite(b)&&render::length(a-b)<0.0001f,
+                       "groom substeps disagree with equivalent fixed frames");
+            }
+    }
     // Closed imported-head proxy: CPU groom can collide against actual
     // authored triangles rather than assuming a procedural ellipsoid.
     {
