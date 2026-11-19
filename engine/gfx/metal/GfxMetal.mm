@@ -249,6 +249,12 @@ public:
         }
         memcpy(static_cast<uint8_t*>(current(*b).contents) + offset, data, size);
     }
+    bool bufferInfo(BufferHandle h, BufferInfo& out) const override {
+        const auto* b = buffers_.get(h.id);
+        if (!b) return false;
+        out = {b->size,uint32_t(b->count)};
+        return true;
+    }
     void destroyBuffer(BufferHandle h) override { buffers_.remove(h.id); }
     bool canUpdateSharedBuffers() const override { return !enc_ && !compute_; }
 
