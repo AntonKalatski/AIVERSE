@@ -22,6 +22,8 @@
 
 namespace aiverse::render {
 
+class GiDynamicProbeTexture;
+
 struct Mesh {
     gfx::BufferHandle vb, ib;
     uint32_t indexCount = 0;
@@ -388,6 +390,14 @@ public:
     // set's mode (indirect / shadowmask / subtractive). Null = realtime only. The set must outlive its use.
     void setBakedLighting(const BakedLighting* b) { baked_ = b; }
     const BakedLighting* bakedLighting() const { return baked_; }
+    // Opt-in dynamic-only indirect probe overlay. Same gfx::Device as this renderer.
+    // No lightmap/cache change; the caller must keep texture alive while bound.
+    // Existing shader-graph texture slots 13+ take priority, so models using graph
+    // textures currently fall back to their existing GI path.
+    bool setDynamicGiOverlay(const GiDynamicProbeTexture* texture, float3 origin,
+                             float spacing, int nx, int ny, int nz);
+    void clearDynamicGiOverlay() { dynamicGiOverlay_ = nullptr; }
+    bool dynamicGiOverlayActive() const { return dynamicGiOverlay_ != nullptr; }
     void setBakedQuality(BakedQuality q);
     BakedQuality bakedQuality() const { return bakedQuality_; }
     static BakedQuality defaultBakedQualityFor(const gfx::Device& dev, bool mobile);
@@ -657,6 +667,9 @@ private:
     std::string modelError_;
     // baked lighting (Renderer3DBaked.cpp)
     const BakedLighting* baked_ = nullptr;
+    const GiDynamicProbeTexture* dynamicGiOverlay_ = nullptr;
+    float4 dynamicGiOrigin_{};
+    float4 dynamicGiSize_{};
     BakedQuality bakedQuality_ = BakedQuality::High;
     uint32_t bakedLightmapped_ = 0, bakedProbed_ = 0, bakedCountLm_ = 0, bakedCountPr_ = 0;
     ModelCapture capture_;
