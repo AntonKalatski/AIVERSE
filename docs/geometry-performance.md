@@ -1583,3 +1583,20 @@ This is not GPU-tested: do not use globally in shipping builds
 without source fixture + real Vulkan/Metal pixel comparisons,
 LOD/variant tests and GPU validation layers. CPU MDI thresholds,
 material-state equality and transparency ordering stay mandatory.
+
+
+### Stage 47 — full reservation preservation when recycling
+
+When `AIVERSE_GEOMETRY_POOL_RECYCLE=1` uses a whole retired
+vertex/index pair for a *smaller* Model, the Model must own the
+original pair's **full reserved lengths**, not only the
+newly uploaded payload sizes. Otherwise the unused tails silently
+disappear from the allocator each unload/reload cycle.
+
+`GlobalGeometryPool.cpp` now copies the old pair's lengths
+into `Model::gpuPoolVertexBytes`/`gpuPoolIndexBytes` after a
+successful checked upload. On release the whole pair is retired
+again, with the standard GPU completion quarantine. Normal
+new high-water allocations still record their original sizes.
+No splitting or overlap is introduced; frame safety and
+defaults are unchanged. Native regression tests are NOT RUN.

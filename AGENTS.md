@@ -1792,3 +1792,16 @@ material/LOD/culling, Metal GPU ICB and command thresholds
 unchanged. No native builds, pixel comparisons or GPU
 validation performed; Draft PR #34 remains open. See Stage 46
 handoff for required tests before default enablement.
+
+
+## Stage 47 — preserve recycled reservation lengths
+
+`Model::gpuPoolVertexBytes` and `gpuPoolIndexBytes` refer to
+the reserved *allocation*, which may be larger than the
+current Model's uploaded vertex/index payload after reuse.
+Save the original retired pair extents when a smaller model
+reuses it and return the same whole pair on release. Do not
+silently shrink the reservation across repeated streaming.
+Keep Stage 44 completed-GPU-serial gate, Stage 41 checked writes,
+256-pair cap and the OFF-by-default recycle flag intact.
+Native/Metal/Vulkan tests still pending.
