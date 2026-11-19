@@ -20,6 +20,7 @@
 #include <fstream>
 #include <filesystem>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
@@ -168,6 +169,47 @@ struct CreatorApp {
         pendingRebuild=true;
         status="Imported open human package: "+path;
     }
+    static void installImportedScalpCollider(
+        HumanGroomRuntime& groom,const render::Model& model,
+        const std::string& meshName) {
+        if(meshName.empty())return;
+        const auto it=std::find_if(model.meshes.begin(),model.meshes.end(),
+            [&](const render::MeshDef& mesh){return mesh.name==meshName;});
+        if(it==model.meshes.end())
+            throw std::runtime_error("VIVID Creator: scalp collider mesh not found");
+        const auto meshId=int(it-model.meshes.begin());
+        for(const auto& node:model.nodes) {
+            if(node.mesh==meshId && node.skin>=0)
+                throw std::runtime_error("VIVID Creator: skinned scalp proxy unsupported");
+        }
+        // The authoring contract is a closed, bind-pose proxy whose vertices
+        // are already expressed in the groom's local coordinate system.
+        std::vector<render::float3> positions;
+        std::vector<std::uint32_t> indices;
+        std::vector<std::uint32_t> remap(model.vertices.size(),
+            std::numeric_limits<std::uint32_t>::max());
+        for(const auto& primitive:it->primitives) {
+            if(!primitive.jointPalette.empty())
+                throw std::runtime_error("VIVID Creator: scalp proxy has skin joints");
+            const auto begin=std::size_t(primitive.firstIndex);
+            const auto end=begin+std::size_t(primitive.indexCount);
+            if(begin>model.indices.size() || end>model.indices.size())
+                throw std::runtime_error("VIVID Creator: scalp proxy index range invalid");
+            for(std::size_t i=begin;i<end;++i) {
+                const auto original=model.indices[i];
+                if(original>=model.vertices.size())
+                    throw std::runtime_error("VIVID Creator: scalp proxy vertex out of bounds");
+                auto& mapped=remap[original];
+                if(mapped==std::numeric_limits<std::uint32_t>::max()) {
+                    mapped=std::uint32_t(positions.size());
+                    positions.push_back(model.vertices[original].pos);
+                }
+                indices.push_back(mapped);
+            }
+        }
+        if(!groom.setCollisionMesh(positions,indices))
+            throw std::runtime_error("VIVID Creator: scalp proxy must be a closed nondegenerate mesh within the 16K/32K budget");
+    }
     void regenerate() {
         if(!device)return;
         try {
@@ -196,6 +238,8 @@ struct CreatorApp {
                     });
                 if(!hasAuthoredHair) {
                     proposed.groom.generate(session.dna(),groomQuality);
+                    installImportedScalpCollider(
+                        proposed.groom,*proposed.head,manifest.scalpColliderMesh);
                     proposed.hair=proposed.groom.makeCardModel(session.dna());
                 }
                 // Artist-authored hair meshes are already in proposed.head,
