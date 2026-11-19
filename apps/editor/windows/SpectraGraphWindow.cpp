@@ -943,6 +943,34 @@ private:
             }
         }
         ImGui::Separator();
+        if(ImGui::CollapsingHeader("Metal GPU timeline",ImGuiTreeNodeFlags_DefaultOpen)) {
+            ImGui::Text("Visual simulation time: %.3f s",
+                        ed.spectraGpuPreviewVisualSeconds());
+            ImGui::Text("Queued forward steps: %u / 300",
+                        ed.spectraGpuPreviewPendingSteps());
+            ImGui::TextDisabled("Forward-only. No reverse GPU state or historical seek.");
+            ImGui::BeginDisabled(!ed.spectraGpuPreviewActive());
+            ImGui::SetNextItemWidth(155.f);
+            ImGui::SliderFloat("Advance GPU (+seconds)",&gpuAdvanceSeconds_,
+                               0.1f,5.f,"%.2f s");
+            ImGui::BeginDisabled(!ed.spectraGpuPreviewFrozen());
+            if(ImGui::Button("Queue GPU advance")) {
+                const uint32_t frames=uint32_t(std::lround(
+                    gpuAdvanceSeconds_*60.f));
+                if(!ed.queueSpectraGpuPreviewFrames(frames))
+                    message_="GPU forward-step queue is full (300 frames)";
+                else message_="Queued forward GPU frames; one step per rendered frame";
+            }
+            ImGui::EndDisabled();
+            ImGui::SameLine();
+            if(ImGui::Button("Restart GPU") &&
+               !ed.restartSpectraGpuPreview())
+                message_="No active Metal GPU preview to restart";
+            ImGui::EndDisabled();
+            if(!ed.spectraGpuPreviewLastError().empty())
+                ui::toneText(ui::Tone::Error,"%s",
+                    ed.spectraGpuPreviewLastError().c_str());
+        }
         if(ImGui::CollapsingHeader("Metal GPU checkpoint — live",ImGuiTreeNodeFlags_DefaultOpen)) {
             const auto* pool=ed.spectraGpuTelemetry();
             if(pool && pool->ready()) {
@@ -950,6 +978,18 @@ private:
                 const auto& ps=pool->stats();
                 ImGui::Text("GPU groups: %u    Sources: %u",
                             ps.gpuGroups,ps.activeSources);
+                if(cp.gpuDeviceHealthKnown) {
+                    ImGui::Text("Metal health: %s",
+                                cp.gpuDeviceHealthy?"healthy":"UNHEALTHY");
+                    if(!cp.gpuDeviceHealthy)
+                        ui::toneText(ui::Tone::Error,
+                            "GPU device reported unhealthy; do not trust live capture");
+                } else ImGui::TextDisabled("Metal health: unavailable");
+                ImGui::Text("GPU failures: upload %llu, compute %llu, pass %llu, loss %llu",
+                    static_cast<unsigned long long>(cp.gpuKillUploadFailures),
+                    static_cast<unsigned long long>(cp.gpuComputeBeginFailures),
+                    static_cast<unsigned long long>(cp.gpuPassOrderRejections),
+                    static_cast<unsigned long long>(cp.gpuDeviceUnhealthy));
                 ImGui::Text("Fresh: %u  Stale: %u  Missing: %u",
                             cp.freshGroups,cp.staleGroups,cp.missingGroups);
                 ImGui::Text("Pending: %u  Recoverable*: %u",
@@ -997,6 +1037,7 @@ private:
                            "Metal GPU доступен только для совместимого billboard-подмножества.");
     }
 
+    float gpuAdvanceSeconds_=0.5f;
     std::string project_,name_="new_spectra",message_,propertyText_,parametersText_,functionText_,instanceSchemaText_,functionLibraryName_="common_math",pendingFrom_,pendingDataFrom_,linkPort_;
     Json previewInstanceValues_=Json::object();
     std::vector<std::string> names_,draftNames_,errors_;
