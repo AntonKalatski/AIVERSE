@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <map>
+#include <optional>
 #include <stdexcept>
 
 namespace aiverse::render {
@@ -244,11 +245,29 @@ PrismaEffect parsePrismaEffect(const Json& j, bool strict, std::vector<std::stri
             problem("postfx '" + id + "': unknown parameter '" + k + "' (parameters: " + known + ", enabled, minQuality)");
             continue;
         }
-        auto clampIn = [&](double x) {
-            const float f = float(x);
-            const float c = std::clamp(f, p->lo, p->hi);
-            if (c != f && issues) issues->push_back("postfx '" + id + "': " + k + " clamped to " + fmt(c) + " (range " + fmt(p->lo) + ".." + fmt(p->hi) + ")");
-            return c;
+        // Stage 65: configuration can be created through game.json, MCP,
+        // the editor, or native Json builders. Do not let NaN/Inf or a
+        // non-numeric RGB element enter a GPU uniform via std::clamp:
+        // std::clamp(NaN,lo,hi) returns NaN on conventional implementations.
+        // Range-clamp in double precision BEFORE converting to float, so
+        // large but finite native JSON numbers cannot overflow to Inf.
+        auto clampIn = [&](const Json& number) -> std::optional<float> {
+            if (!number.isNumber()) {
+                problem("postfx '" + id + "': " + k + " must contain finite numeric values");
+                return std::nullopt;
+            }
+            const double x = number.toDouble();
+            if (!std::isfinite(x)) {
+                problem("postfx '" + id + "': " + k + " must be finite");
+                return std::nullopt;
+            }
+            const double bounded = std::clamp(x,double(p->lo),double(p->hi));
+            const float safe = float(bounded);
+            if (bounded != x && issues)
+                issues->push_back("postfx '" + id + "': " + k +
+                    " clamped to " + fmt(safe) + " (range " +
+                    fmt(p->lo) + ".." + fmt(p->hi) + ")");
+            return safe;
         };
         switch (p->kind) {
         case K::Text:
@@ -260,13 +279,28 @@ PrismaEffect parsePrismaEffect(const Json& j, bool strict, std::vector<std::stri
             else e.values[size_t(off)] = v.boolean() ? 1.0f : 0.0f;
             break;
         case K::Number:
-            if (!v.isNumber()) problem("postfx '" + id + "': " + k + " must be a number");
-            else e.values[size_t(off)] = clampIn(v.toDouble());
+            if (auto value = clampIn(v)) e.values[size_t(off)] = *value;
             break;
         case K::Color:
-            if (v.isNumber()) { const float c = clampIn(v.toDouble()); for (int i = 0; i < 3; ++i) e.values[size_t(off + i)] = c; }
-            else if (!v.isArray() || v.size() < 3) problem("postfx '" + id + "': " + k + " must be [r, g, b]");
-            else for (int i = 0; i < 3; ++i) e.values[size_t(off + i)] = clampIn(v[size_t(i)].toDouble());
+            if (v.isNumber()) {
+                if (auto value = clampIn(v))
+                    for (int i = 0; i < 3; ++i) e.values[size_t(off + i)] = *value;
+            } else if (!v.isArray() || v.size() < 3) {
+                problem("postfx '" + id + "': " + k + " must be [r, g, b]");
+            } else {
+                // Apply an RGB triplet atomically. If one component is
+                // invalid, keep all three defaults rather than mixing
+                // user-supplied and default channels unpredictably.
+                std::optional<float> rgb[3];
+                bool allValid = true;
+                for (int i = 0; i < 3; ++i) {
+                    rgb[i] = clampIn(v[size_t(i)]);
+                    allValid &= rgb[i].has_value();
+                }
+                if (allValid)
+                    for (int i = 0; i < 3; ++i)
+                        e.values[size_t(off + i)] = *rgb[i];
+            }
             break;
         }
     }
