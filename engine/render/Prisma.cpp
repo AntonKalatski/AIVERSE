@@ -636,7 +636,9 @@ RTSCamera Prisma::jitteredCamera(RTSCamera camera, int width, int height) {
         jitter && std::strcmp(jitter,"1") == 0 &&
         effect && effect->enabled && int(quality_) >= int(effect->minQuality) &&
         effect->get("historyWeight") > 0 && effect->get("jitterPixels") > 0 &&
-        camera.jitter.x == 0 && camera.jitter.y == 0;
+        camera.jitter.x == 0 && camera.jitter.y == 0 &&
+        (temporalViews_.find(viewId_)==temporalViews_.end() ||
+         !temporalViews_.at(viewId_).preflightRejected);
     // Shader compilation can fail on a backend. Never jitter the scene
     // if there is no temporal reconstruction shader to undo it.
     if (eligible && !program(kTemporalResolve).valid()) eligible=false;
@@ -1814,6 +1816,10 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     // Native-output temporal reconstruction happens after all render-scale
     // HDR scene passes, including optional shutter blur / DoF / bloom inputs.
     // This prevents later passes from accidentally shrinking output history.
+    float2 fallbackJitter{};
+    if (const auto it=temporalViews_.find(viewId_);
+        it!=temporalViews_.end() && it->second.jitterActive)
+        fallbackJitter=it->second.currentJitterUv;
     bool temporalResolved=false;
     const gfx::TextureHandle outputDepth = temporalRequested
         ? depthFor(set,outW,outH,true) : gfx::TextureHandle{};
@@ -1917,6 +1923,16 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     const double now=std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     if(graphEpoch_<0)graphEpoch_=now;
     u.graphFrame[0]=float(now-graphEpoch_);
+    // If a temporal pass fails AFTER jittered scene encoding, present the
+    // current frame at stable pixel coordinates. This cancellation does not
+    // require an extra target or GPU flush and keeps the HUD untouched.
+    if (!temporalResolved && (fallbackJitter.x!=0 || fallbackJitter.y!=0)) {
+        u.graphFrame[2]=fallbackJitter.x;
+        u.graphFrame[3]=fallbackJitter.y;
+        stats_.temporalFallback=true;
+    }
+    stats_.adaptiveResolution=adaptiveViews_.count(viewId_)!=0;
+    stats_.requestedRenderScale=float(w)/float(std::max(1,outW));
     uint32_t mask = 0;
     put(u.px, 1.0f / float(outW), 1.0f / float(outH), flip, seed);
     put(u.grade1, 1, 1, 1, 1);
