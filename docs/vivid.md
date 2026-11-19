@@ -227,3 +227,25 @@ The earlier Stage 4A sentence saying MotionWeave is "not merged" is superseded b
 The resulting branch exposes `AIVERSE::MotionWeave`, `aiverse::motionweave::MotionWeave::update`, `AnimationPoseComponent`, the shared animation graph/retarget pipeline and the original VIVID `AIVERSE::vivid`, `AIVERSE::vivid_render`, `AIVERSE::vivid_gpu` targets. Source-branch MotionWeave and `main` remain untouched. This is a source-level integration, **not** a green combined native build or verified renderer path: macOS CMake, MotionWeave's tests and GPU readback tests remain outstanding on this merged revision.
 
 VIVID shall **reuse** MotionWeave's presentation World, scheduler, finished `AnimationPoseComponent` and managed rig; it must not add a second skeleton graph, retargeting system, IK solver, animation worker scheduler or LOD manager. The order is: `MotionWeave::update` finishes (including worker joins) → VIVID samples inputs and computes facial weights → VIVID creates a derived render pose/morph stream **without modifying MotionWeave's cached pose** → the existing AIVERSE renderer consumes the result. Read and use `libraries/include/aiverselib/motionweave/MotionWeave.h` and `libraries/include/aiverselib/animation/EcsAnimationSystems.h`.
+
+## Stage 4B — explicit VIVID / MotionWeave pose bridge (2026-11-19)
+
+**Implemented in source; combined native build/CTest NOT RUN yet.** New `AIVERSE::vivid_motionweave` target depends on `AIVERSE::MotionWeave` and `AIVERSE::vivid_render`. Root CMake registers VIVID **after** the MotionWeave target is declared, avoiding unresolved CMake alias references.
+
+Public function `composeFaceAfterMotionWeave(source, facial, binding, output, scratch, influence, mode)` in `engine/character/vivid/MotionWeaveBridge.h` consumes `aiverse::motionweave::AnimationPoseComponent`. Call only **after** `MotionWeave::update` and its worker-join barrier. It retains a single owner for AnimationGraph and the bone skeleton (MotionWeave). VIVID only applies the legacy-morph facial layer onto a **derived** render pose; neither the cached MotionWeave pose nor the matrix array is mutated. `output` and `scratch` are caller-owned reusable `render::Pose` buffers; the function uses scratch + swap to avoid a second copy and protect previously rendered output if an input is invalid. A repeated frame never accumulates additive face weights into a cached MotionWeave frame.
+
+```cpp
+#include <aiverselib/motionweave/MotionWeave.h>
+#include "engine/character/vivid/MotionWeaveBridge.h"
+
+// MotionWeave is the ONE animation scheduler.
+aiverse::motionweave::MotionWeave::update(presentation, dt);
+const auto& source = presentation.get<aiverse::motionweave::AnimationPoseComponent>(actor);
+face.advance(dt);
+aiverse::vivid::composeFaceAfterMotionWeave(
+    source, face.frame(), morphBinding, renderPose, scratchPose);
+```
+
+The adapter covers only legacy `render::Pose` morph indices 0..7 because that is the format that MotionWeave/Renderer3D currently exposes. Extended 52+ shape weights are handled separately by VIVID's `FaceShapeBinding` / GPU CSR morph stream, pending real GPU numerical parity and renderer consumption. This is **not** a fork of MotionWeave, nor a replacement of the rig/retargeting pipeline.
+
+New headless CTest source: `tests/vivid/motionweave_bridge.cpp`, registered as `vivid_motionweave_bridge` / target `aiverse_vivid_motionweave_tests`. The fixture uses real MotionWeave presentation ECS World and a bind-pose AnimationGraph and checks source isolation, repeat-frame additive stability, morph preservation and invalid-input rejection. Native compilation and execution **NOT RUN** in this stage.
