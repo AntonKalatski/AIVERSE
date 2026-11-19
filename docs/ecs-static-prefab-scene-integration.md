@@ -519,3 +519,45 @@ ticks. Actual collision lease/stream residency stays host-only and
 must be independently rebuilt after restore. Native source test
 covers layout save/checksum and mismatch rejection. Native
 execution is pending the final full CTest.
+
+## Verified Mac Studio native gate and measured RSS (2026-11-19)
+
+**Latest default-configuration full validation is green.** The user
+completed the one-shot `tools/ecs-static-scene-validate.sh ... all`
+run, which first builds all native default targets, then executes
+every registered CTest and, only on success, runs process-isolated
+RSS benchmarks. The output ended with
+`RSS samples validated: 9` and `SUCCESS: complete all run`.
+The reported full CTest elapsed time was **517.25 seconds**.
+The previous full run had 129 CTests. The successful excerpt did not
+include the aggregate test count or exact checkout SHA; the success
+gate confirms no CTest failure but not a separately verified count.
+
+For one million ECS entities and 128-byte configs (OS resident-set
+**delta from each process baseline**, not the entire game's RSS):
+
+| Unique configs | Ordinary RSS delta | Shared RSS delta | Static RSS delta | Static memory saving |
+| ---: | ---: | ---: | ---: | ---: |
+| 16 | 272.77 MiB | 36.24 MiB | 36.21 MiB | 86.73% |
+| 64 | 276.60 MiB | 38.79 MiB | 38.77 MiB | 85.98% |
+| 1024 | 280.48 MiB | 40.24 MiB | 39.05 MiB | 86.08% |
+
+Static read pass speedups were 2.58×, 2.49× and 2.10× respectively
+compared to ordinary inline values. Shared was 2.42×, 2.30× and
+1.32× faster. All read checksums matched in all nine samples:
+991000000 (16 unique), 4063000000 (64), and 65486484928
+(1024). There were no checksum errors.
+
+These results measure one source configuration and one Mac Studio
+measurement pass; they do **not** measure GPU memory, production
+game scene residency, cold-load frame spikes, or cross-platform
+variance. They validate the default source path and the synthetic
+ECS benchmark, not every optional graphics/physics build flag.
+
+For full raw numbers, test-trace provenance and remaining limitations,
+see `docs/agent-handoffs/ecs-static-scene-stage9-2026-11-19.md`.
+
+**Merge readiness:** The default full native gate has passed.
+Review latest `main` and parallel feature agents before merging;
+production-specific Metal GPU modes, network replay across hosts,
+and real authored-scene/collision cases may need separate gates.
