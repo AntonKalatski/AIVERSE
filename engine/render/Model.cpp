@@ -626,8 +626,14 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
         // Virtual-image fallback sizing is intentionally per Model::Image.
         // Never reuse a full-resolution ModelTextureCache entry under the
         // same texture key; the reduced resource is owned by this model.
-        if (img.virtualFallbackMaxDimension > 0) uploadImage(dev,img);
-        else if (img.textureCache) img.textureCache->upload(dev, img);
+        if (img.virtualFallbackMaxDimension > 0) {
+            uploadImage(dev,img);
+            // The VT source is already archived; never release the CPU
+            // fallback pixels and claim model upload success if the reduced
+            // GPU texture was rejected by this backend. Retrying upload
+            // later remains possible, without allocating the full source.
+            if (!img.tex.valid()) return false;
+        } else if (img.textureCache) img.textureCache->upload(dev, img);
         else uploadImage(dev, img);
         if (!keepCpu) { img.rgba.clear(); img.rgba.shrink_to_fit(); img.compressed.reset(); img.sharedRgba.reset(); }
     }
