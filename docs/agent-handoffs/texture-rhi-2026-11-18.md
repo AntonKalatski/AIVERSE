@@ -12344,3 +12344,169 @@ Do not claim a new GPU PASS after commits
 without a new native log. After every stage
 append API/source SHA/changed files/actual
 tests/limits/next action to this handoff.
+
+## Stage 10CJ — source compilation coverage for GL330/GLES300 and full-engine regression gate (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, GitHub PR #21
+still Draft, base branch `feature/universal-entity-inspector-fps`.
+**Earlier hardware evidence:** Apple M3 Ultra one-shot
+`tools/texture-rhi-final-verify.sh --jobs 4`
+completed **21 portable focused CTests + seven native
+Metal GPU CTests, all PASS**, at explicitly tested
+commit `7494f32d313a2ac45050be02d25ca3ae97749086`.
+The manifest reported `full_engine=0`. The full
+engine nonexperimental suite and other GPU backends
+were therefore **not** proven by that result.
+
+**User request / chosen bounded next step:** continue
+toward a full engine regression and GL/Vulkan/mobile
+portability. We first inspected current public
+AIVERSE test infrastructure and found an existing
+`.github/workflows/texture-rhi.yml` Linux OpenEXR
+ON/OFF and Vulkan-focused pipeline, plus the main
+`.github/workflows/ci.yml` with Linux, Windows,
+macOS, Android and Web platform builds. Existing
+conditional `virtual_texture_feedback_shaders`
+only compiles feedback GLSL. The modified canonical
+`gfx::kVirtualTextureGLSL` in
+`engine/gfx/VirtualTextureSampling.h` used by
+GL/GLES had no dedicated GL330/GLES300 shader
+compile test for positive physical gutters,
+wrap modes, two-dimensional atlas/page table
+and its legacy sample overload.
+
+**New test source:**
+`tests/render/check_virtual_texture_sampling_shaders.py`
+commit `6d0d9a8d3ebec7f57c9c4657c2925d6460667b8e`,
+with Python 3.8 compatibility follow-up
+`f28377b7fc8ddb6a5af8451862c5917f8c33bec9`.
+The script extracts the **actual production raw
+GLSL and MSL strings** from
+`engine/gfx/VirtualTextureSampling.h`,
+rejects missing/ambiguous symbols, and compiles
+complete fragment shader wrappers through real
+`glslangValidator`:
+  - `#version 330 core` OpenGL 3.3
+  - `#version 300 es` GLES 3.0
+The probes exercise address-aware
+`aiverseLookupVirtual`,
+`aiverseSampleVirtual`, and legacy clamp overloads.
+On macOS, `--backend metal` additionally compiles
+the same production `gfx::kVirtualTextureMSL`
+through `xcrun -sdk macosx metal -c` and requires
+an actual nonempty AIR artifact. No compiler found
+for a *requested* backend is an explicit FAIL.
+This is compile-time source validation, **not**
+GL/Vulkan/Metal framebuffer pixel parity.
+Python uses `from __future__ import annotations`
+to support Python 3.8 on older developer machines.
+
+**CMake registration:**
+`d9f8e0396c86f26f2723a0cb169659930536a7f6`
+added conditional `virtual_texture_sampling_glsl`
+and `virtual_texture_sampling_msl` CTests.
+Commit `20c79da8473abf99f56eedcc12e6f2e3fc1547bc`
+repaired the GLSL test's CMake block scope:
+it is now registered **inside** the
+`Python3_Interpreter_FOUND AND AIVERSE_GLSLANG_VALIDATOR`
+guard. MSL test is registered only when Apple,
+Python and `xcrun` are detected.
+No production engine or shader source was modified.
+
+**Existing verification script integration:**
+`tools/verify-texture-rhi.sh` now adds these optional
+shader-compiler tests to its CTest include filter
+and registration diagnostics, final corrected commit
+`3a222231828d432a9cb04d4b7d9a69124fb2e2e6`.
+`tools/texture-rhi-final-verify.sh` adds the same
+toolchain-backed source compiles to the optional
+safe-stage test matcher **without changing** its
+21 portable / seven native Metal target list,
+final corrected commit
+`3a1a17b1fa061314398a21f40fedb6b69e5cb9a1`.
+
+**Existing CI integration:**
+`.github/workflows/texture-rhi.yml`, final corrected
+commit `f40cbef2a14ce5df92daa9cb9152811a7333a57f`:
+Linux OpenEXR ON/OFF matrix and Vulkan-focused
+job install Ubuntu `glslang-tools`, ensuring
+`glslangValidator` exists. Both jobs run
+`ctest --no-tests=error --verbose
+-R '^virtual_texture_sampling_glsl$'` explicitly
+after their focused builds. This makes a missing
+test registration or shader syntax error fail the
+workflow, rather than silently SKIP. Existing
+artifact uploads and Vulkan source tests remain.
+
+**Important correction within this stage:**
+The first connector code-based JS string replacements
+mistakenly used a replacement *string* containing
+literal `$'` (end-of-regex), which JavaScript
+`replace` interprets as the suffix after the
+match. That corrupted the focused/one-shot shell
+regexes and duplicated YAML workflow sections.
+All damaged files were **immediately detected
+by a second GitHub fetch**, restored from the
+pre-feature verified `00d7411a...` source
+(or tested `7494f32d...` one-shot source), and
+rewritten safely using direct line replacements /
+replacement callbacks. Final checks refetched
+all files: workflow 113 lines with two complete
+strict CTest `-R` selectors and both upload
+artifact steps; focused verifier 197 lines;
+one-shot Mac verifier 175 lines, exactly one
+GPU-build block and one sequential GPU loop,
+two completed optional shader-test selectors;
+CMake GLSL test under its correct feature guard.
+There is no leftover malformed regex in the
+current HEAD. Initial invalid intermediary
+commits must not be used for validation.
+
+**Actual verification completed by this agent:**
+GitHub connector fetches/source inspection of
+scripts, CMake guards, workflow, and test wrapper.
+The prior 21+7 Mac GPU PASS was real user evidence
+from the older tested revision.
+**NOT RUN for Stage 10CJ changes:** an actual
+`glslangValidator` compile on Linux, macOS
+`xcrun metal` source compile, GitHub Actions
+green status for this new commit, full-engine
+CTest, Vulkan/GL/GLES/WebGL/mobile GPU frame
+readback parity, performance/stress.
+No tool here has direct access to the user's Mac,
+so these are pending acceptance gates.
+
+**Exact next Mac Studio full-engine verification**
+in task-named isolated worktree (do not touch
+the primary unfinished-rebase AIVERSE checkout):
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+bash -n tools/verify-texture-rhi.sh
+bash -n tools/texture-rhi-final-verify.sh
+bash tools/texture-rhi-final-verify.sh --jobs 4 --full-engine
+```
+
+Require new `acceptance.txt` with
+`full_engine=1`, `result=PASS`, all default
+CMake/CTest results plus native seven Metal
+test markers, and no `FAIL:`. On Linux
+CI check the actual `virtual_texture_sampling_glsl`
+execution for both GL330/GLES300, and inspect
+Vulkan `vulkan_backend` for a *real test* vs SKIP.
+If any compiler error occurs, fix that actual
+shader/compiler diagnostic, then add another
+source commit and append-only handoff.
+
+**Remaining beyond this bounded Stage 10CJ:**
+real GL/Vulkan/GLES/WebGL/mobile rendering
+and resource/slot parity with GPU pixel readbacks;
+different mip resident/fallback trilinear seam
+cases, anisotropic filtering, nonuniform gutter
+stress and LRU/streaming churn, GPU timestamps/
+FPS. Existing high-risk experimental Metal GPU
+ICB flags are still default OFF and PR #21
+remains Draft until intentionally approved.
