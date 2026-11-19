@@ -2,9 +2,10 @@
 // Builds one StaticTable<T> per config domain, reusable by many scenes and
 // independent ECS Worlds without copying T into each Entity.
 //
-// This header intentionally does not include SceneAsset/SceneLoadCoordinator:
-// the scene feature is developed in a separate branch. Its SpawnPrefab
-// callback can call catalog.attach(world, entity, object.prefab).
+// This header intentionally has no dependency on SceneAsset or the
+// SceneLoadCoordinator, so native gameplay and editor preview can reuse it
+// without scene systems. Optional scene adapters live in
+// engine/scene/PrefabStaticSceneBinding.h and PrefabStaticDomainRegistry.h.
 #pragma once
 
 #include "SharedStaticComponents.h"
