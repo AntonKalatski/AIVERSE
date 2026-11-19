@@ -19,9 +19,24 @@ while (($#)); do
 done
 ROOT="$(git -C "$(dirname "$0")/.." rev-parse --show-toplevel)"
 cd "$ROOT"
-[[ "$(git branch --show-current)" == "feature/texture-rhi-unification" ]] || {
-  echo "FAIL: run only in the feature/texture-rhi-unification isolated worktree" >&2; exit 2;
-}
+# This verification worktree is intentionally often in detached HEAD.
+# Require the exact fetched remote commit instead of requiring a local
+# branch name. Never accept an unrelated detached/feature revision.
+EXPECTED_BRANCH="feature/texture-rhi-unification"
+CURRENT_BRANCH="$(git symbolic-ref --quiet --short HEAD || true)"
+CURRENT_SHA="$(git rev-parse --verify HEAD)"
+REMOTE_SHA="$(git rev-parse --verify "refs/remotes/origin/$EXPECTED_BRANCH^{commit}" 2>/dev/null || true)"
+if [[ -z "$REMOTE_SHA" || "$CURRENT_SHA" != "$REMOTE_SHA" ]]; then
+  echo "FAIL: HEAD must equal the fetched origin/$EXPECTED_BRANCH revision" >&2
+  echo "HEAD=$CURRENT_SHA remote=${REMOTE_SHA:-not-fetched}" >&2
+  echo "Run: git fetch origin $EXPECTED_BRANCH && git pull --ff-only origin $EXPECTED_BRANCH" >&2
+  exit 2
+fi
+if [[ -n "$CURRENT_BRANCH" && "$CURRENT_BRANCH" != "$EXPECTED_BRANCH" ]]; then
+  echo "FAIL: refusing another local branch: $CURRENT_BRANCH" >&2
+  exit 2
+fi
+printf 'Validated source: %s (%s)\n' "$CURRENT_SHA" "${CURRENT_BRANCH:-detached HEAD}"
 [[ "$(uname -s)" == "Darwin" ]] || {
   echo "FAIL: native Metal Mac required (no silent GPU skip)" >&2; exit 2;
 }
