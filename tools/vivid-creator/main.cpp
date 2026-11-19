@@ -649,13 +649,16 @@ struct CreatorApp {
                 morphTargetIndex=std::clamp(morphTargetIndex,0,maxTarget);
                 const auto& target=morphDraft->shapes()[std::size_t(morphTargetIndex)];
                 ImGui::Text("Target: %s",target.name.c_str());
+                bool removedThisFrame=false;
                 if(ImGui::Button("Delete selected target")) {
                     if(morphDraft->removeTarget(std::size_t(morphTargetIndex))) {
+                        removedThisFrame=true;
                         morphTargetIndex=0;
                         morphDirty=true;pendingRebuild=true;
                         status="VIVID corrective target deleted";
                     }
                 }
+                if(!removedThisFrame) {
                 const int maxVertex=int(morphSourceVertices)-1;
                 ImGui::SliderInt("Source vertex",&morphVertexIndex,0,
                                  std::max(0,maxVertex));
@@ -686,7 +689,9 @@ struct CreatorApp {
                 if(ImGui::Button("Redo sculpt") && morphDraft->redo()) {
                     morphDirty=true;pendingRebuild=true;
                 }
+                } // valid selected target for this frame
                 ImGui::TextUnformatted(morphDirty?"Morph changes not exported":"Morph source unchanged");
+                } // nonempty morph targets
                 if(ImGui::Button("Export morph JSON")) {
                     try {
                         if(importedManifest.empty() || morphSourceVertices==0)
@@ -717,7 +722,6 @@ struct CreatorApp {
                         status="VIVID morph sidecar saved; save manifest to publish path";
                     }catch(const std::exception& e){status=e.what();}
                 }
-                } // nonempty morph targets
                 ImGui::TreePop();
             }
             if(ImGui::Button("Save imported manifest")) {
