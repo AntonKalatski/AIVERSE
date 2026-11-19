@@ -1404,3 +1404,44 @@ ordinary animated type previews or assume RtsView has disappeared.
 Test fixture code is committed but **NOT RUN**; follow
 `docs/agent-handoffs/animation-universal.md` Stage 102 for exact
 next tasks and maintain a separate handoff commit after each stage.
+
+## AIVERSE Stage 103 — bounded multi-worker model preparation and resource owner accounting
+
+For genre-neutral C++ model loading, use
+`engine/render/AsyncModelCpuQueue.h` through
+`ModelAssetProvider::setCpuWorkerCount(1..8)`,
+`setCpuMaxQueued`, `requestAsync(source,priority)` and
+`publishReady(device,count,budgetMs)`. The default worker count is
+one for compatibility; opt into concurrency only for genuinely
+thread-safe `FileReader` providers. Do not touch `gfx::Device`,
+`Renderer3D`, View, ECS Worlds or MotionWeave player states on
+workers. All GPU uploads and model publication stay on the owner
+render thread, between draw submissions. Request and completion
+order are distinct: use source revisions to reject stale results
+after a hot reload or project switch. Do not destroy readers,
+decoded-image caches or other captured sources before joining
+the CPU worker queue.
+
+`ModelLoadPriority` affects only CPU job admission and order:
+Interactive > Visible > Background. Same priority uses FIFO;
+bounded fairness occasionally admits the oldest queued source.
+Workers are not preempted. A resource pressure limit never
+authorizes GPU release; the exact async retirement token/fence
+must complete first.
+
+For GPU diagnostics use `ModelResourceCache::gpuOwnerEstimate`
+and `ModelTextureCache::gpuOwnerEstimate`, accounting each unique
+shared texture cache entry once. The global geometry pool is
+device-owned and must be reported separately via
+`geometryPoolStats(device)`; never multiply shared pages by
+the number of models or hosts. All byte counts are estimates,
+not precise driver VRAM allocations.
+
+The editor `SceneRenderable` model/unselected mesh path uses
+`aiverse::View` while selected meshes keep their specialized
+silhouette, and the old RTS appearance/animated portrait adapter
+still exists. Keep the generic View independent of genre classes.
+New tests are authored but **NOT RUN** under the features-first
+rule. After each implementation stage append a separate handoff
+in `docs/agent-handoffs/animation-universal.md` with exact source
+SHAs, changed paths, reality of test execution, risks and next step.
