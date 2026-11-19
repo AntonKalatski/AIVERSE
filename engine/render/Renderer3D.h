@@ -162,6 +162,13 @@ struct ModelDraw {
     const BakedSample* baked = nullptr;            // skin from Model::baked instead of nodeWorld
     float dissolve = 0;                            // 0..1: burn away (spawn, death, construction)
     float4 outline{0, 0, 0, 0};                    // rgb (linear) + width in world units; a = 0: none
+    // Opt-in full ModelVertex (60 bytes) dynamic GPU stream for THIS instance.
+    // Bind only on the same gfx::Device, after compute submission and before
+    // render passes. Owner keeps resource alive through all colour/shadow draws.
+    // Experimental path: Metal dedicated per-model buffers only; no pooled
+    // geometry, GPU ICB/MDI, instancing, LOD or legacy shader morph blending.
+    gfx::BufferHandle vertexOverride{};
+    uint32_t vertexOverrideCount = 0;
 };
 
 enum DrawFlags : uint32_t {
@@ -477,6 +484,8 @@ private:
     };
     struct ModelItem {
         const Model* model; const Primitive* prim; const Material* mat;
+        // Full per-instance ModelVertex buffer; empty for the legacy path.
+        gfx::BufferHandle vertexOverride{};
         bool rigid = false, castShadow = false;
         GeometryPolicy geometry;
         size_t geometryPrimitive = 0;
