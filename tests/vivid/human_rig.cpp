@@ -88,6 +88,9 @@ void check() {
         render::Skin skin;
         skin.joints={1};
         skin.inverseBind={render::mat4{}};
+        // Imported skin may include a non-identity mesh/root binding frame.
+        // Rebinding must retain it, not blindly set inverse(newJoint).
+        skin.inverseBind[0]=render::mat4::translate({0,0,-0.5f});
         rig.skins.push_back(skin);
         rig.vertices.resize(1);
         rig.vertices[0].pos={1,0,0};
@@ -110,12 +113,14 @@ void check() {
             changed.influencedVertices==1,
             "skin binding stage did not validate influenced vertex");
         req(std::fabs(rig.nodes[1].t.y-0.25f)<1.e-6f &&
-            std::fabs(rig.skins[0].inverseBind[0].at(1,3)+0.25f)<1.e-6f,
+            std::fabs(rig.skins[0].inverseBind[0].at(1,3)+0.25f)<1.e-6f &&
+            std::fabs(rig.skins[0].inverseBind[0].at(2,3)+0.5f)<1.e-6f,
             "skin inverse bind was not recomputed from edited skeleton bind");
         const auto neutral=(rig.bindWorld[1]*rig.skins[0].inverseBind[0])
             .transformPoint(rig.vertices[0].pos);
         req(std::fabs(neutral.x-1.0f)<1.e-6f &&
-            std::fabs(neutral.y)<1.e-6f,
+            std::fabs(neutral.y)<1.e-6f &&
+            std::fabs(neutral.z+0.5f)<1.e-6f,
             "skin did not preserve neutral mesh after bind-pose change");
         const auto last=rig.nodes[1].t.y;
         rig.meshes[0].primitives[0].jointPalette={};
