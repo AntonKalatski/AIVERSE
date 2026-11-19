@@ -1,5 +1,6 @@
 #include "engine/render/ModelTextureCache.h"
 #include "engine/render/RenderDeviceLifetime.h"
+#include "engine/render/ModelImageUploadTransaction.h"
 #include "engine/view/AppearanceAssetRegistry.h"
 // LEGACY compatibility adapter for historical RTS/editor scene presentation.
 // Generic game-agnostic View is now <engine/view/View.h> / aiverse::View.
@@ -250,7 +251,15 @@ public:
         return resources_.pendingRetirements();
     }
     bool collectRetiredModels() {
-        return dev_ && resources_.collectRetired(*dev_);
+        if(!dev_)return false;
+        // Both caches use real GPU completion tokens and never retire on
+        // frame counters or elapsed time alone.
+        const bool models=resources_.collectRetired(*dev_);
+        const bool images=imageRollback_.collect(*dev_);
+        return models && images;
+    }
+    size_t pendingRolledBackImages() const noexcept {
+        return imageRollback_.pendingImages();
     }
     // An independent, worker-safe reader enables CPU decoding off the render thread.
     void setAsyncReader(render::FileReader reader) { asyncReader_ = std::move(reader); }
@@ -615,6 +624,8 @@ private:
     bool deferredLoading_ = false, streamingTypes_ = false;
     bool deferAppearanceVariants_ = true; // client default; editor disables
     bool strictAppearanceReload_ = false; // temporary CPU preflight during authored reload
+    render::ModelImageRollbackPool imageRollback_;
+    render::ModelImageUploadTransaction* activeImageTransaction_ = nullptr; // borrowed during staging only
     render::FileReader asyncReader_;
     // Model resources (including async worker lifetime) are owned by
     // resources_; RtsView only supplies appearance rules and GPU publication.
