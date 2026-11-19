@@ -154,6 +154,8 @@ bool IndexResidency::initialize(gfx::Device& device, const ModelAsset& asset,
     if (!(useIncremental ? initializeIncremental(uploadBudgetBytes, error)
                           : update({}, error))) {
         // Neither mode may expose a half-uploaded resident root frontier.
+        // The private type is destroyed only in StrataIndexPages.cpp.
+        if (incremental_) shutdownIncremental(device);
         device_ = nullptr;
         asset_ = nullptr;
         parent_.clear();
