@@ -4,6 +4,7 @@
 #include "engine/character/vivid/MorphLodTransfer.h"
 #include "engine/character/vivid/MorphLodSurface.h"
 #include "engine/character/vivid/MorphLodMapping.h"
+#include "engine/character/vivid/MorphLodGpuAuthoring.h"
 #include "engine/character/vivid/HumanImport.h"
 #include <filesystem>
 #include <array>
@@ -232,6 +233,45 @@ void test() {
         try {(void)MorphLodSurface::project(sourcePositions,faces,tooFar,0.01f);}
         catch(const std::invalid_argument&){rejected=true;}
         req(rejected,"LOD projected a vertex outside authored surface tolerance");
+    }
+    {
+        // A single actor CSR must contain both original facial mesh vertices
+        // and independently authored LOD vertices with the same target weight.
+        MorphTargetInput original;
+        original.name="jawOpen";
+        MorphDelta a;
+        a.vertex=0;
+        a.position={0,0.2f,0};
+        original.deltas.push_back(a);
+        const auto full=SparseMorphLibrary::compile(5,{original});
+        MorphTargetInput lodTarget;
+        lodTarget.name="jawOpen";
+        MorphDelta b;
+        b.vertex=1;
+        b.position={0,0.4f,0};
+        lodTarget.deltas.push_back(b);
+        const auto compact=SparseMorphLibrary::compile(2,{lodTarget});
+        const std::array<std::uint32_t,2> ids{{3,4}};
+        const auto merged=MorphLodGpuAuthoring::combine(full,compact,ids);
+        req(merged.vertices()==5 && merged.targets()==1 &&
+            merged.deltas()==2 && merged.gpuDeltas()[0].vertex==0 &&
+            merged.gpuDeltas()[1].vertex==4,
+            "full-model GPU actor CSR omitted source or authored LOD delta");
+        const std::array<std::uint32_t,2> overlap{{0,4}};
+        bool rejected=false;
+        try {(void)MorphLodGpuAuthoring::combine(full,compact,overlap);}
+        catch(const std::invalid_argument&){rejected=true;}
+        req(!rejected,
+            "LOD delta on unused target index must not conflict with source");
+        MorphDelta c;
+        c.vertex=0;
+        c.position={0,0.1f,0};
+        lodTarget.deltas.push_back(c);
+        const auto overlapCompact=SparseMorphLibrary::compile(2,{lodTarget});
+        rejected=false;
+        try {(void)MorphLodGpuAuthoring::combine(full,overlapCompact,overlap);}
+        catch(const std::invalid_argument&){rejected=true;}
+        req(rejected,"GPU actor LOD CSR accepted overlapping authored deltas");
     }
     std::filesystem::remove(file);
 }
