@@ -156,7 +156,7 @@ inline void io(Archive& a,ForestDeadwoodResource& s) {
         a(s.totalAbsorbedUnits,s.totalRunoffExportUnits,
           s.totalLeachedUnits,s.lastNutrientTick,s.soilCursor,
           s.waterCursor,s.nutrientInitialized);
-    uint32_t n=a.count(s.logs.size(),76);
+    uint32_t n=a.count(s.logs.size(),v2?73:65);
     if(!a.ok() || n>ForestDeadwoodResource::kMaxLogs){a.fail();return;}
     if(!a.writing())s.logs.assign(n,{});
     for(auto& v:s.logs)if(a.ok()) {
