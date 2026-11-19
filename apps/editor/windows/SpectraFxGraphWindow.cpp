@@ -13,6 +13,8 @@
 #include "../Editor.h"
 #include "../EditorUtil.h"
 #include "engine/fx/SpectraFX.h"
+#include "engine/render/TextureCache.h"
+#include "engine/fx/FxModelMesh.h"
 
 namespace aiverse::editor {
 namespace fs = std::filesystem;
@@ -24,6 +26,9 @@ public:
     const char* group() const override { return "look"; }
     const char* dockArea() const override { return "center"; }
     bool openByDefault() const override { return false; }
+    ~SpectraFxGraphWindow() override {
+        if (device_) { previewViewport_.release(*device_); preview_.shutdown(); previewTextures_.shutdown(); }
+    }
 
     void update(Editor& ed,double) override {
         if (project_!=ed.ws().project.dir) {
@@ -34,6 +39,8 @@ public:
             selected_=1;
             undo_.clear();redo_.clear();
             dirty_=false;layoutDirty_=false;
+            previewId_=-1; previewHandle_={}; previewHash_=0;
+            if(device_) preview_.clear();
             layout_.clear();pendingLink_.clear();
             refresh();
         }
@@ -81,6 +88,8 @@ public:
             ImGui::EndChild();return;
         }
         ImGui::Text("%s%s",current_.c_str(),(dirty_||layoutDirty_)?" *":"");
+        ImGui::SameLine();
+        if(ImGui::Button("Restart preview")) {preview_.clear();previewHandle_={};lastPreviewTime_=-1;}
         if(ImGui::Button("Save")) save(ed);
         ImGui::SameLine();
         if(ImGui::Button("Reload") && !dirty_) load(current_);
@@ -167,11 +176,98 @@ public:
             try { commit(Json::parse(raw_)); }
             catch(const std::exception& e) {message_=e.what();}
         }
+        ImGui::Separator();
+        ImGui::TextUnformatted("Live SpectraFX preview (CPU ParticleSystem)");
+        drawPreview(ed,300,210);
         ImGui::EndChild();
         ImGui::EndChild();
     }
 
 private:
+    void initPreview(Editor& ed) {
+        if(device_) return;
+        device_=&ed.device();
+        preview_.setQuality(fx::FxQuality::High);
+        preview_.setFileReader([this](const std::string& name,std::string& out) {
+            std::ifstream input(fs::path(project_)/name,std::ios::binary);
+            if(!input) return false;
+            out.assign(std::istreambuf_iterator<char>(input),std::istreambuf_iterator<char>());
+            return true;
+        });
+        previewTextures_.init(*device_);
+        preview_.setMeshLoader([this](const std::string& name,fx::FxMesh& out) {
+            return fx::meshFromModelFile(name,[this](const std::string& p,std::string& data) {
+                std::ifstream input(fs::path(project_)/p,std::ios::binary);
+                if(!input) return false;
+                data.assign(std::istreambuf_iterator<char>(input),std::istreambuf_iterator<char>());
+                return true;
+            },out);
+        });
+        preview_.setTextureLoader([this](const std::string& name,fx::FxTexture& out) {
+            render::TextureRef texture=previewTextures_.resolve(name,false,project_+"/");
+            if(!texture.valid()) return false;
+            out={texture.tex,texture.u0,texture.v0,texture.u1,texture.v1};
+            return true;
+        });
+        if(!preview_.init(device_)) message_=preview_.lastError();
+    }
+    void drawPreview(Editor& ed,float width,float height) {
+        initPreview(ed);
+        if(!device_) return;
+        // A cheap source hash is sufficient for editor-only invalidation.
+        const std::string json=document_.dump(-1);
+        uint64_t hash=14695981039346656037ull;
+        for(unsigned char ch:json) {hash^=ch;hash*=1099511628211ull;}
+        if(hash!=previewHash_) {
+            previewHash_=hash;
+            fx::EffectDef compiled;
+            std::vector<std::string> errors;
+            if(fx::compileSpectraGraph(document_,compiled,errors)) {
+                previewId_=preview_.define("__spectrafx_editor_preview",compiled);
+                previewHandle_={};
+                lastPreviewTime_=-1;
+            } else {
+                previewId_=-1;
+                preview_.clear();
+            }
+        }
+        const double now=ed.time();
+        float dt=lastPreviewTime_<0?0.0f:float(now-lastPreviewTime_);
+        lastPreviewTime_=now;
+        dt=std::clamp(dt,0.0f,0.05f);
+        if(previewId_>=0 && !preview_.playing(previewHandle_))
+            previewHandle_=preview_.play(previewId_,{0,0.5f,0});
+        const float dpi=ImGui::GetIO().DisplayFramebufferScale.x;
+        previewViewport_.ensure(*device_,int(width*dpi),int(height*dpi));
+        auto& renderer=ed.renderer();
+        renderer.beginScene(previewCamera_,previewViewport_.w,previewViewport_.h);
+        const uint32_t grid=render::rgba(85,90,100,255);
+        for(int i=-5;i<=5;++i) {
+            renderer.line({float(i),0,-5},{float(i),0,5},grid);
+            renderer.line({-5,0,float(i)},{5,0,float(i)},grid);
+        }
+        preview_.setView(previewCamera_,renderer.viewProj(),
+                         previewViewport_.w,previewViewport_.h);
+        preview_.update(dt);
+        gfx::PassDesc pass;
+        pass.colorTarget=previewViewport_.color;
+        pass.depthTarget=previewViewport_.depth;
+        pass.clearColor[0]=0.12f;pass.clearColor[1]=0.13f;pass.clearColor[2]=0.15f;
+        renderer.render(pass);
+        preview_.render({renderer.lighting.fogColor,0});
+        device_->endPass();
+        previewViewport_.image(*device_,width,height);
+        if(ImGui::IsItemHovered()) {
+            const ImGuiIO& io=ImGui::GetIO();
+            if(ImGui::IsMouseDragging(ImGuiMouseButton_Left)) {
+                previewCamera_.yaw-=io.MouseDelta.x*0.01f;
+                previewCamera_.pitch=std::clamp(previewCamera_.pitch+io.MouseDelta.y*0.01f,0.05f,1.5f);
+            }
+            if(io.MouseWheel)
+                previewCamera_.distance=std::clamp(previewCamera_.distance*
+                    (io.MouseWheel>0?0.9f:1.1f),2.0f,60.0f);
+        }
+    }
     static bool validName(const std::string& name) {
         if(name.empty() || name.size()>64) return false;
         for(unsigned char c:name)
@@ -534,6 +630,15 @@ private:
     std::vector<Json> undo_,redo_;
     int selected_=-1;
     bool dirty_=false,createPending_=false,layoutDirty_=false;
+    gfx::Device* device_=nullptr;
+    fx::ParticleSystem preview_;
+    render::TextureCache previewTextures_;
+    Viewport previewViewport_;
+    render::RTSCamera previewCamera_{{0,0.8f,0},9.0f,0.45f,0.7f};
+    fx::FxHandle previewHandle_;
+    int previewId_=-1;
+    uint64_t previewHash_=0;
+    double lastPreviewTime_=-1;
     std::unordered_map<std::string,ImVec2> layout_;
     ImVec2 pan_{};
     std::string pendingLink_;
