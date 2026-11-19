@@ -628,3 +628,14 @@ build/CTest, actual GLSL compile, Vulkan validation layers, hardware pix/counter
 tests and Android/GLES3 are NOT RUN. The direct Metal GI path and CPU-only GLES3
 fallback remain separate. Do not merge into main without validation and
 reconciliation with ongoing parallel renderer work.
+
+
+## Stage 31 — 2026-11-19 — fragment texture-slot admission (SOURCE; NOT RUN)
+
+Full next-agent handoff:
+`docs/agent-handoffs/gi-stage31-fragment-texture-budget-2026-11-19.md`.
+Added backend queried GI fragment slot caps and enforced 14/15/16/17
+resource-binding budgets in Renderer3D; GLES3 dual path fits 16,
+Metal triple requires 17, Vulkan below-cap devices reject unsafe variants.
+Authored `gi_texture_budget` regression and CTest registration.
+Native build, GPU shader/driver, Android and Metal validation: NOT RUN.
