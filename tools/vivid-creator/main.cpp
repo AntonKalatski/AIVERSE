@@ -10,6 +10,7 @@
 #include "engine/character/vivid/ViewportSculptPick.h"
 #include "engine/character/vivid/SkinnedWeightPick.h"
 #include "engine/character/vivid/SkinWeightLodTransfer.h"
+#include "engine/character/vivid/SkinSeamSplit.h"
 #include "engine/character/vivid/RigAuthoring.h"
 #include "engine/character/vivid/BindPoseRebind.h"
 #include "engine/character/vivid/SkinWeightAuthoring.h"
@@ -496,9 +497,15 @@ struct CreatorApp {
                 proposed=generateHumanPreview(session.dna(),groomQuality);
             }
             if(!skinWeightEdits.edits().empty()) {
-                // Apply only to the fresh, private pre-upload Model. Invalid
-                // weight/palette edits cannot corrupt the active character.
-                (void)skinWeightEdits.apply(*proposed.head);
+                // Split incompatible primitive skin palettes only on the
+                // private candidate, preserving original vertex IDs and
+                // expanding the complete extended facial morph CSR.
+                // Authored LOD sidecars refer to original source/target IDs;
+                // these remain unchanged, while clones append after them.
+                const auto splits=SkinSeamSplit::apply(
+                    *proposed.head,proposed.facialShapes);
+                const auto authored=skinWeightEdits.withSplitClones(splits.clones);
+                (void)authored.apply(*proposed.head);
             }
             // Transfer edited base-skin weights to every explicitly
             // authored LOD. Keep the same indexed correspondence used by
