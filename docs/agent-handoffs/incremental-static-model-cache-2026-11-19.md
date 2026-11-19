@@ -393,3 +393,26 @@ The old `staticModelCacheCandidate()` scanned model node runtime-mutable flags a
 ### Next actionable feature and test debt
 - **Next feature-first task:** avoid repeating expensive GPU material fingerprints across thousands of static instances when they intentionally share an immutable material set, but **only** with an explicit material-owner revision/dirty API and safe lifetime key. Do not memoize by `Material*` or `std::vector<Material>::data()` alone (temporary copies and stable-pointer material mutations are common). Validate GPU texture handle identity and shader-graph revisions before allowing shortcuts.
 - Later test phase: update `tests/render/model_batching_policy.cpp` for Stage 10 node override/variant eligibility, Stage 11 clip-bearing rigid bind-pose eligibility and proper finalized bindWorld; add targeted eligibility revision invalidation and stable IDs; run model-policy focused jobs and the actual Metal `static_packets` A/B fixture; then real fixed-camera urban scene A/B/A CPU/GPU measurements. Keep Draft/off-by-default pending these results.
+
+---
+
+## Stage 14 — material source revision and explicit shared owner contract (2026-11-19)
+
+**Branch:** `perf/incremental-static-model-cache` PR #34 Draft, originally from `main=9ee6ff6fbf390bd45363bc92c838f492dfe92eee`. At start PR head `71caa3fe15ba6d00f889b8df8d9a0eb3ffd52950`; GitHub compare showed 86 ahead / **0 behind**, so main already included. **Stage 14 code head before this handoff:** `a1ce55fb44c27c5fd4de04ea0d7c77df3c6d4e55`. User explicitly wants **features first, tests later**.
+
+### Implementation and files
+- `1f3b006dedccf91986dea15901f368056ba73477`: `engine/render/Model.h` introduces runtime-only `Model::materialRevision = 1` and `markMaterialChanged()` monotonic increment (never zero), independent of `geometryRevision`. This captures in-place changes to material factors, shader graphs, texture bindings and texture content where handle IDs remain unchanged, *when called by the owner*.
+- `b5b75cacb07e64043859aaa7afec27a50ef61864`: `engine/render/Model.cpp` bumps material revision on `finalize()`, changes in texture handle bindings during `uploadModel()`, `addImage()`, and `releaseModel()`. Native caller mutations through public vectors outside these methods must explicitly call `markMaterialChanged()`; no write observer was added.
+- `e1010dd2fd80e6750028151c495d24b407fa0ca3`: `engine/render/Renderer3D.h` extends `ModelDraw` with optional `materialOwnerKey` and `materialOwnerRevision`, both zero by default. A nonzero stable owner key is scoped within a Model and must represent the same material-set source. A nonzero revision must change on in-place overrides, shader or texture changes, including content updates preserving GPU handles. Supplying only one field is **not** a valid opt-in.
+- `8d9d6d5dabb08642e47e9221cb131c28cfef3250`, `a1ce55fb44c27c5fd4de04ea0d7c77df3c6d4e55`: documented contract in `docs/geometry-performance.md` and `AGENTS.md`.
+
+### Compatibility, safety, what is not yet implemented
+This stage introduces the versioned **API only** and source revision tracking. It does **not yet** change the existing packet material matching algorithm or introduce a shared material signature memo. All `ModelDraw` owner identity fields default to zero, so current RTS/FPS/native behavior is unchanged. There are no save schema, ECS authoritative state, network or GPU shader ABI changes. Existing `AIVERSE_PERSISTENT_CPU_PACKETS=1` remains opt-in and default OFF. The next stage must actually consume owner identity/revisions in a bounded renderer-side material signature cache, with strict fallback to current exact `staticPacketMaterialStateMatches()` for unversioned draws.
+
+A raw Material pointer or vector allocation address is not a correct identity: memory may be recycled and values can change in place. Model `materialRevision` must be incorporated into the memo key/validation; `geometryRevision` still protects retained geometry/primitive packets. A texture upload that changes underlying pixels behind a stable handle requires a revision, even if the GPU texture index did not change.
+
+### Validation performed
+GitHub connector fetched main/ref/PR, read affected files, wrote five code/docs commits successfully. No compile or unit test executed. **CMake: NOT RUN. CTest: NOT RUN. GPU parity: NOT RUN. Mac city performance: NOT MEASURED.** Existing policy regressions already need updates from earlier stages; do not claim they pass. No merged main, PR still draft.
+
+### Next exact step
+Implement `Renderer3D`'s **shared versioned material signature memo** with a resource cap, owner key and revision, model material/geometry revisions, and explicit invalidation on model unload/full reset. Reuse one fingerprint for every identical owner across thousands of static instances rather than rehashing them per draw, while unversioned paths continue full exact comparison. Never silently promote legacy RTS `show->materials` unless its owner guarantees revisions. Then write Stage 15 handoff separately; tests remain deferred by user.
