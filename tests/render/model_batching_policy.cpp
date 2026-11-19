@@ -32,6 +32,11 @@ public:
     std::map<uint32_t,std::vector<uint8_t>> buffers;
     uint32_t nextId = 1;
     int created = 0, destroyed = 0;
+    int createAttempts = 0, failCreateOn = 0;
+    int sharedWrites = 0, failSharedOn = 0;
+    uint64_t serial = 0, completed = 0;
+    uint64_t frameSerial() const override { return serial; }
+    uint64_t completedFrameSerial() const override { return completed; }
     const aiverse::gfx::DeviceInfo& info() const override { return deviceInfo; }
     const std::string& lastError() const override { return error; }
     bool supportsMultiDrawIndirect() const override { return indirectSupported; }
@@ -47,6 +52,7 @@ public:
     void dispatch(uint32_t, uint32_t) override {}
     void endCompute() override {}
     aiverse::gfx::BufferHandle createBuffer(const aiverse::gfx::BufferDesc& d) override {
+        if (++createAttempts == failCreateOn) return {};
         auto id = nextId++;
         buffers[id].resize(d.size);
         if (d.data && d.size) std::memcpy(buffers[id].data(), d.data, d.size);
@@ -56,6 +62,12 @@ public:
         auto& v = buffers.at(h.id);
         CHECK(offset <= v.size() && size <= v.size() - offset);
         if (size) std::memcpy(v.data() + offset, data, size);
+    }
+    bool updateSharedBufferChecked(aiverse::gfx::BufferHandle h,
+                                   const void* data, size_t size, size_t offset) override {
+        if (++sharedWrites == failSharedOn) return false;
+        updateBuffer(h, data, size, offset);
+        return true;
     }
     void destroyBuffer(aiverse::gfx::BufferHandle h) override {
         CHECK(buffers.erase(h.id) == 1);
@@ -178,6 +190,97 @@ static Model pooledFixture(float dx) {
 
 
 
+// Source-only tests for retained whole-pair recycling and upload failure
+// recovery. The MockDevice does not execute GPU commands: these prove only
+// allocator and CPU/RHI contract logic, not Vulkan/Metal pixel parity.
+static void verifyGeometryPoolRetirementAndUploadRecovery() {
+    {
+        MockDevice dev;
+        dev.serial = 10;
+        auto large = pooledFixture(1);
+        large.vertices.resize(12);
+        large.indices.resize(12, 1);
+        auto keeper = pooledFixture(2);
+        CHECK(uploadModel(dev, large, true));
+        CHECK(uploadModel(dev, keeper, true));
+        const uint32_t oldFirst = large.gpuFirstIndex;
+        const uint32_t oldBase = large.gpuBaseVertex;
+        const uint32_t oldVBBytes = large.gpuPoolVertexBytes;
+        const uint32_t oldIBBytes = large.gpuPoolIndexBytes;
+        CHECK(oldVBBytes > 3 * sizeof(ModelVertex));
+        CHECK(oldIBBytes > 3 * sizeof(uint32_t));
+        releaseModel(dev, large);
+        CHECK(geometryPoolStats(dev).retiredPairs == 1);
+        CHECK(geometryPoolStats(dev).reusablePairs == 0);
+
+        // Still in-flight. A new model must use a different physical span.
+        dev.serial = 11;
+        auto early = pooledFixture(3);
+        CHECK(uploadModel(dev, early, true));
+        CHECK(early.gpuBaseVertex != oldBase);
+
+        dev.completed = 10;
+        auto smaller = pooledFixture(4);
+        CHECK(uploadModel(dev, smaller, true));
+        CHECK(smaller.gpuBaseVertex == oldBase);
+        CHECK(smaller.gpuFirstIndex == oldFirst);
+        CHECK(smaller.gpuPoolVertexBytes == oldVBBytes);
+        CHECK(smaller.gpuPoolIndexBytes == oldIBBytes);
+        CHECK(geometryPoolStats(dev).recycledUploads == 1);
+
+        // Releasing the smaller successor MUST retain the full old pair.
+        releaseModel(dev, smaller);
+        dev.completed = 10; // its current retirement serial 11 isn't ready
+        auto waiting = pooledFixture(5);
+        waiting.vertices.resize(12);
+        waiting.indices.resize(12, 1);
+        CHECK(uploadModel(dev, waiting, true));
+        CHECK(waiting.gpuBaseVertex != oldBase);
+
+        dev.completed = 11;
+        auto restored = pooledFixture(6);
+        restored.vertices.resize(12);
+        restored.indices.resize(12, 1);
+        CHECK(uploadModel(dev, restored, true));
+        CHECK(restored.gpuBaseVertex == oldBase);
+        CHECK(restored.gpuFirstIndex == oldFirst);
+        CHECK(geometryPoolStats(dev).recycledUploads == 2);
+        releaseModel(dev, restored);
+        releaseModel(dev, waiting);
+        releaseModel(dev, early);
+        releaseModel(dev, keeper);
+        CHECK(dev.buffers.empty() && geometryPoolStats(dev).pages == 0);
+    }
+    {
+        MockDevice dev;
+        dev.failSharedOn = 2; // vertex copy succeeded, index copy failed
+        auto model = pooledFixture(10);
+        CHECK(uploadModel(dev, model, true)); // standalone fallback
+        CHECK(!model.geometryPoolPage);
+        CHECK(model.vb.valid() && model.ib.valid() && model.vb != model.ib);
+        CHECK(dev.destroyed == 1); // rejected new shared page was retired
+        CHECK(geometryPoolStats(dev).pages == 0);
+        releaseModel(dev, model);
+        CHECK(dev.buffers.empty());
+    }
+    {
+        MockDevice dev;
+        dev.indirectSupported = false; // force separate VB / IB
+        dev.failCreateOn = 2; // second standalone buffer allocation fails
+        auto model = pooledFixture(20);
+        CHECK(!uploadModel(dev, model, false));
+        CHECK(!model.vb.valid() && !model.ib.valid());
+        CHECK(model.vertices.size() == 3 && model.indices.size() == 3);
+        CHECK(dev.buffers.empty());
+        dev.failCreateOn = 0;
+        CHECK(uploadModel(dev, model, false));
+        CHECK(model.vb.valid() && model.ib.valid());
+        CHECK(model.vertices.empty() && model.indices.empty());
+        releaseModel(dev, model);
+        CHECK(dev.buffers.empty());
+    }
+}
+
 static void verifyIncrementalBatchingWorkspaceAndRhiCounters() {
     // Stage 21-24: current-pass exact page/material grouping, epoch-safe
     // membership, and deterministic bucket sorting of the admitted prefix.
@@ -286,8 +389,16 @@ static void verifyIncrementalBatchingWorkspaceAndRhiCounters() {
 }
 
 int main() {
+    // This process tests both serial-fenced retirement and a dedicated
+    // fallback. Per-process production default remains OFF.
+#ifdef _WIN32
+    CHECK(_putenv_s("AIVERSE_GEOMETRY_POOL_RECYCLE", "1") == 0);
+#else
+    CHECK(setenv("AIVERSE_GEOMETRY_POOL_RECYCLE", "1", 1) == 0);
+#endif
     verifyVehiclePartsRemainIndependent();
     verifyIncrementalBatchingWorkspaceAndRhiCounters();
+    verifyGeometryPoolRetirementAndUploadRecovery();
     Model m;
     m.materials.resize(1);
     constexpr int kNodes = 5;
