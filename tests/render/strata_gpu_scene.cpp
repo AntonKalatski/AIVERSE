@@ -52,6 +52,7 @@ public:
     std::map<uint32_t, std::vector<uint8_t>> buffers;
     std::string error;
     uint32_t next = 1;
+    bool rejectSharedWrites = false;
     const aiverse::gfx::DeviceInfo& info() const override { return deviceInfo; }
     aiverse::gfx::BufferHandle createBuffer(const aiverse::gfx::BufferDesc& d) override {
         if (!d.size || d.size > 8 * 1024 * 1024) return {};
@@ -66,6 +67,16 @@ public:
         auto& bytes = buffers.at(h.id);
         assert(offset <= bytes.size() && len <= bytes.size() - offset);
         std::memcpy(bytes.data() + offset, data, len);
+    }
+    bool updateSharedBufferChecked(aiverse::gfx::BufferHandle h,
+                                   const void* data, size_t len,
+                                   size_t offset = 0) override {
+        if (rejectSharedWrites) return false;
+        if (!buffers.count(h.id) || !data || len == 0 ||
+            offset > buffers[h.id].size() ||
+            len > buffers[h.id].size() - offset) return false;
+        updateBuffer(h, data, len, offset);
+        return true;
     }
     void destroyBuffer(aiverse::gfx::BufferHandle h) override { buffers.erase(h.id); }
     aiverse::gfx::TextureHandle createTexture(const aiverse::gfx::TextureDesc&) override { return {}; }
@@ -164,22 +175,78 @@ int main() {
     assert(dev.buffers.size() == 1);
     assert(staging.stage(dev, "shared", sourceModel, asset));
     assert(staging.stats().sources == 1);
+    assert(staging.stats().indexedSources == 1);
     assert(staging.stats().bytes == packed.size());
-    assert(dev.buffers.size() == 2); // shared geometry + separate metadata only
+    assert(staging.stats().indexBytes == 2 * 9 * sizeof(uint32_t));
+    assert(dev.buffers.size() == 2); // shared geometry + separate metadata
     const auto h = staging.find("shared", sourceModel);
     assert(h.valid());
-    assert(dev.buffers[h.id] == packed);
+    GpuMetadataScene::IndexBinding binding;
+    assert(staging.indexBinding("shared", sourceModel, binding));
+    assert(binding.valid() && binding.buffer == sourceModel.ib);
+    assert(binding.indexCount == 18);
+    assert(binding.baseVertex == int32_t(sourceModel.gpuBaseVertex));
+    const auto& shared = dev.buffers[binding.buffer.id];
+    for (uint32_t i = 0; i < binding.indexCount; ++i)
+        assert(read<uint32_t>(shared, (size_t(binding.firstIndex) + i) * 4) ==
+               asset.primitives[i / 9].geometry.indices[i % 9]);
+    const auto& metadata = dev.buffers[h.id];
+    const auto v2Header = read<GpuMetadataHeader>(metadata, 0);
+    assert(v2Header.version == 2); // indices now in the shared pool
+    const auto indexedFirst =
+        read<GpuPrimitive>(metadata, v2Header.primitivesByteOffset);
+    const auto indexedSecond =
+        read<GpuPrimitive>(metadata, v2Header.primitivesByteOffset +
+                                    sizeof(GpuPrimitive));
+    assert(indexedFirst.gpuFirstIndex == binding.firstIndex);
+    assert(indexedSecond.gpuFirstIndex == binding.firstIndex + 9);
+    assert(read<GpuNode>(metadata, v2Header.nodesByteOffset).sourceFirstIndex == 0);
+    auto poolStats = aiverse::render::geometryPoolStats(dev);
+    assert(poolStats.pages == 1);
+    assert(poolStats.auxiliaryIndexSpans == 1);
+    assert(poolStats.auxiliaryIndexBytes == 18 * sizeof(uint32_t));
     assert(staging.stage(dev, "shared", sourceModel, asset));
     assert(staging.stats().sources == 1); // per-source deduplication
+
+    // Inject a checked RHI copy failure. Neither an output span nor the
+    // occupied page frontier may be published after a failed upload.
+    aiverse::render::GeometryPoolIndexSpan failedSpan;
+    const auto priorBytes = aiverse::render::geometryPoolStats(dev).occupiedBytes;
+    dev.rejectSharedWrites = true;
+    assert(!aiverse::render::uploadAuxiliaryGeometryIndices(
+        dev, sourceModel, asset.primitives[0].geometry.indices.data(),
+        asset.primitives[0].geometry.indices.size(), failedSpan));
+    assert(!failedSpan.valid());
+    assert(aiverse::render::geometryPoolStats(dev).occupiedBytes == priorBytes);
+    dev.rejectSharedWrites = false;
+
+    // Ownership and revision invalidation are separate from metadata
+    // allocation. A source revision change must not preserve stale bindings.
     sourceModel.markGeometryChanged();
     assert(!staging.find("shared", sourceModel).valid());
+    GpuMetadataScene::IndexBinding unchanged = binding;
+    assert(!staging.indexBinding("shared", sourceModel, unchanged));
+    assert(unchanged.firstIndex == binding.firstIndex);
     assert(!staging.stage(dev, "shared", sourceModel, asset));
     assert(staging.stats().failed == 1);
     assert(dev.buffers.size() == 2);
     staging.shutdown(dev);
     assert(staging.stats().sources == 0);
     assert(dev.buffers.size() == 1);
+    assert(aiverse::render::geometryPoolStats(dev).auxiliaryIndexSpans == 0);
+
+    // Direct pool spans can outlive their original Model lease. They still
+    // hold the SAME page alive, and release is the only destructor path.
+    aiverse::render::GeometryPoolIndexSpan pending;
+    assert(aiverse::render::uploadAuxiliaryGeometryIndices(
+        dev, sourceModel, asset.primitives[0].geometry.indices.data(),
+        asset.primitives[0].geometry.indices.size(), pending));
+    assert(aiverse::render::auxiliaryGeometryIndicesValidFor(pending, sourceModel));
+    assert(aiverse::render::geometryPoolStats(dev).auxiliaryIndexSpans == 1);
     aiverse::render::releaseModelGeometryPool(dev, sourceModel);
+    assert(dev.buffers.size() == 1); // pending span retains original page
+    aiverse::render::releaseAuxiliaryGeometryIndices(dev, pending);
     assert(dev.buffers.empty());
+    assert(!pending.valid());
     return 0;
 }
