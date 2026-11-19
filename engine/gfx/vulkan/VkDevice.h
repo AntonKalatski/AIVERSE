@@ -58,6 +58,8 @@ struct VBuffer {
     Usage usage = Usage::Immutable;
     size_t size = 0;
     bool host = false;                 // host-visible versions (Dynamic): a write never touches a version the GPU may read
+    bool discardOnUpdate = false;      // offset-zero update replaces complete readable prefix
+    BufferUpdateStats transferStats{};
     std::vector<Version> versions;
     int current = 0;
     std::vector<uint8_t> shadow;       // host buffers: the contents, copied into a fresh version
@@ -110,12 +112,17 @@ public:
     bool setWindow(const VulkanWindow* window);
 
     const DeviceInfo& info() const override { return info_; }
+    uint64_t frameSerial() const override { return healthy_ ? serial_ : 0; }
+    uint64_t completedFrameSerial() const override { return healthy_ ? completed_ : 0; }
     const std::string& lastError() const override { return error_; }
     bool supports(PixelFormat f) const override;
 
     BufferHandle createBuffer(const BufferDesc& d) override;
     void updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset) override;
+    bool updateSharedBufferChecked(BufferHandle h, const void* data,
+                                   size_t size, size_t offset) override;
     void destroyBuffer(BufferHandle h) override;
+    BufferUpdateStats bufferUpdateStats(BufferHandle h) override;
     TextureHandle createTexture(const TextureDesc& d) override;
     void updateTexture(TextureHandle h, int x, int y, int w, int h2, const void* pixels, int rowPitchBytes) override;
     void destroyTexture(TextureHandle h) override;
@@ -141,6 +148,8 @@ public:
     void setUniforms(int slot, const void* data, size_t size) override;
     void draw(uint32_t vertexCount, uint32_t firstVertex) override;
     void drawIndexed(uint32_t indexCount, uint32_t firstIndex, int32_t baseVertex, uint32_t instanceCount) override;
+    void drawIndexedCanonical(uint32_t indexCount, uint32_t firstIndex,
+                              int32_t baseVertex, uint32_t instanceCount) override;
     bool supportsMultiDrawIndirect() const override { return multiDrawIndirect_; }
     bool drawIndexedIndirect(BufferHandle commands, size_t offset,
                              uint32_t drawCount, uint32_t stride) override;
@@ -160,7 +169,11 @@ private:
     // VkResources.cpp
     bool createBufferObject(size_t size, VkBufferUsageFlags usage, bool host, VkBuffer& buf, Allocation& alloc);
     VkBufferUsageFlags bufferUsage(BufferType t) const;
-    VBuffer::Version& writableVersion(VBuffer& b, bool keepContents);
+    // Null on allocation failure. Never return an in-flight version as a
+    // fallback: writing it corrupts commands already submitted to the GPU.
+    VBuffer::Version* writableVersion(VBuffer& b, bool keepContents);
+    bool updateBufferChecked(BufferHandle h, const void* data,
+                             size_t size, size_t offset);
     VkBuffer resolveBuffer(uint32_t id, uint64_t serialUse);
     bool createImage(VTexture& t, VkImageUsageFlags usage);
     VkSampler samplerFor(const TextureDesc& d, const VTexture& t);

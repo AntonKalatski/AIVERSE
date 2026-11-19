@@ -456,6 +456,30 @@ void VulkanDevice::drawIndexed(uint32_t indexCount, uint32_t firstIndex, int32_t
     vkCmdDrawIndexed(cb, indexCount, instances, firstIndex, 0, 0);
 }
 
+// Pooled rigid indexed models use the Vulkan-standard vertexOffset rule:
+ // the physical VB binding stays at its page base, while the GPU adds
+ // baseVertex to each fetched index. The shader-visible gl_VertexIndex is
+ // therefore identical to a matching VkDrawIndexedIndirectCommand. The old
+ // drawIndexed() remains untouched for other RHI clients (including morph).
+void VulkanDevice::drawIndexedCanonical(uint32_t indexCount, uint32_t firstIndex,
+                                        int32_t baseVertex, uint32_t instances) {
+    if (!prepareDraw() || !indexCount || !instances) return;
+    VkCommandBuffer cb = slots_[size_t(slot_)].main;
+    const VPipeline* p = pipelines_.get(pipelineId_);
+    if (!p) return;
+    VkBuffer ib = resolveBuffer(ibId_, serial_);
+    if (!ib) return;
+    if (p->desc.attrCount > 0) {
+        VkBuffer vb = resolveBuffer(vbId_, serial_);
+        if (!vb) return;
+        const VkDeviceSize offset = vbOffset_;
+        vkCmdBindVertexBuffers(cb, 0, 1, &vb, &offset);
+    }
+    const bool u32 = p->desc.indexType == IndexType::UInt32;
+    vkCmdBindIndexBuffer(cb, ib, ibOffset_, u32 ? VK_INDEX_TYPE_UINT32 : VK_INDEX_TYPE_UINT16);
+    vkCmdDrawIndexed(cb, indexCount, instances, firstIndex, baseVertex, 0);
+}
+
 bool VulkanDevice::drawIndexedIndirect(BufferHandle commands, size_t offset,
                                          uint32_t drawCount, uint32_t stride) {
     if (!multiDrawIndirect_ || !drawCount || stride < sizeof(DrawIndexedIndirectCommand) ||

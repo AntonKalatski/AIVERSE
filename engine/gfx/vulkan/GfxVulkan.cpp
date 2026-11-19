@@ -412,8 +412,12 @@ void VulkanDevice::ensureBackBuffer(int w, int h) {
 
 void VulkanDevice::prepareSlot() {
     FrameSlot& s = slots_[size_t(slot_)];
-    if (vkWaitForFences(device_, 1, &s.fence, VK_TRUE, UINT64_MAX) == VK_ERROR_DEVICE_LOST) healthy_ = false;
-    completed_ = std::max(completed_, s.serial);
+    const VkResult waited = vkWaitForFences(device_, 1, &s.fence, VK_TRUE, UINT64_MAX);
+    // completed_ must mean a *successfully signalled fence*, not merely
+    // that a wait was attempted. On device loss/other errors disallow pool
+    // recycling: there is no proof earlier GPU readers finished.
+    if (waited == VK_SUCCESS) completed_ = std::max(completed_, s.serial);
+    else healthy_ = false;
     collectGarbage();
     vkResetCommandPool(device_, s.pool, 0);
     for (auto p : s.descriptorPools) vkResetDescriptorPool(device_, p, 0);

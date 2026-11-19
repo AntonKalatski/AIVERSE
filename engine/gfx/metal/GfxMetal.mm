@@ -22,6 +22,19 @@ namespace {
 
 constexpr int kFramesInFlight = 3;
 
+// Snapshot allocations belong to independent GPU submissions and cannot be
+// overwritten while in flight. Geometric growth avoids frequent MTLBuffer
+// reallocations when a batch grows by a few indexed commands.
+size_t growIndirectSnapshotCapacity(size_t oldCapacity, size_t required) {
+    if (required <= oldCapacity) return oldCapacity;
+    size_t capacity = std::max(oldCapacity, size_t{256});
+    while (capacity < required) {
+        if (capacity > SIZE_MAX / 2) return required;
+        capacity *= 2;
+    }
+    return capacity;
+}
+
 template <class T> class Pool {
 public:
     uint32_t add(T v) {
@@ -40,6 +53,7 @@ struct MTBuffer {
     size_t size = 0;
     BufferType type = BufferType::Vertex;
     bool storage = false,snapshot = false;
+    bool discardOnUpdate = false; // offset-zero writes replace readable prefix
     uint64_t updatedFrame = UINT64_MAX;
     // Only for dynamic indirect command snapshots: per-frame, per-submission
     // allocations retained until this frame slot is safe to recycle.
@@ -48,6 +62,7 @@ struct MTBuffer {
     // Kept in lockstep with indirectSnapshots to avoid comparing uninitialized data.
     std::vector<size_t> indirectSnapshotValid[kFramesInFlight];
     size_t indirectCursor = 0;
+    BufferUpdateStats transferStats{};
 };
 struct MTTexture { id<MTLTexture> tex; id<MTLSamplerState> sampler; PixelFormat fmt = PixelFormat::RGBA8; bool mips = false; };
 struct MTShader { id<MTLFunction> vs; id<MTLFunction> fs; std::string source; bool linear = false; };
@@ -83,6 +98,10 @@ public:
 
     const DeviceInfo& info() const override { return info_; }
     uint64_t frameSerial() const override { return frame_; }
+    uint64_t completedFrameSerial() const override {
+        return gpuHealthy_->load(std::memory_order_acquire)
+            ? completedFrame_->load(std::memory_order_acquire) : 0;
+    }
     bool supports(PixelFormat f) const override {
         bool apple = false, bc = false;
 #if TARGET_OS_IPHONE
@@ -120,6 +139,7 @@ public:
         b.size = d.size ? d.size : 16;
         b.type = d.type;
         b.snapshot = d.snapshotUpdates;
+        b.discardOnUpdate = d.discardOnUpdate;
         b.storage = d.type == BufferType::Storage;
         b.count = !b.storage && d.usage == Usage::Dynamic ? kFramesInFlight : 1;
         for (int i = 0; i < b.count; ++i) {
@@ -127,21 +147,40 @@ public:
                                : [device_ newBufferWithLength:b.size options:MTLResourceStorageModeShared];
         }
         for(int i=0;i<b.count;++i)if(!b.bufs[i]){error_="buffer allocation failed";return {};}
+        if (b.type == BufferType::Indirect && b.snapshot) {
+            b.transferStats.available = true;
+            b.transferStats.allocations = uint64_t(b.count);
+            if (d.data) b.transferStats.mappedWriteBytes = uint64_t(d.size) * b.count;
+        }
         return {buffers_.add(b)};
     }
     id<MTLBuffer> current(MTBuffer& b) { return b.bufs[b.count == 1 ? 0 : int(frame_ % kFramesInFlight)]; }
+    bool uploadSharedStorage(BufferHandle h, const void* data, size_t size, size_t offset) {
+        auto* b = buffers_.get(h.id);
+        if (!b || !b->storage || !data || !size ||
+            offset > b->size || size > b->size-offset || enc_ || compute_)
+            return false;
+        id<MTLBuffer> upload = [device_ newBufferWithBytes:data length:size options:MTLResourceStorageModeShared];
+        if (!upload) { error_ = "storage upload allocation failed"; gpuHealthy_->store(false); return false; }
+        id<MTLCommandBuffer> cb = cmd_ ? cmd_ : [queue_ commandBuffer];
+        if (!cb) { error_ = "storage command buffer allocation failed"; gpuHealthy_->store(false); return false; }
+        id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
+        if (!blit) { error_ = "storage blit encoder unavailable"; gpuHealthy_->store(false); return false; }
+        [blit copyFromBuffer:upload sourceOffset:0 toBuffer:b->bufs[0]
+          destinationOffset:offset size:size];
+        [blit endEncoding];
+        if (!cmd_) [cb commit];
+        return true;
+    }
+    bool updateSharedBufferChecked(BufferHandle h, const void* data,
+                                   size_t size, size_t offset) override {
+        return uploadSharedStorage(h, data, size, offset);
+    }
     void updateBuffer(BufferHandle h, const void* data, size_t size, size_t offset) override {
         auto* b = buffers_.get(h.id);
         if (!b) return;
         if (b->storage) {
-            if (!data || offset > b->size || size > b->size-offset || enc_ || compute_) return;
-            id<MTLBuffer> upload = [device_ newBufferWithBytes:data length:size options:MTLResourceStorageModeShared];
-            if(!upload){error_="storage upload allocation failed";gpuHealthy_->store(false);return;}
-            id<MTLCommandBuffer> cb = cmd_ ? cmd_ : [queue_ commandBuffer];
-            id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
-            [blit copyFromBuffer:upload sourceOffset:0 toBuffer:b->bufs[0] destinationOffset:offset size:size];
-            [blit endEncoding];
-            if (!cmd_) [cb commit];
+            (void)uploadSharedStorage(h, data, size, offset);
             return;
         }
         if (b->type == BufferType::Indirect && b->snapshot && b->count > 1) {
@@ -156,10 +195,17 @@ public:
             auto& snapshots = b->indirectSnapshots[slot];
             auto& valid = b->indirectSnapshotValid[slot];
             const size_t cursor = b->indirectCursor;
-            id<MTLBuffer> previous = cursor ? b->bufs[slot] : nil;
+            // The previous logical contents may be needed for general partial
+            // updates, including cursor zero after this frame slot is recycled.
+            // GPU fences guarantee the previous slot submission is finished.
+            id<MTLBuffer> previous = b->bufs[slot];
             id<MTLBuffer> target = cursor < snapshots.size() ? snapshots[cursor] : nil;
-            const size_t capacity = std::max(b->size, required);
-            if (!target || target.length < capacity) {
+            const bool discardPrefix = b->discardOnUpdate && offset == 0;
+            const size_t capacity = discardPrefix
+                ? growIndirectSnapshotCapacity(b->size, required)
+                : std::max(b->size, required);
+            const bool allocated = !target || target.length < capacity;
+            if (allocated) {
                 target = [device_ newBufferWithLength:capacity options:MTLResourceStorageModeShared];
                 if (!target) {
                     error_ = "indirect snapshot allocation failed";
@@ -174,28 +220,88 @@ public:
                     valid[cursor] = 0;
                 }
             }
-            // Full updates are the common model indirect path. If this
-            // frame-slot/submission's commands have not changed, keep the
-            // previous contents. The slot is safe after the GPU fence.
-            // Partial updates preserve the previous submission's bytes.
-            const bool fullUpdate = offset == 0 && size == required;
+            // The model indirect path replaces the readable command prefix.
+            // No old tail is read by drawIndexedIndirect(drawCount), so skip
+            // copying it from the previous submission. Non-opted-in buffers
+            // retain their partial-update preservation semantics.
+            size_t preserved = 0;
+            if (!discardPrefix && previous && previous != target &&
+                (offset != 0 || size < b->size)) {
+                preserved = std::min(size_t(target.length), size_t(previous.length));
+                std::memcpy(target.contents, previous.contents, preserved);
+            }
             static const bool dirtyIndirectUpdates = [] {
                 const char* setting = std::getenv("AIVERSE_METAL_ICB_DIRTY_UPDATES");
                 return setting && std::strcmp(setting, "1") == 0;
             }();
-            const bool unchanged = dirtyIndirectUpdates && fullUpdate &&
-                valid[cursor] >= size && std::memcmp(target.contents, data, size) == 0;
-            if (!unchanged) {
-                if (previous && (offset != 0 || size < b->size))
-                    std::memcpy(target.contents, previous.contents,
-                                std::min(size_t(target.length), size_t(previous.length)));
+            size_t written = size;
+            size_t avoided = 0;
+            size_t compared = 0;
+            // Comparing a completed frame-slot snapshot is safe; comparing
+            // snapshots from an earlier submission in *this* frame is not
+            // permission to overwrite that submission. The cursor always
+            // provides a distinct target for each new draw.
+            if (dirtyIndirectUpdates && discardPrefix && valid[cursor] >= size) {
+                // A changing camera often changes only a few indexed
+                // commands. Copy only dirty 128-byte spans; keep the exact
+                // 20-byte command ABI and the full current drawCount.
+                constexpr size_t kDirtyChunk = 128;
+                written = 0;
+                auto* dst = static_cast<uint8_t*>(target.contents);
+                const auto* src = static_cast<const uint8_t*>(data);
+                for (size_t at = 0; at < size; at += kDirtyChunk) {
+                    const size_t length = std::min(kDirtyChunk, size - at);
+                    compared += length;
+                    if (std::memcmp(dst + at, src + at, length) != 0) {
+                        std::memcpy(dst + at, src + at, length);
+                        written += length;
+                    } else {
+                        avoided += length;
+                    }
+                }
+            } else if (dirtyIndirectUpdates && !discardPrefix &&
+                       offset == 0 && size == b->size &&
+                       valid[cursor] >= size) {
+                compared += size;
+                if (std::memcmp(target.contents, data, size) == 0) {
+                    written = 0;
+                    avoided = size;
+                } else {
+                    std::memcpy(target.contents, data, size);
+                }
+            } else {
                 std::memcpy(static_cast<uint8_t*>(target.contents) + offset, data, size);
             }
-            valid[cursor] = std::max(valid[cursor], required);
+            // When only the new prefix is valid, old tail data remains
+            // explicitly undefined for discardOnUpdate clients.
+            valid[cursor] = discardPrefix ? required : std::max(valid[cursor], required);
             b->bufs[slot] = target;
             b->size = capacity;
             b->indirectCursor = cursor + 1;
             b->updatedFrame = frame_;
+            // Count only a completed snapshot update. These are observed CPU
+            // copies, not the bytes fetched by Metal or discrete-GPU traffic.
+            ++b->transferStats.updateCalls;
+            b->transferStats.requestedBytes += size;
+            b->transferStats.mappedWriteBytes += written + preserved;
+            b->transferStats.preservedBytes += preserved;
+            b->transferStats.comparedBytes += compared;
+            b->transferStats.skippedWriteBytes += avoided;
+            b->transferStats.allocations += allocated ? 1u : 0u;
+            b->transferStats.reused += allocated ? 0u : 1u;
+            if (std::getenv("AIVERSE_ICB_PROFILE")) {
+                static uint64_t uploads = 0, copied = 0, saved = 0, growths = 0;
+                copied += written;
+                saved += avoided;
+                growths += allocated ? 1u : 0u;
+                if (++uploads == 600) {
+                    std::fprintf(stderr,
+                        "[metal-indirect-snapshots] /600 updates copied=%.1f KiB dirty-elided=%.1f KiB allocations=%llu (slot fenced)\n",
+                        double(copied) / 1024.0, double(saved) / 1024.0,
+                        (unsigned long long)growths);
+                    uploads = copied = saved = growths = 0;
+                }
+            }
             return;
         }
         if (offset + size > b->size) {
@@ -219,6 +325,24 @@ public:
         memcpy(static_cast<uint8_t*>(current(*b).contents) + offset, data, size);
     }
     void destroyBuffer(BufferHandle h) override { buffers_.remove(h.id); }
+    BufferUpdateStats bufferUpdateStats(BufferHandle h) override {
+        auto* b = buffers_.get(h.id);
+        if (!b || !b->transferStats.available) return {};
+        auto stats = b->transferStats;
+        // b->bufs[slot] can alias an entry in indirectSnapshots[slot].
+        // Do not double-count those MTLBuffers in retained capacity.
+        for (int slot = 0; slot < b->count; ++slot) {
+            const auto& snapshots = b->indirectSnapshots[slot];
+            for (id<MTLBuffer> snapshot : snapshots)
+                if (snapshot) stats.retainedBufferBytes += size_t(snapshot.length);
+            bool alias = false;
+            for (id<MTLBuffer> snapshot : snapshots)
+                if (snapshot == b->bufs[slot]) { alias = true; break; }
+            if (b->bufs[slot] && !alias)
+                stats.retainedBufferBytes += size_t(b->bufs[slot].length);
+        }
+        return stats;
+    }
     bool canUpdateSharedBuffers() const override { return !enc_ && !compute_; }
 
     bool supportsCompute() const override {
@@ -747,13 +871,26 @@ public:
         __block dispatch_semaphore_t sem = frameSemaphore_;
         [cmd_ addCompletedHandler:^(id<MTLCommandBuffer>) { dispatch_semaphore_signal(sem); }];
         auto timing=gpuMs_;auto health=gpuHealthy_;
+        auto completedSerial=completedFrame_;
+        const uint64_t submittedFrame=frame_;
         [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> completed) {
             if(completed.status==MTLCommandBufferStatusError) {
                 health->store(false);
                 const char* description = completed.error ? completed.error.localizedDescription.UTF8String : "unknown";
                 std::fprintf(stderr, "[metal] command buffer failed: %s\\n", description);
             }
-            if(completed.status==MTLCommandBufferStatusCompleted)timing->store((completed.GPUEndTime-completed.GPUStartTime)*1000);
+            if(completed.status==MTLCommandBufferStatusCompleted) {
+                timing->store((completed.GPUEndTime-completed.GPUStartTime)*1000);
+                // Only a completed queue submission may release quarantined
+                // geometry spans. One Metal queue orders all model uploads
+                // and draws; atomically publish the highest completed frame.
+                uint64_t observed=completedSerial->load(std::memory_order_relaxed);
+                while(observed<submittedFrame &&
+                      !completedSerial->compare_exchange_weak(
+                          observed, submittedFrame,
+                          std::memory_order_release,
+                          std::memory_order_relaxed)) {}
+            }
         }];
         firstPass_ = true;
     }
@@ -965,14 +1102,17 @@ public:
     }
 
     bool supportsMultiDrawIndirect() const override {
-        // Both Metal ICB paths are deliberately opt-in. CPU Multi-Draw is
-        // independently testable without enabling GPU-authored commands.
-        // Historic AIVERSE_EXPERIMENTAL_METAL_ICB continues to enable the
-        // CPU path for old A/B scripts; neither flag is a production default.
+        // Independent opt-ins: explicit CPU MDI, legacy experimental ICB,
+        // or the renderer's opt-in three-way AUTO policy. AUTO needs to query
+        // CPU-MDI availability to train its CPU fallback; it must NOT enable
+        // compute-authored GPU ICB (supportsGpuEncodedIcb has stricter flags).
+        // No path is enabled for an ordinary non-AUTO production process.
         const char* cpu = std::getenv("AIVERSE_METAL_CPU_MDI");
         const char* experimental = std::getenv("AIVERSE_EXPERIMENTAL_METAL_ICB");
+        const char* autoBatch = std::getenv("AIVERSE_BATCH_AUTO");
         if (!(cpu && std::strcmp(cpu, "1") == 0) &&
-            !(experimental && std::strcmp(experimental, "1") == 0)) return false;
+            !(experimental && std::strcmp(experimental, "1") == 0) &&
+            !(autoBatch && std::strcmp(autoBatch, "1") == 0)) return false;
 #if TARGET_OS_IPHONE
         if (@available(iOS 14.0, *)) return [device_ supportsFamily:MTLGPUFamilyApple3];
 #else
@@ -1411,9 +1551,28 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             if (!uniforms[slot] || !uniforms[slot].contents) return false;
             std::memcpy(uniforms[slot].contents, bytes.data(), bytes.size());
         }
+        // Each ICB command uses the same uniform slots. Compact the active
+        // bindings once per submission instead of checking 8 empty slots for
+        // every command (potentially hundreds per submission).
+        struct ActiveUniform {
+            id<MTLBuffer> buffer = nil;
+            NSUInteger index = 0;
+        };
+        ActiveUniform uniformBindings[8]{};
+        int uniformBindingCount = 0;
+        for (int slot = 0; slot < 8; ++slot) {
+            if (!uniforms[slot]) continue;
+            uniformBindings[uniformBindingCount++] = {uniforms[slot], NSUInteger(1 + slot)};
+        }
         const auto afterAlloc = std::chrono::steady_clock::now();
         const bool u32 = p->desc.indexType == IndexType::UInt32;
         const size_t indexBytes = u32 ? 4u : 2u;
+        const MTLIndexType icbIndexType = u32 ? MTLIndexTypeUInt32 : MTLIndexTypeUInt16;
+        // All indirect commands share the same validated pipeline. Avoid
+        // re-querying the pipeline table in prim() for each encoded command.
+        const MTLPrimitiveType icbPrimitive =
+            p->desc.primitive == Primitive::Lines
+                ? MTLPrimitiveTypeLine : MTLPrimitiveTypeTriangle;
         const auto& modelUniforms = indirectUniformSnapshots_[0];
         constexpr size_t kModelInstanceBytes = 36u * sizeof(float);
         const size_t instanceCapacity = modelUniforms.size() / kModelInstanceBytes;
@@ -1436,12 +1595,13 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             [command setRenderPipelineState:indirectPipeline];
             if (pbr) [command setFragmentBuffer:pbrArgs offset:0 atIndex:8];
             [command setVertexBuffer:vertices offset:vbOffset_ atIndex:0];
-            for (int slot = 0; slot < 8; ++slot) if (uniforms[slot]) {
-                [command setVertexBuffer:uniforms[slot] offset:0 atIndex:NSUInteger(1 + slot)];
-                [command setFragmentBuffer:uniforms[slot] offset:0 atIndex:NSUInteger(1 + slot)];
+            for (int k = 0; k < uniformBindingCount; ++k) {
+                const auto& binding = uniformBindings[k];
+                [command setVertexBuffer:binding.buffer offset:0 atIndex:binding.index];
+                [command setFragmentBuffer:binding.buffer offset:0 atIndex:binding.index];
             }
-            [command drawIndexedPrimitives:prim() indexCount:args.indexCount
-                indexType:u32 ? MTLIndexTypeUInt32 : MTLIndexTypeUInt16
+            [command drawIndexedPrimitives:icbPrimitive indexCount:args.indexCount
+                indexType:icbIndexType
                 indexBuffer:indices indexBufferOffset:ibOffset_ + size_t(args.firstIndex) * indexBytes
                 instanceCount:args.instanceCount baseVertex:args.baseVertex baseInstance:args.firstInstance];
         }
@@ -1471,9 +1631,20 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             totals[2] += ms(afterAlloc, afterEncode);
             totals[3] += ms(afterEncode, std::chrono::steady_clock::now());
             commandsEncoded += drawCount;
-            if (++submissions == 600) {
+            // Override only the reporting interval, never a GPU/CPU path.
+            // Small AUTO probes may submit far fewer than 600 ICBs.
+            static const uint32_t reportEvery = [] {
+                const char* raw = std::getenv("AIVERSE_ICB_PROFILE_REPORT_EVERY");
+                if (!raw || !*raw) return 600u;
+                char* end = nullptr;
+                const long n = std::strtol(raw, &end, 10);
+                return end != raw && *end == '\0' && n >= 1 && n <= 10000
+                    ? uint32_t(n) : 600u;
+            }();
+            if (++submissions == reportEvery) {
                 std::fprintf(stderr,
-                    "[metal-icb] avg/600 submissions args=%.4f alloc=%.4f encode=%.4f residency-execute=%.4f ms commands/submission=%.1f\n",
+                    "[metal-icb] avg/%u submissions args=%.4f alloc=%.4f encode=%.4f residency-execute=%.4f ms commands/submission=%.1f\n",
+                    reportEvery,
                     totals[0] / submissions, totals[1] / submissions,
                     totals[2] / submissions, totals[3] / submissions,
                     double(commandsEncoded) / submissions);
@@ -1496,6 +1667,9 @@ private:
     Pool<id<MTLComputePipelineState>> computes_;
     std::shared_ptr<std::atomic<bool>> gpuHealthy_=std::make_shared<std::atomic<bool>>(true);
     std::shared_ptr<std::atomic<double>> gpuMs_=std::make_shared<std::atomic<double>>(0);
+    // Shared with the completion callback: never capture a destroyed device.
+    std::shared_ptr<std::atomic<uint64_t>> completedFrame_=
+        std::make_shared<std::atomic<uint64_t>>(0);
     id<CAMetalDrawable> drawable_;
     id<MTLTexture> depth_;
     dispatch_semaphore_t frameSemaphore_;
