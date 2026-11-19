@@ -8,10 +8,13 @@
 #include "AsyncResourceRetirementQueue.h"
 #include "ModelResidentEstimate.h"
 #include "RenderDeviceLifetime.h"
+#include "ModelReadLease.h"
 #ifndef __EMSCRIPTEN__
 #include "ModelPreparationService.h"
 #endif
 #include <cstdint>
+#include <cstdio>
+#include <exception>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -30,7 +33,18 @@ public:
     // Observer registration has an independent lifetime marker. It expires
     // as soon as destruction begins, before any Model or GPU lease members.
     // Group snapshots and owner destruction must share the device thread.
-    ~ModelResourceCache() { lifetimeToken_.reset(); }
+    ~ModelResourceCache() {
+        // Unique-owned resident Models will be destroyed in this
+        // destructor. An outstanding reader is a host lifetime bug;
+        // fail closed rather than silently creating dangling pointers.
+        if(readState_->readers.load(std::memory_order_acquire)!=0) {
+            std::fprintf(stderr,
+                "ModelResourceCache destroyed with active Model read leases\n");
+            std::terminate();
+        }
+        readState_->alive.store(false,std::memory_order_release);
+        lifetimeToken_.reset();
+    }
     std::weak_ptr<const void> lifetimeToken() const noexcept {
         return lifetimeToken_;
     }
@@ -44,6 +58,9 @@ public:
         if(resourceDevice_ &&
            (resourceDevice_!=&device || resourceThread_!=thread))
             throw std::logic_error("ModelResourceCache device/thread mismatch");
+        if(readState_->ownerThread!=std::thread::id{} &&
+           readState_->ownerThread!=thread)
+            throw std::logic_error("ModelResourceCache read and GPU owner thread mismatch");
         if(!resourceDevice_) {
             resourceDevice_=&device;
             resourceThread_=thread;
@@ -71,6 +88,36 @@ public:
     // Incremented by every cache-owned insertion, replacement, eviction,
     // and shutdown; the map is exposed read-only so writes cannot bypass it.
     uint64_t generation() const noexcept {return generation_;}
+
+    // The cache retains unique_ptr<Model> ownership. This temporary
+    // lease does NOT move a Model into shared ownership; it blocks
+    // eviction/replacement/shutdown while a host reads its pointers.
+    // Acquire on the cache render-owner thread, AFTER cache binding
+    // (or before first binding, on the future owner thread).
+    ModelReadLease acquireModelRead(const Model* model) const {
+        if(!model)return {};
+        const auto thread=std::this_thread::get_id();
+        if(resourceDevice_ && resourceThread_!=thread)
+            throw std::logic_error("ModelResourceCache read on foreign GPU thread");
+        if(readState_->ownerThread==std::thread::id{})
+            readState_->ownerThread=thread;
+        if(readState_->ownerThread!=thread ||
+           !readState_->alive.load(std::memory_order_acquire))
+            throw std::logic_error("ModelResourceCache reader owner expired or wrong thread");
+        for(const auto& [key,owned]:models_) {
+            (void)key;
+            if(owned.get()==model)return ModelReadLease(readState_,model);
+        }
+        return {}; // rejected: Model belongs to another cache or was retired
+    }
+    ModelReadLease acquireModelRead(const std::string& key) const {
+        const auto it=models_.find(key);
+        return it==models_.end()?ModelReadLease{}:
+            acquireModelRead(it->second.get());
+    }
+    size_t activeModelReaders() const noexcept {
+        return readState_->readers.load(std::memory_order_acquire);
+    }
 
     struct Stats {
         size_t models=0,textures=0,decodedCpuBytes=0;
@@ -109,6 +156,7 @@ public:
                              const std::vector<std::string>& sources,
                              OnDetach&& onDetach) {
         bindResourceDevice(dev); // model must belong to this owner/device
+        requireNoModelReaders("invalidateSources");
         std::unordered_set<std::string> changed;
         for(const auto& source:sources)
             if(!source.empty() && source.rfind("shape:",0)!=0)
@@ -168,6 +216,7 @@ public:
                            std::unique_ptr<render::Model> replacement,
                            OnRelease&& onRelease) {
         bindResourceDevice(dev); // old model moves into GPU-safe retirement queue
+        requireNoModelReaders("replace");
         auto it=models_.find(key);
         if(it!=models_.end()) {
             if(it->second) {
@@ -279,6 +328,7 @@ public:
                       const std::unordered_set<const render::Model*>& used,
                       OnRelease&& onRelease) {
         bindResourceDevice(dev); // release happens at the host frame boundary
+        requireNoModelReaders("trimUnused");
         size_t released=0;
         for(auto it=models_.begin();it!=models_.end();) {
             if(it->first.rfind("shape:",0)==0 ||
@@ -436,6 +486,7 @@ public:
     // No async loader may still reference these objects at this barrier.
     void shutdown(gfx::Device& dev) {
         bindResourceDevice(dev);
+        requireNoModelReaders("shutdown");
 #ifndef __EMSCRIPTEN__
         preparation_.reset(); // join all texture/model CPU workers before release
 #endif
@@ -470,6 +521,13 @@ public:
         resourceEpochLease_={};
     }
 private:
+    void requireNoModelReaders(const char* operation) const {
+        if(activeModelReaders()!=0)
+            throw std::logic_error(std::string("ModelResourceCache cannot ") +
+                operation + " while Model read leases are active");
+    }
+    std::shared_ptr<ModelReadLeaseState> readState_=
+        std::make_shared<ModelReadLeaseState>();
     std::shared_ptr<const void> lifetimeToken_=
         std::make_shared<const uint8_t>(1);
     mutable gfx::Device* resourceDevice_=nullptr;
