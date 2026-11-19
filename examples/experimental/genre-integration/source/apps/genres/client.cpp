@@ -102,7 +102,7 @@ struct App {
             }
         }
         device.beginFrame(platform::framebufferWidth(),platform::framebufferHeight());gui.newFrame(dt);
-        render::RTSCamera cam;
+        render::Camera cam;
         if(motion) {
             auto& s=motion->state(*sim);cam.target=visual(s.actors[0].body.pos);cam.distance=25;cam.ortho=true;
             cam.pitch=motion->kind()==genres::MotionKind::Platformer?0.f:1.3f;cam.yaw=0;

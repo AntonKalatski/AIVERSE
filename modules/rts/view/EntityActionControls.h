@@ -24,7 +24,7 @@ public:
         }
     };
     struct ScreenItem { size_t index; float x,y,w=120,h=48; };
-    std::vector<ScreenItem> screen(const render::RTSCamera& camera,float width,float height) const {
+    std::vector<ScreenItem> screen(const render::Camera& camera,float width,float height) const {
         std::vector<ScreenItem> out;
         if(width<=0 || height<=0)return out;
         for(size_t i=0;i<items_.size();++i){
@@ -35,7 +35,7 @@ public:
         return out;
     }
     // Disabled hits are consumed too: they must not become a movement order.
-    bool press(const render::RTSCamera& camera,float width,float height,float x,float y) {
+    bool press(const render::Camera& camera,float width,float height,float x,float y) {
         auto boxes=screen(camera,width,height);
         for(auto it=boxes.rbegin();it!=boxes.rend();++it)if(x>=it->x && x<it->x+it->w && y>=it->y && y<it->y+it->h){
             const auto& item=items_[it->index];begin(item.entity,item.abilityId);return true;

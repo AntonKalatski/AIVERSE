@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <cmath>
 namespace aiverse::lib::gameplay::camera {
-enum class Mode { Rts,Follow,Orbit,Strategic };
+enum class Mode { Free,Follow,Orbit,Strategic };
 struct Pose { float x=0,z=0,zoom=20,yaw=0,pitch=45; };
 struct Limits { float minX=-10000,maxX=10000,minZ=-10000,maxZ=10000,minZoom=1,maxZoom=200,minPitch=5,maxPitch=89; };
 inline bool valid(const Pose& p) { return std::isfinite(p.x)&&std::isfinite(p.z)&&std::isfinite(p.zoom)&&std::isfinite(p.yaw)&&std::isfinite(p.pitch); }

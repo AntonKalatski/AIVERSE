@@ -15,7 +15,7 @@ struct Sandbox {
     std::unique_ptr<physics::World> world;
     Renderer3D renderer;
     ImGuiLayer gui;
-    RTSCamera camera;
+    Camera camera;
     i18n::Localization loc;
     std::vector<Mesh> meshes;
     gfx::Device* device=nullptr;

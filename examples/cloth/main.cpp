@@ -31,7 +31,7 @@ struct Demo {
     std::vector<double> gpuTimes;
     std::array<cloth::Capsule,2> verificationCaps{{{{1,-2,.2f},{1,-2,.2f},.5f},{{0,0,0},{0,0,0},-1}}};
     render::ImGuiLayer gui;
-    render::RTSCamera camera;
+    render::Camera camera;
     i18n::Localization loc;
     std::vector<double> simTimes,uploadTimes,callbackTimes,intervalTimes;
     clothdemo::Clock::time_point previous;
