@@ -635,12 +635,14 @@ void Renderer3D::renderCurrentFrameReactiveMask(
     for (const auto& item : items_)
         meshReactiveNeeded |= meshReactiveEligible(item);
     bool rigidReactiveNeeded = false, animatedReactiveNeeded = false;
-    bool cutoutReactiveNeeded = false;
+    bool cutoutReactiveNeeded = false, simpleRigidReactiveNeeded = false;
     for (const auto& it : modelItems_) {
         const bool rigid = reactiveEligible(it);
         rigidReactiveNeeded |= rigid;
-        cutoutReactiveNeeded |= rigid &&
+        const bool detailed = rigid &&
             (it.mat->alpha == AlphaMode::Mask || it.dissolve > 0.0f);
+        cutoutReactiveNeeded |= detailed;
+        simpleRigidReactiveNeeded |= rigid && !detailed;
         animatedReactiveNeeded |= reactiveAnimatedEligible(it);
     }
     const bool reactiveNeeded = rigidReactiveNeeded ||
@@ -790,14 +792,19 @@ void Renderer3D::renderCurrentFrameReactiveMask(
         if (needBaked) prepareAnimatedReactive(true);
         if (needSkin) prepareAnimatedReactive(false);
     }
+    // Check the pipeline for the ACTUAL provider type. A failed cutout
+    // shader must not publish an empty mask merely because the simple
+    // water/blend pipeline happened to be prepared.
+    const bool anyReactiveProviderReady =
+        (simpleRigidReactiveNeeded && objectMotionReactivePipeline_.valid()) ||
+        (cutoutReactiveNeeded && objectMotionReactiveCutoutPipeline_.valid()) ||
+        (animatedReactiveNeeded &&
+            (objectMotionReactiveSkinPipeline_.valid() ||
+             objectMotionReactiveBakedPipeline_.valid())) ||
+        (meshReactiveNeeded && objectMotionReactiveMeshPipeline_.valid()) ||
+        !motionReactiveDraws_.empty();
     if (reactiveNeeded && history.reactive.valid() &&
-        history.depth.valid() && sceneDepth.valid() &&
-        (objectMotionReactivePipeline_.valid() ||
-         objectMotionReactiveCutoutPipeline_.valid() ||
-         objectMotionReactiveSkinPipeline_.valid() ||
-         objectMotionReactiveBakedPipeline_.valid() ||
-         objectMotionReactiveMeshPipeline_.valid() ||
-         !motionReactiveDraws_.empty())) {
+        history.depth.valid() && sceneDepth.valid() && anyReactiveProviderReady) {
         struct ReactiveUniforms {
             float mvp[16], params[4], lod[4];
         };
@@ -993,13 +1000,23 @@ void Renderer3D::renderCurrentFrameReactiveMask(
         post.acceptMotionReactiveMask(MotionTextureInput::declared(
             history.reactive,w,h,gfx::PixelFormat::RGBA8));
         objectMotionStats_.reactiveSubmitted = true;
+    } else {
+        // Callbacks are frame-scoped and discarded at resolvePrisma().
+        // Expose why an authored callback could not be invoked rather
+        // than reusing it in another camera's subsequent scene.
+        objectMotionStats_.reactiveCallbacksDropped +=
+            static_cast<uint32_t>(motionReactiveDraws_.size());
     }
 
 }
 
 void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
     objectMotionStats_ = {};
-    if (!post.wantsObjectMotionVectors() || !dev_) return;
+    if (!post.wantsObjectMotionVectors() || !dev_) {
+        objectMotionStats_.reactiveCallbacksDropped =
+            static_cast<uint32_t>(motionReactiveDraws_.size());
+        return;
+    }
     uint64_t viewId = 0;
     mat4 previousCamera;
     const bool previousCameraValid =
@@ -1101,6 +1118,8 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
     history.valid = true;
     const auto sceneDepth = post.objectMotionSceneDepth();
     if (!sceneDepth.valid()) {
+        objectMotionStats_.reactiveCallbacksDropped =
+            static_cast<uint32_t>(motionReactiveDraws_.size());
         history.previous = std::move(current);
         history.previousDeformed = std::move(currentDeformed);
         return; // neither velocity nor the reactive mask can sample depth
@@ -1540,6 +1559,9 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
 
 void Renderer3D::resolvePrisma() {
     if (!post_) {
+        objectMotionStats_ = {};
+        objectMotionStats_.reactiveCallbacksDropped =
+            static_cast<uint32_t>(motionReactiveDraws_.size());
         motionReactiveDraws_.clear();
         return;
     }
