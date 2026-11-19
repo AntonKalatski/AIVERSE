@@ -341,3 +341,81 @@ files, source graphs or VM data are performed.
 
 These Stage 42 changes were source-committed but not run in a
 native C++/Metal build or GPU hardware test.
+
+## Stage 43 — explicit editor mailbox, safe bundles and owner-frame recovery
+
+Native host projects can now connect a **non-owning**, owner-thread
+mailbox to the existing editor. The mailbox carries only a GPU group
+index, a bounded request sequence and state/error information.
+It neither creates GPU resources nor initiates a Metal readback
+from UI rendering. It is optional: standalone games without an
+editor work exactly as before.
+
+```cpp
+NativeAttachmentExample fx; // outlives all editor attachments
+// After fx.init(...), attach while the native renderer is active:
+editor.setSpectraGpuTelemetry(&fx.poolTelemetry());
+editor.setSpectraGpuCaptureMailbox(&fx.captureMailbox());
+editor.setSpectraGpuRecoveryHost(&fx.recoveryHost());
+
+// UI: Request selected group from render host.
+// Native Device owner: Device.beginFrame -> fx.prepare(...)
+// fx.prepare calls captureMailbox.claimRequested and capture.request
+// BEFORE pool.step(0), then submits after step and before render pass.
+// The host updates mailbox status as the async readback completes.
+// UI: Save SAFE ZIP or JSON (no raw) or explicitly save RAW binary.
+// UI: Release native capture. Host consumes release on next frame.
+
+// MUST detach BEFORE fx.shutdown() or object destruction:
+editor.setSpectraGpuRecoveryHost(nullptr);
+editor.setSpectraGpuCaptureMailbox(nullptr);
+editor.setSpectraGpuTelemetry(nullptr);
+fx.shutdown();
+```
+
+All calls on the **same presentation/Editor owner thread**. The
+mailbox is a plain message-slot API and does not contain network
+locks, background tasks, RHI operations or authoritative ECS
+component writes. It supports
+`Idle/Requested/Claimed/InFlight/Ready/Failed/ReleaseRequested`
+states with an exact sequence number. The native example cancels
+the capture and clears the mailbox before rollback, GPU Device
+replacement or shutdown. Late GPU callbacks cannot post data
+to a newer sequence or pool lifecycle.
+
+The native host also calls
+`GpuPoolRecoveryHost::serviceQueuedResetAtSafeFrame(frameOrdinal)`
+at a safe point after Device.beginFrame. A queued visual reset
+is retried with an exponential frame-based cooldown capped at
+32 frames if a recoverable reset fails, rather than issuing
+GPU reset blits continuously every render frame. The host can
+observe `PoolRecoveryEvent::consecutiveResetFailures` and
+`retryNotBeforeOwnerFrame`; a lost Device requires platform
+re-creation, not repeated reset attempts. No OS graphics Device
+is created automatically.
+
+For support cases, use **Save SAFE ZIP bundle** in SpectraFX Graph
+Window. It creates one local ZIP STORE archive <=128 KiB containing
+only `manifest.json`, `checkpoint_summary.json`, and
+`preview_timeline.json` with at most 180 aggregate-only frames.
+No raw `.spfx` file, full world positions, VM scalar arrays,
+original paths, GPU frame serials or CRC fingerprints are stored.
+Sensitive world bounds/identifier checkboxes used for an
+ordinary JSON report cannot override this stronger ZIP redaction.
+The default file naming includes a local numbered suffix but
+**no GPU frame serial**. The RAW SPFX export is a different,
+explicit user action.
+
+The offline CLI also supports:
+
+```sh
+./inspect_spfx --bundle /path/to/support.safe.zip checkpoint.spfx
+```
+
+The CLI ZIP has an empty sanitized preview timeline. No automatic
+upload, external HTTP request or file sharing is performed.
+
+**Verification:** Source committed in GitHub. C++/ObjC++/Metal
+compile, running the offline CLI, validating ZIP structure with
+an unzip tool, real editor interaction, mailbox/device recovery
+tests and CTest have NOT RUN for Stage 43.
