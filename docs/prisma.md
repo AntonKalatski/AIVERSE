@@ -2681,6 +2681,103 @@ screenshot comparisons, CI. See
 continue functional closure and NOT start final tests until
 the user authorizes that phase.
 
+## Stage 51 — remaining presentation GPU owners, runtime capability reporting, and temporal conflict resolution
+
+Stage 51 completes another functional layer of the feature-first
+PRISMA RHI and adaptive-quality implementation. No gameplay/ECS
+dependencies were added to `Prisma`, its `postfx` JSON root or
+the editor MCP identifiers. Source changes stay confined to
+presentation owners, GPU resource metadata queries and optional
+legacy temporal wrapper integration.
+
+**Additional disjoint GPU memory owners:**
+`SpriteBatch::ownedGpuMemoryStats` reports owned VB/IB/caster buffers,
+*not* its caller-owned static SpriteMesh or borrowed texture handles.
+`FogOfWar` reports its private sheet geometry and texture.
+`RtsFieldView` counts field geometry and per-field texture outputs;
+`RtsOverlays` counts overlay buffer, owned white fallback and the
+overlay-private TextureCache; `RtsGroundFx` counts live ground
+layer meshes/lane mesh, white fallback and its private texture cache.
+`Rts2DView` counts its tile mesh, owned SpriteBatch buffers and
+sprite texture cache. Road and Shore owners enumerate unique model
+VBO/IBO and their kit-owned GPU images, never borrowed image
+references duplicated across models. Roads also count paint decals,
+wet film and puddle mesh buffers, their own SpriteBatch and paint
+textures. `RtsPlanetGroundFx` enumerates planet territory/diggable/
+road/lane tile geometry, `RtsGroundCanvas` owns ground sprite batch
+buffers and its texture cache, and `RtsPaintLayers` reports its
+paint RenderTexture canvases, coastline textures and mesh buffers.
+
+`RtsView::ownedPresentationGpuMemoryStats(device)` now composes
+these owners with Stage 49–50 models, terrain, planets and
+ModelTextureCache. Assets that remain resident but are not drawn in
+this exact frame are still counted until their owning subsystem
+releases them. Borrowed textures, aliases to static mesh buffers
+that have a different owner, shared GlobalGeometryPool pages,
+and Renderer3D/Prisma/LightSystem allocations must never be
+counted again from a draw record. The results remain lower-bound
+RHI metadata, NOT total physical GPU residency or exact VRAM.
+
+**Requested vs supported vs actually executed:**
+`Prisma::runtimeCapabilities() const` is a read-only GPU-free
+diagnostic of device availability/health, RGBA16F support, HDR
+requested/effective last frame, authored temporal effect with
+runtime flag, prepared temporal/velocity GPU pipeline handles,
+subpixel jitter/upscale/adaptive requests and their last-frame
+actual execution flags. It also reports whether the last scene
+used a valid reactive input, whether a scoped timing sample was
+accepted and `fallbackReason` for disabled device, unsupported
+HDR, insufficient tier, absent pipelines, camera-history quota
+rejection, temporal preflight rejection or backend errors.
+`runtimeCapabilities` never compiles shaders or allocates
+textures; a prepared GPU pipeline does not guarantee successful
+GPU execution. The editor's Prisma panel shows each dimension
+explicitly. The last-frame fields are statistics from the latest
+Prisma resolve, not simultaneous per-camera snapshots.
+
+**Legacy temporal resolver conflict:** the older optional
+`PrismaScreenLighting` wrapper owns a separate color-history
+resolver and Halton sequence. Running it concurrently with the
+canonical `Prisma::resolve` temporal pass would blend two
+different histories and jitter sequences. The new
+`Prisma::canonicalTemporalRequested() const` designates the
+single canonical temporal owner for requested HDR High quality
+and an enabled authored Temporal Resolve, *without depending
+on lazy shader readiness*. `PrismaScreenLighting::jittered`
+delegates to the canonical `Prisma::jitteredCamera` and resets
+its own history in that case; its `scenePass` suppresses the
+legacy temporal pipeline. The legacy wrapper's optional
+bounce/volumetric passes are suppressed together with its
+temporal resolver for now; splitting those lighting passes
+into an independent composable effect is a later functional
+task, not a feature claimed to be finished.
+
+**Explicit camera lifecycle:** `Prisma::retireUnregisteredViews(
+const std::vector<uint64_t>& liveViewIds)` can be called by a
+host after recording all live Scene/Game/custom camera passes
+for a graphics frame. It unions tracked per-view exposure,
+temporal, quality/admission, scoped GPU query, motion matrix
+and size-reference IDs, calling existing GPU-fenced
+`retireView(id)` only for IDs missing from the provided
+live list. In-flight textures stay behind actual GPU completion
+fences; the routine does not immediately destroy them or
+retire a size shared by another camera. The host separately
+retires Renderer3D-owned object-motion views via its existing
+API. The editor keeps its explicit Scene/Game RHI-motion
+retirement and adds the generic Prisma per-view cleanup
+at the end of its viewport submission window; shared size
+buffers continue through `retireUnreferencedSizeCaches`.
+
+**Implementation confidence:** source inspection and 59/59
+structural presence/ordering checks. Native compilation, CTest,
+Metal/OpenGL/Vulkan/GLES GPU execution, device-loss/VRAM runtime
+measurements and screenshot parity are **NOT RUN** per the
+user's features-first requirement. The next agent must not
+describe any of these as passed. Stage-specific architecture,
+commits, touched paths, limitations and next functional steps
+are in `docs/handoffs/prisma-stage-51.md`.
+PR #26 remains Draft and main is untouched.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
