@@ -143,7 +143,7 @@ public:
     template<class Prepared>
     bool publishPrepared(gfx::Device& dev,const std::string& key,
                          Prepared&& prepared) {
-        if(models_.count(key))return false;
+        if(models_.count(key) || publicationBackpressured())return false;
         if(prepared.model)render::uploadModel(dev,*prepared.model);
         insertIfAbsent(key,std::move(prepared.model));
         return true;
@@ -195,7 +195,23 @@ public:
         return released;
     }
 
+    using RetirementStats=
+        AsyncResourceRetirementQueue<std::unique_ptr<Model>>::Stats;
     size_t pendingRetirements() const noexcept{return retired_.pending();}
+    RetirementStats retirementStats() const noexcept {
+        return retired_.stats();
+    }
+    // 0 disables backpressure. This is an object-count bound, NOT an exact
+    // byte/VRAM quota (shared images/geometry pools have other owners).
+    void setRetirementSoftLimit(size_t count) noexcept {
+        retirementSoftLimit_=count;
+    }
+    size_t retirementSoftLimit() const noexcept {
+        return retirementSoftLimit_;
+    }
+    bool publicationBackpressured() const noexcept {
+        return retired_.saturated(retirementSoftLimit_);
+    }
     // Schedule async completion tokens and poll old batches without waiting
     // for whole-GPU idle. Each batch covers exactly the resources queued
     // before its marker; newer evictions can NEVER ride an older fence.
@@ -246,6 +262,7 @@ private:
     ModelPreparationService preparation_;
 #endif
     uint64_t generation_=0;
+    size_t retirementSoftLimit_=128;
     ModelMap models_;
     AsyncResourceRetirementQueue<std::unique_ptr<Model>> retired_;
     std::shared_ptr<render::ModelTextureCache> textures_=
