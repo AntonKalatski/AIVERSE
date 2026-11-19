@@ -2621,3 +2621,44 @@ cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parall
 ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
 ```
 
+
+### Stage 10BG — real fragment Texture3D sampling acceptance (source only)
+
+Extend `tests/render/metal_texture_gpu.mm` with a new **real
+Metal fragment shader** sampling test. Previously the GPU acceptance
+fixture covered native texture upload and blit readback, but not
+hardware shader texture sampling. The `kVolumeSampleMSL` shader
+uses an ordinary `texture3d<float> tex0 [[texture(0)]]`,
+the sampler bound by the existing `gfx::Device::setTexture(0,...)`,
+and `coord [[buffer(1)]]` supplied via
+`setUniforms(0,...)`. It draws a fullscreen triangle through
+`createShader`/`createPipeline`/`beginRenderTargets`/`draw`
+into an `RGBA8` Metal render target with a matching depth target.
+
+The fixture now tests three independent sampled colors:
+the original volume Z=0 texel, a partial XY patch in Z=2 of
+mip 0, and the user-authored Z=1 plane in mip 1. The
+rendered `RGBA8` pixels are read back using the same asynchronous
+AIVERSE RHI path and checked against expected colors. Existing
+blit-level byte comparisons retain **zero tolerance**; shader
+float-normalization/output UNORM conversions permit only **1 LSB
+per channel**. All shader setup, pass failures, GPU device errors,
+and pixel mismatches fail the opt-in GPU CTest; no backend
+mock or silent skip is introduced.
+
+Source commit: `9e747cff974d6f44085cc25cfc841198a6f1c309`
+(`tests/render/metal_texture_gpu.mm`). Default CPU source tests
+and public RHI APIs are unchanged. This is not a Metal Shader Graph
+or ICB material test, nor a virtual page feedback/page-table
+streaming test. **Not yet compiled or executed on macOS**;
+no shader-sampling GPU PASS is claimed until a new device run.
+
+After pulling the feature branch in the isolated worktree,
+build and run only the opt-in target:
+
+```bash
+git pull --ff-only origin feature/texture-rhi-unification
+cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parallel 4
+ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
+```
+
