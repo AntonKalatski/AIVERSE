@@ -161,10 +161,21 @@ public:
                 continue;
             if(probeId_ && message.requestId==probeId_) {
                 if(message.receipt.result==Result::Unknown) {
-                    knownRemoteRevision_=true;
-                    remoteRevision_=message.receipt.revision;
-                    if(!active_ && status_==ClientStatus::Uncertain)
-                        status_=ClientStatus::Idle;
+                    if(journalRetrySuspended(message.receipt.detail)) {
+                        // A broken receipt journal cannot safely establish
+                        // a remote editing baseline. Even a plausible ECS
+                        // revision is not proof that request history can be
+                        // deduplicated durably. Require a NEW explicit
+                        // revision probe after server recovery.
+                        knownRemoteRevision_=false;
+                        receipt_=message.receipt;
+                        status_=ClientStatus::Uncertain;
+                    } else {
+                        knownRemoteRevision_=true;
+                        remoteRevision_=message.receipt.revision;
+                        if(!active_ && status_==ClientStatus::Uncertain)
+                            status_=ClientStatus::Idle;
+                    }
                 } else if(message.receipt.result==Result::Denied) {
                     receipt_=message.receipt;
                     status_=ClientStatus::Denied;
