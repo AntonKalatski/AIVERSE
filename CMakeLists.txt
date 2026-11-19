@@ -2292,6 +2292,19 @@ if(AIVERSE_BUILD_TESTS)
     endif()
 endif()
 
+# PHYSIS Stage 49: independent POSIX journal path/fd regression.
+# Deliberately compiles without ECS/net/Box3D to prove the low-level I/O ABI.
+if(AIVERSE_BUILD_TESTS AND UNIX AND NOT EMSCRIPTEN)
+    add_executable(aiverse_physis_journal_posix_io_test
+        tests/physis_journal_posix_io_test.cpp)
+    target_include_directories(aiverse_physis_journal_posix_io_test
+        PRIVATE "${CMAKE_SOURCE_DIR}")
+    add_test(NAME physis_journal_posix_io
+        COMMAND aiverse_physis_journal_posix_io_test)
+    set_tests_properties(physis_journal_posix_io
+        PROPERTIES LABELS "PHYSIS;PERSISTENCE;SECURITY")
+endif()
+
 # PHYSIS Stage 19: deterministic authored field assets and editor Move gizmo
 # transaction contracts. No genre module dependency; authoring uses MapDoc.
 if(AIVERSE_BUILD_TESTS)
