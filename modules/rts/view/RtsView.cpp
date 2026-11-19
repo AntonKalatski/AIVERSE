@@ -240,6 +240,12 @@ void RtsView::draw(Renderer3D& r, const RtsScene& input, double time, const std:
         drawTypes_.push_back(o.type);
         if (!streamingTypes_) loadType(o.type);
     }
+    // All synchronous Model loads above must finish BEFORE this scope.
+    // The cache owns unique_ptr<Model>; the reader guard blocks
+    // replace/invalidate/trim/shutdown until the View's graph evaluation
+    // and synchronous Renderer3D model submissions have completed.
+    // GPU work remains owned by the separate fenced retirement queue.
+    [[maybe_unused]] const auto modelReadScope=resources_.acquireFrameReadScope();
     RtsScene resolved;
     const bool hierarchy=input.entityFx && !input.entityFx->hierarchy.parents.empty();
     if(hierarchy) {
