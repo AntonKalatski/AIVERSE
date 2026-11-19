@@ -1047,9 +1047,14 @@ private:
                     std::clamp(gpuCheckpointGroup_,0,groupCount-1):0;
                 ImGui::BeginDisabled(groupCount<=1);
                 ImGui::SetNextItemWidth(95);
-                if(ImGui::InputInt("GPU group index",&gpuCheckpointGroup_))
+                if(ImGui::InputInt("GPU group index",&gpuCheckpointGroup_)) {
                     gpuCheckpointGroup_=groupCount>0?
                         std::clamp(gpuCheckpointGroup_,0,groupCount-1):0;
+                    // Consent for revealing bounds/IDs is per selection.
+                    // A different GPU group should start fully redacted.
+                    gpuReportIncludeBounds_=false;
+                    gpuReportIncludeIdentifiers_=false;
+                }
                 ImGui::EndDisabled();
                 spectra::PoolGpuGroupSummary selected{};
                 const bool selectedValid=pool->gpuGroupSummary(
