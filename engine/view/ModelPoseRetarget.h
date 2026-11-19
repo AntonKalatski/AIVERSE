@@ -253,6 +253,161 @@ compileModelPoseRetarget(const render::Model& source,
     return compiled;
 }
 
+// Authoring-only diagnostics for rejected LOD maps. Call only when
+// compileModelPoseRetarget returned null; never from an actor draw.
+// No gameplay/asset state is mutated; the first actionable problem
+// and target node index let importers report useful authoring warnings.
+enum class ModelPoseRetargetIssue : uint8_t {
+    None,
+    MissingAssetGeneration,
+    InvalidMapShape,
+    InvalidTranslationScale,
+    UnmappedRig,
+    InvalidSourceNode,
+    DuplicateSourceNode,
+    TargetHierarchyCycle,
+    InvalidTargetParent,
+    IncompatibleAncestry,
+    InvalidMorphChannel,
+    NonFiniteBindTransform,
+    DegenerateSourceBindScale,
+    Other
+};
+
+struct ModelPoseRetargetReport {
+    ModelPoseRetargetIssue issue=ModelPoseRetargetIssue::None;
+    size_t targetNode=0;
+    size_t mappedNodes=0;
+    size_t unboundNodes=0;
+    bool valid() const noexcept{return issue==ModelPoseRetargetIssue::None;}
+};
+
+inline const char* modelPoseRetargetIssueName(
+        ModelPoseRetargetIssue issue) noexcept {
+    switch(issue) {
+        case ModelPoseRetargetIssue::None:return "valid";
+        case ModelPoseRetargetIssue::MissingAssetGeneration:return "missing asset publication generation";
+        case ModelPoseRetargetIssue::InvalidMapShape:return "map length does not match visual rig";
+        case ModelPoseRetargetIssue::InvalidTranslationScale:return "nonfinite or out-of-range translation scale";
+        case ModelPoseRetargetIssue::UnmappedRig:return "no visual nodes reference source bones";
+        case ModelPoseRetargetIssue::InvalidSourceNode:return "target node maps to an invalid source node";
+        case ModelPoseRetargetIssue::DuplicateSourceNode:return "multiple visual nodes map to the same source bone";
+        case ModelPoseRetargetIssue::TargetHierarchyCycle:return "visual skeleton hierarchy has a cycle";
+        case ModelPoseRetargetIssue::InvalidTargetParent:return "visual skeleton parent index is invalid";
+        case ModelPoseRetargetIssue::IncompatibleAncestry:return "source and visual mapped hierarchy disagree";
+        case ModelPoseRetargetIssue::InvalidMorphChannel:return "morph map references unavailable channel";
+        case ModelPoseRetargetIssue::NonFiniteBindTransform:return "source or visual bind has nonfinite transform";
+        case ModelPoseRetargetIssue::DegenerateSourceBindScale:return "source bind scale is zero or degenerate";
+        case ModelPoseRetargetIssue::Other:return "unsupported rig retarget mapping";
+    }
+    return "unsupported rig retarget mapping";
+}
+
+inline ModelPoseRetargetReport describeModelPoseRetarget(
+        const render::Model& source,const render::Model& visual,
+        const ModelPoseRetarget& map,uint64_t sourceGeneration,
+        uint64_t visualGeneration) {
+    ModelPoseRetargetReport report;
+    const auto fail=[&](ModelPoseRetargetIssue issue,size_t node) {
+        report.issue=issue;
+        report.targetNode=node;
+        return report;
+    };
+    if(!sourceGeneration || !visualGeneration)
+        return fail(ModelPoseRetargetIssue::MissingAssetGeneration,0);
+    if(map.sourceNodeForVisual.size()!=visual.nodes.size() ||
+       (!map.sourceMorphForVisual.empty() &&
+        map.sourceMorphForVisual.size()!=visual.nodes.size()))
+        return fail(ModelPoseRetargetIssue::InvalidMapShape,0);
+    if(!std::isfinite(map.translationScale) ||
+       map.translationScale<0.f || map.translationScale>1000.f)
+        return fail(ModelPoseRetargetIssue::InvalidTranslationScale,0);
+    std::vector<bool> visited(source.nodes.size(),false);
+    const auto finite=[](float value) {return std::isfinite(value);};
+    for(size_t i=0;i<visual.nodes.size();++i) {
+        const int srcIndex=map.sourceNodeForVisual[i];
+        const auto& dst=visual.nodes[i];
+        if(srcIndex< -1 ||
+           (srcIndex>=0 && size_t(srcIndex)>=source.nodes.size()))
+            return fail(ModelPoseRetargetIssue::InvalidSourceNode,i);
+        if(dst.parent< -1 ||
+           (dst.parent>=0 && size_t(dst.parent)>=visual.nodes.size()))
+            return fail(ModelPoseRetargetIssue::InvalidTargetParent,i);
+        int parent=dst.parent;
+        for(size_t step=0;parent>=0;++step) {
+            if(step>=visual.nodes.size() || parent==int(i))
+                return fail(ModelPoseRetargetIssue::TargetHierarchyCycle,i);
+            parent=visual.nodes[size_t(parent)].parent;
+            if(parent< -1 ||
+               (parent>=0 && size_t(parent)>=visual.nodes.size()))
+                return fail(ModelPoseRetargetIssue::InvalidTargetParent,i);
+        }
+        for(float value:{dst.t.x,dst.t.y,dst.t.z,
+                         dst.r.x,dst.r.y,dst.r.z,dst.r.w,
+                         dst.s.x,dst.s.y,dst.s.z})
+            if(!finite(value))
+                return fail(ModelPoseRetargetIssue::NonFiniteBindTransform,i);
+        if(srcIndex<0) {
+            ++report.unboundNodes;
+        }else {
+            if(visited[size_t(srcIndex)])
+                return fail(ModelPoseRetargetIssue::DuplicateSourceNode,i);
+            visited[size_t(srcIndex)]=true;
+            ++report.mappedNodes;
+            const auto& src=source.nodes[size_t(srcIndex)];
+            for(float value:{src.t.x,src.t.y,src.t.z,
+                             src.r.x,src.r.y,src.r.z,src.r.w,
+                             src.s.x,src.s.y,src.s.z})
+                if(!finite(value))
+                    return fail(ModelPoseRetargetIssue::NonFiniteBindTransform,i);
+            if(std::abs(src.s.x)<1.e-6f ||
+               std::abs(src.s.y)<1.e-6f ||
+               std::abs(src.s.z)<1.e-6f)
+                return fail(ModelPoseRetargetIssue::DegenerateSourceBindScale,i);
+            if(dst.parent>=0) {
+                const int sourceParent=map.sourceNodeForVisual[size_t(dst.parent)];
+                if(sourceParent>=0) {
+                    int ancestor=src.parent;
+                    bool found=false;
+                    for(size_t step=0;ancestor>=0 && step<source.nodes.size();++step) {
+                        if(ancestor==sourceParent){found=true;break;}
+                        if(size_t(ancestor)>=source.nodes.size())
+                            return fail(ModelPoseRetargetIssue::IncompatibleAncestry,i);
+                        const int next=source.nodes[size_t(ancestor)].parent;
+                        if(next==ancestor)break;
+                        ancestor=next;
+                    }
+                    if(!found)
+                        return fail(ModelPoseRetargetIssue::IncompatibleAncestry,i);
+                }
+            }
+        }
+        if(!map.sourceMorphForVisual.empty()) {
+            int srcMorphCount=0,dstMorphCount=0;
+            if(srcIndex>=0) {
+                const int mesh=source.nodes[size_t(srcIndex)].mesh;
+                if(mesh>=0 && size_t(mesh)<source.meshes.size())
+                    for(const auto& primitive:source.meshes[size_t(mesh)].primitives)
+                        srcMorphCount=std::max(srcMorphCount,primitive.morphTargets);
+            }
+            if(dst.mesh>=0 && size_t(dst.mesh)<visual.meshes.size())
+                for(const auto& primitive:visual.meshes[size_t(dst.mesh)].primitives)
+                    dstMorphCount=std::max(dstMorphCount,primitive.morphTargets);
+            for(size_t k=0;k<render::kMaxMorphTargets;++k) {
+                const int from=map.sourceMorphForVisual[i][k];
+                if(from< -1 || (from>=0 &&
+                   (srcIndex<0 || int(k)>=dstMorphCount || from>=srcMorphCount)))
+                    return fail(ModelPoseRetargetIssue::InvalidMorphChannel,i);
+            }
+        }
+    }
+    if(report.mappedNodes==0)
+        return fail(ModelPoseRetargetIssue::UnmappedRig,0);
+    if(!validModelPoseRetarget(source,visual,map))
+        return fail(ModelPoseRetargetIssue::Other,0);
+    return report;
+}
+
 // O(visual nodes) transform only, with no per-instance map validation
 // or heap-allocated visited flags. A stale plan fails BEFORE accessing
 // any Model node. Host must keep each supplied Model alive through this
