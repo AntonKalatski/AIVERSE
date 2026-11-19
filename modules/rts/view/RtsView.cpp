@@ -60,7 +60,7 @@ bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
         roads_->init(dev, rj["roadTypes"], read_);
         shores_->init(dev, rj["shoreTypes"], read_);   // water shores (docs/water.md)
     }
-    if (!models_.count("shape:generic")) buildShapes(dev);
+    if (!resources_.models().count("shape:generic")) buildShapes(dev);
     if (twoD_) { twoD_->shutdown(dev); twoD_.reset(); }
     looks_.clear();
     warnings_.clear();
@@ -119,10 +119,10 @@ void RtsView::shutdown(gfx::Device& dev) {
     preparing_ = {}; prepareType_ = -1; preparingResource_.clear();
 #endif
     geometryScene_.shutdown(dev);
-    for (auto& [k, m] : models_) if (m) releaseModel(dev, *m);
-    textureCache_->shutdown(dev);
+    for (auto& [k, m] : resources_.models()) if (m) releaseModel(dev, *m);
+    resources_.textures()->shutdown(dev);
     if(genericView_) { genericView_->clear(); genericView_.reset(); }
-    models_.clear(); looks_.clear(); actorRevealTypes_.clear(); loadedTypes_.clear(); anims_.clear(); streamingChoices_.clear(); animationCache_.clear(); tracers_.clear();
+    resources_.models().clear(); looks_.clear(); actorRevealTypes_.clear(); loadedTypes_.clear(); anims_.clear(); streamingChoices_.clear(); animationCache_.clear(); tracers_.clear();
     drawTypeStamps_.clear(); drawTypes_.clear(); drawTypeEpoch_ = 0;
     for (Mesh* m : {&projectile_}) { dev.destroyBuffer(m->vb); dev.destroyBuffer(m->ib); *m = Mesh{}; }
     terrain_.shutdown(dev);
