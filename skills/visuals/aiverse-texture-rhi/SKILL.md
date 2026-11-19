@@ -650,3 +650,21 @@ CI if it remains queued or cancelled.
   exact resource/version equality. Keep resource lifetime checks
   at execution after cache lookup.
 - Native renderer builds/GLSL/MSL compilers and GPU parity NOT RUN.
+
+
+### Frame-safe GPU material resource staging (Stage 10V)
+
+- Native C++ consumers may include
+  `engine/render/GpuMaterialResourceTable.h` and fill
+  `GpuMaterialResourceBinding` with up to four Shader Graph
+  texture handles, optional alpha coverage and exact VT resource
+  binding. Use `GpuMaterialResourceTable::beginFrame(frameSerial)`,
+  `intern`, `matches`, `resolve`, then `reset` on teardown.
+- Resource tickets include frame serial+generation+index; never
+  use a raw index after a new frame, device/scene shutdown or atlas
+  revision promotion. All bindings are compared exactly after
+  hash-bucket prefilter; a hash hit alone does not authorize reuse.
+- This table stages CPU identity only. It DOES NOT bind a Metal
+  argument buffer or permit mixed ICB textures; keep existing
+  homogeneous fallback until the GPU/encoder ABI is implemented
+  and tested. C++/GPU tests NOT RUN.
