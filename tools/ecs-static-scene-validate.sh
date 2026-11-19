@@ -79,16 +79,16 @@ regex="${regex%|})$"
     echo "Branch: $(git branch --show-current)"
     echo "UTC: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
     cmake -S . -B "$build_dir" \
-        -DAIVERSE_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release
+        -DAIVERSE_BUILD_TESTS=ON -DCMAKE_BUILD_TYPE=Release || exit $?
     if [[ "$mode" == "all" ]]; then
         echo "Building ALL native targets (full AIVERSE validation)"
-        cmake --build "$build_dir" --parallel "$jobs"
+        cmake --build "$build_dir" --parallel "$jobs" || exit $?
         echo "Running COMPLETE registered CTest suite (serial for test isolation)"
-        ctest --test-dir "$build_dir" --output-on-failure
+        ctest --test-dir "$build_dir" --output-on-failure || exit $?
     else
         echo "Building selected native targets: ${#targets[@]}"
-        cmake --build "$build_dir" --parallel "$jobs" --target "${targets[@]}"
-        ctest --test-dir "$build_dir" -R "$regex" --output-on-failure
+        cmake --build "$build_dir" --parallel "$jobs" --target "${targets[@]}" || exit $?
+        ctest --test-dir "$build_dir" -R "$regex" --output-on-failure || exit $?
     fi
 } 2>&1 | tee "$log"
 
