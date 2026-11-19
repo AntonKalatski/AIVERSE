@@ -8545,3 +8545,48 @@ The executable checks bounded exact deduplication; per-frame generation invalida
 **Actual tests:** See above. Do not infer CTest/native GPU pass from CI jobs belonging to an older SHA, static source checks, or the presence of a registered test. Current HEAD must be validated independently.
 
 **Next concrete step:** Run the new C++ contract test through Actions and local Mac. Then run full Texture RHI focused verification and Metal GPU capture; fix any new errors before marking PR ready.
+
+
+## Stage 10AP — wire Shader Graph ICB contract into focused CI verifier (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / Draft #21.
+**Source commits:**
+- `5917483125edade003d67308e48cc19c897598a4`,
+  `tests/render/gpu_icb_material_contract.cpp`: use the actual
+  `render::shaders::kModelMSL` generated shader text to audit
+  five Shader Graph VT source counts N=0,1,2,3,4 and their
+  atlas/page-table Metal texture argument IDs. Confirm
+  source tex16 does not declare an illegal dynamic s16.
+- `4d618d1a843da1117a0eef9b7f2045ee22952b37`,
+  `tools/verify-texture-rhi.sh`: explicitly build the
+  new `aiverse_gpu_icb_material_contract_test` target
+  and include its CTest `gpu_icb_material_contract` in
+  normal and `--vulkan` verification filters.
+
+**Docs commits:** `ca38f3b232f3331c0ab9011888d1a100306407f3`
+(`docs/texture-rhi.md`) and `2f76829462e6e140110557c61a4b97458c4f6bbc`
+(`skills/visuals/aiverse-texture-rhi/SKILL.md`).
+
+**Actual verification:** fetched current GitHub branch
+`CMakeLists.txt`, `tests/render/gpu_icb_material_contract.cpp`,
+`ModelShaders.h`, `tools/verify-texture-rhi.sh`.
+Ran seven exact text-level assertions in tool orchestration:
+all TRUE for build target, both CTest filters, registered
+CTest, actual engine header inclusion, test source matrix
+check, all five MSL branches, and portable NaN syntax.
+This is a source-level validation only.
+
+**Not run:** native compile of new test, CTest executable
+execution, Objective-C++ Metal source compile, MSL shader
+compiler, real Metal ICB submission and pixel parity.
+Old GitHub Actions run `44475967111` texture jobs remain
+queued, and the arm64 GCC CI failure from run
+`44475967180` belongs to an older SHA; no post-fix
+passing run exists for the current head.
+
+**Next concrete step:** execute
+`tools/verify-texture-rhi.sh --editor --vulkan --jobs 4`
+on macOS; inspect `build/texture-rhi/verify-logs/`.
+Or run the new target/CTest explicitly on Linux GCC/Clang.
+Then verify macOS Metal graph/VT variants N=0..4 and
+same-camera GPU-vs-CPU image parity before marking PR ready.
