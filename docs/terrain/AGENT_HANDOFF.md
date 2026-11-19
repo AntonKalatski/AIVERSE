@@ -3302,3 +3302,58 @@ Compression is deliberately **opt-in** and accepted only when byte capacity shri
 - **Budgets QA:** zero/small/16MiB limits, mixed compressed and raw shadows, long-lived no-forest cache entries, general GPU LRU eviction accounting vs Stage37 CPU-budget-specific evictions, Stage36 2MiB/sparse upload caps with new PHYSIS field revision after restore.
 - Existing Stage29 outdated one-layer impostor CTest assertions and uncompiled Stage31–37 shader/render work remain test debt; separate tester must update, compile and run actual supported backend checks.
 - **Possible next feature (Stage39, only if desired):** targeted memory representation optimizations or a native GPU-cache quality preset for mobile/desktop. Prefer benchmarking Stage38 first; do not promise compression is cheaper until measured.
+
+## Stage 39 — independent mobile/desktop Horizon runtime presentation quality (FEATURE SOURCE COMMITTED; TESTS DEFERRED)
+
+**Date:** 2026-11-19. **Branch:** `feature/terraweave`. **PR:** [#24](https://github.com/chromealex/AIVERSE/pull/24), Draft, target `main`. At stage start, `main` was already ancestral (`behind_by=0`), so no merge/rebase was required. The owner approved continued features with QA assigned to another agent; CMake/CTest/GPU checks intentionally remain deferred.
+
+### Actual implementation / documentation commits
+
+- `bfd17531b7f03ab2b12b18b3a670800b3ed70542` — **new** `engine/world/TerraWeaveHorizonPresentationQuality.h`: independent, genre-neutral POD `HorizonPresentationPolicy` combines Stage33/34 exact and procedural spatial wind switches, Stage36 GPU upload policy and Stage37/38 inactive wind CPU shadow policy. `HorizonPresentationQualityPreset {BatterySaver,Mobile,Balanced,Desktop}` with `horizonPresentationPolicyForQuality` provides bounded starting values. `validateHorizonPresentationPolicy` checks the entire bundle prior to publication.
+- `f1a3268bca41ac90171e27729d77bce933bdc48f` — `engine/render/TerraWeaveHorizonScene.h`: `setPresentationPolicy`, `presentationPolicy`, `setPresentationQualityPreset` compose existing setters on render-owner thread; no new GPU resource, PHYSIS solver or geometry.
+- `e2a1cba210712f9a63122509a5fd1e63123c3f2a` — `engine/world/TerraWeaveHorizonManifest.h`: optional `terraweaveHorizon.presentationQuality` accepts `battery-saver|mobile|balanced|desktop` (invalid values throw `JsonError`). This is **separate** from existing `terraweaveHorizon.quality` terrain/atlas bake preset; absent presentationQuality preserves Stage38 legacy defaults.
+- `17486c8b0f42f2451e66b78b9bd882158a0d81bc` — `engine/world/WorldScene.h`: native `setVegetationHorizonPresentationPolicy`, `vegetationHorizonPresentationPolicy`, `setVegetationHorizonPresentationQualityPreset`; getter composes actual currently selected individual settings, including manual overrides.
+- `228c62a589d8bf701c6e5c6c1be9d7b917bd1e9b` — `engine/world/WorldScene.cpp`: copies the optional manifest-applied direct HorizonScene policy into WorldScene's pre-existing per-policy fields during construction. Setter validates the full policy before applying the four existing switches/budgets, so an invalid bundle cannot cause partial mutation. No authoritative gameplay state touched.
+- `5a101a849942dca0ac6427033150fb30ffe8883a` — `engine/render/TerraWeaveHorizonScene.h`: `HorizonRuntimeStats` effective `windUploadBudgetBytes`, `cachedWindShadowBudgetBytes`, `windUploadSparseRangeCap`, `windUploadFullFallbackPercent`, `windShadowCompressionEnabled`, `spatialWindVariationEnabled`, independent of any originally chosen named preset.
+- `f59e79205151490471e87abae1c692119628714f` — `docs/terrain/TERRAWEAVE.md` explains independent geometry/presentation policies, manifest/native samples, exact preset values and limits.
+- `a32de2e9bb9dc5efdba3750570c6324bbf536325` — `skills/world/aiverse-terraweave/SKILL.md` records API ownership, safe defaults, testing and why to reuse the existing wind/cache stages.
+- `3bb59e2de4cd4bb472a5c8798223f55b0a9e5408` — root `AGENTS.md` captures the Stage39 composability rule, avoiding duplicate wind render subsystems.
+- This separately committed handoff is the mandatory final entry for Stage39.
+
+### Preset values / compatibility
+
+| Preset | Exact field | Procedural variation | GPU bytes/update | Ranges | Full fallback | Inactive shadow CPU budget | Compress |
+|---|---|---|---:|---:|---:|---:|---|
+| BatterySaver | No | No | 0 | 1 | 70% | 0 | No |
+| Mobile | No | Yes | 128 KiB | 2 | 90% | 1 MiB | Yes |
+| Balanced | Yes | Yes | 512 KiB | 4 | 75% | 4 MiB | Yes |
+| Desktop | Yes | Yes | 2 MiB | 8 | 70% | 16 MiB | Yes |
+
+Existing worlds **without** `presentationQuality` still use Stage38 runtime defaults (exact spatial field true, procedural variation true, 2MiB/8/70 GPU upload, 16MiB dormant CPU shadow, compression false). Geometry `HorizonSettings` and `HorizonQualityPreset` remain unchanged: terrain resolution, forest cluster atlas and seam welding continue to depend only on geometry/source settings and TWH8. Using a presentation preset does not invalidate workers or cause Horizon CPU bakes, geometry rebuild, shader source regeneration, new RHI allocations or PHYSIS/ECS changes. Policy changes are applied on WorldScene/Horizon owner thread; no concurrent `update`/`submit`.
+
+Native usage:
+
+```cpp
+using namespace aiverse::terraweave;
+worldScene.setVegetationHorizonPresentationQualityPreset(
+    HorizonPresentationQualityPreset::Mobile);
+auto policy=worldScene.vegetationHorizonPresentationPolicy();
+policy.windUpload.maxBytesPerUpdate=256u*1024u;
+worldScene.setVegetationHorizonPresentationPolicy(policy);
+```
+
+Startup JSON: `"terraweaveHorizon": { "quality":"high", "presentationQuality":"mobile" }`. This combines high geometry quality with a mobile runtime policy deliberately, not implicitly. A tiny or zero update budget may defer restoration of exact/procedural field metadata, with the existing safe macro wind shader fallback; the corresponding preset is **not a guarantee of specific FPS, GPU bandwidth, battery usage, wind visual parity or memory savings**. Dormant CPU shadow budget may evict whole GPU cache entries if even compressed bytes exceed it.
+
+### Verification actually performed
+
+**Source-only checks performed:** read current feature-branch `TerraWeaveHorizon.h` geometry presets/validation, `TerraWeaveHorizonManifest.h` JSON parser, the Stage36–38 CPU/GPU budget policy headers, Horizon GPU scene update/render/lifecycle and native WorldScene API. Confirmed Stage39 GitHub source writes succeeded with exact SHAs above and fetched the new header, direct scene API, manifest parser, WorldScene constructor/setter and runtime stats after writes. No local container native build was executed. Existing Draft PR status was inspected, and Stage39 changes are on `feature/terraweave`, not merged to main.
+
+**NOT RUN:** Clang/GCC/MSVC compiler, CMake configure/build, CTest, live native runtime, JSON manifest fixture, GLSL/MSL shader compilation, Metal/Vulkan/GL visual QA, PHYSIS field integration, CPU/GPU bandwidth benchmarks, battery/frame-time captures, cache/crossfade tests, device-loss simulation. Do not claim Stage39 is compiled, runtime-verified or production-ready. Keep PR #24 Draft until independent QA and fixes.
+
+### Known limitations and next concrete actions
+
+- A preset is a convenient **initial settings bundle**, not automatic device detection or dynamic scaling. After manual property overrides, query effective `HorizonPresentationPolicy` rather than claiming one named preset remains active.
+- Low transfer budgets can cause a dense or fragmented GPU wind metadata revision to remain pending indefinitely. BatterySaver disables GPU wind metadata transfer entirely and can retain the existing macro fallback after switching from exact mode; explicitly changing back to higher quality may be required for detailed distant wind. Automatic anti-starvation/budget boosts would need separate review and performance constraints.
+- The Stage38 lossless CPU shadow codec is optional; Mobile/Balanced/Desktop presets enable it for dormant GPU cache entries. Activation still restores full bytes before Stage35 GPU RHI patches, with the same correctness contract and staging memory cost.
+- **Independent tester's next step:** refresh Stage29 outdated 1-layer impostor fixtures first, then compile/test Stage31–39, including `HorizonPresentationQualityPreset` values and invalid enums, optional manifest defaults and parsing errors, constructor getter synchronization, bundled validation with no partial mutation, switching exact/procedural wind during active/outgoing crossfade, per-update bandwidth budget vs sparse/dense runs, zero-budget safe fallback, LRU compressed/raw cache retention/re-entry and Metal/Vulkan/GL visual/perf. Save actual command/output and CI links in a new handoff; do not merge merely because GitHub source writes succeeded.
+- **Optional later feature (Stage40 only if explicitly continued):** bounded user-controlled automatic quality adaptation, using measured sustained GPU/CPU frame times and hysteresis with explicit opt-in. Do not silently alter `HorizonSettings` geometry or TWH8 archive fingerprints at runtime.
