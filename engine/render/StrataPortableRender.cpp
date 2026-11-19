@@ -205,7 +205,11 @@ bool PortableSource::prepareModel(
     alias.ib=indexBuffer_;
     alias.gpuFirstIndex=firstIndex_;
     alias.gpuBaseVertex=baseVertex_;
-    alias.geometryPoolPage=source_->geometryPoolPage; // only borrow source owner
+    // A dedicated GLES3/Vulkan fallback IB is NOT a shared pool allocation,
+    // even if the source VB happens to be pooled. Only an actual pooled
+    // auxiliary span may inherit the page for Vulkan canonical draw indexing.
+    alias.geometryPoolPage=pooledIndices_.valid()
+        ? source_->geometryPoolPage : nullptr;
     for(auto& m:alias.meshes){
         m.primitives.clear();
         m.lods.clear();
