@@ -25,6 +25,11 @@ struct EcsStaticModelRender {
     uint64_t appearanceRevision = 1;
     uint32_t flags = 0;
     bool visible = true;
+    // Optional shared GPU material owner, scoped to the resolved Model.
+    // Appended to preserve old aggregate {assetKey, revision, flags, visible}
+    // initializers. Both must be nonzero for the versioned fast path.
+    uint64_t materialOwnerKey = 0;
+    uint64_t materialOwnerRevision = 0;
 };
 
 // The host owns stable namespaced draw IDs. A raw Entity::packed() is not
@@ -55,6 +60,8 @@ size_t visitEcsStaticModels(const aiverse::World& world,
             draw.world = hierarchyMatrix(*xf, renderOrigin);
             draw.persistentId = id;
             draw.staticPacketRevision = view.appearanceRevision;
+            draw.materialOwnerKey = view.materialOwnerKey;
+            draw.materialOwnerRevision = view.materialOwnerRevision;
             draw.flags = kDrawStatic | view.flags;
             submit(entity, draw);
             ++submitted;
