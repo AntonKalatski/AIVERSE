@@ -80,6 +80,7 @@ void Viewport::image(gfx::Device& dev, float wPts, float hPts) {
 // ============================ lifecycle ============================
 
 void Editor::init(gfx::Device& dev) {
+    gpuLifetime_=std::make_unique<render::RenderDeviceLifetime>(dev);
     dev_ = &dev;
     ws_.engineDir = opt_.engineDir;
     editor::setEditorLanguage(ws_.engineDir + "/engine/assets/lang");   // editor messages (map checks)
@@ -174,6 +175,10 @@ void Editor::shutdown() {
     if(fpsPreviewMesh_.ib.valid())dev_->destroyBuffer(fpsPreviewMesh_.ib);
     r3d_.shutdown();
     ui_.shutdown();
+    // The token is invalidated only AFTER all cache-backed GPU shutdowns,
+    // and before the platform can destroy or reuse its Device address.
+    if(gpuLifetime_)gpuLifetime_->retire();
+    gpuLifetime_.reset();
     dev_ = nullptr;
 }
 
