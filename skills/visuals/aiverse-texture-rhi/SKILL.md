@@ -995,3 +995,32 @@ Previous Mac Studio run passed 23/23 focused texture CTests; its
 The fix is source-only until rebuilt on macOS. Native Metal volume
 sampling/readback fidelity and GPU ICB pipeline checks are still needed.
 
+
+## Stage 10BB — on-device Metal GPU acceptance (macOS, opt-in)
+
+`tests/render/metal_texture_gpu.mm` tests the production Metal
+`gfx::Device` against actual GPU command-buffer blit readbacks. It
+verifies `RGBA8 Texture3D` 4×4×4 initial per-Z contents, partial
+mip0 Z-plane updates, authored mip1 Z=1 content, invalid upload
+bounds/pitch, plus 2DArray/Cube/CubeArray face+layer and authored
+mip content, and texture-resource inventory lifetime.
+
+Build target: `aiverse_metal_texture_gpu_test`; CTest:
+`metal_texture_gpu`. Run on macOS only with:
+
+```bash
+git pull --ff-only origin feature/texture-rhi-unification
+bash tools/verify-texture-rhi.sh --editor --metal --jobs 4
+cat build/texture-rhi/verify-logs/metal-gpu.log
+```
+
+Normal source-only 23 CTests do **not** run this GPU test; the
+`--metal` verifier mode adds a separate **fail-closed** CTest gate,
+records exact device name and per-plane byte parity to
+`metal-gpu.log`, and rejects absent Metal hardware/test binary
+or GPU timeout rather than quietly skipping. Never claim this GPU
+test passed based on previous successful macOS editor/CPU builds.
+Its first native run is outstanding. Other capabilities (GPU ICB,
+fragment shader sampling, virtual texture feedback page demand,
+cross-platform parity) require separate hardware tests.
+
