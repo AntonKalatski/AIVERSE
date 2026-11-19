@@ -74,6 +74,18 @@ struct PoolCheckpointStats {
     CheckpointReadbackStats budget{};
 };
 
+// Reset is an ordered, restartable GPU-group transaction, not a single
+// cross-device atomic command buffer. Records exactly which groups accepted
+// reset uploads. Scene emission must stay blocked while retryRequired is true.
+struct PoolResetReport {
+    bool retryRequired=false;
+    bool deviceLost=false;       // requires explicit host graphics-device recovery
+    uint32_t groupCount=0;
+    uint32_t groupsAccepted=0;
+    uint32_t failedGroup=std::numeric_limits<uint32_t>::max();
+    uint64_t attempts=0;
+};
+
 struct PoolWorldStats {
     uint32_t gpuGroups = 0, cpuDefinitions = 0;
     uint32_t activeSources=0;
@@ -155,6 +167,14 @@ public:
     // Scene-level visual rollback reset; clears ALL effects registered to
     // this pool, not a single GPU birth. Do not invoke mid-encoder.
     bool resetForRollback();
+    // On device loss: do not resurrect old GPU particles. Host must keep the
+    // old gfx::Device alive while shutting this pool down, then create a fresh
+    // pool against a recovered Device and re-declare effects from authoring.
+    const PoolResetReport& resetReport() const {return resetReport_;}
+    bool presentationBlocked() const {
+        return resetReport_.retryRequired || resetReport_.deviceLost ||
+               (device_ && !device_->gpuHealthy());
+    }
 
     bool ready() const {return initialized_;}
     const std::string& reason() const {return reason_;}
@@ -217,6 +237,8 @@ private:
     PoolWorldStats stats_{};
     std::shared_ptr<CheckpointReadbackBudget> checkpointBudget_;
     std::vector<Group> gpuGroups_;
+    PoolResetReport resetReport_{};
+    std::vector<uint8_t> resetAccepted_; // per GPU group, retained across retries
     std::map<std::string,Binding> bindings_;
     std::vector<Source> sources_;
     std::vector<uint32_t> freeSourceSlots_;
