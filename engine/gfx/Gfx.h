@@ -217,6 +217,13 @@ public:
     // owner thread at a later beginFrame; empty data on GPU error. Unsupported returns false.
     using BufferReadFn=std::function<void(std::vector<uint8_t>)>;
     virtual bool readBufferAsync(BufferHandle,size_t,BufferReadFn) { return false; }
+    // Optional ranged async readback for bounded large storage snapshots.
+    // Offset and size are in bytes; unsupported backends return false.
+    // A completed callback gets exactly size bytes or an empty vector on GPU
+    // error. Multiple accepted requests are delivered on the device thread.
+    virtual bool readBufferRangeAsync(BufferHandle,size_t,size_t,BufferReadFn) {
+        return false;
+    }
     virtual bool gpuHealthy() const { return true; }
     virtual double gpuFrameMs() const { return 0; } // last completed frame; asynchronous
     // Zero if backend does not expose a completed-slot-safe frame serial.
