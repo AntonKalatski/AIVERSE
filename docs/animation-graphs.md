@@ -1213,3 +1213,24 @@ allocation, injected exception and diagnostic observer recursion, but
 `uploadModel` success criteria do not comprehensively detect shared
 texture/morph failure; coordinate that with graphics/texture owners.
 [Stage 136 handoff](agent-handoffs/animation-stage136-prepared-model-rollback-retirement-observers-2026-11-19.md).
+
+
+## Stage 137 — feature closure before one final validation pass
+
+Per the user-approved workflow, continue implementing all remaining
+MotionWeave / genre-neutral Universal View functionality first. Keep the
+existing single presentation ECS clock, GPU owner fences and simulation
+isolation, and document each untested feature stage in its independent
+handoff. No intermediate CTest is requested. The
+[Stage 137 closure gate](agent-handoffs/animation-stage137-feature-freeze-validation-plan-2026-11-19.md)
+lists the incomplete GPU image/morph upload detection, native host
+adapters, source publication/LOD/retarget ownership, and FPS/RTS/editor
+presentation boundaries that must be closed or explicitly excluded.
+
+A future native macOS pass can be invoked after feature freeze with
+`bash tools/animation/validate-final.sh`, which performs the full
+build/CTest/benchmarks and separate sanitizer configurations in one
+operation and leaves an explicit hardware visual checklist. The runner is
+committed but **NOT RUN**. A single command cannot automatically establish
+Metal/GL/Vulkan visual parity, GPU fence correctness or device-loss
+behavior without real hardware checks; preserve that limitation.
