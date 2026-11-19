@@ -2256,7 +2256,7 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
         ${CMAKE_CURRENT_SOURCE_DIR})
     target_link_libraries(aiverse_spectrafx_metal_rhi_test PRIVATE
         "-framework Metal" "-framework Foundation"
-        "-framework QuartzCore" "-framework CommonCrypto")
+        "-framework QuartzCore")
     add_test(NAME spectrafx_metal_rhi COMMAND aiverse_spectrafx_metal_rhi_test)
     set_tests_properties(spectrafx_metal_rhi PROPERTIES
         LABELS "SpectraFX;MetalGPU;RHI"
