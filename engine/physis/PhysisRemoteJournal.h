@@ -266,14 +266,18 @@ public:
             if(error)*error="PHYSIS journal atomic rename failed: "+ec.message();
             return false;
         }
+        // A successful rename is not crash-durable until the containing
+        // directory is synced. Do not silently accept open() failure.
         const int dir=::open(parent.c_str(),O_RDONLY);
-        if(dir>=0) {
-            const bool ok=(::fsync(dir)==0);
-            ::close(dir);
-            if(!ok) {
-                if(error)*error="PHYSIS journal directory fsync failed";
-                return false;
-            }
+        if(dir<0) {
+            if(error)*error="PHYSIS journal directory open for fsync failed";
+            return false;
+        }
+        const bool synced=(::fsync(dir)==0);
+        const bool closed=(::close(dir)==0);
+        if(!synced || !closed) {
+            if(error)*error="PHYSIS journal directory fsync/close failed";
+            return false;
         }
 #else
         HANDLE fd=CreateFileW(temporary.wstring().c_str(),GENERIC_WRITE,
