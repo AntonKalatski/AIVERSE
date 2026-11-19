@@ -52,3 +52,8 @@ No scene/manifest read-only confluence presentation adapter yet. Render ripples 
 ## Specific next step
 
 Stage 42: build a read-only scene confluence snapshot from ECS generation-safe IDs and a matching `WorldScene` current bridge for ripple and rapid water presentation, sharing `waterConfluenceMouthContribution` and the bounded sorted reducer. Then optimize water material residency (do not reupload VB/IB on shader-only edits). Add build/CTest and sampling parity tests in the deferred validation phase.
+
+
+### Stage 41 source correction (follow-up commit)
+
+Corrected a source-level compile incompatibility: `Fixed` has no integer constructor; the inlet count now uses `Fixed::fromInt`. The contribution now carries its own `speedLimit`, and the shared reducer applies the strictest limit **only among the retained lowest-ID junctions**. Otherwise a discarded junction could silently constrain the result. The correction was made by GitHub connector source inspection; native build, tests and replay remain **not run**.

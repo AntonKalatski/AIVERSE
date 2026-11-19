@@ -3993,3 +3993,8 @@ Added `WaterRapidDetail {Low,Medium,High}` to presentation style (Medium default
 
 **Branch:** `feature/nereid-water-core`, Draft PR #23, code+handoff atomic commit. Full handoff: [Stage 41 confluence ECS](stage-41-confluence-ecs.md).
 New `NereidConfluences.h` optional persistent v1 `WaterConfluenceComponent` (2–4 explicitly linked inlets, outlet, mouth, radius, blend and speed limit). `NereidConfluenceFlow.h` calculates deterministic Fixed X/Z current around junctions: all linked bodies must be alive, valid and cover the mouth, sorted Entity IDs prevent pool-order effects, up to 32 stable contributions. Both reference and indexed samplers call the same policy BEFORE cascade continuity; only the selected `WaterSample.flow` changes. `NativeWaterPipelineConfig::enableConfluences` registers it opt-in, false by default. No genre/Box3D/PHYSIS or ECS water-body changes. **Actual checks:** GitHub source review/commit only. **NOT run:** compile, tests, GPU, replay, regressions. **Next:** immutable ECS-to-scene confluence adapter (Stage 42); defer final test phase. Keep PR Draft.
+
+
+### Stage 41 source correction (follow-up commit)
+
+Corrected a source-level compile incompatibility: `Fixed` has no integer constructor; the inlet count now uses `Fixed::fromInt`. The contribution now carries its own `speedLimit`, and the shared reducer applies the strictest limit **only among the retained lowest-ID junctions**. Otherwise a discarded junction could silently constrain the result. The correction was made by GitHub connector source inspection; native build, tests and replay remain **not run**.

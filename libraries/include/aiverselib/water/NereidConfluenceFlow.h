@@ -15,6 +15,7 @@ struct WaterConfluenceFlowContribution {
     uint64_t confluenceId=0;
     Vec2 desired{};
     Fixed weight{};
+    Fixed speedLimit=1000_fx; // applied only for retained contributors
 };
 
 // Shared math kernel is also available to future immutable scene adapters.
@@ -29,13 +30,13 @@ inline WaterConfluenceFlowContribution waterConfluenceMouthContribution(
     const Fixed t=fxClamp(1_fx-distance/junction.radius,0_fx,1_fx);
     const Fixed weight=junction.blend*t*t*(3_fx-2_fx*t);
     if(weight<=Fixed{})return out;
-    return {id,upstreamMean,weight};
+    return {id,upstreamMean,weight,junction.speedLimit};
 }
 
 template<size_t N>
 inline Vec3 blendWaterConfluenceContributions(
         Vec3 base,std::array<WaterConfluenceFlowContribution,N>& entries,
-        size_t count,Fixed speedLimit=1000_fx) {
+        size_t count) {
     count=std::min(count,N);
     if(!count)return base;
     std::sort(entries.begin(),entries.begin()+count,
@@ -44,10 +45,13 @@ inline Vec3 blendWaterConfluenceContributions(
         });
     Vec2 weighted{};
     Fixed weightSum{};
-    Fixed clampLimit=fxClamp(speedLimit,1_fx,1000_fx);
+    Fixed clampLimit=1000_fx;
+    // A discarded higher-ID junction must not constrain flow from
+    // the 32 retained, lowest-ID eligible contributions.
     for(size_t i=0;i<count;++i) {
         weighted+=entries[i].desired*entries[i].weight;
         weightSum+=entries[i].weight;
+        clampLimit=fxMin(clampLimit,entries[i].speedLimit);
     }
     if(weightSum<=Fixed{})return base;
     const Vec2 desired=weighted/weightSum;
@@ -69,7 +73,6 @@ inline void applyWaterConfluenceFlow(const World& world,Vec3 position,
     constexpr size_t kMaxContributions=32;
     std::array<WaterConfluenceFlowContribution,kMaxContributions> entries{};
     size_t used=0;
-    Fixed maxSpeed=1000_fx;
     world.eachExistingConst<WaterConfluenceComponent>(
         [&](Entity e,const WaterConfluenceComponent& junction) {
             if(!world.alive(e) || !validWaterConfluence(junction) ||
@@ -101,7 +104,7 @@ inline void applyWaterConfluenceFlow(const World& world,Vec3 position,
                 sum.x+=fxClamp(current.x,-1000_fx,1000_fx);
                 sum.y+=fxClamp(current.z,-1000_fx,1000_fx);
             }
-            const Fixed count=Fixed(int(junction.inletCount));
+            const Fixed count=Fixed::fromInt(junction.inletCount);
             const auto contribution=waterConfluenceMouthContribution(
                 uint64_t(e.packed()),junction,sum/count,position);
             if(contribution.weight<=Fixed{})return;
@@ -114,11 +117,8 @@ inline void applyWaterConfluenceFlow(const World& world,Vec3 position,
                 if(contribution.confluenceId<entries[largest].confluenceId)
                     entries[largest]=contribution;
             }
-            // Speed-limit policy is bounded and deterministic; if several
-            // active junctions overlap, use the strictest configured cap.
-            maxSpeed=fxMin(maxSpeed,junction.speedLimit);
         });
     sample.flow=blendWaterConfluenceContributions(
-        sample.flow,entries,used,maxSpeed);
+        sample.flow,entries,used);
 }
 } // namespace aiverse::lib::nereid
