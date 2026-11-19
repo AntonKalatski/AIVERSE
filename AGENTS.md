@@ -1941,3 +1941,26 @@ Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. 
   editor visual checks, sanitizers and benchmarks. Stage 117 is source-only,
   PR #22 remains Draft. Continue Stage 118 resource-init/rollback audit
   before validation; append its own separate handoff.
+
+## MotionWeave / Universal View Stage 118 GPU owner rules
+
+- Continue from [Stage 118 handoff](docs/agent-handoffs/animation-stage118-gpu-init-rollback-2026-11-19.md).
+  Work in `feature/universal-ecs-animation-pipeline`; inspect Git graph
+  before merging main, never force push or overwrite concurrent agents.
+- `Renderer3D::init` and `LightSystem::init` are now transactional.
+  Any required partial GPU allocation failure must roll back ONLY
+  after a proven `Device::waitForResourceIdle()`. If GPU idle is
+  unavailable, preserve the owner and surface the failure; never
+  release potentially in-flight GPU handles.
+- `shutdown` must be safe for partial construction: check `.valid()`
+  before destruction and reset handles. Trace failures are owned by
+  Renderer3D rollback; LightSystem borrows the renderer's target queue.
+  Standalone LightSystem target retirement requires full GPU idle or
+  intentionally orphans the resource with diagnostics.
+- Do not put renderer Device/RTT management into the MotionWeave ECS
+  graph clock; do not move FPS/RTS gameplay, NEREID hydrology or
+  Prisma/PostFx ownership into animation. Keep the engine genre-free.
+- **NO BUILD/TESTS RUN** for this Stage 118 source edit: no native CMake,
+  compiler, CTest, GPU, sanitizers or visual parity. PR #22 remains
+  Draft. Next Stage 119 audits unleased renderer RTT fallback and other
+  resource owners before feature completion and comprehensive tests.
