@@ -2718,6 +2718,21 @@
       "runtime": "header",
       "linkDependencies": ["aiverse_engine"],
       "packageDependencies": ["nereid-water"]
+    },
+    {
+      "id": "nereid-currents",
+      "version": "0.1.0",
+      "layer": "simulation",
+      "status": "experimental",
+      "source": "libraries/include/aiverselib/water/NereidCurrentField.h",
+      "skill": "skills/gameplay/aiverse-nereid-water/SKILL.md",
+      "summary": "NEREID fixed-point per-river spatial flow field with downstream, lateral and shear currents",
+      "notes": "Optional NEREID WaterCurrentFieldComponent: one profile node per RiverSpline point; reference and indexed ECS sampling share deterministic flow. Build/tests deferred.",
+      "verifiedPlatforms": [],
+      "cmakeTarget": "AIVERSE::lib_nereid_currents",
+      "runtime": "header",
+      "linkDependencies": ["aiverse_engine"],
+      "packageDependencies": ["nereid-water"]
     }
   ]
 }
