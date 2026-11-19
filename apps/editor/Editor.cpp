@@ -5,6 +5,7 @@
 #include "core/SimTools.h"
 #include "core/RouteOps.h"
 #include "engine/fx/FxModelMesh.h"
+#include "engine/fx/SpectraGpuPoolWorld.h"
 #include "imgui.h"
 #include "imgui_internal.h" // DockBuilder
 
@@ -41,6 +42,8 @@ FileReader projectReader(const std::string& dir) {
     };
 }
 } // namespace
+
+Editor::~Editor() = default;
 
 // ============================ viewport ============================
 
@@ -159,6 +162,11 @@ void Editor::init(gfx::Device& dev) {
 }
 
 void Editor::shutdown() {
+    if(spectraGpuTelemetry_==spectraPreviewGpu_.get())
+        spectraGpuTelemetry_=nullptr;
+    spectraPreviewGpu_.reset();
+    spectraPreviewFrameOpen_=false;
+    spectraPreviewRequest_.pending=false;
     spectraGpuTelemetry_=nullptr;
     if (!dev_) return;
     clientHost_.stop();
@@ -823,6 +831,81 @@ void Editor::drawEditOverlays3D() {
     }
 }
 
+void Editor::queueSpectraGpuPreview(fx::EffectDef effect,
+    std::array<float,8> params,fx::float3 position,bool inGame,bool loop) {
+    spectraPreviewRequest_.effect=std::move(effect);
+    spectraPreviewRequest_.params=params;
+    spectraPreviewRequest_.position=position;
+    spectraPreviewRequest_.inGame=inGame;
+    spectraPreviewRequest_.loop=loop;
+    spectraPreviewRequest_.pending=true;
+    spectraPreviewStop_=false;
+}
+void Editor::stopSpectraGpuPreview() {
+    spectraPreviewRequest_.pending=false;
+    spectraPreviewStop_=true; // resources release before a future scene pass
+}
+void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
+    if(spectraPreviewStop_) {
+        if(spectraGpuTelemetry_==spectraPreviewGpu_.get())
+            spectraGpuTelemetry_=nullptr;
+        spectraPreviewGpu_.reset();
+        spectraPreviewStop_=false;
+        spectraPreviewLoop_=false;
+    }
+    if(spectraPreviewRequest_.pending && spectraPreviewRequest_.inGame==game) {
+        auto pending=std::move(spectraPreviewRequest_);
+        spectraPreviewRequest_.pending=false;
+        auto candidate=std::make_unique<spectra::GpuPoolWorld>();
+        spectra::PoolWorldBudgets budgets;
+        budgets.maxGpuGroups=1;
+        bool ok=candidate->init(dev_,budgets);
+        if(ok) {
+            spectra::GraphRuntimeOptions options;
+            options.preference=spectra::ComputePreference::RequireGpu;
+            options.quality=fx::FxQuality::High;
+            options.gpuProgram=true;options.gpuMaterial=true;
+            ok=candidate->defineEffect("__editor_gpu_preview",pending.effect,options);
+        }
+        if(!ok) {
+            ws_.log("spectrafx","Metal preview not available: "+candidate->reason(),true);
+        } else {
+            if(spectraGpuTelemetry_==spectraPreviewGpu_.get())
+                spectraGpuTelemetry_=nullptr;
+            spectraPreviewGpu_=std::move(candidate);
+            spectraGpuTelemetry_=spectraPreviewGpu_.get();
+            spectraPreviewInGame_=game;
+            spectraPreviewLoop_=pending.loop;
+            spectraPreviewParams_=pending.params;
+            spectraPreviewPosition_=pending.position;
+            spectraPreviewNextBurst_=-1; // guaranteed first-frame spawn
+        }
+    }
+    if(!spectraPreviewGpu_ || spectraPreviewInGame_!=game || w<=0 || h<=0)
+        return;
+    const auto viewProjection=cam.proj(float(w)/float(h),
+        dev_->info().clipDepthZeroToOne)*cam.view();
+    if(!spectraPreviewGpu_->beginPresentationFrame(cam,viewProjection,w,h)) {
+        ws_.log("spectrafx","Metal preview begin: "+spectraPreviewGpu_->reason(),true);
+        return;
+    }
+    spectraPreviewFrameOpen_=true;
+    if(spectraPreviewNextBurst_<0 ||
+       (spectraPreviewLoop_ && time_>=spectraPreviewNextBurst_)) {
+        if(!spectraPreviewGpu_->burst("__editor_gpu_preview",
+                spectraPreviewPosition_,{0,1,0},{1,1,1,1},&spectraPreviewParams_))
+            ws_.log("spectrafx","Metal preview emission: "+spectraPreviewGpu_->reason(),true);
+        spectraPreviewNextBurst_=time_+0.5;
+    }
+    const float dt=std::clamp(ImGui::GetIO().DeltaTime,0.f,0.1f);
+    if(!spectraPreviewGpu_->step(dt))
+        ws_.log("spectrafx","Metal preview step: "+spectraPreviewGpu_->reason(),true);
+}
+void Editor::drawSpectraGpuPreview() {
+    if(!spectraPreviewFrameOpen_ || !spectraPreviewGpu_)return;
+    spectraPreviewGpu_->draw({r3d_.lighting.fogColor,r3d_.lighting.fogDensity});
+}
+
 void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) {
     if (!vp.color.valid()) return;
     if (playing() && !ws_.project.isFps()) { renderGame(vp, cam); return; }
@@ -862,6 +945,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
         view_.drawGhost(r3d_, uint16_t(oc.placeType), oc.placeAt, oc.placeOk, grid_, time_);
     if (editOverlays && !planets && !ws_.project.isFps()) drawEditOverlays3D();
     if (!planets && !ws_.project.isFps()) tickFx(cam, vp.w, vp.h, nullptr);   // agent previews (fx_preview) in the Scene view
+    tickSpectraGpuPreview(useCam,vp.w,vp.h,false);
     gfx::PassDesc pass;
     pass.colorTarget = vp.color;
     pass.depthTarget = vp.depth;
@@ -873,8 +957,13 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     const auto afterRender = std::chrono::steady_clock::now();
     r3d_.setSceneSelectionOutline(false);
     if (!ws_.project.isFps() && !r3d_.studioDebugMode()) gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
+    drawSpectraGpuPreview();
     r3d_.resolvePostFx();
     dev_->endPass();
+    if(spectraPreviewFrameOpen_ && spectraPreviewGpu_) {
+        spectraPreviewGpu_->endPresentationFrame();
+        spectraPreviewFrameOpen_=false;
+    }
     if (!ws_.project.isFps()) view_.drawOverlays(useCam, scene_, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
     if (traceSceneStages) {
         static unsigned samples = 0;
@@ -929,14 +1018,20 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam) {
     if (const auto& oc = view_.overlays().context(); overlayPreviewType >= 0 && oc.placeType >= 0)
         view_.drawGhost(r3d_, uint16_t(oc.placeType), oc.placeAt, oc.placeOk, gs.grid, time_);
     tickFx(cam, vp.w, vp.h, &sc.objects);
+    tickSpectraGpuPreview(cam,vp.w,vp.h,true);
     gfx::PassDesc pass;
     pass.colorTarget = vp.color;
     pass.depthTarget = vp.depth;
     pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
     r3d_.render(pass, &postFx_);
     gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
+    drawSpectraGpuPreview();
     r3d_.resolvePostFx();
     dev_->endPass();
+    if(spectraPreviewFrameOpen_ && spectraPreviewGpu_) {
+        spectraPreviewGpu_->endPresentationFrame();
+        spectraPreviewFrameOpen_=false;
+    }
     view_.drawOverlays(cam, sc, vp.pointsW, vp.pointsH, vp.originX, vp.originY, ImGui::GetWindowDrawList());
 }
 
