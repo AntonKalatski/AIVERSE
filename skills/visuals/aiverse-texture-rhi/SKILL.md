@@ -892,3 +892,17 @@ CI if it remains queued or cancelled.
   remain on the safe ordinary draw route.
 - No C++/Objective-C++ builds, MSL compiler or Metal GPU
   execution tests have been run. Keep Draft and release OFF.
+
+
+### Shader Graph Metal ICB host counters (Stage 10AK)
+
+- `Renderer3D::gpuModelDrawStats().shaderGraphIcbSubmissions`
+  counts host-accepted graph ICB submissions.
+  `.mixedGraphSourceSubmissions` counts accepted groups where
+  actual command-local graph source handles differ, not
+  groups with only different PBR U2.
+- Compare with `gpuIcbPrepared`, `gpuIcbRejected` and
+  `gpuIcbExecuteFailed` for fallback diagnostics. These
+  counters do not prove GPU completion or pixel correctness.
+- All experimental graph and PBR flags remain disabled by
+  default and have NOT been exercised on a Metal device here.
