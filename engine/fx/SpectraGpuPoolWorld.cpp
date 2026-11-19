@@ -47,6 +47,7 @@ void GpuPoolWorld::shutdown() {
     resetAccepted_.clear();
     resetReport_={};
     bindings_.clear();
+    definitions_.clear();
     sources_.clear();freeSourceSlots_.clear();
     sourceWorldEpoch_=0;nextBindingRevision_=1;nextSourceToken_=1;
     checkpointBudget_.reset();
@@ -145,6 +146,15 @@ bool GpuPoolWorld::defineCompiled(const std::string& name,
         next.defaults[definition.slot]=definition.initial;
     }
     next.named=named;
+    // Preserve only authored/compiled CPU-side data so a new pool can
+    // re-declare the effect after the host rebuilds gfx::Device.
+    PoolRecoveryEffect remembered;
+    remembered.name=name;
+    remembered.effect=effect;
+    remembered.options=options;
+    remembered.options.checkpointBudget.reset();
+    remembered.named=named;
+    remembered.defaults=next.defaults;
     next.usesRuntimeParams=effect.emitters.size()==1 &&
         (!effect.emitters[0].particleProgram.isNull() ||
          !effect.emitters[0].shaderGraph.isNull());
@@ -156,6 +166,7 @@ bool GpuPoolWorld::defineCompiled(const std::string& name,
                 next.gpu=true;next.gpuIndex=i;
                 next.revision=nextBindingRevision_++;
                 bindings_[name]=std::move(next);
+                definitions_[name]=remembered;
                 recountBindings();
                 reason_.clear();
                 return true; // share GPU storage, shader and draw for this effect
@@ -169,6 +180,7 @@ bool GpuPoolWorld::defineCompiled(const std::string& name,
                 gpuGroups_.push_back({key,std::move(particles)});
                 next.revision=nextBindingRevision_++;
                 bindings_[name]=std::move(next);
+                definitions_[name]=remembered;
                 recountBindings();
                 reason_.clear();
                 return true;
@@ -193,6 +205,7 @@ bool GpuPoolWorld::defineCompiled(const std::string& name,
     next.cpuId=id;
     next.revision=nextBindingRevision_++;
     bindings_[name]=std::move(next);
+    definitions_[name]=remembered;
     recountBindings();
     reason_.clear();
     return true;
@@ -212,6 +225,8 @@ bool GpuPoolWorld::setNamedParameter(const std::string& effectName,
         return false;
     }
     it->second.defaults[param->second.slot]=value;
+    if(auto stored=definitions_.find(effectName);stored!=definitions_.end())
+        stored->second.defaults[param->second.slot]=value;
     reason_.clear();
     return true;
 }
@@ -710,6 +725,52 @@ bool GpuPoolWorld::resetForRollback() {
     stats_.activeSources=0;
     resetReport_.retryRequired=false;
     resetReport_.failedGroup=std::numeric_limits<uint32_t>::max();
+    reason_.clear();
+    return true;
+}
+
+PoolRecoveryManifest GpuPoolWorld::exportRecoveryManifest() const {
+    PoolRecoveryManifest manifest;
+    manifest.budgets=budgets_;
+    // The old per-device readback scheduler belongs to the old Device.
+    // Import always provisions a fresh checkpoint budget.
+    manifest.budgets.sharedCheckpointBudget.reset();
+    for(const auto& [name,definition]:definitions_) {
+        (void)name;
+        manifest.effects.push_back(definition);
+    }
+    return manifest;
+}
+
+bool GpuPoolWorld::importRecoveryManifest(
+    gfx::Device* recoveredDevice,const PoolRecoveryManifest& manifest) {
+    if(!recoveredDevice || !recoveredDevice->gpuHealthy()) {
+        reason_="SpectraFX recovery needs a new healthy graphics Device";
+        return false;
+    }
+    // The caller must use a NEW pool and re-create the ECS presenter after
+    // this import. Old GPU resources and renderer source handles cannot
+    // be resurrected from a CPU-only authored-effect catalog.
+    if(initialized_ || !gpuGroups_.empty() || !bindings_.empty()) {
+        reason_="SpectraFX importRecoveryManifest requires a fresh uninitialized pool";
+        return false;
+    }
+    PoolWorldBudgets requested=manifest.budgets;
+    requested.sharedCheckpointBudget.reset();
+    if(!init(recoveredDevice,requested))return false;
+    for(const auto& entry:manifest.effects) {
+        if(!defineCompiled(entry.name,entry.effect,entry.options,entry.named)) {
+            const std::string why="SpectraFX failed to rebuild effect '"+entry.name+
+                "' on recovered Device: "+reason_;
+            shutdown();
+            reason_=why;
+            return false; // no partial renderer is publicly usable
+        }
+        auto live=bindings_.find(entry.name);
+        if(live!=bindings_.end())live->second.defaults=entry.defaults;
+        auto stored=definitions_.find(entry.name);
+        if(stored!=definitions_.end())stored->second.defaults=entry.defaults;
+    }
     reason_.clear();
     return true;
 }
