@@ -201,6 +201,17 @@ public:
             renderer.clearDynamicGiOverlay();
             return false;
         }
+        // Only Metal can opt into a third texture at slot 16. A fully
+        // completed medium and distant volume ensure no invalid GPU texels
+        // are sampled by the 3-cascade path. Failure leaves the safe dual path.
+        if(coarse==1 && levels_.size()>=3 && levels_[2]->fullyValid()) {
+            const auto& distant=*levels_[2];
+            const auto d=distant.volume().dimensions();
+            const auto r=distant.volume().ringOffset();
+            (void)renderer.setDynamicGiThirdCascadeOverlay(&distant.backend().atlas(),
+                distant.volume().originWorld(),distant.volume().spacing(),
+                d[0],d[1],d[2],r[0],r[1],r[2]);
+        }
         return true;
     }
 
