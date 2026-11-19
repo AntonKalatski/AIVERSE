@@ -18,7 +18,8 @@ namespace aiverse::physis::remote::posix_journal {
 
 inline bool validBasename(const std::string& name) {
     return !name.empty() && name!="." && name!=".." &&
-           name.find('/')==std::string::npos;
+           name.find('/')==std::string::npos &&
+           name.find('\\0')==std::string::npos;
 }
 inline bool error(std::string* out,const char* message) {
     if(out)*out=message;
@@ -107,7 +108,8 @@ inline bool write(int directory,const std::string& name,
                   const std::string& randomSuffix,
                   std::string* why=nullptr) {
     if(!ownedDirectory(directory) || !validBasename(name) ||
-       randomSuffix.empty() || randomSuffix.find('/')!=std::string::npos)
+       randomSuffix.empty() || randomSuffix.find('/')!=std::string::npos ||
+       randomSuffix.find('\\0')!=std::string::npos)
         return error(why,"PHYSIS pinned journal directory or name invalid");
     const std::string temporary=name+".next-"+randomSuffix;
     int flags=O_WRONLY|O_CREAT|O_EXCL;
