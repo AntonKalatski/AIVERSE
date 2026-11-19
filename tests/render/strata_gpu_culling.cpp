@@ -69,8 +69,14 @@ public:
     }
     void destroyBuffer(gfx::BufferHandle h) override { buffers.erase(h.id); }
     gfx::ComputeHandle createCompute(const gfx::ComputeDesc& d) override {
-        if (!d.msl || !std::strstr(d.msl, "kernel void cs_main")) return {};
-        shaderText = d.msl;
+        if (deviceInfo.backend==gfx::Backend::Metal) {
+            if (!d.msl || !std::strstr(d.msl, "kernel void cs_main")) return {};
+            shaderText=d.msl;
+        } else if (deviceInfo.backend==gfx::Backend::Vulkan) {
+            if (!d.glsl || !std::strstr(d.glsl, "layout(local_size_x=64") ||
+                !std::strstr(d.glsl, "void main()"))return {};
+            shaderText=d.glsl;
+        } else return {};
         ++computeCalls;
         return {next++};
     }
@@ -292,5 +298,45 @@ int main() {
     assert(dev.drawCalls == 0);
     compute.shutdown(dev);
     assert(dev.buffers.empty());
+
+    // Stage 16.1 Vulkan uses the SAME metadata/instance/range/counter
+    // contract and asynchronous parity callbacks as Metal, but supplies
+    // a native GLSL450 compute shader instead of an MSL kernel.
+    RecordingComputeDevice vk;
+    vk.deviceInfo.backend=gfx::Backend::Vulkan;
+    vk.currentFrame=201;
+    vk.completed=200;
+    GpuClusterCulling gpuVk;
+    GpuSelectionSubmission vkResult;
+    assert(gpuVk.dispatch(vk,{99},{ia,ib},referencePass,201,vkResult));
+    assert(vkResult.valid() && vk.dispatchCount==2);
+    assert(vk.shaderText.find("#version 450") != std::string::npos);
+    assert(vk.shaderText.find("gpuFirstIndex+node.firstIndex") != std::string::npos);
+    GpuSelectionCounters vkCounters{};
+    vkCounters.produced=2;
+    std::memcpy(vk.buffers.at(vkResult.counters.id).data(),
+                &vkCounters,sizeof(vkCounters));
+    std::memcpy(vk.buffers.at(vkResult.ranges.id).data(),
+                &recordB,sizeof(recordB));
+    std::memcpy(vk.buffers.at(vkResult.ranges.id).data()+sizeof(recordB),
+                &recordA,sizeof(recordA));
+    GpuSelectionReadback vulkanRead;
+    bool delivered=false;
+    assert(gpuVk.requestReadback(vk,vkResult,[&](GpuSelectionReadback r){
+        vulkanRead=std::move(r);
+        delivered=true;
+    }));
+    assert(!delivered);
+    vk.flushReads();
+    assert(delivered && vulkanRead.valid());
+    assert(compareGpuSelection(reference,{ia,ib},referencePass,400,
+                               vulkanRead,&error));
+    // Fail-closed if the checked RHI rejects compute encoding.
+    vk.supported=false;
+    GpuSelectionSubmission unchanged=vkResult;
+    assert(!gpuVk.dispatch(vk,{99},{ia},referencePass,201,vkResult));
+    assert(vkResult.ranges==unchanged.ranges);
+    gpuVk.shutdown(vk);
+    assert(vk.buffers.empty());
     return 0;
 }
