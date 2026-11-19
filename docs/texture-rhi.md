@@ -2876,3 +2876,70 @@ page table through a fragment shader, nor does it validate
 GPU ICB Shader Graph material mixing or other backends.
 No source code changed to achieve this observed PASS.
 
+
+### Stage 10BM — disk-worker to real Metal virtual texture publication (source only)
+
+Added `gpuDiskBackedVirtualAtlas` to the macOS opt-in
+`tests/render/metal_texture_gpu.mm` hardware acceptance.
+Unlike earlier direct `VirtualTextureStreamer::stage` tests, this
+path starts the **actual** `VirtualTextureFileStreamer` asynchronous
+I/O worker. The test creates unique temporary files under the OS temp
+directory in the production `m<MIP>/l<LAYER>/x<X>_y<Y>.rgba`
+layout, writes 4×4 packed RGBA8 pages, and deletes the files
+on test destruction. No test-only GPU device or fake worker result
+is used.
+
+The test checks, with bounded 6-second disk/owner-thread polling
+and byte-exact real Metal blit readbacks:
+
+- Requesting a pinned coarsest page does **not** publish a mapping
+  or make the page resident before `VirtualTextureFileStreamer::pump`.
+  The GPU page-table texture initially contains only invalid zero bytes.
+- Real disk worker loads the coarse file and owner-thread `pump()`
+  stages its data through `TextureStreamQueue` into physical
+  atlas slice 0. Both the real atlas pixels and page-table
+  bytes match the expected pinned coarse fallback.
+- A missing file yields one failed completion with an error string.
+  The atlas remains healthy, no exact residency is created and the
+  GPU page-table mapping is unchanged.
+- A fine page loads into physical slice 1 and overrides the mip-zero
+  page-table entry for tile (3,3), while all other tiles retain
+  coarse fallback.
+- A third page loads from disk and triggers LRU eviction/reuse of
+  the unpinned fine physical slice. Real Metal readback confirms the
+  pinned coarse slice survives, the reused slice has the new page,
+  and the GPU table removes the old fine entry and publishes the
+  new mapping.
+- `shutdown` releases both Metal textures from resource inventory.
+  Timing `VT disk worker to Metal publication_total_ms` and each
+  bounded worker/upload completion are logged.
+
+Source commits:
+`11ad74279ff2bbd348de16e4981efae645d7ab4c`
+(test fixture),
+`ebf5f1652c1284eaac6c7be5612def0a78e2c895`
+(explicit CMake `Threads::Threads` linkage), and
+`e8ba85b16a51eaa8794b67f29e2a6ad8503d1893`
+(independent fixture failure handling).
+No native production RHI, virtual texture format, user asset
+or ECS behavior changed. Hardware test remains opt-in with
+`AIVERSE_TEXTURE_METAL_GPU_TESTS=ON` / `--metal`.
+
+**Verification:** source changes committed to GitHub; this new
+disk-backed stage has NOT been compiled or executed on the Mac.
+The confirmed Stage 10BL Metal GPU PASS (1/1, 1.62 seconds)
+does not cover these new lines. In the isolated macOS worktree:
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+cmake -S . -B build/texture-rhi -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_TEXTURE_METAL_GPU_TESTS=ON
+cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parallel 4
+ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
+```
+
+Passing this would validate the real disk-to-GPU page publication
+path for tiny synthetic files. It would **not** yet validate
+application-level fragment shader page-table indirection,
+hardware sparse residency, GPU ICB, or cross-platform parity.
+
