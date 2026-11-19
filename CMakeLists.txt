@@ -786,6 +786,8 @@ if(AIVERSE_BUILD_TESTS)
         PRIVATE aiverse_models AIVERSE::View aiverse_zstd_dec)
     add_test(NAME view_appearance_prepared
         COMMAND aiverse_appearance_prepared_tests)
+endif()
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_executable(aiverse_model_image_transaction_tests
         tests/render/model_image_transaction.cpp)
     target_link_libraries(aiverse_model_image_transaction_tests
