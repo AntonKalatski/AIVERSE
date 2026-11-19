@@ -891,6 +891,7 @@ PoolCheckpointStats GpuPoolWorld::checkpointStats() const {
         result.killedSlotsReclaimed+=stats.killedSlotsReclaimed;
         result.gpuDeviceUnhealthy+=stats.gpuDeviceUnhealthy;
         result.gpuKillUploadFailures+=stats.gpuKillUploadFailures;
+        result.gpuStagingUploadFailures+=stats.gpuStagingUploadFailures;
         result.gpuComputeBeginFailures+=stats.gpuComputeBeginFailures;
         result.gpuResetFailures+=stats.gpuResetFailures;
         result.gpuPassOrderRejections+=stats.gpuPassOrderRejections;
@@ -902,6 +903,7 @@ PoolCheckpointStats GpuPoolWorld::checkpointStats() const {
         if(!state.gpuActive)continue;
         ++result.activeGroups;
         if(state.pending)++result.pendingGroups;
+        if(state.stagingRecoveryPending)++result.stagingRecoveryGroups;
         if(!state.complete)++result.missingGroups;
         else if(state.fresh)++result.freshGroups;
         else ++result.staleGroups;
