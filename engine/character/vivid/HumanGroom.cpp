@@ -46,6 +46,7 @@ void HumanGroomRuntime::generate(const HumanDNA& dna,GroomQuality quality) {
     const float radiusX=0.72f*dna.anatomy.headWidth*headScale;
     const float radiusY=0.90f*headScale;
     const float radiusZ=0.75f*headScale;
+    scalpRadii_={radiusX,radiusY,radiusZ};
     for(std::size_t i=0;i<count;++i) {
         const float u=(float(i)+0.5f)/float(count);
         const float theta=std::acos(1.0f-0.75f*u);
@@ -104,12 +105,23 @@ bool HumanGroomRuntime::step(float dt,render::float3 wind) {
                     if(j>1)guide.position[j-1]+=displacement*0.30f;
                     guide.position[j]=guide.position[j]-displacement*(j==1?1.0f:0.70f);
                 }
-                const float r=length(guide.position[j]);
-                // Scalp protection is conservative and smooth, not a full
-                // character-body/cloth collision system.
-                const float scalp=0.72f;
-                if(r<scalp && r>1e-5f)
-                    guide.position[j]=guide.position[j]*(scalp/r);
+                // Use the same DNA-scaled ellipsoid as guide generation.
+                // A fixed sphere penetrates wide/tall heads and pushes hair
+                // unnaturally far away from narrow heads.
+                const auto p=guide.position[j];
+                const float3 scaled{p.x/scalpRadii_.x,
+                                    p.y/scalpRadii_.y,
+                                    p.z/scalpRadii_.z};
+                const float radius=length(scaled);
+                if(radius<1.0f) {
+                    if(radius>1e-5f) {
+                        guide.position[j]=p*(1.001f/radius);
+                    } else {
+                        // Degenerate centre contact: project towards the
+                        // guide's outward root normal, never divide by zero.
+                        guide.position[j]=guide.root+guide.normal*0.001f;
+                    }
+                }
             }
         }
         for(auto v:guide.position)if(!good(v))return false;
