@@ -9243,3 +9243,92 @@ enabled. Record actual GPU device, OS, shader/compiler results, visual
 pixel output, limits and performance; keep the PR in Draft until validated.
 Do not touch the main worktree during its unrelated rebase.
 
+
+## Stage 10BB — native Metal GPU readback acceptance source (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / Draft PR #21.
+**Input checkpoint:** Stage 10BA, Mac Studio native source gate PASS
+(20/20 focused C++ targets, `aiverse_editor`, CTest PASS; prior
+complete user CTest log 23/23 passed). This success belongs to an
+**older source commit**, before the GPU acceptance work here.
+
+**Source commits:**
+- `29885e3c5883f14e32fed1f82de0ea9fb25f9c51` —
+  NEW `tests/render/metal_texture_gpu.mm`: an opt-in ObjC++ fixture
+  against production `gfx::createMetalDevice` / `GfxMetal.mm`, not
+  a CPU mock. Uses a small CAMetalLayer on a Mac GPU, creates
+  RGBA8 Texture3D 4×4×4 with unique Z-plane colors, uploads an
+  authored mip 1 Z-plane and a mip 0 partial rectangle at Z=2,
+  rejects invalid source pitch and out-of-range volume z,
+  reads back exact GPU bytes/format/extent via asynchronous
+  `Device::readTextureAsync` / real Metal blit and callback
+  delivery in later `beginFrame`. Also tests Texture2DArray,
+  Cube and CubeArray per-face source data, selected mip/face update,
+  exact readback bytes, GPU command buffer health and 3D
+  inventory creation/destruction.
+- `df141da43973c9b442c252f482d8f897a285436c` —
+  `CMakeLists.txt`: macOS-only target
+  `aiverse_metal_texture_gpu_test` building the production
+  `GfxMetal.mm` and fixture separately from the application
+  entry point; CTest `metal_texture_gpu`, label `GPU;METAL;TEXTURE_RHI`,
+  timeout 60 seconds.
+- `c836975b1c5e80460fb608d86cb01cf365fc1c48` —
+  `tools/verify-texture-rhi.sh`: optional `--metal` mode
+  builds/runs real GPU acceptance, rejects non-macOS, uses
+  `--no-tests=error` so an unregistered test cannot pass;
+  regular source-only 23-case CTest filter unchanged.
+- `87e2abf078c4efe93a4752900a64bf61ba970a38` —
+  fixture: explicit `<cstddef>` include.
+- `2fa91aafedfc1d5316a6e331f56f531dcfd2a7b3` —
+  verifier: capture **verbose GPU device name and exact readback
+  byte-comparison output** in `verify-logs/metal-gpu.log`.
+
+**Documentation commits:**
+- `efb75035a1ea3dd2fa63de3eaa6bcf0e5f353534` —
+  `docs/texture-rhi.md`
+- `c3f8c4590eab4f811d4f4d2300acfe09ac8c3119` —
+  `skills/visuals/aiverse-texture-rhi/SKILL.md`
+
+**Public API/compatibility:** no change to existing `gfx::Device`
+or native shader ABI, ECS, game saves, texture asset format, scene
+data or existing CPU verifier defaults. The new test is **opt-in**:
+normal `bash tools/verify-texture-rhi.sh --editor --jobs 4`
+does not execute the GPU fixture. To request actual Metal hardware
+and force a red result if unavailable, append `--metal`.
+The test has no RTS/FPS/genre dependency.
+
+**Actual verification in this conversation:** re-fetched current
+GitHub `GfxMetal.mm`, `Gfx.h`, CMake test block, verifier and
+fixture; source-marker assertions 9/9, CMake markers 5/5,
+verifier markers 7/7 were present. GitHub accepted all commits.
+Only **static source/registration checks** have been performed
+for this stage. **CMake configure NOT RUN; new ObjC++ target compile
+NOT RUN; CTest `metal_texture_gpu` NOT RUN; actual GPU texture
+upload/readback NOT RUN; no device name/image checksum is reported.**
+No green hardware acceptance claim is authorized.
+
+**Known risks/blockers:** the actual Mac SDK/compiler/linker may
+require further changes to the standalone Metal test target.
+The CAMetalLayer-based frame loop may behave differently in a
+noninteractive macOS build runner; missing GPU/drawable must
+fail explicitly, not silently skip. Current fixture proves the
+RHI texture upload/blit readback path, NOT shader texture
+sampling, GPU ICB, virtual texture feedback or full performance.
+Other platforms (Vulkan, GL/GLES, Android, iOS, Windows,
+WebGL2) remain independently unverified by this test.
+
+**Next exact action, in the isolated Mac Studio texture worktree:**
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+bash -n tools/verify-texture-rhi.sh
+bash tools/verify-texture-rhi.sh --editor --metal --jobs 4
+cat build/texture-rhi/verify-logs/metal-gpu.log
+```
+If compile/test fails, record `build/texture-rhi/verify-logs`
+(`build.log`, `ctest.log`, `metal-gpu.log`, `summary.txt`)
+and fix actual compiler/device errors in the same branch, followed by
+a separate handoff. The user's primary AIVERSE checkout has an
+unrelated unfinished rebase and MUST remain untouched.
+Do not promote PR #21 from Draft until GPU evidence is truly passing.
+
