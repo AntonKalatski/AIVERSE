@@ -900,7 +900,15 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     const bool planets = !ws_.project.isFps() && view_.planetMode();
     // planet maps: the orbit camera of the view (Scene window input drives it)
     const RTSCamera& useCam = planets ? view_.updatePlanetCamera(0, float(ImGui::GetIO().DeltaTime), vp.h) : cam;
-    r3d_.beginScene(useCam, vp.w, vp.h);
+    refreshPrismaVolumes();
+    prisma_.setViewId(1ULL);
+    prisma_.applyCameraVolumes(prismaVolumes_, useCam.eye());
+    const bool postEnabledForScene = !r3d_.studioDebugMode() && postFxInScene;
+    // Only the renderer's camera receives jitter. UI, picking, overlays,
+    // camera navigation and authored scene positions use the stable useCam.
+    const RTSCamera renderCam = postEnabledForScene
+        ? prisma_.jitteredCamera(useCam, vp.w, vp.h) : useCam;
+    r3d_.beginScene(renderCam, vp.w, vp.h);
     // Scene selection outline is a depth-tested posteffect, not an
     // inverted-hull ModelDraw vertex extrusion. Never enable in Game.
     r3d_.setSceneSelectionOutline(true);
@@ -926,10 +934,6 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     if (planets) pass.clearColor[0] = pass.clearColor[1] = pass.clearColor[2] = 0.0f;
     // Accurate diagnostic colours must not pass through post-processing.
     const auto beforeRender = std::chrono::steady_clock::now();
-    refreshPrismaVolumes();
-    prisma_.setViewId(1ULL);
-    prisma_.applyCameraVolumes(prismaVolumes_, useCam.eye());
-    const bool postEnabledForScene = !r3d_.studioDebugMode() && postFxInScene;
     const bool postActiveForScene = postEnabledForScene && prisma_.active();
     r3d_.render(pass, postEnabledForScene ? &prisma_ : nullptr);
     if (postActiveForScene) prismaSceneRendered_ = true;
@@ -996,7 +1000,11 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
             o.hovered = hover == me;
         }
     }
-    r3d_.beginScene(cam, vp.w, vp.h);
+    refreshPrismaVolumes();
+    prisma_.setViewId(prismaViewId);
+    prisma_.applyCameraVolumes(prismaVolumes_, cam.eye());
+    const RTSCamera renderCam = prisma_.jitteredCamera(cam, vp.w, vp.h);
+    r3d_.beginScene(renderCam, vp.w, vp.h);
     setOverlayContext(vp, cam, true);
     view_.draw(r3d_, sc, time_, human_ ? &gs.vision[size_t(human_)] : nullptr, gs.grid);
     if (const auto& oc = view_.overlays().context(); overlayPreviewType >= 0 && oc.placeType >= 0)
@@ -1006,9 +1014,6 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
     pass.colorTarget = vp.color;
     pass.depthTarget = vp.depth;
     pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
-    refreshPrismaVolumes();
-    prisma_.setViewId(prismaViewId);
-    prisma_.applyCameraVolumes(prismaVolumes_, cam.eye());
     const bool postActiveForGame = prisma_.active();
     r3d_.render(pass, &prisma_);
     if (postActiveForGame && prismaViewId == 1ULL) prismaSceneRendered_ = true;
