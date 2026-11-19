@@ -217,6 +217,7 @@ struct App {
         gpuLifetime=std::make_unique<render::RenderDeviceLifetime>(device);
         configureInput();
         loadInputConfig();
+        renderer.setGpuDeviceLease(gpuLifetime->lease());
         renderer.init(device);renderer.setShadowQuality(render::ShadowQuality::Low);
         if (const auto file=map.getStr("geometryScene"); !file.empty()) {
             auto reader=[&](const std::string& path,std::string& text){return platform::readContentFile(projectRoot+"/"+path,text);};
