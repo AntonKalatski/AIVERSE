@@ -477,7 +477,8 @@ public:
             (pendingJob_?pendingJob_->reservation:0);
     }
     void draw(render::Renderer3D& renderer,Cell origin,int cellSize,
-              const NereidRippleField* ripples=nullptr)const {
+              const NereidRippleField* ripples=nullptr,
+               render::float4 wind={})const {
         const double worldOriginX=double(origin.x)*double(cellSize);
         const double worldOriginZ=double(origin.z)*double(cellSize);
         const double worldOriginY=double(origin.y)*double(cellSize);
@@ -497,7 +498,7 @@ public:
                         slot.source.id,worldOriginX,worldOriginZ,
                         tile.minX,tile.maxX,tile.minZ,tile.maxZ);
                     slot.gpu->drawTile(renderer,transform,tile,
-                                       packet.rings,packet.shapes);
+                                       packet.rings,packet.shapes,wind);
                 }
             }else{
                 NereidRippleShaderPacket packet{};
@@ -508,7 +509,7 @@ public:
                         slot.source.id,worldOriginX,worldOriginZ,targetX,targetZ);
                 }
                 slot.gpu->draw(renderer,transform,
-                               packet.rings,packet.shapes);
+                               packet.rings,packet.shapes,wind);
             }
         }
     }
