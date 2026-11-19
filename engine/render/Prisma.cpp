@@ -500,6 +500,51 @@ void Prisma::applyCameraVolumes(const PrismaVolumeStack& stack, float3 eye, uint
 
 void Prisma::clearCameraVolumes() { settings_ = baseSettings_; }
 
+// Stage 43: projection-only Halton jitter. Keep the caller's unjittered camera
+// for selection, UI and gameplay. History tracks per-view jitter in stable
+// unflipped UV coordinates; this helper performs no GPU work.
+RTSCamera Prisma::jitteredCamera(RTSCamera camera, int width, int height) {
+    if (width <= 0 || height <= 0) return camera;
+    const auto* effect = settings_.find(PrismaType::TemporalResolve);
+    const char* temporal = std::getenv("AIVERSE_PRISMA_TEMPORAL");
+    const char* jitter = std::getenv("AIVERSE_PRISMA_JITTER");
+    const bool eligible = enabled_ && settings_.enabled &&
+        quality_ == PrismaQuality::High && hdrRequested() &&
+        temporal && std::strcmp(temporal,"1") == 0 &&
+        jitter && std::strcmp(jitter,"1") == 0 &&
+        effect && effect->enabled && int(quality_) >= int(effect->minQuality) &&
+        effect->get("historyWeight") > 0 && effect->get("jitterPixels") > 0 &&
+        camera.jitter.x == 0 && camera.jitter.y == 0;
+    if (!eligible) {
+        if (auto it=temporalViews_.find(viewId_); it!=temporalViews_.end()) {
+            if (it->second.jitterActive) it->second.valid=false;
+            it->second.currentJitterUv={};
+            it->second.jitterActive=false;
+        }
+        return camera;
+    }
+    auto& state = temporalViews_[viewId_];
+    const float amplitude = std::clamp(effect->get("jitterPixels"),0.0f,0.5f);
+    if (!state.jitterActive || std::abs(state.lastJitterPixels-amplitude)>1e-6f) {
+        state.valid=false;
+        state.jitterSequence=0;
+        state.previousJitterUv={};
+    }
+    const auto halton=[](uint32_t index,uint32_t base) {
+        float result=0.0f, factor=1.0f;
+        while (index>0) { factor/=float(base); result+=factor*float(index%base); index/=base; }
+        return result;
+    };
+    const uint32_t index=uint32_t((state.jitterSequence++ % 8u)+1u);
+    const float pixelX=(halton(index,2)-0.5f)*2.0f*amplitude;
+    const float pixelY=(halton(index,3)-0.5f)*2.0f*amplitude;
+    camera.jitter={2.0f*pixelX/float(width),2.0f*pixelY/float(height)};
+    state.currentJitterUv={camera.jitter.x*0.5f,camera.jitter.y*0.5f};
+    state.jitterActive=true;
+    state.lastJitterPixels=amplitude;
+    return camera;
+}
+
 bool Prisma::wantsObjectMotionVectors() const {
     if (!enabled_ || !settings_.enabled || !hdrFrame_) return false;
     const auto activeEffect = [this](PrismaType type, const char* flag) {
