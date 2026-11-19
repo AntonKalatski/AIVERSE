@@ -23,7 +23,11 @@ kernel void cs_main(
     texture2d<float,access::read> direct [[texture(2)]],
     texture2d<float,access::read> oldFiltered [[texture(3)]],
     texture2d<float,access::read> oldNormals [[texture(4)]],
-    depth2d<float> sceneDepth [[texture(5)]]) {
+    depth2d<float> sceneDepth [[texture(5)]]
+#if defined(LUMAWEAVE_PBR_NORMALS)
+    , texture2d<float,access::read> surfaceNormal [[texture(6)]]
+#endif
+) {
     if(i>=p.current.limits.z)return;
     uint w=uint(p.current.resolution.x),h=uint(p.current.resolution.y);
     uint2 pixel=uint2(i%w,i/w);
@@ -37,6 +41,17 @@ kernel void cs_main(
     const float2 uv=(float2(pixel)+.5f)/p.current.resolution.xy;
     float3 world=lumaWorld(uv,d,p.current);
     float3 normal=lumaNormal(uv,d,sceneDepth,p.current);
+#if defined(LUMAWEAVE_PBR_NORMALS)
+    // Respect the exact material world-space normal (including normal maps)
+    // when evaluating temporal history for narrow moving specular highlights.
+    float2 surfaceUv=p.current.eye.w>.5f?
+        float2(uv.x,1.0f-uv.y):uv;
+    uint2 surfaceCoord=uint2(clamp(surfaceUv*float2(surfaceNormal.get_width(),
+        surfaceNormal.get_height()),float2(0),
+        float2(surfaceNormal.get_width()-1,surfaceNormal.get_height()-1)));
+    float3 received=surfaceNormal.read(surfaceCoord).xyz;
+    if(dot(received,received)>.25f)normal=normalize(received);
+#endif
     const float sigma=max(p.spatial.x,1e-6f);
     float3 color=max(center.rgb,float3(0));
     float sum=1.0f;
@@ -85,3 +100,9 @@ kernel void cs_main(
     normals.write(float4(normal,d),pixel);
 }
 )MSL"
+
+
+// Identical spatial/temporal algorithm but historical surface normals are
+// read from the current explicit PBR receiver instead of geometric depth.
+#define AIVERSE_MSL_LUMAWEAVE_DENOISE_PBR \
+    R"MSL(#define LUMAWEAVE_PBR_NORMALS 1\n)MSL" AIVERSE_MSL_LUMAWEAVE_DENOISE
