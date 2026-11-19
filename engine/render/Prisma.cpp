@@ -2766,7 +2766,9 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 state.pipelinePrepared = graphCompositePrepared;
                 state.encoded = graphCompositePrepared && compositeEncoded;
                 if (!state.encoded)
-                    state.reason = "postfx shader graph compile/composite failed";
+                    state.reason = !graphInputsReady ?
+                        "Shader Graph source texture missing or failed to upload; fixed effects used" :
+                        "Shader Graph compile/composite failed; fixed effects fallback attempted";
                 break;
             case PrismaType::Pixelate: compositeBit(kPfPixelate); break;
             case PrismaType::ChromaticAberration: compositeBit(kPfCa); break;
