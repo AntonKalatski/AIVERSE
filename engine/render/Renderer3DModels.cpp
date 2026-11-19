@@ -555,6 +555,7 @@ void Renderer3D::drawModel(const ModelDraw& d) {
     if (overrideStatus != ModelVertexOverrideStatus::Ready &&
         overrideStatus != ModelVertexOverrideStatus::Disabled) {
         // An invalid override must not silently draw stale/unmorphed geometry.
+        modelError_ = "model vertex override: rejected invalid/pooled 60B stream";
         return;
     }
     const bool customVertexStream = overrideStatus == ModelVertexOverrideStatus::Ready;
@@ -564,6 +565,15 @@ void Renderer3D::drawModel(const ModelDraw& d) {
         (dev_->info().backend != gfx::Backend::Metal ||
          (d.flags & kDrawStatic) || !m->ib.valid() || d.baked))
         return;
+    if (customVertexStream && d.persistentId) {
+        // A character that switched from a static source VB to a dynamic
+        // override must not keep its previous persistent GPU draw record.
+        const auto stale = persistentIds_.find(d.persistentId);
+        if (stale != persistentIds_.end()) {
+            persistentScene_.erase(stale->second.handle);
+            persistentIds_.erase(stale);
+        }
+    }
     if (!customVertexStream) recordPersistentModel(d);
     if (capture_ && (d.flags & kDrawStatic)) {   // light baker: the static scene, every node in world space
         const auto& pose = d.nodeWorld && d.nodeWorld->size() == m->nodes.size() ? *d.nodeWorld : m->bindWorld;
@@ -1544,7 +1554,7 @@ void Renderer3D::renderModels(int phase) {
         if(take&&phase==0&&!it.mat->shaderGraph&&it.joints<0&&!it.baked&&it.morph<0&&!it.vertexOverride.valid())
             take=geometryBoxVisible(lightViewProj_*it.world,it.prim->boundsMin,it.prim->boundsMax);
         // Reflection has its own view, never consume main-view occlusion there.
-        if (phase == 1 && !geometryMainView_) take = it.shadowRole != 2 && !blended && (it.mat->shaderGraph || geometryBoxVisible(viewProj_ * it.world, it.prim->boundsMin, it.prim->boundsMax));
+        if (phase == 1 && !geometryMainView_) take = it.shadowRole != 2 && !blended && (it.vertexOverride.valid() || it.mat->shaderGraph || geometryBoxVisible(viewProj_ * it.world, it.prim->boundsMin, it.prim->boundsMax));
         // Kingston water: ground models must not cover the mirrored city.
         // This flat city puts the rainwater at y=.045. Fully submerged primitives
         // are omitted only from the reflection, retaining normal and shadow draws.
