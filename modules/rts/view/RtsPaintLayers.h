@@ -8,6 +8,17 @@ public:
     void draw(render::Renderer3D&,gfx::Device&,const std::shared_ptr<render::PaintLayers>&,
               const MapGrid&,const RtsView&,const std::vector<uint8_t>* vision,double time,uint8_t viewer);
     void shutdown();
+    render::GpuOwnedMemoryStats ownedGpuMemoryStats() const {
+        if (!dev_) return {};
+        render::GpuOwnedMemoryCounter c(*dev_);
+        for (const auto& [id, layer] : layers_) {
+            (void)id;
+            c.texture(layer.canvas.handle());
+            c.texture(layer.coast);
+            c.buffer(layer.mesh.vb);c.buffer(layer.mesh.ib);
+        }
+        return c.stats();
+    }
 private:
     struct Layer {
         render::RenderTexture canvas;
