@@ -677,3 +677,25 @@ animation writer is unchanged; no second ECS or graph clock
 is allocated by the scratch owner. `Renderer3D` now validates
 the render host's existing GPU generation before scene work.
 Validation is still deferred.
+
+## Stage 114 — GPU shader readiness is an appearance publication condition
+
+In the RTS/editor appearance reload path, authored CPU materials,
+AnimationGraph programs, shared GPU image ownership and native GPU
+shader/pipeline readiness must be prepared **before** the live TypeLook
+and animation graph sources are replaced. The host can supply
+`RtsView::setAppearancePipelineValidator`, normally forwarding to
+its existing `Renderer3D::warmModelPipelinesChecked`.
+
+- Ready: candidate may proceed through shared texture/Model commit.
+- Pending: preserve last-good graph and material snapshots, leave
+  the editor's watched source pending and retry after GPU compiler
+  progress.
+- Failed: reject the candidate, keep old animations and return an
+  authoring error; do not replace the live TypeLook.
+
+The validator handles GPU pipeline **preflight** but does not own a
+second animation evaluator or make the Renderer3D shader cache fully
+transactional. Speculative Model and material texture GPU handles
+still require retirement using their own completion fences on abort.
+The implementation is not compiled or GPU-verified.
