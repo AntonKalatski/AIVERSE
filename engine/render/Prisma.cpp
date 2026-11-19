@@ -1439,10 +1439,27 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     const char* autoFlag = std::getenv("AIVERSE_PRISMA_AUTO_EXPOSURE");
     const bool autoRequested = hdrFrame_ && autoEffect && autoFlag &&
         std::strcmp(autoFlag, "1") == 0;
+    // Native stable-view overrides take precedence over volume/profile
+    // fields, including an explicit false. Two cameras at the SAME world
+    // position may therefore use independent cinematic exposure controls.
+    const auto freezeOverride = viewExposureFreeze_.find(viewId_);
     const bool freezeRequested = autoRequested &&
-        autoEffect->get("freezeExposure") > 0.5f;
-    const bool regionRequested = autoRequested &&
-        autoEffect->get("meterRegionEnabled") > 0.5f;
+        (freezeOverride != viewExposureFreeze_.end()
+            ? freezeOverride->second
+            : autoEffect->get("freezeExposure") > 0.5f);
+    ExposureMeterRegion meterRegion{};
+    if (autoEffect) {
+        meterRegion.enabled = autoEffect->get("meterRegionEnabled") > 0.5f;
+        meterRegion.centerX = autoEffect->get("meterCenterX");
+        meterRegion.centerY = autoEffect->get("meterCenterY");
+        meterRegion.radius = autoEffect->get("meterRadius");
+        meterRegion.feather = autoEffect->get("meterFeather");
+        meterRegion.outsideWeight = autoEffect->get("meterOutsideWeight");
+    }
+    if (const auto override = viewExposureMeterRegions_.find(viewId_);
+        override != viewExposureMeterRegions_.end())
+        meterRegion = override->second;
+    const bool regionRequested = autoRequested && meterRegion.enabled;
     bool exposureFrozenThisFrame = false;
     bool exposureRegionMeteredThisFrame = false;
     if (freezeRequested) {
@@ -1478,15 +1495,15 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 put(measure.p0, autoEffect->get("centerWeight"),
                     autoEffect->get("centerRadius"),
                     autoEffect->get("highlightRejection"),
-                    autoEffect->get("meterOutsideWeight"));
+                    meterRegion.outsideWeight);
                 put(measure.sun, autoEffect->get("minMeterLogL"),
                     autoEffect->get("maxMeterLogL"),
                     autoEffect->get("highlightStartEV"),
                     autoEffect->get("highlightSoftnessEV"));
-                put(measure.region, autoEffect->get("meterCenterX"),
-                    autoEffect->get("meterCenterY"),
-                    regionRequested ? autoEffect->get("meterRadius") : -1.0f,
-                    autoEffect->get("meterFeather"));
+                put(measure.region, meterRegion.centerX,
+                    meterRegion.centerY,
+                    regionRequested ? meterRegion.radius : -1.0f,
+                    meterRegion.feather);
             }
             draw(set, mip, pipes_[level == 0 ? kExposureLog : kExposureReduce],
                  &measure, level == 0 ? sizeof measure : sizeof(SimpleU),
@@ -1503,15 +1520,15 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 put(measure.p0, autoEffect->get("centerWeight"),
                     autoEffect->get("centerRadius"),
                     autoEffect->get("highlightRejection"),
-                    autoEffect->get("meterOutsideWeight"));
+                    meterRegion.outsideWeight);
                 put(measure.sun, autoEffect->get("minMeterLogL"),
                     autoEffect->get("maxMeterLogL"),
                     autoEffect->get("highlightStartEV"),
                     autoEffect->get("highlightSoftnessEV"));
-                put(measure.region, autoEffect->get("meterCenterX"),
-                    autoEffect->get("meterCenterY"),
-                    regionRequested ? autoEffect->get("meterRadius") : -1.0f,
-                    autoEffect->get("meterFeather"));
+                put(measure.region, meterRegion.centerX,
+                    meterRegion.centerY,
+                    regionRequested ? meterRegion.radius : -1.0f,
+                    meterRegion.feather);
                 draw(set, mip, pipes_[kExposureLog], &measure, sizeof measure,
                      {{0, scene.tex}});
                 source = mip.tex;
