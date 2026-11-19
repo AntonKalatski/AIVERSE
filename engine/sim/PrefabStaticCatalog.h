@@ -49,16 +49,23 @@ public:
         return it==prefabRefs_.end()?StaticRef<T>{}:it->second;
     }
 
+    // Read-only preflight for multiple configuration domains. Does not
+    // allocate, detach COW resources or mutate ECS state. A host can check
+    // every domain first, then bind them in deterministic order.
+    bool canBindWorld(const World& world) const noexcept {
+        const auto* catalog=world.resourceConst<PrefabCatalogBinding<T>>();
+        const auto* tableBinding=world.resourceConst<StaticTableBinding<T>>();
+        return (!catalog || catalog->fingerprint==fingerprint_) &&
+               (!tableBinding || tableBinding->fingerprint==table_->fingerprint());
+    }
+
     // Bind to a World once. The catalog identity includes every
     // prefab->slot mapping as well as the StaticTable content fingerprint,
     // so a save cannot silently adopt a changed mapping with identical
     // underlying unique configuration values.
     bool bindWorld(World& world) const {
+        if(!canBindWorld(world))return false;
         const auto* catalog=world.resourceConst<PrefabCatalogBinding<T>>();
-        const auto* tableBinding=world.resourceConst<StaticTableBinding<T>>();
-        if((catalog && catalog->fingerprint!=fingerprint_) ||
-           (tableBinding && tableBinding->fingerprint!=table_->fingerprint()))
-            return false;
         if(!bindStaticTable(world,*table_))return false;
         if(!catalog)
             world.setResource<PrefabCatalogBinding<T>>(
