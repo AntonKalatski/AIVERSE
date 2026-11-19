@@ -10,6 +10,7 @@
 #include <cerrno>
 #include <csignal>
 #include <poll.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 #endif
@@ -442,6 +443,18 @@ void unsafeJournalLockInodesRejected() {
     {
         JournalProcessLock safe;
         CHECK(safe.acquire(journal,&error));
+    }
+    // A FIFO with no readers must not block the privileged process while
+    // JournalProcessLock attempts to open() it. The regular-file check
+    // must reject it immediately without acquiring any lock.
+    CHECK(std::filesystem::remove(lock));
+    if(::mkfifo(lock.c_str(),0600)==0) {
+        JournalProcessLock fifo;
+        CHECK(!fifo.acquire(journal,&error));
+        CHECK(!fifo.held());
+        CHECK(std::filesystem::remove(lock));
+    } else {
+        CHECK(false);
     }
     std::filesystem::remove_all(dir);
 }
