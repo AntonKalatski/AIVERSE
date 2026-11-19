@@ -506,13 +506,10 @@ void RtsView::trimTypes(const std::vector<bool>& keep, bool compact) {
         for(const auto& c:look.lods)visit(c);
         for(const auto& s:look.stages)visit(s.choice);
     }
-    size_t released=0;
-    for(auto it=resources_.models().begin();it!=resources_.models().end();) {
-        if(it->first.rfind("shape:",0)==0 || used.contains(it->second.get())){++it;continue;}
-        if(it->second){animationCache_.erase(it->second.get());releaseModel(*dev_,*it->second);}
-        it=resources_.models().erase(it);++released;
-    }
-    resources_.textures()->trim(*dev_);
+    const size_t released=resources_.trimUnused(*dev_,used,
+        [this](const render::Model* model) {
+            animationCache_.erase(model);
+        });
     if(std::getenv("AIVERSE_STREAM_TRACE"))std::fprintf(stderr,"[residency] released=%zu models=%zu textures=%zu\n",released,resources_.models().size(),resources_.textures()->gpuCount());
 }
 
@@ -680,9 +677,7 @@ void RtsView::finishChoice(const UnitType& t, ModelChoice& c) {
 }
 
 std::vector<std::string> RtsView::modelFiles() const {
-    std::vector<std::string> out;
-    for (const auto& [path, m] : resources_.models()) if (path.rfind("shape:", 0) != 0) out.push_back(m ? m->path : path);
-    return out;
+    return resources_.modelFiles();
 }
 
 bool RtsView::loadChoice(gfx::Device& dev, const UnitType& t, const Json& view, const std::string& path, ModelChoice& out) {
