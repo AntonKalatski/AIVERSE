@@ -282,12 +282,13 @@ bool PortableSource::collectResidencyDemands(
 }
 
 bool PortableSource::updateResidency(
-        const std::vector<IndexDemand>& demands,std::string* error) {
+        const std::vector<IndexDemand>& demands,std::string* error,
+        size_t uploadAllowanceBytes) {
     if(!streaming_ || !source_ || !validFor(*source_))
         return fail(error,"portable Strata index streaming is unavailable");
     // All instances of this source are preflighted before ANY drawModel()
     // submission in this epoch. Never repack a buffer mid-Renderer3D render.
-    if(!streaming_->update(demands,error))
+    if(!streaming_->update(demands,error,uploadAllowanceBytes))
         return false;
     indexBuffer_=streaming_->buffer();
     stats_.residentIndexBytes=streaming_->stats().activeBytes;
