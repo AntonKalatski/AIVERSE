@@ -249,8 +249,20 @@ inline const char* kComposite = R"(
                 inverseViewProj3 * clip.w;
             if (abs(worldPosition.w) > 0.00001) {
                 vec3 hitPosition = worldPosition.xyz / worldPosition.w;
+                // Optical absorption only along the portion of the ray
+                // below the water plane (camera may be above it).
+                float startDepth = underwater2.w;  // surfaceY - cameraY
+                float endDepth = startDepth +
+                                 (underwaterCamera.y - hitPosition.y);
+                float immersedFraction = 0.0;
+                if (startDepth >= 0.0 && endDepth >= 0.0)
+                    immersedFraction = 1.0;
+                else if (startDepth > 0.0 || endDepth > 0.0)
+                    immersedFraction = max(startDepth, endDepth) /
+                        max(abs(startDepth) + abs(endDepth), 0.00001);
                 opticalDistance = clamp(
-                    length(hitPosition - underwaterCamera.xyz), 0.0, 120.0);
+                    length(hitPosition - underwaterCamera.xyz) *
+                    immersedFraction, 0.0, 120.0);
             }
         }
 #endif
