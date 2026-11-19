@@ -9,7 +9,8 @@
 namespace aiverse::render {
 namespace strata { struct ModelAsset; class SceneStaging; class GpuMetadataScene; struct ViewConfig; struct ViewPlan;
     struct GpuSceneInstance; struct GpuPassConfig; struct GpuSelectionSubmission;
-    struct GpuSelectionReadback; class GpuClusterCulling; }
+    struct GpuSelectionReadback; class GpuClusterCulling;
+    struct RenderCandidate; enum class RenderPass : uint8_t; }
 class Renderer3D;
 // Static presentation geometry, never collision or simulation objects. HLOD proxies merge
 // compatible materials and use bounded-error cluster simplification. Sources stay available.
@@ -79,6 +80,13 @@ public:
     bool planStrataView(const std::string& sourceKey, uint32_t mesh,
                         uint32_t primitive, const strata::ViewConfig& config,
                         strata::ViewPlan& out, std::string* error = nullptr) const;
+    // Preflight only: prepares selected auxiliary index spans for a single
+    // primitive/pass but DOES NOT draw, replace ModelDraw or commit a route.
+    // Renderer3D remains the only authority for pass/material/instance data.
+    bool prepareStrataRenderCandidate(const std::string& sourceKey,
+        uint32_t mesh, uint32_t primitive, strata::RenderPass pass,
+        const strata::ViewConfig& view, strata::RenderCandidate& out,
+        std::string* error = nullptr) const;
     const Stats& stats() const { return stats_; }
     const std::vector<std::string>& warnings() const { return warnings_; }
     static void validate(const Json& json);
