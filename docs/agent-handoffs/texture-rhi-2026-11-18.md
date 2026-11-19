@@ -6442,3 +6442,59 @@ Actual checks: inspected `VirtualTextureDiskQueue`,
 C++ compilation, CTest, shader and GPU tests NOT RUN per user request.
 Next: add Terra-facing image/atlas pack and activation helper with old/new
 streamer retention; validate alpha atlas mip edge behavior later.
+
+
+## Stage 10C — TerraVeave runtime atlas packaging and safe revision streaming (2026-11-19)
+
+**Source commits:** `cd3e8a6c6f29e20d9e57b9e8f1fb4b01429913d3`,
+`035ed8ab375c021c84dc0b964ebb4572864951fa`.
+**Dependency:** generic page archive writer, Stage 10B,
+`dceac4832ef756e7a4ac1475e9cd37635f3366d0`.
+**New:** `engine/render/TerraWeaveVirtualAtlasArchive.h`.
+**Branch:** `feature/texture-rhi-unification` (PR #21).
+
+Implemented a Terra-facing bridge to the real CPU RGBA8 page writer:
+`terraWeaveAtlasPixels(Image)` extracts in-memory pixels from
+`Image::rgba` or `sharedRgba` while retained;
+`packTerraWeaveModelImage(...,revision,Model,imageIndex,...)` rejects
+non-`terraweave/` models or uploaded-only images;
+`packTerraWeaveAtlas(...,revision,{width,height,span},...)`
+supports direct `HorizonBake::atlasRgba` before its upload/CPU release.
+Both produce the exact on-disk mip/gutter physical-page directory format
+used by `VirtualTextureDiskQueue`, with distinct immutable revisions.
+
+Added `TerraWeaveVirtualAtlasSession` with two-phase GPU streamer
+switching: `prepare(version,physicalPages)` initializes a candidate
+`VirtualTextureFileStreamer` and requests coarsest fallback pages
+pinned for each layer, `pumpCandidate(budget)` advances disk/GPU
+uploads, `candidateFallbackResident()` checks residency,
+`promote(feedbackPass)` rejects active/pending/unconsumed feedback
+and preserves the old `active()` as `retired_`,
+`retireCompletedGpuWork()` releases the retired streamer ONLY
+after the application's actual GPU fence, and `shutdown()` tears
+down all streamers once the device is idle. Multiple promotions
+cannot discard an unreclaimed previous generation.
+`terraWeaveAtlasMapping(version,layer)` returns matching virtual
+tile/mip/layer metadata for `TerraWeaveVirtualTextureFeedback`.
+
+**Important:** `promote` does not implicitly change Terra's main
+material shaders or the active renderer's VT sampler bindings;
+the scene owner must swap the matching `physicalAtlas()` and
+`pageTableTexture()` together, refresh the page/material resolver,
+and invalidate stale per-frame mappings via
+`TerraWeaveVirtualTextureFeedback::beginFrame()`.
+The feedback pass is left as caller-owned and must continue to
+pump the *new* active streamer's requests. Page archive packing
+does not itself implement shader VT sampling. Old Horizon region
+transition draws are still a material/render-policy limitation.
+
+**Verification:** Inspected existing Python packer, disk queue,
+file/physical streamer and Terra Horizon models/atlas lifetime.
+GitHub commits succeeded. Native C++ compilation, CTest, shader
+validation and GPU resource integration **NOT RUN** per user
+functions-first instruction.
+
+**Next:** connect VT physical atlas/page-table sampling in shared
+model material shader paths and Terra material bindings; add a
+revision-aware runtime provider for real Terra atlas allocations,
+then finish backend compile tests and visual validation.
