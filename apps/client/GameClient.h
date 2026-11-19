@@ -133,6 +133,11 @@ public:
     bool lensTargetInfo(uint64_t key,int& w,int& h,bool& hdr) const {
         return lensCamerasActive_ && lensCameras_.targetInfo(key,w,h,hdr);
     }
+    // Bind a camera RT to the active material shader (during a render pass).
+    bool bindLensColorTarget(int textureSlot,uint64_t key) const {
+        return lensCamerasActive_ && dev_ &&
+            lensCameras_.bindColorTarget(*dev_,textureSlot,key);
+    }
 
 private:
     enum class Screen { Menu, Lobby, Playing, Paused, Over };
