@@ -496,7 +496,8 @@ void GpuPoolWorld::tickContinuous(float dt) {
             source.elapsed=std::min(cfg.lifetimeSeconds,source.elapsed+dt);
         }
         if(frameDt<=0.f) {
-            source.paused=true;
+            if(cfg.lifetimeSeconds>0.f &&
+               source.elapsed>=cfg.lifetimeSeconds)source.paused=true;
             source.lastStepPosition=source.position;
             continue;
         }
@@ -508,9 +509,13 @@ void GpuPoolWorld::tickContinuous(float dt) {
         }
         const fx::float3 start=source.lastStepPosition;
         const fx::float3 end=source.position;
-        const fx::float3 displacement=end-start;
-        const float distance=render::length(displacement)*
+        const fx::float3 displacement=(end-start)*
             (dt>0.f?frameDt/dt:0.f);
+        const float distance=render::length(displacement);
+        if(!valid(distance)) {
+            source.lastStepPosition=source.position;
+            continue;
+        }
         const double rateTotal=double(source.accumulatedRate)+
                                double(frameDt)*cfg.burstsPerSecond;
         const uint32_t rateCount=uint32_t(std::min(
@@ -533,7 +538,6 @@ void GpuPoolWorld::tickContinuous(float dt) {
                 ?budgets_.maxBurstsPerFrame-stats_.frameBursts:0u);
         const uint32_t eligible=uint32_t(std::min<uint64_t>(wanted,limit));
         stats_.continuousSkipped+=wanted-eligible;
-        uint32_t emitted=0;
         for(uint32_t i=0;i<eligible;++i) {
             fx::float3 pos=end;
             if(i>=rateCount && cfg.metresPerBurst>0.f && distance>1e-6f) {
@@ -543,7 +547,6 @@ void GpuPoolWorld::tickContinuous(float dt) {
                 pos=start+displacement*std::clamp(along/distance,0.f,1.f);
             }
             if(emitSource(handle,pos,source.direction,source.tint)) {
-                ++emitted;
                 ++stats_.continuousBursts;
             } else {
                 // No retries this frame; an exhausted group must not delay
@@ -552,7 +555,6 @@ void GpuPoolWorld::tickContinuous(float dt) {
                 break;
             }
         }
-        (void)emitted;
         source.lastStepPosition=source.position;
         if(cfg.lifetimeSeconds>0.f &&
            source.elapsed>=cfg.lifetimeSeconds)source.paused=true;
