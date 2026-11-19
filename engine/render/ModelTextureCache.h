@@ -20,6 +20,11 @@ public:
     // Phase 2: commit moves preallocated map nodes and switches scratch
     // Models to shared leases. Replaced dedicated duplicate textures are
     // returned to the caller for normal GPU-fenced retirement.
+    struct PendingImage {
+        Model* model=nullptr;
+        size_t appendIndex=0;
+        const Image* staged=nullptr; // remains valid until ModelImage transaction commit
+    };
     class PreparedGpuPromotion final {
         friend class ModelTextureCache;
     public:
@@ -34,14 +39,21 @@ public:
         std::vector<Image> commit();
     private:
         explicit PreparedGpuPromotion(ModelTextureCache& cache):cache_(&cache){}
-        struct Binding {Image* modelImage=nullptr; Image* sharedOwner=nullptr;};
+        struct Binding {
+            Image* modelImage=nullptr; // already in a scratch Model
+            Model* appendModel=nullptr; // future slot, populated by image commit
+            size_t appendIndex=0;
+            Image* sharedOwner=nullptr;
+        };
         ModelTextureCache* cache_=nullptr;
         std::map<std::string,Image> pending_;
         std::vector<Binding> bindings_;
         std::vector<Image> redundant_;
         bool committed_=false;
     };
-    PreparedGpuPromotion prepareGpuPromotion(const std::vector<Model*>& models);
+    PreparedGpuPromotion prepareGpuPromotion(
+        const std::vector<Model*>& models,
+        const std::vector<PendingImage>& appended={});
 
     void shutdown(gfx::Device& dev);
     void trim(gfx::Device& dev);
