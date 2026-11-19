@@ -742,6 +742,159 @@ A separate `AIVERSE-static-scene` full CTest run reported 125/127 PASS;
 its two skill-registration failures were unrelated to this Strata
 GPU fixture and should not be conflated with Strata's 6/6 focused tests.
 
+## Stage 11 — real Metal raster A/B fixture, separate frames (not production)
+
+`tests/render/strata_metal_raster_parity.cpp` is an **opt-in
+macOS Metal raster parity probe** built by target
+`aiverse_strata_metal_raster_parity` when
+`AIVERSE_STRATA_METAL_GPU_TESTS=ON`. The target is purposefully not
+an unattended CTest because it opens a real CAMetalLayer.
+
+The fixture creates one simple rigid, opaque, UV-mapped quad and
+stages a v2 Strata source whose parent uses the same original two
+triangles as both resident children combined. It uploads the source
+only once via the existing `GlobalGeometryPool`, then stages the
+auxiliary Strata indices **inside the same pooled GPU buffer**.
+Two test-only alias models borrow that exact vertex/index GPU buffer
+with `gpuBaseVertex` from the original source and `gpuFirstIndex`
+from the staged sidecar; neither is uploaded or freed separately.
+The alias primitives reference the CPU `prepareRenderCandidate`
+selected ranges, not a second vertex allocation.
+
+Using the production `Renderer3D::drawModel`, each test frame
+submits at most ONE of: nothing, Legacy source, Strata fine children,
+or Strata coarse parent. A floor serves as a shadow receiver.
+The normal renderer processes its main and sun shadow passes; no
+model is drawn through a second competing raster pipeline.
+Separate frames are captured with the existing Metal
+`gfx::Device::captureNextFrame`. The test requires an empty-vs-Legacy
+image difference (guards against black/blank images), then byte-exact
+Legacy-vs-fine and Legacy-vs-coarse screenshots. This **exact**
+fixture deliberately uses non-simplified parent geometry; it is not
+a crack/seam or perceptual-error allowance for coarse real-world LODs.
+
+The runner writes four binary PPM captures to the working directory
+by default (`strata-raster-empty.ppm`,
+`strata-raster-legacy.ppm`,
+`strata-raster-strata-fine.ppm`,
+`strata-raster-strata-coarse.ppm`). Set
+`AIVERSE_STRATA_RASTER_CAPTURE_PREFIX=/path/to/prefix` to choose
+the location. It checks a single ModelDraw submission per candidate
+frame, nonzero main and sun-shadow submission counters and
+zero changed channels in the compared screenshots.
+It does NOT yet read the shadow-map texture directly, exercise
+planar-water reflection or automatically use the GPU compute
+selected-range buffer as authoritative draw input. These remain
+separate acceptance tests.
+
+Manual validation on a Mac Studio:
+```sh
+cd ~/Projects/AIVERSE-strata-validation
+git status --short
+git fetch origin feature/strata-virtual-geometry
+# If clean (or after preserving local modifications):
+git switch --detach origin/feature/strata-virtual-geometry
+cmake -S . -B build/strata -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_BUILD_STRATA=ON -DAIVERSE_STRATA_METAL_GPU_TESTS=ON
+cmake --build build/strata --target \
+  aiverse_strata_metal_parity aiverse_strata_metal_raster_parity \
+  --parallel 8
+ctest --test-dir build/strata \
+  -R '^strata_(builder|model_adapter|view|gpu_scene|gpu_culling|render_routing)
+- **One scene/instance truth**: `GeometryScene` owns static render instances
+  and HLOD; do not create separate Strata transforms or introduce gameplay
+  entities solely for rendering.
+- **One grouping authority**: indirect draw grouping/material binding stays
+  in the existing renderer, with a future Strata adapter supplying visible
+  cluster ranges. Never double-submit the same primitives.
+- **GPU capability negotiation**: GLES3/WebGL2 should retain traditional
+  indexing paths. Metal/Vulkan/D3D future paths must gate compute, indirect
+  count, storage resources and synchronization independently.
+- **Multi-world**: geometry assets can be shared by handle across worlds,
+  while scene-resident instance tables and render budgets are per world/view.
+- **Dynamic terrain**: TerraWeave owns chunk geometry and versions; Strata
+  consumes immutable snapshots and schedules deferred release. PHYSIS owns
+  simulation/events, not GPU buffers.
+- **Pass separation**: main-camera, shadows, reflections and portals may
+  require distinct culling/error metrics and shadow caster inclusion.
+
+## Known shortcomings / next steps
+
+1. Compile and execute focused tests on a native project checkout:
+   ```sh
+   cmake -S . -B build/strata -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_STRATA=ON
+   cmake --build build/strata --target aiverse_strata_builder_tests aiverse_strata_model_adapter_tests aiverse_strata_view_tests aiverse_strata_gpu_scene_tests aiverse_strata_gpu_culling_tests -j 8
+   ctest --test-dir build/strata -R '^strata_(builder|model_adapter|view|gpu_scene) --output-on-failure
+   ```
+2. Add a recording-device scene fixture comparing Strata staging OFF/ON,
+   instance deduplication, material/LOD/shadow draw parity and unload/reload.
+3. Validate silhouette and seam quality for different LOD depths and attribute
+   discontinuities; parent simplification and locked borders alone do not
+   guarantee crack-free transitions.
+4. The existing `GlobalGeometryPool` now reserves auxiliary Strata index
+   spans without creating a new page, and version-2 metadata maps primitive
+   bases to their actual pooled GPU offsets. Verify on Mac Metal and Vulkan:
+   shared-buffer writes, reupload/revision invalidation, in-flight retirement,
+   surrounding rigid models, and all original fallback paths before enabling
+   submission. Default staging remains OFF.
+5. Experimental Metal compute culling now emits diagnostic GPU-selected
+   ranges but does not render them. Run native Metal compile, GPU readback
+   and sorted CPU `planView` parity, including stack/output overflow and
+   zero-to-one depth convention, before any renderer connection.
+6. Add mutually exclusive Renderer3D selected-range submission only after
+   GPU/CPU selection AND screenshot parity. Preserve legacy fallback on all
+   unsupported devices; then pursue Hi-Z, streaming and independent CPU/GPU
+   benchmarks.
+
+## Verification policy
+
+Compiler, CTest, screenshots, GPU timing and benchmarks must be reported only
+after **actual execution** with exact logs or CI URLs. Queued/cancelled runs
+are not passing results.
+ --output-on-failure
+   ```
+2. Add a recording-device scene fixture comparing Strata staging OFF/ON,
+   instance deduplication, material/LOD/shadow draw parity and unload/reload.
+3. Validate silhouette and seam quality for different LOD depths and attribute
+   discontinuities; parent simplification and locked borders alone do not
+   guarantee crack-free transitions.
+4. Extend **existing** `GlobalGeometryPool` to safely allocate an auxiliary
+   Strata index stream on an existing pooled page, with explicit scene/
+   model revision checks, upload failure rollback, frame-fenced retirement
+   and shared-buffer synchronization. Do not add a second geometry VB/IB pool.
+   All current Strata metadata offsets remain source-local, not drawable.
+5. Build a capability-gated GPU scene/cluster selection path using the
+   CPU planner as a correctness oracle. Submit visible ranges through one
+   existing `Renderer3D` batching/MDI owner, or fall back to normal models.
+6. Benchmark CPU and GPU time separately, validate view-dependent shadows,
+   reflection views and multi-world lifetime, then pursue streaming.
+
+## Verification policy
+
+Compiler, CTest, screenshots, GPU timing and benchmarks must be reported only
+after **actual execution** with exact logs or CI URLs. Queued/cancelled runs
+are not passing results.
+ \
+  --output-on-failure
+./build/strata/aiverse_strata_metal_parity
+./build/strata/aiverse_strata_metal_raster_parity
+```
+
+Expected **but NOT yet observed** for the new raster probe:
+`[strata-raster] PASS: real Renderer3D legacy vs fine/coarse source-page pixel parity`
+followed by `[strata-raster] status=PASSED`.
+Failure exit or any image difference means raster parity remains unverified.
+The prior **actual** Metal GPU compute parity 5/5 and focused CPU
+CTests 6/6 are recorded separately and must not be represented as
+proof that Stage 11 raster parity passes.
+
+`.github/workflows/strata-focused.yml` now uses the corrected
+six-test CTest regex and additionally **compiles** both native Metal
+fixtures on macOS CI. It does **not execute the GUI tests there**,
+so a green compile job alone is not evidence of GPU raster parity.
+Keep the feature PR Draft and production renderer unchanged until
+exact visual and shadow/reflection parity is demonstrated on hardware.
+
 ## Architectural constraints
 - **One scene/instance truth**: `GeometryScene` owns static render instances
   and HLOD; do not create separate Strata transforms or introduce gameplay
