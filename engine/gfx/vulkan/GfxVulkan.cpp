@@ -451,11 +451,18 @@ uint64_t VulkanDevice::beginResourceRetirement() {
 }
 
 bool VulkanDevice::resourceRetirementComplete(uint64_t token) {
+    return resourceRetirementStatus(token)==ResourceRetirementStatus::Complete;
+}
+
+ResourceRetirementStatus VulkanDevice::resourceRetirementStatus(uint64_t token) {
     const auto it=retirementFences_.find(token);
-    if(it==retirementFences_.end() || !device_)return false;
+    if(it==retirementFences_.end() || !device_ || !healthy_)
+        return ResourceRetirementStatus::Failed;
     const VkResult result=vkGetFenceStatus(device_,it->second);
+    if(result==VK_SUCCESS)return ResourceRetirementStatus::Complete;
+    if(result==VK_NOT_READY)return ResourceRetirementStatus::Pending;
     if(result==VK_ERROR_DEVICE_LOST)healthy_=false;
-    return result==VK_SUCCESS;
+    return ResourceRetirementStatus::Failed;
 }
 
 void VulkanDevice::endResourceRetirement(uint64_t token) {
