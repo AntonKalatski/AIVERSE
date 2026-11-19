@@ -94,6 +94,7 @@ public:
     };
 
     explicit Editor(Options o) : opt_(std::move(o)) {}
+    ~Editor(); // out-of-line: owns optional Spectra GPU preview resources
     void init(gfx::Device& dev);
     void frame(gfx::Device& dev, double dt);
     void event(const platform::Event& e);
@@ -256,6 +257,11 @@ public:
 
     // particle effects of the play-test (fx/fx.json + fx/*.json of the open game)
     fx::ParticleSystem& gameFx() { return gameFx_; }
+    // Queue Metal-only graph preview for the next safe pre-pass phase.
+    // Existing CPU preview is the default and never silently GPU-routed.
+    void queueSpectraGpuPreview(fx::EffectDef effect,
+        std::array<float,8> params,fx::float3 position,bool inGame,bool loop);
+    void stopSpectraGpuPreview();
     // Non-owning optional telemetry source. Editor's normal FX preview is
     // CPU-only; external Metal preview hosts explicitly attach their pool.
     // The host MUST detach it before destroying the pool.
@@ -333,6 +339,8 @@ private:
     // Particles of the Scene / Game views (EditorFxOps.cpp): after beginScene (dt, previews, event bridge,
     // particle lights into r3d_.lights); render them after Renderer3D::render.
     void tickFx(const render::RTSCamera& cam, int w, int h, const std::vector<game::SceneObject>* objects);
+    void tickSpectraGpuPreview(const render::RTSCamera& cam,int w,int h,bool game);
+    void drawSpectraGpuPreview();
     void samplePlayStats();
     void updateWorld();       // EditorWorld.cpp: preview / live rows, selection kept across rebuilds
     void syncSelection();
@@ -414,6 +422,15 @@ private:
     render::float3 sceneGoal_{};
 
     const spectra::GpuPoolWorld* spectraGpuTelemetry_=nullptr;
+    std::unique_ptr<spectra::GpuPoolWorld> spectraPreviewGpu_;
+    struct SpectraPreviewRequest {
+        fx::EffectDef effect;
+        std::array<float,8> params{};
+        fx::float3 position{};
+        bool pending=false, inGame=false, loop=false;
+    } spectraPreviewRequest_;
+    bool spectraPreviewStop_=false, spectraPreviewFrameOpen_=false;
+    bool spectraPreviewInGame_=false;
     fx::ParticleSystem gameFx_;
     game::RtsFx gameFxBridge_;
     render::TextureCache fxTextures_;          // sprite textures of effects (same loader as sprites)
