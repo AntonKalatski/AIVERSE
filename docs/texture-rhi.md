@@ -1353,3 +1353,29 @@ without allocating additional sampler slots.
 **Validation:** source-level changes committed; C++/MSL/GLSL compilation,
 GL/Metal/Vulkan renders, wrap-boundary filtering parity, batch identity tests
 and GPU profiling remain **NOT RUN** in the current environment.
+
+
+## Periodic and mirrored immutable VT page packing (Stage 10M)
+
+The standard-library `tools/virtual_texture_pack.py` CLI now accepts
+`--address-u clamp|repeat|mirror` and `--address-v clamp|repeat|mirror`
+(default: clamp). Its `pack_pages(..., address_u=..., address_v=...)`
+interface and `make_page`/`downsample_rgba` helpers apply the selected
+per-axis modes to gutters **and** to odd-size mip box filtering.
+For mirror, the edge texel is repeated at each reflection boundary.
+
+An opt-in manifest contains `addressU` and `addressV` as strings;
+legacy clamp/clamp output manifests are byte-for-byte unchanged in structure.
+The archive reader / material resolver **does not yet automatically import
+these modes** into `ModelVirtualTextureBinding`: configure the matching
+`gfx::SamplerAddressMode` in your project and use the same conventional
+source sampler mode for fallback tex1. Changing wrap policy changes archive
+content; rebuild immutable pages and bump the archive version. This is not
+a sparse-GPU page table implementation.
+
+Example: `python3 tools/virtual_texture_pack.py --layer grass.rgba
+--width 1024 --height 1024 --page-size 128 --gutter 2 --address-u repeat
+--address-v repeat --output grass-pages`.
+
+**Execution:** only source review; Python unit tests, CLI fixture, C++ native
+build and GPU seam parity NOT RUN for this newly added behavior.
