@@ -597,3 +597,22 @@ git merge origin/main
 - **Tests actually run:** **NOT RUN** (functions first, tests later); no native editor build, CTest, UI interaction, project save/reload, GameClient launch or Metal/Vulkan GPU verification. GitHub source commit only.
 - **Known limitations:** routes editor remains raw JSON (typed form/list controls are not yet built). ClientFx loads routes at startup, not on game hot reload; no route UI auto-complete for module event IDs; CPU RTS effects can duplicate opt-in routed cues if project authors specify both. Real GPU emitter visuals and stability remain unverified.
 - **Next:** inspect and implement a pooled/shared GPU batch for multiple emitters, reduce duplicated GPU pipeline/buffer allocations, and add the editor's opt-in GPU preview path; continue documenting each stage. Keep native tests and comprehensive QA deferred until feature-complete as requested.
+
+
+## 2026-11-19 — Stage 36: shared GPU billboard pipelines
+- **Branch:** `feature/spectrafx-generic-cue-queue`; main merged through `d71c6d47e532b25fb816a8bb1f96c41e5275a165` at last comparison. Implementation SHAs: `4c331bf89eeabd737497201a8b98b9d564cee914`, `d6c80e948099171e9d2ba8a29779472b290b06c5`.
+- **Changed:** `engine/fx/SpectraFxHybridEmitter.h` and `engine/fx/SpectraFxHybridPlayback.h`. `SpectraFxHybridEmitter::begin` now optionally accepts a non-owning `SpectraFxGpuBillboardRenderer*`. When provided, the emitter uses that already-initialized renderer while retaining private particle state buffers. Local renderer creation remains supported for standalone callers. `SpectraFxHybridPlayback` lazily initializes **one** billboard shader/static quad/alpha+additive pipeline pair, shares it across managed GPU emitters, does not repeatedly retry failed GPU resource initialization in the same playback lifetime, and explicitly releases the shared renderer after stopping all emitter instances in its destructor. If resource acquisition fails, the existing authored CPU fallback is used only when allowed by the emitter's policy; there is never one effect driven by both CPU and GPU owners.
+- **Scope and performance:** reduces redundant shader/pipeline and static quad allocation across active GPU emitters. GPU particle storage buffers/position textures remain per emitter; does **not** implement one global particle buffer, compute dispatch compaction, indirect live-count or cross-emitter sorting. No changes to ECS state, network saves, Graph v1 format or PRISMA.
+- **Validation actually performed:** **NOT RUN** (user requested all functions before tests). GitHub commits succeeded, but no compiler, GPU shader validation, native game/editor launch, CTest, Metal/Vulkan timing, CI, or frame capture. Do not mark this as production-ready.
+- **Known risks:** shared renderer pointer is borrowed: owners must not destroy it before all referencing emitter instances. `SpectraFxHybridPlayback` destructor now deliberately orders shutdown (emitter.reset -> shared renderer.release) before RHI device teardown. The fallback renderer state is not automatically retried after a device reset; recreate the playback object.
+- **Next:** add an explicit project/example route and preview hooks, GPU particle collision/LOD/quality with a safe CPU fallback, and full native acceptance only after features are finished.
+
+Pull:
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main
+git merge origin/main
+```
