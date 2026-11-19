@@ -2253,3 +2253,118 @@ then evaluate full camera-ray intersection with finite water
 footprints, per-pixel fog scatter quality and mobile metrics, without
 duplicating Prisma fullscreen passes. Append exact commits and
 actual test outcomes after each stage.
+
+## Stage 22 — deterministic universal water object interactions (features first)
+
+**Branch:** `feature/nereid-water-core`, draft PR #23.
+**Baseline:** Stage 21B head `3dccc0abbdcc0354e830b5e2726c7bc1ed53d5b6`.
+**Instruction from owner:** ship **functional features before tests**;
+do not add/run tests in this stage. Follow the same per-stage handoff.
+No other branches merged; `main` has not been modified.
+
+### Implementation commits and source files
+- `17aa20659cf7cdbd4b2c95752bd5e3407abf473e`:
+  NEW `libraries/include/aiverselib/water/NereidInteractions.h`;
+  fixed-point per-actor interaction configuration/history/output,
+  deterministic shared ECS system and versioned persistence.
+- `515bc35237c83821c164e95da158d1553b35cc01`:
+  corrected prepared ECS pool access (`entity.index`) and output
+  clearing when the state pool is missing.
+- `3f4fbbdaa3924a822f3a979fe8af1caa978b28d7`:
+  NEW `libraries/include/aiverselib/water/NereidInteractionPresentation.h`;
+  read-only, generation-safe, tick-filtered and bounded event snapshots,
+  deterministically sorted by actor Entity packed ID.
+- `fd652a9fc2815ed8759049499cbb54432fb90658`:
+  `libraries/include/aiverselib/water/NereidNativeWater.h`:
+  `NativeWaterPipelineConfig::enableInteractions` opt-in.
+- `d9b2fd7252914d51b95151844fdde3a9277d3cd0`:
+  `libraries/catalog.json`: package
+  `AIVERSE::lib_nereid_interactions` for native game projects.
+- `e9d6b6dcdb71201684ae07da83009799efada3a9`:
+  interaction wake depth restriction and validated bounds.
+- `1f0bbcb40b4a6232daad779ff2e2ac804804e9f8`:
+  `skills/gameplay/aiverse-nereid-water/SKILL.md`: API and usage
+  contract for future AI agents.
+
+### Architecture, API and authoritative ownership
+
+Existing `WaterBodyComponent`, `WaterContactComponent` and
+`WaterProbeComponent` remain shared NEREID ECS policy. Nothing in
+the new interaction system alters the water bodies, applies impulses
+to host rigidbodies or depends on an RTS/FPS genre.
+
+New actor ECS components:
+- `WaterInteractionComponent`: `wakeSpacing`, `surfaceWakeDepth`,
+  `wakeRadius`, `splashRadius`, `strength`, `emitSurfaceWakes`,
+  `enabled` (fixed-point; bounded).
+- `WaterInteractionStateComponent`: initialized flag,
+  previous immersion/body/surface/position and wake anchor.
+  **Persist this for save and rollback**, otherwise replay would
+  spontaneously create entry/wake events.
+- `WaterInteractionOutputComponent`: one bounded event per actor
+  per tick, `kind/water/position/radius/strength/tick`.
+  Event kinds: `None`, `Enter`, `Exit`, `SurfaceWake`,
+  `SwitchBody`.
+
+Native use:
+```cpp
+#include <aiverselib/water/NereidNativeWater.h>
+#include <aiverselib/water/NereidInteractionPresentation.h>
+aiverse::lib::nereid::NativeWaterPipelineConfig cfg;
+cfg.enableGeometry=true;
+cfg.enableBuoyancy=true;       // optional, independent
+cfg.enableInteractions=true;   // NEW
+aiverse::lib::nereid::registerNativeWaterPipeline(sim,"water",cfg);
+
+// Each participating actor must have:
+// WaterProbeComponent, WaterContactComponent,
+// WaterInteractionComponent, WaterInteractionStateComponent,
+// WaterInteractionOutputComponent.
+// On a post-step presentation read barrier:
+auto events=aiverse::lib::nereid::snapshotWaterInteractionEvents(
+    sim.world(),sim.tick());
+for(const auto& e:events) {
+    // Host dispatches to SpectraFX/SFX/ripple presentation.
+}
+```
+Schedule: native probe-from-Transform (if enabled) ->
+adaptive/contact sampling -> buoyancy (if enabled) -> interaction
+emission -> host presentation. Missing/stale current-tick sample
+never produces a new event; initial submerged spawn initializes
+history without a fake splash. Enter, Exit and switching bodies
+emit explicit events. Surface wakes are distance-spaced and require
+a near-surface contact; deep swimmers do not leave a surface wake.
+Outputs reset each tick so consumers must match `output.tick`.
+The helper returns a deterministically ordered snapshot, not an
+authoritative mutable global event queue.
+
+VFX spawning and ripple rendering remain **host integrations**, not
+automatically performed by this ECS module. Configured event size
+and strength allow different visuals per project without genre
+dependencies. ECS state is serializable via the registered
+`nereid.interaction`, `nereid.interaction_state` and
+`nereid.interaction_output` schema identifiers, version 1.
+
+### Verification, limits and next functional stage
+
+**Actually performed:** inspected connected GitHub NEREID policies,
+current ECS pool methods, authored source/library catalog/skill and
+committed all changes. **Native compile, CTest, full run-tests, GPU
+visual checks, FPS/RTS gameplay parity: NOT RUN / UNVERIFIED.**
+Tests were deliberately deferred per owner instruction.
+
+Known limits: no automatic VFX/audio playback or water surface
+height deformation; contact sampling is a flat body surface and
+does not reflect GPU displacement waves. Each actor outputs at most
+one event per tick; wake density is distance-throttled. Physical
+splash momentum, fluid momentum transfer, floating wake propagation
+and waterfalls are future work. The host must add all relevant actor
+components and own rigidbody integration.
+
+**Next step (features before tests):** implement a renderer-neutral
+transient ripple/wake field consuming these read-only events and
+supporting radial propagation, decay and bounded memory. Bridge
+to water shader via NEREID presentation data, with optional SpectraFX
+spawn mapping. Then implement waterfalls/cascades and physical flow
+interactions. Update this handoff after each stage. Run tests only
+after functional backlog is done or owner changes priority.
