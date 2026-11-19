@@ -94,7 +94,7 @@ class StaticCrossModelPreflightWorkspace {
 public:
     static constexpr uint32_t kMaxGroups = 2048;
     static constexpr uint32_t kHashSlots = 4096; // power-of-two, <=50% full
-    static constexpr uint16_t kInvalidGroup = UINT16_MAX;
+    static constexpr uint16_t kInvalidGroup = std::numeric_limits<uint16_t>::max();
 
     struct Entry {
         StaticCrossModelPreflightKey key{};
