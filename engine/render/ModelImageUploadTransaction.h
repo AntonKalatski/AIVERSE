@@ -24,6 +24,10 @@ namespace aiverse::render {
 class ModelImageRollbackPool final {
 public:
     using Batch=std::vector<Image>;
+    using DiagnosticObserver=AsyncResourceRetirementQueue<Batch>::DiagnosticObserver;
+    void setRetirementDiagnosticObserver(DiagnosticObserver observer) {
+        queue_.setDiagnosticObserver(std::move(observer));
+    }
     static void destroyImages(gfx::Device& device,Batch& images) {
         for(auto& image:images) {
             if(image.tex.valid() && !image.borrowedTexture)
