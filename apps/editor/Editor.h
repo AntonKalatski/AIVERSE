@@ -24,6 +24,7 @@
 #include "core/Workspace.h"
 #include "core/FieldOps.h"
 #include "core/WorldInspect.h"
+#include "core/VisualAssetDependencyService.h"
 #include "engine/fx/ParticleSystem.h"
 #include "engine/render/TextureCache.h"
 #include "engine/gfx/Gfx.h"
@@ -321,6 +322,8 @@ private:
     void buildEditScene(game::RtsScene& out) const;
     void drawEditOverlays3D();
     void applyChanges();
+    void pollVisualAssets(double dt); // editor-owned asset watcher, independent of windows
+    bool convertVisualModelSource(const std::string& source);
     void pollAgentLink();
     void registerGuiOps();
     void registerPlayOps();   // EditorPlayOps.cpp
@@ -353,6 +356,7 @@ private:
     game::RtsView view_;
     bool lazyEditorAssets_ = true;
     game::view_adapter::RtsModelDemandScheduler modelDemand_;
+    VisualAssetDependencyService visualAssets_;
     bool showPicker_ = false;
     bool resetLayout_ = false;
     bool layoutChecked_ = false;
