@@ -8272,3 +8272,58 @@ and variable VT atlas/table slots 13+N / 14+N; preserve the
 legacy non-graph ICB layout. Source injection must hide direct
 graph fragment arguments in an ICB variant and keep constexpr
 sampler 16. Only then permit graph ICB shader preparation.
+
+
+## Stage 10AI — Metal fragment Shader Graph ICB shader ABI (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, #21 Draft.
+**Source commits:**
+- `62f0a64781fa2f382687aab81a5ee233b8a4a14b` —
+  `engine/render/ModelShaders.h`: conditional
+  `IcbPbrTextures` argument buffer layout for up to four
+  graph source slots at IDs 26/28/30/32 and optional VT
+  atlas/table after graph slot N (13+N/14+N).
+  Dynamic Metal samplers only for slots 13..15;
+  source tex16 uses constexpr sampler. Old non-graph
+  argument table remains.
+- `dad58a1c93fbd9ed7326cd6221e896417254b68f` —
+  `engine/render/Renderer3DModels.cpp`: generated
+  `AIVERSE_SG_ICB_GRAPH` and `AIVERSE_SG_TEXTURE_COUNT`
+  preprocessor metadata for fragment-only opaque graphs;
+  guard direct graph fragment function parameters behind
+  `!AIVERSE_ICB_PBR` and remap source graph sampler aliases
+  to `icbTextures` in the ICB fragment variant.
+- `c7739abe8c53587edb0960a3b49bd141c55cdc5b` —
+  `engine/gfx/metal/GfxMetal.mm`: opt-in graph-specific
+  PBR ICB fragment pipeline compilation, count parsing
+  and bounds checks, per-command native graph resources
+  and sampler validation/bindings; dynamic VT atlas/page
+  table argument indices follow authored graph sources.
+
+**Docs commits:** `0906abab6d7950d5a30048a73dc106c1c7a119bb` docs/texture-rhi.md;
+`ece2a42f027e79307f7774e54b4df61728a0afbd`
+skills/visuals/aiverse-texture-rhi/SKILL.md.
+
+**Architecture/invariants:** no fallback or non-graph
+shader path changed intentionally. Graphs with any
+vertex output or unsupported material shader variant
+are not marked for GPU ICB. Resource IDs in the
+argument buffer follow the RHI texture slot convention
+2*slot; the 4th graph source has no dynamic sampler
+state in Metal. Metadata controls the MSL variant,
+not serialized game-specific code. Shader Graph
+`Program` itself remains backend agnostic.
+
+**Actual verification:** inspected direct and ICB
+ModelShaders.h/Renderer3D graph injection contract,
+committed source and docs through GitHub. **C++
+compile NOT RUN, Objective-C++ NOT RUN, MSL shader
+compiler NOT RUN, CTest NOT RUN, Metal GPU execution
+NOT RUN, image parity NOT RUN.** No release claim.
+
+**Next:** opt-in only fragment-only opaque shader graphs
+in `Renderer3D::prepareGpuModelDraws`, fill per-command
+graph source handle arrays and generation-aware tickets
+for both normal and VT-enabled graph layouts, and preserve
+the existing CPU/legacy safe fallback. Then explicitly
+exclude graph stages requiring direct vertex textures.
