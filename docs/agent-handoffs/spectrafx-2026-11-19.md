@@ -83,3 +83,13 @@ cmake -S . -B build/spectrafx-validation -DCMAKE_BUILD_TYPE=Debug
 cmake --build build/spectrafx-validation --parallel
 ctest --test-dir build/spectrafx-validation --output-on-failure -R 'fx|particle|vfx'
 ```
+
+
+## 2026-11-19: Stage 4 — real SimEvent type mapping (unverified)
+
+- **Implementation commit:** `7fb57936d57524b5acb2e9f57d77621c92eda4cb`; branch `feature/spectrafx-generic-cue-queue`; remote main `9ee6ff6`, 0 behind at stage start.
+- **Changed:** `engine/fx/SpectraFxEventMap.h` (new).
+- **API:** `SpectraFxEventRule` configures cueId/action/scale/tint per native `SimEvent::type`; `SpectraFxEventMap::bind/unbind/clear/rule/translate/translateOneShot` translates genuine `SimEvent` values into `SpectraFxCue` with read-only Fixed to float presentation positions. `installSpectraFxEventMap(sim,map,bridge,queue)` registers the `.collect` adapter for one-shot events. Persistent Move/Stop/Kill need an explicit host key policy via `translate(..., keyFor)`; zero keys are rejected for these actions. No assumptions about RTS/FPS type IDs.
+- **Authority:** `SimEvent` remains the game's sole event source, Graph/FX remain presentation, no ECS/save/checksum changes. The map, bridge and queue must outlive the registered Simulation.
+- **Tests actually executed:** **NOT RUN** (connector-only changes: no native compile, CTest, CI or editor QA); gameplay integrations are optional and are not wired into live RTS/FPS host loops.
+- **Next:** add a minimal graph representation with bounded DAG validation and explicit execution to SpectraFxCueBridge; keep runtime FX effects in existing ParticleSystem. Then add actual native tests/genre host integration and verify compilation before production use.
