@@ -170,10 +170,12 @@ inline ForestNutrientCycleOutcome advanceForestNutrientCycle(
         // NEREID water bodies or through an absent/dry destination.
         if(!target.submergedPermille ||
            target.waterBodyKey!=sampled.waterBodyKey)continue;
-        const uint64_t move=std::min<uint64_t>(
-            std::min<uint64_t>(
-                source.dissolvedUnits,settings.maxAdvectionUnitsPerCell),
-            (std::min<uint64_t>(uint64_t(speed),100)*source.dissolvedUnits)/100);
+        // Scale only the capped per-step transfer, not potentially huge
+        // historical reservoir totals (avoid uint64 overflow).
+        const uint64_t capped=std::min<uint64_t>(
+            source.dissolvedUnits,settings.maxAdvectionUnitsPerCell);
+        const uint64_t move=capped*
+            std::min<uint64_t>(uint64_t(speed),100)/100;
         if(!move)continue;
         auto& src=water[{source.x,source.z}];
         if(src<move)
@@ -213,6 +215,7 @@ inline uint64_t exportForestDissolvedNutrients(
         uint64_t maximumUnits) {
     validateForestDeadwoodResource(resource);
     if(!maximumUnits)return 0;
+    using Cell=std::pair<int64_t,int64_t>;
     auto copy=resource;
     const auto it=std::lower_bound(
         copy.water.begin(),copy.water.end(),Cell{x,z},
