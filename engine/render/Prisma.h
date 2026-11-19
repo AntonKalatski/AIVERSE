@@ -117,6 +117,12 @@ public:
         externalRendererLiveKnownBytes_ = liveKnownBytes;
         externalRendererPendingKnownBytes_ = pendingKnownBytes;
     }
+    // The global geometry pool has separate ownership and lifetime from
+    // Renderer3D's directly-owned GPU buffers. Count its page allocations
+    // once per Prisma device, never for each Model referencing a page.
+    void setExternalGeometryPoolGpuMemory(uint64_t livePageBytes) {
+        externalGeometryPoolKnownBytes_ = livePageBytes;
+    }
 
     // An actual completed GPU-query interval for one view, NOT a whole
     // frame metric. The host owns polling, never block for a query result.
@@ -299,6 +305,7 @@ private:
     std::map<uint64_t, AdaptivePressure> adaptivePressure_;
     uint64_t externalRendererLiveKnownBytes_ = 0;
     uint64_t externalRendererPendingKnownBytes_ = 0;
+    uint64_t externalGeometryPoolKnownBytes_ = 0;
     // Last successful postprocess scene pass per stable view ID. A size cache
     // can be shared by several views; retireView() removes a view reference.
     std::map<uint64_t, std::pair<int, int>> viewDimensions_;
