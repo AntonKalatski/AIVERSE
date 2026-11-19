@@ -1240,6 +1240,13 @@ void Renderer3D::prepareGpuModelDraws() {
         const char* flag = std::getenv("AIVERSE_GPU_ENCODED_ICB");
         return flag && std::strcmp(flag, "1") == 0;
     }();
+    // Prototype the actual Metal per-command argument-buffer ABI without
+    // broadening group equivalence yet. It is OFF by default, and
+    // heterogeneous VT grouping is a separately gated feature stage.
+    static const bool perCommandVt = [] {
+        const char* flag = std::getenv("AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT");
+        return flag && std::strcmp(flag,"1")==0;
+    }();
     static const bool adaptiveGpuIcb = [] {
         const char* flag = std::getenv("AIVERSE_GPU_ICB_ADAPTIVE");
         return flag && std::strcmp(flag, "1") == 0;
@@ -1509,16 +1516,49 @@ void Renderer3D::prepareGpuModelDraws() {
             for (size_t j = first; j < end; ++j)
                 packModelInstance(modelItems_[indices[j]], 1, {1, 1, 1, 1},
                                   instanceRecords.data() + (j - first) * 36u);
-            const uint32_t token = dev_->prepareGpuEncodedIndexedIcb(
-                gpuModelCommands_.output(gpuModelFrame_, gpuModelSubmission_),
-                modelItems_[indices[first]].model->vb,
-                modelItems_[indices[first]].model->ib,
-                sourceSlots.data(), uint32_t(sourceSlots.size()),
-                instanceRecords.data(), instanceRecords.size() * sizeof(float));
+            // Per-command Metal argument descriptors are opt-in. The
+            // grouping above is still homogeneous and validated exactly,
+            // so this stage exercises the GPU ABI without relaxing safe
+            // material-equivalence requirements.
+            const bool materialMode = perCommandVt && vtEnabled[indices[first]];
+            std::vector<gfx::GpuIcbVirtualMaterial> commandMaterials;
+            if (materialMode) {
+                commandMaterials.reserve(end-first);
+                for (size_t j=first;j<end;++j) {
+                    const auto& binding=vtBindings[indices[j]];
+                    gfx::GpuIcbVirtualMaterial descriptor;
+                    descriptor.physicalAtlas=binding.physicalAtlas;
+                    descriptor.pageTable=binding.pageTable;
+                    descriptor.params[0]=float(binding.layer);
+                    descriptor.params[1]=binding.gutterPixels;
+                    descriptor.params[2]=float(uint32_t(binding.addressU));
+                    descriptor.params[3]=float(uint32_t(binding.addressV));
+                    const auto& item=modelItems_[indices[j]];
+                    if (item.mat->alpha==AlphaMode::Mask &&
+                        item.mat->baseTex>=0 &&
+                        size_t(item.mat->baseTex)<item.model->images.size())
+                        descriptor.alphaCoverage=item.model->images[
+                            size_t(item.mat->baseTex)].virtualAlphaMask;
+                    commandMaterials.push_back(descriptor);
+                }
+            }
+            const auto output=gpuModelCommands_.output(
+                gpuModelFrame_,gpuModelSubmission_);
+            const auto vb=modelItems_[indices[first]].model->vb;
+            const auto ib=modelItems_[indices[first]].model->ib;
+            const uint32_t token=materialMode ?
+                dev_->prepareGpuEncodedIndexedIcbWithVirtualMaterials(
+                    output,vb,ib,sourceSlots.data(),uint32_t(sourceSlots.size()),
+                    instanceRecords.data(),instanceRecords.size()*sizeof(float),
+                    commandMaterials.data()) :
+                dev_->prepareGpuEncodedIndexedIcb(
+                    output,vb,ib,sourceSlots.data(),uint32_t(sourceSlots.size()),
+                    instanceRecords.data(),instanceRecords.size()*sizeof(float));
             if (token) {
                 GpuEncodedBatch group;
                 group.items.assign(indices.begin() + first, indices.begin() + end);
                 group.token = token;
+                group.perCommandVt = materialMode;
                 group.usesVirtualTexture = vtEnabled[indices[first]] != 0;
                 group.virtualTexture = vtBindings[indices[first]];
                 const auto& firstModel = modelItems_[indices[first]];
