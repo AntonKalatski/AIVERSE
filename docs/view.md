@@ -2757,3 +2757,35 @@ to the renderer.
 
 **NOT RUN:** native compiler/build/CTest, real GPU backend visual
 tests, sanitizers or benchmarks. Review [Stage 122 handoff](agent-handoffs/animation-stage122-rig-retarget-2026-11-19.md).
+
+## Stage 123 — precompiled asset-generation retarget plans for crowds
+
+The genre-neutral `aiverse::View` now supports immutable
+`CompiledModelPoseRetarget` plans for whole-model visual LODs.
+`compileModelPoseRetarget` verifies authored target-to-source
+node/morph mappings, source/target bind transforms and scales at
+the asset publication boundary; it stores a compact step per
+visual bone. `retargetCompiledModelPose` applies only current
+source Pose deltas and builds the current visual pose/world
+matrices; there is no repeated ancestry check or temporary
+visited-node validation allocation per actor.
+
+A compiled plan is tied to the **nonzero, host-owned publication
+generations and exact pointers of BOTH Models**. Generic
+`view::Object::animationModelGeneration` and
+`ModelLod::visualModelGeneration` must match the plan. Bumping
+either generation on hot reload rejects the old plan even if
+the allocator reused a pointer; the visual remains in bind
+pose until a replacement plan is published. Legacy callers
+using only `ModelLod::retarget` still use the slower, checked
+runtime path. Source MotionWeave graph, pose authority and
+source-rig attachments remain unchanged.
+
+`View::modelRetargetStats()` reports compiled draws,
+stale/rejected plans, exact pose reuse, legacy validation and
+bind-pose fallbacks per presentation frame. RTS compiled LOD
+draws are a separate legacy adapter and not counted here.
+No performance increase is claimed without benchmarking.
+
+**NOT RUN:** native compile/link, CTest/CI, Metal/GL/Vulkan,
+sanitizers or FPS/RTS/editor visual parity. See [Stage 123 handoff](agent-handoffs/animation-stage123-compiled-retarget-cache-2026-11-19.md).
