@@ -104,6 +104,20 @@ bool GeometryScene::collectStrataGpuInstances(
 #endif
 }
 
+bool GeometryScene::requestStrataGpuReadback(
+    gfx::Device& device, const strata::GpuSelectionSubmission& submission,
+    std::function<void(strata::GpuSelectionReadback)> callback) {
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    if (!strataGpuCullingEnabled_ || !strataGpuCulling_ ||
+        strataGpuDevice_ != &device || !callback) return false;
+    return strataGpuCulling_->requestReadback(device, submission,
+                                            std::move(callback));
+#else
+    (void)device; (void)submission; (void)callback;
+    return false;
+#endif
+}
+
 bool GeometryScene::dispatchStrataGpuView(
     gfx::Device& device, const std::string& sourceKey,
     const strata::GpuPassConfig& pass, uint64_t frameSerial,
