@@ -241,14 +241,29 @@ layout(std430,set=0,binding=1) readonly buffer Counters {
     uint produced, overflow, examined, invalid;
 } counters;
 layout(push_constant) uniform Params {
-    uint capacity;
+    uint capacity, fallbackEnabled, fallbackFirstIndex, fallbackIndexCount;
+    int fallbackBaseVertex;
 } settings;
 void main(){
     const uint id=gl_GlobalInvocationID.x;
     if(id>=settings.capacity)return;
     if(counters.overflow!=0u || counters.invalid!=0u ||
-       counters.produced>settings.capacity)
-        indirect.commands[id].indexCount=0u;
+       counters.produced>settings.capacity){
+        // A validated one-material source can render its ORIGINAL indexed
+        // primitive instead of disappearing on GPU selection failure.
+        // Without that strict host contract all commands are disabled and
+        // normal CPU/Legacy routing must own the production presentation.
+        if(id==0u && settings.fallbackEnabled!=0u){
+            indirect.commands[id].indexCount=settings.fallbackIndexCount;
+            indirect.commands[id].instanceCount=1u;
+            indirect.commands[id].firstIndex=settings.fallbackFirstIndex;
+            indirect.commands[id].vertexOffset=settings.fallbackBaseVertex;
+            indirect.commands[id].firstInstance=0u;
+        }else{
+            indirect.commands[id].indexCount=0u;
+            indirect.commands[id].instanceCount=0u;
+        }
+    }
 }
 )GLSL";
 
