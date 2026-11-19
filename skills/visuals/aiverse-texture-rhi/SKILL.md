@@ -1392,3 +1392,35 @@ Keep PR #21 Draft and all GPU ICB feature flags OFF in
 production. Next after GPU PASS: missing/nonresident disk
 fallbacks, wrap seam fidelity, GL/Vulkan/mobile non-ICB parity,
 and representative stress/performance.
+
+## Stage 10BX — hardware-proven Shader Graph + two disk VT domains + Metal ICB
+
+**Mac Studio Apple M3 Ultra: real GPU acceptance PASS**, user-supplied
+native `metal_renderer_graph_vt_icb_gpu` log: **1/1 PASS**, test
+**4.57 s**, CTest elapsed **4.58 s**. Production Renderer3D,
+compiled material Shader Graph with four ordinary source textures
+and `sampleVirtualTexture`, two independent `VirtualTextureFileStreamer`
+archives, per-command VT materials and heterogeneous GPU-authored
+ICB executed for three page-residency states.
+
+| State | Mixed graph/VT ICB submissions | Renderer3D pixel comparison |
+|---|---|---|
+| Pinned coarse | graph=1, mixedGraph=1, vt=1, mixedVt=1, commands=2 | bad_channels=0, max_delta=0 |
+| Fine detail | same | bad_channels=0, max_delta=0 |
+| LRU recycled | same | bad_channels=0, max_delta=0 |
+
+`rejected=0 errors=0` in all three phases. The native
+capture changed by **1392 channels** at fine-page publication
+and **2886 channels** after LRU slot reuse, proving that
+the test exercised actual page transitions and not a static image.
+See `docs/texture-rhi.md` Stage 10BX for exact evidence.
+
+**Still not verified:** nonresident/missing-file page fallback,
+Repeat/MirrorRepeat sampling at UV seams outside [0,1],
+multiple graph source counts, alpha/deformed graph variants,
+GL/Vulkan/mobile/WebGL compatibility, performance and driver stress.
+Never infer FPS improvement from the CTest duration. GPU ICB
+and its opt-in risky CMake tests remain default OFF; PR #21 Draft.
+For the next stage, reuse canonical page sampling and disk workers,
+and create a separate acceptance suite with visual seam/fallback
+oracles rather than rewriting the VT implementation.
