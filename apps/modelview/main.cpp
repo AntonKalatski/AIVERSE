@@ -21,6 +21,7 @@
 #include "../../engine/render/FailedModelUpload.h"
 #include "../../engine/view/View.h"
 #include "../../engine/view/ImportedAttachmentAuthoring.h"
+#include "../../engine/view/AttachmentLayout.h"
 #include "imgui.h"
 #include "Gallery.h"
 
@@ -47,6 +48,8 @@ struct AttachmentSpec {
     std::string modelSource;
     std::string socketName;
     bool enabled=true;
+    render::mat4 local{};
+    render::mat4 childWorld{};
 };
 struct Instance {
     Model* model = nullptr;
@@ -275,17 +278,15 @@ struct Viewer {
         std::string contents;
         if(!readFile(attachmentConfigPath,contents))return; // new file
         try {
-            const auto authored=Json::parse(contents);
-            if(!authored["attachments"].isArray())
-                throw std::invalid_argument("attachment config requires an attachments array");
+            ::aiverse::view::AttachmentLayout document;
+            ::aiverse::view::AttachmentLayoutCodec::read(
+                Json::parse(contents),document);
             std::vector<AttachmentSpec> fromFile;
-            for(const auto& entry:authored["attachments"].items()) {
-                const auto child=entry.getStr("model");
-                const auto socket=entry.getStr("socket");
-                if(child.empty() || socket.empty())
-                    throw std::invalid_argument("attachment needs model and named socket");
-                fromFile.push_back({child,socket,entry.getBool("enabled",true)});
-            }
+            fromFile.reserve(document.attachments.size()+attachmentSpecs.size());
+            for(const auto& entry:document.attachments)
+                fromFile.push_back({
+                    entry.model,entry.socket,entry.enabled,
+                    entry.local,entry.childWorld});
             fromFile.insert(fromFile.end(),attachmentSpecs.begin(),attachmentSpecs.end());
             attachmentSpecs=std::move(fromFile);
         }catch(const std::exception& e) {
@@ -297,16 +298,13 @@ struct Viewer {
         if(attachmentConfigPath.empty())
             attachmentConfigPath=files.empty()?"attachments.json":
                 files.front().first+".attachments.json";
-        auto root=Json::object();
-        auto items=Json::array();
-        for(const auto& entry:attachmentSpecs) {
-            auto item=Json::object();
-            item.set("model",Json::string(entry.modelSource));
-            item.set("socket",Json::string(entry.socketName));
-            item.set("enabled",Json::fromBool(entry.enabled));
-            items.push(item);
-        }
-        root.set("attachments",items);
+        ::aiverse::view::AttachmentLayout document;
+        document.parent=files.empty()?std::string{}:files.front().first;
+        for(const auto& entry:attachmentSpecs)
+            document.attachments.push_back({
+                entry.modelSource,entry.socketName,entry.enabled,
+                entry.local,entry.childWorld});
+        const auto root=::aiverse::view::AttachmentLayoutCodec::write(document);
         std::ofstream file(attachmentConfigPath,std::ios::binary|std::ios::trunc);
         if(!file || !(file<<root.dump(2)))
             log.push_back("failed to save attachment config: "+attachmentConfigPath);
@@ -365,6 +363,8 @@ struct Viewer {
                     Imported::ChildRequest child;
                     child.appearance=children.at(entry.modelSource);
                     child.socketName=entry.socketName;
+                    child.local=entry.local;
+                    child.childWorld=entry.childWorld;
                     requested.push_back(std::move(child));
                 }
                 Imported::Compiled compiled;
@@ -686,6 +686,13 @@ struct Viewer {
                     attachmentsDirty=true;
                 ImGui::SameLine();
                 ImGui::Text("%s @ %s",spec.modelSource.c_str(),spec.socketName.c_str());
+                float offset[]={spec.local.m[12],spec.local.m[13],spec.local.m[14]};
+                if(ImGui::DragFloat3("Socket offset",offset,0.01f)) {
+                    spec.local.m[12]=offset[0];
+                    spec.local.m[13]=offset[1];
+                    spec.local.m[14]=offset[2];
+                    attachmentsDirty=true;
+                }
                 ImGui::SameLine();
                 if(ImGui::SmallButton("Detach")) {
                     attachmentSpecs.erase(attachmentSpecs.begin()+i);
