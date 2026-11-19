@@ -350,7 +350,7 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
     // Stable (entity,node) pairs are the identity: repeated primitives and
     // instancing batches cannot accidentally advance history multiple times.
     using Key = std::pair<uint64_t, int>;
-    std::map<Key, mat4> current;
+    std::map<Key, MotionRigidPose> current;
     auto eligible = [](const ModelItem& it) {
         return it.motionPersistentId != 0 && it.motionNodeIndex >= 0 &&
             it.rigid && it.inView && it.tint.w >= 0.99f &&
@@ -367,7 +367,7 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
     for (const auto& it : modelItems_)
         if (eligible(it))
             current.try_emplace(Key{it.motionPersistentId,it.motionNodeIndex},
-                                it.world);
+                                MotionRigidPose{it.model,it.world});
 
     using DeformKey = std::tuple<uint64_t,int,size_t>;
     std::map<DeformKey, MotionDeformPose> currentDeformed;
@@ -623,7 +623,9 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
         const auto lastModel = [&](const ModelItem& it) {
             const Key key{it.motionPersistentId,it.motionNodeIndex};
             const auto previous = history.previous.find(key);
-            return previous == history.previous.end() ? it.world : previous->second;
+            return previous == history.previous.end() ||
+                   previous->second.sourceModel != it.model
+                ? it.world : previous->second.world;
         };
         for (const auto& [key, items] : batches) {
             for (size_t first = 0; first < items.size();) {
@@ -679,9 +681,10 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                     continue;
                 const Key key{it.motionPersistentId,it.motionNodeIndex};
                 const auto previous = history.previous.find(key);
-                if (previous == history.previous.end()) continue;
+                if (previous == history.previous.end() ||
+                    previous->second.sourceModel != it.model) continue;
                 const mat4 currentMvp = viewProj_ * it.world;
-                const mat4 previousMvp = previousCamera * previous->second;
+                const mat4 previousMvp = previousCamera * previous->second.world;
                 MaskU u{};
                 std::memcpy(u.current,currentMvp.m,sizeof u.current);
                 std::memcpy(u.previous,previousMvp.m,sizeof u.previous);
