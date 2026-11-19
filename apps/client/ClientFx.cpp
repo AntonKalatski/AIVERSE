@@ -47,6 +47,8 @@ void ClientFx::init(gfx::Device& dev, const game::Rules& rules) {
             gpuPlayback_=std::make_unique<fx::SpectraFxHybridPlayback>(
                 dev,ps_,*gpuLibrary_);
             gpuPlayback_->configureGpuBudget(gpuBudget);
+            gpuPlayback_->setCpuEncodeProfiling(
+                std::getenv("AIVERSE_FX_DEBUG") != nullptr);
             for(const auto& [type,route]:gpuRoutes_)
                 if(route.playback.enabled)
                     gpuPlayback_->route(uint32_t(type),route.playback);
@@ -165,6 +167,25 @@ void ClientFx::update(Simulation& sim, const game::RtsScene& scene, const render
                     gpuPlayback_->nominalGpuBytes()/1024),
                 double(budget.filteredFrameMs),double(budget.spawnScale),
                 static_cast<unsigned long long>(budget.samples));
+            const auto& encode=gpuPlayback_->stats();
+            if(encode.cpuUpdateSamples||encode.cpuDrawSamples) {
+                const auto avgUpdate=encode.cpuUpdateSamples?
+                    double(encode.cpuUpdateEncodeUs)/encode.cpuUpdateSamples:0.0;
+                const auto avgDraw=encode.cpuDrawSamples?
+                    double(encode.cpuDrawEncodeUs)/encode.cpuDrawSamples:0.0;
+                std::fprintf(stderr,
+                    "[spectrafx-cpu-encode] updateAvgUs=%.2f updatePeakUs=%llu "
+                    "drawAvgUs=%.2f drawPeakUs=%llu "
+                    "sharedPrograms=%llu createErrors=%llu\n",
+                    avgUpdate,
+                    static_cast<unsigned long long>(encode.cpuUpdatePeakUs),
+                    avgDraw,
+                    static_cast<unsigned long long>(encode.cpuDrawPeakUs),
+                    static_cast<unsigned long long>(
+                        encode.sharedComputePrograms),
+                    static_cast<unsigned long long>(
+                        encode.sharedComputeFailures));
+            }
         }
     }
 }
