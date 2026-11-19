@@ -92,6 +92,7 @@ PostFxQuality PostFx::defaultQualityFor(const gfx::Device& dev, bool mobile) {
 }
 
 bool PostFx::init(gfx::Device& dev) {
+    checkGpuDevice(dev);
     dev_ = &dev;
     const float tri[6] = {-1, -1, 3, -1, -1, 3};
     gfx::BufferDesc bd; bd.data = tri; bd.size = sizeof tri; bd.label = "postfx triangle";
@@ -102,10 +103,11 @@ bool PostFx::init(gfx::Device& dev) {
     return triangle_.valid();
 }
 
-void PostFx::release(gfx::TextureHandle& t) { if (t.valid() && dev_) dev_->destroyTexture(t); t = {}; }
+void PostFx::release(gfx::TextureHandle& t) { if (t.valid() && dev_) {checkGpuDevice(*dev_); dev_->destroyTexture(t);} t = {}; }
 
 void PostFx::shutdown() {
     if (!dev_) return;
+    checkGpuDevice(*dev_);
     for (auto& s : sizes_) {
         for (auto& [r, t] : s.targets) release(t.tex);
         for (auto& [k, d] : s.depths) release(d);
@@ -338,6 +340,7 @@ gfx::TextureHandle PostFx::graphTexture(const std::string& path) {
 }
 
 gfx::PassDesc PostFx::scenePass(const gfx::PassDesc& out, int w, int h) {
+    if(dev_)checkGpuDevice(*dev_);
     hdrFrame_ = hdrRequested();
     Sized& s = sized(w, h);
     gfx::PassDesc p = out;
@@ -378,6 +381,7 @@ void PostFx::draw(Sized& s, const Target& dst, gfx::PipelineHandle pipe, const v
 }
 
 void PostFx::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame& f) {
+    checkGpuDevice(dev);
     stats_ = {};
     if (!sceneReady_) { auto p = out; p.clearColorEnabled = p.clearDepthEnabled = false; dev.beginPass(p); return; }
     const int w = std::max(f.width, 1), h = std::max(f.height, 1);
