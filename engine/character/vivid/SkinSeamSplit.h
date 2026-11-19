@@ -84,14 +84,23 @@ public:
         for(auto& [key,unused]:sourceByPrimitive) {
             (void)unused;
             auto& p=meshes[key.mesh].primitives[key.primitive];
-            // Legacy baked morph atlas / mesh shadow and material batches
-            // refer to primitive-relative vertex ranges and must be rebuilt
-            // separately. Fail closed instead of publishing stale draws.
-            if(!p.morphDeltas.empty() || p.morphTargets!=0 ||
-               meshes[key.mesh].shadowBatch.indexCount ||
-               !meshes[key.mesh].materialBatches.empty())
+            // An already GPU-baked legacy morph texture cannot be safely
+            // rewritten in place. CPU morph arrays can be reindexed below.
+            if(model.morphTex.valid() || p.morphTargets<0 ||
+               p.morphTargets>render::kMaxMorphTargets)
                 throw std::invalid_argument(
-                    "VIVID seam split: legacy morph/batched primitive requires rebake");
+                    "VIVID seam split: GPU legacy morph atlas is already resident");
+            if(p.morphTargets!=0 &&
+               (p.vertexCount==0 ||
+                std::size_t(p.morphTargets)>std::numeric_limits<std::size_t>::max()/
+                    (std::size_t(p.vertexCount)*6) ||
+                p.morphDeltas.size()!=
+                    std::size_t(p.morphTargets)*p.vertexCount*6))
+                throw std::invalid_argument(
+                    "VIVID seam split: legacy morph source stride invalid");
+            if(!p.morphDeltas.empty() && p.morphTargets==0)
+                throw std::invalid_argument(
+                    "VIVID seam split: orphan legacy morph deltas");
             const auto first=std::size_t(p.firstIndex);
             if(first>indices.size() ||
                p.indexCount>indices.size()-first ||
@@ -112,6 +121,30 @@ public:
             if(ordered.size()>maxClones-result.clones.size() ||
                ordered.size()>std::numeric_limits<std::uint32_t>::max()-vertices.size())
                 throw std::invalid_argument("VIVID seam split: clone budget exceeded");
+            // Repack legacy per-primitive deltas as
+            // [target][new local vertex][position xyz,normal xyz].
+            // Original primitive.firstVertex is the only authoritative
+            // local-index origin. Reject noncontiguous legacy references.
+            std::vector<float> repackedLegacy;
+            if(p.morphTargets>0) {
+                repackedLegacy.reserve(std::size_t(p.morphTargets)*
+                                       ordered.size()*6);
+                const std::uint64_t oldBegin=p.firstVertex;
+                const std::uint64_t oldEnd=oldBegin+p.vertexCount;
+                for(auto source:ordered)
+                    if(source<oldBegin||source>=oldEnd)
+                        throw std::invalid_argument(
+                            "VIVID seam split: legacy morph references outside vertex interval");
+                for(int target=0;target<p.morphTargets;++target)
+                    for(auto source:ordered) {
+                        const std::size_t from=
+                            (std::size_t(target)*p.vertexCount+
+                             (source-p.firstVertex))*6;
+                        repackedLegacy.insert(repackedLegacy.end(),
+                            p.morphDeltas.begin()+std::ptrdiff_t(from),
+                            p.morphDeltas.begin()+std::ptrdiff_t(from+6));
+                    }
+            }
             const auto base=std::uint32_t(vertices.size());
             for(auto source:ordered) {
                 const auto target=std::uint32_t(vertices.size());
@@ -123,7 +156,25 @@ public:
                 indices[k]=remap.at(indices[k]);
             p.firstVertex=base;
             p.vertexCount=std::uint32_t(ordered.size());
+            if(p.morphTargets>0) {
+                p.morphDeltas.swap(repackedLegacy);
+                p.morphTexel=0; // GPU upload will assign a new atlas offset
+            }
+            // The cloned skinned primitive must not retain draw batching
+            // state from its old vertex/index interval.
+            p.shadowBatched=false;
             ++result.primitives;
+        }
+        // Precompiled shadow/material batches contain stale primitive
+        // ranges after topology edits. Drop their descriptors on the staged
+        // mesh, never destroy original model data. Native batch builders
+        // deliberately skip skinned meshes, so plain primitive drawing
+        // remains authoritative. Old appended batch index ranges may stay
+        // in the immutable index stream but are no longer submitted.
+        for(auto& mesh:meshes) {
+            mesh.shadowBatch={};
+            mesh.materialBatches.clear();
+            for(auto& p:mesh.primitives)p.shadowBatched=false;
         }
         // Sparse facial targets are keyed by model-global vertex ID. Clone
         // every nonzero delta on a duplicated source so both primitive
