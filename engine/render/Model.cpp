@@ -677,6 +677,10 @@ void prepareModelUpload(Model& m) {
 
 bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
                  bool publishSharedTextures) {
+    // Remember whether this call started with unuploaded indexed geometry:
+    // clearing CPU arrays on success must NEVER turn a failed GPU allocation
+    // into a false-positive upload result.
+    const bool hasGeometry=!m.vertices.empty() && !m.indices.empty();
     if (!m.vertices.empty() && !m.vb.valid()) {
         prepareModelUpload(m);
         if (!uploadModelToGeometryPool(dev, m)) {
@@ -686,6 +690,9 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
             m.ib = dev.createBuffer(ib);
         }
     }
+    if(hasGeometry && !m.geometryPoolPage &&
+       (!m.vb.valid() || !m.ib.valid()))
+        return false;
     for (auto& img : m.images) {
         if(img.textureCache && publishSharedTextures) {
             img.textureCache->upload(dev,img);
@@ -738,7 +745,8 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu,
         m.vertices.clear(); m.vertices.shrink_to_fit();
         m.indices.clear(); m.indices.shrink_to_fit();
     }
-    return m.vertices.empty() || m.vb.valid();
+    return !hasGeometry || bool(m.geometryPoolPage) ||
+           (m.vb.valid() && m.ib.valid());
 }
 
 bool uploadStandaloneImage(gfx::Device& dev, Image& image) {
