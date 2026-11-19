@@ -1188,18 +1188,19 @@ tile dimensions. **Do not submit page IDs from different domains to
 one feedback decoder:** the existing 32-bit page ID has coordinates,
 mip and layer, but no atlas/domain field.
 
-Initialize the usual model feedback adapter once, then register the
-independent domains. The existing legacy `VirtualTextureFeedbackPass`
-passed to `TerraWeaveVirtualTextureFeedback::initialize` can remain
-allocated but its automatic submission is superseded when the
-multi-domain scheduler is attached.
+Initialize model feedback programs once using the pass-free
+`initializeForDomains` entry point, then register independent
+archives. No dummy legacy `VirtualTextureFeedbackPass` is required.
+The model feedback programs and all per-domain passes **must use
+the same depth-attachment mode**. Legacy `initialize(pass,...)`
+continues to work for single-domain applications.
 
 ```cpp
 #include "engine/render/TerraWeaveVirtualAtlasDomains.h"
 
-// renderThread: dev, renderer, feedback and legacyPass outlive domains.
+// Render-thread objects: device and renderer outlive domains.
 render::TerraWeaveVirtualTextureFeedback feedback;
-feedback.initialize(dev, legacyPass, renderer);
+feedback.initializeForDomains(dev, renderer, /*depthAttachment=*/true);
 render::TerraWeaveVirtualAtlasDomains domains(dev);
 render::TerraWeaveVirtualAtlasDomains::Options options;
 options.feedbackWidth = 256;
@@ -1232,6 +1233,11 @@ renderer.drawModel(forestDraw);
 // through domains.setLiveDomainLookup(...) during scene setup.
 renderer.render(...); // runs at most one archive's GPU feedback pass
 ```
+
+The scheduler overrides the legacy single-pass slot only while
+attached. Every `Options::feedbackDepth` value must match
+`feedback.feedbackDepthAttachment()`; mismatches are rejected
+instead of rendering feedback with incorrect depth state.
 
 The render callback runs after shadow passes and before the main
 colour pass. It selects one **idle** domain per frame by round-robin
