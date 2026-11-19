@@ -8,6 +8,8 @@
 #include "engine/render/AnimationGraph.h"
 #include "engine/render/AnimationRig.h"
 #include "engine/render/FullBodyIK.h"
+#include "engine/render/FailedModelUpload.h"
+#include <stdexcept>
 #include <algorithm>
 #include <map>
 namespace aiverse::editor {
@@ -15,8 +17,16 @@ namespace aiverse::editor {
 class AnimationEditorPanel {
 public:
     explicit AnimationEditorPanel(bool rig):rigMode_(rig){}
-    ~AnimationEditorPanel(){release();}
-    void update(Editor& ed,double dt){dt_=float(std::min(dt,.1));if(registered_)return;registered_=true;
+    ~AnimationEditorPanel(){
+        release();
+        // Keep the same offscreen portrait across graph/model reloads;
+        // only its final window teardown needs a full-device barrier.
+        if(portraitReady_) {
+            try {portrait_.shutdown();}
+            catch(...) {} // GPU owner must not destruct live resources
+        }
+    }
+    void update(Editor& ed,double dt){owner_=&ed;dt_=float(std::min(dt,.1));if(registered_)return;registered_=true;
       ed.ws().registerOp({rigMode_ ? "rig_editor_open" : "animation_editor_open",
                           "Open an animation asset in the visual editor; refuses unsaved replacement.",
                           Json::parse(R"({"properties":{"name":{"type":"string"},"graph":{"type":"object"}}})"),
@@ -75,6 +85,7 @@ public:
                           true});
     }
     void draw(Editor& ed){
+        owner_=&ed;
         ws_=&ed.ws();auto tr=[&](const char* k){return text(k);};
         if(ed.ws().project.dir.empty()){ui::hint(tr("openProject").c_str());return;}
         if(project_!=ed.ws().project.dir){if(!project_.empty())drafts_[project_]={doc_,saved_,name_,dirty_};project_=ed.ws().project.dir;if(drafts_.count(project_)){auto& draft=drafts_[project_];doc_=draft.document;saved_=draft.saved;name_=draft.name;dirty_=draft.dirty;}else{doc_=saved_=animation::makeGraph();name_="untitled";dirty_=false;}reset();}
@@ -119,7 +130,19 @@ private:
     std::string text(const char* key)const{return genreText(*ws_,("animationEditor."+std::string(key)).c_str());}
     Json& graph(){if(scope_.empty()||!doc_["graphs"].has(scope_)){scope_.clear();return doc_;}return doc_.member("graphs").member(scope_);}
     static Json* node(Json& g,const std::string& id){for(auto& n:g.member("nodes").itemsMut())if(n.getStr("id")==id)return &n;return nullptr;}
-    void release(){instance_.reset({});if(model_&&dev_)render::releaseModel(*dev_,*model_);model_.reset();portrait_.shutdown();modelKey_.clear();programKey_.clear();ready_=false;}
+    void release(){
+        instance_.reset({}); // drop borrowed rig/graph pointers first
+        if(model_) {
+            if(owner_)owner_->retirePreviewModel(model_);
+            else if(dev_)(void)render::abortFailedModelUpload(*dev_,model_);
+            else (void)model_.release(); // no live device: fail closed
+        }
+        // Reuse the already initialized portrait render target during
+        // ordinary graph edits, asset reloads and project switching.
+        modelKey_.clear();
+        programKey_.clear();
+        ready_=false;
+    }
     void reset(){release();undo_.clear();redo_.clear();scope_.clear();selected_.clear();error_.clear();controls_={};}
     void remember(){remember(doc_);}void remember(const Json& before){if(undo_.size()>=64)undo_.erase(undo_.begin());undo_.push_back(before);redo_.clear();dirty_=true;}
     bool check(const Json& r){if(r.has("error")){error_=r.getStr("error");return false;}error_.clear();return true;}
@@ -181,9 +204,36 @@ private:
     void preview(Editor& ed){
         ready_=false;std::string path=doc_.getStr("model");std::string modelKey=project_+"/"+path;
         try{
-            if(modelKey_!=modelKey){release();modelKey_=modelKey;dev_=&ed.device();model_=loadAnimationModel(ed.ws(),path);if(!render::uploadModel(*dev_,*model_,true))throw std::runtime_error("model upload failed");if(!portrait_.init(*dev_,320))throw std::runtime_error("preview initialization failed");}
+            if(modelKey_!=modelKey){
+                release();
+                dev_=&ed.device();
+                auto candidate=loadAnimationModel(ed.ws(),path);
+                if(!candidate)throw std::runtime_error("animation preview Model load failed");
+                try {
+                    if(!render::uploadModel(*dev_,*candidate,true))
+                        throw std::runtime_error("model GPU upload failed");
+                }catch(...) {
+                    ed.retirePreviewModel(candidate);
+                    throw;
+                }
+                if(!portraitReady_) {
+                    try {
+                        if(!portrait_.init(*dev_,320))
+                            throw std::runtime_error("preview initialization failed");
+                        portraitReady_=true;
+                    }catch(...) {
+                        // Partly allocated offscreen targets are destroyed
+                        // only after the portrait's own GPU idle proof.
+                        try {portrait_.shutdown();}catch(...) {}
+                        ed.retirePreviewModel(candidate);
+                        throw;
+                    }
+                }
+                model_=std::move(candidate);
+                modelKey_=std::move(modelKey);
+            }
             if(!model_)return;
-            std::string key=graph().dump(-1)+doc_["graphs"].dump(-1);if(programKey_!=key){programKey_=key;render::AnimationGraphs graphs;for(auto& [name,g]:doc_["graphs"].members())graphs[name]=g;auto previewGraph=graph();animation::sort(previewGraph);instance_.reset(render::AnimationGraph::compile(*model_,previewGraph,{}, {},graphs));controls_=instance_.parameters();error_.clear();}
+            std::string key=graph().dump(-1)+doc_["graphs"].dump(-1);if(programKey_!=key){render::AnimationGraphs graphs;for(auto& [name,g]:doc_["graphs"].members())graphs[name]=g;auto previewGraph=graph();animation::sort(previewGraph);auto compiled=render::AnimationGraph::compile(*model_,previewGraph,{}, {},graphs);instance_.reset(std::move(compiled));programKey_=std::move(key);controls_=instance_.parameters();error_.clear();}
             if(!instance_.graph())return;
             ImGui::Checkbox(text("play").c_str(),&playing_);ImGui::SameLine();if(ImGui::Button(text("reset").c_str())){programKey_.clear();}
             ImGui::SameLine();ImGui::SliderFloat("##yaw",&yaw_,-3.14f,3.14f);if(instance_.hasContacts()){ImGui::SetNextItemWidth(130);ImGui::DragFloat(text("previewGround").c_str(),&previewGround_,.01f);auto env=std::make_shared<render::AnimationEnvironment>();float ground=previewGround_;env->sphereContact=[ground](render::float3 p,float r,render::IKHit& h){return render::ikSpherePlane(p,r,{0,ground,0},{0,1,0},h);};env->raycast=[ground](render::float3 a,render::float3 b,render::IKHit& h){float d=b.y-a.y;if(std::abs(d)<1e-8f)return false;float t=(ground-a.y)/d;if(t<0||t>1)return false;h={a+(b-a)*t,{0,1,0},0,1};return true;};controls_.environment=env;}
@@ -223,7 +273,7 @@ private:
         for(auto& [name,v]:controls_.vectors){auto p=point(v);dl->AddCircle(p,7,ImGui::GetColorU32(ImGuiCol_PlotLines),12,2);dl->AddText({p.x+8,p.y},ImGui::GetColorU32(ImGuiCol_Text),name.c_str());ImGui::SetCursorScreenPos({p.x-8,p.y-8});ImGui::PushID(name.c_str());ImGui::InvisibleButton("control",{16,16});if(ImGui::IsItemActive()&&ImGui::IsMouseDragging(0)){auto d=ImGui::GetIO().MouseDelta;if(plane_==2)v.y+=d.x/scale;else v.x+=d.x/scale;if(plane_==0)v.y-=d.y/scale;else v.z-=d.y/scale;}ImGui::PopID();}ImGui::EndChild();
     }
     bool dragging_=false,rigMode_=false,registered_=false,dirty_=false,ready_=false,playing_=true;
-    Workspace* ws_=nullptr;gfx::Device* dev_=nullptr;float previewGround_=0,dt_=0,yaw_=.5f,zoom_=1;int plane_=0,unit_=0;ImVec2 pan_{};
+    Workspace* ws_=nullptr;Editor* owner_=nullptr;gfx::Device* dev_=nullptr;bool portraitReady_=false;float previewGround_=0,dt_=0,yaw_=.5f,zoom_=1;int plane_=0,unit_=0;ImVec2 pan_{};
     Json doc_=animation::makeGraph(),saved_=doc_;std::vector<Json> undo_,redo_;struct Draft{Json document,saved;std::string name;bool dirty=false;};std::map<std::string,Draft> drafts_;std::map<ImGuiID,std::string> fields_;
     std::string project_,name_="untitled",scope_,subName_="subgraph",selected_,target_,modelKey_,programKey_,error_,message_;
     std::unique_ptr<render::Model> model_;render::AnimationGraphInstance instance_;render::AnimationParameters controls_;render::Pose pose_;game::Portrait portrait_;
