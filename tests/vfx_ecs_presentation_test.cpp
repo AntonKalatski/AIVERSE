@@ -84,6 +84,7 @@ static void scenario() {
     check(presenter.activeAttachments()==1,"recycled entity attached twice");
     presenter.reset();
     check(presenter.activeAttachments()==0,"reset retained renderer handles");
+    std::vector<fx::FxParticleInfo> particles;
     ps.snapshot(particles);
     check(particles.empty(),"reset must kill attached and recent one-shot particles");
     presenter.consumeTickEvents(39,{hit},bindings);
