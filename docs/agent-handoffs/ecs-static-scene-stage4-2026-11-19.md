@@ -83,6 +83,12 @@ Both original feature branches and `main` remain untouched.
 - `e02d94aff234d5e49372f30acc63933712c3c843` —
   static source review: add direct `SceneHierarchySystem.h` include
   needed by the integration fixture's `installSceneHierarchy` call.
+- `6d7291ca2f2e8584dc2480ee70d0e3f0af781c50` —
+  maintain handoff trail after direct include fix.
+- `db72e5b123c40b072acef5d1bea87f82b209ecc9` —
+  cross-link integrated feature in SceneRuntime documentation.
+- `730eb661b6ef3a1f2ddbf9b4c6267432d3496421` —
+  cross-link integrated feature in Shared/Static documentation.
 
 The handoff itself follows these commits. Fetch the actual HEAD after
 pulling; never report compilation or CTest pass based on committed code.
