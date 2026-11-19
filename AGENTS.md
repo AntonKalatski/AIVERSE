@@ -6,6 +6,36 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 
 ## AIVERSE SpectraFX (universal VFX, in progress)
 
+**Latest implementation handoff (Stage 38, source implementation; tests still deferred):**
+[docs/agent-handoffs/spectrafx-stage-38-reset-recovery-ecs-interpolation-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-38-reset-recovery-ecs-interpolation-2026-11-19.md).
+Multi-group Metal rollback now records `PoolResetReport` with the
+count of groups whose reset uploads were accepted, retry/failure state
+and a latched Device-loss signal. If any group rejects its reset,
+`GpuPoolWorld::presentationBlocked()` prevents starting new VFX
+frames, creating sources and drawing old GPU vertices until a
+successful safe-frame retry. This is a restartable ordered GPU command
+*preparation*, NOT cross-group hardware atomicity. On irrecoverable
+device loss, export `PoolRecoveryManifest` (compiled effect
+definitions, policies, parameter defaults only), release the old
+pool while the OLD gfx Device still lives, then import into a new
+pool on a healthy Device. Live particles and source generations
+do NOT survive. Explicitly reconstruct ECS attachments from the
+committed World.
+
+Native games may use new `GpuEcsPoseInterpolator` from
+`<aiverselib/genre/SpectraFX.h>` to store only two renderer-side
+committed pose snapshots and interpolate adjacent ticks of the SAME
+`Entity::packed()` generation. Do not place float render poses,
+GPU tokens or physical particle handles in authoritative ECS.
+The editor's last 180 GPU preview attempts are telemetry-only
+and can be copied as JSON; they are NOT a scrub/replayable particle
+snapshot. Forward-only timeline behavior is unchanged. C++/Metal
+build, CTest, on-device recovery, editor launch, screenshots and
+performance testing have NOT RUN. Preserve SpectraFX/Prisma
+ownership boundaries and all handoff documents. Do not merge to
+main or overwrite concurrent agents without user request.
+
+
 **Latest implementation handoff (Stage 37, features source, tests deferred):**
 [docs/agent-handoffs/spectrafx-stage-37-staged-ecs-gpu-reset-timeline-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-37-staged-ecs-gpu-reset-timeline-2026-11-19.md).
 The read-only `GpuEcsAttachmentPresenter` now stages new source handles
