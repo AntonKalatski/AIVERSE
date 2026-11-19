@@ -129,6 +129,7 @@ void Renderer3D::shutdown() {
     persistentScene_ = {};
     staticModelCaches_.clear();
     staticRenderPackets_.clear();
+    staticRenderPacketBytes_ = 0;
     staticModelCacheEpoch_ = 0;
     staticRenderPacketEpoch_ = 0;
     shutdownModels();
@@ -175,6 +176,7 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
         if ((staticRenderPacketEpoch_ % 64u) == 0u) {
             for (auto it = staticRenderPackets_.begin(); it != staticRenderPackets_.end();) {
                 if (it->second.seen + 4 < staticRenderPacketEpoch_) {
+                    staticRenderPacketBytes_ -= it->second.items.size() * sizeof(ModelItem);
                     it = staticRenderPackets_.erase(it);
                     ++staticRenderPacketStats_.evicted;
                 } else ++it;
