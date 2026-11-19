@@ -93,3 +93,29 @@ ctest --test-dir build/spectrafx-validation --output-on-failure -R 'fx|particle|
 - **Authority:** `SimEvent` remains the game's sole event source, Graph/FX remain presentation, no ECS/save/checksum changes. The map, bridge and queue must outlive the registered Simulation.
 - **Tests actually executed:** **NOT RUN** (connector-only changes: no native compile, CTest, CI or editor QA); gameplay integrations are optional and are not wired into live RTS/FPS host loops.
 - **Next:** add a minimal graph representation with bounded DAG validation and explicit execution to SpectraFxCueBridge; keep runtime FX effects in existing ParticleSystem. Then add actual native tests/genre host integration and verify compilation before production use.
+
+
+## 2026-11-19: Stage 5 — bounded cue graph evaluator (unverified)
+
+- **Code commit:** `5d7068dd3a9f581d00e8e189aecfdfdf4539a430`; **branch:** `feature/spectrafx-generic-cue-queue`; `main` had no new commits in the last comparison (base `9ee6ff6`, zero behind).
+- **Changed:** `engine/fx/SpectraFxGraph.h` (new).
+- **Architecture:** `SpectraFxNode` with `Input`, `Scale`, `Tint`, `Emit` nodes; compile/authoring can produce a vector of backward-referencing node indices. A single Input, up to 128 nodes, no cycles/forward references, bounded scale/tint, at least one Emit. `SpectraFxGraph::validate` returns an error without modifying state. `execute` creates temporary presentation cues, evaluates ordered transforms and uses `SpectraFxCueBridge::dispatch` for output effects. For keyed/attached cues, multiple outputs are rejected to avoid shared instance-key collisions. Unkeyed one-shots can branch into multiple effects.
+- **Public API:** `setNodes(vector<SpectraFxNode>)`, `nodes()`, `validate(error*)`, `execute(input, cueBridge, queue)` returning `Result {emitted,rejected,valid}`. Existing `fx::ParticleSystem` handles particles, rendering and budgets; this new graph only orchestrates event/cue transforms. **Not** a GPU simulation graph or visual node editor.
+- **Compatibility/authority:** additive header, no changes to JSON/save/net/Simulation checksum or gameplay systems. No PRISMA post-process logic. Existing RTS VFX remains untouched.
+- **Tests actually executed:** **NOT RUN**. Compiler, CTest, editor QA, GPU tests and real RTS/FPS integration are unverified: work was authored through the GitHub connector, with no native checkout/compiler in this stage.
+- **Limitations:** no graph serialization/parser, type checking beyond ordered topology, effect-parameter expressions, GPU compute, node GUI, module-owned launch points or live game call sites. Node evaluation allocates a transient vector per execute. Rollback needs queue reset.
+- **Next:** add explicit native CTest for `SpectraFxCueBridge`, `SpectraFxEventMap`, `SpectraFxGraph`, `SpectraFxCommandQueue` with a headless ParticleSystem, then wire a native game adapter and visual graph serialization. Preserve separate implementation/handoff commits after every stage.
+
+### Commands — always pull branch before testing
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main
+git merge origin/main
+cmake -S . -B build/spectrafx-validation -DCMAKE_BUILD_TYPE=Debug
+cmake --build build/spectrafx-validation --parallel
+ctest --test-dir build/spectrafx-validation --output-on-failure -R 'fx|particle|vfx'
+```
