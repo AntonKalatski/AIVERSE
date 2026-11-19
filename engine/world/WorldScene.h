@@ -3,7 +3,7 @@
 #include "engine/render/Renderer3D.h"
 #include "engine/world/TerraWeave.h"
 #include "engine/world/TerraWeavePhenology.h"
-#include "engine/world/TerraWeaveWind.h"
+#include "engine/world/TerraWeaveWindField.h"
 
 namespace aiverse::terraweave { class TerraWeaveForestScene; class TerraWeaveHorizonScene; }
 namespace aiverse::world {
@@ -32,6 +32,13 @@ public:
     // Tick is the host's deterministic simulation/presentation frame count.
     void setVegetationWind(terraweave::ForestWindState wind);
     terraweave::ForestWindState vegetationWind() const {return vegetationWind_;}
+    // Immutable bounded PHYSIS/game spatial wind grid. Null removes it.
+    // The same snapshot is forwarded to near Flora and Horizon HLOD.
+    void setVegetationWindField(
+        std::shared_ptr<const terraweave::ForestWindField> field);
+    std::shared_ptr<const terraweave::ForestWindField> vegetationWindField() const {
+        return vegetationWindField_;
+    }
     void setVegetationPresentationTick(uint64_t tick);
     uint64_t vegetationPresentationTick() const {return vegetationPresentationTick_;}
     const AsyncChunkStream::Status& status()const{return stream_->status();}
@@ -73,6 +80,7 @@ private:
     terraweave::CanopyPhenology vegetationPhenology_{};
     bool vegetationPhenologyDirty_=false;
     terraweave::ForestWindState vegetationWind_{};
+    std::shared_ptr<const terraweave::ForestWindField> vegetationWindField_;
     uint64_t vegetationPresentationTick_=0;
     float overhang_=0;                                        // "meshOverhang": units a mesh may reach past its chunk
     void releaseChunk(gfx::Device&,Prepared&);
