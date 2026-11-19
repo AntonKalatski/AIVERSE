@@ -147,6 +147,8 @@ bool ComputeParticles::initGpu() {
     readbackLifetime_=std::make_shared<uint64_t>(0);
     vmFrameRevision_=0;
     checkpointRevision_=0;
+    checkpointFrameCounter_=0;
+    asyncCheckpointPending_=false;
     lastCheckpoint_={};
     if(!device_) {reason_="no RHI Device";return false;}
     const uint32_t cap=desc_.capacity;
@@ -276,6 +278,7 @@ bool ComputeParticles::initGpu() {
 void ComputeParticles::releaseGpu() {
     readbackLifetime_.reset();
     asyncErrorPending_=false;
+    asyncCheckpointPending_=false;
     if(device_) {
         if(pipeline_.valid())device_->destroyPipeline(pipeline_);
         if(vertexShader_.valid())device_->destroyShader(vertexShader_);
@@ -313,6 +316,7 @@ void ComputeParticles::shutdown() {
     drawCount_=0;
     programParams_={};
     lastCheckpoint_={};checkpointRevision_=0;
+    checkpointFrameCounter_=0;
     backend_=ComputeBackend::Cpu;stats_={};reason_.clear();
 }
 void ComputeParticles::clear() {
@@ -528,6 +532,9 @@ bool ComputeParticles::step(float dt) {
             ++stats_.gpuCompactDispatches;
     }
     device_->endCompute();
+    // Increment only after submission. Any earlier captured GPU checkpoint
+    // is now stale and may not be used for automatic recovery.
+    ++vmFrameRevision_;
     pendingStates_.clear();pendingSlots_.clear();pendingProgramParams_.clear();
     // Commit CPU lifespan/free-slot changes only after GPU dispatch submission.
     for(uint32_t i=0;i<desc_.capacity;++i) {
@@ -539,6 +546,12 @@ bool ComputeParticles::step(float dt) {
     drawCount_=compactCount;
     stats_.submittedSlots=drawCount_;
     verticesReady_=true;reason_.clear();
+    // Queue chunked readback only after the VM/integration/compact dispatches.
+    // This is optional; never block the render loop on checkpoint collection.
+    if(desc_.checkpointEveryFrames>0 &&
+       ++checkpointFrameCounter_%desc_.checkpointEveryFrames==0 &&
+       !asyncCheckpointPending_)
+        (void)requestGpuCheckpoint();
     return true;
 }
 void ComputeParticles::draw(const fx::FxFog& fog) {
