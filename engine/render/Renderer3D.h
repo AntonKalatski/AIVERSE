@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include "../gfx/Gfx.h"
+#include "../gfx/VirtualTextureFeedbackPass.h"
 #include "Lights.h"
 #include "Math3D.h"
 #include "Model.h"
@@ -224,6 +225,36 @@ public:
 
     void beginScene(const RTSCamera& cam, int fbW, int fbH);
     void drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags = 0, float specular = 0.25f, float emissive = 0.0f);
+    // Bridge the current opaque immediate-mesh scene queue into VT feedback.
+    // The caller supplies a compatible feedback pipeline and per-mesh
+    // material binding. This does not cover ModelItem or custom renderers
+    // (terrain) until their UV/material binding paths are integrated.
+    using FeedbackMeshBinder = std::function<bool(
+        gfx::Device&, const Mesh&, const mat4&)>;
+    bool collectMeshFeedbackDraws(
+        std::vector<gfx::VirtualTextureFeedbackDraw>& out,
+        gfx::PipelineHandle pipeline,
+        const FeedbackMeshBinder& bind) const {
+        if (!pipeline.valid() || !bind) return false;
+        for (const auto& item : items_) {
+            if (!item.mesh || !item.mesh->vb.valid() ||
+                !item.mesh->ib.valid() || !item.mesh->indexCount ||
+                item.color.w < 0.99f) continue;
+            const Mesh* mesh = item.mesh;
+            const mat4 transform = item.model;
+            gfx::VirtualTextureFeedbackDraw draw;
+            draw.pipeline = pipeline;
+            draw.vertexBuffer = mesh->vb;
+            draw.indexBuffer = mesh->ib;
+            draw.count = mesh->indexCount;
+            draw.prepare = [bind,mesh,transform](gfx::Device& dev) {
+                return bind(dev,*mesh,transform);
+            };
+            out.push_back(std::move(draw));
+        }
+        return true;
+    }
+
     // Editor Scene only: render selected geometry into a depth-tested mask
     // and composite its exterior silhouette in screen pixels.
     void setSceneSelectionOutline(bool enabled) { sceneSelectionOutline_ = enabled; }
