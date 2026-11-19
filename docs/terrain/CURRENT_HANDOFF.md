@@ -4,6 +4,20 @@ Last source stage: **70** (2026-11-19), branch `feature/terraweave`.
 PR #24 is Draft, and must not merge to `main` before native QA and
 cross-branch conflict reconciliation.
 
+## Latest QA blocker fixed: optional Box3D native smoke
+
+**Read first:** [Box3D native CMake/header fix and Mac Studio commands](qa-2026-11-19-box3d-native-smoke-fix.md).
+A real AppleClang build from `AIVERSE-terraweave-qa-fix` reported
+`fatal error: 'box3d/box3d.h' file not found` from the
+unconditionally included physics adapter in
+`terraweave_native_micro_compile_test.cpp`.
+The basic smoke is now physics-off-safe; a SEPARATE smoke target links
+`AIVERSE::physics` when Box3D is enabled. Full Linux/macOS QA enables
+physics, while isolated GCC/Clang checks cover physics-off.
+A signedness warning in `terraweave_model_test.cpp` was also corrected.
+These are committed source fixes, NOT yet independently compiled or
+CTest-verified after the user's failure.
+
 ## Current integration/QA stage — source features frozen
 
 **Latest Mac CTest triage:** [2026-11-19 Mac Studio 131-test diagnostics](qa-2026-11-19-mac-ctest-triage.md): 94 passed, 33 Not Run from missing binaries, three importer tests missing `aiverse_headless`, and `skill_audit` three broken paths fixed in GitHub. GCC/Clang and full native CI were re-triggered; source fixes require a real rerun before being marked green.
