@@ -88,6 +88,7 @@ public:
         const auto memory = ed.prisma().memoryStats();
         const auto motion = ed.renderer().motionRetirementStats();
         const auto viewport = ed.viewportRetirement().stats(ed.device());
+        const auto viewportLive = ed.viewportRetirement().liveStats(ed.device());
         const auto objects = ed.gpuResourceRetirement().stats(ed.device());
         ImGui::Text("GPU completed fence: %llu  ·  сцены: %zu активных + %zu ожидают",
                     (unsigned long long)post.lastGpuCompletedFence,
@@ -141,6 +142,10 @@ public:
         }
         ImGui::Text("Viewport Scene / Game / FX: %zu fenced + %zu без fence",
                     viewport.fenced,viewport.unfenced);
+        for (const auto& v : viewportLive)
+            ImGui::Text("Framebuffer %s %dx%d: %.2f MiB / %zu targets, неизвестно %zu",
+                        v.name.c_str(),v.width,v.height,
+                        double(v.knownBytes) / mib,v.textures,v.unknownTextures);
         ImGui::Text("GPU FX/ShaderGraph: %zu pipeline, %zu shader, %zu buffers, %zu textures, %zu bundles",
                     objects.pipelines,objects.shaders,objects.buffers,
                     objects.textures,objects.bundles);
