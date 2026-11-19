@@ -61,6 +61,14 @@ int main() {
     AIVERSE_TEST_CHECK(!gpu.setLights({GiMovingLight{2,{0,0,0},{1,0,0},5,20},
                                       GiMovingLight{2,{1,0,0},{1,0,0},5,20}}));
     AIVERSE_TEST_CHECK(gpu.lightCount()==1); // failed update retains previous lights
+    GiMovingLight cone{3,{0,0,0},{0,1,0},5,20};
+    cone.direction={0,0,1};cone.cosOuter=.6f;cone.cosInner=.9f;
+    AIVERSE_TEST_CHECK(gpu.setLights({cone}));
+    AIVERSE_TEST_CHECK(gpu.lightCount()==1);
+    cone.direction={0,0,0};
+    AIVERSE_TEST_CHECK(!gpu.setLights({cone})); // unnormalised cone rejected
+    cone.direction={0,0,1};
+    AIVERSE_TEST_CHECK(gpu.setLights({cone}));
 
     std::vector<GiProbeTicket> tickets{
         {0,1,giDirtyBit(GiDirtyReason::Geometry),{.5f,.5f,.5f}},
@@ -91,12 +99,17 @@ int main() {
     AIVERSE_TEST_CHECK(vulkanShader.find("layout(push_constant)")!=std::string::npos);
     AIVERSE_TEST_CHECK(vulkanShader.find("imageStore(outputImage")!=std::string::npos);
     AIVERSE_TEST_CHECK(vulkanShader.find("job.index*3u")!=std::string::npos);
+    AIVERSE_TEST_CHECK(vulkanShader.find("spotDirectionOuter")!=std::string::npos);
+    AIVERSE_TEST_CHECK(vulkanShader.find("spotInner.x")!=std::string::npos);
+    AIVERSE_TEST_CHECK(sizeof(GiGpuSmallScene::GpuLamp)==64);
 
     std::string shader=gi_gpu::kMetalSmallScene;
     AIVERSE_TEST_CHECK(shader.find("kernel void cs_main")!=std::string::npos);
     AIVERSE_TEST_CHECK(shader.find("access::write")!=std::string::npos);
     AIVERSE_TEST_CHECK(shader.find("constant Params& p [[buffer(8)]]")!=std::string::npos);
     AIVERSE_TEST_CHECK(shader.find("job.index*3u")!=std::string::npos);
+    AIVERSE_TEST_CHECK(shader.find("spotDirectionOuter")!=std::string::npos);
+    AIVERSE_TEST_CHECK(shader.find("spotInner.x")!=std::string::npos);
 
     gpu.shutdown();
     AIVERSE_TEST_CHECK(d.textures.empty() && d.buffers.empty());
