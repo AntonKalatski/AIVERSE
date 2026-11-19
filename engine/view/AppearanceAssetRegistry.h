@@ -4,6 +4,7 @@
 #include "AppearanceAuthoringService.h"
 #include "AppearanceChoiceAuthoring.h"
 #include "ModelPublicationEpoch.h"
+#include "engine/render/RenderDeviceLifetime.h"
 #include <algorithm>
 #include <cstdint>
 #include <cmath>
@@ -500,6 +501,18 @@ public:
     std::span<const Object> validatedSpan() const {
         requireModelPins();
         return span();
+    }
+    // Optional GPU owner-epoch preflight for native hosts that keep
+    // a RenderDeviceLifetime lease. Checks thread + Device generation,
+    // but DOES NOT retire or pin GPU buffer/image handles. A successful
+    // lease check is NOT proof that a queued draw has finished on GPU.
+    std::span<const Object> validatedSpan(
+            gfx::Device& device,
+            const render::RenderDeviceLifetime::Lease& lease) const {
+        if(!lease.validFor(device))
+            throw std::logic_error(
+                "PinnedAppearanceBatch: expired or foreign GPU Device epoch");
+        return validatedSpan();
     }
     size_t modelPinCount() const noexcept{return modelPins_.size();}
     size_t size() const noexcept{return packets_.size();}
