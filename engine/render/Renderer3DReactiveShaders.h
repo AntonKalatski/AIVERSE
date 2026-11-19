@@ -199,10 +199,21 @@ layout(std140) uniform U0 {
     mat4 previousMvp;
     vec4 params;
 };
+layout(std140) uniform U1 { vec4 reactiveLod; };
 uniform sampler2D tex0;
 in vec4 v_prevClip;
 out vec4 o_color;
 void main() {
+    // Stage 63 exact screen-space LOD dither for skinned/baked coverage,
+    // even on the first frame when no previous pose exists.
+    if (reactiveLod.z > 0.5) {
+        ivec2 lp=ivec2(floor(gl_FragCoord.xy)) & ivec2(3);
+        int rank=((lp.x&1)^(lp.y&1))*8+(lp.y&1)*4+
+                 ((lp.x>>1)^(lp.y>>1))*2+(lp.y>>1);
+        float noise=(float(rank)+0.5)/16.0;
+        if(reactiveLod.y>0.5 ? noise<reactiveLod.x : noise>=reactiveLod.x)
+            discard;
+    }
     vec2 uv = gl_FragCoord.xy / params.xy;
     if (gl_FragCoord.z > texture(tex0,uv).r + 0.0015)
         discard;
@@ -220,10 +231,21 @@ inline std::string animatedMsl(const char* motionMsl) {
     if (fragment == std::string::npos) return {};
     code.resize(fragment);
     code += R"(
+struct ReactiveCoverageU1 {float4 lod;};
 fragment float4 fs_main(VOut in [[stage_in]],
     constant U0& u [[buffer(1)]],
+    constant ReactiveCoverageU1& coverage [[buffer(2)]],
     depth2d<float> tex0 [[texture(0)]],
     sampler tex0_s [[sampler(0)]]) {
+    if (coverage.lod.z > 0.5) {
+        int2 lp=int2(floor(in.position.xy)) & int2(3);
+        int rank=((lp.x&1)^(lp.y&1))*8+(lp.y&1)*4+
+                 ((lp.x>>1)^(lp.y>>1))*2+(lp.y>>1);
+        float noise=(float(rank)+0.5)/16.0;
+        if(coverage.lod.y>0.5 ? noise<coverage.lod.x :
+                                  noise>=coverage.lod.x)
+            discard_fragment();
+    }
     const float2 uv = in.position.xy/u.params.xy;
     if (in.position.z > tex0.sample(tex0_s,uv)+0.0015)
         discard_fragment();
