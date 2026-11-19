@@ -676,6 +676,30 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     const bool tracePreparation = !submit && std::getenv("AIVERSE_ICB_PROFILE") != nullptr;
     const auto prepStart = tracePreparation ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
     const ModelItem& it = modelItems_[items[0]];
+    // Renderer material batching groups GPU-equivalent source materials,
+    // but an external VT resolver can assign different physical atlases.
+    // Split heterogeneous VT bindings before choosing a shader, so no
+    // instanced draw accidentally uses another model's page table.
+    if (submit && count > 1 && (phase == 1 || phase == 2) &&
+        modelVirtualTextureResolver_) {
+        ModelVirtualTextureBinding first;
+        const bool firstUsesVt = resolveModelVirtualTexture(
+            *it.model,*it.mat,first);
+        for (uint32_t n = 1; n < count; ++n) {
+            const auto& next = modelItems_[items[n]];
+            ModelVirtualTextureBinding candidate;
+            const bool usesVt = resolveModelVirtualTexture(
+                *next.model,*next.mat,candidate);
+            if (firstUsesVt != usesVt ||
+                (firstUsesVt && !(first == candidate))) {
+                bool ok = true;
+                for (uint32_t k = 0; k < count; ++k)
+                    ok = drawModelBatch(items+k,1,phase,true,false,false)
+                        && ok;
+                return ok;
+            }
+        }
+    }
     const bool instanced = count > 1;
     gfx::PipelineHandle ph = modelPipeline(it, phase, instanced, gpuInstances, instancePalette);
     if (!ph.valid()) return false;
@@ -761,6 +785,23 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
             dev_->setTexture(4, tex(mt.occlusionTex, white_));
             dev_->setTexture(5, tex(mt.emissiveTex, white_));
             dev_->setTexture(6, tex(mt.teamTex, black_));
+        }
+    }
+    // Resolve every submission, not just on material pointer changes:
+    // the scene may switch a Horizon archive generation between frames.
+    // Shader variants use two spare built-in fragment slots (13/14) and
+    // one U6 vec4. The original tex1 remains bound as fallback.
+    if ((phase == 1 || phase == 2) && !gpuInstances &&
+        !instancePalette && !(mt.shaderGraph &&
+        int(matQuality_) >= mt.shaderGraph->minQuality)) {
+        ModelVirtualTextureBinding vt;
+        if (resolveModelVirtualTexture(*it.model,mt,vt)) {
+            ModelVirtualTextureUniforms params;
+            params.layer = float(vt.layer);
+            params.gutterPixels = vt.gutterPixels;
+            dev_->setTexture(13,vt.physicalAtlas);
+            dev_->setTexture(14,vt.pageTable);
+            dev_->setUniforms(6,&params,sizeof(params));
         }
     }
     if (newModel) {
@@ -859,6 +900,17 @@ static size_t indirectCommandThreshold() {
 bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, int phase,
                                         bool instancePalette) {
     if (count < 2 || !dev_->supportsMultiDrawIndirect()) return false;
+    // Each indirect command shares one material/VT binding. Until the
+    // GPU command ABI includes virtual atlas identity, fall back to the
+    // regular draw path for groups containing virtualized models.
+    if (phase == 1 && modelVirtualTextureResolver_) {
+        for (uint32_t n = 0; n < count; ++n) {
+            const auto& candidate = modelItems_[items[n]];
+            ModelVirtualTextureBinding vt;
+            if (resolveModelVirtualTexture(*candidate.model,*candidate.mat,vt))
+                return false;
+        }
+    }
     if (instancePalette) {
         // Shader U3 is fixed to 64 material entries. Never produce a batch
         // that would index beyond that uniform array.
