@@ -146,7 +146,7 @@ int main(){
     auto stable=std::make_unique<render::Model>();
     auto* ptr=stable.get();
     stagedModels.emplace("models/stable.glb",std::move(stable));
-    owner.publishStagedModels(stagedModels);
+    owner.publishStagedModels(device,stagedModels);
     assert(stagedModels.empty());
     assert(owner.find("models/stable.glb")==ptr);
     render::ModelResourceCache::ModelMap duplicate;
