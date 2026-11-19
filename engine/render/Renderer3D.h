@@ -597,6 +597,15 @@ private:
             packet.materialHashes.size() * sizeof(uint64_t) +
             packet.selectedMeshes.size() * sizeof(int);
     }
+    // Reused per-draw scratch: hot packet replay must not allocate one vector
+    // for every visible entity. Renderer3D submission is non-reentrant.
+    struct StaticPacketNodeState {
+        bool inView = false, inShadow = false;
+        int mesh = -1;
+        size_t level = 0;
+        bool transitioning = false;
+    };
+    std::vector<StaticPacketNodeState> staticPacketNodeScratch_;
     std::unordered_map<uint64_t, StaticPacketEntry> staticRenderPackets_;
     size_t staticRenderPacketBytes_ = 0;
     StaticRenderPacketStats staticRenderPacketStats_{};
