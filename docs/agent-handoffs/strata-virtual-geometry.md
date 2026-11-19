@@ -2212,3 +2212,218 @@ index-page IO, page upload staging/visibility deadlines and a real
 global per-frame bandwidth governor. Later Stage 16 Vulkan compute
 selection; Stage 17 crack-free LOD; final Metal/Vulkan/GLES3 acceptance.
 Append a fresh handoff with exact test results after each stage.
+
+
+---
+
+## Stage 15.3 — asynchronous disk-backed STRATA index pages (2026-11-20)
+
+**Branch:** `feature/strata-virtual-geometry` (NOT merged to main).
+**State:** source code, CMake targets, and recording-RHI test fixtures
+committed. **No native compilation/CTest, Metal GPU run, Vulkan raster
+or GLES hardware run has been performed on this Stage 15.3 code**.
+Do not reinterpret previous Stage 13 Metal reflection PASS as a
+Stage 15.3 acceptance result.
+
+### Implemented architecture
+
+- **Offline archive format:** `engine/render/StrataDiskPages.h/.cpp`
+  adds `DiskIndexPages::writeArchive(path, const ModelAsset&)`.
+  Binary `.strataidx` contains a little-endian fixed-size header
+  (magic `STRIDX03`, version 1, page count, source fingerprint,
+  directory/payload offsets), a fixed 32-byte entry per
+  `(primitive ordinal, cluster node ID)` and all node-local
+  `uint32_t` index payloads. An FNV-1a 64-bit fingerprint verifies
+  the staged source geometry and topology at open, and an independent
+  FNV-1a checksum verifies every page after read. This is *accidental
+  corruption detection*, **NOT cryptographic signing/authenticity**
+  of untrusted asset packages. Archive maximum: 256 MiB and 2M
+  node entries; the writer publishes via a temporary file and
+  filesystem rename, never a partially written final destination.
+  On platforms where rename cannot replace an existing file, export
+  returns a failure rather than deleting a valid archive.
+- **Stable source filenames:** `DiskIndexPages::archiveFilename(key)`
+  computes a deterministic hexadecimal key hash and returns a single
+  filename `strata-<hash>.strataidx`; no model path fragments become
+  filesystem traversal components. The header fingerprint prevents
+  silent cross-source reuse of an archive even in a key-hash collision.
+  `SceneStaging::writeDiskArchives(directory, failures)` prepares
+  all staged source archives for editor/import-time use.
+- **Asynchronous runtime I/O:** `DiskIndexPages::open` validates the
+  directory/header, complete entry ranges and source signature,
+  then creates one native C++ worker thread per archive. `request`,
+  `ready`, `failed`, `consume` and `retainRequested` form a
+  bounded nonblocking render-thread interface. A producer queue is
+  bounded by request count (default 512) and ready CPU payload bytes
+  (runtime `GeometryScene` uses the source index budget). A worker
+  waits without busy-spinning if CPU ready-cache memory is exhausted.
+  `retainRequested` prunes obsolete queued/ready pages when the
+  camera or shadow requirements change; an already executing read
+  is allowed to finish and its result is discarded when not needed.
+  `close()` stops, wakes and joins the worker before source/scene
+  shutdown. Disk I/O is disabled for Emscripten/WebGL2.
+- **Pinned roots are synchronous only during scene initialization.**
+  `readRoot` checks the checksum before a root is submitted to the
+  GPU and returns failure/Legacy if a mandatory root is absent or
+  damaged. All child pages use asynchronous requests; **no file I/O
+  wait is introduced in `GeometryScene::draw`**.
+- **GPU integration:** `IndexResidency::initialize` takes an
+  optional shared `DiskIndexPages` only in the checked, incremental
+  Metal/Vulkan mode. `StrataIndexPages.cpp` requests all siblings
+  of a selected hierarchy parent as a complete set. It uses the
+  verified *disk-read* index bytes for GPU upload, not a CPU copy
+  of `ModelAsset::indices`. If one child is missing, queued, corrupt
+  or GPU upload fails, that branch remains on its resident parent.
+  The GPU-visible node page table is published only after every
+  required checked RHI write succeeds, then the CPU ready cache is
+  consumed. A camera move discards obsolete disk requests. The
+  source Model VB, textures, shadow/reflection passes and single
+  Renderer3D draw authority are unchanged.
+- **Scene integration:** `GeometryScene::setStrataDiskPageDirectory(dir)`
+  is opt-in, before `load/loadPrepared`. It applies only with
+  portable STRATA, a positive source/scene budget, and Metal/Vulkan
+  incremental index streaming enabled; GLES3/GL33 retain their
+  existing CPU-selected immutable fallback. On Metal/Vulkan an
+  absent/mismatched/corrupt archive leaves that particular source
+  on full **Legacy** instead of crashing or silently rendering a
+  partial geometry surface.
+- **Aggregate per-RHI-frame transfer budget:**
+  `GeometryScene::setStrataStreamingFrameUploadBudgetBytes(bytes)`
+  adds an optional cap (0 = unlimited) across Metal/Vulkan
+  incremental source updates. The order of source processing is
+  stable-key + round-robin first-source rotation each draw prepass;
+  the allowance persists while `Device::frameSerial()` is unchanged
+  and resets for the next serial. If a device returns serial 0,
+  the cap safely applies per draw prepass (not strictly per GPU frame).
+  `IndexResidency::update(..., uploadAllowanceBytes)` applies
+  the minimum of this allowance and the older per-source cap.
+  The new `gpuTransferBytes` counter counts **successful checked
+  RHI transfers even when a later child write in the same group
+  fails**, preventing frame-budget overshoot across retries.
+  This governor applies to runtime *incremental* uploads; synchronous
+  pinned root uploads at scene load, disk I/O bytes and GLES3 immutable
+  replacement buffers are not included.
+- **Diagnostics:** `IndexResidencyStats` tracks verified disk reads,
+  failed reads, queued pages, ready bytes and actual submitted GPU
+  bytes. `GeometryScene::Stats` exposes disk-enabled/declined
+  sources, disk bytes/errors/queued/ready, plus GPU transfer counts.
+
+### Public APIs
+
+```cpp
+// Editor/offline CPU import:
+strata::SceneStaging staging;
+staging.stage(sourceKey, cpuModel);
+std::vector<std::string> errors;
+bool packed=staging.writeDiskArchives(assetDirectory, &errors);
+
+// Runtime, before load:
+scene.setStrataPortableRenderingEnabled(true);
+scene.setStrataStreamingSceneBudgetBytes(8 * 1024 * 1024);
+scene.setStrataIncrementalIndexStreamingEnabled(true);
+scene.setStrataStreamingUploadBudgetBytes(128 * 1024); // per source
+scene.setStrataStreamingFrameUploadBudgetBytes(256 * 1024); // scene total
+scene.setStrataDiskPageDirectory(assetDirectory);
+scene.load(device, json, fileReader);
+```
+
+### Changed files / code commits
+
+- `engine/render/StrataDiskPages.h`:
+  `42f452daec4490f0140874990a4be620feffb39e`,
+  `670fa9e682e4857c373f80d0ca6151694d89caa3`.
+- `engine/render/StrataDiskPages.cpp`:
+  `cdf86786403be4533b265c61ea1a621f3c07b879`,
+  `cec96a3c5ea568d0d82bbf4c0999a0be55a689e1`,
+  `2064959c8e428763b91cac9d3f7a4ccf8da1a2f6`,
+  `b8cba13dc398b7977122f221b7baae69e462e362`,
+  `bacc469369ec40902c45a9582accf0eb9f127458`,
+  `d53c797bb872d4ba9b28977437df05f8cc3e691b`,
+  `50e42467a6b4f16ebfc1cb61fbc5161d70c9ac35`.
+- `engine/render/StrataModelAdapter.h`:
+  `c8f131788877e3a0325981aa75a04ed7eee63c91`.
+- `engine/render/StrataIndexResidency.h/.cpp`:
+  `6656257f2c8666ac1788a3c773c8ad3daafc2ba7`,
+  `2f2501942f77e15550dc9e397434bf4d43a7891f`,
+  `fdd3f76df2c590f5ad32f67ede53e20815fc94bf`,
+  `8250f1947e62d16ba4737454fb0a4cea30af13d1`,
+  `844ca4181562ef3fd351529e759f65d3a7fb29be`.
+- `engine/render/StrataIndexPages.cpp`:
+  `a74ffc2f098ef6183e008d0d97a713453bf81b55`,
+  `1206a2680f508299545639fe2fc9f8a627cd6fc0`,
+  `cc757d274125caf7f9f7a8065d026a321492ab36`,
+  `00fdbe3c6643a71eb99a2f19a0f5797e259c2342`,
+  `965c2db869df9b46bce920cce72f8353fbfd8ecf`.
+- `engine/render/StrataPortableRender.h/.cpp`:
+  `1564cdc4022dde204f1b07aeedf61d1c15bad3b1`,
+  `cfa6b53941f55a46e17ef3fc2cae1ecf0c5b3d11`,
+  `9e97c0b492ff6be76ff00dd3d723499d6074c095`,
+  `46415cf65af6ad378f8c314fd01702d98a317e16`.
+- `engine/render/GeometryScene.h/.cpp`:
+  `a57910f98be351c43e71f4771e9e9c28b0f289c0`,
+  `e922469a419267820addccbcb86ca8cb61d66b3b`,
+  `3e51f64d5f508f5e8d9d0b34622308710dc2a7e4`,
+  `b2471d03b1998d77baa77780f8da5054d208b698`,
+  `89714f627a6b63bdefb80c4aee9e839424abff64`.
+- `CMakeLists.txt`:
+  `78504b6b84f7131fb2e5df16210e2689b411ba32`,
+  `b54995619ae66f92dc2d06520453c364cb68fa84`.
+- New tests `tests/render/strata_disk_pages.cpp`:
+  `378898cc6f5623fcf4311490a453805ac1bdf050`.
+  `tests/render/strata_index_pages.cpp`:
+  `de3f3aa0eeb3662cd25e3fef7515f92497894832`.
+
+### Tests authored (NOT executed)
+
+`aiverse_strata_disk_pages_tests` (CTest `strata_disk_pages`)
+covers archive roundtrip and safe key naming, metadata/root checksum,
+bounded queue and duplicate demand suppression, camera-change queue
+pruning, root sync loading, asynchronous leaf disk-to-GPU page
+promotion, unchanged RHI handle, CPU cache consumption, stale source
+fingerprint, leaf corruption and invalid header. Existing
+`aiverse_strata_index_pages_tests` now covers the cross-source
+upload allowance. All should be compiled with native C++ filesystem
+and Threads::Threads on macOS; no tests were run here.
+
+### Current completion table
+
+| Workstream | Code status | Validation status |
+| --- | --- | --- |
+| Disk page archive writer/manifest | Implemented | NOT RUN |
+| Bounded async reads/cancel/cache | Implemented | NOT RUN |
+| Disk-index payload to GPU arena | Implemented | NOT RUN |
+| Scene disk fallback and resource lifetime | Implemented | NOT RUN |
+| Aggregate per-RHI-frame GPU upload budget | Implemented | NOT RUN |
+| GLES3 existing CPU fallback | Retained | NOT RUN on new tree |
+| Release of full CPU ModelAsset index arrays | NOT IMPLEMENTED | N/A |
+| Shared cross-world/global physical VRAM residency | NOT IMPLEMENTED | N/A |
+| Hardware sparse pages/Vulkan GPU compute | NOT IMPLEMENTED | N/A |
+| Crack-free lossy LOD parity | NOT IMPLEMENTED | N/A |
+
+### Limits and next agent steps
+
+**The live CPU ModelAsset still contains the complete original index
+array.** The disk archive provides real asynchronous *disk byte reads
+feeding GPU uploads* but currently does **not** save that CPU memory.
+`planView`, import validation and other diagnostic paths still inspect
+the in-memory index range. Eliminate this duplication only after
+introducing index-count-only immutable metadata with identical failure
+semantics and rewriting all CPU planners that rely on `indices.size()`.
+
+One native worker is created **per disk-backed source**; queue/ready
+cache limits are per source, not a global I/O thread or memory pool.
+Stage 15.4 should centralize worker scheduling and IO cache, expose
+lifetime-safe world ownership and enforce global active+in-flight
+VRAM budgets. Do not confuse FNV with authenticated asset signatures.
+
+Validate the combined updated code once in a clean isolated worktree:
+`aiverse_strata_disk_pages_tests`,
+`aiverse_strata_index_pages_tests`,
+`aiverse_strata_index_residency_tests`,
+`aiverse_strata_portable_tests`,
+`aiverse_strata_view_tests`, and the existing native Stage 13 Metal
+image parity tests. Then verify real GLES3 fallback and Vulkan
+raster/reflect/shadow on supported hardware; do not claim success
+until a real device log identifies the tested SHA.
+Stay on the feature branch: concurrent `main` render/CMake work is
+still divergent and must be integrated without forced updates.
