@@ -673,6 +673,22 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_test(NAME render_model_priority COMMAND aiverse_model_priority_tests)
 endif()
 if(AIVERSE_BUILD_TESTS)
+    add_executable(aiverse_model_owner_estimates_tests
+        tests/render/model_owner_estimates.cpp)
+    target_link_libraries(aiverse_model_owner_estimates_tests
+        PRIVATE aiverse_models aiverse_zstd_dec)
+    add_test(NAME render_model_owner_estimates
+        COMMAND aiverse_model_owner_estimates_tests)
+endif()
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_model_parallel_jobs_tests
+        tests/render/model_parallel_jobs.cpp)
+    target_link_libraries(aiverse_model_parallel_jobs_tests
+        PRIVATE aiverse_models aiverse_zstd_dec Threads::Threads)
+    add_test(NAME render_model_parallel_jobs
+        COMMAND aiverse_model_parallel_jobs_tests)
+endif()
+if(AIVERSE_BUILD_TESTS)
     add_executable(aiverse_animation_crowd_tests tests/animation/crowd.cpp)
     target_link_libraries(aiverse_animation_crowd_tests PRIVATE AIVERSE::animation_ecs aiverse_zstd_dec)
     add_test(NAME animation_crowd_policy COMMAND aiverse_animation_crowd_tests)
