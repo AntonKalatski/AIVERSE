@@ -193,3 +193,37 @@ Next exact steps:
    Run ./run-tests.sh --quick and GPU shader variant checks if possible. Record actual exact tested source SHA and results in another handoff stage.
 2. Integrate concrete read-only scene events from TerraWeave/NEREID/vegetation/building systems after their respective commits land in main; avoid guessing proprietary unpublished APIs. Surface changes must rebuild a geometry proxy for visibility.
 3. Add partial geometry-region update, probe relocation/classification, GPU tracing on Metal and portable graphics fallback, then real performance and visual acceptance. No work was merged into main.
+
+
+## Stage 8 - 2026-11-19 - incremental geometry-revision invalidation and sparse GPU clearing (source committed; NOT VERIFIED)
+
+Code commits:
+- 7732a17614d0da005e71041d2aebde124bd436a9 - engine/render/GiUpdateScheduler.h: optional affectedIndices output in invalidate()
+- d3c101156d898e52971cbca94e92b6fafe457938 - engine/render/GiDynamicProbeReference.h: local geometry snapshot revisions, conservative dirty radii and immediate CPU coefficient clearing
+- 1f7d43663170c70151bee209c4aae1c4e74380ef - engine/render/GiDynamicRuntime.h: setGeometryRegion(), pending regional zero uploads, dedup across overlapping revisions
+- 8271dce623e21b48da4841dc0da467fba1a14f82 - tests/render/gi_regional_geometry.cpp
+- 2c76aa59d4bdd8e2bf5533836810036f98de890b - CMakeLists.txt: GI regional geometry added to default ALL and CTest
+
+API:
+1. GiUpdateScheduler::invalidate(bounds, reason, radius, std::vector<uint32_t>* affectedIndices = nullptr) retains existing overload behavior while optionally reporting every invalidated cell.
+2. GiDynamicProbeReference::setGeometryRegion(const StaticShadowGeometry* rebuiltImmutableSnapshot, uint64_t revision, GiBounds changed, float influenceRadius = 0, std::vector<uint32_t>* cleared = nullptr) requires **an existing and a new non-null** geometry snapshot, validates the region, then atomically switches the reference to the new scene geometry, resets only affected CPU L1 coefficients and schedules those probe indices. Effective radius is conservatively at least traceDistance + maximum source radius: an edited blocker can change both probe-to-surface transport and the subsequent surface-to-light shadow ray.
+3. GiDynamicRuntime::setGeometryRegion(geometry, revision, bounds, radius) forwards the updated immutable BVH snapshot, accumulates zeroed probe indices until the next frame, and returns affected probe count. update(budget, camera) uploads *only those cleared texels* before tracing, even with budget=0; then uploads only successfully retraced probes. Multiple changes before update are deduplicated by GiDynamicProbeTexture::upload. A full setGeometry still performs a full invalidation/zero upload and supersedes pending regional clears.
+
+Compatibility: no changes to baked lightmaps, AVGIC005, shader layouts, ECS save/networking, or existing default GI. Calls are opt-in. Geometry reference snapshots are borrowed; owner must ensure lifetime. Merely bumping a revision without rebuilding the BVH does not make moved geometry traceable; this stage optimizes invalidation, **not** the BVH rebuild itself.
+
+Performance intent and limitations: Local changes avoid full-volume CPU coefficient reset and GPU upload, but the geometry BVH is still rebuilt by the host; CPU reference tracing remains bounded and slow compared with a GPU solver. If traceDistance and light radii cover the whole world, the conservative affected region will still include all probes, which is correct. This is a fixed dense probe volume (not yet clipmaps). Each region is axis-aligned in world metres. Revision changes while old tickets are in flight invalidate them; CPU reference update is currently synchronous single-threaded.
+
+Regressions added (source only): gi_regional_geometry checks GPU texture row preservation for a distant independently lit region, affected count < total, zero upload with no tracing, incremental retracing bounded by budget, coalesced overlapping regional edits, invalid range rejection, and rejecting partial edits without an initial geometry snapshot. It uses always-on AIVERSE_TEST_CHECK.
+
+Validation ACTUALLY performed: GitHub fetch, source edits and successful commit acknowledgements only. **NOT RUN:** compilation, CTest, shaders, device metrics, ./run-tests.sh. No PASS assertions about the regression or Android/Metal performance are justified yet.
+
+Next bounded stage:
+1. Verify the exact branch HEAD in a native worktree, compile the now **eight** gi_* targets and run CTest:
+   git fetch origin && git switch feature/hybrid-dynamic-gi && git pull --ff-only origin feature/hybrid-dynamic-gi
+   cmake -S . -B build/gi -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_EDITOR=OFF -DAIVERSE_BUILD_CLIENT=OFF
+   cmake --build build/gi --target aiverse_gi_regional_geometry_test -j8
+   ctest --test-dir build/gi --output-on-failure -R '^gi_'
+   ./run-tests.sh --quick
+   Preserve logs and exact tested SHA; fix any compiler/test failures before claiming tested.
+2. Add generation-aware geometry chunk sourcing (terrain tiles, vegetation tree proxies, buildings) with a deterministic index and host BVH rebuild/publishing. Only geometry that is actually in a rebuilt BVH affects ray visibility.
+3. Add scrolling/clipmap probe volumes for worlds larger than a single dense <=20,000-probe lattice, then a true GPU compute GI backend (Metal first, Vulkan/other backend fallbacks) plus per-frame GPU timing checks.
