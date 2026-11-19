@@ -590,6 +590,7 @@ private:
     std::unordered_map<uint64_t, StaticPacketEntry> staticRenderPackets_;
     StaticRenderPacketStats staticRenderPacketStats_{};
     bool staticRenderPacketsEnabled_ = false;
+    uint64_t staticRenderPacketEpoch_ = 0;
     struct StaticCacheEntry {
         StaticModelCache cache;
         uint64_t seen = 0;
