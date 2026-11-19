@@ -113,7 +113,11 @@ std::vector<PrismaTypeDef> buildCatalog() {
         // Stage 59: manually authored fixed exposure replaces the AE meter.
         // It is independent of AIVERSE_PRISMA_AUTO_EXPOSURE but still requires HDR.
         flag("manualExposure", false, "use a fixed camera exposure instead of GPU automatic metering; requires HDR", "Ручная экспозиция"),
-        num("manualEV", 0.0f, -12.0f, 12.0f, "fixed exposure multiplier in stops (2^EV), before tone mapping; no metering history", "Ручная экспозиция, EV")}});
+        num("manualEV", 0.0f, -12.0f, 12.0f, "fixed exposure multiplier in stops (2^EV), before tone mapping; no metering history", "Ручная экспозиция, EV"),
+        // Stage 59 metering shapes. The old circular region remains default.
+        flag("meterBox", false, "use a feathered rectangular metering region instead of the default circle", "Прямоугольная область замера"),
+        num("meterHalfWidth", 0.25f, 0.01f, 0.5f, "meter rectangle half width as a fraction of viewport width", "Полуширина области"),
+        num("meterHalfHeight", 0.25f, 0.01f, 0.5f, "meter rectangle half height as a fraction of viewport height", "Полувысота области")}});
     c.push_back({T::MotionBlur, "motionBlur", "Размытие движения", "Camera reprojection velocity and optional native object velocity texture; screen-space shutter blur.", C::Heavy, kHigh, {
         num("intensity", 0.65f, 0, 1, "shutter blend strength", "Сила"),
         num("maxPixels", 20.0f, 0, 64, "maximum motion displacement in screen pixels", "Максимальное смещение"),
