@@ -104,7 +104,8 @@ public:
         applyWaterConfluenceFlow(world_,position,out);
         applyWaterCascadeFlow(world_,position,out);
         applyNereidFlowObstructions(world_,position,out);
-        return out;
+        return applyNereidFloodSample(
+            world_,world_.resourceConst<WaterFloodResource>(),position,out);
     }
     size_t finiteBodyCount() const {return finite_.size();}
     size_t infiniteBodyCount() const {return infinite_.size();}
