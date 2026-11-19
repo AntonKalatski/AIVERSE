@@ -268,6 +268,21 @@ VulkanDevice::~VulkanDevice() {
     vkDestroyInstance(instance_, nullptr);
 }
 
+bool VulkanDevice::waitIdle() {
+    if(!device_ || recording_ || inPass_) return false;
+    const VkResult status=vkDeviceWaitIdle(device_);
+    if(status!=VK_SUCCESS) {
+        healthy_=false;
+        return false;
+    }
+    completed_=std::max(completed_,serial_>0?serial_-1:0);
+    // The GPU is idle, so pending texture readbacks can be delivered on
+    // the owner thread, before their staging allocations are released.
+    for(auto& slot:slots_)completeTextureCaptures(slot,true);
+    collectGarbage();
+    return true;
+}
+
 void VulkanDevice::destroyDeviceObjects() {
     vkDeviceWaitIdle(device_);
     destroySwapchain();
