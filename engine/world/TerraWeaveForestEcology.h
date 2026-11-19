@@ -363,7 +363,14 @@ inline ForestEcologyResult advanceForestEcology(
             plant,environment.sunPermille);
         const PlantEnvironment before=plant.environment;
         auto& env=plant.environment;
-        if(env.matureTicks==0)env.matureTicks=policy.matureTicks;
+        if(env.matureTicks==0){
+            // Legacy authoring defined matureTicks==0 as already mature.
+            // Opting such a tree into ecology must not unexpectedly shrink
+            // it to a tiny seedling on its first processed tick. Explicit
+            // seedling records always carry a nonzero matureTicks value.
+            if(env.ageTicks==0)env.ageTicks=policy.matureTicks;
+            env.matureTicks=policy.matureTicks;
+        }
         if(env.lifespanTicks==0)env.lifespanTicks=policy.lifespanTicks;
         env.ageTicks=std::min<uint64_t>(
             ageLimit,env.ageTicks+std::min<uint64_t>(
