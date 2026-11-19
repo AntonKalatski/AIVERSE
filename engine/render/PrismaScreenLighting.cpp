@@ -60,6 +60,12 @@ void PrismaScreenLighting::shutdown() {
     dev_=nullptr;post_=nullptr;
 }
 RTSCamera PrismaScreenLighting::jittered(RTSCamera c,int w,int h) {
+    // Never apply two independent temporal jitters: canonical Prisma
+    // Temporal Resolve exclusively owns reconstruction when enabled.
+    if (post_ && post_->canonicalTemporalRequested()) {
+        reset();
+        return post_->jitteredCamera(c,w,h);
+    }
     if(enabled_&&post_&&post_->hdrRequested()&&post_->quality()==PostFxQuality::High&&w>0&&h>0) {
         int index=(sequence_++%8)+1;c.jitter={2*(halton(index,2)-0.5f)/float(w),2*(halton(index,3)-0.5f)/float(h)};
     }
@@ -68,7 +74,8 @@ RTSCamera PrismaScreenLighting::jittered(RTSCamera c,int w,int h) {
 }
 gfx::PassDesc PrismaScreenLighting::scenePass(const gfx::PassDesc& out,int w,int h) {
     scene_=post_->scenePass(out,w,h);
-    running_=enabled_&&post_->linearScene()&&post_->quality()==PostFxQuality::High;
+    running_=enabled_&&post_->linearScene()&&post_->quality()==PostFxQuality::High &&
+        !post_->canonicalTemporalRequested();
     if(!running_){reset();return scene_;}
     if(w_!=w||h_!=h){
         releaseTargets();w_=w;h_=h;
