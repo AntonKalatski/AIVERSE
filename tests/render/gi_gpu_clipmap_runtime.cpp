@@ -75,7 +75,10 @@ int main() {
     AIVERSE_TEST_CHECK(step.submitted.submitted && step.submitted.probes==4);
     AIVERSE_TEST_CHECK(runtime.volume().originCell().x==-1);
     AIVERSE_TEST_CHECK((runtime.volume().ringOffset()==std::array<int,3>{3,1,1}));
-    AIVERSE_TEST_CHECK(!step.safeForPresentation);
+    // With a per-slot R8 validity mask, the 12 unchanged probes remain safe
+    // for presentation while four entering slots are still being computed.
+    AIVERSE_TEST_CHECK(step.safeForPresentation);
+    AIVERSE_TEST_CHECK(runtime.validity().validCount()==12);
     device.endFrame();
     device.completeFrame();
 
