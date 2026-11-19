@@ -2765,3 +2765,14 @@ before calling this stage validated.
 - `RenderTexture::upload` returns success/failure and RtsPaintLayers retries failed categorical, territory and manual copy operations without acknowledging stale GPU data.
 - **ACTUAL VALIDATION:** linked GitHub branch/PR, ancestry comparison, exact file reads/writes and source inspection. **NOT RUN:** local native compiler/build/link, CTest/CI, real Metal/Vulkan/GL, FPS/RTS/editor screenshots, TSAN/ASAN or benchmarks. This is source-only, not release ready.
 - **Next Stage 122:** migrate remaining host-specific whole-asset LOD/attachment paths, consider explicit morph/rig remap, finish canvas retry diagnostic API, then build/test and fix after the feature set is complete.
+
+## Stage 122 — explicit LOD retargeting and checked canvas GPU status (2026-11-19)
+
+- **Standalone handoff:** [Stage 122](animation-stage122-rig-retarget-2026-11-19.md), including exact source SHAs, touched code, API boundaries, real validation, risks and Stage 123.
+- Continued Stage 121 HEAD `bf3afef7` on `feature/universal-ecs-animation-pipeline`; main `d71c6d47` already an ancestor, ahead 841/behind 0 before work and ahead 859/behind 0 after functional commits. No main writes or force push; PR #22 is still Draft.
+- New `engine/view/ModelPoseRetarget.h` exposes validated visual-node -> source-node mapping, optional per-morph-channel mapping and bind-relative local TRS retarget. `ModelLod::retarget` and `View::submitOne` support both MotionWeave-evaluated and precomputed FPS/native poses without mutating the source graph clock; bad mappings safely use the target bind pose.
+- RTS `RtsLook` builds a name-based validated map when importing distant model LODs; `RtsViewDraw` reuses the generic retarget helper for those LODs, retaining its old world-matrix fallback for unsupported assets pending visual verification.
+- FPS identifies the source Model on its precomputed character packets and calls `View::beginPreparedFrame` once for LOD state pruning without stepping the graph a second time.
+- `RenderTexture::flushChecked` and `SubmissionStats` expose canvas GPU allocation failures. RtsPaintLayers no longer draws incomplete canvas passes after a failed scratch brush upload; RtsView and Editor Stats surface the per-canvas failure counters.
+- **ACTUALLY PERFORMED:** connected GitHub source inspection, PR and branch ancestry, targeted commits and readbacks. **NOT RUN:** local native CMake/C++, CTest, CI, real Metal/Vulkan/GL, sanitizer or performance/visual parity. No claim of compiled success; PR stays Draft.
+- **Next Stage 123:** compile and cache retarget plans with explicit generation safety, continue native/RTS visual adapter migration, finish features, then run full CMake/CTest/GPU/sanitizers and warnings fixes before any PR merge.
