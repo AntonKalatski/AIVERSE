@@ -41,6 +41,13 @@ int main() {
     CHECK(io::validBasename("receipts"));
     CHECK(!io::validBasename("../escape"));
     CHECK(!io::validBasename("."));
+    const std::string invalidName=std::string("receipts")+
+        char(0)+"other";
+    const std::string invalidSuffix=std::string("nonce")+
+        char(0)+"other";
+    CHECK(!io::validBasename(invalidName));
+    CHECK(!io::read(dir,invalidName,1,1024,readback,missing,&reason));
+    CHECK(!io::write(dir,"receipts",data,invalidSuffix,&reason));
     CHECK(io::read(dir,"receipts",1,1024,readback,missing,&reason));
     CHECK(missing && readback==std::vector<std::uint8_t>{77});
     CHECK(io::write(dir,"receipts",data,"nonce-a",&reason));
