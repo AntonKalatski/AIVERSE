@@ -219,3 +219,32 @@ terraweave::requestAutomaticShorelineRefresh(sim.world());
 **Important finite-volume limitation:** The reservoir conserves volume only in its declared closed window. The base NEREID water body's static volume/level is **not** globally coupled to this separate finite-grid storage; this is a local flood policy, not pressure-based Navier–Stokes or unlimited river discharge. Do not reseed the resource after simulation starts, and do not migrate/change its cell size or region by discarding existing volume. Server authority and ECS save/rollback must include `WaterFloodResource` and all NEREID bank/obstruction resources; the TerraWeave standalone Stage53 save payload does not contain the NEREID flood reservoir.
 
 **Status:** Source committed, NOT built/tested for Stage63. See `docs/terrain/stage-63a-nereid-flood-volume-handoff.md` and `stage-63b-flood-visual-native-handoff.md`. PR #24 stays Draft. After remaining feature work run native CMake/CTest, flood mass/rollback/reference-vs-indexed parity fixtures, Box3D physical obstruction scenarios and Metal screenshots.
+
+
+### Finite upstream supply, blocked channel and downstream outflow (Stage 63c)
+
+A closed grid cannot accumulate new water upstream of a blockage unless there is an initial higher hydraulic head or an **explicit source of inflow**. To model a finite river reach, configure source/outlet grid cells with a conserved external water reserve **before the first water-routing tick**. This is not an infinite pump: `WaterFloodResource::externalVolumeCm` is included in the exact before/after volume budget, with no new water magically created.
+
+```cpp
+// riverBody is the existing, generation-safe Entity returned by
+// examples::terraweave_native::addWaterBody(ecs,body).
+// The previously seeded grid is 1m cells in [-50,50) x [-50,50).
+using lib::nereid::WaterFloodPort;
+using lib::nereid::WaterFloodPortKind;
+examples::terraweave_native::configureFloodRiverPorts(
+    sim.world(),
+    {
+        WaterFloodPort{-30,0,WaterFloodPortKind::Inflow,
+                       6,riverBody},
+        WaterFloodPort{30,0,WaterFloodPortKind::Outflow,
+                       6,kNullEntity}
+    },
+    /*finiteExternalReserveCm=*/100000
+);
+```
+
+The inlet can supply up to 6cm-equivalent of the source cell's area per fixed simulation tick from the **already-counted finite reserve**. The outlet returns up to 6cm-equivalent to the same reserve. If a fallen tree or landslide reduces permeability, water backs up along the higher-head upstream cells, then can overtop lower adjacent dry banks instead of moving through the blocked edge. As the reservoir empties, supply stops naturally; there is no infinite static river discharge unless the game explicitly replaces or extends the model with its own accounted boundary conditions.
+
+`WaterFloodTick` reports grid transfers, overtopped edges, new wet/dry cells, water supplied and drained. `totalBeforeCm` and `totalAfterCm` include BOTH the grid water and external store and must match. Changes in wet/dry **final state** increment `WaterFloodResource::wetnessRevision`, triggering optional shoreline rerasterization. The ECS save/rollback resource includes the reservoir amount and port configuration; replication should send the canonical NEREID flood resource/deltas from server. Do not directly mutate the reservoir from an async graphics job, and never reseed it after simulation starts.
+
+**Status:** Source committed but native compilation/CTest, actual blockage/overflow, Metal shader visuals and water mass invariants are NOT yet tested. Refer to `docs/terrain/stage-63c-finite-river-ports-handoff.md` and the Stage63a/b handoffs.
