@@ -1577,3 +1577,46 @@ indirect submission are not part of the current Vulkan RHI;
 the completed CPU-selected raster fallback remains usable and
 correctness-first. Vulkan GPU compute parity requires additional
 Vulkan RHI compute API, GLSL/SPIR-V shader and hardware evidence.
+
+
+## Stage 14.1 — stable spatial LOD hierarchy and safe multi-backend fallback
+
+Strata now groups **parent LOD clusters by Morton-ordered 3D AABB
+centres at every hierarchy level**. This reduces accidental merging of
+far-away meshlet groups when model import order is nonspatial. Leaf LOD0
+triangles, UV/attribute vertex IDs and original vertex-buffer layout
+remain untouched. Parents still use border-locked, attribute-aware
+meshoptimizer simplification and conservative cumulative error.
+
+`PortableSource` is device-affine: a staged index buffer may only be
+destroyed by its original live RHI device; preparations refuse unhealthy
+devices. Source models with precomputed ordinary `GeometryData`
+(occluders/legacy clusters) are now permitted. The original `Model`
+retains that metadata for an atomic Legacy fallback, whereas the
+Strata alias deliberately has no independent `GeometryData` and no
+second built-in LOD chain, so the renderer cannot double-select a
+cluster hierarchy. Vulkan and GLES3 use the same CPU-selected path;
+GLES3 can use the original VB with one dedicated index buffer.
+A pooled Vulkan/Metal sidecar remains opportunistic, never required.
+
+Sidecar staging now checks every hierarchy node's finite ordered
+bounds, parent bounds containment, nondecreasing parent LOD error and
+the sum of leaf index counts against the original primitive's
+`indexCount` before uploading a GPU buffer. It prevents obvious
+incomplete/corrupt streamed assets from producing missing triangles.
+It cannot verify exact triangle identities once the original CPU
+index data has been released.
+
+New regression **test code** covers far-separated interleaved mesh
+islands, malformed parent bounds/leaf coverage, device loss and
+foreign-device shutdown, plus pre-existing legacy clustered sources
+on Vulkan/GLES3. **None of these tests or a native build have been
+executed in Stage 14.1.** The earlier owner-verified Stage 13 Metal
+strict reflection/shadow/main pixel parity applies only to the
+older test scenario, not the new production CPU-selected route.
+
+See `docs/agent-handoffs/strata-virtual-geometry.md` for exact
+Stage 14.1 commits, changed files, limitations and next validation
+plan. `main` is not merged into this unfinished feature branch;
+retain the default-OFF switch and do not treat this as hardware
+Vulkan/GLES3 certification.
