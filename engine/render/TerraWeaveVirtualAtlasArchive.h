@@ -312,6 +312,8 @@ inline void connectTerraWeaveVirtualTextureSampling(
             binding.pageTable=table;
             binding.layer=map.layer;
             binding.gutterPixels=float(version.gutter);
+            binding.addressU=version.addressU;
+            binding.addressV=version.addressV;
             return binding.valid();
         });
 }
