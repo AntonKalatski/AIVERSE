@@ -1255,17 +1255,22 @@ void Renderer3D::prepareGpuModelDraws() {
         return mixed && std::strcmp(mixed,"1")==0 &&
                perCommand && std::strcmp(perCommand,"1")==0;
     }();
-    // Mixed PBR requires a separate explicit opt-in, because it changes
-    // the GPU per-command U2 and fragment source textures, not merely VT.
-    // Shader Graph and masked/transparent materials remain excluded.
+    // Mixed PBR is independently opt-in for ordinary opaque
+    // materials. A separate VT flag remains mandatory for virtual
+    // materials. Source Shader Graph/alpha blending is still excluded.
     static const bool mixedPbrGroups = [] {
-        const char* pbr=std::getenv("AIVERSE_EXPERIMENTAL_ICB_MIXED_PBR");
-        const char* vt=std::getenv("AIVERSE_EXPERIMENTAL_ICB_MIXED_VT");
-        const char* command=std::getenv("AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT");
-        return pbr && std::strcmp(pbr,"1")==0 &&
-               vt && std::strcmp(vt,"1")==0 &&
+        const char* mixed=std::getenv("AIVERSE_EXPERIMENTAL_ICB_MIXED_PBR");
+        const char* command=std::getenv("AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR");
+        return mixed && std::strcmp(mixed,"1")==0 &&
                command && std::strcmp(command,"1")==0;
     }();
+    static const bool pbrVtAvailable=[] {
+        const char* command=std::getenv("AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT");
+        return command && std::strcmp(command,"1")==0;
+    }();
+    const auto mayMixPbr = [&](uint32_t index) {
+        return mixedPbrGroups && (!vtEnabled[index] || pbrVtAvailable);
+    };
     const auto vtCompatible = [&](uint32_t left, uint32_t right) {
         if (mixedVtGroups && vtEnabled[left] && vtEnabled[right])
             return true; // only when both commands can use per-command VT
@@ -1276,13 +1281,14 @@ void Renderer3D::prepareGpuModelDraws() {
     const auto materialCompatible=[&](uint32_t left,uint32_t right) {
         const auto& a=modelItems_[left];
         const auto& b=modelItems_[right];
-        if (mixedPbrGroups && vtEnabled[left] && vtEnabled[right])
+        if (vtEnabled[left] == vtEnabled[right] &&
+            mayMixPbr(left) && mayMixPbr(right))
             return equivalentGpuIcbPbrPipelineMaterial(*a.mat,*b.mat);
         return equivalentGpuMaterial(*a.model,*a.mat,*b.model,*b.mat);
     };
     const auto externalMaterialHash = [&](uint32_t index) {
         const auto& item=modelItems_[index];
-        uint64_t hash=(mixedPbrGroups && vtEnabled[index]) ?
+        uint64_t hash=mayMixPbr(index) ?
             gpuIcbPbrPipelineHash(*item.mat) :
             gpuMaterialStateHash(*item.model,*item.mat);
         // Exact comparison below remains authoritative, even on a hash
@@ -1578,62 +1584,77 @@ void Renderer3D::prepareGpuModelDraws() {
             // source PBR materials or shader permutations. Exact per-item
             // ticket validation below remains mandatory at execution.
             const bool materialMode = perCommandVt && vtEnabled[indices[first]];
-            const bool pbrMode = materialMode && mixedPbrGroups &&
+            const bool pbrMode = mayMixPbr(indices[first]) &&
                 equivalentGpuIcbPbrPipelineMaterial(
                     *modelItems_[indices[first]].mat,
                     *modelItems_[indices[first]].mat);
             std::vector<gfx::GpuIcbVirtualMaterial> commandMaterials;
+            std::vector<gfx::GpuIcbPbrMaterial> ordinaryPbrMaterials;
             std::vector<GpuMaterialResourceTicket> commandTickets;
             bool materialSnapshotValid=true;
-            if (materialMode) {
-                commandMaterials.reserve(end-first);
+            if (materialMode || pbrMode) {
+                commandMaterials.reserve(materialMode ? end-first : 0);
+                ordinaryPbrMaterials.reserve(!materialMode ? end-first : 0);
                 commandTickets.reserve(end-first);
                 for (size_t j=first;j<end;++j) {
-                    const auto& binding=vtBindings[indices[j]];
-                    if (!vtEnabled[indices[j]] || !binding.valid()) {
+                    const uint32_t index=indices[j];
+                    const auto& item=modelItems_[index];
+                    const auto& binding=vtBindings[index];
+                    if (vtEnabled[index] != uint8_t(materialMode) ||
+                        (materialMode && !binding.valid()) ||
+                        (pbrMode &&
+                         !equivalentGpuIcbPbrPipelineMaterial(
+                             *modelItems_[indices[first]].mat,*item.mat))) {
                         materialSnapshotValid=false;
                         break;
                     }
-                    gfx::GpuIcbVirtualMaterial descriptor;
-                    descriptor.physicalAtlas=binding.physicalAtlas;
-                    descriptor.pageTable=binding.pageTable;
-                    descriptor.params[0]=float(binding.layer);
-                    descriptor.params[1]=binding.gutterPixels;
-                    descriptor.params[2]=float(uint32_t(binding.addressU));
-                    descriptor.params[3]=float(uint32_t(binding.addressV));
-                    const auto& item=modelItems_[indices[j]];
-                    if (item.mat->alpha==AlphaMode::Mask &&
-                        item.mat->baseTex>=0 &&
-                        size_t(item.mat->baseTex)<item.model->images.size())
-                        descriptor.alphaCoverage=item.model->images[
-                            size_t(item.mat->baseTex)].virtualAlphaMask;
+                    gfx::GpuIcbVirtualMaterial virtualDescriptor;
+                    if (materialMode) {
+                        virtualDescriptor.physicalAtlas=binding.physicalAtlas;
+                        virtualDescriptor.pageTable=binding.pageTable;
+                        virtualDescriptor.params[0]=float(binding.layer);
+                        virtualDescriptor.params[1]=binding.gutterPixels;
+                        virtualDescriptor.params[2]=float(uint32_t(binding.addressU));
+                        virtualDescriptor.params[3]=float(uint32_t(binding.addressV));
+                        if (item.mat->alpha==AlphaMode::Mask &&
+                            item.mat->baseTex>=0 &&
+                            size_t(item.mat->baseTex)<item.model->images.size())
+                            virtualDescriptor.alphaCoverage=item.model->images[
+                                size_t(item.mat->baseTex)].virtualAlphaMask;
+                    }
+                    gfx::GpuIcbPbrMaterial ordinaryDescriptor;
                     if (pbrMode) {
-                        if (!equivalentGpuIcbPbrPipelineMaterial(
-                                *modelItems_[indices[first]].mat,*item.mat)) {
-                            materialSnapshotValid=false;
-                            break;
-                        }
-                        descriptor.hasPbr=true;
-                        descriptor.pbrTextures=gpuPbrSourceTextures(
+                        const auto textures=gpuPbrSourceTextures(
                             *item.model,*item.mat,white_,black_,flatNormal_);
                         const auto u2=packGpuPbrMaterialU2(*item.mat);
-                        std::memcpy(descriptor.pbrU2.data(),&u2,sizeof(u2));
+                        std::memcpy(ordinaryDescriptor.u2.data(),&u2,sizeof(u2));
+                        ordinaryDescriptor.textures=textures;
+                        if (materialMode) {
+                            virtualDescriptor.hasPbr=true;
+                            virtualDescriptor.pbrTextures=textures;
+                            virtualDescriptor.pbrU2=ordinaryDescriptor.u2;
+                        }
                     }
                     GpuMaterialResourceBinding snapshot;
-                    snapshot.alphaCoverage=descriptor.alphaCoverage;
-                    snapshot.virtualTextureEnabled=true;
-                    snapshot.virtualTexture=binding;
-                    snapshot.pbrEnabled=descriptor.hasPbr;
+                    snapshot.virtualTextureEnabled=materialMode;
+                    if (materialMode) {
+                        snapshot.virtualTexture=binding;
+                        snapshot.alphaCoverage=virtualDescriptor.alphaCoverage;
+                    }
+                    snapshot.pbrEnabled=pbrMode;
                     if (pbrMode) {
-                        snapshot.pbrTextures=descriptor.pbrTextures;
-                        snapshot.pbrU2=descriptor.pbrU2;
+                        snapshot.pbrTextures=ordinaryDescriptor.textures;
+                        snapshot.pbrU2=ordinaryDescriptor.u2;
                     }
                     const auto ticket=gpuMaterialResources_.intern(snapshot);
-                    if (!descriptor.valid() || !ticket.valid()) {
+                    if (!ticket.valid() ||
+                        (materialMode && !virtualDescriptor.valid()) ||
+                        (pbrMode && !ordinaryDescriptor.valid())) {
                         materialSnapshotValid=false;
                         break;
                     }
-                    commandMaterials.push_back(descriptor);
+                    if (materialMode) commandMaterials.push_back(virtualDescriptor);
+                    else ordinaryPbrMaterials.push_back(ordinaryDescriptor);
                     commandTickets.push_back(ticket);
                 }
             }
@@ -1651,6 +1672,11 @@ void Renderer3D::prepareGpuModelDraws() {
                     output,vb,ib,sourceSlots.data(),uint32_t(sourceSlots.size()),
                     instanceRecords.data(),instanceRecords.size()*sizeof(float),
                     commandMaterials.data()) :
+                pbrMode ?
+                dev_->prepareGpuEncodedIndexedIcbWithPbrMaterials(
+                    output,vb,ib,sourceSlots.data(),uint32_t(sourceSlots.size()),
+                    instanceRecords.data(),instanceRecords.size()*sizeof(float),
+                    ordinaryPbrMaterials.data()) :
                 dev_->prepareGpuEncodedIndexedIcb(
                     output,vb,ib,sourceSlots.data(),uint32_t(sourceSlots.size()),
                     instanceRecords.data(),instanceRecords.size()*sizeof(float));
@@ -1670,14 +1696,18 @@ void Renderer3D::prepareGpuModelDraws() {
                             break;
                         }
                 }
-                if (pbrMode && commandMaterials.size()>1) {
-                    const auto& firstPbr=commandMaterials.front();
-                    for (size_t j=1;j<commandMaterials.size();++j)
-                        if (firstPbr.pbrTextures!=commandMaterials[j].pbrTextures ||
-                            firstPbr.pbrU2!=commandMaterials[j].pbrU2) {
+                if (pbrMode && commandTickets.size()>1) {
+                    GpuMaterialResourceBinding firstSignature;
+                    gpuMaterialResources_.resolve(commandTickets.front(),firstSignature);
+                    for (size_t j=1;j<commandTickets.size();++j) {
+                        GpuMaterialResourceBinding candidate;
+                        if (!gpuMaterialResources_.resolve(commandTickets[j],candidate) ||
+                            firstSignature.pbrTextures != candidate.pbrTextures ||
+                            firstSignature.pbrU2 != candidate.pbrU2) {
                             group.mixedPbrResources=true;
                             break;
                         }
+                    }
                 }
                 group.perCommandTickets = std::move(commandTickets);
                 group.usesVirtualTexture = vtEnabled[indices[first]] != 0;
@@ -1688,9 +1718,9 @@ void Renderer3D::prepareGpuModelDraws() {
                     size_t(firstModel.mat->baseTex) < firstModel.model->images.size())
                     group.alphaCoverage = firstModel.model->images[
                         size_t(firstModel.mat->baseTex)].virtualAlphaMask;
-                if (materialMode) {
+                if (materialMode || pbrMode) {
                     // First ticket is retained for legacy introspection;
-                    // execution validates the complete per-item array.
+                    // execution validates every per-item resource snapshot.
                     group.materialResources = group.perCommandTickets.front();
                 } else {
                     GpuMaterialResourceBinding snapshot;
@@ -1988,7 +2018,7 @@ void Renderer3D::renderModels(int phase) {
             // prepared this ICB. Never bind a new texture table to old
             // encoded command uniforms: fall back to per-item CPU draws.
             bool stable = group.materialResources.valid() &&
-                (!group.perCommandVt ||
+                (!(group.perCommandVt || group.perCommandPbr) ||
                  group.perCommandTickets.size() == group.items.size());
             for (size_t itemOrdinal=0;itemOrdinal<group.items.size();++itemOrdinal) {
                 if (!stable) break;
@@ -2019,7 +2049,7 @@ void Renderer3D::renderModels(int phase) {
                     const auto u2=packGpuPbrMaterialU2(*item.mat);
                     std::memcpy(live.pbrU2.data(),&u2,sizeof(u2));
                 }
-                const auto ticket = group.perCommandVt ?
+                const auto ticket = (group.perCommandVt || group.perCommandPbr) ?
                     group.perCommandTickets[itemOrdinal] : group.materialResources;
                 if (!gpuMaterialResources_.matches(ticket,live) ||
                     (!group.perCommandVt &&
