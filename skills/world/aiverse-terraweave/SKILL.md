@@ -934,3 +934,15 @@ For `makeArborImpostorAtlas(profile, seed, settings)`, assume **two** mask layer
 - The far `Horizon` canopy uses a different statistical HLOD atlas; these near-tree bark/leaf pages do not alter TWH8 archives or the far forest tree samples.
 
 Per user instruction, after each feature stage append `docs/terrain/AGENT_HANDOFF.md` listing exact commits, affected APIs, actual verification, limitations, next concrete step, current branch and PR state. Never label a source-only commit as successfully compiled or GPU-tested.
+
+## Stage 30 — rigid hierarchical BranchLOD wind with bounded poses
+
+Use `ForestWindState::branchFlexPermille` (0..1000, default 600) to opt into or tune independent near-tree branch joint motion. Keep `xCmPerSec/zCmPerSec` and caller tick from existing PHYSIS-neutral bridge. `0` disables only per-branch articulation and preserves Stage 28's root-only sway. Do not create gameplay ECS components for cosmetic tree joints.
+
+- `ArborForestAdapter` caches high-detail tree branch start pivots per **species prototype**, then evaluates child rotations relative to their parent node transforms using existing `ModelDraw::nodeWorld`, without CPU mesh rebuild, skinning, new shaders or RHI allocations.
+- High/Medium/Low near foliage tiers use 100/65/25% of requested branch flex; far impostor and Horizon use no branch articulation, preserving cheap distant rendering. The original whole-tree root tilt remains for every tier.
+- `TerraWeaveForestScene::setBranchPoseBudgetBytes(0..8MiB)` sets the per-forEachDraw CPU pose memory ceiling (default 4MiB). When exhausted the remaining trees use root-only motion, not unbounded per-tree pose allocation. This setting is independent of gameplay network replication.
+- Poses are stored in a stable deque until next `forEachDraw()`. `Renderer3D::drawModel` immediately copies node transforms; callers collecting `ModelDraw` values must not dereference stored `nodeWorld` after the adapter's next submission and must not invoke its mutable pose arena from multiple threads simultaneously.
+- Root/branch angles are **render-only**, not physics deformation or procedural tree skeleton edits. Verify that draw culling and per-node LOD remain conservative under poses. PHYSIS is an optional upstream data supplier only.
+
+**Testing deferred** at user request. Dedicated test agent needs to run C++ builds/CTest plus Metal/GL/Vulkan visuals, verify parent-pivot continuity, material borrowed-pointer lifetime, 0 budget/root-only case, limits, dense forest CPU budgets and native PHYSIS integration. Until then mark code as committed, NOT VALIDATED. Update `docs/terrain/AGENT_HANDOFF.md` after every stage.
