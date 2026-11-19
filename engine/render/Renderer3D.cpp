@@ -350,6 +350,21 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
     // GPU command generation must complete encoding before render passes.
     // Metal guarantees command order between compute and render encoders.
     prepareGpuModelDraws();
+    // The current GPU indirect/ICB draw ABI does not encode the externally
+    // resolved VT atlas/page-table identity per indexed command. Preserve
+    // correctness by using CPU model submission for scenes that actually
+    // contain virtualized materials. Once command records carry that
+    // binding, GPU-driven VT draws can be enabled without a shader fork.
+    if (modelVirtualTextureResolver_) {
+        for (const auto& item : modelItems_) {
+            if (!item.inView || !item.model || !item.mat) continue;
+            ModelVirtualTextureBinding binding;
+            if (resolveModelVirtualTexture(*item.model,*item.mat,binding)) {
+                gpuModelCommandsReady_ = false;
+                break;
+            }
+        }
+    }
     prepareOcclusion();
     // ---- shadow pass
     if (quality_ != ShadowQuality::Off && shadowMap_.valid()) {
