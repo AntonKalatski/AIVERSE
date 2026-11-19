@@ -2440,3 +2440,58 @@ rendered pixels. Run `--vulkan` only where a Vulkan SDK and suitable
 driver are available. Keep the existing main worktree's unrelated
 incomplete rebase untouched.
 
+
+### Stage 10BB — on-device Metal texture acceptance fixture (opt-in, NOT YET RUN)
+
+A real macOS GPU test now lives at `tests/render/metal_texture_gpu.mm`.
+It directly creates the **production** `gfx::createMetalDevice` from
+`engine/gfx/metal/GfxMetal.mm` using a small `CAMetalLayer`; it does not
+substitute a mock texture device. The standalone CMake target is
+`aiverse_metal_texture_gpu_test`, and CTest name is `metal_texture_gpu`
+(labels `METAL;GPU;TEXTURE_RHI`, timeout 60 seconds).
+
+The test covers:
+
+- `RGBA8 Texture3D` 4×4×4 base volume initialized with distinct per-Z
+  colors; an x/y 2×2 patch at mip 0, Z=2; an authored mip-1 Z=1 slice;
+  invalid Z and too-short row-pitch rejection.
+- `Texture2DArray`, `Cube`, `CubeArray` with different initial face/layer
+  colors; update of the last face's authored mip 1.
+- **Actual Metal command-buffer copy** through
+  `gfx::Device::readTextureAsync()` for each selected face, Z plane and
+  mip. Checks exact RGBA8 bytes, dimensions, format, callback completion,
+  GPU device health, and the live/destroyed 3D resource inventory.
+
+It is deliberately excluded from the standard 23 focused CTests.
+Opt in on a Mac with a working Metal GPU:
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+bash tools/verify-texture-rhi.sh --editor --metal --jobs 4
+cat build/texture-rhi/verify-logs/metal-gpu.log
+```
+
+Alternatively, after configuring the worktree:
+
+```bash
+cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parallel 4
+ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
+```
+
+`--metal` fails on non-macOS hosts, fails if the GPU is unavailable,
+fails if the test binary is not registered, and fails on incorrect
+readback bytes or callback timeout. A CTest `SKIPPED` event must never
+be reported as GPU success. The verifier records detailed GPU output
+under `build/texture-rhi/verify-logs/metal-gpu.log` and reports the
+GPU test's result separately from the focused source tests.
+
+**Scope limitation:** this first native GPU acceptance tests uploads,
+blit readbacks and resource lifetime, **not** fragment shader sampling,
+GPU virtual page feedback, ICB multi-material execution, performance,
+hardware sparse residency, or cross-platform driver support. It does
+not prove successful GPU execution until the Mac Studio actually runs
+the opt-in target and supplies its log. Previous confirmed 23/23 CTest
+and editor PASS apply only to source validation on the older tested
+commit, not this new GPU test source.
+
