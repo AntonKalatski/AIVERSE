@@ -134,6 +134,18 @@ public:
     size_t activeModelReaders() const noexcept {
         return readState_->readers.load(std::memory_order_acquire);
     }
+    struct ModelReadSafetyStats {
+        size_t activeReaders=0;
+        size_t peakReaders=0;
+        uint64_t blockedMutations=0;
+    };
+    ModelReadSafetyStats modelReadSafetyStats() const noexcept {
+        return {
+            activeModelReaders(),
+            readState_->peakReaders.load(std::memory_order_relaxed),
+            readState_->blockedMutations.load(std::memory_order_relaxed)
+        };
+    }
 
     struct Stats {
         size_t models=0,textures=0,decodedCpuBytes=0;
@@ -543,9 +555,12 @@ public:
     }
 private:
     void requireNoModelReaders(const char* operation) const {
-        if(activeModelReaders()!=0)
+        if(activeModelReaders()!=0) {
+            readState_->blockedMutations.fetch_add(
+                1,std::memory_order_relaxed);
             throw std::logic_error(std::string("ModelResourceCache cannot ") +
                 operation + " while Model read leases are active");
+        }
     }
     std::shared_ptr<ModelReadLeaseState> readState_=
         std::make_shared<ModelReadLeaseState>();
