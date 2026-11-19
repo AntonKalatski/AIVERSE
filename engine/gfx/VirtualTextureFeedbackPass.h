@@ -10,6 +10,9 @@
 
 #include <cstddef>
 #include <limits>
+#include <vector>
+#include <functional>
+#include <cstdint>
 #include <string>
 #include <utility>
 
@@ -34,6 +37,23 @@ inline PipelineDesc virtualTextureFeedbackPipelineDesc(
     desc.label = "VirtualTextureFeedback";
     return desc;
 }
+
+// A renderer can translate its existing visible mesh/material queue into
+// these backend-independent draw commands. Each command may bind its own
+// material uniforms using prepare(), so meshes and terrain use one API.
+// The callback is invoked while the feedback render pass is active.
+struct VirtualTextureFeedbackDraw {
+    PipelineHandle pipeline;
+    BufferHandle vertexBuffer;
+    BufferHandle indexBuffer; // invalid means non-indexed draw
+    uint32_t count = 0;
+    uint32_t first = 0;
+    int32_t baseVertex = 0;
+    uint32_t instances = 1;
+    size_t vertexOffset = 0;
+    size_t indexOffset = 0;
+    std::function<bool(Device&)> prepare;
+};
 
 class VirtualTextureFeedbackPass {
 public:
@@ -157,6 +177,37 @@ public:
             throw;
         }
         return endAndCapture();
+    }
+
+    // Submit a renderer-prepared visible geometry queue through the same
+    // feedback pass. Reject malformed commands before beginning the pass,
+    // so an invalid item cannot leave partially rendered feedback.
+    // Pipeline depth mode must match hasDepthAttachment(); renderer owns
+    // pipeline creation, material uniform binding and camera transforms.
+    bool renderDrawsAndCapture(
+        const std::vector<VirtualTextureFeedbackDraw>& draws) {
+        for (const auto& draw : draws) {
+            if (!draw.pipeline.valid() || !draw.vertexBuffer.valid() ||
+                draw.count == 0 || draw.instances == 0 ||
+                (!draw.indexBuffer.valid() && draw.instances != 1)) {
+                error_ = "invalid virtual texture feedback draw command";
+                return false;
+            }
+        }
+        return renderAndCapture([&](Device& device) {
+            for (const auto& draw : draws) {
+                device.setPipeline(draw.pipeline);
+                device.setVertexBuffer(draw.vertexBuffer,draw.vertexOffset);
+                if (draw.indexBuffer.valid())
+                    device.setIndexBuffer(draw.indexBuffer,draw.indexOffset);
+                if (draw.prepare && !draw.prepare(device)) return false;
+                if (draw.indexBuffer.valid())
+                    device.drawIndexed(draw.count,draw.first,
+                                       draw.baseVertex,draw.instances);
+                else device.draw(draw.count,draw.first);
+            }
+            return true;
+        });
     }
 
     // End the current render pass, then stage a nonblocking texture readback.
