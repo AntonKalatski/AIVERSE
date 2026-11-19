@@ -1940,6 +1940,30 @@ if(AIVERSE_ENABLE_PHYSICS AND NOT EMSCRIPTEN)
                 apps/place/PlaceAdmission.cpp apps/place/PlaceLink.cpp)
     target_link_libraries(aiverse_place PUBLIC aiverse_net_replica AIVERSE::physics)
     target_include_directories(aiverse_place PUBLIC ${PROJECT_SOURCE_DIR})
+
+    # Explicit native performance-acceptance mode for Debug test builds:
+    # retain Debug symbols, asserts, Box3D validation, scene/substeps, 4G
+    # network traffic and the strict <5ms tick budget. Optimizing only
+    # the production hot-path dependencies avoids measuring a 523-body
+    # load against -O0 libraries while leaving ordinary Debug builds alone.
+    # OFF by default; the one-pass performance gate enables it explicitly.
+    option(AIVERSE_PLACE_FAST_DEBUG
+        "Enable -O2 for Place/Box3D/replica hot paths in Debug, retaining assertions"
+        OFF)
+    if(AIVERSE_PLACE_FAST_DEBUG)
+        if(CMAKE_CXX_COMPILER_ID MATCHES "^(AppleClang|Clang|GNU)$")
+            foreach(_place_hot_target IN ITEMS
+                    aiverse_place aiverse_net_replica aiverse_net
+                    aiverse_physics box3d)
+                if(TARGET ${_place_hot_target})
+                    target_compile_options(${_place_hot_target} PRIVATE
+                        "$<$<CONFIG:Debug>:-O2>")
+                endif()
+            endforeach()
+        else()
+            message(WARNING "AIVERSE_PLACE_FAST_DEBUG is only implemented for AppleClang/Clang/GNU")
+        endif()
+    endif()
     option(AIVERSE_BUILD_PLACE_CLIENT "Build the graphical client into aiverse_place" ${AIVERSE_BUILD_CLIENT})
     if(AIVERSE_BUILD_PLACE_CLIENT AND AIVERSE_DESKTOP)
         add_executable(aiverse_place_app apps/place/main.cpp apps/place/PlaceView.cpp $<TARGET_OBJECTS:aiverse_runtime>)
