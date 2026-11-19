@@ -147,6 +147,37 @@ bool HumanGroomRuntime::setCollisionMesh(
     collisionNodes_=std::move(nodes);
     return true;
 }
+bool HumanGroomRuntime::attachRootsToCollisionMesh() {
+    if(collisionTriangles_.empty()||guides_.empty())return false;
+    using namespace render;
+    const auto& bounds=collisionNodes_.front();
+    const auto center=(bounds.min+bounds.max)*0.5f;
+    for(auto& guide:guides_) {
+        float nearest=std::numeric_limits<float>::max();
+        float3 root=guide.root,normal=guide.normal;
+        // One-time authoring operation; runtime frame collision uses BVH.
+        // This avoids leaving the procedural ellipsoid roots trapped inside
+        // an imported head with different anatomical proportions.
+        for(const auto& tri:collisionTriangles_) {
+            const auto p=closestTriangle(root,tri.a,tri.b,tri.c);
+            const auto delta=p-root;
+            const float dist2=dot(delta,delta);
+            if(dist2>=nearest)continue;
+            nearest=dist2;root=p;
+            normal=normalize(cross(tri.b-tri.a,tri.c-tri.a));
+            if(dot(normal,p-center)<0.0f)normal=normal*(-1.0f);
+        }
+        const auto nextRoot=root+normal*0.002f;
+        const auto offset=nextRoot-guide.root;
+        guide.root=nextRoot;
+        guide.normal=normal;
+        for(auto& p:guide.rest)p=p+offset;
+        for(auto& p:guide.position)p=p+offset;
+        for(auto& p:guide.previous)p=p+offset;
+        guide.rest[0]=guide.position[0]=guide.previous[0]=guide.root;
+    }
+    return true;
+}
 void HumanGroomRuntime::clearCollisionMesh() noexcept {
     collisionTriangles_.clear();
     collisionOrder_.clear();
