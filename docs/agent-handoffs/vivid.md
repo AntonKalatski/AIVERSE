@@ -548,3 +548,11 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
   cmake --build ../AIVERSE-vivid/build/vivid --target aiverse_vivid_metal_rhi_tests aiverse_vivid_vertex_override_tests aiverse_vivid_metal_gpu_tests -j 4
   ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^vivid_(metal_gpu|metal_rhi|vertex_override)$'
   ```
+
+## Stage 5F user macOS verification — 2026-11-19 — 3/3 PASS
+
+- **Source revision:** test run follows the Stage 5F pull/build commands and the then-current GitHub branch head `d206b815fe34df068ba2f3eb40f48e96fd9cca2d`. The supplied excerpt does **not** show local `git rev-parse HEAD`, so the specific SHA is inferred from the immediately preceding instructions rather than independently echoed by the Mac.
+- **Mac compilation reported by user:** `aiverse_vivid_actor` (including new `GpuActorStream.cpp`) built and linked, `aiverse_vivid_metal_rhi_tests` Objective-C++ source rebuilt and linked, plus all prerequisite VIVID/Model GPU targets. No warning/error lines in supplied build output.
+- **User-executed CTest:** `vivid_metal_gpu` PASS 0.89s, `vivid_metal_rhi` PASS 1.81s (includes Stage 5F's two-actor, three-frame Metal GPU parity/ownership assertions), `vivid_vertex_override` PASS 0.58s; **3/3 Passed, 0 Failed, total 3.29s**. These are test results on real Apple Metal hardware, **not** a rendering benchmark or proof of dozens of simultaneous actors.
+- **Gaps:** existing 3-frame GUI Renderer3D/MotionWeave visual preview was previously verified at Stage 5E, not rerun in the supplied Stage 5F excerpt. No full `vivid_` / MotionWeave suite or long-term hot-reload/device loss soak test reported.
+- **Next action:** replace per-actor blocking shutdown on frequent despawn with the existing genre-neutral `render::AsyncResourceRetirementQueue` and GPU retirement markers. Keep a single GPU completion barrier per batch, avoid reimplementing the retirement state machine. Test Pending/Complete/Failed/idle fallback with a recording backend and a real Metal lifecycle pass. No changes to the MotionWeave animation owner.
