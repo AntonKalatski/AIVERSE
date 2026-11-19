@@ -69,7 +69,7 @@ public:
             return;
         }
         Resource resource;
-        resource.buffer=std::exchange(buffer,{});
+        resource.buffer=std::exchange(buffer,gfx::BufferHandle{});
         try {
             queue_->enqueueFrom(resource);
         }catch(...) {
