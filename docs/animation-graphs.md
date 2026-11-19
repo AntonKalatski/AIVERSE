@@ -997,3 +997,27 @@ requires separate lifetime ownership.
 **NOT RUN:** native C++ compilation, animation graph
 CTest, GPU FPS/RTS/editor parity or sanitizers.
 See [Stage 127 handoff](agent-handoffs/animation-stage127-model-epoch-bridge-pinned-appearance-2026-11-19.md).
+
+## Stage 128 — snapshot lifetime for native MotionWeave presentation
+
+Native hosts can retain immutable appearance and AnimationGraph
+snapshots in `PinnedAppearanceBatch` while staging the
+`View::update` input and submitting visuals. New opt-in
+`addOwned` and `pinRelatedModel` also retain genuinely
+shared-owned CPU Models for the base rig and every referenced
+visual LOD/attachment. `validatedSpan` rejects unpinned
+Model references before update, or additionally checks a
+host-provided GPU Device generation lease.
+
+The source and visual Model publication epochs, MotionWeave
+single-writer graph update, previous playback hot reload
+contract and source rig attachments remain unchanged.
+A shared CPU Model owner does NOT prevent a different host
+from destroying that Model's GPU buffers without its real
+fenced retirement. `ModelResourceCache` remains an explicitly
+borrowed unique-owner host; do not fabricate shared ownership
+for its models.
+
+**NOT RUN:** native C++ compiler/link, CTest, Graph lifecycle
+fault injection, GPU visual parity or sanitizers.
+[Stage 128 handoff](agent-handoffs/animation-stage128-native-model-lifetime-pins-2026-11-19.md).
