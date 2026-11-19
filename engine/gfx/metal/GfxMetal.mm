@@ -1690,6 +1690,8 @@ public:
             entry.hasPbr=true;
             entry.pbrTextures=materials[i].textures;
             entry.pbrU2=materials[i].u2;
+            entry.graphTextureCount=materials[i].graphTextureCount;
+            entry.graphTextures=materials[i].graphTextures;
             if (!entry.valid()) return 0;
         }
         return prepareGpuEncodedIndexedIcbInternal(
@@ -1901,6 +1903,19 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                     }
                     std::memcpy(native.u2,materials[i].pbrU2.data(),
                                 sizeof(native.u2));
+                }
+                native.graphTextureCount=materials[i].graphTextureCount;
+                if (native.graphTextureCount>0 && !native.hasPbr) return 0;
+                for (uint32_t j=0;j<native.graphTextureCount;++j) {
+                    const auto handle=materials[i].graphTextures[j];
+                    const auto* source=textures_.get(handle.id);
+                    if (!source || !source->tex || !source->sampler ||
+                        source->dimension!=TextureDimension::Texture2D ||
+                        source->tex.sampleCount!=1)
+                        return 0;
+                    native.graphHandles[j]=handle;
+                    native.graphTextures[j]=source->tex;
+                    native.graphSamplers[j]=source->sampler;
                 }
                 resources.virtualMaterials.push_back(std::move(native));
             }
@@ -2446,6 +2461,10 @@ private:
         std::array<id<MTLTexture>,6> pbrTextures{};
         std::array<id<MTLSamplerState>,6> pbrSamplers{};
         float u2[36] = {};
+        uint32_t graphTextureCount = 0;
+        std::array<TextureHandle,4> graphHandles{};
+        std::array<id<MTLTexture>,4> graphTextures{};
+        std::array<id<MTLSamplerState>,4> graphSamplers{};
     };
     struct GpuEncodedIcbResources {
         std::vector<GpuIcbNativeVtMaterial> virtualMaterials;
