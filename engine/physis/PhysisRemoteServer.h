@@ -207,7 +207,9 @@ public:
                         existing->second.lastTouchedMs=nowMs;
                         reply.receipt=existing->second.receipt;
                     } else {
-                        answer(Result::Unknown,"PHYSIS request not found; safe to retry original");
+                        answer(Result::Unknown,journalHealthy_
+                            ? "PHYSIS request not found; safe to retry original"
+                            : "PHYSIS journal unavailable; new edits and retries suspended");
                         if(const auto* state=simulation.world().resourceConst<FieldRuntimeState>())
                             reply.receipt.revision=state->revision;
                     }
