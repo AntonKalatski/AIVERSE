@@ -2495,3 +2495,49 @@ AUTO 1k exit=0
 5. Keep Draft PR #34 and experimental CPU/GPU flags OFF by default until image parity, performance acceptance and Vulkan cross-platform checks complete.
 
 **Actual tests:** Owner's native Mac Metal fixture only, as above. **Assistant did not execute local CMake/CTest/GPU timing** in this documentation-only stage.
+
+
+---
+
+## Stage 76 — profile successful MDI frames and remove repeated Metal ICB pipeline lookup (2026-11-19)
+
+**Repository/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. **Code commits:** `0b591cd872c705ab0253c61b9c295c6ac5094f03` (`tests/render/material_batches.cpp`) and `d9588ab5acbd7510df537f2e16e8e90c30e5b4f4` (`engine/gfx/metal/GfxMetal.mm`). This documentation is a distinct follow-up commit.
+
+### Actual prior evidence informing this work
+
+Stage 75 owner Mac Studio test validated 1,024 unique primitive items. AUTO made **110 actual CPU MDI submissions**, recorded 11 MDI and 95 Direct learning samples per pass, and chose Direct on the final frame. The CPU EWMA was lower for Direct (shadow 0.85953ms vs 1.14839ms; opaque 0.60410ms vs 0.97347ms), but full-phase Direct/AUTO medians 1.1510ms and 1.1829ms mixed exploration and fixed sequential phase order. Correctness: `changed_channels=0`, 35 CPU invariants PASS, process exit 0. CPU MDI actual submissions were therefore proven before Stage 76; **do not infer that a zero-MDI final frame means no MDI was executed.**
+
+### Implementation
+
+1. `tests/render/material_batches.cpp`: for opt-in `auto_stress` with `AIVERSE_BATCH_CPU_TIMING=1`, sample completed `renderer.render()` calls on frames 100..195 and split into **actually submitted CPU MDI frames** (`modelStats().multiDrawSubmissions > 0`) and **actual Direct/Instancing fallback frames** (zero MDI submissions). Report each group's own count, median, nearest-rank P95, min and max. Also print late AUTO frames 160..195 separately; this still includes periodic re-probes and is not a pure settled baseline. The existing 66 Direct baseline samples and 81 mixed AUTO samples remain unchanged.
+2. On frames with actual CPU MDI submission, record per-pass `mdiCpuStages` only for passes with `submitted > 0`, aggregating per-submitting-pass mean total, selection, material grouping, candidate scan, packing, pipeline setup, buffer upload and backend submit CPU times plus actual submission count. This avoids the former misleading last-frame breakdown (which was Direct). It is **synchronous CPU wall**, not Metal GPU command-buffer execution.
+3. `engine/gfx/metal/GfxMetal.mm`: CPU ICB encoder used `prim()` for each of up to 256 commands, internally looking up the same `Pipeline` by `pipelineId_` each iteration. New local `icbPrimitive` selects Lines/Triangles once from the already validated `p->desc.primitive` before the loop. No changes to command ranges, index formats, uniforms, pipeline state, resource residency, GPU synchronization or GPU ICB compute authoring. This is a low-risk CPU micro-optimization with **unmeasured benefit**; it cannot be cited as the cause of any performance improvement without an A/B test.
+
+### Verification actually done
+
+Inspected current source and profiling stages with GitHub connector, applied and committed the two focused source updates. **NOT RUN:** compilation on Mac, CTest, Metal raster parity after Stage 76, actual successful-MDI stage timings, GPU timestamp query, Vulkan tests, full CI, performance A/B/A. All experimental features remain disabled by default; PR #34 remains Draft.
+
+### Exact Mac Studio reproduction
+
+```sh
+cd /Users/aleksandrfeer/Projects/AIVERSE || exit 1
+git fetch origin
+git switch perf/incremental-static-model-cache
+git pull --ff-only origin perf/incremental-static-model-cache
+cmake --build build/batching-gpu-verify --target aiverse_material_batches --parallel 8 || exit 1
+mkdir -p build/batching-gpu-verify/captures
+AIVERSE_PALETTE_TEST_CASE=auto_stress \
+AIVERSE_BATCH_STRESS_ITEMS=1024 \
+AIVERSE_BATCH_AUTO=1 \
+AIVERSE_BATCH_CPU_TIMING=1 \
+AIVERSE_ICB_PROFILE=1 \
+build/batching-gpu-verify/aiverse_material_batches \
+ unused.obj build/batching-gpu-verify/captures/auto-stress-mdistages-1k
+echo "Stage 76 exit=$?"
+```
+
+Expect 35 CPU checks PASS, `changed_channels=0`, process exit 0 and the new `CPU render benchmark auto_direct_frames`, `auto_mdi_submitted_frames`, `auto_late_frames`, and `successful MDI CPU stage pass=` records when successful MDI probes occur after frame 100. `AIVERSE_ICB_PROFILE=1` may additionally report pooled Metal `[metal-icb]` breakdown after 600 submissions; one 1k test has fewer than 600, so do not expect that report yet. A failure to sample MDI on frames 100..195 requires inspection of policy probe chronology, not a claim that the MDI backend is broken.
+
+### Next engineering work
+
+Use actual successful-MDI stage means to prioritize CPU work (Metal ICB encode vs pipeline state vs grouping). Add per-sample path-labeled parity capture on a confirmed MDI frame, controlled rotated A/B/A measurements, and real GPU timing where backend APIs permit. Large stress (10k/100k), GPU-authored ICB comparisons, Vulkan and full CI still pending. Do not turn on experimental flags by default.
