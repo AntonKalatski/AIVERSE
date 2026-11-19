@@ -99,6 +99,7 @@ public:
         }
         if (sw <= 1 || sh <= 1) return;
         const float dpi = ImGui::GetIO().DisplayFramebufferScale.x;
+        vp_.setGpuDeviceLease(ed.gpuDeviceLease());
         vp_.ensure(ed.device(), int(sw * dpi), int(sh * dpi));
         if (ed.clientPlaying()) { drawClient(ed, dev, dl, origin, avail, sx, sy, sw, sh, k, devW, devH); return; }
         ImGui::SetCursorScreenPos(ImVec2(sx, sy));
