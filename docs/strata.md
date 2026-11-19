@@ -1259,3 +1259,133 @@ cross-backend Vulkan parity or performance. Those are explicit
 next gates. All production Strata render paths remain default-OFF;
 the original `Renderer3D` remains authoritative and `main`
 is not modified by this verification.
+
+
+## Stage 13 — actual Metal planar-reflection RTT A/B with two textured materials (2026-11-19)
+
+**Implementation committed; real Mac Studio Stage 13 compile and runtime
+execution have NOT YET BEEN PERFORMED.** This stage preserves every
+previously verified Metal fixture (5/5 selection, Stage 11 raster,
+Stage 12 two-view sun shadow depth) without modifications and keeps
+the PR Draft. It does not introduce a production Strata draw route,
+create a second GPU geometry pool or double-submit source geometry.
+
+### Diagnostic offscreen colour readback
+
+- \`gfx::Device::readColorTextureAsync(TextureHandle,ColorReadFn)\`
+  is an opt-in diagnostic RHI hook, returning false by default on
+  unsupported backends. It captures the **actual offscreen render
+  target**; it must not return an ordinary screen screenshot in its
+  place. Callback returns tightly packed top-down RGBA8 bytes, width
+  and height, on the device owner thread in a subsequent frame,
+  without blocking the GPU.
+- The Metal implementation accepts only non-MSAA
+  \`RGBA8\` render-target textures backed by
+  \`MTLPixelFormatBGRA8Unorm\`; it rejects invalid/non-RT images,
+  active graphics/compute encoders, >4096² or >64 MiB readbacks,
+  or more than eight outstanding requests. It GPU-blits the **real
+  private reflection texture** to a temporary shared MTLBuffer,
+  respecting Metal's 256-byte row alignment. Completion repacks
+  BGRA to RGBA8 and delivers the result on the owner thread.
+  Empty result indicates GPU command failure.
+  **HDR/RGBA16F reflection readback is intentionally unsupported.**
+- \`LightSystem::requestPlanarReflectionColorReadback\` offers
+  narrow read-only access to the renderer's existing
+  \`reflColor_\` texture only after this frame's actual
+  \`beginReflection/endReflection\` pass succeeded, and only
+  for LDR. \`Renderer3D::requestPlanarReflectionColorReadback\`
+  also requires the selected reflection plane to be valid;
+  it does not expose raw texture ownership.
+- A new separate **diagnostic** \`strata::RenderPass::PlanarReflection\`
+  permits selection preflights with the actual mirrored camera
+  view-projection. It does not enable any production Strata
+  commands. The source geometry still uses the single
+  \`GlobalGeometryPool\` source allocation and indexed sidecar.
+
+### Stage 13 manual Metal fixture
+
+\`tests/render/strata_metal_reflection_material_parity.cpp\`,
+target \`aiverse_strata_metal_reflection_material_parity\`, is
+built on macOS only when \`AIVERSE_STRATA_METAL_GPU_TESTS=ON\`.
+The fixture uses two physical adjacent opaque mesh primitives,
+with a shared x=0 boundary but **duplicated seam vertices,
+independent UV coordinates and distinct PBR materials**. Each
+material samples its own 4×4 GPU checker texture with an independent
+UV transform and has a separately staged lossless parent/leaf
+hierarchy (one parent with both triangles, two child triangles).
+All GPU geometry is uploaded **once** for the original Model
+using the existing \`GlobalGeometryPool\`; Fine/Coarse are
+test-only aliases with borrowed source GPU buffers and sidecar
+index offsets, not duplicate GPU model allocations.
+
+A translucent water surface using the existing
+\`kDrawWaterSurface\` flag, specular 0.98 and high-quality
+\`LightSystem\` triggers \`Renderer3D::renderReflection()\`,
+the real half-resolution reflection RTT. Other render paths are
+unchanged. Four mutually exclusive frame modes
+Empty/Legacy/Fine/Coarse are rendered with the same ordinary
+\`Renderer3D::drawModel\` across two distinct camera positions.
+\`prepareRenderCandidate\` uses the mirrored reflection
+view-projection for each material. Frustum culling is disabled
+in this preflight fixture to isolate strict multi-material
+indexed-offset/LOD selection; the **existing production
+Renderer3D reflection view still performs visibility culling**.
+No frame ever draws Legacy and Strata together.
+
+The fixture requests GPU readbacks inside each steady mode,
+covering 2 views × 4 modes × THREE outputs:
+
+- Actual main camera 800×600 RGBA8 screenshot
+  (\`strata-reflect-view{0|1}-MODE.ppm\`).
+- Actual 512×512 sun shadow Depth32Float texture
+  (\`strata-reflect-view{0|1}-MODE-shadow.f32\`).
+- **Actual 400×300 planar reflection render target RGBA8**
+  (\`strata-reflect-view{0|1}-MODE-reflection.ppm\`).
+  This is not a crop of the main screen.
+
+Strict acceptance requires all 24 GPU results; an **actual**
+reflection pass; Legacy main, depth AND reflection different
+from the empty baseline (per view); exact zero changed bytes
+between Legacy/Fine/Coarse in all three outputs and both
+cameras; distinct Legacy main and reflection images between
+views; at least two opaque/material source draws and four
+fine cluster draws; and one ModelDraw per candidate frame.
+Zero-delta equality is valid because this hierarchy is
+intentionally lossless. This is NOT an error metric for
+deliberately simplified LODs or an assertion of water
+reflection support on every RHI backend.
+
+Manual owner verification on Mac Studio:
+
+\`\`\`sh
+cd ~/Projects/AIVERSE-strata-validation
+git status --short
+git fetch origin feature/strata-virtual-geometry
+git switch --detach origin/feature/strata-virtual-geometry
+cmake -S . -B build/strata -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_BUILD_STRATA=ON \
+  -DAIVERSE_STRATA_METAL_GPU_TESTS=ON
+cmake --build build/strata --target \
+  aiverse_strata_metal_reflection_material_parity --parallel 8
+./build/strata/aiverse_strata_metal_reflection_material_parity
+\`\`\`
+
+Preserve any local uncommitted work before the branch switch.
+Expected successful summary (NOT YET OBSERVED):
+
+\`\`\`text
+[strata-reflect] view=0 main_fine=0 main_coarse=0 shadow_fine=0 shadow_coarse=0 reflection_fine=0 reflection_coarse=0
+[strata-reflect] view=1 main_fine=0 main_coarse=0 shadow_fine=0 shadow_coarse=0 reflection_fine=0 reflection_coarse=0
+[strata-reflect] PASS: actual planar reflection RTT nonblank and byte-identical across Legacy/Fine/Coarse
+[strata-reflect] status=PASSED views=2 modes=4 frames=...
+\`\`\`
+
+The focused macOS GitHub workflow **compiles** the new target, but
+does not execute interactive GUI GPU tests. CI being queued, pending,
+or merely green at compile time does not prove Stage 13 native parity.
+
+**Still pending:** Stage 13 actual Mac Studio build/run; HDR
+planar reflections, intentionally lossy meshlet LOD quality and
+cross-cluster seam tests, live GPU-selected raster/ICB submission
+with exclusive Legacy fallback, streaming/lifetime tests, Vulkan
+reflection parity, and controlled real GPU performance benchmarks.
