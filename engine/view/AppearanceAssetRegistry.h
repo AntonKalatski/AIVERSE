@@ -9,6 +9,7 @@
 #include <cmath>
 #include <limits>
 #include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -418,6 +419,9 @@ public:
     size_t size() const noexcept{return packets_.size();}
     bool empty() const noexcept{return packets_.empty();}
     const std::vector<Object>& objects() const noexcept {return packets_;}
+    std::span<const Object> span() const noexcept {
+        return {packets_.data(),packets_.size()};
+    }
     // Modify model LODs, attachments or significance AFTER constructing the
     // batch, not while View::update / Render3D submission is in progress.
     // References to packet elements may be invalidated by subsequent add().
