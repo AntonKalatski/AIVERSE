@@ -263,7 +263,8 @@ int aiverseMain(int argc, char** argv) {
             renderer.setGpuAuthoredDrawEnabled(batch && benchmarkMode == "gpu_icb");
         renderer.setModelMultiDrawEnabled(scenario == "static_packets"
             ? false : ((scenario != "indirect" &&
-                        scenario != "indirect_palette") || batch));
+                        scenario != "indirect_palette" &&
+                        scenario != "auto_stress") || batch));
         // Keep CPU packet primitive source pointers stable for the lifetime of
         // the fixture. Other scenarios deliberately toggle material batches.
         if (scenario != "static_packets")
