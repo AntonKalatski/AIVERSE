@@ -184,3 +184,33 @@ bytes and read time in separate processes for ordinary, shared, static
 modes. One final validation command after *all feature work*:
 `bash tools/ecs-static-scene-validate.sh build/static-scene all 8 1000000`.
 Do not report native Stage 6 tests or RSS results before that run.
+
+
+## Additive collision ID ownership (Stage 7)
+
+For multiple simultaneously loaded scenes sharing one physical SpatialWorld,
+use `engine/scene/SceneCollisionNamespaces.h` to allocate deterministic,
+non-overlapping static collider ID ranges by sorted stable *instance* key.
+Always retain a move-only range Lease while the real
+`world::CollisionStream` is alive. The standard legacy 3-argument
+CollisionStream still rejects any prior static high ID; the optional
+4th `CollisionIdRange` parameter supports additive scenes safely.
+
+`engine/scene/SceneCollisionBridge.h` wraps this exact existing
+CollisionStream as a `SceneLoadCoordinator` dependency adapter.
+On scene unload it shuts down its own chunk stream and releases only
+its collider IDs; another scene's collider IDs remain live.
+Gate simulation with `bridge.prepareRegions(regions)` before
+consuming any authoritative tick in a region requiring static
+collision. The bridge's per-stream publication limits are not a
+global scheduler budget. Do not rely on wall-clock worker completion
+to decide lockstep command/tick order.
+
+The host must use one namespace catalog per physical SpatialWorld,
+and should verify its fingerprint during network content negotiation
+and cold load. See `docs/scene-collision-namespaces.md` and
+`docs/agent-handoffs/ecs-static-scene-stage7-2026-11-19.md`.
+Native CTests `ecs_scene_collision_namespaces_test` and
+`ecs_scene_collision_bridge_test` are added but not yet run.
+The agreed final gate remains
+`bash tools/ecs-static-scene-validate.sh build/static-scene all 8 1000000`.
