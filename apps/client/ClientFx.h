@@ -28,6 +28,25 @@ public:
     int quality() const { return int(ps_.quality()); }
     void setQuality(int q) { ps_.setQuality(fx::FxQuality(q < 0 ? 0 : q > 3 ? 3 : q)); }
     fx::ParticleSystem& particles() { return ps_; }
+    // This host owns particle GPU buffers/atlas AND separate sprite cache.
+    // The particle batches only borrow sprite textures from this cache.
+    render::GpuOwnedMemoryStats ownedGpuMemoryStats() const {
+        const auto particle = ps_.ownedGpuMemoryStats();
+        const auto images = textures_.ownedGpuMemoryStats();
+        render::GpuOwnedMemoryStats result=particle;
+        result.textureKnownBytes=
+            render::GpuOwnedMemoryCounter::saturatingAdd(
+                result.textureKnownBytes,images.textureKnownBytes);
+        result.bufferKnownBytes=
+            render::GpuOwnedMemoryCounter::saturatingAdd(
+                result.bufferKnownBytes,images.bufferKnownBytes);
+        result.textures+=images.textures;
+        result.buffers+=images.buffers;
+        result.unknownTextures+=images.unknownTextures;
+        result.unknownBuffers+=images.unknownBuffers;
+        result.multiVersionBuffers+=images.multiVersionBuffers;
+        return result;
+    }
 
 private:
     fx::ParticleSystem ps_;
