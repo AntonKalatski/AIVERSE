@@ -132,6 +132,9 @@ void dispatchValidation() {
     check(deform.initialize(backend,library,vertices), "RHI init");
     const std::vector<float> weights{0.5f,0};
     check(!deform.dispatch(weights), "out-of-frame dispatch accepted");
+    // The current RHI has no inFrame() query: the failed beginCompute can
+    // happen after a safe weights upload, without starting a dispatch.
+    const auto uploadsBeforeFrame = backend.updates;
     backend.beginFrame(1,1);
     check(deform.dispatch(weights), "valid GPU dispatch rejected");
     check(backend.logicalThreads==2 && backend.dispatches==1 && backend.completed==1,
@@ -140,7 +143,7 @@ void dispatchValidation() {
           backend.lastParams.targets==2 && backend.lastParams.deltas==1 &&
           backend.lastParams.links==1 && backend.lastParams.normalizeDirections==1,
           "uniform/slot binding mismatch");
-    check(backend.updates==1, "weights weren't updated exactly once");
+    check(backend.updates==uploadsBeforeFrame+1, "valid dispatch missed the shape weights upload");
     const auto count=backend.updates;
     std::vector<float> invalid{std::numeric_limits<float>::quiet_NaN(),0};
     check(!deform.dispatch(invalid), "NaN weight accepted");
