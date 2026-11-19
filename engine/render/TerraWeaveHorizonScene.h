@@ -265,6 +265,13 @@ public:
         wind_=wind;
     }
     const ForestWindState& wind() const {return wind_;}
+    // Optional low-frequency cluster-local direction/strength/phase.
+    // Toggle only on the render owner thread before submit(); this changes
+    // the shared vertex shader graph, never the mesh or CPU atlas.
+    void setSpatialWindVariation(bool enabled) {
+        spatialWindVariation_=enabled;
+    }
+    bool spatialWindVariation() const {return spatialWindVariation_;}
     // Snapshot is owned by the native host; a single macro sample is
     // shared across all cards of an HLOD region and both crossfade models.
     // No per-tree data in the statistical Horizon cluster atlas.
@@ -570,7 +577,9 @@ public:
             // Existing active and crossfade GPU regions are updated without
             // rebaking their CPU atlas or reallocating vertex buffers.
             if(model->materials.size()>1){
-                const auto desired=gpuWind ? canopyWindGraph() :
+                const auto desired=gpuWind ?
+                    (spatialWindVariation_ ? horizonSpatialWindGraph() :
+                                             canopyWindGraph()) :
                     std::shared_ptr<const render::graph::Program>{};
                 if(model->materials[1].shaderGraph!=desired)
                     model->materials[1].shaderGraph=desired;
@@ -855,6 +864,7 @@ private:
     BiomeSettings biomes_;
     HorizonSettings settings_;
     ForestWindState wind_{};
+    bool spatialWindVariation_=true;
     std::shared_ptr<const ForestWindField> windField_;
     uint64_t presentationTick_=0;
     std::unique_ptr<world::AsyncChunkStream> stream_;
