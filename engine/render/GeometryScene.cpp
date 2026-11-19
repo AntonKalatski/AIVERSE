@@ -7,6 +7,7 @@
 #include "StrataGpuCulling.h"
 #include "StrataRenderRouting.h"
 #include "StrataPortableRender.h"
+#include "StrataStreamingCoordinator.h"
 #endif
 #include <algorithm>
 #include <filesystem>
@@ -45,6 +46,11 @@ void GeometryScene::shutdown(gfx::Device& dev){
     for (auto& [source, staged] : strataPortableSources_)
         if (staged) staged->shutdown(dev);
     strataPortableSources_.clear();
+    // The original RHI buffers are already released through their owner;
+    // only now return cross-world reservations to the device ledger.
+    for(const auto& [source,token]:strataGlobalIndexLeases_)
+        strata::releaseDeviceIndexBytes(dev,token);
+    strataGlobalIndexLeases_.clear();
     if (strataGpuCulling_) strataGpuCulling_->shutdown(dev);
     if (strataGpuMetadata_) strataGpuMetadata_->shutdown(dev);
 #endif
@@ -326,7 +332,14 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
             // models that cannot fit their roots stay intact on Legacy.
             std::map<std::string,size_t> streamingBudgets;
             const bool streamingRequested = strataStreamingIndexBudgetBytes_ ||
-                                            strataStreamingSceneBudgetBytes_;
+                                            strataStreamingSceneBudgetBytes_ ||
+                                            strataGlobalIndexBudgetBytes_;
+            const bool globalBudgetConfigured = !streamingRequested ||
+                strata::configureDeviceIndexBudget(
+                    dev,uint64_t(strataGlobalIndexBudgetBytes_));
+            if(!globalBudgetConfigured)
+                warnings_.push_back(
+                    "STRATA global device budget conflicts with an active world");
             if (streamingRequested) {
                 std::vector<strata::SceneIndexBudgetRequest> candidates;
                 constexpr uint64_t kSourceMaximum=64ull*1024ull*1024ull;
@@ -362,6 +375,11 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                 if (!model) continue;
                 const auto* asset = strataStaging_->find(key);
                 if (!asset) { ++stats_.strataPortableDeclined; continue; }
+                if(!globalBudgetConfigured){
+                    ++stats_.strataPortableDeclined;
+                    ++stats_.strataGlobalBudgetDeclined;
+                    continue;
+                }
                 size_t sourceBudget=0;
                 if(streamingRequested){
                     const auto granted=streamingBudgets.find(key);
@@ -371,6 +389,34 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                         continue; // source remains fully valid Legacy
                     }
                     sourceBudget=granted->second;
+                }
+                // Reserve the maximum arena allocation BEFORE loading a
+                // source. All worlds on this device compete for one ledger.
+                // If the remaining cap allows only roots, clamp this source
+                // rather than dropping it when a safe coarse LOD fits.
+                uint64_t leaseToken=0;
+                if(streamingRequested){
+                    uint64_t roots=0;
+                    for(const auto& entry:asset->primitives)
+                        for(uint32_t root:entry.geometry.roots)
+                            roots+=uint64_t(entry.geometry.nodes[root].indexCount)*4u;
+                    const auto current=strata::deviceIndexBudgetStats(dev);
+                    if(current.limitBytes){
+                        const uint64_t spare=current.reservedBytes<=current.limitBytes
+                            ? current.limitBytes-current.reservedBytes:0;
+                        if(spare<roots){
+                            ++stats_.strataPortableDeclined;
+                            ++stats_.strataGlobalBudgetDeclined;
+                            continue;
+                        }
+                        sourceBudget=size_t(std::min<uint64_t>(sourceBudget,spare));
+                    }
+                    if(!strata::reserveDeviceIndexBytes(dev,sourceBudget,leaseToken)){
+                        ++stats_.strataPortableDeclined;
+                        ++stats_.strataGlobalBudgetDeclined;
+                        continue;
+                    }
+                    strataGlobalIndexLeases_[model.get()]=leaseToken;
                 }
                 std::string error;
                 std::shared_ptr<strata::DiskIndexPages> diskPages;
@@ -391,6 +437,10 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                     if(!diskPages->open(path,*asset,sourceBudget,512,&error)){
                         ++stats_.strataPortableDeclined;
                         ++stats_.strataDiskArchiveDeclined;
+                        if(leaseToken){
+                            strata::releaseDeviceIndexBytes(dev,leaseToken);
+                            strataGlobalIndexLeases_.erase(model.get());
+                        }
                         warnings_.push_back("STRATA disk archive '"+key+"': "+error);
                         continue; // original Model remains Legacy
                     }
@@ -402,6 +452,10 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                                    strataStreamingUploadBudgetBytes_,
                                    std::move(diskPages))) {
                     ++stats_.strataPortableDeclined;
+                    if(leaseToken){
+                        strata::releaseDeviceIndexBytes(dev,leaseToken);
+                        strataGlobalIndexLeases_.erase(model.get());
+                    }
                     if (!error.empty())
                         warnings_.push_back("portable Strata source " + key +
                                             ": " + error);
@@ -422,6 +476,11 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                 strataPortableSources_.emplace(model.get(), std::move(source));
                 ++stats_.strataPortableSources;
             }
+        }
+        {
+            const auto shared=strata::deviceIndexBudgetStats(dev);
+            stats_.strataDeviceReservedIndexBytes=shared.reservedBytes;
+            stats_.strataDeviceIndexLeases=shared.activeLeases;
         }
         if (strataGpuMetadataEnabled_ && strataStaging_) {
             strataGpuDevice_ = &dev;
