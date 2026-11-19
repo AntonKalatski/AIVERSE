@@ -757,7 +757,17 @@ struct Viewer {
         // destruction of any native Model, texture or renderer resources.
         if(!dev->waitForResourceIdle()) {
             std::fprintf(stderr,
-                "aiverse_modelview: GPU shutdown barrier failed; resources left alive\n");
+                "aiverse_modelview: GPU shutdown barrier failed; GPU owners quarantined\n");
+            // Viewer is static. A mere early return would allow its
+            // unique_ptr members to destroy GPU-live Models on process
+            // teardown. Explicitly orphan owners when idle cannot be proven.
+            for(auto& [key,model]:models) {
+                (void)key;
+                (void)model.release();
+            }
+            (void)nativeModels.release();
+            for(auto& scene:retiredNativeScenes)(void)scene.release();
+            retiredNativeScenes.clear();
             return;
         }
         for (auto& [p, m] : models) if (m) releaseModel(*dev, *m);
@@ -766,8 +776,16 @@ struct Viewer {
         inst.clear();
         attachmentsRegistry.reset();
         if(nativeModels) {
-            nativeModels->shutdown(*dev);
-            nativeModels.reset();
+            try {
+                nativeModels->shutdown(*dev);
+                nativeModels.reset();
+            }catch(...) {
+                // Preserve partial uploads rather than invoking an unsafe
+                // destructor when provider shutdown reports GPU failure.
+                (void)nativeModels.release();
+                std::fprintf(stderr,
+                    "aiverse_modelview: provider shutdown failed; GPU owner retained\n");
+            }
         }
         (void)collectRetiredNativeScenes(true);
         // If even full-idle shutdown could not complete, retain old GPU
