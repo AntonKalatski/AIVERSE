@@ -108,6 +108,75 @@ void codecAndCorruption() {
     CHECK(!FileJournal::decodeEntries(bad,restored,&error));
 }
 
+void journalWriteFailureNeverAcknowledgesDurableSuccess() {
+    // Fail either the Queued receipt write or the post-tick Applied write.
+    // ECS may still commit, but a client must get Unknown once the durable
+    // receipt journal has become unavailable.
+    for(const int failOnWrite : {2,3}) {
+        auto sim=make();
+        ServerGateway gateway;
+        int writes=0;
+        gateway.setJournalWriter([&](const auto&,std::string* error) {
+            if(++writes>=failOnWrite) {
+                if(error)*error="PHYSIS injected receipt journal IO failure";
+                return false;
+            }
+            return true;
+        });
+        auto [client,server]=net::makeLoopbackPair();
+        const Packet submission=packet(39,730+failOnWrite,40);
+        net::Bytes frame;
+        CHECK(encode(submission,frame));
+        client->send(frame);
+        gateway.poll(*sim,*server,"admin",reader,writer,1);
+        CHECK(gateway.entries().size()==1);
+        CHECK(gateway.journalHealthy()==(failOnWrite==3));
+        client->update(1);
+        net::Bytes responseBytes;
+        Packet response;
+        CHECK(client->recv(responseBytes));
+        CHECK(decode(responseBytes,response));
+        CHECK(response.receipt.result==
+              (failOnWrite==2 ? Result::Unknown : Result::Queued));
+        for(int i=0;i<4;++i)sim->step();
+        gateway.observe(*sim);
+        CHECK(sim->world().resourceConst<FieldRuntimeState>()->revision==1);
+        CHECK(!gateway.journalHealthy());
+
+        Packet question;
+        question.kind=Message::Query;
+        question.clientInstance=submission.clientInstance;
+        question.requestId=submission.requestId;
+        CHECK(encode(question,frame));
+        client->send(frame);
+        gateway.poll(*sim,*server,"admin",reader,writer,100);
+        client->update(100);
+        CHECK(client->recv(responseBytes));
+        CHECK(decode(responseBytes,response));
+        CHECK(response.receipt.result==Result::Unknown);
+        CHECK(response.receipt.scheduledTick==0);
+
+        // Replaying the exact bytes must not reveal an unpersisted Applied.
+        CHECK(encode(submission,frame));
+        client->send(frame);
+        gateway.poll(*sim,*server,"admin",reader,writer,101);
+        client->update(101);
+        CHECK(client->recv(responseBytes));
+        CHECK(decode(responseBytes,response));
+        CHECK(response.receipt.result==Result::Unknown);
+
+        // Fresh writes are suspended until a server restart/reconciliation.
+        CHECK(encode(packet(50,submission.clientInstance,41),frame));
+        client->send(frame);
+        gateway.poll(*sim,*server,"admin",reader,writer,102);
+        client->update(102);
+        CHECK(client->recv(responseBytes));
+        CHECK(decode(responseBytes,response));
+        CHECK(response.receipt.result==Result::Rejected);
+        CHECK(sim->world().resourceConst<FieldRuntimeState>()->revision==1);
+    }
+}
+
 void durableIntentAndReload() {
     auto sim=make();
     const auto dir=tempPath();
@@ -623,6 +692,7 @@ void realLoopbackWebSocket() {
 int main(){
     codecAndCorruption();
     durableIntentAndReload();
+    journalWriteFailureNeverAcknowledgesDurableSuccess();
     queuedReceiptBeforeCrash();
     queuedReceiptAlreadyAppliedBeforeCrash();
     missingJournalFailsClosed();
