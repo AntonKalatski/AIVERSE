@@ -672,3 +672,42 @@ Per-pass `materialGroup` IDs are still derived from exact GPU-state comparison; 
 ### Next actionable feature and later tests
 
 Possible further feature-first optimization: avoid zeroing the complete per-item index array for views where most items are not static (e.g. epoch-marked item-index slots), or bound adaptive page/material group preflight to the current scene's distinct visible pages to cut work in dense worlds. Do not add stale cross-pass visibility caches or compromise exact GPU state/LOD checks. Once feature work ends, update `tests/render/model_batching_policy.cpp` for stages 10/11/13/15 etc, add CPU policy tests for workspace epoch/wrap/saturation/reuse, run focused CI, Metal raster parity and a real large-city A/B/A CPU/GPU benchmark.
+
+---
+
+## Stage 22 — sparse epoch stamps for preflight item indices and MDI modes (2026-11-19)
+
+**User direction:** prioritize features; compilation and tests later. **Repository:** `chromealex/AIVERSE`, **branch:** `perf/incremental-static-model-cache`, **PR:** #34 Draft (unmerged). **Implementation + agent-doc head before this handoff:** `0b59ed99e9f884f75a5194a0d8eeec94df78dcd9`. At start, current `main=9ee6ff6fbf390bd45363bc92c838f492dfe92eee`, branch head `4e440b7e6a17668b55979e4fff7bafae9ac7df21`; compare `ahead=165, behind=0`, main already fully included. Check again before any later write.
+
+### Problem and design
+
+Stage 21 removed per-pass hash-table allocations but still performed **linear full-array writes**:
+`groupForItem_.assign(modelItems_.size(), invalid)` whenever preflight began, and
+`modes_.assign(modelItems_.size(), 0)` whenever any preflight group qualified. In a city with many dynamic and nonbatchable objects but only a few eligible static ones, this zeroed far more indices than were used, twice per render scene (shadow and opaque). Stage 22 uses **item-generation stamps**: index and mode are written only for actually selected items, and older records are interpreted as invalid without clearing their value arrays. This never caches culling, LOD or visibility decisions between views.
+
+### Implementation, commits and changed files
+
+- `7d5d20ff09ee3c653ec325b07d5614fb66f1d847`: `engine/render/StaticCrossModelBatchPolicy.h` extends `StaticCrossModelPreflightWorkspace` with `groupStamp_`, `modeStamp_` (two reusable `std::vector<uint32_t>` arrays), 32-bit `itemEpoch_`, `activeItemCount_` and `modesActive_`. `beginPass(itemCount)` increments both directory generation and item generation, clears only the bounded per-pass group vector, and **resizes only on high-water growth**, not `assign()` each pass. `rememberItem(index,group)` stamps the written group; `groupForItem(index)` returns `kInvalidGroup` unless the element is current. `activateModes(itemCount)` lazily grows mode+stamp capacity, while `rememberMode(index,mode)` marks actual selected items and `modeOf(index)` returns 0 for unstamped/disabled elements. `clearModes()` is a constant-time logical disable. Rare 32-bit generation wrap resets **both stamp arrays** once before advancing again, avoiding false reuse. `retainedBytes()` includes both stamp vector capacities; `release()` frees them and resets generations/active state.
+- `586fe7a44521c6cd9cc3110731536139b40997d9`: `engine/render/Renderer3DModels.cpp` routes all cross-model sorting, per-page adaptive MDI gating, candidate compatibility and fallback through `staticCrossPreflight_.modeOf(index)` instead of direct access to an eagerly initialized full mode array. On the promotion pass it now uses `workspace.rememberMode(itemIndex, mode)`; group lookup already uses `workspace.groupForItem(itemIndex)` and its new stamp check. No original direct mode array references remain. The preflight group table and exact material/GPU page equality checks from Stage 21 are unchanged.
+- `32057d897935a2f4258dad76246b2a79f2d19006`: `docs/geometry-performance.md` explains sparse generation behavior, overflow, visibility invariants and memory/write tradeoff.
+- `0b59ed99e9f884f75a5194a0d8eeec94df78dcd9`: `AGENTS.md` updates agent responsibilities and warns against reading unstamped item data across passes.
+
+### API, lifetime, memory and safety
+
+Shared reusable workspace remains in the core renderer, genre-independent. The new methods `rememberMode(index, uint8_t)` and `modeOf(index)` replace direct mutable access to the mode vector in render code. `groupForItem`/mode lookups validate a generation and (for mode) `modesActive_`. `beginPass` is still called only when the special opt-in preflight will run; unrelated passes call `clearModes()`. The existing 4096 hash slots, 2048 preflight-group cap, exact page/material/VB/IB keys, MDI command thresholds, per-GPU-page cost decisions, and original fallback remain. No geometry, shader, GPU resource, ECS or saved-game changes. Both `AIVERSE_STATIC_CROSS_MODEL_BATCHES` and `AIVERSE_CPU_MDI_ADAPTIVE` remain OFF by default.
+
+The memory tradeoff is **+8 bytes per retained item** for two 32-bit generation stamps (earlier 3-byte/item group+mode content, now 11 bytes/item excluding vector capacity overhead). Scratch still grows only with the highest number of ModelItems seen on this renderer until full scene reload, where `invalidateStaticModelCaches()` frees all vectors; shutdown likewise releases them. This is intentional to reduce repeated O(total scene items) writes in sparse static scenes; dense static scenes may not improve. At the rare 32-bit item generation wrap, two stamp arrays receive a full clear once. Hash directory generation remains independently 64-bit. All pointers stored in a preflight group are valid only for that same draw pass and are not used in a subsequent one.
+
+### Actual verification (do not overstate)
+
+GitHub connector successfully read PR/main ancestry and current files, wrote the two code commits plus `docs/geometry-performance.md` and `AGENTS.md`. Re-fetched `StaticCrossModelBatchPolicy.h` and `Renderer3DModels.cpp`; read-only static source checks verified:
+1. Old per-pass full group-index/mode `assign` calls are gone; high-water `resize` remains.
+2. Both group and mode writes set `itemEpoch_`; both reads require the current generation.
+3. `modesActive_` protects passes that bypass preflight, and wrap/reset logic clears both stamps once.
+4. Direct renderer mode-array access is removed. Sorting, candidate comparison and adaptive instancing fallback all read via `modeOf`; promotion writes via `rememberMode`.
+
+**Native CMake compilation: NOT RUN. CTest: NOT RUN. GPU/Metal raster parity: NOT RUN. Real city CPU/GPU frame-time A/B: NOT RUN.** These remain deferred by the user's explicit feature-first instruction, and no local AIVERSE checkout exists in this session. No measured CPU improvement or visual correctness claim is made. The experimental code is still Draft/opt-in, with existing stale prior-stage test expectations to be reconciled later.
+
+### Next exact work
+
+Possible feature-first follow-up: reduce per-pass `order_` sorting on already-qualified pages using a bounded stable bucketization strategy or preflight-only sorted segments, while retaining exact material/pipeline compatibility, transparency order, and per-camera LOD. Avoid changing other renderers' ownership or GPU ICB without independent design. At the later test phase, add standalone CPU-only generation/wrap/sparse and stale-state cases for `StaticCrossModelPreflightWorkspace`, plus live Metal shadow/opaque off/on raster comparisons and fixed-city CPU/GPU time A/B/A. Update legacy `model_batching_policy.cpp` expectations from Stages 10–11, then run full CI. Append a new handoff after every stage.
