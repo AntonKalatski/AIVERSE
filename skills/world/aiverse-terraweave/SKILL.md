@@ -1320,3 +1320,17 @@ remains opt-in and uses the original CPU/GPU frame tags. Source
 writes and handoff are recorded; native compile/CTest/GPU
 benchmark/visual tests **NOT RUN** at user request. Keep PR #24
 Draft until independent QA.
+
+
+### Stage 43 QA — shared GPU timing router (2026-11-19)
+
+The per-Device `gfx::GpuTimingRouter` shared with native RTS/FPS, editor SceneWindow
+and benchmarks now has `tests/gpu_timing_router_test.cpp`, target
+`aiverse_gpu_timing_router_test`, CTest `gpu_timing_router`.
+The fake Device regression covers tag isolation, out-of-order delivery, late
+cancel/unsubscribe completions, busy/unsupported backend rejection,
+32/64/64 capacity and mailbox drop accounting. TerraWeave isolated GCC/Clang CI
+includes it. This fixture does **not** replace real Metal/GL/Vulkan
+frame-time or device-recreation tests. The prior nine TerraWeave CPU cases
+passed in Mac Studio QA; this **new** test was not compiled or executed by
+the authoring agent. See `docs/terrain/AGENT_HANDOFF.md` Stage43.
