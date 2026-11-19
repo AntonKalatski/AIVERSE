@@ -129,6 +129,13 @@ inline bool write(int directory,const std::string& name,
         if(count<=0) {good=false;break;}
         offset+=static_cast<std::size_t>(count);
     }
+    struct stat staged{};
+    if(good && ::fstat(fd,&staged)!=0)good=false;
+    if(good && (!S_ISREG(staged.st_mode) || staged.st_nlink!=1 ||
+                staged.st_uid!=::geteuid() || (staged.st_mode & 0077)!=0 ||
+                staged.st_size<0 ||
+                static_cast<std::uint64_t>(staged.st_size)!=bytes.size()))
+        good=false;
     if(good && ::fsync(fd)!=0)good=false;
     if(::close(fd)!=0)good=false;
     if(!good) {
@@ -139,8 +146,23 @@ inline bool write(int directory,const std::string& name,
         (void)::unlinkat(directory,temporary.c_str(),0);
         return error(why,"PHYSIS pinned journal rename failed");
     }
-    if(::fsync(directory)!=0 || !ownedDirectory(directory))
-        return error(why,"PHYSIS pinned journal directory fsync/ownership failed");
+    // renameat may complete while another same-UID process races the
+    // published name. Verify that the new target still names our staged
+    // inode before reporting durability. A mismatch is an UNKNOWN outcome,
+    // not a successful receipt acknowledgement.
+    struct stat published{};
+    const bool samePublishedFile=
+        ::fstatat(directory,name.c_str(),&published,AT_SYMLINK_NOFOLLOW)==0 &&
+        S_ISREG(published.st_mode) &&
+        published.st_dev==staged.st_dev &&
+        published.st_ino==staged.st_ino &&
+        published.st_nlink==1 &&
+        published.st_uid==::geteuid() &&
+        (published.st_mode & 0077)==0 &&
+        published.st_size==staged.st_size;
+    if(!samePublishedFile || ::fsync(directory)!=0 ||
+       !ownedDirectory(directory))
+        return error(why,"PHYSIS pinned journal published inode/fsync/ownership failed");
     if(why)why->clear();
     return true;
 }
