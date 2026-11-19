@@ -940,7 +940,20 @@ private:
         bool operator==(const ModelShaderKey& other) const {
             if (variant != other.variant) return false;
             if (graph == other.graph) return true;
-            return graph && other.graph && graph->glsl == other.graph->glsl && graph->vertexGlsl == other.graph->vertexGlsl && graph->textures.size() == other.graph->textures.size() && graph->outputs == other.graph->outputs;
+            if (!graph || !other.graph) return false;
+            // Material fragment and vertex shader source are backend-specific.
+            // A GL-only comparison may alias two distinct MSL shader programs;
+            // a mere texture count also loses the source binding identity.
+            // Preserve the Virtual Texture permutation flag explicitly,
+            // including graphs with an unused/disconnected VT node.
+            return graph->domain == other.graph->domain &&
+                   graph->glsl == other.graph->glsl &&
+                   graph->msl == other.graph->msl &&
+                   graph->vertexGlsl == other.graph->vertexGlsl &&
+                   graph->vertexMsl == other.graph->vertexMsl &&
+                   graph->textures == other.graph->textures &&
+                   graph->outputs == other.graph->outputs &&
+                   graph->usesVirtualTexture == other.graph->usesVirtualTexture;
         }
     };
     struct ShaderEntry { gfx::ShaderHandle shader; bool failed = false; gfx::Device::ShaderJob job; };
