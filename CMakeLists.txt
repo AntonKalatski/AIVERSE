@@ -2256,6 +2256,16 @@ if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
         LABELS "SpectraFX;Architecture")
 endif()
 
+# Portable visual evidence review of seven real P6 screenshots.
+# Runs hermetic synthetic fixtures; actual screenshots are analyzed separately.
+if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
+    add_test(NAME spectrafx_visual_review_parser
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/spectrafx/test_review_frames.py)
+    set_tests_properties(spectrafx_visual_review_parser PROPERTIES
+        LABELS "SpectraFX;TOOLS")
+endif()
+
 # Production Metal RHI acceptance: two independent offscreen camera views,
 # real compute->gfx::Device draw, RGBA pixel readback and 3-in-flight resource churn.
 # Explicitly compiles the production Metal backend without linking PlatformMac's main().

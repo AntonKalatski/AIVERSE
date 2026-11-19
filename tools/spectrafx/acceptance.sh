@@ -95,6 +95,11 @@ if stage configure cmake "${opts[@]}"; then
             # CTest exits 0 when tests SKIP. Do not silently call this a
             # real 3/3 GPU PASS; explicitly report each hardware result.
             stage metal_evidence python3 "$ROOT/tools/spectrafx/verify_metal_ctest.py" "${metal_args[@]}" || true
+            if [[ -n "${AIVERSE_SPECTRAFX_SCENE_CAPTURE:-}" ]]; then
+                stage visual_review python3 "$ROOT/tools/spectrafx/review_frames.py" \
+                    --prefix "$AIVERSE_SPECTRAFX_SCENE_CAPTURE" \
+                    --output-prefix "$LOG/spectrafx-visual-review" --strict || true
+            fi
         else
             skip ctest_metal "no Apple Metal on this OS"
             skip metal_evidence "no Apple Metal on this OS"
