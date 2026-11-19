@@ -1,5 +1,6 @@
 #include "engine/render/ModelTextureCache.h"
 #include "engine/render/RenderDeviceLifetime.h"
+#include "engine/view/AppearanceAssetRegistry.h"
 // LEGACY compatibility adapter for historical RTS/editor scene presentation.
 // Generic game-agnostic View is now <engine/view/View.h> / aiverse::View.
 // Keep genre-specific authoring/overlays here temporarily; do NOT add new
@@ -439,6 +440,8 @@ private:
     struct LegIK { int hip = -1, knee = -1, foot = -1; };
     struct ModelChoice {
         std::shared_ptr<const render::AnimationGraph> graph;
+        std::string graphSignature; // parsed graph definition incl. external content
+        view::AppearanceAssetRegistry::Snapshot appearanceSnapshot;
         render::GeometryPolicy geometry;
         render::Model* model = nullptr;
         std::vector<render::Material> materials;  // per-type copy with overrides applied
@@ -611,6 +614,7 @@ private:
     uint32_t drawTypeEpoch_ = 0;
     bool deferredLoading_ = false, streamingTypes_ = false;
     bool deferAppearanceVariants_ = true; // client default; editor disables
+    bool strictAppearanceReload_ = false; // temporary CPU preflight during authored reload
     render::FileReader asyncReader_;
     // Model resources (including async worker lifetime) are owned by
     // resources_; RtsView only supplies appearance rules and GPU publication.
