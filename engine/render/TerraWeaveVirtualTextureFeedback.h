@@ -120,7 +120,9 @@ public:
             std::isfinite(mapping.uvScaleX) &&
             std::isfinite(mapping.uvScaleY) &&
             std::isfinite(mapping.uvOffsetX) &&
-            std::isfinite(mapping.uvOffsetY);
+            std::isfinite(mapping.uvOffsetY) &&
+            mapping.addressU <= gfx::SamplerAddressMode::MirrorRepeat &&
+            mapping.addressV <= gfx::SamplerAddressMode::MirrorRepeat;
     }
 
     // Register only actual per-material page allocations. Unregistered
