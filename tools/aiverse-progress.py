@@ -23,8 +23,20 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 START_RE = re.compile(r"^\s*Start\s+\d+:\s+(\S+)")
 RESULT_RE = re.compile(r"^\s*\d+/\d+\s+Test\s+#\d+:\s+(\S+)\s+\.{2,}\s+(.+)$")
 BUILD_RE = re.compile(r"^\s*\[\s*(\d+)%\]")
-ERROR_RE = re.compile(r"(?:\berror:|\bfatal error:|\*\*\*Failed|\bFAILED\b)", re.I)
-WARNING_RE = re.compile(r"\bwarning:", re.I)
+# GCC/Clang, MSVC, CMake and failing CTest assertions. These counts are
+# diagnostic OUTPUT LINES, not unique compiler diagnostics.
+ERROR_RE = re.compile(r"(?:\bfatal error:|\berror:|\bCMake Error\b|\berror C\d+\b|\*\*\*Failed|^\s*FAIL(?:\s|:)|^\s*FAILED(?:\s|:)|^\s*The following tests FAILED:|\bundefined reference to\b)", re.I)
+WARNING_RE = re.compile(r"(?:\bwarning:|\bwarning C\d+\b|\bCMake Warning\b)", re.I)
+ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+SOURCE_RE = re.compile(r"(\S+\.(?:c|cc|cpp|cxx|m|mm|h|hpp|hxx)):(\d+)(?::\d+)?:\s*(?:fatal )?(?:warning|error):\s*(.*)", re.I)
+
+
+def short_issue(text):
+    """Preserve location + message in the UI; full source path stays in log."""
+    match = SOURCE_RE.search(text)
+    if match:
+        return "%s:%s: %s" % (pathlib.Path(match.group(1)).name, match.group(2), match.group(3))
+    return text.strip()
 
 
 def elapsed(seconds):
@@ -78,6 +90,11 @@ class Dashboard:
         self.tail = collections.deque(maxlen=9)
         self.warning_count = 0
         self.error_count = 0
+        self.issues = collections.deque(maxlen=6)
+        self.recent_errors = collections.deque(maxlen=6)
+        self.recent_warnings = collections.deque(maxlen=6)
+        self.diagnostics_path = report / "diagnostics.log"
+        self.diagnostic_stream = self.diagnostics_path.open("w", encoding="utf-8")
         self.build_progress = None
         self.last_output = self.start
         self.proc = None
@@ -89,6 +106,8 @@ class Dashboard:
             self._screen = True
 
     def close(self):
+        self.diagnostic_stream.flush()
+        self.diagnostic_stream.close()
         if self._screen:
             sys.stdout.write("\033[?25h\033[?1049l")
             sys.stdout.flush()
@@ -114,10 +133,23 @@ class Dashboard:
         m = BUILD_RE.match(line)
         if self.stage_name == "build" and m:
             self.build_progress = int(m.group(1))
-        if ERROR_RE.search(line):
-            self.error_count += 1
-        if WARNING_RE.search(line):
-            self.warning_count += 1
+        # The dashboard retains the latest issues across configure/build/test;
+        # a warning must not disappear merely because the next stage starts.
+        plain = ANSI_RE.sub("", line)
+        severity = "ERROR" if ERROR_RE.search(plain) else (
+            "WARN" if WARNING_RE.search(plain) else None)
+        if severity:
+            if severity == "ERROR":
+                self.error_count += 1
+            else:
+                self.warning_count += 1
+            issue = short_issue(plain)
+            self.issues.append((severity, issue))
+            (self.recent_errors if severity == "ERROR" else self.recent_warnings).append(issue)
+            stamp = datetime.datetime.now().strftime("%H:%M:%S")
+            self.diagnostic_stream.write("[%s] %s [%s] %s\n" %
+                                         (severity, stamp, self.stage_name, plain))
+            self.diagnostic_stream.flush()
 
     def draw(self, force=False):
         now = time.monotonic()
@@ -147,17 +179,40 @@ class Dashboard:
                          ((str(self.build_progress) + "%") if self.build_progress is not None else "waiting"))
         else:
             lines.append("Configuring CMake / preparing source and cache")
-        lines += ["Warnings: %s   Error lines: %s   Quiet for: %s" %
-                  (self.warning_count, self.error_count, elapsed(now - self.last_output)),
-                  rules, "Recent output:"]
-        lines.extend("  " + trim(x, width - 4) for x in self.tail)
-        if not self.tail:
-            lines.append("  (process running; no output yet)")
-        lines.append(rules)
-        lines.append("Ctrl+C: stop child process. Full output saved even when dashboard is quiet.")
+        lines.append("Warnings: %s   Errors: %s   Quiet for: %s" %
+                     (self.warning_count, self.error_count, elapsed(now - self.last_output)))
+        lines += [rules, "WARNINGS / ERRORS   (most recent, full list in diagnostics.log)"]
         terminal_rows = shutil.get_terminal_size((100, 24)).lines
-        lines = lines[:max(9, terminal_rows - 1)]
-        sys.stdout.write("\033[H\033[2J" + "\n".join(trim(x, width) for x in lines) + "\n")
+        available = max(12, terminal_rows - 1)
+        issue_slots = max(1, min(5, available - len(lines) - 4))
+        # Errors stay visible even if many unrelated warnings arrive later.
+        # Reserve room for both severities whenever the terminal allows it.
+        errors = list(self.recent_errors)[-min(3, issue_slots):]
+        warnings = list(self.recent_warnings)[-max(0, issue_slots - len(errors)):] if issue_slots > len(errors) else []
+        if not warnings and len(errors) < issue_slots:
+            errors = list(self.recent_errors)[-issue_slots:]
+        for issue in errors:
+            lines.append("! ERROR  " + issue)
+        for issue in warnings:
+            lines.append("! WARN   " + issue)
+        if not (errors or warnings):
+            lines.append("  No warnings or errors detected so far")
+        lines += [rules, "Recent output:"]
+        # Keep the warning/error panel visible on short terminal windows;
+        # only the less important recent-output list can be truncated.
+        recent_slots = max(0, available - len(lines) - 2)
+        for item in list(self.tail)[-recent_slots:] if recent_slots else []:
+            lines.append("  " + item)
+        lines += [rules, "Ctrl+C stops work; all diagnostics and raw logs are saved."]
+        visible = []
+        for line in lines[:available]:
+            clipped = trim(line, width)
+            if line.startswith("! ERROR"):
+                clipped = "\033[31m" + clipped + "\033[0m"
+            elif line.startswith("! WARN"):
+                clipped = "\033[33m" + clipped + "\033[0m"
+            visible.append(clipped)
+        sys.stdout.write("\033[H\033[2J" + "\n".join(visible) + "\n")
         sys.stdout.flush()
 
     def run(self, stage, command):
@@ -167,8 +222,7 @@ class Dashboard:
         self.failed_tests = 0
         self.build_progress = None
         self.tail.clear()
-        self.warning_count = 0
-        self.error_count = 0
+        # Keep cross-stage diagnostic counts and the pinned list intact.
         self.last_output = self.stage_start
         path = self.report / (stage + ".log")
         if self.args.dry_run:
@@ -270,6 +324,7 @@ def main(argv=None):
     rc = 0
     try:
         for stage, command in stages:
+            warnings_before, errors_before = dashboard.warning_count, dashboard.error_count
             if stage == "ctest" and not args.dry_run:
                 probe = ["ctest", "--test-dir", str(args.build_dir), "--show-only=json-v1"]
                 if args.test_regex:
@@ -284,7 +339,9 @@ def main(argv=None):
                         dashboard.total_tests = None
             rc = dashboard.run(stage, command)
             summary[stage] = {"exit_code": rc, "completed": dashboard.completed,
-                              "test_failures": dashboard.failed_tests}
+                              "test_failures": dashboard.failed_tests,
+                              "warnings": dashboard.warning_count - warnings_before,
+                              "errors": dashboard.error_count - errors_before}
             if rc:
                 break
     except KeyboardInterrupt:
@@ -293,10 +350,19 @@ def main(argv=None):
     finally:
         dashboard.close()
         summary["exit_code"] = rc
+        summary["diagnostics"] = {"warnings": dashboard.warning_count,
+                                  "errors": dashboard.error_count,
+                                  "file": str(dashboard.diagnostics_path)}
         summary["elapsed_seconds"] = round(time.monotonic() - dashboard.start, 2)
         (report / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     print("AIVERSE:", "PASS" if rc == 0 else "FAIL (exit %s)" % rc)
     print("Elapsed:", elapsed(time.monotonic() - dashboard.start))
+    print("Diagnostics: %s warnings, %s error lines" %
+          (dashboard.warning_count, dashboard.error_count))
+    if dashboard.issues:
+        for level, issue in list(dashboard.issues)[-5:]:
+            print("  [%s] %s" % (level, issue))
+    print("Diagnostic log:", dashboard.diagnostics_path)
     print("Logs:", report)
     return rc
 
