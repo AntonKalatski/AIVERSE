@@ -2,6 +2,7 @@
 // Project assets and routes are presentation resources. ECS SimEvent remains
 // authoritative for the occurrence of events, never for effect particles.
 #pragma once
+#include <algorithm>
 
 #include <cstddef>
 #include <cstdint>
