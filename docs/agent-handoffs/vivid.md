@@ -302,3 +302,25 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
 
 - **Follow-up code commit:** `ecefa8a6cb285e8a3c32a08807d5e36939f7eaf6` (`engine/character/vivid/CMakeLists.txt`): explicitly sets `OBJCXX_STANDARD=20`, `OBJCXX_STANDARD_REQUIRED=ON`, `OBJCXX_EXTENSIONS=OFF` for `aiverse_vivid_metal_gpu_tests`, because the test's `.mm` file includes VIVID C++20 `std::span` headers and a CXX-only compile feature is not sufficient to guarantee Objective-C++ language mode. This does not change any other target.
 - **Tests run on this follow-up:** NOT RUN. The real Metal GPU test still requires the user's Xcode/macOS host. Treat Stage 4D as unverified until that native build/CTest is reported.
+
+## Stage 4E — 2026-11-19 — fix macOS Objective-C++ CMake generation
+
+- **Branch:** `feature/vivid-digital-humans`; prior HEAD `2114f5e7293fa78d287e5cf1a2e539ff50c32c6d`.
+- **Mac repro supplied by user:** `git fetch` and detached checkout to `2114f5e72` succeeded; macOS CMake recognized AppleClang 17.0.0 Objective-C++ and completed configure, but failed *generate* repeatedly: `CMake Error: Error required internal CMake variable not set ... CMAKE_OBJCXX_COMPILE_OBJECT`. The failure is not a Metal shader compile error or a test failure. No fresh 8-test run was executed in this log.
+- **Root cause:** `enable_language(OBJCXX)` was incorrectly called inside `engine/character/vivid/CMakeLists.txt`; CMake's language initialization must occur at the highest common directory of affected targets. The generated compile rule was not available throughout the root's target graph. `OBJCXX_STANDARD=20` alone cannot initialize the language.
+- **Implementation commits:**
+  - `6f9e6fbd6885e7fd39fa195b62cc1e87c3225c6b` — `CMakeLists.txt`: after platform detection and `AIVERSE_BUILD_TESTS` option, conditionally call `enable_language(OBJCXX)` for macOS test configurations, before declaring build targets or adding the VIVID subdirectory.
+  - `09f389a293bc1d223824afaad1f63b116998f18d` — `engine/character/vivid/CMakeLists.txt`: remove the nested `enable_language(OBJCXX)` call. Retain the VIVID-only Metal GPU test target, `OBJCXX_STANDARD 20`, ARC and Metal/Foundation frameworks.
+- **Verification actually performed:** remote GitHub file inspection confirmed **one** `enable_language(OBJCXX)` at root line 45, after the tests option at line 39 and before VIVID `add_subdirectory` at line 524; the VIVID subdirectory has no language-enabling call and retains its macOS-only test definition. **Native CMake generation, compilation, CTest and Metal readback NOT RUN after this fix** by the assistant; no Mac build runner is available through GitHub. User's previous 7/7 CPU and MotionWeave test result predates Stage 4D and is unaffected in source.
+- **Scope/compatibility:** CMake-only change; no animation, renderer, shader, VIVID public API, save/network schema or RHI ABI modifications; macOS tests OFF and non-macOS targets should not enable Objective-C++ through VIVID.
+- **Known risks:** an existing CMake build directory may retain inconsistent state from the failed generation; retry same directory first, and if the generator still fails, configure into a **fresh** directory instead of patching generated CMake variables. The real `metal_gpu.mm` test has never compiled/run and could expose a separate Clang/Metal diagnostic next.
+- **Next exact step / owner Mac commands (NOT RUN by assistant):**
+  ```sh
+  cd ~/Projects/AIVERSE
+  git fetch origin feature/vivid-digital-humans
+  git -C ../AIVERSE-vivid switch --detach origin/feature/vivid-digital-humans
+  cmake -S ../AIVERSE-vivid -B ../AIVERSE-vivid/build/vivid -DAIVERSE_BUILD_TESTS=ON &&
+    cmake --build ../AIVERSE-vivid/build/vivid --target aiverse_vivid_metal_gpu_tests -j 4 &&
+    ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^vivid_metal_gpu$'
+  ```
+  If stale generation persists: substitute a *new* `-B ../AIVERSE-vivid/build/vivid-metal-clean` for both configure/build/CTest paths. Run the 8-test `^(vivid_|motionweave_api$)` selection only after building the corresponding targets. Append exact results to this handoff.
