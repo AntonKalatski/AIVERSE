@@ -344,12 +344,33 @@ void Editor::pollVisualAssets(double dt) {
     // happen only here, before the first rendering pass of a new frame.
     if(!visualAssets_.pending() || playing() || clientPlaying())return;
     const auto impact=visualAssets_.impact();
-    if(impact.requiresWholeView() ||
+    // Source mutations to a model and a graph/material in the same scan
+    // cannot safely share the appearance-only transaction. Keep the
+    // existing full-view barrier for mixed or unclassified GPU sources.
+    if(((impact.graph || impact.materialLibrary) &&
+        (impact.model || impact.texture)) ||
        (impact.texture && impact.models.empty())) {
         reloadVisualAssets();
-        ws_.log("view","обновлены графы/материалы: "+
+        ws_.log("view","полное обновление смешанных ресурсов: "+
                  std::to_string(visualAssets_.changedSources().size())+
                  " источников");
+    } else if(impact.graph || impact.materialLibrary) {
+        size_t refreshed=0;
+        if(view_.reloadAppearanceTypes(impact.types,impact.materialLibrary,
+                                       &refreshed)) {
+            if(refreshed) {
+                editSceneCacheValid_=false;
+                editSceneCache_.clear();
+                ++rulesRevision_;
+            }
+            ws_.log("view","обновлено визуальных типов (без выгрузки моделей): "+
+                     std::to_string(refreshed));
+        } else {
+            // A bad AnimationGraph JSON or malformed material library keeps
+            // the previous working look and active animations in place.
+            ws_.log("view","обновление графа/материалов отклонено; "
+                           "старая версия сохранена",true);
+        }
     } else if(!impact.empty()) {
         if(impact.texture) {
             auto cache=view_.textureCache();
