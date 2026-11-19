@@ -1,14 +1,31 @@
 #pragma once
 #include "../../../engine/render/PaintLayer.h"
 #include "../../../engine/render/Renderer3D.h"
+#include <memory>
+#include <stdexcept>
+#include <utility>
 namespace aiverse::game {
 struct MapGrid; class RtsView;
 class RtsPaintLayers {
 public:
+    void setGpuDeviceLease(render::RenderDeviceLifetime::Lease lease) {
+        if(dev_)throw std::logic_error("RtsPaintLayers: cannot change active GPU epoch");
+        gpuDeviceLease_=std::move(lease);
+    }
+    size_t pendingGpuRetirements() const noexcept {
+        return retirement_?retirement_->pending():0;
+    }
+    bool collectRetiredGpuResources() {
+        return retirement_?retirement_->collect():true;
+    }
+    uint64_t gpuRetirementOrphans() const noexcept {
+        return retirement_?retirement_->orphans():0;
+    }
     void draw(render::Renderer3D&,gfx::Device&,const std::shared_ptr<render::PaintLayers>&,
               const MapGrid&,const RtsView&,const std::vector<uint8_t>* vision,double time,uint8_t viewer);
     void shutdown();
 private:
+    void resetLayers(); // retire old layers without draining the shared GPU queue
     struct Layer {
         render::RenderTexture canvas;
         render::Mesh mesh;
@@ -20,6 +37,8 @@ private:
         uint64_t seaKey=0;
     };
     gfx::Device* dev_=nullptr;
+    render::RenderDeviceLifetime::Lease gpuDeviceLease_;
+    std::unique_ptr<render::CanvasGpuRetirement> retirement_;
     gfx::ShaderHandle shader_,cellShader_;
     gfx::PipelineHandle pipe_,cellPipe_;
     void drawCells(render::Renderer3D&,gfx::Device&,render::PaintLayer&,const MapGrid&,const RtsView&,int id,double time);
