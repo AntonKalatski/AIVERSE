@@ -1,6 +1,7 @@
 // Stage 87: PHYSIS-independent host-owned persisted fall ledger.
 // This suite compiles on the PHYSIS branch before TerraWeave is integrated.
 // Actual TerraWeave/Box3D end-to-end coverage is a separate optional target.
+#include "engine/physis/PhysisIntegration.h"
 #include "engine/world/PhysisNatureFallHost.h"
 #include <iostream>
 #include <memory>
