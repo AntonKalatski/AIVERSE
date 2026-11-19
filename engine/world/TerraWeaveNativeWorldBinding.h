@@ -9,6 +9,7 @@
 #include "engine/world/TerraWeaveWorldSceneBinding.h"
 #include "engine/world/TerraWeaveForestScene.h"
 #include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -46,7 +47,15 @@ public:
         if(initialized_ && !force && state->stateRevision==stateRevision_)
             return false;
 
-        auto stagedSoil=materializeEcsTerrain(*state,cfg_);
+        // Ecology-only stateRevision updates must NOT rebuild all terrain
+        // RHI/SpatialWorld/Box3D heightfields. Only a changed soil revision
+        // or an explicit rollback/force invalidates resident ground.
+        const bool groundChanged=
+            !initialized_ || force ||
+            state->earth.revision!=earth_.revision();
+        std::optional<EarthworksLayer> stagedSoil;
+        if(groundChanged)
+            stagedSoil.emplace(materializeEcsTerrain(*state,cfg_));
         RootSupportRegistry stagedRoots;
         GrassCoverRegistry stagedGrass;
         stagedRoots.setSnapshot(state->rooted);
@@ -69,7 +78,8 @@ public:
 
         // Stage publication; the render/physics system is not authoritative
         // and can be rebuilt after successful ECS snapshot validation.
-        earth_.exchangeSnapshotState(stagedSoil);
+        if(stagedSoil)
+            earth_.exchangeSnapshotState(*stagedSoil);
         roots_.exchangeSnapshotState(stagedRoots);
         grass_.exchangeSnapshotState(stagedGrass);
         if(auto* forest=scene.forestScene()){
@@ -81,8 +91,15 @@ public:
         // The caller now uploads new dynamic mesh/collision tiles within
         // its per-frame budget. Do not simulate actor movement on stale
         // ground while pendingTiles()>0.
-        runtime_.invalidateAllResident();
-        world_.reset(scene);
+        if(groundChanged){
+            runtime_.invalidateAllResident();
+            world_.reset(scene);
+        }else{
+            // Grass can regrow independently of terrain height. Keep the
+            // published terrain model/collision/NavMesh resident and only
+            // rebatch vegetation GPU patches at their normal frame budget.
+            runtime_.grassRenderer().invalidateAll();
+        }
         stateRevision_=state->stateRevision;
         initialized_=true;
         return true;
