@@ -24,6 +24,13 @@ void contract() {
     })"));
     expect(manifest.scalpColliderMesh=="closed_head_proxy",
            "import manifest lost explicit scalp proxy name");
+    reject([] {
+        HumanImportManifest m;
+        m.modelPath="head.obj";
+        m.scalpColliderMesh="head\\nproxy";
+        m.validate();
+    });
+
     expect(manifest.toJson()==HumanImportManifest::fromJson(manifest.toJson()).toJson(),
            "human import manifest canonical JSON lost fields");
     reject([]{HumanImportManifest::fromJson(Json::parse(R"({"version":1,"model":"../bad.obj"})"));});
