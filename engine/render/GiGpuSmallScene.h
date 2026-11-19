@@ -1,4 +1,4 @@
-// Experimental bounded Metal compute GI for small, immutable triangle scenes.
+// Bounded Metal / Vulkan compute GI for small, immutable triangle scenes.
 // Independent opt-in backend; NEVER auto-enables in GiDynamicRuntime.
 // Caller must invoke dispatch inside beginFrame/endFrame and OUTSIDE render passes.
 // GPU BVH traversal writes the RGBA16F dynamic-only atlas. No GPU readback or CPU coefficients.
@@ -6,6 +6,7 @@
 // claiming scheduler tickets complete; this prototype does NOT acknowledge them.
 #pragma once
 #include "GiGpuSmallSceneShaders.h"
+#include "GiGpuVulkanShaders.h"
 #include "GiGpuBvh.h"
 #include "GiDynamicProbeTexture.h"
 #include <algorithm>
@@ -56,13 +57,16 @@ public:
 
     bool initialize(gfx::Device& device, size_t probeCount) {
         shutdown();
-        // This shader is MSL only. Other RHI backends always take the CPU fallback.
-        if (device.info().backend != gfx::Backend::Metal || !device.supportsCompute() ||
-            !device.supports(gfx::PixelFormat::RGBA16F))
+        // GLES3/WebGL2 have no compute guarantee; they use GiDynamicRuntime's
+        // bounded CPU tracer and standard RGBA32F texture update path.
+        const auto backend=device.info().backend;
+        if ((backend!=gfx::Backend::Metal && backend!=gfx::Backend::Vulkan) ||
+            !device.supportsCompute() || !device.supports(gfx::PixelFormat::RGBA16F))
             return false;
         if (!atlas_.initialize(device,probeCount,true)) return false;
         const auto compute = device.createCompute(
-            {gi_gpu::kMetalSmallScene,nullptr,"GI bounded triangle transport"});
+            {gi_gpu::kMetalSmallScene,gi_gpu::kVulkanSmallScene,
+             "GI bounded triangle transport"});
         if (!compute.valid()) { atlas_.release(); return false; }
         dev_ = &device;
         compute_ = compute;
@@ -248,6 +252,7 @@ public:
         dev_->setComputeUniforms(&params,sizeof(params));
         dev_->dispatch(params.jobs);
         dev_->endCompute();
+        if (!dev_->computeDispatchSucceeded()) return result;
         result.submitted=true;
         result.probes=params.jobs;
         result.samples=params.samples;
