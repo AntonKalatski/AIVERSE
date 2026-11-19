@@ -3,6 +3,7 @@
 #pragma once
 #include "engine/render/NereidSurfaceResident.h"
 #include "engine/world/WorldAssets.h"
+#include "engine/world/NereidRipples.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -454,7 +455,8 @@ public:
         stats_.stagingReservedBytes=retainedPreparedBytes()+
             (pendingJob_?pendingJob_->reservation:0);
     }
-    void draw(render::Renderer3D& renderer,Cell origin,int cellSize)const {
+    void draw(render::Renderer3D& renderer,Cell origin,int cellSize,
+              const NereidRippleField* ripples=nullptr)const {
         const double worldOriginX=double(origin.x)*double(cellSize);
         const double worldOriginZ=double(origin.z)*double(cellSize);
         const double worldOriginY=double(origin.y)*double(cellSize);
@@ -465,7 +467,14 @@ public:
                 float(basis.originX-worldOriginX),
                 float(basis.originY-worldOriginY),
                 float(basis.originZ-worldOriginZ)});
-            slot.gpu->draw(renderer,transform);
+            std::array<render::float4,4> waves{};
+            if(ripples) {
+                const double targetX=basis.originX;
+                const double targetZ=basis.originZ;
+                waves=ripples->shaderRipples(
+                    slot.source.id,worldOriginX,worldOriginZ,targetX,targetZ);
+            }
+            slot.gpu->draw(renderer,transform,waves);
         }
     }
     void shutdown(gfx::Device& device) {
