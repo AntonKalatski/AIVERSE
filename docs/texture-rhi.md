@@ -2260,3 +2260,25 @@ decoder scratch and backend staging). Existing cube-array/3D/second-mip
 mock checks cover the upload ordering and resource cleanup, but this
 refactor has **NOT been compiled or run** on an actual backend.
 
+
+### Stage 10AS — focused texture verifier Bash compatibility repair
+
+The standard macOS command remains:
+
+```bash
+git switch feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+bash -n tools/verify-texture-rhi.sh
+bash tools/verify-texture-rhi.sh --editor --jobs 4
+```
+
+The verifier now expands zero optional `-D` CMake flags safely under
+macOS Bash with `set -u`, and has a single syntactically complete CTest
+runner following optional shader validator registration. The older script
+stopped at line 62 with `cmake_flags[@]: unbound variable`, before CMake
+configuration finished. This repair addresses the **verification script**;
+it does not imply native compilation, CTest passes or GPU validation.
+Read `build/texture-rhi/verify-logs/{configure.log,build.log,ctest.log,summary.txt}`
+for actual results after rerunning locally. The PR remains Draft until
+native/platform checks confirm correctness.
+
