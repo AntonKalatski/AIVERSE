@@ -703,6 +703,7 @@ void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
     }
 }
 void WorldScene::shutdown(gfx::Device& device) {
+    nereidFlowObstructions_.clear(); // no stale server physics snapshots after world unload
     nereidWater_.shutdown(device);
     cascades_.shutdown(device);
     ripples_.clear();
