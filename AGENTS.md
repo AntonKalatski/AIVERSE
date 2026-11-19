@@ -331,16 +331,24 @@ Strata development is isolated on `feature/strata-virtual-geometry`.
 Before editing mesh/LOD/geometry import, GeometryScene, GPU scene, RHI or
 indirect batching, read `docs/strata.md` and
 `docs/agent-handoffs/strata-virtual-geometry.md`, plus the latest
-`docs/metal-batching-agent-handoff.md`. Stages 2–7A build CPU meshlet/LOD assets, a read-only `Model`
+`docs/metal-batching-agent-handoff.md`. Stages 2–7B build CPU meshlet/LOD assets, a read-only `Model`
 adapter, opt-in `GeometryScene` staging, a per-view CPU selection oracle
-(`StrataView.h`), and optional `StrataGpuScene` cluster metadata in a
-Metal/Vulkan storage buffer (default OFF). **No Strata GPU draw path,
-geometry residency or compute culling is operational.** `Renderer3D`
-remains the sole draw owner. `SelectedRange::firstIndex` and
-`GpuNode::sourceFirstIndex` index an auxiliary Strata CPU Asset stream,
-NEVER the original pooled Model index buffer. GPU metadata staging
-requires the pre-existing `GlobalGeometryPool` Model allocation; do not
-bypass its admission checks or create a second source geometry pool.
+(`StrataView.h`) and shared-pool Strata index residency with GPU
+cluster metadata version 2 (Metal/Vulkan, default OFF).
+**No Strata GPU compute culling or draw submission path is operational.**
+`Renderer3D` is the sole draw owner. `SelectedRange::firstIndex` and
+`GpuNode::sourceFirstIndex` remain **local** to the primitive's
+`Strata::Asset::indices`; on successful GPU staging, the absolute index
+offset is `GpuPrimitive::gpuFirstIndex + GpuNode::sourceFirstIndex`.
+The `GpuPrimitive::gpuFirstIndex` mapping is valid ONLY for v2 GPU
+metadata held by the same source revision/lease. Do not use CPU v1
+metadata offsets or original `Model::gpuFirstIndex` interchangeably.
+Stage 7B reserves auxiliary index spans inside **the original**
+`GlobalGeometryPool` page: no second source geometry pool, and failed
+admission never triggers another GPU page. Explicitly retire spans before
+destroying the `gfx::Device`; reuse only after completed GPU frame serial.
+Keep CPU staging and GPU metadata upload default-OFF, and preserve legacy
+draw/shadow/LOD behavior without double submission.
 Coordinate with the batching agent: share a single instance/material/indirect
 grouping authority, do not duplicate rendered primitives or transforms.
 On each bounded Strata step: implementation commit first; append and commit the
