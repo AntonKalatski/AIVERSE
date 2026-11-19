@@ -943,6 +943,24 @@ GpuCheckpointStatus ComputeParticles::checkpointStatus() const {
     return status;
 }
 
+bool ComputeParticles::exportFreshCheckpoint(
+    std::vector<uint8_t>& bytes,size_t maxBytes,std::string* why) const {
+    const auto reject=[&](const char* reason) {
+        if(why)*why=reason;
+        return false; // never modify caller's previous byte buffer
+    };
+    if(!gpuActive() || !device_ || !device_->gpuHealthy() ||
+       gpuResetDirty_)return reject("GPU device unavailable or reset incomplete");
+    const GpuCheckpointStatus status=checkpointStatus();
+    if(!status.restoreEligible || status.pending)
+        return reject("no complete fresh checkpoint at current GPU revision");
+    if(!encodeGpuCheckpointDiagnostic(lastCheckpoint_,checkpointRevision_,
+                                       bytes,maxBytes))
+        return reject("checkpoint exceeds diagnostic byte limit or has invalid slots");
+    if(why)why->clear();
+    return true;
+}
+
 bool ComputeParticles::captureGpuCheckpoint(GpuCheckpoint& out) {
     out={};
     if(!initialized_ || backend_!=ComputeBackend::Metal || !device_ ||
