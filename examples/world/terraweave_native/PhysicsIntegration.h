@@ -70,9 +70,7 @@ inline SlopePhysicsEvents applySlideAndTreePhysics(
 inline size_t removeFullyDecayedFallenBodies(
         const terraweave::ForestDeadwoodDecayOutcome& decay,
         terraweave::FallenPlantPhysics& falling) {
-    if(decay.fullyDecayed.size()>
-       terraweave::ForestDeadwoodDecaySettings{}.maxLogsPerStep &&
-       decay.fullyDecayed.size()>1024)
+    if(decay.fullyDecayed.size()>1024u)
         throw std::length_error("TerraWeave deadwood cleanup budget");
     std::set<terraweave::AnchoredPlantId> unique;
     for(const auto& id:decay.fullyDecayed)
