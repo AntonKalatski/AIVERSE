@@ -21,6 +21,11 @@
 
 namespace aiverse::render {
 
+// Priorities describe presentation demand, never simulation authority.
+enum class ModelLoadPriority : uint8_t {
+    Background=0, Visible=1, Interactive=2
+};
+
 class AsyncModelCpuQueue final {
 public:
     struct Prepared {
@@ -33,6 +38,7 @@ public:
         size_t queued=0;
         bool workerActive=false;
         uint64_t finished=0, discarded=0;
+        size_t queuedInteractive=0, queuedVisible=0;
     };
     AsyncModelCpuQueue()=default;
     AsyncModelCpuQueue(const AsyncModelCpuQueue&)=delete;
@@ -42,22 +48,36 @@ public:
     void setMaxQueued(size_t count) noexcept {maxQueued_=count;}
     size_t maxQueued() const noexcept{return maxQueued_;}
     Stats stats() const noexcept {
-        return {queued_.size(),active_.has_value(),finished_,discarded_};
+        Stats result{queued_.size(),active_.has_value(),finished_,discarded_};
+        for(const auto& item:queued_) {
+            if(item.priority==ModelLoadPriority::Interactive)++result.queuedInteractive;
+            if(item.priority==ModelLoadPriority::Visible)++result.queuedVisible;
+        }
+        return result;
     }
     bool contains(const std::string& source) const {
-        if(active_ && active_->source==source)return true;
+        if(active_ && active_->source==source &&
+           active_->revision==currentRevision(source))return true;
         return std::any_of(queued_.begin(),queued_.end(),
             [&](const Request& r){return r.source==source;});
     }
 
     bool request(std::string source,FileReader reader,
-                 std::shared_ptr<ModelTextureCache> textures) {
-        if(source.empty() || !reader || !textures || contains(source) ||
-           (maxQueued_!=0 && queued_.size()>=maxQueued_))
-            return false;
-        const uint64_t revision=revisions_[source];
+                 std::shared_ptr<ModelTextureCache> textures,
+                 ModelLoadPriority priority=ModelLoadPriority::Visible) {
+        if(source.empty() || !reader || !textures)return false;
+        const uint64_t revision=currentRevision(source);
+        if(active_ && active_->source==source &&
+           active_->revision==revision)return false;
+        for(auto& item:queued_) {
+            if(item.source!=source)continue;
+            if(item.priority>=priority)return false;
+            item.priority=priority; // upgrade without changing FIFO among equals
+            return true;
+        }
+        if(maxQueued_!=0 && queued_.size()>=maxQueued_)return false;
         queued_.push_back({std::move(source),revision,
-                           std::move(reader),std::move(textures)});
+                           std::move(reader),std::move(textures),priority});
         startNext();
         return true;
     }
@@ -99,11 +119,20 @@ private:
         uint64_t revision;
         FileReader reader;
         std::shared_ptr<ModelTextureCache> textures;
+        ModelLoadPriority priority=ModelLoadPriority::Visible;
     };
+    uint64_t currentRevision(const std::string& source) const {
+        const auto it=revisions_.find(source);
+        return it==revisions_.end()?0:it->second;
+    }
     void startNext() {
         if(pending_.valid() || queued_.empty())return;
-        active_=std::move(queued_.front());
-        queued_.pop_front();
+        const auto best=std::max_element(queued_.begin(),queued_.end(),
+            [](const Request& a,const Request& b) {
+                return a.priority<b.priority;
+            });
+        active_=std::move(*best);
+        queued_.erase(best);
         const Request request=*active_;
         pending_=std::async(std::launch::async,[request]() mutable {
             Prepared result;
