@@ -1,6 +1,7 @@
 #include "engine/character/vivid/HumanRig.h"
 #include "engine/character/vivid/RigAuthoring.h"
 #include "engine/character/vivid/BindPoseRebind.h"
+#include "engine/character/vivid/SkinWeightAuthoring.h"
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -129,6 +130,55 @@ void check() {
         catch(const std::invalid_argument&){rejected=true;}
         req(rejected && rig.nodes[1].t.y==last,
             "invalid skin palette partially modified skeleton");
+    }
+    {
+        render::Model weighted;
+        render::Node shoulder;
+        shoulder.name="shoulder";
+        weighted.nodes.push_back(shoulder);
+        render::Node elbow;
+        elbow.name="elbow";elbow.parent=0;
+        weighted.nodes.push_back(elbow);
+        render::Node surface;
+        surface.name="surface";surface.mesh=0;surface.skin=0;
+        weighted.nodes.push_back(surface);
+        render::Skin skin;
+        skin.joints={0,1};skin.inverseBind.resize(2);
+        weighted.skins.push_back(skin);
+        weighted.vertices.resize(2);
+        weighted.vertices[0].joints[0]=0;
+        weighted.vertices[0].weights[0]=255;
+        weighted.vertices[1].joints[0]=0;
+        weighted.vertices[1].weights[0]=255;
+        weighted.indices={0,1,0};
+        render::MeshDef mesh;
+        render::Primitive primitive;
+        primitive.firstVertex=0;primitive.vertexCount=2;
+        primitive.firstIndex=0;primitive.indexCount=3;
+        primitive.jointPalette={0,1};
+        mesh.primitives.push_back(primitive);
+        weighted.meshes.push_back(mesh);
+        SkinWeightAuthoring weights;
+        req(weights.set(0,"elbow",0.25f),"skin weights edit rejected");
+        const auto result=weights.apply(weighted);
+        req(result.verticesChanged==1 &&
+            weighted.vertices[0].weights[0]+weighted.vertices[0].weights[1]==255 &&
+            weighted.vertices[0].joints[0]==0 &&
+            weighted.vertices[0].joints[1]==1,
+            "skin weights U8 normalization/joint slot order failed");
+        const auto json=weights.toJson();
+        const auto restored=SkinWeightAuthoring::fromJson(json);
+        req(restored.edits().size()==1 &&
+            std::fabs(restored.edits().begin()->second.weight-0.25f)<1.e-5f,
+            "skin weights sidecar JSON roundtrip failed");
+        auto before=weighted.vertices[0];
+        weighted.meshes[0].primitives[0].jointPalette={0};
+        bool rejected=false;
+        try {(void)weights.apply(weighted);}
+        catch(const std::invalid_argument&){rejected=true;}
+        req(rejected && weighted.vertices[0].weights[0]==before.weights[0] &&
+            weighted.vertices[0].joints[1]==before.joints[1],
+            "invalid weight palette partially changed prepared mesh");
     }
     model.nodes.resize(2); // missing jaw and eyes must be legal for morph-only rigs
     const auto fallback=HumanRigBinding::compile(model,HumanDNA{}.rig);
