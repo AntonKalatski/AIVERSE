@@ -21,6 +21,11 @@ void pixel(std::string& data, uint8_t r, uint8_t g, uint8_t b, uint8_t e) {
     data.push_back(char(r)); data.push_back(char(g));
     data.push_back(char(b)); data.push_back(char(e));
 }
+// RLE channel runs use two bytes (length code and repeated value), not RGBE pixels.
+void rleRun(std::string& data, uint8_t code, uint8_t value) {
+    data.push_back(char(code));
+    data.push_back(char(value));
+}
 struct MockGpu final : gfx::Device {
     gfx::DeviceInfo info_;
     std::string error_ = "mock texture allocation rejected";
@@ -95,10 +100,10 @@ void flatAndUpload() {
 void rleAndOrientation() {
     std::string pixels;
     pixel(pixels,2,2,0,8); // Radiance modern RLE scanline header
-    pixel(pixels,136,128); // 8 red values
-    pixel(pixels,136,0);   // 8 green values
-    pixel(pixels,136,0);   // 8 blue values
-    pixel(pixels,136,129); // exponent, red=1
+    rleRun(pixels,136,128); // 8 red values
+    rleRun(pixels,136,0);   // 8 green values
+    rleRun(pixels,136,0);   // 8 blue values
+    rleRun(pixels,136,129); // exponent, red=1
     render::RadianceImage image; std::string error;
     require(render::parseRadianceHdr(hdr("-Y 1 +X 8",pixels),image,error) &&
             image.rgba16f.size() == 8u*4u,
@@ -126,7 +131,7 @@ void errorsAndBoundary() {
             !error.empty() && image.rgba16f.empty(), "bad signature rejected");
     std::string pixels;
     pixel(pixels,2,2,0,8);
-    pixel(pixels,0,0); // zero-sized RLE code is malformed
+    rleRun(pixels,0,0); // zero-sized RLE code is malformed
     require(!render::parseRadianceHdr(hdr("-Y 1 +X 8",pixels),image,error) &&
             !error.empty() && image.rgba16f.empty(), "invalid RLE run rejected");
     require(!render::parseRadianceHdr(hdr("-Y 1 +X 2",std::string(7,'a')),
