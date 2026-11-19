@@ -425,6 +425,7 @@ private:
         previewHash_=0;
         previewInitialized_=false;
         previewRestartRequested_=true;
+        previewInvalidated_=false;
         previewLastTime_=-1;
         previewPaused_=false;
         previewStepRequested_=false;
@@ -485,10 +486,14 @@ private:
         if(!valid) {
             previewMessage_=error;
             canDraw=false;
-            // Do not display stale particles from the previous valid draft.
-            if(previewInitialized_) {
-                if(previewHost_.resetScene()) previewHash_=0;
-                else previewMessage_="GPU preview reset deferred to safe frame";
+            // Reset exactly once per invalid draft transition. Reset can
+            // be retried if the RHI rejected an unsafe encoder boundary,
+            // but do not spam resets and epoch increments every UI frame.
+            if(previewInitialized_ && !previewInvalidated_) {
+                if(previewHost_.resetScene()) {
+                    previewHash_=0;
+                    previewInvalidated_=true;
+                } else previewMessage_="GPU preview reset deferred to safe frame";
             }
         } else {
             initPreview(ed);
@@ -508,6 +513,7 @@ private:
                             "check CPU effect asset and GPU backend compatibility";
                         previewHash_=hash;
                         previewRestartRequested_=false;
+                        previewInvalidated_=false;
                     } else {
                         previewMessage_="GPU preview reset deferred to safe frame";
                         canDraw=false;
@@ -734,6 +740,7 @@ private:
     uint64_t previewHash_=0;
     double previewLastTime_=-1;
     bool previewInitialized_=false,previewRestartRequested_=true;
+    bool previewInvalidated_=false;
     bool previewPaused_=false,previewStepRequested_=false;
     std::string previewMessage_;
 };
