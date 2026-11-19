@@ -3,6 +3,7 @@
 // array, so Renderer3D's already implemented LOD selection remains valid.
 #pragma once
 #include "SparseMorph.h"
+#include <algorithm>
 #include <cstdint>
 #include <span>
 #include <stdexcept>
@@ -57,9 +58,17 @@ public:
                 if(gpu.vertex>=targetVertexIds.size())
                     throw std::invalid_argument("VIVID LOD GPU: compact vertex outside mapping");
                 const auto global=targetVertexIds[gpu.vertex];
-                for(const auto& existing:authoring.deltas)
-                    if(existing.vertex==global)
-                        throw std::invalid_argument("VIVID LOD GPU: source and LOD facial vertices overlap");
+                // Source sparse deltas are canonically sorted by vertex ID.
+                // Binary search avoids quadratic authoring work for dense LOD.
+                const auto existing=std::lower_bound(
+                    authoring.deltas.begin(),
+                    authoring.deltas.begin()+baseRange.count,global,
+                    [](const MorphDelta& delta,std::uint32_t id) {
+                        return delta.vertex<id;
+                    });
+                if(existing!=authoring.deltas.begin()+baseRange.count &&
+                   existing->vertex==global)
+                    throw std::invalid_argument("VIVID LOD GPU: source and LOD facial vertices overlap");
                 authoring.deltas.push_back(unpack(gpu,global));
             }
             targets.push_back(std::move(authoring));
