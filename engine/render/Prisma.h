@@ -285,6 +285,7 @@ public:
         PrismaQuality quality = PrismaQuality::Off;
         bool hdr = false, sceneReady = false;
         int shaderGraphTextures = 0;     // authored graph texture bindings on last resolve
+        bool shaderGraphFallback = false; // graph omitted, fixed postFX preserved if possible
         int autoExposureTextureSlot = -1; // -1 when final composite omitted exposure
         float autoExposureHighlightRejection = 0; // last encoded composite; zero if absent
         bool autoExposureFrozen = false; // valid 1x1 camera history reused, no meter passes
