@@ -125,6 +125,12 @@ bool Renderer3D::requestSunShadowDepthReadback(
            dev_->readDepthTextureAsync(shadowMap_, std::move(callback));
 }
 
+bool Renderer3D::requestPlanarReflectionColorReadback(
+    gfx::Device::ColorReadFn callback) const {
+    return dev_ && reflectionPlaneValid_ &&
+           lights.requestPlanarReflectionColorReadback(std::move(callback));
+}
+
 void Renderer3D::shutdown() {
     if (!dev_) return;
     gpuModelCommands_.release(*dev_);
