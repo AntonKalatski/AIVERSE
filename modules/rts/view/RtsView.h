@@ -206,6 +206,14 @@ public:
     const view_adapter::RtsModelResourceCache& modelResources() const noexcept {
         return resources_;
     }
+    // Host frame-boundary retirement: call before beginning render submissions
+    // for this frame. No draw happens here; previous GPU work must complete.
+    size_t pendingModelRetirements() const noexcept {
+        return resources_.pendingRetirements();
+    }
+    bool collectRetiredModels() {
+        return dev_ && resources_.collectRetired(*dev_);
+    }
     // An independent, worker-safe reader enables CPU decoding off the render thread.
     void setAsyncReader(render::FileReader reader) { asyncReader_ = std::move(reader); }
     bool prepareType(uint16_t type, bool allVariants = false);
