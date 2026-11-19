@@ -78,6 +78,8 @@ public:
     bool hdrRequested() const;
     gfx::PassDesc scenePass(const gfx::PassDesc& out, int w, int h) override;
     void resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame& frame) override;
+    bool objectMotionContext(uint64_t& viewId, mat4& previousViewProj) const override;
+    void acceptObjectMotionVectors(gfx::TextureHandle velocity) override;
 
     const PrismaStats& stats() const { return stats_; }
     const std::string& lastError() const { return error_; }
