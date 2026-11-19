@@ -2246,6 +2246,16 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos")
         SKIP_RETURN_CODE 77)
 endif()
 
+# Metal evidence parser guards against false-green suites with skipped
+# hardware tests. Standard-library-only; runs on any host with Python.
+if(AIVERSE_BUILD_TESTS AND Python3_Interpreter_FOUND)
+    add_test(NAME spectrafx_metal_evidence_parser
+        COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tools/spectrafx/test_verify_metal_ctest.py)
+    set_tests_properties(spectrafx_metal_evidence_parser PROPERTIES
+        LABELS "SpectraFX;Architecture")
+endif()
+
 # Production Metal RHI acceptance: two independent offscreen camera views,
 # real compute->gfx::Device draw, RGBA pixel readback and 3-in-flight resource churn.
 # Explicitly compiles the production Metal backend without linking PlatformMac's main().

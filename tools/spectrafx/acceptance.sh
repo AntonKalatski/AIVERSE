@@ -2,6 +2,8 @@
 # SpectraFX ONE-COMMAND acceptance runner. Native compile, full CTest,
 # SpectraFX contracts and real Metal compute/raster validation on macOS.
 # Usage: bash tools/spectrafx/acceptance.sh [build-dir]
+# AIVERSE_ACCEPTANCE_REQUIRE_METAL=1 makes skipped MetalGPU tests fatal.
+# On hosted CI without an actual device, per-test PASS/SKIP is always reported.
 # Never pulls, rebases or merges user worktrees.
 set -Eeuo pipefail
 
@@ -86,12 +88,20 @@ if stage configure cmake "${opts[@]}"; then
         stage ctest_spectrafx ctest --test-dir "$BUILD" -C Debug -L SpectraFX --output-on-failure || true
         if [[ "$OS" == Darwin ]]; then
             stage ctest_metal ctest --test-dir "$BUILD" -C Debug -L MetalGPU -V --output-on-failure || true
+            metal_args=("$LOG/ctest_metal.log")
+            if [[ "${AIVERSE_ACCEPTANCE_REQUIRE_METAL:-0}" == 1 ]]; then
+                metal_args+=(--require-all)
+            fi
+            # CTest exits 0 when tests SKIP. Do not silently call this a
+            # real 3/3 GPU PASS; explicitly report each hardware result.
+            stage metal_evidence python3 "$ROOT/tools/spectrafx/verify_metal_ctest.py" "${metal_args[@]}" || true
         else
             skip ctest_metal "no Apple Metal on this OS"
         fi
     else
         skip ctest_spectrafx "targeted build failed"
         skip ctest_metal "targeted build failed"
+    skip metal_evidence "targeted build failed"
     fi
 else
     skip spectrafx_core_build "configure failed"
@@ -101,6 +111,7 @@ else
     skip ctest_full "configure failed"
     skip ctest_spectrafx "configure failed"
     skip ctest_metal "configure failed"
+    skip metal_evidence "configure failed"
 fi
 
 printf '\n**Failed stages:** %d  \n**Skipped stages:** %d\n' "$ERRORS" "$SKIPPED" >> "$SUMMARY"
