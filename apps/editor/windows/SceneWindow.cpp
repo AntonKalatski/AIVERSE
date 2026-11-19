@@ -579,6 +579,15 @@ private:
                 ImGui::Text("Pool utilization: %.1f%% (%.1f MiB slack)", fill, slackMiB);
                 ImGui::TextDisabled("Pool memory excludes textures and dedicated model buffers.");
             }
+            // A retired pair is not necessarily safe to recycle: only the
+            // GPU's completed queue serial can advance it out of quarantine.
+            // These are upload/release statistics, not FPS or GPU timings.
+            ImGui::Text("Pooled geometry: %zu retired / %zu fence-ready pairs",
+                        geometryPool.retiredPairs, geometryPool.reusablePairs);
+            ImGui::Text("Recycled model uploads: %llu",
+                        (unsigned long long)geometryPool.recycledUploads);
+            ImGui::TextDisabled("Recycling needs AIVERSE_GEOMETRY_POOL_RECYCLE=1 (default OFF).");
+            ImGui::TextDisabled("GPU occupied bytes include retained ranges, not only live models.");
             const auto& profile = ed.renderer().profile();
             const auto& modelStats = ed.renderer().modelStats();
             const uint32_t totalSubmissions = ed.renderer().drawCalls();
