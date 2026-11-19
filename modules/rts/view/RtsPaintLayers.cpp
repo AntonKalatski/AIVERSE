@@ -330,7 +330,7 @@ void RtsPaintLayers::drawCells(render::Renderer3D& r,gfx::Device& dev,render::Pa
   }
   p.cellsDirty=p.paletteDirty=false;
  }
- l.canvas.flush();
+ if(!l.canvas.flushChecked())return; // retain queued brush commands
  if(!l.mesh.vb.valid()){   // one quad over the bounds, at the terrain height of its centre + lift
   render::MeshBuilder mb;const float y=view.heightAt(g,p.x+p.w*.5f,p.z+p.h*.5f)+p.lift;
   mb.quad(render::float3{p.x,y,p.z},render::float3{p.x,y,p.z+p.h},render::float3{p.x+p.w,y,p.z+p.h},render::float3{p.x+p.w,y,p.z});
@@ -460,7 +460,8 @@ void RtsPaintLayers::draw(render::Renderer3D& r,gfx::Device& dev,const std::shar
    }
    for(auto& stroke:p.strokes)l.canvas.stroke(stroke);
   }
-  p.clear=false;p.strokes.clear();l.canvas.flush();
+  p.clear=false;p.strokes.clear();
+  if(!l.canvas.flushChecked())continue; // retry authored strokes next frame
   if(!p.surface)continue;
   gfx::TextureHandle sample=l.canvas.handle();
   if(p.textureId){auto it=layers_.find(p.textureId);if(it==layers_.end())continue;sample=it->second.canvas.handle();}
