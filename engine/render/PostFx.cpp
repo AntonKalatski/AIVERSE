@@ -603,7 +603,7 @@ void PostFx::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             underwater_.distortion*budget.distortion,
             underwater_.scattering*budget.scattering);
         put(u.underwater2,budget.crossing,budget.scattering,
-            float(budget.samples),0.f);
+            float(budget.samples),underwater_.surfaceOffset);
         u.graphFrame[1]=underwater_.crossing*budget.crossing;
         ++stats_.effects;
     }
