@@ -564,6 +564,42 @@ void liveParentPermissionChangeSuspendsAdmin() {
     }
     std::filesystem::remove_all(dir);
 }
+// A verified dirfd pins the actual directory inode. Even if the
+// textual parent pathname is replaced before savePinned, the atomic
+// rename cannot be redirected into a newly created lookalike folder.
+// Production endpoint additionally refuses the operation once valid()
+// detects path drift; this direct fixture isolates savePinned's I/O.
+void pinnedJournalSaveDoesNotFollowMovedParent() {
+    const auto base=tempPath();
+    const auto parent=base/"server";
+    std::filesystem::create_directories(parent);
+    const auto journal=parent/"receipts";
+    const auto moved=base/"original";
+    std::string error;
+    {
+        JournalProcessLock owner;
+        CHECK(owner.acquire(journal,&error));
+        const int anchored=owner.directoryFd();
+        CHECK(anchored>=0);
+        if(anchored>=0) {
+            FileJournal file(journal);
+            const std::map<ServerGateway::Key,ServerGateway::Entry> empty;
+            CHECK(file.savePinned(anchored,empty,&error));
+            CHECK(std::filesystem::exists(journal));
+            std::filesystem::rename(parent,moved);
+            std::filesystem::create_directory(parent);
+            CHECK(!owner.valid());
+            CHECK(owner.directoryFd()<0);
+            // Direct test of descriptor-relative rename, NOT authorized
+            // endpoint behavior. No write may land in the new parent.
+            CHECK(file.savePinned(anchored,empty,&error));
+            CHECK(std::filesystem::exists(moved/"receipts"));
+            CHECK(!std::filesystem::exists(parent/"receipts"));
+        }
+    }
+    std::filesystem::remove_all(base);
+}
+
 void killedProcessReleasesJournalLock() {
     const auto dir=tempPath();
     std::filesystem::create_directories(dir);
@@ -868,6 +904,7 @@ int main(){
     unsafeJournalLockParentsRejected();
     replacedLiveLockSuspendsAdmin();
     liveParentPermissionChangeSuspendsAdmin();
+    pinnedJournalSaveDoesNotFollowMovedParent();
     killedEndpointRecoversQueuedJournal();
 #endif
 #ifndef __EMSCRIPTEN__
