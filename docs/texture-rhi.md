@@ -2566,11 +2566,14 @@ are asserted here.
 not full validation of shader sampling, Metal ICB,
 fragment-texture Shader Graph, virtual page feedback/page
 publication, rendering visual parity, performance or other
-backends/platforms. User also stated they launched the full
-`--editor --metal` scenario, but its final summary/output was
-**not provided in this turn**; do not mark the combined scenario
-complete until its `OVERALL SOURCE AND METAL TEXTURE GPU TESTS PASS`
-line (or equivalent logs) is observed.
+backends/platforms. The user subsequently provided the final output from
+`bash tools/verify-texture-rhi.sh --editor --metal --jobs 4`:
+`CTEST PASS`, `METAL GPU PASS`, and
+`OVERALL SOURCE AND METAL TEXTURE GPU TESTS PASS
+(other GPU validation remains separate)`.
+**The full combined macOS source + Metal GPU acceptance gate is PASS.**
+These final lines establish the test exit-status gates, but do not
+identify the physical GPU model or include the verbose per-pixel log.
 
 All source gates previously passed on this Mac; Stage 10BB's
 new Metal acceptance binary was reported to build successfully
