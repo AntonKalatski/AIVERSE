@@ -130,6 +130,29 @@ public:
         return ScopedRegistration(scopedState_,id);
     }
 
+    // Generation-aware registration. Even if a device gets recreated at
+    // the exact same address, a different host epoch cannot reuse stale
+    // live Model resources, View references or GPU retirement markers.
+    ScopedRegistration registerScoped(
+            const RenderDeviceLifetime::Lease& lease,
+            const ModelResourceCache& cache) {
+        checkThread();
+        if(!lease.alive() || !lease.device() ||
+           !lease.validFor(*lease.device()))
+            throw std::logic_error("RenderResourceOwnerGroup invalid GPU epoch");
+        if(boundDevice_ && boundDevice_!=lease.device())
+            throw std::logic_error("RenderResourceOwnerGroup device mismatch");
+        if(boundEpoch_!=0 && boundEpoch_!=lease.generation())
+            throw std::logic_error("RenderResourceOwnerGroup device epoch mismatch");
+        cache.bindResourceDevice(*lease.device(),lease);
+        boundDevice_=lease.device();
+        boundEpoch_=lease.generation();
+        const uint64_t id=nextRegistration_++;
+        owners_.push_back({&cache,cache.lifetimeToken(),
+                           lease.device(),id,lease});
+        return ScopedRegistration(scopedState_,id);
+    }
+
     // Legacy CPU-only read access. For device snapshots, prefer the scoped
     // device-bound registration above. This remains for old native tests.
     void add(const ModelResourceCache& cache) {
@@ -227,11 +250,20 @@ public:
     // The input caches must belong to the supplied gfx Device.
     RenderResourceGroupStats snapshot(gfx::Device& device) const {
         checkThread();
+        if(boundEpoch_!=0 &&
+           !std::any_of(owners_.begin(),owners_.end(),
+               [&](const Registration& entry) {
+                   return !entry.lifetime.expired() &&
+                       entry.epoch.generation()==boundEpoch_ &&
+                       entry.epoch.validFor(device);
+               }))
+            throw std::logic_error("RenderResourceOwnerGroup expired GPU epoch");
         if(boundDevice_ && boundDevice_!=&device)
             throw std::logic_error("RenderResourceOwnerGroup snapshot device mismatch");
         for(const auto& entry:owners_) {
             if(entry.lifetime.expired() || !entry.device)continue;
             if(entry.device!=&device ||
+               (entry.epoch.generation()!=0 && !entry.epoch.validFor(device)) ||
                !entry.cache->boundToResourceDevice(device))
                 throw std::logic_error(
                     "RenderResourceOwnerGroup stale or mixed-device registration");
@@ -263,6 +295,7 @@ private:
         std::weak_ptr<const void> lifetime;
         const gfx::Device* device=nullptr;
         uint64_t id=0;
+        RenderDeviceLifetime::Lease epoch;
     };
     void unregister(uint64_t id) {
         checkThread();
@@ -274,7 +307,7 @@ private:
     std::thread::id ownerThread_;
     std::shared_ptr<ScopedState> scopedState_;
     gfx::Device* boundDevice_=nullptr;
-    uint64_t nextRegistration_=1,budgetBytes_=0;
+    uint64_t nextRegistration_=1,budgetBytes_=0,boundEpoch_=0;
 };
 
 } // namespace aiverse::render
