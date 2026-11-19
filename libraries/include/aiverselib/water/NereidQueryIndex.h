@@ -103,6 +103,7 @@ public:
         if(!nodes_.empty())visit(0,position,out);
         applyWaterConfluenceFlow(world_,position,out);
         applyWaterCascadeFlow(world_,position,out);
+        applyNereidFlowObstructions(world_,position,out);
         return out;
     }
     size_t finiteBodyCount() const {return finite_.size();}
@@ -186,8 +187,8 @@ private:
 inline void addIndexedWaterSamplingSystem(Simulation& sim,std::string name) {
     sim.addSystem(std::move(name),[](Simulation& current) {
         World& world=current.world();
-        auto* contacts=world.prepareExistingWrite<WaterContactComponent>();
-        if(!contacts)return;
+        if(!world.countExisting<WaterContactComponent>())return;
+        auto* contacts=&world.pool<WaterContactComponent>();
         const World& read=world;
         const WaterQueryIndex index(read);
         for(size_t i=0;i<contacts->size();++i) {
