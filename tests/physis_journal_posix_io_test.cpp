@@ -50,7 +50,9 @@ int main() {
     CHECK(!io::read(dir,"receipts",1,1024,readback,missing,&reason));
     CHECK(::chmod((parent/"receipts").c_str(),0600)==0);
     CHECK(io::read(dir,"receipts",1,1024,readback,missing,&reason));
+    readback={77};
     CHECK(!io::read(dir,"receipts",9,1024,readback,missing,&reason));
+    CHECK(readback==std::vector<std::uint8_t>{77});
     CHECK(!io::write(dir,"../wrong",data,"nonce-a",&reason));
     CHECK(!io::write(dir,"receipts",data,"../wrong",&reason));
     CHECK(fs::remove(parent/"receipts"));
@@ -71,7 +73,22 @@ int main() {
     CHECK(!io::read(dir,"receipts",1,1024,readback,missing,&reason));
     CHECK(fs::remove(otherLink));
     CHECK(io::read(dir,"receipts",1,1024,readback,missing,&reason));
+    // O_EXCL must reject a colliding random temp basename without
+    // clobbering either the existing receipt file or that temp file.
+    const fs::path occupied=parent/"receipts.next-collision";
+    const int occupiedFd=::open(occupied.c_str(),O_WRONLY|O_CREAT|O_EXCL,0600);
+    CHECK(occupiedFd>=0);
+    if(occupiedFd>=0)CHECK(::close(occupiedFd)==0);
+    CHECK(!io::write(dir,"receipts",data,"collision",&reason));
+    CHECK(fs::exists(occupied));
+    CHECK(fs::file_size(occupied)==0);
+    CHECK(io::read(dir,"receipts",1,1024,readback,missing,&reason));
+    CHECK(readback==data);
+    CHECK(fs::remove(occupied));
     CHECK(::chmod(parent.c_str(),0777)==0);
+    readback={77};
+    CHECK(!io::read(dir,"receipts",1,1024,readback,missing,&reason));
+    CHECK(readback==std::vector<std::uint8_t>{77});
     CHECK(!io::write(dir,"receipts",data,"nonce-b",&reason));
     CHECK(::chmod(parent.c_str(),0700)==0);
     CHECK(io::write(dir,"receipts",data,"nonce-c",&reason));
