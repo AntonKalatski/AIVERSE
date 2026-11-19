@@ -554,3 +554,19 @@ CI if it remains queued or cancelled.
   infer content authenticity from manifest hashes alone.
 - This is synchronous filesystem validation; do it during asset
   preparation, not on the render loop. Compile/CTest/GPU tests NOT RUN.
+
+
+### Direct TerraWeave VT archive import (Stage 10P)
+
+- Use `session.prepareFromArchiveDirectory(trustedDirectory)` for
+  standalone sessions or `domains.prepareFromArchiveDirectory(domainId,
+  trustedDirectory)` for multiple TerraWeave VT domains. This reads a
+  Python/native `manifest.json`, validates page files and builds
+  the candidate version; do not call every frame.
+- On invalid input the current active atlas and domain stay unchanged.
+  Read `session.lastError()` for diagnostics. The returned candidate
+  is not active until normal bounded `pumpCandidate` /
+  fallback-residency `promote` / GPU fence lifecycle.
+- The active version carries U/V wrap policies into the model renderer.
+  Never change a live archive in place or trust external path names.
+- All C++/GPU validations for the new helper remain NOT RUN.
