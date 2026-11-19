@@ -100,8 +100,8 @@ public:
             };
             const float scale=D*G/std::max(4.f*ndl*ndv,1e-5f);
             const float3 spec=F*scale;
-            result.diffuse+={C.x*diff.x,C.y*diff.y,C.z*diff.z};
-            result.specular+={C.x*spec.x,C.y*spec.y,C.z*spec.z};
+            result.diffuse+=float3{C.x*diff.x,C.y*diff.y,C.z*diff.z};
+            result.specular+=float3{C.x*spec.x,C.y*spec.y,C.z*spec.z};
             ++result.lights;
         }
         return result;
