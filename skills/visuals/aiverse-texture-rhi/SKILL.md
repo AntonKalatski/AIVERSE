@@ -1663,3 +1663,26 @@ representative GPU timing. Do not merge Draft PR #21
 or turn on experimental GPU ICB by default based only
 on a Metal smoke test. After each fix, commit code and
 append a new agent handoff with actual test evidence.
+
+## Stage 10CE — restored one-shot Mac Texture RHI test runner
+
+Post-push GitHub source inspection discovered a malformed
+conditional regex and duplicate code in the first optional
+VT packing/shader check update to
+`tools/texture-rhi-final-verify.sh`. This was repaired
+**before native testing** in source commit
+`6a6bb9f2a18cb494a93d44eb232907c0df2ad8fe`:
+the 142-line runner now has exactly one safe-build path,
+one optional Python shader/packer test selector, one
+`--full-engine` path, and one sequential seven-test
+native Metal CTest loop. See `docs/texture-rhi.md`
+Stage 10CE for exact validated invocation.
+
+Run `bash -n tools/texture-rhi-final-verify.sh` on
+the isolated Mac Studio worktree after pulling the
+feature branch, followed by
+`bash tools/texture-rhi-final-verify.sh --jobs 4`.
+For every nonexperimental engine CTest, append
+`--full-engine`. Only a zero exit and complete
+real native GPU logs count as an acceptance PASS.
+This runner **has not yet been executed** on a Mac.
