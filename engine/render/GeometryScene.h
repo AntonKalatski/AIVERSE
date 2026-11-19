@@ -19,6 +19,9 @@ public:
         uint32_t strataGpuMetadataSources=0, strataGpuMetadataDeclined=0,
                  strataGpuMetadataFailures=0;
         uint64_t strataGpuMetadataBytes=0;
+        uint32_t strataGpuIndexedSources=0, strataGpuIndexDeclined=0,
+                 strataGpuIndexFailures=0;
+        uint64_t strataGpuIndexBytes=0;
     };
     void load(gfx::Device& dev, const Json& json, const FileReader& reader);
     // Procedural/offline callers may supply immutable CPU models instead of files.
@@ -38,6 +41,17 @@ public:
     void setStrataGpuMetadataEnabled(bool enabled) { strataGpuMetadataEnabled_ = enabled; }
     bool strataGpuMetadataEnabled() const { return strataGpuMetadataEnabled_; }
     gfx::BufferHandle strataGpuMetadataBuffer(const std::string& sourceKey) const;
+    // Device-resident auxiliary Strata indices from the EXISTING shared page.
+    // NOT a draw submission; model/node transforms, materials and index
+    // ownership remain with Renderer3D and GlobalGeometryPool.
+    struct StrataIndexBinding {
+        gfx::BufferHandle buffer;
+        uint32_t firstIndex=0, indexCount=0;
+        int32_t baseVertex=0;
+        bool valid() const { return buffer.valid() && indexCount>0; }
+    };
+    bool strataGpuIndexBinding(const std::string& sourceKey,
+                               StrataIndexBinding& out) const;
     bool strataStagingSupported() const;
     const strata::ModelAsset* strataAsset(const std::string& sourceKey) const;
     // Explicit, read-only CPU reference plan for one source primitive.
