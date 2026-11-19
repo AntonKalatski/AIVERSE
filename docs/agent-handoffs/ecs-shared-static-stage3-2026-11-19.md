@@ -4,7 +4,7 @@ Date: 2026-11-19
 Repo: `chromealex/AIVERSE`  
 Branch: `feature/ecs-shared-static-components`  
 Base Stage 2 handoff: `docs/agent-handoffs/ecs-shared-static-stage2-2026-11-19.md`  
-Status: **catalog source, CMake test and docs committed; new native test NOT run**.
+Status: **prefab catalog native target compiled and CTest passed 1/1 on Mac Studio** (user log, 2026-11-19). Actual full ECS/RTS/FPS and SceneLoadCoordinator integration not yet verified.
 
 ## Proven baseline (user-provided Mac Studio logs)
 
@@ -60,7 +60,7 @@ Status: **catalog source, CMake test and docs committed; new native test NOT run
   reusable by multiple Simulations; only the refs/bindings are
   authoritative ECS state. No heap copy of T per entity.
 
-### Test source and wiring (not yet natively executed)
+### Test source and wiring (now natively verified)
 
 - `tests/ecs_prefab_static_catalog_test.cpp`:
   sorted mapping independent of importer input order; deduplication
@@ -112,11 +112,41 @@ ctest --test-dir build/shared-static --output-on-failure \
   -R '^(ecs_prefab_static_catalog_test|ecs_shared_static_components_test|ecs_cow_snapshot_test|ecs_cow_parallel_test)$'
 ```
 
-**No native compile/CTest result exists yet for the new prefab catalog.**
-If the compiler or CTest detects an error, fix source on this branch and
-record the command/output, compiler, exact SHA, changed files, limitations
-and next actions in this handoff. Later run whole ECS suite and genre
-FPS/RTS save/rollback parity before production merge.
+**Prefab catalog native validation was subsequently reported passing.**
+See the recorded log below. The broader combined four-test command and
+FPS/RTS save/rollback parity remain outstanding before a production merge.
+
+## User-reported Stage 3 native validation — 2026-11-19
+
+The user showed successful compilation and linking of
+`aiverse_ecs_prefab_static_catalog_test`, followed by CTest:
+
+```text
+Test project /Users/aleksandrfeer/Projects/AIVERSE/build/shared-static
+Start 8: ecs_prefab_static_catalog_test
+1/1 Test #8: ecs_prefab_static_catalog_test ... Passed 0.59 sec
+100% tests passed, 0 tests failed out of 1
+Total Test time (real) = 0.60 sec
+```
+
+The build/test ran in `/Users/aleksandrfeer/Projects/AIVERSE`, not the
+previous isolated `AIVERSE-shared-static` worktree. No current
+`git rev-parse HEAD`, `git status`, `CMAKE_BUILD_TYPE`, or compiler version
+was printed in this particular log. The target's source originates from
+this branch, but **the precise checked-out SHA and Release mode of that
+run cannot be independently confirmed** from the excerpt.
+
+What this proves: the catalog target compiled and its scenario assertions
+passed in this execution. This is **not** proof that the actual scene
+loader, GPU/physics residency, scene unload or production RTS/FPS adapters
+were exercised. Do not conflate the simulated additive scene grouping
+in the native test with full SceneLoadCoordinator integration.
+
+Next action: verify `git rev-parse --short HEAD` and CMake cache in the
+actual build tree, run the combined targeted suite, then implement a
+small native adapter to SceneLoadCoordinator only after both branches'
+independent native suites are confirmed. Do not silently merge a
+parallel scene agent's branch or bypass CollisionStream static-ID guards.
 
 ## Architectural integration boundary and limitations
 
