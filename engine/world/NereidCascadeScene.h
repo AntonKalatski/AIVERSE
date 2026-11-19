@@ -225,8 +225,44 @@ public:
             opts.originZ=first.z.toDouble();
             const auto joined=connectedNereidCascade(
                 slot.source,inlet,outlet);
-            const auto cpu=lib::nereid::buildWaterCascadeMesh(joined,opts);
+            auto cpu=lib::nereid::buildWaterCascadeMesh(joined,opts);
             if(cpu.empty())continue;
+            // Seam foam masks the material transition between a horizontal
+            // water surface and the descending sheet. This is a visual
+            // gradient on the extra connector segments, never ECS geometry.
+            const bool inletStitched=joined.points.size()>slot.source.cascade.points.size() &&
+                joined.points.front().position!=slot.source.cascade.points.front().position;
+            const bool outletStitched=joined.points.size()>slot.source.cascade.points.size() &&
+                joined.points.back().position!=slot.source.cascade.points.back().position;
+            const size_t steps=opts.stepsPerSegment;
+            const size_t count=cpu.vertices.size();
+            if(inletStitched && count>=steps*8) {
+                for(size_t i=0;i<steps;++i) {
+                    const float t=float(i)/float(steps);
+                    const float u=float(i+1)/float(steps);
+                    const size_t base=i*8;
+                    for(size_t k:{size_t(0),size_t(1),size_t(4),size_t(5)})
+                        cpu.vertices[base+k].foam=std::max(
+                            cpu.vertices[base+k].foam,(1.f-t)*0.9f);
+                    for(size_t k:{size_t(2),size_t(3),size_t(6),size_t(7)})
+                        cpu.vertices[base+k].foam=std::max(
+                            cpu.vertices[base+k].foam,(1.f-u)*0.9f);
+                }
+            }
+            if(outletStitched && count>=steps*8) {
+                const size_t first=count-steps*8;
+                for(size_t i=0;i<steps;++i) {
+                    const float t=float(i)/float(steps);
+                    const float u=float(i+1)/float(steps);
+                    const size_t base=first+i*8;
+                    for(size_t k:{size_t(0),size_t(1),size_t(4),size_t(5)})
+                        cpu.vertices[base+k].foam=std::max(
+                            cpu.vertices[base+k].foam,t*0.9f);
+                    for(size_t k:{size_t(2),size_t(3),size_t(6),size_t(7)})
+                        cpu.vertices[base+k].foam=std::max(
+                            cpu.vertices[base+k].foam,u*0.9f);
+                }
+            }
             auto replacement=uploadNereidCascade(device,cpu,slot.source.style);
             if(!replacement.vb.valid() || !replacement.ib.valid() ||
                replacement.indexCount==0) {
