@@ -6094,3 +6094,26 @@ CTest, shader compilation and GPU tests NOT RUN as requested.
 Next: implement concrete skinning/baked/morph feedback vertex
 shader variants with matching ModelShaders ABI, wire Terra
 producers, then complete backend parity and test.
+
+
+## Stage 9V — feedback-to-scene coordinate mapping for LOD coverage (2026-11-19)
+
+Source commit: ca4e6133546069ddbfa1887cb327e787f44cfead.
+File: engine/gfx/VirtualTextureFeedback.h.
+Both LOD-only and combined alpha+LOD GLSL/MSL shader builders
+now map fragment pixel positions from the feedback viewport
+into the main scene's pixel grid before evaluating the same
+4x4 ordered LOD dither rank. GLSL adds uniforms
+uFeedbackToSceneScale and uFeedbackToSceneOffset. MSL extends
+AiverseLodFeedbackParams with float2 sceneScale/sceneOffset.
+The caller must supply scale and offset from its actual scene
+viewport (identity scale and zero offset for equal viewports).
+This allows consistent screen-grid mapping with downsampled
+feedback, but downsampling still cannot perfectly reconstruct
+every high-resolution coverage sample. No backend tests run.
+
+Verification: GitHub source commit succeeded. Native build,
+CTest, shader compiler and GPU tests NOT RUN per user request.
+Next: wire viewport mapping values in material binders; implement
+concrete deformed-model feedback GPU shaders, Terra producers,
+and complete backend feature parity.
