@@ -312,6 +312,16 @@ struct Viewer {
     }
 
     void shutdown() {
+        if(!dev)return;
+        // ModelView draws raw Models, a Gallery scene and an offscreen
+        // portrait through the SAME Device. They can all be GPU-visible
+        // after the final frame. One explicit idle proof must precede
+        // destruction of any native Model, texture or renderer resources.
+        if(!dev->waitForResourceIdle()) {
+            std::fprintf(stderr,
+                "aiverse_modelview: GPU shutdown barrier failed; resources left alive\n");
+            return;
+        }
         for (auto& [p, m] : models) if (m) releaseModel(*dev, *m);
         nativeModels.shutdown(*dev);
         if (gallery) gallery->shutdown(*dev);
