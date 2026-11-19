@@ -119,3 +119,24 @@ cmake -S . -B build/spectrafx-validation -DCMAKE_BUILD_TYPE=Debug
 cmake --build build/spectrafx-validation --parallel
 ctest --test-dir build/spectrafx-validation --output-on-failure -R 'fx|particle|vfx'
 ```
+
+
+## 2026-11-19 — Stage 6: typed VFX graph parameters and branching
+
+- **Branch:** `feature/spectrafx-generic-cue-queue`, compared with `main` `9ee6ff6fbf390bd45363bc92c838f492dfe92eee`: 0 commits behind at stage start; no main merge necessary.
+- **Implementation commit:** `e67ad37c7514991c2c62c0d3e8dcf9af45c6c21e`.
+- **Affected file:** `engine/fx/SpectraFxGraph.h` (updated existing public graph header).
+- **Features:** Added `SpectraFxGraphParameters` with named scalar/color/bool dictionaries and `setScalar/setColor/setFlag`; backward-compatible `execute(input,bridge,queue)` and new `execute(input,params,bridge,queue)`. Extended `SpectraFxNodeKind` with `ParameterScale`, `ParameterTint`, `Offset`, `Gate`, `EventFilter`. Nodes can branch from earlier cue values; a disabled filter/flag suppresses only its branch. Parameter absence/type mismatch suppresses the branch (no implicit values). Validation now rejects non-finite scale, tint and offset, overlong/empty parameter names, and invalid indices. Graph remains bounded to 128 nodes, with exactly one Input and at least one Emit. Keyed instances still reject multiple Emit outputs.
+- **Compatibility:** Existing `Input/Scale/Tint/Emit` numeric node IDs and the original `execute` overload preserved. Opt-in presentation only; `fx::ParticleSystem` is the rendering executor, no changes to ECS simulation/save/network/RTS/FPS/PRISMA.
+- **Tests:** **NOT RUN**, per user's instruction *functions first, tests later*. No compiler, CTest, CI, live game or GPU execution performed. This is source implementation, not validated production functionality.
+- **Known limitations:** Still not a Niagara graph editor or GPU particle simulation. No persistent parameter binding/serialization, shader graph, runtime effect definition edits or automatic hot reload. `execute` allocates one vector per call; future runtime optimization can precompile a graph plan.
+- **Next:** implement configurable graph asset interchange (explicit versioned authored data, parser/serializer), and a graph registry dispatching cues to graphs before ParticleSystem; then editor integration and GPU runtime. Only after feature implementation: focused tests, native build and cross-game integration.
+- **Pull-first command:**
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main
+git merge origin/main
+```
