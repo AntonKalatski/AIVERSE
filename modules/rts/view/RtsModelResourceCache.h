@@ -5,6 +5,9 @@
 #pragma once
 #include "engine/render/Model.h"
 #include "engine/render/ModelTextureCache.h"
+#ifndef __EMSCRIPTEN__
+#include "RtsModelPreparationService.h"
+#endif
 #include <map>
 #include <memory>
 #include <string>
@@ -20,6 +23,12 @@ public:
         size_t models=0,textures=0,decodedCpuBytes=0;
     };
 
+#ifndef __EMSCRIPTEN__
+    RtsModelPreparationService& preparation() noexcept {return preparation_;}
+    const RtsModelPreparationService& preparation() const noexcept {
+        return preparation_;
+    }
+#endif
     ModelMap& models() noexcept {return models_;}
     const ModelMap& models() const noexcept {return models_;}
     std::shared_ptr<render::ModelTextureCache> textures() const noexcept {
@@ -64,6 +73,9 @@ public:
     // Explicitly release GPU assets before destroying the device.
     // No async loader may still reference these objects at this barrier.
     void shutdown(gfx::Device& dev) {
+#ifndef __EMSCRIPTEN__
+        preparation_.reset(); // join all texture/model CPU workers before release
+#endif
         for(auto& [key,model]:models_) {
             (void)key;
             if(model)render::releaseModel(dev,*model);
@@ -72,6 +84,9 @@ public:
         textures_->shutdown(dev);
     }
 private:
+#ifndef __EMSCRIPTEN__
+    RtsModelPreparationService preparation_;
+#endif
     ModelMap models_;
     std::shared_ptr<render::ModelTextureCache> textures_=
         std::make_shared<render::ModelTextureCache>();
