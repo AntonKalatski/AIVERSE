@@ -80,6 +80,8 @@ public:
             state[i]=2;
         };
         for(std::size_t i=0;i<model.nodes.size();++i)solve(solve,i);
+        if(model.skins.empty())
+            throw std::invalid_argument("VIVID bind rebind: no skinned skeleton to rebind");
         std::vector<std::vector<mat4>> newInverse;
         newInverse.reserve(model.skins.size());
         for(const auto& skin:model.skins) {
