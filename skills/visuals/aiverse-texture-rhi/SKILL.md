@@ -701,3 +701,24 @@ CI if it remains queued or cancelled.
   remain unchanged by default.
 - This is not yet GPU-validated: native C++/Objective-C++, MSL
   compiler, actual Metal frame captures and perf tests NOT RUN.
+
+
+### Mixed VT atlas groups in experimental Metal GPU ICB (Stage 10Y)
+
+- Experimental only: both
+  `AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT=1` and
+  `AIVERSE_EXPERIMENTAL_ICB_MIXED_VT=1` are required, along with
+  the existing GPU-authored ICB flags. Keep disabled in shipped games.
+- `Renderer3D` now permits different VT atlas/table/layer/wrap
+  bindings **only** when the underlying built-in PBR material GPU
+  state, shader and geometry remain equivalent. Each command
+  carries its own `GpuIcbVirtualMaterial` and
+  `GpuMaterialResourceTicket`, and every entry is checked again
+  before execution.
+- `drawModelBatch` skips VT-homogeneity only for this
+  prevalidated per-command GPU submission. CPU instancing/MDI
+  must never inherit that exception. The first command's
+  ordinary PBR materials remain shared, so Shader Graph and
+  different conventional source textures are not mixed.
+- No actual Metal/GL/Vulkan compile, GPU run, screenshot parity
+  or performance evidence has been collected for this path.
