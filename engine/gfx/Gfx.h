@@ -310,6 +310,13 @@ public:
     // Resource must remain alive until the queued GPU blit completes.
     using DepthReadFn = std::function<void(int width,int height,std::vector<uint8_t> depthBytes)>;
     virtual bool readDepthTextureAsync(TextureHandle,DepthReadFn) { return false; }
+    // Diagnostic-only async readback of an OFFSCREEN, non-MSAA RGBA8
+    // render target. Returns tightly packed top-down RGBA8 bytes after GPU
+    // completion on the device owner thread. Empty payload signals GPU error.
+    // Request after the writer pass is closed. Other backends may return false;
+    // do not fall back to reading the presented screen as a fake RTT result.
+    using ColorReadFn=std::function<void(int width,int height,std::vector<uint8_t> rgba)>;
+    virtual bool readColorTextureAsync(TextureHandle,ColorReadFn) { return false; }
     virtual bool gpuHealthy() const { return true; }
     virtual double gpuFrameMs() const { return 0; } // last completed frame; asynchronous
     // Zero if backend does not expose a completed-slot-safe frame serial.
