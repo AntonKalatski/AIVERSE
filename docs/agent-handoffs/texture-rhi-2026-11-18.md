@@ -6709,3 +6709,113 @@ GL/Metal sampler limits (or preserve an explicit no-VT fallback).
 Before merging to main, run targeted C++/shader tests and inspect
 actual Metal, GL33/GLES3, Vulkan readbacks, alpha coverage and VRAM.
 Review branch latest main ancestry again if main has moved.
+
+
+## Stage 10H — restore homogeneous VT/R8 Metal ICB and CPU MDI (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`, PR #21.
+**Code commits (chronological):**
+- `3eae0251afd01af51e909b7fd38d00e3b1f2673a`:
+  `engine/render/ModelVirtualTextureSampling.h`, exact VT
+  resource identity hash and compatible binding predicate;
+  MSL direct-vs-ICB argument-buffer shader injection.
+- `2539f2239ce978aa9de867120ff8b8a92b1d3fb5`:
+  `engine/render/ModelShaders.h`, Metal PBR ICB argument
+  structure expanded for physical VT atlas/page-table and R8
+  cutout; R8 is sourced from ICB fragment argument buffer.
+- `9de0fe6e723e36c49b8dff0e251727f44c6020c1`:
+  `engine/gfx/metal/GfxMetal.mm`, bind these optional
+  texture resources in CPU-encoded and GPU-encoded ICB
+  argument-buffer variants; explicit resource use tracking.
+- `779d436b8934c1fdba2c938d5c18e91a16914bb4`:
+  fixed shader #if newline in injected MSL source.
+- `b83cfe96dad195a9c3b6b580dfe30deb660ee24e`:
+  `engine/render/Renderer3DModels.cpp`, allow VT colour
+  material permutation for compatible GPU_INSTANCE_BUFFER
+  groups, bind U6 + tex13/14 in the parent material pass,
+  validate shared VT identity for CPU multi-draw groups
+  and explicit instancing.
+- `739a9d4ce6aa88bd47c6e10d0eeabdf31897564b`:
+  `Renderer3DModels.cpp` GPU preflight eligibility includes
+  rigid R8 cutout models, resolves VT identity for eligible
+  models, includes identity in material hash and cached plan
+  signature, and exactly verifies identical GPU VT bindings
+  in fresh and cached group membership.
+- `a8db1683b345db93ef51f27f8c6eb388947f248c`:
+  `engine/render/Renderer3D.cpp`, removed previous
+  whole-scene GPU draw disable on any VT/R8 material.
+  Individual ineligible draws still use ordinary CPU path.
+- `3b863f51eb098a85104dd795eec548f1f23b7e3a`:
+  `Renderer3D.h` captures VT+alpha identity per encoded
+  GPU ICB group.
+- `2e625cd8f995b9fc97fdd9e9ce62a527a9d7313e`:
+  `Renderer3DModels.cpp` revalidates all external resources
+  before executing the encoded ICB. A Horizon archive
+  revision/mask switch rejects old commands and leaves them
+  available for safe CPU fallback in the regular pass.
+- `c9b75f1455c2c7adf9470e8d7c4b1e38d9595645`:
+  Metal backend requires a PBR argument-buffer ICB variant
+  for any shader with VT or R8 resources; never trusts
+  direct-pipeline fragment texture inheritance.
+- `f13ecb1cb24fc10c0d24515cfb8dc915a5230cbc`:
+  `ModelShaders.h` does not declare unused sampler IDs
+  27/29 for VT array textures; physical atlas uses s1 and
+  page table is explicitly read-only without sampler.
+- `598e649966de4fb4bb9fdf8615bc59ff335e2daa`:
+  Metal backend binds only VT argument textures at 26/28,
+  avoiding unused sampler binding/validation errors.
+
+**Docs/agent skill commits:**
+`00f5e75f7243e9695201a7858bccdcd808183584`
+(`docs/texture-rhi.md`),
+`71ba83ed8517572d0f927f046973694cb256e526`
+(`skills/visuals/aiverse-texture-rhi/SKILL.md`).
+
+**Architecture/API:** VT remains one shared set of fragment
+resources per homogeneous indirect group. RHI shader slot
+assignments: model base texture at tex1, physical VT array
+tex13, nearest RGBA8 page table tex14, full-resolution R8
+mask tex15; one U6 vec4 at Metal buffer(7). The ICB PBR
+fragment argument encoder references the optional tex13
+(encode ID 26), tex14 (ID 28), tex15+s15 (IDs 30/31).
+Shader source is switched between direct fragment resources
+and ICB argument buffer based on `AIVERSE_ICB_PBR`; this
+is not a heterogeneous per-command VT resource table.
+`modelVirtualTextureBindingHash` is a hash-only prefilter,
+and `compatibleModelVirtualTextureBinding` performs exact
+comparison of atlas, page table, layer, gutter and VT presence.
+
+**Grouping safety:** GPU material source and R8 mask hashes
+remain in `GpuMaterialState.h`. In addition, the renderer
+incorporates the external VT mapping into the GPU batch plan
+hash/signature, and checks exact compatibility in every
+cached/fresh GPU group. A staged `GpuEncodedBatch` stores
+its original VT/R8 identities and rechecks just before
+ICB execution; changed identities cause rejection and
+safe CPU drawing. CPU MDI may submit a group sharing the
+same VT domain; mixed groups reject to direct/instanced.
+Only opaque or R8-masked rigid built-in models with no
+GPU deformation, GI, graph, transparency, dissolve or
+LOD fading are eligible. Original backend experimental
+feature flags and renderer opt-in remain mandatory.
+
+**Actual verification:** fetched and inspected
+`Renderer3DModels.cpp`, `Renderer3D.h`,
+`GpuSceneDrawCommands.h`, `ModelShaders.h` and
+Metal ICB source/argument buffer contracts. GitHub
+accepted the above source and docs commits. Native C++
+compilation **NOT RUN**; CTest **NOT RUN**; Metal/GL/Vulkan
+shader compilers and GPU frame output **NOT RUN**; no
+performance benefit can be asserted. A separate test
+agent should verify actual Metal ICB pipeline creation,
+argument buffer texture residency, alpha silhouette
+parity, archive switching and fallback, with device
+logs, before enabling for production.
+
+**Remaining:** general per-command heterogeneous VT
+material indexes and GPU-resident per-command atlas data;
+Shader Graph VT integration without exceeding sampler
+budgets; multi-domain Terra atlases and full runtime
+tests. Safe existing CPU fallbacks remain for unsupported
+groups. The user requested feature completion first,
+tests later; do not mark tests passed.
