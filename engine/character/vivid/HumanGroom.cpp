@@ -195,9 +195,33 @@ bool HumanGroomRuntime::refitCollisionMesh(
             node.min=lo;node.max=hi;
         }
     }
-    // Commit only after every leaf and parent is rebuilt successfully.
+    // Stage anchored-guide updates too, so a bad deformation cannot
+    // partially publish either geometry or root coordinates.
+    auto movedGuides=guides_;
+    const auto center=(nodes.front().min+nodes.front().max)*0.5f;
+    for(auto& guide:movedGuides) {
+        if(guide.scalpTriangle==std::numeric_limits<std::uint32_t>::max())
+            continue;
+        if(guide.scalpTriangle>=proposed.size())return false;
+        const auto& tri=proposed[guide.scalpTriangle];
+        auto normal=normalize(cross(tri.b-tri.a,tri.c-tri.a));
+        const auto contact=tri.a*guide.scalpBary.x+
+                           tri.b*guide.scalpBary.y+
+                           tri.c*guide.scalpBary.z;
+        if(dot(normal,contact-center)<0.0f)normal=normal*(-1.0f);
+        const auto newRoot=contact+normal*0.002f;
+        if(!good(normal)||!good(newRoot))return false;
+        const auto offset=newRoot-guide.root;
+        guide.root=newRoot;
+        guide.normal=normal;
+        for(auto& p:guide.rest)p=p+offset;
+        for(auto& p:guide.position)p=p+offset;
+        for(auto& p:guide.previous)p=p+offset;
+        guide.rest[0]=guide.position[0]=guide.previous[0]=newRoot;
+    }
     collisionTriangles_=std::move(proposed);
     collisionNodes_=std::move(nodes);
+    guides_=std::move(movedGuides);
     return true;
 }
 bool HumanGroomRuntime::attachRootsToCollisionMesh() {
@@ -224,6 +248,7 @@ bool HumanGroomRuntime::attachRootsToCollisionMesh() {
         std::size_t size=0;
         stack[size++]=0;
         float3 nearestPoint=root;
+        std::uint32_t nearestTriangle=std::numeric_limits<std::uint32_t>::max();
         while(size) {
             const auto& node=collisionNodes_[stack[--size]];
             if(distance2(node)>nearest)continue;
@@ -236,6 +261,7 @@ bool HumanGroomRuntime::attachRootsToCollisionMesh() {
                     if(dist2>=nearest)continue;
                     nearest=dist2;
                     nearestPoint=p;
+                    nearestTriangle=collisionOrder_[i];
                     normal=normalize(cross(tri.b-tri.a,tri.c-tri.a));
                     if(dot(normal,p-center)<0.0f)normal=normal*(-1.0f);
                 }
@@ -246,6 +272,18 @@ bool HumanGroomRuntime::attachRootsToCollisionMesh() {
         }
         if(!std::isfinite(nearest) || !good(nearestPoint) || !good(normal))
             return false;
+        if(nearestTriangle>=collisionTriangles_.size())return false;
+        const auto& triangle=collisionTriangles_[nearestTriangle];
+        const auto u=triangle.b-triangle.a, v=triangle.c-triangle.a;
+        const auto w=nearestPoint-triangle.a;
+        const float aa=dot(u,u),ab=dot(u,v),bb=dot(v,v);
+        const float wa=dot(w,u),wb=dot(w,v);
+        const float determinant=aa*bb-ab*ab;
+        if(!std::isfinite(determinant)||determinant<1e-10f)return false;
+        const float beta=(wa*bb-wb*ab)/determinant;
+        const float gamma=(wb*aa-wa*ab)/determinant;
+        guide.scalpTriangle=nearestTriangle;
+        guide.scalpBary={1.0f-beta-gamma,beta,gamma};
         root=nearestPoint;
         const auto nextRoot=root+normal*0.002f;
         if(!good(nextRoot))return false;
