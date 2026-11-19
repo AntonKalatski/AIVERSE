@@ -1269,6 +1269,13 @@ void GameClient::frame(gfx::Device& dev, double dt) {
                 const render::EcsCameraView& camera,render::Renderer3D& renderer){
                 if(worldScene_ && !planet())
                     worldScene_->draw(renderer,world::Cell{0,0,0},1);
+                // Separate per-camera terrain culling and view projection,
+                // but reuse the primary frame's already uploaded GPU state.
+                if(!planet()) {
+                    auto& gs=mod().state(*sim_);
+                    view_.drawPreparedTerrainFog(renderer,gs.grid,
+                        spectator_?nullptr:&gs.vision[human_],time_);
+                }
                 // Re-submit final pose/material/attachment packets directly.
                 // RtsView::draw and MotionWeave::update are NOT repeated.
                 snapshot.submit(renderer,camera.entity.packed());
