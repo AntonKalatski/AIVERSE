@@ -18,6 +18,7 @@
 #include "SpectraGraphRuntime.h"
 #include "SpectraBatchWorld.h"
 #include "SpectraCueScheduler.h"
+#include "SpectraGpuPoolWorld.h"
 
 namespace aiverse::spectra {
 
