@@ -402,6 +402,19 @@ bool Renderer3D::warmModelPipelines(
     return warmModelPipelinesChecked(model,materials)==PipelineWarmStatus::Ready;
 }
 
+Renderer3D::GpuWarmStats Renderer3D::gpuWarmStats() const noexcept {
+    GpuWarmStats out;
+    out.pipelineJobs=pendingModelPipes_.size();
+    out.colorVariants=pendingColorWarms_.size();
+    out.colorPollAttempts=colorWarmPollAttempts_;
+    out.colorVariantsReady=colorWarmReady_;
+    for(const auto& [key,shader]:modelShaders_) {
+        (void)key;
+        if(shader.job)++out.shaderJobs;
+    }
+    return out;
+}
+
 bool Renderer3D::hasPendingModelPipelineJobs() const noexcept {
     if(!pendingModelPipes_.empty() || !pendingColorWarms_.empty())
         return true;
@@ -418,9 +431,11 @@ bool Renderer3D::pollPendingModelPipelineJobs() {
     // Do not allocate or upload a Model, texture, or material merely to
     // advance GPU compiler jobs that have already been submitted.
     for(auto it=pendingColorWarms_.begin();it!=pendingColorWarms_.end();) {
-        if(dev_->warmPipelineColor(*it,gfx::PixelFormat::RGBA16F))
+        ++colorWarmPollAttempts_;
+        if(dev_->warmPipelineColor(*it,gfx::PixelFormat::RGBA16F)) {
+            ++colorWarmReady_;
             it=pendingColorWarms_.erase(it);
-        else ++it;
+        }else ++it;
     }
     for(auto& [key,entry]:modelShaders_) {
         (void)key;
