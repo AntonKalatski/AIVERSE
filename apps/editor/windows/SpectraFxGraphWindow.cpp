@@ -33,7 +33,7 @@ public:
             saved_=document_;
             selected_=1;
             undo_.clear();redo_.clear();
-            dirty_=false;
+            dirty_=false;layoutDirty_=false;
             layout_.clear();pendingLink_.clear();
             refresh();
         }
@@ -80,7 +80,7 @@ public:
             ImGui::TextUnformatted("Select or create an effect graph.");
             ImGui::EndChild();return;
         }
-        ImGui::Text("%s%s",current_.c_str(),dirty_?" *":"");
+        ImGui::Text("%s%s",current_.c_str(),(dirty_||layoutDirty_)?" *":"");
         if(ImGui::Button("Save")) save(ed);
         ImGui::SameLine();
         if(ImGui::Button("Reload") && !dirty_) load(current_);
@@ -229,6 +229,7 @@ private:
         if(ImGui::IsItemHovered() && ImGui::IsMouseDragging(ImGuiMouseButton_Middle)) {
             pan_.x+=ImGui::GetIO().MouseDelta.x;
             pan_.y+=ImGui::GetIO().MouseDelta.y;
+            layoutDirty_=true;
         }
         const ImU32 gridColor=ImGui::GetColorU32(ImGuiCol_Border,0.25f);
         for(float x=std::fmod(pan_.x,32.0f);x<available.x;x+=32.0f)
@@ -275,6 +276,7 @@ private:
                 ImVec2& np=layout_[id];
                 np.x+=ImGui::GetIO().MouseDelta.x;
                 np.y+=ImGui::GetIO().MouseDelta.y;
+                layoutDirty_=true;
             }
             if(type!="Spawn") {
                 const ImVec2 input{p.x,p.y+42};
@@ -304,6 +306,68 @@ private:
         }
     }
     fs::path dir() const {return fs::path(project_)/"fx"/"graphs";}
+    fs::path layoutPath(const std::string& name) const {
+        return dir()/(name+".layout.json");
+    }
+    void loadLayout(const std::string& name) {
+        layout_.clear();pan_={};layoutDirty_=false;
+        std::ifstream file(layoutPath(name),std::ios::binary);
+        if(!file) return;
+        try {
+            std::string content((std::istreambuf_iterator<char>(file)),
+                                std::istreambuf_iterator<char>());
+            Json root=Json::parse(content);
+            if(!root.isObject() || root.getInt("version")!=1 ||
+               !root["nodes"].isObject()) return;
+            for(const auto& e:root["nodes"].members()) {
+                if(!e.second.isArray() || e.second.size()!=2) continue;
+                const float x=float(e.second[0].toDouble());
+                const float y=float(e.second[1].toDouble());
+                if(!std::isfinite(x)||!std::isfinite(y)||
+                   std::abs(x)>100000||std::abs(y)>100000) continue;
+                layout_[e.first]={x,y};
+            }
+            const Json& pan=root["pan"];
+            if(pan.isArray() && pan.size()==2) {
+                const float x=float(pan[0].toDouble());
+                const float y=float(pan[1].toDouble());
+                if(std::isfinite(x)&&std::isfinite(y)&&
+                   std::abs(x)<100000&&std::abs(y)<100000) pan_={x,y};
+            }
+        } catch(const std::exception&) {
+            // Corrupt editor-only metadata must never invalidate gameplay FX.
+            layout_.clear();pan_={};
+        }
+    }
+    bool saveLayout() {
+        Json root=Json::object();
+        root.set("version",Json::number(int64_t(1)));
+        Json nodes=Json::object();
+        for(const auto& pair:layout_) {
+            Json xy=Json::array();
+            xy.push(Json::number(double(pair.second.x),3));
+            xy.push(Json::number(double(pair.second.y),3));
+            nodes.set(pair.first,std::move(xy));
+        }
+        root.set("nodes",std::move(nodes));
+        Json pan=Json::array();
+        pan.push(Json::number(double(pan_.x),3));
+        pan.push(Json::number(double(pan_.y),3));
+        root.set("pan",std::move(pan));
+        const fs::path dest=layoutPath(current_);
+        const fs::path temp=dest.string()+".tmp";
+        {
+            std::ofstream out(temp,std::ios::binary|std::ios::trunc);
+            out<<root.dump(2)<<"\\n";
+            out.flush();
+            if(!out) {message_="Unable to save SpectraFX canvas layout";return false;}
+        }
+        std::error_code ec;
+        fs::rename(temp,dest,ec);
+        if(ec) {fs::remove(temp);message_=ec.message();return false;}
+        layoutDirty_=false;
+        return true;
+    }
     void refresh() {
         files_.clear();
         std::error_code ec;
@@ -351,7 +415,7 @@ private:
             std::string error;
             if(!compile(doc,error)) {message_=error;return;}
             current_=name;document_=saved_=std::move(doc);
-            layout_.clear();pan_={};pendingLink_.clear();
+            pendingLink_.clear();loadLayout(name);
             raw_=document_.dump(2);dirty_=false;selected_=0;
             propertiesText_=document_["nodes"][0]["properties"].dump(2);
             undo_.clear();redo_.clear();message_.clear();
@@ -371,6 +435,7 @@ private:
         }
         fs::rename(temp,target,ec);
         if(ec) {fs::remove(temp);message_=ec.message();return;}
+        if(!saveLayout()) return;
         saved_=document_;dirty_=false;refresh();ed.reloadFx();
         message_="Saved "+target.string();
     }
@@ -468,7 +533,7 @@ private:
     Json document_=defaultGraph(),saved_;
     std::vector<Json> undo_,redo_;
     int selected_=-1;
-    bool dirty_=false,createPending_=false;
+    bool dirty_=false,createPending_=false,layoutDirty_=false;
     std::unordered_map<std::string,ImVec2> layout_;
     ImVec2 pan_{};
     std::string pendingLink_;
