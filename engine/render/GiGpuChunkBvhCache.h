@@ -30,25 +30,25 @@ public:
             throw std::invalid_argument("GPU GI combined chunk triangle budget exceeded");
         std::map<uint64_t,std::shared_ptr<const Entry>> candidate;
         Stats stats;
-        snapshot.forEachChunk([&](uint64_t id,GiBounds bounds,
-                                  const StaticShadowGeometry& geometry) {
+        snapshot.forEachChunkShared([&](uint64_t id,GiBounds bounds,
+                                  const std::shared_ptr<const StaticShadowGeometry>& geometry) {
             auto old=entries_.find(id);
-            if (old!=entries_.end() && old->second->source==&geometry) {
+            if (old!=entries_.end() && old->second->source==geometry) {
                 candidate.emplace(id,old->second);
                 ++stats.reused;
             } else {
                 std::vector<GiGpuBvhTri> packed;
-                packed.reserve(geometry.triangles.size());
-                for(const auto& tri:geometry.triangles) {
-                    const float3 color=tri.surface<geometry.albedos.size()
-                        ? geometry.albedos[tri.surface] : float3{};
+                packed.reserve(geometry->triangles.size());
+                for(const auto& tri:geometry->triangles) {
+                    const float3 color=tri.surface<geometry->albedos.size()
+                        ? geometry->albedos[tri.surface] : float3{};
                     packed.push_back({{tri.a.x,tri.a.y,tri.a.z,0},
                                       {tri.b.x,tri.b.y,tri.b.z,0},
                                       {tri.c.x,tri.c.y,tri.c.z,0},
                                       {color.x,color.y,color.z,0}});
                 }
                 auto entry=std::make_shared<Entry>();
-                entry->source=&geometry;
+                entry->source=geometry;
                 entry->bounds=bounds;
                 entry->blas=GiGpuBvh::fromPackedTriangles(std::move(packed));
                 candidate.emplace(id,std::move(entry));
@@ -65,6 +65,13 @@ public:
     }
 
     size_t chunkCount() const { return entries_.size(); }
+    // Strongly owned source is retained even after the builder and old
+    // GiChunkedGeometrySnapshot are destroyed, until the cache entry retires.
+    std::shared_ptr<const StaticShadowGeometry> chunkSource(uint64_t id) const {
+        auto it=entries_.find(id);
+        return it==entries_.end()?nullptr:it->second->source;
+    }
+
     const GiGpuBvh* chunkBvh(uint64_t id) const {
         auto it=entries_.find(id);
         return it==entries_.end()?nullptr:&it->second->blas;
@@ -155,7 +162,7 @@ public:
 
 private:
     struct Entry {
-        const StaticShadowGeometry* source=nullptr;
+        std::shared_ptr<const StaticShadowGeometry> source;
         GiBounds bounds{};
         GiGpuBvh blas;
     };
