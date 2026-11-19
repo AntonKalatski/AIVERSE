@@ -2120,3 +2120,42 @@ For this 6+6-sample sequential fixture, Direct median 0.1397 ms vs AUTO median 0
 2. Add independent GPU timestamp reporting only on supported backends, and learn per-pass CPU MDI/ICB break-even thresholds from real wall-time distributions. AUTO currently uses conservative hardcoded workload gates; it is NOT a measured GPU utilization balancer.
 3. Target CPU MDI pipeline setup and Metal backend submit after instrumenting steady-state samples, not the comparatively tiny command packing step.
 4. Preserve Draft PR #34 and OFF-by-default experimental flags until tests and cross-platform acceptance; no full CTest, Vulkan parity, large-scene benchmark, or end-to-end FPS improvement verified at this stage.
+
+
+---
+
+## Stage 68 — learned CPU Direct/MDI cost by pass and workload bucket (2026-11-19)
+
+**Branch:** `perf/incremental-static-model-cache`, Draft PR #34. Main was already ancestor (0 behind) before this stage. **Commits:** `b31d7200f9ca0aa4459129bff4ce83a2764cd9b4` (new policy header), `2984c9297bf1d95c907b65512d80730217ec5b3c` (renderer storage), `8cf94d64ebad1283017887b51d82ef05ad35c87d` (per-pass learning), `7204ca21458b92b8af5b05aac31140b27311ea89` (read-only API), `a3d6f8dc9b9d3197f7dd76473531444128e3b678` (fixture checks/diagnostics), `0bd39c5b39b227d32ccfadeecd6749c0dfff1580` (shadow learning independent from GPU ICB). **No changes to default opt-in flags.**
+
+### Behavior and architecture
+
+- New `engine/render/AutoCpuBatchPolicy.h`: renderer-owned bounded feedback, 2 phases (sun shadow / main opaque), 3 buckets (64–127, 128–511, >=512 visible model items). EWMA CPU pass duration with alpha 0.12, 8 training samples per Direct and CPU MDI, 8% advantage required before selecting MDI in steady state, periodic counterfactual probe once every 32 eligible opportunities. First two samples of each path are excluded from EWMA warmup; subsequent samples drive the estimate. Zero heap allocation for policy updates. Small scenes below the existing 64-item floor retain Stage 66 safe Direct fallback.
+- `engine/render/Renderer3D.h`: `autoCpuBatch_` state survives frames, is reset by the existing model-cache/world invalidation path, and is inspectable through read-only `renderer.autoCpuBatchStats()`.
+- `engine/render/Renderer3DModels.cpp`: when `AIVERSE_BATCH_AUTO=1` and eligible visible count exceeds `AIVERSE_BATCH_AUTO_CPU_MIN_ITEMS`, AUTO decides CPU MDI vs Direct per completed shadow/opaque pass. Reads one CPU duration at the end of the pass, never GPU elapsed time. A nominal MDI phase only contributes a sample if a real CPU MDI submission occurred. Opaque CPU pass observations are suppressed if GPU-encoded ICB batches are present, avoiding comparisons contaminated by GPU authored draws; shadow learning is independent because GPU ICB does not cover shadow. No shader/format/culling/material/LOD tests are skipped. Existing manual modes do not consult the learned policy.
+- `tests/render/material_batches.cpp`: minimal policy CPU checks confirm small-pass direct fallback, learned preference for cheaper Direct, and independent untrained phase. With `AIVERSE_BATCH_CPU_TIMING=1` and auto enabled, prints non-empty `AUTO CPU learning phase/bucket` records (sample counts and EWMA) at fixture report time.
+
+### Important limitations
+
+This is **CPU-cost-aware selection**, not full measured CPU/GPU load balancing. Existing GPU ICB admission is still workload-threshold/preparation feedback only; no real GPU time/busy %, thermal pressure, upload backpressure, or whole-frame scheduling. CPU samples measure entire model pass rather than isolating direct API work only, though both paths use identical visibility/material sorting and per-workload buckets. Scene transitions without calling native invalidation may leave transient historical bias; periodic probing and bounded EWMA mitigate but do not eliminate this risk. Workloads with zero successful MDI submissions cannot train MDI performance. Fixed 64-item initial floor still applies unless user overrides. Do not generalize synthetic fixture performance to 1k/10k/100k objects.
+
+### Verification status and next steps
+
+**Source updated and accepted by GitHub connector. NOT RUN:** native CMake compilation of Stage 68, unit CTest, Metal pixel parity on new code, large-workload performance, real GPU timestamps, full CI, Vulkan validation. Owner's previous Stage 67 Mac Studio run passed old fallback source only. Do not claim the new learning passes native tests or is faster until measured.
+
+Next Mac Studio:
+```sh
+cd /Users/aleksandrfeer/Projects/AIVERSE || exit 1
+git fetch origin
+git switch perf/incremental-static-model-cache
+git pull --ff-only origin perf/incremental-static-model-cache
+cmake --build build/batching-gpu-verify --target aiverse_material_batches --parallel 8 || exit 1
+mkdir -p build/batching-gpu-verify/captures
+AIVERSE_BATCH_CPU_TIMING=1 AIVERSE_BATCH_AUTO=1 \
+ AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTHORED_DRAWS=1 \
+ AIVERSE_GPU_ENCODED_ICB=1 AIVERSE_GPU_ICB_RIGID=1 \
+ AIVERSE_PALETTE_TEST_CASE=indirect \
+ build/batching-gpu-verify/aiverse_material_batches unused.obj build/batching-gpu-verify/captures/auto-learn
+echo "AUTO learning exit=$?"
+```
+Expect screenshot parity and direct fallback on 32-command fixture; 33 CPU invariants (30 older + 3 added). This small fixture does **not** train buckets >=64, so `AUTO CPU learning` lines may be absent. A dedicated medium/high workload test is the next implementation, followed by repeated A/B/A crossover with actual GPU timestamps. Keep Draft and opt-in default-off.
