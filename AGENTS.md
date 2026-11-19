@@ -1695,3 +1695,35 @@ uncompiled GPU/resource/animation source into main.
   `view_appearance_registry`, are registered but **NOT RUN**. No build,
   CTest, TSAN, FPS/RTS/editor screenshot validation was performed. Follow
   Stage 110 handoff for specific commits, risks and exact next step.
+
+### Animation/View Stage 111 — RTS reload and GPU epoch ownership
+
+- `AppearanceAssetRegistry::publishPrepared` accepts already-resolved
+  `Asset` material/node/variant/graph data and stores immutable
+  snapshots **without** texture loading or graph recompilation. It
+  validates prepared indices before publishing but cannot roll back
+  texture/GPU callbacks already performed by native hosts.
+- `RtsView::reloadAppearanceTypes` now preflights external
+  AnimationGraph JSON, named material references and ShaderGraph
+  programs, stages a snapshot for each model/LOD/stage, and only then
+  swaps committed TypeLooks. For a **material-library-only** reload,
+  preserve entity clocks only if all graph signatures, Models and
+  runtime shapes match. Never introduce a second pose writer.
+- `RtsView::drawObject` uses published materials/assignments/variants
+  when a snapshot is present. `RtsView::shutdown` must detach
+  graph/pose/TypeLook/snapshot borrows **before**
+  `ModelResourceCache::shutdown`. GPU uploads performed before an
+  exception may still be resident: do NOT treat this as an atomic RHI
+  transaction.
+- A standalone `GameClient` owns one `RenderDeviceLifetime`;
+  an editor-hosted GameClient borrows the Editor's generation via
+  `ClientHost::start(..., gpuDeviceLease())`. Bind a compatible
+  lease to the RTS `ModelResourceCache` before GPU model operations.
+  Never create two independent generations for one live shared Device.
+  The editor must stop its hosted client before destroying its own
+  resource owners and retiring the one device epoch.
+- Deferred `view_appearance_prepared` and expanded
+  `render_device_epoch` tests have **NOT RUN**. No CMake/CTest,
+  native runtime, GPU loss or visual parity validation was performed.
+  Read `docs/agent-handoffs/animation-universal.md` Stage 111 for
+  exact implementation commits, limitations and next step.
