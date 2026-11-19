@@ -54,7 +54,8 @@ public:
     // The caller must first endCapture(), then beginScene() with each
     // secondary camera. Model/texture resources are borrowed from the host;
     // do not invalidate them until all camera submissions are complete.
-    void submit(Renderer3D& renderer)const {
+    template<class Submit>
+    void forEach(Submit&& submit)const {
         for(const auto& e:entries_) {
             ModelDraw d=e.draw;
             if(e.hasNodeWorld)d.nodeWorld=&e.nodeWorld;
@@ -62,8 +63,11 @@ public:
             if(e.hasNodeMaterial)d.nodeMaterial=&e.nodeMaterial;
             if(e.hasPose)d.pose=&e.pose;
             if(e.hasBaked)d.baked=&e.baked;
-            renderer.drawModel(d);
+            submit(d);
         }
+    }
+    void submit(Renderer3D& renderer)const {
+        forEach([&](const ModelDraw& d){renderer.drawModel(d);});
     }
 };
 } // namespace aiverse::render
