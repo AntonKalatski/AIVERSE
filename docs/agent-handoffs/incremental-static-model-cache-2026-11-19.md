@@ -1253,3 +1253,26 @@ Read current branch code, performed one-occurrence source transformation, checke
 
 ### Next specific action
 Review and resolve any remaining model importer/asset-lifetime edge cases (including malformed LOD chains, in-place material changes and Vulkan pooled addressing). Finish functionality before beginning compilation, dedicated policy fixtures, Metal/Vulkan visual parity, complete scene stress and CPU/GPU A/B/A benchmarking. Keep PR #34 Draft with all experimental modes OFF.
+
+
+---
+
+## Stage 40 — thread-safe last-owner GPU page release (2026-11-19)
+
+**Repository:** `chromealex/AIVERSE`. **Branch:** `perf/incremental-static-model-cache` / Draft PR #34. **Before code:** `48f0c35f419c2cc5d01dadd2e895a2109cc73804`; **implementation:** `a58cc72913c4c0952393a385918d5bb930f9a948`. `main` had already been integrated; check fresh HEAD/ancestry before merging. Handoff appended separately from code.
+
+### Bug and implementation
+
+`releaseModelGeometryPool` previously checked `m.geometryPoolPage.use_count()==1` and reset the owning `shared_ptr` without acquiring `poolMutex`. Upload and `geometryPoolStats` already acquired this mutex. Parallel releases of two models on a shared page could both see a count greater than one and then both reset, leaking the underlying GPU buffer. The registry could also retain expired weak page entries until a later upload.
+
+- `engine/render/GlobalGeometryPool.cpp` now serializes the release ownership transition with the same pool mutex used for upload and stats. It moves the model page into a local `shared_ptr`, checks final ownership under the lock, and removes that page and expired weak entries from the device's directory. Empty per-device registry entries are erased. It captures the last page's GPU handle and performs `dev.destroyBuffer` **after unlocking**, so the gfx backend cannot re-enter the pool lock during resource teardown.
+- Per-model GPU VB/IB handle resetting remains in existing `releaseModel()`; `gpuBaseVertex` and `gpuFirstIndex` are still cleared in `releaseModelGeometryPool()`. The general `uploadModelToGeometryPool` layout, vertex/index offsets, safe/size/LOD eligibility, global config, MDI command generation, Vulkan direct fallback, and Metal submission behavior are unchanged. No genre dependencies.
+- The pointer registry contains weak references, not owners. The final strong lease is allowed to expire before GPU teardown; a later upload cannot resurrect the retired page. Graphics-device `destroyBuffer` remains responsible for asynchronous GPU in-flight resource lifetime, including Vulkan deferred destroy / Metal retained resources. This does not make simultaneous mutation/use of one `Model` thread-safe; callers must coordinate model ownership separately.
+
+### Verification actually performed
+
+Fetched live branch file, matched the exact old release implementation, created one-file source patch/commit and advanced branch by expected-SHA fast forward through GitHub. **Native build: NOT RUN. CTest: NOT RUN. Thread-race sanitizers: NOT RUN. Metal/Vulkan raster/performance A/B/A: NOT RUN.** User explicitly prioritizes features before tests, and this environment has no native checkout. There is no compiler or measured speedup claim. Draft PR remains open.
+
+### Next
+
+Inspect pooled page updates in **Metal** and **Vulkan**, especially RHI update failure and within-frame page-version consistency. Before enabling any default rigid-LOD pooling, run concurrency stress for last-two-owner unload, backend in-flight GPU use, reupload after release, and shared-page hit/miss parity. Keep generic engine API and per-stage documentation.

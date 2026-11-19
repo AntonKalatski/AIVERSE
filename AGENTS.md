@@ -1686,3 +1686,18 @@ allocation, indirect MDI submission or speedup. Query BEFORE the
 normal importer discards CPU vertices. No new Studio per-frame work,
 no genre dependencies and no default-flag changes. Native and GPU
 tests still deferred under user's feature-first direction.
+
+
+## Stage 40 — shared GPU page last-owner release
+
+`engine/render/GlobalGeometryPool.cpp::releaseModelGeometryPool`
+now serializes `shared_ptr` ownership transitions against uploads
+and `geometryPoolStats` using `poolMutex`. The last owner retires
+the page's weak directory entry and erases empty device entries,
+then destroys the GPU buffer *outside* the lock. Keep this invariant
+when changing model/asset streaming: no concurrent uncoordinated
+write/release of the same Model; RHI must retain in-flight GPU use.
+Do not reintroduce an unlocked `use_count()` check or destroy shared
+buffers while another Model owns the page. No tests have been run
+for this stage; retain Draft PR #34 until feature completion and
+Metal/Vulkan/release-stress validation.

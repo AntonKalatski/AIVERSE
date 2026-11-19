@@ -1438,3 +1438,19 @@ already uploaded with discarded CPU vertices may report missing CPU
 geometry; query before upload. This introduces no heap stats/history,
 render-thread sort, GPU readback, shader changes or measured speedup.
 Stage 39 remains source-only until final native tests.
+
+
+### Shared geometry pool final-owner lifetime (Stage 40)
+
+`releaseModelGeometryPool()` now holds the same `poolMutex` as
+uploads and diagnostics while transferring ownership and deciding
+whether a page is the last owner. This avoids a race in which two
+concurrently released models each observe another owner and leak the
+shared GPU page. Expired weak directory entries and empty device
+entries are removed on final release, rather than only lazily at a
+future upload. `gfx::Device::destroyBuffer` occurs *outside* the
+pool mutex; it retains the backend's existing responsibility for
+in-flight GPU commands. This does not permit simultaneous mutation
+and rendering of the same `Model`. No changes to geometry packing,
+cross-model eligibility, GPU command ABI, shader selection or defaults;
+full native and multi-threaded validation is deferred.
