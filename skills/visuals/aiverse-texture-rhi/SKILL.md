@@ -683,3 +683,21 @@ CI if it remains queued or cancelled.
   submit a reused GPU batch. `shutdownModels` resets the tickets.
 - Do not claim per-command mixed Metal ICB resources: the new table is
   still CPU staging only. No native build/GPU shader validation RUN.
+
+
+### Opt-in per-command Metal ICB VT fragment ABI (Stage 10X)
+
+- RHI: `GpuIcbVirtualMaterial` contains VT atlas/page table handles,
+  optional R8 alpha coverage and 16-byte U6 params. The optional
+  `prepareGpuEncodedIndexedIcbWithVirtualMaterials` returns zero
+  on unsupported backends and requires matching count/descriptors.
+- Metal: under `AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT=1`
+  *and* existing Metal GPU ICB flags, GPU encoded commands can point
+  at per-command 4096-byte PBR argument-buffer slices and 256-byte
+  U6 slices. VT resources are revalidated before execution.
+- Renderer3D currently only calls this path for homogeneous groups
+  with valid virtual textures; it has **not** relaxed grouping to
+  allow mixed atlases. The old shared argument buffer and CPU fallback
+  remain unchanged by default.
+- This is not yet GPU-validated: native C++/Objective-C++, MSL
+  compiler, actual Metal frame captures and perf tests NOT RUN.
