@@ -567,3 +567,23 @@ git fetch origin main && git merge origin/main
 - **Compatibility:** feature-gated and standalone, no GameClient/Editor runtime modified in this stage, no ECS simulation/save changes, PRISMA untouched.
 - **Verification actually performed:** **NOT RUN**, per user's features-first request. No compilation, CTest, application/editor or GPU validation. No production-ready claim.
 - **Next actionable step:** integrate the authored routes in `apps/client/ClientFx` with a weak-owned, bounded per-tick event collector, then dispatch only at the safe GPU frame point before `Renderer3D::beginScene`; render after scene render while the pass is open. Protect against duplicate tick deliveries, paused/planet views and device teardown. Commit code and append next handoff separately.
+
+
+## 2026-11-19 — Stage 34: live native RTS GameClient GPU frame integration (opt-in)
+- **Branch:** `feature/spectrafx-generic-cue-queue`; latest compare at the stage start: `main` `d71c6d47e532b25fb816a8bb1f96c41e5275a165`, 0 behind, 76 ahead. No unrelated main edits replaced.
+- **Code SHAs:** `e830f62ed6a0e320e103e2dc5fc004b878a3925f` (ClientFx public hooks), `2da27c262198200b39255d72a24f4e88a692da78` (ClientFx implementation), `5ffa492d8777ddb167df7873174899b6005e2df3` (real GameClient frame calls), `e08b35ceb900a2ea5887c1dcc8f19fb5b0220553` (planet-view guard order).
+- **Changed:** `apps/client/ClientFx.h`, `apps/client/ClientFx.cpp`, `apps/client/GameClient.cpp`. **Existing** client rendering loop now optionally loads `fx/gpu/routes.json`, constructs `SpectraFxGpuEmitterLibrary` and `SpectraFxHybridPlayback` only when at least one configured route exists. A weak-pointer-owned `Simulation::addSystem("spectrafx_gpu.collect",...)` captures only per-tick `SimEvent` records owned by the local viewer, and only the explicitly configured event IDs. Queue is bounded to 1024; events are **not** dispatched into GPU within deterministic simulation. A new `ClientFx::prepareGpuFrame(dt)` drains the cue queue and invokes GPU compute inside the device frame, before `Renderer3D::beginScene`; `renderGpu(viewProj,camera)` draws the GPU-only billboards in the already-open scene pass, after existing CPU `ParticleSystem::render`. Camera right/up are extracted from the view matrix. No generic GPU effect routes = unchanged prior CPU RTS FX behavior. Planetary views reset/skip GPU effects until a dedicated body-local coordinate adapter exists, and this gate is applied before GPU prepare. Match stop and shutdown release hybrid GPU resources before device/ParticleSystem destruction; weak inbox makes stale Simulation collectors inert after match detach.
+- **User-facing config:** `fx/gpu/routes.json` version 1, `routes` up to 64 entries of `{eventType: uint16, asset: "safe-name", enabled: bool, ownPlayerOnly: true, oneShotSeconds: float}`. Event ownership filter is deliberately conservative. Native host code still needs to prevent duplicate legacy RtsFx visuals if project authors assign the same cue to both old and new banks. A network spectator (viewer 0) does not receive GPU-event FX from this opt-in collector.
+- **Scope limits:** Integrated **RTS GameClient only**; FPS external renderer, editor SceneViewport and generic native project hosts remain opt-in/manual. Not a production claim. No untrusted `ownPlayerOnly=false` routing, no visibility leaks by deliberately reading hidden World data, no new ECS persistent components/net formats. Each GPU emitter still owns private buffers and shader pipeline; no batching across emitters yet.
+- **Verification actually run:** **NOT RUN** (explicit user instruction: complete functionality before tests). No C++ compilation, CTest, UI startup, RHI Metal/Vulkan shader compilation, render-pass/barrier visual check, performance profiling, CI or end-to-end event playback evidence. GitHub accepted commits, not proof that runtime works. Do not merge or enable by default until these gates pass.
+- **Next:** editor UI for GPU cue route config and optional project-scoped preview; then cross-emitter batching, GPU collisions, sorting/LOD, and native host/fallback robustness. Finally compile, run focused tests/visual acceptance, fix all errors, and only then merge. Before each stage, fetch/pull branch and compare to latest main.
+
+### Pull and sync (macOS)
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main
+git merge origin/main
+```
