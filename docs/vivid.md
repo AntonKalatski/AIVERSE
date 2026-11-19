@@ -613,3 +613,10 @@ VIVID Creator now has an opt-in, non-destructive facial rig correction panel for
 A separate `MorphLodTransfer` helper carries VIVID sparse facial morph targets to a target LOD when an explicit source-vertex correspondence table is provided. An additional strict reference matcher can infer that table only for original/LOD vertices with unambiguous near-identical positions and a bounded 32K diagnostic budget. Arbitrarily decimated LOD meshes require proper barycentric surface mapping and are not supported by this matcher.
 
 **The code and new regression assertions are not yet natively compiled or tested.** No Metal preview, CTest or production model validation was performed for these features. Outstanding tasks include true bind-pose/skin rebinding, asset-owned rig correction publication, full LOD authoring/bake/editor integration, and physically detailed skin/eyes/strand hair. See Stage 6Z in `docs/agent-handoffs/vivid.md` for implementation commits, caveats and next steps.
+
+
+## Stage 7A — barycentric facial LOD transfer (2026-11-19)
+
+VIVID now has an opt-in CPU `MorphLodSurface` authoring helper for transferring sparse facial morphs to independently decimated LOD vertex streams. It projects each LOD vertex onto an original indexed triangle, stores stable barycentric correspondence and interpolates all authored corrective position, normal and tangent deltas before recompiling the LOD-specific sparse CSR representation. The fallback rejects nonfinite/degenerate data, outside-tolerance vertex positions and authoring workloads exceeding the bounded eight-million comparison budget.
+
+This is source-level morph transfer, **not** automatic mesh simplification, Creator authoring UI integration or runtime LOD switching. Large meshes need a spatial acceleration structure and precise region constraints to avoid false matches across different facial features. The new implementation and regression assertions have **NOT RUN** on macOS; no compiled/GPU-tested parity is claimed. Stage 7A source SHAs and next steps are in `docs/agent-handoffs/vivid.md`.
