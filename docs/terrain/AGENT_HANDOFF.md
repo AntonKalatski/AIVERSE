@@ -1,7 +1,7 @@
 # TerraWeave — AI agent handoff
 
 Last updated: 2026-11-19. Branch: `feature/terraweave`.
-Base: `feature/universal-entity-inspector-fps`.
+PR #24 target: `main` (retargeted 2026-11-19; previous feature branch was historical base).
 Owner request: implement generic terrain/trees/foliage for AIVERSE; **update this file
 at the end of EVERY development stage** so a different AI can pick up immediately.
 
@@ -2846,3 +2846,17 @@ Previous handoff reported PR #24 as nonmergeable with `main`. That was inaccurat
 **NOT RUN:** Actual Python `tools/skills/catalog.py check`, `tools/skills/audit.py`, CMake/CTest on full repository, GCC/Clang builds, macOS/Windows builds, GPU/editor/game runtime. A full local checkout was not available because network `github.com` resolution is blocked in the agent container. No test suite may be marked passing.
 
 **Next agent action:** Run `python3 tools/skills/catalog.py check` and `python3 tools/skills/audit.py` in the checked-out branch, then full isolated TerraWeave CI and CTest; verify no stale catalog and no SpectraFX references from TerraWeave-only PR. Check PR mergeability against latest `main` and test shared renderer + WorldScene/editor integration. Keep PR Draft pending real results and GPU visual checks.
+
+## Stage 23f — CI queue observation and Horizon header portability (SOURCE COMMITTED, CI PENDING)
+
+**Date:** 2026-11-19. **Branch:** `feature/terraweave`. **PR:** [#24](https://github.com/chromealex/AIVERSE/pull/24) → `main`, Draft.
+
+**Source change:** `dc10baec05aae559a3988e8cc7569eb3e6deb468` updates `engine/world/TerraWeaveHorizon.h` to explicitly include `<utility>` for the optional `std::pair<int32_t,int32_t>` neighbor-aware slope callback. Previously the type depended on transitively included standard headers. This is C++20 header portability hardening only; no HLOD logic, GPU buffers, atlas/TWH8 archive format, shader, physics, ECS or data-layout change.
+
+**CI evidence as actually observed:** For pre-change PR head `d7735490a467acaf64f3ad8b8f38f25e1d7de8ae`, six GitHub Actions `pull_request` workflows were present and `queued`, including TerraWeave isolated checks [44480005718](https://github.com/chromealex/AIVERSE/actions/runs/44480005718) and the main CI run [44480005759](https://github.com/chromealex/AIVERSE/actions/runs/44480005759). Earlier per-commit workflow runs [44479880544](https://github.com/chromealex/AIVERSE/actions/runs/44479880544) (TerraWeave) and [44479880571](https://github.com/chromealex/AIVERSE/actions/runs/44479880571) (CI) were observed `completed/cancelled` after newer PR commits. These cancellations are **not** passing tests. The latest post-change commit requires separate current-HEAD workflow evaluation. No GCC/Clang pass, CTest pass, editor GPU screenshot or benchmark has been observed.
+
+**Other static review:** Confirmed head `TerraWeaveHorizonScene.h` includes the Stage 22 empty/resolved and stale-region reporting fields, and the Stage 23 tests include authored Q16 normal, TWH8 provenance and clipping fallback assertions. These are code inspection findings, not execution results. The top-of-file handoff base label has been corrected from the old feature branch to the current PR target `main`.
+
+**Actual validation performed:** GitHub repository file reads, workflow metadata inspection and one successful source commit. **NOT RUN:** full C++20 compilation, CMake/Ninja, CTest, Python skill catalog check, editor/WorldScene scene, Vulkan/Metal/GL screenshots or profiling. PR must remain Draft.
+
+**Exact next work:** Inspect the newest completed TerraWeave isolated workflow on **post-Stage23f** source HEAD; retrieve GCC and Clang job logs, fix real compiler failures or test assertions; then run full and targeted CI, `tools/skills/catalog.py check`, and RHI/editor visual QA. Keep this handoff updated after every stage. Do not claim source tests passed until explicit run conclusions and logs are available.
