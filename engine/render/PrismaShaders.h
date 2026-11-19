@@ -88,26 +88,81 @@ inline const char* kShafts = R"(
 )";
 
 
-// Stage 22 experimental depth-based defocus. TEX0 color, TEX1 scene depth.
-// px.xy=1/resolution; px.z=RT UV flip; p0=(focusDepth,range,maxRadius,intensity).
-// Hardware depth deliberately remains [0,1] (no unsupported near/far inference).
+// Stage 56: opt-in camera-linear DoF and depth-aware silhouette rejection.
+// TEX0 = HDR scene color, TEX1 = device depth; depth is sampled but NEVER
+// attached as a writable render target. CPU validates projection metadata.
+// p0 = (legacy focus depth, legacy focus range, max blur pixels, intensity).
+// depthInfo = (near, far, orthographic[0/1], reserved).
+// focusInfo = (view-space focus distance, metric sharp interval,
+//              silhouette tolerance in world units, metric mode[0/1]).
+// Legacy branch is retained exactly for old authored game/map JSON.
+inline const char* kDepthOfFieldHelpers = R"(
+PF_FN float prismaDofViewDepth(float d, vec4 info) {
+    if (info.z > 0.5) return mix(info.x,info.y,d);
+    float denominator = max(info.y-d*(info.y-info.x),0.0001);
+    return info.x*info.y/denominator;
+}
+)";
 inline const char* kDepthOfField = R"(
     vec2 uv = TUV(s);
-    vec3 original = TEX0(uv).rgb;
-    float depth = TEX1(uv).r;
-    float coc = clamp((abs(depth - p0.x) - p0.y * 0.5) /
-                      max(p0.y, 0.0001), 0.0, 1.0) * p0.w;
+    if (focusInfo.w < 0.5) {
+        vec3 original = TEX0(uv).rgb;
+        float depth = TEX1(uv).r;
+        float coc = clamp((abs(depth - p0.x) - p0.y * 0.5) /
+                          max(p0.y, 0.0001), 0.0, 1.0) * p0.w;
+        vec2 radius = px.xy * p0.z * coc;
+        vec3 sum = original * 2.0;
+        sum += TEX0(uv + vec2( radius.x, 0.0)).rgb;
+        sum += TEX0(uv + vec2(-radius.x, 0.0)).rgb;
+        sum += TEX0(uv + vec2(0.0,  radius.y)).rgb;
+        sum += TEX0(uv + vec2(0.0, -radius.y)).rgb;
+        sum += TEX0(uv + radius * vec2( 0.7071,  0.7071)).rgb;
+        sum += TEX0(uv + radius * vec2(-0.7071,  0.7071)).rgb;
+        sum += TEX0(uv + radius * vec2( 0.7071, -0.7071)).rgb;
+        sum += TEX0(uv + radius * vec2(-0.7071, -0.7071)).rgb;
+        RETURN(vec4(sum * 0.1, 1.0));
+    }
+
+    // Metric mode: the same focus plane works in perspective and ortho.
+    // Depth 1 is background/sky on the existing non-reversed RHI path;
+    // do not let background bleed across foreground silhouettes.
+    vec4 center = TEX0(uv);
+    float rawDepth = TEX1(uv).r;
+    if (rawDepth >= 0.99999) RETURN(center);
+    float centerDistance = prismaDofViewDepth(rawDepth,depthInfo);
+    float range = max(focusInfo.y,0.01);
+    float coc = clamp((abs(centerDistance-focusInfo.x)-range*0.5) /
+                      range,0.0,1.0)*p0.w;
+    if (coc <= 0.00001 || p0.z <= 0.00001) RETURN(center);
     vec2 radius = px.xy * p0.z * coc;
-    vec3 sum = original * 2.0;
-    sum += TEX0(uv + vec2( radius.x, 0.0)).rgb;
-    sum += TEX0(uv + vec2(-radius.x, 0.0)).rgb;
-    sum += TEX0(uv + vec2(0.0,  radius.y)).rgb;
-    sum += TEX0(uv + vec2(0.0, -radius.y)).rgb;
-    sum += TEX0(uv + radius * vec2( 0.7071,  0.7071)).rgb;
-    sum += TEX0(uv + radius * vec2(-0.7071,  0.7071)).rgb;
-    sum += TEX0(uv + radius * vec2( 0.7071, -0.7071)).rgb;
-    sum += TEX0(uv + radius * vec2(-0.7071, -0.7071)).rgb;
-    RETURN(vec4(sum * 0.1, 1.0));
+    vec3 sum = center.rgb * 2.0;
+    float weight = 2.0;
+    float tolerance = max(focusInfo.z,0.001);
+    for (int i=0; i<8; ++i) {
+        vec2 direction =
+            i==0 ? vec2(1.0,0.0) :
+            i==1 ? vec2(-1.0,0.0) :
+            i==2 ? vec2(0.0,1.0) :
+            i==3 ? vec2(0.0,-1.0) :
+            i==4 ? vec2(0.7071,0.7071) :
+            i==5 ? vec2(-0.7071,0.7071) :
+            i==6 ? vec2(0.7071,-0.7071) :
+                   vec2(-0.7071,-0.7071);
+        vec2 sampleUv = TUV(clamp(s + radius*direction,
+                                  vec2(0.0),vec2(1.0)));
+        float tapDepth = TEX1(sampleUv).r;
+        if (tapDepth >= 0.99999) continue;
+        float tapDistance = prismaDofViewDepth(tapDepth,depthInfo);
+        // Reject both background->foreground and foreground->background
+        // contributions across occlusion edges, with a soft transition.
+        float difference = abs(tapDistance-centerDistance);
+        float w = 1.0-smoothstep(tolerance,tolerance*2.0,difference);
+        if (w <= 0.00001) continue;
+        sum += TEX0(sampleUv).rgb*w;
+        weight += w;
+    }
+    // Preserve source alpha: the metric pass modifies HDR RGB only.
+    RETURN(vec4(sum/max(weight,0.0001),center.a));
 )";
 
 
