@@ -2789,3 +2789,35 @@ No performance increase is claimed without benchmarking.
 
 **NOT RUN:** native compile/link, CTest/CI, Metal/GL/Vulkan,
 sanitizers or FPS/RTS/editor visual parity. See [Stage 123 handoff](agent-handoffs/animation-stage123-compiled-retarget-cache-2026-11-19.md).
+
+## Stage 124 — reusable, reentrancy-safe LOD pose scratch
+
+`retargetCompiledModelPose` now assigns a compiled visual bind
+Pose into caller-owned output storage and computes target
+`worldMatrices` in the caller's reusable vector. Unlike the
+previous temporary-return path, actor submissions may reuse
+capacity across a large sequence of retargeted models.
+
+`aiverse::View` now owns one `RetargetScratch` (Pose + mat4
+vector) per presentation View, avoiding a fresh pair of
+temporary vectors per ordinary submit. An RAII busy guard
+handles nested `Renderer3D::drawModel` capture callbacks by
+using isolated stack scratch for the nested call. Renderer3D
+consumes pose and matrix pointers synchronously, while
+persistent GPU-scene uploads copy the world/bounds/identity
+data; no delayed GPU command references retarget scratch.
+
+Render-owner-thread-only and after ECS worker join remains
+mandatory. The older noncompiled retarget helper still
+allocates validation storage, and no benchmark speedup
+is claimed. A failed helper return means caller must
+ignore scratch contents and draw target bind pose.
+
+A new `makeNamedModelPoseRetarget` maps visual nodes to
+source bones by name at asset import and
+`describeModelPoseRetarget` reports rejected authored
+hierarchy/morph cases, without per-draw diagnostics.
+[Stage 124 handoff](agent-handoffs/animation-stage124-pose-scratch-authoring-2026-11-19.md).
+
+**NOT RUN:** CMake/native compiler/CTest, GPU backend visual
+tests, sanitizers or profiling.
