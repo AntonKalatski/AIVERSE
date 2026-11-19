@@ -53,6 +53,12 @@ public:
     // seam-aware neighbourhood). Called with the faded field and the blur radius in cells; null = box blur.
     void setBlur(std::function<void(std::vector<uint8_t>& field, int radius)> fn) { blur_ = std::move(fn); dirty_ = true; }
     gfx::TextureHandle texture() const { return tex_; }
+    render::GpuOwnedMemoryStats ownedGpuMemoryStats() const {
+        if (!dev_) return {};
+        render::GpuOwnedMemoryCounter c(*dev_);
+        c.buffer(vb_);c.buffer(ib_);c.texture(tex_);
+        return c.stats();
+    }
     // Draws the sheet (Renderer3D custom draw after the scene). `cells`: weak tier forces Cells.
     void draw(render::Renderer3D& r, double time, bool lowTier);
 
