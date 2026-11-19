@@ -85,7 +85,7 @@ public:
         distanceCarry_=length-std::floor(length);
         // Initial burst fires only on the first valid tick; no startup
         // teleport can accidentally generate an enormous distance burst.
-        const uint32_t burst=first ? settings_.startupBurst : 0;
+        const uint64_t burst=first ? uint64_t(std::floor(double(settings_.startupBurst)*spawnScale)) : 0;
         const uint64_t desired=uint64_t(rateCount)+distanceCount+burst;
         const uint32_t capped=uint32_t(std::min<uint64_t>(desired,settings_.maxSpawnsPerFrame));
         stats_.requested+=desired;
