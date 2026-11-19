@@ -657,6 +657,11 @@ bool GpuPoolWorld::resetForRollback() {
 PoolCheckpointStats GpuPoolWorld::checkpointStats() const {
     PoolCheckpointStats result;
     if(checkpointBudget_)result.budget=checkpointBudget_->stats();
+    result.gpuDeviceHealthKnown=device_ &&
+        device_->info().backend==gfx::Backend::Metal &&
+        device_->supportsCompute();
+    if(result.gpuDeviceHealthKnown)
+        result.gpuDeviceHealthy=device_->gpuHealthy();
     for(const auto& group:gpuGroups_) {
         const GpuCheckpointStatus state=group.particles->checkpointStatus();
         const ComputeStats& stats=group.particles->stats();
@@ -668,6 +673,10 @@ PoolCheckpointStats GpuPoolWorld::checkpointStats() const {
         result.adaptiveRecoveries+=stats.checkpointAdaptiveRecoveries;
         result.killedSlotsAwaitingFence+=state.killsAwaitingGpuFence;
         result.killedSlotsReclaimed+=stats.killedSlotsReclaimed;
+        result.gpuDeviceUnhealthy+=stats.gpuDeviceUnhealthy;
+        result.gpuKillUploadFailures+=stats.gpuKillUploadFailures;
+        result.gpuComputeBeginFailures+=stats.gpuComputeBeginFailures;
+        result.gpuPassOrderRejections+=stats.gpuPassOrderRejections;
         result.killScatterDispatches+=stats.gpuKillScatterDispatches;
         result.killIndexBytes+=stats.gpuKillIndexBytes;
         result.maximumCurrentIntervalFrames=std::max(
