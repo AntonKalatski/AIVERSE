@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
+#include <chrono>
 #include <fstream>
 #include <functional>
 #include <iterator>
@@ -69,9 +70,29 @@ struct Loop {
 float dist(b3Vec3 a, b3Vec3 b) { return std::sqrt((a.x - b.x) * (a.x - b.x) + (a.y - b.y) * (a.y - b.y) + (a.z - b.z) * (a.z - b.z)); }
 }
 
+// Live 5-second virtual progress and five measured phases. Disabled
+// in production unless PlaceServer::setTickPhaseProfiling is enabled.
+using PlaceClock = std::chrono::steady_clock;
+static void printPlaceLoadPhases(const SimPlace& sim) {
+    const auto& stats=sim.server.stats();
+    const auto& p=stats.phases;
+    std::printf("  [place progress] virtual %.1f s | server avg %.3f ms worst %.3f ms | clients %zu | bodies %zu\\n",
+                sim.seconds(),stats.tickMsAvg(),stats.tickMsWorst,
+                sim.clients.size(),sim.server.bodies().size());
+    if(p.samples){
+        const double d=double(p.samples);
+        std::printf("  [place phases] poll %.3f + players %.3f + Box3D %.3f + sync %.3f + broadcast %.3f ms/tick (%llu samples)\\n",
+                    p.pollMs/d,p.playersMs/d,p.physicsMs/d,
+                    p.syncMs/d,p.broadcastMs/d,
+                    static_cast<unsigned long long>(p.samples));
+    }
+    std::fflush(stdout);
+}
+
 TEST(sixteen_clients_over_4g_converge_predict_and_late_join) {
     Json scene = exampleScene();
     SimPlace sim(scene, 11);
+    sim.server.setTickPhaseProfiling(true);
     // 15 wandering / pushing / spawning bots and one steady walker patrolling open static ground.
     for (int i = 0; i < 15; ++i) sim.add("4g", std::make_unique<Bot>(uint32_t(100 + i)));
     auto probeBot = std::make_unique<Bot>(7, std::vector<b3Vec3>{{37, 0, 27}, {43, 0, 27}, {43, 0, 33}, {37, 0, 33}});
@@ -85,6 +106,7 @@ TEST(sixteen_clients_over_4g_converge_predict_and_late_join) {
     uint64_t probeCorrectionsAtArrival = 0;
     float probeMaxAfterArrival = 0;
     bool probeArrived = false;
+    const auto wallStart=PlaceClock::now();
     while (sim.seconds() < 30) {
         if (!late && sim.seconds() >= 20) { late = sim.clients.size(); sim.add("4g", std::make_unique<Bot>(999)); }
         sim.frame();
@@ -92,10 +114,14 @@ TEST(sixteen_clients_over_4g_converge_predict_and_late_join) {
         auto p = probe.predicted().position;
         if (!probeArrived && p.x > 36 && p.z > 26 && p.z < 34) { probeArrived = true; probeCorrectionsAtArrival = probe.stats().corrections; }
         if (probeArrived) probeMaxAfterArrival = std::max(probeMaxAfterArrival, probe.stats().lastCorrection);
+        const auto frame=uint64_t(std::llround(sim.seconds()*60.0));
+        if(frame && frame%300==0)printPlaceLoadPhases(sim);
     }
     double tickAvg = sim.server.stats().tickMsAvg(), tickWorst = sim.server.stats().tickMsWorst;
     sim.botsActive = false;
     sim.run(6);
+    std::printf("  [place wall] 30s virtual load + 6s convergence: %.1f s\\n",
+                std::chrono::duration<double>(PlaceClock::now()-wallStart).count());
     bool ready = true;
     float worst = 0, meanAwake = 0;
     size_t missing = 0, extra = 0, awake = 0;
