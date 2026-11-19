@@ -3061,3 +3061,94 @@ per-command GPU-authored ICB Shader Graph binding, all sampler
 address modes, broad asset sizes, or GL/Vulkan/mobile parity.
 No fixes were required for the observed PASS.
 
+
+### Stage 10BQ — experimental Metal GPU-encoded ICB graph-source ABI pixel test (source only)
+
+Added a **separate process, explicitly opt-in** macOS native
+`tests/render/metal_icb_graph_gpu.mm` GPU acceptance fixture for
+the existing Metal `gfx::Device` GPU-encoded indexed indirect command
+buffer (ICB), `prepareGpuEncodedIndexedIcbWithPbrMaterials` and
+`executeGpuEncodedIndexedIcb`. This path is experimental and
+may cause driver failures on unsupported hardware; it is **NOT**
+registered during normal source CTest or the already-green
+`--metal` acceptance.
+
+The fixture uses the production Metal backend and explicit flags:
+`AIVERSE_EXPERIMENTAL_METAL_ICB=1`,
+`AIVERSE_GPU_ENCODED_ICB=1`,
+`AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR=1`.
+CMake `AIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=ON` registers
+`metal_texture_icb_graph_gpu` (default **OFF**). CTest supplies
+these opt-in flags via the test environment.
+
+Two GPU-authored indexed commands render the left and right
+halves of a 4×4 RGBA8 render target. Both commands share one
+shader/pipeline and geometry buffers, but have different
+per-command `GpuIcbPbrMaterial` descriptors. Those contain
+distinct `texture(1)` built-in PBR colors,
+distinct Shader Graph source `texture(13)` colors,
+and distinct packed per-command U2 factor vectors.
+A minimal MSL fixture declares the same Metal
+argument-buffer `slot*2` resource layout and graph-source
+count marker used by the production Shader Graph ICB ABI.
+It deliberately does **not** claim to execute the entire
+model rendering or graph compiler.
+
+Acceptance requires:
+- Metal device reports `supportsGpuEncodedIcb()`;
+  no skip / implicit fallback when unavailable;
+- all source textures, uint32 index and vertex buffers,
+  GPU storage command buffer, shader/pipeline allocated;
+- `prepareGpuEncodedIndexedIcbWithPbrMaterials` returns a
+  **nonzero GPU command token**, and
+  `executeGpuEncodedIndexedIcb(token)` succeeds;
+- actual Metal RGBA8 output readback from the GPU matches
+  **distinct left and right pixels** within 1 LSB/channel.
+  A command that accidentally inherits the first material
+  for both halves must fail the test.
+- test process returns nonzero on unsupported GPU, refused
+  GPU encode/execute, GPU fault, callback timeout or
+  pixel mismatch.
+
+This hardware test uses **no CPU/ordinary draw fallback** to
+manufacture a PASS. It does **not** yet validate the full
+`ShaderGraph` authoring/compiler-generated scene materials,
+per-command virtual texture mode, all ICB shader permutations,
+or actual in-game batching performance.
+
+Source commits:
+`facd011f45efd11a6883b615003435c204c83300` (new opt-in
+native MSL fixture),
+`6d9876960432d2db472e9bce704de014d9eef261`
+(default-OFF CMake registration / isolated CTest with env flags),
+`e577a2e696b24c213d4c9e480d2a5fc0e917722c`
+(include correction).
+**Source only: CMake/Objective-C++ compilation and actual
+Metal GPU ICB execution have NOT RUN on the Mac Studio.**
+Previous passing `metal_texture_gpu` is a different, safer
+test and is not evidence of this ICB path.
+
+After pulling the feature branch in the **isolated** Mac Studio
+texture worktree (not the primary AIVERSE checkout), explicitly
+configure/build/run the separate risky target:
+
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git pull --ff-only origin feature/texture-rhi-unification
+cmake -S . -B build/texture-rhi \
+  -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_GPU_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=ON
+cmake --build build/texture-rhi --target aiverse_metal_texture_icb_graph_gpu_test --parallel 4
+ctest --test-dir build/texture-rhi --verbose --output-on-failure \
+  --no-tests=error -R '^metal_texture_icb_graph_gpu$'
+```
+
+To disable the experimental test again, reconfigure with
+`-DAIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=OFF`. Keep
+PR #21 Draft until the actual GPU result, further
+Shader Graph production integration and cross-platform
+acceptance are recorded. Mac drivers with known AGX
+ICB instability may reject or abort the test; record the
+real diagnostic rather than reporting a synthetic pass.
+
