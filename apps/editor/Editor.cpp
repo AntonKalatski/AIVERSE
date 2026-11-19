@@ -908,7 +908,10 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     // The cap applies only to this view's two output HDR histories.
     prisma_.setViewQualityPolicy(1ULL,{64,128});
     const auto sceneModelAssets=view_.ownedModelGpuMemoryStats(*dev_);
-    prisma_.setExternalModelAssetGpuMemory(sceneModelAssets.knownBytes());
+    const auto sceneFxImages=fxTextures_.ownedGpuMemoryStats();
+    prisma_.setExternalPresentationAssetsGpuMemory(
+        render::GpuOwnedMemoryCounter::saturatingAdd(
+            sceneModelAssets.knownBytes(),sceneFxImages.knownBytes()));
     const auto sceneRendererMemory=r3d_.residentMemoryStats();
     prisma_.setExternalRendererGpuMemory(
         sceneRendererMemory.liveTextureKnownBytes+
@@ -1029,7 +1032,10 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
         {uint8_t(prismaViewId==1ULL?64:224),
          uint32_t(prismaViewId==1ULL?128:256)});
     const auto gameModelAssets=view_.ownedModelGpuMemoryStats(*dev_);
-    prisma_.setExternalModelAssetGpuMemory(gameModelAssets.knownBytes());
+    const auto gameFxImages=fxTextures_.ownedGpuMemoryStats();
+    prisma_.setExternalPresentationAssetsGpuMemory(
+        render::GpuOwnedMemoryCounter::saturatingAdd(
+            gameModelAssets.knownBytes(),gameFxImages.knownBytes()));
     const auto gameRendererMemory=r3d_.residentMemoryStats();
     prisma_.setExternalRendererGpuMemory(
         gameRendererMemory.liveTextureKnownBytes+
