@@ -3051,3 +3051,13 @@ mutations, new-key streaming and owner-thread rebind.
 These source tests are **authored but NOT RUN**; no measured
 runtime verification or GPU frame safety is claimed.
 See [Stage 131 handoff](agent-handoffs/animation-stage131-streaming-cache-read-regressions-2026-11-19.md).
+
+
+
+## Stage 149 — animated identity and LOD publication safety
+
+Generic `aiverse::View::update` requires an immutable animation source Model and a **stable nonzero** `Object::id` whenever `Object::graph` is supplied. It rejects anonymous Graph+Model objects before animation ECS update; graphless model draws, precomputed poses and ordinary meshes remain valid without an ID. The `Object::generation` is logical source identity, independent of `Object::animationModelGeneration` for authored asset publication.
+
+The View's per-ID Model LOD hysteresis now invalidates when that source generation/publication changes, the last selected visual LOD model address/visual epoch/threshold changes or the number of LOD levels changes. Source detach via either `forgetSources` or `forgetSourcesForReimport` drops the visual LOD cache entry. Render metadata compares old addresses without dereferencing retired resources. For generic `ModelAttachment` draws, View-generated `persistentId` values incorporate the parent's Model-publication epoch as well as logical identity and index; explicit host-provided IDs are retained. LODs do not start extra animation graph instances or tick a pose source.
+
+These are source-level changes; the full authoring/retargeting integration still needs final native validation. **NOT RUN:** compile, CTest, real Metal/GLES/Vulkan, screenshots, performance/sanitizers. Details in [Stage 149 handoff](agent-handoffs/animation-stage149-source-identity-lod-attachment-reimport-2026-11-19.md).
