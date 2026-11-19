@@ -1535,3 +1535,26 @@ synchronous GPU wait or instruction to reuse live allocations.
 The normal model-draw path and GPU command ABI are unchanged.
 Native GPU tests have **NOT RUN**, so do not enable automatic
 suballocation reuse globally without actual fence/visual parity.
+
+
+### GPU-completed geometry pair recycling (Stage 45, default OFF)
+
+`AIVERSE_GEOMETRY_POOL_RECYCLE=1` optionally allows one live
+`GeometryPoolPage` to recycle **whole vertex+index allocation pairs**
+after their owning Model is removed **and** the original frame
+has been confirmed complete via `Device::completedFrameSerial()`.
+Each page keeps at most 256 retired pairs, with no overlapping
+splits/coalescing, no GPU stalls and no frame-hot-path bookkeeping.
+An unconfirmed pair remains quarantined and is not overwritten;
+when no completed serial is available, recycling is impossible.
+A new Model publishes its pooled handles only after the Stage 41
+checked vertex/index uploads succeed.
+
+Per-model pool byte lengths survive `keepCpu=false` and clear on
+release. `geometryPoolStats` reports `retiredPairs`,
+`reusablePairs` and total `recycledUploads`. The older
+`occupiedBytes` statistic still measures high-water occupancy,
+not a reduction in actual GPU allocations or the precise live
+set. This is a feature-only implementation, not yet native
+compiled or GPU-fence stress tested, and MUST remain OFF by
+default until genuine Metal/Vulkan visual and memory tests.

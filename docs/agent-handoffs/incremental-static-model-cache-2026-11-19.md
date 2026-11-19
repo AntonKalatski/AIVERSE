@@ -1364,3 +1364,24 @@ The Vulkan RHI has asynchronous submissions; the staged copy being *encoded* is 
 **Actual verification:** GitHub connected source inspection; single-occurrence transforms in three files; atomic tree, commit, expected-SHA branch fast-forward. **CMake/CTest, Metal/Vulkan native compilation, GPU fence/runtime validation and CPU/GPU benchmarks NOT RUN** per feature-first user instruction. PR remains Draft.
 
 **Next:** Build bounded quarantined freed-range storage on `GeometryPoolPage`, accounting for per-model vertex/index extents after CPU arrays are freed. Reuse only *retired pairs* with the completion gate; keep old high-water growth fallback. Then add native lifetime/fence and visual tests after feature completion.
+
+
+---
+
+## Stage 45 — opt-in quarantine/reuse of whole pooled GPU geometry pairs (2026-11-19)
+
+**Repo/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`; Draft PR #34. **Code SHA:** `996bc480796426f7be931c0afe750d6897236175`, parent `559232784b1b35fa521796fb20e4ac2b60a4d742` (Stage 44 handoff). No production defaults changed.
+
+**Problem:** Removing Models from a shared `GeometryPoolPage` previously permanently stranded their vertex/index suballocations until the entire page was destroyed. Reusing them immediately would corrupt GPU commands still reading a deleted Model's old page ranges.
+
+**Implementation:**
+- `engine/render/Model.h`: two transient `uint32_t` fields `gpuPoolVertexBytes` and `gpuPoolIndexBytes` persist uploaded Model allocation lengths even when `uploadModel(..., keepCpu=false)` discards source arrays. Dedicated Model handles leave these zero. Both clear on pool release.
+- `engine/render/GlobalGeometryPool.cpp`: `AIVERSE_GEOMETRY_POOL_RECYCLE=1` (default OFF) enables a bounded maximum **256 retired whole pairs per live page**. When one Model releases a page still owned by other Models, record its actual GPU vertex/index offsets and byte lengths together with nonzero graphics `frameSerial()`. On a subsequent upload, reuse only an entire fitting pair if the device is healthy, `completedFrameSerial()` is nonzero and at least that pair's retirement frame. Otherwise use existing high-water append allocation/new-page fallback. No partial overlaps or splitting: capacity larger than reused model is reserved as one slot with unused tail. A retired pair not fitting another Model stays quarantined, not destroyed/repacked.
+- All retirement/selection/page-commit operations remain under `poolMutex`; GPU copy completion checks from Stage 41 remain mandatory before publishing the Model. A checked upload failure leaves a candidate retired pair available for retry. Last Model still destroys the entire page via RHI deferred destruction; the bounded retired list disappears with that page. Missing completion support or unhealthy GPU means **no reuse**. The draw/MDI/LOD paths do not change.
+- `engine/render/GlobalGeometryPool.h`: read-only `GeometryPoolStats::retiredPairs`, `reusablePairs`, `recycledUploads`, together with existing allocated/high-water-occupied byte counters. The occupiedBytes high-water figure remains *reserved/occupied in allocator terms*, not the sum of live Model ranges. No GPU work in diagnostics.
+
+**Ownership/risk:** Model lifetime/races are still caller-owned; never call `releaseModel` while another thread can queue more draws for that Model. Use one graphics Device/queue namespace; a fence from another Device does not authorize reuse. Unlike direct buffer destruction, a recycled span overwrites bytes of a **still-live shared buffer**, so strict fence handling is mandatory. The option is deliberately OFF by default until verified on Metal and Vulkan.
+
+**Actual verification:** GitHub branch reads/source-invariant checks; atomic 3-file implementation commit and expected-SHA fast-forward. **Native CMake/CTest: NOT RUN; GPU fence regression: NOT RUN; in-flight Metal/Vulkan rendering: NOT RUN; memory pressure tests: NOT RUN; CPU/GPU A/B/A: NOT RUN.** Never claim a measured memory decrease or stable GPU recycling. PR remains Draft.
+
+**Next:** inspect Vulkan nonzero pooled `gpuBaseVertex` indirect addressing and shader-facing vertex IDs. Preserve safe fallback unless exact direct/indirect semantics can be equalized without affecting morph/skinning. Then feature-completion audit and explicit native concurrency/fence/visual validation before enabling experimental flags.

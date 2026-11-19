@@ -1759,3 +1759,19 @@ teardown with render submission. No GPU stalls or new draw
 format. Stage 44 source is committed but native tests NOT RUN.
 See the incremental static cache handoff; user still requires
 all features before test phase.
+
+
+## Stage 45 — quarantined reusable geometry suballocations
+
+Model `gpuPoolVertexBytes`/`gpuPoolIndexBytes` retain byte
+extents after CPU data discard. `AIVERSE_GEOMETRY_POOL_RECYCLE=1`
+(default OFF) allows the common pool to remember no more than 256
+retired vertex+index pairs per page. Only reuse a whole pair when
+the **same** Device reports a nonzero completed GPU frame serial
+at least its retirement serial. Otherwise the free area remains
+quarantined; never overwrite in-flight commands. A checked
+upload failure does not consume an available retired pair.
+`GeometryPoolStats` read-only counters show retired/reusable
+pairs and recycled uploads, not GPU residency gains. No
+genre logic, no immediate in-place compaction, no default enable.
+Native/Metal/Vulkan/concurrency tests NOT RUN; PR #34 Draft.
