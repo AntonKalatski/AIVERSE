@@ -2172,3 +2172,28 @@ The next `WorldScene::update` captures one immutable `FoliageExclusionMask` cont
 Clearing updates mark **both previous and new** rectangles as edited, so moving or removing a clearing restores vegetation in the old location rather than preserving stale distant silhouettes. Multiple setter calls before a scene update retain only the first pre-update clearing state and the final replacement; intermediate states never become published. Large edited lists take the Horizon full-rebake fallback rather than unbounded incremental work. Unlike per-tree regrowth, this area mask **does affect** the far HLOD canopy, while not adding a new shader, draw pass, GPU buffer layout or component type.
 
 **Caveats:** The mask suppresses individual CPU canopy samples and may leave empty far cluster cards if all samples in that cluster are excluded; this is a rendering efficiency follow-up. An authored forest/city streaming update can also trigger shared mask republishing, independent of gameplay clearings. No shape rotation, polygon harvesting, sector replication, authoritative resource/collision modifications, or weather/season coupling is included yet. Runtime re-bake, cross-boundary exclusions, visual transitions and performance budgets have **NOT** been verified; another agent owns those tests.
+
+## Stage 26 — resident tree spatial queries for native gameplay
+
+TerraWeave now supports *presentation-resident* tree selection without forcing every decorative tree into ECS:
+
+```cpp
+// TerraWeaveForestScene forest already configured / streamed.
+const auto closest=forest.nearestTreeAt(playerXcm,playerZcm,500);
+if(closest) {
+    forest.removeTree({closest->key,closest->speciesId});
+    // The authoritative game must still update lumber, collider and save.
+}
+
+const auto trees=forest.treesInRect(
+    {plotMinXcm,plotMinZcm,plotMaxXcm,plotMaxZcm},1024);
+```
+
+The coordinates above are game-provided signed **world centimetres**.
+
+- `nearestTreeAt(xCm,zCm,radiusCm=500) -> optional<FoliageInstance>`: searches resident CPU scatter patches, using an AABB precheck and circle distance. Radius must be in 1..10,000,000cm; out-of-world centres are rejected. Equal-distance ties select the lowest stable `ForestTreeIdentity{speciesId,key}`, independently of map iteration order. It is not camera/frustum/LOD dependent.
+- `treesInRect(RectCm,size_t maxResults=1024) -> vector<FoliageInstance>`: checks only resident patches intersecting a nonempty half-open rectangle, excludes removed/pending-regrowth trees and sorts results by species ID, key then X/Z. The result budget is 1..100,000; overflow throws `std::length_error` instead of silently returning an arbitrary truncated set.
+- Both use the exact same `presentationInstance` lifecycle filter as `visibleBatches()`; harvested trees are invisible to queries; a scheduled tree is hidden until its `regrowAtTick`, and returned growing trees carry the current visual scale. Queries never re-scatter terrain, modify the GPU, sample external game physics or use a platform clock.
+- Results cover only **loaded forest patches**. An unloaded tree or a tree outside the configured residency area cannot be found through this presentation-only API; collision, harvesting at long range and persistent jobs remain responsibilities of the authoritative gameplay/world systems.
+
+The generic `WorldScene::forestScene()` accessor from Stage 24 gives native projects access to these methods for opt-in worlds. For huge worlds, if frequent queries become hot, consider an optional per-chunk spatial index after profiling; no claimed performance benchmarks or compiler/CTest/GPU validation have been performed in this features-first stage.
