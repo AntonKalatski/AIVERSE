@@ -194,9 +194,12 @@ void Editor::shutdown() {
     gameFx_.shutdown();
     fxTextures_.shutdown();
     windows_.clear(); // Viewport dtors retire GPU handles into Editor-owned queue.
-    // Shutdown must run at the host's existing confirmed GPU-idle teardown
-    // point; the queue may still hold last-frame ImGui texture references.
-    viewportRetirement_.drainAfterGpuIdle(*dev_);
+    // Shut down after last frame submission. Only an actual successful
+    // graphics-queue idle barrier permits destroying ImGui-referenced
+    // viewport handles; otherwise leave them owned by the device until
+    // its own teardown instead of risking a GPU use-after-free.
+    if (dev_->waitForSubmittedGpuWork())
+        viewportRetirement_.drainAfterGpuIdle(*dev_);
     if (studioLogo_.valid()) { dev_->destroyTexture(studioLogo_); studioLogo_ = {}; }
     view_.shutdown(*dev_);
     prisma_.shutdown();
@@ -1260,13 +1263,19 @@ void Editor::frame(gfx::Device& dev, double dt) {
     const auto motionStats = r3d_.motionRetirementStats();
     const uint64_t pendingKnownBytes = vpStats.knownPendingBytes +
         postStats.knownPendingBytes + motionStats.knownPendingBytes;
-    if (retirementBudgetBytes && pendingKnownBytes > retirementBudgetBytes &&
-        dev.waitForSubmittedGpuWork()) {
-        // Synchronized the graphics queue before any new draw this frame:
-        // both fenced and unfenced quarantined resources are safe to release.
-        viewportRetirement_.drainAfterGpuIdle(dev);
-        prisma_.releaseRetiredSizesAfterGpuIdle();
-        r3d_.drainObjectMotionAfterGpuIdle();
+    const bool flushRequested = gpuRetirementFlushRequested_;
+    gpuRetirementFlushRequested_ = false; // one attempt, no repeated UI stalls
+    if (flushRequested ||
+        (retirementBudgetBytes && pendingKnownBytes > retirementBudgetBytes)) {
+        // This can block, but only at the safe PRE-RENDER boundary. If the
+        // backend can't guarantee submitted-work idle (e.g. WebGL), keep
+        // every resource quarantined rather than freeing in-flight textures.
+        gpuRetirementLastFlushSucceeded_ = dev.waitForSubmittedGpuWork();
+        if (gpuRetirementLastFlushSucceeded_) {
+            viewportRetirement_.drainAfterGpuIdle(dev);
+            prisma_.releaseRetiredSizesAfterGpuIdle();
+            r3d_.drainObjectMotionAfterGpuIdle();
+        }
     }
     // Window tabs can close or become dock-hidden without a destructor.
     // Only a viewport that actually calls Prisma this frame stays live.
