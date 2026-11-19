@@ -14,6 +14,7 @@
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
+#include <utility>
 
 namespace aiverse::render {
 
@@ -67,7 +68,7 @@ public:
         GiGpuResidencyPlan stats;
         stats.sourceChunks=full.chunkCount();
         stats.sourceTriangles=full.triangleCount();
-        const auto filtered=full.filteredChunks(
+        auto filtered=full.filteredChunks(
             [&](uint64_t,GiBounds bounds,uint32_t triangles) {
                 if(intersects(bounds)) {
                     ++stats.relevantChunks;
