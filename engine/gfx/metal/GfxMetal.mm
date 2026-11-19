@@ -61,6 +61,13 @@ struct MTBuffer {
 struct MTTexture {
     id<MTLTexture> tex;
     id<MTLSamplerState> sampler;
+    // Preserve actual sampler semantics for graph source tex16.
+    // Metal cannot dynamically bind sampler(16), so its ICB shader
+    // uses a constexpr repeat/linear sampler, which is only correct
+    // when these stored flags match the original texture descriptor.
+    bool samplerRepeat = false;
+    bool samplerLinear = false;
+    bool samplerCompare = false;
     PixelFormat fmt = PixelFormat::RGBA8;
     TextureDimension dimension = TextureDimension::Texture2D;
     bool mips = false;
@@ -669,6 +676,9 @@ public:
         sd.sAddressMode = sd.tAddressMode = sd.rAddressMode =
             d.repeat ? MTLSamplerAddressModeRepeat : MTLSamplerAddressModeClampToEdge;
         if (d.compare) sd.compareFunction = MTLCompareFunctionLessEqual;
+        t.samplerRepeat = d.repeat;
+        t.samplerLinear = linear;
+        t.samplerCompare = d.compare;
         t.sampler = [device_ newSamplerStateWithDescriptor:sd];
         if (!t.sampler) { error_ = "Metal: sampler allocation failed"; return {}; }
         return {textures_.add(t)};
@@ -1922,7 +1932,13 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                     const auto* source=textures_.get(handle.id);
                     if (!source || !source->tex || !source->sampler ||
                         source->dimension!=TextureDimension::Texture2D ||
-                        source->tex.sampleCount!=1)
+                        source->tex.sampleCount!=1 ||
+                        source->samplerCompare ||
+                        // Graph source slot 16 has no dynamic Metal
+                        // sampler. Reject instead of silently changing
+                        // nearest/clamp sampling to repeat/linear.
+                        (j==3 && (!source->samplerRepeat ||
+                                  !source->samplerLinear)))
                         return 0;
                     native.graphHandles[j]=handle;
                     native.graphTextures[j]=source->tex;
