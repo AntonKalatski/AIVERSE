@@ -310,6 +310,15 @@ bool Editor::convertVisualModelSource(const std::string& src) {
                        ", но modelconv не найден рядом с aiversebuild");
         return false;
     }
+    // modelconv runs via a legacy shell pipe for diagnostics; never allow
+    // author-controlled model paths to break out of quoted arguments.
+    const auto unsafeShellPath=[](const std::string& value) {
+        return value.find_first_of("\"\x24`\\\n\r")!=std::string::npos;
+    };
+    if(unsafeShellPath(src) || unsafeShellPath(tool.string())) {
+        ws_.log("view","отклонён небезопасный путь модели: "+src,true);
+        return false;
+    }
     const std::string cmd="\"" + tool.string() + "\" \"" + src + "\" 2>&1";
 #if defined(_WIN32)
     FILE* pipe=_popen(cmd.c_str(),"r");
