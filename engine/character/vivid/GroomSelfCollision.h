@@ -12,17 +12,6 @@
 #include <vector>
 
 namespace aiverse::vivid {
-struct GroomSelfCollisionConfig {
-    bool enabled=false;
-    float separation=0.014f;   // guide centerline radius * 2
-    float response=0.6f;      // fraction of penetration resolved per pass
-    std::size_t maxPairChecks=250000;
-};
-struct GroomSelfCollisionStats {
-    std::size_t pairChecks=0;
-    std::size_t contacts=0;
-    bool budgetHit=false;
-};
 class GroomSelfCollision final {
     struct Cell {
         int x=0,y=0,z=0;
@@ -118,7 +107,7 @@ public:
                                 render::float3{1,0,0}:render::float3{0,0,1};
                             const auto normal=len>1e-7f?d*(1.f/len):axis;
                             const float depth=(size-len)*cfg.response*0.5f;
-                            corrections[i]-=normal*depth;
+                            corrections[i]=corrections[i]-normal*depth;
                             corrections[j]+=normal*depth;
                             if(counts[i]<65535)++counts[i];
                             if(counts[j]<65535)++counts[j];
