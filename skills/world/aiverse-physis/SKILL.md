@@ -859,3 +859,29 @@ configure/build/ctest report logs in the next handoff.
 
 See `docs/agent-handoffs/physis-stage62-targeted-integration-runner-2026-11-19.md`.
 
+### Stage 63 — reject revision probes when durable receipts are unavailable
+
+A `RemoteClient::requestRevision()` sends a Query for a fresh
+request ID. Its normal Unknown reply carries the authoritative
+revision. However `Result::Unknown` with
+`kJournalRetrySuspended` / `kJournalDurabilityUnavailable`
+means the server cannot guarantee durable request deduplication.
+The client MUST keep `hasRemoteRevision()==false`, set
+`ClientStatus::Uncertain`, and show the error rather than
+implicitly enabling remote editor submissions. After journal
+repair and a fresh server endpoint, an explicit revision probe
+may clear the failure and return the client to Idle. Never treat
+the unhealthy Unknown as a safe baseline.
+
+Regression source:
+`tests/physis_remote_edit_test.cpp::revisionProbeStopsOnUnhealthyJournal`.
+This high-level integration fixture is authored but has NOT
+executed on a full engine build. The unrelated standalone POSIX
+journal CTests still pass 3/3. To validate the actual fix on a
+native checkout, run:
+```sh
+bash tools/physis-validate-native.sh --integration --no-physics --jobs 4
+```
+Handoff:
+`docs/agent-handoffs/physis-stage63-revision-probe-durability-2026-11-19.md`.
+

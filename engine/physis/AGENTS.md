@@ -820,3 +820,38 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
 - Handoff:
   `docs/agent-handoffs/physis-stage62-targeted-integration-runner-2026-11-19.md`.
 
+### Stage 63 — revision probe must not accept an unhealthy journal (2026-11-19)
+
+- `RemoteClient::poll` now checks `journalRetrySuspended()` on the
+  **revision-probe** `Result::Unknown` path, not only on outstanding
+  edits. The authoritative ECS revision number can still be visible
+  while the durable dedupe journal is unhealthy. Do NOT mark
+  `hasRemoteRevision()` true in that case; keep it false, preserve
+  the server diagnostic and enter `ClientStatus::Uncertain`.
+- The operator can call `requestRevision()` explicitly after a
+  newly healthy server is available. A normal Unknown response
+  provides its current ECS revision, sets `hasRemoteRevision()`
+  true, transitions the no-edit client to Idle and clears the
+  obsolete journal failure message. Never automatically retransmit
+  edits just because a probe recovered.
+- Added `revisionProbeStopsOnUnhealthyJournal()` to the existing
+  `tests/physis_remote_edit_test.cpp`. It exercises a REAL
+  ServerGateway with `suspendJournal()`, a real RemoteClient,
+  the loopback `net::Conn`, and a fresh recovered gateway.
+  Registered in its existing main; native AIVERSE CTest is
+  **AUTHORED BUT NOT RUN**.
+- Code commits `67cc79cf73dcd79e46720eaf2be695d5a7abc4fc`,
+  `607202a833a8af95e27668ebe27ba0cd3fddf9c1`,
+  `369d24bd379556007cbe2e7234cb20ab85cb3496`,
+  `a0f078d738a1636fa41309911edc30a6b81bf67c`.
+  Current blobs: client
+  `872e61c380fee748cf219341caa6178d35fd5de1`,
+  test `0c9eaaa6c95f2e37a15ee7180cacacbd283cfc9f`.
+- **ACTUAL PASS**: the unaffected standalone POSIX journal suite was
+  rerun on Linux (CMake/CTest **3/3**). It does NOT compile or test
+  RemoteClient. Full AIVERSE CMake, `physis_remote_edit`,
+  `physis_admin_journal`, macOS/Windows are NOT RUN; CI runner
+  jobs were queued/cancelled, and local git clone fails DNS.
+- Handoff:
+  `docs/agent-handoffs/physis-stage63-revision-probe-durability-2026-11-19.md`.
+
