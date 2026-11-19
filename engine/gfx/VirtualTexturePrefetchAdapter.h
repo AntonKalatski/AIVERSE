@@ -4,6 +4,7 @@
 #pragma once
 
 #include "VirtualTexturePrefetch.h"
+#include "VirtualTexturePrefetchWrap.h"
 #include "VirtualTextureFileStreamer.h"
 
 #include <vector>
@@ -14,6 +15,7 @@ struct VirtualTexturePrefetchDispatch {
     VirtualTexturePrefetchStats planning;
     size_t submittedNewRequests = 0;
     size_t refusedRequests = 0;
+    bool wrapRejected = false; // all-or-nothing malformed/overbudget UV expansion
     std::vector<VirtualDiskPageTicket> tickets;
 };
 
@@ -51,6 +53,23 @@ inline VirtualTexturePrefetchDispatch prefetchVisibleVirtualPages(
         ++result.submittedNewRequests;
     }
     return result;
+}
+
+// Optional per-material wrapped visibility entry point. The normal planner
+// and deduplication still apply after bounded normalized-region expansion.
+inline VirtualTexturePrefetchDispatch prefetchWrappedVirtualPages(
+    VirtualTextureFileStreamer& streamer,
+    VirtualTexturePrefetchPlanner& planner,
+    const std::vector<VirtualTextureVisibleRegion>& views,
+    SamplerAddressMode addressU, SamplerAddressMode addressV) {
+    std::vector<VirtualTextureVisibleRegion> normalized;
+    if (!normalizeWrappedVirtualTextureRegions(
+            views,addressU,addressV,normalized,planner.config().maxRegions)) {
+        VirtualTexturePrefetchDispatch rejected;
+        rejected.wrapRejected=true;
+        return rejected;
+    }
+    return prefetchVisibleVirtualPages(streamer,planner,normalized);
 }
 
 } // namespace aiverse::gfx
