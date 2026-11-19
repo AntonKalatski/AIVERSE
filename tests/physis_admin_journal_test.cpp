@@ -458,6 +458,38 @@ void unsafeJournalLockInodesRejected() {
     }
     std::filesystem::remove_all(dir);
 }
+// The journal must live in a trusted direct parent: creating a secure
+// lock file in a group/world-writable or symlinked directory is unsafe.
+void unsafeJournalLockParentsRejected() {
+    const auto dir=tempPath();
+    std::filesystem::create_directories(dir);
+    const auto privateDir=dir/"private";
+    std::filesystem::create_directories(privateDir);
+    const auto journal=privateDir/"receipts";
+    std::string error;
+    CHECK(::chmod(privateDir.c_str(),0777)==0);
+    {
+        JournalProcessLock unsafe;
+        CHECK(!unsafe.acquire(journal,&error));
+        CHECK(!unsafe.held());
+    }
+    CHECK(::chmod(privateDir.c_str(),0700)==0);
+    {
+        JournalProcessLock owner;
+        CHECK(owner.acquire(journal,&error));
+        CHECK(owner.held());
+    }
+    // The basename can be safe while the direct parent is a symlink.
+    const auto alias=dir/"alias";
+    CHECK(::symlink(privateDir.c_str(),alias.c_str())==0);
+    {
+        JournalProcessLock unsafe;
+        CHECK(!unsafe.acquire(alias/"receipts",&error));
+        CHECK(!unsafe.held());
+    }
+    std::filesystem::remove_all(dir);
+}
+
 void killedProcessReleasesJournalLock() {
     const auto dir=tempPath();
     std::filesystem::create_directories(dir);
@@ -759,6 +791,7 @@ int main(){
 #if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
     killedProcessReleasesJournalLock();
     unsafeJournalLockInodesRejected();
+    unsafeJournalLockParentsRejected();
     killedEndpointRecoversQueuedJournal();
 #endif
 #ifndef __EMSCRIPTEN__
