@@ -1,12 +1,15 @@
 #include "SpectraGpuPoolWorld.h"
 #include "SpectraParticleProgram.h"
 #include <algorithm>
+#include <atomic>
+#include <limits>
 #include <cmath>
 #include <set>
 #include <utility>
 
 namespace aiverse::spectra {
 namespace {
+std::atomic<uint64_t> nextSourceWorldEpoch{1};
 bool valid(float v) {return program::number(v);}
 bool valid(fx::float3 v) {return valid(v.x)&&valid(v.y)&&valid(v.z);}
 bool valid(fx::float4 v) {return valid(v.x)&&valid(v.y)&&valid(v.z)&&valid(v.w);}
@@ -21,6 +24,7 @@ bool GpuPoolWorld::init(gfx::Device* device, PoolWorldBudgets budgets) {
     budgets.maxGpuGroups=std::min<uint32_t>(budgets.maxGpuGroups,64);
     budgets.maxGroupCapacity=std::clamp<uint32_t>(budgets.maxGroupCapacity,1,4096);
     budgets.maxBurstsPerFrame=std::min<uint32_t>(budgets.maxBurstsPerFrame,4096);
+    budgets.maxSources=std::clamp<uint32_t>(budgets.maxSources,1,65536);
     budgets_=budgets;
     device_=device;
     if(!cpu_.init(device_,budgets_.quality)) {
@@ -31,6 +35,7 @@ bool GpuPoolWorld::init(gfx::Device* device, PoolWorldBudgets budgets) {
     checkpointBudget_=budgets_.sharedCheckpointBudget
         ?budgets_.sharedCheckpointBudget
         :std::make_shared<CheckpointReadbackBudget>(budgets_.checkpointReadback);
+    sourceWorldEpoch_=nextSourceWorldEpoch.fetch_add(1,std::memory_order_relaxed);
     initialized_=true;
     reason_.clear();
     return true;
@@ -40,6 +45,8 @@ void GpuPoolWorld::shutdown() {
     // Destroy GPU resources before the caller's graphics Device.
     gpuGroups_.clear();
     bindings_.clear();
+    sources_.clear();freeSourceSlots_.clear();
+    sourceWorldEpoch_=0;nextBindingRevision_=1;
     checkpointBudget_.reset();
     cpu_.shutdown();
     device_=nullptr;
@@ -145,6 +152,7 @@ bool GpuPoolWorld::defineCompiled(const std::string& name,
         for(size_t i=0;i<gpuGroups_.size();++i)
             if(gpuGroups_[i].key==key) {
                 next.gpu=true;next.gpuIndex=i;
+                next.revision=nextBindingRevision_++;
                 bindings_[name]=std::move(next);
                 recountBindings();
                 reason_.clear();
@@ -157,6 +165,7 @@ bool GpuPoolWorld::defineCompiled(const std::string& name,
             if(particles->init(device_,desc) && particles->gpuActive()) {
                 next.gpu=true;next.gpuIndex=gpuGroups_.size();
                 gpuGroups_.push_back({key,std::move(particles)});
+                next.revision=nextBindingRevision_++;
                 bindings_[name]=std::move(next);
                 recountBindings();
                 reason_.clear();
@@ -180,6 +189,7 @@ bool GpuPoolWorld::defineCompiled(const std::string& name,
         return false;
     }
     next.cpuId=id;
+    next.revision=nextBindingRevision_++;
     bindings_[name]=std::move(next);
     recountBindings();
     reason_.clear();
@@ -202,6 +212,112 @@ bool GpuPoolWorld::setNamedParameter(const std::string& effectName,
     it->second.defaults[param->second.slot]=value;
     reason_.clear();
     return true;
+}
+
+const GpuPoolWorld::Source* GpuPoolWorld::getSource(PoolSourceId id) const {
+    if(!initialized_ || !id.valid() || id.worldEpoch!=sourceWorldEpoch_ ||
+       id.slot>=sources_.size())return nullptr;
+    const Source& source=sources_[id.slot];
+    return source.active && source.generation==id.generation?&source:nullptr;
+}
+GpuPoolWorld::Source* GpuPoolWorld::getSource(PoolSourceId id) {
+    return const_cast<Source*>(
+        static_cast<const GpuPoolWorld*>(this)->getSource(id));
+}
+PoolSourceId GpuPoolWorld::createSource(const std::string& effectName) {
+    auto binding=bindings_.find(effectName);
+    if(!initialized_ || binding==bindings_.end()) {
+        reason_="SpectraFX createSource: unknown effect or pool not initialized";
+        return {};
+    }
+    uint32_t slot=0;
+    while(!freeSourceSlots_.empty()) {
+        slot=freeSourceSlots_.back();freeSourceSlots_.pop_back();
+        if(sources_[slot].exhausted ||
+           sources_[slot].generation==std::numeric_limits<uint32_t>::max()) {
+            sources_[slot].exhausted=true;
+            continue;
+        }
+        Source& source=sources_[slot];
+        ++source.generation;
+        source.active=true;source.paused=false;
+        source.effectName=effectName;
+        source.bindingRevision=binding->second.revision;
+        source.values=binding->second.defaults;
+        ++stats_.activeSources;
+        reason_.clear();
+        return {sourceWorldEpoch_,slot,source.generation};
+    }
+    if(sources_.size()>=budgets_.maxSources) {
+        reason_="SpectraFX maximum active/reusable source slots exceeded";
+        return {};
+    }
+    slot=uint32_t(sources_.size());
+    sources_.push_back({});
+    Source& source=sources_.back();
+    source.generation=1;
+    source.active=true;
+    source.effectName=effectName;
+    source.bindingRevision=binding->second.revision;
+    source.values=binding->second.defaults;
+    ++stats_.activeSources;
+    reason_.clear();
+    return {sourceWorldEpoch_,slot,source.generation};
+}
+bool GpuPoolWorld::sourceActive(PoolSourceId id) const {
+    const Source* source=getSource(id);
+    if(!source || source->paused)return false;
+    const auto binding=bindings_.find(source->effectName);
+    return binding!=bindings_.end() &&
+           source->bindingRevision==binding->second.revision;
+}
+bool GpuPoolWorld::pauseSource(PoolSourceId id) {
+    Source* source=getSource(id);
+    if(!source)return false;
+    source->paused=true;return true;
+}
+bool GpuPoolWorld::resumeSource(PoolSourceId id) {
+    Source* source=getSource(id);
+    if(!source)return false;
+    const auto binding=bindings_.find(source->effectName);
+    if(binding==bindings_.end() ||
+       binding->second.revision!=source->bindingRevision)return false;
+    source->paused=false;return true;
+}
+bool GpuPoolWorld::retireSource(PoolSourceId id) {
+    Source* source=getSource(id);
+    if(!source)return false;
+    source->active=false;source->paused=false;
+    source->effectName.clear();source->bindingRevision=0;
+    source->values={};
+    if(!source->exhausted)freeSourceSlots_.push_back(id.slot);
+    if(stats_.activeSources>0)--stats_.activeSources;
+    return true;
+}
+bool GpuPoolWorld::setSourceNamedParameter(
+    PoolSourceId id,const std::string& name,float value) {
+    Source* source=getSource(id);
+    if(!source)return false;
+    const auto binding=bindings_.find(source->effectName);
+    if(binding==bindings_.end() ||
+       binding->second.revision!=source->bindingRevision)return false;
+    const auto param=binding->second.named.find(name);
+    if(param==binding->second.named.end() ||
+       !checkInstanceParameterValue(param->second,value))return false;
+    source->values[param->second.slot]=value;
+    return true; // future emissions only; existing GPU particles not changed
+}
+bool GpuPoolWorld::emitSource(PoolSourceId id,fx::float3 position,
+                              fx::float3 direction,fx::float4 tint) {
+    if(!sourceActive(id)) {
+        reason_="SpectraFX emission rejected: retired, paused or stale source";
+        return false;
+    }
+    const Source& source=sources_[id.slot];
+    // Copy values so parameter mutation cannot affect this burst while it
+    // is registered into the GPU's per-physical-slot spawn snapshots.
+    const auto values=source.values;
+    return burst(source.effectName,position,direction,tint,&values);
 }
 
 bool GpuPoolWorld::burst(const std::string& effectName,fx::float3 position,
@@ -333,6 +449,17 @@ bool GpuPoolWorld::resetForRollback() {
     for(auto& group:gpuGroups_)group.particles->clear();
     stats_.frameBursts=stats_.gpuDrawCalls=stats_.cpuDrawCalls=0;
     stats_.cpuParticles=stats_.gpuParticlesEstimated=0;
+    // A rollback invalidates all presentation source handles. Generation
+    // counters remain allocated, so previously returned IDs cannot revive.
+    for(uint32_t i=0;i<uint32_t(sources_.size());++i) {
+        Source& source=sources_[i];
+        if(!source.active)continue;
+        source.active=false;source.paused=false;
+        source.effectName.clear();source.bindingRevision=0;
+        source.values={};
+        if(!source.exhausted)freeSourceSlots_.push_back(i);
+    }
+    stats_.activeSources=0;
     reason_.clear();
     return true;
 }
