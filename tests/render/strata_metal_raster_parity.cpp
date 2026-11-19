@@ -157,6 +157,7 @@ struct Fixture {
                  d.lastError());
             return false;
         }
+        renderer.setProfiling(true); // require actual shadow/opaque draw counters
         renderer.setShadowQuality(ShadowQuality::High);
         renderer.setTraceEnabled(false);
         renderer.setModelReflectionsEnabled(false);
