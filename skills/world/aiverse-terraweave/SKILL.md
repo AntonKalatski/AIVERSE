@@ -1185,3 +1185,59 @@ per-frame bandwidth starvation/retry, early no-field behavior,
 cache residency/Stage38 packed shadow restoration, crossfade and
 shader selection. Record separate implementation commits and next
 action in `docs/terrain/AGENT_HANDOFF.md` before ending the stage.
+
+## Stage 40 — optional adaptive Horizon presentation quality
+
+For adaptive quality use
+`engine/world/TerraWeaveHorizonAdaptiveQuality.h`.
+`HorizonAdaptiveQualityConfig` is **disabled by default**, with
+bounded `minimum/maximum/initial` Stage39 quality profiles, target
+frame time (microseconds), independent upgrade/downgrade percentages,
+consecutive-frame streaks and cooldown. A native project calls
+`WorldScene::setVegetationHorizonAdaptiveQualityConfig`,
+`submitVegetationHorizonFrameTiming`, and queries
+`vegetationHorizonAdaptiveQualityState`; direct HorizonScene has
+`setAdaptiveQualityConfig`/`submitAdaptiveFrameTiming` and getters.
+
+Never invent or assume a GPU timing measurement: the host must submit
+actual frame CPU/GPU duration in microseconds with strictly increasing
+`frameId`, zero for an unavailable metric. The gfx device
+`gpuFrameMs()` exists but may return zero/lagging measurements;
+do not use asynchronous stale timestamps as same-frame values.
+At least one valid time is needed. Ignore absent/invalid/out-of-order
+samples; gaps reset sustained streaks. Use the worst available real
+timing per frame; the policy is global frame QoS, not a direct
+per-terrain cost estimator.
+
+The pure `advanceHorizonAdaptiveQuality` changes only **one**
+quality level per decision. By default downgrade after 30 consecutive
+frames >115% of 16.667ms, upgrade after 240 frames <80%, with
+240-frame cooldown and Mobile..Desktop bounds. All thresholds and
+bounds are validated; exact boundary/straddle behavior must be
+tested. A manual runtime Stage39 preset/full-policy/individual
+presentation setter **disables** the adaptive controller, while
+external PHYSIS wind, season and simulation time inputs do not.
+Enabling resets controller history and applies the initial preset;
+disabling preserves the current effective profile.
+
+An optional `terraweaveHorizon.adaptiveQuality` manifest object
+supports `enabled`, `minimum`, `maximum`, `initial`,
+`targetFrameUs`, `downgradePercent`, `upgradePercent`,
+`downgradeFrames`, `upgradeFrames`, `cooldownFrames`.
+Quality strings: `battery-saver|mobile|balanced|desktop`; static
+`presentationQuality` supplies the default initial. Manifest
+opt-in alone does NOT automatically supply timing samples; game
+hosts must wire their measured frame telemetry. Keep geometry
+`quality`, TWH8 archive, GPU resources, near authored seam, and
+PHYSIS/ECS authority unchanged.
+
+Expose `HorizonRuntimeStats::adaptiveQuality*` current enabled
+flag, level, sample count, changes and last measured duration. These
+counters are not FPS benchmarks. The user requested features before
+test runs, therefore native CMake/CTest/GPU/shader verification is
+**NOT RUN**, and PR #24 must remain Draft. The independent tester
+should cover consecutive samples, invalid/missing measurements,
+monotonic sequence, hysteresis/cooldown, manual override and
+manifest quality binding, with platform-specific actual GPU timing
+providers and crossfade safety. Record full code commit SHAs
+and next step in `docs/terrain/AGENT_HANDOFF.md`.
