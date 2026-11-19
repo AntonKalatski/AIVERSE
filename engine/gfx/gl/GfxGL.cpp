@@ -426,6 +426,7 @@ public:
         return out;
     }
 #endif
+#if defined(__APPLE__) || defined(_WIN32)
     // Desktop GL33 can measure one bounded region using the native elapsed
     // GPU query. Do NOT use while a whole-frame GL_TIME_ELAPSED query runs:
     // OpenGL prohibits overlapping queries of the same target.
@@ -463,6 +464,7 @@ public:
         }
         return out;
     }
+#endif
     void beginFrame(int w, int h) override {
         pollCompletedGpuFences();
         frameActive_ = true;
