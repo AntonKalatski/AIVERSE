@@ -1348,3 +1348,19 @@ transport. Do not retain references across `beginScene`, do not move ECS
 pointers onto GPU, and do not rebounce baked static sources by default.
 This is an explicit API call, not an automatic renderer/game genre hook.
 Source only; native compile/CTest/Metal/Vulkan/GLES device tests NOT RUN.
+
+
+## GI stage 39 — opt-in sun and sky first bounce (2026-11-20)
+
+See `docs/agent-handoffs/gi-stage39-sun-sky-first-bounce-2026-11-20.md`.
+`GiEnvironmentLight` adds ONLY an independent bounced delta from sun and
+overhead sky after a BVH surface hit and secondary visibility test. It
+defaults OFF (zero intensities) to preserve existing baked/ambient/direct GI
+ownership. `GiLightingController::syncRendererEnvironment` requires explicit
+source multipliers and uses already-authored `Renderer3D::lighting`.
+CPU, Metal MSL and Vulkan SPIR-V kernels use the same 80-byte per-dispatch
+uniform ABI (previously 32); Vulkan requires >=80 push-constant bytes.
+A new environment invalidates every probe and rejects old in-flight tickets.
+GLES3 remains CPU fallback. Sky visibility is a one-ray overhead
+approximation, not physically correct multi-sampled sky transport.
+NATIVE BUILD, CTEST, SHADER COMPILATION AND GPU PIXEL TESTS NOT RUN.
