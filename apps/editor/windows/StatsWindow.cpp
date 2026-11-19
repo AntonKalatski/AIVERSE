@@ -129,6 +129,13 @@ public:
             ImGui::TextDisabled("GPU откат моделей: ошибок очереди %llu · потерянных моделей %llu",
                 (unsigned long long)residency.stagingQueueFailures,
                 (unsigned long long)residency.stagingOrphanModels);
+        ImGui::TextDisabled("GPU программы Renderer3D: %zu партий ждут fence",
+            ed.renderer().pendingProgramRetirements());
+        if(ed.renderer().programRetirementOrphanBatches())
+            ImGui::TextDisabled("GPU программы: потеряно партий %llu",
+                (unsigned long long)ed.renderer().programRetirementOrphanBatches());
+        ImGui::TextDisabled("GPU PostFx: %zu ожидающих освобождения текстур",
+            ed.postFx().pendingTargetRetirements());
         if(const auto& targets=ed.offscreenTargets();targets) {
             ImGui::TextDisabled("GPU render targets: %zu пар ждут fence",
                 targets->pendingPairs());
