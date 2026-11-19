@@ -175,7 +175,7 @@ bool VulkanDevice::pickDevice(std::string& error) {
         lim.maxPerStageDescriptorStorageImages >= 1 &&
         lim.maxDescriptorSetStorageBuffers >= 4 &&
         lim.maxDescriptorSetStorageImages >= 1 &&
-        lim.maxPushConstantsSize >= 32;
+        lim.maxPushConstantsSize >= 80;
     textureSlots_ = int(std::min<uint32_t>({uint32_t(kMaxTextureSlots), lim.maxPerStageDescriptorSamplers, lim.maxPerStageDescriptorSampledImages,
                                             lim.maxDescriptorSetSamplers / 2u}));
     auto fail = [&](const char* why) { vkDestroyDevice(device_, nullptr); device_ = VK_NULL_HANDLE; error = why; return false; };
