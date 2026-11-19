@@ -1441,3 +1441,13 @@ snapshot API is planned for Stage 146.
 **NOT RUN:** native compiler/CMake/CTest, current passing CI, GPU/driver
 Metal/Vulkan/GL, worker race/fence failure, visual parity, sanitizers
 or performance benchmarks. All tests remain deferred until feature freeze.
+
+
+
+## Pre-retirement source playback handoff (Stage 146, 2026-11-19)
+
+Generic presentation hosts using `<aiverselib/animation/MotionWeaveSourceBridge.h>` can opt into `bridge.forgetForReimport(world, sourceIds)` (or `view.forgetSourcesForReimport(sourceIds)`) before retiring the OLD CPU Model and Graph. Unlike ordinary `forget`, this captures the old healthy graph player's **named** playback state and clip phases before the ECS source and any borrowed Model/Graph references are destroyed. Call on the presentation thread outside worker update; the caller still owns CPU Model read leases, GPU retirement tokens and graphics fences.
+
+When a NEW Model/compiled Graph is next synchronized under the same source identity and logical generation, the bridge restores playback only if copied rig names/parents match exactly, both publication epochs are nonzero and different, and the Model address is different. The old address is compared only as an integer (never dereferenced); allocator reuse and in-place reimport restart conservatively. Incompatible authored clips/states also restart. The one-shot snapshot is removed on first attempted recovery, expires after 120 source `sync` calls and is capped at 8192 records. The bridge never transfers old physical pose, contacts, native solver/IK, root motion, montage/notifies, gameplay authority or GPU handles. `forget` and `clear` cancel pending continuity.
+
+This feature was committed without native validation per the agreed feature-first workflow. Exact commits and upcoming tests are in [Stage 146 handoff](agent-handoffs/animation-stage146-pre-retirement-playback-rebind-2026-11-19.md). **NOT RUN:** compiler, CTest, real Metal/GL/Vulkan, hot-reimport and sanitizer tests.
