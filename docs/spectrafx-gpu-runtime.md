@@ -1,5 +1,20 @@
 # SpectraFX — opt-in GPU emitter playback in native AIVERSE projects
 
+## PRISMA postprocessing integration — Stage 107
+
+In any camera view, the only correct render order is:
+`Renderer3D::render(output,&postFx)` (opens HDR scene) ->
+`SpectraFxSceneHost::render(lighting,view)` (inside scene and depth) ->
+`Renderer3D::resolvePostFx()` (PRISMA Bloom/tonemap and final output) ->
+`Device::endPass()`.
+FX rendering after resolve would bypass HDR/Bloom and is incorrect.
+
+The production Metal `spectrafx_metal_scene` test now compares a
+real PRISMA HDR/Bloom output with/without GPU particles, plus hardware
+depth and safe scene reset. This **new** assertion set has NOT yet run
+on the user's M3 Ultra. See Stage 107 handoff.
+
+
 ## Stage 104 — real Renderer3D + SceneHost multi-camera acceptance (authored)
 
 A new macOS `spectrafx_metal_scene` CTest uses production Renderer3D,

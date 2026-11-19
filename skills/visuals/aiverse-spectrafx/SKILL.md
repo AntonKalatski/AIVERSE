@@ -8,7 +8,7 @@ description: Author and integrate AIVERSE SpectraFX visual effects: versioned gr
 **Canonical documentation:** `docs/spectrafx.md`.  
 **Exact stage history:** `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.  
 **Engineering rules:** `AGENTS.md`.
-**Latest handoff:** `docs/agent-handoffs/spectrafx-stage106-editor-preview-camera-2026-11-20.md`.
+**Latest handoff:** `docs/agent-handoffs/spectrafx-stage107-prisma-hdr-2026-11-20.md`.
 
 ## Fast path (current supported capabilities)
 

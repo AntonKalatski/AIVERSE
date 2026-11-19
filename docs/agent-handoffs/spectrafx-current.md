@@ -1,5 +1,17 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 107 — PRISMA HDR/Bloom + SpectraFX integration fixture (NOT RUN)
+
+Code `9ee2ffeb5a0ff3a0d3088e291b098a95279994dc`
+extends production `spectrafx_metal_scene` to render baseline/FX
+through `Renderer3D::render(pass,&PostFx)`, draw GPU particles
+inside PRISMA's HDR scene **before** `resolvePostFx`, verify
+depth+real post passes and compare output pixels. Optional two extra
+HDR/Bloom PPM captures. **Hardware/native tests NOT RUN on Stage 107**.
+Last confirmed source stays Stage 105. Handoff:
+`docs/agent-handoffs/spectrafx-stage107-prisma-hdr-2026-11-20.md`.
+
+
 ## Stage 106 — Editor GPU preview camera/RT coherence (NOT RUN)
 
 Code `f12afc07483523b34923f1fc1378c654cf40c9fb`:
