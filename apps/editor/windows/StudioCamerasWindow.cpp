@@ -37,6 +37,7 @@ public:
     bool openByDefault()const override{return false;}
     int order()const override{return 91;}
     void draw(Editor& ed) override {
+        collectRetiredPreviews(ed.device());
         const std::string project=ed.ws().project.dir;
         if(project.empty()) {
             ImGui::TextDisabled("Open a project to edit camera entities.");
@@ -45,7 +46,7 @@ public:
         if(project_!=project) {
             recorder_.stop();
             captureStatus_=std::make_shared<CaptureStatus>();
-            if(device_)preview_.release(*device_);
+            if(device_)retirePreview(*device_);
             device_=&ed.device();project_=project;
             world_=std::make_unique<World>();
             hierarchy_=std::make_unique<SceneHierarchy>();
@@ -191,7 +192,12 @@ public:
             const float side=std::clamp(ImGui::GetContentRegionAvail().x,128.f,400.f);
             // Keep the texture allocated at its original size while a GPU
             // readback is pending; resizing would retire the capture source.
-            if(!recorder_.pending())preview_.ensure(ed.device(),int(side),int(side));
+            if(!recorder_.pending()) {
+                const int requested=std::max(8,int(side));
+                if(preview_.color.valid() && (preview_.w!=requested || preview_.h!=requested))
+                    retirePreview(ed.device());
+                preview_.ensure(ed.device(),requested,requested);
+            }
             if(lens && lens->physicalFov && render::validCameraLens(*lens)) {
                 const float sensor=float(lens->sensorHeightMm.toDouble());
                 const float focal=float(lens->focalLengthMm.toDouble());
@@ -239,6 +245,29 @@ private:
     Entity selected_{};
     gfx::Device* device_=nullptr;
     Viewport preview_;
+    struct RetiredPreview {
+        Viewport viewport;
+        uint64_t serial=0;
+    };
+    std::vector<RetiredPreview> retiredPreviews_;
+    // A source texture can still be referenced by already encoded GPU work.
+    // The offscreen capture callback may outlive a project switch.
+    void retirePreview(gfx::Device& device) {
+        if(!preview_.color.valid()&&!preview_.depth.valid())return;
+        retiredPreviews_.push_back({preview_,device.frameSerial()});
+        preview_={};
+    }
+    void collectRetiredPreviews(gfx::Device& device) {
+        // A device with no completion serial cannot safely reclaim by age.
+        const uint64_t completed=device.completedFrameSerial();
+        if(!completed)return;
+        for(auto it=retiredPreviews_.begin();it!=retiredPreviews_.end();) {
+            if(it->serial!=0 && completed>=it->serial) {
+                it->viewport.release(device);
+                it=retiredPreviews_.erase(it);
+            } else ++it;
+        }
+    }
     uint64_t nextId_=1;
 
     std::filesystem::path assetPath()const{
