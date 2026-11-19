@@ -271,8 +271,20 @@ public:
     void setSpectraGpuPreviewLoop(bool value) {spectraPreviewLoop_=value;}
     float spectraGpuPreviewSpeed() const {return spectraPreviewSpeed_;}
     void setSpectraGpuPreviewSpeed(float speed);
-    void stepSpectraGpuPreviewOnce() {++spectraPreviewStepRequests_;}
-    uint32_t spectraGpuPreviewPendingSteps() const {return spectraPreviewStepRequests_;}
+    bool stepSpectraGpuPreviewOnce() {return queueSpectraGpuPreviewFrames(1);}
+    // A bounded forward-only visual timeline. One fixed 1/60 step is
+    // consumed per actual scene-render frame; no backward GPU scrubbing.
+    bool queueSpectraGpuPreviewFrames(uint32_t frames);
+    bool restartSpectraGpuPreview();
+    double spectraGpuPreviewVisualSeconds() const {
+        return spectraPreviewVisualSeconds_;
+    }
+    uint32_t spectraGpuPreviewPendingSteps() const {
+        return spectraPreviewStepRequests_;
+    }
+    const std::string& spectraGpuPreviewLastError() const {
+        return spectraPreviewLastError_;
+    }
     // Non-owning optional telemetry source. Editor's normal FX preview is
     // CPU-only; external Metal preview hosts explicitly attach their pool.
     // The host MUST detach it before destroying the pool.
@@ -445,7 +457,10 @@ private:
     bool spectraPreviewLoop_=false;
     bool spectraPreviewPaused_=false,spectraPreviewFrozen_=false;
     float spectraPreviewSpeed_=1.f; // visual preview only, not ECS
-    uint32_t spectraPreviewStepRequests_=0;
+    uint32_t spectraPreviewStepRequests_=0; // bounded to 300 requests
+    bool spectraPreviewRestart_=false;
+    double spectraPreviewVisualSeconds_=0;
+    std::string spectraPreviewLastError_;
     double spectraPreviewNextBurst_=0;
     std::array<float,8> spectraPreviewParams_{};
     fx::float3 spectraPreviewPosition_{};
