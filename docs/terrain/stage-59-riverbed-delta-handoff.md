@@ -21,3 +21,11 @@ Water enters a real wet-bed or wet/dry bank cell only when the existing NEREID w
 All listed commits are source changes on the feature branch. GitHub source readback verified; **NO NEW CMake/Clang/GCC, CTest, NEREID ECS scenario, Metal/Box3D runtime, network parity, mass-budget benchmark, cross-platform test or actual river-delta screenshot has been run** for Stages 57–59. Prior TerraWeave 9/9 CPU and GPU router 1/1 results were older revisions only. PR #24 must remain Draft.
 
 **Next:** Prefer a native compile and focused mass-conservation/replay scenario after feature development. Consider multiple sediment grain classes, slope collapse/landslides, auto rerasterization scheduling and true riverbed material layer later. When adding more mechanics, preserve single NEREID water authority, one TerraWeave soil writer, COW ECS isolation and per-stage handoff.
+
+
+## Stage59 source review follow-ups (2026-11-19)
+
+- `412ac81e2f0b8a9efcae7e78a55410da3bcf7fa0`: `shore_detail::cm(Fixed)` now range-checks the raw Fixed elevation before multiplying by 100, refusing hostile/out-of-range water-level data rather than overflowing signed `int64_t`.
+- `2802f769f4c5072a5213bfceb97fa9690257d510`: wet-bed minimum depth consistency is enforced only when `includeWetBedCells=true`; shoreline-only maps retain independent shallow-water range configuration.
+
+**State:** Changes committed to `feature/terraweave`; no build/CTest/run performed after these edits. Continue feature-first stage, then native compilation/QA prior to merge.
