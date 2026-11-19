@@ -145,6 +145,7 @@ void Model::finalize() {
     }
     if (boundsMin.x > boundsMax.x) boundsMin = boundsMax = {0, 0, 0};
     markGeometryChanged(); // regenerated hierarchy, node transforms and bounds
+    markMaterialChanged(); // default/imported material table may have changed
 }
 
 namespace {
@@ -562,7 +563,10 @@ bool uploadModel(gfx::Device& dev, Model& m, bool keepCpu) {
         }
     }
     for (auto& img : m.images) {
+        const auto previousTexture = img.tex;
         if (img.textureCache) img.textureCache->upload(dev, img); else uploadImage(dev, img);
+        if (!(previousTexture == img.tex))
+            m.markMaterialChanged(); // texture binding changed during upload
         if (!keepCpu) { img.rgba.clear(); img.rgba.shrink_to_fit(); img.compressed.reset(); img.sharedRgba.reset(); }
     }
     // morph deltas of every primitive in one float texture: 2 texels (position, normal) per vertex and target
@@ -602,6 +606,7 @@ int addImage(gfx::Device& dev, Model& m, Image img) {
     uploadImage(dev, img);
     img.rgba.clear(); img.rgba.shrink_to_fit();
     m.images.push_back(std::move(img));
+    m.markMaterialChanged(); // new texture may be selected by model materials
     return int(m.images.size() - 1);
 }
 
@@ -625,6 +630,7 @@ void releaseModel(gfx::Device& dev, Model& m) {
     if (m.baked.tex.valid()) dev.destroyTexture(m.baked.tex);
     m.morphTex = {}; m.baked = Model::Baked{};
     m.markGeometryChanged(); // later upload may reuse the same GPU handle values
+    m.markMaterialChanged(); // texture bindings removed; handles may be reused
 }
 
 } // namespace aiverse::render
