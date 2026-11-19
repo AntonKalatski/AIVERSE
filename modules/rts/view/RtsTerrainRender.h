@@ -91,6 +91,41 @@ public:
 
     struct Stats { int chunks = 0, drawn = 0, lodMax = 0, detailK = 0; uint64_t triangles = 0; double buildMs = 0; int rebuilt = 0; size_t geometryBytes = 0; };
     const Stats& stats() const { return stats_; }
+    // Terrain owns chunk LOD buffers, water/apron geometry, map/vision,
+    // detail/height-field textures and its local terrain material cache.
+    // Called on the graphics owner thread, never GPU readback.
+    render::GpuOwnedMemoryStats ownedGpuMemoryStats() const {
+        if (!dev_) return {};
+        render::GpuOwnedMemoryCounter counter(*dev_);
+        for (const auto& chunk : chunks_)
+            for (const auto& lod : chunk.lods) {
+                counter.buffer(lod.vb);
+                counter.buffer(lod.ib);
+            }
+        counter.buffer(apron_.vb);
+        counter.buffer(apron_.ib);
+        counter.buffer(water_.vb);
+        counter.buffer(water_.ib);
+        for (auto texture : {cellTex_,dynTex_,splatTex_,visionTex_,
+                white_,flatN_,gray_,heightField_.tex,
+                detailNrmTex_,detailSplatTex_})
+            counter.texture(texture);
+        // TextureCache owns layers/cliffs. TextureRef aliases are borrowed.
+        const auto cache = textures_.ownedGpuMemoryStats();
+        auto stats=counter.stats();
+        stats.textureKnownBytes =
+            render::GpuOwnedMemoryCounter::saturatingAdd(
+                stats.textureKnownBytes,cache.textureKnownBytes);
+        stats.bufferKnownBytes =
+            render::GpuOwnedMemoryCounter::saturatingAdd(
+                stats.bufferKnownBytes,cache.bufferKnownBytes);
+        stats.textures+=cache.textures;
+        stats.buffers+=cache.buffers;
+        stats.unknownTextures+=cache.unknownTextures;
+        stats.unknownBuffers+=cache.unknownBuffers;
+        stats.multiVersionBuffers+=cache.multiVersionBuffers;
+        return stats;
+    }
 
 private:
     struct TV { render::float3 pos, nrm; uint32_t rgba; float morph[2]; };
