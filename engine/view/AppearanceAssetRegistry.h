@@ -185,13 +185,16 @@ public:
                        attachment.socket!=binding.socket ||
                        binding.compiled->rig!=sourceModel ||
                        binding.compiled->publication!=sourcePublication ||
-                       !binding.compiled->matches(
-                           *sourceModel,sourcePublication,
-                           binding.socketName,binding.socket))
+                       binding.compiled->socketName!=binding.socketName ||
+                       binding.compiled->authoredSocket!=binding.socket)
                         return false;
                 }
                 Object next=packet;
                 next.lods=lods;
+                // Replace the entire authored socket layout: never leave
+                // a compiled binding from an earlier publication behind.
+                for(auto& attachment:next.attachments)
+                    attachment.compiledSocket.reset();
                 for(const auto& binding:sockets)
                     next.attachments[binding.attachmentIndex].compiledSocket=
                         binding.compiled;
