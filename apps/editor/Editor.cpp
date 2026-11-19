@@ -6,6 +6,8 @@
 #include "core/RouteOps.h"
 #include "engine/fx/FxModelMesh.h"
 #include "engine/fx/SpectraGpuPoolWorld.h"
+#include "engine/fx/SpectraDiagnosticBundle.h"
+#include "libraries/include/aiverselib/genre/SpectraGpuCaptureMailbox.h"
 #include "engine/fx/SpectraDiagnosticReport.h"
 #include "imgui.h"
 #include "imgui_internal.h" // DockBuilder
@@ -879,6 +881,20 @@ bool Editor::requestSpectraGpuPreviewCheckpoint() {
     spectraGpuCaptureNote_="Awaiting a frozen graphics pre-pass";
     return true;
 }
+bool Editor::queueSpectraExternalGpuCapture(size_t groupIndex) {
+    // This is only a request for another native graphics owner to consume
+    // at its own pre-render phase. Never perform Metal reads from ImGui.
+    return spectraGpuMailbox_ && spectraGpuTelemetry_ &&
+           spectraGpuTelemetry_!=spectraPreviewGpu_.get() &&
+           spectraGpuTelemetry_->ready() &&
+           groupIndex<spectraGpuTelemetry_->gpuGroupCount() &&
+           spectraGpuMailbox_->request(groupIndex);
+}
+bool Editor::releaseSpectraExternalGpuCapture() {
+    return spectraGpuMailbox_ &&
+           spectraGpuMailbox_->requestRelease();
+}
+
 bool Editor::saveFreshSpectraGpuCheckpoint(
     std::string& output,size_t requestedGroup) const {
     const auto* pool=spectraGpuTelemetry_;
