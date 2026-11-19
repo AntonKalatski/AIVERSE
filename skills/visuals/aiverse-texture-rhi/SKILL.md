@@ -1354,3 +1354,41 @@ Vulkan/GL/mobile fallbacks, and large-scene performance.
 These are **not verified** by Stage 10BV.
 Keep experimental GPU ICB flags and the risky CMake test
 OFF in production; keep PR #21 Draft.
+
+## Stage 10BW — production Shader Graph + disk VT mixed Metal GPU ICB (source only)
+
+A new opt-in native macOS test exercises a *real compiled Shader Graph*
+with **four source texture nodes plus `sampleVirtualTexture`** in the
+same material using actual `Renderer3D` Metal GPU ICB. It reuses
+`gfx::VirtualTextureFileStreamer`, `ModelVirtualTextureBinding`,
+the canonical virtual shader lookup and the existing model resource table.
+Never implement another VT page lookup or a second disk queue.
+
+- Test source: `tests/render/metal_renderer_graph_vt_icb_gpu.cpp`.
+- CMake option: `AIVERSE_TEXTURE_METAL_GRAPH_VT_ICB_GPU_TESTS=ON`
+  (OFF by default).
+- CTest: `metal_renderer_graph_vt_icb_gpu` in an **isolated**
+  `build/texture-graph-vt-icb` configuration.
+- Two independent temporary file archives create distinct physical
+  atlases and page tables, with virtual layers 0/1 and different U
+  addressing. Both material variants use the same compiled graph.
+- The fixture captures ordinary vs GPU ICB Renderer3D RGBA8 images
+  after pinned coarse pages, fine pages, and LRU replacement.
+  Requires per-command VT, mixed VT, graph and mixed graph GPU ICB
+  submission counters, actual image changes, coarse pinning and
+  eviction, and per-channel parity within 2 LSB.
+- Full fail-fast configure/build/CTest commands and exact PASS marker:
+  `docs/texture-rhi.md` Stage 10BW.
+
+**Native compilation, MSL shader generation, Metal execution,
+on-device image parity and performance have NOT RUN** for this
+new source. Stage 10BV's Apple M3 Ultra 1/1 PASS was **non-VT**
+Shader Graph and cannot certify this new combined path.
+
+On native failure, fix the first concrete compiler/driver/pixel
+error in the same branch, commit the code, and append another
+entry to `docs/agent-handoffs/texture-rhi-2026-11-18.md`.
+Keep PR #21 Draft and all GPU ICB feature flags OFF in
+production. Next after GPU PASS: missing/nonresident disk
+fallbacks, wrap seam fidelity, GL/Vulkan/mobile non-ICB parity,
+and representative stress/performance.
