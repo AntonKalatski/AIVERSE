@@ -2693,3 +2693,44 @@ For two **warmed 32-submission windows**, ICB CPU internal averages per submissi
 3. **Scale safely:** test 10k only after above, 100k last; verify animation, differing materials, shadows/LOD, and Vulkan parity. No full CTest/CI completion, Vulkan GPU parity, frame FPS or GPU timestamp was established by this run.
 
 **Validation:** user native Mac build + fixture PASS only. Assistant only committed this handoff; no source modifications for Stage 79. Keep Draft PR #34 and experimental flags OFF by default.
+
+
+---
+
+## Stage 80 — forced Direct/MDI/AUTO crossover benchmark and Metal ICB binding precompute (2026-11-19)
+
+**Repo/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. **Implementation commits:** `8c05d1cd1f0231f4204ee3da31805b77901acdb7` (`tests/render/material_batches.cpp`), `c2cea9665f958d389ffe7e8333f0d2e66c987a6e` (`tools/batching-stage80-ab.sh`), `6b93a4673c4118d684742e73b2eb6d1150053c66` (`engine/gfx/metal/GfxMetal.mm`). This handoff is a separate commit. This Stage is code/source only; **native CMake, CTest, Metal raster, CPU timing and CI were NOT RUN after these edits**. Do not claim speedup.
+
+### Why
+
+Owner Stage 78 native Mac Studio test confirmed real CPU-MDI raster parity on 1,024 unique primitives (captured frame 101 `changed_channels=0`) and substantial CPU encoding cost on Metal. Warm CPU ICB windows of 32 submissions averaged `encode=0.0373..0.0376ms` per ~203–206-command submission, compared with `alloc~0.0058ms` and `residency-execute~0.0042ms`. Separately, forced MDI occurred in only six labelled AUTO-probe frames vs 90 Direct fallback frames, so their medians (0.8696ms vs 1.1585ms) cannot establish a consistent performance advantage.
+
+### What was changed
+
+1. **Explicit stress policies:** `AIVERSE_BATCH_STRESS_POLICY=direct|mdi|auto` for `auto_stress` (default `auto`). `direct` disables model multi-draw for both fixed-scene phases; `mdi` enables the existing manual CPU MDI route and must run without `AIVERSE_BATCH_AUTO=1` (the fixture validates the conflict); `auto` retains the learned AUTO path when that process flag is enabled. All modes preserve existing exact Direct/after image comparison and camera/material scene. The benchmark now reports frames 115..195 classified by actual MDI submissions (and total real MDI submissions in those measurement frames). Forced MDI with zero measured submitted frames and forced Direct with unexpected MDI frames are hard failures. Existing GPU ICB and other fixture scenarios remain unchanged.
+2. **Rotated runner:** new `tools/batching-stage80-ab.sh` executes 6 separate fixed-scene runs in orders `direct, mdi, auto` then `auto, mdi, direct`. Each run has an independent Direct baseline and warmup, with logs/captures under configurable output directory. It clears inherited experimental GPU flags and the AUTO selector from the process environment, then sets only the mode-specific CPU opt-ins: `AIVERSE_METAL_CPU_MDI=1` for manual Direct/MDI and `AIVERSE_BATCH_AUTO=1` for AUTO. For forced MDI it enables the **actual-MDI-frame screenshot** check, requiring `actual MDI pixel parity ... changed_channels=0`. Shell uses `set -euo pipefail`, thus a failed executable or parity condition fails the script. **This is balanced rotating process order, not a truly randomized per-frame A/B/A schedule, not GPU timing.**
+3. **Metal CPU ICB CPU micro-optimization:** in `drawIndexedIndirect`, precompute up to 8 active `{ id<MTLBuffer>, NSUInteger index }` descriptors per submitted ICB and the `MTLIndexType` before looping over commands. Each command still receives the **same explicit** per-command pipeline, fragment/vertex buffer bindings, indices, baseVertex/baseInstance and resource residency. Avoid repeated integer conversion, per-command array lookup, and index-type branching only. CPU benefit unknown until measured. No changes to driver-sensitive inherit flags, ICB lifecycle or GPU fences.
+
+### Validation status and hazards
+
+GitHub source read/writes succeeded. No CMake or Metal runtime can be claimed in this agent tool environment. Note GitHub-created shell scripts may not have executable file mode; invoke explicitly with `bash tools/batching-stage80-ab.sh`. The new Metal Objective-C++ local binding type must be verified by native compiler; if errors occur, fix before interpreting any benchmarks. Forcing MDI with 1k unique primitives should generate actual MDI submissions, but a driver or pipeline fallback must be reported, not bypassed. The benchmark script's multiple 196-frame runs may add noticeable thermal effects; compare both rotated runs rather than selecting the fastest.
+
+### Exact next Mac Studio steps
+
+```sh
+cd /Users/aleksandrfeer/Projects/AIVERSE || exit 1
+git fetch origin
+git switch perf/incremental-static-model-cache
+git pull --ff-only origin perf/incremental-static-model-cache
+cmake --build build/batching-gpu-verify --target aiverse_material_batches --parallel 8 || exit 1
+bash tools/batching-stage80-ab.sh 1024 build/batching-gpu-verify/stage80-1k
+```
+
+Require all six runs to exit 0, `material palette CPU checks=35 result=passed`, final `changed_channels=0`, MDI parity screenshot PASS for both forced MDI runs, forced MDI `measured_mdi_frames>0` and `measured_mdi_submissions>0`, forced Direct `measured_mdi_frames=0`. Inspect per-run `CPU render benchmark direct`, `batched`, `auto_direct_frames`, `auto_mdi_submitted_frames`, `auto_late_frames`, and `successful MDI CPU stage` data separately. If both MDI runs show a reproducible advantage or loss, consider changing policy thresholds *only after* cross-run parity and GPU work verification. To isolate the Metal binding-descriptor optimization, compare the same repeated benchmark at the parent commit `c2cea966` in a **separate worktree/build directory**, not a dirty production directory; source commits alone do not prove the optimized implementation is faster.
+
+### Next after Stage 80
+
+- Record every observed failure/actual result in next handoff.
+- Add native GPU timestamp / command-buffer duration measurements, separate CPU and GPU execution.
+- Expand samples, run 10k only after reproducible 1k stability, then 100k last.
+- Verify Vulkan pooled MDI, in-flight geometry page safety, real-scene varied materials/LOD, and full relevant CI before default enable or merging Draft PR #34.
