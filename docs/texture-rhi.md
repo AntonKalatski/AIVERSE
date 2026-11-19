@@ -3190,3 +3190,49 @@ logs and build commit, then implement a separate full production
 Shader Graph material/compiler scene acceptance. On failure: fix
 the first confirmed root cause and create another handoff entry.
 Keep <https://github.com/chromealex/AIVERSE/pull/21> **Draft**.
+
+### Stage 10BS — ObjC++ compile correction and stale-binary test safeguard
+
+On the Mac Studio's initial Stage 10BR attempt, native Clang
+reported `tests/render/metal_icb_graph_gpu.mm:237`:
+`assigning to 'const char *' from incompatible type 'std::string'`.
+The fixture mistakenly assigned a mutable `std::string` to
+`gfx::ShaderDesc::msl`, whose public contract is `const char*`.
+
+**Fixed in** `3243fc67157187e087c68048e388dfae15bed05b`:
+`shDesc.msl=shaderSource.c_str();`. The local `shaderSource`
+outlives synchronous `Device::createShader(shDesc)`, and
+the Metal backend copies it to its shader source field.
+The fixture now also prints `graph sources=1` and
+`graph sources=4` on successful per-case GPU pixel comparison.
+
+**Why the original CTest PASS is not Stage 10BR validation:**
+the build failed, but CTest was invoked separately and ran a
+previously present executable. The resulting **1/1 PASS**
+with one generic Shader Graph pixel message is evidence for
+that older binary only. It does not test the new four-source case.
+
+For a **fail-fast** rerun on the isolated Mac Studio worktree:
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+cmake --build build/texture-icb-gpu \
+  --target aiverse_metal_texture_icb_graph_gpu_test --parallel 4
+ctest --test-dir build/texture-icb-gpu \
+  --verbose --output-on-failure --no-tests=error \
+  -R '^metal_texture_icb_graph_gpu$'
+```
+
+`set -e` prevents running CTest if Clang fails again.
+A valid Stage 10BR hardware PASS must include **both**:
+`PASS: GPU ICB graph sources=1, per-command textures/U2 pixel parity`
+and
+`PASS: GPU ICB graph sources=4, per-command textures/U2 pixel parity`,
+plus 1/1 CTest PASS from the same successful build.
+If Metal shader compilation, execution or image comparison fails,
+record the first real native error before continuing.
+**This corrected source has not yet been built or executed
+in this tool environment.** Keep PR #21 Draft.
