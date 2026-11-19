@@ -86,6 +86,12 @@ struct HorizonSurfaceSources {
     // means the point is not resident. Called on CPU during baking only.
     std::function<std::optional<int32_t>(int64_t,int64_t)>
         nearGroundHeightAtCm;
+    // Optional high-precision immutable near surface query. Coordinates
+    // carry 16 fractional bits per centimetre, preserving the true source
+    // height and light gradient at the exact triangle clipping position.
+    // Legacy native providers can omit this and retain whole-cm sampling.
+    std::function<std::optional<int32_t>(int64_t,int64_t)>
+        nearGroundHeightAtQ16Cm;
 };
 
 struct HorizonBake {
@@ -114,6 +120,10 @@ struct HorizonBake {
     struct NearSeamSample {
         int64_t xQ16cm=0,zQ16cm=0;
         int32_t nearHeightCm=0;
+        // Render-only authored surface normal, sampled inside the same
+        // immutable tile. Defaults keep legacy aggregate initializers valid.
+        int32_t nearSlopeXPermille=0, nearSlopeZPermille=0;
+        bool nearNormalValid=false;
     };
     std::vector<NearSeamSample> nearSeamSamples; // capped at 4096 unique points
     uint32_t maxNearWeldSlopePermille = 0; // 0=disable steepness guard
