@@ -1275,6 +1275,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
                     auto& gs=mod().state(*sim_);
                     view_.drawPreparedTerrainFog(renderer,gs.grid,
                         spectator_?nullptr:&gs.vision[human_],time_);
+                    view_.drawPreparedSprites(renderer);
                 }
                 // Re-submit final pose/material/attachment packets directly.
                 // RtsView::draw and MotionWeave::update are NOT repeated.
