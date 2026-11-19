@@ -1364,3 +1364,18 @@ A new environment invalidates every probe and rejects old in-flight tickets.
 GLES3 remains CPU fallback. Sky visibility is a one-ray overhead
 approximation, not physically correct multi-sampled sky transport.
 NATIVE BUILD, CTEST, SHADER COMPILATION AND GPU PIXEL TESTS NOT RUN.
+
+
+## GI stage 40 — atomic world/terrain/foliage publication (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage40-world-terrain-foliage-publication-2026-11-20.md`.
+`GiWorldPresentationSync` coordinates the existing immutable
+`GiGeometryScene` (WorldAssets/TerraWeave collision triangles and foliage
+proxies) with `GiWorldDirtyAccumulator` and the portable
+`GiLightingController`. Never flush world-change events, retire the old
+snapshot or advance the published geometry revision when the GPU refuses
+a new source while its previous VkFence/Metal callback is pending.
+Retry after `updateFrame` confirms completion. `GiWorldGeometryBridge`
+reads real source collision; do NOT generate a second terrain mesh or
+simultaneously publish authored terrain and a live TerraWeave patch.
+The coordinator is opt-in and CTest sources are NOT EXECUTED.
