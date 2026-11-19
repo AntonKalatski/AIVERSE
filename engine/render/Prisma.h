@@ -187,6 +187,8 @@ private:
         bool valid = false;
         uint64_t jitterSequence = 0;
         float2 currentJitterUv{}, previousJitterUv{}; // NDC jitter / 2, unflipped UV
+        bool jitterActive = false;
+        float lastJitterPixels = 0;
 
     };
     struct MotionView {
