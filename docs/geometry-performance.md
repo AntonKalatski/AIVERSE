@@ -1689,3 +1689,22 @@ Actual Mac CTest before the fix: all four ECS cases PASSED,
 `model_batching_policy` FAILED on that assertion (4/5).
 Revised test has NOT RUN yet. Real Metal/Vulkan parity and
 performance checks remain pending; PR #34 is still Draft.
+
+
+### Focused Mac Studio CPU checks — Stage 54
+
+Owner-supplied macOS output for source HEAD `a0376d1` confirms
+`aiverse_model_batching_policy_tests` compiled and linked,
+then CTest `model_batching_policy` **PASSED (0.33 s)** with 0
+failures after the Stage 53 fixture correction. The previous
+five-case local run confirmed the other four ECS tests **PASSED**
+(0.38/0.47/0.19/0.34 s). Thus all **five distinct focused cases**
+have now passed across two runs, not one new combined CTest run.
+
+This is actual CPU/native build evidence, **not** GPU parity,
+successful full CTest, complete CI or a measured batching
+performance improvement. Existing `gpu-batching.yml` already
+provides Direct/CPU MDI, static packet and GPU ICB Metal
+pixel fixtures, but their current Actions runs were queued.
+Do not mark PR #34 ready to merge until GPU and full-suite
+validation complete. Keep experimental GPU flags OFF.

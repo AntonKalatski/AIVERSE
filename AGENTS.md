@@ -1886,3 +1886,16 @@ failure at its stale negative assert line 875. The test assertion
 has been updated, engine behavior not changed. No subsequent
 Mac/CI result is available yet; leave PR #34 Draft and continue
 handoff protocol.
+
+
+## Stage 54 — documented user Mac CTest success
+
+Owner's latest macOS `aiverse_model_batching_policy_tests`
+build **succeeded**; `ctest -R '^model_batching_policy$'`
+**PASSED (0.33 s)**. Prior local Mac CTest confirmed four
+ECS tests PASS, so 5 distinct focused tests have now passed
+across two CTest invocations. This is not proof that the
+complete 5-case CTest was rerun together, full CI finished
+or Metal/Vulkan parity is good. Follow Stage 54 handoff;
+keep the PR Draft and experimental recycle/Vulkan pooled
+MDI flags OFF until real GPU and broader test evidence.

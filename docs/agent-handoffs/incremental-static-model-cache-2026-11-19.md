@@ -1553,3 +1553,28 @@ Read user-provided full CMake and CTest logs and checked both the actual eligibi
 Re-run after fetching branch:
 `cmake --build build-metal --target aiverse_model_batching_policy_tests --parallel 8 && ctest --test-dir build-metal -R '^model_batching_policy$' --output-on-failure`.
 If successful, run the five-case focused CTest again. Preserve all handoffs and keep PR #34 Draft until GPU parity and the full relevant CI gate are successful.
+
+
+---
+
+## Stage 54 — Mac focused CTest green; GPU parity remains outstanding (2026-11-19)
+
+**Repository/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`; Draft PR #34. **Tested source HEAD:** `a0376d17ff124d94ec821d2dccee076ced91e1e0`. At observation this branch was behind main by 0 commits. Stage 54 changes documentation only; it does **not** modify source or run additional tests.
+
+### Actual hardware evidence from user's Mac Studio
+
+The owner ran `git fetch origin`, `git switch perf/incremental-static-model-cache`, `git pull --ff-only origin perf/incremental-static-model-cache` and then `cmake --build build-metal --target aiverse_model_batching_policy_tests --parallel 8`. Their terminal showed CMake configure/generate succeeded, native `aiverse_engine`, `aiverse_models` static libraries and `aiverse_model_batching_policy_tests` executable built successfully on macOS. Then `ctest --test-dir build-metal -R '^model_batching_policy$' --output-on-failure` executed **1/1 PASS** in **0.33 sec**, 0 failures.
+
+In the immediately preceding user's Mac Studio focused 5-case run, `ecs_cow_snapshot_test`, `ecs_cow_exception_test`, `ecs_cow_parallel_test` and `ecs_guarded_parallel_test` all **PASSED**, taking 0.38, 0.47, 0.19 and 0.34 sec respectively, but the old `model_batching_policy` test failed at source line 875. The current Stage 53 test-only fix removed that stale negative assertion. **Thus 5 distinct focused cases were confirmed PASS across two successive local runs, NOT 5/5 in a new single CTest invocation.** Do not rewrite history as a single all-green five-case run or full-suite acceptance.
+
+### Relevant GitHub checks and limits
+
+`GPU batching focused regression` workflow `.github/workflows/gpu-batching.yml` already defines: a macOS + Ubuntu `model-policy` CPU regression; a `macos-15` real Metal Direct vs CPU MDI raster comparison; a Metal warmed CPU packet-vs-cold raster comparison; and a separate `macos-15` Direct vs GPU-authored ICB fixture with explicit `AIVERSE_EXPECT_GPU_ICB=1`. On tested head `a0376d1`, GitHub Actions entries were still **queued**, not passed. GitHub Actions jobs may be replaced/cancelled on each head commit. Do not claim success for any GPU job without completed log/fixtures.
+
+**NOT YET VERIFIED:** overall CI, full CTest suite, direct-vs-CPU-MDI Metal pixel equivalence, GPU-authored Metal ICB pixel equivalence, Vulkan canonical pooled MDI real GPU parity, GPU suballocation recycling/release under in-flight load, graphics-driver validation, same-camera A/B/A timings. Experimental `AIVERSE_GEOMETRY_POOL_RECYCLE=1` and `AIVERSE_VULKAN_POOLED_MDI=1` remain **OFF by default**, and PR #34 remains Draft.
+
+### Exact next actions
+
+On Mac Studio pull the latest branch after this documentation commit. The already configured `build-metal` CTest can run all five together:
+`ctest --test-dir build-metal -R '^(model_batching_policy|ecs_cow_snapshot_test|ecs_cow_exception_test|ecs_cow_parallel_test|ecs_guarded_parallel_test)$' --output-on-failure`.
+For real Metal parity, build `aiverse_material_batches` with `AIVERSE_BUILD_HDR_TESTS=ON` (a separate `build/batching-gpu-verify` tree is preferred to avoid impacting other agents), then use exactly the env/fixture documented in `.github/workflows/gpu-batching.yml` to compare baseline Direct against CPU MDI, static packet replay and experimental GPU ICB. Collect actual output `changed_channels=0`, explicit submission evidence, and logs. Run Vulkan on a capable non-Mac environment; macOS native Metal does not prove Vulkan parity. Report outcomes per fixture, no performance claim without A/B/A measurements.
