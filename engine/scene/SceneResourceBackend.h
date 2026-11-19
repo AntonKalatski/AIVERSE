@@ -189,7 +189,11 @@ public:
         size_t inflight = 0;
         for(const auto& [key,e] : entries_) {
             (void)key;
-            if(e.phase == SceneResourcePhase::Preparing) ++inflight;
+            // A canceled std::async job still occupies a worker slot until
+            // poll() observes its completion and releases its reservation.
+            if(e.phase == SceneResourcePhase::Preparing ||
+               (e.phase == SceneResourcePhase::Cancelled && e.future.valid()))
+                ++inflight;
         }
         for(auto& [key,e] : entries_) {
             if(!startBudget || inflight >= limits_.maxConcurrent) break;
