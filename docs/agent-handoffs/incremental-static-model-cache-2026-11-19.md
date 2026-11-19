@@ -1755,3 +1755,35 @@ GPU ICB exit=0
 ### Verification boundaries / exact next work
 
 This is **PASS for the Metal GPU ICB fixture**, not full renderer certification. Not yet verified: real-scene CPU and GPU frame times (fixed-camera A/B/A), Vulkan pooled MDI pixel parity, safe live geometry pool retirement under in-flight GPU loads, other scenes/materials, full CTest/CI acceptance. Keep Draft PR #34 and experimental defaults OFF. Next agent should add or run real-scene frame CPU/GPU timing with a fixed camera and compare direct baseline, CPU MDI, GPU ICB separately (including shadows and colour path accounting), then complete Vulkan and recycling validation on appropriate hardware. Record per-run data and GPU timestamps if available. Do not count this as a generic 93.9% FPS gain.
+
+
+---
+
+## Stage 60 — opt-in synchronous render CPU benchmark (2026-11-19)
+
+**Branch:** `perf/incremental-static-model-cache`, Draft PR #34. **Implementation commits:** `41d70b7ecf8390f944cbd698f854df9565d04dc9`, `2f224d381703acef9b50862f7dd68128c89203ff`. Stage 59 owner Mac GPU fixture was PASS on earlier source revision; Stage 60 is not yet compiled or executed.
+
+### Implementation and API
+
+- In `tests/render/material_batches.cpp`, optional `AIVERSE_BATCH_CPU_TIMING=1` measures wall-clock duration of the synchronous `renderer.render(pass)` call with `std::chrono::steady_clock`; keeps six steady-state samples each for Direct (frames 3–8) and batched (frames 18–23), after startup/frame-transition warmup.
+- Reports phase sample count, median, p95, minimum and maximum in milliseconds, independently of draw-call counts and existing pixel parity checks. Diagnostics explicitly state this is **not GPU execution time**, full frame latency, or FPS.
+- The fixture's second screenshot callback sets `finished=true` at frame 23; the follow-up code commit moved reporting to frame 23 so benchmark output is guaranteed before fixture exit, and matched the six-sample windows.
+- No renderer, RHI, ECS, material, batching eligibility, shader, default flag or screenshot validation changes. The new timing branch is off unless explicitly enabled.
+
+### Real validation and limits
+
+Reviewed existing fixture's termination and capture path via GitHub, and GitHub accepted both commits. **Not executed:** compilation, test program, macOS Metal measurement, GPU timestamps, real-scene benchmarks, CI, Vulkan. This tiny synthetic fixture provides only a smoke comparison of synchronous CPU render work; six samples per phase are too few for reliable performance decisions. Production-scale 1k/10k/100k objects and GPU timestamps still need a separate controlled benchmark.
+
+### Run on Mac Studio
+
+```sh
+git fetch origin
+git switch perf/incremental-static-model-cache
+git pull --ff-only origin perf/incremental-static-model-cache
+cmake --build build/batching-gpu-verify --target aiverse_material_batches --parallel 8
+mkdir -p build/batching-gpu-verify/captures
+AIVERSE_BATCH_CPU_TIMING=1 AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTHORED_DRAWS=1 AIVERSE_GPU_ENCODED_ICB=1 AIVERSE_GPU_ICB_RIGID=1 AIVERSE_GPU_ICB_MIN_COMMANDS=2 AIVERSE_EXPECT_GPU_ICB=1 AIVERSE_PALETTE_TEST_CASE=indirect build/batching-gpu-verify/aiverse_material_batches unused.obj build/batching-gpu-verify/captures/gpu-icb
+echo "exit=$?"
+```
+
+Require the existing GPU assertion and `changed_channels=0` to remain true, plus two `CPU render benchmark` sample lines. The batch phase may mix GPU ICB and CPU MDI; report both actual submission counters. Repeat several A/B/A runs and use a separate representative-scene test for CPU frame/GPU timestamp estimates. Keep experimental flags off by default and PR Draft.
