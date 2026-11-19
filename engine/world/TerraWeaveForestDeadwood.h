@@ -166,7 +166,9 @@ inline bool seedForestDeadwood(
     validateForestDeadwoodResource(state);
     const AnchoredPlantId id{
         plant.anchor.speciesId,plant.anchor.plantKey};
+    validateRootProfile(plant.anchor.roots);
     if(!id.speciesId || !id.key ||
+       plant.anchor.roots.habit==PlantHabit::Grass ||
        plant.anchor.xCm<-kWorldLimitCm ||
        plant.anchor.xCm>kWorldLimitCm ||
        plant.anchor.zCm<-kWorldLimitCm ||
