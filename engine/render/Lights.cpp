@@ -167,14 +167,22 @@ void LightSystem::retireTarget(gfx::TextureHandle color,
         targetRetirement_->retire(color,depth);
         return;
     }
-    // Legacy unleased renderer hosts retain immediate release. Native GPU
-    // retirement ownership requires a renderer-provided owner pool.
+    // A standalone LightSystem has no shared GPU epoch to enqueue into.
+    // Never delete a potentially in-flight target unless the backend proves
+    // all prior submissions idle. Hosts must call this at a frame boundary;
+    // a failed/unsupported barrier deliberately retains the native texture.
     try {
-        if(dev_ && color.valid())dev_->destroyTexture(color);
-        if(dev_ && depth.valid())dev_->destroyTexture(depth);
+        if(!dev_ || !dev_->waitForResourceIdle()) {
+            ++standaloneRetirementIdleFailures_;
+            ++standaloneTargetOrphans_;
+            return;
+        }
+        if(color.valid())dev_->destroyTexture(color);
+        if(depth.valid())dev_->destroyTexture(depth);
     }catch(...) {
-        // Never throw across cleanup. On a backend failure these orphan
-        // handles survive until actual device destruction.
+        // Never propagate cleanup exceptions; the remaining handle is
+        // orphaned until its Device epoch is destroyed.
+        ++standaloneTargetOrphans_;
     }
 }
 
