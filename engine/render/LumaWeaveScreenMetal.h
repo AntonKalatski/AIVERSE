@@ -304,7 +304,8 @@ public:
     // by the PostProcess wrapper, before ending/submitting the command buffer.
     // GPU encoder order guarantees visibility even before the fence callback.
     gfx::TextureHandle encodedOutput(uint64_t serial) const {
-        return pending_ && pendingSerial_==serial ? filtered_[pendingIndex_] :
+        return pending_ && pendingProducesHistory_ &&
+               pendingSerial_==serial ? filtered_[pendingIndex_] :
                gfx::TextureHandle{};
     }
 
