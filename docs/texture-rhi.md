@@ -1697,3 +1697,43 @@ require compatible parent fragment state; real per-command texture/VT
 resource indexing requires a new Metal shader and argument-buffer ABI.
 This stage makes lifecycle and identity verification explicit before
 that extension. **C++ compilation/CTest/GPU tests NOT RUN.**
+
+
+## Experimental GPU-encoded Metal ICB per-command VT argument buffers — Stage 10X
+
+The RHI now exposes `gfx::GpuIcbVirtualMaterial` and the optional
+`Device::prepareGpuEncodedIndexedIcbWithVirtualMaterials(..., materials)`
+entry point. The descriptor carries native TextureHandles for the
+physical VT atlas, page table, optional full-resolution R8 alpha mask,
+and the four-float U6 (virtual layer, gutter, U/V address modes).
+Unsupported backends explicitly return an invalid token (zero);
+the original `prepareGpuEncodedIndexedIcb` signature and path
+remain unchanged.
+
+The Metal backend implements a source-level **opt-in** variant gated by
+`AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT=1`, in addition to the
+existing GPU ICB/Metal experimental safety flags. A compute-encoded
+ICB command now supports a per-command PBR argument-buffer offset
+(4096-byte aligned stride) and a per-command U6 offset (256-byte
+stride). When this mode is disabled, both strides are zero and the
+legacy shared PBR/U6 buffers are used. Each native VT atlas/table is
+checked against its original handle before execution; it is bound
+through the existing `IcbPbrTextures` IDs 26/28, with optional alpha
+at ID 30 (sampler ID 31). This does not require a new material shader
+permutation or additional fragment sampler slots. All referenced
+textures must remain alive through the actual GPU fence.
+
+`Renderer3D::prepareGpuModelDraws` optionally supplies per-command
+descriptors for already-compatible VT material groups. Grouping still
+requires the exact same original material state and external VT
+binding as before: **this stage exercises the per-command Metal
+argument-buffer ABI only, and does not yet batch heterogeneous VT
+materials**. Stage 10W's CPU ticket revalidation remains in place,
+and stale/invalid descriptors reject execution through the original
+CPU fallback. The legacy path remains selected by default.
+
+**Verification:** only GitHub source inspection and commits;
+Objective-C++ compilation, native MSL compiler, real Metal ICB
+execution and visual/performance checks **NOT RUN**. Treat this GPU
+path as experimental/uncertified, and do not enable the environment
+flag in shipped games.
