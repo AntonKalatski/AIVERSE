@@ -127,7 +127,7 @@ inline ShoreErosionResult erodeShore(const ShoreErosionCell& source,
     const uint64_t exposure=uint64_t(forcing.wetContactPermille)*
                             (1000u-source.rootBindingPermille);
     const uint64_t rate=uint64_t(shock)*settings.ratePermille*exposure/
-                        1000000u; // millimetre-equivalent cm / second
+                        10000000u; // milli-cm/second; no floating-point rate
     const uint64_t requested=rate*dtMs/1000u+
                              source.erosionCarryMilliCm;
     const uint32_t potential=uint32_t(std::min<uint64_t>(
