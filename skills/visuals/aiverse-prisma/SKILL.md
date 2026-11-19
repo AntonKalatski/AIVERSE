@@ -1308,15 +1308,25 @@ and bool normalization. The test is compiled with
 the existing `prisma_volume` target, not a second
 postprocessor or test-only GPU rendering owner.
 
-**Actual run reference:**
-https://github.com/chromealex/AIVERSE/actions/runs/44595377866
-for head `96da88d098307f10d7745af6b2f880e35d918f9e`.
-At time of publication BOTH Linux and macOS jobs were
-**queued**, with no compiler/CTest/GPU outcome yet.
-Previous run 44595169973 was deliberately cancelled by
-concurrency on test update. Never report PASS or FAIL
-for a queued or cancelled job. Inspect the latest
-GitHub run jobs/steps/logs/artifacts after they execute.
+**Current run reference (supersedes older cancelled runs):**
+https://github.com/chromealex/AIVERSE/actions/runs/44597082684
+for source/tests commit `aa262d6b44546985429c0cda0abf0338f270c693`.
+GitHub queued Linux/macOS; native compile/CTest/GPU
+outcomes have NOT been observed yet. Earlier runs
+44595169973 and 44595377866 were cancelled by
+concurrency after test source updates. Never report
+PASS/FAIL for a queued or cancelled job. Fetch
+the newest run's jobs/steps/logs/artifacts before
+updating the Stage-66 handoff.
+
+The existing `prisma_graph` CTest also now checks
+reactiveShaderVariantContract (actual four generated
+GLSL/MSL skin/morph and baked shader strings, including
+fail-closed anchor changes and current UV/alpha)
+and compositeTextureLayoutContract (0–4 bounded
+graph input textures with/without Auto Exposure,
+TEX8/TEX9 slot ownership). They compile/run ONLY
+after the queued runner actually executes.
 Report each actual error and fix it in the feature branch;
 re-run consolidated checks until actual pass.
 
