@@ -769,7 +769,7 @@ int TerrainRenderer::tierFor(const Renderer3D& r) const {
 
 gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant, bool dynamicGi) {
     const int dbase = variant >= 3 ? 3 : 0;
-    for (int tier = variant - dbase; tier >= 0; --tier) {
+    for (int tier = variant - dbase; tier >= (dynamicGi ? 1 : 0); --tier) {
         const int slot = (dynamicGi ? 6 : 0) + dbase + tier;
         if (pipes_[slot].valid()) return pipes_[slot];
         if (shaderFailed_[slot]) continue;
