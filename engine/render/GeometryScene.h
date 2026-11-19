@@ -40,6 +40,9 @@ public:
         // bytes/calls and delayed promotions; not physical VRAM telemetry.
         uint64_t strataStreamingArenaBytes=0, strataStreamingUploadedBytes=0;
         uint64_t strataStreamingUploadDeferrals=0, strataStreamingFenceDeferrals=0;
+        uint32_t strataDiskArchiveSources=0, strataDiskArchiveDeclined=0;
+        uint64_t strataDiskBytesRead=0, strataDiskReadFailures=0;
+        uint64_t strataDiskPending=0, strataDiskReadyBytes=0;
     };
     void load(gfx::Device& dev, const Json& json, const FileReader& reader);
     // Procedural/offline callers may supply immutable CPU models instead of files.
@@ -108,6 +111,16 @@ public:
     }
     size_t strataStreamingUploadBudgetBytes() const {
         return strataStreamingUploadBudgetBytes_;
+    }
+    // Optional offline-built .strataidx archive directory. Requires
+    // Metal/Vulkan incremental streaming + an active index budget.
+    // A missing/stale archive keeps the affected source on Legacy. GLES
+    // uses its existing CPU/immutable index path instead.
+    void setStrataDiskPageDirectory(std::string directory) {
+        strataDiskPageDirectory_=std::move(directory);
+    }
+    const std::string& strataDiskPageDirectory() const {
+        return strataDiskPageDirectory_;
     }
     bool collectStrataGpuInstances(const std::string& sourceKey,
                                    std::vector<strata::GpuSceneInstance>& out) const;
@@ -190,6 +203,7 @@ private:
     size_t strataStreamingSceneBudgetBytes_=0;
     bool strataIncrementalIndexStreamingEnabled_=false;
     size_t strataStreamingUploadBudgetBytes_=0;
+    std::string strataDiskPageDirectory_;
     float errorPixels_=2, maxPixels_=256;
     size_t proxyVertices_=0;
 };
