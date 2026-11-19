@@ -35,6 +35,7 @@ void RtsView::setRoadMap(const Json& map) { roads_->setMap(map); shores_->setMap
 float4 RtsView::playerColor(int p) { return overlayPlayerColor(p); }   // palette shared with the overlays
 
 bool RtsView::init(gfx::Device& dev, const Rules& rules, FileReader reader) {
+    resources_.bindResourceDevice(dev);
 #ifndef __EMSCRIPTEN__
     resources_.preparation().reset();
 #endif
