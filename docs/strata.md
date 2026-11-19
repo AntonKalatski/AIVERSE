@@ -239,10 +239,93 @@ the pool's admission/ownership policy explicitly; do not bypass its safety
 guards. This stage leaves `GlobalGeometryPool.cpp`, active `Renderer3D`
 batching, all render passes, ECS and saved scene formats unmodified.
 
-`aiverse_strata_gpu_scene` builds the metadata layer and CTest
+`aiverse_strata_gpu_scene` builds the metadata and shared-page sidecar layer; CTest
 `strata_gpu_scene` checks CPU binary layout, multi-primitive global
 offsets, source flags, malformed ranges and transactional failure.
 **Native compilation and GPU/CTest execution have not been verified**.
+
+## Stage 7B — shared-page auxiliary Strata index residency
+
+**Status: code committed; native/GPU validation NOT RUN.** All data remains
+experimental and the draw path remains the existing `Renderer3D`.
+
+`GlobalGeometryPool.h/.cpp` now offers the following opt-in source-attached
+API. It does not introduce a second GPU geometry allocator:
+
+```cpp
+render::GeometryPoolIndexSpan lease;
+if (render::uploadAuxiliaryGeometryIndices(
+        device, sourceModel, strataIndices.data(), strataIndices.size(), lease)) {
+    // lease.buffer == sourceModel.ib == sourceModel.vb (same page).
+    // lease.firstIndex is an absolute uint32 GPU index element offset.
+    // lease.indexCount counts only uploaded indices in the sidecar stream.
+    // Indices remain relative to sourceModel.gpuBaseVertex.
+    assert(render::auxiliaryGeometryIndicesValidFor(lease, sourceModel));
+}
+// Explicitly retire before destroying device / source GPU objects:
+render::releaseAuxiliaryGeometryIndices(device, lease);
+```
+
+The function accepts only models **already uploaded into the existing
+`GlobalGeometryPool`**, valid shared VB/IB handles, a complete checked
+shared-buffer write, and source-relative indices that fit the reserved
+vertex slice. It never creates a new page for Strata indices. If the page's
+remaining vertex-to-index gap is too small, the caller keeps the existing
+legacy renderer. No change is committed to the allocator if the RHI write
+fails; all previous model and sidecar byte ranges remain reserved.
+
+Index-only allocations use the same `GeometryPoolPage::indexBegin` frontier
+as ordinary model index allocations. A sidecar lease retains its GPU page
+through `shared_ptr`, preventing page destruction even if the source
+`Model` releases its own lease first. The source revision, base vertex,
+first index, shared page and GPU buffer handles must all match for a binding
+to be usable. `geometryPoolStats` now reports separate *actual*
+`liveModels` and live/retired/reusable auxiliary index counters.
+
+Released auxiliary spans may be recycled only when the existing
+`AIVERSE_GEOMETRY_POOL_RECYCLE=1` opt-in is enabled **and** the backend
+reports a nonzero, healthy `completedFrameSerial()` at or past the recorded
+release `frameSerial()`. Otherwise, storage remains conservatively
+quarantined/stranded until the entire page is destroyed. This is intentional:
+no CPU allocator is allowed to overwrite an in-flight GPU read. There is
+no extra Strata-specific fencing or background worker.
+
+`GpuMetadataScene::stage()` now concatenates each eligible primitive's
+`strata::Asset::indices` and uploads that stream to its source model's
+shared page (default max 1 MiB per source and 8 MiB per scene). Once uploaded,
+it publishes a **version 2** cluster metadata buffer:
+`GpuPrimitive::gpuFirstIndex` contains the *absolute GPU sidecar index
+base for that primitive*; `GpuNode::sourceFirstIndex` remains local to the
+primitive, so the future draw offset is their sum. The original, pure CPU
+`packGpuMetadata()` intentionally emits **version 1** with
+`gpuFirstIndex=invalidNode`; that format is **not GPU drawable**.
+
+```cpp
+scene.setStrataStagingEnabled(true);
+scene.setStrataGpuMetadataEnabled(true); // both default OFF
+scene.loadPrepared(device, json, std::move(models));
+GeometryScene::StrataIndexBinding binding;
+if (scene.strataGpuIndexBinding("models/stone.glb", binding)) {
+    // binding.buffer: same pool as the source Model.
+    // binding.firstIndex: base of the entire Strata sidecar.
+    // binding.baseVertex: original pooled source vertex base.
+    // No Strata draw/dispatch is issued by this API.
+}
+```
+
+The metadata and sidecar allocations share one source lifetime and are
+released **before** `GeometryScene` frees its source models. Source geometry
+remains immutable; existing materials, HLOD, batching and shadows remain
+authoritative. No GPU compute culling, Hi-Z, indirect command generation,
+Strata render pass, texture streaming or actual measured FPS benefit yet.
+
+`tests/render/strata_gpu_scene.cpp` extends the CPU packing fixture with a
+recording RHI and exercises same-page reservation, index byte identity,
+neighboring model protection, upload failure rollback, revision invalidation,
+source-vs-sidecar lifetime and release behavior. These scenarios are **not
+claimed to pass until run**. The next stage must validate deferred recycling
+under real backend serials, build all focused CTests, add OFF/ON draw parity,
+then implement a capability-gated single render submission owner.
 
 ## Architectural constraints
 - **One scene/instance truth**: `GeometryScene` owns static render instances
@@ -275,11 +358,12 @@ offsets, source flags, malformed ranges and transactional failure.
 3. Validate silhouette and seam quality for different LOD depths and attribute
    discontinuities; parent simplification and locked borders alone do not
    guarantee crack-free transitions.
-4. Extend **existing** `GlobalGeometryPool` to safely allocate an auxiliary
-   Strata index stream on an existing pooled page, with explicit scene/
-   model revision checks, upload failure rollback, frame-fenced retirement
-   and shared-buffer synchronization. Do not add a second geometry VB/IB pool.
-   All current Strata metadata offsets remain source-local, not drawable.
+4. The existing `GlobalGeometryPool` now reserves auxiliary Strata index
+   spans without creating a new page, and version-2 metadata maps primitive
+   bases to their actual pooled GPU offsets. Verify on Mac Metal and Vulkan:
+   shared-buffer writes, reupload/revision invalidation, in-flight retirement,
+   surrounding rigid models, and all original fallback paths before enabling
+   submission. Default staging remains OFF.
 5. Build a capability-gated GPU scene/cluster selection path using the
    CPU planner as a correctness oracle. Submit visible ranges through one
    existing `Renderer3D` batching/MDI owner, or fall back to normal models.
