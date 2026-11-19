@@ -171,6 +171,10 @@ public:
                 // allocations remain alive until their retirement token.
                 rawModels_.resources().setEstimatedRetirementByteLimit(
                     64ull*1024ull*1024ull);
+#ifndef __EMSCRIPTEN__
+                rawModels_.setCpuWorkerCount(2);
+                rawModels_.setCpuMaxQueued(8);
+#endif
                 rawDevice_=&ed.device();
                 rawProject_=project;
                 rawRevision_=revision;
