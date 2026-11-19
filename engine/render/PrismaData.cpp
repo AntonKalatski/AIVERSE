@@ -398,7 +398,11 @@ PrismaWork prismaEffectWork(const PrismaEffect& e, PrismaQuality tier, bool igno
     case T::ChromaticAberration: return {2.0f, 0};
     case T::Sharpen: return {2.0f, 0};
     case T::Fxaa: return {6.0f, 1};
-    case T::DepthOfField: return {10.0f, 1};
+    case T::DepthOfField:
+        // The opt-in metric path additionally reads depth at eight color
+        // tap locations to reject foreground/background silhouette bleed.
+        // Conservative, hardware-independent estimate only; not GPU time.
+        return {e.get("metricFocus") > 0.5f ? 18.0f : 10.0f, 1};
     case T::AutoExposure: return {5.0f, 12};
     case T::MotionBlur: return {17.0f + (e.get("velocityDilation") > 0 ? 8.0f : 0.0f), 2}; // upper-bound pyramid: size-dependent passes
     case T::TemporalResolve: {
