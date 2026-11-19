@@ -141,6 +141,12 @@ void WorldScene::setVegetationHorizonExactWindField(bool enabled) {
     vegetationHorizonExactWindField_=enabled;
     if(terraHorizon_)terraHorizon_->setExactSpatialWindField(enabled);
 }
+void WorldScene::setVegetationHorizonWindUploadPolicy(
+        terraweave::HorizonWindUploadPolicy policy) {
+    terraweave::validateHorizonWindUploadPolicy(policy);
+    if(terraHorizon_)terraHorizon_->setWindUploadPolicy(policy);
+    vegetationHorizonWindUploadPolicy_=policy;
+}
 std::shared_ptr<WorldScene::Prepared> WorldScene::prepare(Cell cell,const AssetReader& reader) {
     const auto& asset=assets_.chunks.at(cell);std::string text;
     if(!reader(asset.file,text))throw JsonError("world.scene: read/hash failure: "+asset.file);
