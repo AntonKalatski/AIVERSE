@@ -9655,3 +9655,60 @@ and must be recompiled and rerun on the Mac**. GPU Shader Graph ICB,
 virtual page feedback and cross-platform parity remain separate
 acceptance gates. Keep PR #21 Draft until these pass.
 
+
+## Stage 10BH — Apple M3 Ultra native sampling and timing PASS (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Preceding source stages:** 10BF (timing) and 10BG (real
+Texture3D fragment sampling). **Documentation commit:**
+`20cfa9f946186fec0dd67db11dbba43e34c4aba5`.
+**Mac environment reported:** `Metal Apple M3 Ultra`,
+isolated `AIVERSE-texture-verify-20261119-150819` worktree.
+
+**Observed real GPU CTest:** `1/1 Test #122: metal_texture_gpu
+... Passed 1.14 sec`, 0 failures.
+User-supplied verbose output explicitly contained per-probe
+`PASS` for exact 3D base z0, z2 patched region, mip1 z1,
+2DArray first/last/mip1, Cube first/last/mip1, CubeArray
+first/last/mip1 (all tolerance=0), and new real fragment
+shader samples original z0, patched z2, authored mip1
+(all tolerance=1). This verifies the new 10BF/10BG code
+ran on a physical GPU. No assumed skipped test.
+
+**Actual timings (milliseconds):**
+- Metal device/layer init `67.186`.
+- Texture3D create/upload `2.439`; 2DArray `0.411`;
+  Cube `0.395`; CubeArray `0.531`.
+- Texture3D MSL shader/pipeline setup `194.582`;
+  fragment sampling total `302.001`.
+- Entire fixture `480.275` (body after device init `413.089`);
+  enclosing CTest wall clock `1.14 s`.
+- Readback GPU command-buffer timings:
+  Texture3D `0.007`, 2DArray `0.019`, Cube `0.021`,
+  CubeArray `0.009`; fragment sample cases `0.005`,
+  `0.006`, `0.005`.
+  These are complete command-buffer GPU durations, **not**
+  texture upload throughput or pure blit timings.
+- Poll frame count `2` in each readback group;
+  callback wait range `12.520..21.439 ms`;
+  CPU-side submit range `4.100..9.129 ms`.
+- The extra `~660 ms` between the reported CTest wall
+  clock and fixture timestamp remains unmeasured process
+  runtime overhead; do not invent a GPU bottleneck.
+
+**Changed files in this bounded stage:** documentation only.
+The previously described 10BF/10BG acceptance is now
+verified on device. No production GPU texture code, shader
+material ABI or genre/ECS files changed.
+
+**Still unverified:** real virtual texture feedback shader
+→ RGBA8 ID → async decoder → page request / physical atlas
+publication; experimental per-command Metal Shader Graph
+GPU ICB; actual large scene perf, device loss and GL/Vulkan/
+Windows/Android/iOS/WebGL cross-backend parity.
+
+**Next:** add separate real Metal VT feedback render/readback
+acceptance using production `VirtualTextureFeedbackPass`
+and canonical MSL encoder, then verify on Mac Studio. Keep
+Draft PR and append a handoff after new source/actual tests.
+
