@@ -199,7 +199,9 @@ void DiskIndexPages::serviceOne(const std::shared_ptr<State>& state) {
         return;
     }
     std::vector<uint32_t> payload;
-    const bool okay=readPage(state->path,entry,payload);
+    bool okay=false;
+    try { okay=readPage(state->path,entry,payload); }
+    catch (const std::exception&) { okay=false; }
     bool keep=false;
     {
         std::lock_guard lock(state->mutex);
