@@ -40,6 +40,28 @@ public:
     const std::vector<RoadTypeDef>& types() const { return types_; }
     const RoadNetwork& network() const { return net_; }
     const RoadGeometry& geometry() const { return geom_; }
+    render::GpuOwnedMemoryStats ownedGpuMemoryStats() const {
+        if (!dev_) return {};
+        render::GpuOwnedMemoryCounter counter(*dev_);
+        for (const auto& chunk : chunks_)
+            if (chunk.model) render::appendModelOwnedGpuMemory(*chunk.model,counter);
+        for (const auto& prop : propModels_)
+            if (prop.model) render::appendModelOwnedGpuMemory(*prop.model,counter);
+        if (ghostModel_) render::appendModelOwnedGpuMemory(*ghostModel_,counter);
+        // All chunk models borrow the shared road kit image handles.
+        for (const auto& image : images_) counter.texture(image.tex);
+        counter.buffer(decalMesh_.vb);counter.buffer(vergeMesh_.vb);
+        counter.buffer(filmMesh_.vb);counter.buffer(puddleMesh_.vb);
+        auto total=counter.stats(),batch=decalBatch_.ownedGpuMemoryStats(),cache=paintTex_.ownedGpuMemoryStats();
+        const auto add=[&](const render::GpuOwnedMemoryStats& owner){
+            total.textureKnownBytes=render::GpuOwnedMemoryCounter::saturatingAdd(total.textureKnownBytes,owner.textureKnownBytes);
+            total.bufferKnownBytes=render::GpuOwnedMemoryCounter::saturatingAdd(total.bufferKnownBytes,owner.bufferKnownBytes);
+            total.textures+=owner.textures;total.buffers+=owner.buffers;
+            total.unknownTextures+=owner.unknownTextures;total.unknownBuffers+=owner.unknownBuffers;
+            total.multiVersionBuffers+=owner.multiVersionBuffers;
+        };
+        add(batch);add(cache);return total;
+    }
     float cellMeters() const { return cellMeters_; }
     const std::vector<std::string>& warnings() const { return warnings_; }
     // Asset/build-time breakdown, not an estimate of actual GPU draw calls.
