@@ -28,3 +28,9 @@ Stage63a conserved water within a closed, seeded local grid. A flat NEREID `Wate
 **Actual verification:** Source changes committed through GitHub and reviewed, but NO native C++ build, CTest, ECS flood 1000-tick mass/audit run, Box3D obstruction scenario, real-world water refraction/rendering or GPU performance benchmark executed. Prior 9/9 TerraWeave CPU and 1/1 GPU timing router were from older branch heads. PR #24 remains Draft.
 
 **Next:** Compile the combined new header graph (especially reference-index/adaptive water, WorldScene, native example, ECS persistent flood resource); run bounded 1000-tick mass/overflow/repeated tick/rollback fixtures with 0%, 50%, 100% obstruction permeability; validate cloned COW World snapshots; then test renderer on Metal and profile 2,048/16,384 flood cells. The stage remains a local depth/volume heuristic, not a fluid/energy-conserving shallow-water solver.
+
+
+## Stage63c follow-up source review
+- `0dfc5af85eb80e2bec1084edcf924683c8148c55`: `NereidFloodRouting.h` rejects a dry cell retaining a stale WaterBody Entity; a newly inundated cell explicitly inherits its validated transfer source rather than reusing a previous, potentially recycled body handle.
+- The flood port and local sediment mass records are separate. `externalVolumeCm` is a counted **water** reserve, not ground/sediment or NEREID's static ocean volume.
+- Code was reviewed after this fix; **native compilation and runtime QA remain NOT RUN**.
