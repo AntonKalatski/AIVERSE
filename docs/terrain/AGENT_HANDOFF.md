@@ -2929,3 +2929,19 @@ Previous handoff reported PR #24 as nonmergeable with `main`. That was inaccurat
 **Limitations:** individual stable-tree harvest in Stage 24 is near-only; far Horizon is statistical, but rectangular clearings now affect it. Some far cluster cards may remain allocated when their entire canopy is masked. WorldScene rebuilds immutable resident terrain snapshots when only vegetation clearings change; this can be optimized separately after correctness. No polygon masks / wind / seasonal environmental coupling yet.
 
 **Next functional step:** add a shared genre-independent seasonal growth/dormancy adapter and canopy density/color policy for near Flora/Horizon, or optimize fully masked Horizon clusters, still keeping PHYSIS/water ownership independent and all render effects optional. The later testing agent must verify reverting clearings, negative coordinates, unchanged-set no-op, asynchronous source updates, shader atlas/HLOD parity, and the 4096 input budget before release.
+
+## Stage 26 — bounded deterministic resident-tree queries (FEATURE SOURCE COMMITTED; TESTS DEFERRED)
+
+**Date:** 2026-11-19. **Branch:** `feature/terraweave`; **PR:** #24 (Draft, target `main`). User explicitly prioritized **features first, tests afterward**.
+
+**Code and documentation commits:**
+- `460213ea232cb2cc346a277a21e6e1da3ca3eab8`: `engine/world/TerraWeaveForestScene.h`. Adds `nearestTreeAt(xCm,zCm,radiusCm=500)` (optional instance) and `treesInRect(RectCm,maxResults=1024)` (sorted bounded instances) for generic native harvesting/selection. Queries inspect only existing bounded CPU resident patch cache, regardless of camera frustum or LOD. Uses a coarse per-patch rectangle precheck and exact circle or half-open rectangle checks, excludes removed/hidden regrowth and exposes the current grow-scale on returned copies.
+- `460213ea...` also factors the Stage 24 regrowth/removal visibility logic into a shared private `presentationInstance` helper used by both `visibleBatches()` and these new queries, so interactions and rendering agree without duplicating lifecycle math. Added explicit `<optional>` include.
+- `3f95caa75a28cb8e6efa12b1c6f926e9fa3ad53b`: `docs/terrain/TERRAWEAVE.md` describes query units, stable IDs, limits, native examples and residency-only scope.
+- `cb2fef632821043f9def950225de6f73b7207aae`: `skills/world/aiverse-terraweave/SKILL.md` adds native-agent usage and feature-first handoff rules.
+
+**Semantics:** Nearest query radius 1..10,000,000cm with bounded squared-distance arithmetic. At equal distance choose lowest stable `ForestTreeIdentity{speciesId,key}`. Query returns no tree if forest is not streamed, if an instance is harvested/removed, or if it is not yet visible due to a scheduled regrowth. Rectangle query bounds must be nonempty and inside +/-1e9cm and caller result cap 1..100,000; exceeding cap throws instead of returning nondeterministic truncated contents. Stable output order: species ID, key, X, Z. This does not create ECS entities, upload any GPU models or touch collision/navigation.
+
+**Actual verification:** GitHub source and documentation writes returned commit hashes; source was re-read for method placement, the shared `visibleBatches` helper and signature consistency. **NOT RUN:** C++ compiler, CMake, CTest, live native game/editor, GPU metrics or platform CI. This is deliberate per features-first instruction. Do not claim CI passing; leave PR Draft.
+
+**Limitations / next feature:** Queries access only loaded CPU patches (not remote/unloaded trees). A per-chunk spatial acceleration structure may be warranted after performance profiling for large maxResidentChunks, but is not required for correctness. Next functional stage: species-specific canopy phenology/wind response from PHYSIS via optional genre-independent environmental callbacks, shared with Horizon, preserving stable scene seeds and bounded snapshots. Defer GPU/CTest until user requests validation.
