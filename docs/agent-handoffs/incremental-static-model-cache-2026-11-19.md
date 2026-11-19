@@ -1276,3 +1276,28 @@ Fetched live branch file, matched the exact old release implementation, created 
 ### Next
 
 Inspect pooled page updates in **Metal** and **Vulkan**, especially RHI update failure and within-frame page-version consistency. Before enabling any default rigid-LOD pooling, run concurrency stress for last-two-owner unload, backend in-flight GPU use, reupload after release, and shared-page hit/miss parity. Keep generic engine API and per-stage documentation.
+
+
+---
+
+## Stage 41 — fail-closed Metal/Vulkan pooled GPU upload (2026-11-19)
+
+**Branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. **Code parent:** `5b512f6e278756ecbed5320d0f4d4906e84e80d1`; **implementation commit:** `9a1b2c40038a17bf79d90bda9a2d16a291526477`. Stage 40 handoff already committed separately. Preserve other agent work.
+
+### Bug and implementation
+
+The geometry pool previously called `gfx::Device::updateBuffer` twice (vertices, indices) but that API returns `void`. A rejected Metal Storage update (active encoder/OOM) or failed Vulkan in-flight-safe buffer version allocation could leave only part of a model's geometry initialized while `GlobalGeometryPool` still committed its offsets and published the GPU handle to `Model`. This is an unsafe GPU upload admission independent of rendering genre.
+
+- `engine/gfx/Gfx.h`: adds virtual `updateSharedBufferChecked(handle, data, size, offset)`, returning whether the host-side copy was successfully mapped or encoded; **NOT** a GPU completion/fence signal. Default forwards to the historical void `updateBuffer` for legacy backends and reports success on valid arguments, so it does not invent failure detection on those implementations. Metal and Vulkan override for actual fallible operations.
+- `engine/gfx/metal/GfxMetal.mm`: factors the Storage-buffer path into `uploadSharedStorage`. A rejected encoder/compute context, invalid size/data, failed staging MTLBuffer, failed command buffer or unavailable blit encoder reports `false`; only an encoded blit returns `true`. The old `updateBuffer` still delegates to the same helper, keeping external void signature. Metal's existing GPU health/error state is set for allocation/encoder failure. Existing indirect command snapshots and frame-slot fencing unchanged.
+- `engine/gfx/vulkan/VkDevice.h`, `VkResources.cpp`: adds private `updateBufferChecked`, wrapper for existing `updateBuffer` and Storage-only checked public override. Reports `false` on invalid args, missing buffer, in-flight-safe destination allocation failure or staging failure; returns `true` only after copying/encoding the write. Existing safe version lifetime, shadow preservation, deferred destruction, transfer barriers, and non-Storage external callers remain unchanged. Added offset+size overflow check.
+- `engine/render/GlobalGeometryPool.cpp`: uses the checked API for **both** vertices and indices; does not advance `vertexEnd/indexBegin`, attach the page to a Model, or publish a newly created page in the device registry until both writes succeeded. A new page with either failure is destroyed after unlocking the registry mutex. For a partial failure on an existing page, only unowned/uncommitted offsets may contain uploaded bytes; the next insertion may overwrite that area, while already committed models retain their ranges. This keeps the existing standard dedicated VB/IB fallback in `uploadModel`.
+- No GPU command ABI, ECS data, material equality, shader binding, LOD selection, cross-model sort threshold or opt-in default changed.
+
+### Verified / not yet verified
+
+Read current Metal/Vulkan/Gfx sources, performed exact old-code replacement with source structural checks, committed one atomic 5-file tree through GitHub, and advanced branch using expected SHA. **Native clang/Metal/CMake compilation: NOT RUN. CTest: NOT RUN. OOM/in-flight failure injection: NOT RUN. Metal/Vulkan pixel/driver stress: NOT RUN. Same-camera A/B/A: NOT RUN**, per user feature-first instruction. Source inspection is not proof of compilation or runtime reliability. PR remains Draft.
+
+### Risks and next work
+
+The RHI default `updateSharedBufferChecked` is compatibility forwarding only; non-Metal/Vulkan backend error checking is not stronger than its original `updateBuffer`. Metal/Vulkan report encoded/mapped success, **not** asynchronous GPU execution success. The existing dedicated-fallback `uploadModel` still must handle partial VB/IB buffer creation failures without leaking resources or continuing to image upload. Review and fix this model-level failure path next, then validate with fault-injection. Avoid enabling rigid-Lod pooling globally without real device parity tests.

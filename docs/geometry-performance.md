@@ -1454,3 +1454,28 @@ in-flight GPU commands. This does not permit simultaneous mutation
 and rendering of the same `Model`. No changes to geometry packing,
 cross-model eligibility, GPU command ABI, shader selection or defaults;
 full native and multi-threaded validation is deferred.
+
+
+### Checked pooled Storage uploads in Metal and Vulkan (Stage 41)
+
+The GPU shared-geometry path now calls
+`gfx::Device::updateSharedBufferChecked` for both vertex and index
+ranges. This new virtual method returns CPU-side **encoded/mapped**
+success, not GPU-completed success. Metal and Vulkan implement
+failure-aware overrides, including Metal encoder/blit allocation
+restrictions and Vulkan in-flight-safe buffer version allocation.
+Other backends use a compatibility forwarding default, so do not
+claim they gained independent upload-error detection.
+
+`uploadModelToGeometryPool` no longer commits a new page into
+the device registry, advances page occupation, or publishes a
+`Model::geometryPoolPage`/VB/IB until **both** writes succeed. On
+failure a newly allocated page is released; an existing page keeps
+its old committed ranges and may overwrite the unused failed range
+during a later upload. Dedicated fallback remains the normal
+`uploadModel` behavior. No changes were made to actual MDI
+draw grouping, shader indices, culling, Vulkan nonzero base-vertex
+fallback, memory fences, material state or experimental defaults.
+
+These are source-only changes pending final native compile, OOM
+fault injection, GPU raster parity and performance validation.

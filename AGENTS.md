@@ -1701,3 +1701,19 @@ Do not reintroduce an unlocked `use_count()` check or destroy shared
 buffers while another Model owns the page. No tests have been run
 for this stage; retain Draft PR #34 until feature completion and
 Metal/Vulkan/release-stress validation.
+
+
+## Stage 41 — checked shared geometry Storage updates
+
+`gfx::Device::updateSharedBufferChecked` is the upload API for
+pooled rigid vertex/index ranges. Metal and Vulkan return real
+CPU-side success/failure on allocation/encoder/version selection;
+other backends forward to their existing `updateBuffer` semantics.
+This is **not** a GPU fence or proof the driver executed a draw.
+In `uploadModelToGeometryPool` commit page offsets, register new
+pages and assign Model GPU handles only after both writes succeed.
+On failure preserve the existing committed region and leave the
+failed range available for the next upload. Do not expose half-
+initialized pooled geometry; keep dedicated fallback. Current
+build/driver/failure-injection tests are **NOT RUN** and PR #34
+remains Draft. See Stage 41 handoff.
