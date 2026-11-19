@@ -205,15 +205,28 @@ inline ForestMicroOutcome advanceForestMicroNutrients(
             break;
         }
     }
-    next.soilCursor=soilTotal?
-        (soilStart+report.soilProcessed)%soilTotal:0;
+    // The cursor is an index into the COMPACTED saved array. Remember
+    // the next unprocessed key before removing empty cells; modulo of the
+    // old index against the new size can skip the next soil patch.
+    std::pair<int64_t,int64_t> nextSoilKey{};
+    if(soilTotal){
+        const auto& cell=next.soil[
+            (soilStart+report.soilProcessed)%soilTotal];
+        nextSoilKey={cell.x,cell.z};
+    }
     next.soil.erase(std::remove_if(
         next.soil.begin(),next.soil.end(),
         [](const ForestDeadwoodSoilCell& cell) {
             return cell.availableUnits==0;
         }),next.soil.end());
-    next.soilCursor=next.soil.empty()?0:
-        next.soilCursor%next.soil.size();
+    const auto resumeSoil=std::lower_bound(
+        next.soil.begin(),next.soil.end(),nextSoilKey,
+        [](const ForestDeadwoodSoilCell& cell,
+           const std::pair<int64_t,int64_t>& key) {
+            return std::pair{cell.x,cell.z}<key;
+        });
+    next.soilCursor=resumeSoil==next.soil.end()?0:
+        uint64_t(std::distance(next.soil.begin(),resumeSoil));
 
     // One 4m cardinal step per due tick, restricted to current wet
     // NEREID body. A recipient gets its supply only NEXT tick.
@@ -257,8 +270,15 @@ inline ForestMicroOutcome advanceForestMicroNutrients(
         checkedAdd(originalSpent[key],transfer);
         checkedAdd(report.advected,transfer);
     }
-    next.microWaterCursor=waterTotal?
-        (waterStart+report.waterProcessed)%waterTotal:0;
+    // Keep the next unprocessed ORIGINAL water key, not a stale vector
+    // offset. Advection and later junctions can remove or insert 4m cells.
+    ForestMicroKey nextWaterKey{};
+    if(waterTotal){
+        auto nextWater=original.begin();
+        std::advance(nextWater,std::ptrdiff_t(
+            (waterStart+report.waterProcessed)%waterTotal));
+        nextWaterKey=nextWater->first;
+    }
 
     // Explicit true NEREID confluence/cascade edges. Link discovery belongs
     // to the ECS adapter. The pure kernel re-verifies the exact current
@@ -296,6 +316,13 @@ inline ForestMicroOutcome advanceForestMicroNutrients(
             key.bodyKey,key.x,key.z,amount});
     if(next.microWater.size()>ForestDeadwoodResource::kMaxMicroWaterCells)
         throw std::length_error("TerraWeave sparse 4m water cell budget");
+    const auto resumeWater=std::lower_bound(
+        next.microWater.begin(),next.microWater.end(),nextWaterKey,
+        [](const ForestMicroWaterCell& cell,ForestMicroKey key){
+            return microKeyOf(cell)<key;
+        });
+    next.microWaterCursor=resumeWater==next.microWater.end()?0:
+        uint64_t(std::distance(next.microWater.begin(),resumeWater));
     if(report.absorbed || report.leached || report.advected ||
        report.junctionTransferred){
         if(next.revision==UINT64_MAX)
