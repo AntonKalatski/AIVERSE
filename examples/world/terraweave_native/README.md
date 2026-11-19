@@ -184,3 +184,38 @@ NEREID's existing `sampleWater` and `WaterQueryIndex::sample` now both apply the
 On shutdown, call `slopeDebris.shutdown()` and `fallenTrees.shutdown()` **before** destroying their `physics::Scene`. Refresh generated water obstacles to an empty snapshot if physics sources disappear. After ECS rollback/load, the native host must restore/recreate authoritative physical bodies before recapturing water obstruction records.
 
 **Verification:** Stage62 source is committed, but no Clang/GCC, CMake, CTest, native ECS replay, Box3D scene, Metal/GL/Vulkan screenshot or performance test was run. Keep PR #24 Draft; the next agent should validate the first native compile before integration sign-off.
+
+
+## Stage 63 — water accumulation behind logs/landslides and dry-bank overtopping
+
+The **existing NEREID** water pipeline optionally owns a bounded equal-area flood reservoir (`WaterFloodResource`, ECS resource schema `nereid.flood` v1); TerraWeave only supplies its canonical terrain heightfield. Native sample `registerSystems` enables this opt-in pipeline and the post-terrain ground sync system. No separate water-body renderer/physics solver is created.
+
+**Seed once** after real NEREID water-body creation and before the first ECS flood-routing tick:
+
+```cpp
+// Already registered in the sample's GameModule::setup via
+// examples::terraweave_native::registerSystems(sim,cfg,...).
+// Example: 100 x 100 cells at a 1m grid. This window includes the bank
+// into which water could overtop, not just the original river footprint.
+terraweave::NereidFloodGridRegion riverWindow;
+riverWindow.area={-5000,-5000,5000,5000};
+riverWindow.maxCells=16384;
+examples::terraweave_native::seedFloodReservoir(
+    sim.world(),cfg,riverWindow);
+```
+
+**Optionally** pass a matching, bounded `ShorelineRasterSettings` scan as the **last** argument to `registerSystems`. This installs the automatic bank-refresh system after the NEREID sampling/flood/erosion/sediment stages AND after TerraWeave's slope/ground sync. The refresh system persists its last wet/dry and soil revisions, and rerasterizes when a meaningful topology change occurs; it only creates/modifies auto-tagged bank entities. If NEREID water geometry changes without a flood wetness change, request a rescan explicitly:
+
+```cpp
+terraweave::requestAutomaticShorelineRefresh(sim.world());
+// At the next soil/flood system barrier the bank raster is regenerated
+// from authoritative NEREID water footprints + TerraWeave ground.
+```
+
+**Tick order and volume:** NEREID flood routing moves water between grid-neighbour columns along the hydraulic-head gradient, respecting `WaterFlowObstructionComponent` permeability. The volume-equivalent sum of equal-area water columns is checked for exact conservation after every tick. Water can pile up upstream of a fallen tree/rock blockage, take an open side route and overtop a lower dry bank. The already-existing NEREID base WaterBodyComponent remains unchanged. After NEREID bank erosion and TerraWeave cliff slides/digging, `TerraWeaveFloodGroundSyncSystem` resamples changed ground heights while keeping the saved water column volumes. A new wet/dry boundary triggers auto-bank updates for the following ECS tick; no grass-blade ECS entities are created.
+
+**Visuals:** `publishNativeTerraWeaveFrame` copies up to 2048 flood surface tiles from the current NEREID ECS resource into `WorldScene::setNereidFloodCells` for the active terrain/grass viewing rectangle. One batch of transparent/unlit quads is uploaded/drawn by the existing `gfx::Device`/`Renderer3D` pipeline. Only water that rises ABOVE the authored base surface or overflows OUTSIDE the original water footprint gets an overlay, avoiding duplicate river/ocean meshes. The fallback material is deliberately simple; full NEREID surface refraction/foam and exact seamless triangulation around arbitrary coastlines remain future work.
+
+**Important finite-volume limitation:** The reservoir conserves volume only in its declared closed window. The base NEREID water body's static volume/level is **not** globally coupled to this separate finite-grid storage; this is a local flood policy, not pressure-based Navier–Stokes or unlimited river discharge. Do not reseed the resource after simulation starts, and do not migrate/change its cell size or region by discarding existing volume. Server authority and ECS save/rollback must include `WaterFloodResource` and all NEREID bank/obstruction resources; the TerraWeave standalone Stage53 save payload does not contain the NEREID flood reservoir.
+
+**Status:** Source committed, NOT built/tested for Stage63. See `docs/terrain/stage-63a-nereid-flood-volume-handoff.md` and `stage-63b-flood-visual-native-handoff.md`. PR #24 stays Draft. After remaining feature work run native CMake/CTest, flood mass/rollback/reference-vs-indexed parity fixtures, Box3D physical obstruction scenarios and Metal screenshots.
