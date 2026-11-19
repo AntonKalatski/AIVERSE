@@ -31,6 +31,10 @@ class Prisma : public PostProcess {
 public:
     bool init(gfx::Device& dev);
     void shutdown();
+    // For hosts that can guarantee a truly idle GPU: drain quarantined
+    // prior viewport-size render targets (never infer idle from CPU frames).
+    void releaseRetiredSizesAfterGpuIdle();
+    size_t pendingRetiredSizes() const { return retiredSizes_.size(); }
 
     // game.json "postfx" then the map's (either may be null); problems go to `issues`.
     void configure(const Json& game, const Json& map, std::vector<std::string>* issues = nullptr);
@@ -104,6 +108,10 @@ private:
         PrismaBloomGraphCache bloomGraph; // invalidates on size, mip count or HDR format changes
         std::unique_ptr<PrismaRhiExecutor> graphExecutor; // optional persistent per-view context
     };
+    struct RetiredSized {
+        Sized resources;
+        uint64_t lastSubmittedFence = 0; // 0 = no backend proof, await GPU idle
+    };
     struct ExposureView {
         gfx::TextureHandle history[2];
         int current = 0;
@@ -124,6 +132,8 @@ private:
     Target& target(Sized& s, int role, int w, int h);
     gfx::TextureHandle depthFor(Sized& s, int w, int h, bool scratch = false);
     Sized& sized(int w, int h);
+    void destroySized(Sized& s);
+    void collectCompletedSizes(uint64_t completedGpuFence);
     gfx::PipelineHandle program(Prog p);
     gfx::PipelineHandle composite(uint32_t mask, const Json* graph = nullptr);
     void draw(Sized& s, const Target& dst, gfx::PipelineHandle pipe, const void* u, size_t size,
@@ -147,6 +157,7 @@ private:
     std::map<std::string, std::pair<gfx::ShaderHandle, gfx::PipelineHandle>> composites_;
     std::map<std::string, bool> compositeFailed_;
     std::vector<Sized> sizes_;
+    std::vector<RetiredSized> retiredSizes_; // retains GPU resources until verified safe
     // Temporal state is keyed by view identity, NOT by render target size.
     std::map<uint64_t, ExposureView> exposureViews_;
     std::map<uint64_t, MotionView> motionViews_;
