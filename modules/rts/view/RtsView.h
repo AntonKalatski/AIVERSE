@@ -182,6 +182,11 @@ public:
     bool typeLoaded(uint16_t type) const { return type < loadedTypes_.size() && loadedTypes_[type]; }
     void loadType(uint16_t type);
     void trimTypes(const std::vector<bool>& keep, bool compact = false);
+    // Render-thread hot reload for changed model SOURCE files. Detach only
+    // affected looks/graph players before evicting their cached GPU models.
+    // Call between submitted frames, never during presentation worker dispatch.
+    // Returns the number of cache keys invalidated (including failed loads).
+    size_t reloadModelSources(const std::vector<std::string>& sources);
     bool typeCurrent(uint16_t t) const { return typeLoaded(t) && requestedModels_[t]==loadedModels_[t]; }
     bool detailRequested(uint16_t t) const { return t<requestedModels_.size() && requestedModels_[t].empty(); }
     void requestDetail(uint16_t type, bool detailed);
