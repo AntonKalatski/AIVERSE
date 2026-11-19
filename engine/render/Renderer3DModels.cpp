@@ -140,7 +140,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     // Shader Graph owns those slots, and GPU ICB commands may mix
     // external VT domains, so both paths remain on source textures.
     ModelVirtualTextureBinding vtBinding;
-    const bool vtSampling = giPhase && !graph && !instancePalette &&
+    const bool vtSampling = giPhase && !graph && !materialPalette &&
         !gpuInstances &&
         resolveModelVirtualTexture(*it.model,*it.mat,vtBinding);
     const uint32_t shaderKey = (vtSampling ? kKeyModelVirtualTexture : 0u) |
@@ -792,7 +792,7 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     // Shader variants use two spare built-in fragment slots (13/14) and
     // one U6 vec4. The original tex1 remains bound as fallback.
     if ((phase == 1 || phase == 2) && !gpuInstances &&
-        !instancePalette && !(mt.shaderGraph &&
+        !instancePalette && !it.paletteMaterials && !(mt.shaderGraph &&
         int(matQuality_) >= mt.shaderGraph->minQuality)) {
         ModelVirtualTextureBinding vt;
         if (resolveModelVirtualTexture(*it.model,mt,vt)) {
