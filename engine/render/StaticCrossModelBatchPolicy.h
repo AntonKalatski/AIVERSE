@@ -215,8 +215,10 @@ public:
         return sortedGroups_.size();
     }
 
-    uint16_t sortRankForItem(uint32_t itemIndex) const {
-        if (modeOf(itemIndex) != 1u) return kInvalidGroup;
+    // The caller has already established modeOf(index) == 1. Do not
+    // repeat the stamped mode lookup in every sort comparison: the group
+    // index carries its own epoch guard and unranked groups return invalid.
+    uint16_t sortRankForPermittedItem(uint32_t itemIndex) const {
         const uint16_t groupIndex = groupForItem(itemIndex);
         return groupIndex == kInvalidGroup
             ? kInvalidGroup : groups_[groupIndex].sortRank;
