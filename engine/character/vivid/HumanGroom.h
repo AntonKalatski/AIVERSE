@@ -36,6 +36,9 @@ private:
     std::vector<GroomGuide> guides_;
     std::size_t segments_=0;
     float stiffness_=0.55f,damping_=0.25f,gravity_=0.65f,windStrength_=0.15f;
+    // Scalp ellipsoid matches the DNA-generated guide root geometry.
+    // Stored per instance, not inferred from a fixed human head preset.
+    render::float3 scalpRadii_{0.72f,0.90f,0.75f};
     float lastStepMs_=0;
 };
 } // namespace aiverse::vivid
