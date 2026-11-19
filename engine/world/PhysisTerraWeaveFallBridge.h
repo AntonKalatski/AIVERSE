@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <map>
 #include <optional>
 #include <set>
@@ -100,59 +101,118 @@ inline std::optional<NatureFallRecord> makeNatureFallRecord(
 // TerraWeave is merged: the cross-system API is verified against its branch.
 // Events are not physical bodies: sink only stages a persistent ECS record;
 // the separate Box3D barrier reconstructs bodies from the committed ledger.
+// Stage 94: stage ALL selected events on a private World copy and publish
+// only once. This keeps PHYSIS acks, fall ledger and TerraWeave rooted.fallen
+// in the same rollback/persistence transaction (no intermediate save).
 inline physis::NatureFractureDispatchStats
 dispatchPhysisTerraWeaveFalls(World& world, std::size_t maxEvents = 64) {
-    const auto* state = world.resourceConst<NatureFallHostState>();
+    if (maxEvents == 0 || maxEvents > 4096)
+        throw std::invalid_argument("PHYSIS/Terra fall host budget 1..4096");
+    const auto* bindingState = world.resourceConst<NatureFallHostState>();
     const auto* terrain =
         world.resourceConst<terraweave::TerraWeaveAuthorityResource>();
-    if (!state || !terrain)
+    if (!bindingState || !terrain)
         throw std::logic_error("PHYSIS/Terra fall host resources not installed");
 
-    // Avoid scanning up to a million TerraWeave rooted plants PER event.
-    // Build a tiny requested-ID index, then make one linear pass over roots.
-    // TerraWeave authority is immutable during this host barrier.
-    const auto pending=physis::pendingNatureFractures(world);
-    if (pending.empty()) return {};
-    std::map<terraweave::AnchoredPlantId,
-             const terraweave::AnchoredPlant*> requested;
-    for (const auto& event : pending) {
-        const auto it=std::lower_bound(
-            state->bindings.begin(),state->bindings.end(),
-            event.entity.packed(),
-            [](const NatureFallBinding& b,std::uint64_t key){
+    const auto pending = physis::pendingNatureFractures(world);
+    physis::NatureFractureDispatchStats stats;
+    stats.pendingAtStart = pending.size();
+    stats.pendingAtEnd = pending.size();
+    if (pending.empty()) return stats;
+
+    // One scan over canonical roots for up to maxEvents requested identities.
+    const std::size_t count = std::min(maxEvents, pending.size());
+    const std::size_t missing = std::numeric_limits<std::size_t>::max();
+    std::map<terraweave::AnchoredPlantId, std::size_t> requested;
+    for (std::size_t i = 0; i < count; ++i) {
+        const auto packed = pending[i].entity.packed();
+        const auto bound = std::lower_bound(
+            bindingState->bindings.begin(), bindingState->bindings.end(),
+            packed, [](const NatureFallBinding& b, std::uint64_t key) {
                 return b.entityPacked < key;
             });
-        if (it!=state->bindings.end() &&
-            it->entityPacked==event.entity.packed())
-            requested.try_emplace(terraPlantId(it->plant),nullptr);
+        if (bound != bindingState->bindings.end() &&
+            bound->entityPacked == packed)
+            requested.try_emplace(terraPlantId(bound->plant), missing);
     }
-    for (const auto& plant : terrain->rooted) {
-        auto it=requested.find({plant.anchor.speciesId,plant.anchor.plantKey});
-        if (it!=requested.end())it->second=&plant;
+    for (std::size_t i = 0; i < terrain->rooted.size(); ++i) {
+        const auto& plant = terrain->rooted[i];
+        const auto it = requested.find(
+            {plant.anchor.speciesId, plant.anchor.plantKey});
+        if (it != requested.end()) {
+            if (it->second != missing)
+                throw std::invalid_argument("TerraWeave duplicate rooted plant identity");
+            it->second = i;
+        }
     }
 
-    return physis::dispatchNatureFractures(
-        world, [&](const physis::NatureFractureEvent& event) {
-            using D = physis::NatureFractureDisposition;
-            // Earlier sink calls replace the host ledger resource; re-read
-            // the mapping, not a stale pointer retained into a COW write.
-            const auto* host = world.resourceConst<NatureFallHostState>();
-            const auto packed = event.entity.packed();
-            const auto bound = std::lower_bound(
-                host->bindings.begin(),host->bindings.end(),packed,
-                [](const NatureFallBinding& b,std::uint64_t key){
-                    return b.entityPacked < key;
-                });
-            if (bound == host->bindings.end() || bound->entityPacked != packed)
-                return D::Retry;
-            const auto plant=requested.find(terraPlantId(bound->plant));
-            if (plant==requested.end() || !plant->second)
-                return D::Retry;
-            const auto record=makeNatureFallRecord(
-                event,*plant->second,terrain->earth.revision);
-            if (!record) return D::Retry;
-            return stageNatureFall(world,event,*record);
-        }, maxEvents);
+    // COW shares unchanged pages when enabled. In legacy mode this is a
+    // deliberate one-time deep clone on a batch with pending fractures.
+    // Any exception before final move leaves original World intact.
+    World staged = world;
+    std::vector<std::size_t> fallenRoots;
+    fallenRoots.reserve(count);
+    for (std::size_t i = 0; i < count; ++i) {
+        const auto& event = pending[i];
+        if (!staged.alive(event.entity)) {
+            ++stats.stale;
+            continue;
+        }
+        const auto* boundState = staged.resourceConst<NatureFallHostState>();
+        const auto packed = event.entity.packed();
+        const auto bound = std::lower_bound(
+            boundState->bindings.begin(), boundState->bindings.end(),
+            packed, [](const NatureFallBinding& b, std::uint64_t key) {
+                return b.entityPacked < key;
+            });
+        if (bound == boundState->bindings.end() ||
+            bound->entityPacked != packed) {
+            ++stats.visited;
+            ++stats.retry;
+            continue;
+        }
+        const auto root = requested.find(terraPlantId(bound->plant));
+        if (root == requested.end() || root->second == missing) {
+            ++stats.visited;
+            ++stats.retry;
+            continue;
+        }
+        const auto record = makeNatureFallRecord(
+            event, terrain->rooted[root->second], terrain->earth.revision);
+        ++stats.visited;
+        if (!record ||
+            stageNatureFall(staged, event, *record) !=
+                physis::NatureFractureDisposition::DurablyCommitted) {
+            ++stats.retry;
+            continue;
+        }
+        if (!physis::acknowledgeNatureFracture(
+                staged, event.entity, event.eventKey, event.climateTick)) {
+            ++stats.stale;
+            continue;
+        }
+        ++stats.committed;
+        if (!terrain->rooted[root->second].fallen)
+            fallenRoots.push_back(root->second);
+    }
+
+    if (stats.committed) {
+        if (!fallenRoots.empty()) {
+            // One Terra authority revision publishes all wind-fallen roots,
+            // so NativeTerraWeaveWorldBinding hides them after save/load.
+            auto updated = *terrain;
+            if (updated.stateRevision == UINT64_MAX)
+                throw std::overflow_error("TerraWeave fall authority revision overflow");
+            ++updated.stateRevision;
+            for (std::size_t index : fallenRoots)
+                updated.rooted[index].fallen = true;
+            staged.setResource<terraweave::TerraWeaveAuthorityResource>(
+                std::move(updated));
+        }
+        stats.pendingAtEnd = physis::pendingNatureFractures(staged).size();
+        world = std::move(staged);
+    }
+    return stats;
 }
 
 struct NatureFallReconcileStats {
