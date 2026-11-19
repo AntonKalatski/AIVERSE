@@ -2026,3 +2026,39 @@ This stage is **CPU/native resource staging only**. MSL argument-buffer
 declarations, GPU shader permutation eligibility and Shader Graph
 renderer submission are separate subsequent stages. Native/Metal
 compiler and GPU tests have **NOT RUN**.
+
+
+## Stage 10AI — Metal Shader Graph ICB fragment argument ABI
+
+`ModelShaders.h` has a dedicated `AIVERSE_SG_ICB_GRAPH`
+`IcbPbrTextures` argument-buffer layout for fragment-only graphs.
+It encodes up to four graph textures in IDs 26/28/30/32 (normal
+texture index 13..16) and samplers in IDs 27/29/31 for 13..15.
+The fourth graph texture uses existing constexpr sampler s16;
+Metal has no dynamic sampler slot 16. For a graph that also
+uses virtual texture sampling, its physical atlas/page table
+follow the graph sources: texture slots `13+N` and `14+N`,
+or argument IDs `2*(13+N)` and `2*(14+N)`.
+The original non-graph ICB layout is kept.
+
+`Renderer3DModels.cpp` marks opaque, fragment-only compatible
+graph shader variants with
+`AIVERSE_SG_ICB_GRAPH` and `AIVERSE_SG_TEXTURE_COUNT`.
+It generates conditional direct Metal fragment parameters,
+which are absent from the `AIVERSE_ICB_PBR` shader variant.
+Fragment graph sample macros alias normal texture slots to
+`icbTextures` within the opt-in ICB code path, without
+touching the ordinary non-ICB shader.
+
+`GfxMetal.mm` now permits such an explicitly marked graph to
+build the PBR ICB fragment pipeline. For every command it
+validates shader source count against its staged resource
+snapshot and encodes the exact graph source textures/samplers
+into argument buffer IDs. When VT is active, atlas/table IDs
+move after those sources. Changed handles or sampler objects
+reject execution.
+
+**Important:** graph geometry eligibility and Renderer3D per-draw
+snapshot submissions have not been enabled by this stage.
+These changes are a source-level ABI; native C++/Objective-C++,
+MSL and GPU shader compilation/tests have **NOT RUN**.
