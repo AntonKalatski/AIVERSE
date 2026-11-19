@@ -363,6 +363,20 @@ invalid/overflow/readback-failed status is not drawable. The real macOS
 execution before GPU parity can be claimed. The owner-confirmed Mac Studio
 run for **previous Stage 8 code** passed 5/5 CPU/mocked CTests in 1.19s;
 that does not prove the newer shader or readback behavior.
+Stage 9 adds `StrataRenderRouting.h/.cpp` and the additive
+`GeometryScene::prepareStrataRenderCandidate` diagnostic preflight.
+Batching PR #34 has merged into main; Strata synchronized its updates at
+merge commit `a77cd830` without overwriting batching ownership.
+`RenderRouteGate` defaults to Legacy and requires independent proof of
+CPU/GPU selection parity, raster parity, source safety, residency and
+Renderer3D submission ownership. Even a complete gate only prepares
+commands; **no live renderer suppresses legacy ModelDraw or executes
+Strata commands yet**. Do not turn it on until the actual Metal parity
+runner, material and shadow screenshots, and exclusive per-primitive
+ownership are verified. `encodeRendererCommands` revalidates the
+current Model pointer, geometry/material revisions and live
+`GpuMetadataScene` sidecar lease before preparing shared-RHI indirect
+command bytes. Never use a stale candidate after source unload.
 On each bounded Strata step: implementation commit first; append and commit the
 handoff separately, recording unrun tests honestly.
 
