@@ -69,13 +69,25 @@ public:
 
     // Each new particle captures the current source's eight values.
     bool spawn(uint32_t particleSlot, SourceId id) {
-        if(!contains(id)||particleSlot>=particles_.size())return false;
+        if(!contains(id)||particleSlot>=particles_.size() ||
+           particles_[particleSlot].active)return false;
         auto& p=particles_[particleSlot];
         p.values=sources_[id.slot].values;
         p.sourceSlot=id.slot;
         p.generation=id.generation;
         p.active=1;
-        p.reserved=0;
+        p.reserved=1; // only pending births execute the Spawn VM
+        ++revision_;
+        return true;
+    }
+
+    // Host acknowledges the GPU Spawn dispatch only after its commands have
+    // been successfully submitted. Does NOT wait for GPU execution.
+    bool acknowledgeSpawn(uint32_t particleSlot) {
+        if(particleSlot>=particles_.size() ||
+           !particles_[particleSlot].active ||
+           particles_[particleSlot].reserved!=1)return false;
+        particles_[particleSlot].reserved=0;
         ++revision_;
         return true;
     }
