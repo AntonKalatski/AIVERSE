@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>
 #include <cstdint>
 #include <set>
 #include <stdexcept>
@@ -30,6 +31,11 @@ public:
         uint32_t probes = 0, samples = 0, triangles = 0, nodes = 0, lights = 0;
         uint64_t primaryRayBudget = 0, maximumTriangleTests = 0;
     };
+    struct GeometryUploadStats {
+        bool full=false;
+        size_t bytes=0, regions=0;
+    };
+    GeometryUploadStats lastGeometryUpload() const { return geometryUpload_; }
     using GpuTri = GiGpuBvhTri;
     using GpuNode = GiGpuBvhNode;
     struct GpuLamp { float4 posRadius{}, colorIntensity{}; };
@@ -93,6 +99,9 @@ public:
         nodeCount_=0;
         lightCount_=0;
         geometryRevision_=0;
+        lastTriangles_.clear();
+        lastNodes_.clear();
+        geometryUpload_={};
     }
 
     bool ready() const { return dev_ && compute_.valid() && atlas_.texture().valid(); }
@@ -120,19 +129,57 @@ public:
             bvh.triangles.size()>kMaxTriangles || bvh.nodes.size()>2*kMaxTriangles+4096)
             return false;
         if (revision==geometryRevision_) return true;
-        const auto triangles = allocate(std::max<size_t>(1,bvh.triangles.size())*sizeof(GpuTri),
-                                        bvh.triangles.empty()?nullptr:bvh.triangles.data());
-        if (!triangles.valid()) return false;
-        const auto nodes = allocate(std::max<size_t>(1,bvh.nodes.size())*sizeof(GpuNode),
-                                    bvh.nodes.empty()?nullptr:bvh.nodes.data());
-        if (!nodes.valid()) { dev_->destroyBuffer(triangles); return false; }
-        dev_->destroyBuffer(triBuffer_);
-        dev_->destroyBuffer(nodeBuffer_);
-        triBuffer_=triangles;
-        nodeBuffer_=nodes;
+        GeometryUploadStats stats;
+        // Stable chunk size/layout: blit only changed 64-byte triangle and
+        // 48-byte node ranges. RHI Metal storage updates are queue-ordered;
+        // caller MUST have waited on GiGpuTicketQueue's completion fence.
+        if (geometryRevision_!=0 &&
+            bvh.triangles.size()==lastTriangles_.size() &&
+            bvh.nodes.size()==lastNodes_.size()) {
+            const auto apply=[&]<class T>(const std::vector<T>& previous,
+                                          const std::vector<T>& current,
+                                          gfx::BufferHandle handle) {
+                size_t begin=0;
+                while(begin<current.size()) {
+                    if(std::memcmp(&previous[begin],&current[begin],sizeof(T))==0) {
+                        ++begin;
+                        continue;
+                    }
+                    size_t end=begin+1;
+                    while(end<current.size() &&
+                          std::memcmp(&previous[end],&current[end],sizeof(T))!=0)
+                        ++end;
+                    const size_t bytes=(end-begin)*sizeof(T);
+                    dev_->updateBuffer(handle,current.data()+begin,bytes,
+                                       begin*sizeof(T));
+                    stats.bytes+=bytes;
+                    ++stats.regions;
+                    begin=end;
+                }
+            };
+            apply(lastTriangles_,bvh.triangles,triBuffer_);
+            apply(lastNodes_,bvh.nodes,nodeBuffer_);
+        } else {
+            const auto triangles = allocate(std::max<size_t>(1,bvh.triangles.size())*sizeof(GpuTri),
+                                            bvh.triangles.empty()?nullptr:bvh.triangles.data());
+            if (!triangles.valid()) return false;
+            const auto nodes = allocate(std::max<size_t>(1,bvh.nodes.size())*sizeof(GpuNode),
+                                        bvh.nodes.empty()?nullptr:bvh.nodes.data());
+            if (!nodes.valid()) { dev_->destroyBuffer(triangles); return false; }
+            dev_->destroyBuffer(triBuffer_);
+            dev_->destroyBuffer(nodeBuffer_);
+            triBuffer_=triangles;
+            nodeBuffer_=nodes;
+            stats.full=true;
+            stats.bytes=bvh.triangles.size()*sizeof(GpuTri)+bvh.nodes.size()*sizeof(GpuNode);
+            stats.regions=2;
+        }
+        lastTriangles_=bvh.triangles;
+        lastNodes_=bvh.nodes;
         triangleCount_=bvh.triangles.size();
         nodeCount_=bvh.nodes.size();
         geometryRevision_=revision;
+        geometryUpload_=stats;
         return true;
     }
 
@@ -232,6 +279,9 @@ private:
     gfx::BufferHandle triBuffer_{},nodeBuffer_{},lampBuffer_{},jobBuffer_{};
     GiDynamicProbeTexture atlas_;
     size_t triangleCount_=0,nodeCount_=0,lightCount_=0;
+    std::vector<GpuTri> lastTriangles_;
+    std::vector<GpuNode> lastNodes_;
+    GeometryUploadStats geometryUpload_{};
     uint64_t geometryRevision_=0;
 };
 
