@@ -1292,3 +1292,36 @@ only concerns CPU MDI policies. No feature is enabled by default.
 This is a feature-only API; CMake/CTest, visual GPU parity and A/B
 performance tests remain unexecuted until all batching features
 are finished.
+
+
+### Exception-safe CPU MDI policy scope for game/editor hosts
+
+Use `Renderer3D::ScopedCpuMdiPolicyOverride` for an owned
+render-view invocation rather than remembering to issue a separate
+`setCpuMdiPolicyOverrides(old)` call after every branch.
+The guard restores precisely the **previous** configuration (including
+host-specific adaptive feedback `scope`) at C++ scope exit, even on
+early return or exception. Nested guards restore in reverse order.
+The Scene viewport now scopes its baseline/optimized render(s) this
+way, without replacing an already configured game host's policy with
+process defaults. Native/FPS/RTS hosts can use the identical API:
+
+```cpp
+auto local = renderer.cpuMdiPolicyOverrides();
+local.crossModel = Renderer3D::StaticCrossModelBatchMode::Enable;
+local.adaptiveScope = stableViewportNamespace;
+{
+    Renderer3D::ScopedCpuMdiPolicyOverride scope(renderer, local);
+    // draw / beginScene / render for this view only
+}
+// Previous renderer CPU policy is restored here.
+```
+
+This is a *configuration-only* stack guard: the renderer must outlive
+it, calls must not race across threads, and the old effective flags
+will be re-resolved at the **next** `beginScene`. It does not roll back
+draw commands, GPU resources, scene profiling, previous page feedback,
+LOD, culling or material state. The isolated scope key partitions page
+EMA but not its bounded global storage. Explicit backend safety/MDI
+eligibility still takes precedence. No experimental feature turns on
+by default and there is no measured performance result yet.

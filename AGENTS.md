@@ -1594,3 +1594,19 @@ This snapshot is CPU-only and does not own GPU commands, page EMA
 samples, scene entities, shader state or rendering resources.
 Preserve the renderer's genre independence and document each stage.
 No tests now, per user instruction.
+
+
+## Scoped CPU MDI policy override — Stage 35
+
+For Scene/native FPS/RTS render hosts sharing a `Renderer3D`, prefer
+`Renderer3D::ScopedCpuMdiPolicyOverride(renderer, policy)` around
+one view instead of manual snapshot/reset code. It saves the *actual*
+previous `CpuMdiPolicyOverrides` and restores it with stack lifetime,
+including early returns/exceptions; it is noncopyable and nonmovable.
+Nested scopes restore LIFO. Do not let it outlive the renderer or race
+across threads, and do not assume it snapshots GPU state, effective
+`beginScene` flags, ECS scene state, profiling, shader/LOD or page EMA.
+The Studio Scene viewport uses it and does not overwrite a game host's
+configured CPU MDI policy. Generic backend/material/geometry constraints
+remain authoritative. PR #34 remains Draft; native validation deferred
+under user's feature-first instruction. See Stage 35 handoff.

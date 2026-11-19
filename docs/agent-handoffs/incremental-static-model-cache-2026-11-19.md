@@ -1133,3 +1133,26 @@ Only CPU policy selection and per-view safe restoration changed; no render eligi
 ### Next
 
 Feature completion audit across all active native game rendering hosts and legacy RTS view adapters, ensure no per-genre restrictions remain on the generic CPU MDI policy entrypoint, and explicitly document any known unsupported cases before switching to the test phase.
+
+
+---
+
+## Stage 35 — exception-safe scoped CPU MDI policy for all native hosts (2026-11-19)
+
+**Repository/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache` (Draft PR #34). **Source HEAD before code stage:** `07e494aca9d8e41aec5b7e13c51639a6f3f71236`; **main** `d71c6d47e532b25fb816a8bb1f96c41e5275a165`, branch behind=0. **Implementation commit:** `1486b3e76e8aafba8f81a90fd49ca03598ec0ea1`.
+
+### Implementation, architecture and API
+
+- `engine/render/Renderer3D.h`: adds nested public `Renderer3D::ScopedCpuMdiPolicyOverride`, a non-copyable/non-movable stack guard taking `Renderer3D&` and a `CpuMdiPolicyOverrides` value. The constructor snapshots the *current* configuration and applies the requested override; its destructor restores that exact snapshot. Nested scopes restore LIFO. Does not cache GPU state or change existing opt-in defaults. The renderer must outlive the guard; hosts must not mutate the same renderer concurrently.
+- `apps/editor/windows/SceneWindow.cpp`: applies the Scene-specific CPU MDI mode, adaptive feedback scope, layout cache, sort and budget through the scoped guard. The guard covers baseline/optimized benchmark render(s), result snapshots and possible early returns/exceptions; restoration occurs immediately after Scene render and **before** the generic Studio reset path, so Game/native host configuration survives. Removed the previous manually placed restore. Non-CPU model culling/LOD/instancing and debug controls keep their existing Studio lifecycle.
+- No changes to FPS/RTS gameplay, ECS serialization, model draw commands, GPU buffer/ICB/Vulkan/Metal backend, in-flight fencing, MDI grouping thresholds, material equality, or stable scene/camera selection. This is a genre-neutral renderer host API, not an RTS integration. Existing `CpuMdiPolicyOverrides` constructor and explicit get/set APIs remain available.
+
+### Actual verification
+
+Read the current branch source via connected GitHub; verified one-occurrence source transformations and expected structural invariants, created an atomic two-file Git tree/commit and successfully advanced branch HEAD through an expected-SHA fast-forward. GitHub compare after code showed main behind=0 and draft PR #34 remained open. **Native CMake build: NOT RUN; CTest: NOT RUN; GPU Metal/Vulkan parity: NOT RUN; measured A/B/A: NOT RUN** (user directs feature completion first; environment has no native AIVERSE checkout). In particular exception unwinding and nested-scope behavior are not yet tested in a native binary; source inspection alone is not a compile or correctness result. No speedup claimed.
+
+### Risks, limits and next step
+
+- The guard only snapshots CPU MDI configuration (including scope), not computed effective `beginScene` state, page-adaptive EMA, cached GPU buffers or other renderer debug flags. It intentionally restores configuration rather than rewinding GPU state. Reusing one renderer from multiple simultaneous threads is still unsupported.
+- The guard's lifetime must end before destroying the renderer; do not return it by value or store references across renderer lifetime changes. It is not a model-asset invalidation mechanism.
+- Next feature-first: examine active native renderer host/RTS view invocation paths for any remaining **genre-dependent policy decisions** and document supported/unsupported GPU geometry-pool cases without relaxing batch correctness; keep Stage 35 changes isolated. Only after the user finishes batching features: build and run focused policy tests, scope nesting/exception tests, Scene/Game isolation, Metal/Vulkan visual comparisons, and real CPU/GPU A/B/A. Preserve Draft PR and OFF defaults until validation.
