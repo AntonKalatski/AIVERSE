@@ -112,7 +112,8 @@ static void testPipeline() {
     AIVERSE_TEST_CHECK(pipeline.commit(global));
     AIVERSE_TEST_CHECK(pipeline.commit(village));
     AIVERSE_TEST_CHECK(scenes.count()==2);
-    AIVERSE_TEST_CHECK(resources.leaseCount("render/shared")==2);
+    AIVERSE_TEST_CHECK(resources.leaseCount("render/shared")==1);
+    AIVERSE_TEST_CHECK(loader.resourceRefCount("render/shared")==2);
     AIVERSE_TEST_CHECK(resources.pinCount("render/shared")==0);
 
     // Invalid resource catalog key rejects the new transition without
@@ -133,12 +134,14 @@ static void testPipeline() {
         pipeline.poll(2,1,16);
         return pipeline.ready(lake);
     });
-    AIVERSE_TEST_CHECK(resources.leaseCount("render/shared")==2);
+    AIVERSE_TEST_CHECK(resources.leaseCount("render/shared")==1);
+    AIVERSE_TEST_CHECK(loader.resourceRefCount("render/shared")==2);
     AIVERSE_TEST_CHECK(pipeline.commit(lake));
     AIVERSE_TEST_CHECK(scenes.record(village.scene)==nullptr);
     AIVERSE_TEST_CHECK(scenes.record(global.scene)!=nullptr);
     AIVERSE_TEST_CHECK(retired["collision/village"]==1);
-    AIVERSE_TEST_CHECK(resources.leaseCount("render/shared")==2);
+    AIVERSE_TEST_CHECK(resources.leaseCount("render/shared")==1);
+    AIVERSE_TEST_CHECK(loader.resourceRefCount("render/shared")==2);
     AIVERSE_TEST_CHECK(resources.status().residentReserved==64);
 
     // Restore a World snapshot: ECS entities/registry are restored, not
@@ -165,11 +168,16 @@ static void testPipeline() {
     });
     for(const auto& ticket:jobs)
         AIVERSE_TEST_CHECK(pipeline.commit(ticket));
-    AIVERSE_TEST_CHECK(resources.leaseCount("render/shared")==2);
+    AIVERSE_TEST_CHECK(resources.leaseCount("render/shared")==1);
+    AIVERSE_TEST_CHECK(loader.resourceRefCount("render/shared")==2);
     AIVERSE_TEST_CHECK(scenes.count()==2);
     AIVERSE_TEST_CHECK(pipeline.unload(global.scene));
     AIVERSE_TEST_CHECK(resources.leaseCount("render/shared")==1);
+    AIVERSE_TEST_CHECK(loader.resourceRefCount("render/shared")==1);
     AIVERSE_TEST_CHECK(pipeline.unload(lake.scene));
+    AIVERSE_TEST_CHECK(loader.resourceRefCount("render/shared")==0);
+    AIVERSE_TEST_CHECK(resources.leaseCount("render/shared")==0);
+    AIVERSE_TEST_CHECK(retired["render/shared"]>=1);
     AIVERSE_TEST_CHECK(resources.status().residentReserved==0);
     AIVERSE_TEST_CHECK(resources.status().stagingReserved==0);
     AIVERSE_TEST_CHECK(resources.status().published==0);
