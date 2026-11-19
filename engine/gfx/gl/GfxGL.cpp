@@ -131,7 +131,12 @@ public:
     }
 
     const DeviceInfo& info() const override { return info_; }
-    const std::string& lastError() const override { return error_; }
+    const std::string& lastError() const override { return error_; } 
+    bool waitIdle() override {
+        glFinish();
+        return glGetError()==GL_NO_ERROR;
+    }
+
 
     // ---------- buffers ----------
     BufferHandle createBuffer(const BufferDesc& d) override {
