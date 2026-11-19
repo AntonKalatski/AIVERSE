@@ -417,6 +417,18 @@ and nonblank baseline. This fix requires native rerun and cannot
 be marked PASS from its mere GitHub commit. Confirm callback-frame
 and main/shadow draw diagnostics if failing. No production renderer
 or Strata draw path was enabled.
+Update from owner Mac Studio after `bcc471e9`: **Stage 11.1
+native Metal raster A/B PASSED**, `Legacy/Fine
+changed_channels=0`, `Legacy/Coarse changed_channels=0`,
+`status=PASSED frames=44`. The screenshots' actual capture
+callback frames were Empty 6, Legacy 17, Fine 28, Coarse 39
+(requested 4,15,26,37); the renderer recorded source shadow/opaque
+submissions Legacy 1/1, Fine 2/2, Coarse 1/1, Empty 0/0, with
+`pipelines=16 pipelineFailures=0`. Previous blank-baseline
+failure is superseded for this fixed native fixture; do NOT
+extrapolate to independent shadow-map depth, reflection,
+mixed materials or lossy LOD visual parity.
+Production Strata draw route remains opt-in diagnostic only.
 On each bounded Strata step: implementation commit first; append and commit the
 handoff separately, recording unrun tests honestly.
 
