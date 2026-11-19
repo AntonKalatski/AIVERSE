@@ -293,3 +293,58 @@ The merge was constructed on GitHub using the pinned batching tree as base, over
 
 ### Development coordination
 Batching branch ownership is separate. Its live head can advance after this Stage 6 snapshot; verify newest PR #34/head before another merge. Keep feature flags default OFF and PR #35 Draft; do not merge either experimental code path into main until native and cross-platform validation is complete.
+
+
+---
+
+## Stage 7A — GPU cluster metadata anchored to GlobalGeometryPool (2026-11-19)
+
+### Branch and exact implementation commits
+**Branch:** `feature/strata-virtual-geometry` (Draft PR #35 stacked on active batching PR #34).
+- `cffb601ee04cf9c05bb1213c88e958302276ad1a` — new `engine/render/StrataGpuScene.h`: versioned GPU metadata storage layouts and per-scene staging interface.
+- `7a2baf58249b7d67e2edd4a8f6139b219c691816` — new `engine/render/StrataGpuScene.cpp`: pure transactional metadata packer, existing-shared-pool admission, metadata buffer allocation, geometry revision/handle validation, explicit teardown.
+- `46e5dc2d0a50171e1e11841327c4e091561fafec` — fix validation order before accessing a possibly empty cluster tree.
+- `2cc8720847dc999cc4076653f2e5966707ef7b54` — new `tests/render/strata_gpu_scene.cpp`: binary layout/offset, material/root/child IDs, missing residency flags and malformed source cases.
+- `662e082ecd7be89554bcb1af42b83a3581be3dd3` — `CMakeLists.txt`: new `aiverse_strata_gpu_scene` and `aiverse_strata_gpu_scene_tests` / `strata_gpu_scene` target; runtime linked only if `AIVERSE_BUILD_STRATA=ON`.
+- `8615c55f2d138956884149cecfff8229356002fc` — `engine/render/GeometryScene.h`: GPU metadata feature toggle, query, statistics.
+- `03df91ed51724b36df9ff7ab7e56c766a4e6306a` — `engine/render/GeometryScene.cpp`: stage metadata after ordinary `uploadModel`; on shutdown destroy metadata before source models.
+- `f91798d35472ecb5280045da0da0b9baafda11f7` — `docs/strata.md` updated with layout, lifecycle and feature gates.
+- `bf15b90723d65da1c9d62b91d6f7fd4a2aed6ed2` — `AGENTS.md` requires same shared geometry pool and forbids using source-local indices as pooled GPU draw offsets.
+- `668b37d3d888eb18bebc39159ad97ad65095e239` — `tests/render/strata_gpu_scene.cpp` recording RHI fixture: use real `uploadModelToGeometryPool`, reject nonpooled model, allocate metadata once, invalidate on `markGeometryChanged`, shutdown both metadata and shared original GPU page.
+
+### Current functionality
+`strata::packGpuMetadata(ModelAsset, vector<uint8_t>&, error)` builds one version-1 packed Storage buffer payload:
+- 32 B `GpuMetadataHeader`; 32 B `GpuPrimitive` per asset partition; 64 B `GpuNode` per hierarchy node; 4 B root global indices; 16-byte total padding.
+- Validates nonempty and DAG-free forest, material partitions, bounds and index ranges; 32-bit overflow and 64 MiB temporary payload bound. Pack remains transactional on invalid input.
+- GPU node `sourceFirstIndex` is deliberately **ASSET-local**, not a ready GPU index buffer offset. `GpuNode::resident` is a CPU flag snapshot, **not** proof of actual GPU-resident triangles.
+
+`strata::GpuMetadataScene` is experimental metadata **only**. It uploads via `gfx::Device::createBuffer(BufferType::Storage, Usage::Immutable)` after checking an existing `Model::geometryPoolPage`, shared valid VB/IB, nonempty pool allocations, Metal or Vulkan backend and compute capability. It never allocates source geometry or calls `drawIndexed`; `Renderer3D` remains the single draw owner. Allocations are bounded to 1 MiB per source and 8 MiB per scene by default. Model pointer, `geometryRevision` and GPU VB/IB handles are rechecked for each `find`; stale records require explicit scene reload instead of in-place overwrite.
+
+`GeometryScene::setStrataGpuMetadataEnabled(true)` enables this path **only** if `setStrataStagingEnabled(true)` also ran before scene loading. Both default OFF. `strataGpuMetadataBuffer(sourceKey)` returns the optional metadata handle or invalid. `stats()` adds metadata uploaded/declined/failed source counts and metadata bytes. `shutdown(dev)` frees metadata buffers before original source models and the device. Old scene JSON, ECS, save files, materials, draw calls, dynamic rendering and HLOD remain unchanged.
+
+### Important blocker — geometry residency NOT implemented yet
+The existing `GlobalGeometryPool` is shared by legacy models and handles full vertex/index pairs. It does not expose an API for adding *auxiliary Strata index-only spans* to a currently uploaded source without a versioned reservation, frame-complete retirement and overlap-safe writes. Stage 7A therefore uploads only metadata, and refuses dedicated/nonpooled sources. It does **not** publish GPU-resident Strata meshlets/indices, call compute culling or issue indirect draws. Never pass Strata's `sourceFirstIndex` to existing pooled `Model::ib`. A model with `Model::geometry` (older GeometryCluster path) is intentionally rejected from the current rigid shared pool; do not bypass this policy without a proven safe compatible representation. Metadata buffer availability alone must never activate a Strata render path.
+
+### Verification actually done
+- GitHub connector writes succeeded, file/API contracts were inspected. No changes were made to the active batching branch.
+- **Native CMake compile: NOT RUN. Focused CTest: NOT RUN. Mock RHI fixture: NOT RUN. Metal/Vulkan hardware/raster test: NOT RUN.** This runtime does not have an AIVERSE checkout, and direct GitHub access from the local container fails DNS. The test code exists but has not been executed.
+- GitHub Actions earlier Stage 6 head `db597cc7`: main CI and GPU batching checks were **cancelled**, not passing. Stage 7 code head `03df91ed`: main CI observed **pending**, other workflows queued. Re-check current head, not historical runs.
+
+### Immediate next actions
+1. On Mac Studio fetch feature branch, build and run all four focused tests:
+   ```sh
+   cd ~/Projects/AIVERSE
+   git fetch origin main perf/incremental-static-model-cache feature/strata-virtual-geometry
+   git worktree add --detach ../AIVERSE-strata-stage7 origin/feature/strata-virtual-geometry
+   cmake -S ../AIVERSE-strata-stage7 -B ../AIVERSE-strata-stage7/build/strata -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_STRATA=ON
+   cmake --build ../AIVERSE-strata-stage7/build/strata --target aiverse_strata_builder_tests aiverse_strata_model_adapter_tests aiverse_strata_view_tests aiverse_strata_gpu_scene_tests -j 8
+   ctest --test-dir ../AIVERSE-strata-stage7/build/strata -R '^strata_(builder|model_adapter|view|gpu_scene)$' --output-on-failure
+   ```
+   Fix all compilation warnings/failures, report actual results in another implementation + handoff commit.
+2. Add a real `GeometryScene` recording-device OFF/ON parity test, verify pooled vs dedicated model diagnosis and unload/reload with multiple worlds, material variants and shadow passes.
+3. Coordinate with batching agent on **extending the existing GlobalGeometryPool** for bounded, versioned and frame-fenced *auxiliary index spans*, not a second VB/IB source pool. Preserve GPU allocation failure rollback, model revision and shared pool admission.
+4. Only after sidecar indices are resident implement GPU scene instance records and compute frustum/LOD, with `strata::planView` as oracle and a **single mutually exclusive render submission owner**. Record real GPU timing and visual parity.
+5. Check newest `perf/incremental-static-model-cache` head before syncing. In the previous stage it advanced while Strata was running; do not blindly overlay its files, handoff or CMake.
+
+### Coordination and risks
+PR #35 remains a Draft stacked on PR #34. Keep all GPU/ICB experimental flags OFF by default, do not merge into main until native CTest + platform validation. Metadata GPU buffers must be released while their owning gfx::Device is still alive; the ordinary backend is responsible for keeping in-flight references alive when destroyBuffer is called. No real GPU compute, index-stream residency or render acceleration has been demonstrated.
