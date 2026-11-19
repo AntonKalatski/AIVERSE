@@ -58,6 +58,7 @@ inline std::unique_ptr<render::Model> makeGrassPatchModel(
     validateGrassRenderQuality(quality);
     if(!ground)throw std::invalid_argument("TerraWeave grass ground sampler");
     const auto draw=prepareGrassPatch(patch);
+    if(draw.bladeCount==0)return {};
     auto model=std::make_unique<render::Model>();
     model->path="terraweave/grass/patch-"+std::to_string(patch.key);
     model->batching.autoLod=false;
