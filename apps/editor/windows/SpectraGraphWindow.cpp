@@ -1037,6 +1037,14 @@ private:
                             cp.pendingGroups,cp.restoreEligibleGroups);
                 ImGui::Text("Binary export ready: %u group(s)",
                             cp.exportReadyGroups);
+                ImGui::BeginDisabled(!ed.spectraGpuPreviewActive());
+                if(ImGui::Button("Freeze & capture GPU state")) {
+                    if(!ed.requestSpectraGpuPreviewCheckpoint())
+                        message_="Metal GPU preview is not active";
+                }
+                ImGui::EndDisabled();
+                if(!ed.spectraGpuCaptureNote().empty())
+                    ImGui::TextWrapped("%s",ed.spectraGpuCaptureNote().c_str());
                 ImGui::BeginDisabled(cp.exportReadyGroups==0);
                 if(ImGui::Button("Save fresh GPU checkpoint")) {
                     std::string fileOrReason;
