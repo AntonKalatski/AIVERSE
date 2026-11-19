@@ -17,9 +17,10 @@ struct ModelResidentEstimate {
     size_t sharedGeometryModels=0;
     size_t borrowedImages=0;
     uint64_t knownBytes() const noexcept {
-        const uint64_t sum=dedicatedGeometryBytes+ownedImageBytes;
-        return sum>std::numeric_limits<uint64_t>::max()-poseTextureBytes
-            ?std::numeric_limits<uint64_t>::max():sum+poseTextureBytes;
+        const auto max=std::numeric_limits<uint64_t>::max();
+        const uint64_t sum=ownedImageBytes>max-dedicatedGeometryBytes
+            ?max:dedicatedGeometryBytes+ownedImageBytes;
+        return poseTextureBytes>max-sum?max:sum+poseTextureBytes;
     }
 };
 
