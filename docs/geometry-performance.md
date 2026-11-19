@@ -1600,3 +1600,16 @@ again, with the standard GPU completion quarantine. Normal
 new high-water allocations still record their original sizes.
 No splitting or overlap is introduced; frame safety and
 defaults are unchanged. Native regression tests are NOT RUN.
+
+
+### Studio Scene — geometry recycler diagnostics (Stage 48)
+
+Scene → Batching now displays live `GeometryPoolStats`
+`retiredPairs`, `reusablePairs` (GPU-fence-ready), and
+`recycledUploads` alongside the existing geometry page and
+high-water capacity figures. The widget is read-only; it does
+not enable `AIVERSE_GEOMETRY_POOL_RECYCLE` or perform GPU
+readback. Values are **per gfx::Device**, not necessarily
+one Scene viewport, and do not represent GPU frame time or
+measured memory savings. All safety/enable defaults unchanged.
+Native/Metal/Vulkan validation pending.

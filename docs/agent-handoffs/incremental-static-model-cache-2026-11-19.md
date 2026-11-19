@@ -1420,3 +1420,18 @@ The Vulkan RHI has asynchronous submissions; the staged copy being *encoded* is 
 **Actually performed:** GitHub connector read current source and branch, applied one exact unique block replacement, created a new commit tree and advanced the branch with expected head SHA. Source invariants checked. **CMake/CTest/Metal/Vulkan GPU tests: NOT RUN. Performance/memory A/B/A: NOT RUN.** This is a source-level fix pending native verification. No speedup or observed memory recovery claimed.
 
 **Next:** Run a final safety audit of Vulkan pool buffer version/fence semantics and lifecycle around model unload/reload. After feature completion, run fault-injected GPU upload and repeated large->small->large recycle scenarios; verify that reusable capacity does not shrink and visual rendering remains identical under Metal/Vulkan with the recycling flag OFF/ON. PR stays Draft until actual builds and parity checks.
+
+
+---
+
+## Stage 48 — Studio read-only GPU geometry recycling diagnostics (2026-11-19)
+
+**Repo/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`; Draft PR #34. **Implementation:** `82fe317d3b2a02e2067c18c034475f5245458033`, parent Stage 47 handoff `104c6864faf1b71c5eae299e0f2369a013825997`.
+
+**Change:** `apps/editor/windows/SceneWindow.cpp` shows the already-available `geometryPoolStats(Device&)` values `retiredPairs`, `reusablePairs`, and `recycledUploads` under Scene → Batching. It explicitly labels the difference between retired and *GPU fence-ready* pairs. There is no asynchronous GPU readback, new per-frame render allocation, geometry upload/release change, or control that can silently enable recycling. The original high-water `occupiedBytes` can include reserved retired capacity and does not measure live GPU memory savings. A `reusablePairs > 0` value is an eligible capacity observation, not evidence of a reused draw, CPU MDI batch, or faster frame.
+
+**Safety:** GPU recycling remains `AIVERSE_GEOMETRY_POOL_RECYCLE=1` (default OFF) and retains Stage 44 completed GPU queue fence gate, Stage 41 checked uploads, Stage 47 reserved allocation lengths and per-device ownership. Model/graphics code untouched in this stage. Scene stats can reflect all models on the Device, not Scene alone, so never label them as viewport-only draws.
+
+**Actual verification:** Read latest source and current branch, exact one-location replacement in Scene window, atomic one-file Git commit and expected-SHA ref advance. **Native CMake/CTest, Metal/Vulkan runtime, graphics screenshots, thread sanitizers and CPU/GPU performance measurement: NOT RUN** (checkout unavailable in execution environment). This is a source-only feature, not a verified native build. PR remains Draft.
+
+**Next:** Complete final audit of remaining upload/LOD/MDI edge cases and run focused CI/build/CTest where runner is available, with actual outcomes; on owner's Mac run hardware Metal raster parity and A/B/A with flags OFF/ON only after CI. Do not claim queued/cancelled Actions passed.

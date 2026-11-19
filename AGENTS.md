@@ -1805,3 +1805,15 @@ silently shrink the reservation across repeated streaming.
 Keep Stage 44 completed-GPU-serial gate, Stage 41 checked writes,
 256-pair cap and the OFF-by-default recycle flag intact.
 Native/Metal/Vulkan tests still pending.
+
+
+## Stage 48 — read-only recycler stats
+
+Studio Scene → Batching displays retired, GPU-fence-ready
+and actually recycled GPU geometry allocation pairs via
+`geometryPoolStats()`. Keep the distinction: retired
+may still be in-flight; ready != submitted; high-water
+occupied is not live VRAM residency. Renderer and RHI
+behavior unchanged, `AIVERSE_GEOMETRY_POOL_RECYCLE` OFF by
+default. No native compilation/GPU tests run yet. See Stage 48
+handoff and maintain per-stage documentation.
