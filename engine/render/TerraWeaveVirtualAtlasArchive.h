@@ -267,6 +267,8 @@ inline VirtualTextureMaterialMapping terraWeaveAtlasMapping(
     map.baseTilesX=v.baseTilesX;
     map.baseTilesY=v.baseTilesY;
     map.layer=layer;
+    map.addressU=v.addressU;
+    map.addressV=v.addressV;
     map.mipLevels=v.mipLevels;
     map.explicitMip=0;
     map.texelWidth=float(v.width);
