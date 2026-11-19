@@ -1258,3 +1258,5 @@ GLSL sampling exists for Vulkan/GLES, but hardware tests and Vulkan native GI
 compute are **NOT DONE**. FakeDevice backend identities are not GPU parity evidence.
 Never merge this branch into `main` without reconciling the diverged histories
 and compiling/validating all required backends.
+
+Stage 29 safety checkpoint: `docs/agent-handoffs/gi-stage29-bind-safety-and-rhi-audit-2026-11-19.md` documents why `GiDynamicRuntime::bind()` must *actively unbind* a previous frame's borrowed overlay when zero-upload invalidation is pending or the new texture is rejected. Vulkan/GLES RHI texture code was inspected only: **native GPU verification remains NOT RUN**.
