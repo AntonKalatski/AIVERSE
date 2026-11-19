@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdint>
 #include <map>
+#include <limits>
 #include <optional>
 #include <stdexcept>
 #include <vector>
