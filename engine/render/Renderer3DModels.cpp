@@ -237,10 +237,15 @@ bool Renderer3D::setDynamicGiThirdCascadeOverlay(const GiDynamicProbeTexture* th
 }
 
 bool Renderer3D::dynamicGiEligible(const ModelItem& it, int phase,
-                                  bool gpuInstances, bool instancePalette) const {
+                                  bool /*gpuInstances*/, bool /*instancePalette*/) const {
+    // U6 and tex13..16 are view-shared (not per-instance) and the model
+    // shader evaluates GI from each instance's world position/normal.
+    // This applies equally to standard instancing, per-instance material
+    // palettes and Metal GPU-authored ICB draws. Never silently omit
+    // bounced light just because static geometry was batched.
     if ((phase != 1 && phase != 2) || !dynamicGiOverlay_ ||
-        !dynamicGiOverlay_->texture().valid() || gpuInstances ||
-        instancePalette || !hdrFrame_ || matQuality_ == MaterialQuality::Low ||
+        !dynamicGiOverlay_->texture().valid() ||
+        !hdrFrame_ || matQuality_ == MaterialQuality::Low ||
         it.mat->shading == ShadingModel::Unlit)
         return false;
     const auto& program = it.mat->shaderGraph;
