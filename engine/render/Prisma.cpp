@@ -1297,12 +1297,15 @@ const Prisma::Lut* Prisma::lut(const std::string& path) {
     std::vector<uint8_t> rgba;
     if (!loader_ || !loader_(path, w, h, rgba)) {
         l.failed = true;
-        std::fprintf(stderr, "[postfx] lut '%s': can't read the image\n", path.c_str());
+        error_ = "postfx LUT: cannot read image '" + path + "'";
+        std::fprintf(stderr, "[postfx] %s\n", error_.c_str());
         return nullptr;
     }
     if (h < 2 || w != h * h || rgba.size() < size_t(w) * size_t(h) * 4) {
         l.failed = true;
-        std::fprintf(stderr, "[postfx] lut '%s': expected a strip of N squares N x N (e.g. 256x16, 1024x32), got %dx%d\n", path.c_str(), w, h);
+        error_ = "postfx LUT: invalid strip dimensions for '" + path +
+                 "' (expected N^2 x N, e.g. 256x16)";
+        std::fprintf(stderr, "[postfx] %s (got %dx%d)\n", error_.c_str(), w, h);
         return nullptr;
     }
     gfx::TextureDesc td;
@@ -1311,7 +1314,12 @@ const Prisma::Lut* Prisma::lut(const std::string& path) {
     td.label = "postfx lut";
     l.tex = dev_->createTexture(td);
     l.n = h;
-    if (!l.tex.valid()) { l.failed = true; return nullptr; }
+    if (!l.tex.valid()) {
+        l.failed = true;
+        error_ = "postfx LUT: GPU upload failed for '" + path + "': " +
+                 dev_->lastError();
+        return nullptr;
+    }
     return &l;
 }
 
@@ -1323,7 +1331,15 @@ gfx::TextureHandle Prisma::graphTexture(const std::string& path) {
     }
     gfx::TextureDesc td;td.width=w;td.height=h;td.data=bytes.data();td.filter=gfx::Filter::Linear;
     auto texture=dev_->createTexture(td);
-    if(!texture.valid()){error_=dev_->lastError();return black_;}
+    if (!texture.valid()) {
+        // Negative-cache failed GPU uploads just like failed image
+        // decodes. Retrying them on every frame would stall the
+        // render loop; setImageLoader() clears this cache explicitly.
+        graphTextures_[path] = {};
+        error_ = "shader graph: GPU texture upload failed for '" + path +
+                 "': " + dev_->lastError();
+        return black_;
+    }
     graphTextures_[path]=texture;return texture;
 }
 
