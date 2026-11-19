@@ -48,6 +48,7 @@ static_assert(sizeof(LumaGpuClusterEntry)==16);
 struct LumaClusterCsrPacket {
     LumaClusterConfig config{};
     uint64_t sourceRevision=0;
+    uint64_t buildGeneration=0;
     std::vector<LumaGpuClusterEntry> cells;
     std::vector<uint32_t> indices;
 };
@@ -135,15 +136,19 @@ public:
             nextIndices.insert(nextIndices.end(),b.indices.begin(),b.indices.end());
         }
         stats.references=nextIndices.size();
+        if(buildGeneration_==std::numeric_limits<uint64_t>::max())
+            throw std::overflow_error("LumaWeave cluster build generation exhausted");
         cells_.swap(next);
         fast_.swap(nextIndices);
         config_=config;
         revision_=sources.revision();
+        ++buildGeneration_;
         return stats;
     }
 
     bool ready() const {return !cells_.empty();}
     uint64_t sourceRevision() const {return revision_;}
+    uint64_t buildGeneration() const {return buildGeneration_;}
     LumaClusterConfig config() const {return config_;}
     size_t references() const {return fast_.size();}
 
@@ -153,6 +158,7 @@ public:
         LumaClusterCsrPacket result;
         result.config=config_;
         result.sourceRevision=revision_;
+        result.buildGeneration=buildGeneration_;
         result.indices=fast_;
         result.cells.reserve(cells_.size());
         for(const auto& c:cells_) result.cells.push_back(
@@ -187,7 +193,7 @@ private:
     LumaClusterConfig config_{};
     std::vector<Cell> cells_;
     std::vector<uint32_t> fast_;
-    uint64_t revision_=0;
+    uint64_t revision_=0,buildGeneration_=0;
 };
 
 } // namespace aiverse::render
