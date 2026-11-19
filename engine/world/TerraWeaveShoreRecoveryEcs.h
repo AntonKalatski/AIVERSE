@@ -5,6 +5,7 @@
 #pragma once
 #include "engine/world/TerraWeaveEcsAuthority.h"
 #include "engine/world/TerraWeaveShoreRecovery.h"
+#include "engine/world/TerraWeaveShorelineRaster.h"
 #include <aiverselib/water/NereidQueryIndex.h>
 #include <algorithm>
 #include <array>
@@ -130,6 +131,27 @@ inline ShoreEcologyEcsReport advanceShoreEcologyEcs(
     // exposure/seed-bank record (or vice versa). The move is a single
     // authoritative structural barrier after all validation passes.
     World staged=ecs;
+    // Only generated bank ECS cells are ecology-owned. Manually authored
+    // bank armour/litter/shield values remain owned by their own game logic.
+    // The same recovery soil-cover state also persists for drying patches,
+    // even when their grass blade count is presently zero.
+    const ShoreRecoveryCoverIndex cover(nextAuthority.grass,recovery);
+    std::vector<std::pair<Entity,uint32_t>> bankUpdates;
+    staged.eachExistingConst<AutoShorelineBankComponent>(
+        [&](Entity entity,const AutoShorelineBankComponent& marker){
+            if(!staged.alive(entity) || marker.generatorVersion!=1)return;
+            const auto* vertex=staged.tryGetConst<
+                BankEarthVertexComponent>(entity);
+            if(!vertex)return;
+            const int64_t x=vertex->vertex.x*
+                int64_t(config.soilGridCm);
+            const int64_t z=vertex->vertex.z*
+                int64_t(config.soilGridCm);
+            bankUpdates.emplace_back(entity,cover.shieldAt(x,z));
+        });
+    for(const auto& [entity,shield]:bankUpdates)
+        staged.add<lib::nereid::WaterBankSurfaceCoverComponent>(
+            entity,lib::nereid::WaterBankSurfaceCoverComponent{shield});
     staged.setResource<ShoreRecoveryResource>(std::move(recovery));
     if(!report.changed.empty())
         staged.setResource<TerraWeaveAuthorityResource>(
