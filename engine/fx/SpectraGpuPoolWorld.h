@@ -86,6 +86,21 @@ struct PoolResetReport {
     uint64_t attempts=0;
 };
 
+// CPU-side reconstruction recipe. No old graphics handles, entity IDs,
+ // GPU particles or simulation time. Suitable for an explicit NEW pool after
+ // a graphics Device loss, not a transparent restoration of live FX.
+struct PoolRecoveryEffect {
+    std::string name;
+    fx::EffectDef effect;
+    GraphRuntimeOptions options{};
+    InstanceParameterTable named;
+    std::array<float,8> defaults{};
+};
+struct PoolRecoveryManifest {
+    PoolWorldBudgets budgets{};
+    std::vector<PoolRecoveryEffect> effects;
+};
+
 struct PoolWorldStats {
     uint32_t gpuGroups = 0, cpuDefinitions = 0;
     uint32_t activeSources=0;
@@ -171,6 +186,12 @@ public:
     // old gfx::Device alive while shutting this pool down, then create a fresh
     // pool against a recovered Device and re-declare effects from authoring.
     const PoolResetReport& resetReport() const {return resetReport_;}
+    // Export authored definitions while this pool (even an unhealthy one)
+    // still exists. Create a different GpuPoolWorld on the new healthy
+    // Device and import there. No live particles or source handles survive.
+    PoolRecoveryManifest exportRecoveryManifest() const;
+    bool importRecoveryManifest(gfx::Device* recoveredDevice,
+                                const PoolRecoveryManifest& manifest);
     bool presentationBlocked() const {
         return resetReport_.retryRequired || resetReport_.deviceLost ||
                (device_ && !device_->gpuHealthy());
@@ -240,6 +261,7 @@ private:
     PoolResetReport resetReport_{};
     std::vector<uint8_t> resetAccepted_; // per GPU group, retained across retries
     std::map<std::string,Binding> bindings_;
+    std::map<std::string,PoolRecoveryEffect> definitions_;
     std::vector<Source> sources_;
     std::vector<uint32_t> freeSourceSlots_;
     uint64_t sourceWorldEpoch_=0, nextBindingRevision_=1;
