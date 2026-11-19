@@ -257,6 +257,12 @@ void test() {
                std::fabs(output[0].y-3.0f*127.0f/255.0f)<0.0001f,
                "scalp skinning did not normalize indexed joint weights");
         const auto first=output[0];
+        model.vertices[0].joints[0]=250;
+        bool rejectedBadPalette=false;
+        try { (void)ScalpSkinning::compile(model,0,0,ids); }
+        catch(const std::invalid_argument&) { rejectedBadPalette=true; }
+        expect(rejectedBadPalette,"invalid scalp joint palette slot accepted");
+        model.vertices[0].joints[0]=0;
         pose[1].at(0,3)=std::numeric_limits<float>::quiet_NaN();
         expect(!skin.evaluate(pose,render::mat4{},output) &&
                render::length(output[0]-first)<0.0001f,
