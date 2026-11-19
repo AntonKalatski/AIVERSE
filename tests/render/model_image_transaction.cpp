@@ -152,7 +152,7 @@ int main(){
     render::ModelResourceCache::ModelMap duplicate;
     duplicate.emplace("models/stable.glb",std::make_unique<render::Model>());
     bool rejectedDuplicate=false;
-    try {owner.publishStagedModels(duplicate);}
+    try {owner.publishStagedModels(device,duplicate);}
     catch(const std::logic_error&){rejectedDuplicate=true;}
     assert(rejectedDuplicate && duplicate.size()==1);
     duplicate.clear();
