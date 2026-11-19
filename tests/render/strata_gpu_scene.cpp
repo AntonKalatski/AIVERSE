@@ -3,10 +3,13 @@
 #undef NDEBUG
 #endif
 #include "engine/render/StrataGpuScene.h"
+#include "engine/render/GlobalGeometryPool.h"
 #include <cassert>
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <map>
+#include <string>
 #include <vector>
 
 using namespace aiverse::render::strata;
@@ -41,6 +44,54 @@ static ModelPrimitiveAsset primitive(uint32_t mesh, uint32_t material) {
     a.nodes[2].resident = false;
     return p;
 }
+// A recording RHI validates the shared-pool gate and GPU metadata lifetime
+// without Metal hardware. This is NOT a raster/pixel parity test.
+class RecordingDevice final : public aiverse::gfx::Device {
+public:
+    aiverse::gfx::DeviceInfo deviceInfo{aiverse::gfx::Backend::Metal, true, false, "Strata mock"};
+    std::map<uint32_t, std::vector<uint8_t>> buffers;
+    std::string error;
+    uint32_t next = 1;
+    const aiverse::gfx::DeviceInfo& info() const override { return deviceInfo; }
+    aiverse::gfx::BufferHandle createBuffer(const aiverse::gfx::BufferDesc& d) override {
+        if (!d.size || d.size > 8 * 1024 * 1024) return {};
+        auto id = next++;
+        auto& bytes = buffers[id];
+        bytes.assign(d.size, uint8_t(0));
+        if (d.data) std::memcpy(bytes.data(), d.data, d.size);
+        return {id};
+    }
+    void updateBuffer(aiverse::gfx::BufferHandle h, const void* data, size_t len,
+                      size_t offset = 0) override {
+        auto& bytes = buffers.at(h.id);
+        assert(offset <= bytes.size() && len <= bytes.size() - offset);
+        std::memcpy(bytes.data() + offset, data, len);
+    }
+    void destroyBuffer(aiverse::gfx::BufferHandle h) override { buffers.erase(h.id); }
+    aiverse::gfx::TextureHandle createTexture(const aiverse::gfx::TextureDesc&) override { return {}; }
+    void updateTexture(aiverse::gfx::TextureHandle,int,int,int,int,const void*,int) override {}
+    void destroyTexture(aiverse::gfx::TextureHandle) override {}
+    aiverse::gfx::ShaderHandle createShader(const aiverse::gfx::ShaderDesc&) override { return {}; }
+    void destroyShader(aiverse::gfx::ShaderHandle) override {}
+    aiverse::gfx::PipelineHandle createPipeline(const aiverse::gfx::PipelineDesc&) override { return {}; }
+    void destroyPipeline(aiverse::gfx::PipelineHandle) override {}
+    const std::string& lastError() const override { return error; }
+    bool supportsCompute() const override { return true; }
+    bool supportsMultiDrawIndirect() const override { return true; }
+    void beginFrame(int,int) override {}
+    void endFrame() override {}
+    void beginPass(const aiverse::gfx::PassDesc&) override {}
+    void endPass() override {}
+    void setViewport(const aiverse::gfx::Rect&) override {}
+    void setScissor(const aiverse::gfx::Rect&) override {}
+    void setPipeline(aiverse::gfx::PipelineHandle) override {}
+    void setVertexBuffer(aiverse::gfx::BufferHandle,size_t = 0) override {}
+    void setIndexBuffer(aiverse::gfx::BufferHandle,size_t = 0) override {}
+    void setTexture(int,aiverse::gfx::TextureHandle) override {}
+    void setUniforms(int,const void*,size_t) override {}
+    void draw(uint32_t,uint32_t = 0) override {}
+    void drawIndexed(uint32_t,uint32_t = 0,int32_t = 0,uint32_t = 1) override {}
+};
 int main() {
     ModelAsset asset;
     asset.primitives.push_back(primitive(2, 7));
@@ -96,5 +147,39 @@ int main() {
     assert(packed == old);
     asset.primitives[0].geometry.bounds[2].max[0] = 3.f;
     assert(packGpuMetadata(asset, packed, &error));
+
+    RecordingDevice dev;
+    GpuMetadataScene staging;
+    aiverse::render::Model sourceModel;
+    sourceModel.vertices.resize(4);
+    sourceModel.indices = {0, 1, 2, 0, 1, 2, 2, 3, 0};
+
+    // No source Model::geometryPoolPage: never invent a second GPU geometry
+    // pool or upload Strata metadata for a dedicated source VB/IB.
+    assert(!staging.stage(dev, "shared", sourceModel, asset));
+    assert(staging.stats().declined == 1 && dev.buffers.empty());
+    // Upload through the existing engine pool, not a Strata allocator.
+    assert(aiverse::render::uploadModelToGeometryPool(dev, sourceModel));
+    assert(sourceModel.geometryPoolPage && sourceModel.vb == sourceModel.ib);
+    assert(dev.buffers.size() == 1);
+    assert(staging.stage(dev, "shared", sourceModel, asset));
+    assert(staging.stats().sources == 1);
+    assert(staging.stats().bytes == packed.size());
+    assert(dev.buffers.size() == 2); // shared geometry + separate metadata only
+    const auto h = staging.find("shared", sourceModel);
+    assert(h.valid());
+    assert(dev.buffers[h.id] == packed);
+    assert(staging.stage(dev, "shared", sourceModel, asset));
+    assert(staging.stats().sources == 1); // per-source deduplication
+    sourceModel.markGeometryChanged();
+    assert(!staging.find("shared", sourceModel).valid());
+    assert(!staging.stage(dev, "shared", sourceModel, asset));
+    assert(staging.stats().failed == 1);
+    assert(dev.buffers.size() == 2);
+    staging.shutdown(dev);
+    assert(staging.stats().sources == 0);
+    assert(dev.buffers.size() == 1);
+    aiverse::render::releaseModelGeometryPool(dev, sourceModel);
+    assert(dev.buffers.empty());
     return 0;
 }
