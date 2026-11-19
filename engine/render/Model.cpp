@@ -459,6 +459,22 @@ void ModelTextureCache::invalidateSource(const std::string& path) {
     ++sourceRevisions_[key];
 }
 
+bool ModelTextureCache::borrowResident(Image& image) const {
+    if(image.textureKey.empty())return false;
+    const auto revision=sourceRevisions_.find(image.textureKey);
+    const uint64_t epoch=revision==sourceRevisions_.end()?0:revision->second;
+    const auto key=image.textureKey+(image.repeat?"#repeat":"#clamp")+
+                   (image.nearest?"#nearest":"#linear")+
+                   "#revision"+std::to_string(epoch);
+    const auto it=gpu_.find(key);
+    if(it==gpu_.end() || !it->second.tex.valid())return false;
+    image.tex=it->second.tex;
+    image.textureLease=it->second.textureLease;
+    image.borrowedTexture=true;
+    image.gpuCompressed=it->second.gpuCompressed;
+    return true;
+}
+
 void ModelTextureCache::upload(gfx::Device& dev, Image& image) {
     const auto revision=sourceRevisions_.find(image.textureKey);
     const uint64_t epoch=revision==sourceRevisions_.end()?0:revision->second;
