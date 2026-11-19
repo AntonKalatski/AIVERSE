@@ -24,12 +24,17 @@ struct NatureWaterContactView {
 inline bool readNatureWaterContact(const ::aiverse::World& world,
                                    Entity entity,
                                    NatureWaterContactView& result) {
+    const auto* climate = world.resourceConst<physis::State>();
     const auto* natureProbe = world.tryGetConst<physis::NatureProbeComponent>(entity);
     const auto* nature = world.tryGetConst<physis::NatureContactComponent>(entity);
     const auto* waterProbe = world.tryGetConst<lib::nereid::WaterProbeComponent>(entity);
     const auto* water = world.tryGetConst<lib::nereid::WaterContactComponent>(entity);
-    if (!world.alive(entity) || !natureProbe || !natureProbe->enabled ||
+    if (!climate || !world.alive(entity) || !natureProbe || !natureProbe->enabled ||
         !nature || !nature->valid || !waterProbe || !water ||
+        // A pair of old contacts can agree with each other but still
+        // belong to an earlier PHYSIS climate tick. Reject it until both
+        // sampling systems have completed after the current climate update.
+        nature->climateTick != climate->tick ||
         nature->sampledSimulationTick != water->sampledTick ||
         nature->position != natureProbe->position ||
         nature->position != waterProbe->position)

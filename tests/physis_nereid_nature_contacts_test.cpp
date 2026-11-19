@@ -123,6 +123,14 @@ static std::uint64_t run(bool cow) {
             both.sampledSimulationTick == 0,
             "composed PHYSIS/NEREID contact must be coherent");
 
+    // Simulate an authoritative climate advance before contacts have been
+    // resampled. Equal old contact stamps alone are not proof of freshness.
+    auto* climateClock = sim->world().resource<pn::State>();
+    ++climateClock->tick;
+    require(!bridge::readNatureWaterContact(sim->world(), host->observer, both),
+            "bridge accepted old contacts during the next climate tick");
+    --climateClock->tick;
+
     // After input moves, the old derived result must not be accepted before
     // the next committed PHYSIS/NEREID sampling pass.
     sim->world().get<pn::NatureProbeComponent>(host->observer).position =
