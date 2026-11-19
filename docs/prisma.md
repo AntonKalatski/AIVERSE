@@ -2367,7 +2367,11 @@ lower bounds, scene-capture/motion subtotals, pending object motion
 and unknown allocations separately from Prisma so an owner is
 not counted twice.
 
-**Verification:** source inspection and structural checks only.
+**Verification:** source inspection and **53/53 structural
+source-presence checks**, including bounded Metal GPU scopes, separate
+timing queues, GPU-clock calibration, renderer-owner memory telemetry,
+deduplicated resource handling, source freshness/domain switching and
+host API wiring. This is not a compiler or GPU validation result.
 **NOT RUN:** native Obj-C++/Metal compile, CTest, Metal counter
 calibration on Apple Silicon/Intel Mac/iOS, GL33 timing capture,
 GPU memory pressure and screenshot tests. Apple counter API
