@@ -25,6 +25,23 @@ LightQuality LightSystem::defaultQualityFor(const gfx::Device& dev, bool mobile)
     return LightQuality::High;
 }
 
+GpuOwnedMemoryStats LightSystem::ownedGpuMemoryStats() const {
+    if (!dev_) return {};
+    GpuOwnedMemoryCounter counter(*dev_);
+    counter.texture(map_);
+    counter.texture(mapDepth_);
+    counter.texture(black_);
+    counter.texture(spotShadow_);
+    counter.texture(reflColor_);
+    counter.texture(reflDepth_);
+    counter.texture(staticGrid_);
+    counter.buffer(vb_);
+    counter.buffer(haloVB_);
+    counter.buffer(beamVB_);
+    counter.buffer(decalVB_);
+    return counter.stats();
+}
+
 bool LightSystem::init(gfx::Device& dev) {
     dev_ = &dev;
     gfx::ShaderDesc sd;
