@@ -1962,17 +1962,30 @@ void Renderer3D::renderModels(int phase) {
             std::unordered_map<PreflightKey, PreflightGroup,
                                StaticCrossModelPreflightKeyHash> groups;
             groups.reserve(std::min<size_t>(order_.size(), 256));
+            // Too many one-off pages/materials defeat the point of a cheap
+            // preflight. Fall back to the original sort without unbounded
+            // hash-map growth or work under highly fragmented workloads.
+            constexpr size_t kMaxPreflightGroups = 2048;
+            bool budgetExceeded = false;
             for (uint32_t itemIndex : order_) {
                 const ModelItem& item = modelItems_[itemIndex];
                 if (!eligibleStaticPage(item)) continue;
                 const PreflightKey key{item.model->geometryPoolPage.get(),
                                        materialGroup[itemIndex], item.flags,
                                        item.model->vb.id, item.model->ib.id};
-                groups[key].observe(item.model, item.prim, threshold);
+                auto found = groups.find(key);
+                if (found == groups.end()) {
+                    if (groups.size() == kMaxPreflightGroups) {
+                        budgetExceeded = true;
+                        break;
+                    }
+                    found = groups.try_emplace(key).first;
+                }
+                found->second.observe(item.model, item.prim, threshold);
             }
             modelStats_.staticCrossModelPreflightGroups += groups.size();
             size_t readyGroupsThisPass = 0;
-            for (auto& [key, group] : groups) {
+            if (!budgetExceeded) for (auto& [key, group] : groups) {
                 (void)key;
                 group.ready = group.opportunity(threshold, instanceLimit_);
                 if (group.ready) {
@@ -1984,7 +1997,10 @@ void Renderer3D::renderModels(int phase) {
             }
             // A prior sun-shadow pass may have qualified other groups.
             // Never use accumulated scene statistics to enable this pass.
-            if (readyGroupsThisPass == 0) {
+            if (budgetExceeded) {
+                modelStats_.staticCrossModelPreflightRejected += groups.size();
+                staticCrossModelSort = false;
+            } else if (readyGroupsThisPass == 0) {
                 staticCrossModelSort = false;
             } else {
                 staticCrossCandidates.resize(modelItems_.size(), uint8_t{0});
