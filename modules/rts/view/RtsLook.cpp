@@ -345,7 +345,17 @@ bool RtsView::prepareType(uint16_t type, bool allVariants) {
         for (const auto& message : result.warnings) warn(t, message);
         // A runtime spawn can have synchronously cached the same file while the worker ran.
         const auto& key = resources_.preparation().current().second;
-        resources_.publishPrepared(*dev_,key,std::move(result));
+        try {
+            const bool published=resources_.publishPrepared(
+                *dev_,key,std::move(result));
+            if(!published && !resources_.contains(key))
+                warn(t,"async Model upload failed for "+key);
+        }catch(const std::exception& e) {
+            // publishPrepared has already queued any partially uploaded
+            // Model for GPU-safe retirement; do not retry the same worker
+            // result or leave preparation stalled on its failed key.
+            warn(t,std::string("async Model publish: ")+e.what());
+        }
         resources_.preparation().advance();
     }
     if (resources_.preparation().hasRemaining()) {
