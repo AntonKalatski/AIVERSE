@@ -55,6 +55,19 @@ int main() {
         {Fixed{},Fixed{},Fixed::fromRaw(
             std::numeric_limits<int64_t>::max())},
         1,neverQuery,mouthCfg));
+    // Exercise the other public entry point directly. Empty ECS has no
+    // NEREID water bodies: extreme 4m indices must return dry *before*
+    // Earthworks or the water index is sampled or integer-scaled.
+    World emptyWorld;
+    const EarthworksLayer terrain(400,
+        [](int64_t,int64_t)->int32_t{return 0;});
+    const lib::nereid::WaterQueryIndex waterIndex(emptyWorld);
+    const auto emptyRiver=makeNereidMicroWaterSampler(terrain,waterIndex);
+    assert(!emptyRiver(std::numeric_limits<int64_t>::max(),0,0).submerged);
+    assert(!emptyRiver(std::numeric_limits<int64_t>::min(),0,0).submerged);
+    assert(!emptyRiver(0,std::numeric_limits<int64_t>::max(),0).submerged);
+    assert(!emptyRiver(0,std::numeric_limits<int64_t>::min(),0).submerged);
+    assert(!emptyRiver(-1,-1,0).submerged);
     // Normal negative coordinates must still discover the nearest
     // correct body, with deterministic signed lattice floor.
     const ForestMicroWaterSampler wetNegative=[](int64_t x,int64_t z,
