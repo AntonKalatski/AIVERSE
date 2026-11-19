@@ -17,6 +17,7 @@
 #include "PersistentGpuSceneUpload.h"
 #include "GpuSceneCulling.h"
 #include "GpuSceneDrawCommands.h"
+#include "RenderDeviceLifetime.h"
 #include <memory>
 #include <unordered_map>
 
@@ -210,6 +211,9 @@ struct ModelRenderStats {
 
 class Renderer3D {
 public:
+    void setGpuDeviceLease(RenderDeviceLifetime::Lease lease) {
+        gpuDeviceLease_=std::move(lease);
+    }
     bool init(gfx::Device& dev);
     void shutdown();
     // Optional fixed scene bounds for interior/model viewers; clear to use RTS ground fitting.
@@ -453,6 +457,11 @@ private:
     void bindSceneTextures(int colorSlot, int depthSlot);   // after the capture: the scene targets, else placeholders
     void bindTraceTextures();                                // lit pipeline: tex3 height, tex4/tex5 scene
 
+    void checkGpuDevice(const gfx::Device& dev) const {
+        if(gpuDeviceLease_.device() && !gpuDeviceLease_.validFor(dev))
+            throw std::logic_error("Renderer3D GPU device generation expired");
+    }
+    RenderDeviceLifetime::Lease gpuDeviceLease_;
     gfx::Device* dev_ = nullptr;
     gfx::ShaderHandle litShader_, shadowShader_, colorShader_;
     gfx::PipelineHandle litPipe_, litBlendPipe_, shadowPipe_, linePipe_, triPipe_;
