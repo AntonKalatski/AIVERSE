@@ -4,6 +4,7 @@
 #include "GLApi.h"
 
 #include <algorithm>
+#include <limits>
 #include <cstring>
 #include <cstdio>
 #include <string>
