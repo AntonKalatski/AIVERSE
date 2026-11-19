@@ -6,6 +6,9 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
+#include <unordered_set>
+#include <vector>
 namespace aiverse::platform {
 bool readContentFile(const std::string&,std::string&){return false;}
 }
@@ -96,6 +99,19 @@ static void verifyReadLeaseContracts() {
     assert(cache.activeModelReaders()==3);
     assert(cache.modelReadSafetyStats().blockedMutations==4);
     assert(cache.modelReadSafetyStats().peakReaders>=3);
+
+    // Streaming publication of NEW keys is deliberately allowed under a
+    // frame reader: std::map node insertion cannot move existing Model*.
+    cache.insertIfAbsent("models/new.glb",
+                         std::make_unique<render::Model>());
+    render::ModelResourceCache::ModelMap staged;
+    staged.emplace("models/streamed.glb",
+                   std::make_unique<render::Model>());
+    cache.publishStagedModels(dev,staged);
+    assert(staged.empty() && cache.find("models/new.glb") &&
+           cache.find("models/streamed.glb"));
+    assert(cache.activeModelReaders()==3);
+    // Replacements and evictions remain forbidden until the last reader.
 
     frame.reset();
     moved.reset();
