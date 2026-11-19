@@ -2960,3 +2960,39 @@ changed.
 **NOT RUN:** native build/CTest, GPU validation, screenshots,
 sanitizers, large crowds or memory benchmarks.
 [Stage 128 handoff](agent-handoffs/animation-stage128-native-model-lifetime-pins-2026-11-19.md).
+
+## Stage 129 — cache reader leases for native View transactions
+
+Generic `render::ModelResourceCache` retains its `unique_ptr<Model>`
+and independent GPU-fenced retirement, but now provides real
+owner-thread CPU read guards. `ModelReadLease` pins a specific
+resident cache Model against eviction/replacement, while
+`ModelCacheReadScope` guards an entire legacy multi-model frame.
+While guards are active, `ModelResourceCache::invalidateSources`,
+`replace`, `trimUnused`, and `shutdown` fail closed rather than
+destroying CPU Model objects that MotionWeave / Renderer3D are
+still reading. A host must release every guard before cache teardown;
+destruction with live guards is a fatal ownership error.
+
+Native code can assemble `PinnedAppearanceBatch` using genuine
+`cache.acquireModelRead(model)` tokens passed to
+`batch.addCacheOwned(snapshot,world,std::move(lease))`. Visual
+LODs, base animation rigs and attachments use
+`pinCacheRelatedModel`. `validatedSpan` checks CPU owners from
+either real `shared_ptr<Model>` pins or cache read leases, and
+can optionally validate a GPU Device epoch lease. The Model
+itself remains cache-owned; the View batch does not adopt the
+Model, allocate GPU buffers or alter the animation clock.
+`batch.clear()` releases the read tokens only after the joined
+animation update and synchronous draw.
+
+The legacy RTS adapter takes a coarse cache read scope after its
+upfront model loads in `RtsView::draw`, covering animation
+evaluation and scene submission. Editor Stats reports active
+cache readers when any exist. GPU command completion STILL
+requires the owner's independent deferred retirement queue;
+a read lease or GPU Device epoch cannot replace a real GPU fence.
+[Stage 129 handoff](agent-handoffs/animation-stage129-model-cache-read-leases-2026-11-19.md).
+
+**NOT RUN:** CMake/native compiler, CTest, real GPU backend,
+hot reload fault-injection, sanitizers or benchmarks.
