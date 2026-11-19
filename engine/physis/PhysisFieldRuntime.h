@@ -407,20 +407,25 @@ inline bool installEditableFromMap(Simulation& sim,const Json& map) {
        sim.world().resourceConst<FieldRuntimeState>())
         throw std::logic_error("PHYSIS authored field registry already installed; choose exactly one runtime");
     const auto initial=parseFieldAssets(map["physis"],*options);
+    // Validate the serializable authored identity BEFORE any ECS installation.
+    // Serialization errors must not leave a partially spawned editable World.
+    FieldRuntimeState registry;
+    std::map<std::string,std::string> fingerprints;
+    for(const auto& asset:initial)
+        fingerprints.emplace(asset.id,authoredFingerprint(asset));
     options->enableWindZones=true;
     options->enableStorms=true;
     options->enableGravityFields=true;
     install(sim,*options);
-    sim.world().setResource<AuthoredFieldInstallMode>(AuthoredFieldInstallMode{AuthoredFieldMode::Editable});
     sim.registerPersistentResource<FieldRuntimeState>("physis.field_runtime",1);
-    FieldRuntimeState registry;
     for(const auto& asset:initial) {
         const Entity entity=sim.world().create();
         writeFieldComponent(sim.world(),entity,asset);
         registry.byId.emplace(asset.id,FieldRuntimeEntry{
-            entity,asset.kind,authoredFingerprint(asset)});
+            entity,asset.kind,fingerprints.at(asset.id)});
     }
     sim.world().setResource<FieldRuntimeState>(std::move(registry));
+    sim.world().setResource<AuthoredFieldInstallMode>(AuthoredFieldInstallMode{AuthoredFieldMode::Editable});
     return true;
 }
 
