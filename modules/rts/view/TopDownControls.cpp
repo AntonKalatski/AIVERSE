@@ -46,7 +46,7 @@ TopDownStickConfig readStick(const Json& j, TopDownStickConfig c) {
     readPair(j["center"], c.center);
     return c;
 }
-// Screen vector (x right, y down) -> world ground direction for a camera with this yaw (RTSCamera: the camera
+// Screen vector (x right, y down) -> world ground direction for a camera with this yaw (Camera: the camera
 // looks along -(sin yaw, cos yaw); screen up is that direction on the ground).
 void screenToWorld(float sx, float sy, float yaw, float& wx, float& wz) {
     const float s = std::sin(yaw), c = std::cos(yaw);
@@ -119,7 +119,7 @@ void finishTopDownCamera(TopDownCameraConfig& cam) {
     cam.maxDistance = std::max(cam.maxDistance, cam.distance);
 }
 
-void topDownClipPlanes(render::RTSCamera& cam) {
+void topDownClipPlanes(render::Camera& cam) {
     cam.zNear = std::max(0.5f, cam.distance * 0.02f);    // 0.5 up to 25 units (the engine default), 6.4 at 320
     cam.zFar = std::max(1000.0f, cam.distance * 4.0f);
 }
@@ -483,14 +483,14 @@ topdown::Input TopDownControls::compose(const TopDownFrameInput& in, float yaw) 
 
 // ================================================================= camera
 
-void TopDownControls::snapCamera(render::RTSCamera& cam, render::float3 hero, float mapW, float mapH) {
+void TopDownControls::snapCamera(render::Camera& cam, render::float3 hero, float mapW, float mapH) {
     camInit_ = false;
     haveLast_ = false;
     velX_ = velZ_ = speed_ = vOffX_ = vOffZ_ = zoomAdd_ = 0;
     updateCamera(cam, hero, true, 0, mapW, mapH);
 }
 
-void TopDownControls::updateCamera(render::RTSCamera& cam, render::float3 hero, bool haveHero, float dt, float mapW, float mapH) {
+void TopDownControls::updateCamera(render::Camera& cam, render::float3 hero, bool haveHero, float dt, float mapW, float mapH) {
     const TopDownCameraConfig& c = cfg_.camera;
     namespace gc = lib::gameplay::camera;
     gc::Limits lim;

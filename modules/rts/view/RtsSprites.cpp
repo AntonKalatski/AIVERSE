@@ -20,7 +20,7 @@ const char* kActionNames[kActCount] = {"idle", "move", "attack", "work", "build"
 float f(const Json& j, float def) { return j.isNumber() ? float(j.fx().toDouble()) : def; }
 
 struct Basis { float3 right, up, fwd, gRight, gFront; };
-Basis basisOf(const RTSCamera& cam) {
+Basis basisOf(const Camera& cam) {
     Basis b;
     b.fwd = normalize(cam.target - cam.eye());
     b.right = {std::cos(cam.yaw), 0, -std::sin(cam.yaw)};
@@ -176,7 +176,7 @@ int Rts2DView::facingIndex(const SpriteLook& L, float3 facing, bool& flip) const
     return ((m - north) % N + N) % N;
 }
 
-void Rts2DView::beginFrame(const RTSCamera& cam, double time, const Renderer3D& r, const MapGrid* grid, float levelHeight) {
+void Rts2DView::beginFrame(const Camera& cam, double time, const Renderer3D& r, const MapGrid* grid, float levelHeight) {
     cam_ = cam;
     Basis b = basisOf(cam);
     camRight_ = b.right; camUp_ = b.up; camFwd_ = b.fwd; groundRight_ = b.gRight; groundFront_ = b.gFront;
@@ -495,7 +495,7 @@ float3 Rts2DView::barPoint(const SceneObject& o, float groundY) const {
     return (c[0] + c[1]) * 0.5f;
 }
 
-bool Rts2DView::hit(const RTSCamera& cam, const SceneObject& o, float groundY, float sx, float sy, float w, float h) const {
+bool Rts2DView::hit(const Camera& cam, const SceneObject& o, float groundY, float sx, float sy, float w, float h) const {
     if (!hasSprite(o.type)) return false;
     const SpriteLook& L = looks_[o.type];
     float3 c[4];
