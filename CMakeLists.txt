@@ -654,10 +654,12 @@ if(AIVERSE_BUILD_TESTS)
     target_include_directories(aiverse_retirement_pressure_tests
         PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
     add_test(NAME render_retirement_pressure COMMAND aiverse_retirement_pressure_tests)
+endif()
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
     add_executable(aiverse_async_model_cpu_queue_tests
         tests/render/async_model_cpu_queue.cpp)
     target_link_libraries(aiverse_async_model_cpu_queue_tests
-        PRIVATE aiverse_models aiverse_zstd_dec)
+        PRIVATE aiverse_models aiverse_zstd_dec Threads::Threads)
     add_test(NAME render_async_model_cpu_queue COMMAND aiverse_async_model_cpu_queue_tests)
 endif()
 if(AIVERSE_BUILD_TESTS)
