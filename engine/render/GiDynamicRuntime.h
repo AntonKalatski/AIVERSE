@@ -3,6 +3,7 @@
 // Presentation only. Not suitable for full-world CPU ray tracing on mobile.
 #pragma once
 #include "GiDynamicProbeTexture.h"
+#include "GiWorldDirtyAccumulator.h"
 #include "Renderer3D.h"
 #include <cstddef>
 #include <cstdint>
@@ -70,6 +71,13 @@ public:
     void invalidate(GiBounds bounds, GiDirtyReason reason, float influenceRadius=0) {
         ensureReady();
         reference_.scheduler().invalidate(bounds,reason,influenceRadius);
+    }
+
+    // Batch ECS/world-change presentation notifications into deterministic probe dirties.
+    // For actual changed obstacles caller must ALSO publish a rebuilt BVH via setGeometry.
+    GiWorldDirtyAccumulator::Stats applyWorldChanges(GiWorldDirtyAccumulator& changes) {
+        ensureReady();
+        return changes.flush(reference_.scheduler());
     }
 
     GiRuntimeStats update(size_t probeBudget, float3 camera) {
