@@ -2408,3 +2408,73 @@ unpublished Model retirement and scratch Model map publication;
 **NOT RUN:** native CMake, CTest, real GPU timelines, screenshots,
 sanitizers and cross-platform parity. This stage is source-only
 and must remain Draft until validated.
+
+## Stage 114 — shared texture promotion, GPU shader preflight and offscreen retirement
+
+The generic `ModelTextureCache::prepareGpuPromotion(models, appended)`
+builds a two-phase GPU ownership plan from already uploaded scratch
+Models **and** material images whose future append slots are still held
+by `ModelImageUploadTransaction`. The plan allocates shared lease control
+blocks and cache map nodes without modifying live shared GPU residency.
+After the outer appearance/image/Model publication passes all checks,
+`PreparedGpuPromotion::commit()` transfers preallocated map nodes,
+converts source images into borrowed shared leases, and returns duplicate
+dedicated texture handles for `ModelImageRollbackPool::retire`.
+No additional GPU texture upload is performed during promotion.
+A rejected plan never publishes a new cache key. Keys include the
+existing normalized source, sampler and source revision policy.
+To remain correct when `Model::images` reallocates, the plan stores
+**Model pointer + image index** rather than pointers to vector elements.
+
+During RTS authored hot reload, `RtsView::loadTexture` uses the shared
+CPU-decoded `ModelTextureCache::read` and stages its GPU image outside
+the Model. The complete GPU promotion plan combines those future
+material images with scratch imported Model images. Texture duplicates
+across both sources share one GPU owner after success; no cache misses
+are published on failure. `uploadModel(...,publishSharedTextures=false)`
+retains the source cache identity on dedicated speculative misses and
+rejects missing GPU texture allocations rather than publishing a partially
+uploaded Model.
+
+GPU ShaderGraph authoring now has an **optional host-renderer preflight**.
+`Renderer3D::warmModelPipelinesChecked` returns
+`PipelineWarmStatus::Ready / Pending / Failed` rather than conflating
+asynchronous compiler progress and invalid shader/pipeline handles.
+`RtsView::setAppearancePipelineValidator` invokes the host's single
+Renderer3D preflight for each staged choice, LOD and damage/construction
+stage before committing Model/texture/TypeLook changes. Failed GPU
+programs keep the previous live appearance and animation clocks. For
+Pending, the editor leaves the source watcher unacknowledged and retries
+on a later scan; no second animation writer is created. Already warmed
+shader/pipeline cache entries are still owned by Renderer3D and are not
+a separate GPU rollback transaction.
+
+Native `ModelAssetProvider` now uses a reusable, genre-neutral
+`ModelStagingTransaction` for both synchronous `load()` and
+asynchronous `publishReady()`. It holds newly imported Models in a
+scratch map, uploads them with shared cache GPU publication disabled,
+then promotes the shared textures and Model map nodes on success.
+Failures return through the same GPU-fenced speculative Model retirement
+and legacy failed-load tombstone policy, rather than immediately
+destroying partially uploaded GPU buffers/textures. A native host must
+call `collectRetired` at safe frame boundaries and `shutdown` before
+destroying its gfx::Device. An optional host lease binds the shared GPU
+device generation.
+
+Editor Scene/Game `Viewport` now uses an optional weak
+`OffscreenTargetRetirement` owner for color/depth textures. Resizing
+or destroying a window enqueues the previous pair instead of deleting
+possibly in-flight GPU targets. Editor owns one pool under its existing
+GPU generation, collects at the beginning of frames, and requires a
+successful GPU idle drain after windows are destroyed and before retiring
+the editor GPU epoch. Pending/Failed GPU fence tokens never authorize
+destruction. This pool and other Model/Image queues share the editor's
+bounded retirement diagnostic stream, now including `Target` events.
+
+The deferred `render_model_image_transaction` fixture includes
+cross-Model shared GPU deduplication, pending material image slots,
+vector relocation, generic native scratch commit/abort, and failed
+offscreen target GPU retirement. **NOT RUN:** native CMake/CTest,
+Metal/Vulkan/GL/WebGL2 runtime, UI visual parity, device-loss recovery,
+sanitizers or CI. This is a source implementation with unverified
+compiler/backend behavior, not merge-ready GPU code.
