@@ -6,6 +6,7 @@
 #include <limits>
 #include <unordered_map>
 #include <string>
+#include <optional>
 #include "../data/Json.h"
 #include "SpectraFxHybridPlayback.h"
 
@@ -23,7 +24,8 @@ class SpectraFxGpuRouteAsset {
 public:
     using Routes = std::unordered_map<uint16_t, SpectraFxGpuEventRoute>;
     static bool read(const Json& doc, Routes& result, std::string* error=nullptr,
-                     SpectraFxGpuBudgetGovernor::Config* gpuBudget=nullptr) {
+                     SpectraFxGpuBudgetGovernor::Config* gpuBudget=nullptr,
+                     std::optional<FxQuality>* sceneQuality=nullptr) {
         auto fail=[&](const std::string& reason){
             if(error) *error=reason;
             return false;
@@ -32,8 +34,20 @@ public:
             return fail("SpectraFX GPU routes require version 1");
         for(const auto& p:doc.members())
             if(p.first!="version" && p.first!="routes" &&
-               p.first!="gpuFrameBudgetMs" && p.first!="minGpuSpawnScale")
+               p.first!="gpuFrameBudgetMs" && p.first!="minGpuSpawnScale" &&
+               p.first!="sceneQuality")
                 return fail("SpectraFX GPU routes: unknown field "+p.first);
+        std::optional<FxQuality> parsedQuality;
+        if(doc.has("sceneQuality")) {
+            if(!doc["sceneQuality"].isString())
+                return fail("sceneQuality must be off, low, medium or high");
+            const auto name=doc["sceneQuality"].str();
+            if(name=="off") parsedQuality=FxQuality::Off;
+            else if(name=="low") parsedQuality=FxQuality::Low;
+            else if(name=="medium") parsedQuality=FxQuality::Medium;
+            else if(name=="high") parsedQuality=FxQuality::High;
+            else return fail("unknown sceneQuality");
+        }
         SpectraFxGpuBudgetGovernor::Config budget;
         if(doc.has("gpuFrameBudgetMs")) {
             const Json& field=doc["gpuFrameBudgetMs"];
@@ -127,13 +141,15 @@ public:
         }
         result=std::move(next);
         if(gpuBudget) *gpuBudget=budget;
+        if(sceneQuality) *sceneQuality=parsedQuality;
         if(error) error->clear();
         return true;
     }
     static bool readText(const std::string& text,Routes& routes,
                          std::string* error=nullptr,
-                         SpectraFxGpuBudgetGovernor::Config* gpuBudget=nullptr) {
-        try {return read(Json::parse(text),routes,error,gpuBudget);}
+                         SpectraFxGpuBudgetGovernor::Config* gpuBudget=nullptr,
+                         std::optional<FxQuality>* sceneQuality=nullptr) {
+        try {return read(Json::parse(text),routes,error,gpuBudget,sceneQuality);}
         catch(const std::exception& e) {
             if(error) *error=e.what();
             return false;
