@@ -2,6 +2,8 @@
 #include "engine/render/GpuMaterialState.h"
 #include "engine/render/ModelShaders.h"
 #include <algorithm>
+#include <array>
+#include <cstdint>
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -130,6 +132,44 @@ void test() {
                        "groom strand penetrated DNA-scaled head ellipsoid");
             }
         }
+    }
+
+    // Closed imported-head proxy: CPU groom can collide against actual
+    // authored triangles rather than assuming a procedural ellipsoid.
+    {
+        HumanGroomRuntime groom;
+        groom.generate(HumanDNA::preset("neutral"),GroomQuality::Low);
+        const std::array<render::float3,8> verts{{
+            {-1.4f,-1.4f,-1.4f},{1.4f,-1.4f,-1.4f},
+            {1.4f,1.4f,-1.4f},{-1.4f,1.4f,-1.4f},
+            {-1.4f,-1.4f,1.4f},{1.4f,-1.4f,1.4f},
+            {1.4f,1.4f,1.4f},{-1.4f,1.4f,1.4f}
+        }};
+        const std::array<std::uint32_t,36> indices{{
+            0,2,1,0,3,2, 4,5,6,4,6,7,
+            0,1,5,0,5,4, 3,7,6,3,6,2,
+            0,4,7,0,7,3, 1,2,6,1,6,5
+        }};
+        expect(groom.setCollisionMesh(verts,indices),
+               "closed imported groom collider rejected");
+        expect(groom.hasCollisionMesh(),"groom collider was not retained");
+        const std::array<std::uint32_t,3> bad{0,0,1};
+        expect(!groom.setCollisionMesh(verts,bad) && groom.hasCollisionMesh(),
+               "invalid collider replaced last-good imported geometry");
+        for(int frame=0;frame<4;++frame)
+            expect(groom.step(0.016f,{0.1f,0.0f,0.1f}),
+                   "imported groom collision simulation failed");
+        for(const auto& guide:groom.guides())
+            for(std::size_t j=1;j<guide.position.size();++j) {
+                const auto p=guide.position[j];
+                const float extent=std::max({std::fabs(p.x),
+                                              std::fabs(p.y),
+                                              std::fabs(p.z)});
+                expect(finite(p)&&extent>=1.399f,
+                       "hair segment remained inside closed import collider");
+            }
+        groom.clearCollisionMesh();
+        expect(!groom.hasCollisionMesh(),"groom collision reset failed");
     }
     auto originalDNA=HumanDNA{};
     auto sculptedDNA=originalDNA;
