@@ -1,5 +1,6 @@
 #include "StrataStreamingCoordinator.h"
 #include <atomic>
+#include <algorithm>
 #include <condition_variable>
 #include <limits>
 #include <system_error>
@@ -14,6 +15,8 @@ namespace aiverse::render::strata {
 namespace {
 struct GpuLedger {
     uint64_t limit=0, bytes=0;
+    uint64_t frameUploadLimit=0, frameUploadRemaining=0;
+    uint64_t frameSerial=0, frameUploaded=0;
     std::map<uint64_t,uint64_t> leases;
 };
 std::mutex gpuMutex;
@@ -181,7 +184,51 @@ DeviceIndexBudgetStats deviceIndexBudgetStats(gfx::Device& device) {
     const auto it=gpuLedgers.find(&device);
     if(it==gpuLedgers.end())return {};
     return {it->second.limit,it->second.bytes,
-            uint32_t(it->second.leases.size())};
+            uint32_t(it->second.leases.size()),
+            it->second.frameUploadLimit,it->second.frameUploadRemaining,
+            it->second.frameSerial,it->second.frameUploaded};
+}
+
+bool configureDeviceFrameUploadBudget(gfx::Device& device,uint64_t bytes) {
+    std::lock_guard lock(gpuMutex);
+    auto& ledger=gpuLedgers[&device];
+    if(!bytes)return true; // inherit any previously configured cap
+    if(ledger.frameUploadLimit && ledger.frameUploadLimit!=bytes &&
+       !ledger.leases.empty())
+        return false;
+    ledger.frameUploadLimit=bytes;
+    ledger.frameUploadRemaining=bytes;
+    ledger.frameSerial=0;
+    ledger.frameUploaded=0;
+    return true;
+}
+
+uint64_t deviceFrameUploadAllowance(gfx::Device& device,uint64_t serial) {
+    std::lock_guard lock(gpuMutex);
+    const auto it=gpuLedgers.find(&device);
+    if(it==gpuLedgers.end() || !it->second.frameUploadLimit)
+        return UINT64_MAX;
+    auto& ledger=it->second;
+    if(!serial)return 0; // unknown GPU completion epoch: safe no-upload
+    if(ledger.frameSerial!=serial){
+        ledger.frameSerial=serial;
+        ledger.frameUploadRemaining=ledger.frameUploadLimit;
+        ledger.frameUploaded=0;
+    }
+    return ledger.frameUploadRemaining;
+}
+
+void accountDeviceFrameUpload(gfx::Device& device,uint64_t serial,
+                              uint64_t checkedBytes) {
+    if(!serial || !checkedBytes)return;
+    std::lock_guard lock(gpuMutex);
+    const auto it=gpuLedgers.find(&device);
+    if(it==gpuLedgers.end() || !it->second.frameUploadLimit ||
+       it->second.frameSerial!=serial)return;
+    auto& ledger=it->second;
+    const uint64_t consumed=std::min(checkedBytes,ledger.frameUploadRemaining);
+    ledger.frameUploadRemaining-=consumed;
+    ledger.frameUploaded+=consumed;
 }
 
 #if !defined(__EMSCRIPTEN__)
