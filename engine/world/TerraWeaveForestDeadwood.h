@@ -282,7 +282,8 @@ inline ForestDeadwoodDecayOutcome advanceForestDeadwood(
         const uint64_t nutrients=weighted/1000;
         // A completely spent log must account for fractional nutrient
         // carry: less than a unit is routed to the respired remainder.
-        if(log.remainingUnits)log.nutrientCarry=uint16_t(weighted%1000);
+        log.nutrientCarry=log.remainingUnits?
+            uint16_t(weighted%1000):uint16_t(0);
         const uint64_t respired=lost-nutrients;
         if(next.totalRespiredUnits>UINT64_MAX-respired)
             throw std::overflow_error("TerraWeave deadwood respiration overflow");
