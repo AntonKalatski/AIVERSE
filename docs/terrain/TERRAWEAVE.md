@@ -2627,3 +2627,95 @@ measurements are **NOT RUN** in this feature-first stage. Test LRU
 oldest-first, zero/small/max budget, no-forest model, transition
 completion/reversal, source revision invalidation, cold region reentry,
 active + outgoing preservation and exact/procedural PHYSIS consistency.
+
+## Stage 38 — lossless dormant Horizon GPU wind-shadow compression
+
+Stage37 had to evict a complete GPU cache entry whenever its inactive CPU
+wind shadow exceeded the configured budget. Stage38 optionally saves dormant
+CPU memory **without evicting the matching GPU region**. The wind field,
+PHYSIS owner, procedural map, material shader and existing RHI GPU buffers
+remain unchanged.
+
+Use the public **Stage37** policy from a native project:
+
+```cpp
+aiverse::terraweave::HorizonWindShadowCachePolicy policy;
+policy.maxCachedShadowBytes=2u*1024u*1024u;
+policy.compressCachedShadows=true;  // Stage38 optional; default false
+worldScene.setVegetationHorizonWindShadowCachePolicy(policy);
+```
+
+This setter stays on the WorldScene owner thread. The optional
+`TerraWeaveHorizonScene::setWindShadowCachePolicy` accepts the same POD.
+The per-update **GPU upload** policy is separate (`HorizonWindUploadPolicy`).
+All default API values preserve Stage37 behavior (compression disabled unless
+explicitly enabled). The current 0..16 MiB inactive CPU-shadow budget remains
+valid and unchanged.
+
+**Lossless storage:** `TerraWeaveHorizonWindCompression.h` provides
+`packHorizonWindVertexBytes` and `unpackHorizonWindVertexBytes` with a
+simple bounded bytewise zero-run/literal codec (1..128 bytes per token).
+It stores raw **ModelVertex bytes**, including all 32-bit float fields,
+RGBA wind metadata and joint/weight fields; it never rescales or recomputes
+geometry or a PHYSIS wind sample. This is memory-only storage inside the
+process, not a persistent file format. Before packing, the
+`HorizonForestWindOverlay` must be intact and already paired with its
+GPU-resident model. A compressed overlay keeps its signed world-centimetre
+`centersCm`, the exact applied wind revision and first vertex offset, and
+stores `packedVertices` plus `packedVertexCount` instead of a full vertex
+array. Compression is accepted **only when the packed vector's actual
+capacity is lower than the original vertex vector capacity**; otherwise
+the original raw shadow stays untouched.
+
+**Cache lifecycle and budget:** `HorizonGpuRegionCache::retain` packs
+only **inactive** entries (not the active or outgoing crossfade model). It
+compresses already-cached entries when the policy is enabled during a live
+scene, at the next `update(device)` before budget trimming.
+`windCompressionAttempted` prevents repeatedly scanning incompressible
+entries every frame. The dormant CPU budget now counts the actual capacities
+of raw vertices, packed bytes and cluster centres. Only if compressed/raw
+capacity still exceeds the budget will Stage37's whole-region LRU eviction
+run. There is **no** GPU upload, new buffer, atlas rebuild or geometry
+regeneration when a shadow is packed.
+
+On a camera return, `HorizonGpuRegionCache::take` decodes compressed data
+to a fresh `std::vector<render::ModelVertex>` **before** transferring the
+already-uploaded GPU model into active ownership. Decode validates token
+boundaries, exact output byte count, cluster count and the existing 2 MiB
+forest-vertex limit, publishes only on full success, and leaves GPU bytes
+untouched. `appliedRevision` remains unchanged, so Stage35 can compare
+the exact last-uploaded RGB values if a newer wind snapshot is pending.
+A malformed stream is handled by the device-aware cache `take` overload:
+release the entire corrupted GPU cache entry and use the normal async
+re-prepare/re-upload path; never present a bogus exact-field shader.
+Allocation failures are not suppressed and must follow normal host
+memory-error handling.
+
+New runtime diagnostics: `gpuCachedCompressedWindShadows` counts the
+currently dormant compressed regions;
+`gpuWindShadowCompressions` and `gpuWindShadowRestores` count successful
+pack/unpack operations;
+`gpuWindShadowDecodeFailures` counts corrupt dormant cache entries
+released for a safe re-stream. The Stage37
+`gpuCachedWindShadowBytes` now includes packed byte vector capacities
+and resident cluster centres. These are accounting counters, **not
+measured GPU speedups**.
+
+**Limits:** zero-run compression may provide no benefit for high-entropy
+geometry; such entries remain uncompressed and may still be evicted.
+Per-entry compression and restoration temporarily allocate an additional
+CPU buffer. The codec preserves exact bytes only within one running
+process and is not a disk archive or cross-platform data format.
+WorldScene/Horizon updates, cache transitions and policy writes must be
+serialized on the owning render thread. The active/outgoing wind shadows,
+other CPU terrain patch data and `HorizonBake` caches remain out of
+Stage37's dormant CPU policy. No TWH8 archive changes.
+
+**Validation not run:** native CMake/Clang/GCC, CTest, ShaderGraph
+GLSL/MSL compilation, Metal/Vulkan/GL GPU rendering, measured memory
+ratios, PHYSIS field update/crossfade tests, fuzz/corruption fixtures
+and timing benchmarks are deliberately deferred to the independent QA
+phase. The QA agent should verify the codec's bitwise roundtrip, no-change
+fallback, zero budget, toggling compression at runtime, malformed stream
+eviction, camera return without model reupload when compressed, source
+revision invalidation and mixed packed/raw LRU accounting.
