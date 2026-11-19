@@ -141,3 +141,23 @@ CTest, GPU visual comparison, sanitizer or performance test was run.
 The macOS/Metal verification cited above is historical and **does
 not validate this Stage 120 refactor**. Keep Draft PR #22 unmerged.
 See [Stage 120 handoff](agent-handoffs/animation-stage120-canvas-gpu-retirement-2026-11-19.md).
+
+## Stage 121 — failed canvas uploads preserve authored input
+
+`RenderTexture::upload` returns bool (old void-style callers
+may ignore the result). Failure to create the staging texture or
+the GPU blit vertex buffer returns false without claiming the
+partial target update succeeded. The staging texture is still
+GPU-fence-retired through Stage 120's canvas owner.
+
+`RtsPaintLayers` now retries source image updates safely:
+categorical palette/cell changes retain dirty flags when staging
+fails; coastline texture allocation failure does not acknowledge
+the new sea-mask hash; territory coverage layers remember failed
+partial GPU uploads and retry the entire latest CPU image even
+when no further cell changed; manual `copy_from` is retained
+until its GPU blit actually submits, before later brush strokes.
+No Lua command or simulation checksum semantics were changed.
+
+This stage is **source-only and NOT COMPILED/TESTED**.
+See [Stage 121 handoff](agent-handoffs/animation-stage121-universal-lod-attachments-2026-11-19.md).
