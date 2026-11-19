@@ -397,8 +397,12 @@ private:
         size_t count = 0;
         for(const auto& [serial, job] : jobs_) {
             (void)serial;
-            if(job.ticket.epoch == epoch_ &&
-               job.status == SceneLoadStatus::Preparing) ++count;
+            // Canceled/rollback-invalidated std::async work still runs
+            // until joined by poll(). Count these futures to preserve the
+            // actual worker cap during repeated cancels and rewinds.
+            if(job.future.valid() &&
+               (job.status == SceneLoadStatus::Preparing ||
+                job.status == SceneLoadStatus::Cancelled)) ++count;
         }
         return count;
     }
