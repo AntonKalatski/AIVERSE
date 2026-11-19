@@ -421,6 +421,81 @@ public:
         }
         for(auto& read:ready)read->callback(std::move(read->bytes));
     }
+    // A depth-only diagnostic readback, asynchronous and bounded. Metal's
+    // Depth32Float shadow map is private; encode a blit into a temporary shared
+    // buffer after the shadow render pass, never use getBytes on private memory.
+    struct DepthRead {
+        int width = 0, height = 0;
+        std::vector<uint8_t> bytes;
+        DepthReadFn callback;
+        std::atomic<bool> ready{false};
+    };
+    std::vector<std::shared_ptr<DepthRead>> depthReads_;
+    bool readDepthTextureAsync(TextureHandle h,DepthReadFn callback) override {
+        auto* t = textures_.get(h.id);
+        if (!cmd_ || enc_ || compute_ || !t || !callback ||
+            t->fmt != PixelFormat::Depth ||
+            t->tex.pixelFormat != MTLPixelFormatDepth32Float ||
+            t->tex.textureType != MTLTextureType2D ||
+            t->tex.sampleCount != 1 ||
+            !t->tex.width || !t->tex.height ||
+            t->tex.width > 4096 || t->tex.height > 4096 ||
+            depthReads_.size() >= 8)
+            return false;
+        const NSUInteger w = t->tex.width, hgt = t->tex.height;
+        constexpr NSUInteger kFloatBytes = sizeof(float);
+        // Metal blit-to-buffer row stride must be padded. All user-facing
+        // bytes are repacked to tightly packed float32 at callback delivery.
+        const NSUInteger rowBytes =
+            ((w * kFloatBytes + 255u) / 256u) * 256u;
+        const NSUInteger allocation = rowBytes * hgt;
+        if (allocation > 64u * 1024u * 1024u) return false;
+        id<MTLBuffer> dst =
+            [device_ newBufferWithLength:allocation
+                                 options:MTLResourceStorageModeShared];
+        if (!dst) return false;
+        auto read = std::make_shared<DepthRead>();
+        read->width = int(w);
+        read->height = int(hgt);
+        read->bytes.resize(size_t(w * hgt) * sizeof(float));
+        read->callback = std::move(callback);
+        id<MTLBlitCommandEncoder> blit = [cmd_ blitCommandEncoder];
+        if (!blit) return false;
+        [blit copyFromTexture:t->tex sourceSlice:0 sourceLevel:0
+                sourceOrigin:MTLOriginMake(0, 0, 0)
+                  sourceSize:MTLSizeMake(w, hgt, 1)
+                    toBuffer:dst destinationOffset:0
+        destinationBytesPerRow:rowBytes
+      destinationBytesPerImage:allocation];
+        [blit endEncoding];
+        [cmd_ addCompletedHandler:^(id<MTLCommandBuffer> completed) {
+            if (completed.status != MTLCommandBufferStatusCompleted) {
+                read->bytes.clear();
+            } else {
+                const uint8_t* src =
+                    static_cast<const uint8_t*>(dst.contents);
+                for (NSUInteger y = 0; y < hgt; ++y)
+                    std::memcpy(read->bytes.data() + size_t(y*w)*sizeof(float),
+                                src + size_t(y*rowBytes),
+                                size_t(w)*sizeof(float));
+            }
+            read->ready.store(true, std::memory_order_release);
+        }];
+        depthReads_.push_back(std::move(read));
+        return true;
+    }
+    void deliverDepthReads() {
+        std::vector<std::shared_ptr<DepthRead>> ready;
+        for (auto it = depthReads_.begin(); it != depthReads_.end();) {
+            if ((*it)->ready.load(std::memory_order_acquire)) {
+                ready.push_back(*it);
+                it = depthReads_.erase(it);
+            } else ++it;
+        }
+        for (auto& read : ready)
+            read->callback(read->width, read->height,
+                           std::move(read->bytes));
+    }
     bool gpuHealthy() const override { return gpuHealthy_->load(); }
     double gpuFrameMs() const override { return gpuMs_->load(); }
 
@@ -849,6 +924,7 @@ public:
         fbW_ = w; fbH_ = h;
         dispatch_semaphore_wait(frameSemaphore_, DISPATCH_TIME_FOREVER);
         deliverBufferReads();
+        deliverDepthReads();
         deliverCapture(); // the previous frame's GPU work is done here
         ++frame_;
         // The semaphore guarantees this slot is no longer in flight.
