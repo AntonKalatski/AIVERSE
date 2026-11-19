@@ -582,6 +582,11 @@ if(AIVERSE_VULKAN)
 endif()
 target_link_libraries(aiverse_runtime PUBLIC aiverse_engine aiverse_models aiverse_imgui aiverse_pack aiverse_zstd_dec aiverse_plugins)
 target_link_libraries(aiverse_runtime PUBLIC aiverse_postfx_data aiverse_shader_graph)   # postfx agent
+# WorldScene.cpp and the public WorldScene/NEREID presentation headers include
+# <aiverselib/water/...>. The header-only package owns its include dirs; an
+# OBJECT runtime must carry that usage requirement on its own target.
+# PUBLIC also propagates it to clients/editor targets using WorldScene.h.
+target_link_libraries(aiverse_runtime PUBLIC AIVERSE::lib_nereid_water)
 if(APPLE)
     set_source_files_properties(engine/platform/macos/PlatformMac.mm engine/platform/ios/PlatformIOS.mm
         engine/gfx/metal/GfxMetal.mm engine/platform/apple/PluginsApple.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")

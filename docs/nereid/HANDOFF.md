@@ -4039,3 +4039,10 @@ Inspected exact definitions: `worldInteger` and `worldVector` are implemented (n
 **Fix:** in templated `exercise<Tag>`, all eight `linear->world().get<T>()` and `indexed->world().get<T>()` expressions now use the required dependent-member disambiguator: `linear->world().template get<T>()` / `indexed->world().template get<T>()`. No water API, ECS semantics, runtime logic or other module changed. The source was verified to contain exactly eight such calls and all eight were replaced.
 
 **Actually verified:** user-provided Clang diagnostic and connected GitHub source inspection, exact guarded transformation and committed branch update. **NOT verified:** a new compile/CTest run after the fix; no claim of PASS. Next: `cmake --build build/nereid-test --parallel 4`, then `ctest --test-dir build/nereid-test --output-on-failure --parallel 4`. If the build fails elsewhere, record first error and repair; PR #23 remains Draft.
+
+
+## Stage 45.3 — runtime target missing NEREID include usage (macOS build error)
+
+**Branch:** `feature/nereid-water-core`; PR #23 Draft. Full handoff: [Stage 45.3](stage-45-3-runtime-include-fix.md).
+
+**Actual failure reported:** building `aiverse_runtime` / `engine/world/WorldScene.cpp` fails in `engine/render/NereidWaterRenderer.h` because public `aiverselib/water/NereidWaterSurfaceMesh.h` cannot be found. The header exists in `libraries/include`; `aiverse_runtime` lacked a direct PUBLIC target link to `AIVERSE::lib_nereid_water`, so the compiler did not inherit its INTERFACE include dirs. Added that runtime target dependency in root CMake; no gameplay or water source changes. **Performed:** inspection of GitHub CMake and source + commit. **Not run:** local macOS reconfigure/build, CTest, GPU, shaders or genre regressions. **Next:** reconfigure and rebuild on macOS, fix subsequent compiler errors, retain Draft PR.
