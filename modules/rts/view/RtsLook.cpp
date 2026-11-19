@@ -8,11 +8,13 @@
 #include "engine/view/AppearanceChoiceAuthoring.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <functional>
+#include <stdexcept>
 #include <unordered_set>
 
 namespace aiverse::game {
@@ -20,6 +22,9 @@ namespace aiverse::game {
 using namespace render;
 
 namespace {
+// Presentation-only publication revisions: choice rebuilds must never reuse
+// the previous retarget plan, even if a Model allocator recycles an address.
+std::atomic<uint64_t> nextModelChoiceGeneration{1};
 constexpr float kDeg = 3.14159265358979f / 180.0f;
 // Keep one appearance of each initial model. Remaining material/body variants are appended later.
 std::vector<size_t> initialModelChoices(const Json& view) {
@@ -232,8 +237,12 @@ void RtsView::buildLook(gfx::Device& dev, const UnitType& t, TypeLook& L) {
             // for each actor, camera and draw submission.
             auto retarget=std::make_shared<view::ModelPoseRetarget>();
             retarget->sourceNodeForVisual=lc.nodeMap;
-            if(view::validModelPoseRetarget(base,*lc.model,*retarget))
+            if(auto plan=view::compileModelPoseRetarget(
+                   base,*lc.model,*retarget,
+                   L.models[0].modelGeneration,lc.modelGeneration)) {
                 lc.poseRetarget=std::move(retarget);
+                lc.compiledPoseRetarget=std::move(plan);
+            }
             for (int k = 0; k < kAnimCount; ++k) { lc.clips[k] = L.models[0].clips[k]; lc.hasClip[k] = L.models[0].hasClip[k]; }
             procedural(lc, v);
             configureExtras(dev, t, v, lc);
@@ -1009,6 +1018,10 @@ bool RtsView::loadChoice(gfx::Device& dev, const UnitType& t, const Json& view, 
     }
     out.materials = out.model->materials;
     configureChoice(dev, t, view, out, false);
+    out.modelGeneration=nextModelChoiceGeneration.fetch_add(
+        1,std::memory_order_relaxed);
+    if(out.modelGeneration==0)
+        throw std::overflow_error("RtsLook: model choice generation exhausted");
     return true;
 }
 
