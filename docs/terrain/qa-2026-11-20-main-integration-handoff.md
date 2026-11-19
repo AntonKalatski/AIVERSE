@@ -99,6 +99,23 @@ the merge was not a fake two-parent commit that overwrote main with
 the TerraWeave tree. Future changes to main after the stated SHA
 require another explicit integration update.
 
+## Independent Git-tree content retention verification
+
+GitHub recursive trees for the common ancestor, main, TerraWeave and
+the synthesized merge were compared by path, blob SHA and file mode.
+The 189 TerraWeave-changed paths break down into **178 TerraWeave-only
+paths plus 11 changed on both sides**; main had **83 main-only**
+changed paths plus those same 11 overlap paths.
+
+The merged tree preserves the EXACT TerraWeave blob/mode for
+**all 178 TerraWeave-only paths** and EXACT main blob/mode for
+**all 83 main-only paths**. The 11 overlaps have intentional merged
+blobs; none is missing. **Zero unexpected SHA/mode mismatches**
+were found across these nonoverlapping change sets.
+Merged tree has **4,786 file entries**; main had 4,633,
+TerraWeave had 4,726. This is source-tree validation,
+NOT C++ build, logical behavior verification or GPU acceptance.
+
 ## Verification achieved vs not yet achieved
 
 **Actually done:** GitHub repo/head/merge-base comparison, 189/
