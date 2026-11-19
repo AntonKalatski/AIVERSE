@@ -116,14 +116,18 @@ public:
             S_ISDIR(visibleParent.st_mode) &&
             visibleParent.st_dev==parentStat.st_dev &&
             visibleParent.st_ino==parentStat.st_ino;
-        ::close(parentFd);
         if(!samePath) {
             ::flock(fd,LOCK_UN);
             ::close(fd);
+            ::close(parentFd);
             if(error)*error="PHYSIS journal lock path changed during acquisition";
             return false;
         }
+        // Keep the verified parent open for the whole endpoint lifetime.
+        // Journal persistence can now resolve temp and target basenames
+        // relative to THIS inode, even if a caller changes path components.
         fd_=fd;
+        parentFd_=parentFd;
         lockPath_=path;
         parentPath_=parent;
         parentDev_=parentStat.st_dev;
@@ -164,13 +168,20 @@ public:
     bool valid() const {
         if(!held())return false;
 #ifndef _WIN32
-        struct stat locked{}, named{}, parent{};
-        return ::fstat(fd_,&locked)==0 &&
+        struct stat locked{}, named{}, parent{}, openedParent{};
+        const auto basename=lockPath_.filename();
+        return parentFd_>=0 &&
+               ::fstat(parentFd_,&openedParent)==0 &&
+               S_ISDIR(openedParent.st_mode) &&
+               openedParent.st_dev==parentDev_ &&
+               openedParent.st_ino==parentIno_ &&
+               ::fstat(fd_,&locked)==0 &&
                S_ISREG(locked.st_mode) &&
                locked.st_nlink==1 &&
                locked.st_uid==::geteuid() &&
                (locked.st_mode & 0077)==0 &&
-               ::lstat(lockPath_.c_str(),&named)==0 &&
+               ::fstatat(parentFd_,basename.c_str(),&named,
+                         AT_SYMLINK_NOFOLLOW)==0 &&
                S_ISREG(named.st_mode) &&
                named.st_dev==locked.st_dev &&
                named.st_ino==locked.st_ino &&
@@ -187,12 +198,22 @@ public:
 #endif
     }
 
+#ifndef _WIN32
+    // Only callers using the canonical lock-owned journal may receive this
+    // pinned directory handle. -1 means ownership has been lost.
+    int directoryFd() const { return valid() ? parentFd_ : -1; }
+#endif
+
     void release() {
 #ifndef _WIN32
         if(fd_>=0) {
             ::flock(fd_,LOCK_UN);
             ::close(fd_);
             fd_=-1;
+        }
+        if(parentFd_>=0) {
+            ::close(parentFd_);
+            parentFd_=-1;
         }
         lockPath_.clear();
         parentPath_.clear();
@@ -210,6 +231,7 @@ public:
 private:
 #ifndef _WIN32
     int fd_=-1;
+    int parentFd_=-1;
     std::filesystem::path lockPath_;
     std::filesystem::path parentPath_;
     dev_t parentDev_=0;
