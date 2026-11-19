@@ -151,6 +151,17 @@ struct ModelDraw {
     // packet reuse. Increase when any caller-owned material/appearance state
     // changes in-place (including pointer-stable material vectors).
     uint64_t staticPacketRevision = 0;
+    // Optional versioned material-owner contract (both must be nonzero).
+    // Independent static objects sharing one immutable material set can
+    // reuse its GPU-state signature across draws, without hashing every
+    // material per instance. Owner ID is namespaced within a Model.
+    // Advance materialOwnerRevision on any override changes, including
+    // edits behind a stable pointer, texture content or shader graph edits.
+    // Also advance Model::materialRevision for model-owned state changes.
+    // Without this explicit contract the renderer retains exact GPU state
+    // equality checks on every packet candidate.
+    uint64_t materialOwnerKey = 0;
+    uint64_t materialOwnerRevision = 0;
     mat4 world;                                    // model space -> world
     const std::vector<mat4>* nodeWorld = nullptr;  // pose, model space; null = bind pose
     const std::vector<Material>* materials = nullptr; // per-instance override (model->materials first, extra ones after)
