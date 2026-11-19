@@ -490,8 +490,28 @@ void RtsView::rememberReloadPlayback(uint64_t key,const EntityAnim& state) noexc
     snapshot.type=state.type;
     snapshot.choice=state.choice;
     snapshot.capturedFrame=frame_;
-    if(!state.genericViewPose && !state.wasGenericViewPose)
+    if(!state.genericViewPose && !state.wasGenericViewPose) {
         snapshot.graph=state.graph.snapshotPlayback();
+        // Legacy Animator publishes no independent ECS graph clock.
+        // Capture ONLY a stable, unblended base clip; cross-fades and
+        // secondary layers must restart safely on different model rigs.
+        const auto* oldModel=state.anim.model();
+        const int oldClip=state.anim.clip(0);
+        const auto sampled=state.anim.baseSample();
+        if(oldModel && state.baseKind>=0 && state.baseKind<kAnimCount &&
+           oldClip>=0 && size_t(oldClip)<oldModel->clips.size() &&
+           sampled.clipA==oldClip && sampled.clipB<0 &&
+           oldModel->clips[size_t(oldClip)].duration>0.f &&
+           std::isfinite(state.anim.time(0))) {
+            snapshot.baseClip=oldModel->clips[size_t(oldClip)].name;
+            snapshot.basePhase=std::clamp(
+                state.anim.time(0)/
+                    oldModel->clips[size_t(oldClip)].duration,
+                0.f,1.f);
+            snapshot.baseLoop=sampled.loopA;
+            snapshot.baseKind=state.baseKind;
+        }
+    }
     std::copy(std::begin(state.eventAge),std::end(state.eventAge),
               std::begin(snapshot.eventAge));
     snapshot.castAge=state.castAge;
