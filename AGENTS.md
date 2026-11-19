@@ -43,8 +43,8 @@ Strata development is isolated on `feature/strata-virtual-geometry`.
 Before editing mesh/LOD/geometry import, GeometryScene, GPU scene, RHI or
 indirect batching, read `docs/strata.md` and
 `docs/agent-handoffs/strata-virtual-geometry.md`, plus the latest
-`docs/metal-batching-agent-handoff.md`. Stage 2 currently builds CPU
-meshlet/LOD assets only: **no Strata GPU submission path is operational**.
+`docs/metal-batching-agent-handoff.md`. Stages 2–3 currently build CPU meshlet/LOD assets and provide a read-only
+`Model` adapter: **no Strata GPU submission path is operational**.
 Coordinate with the batching agent: share a single instance/material/indirect
 grouping authority, do not duplicate rendered primitives or transforms.
 On each bounded Strata step: implementation commit first; append and commit the
