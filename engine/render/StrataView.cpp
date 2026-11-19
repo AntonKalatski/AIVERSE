@@ -28,7 +28,8 @@ float3 high(const ClusterBounds& b) {
 } // namespace
 
 bool planView(const Asset& source, const ViewConfig& config,
-              ViewPlan& out, std::string* error) {
+              ViewPlan& out, std::string* error,
+              const std::vector<uint8_t>* residentMask) {
     if (error) error->clear();
     if (config.width <= 0 || config.height <= 0 ||
         config.width > 32768 || config.height > 32768 ||
@@ -67,13 +68,25 @@ bool planView(const Asset& source, const ViewConfig& config,
             return fail(error, "nonfinite projected Strata error");
     }
 
+    // Physical residency does not modify source/import assets. This keeps
+    // the immutable CPU hierarchy available for future streaming requests.
+    std::vector<ClusterNode> maskedNodes;
+    if (residentMask) {
+        if (residentMask->size() != source.nodes.size())
+            return fail(error, "incorrect Strata physical residency mask size");
+        maskedNodes = source.nodes;
+        for (size_t i = 0; i < maskedNodes.size(); ++i)
+            maskedNodes[i].resident =
+                maskedNodes[i].resident && (*residentMask)[i] != 0;
+    }
+    const auto& selectionNodes = residentMask ? maskedNodes : source.nodes;
     SelectionInput input;
     input.errorPixels = errors.data();
     input.errorCount = uint32_t(errors.size());
     input.thresholdPixels = config.errorThresholdPixels;
     input.maxVisibleNodes = config.maxSelectedNodes;
     SelectionOutput selection;
-    if (!select(source.nodes, source.roots, input, selection))
+    if (!select(selectionNodes, source.roots, input, selection))
         return fail(error, "Strata nodes not resident or selection budget exhausted");
 
     ViewPlan planned;
