@@ -8,6 +8,8 @@
 #include <aiverselib/water/NereidQueryIndex.h>
 #include <algorithm>
 #include <cstdint>
+#include <cstdlib>
+#include <functional>
 #include <map>
 #include <optional>
 #include <stdexcept>
@@ -126,7 +128,7 @@ inline std::vector<AutoShorelineBank> discoverNereidShoreline(
         }
         return {wet,height,v,at};
     };
-    const auto floorWet=[&](const shore_detail::WetSample& wet)->bool{
+    const auto floorWet=[](const shore_detail::WetSample& wet)->bool{
         return wet.wet;
     };
     // Deterministic direction order and first matching wet-neighbour tie:
@@ -237,10 +239,16 @@ inline ShorelineRefreshStats refreshAutoShorelineBanks(
     if(known.size()+requested.size()>32768u)
         throw std::length_error("TerraWeave automatic bank capacity");
 
+    // Existing soil and probe pools must detach before mutable access so
+    // Simulation copy-on-write snapshots and rollback remain independent.
+    auto* soilPool=world.prepareExistingWrite<
+        lib::nereid::WaterBankSoilComponent>();
+    auto* probePool=world.prepareExistingWrite<
+        lib::nereid::WaterProbeComponent>();
     ShorelineRefreshStats stats;
     for(const auto& [vertex,entity]:known){
         if(requested.contains(vertex))continue;
-        if(auto* soil=world.tryGet<lib::nereid::WaterBankSoilComponent>(entity)){
+        if(auto* soil=soilPool?soilPool->tryGet(entity.index):nullptr){
             soil->enabled=false;
             soil->wetContactPermille=0;
             ++stats.disabled;
@@ -273,8 +281,8 @@ inline ShorelineRefreshStats refreshAutoShorelineBanks(
             ++stats.created;
         } else {
             const Entity entity=existing->second;
-            auto* soil=world.tryGet<lib::nereid::WaterBankSoilComponent>(entity);
-            auto* probe=world.tryGet<lib::nereid::WaterProbeComponent>(entity);
+            auto* soil=soilPool?soilPool->tryGet(entity.index):nullptr;
+            auto* probe=probePool?probePool->tryGet(entity.index):nullptr;
             if(!soil || !probe ||
                !world.has<lib::nereid::WaterContactComponent>(entity) ||
                !world.has<lib::nereid::WaterBankErosionOutputComponent>(entity))
