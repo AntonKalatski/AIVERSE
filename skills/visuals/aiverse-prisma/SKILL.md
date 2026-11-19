@@ -571,10 +571,19 @@ pipeline has compiled. In that case the optional historical
 `PrismaScreenLighting` wrapper MUST skip its own TAA/history passes
 and route its camera-jitter request to `Prisma::jitteredCamera` instead.
 No simultaneous accumulation with different history and jitter
-sequences. The legacy optional wrapper's bounce/volumetric additions
-are also skipped while canonical temporal owns the resolve path;
-the next functional stage can separate lighting contributions from
-legacy TAA as a dedicated subfeature. Do not silently layer them.
+sequences. **Stage 52** restores the independent linear-HDR
+bounce/volumetric passes before canonical Prisma resolve, but never
+runs the old temporal pass with the canonical one. Use the separate
+alpha-preserving composite shader, not the old TAA copy whose history
+alpha stores depth. The wrapper's `temporalShadowResolve()` is true
+ONLY while its legacy TAA is the actual owner; `lightingOnly()`
+indicates a non-temporal HDR-lighting path. Canonical mode allocates
+no second history/depth images; old allocations are retained across
+mode switches until adapter resize/shutdown (GPU-fence retirement
+for that historical adapter still requires separate validation).
+Volumetric noise phase is deterministic without wrapper history,
+including canonical fallback frames. See
+`docs/handoffs/prisma-stage-52.md` for actual code commits and checks.
 
 **Custom camera lifecycle:** `Prisma::retireUnregisteredViews(liveViewIds)`
 lets a host pass exactly its active stable camera identities at the END
@@ -589,10 +598,10 @@ its existing Scene/Game close transition. There is no guessed CPU-frame
 or implicit GPU idle.
 
 **User instruction:** complete functional stages before launching
-native build/CTest/GPU/performance validation. Stage 51 source was
-inspected with 59/59 static checks only; never report compilation
+native build/CTest/GPU/performance validation. Stage 52 source was
+inspected with 15/15 static checks only; never report compilation
 or GPU runtime PASS. Continue from
-`docs/handoffs/prisma-stage-51.md` and keep Draft PR #26 untouched
+`docs/handoffs/prisma-stage-52.md` and keep Draft PR #26 untouched
 until explicit merge approval.
 
 ## Source tree and compatibility
