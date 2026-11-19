@@ -34,6 +34,7 @@ public:
         uint32_t strataStreamedSources=0;
         uint64_t strataStreamingIndexBytes=0, strataStreamingEvictions=0;
         uint64_t strataStreamingPrepareFailures=0;
+        uint32_t strataStreamingBudgetDeclined=0;
     };
     void load(gfx::Device& dev, const Json& json, const FileReader& reader);
     // Procedural/offline callers may supply immutable CPU models instead of files.
@@ -77,6 +78,15 @@ public:
     }
     size_t strataStreamingIndexBudgetBytes() const {
         return strataStreamingIndexBudgetBytes_;
+    }
+    // Optional aggregate cap on ACTIVE Strata index storage in one scene.
+    // Streams share this cap via deterministic load-time apportionment.
+    // Scene-level limit=0 means no aggregate cap; per-source limit still applies.
+    void setStrataStreamingSceneBudgetBytes(size_t bytes) {
+        strataStreamingSceneBudgetBytes_=bytes;
+    }
+    size_t strataStreamingSceneBudgetBytes() const {
+        return strataStreamingSceneBudgetBytes_;
     }
     bool collectStrataGpuInstances(const std::string& sourceKey,
                                    std::vector<strata::GpuSceneInstance>& out) const;
@@ -156,6 +166,7 @@ private:
     bool strataRenderPreviewEnabled_=false;
     bool strataPortableRenderingEnabled_=false;
     size_t strataStreamingIndexBudgetBytes_=0;
+    size_t strataStreamingSceneBudgetBytes_=0;
     float errorPixels_=2, maxPixels_=256;
     size_t proxyVertices_=0;
 };
