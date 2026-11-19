@@ -49,6 +49,9 @@ public:
         // internal backend copies; see Stage 15.4 handoff.
         uint64_t strataDeviceReservedIndexBytes=0;
         uint32_t strataDeviceIndexLeases=0, strataGlobalBudgetDeclined=0;
+        uint32_t strataSharedIoWorkers=0;
+        uint64_t strataSharedIoQueuedJobs=0, strataSharedIoActiveJobs=0;
+        uint64_t strataSharedCpuReadyBytes=0, strataSharedCpuReadyBudgetBytes=0;
     };
     void load(gfx::Device& dev, const Json& json, const FileReader& reader);
     // Procedural/offline callers may supply immutable CPU models instead of files.
