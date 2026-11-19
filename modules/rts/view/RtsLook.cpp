@@ -2,6 +2,7 @@
 // overrides, clip mapping and procedural animation presets. Problems become warnings with the
 // type id, never errors: a broken model must not stop a game from starting.
 #include "RtsView.h"
+#include "engine/view/ModelPoseRetarget.h"
 #include "RtsModelStreaming.h"
 #include "engine/view/AppearanceAuthoringService.h"
 #include "engine/view/AppearanceChoiceAuthoring.h"
@@ -226,6 +227,13 @@ void RtsView::buildLook(gfx::Device& dev, const UnitType& t, TypeLook& L) {
             const Model& base = *L.models[0].model;
             for (const auto& c0 : base.clips) lc.clipMap.push_back(lc.model->findClip(c0.name));
             for (const auto& n : lc.model->nodes) lc.nodeMap.push_back(base.findNode(n.name));
+            // The canonical View retarget is an opt-in authored visual
+            // adapter, compiled once per loaded LOD rather than rebuilt
+            // for each actor, camera and draw submission.
+            auto retarget=std::make_shared<view::ModelPoseRetarget>();
+            retarget->sourceNodeForVisual=lc.nodeMap;
+            if(view::validModelPoseRetarget(base,*lc.model,*retarget))
+                lc.poseRetarget=std::move(retarget);
             for (int k = 0; k < kAnimCount; ++k) { lc.clips[k] = L.models[0].clips[k]; lc.hasClip[k] = L.models[0].hasClip[k]; }
             procedural(lc, v);
             configureExtras(dev, t, v, lc);
