@@ -146,7 +146,9 @@ Program compile(const Json& g, const std::string& expected) {
                     e=sample+"("+arg(0)+".xy"+(op=="sampleTextureLod"?",max("+arg(1)+".r,0.0)":"")+")";
                 } else e=nodeExpression(n,arg,metal,name,code);
                 code+=vec+" "+name+" = "+e+";\n";
-                if((op=="texture" && p.domain=="material") || ((op=="sampleTexture" || op=="sampleTextureLod") && n.getBool("srgb",false))) {
+                if((op=="texture" && p.domain=="material") ||
+                   ((op=="sampleTexture" || op=="sampleTextureLod" ||
+                     op=="sampleVirtualTexture") && n.getBool("srgb",false))) {
                     const std::string c=name+".rgb";
                     code+=c+" = "+c+"*("+c+"*("+c+"*0.305306011+0.682171111)+0.012522878);\n";
                 }
