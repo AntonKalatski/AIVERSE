@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "SpectraFxGpuEmitterLibrary.h"
+#include "SpectraFxEmitterEvents.h"
 #include "SpectraFxCueBridge.h"
 
 namespace aiverse::fx {
@@ -30,6 +31,7 @@ public:
     struct Stats {
         uint64_t played=0,moved=0,stopped=0,killed=0;
         uint64_t missing=0,refused=0,failed=0,oneShots=0,retired=0;
+        uint64_t gpuImpacts=0,impactDropped=0;
     };
 
     SpectraFxHybridPlayback(gfx::Device& device,ParticleSystem& cpu,
@@ -142,6 +144,29 @@ public:
             drawGpu(*pair.second,viewProj,cameraRight,cameraUp);
         for(auto& shot:oneShots_)
             drawGpu(*shot.emitter,viewProj,cameraRight,cameraUp);
+    }
+
+    // Called on the GPU owner/presentation thread after async readback
+    // callbacks have been delivered (typically a subsequent beginFrame).
+    // Emits no gameplay events and never modifies Simulation or ECS.
+    void publishGpuImpacts(SpectraFxEmitterEventRouter& router,
+                           size_t maxEvents=128) {
+        size_t remaining=maxEvents;
+        auto forward=[&](uint64_t key,SpectraFxHybridEmitter& emitter) {
+            if(!remaining) return;
+            emitter.drainGpuImpacts([&](const SpectraFxGpuImpact& impact) {
+                SpectraFxEmitterEventRecord record;
+                record.emitterKey=key;
+                record.type=SpectraFxEmitterEvent::Impact;
+                record.marker=impact.particle.index;
+                record.position=impact.position;
+                if(router.publish(record)) ++stats_.gpuImpacts;
+                else ++stats_.impactDropped;
+                --remaining;
+            },remaining);
+        };
+        for(auto& pair:active_) forward(pair.first,*pair.second);
+        for(auto& oneShot:oneShots_) forward(0,*oneShot.emitter);
     }
 
     // Rollback/scene unload: prevents stale generation-safe keys from
