@@ -25,7 +25,15 @@ bool GpuPoolWorld::init(gfx::Device* device, PoolWorldBudgets budgets) {
     budgets.maxGroupCapacity=std::clamp<uint32_t>(budgets.maxGroupCapacity,1,4096);
     budgets.maxBurstsPerFrame=std::min<uint32_t>(budgets.maxBurstsPerFrame,4096);
     budgets.maxSources=std::clamp<uint32_t>(budgets.maxSources,1,65536);
+    if(budgets.loadShedding.enabled) {
+        budgets.loadShedding.maxContinuousBurstsPerFrame=std::min(
+            budgets.loadShedding.maxContinuousBurstsPerFrame,
+            budgets.maxBurstsPerFrame);
+        budgets.loadShedding.reserveManualBursts=std::min(
+            budgets.loadShedding.reserveManualBursts,budgets.maxBurstsPerFrame);
+    }
     budgets_=budgets;
+    stats_.sourceCapacity=budgets_.maxSources;
     device_=device;
     if(!cpu_.init(device_,budgets_.quality)) {
         reason_="SpectraFX pooled CPU world init failed: "+cpu_.error();
@@ -54,7 +62,7 @@ void GpuPoolWorld::shutdown() {
     cpu_.shutdown();
     device_=nullptr;
     initialized_=frameOpen_=stepped_=drawn_=false;
-    nextGroupStart_=0;
+    nextGroupStart_=nextContinuousSource_=0;
     stats_={};
     reason_.clear();
 }
@@ -207,6 +215,19 @@ bool GpuPoolWorld::defineCompiled(const std::string& name,
     bindings_[name]=std::move(next);
     definitions_[name]=remembered;
     recountBindings();
+    reason_.clear();
+    return true;
+}
+
+bool GpuPoolWorld::setLoadShedding(PoolLoadSheddingPolicy policy) {
+    if(!initialized_ || frameOpen_ ||
+       (policy.enabled &&
+       (policy.maxContinuousBurstsPerFrame>budgets_.maxBurstsPerFrame ||
+        policy.reserveManualBursts>budgets_.maxBurstsPerFrame))) {
+        reason_="SpectraFX load policy must fit global burst budget and change between frames";
+        return false;
+    }
+    budgets_.loadShedding=policy;
     reason_.clear();
     return true;
 }
@@ -518,8 +539,38 @@ bool GpuPoolWorld::beginPresentationFrame(const render::RTSCamera& camera,
 void GpuPoolWorld::tickContinuous(float dt) {
     // Called once from step, before stepped_ is set. This scheduler is
     // rendering-only; it never integrates an authoritative gameplay state.
-    for(uint32_t slot=0;slot<uint32_t(sources_.size());++slot) {
-        Source& source=sources_[slot];
+    const auto& policy=budgets_.loadShedding;
+    const uint32_t remainingGlobal=budgets_.maxBurstsPerFrame>
+        stats_.frameBursts ? budgets_.maxBurstsPerFrame-stats_.frameBursts:0;
+    uint32_t budget=remainingGlobal;
+    stats_.pressureActive=false;
+    if(policy.enabled) {
+        if(policy.maxContinuousBurstsPerFrame>0)
+            budget=std::min(budget,policy.maxContinuousBurstsPerFrame);
+        budget=std::min(budget,
+            remainingGlobal>policy.reserveManualBursts ?
+            remainingGlobal-policy.reserveManualBursts : 0u);
+        const uint64_t occupancy=uint64_t(stats_.cpuParticles)+
+                                 uint64_t(stats_.gpuParticlesEstimated);
+        const bool particlePressure=policy.estimatedParticleSoftLimit>0 &&
+            occupancy>=policy.estimatedParticleSoftLimit;
+        const bool readbackPressure=policy.maxReadbackBytesInFlight>0 &&
+            checkpointBudget_ &&
+            checkpointBudget_->stats().bytesInFlight>=
+                policy.maxReadbackBytesInFlight;
+        if(particlePressure || readbackPressure)budget=0;
+        stats_.pressureActive=particlePressure || readbackPressure ||
+            budget<remainingGlobal;
+    }
+    stats_.continuousFrameBudget=budget;
+    uint32_t emittedTotal=0;
+    const size_t count=sources_.size();
+    const size_t first=count?nextContinuousSource_%count:0;
+    if(count)nextContinuousSource_=(first+1)%count;
+    // Rotating order prevents a busy lower-index source from always using
+    // the entire shared continuous budget before later sources run.
+    for(size_t scan=0;scan<count;++scan) {
+        Source& source=sources_[(first+scan)%count];
         if(!source.active)continue;
         if(source.paused || !source.transformAttached) {
             source.lastStepPosition=source.position;
@@ -573,10 +624,17 @@ void GpuPoolWorld::tickContinuous(float dt) {
         } else source.accumulatedDistance=0.f;
         // Discard excess rather than accumulating an unbounded catch-up queue.
         const uint64_t wanted=uint64_t(rateCount)+distanceCount;
-        const uint32_t limit=std::min(cfg.maxBurstsPerFrame,
-             budgets_.maxBurstsPerFrame>stats_.frameBursts
-                ?budgets_.maxBurstsPerFrame-stats_.frameBursts:0u);
-        const uint32_t eligible=uint32_t(std::min<uint64_t>(wanted,limit));
+        const uint32_t globalRemaining=budgets_.maxBurstsPerFrame>
+            stats_.frameBursts ? budgets_.maxBurstsPerFrame-stats_.frameBursts:0;
+        const uint32_t baseLimit=std::min(cfg.maxBurstsPerFrame,globalRemaining);
+        const uint32_t adjustedLimit=std::min(
+            baseLimit,budget>emittedTotal?budget-emittedTotal:0u);
+        const uint32_t baseEligible=uint32_t(
+            std::min<uint64_t>(wanted,baseLimit));
+        const uint32_t eligible=uint32_t(
+            std::min<uint64_t>(wanted,adjustedLimit));
+        if(policy.enabled && baseEligible>eligible)
+            stats_.pressureSkipped+=baseEligible-eligible;
         stats_.continuousSkipped+=wanted-eligible;
         for(uint32_t i=0;i<eligible;++i) {
             fx::float3 pos=end;
@@ -588,6 +646,7 @@ void GpuPoolWorld::tickContinuous(float dt) {
             }
             if(emitSource(handle,pos,source.direction,source.tint)) {
                 ++stats_.continuousBursts;
+                ++emittedTotal;
             } else {
                 // No retries this frame; an exhausted group must not delay
                 // simulation or another source's emission.
