@@ -2266,8 +2266,12 @@ frame hysteresis prevents per-frame thrashing, but is not a promise
 of performance gain. A backend's unavailable query must not cause a
 false zero-time result or stale scope escalation.
 
-**Verification performed:** GitHub source readback/structural
-inspection only; see `docs/handoffs/prisma-stage-46.md`.
+**Verification performed:** GitHub source readback plus
+**42/42 structural checks**, including per-viewport scope begin/end
+ordering, GL33 query exclusivity, separate benchmark queues, per-view
+sample input, safe memory budget accounting and editor reporting.
+These checks are source-presence/ordering checks ONLY; see
+`docs/handoffs/prisma-stage-46.md`.
 **NOT RUN:** native C++/Metal/GLSL compilation, CTest, actual GL33
 GPU scope queries, Metal/GLES/Vulkan/WebGL smoke, frame budget/
 VRAM profiling, GPU-loss/queue saturation and CI. No production-ready
