@@ -1,4 +1,5 @@
 #include "engine/character/vivid/HumanRig.h"
+#include "engine/character/vivid/RigAuthoring.h"
 #include <cmath>
 #include <iostream>
 #include <stdexcept>
@@ -38,6 +39,29 @@ void check() {
     catch(const std::invalid_argument&){thrown=true;}
     req(thrown,"detached jaw accepted");
     model.nodes[2].parent=1;
+    {
+        RigAuthoring edits;
+        req(edits.setTranslation("head",{0,0.10f,0}),
+            "rig correction edit rejected");
+        std::vector<render::mat4> corrected(motion.size());
+        req(edits.apply(model,motion,corrected),
+            "rig correction overlay could not compose");
+        req(std::fabs(corrected[1].at(1,3)-(motion[1].at(1,3)+0.10f))<1.e-5f &&
+            std::fabs(corrected[2].at(1,3)-(motion[2].at(1,3)+0.10f))<1.e-5f &&
+            corrected[0].at(1,3)==motion[0].at(1,3),
+            "rig correction did not propagate to descendants");
+        auto loaded=RigAuthoring::fromJson(edits.toJson());
+        std::vector<render::mat4> roundtrip(motion.size());
+        req(loaded.apply(model,motion,roundtrip) &&
+            std::fabs(roundtrip[2].at(1,3)-corrected[2].at(1,3))<1.e-5f,
+            "rig JSON offset roundtrip failed");
+        req(loaded.undo()==false &&
+            loaded.setTranslation("head",{0,0.2f,0}) &&
+            loaded.undo() && loaded.redo(),
+            "rig correction undo redo failed");
+        req(!edits.apply(model,motion,motion),
+            "rig correction modified immutable MotionWeave input");
+    }
     model.nodes.resize(2); // missing jaw and eyes must be legal for morph-only rigs
     const auto fallback=HumanRigBinding::compile(model,HumanDNA{}.rig);
     req(fallback.valid()&&!fallback.hasFacialJoints(),"morph-only rig rejected");
