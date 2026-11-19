@@ -532,7 +532,7 @@ public:
             count += patch.size();
         }
         std::vector<FoliageInstance> placements;
-        placements.reserve(count+recruited_.size());
+        placements.reserve(count+std::min<size_t>(recruited_.size(),1024));
         for (const auto& [key, patch] : patches_) {
             (void)key;
             for (const FoliageInstance& instance : patch) {
@@ -599,6 +599,25 @@ public:
                 }
             }
         }
+        // These are explicit ECS-grown saplings, not present in procedural
+        // scatter patches. Selection/harvest queries must see them too.
+        for(const auto& [id,instance]:recruited_){
+            (void)id;
+            const int64_t dx=instance.xCm-xCm,dz=instance.zCm-zCm;
+            if(dx<-radius || dx>radius || dz<-radius || dz>radius)
+                continue;
+            const int64_t dist=dx*dx+dz*dz;
+            if(dist>bestDist)continue;
+            const auto shown=presentationInstance(instance);
+            if(!shown)continue;
+            if(!best || dist<bestDist ||
+               (dist==bestDist &&
+                ForestTreeIdentity{shown->key,shown->speciesId} <
+                ForestTreeIdentity{best->key,best->speciesId})){
+                best=*shown;
+                bestDist=dist;
+            }
+        }
         return best;
     }
 
@@ -624,6 +643,15 @@ public:
                     throw std::length_error("TerraWeave tree query result overflow");
                 results.push_back(*shown);
             }
+        }
+        for(const auto& [id,instance]:recruited_){
+            (void)id;
+            if(!region.contains(instance.xCm,instance.zCm))continue;
+            const auto shown=presentationInstance(instance);
+            if(!shown)continue;
+            if(results.size()==maxResults)
+                throw std::length_error("TerraWeave recruited tree query overflow");
+            results.push_back(*shown);
         }
         std::sort(results.begin(),results.end(),
             [](const FoliageInstance& a,const FoliageInstance& b){
