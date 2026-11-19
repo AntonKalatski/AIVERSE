@@ -131,6 +131,26 @@ struct DrawIndexedIndirectCommand {
 };
 static_assert(sizeof(DrawIndexedIndirectCommand) == 20);
 
+// Experimental *per-command* VT fragment resources for Metal GPU ICB.
+// The pipeline and non-VT PBR resources remain shared per command group.
+// This is a descriptor only; regular backends reject the opt-in path.
+// Both physical atlas and page table must be 2D-array textures.
+// params = (virtualLayer, gutterPixels, addressU, addressV).
+struct GpuIcbVirtualMaterial {
+    TextureHandle physicalAtlas, pageTable, alphaCoverage;
+    float params[4] = {};
+    bool valid() const {
+        return physicalAtlas.valid() && pageTable.valid() &&
+               std::isfinite(params[0]) && params[0] >= 0 &&
+               params[0] < 16 && std::floor(params[0]) == params[0] &&
+               std::isfinite(params[1]) && params[1] >= 0 &&
+               std::isfinite(params[2]) && params[2] >= 0 &&
+               params[2] <= 2 && std::floor(params[2]) == params[2] &&
+               std::isfinite(params[3]) && params[3] >= 0 &&
+               params[3] <= 2 && std::floor(params[3]) == params[3];
+    }
+};
+
 struct BufferDesc {
     BufferType type = BufferType::Vertex;
     Usage usage = Usage::Immutable;
@@ -689,6 +709,20 @@ public:
         const void* instanceData, size_t instanceBytes) {
         (void)gpuArguments; (void)vertexBuffer; (void)indexBuffer; (void)sourceSlots; (void)count;
         (void)instanceData; (void)instanceBytes;
+        return 0;
+    }
+    // Optional GPU ICB material bindings. Unlike the legacy homogeneous
+    // path, this API may assign each draw its own VT atlas/page table and
+    // per-command U6. Only supported backends implement this; failed
+    // submissions return zero and the caller uses the ordinary draw path.
+    virtual uint32_t prepareGpuEncodedIndexedIcbWithVirtualMaterials(
+        BufferHandle gpuArguments, BufferHandle vertexBuffer,
+        BufferHandle indexBuffer, const uint32_t* sourceSlots, uint32_t count,
+        const void* instanceData, size_t instanceBytes,
+        const GpuIcbVirtualMaterial* materials) {
+        (void)gpuArguments; (void)vertexBuffer; (void)indexBuffer;
+        (void)sourceSlots; (void)count; (void)instanceData;
+        (void)instanceBytes; (void)materials;
         return 0;
     }
     // Finish batched GPU command encoding before opening a render pass.
