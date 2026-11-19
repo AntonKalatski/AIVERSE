@@ -173,6 +173,9 @@ public:
         ImGui::TextDisabled("MotionWeave retarget CPU scratch: %.1f / %.1f KiB",
             double(ed.view().genericRetargetScratchCapacityBytes())/1024.0,
             double(ed.view().genericRetargetScratchBudgetBytes())/1024.0);
+        if(ed.view().activeModelReadLeases())
+            ImGui::TextDisabled("Model cache: %zu active render read leases",
+                ed.view().activeModelReadLeases());
         ImGui::TextDisabled("GPU программы Renderer3D: %zu партий ждут fence",
             ed.renderer().pendingProgramRetirements());
         ImGui::TextDisabled("GPU RenderTargets: %zu пар ждут fence",
