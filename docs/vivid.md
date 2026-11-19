@@ -620,3 +620,10 @@ A separate `MorphLodTransfer` helper carries VIVID sparse facial morph targets t
 VIVID now has an opt-in CPU `MorphLodSurface` authoring helper for transferring sparse facial morphs to independently decimated LOD vertex streams. It projects each LOD vertex onto an original indexed triangle, stores stable barycentric correspondence and interpolates all authored corrective position, normal and tangent deltas before recompiling the LOD-specific sparse CSR representation. The fallback rejects nonfinite/degenerate data, outside-tolerance vertex positions and authoring workloads exceeding the bounded eight-million comparison budget.
 
 This is source-level morph transfer, **not** automatic mesh simplification, Creator authoring UI integration or runtime LOD switching. Large meshes need a spatial acceleration structure and precise region constraints to avoid false matches across different facial features. The new implementation and regression assertions have **NOT RUN** on macOS; no compiled/GPU-tested parity is claimed. Stage 7A source SHAs and next steps are in `docs/agent-handoffs/vivid.md`.
+
+
+## Stage 7B — persistent facial LOD projection mapping (2026-11-19)
+
+A versioned `MorphLodMapping` JSON sidecar now records the source mesh dimensions and each target LOD vertex's barycentric triangle projection. Stored maps can be reloaded to produce target-specific sparse morph CSR data without recalculating Stage 7A surface proximity. The loader enforces bounded dimensions, finite coordinates and barycentric values and verifies source vertex/triangle counts.
+
+**Not yet production-safe against unrelated same-sized meshes:** a topology fingerprint and authoring asset identity remain required. Creator sidecar UI, BVH accelerated surface search, GPU LOD switching and native Mac acceptance are still outstanding. Source and regression assertions are committed, **tests not run**. Exact commits and handoff are in `docs/agent-handoffs/vivid.md`.
