@@ -273,9 +273,22 @@ static void verifyModelOwnershipVisitorContracts() {
                            [](const render::Model*){});});
         expectBlocked([&]{(void)cache.acquireModelRead(&model);});
         expectBlocked([&]{(void)cache.collectRetired(dev);});
+        expectBlocked([&]{cache.setRetirementDiagnosticObserver(
+            [](const render::RetirementDiagnosticEvent&){});});
+        if(visited==1) {
+            // retireUnpublished() is noexcept, so nested retirement cannot
+            // throw. It must take the explicit idle fallback, never append
+            // under an active retirement-queue enumeration callback.
+            auto scratch=std::make_unique<render::Model>();
+            const auto failures=cache.stagingQueueFailures();
+            cache.retireUnpublished(dev,scratch);
+            CHECK(!scratch);
+            CHECK(cache.stagingQueueFailures()==failures+1);
+            CHECK(cache.pendingRetirements()==0);
+        }
     });
     CHECK(visited==2);
-    CHECK(blocked==8);
+    CHECK(blocked==10);
     CHECK(cache.generation()==initialGeneration);
     CHECK(cache.find("models/first.glb")==resident);
     CHECK(cache.find("models/new.glb")==nullptr);
