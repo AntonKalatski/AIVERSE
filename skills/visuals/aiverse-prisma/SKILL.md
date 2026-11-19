@@ -178,12 +178,58 @@ over/under-allocation, scaling ratios and Metal/GL/Vulkan shader validity.
 See `docs/handoffs/prisma-stage-44.md`. Do not enable by default or infer
 improved frame rate from source code.
 
+## GPU-fence-gated adaptive scaling and stable fallback (Stage 45)
+
+`engine/render/PrismaAdaptiveResolution.h` adds a CPU-only
+`PrismaAdaptiveResolution` hysteresis controller that adjusts render scale
+only from **new, completed GPU-frame timings** plus a strictly advancing
+`Device::gpuCompletedFence()`. The native `Device::gpuFrameMs()` supplies
+an asynchronously completed *whole GPU frame* measurement where supported
+(e.g. Metal); unsupported GL/Vulkan/mobile backends may return 0 and must
+retain the authored scale. CPU frame times/FPS are NEVER substituted.
+
+The `temporalResolve` effect now provides optional `adaptiveResolution`
+(default false), `targetGpuMs` (default 16.6; 4..50 ms) and
+`minRenderScale` (default 0.5). It also requires
+`AIVERSE_PRISMA_ADAPTIVE=1` along with the Stage 44 trio of
+`AIVERSE_PRISMA_TEMPORAL=1`, `AIVERSE_PRISMA_JITTER=1`,
+`AIVERSE_PRISMA_UPSCALE=1`. The authored `renderScale` is the upper
+bound. Over target by >15% for 12 new completed GPU observations steps
+scale down 1/16; <80% of target for 36 samples steps it up; 48 new
+completed GPU samples of cooldown prevent oscillation. Each view has
+its own state, but timings represent the entire GPU frame, NOT an
+isolated viewport.
+
+Before returning a reduced render size, `renderSizeForOutput()` now
+**preflights GPU resources** on the graphics thread: valid temporal and
+velocity pipelines, fallback composite, full-output HDR history pair and
+matching scratch depth, low-res HDR scene/depth/velocity/scratch. Failed
+preflight returns the original full dimensions, suppresses jitter for the
+view and rate-limits retries (60 calls). Resource ownership stays in
+the existing Prisma cache/history and is GPU-fence retired on resize.
+
+If the temporal pass unexpectedly fails *after* jittered geometry has
+already been encoded, the existing final composite now samples at
+`s + currentJitter` to cancel the projection offset. This is a
+stable-space **spatial fallback**, not a substitute for history or an
+automatic GPU retry. The shader's `graphFrame.zw` is zero in normal
+paths and is used only for fallback sampling. Input/overlay/UI cameras
+are unchanged. The editor shows the adaptive-state, current internal
+scale, whole-GPU-frame timing and whether jitter compensation was used.
+
+**Do not confuse:** `gpuCompletedFence` is a validity gate for new
+asynchronous timings, never permission to release arbitrary resources;
+normal Prisma GPU lifetime rules remain unchanged. Profiling and
+compilation have NOT RUN in this stage, and neither adaptive frame-rate
+improvement nor image-quality superiority has been measured. See
+`docs/handoffs/prisma-stage-45.md`.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
 - Temporal/screen-space: `PrismaScreenLighting.{h,cpp}`, `PrismaScreenLightingShaders.h`.
 - Legacy `PostFx*.h`, `ScreenLighting.h` and old ops header are compatibility-only; legacy .cpp shims have no definitions. New engine changes MUST go in PRISMA files.
-- The volume stack remains GPU-free. The main PRISMA chain includes **source-level, experimental** Auto Exposure, DoF, camera/object motion blur, Stages 42–43 native temporal resolve/jitter, and Stage 44 fixed-scale temporal upscaling. RenderGraph execution is partially opt-in; automatic dynamic resolution and production-grade TSR/FSR are **not** implemented. Native builds and GPU parity tests remain unrun for these stages; never label them verified or production-ready.
+- The volume stack remains GPU-free. The main PRISMA chain includes **source-level, experimental** Auto Exposure, DoF, camera/object motion blur, Stages 42–43 native temporal resolve/jitter, Stage 44 temporal upscaling and Stage 45 opt-in **whole-GPU-frame adaptive scale**. RenderGraph execution is partially opt-in; a production-grade dynamic resolution/TSR/FSR system is **not** implemented. Native builds and GPU parity tests remain unrun for these stages; never label them verified or production-ready.
 
 ## Mandatory validation and handoff
 
