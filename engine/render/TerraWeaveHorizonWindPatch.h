@@ -30,7 +30,10 @@ inline uint32_t horizonFieldWindVertexColor(
     const auto signedChannel=[](int32_t v)->uint32_t {
         // v is validated as part of the wind field and remains in +/-5000.
         const int64_t clamped=std::clamp<int64_t>(v,-5000,5000);
-        return static_cast<uint32_t>((clamped+5000)*255/10000);
+        const int64_t quantized=clamped>=0 ?
+            (clamped*127+2500)/5000 :
+            -((-clamped*127+2500)/5000);
+        return static_cast<uint32_t>(128+quantized);
     };
     const uint32_t x=signedChannel(sample.xCmPerSec);
     const uint32_t z=signedChannel(sample.zCmPerSec);
