@@ -2,6 +2,7 @@
 #include "Renderer3D.h"
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
 #include "StrataModelAdapter.h"
+#include "StrataView.h"
 #endif
 #include <algorithm>
 #include <numeric>
@@ -45,6 +46,29 @@ const strata::ModelAsset* GeometryScene::strataAsset(const std::string& sourceKe
 #else
     (void)sourceKey;
     return nullptr;
+#endif
+}
+
+bool GeometryScene::planStrataView(const std::string& sourceKey,
+                                   uint32_t mesh, uint32_t primitive,
+                                   const strata::ViewConfig& config,
+                                   strata::ViewPlan& out,
+                                   std::string* error) const {
+#if defined(AIVERSE_STRATA_STAGING_ENABLED)
+    const auto* model = strataAsset(sourceKey);
+    if (!model) {
+        if (error) *error = "Strata source is not staged";
+        return false;
+    }
+    for (const auto& p : model->primitives)
+        if (p.mesh == mesh && p.primitive == primitive)
+            return strata::planView(p.geometry, config, out, error);
+    if (error) *error = "Strata primitive is not staged";
+    return false;
+#else
+    (void)sourceKey; (void)mesh; (void)primitive; (void)config; (void)out;
+    if (error) *error = "Strata support is disabled at build time";
+    return false;
 #endif
 }
 
