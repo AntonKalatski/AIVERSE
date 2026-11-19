@@ -1102,14 +1102,17 @@ public:
     }
 
     bool supportsMultiDrawIndirect() const override {
-        // Both Metal ICB paths are deliberately opt-in. CPU Multi-Draw is
-        // independently testable without enabling GPU-authored commands.
-        // Historic AIVERSE_EXPERIMENTAL_METAL_ICB continues to enable the
-        // CPU path for old A/B scripts; neither flag is a production default.
+        // Independent opt-ins: explicit CPU MDI, legacy experimental ICB,
+        // or the renderer's opt-in three-way AUTO policy. AUTO needs to query
+        // CPU-MDI availability to train its CPU fallback; it must NOT enable
+        // compute-authored GPU ICB (supportsGpuEncodedIcb has stricter flags).
+        // No path is enabled for an ordinary non-AUTO production process.
         const char* cpu = std::getenv("AIVERSE_METAL_CPU_MDI");
         const char* experimental = std::getenv("AIVERSE_EXPERIMENTAL_METAL_ICB");
+        const char* autoBatch = std::getenv("AIVERSE_BATCH_AUTO");
         if (!(cpu && std::strcmp(cpu, "1") == 0) &&
-            !(experimental && std::strcmp(experimental, "1") == 0)) return false;
+            !(experimental && std::strcmp(experimental, "1") == 0) &&
+            !(autoBatch && std::strcmp(autoBatch, "1") == 0)) return false;
 #if TARGET_OS_IPHONE
         if (@available(iOS 14.0, *)) return [device_ supportsFamily:MTLGPUFamilyApple3];
 #else
@@ -1548,9 +1551,28 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             if (!uniforms[slot] || !uniforms[slot].contents) return false;
             std::memcpy(uniforms[slot].contents, bytes.data(), bytes.size());
         }
+        // Each ICB command uses the same uniform slots. Compact the active
+        // bindings once per submission instead of checking 8 empty slots for
+        // every command (potentially hundreds per submission).
+        struct ActiveUniform {
+            id<MTLBuffer> buffer = nil;
+            NSUInteger index = 0;
+        };
+        ActiveUniform uniformBindings[8]{};
+        int uniformBindingCount = 0;
+        for (int slot = 0; slot < 8; ++slot) {
+            if (!uniforms[slot]) continue;
+            uniformBindings[uniformBindingCount++] = {uniforms[slot], NSUInteger(1 + slot)};
+        }
         const auto afterAlloc = std::chrono::steady_clock::now();
         const bool u32 = p->desc.indexType == IndexType::UInt32;
         const size_t indexBytes = u32 ? 4u : 2u;
+        const MTLIndexType icbIndexType = u32 ? MTLIndexTypeUInt32 : MTLIndexTypeUInt16;
+        // All indirect commands share the same validated pipeline. Avoid
+        // re-querying the pipeline table in prim() for each encoded command.
+        const MTLPrimitiveType icbPrimitive =
+            p->desc.primitive == Primitive::Lines
+                ? MTLPrimitiveTypeLine : MTLPrimitiveTypeTriangle;
         const auto& modelUniforms = indirectUniformSnapshots_[0];
         constexpr size_t kModelInstanceBytes = 36u * sizeof(float);
         const size_t instanceCapacity = modelUniforms.size() / kModelInstanceBytes;
@@ -1573,12 +1595,13 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             [command setRenderPipelineState:indirectPipeline];
             if (pbr) [command setFragmentBuffer:pbrArgs offset:0 atIndex:8];
             [command setVertexBuffer:vertices offset:vbOffset_ atIndex:0];
-            for (int slot = 0; slot < 8; ++slot) if (uniforms[slot]) {
-                [command setVertexBuffer:uniforms[slot] offset:0 atIndex:NSUInteger(1 + slot)];
-                [command setFragmentBuffer:uniforms[slot] offset:0 atIndex:NSUInteger(1 + slot)];
+            for (int k = 0; k < uniformBindingCount; ++k) {
+                const auto& binding = uniformBindings[k];
+                [command setVertexBuffer:binding.buffer offset:0 atIndex:binding.index];
+                [command setFragmentBuffer:binding.buffer offset:0 atIndex:binding.index];
             }
-            [command drawIndexedPrimitives:prim() indexCount:args.indexCount
-                indexType:u32 ? MTLIndexTypeUInt32 : MTLIndexTypeUInt16
+            [command drawIndexedPrimitives:icbPrimitive indexCount:args.indexCount
+                indexType:icbIndexType
                 indexBuffer:indices indexBufferOffset:ibOffset_ + size_t(args.firstIndex) * indexBytes
                 instanceCount:args.instanceCount baseVertex:args.baseVertex baseInstance:args.firstInstance];
         }
@@ -1608,9 +1631,20 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             totals[2] += ms(afterAlloc, afterEncode);
             totals[3] += ms(afterEncode, std::chrono::steady_clock::now());
             commandsEncoded += drawCount;
-            if (++submissions == 600) {
+            // Override only the reporting interval, never a GPU/CPU path.
+            // Small AUTO probes may submit far fewer than 600 ICBs.
+            static const uint32_t reportEvery = [] {
+                const char* raw = std::getenv("AIVERSE_ICB_PROFILE_REPORT_EVERY");
+                if (!raw || !*raw) return 600u;
+                char* end = nullptr;
+                const long n = std::strtol(raw, &end, 10);
+                return end != raw && *end == '\0' && n >= 1 && n <= 10000
+                    ? uint32_t(n) : 600u;
+            }();
+            if (++submissions == reportEvery) {
                 std::fprintf(stderr,
-                    "[metal-icb] avg/600 submissions args=%.4f alloc=%.4f encode=%.4f residency-execute=%.4f ms commands/submission=%.1f\n",
+                    "[metal-icb] avg/%u submissions args=%.4f alloc=%.4f encode=%.4f residency-execute=%.4f ms commands/submission=%.1f\n",
+                    reportEvery,
                     totals[0] / submissions, totals[1] / submissions,
                     totals[2] / submissions, totals[3] / submissions,
                     double(commandsEncoded) / submissions);

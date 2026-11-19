@@ -14,6 +14,7 @@ struct AutoCpuBatchPolicy {
         double directMs = 0.0, mdiMs = 0.0;
         uint32_t directSamples = 0, mdiSamples = 0;
         uint32_t opportunities = 0;
+        uint32_t mdiNoSubmission = 0;
     };
     std::array<std::array<Lane, 3>, 2> lanes{};
     static size_t bucket(size_t items) {
@@ -25,25 +26,41 @@ struct AutoCpuBatchPolicy {
         if (phase >= 2 || items < 64) return false;
         auto& lane = lanes[phase][bucket(items)];
         const uint32_t n = ++lane.opportunities;
-        // Warm each path before comparing to eliminate initialization bias.
-        if (lane.directSamples < 8) return (n & 1u) == 0u;
-        if (lane.mdiSamples < 8) return true;
-        // Fixed 8% margin to dampen noisy switches. Every 32 opportunities
-        // sample the currently disfavoured path to track workload changes.
+        // A candidate count alone is not a valid indirect command count.
+        // If the renderer repeatedly found no valid MDI submission, stay on
+        // direct/instancing and periodically probe again as content changes.
+        if (lane.mdiNoSubmission >= 3)
+            return n % 32u == 0u;
+        // Do not freeze the choice after only a handful of MDI probes.
+        // The first MDI frame may allocate/pipeline-warm Metal ICB resources,
+        // so gather a useful consecutive window before trusting its EWMA.
+        if (lane.directSamples < 12) return (n & 1u) == 0u;
+        if (lane.mdiSamples < 32) return true;
+        // Require a measurable advantage before switching to MDI. While
+        // Direct is selected, sample an 8-pass contiguous MDI probe every
+        // 64 opportunities; isolated single probes can amplify cold-start
+        // effects and keep the estimator stuck on Direct indefinitely.
         const bool mdiFaster = lane.mdiMs < lane.directMs * 0.92;
-        if ((n % 32u) == 0u) return !mdiFaster;
+        if (!mdiFaster && n % 64u < 8u) return true;
+        if (mdiFaster && n % 64u == 0u) return false;
         return mdiFaster;
+    }
+    void recordNoSubmission(size_t phase, size_t items) {
+        if (phase >= 2 || items < 64) return;
+        auto& lane = lanes[phase][bucket(items)];
+        if (lane.mdiNoSubmission < 1000000u) ++lane.mdiNoSubmission;
     }
     void observe(size_t phase, size_t items, bool mdi, double ms) {
         if (phase >= 2 || items < 64 || !std::isfinite(ms) || ms <= 0.0)
             return;
         auto& lane = lanes[phase][bucket(items)];
+        if (mdi) lane.mdiNoSubmission = 0;
         auto& avg = mdi ? lane.mdiMs : lane.directMs;
         auto& count = mdi ? lane.mdiSamples : lane.directSamples;
         // Ignore first two samples of each lane to limit pipeline warmup.
         if (count < 2) { ++count; return; }
         if (count == 2) avg = ms;
-        else avg += 0.12 * (ms - avg);
+        else avg += 0.25 * (ms - avg);
         if (count < 1000000u) ++count;
     }
 };

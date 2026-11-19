@@ -98,13 +98,31 @@ static bool unitChecks() {
     }
     ok &= check(!autoPolicy.useMdi(0, 80)); // direct cheaper
     ok &= check(!autoPolicy.useMdi(1, 80)); // independent untrained phase
+    AutoCpuBatchPolicy stalled;
+    for (int i = 0; i < 3; ++i) stalled.recordNoSubmission(0, 1024);
+    ok &= check(!stalled.useMdi(0, 1024)); // no repeated unproductive MDI
+    for (int i = 0; i < 30; ++i) stalled.useMdi(0, 1024);
+    ok &= check(stalled.useMdi(0, 1024)); // periodic re-probe
+    AutoCpuBatchPolicy calibrated;
+    // Explicitly feed comparable completed pass measurements; the learner
+    // must gather a full MDI window before trusting early expensive frames.
+    for (int i = 0; i < 12; ++i)
+        calibrated.observe(0, 1024, false, 1.0);
+    for (int i = 0; i < 31; ++i)
+        calibrated.observe(0, 1024, true, i < 4 ? 2.0 : 0.65);
+    ok &= check(calibrated.useMdi(0, 1024));
+    calibrated.observe(0, 1024, true, 0.65);
+    ok &= check(calibrated.useMdi(0, 1024)); // MDI now wins after warmup
+    ok &= check(!calibrated.useMdi(1, 1024)); // independent opaque lane
+
     std::printf("material palette CPU checks=%d result=%s\n",checks,ok?"passed":"FAILED");
     return ok;
 }
 
 // Deterministic 16-primitive fixture with one shader/material and independent
 // node transforms. MDI and the fallback must render byte-identical images.
-static std::unique_ptr<render::Model> indirectFixture(bool variedMaterials = false) {
+static std::unique_ptr<render::Model> indirectFixture(bool variedMaterials = false,
+                                                       size_t primitives = 16) {
     using namespace render;
     auto m = std::make_unique<Model>();
     m->path = "indirect-fixture";
@@ -120,7 +138,7 @@ static std::unique_ptr<render::Model> indirectFixture(bool variedMaterials = fal
         m->materials[2].baseColor = {.15f, .25f, .85f, 1.f};
         m->materials[2].roughness = .18f;
     }
-    for (int i = 0; i < 16; ++i) {
+    for (size_t i = 0; i < primitives; ++i) {
         const uint32_t start = uint32_t(m->vertices.size());
         for (float3 pos : {float3{-.3f, 0, 0}, float3{.3f, 0, 0}, float3{0, .75f, 0}}) {
             ModelVertex v;
@@ -130,7 +148,7 @@ static std::unique_ptr<render::Model> indirectFixture(bool variedMaterials = fal
         }
         m->indices.insert(m->indices.end(), {start, start + 1, start + 2});
         Primitive p;
-        p.material = variedMaterials ? i % 3 : 0;
+        p.material = variedMaterials ? int(i % 3) : 0;
         p.firstIndex = uint32_t(m->indices.size() - 3);
         p.indexCount = 3;
         p.firstVertex = start;
@@ -141,7 +159,14 @@ static std::unique_ptr<render::Model> indirectFixture(bool variedMaterials = fal
         Node node;
         node.mesh = int(m->meshes.size());
         node.name = mesh.name;
-        node.t = {float(i % 4) * 1.5f - 2.25f, float(i / 4) * .9f, 0};
+        // Stress: unique primitives in a compact region around the fixed
+        // camera target. No identical-primitive instancing can collapse the
+        // workload into 16 draws, and no repeated model draws are needed.
+        node.t = primitives == 16
+            ? float3{float(i % 4) * 1.5f - 2.25f, float(i / 4) * .9f, 0}
+            : float3{float(i % 128) * .028f - 1.8f,
+                     float((i / 128) % 128) * .028f,
+                     float(i / 16384) * .016f};
         m->meshes.push_back(std::move(mesh));
         m->nodes.push_back(std::move(node));
     }
@@ -176,32 +201,8 @@ int aiverseMain(int argc, char** argv) {
         return models && after<before ? 0 : 1;
     }
     const std::string scenario = std::getenv("AIVERSE_PALETTE_TEST_CASE") ? std::getenv("AIVERSE_PALETTE_TEST_CASE") : "default";
-    // Cold-vs-warm packet screenshot parity uses the same self-contained
-    // varied-material 16-rigid-part fixture as the indirect palette test.
-    auto model = scenario == "indirect" || scenario == "indirect_palette" ||
-                 scenario == "static_packets" || scenario == "auto_stress"
-        ? indirectFixture(scenario != "indirect") : render::loadModel(argv[1],read);
-    const std::string prefix = argv[2];
-    const bool reflection=std::getenv("AIVERSE_SHADOW_TEST_REFLECTION")!=nullptr;
-    render::Renderer3D renderer; render::Mesh floor; gfx::Device* device = nullptr;
-    std::unique_ptr<render::Model> secondModel;
-    std::vector<render::Material> materials;
-    std::vector<std::vector<render::MaterialBatch>> batches;
-    std::vector<uint8_t> before;
-    uint32_t shadowBefore=0, opaqueBefore=0; int frame=0; bool failed=false, finished=false;
-    bool packetBuilt=false; // the warm hit must reuse a previously built packet
-    // Opt-in synchronous CPU measurements; never treat these as GPU timing.
-    const bool cpuTiming = std::getenv("AIVERSE_BATCH_CPU_TIMING") &&
-        std::string(std::getenv("AIVERSE_BATCH_CPU_TIMING")) == "1";
-    std::vector<double> cpuRenderBefore, cpuRenderAfter;
     const bool stress = scenario == "auto_stress";
-    const int captureBeforeFrame = stress ? 75 : 8;
-    const int captureAfterFrame = stress ? 195 : 23;
-    const int startBatchFrame = stress ? 90 : 15;
-    const int maximumFrame = stress ? 205 : 40;
-    // Number of visible-targeted primitive items, rounded up in 16-part
-    // rigid-model units. This is not a guaranteed post-culling visible count.
-    size_t stressDraws = 0;
+    size_t stressItems = 0;
     if (stress) {
         const char* raw = std::getenv("AIVERSE_BATCH_STRESS_ITEMS");
         char* end = nullptr;
@@ -211,10 +212,70 @@ int aiverseMain(int argc, char** argv) {
             std::fprintf(stderr, "AIVERSE_BATCH_STRESS_ITEMS must be 64..100000\n");
             return 2;
         }
-        stressDraws = (size_t(parsed) + 15) / 16;
-        std::printf("stress requested_items=%zu submitted_model_draws=%zu "
-                    "source_primitives_per_draw=16\n",
-                    size_t(parsed), stressDraws);
+        stressItems = size_t(parsed);
+    }
+    // Cold-vs-warm packet screenshot parity uses the same self-contained
+    // varied-material 16-rigid-part fixture as the indirect palette test.
+    auto model = scenario == "indirect" || scenario == "indirect_palette" ||
+                 scenario == "static_packets" || scenario == "auto_stress"
+        ? indirectFixture(scenario != "indirect" && !stress,
+                          stress ? stressItems : 16) : render::loadModel(argv[1],read);
+    const std::string prefix = argv[2];
+    const bool reflection=std::getenv("AIVERSE_SHADOW_TEST_REFLECTION")!=nullptr;
+    render::Renderer3D renderer; render::Mesh floor; gfx::Device* device = nullptr;
+    std::unique_ptr<render::Model> secondModel;
+    std::vector<render::Material> materials;
+    std::vector<std::vector<render::MaterialBatch>> batches;
+    std::vector<uint8_t> before;
+    bool mdiCaptureRequested=false, mdiCaptureVerified=false;
+    const bool captureMdi = std::getenv("AIVERSE_CAPTURE_SUCCESSFUL_MDI") &&
+        std::string(std::getenv("AIVERSE_CAPTURE_SUCCESSFUL_MDI")) == "1";
+    uint32_t shadowBefore=0, opaqueBefore=0; int frame=0; bool failed=false, finished=false;
+    bool packetBuilt=false; // the warm hit must reuse a previously built packet
+    // Opt-in synchronous CPU measurements; never treat these as GPU timing.
+    const bool cpuTiming = std::getenv("AIVERSE_BATCH_CPU_TIMING") &&
+        std::string(std::getenv("AIVERSE_BATCH_CPU_TIMING")) == "1";
+    std::vector<double> cpuRenderBefore, cpuRenderAfter;
+    // Stage 76: do not conflate AUTO exploration frames with its learned
+    // Direct frames. Retain CPU samples for *actual* successful MDI frames.
+    std::vector<double> stressDirectFallbackMs, stressSuccessfulMdiMs;
+    std::vector<double> stressSteadyAutoMs;
+    struct SuccessfulMdiCpu {
+        uint64_t samples = 0, submissions = 0;
+        double totalMs = 0, selectionMs = 0, groupingMs = 0;
+        double scanMs = 0, packingMs = 0, pipelineMs = 0;
+        double uploadMs = 0, submitMs = 0;
+    };
+    std::array<SuccessfulMdiCpu, 2> successfulMdiStages{};
+    uint64_t stressAutoMdiScans = 0, stressAutoMdiAttempts = 0;
+    uint64_t stressAutoMdiSubmitted = 0, stressAutoMdiShort = 0;
+    uint64_t stressAutoMdiBelow = 0, stressAutoMdiIneligible = 0;
+    uint64_t stressAutoMdiFailed = 0;
+    uint64_t stressAutoGeometryBreaks = 0, stressAutoMaterialBreaks = 0;
+    uint64_t stressAutoStateBreaks = 0;
+    const std::string stressPolicy = stress && std::getenv("AIVERSE_BATCH_STRESS_POLICY")
+        ? std::getenv("AIVERSE_BATCH_STRESS_POLICY") : "auto";
+    if (stress && stressPolicy != "auto" && stressPolicy != "mdi" &&
+        stressPolicy != "direct") {
+        std::fprintf(stderr, "Invalid AIVERSE_BATCH_STRESS_POLICY: %s\n",
+                     stressPolicy.c_str());
+        return 2;
+    }
+    if (stress && stressPolicy == "mdi" &&
+        std::getenv("AIVERSE_BATCH_AUTO") &&
+        std::string(std::getenv("AIVERSE_BATCH_AUTO")) == "1") {
+        std::fprintf(stderr, "Forced MDI benchmark requires AUTO disabled\n");
+        return 2;
+    }
+    uint64_t stressMeasuredMdiFrames = 0, stressMeasuredDirectFrames = 0;
+    uint64_t stressMeasuredMdiSubmissions = 0;
+    const int captureBeforeFrame = stress ? 75 : 8;
+    const int captureAfterFrame = stress ? 195 : 23;
+    const int startBatchFrame = stress ? 90 : 15;
+    const int maximumFrame = stress ? 205 : 40;
+    if (stress) {
+        std::printf("stress requested_items=%zu authored_unique_primitives=%zu "
+                    "submitted_model_draws=1\n", stressItems, model->meshes.size());
     }
     // Benchmark only: independent runs for CPU MDI and GPU ICB. The latter
     // may legitimately retain CPU MDI for a different render pass.
@@ -235,6 +296,17 @@ int aiverseMain(int argc, char** argv) {
             if (!render::uploadModel(d, *secondModel)) { failed=true; return; }
             if (!model->geometryPoolPage || !secondModel->geometryPoolPage ||
                 !(model->vb == secondModel->vb)) { failed=true; return; }
+        }
+        // AUTO is a complete CPU-path opt-in on Metal. Failing this capability
+        // gate used to silently prevent all MDI probes and poison learning.
+        if (stress && std::getenv("AIVERSE_BATCH_AUTO") &&
+            std::string(std::getenv("AIVERSE_BATCH_AUTO")) == "1" &&
+            d.info().backend == gfx::Backend::Metal &&
+            !d.supportsMultiDrawIndirect()) {
+            std::fprintf(stderr,
+                "AUTO stress: Metal CPU MDI capability unavailable despite explicit AUTO opt-in\n");
+            failed = true;
+            return;
         }
         renderer.setProfiling(true); renderer.setShadowQuality(render::ShadowQuality::High);
         renderer.lighting.fogDensity=0;
@@ -264,10 +336,11 @@ int aiverseMain(int argc, char** argv) {
         renderer.setModelMultiDrawEnabled(scenario == "static_packets"
             ? false : ((scenario != "indirect" &&
                         scenario != "indirect_palette" &&
-                        scenario != "auto_stress") || batch));
+                        scenario != "auto_stress") || batch) &&
+                (!stress || !batch || stressPolicy != "direct"));
         // Keep CPU packet primitive source pointers stable for the lifetime of
         // the fixture. Other scenarios deliberately toggle material batches.
-        if (scenario != "static_packets")
+        if (scenario != "static_packets" && !stress)
             for(size_t i=0;i<model->meshes.size();++i)
                 model->meshes[i].materialBatches=(batch && scenario != "indirect" &&
                                                    scenario != "indirect_palette")
@@ -281,7 +354,7 @@ int aiverseMain(int argc, char** argv) {
         // puts static (or explicitly allowed rigid) instances into the
         // compute-generated ICB path. Without this flag a green test would
         // exercise CPU MDI only, regardless of AIVERSE_GPU_ENCODED_ICB.
-        if (scenario == "indirect" || scenario == "static_packets")
+        if (scenario == "indirect" || scenario == "static_packets" || stress)
             draw.flags |= render::kDrawStatic;
         if (scenario == "static_packets") {
             draw.persistentId = 0x12345;
@@ -300,18 +373,7 @@ int aiverseMain(int argc, char** argv) {
             pixels=std::max(pixels,render::geometryErrorPixels(renderer.lightViewProj()*xf,mesh.boundsMin,mesh.boundsMax,error,renderer.shadowMapSize(),renderer.shadowMapSize(),d.info().clipDepthZeroToOne));
             mesh.lods.resize(1);mesh.lods[0].maxPixels=pixels;renderer.setModelLodFadeWidth(.15f);
         }
-        if (stress) {
-            // Deterministic grid with bounded world footprint; use identical
-            // geometry, camera, lighting and transforms in both phases.
-            // Avoid multiplying geometry payload size by reusing one Model.
-            for (size_t n = 0; n < stressDraws; ++n) {
-                auto instance = draw;
-                const float x = float(n % 32) * 0.12f - 1.8f;
-                const float z = float((n / 32) % 32) * 0.12f - 1.8f;
-                instance.world = render::mat4::translate({x, 0, z}) * draw.world;
-                renderer.drawModel(instance);
-            }
-        } else renderer.drawModel(draw);
+        renderer.drawModel(draw);
         if (scenario == "indirect") {
             render::ModelDraw other = draw;
             other.model = secondModel.get();
@@ -324,6 +386,82 @@ int aiverseMain(int argc, char** argv) {
         const auto startCpu = std::chrono::steady_clock::now();
         renderer.render(pass);
         const auto endCpu = std::chrono::steady_clock::now();
+        if (stress && batch && captureMdi && frame >= 100 &&
+            !mdiCaptureRequested && renderer.modelStats().multiDrawSubmissions > 0) {
+            // Capture a frame with a *real* CPU MDI submission rather than
+            // comparing baseline against the final AUTO Direct fallback.
+            mdiCaptureRequested = true;
+            d.captureNextFrame([&, capturedFrame=frame](int w, int h,
+                                                         std::vector<uint8_t> px) {
+                if (w != 960 || h != 640 || before.size() != px.size()) {
+                    std::fprintf(stderr, "MDI pixel capture invalid size at frame=%d\n",
+                                 capturedFrame);
+                    failed = true;
+                    return;
+                }
+                size_t changed = 0;
+                for (size_t i = 0; i < px.size(); ++i)
+                    changed += px[i] != before[i];
+                std::printf("actual MDI pixel parity frame=%d changed_channels=%zu\n",
+                            capturedFrame, changed);
+                if (changed) failed = true;
+                std::ofstream output(prefix + "-mdi-after.ppm", std::ios::binary);
+                output << "P6\n" << w << " " << h << "\n255\n";
+                for (size_t i = 0; i < px.size(); i += 4)
+                    output.write(reinterpret_cast<const char*>(px.data()+i), 3);
+                if (!output) failed = true;
+                mdiCaptureVerified = true;
+            });
+        }
+        if (stress && batch && cpuTiming && frame >= 100 &&
+            frame <= captureAfterFrame) {
+            const auto& st = renderer.modelStats();
+            const double ms = std::chrono::duration<double, std::milli>(
+                endCpu - startCpu).count();
+            if (st.multiDrawSubmissions > 0) {
+                stressSuccessfulMdiMs.push_back(ms);
+                for (size_t phase = 0; phase < successfulMdiStages.size(); ++phase) {
+                    const auto& sample = st.mdiCpuStages[phase];
+                    if (!sample.submitted) continue;
+                    auto& total = successfulMdiStages[phase];
+                    ++total.samples;
+                    total.submissions += sample.submitted;
+                    total.totalMs += sample.totalMs;
+                    total.selectionMs += sample.selectionMs;
+                    total.groupingMs += sample.groupingSortMs;
+                    total.scanMs += sample.candidateScanMs;
+                    total.packingMs += sample.commandPackingMs;
+                    total.pipelineMs += sample.pipelineSetupMs;
+                    total.uploadMs += sample.bufferUploadMs;
+                    total.submitMs += sample.backendSubmitMs;
+                }
+            } else {
+                stressDirectFallbackMs.push_back(ms);
+            }
+            // Late AUTO frames, clearly separate from exploratory warmup.
+            if (frame >= 160) stressSteadyAutoMs.push_back(ms);
+        }
+        if (stress && batch && frame >= 115 && frame <= captureAfterFrame) {
+            const auto& stats = renderer.modelStats();
+            if (stats.multiDrawSubmissions) {
+                ++stressMeasuredMdiFrames;
+                stressMeasuredMdiSubmissions += stats.multiDrawSubmissions;
+            } else ++stressMeasuredDirectFrames;
+        }
+        if (stress && batch) {
+            const auto& st = renderer.modelStats();
+            stressAutoMdiScans += st.mdiScans;
+            stressAutoMdiAttempts += st.mdiCpuStages[0].indirectAttempts +
+                                     st.mdiCpuStages[1].indirectAttempts;
+            stressAutoMdiSubmitted += st.multiDrawSubmissions;
+            stressAutoMdiShort += st.mdiShort;
+            stressAutoMdiBelow += st.mdiBelowThreshold;
+            stressAutoMdiIneligible += st.mdiIneligible;
+            stressAutoMdiFailed += st.mdiFailed;
+            stressAutoGeometryBreaks += st.mdiGeometryBreaks;
+            stressAutoMaterialBreaks += st.mdiMaterialBreaks;
+            stressAutoStateBreaks += st.mdiStateBreaks;
+        }
         // Discard pipeline warmup and the transition frame; no readback in sample.
         if (cpuTiming && (stress
                 ? ((frame >= 10 && frame <= captureBeforeFrame) ||
@@ -364,6 +502,44 @@ int aiverseMain(int argc, char** argv) {
                    benchmarkMode == "gpu_icb" ? "gpu_icb_mixed" :
                    "batched", cpuRenderAfter);
             std::printf("CPU render benchmark: synchronous renderer.render() only; not GPU time or FPS\n");
+            if (stress) {
+                std::printf("stress benchmark policy=%s measured_mdi_frames=%llu "
+                            "measured_direct_frames=%llu measured_mdi_submissions=%llu\n",
+                    stressPolicy.c_str(),
+                    (unsigned long long)stressMeasuredMdiFrames,
+                    (unsigned long long)stressMeasuredDirectFrames,
+                    (unsigned long long)stressMeasuredMdiSubmissions);
+                if (stressPolicy == "mdi" && !stressMeasuredMdiFrames) {
+                    std::fprintf(stderr, "forced MDI failed: zero submitted frames\n");
+                    failed = true;
+                }
+                if (stressPolicy == "direct" && stressMeasuredMdiFrames) {
+                    std::fprintf(stderr, "forced Direct failed: MDI submitted\n");
+                    failed = true;
+                }
+                report("auto_direct_frames", stressDirectFallbackMs);
+                report("auto_mdi_submitted_frames", stressSuccessfulMdiMs);
+                report("auto_late_frames", stressSteadyAutoMs);
+                for (size_t phase = 0; phase < successfulMdiStages.size(); ++phase) {
+                    const auto& x = successfulMdiStages[phase];
+                    if (!x.samples) continue;
+                    const double scale = 1.0 / double(x.samples);
+                    std::printf("successful MDI CPU stage pass=%zu samples=%llu "
+                                "submissions=%llu mean_total_ms=%.5f "
+                                "selection_ms=%.5f grouping_ms=%.5f scan_ms=%.5f "
+                                "packing_ms=%.5f pipeline_ms=%.5f "
+                                "upload_ms=%.5f submit_ms=%.5f\n",
+                        phase, (unsigned long long)x.samples,
+                        (unsigned long long)x.submissions, x.totalMs * scale,
+                        x.selectionMs * scale, x.groupingMs * scale,
+                        x.scanMs * scale, x.packingMs * scale,
+                        x.pipelineMs * scale, x.uploadMs * scale,
+                        x.submitMs * scale);
+                }
+                std::printf("AUTO stress timing note: exploratory frame modes "
+                            "are not randomized A/B/A, GPU time remains unknown\n");
+            }
+
             if (std::getenv("AIVERSE_BATCH_AUTO") &&
                 std::string(std::getenv("AIVERSE_BATCH_AUTO")) == "1") {
                 const auto& learned = renderer.autoCpuBatchStats();
@@ -379,6 +555,11 @@ int aiverseMain(int argc, char** argv) {
                 }
             }
 
+        }
+        if (stress && frame == captureAfterFrame && captureMdi &&
+            (!mdiCaptureRequested || !mdiCaptureVerified)) {
+            std::fprintf(stderr, "actual MDI parity capture missing at AUTO end\n");
+            failed = true;
         }
         if(frame==captureBeforeFrame||frame==captureAfterFrame){
             const auto& p=renderer.profile();
@@ -421,6 +602,48 @@ int aiverseMain(int argc, char** argv) {
                     (unsigned long long)cpu.multiDrawSubmissions,
                     (unsigned long long)cpu.indirectCommands,
                     gpu.gpuEncodedSubmissions, gpu.gpuEncodedCommands);
+                std::printf("stress AUTO cumulative: scans=%llu attempts=%llu "
+                            "submitted=%llu short=%llu below=%llu ineligible=%llu "
+                            "failed=%llu geometryBreaks=%llu materialBreaks=%llu "
+                            "stateBreaks=%llu\n",
+                    (unsigned long long)stressAutoMdiScans,
+                    (unsigned long long)stressAutoMdiAttempts,
+                    (unsigned long long)stressAutoMdiSubmitted,
+                    (unsigned long long)stressAutoMdiShort,
+                    (unsigned long long)stressAutoMdiBelow,
+                    (unsigned long long)stressAutoMdiIneligible,
+                    (unsigned long long)stressAutoMdiFailed,
+                    (unsigned long long)stressAutoGeometryBreaks,
+                    (unsigned long long)stressAutoMaterialBreaks,
+                    (unsigned long long)stressAutoStateBreaks);
+                std::printf("stress MDI decisions: scans=%llu short=%llu below=%llu "
+                            "ineligible=%llu failed=%llu geometryBreaks=%llu "
+                            "materialBreaks=%llu stateBreaks=%llu\n",
+                    (unsigned long long)cpu.mdiScans,
+                    (unsigned long long)cpu.mdiShort,
+                    (unsigned long long)cpu.mdiBelowThreshold,
+                    (unsigned long long)cpu.mdiIneligible,
+                    (unsigned long long)cpu.mdiFailed,
+                    (unsigned long long)cpu.mdiGeometryBreaks,
+                    (unsigned long long)cpu.mdiMaterialBreaks,
+                    (unsigned long long)cpu.mdiStateBreaks);
+                if (cpuTiming)
+                    for (size_t phase = 0; phase < 2; ++phase) {
+                        const auto& st = cpu.mdiCpuStages[phase];
+                        std::printf("stress MDI pass=%zu scans=%llu attempts=%llu "
+                                    "submitted=%llu warmups=%llu threshold=%llu "
+                                    "fallbacks=%llu total=%.5fms "
+                                    "grouping=%.5fms packing=%.5fms "
+                                    "pipeline=%.5fms submit=%.5fms\n",
+                            phase, (unsigned long long)st.candidateScans,
+                            (unsigned long long)st.indirectAttempts,
+                            (unsigned long long)st.submitted,
+                            (unsigned long long)st.pipelineWarmups,
+                            (unsigned long long)st.underThreshold,
+                            (unsigned long long)st.backendFallbacks,
+                            st.totalMs, st.groupingSortMs, st.commandPackingMs,
+                            st.pipelineSetupMs, st.backendSubmitMs);
+                    }
                 // AUTO can correctly choose any valid renderer path.
                 // Pixel parity and exit status remain mandatory below.
             }
