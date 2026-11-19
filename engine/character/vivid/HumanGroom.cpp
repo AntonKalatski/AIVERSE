@@ -141,10 +141,13 @@ bool HumanGroomRuntime::setCollisionMesh(
         return id;
     };
     build(0,std::uint32_t(order.size()));
+    // Stage every allocation before publishing the new collider. A failed
+    // allocation must not leave triangles and source indices mismatched.
+    std::vector<std::uint32_t> sourceIndices(triangles.begin(),triangles.end());
     collisionTriangles_=std::move(proposed);
     collisionOrder_=std::move(order);
     collisionNodes_=std::move(nodes);
-    collisionSourceIndices_.assign(triangles.begin(),triangles.end());
+    collisionSourceIndices_=std::move(sourceIndices);
     collisionSourceVertexCount_=vertices.size();
     return true;
 }
@@ -202,7 +205,10 @@ bool HumanGroomRuntime::attachRootsToCollisionMesh() {
     using namespace render;
     const auto& bounds=collisionNodes_.front();
     const auto center=(bounds.min+bounds.max)*0.5f;
-    for(auto& guide:guides_) {
+    // Stage guide attachment as a single transaction. A malformed collider,
+    // degenerate outward normal or non-finite result cannot partly move hair.
+    auto attached=guides_;
+    for(auto& guide:attached) {
         float nearest=std::numeric_limits<float>::max();
         float3 root=guide.root,normal=guide.normal;
         // BVH nearest-surface query for every generated root. This is
@@ -238,8 +244,11 @@ bool HumanGroomRuntime::attachRootsToCollisionMesh() {
                 stack[size++]=node.right;
             }
         }
+        if(!std::isfinite(nearest) || !good(nearestPoint) || !good(normal))
+            return false;
         root=nearestPoint;
         const auto nextRoot=root+normal*0.002f;
+        if(!good(nextRoot))return false;
         const auto offset=nextRoot-guide.root;
         guide.root=nextRoot;
         guide.normal=normal;
@@ -248,6 +257,7 @@ bool HumanGroomRuntime::attachRootsToCollisionMesh() {
         for(auto& p:guide.previous)p=p+offset;
         guide.rest[0]=guide.position[0]=guide.previous[0]=guide.root;
     }
+    guides_=std::move(attached);
     return true;
 }
 void HumanGroomRuntime::clearCollisionMesh() noexcept {
