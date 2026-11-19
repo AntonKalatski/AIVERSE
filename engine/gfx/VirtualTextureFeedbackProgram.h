@@ -83,7 +83,7 @@ layout(location=0) out vec4 outFeedback;
             "uTexels.xy,int(uTexels.z),uTexels.w);\n";
     else
         src.glslFragment += " int mip=int(uPage.w);\n";
-    if (alphaMask)
+    if (alphaMask) {
         src.glslFragment +=
             " vec3 auv=vec3(vAlphaUV,1.0);\n"
             " vec2 sampleUv=vec2(dot(uAlphaUv0.xyz,auv),"
@@ -91,6 +91,7 @@ layout(location=0) out vec4 outFeedback;
         src.glslFragment += std::string(" if(texture(tex0,sampleUv)") +
             (alphaRedChannel ? ".r" : ".a") +
             "*uCoverage.x<uCoverage.y) discard;\n";
+    }
     if (lodFade)
         src.glslFragment +=
             " vec2 pixel=gl_FragCoord.xy*uScenePixel.xy+uScenePixel.zw;\n"
@@ -146,7 +147,7 @@ vertex FeedbackOut vs_main(FeedbackIn in [[stage_in]],
             "u.texels.xy,int(u.texels.z),u.texels.w);\n";
     else
         src.msl += " int mip=int(u.page.w);\n";
-    if (alphaMask)
+    if (alphaMask) {
         src.msl +=
             " float3 auv=float3(in.alphaUv,1.0);\n"
             " float2 sampleUv=float2(dot(u.alphaUv0.xyz,auv),"
@@ -155,6 +156,7 @@ vertex FeedbackOut vs_main(FeedbackIn in [[stage_in]],
         src.msl += std::string(" if(alphaSample.") +
             (alphaRedChannel ? "r" : "a") +
             "*u.coverage.x<u.coverage.y) discard_fragment();\n";
+    }
     if (lodFade)
         src.msl +=
             " float2 pixel=in.position.xy*u.scenePixel.xy+u.scenePixel.zw;\n"
