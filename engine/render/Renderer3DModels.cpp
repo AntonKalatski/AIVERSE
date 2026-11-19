@@ -7,6 +7,7 @@
 #include "GiDynamicProbeTexture.h"
 #include "GiClipmapValidityTexture.h"
 #include "GiTextureBudget.h"
+#include "GiShaderGraphTextureSlots.h"
 #include "GiPresentationPolicy.h"
 #include "Animation.h"
 #include "ModelVisibility.h"
@@ -162,10 +163,17 @@ bool Renderer3D::dynamicGiEligible(const ModelItem& it, int phase,
         it.mat->shading == ShadingModel::Unlit)
         return false;
     const auto& program = it.mat->shaderGraph;
-    // Shader Graph textures start at slot 13, which the opt-in GI overlay uses.
-    // A graph with no textures remains eligible; never steal texture slot 13.
-    return !program || int(matQuality_) < program->minQuality ||
-           program->textures.empty();
+    if (!program || int(matQuality_) < program->minQuality ||
+        program->textures.empty()) return true;
+    // Instead of stealing Shader Graph tex13+, bind its textures AFTER the
+    // dynamic-GI permutation (single/validity/cascades/triple). On a GLES
+    // device with only 16 fragment texture units this can still admit a
+    // single-probe GI overlay alongside up to two graph textures.
+    return giGraphTextureSlotsFit(dev_->maxFragmentTextureSlots(),
+                                 program->textures.size(),true,
+                                 dynamicGiValidity_!=nullptr,
+                                 dynamicGiFarOverlay_!=nullptr,
+                                 dynamicGiThirdOverlay_!=nullptr);
 }
 
 void Renderer3D::initModels() {
@@ -239,6 +247,8 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     const bool dynamicGiCascades = dynamicGiValidity && dynamicGiFarOverlay_ != nullptr;
     const bool dynamicGiTriple = dynamicGiCascades && dynamicGiThirdOverlay_ != nullptr &&
                                  dev_->info().backend == gfx::Backend::Metal;
+    const int graphBaseSlot=giGraphTextureStart(dynamicGi,dynamicGiValidity,
+                                                dynamicGiCascades,dynamicGiTriple);
     const uint32_t gpuInstanceShaderBit = gpuInstances ? (1u << 26) : 0u;
     const uint32_t studioShaderBits = (geometryMainView_ && (phase == 1 || phase == 2) && studioDebugMode_ >= 2)
                                     ? uint32_t(studioDebugMode_) << 17 : 0u;
@@ -308,9 +318,9 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                 if(!vertexOnly) {
                     std::string declarations, args, macros;
                     for(size_t i=0;i<graph->textures.size();++i) {
-                        const auto slot=std::to_string(kGraphTextureSlot+int(i)), index=std::to_string(i);
+                        const auto slot=std::to_string(graphBaseSlot+int(i)), index=std::to_string(i);
                         declarations+="uniform sampler2D tex"+slot+";\n";
-                        args+=", texture2d<float> tex"+slot+" [[texture("+slot+")]]"+metalGraphSampler(kGraphTextureSlot+int(i));
+                        args+=", texture2d<float> tex"+slot+" [[texture("+slot+")]]"+metalGraphSampler(graphBaseSlot+int(i));
                         macros+="#define SG_TEXTURE"+index+"(uv) "+(metal?"tex"+slot+".sample(s"+slot+",uv)":"texture(tex"+slot+",uv)")+"\n";
                         macros+="#define SG_TEXTURE_LOD"+index+"(uv,lod) "+(metal?"tex"+slot+".sample(s"+slot+",uv,level(lod))":"textureLod(tex"+slot+",uv,lod)")+"\n";
                     }
@@ -345,9 +355,9 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                     code+=v3+" sg_view="+(metal?"f.camPos.xyz":"u_camPos.xyz")+"-sg_world; "+v+" sg_color="+(metal?"in.col":"a_col")+"; float sg_time="+(metal?"f.camPos.w":"u_camPos.w")+";\n";
                     std::string args,declarations,macros;
                     for(size_t i=0;i<graph->textures.size();++i) {
-                        const auto slot=std::to_string(kGraphTextureSlot+int(i)),index=std::to_string(i);
+                        const auto slot=std::to_string(graphBaseSlot+int(i)),index=std::to_string(i);
                         declarations+="uniform sampler2D tex"+slot+";\n";
-                        args+=", texture2d<float> tex"+slot+" [[texture("+slot+")]]"+metalGraphSampler(kGraphTextureSlot+int(i));
+                        args+=", texture2d<float> tex"+slot+" [[texture("+slot+")]]"+metalGraphSampler(graphBaseSlot+int(i));
                         macros+="#define SG_TEXTURE_LOD"+index+"(uv,lod) "+(metal?"tex"+slot+".sample(s"+slot+",uv,level(lod))":"textureLod(tex"+slot+",uv,lod)")+"\n";
                     }
                     if(metal)replace(source,"vs_main(VERTEX_ARGS)","vs_main(VERTEX_ARGS"+args+")");else source=declarations+source;
@@ -359,17 +369,18 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                 }
             };
             inject(vs,false,true);inject(fs,false,false);inject(msl,true,false);
-            for(int slot=16;slot<kGraphTextureSlot+int(graph->textures.size());++slot) {
+            for(int slot=16;slot<graphBaseSlot+int(graph->textures.size());++slot) {
                 const auto at=msl.find("using namespace metal;");
                 if(at!=std::string::npos)msl.insert(at+22,"\nconstexpr sampler s"+std::to_string(slot)+"(coord::normalized, address::repeat, filter::linear, mip_filter::linear);");
             }
         }
         gfx::ShaderDesc sd;
         sd.glslVertex = vs.c_str(); sd.glslFragment = fs.c_str(); sd.msl = msl.c_str();
-        // tex11/tex12: SSR scene colour/depth; graph textures follow at kGraphTextureSlot.
+        // tex11/tex12: SSR scene colour/depth; Shader Graph textures follow
+        // the last active dynamic-GI texture, never aliasing its tex13+ atlas.
         sd.uniformSlots = shadow ? 5 : dynamicGiTriple ? 9 : dynamicGiCascades ? 8 : dynamicGi ? 7 : 6;
         sd.textureSlots = graph && !graph->textures.empty()
-            ? kGraphTextureSlot+int(graph->textures.size()) : shadow ? 9 :
+            ? graphBaseSlot+int(graph->textures.size()) : shadow ? 9 :
               dynamicGiTriple ? 17 : dynamicGiCascades ? 16 : dynamicGiValidity ? 15 : dynamicGi ? 14 : 13; sd.label = shadow ? "model shadow" : "model"; // U5/tex9: lights, tex10: height field
         ShaderEntry e;
         if (warmingPipelines_) e.job=dev_->createShaderAsync(sd);
@@ -859,7 +870,7 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
             return idx >= 0 && idx < int(it.model->images.size()) && it.model->images[size_t(idx)].tex.valid() ? it.model->images[size_t(idx)].tex : def;
         };
         dev_->setTexture(1, tex(mt.baseTex, white_));
-        if(mt.shaderGraph)for(size_t i=0;i<mt.shaderGraph->textures.size();++i)dev_->setTexture(kGraphTextureSlot+int(i),tex(mt.graphTextures[i],white_));
+        if(mt.shaderGraph)for(size_t i=0;i<mt.shaderGraph->textures.size();++i)dev_->setTexture(graphBaseSlot+int(i),tex(mt.graphTextures[i],white_));
         if (phase != 0) {
             dev_->setTexture(2, tex(mt.mrTex, white_));
             dev_->setTexture(3, tex(mt.normalTex, flatNormal_));
