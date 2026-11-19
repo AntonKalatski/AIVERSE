@@ -52,6 +52,8 @@ struct HorizonRuntimeStats {
     size_t vertexPatchRanges=0; // last successful vertex update run count
     size_t gpuCachedRegions=0, gpuCachedBytes=0, gpuCacheHits=0; // extra GPU residency
     size_t gpuCacheEvictions=0; // LRU and stale-revision RHI retirements
+    size_t gpuCachedWindShadowBytes=0; // inactive cached CPU wind shadow capacity
+    size_t gpuWindShadowBudgetEvictions=0; // whole GPU entries retired for CPU budget
     size_t windOverlayPatchWrites=0, windOverlayPatchBytes=0;
     size_t windOverlayPatchRanges=0, windOverlayChangedClusters=0;
     size_t windOverlayFullRangeFallbacks=0, windOverlayNoopRevisions=0;
@@ -308,6 +310,16 @@ public:
     HorizonWindUploadPolicy windUploadPolicy() const {
         return windUploadPolicy_;
     }
+    // CPU policy is distinct from Stage36's GPU *transfer* policy.
+    // Setter is owner-thread-only; an actual cache trim needs gfx::Device,
+    // so it happens at the start of the next update(), not in this setter.
+    void setWindShadowCachePolicy(HorizonWindShadowCachePolicy policy) {
+        validateHorizonWindShadowCachePolicy(policy);
+        windShadowCachePolicy_=policy;
+    }
+    HorizonWindShadowCachePolicy windShadowCachePolicy() const {
+        return windShadowCachePolicy_;
+    }
     std::shared_ptr<const ForestWindField> windField() const {
         return windField_;
     }
@@ -349,6 +361,8 @@ public:
         // can only be retired on the owning gfx::Device thread.
         gpuCache_.prune(device,sourceRevision_);
         finishTransition(device);
+        gpuCache_.trimWindShadowBytes(device,
+            windShadowCachePolicy_.maxCachedShadowBytes);
         // Patch only models that survived transition retirement. This must
         // run BEFORE fast-return/cached-region paths, and never during submit.
         refreshForestWindGpu(device);
@@ -745,6 +759,8 @@ public:
         out.gpuCachedBytes=gpuCache_.bytes();
         out.gpuCacheHits=gpuCacheHits_;
         out.gpuCacheEvictions=gpuCache_.evictions();
+        out.gpuCachedWindShadowBytes=gpuCache_.cachedWindShadowBytes();
+        out.gpuWindShadowBudgetEvictions=gpuCache_.windShadowEvictions();
         out.exactWindFieldActive=exactSpatialWindField_ && bool(windField_);
         out.windOverlayPending=bool(model_) &&
             !activeWindOverlay_.vertices.empty() &&
@@ -820,7 +836,8 @@ private:
            settings_.maxCachedGpuRegions)
             gpuCache_.retain(device,*transitionCell_,transitionRevision_,
                 std::move(transition_),settings_.maxCachedGpuRegions,
-                size_t(settings_.gpuCacheBudgetMiB)*1024u*1024u);
+                size_t(settings_.gpuCacheBudgetMiB)*1024u*1024u,
+                windShadowCachePolicy_.maxCachedShadowBytes);
         else
             render::releaseModel(device,*transition_.model);
         transition_={};
@@ -888,7 +905,8 @@ private:
                 return;
             }
             gpuCache_.retain(device,*activeCell_,activeRevision_,
-                std::move(previous),settings_.maxCachedGpuRegions,budget);
+                std::move(previous),settings_.maxCachedGpuRegions,budget,
+                windShadowCachePolicy_.maxCachedShadowBytes);
         } else if(previous.model)
             render::releaseModel(device,*previous.model);
     }
@@ -961,6 +979,7 @@ private:
     bool spatialWindVariation_=true;
     bool exactSpatialWindField_=true;
     HorizonWindUploadPolicy windUploadPolicy_{};
+    HorizonWindShadowCachePolicy windShadowCachePolicy_{};
     bool windFieldHasWind_=false;
     uint64_t windFieldRevision_=1;
     std::shared_ptr<const ForestWindField> windField_;
