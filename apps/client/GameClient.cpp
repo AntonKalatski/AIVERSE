@@ -118,6 +118,11 @@ void GameClient::initStep(gfx::Device& dev, int step) {
         overlay_.init(dev, "fonts/ui.ttf", 17.0f);
         r3d_.setGpuDeviceLease(gpuDeviceLease_);
         if (!r3d_.init(dev)) error_ = "renderer: " + dev.lastError();
+        view_.setAppearancePipelineValidator(
+            [this](const render::Model& model,
+                   const std::vector<render::Material>& materials) {
+                return r3d_.warmModelPipelinesChecked(model,&materials);
+            });
         r3d_.setShadowQuality(Renderer3D::defaultQualityFor(dev, platform::isTouchDevice()));
         r3d_.setMaterialQuality(Renderer3D::defaultMaterialQualityFor(dev, platform::isTouchDevice()));
         r3d_.setBakedQuality(Renderer3D::defaultBakedQualityFor(dev, platform::isTouchDevice()));
