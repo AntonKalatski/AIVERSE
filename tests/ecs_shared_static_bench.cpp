@@ -4,6 +4,7 @@
 #include "engine/sim/SharedStaticComponents.h"
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <iomanip>
@@ -37,8 +38,8 @@ static double medianMs(Fn&& fn) {
         const auto total=fn();
         const auto end=std::chrono::steady_clock::now();
         // Write to an externally observable sink to prevent elision.
-        static volatile uint64_t sink=0;
-        sink = uint64_t(sink) ^ total;
+        static std::atomic<uint64_t> sink{0};
+        sink.fetch_xor(total,std::memory_order_relaxed);
         if(run) samples.push_back(
             std::chrono::duration<double,std::milli>(end-start).count());
     }
@@ -47,8 +48,7 @@ static double medianMs(Fn&& fn) {
 }
 
 int main(int argc,char** argv) {
-    (void)argv;
-    const int n=argc>1 ? 200000 : 200000;
+    const int n=argc>1 ? std::clamp(std::stoi(argv[1]),1,2000000) : 200000;
     constexpr int unique=64;
     World world;
     st::StaticTableBuilder<bench::LargeConfig> builder;
