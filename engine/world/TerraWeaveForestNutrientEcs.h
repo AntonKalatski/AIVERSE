@@ -149,7 +149,7 @@ inline ForestNutrientCycleOutcome advanceForestNutrientCycleEcs(
     // Linked confluences/cascades are discovered from the SAME ECS read
     // snapshot used by NEREID WaterQueryIndex. No ad-hoc water topology.
     const auto junctions=buildNereidNutrientJunctionPlan(
-        ecs,junctionSettings);
+        ecs,ground,water,junctionSettings);
     if(junctions.size()>settings.maxJunctionTransfersPerStep)
         throw std::length_error(
             "TerraWeave junction plan exceeds configured step budget");
