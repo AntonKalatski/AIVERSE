@@ -186,6 +186,9 @@ void Renderer3D::shutdown() {
 }
 
 void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
+    // Query backend-confirmed GPU completion before allocating new targets;
+    // this is nonblocking and never guesses an N-frame CPU delay.
+    if (dev_) collectCompletedObjectMotion(dev_->gpuCompletedFence());
     static const bool enablePersistentScene = [] {
         const char* value = std::getenv("AIVERSE_PERSISTENT_GPU_SCENE");
         return value && std::strcmp(value, "1") == 0;
@@ -360,6 +363,11 @@ void Renderer3D::bindTraceTextures() {
 void Renderer3D::queueObjectMotionTexture(
     gfx::TextureHandle& texture, uint64_t lastSubmittedFence) {
     if (!texture.valid()) return;
+    // Prefer a token from the live backend's own CURRENT GPU submission.
+    // This frame's fence covers all previous submissions on its graphics
+    // queue, including work referencing the stale texture.
+    const uint64_t currentGpuFence = dev_ ? dev_->gpuSubmissionFence() : 0;
+    if (currentGpuFence) lastSubmittedFence = currentGpuFence;
     if (lastSubmittedFence)
         motionRetired_.retire(texture,lastSubmittedFence);
     else
