@@ -39,7 +39,10 @@ public:
         }
         const auto path=std::filesystem::path(journal.string()+".lock");
 #ifndef _WIN32
-        int flags=O_RDWR|O_CREAT;
+        // Nonblocking open is essential before fstat(): a malicious FIFO
+        // at the lock path must not hang the privileged admin server.
+        // The eventual validated regular-file descriptor is unaffected.
+        int flags=O_RDWR|O_CREAT|O_NONBLOCK;
 #ifdef O_CLOEXEC
         flags|=O_CLOEXEC;
 #endif
