@@ -17,19 +17,27 @@ namespace aiverse::terraweave {
 
 inline void registerTerraWeaveForestDeadwoodPersistence(Simulation& sim) {
     sim.registerPersistentResource<ForestDeadwoodResource>(
-        "terraweave.forest_deadwood",1);
+        "terraweave.forest_deadwood",2);
+    // Native ECS save schema changed with the dissolved water and uptake
+    // ledgers. Explicit v1 migration reads the OLD value, whose io() now
+    // promotes it losslessly; saves/hashes always write v2.
+    sim.registerPersistentResourceMigration<ForestDeadwoodResource>(
+        "terraweave.forest_deadwood",1,
+        [](Archive& a,ForestDeadwoodResource& item){io(a,item);});
     sim.world().setResource<ForestDeadwoodResource>(
         ForestDeadwoodResource{});
 }
 
 inline ForestDeadwoodDecayOutcome advanceForestDeadwoodEcs(
         World& ecs,uint64_t completedTick,
-        ForestDeadwoodDecaySettings settings={}) {
+        ForestDeadwoodDecaySettings settings={},
+        ForestDeadwoodClimateSampler climate={}) {
     const auto* existing=ecs.resourceConst<ForestDeadwoodResource>();
     if(!existing)
         throw std::logic_error("TerraWeave missing deadwood persistence");
     ForestDeadwoodResource next=*existing;
-    auto result=advanceForestDeadwood(next,completedTick,settings);
+    auto result=advanceForestDeadwood(
+        next,completedTick,settings,std::move(climate));
     // Even a no-loss tick advances the persistent cursor and sample times.
     // Never leave a partly processed soil/wood transaction in World.
     if(next.initialized &&
@@ -47,12 +55,14 @@ inline ForestDeadwoodDecayOutcome advanceForestDeadwoodEcs(
 inline void addTerraWeaveForestDeadwoodSystem(
         Simulation& sim,std::string name,
         ForestDeadwoodDecaySettings settings={},
-        std::function<void(const ForestDeadwoodDecayOutcome&)> onDecay={}) {
+        std::function<void(const ForestDeadwoodDecayOutcome&)> onDecay={},
+        ForestDeadwoodClimateSampler climate={}) {
     validateForestDeadwoodDecaySettings(settings);
     sim.addSystem(std::move(name),
-        [settings,onDecay=std::move(onDecay)](Simulation& current){
+        [settings,onDecay=std::move(onDecay),
+         climate=std::move(climate)](Simulation& current){
             auto result=advanceForestDeadwoodEcs(
-                current.world(),current.tick(),settings);
+                current.world(),current.tick(),settings,climate);
             if(onDecay && result.decayedUnits)
                 onDecay(result);
         });
