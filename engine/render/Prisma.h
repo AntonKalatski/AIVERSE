@@ -78,6 +78,7 @@ public:
         size_t liveTextures = 0, unknownTextures = 0;
         uint64_t liveKnownBytes = 0; // active size caches + per-view exposure + resident LUTs
         uint64_t sharedSizeKnownBytes = 0;
+        uint64_t unreferencedSizeKnownBytes = 0; // subset of sharedSizeKnownBytes
         uint64_t viewHistoryKnownBytes = 0;
         uint64_t otherLiveKnownBytes = 0;
         uint64_t graphPendingKnownBytes = 0; // belongs to retirement, NOT live bytes
