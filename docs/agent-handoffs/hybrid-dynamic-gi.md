@@ -615,3 +615,16 @@ These stages prevent stale CPU probe radiance from remaining in the RHI texture 
 ## Stage 29 — 2026-11-19 — stale GI binding fail-closed and Vulkan/GLES RHI inspection (SOURCE; NOT RUN)
 
 Stage 29 on the portable branch records source commit `01a9ca9b976c9f4d7d10b226d3df0f47d4c6fe47`, the previous-frame borrowed texture unbinding fix, and a source-only audit of Vulkan RGBA32F sampled image and GL ES3 GL_RGBA32F update paths. Full per-stage details, limits, native test status, and exact next action are in `docs/agent-handoffs/gi-stage29-bind-safety-and-rhi-audit-2026-11-19.md`. **Vulkan native compute is absent; do not present CPU/RHI fallback as GPU compute parity. Not compiled or GPU-tested.**
+
+
+## Stage 30 — 2026-11-19 — Vulkan GI compute RHI and fence-safe publication (SOURCE; NOT RUN)
+
+Stage 30 on the portable branch is documented in
+`docs/agent-handoffs/gi-stage30-vulkan-compute-rhi-2026-11-19.md`.
+Added Vulkan compute shader/SPIR-V source, Vulkan backend storage buffers and
+RGBA16F storage image, VkFence-completed serial tracking, GI queue integration,
+CMake and FakeDevice tests. Vulkan execution is **NOT VERIFIED**; native
+build/CTest, actual GLSL compile, Vulkan validation layers, hardware pix/counter
+tests and Android/GLES3 are NOT RUN. The direct Metal GI path and CPU-only GLES3
+fallback remain separate. Do not merge into main without validation and
+reconciliation with ongoing parallel renderer work.
