@@ -23,14 +23,17 @@ namespace aiverse::view {
 // pointers remain host-owned and valid until submit() completes.
 // The optional graph operates on a separate presentation ECS World.
 struct Object {
+    // Preserve existing aggregate initialization order for native project
+    // code and earlier View adapters; all Stage 121 fields are appended.
     uint64_t id=0,generation=0;
     render::ModelDraw draw;
-    // The graph's source rig is stable even if a whole-asset visual LOD
-    // replaces draw.model. Null uses draw.model as before (compatible API).
-    const render::Model* animationModel=nullptr;
     std::shared_ptr<const render::AnimationGraph> graph;
     render::AnimationParameters parameters;
     lib::animation::AnimationSignificanceComponent significance;
+    bool visible=true;
+    // The graph's source rig is stable even if a whole-asset visual LOD
+    // replaces draw.model. Null uses draw.model as before (compatible API).
+    const render::Model* animationModel=nullptr;
     // Optional whole-model visual LOD. Native Renderer3D mesh LOD stays active.
     // Switching these never creates, resets or advances an animation player.
     std::vector<ModelLod> lods;
@@ -38,7 +41,6 @@ struct Object {
     // Child model draws attached to named/indexed nodes of animationModel.
     // Attachments reuse the parent's already evaluated pose, no extra update.
     std::vector<ModelAttachment> attachments;
-    bool visible=true;
 };
 inline const render::Model* animationSourceModel(const Object& obj) noexcept {
     return obj.animationModel?obj.animationModel:obj.draw.model;
