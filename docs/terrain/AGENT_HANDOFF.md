@@ -2600,3 +2600,19 @@ Added `AuthoredWorldHeightSnapshot::continuousSlopeQ16(xQ16cm,zQ16cm,radiusCm=20
 **Next implementation:** route a snapshot-derived neighbor-aware normal callback through `HorizonSurfaceSources` and `WorldScene`, retaining tile-local fallback when neighbors are unavailable. Then integrate into `populateHorizonNearSeamSamples`, update TWH8 compatibility only if serialized layout changes, and ensure GPU vertex patch comparison handles any changed normal attributes. Update `TERRAWEAVE.md`, skill, and this handoff with each next commit.
 
 **Testing-agent acceptance:** two adjacent equal-height/sloped tiles with positive/negative world coordinates, missing adjacent tile, height-discontinuous cliff, corner crossing, one-sided world-limit stencil, 0/1/100cm tolerance, radius bounds, Q16 negative-height rounding, and C++ compiler checks. Validate no smoothing across missing/discontinuous seams. All tests remain assigned to the separate testing agent.
+
+## Stage 22b — neighbor-aware Q16 normals wired to Horizon (SOURCE COMMITTED; TESTS DEFERRED)
+
+**Branch:** `feature/terraweave`, Draft PR #24.
+**Code commits:** `9183fb6219976e4e1e978de0c15a1e408be3c48d`, `7a47ff68db25def5ba283981f4ef7b73270d06f8`, `8c3721cf237e4f71f8417857fa63148e3565d9f5`.
+**Files:** `engine/world/TerraWeaveHorizon.h`, `engine/world/WorldScene.cpp`, `engine/render/TerraWeaveHorizonClip.h`.
+
+Added optional `HorizonSurfaceSources::nearGroundContinuousSlopeAtQ16Cm` callback returning signed X/Z permille slopes. WorldScene captures the existing immutable authored height snapshot and supplies `continuousSlopeQ16`. Horizon seam baking prefers the neighbor-aware result at each clamped Q16 near seam sample, falling back to existing tile-local 2m derivatives when the callback is absent or returns nullopt. The existing TWH8 `NearSeamSample` payload (slopes + valid flag), normal blending, vertex patch comparison and GPU cache counters continue to consume the same representation; **no archive version/layout change**. No extra geometry, draw calls, shader or ECS changes.
+
+**Limits:** fallback can still show lighting discontinuity at authored cliffs or absent neighbors; this is deliberate. No dedicated count distinguishing neighbor-aware and local-fallback normals yet. Stencil radius is 200cm and continuity tolerance is 1cm. Boundary-adjacent Q16 samples may use one-sided data if neighboring tiles are not resident. The exact code path was not compiled or run.
+
+**Actual verification:** three GitHub source commits succeeded. NO CMake, compiler, CTest, GPU screenshot, game/editor run or benchmark. Separate test agent owns validation; keep PR Draft.
+
+**Tester matrix:** continuous adjacent tiles (including negative world coordinates), discontinuous height steps, missing neighbor, half-open boundary Q16 inset, tile corners, cross-compiler deterministic archive bytes, TWH8 roundtrip, near normal 0/65/100% blend, strict atlas-only rejection when slopes change, partial VB update and GPU LRU restoration. Confirm unchanged triangle/index/material counts and no GPU allocation regression.
+
+**Next implementation:** add explicit source-normal provenance diagnostics without changing TWH8 archive layout (derive or track during CPU bake), expose neighbor-aware vs local-fallback counts in HorizonRuntimeStats/GPU cache, then update TERRAWEAVE.md and skill. Tests remain deferred to separate agent.
