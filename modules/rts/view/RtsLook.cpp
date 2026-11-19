@@ -609,7 +609,8 @@ bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
                     oldChoice.additive.size()==nextChoice.additive.size() &&
                     oldChoice.weaponPoses.size()==nextChoice.weaponPoses.size();
             };
-            bool canPreserve=candidate.models.size()==previous.models.size() &&
+            bool canPreserve=reloadMaterialLibrary &&
+                candidate.models.size()==previous.models.size() &&
                 candidate.lods.size()==previous.lods.size() &&
                 candidate.stages.size()==previous.stages.size();
             if(canPreserve) {
@@ -645,8 +646,9 @@ bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
                 prepared.graphDefinition=choice.graphSignature;
                 prepared.modelSource=choice.model?choice.model->path:std::string{};
                 prepared.sources={prepared.modelSource,"materials.json"};
+                ++packetOrdinal;
                 prepared.sourceId=choice.graph ?
-                    ((uint64_t(index+1)<<32) | uint64_t(++packetOrdinal)) : 0;
+                    ((uint64_t(index+1)<<32) | uint64_t(packetOrdinal)) : 0;
                 const std::string key=std::to_string(index)+"/"+kind+"/"+
                                       std::to_string(packetOrdinal);
                 std::string error;
