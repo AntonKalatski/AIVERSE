@@ -709,3 +709,41 @@ this interface without inheriting from `RtsView`.
 
 **NOT RUN**: user deferred native compilation, CTest, rendering
 parity and CI until feature work is complete.
+
+## Per-host RTS model/texture ownership (Stage 90)
+
+`modules/rts/view/RtsModelResourceCache.h` is the new per-host
+`view_adapter::RtsModelResourceCache`. It owns the canonical
+`std::map<std::string,std::unique_ptr<render::Model>>` model assets
+(including procedural `shape:` models) and the shared
+`render::ModelTextureCache`. Its surface includes
+`models()`, `textures()`, `stats()`, `modelFiles()`,
+`trimUnused(device,used,onRelease)` and
+`shutdown(device)`. GPU destruction/texture trimming happen on the
+render thread after outstanding asynchronous preparation has joined.
+An optional host callback invalidates graph/animation entries before
+a model is destroyed.
+
+`RtsLook.cpp` model loading, asynchronous prepared-result insertion,
+residency trimming, and model listing now access this one cache.
+`RtsShapes.cpp` inserts procedural fallback shapes into the same
+owner. `RtsView.cpp` delegates complete model/texture shutdown
+instead of independently iterating raw model pointers. Existing
+`RtsView::textureCache()`, `assetResidencyStats()` and
+`modelFiles()` remain source compatible and forward to the owner.
+A read-only `RtsView::modelResources()` accessor exposes this
+per-host resource owner to native presentation adapters.
+
+The resource cache itself does **not** depend on RTS Rules, View
+simulation, FPS, AnimationGraph scheduling, or genre-specific game
+commands; it stores `render::Model` and texture assets only.
+The legacy `RtsView` still *contains* its resource-owner instance
+and still selects/loading model variants. This stage is ownership
+extraction, not fully independent lifecycle or complete elimination
+of RtsView.
+
+**NOT RUN:** per user instruction, no CMake/configure, native compile,
+CTest, sanitizers, Metal graphics, CI or visual comparison was executed.
+Before shipping, verify resource release ordering, shared-texture
+hot reload, streaming cancellation, and asset residency under editor
+scene switching.
