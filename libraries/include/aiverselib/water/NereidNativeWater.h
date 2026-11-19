@@ -5,6 +5,7 @@
 #include <aiverselib/water/NereidBuoyancySystems.h>
 #include <aiverselib/water/NereidInteractions.h>
 #include <aiverselib/water/NereidCascades.h>
+#include <aiverselib/water/NereidConfluences.h>
 #include <string>
 #include <utility>
 #include <vector>
@@ -16,6 +17,7 @@ struct NativeWaterPipelineConfig {
     bool enableBuoyancy=false;
     bool enableInteractions=false;
     bool enableCascades=false;
+    bool enableConfluences=false;
     bool enableCurrentField=false;
     bool enableVortices=false;
     bool probeFromTransform=true;
@@ -31,6 +33,7 @@ inline void registerNativeWaterPipeline(Simulation& sim,
     if(config.enableBuoyancy)registerNereidBuoyancyPersistence(sim);
     if(config.enableInteractions)registerNereidInteractionPersistence(sim);
     if(config.enableCascades)registerNereidCascadePersistence(sim);
+    if(config.enableConfluences)registerNereidConfluencePersistence(sim);
     if(config.enableCurrentField)registerNereidCurrentPersistence(sim);
     if(config.enableVortices)registerNereidVortexPersistence(sim);
     if(config.probeFromTransform)

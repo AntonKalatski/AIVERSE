@@ -660,3 +660,8 @@ Scene `style.rapidFoamColor: [r,g,b]` now controls only the current-generated wh
 ## Stage 40 — configurable rapid-water shading cost
 
 Use scene `style.rapidDetail` values `"low"`, `"medium"`, `"high"` or native `WaterSurfaceStyle::rapidDetail` enum. Default Medium reproduces the Stage 39 material. Only water presentation changes: `waterRapidColor.a` selects the shader variant without changing U0 or ECS. Keep GLSL/MSL parity. Quality does not imply geometry LOD; choose separately. Full handoff `docs/nereid/stage-40-whitewater-quality.md`; **no build/tests/shader execution performed**. Next agent implements explicit linked river confluence without genre dependencies.
+
+
+## Stage 41 — confluence current ECS composition
+
+Include `<aiverselib/water/NereidConfluences.h>`; enable `NativeWaterPipelineConfig::enableConfluences`, then attach a `WaterConfluenceComponent` on a dedicated junction Entity with 2..4 distinct inlet water Entity IDs, one distinct outlet and Fixed mouth/radius/blend/speed limit. All linked bodies must cover the authored mouth; invalid/dead link suppresses junction. The same `applyWaterConfluenceFlow` runs in reference/indexed water sampling before cascade continuity. The component has independent persistent schema `nereid.confluence` v1; do not alter old water archives or genre modules. Rendering bridge remains pending. Handoff: `docs/nereid/stage-41-confluence-ecs.md`. **C++/CTest unverified**.

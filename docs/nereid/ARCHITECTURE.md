@@ -314,3 +314,8 @@ Per-water-surface presentation style now has `rapidFoamR/G/B` (normalized, defau
 ## Stage 40 — quality policy for current-driven whitewater
 
 `WaterSurfaceStyle::rapidDetail` uses `WaterRapidDetail::Low/Medium/High` (Medium default), configured by scene JSON `style.rapidDetail: "low"|"medium"|"high"`. It is presentation-only and encoded in the previously unused alpha of `waterRapidColor`. Low uses fewer waves and no whitewater-normal detail; Medium preserves the Stage 39 formula; High adds secondary cross-flow filaments. GLSL and MSL shader changes remain uncompiled and unbenchmarked. See `docs/nereid/stage-40-whitewater-quality.md`.
+
+
+## Stage 41 — optional confluence flow (ECS only)
+
+`WaterConfluenceComponent` is a distinct persistent junction entity linking 2–4 generation-safe upstream water bodies and one outlet. The source is validated in Fixed and sampled only near its explicitly authored mouth. `applyWaterConfluenceFlow` is a shared post-sampling policy in both linear and indexed paths, BEFORE cascade mouth transfer. `WaterSample.flow` changes locally, never source `WaterBody.flow`; no mass conservation, erosion, physics integration or geometry modification. Register through `NativeWaterPipelineConfig::enableConfluences` (false default) or `registerNereidConfluencePersistence`. Presentation scene parity is deferred to Stage 42. Neither compilation nor test execution has been performed. See `docs/nereid/stage-41-confluence-ecs.md`.
