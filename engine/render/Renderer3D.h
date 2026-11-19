@@ -425,7 +425,13 @@ public:
     // and U6/tex13, optional validity U6/tex14, far U7/tex15 and Metal-only
     // third U8/tex16. Off on missing/mismatched sources or RHI limits.
     // This does NOT compile a shader or add GI to an arbitrary fragment body.
-    GiCustomShaderMode bindDynamicGiForCustomShader(GiCustomShaderMode requested);
+    // Query BEFORE compiling/selecting a custom shader variant. Custom
+    // texture layouts can reserve tex0..20 for terrain, then request GI at 21.
+    // If this reports Off, compile/draw the no-GI shader permutation.
+    GiCustomShaderMode availableDynamicGiForCustomShader(
+        GiCustomShaderMode requested,int firstTextureSlot=13) const;
+    GiCustomShaderMode bindDynamicGiForCustomShader(
+        GiCustomShaderMode requested,int firstTextureSlot=13);
     void setBakedQuality(BakedQuality q);
     BakedQuality bakedQuality() const { return bakedQuality_; }
     static BakedQuality defaultBakedQualityFor(const gfx::Device& dev, bool mobile);
