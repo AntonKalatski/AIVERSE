@@ -2,15 +2,30 @@
 
 Updated: 2026-11-19. Branch: `feature/spectrafx-generic-cue-queue`.
 Repository: `chromealex/AIVERSE`.
-Status: **native validation in progress**. The user provided a Mac Studio
-build/CTest log for the native `aiverse_spectrafx_contract_tests` target:
-`spectrafx_contract` **PASSED 1/1** (0.32 seconds, no failed tests),
-in the separate `AIVERSE-spectrafx-validation` worktree. This is the
-only new native test PASS evidenced so far. The full SpectraFX CTest
-suite, editor/FPS/RTS client compilation, MSL shader/runtime, GPU memory
-lifetime, and visual CPU/GPU fallback are **not yet validated**.
-Do not claim release readiness or merge to `main` without validation.
+Status: **native validation in progress; CPU/header/host gates confirmed,
+Metal GPU work pending**. User-provided Mac Studio logs confirm:
+- `aiverse_spectrafx_header_smoke`, `aiverse_editor`,
+  `aiverse_fps_client` and `aiverse_client` **built/linked** successfully
+- `ctest -L SpectraFX` **4/4 PASS**, 0 failures, 1.51 seconds:
+  `vfx_graph_compiler`, `vfx_ecs_presentation`,
+  `spectrafx_contract`, `vfx_graph_assets`
+- No native editor/GPU preview launch, Metal shader execution,
+  GPU resource lifetime or visual fallback has been verified yet
 
+A new macOS-only **real Metal GPU compute test**
+`aiverse_spectrafx_metal_gpu_test` was added in stage 90.
+It compiles and executes the exact runtime evolution, alpha sorting
+and compaction MSL shaders and verifies the GPU-generated data.
+It has **NOT BEEN RUN** yet on the user's Mac. After refreshing CMake
+from the latest feature branch, it adds a fifth SpectraFX-labeled CTest.
+The new GitHub Actions run `44578278295` was queued at last observation:
+https://github.com/chromealex/AIVERSE/actions/runs/44578278295
+
+Important cross-agent warning: `main` is now >300 commits ahead of
+the feature base while other agents work. Keep the validated detached
+worktree isolated; do not merge `main` into it or into this feature
+branch until runtime acceptance and conflict review.
+Do not claim release readiness or merge to `main` without validation.
 ## Where to start
 
 1. `docs/agent-handoffs/spectrafx-2026-11-19.md` is the canonical,
@@ -92,13 +107,16 @@ The next source review should prioritize remaining metal readback
 callback/resource completion assumptions, the editor viewport frame
 sequence and compatibility with current `gfx::Device` API.
 
-**Immediate next test step:** from an updated detached SpectraFX
-validation worktree, build `aiverse_spectrafx_header_smoke`,
-`aiverse_vfx_graph_tests`, `aiverse_vfx_ecs_tests`,
-`aiverse_vfx_assets_tests`, `aiverse_editor`,
-`aiverse_fps_client` and `aiverse_client`; then run
-`ctest --test-dir build/spectrafx-validation -L SpectraFX --output-on-failure`.
-Record real logs and fix errors before proceeding.
+**Immediate next test step (Metal GPU):** in
+`~/Projects/AIVERSE-spectrafx-validation` (detached worktree),
+`git fetch origin && git switch --detach origin/feature/spectrafx-generic-cue-queue`,
+`cmake -S . -B build/spectrafx-validation -DAIVERSE_BUILD_TESTS=ON`,
+`cmake --build build/spectrafx-validation --parallel 4 --target aiverse_spectrafx_metal_gpu_test`,
+then `ctest --test-dir build/spectrafx-validation -L MetalGPU -V --output-on-failure`.
+The new test can report PASS, FAIL with Metal compiler/GPU details, or
+SKIPPED (exit 77, no Metal device). This is a raw Metal compute acceptance
+test **not** an integration test of Renderer3D/RHI draw or 3-frame
+retirement. Save full logs and fix any errors before merging.
 
 After this first validated native contract, continue with:
 - CMake configure/build including `aiverse_editor`,
