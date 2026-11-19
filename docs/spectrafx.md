@@ -1418,6 +1418,121 @@ CMake, CTest, MSL compilation, real Apple GPU rendering or
 performance parity checks. The commits establish source changes,
 not confirmed production behavior.
 
+## Restricted Metal GPU shader graph materials (Stage 27 — source committed, tests deferred)
+
+The opt-in Metal GPU billboard backend now supports a **bounded
+subset of the existing particle-domain `shaderGraph` language**,
+including per-particle VM custom `attribute0..7` and per-source
+`param0..7` inputs. This is the same
+`render::graph::compile(graph,"particle")` compiler already
+used by the full CPU ParticleSystem, **not a duplicate material
+node language**. Complex effects continue to use their complete
+CPU effect definitions.
+
+Native opt-in (both switches default to false):
+
+```cpp
+aiverse::spectra::GraphRuntimeOptions options;
+options.preference = aiverse::spectra::ComputePreference::Automatic;
+options.gpuProgram = true; // if ParticleProgramModule is present
+options.gpuMaterial = true; // enables the restricted particle shaderGraph
+options.gpuIndirect = false; // optional, independent, experimental
+```
+
+Use a `SpriteOutput` node (or legacy emitter) with these
+complete authoring fields:
+
+```json
+{
+  "texture": "builtin:soft",
+  "blend": "additive",
+  "graphInputs": ["attribute0", "param0", "age", "lifetime"],
+  "shaderGraph": {
+    "version": 1,
+    "domain": "particle",
+    "nodes": [
+      {"id":"input","op":"input"},
+      {"id":"gain","op":"particleAge"},
+      {"id":"tint","op":"multiply","inputs":["input","gain"]}
+    ],
+    "outputs":{"color":"tint"}
+  }
+}
+```
+
+Full graph example:
+`examples/spectrafx/gpu_vm_material_inputs_v2.vfx.json`.
+It captures named `intensity` to particle `attribute0`
+in Spawn, then uses `sg_particle.x` in the material's
+particleAge node to modulate base sprite tint.
+
+### Capability and rendering contract
+
+- `GraphRuntimeOptions::gpuMaterial` (and lower-level
+  `ComputeEmitterDesc::gpuMaterial`) **must be explicitly true**,
+  otherwise a shaderGraph emitter stays on CPU. A graph with
+  `graphInputs` but no compatible `shaderGraph` is also
+  rejected for Metal so its authored data is not ignored.
+- `gpu_material::compile` validates at most **32 pure
+  fragment nodes**, one `color` output, no vertex graph,
+  no extra texture samplers, no time-dependent/unavailable
+  operations and a restricted whitelist: input, UV, the
+  builtin sprite sample, constants/parameters/vertexColor,
+  the four particle graph channels, and elementary colour
+  arithmetic/combination. The authoritative
+  `render::graph::compile` must also accept the graph.
+- The CPU emitter's `graphInputs` schema is reused.
+  The GPU compute kernel publishes exactly four source
+  floats from particle age, lifetime, `attribute0..7`,
+  `param0..7` or zero into the existing **40-byte**
+  `Vertex::graphData`. The mapping is compiled at emitter
+  initialization into a four-uint (16-byte) buffer at Metal
+  compute slot **13**; it is never parsed as JSON per frame.
+  Stable CPU UID-derived `random` is rejected in a GPU
+  material because the fixed GPU particle state cannot
+  reproduce it. Material graphs referencing the default
+  particleRandom input without an explicit mapping are
+  rejected rather than silently changing the visual.
+- A compatible GPU material uses a separate generated
+  shader pipeline with vertex attribute **3** bound as
+  `Float4` at offset 24. All other particle emitters retain
+  the old three-attribute billboard pipeline. Existing
+  particle state remains **64 bytes** and GPU vertices
+  **40 bytes**; existing per-instance VM params, custom
+  registers, host-gather and optional indirect-draw paths
+  are preserved.
+- The graphics shader is built from a trusted MSL/GLSL
+  template and the **existing compiler's generated source**
+  (no arbitrary authored shader source is interpolated).
+  The fragment receives the same `sg_input`, `sg_color`,
+  `sg_particle`, UV/position/view parameters as the CPU
+  material implementation and outputs the compiler's
+  `color` expression. Only one builtin soft-sprite
+  texture is bound; no new material texture loaders
+  or project-specific dependencies are introduced.
+- Full CPU fallback for standalone `ComputeParticles`
+  preserves the authored `particleProgram`,
+  `shaderGraph` and `graphInputs`. For
+  `GraphRuntime`, the existing strict complete
+  `EffectDef` comparison now retains those fields only
+  after the GPU material subset has passed validation.
+  `RequireGpu` reports an error instead of dropping any
+  unsupported material behaviour.
+
+**Boundary:** This is not generic Niagara/HLSL material
+authoring parity, GPU mesh/ribbon rendering, external texture
+sampling, arbitrary graph shader stages, light/collision modules,
+alpha sorting, multiblend materials, or a shared multi-emitter
+GPU draw pool. Vulkan/GL/ES/WebGL continue using CPU VFX when
+compute is unavailable.
+
+**Verification:** User explicitly requested features before tests.
+Stage 27 C++/MSL/GLSL source and example files are committed,
+but **CMake, CTest, shader compilation, real Metal rendering,
+screenshots, performance and visual CPU/GPU parity remain NOT RUN**.
+The generated shader and storage binding should be checked on
+actual Apple Silicon before enabling this path in production.
+
 ## Validation checklist
 
 ```bash
