@@ -242,7 +242,7 @@ void frame(Device& device,double) {
     } else if(stages==5 && seamOracle && seamOracle->complete() && failures==0) {
         stages=6;
         ++completed;
-        std::printf("PASS: WebGL2 production VT atlas and table GPU readback generation=%u\n",
+        std::printf("PASS: WebGL2 production VT atlas/table, trilinear and nonuniform seam GPU parity generation=%u\n",
                     generations);
     }
 }
