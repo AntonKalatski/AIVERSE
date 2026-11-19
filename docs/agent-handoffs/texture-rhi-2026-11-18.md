@@ -11459,3 +11459,122 @@ tests and representative GPU time/FPS remain open.
 PR #21 stays **Draft**; experimental GPU ICB flags
 remain OFF by default. New CMake test remains
 default-OFF pending real native validation.
+
+## Stage 10CC — observed nonuniform VT physical-gutter native PASS (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`; PR #21 Draft.
+**Previous source feature/fix:** Stage 10CB
+`1af66f86a754958f6bacf84d279b14a163fca831`
+corrected production `engine/gfx/VirtualTextureSampling.h`
+in both GLSL and Metal. For `gutterPixels>0`,
+page boundary samples now include physically neighboring
+gutter pixels instead of stopping at interior texel
+centers; `gutterPixels=0` retains legacy center-clamp
+semantics. Stage 10CB GPU test source
+`4787302de05704c2c48e7c9fede9a4813b5d2a33`
+created `tests/render/metal_vt_bilinear_gpu.mm` to
+test the canonical MSL helper against an independent
+logical-texture CPU bilinear oracle using nonuniform
+logical texels, genuine 1-pixel neighbor gutters and
+two production disk-backed native VT streams.
+
+**User-supplied native Apple M3 Ultra hardware log:**
+```text
+[metal-assets] libraries=0 sourceMisses=1 pipelines=1 pipelineFailures=0 archive=0 strict=0
+Metal canonical VT bilinear: Metal Apple M3 Ultra, page=8 interior=6 gutter=1
+VT bilinear independent CPU oracle: samples=136 seam_samples=120 max_delta=1
+PASS: native Metal canonical VT bilinear nonuniform gutter seam and Repeat/MirrorRepeat CPU pixel oracle
+1/1 Test #122: metal_vt_bilinear_gpu ............ Passed 6.07 sec
+100% tests passed, 0 tests failed out of 1
+Total Test time (real) = 6.08 sec
+```
+
+**Verified on actual hardware:** native Metal production
+sampler's `aiverse_sample_virtual`, uploaded physical
+RGBA8 pages with actual neighbor gutters, native page
+table/addressing and async GPU fragment readback all
+matched the independent source-logical-pixel interpolation
+within **1 LSB** at each of **136** UV probes (including
+**120 seam-adjacent cases**). A guard separately rejects
+the prior buggy center-of-interior formula with this
+nonuniform pattern. No driver/shader pipeline failures
+were observed. CTest wall duration 6.07 seconds is
+not an isolated shader/GPU draw time.
+
+**Scope and limitations:** the native GPU test exercises
+the same canonical Metal MSL sampler later used in
+`Renderer3D` graph material shaders, but the test is
+a standalone direct Metal fragment oracle. It did
+**not** execute Renderer3D or GPU-encoded ICB on a
+nonuniform guttered model scene. The symmetric GLSL
+source was changed but GL/Vulkan/mobile/WebGL hardware
+acceptance remains unverified. Trilinear mip transition,
+anisotropic filtering and driver soak/performance
+are still open. Earlier Stage 10BX/10BY native GPU
+PASS for Shader Graph+VT+ICB with **zero gutters**
+predates the shared shader change; those previous
+logs must not be represented as a post-fix regression
+test.
+
+**Stage 10CC files/commits** (no new production source
+changes after the 10CB fix or GPU PASS):
+- `23620dae0e5bf3101f58a2083eef56eddedeb547`:
+  `docs/texture-rhi.md`, exact hardware results,
+  distinction between direct Metal and ICB, and
+  mandatory fail-fast zero-gutter regression commands.
+- `86ce7a606e407b58842286fbf8702be12f645a01`:
+  `skills/visuals/aiverse-texture-rhi/SKILL.md`,
+  native PASS recorded and remaining regression gates.
+- This **separate append-only handoff commit**
+  records actual native verification, architectural
+  boundaries, source revisions, residual risks and
+  the next concrete agent action.
+
+**Next exact agent step** (Mac Studio's isolated
+`/Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819`
+worktree only; never touch unrelated in-progress rebase
+in the primary AIVERSE checkout):
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+
+cmake --build build/texture-graph-vt-icb \
+  --target aiverse_metal_renderer_graph_vt_icb_gpu_test --parallel 4
+ctest --test-dir build/texture-graph-vt-icb \
+  --verbose --output-on-failure --no-tests=error \
+  -R '^metal_renderer_graph_vt_icb_gpu$'
+
+cmake --build build/texture-graph-vt-seam \
+  --target aiverse_metal_renderer_graph_vt_seam_gpu_test --parallel 4
+ctest --test-dir build/texture-graph-vt-seam \
+  --verbose --output-on-failure --no-tests=error \
+  -R '^metal_renderer_graph_vt_seam_gpu$'
+```
+
+Rebuild **both** binaries first (shared header change);
+do not reuse a stale green executable after a failed
+build. For Stage 10BX require all three pinned coarse,
+fine and LRU image parity PASS, nonzero real mixed
+graph/VT ICB counters and CTest 1/1. For Stage 10BY
+require both missing-file failure callbacks, seven direct/
+ICB pair PASS, eight independent Repeat/MirrorRepeat
+page-selection oracles and CTest 1/1. If native compiler,
+shader, GPU driver or pixel errors occur, capture first
+real failure, fix source in a distinct code commit, then
+append a new handoff.
+
+**After the two regression PASS logs:** build a separate
+default-OFF opt-in production `Renderer3D` Shader Graph
++ disk VT mixed Metal ICB scene acceptance fixture using
+nonuniform gutters and an independently computed
+expected-pixel oracle; additionally test dissimilar
+mip coarsening and trilinear/anisotropic behavior.
+Check same-code fallback and resource limits on Vulkan,
+GL, WebGL and mobile. Stress/benchmark real GPU frame
+timings and memory separately; do not infer performance
+from CTest wall duration. Keep all experimental ICB
+flags OFF by default; do **not** merge Draft PR #21
+until cross-backend and stress gates succeed.
