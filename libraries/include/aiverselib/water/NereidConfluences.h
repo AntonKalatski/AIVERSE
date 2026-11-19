@@ -25,12 +25,18 @@ struct WaterConfluenceComponent {
     bool enabled=true;
 };
 
+// Flow policy has no dependency on Entity encoding. Presentation manifests
+// use stable scene IDs and must never invent fake ECS Entity handles.
+inline bool validWaterConfluenceFlowPolicy(const WaterConfluenceComponent& c) {
+    return c.enabled && c.inletCount>=2 &&
+           c.inletCount<=kMaxWaterConfluenceInlets &&
+           c.radius>=Fixed::fromRatio(1,10) && c.radius<=1000_fx &&
+           c.blend>=0_fx && c.blend<=1_fx &&
+           c.speedLimit>0_fx && c.speedLimit<=1000_fx;
+}
 inline bool validWaterConfluence(const WaterConfluenceComponent& c) {
-    if(!c.enabled || c.inletCount<2 ||
-       c.inletCount>kMaxWaterConfluenceInlets ||
-       c.outlet==kNullEntity || c.radius<Fixed::fromRatio(1,10) ||
-       c.radius>1000_fx || c.blend<0_fx || c.blend>1_fx ||
-       c.speedLimit<=0_fx || c.speedLimit>1000_fx)return false;
+    if(!validWaterConfluenceFlowPolicy(c) || c.outlet==kNullEntity)
+        return false;
     for(size_t i=0;i<c.inletCount;++i) {
         if(c.inlets[i]==kNullEntity || c.inlets[i]==c.outlet)return false;
         for(size_t j=0;j<i;++j)if(c.inlets[i]==c.inlets[j])return false;

@@ -329,3 +329,8 @@ Per-water-surface presentation style now has `rapidFoamR/G/B` (normalized, defau
 ## Stage 43 — GPU mesh residency independent of draw-only style
 
 NEREID source mesh revision depends only on body geometry, LOD and vertex tint fields (deep RGB, shoreline foam RGB/strength). Shader-only changes use `NereidSurfaceResident::setDrawStyle`, avoiding VB/IB uploads while preserving full style equality for external callers. `sameNereidSurfaceUploadKey` controls mesh residency and async staging acceptance; pending workers remain bound to immutable geometry revision. This changes no ECS data or GPU uniform layouts. Source-reviewed and committed, but C++/shader/GPU tests have not run. See `docs/nereid/stage-43-material-residency.md`.
+
+
+## Stage 44 — explicit static JSON confluence source IDs
+
+`parseNereidConfluenceManifest(root,water.surfaces)` parses `nereidConfluences.sources` from a WorldScene JSON manifest. Each junction has a positive scene ID, 2–4 explicit inlet water source IDs, a distinct outlet water ID, a Fixed mouth position, radius, blend, speedLimit and optional enabled. It requires referenced water surfaces to have explicit IDs, and validates X/Z footprint coverage at the mouth. Scene links are NOT ECS Entity handles; the numeric `validWaterConfluenceFlowPolicy` is used by shared flow kernel and scene, whereas `validWaterConfluence` retains full authoritative ECS link validation. WorldScene construction supplies this manifest to its read-only `NereidConfluenceScene`, and later ECS snapshots may override it explicitly. No ECS schemas, scene GPU resources or hydraulic simulation added. Validation NOT RUN; see `docs/nereid/stage-44-confluence-manifest.md`.

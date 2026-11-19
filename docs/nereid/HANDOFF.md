@@ -4010,3 +4010,10 @@ New `NereidConfluenceScene.h` stores immutable confluence snapshots by stable id
 
 **Branch** `feature/nereid-water-core`, Draft PR #23. Code + documentation atomic commit. Independent handoff: [Stage 43](stage-43-material-residency.md).
 Added `sameNereidWaterVertexStyle`, `sameNereidSurfaceUploadKey` and `NereidSurfaceResident::setDrawStyle`; full public key equality remains. Changed NereidWaterScene revision to only geometry/vertex-baked fields, while current, flow, optics and rapids are draw-only; preserve latest style after async mesh upload. Vertex baked deep/foam RGB/strength still rebuild meshes. **Performed:** GitHub source inspection and commit only. **NOT RUN:** C++ build, shaders, CTest, GPU metrics, scene parity or other genre regressions. **Next:** feature completeness check, then full validation and repair. Keep Draft PR.
+
+
+## Stage 44 — author visual confluences in WorldScene JSON
+
+**Branch:** `feature/nereid-water-core`, Draft PR #23; implementation and this handoff committed atomically. **Full agent handoff:** [Stage 44 confluence JSON](stage-44-confluence-manifest.md).
+
+`nereidConfluences.sources` now accepts explicit scene IDs (`id`, `inletWaterIds` 2–4, `outletWaterId`, `mouth`, `radius`, `blend`, `speedLimit`, `enabled`) and links to explicit `nereidWater.surfaces[].id`. The new manifest parser validates numeric bounds, duplicates, self-links, unknown water IDs and all X/Z mouth footprints before constructing the scene. Disabled entries are validated but omitted. Changed ECS/scene validation split: `validWaterConfluenceFlowPolicy` checks Fixed flow settings independently; `validWaterConfluence` still validates canonical Entity links. Shared mouth math now uses numeric policy, allowing visual sources with no fake ECS handles. `WorldScene.cpp` parses and publishes to Stage 42 read-only scene; ECS water systems and persistence remain intact. **Actually performed:** source review + commit; **NOT RUN:** build, CTest, shaders, GPU, native simulation or regressions. **Next:** dedicated test/CI validation, fix failures. Keep Draft PR.

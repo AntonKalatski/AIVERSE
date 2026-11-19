@@ -2,6 +2,7 @@
 #include "engine/render/ModelTextureCache.h"
 #include "engine/world/NereidWaterManifest.h"
 #include "engine/world/NereidCascadeManifest.h"
+#include "engine/world/NereidConfluenceManifest.h"
 #include <algorithm>
 #include <cmath>
 #include <mutex>
@@ -62,6 +63,11 @@ WorldScene::WorldScene(const Json& manifest,AssetReader reader,std::shared_ptr<r
     const auto cascade=parseNereidCascadeManifest(manifest);
     cascades_.setMaxUploadsPerFrame(cascade.maxUploadsPerFrame);
     if(manifest.has("nereidCascades"))cascades_.setCascades(cascade.sources);
+    // Static confluences use explicit scene water IDs, not manufactured ECS
+    // Entity handles. Parse all links before accepting a partial scene.
+    const auto confluence=parseNereidConfluenceManifest(manifest,water.surfaces);
+    if(manifest.has("nereidConfluences"))
+        confluences_.setConfluences(confluence.sources);
     auto verified=assets_.verifiedReader(reader);
     stream_=std::make_unique<AsyncChunkStream>(assets_.limits,assets_.stagingBytes,assets_.maxJobs,[this,verified](Cell cell){return prepare(cell,verified);});
     for(const auto& [cell,asset]:assets_.chunks){if(asset.bytes>uploadBytes_)throw JsonError("world.chunk: reservation exceeds maxUploadBytes");if(!stream_->add(cell,asset.bytes))throw JsonError("world.chunk: staging budget too small");}

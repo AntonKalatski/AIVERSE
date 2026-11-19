@@ -24,7 +24,7 @@ inline WaterConfluenceFlowContribution waterConfluenceMouthContribution(
         uint64_t id,const WaterConfluenceComponent& junction,
         Vec2 upstreamMean,Vec3 position) {
     WaterConfluenceFlowContribution out;
-    if(!validWaterConfluence(junction))return out;
+    if(!validWaterConfluenceFlowPolicy(junction))return out;
     const Fixed distance=(position.xz()-junction.mouth.xz()).length();
     if(distance>=junction.radius)return out;
     const Fixed t=fxClamp(1_fx-distance/junction.radius,0_fx,1_fx);

@@ -15,8 +15,11 @@
 
 namespace aiverse::world {
 
-// Stable body IDs use packed generation-safe ECS Entity + 1 (never pool index).
-// The junction component is a copied read-only configuration, not live ECS.
+// ECS snapshots use packed generation-safe Entity + 1; static JSON scenes
+// instead use explicit stable water source IDs (never fabricated ECS handles).
+// The junction component carries copied Fixed flow settings, not live ECS.
+// For JSON-only sources, its Entity link fields remain null: the source's
+// inletWaterIds/outletWaterId carry the actual scene links.
 struct NereidConfluenceSource {
     uint64_t id=0; // generation-safe confluence Entity + 1
     lib::nereid::WaterConfluenceComponent junction{};
@@ -35,7 +38,7 @@ public:
         std::map<uint64_t,NereidConfluenceSource> next;
         for(auto& source:incoming) {
             if(!source.id || !source.outletWaterId ||
-               !lib::nereid::validWaterConfluence(source.junction))
+               !lib::nereid::validWaterConfluenceFlowPolicy(source.junction))
                 throw std::invalid_argument("nereid.confluence: invalid scene junction");
             for(size_t i=0;i<source.junction.inletCount;++i) {
                 if(!source.inletWaterIds[i] ||
