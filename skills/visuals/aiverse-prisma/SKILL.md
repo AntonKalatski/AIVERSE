@@ -999,6 +999,54 @@ Refer to `docs/handoffs/prisma-stage-60.md` for exact
 code commits, limitations, tests NOT RUN and next stage.
 Keep PR #26 Draft; do not merge main without approval.
 
+## Stage 61 — reactive MotionBlur edges, alpha and fail-safe FXAA
+
+The existing `PrismaType::MotionBlur` catalog appends one optional
+float `reactiveTapRejection` (default 0, range 0..1).
+It does NOT shift prior numeric offsets or require any new ECS or
+GPU history owner. Only the `kMotionBlur` pass adds a fifth
+UBO vec4 `tapInfo` (other fullscreen passes remain unchanged).
+Its strength is passed to the shader only if a current-frame
+borrowed RGBA8 reactive mask has accepted metadata/RHI format
+and correct INTERNAL scene dimensions. With strength=0, retain
+the original shutter-depth filtering. With strength>0, suppress
+neighbor color taps with reactive coverage unlike the center
+pixel, complementing the existing depth layer rejection.
+Preserve source HDR alpha in the MotionBlur result; the separate
+canonical temporal history continues to write device depth into
+its own history alpha.
+
+Do NOT infer a usable mask merely from a non-null handle when
+size/format metadata rejects it. When metadata is absent and
+the backend cannot introspect, the existing legacy borrowing
+contract still accepts it; the status must not claim actual GPU
+pixel validation. `ViewEffectReport.reactiveInputSupplied`,
+`reactiveInputAccepted` and
+`motionBlurReactiveEdgesEnabled` are per stable camera ID
+diagnostics. The last flag must become true only if MotionBlur
+was actually encoded with the accepted reactive input.
+The editor exposes this without RHI allocations.
+
+SDR FXAA must preserve the previous `src` when a new
+`kAa` color target or its depth attachment cannot be
+created. Keep `fxaaInput` and `fxaaOutput` independent,
+ensure their handles and depth are valid BEFORE draw, and
+only swap `src` to output after a pass was actually encoded.
+The graph FXAA path is still opt-in and direct FXAA remains
+a fallback if its graph executor cannot complete.
+For HDR output FXAA, only render the post-composite pass
+when `!temporalResolved` **and** the preceding final
+composite pipeline is valid, with target and depth verified.
+Do NOT attempt to read an unwritten intermediate texture.
+
+Stage 61 source readback: **40/40 static contract/lifecycle checks**.
+**NOT RUN** native CMake/clang, GLSL/MSL/SPIR-V compiler,
+CTest, editor/client start, Metal/GL/GLES/Vulkan/WebGL,
+HDR alpha/pixel capture or real performance tests.
+See `docs/handoffs/prisma-stage-61.md` for exact commits,
+source impacts, limitations and next functionality.
+Maintain Draft PR #26; never merge to main without approval.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
