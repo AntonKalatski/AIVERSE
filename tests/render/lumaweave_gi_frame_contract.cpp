@@ -20,6 +20,13 @@ static_assert(requires(LumaWeaveNativeCoordinator& coordinator,
 });
 static_assert(std::is_same_v<decltype(LumaNativeViewInput{}.indirectGi),
                               GiGpuCascadeRuntime*>);
+static_assert(std::is_same_v<decltype(LumaNativeViewInput{}.indirectCpuGi),
+                              GiDynamicRuntime*>);
+static_assert(std::is_same_v<decltype(LumaNativeViewResult{}.cpuGiFrame),
+                              GiRuntimeStats>);
+static_assert(std::is_same_v<decltype(LumaNativeViewResult{}.backendCapabilities),
+                              LumaLightingBackendCaps>);
+static_assert(LumaWeaveBackendPolicy::cpuProbeLimit(gfx::Backend::GLES3)==2);
 static_assert(std::is_same_v<decltype(LumaNativeViewResult{}.giFrame),
                               GiCascadeFrame>);
 static_assert(std::is_same_v<decltype(LumaNativeViewResult{}.giPollFrame),
