@@ -27,6 +27,10 @@ inline void registerSystems(
     // river-spline shoreline outlines used by automatic bank detection.
     water.enableGeometry=true;
     water.enableCurrentField=true;
+    // Authoritative mouth topology is needed for directed sediment transfer
+    // between river/lake bodies; absent components add no runtime junctions.
+    water.enableConfluences=true;
+    water.enableCascades=true;
     // This example gives bank cells explicit WaterProbe positions. A native
     // game that uses Transform-driven probes may choose true instead.
     water.probeFromTransform=false;
