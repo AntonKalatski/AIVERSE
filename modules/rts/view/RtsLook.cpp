@@ -711,7 +711,7 @@ bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
         // the entire node transfer uses allocation-free map node handles.
         // Existing live Models are still borrowed by old TypeLooks until
         // the final frame-boundary swap below.
-        resources_.publishStagedModels(stagedModels);
+        resources_.publishStagedModels(*dev_,stagedModels);
     }catch(const std::exception& e) {
         materialLib_=std::move(previousLibrary);
         warnings_.push_back(std::string("appearance image commit: ")+e.what());
