@@ -6,6 +6,7 @@
 #include "engine/character/vivid/HumanImport.h"
 #include "engine/character/vivid/MorphAuthoring.h"
 #include "engine/character/vivid/MorphLodMapping.h"
+#include "engine/character/vivid/MorphLodGpuAuthoring.h"
 #include "engine/character/vivid/ViewportSculptPick.h"
 #include "engine/character/vivid/RigAuthoring.h"
 #include "engine/character/vivid/ScalpSkinning.h"
@@ -80,6 +81,9 @@ struct CreatorApp {
     int sculptMeshIndex=-1;
     int sourceLodMesh=-1,targetLodMesh=-1;
     float lodProjectionTolerance=0.02f;
+    MorphLodMapping activeLodMapping;
+    std::vector<std::uint32_t> activeLodSourceIndices;
+    bool lodGpuMorphEnabled=false;
     bool sculptPickArmed=false;
     int morphTargetIndex=0,morphVertexIndex=0;
     int routeChannelIndex=0;
@@ -216,6 +220,9 @@ struct CreatorApp {
         morphTargetIndex=0;
         morphVertexIndex=0;
         morphEditOffset={};
+        lodGpuMorphEnabled=false;
+        activeLodMapping={};
+        activeLodSourceIndices.clear();
         sculptMeshIndex=-1;
         sculptPickArmed=false;
         morphDirty=false;
@@ -328,6 +335,23 @@ struct CreatorApp {
                 proposed.rig=imported.rig;
                 proposed.facialShapes=morphDraft
                     ? morphDraft->compile() : std::move(imported.facialShapes);
+                if(lodGpuMorphEnabled) {
+                    if(activeLodMapping.targetVertexIds.empty() ||
+                       activeLodSourceIndices.empty())
+                        throw std::runtime_error("VIVID GPU LOD: no baked vertex correspondence");
+                    std::vector<float3> sourcePositions;
+                    sourcePositions.reserve(morphSourcePositions.size());
+                    for(const auto& p:morphSourcePositions)
+                        sourcePositions.push_back({p[0],p[1],p[2]});
+                    // Fingerprint validation is done against the original
+                    // pre-LOD source stream on every scene regeneration.
+                    const auto compact=activeLodMapping.transfer(
+                        proposed.facialShapes,sourcePositions,
+                        activeLodSourceIndices);
+                    proposed.facialShapes=MorphLodGpuAuthoring::combine(
+                        proposed.facialShapes,compact,
+                        activeLodMapping.targetVertexIds);
+                }
                 proposed.facialBinding=FaceShapeBinding::compile(
                     proposed.facialShapes,manifest.routes);
                 for(const auto& [name,surface]:manifest.materials) {
@@ -890,6 +914,16 @@ struct CreatorApp {
                 meshCombo("Target face LOD mesh",targetLodMesh);
                 ImGui::SliderFloat("Projection tolerance",&lodProjectionTolerance,
                                    0.001f,0.2f,"%.3f");
+                if(!activeLodMapping.samples.empty()) {
+                    if(ImGui::Checkbox("Publish LOD morphs to GPU actor",
+                                       &lodGpuMorphEnabled))
+                        pendingRebuild=true;
+                    ImGui::Text("Prepared LOD points: %zu",
+                                activeLodMapping.samples.size());
+                    ImGui::TextWrapped("Actor deforms both source and LOD "
+                        "vertices in one full-model GPU stream; Renderer3D "
+                        "chooses the authored mesh LOD.");
+                }
                 if(ImGui::Button("Bake and export LOD morphs")) {
                     try {
                         if(!externalMode || importedManifest.empty() ||
@@ -968,6 +1002,13 @@ struct CreatorApp {
                         };
                         save(mappingFile,map.toJson().dump(2));
                         save(morphFile,lodSidecar);
+                        // Publish the full source/target CSR only at the next
+                        // authoring rebuild, not by swapping a GPU stream
+                        // during an active render pass.
+                        activeLodMapping=std::move(map);
+                        activeLodSourceIndices=std::move(faceIndices);
+                        lodGpuMorphEnabled=true;
+                        pendingRebuild=true;
                         status="VIVID LOD: baked "+
                             std::to_string(lodPositions.size())+
                             " projected vertices; mapping and morph sidecars saved";
