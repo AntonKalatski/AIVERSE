@@ -789,3 +789,155 @@ The exact output did not print the `git rev-parse HEAD` of the tested
 checkout. The user had previously been instructed to fetch and switch
 to the branch, but **do not falsely claim an SHA-level GPU PASS**
 without that SHA being observed in an owner-provided log.
+
+
+---
+
+## Stage 11 — real Metal Renderer3D raster Legacy/Strata pixel-parity fixture (2026-11-19)
+
+### Current branch and exact commits
+**Branch** `feature/strata-virtual-geometry`; PR #35 remains Draft with base `main`.
+Main and unrelated agents' branches are untouched. This stage adds a
+**manual graphical regression fixture only**. No new production
+`Renderer3D` draw route or Hi-Z GPU occlusion path is enabled.
+
+Stage 11 implementation commits:
+- `67ce7c346030cb002f400a78bc386b72974f3775` — new
+  `tests/render/strata_metal_raster_parity.cpp` with real Metal,
+  a source model + a lossless parent-and-two-leaf Strata asset,
+  shared GPU-pool source VB/IB, sidecar v2 indexed metadata and
+  raster-only alias Models sharing exactly the same pooled GPU
+  buffer. It renders empty, legacy, fine, coarse in **separate frames**
+  through the existing `Renderer3D::drawModel` and includes an
+  actual shadow-receiver floor and main/sun shadow pass counters.
+- `f5b9bab91810cf815478aed24609c0a7add5dba5` —
+  `CMakeLists.txt` adds opt-in macOS-only target
+  `aiverse_strata_metal_raster_parity` under the existing
+  `AIVERSE_STRATA_METAL_GPU_TESTS=ON` flag.
+- `a6b72b498f9b34d88e60fc5d307471e098744796` and
+  `b6979f9bb364bfbfc7b63d881c8dbc2b5fc9e995` —
+  write four lossless RGB PPM captures with proper newline headers
+  (using `AIVERSE_STRATA_RASTER_CAPTURE_PREFIX` for output location).
+- `6a8a7ec2a325896d12ecba8bbb338d9ccd1c9ab8` —
+  `.github/workflows/strata-focused.yml`: fixed a discovered
+  malformed/broken six-test CTest regex and duplicated
+  `--output-on-failure`; ensures the native macOS runner builds
+  **both** real Metal fixture executables, but does not launch
+  AppKit windows in headless CI.
+- `8c3a3163029268c4e66a3957d1501c02321a97c4` —
+  `docs/strata.md` records Stage 11 fixture design, capture paths,
+  limitations, safety invariants and full native commands.
+- `e10d67be543fade673a18ab7cc941bdb1fd6c737` —
+  `AGENTS.md` Stage 11 contract and handoff requirement.
+- `8d7a8f44b1d34f5625e784b5273b462520bd4114` —
+  enable Renderer3D profiling in the fixture so actual
+  main/shadow pass draw counts are inspected.
+
+### Architecture / APIs / no double-rendering
+The fixture uses `gfx::Device` Metal via the regular
+`platform::run` window and the production
+`Renderer3D::beginScene/drawModel/render` pipeline. The CPU Model is
+uploaded **once** to the existing `GlobalGeometryPool`;
+`GpuMetadataScene::stage` separately uploads only Strata's
+auxiliary indices into that same source page and records absolute
+GPU first-index offsets. Fine and coarse alias Models are never
+uploaded or released: they only borrow `source.vb/ib`, same
+`source.gpuBaseVertex`, and set `gpuFirstIndex` to the
+source's **v2 Strata sidecar firstIndex**. The models differ only in
+primitive firstIndex/indexCount and use identical original
+source vertex attributes, normals, UVs, material and triangle winding.
+The parent is intentionally lossless (both legacy triangles);
+the two leaves partition exactly those same triangles. This is an
+index-addressing, material/shader/renderer-routing pixel parity test,
+**not** evidence of real mesh simplification visual quality.
+
+The test validates selected range offsets via CPU
+`strata::prepareRenderCandidate` for current main view before
+rasterizing. Original Legacy and both Strata aliases each draw via
+the SAME `Renderer3D::drawModel` method in **different captured
+frames**, with one explicit ModelDraw per candidate frame; it does
+not submit the legacy source and selected Strata alias together.
+The floor is a constant ordinary `MeshBuilder` draw in every frame,
+serving as a shadow receiver; high sun shadow quality is enabled.
+Screenshot capture is `gfx::Device::captureNextFrame`. A blank
+capture must differ from the Legacy capture, preventing a false
+positive from uniformly blank output. Fine/coarse image comparisons
+are **byte exact**, reporting changed-channel counts. A mismatch
+fails the executable and writes images for inspection.
+
+The fixture checks nonzero renderer shadow and opaque pass draw
+counts for all three model cases, and that each candidate frame
+received one ModelDraw. It does not assert the *raw shadow depth
+texture bytes*, does not drive indirect/ICB submissions from
+`GpuSelectedCluster`, and does not test water reflection/special
+material passes. Existing production Strata preview and routing
+gate remain default-OFF and **do not suppress any original
+ModelDraw**.
+
+### Actual validation status
+- **Previously verified, owner-supplied Mac Studio**:
+  six Strata CPU/recording-RHI CTests **PASS 6/6**;
+  real Metal GPU selection/async readback oracle **PASS 5/5**.
+- **Stage 11 new raster C++ compilation: NOT RUN in assistant
+  environment. Real Metal Renderer3D pixel comparison: NOT RUN.**
+  A committed test is not a passing test. CI for new Stage 11
+  commits must be checked for an actual conclusion; a queued or
+  pending workflow is not green.
+- Real GPU performance and photorealistic/simplified-LOD,
+  sun-shadow depth texture, reflection, mixed material and
+  Vulkan/other-backend raster parity: **NOT RUN**.
+- Unrelated `AIVERSE-static-scene` skill registration reruns were
+  owner-confirmed PASS 2/2, separate from this Strata stage.
+
+### Immediate Mac Studio test commands
+Run in the owner's existing worktree, taking care not to destroy
+local changes:
+```sh
+cd ~/Projects/AIVERSE-strata-validation
+git status --short
+git fetch origin feature/strata-virtual-geometry
+# Only if no unsaved working-tree changes:
+git switch --detach origin/feature/strata-virtual-geometry
+cmake -S . -B build/strata \
+  -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_BUILD_STRATA=ON \
+  -DAIVERSE_STRATA_METAL_GPU_TESTS=ON
+cmake --build build/strata --target \
+  aiverse_strata_builder_tests \
+  aiverse_strata_model_adapter_tests \
+  aiverse_strata_view_tests \
+  aiverse_strata_gpu_scene_tests \
+  aiverse_strata_gpu_culling_tests \
+  aiverse_strata_render_routing_tests \
+  aiverse_strata_metal_parity \
+  aiverse_strata_metal_raster_parity --parallel 8
+ctest --test-dir build/strata \
+  -R '^strata_(builder|model_adapter|view|gpu_scene|gpu_culling|render_routing)$' \
+  --output-on-failure
+./build/strata/aiverse_strata_metal_parity
+./build/strata/aiverse_strata_metal_raster_parity
+```
+Expected **not yet observed** output:
+`[strata-raster] Legacy/Fine changed_channels=0`,
+`[strata-raster] Legacy/Coarse changed_channels=0`,
+`[strata-raster] status=PASSED`.
+The real pixel test creates
+`strata-raster-empty.ppm`, `strata-raster-legacy.ppm`,
+`strata-raster-strata-fine.ppm` and
+`strata-raster-strata-coarse.ppm` in the current working
+directory unless a custom prefix is set. On mismatch/compile
+error, record the actual diagnostics and fix without relaxing the
+pixel-parity oracle.
+
+### Next bounded step
+After the native fixture passes, extend the raster test to
+multiple materials and independent shadow-map image comparison,
+then reflection/multiview and randomized camera transforms. Verify
+that preview mode OFF vs ON yields identical submitted draws and
+pixels on an actual `GeometryScene` with multiple source instances.
+Only after passing those real backend tests implement an
+**exclusive**, scoped `Renderer3D` source-to-Strata draw switch,
+with preserved legacy fallback for any unsupported material/
+occlusion/pass/GPU residency. Do not enable GPU-selected indirect
+commands or Hi-Z until independent actual GPU selection AND
+raster/occlusion parity are established.
