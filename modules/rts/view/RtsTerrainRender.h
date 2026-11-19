@@ -184,7 +184,10 @@ private:
     bool visionInit_ = false;
     std::vector<uint8_t> materialLayer_;
     render::TextureRef layerTex_[4], layerNrm_[4], cliffTex_, cliffNrm_;
-    // GL33: four repeatable layer normals packed into one atlas sampler.\n    gfx::TextureHandle layerNormalAtlas_;\n    int layerNormalAtlasSize_ = 0;\n    bool texturesLoaded_ = false;
+    // GL33: four repeatable layer normals packed into one atlas sampler.
+    gfx::TextureHandle layerNormalAtlas_;
+    int layerNormalAtlasSize_ = 0;
+    bool texturesLoaded_ = false;
 
     std::vector<Chunk> chunks_;
     int cw_ = 0, ch_ = 0, mapW_ = 0, mapH_ = 0, lodLevels_ = 1;
