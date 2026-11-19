@@ -137,7 +137,11 @@ horizonSceneFromManifest(
         };
         terraweave::HorizonAdaptiveQualityConfig config;
         config.enabled=adaptive.getBool("enabled",false);
-        config.minimum=parseLevel(adaptive.getStr("minimum","mobile"));
+        // If a static BatterySaver presentation preset was selected,
+        // admit it as a valid starting adaptive floor by default.
+        config.minimum=parseLevel(adaptive.getStr("minimum",
+            presentationQuality=="battery-saver" ?
+                "battery-saver" : "mobile"));
         config.maximum=parseLevel(adaptive.getStr("maximum","desktop"));
         // A selected static runtime profile also serves as the default
         // starting level unless the adaptive block overrides "initial".
