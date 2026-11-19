@@ -332,6 +332,52 @@ void queuedReceiptInvalidatedByRollback() {
     CHECK(client.status()!=ClientStatus::Applied);
     CHECK(registry(*sim).revision==0);
 }
+void unhealthyJournalStopsAutomaticResubmit() {
+    // Unknown alone permits same-ID recovery, but Unknown explicitly marked
+    // journal-unavailable must leave the client in Uncertain, not a busy
+    // retry loop that the server cannot safely deduplicate.
+    for(const int failOnWrite : {2,3}) {
+        auto sim=make();
+        ServerGateway gateway;
+        int writes=0;
+        gateway.setJournalWriter([&](const auto&,std::string* error) {
+            if(++writes>=failOnWrite) {
+                if(error)*error="injected journal failure";
+                return false;
+            }
+            return true;
+        });
+        RemoteClient client(70800+std::uint64_t(failOnWrite));
+        CHECK(client.begin(edit(Fixed::fromInt(41)),kEdit,4));
+        auto [editorConn,hostConn]=net::makeLoopbackPair();
+        std::uint64_t stoppedAt=0;
+        for(std::uint64_t ms=0;ms<3000;ms+=40) {
+            client.poll(*editorConn,ms);
+            gateway.poll(*sim,*hostConn,"trusted-editor",
+                         readAcl,writeAcl,ms);
+            sim->step();
+            gateway.observe(*sim);
+            client.poll(*editorConn,ms+1);
+            if(!gateway.journalHealthy() &&
+               client.status()==ClientStatus::Uncertain) {
+                stoppedAt=ms+1;
+                break;
+            }
+        }
+        CHECK(stoppedAt>0);
+        CHECK(!gateway.journalHealthy());
+        CHECK(client.status()==ClientStatus::Uncertain);
+        CHECK(client.receipt().result==Result::Unknown);
+        CHECK(!client.exportOutstanding().empty());
+        // The client may still receive transport heartbeats internally,
+        // but must not emit further PHYSIS application Submit/Query frames.
+        for(std::uint64_t ms=stoppedAt+100;ms<stoppedAt+2000;ms+=100) {
+            client.poll(*editorConn,ms);
+            net::Bytes extra;
+            CHECK(!hostConn->recv(extra));
+        }
+    }
+}
 void initialRevisionProbe() {
     auto sim=make();
     ServerGateway gateway;
@@ -382,6 +428,7 @@ int main() {
     editorBridge();
     latencyAndReorderSimulation();
     initialRevisionProbe();
+    unhealthyJournalStopsAutomaticResubmit();
     appliedReceiptAfterRollback();
     queuedReceiptInvalidatedByRollback();
     denied();
