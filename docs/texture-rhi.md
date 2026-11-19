@@ -3560,3 +3560,117 @@ missing disk pages with coarse/fallback persistence, sample UV
 outside [0,1] at seams, and native GPU screenshot/oracle
 comparison. Reuse `VirtualTextureFileStreamer` and the existing
 canonical shader sampler; do not implement a parallel VT runtime.
+
+
+### Stage 10BY — missing VT disk page, nonresident fallback and out-of-range wrap oracle (source only)
+
+**New file:** `tests/render/metal_renderer_graph_vt_seam_gpu.cpp` is
+a **separate, default-OFF** macOS opt-in test of real
+`render::graph::compile` + production `Renderer3D` + two
+`VirtualTextureFileStreamer` domains + Metal GPU-encoded ICB.
+It reuses the working Stage 10BW synthetic two-material, four-source
+Shader Graph fixture and canonical `gfx::kVirtualTextureMSL`.
+The test does not modify the production shader, disk worker,
+page-table, RHI, gameplay, or mesh API.
+
+**Independent GPU image oracles, not merely CPU/ICB agreement:**
+
+- Without a VT resolver, ordinary Shader Graph sampling provides
+  a `tex1` fallback reference. With a live but fully nonresident
+  VT page table, both the ordinary renderer and real mixed VT GPU
+  ICB must produce **exactly that same** full RGBA8 image. Both
+  GPU page table entries for virtual tile (3,1), respective layers
+  0 and 1, must remain `{0,0,0,0}` before publication.
+- Each archive then publishes and pins a known mip2 coarse page
+  from a trusted 4×4 RGBA8 file. The image **must change** from
+  the fallback, and the target mip0 table entry must be
+  `{0,0,2,255}`.
+- A requested, deliberately **absent** mip0 file (tile 2,1)
+  must trigger a real asynchronous worker **failure callback**
+  with a nonempty diagnostic. Neither GPU atlas can be
+  quarantined; the pinned coarse page and table mapping must
+  remain. The full ordinary image **must remain identical**
+  after the failed lookup; the corresponding GPU ICB frame
+  must still agree with the ordinary renderer.
+- A known mip0 fine tile (3,1) is then published in the second
+  physical slice, with table entry `{1,0,0,255}`. Each material
+  sets tiny UV scale (0.0001) and fixed V=0.375, making every
+  visible fragment sample one predictable tile. The left material
+  has **Repeat-U**; the right has **MirrorRepeat-U**.
+  At `U=-0.125` and `U=-0.0005`, Repeat must address tile3
+  (fine), while MirrorRepeat addresses tile0 (coarse).
+  At `U=1.125` and `U=1.0005`, these roles reverse.
+  A pure CPU oracle, based on authored raw page colors and these
+  known wrap policies, requires **only the predicted material
+  region** to change from the pinned-coarse image. It also
+  checks the expected RGB channel **direction**, including
+  red increasing and green decreasing in the left fine region
+  versus red increasing and blue decreasing in the right fine
+  region. The same oracle runs separately on ordinary and
+  GPU ICB frame captures.
+- In every VT state the real GPU ICB path must expose nonzero
+  `shaderGraphIcbSubmissions`, `mixedGraphSourceSubmissions`,
+  `perCommandVtExecutions`, `mixedVtExecutions`,
+  at least two GPU commands, **zero rejected/execute-failed**
+  commands, and full-frame ordinary-vs-GPU-ICB RGBA8 agreement
+  within 2 LSB/channel. Missing GPU execution/blank output is
+  not accepted as a PASS.
+
+The new CMake option
+`AIVERSE_TEXTURE_METAL_GRAPH_VT_SEAM_GPU_TESTS=OFF`
+(default) registers the separate process
+`metal_renderer_graph_vt_seam_gpu` only on explicit macOS
+opt-in; it is not run by ordinary texture or Metal acceptance.
+Experimental ICB flags are provided only to this test process.
+
+**Source commits:**
+`694d04531ffd5c1e81efe60b499a0ccd8e096d0d` — fixture;
+`d95cdc388778a31de5b0f9900863cd28c2e7a737` — opt-in
+CMake/CTest registration.
+
+**Evidence and limitations:** the earlier Stage 10BX Apple M3 Ultra
+graph+VT coarse/fine/LRU test **PASSED 1/1**, but the new Stage 10BY
+compiler, native test, GPU screenshots and seam/missing-page oracle
+have **NOT RUN**. This test addresses *selection across wrap
+boundaries* for solid-color physical tiles with gutter=0; it
+does **not** certify bilinear filtering and gutter continuity
+for nonuniform page edges. Hardware result required before claiming
+this feature works on the current branch.
+
+**Fail-fast Mac Studio command**, *isolated* texture worktree only:
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+cmake -S . -B build/texture-graph-vt-seam \
+  -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_RENDERER_GRAPH_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_GRAPH_VT_ICB_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_GRAPH_VT_SEAM_GPU_TESTS=ON
+cmake --build build/texture-graph-vt-seam \
+  --target aiverse_metal_renderer_graph_vt_seam_gpu_test --parallel 4
+ctest --test-dir build/texture-graph-vt-seam \
+  --verbose --output-on-failure --no-tests=error \
+  -R '^metal_renderer_graph_vt_seam_gpu$'
+```
+
+A valid PASS must include: exact nonresident-vs-no-VT fallback
+equality; observed real missing-file error for BOTH archives;
+unchanged coarse frame after that error; coarse/fine GPU
+page table mapping; four `PASS: independent wrap oracle`
+lines for ordinary **and** four for GPU ICB; the final
+`PASS: Renderer3D Shader Graph disk VT missing-page and
+Repeat/MirrorRepeat seam GPU ICB oracle`, and a native CTest
+1/1 PASS after a successful build. The test duration is not
+an isolated GPU draw time or FPS benchmark.
+
+**Outstanding after Stage 10BY:** bilinear/anisotropic filter
+edge gutters at actual physical tile seams (nonuniform page
+data), other graph texture counts and material permutations,
+large-scene memory/performance/stress, cross-platform
+Vulkan/GL/WebGL/mobile acceptance. Keep PR #21 Draft and
+experimental GPU ICB flags OFF by default pending verification.
