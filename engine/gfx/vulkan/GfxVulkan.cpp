@@ -272,6 +272,9 @@ void VulkanDevice::destroyDeviceObjects() {
     vkDeviceWaitIdle(device_);
     destroySwapchain();
     completed_ = ~uint64_t(0);
+    // Device teardown never dispatches user callbacks, but GPU idle makes
+    // capture staging buffers safe to release before allocator shutdown.
+    for (auto& slot : slots_) completeTextureCaptures(slot,false);
     collectGarbage();
     buffers_.each([&](VBuffer& b) { for (auto& v : b.versions) { vkDestroyBuffer(device_, v.buffer, nullptr); memory_.release(v.alloc); } });
     auto killTex = [&](VTexture& t) { if (t.view) vkDestroyImageView(device_, t.view, nullptr); if (t.image) vkDestroyImage(device_, t.image, nullptr); memory_.release(t.alloc); };
@@ -416,8 +419,15 @@ void VulkanDevice::prepareSlot() {
     // completed_ must mean a *successfully signalled fence*, not merely
     // that a wait was attempted. On device loss/other errors disallow pool
     // recycling: there is no proof earlier GPU readers finished.
-    if (waited == VK_SUCCESS) completed_ = std::max(completed_, s.serial);
-    else healthy_ = false;
+    if (waited == VK_SUCCESS) {
+        completed_ = std::max(completed_, s.serial);
+        completeTextureCaptures(s,true);
+    } else {
+        healthy_ = false;
+        // An unsuccessful fence cannot prove ownership is safe to recycle.
+        // Pending captures remain allocated until device shutdown.
+        return;
+    }
     collectGarbage();
     vkResetCommandPool(device_, s.pool, 0);
     for (auto p : s.descriptorPools) vkResetDescriptorPool(device_, p, 0);
@@ -446,6 +456,67 @@ VkCommandBuffer VulkanDevice::transferCmd() {
         s.preRecording = true;
     }
     return s.pre;
+}
+
+// Called only between beginFrame/endFrame and outside render passes.
+// The copy is encoded into the current main command buffer; the callback
+// is dispatched on the Device owner thread once that frame slot fence signals.
+bool VulkanDevice::captureTexture(TextureHandle source,CaptureFn callback) {
+    if (!callback || !healthy_ || !recording_ || inPass_ || !source.valid()) return false;
+    VTexture* texture=textures_.get(source.id);
+    if (!texture || !texture->renderTarget || texture->depth ||
+        (texture->format!=PixelFormat::RGBA8 && texture->format!=PixelFormat::RGBA8_sRGB) ||
+        texture->width<=0 || texture->height<=0 ||
+        texture->width>8192 || texture->height>8192) return false;
+    const size_t width=size_t(texture->width), height=size_t(texture->height);
+    FrameSlot::TextureCapture capture;
+    capture.width=texture->width;
+    capture.height=texture->height;
+    if (!createBufferObject(width*height*4, VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                            true,capture.buffer,capture.allocation)) return false;
+    if (!capture.allocation.mapped) {
+        vkDestroyBuffer(device_,capture.buffer,nullptr);
+        memory_.release(capture.allocation);
+        return false;
+    }
+    capture.callback=std::move(callback);
+    VkCommandBuffer cb=slots_[size_t(slot_)].main;
+    barrierImage(cb,texture->image,false,VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                 VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    VkBufferImageCopy copy{};
+    copy.bufferOffset=0;
+    copy.bufferRowLength=0;
+    copy.bufferImageHeight=0;
+    copy.imageSubresource={VK_IMAGE_ASPECT_COLOR_BIT,0,0,1};
+    copy.imageExtent={uint32_t(capture.width),uint32_t(capture.height),1};
+    vkCmdCopyImageToBuffer(cb,texture->image,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                           capture.buffer,1,&copy);
+    barrierImage(cb,texture->image,false,VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+    slots_[size_t(slot_)].textureCaptures.push_back(std::move(capture));
+    return true;
+}
+
+void VulkanDevice::completeTextureCaptures(FrameSlot& slot,bool succeeded) {
+    auto captures=std::move(slot.textureCaptures);
+    slot.textureCaptures.clear();
+    for (auto& capture:captures) {
+        std::vector<uint8_t> bytes;
+        if (succeeded && capture.allocation.mapped) {
+            const size_t row=size_t(capture.width)*4;
+            bytes.resize(row*size_t(capture.height));
+            const uint8_t* source=static_cast<const uint8_t*>(capture.allocation.mapped);
+            // Vulkan RHI render-target orientation matches GL (bottom-up);
+            // the public capture callback always returns top-down RGBA8.
+            for (int y=0;y<capture.height;++y)
+                std::memcpy(bytes.data()+size_t(y)*row,
+                            source+size_t(capture.height-1-y)*row,row);
+        }
+        if (capture.buffer) vkDestroyBuffer(device_,capture.buffer,nullptr);
+        memory_.release(capture.allocation);
+        if (succeeded && capture.callback)
+            capture.callback(capture.width,capture.height,std::move(bytes));
+    }
 }
 
 void VulkanDevice::beginFrame(int w, int h) {
