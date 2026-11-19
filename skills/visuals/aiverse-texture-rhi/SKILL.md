@@ -1710,3 +1710,29 @@ Do not check out a branch merely to satisfy this script.
 Only a complete real macOS build/CTest/GPU log and
 `build/texture-final-logs/acceptance.txt` ending
 `result=PASS` establish final texture acceptance.
+
+## Stage 10CG — allow verified task branch names in one-shot Mac suite
+
+User's existing isolated worktree is on local branch
+`verify-texture-rhi-20261119-150819`, and a successful
+`git fetch`/`git pull --ff-only` fast-forwarded it to
+the exact feature remote commit. The former preflight
+guard still rejected that *name* before compilation,
+despite correct source identity.
+
+Commit `e7e012b01c6599c85c94f24f4a85197e4a616cf4`
+fixes `tools/texture-rhi-final-verify.sh`:
+only equality of the actual HEAD SHA to the fetched
+`refs/remotes/origin/feature/texture-rhi-unification`
+SHA determines source validity. Task-specific local
+branches, the named feature branch and detached HEAD
+are all allowed at this exact SHA. Any stale/other commit,
+or absent remote tracking ref, remains rejected.
+The runner removes stale `acceptance.txt` at start so
+only a **new complete** PASS persists.
+
+Guide: `docs/texture-rhi.md` Stage 10CG.
+**The native 21-portable + 7-real-Metal final run is
+still unverified** after this change; do not call it
+PASS until the user supplies a successful Mac log.
+Do not switch branches just to satisfy the runner.
