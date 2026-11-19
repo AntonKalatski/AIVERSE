@@ -736,3 +736,12 @@ The existing `SkinWeightAuthoring` supports a transactional brush stroke over se
 The Creator exposes a selected mesh, selected named joint, weight painting controls, an arm-and-click triangle ray-picking interaction, Undo/Redo, and a screen-space red/blue diagnostic heatmap of sampled original model vertex weights. **Accuracy limitation:** this overlay uses the mesh owner's node transform and does not yet reconstruct final skinned and morphed GPU vertices. GPU skinning-aware surface picking, continuous drag paint, spatial indexing for very dense meshes and actual per-vertex GPU-accurate heatmap are still open. Mirroring assumes local X symmetry; ambiguous shared seams still reject edits.
 
 Source-level regression assertions cover symmetric brush influence, bounded falloff, undo/redo, invalid-stroke rollback and U8 weight normalization. The changes were committed but **not compiled, run or visually tested**; see `docs/agent-handoffs/vivid.md` Stage 7P for exact source commits and remaining work.
+
+
+## Stage 7Q — skin-aware viewport picking and continuous drag weight paint (2026-11-20)
+
+`SkinnedWeightPick.h` reconstructs the current mesh's CPU-skinned world-space positions from the authoritative MotionWeave node-world matrices, imported joint palettes, U8 vertex influences and `Skin::inverseBind` matrices. VIVID Creator uses these deformed triangles for its skin-paint raycast and projects the same staged positions for the sampled weight heatmap. The brush now supports holding and dragging the left mouse button; the in-memory series of dabs becomes a single Undo/Redo record at mouse-up, with full cancellation for invalid palette/skin strokes and no per-dab model upload.
+
+The implementation preserves the existing single source skeleton evaluator and stable model-global vertex IDs. Limitations remain significant: GPU facial morph displacement and cloth deformation are not represented in CPU picking, and this is not a GPU depth/object-ID selection pass. Selected skinned mesh must have exactly one owning Model node and consistent primitive palette mappings; ambiguous instancing/shared seams fail closed. The current CPU scratch surface is recomputed while painting/heatmap is active, so high-poly acceleration remains an optimization task.
+
+Tests for translated-joint picking, invalid-pose staging, multi-dab undo history and cancelled drag rollback have been added as source only. **No C++ build, CTest, GUI or GPU parity run has been executed.** Exact commits and next-agent handoff are in `docs/agent-handoffs/vivid.md` Stage 7Q.
