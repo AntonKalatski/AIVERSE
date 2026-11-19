@@ -142,10 +142,13 @@ void Renderer3D::shutdown() {
     if (objectMotionDeformedShader_.valid()) dev_->destroyShader(objectMotionDeformedShader_);
     if (objectMotionBakedPipeline_.valid()) dev_->destroyPipeline(objectMotionBakedPipeline_);
     if (objectMotionBakedShader_.valid()) dev_->destroyShader(objectMotionBakedShader_);
+    if (objectMotionMaskedPipeline_.valid()) dev_->destroyPipeline(objectMotionMaskedPipeline_);
+    if (objectMotionMaskedShader_.valid()) dev_->destroyShader(objectMotionMaskedShader_);
     objectMotionPipeline_ = {}; objectMotionShader_ = {};
     objectMotionInstancedPipeline_ = {}; objectMotionInstancedShader_ = {};
     objectMotionDeformedPipeline_ = {}; objectMotionDeformedShader_ = {};
     objectMotionBakedPipeline_ = {}; objectMotionBakedShader_ = {};
+    objectMotionMaskedPipeline_ = {}; objectMotionMaskedShader_ = {};
     shutdownModels();
     lights.shutdown();
     shutdownTrace();
@@ -355,8 +358,9 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
             it.morph < 0 && (!it.prim || it.prim->morphTargets == 0 ||
             !it.model || !it.model->morphTex.valid()) &&
             it.materialRole != 1 && it.shadowRole != 2 &&
-            it.mat && it.mat->alpha == AlphaMode::Opaque &&
-            !it.mat->transparent && !(it.flags & kDrawTransparent) &&
+            it.mat && (it.mat->alpha == AlphaMode::Opaque ||
+             it.mat->alpha == AlphaMode::Mask) && !it.mat->shaderGraph &&
+            it.mat->team == TeamMode::None && !it.mat->transparent && !(it.flags & kDrawTransparent) &&
             it.model && !it.model->geometry && it.model->vb.valid() &&
             it.model->ib.valid() && it.indexCount > 0;
     };
@@ -556,6 +560,34 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
             objectMotionBakedPipeline_ = dev_->createPipeline(pipeline);
         }
     }
+    if (!objectMotionMaskedShader_.valid()) {
+        gfx::ShaderDesc shader;
+        shader.glslVertex = motion_shaders::kMaskedVS;
+        shader.glslFragment = motion_shaders::kMaskedFS;
+        shader.msl = motion_shaders::kMaskedMSL;
+        shader.textureSlots = 2; // sampled scene depth + alpha base texture
+        shader.uniformSlots = 1;
+        shader.label = "prisma alpha-cutout velocity";
+        objectMotionMaskedShader_ = dev_->createShader(shader);
+        if (objectMotionMaskedShader_.valid()) {
+            gfx::PipelineDesc pipeline;
+            pipeline.shader = objectMotionMaskedShader_;
+            pipeline.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
+            pipeline.attrs[1] = {2, gfx::VertexFormat::Float2,
+                                 uint32_t(offsetof(ModelVertex,uv))};
+            pipeline.attrs[2] = {4, gfx::VertexFormat::UByte4N,
+                                 uint32_t(offsetof(ModelVertex,color))};
+            pipeline.attrCount = 3;
+            pipeline.stride = sizeof(ModelVertex);
+            pipeline.indexType = gfx::IndexType::UInt32;
+            pipeline.cull = gfx::CullMode::Back;
+            pipeline.depthTest = false;
+            pipeline.depthWrite = false;
+            pipeline.colorFormat = gfx::PixelFormat::RGBA16F;
+            pipeline.label = "prisma alpha-cutout velocity";
+            objectMotionMaskedPipeline_ = dev_->createPipeline(pipeline);
+        }
+    }
     if (history.target.valid() && history.depth.valid() &&
         objectMotionPipeline_.valid()) {
         struct MotionU {
@@ -579,7 +611,7 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
         using BatchKey = std::tuple<const Model*, uint32_t, uint32_t>;
         std::map<BatchKey, std::vector<const ModelItem*>> batches;
         for (const auto& it : modelItems_) {
-            if (!eligible(it)) continue;
+            if (!eligible(it) || it.mat->alpha == AlphaMode::Mask) continue;
             batches[{it.model,it.firstIndex,it.indexCount}].push_back(&it);
         }
         struct BatchU {
@@ -631,6 +663,50 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                     int32_t(sample.model->gpuBaseVertex),
                     static_cast<uint32_t>(n));
                 first += n;
+            }
+        }
+        // Alpha-mask replay must happen after rigid batches, before the
+        // deformable pass, so cut-out fragments never mark empty pixels
+        // with a bogus object velocity.
+        if (objectMotionMaskedPipeline_.valid()) {
+            struct MaskU {
+                float current[16], previous[16], params[4];
+                float uvTransform0[4], uvTransform1[4];
+            };
+            dev_->setPipeline(objectMotionMaskedPipeline_);
+            for (const auto& it : modelItems_) {
+                if (!eligible(it) || it.mat->alpha != AlphaMode::Mask)
+                    continue;
+                const Key key{it.motionPersistentId,it.motionNodeIndex};
+                const auto previous = history.previous.find(key);
+                if (previous == history.previous.end()) continue;
+                const mat4 currentMvp = viewProj_ * it.world;
+                const mat4 previousMvp = previousCamera * previous->second;
+                MaskU u{};
+                std::memcpy(u.current,currentMvp.m,sizeof u.current);
+                std::memcpy(u.previous,previousMvp.m,sizeof u.previous);
+                u.params[0]=float(w); u.params[1]=float(h);
+                u.uvTransform0[0]=it.mat->uvOffset.x;
+                u.uvTransform0[1]=it.mat->uvOffset.y;
+                u.uvTransform0[2]=it.mat->uvScale.x;
+                u.uvTransform0[3]=it.mat->uvScale.y;
+                u.uvTransform1[0]=it.mat->uvRotation;
+                u.uvTransform1[1]=it.mat->alphaCutoff;
+                u.uvTransform1[2]=it.mat->baseColor.w;
+                u.uvTransform1[3]=it.mat->vertexColors ? 1.0f : 0.0f;
+                dev_->setUniforms(0,&u,sizeof u);
+                gfx::TextureHandle base=white_;
+                if (it.mat->baseTex >= 0 &&
+                    size_t(it.mat->baseTex) < it.model->images.size()) {
+                    auto tex=it.model->images[size_t(it.mat->baseTex)].tex;
+                    if (tex.valid()) base=tex;
+                }
+                dev_->setTexture(1,base);
+                dev_->setVertexBuffer(it.model->vb);
+                dev_->setIndexBuffer(it.model->ib);
+                dev_->drawIndexed(it.indexCount,
+                    it.firstIndex + it.model->gpuFirstIndex,
+                    int32_t(it.model->gpuBaseVertex));
             }
         }
         // Re-evaluate vertex deformation for BOTH poses. Current and prior
