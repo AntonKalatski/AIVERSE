@@ -98,6 +98,54 @@ inline void initializeNereidFloodGrid(
     ecs.setResource<lib::nereid::WaterFloodResource>(std::move(seed));
 }
 
+// Configured finite inflow/outflow ports make an actual river generate a
+// water-level rise behind a blocked channel. This reserves a KNOWN finite
+// amount of water outside the visible grid; inflow moves it into the bank,
+// and outflow returns it to the SAME counted reserve. Host supplies genuine
+// NEREID water-body IDs; no implicit infinite-volume pump is created.
+// This setter is intentionally usable only before the first simulation tick.
+inline void configureNereidFloodBoundaryPorts(
+        World& ecs,
+        std::vector<lib::nereid::WaterFloodPort> ports,
+        uint64_t externalVolumeCm) {
+    const auto* existing=ecs.resourceConst<
+        lib::nereid::WaterFloodResource>();
+    if(!existing || existing->cells.empty() ||
+       existing->lastTick!=UINT32_MAX ||
+       existing->revision!=0)
+        throw std::logic_error(
+            "NEREID flood ports must be configured once before first water tick");
+    if(externalVolumeCm>1000000000ull)
+        throw std::length_error("NEREID external flood reserve too large");
+    for(const auto& port:ports) {
+        if(port.kind==lib::nereid::WaterFloodPortKind::Inflow){
+            const auto* body=ecs.tryGetConst<
+                lib::nereid::WaterBodyComponent>(port.waterBody);
+            if(!ecs.alive(port.waterBody) || !body ||
+               !lib::nereid::validWaterBody(*body))
+                throw std::invalid_argument(
+                    "TerraWeave flood inlet has no real NEREID water body");
+        }
+        const auto id=std::pair{port.x,port.z};
+        const auto it=std::lower_bound(
+            existing->cells.begin(),existing->cells.end(),id,
+            [](const lib::nereid::WaterFloodCell& a,
+               const std::pair<int32_t,int32_t>& key){
+                return std::pair{a.x,a.z}<key;
+            });
+        if(it==existing->cells.end() ||
+           std::pair{it->x,it->z}!=id)
+            throw std::invalid_argument(
+                "TerraWeave flood port outside existing finite grid");
+    }
+    auto next=*existing;
+    next.ports=std::move(ports);
+    next.externalVolumeCm=externalVolumeCm;
+    lib::nereid::validateNereidFlood(next);
+    ecs.setResource<lib::nereid::WaterFloodResource>(
+        std::move(next));
+}
+
 // Excavating/erosion/filling displaces the *ground* under the same fluid
 // column, preserving saved water volume; the surface rises over fill or
 // lowers after excavation without deleting/addition of water. The native
