@@ -700,6 +700,9 @@ private:
                         (unsigned long long)modelStats.staticCrossModelPreflightRejected);
                     ImGui::Text("Page preflight selected: %llu visible items",
                         (unsigned long long)modelStats.staticCrossModelPreflightItems);
+                    ImGui::Text("Preflight workspace retained: %.1f KiB",
+                        double(modelStats.staticCrossModelPreflightWorkspaceBytes) / 1024.0);
+                    ImGui::TextDisabled("Reusable across views; cleared on scene reload, no retained GPU data.");
                     if (ed.renderer().cpuMdiAdaptiveEnabled()) {
                         ImGui::Text("Adaptive CPU MDI: skipped %llu / probe %llu passes, measured %llu attempts",
                             (unsigned long long)modelStats.staticCrossModelAdaptiveSkippedPasses,
