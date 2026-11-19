@@ -1,0 +1,125 @@
+// VIVID editor-side sparse facial sculpt data. Never mutates the source mesh.
+#pragma once
+#include "SparseMorph.h"
+#include "engine/data/Json.h"
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <stdexcept>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace aiverse::vivid {
+class MorphAuthoring {
+public:
+    static MorphAuthoring fromCompiled(const SparseMorphLibrary& compiled) {
+        MorphAuthoring out;
+        out.vertices_=compiled.vertices();
+        for(std::size_t i=0;i<compiled.targets();++i) {
+            MorphTargetInput target;
+            target.name=std::string(compiled.targetName(i));
+            const auto range=compiled.gpuRanges()[i];
+            for(std::uint32_t k=0;k<range.count;++k) {
+                const auto& gpu=compiled.gpuDeltas()[range.first+k];
+                MorphDelta delta;
+                delta.vertex=gpu.vertex;
+                for(int n=0;n<3;++n) {
+                    delta.position[std::size_t(n)]=gpu.position[n];
+                    delta.normal[std::size_t(n)]=gpu.normal[n];
+                    delta.tangent[std::size_t(n)]=gpu.tangent[n];
+                }
+                target.deltas.push_back(delta);
+            }
+            out.targets_.push_back(std::move(target));
+        }
+        return out;
+    }
+    std::size_t vertices() const noexcept {return vertices_;}
+    std::size_t targets() const noexcept {return targets_.size();}
+    const std::vector<MorphTargetInput>& shapes() const noexcept {return targets_;}
+    bool canUndo() const noexcept {return !undo_.empty();}
+    bool canRedo() const noexcept {return !redo_.empty();}
+    // Edits sparse offsets by source model vertex ID. A zero triplet removes
+    // an existing sparse entry. Failed edits are fully transactional.
+    bool setPosition(std::size_t target,std::uint32_t vertex,MorphVec3 value) {
+        if(target>=targets_.size() || vertex>=vertices_)return false;
+        for(float c:value)if(!std::isfinite(c)||std::fabs(c)>10.0f)return false;
+        auto next=targets_;
+        auto& deltas=next[target].deltas;
+        auto it=std::find_if(deltas.begin(),deltas.end(),
+            [&](const MorphDelta& d){return d.vertex==vertex;});
+        if(it==deltas.end()) {
+            if(value==MorphVec3{})return true;
+            MorphDelta delta;
+            delta.vertex=vertex;
+            delta.position=value;
+            deltas.push_back(delta);
+        }else {
+            it->position=value;
+            if(it->position==MorphVec3{} && it->normal==MorphVec3{} &&
+               it->tangent==MorphVec3{})deltas.erase(it);
+        }
+        try { (void)SparseMorphLibrary::compile(vertices_,next); }
+        catch(...) {return false;}
+        if(undo_.size()==kMaxHistory)undo_.erase(undo_.begin());
+        undo_.push_back(std::move(targets_));
+        targets_=std::move(next);
+        redo_.clear();
+        return true;
+    }
+    bool undo() {
+        if(undo_.empty())return false;
+        if(redo_.size()==kMaxHistory)redo_.erase(redo_.begin());
+        redo_.push_back(std::move(targets_));
+        targets_=std::move(undo_.back());
+        undo_.pop_back();
+        return true;
+    }
+    bool redo() {
+        if(redo_.empty())return false;
+        if(undo_.size()==kMaxHistory)undo_.erase(undo_.begin());
+        undo_.push_back(std::move(targets_));
+        targets_=std::move(redo_.back());
+        redo_.pop_back();
+        return true;
+    }
+    SparseMorphLibrary compile() const {
+        return SparseMorphLibrary::compile(vertices_,targets_);
+    }
+    Json toJson() const {
+        (void)compile();
+        Json root=Json::object();
+        root.set("version",Json::number(std::int64_t(1)));
+        root.set("vertices",Json::number(std::int64_t(vertices_)));
+        Json targets=Json::array();
+        for(const auto& t:targets_) {
+            Json target=Json::object();
+            target.set("name",Json::string(t.name));
+            Json deltas=Json::array();
+            for(const auto& d:t.deltas) {
+                Json delta=Json::object();
+                delta.set("vertex",Json::number(std::int64_t(d.vertex)));
+                const auto write=[](const MorphVec3& value) {
+                    Json array=Json::array();
+                    for(float x:value)array.push(Json::number(double(x),7));
+                    return array;
+                };
+                delta.set("position",write(d.position));
+                delta.set("normal",write(d.normal));
+                delta.set("tangent",write(d.tangent));
+                deltas.push(std::move(delta));
+            }
+            target.set("deltas",std::move(deltas));
+            targets.push(std::move(target));
+        }
+        root.set("targets",std::move(targets));
+        return root;
+    }
+private:
+    static constexpr std::size_t kMaxHistory=32;
+    std::size_t vertices_=0;
+    std::vector<MorphTargetInput> targets_;
+    std::vector<std::vector<MorphTargetInput>> undo_,redo_;
+};
+} // namespace aiverse::vivid
