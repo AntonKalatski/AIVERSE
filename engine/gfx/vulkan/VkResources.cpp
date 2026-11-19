@@ -449,6 +449,13 @@ void VulkanDevice::updateTexture(TextureHandle h, int x, int y, int w, int hh, c
     else barrierImage(cb, t->image, false, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
 }
 
+bool VulkanDevice::textureInfo(TextureHandle h, TextureInfo& out) const {
+    const auto* t = textures_.get(h.id);
+    if (!t) return false;
+    out = {t->width,t->height,t->format};
+    return true;
+}
+
 void VulkanDevice::destroyTexture(TextureHandle h) {
     VTexture* t = textures_.get(h.id);
     if (!t) return;
