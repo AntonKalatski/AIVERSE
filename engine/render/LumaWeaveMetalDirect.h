@@ -129,11 +129,24 @@ public:
            packet.lights.size()>LumaWeaveRegistry::kMaxSources ||
            packet.cells.size()>LumaWeaveClusters::kMaxCells ||
            packet.candidateIndices.size()>(1u<<20))return false;
+        const auto& g=packet.uniforms;
+        const auto finite=[](float v){return std::isfinite(v);};
+        if(!finite(g.origin.x)||!finite(g.origin.y)||!finite(g.origin.z) ||
+           !finite(g.cellSize.x)||!finite(g.cellSize.y)||!finite(g.cellSize.z) ||
+           g.cellSize.x<.25f||g.cellSize.y<.25f||g.cellSize.z<.25f ||
+           g.dims[0]<1||g.dims[1]<1||g.dims[2]<1 ||
+           uint64_t(g.dims[0])*g.dims[1]*g.dims[2]!=packet.cells.size() ||
+           g.limits[0]!=packet.lights.size() ||
+           g.limits[1]!=packet.candidateIndices.size())
+            return false;
         for(const auto& cell:packet.cells)
             if(size_t(cell.first)+cell.count>packet.candidateIndices.size())
                 return false;
         for(auto i:packet.candidateIndices)
             if(i>=packet.lights.size())return false;
+        // Copy CPU-side source snapshot BEFORE replacing any GPU handles:
+        // memory allocation failure must not publish a mismatched RHI revision.
+        LumaGpuInputPacket staged=packet;
         // Transactional GPU-buffer replacements; old resources are retained
         // if any allocation fails. No compute can read these until published.
         const auto lights=allocate(std::max<size_t>(1,packet.lights.size())*
@@ -154,7 +167,7 @@ public:
         dev_->destroyBuffer(cellBuffer_);
         dev_->destroyBuffer(indexBuffer_);
         lightBuffer_=lights;cellBuffer_=cells;indexBuffer_=indices;
-        sourcePacket_=packet;
+        sourcePacket_=std::move(staged);
         sourceRevision_=packet.sourceRevision;
         sourceReady_=true;
         outputValid_=false;
