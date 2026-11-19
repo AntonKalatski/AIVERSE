@@ -9,6 +9,7 @@
 #include "StrataPortableRender.h"
 #endif
 #include <algorithm>
+#include <filesystem>
 #include <numeric>
 #include <set>
 #include <tuple>
@@ -367,12 +368,35 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                     }
                     sourceBudget=granted->second;
                 }
-                auto source=std::make_shared<strata::PortableSource>();
                 std::string error;
+                std::shared_ptr<strata::DiskIndexPages> diskPages;
+                const bool diskApplicable =
+                    !strataDiskPageDirectory_.empty() && sourceBudget &&
+                    strataIncrementalIndexStreamingEnabled_ &&
+                    dev.canUpdateSharedBuffers() &&
+                    (dev.info().backend==gfx::Backend::Metal ||
+                     dev.info().backend==gfx::Backend::Vulkan);
+                if(diskApplicable){
+                    diskPages=std::make_shared<strata::DiskIndexPages>();
+                    // Source key is only hashed to a safe archive filename;
+                    // it is never interpreted as a filesystem subpath.
+                    const auto filename=strata::DiskIndexPages::
+                        archiveFilename(key);
+                    const auto path=(std::filesystem::path(
+                        strataDiskPageDirectory_)/filename).string();
+                    if(!diskPages->open(path,*asset,sourceBudget,512,&error)){
+                        ++stats_.strataPortableDeclined;
+                        ++stats_.strataDiskArchiveDeclined;
+                        warnings_.push_back("STRATA disk archive '"+key+"': "+error);
+                        continue; // original Model remains Legacy
+                    }
+                }
+                auto source=std::make_shared<strata::PortableSource>();
                 if (!source->stage(dev, *model, *asset, &error,
                                    sourceBudget,
                                    strataIncrementalIndexStreamingEnabled_,
-                                   strataStreamingUploadBudgetBytes_)) {
+                                   strataStreamingUploadBudgetBytes_,
+                                   std::move(diskPages))) {
                     ++stats_.strataPortableDeclined;
                     if (!error.empty())
                         warnings_.push_back("portable Strata source " + key +
@@ -385,6 +409,10 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                         stats_.strataStreamingIndexBytes+=status->activeBytes;
                         stats_.strataStreamingArenaBytes+=status->arenaBytes;
                         if(status->incremental)++stats_.strataIncrementalSources;
+                        if(diskApplicable){
+                            ++stats_.strataDiskArchiveSources;
+                            stats_.strataDiskBytesRead+=status->diskBytesRead;
+                        }
                     }
                 }
                 strataPortableSources_.emplace(model.get(), std::move(source));
@@ -531,6 +559,10 @@ void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
     stats_.strataStreamingUploadedBytes=0;
     stats_.strataStreamingUploadDeferrals=0;
     stats_.strataStreamingFenceDeferrals=0;
+    stats_.strataDiskBytesRead=0;
+    stats_.strataDiskReadFailures=0;
+    stats_.strataDiskPending=0;
+    stats_.strataDiskReadyBytes=0;
     for(auto& [model,source]:strataPortableSources_){
         if(!source || !source->streamingEnabled())continue;
         std::string error;
@@ -544,6 +576,10 @@ void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
             stats_.strataStreamingUploadedBytes+=status->uploadedBytes;
             stats_.strataStreamingUploadDeferrals+=status->uploadBudgetDeferrals;
             stats_.strataStreamingFenceDeferrals+=status->fenceReuseDeferrals;
+            stats_.strataDiskBytesRead+=status->diskBytesRead;
+            stats_.strataDiskReadFailures+=status->diskFailures;
+            stats_.strataDiskPending+=status->diskPending;
+            stats_.strataDiskReadyBytes+=status->diskReadyBytes;
         }
     }
 #else
