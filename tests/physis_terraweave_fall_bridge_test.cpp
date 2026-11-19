@@ -20,7 +20,7 @@ int main() {
     pn::Settings cfg;
     cfg.width=cfg.height=1;
     pn::initialize(world,cfg);
-    world.setResource<host::NatureFallHostState>({});
+    world.setResource<host::NatureFallHostState>(host::NatureFallHostState{});
     tw::TerraWeaveAuthorityResource authority;
     tw::AnchoredPlant tree;
     tree.anchor.plantKey=551;
