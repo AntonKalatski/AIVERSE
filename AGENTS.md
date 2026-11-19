@@ -1488,3 +1488,40 @@ after every implementation stage as a separate commit with
 architecture, changed files, actual validation, known risks,
 current ref and next exact step. Do not merge unvalidated changes
 to main based only on source-level inspection.
+
+## AIVERSE Stage 105 — multi-host resource groups and authored static portraits
+
+For native model resource aggregation, use
+`engine/render/RenderResourceOwnerGroup.h`. A group can
+non-owningly register multiple `render::ModelResourceCache`
+hosts and deduplicates exact Model pointers, shared texture
+cache owners and device-global geometry pages. Only call
+`snapshot(device)` on the device owner thread; all registered
+cache allocations must belong to the same gfx::Device.
+`snapshotOwners(bool gpuHealthy)` is the CPU-only source
+diagnostic path. Do not add shared geometry pool allocations
+per model/host, and do not double-charge borrowed textures.
+The group's estimated-byte admission limit is advisory and
+must NEVER cause forced destruction before the resource's own
+GPU fence signals. `PendingGpuRetirement` is normal;
+`DeviceUnhealthy` means new imports/publication must pause
+until the host resolves backend loss (no timeout-based release).
+
+For static previews that require full authored appearance,
+use `game::Portrait::renderAppearance(ModelDraw,camera,...)`
+or submit a `view::Object` to `aiverse::View`. The host owns
+model/material vectors, variant, geometry policy, tint and
+optional precomputed pose until the synchronous submit returns.
+The normal `Portrait::render(RtsView&,...)` now delegates
+static resolved packets to this API with its original camera;
+animated/complex scenes keep the legacy fallback until visual
+parity and single-writer animation evaluation are verified.
+Do not introduce a genre dependency into engine/render or
+canonical View.
+
+Stage 105 GPU-owner and portrait API tests are authored but
+**NOT RUN**, as are native compiler, render device, FPS/RTS,
+screenshot and sanitizer checks. After each feature stage
+append a separate detailed handoff to
+`docs/agent-handoffs/animation-universal.md` including
+exact Git refs, actual tests, limitations and next step.
