@@ -38,6 +38,56 @@ struct WaterCascadeFlowContribution {
     Fixed weight{};
 };
 
+// Shared deterministic mouth kernel used by authoritative ECS queries and
+// the optional read-only scene presentation current. No dynamic allocations.
+inline WaterCascadeFlowContribution waterCascadeMouthContribution(
+        uint64_t id,const WaterCascadeComponent& cascade,
+        const WaterCascadeFlowPolicyComponent& policy,bool atOutlet,
+        Vec3 position,Fixed upstreamSpeed=Fixed{}) {
+    WaterCascadeFlowContribution out;
+    if(!validWaterCascadeFlowPolicy(policy) || !validWaterCascade(cascade))
+        return out;
+    const Vec3 anchor=atOutlet?cascade.points.back().position:
+                              cascade.points.front().position;
+    const Fixed distance=(position.xz()-anchor.xz()).length();
+    if(distance>=policy.radius)return out;
+    const Vec2 heading=cascadeDownstreamDirection(cascade,atOutlet);
+    if(heading.lengthSq()<=Fixed{})return out;
+    Fixed speed=cascade.speed;
+    if(atOutlet)speed=fxMax(speed,upstreamSpeed);
+    speed=fxClamp(speed,Fixed{},policy.speedLimit);
+    const Fixed t=fxClamp(1_fx-distance/policy.radius,0_fx,1_fx);
+    const Fixed weight=policy.blend*t*t*(3_fx-t*2);
+    if(weight<=Fixed{})return out;
+    return {id,heading*speed,weight};
+}
+
+template<size_t N>
+inline Vec3 blendWaterCascadeContributions(
+        Vec3 base,std::array<WaterCascadeFlowContribution,N>& entries,
+        size_t used) {
+    if(!used)return base;
+    used=std::min(used,N);
+    std::sort(entries.begin(),entries.begin()+used,
+        [](const auto& a,const auto& b) {
+            return a.cascadeId<b.cascadeId;
+        });
+    Vec2 weighted{};
+    Fixed total{};
+    for(size_t i=0;i<used;++i) {
+        weighted+=entries[i].desired*entries[i].weight;
+        total+=entries[i].weight;
+    }
+    if(total<=Fixed{})return base;
+    const Vec2 desired=weighted/total;
+    const Fixed alpha=fxClamp(total,0_fx,1_fx);
+    const Vec2 initial=base.xz();
+    const Vec2 result=initial*(1_fx-alpha)+desired*alpha;
+    base.x=fxClamp(result.x,-1000_fx,1000_fx);
+    base.z=fxClamp(result.y,-1000_fx,1000_fx);
+    return base;
+}
+
 // After regular water body / current / vortex sampling, near a waterfall
 // mouth steer the local WaterSample.flow toward its linked channel. Multiple
 // waterfalls are combined in stable Entity-ID order, independent of pool
@@ -61,14 +111,7 @@ inline void applyWaterCascadeFlow(const World& world,Vec3 position,
             const bool atOutlet=sample.body==links->outlet;
             const bool atInlet=sample.body==links->inlet && !atOutlet;
             if(!atOutlet && !atInlet)return;
-            const Vec3 anchor=atOutlet?cascade->points.back().position:
-                                      cascade->points.front().position;
-            const Vec2 separation=position.xz()-anchor.xz();
-            const Fixed distance=separation.length();
-            if(distance>=policy.radius)return;
-            const Vec2 heading=cascadeDownstreamDirection(*cascade,atOutlet);
-            if(heading.lengthSq()<=Fixed{})return;
-            Fixed targetSpeed=cascade->speed;
+            Fixed upstreamSpeed{};
             if(atOutlet && links->inlet!=kNullEntity &&
                world.alive(links->inlet)) {
                 const auto* inlet=world.tryGetConst<WaterBodyComponent>(links->inlet);
@@ -79,16 +122,13 @@ inline void applyWaterCascadeFlow(const World& world,Vec3 position,
                     const Vec3 upstream=waterCurrentWithVortices(
                         *inlet,geometry,current,vortices,
                         cascade->points.front().position);
-                    targetSpeed=fxMax(targetSpeed,upstream.xz().length());
+                    upstreamSpeed=upstream.xz().length();
                 }
             }
-            targetSpeed=fxClamp(targetSpeed,Fixed{},policy.speedLimit);
-            const Fixed t=fxClamp(1_fx-distance/policy.radius,0_fx,1_fx);
-            const Fixed smooth=t*t*(3_fx-t*2);
-            const Fixed weight=policy.blend*smooth;
-            if(weight<=Fixed{})return;
-            WaterCascadeFlowContribution contribution{
-                uint64_t(e.packed()),heading*targetSpeed,weight};
+            const WaterCascadeFlowContribution contribution=
+                waterCascadeMouthContribution(uint64_t(e.packed()),
+                    *cascade,policy,atOutlet,position,upstreamSpeed);
+            if(contribution.weight<=Fixed{})return;
             if(used<kMaxContributions) {
                 contributions[used++]=contribution;
             }else{
@@ -102,23 +142,7 @@ inline void applyWaterCascadeFlow(const World& world,Vec3 position,
                     contributions[largest]=contribution;
             }
         });
-    if(!used)return;
-    std::sort(contributions.begin(),contributions.begin()+used,
-        [](const auto& a,const auto& b) {
-            return a.cascadeId<b.cascadeId;
-        });
-    Vec2 weighted{};
-    Fixed total{};
-    for(size_t i=0;i<used;++i) {
-        weighted+=contributions[i].desired*contributions[i].weight;
-        total+=contributions[i].weight;
-    }
-    if(total<=Fixed{})return;
-    const Vec2 desired=weighted/total;
-    const Fixed alpha=fxClamp(total,0_fx,1_fx);
-    const Vec2 base=sample.flow.xz();
-    const Vec2 result=base*(1_fx-alpha)+desired*alpha;
-    sample.flow.x=fxClamp(result.x,-1000_fx,1000_fx);
-    sample.flow.z=fxClamp(result.y,-1000_fx,1000_fx);
+    sample.flow=blendWaterCascadeContributions(
+        sample.flow,contributions,used);
 }
 } // namespace aiverse::lib::nereid
