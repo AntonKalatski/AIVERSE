@@ -168,6 +168,18 @@ struct GpuIcbVirtualMaterial {
     }
 };
 
+// Opt-in per-command PBR resources without a virtual texture.
+// Slots 1..6 and U2 are fully specified; default backends refuse it.
+struct GpuIcbPbrMaterial {
+    std::array<TextureHandle,6> textures{};
+    std::array<float,36> u2{};
+    bool valid() const {
+        for (auto t : textures) if (!t.valid()) return false;
+        for (float x : u2) if (!std::isfinite(x)) return false;
+        return true;
+    }
+};
+
 struct BufferDesc {
     BufferType type = BufferType::Vertex;
     Usage usage = Usage::Immutable;
@@ -737,6 +749,19 @@ public:
         BufferHandle indexBuffer, const uint32_t* sourceSlots, uint32_t count,
         const void* instanceData, size_t instanceBytes,
         const GpuIcbVirtualMaterial* materials) {
+        (void)gpuArguments; (void)vertexBuffer; (void)indexBuffer;
+        (void)sourceSlots; (void)count; (void)instanceData;
+        (void)instanceBytes; (void)materials;
+        return 0;
+    }
+    // Separate optional non-VT PBR material pathway. A renderer may
+    // mix compatible opaque built-in PBR source textures/U2 while using
+    // the same geometry/shader pipeline. Failure returns token zero.
+    virtual uint32_t prepareGpuEncodedIndexedIcbWithPbrMaterials(
+        BufferHandle gpuArguments, BufferHandle vertexBuffer,
+        BufferHandle indexBuffer, const uint32_t* sourceSlots, uint32_t count,
+        const void* instanceData, size_t instanceBytes,
+        const GpuIcbPbrMaterial* materials) {
         (void)gpuArguments; (void)vertexBuffer; (void)indexBuffer;
         (void)sourceSlots; (void)count; (void)instanceData;
         (void)instanceBytes; (void)materials;
