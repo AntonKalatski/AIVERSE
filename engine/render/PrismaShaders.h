@@ -284,17 +284,18 @@ inline const char* kMotionBlur = R"(
     RETURN(vec4(mix(sharp,blurred,strength),1.0));
 )";
 
-// Stage 42. HDR temporal color resolve. TEX0=current linear HDR color,
-// TEX1=per-view previous RGBA16F color + previous device depth in alpha,
-// TEX2=screen velocity (current-minus-previous normalized UV), TEX3=depth,
-// TEX4=current-frame reactive mask (R). The history is nearest-filtered;
-// four explicit bilinear taps are depth validated INDEPENDENTLY to avoid
-// interpolating an occluder's depth into a newly uncovered surface.
-// Uses the same current/previous view-projection columns as motion vectors.
-// px.xy=texel size, px.z=render-target Y flip; p0.x=clip depth 0..1,
-// p0.y=valid history; p0.z=history weight; p0.w=reactive strength.
-// sun.x=depth threshold, sun.y=motion attenuation per pixel,
-// sun.z=reactive input present. Never writes to the sampled history target.
+// Stages 42–43. HDR temporal color resolve with opt-in subpixel jitter.
+// TEX0 = current linear HDR, TEX1 = previous per-camera HDR RGB + previous
+// hardware depth alpha, TEX2 = normalized current-minus-previous velocity,
+// TEX3 = current hardware depth, TEX4 = current-frame reactive mask.
+// px.xy = reciprocal viewport size, px.z = render-target Y flip.
+// p0.x = clip depth 0..1, p0.y = valid history, p0.z = max history weight,
+// p0.w = reactive rejection. sun.x = depth threshold, sun.y = motion attenuation,
+// sun.z = valid reactive mask, sun.w = confidence rejection (0..1).
+// jitter.xy = current projection jitter UV, jitter.zw = prior projection
+// jitter UV. Jitter is intentionally removed from previous history lookup:
+// input pixels are sampled in jittered projection space, while history is
+// stored on the stable output pixel grid. History is NEVER sampled as RT.
 inline const char* kTemporalResolveHelpers = R"(
 PF_FN vec3 prismaHistoryCompress(vec3 c) {
     c=max(c,vec3(0.0));
@@ -305,34 +306,46 @@ PF_FN vec3 prismaHistoryExpand(vec3 c) {
 }
 )";
 inline const char* kTemporalResolve = R"(
-    vec2 uv=TUV(s);
+    vec2 sampleS=clamp(s+jitter.xy,px.xy*0.5,vec2(1.0)-px.xy*0.5);
+    vec2 uv=TUV(sampleS);
     vec3 current=prismaHistoryCompress(TEX0(uv).rgb);
     float depth=TEX3(uv).r;
-    vec3 lo=current, hi=current;
+    vec3 lo=current,hi=current;
+    float meanLuma=0.0, meanLumaSq=0.0;
+    float nearDepth=depth,farDepth=depth;
     for(int y=-1;y<=1;++y)for(int x=-1;x<=1;++x) {
-        vec2 q=TUV(clamp(s+vec2(float(x)*px.x,float(y)*px.y),vec2(0.0),vec2(1.0)));
+        vec2 q=TUV(clamp(sampleS+vec2(float(x)*px.x,float(y)*px.y),
+                         px.xy*0.5,vec2(1.0)-px.xy*0.5));
         vec3 c=prismaHistoryCompress(TEX0(q).rgb);
         lo=min(lo,c);hi=max(hi,c);
+        float luma=dot(c,vec3(0.2126,0.7152,0.0722));
+        meanLuma+=luma;
+        meanLumaSq+=luma*luma;
+        float d=TEX3(q).r;
+        nearDepth=min(nearDepth,d);farDepth=max(farDepth,d);
     }
+    meanLuma*=1.0/9.0;meanLumaSq*=1.0/9.0;
+    float localSigma=sqrt(max(meanLumaSq-meanLuma*meanLuma,0.0));
     vec3 resolved=current;
     if(p0.y>0.5 && depth<0.99999) {
         vec2 velocity=TEX2(uv).rg;
-        vec2 previousUv=s-velocity;
-        if(min(previousUv.x,previousUv.y)>px.x*0.5 &&
-           previousUv.x<1.0-px.x*0.5 &&
-           previousUv.y<1.0-px.y*0.5) {
-            vec4 clip=vec4(s*2.0-vec2(1.0),
-                          p0.x>0.5?depth:depth*2.0-1.0,1.0);
+        // Motion vectors are defined in jittered input projection space;
+        // subtract the previous frame jitter to address stable history UVs.
+        vec2 previousUv=sampleS-velocity-jitter.zw;
+        if(previousUv.x>px.x*0.5 && previousUv.y>px.y*0.5 &&
+           previousUv.x<1.0-px.x*0.5 && previousUv.y<1.0-px.y*0.5) {
+            vec4 clip=vec4(sampleS*2.0-vec2(1.0),
+                           p0.x>0.5?depth:depth*2.0-1.0,1.0);
             vec4 world=inv0*clip.x+inv1*clip.y+inv2*clip.z+inv3*clip.w;
             world=world/max(abs(world.w),0.000001)*(world.w<0.0?-1.0:1.0);
             vec4 prev=prev0*world.x+prev1*world.y+prev2*world.z+prev3*world.w;
             if(prev.w>0.00001) {
                 float expected=p0.x>0.5?prev.z/prev.w:prev.z/prev.w*0.5+0.5;
                 vec2 pixel=previousUv/px.xy-vec2(0.5);
-                vec2 base=floor(pixel), fraction=fract(pixel);
-                vec3 oldSum=vec3(0.0);
-                float weightSum=0.0;
-                // Validated bilinear history reconstruction, not alpha interpolation.
+                vec2 base=floor(pixel),fraction=fract(pixel);
+                vec3 oldSum=vec3(0.0);float weightSum=0.0;
+                // Nearest samples: validate EACH historical depth before
+                // bilinear reconstruction, never interpolate depth across edges.
                 for(int y=0;y<2;++y)for(int x=0;x<2;++x) {
                     vec2 q=(base+vec2(float(x),float(y))+vec2(0.5))*px.xy;
                     if(min(q.x,q.y)<0.0||max(q.x,q.y)>1.0)continue;
@@ -347,11 +360,20 @@ inline const char* kTemporalResolve = R"(
                 }
                 if(weightSum>0.01) {
                     vec3 old=clamp(oldSum/weightSum,lo,hi);
-                    float motionPixels=length(velocity/max(px.xy,vec2(0.000001)));
+                    float currentLuma=dot(current,vec3(0.2126,0.7152,0.0722));
+                    float oldLuma=dot(old,vec3(0.2126,0.7152,0.0722));
+                    float relativeDelta=abs(oldLuma-currentLuma)/max(localSigma,0.015);
+                    float colorConfidence=1.0-sun.w*smoothstep(0.75,3.0,relativeDelta);
+                    float depthEdge=farDepth-nearDepth;
+                    float edgeConfidence=1.0-sun.w*0.8*
+                        smoothstep(sun.x*0.5,sun.x*4.0,depthEdge);
+                    // Filter out jitter-only movement when damping history.
+                    vec2 physicalVelocity=velocity-(jitter.xy-jitter.zw);
+                    float motionPixels=length(physicalVelocity/max(px.xy,vec2(0.000001)));
                     float reactive=sun.z>0.5?clamp(TEX4(uv).r,0.0,1.0):0.0;
                     float historyWeight=p0.z/(1.0+sun.y*motionPixels);
                     historyWeight*=1.0-reactive*p0.w;
-                    historyWeight*=clamp(weightSum,0.0,1.0);
+                    historyWeight*=clamp(weightSum,0.0,1.0)*colorConfidence*edgeConfidence;
                     resolved=mix(current,old,clamp(historyWeight,0.0,0.98));
                 }
             }
