@@ -87,6 +87,7 @@ public:
         const auto post = ed.prisma().retirementStats();
         const auto memory = ed.prisma().memoryStats();
         const auto motion = ed.renderer().motionRetirementStats();
+        const auto rendererOwned = ed.renderer().residentMemoryStats();
         const auto viewport = ed.viewportRetirement().stats(ed.device());
         const auto viewportLive = ed.viewportRetirement().liveStats(ed.device());
         const auto objects = ed.gpuResourceRetirement().stats(ed.device());
@@ -97,7 +98,7 @@ public:
                     post.exposureViews, post.temporalViews, post.motionViews, motion.liveViews);
         const auto scopedGpu=ed.prisma().viewGpuTimings();
         if (scopedGpu.empty()) {
-            ImGui::TextDisabled("Per-viewport GPU timing: unavailable / opt-in GL33 only");
+            ImGui::TextDisabled("Per-viewport GPU timing: unavailable / opt-in Metal counters or GL33");
         } else {
             for (const auto& gpu : scopedGpu) {
                 const char* name=gpu.viewId==1?"Scene":gpu.viewId==2?"Game":"Custom";
@@ -112,6 +113,20 @@ public:
                     post.graphRetiredTextures);
         ImGui::Text("Renderer motion: %zu fenced + %zu unfenced textures",
                     motion.fencedTextures, motion.unfencedTextures);
+        ImGui::Text("Renderer3D directly owned: %.2f MiB textures + %.2f MiB buffers (%zu/%zu handles)",
+            double(rendererOwned.liveTextureKnownBytes) / mib,
+            double(rendererOwned.liveBufferKnownBytes) / mib,
+            rendererOwned.liveTextures,rendererOwned.liveBuffers);
+        ImGui::TextDisabled("Renderer owned details: scene capture %.2f MiB, motion %.2f MiB, pending motion %.2f MiB",
+            double(rendererOwned.sceneCaptureKnownBytes) / mib,
+            double(rendererOwned.objectMotionKnownBytes) / mib,
+            double(rendererOwned.pendingMotionKnownBytes) / mib);
+        if (rendererOwned.unknownTextures || rendererOwned.unknownBuffers ||
+            rendererOwned.multiVersionBuffers)
+            ImGui::TextDisabled("Renderer unknown: %zu textures, %zu buffers; %zu multi-version buffer(s)",
+                rendererOwned.unknownTextures,rendererOwned.unknownBuffers,
+                rendererOwned.multiVersionBuffers);
+        ImGui::TextDisabled("Excludes externally owned models/materials, LightSystem, pools, driver overhead and Prisma resources.");
         ImGui::Text("Hosted GameClient ожидают GPU: %zu  ·  ShaderGraph pools: %zu активных / %zu ожидают",
                     ed.clientHost().pendingRetiredClients(),
                     post.graphLiveTextures, post.graphRetiredTextures);
