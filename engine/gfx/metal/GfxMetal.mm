@@ -2031,16 +2031,6 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         const bool externalMaterialTextures = boundShader &&
             (boundShader->source.find("#define AIVERSE_MODEL_VT 1") != std::string::npos ||
              boundShader->source.find("#define VIRTUAL_ALPHA_MASK 1") != std::string::npos);
-        const bool usePbrVariant = externalMaterialTextures ||
-            !pipeline->state.supportIndirectCommandBuffers;
-        // GPU command encoder uses uint32 index addresses. A future uint16
-        // specialization must be explicit rather than reinterpret indices.
-        if (pipeline->desc.indexType != IndexType::UInt32)
-            return reject("GPU ICB requires uint32 indices");
-        id<MTLRenderPipelineState> icbPipeline =
-            usePbrVariant ? pipeline->icbPbrState : pipeline->state;
-        if (!icbPipeline || !icbPipeline.supportIndirectCommandBuffers)
-            return reject("ICB-compatible pipeline unavailable (PBR variant not compiled)");
         const size_t frameSlot = frame_ % kFramesInFlight;
         auto& pool = gpuEncodedIcbPool_[frameSlot];
         if (size_t(token) > pool.size())
@@ -2048,6 +2038,20 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         auto& resources = pool[token - 1];
         if (resources.frame != frame_ || !resources.icb || resources.count == 0)
             return reject("ICB not encoded for current frame");
+        const bool perCommandPbr = !resources.virtualMaterials.empty() &&
+            resources.virtualMaterials.front().hasPbr;
+        const bool perCommandVt = !resources.virtualMaterials.empty() &&
+            resources.virtualMaterials.front().hasVt;
+        // A non-VT PBR group still needs the PBR argument-buffer shader
+        // even when the direct pipeline supports ordinary ICB.
+        const bool usePbrVariant = perCommandPbr || externalMaterialTextures ||
+            !pipeline->state.supportIndirectCommandBuffers;
+        if (pipeline->desc.indexType != IndexType::UInt32)
+            return reject("GPU ICB requires uint32 indices");
+        id<MTLRenderPipelineState> icbPipeline =
+            usePbrVariant ? pipeline->icbPbrState : pipeline->state;
+        if (!icbPipeline || !icbPipeline.supportIndirectCommandBuffers)
+            return reject("ICB-compatible pipeline unavailable (PBR variant not compiled)");
         if (!buffers_.get(ibId_) || !buffers_.get(vbId_))
             return reject("index or vertex resource is not bound");
         // The Metal render pipeline must retain all parent vertex/fragment
@@ -2082,8 +2086,14 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                 std::memcpy(stable.contents, snapshot.data(), snapshot.size());
             declareIndirectRead(stable, MTLRenderStageVertex | MTLRenderStageFragment);
         }
-        if (!resources.virtualMaterials.empty() && !externalMaterialTextures)
-            return reject("per-command VT requires virtual texture shader variant");
+        if (perCommandVt && !boundShader)
+            return reject("per-command VT requires a model shader");
+        if (!perCommandVt && perCommandPbr && boundShader &&
+            (boundShader->source.find("#define AIVERSE_MODEL_VT 1") !=
+                 std::string::npos ||
+             boundShader->source.find("#define VIRTUAL_ALPHA_MASK 1") !=
+                 std::string::npos))
+            return reject("non-VT PBR ICB shader mode mismatch");
         if (usePbrVariant) {
             if (!pipeline->icbPbrEncoder)
                 return reject("PBR ICB fragment argument encoder missing");
@@ -2096,8 +2106,6 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             const auto bound = [&](int slot) {
                 return icbFragmentTextures_[slot] && icbFragmentSamplers_[slot];
             };
-            const bool perCommandPbr = !resources.virtualMaterials.empty() &&
-                resources.virtualMaterials.front().hasPbr;
             for (int slot : pbrSlots)
                 if (!(perCommandPbr && slot>=1 && slot<=6) && !bound(slot))
                     return reject("PBR ICB required texture or sampler not bound");
@@ -2131,21 +2139,23 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                 if (virtualSampling) { bindPbrSlot(13,false); bindPbrSlot(14,false); }
                 if (alphaCoverage) bindPbrSlot(15);
             } else {
-                if (!virtualSampling ||
+                if (perCommandVt != virtualSampling ||
                     resources.virtualMaterials.size()!=resources.count)
-                    return reject("per-command VT descriptor count/shader mismatch");
+                    return reject("per-command material count/shader mode mismatch");
                 for (uint32_t i=0;i<resources.count;++i) {
                     const auto& resource=resources.virtualMaterials[i];
-                    const auto* liveAtlas=textures_.get(resource.atlasHandle.id);
-                    const auto* liveTable=textures_.get(resource.tableHandle.id);
-                    const auto* liveAlpha=resource.alphaHandle.valid() ?
-                        textures_.get(resource.alphaHandle.id) : nullptr;
-                    if (!liveAtlas || !liveTable ||
-                        liveAtlas->tex != resource.atlas ||
-                        liveTable->tex != resource.table ||
-                        (resource.alphaHandle.valid() &&
-                         (!liveAlpha || liveAlpha->tex != resource.alpha)))
-                        return reject("per-command VT material texture changed after preparation");
+                    if (perCommandVt) {
+                        const auto* liveAtlas=textures_.get(resource.atlasHandle.id);
+                        const auto* liveTable=textures_.get(resource.tableHandle.id);
+                        const auto* liveAlpha=resource.alphaHandle.valid() ?
+                            textures_.get(resource.alphaHandle.id) : nullptr;
+                        if (!liveAtlas || !liveTable ||
+                            liveAtlas->tex != resource.atlas ||
+                            liveTable->tex != resource.table ||
+                            (resource.alphaHandle.valid() &&
+                             (!liveAlpha || liveAlpha->tex != resource.alpha)))
+                            return reject("per-command VT texture changed after preparation");
+                    }
                     [pipeline->icbPbrEncoder
                         setArgumentBuffer:resources.pbrArgs
                         offset:NSUInteger(size_t(i)*kPerCommandPbrStride)];
@@ -2169,10 +2179,12 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                             declareIndirectRead(texture,MTLRenderStageFragment);
                         }
                     }
-                    [pipeline->icbPbrEncoder setTexture:resource.atlas atIndex:26];
-                    [pipeline->icbPbrEncoder setTexture:resource.table atIndex:28];
-                    declareIndirectRead(resource.atlas, MTLRenderStageFragment);
-                    declareIndirectRead(resource.table, MTLRenderStageFragment);
+                    if (perCommandVt) {
+                        [pipeline->icbPbrEncoder setTexture:resource.atlas atIndex:26];
+                        [pipeline->icbPbrEncoder setTexture:resource.table atIndex:28];
+                        declareIndirectRead(resource.atlas, MTLRenderStageFragment);
+                        declareIndirectRead(resource.table, MTLRenderStageFragment);
+                    }
                     if (alphaCoverage) {
                         if (!resource.alpha || !icbFragmentSamplers_[15])
                             return reject("per-command VT alpha mask missing");
