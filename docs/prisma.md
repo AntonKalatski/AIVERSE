@@ -1514,6 +1514,113 @@ capture callbacks, docking/graph-preview smoke, GPU lifetime
 profiling and CI were **NOT RUN**, per user request. Refer to
 `docs/handoffs/prisma-stage-36.md`.
 
+
+## Stage 37 — generic GPU-fenced shaders, pipelines, buffers, FX hot reload
+
+Stage 37 extends the GPU-completion lifetime policy from textures
+and viewport resources to **all RHI handle categories used by
+Shader Graph and VFX hot reload**.
+
+`engine/render/GpuResourceRetirement.h` introduces a
+genre-independent, graphics-owner-thread lifetime service with
+overloads for `gfx::PipelineHandle`, `ShaderHandle`,
+`BufferHandle`, `TextureHandle`, and `ComputeHandle`.
+Each retired handle is detached from its old owner and stored with
+the GPU submission token from `gfx::Device::gpuSubmissionFence()`.
+A zero token is quarantined. A verified
+`gpuCompletedFence()` allows nonblocking reclamation; explicit
+`drainAfterGpuIdle()` requires a real GPU-idle guarantee.
+
+When multiple GPU handles become eligible at the same time, the
+service destroys pipelines before shaders, preserving dependencies.
+It also supports `retireOwned(device,cleanup,knownBytes)` for
+complex rendering-owner bundles whose internal destruction order
+is already encapsulated. The callback is invoked **only after**
+GPU completion on the graphics-owner thread, never from the
+Metal completion-handler thread. The service tracks pending
+resource-type counts, fenced/unfenced entries and optional
+known bytes; these are lower bounds, not complete VRAM metrics.
+It owns resources exclusively; do not hand it borrowed handles.
+
+### Shader Graph Preview: whole-bundle retirement
+
+The Shader Graph editor now retains the **entire previous**
+`ShaderGraphPreview` object on a graph asset/project/domain change.
+The archived object includes its Portrait/Renderer3D,
+ParticleSystem, PRISMA, TextureCache, shaders, pipelines,
+vertex buffers, and preview color/depth targets.
+The new preview is created separately. The old preview's
+`shutdownAfterGpuCompletion()` runs only when its last GPU
+submission fence has actually completed (or at explicit GPU idle).
+This avoids the former immediate pipeline/shader destruction while
+a previous GPU frame may still reference those resources.
+
+A UI-only change to the node `position` field does **not** invalidate
+GPU shader preview resources; both the window and preview use a
+shared `ShaderGraphPreview::resourceKey(graph)` that excludes node
+screen positions. Actual changes to shader nodes, connections,
+parameters or domain still produce a new GPU preview bundle.
+
+### Editor FX and TextureCache hot reload
+
+`fx::ParticleSystem` exposes the optional
+`setGpuResourceRetirement(owner)` hook. When attached,
+`reloadAll()` retires each previous shader-graph variant pipeline
+and shader rather than directly calling `destroyPipeline` /
+`destroyShader` while previous draws may be in flight. Its
+normal `shutdown()` also retires owned particle buffers, shader
+variants, pipelines, built-in atlas texture and reactive GPU resources.
+The old immediate owner path remains for runtime clients without
+a retirement owner.
+
+`render::TextureCache` likewise has an optional
+`setGpuResourceRetirement(owner)` hook. On reload/shutdown it
+deduplicates cached and atlas-page texture handles, queues each
+owned texture exactly once and preserves the default legacy
+cleanup path when no retirement owner is attached.
+
+The editor's main FX producer (`gameFx_` and `fxTextures_`) and
+the separate FX preview window are opted into this service. Existing
+rendering and ECS data are not modified.
+
+### Editor lifecycle, memory pressure and UI
+
+The `Editor` owns `GpuResourceRetirement` independently of its
+windows; it collects GPU-completed resources on each pre-render
+frame and drains at a confirmed GPU-idle pressure/shutdown point.
+The Stage 35 pending-memory pressure estimate includes known
+bytes of these resource entries. More than eight pending
+whole-preview bundles is also a pressure signal for a **real**
+pre-render GPU-idle attempt, not permission to assume completion.
+In unsupported/failed-fence paths, resources are kept alive
+rather than destroyed early.
+
+The Statistics window now reports separately pending
+pipelines, shaders, buffers, textures, owner bundles, and fenced /
+unfenced counts. Bundles' underlying GPU memory is not fully known
+so the budget remains an advisory minimum.
+
+### Constraints
+
+This does **not** automatically migrate every producer in the
+engine: a native game, custom rendering module or plugin must opt
+into a lifetime owner before destroying shaders/pipelines/buffers
+mid-frame. The Shader Graph and editor FX integrations are concrete
+paths. Multiple external GPU queues/devices require their own
+synchronization and owners. A full graphics-device teardown
+still requires an actual GPU idle guarantee; a pending callback
+must not dereference an already destroyed `gfx::Device`.
+
+The original `postfx` JSON, PRISMA visual effects, ECS gameplay,
+water/VFX feature configurations and default-off experimental flags
+remain unchanged.
+
+**NOT RUN** at the user's direction: native builds, CTest,
+Metal/GL/Vulkan driver work, screenshots, FX-preview hot-reload smoke,
+VRAM profiling and CI. Source-level commits and symbol inspection do
+not establish runtime correctness. See
+`docs/handoffs/prisma-stage-37.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
