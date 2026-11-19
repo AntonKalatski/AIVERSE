@@ -97,6 +97,28 @@ int main() {
         AIVERSE_TEST_CHECK(controller.setGeometry(scene,2));
         std::vector<GiMovingLight> tooMany(17);
         AIVERSE_TEST_CHECK(!controller.setLights(tooMany));
+        AIVERSE_TEST_CHECK(controller.presentationBlocked());
+        AIVERSE_TEST_CHECK(!controller.updateFrame({0,0,0},0).canPresent);
+        AIVERSE_TEST_CHECK(controller.setLights({
+            GiMovingLight{7,{0,0,0},{1,0,0},4,10}}));
+        AIVERSE_TEST_CHECK(!controller.presentationBlocked());
+
+        // A changed light beyond the current local GPU BVH reach cannot
+        // reuse the old indirect result. A smaller accepted source restores
+        // only the light gate, while normal dirty probes still gate pixels.
+        AIVERSE_TEST_CHECK(!controller.setLights({
+            GiMovingLight{7,{0,0,0},{1,0,0},128,10}}));
+        AIVERSE_TEST_CHECK(controller.presentationBlocked());
+        AIVERSE_TEST_CHECK(controller.setLights({
+            GiMovingLight{7,{0,0,0},{1,0,0},4,10}}));
+        AIVERSE_TEST_CHECK(!controller.presentationBlocked());
+
+        GiEnvironmentLight invalidEnvironment;
+        invalidEnvironment.skyIntensity=-1;
+        AIVERSE_TEST_CHECK(!controller.setEnvironment(invalidEnvironment));
+        AIVERSE_TEST_CHECK(controller.presentationBlocked());
+        AIVERSE_TEST_CHECK(controller.setEnvironment(GiEnvironmentLight{}));
+        AIVERSE_TEST_CHECK(!controller.presentationBlocked());
         AIVERSE_TEST_CHECK(controller.shutdown());
         AIVERSE_TEST_CHECK(device.buffers.empty() && device.textures.empty());
 
