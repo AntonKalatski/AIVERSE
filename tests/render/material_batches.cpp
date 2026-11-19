@@ -447,7 +447,7 @@ int aiverseMain(int argc, char** argv) {
                 std::printf("stress AUTO cumulative: scans=%llu attempts=%llu "
                             "submitted=%llu short=%llu below=%llu ineligible=%llu "
                             "failed=%llu geometryBreaks=%llu materialBreaks=%llu "
-                            "stateBreaks=%llu\\n",
+                            "stateBreaks=%llu\n",
                     (unsigned long long)stressAutoMdiScans,
                     (unsigned long long)stressAutoMdiAttempts,
                     (unsigned long long)stressAutoMdiSubmitted,
