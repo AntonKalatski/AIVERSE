@@ -160,28 +160,60 @@ d.staticPacketRevision = immutableAppearanceRevision; // nonzero!
 renderer.drawModel(d);
 ```
 
-`ModelDraw::staticPacketRevision` defaults to zero. Only opt in for
-caller-owned material/appearance state whose **every in-place mutation**
-increments the revision before the next submission. The renderer also
-validates exact transform / visual parameters, `Model::geometryRevision`,
-material vector address/count, vertex/index GPU handles and stable model
-identity. Different entity IDs own independent packets. Current eligibility
-excludes custom per-draw material arrays/overrides, material variants,
-skinning, morphs, authored animations/poses, node mutability, runtime LOD
-meshes, cluster geometry, shader vertex displacement, baked GI and active
-LOD inspector diagnostics. These cases keep the existing dynamic path.
-`Model::geometryRevision` and the existing `markGeometryChanged()`
-are necessary for model geometry/hierarchy mutations, but do not automatically
-detect every native-side material edit. The caller must advance
-`staticPacketRevision` for such edits. Since the revision contract is explicit,
-**no existing RTS/FPS submission is automatically enrolled** without being
-audited first.
+`ModelDraw::staticPacketRevision` defaults to zero and is the caller's
+explicit opt-in for non-GPU-state appearance semantics. On every packet hit
+the renderer automatically compares a snapshot of resolved GPU material
+state — factors, shader graph and texture resource handles — for both model
+materials and `ModelDraw::materials` overrides. Copied, reallocated or
+pointer-stable material vectors are remapped by material **index**; a
+changed state invalidates the packet and uses the ordinary rendering path.
+This prevents stale Material pointers when a native caller reallocates
+its override vector. External texture writes that keep the *same* GPU handle
+and non-renderer state still require explicit owner revisions. The renderer
+checks all standard `ModelDraw` visual fields and world transform too.
 
-Source templates hold non-owning `Model*`, `Material*`, `Primitive*`
-references. `Renderer3D::invalidateStaticModelCaches()` clears both the
+CPU runtime LOD is supported for rigid models: a packet remembers the
+selected LOD mesh per node and re-selects the LOD against the **current**
+main-camera and sun-shadow projected error on every submission. When the
+chosen mesh differs, it rebuilds. When a transition is in progress (LOD
+crossfade), it bypasses packet reuse entirely so fade weights are always
+current. Experimental GPU-compute LOD remains on its existing uncached path.
+
+Eligibility still excludes node material overrides and material variants,
+skinned/morphed/animated models, runtime-mutable nodes, cluster geometry,
+vertex displacement, baked GI and active LOD diagnostics. No simulation
+state is cached or made genre-specific. The optional RTS view bridge marks
+safe stationary scenery with a nonzero packet revision; this has **no**
+effect unless the global CPU packet flag is explicitly enabled.
+Native games can instead use `engine/render/EcsStaticModelRender.h`
+to bridge integer ECS presentation components and the generic
+`WorldTransform` into `Renderer3D`.
+
+ECS integration (shared, header-only, without RTS/FPS dependencies):
+
+```cpp
+#include "engine/render/EcsStaticModelRender.h"
+// A render-only phase after SceneHierarchy::update:
+render::drawEcsStaticModels(world, renderer,
+    [&](uint32_t asset) -> const render::Model* { return lookupModel(asset); },
+    [&](Entity entity) -> uint64_t { return stableNamespacedDrawId(entity); });
+```
+
+The host must supply a collision-free nonzero ID across the Worlds and
+multiple draw sources sharing a Renderer3D. `EcsStaticModelRender` carries
+a stable integer `assetKey`, `appearanceRevision`, draw flags and visibility;
+there are no renderer/model pointers or floats in the authoritative ECS
+component. `SceneHierarchyRender::hierarchyMatrix` performs fixed-point
+to float conversion with render-origin subtraction. The bridge is optional:
+old projects do not change until they register these components and call
+the adapter.
+
+Source templates hold non-owning `Model*` and `Primitive*` references.
+Cached material pointers are explicitly rebound from the current live vector
+before each replay. `Renderer3D::invalidateStaticModelCaches()` clears both the
 transform cache and packet cache before asset destruction/reload; the editor
 does so from `reloadRules()`. The implementation caps each packet at 128
-items and total retained template item storage at 64 MiB, with periodic
+items and combined retained item/material/LOD snapshot payload storage at 64 MiB, with periodic
 expiry of unused packets. A cache miss always uses the full original draw path.
 
 Scene → Batching → Persistent rigid draw packets reports per-scene replay,
