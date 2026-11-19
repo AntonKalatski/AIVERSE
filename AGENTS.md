@@ -69,6 +69,19 @@ owner fields must be nonzero for a version-based shortcut. Native asset
 and override owners must advance revisions on in-place factors, shader,
 texture binding **or texture content** changes, including stable handle IDs.
 Without these fields, keep exact GPU material fingerprint comparison.
+`Renderer3D` now implements a shared, bounded material-owner signature memo
+(4096 owners, <=512 materials each, <=8 MiB fingerprint payload) only when
+packet caching is enabled and both owner values are nonzero. It hashes
+resolved GPU state once per owner revision, then matches a monotonic
+signature serial from each saved packet instead of hashing/copying the
+same material array per entity. An unchanged owner revision promises
+unchanged materials/texture contents even if allocation pointers change.
+Model geometry/material revisions, owner revision and material count are
+validated. Material quality still controls vertex displacement from the
+stored shader threshold. Source changes require `markMaterialChanged()`
+or owner revision bump; `invalidateSharedMaterialState(model, ownerKey)`
+can immediately retire an individual owner on native unload. The fallback
+without trustworthy versions continues exact hash and equality checks.
 `StaticModelCachePolicy.h` still validates every draw's pose, static flag,
 material displacement, GPU material state, LOD and view state separately.
 In-place native changes to node/primitive eligibility must bump
