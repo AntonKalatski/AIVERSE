@@ -130,6 +130,10 @@ void Renderer3D::shutdown() {
     staticModelCaches_.clear();
     staticRenderPackets_.clear();
     staticModelEligibility_.clear();
+    staticMaterialOwners_.clear();
+    staticMaterialOwnerBytes_ = 0;
+    staticMaterialOwnerSerial_ = 0;
+    staticMaterialOwnerEpoch_ = 0;
     staticRenderPacketBytes_ = 0;
     staticModelCacheEpoch_ = 0;
     staticRenderPacketEpoch_ = 0;
@@ -170,6 +174,13 @@ void Renderer3D::invalidateStaticModelCache(uint64_t persistentId) {
 
 void Renderer3D::invalidateModelCachesFor(const Model* model) {
     if (!model) return;
+    for (auto it = staticMaterialOwners_.begin(); it != staticMaterialOwners_.end();) {
+        if (it->first.model == model) {
+            staticMaterialOwnerBytes_ -= it->second.hashes.size() * sizeof(uint64_t);
+            it = staticMaterialOwners_.erase(it);
+            ++sharedMaterialStateStats_.evicted;
+        } else ++it;
+    }
     if (staticModelEligibility_.erase(model))
         ++staticEligibilityStats_.evicted;
     // Compare pointer identity only, never dereference a model being released.
@@ -208,6 +219,20 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     staticRenderPacketsEnabled_ = enablePackets;
     staticRenderPacketStats_ = {};
     staticEligibilityStats_ = {};
+    sharedMaterialStateStats_ = {};
+    if (staticRenderPacketsEnabled_) {
+        ++staticMaterialOwnerEpoch_;
+        if ((staticMaterialOwnerEpoch_ % 64u) == 0u) {
+            for (auto it = staticMaterialOwners_.begin();
+                 it != staticMaterialOwners_.end();) {
+                if (staticMaterialOwnerEpoch_ > it->second.seen + 128u) {
+                    staticMaterialOwnerBytes_ -= it->second.hashes.size() * sizeof(uint64_t);
+                    it = staticMaterialOwners_.erase(it);
+                    ++sharedMaterialStateStats_.evicted;
+                } else ++it;
+            }
+        }
+    }
     if (staticModelCacheEnabled_ || staticRenderPacketsEnabled_) {
         ++staticEligibilityEpoch_;
         // Memo is model-scoped, not per visible entity; keep entries alive
