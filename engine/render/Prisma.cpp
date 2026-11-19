@@ -1172,90 +1172,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         }
     }
 
-    bool temporalResolved=false;
-    if (temporalRequested && scene.tex.valid() && sceneDepth.valid() &&
-        scratchDepth.valid() && program(kTemporalResolve).valid()) {
-        auto& history=temporalViews_[viewId_];
-        if (history.width != w || history.height != h) {
-            for (auto& handle : history.history) retireTarget(handle);
-            history.width=w;history.height=h;
-            history.valid=false;history.current=0;
-        }
-        for (auto& handle : history.history) {
-            if (handle.valid()) continue;
-            gfx::TextureDesc desc{};
-            desc.width=w;desc.height=h;
-            desc.format=gfx::PixelFormat::RGBA16F;
-            desc.filter=gfx::Filter::Nearest;
-            desc.renderTarget=true;
-            desc.label="prisma temporal camera history";
-            handle=dev.createTexture(desc);
-        }
-        const int next=1-history.current;
-        const gfx::TextureHandle targetHistory=history.history[next];
-        const gfx::TextureHandle previousHistory=history.history[history.current];
-        if (targetHistory.valid() && previousHistory.valid()) {
-            TemporalUniforms uniforms{};
-            put(uniforms.px,1.0f/float(w),1.0f/float(h),flip,0);
-            const bool useHistory=history.valid && previousValid && velocity.tex.valid();
-            put(uniforms.p0,
-                dev.info().clipDepthZeroToOne?1.0f:0.0f,
-                useHistory?1.0f:0.0f,
-                temporalEffect->get("historyWeight"),
-                temporalEffect->get("reactiveStrength"));
-            put(uniforms.sun,
-                temporalEffect->get("depthThreshold"),
-                temporalEffect->get("motionScale"),
-                validReactive?1.0f:0.0f,
-                temporalEffect->get("historyConfidence"));
-            put(uniforms.jitter,
-                history.currentJitterUv.x, history.currentJitterUv.y,
-                history.previousJitterUv.x, history.previousJitterUv.y);
-            const mat4 inverseViewProj=f.viewProj.inverse();
-            std::memcpy(uniforms.inv0,inverseViewProj.m,sizeof inverseViewProj.m);
-            std::memcpy(uniforms.prev0,motionView.previousViewProj.m,
-                        sizeof motionView.previousViewProj.m);
-            gfx::PassDesc pass{};
-            pass.colorTarget=targetHistory;
-            pass.depthTarget=scratchDepth;
-            pass.clearColor[0]=pass.clearColor[1]=pass.clearColor[2]=0;
-            pass.clearColor[3]=1;
-            dev.beginPass(pass);
-            dev.setViewport({0,0,w,h});
-            dev.setPipeline(pipes_[kTemporalResolve]);
-            dev.setVertexBuffer(triangle_);
-            dev.setUniforms(0,&uniforms,sizeof uniforms);
-            dev.setTexture(0,src.tex);
-            dev.setTexture(1,useHistory?previousHistory:black_);
-            dev.setTexture(2,velocity.tex.valid()?velocity.tex:black_);
-            dev.setTexture(3,sceneDepth);
-            dev.setTexture(4,validReactive?motionView.reactiveMask.texture:black_);
-            dev.draw(3);
-            dev.endPass();
-            ++stats_.passes;
-            history.current=next;
-            history.valid=true;
-            history.previousJitterUv=history.currentJitterUv;
-            src={targetHistory,w,h,gfx::PixelFormat::RGBA16F};
-            temporalResolved=true;
-            stats_.temporalResolved=true;
-            stats_.temporalJittered=history.jitterActive;
-            stats_.jitterPixelX=history.currentJitterUv.x*float(w);
-            stats_.jitterPixelY=history.currentJitterUv.y*float(h);
-        } else history.valid=false;
-    } else {
-        // Release camera-owned HDR history if its effect is off or the
-        // viewport switched to an unsupported quality/format.
-        auto it=temporalViews_.find(viewId_);
-        if (it!=temporalViews_.end()) {
-            for(auto& handle:it->second.history)retireTarget(handle);
-            temporalViews_.erase(it);
-        }
-    }
-
-    // Motion blur samples the temporally stabilized scene when both options
-    // are enabled; unlike the previous implementation, velocity is built
-    // exactly once and never overwrites the temporal history.
+    // Motion blur runs in internal render resolution before the temporal
+    // upscale; both effects still share exactly one velocity pass.
     if (motionRequested && previousValid && velocity.tex.valid() &&
         sceneDepth.valid() && scratchDepth.valid() &&
         program(kMotionBlur).valid()) {
@@ -1295,14 +1213,6 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             src=blurred;
         }
     }
-    // Seed motion history independently of the effect switches. A cut or
-    // resize makes the next temporal pass sharp, never a stale reprojection.
-    motionView.previousViewProj=f.viewProj;
-    motionView.previousCameraPos=f.cameraPos;
-    motionView.width=w;motionView.height=h;motionView.valid=true;
-    motionView.objectVelocity={};
-    motionView.reactiveMask={};
-
     // ---- experimental depth of field: device-depth driven defocus
     // The scene depth texture must NEVER be attached for depth writes while
     // sampled, so a separate scratch depth attachment is used for this pass.
@@ -1818,6 +1728,106 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             }
         }
     }
+
+    // Native-output temporal reconstruction happens after all render-scale
+    // HDR scene passes, including optional shutter blur / DoF / bloom inputs.
+    // This prevents later passes from accidentally shrinking output history.
+    bool temporalResolved=false;
+    const gfx::TextureHandle outputDepth = temporalRequested
+        ? depthFor(set,outW,outH,true) : gfx::TextureHandle{};
+    if (temporalRequested && src.tex.valid() && sceneDepth.valid() &&
+        outputDepth.valid() && program(kTemporalResolve).valid()) {
+        auto& history=temporalViews_[viewId_];
+        if (history.width != outW || history.height != outH ||
+            history.inputWidth != w || history.inputHeight != h) {
+            for (auto& handle : history.history) retireTarget(handle);
+            history.width=outW;history.height=outH;
+            history.inputWidth=w;history.inputHeight=h;
+            history.valid=false;history.current=0;
+        }
+        for (auto& handle : history.history) {
+            if (handle.valid()) continue;
+            gfx::TextureDesc desc{};
+            desc.width=outW;desc.height=outH;
+            desc.format=gfx::PixelFormat::RGBA16F;
+            desc.filter=gfx::Filter::Nearest;
+            desc.renderTarget=true;
+            desc.label="prisma temporal camera history";
+            handle=dev.createTexture(desc);
+        }
+        const int next=1-history.current;
+        const gfx::TextureHandle targetHistory=history.history[next];
+        const gfx::TextureHandle previousHistory=history.history[history.current];
+        if (targetHistory.valid() && previousHistory.valid()) {
+            TemporalUniforms uniforms{};
+            // Output-space history taps and input-space current neighborhood
+            // are distinct when temporal upscaling is enabled.
+            put(uniforms.px,1.0f/float(outW),1.0f/float(outH),flip,0);
+            put(uniforms.inputPx,1.0f/float(w),1.0f/float(h),0,0);
+            const bool useHistory=history.valid && previousValid && velocity.tex.valid();
+            put(uniforms.p0,
+                dev.info().clipDepthZeroToOne?1.0f:0.0f,
+                useHistory?1.0f:0.0f,
+                temporalEffect->get("historyWeight"),
+                temporalEffect->get("reactiveStrength"));
+            put(uniforms.sun,
+                temporalEffect->get("depthThreshold"),
+                temporalEffect->get("motionScale"),
+                validReactive?1.0f:0.0f,
+                temporalEffect->get("historyConfidence"));
+            put(uniforms.jitter,
+                history.currentJitterUv.x, history.currentJitterUv.y,
+                history.previousJitterUv.x, history.previousJitterUv.y);
+            const mat4 inverseViewProj=f.viewProj.inverse();
+            std::memcpy(uniforms.inv0,inverseViewProj.m,sizeof inverseViewProj.m);
+            std::memcpy(uniforms.prev0,motionView.previousViewProj.m,
+                        sizeof motionView.previousViewProj.m);
+            gfx::PassDesc pass{};
+            pass.colorTarget=targetHistory;
+            pass.depthTarget=outputDepth;
+            pass.clearColor[0]=pass.clearColor[1]=pass.clearColor[2]=0;
+            pass.clearColor[3]=1;
+            dev.beginPass(pass);
+            dev.setViewport({0,0,outW,outH});
+            dev.setPipeline(pipes_[kTemporalResolve]);
+            dev.setVertexBuffer(triangle_);
+            dev.setUniforms(0,&uniforms,sizeof uniforms);
+            dev.setTexture(0,src.tex);
+            dev.setTexture(1,useHistory?previousHistory:black_);
+            dev.setTexture(2,velocity.tex.valid()?velocity.tex:black_);
+            dev.setTexture(3,sceneDepth);
+            dev.setTexture(4,validReactive?motionView.reactiveMask.texture:black_);
+            dev.draw(3);
+            dev.endPass();
+            ++stats_.passes;
+            history.current=next;
+            history.valid=true;
+            history.previousJitterUv=history.currentJitterUv;
+            src={targetHistory,outW,outH,gfx::PixelFormat::RGBA16F};
+            temporalResolved=true;
+            stats_.temporalResolved=true;
+            stats_.temporalUpscaled=outW>w || outH>h;
+            stats_.temporalJittered=history.jitterActive;
+            stats_.jitterPixelX=history.currentJitterUv.x*float(w);
+            stats_.jitterPixelY=history.currentJitterUv.y*float(h);
+        } else history.valid=false;
+    } else {
+        // Release camera-owned HDR history if its effect is off or the
+        // viewport switched to an unsupported quality/format.
+        auto it=temporalViews_.find(viewId_);
+        if (it!=temporalViews_.end()) {
+            for(auto& handle:it->second.history)retireTarget(handle);
+            temporalViews_.erase(it);
+        }
+    }
+
+    // Seed motion history independently of the effect switches. A cut or
+    // resize makes the next temporal pass sharp, never a stale reprojection.
+    motionView.previousViewProj=f.viewProj;
+    motionView.previousCameraPos=f.cameraPos;
+    motionView.width=w;motionView.height=h;motionView.valid=true;
+    motionView.objectVelocity={};
+    motionView.reactiveMask={};
 
     // ---- composite into the caller's pass (left open)
     CompositeU u{};
