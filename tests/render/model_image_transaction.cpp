@@ -260,6 +260,41 @@ int main(){
     shared->trim(device);
     assert(shared->gpuCount()==0 && device.live.empty());
 
+    // A scratch Model can receive new authored material images in the
+    // SAME transaction. Its Model::images vector may relocate when the
+    // material append reserves space; promotion bindings must address
+    // Model+index rather than dangling Image* pointers.
+    render::Model mixed;
+    auto original=makeImage("original.png");
+    original.textureKey="textures/original.png";
+    original.textureCache=shared;
+    assert(render::uploadStandaloneImage(device,original));
+    mixed.images.push_back(std::move(original));
+    mixed.images.shrink_to_fit();
+    {
+        render::ModelImageUploadTransaction tx(device,pool,epoch.lease());
+        auto extra=makeImage("override.png");
+        extra.textureKey="textures/override.png";
+        extra.textureCache=shared;
+        assert(tx.stage(mixed,std::move(extra))==1);
+        std::vector<render::ModelTextureCache::PendingImage> proposed;
+        for(const auto& ref:tx.pendingImageReferences())
+            proposed.push_back({ref.model,ref.appendIndex,ref.staged});
+        auto plan=shared->prepareGpuPromotion({&mixed},proposed);
+        assert(plan.newSharedTextures()==2 && plan.bindings()==2);
+        assert(tx.commit()==1);
+        auto redundant=plan.commit();
+        assert(redundant.empty());
+        assert(mixed.images.size()==2);
+        assert(mixed.images[0].borrowedTexture);
+        assert(mixed.images[1].borrowedTexture);
+        assert(shared->gpuCount()==2);
+    }
+    device.idle=true;
+    render::releaseModel(device,mixed);
+    shared->trim(device);
+    assert(shared->gpuCount()==0 && device.live.empty());
+
     epoch.retire();
     bool stale=false;
     try {
