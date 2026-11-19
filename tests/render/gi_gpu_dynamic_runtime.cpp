@@ -59,8 +59,12 @@ int main() {
     AIVERSE_TEST_CHECK(!frame.safeForPresentation);
     AIVERSE_TEST_CHECK(frame.inFlight==4);
     AIVERSE_TEST_CHECK(runtime.busy());
-    // The scene and lamps cannot be replaced while the GPU reads them.
+    // A changed scene/light set must wait for a real GPU fence. But a game
+    // republishes the same immutable light snapshot every frame: this is
+    // idempotent and MUST NOT fail or hide existing GI.
     AIVERSE_TEST_CHECK(!runtime.setGeometry(scene(false),2));
+    AIVERSE_TEST_CHECK(runtime.setLights({
+        GiMovingLight{7,{0,0,0},{1,0,0},4,20}}));
     AIVERSE_TEST_CHECK(!runtime.setLights({}));
     device.endFrame();
     device.finish();
