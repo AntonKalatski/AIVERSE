@@ -12,6 +12,7 @@
 #include <algorithm>
 #include "engine/world/TerraWeave.h"
 #include "engine/world/TerraWeaveEarthworks.h"
+#include <set>
 #include "engine/world/TerraWeaveVegetationSoil.h"
 #include "engine/world/TerraWeavePhenology.h"
 #include "engine/world/TerraWeaveWindField.h"
@@ -103,6 +104,11 @@ public:
     void setVegetationTerrainSnapshot(
         std::shared_ptr<const terraweave::EarthworksLayer> soil,
         std::vector<terraweave::RectCm> edited = {});
+    // Suppress ONLY the old static terrain draw for tiles where a complete,
+    // already-GPU-resident replacement is submitted by the native host.
+    // This does not unload/change terrain collision or other mesh instances.
+    void setReplacedTerrainTiles(std::vector<Cell> residentReplacementCells);
+    size_t replacedTerrainTileCount() const {return replacedTerrainTiles_.size();}
     uint64_t vegetationTerrainRevision() const {
         return vegetationTerrain_ ? vegetationTerrain_->revision() : 0;
     }
@@ -226,6 +232,7 @@ private:
     std::shared_ptr<const terraweave::EarthworksLayer> vegetationTerrain_;
     std::vector<terraweave::RectCm> vegetationTerrainEdited_;
     bool vegetationTerrainDirty_=false;
+    std::set<Cell> replacedTerrainTiles_;
     terraweave::CanopyPhenology vegetationPhenology_{};
     bool vegetationPhenologyDirty_=false;
     terraweave::ForestWindState vegetationWind_{};
