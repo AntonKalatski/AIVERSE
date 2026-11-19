@@ -170,6 +170,7 @@ public:
         size_t loadedTypes = 0, cachedModels = 0, gpuTextures = 0, decodedCpuBytes = 0;
         size_t retiredModels=0,retirementBatches=0,retirementPeak=0;
         size_t retirementSoftLimit=0;
+        uint64_t estimatedRetiredGpuBytes=0,estimatedRetirementByteLimit=0;
         uint64_t retirementTokenFailures=0,retirementFallbackFailures=0;
         bool publicationBackpressured=false;
     };
@@ -187,6 +188,9 @@ public:
         stats.retirementBatches=retired.pendingBatches;
         stats.retirementPeak=retired.highWatermark;
         stats.retirementSoftLimit=resources_.retirementSoftLimit();
+        stats.estimatedRetiredGpuBytes=resources_.estimatedRetiredGpuBytes();
+        stats.estimatedRetirementByteLimit=
+            resources_.estimatedRetirementByteLimit();
         stats.retirementTokenFailures=retired.tokenFailures;
         stats.retirementFallbackFailures=retired.idleFallbackFailures;
         stats.publicationBackpressured=resources_.publicationBackpressured();
