@@ -2544,3 +2544,56 @@ registered with CMake but has **NOT BEEN RUN**. Neither native
 CMake/CTest nor Metal/Vulkan/OpenGL rendering, sanitizer,
 NEREID/animation coexistence, ShaderGraph compilation or CI
 has been executed for this stage. PR #22 remains Draft.
+
+## Stage 116 — GPU-fenced shadow, reflection and trace targets
+
+`Renderer3D` now maintains ONE `OffscreenTargetRetirement` queue using
+the existing host-owned `RenderDeviceLifetime::Lease`. It is created
+before renderer GPU allocation and borrowed by `LightSystem`; no
+independent device epoch or genre-specific target allocator exists.
+`retireRenderTargets(color,depth)` queues replaced handles at
+render-owner frame boundaries. The Editor, GameClient and FPS host
+collect only when `pendingTargetRetirements()` is nonzero, prior to
+new submissions, using real `gfx::Device` retirement tokens.
+Pending/Failed tokens are never proof that GPU work has completed.
+
+The following render targets are now covered:
+- `Renderer3D::setShadowQuality` shadow-map depth replacement, with
+  last-good resource preservation on failed new allocation
+- `Renderer3DTrace::beginSceneCapture` SSR scene color/depth resize
+  and LRU eviction, including partially allocated attachments
+- Editor depth-tested scene-selection mask resizing
+- `LightSystem` map/depth quality changes, spot-shadow quality
+  changes, static radiance/point-light atlas replacement, and
+  planar water reflection color/depth changes (including NEREID)
+- All of the above owners' normal shutdown paths
+
+When allocating a replacement render target fails, the previous
+live handles remain usable where an old target exists. A partially
+allocated new pair is retired safely rather than destroyed during
+a possibly in-flight pass. `Renderer3D::shutdown` now requires a
+successful full-device idle barrier before freeing live GPU buffers
+and pipelines, then drains the target and program retirement pools
+before retiring their owner generation. The LightSystem borrows
+the renderer target pool only until its own shutdown is complete.
+
+`Renderer3D::warmModelPipelinesChecked` also tracks outstanding
+backend `warmPipelineColor(RGBA16F)` operations in a separate
+`pendingColorWarms_` list. `pollPendingModelPipelineJobs()` advances
+these existing handles along with ShaderJob/PipelineJob completion.
+The Editor source watcher therefore keeps an appearance edit pending
+without repeatedly importing scratch Models/textures merely because
+HDR pipeline colour warmup remains incomplete. The device API
+exposes only a boolean readiness for colour warmup; a permanent
+backend error can remain Pending rather than being classified Failed.
+The Editor Stats view exposes queued shaders, pipelines, HDR
+colour variants, completed colour variants and the target
+retirement orphan counters.
+
+**Deferred/not run:** the existing native
+`render_model_image_transaction` fixture now covers shadow-only,
+SSR and reflection target pairs, a partially allocated target, a
+Pending/Failed fence and a valid completed token. It also includes
+a failed vertex/index buffer creation check. These tests and all
+CMake/CTest/Metal/Vulkan/OpenGL/sanitizer suites are **NOT RUN**.
+The implementation has not yet been compiled or validated on GPU.
