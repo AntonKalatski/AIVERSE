@@ -863,8 +863,10 @@ struct App {
             drawSceneMesh(transform,id==1?render::float4{0.18f,0.23f,0.22f,1}:render::float4{0.4f,0.46f,0.5f,1});
         }
         // Stage remote character draws in one ordered View stream. Their
-        // poses are authored by characterPresentation above; the generic
+        // Poses are authored by characterPresentation above; the generic
         // View must never evaluate those graphs a second time.
+        // Maintain prepared-packet LOD state without duplicating ECS clocks.
+        genericSceneView.beginPreparedFrame();
         ::aiverse::view::ScenePacketBatch remotePackets;
         remotePackets.reserve(client->snapshot().actors.size());
         for(const auto& remote:client->snapshot().actors)
