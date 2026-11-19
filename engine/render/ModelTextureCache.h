@@ -40,10 +40,12 @@ public:
     private:
         explicit PreparedGpuPromotion(ModelTextureCache& cache):cache_(&cache){}
         struct Binding {
-            Image* modelImage=nullptr; // already in a scratch Model
-            Model* appendModel=nullptr; // future slot, populated by image commit
-            size_t appendIndex=0;
-            Image* sharedOwner=nullptr;
+            // Model* addresses remain stable across std::map node transfers.
+            // Images inside Model::images DO NOT remain at stable addresses
+            // when the material transaction reserves/appends new textures.
+            Model* model=nullptr;
+            size_t index=0;
+            Image* sharedOwner=nullptr; // stable std::map<Image> node address
         };
         ModelTextureCache* cache_=nullptr;
         std::map<std::string,Image> pending_;
