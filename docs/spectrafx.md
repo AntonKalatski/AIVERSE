@@ -2359,3 +2359,113 @@ file reads only. Native C++ compilation, Objective-C++/Metal
 shader compilation, CTest, editor rendering and Metal hardware
 verification, source-generation rollback and performance tests
 have **NOT RUN**. The source remains unverified for production.
+
+## Stage 37 — staged ECS source admission, checked rollback reset and forward GPU timeline
+
+### Staged ECS attachment admission
+
+`GpuEcsAttachmentPresenter::syncCommitted(tick,world,resolve)` now uses
+**staged** source creation. It validates every requested effect policy,
+unit-scale limitation, and finite resolved pose before modifying
+existing attachments. It creates/configures replacement
+`PoolSourceId` handles in a temporary map and uses
+`GpuPoolWorld::canStopSource(handle,killLiving)` as a read-only detach
+preflight. Any allocation/configuration/preflight failure frees the
+temporary sources and leaves the existing tracked effects alone.
+
+If the old source is still alive but its named effect definition was
+replaced in the GPU pool, `sourceBindingCurrent` detects the stale
+binding even when that source is paused. The presenter prepares a
+fresh source instead of trying to emit with the wrong definition.
+
+For a replacement, the pool needs enough free `maxSources` headroom
+to hold both the old source and the staged replacement temporarily.
+When it cannot, sync fails **without silently removing existing
+sources**; the native host can increase `PoolWorldBudgets::maxSources`
+or explicitly retire some effects at a safe presentation boundary.
+The commit phase that retires obsolete GPU sources cannot be made
+fully transactional against a hardware failure during a later
+selective-kill operation: a partial detach may still happen. The
+adapter preserves remaining tracked handles and explicitly returns
+false so the host can retry. This is not a promise of atomic
+hardware-level state transitions.
+
+### Categorized GPU diagnostics
+
+`ComputeStats` now separately records
+`gpuDeviceUnhealthy`, `gpuKillUploadFailures`,
+`gpuComputeBeginFailures`, `gpuPassOrderRejections`,
+and `gpuResetFailures`. `PoolCheckpointStats` aggregates these
+counts and reports whether Metal device health is genuinely known
+(`gpuDeviceHealthKnown`) and if it is healthy
+(`gpuDeviceHealthy`). Unsupported backends show an **unknown**
+rather than an invented healthy status. The editor SpectraFX
+telemetry view surfaces all these statuses and source-kill fence
+counters. A `GpuPoolWorld` group that failed its `step` no
+longer draws stale vertices from a previous frame; standalone
+`ComputeParticles` also invalidates its submission flags on
+important early GPU step errors.
+
+### Checked GPU rollback reset
+
+`ComputeParticles::tryClear()` is a new explicit success/failure
+API, while `clear()` remains a compatibility wrapper. Metal reset
+requires an **active gfx Device frame outside render/compute
+encoders**, not just a completed previous frame. It uses
+`updateStorageBufferChecked` for particle state, VM parameter,
+and custom attribute reset writes. It does not commit the CPU
+free-slot/age mirror until *all* three ordered transfers have been
+accepted. On a partial failure `gpuResetDirty_` blocks future
+GPU births, simulation and checkpoint capture until a successful
+reset is retried; it never reports stale state as an exact recovery.
+These checked uploads still confirm **command encoding**, not
+successful hardware completion. Later GPU failure must be handled
+using device health and completed frame telemetry.
+
+`GpuPoolWorld::resetForRollback()` calls `tryClear()` for all
+GPU groups before clearing the shared CPU effect world or
+releasing ECS presentation sources. If a group fails, it returns
+false and preserves CPU/source tracking for a retry. An earlier
+GPU group may already have cleared successfully; the operation
+is therefore **best-effort across multiple GPU groups**, not an
+atomic multi-group transaction. Source clients must not replay
+presentation ticks until the reset succeeds.
+
+```cpp
+// At a rollback boundary: finish the old scene/graphics frame first.
+device.beginFrame(width,height); // active RHI command buffer required
+bool resetOk=attachmentPresenter.resetForRollback();
+device.endFrame();
+if(!resetOk) {
+    // Do not claim visual reset. Retry at a subsequent safe frame.
+}
+```
+
+The Stage 36 native integration example has been updated to show this
+required frame ordering.
+
+### GPU preview timeline (forward only)
+
+The editor's opt-in **Metal GPU** graph preview now displays
+`Visual simulation time` (accumulated only from successful
+presentation steps). While Frozen, the user can request forward
+advancement in 1/60-second increments; at most **300 frames**
+may remain queued at once and one frame is consumed for each
+rendered preview frame. The **Restart GPU** control schedules a
+checked whole-pool visual reset at the next safe pre-pass phase.
+No reverse seek or restoration of historical GPU frames is claimed.
+
+The preview loop cadence now follows **simulated visual time**
+instead of editor wall time, so GPU preview speed/freeze settings
+do not silently change the repeat rate. Advanced frames while
+frozen only evolve existing particles and do not create new
+bursts. A failed GPU step does not increase the displayed time;
+the panel reports the last preview error.
+
+**Actual verification:** GitHub source writes and source/ancestry
+inspection only. **NOT RUN:** local CMake/Clang compilation,
+Objective-C++ or MSL compilation, CTest, Metal hardware tests,
+editor UI launch/screenshots, GPU reset fault injection, multi-group
+atomicity stress, source staging under capacity pressure, or
+CPU/GPU parity. Implementation is unverified executable source;
+do not enable it by default for production.
