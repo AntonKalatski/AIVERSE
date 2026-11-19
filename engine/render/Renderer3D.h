@@ -27,6 +27,7 @@
 #include <unordered_map>
 
 namespace aiverse::render {
+namespace strata { struct ModelAsset; class GpuMetadataScene; }
 
 struct Mesh {
     gfx::BufferHandle vb, ib;
@@ -333,6 +334,17 @@ public:
     void circleXZ(float3 c, float radius, uint32_t color, int segments = 40, float y = 0.03f);
     bool warmModelPipelines(const Model& model, const std::vector<Material>* materials = nullptr);
     void drawModel(const ModelDraw& d);
+    // Diagnostic-only per-ModelDraw Strata preflight (legacy draws untouched).
+    // Only GeometryScene's opt-in native static scene calls this in Stage 10.
+    // No render pass, GPU commands, source cache or ECS state is mutated.
+    struct StrataPreviewStats {
+        uint64_t modelDraws=0, attempted=0, ready=0, rejected=0;
+        uint64_t selectedClusters=0, fullyCulled=0, skippedUnsafeDraws=0;
+    };
+    void previewStrataModel(const ModelDraw& d, const strata::ModelAsset& staged,
+                           const strata::GpuMetadataScene& pooled,
+                           const std::string& sourceKey);
+    StrataPreviewStats strataPreviewStats() const { return strataPreviewStats_; }
     // Opt-in CPU cache of per-node rigid bind transforms for stationary objects
     // with stable persistentId. Does NOT cache visibility, LOD, materials or draws.
     struct StaticModelCacheStats {
@@ -1008,6 +1020,7 @@ private:
     int geometryShadowSize_=0;
     MaterialQuality matQuality_ = MaterialQuality::High;
     std::vector<ModelItem> modelItems_;
+    StrataPreviewStats strataPreviewStats_{};
     // Immutable rigid packet templates; views / shadows / depth are replayed
     // for the current camera. Stored items own no GPU or Model resources.
     struct StaticPacketEntry {
