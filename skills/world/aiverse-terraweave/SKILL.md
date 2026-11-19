@@ -878,3 +878,15 @@ contracts, see `docs/terrain/TERRAWEAVE.md` Stage 22.
 - `ForestSceneStats::scheduledRegrowth` and `presentationTick` are trailing diagnostics. Regrowth is **visual**: the gameplay authority owns resources, collision, destruction, navmesh, persistence and replication. Far Horizon cluster HLOD does not yet reflect per-tree removals; do not claim forest-wide harvest parity.
 
 **Next functional work** before the separate test phase: add bounded harvested-area masks / multi-tree clearings in Horizon from authoritative world patches, or a compatible seasonal growth/dormancy source shared by Flora and Horizon. Do not add tests or run CTest in this feature-first phase unless the user changes priorities. Always append an exact per-stage handoff record after coding.
+
+## Stage 25 — authoring runtime forest clearings across LODs
+
+Use `world::WorldScene::setVegetationClearings(std::vector<terraweave::RectCm>)` to opt in to whole-area forest removal or restoration. This is **not** the same as the sparse per-tree regrowth overlay in Stage 24: rectangle clearings are incorporated into a shared, immutable `FoliageExclusionMask` used by both `TerraWeaveForestScene` and `HorizonSurfaceSources::allowsCanopyAt`. Changed and removed clearings must rebake only via the existing async source-revision invalidation, not by mutating GPU models or a worker-captured callback in place.
+
+- Coordinates: signed world centimetres, half-open min/max X/Z. Rectangles must be nonempty, within `kWorldLimitCm`, <=4096 input shapes. The setter sorts and deduplicates, making unchanged calls no-ops.
+- Keep previous **and new** rectangles in the Horizon edited bounds when changing/clearing masks. Otherwise older canopy atlas cards can stay visible after restoring an area. Use the existing bounded full-rebake fallback for oversized edits.
+- `WorldScene::update()` is the source publication point. Native hosts call the setter on the scene-owning update thread, never concurrently with a renderer draw or async callback.
+- Save `vegetationClearings()` and restore via the setter; gameplay still owns authoritative construction, resource harvesting, collision/navmesh, network and save versioning. Do not introduce RTS/FPS-specific dependencies or per-tree cosmetic ECS entities.
+- The far HLOD atlas currently samples mask positions rather than tracking every individual generated near-tree identity. Rectangular clearings suppress far canopy; Stage 24 individual regrowth is near-only. Fully empty cluster cards and visual alpha transitions still require future optimization, not an unverified claim of perfect GPU performance.
+
+**User preference:** finish functional features before running builds/CTest. After each coding stage append an agent handoff with exact commits, changed paths, public API, *actual* checks, limitations and next feature. All GPU/CI tests remain assigned to the later testing stage.
