@@ -1,6 +1,7 @@
 #pragma once
 #include "Geometry.h"
 #include "Renderer3D.h"
+#include "NativePresentationRetirement.h"
 #include <map>
 
 namespace aiverse::render {
@@ -14,13 +15,18 @@ public:
     // Procedural/offline callers may supply immutable CPU models instead of files.
     // Borrowed image handles must outlive the scene. GPU geometry is owned by the scene.
     void loadPrepared(gfx::Device& dev,const Json& json,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget=2000000);
+    // Full Device idle proof is required at final teardown. Live reload
+    // instead moves old resident Models/HLOD proxies into the ordered queue.
     void shutdown(gfx::Device& dev);
+    size_t pendingGpuRetirements() const noexcept {return retirement_.pending();}
+    bool collectRetired(gfx::Device& dev) {return retirement_.collect(dev);}
     void draw(Renderer3D& renderer);
     void setRuntimeOptions(bool hlod,bool geometry,bool surfaces,bool cache) { hlod_=hlod;geometryEnabled_=geometry;surfacesEnabled_=surfaces;cacheEnabled_=cache; }
     const Stats& stats() const { return stats_; }
     const std::vector<std::string>& warnings() const { return warnings_; }
     static void validate(const Json& json);
 private:
+    void retireResident(gfx::Device& dev);
     void loadImpl(gfx::Device& dev,const Json& json,const FileReader& reader,std::map<std::string,std::unique_ptr<Model>> models,size_t vertexBudget);
     struct Instance { Model* model=nullptr; mat4 world; GeometryPolicy policy; Model* surfaceProxy=nullptr; float proxyPixels=96; StaticModelCache cache,proxyCache; float3 min,max; };
     struct Group {
@@ -36,6 +42,7 @@ private:
     void drawGroup(Renderer3D& renderer,int group);
     void drawInstance(Renderer3D& renderer,const Instance& instance);
     std::unique_ptr<Model> makeProxy(const std::vector<size_t>& ids,float& error);
+    NativePresentationRetirement retirement_;
     std::map<std::string,std::unique_ptr<Model>> models_;
     std::vector<Instance> instances_;
     std::vector<Group> groups_;
