@@ -53,6 +53,8 @@ struct HorizonRuntimeStats {
     size_t gpuCachedRegions=0, gpuCachedBytes=0, gpuCacheHits=0; // extra GPU residency
     size_t gpuCacheEvictions=0; // LRU and stale-revision RHI retirements
     size_t windOverlayPatchWrites=0, windOverlayPatchBytes=0;
+    size_t windOverlayPatchRanges=0, windOverlayChangedClusters=0;
+    size_t windOverlayFullRangeFallbacks=0, windOverlayNoopRevisions=0;
     bool windOverlayPending=false, exactWindFieldActive=false;
     size_t transitionStarts=0;
     size_t nearClipQuads=0, nearClipTriangles=0;
@@ -754,9 +756,11 @@ public:
 
 private:
     void refreshForestWindGpu(gfx::Device& device) {
-        // One bounded RHI update per visible region, up to 2 MiB per
-        // owner-thread update. The outgoing crossfade region shares this
-        // budget; unfinished updates retain their old safe shader mode.
+        // Up to eight sparse dirty-cluster ranges per region, with a
+        // conservative full-forest-suffix fallback for fragmented/dense
+        // changes. The active and outgoing regions share one 2 MiB
+        // render-owner update budget and retain their old safe shader
+        // mode until the entire field revision is committed.
         size_t remaining=2u*1024u*1024u;
         const ForestWindField* selectedField=
             exactSpatialWindField_ ? windField_.get() : nullptr;
@@ -767,10 +771,17 @@ private:
             const auto result=applyHorizonForestWindOverlay(
                 device,*model,overlay,selectedField,wind_,
                 windFieldRevision_,remaining);
+            if(result.ready && !result.uploaded)
+                ++runtime_.windOverlayNoopRevisions;
             if(result.uploaded) {
                 remaining-=result.bytes;
                 ++runtime_.windOverlayPatchWrites;
                 runtime_.windOverlayPatchBytes+=result.bytes;
+                runtime_.windOverlayPatchRanges+=result.ranges;
+                runtime_.windOverlayChangedClusters+=
+                    result.changedClusters;
+                if(result.fullRangeFallback)
+                    ++runtime_.windOverlayFullRangeFallbacks;
             }
         };
         refresh(model_.get(),activeWindOverlay_);
