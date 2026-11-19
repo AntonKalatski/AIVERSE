@@ -222,3 +222,34 @@ A/B/A runs and pixel checks to decide whether copying item templates is
 faster than normal assembly for actual scenes. Do not infer GPU performance
 from CPU packet hit count. The feature is off by default and has not been
 validated with owner Mac build/GPU capture yet.
+
+### Real-backend persistent packet parity fixture
+
+The focused GPU batching workflow now runs the existing `aiverse_material_batches`
+program on macOS with `AIVERSE_PALETTE_TEST_CASE=static_packets` and
+`AIVERSE_PERSISTENT_CPU_PACKETS=1`. It uses an inline 16-part,
+three-material rigid fixture with a copied material vector and a stable
+entity key, to exercise the native material-override code path without
+external assets. The first reference frame is submitted with
+`staticPacketRevision=0` (uncached); later frames use revision 1 and
+produce an actual packet replay. The test fails if warm packet hits are
+zero, opaque/shadow API draw counts differ, or the two GPU captures differ
+byte-for-byte. The fixture does not mutate `materialBatches` each frame:
+that would invalidate stored primitive pointers without a geometry revision
+and make the test measure an unsupported asset-lifecycle violation.
+
+Run on the Mac with the HDR fixture enabled:
+
+```sh
+cmake -S . -B build/metal-packets -DAIVERSE_BUILD_HDR_TESTS=ON \\
+  -DAIVERSE_BUILD_EDITOR=OFF -DCMAKE_BUILD_TYPE=Release
+cmake --build build/metal-packets --target aiverse_material_batches -j8
+AIVERSE_PERSISTENT_CPU_PACKETS=1 AIVERSE_PALETTE_TEST_CASE=static_packets \\
+  AIVERSE_MULTI_DRAW_INDIRECT=off \\
+  ./build/metal-packets/aiverse_material_batches unused.obj /tmp/static-packets
+```
+
+This is a visual + CPU policy regression, **not** a CPU/GPU throughput
+benchmark. The CI job and runtime screenshots must succeed before this
+experimental mode can be considered validated. Real RTS static scenes with
+LOD and dynamic material changes still need separate A/B/A.
