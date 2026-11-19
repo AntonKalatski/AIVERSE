@@ -2310,3 +2310,42 @@ worldScene.setVegetationPresentationTick(gameplayTick);
 A real PHYSIS solver may supply the world X/Z velocity components; this bridge does not require PHYSIS headers, does not alter collision/navmesh/authoritative physics and does not put wind in an ECS component. `WorldScene` continues forwarding the same validated wind state and tick, so native code uses the existing public methods.
 
 **Limitations/QA debt:** Branches are rigidly rotated at their joints rather than continuously bent as a skinned elastic curve. At high winds thin joints can show gaps. The source uses integer hashed wind phases but converts degrees to float matrices in renderer presentation; bitwise cross-GPU determinism is not promised. Very dense near forests can hit the CPU pose budget and switch to root-only motion. Source `forEachDraw` collectors must respect pose borrowing lifetime. No CMake, CTest, GPU screenshot, per-frame CPU benchmark or cross-platform rendering check has been executed. Dedicated test agent should validate hierarchy/pivot continuity, season + wind, LOD transitions, budget fallback, material/draw pointers and native PHYSIS integration before marking production ready.
+
+## Stage 31 — shared GPU crown wind for near Arbor and Horizon
+
+**Source implementation committed in `feature/terraweave`; independent compilation/CTest/GPU QA NOT RUN.** Stage 31 extends Stage 28/30's existing root and rigid-branch sway with an optional GPU vertex-layer. It uses **Renderer3D's existing Material Shader Graph `vertexOffset` hooks** for GLSL and MSL, with no compute jobs, new render backend, separate shaders pipeline, GPU vertex buffers, extra atlas or re-bake-per-tick.
+
+### First-party vertex graph and instance payload
+
+The new `engine/render/TerraWeaveVertexWind.h` provides `canopyWindGraph()`, one immutable engine-authored `render::graph::Program` containing both GLSL and Metal vertex code, plus `canopyWindVertexParameters(wind,tick,yaw,strength)`. The graph preserves the fragment's original material/shading (`outputs["color"]="sg_input"`) and emits bounded `vertexOffset`: wind vector * squared 0..1 height weight * low-frequency, spatially staggered sine wave with bounded higher-frequency gust. Crown roots remain fixed. It uses **`I.anim`**, already present in rigid model instance uniform U0, instead of allocating a new uniform buffer. The phase derives from the host's `setVegetationPresentationTick` (tick modulo `ForestWindState::cycleTicks`), **not** uncontrolled wall-clock shader time. X/Z velocities come from the same PHYSIS-neutral `ForestWindState` as CPU root sway; near instance yaw is inverted before passing the local vector, so wind remains oriented in world space.
+
+This is a trusted engine-generated program, not a user-authored shader source injection API. `canopyWindGraph()` returns a shared, immutable program to avoid creating a new shader-pipeline identity every tick or every tree. A zero wind vector or zero branch-flex/amplitude leaves the feature disabled and preserves existing materials.
+
+`render::ModelDraw` appends generic `useVertexParameters`, `vertexParameters` (float4) and `maxVertexOffsetMetres`. `Renderer3D::drawModel` places those four parameters in U0 `Inst.anim` **only for eligible rigid, non-baked, non-lightmapped instances** whose material has a graph. Baked animations and lightmap UV transforms retain priority; no U0 binary layout change was made. Other graph-using native projects may reuse the generic contract, but callers must not request the same U0 payload for baked skin/lightmapped models. Unknown/unbounded shader vertex offsets retain the renderer's conservative no-cull behavior; finite positive explicit bounds allow normal model/node frustum rejection and per-node LOD, with expanded geometry bounds. The TerraWeave graph sets a conservative **0.65m local-space maximum offset**.
+
+### Near Arbor
+
+`makeArborBranchLodModel` encodes each foliage vertex's source height relative to the procedural tree skeleton as a normalized RGBA8 alpha **wind weight**. Foliage `Material::vertexColors=false` keeps this auxiliary weight from accidentally tinting/cutting out the leaf texture. Bark geometry/materials remain static under this vertex shader; wind still rotates the tree root and optional rigid branch nodes via the earlier Stage 28–30 paths.
+
+`ArborForestAdapter` applies the single graph only to foliage material slot 1 in shared per-species and per-azimuth override vectors. The shared program is attached when nonzero validated wind, `branchFlexPermille>0` and `maxLeanMilliDegrees>0`; changing numerical wind/tick values updates per-instance parameters without creating another graph program. GPU flutter amplitude diminishes by LOD (High 100%, Medium 75%, Low 50%, Impostor 35%). If foliage cover is 0 during winter, the old bark-only primitive filter remains active; no hidden leaf vertex pass is submitted. Stage 29's split impostor geometry encodes zero weight at its lower foliage vertices and full weight at the top, so its root is anchored.
+
+### Far Horizon
+
+`makeHorizonModel` keeps **one combined model**, the original terrain primitive and shared forest-cluster primitive/atlas. Forest billboard vertex alpha now encodes a weight of 0 at the base and 1 at the canopy top; the forest material ignores vertex alpha in fragment shading so it cannot accidentally erase half the forest. Only its canopy material slot 1 opts into the same graph. `TerraWeaveHorizonScene::setWind` and `setPresentationTick` accept the same POD/tick as near Arbor. In `submit`, current and crossfading forest-region materials receive the shared graph and a restrained **30% GPU wind strength**. The terrain material and near/far seam vertices are unchanged. Static TWH8 archives and partial atlas/VB uploads remain untouched; the per-frame motion is a GPU vertex offset, not an atlas redraw. Source snapshot revisions are **not** advanced merely because the wind changed.
+
+`WorldScene::setVegetationWind` and `setVegetationPresentationTick` forward the policy/time to **both** near ForestScene and far HorizonScene, preserving null opt-in module behavior.
+
+**API example:**
+
+```cpp
+aiverse::terraweave::ForestWindState wind;
+wind.xCmPerSec = 650;
+wind.zCmPerSec = -250;
+wind.branchFlexPermille = 700; // 0 restores root-only sway
+worldScene.setVegetationWind(wind);
+worldScene.setVegetationPresentationTick(gameplayTick);
+```
+
+**Boundaries/limitations:** This is *procedural render-only* crown flutter, not physical leaf/branch simulation; wind affects shader vertex positions but not collision, navmesh, authoritative tree positions or gameplay ECS. The effect intentionally retains existing root/branch transforms and only adds a small extra vertex displacement. Spatial phases are deterministic functions of the host tick and model-space/rebased world coordinates but GPU sine/floating math is not promised bitwise-identical across devices. Bounded graph models now continue to participate in node/LOD culling; confirm conservativeness with high-wind screenshots. Raw `ModelDraw::vertexParameters` is incompatible with concurrently using the packed `Inst.anim` slot for baked clips or lightmaps. The far forest motion is whole-card canopy shear, not individually simulated distant branches. Renderer pipeline/material changes, shadows, PHYSIS integration, large-area transition and CPU/GPU timings are **not yet validated**.
+
+**Tests intentionally deferred:** The independent testing agent must update Stage 29 impostor expectations, compile GCC/Clang and backend shader pipelines, validate U0 payload/vertex colors on Metal, Vulkan and GL, test 0 and maximum wind, season + GPU flutter, crossfade compatibility, vertex bounds and culling, and measure material pipeline counts/frame cost. Do not treat source commits as passing tests.
