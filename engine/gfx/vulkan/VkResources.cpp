@@ -713,6 +713,15 @@ void VulkanDevice::updateTexture(TextureHandle h, int x, int y, int w, int hh,
 }
 
 bool VulkanDevice::updateTextureRegion(TextureHandle handle, const TextureUploadDesc& u) {
+    // transferCmd() selects the pre-frame command buffer while in a pass.
+    // That buffer submits BEFORE the main pass, even when the caller asks
+    // to overwrite a virtual atlas slice after earlier draw commands.
+    // Fail closed instead of reordering an overwrite ahead of its readers.
+    // Streamers must drain on the graphics thread BETWEEN render passes.
+    if (inPass_) {
+        error_ = "Vulkan texture region upload requires no active render pass";
+        return false;
+    }
     VTexture* t = textures_.get(handle.id);
     if (!t || t->samples > 1 || t->compressed || t->depth || !u.data || u.width <= 0 ||
         u.height <= 0 || u.depth <= 0 || u.mipLevel < 0 || u.mipLevel >= t->levels ||
