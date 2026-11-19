@@ -5760,3 +5760,31 @@ per user request to finish functions first.
 Next: integrate visible render queue construction into the
 engine renderer and expose per-material feedback params; close
 backend render-target/storage image feature gaps.
+
+
+## Stage 9J — generic renderer visibility queue adapter (2026-11-19)
+
+Source commit: 9a51b6ad86b82245acde20dab1da2c982302db03.
+Changed file: engine/gfx/VirtualTextureFeedbackPass.h.
+Added VirtualTextureFeedbackDrawSource abstract interface with
+collectFeedbackDraws(vector<VirtualTextureFeedbackDraw>&), and
+VirtualTextureFeedbackPass::renderVisibleAndCapture(source).
+Collection happens before entering the GPU pass, after checking
+that the pass is ready/idle and no feedback capture is pending
+or awaiting consumption. A failed collection returns false
+without beginning a pass; successful collection forwards the
+draw queue to renderDrawsAndCapture. An empty visible scene
+still produces a valid zero-cleared feedback capture.
+The renderer is responsible for translating its already-culled
+mesh/material queue into compatible feedback draw commands,
+including pipeline, geometry, uniforms and depth policy.
+No dependency on terrain, editor or genre-specific systems.
+
+Scope caveat: this is the common renderer adapter API only;
+no existing renderer has yet been wired to call it automatically.
+Verification: GitHub source commit succeeded. Native compile,
+CTest, shader compiler and GPU readback NOT RUN, as requested.
+Next: identify and integrate the engine's actual shared
+renderer visibility queue with this adapter, then implement
+per-material virtual texture parameter binding and remaining
+backend RenderTexture/storage parity.
