@@ -129,7 +129,8 @@ void test() {
         const std::array<MorphVec3,2> source{{{-1,0,0},{1,0,0}}};
         req(sculpt.brush(0,source,0,0.2f,{0.1f,0,0},true),
             "bilateral sculpt stroke rejected");
-        const auto gpu=sculpt.compile().gpuDeltas();
+        const auto compiledSculpt=sculpt.compile();
+        const auto gpu=compiledSculpt.gpuDeltas();
         req(gpu.size()==2&&gpu[0].position[0]>0.09f &&
             gpu[1].position[0]<-0.09f,
             "sculpt symmetry did not mirror horizontal displacement");
