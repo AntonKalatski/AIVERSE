@@ -1532,3 +1532,37 @@ and reconstruct CPU state. **No such migration exists yet.**
 Status: source code committed; native C++ build, Metal shader compile,
 CTest, editor UI and GPU fault-injection tests NOT RUN. Do not claim that
 this is a production-grade recovery implementation.
+
+
+## Stage 28 — diagnostic Metal GPU checkpoints + asynchronous VM error requests
+
+`ComputeParticles::captureGpuCheckpoint(GpuCheckpoint&)` (and the graph-runtime
+wrapper) reads all **physical GPU slots**, including the 64-byte position/age,
+velocity/lifetime, tint and size state, the eight 32-bit VM instance parameters
+and eight VM custom attributes. It also captures the CPU-side remaining-life
+mirror and completed frame serial. Each exported `GpuCheckpointParticle`
+occupies 128 bytes. A checkpoint is marked `complete` only after all three
+storage-buffer reads succeed; invalid, unavailable, active-frame or pending
+birth state is rejected. Calls are blocking, strictly between completed Metal
+frames: never run one every interactive frame. The Metal RHI's synchronous
+`readBuffer` uses a separate copy command and waits for completion.
+
+`ComputeParticles::requestGpuVmErrors(callback)` uses RHI
+`readBufferAsync` to return `callback(bool success,uint32_t count)` on a
+subsequent frame. Only one pending diagnostic request is accepted at a time.
+The lifetime token cancels callbacks if GPU resources have been destroyed;
+frame-revision checking prevents old error results from overwriting stats for
+a newer frame. No callback is promised if the VM runtime is destroyed before
+its readback returns. `GraphRuntime` forwards both APIs.
+
+**Important:** this is a GPU state *export* and a basis for future recovery,
+**not** lossless GPU→CPU fallback. The existing CPU `ParticleSystem` does not
+provide an import API for live particles with their custom attributes and
+instance state. If the GPU becomes unhealthy, reading the now-lost buffers
+cannot be assumed possible. Stage 29 must implement transactional CPU import
+and periodic captured checkpoints with a safe resource/fence policy before
+automatic recovery is enabled. `lostOnFallback` continues to report lost
+particles honestly. `RequireGpu` still forbids silent CPU fallback.
+
+No compiler, CMake, CTest, Metal execution, fault-injection test or CPU/GPU
+parity test has been performed for Stage 28; source is unverified.
