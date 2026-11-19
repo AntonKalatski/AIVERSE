@@ -117,3 +117,23 @@ serialized as notes. Invalid/non-affine values fail before replacing the
 last-good authored document. See [the shared attachment JSON format](attachment-layout.md)
 and [Stage 158 handoff](agent-handoffs/animation-stage158-universal-attachment-layout-transform-2026-11-20.md).
 Actual Studio GUI, native compile/CTest and GPU visual/lifetime checks **NOT RUN**.
+
+
+
+## Stage 160 — stable child IDs and scene lifecycle preview
+
+Studio attachments now let authors edit an optional **Prefab child ID**
+alongside child source and named socket. It is saved/loaded through the
+shared `AttachmentLayoutCodec`; duplicates are rejected. Each Studio
+preview session uses the real genre-neutral `SceneAttachmentHost`
+bound to an independent cosmetic ECS World, with stable preview key
+`{1,"preview"}`. The preview prepares visual children only after
+validating the current ECS root/child generations. Old session teardown
+calls the host's `clear()` before retiring provider-owned Models.
+
+The same host API is ready for adapter use at scene activation/unload
+barriers, but it is NOT yet bound to `SceneLoadCoordinator` from other
+development branches and does NOT mutate authoritative game ECS state.
+See [SceneAttachmentHost guide](scene-attachment-host.md) and
+[Stage 160 handoff](agent-handoffs/animation-stage160-scene-attachment-host-stable-identity-2026-11-20.md).
+Native Studio/Metal/Vulkan/GLES compiler and renderer validation NOT RUN.
