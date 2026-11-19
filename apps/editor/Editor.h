@@ -431,6 +431,10 @@ private:
     } spectraPreviewRequest_;
     bool spectraPreviewStop_=false, spectraPreviewFrameOpen_=false;
     bool spectraPreviewInGame_=false;
+    bool spectraPreviewLoop_=false;
+    double spectraPreviewNextBurst_=0;
+    std::array<float,8> spectraPreviewParams_{};
+    fx::float3 spectraPreviewPosition_{};
     fx::ParticleSystem gameFx_;
     game::RtsFx gameFxBridge_;
     render::TextureCache fxTextures_;          // sprite textures of effects (same loader as sprites)
