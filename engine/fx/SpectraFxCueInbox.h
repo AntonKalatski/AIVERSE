@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <utility>
 #include "SpectraFxCueBridge.h"
 
 namespace aiverse::fx {
