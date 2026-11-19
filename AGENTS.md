@@ -1972,3 +1972,38 @@ Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. 
 - `Renderer3D::retireRenderTargets` uses its GPU-fenced owner normally. Without the owner, deletion is allowed only after `waitForResourceIdle()` succeeds. Unsupported/failed barriers deliberately orphan the handles; `unleasedTargetIdleFailures` and `targetRetirementOrphanPairs` diagnose this condition.
 - Independent `RenderTexture` immediately destroys GPU upload textures and per-draw vertex buffers after command submission; handle its fence-aware lifetime as a separate Stage 120. Do not modify SpectraFX, NEREID or Prisma owners without checking concurrent agents' code.
 - **NOT TESTED:** no local CMake configure, C++ compiler/link, CTest, CI, native GPU parity, sanitizer or performance test. Keep PR #22 Draft until the entire feature suite is finished and successfully validated.
+
+## MotionWeave / Universal View — Stage 120 resource owner handoff
+
+- Continue from [Stage 120 handoff](docs/agent-handoffs/animation-stage120-canvas-gpu-retirement-2026-11-19.md).
+  Branch: `feature/universal-ecs-animation-pipeline`, PR #22 Draft.
+  Compare with latest `main` and other agents before writing; no
+  force push, no lost NEREID/Prisma/SpectraFX/TerraWeave changes.
+- `render::CanvasGpuRetirement` is the generic device-bound,
+  optionally epoch-leased, GPU-fenced owner of canvas vertex
+  buffers, staging images, target textures and shader pipelines.
+  `retire(handle)` does not imply completed GPU work.
+  Poll `collect()` ONLY at a real host frame boundary after prior
+  command submission, outside render passes. On Failed/Pending
+  tokens retain native handles; a real `waitForResourceIdle`
+  can authorize fallback destruction.
+- A native `RenderTexture` borrows a shared owner using
+  `setRetirementOwner` **before** `init`. A standalone
+  `RenderTexture` owns its queue, and the native caller must
+  collect/drain it before destroying the Device. Never free its
+  scratch brush/blit buffer or upload image immediately after a
+  GPU `endPass`. On invalid upload, preserve pending brush commands.
+- `RtsPaintLayers` owns one pool across source resets and removed
+  layers, passes the existing RtsView GPU lease, and queues old
+  cached meshes/coast textures/programs. Editor and GameClient poll
+  via `RtsView::collectRetiredPaintGpuResources` at their frame
+  boundary, and RtsView.shutdown drains only after proven GPU idle.
+- Keep a last-good mesh if replacement GPU geometry allocation
+  fails; do not submit an invalid draw packet.
+- This stage did NOT modify MotionWeave graph/clock, authoritative
+  ECS, NEREID water selection, Prisma or SpectraFX. Neighbor GPU
+  resource owners require their own audits.
+- **NOT TESTED:** native CMake compiler/link, CTest/CI, real GPU
+  render/fence failures, sanitizers or visual parity. Do not mark
+  PR #22 ready before full features-first validation. Continue
+  Stage 121 with remaining View/attachment and ownership work.
