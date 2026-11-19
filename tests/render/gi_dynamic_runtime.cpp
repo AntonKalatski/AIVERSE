@@ -46,6 +46,47 @@ int main() {
         AIVERSE_TEST_CHECK(step.inFlight==0);
     }
     AIVERSE_TEST_CHECK(runtime.update(4,{0,0,0}).upload.bytes==0);
+
+    // Moving a light must synchronously invalidate the CPU coefficients, then
+    // flush the old GPU bounce even with ZERO tracing budget. All 18 probes
+    // are within the old source's conservative radius plus trace distance.
+    runtime.setLights({GiMovingLight{42,{1,0,0},{0,0,1},4,20}});
+    AIVERSE_TEST_CHECK(runtime.reference().scheduler().pending()==18);
+    for (const auto& probe:runtime.reference().coefficients())
+        for (const auto& c:probe.irradiance)
+            AIVERSE_TEST_CHECK(c.x==0 && c.y==0 && c.z==0 && c.w==0);
+    const auto oldLightClear=runtime.update(0,{0,0,0});
+    AIVERSE_TEST_CHECK(oldLightClear.trace.claimed==0);
+    AIVERSE_TEST_CHECK(oldLightClear.upload.probes==18 &&
+                       oldLightClear.upload.bytes==18*3*sizeof(float4));
+    for (const auto& value:device.textures.at(texture.id).data)
+        AIVERSE_TEST_CHECK(value.x==0 && value.y==0 && value.z==0 && value.w==0);
+
+    // Source removal is the same invalidation case; it cannot keep stale GI.
+    AIVERSE_TEST_CHECK(runtime.update(2,{0,0,0}).trace.published==2);
+    runtime.setLights({});
+    const auto removedLightClear=runtime.update(0,{0,0,0});
+    AIVERSE_TEST_CHECK(removedLightClear.trace.claimed==0);
+    AIVERSE_TEST_CHECK(removedLightClear.upload.probes==18);
+    for (const auto& value:device.textures.at(texture.id).data)
+        AIVERSE_TEST_CHECK(value.x==0 && value.y==0 && value.z==0 && value.w==0);
+
+    // Exercise the generic RHI CPU-probe path using each backend's identity.
+    // FakeDevice is NOT real Vulkan/GLES/Metal GPU execution or shader validation.
+    for (const auto backend:{gfx::Backend::GLES3,gfx::Backend::Vulkan,gfx::Backend::Metal}) {
+        FakeDevice portable;
+        portable.info_.backend=backend;
+        GiDynamicRuntime cross;
+        AIVERSE_TEST_CHECK(cross.initialize(portable,{-1,-1,-1},1,3,3,2,16,6));
+        cross.setGeometry(&wall,1);
+        cross.setLights({GiMovingLight{7,{0,0,0},{1,1,1},4,20}});
+        AIVERSE_TEST_CHECK(cross.update(3,{0,0,0}).trace.published==3);
+        cross.setLights({});
+        const auto clearedOnBackend=cross.update(0,{0,0,0});
+        AIVERSE_TEST_CHECK(clearedOnBackend.upload.probes==18);
+        cross.shutdown();
+        AIVERSE_TEST_CHECK(portable.textures.empty());
+    }
     runtime.shutdown();
     AIVERSE_TEST_CHECK(!runtime.ready() && device.textures.empty());
 
