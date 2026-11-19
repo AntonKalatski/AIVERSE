@@ -355,3 +355,22 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
 - Full native CMake/CTest, platform CI and editor UI execution are
   **NOT VERIFIED**; GitHub Actions remains queued/cancelled as inspected.
   Handoff: `docs/agent-handoffs/physis-stage44-manual-retry-2026-11-19.md`.
+
+### Stage 45 — never block on a malicious POSIX journal lock file (2026-11-19)
+
+- `JournalProcessLock::acquire` MUST open the POSIX lock path with
+  `O_NONBLOCK` before `fstat` and `flock`. A user-controlled FIFO at
+  `<journal>.lock` could otherwise block privileged admin startup before
+  the inode-type guard had a chance to reject it.
+- Continue requiring a regular single-link, current effective UID-owned
+  lock file without group/other permission bits. The lock and its parent
+  must be in a trusted server-owned directory. This is advisory
+  single-host locking; it is NOT distributed fencing.
+- `unsafeJournalLockInodesRejected` in `physis_admin_journal` now
+  creates a malicious FIFO and asserts immediate refusal.
+- Isolated Linux GCC 14.2 C++20 harness: PASS. It compiled the EXACT
+  fetched PHYSIS header with Git blob SHA
+  `835cfb9630e66d7918ed91ef06f97f590c2007b5`, and checked
+  FIFO refusal, mode/hardlink denial, inter-process exclusion and
+  SIGKILL lock release. Full AIVERSE CMake/CTest was NOT RUN.
+- Handoff: `docs/agent-handoffs/physis-stage45-fifo-lock-hardening-2026-11-19.md`.
