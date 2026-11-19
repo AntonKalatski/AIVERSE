@@ -906,6 +906,27 @@ bool GpuPoolWorld::exportFreshCheckpoint(
     return group.particles->exportFreshCheckpoint(bytes,maxBytes,error);
 }
 
+bool GpuPoolWorld::gpuGroupSummary(
+    size_t index,PoolGpuGroupSummary& result) const {
+    if(!initialized_ || index>=gpuGroups_.size() ||
+       !gpuGroups_[index].particles)return false;
+    const Group& group=gpuGroups_[index];
+    PoolGpuGroupSummary next;
+    next.index=index;
+    next.gpuActive=group.particles->gpuActive();
+    next.stepAccepted=group.stepOk;
+    next.checkpoint=group.particles->checkpointStatus();
+    next.estimatedAlive=group.particles->stats().alive;
+    next.allocatedGpuBytes=group.particles->stats().gpuBytes;
+    next.resetAccepted=index<resetAccepted_.size() &&
+                       resetAccepted_[index]!=0;
+    next.exportReady=!presentationBlocked() && next.gpuActive &&
+        next.checkpoint.restoreEligible && !next.checkpoint.pending &&
+        device_ && device_->gpuHealthy();
+    result=std::move(next);
+    return true;
+}
+
 PoolCheckpointStats GpuPoolWorld::checkpointStats() const {
     PoolCheckpointStats result;
     if(checkpointBudget_)result.budget=checkpointBudget_->stats();
