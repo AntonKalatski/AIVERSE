@@ -1575,3 +1575,31 @@ and geometry asset ownership must still be audited with other owners.
 [Stage 143 handoff](agent-handoffs/animation-stage143-geometry-world-streamed-model-retirement-2026-11-19.md).
 **NOT RUN:** native CMake/compiler/CTest/CI, Metal/Vulkan/GL,
 worker-thread sanitizer, GPU fence fault injection, visuals or benchmarks.
+
+
+## Stage 144 — portable animation playback across compatible Model revisions
+
+A Model/LOD/source/graph publication must detach old borrowed Model,
+skin, rig and pose references before GPU retirement. Existing RTS
+source/appearance reload performs that detach, and now optionally
+keeps one **Model-pointer-free** `ReloadPlayback` snapshot per entity,
+with a limit of 8192 records and expiry after 120 View frames.
+
+The new `AnimationGraphInstance::rebindPlayback` helper restores
+only named state and clip phases into a newly compiled graph,
+allowing compatible visual reimports without an apparent restart.
+Legacy clip-only actors may also retain one unblended base clip
+via its **name, new authored animation kind, loop mode and normalized
+phase** — never by the old Model's numeric clip index. A renamed
+clip, incompatible graph, new logical entity generation or changed
+type resets to safe default playback. Old animation events/notifies,
+rig contacts, native operation state and root motion are not copied.
+
+The per-entity programmable graph override must be resolved before
+the saved graph clock is restored; generic ECS MotionWeave animation
+remains a separate sole playback owner. Model editing and Graph/Rig
+previews use the same portable named playback idea.
+
+[Stage 144 handoff](agent-handoffs/animation-stage144-named-playback-source-reload-2026-11-19.md).
+**NOT RUN:** native CMake/C++/CTest, GPU/driver source reload,
+FPS/RTS/editor playback screenshot parity or sanitizer/performance.
