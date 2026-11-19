@@ -35,7 +35,7 @@
     std::unique_ptr<aiverse::studio::StudioSession> session_;
     std::unique_ptr<aiverse::studio::StudioMetalScene> preview_;
     aiverse::studio::NativeViewportPlacement placement_;
-    BOOL readyEmitted_=NO;
+    BOOL readyEmitted_; // Objective-C object ivars are zero-initialized
 }
 - (instancetype)initWithProject:(const std::string&)project dev:(BOOL)dev;
 - (void)orbitX:(CGFloat)dx y:(CGFloat)dy;

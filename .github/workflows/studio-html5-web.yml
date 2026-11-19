@@ -53,3 +53,7 @@ jobs:
         run: python3 tools/studio/migration_audit.py --strict --json
       - name: Audit scanner tests
         run: python3 -m unittest discover -s tools/studio -p 'test_*.py' -v
+      - name: Build headless native viewport layout contract
+        run: c++ -std=c++17 -Wall -Wextra -Werror -I . apps/studio-native/tests/StudioViewportLayoutTests.cpp -o /tmp/aiverse_studio_viewport_layout
+      - name: Run headless native viewport layout contract
+        run: /tmp/aiverse_studio_viewport_layout
