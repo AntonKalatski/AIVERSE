@@ -2827,6 +2827,67 @@ Vulkan/GLES execution, GPU fences, HDR color/alpha pixel parity,
 screen-space bounce/volumetric screenshot tests and CI. Stage 52 code
 and precise continuation live in `docs/handoffs/prisma-stage-52.md`.
 
+
+## Stage 53 — камера-специфичная диагностика эффекта (CPU read-only)
+
+`Prisma::effectReport(viewId) const` возвращает указатель на
+`Prisma::ViewEffectReport`, снятый **после последнего `resolve()` именно
+этой камеры**. Идентификаторы `viewId` назначает host; значение 0 —
+унаследованный default. `effectReportViewIds()` возвращает отсортированные
+ключи сохранённых отчётов. Результат не создаёт RHI shader/texture,
+не вызывает `program()/composite()`, не ждёт GPU и не меняет ECS.
+
+`ViewEffectReport`: `viewId`, счётчик `sequence` (только вызовы resolve
+для данного ID), размеры входа, качество, HDR-путь, готовность сцены и
+список `EffectExecution` для всех элементов текущего camera-profile,
+**включая authored-disabled/low-tier эффекты**. Каждая запись содержит:
+
+- `type` — `PrismaType` из стандартного каталога; `authored` означает
+  присутствие в текущем профиле.
+- `requested` — effect enabled на текущем tier и его opt-in + числовые
+  условия (при наличии) выполнены; низкий tier / выключенная переменная
+  окружения даёт конкретный reason и `requested=false`.
+- `pipelinePrepared` — локальные кэшированные RHI handles
+  доступны. Это **не** доказательство GPU execution; для composite
+  проверяется реально выбранный variant, а для многопроходных
+  Bloom/TiltShift/SunShafts конкретные подготовленные pipelines.
+- `encoded` — соответствующий эффект реально вошёл в последний
+  рендер (draw для MotionBlur/DoF/FXAA/Temporal, подключённый к
+  отправленному composite ресурс для Bloom, LUT, Bloom/etc). Частичный
+  ошибочный GPU graph без использования результата не считается
+  успешным эффектом. Готовность шейдера без draw не даёт `encoded`.
+- `reason` — причина пропуска (camera cut/first frame, history quota,
+  temporal preflight, HDR/tier/opt-in, отсутствие LUT/pipeline,
+  shadergraph/exposure texture-slot конфликт, отсутствие target и др.).
+  Пусто у успешно закодированного эффекта.
+
+Отчёт per-view не смешивает Scene/Game с одинаковым размером. При
+`retireView` / `retireUnregisteredViews` снимок удаляется вместе с
+камерным состоянием, при `shutdown()` и `setSettings()` старые отчёты
+очищаются. Обновление `applyCameraVolumes()` отражается при следующем
+`resolve`; до него снимок является историей *последнего рендера*, не
+планом текущей настройки. Указатели report инвалидируются при очистке
+или обновлении карты; не кэшировать их между кадрами.
+
+Редактор `PRISMA — Постобработка` отображает collapsible матрицу
+`View ID / effect / requested / pipeline / encoded / reason`, не создавая
+ресурсы во время просмотра. Existing global `runtimeCapabilities()`
+по-прежнему описывает последние данные из `PrismaStats`, а не все
+камеры; для per-view эффекта использовать новый API.
+
+Особенно важно: `encoded` означает **GPU draw command issued**, а
+не выполненный GPU fence, корректные пиксели, изображение в кадре или
+соответствие эффектов на разных RHI. Последние четыре утверждения
+допускаются только после реальных GPU-тестов.
+
+Источник Stage 53: `engine/render/Prisma.{h,cpp}`,
+`apps/editor/windows/PrismaWindow.cpp`; точные коммиты,
+структурные проверки и следующий этап — `docs/handoffs/prisma-stage-53.md`.
+**Actual verification:** 18/18 source-presence/lifecycle checks после
+GitHub readback. **NOT RUN:** локальный CMake/clang/CTest, редактор,
+Metal/GL/GLES/Vulkan, shader compile, screenshots, GPU passes, CI.
+Проверку производительности/пикселей не заявлять до отдельной test phase.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
