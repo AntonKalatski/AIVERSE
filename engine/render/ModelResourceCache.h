@@ -222,8 +222,15 @@ public:
         return released;
     }
 
-    using RetirementStats=
-        AsyncResourceRetirementQueue<std::unique_ptr<Model>>::Stats;
+    using RetirementQueue=
+        AsyncResourceRetirementQueue<std::unique_ptr<Model>>;
+    using RetirementStats=RetirementQueue::Stats;
+    using RetirementDiagnosticObserver=RetirementQueue::DiagnosticObserver;
+    // The host may attach a read-only token trace, e.g. in a GPU debug
+    // panel. Callback exceptions cannot interrupt resource retirement.
+    void setRetirementDiagnosticObserver(RetirementDiagnosticObserver observer) {
+        retired_.setDiagnosticObserver(std::move(observer));
+    }
     size_t pendingRetirements() const noexcept{return retired_.pending();}
     RetirementStats retirementStats() const noexcept {
         return retired_.stats();
