@@ -20,12 +20,14 @@
 #include "../../engine/render/ModelAssetProvider.h"
 #include "../../engine/render/FailedModelUpload.h"
 #include "../../engine/view/View.h"
+#include "../../engine/view/ImportedAttachmentAuthoring.h"
 #include "imgui.h"
 #include "Gallery.h"
 
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
 #include <map>
 #include <memory>
@@ -37,6 +39,12 @@ using namespace aiverse::render;
 
 namespace {
 
+using Imported = ::aiverse::view::ImportedAttachmentAuthoring;
+struct AttachmentSpec {
+    std::string modelSource;
+    std::string socketName;
+    bool enabled=true;
+};
 struct Instance {
     Model* model = nullptr;
     std::string path;
@@ -45,6 +53,10 @@ struct Instance {
     std::vector<mat4> world;
     int clip = -1, variant = -1;
     mat4 fix;
+    ::aiverse::view::AppearanceAssetRegistry::Snapshot publishedAppearance;
+    Imported::Compiled compiledAttachments;
+    bool attachmentsReady=false;
+    std::string lastAttachmentError;
 };
 
 struct Viewer {
@@ -71,6 +83,12 @@ struct Viewer {
     RTSCamera cam;
     std::map<std::string, std::unique_ptr<Model>> models;
     ModelAssetProvider nativeModels; // independent source owner, not a game::RtsView
+    ::aiverse::view::AppearanceAssetRegistry attachmentsRegistry;
+    ::aiverse::View attachmentView; // compose borrowed precomputed poses only
+    std::vector<AttachmentSpec> attachmentSpecs;
+    std::string attachmentConfigPath;
+    char newAttachmentModel[512]{},newAttachmentSocket[256]{};
+    bool attachmentPreview=false;
     std::map<std::string, std::string> mergeInfo;   // path -> "parts 47 -> 14" or why not merged
     std::vector<Instance> inst;
     std::vector<std::string> log;
@@ -88,6 +106,18 @@ struct Viewer {
 
     void init(gfx::Device& d) {
         dev = &d;
+        // This attachment preview uses ONE real ModelAssetProvider for both
+        // source rig and imported children. The original comparison/gallery
+        // paths remain unchanged unless the user opts into attachments.
+        if(!attachmentSpecs.empty() || !attachmentConfigPath.empty()) {
+            if(!gameDir.empty())
+                throw std::invalid_argument(
+                    "attachment preview takes model files, not --game gallery");
+            attachmentPreview=true;
+            providerMode=true;
+            merge=false;
+            baked=false;
+        }
         r3d.init(d);
         r3d.setProfiling(lodReport);
         r3d.setModelLodEnabled(!noLod);
@@ -122,7 +152,7 @@ struct Viewer {
         for (auto& [path, clip] : files) {
             Model* resolved=nullptr;
             if(providerMode && !merge && !baked &&
-               clip.empty() && clipAll.empty()) {
+               ((clip.empty() && clipAll.empty()) || attachmentPreview)) {
                 resolved=nativeModels.load(d,path);
                 if(resolved) {
                     for(auto& mt:resolved->materials) {
@@ -207,6 +237,7 @@ struct Viewer {
             inst.push_back(std::move(in));
             x += spacing;
         }
+        if(attachmentPreview)rebuildAttachments();
         for (auto& l : log) std::printf("%s\n", l.c_str());
         cam.target = {0, maxH * 0.45f, 0};
         cam.distance = distance > 0 ? distance : std::max(4.0f, spacing * float(files.size()) * 1.1f + maxH);
