@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -30,7 +31,7 @@ struct WorldEntityRef {
 class SimulationHost {
 public:
     WorldHandle insert(std::unique_ptr<Simulation> simulation) {
-        if(!simulation) return {};
+        if(!simulation || stepping_) return {};
         if(!free_.empty()) {
             const uint32_t index = free_.back();
             free_.pop_back();
@@ -64,7 +65,7 @@ public:
     // Ownership is exclusive. Removing a world destroys its Simulation and
     // invalidates every WorldEntityRef pointing into that incarnation.
     bool erase(WorldHandle handle) {
-        if(!get(handle)) return false;
+        if(stepping_ || !get(handle)) return false;
         Slot& slot = slots_[handle.index];
         slot.simulation.reset();
         slot.paused = false;
@@ -76,7 +77,7 @@ public:
     }
 
     bool setPaused(WorldHandle handle, bool paused) {
-        if(!get(handle)) return false;
+        if(stepping_ || !get(handle)) return false;
         slots_[handle.index].paused = paused;
         return true;
     }
@@ -93,16 +94,28 @@ public:
     // thread, not while worlds are being inserted/erased from callbacks.
     // Per-Simulation readyToStep() may independently block one world.
     void stepAll() {
+        StepGuard guard(*this);
         for(Slot& slot : slots_)
             if(slot.simulation && !slot.paused) slot.simulation->step();
     }
     void advanceAll(double realSeconds, int maxTicks = 8) {
+        StepGuard guard(*this);
         for(Slot& slot : slots_)
             if(slot.simulation && !slot.paused)
                 slot.simulation->advance(realSeconds, maxTicks);
     }
 
 private:
+    // Guard against callbacks resizing/removing slots during iteration.
+    // RAII restores the host even if a game's system throws.
+    struct StepGuard {
+        SimulationHost& owner;
+        explicit StepGuard(SimulationHost& value) : owner(value) {
+            if(owner.stepping_) throw std::logic_error("nested SimulationHost advance");
+            owner.stepping_ = true;
+        }
+        ~StepGuard() { owner.stepping_ = false; }
+    };
     struct Slot {
         uint32_t generation = 1;
         std::unique_ptr<Simulation> simulation;
@@ -110,6 +123,7 @@ private:
     };
     std::vector<Slot> slots_;
     std::vector<uint32_t> free_;
+    bool stepping_ = false;
 };
 
 } // namespace aiverse::scene
