@@ -4,6 +4,7 @@
 #include <aiverselib/water/NereidAdaptiveWater.h>
 #include <aiverselib/water/NereidBuoyancySystems.h>
 #include <aiverselib/water/NereidInteractions.h>
+#include <aiverselib/water/NereidCascades.h>
 #include <string>
 #include <utility>
 #include <vector>
@@ -14,6 +15,7 @@ struct NativeWaterPipelineConfig {
     bool enableGeometry=false;
     bool enableBuoyancy=false;
     bool enableInteractions=false;
+    bool enableCascades=false;
     bool probeFromTransform=true;
     AdaptiveWaterSamplingConfig adaptive{};
 };
@@ -26,6 +28,7 @@ inline void registerNativeWaterPipeline(Simulation& sim,
     if(config.enableGeometry)registerNereidGeometryPersistence(sim);
     if(config.enableBuoyancy)registerNereidBuoyancyPersistence(sim);
     if(config.enableInteractions)registerNereidInteractionPersistence(sim);
+    if(config.enableCascades)registerNereidCascadePersistence(sim);
     if(config.probeFromTransform)
         addWaterProbeFromTransformSystem(sim,prefix+".probe");
     addAdaptiveWaterSamplingSystem(sim,prefix+".sample",config.adaptive);
