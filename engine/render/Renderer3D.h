@@ -351,6 +351,25 @@ public:
         });
     }
 
+    // Opt-in automatic feedback submission during Renderer3D::render(),
+    // after shadow passes and before the main scene pass begins.
+    // The feedback pass and its GPU resources must outlive this renderer.
+    // Only enable when the owning application has initialized the pass
+    // and configured a compatible material feedback pipeline.
+    void setVirtualTextureFeedback(
+        gfx::VirtualTextureFeedbackPass* pass,
+        gfx::PipelineHandle meshPipeline,
+        FeedbackMeshBinder binder) {
+        feedbackPass_ = pass;
+        feedbackMeshPipeline_ = meshPipeline;
+        feedbackMeshBinder_ = std::move(binder);
+    }
+    void clearVirtualTextureFeedback() {
+        feedbackPass_ = nullptr;
+        feedbackMeshPipeline_ = {};
+        feedbackMeshBinder_ = {};
+    }
+
     // Extra shadow casters (sprites): run inside the sun shadow pass (only when shadows are on) with
     // the target bound; draw depth with lightViewProj(). Same lifetime rules as drawCustom.
     void drawCustomShadow(CustomDraw fn) { customShadow_.push_back(std::move(fn)); }
@@ -542,6 +561,9 @@ private:
     std::vector<ColorVertex> lines_, tris_;
     std::vector<CustomDraw> custom_, customOpaque_, customShadow_;
     std::vector<FeedbackCustomDraw> customFeedback_;
+    gfx::VirtualTextureFeedbackPass* feedbackPass_ = nullptr; // non-owning
+    gfx::PipelineHandle feedbackMeshPipeline_;
+    FeedbackMeshBinder feedbackMeshBinder_;
     RTSCamera cam_;
     mat4 viewProj_, lightViewProj_;
     float3 camPos_;
