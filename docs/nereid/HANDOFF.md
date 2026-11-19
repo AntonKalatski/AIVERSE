@@ -2368,3 +2368,100 @@ to water shader via NEREID presentation data, with optional SpectraFX
 spawn mapping. Then implement waterfalls/cascades and physical flow
 interactions. Update this handoff after each stage. Run tests only
 after functional backlog is done or owner changes priority.
+
+## Stage 23 — expanding water ripple/wake presentation and VFX handoff
+
+**Branch:** `feature/nereid-water-core`, Draft PR #23.
+**Starting point:** Stage 22 head `326db9511494d2ecfa18332a454487f59bf99b62`.
+**User priority:** features first; no new tests/run tests until functional
+work is complete. No merge of other branches or changes to `main`.
+
+### Actual commits and changed files
+
+- `7f24f9a3f1d5b342e14d672826d8387fd1cba288` —
+  `libraries/include/aiverselib/water/NereidInteractions.h`: cleans
+  a redundant, misindented wake anchor assignment during initial
+  contact history initialization.
+- `75b91882bef25fb635fda8b3b0024430de28a1cd` —
+  NEW `engine/world/NereidRipples.h`. A bounded, renderer-aware
+  **presentation-only** expanding ripple field:
+  `NereidRipple`, `NereidRippleField::ingest`, `advance`, `draw`,
+  `clear`, `setLimit`, and `ripples`.
+- `b770f18c754c4d6080a6a27801e8242009153026` —
+  `engine/world/WorldScene.h`: opt-in water event ingestion, callback
+  for SpectraFX/audio, render-time decay, read-only ripple accessor.
+- `c7ddb743d09f06019c9775183ca1d94e556c9ee4` —
+  `engine/world/WorldScene.cpp`: render expanding translucent ring
+  triangles after NEREID scene water; clear the presentation field on
+  world-scene shutdown.
+- `75a533ecae7a7ab3f03db3194153e9789d60538e` —
+  `skills/gameplay/aiverse-nereid-water/SKILL.md`: native usage and
+  ownership rules for the next agent.
+
+### Architecture / API
+
+The canonical Stage-22 `WaterInteractionOutputComponent` stays
+authoritative and is sampled once per completed tick using
+`snapshotWaterInteractionEvents(world,completedTick)`. No changes to
+the gameplay integrator, contact sampling, deterministic water body,
+PHYSIS, Box3D, SpectraFX implementation or Prisma were required.
+
+```cpp
+#include <aiverselib/water/NereidInteractionPresentation.h>
+// After the NEREID water interaction system has completed its tick:
+auto events=lib::nereid::snapshotWaterInteractionEvents(sim.world(),sim.tick());
+worldScene.ingestNereidInteractions(events,sim.tick(),
+    [&](const lib::nereid::WaterPresentationEvent& e) {
+        // The native host maps e.event.kind to SpectraFX/SFX; optional.
+    });
+// Once per presentation frame:
+worldScene.advanceNereidRipples(deltaSeconds);
+// Existing WorldScene::draw(renderer,renderOrigin,cellSize) renders rings.
+```
+
+`NereidRippleField` holds up to 256 active ripples, oldest-first
+eviction and constant-bounded memory. Events of kinds `Enter`,
+`Exit`, `SwitchBody` and `SurfaceWake` create pulses with distinct
+propagation speed, initial radius and lifetime. Pulse age advances
+using bounded non-negative frame time. Its ring mesh consists of
+24-segment double-precision-origin-relative alpha triangles, emitted
+through existing `Renderer3D::triangle` without persistent per-pulse
+GPU buffers. The callback is explicitly a native project hook,
+not an invented SpectraFX call or an automatic VFX installation.
+
+Repeated ingestion of the same tick is ignored. Decreasing completed
+tick (rollback) clears all old visual waves to avoid ghost history.
+`NereidRippleField::setLimit` caps memory between 1 and 256.
+Rendering is a presentation-only overlay at surface Y+0.035m;
+no ECS state or physics force is affected, and simulated water
+heights remain the source of truth.
+
+### Verification and next feature
+
+**Actually performed:** inspected existing NEREID interaction outputs,
+WorldScene update/draw ownership and Renderer3D triangle API from the
+connected GitHub repo; wrote the implementation, skill and handoff
+using connected GitHub actions.
+
+**NOT RUN / UNVERIFIED:** local C++ compiler, project build, CTest,
+unit tests, Metal/GL shader rendering, visuals in real scenes,
+FPS/RTS parity and automatic SpectraFX playback. No new tests
+authored per current user instruction.
+
+**Known limitations:** overlay rings are a visual approximation,
+not a GPU water normal/displacement field or true wake simulation.
+There is not yet an actual SpectraFX effect prefab mapping or
+automatic rendering of particles/spray; the host gets a callback.
+Visual rings are not clipped to shorelines and may extend past a
+finite footprint; no depth-awareness or occlusion beyond the
+existing overlay pipeline. Scene host must explicitly advance the
+ripples per frame and pass the render origin; they do not age from
+the deterministic ECS tick. Origin rebasing prevents XY precision
+loss in ring placement but not all Renderer3D floating-world limits.
+
+**Next functional stage (before tests):** add genre-neutral
+water-surface shader perturbation driven by a bounded ring parameter
+array or a renderer-provided ripple texture, plus real SpectraFX
+mapping from event kinds. Prefer the existing RHI and NEREID
+ownership boundaries. Then waterfall/cascade geometry and current
+forces. Update this document after the next implementation stage.
