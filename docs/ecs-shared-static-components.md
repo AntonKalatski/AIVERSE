@@ -356,3 +356,16 @@ or compare actual process RSS without measuring it.
    well-bounded tables and if save compatibility can be preserved.
 5. Validate two independent GameModule hosts, native editor usage and
    legacy FPS/RTS serialization before any production migration.
+
+
+## SceneRuntime integration (isolated branch)
+
+The `feature/ecs-static-prefab-scene-integration` branch integrates
+`PrefabStaticCatalog<T>` with the real
+`SceneLoadCoordinator::SpawnPrefab` through
+`engine/scene/PrefabStaticSceneBinding.h`. The same immutable config
+table is held across additive scene instances and across independent
+Simulation Worlds while each Entity stores only a 4-byte StaticRef.
+Read `docs/ecs-static-prefab-scene-integration.md` for API and
+`docs/agent-handoffs/ecs-static-scene-stage4-2026-11-19.md`
+for integration status. **Native combined tests have not yet run.**
