@@ -37,9 +37,21 @@ struct MotionUniforms {
     float inv0[4], inv1[4], inv2[4], inv3[4];
     float prev0[4], prev1[4], prev2[4], prev3[4];
 };
+// Preserve the existing motion UBO prefix and add only temporal subpixel
+// jitter in the canonical fragment shader's last vec4.
+struct TemporalUniforms {
+    float px[4], p0[4], sun[4];
+    float inv0[4], inv1[4], inv2[4], inv3[4];
+    float prev0[4], prev1[4], prev2[4], prev3[4];
+    float jitter[4];
+};
 const char* kMotionFields[] = {
     "px", "p0", "sun", "inv0", "inv1", "inv2", "inv3",
     "prev0", "prev1", "prev2", "prev3"
+};
+const char* kTemporalFields[] = {
+    "px", "p0", "sun", "inv0", "inv1", "inv2", "inv3",
+    "prev0", "prev1", "prev2", "prev3", "jitter"
 };
 struct CompositeU {
     float px[4], grade0[4], grade1[4], lift[4], gamma[4], gain[4], filt[4], vig[4], bloom[4], shafts[4], tilt[4], fade[4], lut[4], lbox[4], graphFrame[4];
@@ -732,8 +744,10 @@ gfx::PipelineHandle Prisma::program(Prog p) {
     const uint32_t sampledDepth = p == kMotionVectors || p == kDepthOfField
         ? (1u << 1) : (p == kMotionBlur ? (1u << 2) :
             (p == kTemporalResolve ? (1u << 3) : 0u));
-    Built b = (p == kMotionVectors || p == kTemporalResolve)
-        ? buildProgram(kMotionFields, 11, d.tex, "", d.helpers, d.body, sampledDepth)
+    Built b = p == kTemporalResolve
+        ? buildProgram(kTemporalFields, 12, d.tex, "", d.helpers, d.body, sampledDepth)
+        : p == kMotionVectors
+            ? buildProgram(kMotionFields, 11, d.tex, "", d.helpers, d.body, sampledDepth)
         : p == kMotionBlur
             ? buildProgram(kMotionBlurFields, 4, d.tex, "", d.helpers, d.body, sampledDepth)
             : buildProgram(kSimpleFields, 3, d.tex, "", d.helpers, d.body, sampledDepth);
@@ -1117,7 +1131,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         const gfx::TextureHandle targetHistory=history.history[next];
         const gfx::TextureHandle previousHistory=history.history[history.current];
         if (targetHistory.valid() && previousHistory.valid()) {
-            MotionUniforms uniforms{};
+            TemporalUniforms uniforms{};
             put(uniforms.px,1.0f/float(w),1.0f/float(h),flip,0);
             const bool useHistory=history.valid && previousValid && velocity.tex.valid();
             put(uniforms.p0,
@@ -1128,7 +1142,11 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             put(uniforms.sun,
                 temporalEffect->get("depthThreshold"),
                 temporalEffect->get("motionScale"),
-                validReactive?1.0f:0.0f,0);
+                validReactive?1.0f:0.0f,
+                temporalEffect->get("historyConfidence"));
+            put(uniforms.jitter,
+                history.currentJitterUv.x, history.currentJitterUv.y,
+                history.previousJitterUv.x, history.previousJitterUv.y);
             const mat4 inverseViewProj=f.viewProj.inverse();
             std::memcpy(uniforms.inv0,inverseViewProj.m,sizeof inverseViewProj.m);
             std::memcpy(uniforms.prev0,motionView.previousViewProj.m,
@@ -1153,6 +1171,7 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             ++stats_.passes;
             history.current=next;
             history.valid=true;
+            history.previousJitterUv=history.currentJitterUv;
             src={targetHistory,w,h,gfx::PixelFormat::RGBA16F};
             temporalResolved=true;
         } else history.valid=false;
