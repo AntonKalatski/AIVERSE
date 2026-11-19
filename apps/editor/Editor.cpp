@@ -193,6 +193,7 @@ void Editor::shutdown() {
     if (studioLogo_.valid()) { dev_->destroyTexture(studioLogo_); studioLogo_ = {}; }
     view_.shutdown(*dev_);
     view_.modelResources().setRetirementDiagnosticObserver({});
+    view_.setImageRetirementDiagnosticObserver({});
     gpuRetirementRing_.reset();
     postFx_.shutdown();
     if(fpsPreviewMesh_.vb.valid())dev_->destroyBuffer(fpsPreviewMesh_.vb);
