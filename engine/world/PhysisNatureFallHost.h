@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <compare>
 #include <limits>
 #include <stdexcept>
 #include <vector>
@@ -102,6 +103,15 @@ inline void io(Archive& a, NatureFallHostState& value) {
                 !b.plant.speciesId || !b.plant.plantKey ||
                 (i && value.bindings[i-1].entityPacked >= b.entityPacked)) {
                 a.fail(); return;
+            }
+        }
+        // Reject aliasing the same rooted plant to multiple ECS entities.
+        // Corrupt imported state must never allow duplicate physical bodies.
+        for (std::size_t i = 0; i < value.bindings.size(); ++i) {
+            for (std::size_t j = i + 1; j < value.bindings.size(); ++j) {
+                if (value.bindings[i].plant == value.bindings[j].plant) {
+                    a.fail(); return;
+                }
             }
         }
         for (std::size_t i = 0; i < value.records.size(); ++i) {
