@@ -1201,7 +1201,18 @@ void GameClient::frame(gfx::Device& dev, double dt) {
             view_.setOverlayContext(oc);
         }
         render::CameraModelSnapshot::CaptureGuard lensCaptureGuard;
-        if(lensCamerasActive_)lensCaptureGuard.begin(lensModelSnapshot_,r3d_);
+        // Automatically clear the borrowed RtsView capture pointer if
+        // any rendering/animation callback throws before the normal end.
+        struct PreparedCaptureReset {
+            game::RtsView* view=nullptr;
+            ~PreparedCaptureReset() {
+                if(view)view->setCameraPreparedCapture(nullptr);
+            }
+        } preparedCaptureReset{lensCamerasActive_?&view_:nullptr};
+        if(lensCamerasActive_) {
+            lensCaptureGuard.begin(lensModelSnapshot_,r3d_);
+            view_.setCameraPreparedCapture(&lensModelSnapshot_);
+        }
         view_.draw(r3d_, scene_, time_, spectator_ ? nullptr : &gs.vision[human_], gs.grid);
         for (auto& fe : view_.fieldView().takeEffects()) fx_.particles().play(fe.name, {fe.pos.x, fe.pos.y + 0.2f, fe.pos.z});   // grid field particles
         fx_.setPlanetView(planet() ? &view_ : nullptr);   // planets: effects in the camera body's space
@@ -1224,6 +1235,10 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         }
         drawToolPreview();
         lensCaptureGuard.end();
+        if(preparedCaptureReset.view) {
+            preparedCaptureReset.view->setCameraPreparedCapture(nullptr);
+            preparedCaptureReset.view=nullptr;
+        }
         const float fogBase = r3d_.lighting.fogDensity;   // a narrow top-down lens: fog as a default lens framing it sees
         if (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over)
             if (topDownActive()) r3d_.lighting.fogDensity = fogBase * topDown_.fogScale();
@@ -1251,12 +1266,12 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         const auto result=lensCameras_.renderPrepared(
             lensModelSnapshot_,visualId,float(dt),
             [&](const render::CameraModelSnapshot& snapshot,
-                const render::EcsCameraView&,render::Renderer3D& renderer){
+                const render::EcsCameraView& camera,render::Renderer3D& renderer){
                 if(worldScene_ && !planet())
                     worldScene_->draw(renderer,world::Cell{0,0,0},1);
                 // Re-submit final pose/material/attachment packets directly.
                 // RtsView::draw and MotionWeave::update are NOT repeated.
-                snapshot.submit(renderer);
+                snapshot.submit(renderer,camera.entity.packed());
             });
         if(std::getenv("AIVERSE_LENS_LOG") && !result.diagnostics.empty())
             std::fprintf(stderr,"[lens] submitted=%zu skipped=%zu diagnostics=%zu\n",
