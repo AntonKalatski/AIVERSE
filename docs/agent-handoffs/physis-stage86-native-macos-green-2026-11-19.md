@@ -59,9 +59,8 @@ cd ~/Projects/AIVERSE-physis-fracture
 git fetch origin
 git switch -c feature/physis-fracture-delivery --track origin/feature/physis-fracture-delivery 2>/dev/null || git switch feature/physis-fracture-delivery
 git pull --ff-only origin feature/physis-fracture-delivery
-python3 tools/aiverse-progress.py --mode test \
-  --build-dir build/physis-fracture-validation \
-  --test-regex '^physis_' --jobs 4
+./run-tests.sh --filter '^physis_' \
+  --build-dir build/physis-fracture-full --jobs 4 --ctest-jobs 4
 ```
 
-Check `ctest.log` for exact totals first and see whether GitHub CI passed. Keep PR #36 draft until CI and broader native acceptance; do not merge directly into main. After release validation, coordinate actual host-owned `TerraWeave PlantFallEvent` / Box3D reconciliation on an integration branch, not in PHYSIS core.
+The broad runner builds the complete desktop Debug target first, so CTest won't encounter missing PHYSIS executables from the earlier focused build. Check the first targeted report's `ctest.log` for exact totals and see whether GitHub CI passed. Keep PR #36 draft until CI and broader native acceptance; do not merge directly into main. After release validation, coordinate actual host-owned `TerraWeave PlantFallEvent` / Box3D reconciliation on an integration branch, not in PHYSIS core.
