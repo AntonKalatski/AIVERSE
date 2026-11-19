@@ -570,7 +570,8 @@ void GpuPoolWorld::tickContinuous(float dt) {
     // Rotating order prevents a busy lower-index source from always using
     // the entire shared continuous budget before later sources run.
     for(size_t scan=0;scan<count;++scan) {
-        Source& source=sources_[(first+scan)%count];
+        const uint32_t slot=uint32_t((first+scan)%count);
+        Source& source=sources_[slot];
         if(!source.active)continue;
         if(source.paused || !source.transformAttached) {
             source.lastStepPosition=source.position;
