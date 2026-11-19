@@ -31,7 +31,7 @@ public:
         if(joint.empty()||joint.size()>128 ||
            joint.find_first_of("\n\r")!=std::string::npos ||
            !std::isfinite(weight)||weight<0||weight>1 ||
-           edits_.size()>=65536 && !edits_.count(vertex))
+           (edits_.size()>=65536 && !edits_.count(vertex)))
             return false;
         edits_[vertex]={vertex,std::move(joint),weight};
         return true;
@@ -152,7 +152,6 @@ public:
             if(values.empty())
                 throw std::invalid_argument("VIVID skin weights: source weights empty");
             const double requested=edit.weight;
-            const double oldShare=values.count(destination)?values[destination]:0.0;
             double others=0;
             for(const auto& [slot,value]:values)if(slot!=destination)others+=value;
             for(auto& [slot,value]:values)
@@ -161,7 +160,6 @@ public:
             if(others==0 && requested<1.0)
                 throw std::invalid_argument(
                     "VIVID skin weights: no other joint to absorb remaining weight");
-            (void)oldShare;
             values[destination]=requested;
             std::vector<std::pair<int,double>> sorted;
             for(const auto& [slot,value]:values)if(value>0)sorted.push_back({slot,value});
@@ -169,7 +167,17 @@ public:
                 [](const auto& a,const auto& b) {
                     return a.second!=b.second ? a.second>b.second : a.first<b.first;
                 });
-            if(sorted.size()>4)sorted.resize(4);
+            if(sorted.size()>4) {
+                // A newly authored bone must not vanish merely because
+                // the original vertex already had four influences. Drop
+                // the smallest OTHER influence, then re-normalize.
+                const auto selected=std::find_if(sorted.begin(),sorted.end(),
+                    [&](const auto& entry){return entry.first==destination;});
+                if(selected!=sorted.end() &&
+                   std::distance(sorted.begin(),selected)>=4)
+                    std::iter_swap(selected,sorted.begin()+3);
+                sorted.resize(4);
+            }
             double total=0;
             for(const auto& pair:sorted)total+=pair.second;
             if(total<=0)throw std::invalid_argument("VIVID skin weights: no remaining influence");
