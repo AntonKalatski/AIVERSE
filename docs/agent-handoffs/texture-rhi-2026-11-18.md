@@ -9332,3 +9332,62 @@ a separate handoff. The user's primary AIVERSE checkout has an
 unrelated unfinished rebase and MUST remain untouched.
 Do not promote PR #21 from Draft until GPU evidence is truly passing.
 
+
+## Stage 10BC — explicit CMake opt-in hardware test registration (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification` / Draft #21.
+**Prerequisite:** Stage 10BB real Metal texture GPU fixture source and
+separate `--metal` verifier gate have been committed. Neither was
+compiled nor executed on macOS in this tool session.
+
+**Code commits:**
+- `b08d22f63958088cdf5c10af1bc95df45dc0a382` —
+  `CMakeLists.txt`: new
+  `AIVERSE_TEXTURE_METAL_GPU_TESTS` option defaults to OFF;
+  `aiverse_metal_texture_gpu_test` and its CTest
+  `metal_texture_gpu` are registered only on macOS when both
+  `AIVERSE_BUILD_TESTS` and that explicit option are ON.
+- `46611e6a2a8890649d415fe092f88564a2b4df2d` —
+  `tools/verify-texture-rhi.sh`: set the CMake option ON
+  only for `--metal`, and force OFF otherwise, including a
+  reused CMake build directory previously configured with
+  `--metal`. The normal 23-case CTest filter is unchanged;
+  hardware CTest is separate with `--no-tests=error`.
+- `30efc33b816fe6d87e6562d19b3d1fb0139910b6` —
+  `docs/texture-rhi.md`: document the opt-in CMake option
+  and update manual configure commands.
+- `7ebf5827f6df03e98309a467d5e75598f69e5a76` —
+  `skills/visuals/aiverse-texture-rhi/SKILL.md`: explain
+  that full default CTest must not run hardware tests.
+
+**Reason:** adding a `metal_texture_gpu` CTest unconditionally on
+every macOS build would make all native `ctest` runs depend on
+a Metal device or GUI / layer drawable (even if the focused 23
+test filter excluded that name). Hardware tests must instead be
+explicitly selected, with no silent GPU-unavailable pass and no
+unplanned CI failures.
+
+**Compatibility:** no RHI API, production shader, ECS, asset,
+or engine runtime changes. Default source-verification behavior
+is preserved. Users opt in by running
+`bash tools/verify-texture-rhi.sh --editor --metal --jobs 4`
+in the existing isolated macOS worktree. The standalone CMake
+alternative must configure
+`-DAIVERSE_TEXTURE_METAL_GPU_TESTS=ON` explicitly.
+
+**Actual verification:** GitHub accepted the CMake, verifier,
+documentation and skill source updates. **CMake configure,
+macOS ObjC++ compile/link, CTest execution and actual Metal
+GPU readback have NOT been performed for these new commits**.
+Previous Mac Studio editor/source CTest PASS belongs to an
+older, GPU-fixture-free commit and must not be reused as
+evidence of this stage passing.
+
+**Next exact step:** in the isolated Mac Studio worktree,
+run the opt-in `--metal` verifier, inspect detailed
+`build/texture-rhi/verify-logs/metal-gpu.log`, and fix the first
+compiler/linker/GPU error before marking any hardware gate
+passed. Keep PR #21 Draft, preserve the user's main worktree's
+unrelated incomplete rebase, and append a new handoff for
+the next result.
+
