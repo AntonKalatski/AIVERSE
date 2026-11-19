@@ -237,11 +237,11 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
                                 "aiverse_sample_virtual(tex"+std::to_string(virtualAtlasSlot)+
                                 ",tex"+std::to_string(virtualTableSlot)+
                                 ",s1,(uv),uint(uModelVt.x),uModelVt.y,"
-                                "tex1.sample(s1,(uv)))" :
+                                "tex1.sample(s1,(uv)),uint(uModelVt.z),uint(uModelVt.w))" :
                                 "aiverseSampleVirtual(tex"+std::to_string(virtualAtlasSlot)+
                                 ",tex"+std::to_string(virtualTableSlot)+
                                 ",(uv),int(uModelVt.x),uModelVt.y,"
-                                "texture(tex1,(uv)))";
+                                "texture(tex1,(uv)),int(uModelVt.z),int(uModelVt.w))";
                             code+="#define SG_SAMPLE_VIRTUAL(uv) "+sampled+"\n";
                         } else
                             code+="#define SG_SAMPLE_VIRTUAL(uv) SG_SAMPLE(uv)\n";
@@ -848,6 +848,8 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
             ModelVirtualTextureUniforms params;
             params.layer = float(vt.layer);
             params.gutterPixels = vt.gutterPixels;
+            params.addressU = float(uint32_t(vt.addressU));
+            params.addressV = float(uint32_t(vt.addressV));
             const int atlasSlot=activeGraph ?
                 kGraphTextureSlot+int(activeGraph->textures.size()) : 13;
             if (atlasSlot+1 < 16) {
