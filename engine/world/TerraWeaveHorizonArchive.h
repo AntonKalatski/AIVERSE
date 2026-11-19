@@ -14,8 +14,8 @@
 namespace aiverse::terraweave {
 namespace horizon_archive_detail {
 
-inline constexpr uint32_t kMagic=0x37485754u; // "TWH7" in little endian
-inline constexpr uint32_t kVersion=7;
+inline constexpr uint32_t kMagic=0x38485754u; // "TWH8" in little endian
+inline constexpr uint32_t kVersion=8;
 inline constexpr size_t kHeaderBytes=24; // magic,version,fingerprint,checksum
 inline constexpr size_t kMaxBytes=20u*1024u*1024u;
 
@@ -81,7 +81,12 @@ inline void validate(const HorizonBake& b) {
                       s.zQ16cm < -kWorldLimitCm*65536 ||
                       s.zQ16cm > kWorldLimitCm*65536 ||
                       s.nearHeightCm < -kWorldLimitCm ||
-                      s.nearHeightCm > kWorldLimitCm;
+                      s.nearHeightCm > kWorldLimitCm ||
+                      (s.nearNormalValid &&
+                       (s.nearSlopeXPermille < -1000000 ||
+                        s.nearSlopeXPermille > 1000000 ||
+                        s.nearSlopeZPermille < -1000000 ||
+                        s.nearSlopeZPermille > 1000000));
            }) ||
        std::any_of(b.nearClipRects.begin(),b.nearClipRects.end(),
            [](const RectCm& r) {
@@ -184,7 +189,7 @@ inline std::vector<uint8_t> encodeHorizonArchive(
                 bake.clusters.size()*60+bake.terrainVertices.size()*32+
                 bake.nearOwnedQuads.size()+
                 bake.nearClipRects.size()*32+
-                bake.nearSeamSamples.size()*20+140);
+                bake.nearSeamSamples.size()*32+140);
     put32(out,kMagic);
     put32(out,kVersion);
     put64(out,fingerprint);
@@ -228,6 +233,9 @@ inline std::vector<uint8_t> encodeHorizonArchive(
     for(const auto& s:bake.nearSeamSamples){
         putI64(out,s.xQ16cm);putI64(out,s.zQ16cm);
         putI32(out,s.nearHeightCm);
+        putI32(out,s.nearSlopeXPermille);
+        putI32(out,s.nearSlopeZPermille);
+        put32(out,s.nearNormalValid?1u:0u);
     }
     if(out.size()>kMaxBytes)
         throw std::invalid_argument("TerraWeave Horizon archive exceeds budget");
@@ -326,14 +334,20 @@ inline HorizonBake decodeHorizonArchive(
         r.maxX=getI64(bytes,at);r.maxZ=getI64(bytes,at);
         b.nearClipRects.push_back(r);
     }
-    if(nearSeamCount>(bytes.size()-at)/20)
-        throw std::invalid_argument("TerraWeave Horizon near seam heights truncated");
+    if(nearSeamCount>(bytes.size()-at)/32)
+        throw std::invalid_argument("TerraWeave Horizon near seam samples truncated");
     b.nearSeamSamples.reserve(nearSeamCount);
     for(uint32_t i=0;i<nearSeamCount;++i) {
         HorizonBake::NearSeamSample s;
         s.xQ16cm=getI64(bytes,at);
         s.zQ16cm=getI64(bytes,at);
         s.nearHeightCm=getI32(bytes,at);
+        s.nearSlopeXPermille=getI32(bytes,at);
+        s.nearSlopeZPermille=getI32(bytes,at);
+        const uint32_t nearNormal=get32(bytes,at);
+        if(nearNormal>1u)
+            throw std::invalid_argument("TerraWeave Horizon near normal flag");
+        s.nearNormalValid=nearNormal!=0u;
         b.nearSeamSamples.push_back(s);
     }
     if(at!=bytes.size())
