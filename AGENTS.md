@@ -1964,3 +1964,11 @@ Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. 
   compiler, CTest, GPU, sanitizers or visual parity. PR #22 remains
   Draft. Next Stage 119 audits unleased renderer RTT fallback and other
   resource owners before feature completion and comprehensive tests.
+
+## MotionWeave / Universal View Stage 119 — playback hot reload and GPU fallback
+
+- Continue from [Stage 119 handoff](docs/agent-handoffs/animation-stage119-playback-continuity-2026-11-19.md). Branch: `feature/universal-ecs-animation-pipeline`, PR #22 Draft. Review `main` ancestry before changing files; never force push or delete concurrent team changes.
+- On SAME presentation source generation, `MotionWeaveSourceBridge` may capture a healthy `AnimationGraphInstance::PlaybackSnapshot` before compatible Model/Graph replacement. It is restored once after graph reset; matching named states and node/clip phases survive, but old Pose, IK, native/montage state and events MUST NOT be copied. Changed generation/rig hierarchy gets a full reset. The host must keep old Models alive until synchronous bridge migration finishes and worker jobs have joined.
+- `Renderer3D::retireRenderTargets` uses its GPU-fenced owner normally. Without the owner, deletion is allowed only after `waitForResourceIdle()` succeeds. Unsupported/failed barriers deliberately orphan the handles; `unleasedTargetIdleFailures` and `targetRetirementOrphanPairs` diagnose this condition.
+- Independent `RenderTexture` immediately destroys GPU upload textures and per-draw vertex buffers after command submission; handle its fence-aware lifetime as a separate Stage 120. Do not modify SpectraFX, NEREID or Prisma owners without checking concurrent agents' code.
+- **NOT TESTED:** no local CMake configure, C++ compiler/link, CTest, CI, native GPU parity, sanitizer or performance test. Keep PR #22 Draft until the entire feature suite is finished and successfully validated.
