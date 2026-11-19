@@ -26,6 +26,7 @@ struct Frame { float u0, v0, u1, v1; int sprite = -1; };
 
 void ParticleSystem::render(const FxFog& fog) {
     auto& I = *impl_;
+    if(I.dev && !deviceLeaseValid(*I.dev))return; // expired GPU epoch, no draw
     stats_.drawn = stats_.batches = stats_.drawCalls = 0;
     stats_.fill = 0;
     stats_.trailQuads = stats_.meshVerts = 0;
