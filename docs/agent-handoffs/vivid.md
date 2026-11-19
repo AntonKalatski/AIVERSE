@@ -726,3 +726,21 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
 - **Tests actually run: NOT RUN** (remote GitHub source edit only). No compiler, GPU, exact-runtime or frame time claims. Use `bash tools/vivid-validate.sh` on native Mac, then `--full` after fixes.
 - Limitations: mesh must be **closed**, in the same local coordinate system as the groom. This is a simple CPU O(strand-segments × constraint-passes × triangles) implementation with naive parity ray tests; ray-edge degeneracy, winding-independent odd-parity tests on non-manifold geometry, thin shells, moving/skinned colliders, backface contact, self-collision, neck/cloth integration and BVH are not production-ready. Root remains pinned, so if the imported closed mesh encloses roots, segment separation may be large; a scalp attachment/transfer rig is required. The Creator UI does **not** automatically pass imported model geometry into this opt-in API.
 - Next bounded milestone 6I: BVH or signed-distance collision acceleration, coordinate-space/skin-pose adaptation, explicit collider mesh selection in Creator, tests for moving collision and deterministic dt subdivision. Following separate tracks: measured multilayer skin and corneal refraction with depth, strand hair BRDF, rig/morph/LOD authoring UI. Do not claim MetaHuman equivalence.
+
+
+## Stage 6I — 2026-11-19 — DNA sclera color integration
+
+- Branch: `feature/vivid-digital-humans`, main unchanged.
+- Code commit `076b91bbd479db68343102d237e4461bd3515e27` (`HumanMaterials.cpp`): skin/iris/cornea/hair shader paths were already present; this bounded fix makes `HumanEyes::scleraRedness` affect the actual PBR sclera baseColor, rather than only the iris ShaderGraph's internal sclera fallback.
+- Regression commit `636cc177b534fa68356ed72c87d6efb1fbd5c485` (`tests/vivid/human_appearance.cpp`): verifies green/blue attenuation for authored sclera redness 0→1.
+- Actual compile/CTest/Metal pixel validation: **NOT RUN**. This is *not* measured skin diffusion, true cornea refraction or strand scattering; these larger shading targets remain open.
+- Next: build on Mac, render matched eye screenshots, evaluate pupil/tear-film and cornea against licensed realistic reference assets, then consider depth-aware corneal refraction without changing existing opt-in PBR defaults.
+
+## Stage 6J — 2026-11-19 — Creator facial channel authoring
+
+- Branch: `feature/vivid-digital-humans`; code commit `d93ecd489ba84e0bc39e58eb6d15cfcfb0e8def7` (`tools/vivid-creator/main.cpp`).
+- Creator includes an expandable per-channel authoring UI for the canonical 52 `Face.h` channels. Each drag commits via `HumanCreatorSession` and therefore participates in DNA save/load + undo/redo. The runtime installs DNA defaults in the Tracking layer before interactive jaw/blink/smile overrides; a reset button restores zero default channels.
+- Contracts: canonical ARKit channel order unchanged; MotionWeave still owns node pose; `HumanDNA` serialisation schema version unchanged and existing `expressionRest` array reused.
+- Actual native Creator compile, GUI and pixel acceptance: **NOT RUN**. No new dedicated UI automation or display screenshot exists for this change; the prior Stage 5J passes do not verify it.
+- Limits: 52-channel authoring changes semantic weights, not the imported vertex-to-morph `ShapeRoute` map, skeletal bind pose, 3D morph sculpt geometry, shape LOD topology, or animation retargeting. Current Hair High/Med/Low buttons select pre-existing groom quality, rather than authoring production mesh LOD assets.
+- Next: add visual inspector/editor for `ShapeRoute` and joint-to-morph binding, editable preview LOD and external asset publishing, then cross-backend tests. Never claim full MetaHuman Creator parity from channel sliders alone.
