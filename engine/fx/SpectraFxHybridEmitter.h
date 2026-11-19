@@ -155,7 +155,11 @@ public:
             if(!scheduled) {status_="Invalid GPU emission frame";return false;}
         }
         if(slots_.step(dt,config_.environment)) {
-            if(config_.gpuSortAlpha && slots_.activeCount()>0) {
+            // A single visible alpha particle needs no ordering. Culling
+            // also suppresses sort work while particle lifetime still
+            // advances on the GPU.
+            if(config_.gpuSortAlpha && lodVisible_ &&
+               slots_.activeCount()>1) {
                 if(!sortCameraValid_ ||
                    !alphaSort_.prepare(slots_.evolution(),
                                        sortCameraEye_,sortCameraForward_)) {
@@ -166,7 +170,7 @@ public:
                 }
                 ++sortedFrames_;
             }
-            if(compaction_.ready()) {
+            if(compaction_.ready() && lodVisible_ && slots_.activeCount()>0) {
                 if(compaction_.prepare(slots_.evolution())) ++compactionFrames_;
                 else ++compactionFallbacks_;
             }
