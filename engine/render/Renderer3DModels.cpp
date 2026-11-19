@@ -1747,7 +1747,7 @@ void Renderer3D::prepareGpuModelDraws() {
     static const bool adaptiveGpuIcb = [] {
         const char* flag = std::getenv("AIVERSE_GPU_ICB_ADAPTIVE");
         return flag && std::strcmp(flag, "1") == 0;
-    }();
+    }() || autoBatch;
     static const uint32_t minGpuIcbCommands = [] {
         const char* raw = std::getenv("AIVERSE_GPU_ICB_MIN_COMMANDS");
         if (!raw || !*raw) return 2u;
@@ -2596,7 +2596,9 @@ void Renderer3D::renderModels(int phase) {
         // disabled GPU path still incurs compute+per-draw API overhead.
         static const bool adaptiveGpuIcbFallback = [] {
             const char* flag = std::getenv("AIVERSE_GPU_ICB_ADAPTIVE");
-            return flag && std::strcmp(flag, "1") == 0;
+            const char* autoFlag = std::getenv("AIVERSE_BATCH_AUTO");
+            return (flag && std::strcmp(flag, "1") == 0) ||
+                   (autoFlag && std::strcmp(autoFlag, "1") == 0);
         }();
         if (!adaptiveGpuIcbFallback &&
             phase == 1 && modelMultiDrawEnabled_ && geometryMainView_ &&
