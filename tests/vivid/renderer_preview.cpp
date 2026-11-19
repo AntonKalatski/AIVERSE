@@ -6,6 +6,7 @@
 #include "engine/platform/Platform.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/render/GlobalGeometryPool.h"
+#include "engine/render/ModelVertexStreamOverride.h"
 #include "engine/character/vivid/GpuMorphMeshStream.h"
 #include "engine/character/vivid/FaceShapeBinding.h"
 #include <aiverselib/motionweave/MotionWeave.h>
@@ -104,6 +105,12 @@ struct Preview {
     std::vector<Capture> captures;
     bool failed = false, initialized = false, complete = false, animated = false;
     int frame = 0;
+    // Capture stages advance only after the callback confirms a rendered
+    // image. Pipeline compilation may take many frames on first launch.
+    int stage = 0; // baseline, morph, MotionWeave
+    int readyFrames = 0;
+    int motionFrames = 0;
+    bool capturePending = false;
 
     void initialize(gfx::Device& dev) {
         device = &dev;
@@ -117,6 +124,7 @@ struct Preview {
         renderer.setModelInstancingEnabled(false);
         renderer.setModelLodEnabled(false);
         renderer.setShadowQuality(render::ShadowQuality::Medium);
+        renderer.setShadowBounds({-5.0f,-2.0f,-5.0f},{5.0f,5.0f,5.0f});
         renderer.setTraceEnabled(false);
         renderer.lighting.fogDensity = 0;
         renderer.lighting.sunIntensity = 1.4f;
@@ -153,6 +161,15 @@ struct Preview {
         require(render::uploadModel(dev,*model,true), "model GPU upload failed");
         require(!model->geometryPoolPage && !model->gpuBaseVertex &&
                 !model->gpuFirstIndex, "VIVID needs dedicated ModelVertex storage");
+        const auto preflight = render::modelVertexOverrideStatus(
+            *model, model->vb, static_cast<std::uint32_t>(model->vertices.size()));
+        if(preflight != render::ModelVertexOverrideStatus::Ready)
+            throw std::runtime_error("VIVID preview model vertex metadata invalid: status=" +
+                                     std::to_string(int(preflight)));
+        std::printf("VIVID preview primitive range: first=%u count=%u total=%zu\n",
+                    model->meshes[0].primitives[0].firstVertex,
+                    model->meshes[0].primitives[0].vertexCount,
+                    model->vertices.size());
         require(morph.initialize(dev,*shapes,base), "VIVID GPU morph init failed");
         require(mesh.initialize(dev,model->vertices), "VIVID 60B GPU stream init failed");
         render::MeshBuilder ground;
@@ -189,6 +206,17 @@ struct Preview {
             }
             captures.push_back({number,std::move(pixels)});
             std::printf("VIVID preview captured %s\n",capturePath(suffix.c_str()).c_str());
+            // Keep a capture's visual state until the asynchronous callback:
+            // a Metal screenshot can be delivered 1-2 frames after request.
+            capturePending = false;
+            if (stage != number) {
+                failed = true;
+                std::fprintf(stderr, "VIVID preview capture stage mismatch\n");
+                platform::requestQuit();
+                return;
+            }
+            ++stage;
+            readyFrames = 0;
             if(captures.size()==3) {
                 std::sort(captures.begin(),captures.end(),
                           [](const Capture& a,const Capture& b){return a.index<b.index;});
@@ -215,21 +243,27 @@ struct Preview {
     }
 
     void frameStep(gfx::Device& dev) {
-        if(failed || complete || frame>80) {
-            if(frame>80 && !complete)failed=true;
+        if(failed || complete || frame>400) {
+            if(frame>400 && !complete) {
+                std::fprintf(stderr,
+                    "VIVID preview: pipeline/capture timeout at stage=%d pending=%d readyFrames=%d motionFrames=%d\n",
+                    stage,int(capturePending),readyFrames,motionFrames);
+                failed=true;
+            }
             platform::requestQuit();
             return;
         }
         // Keep the exact same rig pose in baseline & morph captures,
         // then advance the single MotionWeave player for the third capture.
-        const bool motion = frame>=21;
+        const bool motion = stage >= 2;
         const float dt = motion ? 0.02f : 0.0f;
+        if (motion) ++motionFrames;
         motionweave::MotionWeave::update(presentation,dt);
         const auto& pose=presentation.get<motionweave::AnimationPoseComponent>(actor);
         require(pose.valid && pose.matrices.size()==model->nodes.size(),
                 "MotionWeave failed to produce a usable pose");
         if(motion && pose.local[0].t.y>0.05f)animated=true;
-        const bool faceActive=frame>=11;
+        const bool faceActive=stage>=1;
         require(face.set(vivid::Layer::Tracking,vivid::Channel::JawOpen,faceActive?1.f:0.f),
                 "jaw source invalid");
         require(face.set(vivid::Layer::Tracking,vivid::Channel::EyeBlinkRight,faceActive?1.f:0.f),
@@ -260,18 +294,28 @@ struct Preview {
         pass.clearColor[0]=.08f;pass.clearColor[1]=.1f;pass.clearColor[2]=.13f;
         renderer.render(pass);
         const auto& profile=renderer.profile();
-        if(frame>=4 && (!profile.draws[0] || !profile.draws[1])) {
-            std::fprintf(stderr,"VIVID preview missing shadow/colour model submissions: %u/%u\n",
-                         profile.draws[0],profile.draws[1]);
-            failed=true;
-        }
+        // A newly compiled Metal model pipeline can be Pending for several
+        // frames. No blank or partially warmed frame may enter the image
+        // comparison, but warmup itself is not a rendering failure.
+        const bool bothPasses = profile.draws[0] > 0 && profile.draws[1] > 0;
+        readyFrames = bothPasses ? readyFrames + 1 : 0;
+        if (frame % 45 == 0 && !bothPasses)
+            std::printf("VIVID preview waiting for colour/shadow pipelines: frame=%d stage=%d shadow=%u colour=%u pending=%d\n",
+                        frame,stage,profile.draws[0],profile.draws[1],
+                        int(renderer.hasPendingModelPipelineJobs()));
         if(!renderer.modelError().empty()) {
             std::fprintf(stderr,"VIVID preview Renderer3D: %s\n",renderer.modelError().c_str());
             failed=true;
         }
-        if(frame==6)capture(dev,"-baseline",0);
-        if(frame==17)capture(dev,"-morph",1);
-        if(frame==39)capture(dev,"-motionweave",2);
+        const bool motionReady = stage != 2 || (motionFrames >= 18 && animated);
+        if (!capturePending && stage < 3 && readyFrames >= 4 && motionReady) {
+            capturePending = true;
+            const char* suffix = stage == 0 ? "-baseline" :
+                                 stage == 1 ? "-morph" : "-motionweave";
+            std::printf("VIVID preview render ready for capture: stage=%d frame=%d shadow=%u colour=%u\n",
+                        stage,frame,profile.draws[0],profile.draws[1]);
+            capture(dev,suffix,stage);
+        }
         dev.endPass();
         ++frame;
     }
