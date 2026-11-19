@@ -907,11 +907,14 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     // Editor Scene is a lower-priority preview than the live Game viewport.
     // The cap applies only to this view's two output HDR histories.
     prisma_.setViewQualityPolicy(1ULL,{64,128});
-    const auto sceneModelAssets=view_.ownedModelGpuMemoryStats(*dev_);
+    const auto sceneAssets=view_.ownedPresentationGpuMemoryStats(*dev_);
     const auto sceneFxImages=fxTextures_.ownedGpuMemoryStats();
+    const auto sceneFxBuffers=gameFx_.ownedGpuMemoryStats();
     prisma_.setExternalPresentationAssetsGpuMemory(
         render::GpuOwnedMemoryCounter::saturatingAdd(
-            sceneModelAssets.knownBytes(),sceneFxImages.knownBytes()));
+            render::GpuOwnedMemoryCounter::saturatingAdd(
+                sceneAssets.knownBytes(),sceneFxImages.knownBytes()),
+            sceneFxBuffers.knownBytes()));
     const auto sceneRendererMemory=r3d_.residentMemoryStats();
     prisma_.setExternalRendererGpuMemory(
         sceneRendererMemory.liveTextureKnownBytes+
@@ -1031,11 +1034,14 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewI
     prisma_.setViewQualityPolicy(prismaViewId,
         {uint8_t(prismaViewId==1ULL?64:224),
          uint32_t(prismaViewId==1ULL?128:256)});
-    const auto gameModelAssets=view_.ownedModelGpuMemoryStats(*dev_);
+    const auto gameAssets=view_.ownedPresentationGpuMemoryStats(*dev_);
     const auto gameFxImages=fxTextures_.ownedGpuMemoryStats();
+    const auto gameFxBuffers=gameFx_.ownedGpuMemoryStats();
     prisma_.setExternalPresentationAssetsGpuMemory(
         render::GpuOwnedMemoryCounter::saturatingAdd(
-            gameModelAssets.knownBytes(),gameFxImages.knownBytes()));
+            render::GpuOwnedMemoryCounter::saturatingAdd(
+                gameAssets.knownBytes(),gameFxImages.knownBytes()),
+            gameFxBuffers.knownBytes()));
     const auto gameRendererMemory=r3d_.residentMemoryStats();
     prisma_.setExternalRendererGpuMemory(
         gameRendererMemory.liveTextureKnownBytes+
