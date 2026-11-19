@@ -2197,3 +2197,32 @@ The coordinates above are game-provided signed **world centimetres**.
 - Results cover only **loaded forest patches**. An unloaded tree or a tree outside the configured residency area cannot be found through this presentation-only API; collision, harvesting at long range and persistent jobs remain responsibilities of the authoritative gameplay/world systems.
 
 The generic `WorldScene::forestScene()` accessor from Stage 24 gives native projects access to these methods for opt-in worlds. For huge worlds, if frequent queries become hot, consider an optional per-chunk spatial index after profiling; no claimed performance benchmarks or compiler/CTest/GPU validation have been performed in this features-first stage.
+
+## Stage 27 — shared canopy phenology for Flora and Horizon
+
+**Source committed; compilation, CTest, screenshots and GPU benchmarks intentionally deferred.**
+The engine now accepts a **host-owned seasonal appearance state**, not a built-in calendar or weather simulation. PHYSIS and game-specific time-of-year systems can supply the same small POD via a genre-independent bridge:
+
+```cpp
+#include "engine/world/TerraWeavePhenology.h"
+// A non-default fall/autumn profile; choose values in the host.
+aiverse::terraweave::CanopyPhenology autumn;
+autumn.broadleafCoverPermille = 480;
+autumn.evergreenCoverPermille = 960;
+autumn.tintRPermille = 1350;
+autumn.tintGPermille = 810;
+autumn.tintBPermille = 580;
+worldScene.setVegetationPhenology(autumn);
+```
+
+The above values are an **example**, not a baked climate forecast. Each cover value is in 0..1000; RGB tint multipliers are integer permille 0..2000; 1000 = identity. `validateCanopyPhenology`, `canopyCoverPermille` and `tintCanopyChannel` are pure C++20 helpers in `engine/world/TerraWeavePhenology.h`. They do not include PHYSIS, RTS, FPS, GPU or platform timing. The caller owns climate, seasonal chronology, persistence and replication.
+
+The opt-in `world::WorldScene::setVegetationPhenology(state)` stores the canonical policy, forwards it to `TerraWeaveForestScene::setPhenology`, and queues a Horizon source revision for the next `WorldScene::update`. Unchanged state is a no-op. Near Flora updates shared *per-species material overrides* in `ArborForestAdapter` without rescatters or async worker cancellation. Conifer prototypes use the evergreen coverage; other shapes use broadleaf coverage. Bark material stays intact, while the leaf material receives RGB tint and optional blended alpha when canopy cover is below full. Overrides must not be changed after submitting draws to Renderer3D but before that frame is rendered, because `ModelDraw::materials` stores a borrowed pointer.
+
+For near azimuth impostors, the same policy updates the **existing shared per-view billboard material overrides**; the source atlas includes bark and foliage on one quad, so coverage alpha fades the entire billboard rather than just its leaves. This is a known LOD-parity limitation, **not** a leaf-only billboard mask or per-pixel seasonal foliage solution. It adds no atlas, mesh or extra draw pass by design. Partially transparent canopy may incur standard blended-render overdraw; benchmark in the later test phase.
+
+Far Horizon uses the same immutable `CanopyPhenology` captured in `HorizonSurfaceSources::phenology`: each procedural broadleaf/conifer canopy crown is **deterministically thinned** by the corresponding cover value, and resulting leaf RGB pixels are tinted before writing the existing shared RGBA atlas. Occasional exposed trunks remain untouched. Heightfields, terrain geometry, physics, material count, triangle budgets and near-seam welding do not change. `HorizonSurfaceSources` appends the policy to its existing optional callbacks; native projects that do not supply it retain default summer-like output. Seasonal changes request a bounded worker re-bake; old GPU proxy stays visible until replacement succeeds.
+
+**TWH8 cache safety:** the current static archive format/fingerprint does *not* serialize the season. The Horizon worker therefore deliberately **disables static disk atlas read/write while a non-default phenology is active**, avoiding false summer archive hits. Default state retains the existing TWH8 path. No archive version/layout migration occurs. Native projects wanting prebaked multiple seasons would need an explicit future archive key and asset naming policy.
+
+**Remaining limitations:** Per-tree `ForestRegrowthSchedule` still controls individual growth scale, independent from seasonal leaf cover. Spring/autumn transitions are immediate material/atlas policy changes rather than continuous blended dual-atlas animations; near impostor cards fade trunk as well as canopy; distant HLOD crown types are procedural/bio-climate approximations, not identities of actual nearby species. Individual harvested trees remain near-only until far HLOD supports individual tree metadata, while rectangular clearings are already shared across near/far. This stage is **features first** — no compiler, CTest, GPU screenshot or performance pass was observed.
