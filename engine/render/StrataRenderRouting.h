@@ -40,6 +40,8 @@ struct GeometryDrawRange {
 };
 struct RenderCandidate {
     const Model* source = nullptr; // borrowed identity, never dereference after scene unload
+    std::string sourceKey; // required for a FRESH GPU sidecar lease check
+    RenderPass pass = RenderPass::MainOpaque;
     gfx::BufferHandle vertexBuffer, indexBuffer;
     uint32_t mesh = 0, primitive = 0, material = 0;
     uint64_t geometryRevision = 0, materialRevision = 0;
@@ -64,6 +66,7 @@ bool prepareRenderCandidate(const Model& source, const ModelAsset& staged,
 // submitted: pipeline/material/command ownership stays with Renderer3D.
 // If a zero-range cull is correct, the output is an empty command vector.
 bool encodeRendererCommands(const Model& liveSource,
+                            const GpuMetadataScene& liveResidency,
                             const RenderCandidate& candidate,
                             uint32_t rendererInstanceSlot,
                             const RenderRouteGate& gate,
