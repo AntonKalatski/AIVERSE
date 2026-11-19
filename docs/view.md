@@ -1762,3 +1762,103 @@ on unsupported backends and is not an exhaustive GPU error probe.
 The estimated budget is advisory and does not replace real backend
 allocation/tracking or force release of unresolved GPU resources.
 Full authored animated character/RTS view retirement is not complete.
+
+## Stage 106 — safe resource-owner registrations and explicit failed GPU fence diagnostics
+
+### Expiring owner registrations
+
+`render::ModelResourceCache` now exposes a non-owning lifetime
+marker via `lifetimeToken()`. `RenderResourceOwnerGroup` stores
+`weak_ptr<const void>` markers alongside raw cache addresses and
+checks expiration before dereferencing. A cache invalidates its marker
+at the start of its destructor. `add` deduplicates *live*
+registrations; a newly constructed cache reusing the same address as
+an expired one is a distinct owner. `size()`, `snapshotOwners()`
+and `snapshot(device)` ignore dead caches, and diagnostics report
+`expiredRegistrations` without dereferencing them.
+
+**Important thread boundary:** registration, cache destruction and
+group snapshot are still device-owner-thread operations. A weak marker
+alone does not provide a thread-safe GPU cache snapshot or guard
+against a destructor racing with a snapshot on another thread.
+`RenderResourceOwnerGroup` remains an observer, not a cache owner;
+it never takes responsibility for GPU shutdown.
+
+### Failure-aware GPU completion
+
+`gfx::ResourceRetirementStatus` is now a three-state
+`Pending / Complete / Failed` API, reported through the additive
+`gfx::Device::resourceRetirementStatus(token)` virtual method.
+The default maps older backends' boolean completion status to
+Complete or conservatively Pending. Metal checks its command-buffer
+completion callback's atomic status; Vulkan distinguishes
+`VK_NOT_READY` from non-success fence errors (including device
+loss); GL checks `glClientWaitSync` results and treats
+`GL_TIMEOUT_EXPIRED` as Pending, `GL_WAIT_FAILED` as Failed.
+
+`AsyncResourceRetirementQueue::collect` retains its earlier
+five-callback API, and now has an overload accepting an explicit
+`failed(token)` predicate. A token-confirmed failure is marked
+*once* per batch; the queue reports `failedFenceBatches` and
+`unresolvedFailedFences` separately from routine
+`pendingPolls` or unsupported-token fallback counters. Failed
+batches are sticky: they can NEVER be released by a later token
+completion or elapsed time. They are kept until the backend
+provides a successful full-device `waitForResourceIdle()`
+barrier, whereupon `drain` can safely free the models.
+
+For completed tokens, the existing backend
+`endResourceRetirement(token)` remains valid. The additive
+`abandonRetirementTokenAfterIdle(token)` is a narrowly-scoped
+native marker cleanup hook invoked ONLY after a successful full
+GPU-idle barrier; Metal discards callback bookkeeping, Vulkan
+destroys the now-idle fence and GL deletes the idle sync object.
+This does not turn a failed fence into proof of completion.
+`ModelResourceCache` uses the explicit three-state probe and
+fence-failure predicate when collecting retired models, and
+post-idle cleanup when draining shutdown resources.
+
+`RenderResourceGroupStats::health` now distinguishes
+`Ready`, `PendingGpuRetirement`,
+`RetirementFenceFailed` and `DeviceUnhealthy`.
+Backend-unhealthy takes precedence; a real unresolved fence
+failure prevents NEW source admission even if the device
+reports healthy. The editor shows failures separately from
+normal async completion and resource-pressure status; its
+statistics panel exposes per-scene failed token batches.
+
+### Additional canonical View consumer
+
+The material-library preview in `game::Portrait::renderMaterial`
+now assembles its existing authored `ModelDraw` (preview shape,
+material override, team and rotation) and submits through
+`Portrait::renderAppearance` / `aiverse::View`, using the same
+camera, clear colour and portrait render targets. The actual
+`view.applyMaterial` authoring still resides in the compatibility
+adapter. This unifies another static preview with native model
+and precomputed-pose consumers without introducing a second
+MotionWeave animation evaluation or changing gameplay/saves.
+
+### Validation status and caveats
+
+New source fixtures `tests/render/resource_owner_lifetime.cpp`
+(CTest `render_resource_owner_lifetime`) and
+`tests/render/retirement_failed_token.cpp` (CTest
+`render_retirement_failed_token`) cover weak owner expiry/
+replacement and explicit failed-token retention followed by
+confirmed GPU idle recovery. Normal CMake targets were registered.
+All compilation, CTest/`run-tests.sh`, Metal/Vulkan/GL/WebGL2
+GPU checks, editor screenshots, memory profiling, device-loss
+stress and sanitizer checks are **NOT RUN** by the user's
+features-first request. Source updates do not establish green
+CI or production GPU lifetime safety.
+
+Remaining limitations: weak lifetime checks do not make
+cross-thread destruction safe; explicit failure states only cover
+backends that implement the three-state probe; tokens cannot
+include commands not yet submitted on their GPU queue; no
+automatic lost-device recreation exists; group memory numbers
+are source-derived estimates, not measured driver allocations.
+`RtsView` is still needed for complex authored animation and
+visual effects. The next agent must validate with real build and
+hardware before claiming parity or merging.
