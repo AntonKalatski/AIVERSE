@@ -2753,3 +2753,33 @@ cmake --build build/texture-rhi --target aiverse_metal_texture_gpu_test --parall
 ctest --test-dir build/texture-rhi --verbose --output-on-failure --no-tests=error -R '^metal_texture_gpu$'
 ```
 
+
+### Stage 10BJ — on-device Metal virtual texture feedback PASS (2026-11-19)
+
+The user ran the newly extended `metal_texture_gpu` native CTest
+on the Mac Studio following Stage 10BI. Actual test report:
+`1/1 Test #122: metal_texture_gpu ... Passed 0.45 sec`,
+`100% tests passed, 0 tests failed`, `Total Test time 0.46 sec`.
+The provided tail of the verbose output showed a real
+`VT GPU feedback RGBA8 ID` readback with
+`submit_ms=7.758`, `callback_wait_ms=19.502`,
+`poll_frames=2`, `compare_ms=0.030`, and
+`gpu_command_ms=0.005`. The VT acceptance stage reported
+`VT feedback GPU acceptance_total_ms=74.085`,
+fixture `393.549 ms` and total CTest `0.45 s`.
+
+**Result interpretation:** the single opt-in hardware CTest is
+confirmed PASS on that machine with the added real feedback
+rendering/decoding coverage. The excerpt does not separately show
+the valid-ID and invalid-UV probe lines or device name, so it
+cannot be used to claim individual per-probe timings. The earlier
+user-provided full log explicitly identified an Apple M3 Ultra;
+the current report does not repeat the device identification.
+No production source changed in this record.
+
+**Still not validated:** full physical VT atlas and page-table GPU
+publication, disk-backed page streaming, actual GPU ICB/Shader Graph
+resource mixing, other backends or a multi-frame game performance
+benchmark. Direct feedback ID readback is fast on the GPU, but
+the 0.45 s CTest wall time is not a texture transfer benchmark.
+
