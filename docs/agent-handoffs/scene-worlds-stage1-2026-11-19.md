@@ -4,7 +4,7 @@ Date: 2026-11-19
 Repository: `chromealex/AIVERSE`  
 Branch: `feature/scene-runtime-multiworld`  
 Base: `main` (branch created directly from current remote main)  
-Most recent implementation/docs commit before this handoff: `7b09ca5d406b95c716c1eec0ca6d75a85eef0c13`  
+Most recent source-code correction: `5d3fd0c9a65d331f551add1614829d927fcd734a`  
 Status: **code committed, native build and CTest NOT run**.
 
 ## Intent and ownership
@@ -74,8 +74,12 @@ not collapse those concepts. `SceneHierarchy` remains per ECS World.
 - `2e9d10cfa44934a70e0d2ee3cefb0318443bae0a` — host reentrancy guard.
 - `27f6609396a73e74e6a9e71a54147a46b787b676` — architecture/API doc.
 - `7b09ca5d406b95c716c1eec0ca6d75a85eef0c13` — scoped AGENTS.
+- `f080ce0d09afe86abec3d0466dafcab85bc1667a` — initial stage handoff.
+- `5d3fd0c9a65d331f551add1614829d927fcd734a` — source comment clarifying rollback ID timeline.
+- `e7bc98b43c366838ce2e3f66ccf313ab4b6d56b6` — architecture doc clarification.
+- `9f3e649dabbb07324dea49acf0b5768ef25da945` — handoff clarification.
 
-No runtime build or execution has occurred in this environment; there
+Remote GitHub Actions reported zero workflow runs on this branch as of this handoff; no native build or execution has occurred in this environment. There
 is no native test output to report. **Do not label Stage 1 tested.**
 
 ## First action for next agent / user test
