@@ -943,11 +943,13 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
     spectraPreviewFrameOpen_=true;
     if(!spectraPreviewPaused_ && !spectraPreviewFrozen_ &&
        (spectraPreviewNextBurst_<0 ||
-       (spectraPreviewLoop_ && time_>=spectraPreviewNextBurst_))) {
+       (spectraPreviewLoop_ &&
+        spectraPreviewVisualSeconds_>=spectraPreviewNextBurst_))) {
         if(!spectraPreviewGpu_->burst("__editor_gpu_preview",
                 spectraPreviewPosition_,{0,1,0},{1,1,1,1},&spectraPreviewParams_))
             ws_.log("spectrafx","Metal preview emission: "+spectraPreviewGpu_->reason(),true);
-        spectraPreviewNextBurst_=time_+0.5;
+        // Repeat using visual elapsed time, not the editor's wall clock.
+        spectraPreviewNextBurst_=spectraPreviewVisualSeconds_+0.5;
     }
     // Freeze stops visual time; Pause only blocks future births while living
     // particles continue updating. Neither state changes gameplay simulation.
