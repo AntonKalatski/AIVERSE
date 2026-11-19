@@ -1154,3 +1154,34 @@ continue using the legacy path pending visual parity tests.
 
 **NOT COMPILED OR TESTED:** no measured speedup or real rig
 validation is claimed. See [Stage 123 handoff](agent-handoffs/animation-stage123-compiled-retarget-cache-2026-11-19.md).
+
+## Stage 124 — retarget map authoring errors and source-pose scratch
+
+Native projects can create a best-effort source-visual
+`ModelPoseRetarget` with
+`makeNamedModelPoseRetarget(source,visual,translationScale)`.
+Every visual node is resolved by its authored source bone
+name; unmatched nodes are set to -1 and remain in the
+visual bind pose. Morph target correspondence is deliberately
+NOT inferred from names or mesh indices — explicit
+sourceMorphForVisual authoring remains required.
+
+After an unsuccessful `compileModelPoseRetarget`, use
+`describeModelPoseRetarget` with the same models,
+source/visual generations and authored mapping to obtain
+`ModelPoseRetargetIssue`, the first failing visual
+node, and mapped/unbound totals. This is an offline/editor
+publication helper, not a per-frame analyzer. RTS now
+uses the same name-map builder for ModelChoice LODs and
+reports rejected compiled maps through deduplicated
+per-type warnings, preserving legacy LOD visuals
+pending native editor comparison.
+
+Compiled runtime retarget output reuses Pose/matrix capacity
+and a per-View scratch owner with nested-call isolation;
+it does not change skin inverse-binds, modify source
+AnimationGraph clocks or make generic View genre dependent.
+No measured speedup or native correctness is claimed.
+See [Stage 124 handoff](agent-handoffs/animation-stage124-pose-scratch-authoring-2026-11-19.md).
+
+**NOT RUN:** compiler, CTest, GPU visual parity or sanitizers.
