@@ -28,8 +28,9 @@ struct alignas(16) VirtualTextureFeedbackUniforms {
     float alphaUv1[4] = {0, 1, 0, 0};
     float coverage[4] = {1, 0.5f, 1, 0};
     float scenePixel[4] = {1, 1, 0, 0};
+    float addressModes[4] = {}; // U/V: clamp=0, repeat=1, mirror=2
 };
-static_assert(sizeof(VirtualTextureFeedbackUniforms) == 176);
+static_assert(sizeof(VirtualTextureFeedbackUniforms) == 192);
 static_assert(alignof(VirtualTextureFeedbackUniforms) == 16);
 
 struct VirtualTextureFeedbackProgramSources {
@@ -48,7 +49,7 @@ virtualTextureFeedbackProgramSources(bool alphaMask, bool lodFade,
 layout(std140) uniform U0 {
     mat4 uClipFromLocal;
     vec4 uPage, uTexels, uVirtualUv;
-    vec4 uAlphaUv0, uAlphaUv1, uCoverage, uScenePixel;
+    vec4 uAlphaUv0, uAlphaUv1, uCoverage, uScenePixel, uAddressModes;
 };
 )GLSL";
     src.glslVertex = R"GLSL(
@@ -103,14 +104,16 @@ layout(location=0) out vec4 outFeedback;
             " discard;\n";
     src.glslFragment +=
         " outFeedback=aiverseMaterialFeedback(vVirtualUV,mip,"
-        "int(uPage.z),ivec2(uPage.xy));\n}\n";
+        "int(uPage.z),ivec2(uPage.xy),"
+        "int(uAddressModes.x),int(uAddressModes.y));\n}\n";
 
     src.msl = R"MSL(
 #include <metal_stdlib>
 using namespace metal;
 struct FeedbackU0 {
     float4x4 clipFromLocal;
-    float4 page, texels, virtualUv, alphaUv0, alphaUv1, coverage, scenePixel;
+    float4 page, texels, virtualUv, alphaUv0, alphaUv1, coverage,
+           scenePixel, addressModes;
 };
 struct FeedbackIn {
     float3 pos [[attribute(0)]];
@@ -168,7 +171,8 @@ vertex FeedbackOut vs_main(FeedbackIn in [[stage_in]],
             " discard_fragment();\n";
     src.msl +=
         " return aiverse_material_feedback(in.uv,mip,"
-        "int(u.page.z),int2(u.page.xy));\n}\n";
+        "int(u.page.z),int2(u.page.xy),"
+        "uint(u.addressModes.x),uint(u.addressModes.y));\n}\n";
     return src;
 }
 
