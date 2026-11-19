@@ -1764,3 +1764,78 @@ Stage 15.2 compilation, native CTest or real-device parity has yet
 been performed**. See the Stage 15.2 entry in
 `docs/agent-handoffs/strata-virtual-geometry.md` for exact changed
 files, commits, failure cases and continuation.
+
+
+## Stage 15.3 — disk-backed async GPU index streaming (2026-11-20)
+
+Stage 15.3 adds a distinct offline/online data boundary: STRATA
+hierarchy pages can now be **written to indexed on-disk archives**,
+then read by bounded background I/O workers and uploaded as whole
+sibling groups into the Stage 15.2 GPU index arena. The render thread
+never waits for a child page to be read; it draws the resident parent
+until the entire set of children has passed checksum and checked GPU
+upload.
+
+### Offline content preparation
+
+```cpp
+render::strata::SceneStaging staging;
+staging.stage(sourceKey, cpuModel); // CPU source, before normal GPU upload
+std::vector<std::string> errors;
+const bool ok=staging.writeDiskArchives("Content/Strata", &errors);
+```
+
+This emits `strata-<key-hash>.strataidx` per staged source. The archive
+contains a versioned header, source-geometry fingerprint, per-node
+directory and separate source-index payloads. File keys are hashed,
+not interpreted as paths, avoiding traversal by model names.
+**FNV-1a hashes detect accidental corruption; they do NOT
+authenticate hostile packages.** Build/archive signing belongs to
+the content packaging system. The imported original `ModelAsset`
+currently remains in CPU memory for planning and reference checks.
+
+### Runtime integration
+
+```cpp
+render::GeometryScene scene;
+scene.setStrataPortableRenderingEnabled(true);
+scene.setStrataStreamingSceneBudgetBytes(8 * 1024 * 1024);
+scene.setStrataIncrementalIndexStreamingEnabled(true);
+scene.setStrataStreamingUploadBudgetBytes(128 * 1024); // bytes / source / update
+scene.setStrataStreamingFrameUploadBudgetBytes(256 * 1024); // total / RHI frame
+scene.setStrataDiskPageDirectory("Content/Strata");
+scene.load(device, sceneJson, readFile);
+```
+
+All setters are configured before scene load. Only Metal and Vulkan
+incremental GPU index streaming consumes the archives. GLES3/WebGL2
+and GL33 continue their ordinary portable CPU-selected immutable
+sidecar fallback, independent of async disk support.
+
+Scene load verifies the exact archive/source identity. Root pages are
+loaded synchronously once while initializing (failure => that source
+remains Legacy). Other pages are loaded by a native worker as needed.
+Requests and verified CPU-ready bytes are bounded per source; old
+queued/ready requests are discarded when camera/shadow requirements
+change. The CPU hierarchy selects ideal LODs, but GPU upload waits
+until **all siblings** are ready, then atomically publishes the new
+node ranges after checked device writes. A corrupt or missing leaf
+cannot erase an existing parent; any RHI upload failure preserves the
+previous visible frontier.
+
+The new scene-wide GPU transfer budget includes successful checked
+writes even if a subsequent sibling fails, and rotates which source
+has first access to the remaining allowance each prepass. It is
+reset on each new RHI frame serial; if no frame serial is supported
+the limit applies per draw prepass instead. This is an incremental
+Metal/Vulkan upload governor, not a GPU physical-memory measurement,
+not a disk bytes/sec limiter, and not a promise of reduced Vulkan
+internal buffer-copy bandwidth.
+
+**Stage 15.3 code is committed but not yet natively built or run**.
+The archive format, worker, scene integration and GPU upload governor
+have recording-RHI tests authored for the final verification pass.
+Full CPU index release, shared global IO workers, cross-world
+memory budgets, Vulkan GPU-driven selection and crack-free lossy LOD
+remain future stages. For all exact commits and test cases see
+`docs/agent-handoffs/strata-virtual-geometry.md`, Stage 15.3.
