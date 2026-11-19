@@ -264,7 +264,7 @@ void RtsView::buildLook(gfx::Device& dev, const UnitType& t, TypeLook& L) {
             shape = t.structure ? "structure" : "generic";
         }
         ModelChoice ch;
-        ch.model = const_cast<render::Model*>(resources_.find("shape:" + shape));
+        ch.model = resources_.find("shape:" + shape);
         ch.materials = ch.model->materials;
         configureChoice(dev, t, v, ch, true);
         L.models.push_back(std::move(ch));
