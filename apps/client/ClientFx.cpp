@@ -35,8 +35,10 @@ void ClientFx::init(gfx::Device& dev, const game::Rules& rules) {
     if(platform::readContentFile("fx/gpu/routes.json",routesText)) {
         fx::SpectraFxGpuRouteAsset::Routes routes;
         fx::SpectraFxGpuBudgetGovernor::Config gpuBudget{};
+        std::optional<fx::FxQuality> sceneQuality;
         std::string issue;
-        if(!fx::SpectraFxGpuRouteAsset::readText(routesText,routes,&issue,&gpuBudget))
+        if(!fx::SpectraFxGpuRouteAsset::readText(
+                routesText,routes,&issue,&gpuBudget,&sceneQuality))
             std::fprintf(stderr,"SpectraFX GPU routes: %s\n",issue.c_str());
         else if(!routes.empty()) {
             gpuRoutes_=std::move(routes);
@@ -47,6 +49,10 @@ void ClientFx::init(gfx::Device& dev, const game::Rules& rules) {
             gpuPlayback_=std::make_unique<fx::SpectraFxHybridPlayback>(
                 dev,ps_,*gpuLibrary_);
             gpuPlayback_->configureGpuBudget(gpuBudget);
+            if(sceneQuality) {
+                ps_.setQuality(*sceneQuality);
+                gpuPlayback_->setGlobalQuality(*sceneQuality);
+            }
             gpuPlayback_->setCpuEncodeProfiling(
                 std::getenv("AIVERSE_FX_DEBUG") != nullptr);
             for(const auto& [type,route]:gpuRoutes_)
