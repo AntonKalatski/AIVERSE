@@ -6,6 +6,24 @@ short user-facing introduction (English, with translations `README.<lang>.md`, s
 
 ## AIVERSE SpectraFX (universal VFX, in progress)
 
+**Latest implementation handoff (Stage 36, functional source, execution NOT verified):**
+[docs/agent-handoffs/spectrafx-stage-36-scatter-kills-native-ecs-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-36-scatter-kills-native-ecs-2026-11-19.md).
+GPU kill mode 6 operates on a compact uint32 physical-slot list at
+compute buffer slot 14, dispatched **before** Spawn/Integrate/Compact,
+replacing fragmented per-range Metal state blits. The Stage 35
+`completedFrameSerial()` quarantine remains mandatory before
+recycling dead physical slots. Do not turn GPU-kill submission into
+a CPU-only free-list update, and do not claim performance improvement
+without hardware measurements. A reusable native ECS attachment
+example (not an executable) is in
+`examples/spectrafx/native_ecs_attachments.h` with README.
+The editor's Metal preview gains speed and single-frame stepping,
+without modifying gameplay ECS, production CPU preview or simulation
+time. Clang/CMake, MSL, CTest, editor launch and Metal hardware
+execution have NOT RUN. Preserve earlier handoffs and avoid genre
+coupling, force pushes or unrequested changes to main.
+
+
 **Latest implementation handoff (Stage 35, source-only, tests deferred):**
 [docs/agent-handoffs/spectrafx-stage-35-ecs-attachments-gpu-fences-2026-11-19.md](docs/agent-handoffs/spectrafx-stage-35-ecs-attachments-gpu-fences-2026-11-19.md).
 The working SpectraFX branch already contained main at Stage 35 start
