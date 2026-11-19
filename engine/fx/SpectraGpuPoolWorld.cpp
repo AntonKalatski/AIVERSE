@@ -2,6 +2,7 @@
 #include "SpectraParticleProgram.h"
 #include <algorithm>
 #include <cmath>
+#include <set>
 #include <utility>
 
 namespace aiverse::spectra {
@@ -52,6 +53,16 @@ std::string GpuPoolWorld::groupKey(const fx::EffectDef& effect,
         "|vm="+std::to_string(unsigned(options.gpuProgram))+
         "|material="+std::to_string(unsigned(options.gpuMaterial))+
         "|indirect="+std::to_string(unsigned(options.gpuIndirect));
+}
+
+void GpuPoolWorld::recountBindings() {
+    stats_.gpuGroups=uint32_t(gpuGroups_.size());
+    std::set<int> distinctCpu;
+    for(const auto& [name,binding]:bindings_) {
+        (void)name;
+        if(!binding.gpu && binding.cpuId>=0)distinctCpu.insert(binding.cpuId);
+    }
+    stats_.cpuDefinitions=uint32_t(distinctCpu.size());
 }
 
 bool GpuPoolWorld::defineGraph(const std::string& name,const Json& graph,
@@ -120,7 +131,7 @@ bool GpuPoolWorld::defineCompiled(const std::string& name,
             if(gpuGroups_[i].key==key) {
                 next.gpu=true;next.gpuIndex=i;
                 bindings_[name]=std::move(next);
-                stats_.gpuGroups=uint32_t(gpuGroups_.size());
+                recountBindings();
                 reason_.clear();
                 return true; // share GPU storage, shader and draw for this effect
             }
@@ -132,7 +143,7 @@ bool GpuPoolWorld::defineCompiled(const std::string& name,
                 next.gpu=true;next.gpuIndex=gpuGroups_.size();
                 gpuGroups_.push_back({key,std::move(particles)});
                 bindings_[name]=std::move(next);
-                stats_.gpuGroups=uint32_t(gpuGroups_.size());
+                recountBindings();
                 reason_.clear();
                 return true;
             }
@@ -155,11 +166,7 @@ bool GpuPoolWorld::defineCompiled(const std::string& name,
     }
     next.cpuId=id;
     bindings_[name]=std::move(next);
-    stats_.cpuDefinitions=0;
-    for(const auto& [key,binding]:bindings_) {
-        (void)key;
-        if(!binding.gpu)++stats_.cpuDefinitions;
-    }
+    recountBindings();
     reason_.clear();
     return true;
 }
@@ -199,6 +206,13 @@ bool GpuPoolWorld::burst(const std::string& effectName,fx::float3 position,
         ++stats_.rejectedBursts;
         reason_="nonfinite or unbounded SpectraFX pool instance parameters";
         return false;
+    }
+    for(const auto& [paramName,definition]:binding.named) {
+        if(!checkInstanceParameterValue(definition,params[definition.slot])) {
+            ++stats_.rejectedBursts;
+            reason_="out-of-range SpectraFX pooled runtime parameter '"+paramName+"'";
+            return false;
+        }
     }
     bool ok=false;
     if(binding.gpu) {
@@ -303,7 +317,9 @@ bool GpuPoolWorld::resetForRollback() {
 
 bool GpuPoolWorld::isGpuEffect(const std::string& name) const {
     const auto it=bindings_.find(name);
-    return it!=bindings_.end()&&it->second.gpu;
+    return it!=bindings_.end() && it->second.gpu &&
+        it->second.gpuIndex<gpuGroups_.size() &&
+        gpuGroups_[it->second.gpuIndex].particles->gpuActive();
 }
 
 } // namespace aiverse::spectra
