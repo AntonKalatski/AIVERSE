@@ -650,3 +650,8 @@ default, and ordinary genres/legacy water remain unchanged.
 compiler, CTest and visual integration are **NOT RUN** by owner
 instruction. Handoff for each stage is appended at
 `docs/nereid/HANDOFF.md`. Do not make PASS claims.
+
+
+## Stage 39 — rapid foam colour
+
+Scene `style.rapidFoamColor: [r,g,b]` now controls only the current-generated whitewater foam RGB (linear, each 0..1). C++ `WaterSurfaceStyle::rapidFoamR/G/B` defaults to the previous shader color `{.84,.93,.94}`; regular shoreline foam is still controlled separately by `foamColor`. With `rapidFoamStrength=0`, the new colour has no visual effect. Keep the new shared C++/GLSL/MSL `waterRapidColor` U0 field in sync, including `Renderer3DReflect.cpp`; do not modify authoritative ECS state. The 16-byte U0 extension and all tests are unverified. Read `docs/nereid/stage-39-rapid-foam-color.md` for full stage handoff and next steps.

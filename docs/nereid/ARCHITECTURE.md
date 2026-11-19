@@ -304,3 +304,8 @@ water behavior remain unchanged. The reflection-plane flag is
 **presentation-only derived state**, never a WaterBody ECS source.
 Multiple simultaneous planar reflection passes are still unsupported;
 secondary surfaces fall back to SSR (when available) or lighting.
+
+
+## Stage 39 — optional rapid foam palette
+
+Per-water-surface presentation style now has `rapidFoamR/G/B` (normalized, default 0.84/0.93/0.94), read from scene JSON key `style.rapidFoamColor: [r,g,b]`. The value travels through the existing NEREID draw path to a new shared U0 `waterRapidColor` float4, at the end of the water uniform sequence in C++, GLSL and Metal. This only colours Stage 38 current-driven rapid foam when enabled; no ECS schema, water flow physics, additional GPU texture or pass is involved. Reflection uniforms use the same extended U0 layout. Built/shader-compiled validation not yet performed; see `docs/nereid/stage-39-rapid-foam-color.md`.

@@ -3971,3 +3971,13 @@ automatic bank-aware cascade width transitions, and exposing
 configurable whitewater foam colour. Only once feature completion is
 confirmed should native/build/GLSL/MSL/RTS/FPS tests be run and their
 actual results recorded in a new handoff.
+
+
+## Stage 39 — authorable per-water-surface rapid foam colour
+
+**Implementation commit:** `1d7857e68c9783d528c591229a91058115cc1864` on `feature/nereid-water-core` (Draft PR #23; main ancestor 0 behind).
+Full independent agent handoff: [`docs/nereid/stage-39-rapid-foam-color.md`](stage-39-rapid-foam-color.md).
+
+New `WaterSurfaceStyle::rapidFoamR/G/B` and scene JSON `style.rapidFoamColor: [r,g,b]` provide 0..1 RGB for animated whitewater. The default `{0.84,0.93,0.94}` retains the prior GLSL/Metal look. Validated by `validNereidWaterStyle`; included in scene/resident cache comparisons. Added `waterRapidColor` float4 at the end of the shared C++/GLSL/MSL U0 draw layout and forwarded from water draw through Renderer3D. Water-body geometry, ECS flow, legacy genres, and PHYSIS/Box3D ownership unchanged.
+
+**Verification performed:** reviewed source and authored code through connected GitHub; committed atomically to feature branch. **NOT RUN:** CMake, CTest, shader compilation, native sample, GPU inspection, regressions. **Limit:** shader-only color currently triggers material residency-key invalidation; U0 grows 16 bytes. **Next:** feature-first detail quality / confluence current; revisit residency split, then run actual verification before merge. See linked per-stage handoff.
