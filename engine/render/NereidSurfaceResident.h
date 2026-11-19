@@ -186,7 +186,7 @@ public:
     }
 
     void draw(Renderer3D& renderer,const mat4& transform=mat4::identity(),
-              const std::array<float4,4>& ripples={}) const {
+              const std::array<float4,16>& ripples={}) const {
         if(resident_)drawNereidWaterSurface(renderer,mesh_,key_.style,
                                           transform,ripples);
     }
