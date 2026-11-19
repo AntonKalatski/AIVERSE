@@ -19,6 +19,7 @@
 #include <unordered_map>
 #include <tuple>
 #include <functional>
+#include <limits>
 
 namespace aiverse::render {
 
