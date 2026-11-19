@@ -347,6 +347,22 @@ public:
         uint64_t lastGpuCompletedFence = 0;
     };
     MotionRetirementStats motionRetirementStats() const;
+    // Read-only lower-bound of GPU resources owned DIRECTLY by Renderer3D.
+    // Unique texture/buffer handles are counted once, including scene
+    // capture aliases and per-view motion buffers; deferred motion is
+    // reported separately. Excludes externally owned Model/Material assets,
+    // LightSystem, uploaded scene pools and PRISMA (never sum them twice).
+    struct ResidentMemoryStats {
+        uint64_t liveTextureKnownBytes = 0;
+        uint64_t liveBufferKnownBytes = 0;
+        uint64_t sceneCaptureKnownBytes = 0;
+        uint64_t objectMotionKnownBytes = 0;
+        uint64_t pendingMotionKnownBytes = 0;
+        size_t liveTextures = 0, liveBuffers = 0;
+        size_t unknownTextures = 0, unknownBuffers = 0;
+        size_t multiVersionBuffers = 0;
+    };
+    ResidentMemoryStats residentMemoryStats() const;
     // Generic presentation-only reactive-mask hook for water, particles and
     // user render modules. Register AFTER beginScene() and BEFORE resolvePrisma().
     // Called once with the reactive RGBA8 render pass already open. The callback
