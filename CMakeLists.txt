@@ -2022,7 +2022,7 @@ if(AIVERSE_BUILD_STRATA)
     target_include_directories(aiverse_strata_view PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
     # GeometryScene is still the only instance owner. This option exposes
     # opt-in CPU staging at scene load, not a second draw submission path.
-    target_link_libraries(aiverse_runtime PUBLIC aiverse_strata_model_adapter)
+    target_link_libraries(aiverse_runtime PUBLIC aiverse_strata_view)
     target_compile_definitions(aiverse_runtime PRIVATE AIVERSE_STRATA_STAGING_ENABLED=1)
     if(AIVERSE_BUILD_TESTS)
         add_executable(aiverse_strata_builder_tests tests/render/strata_builder.cpp)
