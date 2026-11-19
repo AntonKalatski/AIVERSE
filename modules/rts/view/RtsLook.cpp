@@ -528,13 +528,21 @@ size_t RtsView::reloadModelSources(const std::vector<std::string>& sources) {
                 view_adapter::discoverModelPaths(rules_->types[i].view,false,
                     [](const std::string&){return false;},
                     [&](const std::string& path,const std::string&){
-                        if(changed.contains(path))hit=true;
+                        if(changed.contains(
+                            view_adapter::RtsModelResourceCache::sourceForKey(path)))
+                            hit=true;
                     });
                 const auto& streaming=rules_->types[i].view["streaming"];
-                hit |= changed.contains(streaming.getStr("coarseModel"));
-                hit |= changed.contains(streaming.getStr("detailModel"));
+                hit |= changed.contains(
+                    view_adapter::RtsModelResourceCache::sourceForKey(
+                        streaming.getStr("coarseModel")));
+                hit |= changed.contains(
+                    view_adapter::RtsModelResourceCache::sourceForKey(
+                        streaming.getStr("detailModel")));
                 if(!requestedModels_[i].empty())
-                    hit |= changed.contains(requestedModels_[i]);
+                    hit |= changed.contains(
+                        view_adapter::RtsModelResourceCache::sourceForKey(
+                            requestedModels_[i]));
                 typeAffected[i]=hit;
                 if(hit)rebuild.push_back(uint16_t(i));
             }
