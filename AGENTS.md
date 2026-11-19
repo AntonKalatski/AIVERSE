@@ -4,6 +4,19 @@ Read this file completely before changing anything. It is short on purpose. `REA
 short user-facing introduction (English, with translations `README.<lang>.md`, see §11),
 `docs/overview.md` the detailed overview; this file is the engineering contract.
 
+## Hybrid global illumination (work in progress, 2026-11-19)
+
+Active GI implementation branch: `feature/hybrid-dynamic-gi`.
+Read `docs/agent-handoffs/hybrid-dynamic-gi.md` before making GI changes.
+Every bounded GI stage needs its own source commit(s) and a **separate**
+handoff commit on the same branch with exact source SHA, paths, public APIs,
+compatibility, actually executed tests/NOT RUN, limitations and next action.
+The shared `GiUpdateScheduler` is presentation-only; do not write floating
+GI caches into authoritative ECS save/replay, nor quietly enable incomplete
+dynamic GI in existing renderer quality tiers. Preserve old baked lighting
+and independent probe GI until integration has pixel/performance parity tests.
+No changes to Metal ICB/MDI experimental safety gates are authorized by GI.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
