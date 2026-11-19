@@ -557,6 +557,7 @@ private:
                                 bool instancePalette = false);
     void prepareGpuModelDraws();
     void renderModels(int phase);   // 0 shadow, 1 opaque, 2 blended, 3 outlines, 4 depth of transparent objects
+    struct ObjectMotionHistory; // defined with per-view GPU owners below
     void renderObjectMotionVectors(PostProcess& post); // RHI pass, rigid + deformed models
     // Camera-current reactive coverage is NOT motion history: still encode
     // it on first frame, camera cut, resize or unavailable RGBA16F velocity.
