@@ -58,9 +58,11 @@ public:
             hex(catalog_->table().fingerprint())));
         Json detail=Json::object();
         if(describe_)detail=describe_(*value);
-        if(!detail.isObject())
-            detail=Json::object().set("description",
-                     Json::string(detail.dump(-1)));
+        if(!detail.isObject()) {
+            Json wrapped=Json::object();
+            wrapped.set("description",Json::string(detail.dump(-1)));
+            detail=std::move(wrapped);
+        }
         fields.set("config",std::move(detail));
         components.set(componentId_,std::move(fields));
 
