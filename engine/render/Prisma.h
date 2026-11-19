@@ -189,7 +189,9 @@ private:
         float2 currentJitterUv{}, previousJitterUv{}; // NDC jitter / 2, unflipped UV
         bool jitterActive = false;
         float lastJitterPixels = 0;
-
+        bool projectionKnown = false;
+        bool previousOrtho = false;
+        float previousFovY = 0, previousNear = 0, previousFar = 0;
     };
     struct MotionView {
         mat4 previousViewProj;
