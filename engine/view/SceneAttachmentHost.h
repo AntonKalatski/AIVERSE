@@ -170,6 +170,16 @@ public:
             *presentation_,it->second,cache,world,out,error);
     }
 
+    // Stable authored identity is resolved anew after EACH scene source
+    // reimport/restore; caller never keeps an old ECS slot across reload.
+    Entity resolveChild(uint64_t scene,const std::string& object,
+                        const std::string& childId) const {
+        const auto* instance=find(scene,object);
+        return instance
+            ?EcsAttachmentScene::resolveChild(*presentation_,*instance,childId)
+            :kNullEntity;
+    }
+
     const EcsAttachmentScene::Instance* find(
             uint64_t scene,const std::string& object) const {
         const auto it=instances_.find(Key{scene,object});
