@@ -6,6 +6,7 @@
 #include "engine/character/vivid/SkinWeightLodTransfer.h"
 #include "engine/character/vivid/SkinSeamAnalysis.h"
 #include "engine/character/vivid/SkinSeamSplit.h"
+#include "engine/character/vivid/SkinLodSeamRemap.h"
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -443,6 +444,40 @@ void check() {
         req(range.count==2 && facial.gpuDeltas()[range.first].vertex==0 &&
             facial.gpuDeltas()[range.first+1].vertex==3,
             "extended sparse morph was not cloned to the new skin seam");
+        // An authored target LOD that shares a vertex subsequently split
+        // must receive a copied correspondence sample at the clone's new ID.
+        MorphLodMapping targetMap;
+        targetMap.sourceVertices=3;
+        targetMap.sourceTriangles=1;
+        const std::array<render::float3,3> sourcePositions{{
+            stitched.vertices[0].pos,stitched.vertices[1].pos,
+            stitched.vertices[2].pos}};
+        const std::array<std::uint32_t,3> sourceTriangles{{0,1,2}};
+        targetMap.sourceFingerprint=MorphLodMapping::fingerprint(
+            sourcePositions,sourceTriangles);
+        targetMap.targetVertexIds={0,1,2};
+        for(int index=0;index<3;++index) {
+            LodSurfaceSample sample;
+            sample.triangle=0;
+            sample.bary={index==0?1.f:0.f,
+                         index==1?1.f:0.f,index==2?1.f:0.f};
+            targetMap.samples.push_back(sample);
+        }
+        const auto remapped=SkinLodSeamRemap::expandTarget(
+            targetMap,split.clones,0);
+        req(remapped.targetVertexIds.size()==6 &&
+            remapped.targetVertexIds[3]==3 &&
+            remapped.samples[3].bary.x==1.f &&
+            targetMap.targetVertexIds.size()==3,
+            "cloned LOD correspondence lost source sample or mutated sidecar");
+        auto invalidMap=targetMap;
+        invalidMap.targetVertexIds.pop_back();
+        invalidMap.samples.pop_back();
+        bool mappingRejected=false;
+        try{(void)SkinLodSeamRemap::expandTarget(invalidMap,split.clones,0);}
+        catch(const std::invalid_argument&){mappingRejected=true;}
+        req(mappingRejected && invalidMap.samples.size()==2,
+            "incomplete target correspondence was not rejected transactionally");
         SkinWeightAuthoring weights;
         req(weights.set(0,"jointA",0.6f),"authoring split base edit");
         const auto expanded=weights.withSplitClones(split.clones);
