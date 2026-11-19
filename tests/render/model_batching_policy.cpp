@@ -1,6 +1,7 @@
 // Engine regression: static batching preserves runtime-mutable subtrees.
 // This is intentionally independent from any particular project/genre.
 #include "engine/render/Model.h"
+#include "engine/render/Animation.h" // full NodePose definition for active-pose regression
 #include "engine/render/ModelMerge.h"
 #include "engine/render/GpuMaterialState.h"
 #include "engine/render/GlobalGeometryPool.h"
