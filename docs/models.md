@@ -874,3 +874,18 @@ cost are intentionally excluded. Geometry pooling stays at upload-time
 configuration in both passes. The 382.9/384 MiB scene observation indicates
 high page occupancy, so simply shrinking page sizes will not materially reduce
 geometry storage for that workload.
+
+### Standalone native model provider comparison (Stage 102)
+
+The `aiverse_modelview` tool now accepts
+`--provider --no-merge` for an opt-in, non-gallery **raw static model**
+path. It uses a native `render::ModelAssetProvider` and the canonical
+`aiverse::View::submitModel` without constructing a `game::RtsView`
+for that source. It preserves the model viewer's existing camera,
+materials, team colour, variants and scale, but does not merge rigid
+parts or run this provider path for requested animation clips/baked
+skinning. Those scenarios continue using the original loader; both
+paths submit the same precomputed `ModelDraw` to universal View.
+This is an inspection/comparison path, not a promise of scene-render
+parity or a replacement for full game view blocks. Visual/native
+validation has **NOT RUN**.
