@@ -8,6 +8,7 @@
 #include "SpectraEcsRenderPose.h"
 #include <cstdint>
 #include <functional>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -84,26 +85,35 @@ public:
     // that any GPU data was restored.
     bool replaceDevice(gfx::Device& healthyReplacement) {
         if(!healthyReplacement.gpuHealthy()) {
-            reason_="SpectraFX graphics Device replacement is not healthy";
+            reason_="SpectraFX replacement Device is not healthy";
             poll();
             return false;
         }
-        if(!pool_.ready()) {
-            reason_="SpectraFX replacement requires the original pool alive";
+        if(pool_.ready()) {
+            // Snapshot compiled authoring data BEFORE releasing the old pool.
+            // No old GPU handles, particle slots or ECS source generations
+            // become part of the recovery recipe.
+            recoveryRecipe_=pool_.exportRecoveryManifest();
+            pool_.shutdown(); // old gfx Device must still be alive here
+            presenter_.discardTrackingAfterPoolRecreation();
+            if(poses_)poses_->resetForRollback();
+        }
+        if(!recoveryRecipe_) {
+            reason_="SpectraFX Device replacement has no saved authored effect catalog";
             poll();
             return false;
         }
-        auto catalog=pool_.exportRecoveryManifest();
-        pool_.shutdown(); // requires old gfx Device still valid
-        presenter_.discardTrackingAfterPoolRecreation();
-        if(poses_)poses_->resetForRollback();
+        // If the previous import failed, keep the CPU recipe and allow
+        // another host-owned Device replacement WITHOUT the old Device.
         const bool rebuilt=pool_.importRecoveryManifest(
-            &healthyReplacement,catalog);
+            &healthyReplacement,*recoveryRecipe_);
         if(!rebuilt) {
-            reason_="SpectraFX Device replacement: "+pool_.reason();
+            reason_="SpectraFX Device replacement failed; CPU effect catalog "
+                    "retained for retry: "+pool_.reason();
             poll();
             return false;
         }
+        recoveryRecipe_.reset();
         reason_.clear();
         poll();
         return true;
@@ -112,8 +122,13 @@ public:
     PoolRecoveryEvent inspect() const {
         PoolRecoveryEvent out;
         if(!pool_.ready()) {
-            out.phase=PoolRecoveryPhase::Uninitialized;
-            out.next=PoolRecoveryAction::InitPool;
+            out.phase=recoveryRecipe_?
+                PoolRecoveryPhase::DeviceRecreationRequired:
+                PoolRecoveryPhase::Uninitialized;
+            out.next=recoveryRecipe_?
+                PoolRecoveryAction::RecreateGraphicsDevice:
+                PoolRecoveryAction::InitPool;
+            out.presentationBlocked=bool(recoveryRecipe_);
             out.reason=reason_.empty()?pool_.reason():reason_;
             return out;
         }
@@ -163,6 +178,7 @@ private:
     OnChange onChange_;
     PoolRecoveryEvent last_{};
     std::string reason_;
+    std::optional<PoolRecoveryManifest> recoveryRecipe_;
     bool observed_=false;
 };
 
