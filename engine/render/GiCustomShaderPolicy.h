@@ -20,17 +20,33 @@ constexpr bool giCustomModeUsesFar(GiCustomShaderMode mode) {
 constexpr bool giCustomModeUsesThird(GiCustomShaderMode mode) {
     return mode>=GiCustomShaderMode::TripleCascade;
 }
+constexpr int giCustomModeTextureCount(GiCustomShaderMode mode) {
+    switch(mode) {
+        case GiCustomShaderMode::Single: return 1;
+        case GiCustomShaderMode::Validity: return 2;
+        case GiCustomShaderMode::DualCascade: return 3;
+        case GiCustomShaderMode::TripleCascade: return 4;
+        default: return 0;
+    }
+}
 constexpr int giCustomModeTextureSlots(GiCustomShaderMode mode) {
     return mode==GiCustomShaderMode::Off ? 0 :
            giFragmentTextureSlotsRequired(giCustomModeUsesValidity(mode),
                                           giCustomModeUsesFar(mode),
                                           giCustomModeUsesThird(mode));
 }
+// Custom renderers already occupying tex13+ must choose an explicit free
+// contiguous range, e.g. a terrain pass using tex0..20 chooses firstSlot=21.
+// Check subtraction instead of firstSlot+count to avoid integer overflow.
+constexpr bool giCustomModeFitsAt(GiCustomShaderMode mode,int firstSlot,
+                                  int fragmentSlots,bool metal) {
+    if(mode==GiCustomShaderMode::TripleCascade && !metal)return false;
+    const int count=giCustomModeTextureCount(mode);
+    return count>0 && firstSlot>=0 && fragmentSlots>=firstSlot &&
+           count<=fragmentSlots-firstSlot;
+}
 constexpr bool giCustomModeFits(GiCustomShaderMode mode,int fragmentSlots,
                                 bool metal) {
-    if(mode==GiCustomShaderMode::Off)return false;
-    if(mode==GiCustomShaderMode::TripleCascade && !metal)return false;
-    const int required=giCustomModeTextureSlots(mode);
-    return required>0 && required<=fragmentSlots;
+    return giCustomModeFitsAt(mode,13,fragmentSlots,metal);
 }
 } // namespace aiverse::render
