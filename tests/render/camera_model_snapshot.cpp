@@ -106,4 +106,34 @@ int main(){
     assert(mixed.geometryCount()==2 && geometryVisits==2);
     mixed.clear();
     assert(mixed.geometryCount()==0);
+
+    // Specialized water and selection packets retain shader and outline
+    // parameters, rather than becoming incomplete ordinary Mesh commands.
+    CameraGeometryCommand water;
+    water.kind=CameraGeometryCommand::Kind::Water;
+    water.mesh=nullptr;
+    water.ripples[0]={1.f,2.f,3.f,4.f};
+    water.wakes[2]={5.f,6.f,7.f,8.f};
+    water.wind={9.f,10.f,11.f,12.f};
+    water.firstIndex=10;water.indexCount=22;
+    mixed.recordGeometry(water);
+    CameraGeometryCommand selection;
+    selection.kind=CameraGeometryCommand::Kind::Selection;
+    selection.selection={.3f,.5f,.8f,1.f};
+    mixed.recordGeometry(selection);
+    int specials=0;
+    mixed.forEachGeometry([&](const CameraGeometryCommand& packet) {
+        if(specials==0) {
+            assert(packet.kind==CameraGeometryCommand::Kind::Water);
+            assert(packet.ripples[0].w==4.f);
+            assert(packet.wakes[2].z==7.f);
+            assert(packet.wind.x==9.f);
+            assert(packet.firstIndex==10&&packet.indexCount==22);
+        } else {
+            assert(packet.kind==CameraGeometryCommand::Kind::Selection);
+            assert(packet.selection.y==.5f);
+        }
+        ++specials;
+    });
+    assert(specials==2);
 }
