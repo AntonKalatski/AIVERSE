@@ -267,3 +267,35 @@ presentation and rendering.
 
 **NOT RUN:** deferred native/Metal/Vulkan/GL/WebGL2 build, runtime,
 GPU-lifetime, sanitizer and visual parity checks.
+
+### Stage 101 — async model source preparation and GPU retirement pressure
+
+Animation graphs remain separate from render-resource loading. Native
+project hosts can use `render::ModelAssetProvider::requestAsync(path)`
+for bounded, single-worker CPU model import, then call
+`publishReady(device, maxCount)` on the owning render thread before
+constructing `aiverse::View` packets. The CPU queue records source
+revisions: invalidating a model source makes any older worker result
+unpublishable even if the CPU task completes later. MotionWeave source
+identity/generation and any live pose/graph players must still be
+detached before replacing a resident Model.
+
+`render::ModelResourceCache` now exposes model-count-based retirement
+pressure telemetry and a soft admission limit for NEW generic model
+loads. Existing graph sources continue to render; a saturated backlog
+must never force early GPU destruction. The default is 128 retired
+Model objects, NOT a byte-accurate GPU memory budget. Editor's Statistics
+panel reports pending GPU model retirements and fence fallbacks.
+
+The editor Model window provides an opt-in native-source preview for
+static unskinned models, using an independently owned
+`render::ModelAssetProvider` and
+`game::Portrait::renderStaticModel`. Default fully authored
+RTS/character portraits still use their previous presentation path,
+preserving material overrides, attachments and animation playback.
+The raw-model inspection path is not a parity replacement.
+
+**NOT RUN:** CMake/compiler, CTest, Metal/Vulkan/GL/WebGL2 GPU tests,
+native/editor preview, sanitizers and simulation/animation visual
+regressions. Keep stages independent and do not claim the old RtsView
+has been removed.
