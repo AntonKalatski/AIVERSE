@@ -22,8 +22,9 @@ struct alignas(16) VirtualTextureDeformedFeedbackU6 {
     float policy[4] = {};     // alphaMask,LODfade,threshold,invert
     float scenePixel[4] = {1,1,0,0};
     float alphaMode[4] = {};  // x: source is full-res R8 tex15
+    float addressModes[4] = {}; // U/V: 0=clamp, 1=repeat, 2=mirror
 };
-static_assert(sizeof(VirtualTextureDeformedFeedbackU6) == 96);
+static_assert(sizeof(VirtualTextureDeformedFeedbackU6) == 112);
 
 struct VirtualTextureDeformedFeedbackSources {
     std::string vertex, fragment, metal;
@@ -55,7 +56,7 @@ layout(std140) uniform U2 {
     vec4 m_base,m_emissive,m_pbr,m_misc,m_uv0,m_uv1,m_light,m_reveal,m_revealAxis;
 };
 layout(std140) uniform U6 {
-    vec4 vtPage,vtTexels,vtVirtualUv,vtPolicy,vtScenePixel,vtAlphaMode;
+    vec4 vtPage,vtTexels,vtVirtualUv,vtPolicy,vtScenePixel,vtAlphaMode,vtAddressModes;
 };
 uniform sampler2D tex1;
 uniform sampler2D tex15;
@@ -86,7 +87,8 @@ void main() {
             discard;
     }
     outFeedback=aiverseMaterialFeedback(
-        virtualUV,mip,int(vtPage.z),ivec2(vtPage.xy));
+        virtualUV,mip,int(vtPage.z),ivec2(vtPage.xy),
+        int(vtAddressModes.x),int(vtAddressModes.y));
 }
 )GLSL";
 
@@ -107,7 +109,7 @@ void main() {
     result.metal += gfx::kVirtualTextureFeedbackAutoMipMSL;
     result.metal += R"MSL(
 struct VTFeedbackU6 {
-    float4 page,texels,virtualUv,policy,scenePixel,alphaMode;
+    float4 page,texels,virtualUv,policy,scenePixel,alphaMode,addressModes;
 };
 fragment float4 fs_main(VOut in [[stage_in]],
                         constant MU2& m [[buffer(3)]],
@@ -134,7 +136,8 @@ fragment float4 fs_main(VOut in [[stage_in]],
             discard_fragment();
     }
     return aiverse_material_feedback(
-        virtualUV,mip,int(vt.page.z),int2(vt.page.xy));
+        virtualUV,mip,int(vt.page.z),int2(vt.page.xy),
+        uint(vt.addressModes.x),uint(vt.addressModes.y));
 }
 )MSL";
     return result;
@@ -277,6 +280,8 @@ private:
         vt.virtualUv[1]=map.uvScaleY;
         vt.virtualUv[2]=map.uvOffsetX;
         vt.virtualUv[3]=map.uvOffsetY;
+        vt.addressModes[0]=float(uint32_t(map.addressU));
+        vt.addressModes[1]=float(uint32_t(map.addressV));
         vt.policy[0]=it.material.alpha==AlphaMode::Mask?1.0f:0.0f;
         gfx::TextureHandle alphaMask;
         if (it.material.baseTex >= 0 &&
