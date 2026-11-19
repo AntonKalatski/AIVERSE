@@ -61,10 +61,10 @@ public:
         const float blend=float(std::min(total,1.0));
         const float inv=float(1.0/total);
         return normalizeNereidWind({
-            base_.east+(ex*inv-base_.east)*blend,
-            base_.north+(nz*inv-base_.north)*blend,
-            base_.gust+(g*inv-base_.gust)*blend,
-            base_.coupling+(c*inv-base_.coupling)*blend});
+            float(base_.east+(ex*inv-base_.east)*blend),
+            float(base_.north+(nz*inv-base_.north)*blend),
+            float(base_.gust+(g*inv-base_.gust)*blend),
+            float(base_.coupling+(c*inv-base_.coupling)*blend)});
     }
 private:
     NereidVisualWind base_{};
