@@ -1,5 +1,22 @@
 # SpectraFX — opt-in GPU emitter playback in native AIVERSE projects
 
+## Real Metal RHI acceptance (Stage 98; authored, unverified)
+
+`spectrafx_metal_rhi` is a new macOS CTest exercising actual
+`gfx::Device` GPU particle compute and billboard draws into two independent
+offscreen render targets with different `SpectraFxView` cameras, including
+one rolled camera. Pixel readback uses a new **optional, synchronous,
+between-frame only** RHI diagnostic method
+`Device::readColorRGBA8(texture, pixels)`. Rendering does not require
+readback. The test also performs 24 creation/retirement frames, retaining
+GPU buffers through a three-frame grace period.
+
+**Stage 98 CTest/build is not yet run**; the proven Stage 97 Mac Studio
+acceptance was for the previous source SHA. Renderer3D/Editor GPU Preview
+and production HybridPlayback lifetime tests remain separate acceptance
+tasks. See `docs/agent-handoffs/spectrafx-stage98-metal-rhi-2026-11-19.md`.
+
+
 ## Genre-independent scene/view contract (Stage 94)
 
 SpectraFX is independent of FPS, RTS and Editor. A native scene directly

@@ -8,7 +8,7 @@ description: Author and integrate AIVERSE SpectraFX visual effects: versioned gr
 **Canonical documentation:** `docs/spectrafx.md`.  
 **Exact stage history:** `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`.  
 **Engineering rules:** `AGENTS.md`.
-**Latest handoff:** `docs/agent-handoffs/spectrafx-stage94-genre-neutral-camera-2026-11-19.md`.
+**Latest handoff:** `docs/agent-handoffs/spectrafx-stage98-metal-rhi-2026-11-19.md`.
 
 ## Fast path (current supported capabilities)
 
@@ -24,7 +24,12 @@ VFX are **presentation-only**, never deterministic damage, collision authority, 
 
 **Hard dependency rule:** engine/fx must not include any FPS, RTS, Editor or app module and must not accept a concrete genre camera. Use `SpectraFxView` and the generic `SpectraFxSceneHost` API instead; old camera APIs are source-compatible template adapters. The `spectrafx_architecture` CTest enforces direct source boundaries. Host builds are optional integration regressions, not requirements for using core.
 
-Use CMake target `AIVERSE::spectrafx` in a native project. Validate with:
+Use CMake target `AIVERSE::spectrafx` in a native project. The optional
+Metal `spectrafx_metal_rhi` test (Stage 98) compiles production
+`GfxMetal.mm` and validates two offscreen views and per-frame resource
+retirement. Do not claim this new test PASS before a hardware log exists.
+`gfx::Device::readColorRGBA8` is **test/debug only**, never per-frame
+FX runtime readback. Validate with:
 
 ```bash
 cmake -S . -B build/vfx-test -DAIVERSE_BUILD_TESTS=ON

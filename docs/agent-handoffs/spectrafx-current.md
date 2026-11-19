@@ -1,5 +1,21 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 98 — real Metal RHI multi-view + retirement test authored (NOT RUN)
+
+**Code SHAs:** `59605eea446f0c26533ea839b6074b7729d3d73f`,
+`96954451dd1bd317079098bfe2ca02b823fa89ed`,
+`fe530ceb33fd0edcb1c7c2b52113c838178bbce8`.
+Added `spectrafx_metal_rhi` CTest with actual `GfxMetal.mm`,
+offscreen RGBA8 readback, two independent camera views, compute→draw
+and 24 frames of 3-serial GPU lifetime pressure. New optional
+`gfx::Device::readColorRGBA8` is **diagnostic-only**; other backends
+remain unchanged. **Stage 98 has NOT been compiled or tested on Mac**.
+The Stage 97 all-green run was for the earlier SHA.
+Next step: focused `aiverse_spectrafx_metal_rhi_test` build/CTest,
+then one full `tools/spectrafx/acceptance.sh` and record logs.
+Read `docs/agent-handoffs/spectrafx-stage98-metal-rhi-2026-11-19.md`.
+
+
 ## Stage 97 — full native acceptance PASS on Apple M3 Ultra
 
 **Validated source:** `4e363db3a6fc0d1631a574165febb7d26e08c3b8`.
