@@ -38,10 +38,10 @@ public:
     const ModelResourceCache& resources() const noexcept {return resources_;}
     const std::vector<std::string>& warnings() const noexcept {return warnings_;}
     void clearWarnings() {warnings_.clear();}
-    Model* find(const std::string& source) noexcept {
+    Model* find(const std::string& source) {
         return resources_.find(source);
     }
-    const Model* find(const std::string& source) const noexcept {
+    const Model* find(const std::string& source) const {
         return resources_.find(source);
     }
 
@@ -127,7 +127,7 @@ public:
         return published;
     }
 #endif
-    bool publicationBackpressured() const noexcept {
+    bool publicationBackpressured() const {
         return resources_.publicationBackpressured();
     }
     template<class OnDetach>
