@@ -293,6 +293,11 @@ public:
         bool manualExposureEncoded = false; // fixed EV applied by final HDR composite
         float manualExposureEV = 0; // last applied EV, meaningful iff manualExposureEncoded
         bool autoExposureBoxMetered = false; // last encoded region meter used a box, not circle
+        // Borrowed reactive coverage is camera-local and current-frame only.
+        // "accepted" means declared metadata/RHI checks passed, NOT pixel proof.
+        bool reactiveInputSupplied = false;
+        bool reactiveInputAccepted = false;
+        bool motionBlurReactiveEdgesEnabled = false; // actually encoded with tap rejection
         std::vector<EffectExecution> effects;
     };
     const ViewEffectReport* effectReport(uint64_t viewId) const;
