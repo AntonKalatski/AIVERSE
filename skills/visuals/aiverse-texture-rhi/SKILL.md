@@ -1686,3 +1686,27 @@ For every nonexperimental engine CTest, append
 `--full-engine`. Only a zero exit and complete
 real native GPU logs count as an acceptance PASS.
 This runner **has not yet been executed** on a Mac.
+
+## Stage 10CF — support detached HEAD Mac Studio validation worktrees
+
+The first native unified test invocation was rejected by
+`tools/texture-rhi-final-verify.sh` before compilation
+because the user's isolated worktree is intentionally
+in detached HEAD. Git fetch + fast-forward had succeeded;
+the old script checked only the local branch name.
+Fix commit `1fd7dcba4b16cbf72c64d0f6c81c5be9415c23ce`
+permits detached HEAD **only when its exact commit equals**
+`refs/remotes/origin/feature/texture-rhi-unification`.
+It still rejects stale or unrelated revisions, absent
+remote-tracking refs and other local branch names.
+Guide commit `f3018a40c4bab2f727f3f89d31b68618f1875646`
+explains the reason and exact retry commands.
+
+The corrected runner is **NOT yet native-tested**.
+After `git fetch`, `git pull --ff-only` and
+`bash -n tools/texture-rhi-final-verify.sh`, run
+`bash tools/texture-rhi-final-verify.sh --jobs 4`.
+Do not check out a branch merely to satisfy this script.
+Only a complete real macOS build/CTest/GPU log and
+`build/texture-final-logs/acceptance.txt` ending
+`result=PASS` establish final texture acceptance.
