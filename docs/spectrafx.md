@@ -3192,3 +3192,100 @@ CLI output/privacy/corruption tests, CTest, editor
 UI launch/screenshots, real Metal capture and owner
 thread callback/device-loss tests. This stage is
 source-implemented, not production-verified.
+
+## Stage 44 — executable offline diagnostic verification and CI regression gates
+
+Stage 44 validates the existing V2 diagnostics, bounded ZIP support
+bundle, redacted reporting and standalone CLI using **actual native
+C++20 execution**, rather than GitHub source commits alone.
+
+### New regression and build integration
+
+- `tests/vfx_spfx_diagnostics_test.cpp` exercises valid V2
+  checkpoint encoding/inspection, corrupted CRC, unsupported
+  version, truncated/trailing bytes, invalid magic and physical
+  slot count. It confirms sensitive GPU identifiers and world
+  bounds are excluded from redacted JSON by default, that
+  explicit opt-ins work independently, and that the safe ZIP
+  contains only three fixed JSON members with correct STORE,
+  central directory and CRC32. Invalid/oversized builder
+  requests must leave existing output unchanged.
+- `CMakeLists.txt` now registers the standalone test as
+  `aiverse_vfx_spfx_diagnostics_test`, with a
+  `vfx_spfx_diagnostics` CTest labeled `SpectraFX`.
+- `.github/workflows/spectrafx-diagnostics.yml` is a
+  standalone Linux/macOS C++20 validation pipeline
+  triggered by relevant source/PR changes. It compiles the
+  CLI and regression under `-Wall -Wextra -Werror`,
+  generates explicit fixture files and uses Python's
+  `zipfile` to check actual ZIP extraction, CRC and
+  redaction. It also verifies a corrupted SPFX binary
+  fails and explicitly enabled sensitive fields become
+  visible only when requested.
+- The existing `.github/workflows/spectrafx-validation.yml`
+  includes the new executable in its focused CMake build,
+  so the labeled CTest is not accidentally registered
+  without being built.
+
+### Actual Stage 44 execution evidence
+
+Source files were fetched from the active GitHub feature
+branch, copied into an isolated local Linux test workspace,
+and **git hash-object** of each downloaded copy was
+compared with its original GitHub blob SHA. All matched:
+
+```text
+engine/fx/SpectraCheckpointExport.h      319b2aedde9265af199aaaefa696eba20d49afb2
+engine/fx/SpectraCheckpointInspector.h   79de640771f0c96bb6f070551e00db3c49675d4e
+engine/fx/SpectraDiagnosticReport.h      2c4be4c9f993fdad2e67dddc46125cfda95b15a1
+engine/fx/SpectraDiagnosticBundle.h      747489406e60249da5e3a4d62d8e9d5bdcd5f808
+tools/spectrafx/inspect_spfx.cpp         69a2b3ca2f474503e0d168fda13a61f706a7cd14
+tests/vfx_spfx_diagnostics_test.cpp      94884afbc46b7cd41b2aff12f5b8d1cc07356d94
+```
+
+Only the small `render::float4` and checkpoint-data ABI
+declarations were mirrored locally to isolate the
+GPU-independent code without cloning the entire AIVERSE
+engine; the actual six test/compiler source files were
+**byte-for-byte identical to GitHub**. Therefore these
+results verify the portable diagnostics subset, **not**
+the full engine or Objective-C++/Metal integration.
+
+Tests actually run on Linux:
+- GCC 14.2 C++20 `-Wall -Wextra -Werror -O2`
+  compilation and execution of checkpoint exporter,
+  inspector, redacted report, safe ZIP writer,
+  the full `vfx_spfx_diagnostics_test.cpp` and the
+  offline `inspect_spfx` CLI — **PASS**.
+- Python standard-library `zipfile` successfully opened
+  and CRC-checked the output of the compiled C++ ZIP
+  writer; all three fixed entries contained valid JSON,
+  with no raw VM scalar/world bounds or RHI identifiers
+  under default redaction — **PASS**.
+- End-to-end CLI `--json --report --bundle` with
+  a generated valid fixture, explicit sensitive opt-ins,
+  corruption exit code 1 and missing-file exit code 2
+  — **PASS**.
+- Isolated CMake/CTest
+  `ctest --test-dir build --output-on-failure -L SpectraFX`
+  — **1/1 PASS**.
+- GCC AddressSanitizer and UndefinedBehaviorSanitizer
+  builds of the standalone regression and offline CLI,
+  with ZIP extraction afterwards — **PASS**, no
+  sanitizer diagnostics observed.
+
+### Still NOT verified
+
+- Full AIVERSE CMake configuration or linking native editor,
+  client and the full SpectraFX renderer.
+- Apple Clang/Objective-C++/Metal shader compilation,
+  actual Metal device compute/draw, GPU recovery,
+  asynchronous callback cancellation, ECS renderer
+  attachment integration or CPU/GPU visual parity.
+- GitHub Actions cross-platform workflow **success**:
+  latest workflow instances were **pending or queued**
+  when checked, not completed/passing.
+
+These distinctions are mandatory: an isolated Linux
+diagnostics PASS is neither a successful full CTest suite
+nor evidence that Apple GPU compute already works.
