@@ -535,6 +535,11 @@ public:
         resourceThread_={};
         resourceEpoch_=0;
         resourceEpochLease_={};
+        // An empty owner may be rebound on a different render thread
+        // after explicit shutdown. All readers were checked above.
+        // Keeping the previous reader thread would permanently reject a
+        // new Device owner even though all cached GPU assets are gone.
+        readState_->ownerThread={};
     }
 private:
     void requireNoModelReaders(const char* operation) const {
