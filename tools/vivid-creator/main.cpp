@@ -11,6 +11,7 @@
 #include "engine/character/vivid/RigAuthoring.h"
 #include "engine/character/vivid/ScalpSkinning.h"
 #include "engine/character/vivid/GpuActorStream.h"
+#include "engine/character/vivid/HumanRetirementQueue.h"
 #include "engine/character/vivid/CpuActorStream.h"
 #include "engine/character/vivid/GpuMorphAssetCache.h"
 #include "engine/platform/Platform.h"
@@ -48,6 +49,7 @@ struct CreatorApp {
     HumanDNA draft;
     HumanPreviewAsset human;
     std::unique_ptr<GpuMorphAssetCache> cache;
+    std::unique_ptr<HumanRetirementQueue> retiredHumans;
     std::unique_ptr<GpuActorStream> actor;
     std::unique_ptr<CpuActorStream> cpuActor;
     std::unique_ptr<World> world;
@@ -146,6 +148,7 @@ struct CreatorApp {
         camera.pitch=0.08f;
         camera.yaw=0.08f;
         cache=std::make_unique<GpuMorphAssetCache>(dev);
+        retiredHumans=std::make_unique<HumanRetirementQueue>(dev);
         MeshBuilder ground;
         ground.box({0,-1.20f,0},{12,0.16f,12});
         floor=ground.upload(dev);
@@ -566,14 +569,20 @@ struct CreatorApp {
                 if(proposed.head)releaseModel(*device,*proposed.head);
                 throw;
             }
-            // Phase 2: publish only after all GPU streams and the complete
-            // new MotionWeave ECS world have been successfully prepared.
-            // If old retirement fails, keep old preview and dispose the new
-            // candidate after a confirmed idle barrier (no partial swap).
-            if(!releaseHuman()) {
+            // Phase 2: allocate an empty retirement queue slot BEFORE
+            // modifying active state. No GPU-wide idle stall on a normal
+            // revision change. A completed fence eventually retires the
+            // old actor AND its Model/texture resources together.
+            HumanRetirementQueue::Resident* retired=nullptr;
+            try {
+                if(human.head || human.hair || actor || cpuActor || world)
+                    retired=retiredHumans->enqueueEmpty();
+            }catch(...) {
+                // Queue admission failed. Keep the old live character and
+                // discard the candidate after the safe idle fallback.
                 if(device->waitForResourceIdle()) {
-                    (void)(nextActor && nextActor->shutdownAfterIdle());
-                    (void)(nextCpuActor && nextCpuActor->shutdownAfterIdle());
+                    if(nextActor)(void)nextActor->shutdownAfterIdle();
+                    if(nextCpuActor)(void)nextCpuActor->shutdownAfterIdle();
                     nextWorld.reset();
                     newGraph.reset();
                     if(proposed.hair)releaseModel(*device,*proposed.hair);
@@ -584,8 +593,16 @@ struct CreatorApp {
                     (void)nextActor.release();
                     (void)nextCpuActor.release();
                 }
-                pendingRebuild=false;
-                return;
+                throw;
+            }
+            if(retired) {
+                // All transfers here are pointer/owned-state moves; the
+                // retirement queue already owns the slot on allocation.
+                retired->world=std::move(world);
+                retired->graph=std::move(graph);
+                retired->actor=std::move(actor);
+                retired->cpuActor=std::move(cpuActor);
+                retired->human=std::move(human);
             }
             human=std::move(proposed);
             actor=std::move(nextActor);
@@ -1371,6 +1388,11 @@ struct CreatorApp {
         ImGui::End();
     }
     void frame(gfx::Device& dev,double dt) {
+        // The previous render has been submitted at this frame boundary.
+        // No model/actor is destroyed unless its GPU fence has completed.
+        if(retiredHumans && retiredHumans->pending())
+            (void)retiredHumans->collect();
+        if(cache)cache->pruneExpired();
         ui.newFrame(dt);
         guiControls();
         if(pendingRebuild)regenerate();
@@ -1556,11 +1578,20 @@ struct CreatorApp {
     void shutdown() {
         if(!device)return;
         if(!releaseHuman())std::fprintf(stderr,
-            "VIVID Creator: GPU resource drain failed at shutdown\n");
+            "VIVID Creator: active GPU resource drain failed at shutdown\n");
+        if(retiredHumans && !retiredHumans->drain())
+            std::fprintf(stderr,
+                "VIVID Creator: pending GPU retirement could not confirm completion\n");
         if(floor.vb.valid())device->destroyBuffer(floor.vb);
         if(floor.ib.valid())device->destroyBuffer(floor.ib);
         if(uiReady)ui.shutdown();
         if(rendererReady)renderer.shutdown();
+        // A failed drain means the device cannot safely release pending
+        // GPU resources. Keep the owner alive rather than running a
+        // destructor that could free in-flight model data.
+        if(retiredHumans && retiredHumans->pending())
+            (void)retiredHumans.release();
+        else retiredHumans.reset();
         cache.reset();
         device=nullptr;
     }
