@@ -240,6 +240,12 @@ public:
     // as a proxy for completion; zero means no verified completion yet.
     virtual uint64_t gpuSubmissionFence() const { return 0; }
     virtual uint64_t gpuCompletedFence() const { return 0; }
+    // Explicit memory-pressure synchronization. Call only on the graphics
+    // owner thread at a PRE-RENDER frame boundary, before encoding any work
+    // that could reference textures awaiting destruction. The backend waits
+    // for already SUBMITTED GPU commands; it must not require current-frame
+    // unsubmitted commands to finish. May block; never use every frame.
+    virtual bool waitForSubmittedGpuWork() { return false; }
 
     // Frame (driven by the platform layer)
     virtual void beginFrame(int framebufferWidth, int framebufferHeight) = 0;
