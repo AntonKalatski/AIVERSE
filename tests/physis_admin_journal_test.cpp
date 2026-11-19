@@ -414,6 +414,37 @@ void exclusiveJournalOwnership() {
 #if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
 // Two genuinely independent OS processes. The child owns a fresh flock fd;
 // SIGKILL intentionally skips JournalProcessLock's RAII destructor.
+void unsafeJournalLockInodesRejected() {
+    const auto dir=tempPath();
+    std::filesystem::create_directories(dir);
+    const auto journal=dir/"journal";
+    const auto lock=std::filesystem::path(journal.string()+".lock");
+    std::string error;
+    {
+        JournalProcessLock owner;
+        CHECK(owner.acquire(journal,&error));
+    }
+    CHECK(::chmod(lock.c_str(),0666)==0);
+    {
+        JournalProcessLock unsafe;
+        CHECK(!unsafe.acquire(journal,&error));
+        CHECK(!unsafe.held());
+    }
+    CHECK(::chmod(lock.c_str(),0600)==0);
+    const auto alias=dir/"alias.lock";
+    CHECK(::link(lock.c_str(),alias.c_str())==0);
+    {
+        JournalProcessLock linked;
+        CHECK(!linked.acquire(journal,&error));
+        CHECK(!linked.held());
+    }
+    std::filesystem::remove(alias);
+    {
+        JournalProcessLock safe;
+        CHECK(safe.acquire(journal,&error));
+    }
+    std::filesystem::remove_all(dir);
+}
 void killedProcessReleasesJournalLock() {
     const auto dir=tempPath();
     std::filesystem::create_directories(dir);
@@ -714,6 +745,7 @@ int main(){
     exclusiveJournalOwnership();
 #if !defined(_WIN32) && !defined(__EMSCRIPTEN__)
     killedProcessReleasesJournalLock();
+    unsafeJournalLockInodesRejected();
     killedEndpointRecoversQueuedJournal();
 #endif
 #ifndef __EMSCRIPTEN__
