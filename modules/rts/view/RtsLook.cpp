@@ -591,7 +591,7 @@ size_t RtsView::reloadModelSources(const std::vector<std::string>& sources) {
                     sourceIds.push_back(animation.genericViewId);
             }
             if(genericView_ && !sourceIds.empty())
-                genericView_->forgetSources(sourceIds);
+                genericView_->forgetSourcesForReimport(sourceIds);
             for(auto it=anims_.begin();it!=anims_.end();) {
                 if(it->second.type<typeAffected.size() &&
                    typeAffected[it->second.type]) {
@@ -877,7 +877,7 @@ bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
             graphSources.push_back(state.genericViewId);
     }
     if(genericView_ && !graphSources.empty())
-        genericView_->forgetSources(graphSources);
+        genericView_->forgetSourcesForReimport(graphSources);
     for(auto it=anims_.begin();it!=anims_.end();) {
         if(affected.contains(it->second.type)) {
             rememberReloadPlayback(it->first,it->second);
