@@ -2002,7 +2002,21 @@ void Renderer3D::renderModels(int phase) {
                 staticCrossModelSort = false;
             } else if (readyGroupsThisPass == 0) {
                 staticCrossModelSort = false;
+            } else if (cpuMdiAdaptiveEnabled_ &&
+                       !cpuMdiAdaptive_[size_t(phase)].permit(
+                           cpuMdiAdaptiveBudgetUs_)) {
+                // Material/geometry eligibility can be sufficient but the
+                // measured CPU preparation cost of recent MDI submissions
+                // may be too high. Preserve the ordinary batching order.
+                ++modelStats_.staticCrossModelAdaptiveSkippedPasses;
+                staticCrossModelSort = false;
             } else {
+                if (cpuMdiAdaptiveEnabled_) {
+                    const auto& feedback = cpuMdiAdaptive_[size_t(phase)];
+                    if (feedback.samples >= 8 &&
+                        feedback.avgUsPerCommand > cpuMdiAdaptiveBudgetUs_)
+                        ++modelStats_.staticCrossModelAdaptiveProbePasses;
+                }
                 staticCrossCandidates.resize(modelItems_.size(), uint8_t{0});
                 for (uint32_t itemIndex : order_) {
                     const ModelItem& item = modelItems_[itemIndex];
@@ -2244,8 +2258,11 @@ void Renderer3D::renderModels(int phase) {
                     // Count consecutive primitive runs before allocating a command
                     // vector or preparing a pipeline. Repeated instances of one
                     // primitive are only ONE indirect command.
+                    const bool measureAdaptive = cpuMdiAdaptiveEnabled_ && pooledStatic;
                     size_t runs = 1;
-                    for (size_t k = i + 1; k < end && runs < minIndirectCommands; ++k)
+                    for (size_t k = i + 1;
+                         k < end && (measureAdaptive || runs < minIndirectCommands);
+                         ++k)
                         if (modelItems_[order_[k - 1]].prim != modelItems_[order_[k]].prim)
                             ++runs;
                     // With group-adaptive selection, reject MDI groups
@@ -2256,8 +2273,24 @@ void Renderer3D::renderModels(int phase) {
                             uint32_t(end - i), uint32_t(runs),
                             uint32_t(minIndirectCommands)))) {
                         const auto attemptBegin = std::chrono::steady_clock::now();
+                        const uint64_t submissionsBefore =
+                            measureAdaptive ? modelStats_.multiDrawSubmissions : 0;
                         const bool accepted = drawModelIndirectBatch(
                             order_.data() + i, uint32_t(end - i), phase, paletteSort);
+                        if (measureAdaptive) {
+                            // CPU wall-clock includes compatible-run scan,
+                            // command packing, pipeline bindings and the GPU
+                            // submission API, not actual GPU elapsed time.
+                            // Failed submissions still teach the policy that
+                            // costly attempts should be avoided on most frames.
+                            const auto elapsedUs =
+                                std::chrono::duration<double, std::micro>(
+                                    std::chrono::steady_clock::now() - scanBegin).count();
+                            cpuMdiAdaptive_[size_t(phase)].observe(
+                                elapsedUs, uint32_t(runs),
+                                modelStats_.multiDrawSubmissions > submissionsBefore);
+                            ++modelStats_.staticCrossModelAdaptiveMeasuredAttempts;
+                        }
                         if (traceModelPass) {
                             const double elapsed = std::chrono::duration<double, std::milli>(
                                 std::chrono::steady_clock::now() - attemptBegin).count();
