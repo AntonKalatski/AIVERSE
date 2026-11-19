@@ -1,4 +1,5 @@
 #include "engine/render/GiTextureBudget.h"
+#include "engine/render/GiPresentationPolicy.h"
 #include "tests/AlwaysCheck.h"
 
 using namespace aiverse::render;
@@ -10,6 +11,13 @@ static_assert(giFragmentTextureSlotsRequired(false,true,false)==0);
 static_assert(giFragmentTextureSlotsRequired(true,false,true)==0);
 
 int main() {
+    // GLES3/WebGL2 CPU probe atlas is a texture SAMPLE, not an HDR target.
+    // RGBA8 framebuffer + sampled RGBA32F GI still supports PBR indirect.
+    AIVERSE_TEST_CHECK(giDynamicColorPassAllowed(false,false));
+    AIVERSE_TEST_CHECK(giDynamicColorPassAllowed(true,false));
+    AIVERSE_TEST_CHECK(giDynamicColorPassAllowed(true,true));
+    AIVERSE_TEST_CHECK(!giDynamicColorPassAllowed(false,true));
+
     // GLES3 minimum 16 fragment texture units: single/dual permitted,
     // Metal third atlas at texture(16) is NOT a GLES/WebGL2 permutation.
     AIVERSE_TEST_CHECK(giFragmentTextureBudgetAllows(16,false,false,false));
