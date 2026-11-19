@@ -651,3 +651,11 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
 - **Verification provenance:** test and GUI work executed by the user on Mac. The agent has *not* opened the six local PPMs; claims are limited to actual render-pass counters, capture outputs and programmatic pixel-difference results. No full-engine CTest suite was run by this command (`--full` was not selected), nor production GPU frame timings/FPS, real photorealistic human assets/eyes/hair/DNA, Vulkan parity or a device-loss soak.
 - **Source changes for this checkpoint:** documentation only; no reimplementation of MotionWeave, new simulation mutations, or branch merge.
 - **Next step:** treat Stage 5J *focused Metal VIVID integration acceptance* as PASS. Follow-up milestones, if required for full product readiness, are accurate GPU timing and scaling at high actor counts, non-Metal backend parity, streaming/LOD/ICB safe activation, actual human asset/rig/groom/skin/eyes and editor authoring. Do not label those unfinished features as completed, and do not re-run focused tests without a source change or new QA target.
+
+## Stage 6A — 2026-11-19 — HumanDNA schema and serialization
+
+- Branch: `feature/vivid-digital-humans`; MotionWeave core and main unchanged.
+- Commits: `f98f7e220dfb12ac76f0d4b17fbcae5efa406a56` `HumanDNA.h`; `accfd04657f95bbde794293dd5006c9098fdbad6` `HumanDNA.cpp`; `611f79c088e8dcc55b103398b7fc26a48e544885`, `ae3c8f38633a0433fc302015291d43d79fa5cbe3` corrections to public include/range parsing; `94b786f603dad567d16cc11b753db0f9f0dc80f0` `tests/vivid/human_dna.cpp`; `710d7b670fc198cf827615c05548b420fda0d1f4` `engine/character/vivid/CMakeLists.txt` new `AIVERSE::vivid_human` and `vivid_human_dna`.
+- API: `HumanDNA::preset`, `HumanDNA::fromJson`, `HumanDNA::toJson`, `HumanDNA::validate`. Version 1 includes anatomy/skin/eyes/groom/rig and 52 facial rest channels. Strict finite/size guards and canonical serialization, no proprietary DNA parsing.
+- Tests actually executed: **NOT RUN** for Stage 6A Mac compile/CTest; code authored and checked remotely. Do not infer passing tests from previous VIVID 11/11.
+- Next: build material/shader integration, eye/groom procedural asset generation, editable authoring UI; then one Mac validation. Preserve genre-neutral MotionWeave ownership and write a stage handoff.
