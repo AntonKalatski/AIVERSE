@@ -206,8 +206,11 @@ public:
             result.unknownBuffers+=owner.unknownBuffers;
             result.multiVersionBuffers+=owner.multiVersionBuffers;
         };
-        if (hasTerrain_) merge(terrain_.ownedGpuMemoryStats());
-        if (planets_.active()) merge(planets_.ownedGpuMemoryStats());
+        // Include resident allocations even while the corresponding
+        // terrain/planet presentation is hidden or inactive this frame.
+        // GPU memory ownership ends at shutdown, not when drawn=false.
+        merge(terrain_.ownedGpuMemoryStats());
+        merge(planets_.ownedGpuMemoryStats());
         return result;
     }
     bool typeLoaded(uint16_t type) const { return type < loadedTypes_.size() && loadedTypes_[type]; }
