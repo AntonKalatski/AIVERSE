@@ -3556,3 +3556,25 @@ ctest --test-dir build/terraweave-qa --output-on-failure -R '^terraweave_horizon
 ```
 
 If compilation fails again, capture the **first primary compiler error**, not just the secondary CTest "Unable to find executable" output. Keep the QA worktree separate from any conflicted PHYSIS rebase.
+
+## Mac Studio Horizon QA fix — conservative HLOD triangle budget test (2026-11-19)
+
+**User-provided, actually executed local QA result:** after pulling `f2165994957f` into the isolated `~/Projects/AIVERSE-terraweave-qa` worktree, `cmake --build build/terraweave-qa --parallel 4 --target aiverse_terraweave_horizon_test` **succeeded**. The executable linked without the earlier lambda / Apple libc++ errors. The subsequent `ctest --test-dir build/terraweave-qa --output-on-failure -R '^terraweave_horizon$'` **failed 0/1** with `Assertion failed: (budget.maxTriangles<=settings.terrainResolution*settings.terrainResolution*2+budget.maxForestClusters*4)`, `tests/terraweave_horizon_test.cpp:39`. This log supersedes an older pasted build log containing the already-fixed lambda and atomic shared_ptr errors.
+
+**Diagnosis:** the old test assumed the conservative triangle *upper bound* included only base ground quads (`resolution²*2`) plus 4 crossed-card triangles per forest cluster. The actual `estimateHorizonBudget` in `engine/world/TerraWeaveHorizon.h` conservatively includes additional optional skirt triangles (`8*terrainResolution`), up to 512 seam inner-lip edges (2 triangles/edge = 1024), and `maxNearClipTriangles` for near-owned ground clipping. Thus the previous `<=` test assertion was stale and contradicted intentional geometry feature budgets, not evidence that the production generator was over-budget. The next default test (`defaults.maxTriangles<10000`) was stale for the same reason: its exact conservative default is 4,608 ground + 384 skirt + 1,024 inner lip + 2,048 near clip + 3,328 forest = **11,392** triangles.
+
+**Fix source commit:** `a1128babccd4ca3daff13a6dd32c3ea331f35285`, changed **only** `tests/terraweave_horizon_test.cpp`: introduce test-local `expectedMaximumTriangles(settings,clusters)` modelling the documented independent ground/skirt/lip/clip/forest caps, assert `estimateHorizonBudget` equals the formula for a custom test config and for defaults, and assert the default value 11,392. No changes to `HorizonSettings`, the renderer, near-ground seam geometry, clipping algorithm, authored data, PHYSIS, ECS or TWH8 archive. The updated test is stronger (checks exact conservative component accounting) than the obsolete inequality.
+
+**Actually verified:** fetched GitHub feature-branch test/production budget source, calculated and independently compared component accounting, wrote the test fix and received source commit SHA. **NOT RUN after this commit:** local Clang compile, CTest or GPU visual test; do not claim assertion fixed in execution until user supplies actual new output. PR #24 remains Draft.
+
+**Next local command (always pull the feature branch, isolated worktree only):**
+
+```bash
+cd ~/Projects/AIVERSE-terraweave-qa
+git fetch origin feature/terraweave
+git pull --ff-only origin feature/terraweave
+cmake --build build/terraweave-qa --parallel 4 --target aiverse_terraweave_horizon_test
+ctest --test-dir build/terraweave-qa --output-on-failure -R '^terraweave_horizon$'
+```
+
+On a further failure, capture and report the *first new failing assertion/compile diagnostic*, not the already-superseded errors in the older attached log. The deferred all-TerraWeave CTest and RTS/FPS/editor full build still require independent validation.
