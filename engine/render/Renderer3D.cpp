@@ -620,7 +620,14 @@ void Renderer3D::renderCurrentFrameReactiveMask(
         const bool translucent = it.tint.w < 0.99f ||
             it.mat->transparent || it.mat->alpha == AlphaMode::Blend ||
             (it.flags & kDrawTransparent) != 0;
-        return deform && translucent &&
+        // Current-pose reactive silhouettes also protect animated LOD
+        // fades and dissolving characters. LOD dither is reproduced in
+        // the reactive shader; dissolve is conservative for animated
+        // vertex deformation (the exact noise lives in ModelShaders).
+        const bool fade = (it.lodThreshold < 1.0f || it.lodInvert) &&
+            it.mat->alpha == AlphaMode::Opaque;
+        const bool dissolve = it.dissolve > 0.0f && it.dissolve < 1.0f;
+        return deform && (translucent || fade || dissolve) &&
             (!it.baked || it.model->baked.tex.valid());
     };
     // Water sheets and other immediate MeshVertex draws use DrawItem
@@ -958,6 +965,14 @@ void Renderer3D::renderCurrentFrameReactiveMask(
 
             dev_->setPipeline(pipeline);
             dev_->setUniforms(0,&position,sizeof position);
+            const bool fade = it.lodThreshold < 1.0f || it.lodInvert;
+            float reactiveLod[4] = {
+                it.lodThreshold, it.lodInvert ? 1.0f : 0.0f,
+                fade ? 1.0f : 0.0f, 0.0f
+            };
+            dev_->setUniforms(1,reactiveLod,sizeof reactiveLod);
+            if (fade) ++objectMotionStats_.lodReactiveDraws;
+            if (it.dissolve > 0.0f) ++objectMotionStats_.dissolveReactiveDraws;
             dev_->setTexture(0,sceneDepth);
             if (baked) {
                 float palette[80] = {};
