@@ -1931,3 +1931,7 @@ The page cache now exposes `mappingChangesSince(revision,out,maxKeys=128)`, back
 ## Stage 10CR — indexed table GPU initialization (SHA d64ba9eb)
 
 `VirtualTexturePageTable::createGpuTexture(gpu,true)` allocates empty array slices and retains all dirty rows; `VirtualTextureStreamer::initialize` automatically runs bounded `synchronizeTable()` in indexed mode before exposing a valid texture. Legacy create defaults unchanged. A too-small `pageTableBytesPerFlush` (less than full width*4 row) causes fail-closed initialization. No tests run on this SHA, PR #21 Draft.
+
+## Stage 10CS — virtual-footprint anisotropic trilinear VT (SHAs f26eaf98, 916896ea)
+
+Canonical GLSL `aiverseSampleVirtualAnisotropic` and MSL `aiverse_sample_virtual_anisotropic` take original UV derivatives, virtual pixel resolution, mip bias/levels, a max tap cap 1..8 and U/V address modes. Each tap independently resolves the indexed virtual page table, unlike hardware within-slice anisotropy. `ModelVirtualTextureBinding.virtualAnisotropyTaps` accepts 1,2,4,8 in indexed mode (default1); 48B indexed U6 now includes a third quality vec4, legacy still16B. `makeModelVirtualTextureArchiveBinding(archive,streamer,layer,out,bias,taps)` fills the binding. High tap count costs multiple page lookups and is unverified. No shader or GPU tests run on new SHAs; keep PR Draft.
