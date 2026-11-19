@@ -215,7 +215,7 @@ struct ModelRenderStats {
 // Immutable draw parameters for simple geometry emitted by any scene host.
 // Mesh GPU handles remain borrowed; the host owns their GPU retirement.
 struct CameraGeometryCommand {
-    enum class Kind : uint8_t { Mesh, Line, Triangle };
+    enum class Kind : uint8_t { Mesh, Line, Triangle, Water, Selection };
     Kind kind=Kind::Mesh;
     const Mesh* mesh=nullptr;
     mat4 world{};
@@ -224,6 +224,12 @@ struct CameraGeometryCommand {
     float specular=.25f,emissive=0.f;
     float3 a{},b{},c{};
     uint32_t rgba=0xffffffffu;
+    // The water and selection variants must preserve their additional
+    // shader/outline parameters instead of being flattened to DrawMesh.
+    std::array<float4,16> ripples{},wakes{};
+    float4 wind{},hydraulics{},rapidColor{};
+    uint32_t firstIndex=0,indexCount=0;
+    float4 selection{};
 };
 
 class Renderer3D {
@@ -770,6 +776,7 @@ private:
     ModelCapture capture_;
     ModelPacketTap modelPacketTap_;
     GeometryPacketTap geometryPacketTap_;
+    bool suppressGeometryTap_=false;
     void bakedItem(ModelItem& it, const ModelDraw& d, int node);
     void bindBakedGI(const ModelItem& it);
 };
