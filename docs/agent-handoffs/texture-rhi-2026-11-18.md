@@ -7447,3 +7447,58 @@ validation: compile native headers/Shader Graph, run texture CTests,
 test Python/C++ manifest and wrap parity, and capture Metal/Vulkan/
 GL screen-diff and page-request correctness. Keep PR draft until
 all required checks have actually passed.
+
+
+## Stage 10S — four-source Shader Graph VT sampling on Metal (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, #21 Draft.
+**Feature commits:**
+- `38a88994b08c06965c06a1d56cc5430213ccca24`:
+  `engine/render/graph/ShaderGraph.cpp` removes the single
+  independent source limit from `sampleVirtualTexture` nodes;
+  original overall graph four-source cap still applies.
+- `effe82d27578690addf6d00111ca1cdc8e85472b`:
+  `engine/render/ModelVirtualTextureSampling.h` adds typed
+  device-aware graph/VT slot planning with Metal extension to
+  tex17/18; explicit opt-in to extended-slot shader injection.
+- `ec7eeefce4a54682bbb03cba0d5d21ebce542f29`:
+  `engine/render/Renderer3DModels.cpp` validates graph source
+  availability, selects consistent shader/per-draw VT resources
+  on Metal (four graph tex13..16 plus VT 17/18), and fails
+  unrepresentable GL/Vulkan source textures without aliasing.
+**Docs commits:**
+- `cf9b0b6952161731d1093c3878c21f695d120bcc`: `docs/texture-rhi.md`.
+- `82e0a78553bb66335725315d3b474eb193e24c32`: `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Architecture/API:** Source graph compiler remains independent of
+backend; the renderer owns dynamic material texture slot allocation.
+Metal supports 32 texture indices but only 16 dynamic samplers.
+The fourth graph source at tex16 uses an existing constexpr sampler;
+the two VT arrays use s1 and direct read, so no extra sampler state
+is needed at tex17/18. On other backends the legacy 16-texture
+budget is enforced, a graph VT node without spare arrays falls back
+to ordinary tex1, and a graph with inaccessible source tex16 fails
+rather than producing incorrect results. Built-in material VT,
+existing MSL/GLSL text injection and non-graph models retain their
+prior call signature and behavior.
+
+**Actual verification:** GitHub source inspection of shader graph
+compiler, model renderer and Metal setTexture (accepts 0..31,
+sampler indices 0..15). All source/docs commits accepted.
+**C++ compilation NOT RUN; CTest NOT RUN; Metal shader compiler
+NOT RUN; GLES/Vulkan image parity NOT RUN.** Do not count this as
+GPU-certified or merge-ready.
+
+**Known limitations:** Metal graph material draws remain on the
+normal CPU submission path; this is not a heterogeneous ICB resource
+table or general bindless texture system. GL/Vulkan still have a
+lower graph VT budget. Need verify MSL function signatures, graph
+sampler s16 declaration, U6 uniform binding and fallback output.
+
+**Next feature stage:** publish a first-class RHI fragment texture-slot
+capability (default 16, Metal 32) and consume it in the graph
+allocator, then design/implement a separate heterogeneous Metal ICB
+descriptor ABI if safe; retain homogeneous fallback in the meantime.
+During later test phase run real shader compilation, GPU screenshot
+parity and negative 16-slot checks on GL/Vulkan.
+
