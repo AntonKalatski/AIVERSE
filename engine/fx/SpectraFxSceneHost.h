@@ -80,9 +80,15 @@ public:
     }
     // Presentation discontinuity: rollback/new match/floating-origin shift.
     // Leaves authoring routes and the CPU effect file cache installed.
-    void resetScene() {
-        if(playback_) playback_->reset();
+    bool resetScene() {
+        // Live floating-origin/rollback transitions must not destroy GPU
+        // buffers still in flight. resetPresentation queues them instead.
+        if(playback_ && !playback_->resetPresentation()) {
+            lastError_="SpectraFX scene reset needs an outside-pass safe point";
+            return false;
+        }
         if(enabled_) cpu_.clear();
+        return true;
     }
     // Inside gfx::Device::beginFrame/endFrame and before an open pass.
     void prepareGpu(float dt,const render::RTSCamera& camera) {
