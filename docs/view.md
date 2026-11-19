@@ -2996,3 +2996,34 @@ a read lease or GPU Device epoch cannot replace a real GPU fence.
 
 **NOT RUN:** CMake/native compiler, CTest, real GPU backend,
 hot reload fault-injection, sanitizers or benchmarks.
+
+## Stage 130 — cache read lease owner rebind and diagnostic counters
+
+`ModelResourceCache`'s GPU owner and CPU Model read owner are
+related but independent. Read guards still block cache mutation
+while a View evaluates a Model or submits its synchronous
+draw. After a successful `ModelResourceCache::shutdown`
+(no active reader, GPU idle proved and Model resources freed),
+the former read-owner thread ID is reset: the host may
+reinitialize the empty cache against a NEW Device owner
+on a different render thread. No existing reader is ever
+rebound.
+
+Both `ModelReadLease` and `ModelCacheReadScope`
+are strictly owner-thread-only. Releasing either on
+another thread terminates rather than allowing cache
+eviction to race with borrowed data use. The cache
+exposes `modelReadSafetyStats()` with active readers,
+historical peak readers and cumulative blocked mutation
+attempts (`invalidateSources`, `replace`, `trimUnused`,
+`shutdown`). RTS forwards this to Editor Statistics;
+no simulation ECS state or GPU fence owner changes.
+
+This is NOT a cross-thread reader-writer lock or GPU
+completion fence. Host Model data must remain immutable
+while read, and MotionWeave workers must join before
+the owner releases its guard. See
+[Stage 130 handoff](agent-handoffs/animation-stage130-read-lease-lifecycle-diagnostics-2026-11-19.md).
+
+**NOT RUN:** native compiler/CMake/CTest,
+GPU visual parity, sanitizers or benchmarks.
