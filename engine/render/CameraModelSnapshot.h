@@ -111,6 +111,26 @@ public:
     CaptureGuard capture(Renderer3D& renderer) {
         return CaptureGuard(*this,renderer);
     }
+    bool isPreparedDraw(uint64_t persistentId)const {
+        return persistentId!=0 && preparedDrawIds_.count(persistentId)!=0;
+    }
+    template<class Fn>
+    void forEachPrepared(Fn&& fn)const {
+        for(const auto& entry:prepared_) {
+            if(!entry.viewSource)continue;
+            view::Object packet=entry.object;
+            packet.draw=ownedDraw(entry.source);
+            fn(*entry.viewSource,packet);
+        }
+    }
+    template<class Fn>
+    void forEachFallback(Fn&& fn)const {
+        for(const auto& entry:entries_) {
+            const ModelDraw draw=ownedDraw(entry);
+            if(isPreparedDraw(draw.persistentId))continue;
+            fn(draw);
+        }
+    }
     // The caller must first endCapture(), then beginScene() with each
     // secondary camera. Model/texture resources are borrowed from the host;
     // do not invalidate them until all camera submissions are complete.
@@ -122,17 +142,10 @@ public:
     // Prepared base objects select per-camera LOD, while legacy packets and
     // attachments from the main view remain in the finalized fallback stream.
     void submit(Renderer3D& renderer,uint64_t cameraScope=0)const {
-        for(const auto& e:entries_) {
-            const ModelDraw d=ownedDraw(e);
-            if(d.persistentId && preparedDrawIds_.count(d.persistentId))continue;
-            renderer.drawModel(d);
-        }
-        for(const auto& entry:prepared_) {
-            if(!entry.viewSource)continue;
-            view::Object packet=entry.object;
-            packet.draw=ownedDraw(entry.source);
-            entry.viewSource->submitOne(renderer,packet,cameraScope);
-        }
+        forEachFallback([&](const ModelDraw& d){renderer.drawModel(d);});
+        forEachPrepared([&](const view::View& source,const view::Object& packet) {
+            source.submitOne(renderer,packet,cameraScope);
+        });
     }
 };
 } // namespace aiverse::render
