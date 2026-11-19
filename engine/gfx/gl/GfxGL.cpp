@@ -53,6 +53,7 @@ public:
         items_.push_back(std::move(v)); alive_.push_back(1); return uint32_t(items_.size());
     }
     T* get(uint32_t id) { return id && id <= items_.size() && alive_[id - 1] ? &items_[id - 1] : nullptr; }
+    const T* get(uint32_t id) const { return id && id <= items_.size() && alive_[id - 1] ? &items_[id - 1] : nullptr; }
     void remove(uint32_t id) { if (get(id)) { alive_[id - 1] = 0; free_.push_back(id - 1); } }
 private:
     std::vector<T> items_; std::vector<uint8_t> alive_; std::vector<uint32_t> free_;
@@ -229,6 +230,12 @@ public:
                 glTexSubImage2D(GL_TEXTURE_2D, 0, x, y + r, w, 1, fmt, type, static_cast<const uint8_t*>(pixels) + size_t(r) * rowPitch);
         }
         if (t->mips) glGenerateMipmap(GL_TEXTURE_2D);
+    }
+    bool textureInfo(TextureHandle h, TextureInfo& out) const override {
+        const auto* t = textures_.get(h.id);
+        if (!t) return false;
+        out = {t->w,t->h,t->fmt};
+        return true;
     }
     void destroyTexture(TextureHandle h) override {
         if (auto* t = textures_.get(h.id)) { glDeleteTextures(1, &t->id); textures_.remove(h.id); }
