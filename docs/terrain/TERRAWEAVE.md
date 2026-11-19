@@ -3071,3 +3071,45 @@ must verify interleaved same-device subscribers, tag ownership,
 cancel/unsubscribe, queue overflow/rejection, GL busy fallback,
 Metal completion ordering, device recreation, and teardown.
 Keep PR #24 Draft. See Stage42 handoff.
+
+
+## Stage 45–46 — bank erosion, excavation, visible roots, plant health and grass patches
+
+The universal NEREID water framework has been merged from \`main\` into
+\`feature/terraweave\` at merge \`a56ff765311a8f464a2e180d5dd23e7eacdcb5dd\`.
+NEREID remains the only water ECS/current/renderer owner. TerraWeave
+adds soil and vegetation reaction, NOT a duplicate water solver.
+See \`docs/nereid/TERRAIN_EROSION.md\` for complete contracts and limitations.
+
+- \`NereidErosion.h\` computes deterministic soil-specific sand/silt/clay/
+  gravel/rock erosion, suspended sediment, bedrock, root binding and wave
+  energy effects. \`NereidShorelineSystems.h\` allows a native ECS game to
+  opt into a persistent per-bank-cell erosion stage AFTER water sampling.
+- \`TerraWeaveEarthworks.h\` supports bounded sparse native heightfield
+  excavation/fill with dirty rectangles and replay edits. Flat RTS editor
+  operation \`terraweave_excavate\` is undoable and preserves the detailed
+  height/splat layers; other world formats require separate adapters.
+- \`TerraWeaveVegetationSoil.h\` provides deterministic \`PlantEnvironment\`
+  (age, light, water, nutrients), shrubs with smaller root extent than
+  trees, ground support loss, conditional root geometry, and one stable
+  fall event on loss of support. Grass has **no visible roots**.
+- \`TerraWeaveForestScene\` stores optional sparse per-plant environment
+  overrides/root snapshots. Ordinary generated tree/shrub placements
+  receive stable seeded ages and environments. Natural cliffs can expose
+  roots from the first generation; dynamic excavation/river erosion can
+  expose or undermine them later.
+- \`TerraWeaveRootModel.h\` with the existing \`ArborForestAdapter\` builds
+  one shared RHI bark root model per species/visibility tier ONLY if roots
+  are exposed. \`WorldScene::setVegetationRootStates\` publishes states,
+  and the next regular update uploads any new root tiers on the device
+  owner thread. No per-tree unique GPU model or per-grass-blade ECS entity.
+- \`GrassPatch\` represents up to 262144 logical blades as ONE compact
+  cover/age/light/density descriptor. \`sampleGrassBlade\` reconstructs
+  age and position from the patch key/seed on demand; erosion changes one
+  coverage value, not thousands of entity states.
+
+**Unfinished, important:** GPU instanced grass drawing and real falling
+physics/colliders/replication are not yet connected; nor are Earthworks
+edits applied automatically to live streamed world colliders and navmesh.
+These are separate features, not a passing QA statement. Source changes
+only; no compile/CTest/GPU run on this feature revision. Keep PR Draft.
