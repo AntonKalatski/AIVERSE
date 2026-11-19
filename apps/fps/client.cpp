@@ -707,6 +707,8 @@ struct App {
         // to the host Device and retire only after real GPU completion.
         if(renderer.pendingProgramRetirements()!=0)
             renderer.collectRetiredPrograms();
+        if(renderer.hasPendingModelPipelineJobs())
+            renderer.pollPendingModelPipelineJobs();
         const auto now=net::nowMs();
 #ifndef __EMSCRIPTEN__
         if(listen) {
