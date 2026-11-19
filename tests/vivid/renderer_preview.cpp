@@ -49,18 +49,6 @@ struct Capture {
     int index = 0;
     std::vector<uint8_t> data;
 };
-std::vector<vivid::MorphVertex> baseFromModel(const render::Model& model) {
-    std::vector<vivid::MorphVertex> base;
-    base.reserve(model.vertices.size());
-    for (const auto& v : model.vertices) {
-        vivid::MorphVertex b;
-        b.position = {v.pos.x,v.pos.y,v.pos.z};
-        b.normal = {v.nrm.x,v.nrm.y,v.nrm.z};
-        b.tangent = {v.tangent.x,v.tangent.y,v.tangent.z};
-        base.push_back(b);
-    }
-    return base;
-}
 vivid::SparseMorphLibrary morphsFromModel(const render::Model& model) {
     std::vector<vivid::MorphTargetInput> targets;
     vivid::MorphTargetInput jaw;
@@ -154,7 +142,6 @@ struct Preview {
         clip.channels.push_back(channel);
         model->clips.push_back(std::move(clip));
         render::prepareModelUpload(*model);
-        auto base = baseFromModel(*model);
         shapes = std::make_unique<vivid::SparseMorphLibrary>(morphsFromModel(*model));
         const std::vector<vivid::ShapeRoute> routes{
             {vivid::Channel::JawOpen,"jawOpen",1.0f},
@@ -364,26 +351,29 @@ struct Preview {
         if(!device)return;
         // Frame-retirement correctness is more important than teardown speed:
         // all compute outputs may still be referenced by shadow/colour draws.
-        if(!device->waitForResourceIdle()) {
+        if(actorRetirement) {
+            for(auto& actor:actors)
+                if(!actorRetirement->retire(actor)) {
+                    failed=true;
+                    std::fprintf(stderr,"VIVID preview: failed to retire GPU actor\n");
+                    return;
+                }
+            // One completion barrier releases all actors, then their last
+            // immutable cache reference and finally the Renderer3D model.
+            if(!actorRetirement->drain()) {
+                failed=true;
+                std::fprintf(stderr,"VIVID preview: GPU actor queue drain failed\n");
+                return;
+            }
+            actors.clear();
+            sharedAsset.reset();
+            sharedCache.reset();
+            actorRetirement.reset();
+        } else if(!device->waitForResourceIdle()) {
             std::fprintf(stderr,"VIVID preview: GPU idle barrier failed; cannot retire resources\n");
             failed=true;
             return;
         }
-        for(auto& actor:actors)
-            if(!actorRetirement->retire(actor)) {
-                failed=true;
-                std::fprintf(stderr,"VIVID preview: failed to retire GPU actor\n");
-                return;
-            }
-        if(!actorRetirement->drain()) {
-            failed=true;
-            std::fprintf(stderr,"VIVID preview: GPU actor queue drain failed\n");
-            return;
-        }
-        actors.clear();
-        sharedAsset.reset();
-        sharedCache.reset();
-        actorRetirement.reset();
         if(floor.vb.valid())device->destroyBuffer(floor.vb);
         if(floor.ib.valid())device->destroyBuffer(floor.ib);
         if(model)render::releaseModel(*device,*model);
