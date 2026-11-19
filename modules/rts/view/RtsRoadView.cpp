@@ -1,5 +1,6 @@
 #include "RtsRoadView.h"
 #include "RtsRoadKit.h"
+#include "../../../engine/render/FailedModelUpload.h"
 #include "engine/view/TriangleFacing.h"
 #include "../../../engine/platform/Platform.h"
 #include <algorithm>
@@ -9,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <stdexcept>
 #include <tuple>
 
 namespace aiverse::game {
@@ -2125,12 +2127,27 @@ int RtsRoadView::paintedMaterial(gfx::Device& dev, int type, int variant) {
 
 int RtsRoadView::propModel(gfx::Device& dev, const std::string& path) {
     for (size_t i = 0; i < propModels_.size(); ++i) if (propModels_[i].path == path) return propModels_[i].model ? int(i) : -1;
+    // Reserve before GPU allocation so inserting the successful prop cannot
+    // throw and discard a Model that now owns native resources.
+    propModels_.reserve(propModels_.size()+1);
     PropModel pm;
     pm.path = path;
+    bool uploadStarted=false;
     try {
         pm.model = loadModel(path, read_);
-        if (pm.model) uploadModel(dev, *pm.model);
-    } catch (const std::exception& e) { warnings_.push_back("road prop " + path + ": " + e.what()); pm.model.reset(); }
+        if (!pm.model)throw std::runtime_error("Model import returned no data");
+        uploadStarted=true;
+        if (!uploadModel(dev,*pm.model))
+            throw std::runtime_error("GPU Model upload returned false");
+    } catch (const std::exception& e) {
+        if(uploadStarted) {
+            const auto status=abortFailedModelUpload(dev,pm.model);
+            if(status==FailedModelUploadDisposition::OrphanedWithoutGpuProof)
+                warnings_.push_back("road prop " + path +
+                    ": GPU completion unavailable; partial Model quarantined");
+        } else pm.model.reset(); // CPU-only load, no GPU handles created
+        warnings_.push_back("road prop " + path + ": " + e.what());
+    }
     propModels_.push_back(std::move(pm));
     return propModels_.back().model ? int(propModels_.size() - 1) : -1;
 }
@@ -2302,12 +2319,23 @@ void RtsRoadView::rebuild(gfx::Device& dev, const std::function<float(float, flo
             "[rts-road-merge] group=%d source-chunks=%zu merged-chunks=%zu success=%d\n",
             chunkGroup, before, mesh.chunks.size(), int(valid));
     }
+    // Reserve before any GPU upload: successful publication into the chunk
+    // vector cannot then throw on growth and strand GPU resources.
+    chunks_.reserve(chunks_.size()+mesh.chunks.size());
     for (auto& [key, a] : mesh.chunks) {
         if (a.empty()) continue;
         auto m = toModel("roads", a, images_, materials_);
         if (!m) continue;
-        uploadModel(dev, *m);
-        chunks_.push_back({std::move(m)});
+        try {
+            if (!uploadModel(dev,*m))
+                throw std::runtime_error("GPU Model upload returned false");
+            chunks_.push_back({std::move(m)});
+        } catch (const std::exception& e) {
+            const auto status=abortFailedModelUpload(dev,m);
+            if(status==FailedModelUploadDisposition::OrphanedWithoutGpuProof)
+                warnings_.push_back("road chunk: GPU completion unavailable; partial Model quarantined");
+            warnings_.push_back(std::string("road chunk: ")+e.what());
+        }
     }
     batchStats_.uploadedChunks = chunks_.size();
     // These counts describe uploaded road surfaces, not shadow/reflection
@@ -2354,8 +2382,14 @@ void RtsRoadView::buildGhost(gfx::Device& dev, const std::function<float(float, 
         for (auto& p : mesh.props) if (p.model.empty()) addShapes(mesh.chunks[0], p.shape, p.xf, 1.0f / cm, shapes);
         if (mesh.chunks.empty()) return;
         ghostModel_ = toModel("road-ghost", mesh.chunks[0], images_, materials_);
-        if (ghostModel_) uploadModel(dev, *ghostModel_);
-    } catch (const std::exception&) { ghostModel_.reset(); }
+        if (ghostModel_ && !uploadModel(dev,*ghostModel_))
+            throw std::runtime_error("road ghost GPU upload returned false");
+    } catch (const std::exception& e) {
+        const auto status=abortFailedModelUpload(dev,ghostModel_);
+        if(status==FailedModelUploadDisposition::OrphanedWithoutGpuProof)
+            warnings_.push_back("road ghost: GPU completion unavailable; partial Model quarantined");
+        warnings_.push_back(std::string("road ghost: ")+e.what());
+    }
 }
 
 void RtsRoadView::setWeather(float wet, float puddles) {
