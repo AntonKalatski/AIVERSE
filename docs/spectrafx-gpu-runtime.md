@@ -105,11 +105,37 @@ Create `fx/gpu/routes.json`:
       "asset": "flame_gpu",
       "enabled": true,
       "ownPlayerOnly": true,
-      "oneShotSeconds": 2.5
+      "oneShotSeconds": 2.5,
+      "sharedPool": "embers",
+      "sharedPoolCapacity": 8192
     }
   ]
 }
 ```
+
+An optional `sharedPool` opts this route into the new project-level
+homogeneous shared GPU arena. Multiple routes using the same pool name
+share one GPU particle storage allocation, compute update and draw if
+their emitter assets have *exactly identical* appearance (color,
+billboard radius, additive blending), acceleration/damping, ground
+collision and compaction settings. Their spawn rates, quality tiers,
+movement and LOD settings can differ. `sharedPoolCapacity` sets the
+**total particles in that pool**, not a per-event allowance (default
+8192). Each route sharing that pool must specify the same capacity.
+Without `sharedPool`, playback uses its existing dedicated
+CPU/GPU emitter behavior.
+
+Automatic shared grouping is currently restricted to **additive**
+billboards. Alpha-blended effects require back-to-front sorting and
+therefore fall back to the dedicated HybridEmitter path. GPU impact
+readback/`impactEffect` also remains on dedicated emitters. If
+the pool cannot initialize, becomes incompatible or fills up, the
+existing dedicated path is attempted, retaining its authored CPU
+fallback. One `SpectraFxHybridPlayback` permits up to 8 shared pools,
+65536 **total GPU slots including dedicated emitters**, and 64 active
+source instances across grouped/dedicated one-shots and keyed effects.
+A one-shot in a shared pool receives an internal generation-safe ticket
+and retires after `oneShotSeconds`.
 
 **42 is an illustrative example, not a known AIVERSE event ID.** Replace
 it with the numeric `SimEvent::type` defined by *your* GameModule.
@@ -211,13 +237,13 @@ arena.render(viewProj,
 arena.shutdown();
 ```
 
-This is a separate, opt-in **homogeneous shared pool**. It has a global
-65,536-particle maximum and up to 64 registered emission sources;
-sources have independent scheduling, positions, and distance LOD, but
-share the physical environment and billboard appearance. It does not
-yet provide a project JSON arena registry or automatic integration with
-`SpectraFxHybridPlayback`. Source removal can preserve existing
-particles until expiry or explicitly kill them at a safe point.
+This is also usable as a separate, opt-in native
+`SpectraFxGpuSharedArena` API (capacity 1..65536, up to 64 registered
+sources), but now a project can additionally select named homogeneous
+pools through `fx/gpu/routes.json` without writing C++. The standalone
+API has no built-in CPU fallback; the project-level HybridPlayback
+retains that fallback. Source removal can preserve existing particles
+until expiry or kill them at a safe point.
 
 The GPU compaction uses atomics and is **unsorted**. Transparent alpha
 effects that need depth ordering still require the CPU fallback; this
@@ -227,15 +253,19 @@ before enabling it in production.
 
 ## API boundaries and known work
 
-`SpectraFxHybridPlayback` now shares a billboard GPU pipeline and
-quad buffers across its emitter instances, but particle buffers/textures
-are still per emitter. There is no cross-emitter compaction, global GPU
-sorting, depth collisions, per-particle collision/death callback,
-indirect live-count rendering or Vulkan/Metal acceptance evidence.
+`SpectraFxHybridPlayback` now shares billboard pipelines and quad
+buffers across dedicated emitters and can group homogeneous additive
+emitters into shared GPU particle arenas via project routes. Metal-only
+live-slot compaction and indirect draws are optional. Ground-plane GPU
+collision and best-effort Metal asynchronous impact feedback are
+implemented in source, but actual mesh/depth collision, general GPU
+alpha sorting, global heterogeneous/multi-material GPU batching,
+GPU event parity and Vulkan/Metal acceptance remain incomplete.
 
-The next steps are to implement GPU-side collision and event readback,
-cross-emitter pooling and LOD, and to integrate opt-in playback into
-additional native host genres without duplicating the gameplay solver.
+The next steps are to harden GPU resource lifetimes, evaluate
+transparent sorting and pooled memory/LOD behavior, and integrate
+the generic interfaces into more native host genres without
+duplicating gameplay solvers.
 Run native build, CTest, editor UX, CPU/GPU fallback, Metal/Vulkan
 shader/render and performance checks **after functional implementation**
 as requested. Until then this branch is not ready to merge.
