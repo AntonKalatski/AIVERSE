@@ -1289,7 +1289,10 @@ void Editor::frame(gfx::Device& dev, double dt) {
     gpuRetirementFlushRequested_ = false; // one attempt, no repeated UI stalls
     if (flushRequested ||
         (retirementBudgetBytes && pendingKnownBytes > retirementBudgetBytes) ||
-        clientHost_.pendingRetiredClients() > 2) {
+        clientHost_.pendingRetiredClients() > 2 ||
+        genericStats.bundles > 8) {
+        // Old ShaderGraph preview bundles include unknown portrait/FX GPU
+        // allocations. Bundle count is pressure only, never GPU completion.
         // A retired hosted GameClient has deep renderer/textures whose
         // GPU byte count is not cheaply enumerable. Bound the number of
         // archived clients as an additional pressure signal (never as a
