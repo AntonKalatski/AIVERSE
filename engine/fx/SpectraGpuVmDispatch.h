@@ -8,6 +8,8 @@
 #include "engine/gfx/Gfx.h"
 #include <array>
 #include <cstring>
+#include <algorithm>
+#include <vector>
 #include <string>
 
 namespace aiverse::spectra::gpu_program {
@@ -71,6 +73,7 @@ public:
         snapshots_=create(size_t(maxParticleSlots)*sizeof(ParticleParams),
                           nullptr,"SpectraFX per-particle VM parameters");
         maxParticleSlots_=maxParticleSlots;
+        uploadedSnapshots_.clear();
         if(!code_.valid()||!params_.valid()||!errors_.valid()||!snapshots_.valid()) {
             reason_="Metal VM buffer creation: "+device_->lastError();
             shutdownResources();
@@ -110,6 +113,11 @@ public:
     // GPU error counter is device-resident; dispatch success does not imply
     // every VM expression succeeded. Host must read and handle errors.
     gfx::BufferHandle errorCounter() const {return errors_;}
+    // Diagnostic only: read between completed frames. Failure is not zero.
+    bool readErrors(uint32_t& count) {
+        if(!ready() || !device_->canUpdateSharedBuffers())return false;
+        return device_->readBuffer(errors_,&count,sizeof(count));
+    }
     void shutdown() {shutdownResources();reason_.clear();}
 private:
     bool dispatchImpl(gfx::BufferHandle particleStates, uint32_t particleCount,
@@ -140,10 +148,31 @@ private:
         const uint32_t zero=0;
         device_->updateBuffer(params_,values.data(),sizeof(values));
         if(sources) {
-            // No stale source pointer is retained; snapshot data is uploaded
-            // before beginning the Metal encoder, in RHI submission order.
-            device_->updateBuffer(snapshots_,sources->particleBuffer().data(),
-                                  size_t(particleCount)*sizeof(ParticleParams));
+            // Diff against this pass's last submitted snapshots. Blits run in
+            // command queue order ahead of this compute dispatch.
+            const auto& next=sources->particleBuffer();
+            const size_t oldCount=uploadedSnapshots_.size();
+            auto changed=[&](size_t i) {
+                if(i>=oldCount)return true;
+                const auto& a=next[i];
+                const auto& b=uploadedSnapshots_[i];
+                return a.values!=b.values || a.sourceSlot!=b.sourceSlot ||
+                       a.generation!=b.generation || a.active!=b.active ||
+                       a.reserved!=b.reserved;
+            };
+            size_t begin=0;
+            while(begin<particleCount) {
+                if(!changed(begin)) {++begin;continue;}
+                size_t end=begin+1;
+                while(end<particleCount && changed(end))++end;
+                device_->updateBuffer(snapshots_,next.data()+begin,
+                    (end-begin)*sizeof(ParticleParams),
+                    begin*sizeof(ParticleParams));
+                begin=end;
+            }
+            if(uploadedSnapshots_.size()<particleCount)
+                uploadedSnapshots_.resize(particleCount);
+            std::copy_n(next.begin(),particleCount,uploadedSnapshots_.begin());
         }
         device_->updateBuffer(errors_,&zero,sizeof(zero));
         if(!device_->beginCompute(compute_)) {
@@ -172,12 +201,13 @@ private:
             if(snapshots_.valid())device_->destroyBuffer(snapshots_);
         }
         compute_={};code_={};params_={};errors_={};snapshots_={};
-        maxParticleSlots_=0;device_=nullptr;
+        maxParticleSlots_=0;uploadedSnapshots_.clear();device_=nullptr;
     }
     gfx::Device* device_=nullptr;
     gfx::ComputeHandle compute_{};
     gfx::BufferHandle code_{},params_{},errors_{},snapshots_{};
     uint32_t maxParticleSlots_=0;
+    std::vector<ParticleParams> uploadedSnapshots_;
     std::string reason_;
 };
 } // namespace aiverse::spectra::gpu_program
