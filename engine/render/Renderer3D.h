@@ -115,7 +115,12 @@ enum class BakedQuality { Off, Low, High };
 // effect chain into `screenPass` and leaves that pass open (UI and overlays drawn after it are not
 // post-processed). Without a hook, or with no active effect, nothing changes and it costs nothing.
 struct PostFrame { mat4 viewProj; float3 cameraPos; Lighting lighting; int width = 0, height = 0;
-                   gfx::TextureHandle sunShadow; mat4 lightViewProj; }; // sunShadow: empty when shadows are off
+                   gfx::TextureHandle sunShadow; mat4 lightViewProj;
+                   // Projection metadata for optional linear view-depth post FX.
+                   // Ortho projection uses explicit -200..1000 clip bounds.
+                   float depthNear = 0.5f, depthFar = 1000.0f;
+                   bool orthographic = false;
+                 }; // sunShadow: empty when shadows are off
 class PostProcess {
 public:
     virtual ~PostProcess() = default;
