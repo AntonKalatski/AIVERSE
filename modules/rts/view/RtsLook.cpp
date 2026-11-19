@@ -713,7 +713,13 @@ bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
                 throw std::logic_error("staged Model key became resident: "+key);
             if(model)scratch.push_back(model.get());
         }
-        auto shared=resources_.textures()->prepareGpuPromotion(scratch);
+        const auto refs=imageTransaction.pendingImageReferences();
+        std::vector<render::ModelTextureCache::PendingImage> proposed;
+        proposed.reserve(refs.size());
+        for(const auto& ref:refs)
+            proposed.push_back({ref.model,ref.appendIndex,ref.staged});
+        auto shared=resources_.textures()->prepareGpuPromotion(
+            scratch,proposed);
         // Reserve capacity for ALL affected Model vectors before publishing
         // the first Image. Failure preserves Model image counts and TypeLooks;
         // the transaction destructor queues staged GPU handles for retirement.
@@ -974,23 +980,25 @@ bool RtsView::loadChoice(gfx::Device& dev, const UnitType& t, const Json& view, 
 int RtsView::loadTexture(gfx::Device& dev, const UnitType& t, Model& m, const std::string& path) {
     for (size_t i = 0; i < m.images.size(); ++i)
         if (m.images[i].name == path)return int(i);
-    std::string bytes;
     Image img;
     img.name=path;
+    if(activeImageTransaction_) {
+        // Reuse the shared decoded CPU image cache, but do not publish
+        // a GPU cache entry until the entire authored transaction succeeds.
+        // Its image keeps textureKey/textureCache for the shared promotion plan.
+        if(!read_ || !resources_.textures()->read(path,read_,img))
+            throw std::runtime_error("appearance texture not found/unsupported: "+path);
+        return activeImageTransaction_->stage(m,std::move(img));
+    }
+    std::string bytes;
     if(!read_ || !read_(path,bytes)) {
-        if(activeImageTransaction_)
-            throw std::runtime_error("appearance texture not found: "+path);
         warn(t,"texture '"+path+"' not found");
         return -1;
     }
     if(!decodeImage(bytes,img)) {
-        if(activeImageTransaction_)
-            throw std::runtime_error("appearance texture unsupported: "+path);
         warn(t,"texture '"+path+"': unsupported format (PNG, JPEG, TGA)");
         return -1;
     }
-    if(activeImageTransaction_)
-        return activeImageTransaction_->stage(m,std::move(img));
     return addImage(dev,m,std::move(img));
 }
 
