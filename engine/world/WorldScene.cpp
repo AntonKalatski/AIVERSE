@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <mutex>
+#include <stdexcept>
 
 namespace aiverse::world {
 namespace {
@@ -60,6 +61,45 @@ WorldScene::WorldScene(const Json& manifest,AssetReader reader,std::shared_ptr<r
     for(const auto& [cell,asset]:assets_.chunks){if(asset.bytes>uploadBytes_)throw JsonError("world.chunk: reservation exceeds maxUploadBytes");if(!stream_->add(cell,asset.bytes))throw JsonError("world.chunk: staging budget too small");}
 }
 WorldScene::~WorldScene()=default;
+
+// A caller-owned, serializable set of runtime clearings shared by both
+// Flora instances and distant Horizon canopy silhouettes. Only the first
+// state and the latest replacement matter until the next WorldScene update.
+void WorldScene::setVegetationClearings(
+        std::vector<terraweave::RectCm> clearings) {
+    if(clearings.size()>4096)
+        throw std::length_error("TerraWeave forest clearing budget");
+    for(const auto& r:clearings) {
+        if(r.minX>=r.maxX || r.minZ>=r.maxZ ||
+           r.minX<-terraweave::kWorldLimitCm ||
+           r.minZ<-terraweave::kWorldLimitCm ||
+           r.maxX>terraweave::kWorldLimitCm ||
+           r.maxZ>terraweave::kWorldLimitCm)
+            throw std::invalid_argument("TerraWeave forest clearing rectangle");
+    }
+    const auto less=[](const terraweave::RectCm& a,
+                       const terraweave::RectCm& b) {
+        if(a.minZ!=b.minZ)return a.minZ<b.minZ;
+        if(a.minX!=b.minX)return a.minX<b.minX;
+        if(a.maxZ!=b.maxZ)return a.maxZ<b.maxZ;
+        return a.maxX<b.maxX;
+    };
+    const auto same=[](const terraweave::RectCm& a,
+                       const terraweave::RectCm& b) {
+        return a.minX==b.minX && a.minZ==b.minZ &&
+               a.maxX==b.maxX && a.maxZ==b.maxZ;
+    };
+    std::sort(clearings.begin(),clearings.end(),less);
+    clearings.erase(std::unique(clearings.begin(),clearings.end(),same),
+                    clearings.end());
+    if(clearings.size()==vegetationClearings_.size() &&
+       std::equal(clearings.begin(),clearings.end(),
+                  vegetationClearings_.begin(),same))return;
+    if(!vegetationClearingsDirty_)
+        previousVegetationClearings_=vegetationClearings_;
+    vegetationClearings_=std::move(clearings);
+    vegetationClearingsDirty_=true;
+}
 std::shared_ptr<WorldScene::Prepared> WorldScene::prepare(Cell cell,const AssetReader& reader) {
     const auto& asset=assets_.chunks.at(cell);std::string text;
     if(!reader(asset.file,text))throw JsonError("world.scene: read/hash failure: "+asset.file);
@@ -187,7 +227,18 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
         releaseChunk(device,*it->second);
         resident_.erase(it);
     },uploadBytes_);
-    if((terraForest_ || terraHorizon_) && landscapeChanged){
+    if((terraForest_ || terraHorizon_) &&
+       (landscapeChanged || vegetationClearingsDirty_)){
+        // Cleared patches may extend far beyond resident collision tiles.
+        // Include BOTH old and new rectangles so an old canopy silhouette
+        // is invalidated when a clearing is restored or moved.
+        if(vegetationClearingsDirty_) {
+            editedLandscape.insert(editedLandscape.end(),
+                previousVegetationClearings_.begin(),
+                previousVegetationClearings_.end());
+            editedLandscape.insert(editedLandscape.end(),
+                vegetationClearings_.begin(),vegetationClearings_.end());
+        }
         // Publish a single immutable snapshot for both terrain heights and
         // obstacle footprints. Async foliage jobs keep old snapshots alive
         // until canceled; revision checks discard their stale results.
@@ -195,6 +246,13 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
             assets_.cellSize);
         auto mutableMask=std::make_shared<terraweave::FoliageExclusionMask>();
         size_t boxes=0;
+        // The same immutable exclusion mask is captured by near forest
+        // workers and Horizon's CPU-only canopy baker. No live callbacks
+        // inspect mutable gameplay state from a worker thread.
+        for(const auto& r:vegetationClearings_){
+            mutableMask->addBuilding(r);
+            ++boxes;
+        }
         for(const auto& [cell,prepared]:resident_){
             if(prepared->terrainResolution){
                 terraweave::AuthoredHeightTileCm tile;
@@ -288,6 +346,8 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
                 std::span<const terraweave::RectCm>(
                     editedLandscape.data(),editedLandscape.size()));
         }
+        vegetationClearingsDirty_=false;
+        previousVegetationClearings_.clear();
     }
     if(terraForest_){
         if(!observers.empty()) {
