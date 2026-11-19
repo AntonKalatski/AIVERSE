@@ -8,7 +8,7 @@ namespace aiverse::fx {
 inline constexpr const char* kSpectraFxComputeMetal=R"GPU(
 #include <metal_stdlib>
 using namespace metal;
-struct Parameters { uint count; float dt; float damping; float pad; float4 acceleration; float4 ground; };
+struct Parameters { uint count; float dt; float damping; float pad; float4 acceleration; float4 ground; }; // pad: impact feedback enabled
 kernel void cs_main(uint2 tid [[thread_position_in_grid]],
                     device float4* positionAge [[buffer(0)]],
                     device float4* velocityLife [[buffer(1)]],
@@ -35,7 +35,7 @@ kernel void cs_main(uint2 tid [[thread_position_in_grid]],
         velocityLife[i]=float4(nextVelocity,v.w);
     }
     positionAge[i]=a;
-    impactEvents[i]=float4(a.xyz,hitGround?1.0f:0.0f);
+    if(p.pad>0.5f) impactEvents[i]=float4(a.xyz,hitGround?1.0f:0.0f);
     const float remaining=v.w>0.0f?clamp((v.w-a.w)/v.w,0.0f,1.0f):0.0f;
     positionTexture.write(float4(a.xyz,remaining),uint2(i%positionTexture.get_width(),i/positionTexture.get_width()));
 }
@@ -72,7 +72,7 @@ void main() {
         velocityLife[i]=vec4(velocity,v.w);
     }
     positionAge[i]=a;
-    impactEvents[i]=vec4(a.xyz,hitGround?1.0:0.0);
+    if(p.pad>0.5) impactEvents[i]=vec4(a.xyz,hitGround?1.0:0.0);
     const ivec2 size=imageSize(positionTexture);
     const float remaining=v.w>0.0?clamp((v.w-a.w)/v.w,0.0,1.0):0.0;
     imageStore(positionTexture,ivec2(int(i)%size.x,int(i)/size.x),vec4(a.xyz,remaining));
