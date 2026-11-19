@@ -1923,3 +1923,20 @@ No regular CPU material batching policy was relaxed.
 **Validation**: source inspection/commits only. Native
 C++, Objective-C++, MSL, CTest and real hardware execution
 remain NOT RUN; keep all new flags disabled by default.
+
+
+## PBR ICB host-submission diagnostics — Stage 10AE
+
+`Renderer3D::gpuModelDrawStats()` now publishes
+`perCommandPbrSubmissions` and `mixedPbrSubmissions`.
+Both are incremented only when
+`Device::executeGpuEncodedIndexedIcb` returns success
+for an opt-in per-command PBR group. The mixed counter
+requires at least two distinct U2 or source texture
+payloads in the accepted group. These are **host-accepted
+submission** counters, NOT GPU-completion events or
+screenshot parity evidence.
+
+They reset on GPU draw preparation; existing ICB
+preflight/rejected/failed counters remain unchanged.
+No native compile or GPU test was run for this stage.
