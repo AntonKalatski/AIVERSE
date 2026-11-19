@@ -1,0 +1,18 @@
+#include "apps/studio-native/StudioSession.h"
+#include <cassert>
+#include <iostream>
+
+int main() {
+    using namespace aiverse;
+    aiverse::studio::StudioSession session(".");
+    auto call = [&session](const char* json) { return session.dispatch(Json::parse(json)); };
+    const Json snapshot = call(R"({"id":1,"method":"studio.snapshot","params":{}})");
+    assert(snapshot["result"].isObject());
+    assert(snapshot["result"]["scene"]["entities"].isArray());
+    assert(snapshot["result"]["selectedId"].isNull());
+    assert(call(R"({"id":2,"method":"studio.select","params":{"id":"entity:0"}})").has("error"));
+    assert(call(R"({"id":3,"method":"workspace.call","params":{}})").has("error"));
+    assert(call(R"({"id":4,"method":"studio.setProperty","params":{"entityId":"entity:0","key":"x","value":1}})").has("error"));
+    assert(call(R"({"id":5,"method":"studio.select","params":{"id":null}})")["result"]["selectedId"].isNull());
+    std::cout << "studio session contract PASS\n";
+}
