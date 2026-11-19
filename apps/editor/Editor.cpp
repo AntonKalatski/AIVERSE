@@ -845,6 +845,9 @@ void Editor::stopSpectraGpuPreview() {
     spectraPreviewRequest_.pending=false;
     spectraPreviewStop_=true; // resources release before a future scene pass
 }
+bool Editor::spectraGpuPreviewActive() const {
+    return spectraPreviewGpu_ && spectraPreviewGpu_->ready();
+}
 void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
     if(spectraPreviewStop_) {
         if(spectraGpuTelemetry_==spectraPreviewGpu_.get())
@@ -852,6 +855,7 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
         spectraPreviewGpu_.reset();
         spectraPreviewStop_=false;
         spectraPreviewLoop_=false;
+        spectraPreviewPaused_=spectraPreviewFrozen_=false;
     }
     if(spectraPreviewRequest_.pending && spectraPreviewRequest_.inGame==game) {
         auto pending=std::move(spectraPreviewRequest_);
@@ -876,6 +880,7 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
             spectraGpuTelemetry_=spectraPreviewGpu_.get();
             spectraPreviewInGame_=game;
             spectraPreviewLoop_=pending.loop;
+            spectraPreviewPaused_=spectraPreviewFrozen_=false;
             spectraPreviewParams_=pending.params;
             spectraPreviewPosition_=pending.position;
             spectraPreviewNextBurst_=-1; // guaranteed first-frame spawn
@@ -890,14 +895,18 @@ void Editor::tickSpectraGpuPreview(const RTSCamera& cam,int w,int h,bool game) {
         return;
     }
     spectraPreviewFrameOpen_=true;
-    if(spectraPreviewNextBurst_<0 ||
-       (spectraPreviewLoop_ && time_>=spectraPreviewNextBurst_)) {
+    if(!spectraPreviewPaused_ && !spectraPreviewFrozen_ &&
+       (spectraPreviewNextBurst_<0 ||
+       (spectraPreviewLoop_ && time_>=spectraPreviewNextBurst_))) {
         if(!spectraPreviewGpu_->burst("__editor_gpu_preview",
                 spectraPreviewPosition_,{0,1,0},{1,1,1,1},&spectraPreviewParams_))
             ws_.log("spectrafx","Metal preview emission: "+spectraPreviewGpu_->reason(),true);
         spectraPreviewNextBurst_=time_+0.5;
     }
-    const float dt=std::clamp(ImGui::GetIO().DeltaTime,0.f,0.1f);
+    // Freeze stops visual time; Pause only blocks future births while living
+    // particles continue updating. Neither state changes gameplay simulation.
+    const float dt=spectraPreviewFrozen_?0.f:
+        std::clamp(ImGui::GetIO().DeltaTime,0.f,0.1f);
     if(!spectraPreviewGpu_->step(dt))
         ws_.log("spectrafx","Metal preview step: "+spectraPreviewGpu_->reason(),true);
 }
