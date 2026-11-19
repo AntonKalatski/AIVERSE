@@ -24,7 +24,9 @@ bool good(float3 v){
 void HumanGroomRuntime::generate(const HumanDNA& dna,GroomQuality quality) {
     dna.validate();
     const auto& g=dna.groom;
-    std::size_t count=g.guideCount;
+    std::size_t count=std::max<std::size_t>(
+        4,std::size_t(std::lround(float(g.guideCount)*
+                                 (0.12f+0.88f*g.density))));
     std::size_t segments=g.segments;
     if(quality==GroomQuality::Medium) {
         count=std::max<std::size_t>(4,count/3);
@@ -63,9 +65,12 @@ void HumanGroomRuntime::generate(const HumanDNA& dna,GroomQuality quality) {
             const float t=float(j)/float(segments);
             const float curlAngle=angle+t*11.0f;
             const float curl=g.curl*0.06f*t*t;
+            const float clump=g.clump*0.018f*t*t;
             const auto p=root+dir*(g.lengthMeters*t)+
-                          float3{std::cos(curlAngle)*curl,0,
-                                 std::sin(curlAngle)*curl};
+                          float3{std::cos(curlAngle)*curl+
+                                     std::sin(angle*0.27f)*clump,0,
+                                 std::sin(curlAngle)*curl+
+                                     std::cos(angle*0.27f)*clump};
             guide.rest[j]=guide.position[j]=guide.previous[j]=p;
         }
         guides_.push_back(std::move(guide));
