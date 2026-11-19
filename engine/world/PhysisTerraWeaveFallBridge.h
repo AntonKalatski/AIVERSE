@@ -108,11 +108,34 @@ dispatchPhysisTerraWeaveFalls(World& world, std::size_t maxEvents = 64) {
     if (!state || !terrain)
         throw std::logic_error("PHYSIS/Terra fall host resources not installed");
 
+    // Avoid scanning up to a million TerraWeave rooted plants PER event.
+    // Build a tiny requested-ID index, then make one linear pass over roots.
+    // TerraWeave authority is immutable during this host barrier.
+    const auto pending=physis::pendingNatureFractures(world);
+    if (pending.empty()) return {};
+    std::map<terraweave::AnchoredPlantId,
+             const terraweave::AnchoredPlant*> requested;
+    for (const auto& event : pending) {
+        const auto it=std::lower_bound(
+            state->bindings.begin(),state->bindings.end(),
+            event.entity.packed(),
+            [](const NatureFallBinding& b,std::uint64_t key){
+                return b.entityPacked < key;
+            });
+        if (it!=state->bindings.end() &&
+            it->entityPacked==event.entity.packed())
+            requested.try_emplace(terraPlantId(it->plant),nullptr);
+    }
+    for (const auto& plant : terrain->rooted) {
+        auto it=requested.find({plant.anchor.speciesId,plant.anchor.plantKey});
+        if (it!=requested.end())it->second=&plant;
+    }
+
     return physis::dispatchNatureFractures(
         world, [&](const physis::NatureFractureEvent& event) {
             using D = physis::NatureFractureDisposition;
-            // Earlier sink calls replace the host ledger resource; always
-            // re-read its pointer, not a stale pre-dispatch reference.
+            // Earlier sink calls replace the host ledger resource; re-read
+            // the mapping, not a stale pointer retained into a COW write.
             const auto* host = world.resourceConst<NatureFallHostState>();
             const auto packed = event.entity.packed();
             const auto bound = std::lower_bound(
@@ -122,18 +145,11 @@ dispatchPhysisTerraWeaveFalls(World& world, std::size_t maxEvents = 64) {
                 });
             if (bound == host->bindings.end() || bound->entityPacked != packed)
                 return D::Retry;
-            const auto* authority =
-                world.resourceConst<terraweave::TerraWeaveAuthorityResource>();
-            const auto it = std::find_if(
-                authority->rooted.begin(),authority->rooted.end(),
-                [&](const terraweave::AnchoredPlant& p){
-                    return p.anchor.plantKey == bound->plant.plantKey &&
-                           p.anchor.speciesId == bound->plant.speciesId;
-                });
-            if (it == authority->rooted.end())
+            const auto plant=requested.find(terraPlantId(bound->plant));
+            if (plant==requested.end() || !plant->second)
                 return D::Retry;
-            const auto record =
-                makeNatureFallRecord(event,*it,authority->earth.revision);
+            const auto record=makeNatureFallRecord(
+                event,*plant->second,terrain->earth.revision);
             if (!record) return D::Retry;
             return stageNatureFall(world,event,*record);
         }, maxEvents);
