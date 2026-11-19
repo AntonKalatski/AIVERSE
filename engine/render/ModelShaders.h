@@ -674,10 +674,10 @@ struct IcbPbrTextures {
     depth2d<float> tex12 [[id(24)]];
     sampler s12 [[id(25)]];
 #if defined(AIVERSE_MODEL_VT)
+    // The VT physical atlas uses the existing s1 material sampler;
+    // the page table uses read(), so neither requires a new sampler.
     texture2d_array<float, access::sample> tex13 [[id(26)]];
-    sampler s13 [[id(27)]];
     texture2d_array<float, access::read> tex14 [[id(28)]];
-    sampler s14 [[id(29)]];
 #endif
 #if defined(VIRTUAL_ALPHA_MASK)
     texture2d<float> tex15 [[id(30)]];
