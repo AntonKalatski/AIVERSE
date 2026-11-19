@@ -379,6 +379,13 @@ public:
     void setTerrainDetail(const terrain::DetailSurface* d, const std::vector<uint8_t>* splat) { terrain_.setDetail(d, splat); }
     const TerrainRenderer& terrainRenderer() const { return terrain_; }
     void draw(render::Renderer3D& r, const RtsScene& s, double time, const std::vector<uint8_t>* vision, const MapGrid& grid);
+    // Secondary camera: emits prepared terrain and fog without updating
+    // simulation, animation clocks, field textures or fog transitions.
+    // Requires a primary draw() in the same presentation frame.
+    void drawPreparedTerrainFog(render::Renderer3D& renderer,
+                                const MapGrid& grid,
+                                const std::vector<uint8_t>* vision,
+                                double seconds);
     // Optional LENS one-frame capture of pre-LOD MotionWeave model packets.
     // Owner must disable this before resources can be reimported or destroyed.
     void setCameraPreparedCapture(render::CameraModelSnapshot* target) noexcept {
