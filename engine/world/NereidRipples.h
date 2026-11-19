@@ -52,7 +52,8 @@ public:
         candidates.reserve(ripples_.size());
         for(size_t i=0;i<ripples_.size();++i) {
             const auto& r=ripples_[i];
-            if(waterId==0 || waterId!=r.waterId+1)continue;
+            if(waterId==0 || r.waterId==UINT64_MAX ||
+               waterId!=r.waterId+1)continue;
             const double dx=r.x-targetX,dz=r.z-targetZ;
             const double d2=dx*dx+dz*dz;
             // Do not clip by distance from the mesh origin: a polygon or
