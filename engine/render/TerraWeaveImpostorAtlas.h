@@ -1,5 +1,7 @@
-// TerraWeave multi-azimuth tree impostors. All azimuths share a single GPU
-// texture and a single quad model; per-view MATERIAL overrides select UV tiles.
+// TerraWeave multi-azimuth tree impostors. All azimuths share ONE GPU
+// texture, with separate bark and leaf mask pages in the same atlas.
+// Two co-located model primitives keep trunks opaque in winter; per-view
+// MATERIAL overrides select the right image tile without shader changes.
 // This preserves Renderer3D's normal model instancing/material grouping.
 #pragma once
 
@@ -21,7 +23,7 @@ struct ArborImpostorAtlasSettings {
     uint32_t azimuthViews = 8; // 4, 8, or 16
 };
 
-// Keep one vector<Material> per azimuth to pass to ModelDraw::materials.
+// Keep two materials (bark, foliage) per azimuth in ModelDraw::materials.
 // These overrides MUST outlive all Renderer3D submissions of the frame.
 struct ArborImpostorAtlas {
     std::unique_ptr<render::Model> model;
@@ -39,10 +41,12 @@ inline ArborImpostorAtlas makeArborImpostorAtlas(
     if ((views != 4 && views != 8 && views != 16) ||
         width < 32 || width > 512 || height < 32 || height > 1024 ||
         gutter < 2 || gutter * 3 >= width || gutter * 3 >= height ||
-        width * views > 8192)
+        uint64_t(width) * views * 2u > 8192u)
         throw std::invalid_argument("TerraWeave impostor atlas settings");
 
-    // Reuse the standard one-quad mesh and alpha-mask material.
+    // Reuse the generic quad geometry, then add a second coplanar-ish quad
+    // for foliage, only 2 extra triangles. Bark/leaf share one GPU texture,
+    // so foliage can become transparent without fading the trunk.
     ArborImpostorAtlas out;
     out.model = makeArborBillboardModel(profile, seed, settings.tile);
     out.views = views;
@@ -51,8 +55,8 @@ inline ArborImpostorAtlas makeArborImpostorAtlas(
                       std::to_string(seed) + "/" + std::to_string(views);
 
     render::Image& atlas = out.model->images[0];
-    atlas.name = "TerraWeave Arbor azimuth atlas";
-    atlas.width = static_cast<int>(width * views);
+    atlas.name = "TerraWeave Arbor bark + foliage azimuth atlas";
+    atlas.width = static_cast<int>(width * views * 2u);
     atlas.height = static_cast<int>(height);
     atlas.rgba.assign(static_cast<size_t>(atlas.width) * atlas.height * 4, 0);
     atlas.repeat = false;
@@ -74,7 +78,8 @@ inline ArborImpostorAtlas makeArborImpostorAtlas(
         const double angle = tau * double(frame) / double(views);
         const float c = static_cast<float>(std::cos(angle));
         const float s = static_cast<float>(std::sin(angle));
-        const int tileLeft = static_cast<int>(frame * width);
+        // All bark azimuths occupy the first half, foliage the second.
+        // Each independent tile retains its own bilinear-filter gutters.
         const int W = static_cast<int>(width), H = static_cast<int>(height);
         auto xScreen = [&](int32_t x, int32_t z) {
             return W / 2 + static_cast<int>(std::lround(
@@ -84,8 +89,9 @@ inline ArborImpostorAtlas makeArborImpostorAtlas(
             return H - 1 - static_cast<int>(gutter) -
                    static_cast<int>(std::lround(float(y) * pixelsY));
         };
-        auto disk = [&](int cx, int cy, int radius,
-                        uint8_t red, uint8_t green, uint8_t blue) {
+        auto disk = [&](uint32_t layer,int cx,int cy,int radius,
+                        uint8_t red,uint8_t green,uint8_t blue) {
+            const size_t tileLeft=size_t(layer*views+frame)*width;
             radius = std::clamp(radius, 1, std::max(W, H));
             const int minX = std::max(0, cx - radius);
             const int maxX = std::min(W - 1, cx + radius);
@@ -96,7 +102,7 @@ inline ArborImpostorAtlas makeArborImpostorAtlas(
                     const int dx = x - cx, dy = y - cy;
                     if (dx * dx + dy * dy > radius * radius) continue;
                     const size_t at = (static_cast<size_t>(y) * atlas.width +
-                                       static_cast<size_t>(tileLeft + x)) * 4;
+                                       tileLeft + static_cast<size_t>(x)) * 4;
                     atlas.rgba[at] = red;
                     atlas.rgba[at + 1] = green;
                     atlas.rgba[at + 2] = blue;
@@ -104,8 +110,9 @@ inline ArborImpostorAtlas makeArborImpostorAtlas(
                 }
             }
         };
-        // Bark first, canopy second: foreground foliage naturally covers
-        // branch silhouettes. Same deterministic palette for each viewpoint.
+        // Bake bark and foliage as separate opaque cutout masks. The
+        // renderer later overlays foliage ahead of bark, and seasons only
+        // change the foliage primitive's material.
         for (const TreeBranch& branch : tree.branches) {
             const int x0 = xScreen(branch.x0, branch.z0);
             const int y0 = yScreen(branch.y0);
@@ -118,33 +125,68 @@ inline ArborImpostorAtlas makeArborImpostorAtlas(
                 const int y = y0 + (y1 - y0) * step / steps;
                 const int32_t radiusCm = branch.startRadiusCm +
                     (branch.endRadiusCm - branch.startRadiusCm) * step / steps;
-                disk(x, y, std::max(1, static_cast<int>(std::lround(
-                     float(radiusCm) * pixelsX))), 103, 64, 38);
+                disk(0u,x,y,std::max(1,static_cast<int>(std::lround(
+                     float(radiusCm)*pixelsX))),103,64,38);
             }
         }
         for (const LeafCluster& leaf : tree.leaves) {
             const uint8_t v = static_cast<uint8_t>(leaf.variation % 29);
-            disk(xScreen(leaf.xCm, leaf.zCm), yScreen(leaf.yCm),
-                 std::max(1, static_cast<int>(std::lround(
-                     float(leaf.radiusCm) * std::min(pixelsX, pixelsY)))),
-                 static_cast<uint8_t>(34 + v), static_cast<uint8_t>(88 + v),
-                 static_cast<uint8_t>(27 + v / 2));
+            disk(1u,xScreen(leaf.xCm,leaf.zCm),yScreen(leaf.yCm),
+                 std::max(1,static_cast<int>(std::lround(
+                     float(leaf.radiusCm)*std::min(pixelsX,pixelsY)))),
+                 static_cast<uint8_t>(34+v),static_cast<uint8_t>(88+v),
+                 static_cast<uint8_t>(27+v/2));
         }
     }
 
-    // Use one model and one texture for *all* viewpoints. A fixed vector of
-    // per-azimuth material overrides only changes the UV transform, which
-    // Renderer3D already uploads/batches as normal PBR material state.
+    // One model, one texture, two independent alpha-masked materials.
+    // A tiny front offset keeps foliage ahead of bark under depth testing,
+    // while the root-origin transform and camera-facing yaw remain shared.
+    auto& model=*out.model;
+    if(model.vertices.size()!=4 || model.indices.size()!=6 ||
+       model.meshes.size()!=1 || model.meshes[0].primitives.size()!=1 ||
+       model.materials.size()!=1)
+        throw std::logic_error("TerraWeave impostor expected one source quad");
+    render::Material bark=model.materials[0];
+    bark.name="TerraWeave impostor bark";
+    bark.baseTex=0;
+    bark.alpha=render::AlphaMode::Mask;
+    render::Material leaves=bark;
+    leaves.name="TerraWeave impostor foliage";
+    model.materials={std::move(bark),std::move(leaves)};
+    for(size_t i=0;i<4;++i){
+        auto vertex=model.vertices[i];
+        vertex.pos.z+=0.003f; // face +Z points toward camera
+        model.vertices.push_back(vertex);
+    }
+    model.indices.insert(model.indices.end(),{4u,5u,6u,4u,6u,7u});
+    model.meshes[0].primitives[0].material=0;
+    auto foliagePrimitive=model.meshes[0].primitives[0];
+    foliagePrimitive.material=1;
+    foliagePrimitive.firstVertex=4;
+    foliagePrimitive.vertexCount=4;
+    foliagePrimitive.firstIndex=6;
+    foliagePrimitive.indexCount=6;
+    model.meshes[0].primitives.push_back(foliagePrimitive);
+    // makeArborBillboardModel already finalized a single-quad model.
+    // Recompute its bounds/material batches after the two-layer conversion.
+    model.finalize();
+
+    // Two material slots per view, matching Primitive.material 0/1.
+    // Both materials sample disjoint regions of the SAME atlas image.
     out.viewMaterials.reserve(views);
-    for (uint32_t frame = 0; frame < views; ++frame) {
-        render::Material m = out.model->materials[0];
-        // Half-texel inset prevents filtering into adjacent atlas tiles.
-        const float atlasWidth = float(width * views);
-        m.uvOffset.x = (float(frame * width) + 0.5f) / atlasWidth;
-        m.uvOffset.y = 0.5f / float(height);
-        m.uvScale.x = (float(width) - 1.0f) / atlasWidth;
-        m.uvScale.y = (float(height) - 1.0f) / float(height);
-        out.viewMaterials.push_back({std::move(m)});
+    for(uint32_t frame=0;frame<views;++frame){
+        auto materials=model.materials;
+        for(uint32_t layer=0;layer<2u;++layer){
+            auto& m=materials[layer];
+            const float atlasWidth=float(width*views*2u);
+            const float tileX=float((layer*views+frame)*width);
+            m.uvOffset.x=(tileX+0.5f)/atlasWidth;
+            m.uvOffset.y=0.5f/float(height);
+            m.uvScale.x=(float(width)-1.0f)/atlasWidth;
+            m.uvScale.y=(float(height)-1.0f)/float(height);
+        }
+        out.viewMaterials.push_back(std::move(materials));
     }
     return out;
 }
