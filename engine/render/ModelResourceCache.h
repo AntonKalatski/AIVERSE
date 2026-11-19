@@ -115,6 +115,22 @@ public:
         return it==models_.end()?ModelReadLease{}:
             acquireModelRead(it->second.get());
     }
+    // One owner-thread read transaction protects ALL currently resident
+    // Models across a legacy multi-model draw. It does not return a Model*
+    // or change ownership, and never authorizes GPU resource destruction.
+    // Acquire after synchronous asset loads, before accessing authored
+    // pointers; release before attempting cache eviction/replacement.
+    ModelCacheReadScope acquireFrameReadScope() const {
+        const auto thread=std::this_thread::get_id();
+        if(resourceDevice_ && resourceThread_!=thread)
+            throw std::logic_error("ModelResourceCache frame read on foreign GPU thread");
+        if(readState_->ownerThread==std::thread::id{})
+            readState_->ownerThread=thread;
+        if(readState_->ownerThread!=thread ||
+           !readState_->alive.load(std::memory_order_acquire))
+            throw std::logic_error("ModelResourceCache frame reader invalid or expired");
+        return ModelCacheReadScope(readState_);
+    }
     size_t activeModelReaders() const noexcept {
         return readState_->readers.load(std::memory_order_acquire);
     }
