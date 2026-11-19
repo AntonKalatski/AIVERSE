@@ -242,6 +242,16 @@ public:
     // The source model may already have been uploaded on the render thread.
     render::Model* insertIfAbsent(std::string key,
                                   std::unique_ptr<render::Model> model) {
+        // New-key streaming may run under active read scopes, but map
+        // mutation must still occur on the cache's owner/render thread.
+        // Check BEFORE try_emplace: std::map is not concurrent-read/write.
+        const auto thread=std::this_thread::get_id();
+        if((resourceDevice_ && resourceThread_!=thread) ||
+           (readState_->ownerThread!=std::thread::id{} &&
+            readState_->ownerThread!=thread) ||
+           !readState_->alive.load(std::memory_order_acquire))
+            throw std::logic_error(
+                "ModelResourceCache insert on foreign or expired owner");
         auto [it,inserted]=models_.try_emplace(std::move(key),std::move(model));
         if(inserted)++generation_;
         return it->second.get();
