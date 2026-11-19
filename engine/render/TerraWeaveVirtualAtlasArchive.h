@@ -9,6 +9,7 @@
 
 #include "Model.h"
 #include "VirtualTextureModelFeedback.h"
+#include "ModelVirtualTextureFallback.h"
 #include "TerraWeaveVirtualTextureFeedback.h"
 #include "../gfx/VirtualTexturePageArchiveWriter.h"
 #include <cstdint>
@@ -74,6 +75,26 @@ inline bool packTerraWeaveModelImage(
     }
     return packTerraWeaveAtlas(
         versionsRoot,revision,pixels,config,out,error);
+}
+
+// After packing a Terra model image into an immutable VT archive, opt in
+// to uploading only a tiny fallback texture for that image. The generic
+// policy rejects alpha-sensitive or shared source images. This is
+// intentionally separate from packing: a packed alpha-mask atlas can
+// still be streamed without sacrificing its full-resolution silhouette.
+inline bool configureTerraWeavePackedImageFallback(
+    Model& model, size_t imageIndex,
+    const gfx::VirtualTextureArchiveVersion& archive,
+    int maxDimension = 64,
+    VirtualFallbackSavings* savings = nullptr,
+    std::string* reason = nullptr) {
+    if (model.path.rfind("terraweave/", 0) != 0) {
+        if (reason) *reason = "model is not a TerraWeave asset";
+        if (savings) *savings = {};
+        return false;
+    }
+    return configureModelVirtualFallback(
+        model,imageIndex,archive,maxDimension,savings,reason);
 }
 
 // One complete archive per VT sampling domain. The atlas and page-table
