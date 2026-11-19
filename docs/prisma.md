@@ -3296,6 +3296,142 @@ latency/FPS, GPU fences и CI. Структурные проверки не
 `docs/handoffs/prisma-stage-58.md`.
 
 
+
+## Stage 59 — Manual EV, прямоугольная ROI и отказоустойчивый HDR metering
+
+Ручной EV реализован **внутри существующего** `AutoExposure`
+postfx effect; он не запускает второй HDR owner, GPU-историю,
+новый fullscreen pass или дополнительный sampler. Каталог
+`PrismaData.cpp` дополняет Stage 58 полями:
+
+| Поле | По умолчанию | Назначение |
+|---|---|---|
+| `manualExposure` | false | Режим фиксированной экспозиции вместо автоматического замера |
+| `manualEV` | 0 | −12…+12 stops, `2^manualEV` в линейном HDR |
+| `meterBox` | false | Вместо круга использовать прямоугольную ROI |
+| `meterHalfWidth` | 0.25 | Полуширина прямоугольника в долях **ширины** кадра |
+| `meterHalfHeight` | 0.25 | Полувысота прямоугольника в долях **высоты** кадра |
+
+Все новые настройки opt-in и добавлены в конец каталога.
+Старые `postfx`, editor IDs и MCP операции сохраняются;
+у существующих проектов `manualExposure=false` и
+`meterBox=false` означают отсутствие изменений. Обычная
+автоматическая экспозиция всё так же требует
+`AIVERSE_PRISMA_AUTO_EXPOSURE=1`, а **явно включённый**
+manualExposure работает без этого флага (но требует
+authored `autoExposure`, enabled postFX, разрешённый tier
+и линейный HDR).
+
+### Fixed EV и camera state
+
+В `Prisma::resolve` ручной режим выбирается по профилю камеры
+и native override. При активном manualExposure GPU metering,
+`kExposureLog/Reduce/Adapt`, 1×1 exposure history и texture
+sampler `TEX8/TEX9` **не используются**. Вместо этого
+уже существующий `CompositeU.filt[2]` умножается на
+`exp2(manualEV)` **после** вычисления author ColorGrade
+exposure, но **до** final HDR composite / ACES / sRGB / LUT /
+Shader Graph и UI. Это означает, что фиксированный EV и
+художественная ColorGrade exposure композиционно
+перемножаются, но автоматической адаптации в manual-режиме нет.
+
+Manual EV из нативных вызовов и C++ профиля проверяется на
+finite и ограничивается [-12,+12] перед HDR; NaN/Inf
+не пропускаются в shader. При переходе в/из ручного
+режима camera-local exposure history инвалидируется; при
+возврате к автоматике выполняется новый замер текущей
+сцены вместо смешивания со старой яркостью. Ручной режим
+может работать сразу при первом кадре — в отличие от
+`freezeExposure`, требующего валидную предшествующую 1×1
+адаптацию. При ошибке пользовательского Shader Graph
+fallback к `composite(0)` сохраняет fixed EV, поскольку
+`filt[2]` применяется вне `PF_GRADE` и `PF_AUTO_EXPOSURE`.
+При невалидном final pipeline отчёт не объявляет manual EV
+выполненным.
+
+Native API:
+```cpp
+prisma.setViewManualExposure(stableViewId, true, 1.5f);
+prisma.setViewManualExposure(stableViewId, false, 0.0f); // explicit disable
+prisma.clearViewManualExposure(stableViewId); // restore profile inheritance
+```
+Выбор `setViewManualExposure(id,false,...)` явно
+переопределяет авторский `manualExposure=true`; clear
+возвращает управление профилю и инвалидацией AE history.
+Overrides принадлежат stable presentation `viewId`, а не
+разрешению/позиции камеры. `retireView`,
+`retireUnregisteredViews` и `shutdown` удаляют их
+вместе с остальным per-camera state, не освобождая
+общие GPU texture caches.
+
+### Мягкий прямоугольник для HDR Metering
+
+Stage 58 круговая область остаётся default; Stage 59
+добавляет `meterBox=true` с параметрами
+`meterHalfWidth` и `meterHalfHeight` в нормализованных
+координатах viewport. Радиус и feather прежней области
+сохранены. В `ExposureMeterU` добавлен `regionBox`
+(пятый vec4); `kExposureLog` через
+`regionBox.z > 0.5` выбирает signed-distance box вместо
+circle. Разность X приводится к масштабу **высоты**
+кадра множителем aspect; у мягкой границы есть
+`smoothstep(0,feather,signedDistance)`.
+`TUV(q)` обеспечивает одинаковое направление Y в
+GL/Metal, а прежний `meterOutsideWeight >= 0.02`
+сохраняет ненулевые вклады вне области. Глобальная
+редукция (weighted log sum и weight sum) не изменена.
+
+Native `ExposureMeterRegion` дополняет существующие поля
+`bool box=false; float halfWidth=0.25, halfHeight=0.25`
+**в конце** структуры, сохраняя старые aggregate initializers.
+Сеттеры клэмпят finite размеры к [0.01,0.5], а ROI
+не входит в authoritative ECS. Отчёт camera view
+дополнен `autoExposureBoxMetered` (только для
+**фактически закодированной** экспозиции). В режиме
+manualEV никакой meterRegion на кадре не выполняется.
+
+### Fallback при сбое GPU metering
+
+Если HDR luminance pyramid не закончилась полноценной
+1×1 текстурой (`valid=false` или `pw/ph != 1`),
+Prisma теперь **не выделяет и не пишет**
+`ExposureView.history` для этого замера. Старый
+per-camera sample инвалидируется, final composite
+продолжает работать без sampled Auto Exposure;
+в будущих кадрах может быть сделана новая попытка.
+Частично закодированные mip passes не выдаются за
+успешное адаптированное освещение, отдельного
+GPU sync ожидания не добавлено.
+
+`ViewEffectReport.manualExposureEncoded` и
+`manualExposureEV` сообщают только об истинно выбранном
+и закодированном fixed EV на последнем `resolve`.
+`autoExposureTextureSlot` остаётся -1 для manual.
+Существующая матрица эффектов отмечает manual как
+выполненный через base/fallback HDR composite, без
+ложной необходимости ExposureLog pipelines.
+`autoExposureBoxMetered` показывается вместе с
+`autoExposureRegionMetered` только после реального
+GPU meter pass и последующего успешного composite.
+В редакторе эти параметры доступны из общего
+каталога с пояснениями и статусом по viewId.
+
+Это **не** полноценный произвольный metering texture
+mask, GPU histogram, local exposure, физическая
+имитация камеры, TSR или решение всех Shader Graph
+ошибок. Дополнительные рендер-ветви остаются
+экспериментальными до настоящих GPU-тестов.
+
+**Фактическая проверка:** GitHub readback пяти
+изменённых исходников и **49/49 source-only
+структурных проверок**. **NOT RUN:** CMake, clang,
+CTest, GLSL/MSL/SPIR-V компиляция, Metal/GL/GLES/
+Vulkan/WebGL GPU smoke/pixel capture, сохранение editor
+undo, замер HDR parity и производительности, CI.
+Для точных коммитов и следующего шага см.
+`docs/handoffs/prisma-stage-59.md`.
+
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
