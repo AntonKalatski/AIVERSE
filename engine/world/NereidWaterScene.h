@@ -4,6 +4,7 @@
 #include "engine/render/NereidSurfaceResident.h"
 #include "engine/world/WorldAssets.h"
 #include "engine/world/NereidRipples.h"
+#include "engine/world/NereidWindField.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -478,7 +479,7 @@ public:
     }
     void draw(render::Renderer3D& renderer,Cell origin,int cellSize,
               const NereidRippleField* ripples=nullptr,
-               render::float4 wind={})const {
+               const NereidVisualWindField* windField=nullptr)const {
         const double worldOriginX=double(origin.x)*double(cellSize);
         const double worldOriginZ=double(origin.z)*double(cellSize);
         const double worldOriginY=double(origin.y)*double(cellSize);
@@ -497,6 +498,9 @@ public:
                     if(ripples)packet=ripples->shaderPacketForTile(
                         slot.source.id,worldOriginX,worldOriginZ,
                         tile.minX,tile.maxX,tile.minZ,tile.maxZ);
+                    const render::float4 wind=windField?
+                        windField->sample(tile.centerX,tile.centerZ).shaderUniform():
+                        render::float4{};
                     slot.gpu->drawTile(renderer,transform,tile,
                                        packet.rings,packet.shapes,wind);
                 }
@@ -508,6 +512,11 @@ public:
                     packet=ripples->shaderPacket(
                         slot.source.id,worldOriginX,worldOriginZ,targetX,targetZ);
                 }
+                const double windX=observer_?observer_->x.toDouble():basis.originX;
+                const double windZ=observer_?observer_->z.toDouble():basis.originZ;
+                const render::float4 wind=windField?
+                    windField->sample(windX,windZ).shaderUniform():
+                    render::float4{};
                 slot.gpu->draw(renderer,transform,
                                packet.rings,packet.shapes,wind);
             }
