@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <memory>
+#include <map>
 #include <string>
 #include <utility>
 #include <vector>
