@@ -2,9 +2,26 @@
 #include "WorldAssets.h"
 
 namespace aiverse::world {
+
+// Optional explicit namespace for additive scene collision. Each slot reserves
+// 65,536 possible collider IDs, with slot N based at 0x80000000 + N*65536.
+// The host's SceneCollisionNamespaceCatalog allocates non-overlapping ranges.
+// A zero slotCount selects the original standalone/legacy behavior.
+struct CollisionIdRange {
+    uint32_t firstSlot=0;
+    uint32_t slotCount=0;
+    constexpr bool valid() const {
+        return slotCount>0 && firstSlot<32768 &&
+               uint64_t(firstSlot)+slotCount<=32768;
+    }
+};
 class CollisionStream {
 public:
-    CollisionStream(const Json& manifest,AssetReader reader,SpatialWorld& target);
+    // Existing three-argument constructor remains source/behavior compatible.
+    // Explicit ranges are assigned before streaming and never depend on I/O
+    // completion order. Caller must hold the namespace lease for this lifetime.
+    CollisionStream(const Json& manifest,AssetReader reader,SpatialWorld& target,
+                    CollisionIdRange idRange={});
     ~CollisionStream();
     // Must be called before advancing a simulation tick. False means wait, never simulate holes.
     bool prepareRegions(std::span<const Bounds> regions,size_t requests=4,size_t publications=4);
