@@ -14,6 +14,8 @@ namespace aiverse::lib::nereid {
 struct WaterPresentationEvent {
     Entity source=kNullEntity;
     WaterInteractionOutputComponent event{};
+    Vec2 movementDirection{};
+    Fixed travelled{};
 };
 
 // Call exactly once per presented simulation tick after water.interaction.
@@ -29,7 +31,16 @@ inline std::vector<WaterPresentationEvent> snapshotWaterInteractionEvents(
                output.kind==WaterInteractionKind::None)return;
             if(result.size()>=limit)
                 throw std::invalid_argument("nereid: interaction event snapshot limit exceeded");
-            result.push_back({entity,output});
+            WaterPresentationEvent presentation;
+            presentation.source=entity;
+            presentation.event=output;
+            if(const auto* motion=world.tryGetConst<WaterWakeDirectionComponent>(entity)) {
+                if(motion->sampledTick==completedTick) {
+                    presentation.movementDirection=motion->direction;
+                    presentation.travelled=motion->travelled;
+                }
+            }
+            result.push_back(presentation);
         });
     std::sort(result.begin(),result.end(),
         [](const WaterPresentationEvent& a,const WaterPresentationEvent& b) {
