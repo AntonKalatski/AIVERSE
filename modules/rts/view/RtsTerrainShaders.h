@@ -388,7 +388,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant TU0& u [[buffer(1)]], con
                         texture2d<float> tex11 [[texture(11)]], sampler s11 [[sampler(11)]],
                         texture2d<float> tex12 [[texture(12)]], sampler s12 [[sampler(12)]],
                         texture2d<float> tex13 [[texture(13)]], sampler s13 [[sampler(13)]],
-                        texture2d<float> tex14 [[texture(14)]], sampler s14 [[sampler(14)]],
+                        texture2d<float> tex14 [[texture(14)]],
                         texture2d<float> tex15 [[texture(15)]], sampler s15 [[sampler(15)]]
 #if TERRAIN_DETAIL
                         , texture2d<float> tex16 [[texture(16)]], texture2d<float> tex17 [[texture(17)]]
@@ -399,7 +399,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant TU0& u [[buffer(1)]], con
 #if TERRAIN_DETAIL
     // Metal has sampler slots 0..15 per stage: the detail textures use constant samplers
     constexpr sampler s16(filter::linear, mip_filter::linear, address::clamp_to_edge);
-    constexpr sampler s17(filter::linear, mip_filter::linear, address::clamp_to_edge);
+    // Detail splat uses s16: same filtering, mip selection and addressing.
 #endif
     constexpr sampler s18(filter::linear, mip_filter::none, address::clamp_to_edge);   // height field (traced shadows)
     float3 n = normalize(in.nrm);
@@ -425,7 +425,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant TU0& u [[buffer(1)]], con
 #if TERRAIN_TIER >= 1
     if (u.mode.y > 0.5) {
 #if TERRAIN_DETAIL
-        float4 w = tex17.sample(s17, in.wpos.xz * u.detail.xy + u.detail.zw, bias(outB));
+        float4 w = tex17.sample(s16, in.wpos.xz * u.detail.xy + u.detail.zw, bias(outB));
 #else
         float4 w = tex4.sample(s4, in.wpos.xz / u.lod.zw);
 #endif
@@ -476,7 +476,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant TU0& u [[buffer(1)]], con
             float3 c = tex13.sample(s13, q.zy).rgb * bw.x + tex13.sample(s13, q.xz).rgb * bw.y + tex13.sample(s13, q.xy).rgb * bw.z;
             if (u.cliffTint.w > 0.5) {
                 float3 nn = geoN;
-                float3 tx = unpackN(tex14.sample(s14, q.zy)), ty = unpackN(tex14.sample(s14, q.xz)), tz = unpackN(tex14.sample(s14, q.xy));
+                float3 tx = unpackN(tex14.sample(s13, q.zy)), ty = unpackN(tex14.sample(s13, q.xz)), tz = unpackN(tex14.sample(s13, q.xy));
                 float3 wn = normalize(float3(0.0, tx.y, tx.x) * bw.x + float3(ty.x, 0.0, ty.y) * bw.y + float3(tz.x, tz.y, 0.0) * bw.z + nn);
                 n = normalize(mix(n, wn, cw));
             }
