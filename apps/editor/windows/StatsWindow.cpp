@@ -83,6 +83,11 @@ public:
         ImGui::Text("GPU очередь освобождения: %zu моделей · %zu партий · пик %zu",
                     residency.retiredModels,residency.retirementBatches,
                     residency.retirementPeak);
+        ImGui::Text("Модели на GPU (оценка, без shared pool): %.2f MiB",
+                    double(residency.estimatedRetiredGpuBytes)/mib);
+        if(residency.estimatedRetirementByteLimit)
+            ImGui::TextDisabled("Предел оценки: %.2f MiB",
+                double(residency.estimatedRetirementByteLimit)/mib);
         ImGui::Text("Порог новых загрузок: %zu моделей · ожидание fence: %s",
                     residency.retirementSoftLimit,
                     residency.publicationBackpressured ? "ограничивает новые загрузки" : "норма");
