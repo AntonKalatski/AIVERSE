@@ -315,6 +315,7 @@ void frame(void*) {
     g_device->beginFrame(S.fbW, S.fbH);
     if (S.cb.frame) S.cb.frame(*g_device, dt);
     g_device->endFrame();
+        if (S.cb.afterFrame) S.cb.afterFrame(*g_device);
 }
 } // namespace
 
