@@ -70,7 +70,7 @@ public:
     // pass. The caller owns texture-slot selection and must ensure there is
     // no feedback from the currently rendered target.
     bool bindColorTarget(gfx::Device& device,int textureSlot,uint64_t assetKey) const {
-        if(textureSlot<0 || textureSlot>=gfx::kMaxTextureSlots)return false;
+        if(textureSlot<0 || textureSlot>=16)return false;
         const auto handle=colorTarget(assetKey);
         if(!handle.valid())return false;
         device.setTexture(textureSlot,handle);
