@@ -10,6 +10,8 @@
 #include "engine/render/Model.h"
 #include "engine/render/Renderer3D.h"
 #include <algorithm>
+#include <compare>
+#include <cstdlib>
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
@@ -65,7 +67,7 @@ inline std::vector<NereidFloodVisualCell> collectNereidFloodVisualCells(
         if(out.size()>=maxCells)break; // deterministic sorted X/Z truncation
         const uint32_t speed=uint32_t(std::min<int64_t>(
             100000,int64_t(std::abs(cell.flowXcmPerSec))+
-                   std::abs(cell.flowZcmPerSec)));
+                   int64_t(std::abs(cell.flowZcmPerSec))));
         out.push_back({x,z,flood.gridCm,cell.groundCm,
                        int32_t(surface),speed});
     }
