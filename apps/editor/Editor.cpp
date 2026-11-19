@@ -836,7 +836,7 @@ void Editor::drawEditOverlays3D() {
 
 void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) {
     if (!vp.color.valid()) return;
-    if (playing() && !ws_.project.isFps()) { renderGame(vp, cam); return; }
+    if (playing() && !ws_.project.isFps()) { renderGame(vp, cam, 1ULL); return; }
     const bool traceSceneStages = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
     const auto stageStart = std::chrono::steady_clock::now();
     if (!ws_.project.isFps()) {
@@ -883,7 +883,9 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     refreshPrismaVolumes();
     prisma_.setViewId(1ULL);
     prisma_.applyCameraVolumes(prismaVolumes_, useCam.eye());
-    r3d_.render(pass, r3d_.studioDebugMode() ? nullptr : (postFxInScene ? &prisma_ : nullptr));
+    const bool postEnabledForScene = !r3d_.studioDebugMode() && postFxInScene;
+    r3d_.render(pass, postEnabledForScene ? &prisma_ : nullptr);
+    if (postEnabledForScene) prismaSceneRendered_ = true;
     const auto afterRender = std::chrono::steady_clock::now();
     r3d_.setSceneSelectionOutline(false);
     if (!ws_.project.isFps() && !r3d_.studioDebugMode()) {
@@ -921,7 +923,7 @@ void Editor::renderScene(Viewport& vp, const RTSCamera& cam, bool editOverlays) 
     }
 }
 
-void Editor::renderGame(Viewport& vp, const RTSCamera& cam) {
+void Editor::renderGame(Viewport& vp, const RTSCamera& cam, uint64_t prismaViewId) {
     if (!vp.color.valid() || !sim_) return;
     auto& gs = simModule()->state(*sim_);
     // fields / creep changing during play are read by the terrain shader: build once per play session
@@ -958,9 +960,11 @@ void Editor::renderGame(Viewport& vp, const RTSCamera& cam) {
     pass.depthTarget = vp.depth;
     pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
     refreshPrismaVolumes();
-    prisma_.setViewId(2ULL);
+    prisma_.setViewId(prismaViewId);
     prisma_.applyCameraVolumes(prismaVolumes_, cam.eye());
     r3d_.render(pass, &prisma_);
+    if (prismaViewId == 1ULL) prismaSceneRendered_ = true;
+    if (prismaViewId == 2ULL) prismaGameRendered_ = true;
     gameFx_.render({r3d_.lighting.fogColor, r3d_.lighting.fogDensity});
     if (gameFx_.hasReactiveGeometry())
         r3d_.addMotionReactiveDraw([this](gfx::Device& gpu,
@@ -1214,6 +1218,9 @@ void Editor::drawDockspace() {
 }
 
 void Editor::frame(gfx::Device& dev, double dt) {
+    // Window tabs can close or become dock-hidden without a destructor.
+    // Only a viewport that actually calls Prisma this frame stays live.
+    prismaSceneRendered_ = prismaGameRendered_ = false;
     auto t0 = std::chrono::steady_clock::now();
     const bool traceEditor = std::getenv("AIVERSE_FRAME_TRACE") != nullptr;
     time_ += dt;
@@ -1304,6 +1311,21 @@ void Editor::frame(gfx::Device& dev, double dt) {
         if (focusFirst_ > 0) --focusFirst_;
     }
     const auto afterWindows = std::chrono::steady_clock::now();
+    // At a hidden/closed tab transition, drop only camera-private histories.
+    // Shared size-keyed scene render targets remain usable by other tabs.
+    // The current GPU submission token fences the previous view's textures.
+    auto retireClosedView = [&](uint64_t id, bool rendered, bool& wasLive) {
+        if (wasLive && !rendered) {
+            prisma_.retireView(id);
+            r3d_.retireObjectMotionView(id, dev.gpuSubmissionFence());
+        }
+        wasLive = rendered;
+    };
+    retireClosedView(1ULL, prismaSceneRendered_, prismaScenePreviouslyLive_);
+    retireClosedView(2ULL, prismaGameRendered_, prismaGamePreviouslyLive_);
+    // Polling also runs when no Scene/Game render pass is active.
+    prisma_.collectGpuRetirements();
+    r3d_.collectCompletedObjectMotion(dev.gpuCompletedFence());
     drawOpenRequest();
     drawNativeBuild();
     // the screen: only the UI (3D views were rendered offscreen by their windows)
