@@ -72,8 +72,9 @@ inline void addWaterProbeFromTransformSystem(Simulation& sim,std::string name) {
 inline void addWaterSamplingSystem(Simulation& sim,std::string name) {
     sim.addSystem(std::move(name),[](Simulation& current) {
         World& world=current.world();
-        auto* contacts=world.prepareExistingWrite<WaterContactComponent>();
-        if(!contacts)return;
+        if(!world.countExisting<WaterContactComponent>())return;
+        // Detach the shared COW pool before modifying contact samples.
+        auto* contacts=&world.pool<WaterContactComponent>();
         const World& read=world;
         for(size_t i=0;i<contacts->size();++i) {
             const Entity e=contacts->entityAt(i);
