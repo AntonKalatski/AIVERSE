@@ -184,6 +184,11 @@ public:
                 rawModels_.requestAsync(
                     current->path,render::ModelLoadPriority::Interactive);
             rawModels_.publishReady(ed.device(),1,1.0);
+            const auto progress=rawModels_.cpuStats();
+            if(progress.workerActive || progress.queued)
+                ImGui::TextDisabled("CPU моделей: %zu / %zu задач · очередь %zu",
+                    progress.activeWorkers,progress.configuredWorkers,
+                    progress.queued);
 #else
             rawModels_.load(ed.device(),current->path);
 #endif
