@@ -50,7 +50,23 @@ public:
                 if(why)*why="PHYSIS admin journal lock path was replaced";
                 return false;
             }
-            return journal_.save(entries,why);
+#ifndef _WIN32
+            const int parentFd=journalLock_.directoryFd();
+            if(parentFd<0) {
+                if(why)*why="PHYSIS admin journal directory ownership lost";
+                return false;
+            }
+            const bool saved=journal_.savePinned(parentFd,entries,why);
+#else
+            const bool saved=journal_.save(entries,why);
+#endif
+            // Journal bytes are not safe to acknowledge if ownership was
+            // lost during I/O, even if the atomic rename already succeeded.
+            if(!journalLock_.valid()) {
+                if(why)*why="PHYSIS admin journal ownership changed during write";
+                return false;
+            }
+            return saved;
         });
         if(!listener_.open(port,true)) {
             journalLock_.release();
