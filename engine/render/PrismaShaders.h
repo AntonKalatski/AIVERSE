@@ -214,7 +214,26 @@ inline const char* kMotionVectors = R"(
 // ghost-producing history reads and no persistent color state.
 inline const char* kMotionBlur = R"(
     vec2 uv = TUV(s);
-    vec2 velocity = TEX1(uv).rg * p0.x;
+    float centerDepth = TEX2(uv).r;
+    vec2 velocity = TEX1(uv).rg;
+    // Depth-matched velocity dilation: preserve foreground motion along
+    // silhouettes without importing unrelated background velocity.
+    if (sun.z > 0.001) {
+        vec2 delta = px.xy * sun.z;
+        float limit = max(sun.x,0.0005);
+        for (int i=0; i<4; ++i) {
+            vec2 axis = i==0 ? vec2(delta.x,0.0) :
+                        i==1 ? vec2(-delta.x,0.0) :
+                        i==2 ? vec2(0.0,delta.y) : vec2(0.0,-delta.y);
+            vec2 neighbor = TUV(clamp(s+axis,vec2(0.0),vec2(1.0)));
+            float depthDifference = abs(TEX2(neighbor).r-centerDepth);
+            vec2 candidate = TEX1(neighbor).rg;
+            if (depthDifference < limit*0.25 &&
+                dot(candidate,candidate)>dot(velocity,velocity))
+                velocity=candidate;
+        }
+    }
+    velocity *= p0.x;
     vec2 pixels = velocity / max(px.xy,vec2(0.000001));
     float distancePx = length(pixels);
     float scale = min(1.0, p0.y / max(distancePx,0.0001));
@@ -224,7 +243,6 @@ inline const char* kMotionBlur = R"(
     // near silhouette would otherwise smear their color over foreground.
     // Device-depth threshold is intentionally conservative, independent of
     // the camera near/far planes; exact linear-depth filtering comes later.
-    float centerDepth = TEX2(uv).r;
     vec3 accum = vec3(0.0);
     float weight = 0.0;
     for (int i = 0; i < 16; ++i) {
