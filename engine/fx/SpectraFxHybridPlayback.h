@@ -37,7 +37,10 @@ public:
         : device_(device),cpu_(cpu),library_(library) {}
 
     // Destruction should happen before the RHI Device and CPU ParticleSystem.
-    ~SpectraFxHybridPlayback() { reset(); }
+    ~SpectraFxHybridPlayback() {
+        reset();
+        sharedRenderer_.release();
+    }
 
     void route(uint32_t cueId,Route value) {routes_[cueId]=std::move(value);}
     void unroute(uint32_t cueId) {routes_.erase(cueId);}
@@ -76,8 +79,18 @@ public:
         const auto load=library_.load(route->second.asset);
         const auto* entry=library_.find(route->second.asset);
         if(!load.valid || !entry) {++stats_.failed;return false;}
+        // All GPU emitter batches share one static quad, MSL/GLSL shader,
+        // and alpha/additive render pipelines; only particle state is private.
+        const auto preference=chooseSpectraFxBackend(device_,entry->config.backend);
+        const bool gpuRequested=preference.accepted &&
+                                preference.backend==SpectraFxExecutionBackend::Gpu;
+        if(gpuRequested && !sharedRendererAttempted_) {
+            sharedRendererAttempted_=true;
+            sharedRenderer_.init(device_);
+        }
         auto next=std::make_unique<SpectraFxHybridEmitter>();
-        if(!next->begin(device_,cpu_,entry->config,cue.position,cue.direction)) {
+        if(!next->begin(device_,cpu_,entry->config,cue.position,cue.direction,
+                        gpuRequested ? &sharedRenderer_ : nullptr)) {
             ++stats_.failed;return false;
         }
         if(oneShot) {
@@ -163,6 +176,8 @@ private:
     gfx::Device& device_;
     ParticleSystem& cpu_;
     SpectraFxGpuEmitterLibrary& library_;
+    SpectraFxGpuBillboardRenderer sharedRenderer_{};
+    bool sharedRendererAttempted_=false;
     std::unordered_map<uint32_t,Route> routes_;
     std::unordered_map<uint64_t,std::unique_ptr<SpectraFxHybridEmitter>> active_;
     std::vector<OneShot> oneShots_;
