@@ -2632,3 +2632,17 @@ Added nonserialized `HorizonBake::continuousNearNormalSamples` and `localFallbac
 **Tester acceptance:** compile C++20, verify unique seam counts and local fallback paths, all-or-none slope rejection, GPU full/atlas/VB patch publication and GPU LRU restoration, disk archive cache hit zero/unknown semantics, no changed draw/triangle counts, and TWH8 compatibility. Also verify source-revision invalidation and no stale diagnostics after an empty model or cache restore.
 
 **Next implementation:** explicit provenance availability flag, distinguish unavailable archive provenance from true zero; expose diagnostics to editor/host as appropriate, update docs and skill. Tests remain separate.
+
+## Stage 22d — explicit availability for near-normal provenance (SOURCE COMMITTED; TESTS NOT RUN)
+
+**Branch:** `feature/terraweave`, PR #24 Draft.
+**Code commits:** `69a8059c40e4ca7fdb5f6b085733a204638330c3`, `edd0b237c88a6c02bbe1b74afd88cdefe1c8b7a5`, `0c43a49f6a4270048e3d4ccd74d068a8de720303`, `62929f00c209a2f1eac814c7bdd47d3775d24fc0`.
+**Files:** `engine/world/TerraWeaveHorizon.h`, `engine/render/TerraWeaveHorizonGpuCache.h`, `engine/render/TerraWeaveHorizonScene.h`, `engine/render/TerraWeaveHorizonClip.h`.
+
+Added nonserialized `nearNormalProvenanceAvailable` to HorizonBake, runtime stats and GPU region metadata. `populateHorizonNearSeamSamples` resets the flag and sets it true only after the source/clip-plan prerequisites are available. Runtime publication from prepared bakes, GPU retirement and GPU cache restoration now preserve it. A TWH8 archive decode defaults to false, so zero provenance counts from an archive are explicitly **unknown**, not a claim that zero neighbor-aware samples occurred. TWH8 on-disk layout and archive fingerprint remain unchanged.
+
+**Caveat:** availability means the CPU sampler path was entered with a valid clipping plan, not that a nonzero number of samples or successful height welds exists. Existing all-or-none weld fallback may reset counts while the flag remains true. This status is diagnostic only; it must not affect geometry, rendering or physics. Source revision/cache paths and archive hits need independent tester verification.
+
+**Actually verified:** GitHub file update commits succeeded. No compiler/build, CTest, editor/game runtime, GPU screenshots or benchmarks. Keep PR Draft.
+
+**Next:** audit full/partial upload, empty-model and source revision paths for stale stats, update TerraWeave design docs/skill, and have separate test agent validate archive miss/hit, GPU cache restoration and all-or-none weld rejection with real CMake/CTest runs.
