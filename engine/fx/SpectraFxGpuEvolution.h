@@ -94,6 +94,11 @@ public:
         velocity_=device.createBuffer({gfx::BufferType::Storage,gfx::Usage::Dynamic,
                                        velocities.size()*sizeof(render::float4),
                                        velocities.data(),"SpectraFX velocities"});
+        // xyz=impact position, w=1 if this particle hit the ground this dispatch.
+        // Readback is opt-in/asynchronous; evolution never waits on the CPU.
+        impacts_=device.createBuffer({gfx::BufferType::Storage,gfx::Usage::Immutable,
+                                      positions.size()*sizeof(render::float4),
+                                      nullptr,"SpectraFX impact events"});
         gfx::TextureDesc texture;
         texture.width=int(kTextureWidth);
         texture.height=int((count_+kTextureWidth-1)/kTextureWidth);
@@ -102,7 +107,7 @@ public:
         texture.storage=true;
         texture.label="SpectraFX GPU position texture";
         output_=device.createTexture(texture);
-        if(!position_.valid() || !velocity_.valid() || !output_.valid()) {
+        if(!position_.valid() || !velocity_.valid() || !impacts_.valid() || !output_.valid()) {
             error_="SpectraFX GPU buffer/texture allocation failed: "+device.lastError();
             shutdown();
             return false;
@@ -161,6 +166,7 @@ public:
         }
         device_->setComputeBuffer(0,position_);
         device_->setComputeBuffer(1,velocity_);
+        device_->setComputeBuffer(2,impacts_);
         device_->setComputeTexture(0,output_);
         device_->setComputeUniforms(&params,sizeof(params));
         device_->dispatch(count_);
@@ -173,20 +179,24 @@ public:
     gfx::TextureHandle positionTexture() const {return output_;}
     gfx::BufferHandle positionBuffer() const {return position_;}
     gfx::BufferHandle velocityBuffer() const {return velocity_;}
+    // 16 bytes per particle, bounded to the RHI's 64-KiB async readback.
+    gfx::BufferHandle impactBuffer() const {return impacts_;}
+    bool impactReadbackEligible() const {return ready() && count_<=4096;}
     uint32_t count() const {return count_;}
     bool ready() const {return device_ && shader_.valid() && position_.valid() &&
-                               velocity_.valid() && output_.valid();}
+                               velocity_.valid() && impacts_.valid() && output_.valid();}
     const std::string& lastError() const {return error_;}
 
     void shutdown() {
         if(device_) {
+            if(impacts_.valid()) device_->destroyBuffer(impacts_);
             if(output_.valid()) device_->destroyTexture(output_);
             if(position_.valid()) device_->destroyBuffer(position_);
             if(velocity_.valid()) device_->destroyBuffer(velocity_);
             if(shader_.valid()) device_->destroyCompute(shader_);
         }
         device_=nullptr;
-        shader_={};position_={};velocity_={};output_={};count_=0;
+        shader_={};position_={};velocity_={};impacts_={};output_={};count_=0;
     }
 
 private:
@@ -195,7 +205,7 @@ private:
     }
     gfx::Device* device_=nullptr;
     gfx::ComputeHandle shader_;
-    gfx::BufferHandle position_,velocity_;
+    gfx::BufferHandle position_,velocity_,impacts_;
     gfx::TextureHandle output_;
     uint32_t count_=0;
     std::string error_;
