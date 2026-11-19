@@ -2,6 +2,7 @@
 #include "tests/AlwaysCheck.h"
 #include "tests/cloth/FakeDevice.h"
 #include <cstdint>
+#include <initializer_list>
 #include <stdexcept>
 
 using namespace aiverse::render;
