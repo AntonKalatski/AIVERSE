@@ -14,7 +14,7 @@ namespace aiverse::render {
 namespace {
 constexpr float kPi = 3.14159265358979f;
 
-struct DrawUniforms { float model[16]; float color[4]; float params[4]; };
+struct DrawUniforms { float model[16]; float color[4]; float params[4]; float waterRipples[16]; };
 struct FrameUniforms {
     float viewProj[16];
     float lightViewProj[16];
@@ -230,6 +230,13 @@ void Renderer3D::computeShadowMatrix(const RTSCamera& cam, float aspect) {
 void Renderer3D::drawMesh(const Mesh& m, const mat4& model, float4 color, uint32_t flags, float specular, float emissive) {
     items_.push_back({&m, model, color, flags, specular, emissive});
 }
+void Renderer3D::drawNereidRippleMesh(const Mesh& mesh,const mat4& model,
+        float4 color,float specular,float refraction,
+        const std::array<float4,4>& ripples) {
+    drawMesh(mesh,model,color,kDrawNoCastShadow|kDrawWaterSurface,
+             specular,refraction);
+    if(!items_.empty())items_.back().waterRipples=ripples;
+}
 
 void Renderer3D::drawSelectionMesh(const Mesh& mesh, const mat4& model,
                                    float4 tint, float4 selection) {
@@ -427,6 +434,7 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         u.params[1] = it.specular;
         u.params[2] = (it.flags & kDrawNoReceiveShadow) ? 0.f : 1.f;
         u.params[3] = it.emissive;
+        std::memcpy(u.waterRipples,it.waterRipples.data(),sizeof u.waterRipples);
         if (studioDebugMode_ == 2 || studioDebugMode_ == 4 || studioDebugMode_ == 9)
             u.params[0] = 10.0f + float(studioDebugMode_);
         if (drawCallDebug_) {
