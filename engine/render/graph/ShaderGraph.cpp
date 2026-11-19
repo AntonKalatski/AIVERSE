@@ -100,11 +100,11 @@ Program compile(const Json& g, const std::string& expected) {
         }
         if ((!n["inputs"].isArray() && it->inputs) || n["inputs"].size()!=size_t(it->inputs)) fail("node '"+id+"': wrong input count");
     }
-    // Graph textures begin at RHI slot 13. VT requires two more slots,
-    // so a material using sampleVirtualTexture may have at most one
-    // separate source texture (13+1+2 <= 16, hardware 0..15).
-    if (p.usesVirtualTexture && p.textures.size() > 1)
-        fail("sampleVirtualTexture requires at most one independent graph texture");
+    // Shader Graph remains backend-agnostic. The renderer resolves an
+    // explicit VT node against the actual RHI slot budget: Metal may use
+    // texture indices 16+ without extra sampler slots, while GL/Vulkan
+    // retain tex1 fallback if their fragment binding limit is exceeded.
+    // A graph can author up to four independent textures (checked above).
     lib::Graph edges(ns.size());
     for (size_t i=0;i<ns.size();++i) for (const auto& in:ns[i]["inputs"].items()) {
         auto it=ids.find(in.str());
