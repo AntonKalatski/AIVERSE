@@ -1389,3 +1389,63 @@ planar reflections, intentionally lossy meshlet LOD quality and
 cross-cluster seam tests, live GPU-selected raster/ICB submission
 with exclusive Legacy fallback, streaming/lifetime tests, Vulkan
 reflection parity, and controlled real GPU performance benchmarks.
+
+
+## Stage 13.1 hardware verification — actual Metal planar reflection RTT PASS (2026-11-19)
+
+The owner supplied the **actual Mac Studio build and GPU runtime log**
+for `aiverse_strata_metal_reflection_material_parity`. It was
+successfully compiled and linked, then completed with
+
+```text
+[strata-reflect] view=0 main_fine=0 main_coarse=0 shadow_fine=0 shadow_coarse=0 reflection_fine=0 reflection_coarse=0
+[strata-reflect] view=1 main_fine=0 main_coarse=0 shadow_fine=0 shadow_coarse=0 reflection_fine=0 reflection_coarse=0
+[strata-reflect] PASS: actual planar reflection RTT nonblank and byte-identical across Legacy/Fine/Coarse
+[strata-reflect] PASS: two independent cameras, two opaque UV-textured materials
+[strata-reflect] PASS: sun-shadow and main RGBA strict pixel parity, one pooled source and one ModelDraw
+[strata-reflect] status=PASSED views=2 modes=4 frames=89
+[metal-assets] libraries=0 sourceMisses=11 pipelines=16 pipelineFailures=0 archive=0 strict=0
+```
+
+Eight main-view RGBA snapshots (800×600, 1,920,000 bytes each),
+eight actual Metal sun-shadow depth readbacks (512×512, 262,144
+float samples each) and eight **independent offscreen planar
+reflection RTT readbacks** (400×300, 120,000 pixels each) completed,
+across two independent cameras and four separate
+Empty/Legacy/Strata Fine/Strata Coarse modes. Captures were
+delivered asynchronously (screen callbacks 2–3 frames after requests),
+while depth and RTT callbacks arrived same/next frame. The fixture's
+nonempty reflection baseline checks and per-material render
+submission assertions passed.
+
+Per-camera source-versus-Strata differences are all **zero**
+for the main colour, raw shadow-depth bytes and reflection
+RTT colour, with the intentionally *lossless* parent/leaf
+hierarchy. This is real renderer parity evidence, not a
+surrogate screenshot of the screen or a mocked RHI.
+
+The owner ran the new fixture inside a clean isolated
+`AIVERSE-strata-stage13` worktree, after the earlier
+`AIVERSE-strata-validation` worktree was found dirty.
+The user log does **not** include a printed `git rev-parse HEAD`
+for that run: the exact tested source SHA was not independently
+observed; do not invent one.
+
+**What this does not prove:** lossy simplified LOD appearance,
+crack-free LOD boundaries, GPU-selected indirect raster command
+submission, Vulkan or HDR reflection parity, production Strata
+legacy suppression/fallback, GPU frame times or multiworld
+streaming/recycling. Stage 13 is now owner-verified **PASS
+within the strict fixture scope**, superseding the earlier
+'not yet run' planning note. PR #35 remains Draft and the
+production renderer remains unchanged.
+
+### Integration risk
+
+At this verification point the branch remained diverged from
+the concurrent `main` work. The isolated Stage 13 PASS does
+**not** certify the combined main+Strata tree. Before merging
+anything, preserve local worktrees, reconcile the latest main
+changes in a separate integration validation, and run the
+focused CTests plus all native Metal parity executables against
+that merged source snapshot.
