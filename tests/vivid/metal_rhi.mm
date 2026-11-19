@@ -7,6 +7,7 @@
 
 #include "engine/character/vivid/GpuMorph.h"
 #include "engine/character/vivid/GpuMorphMeshStream.h"
+#include "engine/character/vivid/GpuActorStream.h"
 #include "engine/gfx/Gfx.h"
 
 #include <algorithm>
@@ -200,6 +201,113 @@ void run() {
             std::cout << "VIVID Metal RHI ModelVertex(60B) frame=" << frame
                       << " max_abs_error=" << meshError << '\n';
         }
+        // VIVID multi-actor GPU: each character owns a separate writable
+        // 48B + 60B compute pipeline, even when sharing ONE immutable Model
+        // and sparse library. Repeated submission in the same frame must
+        // fail rather than rewrite the stream queued for a model draw.
+        {
+            render::Model sharedModel;
+            sharedModel.vertices=original;
+            sharedModel.meshes.resize(1);
+            sharedModel.meshes[0].primitives.resize(1);
+            auto& p=sharedModel.meshes[0].primitives[0];
+            p.firstVertex=0;
+            p.vertexCount=static_cast<std::uint32_t>(original.size());
+            p.firstIndex=0;
+            p.indexCount=3;
+            gfx::BufferDesc vertexDesc{};
+            vertexDesc.type=gfx::BufferType::Vertex;
+            vertexDesc.size=original.size()*sizeof(render::ModelVertex);
+            vertexDesc.data=original.data();
+            sharedModel.vb=device->createBuffer(vertexDesc);
+            const std::uint32_t triangle[3]={0,1,2};
+            gfx::BufferDesc indexDesc{};
+            indexDesc.type=gfx::BufferType::Index;
+            indexDesc.size=sizeof(triangle);
+            indexDesc.data=triangle;
+            sharedModel.ib=device->createBuffer(indexDesc);
+            require(sharedModel.vb.valid() && sharedModel.ib.valid(),
+                    "multi-actor fixture model GPU upload failed");
+            const std::vector<ShapeRoute> routes{
+                {Channel::JawOpen,"rhi_morph_0",1.0f},
+                {Channel::EyeBlinkRight,"rhi_morph_1",1.0f}};
+            const auto mapping=FaceShapeBinding::compile(f.library,routes);
+            GpuActorStream actorA, actorB;
+            require(actorA.initialize(*device,sharedModel,f.library,original),
+                    "multi-actor GPU stream A initialization failed");
+            require(actorB.initialize(*device,sharedModel,f.library,original),
+                    "multi-actor GPU stream B initialization failed");
+            require(actorA.vertexBuffer()!=actorB.vertexBuffer(),
+                    "multi-actor GPU output buffer was shared");
+            for(std::uint32_t frame=0;frame<3;++frame) {
+                FaceFrame faceA{}, faceB{};
+                faceA.values[static_cast<std::size_t>(Channel::JawOpen)]=0.25f+frame*0.2f;
+                faceB.values[static_cast<std::size_t>(Channel::EyeBlinkRight)]=0.35f+frame*0.2f;
+
+                // An unrefreshed previous-frame GPU stream is never accepted.
+                render::ModelDraw before;
+                before.model=&sharedModel;
+                if(frame>0)require(!actorA.attach(before),
+                    "VIVID actor accepted stale GPU stream in a new frame");
+
+                device->beginFrame(8,8);
+                require(actorA.dispatch(faceA,mapping), "VIVID actor A dispatch failed");
+                require(actorB.dispatch(faceB,mapping), "VIVID actor B dispatch failed");
+                require(!actorA.dispatch(faceA,mapping),
+                        "VIVID actor accepted two writes in the same frame");
+                render::ModelDraw drawA, drawB;
+                drawA.model=drawB.model=&sharedModel;
+                require(actorA.attach(drawA) && actorB.attach(drawB),
+                        "VIVID actor refused fresh ModelDraw binding");
+                require(drawA.vertexOverride.valid() && drawB.vertexOverride.valid() &&
+                        drawA.vertexOverride!=drawB.vertexOverride &&
+                        drawA.vertexOverrideCount==original.size() &&
+                        drawB.vertexOverrideCount==original.size(),
+                        "VIVID per-actor stream identity/count mismatch");
+                render::ModelDraw unrelated;
+                require(!actorA.attach(unrelated) && !unrelated.vertexOverride.valid(),
+                        "VIVID attached actor GPU data to an unrelated ModelDraw");
+                device->endFrame();
+
+                auto checkActor=[&](const GpuActorStream& actor,
+                                    const FaceFrame& face) {
+                    std::vector<float> weights(f.library.targets(),0.0f);
+                    require(mapping.evaluate(face,weights),
+                            "multi-actor face weights reference failed");
+                    std::vector<MorphVertex> reference(f.base.size());
+                    require(f.library.evaluateGather(f.base,weights,reference,true),
+                            "multi-actor CPU gather reference failed");
+                    std::vector<render::ModelVertex> got(original.size());
+                    require(actor.download(got), "multi-actor GPU output readback failed");
+                    float largest=0.0f;
+                    for(std::size_t i=0;i<got.size();++i) {
+                        const MorphVec3 p{got[i].pos.x,got[i].pos.y,got[i].pos.z};
+                        const MorphVec3 n{got[i].nrm.x,got[i].nrm.y,got[i].nrm.z};
+                        const MorphVec3 t{got[i].tangent.x,got[i].tangent.y,got[i].tangent.z};
+                        largest=std::max(largest,componentError(reference[i].position,p));
+                        largest=std::max(largest,componentError(reference[i].normal,n));
+                        largest=std::max(largest,componentError(reference[i].tangent,t));
+                        const auto* src=reinterpret_cast<const unsigned char*>(&original[i]);
+                        const auto* out=reinterpret_cast<const unsigned char*>(&got[i]);
+                        require(std::memcmp(src+24,out+24,8)==0 &&
+                                std::memcmp(src+44,out+44,16)==0,
+                                "multi-actor GPU modified immutable vertex attributes");
+                    }
+                    require(largest<=0.0005f,"multi-actor GPU parity failed");
+                };
+                checkActor(actorA,faceA);
+                checkActor(actorB,faceB);
+            }
+            require(actorA.shutdownAfterIdle() && actorB.shutdownAfterIdle(),
+                    "multi-actor idle teardown failed");
+            require(!actorA.ready() && !actorB.ready() &&
+                    !actorA.vertexBuffer().valid() && !actorB.vertexBuffer().valid(),
+                    "multi-actor GPU stream handles survived shutdown");
+            device->destroyBuffer(sharedModel.vb);
+            device->destroyBuffer(sharedModel.ib);
+            std::cout << "VIVID multi-actor GPU 2 independent actors / 3 frames PASS\n";
+        }
+
         meshStream.release();
         require(!meshStream.ready() && !meshStream.vertexBuffer().valid(),
                 "VIVID RHI mesh stream output leaked after release");
