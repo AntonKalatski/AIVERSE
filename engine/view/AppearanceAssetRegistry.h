@@ -416,6 +416,85 @@ public:
         }
         return true;
     }
+
+    // Optional STRONG CPU ownership for a host whose Model is managed by
+    // shared_ptr. The exact pointer must match the borrowed published Asset.
+    // The shared_ptr's custom deleter must NEVER destroy in-flight GPU
+    // handles; GPU completion/retirement remains owned by the renderer host.
+    //
+    // ModelResourceCache currently stores unique_ptr<Model> and cannot
+    // produce this strong pin without a separate owner transaction.
+    // Such cache-backed hosts should keep using add() plus their explicit
+    // cache detach/retire boundary; do not fabricate non-owning aliases.
+    bool addOwned(Snapshot asset,const render::mat4& world,
+                  std::shared_ptr<const render::Model> modelOwner) {
+        if(!asset || !modelOwner || asset->model!=modelOwner.get())
+            return false;
+        modelPins_.push_back(std::move(modelOwner));
+        try {
+            if(add(std::move(asset),world))return true;
+            modelPins_.pop_back();
+            return false;
+        }catch(...) {
+            modelPins_.pop_back();
+            throw;
+        }
+    }
+    // Additional owned LOD, animation-source or attachment Models can be
+    // pinned after editing packets. Reject unrelated pointers, so the
+    // owner check is auditable rather than a decorative shared_ptr.
+    bool pinRelatedModel(std::shared_ptr<const render::Model> owner) {
+        if(!owner)return false;
+        const auto* model=owner.get();
+        bool referenced=false;
+        for(const auto& packet:packets_) {
+            if(packet.draw.model==model ||
+               animationSourceModel(packet)==model)
+                {referenced=true;break;}
+            for(const auto& lod:packet.lods)
+                if(lod.model==model){referenced=true;break;}
+            if(referenced)break;
+            for(const auto& attachment:packet.attachments)
+                if(attachment.draw.model==model){referenced=true;break;}
+            if(referenced)break;
+        }
+        if(!referenced)return false;
+        for(const auto& pin:modelPins_)
+            if(pin.get()==model)return true;
+        modelPins_.push_back(std::move(owner));
+        return true;
+    }
+    // Strict opt-in validation, BEFORE any View::update/submit. This does
+    // not inspect RHI Device state or guarantee that Model GPU handles
+    // outlive an async submission: the host still owns those fences.
+    size_t missingModelPins() const noexcept {
+        const auto held=[this](const render::Model* model) {
+            if(!model)return true; // unloaded optional visual LOD
+            for(const auto& pin:modelPins_)
+                if(pin.get()==model)return true;
+            return false;
+        };
+        size_t missing=0;
+        for(const auto& packet:packets_) {
+            if(!held(packet.draw.model))++missing;
+            const auto* rig=animationSourceModel(packet);
+            if(rig!=packet.draw.model && !held(rig))++missing;
+            for(const auto& lod:packet.lods)
+                if(!held(lod.model))++missing;
+            for(const auto& attachment:packet.attachments)
+                if(!held(attachment.draw.model))++missing;
+        }
+        return missing;
+    }
+    bool allModelsPinned() const noexcept {
+        return missingModelPins()==0;
+    }
+    void requireModelPins() const {
+        if(!allModelsPinned())
+            throw std::logic_error(
+                "PinnedAppearanceBatch: missing CPU Model owners for one or more draws");
+    }
+    size_t modelPinCount() const noexcept{return modelPins_.size();}
     size_t size() const noexcept{return packets_.size();}
     bool empty() const noexcept{return packets_.empty();}
     const std::vector<Object>& objects() const noexcept {return packets_;}
@@ -430,10 +509,15 @@ public:
         // End of the host's joined update/render transaction only.
         packets_.clear();
         pins_.clear();
+        // Releasing model CPU owners does NOT release any in-flight GPU
+        // allocations. Shared model deleters must cooperate with the
+        // host's separately fenced GPU retirement queue.
+        modelPins_.clear();
     }
 private:
     std::vector<Snapshot> pins_;
     std::vector<Object> packets_;
+    std::vector<std::shared_ptr<const render::Model>> modelPins_;
 };
 
 } // namespace aiverse::view
