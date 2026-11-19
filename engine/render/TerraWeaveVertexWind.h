@@ -96,6 +96,60 @@ float4 tw_offset=float4(tw_wind.x*tw_weight*tw_amp*tw_wave,
     return program;
 }
 
+// Exact remote-cluster wind values, not just the macro + procedural jitter.
+// RGB8 = signed X/Z velocity and unsigned gust from the last published
+// immutable field. Alpha remains the 0/255 root-to-crown height weight.
+// A single first-party program is shared by ALL distant forest cards.
+inline const std::shared_ptr<const render::graph::Program>&
+horizonExactFieldWindGraph() {
+    static const auto program=[] {
+        auto p=std::make_shared<render::graph::Program>(*canopyWindGraph());
+        p->vertexGlsl=R"(
+float tw_weight=clamp(sg_color.a,0.0,1.0);
+tw_weight*=tw_weight;
+vec2 tw_wind=clamp(
+    (sg_color.rg*255.0-vec2(128.0))/127.0,-1.0,1.0);
+float tw_phase=I.anim.z+
+               sg_world.x*0.007+sg_world.z*0.011+
+               sg_object.y*0.27;
+float tw_wave=0.62+0.38*sin(tw_phase)+
+              sg_color.b*0.25*sin(tw_phase*2.13);
+vec4 tw_offset=vec4(
+    tw_wind.x*I.anim.x*tw_weight*tw_wave,
+    0.0,tw_wind.y*I.anim.x*tw_weight*tw_wave,0.0);
+)";
+        p->vertexMsl=R"(
+float tw_weight=clamp(sg_color.a,0.0,1.0);
+tw_weight*=tw_weight;
+float2 tw_wind=clamp(
+    (sg_color.rg*255.0-float2(128.0))/127.0,-1.0,1.0);
+float tw_phase=I.anim.z+
+               sg_world.x*0.007+sg_world.z*0.011+
+               sg_object.y*0.27;
+float tw_wave=0.62+0.38*sin(tw_phase)+
+              sg_color.b*0.25*sin(tw_phase*2.13);
+float4 tw_offset=float4(
+    tw_wind.x*I.anim.x*tw_weight*tw_wave,
+    0.0,tw_wind.y*I.anim.x*tw_weight*tw_wave,0.0);
+)";
+        return std::shared_ptr<const render::graph::Program>(std::move(p));
+    }();
+    return program;
+}
+
+// The exact field carries local X/Z and gust in the uploaded RGB8 colours;
+// U0 needs only a bounded PHYSIS-neutral strength policy + simulation phase.
+inline render::float4 horizonExactFieldVertexParameters(
+        const ForestWindState& policy,uint64_t tick) {
+    const float amplitude=0.35f*0.30f*
+        (float(policy.maxLeanMilliDegrees)/3000.0f)*
+        (float(policy.branchFlexPermille)/1000.0f);
+    constexpr float tau=6.2831853071795864769f;
+    const float phase=tau*float(tick%policy.cycleTicks)/
+                       float(policy.cycleTicks);
+    return {amplitude,0.0f,phase,0.0f};
+}
+
 // Stable, SMOOTH spatial metadata. All four card corners of one cluster
 // receive the same RGB, with only A varying from 0 (base) to 255 (crown).
 // Using world-centimetre noise rather than snapped camera region indices
