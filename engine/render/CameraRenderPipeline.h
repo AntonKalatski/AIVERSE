@@ -13,6 +13,8 @@
 #include "CameraCaptureViews.h"
 #include "CameraCaptureGraph.h"
 #include "CameraPanorama.h"
+#include "CameraHdrResolve.h"
+#include "CameraFrameRecorder.h"
 #include <cstdint>
 #include <unordered_set>
 #include <utility>
@@ -46,7 +48,7 @@ public:
     const CameraRenderTargetPool& targets() const { return targets_; }
     // Requires a host-confirmed GPU idle point (or final device teardown).
     void shutdownAfterGpuIdle() {
-        panorama_.shutdownAfterGpuIdle();compositor_.shutdownAfterGpuIdle();screenTargets_.shutdownAfterGpuIdle();
+        hdrResolve_.shutdownAfterGpuIdle();panorama_.shutdownAfterGpuIdle();compositor_.shutdownAfterGpuIdle();screenTargets_.shutdownAfterGpuIdle();
         targets_.shutdownAfterGpuIdle(); scheduler_.reset();
     }
 
@@ -245,6 +247,35 @@ public:
         return true;
     }
 
+    // Resolve an already rendered HDR RGBA16F target into a separate SDR RGBA8
+    // target, ready for captureTexture() or CameraFrameRecorder::tickTexture().
+    // Caller must invoke during a frame, after HDR rendering and outside passes.
+    bool resolveHdrForExport(uint64_t hdrKey,uint64_t sdrKey,
+                             CameraHdrResolveSettings settings={}) {
+        if(!hdrKey||!sdrKey||hdrKey==sdrKey||
+           !validCameraHdrResolveSettings(settings))return false;
+        const auto* source=targets_.find(hdrKey);
+        if(!source||!source->ready||!source->hdr||!source->color.valid())return false;
+        const int width=source->width,height=source->height;
+        auto* output=targets_.acquire(sdrKey,width,height,false,false);
+        if(!output)return false;
+        if(!hdrResolve_.init(device_)||
+           !hdrResolve_.render(source->color,output->color,width,height,settings)) {
+            targets_.markInvalid(sdrKey);return false;
+        }
+        targets_.markReady(sdrKey);
+        return true;
+    }
+    // Combined scheduling convenience: returns false when resolve/capture
+    // could not be scheduled. The host keeps the device frame alive until
+    // submissions finish and the recorder callback eventually delivers PNG.
+    bool recordHdrPngFrame(CameraFrameRecorder& recorder,uint64_t hdrKey,
+                           uint64_t sdrKey,double seconds,
+                           CameraHdrResolveSettings settings={}) {
+        return resolveHdrForExport(hdrKey,sdrKey,settings) &&
+               recorder.tickTexture(device_,targets_.color(sdrKey),seconds);
+    }
+
     template<class Submit>
     CameraCaptureGraphPlan renderCaptureGraph(
             const std::vector<CameraCaptureNode>& nodes,
@@ -288,6 +319,7 @@ private:
     CameraRenderTargetPool screenTargets_;
     CameraCompositor compositor_;
     CameraPanorama panorama_;
+    CameraHdrResolve hdrResolve_;
 };
 
 } // namespace aiverse::render
