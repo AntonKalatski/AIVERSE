@@ -561,12 +561,14 @@ bool Prisma::preflightUpscale(int outputW,int outputH,int renderW,int renderH) {
 }
 
 std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
-    // Pure host-side size choice; no implicit scaling of current projects.
     width=std::max(1,width);
     height=std::max(1,height);
     requestedOutputSizes_[viewId_]={width,height};
-    if (width<64 || height<64 || !dev_ || !enabled_ || !settings_.enabled ||
-        quality_ != PrismaQuality::High || !hdrRequested())
+    auto previous=temporalViews_.find(viewId_);
+    if (previous!=temporalViews_.end()) previous->second.preflightRejected=false;
+    if (width<64 || height<64 || !dev_ || !dev_->gpuHealthy() ||
+        !enabled_ || !settings_.enabled ||
+        quality_!=PrismaQuality::High || !hdrRequested())
         return {width,height};
     const auto* effect=settings_.find(PrismaType::TemporalResolve);
     const char* temporal=std::getenv("AIVERSE_PRISMA_TEMPORAL");
@@ -578,14 +580,45 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
         !jitter || std::strcmp(jitter,"1")!=0 ||
         effect->get("historyWeight")<=0 || effect->get("jitterPixels")<=0)
         return {width,height};
-    // Quantize authored/volume-blended scale to avoid reallocating
-    // temporal targets at every subpixel camera motion across a volume.
-    const float authoredScale=std::clamp(effect->get("renderScale"),0.5f,1.0f);
-    const float scale=std::round(authoredScale*16.0f)/16.0f;
-    if (scale>=0.999f || !program(kTemporalResolve).valid())
-        return {width,height};
+
+    const float ceiling=PrismaAdaptiveResolution::quantize(
+        std::clamp(effect->get("renderScale"),0.5f,1.0f));
+    float scale=ceiling;
+    const char* adaptiveFlag=std::getenv("AIVERSE_PRISMA_ADAPTIVE");
+    const bool adaptiveRequested=adaptiveFlag &&
+        std::strcmp(adaptiveFlag,"1")==0 &&
+        effect->get("adaptiveResolution")>0.5f;
+    if (adaptiveRequested) {
+        auto& adaptive=adaptiveViews_[viewId_];
+        // Only completed hardware GPU frame duration may change the scale.
+        // On unsupported backends GPU ms/fences are zero, so stay authored.
+        adaptive.observe(dev_->gpuFrameMs(),dev_->gpuCompletedFence(),
+            effect->get("targetGpuMs"),
+            effect->get("minRenderScale"),ceiling);
+        scale=adaptive.scale;
+    } else {
+        adaptiveViews_.erase(viewId_);
+    }
+    if (scale>=0.999f) return {width,height};
     const int renderW=std::clamp(int(std::lround(double(width)*scale)),32,width);
     const int renderH=std::clamp(int(std::lround(double(height)*scale)),32,height);
+    auto& history=temporalViews_[viewId_];
+    // Avoid hammering unsupported VRAM allocation every frame. A successful
+    // preflight clears the cooldown immediately.
+    if (history.preflightCooldown>0) {
+        --history.preflightCooldown;
+        history.preflightRejected=true;
+        return {width,height};
+    }
+    if (!preflightUpscale(width,height,renderW,renderH)) {
+        history.preflightRejected=true;
+        history.valid=false;
+        history.preflightCooldown=60;
+        if (error_.empty()) error_="PRISMA upscale preflight: missing GPU targets; using full-resolution unjittered fallback";
+        return {width,height};
+    }
+    history.preflightRejected=false;
+    history.preflightCooldown=0;
     return {renderW,renderH};
 }
 
