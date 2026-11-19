@@ -68,6 +68,22 @@ public:
         };
         const auto srcPalettes=paletteFor(sourceMesh);
         const auto dstPalettes=paletteFor(targetMesh);
+        if(mapping.sourceVertices>model.vertices.size() ||
+           dstPalettes.size()!=mapping.targetVertexIds.size())
+            throw std::invalid_argument("VIVID skin LOD: source/target vertex count mismatch");
+        std::vector<render::float3> sourcePositions;
+        sourcePositions.reserve(mapping.sourceVertices);
+        for(std::size_t i=0;i<mapping.sourceVertices;++i)
+            sourcePositions.push_back(model.vertices[i].pos);
+        if(MorphLodMapping::fingerprint(sourcePositions,sourceIndices)!=
+           mapping.sourceFingerprint)
+            throw std::invalid_argument("VIVID skin LOD: source geometry fingerprint mismatch");
+        for(const auto& [id,palette]:dstPalettes) {
+            (void)palette;
+            if(!std::binary_search(mapping.targetVertexIds.begin(),
+                                   mapping.targetVertexIds.end(),id))
+                throw std::invalid_argument("VIVID skin LOD: target vertex set mismatch");
+        }
         std::vector<std::pair<std::uint32_t,render::ModelVertex>> staged;
         staged.reserve(mapping.samples.size());
         for(std::size_t i=0;i<mapping.samples.size();++i) {
