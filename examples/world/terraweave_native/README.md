@@ -431,5 +431,5 @@ natural-death Box3D spawning remain future feature stages.
 **Testing status:** source uploaded and read back through GitHub; this
 stage has **not** been compiled, executed in a native game, or verified
 on Metal/GL/Vulkan/Box3D/CTest. See
-[Stage67 agent handoff](../../docs/terrain/stage-67-deadwood-soil-nutrients-handoff.md)
+[Stage67 agent handoff](../../../docs/terrain/stage-67-deadwood-soil-nutrients-handoff.md)
 for exact commits, budgets, dependencies, QA and next work.
