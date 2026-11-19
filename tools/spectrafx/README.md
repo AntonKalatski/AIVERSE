@@ -184,3 +184,98 @@ is retained. No callback silently creates a graphics Device.
 
 **Verification:** Source/commit readback only in Stage 42.
 The CLI is NOT YET compiled or executed on real/corrupt files.
+
+## Stage 43 — local redacted support ZIP and native request mailbox
+
+A **safe diagnostic ZIP** can now be created from a complete V2
+`.spfx` checkpoint without loading Metal. This operation is ALWAYS an
+explicit local action and the archive contains exactly three fixed-name,
+plain JSON files: `manifest.json`, `checkpoint_summary.json`, and
+`preview_timeline.json`. No original raw `.spfx` file, full particle
+positions, VM registers or sensitive graph content is accepted by the
+bundle API. All archive entries are ZIP STORE (no external zip library)
+with CRC32 and a **128 KiB** total byte cap.
+
+```sh
+# Compile from the repository root; not yet executed for Stage 43.
+c++ -std=c++20 -O2 -I. tools/spectrafx/inspect_spfx.cpp -o inspect_spfx
+
+# Explicitly save one local safe ZIP. Regardless of any other CLI flags,
+# this ZIP is ALWAYS redacted (world bounds and GPU IDs omitted).
+./inspect_spfx --bundle /path/to/support.safe.zip /path/to/source.spfx
+
+# JSON output is a separate explicit action; raw inputs are never
+# automatically included as an archive entry.
+./inspect_spfx --json --report /path/to/report.safe.json \
+  --bundle /path/to/support.safe.zip /path/to/source.spfx
+```
+
+The CLI refuses to use the raw checkpoint path as the ZIP output. It
+writes the archive through a temporary file and then renames it to the
+requested destination. The archive manifest explicitly declares
+`redacted: true`, `containsRawCheckpoint: false`,
+`containsWorldCoordinates: false`, `containsVmScalars: false`,
+`containsGpuIdentifiers: false`, and `uploadedAutomatically: false`.
+The offline timeline entry is an empty array; the editor can supply up
+to **180 already sanitized samples** instead.
+
+The editor now has a distinct **Save SAFE ZIP bundle** button that
+ignores the separate sensitive checkbox settings, never includes
+raw GPU diagnostic bytes, and uses a local `safe-bundle-group-N-M.zip`
+filename with **no absolute GPU serial in the safe filename**. The
+matching safe JSON filename is similarly serial-free. The adjacent RAW
+`.spfx` action remains explicit and is NOT part of this safe bundle.
+
+### External render-host capture mailbox
+
+The public native header `<aiverselib/genre/SpectraFX.h>` exports
+`GpuCaptureRequestMailbox` from
+`libraries/include/aiverselib/genre/SpectraGpuCaptureMailbox.h`.
+An editor may attach a **non-owning** pointer supplied by the external
+native renderer. The editor can request a named GPU group index,
+inspect `Idle / Requested / Claimed / InFlight / Ready / Failed`
+status, and request release when it is finished. It cannot invoke
+Metal calls or bypass the owner's normal pre-render phase.
+
+A native host can use the existing
+`examples/spectrafx/native_ecs_attachments.h` integration:
+
+```cpp
+// While NativeAttachmentExample fx is alive, on the SAME owner thread:
+editor.setSpectraGpuTelemetry(&fx.poolTelemetry());
+editor.setSpectraGpuCaptureMailbox(&fx.captureMailbox());
+editor.setSpectraGpuRecoveryHost(&fx.recoveryHost());
+// Before native fx/shutdown or destruction, detach these pointers:
+editor.setSpectraGpuRecoveryHost(nullptr);
+editor.setSpectraGpuCaptureMailbox(nullptr);
+editor.setSpectraGpuTelemetry(nullptr);
+```
+
+The native example actually services mailbox requests inside
+`prepare()` after the host opens its gfx frame. It calls
+`GpuPoolCaptureHost::request(group)` and, after frozen
+`pool.step(0)`, submits the readback before the scene pass. A
+late callback cannot publish into a new host lifecycle generation.
+The UI must NOT call `gfx::Device::readBuffer`, `beginCompute`, or
+GPU reset directly.
+
+### Bounded retry and recovery notifications
+
+`GpuPoolRecoveryHost::serviceQueuedResetAtSafeFrame(ownerFrameOrdinal)`
+can be called from the native render owner, inside an active Device
+graphics frame, outside encoders. On a recoverable failure it increases
+retry spacing by host frames (up to 32), rather than attempting failed
+Metal reset uploads every frame. Its `PoolRecoveryEvent` includes
+`consecutiveResetFailures` and
+`retryNotBeforeOwnerFrame`. The editor can attach a non-owning
+`GpuPoolRecoveryHost` for read-only status and explicitly queue a
+VFX-only reset request; Device recreation remains the platform host's
+responsibility. An unrecoverably lost Device must not be retried as
+an ordinary VFX reset.
+
+All these APIs are presentation-only, genre-neutral, and cannot
+modify authoritative ECS state or create background GPU work.
+
+**Stage 43 verification:** GitHub file commits and source inspection
+only. The new ZIP writer, CLI packaging, editor UI and actual Metal
+readbacks have **NOT YET** been compiled, executed or hardware-tested.
