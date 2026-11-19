@@ -327,6 +327,94 @@ claimed to pass until run**. The next stage must validate deferred recycling
 under real backend serials, build all focused CTests, add OFF/ON draw parity,
 then implement a capability-gated single render submission owner.
 
+## Stage 8 — diagnostic Metal GPU cluster culling
+
+**Experimental, no render integration or visual parity claim.** The
+`aiverse_strata_gpu_culling` library adds a Metal compute kernel that traverses
+the version-2 Strata GPU metadata hierarchy for each static source instance
+and applies the same projected-error and conservative frustum policies as
+the CPU `strata::planView` reference.
+
+Inputs are a staged metadata v2 storage buffer, a bounded per-source list of
+`GpuSceneInstance` records (object-to-world matrices including each Model
+node bind transform, GPU primitive index, enabled flag, diagnostic token),
+and `GpuPassConfig` with a separate **view-projection** matrix. Do not pass
+a pre-multiplied objectToClip matrix to the GPU and multiply the instance
+twice. Use `strata::cpuReferenceView(pass, instance)` to obtain the matching
+CPU per-instance `ViewConfig`.
+
+```cpp
+render::GeometryScene scene;
+scene.setStrataStagingEnabled(true);
+scene.setStrataGpuMetadataEnabled(true);
+scene.setStrataGpuCullingEnabled(true); // ALL opt-in, default OFF
+scene.loadPrepared(device, sceneJson, std::move(models));
+
+// Within the graphics frame and OUTSIDE any render/compute encoder:
+render::strata::GpuPassConfig pass;
+pass.viewProjection = mainCameraViewProj;
+pass.width = viewportWidth;
+pass.height = viewportHeight;
+pass.clipDepthZeroToOne = device.info().clipDepthZeroToOne;
+pass.errorThresholdPixels = 1.f;
+pass.maxOutputClusters = 65536;
+render::strata::GpuSelectionSubmission result;
+bool encoded = scene.dispatchStrataGpuView(
+    device, "models/stone.glb", pass, device.frameSerial(), result);
+// result.ranges / result.counters are GPU buffers; NOT a draw command list.
+```
+
+`GeometryScene::collectStrataGpuInstances(sourceKey, output)` constructs
+the static scene input from its **existing** instance and node transforms;
+it does not copy ECS state into a second world. A token is a local
+diagnostic identifier, not a persistent Entity ID. More than 4096 staged
+primitive instances is rejected conservatively. The source must have valid
+Strata v2 metadata backed by the same `GlobalGeometryPool` index lease.
+
+`GpuClusterCulling::dispatch()` uses Metal `gfx::Device::createCompute()`
+and slots 0/1/2/3 for metadata, instances, selected clusters and atomic
+counters, with pass uniform bytes on slot 8. Each GPU thread walks one
+primitive instance's cluster hierarchy, refining only when all child
+clusters are resident. The 128-item local traversal stack and bounded
+output flag malformed/excessive work; **overflow/invalid results must never
+be used for drawing**. The shader emits `GpuSelectedCluster` entries with
+instance token, absolute pooled GPU index offset, count, material ID,
+global node ID and primitive ID. The atomic compaction order is undefined,
+so eventual GPU/CPU comparisons must sort by stable instance/node keys.
+
+This stage does NOT issue any `drawIndexed`, GPU-authored indexed indirect
+commands, GPU ICBs, or readback in the normal render loop. The existing
+`Renderer3D` remains sole draw owner and continues drawing all original
+geometry, even when the diagnostic dispatch succeeds. No Hi-Z, occlusion
+history, mesh shading, streaming or Vulkan compute path has been added.
+
+Frame safety: three frame slots, up to 64 independent submissions per
+frame slot, fresh storage buffers per same-frame submission. A recycled
+slot is rejected unless the backend confirms its old frame completed
+(`completedFrameSerial >= previousFrameSerial`); an absent/unknown
+completion serial fails closed rather than overwriting in-flight data.
+Call `GpuClusterCulling::shutdown(device)`, or
+`GeometryScene::shutdown(device)` when scene-owned, before the device is
+destroyed. Metal-only capability gate rejects other backends; the legacy
+renderer is untouched.
+
+Targeted tests:
+`aiverse_strata_gpu_culling_tests` (`strata_gpu_culling`) uses recording
+RHI assertions for CPU reference transform composition, disabled backends,
+Metal compute dispatch setup, independent same-frame submissions, frame-slot
+retirement and zero draw calls. This does **not** compile the shader through
+Metal or confirm that GPU selections equal CPU selections. The focused
+workflow `.github/workflows/strata-focused.yml` configures and runs all
+five Strata CPU/mock contract targets on Linux and macOS. Treat queued,
+cancelled or unavailable Actions as **NOT VERIFIED**.
+
+Before enabling draws: native compile + focused tests, actual Metal shader
+compilation, asynchronous GPU counter/result readback in a test harness,
+CPU `planView` comparison over randomized projections, LOD/fallback
+transitions, shadows, meshes/materials and multiple instances. Then prove
+exclusive draw ownership and compare legacy-vs-Strata pixels on real GPU
+before even considering using compacted ranges in an indirect path.
+
 ## Architectural constraints
 - **One scene/instance truth**: `GeometryScene` owns static render instances
   and HLOD; do not create separate Strata transforms or introduce gameplay
@@ -350,7 +438,7 @@ then implement a capability-gated single render submission owner.
 1. Compile and execute focused tests on a native project checkout:
    ```sh
    cmake -S . -B build/strata -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_STRATA=ON
-   cmake --build build/strata --target aiverse_strata_builder_tests aiverse_strata_model_adapter_tests aiverse_strata_view_tests aiverse_strata_gpu_scene_tests -j 8
+   cmake --build build/strata --target aiverse_strata_builder_tests aiverse_strata_model_adapter_tests aiverse_strata_view_tests aiverse_strata_gpu_scene_tests aiverse_strata_gpu_culling_tests -j 8
    ctest --test-dir build/strata -R '^strata_(builder|model_adapter|view|gpu_scene) --output-on-failure
    ```
 2. Add a recording-device scene fixture comparing Strata staging OFF/ON,
@@ -364,11 +452,14 @@ then implement a capability-gated single render submission owner.
    shared-buffer writes, reupload/revision invalidation, in-flight retirement,
    surrounding rigid models, and all original fallback paths before enabling
    submission. Default staging remains OFF.
-5. Build a capability-gated GPU scene/cluster selection path using the
-   CPU planner as a correctness oracle. Submit visible ranges through one
-   existing `Renderer3D` batching/MDI owner, or fall back to normal models.
-6. Benchmark CPU and GPU time separately, validate view-dependent shadows,
-   reflection views and multi-world lifetime, then pursue streaming.
+5. Experimental Metal compute culling now emits diagnostic GPU-selected
+   ranges but does not render them. Run native Metal compile, GPU readback
+   and sorted CPU `planView` parity, including stack/output overflow and
+   zero-to-one depth convention, before any renderer connection.
+6. Add mutually exclusive Renderer3D selected-range submission only after
+   GPU/CPU selection AND screenshot parity. Preserve legacy fallback on all
+   unsupported devices; then pursue Hi-Z, streaming and independent CPU/GPU
+   benchmarks.
 
 ## Verification policy
 
