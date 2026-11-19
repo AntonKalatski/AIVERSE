@@ -1162,6 +1162,14 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         prisma_.applyCameraVolumes(prismaVolumes_, cam_.eye());
         r3d_.render(pass, &prisma_);
         fx_.render(r3d_.lighting);
+        // PRISMA: current-frame particle alpha/depth coverage for MotionBlur.
+        // Callback runs only when the HDR motion/reactive pass is active;
+        // it reuses particle geometry already submitted by fx_.render().
+        if (fx_.particles().hasReactiveGeometry())
+            r3d_.addMotionReactiveDraw([this](gfx::Device& gpu,
+                    gfx::TextureHandle sceneDepth, int width, int height) {
+                fx_.particles().renderReactive(gpu,sceneDepth,width,height);
+            });
         r3d_.lighting.fogDensity = fogBase;
         r3d_.resolvePrisma();   // post effects (if any) under the HUD
         prisma_.clearCameraVolumes();
