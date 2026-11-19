@@ -710,3 +710,15 @@ Zero source intensities preserve default baked/direct/ambient GI.
 Sky uses one +Y visibility ray; large-world physically correct sky remains
 unimplemented. No native compiler, CTest, shader compiler, real Metal/Vulkan
 GPU or GLES hardware run. Do NOT merge into main yet.
+
+
+## Stage 40 — 2026-11-20 — world/terrain/foliage GI publication coordinator (SOURCE; NOT RUN)
+
+See `docs/agent-handoffs/gi-stage40-world-terrain-foliage-publication-2026-11-20.md`.
+New `GiWorldPresentationSync` makes immutable geometry and dirty event
+publication transactional across CPU/GLES3 and Metal/Vulkan GPU fences.
+On refused GPU snapshot it retains old current geometry, old/new dirty
+regions and all unflushed changes for retry. CPU/GPU FakeDevice test sources
+registered with CTest. No compiler, CTest, shader validation, device test
+or real TerraWeave producer linkage executed. Automatic ECS subscription and
+terrain/foliage receiving shader GI remain unfinished.
