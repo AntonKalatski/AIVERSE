@@ -7117,3 +7117,58 @@ fallback. During the later verification phase, add wrap tests for
 negative UV, exactly integer UV, mirrored edges, mixed U/V modes,
 shader compile and source/VT edge pixels on Metal/GL/Vulkan. Keep
 this PR draft until actual backend builds/GPU tests pass.
+
+
+## Stage 10M — immutable repeat/mirror VT page archive gutters (2026-11-19)
+
+**Source commit:** `d034590fef411f16ddc59d1956844982ba5d1bae`.
+**Branch / PR:** `feature/texture-rhi-unification` / Draft PR #21.
+
+**Changed source:** `tools/virtual_texture_pack.py` now supports
+`address_u/address_v` keyword options on `pack_pages`,
+`make_page` and `downsample_rgba`, with CLI switches
+`--address-u/--address-v clamp|repeat|mirror`.
+The `address_texel` helper implements per-axis wrapping or
+edge-duplicating mirroring for negative / over-bound coordinates;
+it is reused for gutter extraction and odd-dimension mip samples.
+The default is unchanged clamp/edge behavior. A non-default
+archive manifest records `addressU` and `addressV` so the
+game-side resolver can choose matching binding modes. Output
+creation stays transactional and validates modes before staging.
+
+**Documentation commits:**
+- `f3a6c0fc32952540523932472e87781bf940eda6` — `docs/texture-rhi.md`.
+- `31896f477618f0ce5fe1de7e7c3ddd324d083dc3` —
+  `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Integration/API:** The archive manifest is descriptive; the
+native `ModelVirtualTextureBinding` does **not** infer sampler
+addressing from it automatically. The project must set the
+same `gfx::SamplerAddressMode` on its VT resolver and its
+ordinary source material fallback sampler. Rebuild immutable
+archives and bump archive version on wrap changes. No new
+third-party dependency or GPU texture format was introduced.
+Older clamp/clamp manifests retain their original field set.
+
+**Checks actually performed:** GitHub source fetch and
+strict unique replacement/postcondition inspections;
+GitHub accepted the implementation and documentation commits.
+**Python unit tests NOT RUN, Python CLI smoke NOT RUN,
+CMake/CTest NOT RUN, MSL/GLSL compilation NOT RUN, real GPU
+UV-seam comparison NOT RUN**, per user's feature-first phase.
+Do not infer a passing build or verified filtering.
+
+**Risks:** wrap-aware padded tiles may not be automatically
+picked up by an existing Terra/Model archive version; caller
+must refresh the immutable revision and resolver settings.
+Cross-page derivative filtering may still need GPU seams/LOD
+tuning. Add explicit source packer unit coverage for repeat,
+mirror, mixed U/V and odd dimensions during deferred test
+phase.
+
+**Next concrete stage:** implement optional manifest-to-material
+address-mode validation during Terra archive activation
+(without mutating the active atlas or overwriting explicit
+material sampler settings), or proceed with the heterogeneous
+Metal ICB descriptor-table strategy. Keep PR draft until
+native/Metal/Vulkan/GL compilation and the release gate pass.
