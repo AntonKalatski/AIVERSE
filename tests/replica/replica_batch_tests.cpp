@@ -16,7 +16,7 @@ TEST(batched_fields_preserve_legacy_replica_wire_and_values) {
     auto& lc = legacy.add();
     auto& bc = batch.add();
     legacy.server.setViewers(1, {{0, 0, 0}});
-    batch.server.setViewers(1, {{0, 0, 0}});
+    batch.server.setViewer(1, {0, 0, 0});
     ObjectId lp = legacy.server.create(legacy.game.player);
     ObjectId bp = batch.server.create(batch.game.player);
     ObjectId lb = legacy.server.create(legacy.game.prop);
@@ -65,6 +65,10 @@ TEST(batched_fields_preserve_legacy_replica_wire_and_values) {
             batch.server.setFields(bb, extra);
             batch.server.setFields(bb, {});
         }
+        const float viewX = float(i % 39) * 0.25f;
+        const std::array<float, 3> viewer{viewX, 0, -viewX};
+        legacy.server.setViewers(1, {viewer});
+        batch.server.setViewer(1, viewer);
         legacy.frame();
         batch.frame();
 
