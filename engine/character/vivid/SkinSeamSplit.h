@@ -53,6 +53,14 @@ public:
         for(auto& [key,unused]:sourceByPrimitive) {
             (void)unused;
             auto& p=meshes[key.mesh].primitives[key.primitive];
+            // Legacy baked morph atlas / mesh shadow and material batches
+            // refer to primitive-relative vertex ranges and must be rebuilt
+            // separately. Fail closed instead of publishing stale draws.
+            if(!p.morphDeltas.empty() || p.morphTargets!=0 ||
+               meshes[key.mesh].shadowBatch.indexCount ||
+               !meshes[key.mesh].materialBatches.empty())
+                throw std::invalid_argument(
+                    "VIVID seam split: legacy morph/batched primitive requires rebake");
             const auto first=std::size_t(p.firstIndex);
             if(first>indices.size() ||
                p.indexCount>indices.size()-first ||
