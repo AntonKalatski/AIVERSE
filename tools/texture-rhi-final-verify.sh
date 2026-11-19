@@ -83,7 +83,7 @@ safe_targets=(
   aiverse_texture_streaming_test aiverse_texture_mip_residency_test
   aiverse_texture_resident_streamer_test
   aiverse_virtual_texture_pages_test aiverse_virtual_texture_page_table_test
-  aiverse_virtual_texture_streamer_test aiverse_virtual_texture_disk_queue_test
+  aiverse_virtual_texture_streamer_test aiverse_virtual_texture_mip_pipeline_test aiverse_virtual_texture_disk_queue_test
   aiverse_virtual_texture_file_streamer_test aiverse_virtual_texture_prefetch_test
   aiverse_virtual_texture_feedback_test aiverse_virtual_texture_feedback_pass_test
   aiverse_gpu_icb_material_contract_test
@@ -93,7 +93,7 @@ safe_tests=(
   texture_asset hdr_texture exr_texture dds_layers texture_streaming
   texture_mip_residency texture_resident_streamer
   virtual_texture_pages virtual_texture_page_table virtual_texture_streamer
-  virtual_texture_disk_queue virtual_texture_file_streamer virtual_texture_prefetch
+  virtual_texture_mip_pipeline virtual_texture_disk_queue virtual_texture_file_streamer virtual_texture_prefetch
   virtual_texture_feedback virtual_texture_feedback_pass gpu_icb_material_contract
 )
 run_logged safe-build cmake --build "$SAFE" --target ${safe_targets[@]} --parallel "$JOBS"
@@ -165,10 +165,10 @@ for index in "${!gpu_tests[@]}"; do
 done
 {
   echo "sha=$(git rev-parse HEAD)"
-  echo "safe_texture_tests=21"
+  echo "safe_texture_tests=22"
   echo "native_metal_gpu_tests=7"
   echo "full_engine=$FULL_ENGINE"
   echo "result=PASS"
 } | tee "$LOGS/acceptance.txt"
-echo "PASS: all 21 portable texture/graph and 7 native Metal GPU tests"
+echo "PASS: all 22 portable texture/graph and 7 native Metal GPU tests"
 echo "Logs: $LOGS"
