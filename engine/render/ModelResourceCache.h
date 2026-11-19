@@ -226,6 +226,20 @@ public:
         // Shared geometry-pool bytes belong to the device-level pool,
         // NOT this host owner. Query geometryPoolStats(device) separately.
     };
+    // Models can share geometry pages across multiple hosts. Give the
+    // device-level geometry pool ONE combined model set when computing
+    // page capacity; include retired models until their GPU token completes.
+    std::vector<const Model*> geometryPoolModelReferences() const {
+        std::vector<const Model*> result;
+        for(const auto& [key,model]:models_) {
+            (void)key;
+            if(model && model->geometryPoolPage)result.push_back(model.get());
+        }
+        retired_.forEachPending([&](const std::unique_ptr<Model>& model) {
+            if(model && model->geometryPoolPage)result.push_back(model.get());
+        });
+        return result;
+    }
     GpuOwnerEstimate gpuOwnerEstimate() const {
         GpuOwnerEstimate result;
         const auto max=std::numeric_limits<uint64_t>::max();
