@@ -2075,6 +2075,7 @@ void Renderer3D::renderModels(int phase) {
                 // The group index was captured during this same visibility
                 // epoch. No second GPU-material/page hash lookup or redundant
                 // eligibleStaticPage call is needed when assigning draw modes.
+                workspace.activateModes(modelItems_.size());
                 for (uint32_t itemIndex : order_) {
                     const uint16_t groupIndex = workspace.groupForItem(itemIndex);
                     if (groupIndex == StaticCrossModelPreflightWorkspace::kInvalidGroup)
