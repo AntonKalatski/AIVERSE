@@ -191,11 +191,20 @@ EMSCRIPTEN_WEBGL_CONTEXT_HANDLE g_ctx = 0;
 bool g_contextLost = false;
 bool g_contextRestorePending = false;
 bool g_initialized = false;
+#if defined(AIVERSE_WEBGL_CONTEXT_ACCEPTANCE)
+// Read-only counters for the opt-in browser recovery probe.
+uint32_t g_testDeviceGeneration = 0;
+uint32_t g_testRenderedFrames = 0;
+uint32_t g_testContextLosses = 0;
+#endif
 EM_BOOL onWebGLContextLost(int, const EmscriptenWebGLContextEvent*, void*) {
     // Returning true prevents browser default handling and permits restoration.
     // Invalidate all GPU handles; rendering resumes only after reinitialization.
     g_contextLost = true;
     g_contextRestorePending = false;
+#if defined(AIVERSE_WEBGL_CONTEXT_ACCEPTANCE)
+    ++g_testContextLosses;
+#endif
     emscripten_log(EM_LOG_WARN,"AIVERSE WebGL2 context lost; frames suspended");
     return EM_TRUE;
 }
@@ -346,6 +355,9 @@ void frame(void*) {
         if(S.cb.init) S.cb.init(*g_device);
         g_initialized = true;
         g_contextLost = false;
+#if defined(AIVERSE_WEBGL_CONTEXT_ACCEPTANCE)
+        ++g_testDeviceGeneration;
+#endif
         // Never render using stale dt or scene state from the lost context.
         return;
     }
@@ -356,6 +368,9 @@ void frame(void*) {
     g_device->beginFrame(S.fbW, S.fbH);
     if (S.cb.frame) S.cb.frame(*g_device, dt);
     g_device->endFrame();
+#if defined(AIVERSE_WEBGL_CONTEXT_ACCEPTANCE)
+    ++g_testRenderedFrames;
+#endif
 }
 } // namespace
 
@@ -424,6 +439,9 @@ void startAfterStorage() {
     }
     if (S.cb.init) S.cb.init(*g_device);
     g_initialized = true;
+#if defined(AIVERSE_WEBGL_CONTEXT_ACCEPTANCE)
+    ++g_testDeviceGeneration;
+#endif
     emscripten_set_main_loop_arg(frame, nullptr, 0, EM_FALSE);
 }
 
@@ -444,6 +462,20 @@ void setClipboardText(const std::string& s) {
 
 // Called from the hidden input's JS handlers.
 extern "C" {
+#if defined(AIVERSE_WEBGL_CONTEXT_ACCEPTANCE)
+EMSCRIPTEN_KEEPALIVE int aiverse_web_test_generation() {
+    return int(aiverse::platform::g_testDeviceGeneration);
+}
+EMSCRIPTEN_KEEPALIVE int aiverse_web_test_frames() {
+    return int(aiverse::platform::g_testRenderedFrames);
+}
+EMSCRIPTEN_KEEPALIVE int aiverse_web_test_losses() {
+    return int(aiverse::platform::g_testContextLosses);
+}
+EMSCRIPTEN_KEEPALIVE int aiverse_web_test_suspended() {
+    return aiverse::platform::g_contextLost ? 1 : 0;
+}
+#endif
 EMSCRIPTEN_KEEPALIVE void aiverse_web_char(int cp) {
     aiverse::platform::Event e; e.type = aiverse::platform::EventType::Char; e.codepoint = uint32_t(cp);
     aiverse::platform::detail::dispatch(e);
