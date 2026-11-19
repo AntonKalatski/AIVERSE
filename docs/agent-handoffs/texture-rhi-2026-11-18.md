@@ -5676,3 +5676,29 @@ instruction to complete functionality first.
 Next: connect source builders to generic material pipeline
 creation and scene-visible draw submission; finish backend
 storage texture and render target feature parity.
+
+
+## Stage 9G — reusable feedback pipeline descriptor (2026-11-19)
+
+Source commit: 4ee20aa106ed38a3341598683035c6e13b742c41.
+Changed file: engine/gfx/VirtualTextureFeedbackPass.h.
+Added virtualTextureFeedbackPipelineDesc(ShaderHandle,
+bool depthAttachment=false), an additive native RHI helper
+returning PipelineDesc for one RGBA8 UNORM attachment, one sample,
+opaque blend, color writes enabled, and no depth-only mode.
+The caller supplies shader, vertex layout and cull policy.
+Depth testing/writes are disabled by default because the
+current VirtualTextureFeedbackPass creates no depth attachment.
+The optional depthAttachment flag is only valid if the caller
+has actually configured a matching depth attachment.
+
+Limitations: this is a pipeline description factory, not a
+created pipeline, material registry, or renderer integration.
+Without a depth attachment overlapping geometry feedback may
+report occluded pages. Do not claim visibility-correct GPU
+feedback until depth support is implemented and integrated.
+Verification: GitHub source commit succeeded; native compilation,
+CTest, shader compilation and GPU tests NOT RUN, per user request.
+Next: implement optional depth attachment in feedback pass,
+then integrate actual generic renderer draw submission and
+per-material shader parameter binding; finish backend parity.
