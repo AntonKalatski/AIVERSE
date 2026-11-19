@@ -965,12 +965,14 @@ void realLoopbackWebSocket() {
     const auto url="ws://127.0.0.1:"+std::to_string(service.port());
     CHECK(connector.connect(url,"admin",key(),&error));
     const auto start=net::nowMs();
+    std::uint64_t lastPollMs=start;
     bool established=false;
     for(int i=0;i<200;++i) {
         const auto now=start+std::uint64_t(i*20);
         connector.poll(now);
         service.poll(*sim,now);
         connector.poll(now+1);
+        lastPollMs=now+1;
         if(connector.ready()){established=true;break;}
     }
     CHECK(established);
@@ -978,7 +980,13 @@ void realLoopbackWebSocket() {
         RemoteClient remote(334455);
         CHECK(remote.begin(desired(21),kEdit,4));
         auto c=connector.takeAuthenticated();
-        const auto next=net::nowMs();
+        // Both WS endpoints already observed synthetic handshake timestamps.
+        // Starting this phase from a FRESH wall-clock nowMs() can go
+        // *backwards*: the handshake loop advances time by 20ms per spin,
+        // faster than wall time. Native WsConn then underflows its unsigned
+        // now-lastHeard_ timeout and closes before any PHYSIS Submit.
+        // Continue the SAME monotonic logical clock for socket I/O.
+        const auto next=lastPollMs+1;
         for(int i=0;i<150;++i) {
             const auto now=next+std::uint64_t(i*30);
             remote.poll(*c,now);
@@ -987,6 +995,16 @@ void realLoopbackWebSocket() {
             service.afterTick(*sim);
             remote.poll(*c,now+1);
             if(remote.status()==ClientStatus::Applied)break;
+        }
+        if(remote.status()!=ClientStatus::Applied) {
+            std::printf("PHYSIS WS diagnostic: status=%u receipt=%u detail=%s "
+                        "revision=%llu peers=%zu entries=%zu journal=%d conn=%d\n",
+                        unsigned(remote.status()),unsigned(remote.receipt().result),
+                        remote.receipt().detail.c_str(),
+                        static_cast<unsigned long long>(
+                            sim->world().resourceConst<FieldRuntimeState>()->revision),
+                        service.connections(),service.gateway().entries().size(),
+                        int(service.journalHealthy()),int(c->state()));
         }
         CHECK(remote.status()==ClientStatus::Applied);
         CHECK(sim->world().resourceConst<FieldRuntimeState>()->revision==1);

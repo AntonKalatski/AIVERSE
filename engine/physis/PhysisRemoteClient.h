@@ -307,7 +307,12 @@ public:
         if(refreshApplied_ && outgoing.kind==Message::Query)
             refreshQuerySent_=true;
         sent_=true;
-        if(status_!=ClientStatus::Queued)status_=ClientStatus::AwaitingReceipt;
+        // A reconnect verification only queries the previously Applied
+        // receipt. Preserve its last confirmed status until a *new*
+        // authoritative reply changes that conclusion. Otherwise a Query
+        // send itself incorrectly downgrades Applied to AwaitingReceipt.
+        if(status_!=ClientStatus::Queued && !refreshApplied_)
+            status_=ClientStatus::AwaitingReceipt;
         ++attempts_;
         // Backoff is only network timing, never fed into deterministic ECS.
         const std::uint64_t delay=std::min<std::uint64_t>(200u*attempts_,2000u);
