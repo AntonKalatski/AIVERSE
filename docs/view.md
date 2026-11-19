@@ -2478,3 +2478,69 @@ offscreen target GPU retirement. **NOT RUN:** native CMake/CTest,
 Metal/Vulkan/GL/WebGL2 runtime, UI visual parity, device-loss recovery,
 sanitizers or CI. This is a source implementation with unverified
 compiler/backend behavior, not merge-ready GPU code.
+
+## Stage 115 — NEREID integration and fence-backed GPU program retirement
+
+The animation feature branch incorporated the latest reviewed `main`
+tree through merge commit `01538817a68ac869b1e9ca12bc48ef9d9f4d56c7`
+(two real parents: animation Stage 114 and NEREID main).
+Of 114 main-changed paths, 108 were disjoint and six files
+(`AGENTS.md`, `CMakeLists.txt`, `PostFx.h/.cpp`, and
+`Renderer3D.h/.cpp`) were merged from independent hunks.
+The resulting tree was compared to the previous feature tree:
+exactly 114 files changed, preserving NEREID/underwater features
+and the animation host's GPU epoch guards. This confirms Git
+ancestry and source inclusion, NOT native compatibility or tests.
+
+`render::GpuProgramRetirement` owns a persistent, genre-neutral
+`AsyncResourceRetirementQueue<GpuProgramBatch>` containing
+shader and pipeline handles. When `Renderer3D` changes its
+material-quality tier or GPU instance limit, old cached GPU model
+programs are enqueued instead of destroyed immediately. The host
+calls `Renderer3D::collectRetiredPrograms()` at an actual frame
+boundary (outside a render pass). Pending/Failed completion tokens
+retain shader and pipeline handles. A proven device-idle barrier
+can drain the queue at `Renderer3D::shutdown`; failure prevents
+silently freeing in-flight GPU resources. If queue allocation fails,
+the owner attempts a true GPU idle fallback and records any
+unrecoverable/orphan batch.
+
+The editor, standalone/embedded `GameClient`, and FPS host poll
+this program retirement before frame submission, all using the
+already existing single host `RenderDeviceLifetime` generation.
+`Renderer3D::hasPendingModelPipelineJobs()` and
+`pollPendingModelPipelineJobs()` also allow completed asynchronous
+native shader/pipeline jobs to progress without rebuilding a
+candidate Model/texture set. During an Editor hot appearance reload,
+a previous `Pending` GPU compiler result holds the source
+watcher unacknowledged and skips repeated scratch uploads while
+those specific jobs are in flight. When no jobs remain, the
+candidate is re-evaluated normally; `Failed` continues to
+retain the last-good appearance and AnimationGraph clocks.
+
+On clients/editor that provide a GPU generation lease,
+`PostFx` now owns a GPU-fenced `OffscreenTargetRetirement` pool.
+Target LRU eviction, HDR/size format replacement, LUT replacement
+and the final texture shutdown enqueue old handles rather than
+destroying textures still potentially used by prior passes.
+The host collects these handles at frame boundaries and
+`PostFx::shutdown()` drains with a proven GPU-idle barrier
+before releasing shader and pipeline handles. Standalone legacy
+tools that omit a generation lease retain their original
+immediate-destruction contract. This is a resource-retirement
+change only: the NEREID underwater composition and depth-sampling
+logic added by main are preserved.
+
+The speculative `render::uploadModel` path now checks that
+indexed vertex/index GPU allocations really succeeded BEFORE
+clearing source vertex/index arrays. A failed partial upload
+therefore fails the surrounding scratch transaction instead of
+appearing successful after the CPU arrays were discarded.
+
+Native-only deferred fixture `render_gpu_program_retirement`
+covers Pending, Failed, unsupported-token/idle recovery, shader
+and pipeline release ordering and stale GPU generations. It is
+registered with CMake but has **NOT BEEN RUN**. Neither native
+CMake/CTest nor Metal/Vulkan/OpenGL rendering, sanitizer,
+NEREID/animation coexistence, ShaderGraph compilation or CI
+has been executed for this stage. PR #22 remains Draft.
