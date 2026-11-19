@@ -495,6 +495,43 @@ public:
             error_ = "GL: requested compressed pixel format unsupported";
             return {};
         }
+        // Legacy Texture2D and compressed uploads also consume CPU pointers.
+        // Inherit no pixel-unpack/PBO state from previous render systems.
+        struct Scoped2DUnpack {
+            enum : GLenum {
+                Pbo=0x88EC,PboBinding=0x88EF,TextureBinding=0x8069,
+                RowLength=0x0CF2,ImageHeight=0x806E,SkipPixels=0x0CF4,
+                SkipRows=0x0CF3,SkipImages=0x806D
+            };
+            GLint texture=0,pbo=0,align=4,row=0,image=0,pixels=0,rows=0,images=0;
+            Scoped2DUnpack() {
+                glGetIntegerv(TextureBinding,&texture);
+                glGetIntegerv(PboBinding,&pbo);
+                glGetIntegerv(GL_UNPACK_ALIGNMENT,&align);
+                glGetIntegerv(RowLength,&row);
+                glGetIntegerv(ImageHeight,&image);
+                glGetIntegerv(SkipPixels,&pixels);
+                glGetIntegerv(SkipRows,&rows);
+                glGetIntegerv(SkipImages,&images);
+                glBindBuffer(Pbo,0);
+                glPixelStorei(GL_UNPACK_ALIGNMENT,1);
+                glPixelStorei(RowLength,0);
+                glPixelStorei(ImageHeight,0);
+                glPixelStorei(SkipPixels,0);
+                glPixelStorei(SkipRows,0);
+                glPixelStorei(SkipImages,0);
+            }
+            ~Scoped2DUnpack() {
+                glBindTexture(GL_TEXTURE_2D,GLuint(texture));
+                glBindBuffer(Pbo,GLuint(pbo));
+                glPixelStorei(GL_UNPACK_ALIGNMENT,align);
+                glPixelStorei(RowLength,row);
+                glPixelStorei(ImageHeight,image);
+                glPixelStorei(SkipPixels,pixels);
+                glPixelStorei(SkipRows,rows);
+                glPixelStorei(SkipImages,images);
+            }
+        } scopedUnpack;
         GLTexture t; t.fmt = d.format; t.w = d.width; t.h = d.height;
         t.renderTarget = d.renderTarget || d.format == PixelFormat::Depth;
         t.mips = d.mipmaps && d.format != PixelFormat::Depth &&
@@ -506,12 +543,23 @@ public:
                    d.mipLevels > 0 ? d.mipLevels :
                    t.mips ? maxTextureMipLevels(d.width, d.height) : 1;
         glGenTextures(1, &t.id);
+        if (!t.id) { error_ = "GL: texture allocation returned zero name"; return {}; }
         glBindTexture(GL_TEXTURE_2D, t.id);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         if (const GLenum ce = compressedEnum(d.format)) {
-            for (int l = 0; l < d.levelCount; ++l)
+            if (!d.levelData || !d.levelSize || d.levelCount < 1) {
+                glDeleteTextures(1,&t.id);
+                error_ = "GL: compressed 2D texture needs complete mip payloads";
+                return {};
+            }
+            for (int l = 0; l < d.levelCount; ++l) {
+                if (!d.levelData[l] || d.levelSize[l] > size_t(std::numeric_limits<GLsizei>::max())) {
+                    glDeleteTextures(1,&t.id);
+                    error_ = "GL: compressed 2D mip payload missing or too large";
+                    return {};
+                }
                 glCompressedTexImage2D(GL_TEXTURE_2D, l, ce, std::max(1, d.width >> l), std::max(1, d.height >> l), 0,
                                        GLsizei(d.levelSize[l]), d.levelData[l]);
+            }
             t.mips = false;
             const GLint mf = d.levelCount > 1 ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR;
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, std::max(0, d.levelCount - 1));
@@ -520,6 +568,11 @@ public:
             GLint wrap = d.repeat ? GL_REPEAT : GL_CLAMP_TO_EDGE;
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap);
+            if (glGetError()!=GL_NO_ERROR) {
+                glDeleteTextures(1,&t.id);
+                error_="GL: compressed 2D texture upload failed";
+                return {};
+            }
             return {textures_.add(t)};
         }
         if (d.format == PixelFormat::Depth) {
@@ -565,20 +618,14 @@ public:
         return {textures_.add(t)};
     }
     void updateTexture(TextureHandle h, int x, int y, int w, int hh, const void* pixels, int rowPitch) override {
-        auto* t = textures_.get(h.id);
-        if (!t || t->renderbuffer || t->dimension != TextureDimension::Texture2D || t->compressed || t->fmt == PixelFormat::Depth) return;
-        glBindTexture(GL_TEXTURE_2D, t->id);
-        glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-        const int bpp = uncompressedTexturePixelBytes(t->fmt);
-        const GLenum fmt = uncompressedExternal(t->fmt);
-        const GLenum type = uncompressedType(t->fmt);
-        if (rowPitch == w * bpp) {
-            glTexSubImage2D(GL_TEXTURE_2D, 0, x, y, w, hh, fmt, type, pixels);
-        } else { // GL_UNPACK_ROW_LENGTH exists in ES3 but upload row by row for maximum portability
-            for (int r = 0; r < hh; ++r)
-                glTexSubImage2D(GL_TEXTURE_2D, 0, x, y + r, w, 1, fmt, type, static_cast<const uint8_t*>(pixels) + size_t(r) * rowPitch);
-        }
-        if (t->mips) glGenerateMipmap(GL_TEXTURE_2D);
+        // Route the legacy void API through the validated, state-isolated
+        // subresource uploader. Invalid requests become fail-closed and can
+        // be diagnosed via lastError(), rather than corrupting shared GL state.
+        TextureUploadDesc upload;
+        upload.x=x;upload.y=y;upload.width=w;upload.height=hh;
+        upload.rowPitchBytes=rowPitch;upload.data=pixels;
+        if (!updateTextureRegion(h,upload) && error_.empty())
+            error_="GL: legacy Texture2D upload rejected";
     }
     bool updateTextureRegion(TextureHandle h, const TextureUploadDesc& u) override {
         auto* t = textures_.get(h.id);
