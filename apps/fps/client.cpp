@@ -899,8 +899,11 @@ struct App {
                         packet.id=remote.slot;
                         packet.generation=remote.life;
                         packet.draw=packetDraw;
-                        // Precomputed pose/baked sample: no graph attached,
-                        // so View only forwards the already-evaluated result.
+                        packet.animationModel=characterModel.get();
+                        // Precomputed pose/baked sample: no graph attached;
+                        // View consumes the source rig without a second
+                        // MotionWeave update. Optional LOD retarget maps
+                        // can be supplied by this host in future.
                         remotePackets.add(std::move(packet));
                     };
                     if(characterBakedCrowd) {
