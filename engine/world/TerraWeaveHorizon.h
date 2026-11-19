@@ -3,6 +3,7 @@
 // Forest cover is evaluated at coarse resolution, NOT one tree at a time.
 #pragma once
 #include "engine/world/TerraWeave.h"
+#include "engine/world/TerraWeavePhenology.h"
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -97,6 +98,9 @@ struct HorizonSurfaceSources {
     // when a tile is absent or a boundary is discontinuous. CPU bake only.
     std::function<std::optional<std::pair<int32_t,int32_t>>(int64_t,int64_t)>
         nearGroundContinuousSlopeAtQ16Cm;
+    // Optional immutable seasonal appearance. CPU canopy sampling only;
+    // ground height, authored biomes, near ownership and physics unchanged.
+    CanopyPhenology phenology{};
 };
 
 struct HorizonBake {
@@ -373,6 +377,8 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                               const HorizonBake* previous = nullptr,
                               std::span<const RectCm> edited = {}) {
     validateHorizonSettings(s);
+    const CanopyPhenology phenology=source ? source->phenology : CanopyPhenology{};
+    validateCanopyPhenology(phenology);
     const auto heightSample = [&](int64_t x, int64_t z) -> int32_t {
         const int32_t h = source && source->heightAtCm ?
             source->heightAtCm(x, z) : heightAtCm(terrain, x, z);
@@ -607,7 +613,13 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                         gz*cell+axisSample : z;
                     if (!canopyAllowed(sampleX, sampleZ)) continue;
                     const auto subBiome=biomeSample(sampleX,sampleZ);
-                    const uint32_t coverage=horizon_detail::canopyStrength(subBiome);
+                    const bool needleShape=subBiome==Biome::Tundra ||
+                        (subBiome==Biome::Forest&&((h>>47)&3ULL)==0);
+                    const uint32_t seasonalCover=canopyCoverPermille(
+                        phenology,needleShape);
+                    const uint32_t coverage=static_cast<uint32_t>(
+                        uint64_t(horizon_detail::canopyStrength(subBiome))*
+                        seasonalCover/1000u);
                     if (((h>>16)&255ULL)>=coverage)continue;
                     const int32_t surface=heightSample(sampleX,sampleZ);
                     const int32_t crownCm=std::max<int32_t>(220,
@@ -622,8 +634,6 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                         int32_t(int64_t(crownCm)*p*52/
                                 (int64_t(heightRange)*100)),2,
                         std::max<int32_t>(2,int32_t(p/3u)));
-                    const bool needleShape=subBiome==Biome::Tundra ||
-                        (subBiome==Biome::Forest&&((h>>47)&3ULL)==0);
                     const int32_t loX=std::max<int32_t>(1,int32_t(column)-rx);
                     const int32_t hiX=std::min<int32_t>(int32_t(p)-2,
                                                         int32_t(column)+rx);
@@ -671,9 +681,12 @@ inline HorizonBake bakeHorizon(const TerrainSettings& terrain,
                             // naturally and do not add card geometry.
                             if(alpha>=out.atlasRgba[at+3] ||
                                 ((h>>55)&1ULL)==0) {
-                                out.atlasRgba[at]=red;
-                                out.atlasRgba[at+1]=green;
-                                out.atlasRgba[at+2]=blue;
+                                out.atlasRgba[at]=tintCanopyChannel(
+                                    red,phenology.tintRPermille);
+                                out.atlasRgba[at+1]=tintCanopyChannel(
+                                    green,phenology.tintGPermille);
+                                out.atlasRgba[at+2]=tintCanopyChannel(
+                                    blue,phenology.tintBPermille);
                                 out.atlasRgba[at+3]=static_cast<uint8_t>(alpha);
                             }
                         }
