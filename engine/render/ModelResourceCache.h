@@ -6,6 +6,7 @@
 #include "Model.h"
 #include "ModelTextureCache.h"
 #include "AsyncResourceRetirementQueue.h"
+#include "ModelResidentEstimate.h"
 #ifndef __EMSCRIPTEN__
 #include "ModelPreparationService.h"
 #endif
@@ -209,8 +210,25 @@ public:
     size_t retirementSoftLimit() const noexcept {
         return retirementSoftLimit_;
     }
-    bool publicationBackpressured() const noexcept {
-        return retired_.saturated(retirementSoftLimit_);
+    uint64_t estimatedRetiredGpuBytes() const {
+        return retired_.estimatedPendingBytes(
+            [](const std::unique_ptr<Model>& model)->uint64_t {
+                return model?estimateModelResident(*model).knownBytes():0;
+            });
+    }
+    // 0 disables the estimated-byte admission limit. The estimate excludes
+    // shared geometry pages, borrowed textures, morph height, driver padding
+    // and hidden RHI allocations. Not an actual VRAM usage counter.
+    void setEstimatedRetirementByteLimit(uint64_t value) noexcept {
+        estimatedByteLimit_=value;
+    }
+    uint64_t estimatedRetirementByteLimit() const noexcept {
+        return estimatedByteLimit_;
+    }
+    bool publicationBackpressured() const {
+        return retired_.saturated(retirementSoftLimit_) ||
+            (estimatedByteLimit_!=0 &&
+             estimatedRetiredGpuBytes()>=estimatedByteLimit_);
     }
     // Schedule async completion tokens and poll old batches without waiting
     // for whole-GPU idle. Each batch covers exactly the resources queued
@@ -263,6 +281,7 @@ private:
 #endif
     uint64_t generation_=0;
     size_t retirementSoftLimit_=128;
+    uint64_t estimatedByteLimit_=0; // optional; never claims exact VRAM usage
     ModelMap models_;
     AsyncResourceRetirementQueue<std::unique_ptr<Model>> retired_;
     std::shared_ptr<render::ModelTextureCache> textures_=
