@@ -2271,3 +2271,69 @@ The existing `render_device_epoch` fixture was expanded to cover
 multiple cache owners sharing one editor-hosted generation. **NOT RUN**:
 CMake configure/build, CTest, native editor/gameplay, GPU screenshot
 parity, sanitizers or hardware-fence/device-loss tests.
+
+## Stage 112 — transactional model image uploads and GPU generation fences
+
+The generic `engine/render/ModelImageUploadTransaction.h` adds an
+owner-thread Model image import transaction. A native authoring host
+creates `ModelImageUploadTransaction(device, persistentRollbackPool,
+deviceLifetimeLease)` at a render-frame boundary. It accepts decoded
+`render::Image` objects through `stage(model,image)` and returns their
+**future** material indices; the live `Model::images` array is not
+modified until `commit()`. Multiple materials referencing the same
+filename in a single Model share a staged index, and several different
+Models can participate in the same transaction. Before commit, every
+affected Model's image vector reserves its final capacity, so an
+allocation failure cannot leave earlier Models partially appended.
+Successful commit moves already GPU-uploaded Images into their Models
+without a second upload. Callers must not submit staged material
+indices to `Renderer3D` until the transaction has committed.
+
+If a stage fails or the transaction is destroyed uncommitted, the
+temporary Images go to a persistent
+`render::ModelImageRollbackPool`. That pool uses the same
+`AsyncResourceRetirementQueue` completion token semantics as the
+Model cache: Pending and Failed GPU markers **never** authorize
+texture destruction; a successful full-device idle permits recovery
+and cleanup. At a safe frame boundary the host calls
+`rollbackPool.collect(device)`; before device shutdown it must
+call `rollbackPool.drain(device)` and reject teardown when the
+completion barrier fails. In an exceptional queue-allocation failure,
+the pool may need a synchronous idle fallback or conservatively leak
+an orphaned GPU allocation until the actual device is destroyed
+rather than freeing in-flight GPU work. Diagnostics expose pending
+images, enqueue failures and unrecoverable batch counts.
+
+`RtsView::reloadAppearanceTypes` now uses this transaction for all
+GPU material images added during candidate construction across
+every selected type, model variant, LOD and damage/construction stage.
+Its texture loader stages in the transaction instead of immediately
+calling `addImage`; missing/undecodable textures or failed GPU
+creation abort the candidate set. After all CPU authoring checks and
+prepared appearance snapshots succeed, `commit()` publishes the
+Model images before the TypeLook/snapshot swap. On exceptions before
+commit, live Model image counts, last-good appearance snapshots and
+running animations remain unchanged. The existing separate
+`RtsView::collectRetiredModels()` now polls both model and rolled-back
+image queues. Shutdown drains the image queue after detaching
+borrowed snapshots and before shutting down the Model resource cache.
+
+Generation-aware checks were extended to `render::PostFx`,
+`TerrainRenderer`, `RtsGroundFx`, `fx::ParticleSystem` and
+Editor Scene/Game `Viewport`, using the SAME editor/client epoch
+already established in Stage 111. The particle renderer refuses an
+invalid device at initialization and stops emitting draw commands
+after an epoch expires. Its destructor-safe shutdown deliberately
+avoids calling an expired device; orphan handles may then remain
+until device teardown. Epoch validity is a **safety check**, not a
+GPU synchronization fence or automatic device-loss recovery.
+
+**Still not universally transactional:** initial model import,
+other render-target/terrain shader/FX allocations, texture cache
+sources, and runtime postprocess pipeline changes continue to have
+their own GPU ownership policies. The stage covers new material
+Images routed through the RTS hot-appearance texture loader, not
+all RHI allocations in the engine. The new native-only deferred
+`render_model_image_transaction` test checks abort, duplicate
+staging, multi-Model commit and failure-to-idle GPU token behavior.
+No native CMake build, CTest or real backend validation was run.
