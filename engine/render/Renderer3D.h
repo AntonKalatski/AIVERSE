@@ -269,6 +269,11 @@ public:
     // must retain its last-good Model/Material/AnimationGraph publication.
     PipelineWarmStatus warmModelPipelinesChecked(
         const Model& model,const std::vector<Material>* materials=nullptr);
+    // Poll only jobs already staged by a previous candidate. This lets
+    // editor hot-reload hold the last-good appearance without reimporting
+    // scratch Models/textures every time a GPU compiler is still Pending.
+    bool hasPendingModelPipelineJobs() const noexcept;
+    bool pollPendingModelPipelineJobs();
     bool warmModelPipelines(const Model& model, const std::vector<Material>* materials = nullptr);
     void drawModel(const ModelDraw& d);
     // Diagnostic, opt-in persistent scene upload stats. This staging path is
