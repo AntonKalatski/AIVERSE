@@ -7,6 +7,8 @@
 #include "CameraRenderScheduler.h"
 #include "RenderTargetPool.h"
 #include "Renderer3D.h"
+#include "CameraRig.h"
+#include "CameraPostFxPool.h"
 #include <cstdint>
 #include <unordered_set>
 #include <utility>
@@ -54,12 +56,24 @@ public:
     CameraExecutionResult executeWithPost(const World& world,uint64_t frame,
              double seconds,Submit&& submit,PostProvider&& postFor,
              Vec3 renderOrigin={}) {
+        return executeWithPostAndModifier(world,frame,seconds,
+            std::forward<Submit>(submit),std::forward<PostProvider>(postFor),
+            [](EcsCameraView&,int,int){},renderOrigin);
+    }
+
+    // Modify a transient view after scheduling and target size resolution,
+    // before Renderer3D receives it. Suitable for ECS rigs and jitter.
+    template<class Submit,class PostProvider,class Modifier>
+    CameraExecutionResult executeWithPostAndModifier(const World& world,uint64_t frame,
+             double seconds,Submit&& submit,PostProvider&& postFor,
+             Modifier&& modify,Vec3 renderOrigin={}) {
         CameraExecutionResult result;
         targets_.collectCompleted();
         result.plan=scheduler_.buildPlan(world,frame,seconds,renderOrigin);
         std::unordered_set<PostProcess*> usedPost;
         std::unordered_set<uint64_t> failedTargets;
-        for(const auto& view: result.plan.jobs) {
+        for(const auto& planned: result.plan.jobs) {
+            EcsCameraView view=planned; // never mutate the ECS snapshot/plan
             bool inputsReady=true;
             uint64_t missing=0;
             const auto& inputs=view.dependencies;
@@ -101,6 +115,7 @@ public:
                 if(target)failedTargets.insert(view.output.targetAssetKey);
                 continue;
             }
+            modify(view,width,height);
             PostProcess* post=postFor(view);
             if(post && post->active() && !usedPost.insert(post).second) {
                 // Explicit opt-out is safer than silently sharing temporal
@@ -133,6 +148,26 @@ public:
             ++result.submitted;
         }
         return result;
+    }
+    // Complete presentation workflow: ECS rig pose/lens/shake, independently
+    // owned per-camera temporal histories, capture scheduling and final RT.
+    // The World is read-only. GPU post pool must outlive all captures and be
+    // shutdown only at a host-confirmed GPU idle point.
+    template<class Submit>
+    CameraExecutionResult executeManaged(const World& world,uint64_t frame,
+             double seconds,float dt,Submit&& submit,
+             CameraRigEvaluator& rigs,CameraPostFxPool& post,
+             Vec3 renderOrigin={}) {
+        post.bindWorld(world);
+        return executeWithPostAndModifier(world,frame,seconds,
+            std::forward<Submit>(submit),
+            [&](const EcsCameraView& camera)->PostProcess* {
+                return post.get(camera.entity);
+            },
+            [&](EcsCameraView& camera,int width,int height) {
+                rigs.apply(world,camera,seconds,dt,renderOrigin);
+                camera.camera=post.prepare(camera,width,height);
+            },renderOrigin);
     }
 private:
     gfx::Device& device_;
