@@ -955,9 +955,11 @@ Prisma::RuntimeCapabilities Prisma::runtimeCapabilities() const {
 
 bool Prisma::canonicalTemporalRequested() const {
     const auto report=runtimeCapabilities();
+    // Ownership is selected by authored intent, not by the success of a
+    // lazily compiled shader. Even if the canonical shader is unavailable,
+    // starting legacy TAA would create a competing history unexpectedly.
     return report.deviceHealthy && report.hdrRequested &&
-        quality_==PrismaQuality::High && report.temporalRequested &&
-        report.temporalPipelinePrepared;
+        quality_==PrismaQuality::High && report.temporalRequested;
 }
 
 bool Prisma::hdrRequested() const {
