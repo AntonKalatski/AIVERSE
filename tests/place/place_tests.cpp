@@ -187,6 +187,7 @@ TEST(sixteen_clients_over_4g_converge_predict_and_late_join) {
 TEST(example_scene_settles_without_players) {
     Json scene = exampleScene();
     PlaceServer server(scene);
+    server.setTickPhaseProfiling(true);
     std::map<physics::BodyHandle, b3Vec3> start;
     for (auto id : server.bodies()) start[server.bodyHandle(id)] = server.scene().position(server.bodyHandle(id));
     uint64_t now = 1000;
@@ -199,6 +200,14 @@ TEST(example_scene_settles_without_players) {
         awake += server.scene().awake(h);
     }
     std::printf("    %zu dynamic bodies: %zu moved > 0.3 m, %zu awake after 10 s, tick avg %.3f ms\n", bodies, moved, awake, server.stats().tickMsAvg());
+    const auto& phases = server.stats().phases;
+    CHECK(phases.samples == 600);
+    CHECK(phases.pollMs >= 0 && phases.playersMs >= 0 &&
+          phases.physicsMs >= 0 && phases.syncMs >= 0 &&
+          phases.broadcastMs >= 0);
+    const double phaseSum = phases.pollMs + phases.playersMs +
+        phases.physicsMs + phases.syncMs + phases.broadcastMs;
+    CHECK(phaseSum <= server.stats().tickMsSum + 1.0);
     CHECK(bodies == 500);
     CHECK(moved <= 10);
     CHECK(awake <= 25);
