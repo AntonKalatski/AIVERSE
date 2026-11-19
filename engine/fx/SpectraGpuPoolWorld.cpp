@@ -474,6 +474,10 @@ PoolCheckpointStats GpuPoolWorld::checkpointStats() const {
         result.completed+=stats.checkpointCompleted;
         result.failed+=stats.checkpointFailed;
         result.budgetDenied+=stats.checkpointBudgetDenied;
+        result.adaptiveBackoffs+=stats.checkpointAdaptiveBackoffs;
+        result.adaptiveRecoveries+=stats.checkpointAdaptiveRecoveries;
+        result.maximumCurrentIntervalFrames=std::max(
+            result.maximumCurrentIntervalFrames,state.checkpointIntervalFrames);
         result.bytesReturned+=stats.checkpointBytesReturned;
         if(!state.gpuActive)continue;
         ++result.activeGroups;
