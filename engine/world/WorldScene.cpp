@@ -656,6 +656,7 @@ void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int 
             static_cast<int64_t>(std::llround(zCm))});
     }
     nereidWater_.update(device,observers.empty()?nullptr:&observers.front());
+    floodVisual_.update(device);
     cascades_.update(device,&nereidWater_);
     if(textures_)textures_->trim(device);
 }
@@ -670,6 +671,11 @@ void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
                 stableWaterId,position,current);
         });
     cascades_.draw(renderer,origin,size);
+    const int64_t floodOriginCm=int64_t(size)*100;
+    floodVisual_.draw(renderer,
+        int64_t(origin.x)*floodOriginCm,
+        int64_t(origin.y)*floodOriginCm,
+        int64_t(origin.z)*floodOriginCm);
     // Shader-normal ripples replace the old overlay rings for surfaces
     // using NEREID. The overlay remains available via ripples().draw().
     for(const auto& [cell,chunk]:resident_){
@@ -704,6 +710,7 @@ void WorldScene::draw(render::Renderer3D& renderer,Cell origin,int size) {
 }
 void WorldScene::shutdown(gfx::Device& device) {
     nereidFlowObstructions_.clear(); // no stale server physics snapshots after world unload
+    floodVisual_.shutdown(device);
     nereidWater_.shutdown(device);
     cascades_.shutdown(device);
     ripples_.clear();
