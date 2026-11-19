@@ -43,8 +43,10 @@ inline bool staticRenderPacketCandidate(const ModelDraw& d,
                                         bool activeDisplacement, bool bakedLighting,
                                         bool lodDiagnostics) {
     const Model* m = d.model;
-    if (!d.staticPacketRevision || d.nodeMaterial ||
-        d.variant >= 0 || bakedLighting || lodDiagnostics ||
+    // Per-node material overrides and KHR material variants are static
+    // packet inputs, not a reason to decline the entire model. The renderer
+    // snapshots override indices and compares the selected variant each draw.
+    if (!d.staticPacketRevision || bakedLighting || lodDiagnostics ||
         !staticModelCacheCandidate(d, activeDisplacement)) return false;
     for (const auto& node : m->nodes)
         if (node.skin >= 0 || (node.mesh >= 0 &&
