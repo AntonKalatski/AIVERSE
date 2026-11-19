@@ -43,6 +43,14 @@ struct GpuPassConfig {
     // pooled source*. Materials/transforms and presentation remain owned by
     // Renderer3D. Must be nonnegative (source model gpuBaseVertex).
     int32_t baseVertex = 0;
+    // Optional Vulkan-only *same-material, same-world* full-primitive
+    // fallback command written by the second compute pass when GPU traversal
+    // flags overflow/invalid metadata. RHI index buffer must contain the
+    // original primitive and Strata pages in the SAME pooled storage.
+    // Do not enable before the strict renderer-side draw contract passes.
+    bool gpuFallbackEnabled = false;
+    uint32_t gpuFallbackFirstIndex = 0, gpuFallbackIndexCount = 0;
+    int32_t gpuFallbackBaseVertex = 0;
 };
 ViewConfig cpuReferenceView(const GpuPassConfig& pass,
                             const GpuSceneInstance& instance);
