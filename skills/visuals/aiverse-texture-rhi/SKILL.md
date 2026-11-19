@@ -1791,3 +1791,43 @@ and `bash tools/texture-rhi-final-verify.sh --jobs 4`.
 Check that the full nonuniform scene independent CPU
 oracle prints a real PASS and that all native GPU
 CTest logs contain no `FAIL:` diagnostics.
+
+## Stage 10CI — unified native Texture RHI GPU acceptance PASS at 7494f32d
+
+**Actual one-shot Mac Studio/Apple M3 Ultra result:**
+the user ran `bash tools/texture-rhi-final-verify.sh --jobs 4`
+on tested SHA `7494f32d313a2ac45050be02d25ca3ae97749086`.
+The fail-fast runner finished with `result=PASS`
+and its manifest reported **21 focused portable tests
+and seven native, separate-process Metal GPU tests**.
+
+The new production `metal_renderer_graph_vt_gutter_gpu`
+(CTest #128) itself reported **1/1 PASS, 1.90 sec**.
+For U=0.400/0.480/0.500/0.520/0.600,
+`graph=1 mixedGraph=1 vt=1 mixedVt=1
+commands=2 rejected=0 errors=0`.
+Every full-scene ordinary vs GPU ICB readback
+had `bad_channels=0 max_delta=0`, and the
+independent original logical-source, endpoint-calibrated
+scene bilinear oracle passed with **max interpolation
+error 1 displayed RGB level** on both paths.
+The expected nonuniform-gutter, mixed ICB
+success marker was printed, with **zero FAIL** lines.
+This corrects the earlier false CTest success concern:
+the inspected tested SHA contains ROI threshold 12
+and the failure-to-exit-status fix.
+
+Read `docs/texture-rhi.md` Stage 10CI for exact log
+and proof limits. This is **real native device correctness
+verification**, but **NOT** a full-engine-wide run:
+the manifest explicitly says `full_engine=0`.
+Do not infer Vulkan/GL/WebGL/mobile, trilinear/aniso,
+large streamed page stress or FPS. The 1.90 seconds
+is CTest wall time, not GPU frame duration.
+After these documentation commits, HEAD will differ
+from tested 7494f32d; continue to refer to the
+actual tested source SHA in reports.
+
+Keep PR #21 Draft pending any desired whole-engine
+regression, cross-backend and driver/performance
+acceptance. All experimental GPU ICB defaults OFF.
