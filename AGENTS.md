@@ -2045,3 +2045,13 @@ Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. 
   run for Stage 121. Do not merge PR #22 or mark it ready.
   Next Stage 122 continues host integration and explicit LOD remaps,
   then performs full testing only after feature completion.
+
+## MotionWeave / Universal View Stage 122 — explicit LOD retarget and canvas status
+
+- Continue from [Stage 122 handoff](docs/agent-handoffs/animation-stage122-rig-retarget-2026-11-19.md). Branch `feature/universal-ecs-animation-pipeline`, PR #22 stays DRAFT. Compare latest `main` and related agent branches before any further source edits; never force push or overwrite PHYSIS/NEREID/Prisma/SpectraFX/TerraWeave.
+- Whole-asset LODs may provide an immutable `view::ModelPoseRetarget` mapping visual nodes to source rig nodes. The map is validated for node indices, ancestry, morph channel bounds and translation scale. `retargetModelPose` applies source animation TRS deltas to the **visual target bind pose**, then builds visual node matrices. Do not blindly copy source node matrices or inverse binds into a different skeleton.
+- `view::ModelLod::retarget` is optional. Strictly equivalent models share source Pose directly; a valid mapping produces a separate visual Pose; otherwise draw target bind pose. `ModelAttachment` always follows source rig. MotionWeave updates ONCE, regardless of LOD, and never writes gameplay state.
+- An FPS/native source with a precomputed pose must set `view::Object::animationModel` and call `View::beginPreparedFrame()` once before ordered draw packet submission, NOT `View::update()`, avoiding a second graph step. The FPS host now follows this contract. RTS retains its genre-owned LOD selection but shares the retarget helper, caching validated source-to-visual node maps per loaded LOD in `RtsLook`.
+- Optional morph retarget arrays must initialize every unmapped entry to -1. Do not assume independently authored morph target slot indices are equivalent. Source and visual GPU/CPU asset ownership remains with the host through all worker joins and synchronous submissions.
+- `RenderTexture::flushChecked()` returns success/failure. Old `void flush()` remains a compatibility wrapper. On GPU scratch allocation failure, preserve brush commands. Canvas `SubmissionStats` and Editor statistics record failed brush, blit and staging-image allocations for live paint owners.
+- No native C++ compilation, CMake/CTest, CI, Metal/Vulkan/GL GPU, sanitizer or benchmark was performed in Stage 122; source changes are UNVERIFIED for native compilation/runtime. PR #22 must stay Draft. Next Stage 123: compiled/generation-aware retarget maps and remaining host parity; test only after feature completion.
