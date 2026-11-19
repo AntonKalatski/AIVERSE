@@ -1564,3 +1564,50 @@ Maintain `docs/agent-handoffs/animation-universal.md` with exact
 commits, changed paths, actual tests and next action after each
 stage, in a separate handoff commit. Do not merge source-only
 unverified changes to main.
+
+## AIVERSE Stage 107 — scoped GPU device ownership, replayable fence diagnostics and appearance packet providers
+
+For all NEW native render hosts, call
+`ModelResourceCache::bindResourceDevice(device)` before GPU
+upload/replacement or use `RenderResourceOwnerGroup::registerScoped(
+device, cache)`, keeping its move-only lease alive until after
+the last resource snapshot. All resource registration, host
+mutation, shutdown and View submission MUST run on the same
+device-owner thread. Do not share an already GPU-bound cache with
+another device. A failed shutdown leaves binding intact and GPU
+resources retained; only successful GPU-safe `shutdown` allows
+device rebind. `snapshot(device)` now rejects expired/rebound
+scoped registrations. A wrong-thread scoped lease release is
+diagnosed, not executed. The legacy `add(cache)` is a CPU-only
+compatibility observer, not a safe replacement for device-bound
+leases. The GPU Device itself must outlive all attached caches.
+
+Use `gfx::ResourceRetirementStatus::{Pending,Complete,Failed}`
+and the existing fence completion semantics; NEVER infer GPU
+completion from elapsed time or frame serial. For debugging,
+`AsyncResourceRetirementQueue::setDiagnosticObserver` emits
+token lifecycle events and `render::RetirementStatusReplay`
+can replay a scripted synthetic sequence. A synthetic replay is
+NOT a native GPU fence. Diagnostic callback exceptions are
+ignored so they cannot corrupt retirement. A Failed token
+must retain its Models until an actual successful idle barrier.
+
+For genre-neutral fully authored visuals, use
+`engine/view/AppearancePacket.h` with `AppearanceSpec` and
+`buildAppearancePacket`. The caller supplies Model, materials,
+node assignments, geometry, variant, tint, optional animation
+graph and source identity; the generic builder creates
+`view::Object` without genre dependencies. RTS static preview
+and ghost packets now delegate common appearance composition
+to this provider. No second animation player may be created:
+static/precomputed submissions must have no graph, while graph
+inputs require one owning `View::update` before submit.
+The remaining RtsView rules/material/graph authoring is
+compatibility code pending further migration and real
+visual parity testing.
+
+Stage 107 regression sources are present but tests have NOT RUN
+by user request; handoff in
+`docs/agent-handoffs/animation-universal.md` records actual
+source changes, limitations and the next agent step. Do not
+merge unverified GPU/resource/animation changes to main.
