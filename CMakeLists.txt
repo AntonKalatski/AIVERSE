@@ -2346,3 +2346,27 @@ if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos"
         TIMEOUT 120
         ENVIRONMENT "AIVERSE_EXPERIMENTAL_METAL_ICB=1;AIVERSE_GPU_ENCODED_ICB=1;AIVERSE_GPU_AUTHORED_DRAWS=1;AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_PBR=1;AIVERSE_EXPERIMENTAL_ICB_MIXED_PBR=1;AIVERSE_EXPERIMENTAL_ICB_PER_COMMAND_VT=1;AIVERSE_EXPERIMENTAL_ICB_MIXED_VT=1;AIVERSE_EXPERIMENTAL_ICB_SHADER_GRAPH=1;AIVERSE_GPU_ICB_ADAPTIVE=0;AIVERSE_ADAPTIVE_DRAW_GROUPS=0;AIVERSE_GPU_ICB_MIN_COMMANDS=2;AIVERSE_ICB_TRACE=1")
 endif()
+
+
+# Canonical Metal VT bilinear/gutter correctness against an independent
+# original-logical-texel CPU oracle. Separate from GPU-authored ICB fixtures:
+# this gate checks shader sampling math before high-level renderer parity.
+# No default GPU/driver test should silently run this additional workload.
+option(AIVERSE_TEXTURE_METAL_VT_BILINEAR_GPU_TESTS
+    "Opt-in native Metal canonical VT nonuniform bilinear/gutter CPU pixel oracle" OFF)
+if(AIVERSE_BUILD_TESTS AND AIVERSE_PLATFORM STREQUAL "macos"
+   AND AIVERSE_TEXTURE_METAL_VT_BILINEAR_GPU_TESTS)
+    add_executable(aiverse_metal_vt_bilinear_gpu_test
+        tests/render/metal_vt_bilinear_gpu.mm
+        engine/gfx/metal/GfxMetal.mm)
+    target_include_directories(aiverse_metal_vt_bilinear_gpu_test
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    set_source_files_properties(tests/render/metal_vt_bilinear_gpu.mm
+        PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+    target_link_libraries(aiverse_metal_vt_bilinear_gpu_test PRIVATE
+        Threads::Threads
+        "-framework Metal" "-framework QuartzCore" "-framework Foundation")
+    add_test(NAME metal_vt_bilinear_gpu COMMAND aiverse_metal_vt_bilinear_gpu_test)
+    set_tests_properties(metal_vt_bilinear_gpu PROPERTIES
+        LABELS "METAL;GPU;TEXTURE_RHI;VIRTUAL_TEXTURE;BILINEAR_ORACLE" TIMEOUT 120)
+endif()
