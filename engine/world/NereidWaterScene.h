@@ -177,6 +177,16 @@ public:
     // presentation ripple event; no ECS pool access or mutable ownership.
     // Read-only surface elevation for visual river-cascade-lake joins.
     // No GPU allocations or authoritative water ECS mutation.
+    // Borrowed only until next setSurfaces transaction. Connectors use
+    // it synchronously during GPU preparation on the scene thread.
+    const NereidSceneSurface* surfaceForId(uint64_t waterId)const {
+        if(!waterId)return nullptr;
+        for(const auto& slot:slots_)
+            if(slot.source.id==waterId && slot.source.body.enabled &&
+               lib::nereid::validWaterBody(slot.source.body))
+                return &slot.source;
+        return nullptr;
+    }
     std::optional<Fixed> surfaceLevelForId(uint64_t waterId)const {
         if(!waterId)return std::nullopt;
         for(const auto& slot:slots_)
