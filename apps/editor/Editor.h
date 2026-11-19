@@ -32,6 +32,7 @@
 #include "engine/render/ImGuiLayer.h"
 #include "engine/render/PostFx.h"
 #include "engine/render/Renderer3D.h"
+#include "engine/render/RenderDeviceLifetime.h"
 #include "engine/sim/Simulation.h"
 #include "modules/rts/RtsAI.h"
 #include "modules/rts/RtsMap.h"
@@ -104,6 +105,9 @@ public:
     const MapDoc& doc() const { return ws_.map; }
     const game::Rules& rules() const { return ws_.project.rules; }
     gfx::Device& device() { return *dev_; }
+    render::RenderDeviceLifetime::Lease gpuDeviceLease() const {
+        return gpuLifetime_?gpuLifetime_->lease():render::RenderDeviceLifetime::Lease{};
+    }
     render::Renderer3D& renderer() { return r3d_; }
     render::PostFx& postFx() { return postFx_; }   // post effects of Scene / Game views (PostFxWindow configures it)
     bool postFxInScene = true;                     // false: only the Game view is post-processed
@@ -341,6 +345,7 @@ private:
     Options opt_;
     Workspace ws_;
     gfx::Device* dev_ = nullptr;
+    std::unique_ptr<render::RenderDeviceLifetime> gpuLifetime_;
     gfx::TextureHandle studioLogo_{}; // editor brand mark
     render::ImGuiLayer ui_;
     ClientHost clientHost_;   // after ui_: shut down first (its ImGui context, RmlUi)
