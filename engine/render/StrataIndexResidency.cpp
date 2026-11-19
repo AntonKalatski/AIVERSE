@@ -178,7 +178,8 @@ bool IndexResidency::initialize(gfx::Device& device, const ModelAsset& asset,
 }
 
 bool IndexResidency::update(const std::vector<IndexDemand>& demands,
-                            std::string* error) {
+                            std::string* error,
+                            size_t uploadAllowanceBytes) {
     if (error) error->clear();
     if (!device_ || !asset_ || !device_->gpuHealthy())
         return fail(error, "Strata residency device is unavailable");
@@ -243,7 +244,8 @@ bool IndexResidency::update(const std::vector<IndexDemand>& demands,
     }
 
     if (incremental_)
-        return updateIncremental(wanted, sorted, deferred, error);
+        return updateIncremental(wanted, sorted, deferred, error,
+                                 uploadAllowanceBytes);
 
     bool unchanged = buffer_.valid();
     uint64_t oldNodes = 0, newNodes = 0, evictions = 0;
