@@ -12,6 +12,13 @@ add_library(AIVERSE::vivid_gpu ALIAS aiverse_vivid_gpu)
 target_link_libraries(aiverse_vivid_gpu PUBLIC aiverse_vivid aiverse_engine)
 target_compile_features(aiverse_vivid_gpu PUBLIC cxx_std_20)
 
+# Optional 48B -> 60B GPU ModelVertex stream conversion. Renderer3D still
+# requires an explicit opt-in draw-path integration (not enabled by default).
+add_library(aiverse_vivid_mesh STATIC GpuMorphMeshStream.cpp)
+add_library(AIVERSE::vivid_mesh ALIAS aiverse_vivid_mesh)
+target_link_libraries(aiverse_vivid_mesh PUBLIC aiverse_vivid_gpu aiverse_models)
+target_compile_features(aiverse_vivid_mesh PUBLIC cxx_std_20)
+
 # Legacy render::Pose adapter; core remains usable without aiverse_models.
 add_library(aiverse_vivid_render STATIC MorphBinding.cpp)
 add_library(AIVERSE::vivid_render ALIAS aiverse_vivid_render)
@@ -76,7 +83,7 @@ if(AIVERSE_BUILD_TESTS)
             ${PROJECT_SOURCE_DIR}/engine/gfx/metal/GfxMetal.mm
             PROPERTIES COMPILE_FLAGS "-fobjc-arc")
         target_link_libraries(aiverse_vivid_metal_rhi_tests PRIVATE
-            aiverse_vivid_gpu
+            aiverse_vivid_mesh aiverse_vivid_gpu
             "-framework Metal" "-framework QuartzCore" "-framework Foundation")
         set_target_properties(aiverse_vivid_metal_rhi_tests PROPERTIES
             OBJCXX_STANDARD 20
