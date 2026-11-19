@@ -170,12 +170,18 @@ struct CreatorApp {
         }
         actor.reset();
         cpuActor.reset();
-        if(human.hair)releaseModel(*device,*human.hair);
-        if(human.head)releaseModel(*device,*human.head);
-        human={};
+        // MotionWeave entities and compiled graph borrow Model nodes/clips.
+        // Following animation source-epoch/lifetime integration, detach all
+        // presentation owners BEFORE retiring the old model's CPU/GPU data.
+        // The preceding actor idle barrier has already proven no in-flight
+        // morph/renderer buffers need the old model any more.
         world.reset();
         graph.reset();
         facePose.clear();
+        rigPoseScratch.clear();
+        if(human.hair)releaseModel(*device,*human.hair);
+        if(human.head)releaseModel(*device,*human.head);
+        human={};
         scalpBindPositions.clear();
         scalpAnimatedPositions.clear();
         scalpSkinScratch.clear();
