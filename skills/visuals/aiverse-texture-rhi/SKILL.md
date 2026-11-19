@@ -722,3 +722,18 @@ CI if it remains queued or cancelled.
   different conventional source textures are not mixed.
 - No actual Metal/GL/Vulkan compile, GPU run, screenshot parity
   or performance evidence has been collected for this path.
+
+
+### Mixed VT ICB diagnostics (Stage 10Z)
+
+- Read `Renderer3D::gpuModelDrawStats().perCommandVtExecutions`
+  and `.mixedVtExecutions` to see accepted GPU execution
+  outcomes; these are not counts of prepared or attempted
+  commands. A mixed submission must include at least two
+  distinct VT resource bindings.
+- Compare with `gpuIcbPrepared`, `gpuIcbRejected` and
+  `gpuIcbExecuteFailed` when diagnosing CPU fallback.
+  Still require Metal GPU capture and pixel A/B tests;
+  source-level statistics do not prove shader correctness.
+- Both experimental per-command/mixed flags remain
+  release-disabled. Native and GPU tests are NOT RUN.
