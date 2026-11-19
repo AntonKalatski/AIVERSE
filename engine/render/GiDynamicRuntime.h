@@ -96,7 +96,13 @@ public:
 
     void setLights(std::vector<GiMovingLight> lights) {
         ensureReady();
-        reference_.setLights(std::move(lights));
+        std::vector<uint32_t> cleared;
+        reference_.setLights(std::move(lights), &cleared);
+        // Clear the old indirect bounce before any new budgeted relighting.
+        // Reuse the same sparse upload path as regional geometry edits.
+        if (!clearPending_)
+            pendingRegionalClear_.insert(pendingRegionalClear_.end(),
+                                         cleared.begin(), cleared.end());
     }
 
     void invalidate(GiBounds bounds, GiDirtyReason reason, float influenceRadius=0) {
@@ -144,7 +150,10 @@ public:
     // Caller MUST clearDynamicGiOverlay() on the renderer before shutdown/recreation
     // of this runtime or renderer, or before a different gfx::Device is installed.
     bool bind(Renderer3D& renderer) const {
-        return ready() && renderer.setDynamicGiOverlay(&atlas_,origin_,spacing_,nx_,ny_,nz_);
+        // Avoid presenting ghost GI if the host has not yet flushed invalidated
+        // light/geometry texels. update(0, camera) is sufficient to flush them.
+        return ready() && !clearPending_ && pendingRegionalClear_.empty() &&
+               renderer.setDynamicGiOverlay(&atlas_,origin_,spacing_,nx_,ny_,nz_);
     }
     void unbind(Renderer3D& renderer) const { renderer.clearDynamicGiOverlay(); }
 
