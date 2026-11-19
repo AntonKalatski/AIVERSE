@@ -71,13 +71,13 @@ inline void drawNereidWaterSurface(Renderer3D& renderer,const Mesh& mesh,
         const std::array<float4,16>& ripples={},
         uint32_t firstIndex=0,uint32_t indexCount=0,
         const std::array<float4,16>& wakeShapes={},
-        float4 wind={}) {
+        float4 wind={},float4 hydraulics={}) {
     if(mesh.indexCount==0 || !validNereidWaterStyle(style))return;
     renderer.drawNereidRippleMesh(mesh,transform,
                       {style.absorption,style.shoreFoamDepth,
                        style.depthTint,style.opacity},
                        style.specular,style.refractionStrength,ripples,
-                       firstIndex,indexCount,wakeShapes,wind);
+                       firstIndex,indexCount,wakeShapes,wind,hydraulics);
 }
 inline void releaseNereidWaterSurface(gfx::Device& device,Mesh& mesh) {
     if(mesh.vb.valid())device.destroyBuffer(mesh.vb);
