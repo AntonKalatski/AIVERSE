@@ -269,6 +269,10 @@ public:
     void setSpectraGpuPreviewPaused(bool value) {spectraPreviewPaused_=value;}
     void setSpectraGpuPreviewFrozen(bool value) {spectraPreviewFrozen_=value;}
     void setSpectraGpuPreviewLoop(bool value) {spectraPreviewLoop_=value;}
+    float spectraGpuPreviewSpeed() const {return spectraPreviewSpeed_;}
+    void setSpectraGpuPreviewSpeed(float speed);
+    void stepSpectraGpuPreviewOnce() {++spectraPreviewStepRequests_;}
+    uint32_t spectraGpuPreviewPendingSteps() const {return spectraPreviewStepRequests_;}
     // Non-owning optional telemetry source. Editor's normal FX preview is
     // CPU-only; external Metal preview hosts explicitly attach their pool.
     // The host MUST detach it before destroying the pool.
@@ -440,6 +444,8 @@ private:
     bool spectraPreviewInGame_=false;
     bool spectraPreviewLoop_=false;
     bool spectraPreviewPaused_=false,spectraPreviewFrozen_=false;
+    float spectraPreviewSpeed_=1.f; // visual preview only, not ECS
+    uint32_t spectraPreviewStepRequests_=0;
     double spectraPreviewNextBurst_=0;
     std::array<float,8> spectraPreviewParams_{};
     fx::float3 spectraPreviewPosition_{};
