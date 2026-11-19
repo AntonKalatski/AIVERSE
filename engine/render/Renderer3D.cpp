@@ -377,6 +377,7 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     reflectionPlaneY_ = 0.f;
     items_.clear(); lines_.clear(); tris_.clear(); custom_.clear(); customOpaque_.clear(); customShadow_.clear();
     modelItems_.clear(); jointData_.clear(); morphData_.clear(); modelStats_ = {};
+    strataPreviewStats_ = {}; // diagnostic preflight never persists across scenes
     maintainIndirectLayoutCaches(); // prune unused layouts even in empty scenes
     lodDebugSample_ = {}; // selected instance is tracked per viewport beginScene
     // ModelItem pointers are valid only within this scene; never reuse their
