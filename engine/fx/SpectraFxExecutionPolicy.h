@@ -58,8 +58,11 @@ struct SpectraFxBackendDecision {
 inline SpectraFxBackendDecision chooseSpectraFxBackend(
         const gfx::Device& device,const SpectraFxBackendRequest& request) {
     const auto cpu = [&](const char* reason) -> SpectraFxBackendDecision {
+        // Explicit CPU mode is not a fallback. Auto/Gpu must honour the
+        // authored allowCpuFallback flag even if no GPU backend is available.
+        // Previously Auto accidentally accepted CPU with fallback disabled.
         return {SpectraFxExecutionBackend::Cpu,
-                request.preference!=SpectraFxExecutionPreference::Gpu ||
+                request.preference==SpectraFxExecutionPreference::Cpu ||
                 request.allowCpuFallback,
                 reason};
     };
