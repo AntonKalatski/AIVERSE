@@ -60,4 +60,5 @@ jobs:
           cmake --build build/strata-focused --target \
             aiverse_strata_metal_parity \
             aiverse_strata_metal_raster_parity \
-            aiverse_strata_metal_depth_multiview_parity --parallel 4
+            aiverse_strata_metal_depth_multiview_parity \
+            aiverse_strata_metal_reflection_material_parity --parallel 4
