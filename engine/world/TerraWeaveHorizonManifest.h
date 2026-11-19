@@ -119,6 +119,48 @@ horizonSceneFromManifest(
             "world.terraweaveHorizon.presentationQuality: expected battery-saver|mobile|balanced|desktop");
         scene->setPresentationQualityPreset(selected);
     }
+    // Stage40 controller is separate from the geometry and runtime preset.
+    // It remains OFF unless explicitly enabled and requires the native host
+    // to feed real frame timing samples; the manifest cannot invent timings.
+    if(j.has("adaptiveQuality")) {
+        const Json& adaptive=j["adaptiveQuality"];
+        if(!adaptive.isObject())
+            throw JsonError("world.terraweaveHorizon.adaptiveQuality: expected object");
+        const auto parseLevel=[](const std::string& value)
+                ->terraweave::HorizonPresentationQualityPreset {
+            using Preset=terraweave::HorizonPresentationQualityPreset;
+            if(value=="battery-saver")return Preset::BatterySaver;
+            if(value=="mobile")return Preset::Mobile;
+            if(value=="balanced")return Preset::Balanced;
+            if(value=="desktop")return Preset::Desktop;
+            throw JsonError("world.terraweaveHorizon.adaptiveQuality: invalid quality level");
+        };
+        terraweave::HorizonAdaptiveQualityConfig config;
+        config.enabled=adaptive.getBool("enabled",false);
+        config.minimum=parseLevel(adaptive.getStr("minimum","mobile"));
+        config.maximum=parseLevel(adaptive.getStr("maximum","desktop"));
+        // A selected static runtime profile also serves as the default
+        // starting level unless the adaptive block overrides "initial".
+        config.initial=parseLevel(adaptive.getStr("initial",
+            presentationQuality.empty() ? "balanced" : presentationQuality));
+        config.targetFrameUs=static_cast<uint32_t>(worldInteger(
+            adaptive,"targetFrameUs",config.targetFrameUs,4000,100000));
+        config.downgradePercent=static_cast<uint32_t>(worldInteger(
+            adaptive,"downgradePercent",config.downgradePercent,101,200));
+        config.upgradePercent=static_cast<uint32_t>(worldInteger(
+            adaptive,"upgradePercent",config.upgradePercent,25,99));
+        config.downgradeFrames=static_cast<uint32_t>(worldInteger(
+            adaptive,"downgradeFrames",config.downgradeFrames,2,600));
+        config.upgradeFrames=static_cast<uint32_t>(worldInteger(
+            adaptive,"upgradeFrames",config.upgradeFrames,2,3600));
+        config.cooldownFrames=static_cast<uint32_t>(worldInteger(
+            adaptive,"cooldownFrames",config.cooldownFrames,0,36000));
+        try {
+            scene->setAdaptiveQualityConfig(config);
+        } catch(const std::invalid_argument&) {
+            throw JsonError("world.terraweaveHorizon.adaptiveQuality: invalid quality bounds or initial level");
+        }
+    }
     // Read-only prebaked assets are strictly opt-in. The game pack owns
     // access to the archive files; runtime never writes into content.
     const std::string archivePrefix=j.getStr("archivePrefix");
