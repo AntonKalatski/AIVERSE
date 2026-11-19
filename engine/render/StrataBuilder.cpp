@@ -76,6 +76,23 @@ bool build(const BuildInput& input, const BuildOptions& options,
         options.relativeError < 0 || options.relativeError > 1)
         return fail(error, "invalid Strata input dimensions or build options");
 
+    const bool hasAttributes = input.attributes != nullptr;
+    if (hasAttributes) {
+        if (!input.attributeWeights || input.attributeComponents < 1 ||
+            input.attributeComponents > 32 ||
+            input.attributeStride < size_t(input.attributeComponents) * sizeof(float) ||
+            input.attributeStride % sizeof(float) ||
+            input.attributeStride > 4096)
+            return fail(error, "invalid vertex attribute layout");
+        for (uint32_t i = 0; i < input.attributeComponents; ++i)
+            if (!std::isfinite(input.attributeWeights[i]) ||
+                input.attributeWeights[i] <= 0)
+                return fail(error, "invalid attribute simplification weights");
+    } else if (input.attributeWeights || input.attributeComponents ||
+               input.attributeStride) {
+        return fail(error, "incomplete vertex attribute layout");
+    }
+
     // Validate indices and finite source positions before calling meshoptimizer.
     // Check every input vertex, including unreferenced data, for predictable assets.
     for (size_t i = 0; i < input.vertexCount; ++i) {
@@ -83,6 +100,17 @@ bool build(const BuildInput& input, const BuildOptions& options,
         for (float c : p)
             if (!std::isfinite(c))
                 return fail(error, "non-finite vertex position");
+        if (hasAttributes) {
+            const auto* bytes = reinterpret_cast<const uint8_t*>(input.attributes) +
+                                i * input.attributeStride;
+            for (uint32_t c = 0; c < input.attributeComponents; ++c) {
+                float component = 0;
+                std::memcpy(&component, bytes + size_t(c) * sizeof(float),
+                            sizeof(component));
+                if (!std::isfinite(component))
+                    return fail(error, "non-finite vertex attribute");
+            }
+        }
     }
     for (size_t i = 0; i < input.indexCount; ++i)
         if (input.indices[i] >= input.vertexCount)
@@ -190,12 +218,19 @@ bool build(const BuildInput& input, const BuildOptions& options,
                 (size_t(double(source.size()) * options.targetRatio) / 3) * 3);
             std::vector<uint32_t> simplified(source.size());
             float simplificationError = 0;
-            const size_t count = meshopt_simplify(
-                simplified.data(), source.data(), source.size(),
-                input.positions, input.vertexCount, input.positionStride,
-                target, targetError,
-                meshopt_SimplifyLockBorder | meshopt_SimplifyErrorAbsolute,
-                &simplificationError);
+            const unsigned simplifyFlags = meshopt_SimplifyLockBorder |
+                                           meshopt_SimplifyErrorAbsolute;
+            const size_t count = hasAttributes
+                ? meshopt_simplifyWithAttributes(
+                    simplified.data(), source.data(), source.size(),
+                    input.positions, input.vertexCount, input.positionStride,
+                    input.attributes, input.attributeStride,
+                    input.attributeWeights, input.attributeComponents, nullptr,
+                    target, targetError, simplifyFlags, &simplificationError)
+                : meshopt_simplify(
+                    simplified.data(), source.data(), source.size(),
+                    input.positions, input.vertexCount, input.positionStride,
+                    target, targetError, simplifyFlags, &simplificationError);
 
             if (count < 3 || count % 3 || count > source.size() ||
                 !std::isfinite(simplificationError) || simplificationError < 0)
