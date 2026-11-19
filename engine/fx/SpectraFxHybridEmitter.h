@@ -21,6 +21,9 @@ public:
     struct Config {
         SpectraFxBackendRequest backend;
         std::string cpuEffect;
+        // Optional authored CPU sub-effect on visual GPU ground impact.
+        // Requires environment.reportImpacts and is rate-capped by playback.
+        std::string impactEffect;
         SpectraFxGpuBillboardRenderer::Appearance appearance{};
         SpectraFxGpuEnvironment environment{};
         SpectraFxGpuSpawnSettings spawning{};
@@ -172,6 +175,7 @@ public:
     bool suspended() const {return suspended_;}
     SpectraFxExecutionBackend backend() const {return backend_;}
     const SpectraFxBackendDecision& decision() const {return decision_;}
+    const Config& config() const {return config_;}
     const std::string& status() const {return status_;}
     uint32_t gpuActiveParticles() const {return slots_.activeCount();}
 
