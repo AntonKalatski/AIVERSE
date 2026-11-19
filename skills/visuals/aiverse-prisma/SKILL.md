@@ -83,20 +83,61 @@ prevent two spatial/temporal AA filters on the same frame. Calling
 and temporal history. `retireView(viewId)` fence-retires camera-owned
 history; owner GPU completion/lifetime rules are unchanged.
 
-This is native-resolution stabilization, **not dynamic-resolution temporal
-upscaling**, jittered subpixel reconstruction or a motion-reconstruction
-quality certification. It must be validated on Metal/GL/GLES/Vulkan with
+Stage 42 alone is native-resolution stabilization; Stage 43 adds optional
+jittered subpixel reconstruction, still **not** dynamic-resolution temporal
+upscaling or a motion-reconstruction quality certification. It must be validated on Metal/GL/GLES/Vulkan with
 moving actors, silhouettes, sky, particle transparency, camera teleports,
 dual viewports and pass count. No native compile, CTest or GPU screenshot
 was run in the GitHub-only stage. See
 `docs/handoffs/prisma-stage-42.md`.
+
+## Native-resolution subpixel sampling and confidence (Stage 43)
+
+Stage 43 extends `temporalResolve` with two optional catalog parameters:
+`jitterPixels` (0..0.5, default 0.5) and `historyConfidence` (0..1,
+default 0.65). Jitter is **separately gated** by
+`AIVERSE_PRISMA_JITTER=1` *and* `AIVERSE_PRISMA_TEMPORAL=1` plus an
+active High/HDR temporal effect. Jitter never runs for games that have not
+explicitly enabled both environment flags.
+
+Before `Renderer3D::beginScene`, call the presentation-only camera API:
+
+```cpp
+prisma.setViewId(cameraId);              // stable identity, not resolution
+prisma.applyCameraVolumes(volumes, camera.eye());
+auto renderCamera = prisma.jitteredCamera(camera, framebufferW, framebufferH);
+renderer.beginScene(renderCamera, framebufferW, framebufferH);
+// Keep the ORIGINAL camera for picking, camera navigation and HUD layout.
+```
+
+`jitteredCamera` uses a per-camera 8-phase Halton (2,3) sequence in
+`RTSCamera::jitter` (NDC). The temporal shader samples the current HDR
+scene at `stablePixel + currentJitter` and reads prior HDR history at the
+reprojected pixel **minus previousJitter**; the persistent history target
+always uses the stable output grid. The previous jitter is removed from
+motion magnitude when computing history confidence.
+
+The temporal confidence rejection combines per-tap previous-depth matching,
+3×3 current-color luminance variance and neighborhood clipping, current
+depth discontinuities, object/camera motion and the existing reactive mask.
+Invalid/sharp camera cuts seed fresh history; changes to projection type,
+FOV or clip planes explicitly reset motion and color history. Scene/Game/
+GameClient render copies of camera; input/picking/overlays remain unjittered.
+`PrismaStats` and the editor PRISMA panel show last-frame resolve/jitter.
+
+Stage 43 is **native-resolution subpixel temporal AA**, not TSR/FSR/DLSS,
+dynamic resolution, jittered shadows or proven reconstruction quality.
+Do not compose with the older optional `PrismaScreenLighting` TAA.
+No CMake/native compile, CTest or Metal/GL/Vulkan screenshots were run;
+verify motion, transparency, silhouettes and subpixel stability before
+production. See `docs/handoffs/prisma-stage-43.md`.
 
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
 - Temporal/screen-space: `PrismaScreenLighting.{h,cpp}`, `PrismaScreenLightingShaders.h`.
 - Legacy `PostFx*.h`, `ScreenLighting.h` and old ops header are compatibility-only; legacy .cpp shims have no definitions. New engine changes MUST go in PRISMA files.
-- The volume stack remains GPU-free. The main PRISMA chain includes **source-level, experimental** Auto Exposure, DoF, camera/object motion blur and Stage 42 temporal resolve. RenderGraph execution is partially opt-in and temporal upscaling is **not** implemented. Builds and GPU parity tests have not been run for these stages; never label them verified or production-ready.
+- The volume stack remains GPU-free. The main PRISMA chain includes **source-level, experimental** Auto Exposure, DoF, camera/object motion blur and Stages 42–43 temporal resolve/jitter. RenderGraph execution is partially opt-in and temporal upscaling is **not** implemented. Builds and GPU parity tests have not been run for these stages; never label them verified or production-ready.
 
 ## Mandatory validation and handoff
 
