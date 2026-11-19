@@ -1852,3 +1852,39 @@ test status, limits and next step to its handoff as the next separate commit.
 ## Release-mode test assertion contract (2026-11-19)
 
 Native ECS/C++ regression tests are routinely built in `Release` with `NDEBUG`. **Never rely on standard `assert(expr)` for a test requirement, especially if `expr` has side effects or creates fixtures**, because the expression disappears entirely in Release, yielding false-green tests and Clang unused-variable warnings. Use `#include "tests/AlwaysCheck.h"` and `AIVERSE_TEST_CHECK(expr)`, or an equivalent always-on check throwing an informative exception. Tests must enforce invariants identically in Debug and Release; don't use `(void)variable`, `[[maybe_unused]]`, `-Wno-unused-*`, or `#undef NDEBUG` as a substitute for real assertions. Source: `docs/nereid/stage-50-release-assertion-correctness.md`.
+
+### Animation/View Stage 115 — main integration and GPU program lifetime
+
+- Merge `01538817a68ac869b1e9ca12bc48ef9d9f4d56c7`
+  integrated main's NEREID/SpectraFX work with the animation
+  feature branch, preserving both parent histories. The six
+  shared files were reconciled without dropping unrelated
+  water/postprocessing or animation GPU-epoch changes.
+  **This Git merge is NOT a C++ compilation or test result.**
+- `Renderer3D` now owns `GpuProgramRetirement`: a material
+  quality/instance-limit change must enqueue obsolete shader
+  and pipeline handles for GPU-fenced retirement instead of
+  destroying potentially in-flight programs. Editor, FPS and
+  client hosts call `collectRetiredPrograms` only at true
+  frame boundaries, while using the same host GPU epoch.
+- When an edited AnimationGraph's GPU shader preflight is
+  `Pending`, poll native jobs through
+  `Renderer3D::pollPendingModelPipelineJobs()`. Do not
+  repeatedly decode/upload scratch Models merely to check
+  the same unfinished shader job. Preserve the old
+  AnimationGraph and presentation clocks on `Failed`.
+- A leased `PostFx` owner now queues old color/depth and LUT
+  texture handles into GPU-fenced `OffscreenTargetRetirement`
+  on size eviction/loader replacement. Frame-boundary
+  collection and successful idle-drain at shutdown are required
+  before retiring the host Device. Legacy unleased tools
+  retain immediate cleanup for compatibility. Do not erase
+  NEREID underwater/depth compositing changes.
+- `uploadModel` may report false when an indexed GPU vertex
+  or index allocation failed; scratch callers must use
+  fence-backed rollback, not direct immediate destruction.
+  The native `render_gpu_program_retirement` CTest is
+  registered but **NOT RUN**. PR #22 remains Draft until
+  build, GPU/backend, cross-genre animation and sanitizer
+  suites pass. See Stage 115 handoff for exact commits and
+  next work.
