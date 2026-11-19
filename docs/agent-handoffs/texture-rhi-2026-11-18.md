@@ -6156,3 +6156,47 @@ run (user requested functions first, tests later).
 Next: provide RHI-compatible GPU shader program creation
 with real U0 std140/MSL buffer(1) and correct vertex semantics;
 connect Terra producers and deformed model shader paths.
+
+
+## Stage 9X — RHI-native position/UV feedback shaders and pipeline (2026-11-19)
+
+Source commit: dbf5aa99e74d5532abdd35f49303e60c19678036.
+New file: engine/gfx/VirtualTextureFeedbackProgram.h.
+Added a standalone, cross-backend native C++ builder
+`virtualTextureFeedbackProgramSources(alphaMask,lodFade,automaticMip)`
+which emits complete GLSL vertex/fragment sources and a combined
+MSL source with VS `vs_main` and FS `fs_main`. This resolves
+the incompatibility of the earlier standalone fragment snippets
+with the RHI's shader-stage, U0 uniform block and Metal entrypoint
+contract. GLSL uses U0 std140, sampler `tex0` for masked variants;
+MSL uses constant buffer(1), texture(0) and sampler(0).
+
+Added `VirtualTextureFeedbackUniforms` (176-byte U0),
+`VirtualTextureFeedbackVertexLayout`, and
+`VirtualTextureFeedbackProgram` with synchronous
+initialize()/bind()/shutdown(), RGBA8 opaque single-sample
+pipeline, optional depth, position attribute 0 and UV attribute 2.
+ModelVertex maps to stride 60, offsets 0/24, UInt32 indices.
+Optional alpha masking and 4x4 LOD dither variants share the
+existing page encoding and derivative mip policy. All parameter
+blocks have explicit vector packing for std140/Metal parity.
+The program is genre-agnostic and can also be instantiated for
+terrain vertices with a different stride/UV offset.
+
+Important: callers MUST compute clipFromLocal (viewProj*world),
+virtual texture tile counts, logical texels/mips, alpha UV rows,
+and source baseColor alpha factor. For LOD fade they MUST fill
+scenePixel with Renderer3D::feedbackPixelGrid() values. Masked
+variants require a valid source base-color TextureHandle and
+matching sampler. This is a native shader/pipeline path but
+not yet a full plug-and-play material registration in
+Renderer3D/Terra. Non-position+UV deformation remains delegated
+to the separate deformed-model feedback callback.
+
+Verification: source committed to GitHub; NO native compilation,
+GLSL/MSL shader validation, CTest or GPU runs (user wants
+features first). Shader ABI and backend compilation require
+later verification.
+Next: wire the new program into model material binding and
+Terra's render submissions; concrete skinned/baked/morph
+vertex variants must follow ModelShaders.h ABI.
