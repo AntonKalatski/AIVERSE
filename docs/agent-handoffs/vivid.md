@@ -392,3 +392,25 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
   cmake --build ../AIVERSE-vivid/build/vivid --target aiverse_vivid_metal_rhi_tests aiverse_vivid_metal_gpu_tests -j 4
   ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^vivid_metal_(rhi|gpu)$'
   ```
+
+## Stage 5B — 2026-11-19 — reserved MSL identifier and actionable failure diagnostics
+
+- **Branch:** `feature/vivid-digital-humans`; previous Stage 5A HEAD reported in user verification: `208b4d37c06f49ba774c14dfc9a3a96fb57bab25`.
+- **Actual user-run macOS evidence before fix:** `aiverse_vivid_mesh`, `aiverse_vivid_metal_rhi_tests` and `aiverse_vivid_metal_gpu_tests` compiled and linked. `vivid_metal_gpu` **Passed** (0.12 s); `vivid_metal_rhi` **Failed** (2.03 s) with `VIVID RHI 60-byte mesh stream initialization failed`, prior to mesh-conversion dispatch. CTest: **1/2 passed, 1 failed, 2.16 s**; output did not contain compiler warnings or notes. The old Metal deformer path was previously independently confirmed, but the new 60B packing path is **NOT** verified.
+- **Root-cause analysis:** `GpuMorphMeshStream::initialize` can fail on no compute, invalid count/budget, `gfx::Device::createCompute`, or GPU storage allocation. Valid small test dimensions and a previously working Metal compute backend narrow this to new shader/pipeline compilation as the leading hypothesis. Source inspection shows MSL kernel parameter `uint vertex [[thread_position_in_grid]]`; `vertex` is the Metal shader-stage keyword. This inference has not yet been confirmed with the native Metal compiler diagnostic.
+- **Implementation commits / files:**
+  - `af74fb9c23139de9d20d8cfb506dbc83387754f3` — `engine/character/vivid/GpuMorphMeshShaders.h`: rename Metal compute parameter to `vertexIndex` and update every use, leaving GLSL source untouched.
+  - `3488f98b5e444976786315e98e6b0eec4436b446` — `tests/vivid/metal_rhi.mm`: on failed stream initialization, include `meshStream.lastError()` and `gfx::Device::lastError()` in the thrown error. Future Metal compiler/allocator failures will be visible instead of generic.
+  - `f434e01bdc349528a7337cdd09942c549a0b3a17` — `docs/vivid.md` Stage 5B source explanation and actual failed test status.
+- **Public API / ABI / persistence compatibility:** neither `ModelVertex` 60B nor `GpuMorphVertex` 48B layout changed; no production `GpuMorphMeshStream` C++ signatures, render contracts, CMake targets, MotionWeave, simulation, save/network changes. Only the internal MSL variable naming and test diagnostics changed.
+- **Tests actually executed AFTER fix:** **NOT RUN**. GitHub fetched modified source for verification; no remote macOS execution tool is available. Do not claim the user-visible `vivid_metal_rhi` is passing before rerun.
+- **Known risks / next step:** if initialization still fails, the new error path should reveal the exact MSL compile error or allocation error; fix that primary diagnostic first. If it compiles, the test's four-frame output comparison will validate that 60B ModelVertex UV, colours, tangent handedness and joint data remain intact while positions, normals and tangents are morphed.
+- **Mac commands (unrun by assistant):**
+  ```bash
+  cd ~/Projects/AIVERSE
+  git fetch origin feature/vivid-digital-humans
+  git -C ../AIVERSE-vivid switch --detach origin/feature/vivid-digital-humans
+  cmake -S ../AIVERSE-vivid -B ../AIVERSE-vivid/build/vivid -DAIVERSE_BUILD_TESTS=ON &&
+    cmake --build ../AIVERSE-vivid/build/vivid --target aiverse_vivid_metal_rhi_tests aiverse_vivid_metal_gpu_tests -j 4 &&
+    ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^vivid_metal_(rhi|gpu)$'
+  ```
