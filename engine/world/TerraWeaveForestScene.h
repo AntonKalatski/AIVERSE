@@ -317,7 +317,8 @@ public:
     }
     bool restoreTree(ForestTreeIdentity id) {
         const bool hadSchedule=regrowth_.erase(id)!=0;
-        return removed_.erase(id)!=0 || hadSchedule;
+        const bool wasRemoved=removed_.erase(id)!=0;
+        return wasRemoved || hadSchedule;
     }
 
     void setRemovedTrees(const std::vector<ForestTreeIdentity>& ids) {
