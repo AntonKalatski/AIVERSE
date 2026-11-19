@@ -7,6 +7,7 @@
 
 #include "ParticleSystem.h"
 #include "SpectraGpuCheckpoint.h"
+#include "SpectraCheckpointExport.h"
 #include "SpectraCheckpointReadbackBudget.h"
 #include "SpectraAdaptiveCheckpoint.h"
 #include <array>
@@ -161,6 +162,12 @@ public:
     const ComputeStats& stats() const { return stats_; }
     // No GPU readback; status is a snapshot of local bookkeeping only.
     GpuCheckpointStatus checkpointStatus() const;
+    // Copies only the latest fully completed checkpoint at the CURRENT GPU
+    // revision. No GPU access, no blocking readback, and <=528 KiB + header.
+    // Never call this an authoritative ECS save or a replayable history.
+    bool exportFreshCheckpoint(std::vector<uint8_t>& bytes,
+        size_t maxBytes=kGpuCheckpointExportMaxBytes,
+        std::string* reason=nullptr) const;
     const fx::ParticleSystem& cpuFallback() const { return cpu_; }
 private:
     struct ParticleState {
