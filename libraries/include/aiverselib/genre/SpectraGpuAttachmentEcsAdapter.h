@@ -234,6 +234,16 @@ public:
         return true;
     }
     uint64_t lastCommittedTick() const {return lastCommittedTick_;}
+    // When the graphics Device was permanently lost, the native host shuts
+    // down/reconstructs the entire presentation pool. Renderer source IDs are
+    // no longer valid. Drop ONLY this presenter's local tracking, preserving
+    // effect policies; DO NOT access the old GPU pool or authoritative ECS.
+    void discardTrackingAfterPoolRecreation() {
+        attached_.clear();
+        lastCommittedTick_=0;
+        haveCommittedTick_=false;
+        reason_.clear();
+    }
 
     // Call outside any active render/compute pass and before replaying ticks.
     // Rejects without clearing tracking if GPU pool cannot reset safely.
