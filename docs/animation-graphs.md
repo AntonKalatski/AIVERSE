@@ -1234,3 +1234,24 @@ operation and leaves an explicit hardware visual checklist. The runner is
 committed but **NOT RUN**. A single command cannot automatically establish
 Metal/GL/Vulkan visual parity, GPU fence correctness or device-loss
 behavior without real hardware checks; preserve that limitation.
+
+
+## Stage 138 — GPU texture and morph failure handling in Model publication
+
+Generic Model GPU upload now returns failure if a dimensioned image lacks a
+valid uploaded texture, whether it used shared `ModelTextureCache` residency
+or a standalone speculative texture. An RGBA32F morph-delta texture that
+fails to allocate likewise rejects the Model; CPU morph deltas are not
+discarded before a successful morph GPU upload.
+
+Shared cache texture ownership nodes and lease allocations are prepared
+before a device texture allocation, while the synchronous RTS import now
+retires any partial Model GPU buffers/images through its existing real
+GPU-completion barrier rather than a local Model destructor. The Stage 136
+asynchronous prepared Model rollback is unchanged. `addImage` returns
+`-1` when texture creation fails, and post-upload CPU pixel/morph/vertex/
+index cleanup uses nonthrowing empty-vector swaps.
+
+**Source-only stage:** all native CMake, CTest, GPU visual/fault injection,
+sanitizers and benchmarks remain **NOT RUN** under the user-approved
+feature-first workflow. [Stage 138 handoff](agent-handoffs/animation-stage138-image-morph-gpu-admission-2026-11-19.md).
