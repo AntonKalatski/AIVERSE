@@ -365,6 +365,34 @@ result arrives and never queues these into authoritative ECS.
   filtering, sampler address semantics and resource lifetime.
   No native build/GPU test was run for this feature stage.
 
+### Experimental VT batch grouping on Metal
+
+- Use `ModelVirtualTextureBinding` as an exact GPU resource
+  identity: physical atlas, page-table handle, virtual layer and
+  gutter. The `modelVirtualTextureBindingHash` is only a fast
+  grouping prefilter; `compatibleModelVirtualTextureBinding`
+  must also pass for every group member. A Horizon archive
+  revision switch invalidates existing GPU batch signatures.
+- CPU MDI and compute-encoded Metal ICB can share VT fragment
+  resources **only** inside a homogeneous group. Each GPU ICB
+  command keeps its own transform/indices; all commands inherit
+  one group atlas/page-table/U6 and source material binding.
+  This is not yet a per-command heterogeneous VT material table.
+- Metal PBR argument buffer includes optional VT texture slots
+  13/14 and R8 alpha slot 15 when the corresponding shader
+  permutation is enabled. VT uses the standard material sampler
+  s1; the page-table lookup reads an integer texel and needs no
+  extra sampler. Never bind empty/surplus sampler IDs 27/29.
+- GPU ICB groups capture external textures at preparation and
+  compare current handles/parameters just before execute.
+  A changed Horizon revision/mask rejects ICB and falls back
+  to CPU submission. Unsupported skinned/morphed/graph/animated
+  materials remain on CPU. Full Metal PBR ICB remains
+  **experimental opt-in**; never enable by default.
+- User deferred native/CTest/GPU tests. Do not claim a speedup
+  or visual correctness until targeted Metal ICB and CPU MDI
+  shader compilation, output-parity and perf data exist.
+
 ### Verification gates — don't invent passes
 
 ```sh
