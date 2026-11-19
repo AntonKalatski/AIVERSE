@@ -11,6 +11,7 @@
 #include <map>
 #include <memory>
 #include <stdexcept>
+#include <vector>
 #include <utility>
 
 namespace aiverse::render {
@@ -73,12 +74,33 @@ public:
         return driver(worldId).frame(input,out,std::forward<SubmitScene>(draw));
     }
 
+    // Call once after Device::beginFrame() on the render owner thread,
+    // including worlds whose cameras are currently inactive. Metal delivers
+    // buffer-read callbacks at beginFrame; without this idle worlds can remain
+    // falsely pending forever and never safely retire their GPU resources.
+    struct CompletedWorld {
+        uint64_t worldId=0;
+        LumaWeaveMetalScreen::Completion completion{};
+    };
+    std::vector<CompletedWorld> pollAll() {
+        if(inFrame_)throw std::logic_error("cannot poll during LumaWeave draw");
+        std::vector<CompletedWorld> completed;
+        for(auto& [id,entry]:worlds_) {
+            const auto done=entry->driver.gpuPost().pollGpu();
+            if(done.completed)completed.push_back({id,done});
+        }
+        return completed;
+    }
+
     // Deletion is refused until an actual GPU command-buffer callback is
     // polled. The caller must keep Device/Renderer/PostProcess alive until then.
     bool removeWorld(uint64_t worldId) {
         if(inFrame_)return false;
         auto it=worlds_.find(worldId);
         if(it==worlds_.end())return false;
+        // Completion may already be delivered for an inactive world's prior
+        // frame. Observe its real RHI callback before the retirement guard.
+        (void)it->second->driver.gpuPost().pollGpu();
         if(it->second->driver.gpuPost().screen().busy())return false;
         if(!it->second->driver.shutdown())return false;
         worlds_.erase(it);
@@ -88,8 +110,9 @@ public:
     // Never partially tear down the pool: reject if any world is pending.
     bool shutdown() {
         if(inFrame_)return false;
-        for(const auto& [id,world]:worlds_) {
+        for(auto& [id,world]:worlds_) {
             (void)id;
+            (void)world->driver.gpuPost().pollGpu();
             if(world->driver.gpuPost().screen().busy())return false;
         }
         for(auto& [id,world]:worlds_) {
