@@ -117,6 +117,24 @@ public:
     const std::string& state() const;
     const std::vector<AnimationGraphNotify>& notifies() const {return notifies_;}
     float stateTime() const { return time_; }
+    // A named, presentation-only playback position for compatible graph/model
+    // hot reload. Does not transfer native operations, contacts, rig solver
+    // caches, poses, event queues or authoritative root motion.
+    struct PlaybackSnapshot {
+        struct Clip {
+            std::string node;
+            std::string clip;
+            float phase=0.f;
+            bool loop=true;
+        };
+        std::string state;
+        float stateTime=0.f;
+        std::vector<Clip> clips;
+    };
+    PlaybackSnapshot snapshotPlayback() const;
+    // Call after reset(newGraph). Return false without mutating clocks if
+    // the old state/clip identities cannot be matched.
+    bool restorePlayback(const PlaybackSnapshot& snapshot);
     // Scoped, cosmetic-only clip clock seeding for CPU/GPU backend migration.
     // Does not synthesize notifies; only valid clip nodes may be queried.
     std::optional<float> clipTime(const std::string& node) const;
