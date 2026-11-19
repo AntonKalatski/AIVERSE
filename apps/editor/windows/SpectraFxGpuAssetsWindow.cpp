@@ -10,6 +10,7 @@
 #include "../Editor.h"
 #include "../EditorUtil.h"
 #include "engine/fx/SpectraFxGpuEmitterAsset.h"
+#include "engine/fx/SpectraFxGpuEmitterLibrary.h"
 
 namespace aiverse::editor {
 namespace fs = std::filesystem;
