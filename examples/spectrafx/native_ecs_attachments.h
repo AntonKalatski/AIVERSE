@@ -33,7 +33,8 @@ inline Entity spawnDemoSource(World& world,const std::string& effect,
 class NativeAttachmentExample final {
 public:
     NativeAttachmentExample()
-        : bridge_(pool_), recovery_(pool_,bridge_,&poseHistory_) {}
+        : bridge_(pool_), recovery_(pool_,bridge_,&poseHistory_),
+          capture_(pool_) {}
     NativeAttachmentExample(const NativeAttachmentExample&)=delete;
     NativeAttachmentExample& operator=(const NativeAttachmentExample&)=delete;
 
@@ -62,6 +63,10 @@ public:
                  const render::RTSCamera& camera,const render::mat4& viewProj,
                  int width,int height,float dt,float alpha=1.f) {
         if(frameOpen_)return false;
+        // Metal delivers previous-frame readback callbacks at Device.beginFrame.
+        // Poll BEFORE mutating the next GPU revision. While a capture remains
+        // queued/in-flight/ready we intentionally keep VFX presentation frozen.
+        capture_.pollBeforeStep();
         // Surface pending-reset / lost-Device actions to the renderer host
         // BEFORE asking the ECS bridge to stage new particle sources.
         const auto recovery=recovery_.poll();
@@ -81,18 +86,29 @@ public:
                  float(pose->forward.z.toDouble())};
             return true;
         };
-        if(!poseHistory_.captureCommitted(committedTick,committedWorld,resolve))
+        const auto phase=capture_.status().phase;
+        const bool captureFrozen=phase==spectra::GpuCapturePhase::Queued ||
+            phase==spectra::GpuCapturePhase::InFlight ||
+            phase==spectra::GpuCapturePhase::Ready;
+        if(!captureFrozen &&
+           !poseHistory_.captureCommitted(committedTick,committedWorld,resolve))
             return false;
         if(!pool_.beginPresentationFrame(camera,viewProj,width,height))
             return false;
         frameOpen_=true;
-        if(!bridge_.syncCommitted(
-                committedTick,committedWorld,poseHistory_.resolver(alpha)) ||
-           !pool_.step(dt)) {
+        // A queued diagnostic must not permit ECS transform changes,
+        // source retire/kill or new emissions to invalidate its revision.
+        // On resume sync all changes from the latest committed World.
+        if((!captureFrozen &&
+             !bridge_.syncCommitted(
+                 committedTick,committedWorld,poseHistory_.resolver(alpha))) ||
+           !pool_.step(captureFrozen?0.f:dt)) {
             pool_.endPresentationFrame();
             frameOpen_=false;
             return false;
         }
+        if(phase==spectra::GpuCapturePhase::Queued)
+            (void)capture_.submitAfterStepBeforePass();
         return true;
     }
 
@@ -115,6 +131,7 @@ public:
     // Host separately owns restoring the authoritative World snapshot.
     bool afterRollback() {
         if(frameOpen_)return false;
+        capture_.cancel(); // invalidate any old-device in-flight callback
         return recovery_.retryPresentationReset();
     }
 
@@ -125,6 +142,7 @@ public:
     // and renderer source IDs are lost. ECS rebinds on the next prepare().
     bool rebuildOnRecoveredDevice(gfx::Device& recoveredDevice) {
         if(frameOpen_)return false;
+        capture_.cancel(); // no snapshot crosses Device epochs
         return recovery_.replaceDevice(recoveredDevice);
     }
 
@@ -136,6 +154,20 @@ public:
     spectra::PoolRecoveryEvent recoveryStatus() {
         return recovery_.poll();
     }
+    // One asynchronous request. Call between presentation frames; the
+    // normal prepare() frame loop handles GPU submission and completion.
+    bool queueGpuCheckpoint(size_t groupIndex=0) {
+        if(frameOpen_)return false;
+        return capture_.request(groupIndex);
+    }
+    spectra::GpuCaptureStatus gpuCaptureStatus() const {
+        return capture_.status();
+    }
+    bool takeGpuCheckpoint(std::vector<uint8_t>& bytes) {
+        return capture_.takeReady(bytes);
+    }
+    void cancelGpuCheckpoint() {capture_.cancel();}
+    // Legacy immediate export remains read-only and cannot request readback.
     bool exportFreshGpuCheckpoint(size_t groupIndex,
                                   std::vector<uint8_t>& bytes) const {
         return pool_.exportFreshCheckpoint(groupIndex,bytes);
@@ -147,6 +179,7 @@ public:
     // Explicitly release resources while Device is still alive.
     void shutdown() {
         if(frameOpen_)finish();
+        capture_.cancel(); // RHI callbacks retain only weak capture state
         pool_.shutdown();
         bridge_.discardTrackingAfterPoolRecreation();
         poseHistory_.resetForRollback();
@@ -161,6 +194,7 @@ private:
     spectra::GpuEcsAttachmentPresenter bridge_;
     spectra::GpuEcsPoseInterpolator poseHistory_{4096};
     spectra::GpuPoolRecoveryHost recovery_;
+    spectra::GpuPoolCaptureHost capture_;
     bool frameOpen_=false;
 };
 
