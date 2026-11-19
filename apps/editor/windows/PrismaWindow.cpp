@@ -88,6 +88,12 @@ public:
         }
         ui::checkbox("Показывать в «Сцене»", &inScene_);
         ImGui::TextDisabled("Последний кадр: проходов %d, эффектов %d", pf.stats().passes, pf.stats().effects);
+        ImGui::TextDisabled("Temporal HDR: %s  |  jitter: %s (%.3f, %.3f) px",
+                            pf.stats().temporalResolved ? "resolved" : "off / fallback",
+                            pf.stats().temporalJittered ? "on" : "off",
+                            double(pf.stats().jitterPixelX),
+                            double(pf.stats().jitterPixelY));
+        ImGui::TextDisabled("Jitter: отдельный opt-in AIVERSE_PRISMA_JITTER=1; без него обычный Temporal Resolve остаётся доступен.");
 
         ui::section(nullptr, "Где");
         static const char* scopes[] = {"Вся игра (game.json)", "Эта карта"};
