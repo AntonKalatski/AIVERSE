@@ -3,8 +3,10 @@
 // Presentation only. Not suitable for full-world CPU ray tracing on mobile.
 #pragma once
 #include "GiDynamicProbeTexture.h"
+#include "GiCpuTraceBudget.h"
 #include "GiWorldDirtyAccumulator.h"
 #include "Renderer3D.h"
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
@@ -28,6 +30,7 @@ public:
                     float bounceDistance=12) {
         shutdown();
         reference_.configure(origin,spacing,nx,ny,nz,raysPerProbe,bounceDistance);
+        cpuBudget_.configure(cpuBudget_.targetMs(),cpuBudget_.maxProbes());
         if (!atlas_.initialize(device,reference_.coefficients().size())) {
             reference_ = GiDynamicProbeReference{};
             return false;
@@ -52,6 +55,8 @@ public:
     GiDynamicProbeReference& reference() { return reference_; }
     const GiDynamicProbeReference& reference() const { return reference_; }
     const GiDynamicProbeTexture& atlas() const { return atlas_; }
+    GiCpuTraceBudget& cpuTraceBudget() { return cpuBudget_; }
+    const GiCpuTraceBudget& cpuTraceBudget() const { return cpuBudget_; }
 
     // The geometry snapshot must remain immutable and alive until the next setGeometry call.
     // Changed topology requires a rebuilt traceable geometry snapshot, not only a new revision.
@@ -163,6 +168,20 @@ public:
         return result;
     }
 
+    // Opt-in bounded CPU GI route for GLES3/WebGL2 or Vulkan without storage
+    // compute. Adapts the next frame's probe count using real wall-clock cost.
+    // update(0, camera) remains valid when the trace budget is paused: it
+    // flushes invalidated/stale atlas values without tracing new probes.
+    GiRuntimeStats updateAdaptive(float3 camera) {
+        const auto begin=std::chrono::steady_clock::now();
+        const size_t budget=cpuBudget_.choose(reference_.scheduler().pending());
+        auto result=update(budget,camera);
+        const auto elapsed=std::chrono::duration<double,std::milli>(
+            std::chrono::steady_clock::now()-begin).count();
+        cpuBudget_.observe(result.trace.claimed,elapsed);
+        return result;
+    }
+
     // Must be called before ordinary model draws. No binding is retained internally.
     // Caller MUST clearDynamicGiOverlay() on the renderer before shutdown/recreation
     // of this runtime or renderer, or before a different gfx::Device is installed.
@@ -191,6 +210,7 @@ private:
 
     GiDynamicProbeReference reference_;
     GiDynamicProbeTexture atlas_;
+    GiCpuTraceBudget cpuBudget_;
     float3 origin_{};
     float spacing_=1;
     int nx_=0,ny_=0,nz_=0;
