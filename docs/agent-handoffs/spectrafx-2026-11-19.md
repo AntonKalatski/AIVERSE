@@ -460,3 +460,24 @@ git fetch origin main && git merge origin/main
 - **Code commit:** `7fc788f5c7d9db25e5bcd526dd92dc939bc64cc7`; `engine/fx/SpectraFxGpuParticleSlots.h`.
 - Changed per-slot generation assignment to a monotonically advancing manager-owned counter that survives `init/shutdown` on the same manager, preventing an ordinary pool reset/reuse from recreating a previously used (index,generation) pair. `uint32_t` wraparound and handles crossing distinct manager objects/sessions still require external session-level identity if used by a host; do not expose raw handles across sessions.
 - **Verification:** NOT RUN. The source remains uncompiled and unverified; full targeted/multiplatform checks are deferred by user request.
+
+
+## 2026-11-19 — Stage 27: bounded GPU automatic emission, rate/distance/burst and quality scaling
+
+- **Branch:** `feature/spectrafx-generic-cue-queue`. Start-of-stage compare to `main` `d71c6d47e532b25fb816a8bb1f96c41e5275a165`: ahead 62, behind 0; no merge needed.
+- **Implementation commits:** `6ea338039fe219ebf9d4977d337ac521f7296899`, `c3d209858aa4b7bcbbafbbe74af25d9d30c960fc`.
+- **Paths:** new `engine/fx/SpectraFxGpuSpawnScheduler.h`; updated `engine/fx/SpectraFxHybridEmitter.h`.
+- **Architecture/API:** opt-in presentation-only `SpectraFxGpuSpawnSettings` supports particlesPerSecond, particlesPerMeter, startupBurst, lifetime, speed, spread, seed, maxSpawnsPerFrame. `SpectraFxGpuSpawnScheduler::configure/reset/tick/pauseDistanceTracking/stats` calculates bounded per-frame requests with fractional emission carry; the first tick avoids long-distance teleport bursts; time spawns follow the current location and distance spawns interpolate along movement. A local xorshift sequence provides inexpensive visual jitter without changing the authoritative simulation RNG. Quality tiers map Off/Low/Medium/High to 0/0.4/0.7/1 spawn multipliers. Frame cap and failed GPU uploads are counted as dropped, not unbounded deferred debt.
+- **Hybrid integration:** `SpectraFxHybridEmitter::Config` gains `spawning`, `quality`, `autoSpawnGpu`; `begin` validates settings before allocating either backend, `updateGpu` schedules bounded new GPU seeds at a safe point before GPU evolution, `moveOrigin` updates attachment coordinates (and CPU-owned effect when active), and `spawnStats` exposes counters. GPU update returns false on suspended/invalid state. Existing CPU ParticleSystem emitter logic remains its sole owner; no concurrent CPU+GPU execution of one emitter.
+- **Limitations:** spawn scheduler has no authored JSON binding yet and no automatic GPU emitter registration in Editor/Game scene. Quality only scales spawn counts, not shader iterations or screen fill. This is a CPU command producer for GPU slot allocation, not GPU-side append/compaction nor indirect live-count rendering. Slots still render up to capacity with alpha-zero dormant particles. Under GPU errors, scheduler may already have emitted some seeds before the failed evolution; hybrid then suspends instead of silently switching to CPU. Backend-specific safe-point/thread ordering must be verified.
+- **Verification actually executed:** **NOT RUN** — feature-only phase by explicit user request. No native C++ compilation, CTest, MSL/GLSL compilation, editor preview, Metal/Vulkan frame, CI or GPU performance validation. Do not present this as tested production behavior.
+- **Next:** add an authored GPU emitter configuration format and project-level native playback bridge, plus bounded emitter registration in the Editor/Game rendering path. Then implement GPU events/collisions and async-friendly rendering. Finish remaining functionality before broad testing.
+
+### Pull newest branch before local work
+```bash
+cd /Users/aleksandrfeer/Projects/AIVERSE
+git fetch origin
+git switch feature/spectrafx-generic-cue-queue
+git pull --ff-only origin feature/spectrafx-generic-cue-queue
+git fetch origin main && git merge origin/main
+```
