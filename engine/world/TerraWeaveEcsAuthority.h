@@ -160,6 +160,19 @@ inline void addTerraWeaveAuthoritativeBankSystem(
                 ecs.resourceConst<TerraWeaveAuthorityResource>();
             if(!existing)
                 throw std::logic_error("TerraWeave ECS resource not initialized");
+            // Most bank ticks only accumulate a fractional erosion carry
+            // inside NEREID ECS. Avoid rematerializing up to a million saved
+            // vegetation records when no actual ground vertex was changed.
+            bool anyGroundEdit=false;
+            static_cast<const World&>(ecs)
+                .eachExistingConst<
+                    lib::nereid::WaterBankErosionOutputComponent>(
+                    [&](Entity,
+                        const lib::nereid::WaterBankErosionOutputComponent& out){
+                        if(out.sampledTick==current.tick() && out.changed)
+                            anyGroundEdit=true;
+                    });
+            if(!anyGroundEdit)return;
             auto ground=materializeEcsTerrain(*existing,cfg);
             RootSupportRegistry roots;
             GrassCoverRegistry grass;
