@@ -393,7 +393,12 @@ PrismaWork prismaEffectWork(const PrismaEffect& e, PrismaQuality tier, bool igno
     case T::DepthOfField: return {10.0f, 1};
     case T::AutoExposure: return {5.0f, 12};
     case T::MotionBlur: return {17.0f + (e.get("velocityDilation") > 0 ? 8.0f : 0.0f), 2}; // upper-bound pyramid: size-dependent passes
-    case T::TemporalResolve: return {16.0f, 2}; // shared velocity pass + 3x3 neighborhood/history resolve
+    case T::TemporalResolve: {
+        // Heuristic only: temporal history/shader execute at OUTPUT resolution,
+        // while the shared velocity pass and scene execute at INTERNAL size.
+        const float scale=std::clamp(e.get("renderScale"),0.5f,1.0f);
+        return {12.0f+4.0f*scale*scale,2};
+    }
     case T::Bloom: {
         const BloomPlan b = bloomPlan(tier);
         float a = 1.0f / float(b.startDiv * b.startDiv), u = 4 * a;   // prefilter: 4 taps per output pixel
