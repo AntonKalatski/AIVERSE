@@ -130,3 +130,23 @@ Do not treat the listed commands as executed until run by the QA agent.
   ONLY after current shared renderer/ECS/gfx branches converge and native QA
   confirms this stage. The branch was previously 846 ahead/305 behind main;
   treat counts as snapshot, not live guaranteed values.
+
+## Stage66 incremental safety/performance follow-ups
+
+- `8fece67de0d3461ef481fad8f991f05033d8b215` — new harvest
+  header now explicitly includes `<cstddef>` and constructs a concrete
+  `ForestHarvestResource{}` in its Simulation registration call, avoiding
+  C++20 template overload / initializer-list ambiguity.
+- `9555a7faab82ce43ae57e492bce3faa7467d0d02` —
+  `TerraWeaveNativeWorldBinding` caches the last published harvest
+  resource revision; ecology-only `stateRevision` changes DO NOT rematerialize
+  up to 1,000,000 tree-removal identities on each age/shade tick. First
+  reconcile, a changed harvest revision, explicit forced rollback or detach
+  still republish; optional resource absence keeps legacy visual removals.
+- GitHub source readback confirmed presence of the new harvest header,
+  ecology guard, native binding, sample opt-in and this handoff. **No code
+  compilation or CTest was executed.**
+- Latest observed remote feature branch HEAD:
+  `9555a7faab82ce43ae57e492bce3faa7467d0d02`; compared against
+  `main`: 856 ahead / 305 behind; PR #24 remains Draft and nonmergeable.
+  These are current remote observations, not a claim that `main` was merged.
