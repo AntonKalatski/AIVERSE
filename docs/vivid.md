@@ -102,3 +102,24 @@ Prefer public headers under `engine/character/vivid/`, namespace `aiverse::vivid
 
 ## Status truth (2026-11-19)
 At design creation no VIVID runtime, editor, DNA, skin or groom features were implemented/validated. Existing AIVERSE supports up to 8 GPU morphs per primitive and up to 80 joints per primitive palette, and FBX import ignores blend shapes; these are **blockers for full MetaHuman fidelity**, not bugs to remove blindly. This file is the design contract, not completion evidence.
+
+## Implemented stage 1 — portable facial channels (2026-11-19)
+
+Available now (source implemented; full native build **NOT RUN**):
+- `engine/character/vivid/Face.h/.cpp`: typed 52-channel ARKit-compatible semantic API, strict names and lookup, instance-owned track/emotion/speech source layering, optional per-layer crossfade, source clearing, safety clamp, exponential smoothing, instant snap and reset.
+- `setEmotion(Neutral/Happy/Sad/Angry/Surprise/Disgust/Fear)` and `setViseme(Silence/Aa/Ee/Oh/Fv/Mbp)` are simple *authoring presets*, **not** speech recognition, lip-sync extraction or MetaHuman DNA solving.
+- `AIVERSE::vivid` CMake alias, `vivid_face` CTest unit target; no renderer, importer or gameplay coupling.
+
+Usage from native code:
+
+```cpp
+#include "engine/character/vivid/Face.h"
+aiverse::vivid::FaceController face(0.08f);
+face.set(aiverse::vivid::Layer::Tracking, "eyeBlinkLeft", 1.0f);
+face.setEmotion(aiverse::vivid::Emotion::Happy, 0.6f);
+face.setViseme(aiverse::vivid::Viseme::Aa);
+face.advance(dt);
+const float jaw = face.frame().value(aiverse::vivid::Channel::JawOpen);
+```
+
+The `face.frame()` result is a semantic vector only. **Nothing applies it to meshes or draws a face yet.** No save format, ECS registry or network schema was added. Stage 2 will bridge this data to existing `render::Pose` morph slots while leaving their current 8-target limit explicit.
