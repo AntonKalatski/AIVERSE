@@ -387,3 +387,26 @@ Stage handoff docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md.
 
 ### Stage 26 journal crash-recovery correction
 A journal persisted as `Queued` may lose its actual in-memory command on restart. Restore `Queued` to `Unknown`, reconcile against restored `FieldRuntimeState`, and only certify `Applied` when revision and authored fingerprints match. If the original command was not applied, accept a retransmission of the SAME authenticated request and expected revision; never synthesize a successful receipt. The sidecar journal and World checkpoint are not one durable transaction. See `docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md`. Tests added, NOT RUN.
+
+### Stage 40 — admin lock ownership and OS crash recovery
+
+The canonical admin endpoint acquires a `JournalProcessLock` before
+loading the sidecar and binding the loopback WebSocket listener. Retain
+that lock until the listener and all peers have been destroyed; do not
+remove or rotate `<journal>.lock` while the endpoint is alive. The lock
+is process-local/advisory, **not** a distributed leadership fence.
+
+After a server crash, re-open from a restored authoritative World
+checkpoint. Every prior persisted Queued receipt must be treated as
+Unknown until it is proven Applied by canonical ECS revision and
+fingerprints or the same authenticated original request is safely
+re-submitted under current ACL. A separate journal file and World save
+are not crash-atomic.
+
+Stage 40 source fixtures in `physis_admin_journal` cover POSIX fork,
+SIGKILL, lock reacquisition and killed-endpoint Queued journal restore,
+plus endpoint-to-endpoint lifetime exclusion. Windows still requires
+separate process test coverage. An isolated Linux GCC 14.2 C++20
+header smoke passed; full native AIVERSE CTest, macOS/Windows editor and
+real external authenticated transport have **NOT** run. See
+`docs/agent-handoffs/physis-stage40-cross-process-journal-2026-11-19.md`.
