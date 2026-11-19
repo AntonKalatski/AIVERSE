@@ -64,6 +64,7 @@ public:
     const std::vector<Entity>& entities()const{return entities_;}
     const World& world()const{return cameras_;}
     CameraRenderPipeline* pipeline(){return pipeline_.get();}
+    const CameraRenderPipeline* pipeline()const{return pipeline_.get();}
     CameraPostFxPool& postFx(){return post_;}
     // Must run after device GPU idle, before its lifetime ends.
     void shutdownAfterGpuIdle() {
