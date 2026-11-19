@@ -5,6 +5,7 @@
 #include "../Editor.h"
 #include "../EditorUtil.h"
 #include "engine/render/GlobalGeometryPool.h"
+#include <span>
 
 namespace aiverse::editor {
 
@@ -72,12 +73,23 @@ public:
         // visible in the camera. No texture or render-target byte estimates.
         ui::section(ICON_REGIONS, "Память ассетов (учтённая)");
         const auto pool = render::geometryPoolStats(ed.device());
+        // Unique page identity within this owner, resident AND waiting for
+        // a GPU retirement fence. These pages are already in 'pool' above
+        // and must never be added to its device-wide allocation total.
+        const auto referencedModels=
+            ed.view().modelResources().geometryPoolModelReferences();
+        const auto ownedPages=render::geometryPoolReferencedStats(
+            ed.device(),std::span<const render::Model* const>(
+                referencedModels.data(),referencedModels.size()));
         const auto residency = ed.view().assetResidencyStats();
         constexpr double mib = 1024.0 * 1024.0;
         ImGui::Text("GPU геометрия (pool): %.1f / %.1f MiB  ·  страниц: %zu",
                     double(pool.occupiedBytes) / mib, double(pool.allocatedBytes) / mib, pool.pages);
         ImGui::Text("Модели в пуле: %zu  ·  кэш моделей: %zu  ·  загружено типов: %zu / %zu",
                     pool.liveModels, residency.cachedModels, residency.loadedTypes, ed.rules().types.size());
+        ImGui::TextDisabled("Из них страницы, используемые этим View: %zu · %.1f MiB выделено (уже включено выше)",
+                    ownedPages.uniquePages,
+                    double(ownedPages.allocatedBytes)/ (1024.0*1024.0));
         ImGui::Text("CPU кэш изображений: %.1f MiB  ·  GPU текстур моделей: %zu шт.",
                     double(residency.decodedCpuBytes) / mib, residency.gpuTextures);
         ImGui::Text("GPU очередь освобождения: %zu моделей · %zu партий · пик %zu",
