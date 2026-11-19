@@ -4,6 +4,7 @@
 #include "engine/fx/SpectraFX.h"
 #include "EcsVfxPresentation.h"
 #include "SpectraCueEcsAdapter.h"
+#include "SpectraGpuCueEcsAdapter.h"
 
 namespace aiverse::spectra {
 
