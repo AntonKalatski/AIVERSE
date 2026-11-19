@@ -185,6 +185,16 @@ int aiverseMain(int argc, char** argv) {
     const bool cpuTiming = std::getenv("AIVERSE_BATCH_CPU_TIMING") &&
         std::string(std::getenv("AIVERSE_BATCH_CPU_TIMING")) == "1";
     std::vector<double> cpuRenderBefore, cpuRenderAfter;
+    // Benchmark only: independent runs for CPU MDI and GPU ICB. The latter
+    // may legitimately retain CPU MDI for a different render pass.
+    const std::string benchmarkMode = std::getenv("AIVERSE_BATCH_BENCH_MODE")
+        ? std::getenv("AIVERSE_BATCH_BENCH_MODE") : "legacy";
+    if (benchmarkMode != "legacy" && benchmarkMode != "cpu_mdi" &&
+        benchmarkMode != "gpu_icb") {
+        std::fprintf(stderr, "Invalid AIVERSE_BATCH_BENCH_MODE: %s\n",
+                     benchmarkMode.c_str());
+        return 2;
+    }
     platform::AppConfig cfg; cfg.title="Material palette A/B"; cfg.width=960; cfg.height=640; cfg.highDpi=false;
     platform::AppCallbacks cb;
     cb.init=[&](gfx::Device& d) {
@@ -215,6 +225,11 @@ int aiverseMain(int argc, char** argv) {
     cb.frame=[&](gfx::Device& d,double) {
         if(failed||finished||frame>40){platform::requestQuit();return;}
         const bool batch=frame>=15;
+        // In cpu_mdi mode explicitly exclude GPU-authored draws, regardless
+        // of process flags. In gpu_icb mode the original real GPU ICB path is
+        // allowed, with separate CPU MDI counters for any remaining passes.
+        if (benchmarkMode != "legacy")
+            renderer.setGpuAuthoredDrawEnabled(batch && benchmarkMode == "gpu_icb");
         renderer.setModelMultiDrawEnabled(scenario == "static_packets"
             ? false : ((scenario != "indirect" &&
                         scenario != "indirect_palette") || batch));
@@ -299,7 +314,9 @@ int aiverseMain(int argc, char** argv) {
                     phase, n, median, samples[p95Index], samples.front(), samples.back());
             };
             report("direct", cpuRenderBefore);
-            report("batched", cpuRenderAfter);
+            report(benchmarkMode == "cpu_mdi" ? "cpu_mdi" :
+                   benchmarkMode == "gpu_icb" ? "gpu_icb_mixed" :
+                   "batched", cpuRenderAfter);
             std::printf("CPU render benchmark: synchronous renderer.render() only; not GPU time or FPS\n");
         }
         if(frame==8||frame==23){
@@ -343,6 +360,20 @@ int aiverseMain(int argc, char** argv) {
                                         std::string(std::getenv("AIVERSE_EXPECT_GPU_ICB")) == "1";
                 const auto gpuDraw = renderer.gpuModelDrawStats();
                 const uint64_t indirectCommands = renderer.modelStats().indirectCommands;
+                if (benchmarkMode == "cpu_mdi" &&
+                    (gpuDraw.gpuEncodedSubmissions || gpuDraw.gpuEncodedCommands ||
+                     !renderer.modelStats().multiDrawSubmissions)) {
+                    std::fprintf(stderr,
+                        "CPU MDI benchmark isolation failed: gpu=%u/%u cpu=%llu\n",
+                        gpuDraw.gpuEncodedSubmissions, gpuDraw.gpuEncodedCommands,
+                        (unsigned long long)renderer.modelStats().multiDrawSubmissions);
+                    failed = true;
+                }
+                if (benchmarkMode == "gpu_icb" &&
+                    (!gpuDraw.gpuEncodedSubmissions || !gpuDraw.gpuEncodedCommands)) {
+                    std::fprintf(stderr, "GPU ICB benchmark did not submit GPU commands\n");
+                    failed = true;
+                }
                 // Separate GPU-compute-authored ICB from CPU-encoded MDI.
                 // The two paths can both contribute to a single model frame
                 // (e.g. different shadow/PBR passes), so the aggregate CPU
