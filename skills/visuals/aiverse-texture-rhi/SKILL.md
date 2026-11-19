@@ -537,3 +537,20 @@ CI if it remains queued or cancelled.
   resolver. There is no automatic manifest-to-version reader.
 - `ClampToBorder` is unsupported and rejected. Native/GPU seam tests
   remain deferred; do not treat source-only integration as certified.
+
+
+### Validated immutable archive manifest import (Stage 10O)
+
+- Use `gfx::loadVirtualTextureArchiveManifest(directory, version, error)`
+  before attempting to stream a prepacked Python or C++ page archive.
+  The directory is caller-selected and must be trusted/immutable.
+  The importer validates all expected page paths, byte sizes, tile/mip
+  geometry and sampler U/V modes. It never mutates an active GPU atlas.
+- `gfx::importVirtualTextureArchiveManifest(Json,...)` accepts an
+  already parsed manifest and the same trusted archive directory.
+  The engine's existing `engine/data/Json.h` handles parsing.
+- The result is a typed `VirtualTextureArchiveVersion`; supply it to
+  the normal TerraWeave session `prepare`/promote lifecycle. Do not
+  infer content authenticity from manifest hashes alone.
+- This is synchronous filesystem validation; do it during asset
+  preparation, not on the render loop. Compile/CTest/GPU tests NOT RUN.
