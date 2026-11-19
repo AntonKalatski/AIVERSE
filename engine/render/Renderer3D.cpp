@@ -127,6 +127,8 @@ void Renderer3D::shutdown() {
     }
     persistentIds_.clear();
     persistentScene_ = {};
+    staticModelCaches_.clear();
+    staticModelCacheEpoch_ = 0;
     shutdownModels();
     lights.shutdown();
     shutdownTrace();
@@ -152,6 +154,25 @@ void Renderer3D::beginScene(const RTSCamera& cam, int fbW, int fbH) {
     }();
     persistentSceneEnabled_ = enablePersistentScene;
     if (persistentSceneEnabled_) ++persistentSceneEpoch_;
+    static const bool enableCpuStaticCache = [] {
+        const char* value = std::getenv("AIVERSE_PERSISTENT_CPU_MODEL_CACHE");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    staticModelCacheEnabled_ = enableCpuStaticCache;
+    staticModelCacheStats_ = {};
+    if (staticModelCacheEnabled_) {
+        ++staticModelCacheEpoch_;
+        // Bounded persistent memory. Delayed removal tolerates alternating
+        // Scene/Game viewports and temporary invisibility without rebuilding.
+        if ((staticModelCacheEpoch_ % 64u) == 0u) {
+            for (auto it = staticModelCaches_.begin(); it != staticModelCaches_.end();) {
+                if (it->second.seen + 4 < staticModelCacheEpoch_) {
+                    it = staticModelCaches_.erase(it);
+                    ++staticModelCacheStats_.evicted;
+                } else ++it;
+            }
+        }
+    }
     bakedLightmapped_ = bakedCountLm_; bakedProbed_ = bakedCountPr_; bakedCountLm_ = bakedCountPr_ = 0;   // agent-lightbake
     const double now = std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
     if(graphEpoch_ < 0) graphEpoch_ = now;
