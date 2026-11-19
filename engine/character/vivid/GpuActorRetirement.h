@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <utility>
 
 namespace aiverse::vivid {
 
