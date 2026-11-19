@@ -13,14 +13,14 @@
 namespace aiverse::vivid {
 class MorphLodTransfer {
 public:
-    // Exact/near-exact vertex correspondence only. Ambiguous matches,
+    // Diagnostic-only O(source * LOD) matcher with a strict 32K budget.\n    // Exact/near-exact vertex correspondence only. Ambiguous matches,
     // generated unrelated vertices and nonfinite positions fail closed.
     static std::vector<std::uint32_t> matchPositions(
             std::span<const render::float3> source,
             std::span<const render::float3> lod,
             float tolerance=1.e-5f) {
         if(source.empty() || lod.empty() ||
-           source.size()>16'000'000 || lod.size()>16'000'000 ||
+           source.size()>32768 || lod.size()>32768 ||
            !std::isfinite(tolerance) || tolerance<=0 ||
            tolerance>0.01f)
             throw std::invalid_argument("VIVID morph LOD: invalid geometric mapping budget");
