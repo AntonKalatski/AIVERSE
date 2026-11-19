@@ -317,6 +317,8 @@ public:
         bool compacted = false, prepared = false;
         // Counts only successful Metal ICB executions, not GPU staging.
         uint32_t perCommandVtExecutions = 0, mixedVtExecutions = 0;
+        // Host-accepted ICB submissions; actual GPU completion is async.
+        uint32_t perCommandPbrSubmissions = 0, mixedPbrSubmissions = 0;
     };
     GpuModelDrawStats gpuModelDrawStats() const {
         const auto upload = gpuModelCommandsReady_ ?
@@ -332,7 +334,8 @@ public:
                 gpuAdaptiveInstancingFallback_,
                 gpuModelCommandsReady_ && gpuModelCommands_.compactedReady(gpuModelFrame_, gpuModelSubmission_),
                 gpuModelCommandsReady_,
-                gpuIcbPerCommandVtExecuted_, gpuIcbMixedVtExecuted_};
+                gpuIcbPerCommandVtExecuted_, gpuIcbMixedVtExecuted_,
+                gpuIcbPerCommandPbrSubmitted_, gpuIcbMixedPbrSubmitted_};
     }
     void render(const gfx::PassDesc& screenPass, PostProcess* post = nullptr); // shadow pass + opens the main pass and draws everything
     // With a post hook: ends the scene pass, runs the effects into screenPass (left open). No-op otherwise.
@@ -935,6 +938,7 @@ private:
     uint32_t gpuIcbCandidates_ = 0, gpuIcbPrepared_ = 0;
     uint32_t gpuIcbRejected_ = 0, gpuIcbExecuteFailed_ = 0;
     uint32_t gpuIcbPerCommandVtExecuted_ = 0, gpuIcbMixedVtExecuted_ = 0;
+    uint32_t gpuIcbPerCommandPbrSubmitted_ = 0, gpuIcbMixedPbrSubmitted_ = 0;
     uint32_t gpuModelEligible_ = 0, gpuModelDrawn_ = 0;
     uint32_t gpuModelDynamicEligible_ = 0, gpuModelLodEligible_ = 0;
     PersistentGpuScene persistentScene_;
