@@ -55,8 +55,6 @@ struct Fixture {
     std::array<bool,kSlots> reflectionReceived{};
     std::array<std::vector<uint8_t>,kSlots> depthCaptures{};
     std::array<bool,kSlots> depthReceived{};
-    std::array<std::vector<uint8_t>,kSlots> reflectionCaptures{};
-    std::array<bool,kSlots> reflectionReceived{};
     std::array<uint32_t,kSlots> shadowDraws{};
     std::array<uint32_t,kSlots> opaqueDraws{};
     std::array<uint32_t,kSlots> modelSubmissions{};
