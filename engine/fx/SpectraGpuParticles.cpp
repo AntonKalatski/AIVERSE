@@ -127,6 +127,8 @@ bool ComputeParticles::initCpu() {
     return cpuEffect_>=0;
 }
 bool ComputeParticles::initGpu() {
+    readbackLifetime_=std::make_shared<uint64_t>(0);
+    vmFrameRevision_=0;
     if(!device_) {reason_="no RHI Device";return false;}
     const uint32_t cap=desc_.capacity;
     gpu_program::Payload vmPayload;
@@ -240,6 +242,8 @@ bool ComputeParticles::initGpu() {
     return true;
 }
 void ComputeParticles::releaseGpu() {
+    readbackLifetime_.reset();
+    asyncErrorPending_=false;
     if(device_) {
         if(pipeline_.valid())device_->destroyPipeline(pipeline_);
         if(vertexShader_.valid())device_->destroyShader(vertexShader_);
@@ -545,6 +549,71 @@ bool ComputeParticles::readGpuVmErrors(uint32_t& count) {
     stats_.gpuVmErrorsKnown=true;
     return true;
 }
+bool ComputeParticles::requestGpuVmErrors(
+    std::function<void(bool,uint32_t)> callback) {
+    if(!callback || !initialized_ || backend_!=ComputeBackend::Metal ||
+       !device_ || !vmErrors_.valid() || !device_->gpuHealthy() ||
+       !device_->canUpdateSharedBuffers() || asyncErrorPending_ ||
+       !readbackLifetime_)return false;
+    const uint64_t revision=vmFrameRevision_;
+    std::weak_ptr<uint64_t> lifetime(readbackLifetime_);
+    asyncErrorPending_=true;
+    if(!device_->readBufferAsync(vmErrors_,sizeof(uint32_t),
+         [this,lifetime,revision,callback=std::move(callback)](
+             std::vector<uint8_t> bytes) mutable {
+             if(!lifetime.lock())return; // shutdown/device loss
+             asyncErrorPending_=false;
+             uint32_t errors=0;
+             const bool ok=bytes.size()==sizeof(errors);
+             if(ok)std::memcpy(&errors,bytes.data(),sizeof(errors));
+             // Result describes the requested frame, not a later frame.
+             if(ok && revision==vmFrameRevision_ && gpuActive()) {
+                 stats_.gpuVmErrorsLastRead=errors;
+                 stats_.gpuVmErrorsKnown=true;
+             }
+             callback(ok,errors);
+         })) {
+        asyncErrorPending_=false;
+        return false;
+    }
+    return true;
+}
+
+bool ComputeParticles::captureGpuCheckpoint(GpuCheckpoint& out) {
+    out={};
+    if(!initialized_ || backend_!=ComputeBackend::Metal || !device_ ||
+       !device_->gpuHealthy() || !device_->canUpdateSharedBuffers() ||
+       !states_.valid() || !stateProgramParams_.valid() ||
+       !stateAttributes_.valid() || ages_.empty())return false;
+    const size_t n=ages_.size();
+    // A checkpoint must include all physical slots, not merely those that
+    // survived the previous draw or the CPU-estimated indirect draw count.
+    std::vector<ParticleState> state(n);
+    std::vector<ProgramParams> params(n);
+    std::vector<ProgramAttributes> attributes(n);
+    if(!device_->readBuffer(states_,state.data(),n*sizeof(ParticleState)) ||
+       !device_->readBuffer(stateProgramParams_,params.data(),
+                            n*sizeof(ProgramParams)) ||
+       !device_->readBuffer(stateAttributes_,attributes.data(),
+                            n*sizeof(ProgramAttributes)))return false;
+    GpuCheckpoint next;
+    next.slots.resize(n);
+    next.remainingLifetime=ages_;
+    next.frameSerial=device_->frameSerial();
+    for(size_t i=0;i<n;++i) {
+        auto& d=next.slots[i];
+        d.positionAge=state[i].positionAge;
+        d.velocityLife=state[i].velocityLife;
+        d.tint=state[i].tint;
+        d.size=state[i].size;
+        std::memcpy(d.programParams.data(),&params[i],sizeof(ProgramParams));
+        std::memcpy(d.attributes.data(),&attributes[i],sizeof(ProgramAttributes));
+    }
+    next.complete=true;
+    out=std::move(next);
+    return true;
+}
+
 void ComputeParticles::switchToCpu(const std::string& why) {
     ++stats_.gpuFallbacks;
     stats_.gpuVmErrorsKnown=false;
