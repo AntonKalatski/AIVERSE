@@ -1566,6 +1566,25 @@ endif()
 
 # FPS is an independent GameModule; RTS lockstep remains available unchanged.
 add_subdirectory(modules/fps)
+# Opt-in additive scene collision namespaces use the existing
+# aiverse_world / CollisionStream library. Define these after modules/fps
+# has created aiverse_world, not in the early aiverse_engine-only test group.
+if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_executable(aiverse_ecs_scene_collision_namespaces_test
+        tests/ecs_scene_collision_namespaces_test.cpp)
+    target_link_libraries(aiverse_ecs_scene_collision_namespaces_test PRIVATE
+        aiverse_world aiverse_engine)
+    add_test(NAME ecs_scene_collision_namespaces_test
+        COMMAND aiverse_ecs_scene_collision_namespaces_test)
+
+    add_executable(aiverse_ecs_scene_collision_bridge_test
+        tests/ecs_scene_collision_bridge_test.cpp)
+    target_link_libraries(aiverse_ecs_scene_collision_bridge_test PRIVATE
+        aiverse_world aiverse_engine)
+    add_test(NAME ecs_scene_collision_bridge_test
+        COMMAND aiverse_ecs_scene_collision_bridge_test)
+endif()
+
 # Real genre-adapter validation: both production GameModules, v9 disk states,
 # canonical command order, COW snapshots, replay and FPS ECS authority.
 if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
