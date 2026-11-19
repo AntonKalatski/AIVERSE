@@ -47,6 +47,20 @@ if(AIVERSE_BUILD_TESTS)
     target_link_libraries(aiverse_vivid_motionweave_tests PRIVATE aiverse_vivid_motionweave aiverse_zstd_dec)
     add_test(NAME vivid_motionweave_bridge COMMAND aiverse_vivid_motionweave_tests)
 
+    # Real Metal execution/readback, separate from the fake-RHI GPU contract.
+    # Keep Objective-C++ and Apple frameworks out of non-macOS targets.
+    if(AIVERSE_PLATFORM STREQUAL "macos")
+        enable_language(OBJCXX)
+        add_executable(aiverse_vivid_metal_gpu_tests ${PROJECT_SOURCE_DIR}/tests/vivid/metal_gpu.mm)
+        set_source_files_properties(${PROJECT_SOURCE_DIR}/tests/vivid/metal_gpu.mm
+            PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+        target_link_libraries(aiverse_vivid_metal_gpu_tests PRIVATE
+            aiverse_vivid_gpu "-framework Metal" "-framework Foundation")
+        target_compile_features(aiverse_vivid_metal_gpu_tests PRIVATE cxx_std_20)
+        add_test(NAME vivid_metal_gpu COMMAND aiverse_vivid_metal_gpu_tests)
+        set_tests_properties(vivid_metal_gpu PROPERTIES SKIP_RETURN_CODE 77)
+    endif()
+
     add_executable(aiverse_vivid_morph_tests ${PROJECT_SOURCE_DIR}/tests/vivid/morph_binding.cpp)
     target_link_libraries(aiverse_vivid_morph_tests PRIVATE aiverse_vivid_render aiverse_zstd_dec)
     add_test(NAME vivid_morph_binding COMMAND aiverse_vivid_morph_tests)
