@@ -106,7 +106,8 @@ public:
                                        bool allowMobileFallback=true) {
         if(!geometryRevision || !viewW || !viewH ||
            !std::isfinite(cameraFocus.x)||!std::isfinite(cameraFocus.y)||
-           !std::isfinite(cameraFocus.z))
+           !std::isfinite(cameraFocus.z) ||
+           !std::isfinite(viewRadius) || viewRadius<=0 || viewRadius>100000)
             throw std::invalid_argument("invalid LumaWeave native view or geometry");
         stats_.route=LumaDirectRoute::Disabled;
         stats_.gpuExclusive=false;
@@ -150,11 +151,14 @@ public:
             stats_.backendUnavailable=true;
         }
 
+        // The same source may already be present in an externally managed
+        // LightSystem. If that map is nonempty, do not add this registry again:
+        // there is no generic way to prove identity compatibility here.
         if(allowMobileFallback && requestedQuality!=LumaWeaveQuality::Off &&
-           legacy_.quality()!=LightQuality::Off) {
+           legacy_.quality()!=LightQuality::Off &&
+           legacy_.count()==0 && !legacy_.staticPointLightsActive()) {
             stats_.mobile=LumaWeaveMobileFallback::plan(
-                registry_,cameraFocus,viewRadius,
-                LightSystem::kMaxLights-legacy_.count());
+                registry_,cameraFocus,viewRadius,LightSystem::kMaxLights);
             if(LumaWeaveMobileFallback::enqueue(legacy_,stats_.mobile)) {
                 stats_.route=LumaDirectRoute::MobileRasterFallback;
                 stats_.sourceLoss=stats_.mobile.lossy;
@@ -169,6 +173,12 @@ public:
         return stats_.route==LumaDirectRoute::MetalGpu ?
             static_cast<PostProcess&>(gpu_) : existing_;
     }
+    // Separate indirect GI synchronization; never mixes bounce output into
+    // LumaWeave's direct light buffer. Caller must poll GPU fences first.
+    template<class GiRuntime>
+    LumaGiSyncStatus syncGi(GiRuntime& gi) {
+        return giSync_.publish(registry_,gi);
+    }
     const LumaWeaveRegistry& registry() const{return registry_;}
     const LumaWeaveClusters& clusters() const{return clusters_;}
     const LumaNativeFrameStats& stats() const{return stats_;}
@@ -181,6 +191,7 @@ public:
         registry_=LumaWeaveRegistry{};
         clusters_=LumaWeaveClusters{};
         clustersReady_=false;
+        giSync_.reset();
         stats_={};
         gpu_.setEnabled(false);
     }
@@ -191,6 +202,7 @@ private:
     LightSystem& legacy_;
     LumaWeaveRegistry registry_;
     LumaWeaveClusters clusters_;
+    LumaWeaveGiSync giSync_;
     LumaClusterConfig clusterConfig_{};
     LumaNativeFrameStats stats_{};
     bool clustersReady_=false;
