@@ -1164,6 +1164,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
     pass.colorTarget = hostColor_;
     pass.depthTarget = hostDepth_;
     pass.clearColor[0] = 0.55f; pass.clearColor[1] = 0.66f; pass.clearColor[2] = 0.78f;
+    render::LightSystem::PreparedFrame lensLightingSnapshot;
     if (sim_) {
         if (planet()) { // orbit camera -> view-world RTSCamera; space is black
             cam_ = view_.updatePlanetCamera(scene_.seconds, float(dt), fbH());
@@ -1242,6 +1243,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
         const float fogBase = r3d_.lighting.fogDensity;   // a narrow top-down lens: fog as a default lens framing it sees
         if (screen_ == Screen::Playing || screen_ == Screen::Paused || screen_ == Screen::Over)
             if (topDownActive()) r3d_.lighting.fogDensity = fogBase * topDown_.fogScale();
+        if(lensCamerasActive_) lensLightingSnapshot=r3d_.lights.capturePrepared();
         r3d_.render(pass, &postFx_);
         fx_.render(r3d_.lighting);
         r3d_.lighting.fogDensity = fogBase;
@@ -1279,7 +1281,7 @@ void GameClient::frame(gfx::Device& dev, double dt) {
                 }
                 // Renderer3D::beginScene reset the per-camera light list.
                 // Reuse primary-frame particle lights without collecting FX again.
-                fx_.addPreparedLights(renderer.lights);
+                renderer.lights.replayPrepared(lensLightingSnapshot);
                 // Re-submit final pose/material/attachment packets directly.
                 // RtsView::draw and MotionWeave::update are NOT repeated.
                 snapshot.submit(renderer,camera.entity.packed());
