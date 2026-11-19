@@ -155,18 +155,40 @@ bool HumanGroomRuntime::attachRootsToCollisionMesh() {
     for(auto& guide:guides_) {
         float nearest=std::numeric_limits<float>::max();
         float3 root=guide.root,normal=guide.normal;
-        // One-time authoring operation; runtime frame collision uses BVH.
-        // This avoids leaving the procedural ellipsoid roots trapped inside
-        // an imported head with different anatomical proportions.
-        for(const auto& tri:collisionTriangles_) {
-            const auto p=closestTriangle(root,tri.a,tri.b,tri.c);
-            const auto delta=p-root;
-            const float dist2=dot(delta,delta);
-            if(dist2>=nearest)continue;
-            nearest=dist2;root=p;
-            normal=normalize(cross(tri.b-tri.a,tri.c-tri.a));
-            if(dot(normal,p-center)<0.0f)normal=normal*(-1.0f);
+        // BVH nearest-surface query for every generated root. This is
+        // O(log triangles) on typical closed scalp proxies; unlike the old
+        // all-triangle scan it scales to dense strand authoring.
+        auto distance2=[&](const CollisionNode& node) {
+            const float dx=std::max({node.min.x-root.x,0.0f,root.x-node.max.x});
+            const float dy=std::max({node.min.y-root.y,0.0f,root.y-node.max.y});
+            const float dz=std::max({node.min.z-root.z,0.0f,root.z-node.max.z});
+            return dx*dx+dy*dy+dz*dz;
+        };
+        std::array<std::uint32_t,64> stack{};
+        std::size_t size=0;
+        stack[size++]=0;
+        float3 nearestPoint=root;
+        while(size) {
+            const auto& node=collisionNodes_[stack[--size]];
+            if(distance2(node)>nearest)continue;
+            if(node.count) {
+                for(std::uint32_t i=node.begin;i<node.begin+node.count;++i) {
+                    const auto& tri=collisionTriangles_[collisionOrder_[i]];
+                    const auto p=closestTriangle(guide.root,tri.a,tri.b,tri.c);
+                    const auto delta=p-guide.root;
+                    const float dist2=dot(delta,delta);
+                    if(dist2>=nearest)continue;
+                    nearest=dist2;
+                    nearestPoint=p;
+                    normal=normalize(cross(tri.b-tri.a,tri.c-tri.a));
+                    if(dot(normal,p-center)<0.0f)normal=normal*(-1.0f);
+                }
+            }else{
+                stack[size++]=node.left;
+                stack[size++]=node.right;
+            }
         }
+        root=nearestPoint;
         const auto nextRoot=root+normal*0.002f;
         const auto offset=nextRoot-guide.root;
         guide.root=nextRoot;
