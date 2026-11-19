@@ -905,6 +905,14 @@ public:
     void beginFrame(int w, int h) override {
         fbW_ = w; fbH_ = h;
         deliverTextureReads();
+#if defined(__EMSCRIPTEN__) && defined(AIVERSE_WEBGL_CONTEXT_ACCEPTANCE)
+        // The pixel transfer is synchronous on WebGL2, but callbacks keep
+        // the public RHI contract: delivered on the next beginFrame.
+        auto completedWeb = std::move(webTextureReads_);
+        webTextureReads_.clear();
+        for (auto& result : completedWeb)
+            if (result.callback) result.callback(std::move(result.value));
+#endif
         uboOffset_ = 0;
         for (auto& d : slotData_) d.clear();
 #if !defined(__EMSCRIPTEN__) && !defined(__APPLE__)
@@ -937,11 +945,74 @@ public:
 
     bool readTextureAsync(TextureHandle h, TextureReadbackDesc request,
                           TextureReadFn callback) override {
-#if defined(__EMSCRIPTEN__)
-        // WebGL2 exposes neither portable PBO mapping nor a fence-backed
-        // GLES glMapBufferRange path in this native interface.
+#if defined(__EMSCRIPTEN__) && defined(AIVERSE_WEBGL_CONTEXT_ACCEPTANCE)
+        // Opt-in acceptance-only, bounded synchronous WebGL2 GPU readback.
+        // Browser WebGL2 does not permit portable mapping of a pack PBO.
+        // Defer the callback to next beginFrame, NOT the pixel transfer.
+        const GLTexture* t = textures_.get(h.id);
+        if (!callback || inPass_ || !t || !t->id || t->renderbuffer ||
+            t->compressed || t->samples != 1 ||
+            (t->fmt != PixelFormat::RGBA8 && t->fmt != PixelFormat::RGBA8_sRGB) ||
+            t->dimension != TextureDimension::Texture2DArray ||
+            request.mipLevel < 0 || request.mipLevel >= t->levels ||
+            request.arrayLayer < 0 || request.arrayLayer >= t->layers ||
+            webTextureReads_.size() >= 16) return false;
+        const int width=std::max(1,t->w>>request.mipLevel);
+        const int height=std::max(1,t->h>>request.mipLevel);
+        const size_t bytes=size_t(width)*size_t(height)*4u;
+        if (bytes > (size_t(256)<<10)) return false;
+        GLint oldReadFbo=0,oldPackPbo=0,oldPackAlignment=4,oldReadBuffer=GL_BACK;
+        glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING,&oldReadFbo);
+        glGetIntegerv(GL_PIXEL_PACK_BUFFER_BINDING,&oldPackPbo);
+        glGetIntegerv(GL_PACK_ALIGNMENT,&oldPackAlignment);
+        glGetIntegerv(GL_READ_BUFFER,&oldReadBuffer);
+        if(glGetError()!=GL_NO_ERROR) {
+            error_="WebGL2 acceptance: could not read framebuffer/pixel-pack state";
+            return false;
+        }
+        GLuint fbo=0;
+        glGenFramebuffers(1,&fbo);
+        if(!fbo) {
+            error_="WebGL2 acceptance: framebuffer allocation failed";
+            return false;
+        }
+        glBindFramebuffer(GL_READ_FRAMEBUFFER,fbo);
+        glFramebufferTextureLayer(GL_READ_FRAMEBUFFER,GL_COLOR_ATTACHMENT0,
+                                  t->id,request.mipLevel,request.arrayLayer);
+        const bool complete=glCheckFramebufferStatus(GL_READ_FRAMEBUFFER)==
+                            GL_FRAMEBUFFER_COMPLETE;
+        TextureReadbackResult result;
+        result.format=t->fmt;
+        if(complete) {
+            glReadBuffer(GL_COLOR_ATTACHMENT0);
+            glBindBuffer(GL_PIXEL_PACK_BUFFER,0);
+            glPixelStorei(GL_PACK_ALIGNMENT,1);
+            const size_t row=size_t(width)*4u;
+            std::vector<uint8_t> bottomUp(bytes);
+            glReadPixels(0,0,width,height,GL_RGBA,GL_UNSIGNED_BYTE,bottomUp.data());
+            if(glGetError()==GL_NO_ERROR) {
+                result.width=width;result.height=height;
+                result.pixels.resize(bytes);
+                for(int y=0;y<height;++y)
+                    std::memcpy(result.pixels.data()+size_t(y)*row,
+                                bottomUp.data()+size_t(height-1-y)*row,row);
+            }
+        }
+        glBindFramebuffer(GL_READ_FRAMEBUFFER,GLuint(oldReadFbo));
+        glReadBuffer(GLenum(oldReadBuffer));
+        glBindBuffer(GL_PIXEL_PACK_BUFFER,GLuint(oldPackPbo));
+        glPixelStorei(GL_PACK_ALIGNMENT,oldPackAlignment);
+        glDeleteFramebuffers(1,&fbo);
+        if(!result.success() || glGetError()!=GL_NO_ERROR) {
+            error_="WebGL2 acceptance: array mip/layer GPU readback failed";
+            return false;
+        }
+        webTextureReads_.push_back({std::move(callback),std::move(result)});
+        error_.clear();
+        return true;
+#elif defined(__EMSCRIPTEN__)
         (void)h; (void)request; (void)callback;
-        error_ = "WebGL2: native asynchronous texture readback is unsupported";
+        error_="WebGL2: native asynchronous texture readback is unsupported";
         return false;
 #else
         const GLTexture* t = textures_.get(h.id);
@@ -1537,6 +1608,13 @@ private:
     int passW_ = 0, passH_ = 0;
     std::vector<GLFramebuffer> fbos_;
     std::vector<GLTextureRead> textureReads_;
+#if defined(__EMSCRIPTEN__) && defined(AIVERSE_WEBGL_CONTEXT_ACCEPTANCE)
+    struct WebTextureRead {
+        TextureReadFn callback;
+        TextureReadbackResult value;
+    };
+    std::vector<WebTextureRead> webTextureReads_;
+#endif
     struct GLResolve { uint32_t dst = 0; int mip = 0, layer = 0; };
     GLuint scopedFbo_ = 0;
     std::array<GLResolve, kMaxRenderTargetColors> scopedResolves_{};
