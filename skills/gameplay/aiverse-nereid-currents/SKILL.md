@@ -11,7 +11,7 @@ Read `AGENTS.md`, `docs/nereid/ARCHITECTURE.md`, `docs/nereid/HANDOFF.md` and th
 
 Use `target_link_libraries(my_native_game PRIVATE AIVERSE::lib_nereid_currents)` in CMake, or `aiverse_native_use_libraries(aiverse_native_GAME nereid-currents)` when using the native module helper. The shared water dependency is `AIVERSE::lib_nereid_water`. Include `<aiverselib/water/NereidCurrentField.h>`; namespace `aiverse::lib::nereid`.
 
-Attach WaterCurrentFieldComponent to a water body with valid enabled RiverSpline WaterGeometryComponent. Field must have one WaterCurrentNode per spline point; waterCurrentAt produces fixed-point current shared by indexed and reference NEREID sampling. Register registerNereidCurrentPersistence. Never derive gameplay current from the shader.
+Attach WaterCurrentFieldComponent to a water body with valid enabled RiverSpline WaterGeometryComponent. Field must have one WaterCurrentNode per spline point; waterCurrentAt produces fixed-point current shared by indexed and reference NEREID sampling. The persistence helper `registerNereidCurrentPersistence(sim)` is declared in `<aiverselib/water/NereidWaterSystems.h>`, so include that header too when registering manually. If you use `registerNativeWaterPipeline` with `enableCurrentField=true`, do not register the same component twice. Never derive gameplay current from the shader.
 
 ## Engineering contract
 
