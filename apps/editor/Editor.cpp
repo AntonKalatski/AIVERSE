@@ -8,6 +8,7 @@
 #include "engine/fx/SpectraGpuPoolWorld.h"
 #include "engine/fx/SpectraDiagnosticBundle.h"
 #include "libraries/include/aiverselib/genre/SpectraGpuCaptureMailbox.h"
+#include "libraries/include/aiverselib/genre/SpectraGpuRecoveryHost.h"
 #include "engine/fx/SpectraDiagnosticReport.h"
 #include "imgui.h"
 #include "imgui_internal.h" // DockBuilder
@@ -909,6 +910,15 @@ bool Editor::queueSpectraExternalGpuCapture(size_t groupIndex) {
 bool Editor::releaseSpectraExternalGpuCapture() {
     return spectraGpuMailbox_ &&
            spectraGpuMailbox_->requestRelease();
+}
+bool Editor::queueSpectraExternalVisualReset() {
+    // This cannot encode a Metal reset. The native host receives status
+    // only and services it after Device.beginFrame at its own safe point.
+    return spectraGpuRecoveryHost_ &&
+           spectraGpuTelemetry_ &&
+           spectraGpuTelemetry_!=spectraPreviewGpu_.get() &&
+           spectraGpuRecoveryHost_->requestPresentationReset(
+               "explicit editor VFX-only reset");
 }
 
 bool Editor::saveFreshSpectraGpuCheckpoint(
