@@ -35,7 +35,14 @@ Create `fx/gpu/flame_gpu.gpu.json`:
   },
   "environment": {
     "acceleration": [0, -2, 0],
-    "damping": 0.99
+    "damping": 0.99,
+    "groundCollision": {
+      "enabled": true,
+      "height": 0,
+      "restitution": 0.35,
+      "tangentRetention": 0.8,
+      "emitImpactEvents": false
+    }
   }
 }
 ```
@@ -48,6 +55,25 @@ modules (collision, trails, ribbons, mesh particles, subemitters, lights,
 sorting, flipbooks and local space) stay on CPU. The backend selection
 permits GPU only on compatible Metal/Vulkan devices with compute and
 RGBA32F; there is no D3D12 RHI in this project.
+
+For optional visual GPU ground-impact feedback, set
+`environment.groundCollision.emitImpactEvents: true`, and optionally
+`"impactEffect": "sparks"` at the emitter asset root (the named
+`fx/sparks.json` must exist). The compute kernel uses a horizontal
+world-Y plane; there is no terrain mesh/depth collision. Impact event
+feedback requires Metal's asynchronous buffer readback and at most
+4,096 GPU slots; a CPU fallback is selected when the policy disallows
+the requested GPU feature. The returned impact is **visual only**:
+it is not a gameplay collision, damage, physics contact or
+authoritative ECS event.
+
+`SpectraFxHybridPlayback::publishGpuImpacts(router)` routes feedback
+to the bounded presentation event queue for native hosts. The
+`ClientFx` host separately consumes authored `impactEffect` CPU
+sub-effects with a cap of 32 per frame. Hosts should not consume the
+same pending feedback by both methods. Async feedback can be delayed or
+dropped when unsupported or when particles are recycled before
+delivery.
 
 Create `fx/gpu/routes.json`:
 
