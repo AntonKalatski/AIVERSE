@@ -82,7 +82,8 @@ public:
             return false;
         }
         if(decision_.backend==SpectraFxExecutionBackend::Gpu) {
-            if(slots_.init(device,config_.backend.particles) &&
+            if(slots_.init(device,config_.backend.particles,
+                           config_.environment.reportImpacts) &&
                (sharedRenderer ? sharedRenderer->ready() : renderer_.init(device))) {
                 rendererOwner_=sharedRenderer ? sharedRenderer : &renderer_;
                 gpuDevice_=&device;
