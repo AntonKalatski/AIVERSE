@@ -47,7 +47,10 @@ void GpuPoolWorld::shutdown() {
 std::string GpuPoolWorld::groupKey(const fx::EffectDef& effect,
                                   const GraphRuntimeOptions& options,
                                   uint32_t capacity) {
-    return fx::effectToJson(effect).dump(-1)+
+    const std::string serialized=fx::effectToJson(effect).dump(-1);
+    // Length prefix prevents ambiguous keys if authored shader graphs contain
+    // textual substrings that resemble the policy suffix.
+    return std::to_string(serialized.size())+":"+serialized+
         "|capacity="+std::to_string(capacity)+
         "|quality="+std::to_string(unsigned(options.quality))+
         "|vm="+std::to_string(unsigned(options.gpuProgram))+
@@ -303,7 +306,8 @@ void GpuPoolWorld::endPresentationFrame() {
 
 bool GpuPoolWorld::resetForRollback() {
     if(!initialized_||frameOpen_||
-       (device_&&!device_->canUpdateSharedBuffers())) {
+       (device_&&(!device_->gpuHealthy() ||
+                  !device_->canUpdateSharedBuffers()))) {
         reason_="SpectraFX pool reset must run outside GPU render/compute frame";
         return false;
     }
