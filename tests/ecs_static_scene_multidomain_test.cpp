@@ -237,6 +237,29 @@ static void multiDomainIntegration() {
     AIVERSE_TEST_CHECK(configs.brains->fingerprint()!=
         remapped.brains->fingerprint());
 
+    // Multi-domain binding is preflighted as a whole: a stale Brain
+    // catalog prevents partial Weapon/Inventory bindings.
+    World incompatible;
+    AIVERSE_TEST_CHECK(remapped.brains->bindWorld(incompatible));
+    AIVERSE_TEST_CHECK(!configs.registry->bindWorld(incompatible));
+    AIVERSE_TEST_CHECK(incompatible.resourceConst<
+        st::PrefabCatalogBinding<fixture::Weapon>>()==nullptr);
+    AIVERSE_TEST_CHECK(incompatible.resourceConst<
+        st::PrefabCatalogBinding<fixture::Inventory>>()==nullptr);
+
+    // Required domain failure must leave even a newly created entity
+    // without a partially attached StaticRef.
+    World scratch;
+    AIVERSE_TEST_CHECK(configs.registry->bindWorld(scratch));
+    const Entity scratchEntity=scratch.create();
+    sc::SceneObjectAsset unknown{1,0,"prefabs/unknown",Json::object()};
+    std::string scratchError;
+    AIVERSE_TEST_CHECK(!spawn(configs)(scratch,scratchEntity,unknown,scratchError));
+    AIVERSE_TEST_CHECK(!scratchError.empty());
+    AIVERSE_TEST_CHECK(!scratch.has<st::StaticRef<fixture::Weapon>>(scratchEntity));
+    AIVERSE_TEST_CHECK(!scratch.has<st::StaticRef<fixture::Brain>>(scratchEntity));
+    AIVERSE_TEST_CHECK(!scratch.has<st::StaticRef<fixture::Inventory>>(scratchEntity));
+
     auto game=makeSimulation(configs);
     auto preview=makeSimulation(configs);
     auto& world=game->world();
@@ -282,6 +305,23 @@ static void multiDomainIntegration() {
         configs.brains->read(preview->world(),previewEntities[1]));
     AIVERSE_TEST_CHECK(configs.inventories->read(world,fieldEntities[0])==nullptr);
     AIVERSE_TEST_CHECK(configs.inventories->read(world,fieldEntities[1])!=nullptr);
+
+    // Reversed registration order must still produce identical native
+    // checksums and serialization when the same scenes are committed in
+    // canonical order. Domain mapping order is sorted by domain key.
+    auto reverse=makeSimulation(sameOrderIndependent);
+    sc::SceneLoadCoordinator reverseLoader(
+        reverse->world(),reader(),{},spawn(sameOrderIndependent));
+    const auto reverseGlobal=reverseLoader.request(
+        "scenes/global",sc::LoadMode::Additive,true);
+    const auto reverseField=reverseLoader.request("scenes/field");
+    awaitReady(reverseLoader,reverseGlobal);
+    awaitReady(reverseLoader,reverseField);
+    AIVERSE_TEST_CHECK(reverseLoader.commit(reverseGlobal));
+    AIVERSE_TEST_CHECK(reverseLoader.commit(reverseField));
+    AIVERSE_TEST_CHECK(reverse->checksum()==game->checksum());
+    AIVERSE_TEST_CHECK(reverse->serialize()==game->serialize());
+    AIVERSE_TEST_CHECK(sameOrderIndependent.registry->validateWorld(reverse->world()));
 
     // Mutating one instance cannot mutate any static domain.
     const auto* baseWeapon=configs.weapons->read(world,fieldEntities[1]);
