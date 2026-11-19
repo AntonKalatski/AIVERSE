@@ -4070,6 +4070,68 @@ multi-view GPU-fence stress, profiling/CI.
 после окончательного одобрения завершения
 функций, с записью фактических PASS/FAIL.
 
+
+## Stage 66 — фактический запуск консолидированной валидации (CI queued)
+
+Stage 65 закрыл каталог только **по исходникам**. Stage 66
+добавляет исполняемую GitHub Actions конфигурацию
+`.github/workflows/prisma-final-validation.yml`.
+Она запускается на `feature/prisma-postfx` при изменениях
+в PRISMA/Renderer3D/Editor/Client или вручную через
+`workflow_dispatch`. Linux (`ubuntu-24.04`)
+и macOS (`macos-15`) получают одинаковые требования:
+`AIVERSE_BUILD_TESTS=ON`, `AIVERSE_BUILD_HDR_TESTS=ON`,
+`AIVERSE_BUILD_EDITOR=ON`, CMake Release, полный
+`cmake --build ... --parallel 4`, затем **один
+полный** `ctest --output-on-failure -j 4`.
+Linux runner устанавливает X11/EGL/GLES/Vulkan/Mesa/Xvfb
+заголовки для desktop renderer. После CTest
+workflow пытается запустить HDR fixture:
+Linux `aiverse_hdr_scene` через Xvfb (Mesa),
+macOS `aiverse_hdr_gl` с Cocoa/OpenGL context;
+запуск ограничен 240 секундами и логируется,
+отсутствие бинарника явно обозначается как
+`GPU SMOKE NOT RUN`, а не `PASS`.
+Сохранение логов `prisma-configure.log`,
+`prisma-build.log`, `prisma-ctest.log`,
+`prisma-gpu.log`, возможного `prisma-hdr-capture.ppm`
+и CTest LastTest.log — GitHub Action artifacts
+(`if: always()`), даже при ошибке.
+
+Зафиксирован новый тест в уже существующем
+`tests/render/prisma_volume.cpp` для GPU-free
+`PrismaData` numeric API: неправильный RGB
+элемент в strict/non-strict mode, NaN и Infinity
+у нативного профиля, укороченный flattened
+вектор параметров, лишние элементы и
+normalization boolean. Test запускается
+в рамках `prisma_volume` полного CTest
+и не создаёт отдельного GPU target.
+
+**Фактическое состояние на момент документации:**
+workflow для HEAD `96da88d098307f10d7745af6b2f880e35d918f9e`
+зарегистрирован как
+[GitHub Actions run #44595377866](https://github.com/chromealex/AIVERSE/actions/runs/44595377866).
+Оба задания Linux/macOS были **queued**, ни
+одна сборка/CTest/GPU fixture ещё не имела
+результата. Нельзя выводить PASS/FAIL из
+успешной постановки workflow в очередь.
+Первоначальный workflow запуск на предыдущем
+SHA был отменён `concurrency.cancel-in-progress`
+после добавления теста; не использовать
+его как результат валидации.
+
+Следующий агент должен считать фактический
+run/job status, получить реальные job logs
+и artifacts, исправить build/test/GPU FAIL,
+а затем сохранить реальные команды,
+exit code и результаты в handoff;
+не обещать проверку Metal GPU на физическом
+Mac Studio — macOS GitHub runner проверяет
+доступную ему машину, не пользовательскую.
+Подробности:
+`docs/handoffs/prisma-stage-66.md`.
+
 ## Требования
 - Универсальные render API для разных жанров; никакой зависимости от `modules/rts`/`modules/fps` в PRISMA.
 - Переход постепенный: каждый новый путь отключаемый, исходный `postfx` формат не ломать.
