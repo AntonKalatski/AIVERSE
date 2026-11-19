@@ -87,3 +87,25 @@ ACTUALLY performed:
 4. Later stages may add an opt-in native LOD profile authoring UI and stream-source map, with explicit immutable snapshots and asset version diagnostics. Keep genre logic in the host.
 5. Finish remaining feature work as requested, then run full native CMake, CTest, compiler warnings, Metal/Vulkan/GL visuals, FPS/RTS/editor hot reload parity, sanitizer/failure injection and benchmarks. Do not claim tests passed until actual evidence exists. PR #22 remains Draft.
 6. Next Stage 127 must start with current main and peer branch ancestry, then write a separate detailed handoff and update `AGENTS.md` with changed files, actual tests, limitations, HEAD and next step. Never force push or overwrite parallel teams' changes.
+
+## Stage 126 native AppearanceSpec follow-on commits
+
+Two source commits were made after the initial handoff was written:
+
+- `1aa17f6d12bdbc3c8e306ac23c057d18609d3440` —
+  `engine/view/AppearancePacket.h`: appended optional
+  `AppearanceSpec::modelPublicationGeneration` after the
+  original aggregate fields. Native hosts that do not use
+  `AppearanceAssetRegistry` may supply an explicit generation.
+  `buildAppearancePacket` forwards it to the resulting
+  `view::Object::animationModelGeneration`; zero remains a
+  backwards-compatible opt-out for old noncompiled LOD hosts.
+- `6487a3f61a1e694145b28a5745061aa00b5de8f3` —
+  `engine/view/AppearanceAssetRegistry.h`: registry snapshot
+  packets now set that same `AppearanceSpec` property before
+  calling the generic builder, avoiding a separate downstream
+  assignment. Registry and no-registry native consumers share
+  one source-level contract.
+
+These remain GitHub code-only edits. Neither native C++ compilation
+nor CTest nor GPU validation was performed.
