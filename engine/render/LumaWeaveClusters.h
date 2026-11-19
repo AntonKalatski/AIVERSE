@@ -151,6 +151,7 @@ public:
         if(x<0||y<0||z<0)return {}; // outside index: full slow path, never black
         const auto& cell=cells_[size_t(x)+size_t(config_.nx)*
                                (size_t(y)+size_t(config_.ny)*size_t(z))];
+        if (!cell.count) return {{},cell.overflow,cell.total};
         return {std::span<const uint32_t>(fast_.data()+cell.first,cell.count),
                 cell.overflow,cell.total};
     }
