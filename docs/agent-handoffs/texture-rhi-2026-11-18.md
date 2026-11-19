@@ -12663,3 +12663,13 @@ bash tools/texture-rhi-final-verify.sh --jobs 4 --full-engine
 **Actual verification:** Source write/blob-tree commit through GitHub only. User requested all functional changes before tests, so no compiler, CMake/CTest, backend, driver, perf or stress tests run on this SHA. The old 21+7 GPU PASS remains evidence only for `7494f32d`.
 
 **Next:** source feature review and necessary fixes, then record exact final feature freeze SHA and run 1 full Mac regression + canonical GLSL/MSL compilers + real native GPU readbacks + CPU reference stress. Full cross-backend/mobile/CI validation remains separate until actually executed. PR Draft, experimental ICB OFF.
+
+## Stage 10CU — sRGB physical mip CPU conversion without hot-loop pow (2026-11-19)
+
+**Source SHA:** `dae9aade812d943884b79ed4d8c99bd935af7d01`. **Branch:** `feature/texture-rhi-unification`, PR #21 Draft.
+
+**Implementation:** In `engine/gfx/VirtualTexturePhysicalMips.h`, sRGB decoding now uses one function-local static monotonic 256-entry linear-light lookup table initialized once. Each source RGB code is converted to premultiplied linear light in O(1), and the output is quantized via `std::lower_bound` on the same table to the nearest representable sRGB code under linear-light distance (O(log 256)); linear RGBA8 retains direct byte encode. This removes repeated `pow` from per-pixel generation and avoids gamma-space average artifacts. Alpha remains linearly averaged and colours premultiplied while filtering; generated mip layout, dimensions, and I/O API are unchanged.
+
+**Actual verification:** Source pushed via GitHub connector, not compiled, tested, benchmarked, or GPU-validated. The CPU mip kernel should receive golden-image and performance reference fixtures in the final verification stage. No speedup number asserted. Prior old Mac 21+7 PASS is still for `7494f32d` only.
+
+**Next:** feature freeze and final cross-backend acceptance tests including indexed residency partial-vs-full reference, mixed-mip anisotropic seams, GPU atlas mips, model permutations, streaming budgets and performance. Keep #21 Draft and experimental ICB OFF.

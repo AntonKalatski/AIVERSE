@@ -1939,3 +1939,7 @@ Canonical GLSL `aiverseSampleVirtualAnisotropic` and MSL `aiverse_sample_virtual
 ## Stage 10CT — fail-fast virtual streaming budgets (SHA bf327614)
 
 `virtualTexturePhysicalMipChainBytes(side,levels)` estimates a full physical RGBA8 mip chain. `VirtualTextureStreamer::initialize` now rejects impossible atomic staging (full chain > staging budget or base page > uploadBytesPerFrame), insufficient page-table row flush budget, and combined atlas+indexed/legacy page-table GPU memory exceeding queue's configured GPU budget. `estimatedGpuAllocatedBytes()` includes the table estimate, unlike queue-only `streamStats()`. Errors remain fail-closed; no native test has run for these changes.
+
+## Stage 10CU — optimized sRGB mip CPU converter (SHA dae9aade)
+
+`buildVirtualTexturePhysicalMips` now uses one static 256-value sRGB-to-linear table and binary-search inverse quantization, avoiding per-texel `pow` during runtime VT page uploads. Existing alpha-correct filtering and generated mip dimensions unchanged. Correctness and performance have not been tested for this source SHA; record actual oracle/benchmarks in final acceptance.
