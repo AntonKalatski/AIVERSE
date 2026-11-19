@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <deque>
 #include <memory>
 #include <string>
@@ -169,13 +170,35 @@ int main() {
                 } else ++it;
             }
         };
-        constexpr int kChurnFrames=24;
+        // Default smoke stays quick. Mac Studio stress may opt in to
+        // 512+ frames and 256+ particle slots while retaining the exact
+        // same real compute/draw/resource-retirement checks. No perf
+        // threshold depends on the host's clock or thermal conditions.
+        auto envInt=[](const char* key,int fallback,int lo,int hi) {
+            const char* raw=std::getenv(key);
+            if(!raw || !*raw) return fallback;
+            char* end=nullptr;
+            const long value=std::strtol(raw,&end,10);
+            return end!=raw && *end=='\0' && value>=lo && value<=hi
+                ?int(value):fallback;
+        };
+        const int kChurnFrames=envInt(
+            "AIVERSE_SPECTRAFX_RHI_STRESS_FRAMES",24,24,2048);
+        const int kChurnCapacity=envInt(
+            "AIVERSE_SPECTRAFX_RHI_STRESS_CAPACITY",1,1,4096);
+        uint64_t maxOutstandingBytes=0;
         for (int i=0;i<kChurnFrames;++i) {
             device->beginFrame(kWidth,kHeight);
             retire();
             auto next=std::make_unique<aiverse::fx::SpectraFxGpuEvolution>();
-            check(next->init(*device,{seed((i%2==0)?-0.45f:0.45f)},
-                             false,sharedCompute),
+            std::vector<aiverse::fx::SpectraFxGpuSeed> seeds;
+            seeds.reserve(size_t(kChurnCapacity));
+            for(int j=0;j<kChurnCapacity;++j) {
+                auto instance=seed((i%2==0)?-0.45f:0.45f);
+                instance.position.x+=float(j%32)*0.002f;
+                seeds.push_back(instance);
+            }
+            check(next->init(*device,seeds,false,sharedCompute),
                   "churn allocation of production GPU resources");
             if (!next->ready()) {device->endFrame();break;}
             check(next->step(0.016f,env),"churn GPU evolution dispatch");
@@ -185,6 +208,10 @@ int main() {
                                 cameraA.up,appearance),"churn GPU RHI draw");
             device->endPass();
             retiring.push_back({std::move(next),device->frameSerial()});
+            uint64_t outstanding=0;
+            for(const auto& held:retiring)
+                outstanding+=held.particles->nominalGpuBytes();
+            maxOutstandingBytes=std::max(maxOutstandingBytes,outstanding);
             device->endFrame();
             if (failures) break;
         }
@@ -197,9 +224,13 @@ int main() {
         check(device->readColorRGBA8(colorA,frameA),
               "finished churn frame readable through RHI");
         check(device->gpuHealthy(),"GPU healthy after 24 emitter churn frames");
-        std::printf("[spectrafx-metal-rhi] churn_frames=%d retire_remaining=%zu "
-                    "gpu_healthy=%d\n",kChurnFrames,retiring.size(),
-                    device->gpuHealthy()?1:0);
+        std::printf("[spectrafx-metal-rhi] churn_frames=%d capacity=%d "
+                    "peak_nominal_kib=%llu retire_remaining=%zu "
+                    "gpu_healthy=%d\n",
+                    kChurnFrames,kChurnCapacity,
+                    static_cast<unsigned long long>(
+                        maxOutstandingBytes/1024u),
+                    retiring.size(),device->gpuHealthy()?1:0);
 
         // Stage 108: real GPU alpha-sort parity for two opposite camera
         // directions in ONE Metal frame. This is a test-only diagnostic

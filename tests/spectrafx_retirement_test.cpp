@@ -1,6 +1,8 @@
 // SpectraFX genre-independent hybrid playback retirement policy regression.
 // A deliberately deterministic fake Metal-capable RHI validates policy,
 // NOT GPU shader execution. Real Metal coverage: spectrafx_metal_rhi.
+#include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -88,11 +90,15 @@ public:
     void draw(uint32_t,uint32_t) override {}
     void drawIndexed(uint32_t,uint32_t,int32_t,uint32_t) override {}
     size_t liveResources() const {return live_.size();}
+    size_t peakLiveResources() const {return peakLive_;}
+    uint64_t createdResources() const {return created_;}
     uint64_t serial() const {return serial_;}
 private:
     uint32_t allocate() {
         const uint32_t id=++nextId_;
         live_.insert(id);
+        ++created_;
+        peakLive_=std::max(peakLive_,live_.size());
         return id;
     }
     void erase(uint32_t id) {
@@ -105,6 +111,8 @@ private:
     uint32_t nextId_=0;
     bool inFrame_=false,inPass_=false,inCompute_=false;
     std::unordered_set<uint32_t> live_;
+    size_t peakLive_=0;
+    uint64_t created_=0;
 };
 
 SpectraFxCue cue(uint64_t key,SpectraFxCue::Action action) {
@@ -170,7 +178,14 @@ int main() {
 
         // Repeated keyed replacement and live-scene reset: old slot
         // allocations count against capacity until their fence expires.
-        for(int frame=0;frame<32;++frame) {
+        // 1024 cycles x 2 GPU-allocated keyed emitters = 2048 source
+        // retirements, including repeated scene resets and slot reuse.
+        // Benchmark telemetry is informational only; native host speed
+        // is never used as a deterministic pass/fail threshold.
+        constexpr int kStressFrames=1024;
+        uint64_t peakReservedSlots=0;
+        const auto stressStart=std::chrono::steady_clock::now();
+        for(int frame=0;frame<kStressFrames;++frame) {
             device.beginFrame(128,128);
             check(playback.dispatch(cue(11,SpectraFxCue::Action::Play)),
                   "GPU emitter can be recreated after retirement");
@@ -183,6 +198,11 @@ int main() {
                   "reset invalidates all active presentation entities");
             check(playback.retiringGpuSlots()>=16,
                   "both replaced and reset emitters retain their GPU slots");
+            peakReservedSlots=std::max(peakReservedSlots,
+                                      playback.retiringGpuSlots());
+            check(playback.usedGpuSlots()<=
+                  SpectraFxHybridPlayback::kMaxPlaybackGpuSlots,
+                  "retirement accounts for GPU capacity on every churn frame");
             playback.updateGpu(0.016f,{0,0,2},{0,0,-1});
             device.endFrame();
         }
@@ -191,9 +211,27 @@ int main() {
             playback.updateGpu(0.016f,{0,0,2},{0,0,-1});
             device.endFrame();
         }
+        const auto stressEnd=std::chrono::steady_clock::now();
+        const double stressMs=std::chrono::duration<double,std::milli>(
+            stressEnd-stressStart).count();
         check(playback.retiringGpuSlots()==0 &&
               playback.retiringGpuResourceCount()==0,
               "all queued GPU emissions safely retired after frame drain");
+        check(playback.stats().dedicatedGpuRetired>=
+                  uint64_t(2*kStressFrames),
+              "at least 2048 GPU emitters retired during stress");
+        check(peakReservedSlots<=512 && device.peakLiveResources()<=4096,
+              "bounded resource count under repeated scene resets");
+        std::printf("[spectrafx-retirement] frames=%d retired=%llu "
+                    "peak_slots=%llu peak_rhi_handles=%zu "
+                    "created_rhi_handles=%llu wall_ms=%.2f\n",
+                    kStressFrames,
+                    static_cast<unsigned long long>(
+                        playback.stats().dedicatedGpuRetired),
+                    static_cast<unsigned long long>(peakReservedSlots),
+                    device.peakLiveResources(),
+                    static_cast<unsigned long long>(
+                        device.createdResources()),stressMs);
         check(playback.stats().dedicatedGpuRetired==
               playback.stats().dedicatedGpuReleased,
               "no lost or double-released GPU emitters");
