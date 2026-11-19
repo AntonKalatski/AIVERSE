@@ -315,7 +315,8 @@ void RtsPaintLayers::drawCells(render::Renderer3D& r,gfx::Device& dev,render::Pa
    for(int k=0;k<3;++k)l.bytes[i*4+size_t(k)]=p.palette[size_t(c)*4+size_t(k)];
    l.bytes[i*4+3]=c;
   }
-  l.canvas.upload(0,0,tw,th,l.bytes.data(),tw*4);
+  if(!l.canvas.upload(0,0,tw,th,l.bytes.data(),tw*4))
+   return; // retain palette/cell dirty flags until GPU upload succeeds
   if(p.coast&&p.cellsDirty){   // the shoreline is static: rebuilt only when the sea mask changes
    std::vector<uint8_t> sea(size_t(tw)*th);uint64_t key=14695981039346656037ull;
    for(size_t i=0;i<sea.size();++i){sea[i]=l.bytes[i*4+3]==p.seaId;key=(key^sea[i])*1099511628211ull;}
@@ -323,6 +324,7 @@ void RtsPaintLayers::drawCells(render::Renderer3D& r,gfx::Device& dev,render::Pa
     std::vector<uint8_t> coast;coastDistance(sea,tw,th,coast);
     if(!l.coast.valid()){gfx::TextureDesc td;td.width=tw;td.height=th;td.filter=gfx::Filter::Linear;td.data=coast.data();td.label="paint coast";l.coast=dev.createTexture(td);}
     else dev.updateTexture(l.coast,0,0,tw,th,coast.data(),tw*4);
+    if(!l.coast.valid())return; // retry without acknowledging stale coastline
     l.seaKey=key;
    }
   }
@@ -422,6 +424,7 @@ void RtsPaintLayers::draw(render::Renderer3D& r,gfx::Device& dev,const std::shar
    const int th=field?h_:std::max(1,p.height*tw/p.width);
    l.canvas.setRetirementOwner(retirement_.get());if(!l.canvas.init(dev,tw,th))continue;
    l.value.assign(size_t(w_)*h_,0);l.target=l.value;l.bytes.assign(size_t(w_)*h_*4,0);
+   l.uploadRetry=false;
   }
   if(field){
    // Compact scalar source, smoothed in CPU space then sampled bilinearly by the GPU.
@@ -439,10 +442,22 @@ void RtsPaintLayers::draw(render::Renderer3D& r,gfx::Device& dev,const std::shar
     if(a!=l.bytes[size_t(i)*4+3]){l.bytes[size_t(i)*4+3]=a;x0=std::min(x0,x);y0=std::min(y0,y);x1=std::max(x1,x);y1=std::max(y1,y);}
    }
    l.revision=revision_;
-   if(x1>=x0)l.canvas.upload(x0,y0,x1-x0+1,y1-y0+1,l.bytes.data()+size_t(y0*w_+x0)*4,w_*4);
+   // A previously failed partial upload left the CPU bytes newer than
+   // the target texture; retry the complete known image, even if no
+   // per-cell difference is visible this frame.
+   if(l.uploadRetry){x0=0;y0=0;x1=w_-1;y1=h_-1;}
+   if(x1>=x0)
+    l.uploadRetry=!l.canvas.upload(x0,y0,x1-x0+1,y1-y0+1,
+                  l.bytes.data()+size_t(y0*w_+x0)*4,w_*4);
   }else{
    if(p.clear)l.canvas.clear();
-   if(p.copyFrom){auto it=layers_.find(p.copyFrom);if(it!=layers_.end())l.canvas.blit(it->second.canvas.handle());p.copyFrom=0;}
+   if(p.copyFrom){
+    auto it=layers_.find(p.copyFrom);
+    if(it==layers_.end() ||
+       !l.canvas.blit(it->second.canvas.handle()))
+     continue; // retry copy next frame, before accepting later strokes
+    p.copyFrom=0;
+   }
    for(auto& stroke:p.strokes)l.canvas.stroke(stroke);
   }
   p.clear=false;p.strokes.clear();l.canvas.flush();
