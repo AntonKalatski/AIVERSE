@@ -348,3 +348,67 @@ The existing `GlobalGeometryPool` is shared by legacy models and handles full ve
 
 ### Coordination and risks
 PR #35 remains a Draft stacked on PR #34. Keep all GPU/ICB experimental flags OFF by default, do not merge into main until native CTest + platform validation. Metadata GPU buffers must be released while their owning gfx::Device is still alive; the ordinary backend is responsible for keeping in-flight references alive when destroyBuffer is called. No real GPU compute, index-stream residency or render acceleration has been demonstrated.
+
+
+---
+
+## Stage 7B — pooled auxiliary Strata index residency (2026-11-19)
+
+### Resume point
+Branch `feature/strata-virtual-geometry`, Draft PR #35 stacked atop the independently evolving `perf/incremental-static-model-cache` Draft PR #34. Do not merge either experimental branch into `main` without actual native and visual parity results. **Stage 7B is source-attached sidecar index residency, NOT GPU compute culling or Strata indirect rendering.** All experimental opt-ins stay disabled by default.
+
+### Exact code commits, in order
+- `781a624ee3d459503c0cc14a0439909190d1dfd7` — `engine/render/GlobalGeometryPool.h`: add move-only `GeometryPoolIndexSpan`, `uploadAuxiliaryGeometryIndices`, `auxiliaryGeometryIndicesValidFor`, explicit `releaseAuxiliaryGeometryIndices`, and separate sidecar counters.
+- `7a87f98ca0020b5a81b6765e87faa89ed3e960a4` — `engine/render/GlobalGeometryPool.cpp`: allocate index-only sidecars in the *existing* model page, synchronized with `poolMutex`, check all source-relative indices, reuse released ranges only with verified GPU completion and recycling opt-in, retain page lifetime until last Model or sidecar owner releases; no second GPU page.
+- `c54d33abe88f367695ae89725c2ace93b8168f4d` — `engine/render/StrataGpuScene.h`: `GpuPrimitive::gpuFirstIndex`, binary metadata v1/v2 mapping, per-source/scene index budgets, read-only `GpuMetadataScene::indexBinding`.
+- `fa935f01ad062fffa88faa7c2f911b765550e836` — `engine/render/StrataGpuScene.cpp`: concatenate per-primitive Strata indices, upload into source shared page, version-2 GPU metadata patch with absolute per-primitive base indices, joint lifetime and allocation failure cleanup.
+- `5f5dc552e27ab5269cba14b2389c530443946123` and `1dd5ecf968cb4e221d3d358f217af2cbd4e4d708` — `GeometryScene.h/.cpp`: `strataGpuIndexBinding(sourceKey, out)` and index residency stats; draw path unchanged.
+- `3931b1e4b087de3b1acf872850694fdf8237ee9a` — `tests/render/strata_gpu_scene.cpp`: synthetic recording-RHI v2 payload, full actual pooled byte comparison, source revision invalidation, checked GPU-write rollback, lifetime across Model release.
+- `268fcd5e06873ae73465927303964e44582c7f25` — same fixture: no additional GPU page on index allocation exhaustion; no corruption of a second ordinary pooled Model.
+- `b108001f4abda9b003b03e693dc2fa38eb417df0` — `GlobalGeometryPool.cpp`: count actual model leases separately from sidecar leases, preserving meaningful `GeometryPoolStats::liveModels`.
+- `83da15840341c1b2d02e78ec41afe32e5c8816aa` — test explicit independent source model and auxiliary span ownership counts.
+- `71616a0b212c0aabcfbc376dcf1a83b71cc8e2a4` — Strata GPU header comment corrected to state v2 sidecar residency behavior.
+- `4761639fd7f5acb08816b08556dd4665b607d439` — `docs/strata.md`: new shared-pool residency API, metadata v2, lifetime/budget/per-pass offsets, limitations and native checklist.
+- `15548c847c33614b4d84cf22571794464b01103b` — `GlobalGeometryPool.cpp`: clarify last-owner teardown and completed-serial diagnostics.
+- `1f2ecc55f7146df11e395cd1dbc93430a274d574` — `AGENTS.md`: required single-pool, v2 format and no-double-draw rules.
+- `986d633056d293979ea145578cf4f8ab93c6f445` — `tests/render/strata_gpu_scene.cpp`: simulated frame serials confirm a released GPU index range is quarantined before completion and optionally reused only after the completion fence.
+
+### Architecture and API contract
+`GeometryPoolIndexSpan` is **move-only**, retains the existing `GeometryPoolPage` with shared ownership, stores the pooled GPU index-buffer handle, absolute uint32 `firstIndex` and `indexCount`, source Model pointer identity (not dereferenced), `geometryRevision`, GPU VB/IB and model base offsets. The source Model's original vertex buffer is used unchanged. `uploadAuxiliaryGeometryIndices` accepts only an already pooled, valid immutable model and source-relative indices, checks the page belongs to the same device, and writes into unused space between `vertexEnd` and `indexBegin`. It never allocates a new Strata page. Failed checked RHI uploads do not commit a sidecar lease or advance the page frontier. A full page rejects the sidecar and legacy rendering continues. Call `releaseAuxiliaryGeometryIndices(dev, span)` before Device shutdown; the sidecar may legitimately outlive its source Model lease, preventing premature destruction of the existing shared GPU page.
+
+Only the pre-existing `AIVERSE_GEOMETRY_POOL_RECYCLE=1` opt-in permits future reuse of a retired index-only span; reuse additionally requires nonzero `completedFrameSerial >= retireFrame` from a healthy device. In absence of a trustworthy serial, released spans stay stranded until the GPU page itself is destroyed, intentionally favouring safety over memory reuse. Sidecar accounting is distinct from Model count; `GeometryPoolStats` has `auxiliaryIndexSpans`, `auxiliaryIndexBytes`, retired/reusable span counts and recycled auxiliary uploads.
+
+`GpuMetadataScene` now stages a complete source-level concatenated Strata index stream on the original page (defaults: <=1 MiB per source, <=8 MiB per scene). If upload succeeds, v2 GPU metadata records each primitive's `gpuFirstIndex` as an **absolute pooled GPU index offset**. The node-level `sourceFirstIndex` remains local to that primitive; the future GPU command offset is **primitive.gpuFirstIndex + node.sourceFirstIndex**, with the original Model's `gpuBaseVertex` used for vertex addressing. The pure CPU `packGpuMetadata` still emits v1 (gpuFirstIndex invalid); this metadata cannot be submitted for drawing. The source page, sidecar and metadata have linked lifetime. `GpuMetadataScene::indexBinding` and `GeometryScene::strataGpuIndexBinding` return read-only handles/ranges only while Model identity, revision, shared allocation and GPU handles remain valid; errors preserve caller output.
+
+`GeometryScene::setStrataStagingEnabled(true)` and `setStrataGpuMetadataEnabled(true)` must both be called before load (both default OFF). `GeometryScene` releases Strata GPU metadata and pooled index spans **before** releasing the owning legacy models. No shaders, per-instance GPU transforms, computation, occlusion/Hi-Z, draw commands, physics, ECS, save schema or genre-specific renderer code are changed. The existing `Renderer3D` and CPU/GPU batching paths remain the only draw authority.
+
+### Actual validation (do NOT report PASS)
+- Source changes and exact commits confirmed by connected GitHub writes. The batching agent's branch was **not** modified.
+- **Native compile: NOT RUN. CTest (all Strata targets): NOT RUN. Recording fake RHI test: NOT RUN. Actual Metal/Vulkan execution, GPU fences, visual parity, memory/perf measurements: NOT RUN.**
+- GitHub Actions for code head `1f2ecc55` were observed **queued**; not passing. Recheck current head after this handoff commit. Historical queued/cancelled validation is not proof of correctness.
+- The recording-RHI test now includes a simulated monotonic `frameSerial` and `completedFrameSerial`. Its presence does not constitute execution.
+
+### Immediate native verification
+```sh
+cd ~/Projects/AIVERSE
+git fetch origin main perf/incremental-static-model-cache feature/strata-virtual-geometry
+git worktree add --detach ../AIVERSE-strata-7b origin/feature/strata-virtual-geometry
+cmake -S ../AIVERSE-strata-7b -B ../AIVERSE-strata-7b/build/strata \
+  -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_STRATA=ON
+cmake --build ../AIVERSE-strata-7b/build/strata \
+  --target aiverse_strata_builder_tests aiverse_strata_model_adapter_tests \
+  aiverse_strata_view_tests aiverse_strata_gpu_scene_tests -j 8
+ctest --test-dir ../AIVERSE-strata-7b/build/strata \
+  -R '^strata_(builder|model_adapter|view|gpu_scene)$' --output-on-failure
+```
+
+Then build actual runtime and exercise source sharing + OFF/ON pixel parity on Metal; perform Vulkan parity where supported, HLOD/shadow/reflection passes, memory churn, frame-serial fence/retire under real GPU load and multi-world unload before activating any Strata draws. Fix native compile/test issues and commit code + separate handoff on the **same branch**.
+
+### Next bounded code step
+After native builds/tests pass, add an **opt-in, mutually exclusive** Strata submission route in the existing `Renderer3D`, using selected cluster ranges and correct shared buffer + base-vertex mapping; never draw an original primitive twice. Implement pass-specific GPU scene instance records and compute frustum/LOD with CPU `planView` as oracle, then Hi-Z and async streaming only after measured parity and safe fences. Avoid changing existing GPU ICB defaults or duplicating `GlobalGeometryPool` / ECS transforms.
+
+### Known risks
+- The existing GPU pool still uses a bounded, page-local, first-fit free-gap allocator; a sidecar can fail even if other pages have available memory (no second page is allocated for this source). Retired index ranges may strand memory when recycling is OFF or serials unavailable, by design.
+- The sidecar model lease is explicit and move-only, not a self-destroying GPU RAII object; callers MUST invoke release before Device teardown.
+- Hierarchical LOD may still crack or alter attributes across cluster boundaries. No measured speedup, GPU mesh shading or GPU indirect draw has been proven.
+- The active batching branch has advanced considerably during this task. Do not blindly overwrite its `GlobalGeometryPool.cpp` work; re-diff current batching head and reconcile it before a later merge. PR #35 remains stacked Draft on PR #34.
