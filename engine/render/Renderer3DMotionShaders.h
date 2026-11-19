@@ -60,7 +60,7 @@ fragment float4 fs_main(
     texture2d<float> tex0 [[texture(0)]],
     sampler tex0_s [[sampler(0)]]) {
     float2 s=in.position.xy/u.params.xy;
-    float2 uv=u.params.z>0.5 ? float2(s.x,1.0-s.y):s;
+    // Metal raster pixels and render target textures both use top-left UV.\n    float2 uv=s;
     const float sceneZ=tex0.sample(tex0_s,uv).r;
     if (in.position.z > sceneZ+0.0015) discard_fragment();
     if (in.previous.w <= 0.00001) discard_fragment();
