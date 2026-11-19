@@ -801,12 +801,22 @@ gfx::PipelineHandle TerrainRenderer::pipeline(gfx::Device& dev, int variant) {
     return {};
 }
 
-void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<uint8_t>* vision, bool) {
+void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g,
+                           const std::vector<uint8_t>* vision, bool) {
+    drawInternal(r,g,vision,false);
+}
+void TerrainRenderer::drawPrepared(Renderer3D& r,const MapGrid& g,
+                                   const std::vector<uint8_t>* vision) {
+    drawInternal(r,g,vision,true);
+}
+void TerrainRenderer::drawInternal(Renderer3D& r,const MapGrid& g,
+                                   const std::vector<uint8_t>* vision,
+                                   bool preparedOnly) {
     if (!built_ || !dev_ || g.w != mapW_ || g.h != mapH_) return;
     gfx::Device& dev = *dev_;
-    updateDynamic(dev, g, false);
+    if(!preparedOnly)updateDynamic(dev, g, false);
     const bool fog = heightfield_ && vision && !vision->empty();
-    if (fog) {
+    if (fog && !preparedOnly) {
         if (fogField_ && fogField_->size() == visionPx_.size()) { if (fogFieldChanged_) { visionPx_ = *fogField_; dev.updateTexture(visionTex_, 0, 0, texW_, texH_, visionPx_.data(), texW_); visionInit_ = true; } }
         else updateVision(dev, *vision);
         fogFieldChanged_ = false;
@@ -830,16 +840,24 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
             while (k + 1 < lodLevels_ && d >= range) { ++k; range *= 2; }
             if (k + 1 < lodLevels_) { start = range * 0.75f; end = range; }
         }
-        if (detailOn_ && !c.lods[size_t(k)].indexCount) buildDetailLod(dev, g, c, k);
-        if (detailOn_) c.lastUse[size_t(k)] = frame_;
+        // A secondary camera may use a coarser prebuilt level, but it may
+        // not allocate/upload a new mesh while source GPU work is in flight.
+        if (detailOn_ && !c.lods[size_t(k)].indexCount && !preparedOnly)
+            buildDetailLod(dev, g, c, k);
+        if (detailOn_ && !preparedOnly) c.lastUse[size_t(k)] = frame_;
+        while(preparedOnly && k+1<lodLevels_ &&
+              !c.lods[size_t(k)].indexCount)++k;
+        if(preparedOnly && !c.lods[size_t(k)].indexCount) {
+            while(k>0 && !c.lods[size_t(k)].indexCount)--k;
+        }
         const Lod& l = c.lods[size_t(k)];
         if (!l.indexCount) continue;
         items->push_back({&l, start, end});
         ++stats_.drawn;
         stats_.triangles += l.indexCount / 3;
     }
-    ++frame_;
-    if (detailOn_ && geoBytes_ > look_.detailBudgetMB * 1048576.0) { // LRU: drop LOD meshes not drawn for a while
+    if(!preparedOnly)++frame_;
+    if (!preparedOnly && detailOn_ && geoBytes_ > look_.detailBudgetMB * 1048576.0) { // LRU: drop LOD meshes not drawn for a while
         for (auto& c : chunks_)
             for (size_t L = 0; L < c.lods.size(); ++L) {
                 Lod& l = c.lods[L];
@@ -891,7 +909,7 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
     const Lod* apron = apron_.indexCount ? &apron_ : nullptr;
     // traced terrain shadows (Renderer3D trace tier): the height map of the drawn surface
     if (r.traceActive()) {
-        if (heightDirty_) updateHeightField(dev, g);
+        if (!preparedOnly && heightDirty_) updateHeightField(dev, g);
         r.setHeightField(heightField_);
     } else r.setHeightField({});
     r.drawCustomOpaque([this, &r, items, u, pipe, apron](gfx::Device& d) {
@@ -922,7 +940,7 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
     if (hasWater_ && water_.indexCount) r.drawMesh(water_, mat4{}, look_.waterColor, kDrawNoCastShadow, 0.9f);
     // AIVERSE_TERRAIN_STATS=1: chunks / triangles / frame time every 60 frames (stderr; perf checks on big maps)
     static const bool printStats = std::getenv("AIVERSE_TERRAIN_STATS") != nullptr;
-    if (printStats) {
+    if (printStats && !preparedOnly) {
         static auto last = std::chrono::steady_clock::now();
         static int frames = 0;
         if (++frames == 60) {
