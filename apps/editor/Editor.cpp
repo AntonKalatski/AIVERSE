@@ -90,6 +90,8 @@ void Viewport::release(gfx::Device& dev) {
         color = depth = {};
     }
     w = h = 0;
+    hovered = false;
+    drawnFrame = -100; // never expose a released ImGui texture as live
 }
 
 void Viewport::image(gfx::Device& dev, float wPts, float hPts) {
@@ -191,7 +193,10 @@ void Editor::shutdown() {
     sim_.reset();
     gameFx_.shutdown();
     fxTextures_.shutdown();
-    windows_.clear(); // windows release their viewports in their destructors via update()? keep simple: textures die with the device
+    windows_.clear(); // Viewport dtors retire GPU handles into Editor-owned queue.
+    // Shutdown must run at the host's existing confirmed GPU-idle teardown
+    // point; the queue may still hold last-frame ImGui texture references.
+    viewportRetirement_.drainAfterGpuIdle(*dev_);
     if (studioLogo_.valid()) { dev_->destroyTexture(studioLogo_); studioLogo_ = {}; }
     view_.shutdown(*dev_);
     prisma_.shutdown();
@@ -1232,6 +1237,37 @@ void Editor::drawDockspace() {
 }
 
 void Editor::frame(gfx::Device& dev, double dt) {
+    // PRE-RENDER GPU-retirement maintenance. Only here may the editor
+    // explicitly synchronize previously SUBMITTED work on memory pressure:
+    // the current frame has not encoded its viewport/ImGui render yet.
+    // Do not do an idle wait after scene/ImGui commands are recorded.
+    static const uint64_t retirementBudgetBytes = []() -> uint64_t {
+        uint64_t mb = 128;
+        if (const char* value = std::getenv("AIVERSE_PRISMA_RETIRE_BUDGET_MB")) {
+            char* end = nullptr;
+            const unsigned long long n = std::strtoull(value,&end,10);
+            if (end != value && end && *end == '\0')
+                mb = std::clamp<uint64_t>(n,32,4096);
+        }
+        return mb * 1024 * 1024;
+    }();
+    viewportRetirement_.setBudgetBytes(retirementBudgetBytes);
+    viewportRetirement_.collect(dev);
+    prisma_.collectGpuRetirements();
+    r3d_.collectCompletedObjectMotion(dev.gpuCompletedFence());
+    const auto vpStats = viewportRetirement_.stats(dev);
+    const auto postStats = prisma_.retirementStats();
+    const auto motionStats = r3d_.motionRetirementStats();
+    const uint64_t pendingKnownBytes = vpStats.knownPendingBytes +
+        postStats.knownPendingBytes + motionStats.knownPendingBytes;
+    if (retirementBudgetBytes && pendingKnownBytes > retirementBudgetBytes &&
+        dev.waitForSubmittedGpuWork()) {
+        // Synchronized the graphics queue before any new draw this frame:
+        // both fenced and unfenced quarantined resources are safe to release.
+        viewportRetirement_.drainAfterGpuIdle(dev);
+        prisma_.releaseRetiredSizesAfterGpuIdle();
+        r3d_.drainObjectMotionAfterGpuIdle();
+    }
     // Window tabs can close or become dock-hidden without a destructor.
     // Only a viewport that actually calls Prisma this frame stays live.
     prismaSceneRendered_ = prismaGameRendered_ = false;
