@@ -1900,3 +1900,11 @@ ICB by default without deliberate release gating.
 - The ticket returned from either stage call identifies an entire mip batch for `cancel(rootTicket)`; all mips must finish before page table publication. `drain()` counts mip updates, callbacks count **completed virtual pages**.
 - Existing `VirtualTextureFileStreamer` and disk page archives remain base-level files and work without API changes, with optional mip generation at GPU staging.
 - Not yet compiled or GPU-tested. Still need second virtual-mip mapping, shader blend, real backend readbacks, and final full engine validation. No changes to `main`; PR #21 remains Draft.
+
+## Stage 10CM — opt-in indexed virtual mip table and shader trilinear
+
+- `VirtualTextureStreamConfig.indexedMipTable` defaults to false. When true, `VirtualTextureStreamer::indexedMipPageTableTexture()` is the ONLY table handle for new shader ABI, with `indexedMipTableLevels()` virtual levels. Legacy `pageTableTexture()` returns invalid in this mode to fail closed.
+- The indexed RGBA8 Texture2DArray page-table physical slice is `logicalLayer*mipLevels+requestedMip`. Each RGBA8 entry resolves nearest READY requested mip or COARSER resident page; root must be resident or sampler returns fallback. See `VirtualTexturePageTable::entryForMip` for CPU inspection.
+- GLSL: `aiverseVirtualMipLod(uvDx, uvDy, virtualSizePixels, bias)`, then `aiverseSampleVirtualTrilinear(atlas,indexedTable,uv,logicalLayer,gutterPx,fallback,uvDx,uvDy,lod,virtualMipLevels,addressU,addressV)`. Metal equivalents: `aiverse_virtual_mip_lod`, `aiverse_sample_virtual_trilinear` with separate sampler argument.
+- Both shaders have clamp-only convenience overloads and explicit-gradient page sampling. Use ORIGINAL virtual UV gradients and provide logical virtual pixel dimensions, not atlas slice dimensions.
+- No default renderer auto-binding or GPU test yet. Existing materials must continue to bind the one-slice legacy table; indexed ABI must opt in. 32MiB CPU page-table cap and backend array layer limits are release constraints. Source SHAs `93f4cbb` + `371812a`. PR #21 Draft; tests later.
