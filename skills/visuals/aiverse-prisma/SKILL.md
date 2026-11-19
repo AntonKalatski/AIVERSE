@@ -224,6 +224,60 @@ compilation have NOT RUN in this stage, and neither adaptive frame-rate
 improvement nor image-quality superiority has been measured. See
 `docs/handoffs/prisma-stage-45.md`.
 
+## Scoped viewport GPU diagnostics and Prisma-memory guard (Stage 46)
+
+The RHI provides three **optional**, nonblocking `gfx::Device` hooks:
+`beginGpuScope(tag)`, `endGpuScope()`, and
+`takeGpuScopeTimings()`. The bounded scope covers an actual region of GPU
+commands between the two calls, not CPU duration. It uses a **separate
+result queue** from the existing `timeGpuFrame/takeGpuTimings` benchmark
+interface and must not overlap an active full-frame `GL_TIME_ELAPSED`
+query. Desktop OpenGL 3.3 on supported macOS/Windows builds uses real GPU
+elapsed queries; GL ES/WebGL/Linux fallback, Metal and Vulkan report
+unsupported rather than inventing per-viewport timing. Metal's existing
+`gpuFrameMs()` remains a whole-command-buffer value, never a viewport
+value.
+
+The editor can opt into Scene/Game GPU-region timings with
+`AIVERSE_PRISMA_VIEWPORT_GPU_TIMING=1`. It scopes the GPU submission
+from `Renderer3D::render` through `resolvePrisma` and the final viewport
+pass, then nonblockingly polls only finished scope queries in the
+pre-render maintenance window. `Prisma::acceptViewGpuTiming(viewId,ms)`
+accepts those **completed/valid** samples from a trusted host;
+`viewGpuTimings()` supplies read-only per-view diagnostics. The
+per-view adaptive controller prefers a *new scoped measurement* when
+available, otherwise falls back to the previously documented confirmed
+whole-frame GPU timer; it never substitutes CPU time/FPS. A scope may
+include shadows, reflections and FX, but does not measure asset uploads
+before `Renderer3D::render`. Render passes with no scope support simply
+remain unmeasured.
+
+The existing opt-in `temporalResolve.adaptiveResolution` catalog adds
+`maxPrismaMemoryMiB` (32..4096 MiB, default 256). The controller
+compares it with the **lower-bound** sum of
+`Prisma::memoryStats().liveKnownBytes` plus
+`Prisma::retirementStats().knownPendingBytes`, where shared size-cache
+resources are counted only once and pending resources are not
+double-counted. A known-memory overage can drive a downward 1/16 scale
+step after 12 distinct confirmed GPU completions (even when no valid
+GPU-ms duration is available). It blocks upward quality promotion while
+over budget and still uses the 48-sample cooldown. It never force-releases
+resources: actual destruction still requires the existing GPU-fenced
+retirement path. This is a **Prisma-only known-memory guard**, NOT total
+VRAM usage, device residency, physical driver allocation or a real
+VRAM-budget query; opaque/unknown textures are excluded.
+
+Scene/Game scoped timings and memory pressure appear in Stats/Prisma
+editor windows, and `PrismaStats` shows the GPU timing source
+(scoped/whole), last valid ms, known bytes and pressure. On an unsupported
+backend the UI says unavailable, not 0 ms.
+
+These APIs are source-level and **NOT native/GPU tested**. Before shipping,
+compile GL33+GLES and Metal/Vulkan, run GPU timing query/camera lifetime
+smoke, verify no overlap with other profilers and benchmark consumers,
+exercise memory thresholds and test GL context loss/query saturation.
+`docs/handoffs/prisma-stage-46.md` is the next-agent source of truth.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
