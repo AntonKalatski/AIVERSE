@@ -215,7 +215,7 @@ inline void populateHorizonNearSeamSamples(
     bake.nearWeldSlopeFallback=false;
     // No partial diagnostic result may survive a failed all-or-none
     // height sampling pass or a truncated sample budget.
-    const discardIncompleteSamples=[&bake]() {
+    const auto discardIncompleteSamples=[&bake]() {
         bake.nearSeamSamples.clear();
         bake.continuousNearNormalSamples=0;
         bake.localFallbackNearNormalSamples=0;
@@ -306,7 +306,7 @@ inline void populateHorizonNearSeamSamples(
                 const auto hz0=source->nearGroundHeightAtQ16Cm(xq,zl);
                 const auto hz1=source->nearGroundHeightAtQ16Cm(xq,zr);
                 if(xr>xl && zr>zl && hx0 && hx1 && hz0 && hz1){
-                    const auto slope=[scale](int32_t left,int32_t right,
+                    const auto slope=[](int32_t left,int32_t right,
                                              int64_t distanceQ16) {
                         const int64_t diff=(int64_t(left)-right)*1000*scale;
                         return static_cast<int32_t>(std::clamp<int64_t>(
