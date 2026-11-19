@@ -6854,3 +6854,108 @@ Next: add an independent archive-domain owner with one
 round-robin capture and per-domain `updateStreaming`, while
 preserving ordinary shared Renderer3D color/ICB submissions.
 Never send decoded feedback to another domain's streamer.
+
+
+## Stage 10J — multi-archive Terra VT sessions and independent GPU feedback (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`; PR #21.
+**Feature commits:**
+- `ab984fbd34c86bbb7945830b69a6b492c4439dd4` — generic optional
+  `Renderer3D::setVirtualTextureFeedbackScheduler` / clear API in
+  `engine/render/Renderer3D.h`.
+- `9ef13f7f4733e1c2c96c8f7f0df12f57413c83ed` — call scheduler after
+  shadow passes and before main pass; when configured it replaces, rather
+  than duplicates, the old single feedback pass in Renderer3D.cpp.
+- `4933038d5c84039d3de64c4c16b63b2a2be55c3f` — new
+  `engine/render/TerraWeaveVirtualAtlasDomains.h` manager.
+- `6999b17a764584bb2f3afb0e5897f824cfaa835b` — fix
+  portable std::less material pointer ordering, std header includes and
+  exception-safe feedback-domain selector reset.
+- `68b0676d6709529f7b739e5f97ecc923610235ff` and
+  `781e4a70a5eabd4e6136b64625ad9dcd79c79dd3` — repair
+  `engine/render/ModelVirtualTextureSampling.h` MSL injection ABI:
+  its previous `GI_FARGS) {` anchor was stale after
+  `VIRTUAL_ALPHA_MASK` extended the fragment function signature.
+  The injection now matches the stable `GI_FARGS` line and inserts
+  U6 and conditional direct/ICB textures without deleting the
+  R8 alpha mask arguments. The second commit fixes newline escapes.
+- `b9d2903d3145bf722d896f115b9efbb0a3dbf8ed` — add
+  `TerraWeaveVirtualTextureFeedback::initializeForDomains` so multi-domain
+  mode does not require a dummy/legacy target.
+- `0a0e6c3ac74e3f48f265eba4eb108f4a8006cb08` — expose model
+  feedback programs' selected depth attachment mode.
+- `98a643e41a71f409c635e69ad6e56ba4e05c38d5` — reject domain
+  feedback passes whose depth mode is incompatible with shader programs.
+
+**Documentation/AI skill commits:**
+`0fb709294043ac2cdb52271d113a4ebd945b246d`,
+`86f1561040623d7178cf6221eecb380bc2f12b4d`,
+`ca22456dfc1f0e85f7f46b77845db4dbed7f1b34`,
+`ac3f7a3c9408a4d3445a58a1f0ca5cdf844a3020`.
+Files: `docs/texture-rhi.md`,
+`skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Architecture/API:** `render::TerraWeaveVirtualAtlasDomains`
+stores one `TerraWeaveVirtualAtlasSession` and independent
+`gfx::VirtualTextureFeedbackPass` per numeric DomainId. This avoids
+the packed 32-bit feedback codec's lack of a domain field and
+permits different layer counts, tile grids and archive revisions.
+`addDomain(id,Options)`, `prepare(id,version)`,
+`pumpCandidate(id,budget)`, `promote(id,requireFallback)`,
+`beginFrame()`, `registerMaterial(model,material,id,layer)`,
+`registerDraw(ModelDraw,id,layer)`,
+`setLiveDomainLookup(callback)`, `attach(renderer,feedback)`,
+`pumpActive(budget)`, `requestPage(id,key,pin)`,
+`session(id)`, `feedbackPass(id)`,
+`retireCompletedGpuWork(id)`, `detach()`, `shutdown()`.
+
+`attach` installs one Renderer3D pre-main feedback scheduler,
+one sampler resolver for *all active* archive domains, and a
+feedback material filter that selects exactly one domain at a
+time. At most one ready domain pass is captured each scene frame,
+with stable round-robin selection. Other materials write zero
+feedback page IDs but preserve depth occlusion. Independent
+per-domain feedback targets/decoders ensure asynchronous readbacks
+are consumed only through that domain's streamer's
+`VirtualTextureFeedbackPass::updateStreaming`. Main scene samples
+different VT atlases simultaneously through the existing per-model
+ModelVirtualTextureBinding; compatible homogeneous ICB/MDI
+grouping from Stage 10H is preserved. Color and feedback
+material lookups are resolved using actual Model/Material pointers
+or an opt-in live domain lookup for private Horizon region models.
+Frame registrations are explicitly reset, preventing stale pointer
+keys after region unloads and asset reloads.
+
+`promote` prepares an independent feedback pass for the candidate
+archive's tile/mip geometry and uses the existing two-phase
+TerraWeaveVirtualAtlasSession switch. The candidate requires
+fallback residency (by default), the old readback must not be
+pending or unconsumed, and the application must still observe a
+real GPU fence before releasing the retired atlas; no timer-based
+resource retirement is performed. Each domain's feedback depth
+attachment mode must match the one used when model feedback shader
+variants were initialized.
+
+**Important source-compatibility fix:** previous main-model Metal
+VT injection searched for `GI_FARGS) {`, which no longer exists
+after the R8-alpha signature change. The new injection preserves
+the R8 parameter block, inserts VT U6 at Metal buffer(7), and
+switches tex13/14 between direct resources and ICB argument
+buffer. This was source-corrected, not shader-compiler verified.
+
+**Verification actually performed:** GitHub source inspection of
+feedback ID codec, `VirtualTextureFeedbackRuntime` and its
+planner config, `VirtualTextureFeedbackPass`, model shader
+signature, archive streamer, and actual renderer pass ordering;
+all named feature and docs commits accepted by GitHub.
+**Native C++ compilation NOT RUN; CTest NOT RUN; MSL/GLSL/Vulkan
+shader compilation NOT RUN; GPU readback/streaming/VRAM tests
+NOT RUN**, per user's functionality-first instruction.
+
+**Next steps:** complete actual Shader Graph VT support within
+texture-sampler budgets and semantic graph material parity;
+investigate heterogeneous per-command Metal ICB VT material
+tables (current GPU ICB groups must remain homogeneous). After
+features close, run dedicated cross-backend native/GPU tests,
+confirm GPU feedback domains cannot cross-contaminate physical
+page streamer requests, and compare viewport/LOD/alpha results.
