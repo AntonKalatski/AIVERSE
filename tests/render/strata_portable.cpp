@@ -24,7 +24,7 @@ public:
         : info_{backend,true,false,"Portable Strata recorder"}, mdi_(mdi) {}
     gfx::DeviceInfo info_{};
     bool mdi_=false;
-    bool healthy_=true;
+    bool healthy_=true, failNextIndex_=false;
     uint32_t next_=1;
     uint32_t draws=0, allocs=0, releases=0;
     std::map<uint32_t,std::vector<uint8_t>> data_;
@@ -34,6 +34,9 @@ public:
     bool supportsMultiDrawIndirect() const override {return mdi_;}
     bool gpuHealthy() const override {return healthy_;}
     gfx::BufferHandle createBuffer(const gfx::BufferDesc& d) override {
+        if(failNextIndex_ && d.type==gfx::BufferType::Index){
+            failNextIndex_=false;return {};
+        }
         if(!d.size || d.size>32u*1024u*1024u)return {};
         gfx::BufferHandle h{next_++};
         data_[h.id].resize(d.size);
@@ -271,7 +274,64 @@ static void testLegacyClusteredSource(gfx::Backend backend) {
     assert(dev.data_.empty());
 }
 
+static void testStreamedPortable(gfx::Backend backend) {
+    Recorder dev(backend,false);
+    Model source=makeModel();
+    const auto asset=makeAsset();
+    gfx::BufferDesc desc{};
+    desc.type=gfx::BufferType::Vertex;
+    desc.size=source.vertices.size()*sizeof(ModelVertex);
+    desc.data=source.vertices.data();
+    source.vb=dev.createBuffer(desc);
+    desc.type=gfx::BufferType::Index;
+    desc.size=source.indices.size()*sizeof(uint32_t);
+    desc.data=source.indices.data();
+    source.ib=dev.createBuffer(desc);
+    std::string error;
+    PortablePassView fine{mat4::identity(),800,600,true,.01f};
+    PortableSource staged;
+    // Root requires six uint32 indices = 24 bytes. Insufficient budgets
+    // refuse staged Strata, retaining source Legacy geometry unchanged.
+    assert(!staged.stage(dev,source,asset,&error,23));
+    assert(staged.stage(dev,source,asset,&error,48));
+    assert(staged.streamingEnabled());
+    assert(staged.stats().residentIndexBytes==24);
+    const auto rootBuffer=staged.indexBuffer();
+    Model alias;
+    assert(staged.prepareModel(mat4::identity(),{fine},false,alias,&error));
+    assert(alias.meshes[0].primitives.size()==1);
+    assert(alias.meshes[0].primitives[0].indexCount==6);
+    std::vector<IndexDemand> demands;
+    assert(staged.collectResidencyDemands(mat4::identity(),{fine},false,demands));
+    assert(demands.size()==2);
+    // Failure must NOT publish half-loaded children, or destroy root VB/IB.
+    dev.failNextIndex_=true;
+    assert(!staged.updateResidency(demands,&error));
+    assert(staged.indexBuffer()==rootBuffer);
+    assert(staged.prepareModel(mat4::identity(),{fine},false,alias,&error));
+    assert(alias.meshes[0].primitives.size()==1);
+    assert(staged.updateResidency(demands,&error));
+    assert(staged.indexBuffer()!=rootBuffer);
+    assert(staged.stats().residentIndexBytes==48);
+    assert(staged.prepareModel(mat4::identity(),{fine},false,alias,&error));
+    assert(alias.meshes[0].primitives.size()==2);
+    assert(alias.ib==staged.indexBuffer());
+    assert(alias.vb==source.vb);
+    assert(staged.updateResidency({},&error));
+    assert(staged.stats().residentIndexBytes==24);
+    assert(staged.prepareModel(mat4::identity(),{fine},false,alias,&error));
+    assert(alias.meshes[0].primitives.size()==1);
+    assert(dev.data_.size()==3); // source VB+IB and exactly one active sidecar
+    alias=Model{}; // renderer must finish before source/sidecar destruction
+    staged.shutdown(dev);
+    dev.destroyBuffer(source.vb);
+    dev.destroyBuffer(source.ib);
+    assert(dev.data_.empty());
+}
+
 int main(){
+    testStreamedPortable(gfx::Backend::GLES3);
+    testStreamedPortable(gfx::Backend::Vulkan);
     testLegacyClusteredSource(gfx::Backend::GLES3);
     testLegacyClusteredSource(gfx::Backend::Vulkan);
     testBackend(gfx::Backend::GLES3,false);
