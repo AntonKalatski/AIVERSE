@@ -28,6 +28,9 @@ bool GpuPoolWorld::init(gfx::Device* device, PoolWorldBudgets budgets) {
         device_=nullptr;
         return false;
     }
+    checkpointBudget_=budgets_.sharedCheckpointBudget
+        ?budgets_.sharedCheckpointBudget
+        :std::make_shared<CheckpointReadbackBudget>(budgets_.checkpointReadback);
     initialized_=true;
     reason_.clear();
     return true;
@@ -37,6 +40,7 @@ void GpuPoolWorld::shutdown() {
     // Destroy GPU resources before the caller's graphics Device.
     gpuGroups_.clear();
     bindings_.clear();
+    checkpointBudget_.reset();
     cpu_.shutdown();
     device_=nullptr;
     initialized_=frameOpen_=stepped_=drawn_=false;
@@ -55,7 +59,8 @@ std::string GpuPoolWorld::groupKey(const fx::EffectDef& effect,
         "|quality="+std::to_string(unsigned(options.quality))+
         "|vm="+std::to_string(unsigned(options.gpuProgram))+
         "|material="+std::to_string(unsigned(options.gpuMaterial))+
-        "|indirect="+std::to_string(unsigned(options.gpuIndirect));
+        "|indirect="+std::to_string(unsigned(options.gpuIndirect))+
+        "|checkpointCadence="+std::to_string(options.checkpointEveryFrames);
 }
 
 void GpuPoolWorld::recountBindings() {
@@ -113,6 +118,9 @@ bool GpuPoolWorld::defineCompiled(const std::string& name,
     // caller requests a larger emitter allocation or higher quality tier.
     actual.capacity=std::min(options.capacity,budgets_.maxGroupCapacity);
     actual.quality=std::min(options.quality,budgets_.quality);
+    // A pooled Device must use ONE limiter for all its GPU groups, including
+    // groups with different checkpoint cadences.
+    actual.checkpointBudget=checkpointBudget_;
     const GraphGpuEligibility eligible=inspectGraphGpuEligibility(effect,actual);
     const bool wantsGpu=options.preference!=ComputePreference::CpuOnly;
     const bool metalAvailable=device_&&device_->supportsCompute()&&
@@ -317,6 +325,28 @@ bool GpuPoolWorld::resetForRollback() {
     stats_.cpuParticles=stats_.gpuParticlesEstimated=0;
     reason_.clear();
     return true;
+}
+
+PoolCheckpointStats GpuPoolWorld::checkpointStats() const {
+    PoolCheckpointStats result;
+    if(checkpointBudget_)result.budget=checkpointBudget_->stats();
+    for(const auto& group:gpuGroups_) {
+        const GpuCheckpointStatus state=group.particles->checkpointStatus();
+        const ComputeStats& stats=group.particles->stats();
+        result.requests+=stats.checkpointRequests;
+        result.completed+=stats.checkpointCompleted;
+        result.failed+=stats.checkpointFailed;
+        result.budgetDenied+=stats.checkpointBudgetDenied;
+        result.bytesReturned+=stats.checkpointBytesReturned;
+        if(!state.gpuActive)continue;
+        ++result.activeGroups;
+        if(state.pending)++result.pendingGroups;
+        if(!state.complete)++result.missingGroups;
+        else if(state.fresh)++result.freshGroups;
+        else ++result.staleGroups;
+        if(state.restoreEligible)++result.restoreEligibleGroups;
+    }
+    return result;
 }
 
 bool GpuPoolWorld::isGpuEffect(const std::string& name) const {
