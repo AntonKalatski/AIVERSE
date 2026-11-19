@@ -922,6 +922,12 @@ if(AIVERSE_BUILD_TESTS)
     add_test(NAME bake_tests COMMAND aiverse_bake_tests)
 endif()
 
+if(AIVERSE_BUILD_TOOLS)
+    # Offline CPU planner profiler only; does NOT run in CTest and does NOT report GPU timings.
+    add_executable(aiverse_lumaweave_bench tools/lumaweave_bench.cpp)
+    target_include_directories(aiverse_lumaweave_bench PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+endif()
+
 if(AIVERSE_BUILD_EDITOR OR AIVERSE_BUILD_TOOLS)
     # Editor core: project/map documents and the operation registry shared by the editor and aiversemcp.
     add_library(aiverse_editor_core STATIC apps/editor/core/MapDoc.cpp apps/editor/core/MapDocPlanet.cpp apps/editor/core/Workspace.cpp apps/editor/core/Net.cpp apps/editor/core/McpInstall.cpp apps/editor/core/Projects.cpp
