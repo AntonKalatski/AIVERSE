@@ -96,6 +96,7 @@ private:
     static std::string groupKey(const fx::EffectDef& effect,
                                 const GraphRuntimeOptions& options,
                                 uint32_t capacity);
+    void recountBindings();
 
     gfx::Device* device_ = nullptr;
     BatchWorld cpu_;
