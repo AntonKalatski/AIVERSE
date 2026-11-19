@@ -83,6 +83,22 @@ public:
         ImGui::TextDisabled("Без dedicated-геометрии, размеров GPU текстур, render targets и FX.");
         ImGui::TextDisabled("Выгрузка моделей редактора: %s (период ожидания 15 с)",
                             ed.lazyEditorAssetsEnabled() ? "по требованию" : "отключена");
+        ui::section(ICON_REGIONS, "PRISMA · GPU resource retirement");
+        const auto post = ed.prisma().retirementStats();
+        const auto motion = ed.renderer().motionRetirementStats();
+        ImGui::Text("GPU completed fence: %llu  ·  сцены: %zu активных + %zu ожидают",
+                    (unsigned long long)post.lastGpuCompletedFence,
+                    post.activeSizes, post.retiredSizes);
+        ImGui::Text("Auto Exposure: %zu камер  ·  Motion history: %zu камер  ·  Model velocity: %zu видов",
+                    post.exposureViews, post.motionViews, motion.liveViews);
+        ImGui::Text("PRISMA: %zu fenced + %zu unfenced textures, graph pending %zu",
+                    post.fencedTextures, post.unfencedTextures,
+                    post.graphRetiredTextures);
+        ImGui::Text("Renderer motion: %zu fenced + %zu unfenced textures",
+                    motion.fencedTextures, motion.unfencedTextures);
+        ImGui::Text("Удерживается GPU (известный минимум): %.2f MiB",
+                    double(post.knownPendingBytes + motion.knownPendingBytes) / mib);
+        ImGui::TextDisabled("Это только ожидающие освобождения ресурсы; внутренние RenderGraph allocations могут добавить память.");
         if (ed.lazyEditorAssetsEnabled() && ImGui::Button("Освободить неиспользуемые модели"))
             ed.reclaimEditorAssets(true);
         ui::section(ICON_REGIONS, "Карта");
