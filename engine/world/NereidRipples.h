@@ -49,9 +49,9 @@ public:
             if(waterId==0 || waterId!=r.waterId+1)continue;
             const double dx=r.x-targetX,dz=r.z-targetZ;
             const double d2=dx*dx+dz*dz;
-            const float radius=r.initialRadius+r.speed*r.age;
-            const double reach=double(radius+8.f);
-            if(d2>reach*reach)continue;
+            // Do not clip by distance from the mesh origin: a polygon or
+            // a wide lake can span kilometres. The fragment shader gates
+            // each ring spatially against the actual pixel position.
             candidates.push_back({d2,i});
         }
         std::sort(candidates.begin(),candidates.end(),[](auto a,auto b) {
