@@ -177,6 +177,12 @@ void Editor::init(gfx::Device& dev) {
             event.resource=render::RetirementResourceKind::Image;
             gpuTrace(event);
         });
+    if(offscreenTargets_)
+        offscreenTargets_->setRetirementDiagnosticObserver(
+            [gpuTrace](render::RetirementDiagnosticEvent event) {
+                event.resource=render::RetirementResourceKind::Target;
+                gpuTrace(event);
+            });
     for (auto& w : view_.warnings()) ws_.log("view", w, true);
     fxTextures_.init(dev);
     gameFx_.setQuality(fx::defaultQualityFor(dev, false));
