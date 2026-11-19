@@ -23,6 +23,24 @@ struct alignas(16) GpuSceneInstance {
 static_assert(sizeof(GpuSceneInstance) == 80);
 static_assert(alignof(GpuSceneInstance) == 16);
 
+// The CPU oracle uses (pass viewProjection * this instance transform).
+// Do not pass a precombined objectToClip matrix to the GPU dispatch.
+GpuSceneInstance makeGpuSceneInstance(const mat4& objectToWorld,
+                                     uint32_t primitiveIndex,
+                                     uint32_t instanceToken,
+                                     bool enabled = true);
+
+struct GpuPassConfig {
+    mat4 viewProjection{};
+    int width = 0, height = 0;
+    bool clipDepthZeroToOne = true;
+    bool frustumCull = true;
+    float errorThresholdPixels = 1.f;
+    uint32_t maxOutputClusters = 65536;
+};
+ViewConfig cpuReferenceView(const GpuPassConfig& pass,
+                            const GpuSceneInstance& instance);
+
 // Output is in arbitrary GPU atomic order. Each range is an absolute pooled
 // index span (metadata v2 primitive base + node local firstIndex) and never
 // carries material/transform state sufficient to call drawIndexed by itself.
@@ -83,7 +101,7 @@ public:
 
     bool dispatch(gfx::Device& dev, gfx::BufferHandle gpuMetadataV2,
                   const std::vector<GpuSceneInstance>& instances,
-                  const ViewConfig& config, uint64_t frameSerial,
+                  const GpuPassConfig& config, uint64_t frameSerial,
                   GpuSelectionSubmission& out);
     void shutdown(gfx::Device& dev);
 private:
