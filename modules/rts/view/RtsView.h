@@ -300,6 +300,9 @@ public:
     uint64_t paintGpuRetirementEnqueueFailures() const noexcept {
         return paintLayers_.gpuRetirementEnqueueFailures();
     }
+    render::RenderTexture::SubmissionStats paintGpuCanvasSubmitStats() const noexcept {
+        return paintLayers_.canvasSubmitStats();
+    }
     void setImageRetirementDiagnosticObserver(
             render::ModelImageRollbackPool::DiagnosticObserver observer) {
         imageRollback_.setRetirementDiagnosticObserver(std::move(observer));
