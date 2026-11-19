@@ -2015,6 +2015,11 @@ if(AIVERSE_BUILD_STRATA)
     add_library(aiverse_strata_model_adapter STATIC engine/render/StrataModelAdapter.cpp)
     target_link_libraries(aiverse_strata_model_adapter PUBLIC aiverse_strata_builder aiverse_models)
     target_include_directories(aiverse_strata_model_adapter PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    # Per-pass CPU reference selection, using existing Geometry.cpp projection.
+    # Output is non-submitting source-local index ranges, not GPU commands.
+    add_library(aiverse_strata_view STATIC engine/render/StrataView.cpp)
+    target_link_libraries(aiverse_strata_view PUBLIC aiverse_strata_model_adapter aiverse_models)
+    target_include_directories(aiverse_strata_view PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
     # GeometryScene is still the only instance owner. This option exposes
     # opt-in CPU staging at scene load, not a second draw submission path.
     target_link_libraries(aiverse_runtime PUBLIC aiverse_strata_model_adapter)
@@ -2027,6 +2032,9 @@ if(AIVERSE_BUILD_STRATA)
         target_link_libraries(aiverse_strata_model_adapter_tests PRIVATE
             aiverse_strata_model_adapter aiverse_zstd_dec)
         add_test(NAME strata_model_adapter COMMAND aiverse_strata_model_adapter_tests)
+        add_executable(aiverse_strata_view_tests tests/render/strata_view.cpp)
+        target_link_libraries(aiverse_strata_view_tests PRIVATE aiverse_strata_view aiverse_zstd_dec)
+        add_test(NAME strata_view COMMAND aiverse_strata_view_tests)
     endif()
 endif()
 if(AIVERSE_RUNTIME_AUTOLOD)
