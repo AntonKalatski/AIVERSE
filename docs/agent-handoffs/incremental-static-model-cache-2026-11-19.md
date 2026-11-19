@@ -2233,3 +2233,59 @@ echo "stress-1k exit=$?"
 ```
 
 Require `changed_channels=0`, both phases' samples and learned AUTO buckets, and exit 0. If green, repeat with 10000. Run 100000 last and watch system memory/thermal pressure; stop if unreasonable. For separate GPU ICB assessment, enable its explicit opt-in Metal environment switches and note opaque pass may mix with CPU MDI on other passes. Tests and real-scene GPU timing remain necessary. The next agent should add per-pass post-culling visible-item counters, repeated randomized A/B/A scheduling, GPU timestamp support if available, and scenario material/LOD variations, documenting each stage.
+
+
+---
+
+## Stage 71 — correct AUTO stress geometry and no-submission training starvation (2026-11-19)
+
+**Repository / branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. **Fix commits:** `3607ce098db5166a61bf457a89c7c79d1cedf0c4` (stress fixture), `410305d19ce5df44914a2a68c649afd4c72e5b13` (learning policy), `c5ac34894723053b75b4ec6756292db10625023c` (renderer feedback), `3b2aa0175c0f71e6c6f528194dfb298971ea0322` (regression checks). **Verification in this stage:** GitHub source inspection + successful GitHub file updates only; Mac CMake, Metal test, screenshots and long-run performance **NOT RUN**.
+
+### User-provided Stage 70 Mac Studio evidence
+
+```text
+[100%] Built target aiverse_material_batches
+material palette CPU checks=33 result=passed
+stress requested_items=1024 submitted_model_draws=64 source_primitives_per_draw=16
+batch=0 shadow=16 opaque=16 total=34 error=
+CPU render benchmark direct: samples=66 median_ms=0.7576 p95_ms=1.5035 min_ms=0.3019 max_ms=1.6019
+CPU render benchmark batched: samples=81 median_ms=1.1078 p95_ms=1.5789 min_ms=0.6720 max_ms=1.7274
+AUTO CPU learning phase=0 bucket=2 direct=8 0.51875ms mdi=0 0.00000ms opportunities=106
+AUTO CPU learning phase=1 bucket=2 direct=8 0.50687ms mdi=0 0.00000ms opportunities=106
+batch=1 shadow=16 opaque=16 total=34 error=
+stress phase=auto model_draw_calls=32 cpu_mdi_submissions=0 cpu_mdi_commands=0 gpu_icb_submissions=0 gpu_icb_commands=0
+changed_channels=0
+[metal-assets] libraries=0 sourceMisses=11 pipelines=15 pipelineFailures=0 archive=0 strict=0
+AUTO stress exit=0
+```
+
+**Interpretation:** Screenshot parity and fixture exit PASS, but this experiment does **not** establish 1024 independently drawable primitive runs or successful MDI learning. The fixture submitted 64 ModelDraw instances of the **same sixteen primitives**, which the existing instancing path collapsed to 16 shadow and 16 opaque model draws. AUTO recorded no successful MDI submissions and was stuck without MDI measurements. CPU render() medians differ +0.3502 ms (+46.22%) between sequential runs, but these are Direct/instancing vs Direct/instancing, not a controlled Direct vs MDI comparison. No GPU timing measured.
+
+### Corrective implementation
+
+1. `tests/render/material_batches.cpp`: the `auto_stress` fixture now creates `AIVERSE_BATCH_STRESS_ITEMS` **distinct mesh primitives and nodes** in one uploaded rigid Model. It submits exactly one ModelDraw per frame, so ordinary instancing cannot reduce unique primitive runs into 16 identity groups. Deterministic compact transforms keep the source around the camera target; actual visibility remains dependent on frustum, shadows and renderer. The original 16-primitive `indirect` and other fixture scenarios remain unchanged. Output now says `authored_unique_primitives` and `submitted_model_draws=1`, not the misleading previous inferred item count. No repeated per-frame material-batch vector overwrite in stress mode.
+2. `engine/render/AutoCpuBatchPolicy.h`: per-pass/bucket `mdiNoSubmission` feedback increments on CPU MDI probes that did not produce a real indirect submission. After 3 no-submission attempts, default to Direct/instancing and retry MDI every 32 opportunities. The first subsequent successful MDI observation resets failure count. This prevents wasting CPU on permanently impossible MDI training; it does not falsify a throughput sample or claim an indirect success.
+3. `engine/render/Renderer3DModels.cpp`: records no-submission misses whenever AUTO requested MDI but the backend produced zero actual MDI submissions. Valid MDI measurements and Direct measurements continue to update the existing EWMA separately.
+4. `tests/render/material_batches.cpp`: two additional policy checks for no-submission Direct fallback and periodic re-probe, increasing expected CPU invariant count from 33 to **35**.
+
+### Limitations / next test
+
+**Unverified:** CMake compilation of the new stress model path, Metal parity, measured visible item count (as opposed to authored), actual CPU MDI training, memory usage at 100k, macOS GPU duration, full CTest and Vulkan parity. 100k distinct CPU-side primitives may create substantial import, buffer upload and per-frame work. Do **not** start with 100k.
+
+```sh
+cd /Users/aleksandrfeer/Projects/AIVERSE || exit 1
+git fetch origin
+git switch perf/incremental-static-model-cache
+git pull --ff-only origin perf/incremental-static-model-cache
+cmake --build build/batching-gpu-verify --target aiverse_material_batches --parallel 8 || exit 1
+mkdir -p build/batching-gpu-verify/captures
+AIVERSE_PALETTE_TEST_CASE=auto_stress \
+AIVERSE_BATCH_STRESS_ITEMS=1024 \
+AIVERSE_BATCH_AUTO=1 \
+AIVERSE_BATCH_CPU_TIMING=1 \
+build/batching-gpu-verify/aiverse_material_batches \
+ unused.obj build/batching-gpu-verify/captures/auto-stress-unique-1k
+echo "AUTO unique-stress exit=$?"
+```
+
+Require `material palette CPU checks=35 result=passed`, renderer errors empty, `changed_channels=0`, exit 0, and inspect `AUTO CPU learning` for each pass including Direct vs real MDI successful samples or miss fallback. Do not assert that all 1024 authored items were visible until visibility telemetry is added; draw calls can differ substantially due to culling and real batching. If 1k validated, scale cautiously to 10k; 100k requires GPU-memory observation and should be the last stage. Keep experimental flags OFF and PR Draft until a long-run cross-device acceptance gate completes.
