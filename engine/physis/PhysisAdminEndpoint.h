@@ -5,6 +5,7 @@
 #pragma once
 #include "PhysisAdminAuth.h"
 #include "PhysisRemoteJournal.h"
+#include "PhysisJournalProcessLock.h"
 #include "engine/net/WebSocket.h"
 #include <algorithm>
 #include <cstdint>
@@ -34,9 +35,14 @@ public:
             if(error)*error="PHYSIS admin requires credential lookup and ACL";
             return false;
         }
+        if(!journalLock_.acquire(journal_.path(),error))return false;
         gateway_.setReservedCommandType(reservedFieldCommandType);
-        if(!journal_.attach(gateway_,error))return false;
+        if(!journal_.attach(gateway_,error)) {
+            journalLock_.release();
+            return false;
+        }
         if(!listener_.open(port,true)) {
+            journalLock_.release();
             if(error)*error="PHYSIS loopback admin WebSocket listener failed";
             return false;
         }
@@ -98,6 +104,7 @@ private:
     };
     net::WsListener listener_;
     FileJournal journal_;
+    JournalProcessLock journalLock_;
     ServerGateway gateway_;
     KeyLookup keys_;
     ReadAcl read_;
