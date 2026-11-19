@@ -546,6 +546,10 @@ bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
         }
     }
 
+    // A successful appearance may use the proposed future indices, but
+    // no new Image is exposed in any live Model before commit().
+    render::ModelImageUploadTransaction imageTransaction(
+        *dev_,imageRollback_,gpuDeviceLease_);
     std::map<size_t,TypeLook> staged;
     std::set<size_t> preserveAnimation;
     // Local registry is published only into the replacement TypeLooks after
@@ -553,11 +557,20 @@ bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
     view::AppearanceAssetRegistry preparedSnapshots;
     struct StrictReloadScope final {
         bool& enabled;
-        explicit StrictReloadScope(bool& value):enabled(value){enabled=true;}
-        ~StrictReloadScope(){enabled=false;}
+        render::ModelImageUploadTransaction*& active;
+        StrictReloadScope(bool& flag,render::ModelImageUploadTransaction*& target,
+                          render::ModelImageUploadTransaction& transaction)
+            :enabled(flag),active(target) {
+            if(enabled || active)
+                throw std::logic_error("nested RTS appearance transaction");
+            enabled=true;
+            active=&transaction;
+        }
+        ~StrictReloadScope(){active=nullptr;enabled=false;}
     };
     try {
-        StrictReloadScope strict(strictAppearanceReload_);
+        StrictReloadScope strict(strictAppearanceReload_,activeImageTransaction_,
+                                 imageTransaction);
         for(const size_t index:types) {
             if(index>=loadedTypes_.size() || !loadedTypes_[index])continue;
             const auto& authored=rules_->types[index];
@@ -667,6 +680,16 @@ bool RtsView::reloadAppearanceTypes(const std::set<size_t>& types,
         return false;
     }
     if(staged.empty())return true;
+    try {
+        // Reserve capacity for ALL affected Model vectors before publishing
+        // the first Image. Failure preserves Model image counts and TypeLooks;
+        // the transaction destructor queues staged GPU handles for retirement.
+        imageTransaction.commit();
+    }catch(const std::exception& e) {
+        materialLib_=std::move(previousLibrary);
+        warnings_.push_back(std::string("appearance image commit: ")+e.what());
+        return false;
+    }
     std::set<size_t> affected;
     for(const auto& [index,look]:staged)
         if(!preserveAnimation.contains(index))
@@ -874,13 +897,26 @@ bool RtsView::loadChoice(gfx::Device& dev, const UnitType& t, const Json& view, 
 }
 
 int RtsView::loadTexture(gfx::Device& dev, const UnitType& t, Model& m, const std::string& path) {
-    for (size_t i = 0; i < m.images.size(); ++i) if (m.images[i].name == path) return int(i);
+    for (size_t i = 0; i < m.images.size(); ++i)
+        if (m.images[i].name == path)return int(i);
     std::string bytes;
     Image img;
-    img.name = path;
-    if (!read_(path, bytes)) { warn(t, "texture '" + path + "' not found"); return -1; }
-    if (!decodeImage(bytes, img)) { warn(t, "texture '" + path + "': unsupported format (PNG, JPEG, TGA)"); return -1; }
-    return addImage(dev, m, std::move(img));
+    img.name=path;
+    if(!read_ || !read_(path,bytes)) {
+        if(activeImageTransaction_)
+            throw std::runtime_error("appearance texture not found: "+path);
+        warn(t,"texture '"+path+"' not found");
+        return -1;
+    }
+    if(!decodeImage(bytes,img)) {
+        if(activeImageTransaction_)
+            throw std::runtime_error("appearance texture unsupported: "+path);
+        warn(t,"texture '"+path+"': unsupported format (PNG, JPEG, TGA)");
+        return -1;
+    }
+    if(activeImageTransaction_)
+        return activeImageTransaction_->stage(m,std::move(img));
+    return addImage(dev,m,std::move(img));
 }
 
 void RtsView::configureChoice(gfx::Device& dev, const UnitType& t, const Json& v, ModelChoice& c, bool isShape) {
