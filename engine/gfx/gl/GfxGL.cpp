@@ -565,8 +565,30 @@ public:
         // GLES3/WebGL2 expose UNPACK_ALIGNMENT as shared context state.
         // Preserve it so this streaming upload cannot corrupt later texture
         // uploads performed by unrelated render/material systems.
+        // The active texture unit is caller-owned. Preserve its binding,
+        // as well as PBO state: with GL_PIXEL_UNPACK_BUFFER bound, the source
+        // argument of glTexSubImage* is an OFFSET, not a CPU pointer.
+        constexpr GLenum kUnpackBuffer = 0x88EC;
+        constexpr GLenum kUnpackBufferBinding = 0x88EF;
+        constexpr GLenum kTextureBinding2D = 0x8069;
+        constexpr GLenum kTextureBinding3D = 0x806A;
+        constexpr GLenum kTextureBindingCube = 0x8514;
+        constexpr GLenum kTextureBindingArray = 0x8C1D;
+        const GLenum bindingQuery =
+            t->target == GL_TEXTURE_2D ? kTextureBinding2D :
+            t->target == GL_TEXTURE_3D ? kTextureBinding3D :
+            t->target == GL_TEXTURE_CUBE_MAP ? kTextureBindingCube :
+            kTextureBindingArray;
+        GLint previousBinding = 0, previousUnpackBuffer = 0;
         GLint previousUnpackAlignment = 4;
+        glGetIntegerv(bindingQuery, &previousBinding);
+        glGetIntegerv(kUnpackBufferBinding, &previousUnpackBuffer);
         glGetIntegerv(GL_UNPACK_ALIGNMENT, &previousUnpackAlignment);
+        if (glGetError() != GL_NO_ERROR) {
+            error_ = "GL texture region: unable to inspect upload state";
+            return false;
+        }
+        glBindBuffer(kUnpackBuffer, 0);
         glBindTexture(t->target, t->id);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
         const auto* src = static_cast<const uint8_t*>(u.data);
@@ -588,12 +610,17 @@ public:
         if (t->mips && u.mipLevel == 0) glGenerateMipmap(t->target);
         const GLenum uploadError = glGetError();
         glPixelStorei(GL_UNPACK_ALIGNMENT, previousUnpackAlignment);
-        if (uploadError != GL_NO_ERROR) {
-            error_ = "GL texture region upload failed (GL error " +
-                     std::to_string(static_cast<unsigned>(uploadError)) + ")";
+        glBindTexture(t->target, static_cast<GLuint>(previousBinding));
+        glBindBuffer(kUnpackBuffer, static_cast<GLuint>(previousUnpackBuffer));
+        const GLenum restoreError = glGetError();
+        if (uploadError != GL_NO_ERROR || restoreError != GL_NO_ERROR) {
+            const GLenum fault = uploadError != GL_NO_ERROR ? uploadError : restoreError;
+            error_ = "GL texture region upload or state restore failed (GL error " +
+                     std::to_string(static_cast<unsigned>(fault)) + ")";
             return false;
         }
-        return glGetError() == GL_NO_ERROR;
+        error_.clear();
+        return true;
     }
     TextureViewHandle createTextureView(TextureHandle h, const TextureViewDesc& v) override {
         // Explicitly support only identity views on the GL33/GLES3 portability path.
