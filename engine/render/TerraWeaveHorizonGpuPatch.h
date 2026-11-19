@@ -77,7 +77,25 @@ inline bool horizonCanReuseHorizonLayout(const HorizonBake& oldBake,
 // vertex heights, normals and colours change.
 inline bool horizonCanReuseModelGeometry(const HorizonBake& oldBake,
                                          const HorizonBake& nextBake) {
-    if(!horizonCanReuseHorizonLayout(oldBake,nextBake))return false;
+    if(!horizonCanReuseHorizonLayout(oldBake,nextBake) ||
+       oldBake.maxNearWeldSlopePermille!=nextBake.maxNearWeldSlopePermille ||
+       oldBake.nearSeamNormalBlendPercent!=nextBake.nearSeamNormalBlendPercent ||
+       oldBake.nearWeldSlopeFallback!=nextBake.nearWeldSlopeFallback ||
+       oldBake.nearSeamSamples.size()!=nextBake.nearSeamSamples.size())
+        return false;
+    // Strict atlas-only uploads must reject ANY change to a height-weld
+    // sample or its authored normal. Otherwise the resident vertex data
+    // could silently keep stale Y/normals despite an updated CPU bake.
+    for(size_t i=0;i<oldBake.nearSeamSamples.size();++i) {
+        const auto& a=oldBake.nearSeamSamples[i];
+        const auto& b=nextBake.nearSeamSamples[i];
+        if(a.xQ16cm!=b.xQ16cm||a.zQ16cm!=b.zQ16cm||
+           a.nearHeightCm!=b.nearHeightCm ||
+           a.nearSlopeXPermille!=b.nearSlopeXPermille ||
+           a.nearSlopeZPermille!=b.nearSlopeZPermille ||
+           a.nearNormalValid!=b.nearNormalValid)
+            return false;
+    }
     for(size_t i=0;i<oldBake.terrainVertices.size();++i) {
         const auto& a=oldBake.terrainVertices[i];
         const auto& b=nextBake.terrainVertices[i];
