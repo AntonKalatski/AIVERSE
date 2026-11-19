@@ -478,13 +478,20 @@ void Prisma::applyCameraVolumes(const PrismaVolumeStack& stack, float3 eye, uint
 void Prisma::clearCameraVolumes() { settings_ = baseSettings_; }
 
 bool Prisma::wantsObjectMotionVectors() const {
-    const auto* effect = settings_.find(PrismaType::MotionBlur);
-    const char* env = std::getenv("AIVERSE_PRISMA_MOTION_BLUR");
-    return enabled_ && settings_.enabled && hdrFrame_ &&
-        env && std::strcmp(env, "1") == 0 &&
-        effect && effect->enabled &&
-        int(quality_) >= int(effect->minQuality) &&
-        effect->get("intensity") > 0 && effect->get("maxPixels") > 0;
+    if (!enabled_ || !settings_.enabled || !hdrFrame_) return false;
+    const auto activeEffect = [this](PrismaType type, const char* flag) {
+        const PrismaEffect* effect = settings_.find(type);
+        const char* env = std::getenv(flag);
+        return effect && effect->enabled &&
+            int(quality_) >= int(effect->minQuality) &&
+            env && std::strcmp(env, "1") == 0;
+    };
+    const bool blur = activeEffect(PrismaType::MotionBlur, "AIVERSE_PRISMA_MOTION_BLUR") &&
+        settings_.find(PrismaType::MotionBlur)->get("intensity") > 0 &&
+        settings_.find(PrismaType::MotionBlur)->get("maxPixels") > 0;
+    const bool temporal = activeEffect(PrismaType::TemporalResolve, "AIVERSE_PRISMA_TEMPORAL") &&
+        settings_.find(PrismaType::TemporalResolve)->get("historyWeight") > 0;
+    return blur || temporal;
 }
 uint64_t Prisma::objectMotionEpoch(uint64_t id) const {
     const auto it = motionViews_.find(id);
@@ -493,16 +500,9 @@ uint64_t Prisma::objectMotionEpoch(uint64_t id) const {
 
 bool Prisma::objectMotionContext(uint64_t& id, mat4& previous) const {
     id = viewId_;
-    const auto* effect = settings_.find(PrismaType::MotionBlur);
-    const char* env = std::getenv("AIVERSE_PRISMA_MOTION_BLUR");
-    if (!env || std::strcmp(env, "1") != 0 || !enabled_ ||
-        !settings_.enabled || !hdrFrame_ || !effect || !effect->enabled ||
-        int(quality_) < int(effect->minQuality) ||
-        effect->get("intensity") <= 0.0f || effect->get("maxPixels") <= 0.0f)
-        return false;
+    if (!wantsObjectMotionVectors()) return false;
     const auto found = motionViews_.find(viewId_);
-    if (found == motionViews_.end() || !found->second.valid)
-        return false;
+    if (found == motionViews_.end() || !found->second.valid) return false;
     previous = found->second.previousViewProj;
     return true;
 }
