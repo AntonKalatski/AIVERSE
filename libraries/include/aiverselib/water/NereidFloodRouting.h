@@ -94,7 +94,8 @@ inline void io(Archive& a,WaterFloodCell& c){
 inline void io(Archive& a,WaterFloodResource& r){
     a(r.version,r.gridCm,r.originXcm,r.originZcm,
       r.revision,r.groundRevision,r.lastTick);
-    uint32_t n=a.count(r.cells.size(),33);
+    // Each cell is exactly 32 persisted bytes (6 int32 fields + Entity).
+    uint32_t n=a.count(r.cells.size(),32);
     if(!a.ok() || n>16384u){a.fail();return;}
     if(!a.writing())r.cells.assign(n,{});
     for(auto& c:r.cells)if(a.ok())a(c);
