@@ -151,7 +151,6 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
     // external VT domains, so both paths remain on source textures.
     ModelVirtualTextureBinding vtBinding;
     const bool vtSampling = giPhase && !graph && !materialPalette &&
-        !gpuInstances &&
         resolveModelVirtualTexture(*it.model,*it.mat,vtBinding);
     const uint32_t shaderKey = (vtSampling ? kKeyModelVirtualTexture : 0u) |
         (alphaR8 ? kKeyModelVirtualAlpha : 0u) |
@@ -190,6 +189,7 @@ gfx::PipelineHandle Renderer3D::modelPipeline(const ModelItem& it, int phase, bo
         if (normalMap) defs += "#define NORMALMAP 1\n";
         if (mask) defs += "#define ALPHAMASK 1\n";
         if (alphaR8) defs += "#define VIRTUAL_ALPHA_MASK 1\n";
+        if (vtSampling) defs += "#define AIVERSE_MODEL_VT 1\n";
         if (materialPalette) defs += "#define MATERIAL_PALETTE 1\n";
         if (instancePalette) defs += "#define MATERIAL_INSTANCE_PALETTE 1\n";
         if (lodFade) defs += "#define LODFADE 1\n";
@@ -691,9 +691,10 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     const ModelItem& it = modelItems_[items[0]];
     // Renderer material batching groups GPU-equivalent source materials,
     // but an external VT resolver can assign different physical atlases.
-    // Split heterogeneous VT bindings before choosing a shader, so no
-    // instanced draw accidentally uses another model's page table.
-    if (submit && count > 1 && (phase == 1 || phase == 2) &&
+    // Validate each batch that shares GPU parent texture bindings.
+    // Direct batches may split; GPU-encoded parent draws must reject
+    // heterogeneity BEFORE submitting anything to the ICB.
+    if (count > 1 && (phase == 1 || phase == 2) &&
         modelVirtualTextureResolver_) {
         ModelVirtualTextureBinding first;
         const bool firstUsesVt = resolveModelVirtualTexture(
@@ -703,8 +704,9 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
             ModelVirtualTextureBinding candidate;
             const bool usesVt = resolveModelVirtualTexture(
                 *next.model,*next.mat,candidate);
-            if (firstUsesVt != usesVt ||
-                (firstUsesVt && !(first == candidate))) {
+            if (!compatibleModelVirtualTextureBinding(
+                    firstUsesVt, first, usesVt, candidate)) {
+                if (!submit) return false;
                 bool ok = true;
                 for (uint32_t k = 0; k < count; ++k)
                     ok = drawModelBatch(items+k,1,phase,true,false,false)
@@ -810,7 +812,7 @@ bool Renderer3D::drawModelBatch(const uint32_t* items, uint32_t count,
     // the scene may switch a Horizon archive generation between frames.
     // Shader variants use two spare built-in fragment slots (13/14) and
     // one U6 vec4. The original tex1 remains bound as fallback.
-    if ((phase == 1 || phase == 2) && !gpuInstances &&
+    if ((phase == 1 || phase == 2) &&
         !instancePalette && !it.paletteMaterials && !(mt.shaderGraph &&
         int(matQuality_) >= mt.shaderGraph->minQuality)) {
         ModelVirtualTextureBinding vt;
@@ -919,14 +921,23 @@ static size_t indirectCommandThreshold() {
 bool Renderer3D::drawModelIndirectBatch(const uint32_t* items, uint32_t count, int phase,
                                         bool instancePalette) {
     if (count < 2 || !dev_->supportsMultiDrawIndirect()) return false;
-    // Each indirect command shares one material/VT binding. Until the
-    // GPU command ABI includes virtual atlas identity, fall back to the
-    // regular draw path for groups containing virtualized models.
+    // One Metal/CPU indirect command group inherits one fragment material
+    // state. Permit VT only when ALL commands use the exact same pair of
+    // atlas/page-table handles, layer and gutter. Never virtualize the
+    // per-instance material palette: its command layout lacks VT identity.
     if (phase == 1 && modelVirtualTextureResolver_) {
-        for (uint32_t n = 0; n < count; ++n) {
+        ModelVirtualTextureBinding first;
+        const auto& firstItem = modelItems_[items[0]];
+        const bool firstVt = resolveModelVirtualTexture(
+            *firstItem.model,*firstItem.mat,first);
+        if (firstVt && instancePalette) return false;
+        for (uint32_t n = 1; n < count; ++n) {
             const auto& candidate = modelItems_[items[n]];
-            ModelVirtualTextureBinding vt;
-            if (resolveModelVirtualTexture(*candidate.model,*candidate.mat,vt))
+            ModelVirtualTextureBinding binding;
+            const bool vt = resolveModelVirtualTexture(
+                *candidate.model,*candidate.mat,binding);
+            if (!compatibleModelVirtualTextureBinding(
+                    firstVt,first,vt,binding))
                 return false;
         }
     }
