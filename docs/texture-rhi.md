@@ -1669,3 +1669,31 @@ The header establishes a bounded identity and validation contract
 before extending GPU-side per-command resource indices and the MSL
 material shader ABI. No native builds, CTest, GPU compilations or
 device tests have been run for this new header.
+
+
+## GPU material resource ticket validation at ICB submission — Stage 10W
+
+The experimental `Renderer3D` Metal ICB workflow now uses the existing
+`GpuMaterialResourceTable` as a **CPU safety gate** for its *homogeneous*
+command groups. `prepareGpuModelDraws` starts a new staging generation
+for every scene-frame preparation (including ICB-disabled paths).
+After GPU command encoding, a group interns its exact captured
+`ModelVirtualTextureBinding` and optional R8 alpha coverage and retains
+the generation-qualified ticket. Invalid/capacity-exhausted entries
+are rejected: prepared ICB commands are never submitted and the regular
+draw path remains eligible.
+
+Immediately before executing a prepared group, `renderModels`
+resolves the current VT archive resources and alpha coverage for **every**
+model and calls `GpuMaterialResourceTable::matches` in addition to the
+pre-existing strict group compatibility checks. Any archive swap, page
+table change, wrap mode change, alpha-mask change, stale ticket or
+new staging generation rejects GPU submission, preserving CPU fallback.
+`shutdownModels` invalidates tickets before model GPU handles retire.
+The table does not own textures or alter GPU command shader layouts.
+
+**No heterogeneous Metal ICB is enabled yet.** Different materials still
+require compatible parent fragment state; real per-command texture/VT
+resource indexing requires a new Metal shader and argument-buffer ABI.
+This stage makes lifecycle and identity verification explicit before
+that extension. **C++ compilation/CTest/GPU tests NOT RUN.**
