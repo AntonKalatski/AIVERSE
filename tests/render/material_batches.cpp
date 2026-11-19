@@ -89,6 +89,15 @@ static bool unitChecks() {
     Model lod;lod.vertices.resize(3);lod.indices=indices;lod.materials.resize(3);lod.meshes={mesh,mesh};
     lod.meshes[0].lods.push_back({1,20});
     ok&=check(prepareMaterialBatches(lod)==6 && lod.meshes[0].materialBatches.size()==1 && lod.meshes[1].materialBatches.size()==1);
+    // AUTO CPU scheduler learns independently by pass and size bucket.
+    AutoCpuBatchPolicy autoPolicy;
+    ok &= check(!autoPolicy.useMdi(0, 32));
+    for (int i = 0; i < 10; ++i) {
+        autoPolicy.observe(0, 80, false, 0.10);
+        autoPolicy.observe(0, 80, true, 0.20);
+    }
+    ok &= check(!autoPolicy.useMdi(0, 80)); // direct cheaper
+    ok &= check(!autoPolicy.useMdi(1, 80)); // independent untrained phase
     std::printf("material palette CPU checks=%d result=%s\n",checks,ok?"passed":"FAILED");
     return ok;
 }
@@ -318,6 +327,21 @@ int aiverseMain(int argc, char** argv) {
                    benchmarkMode == "gpu_icb" ? "gpu_icb_mixed" :
                    "batched", cpuRenderAfter);
             std::printf("CPU render benchmark: synchronous renderer.render() only; not GPU time or FPS\n");
+            if (std::getenv("AIVERSE_BATCH_AUTO") &&
+                std::string(std::getenv("AIVERSE_BATCH_AUTO")) == "1") {
+                const auto& learned = renderer.autoCpuBatchStats();
+                for (size_t phase = 0; phase < 2; ++phase) {
+                    for (size_t bucket = 0; bucket < 3; ++bucket) {
+                        const auto& lane = learned.lanes[phase][bucket];
+                        if (!lane.opportunities) continue;
+                        std::printf("AUTO CPU learning phase=%zu bucket=%zu direct=%u %.5fms "
+                                    "mdi=%u %.5fms opportunities=%u\n",
+                            phase, bucket, lane.directSamples, lane.directMs,
+                            lane.mdiSamples, lane.mdiMs, lane.opportunities);
+                    }
+                }
+            }
+
         }
         if(frame==8||frame==23){
             const auto& p=renderer.profile();
