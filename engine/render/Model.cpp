@@ -603,6 +603,20 @@ int addImage(gfx::Device& dev, Model& m, Image img) {
     return int(m.images.size() - 1);
 }
 
+void appendModelOwnedGpuMemory(const Model& m,
+                               GpuOwnedMemoryCounter& counter) {
+    // Shared pooled geometry is owned and counted by GlobalGeometryPool.
+    if (!m.geometryPoolPage) {
+        counter.buffer(m.vb);
+        counter.buffer(m.ib);
+    }
+    for (const auto& image : m.images)
+        if (!image.borrowedTexture && !image.textureCache)
+            counter.texture(image.tex);
+    counter.texture(m.morphTex);
+    counter.texture(m.baked.tex);
+}
+
 void releaseModel(gfx::Device& dev, Model& m) {
     if (m.geometryPoolPage) releaseModelGeometryPool(dev, m);
     else {
