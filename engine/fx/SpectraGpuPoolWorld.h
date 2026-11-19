@@ -36,11 +36,23 @@ struct PoolContinuousEmission {
     uint32_t maxBurstsPerFrame=8; // [1,64]
 };
 
+// Opt-in presentation-only load shedding. Estimates come from the prior
+// completed pool step, not a GPU counter or authoritative gameplay state.
+// 0 for any max/limit means no limit of that type.
+struct PoolLoadSheddingPolicy {
+    bool enabled=false;
+    uint32_t maxContinuousBurstsPerFrame=64;
+    uint32_t reserveManualBursts=16;
+    uint32_t estimatedParticleSoftLimit=0;
+    size_t maxReadbackBytesInFlight=0;
+};
+
 struct PoolWorldBudgets {
     uint32_t maxGpuGroups = 16;        // unique compiled graph + backend policy
     uint32_t maxGroupCapacity = 1024;  // each ComputeParticles resource (1..4096)
     uint32_t maxBurstsPerFrame = 256;  // global presentation submission limit
     uint32_t maxSources = 4096;        // live per-source emitter handles
+    PoolLoadSheddingPolicy loadShedding{};
     fx::FxQuality quality = fx::FxQuality::High;
     // Budget is shared across all GPU groups owned by this world. Optionally
     // supply the SAME external budget to other worlds/GraphRuntime instances
@@ -105,6 +117,10 @@ struct PoolWorldStats {
     uint32_t gpuGroups = 0, cpuDefinitions = 0;
     uint32_t activeSources=0;
     uint64_t continuousBursts=0, continuousSkipped=0;
+    uint64_t pressureSkipped=0; // additional dropped automatic births
+    uint32_t continuousFrameBudget=0;
+    bool pressureActive=false;
+    uint32_t sourceCapacity=0;
     uint64_t selectiveKillRequests=0;
     uint32_t submittedBursts = 0, rejectedBursts = 0, frameBursts = 0;
     uint32_t cpuDrawCalls = 0, gpuDrawCalls = 0;
@@ -134,6 +150,12 @@ public:
                       const GraphRuntimeOptions& options = {});
     bool setNamedParameter(const std::string& effectName,
                            const std::string& parameterName,float value);
+    // Can be changed between frames. Never throttles manually submitted
+    // bursts, just the continuous sources ticked before a pool GPU step.
+    bool setLoadShedding(PoolLoadSheddingPolicy policy);
+    const PoolLoadSheddingPolicy& loadShedding() const {
+        return budgets_.loadShedding;
+    }
 
     // One-shot births only. Different logical sources may provide independent
     // eight-scalar VM parameter snapshots without changing living particles
@@ -275,6 +297,7 @@ private:
     // Round-robin dispatch start prevents persistent budget starvation when
     // several GPU groups request checkpoint captures in the same cadence.
     size_t nextGroupStart_ = 0;
+    size_t nextContinuousSource_ = 0; // rotate start to avoid slot-order starvation
     bool initialized_ = false, frameOpen_ = false, stepped_ = false, drawn_ = false;
     std::string reason_;
 };
