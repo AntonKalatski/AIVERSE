@@ -733,6 +733,28 @@ bool ComputeParticles::requestGpuCheckpoint(std::function<void(bool)> callback) 
     return true;
 }
 
+GpuCheckpointStatus ComputeParticles::checkpointStatus() const {
+    GpuCheckpointStatus status;
+    status.gpuActive=gpuActive();
+    status.pending=asyncCheckpointPending_;
+    status.complete=lastCheckpoint_.complete;
+    status.unsentBirths=!pendingStates_.empty();
+    status.currentRevision=vmFrameRevision_;
+    status.capturedRevision=checkpointRevision_;
+    status.physicalSlots=static_cast<uint32_t>(ages_.size());
+    if(status.complete) {
+        status.frameSerial=lastCheckpoint_.frameSerial;
+        status.framesBehind=status.currentRevision>=status.capturedRevision
+            ?status.currentRevision-status.capturedRevision : 0;
+        status.fresh=status.currentRevision==status.capturedRevision;
+    }
+    status.restoreEligible=status.gpuActive && status.fresh &&
+        !status.unsentBirths &&
+        lastCheckpoint_.slots.size()==ages_.size() &&
+        lastCheckpoint_.remainingLifetime.size()==ages_.size();
+    return status;
+}
+
 bool ComputeParticles::captureGpuCheckpoint(GpuCheckpoint& out) {
     out={};
     if(!initialized_ || backend_!=ComputeBackend::Metal || !device_ ||
@@ -777,10 +799,8 @@ void ComputeParticles::switchToCpu(const std::string& why) {
     // Restore only a complete checkpoint captured after the LAST submitted
     // GPU frame, with no pending unsent births. A stale checkpoint must never
     // resurrect particles that have died or silently omit recent births.
-    const bool canRestore=lastCheckpoint_.complete &&
-        checkpointRevision_==vmFrameRevision_ && pendingStates_.empty() &&
-        lastCheckpoint_.slots.size()==ages_.size() &&
-        lastCheckpoint_.remainingLifetime.size()==ages_.size();
+    const GpuCheckpointStatus capture=checkpointStatus();
+    const bool canRestore=capture.restoreEligible;
     std::vector<fx::FxImportedParticle> restored;
     if(canRestore) {
         restored.reserve(lastCheckpoint_.slots.size());
