@@ -189,6 +189,11 @@ void Editor::init(gfx::Device& dev) {
 void Editor::shutdown() {
     if (!dev_) return;
     clientHost_.stop();
+    // A hosted GameClient may have submitted resources in an earlier GUI
+    // frame. Its GPU handles must survive until a true graphics completion
+    // signal; do not release them simply because the Game tab was closed.
+    if (dev_->waitForSubmittedGpuWork())
+        clientHost_.drainAfterGpuIdle();
     gameFxBridge_.detach();
     sim_.reset();
     gameFx_.shutdown();
@@ -1256,6 +1261,7 @@ void Editor::frame(gfx::Device& dev, double dt) {
     }();
     viewportRetirement_.setBudgetBytes(retirementBudgetBytes);
     viewportRetirement_.collect(dev);
+    clientHost_.collectGpuRetirements();
     prisma_.collectGpuRetirements();
     r3d_.collectCompletedObjectMotion(dev.gpuCompletedFence());
     const auto vpStats = viewportRetirement_.stats(dev);
@@ -1273,6 +1279,7 @@ void Editor::frame(gfx::Device& dev, double dt) {
         gpuRetirementLastFlushSucceeded_ = dev.waitForSubmittedGpuWork();
         if (gpuRetirementLastFlushSucceeded_) {
             viewportRetirement_.drainAfterGpuIdle(dev);
+            clientHost_.drainAfterGpuIdle();
             prisma_.releaseRetiredSizesAfterGpuIdle();
             r3d_.drainObjectMotionAfterGpuIdle();
         }
