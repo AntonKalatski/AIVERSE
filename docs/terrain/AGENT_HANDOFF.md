@@ -2586,3 +2586,17 @@ testing agent retains ownership.
 **Tester acceptance:** confirm existing atlas-only comparison rejects a change only in `nearSlopeXPermille` or `nearNormalValid`, while the vertex-patch planner detects updated normals and uses correct VB offsets; verify GPU-region restore matches the latest normal count. Test authored slopes on both sides of a half-open tile at negative coordinates, exact lattice/collision diagonal and Q16 fractional high corners. Validate TWH8 truncation, checksum, forged normal-valid bits, invalid slope bounds, rejection of TWH7, size <=20MiB and reuse of valid archive. Run real Metal/GL/Vulkan screenshots of smooth lighting with 0%,65%,100% normal blend, and verify no increase in draw calls/indices.
 
 **Next function-oriented step:** If GPU screenshots reveal a perceptible shading mismatch at disconnected authored terrain tiles, a neighbor-aware near normal blending policy can be built on the same Q16 snapshots. A physically wider height slope band still needs explicit width/triangle budget and must never violate the existing conservative all-or-none slope guard. No new feature is implied to have passed its tests.
+
+## Stage 22a — neighbor-aware authored terrain slope primitive (SOURCE COMMITTED; TESTS NOT RUN)
+
+**Branch:** `feature/terraweave`; PR #24 remains Draft.
+**Commit:** `4125a2372cf2cf7c90182c8e1d5b08a38e28986d`.
+**Changed:** `engine/world/TerraWeaveWorldHeightSource.h`.
+
+Added `AuthoredWorldHeightSnapshot::continuousSlopeQ16(xQ16cm,zQ16cm,radiusCm=200,toleranceCm=1)`, returning optional signed X/Z slopes in permille. The probe uses existing immutable Q16 terrain height tiles, a bounded radius (1..4096 cm), central/one-sided world-limit differences, and explicit continuity checks at every crossed tile boundary. Missing tiles or mismatched boundary heights return nullopt; it never mutates collision, ECS, GPU, archive format, or the legacy integer sampler. This is a source-side primitive, **not yet wired to Horizon seam baking**. Existing TWH8 and near seam normal counters are unchanged.
+
+**Actual verification:** GitHub write success only; no build, CTest, runtime, GPU screenshot or benchmark. Do not claim test pass.
+
+**Next implementation:** route a snapshot-derived neighbor-aware normal callback through `HorizonSurfaceSources` and `WorldScene`, retaining tile-local fallback when neighbors are unavailable. Then integrate into `populateHorizonNearSeamSamples`, update TWH8 compatibility only if serialized layout changes, and ensure GPU vertex patch comparison handles any changed normal attributes. Update `TERRAWEAVE.md`, skill, and this handoff with each next commit.
+
+**Testing-agent acceptance:** two adjacent equal-height/sloped tiles with positive/negative world coordinates, missing adjacent tile, height-discontinuous cliff, corner crossing, one-sided world-limit stencil, 0/1/100cm tolerance, radius bounds, Q16 negative-height rounding, and C++ compiler checks. Validate no smoothing across missing/discontinuous seams. All tests remain assigned to the separate testing agent.
