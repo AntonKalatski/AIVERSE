@@ -2776,3 +2776,13 @@ before calling this stage validated.
 - `RenderTexture::flushChecked` and `SubmissionStats` expose canvas GPU allocation failures. RtsPaintLayers no longer draws incomplete canvas passes after a failed scratch brush upload; RtsView and Editor Stats surface the per-canvas failure counters.
 - **ACTUALLY PERFORMED:** connected GitHub source inspection, PR and branch ancestry, targeted commits and readbacks. **NOT RUN:** local native CMake/C++, CTest, CI, real Metal/Vulkan/GL, sanitizer or performance/visual parity. No claim of compiled success; PR stays Draft.
 - **Next Stage 123:** compile and cache retarget plans with explicit generation safety, continue native/RTS visual adapter migration, finish features, then run full CMake/CTest/GPU/sanitizers and warnings fixes before any PR merge.
+
+## Stage 123 — compiled, generation-safe Model LOD retarget (2026-11-19)
+
+- **Detailed separate handoff:** [Stage 123](animation-stage123-compiled-retarget-cache-2026-11-19.md) records exact commits, modified code, public API, lifetime contracts, actual checks and Stage 124.
+- Continued Stage 122 HEAD `cae9ebf4`. Main `d71c6d47` already merged; GitHub compare before this stage: ahead 866 / behind 0, after functional commits ahead 876 / behind 0. Main unchanged, PR #22 Draft.
+- Added `CompiledModelPoseRetarget` with a one-time validation/compile step keyed by explicitly nonzero source and visual Model generations; runtime transform skips repeated node-map ancestry validation allocations. A stale plan cannot fall back to an outdated mapping; the target draws bind pose. Native View retains legacy per-draw validated maps where no compiled plan is supplied.
+- RTS `loadChoice` now issues a monotonic model-choice publication generation. `RtsLook` compiles a shared retarget plan per LOD; `RtsViewDraw` reuses it across actors. Global static LOD pose scratch was replaced with per-RtsView reusable scratch. No gameplay/ECS clock changes.
+- Native `View::modelRetargetStats` exposes per-frame compiled hits/rejections, exact pose reuse, legacy dynamic validation and bind fallbacks for follow-up profiling.
+- **ACTUALLY PERFORMED:** GitHub branch/PR/ancestry and source inspection, specific blob-SHA commits and readback. **NOT RUN:** CMake/C++ build/link, CTest, CI, real GPU/visual comparison, sanitizers or benchmarks. Keep PR Draft.
+- **Next Stage 124:** finish other legacy LOD/attachment adapters and investigate reusable visual Pose scratch, retarget authoring diagnostics; only then run complete features-first validation and fix build/test/warning failures.
