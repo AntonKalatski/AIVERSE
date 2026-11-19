@@ -185,9 +185,12 @@ public:
             // independent raw-source model provider. Shared GPU pool pages
             // and texture-owner allocations are never charged per Model.
             render::RenderResourceOwnerGroup ownerGroup;
-            ownerGroup.add(ed.view().modelResources());
-            ownerGroup.add(portrait_.modelResources());
-            ownerGroup.add(rawModels_.resources());
+            const auto sceneLease=ownerGroup.registerScoped(
+                ed.device(),ed.view().modelResources());
+            const auto portraitLease=ownerGroup.registerScoped(
+                ed.device(),portrait_.modelResources());
+            const auto rawLease=ownerGroup.registerScoped(
+                ed.device(),rawModels_.resources());
             ownerGroup.setEstimatedBudgetBytes(256ull*1024ull*1024ull);
             const auto group=ownerGroup.snapshot(ed.device());
             const bool admission=ownerGroup.mayAdmitNewSources(group);
