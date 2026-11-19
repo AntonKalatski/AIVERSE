@@ -1,5 +1,6 @@
 // Exercise checked parallel jobs while full COW snapshots share all pools.
 #include "engine/experiments/EcsGuardedWorld.h"
+#include "tests/AlwaysCheck.h"
 #include "tests/TestCheck.h"
 #include <cstdint>
 #include <iostream>
