@@ -349,3 +349,8 @@ NEREID renderer and confluence contract tests both require `worldInteger` / `wor
 ## Stage 46 — native CTest fixture corrections
 
 Far-LOD river surface generation deliberately suppresses shore foam to avoid whitening an all-perimeter mesh; its test now asserts no foam in Far and positive foam in Medium. Four intended-valid JSON water examples in the renderer contract test were missing final root braces and are now corrected. Gameplay/renderer behavior unchanged; no native tests run after change. See `docs/nereid/stage-46-native-test-fixtures.md`.
+
+
+## Stage 47 — library/skill catalog identity
+
+Each registered NEREID CMake package has a distinct skill ID; core water skill remains the common ECS ownership and architecture contract. The packages for buoyancy, interactions, cascades, currents and vortices have separate brief skills and still declare core `nereid-water` as their dependency. The generated skill catalog contains independent references so automated routing does not collide. No water runtime C++ code changes; Python check/CTest not run. See `docs/nereid/stage-47-skill-catalog.md`.

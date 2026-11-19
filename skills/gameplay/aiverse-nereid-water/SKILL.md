@@ -685,3 +685,8 @@ To author presentation-only confluence flow, include `"nereidConfluences":{"sour
 ## Stage 45 — authored confluence CPU test
 
 Run `ctest --test-dir build/ecs-test --output-on-failure -R '^ecs_nereid_confluence_contract_test$'` after configuring/building `aiverse_ecs_nereid_confluence_contract_test`. The fixture checks manifest references and errors, ECS reference/indexed water contact parity, snapshot scene flow, disabled junctions, and draw-only water resident upload key. ECS experimental shell CI also includes it. **The tests are authored but NOT RUN here**; do not claim PASS or merge until genuine native/CI verification is available. Full handoff `docs/nereid/stage-45-confluence-contract-tests.md`.
+
+
+## Stage 47 — one skill per registered NEREID library package
+
+The core package remains `aiverse-nereid-water`. Specialized native targets now have their own AI routing skills: `aiverse-nereid-buoyancy`, `aiverse-nereid-interactions`, `aiverse-nereid-cascades`, `aiverse-nereid-currents`, `aiverse-nereid-vortices`. All reference the shared NEREID architecture/handoff and depend on `aiverse-nereid-water` in the generated catalog. This preserves each library's own CMake target, avoids duplicate skill IDs in `tools/skills/catalog.py validate`, and lets agents request only the required mechanic. Do not reintroduce one SKILL.md path across multiple package records. Refer to `docs/nereid/stage-47-skill-catalog.md`.
