@@ -10541,3 +10541,122 @@ next handoff. After genuine GPU PASS, proceed to production compiled
 Shader Graph/Renderer3D integration and cross-platform fidelity.
 Do not merge PR #21 until all required gates succeed.
 
+
+## Stage 10BT — Apple M3 Ultra Metal GPU ICB four-source ABI PASS (2026-11-19)
+
+**Branch/PR:** `feature/texture-rhi-unification`, Draft PR #21.
+**Native user verification:** the user ran the repaired Stage 10BS
+source on Apple M3 Ultra in the isolated Mac Studio worktree
+`/Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819`.
+The verbose CTest reported
+`Test #122 metal_texture_icb_graph_gpu: Passed 1.06 sec`,
+**1/1 PASS, zero failures; total CTest real elapsed 1.07 sec**.
+Actual backend `prepareGpuEncodedIndexedIcbWithPbrMaterials` /
+`executeGpuEncodedIndexedIcb` submitted two native GPU commands
+and 4x4 GPU RGBA8 pixels matched different per-command materials.
+
+**Distinct PASS markers observed in the user's log:**
+- `PASS: GPU ICB graph sources=1, per-command textures/U2 pixel parity`;
+  fixture interval `240.116 ms`.
+- `PASS: GPU ICB graph sources=4, per-command textures/U2 pixel parity`;
+  fixture interval `151.826 ms`.
+- Both displayed `PASS: production Metal GPU ICB executed two material commands`.
+- Driver reported `Metal Apple M3 Ultra`, `pipelineFailures=0`.
+
+**Scope:** first observed real-device PASS for both ABI layouts,
+including argument texture slot 16 with constexpr sampler and heterogeneous
+source/U2 descriptors. No CPU fallback. These operation intervals are
+not isolated fragment GPU timings or frame FPS. The fixture still
+uses a deliberately minimal MSL graph ABI, **not** the production
+`render::graph::compile` or `Renderer3D` scene shaders.
+Shader Graph scene integration, Vulkan/GL/mobile, GPU robustness and
+large-scene performance remain unverified.
+
+**Change commit:** `332258c766eadb719c434a523294231583ac006e`
+records the actual user log and verification boundary in
+`docs/texture-rhi.md`. No rendering source was changed by this
+bounded result-recording step. Keep Draft.
+
+## Stage 10BU — real compiled Shader Graph + Renderer3D GPU ICB scene (source only)
+
+**Branch:** `feature/texture-rhi-unification` (Draft PR #21).
+**New source commit:** `353537d34021690c284689fab5db88eb752cdd2d`
+adds `tests/render/metal_renderer_graph_icb_gpu.cpp` (304 lines).
+**CMake commit:** `c28699610bee997b7db0c8fd0ac91803b75bd3bd`
+adds isolated opt-in CMake/CTest gate with
+`AIVERSE_TEXTURE_METAL_RENDERER_GRAPH_GPU_TESTS=OFF`
+by default, executable
+`aiverse_metal_renderer_graph_icb_gpu_test`,
+CTest name `metal_renderer_graph_icb_gpu`.
+**Docs commits:** `368a6bfab138cd108defa57cecd3504f95b48b89`
+updates `docs/texture-rhi.md`, and
+`8348352fa818680d40d0627e501bf61b67d2a837`
+updates `skills/visuals/aiverse-texture-rhi/SKILL.md`.
+
+**Architecture and API:** The fixture constructs an authored material
+graph as JSON with **four connected sampleTexture outputs**,
+runs real `render::graph::compile(json,"material")`,
+and binds its immutable Program to both `render::Material` values.
+A generated native model has two opaque quad primitives,
+different sampled `Model::images` for each of four source
+slots on either material, and separate U2 base-color factors.
+Normal `render::uploadModel` prepares real GPU buffers/textures.
+`Renderer3D::beginScene`, `drawModel`, `render`,
+`Device::captureNextFrame` first record conventional pixels
+and then the same scene with
+`Renderer3D::setGpuAuthoredDrawEnabled(true)`.
+The test requires real `GpuModelDrawStats` nonzero:
+`shaderGraphIcbSubmissions`, `mixedGraphSourceSubmissions`,
+`perCommandPbrSubmissions`, at least two encoded commands
+and zero execution failures. It also checks both output regions
+are visibly different and the entire direct/GPU ICB RGBA8
+capture differs by <=2 LSB/channel. Zero draws/blank frames,
+reused first material, CPU fallback and stale test binaries
+are explicitly rejected.
+
+**Production files untouched:** `Gfx.h`, `GfxMetal.mm`,
+`Renderer3DModels.cpp`, actual graph compiler, materials,
+serialized assets and RTS/FPS gameplay. No new engine API is required.
+Only test source, CMake/docs/skill/handoff change. Driver-unsafe
+GPU-ICB remains default-OFF and in its own CTest process.
+
+**Verification done:** static cross-file review of CMake target
+registration and production shader graph, model material/image,
+renderer scene/capture and ICB counter signatures via GitHub.
+**NOT RUN:** native macOS build, Objective-C++/C++ linking,
+`render::graph::compile` in this fixture, MSL generated shader
+compilation, actual production Renderer3D ICB GPU draw,
+screen capture, visual parity or performance. Stage 10BT
+low-level hardware PASS must not be misreported as 10BU PASS.
+
+**Next exact commands** (dedicated build cache and only the
+isolated Mac Studio texture worktree, never primary AIVERSE
+checkout with unrelated unfinished rebase):
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+cmake -S . -B build/texture-renderer-graph-icb \
+  -DAIVERSE_BUILD_TESTS=ON \
+  -DAIVERSE_TEXTURE_METAL_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_ICB_GPU_TESTS=OFF \
+  -DAIVERSE_TEXTURE_METAL_RENDERER_GRAPH_GPU_TESTS=ON
+cmake --build build/texture-renderer-graph-icb \
+  --target aiverse_metal_renderer_graph_icb_gpu_test --parallel 4
+ctest --test-dir build/texture-renderer-graph-icb \
+  --verbose --output-on-failure --no-tests=error \
+  -R '^metal_renderer_graph_icb_gpu$'
+```
+
+**Acceptance:** require successful build and 1/1 CTest PASS,
+plus `PASS: production Renderer3D compiled Shader Graph 4-source
+mixed Metal GPU ICB pixels` (not just 10BT's 1/4-source ABI markers).
+On compiler/Metal GPU shader/driver/counter/pixel failure,
+capture the first concrete diagnostic and fix root cause on this
+feature branch; commit code, then append a fresh handoff.
+Only after native proof should the next agent expand to
+multiple Shader Graph permutations, VT+graph integrated
+scene draws and separate Vulkan/GL/mobile acceptance.
+**Do not merge PR #21 until independently verified.**
