@@ -5,6 +5,7 @@
 // overwrite GPU indices while an earlier frame may still read them.
 // Call updates at a renderer submission epoch boundary, before drawModel().
 #include "StrataModelAdapter.h"
+#include "StrataDiskPages.h"
 #include "../gfx/Gfx.h"
 #include <cstddef>
 #include <cstdint>
@@ -45,6 +46,9 @@ struct IndexResidencyStats {
     uint64_t arenaBytes = 0, uploadedBytes = 0, uploadCalls = 0;
     uint64_t uploadBudgetDeferrals = 0, fenceReuseDeferrals = 0;
     bool incremental = false;
+    // Background archive reads; bytes are verified CPU pages, not GPU DMA.
+    uint64_t diskBytesRead = 0, diskCompletedReads = 0;
+    uint64_t diskFailures = 0, diskPending = 0, diskReadyBytes = 0;
     uint64_t generations = 0, uploads = 0, evictions = 0;
     uint64_t deferredDemands = 0, failedUploads = 0;
     uint32_t residentNodes = 0;
@@ -62,7 +66,8 @@ public:
     bool initialize(gfx::Device& device, const ModelAsset& asset,
                     size_t budgetBytes, std::string* error = nullptr,
                     bool preferIncremental = false,
-                    size_t uploadBudgetBytes = 0);
+                    size_t uploadBudgetBytes = 0,
+                    std::shared_ptr<DiskIndexPages> diskPages = {});
     bool incrementalEnabled() const { return bool(incremental_); }
     // Atomic compact/repack: requests promote complete sibling groups along
     // each path (parent->children). Rejected requests retain a drawable
@@ -91,6 +96,10 @@ private:
     // the Stage 15 immutable buffer-generation fallback.
     struct IncrementalStorage;
     std::unique_ptr<IncrementalStorage> incremental_;
+    // Archive worker is never accessed after shutdown. Strata full CPU
+    // assets remain immutable until disk metadata/page-table extraction
+    // is decoupled from asset.indices in a subsequent stage.
+    std::shared_ptr<DiskIndexPages> diskPages_;
     bool initializeIncremental(size_t uploadBudgetBytes, std::string* error);
     bool updateIncremental(const std::vector<std::vector<uint8_t>>& wanted,
                            const std::vector<IndexDemand>& priorities,
