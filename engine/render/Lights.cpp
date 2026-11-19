@@ -7,6 +7,7 @@
 #include <cstring>
 #include <cstdio>
 #include <string>
+#include <stdexcept>
 
 namespace aiverse::render {
 
@@ -26,77 +27,102 @@ LightQuality LightSystem::defaultQualityFor(const gfx::Device& dev, bool mobile)
 }
 
 bool LightSystem::init(gfx::Device& dev) {
+    if(dev_)throw std::logic_error("LightSystem init: already initialized");
     dev_ = &dev;
-    gfx::ShaderDesc sd;
-    sd.glslVertex = shaders::kLightMapVS; sd.glslFragment = shaders::kLightMapFS; sd.msl = shaders::kLightMapMSL;
-    sd.uniformSlots = 1; sd.textureSlots = 1; sd.label = "lightmap";   // U0 + tex0: spot shadow
-    shader_ = dev.createShader(sd);
-    if (!shader_.valid()) return false;
-    gfx::PipelineDesc pd;
-    pd.shader = shader_;
-    pd.attrs[0] = {0, gfx::VertexFormat::Float2, 0};
-    pd.attrs[1] = {1, gfx::VertexFormat::Float2, 8};
-    pd.attrs[2] = {2, gfx::VertexFormat::Float4, 16};
-    pd.attrs[3] = {3, gfx::VertexFormat::Float4, 32};
-    pd.attrs[4] = {4, gfx::VertexFormat::Float4, 48};
-    pd.attrs[5] = {5, gfx::VertexFormat::Float4, 64};
-    pd.attrCount = 6; pd.stride = sizeof(MapVertex);
-    pd.indexType = gfx::IndexType::None;
-    pd.cull = gfx::CullMode::None;
-    pd.blend = gfx::BlendMode::Additive;
-    pd.depthTest = false; pd.depthWrite = false;
-    pd.label = "lightmap";
-    pipe_ = dev.createPipeline(pd);
-    gfx::BufferDesc bd; bd.usage = gfx::Usage::Dynamic; bd.size = kMaxLights * 6 * sizeof(MapVertex) * 2; bd.label = "lightmap";
-    vb_ = dev.createBuffer(bd);
-    vbCap_ = bd.size;
-    const uint8_t zero[4] = {0, 0, 0, 0};
-    gfx::TextureDesc td; td.width = td.height = 1; td.data = zero; td.label = "nolight";
-    black_ = dev.createTexture(td);
-
-    gfx::ShaderDesc hs;
-    hs.glslVertex = shaders::kHaloVS; hs.glslFragment = shaders::kHaloFS; hs.msl = shaders::kHaloMSL;
-    hs.uniformSlots = 1; hs.label = "halo";
-    haloShader_ = dev.createShader(hs);
-    if (!haloShader_.valid()) return false;
-    gfx::PipelineDesc hp;
-    hp.shader = haloShader_;
-    hp.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
-    hp.attrs[1] = {1, gfx::VertexFormat::Float2, 12};
-    hp.attrs[2] = {2, gfx::VertexFormat::Float4, 20};
-    hp.attrCount = 3; hp.stride = sizeof(HaloVertex);
-    hp.indexType = gfx::IndexType::None;
-    hp.cull = gfx::CullMode::None;
-    hp.blend = gfx::BlendMode::Additive;
-    hp.depthTest = true; hp.depthWrite = false;
-    hp.label = "halo";
-    haloPipe_ = dev.createPipeline(hp);
-    gfx::BufferDesc hb; hb.usage = gfx::Usage::Dynamic; hb.size = 2048 * 6 * sizeof(HaloVertex); hb.label = "halos";
-    haloVB_ = dev.createBuffer(hb);
-    smallCap_ = hb.size;
-    gfx::ShaderDesc ds = hs;
-    ds.glslFragment = shaders::kDecalFS; ds.msl = shaders::kDecalMSL; ds.label = "contact shadow";
-    decalShader_ = dev.createShader(ds);
-    if (!decalShader_.valid()) return false;
-    gfx::PipelineDesc dp = hp;
-    dp.shader = decalShader_;
-    dp.blend = gfx::BlendMode::Alpha;
-    dp.label = "contact shadow";
-    decalPipe_ = dev.createPipeline(dp);
-    gfx::ShaderDesc bs = hs;
-    bs.glslFragment = shaders::kBeamFS; bs.msl = shaders::kBeamMSL; bs.label = "light shaft";
-    beamShader_ = dev.createShader(bs);
-    if (!beamShader_.valid()) return false;
-    gfx::PipelineDesc bp = hp;
-    bp.shader = beamShader_;
-    bp.label = "light shaft";
-    beamPipe_ = dev.createPipeline(bp);
-    gfx::BufferDesc bb = hb; bb.label = "light shafts";
-    beamVB_ = dev.createBuffer(bb);
-    gfx::BufferDesc db = hb; db.label = "contact shadows";
-    decalVB_ = dev.createBuffer(db);
-    setQuality(quality_);
-    return pipe_.valid() && vb_.valid() && black_.valid() && haloPipe_.valid() && haloVB_.valid() && decalPipe_.valid() && decalVB_.valid();
+    // LightSystem can also be initialized by a standalone native host.
+    // Roll back partial allocations only after proven device idle. When
+    // Renderer3D owns it, both share the renderer's target retirement pool.
+    auto rollback = [&]() {
+        if(!dev.waitForResourceIdle())
+            throw std::runtime_error("LightSystem init rollback: GPU idle barrier failed");
+        shutdown();
+    };
+    bool initialized = false;
+    try {
+        initialized = [&]() -> bool {
+        gfx::ShaderDesc sd;
+        sd.glslVertex = shaders::kLightMapVS; sd.glslFragment = shaders::kLightMapFS; sd.msl = shaders::kLightMapMSL;
+        sd.uniformSlots = 1; sd.textureSlots = 1; sd.label = "lightmap";   // U0 + tex0: spot shadow
+        shader_ = dev.createShader(sd);
+        if (!shader_.valid()) return false;
+        gfx::PipelineDesc pd;
+        pd.shader = shader_;
+        pd.attrs[0] = {0, gfx::VertexFormat::Float2, 0};
+        pd.attrs[1] = {1, gfx::VertexFormat::Float2, 8};
+        pd.attrs[2] = {2, gfx::VertexFormat::Float4, 16};
+        pd.attrs[3] = {3, gfx::VertexFormat::Float4, 32};
+        pd.attrs[4] = {4, gfx::VertexFormat::Float4, 48};
+        pd.attrs[5] = {5, gfx::VertexFormat::Float4, 64};
+        pd.attrCount = 6; pd.stride = sizeof(MapVertex);
+        pd.indexType = gfx::IndexType::None;
+        pd.cull = gfx::CullMode::None;
+        pd.blend = gfx::BlendMode::Additive;
+        pd.depthTest = false; pd.depthWrite = false;
+        pd.label = "lightmap";
+        pipe_ = dev.createPipeline(pd);
+        gfx::BufferDesc bd; bd.usage = gfx::Usage::Dynamic; bd.size = kMaxLights * 6 * sizeof(MapVertex) * 2; bd.label = "lightmap";
+        vb_ = dev.createBuffer(bd);
+        vbCap_ = bd.size;
+        const uint8_t zero[4] = {0, 0, 0, 0};
+        gfx::TextureDesc td; td.width = td.height = 1; td.data = zero; td.label = "nolight";
+        black_ = dev.createTexture(td);
+    
+        gfx::ShaderDesc hs;
+        hs.glslVertex = shaders::kHaloVS; hs.glslFragment = shaders::kHaloFS; hs.msl = shaders::kHaloMSL;
+        hs.uniformSlots = 1; hs.label = "halo";
+        haloShader_ = dev.createShader(hs);
+        if (!haloShader_.valid()) return false;
+        gfx::PipelineDesc hp;
+        hp.shader = haloShader_;
+        hp.attrs[0] = {0, gfx::VertexFormat::Float3, 0};
+        hp.attrs[1] = {1, gfx::VertexFormat::Float2, 12};
+        hp.attrs[2] = {2, gfx::VertexFormat::Float4, 20};
+        hp.attrCount = 3; hp.stride = sizeof(HaloVertex);
+        hp.indexType = gfx::IndexType::None;
+        hp.cull = gfx::CullMode::None;
+        hp.blend = gfx::BlendMode::Additive;
+        hp.depthTest = true; hp.depthWrite = false;
+        hp.label = "halo";
+        haloPipe_ = dev.createPipeline(hp);
+        gfx::BufferDesc hb; hb.usage = gfx::Usage::Dynamic; hb.size = 2048 * 6 * sizeof(HaloVertex); hb.label = "halos";
+        haloVB_ = dev.createBuffer(hb);
+        smallCap_ = hb.size;
+        gfx::ShaderDesc ds = hs;
+        ds.glslFragment = shaders::kDecalFS; ds.msl = shaders::kDecalMSL; ds.label = "contact shadow";
+        decalShader_ = dev.createShader(ds);
+        if (!decalShader_.valid()) return false;
+        gfx::PipelineDesc dp = hp;
+        dp.shader = decalShader_;
+        dp.blend = gfx::BlendMode::Alpha;
+        dp.label = "contact shadow";
+        decalPipe_ = dev.createPipeline(dp);
+        gfx::ShaderDesc bs = hs;
+        bs.glslFragment = shaders::kBeamFS; bs.msl = shaders::kBeamMSL; bs.label = "light shaft";
+        beamShader_ = dev.createShader(bs);
+        if (!beamShader_.valid()) return false;
+        gfx::PipelineDesc bp = hp;
+        bp.shader = beamShader_;
+        bp.label = "light shaft";
+        beamPipe_ = dev.createPipeline(bp);
+        gfx::BufferDesc bb = hb; bb.label = "light shafts";
+        beamVB_ = dev.createBuffer(bb);
+        gfx::BufferDesc db = hb; db.label = "contact shadows";
+        decalVB_ = dev.createBuffer(db);
+        setQuality(quality_);
+        return pipe_.valid() && vb_.valid() && black_.valid() &&
+               haloShader_.valid() && haloPipe_.valid() && haloVB_.valid() &&
+               decalShader_.valid() && decalPipe_.valid() && decalVB_.valid() &&
+               beamShader_.valid() && beamPipe_.valid() && beamVB_.valid() &&
+               spotShadow_.valid() &&
+               (quality_ == LightQuality::Off ||
+                (map_.valid() && mapDepth_.valid()));
+        }();
+    } catch (...) {
+        rollback();
+        throw;
+    }
+    if(!initialized)rollback();
+    return initialized;
 }
 
 bool LightSystem::setStaticPointLights(const std::vector<PointLight>& lights,float cellSize,const std::vector<StaticPointShadow>* shadows,const StaticDiffuseField* diffuse) {
