@@ -229,6 +229,11 @@ public:
     // Read-only generation of this pool's resource lifetime. A native
     // callback can reject late checkpoint results after Device recreation.
     uint64_t lifecycleEpoch() const {return sourceWorldEpoch_;}
+    // Host recovery must never "replace" an unhealthy Device with the same
+    // physical graphics object, even if its health flag becomes true later.
+    bool boundToDevice(const gfx::Device* device) const {
+        return initialized_ && device_==device;
+    }
     bool ready() const {return initialized_;}
     const std::string& reason() const {return reason_;}
     const PoolWorldStats& stats() const {return stats_;}
