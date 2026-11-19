@@ -630,7 +630,11 @@ void addShape(Acc& a, const std::string& shape, const mat4& xf, float worldPerMe
 } // namespace
 
 void RtsShoreView::init(gfx::Device& dev, const Json& shoreTypes, FileReader reader) {
-    shutdown(dev);
+    if(dev_) {
+        shutdown(*dev_);
+        if(dev_)throw std::runtime_error(
+            "shore View cannot rebind before verified GPU retirement");
+    }
     dev_ = &dev;
     read_ = std::move(reader);
     warnings_.clear();
@@ -667,16 +671,29 @@ void RtsShoreView::init(gfx::Device& dev, const Json& shoreTypes, FileReader rea
 }
 
 void RtsShoreView::release(gfx::Device& dev) {
-    for (auto& c : chunks_) if (c) releaseModel(dev, *c);
-    for (auto& c : transparent_) if (c) releaseModel(dev, *c);
+    // Retain old cliff/beach/foam GPU allocations until an actual RHI
+    // completion token proves that the last submitted frame is finished.
+    for (auto& c : chunks_) retirement_.retireModel(dev,c);
+    for (auto& c : transparent_) retirement_.retireModel(dev,c);
     chunks_.clear(); transparent_.clear(); props_.clear();
 }
 
 void RtsShoreView::shutdown(gfx::Device& dev) {
+    if(!dev_)return;
+    if(dev_!=&dev)throw std::logic_error("shore View GPU owner mismatch");
     release(dev);
-    for (auto& p : propModels_) if (p.model) releaseModel(dev, *p.model);
+    for (auto& p : propModels_) retirement_.retireModel(dev,p.model);
     propModels_.clear();
-    for (auto& img : images_) if (img.tex.valid()) { dev.destroyTexture(img.tex); img.tex = {}; }
+    // A single explicit full GPU idle check at shutdown also protects
+    // host-owned kit textures. Never destroy them if completion fails.
+    if(!retirement_.completeForShutdown(dev)) {
+        warnings_.push_back(
+            "shore View shutdown: GPU idle unproven, resources held fail-closed");
+        return;
+    }
+    for (auto& img : images_) if (img.tex.valid()) {
+        dev.destroyTexture(img.tex); img.tex = {};
+    }
     images_.clear();
     dev_ = nullptr;
 }
