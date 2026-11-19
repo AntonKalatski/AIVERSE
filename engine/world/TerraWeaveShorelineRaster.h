@@ -247,11 +247,12 @@ inline ShorelineRefreshStats refreshAutoShorelineBanks(
     if(known.size()+requested.size()>32768u)
         throw std::length_error("TerraWeave automatic bank capacity");
 
-    // Existing soil and probe pools must detach before mutable access so
-    // Simulation copy-on-write snapshots and rollback remain independent.
-    auto* soilPool=world.prepareExistingWrite<
+    // World::pool<T>() detaches shared COW pool ownership, while the
+    // subsequent Pool::tryGet() detaches the individual payload page.
+    // prepareExistingWrite<T>() ALONE does not detach pool ownership.
+    auto* soilPool=&world.pool<
         lib::nereid::WaterBankSoilComponent>();
-    auto* probePool=world.prepareExistingWrite<
+    auto* probePool=&world.pool<
         lib::nereid::WaterProbeComponent>();
     // Validate ALL existing bank data before any mutation; preserve both
     // native authored bank entities and previously carried sediment.
