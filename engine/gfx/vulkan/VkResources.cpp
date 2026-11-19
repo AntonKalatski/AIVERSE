@@ -189,7 +189,20 @@ BufferHandle VulkanDevice::createBuffer(const BufferDesc& d) {
         if (void* p = stagingWrite(d.size, src, off)) {
             std::memcpy(p, d.data, d.size);
             VkBufferCopy c{off, 0, d.size};
-            vkCmdCopyBuffer(transferCmd(), src, v.buffer, 1, &c);
+            VkCommandBuffer cb=transferCmd();
+            vkCmdCopyBuffer(cb, src, v.buffer, 1, &c);
+            // First-use uploads feed vertex/index AND GI storage-buffer inputs.
+            // A transfer->compute memory dependency is required before dispatch.
+            auto mb=vkStruct<VkMemoryBarrier>(VK_STRUCTURE_TYPE_MEMORY_BARRIER);
+            mb.srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT;
+            mb.dstAccessMask=VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT |
+                             VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
+            VkPipelineStageFlags dst=VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
+                                     VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            if(computeAvailable_)dst|=VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            vkCmdPipelineBarrier(cb,VK_PIPELINE_STAGE_TRANSFER_BIT,dst,0,
+                                 1,&mb,0,nullptr,0,nullptr);
         }
     }
     b.versions.push_back(v);
@@ -239,10 +252,12 @@ void VulkanDevice::updateBuffer(BufferHandle h, const void* data, size_t size, s
             auto mb = vkStruct<VkMemoryBarrier>(VK_STRUCTURE_TYPE_MEMORY_BARRIER);
             mb.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
             mb.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT | VK_ACCESS_INDEX_READ_BIT | VK_ACCESS_SHADER_READ_BIT;
-            vkCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT,
-                                 VK_PIPELINE_STAGE_VERTEX_INPUT_BIT | VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
-                                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
-                                 0, 1, &mb, 0, nullptr, 0, nullptr);
+            VkPipelineStageFlags dst=VK_PIPELINE_STAGE_VERTEX_INPUT_BIT |
+                                     VK_PIPELINE_STAGE_VERTEX_SHADER_BIT |
+                                     VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            if(computeAvailable_)dst|=VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT;
+            vkCmdPipelineBarrier(cb,VK_PIPELINE_STAGE_TRANSFER_BIT,dst,
+                                 0,1,&mb,0,nullptr,0,nullptr);
             return;
         }
     }
