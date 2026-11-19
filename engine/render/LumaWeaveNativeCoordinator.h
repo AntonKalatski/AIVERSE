@@ -216,6 +216,10 @@ public:
     LumaGiSyncStatus syncGi(GiRuntime& gi) {
         return giSync_.publish(registry_,gi);
     }
+    // Call when replacing the GI runtime (including same-address
+    // reconstruction) or switching back from external GI source ownership.
+    // Resets ONLY the source adapter, not either runtime's GPU resources.
+    void resetGiSourceSync() {giSync_.reset();}
     const LumaWeaveRegistry& registry() const{return registry_;}
     const LumaWeaveClusters& clusters() const{return clusters_;}
     const LumaNativeFrameStats& stats() const{return stats_;}
