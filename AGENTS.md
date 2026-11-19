@@ -1440,3 +1440,19 @@ remain unchanged, bounce multiplies linear terrain albedo once.
 Native compilation, CTest, GLSL/MSL/Vulkan shader testing and visuals
 are NOT RUN. TerraWeave standalone renderers are in divergent newer
 branches and MUST be integrated conflict-aware before applying this API.
+
+
+## GI Stage 45 — vegetation/HLOD collision proxy source (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage45-vegetation-proxy-geometry-2026-11-20.md`.
+`GiWorldGeometryBridge::replaceVegetationProxy` now accepts preexisting
+WORLD-SPACE tree/grass/fallen-wood occlusion triangles into a stable separate
+VegetationProxy chunk ID; empty source/LOD unload removes only that source
+and invalidates OLD bounds. The bridge does not generate foliage geometry,
+own authoritative ECS/ecology or mutate PHYSIS/Box3D. Use
+`GiWorldPresentationSync` AFTER read barriers, and retry if a Vulkan/Metal
+GPU fence defers new geometry. GPU bounded BVH may reject large foliage
+sources; never silently clip. The current GI experiment lacks newer
+TerraWeaveTerrainPatchRender/TerraWeaveGrassRender branch files, so
+their shader integration remains pending conflict-aware main merge.
+New tests are SOURCE ONLY, NOT EXECUTED.
