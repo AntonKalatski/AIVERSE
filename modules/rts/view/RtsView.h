@@ -201,6 +201,9 @@ public:
     size_t activeModelReadLeases() const noexcept {
         return resources_.activeModelReaders();
     }
+    render::ModelResourceCache::ModelReadSafetyStats modelReadSafetyStats() const noexcept {
+        return resources_.modelReadSafetyStats();
+    }
     // Budget only retained transient Pose/matrix capacity in the generic
     // MotionWeave View. The largest single actor still renders normally.
     void setGenericRetargetScratchBudgetBytes(size_t bytes);
