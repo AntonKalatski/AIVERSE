@@ -278,6 +278,68 @@ smoke, verify no overlap with other profilers and benchmark consumers,
 exercise memory thresholds and test GL context loss/query saturation.
 `docs/handoffs/prisma-stage-46.md` is the next-agent source of truth.
 
+## Metal hardware viewport timers and Renderer3D memory accounting (Stage 47)
+
+Stage 47 implements an experimental **real Metal GPU timestamp** backend
+for the existing `gfx::Device::beginGpuScope/endGpuScope/takeGpuScopeTimings`
+API. It uses `MTLCounterSampleBuffer` from the Metal device's
+`MTLCommonCounterSetTimestamp` only if that GPU supports
+`MTLCounterSamplingPointAtBlitBoundary` or
+`MTLCounterSamplingPointAtStageBoundary`. Scope endpoints are encoded
+into tiny blit encoders in the *existing* command buffer, never split into
+separate command buffers or taken from the whole-frame
+`GPUStartTime/GPUEndTime`. The completed command buffer's two timestamp
+samples are resolved in a nonblocking poll; the GPU clock delta is
+converted to elapsed time by **two correlated CPU/GPU clock pairs**
+(`MTLDevice::sampleTimestamps:gpuTimestamp:`). Impossible/invalid
+samples are rejected, never passed off as a valid per-viewport reading.
+Scopes are bounded to 64 pending records. GPU fences and existing Metal
+frame completion remain unchanged. Devices without supported timestamp
+counters return unsupported, so the prior whole-GPU-frame fallback is
+still separate and correctly labeled.
+
+The editor's existing opt-in
+`AIVERSE_PRISMA_VIEWPORT_GPU_TIMING=1` now covers supported Metal
+devices as well as desktop GL33. The editor already scopes Scene/Game
+GPU commands and polls completed scope results separately from
+whole-frame benchmark timings. **No Vulkan or GLES/WebGL scoped
+timing support is claimed.**
+
+`Renderer3D::residentMemoryStats()` is a read-only CPU metadata estimate
+for **directly owned** GPU resources: sun shadow map, selection mask,
+scene-capture textures, trace placeholders, renderer-owned model
+placeholders, per-camera object-motion/reactive buffers and owned
+line/selection/indirect buffers. Distinct handles are counted once;
+`sceneColor_/sceneDepth_` cache aliases are not counted a second time.
+Pending retired object-motion textures appear in a separate byte field,
+not in live residency. This does not include external Model/Material
+assets, `LightSystem` shadow/reflection resources, persistent scene/
+geometry owners, unenumerated GPU driver/shader allocations, or PRISMA
+targets. Buffer physical versions/mips can exceed the reported bytes.
+
+The host calls `prisma.setExternalRendererGpuMemory(liveKnownBytes,
+pendingKnownBytes)` before `prisma.renderSizeForOutput()`. Editor
+Scene/Game and GameClient now supply the direct Renderer3D memory
+estimate. Prisma's adaptive threshold `maxPrismaMemoryMiB` keeps its
+existing serialized key but compares the **known Prisma +
+directly-owned Renderer3D live and pending lower bound** with the
+author's threshold. The two owners' resources do not overlap. This
+is not a VRAM-capacity query, not a true hard cap, and not justification
+to destroy GPU-fenced objects early.
+
+**Stage 47 correctness fix:** a per-view scoped query sequence and the
+whole-frame GPU fence are separate token domains. The hysteresis policy
+resets its sample counter (NOT render scale) when switching sources.
+A scoped sample is stale after more than eight subsequent completed GPU
+fence advances without a replacement, allowing a truthful whole-frame
+fallback. No duplicate GPU completion is counted as a fresh sample.
+
+Feature guards, game data, ECS simulation and editor ownership remain
+as in Stages 41–46. **Native Obj-C++/Metal compilation, counter query
+runtime, GPU timing calibration and VRAM profiling have NOT RUN.**
+Apple hardware-counter support and GPU calibration must be verified on
+real devices before shipping; see `docs/handoffs/prisma-stage-47.md`.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
