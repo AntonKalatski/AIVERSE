@@ -782,3 +782,20 @@ CI if it remains queued or cancelled.
 - Renderer3D integration and hardware shader validation
   are still required; do not treat this as an enabled or
   verified heterogeneous ICB batch. Tests NOT RUN.
+
+
+### Heterogeneous opaque PBR in experimental Metal VT ICB (Stage 10AD)
+
+- Opt in to `AIVERSE_EXPERIMENTAL_ICB_MIXED_PBR=1` only
+  with existing mixed-VT/per-command-VT/Metal GPU-ICB flags
+  on a test device. Never enable by default in production.
+- `packGpuPbrMaterialU2` packs the same nine float4 U2 rows
+  as the ordinary renderer. `gpuPbrSourceTextures` resolves
+  the six fragment samplers with standard fallbacks.
+  The GPU command resource ticket includes exact U2+textures,
+  VT atlas/page table/layer/wrap and optional alpha coverage.
+- Pipeline grouping is conservative: opaque non-graph materials
+  only, with matching shader-sensitive normal-map presence and
+  structural flags. Masked/transparent and Shader Graph are
+  excluded; CPU MDI/direct batching remains unchanged.
+- All native builds, shader compiler/device GPU tests NOT RUN.
