@@ -617,6 +617,23 @@ private:
             ImGui::Text("Models: %u | Other tracked: %u",
                         modelSubmissions, otherSubmissions);
             ImGui::TextDisabled("Includes repeated geometry in shadow, reflection and colour passes.");
+            if (ImGui::TreeNode("Incremental static CPU model cache")) {
+                const auto staticCache = ed.renderer().staticModelCacheStats();
+                const char* flag = std::getenv("AIVERSE_PERSISTENT_CPU_MODEL_CACHE");
+                const bool enabled = flag && std::strcmp(flag, "1") == 0;
+                ImGui::Text("Status: %s (AIVERSE_PERSISTENT_CPU_MODEL_CACHE=1)",
+                            enabled ? "OPT-IN ACTIVE" : "OFF");
+                ImGui::Text("Hits: %llu | Rebuilds: %llu | Declined: %llu",
+                            (unsigned long long)staticCache.hits,
+                            (unsigned long long)staticCache.rebuilds,
+                            (unsigned long long)staticCache.declined);
+                ImGui::Text("Live entries: %zu | Evicted: %llu",
+                            staticCache.live,
+                            (unsigned long long)staticCache.evicted);
+                ImGui::TextDisabled("Caches bind transforms, not draw commands or camera-dependent LOD.");
+                ImGui::TextDisabled("Asset edits need cache invalidation; benchmark with the same view.");
+                ImGui::TreePop();
+            }
             if (ImGui::TreeNode("Model pass breakdown")) {
                 static constexpr const char* phaseNames[5] = {
                     "Shadow", "Opaque (+ reflection)", "Blended",
