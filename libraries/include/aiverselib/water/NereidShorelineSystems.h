@@ -21,6 +21,17 @@ struct WaterBankSoilComponent {
     bool enabled=true;
 };
 
+// Optional surface protection from grass, litter and recovering soil crust.
+// Unlike ShoreErosionCell::rootBindingPermille, this does NOT claim grass
+// has tree/shrub roots, and it doesn't alter sediment mass directly.
+struct WaterBankSurfaceCoverComponent {
+    uint32_t shieldPermille=0;
+};
+inline void io(Archive& a,WaterBankSurfaceCoverComponent& cover){
+    a(cover.shieldPermille);
+    if(!a.writing() && cover.shieldPermille>1000u)a.fail();
+}
+
 struct WaterBankErosionOutputComponent {
     int32_t beforeGroundCm=0,afterGroundCm=0;
     uint32_t removedCm=0,depositedCm=0;
@@ -61,6 +72,9 @@ inline void addNereidBankErosionSystem(Simulation& sim,std::string name,
             forcing.waveEnergyPermille=soil->waveEnergyPermille;
             forcing.wetContactPermille=soil->wetContactPermille;
             forcing.bankSlopePermille=soil->bankSlopePermille;
+            if(const auto* cover=read.tryGetConst<
+                    WaterBankSurfaceCoverComponent>(entity))
+                forcing.surfaceShieldPermille=cover->shieldPermille;
             const auto result=erodeShore(
                 soil->soil,forcing,fixedDeltaMs,soil->settings);
             soil->soil=result.cell;
@@ -94,6 +108,8 @@ inline void registerNereidBankErosionPersistence(Simulation& sim) {
         "nereid.bank_soil",1);
     sim.registerPersistentComponent<WaterBankErosionOutputComponent>(
         "nereid.bank_erosion_output",1);
+    sim.registerPersistentComponent<WaterBankSurfaceCoverComponent>(
+        "nereid.bank_surface_cover",1);
 }
 
 } // namespace aiverse::lib::nereid
