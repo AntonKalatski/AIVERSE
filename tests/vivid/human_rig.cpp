@@ -5,6 +5,7 @@
 #include "engine/character/vivid/SkinnedWeightPick.h"
 #include "engine/character/vivid/SkinWeightLodTransfer.h"
 #include "engine/character/vivid/SkinSeamAnalysis.h"
+#include "engine/character/vivid/SkinSeamSplit.h"
 #include <cmath>
 #include <iostream>
 #include <limits>
@@ -394,6 +395,64 @@ void check() {
             lod.vertices[3].weights[0]==before.weights[0] &&
             lod.vertices[3].joints[0]==before.joints[0],
             "LOD transfer modified target after missing-joint failure");
+    }
+    {
+        render::Model stitched;
+        stitched.nodes.resize(3);
+        stitched.nodes[0].name="jointA";
+        stitched.nodes[1].name="jointB";
+        stitched.nodes[2].name="skinNode";stitched.nodes[2].mesh=0;
+        stitched.nodes[2].skin=0;
+        render::Skin skin;
+        skin.joints={0,1};skin.inverseBind.resize(2);
+        stitched.skins.push_back(skin);
+        stitched.vertices.resize(3);
+        stitched.vertices[0].pos={0,0,0};
+        stitched.vertices[1].pos={1,0,0};
+        stitched.vertices[2].pos={0,1,0};
+        for(auto& v:stitched.vertices) {
+            v.weights[0]=128;v.joints[0]=0;
+            v.weights[1]=127;v.joints[1]=1;
+        }
+        stitched.indices={0,1,2,0,1,2};
+        render::Primitive first;
+        first.firstIndex=0;first.indexCount=3;
+        first.firstVertex=0;first.vertexCount=3;
+        first.jointPalette={0,1};
+        auto second=first;
+        second.firstIndex=3;second.jointPalette={1,0};
+        render::MeshDef mesh;
+        mesh.primitives={first,second};
+        stitched.meshes.push_back(mesh);
+        MorphDelta delta;delta.vertex=0;
+        delta.position={0.25f,0,0};
+        SparseMorphLibrary facial=SparseMorphLibrary::compile(
+            3,{{"smile",{delta}}});
+        req(SkinSeamAnalysis::detect(stitched).size()==3,
+            "skin seam fixture did not have three conflicts");
+        const auto split=SkinSeamSplit::apply(stitched,facial);
+        req(split.primitives==1 && split.clones.size()==3 &&
+            stitched.vertices.size()==6 && facial.vertices()==6 &&
+            SkinSeamAnalysis::detect(stitched).empty(),
+            "seam splitting failed geometry topology or palette isolation");
+        req(stitched.indices[0]==0 && stitched.indices[3]==3 &&
+            stitched.meshes[0].primitives[1].firstVertex==3 &&
+            stitched.meshes[0].primitives[1].vertexCount==3,
+            "split changed source indices or failed contiguous clone interval");
+        const auto range=facial.gpuRanges()[0];
+        req(range.count==2 && facial.gpuDeltas()[range.first].vertex==0 &&
+            facial.gpuDeltas()[range.first+1].vertex==3,
+            "extended sparse morph was not cloned to the new skin seam");
+        SkinWeightAuthoring weights;
+        req(weights.set(0,"jointA",0.6f),"authoring split base edit");
+        const auto expanded=weights.withSplitClones(split.clones);
+        req(expanded.edits().count(3)==1 && weights.edits().count(3)==0,
+            "split incorrectly changed original vertex-ID authoring");
+        const auto applied=expanded.apply(stitched);
+        req(applied.verticesChanged==2 &&
+            stitched.vertices[0].weights[0]+stitched.vertices[0].weights[1]==255 &&
+            stitched.vertices[3].weights[0]+stitched.vertices[3].weights[1]==255,
+            "clone skin weight edits did not remain normalized");
     }
     model.nodes.resize(2); // missing jaw and eyes must be legal for morph-only rigs
     const auto fallback=HumanRigBinding::compile(model,HumanDNA{}.rig);
