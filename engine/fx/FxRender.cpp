@@ -469,7 +469,8 @@ void ParticleSystem::render(const FxFog& fog) {
     stats_.drawn = int(I.recs.size());
 }
 
-void ParticleSystem::collectLights(std::vector<FxPointLight>& out, int maxLights) const {
+void ParticleSystem::collectLightsStable(std::vector<FxIdentifiedPointLight>& out,
+                                         int maxLights) const {
     const auto& I = *impl_;
     if (quality_ == FxQuality::Off) return;
     if (quality_ == FxQuality::Low) maxLights = std::min(maxLights, 8);
@@ -497,9 +498,20 @@ void ParticleSystem::collectLights(std::vector<FxPointLight>& out, int maxLights
         if (!l.radiusOverLife.empty()) fl.radius *= er.lightRadius[li];
         if (!l.intensityOverLife.empty()) fl.intensity *= er.lightIntensity[li];
         if (fl.intensity <= 0.01f || fl.radius <= 0.01f) continue;
-        out.push_back(fl);
+        out.push_back({p.uid,p.owner,p.emitter,fl});
         ++added;
     }
+}
+
+void ParticleSystem::collectLights(std::vector<FxPointLight>& out, int maxLights) const {
+    // Keep source-compatible legacy API and EXACT color/radius/quality behavior
+    // by sharing the identified path, avoiding two divergent VFX solvers.
+    if(maxLights<=0)return;
+    std::vector<FxIdentifiedPointLight> identified;
+    identified.reserve(size_t(std::min(maxLights,256)));
+    collectLightsStable(identified,maxLights);
+    out.reserve(out.size()+identified.size());
+    for(const auto& item:identified)out.push_back(item.light);
 }
 
 } // namespace aiverse::fx
