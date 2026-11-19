@@ -477,7 +477,15 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                 packet.selectedMeshes.size() == m->nodes.size() &&
                 equivalentStaticRenderPacketDraw(packet.draw, d) &&
                 staticPacketMaterialStateMatches(*m, mats, packet.materialsSnapshot,
-                                                 packet.materialHashes);
+                                                 packet.materialHashes) &&
+                std::all_of(packet.items.begin(), packet.items.end(),
+                    [m, &mats](const ModelItem& item) {
+                        return item.model == m && item.prim &&
+                            item.sourceNode >= 0 &&
+                            size_t(item.sourceNode) < m->nodes.size() &&
+                            item.materialIndex >= 0 &&
+                            size_t(item.materialIndex) < mats.size();
+                    });
             if (sameSource) {
                 struct PacketNodeState {
                     bool inView = false, inShadow = false;
@@ -546,12 +554,8 @@ void Renderer3D::drawModel(const ModelDraw& d) {
                         while (itemIndex < packet.items.size() &&
                                packet.items[itemIndex].sourceNode == n) {
                             ModelItem item = packet.items[itemIndex++];
-                            if (item.materialIndex < 0 ||
-                                size_t(item.materialIndex) >= mats.size()) {
-                                // Invalid templates are never expected after exact
-                                // material signature checks; do not dereference them.
-                                continue;
-                            }
+                            // Index validation is completed before replay,
+                            // so no individual source draw can disappear here.
                             item.mat = &mats[size_t(item.materialIndex)];
                             item.paletteMaterials = item.materialRole == 2 ? &mats : nullptr;
                             item.inView = item.shadowRole != 2 && st.inView;
