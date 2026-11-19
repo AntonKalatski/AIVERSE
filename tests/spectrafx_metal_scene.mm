@@ -11,6 +11,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 #include "engine/gfx/Gfx.h"
@@ -52,6 +53,23 @@ aiverse::gfx::PassDesc pass(Target t) {
     p.clearColor[0]=p.clearColor[1]=p.clearColor[2]=0.01f;
     p.clearColor[3]=1.0f;
     return p;
+}
+// Optional pixel evidence for visual QA (no files in ordinary CI runs).
+// Set AIVERSE_SPECTRAFX_SCENE_CAPTURE=/tmp/spectrafx-scene to write PPMs.
+bool capture(const char* suffix,const std::vector<uint8_t>& rgba) {
+    const char* prefix=std::getenv("AIVERSE_SPECTRAFX_SCENE_CAPTURE");
+    if(!prefix || !*prefix) return true;
+    if(rgba.size()!=size_t(kSide*kSide*4))return false;
+    const std::string path=std::string(prefix)+"-"+suffix+".ppm";
+    std::FILE* file=std::fopen(path.c_str(),"wb");
+    if(!file)return false;
+    std::fprintf(file,"P6\n%d %d\n255\n",kSide,kSide);
+    bool ok=true;
+    for(size_t i=0;i<rgba.size();i+=4)
+        if(std::fwrite(rgba.data()+i,1,3,file)!=3){ok=false;break;}
+    if(std::fclose(file)!=0)ok=false;
+    if(ok)std::printf("[spectrafx-metal-scene] capture=%s\n",path.c_str());
+    return ok;
 }
 struct Diff {
     int changed=0;
@@ -226,6 +244,11 @@ int aiverseMain(int,char**) {
                device->readColorRGBA8(baselineB.color,clearB) &&
                device->readColorRGBA8(effectB.color,withB),
                "completed Renderer3D color targets readable through real RHI");
+        expect(capture("baseline-a",clearA) &&
+               capture("effect-a",withA) &&
+               capture("baseline-b",clearB) &&
+               capture("effect-b",withB),
+               "optional four-view visual capture");
         const auto deltaA=differences(clearA,withA);
         const auto deltaB=differences(clearB,withB);
         expect(deltaA.changed>40&&deltaA.maxDifference>30,
@@ -261,6 +284,8 @@ int aiverseMain(int,char**) {
                "reset frame color probe");
         expect(maxDelta(clearA,withA)<=4,
                "reset scene returns to baseline without ghost particles");
+        expect(capture("after-reset-a",withA),
+               "optional post-reset visual capture");
 
         for(int i=0;i<4;++i){
             device->beginFrame(kSide,kSide);
