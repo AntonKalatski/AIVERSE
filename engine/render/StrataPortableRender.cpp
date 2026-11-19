@@ -25,7 +25,10 @@ bool safePrimitive(const Model& source,uint32_t mesh,uint32_t primitive,
     const auto& m=source.meshes[mesh];
     const auto& p=m.primitives[primitive];
     const auto& mat=source.materials[material];
-    return !m.deformable && m.lods.empty() &&
+    // Root meshes may have normal authored/generated alternative LODs:
+    // portable Strata replaces their runtime selection without changing
+    // the still-available original source LOD chain for Legacy fallback.
+    return !m.deformable &&
            p.material==int(material) && !p.morphTargets &&
            !p.jointPalette.size() && p.variantMaterial.empty() &&
            p.indexCount>0 && p.indexCount%3==0 &&
@@ -110,11 +113,21 @@ bool PortableSource::stage(gfx::Device& dev,const Model& source,
         combined.insert(combined.end(),entry.geometry.indices.begin(),
                         entry.geometry.indices.end());
     }
-    for(uint32_t mesh=0;mesh<source.meshes.size();++mesh)
+    // A regular prepared Model may contain generated alternate LOD meshes
+    // appended by upload preparation. They are not independent source
+    // objects. Require complete coverage of only meshes actually bound
+    // by original Model nodes, leaving those alternate LODs available to
+    // the untouched Legacy renderer on unsupported/fallback draw.
+    for(const auto& node:source.nodes){
+        if(node.mesh<0)continue;
+        if(size_t(node.mesh)>=source.meshes.size())
+            return fail(error,"source node references invalid mesh");
         for(uint32_t primitive=0;
-            primitive<source.meshes[mesh].primitives.size();++primitive)
-            if(!covered.count({mesh,primitive}))
-                return fail(error,"Strata stage does not cover every source primitive");
+            primitive<source.meshes[size_t(node.mesh)].primitives.size();
+            ++primitive)
+            if(!covered.count({uint32_t(node.mesh),primitive}))
+                return fail(error,"Strata stage misses a live source primitive");
+    }
     if(combined.empty())return fail(error,"no portable Strata indices");
 
     GeometryPoolIndexSpan pooled;
