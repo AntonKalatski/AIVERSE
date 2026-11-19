@@ -1085,6 +1085,96 @@ void Renderer3D::renderObjectMotionVectors(PostProcess& post) {
                     int32_t(it.model->gpuBaseVertex));
                 ++objectMotionStats_.reactiveDraws;
             }
+
+            // Animated translucent current-pose silhouettes. We intentionally
+            // use the current pose for both vertex parameters: the fragment
+            // writes coverage, NOT velocity. Thus this works without an ID.
+            for (const auto& it : modelItems_) {
+                if (!reactiveAnimatedEligible(it)) continue;
+                const bool baked = it.baked;
+                const auto pipeline = baked ? objectMotionReactiveBakedPipeline_
+                                             : objectMotionReactiveSkinPipeline_;
+                if (!pipeline.valid()) continue;
+                const bool morph = it.prim->morphTargets > 0 &&
+                                   it.model->morphTex.valid();
+                const bool skin = it.joints >= 0;
+                if (skin &&
+                    (it.joints < 0 ||
+                     size_t(it.joints) + size_t(kMaxPaletteJoints) * 12 >
+                         jointData_.size())) {
+                    ++objectMotionStats_.rejected;
+                    continue;
+                }
+                if (morph && it.morph >= 0 &&
+                    size_t(it.morph) + size_t(kMaxMorphTargets) >
+                        morphData_.size()) {
+                    ++objectMotionStats_.rejected;
+                    continue;
+                }
+                MotionU position{};
+                const mat4 mvp = viewProj_ * it.world;
+                std::memcpy(position.current,mvp.m,sizeof position.current);
+                std::memcpy(position.previous,mvp.m,sizeof position.previous);
+                position.params[0] = float(w);
+                position.params[1] = float(h);
+                position.params[2] = baked ? (morph ? 1.0f : 0.0f) :
+                                             (skin ? 1.0f : 0.0f);
+                position.params[3] = !baked && morph ? 1.0f : 0.0f;
+
+                ReactiveMorphU mo{};
+                if (morph) {
+                    if (it.morph >= 0) {
+                        std::memcpy(mo.currentW,morphData_.data()+it.morph,
+                                    sizeof mo.currentW);
+                        std::memcpy(mo.previousW,mo.currentW,sizeof mo.previousW);
+                    }
+                    mo.info[0] = float(it.prim->morphTexel);
+                    mo.info[1] = float(it.prim->firstVertex);
+                    mo.info[2] = float(it.prim->vertexCount);
+                    mo.info[3] = float(it.prim->morphTargets);
+                    mo.info2[0] = float(it.model->morphTexWidth);
+                }
+
+                dev_->setPipeline(pipeline);
+                dev_->setUniforms(0,&position,sizeof position);
+                dev_->setTexture(0,sceneDepth);
+                if (baked) {
+                    float palette[80] = {};
+                    for (size_t j=0;j<it.prim->jointPalette.size() && j<80;++j)
+                        palette[j] = float(it.prim->jointPalette[j]);
+                    float animation[8] = {
+                        it.anim.x,it.anim.y,it.anim.z,it.anim.w,
+                        it.anim.x,it.anim.y,it.anim.z,it.anim.w
+                    };
+                    dev_->setUniforms(3,palette,sizeof palette);
+                    dev_->setUniforms(4,animation,sizeof animation);
+                    dev_->setUniforms(5,&mo,sizeof mo);
+                    dev_->setTexture(7,it.model->baked.tex);
+                } else {
+                    float joints[size_t(kMaxPaletteJoints)*12] = {};
+                    if (skin)
+                        std::memcpy(joints,jointData_.data()+it.joints,
+                                    sizeof joints);
+                    dev_->setUniforms(3,joints,sizeof joints);
+                    dev_->setUniforms(4,joints,sizeof joints);
+                    dev_->setUniforms(5,&mo,sizeof mo);
+                }
+                dev_->setTexture(8,morph ? it.model->morphTex : white_);
+                dev_->setVertexBuffer(it.model->vb);
+                dev_->setIndexBuffer(it.model->ib);
+                dev_->drawIndexed(it.indexCount,
+                    it.firstIndex + it.model->gpuFirstIndex,
+                    int32_t(it.model->gpuBaseVertex));
+                ++objectMotionStats_.reactiveAnimatedDraws;
+            }
+
+            // Optional water/particles/custom extensions. The GPU pass and
+            // viewport are already active. Clients must blend coverage over
+            // previous layers (Screen union) and must not end the pass.
+            for (auto& renderReactive : motionReactiveDraws_) {
+                renderReactive(*dev_,sceneDepth,w,h);
+                ++objectMotionStats_.reactiveCallbacks;
+            }
             dev_->endPass();
             post.acceptMotionReactiveMask(history.reactive);
         }
