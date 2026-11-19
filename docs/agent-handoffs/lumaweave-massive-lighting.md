@@ -38,3 +38,20 @@ cmake -S . -B build/lumaweave -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_EDITOR=OF
 cmake --build build/lumaweave --target aiverse_lumaweave_registry_test -j8
 ctest --test-dir build/lumaweave --output-on-failure -R '^lumaweave_'
 ```
+
+## Stage 2 — 2026-11-19 — bounded deterministic world-space clusters (SOURCE; NOT RUN)
+
+Source commits:
+- 95d38e9f88dba6aa603fcd568db0fbf7c2182364, 503f58be4a15d14fd867fcdc46c6f3a933c24f4d — engine/render/LumaWeaveClusters.h
+- 18c0dadc669ebe7b96ebcd506d23efe7604879a3 — tests/render/lumaweave_clusters.cpp
+- 8872e868ba7cd6abef6feab1a963b0df41b7e4b1 — CMakeLists.txt, adds lumaweave_clusters target/test to default AIVERSE_BUILD_TESTS.
+
+API: LumaClusterConfig defines world-space origin, per-axis cellSize, nx/ny/nz, maxFastPerCell<=64, maxFastReferences<=1,048,576, max cells 16384. LumaWeaveClusters::rebuild(const LumaWeaveRegistry&,config) transactionally validates params, performs conservative sphere-vs-AABB filtering for point/spot radius against only spatially relevant cells, and stores deterministic sorted source indices in a compressed row storage (CSR) array. BuildStats includes clusters, sources, occupied, overflow count, retained fast references, number of spatial tests, registry revision. query(worldPosition, registry) checks revision, returns span of light indices plus potentialCount and requiresFullScan flag. When a cell exceeds per-cell OR global fast-reference budget, requiresFullScan=true; the next importance sampler MUST use the FULL sorted source registry and exact receiver tests in that case. Outside the indexed volume also triggers full fallback. Missing lights cannot be silently discarded because fast list is capped. Empty spans do not perform null-pointer arithmetic.
+
+Source contract: Registry revision is checked per query. The cluster index does not mutate ECS nor legacy LightSystem and introduces no data texture, shaders or default GPU cost. 3D world-space clusters are a portable CPU reference; eventual forward+/deferred production culling should map screen-space depth slices and material coverage, and support compact GPU workgroups; do not call this pixel-tiled or a GPU implementation.
+
+Tests written but NOT RUN: `lumaweave_clusters` verifies disjoint separated lights, positive/negative positions, outside fallback, 32 lights in one cell with fast cap two and explicit overflow metadata, source revision rejection, invalid configuration and preserving prior valid index on failure. Uses AIVERSE_TEST_CHECK (Release-safe).
+
+ACTUAL verification: source read/create/update commits and CMake test registration through GitHub; no native filesystem repo, thus no C++ compilation, CTest, GPU timing/visualization, Metal compiler, or run-tests.sh has been executed. DO NOT report a PASS.
+
+Next bounded stage: implement deterministic receiver importance sampling for POINT and SPOT sources from either cluster fast span or the exact full-registry slow path, and an unbiased (conditional on candidate set) Monte Carlo direct-light estimator with a FIXED number of shadow rays. Reuse GiGpuBvh::trace for shadow queries — do not duplicate a geometry intersection acceleration system. Keep direct light separate from GiDynamicProbeReference bounced light and existing LightSystem. Add a CPU test comparing mean sampled direct radiance to exhaustive unshadowed/shadowed reference and showing no energy loss on overflow; then another handoff commit. Later hardware GPU passes and temporal/spatial denoising remain absent.
