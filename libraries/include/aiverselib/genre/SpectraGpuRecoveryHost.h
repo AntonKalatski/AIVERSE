@@ -84,6 +84,12 @@ public:
     // A failed import shuts down its partial new pool and does not claim
     // that any GPU data was restored.
     bool replaceDevice(gfx::Device& healthyReplacement) {
+        if(pool_.boundToDevice(&healthyReplacement)) {
+            reason_="SpectraFX recovery requires a DIFFERENT graphics Device, "
+                    "not the same previous graphics object";
+            poll();
+            return false;
+        }
         if(!healthyReplacement.gpuHealthy()) {
             reason_="SpectraFX replacement Device is not healthy";
             poll();
