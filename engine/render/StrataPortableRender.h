@@ -56,7 +56,8 @@ public:
                const ModelAsset& asset, std::string* error = nullptr,
                size_t indexBudgetBytes = 0,
                bool preferIncremental = false,
-               size_t uploadBudgetBytes = 0);
+               size_t uploadBudgetBytes = 0,
+               std::shared_ptr<DiskIndexPages> diskPages = {});
     bool streamingEnabled() const { return bool(streaming_); }
     const IndexResidencyStats* residencyStats() const {
         return streaming_ ? &streaming_->stats() : nullptr;
