@@ -687,3 +687,14 @@ both GLES CPU transport and Metal/Vulkan single-volume compute, with
 revision-safe stale ticket rejection and explicit geometry-snapshot boundary.
 `gi_gpu_dynamic_runtime` and `gi_lighting_controller` test sources updated.
 No real C++ build, shader compilation, CTest or GPU parity run.
+
+
+## Stage 38 — 2026-11-20 — direct PointLight/spotlight snapshot to GI (SOURCE; NOT RUN)
+
+Full handoff: `docs/agent-handoffs/gi-stage38-renderer-light-snapshot-2026-11-20.md`.
+`LightSystem::submittedLights()` exposes a const view of the light sources
+submitted this scene; `GiLightingController::syncRendererLights` copies
+selected opt-in point/spot lights using stable namespaced keys, without any
+special FPS/RTS ECS dependency or changing direct lighting. The source
+fixture in `gi_lighting_controller` was expanded. C++/CTest/GPU execution
+not run. Main merge not performed.
