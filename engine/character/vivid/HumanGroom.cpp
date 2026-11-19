@@ -149,6 +149,10 @@ bool HumanGroomRuntime::setCollisionMesh(
     collisionNodes_=std::move(nodes);
     collisionSourceIndices_=std::move(sourceIndices);
     collisionSourceVertexCount_=vertices.size();
+    // Triangle IDs are specific to the old topology. Replacing a collider
+    // invalidates old barycentric anchor IDs until explicit reattachment.
+    for(auto& guide:guides_)
+        guide.scalpTriangle=std::numeric_limits<std::uint32_t>::max();
     return true;
 }
 bool HumanGroomRuntime::refitCollisionMesh(
@@ -304,6 +308,8 @@ void HumanGroomRuntime::clearCollisionMesh() noexcept {
     collisionNodes_.clear();
     collisionSourceIndices_.clear();
     collisionSourceVertexCount_=0;
+    for(auto& guide:guides_)
+        guide.scalpTriangle=std::numeric_limits<std::uint32_t>::max();
 }
 render::float3 HumanGroomRuntime::resolveCollision(
         render::float3 p,const GroomGuide& guide) const {
