@@ -10,12 +10,19 @@ namespace aiverse::render {
 
 struct CameraHdrResolveSettings {
     float exposureEV=0.f; // exposure multiplier = 2^EV
-    float gamma=2.4f;      // reserved for future output transfer curves
 };
 
 inline bool validCameraHdrResolveSettings(const CameraHdrResolveSettings& s) {
     return std::isfinite(s.exposureEV) && s.exposureEV>=-16.f &&
-           s.exposureEV<=16.f && std::isfinite(s.gamma) && s.gamma>0.f;
+           s.exposureEV<=16.f;
+}
+
+// CPU reference for validating GPU shader values (linear-channel input).
+inline float cameraHdrToSrgb(float linear,float exposureEV) {
+    const float x=std::max(0.f,linear*std::exp2(exposureEV));
+    const float mapped=x/(1.f+x);
+    return std::clamp(mapped<=.0031308f?12.92f*mapped:
+                      1.055f*std::pow(mapped,1.f/2.4f)-.055f,0.f,1.f);
 }
 
 // Linear HDR -> photographic Reinhard -> sRGB transfer -> RGBA8 UNORM.
