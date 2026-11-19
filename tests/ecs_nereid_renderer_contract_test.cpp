@@ -10,6 +10,7 @@
 #include "engine/render/PostFxShaders.h"
 #include "engine/render/NereidWaterReflectionPolicy.h"
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
 using namespace aiverse;
@@ -681,5 +682,31 @@ int main() {
     check(render::postFxUnderwaterBudget(render::PostFxQuality::Low).samples==1 &&
           render::postFxUnderwaterBudget(render::PostFxQuality::High).samples==3,
           "depth capability must not change established water quality budgets");
+    // Depth-aware underwater compositing must integrate only the portion
+    // of a view ray inside the volume, including above-to-below crossings.
+    check(render::postFxUnderwaterRayFraction(5.f,10.f)==1.f,
+          "fully submerged rays should attenuate over their entire distance");
+    check(render::postFxUnderwaterRayFraction(-5.f,-2.f)==0.f,
+          "entirely airborne rays must not receive underwater extinction");
+    check(render::postFxUnderwaterRayFraction(-3.f,7.f)>0.69f &&
+          render::postFxUnderwaterRayFraction(-3.f,7.f)<0.71f,
+          "entry ray should only attenuate over the submerged portion");
+    check(render::postFxUnderwaterRayFraction(2.f,-6.f)==0.25f,
+          "exiting water should attenuate only the initial immersed segment");
+    check(render::postFxUnderwaterRayFraction(
+          std::numeric_limits<float>::quiet_NaN(),1.f)==0.f,
+          "invalid depth values must not propagate into optical absorption");
+    render::PostFxUnderwater rayTarget{};
+    rayTarget.submerged=true;
+    rayTarget.surfaceOffset=2.5f;
+    const auto rayState=render::advancePostFxUnderwater({},rayTarget,0.1f);
+    check(rayState.surfaceOffset==2.5f,
+          "Prisma should retain signed water-plane offset from NEREID");
+    check(depthComposite.find("float startDepth = underwater2.w")!=
+          std::string::npos &&
+          depthComposite.find("float endDepth = startDepth +")!=
+          std::string::npos &&
+          depthComposite.find("immersedFraction")!=std::string::npos,
+          "shared GL/Metal shader must clip underwater distance to water plane");
     std::cout<<"PASS NEREID renderer bridge + multi-height planar fallback contract\n";
 }
