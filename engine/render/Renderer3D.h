@@ -953,7 +953,8 @@ private:
                    graph->vertexMsl == other.graph->vertexMsl &&
                    graph->textures == other.graph->textures &&
                    graph->outputs == other.graph->outputs &&
-                   graph->usesVirtualTexture == other.graph->usesVirtualTexture;
+                   graph->usesVirtualTexture == other.graph->usesVirtualTexture &&
+                   graph->minQuality == other.graph->minQuality;
         }
     };
     struct ShaderEntry { gfx::ShaderHandle shader; bool failed = false; gfx::Device::ShaderJob job; };
