@@ -484,3 +484,19 @@ Test fixtures: `manualRetryAfterJournalRecovery` and
 macOS/Windows validation and true journal+World crash-atomicity are
 NOT VERIFIED. Handoff:
 `docs/agent-handoffs/physis-stage44-manual-retry-2026-11-19.md`.
+
+### Stage 45 — prevent lock-file FIFO startup hangs (POSIX)
+
+For the canonical admin journal, `JournalProcessLock::acquire`
+opens `<journal>.lock` with `O_RDWR|O_CREAT|O_NONBLOCK` (plus
+`O_CLOEXEC` and `O_NOFOLLOW` where supported). This is required:
+a malicious FIFO can block the server BEFORE its `fstat` regular-file
+security check if the open is not nonblocking. Reject non-regular,
+multiply hardlinked, wrong-owner or group/other-accessible inodes.
+
+The PHYSIS CTest source `unsafeJournalLockInodesRejected` now verifies
+a FIFO is refused, in addition to permission and hardlink checks.
+An **isolated Linux GCC 14.2 C++20 header smoke** passed with exact
+source blob SHA `835cfb9630e66d7918ed91ef06f97f590c2007b5`.
+This is NOT a full engine CMake/CTest or platform validation. See
+`docs/agent-handoffs/physis-stage45-fifo-lock-hardening-2026-11-19.md`.
