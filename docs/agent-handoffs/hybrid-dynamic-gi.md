@@ -722,3 +722,14 @@ regions and all unflushed changes for retry. CPU/GPU FakeDevice test sources
 registered with CTest. No compiler, CTest, shader validation, device test
 or real TerraWeave producer linkage executed. Automatic ECS subscription and
 terrain/foliage receiving shader GI remain unfinished.
+
+
+## Stage 41 — 2026-11-20 — dynamic GI with textured Shader Graph (SOURCE; NOT RUN)
+
+Read `docs/agent-handoffs/gi-stage41-shader-graph-dynamic-gi-2026-11-20.md`.
+Added `GiShaderGraphTextureSlots` and capability-gated model shader
+permutation so GI atlas/validity/cascades occupy reserved tex13..16 before
+Shader Graph textures, with fallback to graph-only shading when GPU/GLES
+resource caps are insufficient. Model draw path rebinds graph textures
+after pipeline variant changes. GI texture budget source tests extended;
+native C++, CTest, MSL/GLSL/SPIR-V shader runs and device pixels NOT RUN.
