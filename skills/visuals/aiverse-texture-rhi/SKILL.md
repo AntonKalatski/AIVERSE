@@ -1424,3 +1424,45 @@ and its opt-in risky CMake tests remain default OFF; PR #21 Draft.
 For the next stage, reuse canonical page sampling and disk workers,
 and create a separate acceptance suite with visual seam/fallback
 oracles rather than rewriting the VT implementation.
+
+## Stage 10BY — missing disk page, empty VT fallback and wrap boundaries (source only)
+
+Native real-Metal, separately opt-in test:
+`tests/render/metal_renderer_graph_vt_seam_gpu.cpp`;
+CMake `AIVERSE_TEXTURE_METAL_GRAPH_VT_SEAM_GPU_TESTS=ON`
+(default **OFF**), CTest `metal_renderer_graph_vt_seam_gpu`.
+Use a dedicated Mac Studio `build/texture-graph-vt-seam` cache.
+
+The fixture reuses production `render::graph::compile`,
+`Renderer3D`, `VirtualTextureFileStreamer`,
+`ModelVirtualTextureBinding`, and the canonical shader sampler.
+It does **not** duplicate core VT/Shader Graph routines.
+
+It requires a hardware GPU ICB readback for every state, and also
+independent oracles to avoid identical mistakes by direct and
+ICB paths: no-VT fallback pixels must exactly equal sampling an
+empty GPU page table; deliberately missing disk files must fail
+twice without changing pinned-coarse pixels; after fine tile(3,1)
+publication, **Repeat** U=-0.125 and U=-0.0005 must select
+fine on the left while **MirrorRepeat** selects coarse on the
+right. At U=1.125 and U=1.0005 the selection reverses.
+The test predicts which *actual image region* changes based on
+the original raw RGBA8 page colors, compares RGB channel
+directions, validates CPU page table bytes and requires mixed VT
+and mixed graph GPU ICB submission counters. It rejects fallback
+to ordinary GPU draws.
+
+Source commits: `694d04531ffd5c1e81efe60b499a0ccd8e096d0d`
+and `d95cdc388778a31de5b0f9900863cd28c2e7a737`.
+See `docs/texture-rhi.md` Stage 10BY for exact pull,
+configure/build/CTest and criteria.
+
+**Native C++ compilation, MSL shader, Metal GPU execution,
+missing-file callback, seam pixels and CTest have NOT RUN** for
+Stage 10BY. The prior 10BX coarse/fine/LRU 1/1 GPU PASS is
+independent evidence, not this stage's acceptance.
+Do not merge PR #21 or enable experimental Metal ICB in production.
+
+Remaining: nonuniform page-edge gutters with bilinear filtering,
+cross-platform Vulkan/GL/mobile and WebGL, shader counts 0–4,
+stress and real GPU frame-time benchmarks.
