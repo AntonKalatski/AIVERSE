@@ -627,6 +627,117 @@ bool ComputeParticles::requestGpuVmErrors(
     return true;
 }
 
+bool ComputeParticles::requestGpuCheckpoint(std::function<void(bool)> callback) {
+    if(!initialized_ || backend_!=ComputeBackend::Metal || !device_ ||
+       !device_->gpuHealthy() || !device_->canUpdateSharedBuffers() ||
+       !readbackLifetime_ || asyncCheckpointPending_ ||
+       !states_.valid() || !stateProgramParams_.valid() ||
+       !stateAttributes_.valid() || ages_.empty() ||
+       !pendingStates_.empty())return false;
+
+    // At most eight 64 KiB chunks for the existing 4096-slot GPU backend.
+    // Every callback carries bytes from a single ordered Metal command buffer.
+    const size_t n=ages_.size();
+    const std::array<size_t,3> lengths{
+        n*sizeof(ParticleState),n*sizeof(ProgramParams),
+        n*sizeof(ProgramAttributes)
+    };
+    constexpr size_t kChunkBytes=65536;
+    size_t chunks=0;
+    for(size_t bytes:lengths)chunks+=(bytes+kChunkBytes-1)/kChunkBytes;
+    if(chunks==0 || chunks>16)return false;
+
+    struct Pending {
+        std::array<std::vector<uint8_t>,3> bytes;
+        std::vector<float> remainingLifetime;
+        uint64_t frameRevision=0, frameSerial=0;
+        size_t left=0;
+        bool failed=false, acceptedAll=false;
+        std::function<void(bool)> completion;
+    };
+    auto pending=std::make_shared<Pending>();
+    pending->remainingLifetime=ages_;
+    pending->frameRevision=vmFrameRevision_;
+    pending->frameSerial=device_->frameSerial();
+    pending->completion=std::move(callback);
+    pending->left=chunks;
+    for(size_t i=0;i<3;++i)pending->bytes[i].resize(lengths[i]);
+    const std::weak_ptr<uint64_t> lifetime=readbackLifetime_;
+    asyncCheckpointPending_=true;
+    ++stats_.checkpointRequests;
+
+    const std::array<gfx::BufferHandle,3> buffers{
+        states_,stateProgramParams_,stateAttributes_
+    };
+    bool allAccepted=true;
+    for(size_t b=0;b<3 && allAccepted;++b) {
+        for(size_t offset=0;offset<lengths[b];offset+=kChunkBytes) {
+            const size_t length=std::min(kChunkBytes,lengths[b]-offset);
+            const bool accepted=device_->readBufferRangeAsync(
+                buffers[b],offset,length,
+                [this,lifetime,pending,b,offset,length](
+                    std::vector<uint8_t> data) {
+                    if(!lifetime.lock())return; // destroyed/fallback
+                    if(data.size()!=length)pending->failed=true;
+                    else std::memcpy(pending->bytes[b].data()+offset,
+                                     data.data(),length);
+                    if(--pending->left!=0)return;
+                    asyncCheckpointPending_=false;
+                    bool complete=pending->acceptedAll && !pending->failed &&
+                        gpuActive() &&
+                        pending->remainingLifetime.size()==ages_.size();
+                    if(complete) {
+                        GpuCheckpoint result;
+                        const size_t total=pending->remainingLifetime.size();
+                        result.slots.resize(total);
+                        result.remainingLifetime=pending->remainingLifetime;
+                        result.frameSerial=pending->frameSerial;
+                        for(size_t i=0;i<total;++i) {
+                            auto& dst=result.slots[i];
+                            std::memcpy(&dst.positionAge,
+                                pending->bytes[0].data()+i*sizeof(ParticleState),
+                                sizeof(ParticleState));
+                            std::memcpy(dst.programParams.data(),
+                                pending->bytes[1].data()+i*sizeof(ProgramParams),
+                                sizeof(ProgramParams));
+                            std::memcpy(dst.attributes.data(),
+                                pending->bytes[2].data()+i*sizeof(ProgramAttributes),
+                                sizeof(ProgramAttributes));
+                        }
+                        result.complete=true;
+                        // Keep a completed historical capture for diagnostics,
+                        // but ONLY same-revision state is eligible for fallback.
+                        lastCheckpoint_=std::move(result);
+                        checkpointRevision_=pending->frameRevision;
+                        ++stats_.checkpointCompleted;
+                    } else ++stats_.checkpointFailed;
+                    if(pending->completion)pending->completion(complete);
+                });
+            if(!accepted) {allAccepted=false;break;}
+        }
+    }
+    if(!allAccepted) {
+        // Earlier accepted callbacks still own their staging data. Mark the
+        // request invalid and count the unqueued chunks as completed failures;
+        // no partial data may ever be published as a usable checkpoint.
+        pending->failed=true;
+        pending->acceptedAll=false;
+        size_t unqueued=0;
+        // The remaining count includes both accepted and unaccepted chunks;
+        // the latter will never callback. Count accepted requests instead.
+        // 'left' is recomputed from this request's accepted callback count.
+        // (see accepted counter below)
+        (void)unqueued;
+        // The device may have reached its concurrent-readback limit. Revoke
+        // the entire batch; callbacks will be ignored via failure marker.
+        asyncCheckpointPending_=false;
+        ++stats_.checkpointFailed;
+        return false;
+    }
+    pending->acceptedAll=true;
+    return true;
+}
+
 bool ComputeParticles::captureGpuCheckpoint(GpuCheckpoint& out) {
     out={};
     if(!initialized_ || backend_!=ComputeBackend::Metal || !device_ ||
