@@ -466,3 +466,38 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   `tests/physis_admin_journal_test.cpp`; native CMake/CTest have
   NOT RUN. Handoff:
   `docs/agent-handoffs/physis-stage48-pinned-journal-io-2026-11-19.md`.
+
+### Stage 49 — independently tested POSIX journal filesystem layer (2026-11-19)
+
+- Canonical POSIX `FileJournal::loadPinned/savePinned` retain the same
+  v1 receipt serialization, checksums, IDs, file limits and
+  `ServerGateway::restoreJournal`, but delegate raw file operations
+  to `engine/physis/PhysisJournalPosixIO.h`. The new
+  `posix_journal::read/write` helpers are independent of ECS, net,
+  editor, Box3D and game genres.
+- A verified directory fd remains mandatory for privileged operations.
+  `read` distinguishes a genuinely absent file (fresh journal)
+  from a symlink, FIFO, hardlink, unsafe file modes, wrong owner,
+  invalid size, and short read. It does not overwrite output on
+  failure. `write` uses caller-provided cryptographic random suffix,
+  `openat(O_EXCL)`, file fsync, `renameat`, directory fsync and
+  `unlinkat` cleanup on failed pre-rename writes.
+- New native POSIX CTest `physis_journal_posix_io` is included in
+  CMake and explicit Ubuntu/macOS PHYSIS workflow build targets.
+- **ACTUAL PASS**: isolated source-identical Linux GCC 14.2 C++20
+  CMake/CTest `physis_journal_posix_io` 1/1, GCC ASan/UBSan test,
+  and Clang 17 strict-warning standalone binary. Git blobs:
+  `PhysisJournalPosixIO.h` =
+  `834a651f38b2d9c3ce75bc261b3ec731d3572e8a`,
+  `physis_journal_posix_io_test.cpp` =
+  `d45e0dd9e5ab5d8d55b806e0b847fe49ced22775`.
+- This is NOT a successful full AIVERSE configure/CTest. The entire
+  repository cannot be cloned in the local environment (GitHub DNS
+  unavailable); GitHub Actions jobs for the feature branch were
+  queued or superseded/cancelled, not confirmed green.
+- Continue the canonical `LoopbackAdminEndpoint` lock ownership
+  and journal error fail-closed policy. Direct legacy path-based
+  FileJournal::save/load remain separate. Windows stays on its
+  previous implementation. NEREID, TerraWeave and Box3D ownership
+  remains unchanged. Handoff:
+  `docs/agent-handoffs/physis-stage49-posix-journal-test-2026-11-19.md`.
