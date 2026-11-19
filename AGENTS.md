@@ -1336,3 +1336,15 @@ sparse-clears old probe texels. Always publish new immutable BVH/albedo for
 actual terrain geometry/material changes: dirty events alone cannot alter
 ray-trace geometry. Sun/sky/environment transport is not implemented by these
 point/spot kernels. Source only; native CTest/GPU tests NOT RUN.
+
+
+## GI Stage 38 — read-only direct light snapshot bridge (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage38-renderer-light-snapshot-2026-11-20.md`.
+After all `Renderer3D::lights.add()` calls, `LightSystem::submittedLights()`
+provides a const per-scene source vector; `GiLightingController::syncRendererLights`
+copies only explicitly opted-in point/spot sources into stable-key indirect
+transport. Do not retain references across `beginScene`, do not move ECS
+pointers onto GPU, and do not rebounce baked static sources by default.
+This is an explicit API call, not an automatic renderer/game genre hook.
+Source only; native compile/CTest/Metal/Vulkan/GLES device tests NOT RUN.
