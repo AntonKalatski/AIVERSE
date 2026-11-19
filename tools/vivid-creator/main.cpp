@@ -997,9 +997,34 @@ struct CreatorApp {
                         ImGui::SameLine();
                         ImGui::PushID(int(level));
                         if(ImGui::SmallButton("Remove level")) {
-                            authoredFacialLods.erase(authoredFacialLods.begin()+std::ptrdiff_t(level));
-                            if(authoredFacialLods.empty())lodGpuMorphEnabled=false;
-                            pendingRebuild=true;
+                            try {
+                                auto proposed=importedPackage;
+                                if(lod.targetMesh<0 ||
+                                   std::size_t(lod.targetMesh)>=human.head->meshes.size())
+                                    throw std::runtime_error("VIVID LOD: selected mesh missing");
+                                const auto name=human.head->meshes[std::size_t(lod.targetMesh)].name;
+                                proposed.facialLods.erase(std::remove_if(
+                                    proposed.facialLods.begin(),proposed.facialLods.end(),
+                                    [&](const HumanLodEntry& entry){return entry.meshName==name;}),
+                                    proposed.facialLods.end());
+                                proposed.validate();
+                                const auto data=proposed.toJson().dump(2);
+                                const auto tmp=std::string(importedManifest)+".vivid.tmp";
+                                {std::ofstream out(tmp,std::ios::binary|std::ios::trunc);
+                                 if(!out)throw std::runtime_error("VIVID LOD: manifest staging open failed");
+                                 out.write(data.data(),std::streamsize(data.size()));
+                                 out.flush();
+                                 if(!out)throw std::runtime_error("VIVID LOD: manifest staging write failed");}
+                                std::error_code error;
+                                std::filesystem::rename(tmp,importedManifest,error);
+                                if(error)throw std::runtime_error(error.message());
+                                importedPackage=std::move(proposed);
+                                authoredFacialLods.erase(
+                                    authoredFacialLods.begin()+std::ptrdiff_t(level));
+                                if(authoredFacialLods.empty())lodGpuMorphEnabled=false;
+                                pendingRebuild=true;
+                                status="VIVID LOD: removed level from package index";
+                            }catch(const std::exception& e){status=e.what();}
                             ImGui::PopID();
                             break;
                         }
@@ -1016,9 +1041,16 @@ struct CreatorApp {
                            std::size_t(sourceLodMesh)>=human.head->meshes.size() ||
                            std::size_t(targetLodMesh)>=human.head->meshes.size())
                             throw std::runtime_error("VIVID LOD: select source and target meshes first");
+                        const auto targetName=human.head->meshes[std::size_t(targetLodMesh)].name;
+                        const auto registered=std::find_if(
+                            importedPackage.facialLods.begin(),
+                            importedPackage.facialLods.end(),
+                            [&](const HumanLodEntry& e){return e.meshName==targetName;});
+                        if(registered==importedPackage.facialLods.end())
+                            throw std::runtime_error("VIVID LOD: no indexed mapping for target mesh");
                         const auto path=std::filesystem::absolute(
                             std::filesystem::path(importedManifest)).parent_path()/
-                            ("vivid-facial-lod-"+std::to_string(targetLodMesh)+".mapping.json");
+                            registered->mappingPath;
                         const auto restored=MorphLodMapping::fromJson(
                             Json::parse(fileContents(path,64ull*1024ull*1024ull)));
                         std::vector<std::uint32_t> sourceIndices;
