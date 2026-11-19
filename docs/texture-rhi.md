@@ -4176,3 +4176,51 @@ The success record `build/texture-final-logs/acceptance.txt`
 is trustworthy only when the script exits zero and all
 required CTest logs contain real native GPU execution
 markers, not merely the previously seen test binaries.
+
+### Stage 10CF — detached HEAD isolated worktree accepted safely
+
+**Observed user Mac Studio result:** the one-shot runner stopped before
+CMake or CTest with:
+`FAIL: run only in the feature/texture-rhi-unification isolated worktree`.
+The user had successfully fetched and fast-forwarded to
+`67cd9a4214309a3614f492efb79e980311d553a4` but the
+existing isolated validation worktree was in **detached HEAD**,
+as previously used by concurrent AIVERSE agent workflows.
+`git branch --show-current` is blank in detached HEAD.
+This was a **runner preflight false rejection**, not
+a texture/shader/compiler or GPU test failure.
+
+**Source fix commit:** `1fd7dcba4b16cbf72c64d0f6c81c5be9415c23ce`
+updates only `tools/texture-rhi-final-verify.sh`.
+The script now obtains `HEAD` and the fetched
+`refs/remotes/origin/feature/texture-rhi-unification`
+commit IDs and **requires exact equality** before doing work.
+A named local branch must still be
+`feature/texture-rhi-unification`; detached HEAD
+is permitted only at this same fetched source SHA.
+Missing remote-tracking ref, stale HEAD and other local
+branches fail closed, rather than trusting detached
+HEAD indiscriminately. The shell reports the accepted
+source SHA and detached/branch state explicitly.
+
+**Status:** the worktree failure is explained and a
+source fix was pushed. The **corrected one-shot runner
+has not yet been executed on the user's Mac**; no
+21-test or seven-GPU-test PASS is claimed here.
+
+Run the same complete one-shot command without changing
+or creating local branches:
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+bash -n tools/texture-rhi-final-verify.sh
+bash tools/texture-rhi-final-verify.sh --jobs 4
+```
+
+To include the entire nonexperimental engine suite as
+well as the texture gates, add `--full-engine`.
+Review the first error if anything new fails and keep
+the existing fail-fast / native GPU success-marker rules.
