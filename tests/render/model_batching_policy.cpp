@@ -615,14 +615,28 @@ int main() {
         CHECK(equivalentStaticRenderPacketDraw(snapshot, draw));
 
         draw.materials = &model.materials;
-        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+        CHECK(staticRenderPacketCandidate(draw, false, false, false));
+        const auto savedMaterials = model.materials;
+        const auto savedHashes = staticPacketMaterialHashes(model, savedMaterials);
+        CHECK(staticPacketMaterialStateMatches(model, model.materials,
+                                                savedMaterials, savedHashes));
+        model.materials[0].metallic = .85f; // pointer-stable native mutation
+        CHECK(!staticPacketMaterialStateMatches(model, model.materials,
+                                                 savedMaterials, savedHashes));
+        model.materials[0] = savedMaterials[0];
+        CHECK(staticPacketMaterialStateMatches(model, model.materials,
+                                                savedMaterials, savedHashes));
+        model.materials.emplace_back(); // reallocated material vector
+        CHECK(!staticPacketMaterialStateMatches(model, model.materials,
+                                                 savedMaterials, savedHashes));
+        model.materials.pop_back();
         draw.materials = nullptr;
         std::vector<int> nodeMaterials(1, 0);
         draw.nodeMaterial = &nodeMaterials;
         CHECK(!staticRenderPacketCandidate(draw, false, false, false));
         draw.nodeMaterial = nullptr;
         model.meshes[0].lods.push_back({0, 10.f});
-        CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+        CHECK(staticRenderPacketCandidate(draw, false, false, false));
         model.meshes[0].lods.clear();
         model.meshes[0].deformable = true;
         CHECK(!staticRenderPacketCandidate(draw, false, false, false));
@@ -632,6 +646,20 @@ int main() {
         model.nodes[0].runtimeMutable = false;
         model.nodes[0].skin = 0;
         CHECK(!staticRenderPacketCandidate(draw, false, false, false));
+    }
+
+    // LOD-aware packet replay must invalidate on a changed selected mesh,
+    // and bypass continuously varying crossfade frames.
+    {
+        const std::vector<ModelLod> levels{{1, 32.f}, {2, 8.f}};
+        const auto near = selectModelLod(0, levels, 150.f, .15f);
+        const auto mid = selectModelLod(0, levels, 20.f, .15f);
+        const auto far = selectModelLod(0, levels, 2.f, .15f);
+        CHECK(near.mesh == 0 && near.incoming < 0);
+        CHECK(mid.mesh == 1 && mid.incoming < 0);
+        CHECK(far.mesh == 2 && far.incoming < 0);
+        const auto transition = selectModelLod(0, levels, 32.f, .15f);
+        CHECK(transition.incoming >= 0 && transition.progress > 0.f);
     }
 
     std::puts("engine model batching policy: PASS");
