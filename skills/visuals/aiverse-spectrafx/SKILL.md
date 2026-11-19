@@ -1270,3 +1270,59 @@ GPU commands while drawing its UI.
 readback only; compilation, ZIP extraction, offline
 CLI execution, CTest, editor UI, real Metal capture
 and Device recovery were NOT RUN. Do not claim otherwise.
+
+## Stage 44 — executable standalone V2 diagnostics and regression gate
+
+The source-only Stage 41–43 V2 diagnostics now have
+**actually executed standalone C++20 verification**.
+Use the genre-neutral regression
+`tests/vfx_spfx_diagnostics_test.cpp` and offline
+`tools/spectrafx/inspect_spfx.cpp` rather than
+rewriting custom binary/ZIP parsers.
+
+Standalone development commands, from the AIVERSE
+root on a C++20 host:
+
+```sh
+c++ -std=c++20 -Wall -Wextra -Werror -O2 -I. \
+  tests/vfx_spfx_diagnostics_test.cpp -o vfx_spfx_diagnostics_test
+./vfx_spfx_diagnostics_test fixture.spfx fixture.zip
+
+c++ -std=c++20 -Wall -Wextra -Werror -O2 -I. \
+  tools/spectrafx/inspect_spfx.cpp -o inspect_spfx
+./inspect_spfx --json --report report.json --bundle support.zip fixture.spfx
+
+# Existing CMake/CTest integration:
+cmake --build build --target aiverse_vfx_spfx_diagnostics_test
+ctest --test-dir build --output-on-failure -R '^vfx_spfx_diagnostics$'
+```
+
+The source code and test file were mirrored into a
+local Linux compiler environment and their `git hash-object`
+values checked against the exact six GitHub blob SHAs.
+Actual GCC 14.2 C++20 compile/execution,
+`-Wall -Wextra -Werror`, CRC/malformed V2 tests,
+privacy-default/opt-in tests, C++ ZIP serialization
+read by Python `zipfile`, CLI valid/invalid behavior,
+a ONE-TEST isolated CMake/CTest, and ASAN+UBSAN
+passed. The GPU-independent mirror used minimal
+ABI-compatible `render::float4`/checkpoint struct
+declarations, NOT the full AIVERSE engine checkout.
+
+A standalone GitHub Actions workflow
+`.github/workflows/spectrafx-diagnostics.yml`
+runs Linux and macOS compile, CLI and ZIP tests
+on push/PR or manual dispatch. The existing
+`spectrafx-validation.yml` focused build includes
+the CTest executable. GitHub Actions runs were
+`queued`/`pending`, not completed when checked;
+**do not falsely report a CI pass**.
+
+**Still not run:** full native AIVERSE CMake/build/CTest,
+Apple Objective-C++ and MSL, real GPU compute/frames,
+renderer-native mailbox, device loss/cancellation
+or performance tests. Never conflate portable
+SPFX verification with Metal device correctness.
+
+Stage 44 handoff:
+`docs/agent-handoffs/spectrafx-stage-44-offline-diagnostics-tested-2026-11-19.md`.
