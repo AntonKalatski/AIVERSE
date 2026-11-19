@@ -111,6 +111,9 @@ void HumanImportManifest::validate() const {
     relativePath(modelPath,true);
     relativePath(dnaPath,false);
     relativePath(morphPath,false);
+    require(scalpColliderMesh.size()<=128 &&
+            scalpColliderMesh.find_first_of("\\n\\r") == std::string::npos,
+            "VIVID import: invalid scalp collider mesh name");
     require(routes.size()<=4096 && materials.size()<=512,
             "VIVID import: route/material budget exceeded");
     for(const auto& route:routes) {
@@ -126,7 +129,7 @@ void HumanImportManifest::validate() const {
     }
 }
 HumanImportManifest HumanImportManifest::fromJson(const Json& src) {
-    allowed(src,{"version","model","dna","morphs","routes","materials"});
+    allowed(src,{"version","model","dna","morphs","routes","materials","scalpColliderMesh"});
     HumanImportManifest m;
     require(src.has("version"),"VIVID import: missing manifest version");
     m.version=integer(src["version"]);
@@ -139,6 +142,11 @@ HumanImportManifest HumanImportManifest::fromJson(const Json& src) {
     if(src.has("morphs")) {
         require(src["morphs"].isString(),"VIVID import: invalid morph path");
         m.morphPath=src["morphs"].str();
+    }
+    if(src.has("scalpColliderMesh")) {
+        require(src["scalpColliderMesh"].isString(),
+                "VIVID import: scalp collider mesh name must be string");
+        m.scalpColliderMesh=src["scalpColliderMesh"].str();
     }
     if(src.has("routes")) {
         const auto& routes=src["routes"];
@@ -178,6 +186,8 @@ Json HumanImportManifest::toJson() const {
     j.set("model",Json::string(modelPath));
     if(!dnaPath.empty())j.set("dna",Json::string(dnaPath));
     if(!morphPath.empty())j.set("morphs",Json::string(morphPath));
+    if(!scalpColliderMesh.empty())
+        j.set("scalpColliderMesh",Json::string(scalpColliderMesh));
     auto routesJson=Json::array();
     for(const auto& route:routes){
         auto r=Json::object();
