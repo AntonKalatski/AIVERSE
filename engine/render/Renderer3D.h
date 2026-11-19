@@ -122,6 +122,11 @@ public:
     virtual bool temporalShadowResolve() const { return false; }
     virtual gfx::PassDesc scenePass(const gfx::PassDesc& out, int w, int h) = 0;
     virtual void resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame& frame) = 0;
+    // Optional read-only presentation bridge for object motion vectors.
+    virtual bool objectMotionContext(uint64_t& viewId, mat4& previousViewProj) const {
+        (void)viewId; (void)previousViewProj; return false;
+    }
+    virtual void acceptObjectMotionVectors(gfx::TextureHandle) {}
 };
 
 // Baked skinning sample (Animator::baseSample()): clip A blends to clip B by `mix`; clip -1 = bind pose.
@@ -411,6 +416,8 @@ private:
         float gpuLodMaxPixels = 0, gpuLodError = 0;
         float3 gpuLodBoundsMin{}, gpuLodBoundsMax{};
         mat4 world; float4 tint; float3 team; float flash; uint32_t flags;
+        uint64_t motionPersistentId = 0; // 0: transient, never tracked
+        int motionNodeIndex = -1;
         int32_t joints;     // offset into jointData_ (floats), -1 when not palette-skinned
         bool baked;         // skinned from the baked texture (rows in anim)
         float4 anim;        // baked row A, row B, mix
@@ -439,6 +446,7 @@ private:
                                 bool instancePalette = false);
     void prepareGpuModelDraws();
     void renderModels(int phase);   // 0 shadow, 1 opaque, 2 blended, 3 outlines, 4 depth of transparent objects
+    void renderObjectMotionVectors(PostProcess& post); // RHI pass, opaque rigid models only
     bool initSelectionOutline();
     void renderSelectionOutline(const gfx::PassDesc& scenePass, int width, int height);
 
@@ -546,6 +554,15 @@ private:
     int geometryShadowSize_=0;
     MaterialQuality matQuality_ = MaterialQuality::High;
     std::vector<ModelItem> modelItems_;
+    struct ObjectMotionHistory {
+        gfx::TextureHandle target;
+        int width = 0, height = 0;
+        std::map<std::pair<uint64_t, int>, mat4> previous;
+    };
+    std::map<uint64_t, ObjectMotionHistory> objectMotionViews_;
+    gfx::ShaderHandle objectMotionShader_;
+    gfx::PipelineHandle objectMotionPipeline_;
+
     // Material GPU-state equivalence is pass-independent within one scene.
     // Resolve each distinct (model, material) once for shadows, colour,
     // reflection and outline. All containers are cleared at beginScene(),
