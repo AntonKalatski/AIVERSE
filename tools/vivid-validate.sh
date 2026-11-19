@@ -60,6 +60,11 @@ else
         aiverse_vivid_metal_rhi_tests \
         aiverse_vivid_vertex_override_tests \
         aiverse_vivid_actor_retirement_tests \
+        aiverse_vivid_human_dna_tests \
+        aiverse_vivid_human_rig_tests \
+        aiverse_vivid_human_appearance_tests \
+        aiverse_vivid_human_creator_tests \
+        aiverse_vivid_creator \
         aiverse_vivid_motionweave_tests \
         aiverse_motionweave_api_tests \
         aiverse_vivid_renderer_preview \
@@ -112,6 +117,27 @@ if [[ "$GUI" -eq 1 ]]; then
         printf 'VIVID multi-actor Renderer3D/MotionWeave preview did not pass.\n' >&2
         exit 1
     fi
+
+    # Build and execute the real ImGui Creator shader/material preview in
+    # noninteractive capture mode. Tests skin, sclera, iris, cornea, hair
+    # cards, user-facing renderer and screenshot data on a Metal GPU.
+    CREATOR="$BUILD/aiverse_vivid_creator"
+    if [[ ! -x "$CREATOR" ]]; then
+        printf 'Missing VIVID Creator executable: %s\n' "$CREATOR" >&2
+        exit 1
+    fi
+    CREATOR_PPM="$LOGDIR/vivid-creator.ppm"
+    run_logged creator-gui-preview env \
+        AIVERSE_VIVID_CREATOR_CAPTURE="$CREATOR_PPM" \
+        "$CREATOR" --smoke
+    if [[ ! -s "$CREATOR_PPM" ]]; then
+        printf 'VIVID Creator real skin/eye/groom screenshot missing.\n' >&2
+        exit 1
+    fi
+    if ! grep -q 'pass=1' "$LOGDIR/creator-gui-preview.log"; then
+        printf 'VIVID Creator Metal preview did not report pass=1.\n' >&2
+        exit 1
+    fi
 else
     printf 'GUI preview intentionally skipped by --no-gui; this is NOT full visual acceptance.\n'
 fi
@@ -122,6 +148,7 @@ fi
     if [[ "$GUI" -eq 1 ]]; then
         printf 'Renderer3D colour/shadow/MotionWeave visual preview=PASS\n'
         printf 'Renderer3D shared GPU asset crowd preview=PASS\n'
+        printf 'VIVID Creator skin/eye/groom interactive GUI GPU preview=PASS\n'
     else
         printf 'Renderer3D visual preview=NOT RUN (--no-gui)\n'
     fi
