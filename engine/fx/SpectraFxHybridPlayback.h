@@ -31,7 +31,7 @@ public:
     struct Stats {
         uint64_t played=0,moved=0,stopped=0,killed=0;
         uint64_t missing=0,refused=0,failed=0,oneShots=0,retired=0;
-        uint64_t gpuImpacts=0,impactDropped=0;
+        uint64_t gpuImpacts=0,impactDropped=0,impactEffects=0;
     };
 
     SpectraFxHybridPlayback(gfx::Device& device,ParticleSystem& cpu,
@@ -167,6 +167,25 @@ public:
         };
         for(auto& pair:active_) forward(pair.first,*pair.second);
         for(auto& oneShot:oneShots_) forward(0,*oneShot.emitter);
+    }
+
+    // Optional authored on-impact CPU sub-effects. Call once after
+    // ParticleSystem::setView and before ParticleSystem::update, on the
+    // presentation thread. Effects are bounded and NEVER gameplay hits.
+    void playGpuImpactEffects(size_t maxEffects=32) {
+        size_t remaining=maxEffects;
+        auto emit=[&](SpectraFxHybridEmitter& emitter) {
+            const auto& name=emitter.config().impactEffect;
+            if(name.empty() || !remaining) return;
+            emitter.drainGpuImpacts([&](const SpectraFxGpuImpact& impact) {
+                const auto h=cpu_.play(name,impact.position);
+                if(h.valid()) ++stats_.impactEffects;
+                else ++stats_.impactDropped;
+                --remaining;
+            },remaining);
+        };
+        for(auto& pair:active_) emit(*pair.second);
+        for(auto& shot:oneShots_) emit(*shot.emitter);
     }
 
     // Rollback/scene unload: prevents stale generation-safe keys from
