@@ -762,3 +762,12 @@ git merge origin/main
 - **Limits:** This is a conservative routing rule, **not** a GPU alpha sort implementation. Arbitrary material/mesh/depth sorting, CPU/GPU visual parity, Vulkan/Metal GPU pipeline correctness and runtime feedback are still unverified.
 - **Actual tests:** **NOT RUN** per user's features-first request; no native compiler, shader validation, CTest, GPU or editor execution. No production readiness claimed.
 - **Next:** document the opt-in unsorted-alpha switch in the user-facing GPU guide and continue GPU sorting/multi-emitter resource/performance work before validation.
+
+
+## 2026-11-19 — Stage 52: opt-in Metal GPU depth sorter for alpha particles
+- **Branch:** `feature/spectrafx-generic-cue-queue`; at start main `d71c6d47e532b25fb816a8bb1f96c41e5275a165` was already merged, behind 0.
+- **Code SHA:** `3ab1fe2ec746e339f71d4182b4623701bd913765`.
+- **New file:** `engine/fx/SpectraFxGpuAlphaSort.h`, class `SpectraFxGpuAlphaSort::init/prepare/preparedFor/sortedIndexTexture/release` (Metal-specific RHI compute). It snapshots a GPU-produced RGBA32F particle position/opacity texture after `GpuEvolution::step`, initializes `SortItem {depth,slot}` including padded next-power-of-two slots, runs back-to-front bitonic sort passes using separate compute encoders (RHI has no in-encoder dispatch memory barrier primitive), and writes sorted source-slot indices to a GPU RGBA32F texture. The depth key uses dot(position-cameraEye,cameraForward); fully transparent/dead slots sort to the tail. Equal-depth ties are ordered by lower source-slot index, so iteration is stable for a given particle state. No CPU readback.
+- **Boundaries:** requires Metal, `Device::frameSerial`, RHI compute, RGBA32F and <=4096 source slots. Sorting remains **opt-in** and is not yet connected to the normal BillboardRenderer or HybridEmitter in this stage. It does not offer cross-emitter global transparency ordering or Vulkan sorting. Worst-case cost is multiple bitonic dispatches per frame and must be benchmarked; don't automatically enable.
+- **Native tests actually performed:** **NOT RUN**, per user's features-before-tests directive. No shader compilation, Metal draw, CTest or GUI/visual validation; source code merged into feature branch only.
+- **Next:** attach sorted index texture to GPU billboard shader and add conservative execution policy/authoring switch. Do not claim GPU alpha support or performance until later native checks.
