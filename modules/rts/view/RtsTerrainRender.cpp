@@ -886,8 +886,16 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
     }
     stats_.geometryBytes = geoBytes_;
     const int tier = tierFor(r);
-    gfx::PipelineHandle pipe = pipeline(dev, tier + (detailOn_ ? 3 : 0));
-    if (!pipe.valid()) return;
+    const int variant=tier+(detailOn_ ? 3 : 0);
+    const gfx::PipelineHandle fallbackPipe=pipeline(dev,variant,false);
+    if (!fallbackPipe.valid()) return;
+    // Custom terrain already owns tex0..20, so GI uses tex21 and only a
+    // device with >=22 fragment texture slots may compile this permutation.
+    // The actual HDR/atlas readiness is checked inside the deferred pass.
+    const gfx::PipelineHandle giPipe=
+        tier>=1 && r.dynamicGiOverlayActive() &&
+        dev.maxFragmentTextureSlots()>=22
+        ? pipeline(dev,variant,true) : gfx::PipelineHandle{};
     TU0 u{};
     u.lod[2] = float(mapW_); u.lod[3] = float(mapH_);
     u.mode[0] = 0.05f;
@@ -930,11 +938,24 @@ void TerrainRenderer::draw(Renderer3D& r, const MapGrid& g, const std::vector<ui
         if (heightDirty_) updateHeightField(dev, g);
         r.setHeightField(heightField_);
     } else r.setHeightField({});
-    r.drawCustomOpaque([this, &r, items, u, pipe, apron](gfx::Device& d) {
-        d.setPipeline(pipe);
+    r.drawCustomOpaque([this, &r, items, u, fallbackPipe, giPipe, apron](gfx::Device& d) {
+        const bool giAvailable=giPipe.valid() &&
+            r.availableDynamicGiForCustomShader(
+                render::GiCustomShaderMode::Single,21)==render::GiCustomShaderMode::Single;
+        d.setPipeline(giAvailable ? giPipe : fallbackPipe);
         r.bindLitFrame();
         r.bindTrace(18);
         r.bindBakedTerrain(3, 19, 20);   // agent-lightbake
+        if(giAvailable && r.bindDynamicGiForCustomShader(
+                render::GiCustomShaderMode::Single,21)!=render::GiCustomShaderMode::Single) {
+            // Unexpected GI resource retirement between preflight and bind:
+            // use the precompiled ordinary terrain pipeline, never sample
+            // an unbound tex21 in a GI shader variant.
+            d.setPipeline(fallbackPipe);
+            r.bindLitFrame();
+            r.bindTrace(18);
+            r.bindBakedTerrain(3,19,20);
+        }
         d.setTexture(2, cellTex_); d.setTexture(3, dynTex_); d.setTexture(4, splatTex_);
         for (int i = 0; i < 4; ++i) {
             d.setTexture(5 + i, layerTex_[i].valid() ? layerTex_[i].tex : white_);
