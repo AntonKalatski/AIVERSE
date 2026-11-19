@@ -146,6 +146,10 @@ struct ModelDraw {
     // Optional stable entity identity; 0 means transient/immediate draw.
     // Attachments and multiple draws per entity need distinct IDs.
     uint64_t persistentId = 0;
+    // Explicit revision/opt-in for immutable CPU render packets: zero disables
+    // packet reuse. Increase when any caller-owned material/appearance state
+    // changes in-place (including pointer-stable material vectors).
+    uint64_t staticPacketRevision = 0;
     mat4 world;                                    // model space -> world
     const std::vector<mat4>* nodeWorld = nullptr;  // pose, model space; null = bind pose
     const std::vector<Material>* materials = nullptr; // per-instance override (model->materials first, extra ones after)
@@ -249,7 +253,19 @@ public:
     }
     // Call before/after in-place model geometry or bind-hierarchy edits, or
     // after an asset reload retaining the same model pointer and GPU handles.
-    void invalidateStaticModelCaches() { staticModelCaches_.clear(); }
+    void invalidateStaticModelCaches() {
+        staticModelCaches_.clear();
+        staticRenderPackets_.clear();
+    }
+    struct StaticRenderPacketStats {
+        uint64_t hits = 0, rebuilds = 0, declined = 0, evicted = 0;
+        size_t live = 0;
+    };
+    StaticRenderPacketStats staticRenderPacketStats() const {
+        auto s = staticRenderPacketStats_;
+        s.live = staticRenderPackets_.size();
+        return s;
+    }
     // Diagnostic, opt-in persistent scene upload stats. This staging path is
     // not yet bound to model shaders or used for GPU culling.
     struct PersistentSceneStats {
@@ -437,6 +453,7 @@ private:
         uint8_t materialRole = 0; // 1 original colour suppressed, 2 palette batch (colour only)
         uint8_t shadowRole = 0;   // 0 normal, 1 part covered by its mesh's shadow batch, 2 the shadow batch
         bool inView, inShadow; float depth;
+        int32_t sourceNode = -1; // producer node for per-view packet replay
     };
     void initModels();
     void shutdownModels();
@@ -559,6 +576,20 @@ private:
     int geometryShadowSize_=0;
     MaterialQuality matQuality_ = MaterialQuality::High;
     std::vector<ModelItem> modelItems_;
+    // Immutable rigid packet templates; views / shadows / depth are replayed
+    // for the current camera. Stored items own no GPU or Model resources.
+    struct StaticPacketEntry {
+        ModelDraw draw;
+        uint64_t geometryRevision = 0;
+        uint32_t vertexBuffer = 0, indexBuffer = 0;
+        uint64_t seen = 0;
+        const Material* materialData = nullptr;
+        size_t materialCount = 0;
+        std::vector<ModelItem> items;
+    };
+    std::unordered_map<uint64_t, StaticPacketEntry> staticRenderPackets_;
+    StaticRenderPacketStats staticRenderPacketStats_{};
+    bool staticRenderPacketsEnabled_ = false;
     struct StaticCacheEntry {
         StaticModelCache cache;
         uint64_t seen = 0;
