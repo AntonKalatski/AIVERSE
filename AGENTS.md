@@ -61,6 +61,14 @@ The renderer now memoizes per-model static eligibility through
 `engine/render/ModelStaticEligibility.h`, keyed by geometryRevision and
 structural/GPU handles, with an 8192-entry cap and periodic expiry; this
 avoids rescanning rigid node and mesh flags per rendered instance.
+For the separate versioned material-owner opt-in API,
+`Model::materialRevision`/`markMaterialChanged()` tracks source material
+and GPU texture state, while `ModelDraw::materialOwnerKey` and
+`materialOwnerRevision` identify an immutable shared material set. Both
+owner fields must be nonzero for a version-based shortcut. Native asset
+and override owners must advance revisions on in-place factors, shader,
+texture binding **or texture content** changes, including stable handle IDs.
+Without these fields, keep exact GPU material fingerprint comparison.
 `StaticModelCachePolicy.h` still validates every draw's pose, static flag,
 material displacement, GPU material state, LOD and view state separately.
 In-place native changes to node/primitive eligibility must bump
