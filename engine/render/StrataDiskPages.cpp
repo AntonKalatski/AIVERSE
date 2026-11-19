@@ -3,6 +3,7 @@
 #include <array>
 #include <condition_variable>
 #include <cstring>
+#include <cmath>
 #include <deque>
 #include <filesystem>
 #include <fstream>
@@ -12,6 +13,7 @@
 #include <mutex>
 #include <set>
 #include <sstream>
+#include <system_error>
 #include <thread>
 #include <utility>
 
@@ -109,11 +111,18 @@ bool sourceValid(const ModelAsset& asset) {
         if(!validate(g.nodes,g.roots) ||
            g.bounds.size()!=g.nodes.size() || g.indices.empty())
             return false;
-        for(const auto& node:g.nodes)
+        for(size_t n=0;n<g.nodes.size();++n) {
+            const auto& node=g.nodes[n];
             if(!node.resident ||
                node.firstIndex>g.indices.size() ||
                node.indexCount>g.indices.size()-node.firstIndex)
                 return false;
+            const auto& b=g.bounds[n];
+            for(unsigned k=0;k<3;++k)
+                if(!std::isfinite(b.min[k]) || !std::isfinite(b.max[k]) ||
+                   b.min[k]>b.max[k])
+                    return false;
+        }
     }
     return true;
 }
@@ -270,7 +279,7 @@ bool DiskIndexPages::open(const std::string& path,const ModelAsset& asset,
            !get64(file,hash)||p>=asset.primitives.size() ||
            n>=asset.primitives[p].geometry.nodes.size() ||
            indices!=asset.primitives[p].geometry.nodes[n].indexCount ||
-           reserved || offset<previousEnd || offset>size ||
+           reserved || offset!=previousEnd || offset>size ||
            uint64_t(indices)*4u>size-offset ||
            !next->entries.emplace(Key{p,n},Entry{indices,offset,hash}).second)
             return fail(error,"STRATA archive directory is corrupt");
