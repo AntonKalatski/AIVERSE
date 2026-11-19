@@ -55,6 +55,14 @@ struct alignas(16) GpuMorphRange {
 static_assert(sizeof(GpuMorphRange) == 16);
 static_assert(alignof(GpuMorphRange) == 16);
 
+// CSR gather: offsets[v]..offsets[v+1] holds links for a single vertex.
+// Each GPU vertex/thread owns its output, therefore no float atomics.
+struct GpuMorphLink {
+    std::uint32_t target = 0; // index into target weight array
+    std::uint32_t delta = 0;  // index into shared GpuMorphDelta array
+};
+static_assert(sizeof(GpuMorphLink) == 8);
+
 class SparseMorphLibrary {
 public:
     // Validates names/vertices/finite deltas, canonicalizes each target to
@@ -67,10 +75,17 @@ public:
     std::size_t targets() const noexcept { return names_.size(); }
     std::size_t deltas() const noexcept { return deltas_.size(); }
     std::size_t bufferBytes() const noexcept {
-        return deltas_.size() * sizeof(GpuMorphDelta) + ranges_.size() * sizeof(GpuMorphRange);
+        return deltas_.size() * sizeof(GpuMorphDelta)
+            + ranges_.size() * sizeof(GpuMorphRange)
+            + offsets_.size() * sizeof(std::uint32_t)
+            + links_.size() * sizeof(GpuMorphLink);
     }
     std::span<const GpuMorphDelta> gpuDeltas() const noexcept { return deltas_; }
     std::span<const GpuMorphRange> gpuRanges() const noexcept { return ranges_; }
+    // RHI-neutral CSR storage. offsets count = vertexCount + 1, links count
+    // = total nonzero deltas, ordered by target within each vertex.
+    std::span<const std::uint32_t> gpuVertexOffsets() const noexcept { return offsets_; }
+    std::span<const GpuMorphLink> gpuVertexLinks() const noexcept { return links_; }
     std::string_view targetName(std::size_t i) const noexcept {
         return i < names_.size() ? std::string_view{names_[i]} : std::string_view{};
     }
@@ -84,12 +99,19 @@ public:
     // weighted deltas. No heap allocations or GPU calls per invocation.
     bool evaluate(std::span<const MorphVertex> base, std::span<const float> weights,
                   std::span<MorphVertex> output, bool normalizeDirections = true) const noexcept;
+    // GPU-style per-vertex gather reference. Same numerical result as evaluate()
+    // within floating-point tolerance; no vertex scatter/atomic operations.
+    bool evaluateGather(std::span<const MorphVertex> base, std::span<const float> weights,
+                        std::span<MorphVertex> output,
+                        bool normalizeDirections = true) const noexcept;
 
 private:
     std::size_t vertices_ = 0;
     std::vector<std::string> names_;
     std::vector<GpuMorphRange> ranges_;
     std::vector<GpuMorphDelta> deltas_;
+    std::vector<std::uint32_t> offsets_;
+    std::vector<GpuMorphLink> links_;
 };
 
 } // namespace aiverse::vivid
