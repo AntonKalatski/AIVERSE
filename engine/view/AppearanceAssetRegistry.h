@@ -143,6 +143,119 @@ public:
                 return false;
             }
         }
+
+        // Generic authoring requests. Published appearance snapshots remain
+        // host-owned; these descriptions are used only during compilation.
+        struct VisualLodRequest {
+            const Asset* visual=nullptr;
+            float minDistance=0.f;
+            std::shared_ptr<const ModelPoseRetarget> mapping;
+        };
+        struct SocketBindingRequest {
+            size_t attachmentIndex=0;
+            std::string socketName;
+            int socket=-1;
+        };
+        struct CompiledPresentationBindings {
+            struct SocketBinding {
+                size_t attachmentIndex=0;
+                std::string socketName;
+                int socket=-1;
+                std::shared_ptr<const CompiledModelSocket> compiled;
+            };
+            const render::Model* sourceModel=nullptr; // comparison only
+            uint64_t sourcePublication=0;
+            std::vector<ModelLod> lods;
+            std::vector<SocketBinding> sockets;
+
+            // Transactional packet application. No graph evaluation, GPU
+            // allocation, old Model dereference or ownership transfer.
+            // All authored selectors and source publication must match.
+            bool apply(Object& packet) const {
+                if(!sourceModel || !sourcePublication ||
+                   animationSourceModel(packet)!=sourceModel ||
+                   packet.animationModelGeneration!=sourcePublication)
+                    return false;
+                for(const auto& binding:sockets) {
+                    if(!binding.compiled ||
+                       binding.attachmentIndex>=packet.attachments.size())
+                        return false;
+                    const auto& attachment=packet.attachments[binding.attachmentIndex];
+                    if(attachment.socketName!=binding.socketName ||
+                       attachment.socket!=binding.socket ||
+                       binding.compiled->rig!=sourceModel ||
+                       binding.compiled->publication!=sourcePublication ||
+                       !binding.compiled->matches(
+                           *sourceModel,sourcePublication,
+                           binding.socketName,binding.socket))
+                        return false;
+                }
+                Object next=packet;
+                next.lods=lods;
+                for(const auto& binding:sockets)
+                    next.attachments[binding.attachmentIndex].compiledSocket=
+                        binding.compiled;
+                packet=std::move(next);
+                return true;
+            }
+        };
+
+        // Compile a whole authored visual configuration atomically against
+        // this already-published immutable source asset. If any LOD or
+        // socket fails, out is untouched (the prior last-good configuration
+        // remains usable). No render-thread or gameplay state is changed.
+        bool compilePresentationBindings(
+                std::span<const VisualLodRequest> authoredLods,
+                std::span<const SocketBindingRequest> authoredSockets,
+                CompiledPresentationBindings& out,
+                std::string* error=nullptr) const {
+            if(error)error->clear();
+            try {
+                if(!model || modelPublicationGeneration==0)
+                    throw std::invalid_argument(
+                        "presentation bindings need a published source Model");
+                CompiledPresentationBindings candidate;
+                candidate.sourceModel=model;
+                candidate.sourcePublication=modelPublicationGeneration;
+                candidate.lods.reserve(authoredLods.size());
+                float previousDistance=0.f;
+                for(const auto& authored:authoredLods) {
+                    if(!authored.visual || !authored.mapping ||
+                       !std::isfinite(authored.minDistance) ||
+                       authored.minDistance<=previousDistance)
+                        throw std::invalid_argument(
+                            "visual LOD needs a mapping and strictly increasing distance");
+                    ModelLod lod;
+                    if(!compileVisualLod(*authored.visual,authored.minDistance,
+                                         *authored.mapping,lod,error))
+                        return false;
+                    lod.retarget=authored.mapping;
+                    candidate.lods.push_back(std::move(lod));
+                    previousDistance=authored.minDistance;
+                }
+                candidate.sockets.reserve(authoredSockets.size());
+                std::unordered_set<size_t> seen;
+                for(const auto& authored:authoredSockets) {
+                    if(!seen.insert(authored.attachmentIndex).second)
+                        throw std::invalid_argument(
+                            "duplicate attachment binding index");
+                    auto compiled=compileModelSocket(
+                        *model,modelPublicationGeneration,
+                        authored.socketName,authored.socket);
+                    if(!compiled)
+                        throw std::invalid_argument(
+                            "invalid attachment socket or unpublished rig");
+                    candidate.sockets.push_back({
+                        authored.attachmentIndex,authored.socketName,
+                        authored.socket,std::move(compiled)});
+                }
+                out=std::move(candidate);
+                return true;
+            }catch(const std::exception& ex) {
+                if(error)*error=ex.what();
+                return false;
+            }
+        }
     };
 
     using Snapshot=std::shared_ptr<const Asset>;
