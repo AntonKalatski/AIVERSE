@@ -258,6 +258,11 @@ public:
         staticRenderPackets_.clear();
         staticRenderPacketBytes_ = 0;
     }
+    // Targeted cache retirement for native ECS entity destruction/streaming.
+    // Invoke on the renderer thread before Model resources are released and
+    // before starting another draw submission; no GPU resources are owned here.
+    void invalidateStaticModelCache(uint64_t persistentId);
+    void invalidateModelCachesFor(const Model* model);
     struct StaticRenderPacketStats {
         uint64_t hits = 0, rebuilds = 0, declined = 0, evicted = 0;
         size_t live = 0, retainedBytes = 0;
