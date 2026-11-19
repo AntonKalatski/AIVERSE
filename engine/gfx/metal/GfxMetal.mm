@@ -1554,13 +1554,20 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         // Each ICB command uses the same uniform slots. Compact the active
         // bindings once per submission instead of checking 8 empty slots for
         // every command (potentially hundreds per submission).
-        int uniformSlots[8] = {};
-        int uniformSlotCount = 0;
-        for (int slot = 0; slot < 8; ++slot)
-            if (uniforms[slot]) uniformSlots[uniformSlotCount++] = slot;
+        struct ActiveUniform {
+            id<MTLBuffer> buffer = nil;
+            NSUInteger index = 0;
+        };
+        ActiveUniform uniformBindings[8]{};
+        int uniformBindingCount = 0;
+        for (int slot = 0; slot < 8; ++slot) {
+            if (!uniforms[slot]) continue;
+            uniformBindings[uniformBindingCount++] = {uniforms[slot], NSUInteger(1 + slot)};
+        }
         const auto afterAlloc = std::chrono::steady_clock::now();
         const bool u32 = p->desc.indexType == IndexType::UInt32;
         const size_t indexBytes = u32 ? 4u : 2u;
+        const MTLIndexType icbIndexType = u32 ? MTLIndexTypeUInt32 : MTLIndexTypeUInt16;
         // All indirect commands share the same validated pipeline. Avoid
         // re-querying the pipeline table in prim() for each encoded command.
         const MTLPrimitiveType icbPrimitive =
@@ -1588,13 +1595,13 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             [command setRenderPipelineState:indirectPipeline];
             if (pbr) [command setFragmentBuffer:pbrArgs offset:0 atIndex:8];
             [command setVertexBuffer:vertices offset:vbOffset_ atIndex:0];
-            for (int k = 0; k < uniformSlotCount; ++k) {
-                const int slot = uniformSlots[k];
-                [command setVertexBuffer:uniforms[slot] offset:0 atIndex:NSUInteger(1 + slot)];
-                [command setFragmentBuffer:uniforms[slot] offset:0 atIndex:NSUInteger(1 + slot)];
+            for (int k = 0; k < uniformBindingCount; ++k) {
+                const auto& binding = uniformBindings[k];
+                [command setVertexBuffer:binding.buffer offset:0 atIndex:binding.index];
+                [command setFragmentBuffer:binding.buffer offset:0 atIndex:binding.index];
             }
             [command drawIndexedPrimitives:icbPrimitive indexCount:args.indexCount
-                indexType:u32 ? MTLIndexTypeUInt32 : MTLIndexTypeUInt16
+                indexType:icbIndexType
                 indexBuffer:indices indexBufferOffset:ibOffset_ + size_t(args.firstIndex) * indexBytes
                 instanceCount:args.instanceCount baseVertex:args.baseVertex baseInstance:args.firstInstance];
         }
