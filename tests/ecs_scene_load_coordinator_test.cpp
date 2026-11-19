@@ -66,6 +66,23 @@ static void checkAssets() {
       {"version":1,"id":"scene/test","dependencies":[],"objects":[
       {"id":1,"prefab":"one"},{"id":1,"prefab":"two"}]}
     )json"),asset,&error));
+    // Scene-local IDs and version must not use Json::integer(), which
+    // converts fractional JSON values through Fixed and truncates them.
+    AIVERSE_TEST_CHECK(!sc::SceneAsset::decode(Json::parse(R"json(
+      {"version":1.5,"id":"scene/test","dependencies":[],"objects":[]}
+    )json"),asset,&error));
+    AIVERSE_TEST_CHECK(!sc::SceneAsset::decode(Json::parse(R"json(
+      {"version":1,"id":"scene/test","dependencies":[],"objects":[
+      {"id":1.5,"prefab":"one"}]}
+    )json"),asset,&error));
+    AIVERSE_TEST_CHECK(!sc::SceneAsset::decode(Json::parse(R"json(
+      {"version":1,"id":"scene/test","dependencies":[],"objects":[
+      {"id":1,"parent":1.2,"prefab":"one"}]}
+    )json"),asset,&error));
+    AIVERSE_TEST_CHECK(!sc::SceneAsset::decode(Json::parse(R"json(
+      {"version":1,"id":"scene/test","dependencies":[],"objects":[
+      {"id":999999999999999999999999,"prefab":"one"}]}
+    )json"),asset,&error));
 }
 
 template<class Predicate>
