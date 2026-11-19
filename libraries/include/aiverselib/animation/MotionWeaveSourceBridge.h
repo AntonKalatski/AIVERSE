@@ -68,6 +68,11 @@ public:
         std::map<uint64_t,std::shared_ptr<const RigHierarchy>> incomingRigs;
         std::map<RigKey,std::shared_ptr<const RigHierarchy>,RigKeyLess> distinctRigs;
         for(const auto& input:sources) {
+            // Zero is the absence of a stable logical identity in View.
+            // Never let unrelated anonymous visual objects share clocks
+            // or inherit a prior asset-reimport snapshot.
+            if(input.sourceId==0)
+                throw std::invalid_argument("MotionWeave bridge: source ID must be nonzero");
             if(!keys.insert(input.sourceId).second)
                 throw std::invalid_argument("MotionWeave bridge: duplicate source ID");
             if(!input.model || !input.graph ||
@@ -395,8 +400,15 @@ private:
         size_t removed=0;
         for(const uint64_t id:sourceIds) {
             auto it=links_.find(id);
+            if(it==links_.end()) {
+                // Repeated IDs in a pre-retirement batch must not erase
+                // the snapshot just captured by the first occurrence.
+                // Plain forget remains a cancellation even without a
+                // live ECS source.
+                if(!preservePortablePlayback)pendingRetirements_.erase(id);
+                continue;
+            }
             pendingRetirements_.erase(id);
-            if(it==links_.end())continue;
             if(preservePortablePlayback)
                 saveRetirementSnapshot(presentation,id,it->second);
             if(presentation.alive(it->second))presentation.destroy(it->second);
