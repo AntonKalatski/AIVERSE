@@ -10,6 +10,7 @@
 #include "engine/character/vivid/ViewportSculptPick.h"
 #include "engine/character/vivid/RigAuthoring.h"
 #include "engine/character/vivid/BindPoseRebind.h"
+#include "engine/character/vivid/SkinWeightAuthoring.h"
 #include "engine/character/vivid/ScalpSkinning.h"
 #include "engine/character/vivid/GpuActorStream.h"
 #include "engine/character/vivid/HumanRetirementQueue.h"
@@ -59,7 +60,11 @@ struct CreatorApp {
     std::vector<mat4> facePose;
     std::vector<mat4> rigPoseScratch;
     RigAuthoring rigCorrections;
+    SkinWeightAuthoring skinWeightEdits;
     bool authorBindPose=false;
+    int skinVertexId=0,skinJointNode=0;
+    float skinWeightValue=0.5f;
+    char skinWeightFile[512]="/tmp/vivid-skin-weights.json";
     int selectedRigNode=0;
     float rigOffset[3]={0,0,0};
     char rigCorrectionFile[512]="/tmp/vivid-rig-corrections.json";
@@ -486,6 +491,11 @@ struct CreatorApp {
             } else {
                 proposed=generateHumanPreview(session.dna(),groomQuality);
             }
+            if(!skinWeightEdits.edits().empty()) {
+                // Apply only to the fresh, private pre-upload Model. Invalid
+                // weight/palette edits cannot corrupt the active character.
+                (void)skinWeightEdits.apply(*proposed.head);
+            }
             if(authorBindPose && !rigCorrections.edits().empty()) {
                 // Stage all bind / inverse-bind changes on this candidate
                 // before model GPU upload and AnimationGraph compilation.
@@ -802,6 +812,68 @@ struct CreatorApp {
                     rigCorrections=std::move(next);
                     if(authorBindPose)pendingRebuild=true;
                     status="Rig corrections loaded";
+                }catch(const std::exception& e){status=e.what();}
+            }
+        }
+        if(ImGui::CollapsingHeader("Skin weight authoring")) {
+            ImGui::TextWrapped("Edit one model-relative vertex and named bone. "
+                "Other influences are normalized automatically to 255 bytes. "
+                "Shared vertices with incompatible skin palettes are rejected.");
+            if(human.head && !human.head->vertices.empty() &&
+               !human.head->nodes.empty()) {
+                skinVertexId=std::clamp(skinVertexId,0,
+                    int(human.head->vertices.size()-1));
+                skinJointNode=std::clamp(skinJointNode,0,
+                    int(human.head->nodes.size()-1));
+                ImGui::InputInt("Skin vertex ID",&skinVertexId);
+                if(ImGui::BeginCombo("Skin bone",
+                    human.head->nodes[std::size_t(skinJointNode)].name.c_str())) {
+                    for(std::size_t i=0;i<human.head->nodes.size();++i)
+                        if(ImGui::Selectable(human.head->nodes[i].name.c_str(),
+                            int(i)==skinJointNode))skinJointNode=int(i);
+                    ImGui::EndCombo();
+                }
+                ImGui::SliderFloat("Target bone weight",&skinWeightValue,0,1,"%.3f");
+                if(ImGui::Button("Set skin weight")) {
+                    if(skinVertexId>=0 && skinWeightEdits.set(
+                        std::uint32_t(skinVertexId),
+                        human.head->nodes[std::size_t(skinJointNode)].name,
+                        skinWeightValue)) {
+                        pendingRebuild=true;
+                        status="Skin weight edit staged for next model rebuild";
+                    }else status="Skin weight edit rejected";
+                }
+                ImGui::SameLine();
+                if(ImGui::Button("Clear vertex edit") && skinVertexId>=0 &&
+                   skinWeightEdits.erase(std::uint32_t(skinVertexId))) {
+                    pendingRebuild=true;
+                }
+                ImGui::Text("Authored weight edits: %zu",skinWeightEdits.edits().size());
+            }
+            ImGui::InputText("Skin weights JSON",skinWeightFile,sizeof(skinWeightFile));
+            if(ImGui::Button("Save skin weights")) {
+                try {
+                    const auto data=skinWeightEdits.toJson().dump(2);
+                    const auto tmp=std::string(skinWeightFile)+".vivid.tmp";
+                    {std::ofstream out(tmp,std::ios::binary|std::ios::trunc);
+                     if(!out)throw std::runtime_error("VIVID skin: cannot stage file");
+                     out.write(data.data(),std::streamsize(data.size()));
+                     out.flush();
+                     if(!out)throw std::runtime_error("VIVID skin: save failed");}
+                    std::error_code ec;
+                    std::filesystem::rename(tmp,skinWeightFile,ec);
+                    if(ec)throw std::runtime_error(ec.message());
+                    status="Skin weight sidecar saved";
+                }catch(const std::exception& e){status=e.what();}
+            }
+            ImGui::SameLine();
+            if(ImGui::Button("Load skin weights")) {
+                try {
+                    auto next=SkinWeightAuthoring::fromJson(
+                        Json::parse(fileContents(skinWeightFile,4ull*1024ull*1024ull)));
+                    skinWeightEdits=std::move(next);
+                    pendingRebuild=true;
+                    status="Skin weight sidecar loaded";
                 }catch(const std::exception& e){status=e.what();}
             }
         }
