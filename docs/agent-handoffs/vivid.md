@@ -333,3 +333,26 @@ This is the **canonical living handoff** for AIVERSE VIVID. Read `docs/vivid.md`
 - **Still NOT RUN / NOT VERIFIED:** real `gfx::Device` RHI-backed dispatch/readback; gfx vertex stream + MotionWeave skinning; visual render, shadows, memory/latency benchmark, Vulkan/GL; full merged 8-test suite at revision `424e838` (previous VIVID+MotionWeave 7/7 were separately confirmed on earlier commit).
 - **API/persistence:** no production code changes from this validation checkpoint; `main` and MotionWeave source branch untouched.
 - **Next exact step:** build isolated macOS real `gfx::Device` lifecycle/dispatch/readback parity test on new source commit, record exact results and warnings. Do not treat direct native Metal parity as automatically proving RHI integration.
+
+## Stage 4F — 2026-11-19 — real gfx::Device Metal RHI parity
+
+- **Branch:** `feature/vivid-digital-humans`. Previous source revision `424e8382144511c1b453ce9d3234cc813734356c`; confirmation handoff commit `e98b74ce948e25b182a0900cbf93a9a79aef8a3a`.
+- **User's actual validation at previous stage:** `vivid_metal_gpu` **1/1 PASS**, total 0.68 s on a real Mac GPU; CMake configure/generate and OBJCXX compilation completed. This is the native kernel test from Stage 4D, **not** the RHI test added in this stage.
+- **Implementation SHAs / changed paths**:
+  - `88f035bfee3b504c7d61e4d11d7d89950b090824` — new `tests/vivid/metal_rhi.mm`, uses the real AIVERSE Metal `gfx::Device`, `GpuMorphDeformer`, four GPU frames, 160 targets, 79 vertices, CPU gather comparison.
+  - `2991bd678ffac4a987a430bd9bfcb08f049a6166` — `engine/character/vivid/CMakeLists.txt` registers macOS-only `aiverse_vivid_metal_rhi_tests` / CTest `vivid_metal_rhi`, compiles the existing `engine/gfx/metal/GfxMetal.mm` into a standalone native test binary, links `AIVERSE::vivid_gpu`, ARC/Objective-C++20, Metal/QuartzCore/Foundation.
+  - `ed4569d73d0e6ce23ebabf3fe33982c0d8559de7` — `docs/vivid.md` Stage 4F overview, test constraints and scope.
+- **Runtime behavior tested by authored fixture (not yet executed):** create headless `CAMetalLayer` and `gfx::createMetalDevice`; initialize 6 VIVID storage buffers once; call `beginFrame` / `GpuMorphDeformer::dispatch` / `endFrame` / `download`; read back after each completed frame and compare all position/normal/tangent components to `SparseMorphLibrary::evaluateGather`. Frames vary weights/normalization to catch buffer updates, synchronization and stale output. Per-component absolute tolerance ≤ 5e-4. Release VIVID before gfx device teardown. Empty optional shader-archive platform hook is scoped to this executable, not game runtime.
+- **API/save/network:** no production public ABI, `engine/gfx/Gfx.h`, MotionWeave, simulation or persistence changes. New test source/link definitions only.
+- **Tests actually executed for this stage:** **NOT RUN**. The user has **not** compiled the new RHI test. Native Metal compiler, headless CAMetalLayer behavior, Metal backend linkage, output parity and resource cleanup remain unknown. GitHub structure verified; do not claim 9/9 or `vivid_metal_rhi` Passed until Mac reports it. No CI result.
+- **Potential blockers:** headless `nextDrawable` behavior varies with OS, though compute command buffers should not depend on presentation. Linking `GfxMetal.mm` standalone may uncover additional platform dependencies. Check the first real build error instead of editing shared graphics backend unnecessarily; if the device cannot supply a drawable, consider an explicit graphics test harness or a small backend factory allowing an offscreen GPU frame instead of pretending the test passed.
+- **Next exact action / Mac commands (NOT RUN by agent):**
+  ```bash
+  cd ~/Projects/AIVERSE
+  git fetch origin feature/vivid-digital-humans
+  git -C ../AIVERSE-vivid switch --detach origin/feature/vivid-digital-humans
+  cmake -S ../AIVERSE-vivid -B ../AIVERSE-vivid/build/vivid -DAIVERSE_BUILD_TESTS=ON
+  cmake --build ../AIVERSE-vivid/build/vivid --target aiverse_vivid_metal_rhi_tests -j 4
+  ctest --test-dir ../AIVERSE-vivid/build/vivid --output-on-failure -R '^vivid_metal_rhi$'
+  ```
+- **After real RHI parity:** integrate opt-in extended facial morph stream with MotionWeave skeleton and common `Renderer3D` material/shadow passes using stable buffer ownership. The existing `render::Model` eight-target path must remain unchanged for non-VIVID assets until visual parity and runtime benchmarks prove the transition. Record numerical/screenshot/real GPU measurements in the handoff after each bounded stage.
