@@ -256,6 +256,7 @@ public:
     void invalidateStaticModelCaches() {
         staticModelCaches_.clear();
         staticRenderPackets_.clear();
+        staticRenderPacketBytes_ = 0;
     }
     struct StaticRenderPacketStats {
         uint64_t hits = 0, rebuilds = 0, declined = 0, evicted = 0;
@@ -588,6 +589,7 @@ private:
         std::vector<ModelItem> items;
     };
     std::unordered_map<uint64_t, StaticPacketEntry> staticRenderPackets_;
+    size_t staticRenderPacketBytes_ = 0;
     StaticRenderPacketStats staticRenderPacketStats_{};
     bool staticRenderPacketsEnabled_ = false;
     uint64_t staticRenderPacketEpoch_ = 0;
