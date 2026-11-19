@@ -2678,3 +2678,100 @@ foam styles, waterfall/cascade emitter geometry, and configurable
 flow-wake response. Only after functional completion perform native
 C++/GLSL/MSL and GPU visual verification. Always append another
 handoff after the next feature phase.
+
+## Stage 26 — static spatial water tiles with local ripple selection
+
+**Branch** `feature/nereid-water-core`, Draft PR #23.
+**Baseline:** Stage 25 commit `2ef7e99c728fa7121a59407d231f6e766c1d10a3`.
+**Priority:** functional features first; no new tests or test runs.
+No other feature branch was merged or main changed.
+
+### Implementation commits / changed files
+- `884fe1e8d13a8c9b84f2b3bec4c1251606cf16a3` —
+  `libraries/include/aiverselib/water/NereidWaterSurfaceMesh.h`:
+  `WaterSurfaceMeshOptions::rippleTileGrid` (1..8, default 1),
+  `WaterTileRange`, CPU tessellation of a Box or Infinite water
+  footprint into N×N disjoint indexed tiles. Tile vertices/indices
+  are contiguous per tile and share the parent mesh's single VB/IB.
+  Near/Medium/Far changes per-tile subdivision; only the outer
+  boundary contributes geometric shoreline foam. Old shapes/modes
+  retain the old mesh builder path.
+- `766ea03f8f9c75db6fc37b92dcbc6cc8fb2c681a` —
+  `engine/render/Renderer3D.h`: optional firstIndex/indexCount
+  on deferred NEREID draws; other drawMesh clients unaffected.
+- `5e2818cb6283d06840e9c442bb4443ec211986ae` —
+  `engine/render/Renderer3D.cpp`: use Gfx::Device indexed subrange
+  draw only when specified; profile actual submitted indices.
+- `0156c7db38f369ef62127d11587ca2ee166c4df0` —
+  `engine/render/NereidWaterRenderer.h`: forward indexed ranges.
+- `4a6e16d6ae17b58bc41c1ce19af652f512ccc1d1` —
+  `engine/render/NereidSurfaceResident.h`: cache per-tile ranges with
+  uploaded mesh, expose `tiles()` and `drawTile()`; clear with GPU
+  residency; add tile-grid to per-body GPU key.
+- `6b217d6a9738bffb0d3a37de060ed17ac02b94a5` —
+  `engine/world/NereidWaterScene.h`: invalidate residency on
+  tile-grid changes.
+- `49cb675837d95c0e9a76d50075f1272c453c8587` —
+  `engine/world/NereidWaterManifest.h`: parse validated
+  `rippleTileGrid` from the per-surface JSON.
+- `17c8825199a9729853178fa506309daf8a6bfbaf` —
+  `NereidWaterSurfaceMesh.h`: store precise X/Z AABBs per tile.
+- `82693d9b80ce1afd04687e5a16671dcb9384ec7b` —
+  `engine/world/NereidRipples.h`: new
+  `shaderRipplesForTile(waterId,renderOriginX,renderOriginZ,
+  minX,maxX,minZ,maxZ)`; filters by annular wavefront AABB
+  intersection and selects up to sixteen closest affected impulses.
+- `2ffe8e0a60807a6bfa27cd7ae93b7fbb463848c1` —
+  `engine/world/NereidWaterScene.h`: when a resident has tiles,
+  submit disjoint water index ranges with their own sixteen ripple
+  parameters; legacy single draw remains when `rippleTileGrid=1`.
+
+### API / example
+
+```json
+{
+  "nereidWater": {
+    "surfaces": [{
+      "id": 12, "kind": "ocean", "shape": "infinite",
+      "surfaceY": 3, "bottomY": -100,
+      "oceanPatchRadius": 512,
+      "rippleTileGrid": 4
+    }]
+  }
+}
+```
+
+A grid size of 4 yields up to 16 indexed draw calls per resident
+water body, each accessing 16 local ripple slots; 8 yields up to
+64 draws. The CPU mesh and GPU VB/IB are still uploaded once per
+water body (not once per tile). Active ripple source data remains
+the Stage-22 deterministic ECS outputs copied to the Stage-23
+presentation field, not a new simulation system. The tiling belongs
+to render options; no change to authoritative water shape, physics,
+networking or rollback. Tile bounds and rendered vertices use double
+world origins before float conversion.
+
+### Status, limitations, next features
+
+**Actual work:** source inspection of Gfx::Device::drawIndexed and
+NEREID renderer/mesh/scene, code commits and this handoff.
+**NOT RUN / UNVERIFIED by user request:** native build, CTest,
+shader compilation, Metal/OpenGL screen rendering, FPS/RTS
+parity, GPU profiling. No test code authored this stage.
+Keep PR Draft.
+
+**Limitations:** tiled support in this stage applies to rectangular
+Box and Infinite patches only. River splines, concave polygons and
+discs remain single draws. Tile meshes duplicate vertices at seams;
+this is expected, but per-surface VB/IB budgets still apply.
+Quality setting `rippleTileGrid=1` keeps the old single-draw
+path. Tiles are not frustum-culling independently; 8×8 means 64
+draws even on mobile, so use 2×2 or 4×4 on weak GPUs. A chosen
+ripple's normal/foam is still a presentation-only shader effect.
+For larger world patches, precision is limited by global camera
+view-projection and scene RHI rather than these tile-local bounds.
+
+**Next functional work:** add opt-in waterfall/cascade presentation
+geometry (vertical stream strips, variable widths and falling foam)
+and simple flow-direction wave response, preserving ECS water body
+authority. Per-stage handoff is mandatory; tests remain deferred.
