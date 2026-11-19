@@ -14,6 +14,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
+#include <iterator>
+#include <stdexcept>
 #include <limits>
 #include <span>
 #include <sstream>
