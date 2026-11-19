@@ -980,7 +980,9 @@ public:
             src.find("#define BAKED 1") != std::string::npos ||
             src.find("#define MORPH 1") != std::string::npos ||
             src.find("#define MATERIAL_PALETTE 1") != std::string::npos ||
-            src.find("#define SG_SAMPLE(") != std::string::npos) return;
+            (src.find("#define SG_SAMPLE(") != std::string::npos &&
+             src.find("#define AIVERSE_SG_ICB_GRAPH 1") == std::string::npos))
+            return;
 
         auto& cached = icbPbrShaders_[{src, shader->linear}];
         if (!cached.attempted) {
@@ -2118,6 +2120,21 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                 pbrShader->source.find("#define AIVERSE_MODEL_VT 1") != std::string::npos;
             const bool alphaCoverage = pbrShader &&
                 pbrShader->source.find("#define VIRTUAL_ALPHA_MASK 1") != std::string::npos;
+            const bool graphShader = pbrShader &&
+                pbrShader->source.find("#define AIVERSE_SG_ICB_GRAPH 1") != std::string::npos;
+            int shaderGraphCount=0;
+            if (graphShader) {
+                const std::string_view source=pbrShader->source;
+                constexpr std::string_view tag="#define AIVERSE_SG_TEXTURE_COUNT ";
+                const auto at=source.find(tag);
+                if (at==std::string_view::npos ||
+                    at+tag.size()+1>=source.size() ||
+                    source[at+tag.size()]<'0' ||
+                    source[at+tag.size()]>'4' ||
+                    source[at+tag.size()+1]!='\n')
+                    return reject("invalid graph source count in ICB variant");
+                shaderGraphCount=int(source[at+tag.size()]-'0');
+            }
             const auto bound = [&](int slot) {
                 return icbFragmentTextures_[slot] && icbFragmentSamplers_[slot];
             };
@@ -2159,6 +2176,8 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                     return reject("per-command material count/shader mode mismatch");
                 for (uint32_t i=0;i<resources.count;++i) {
                     const auto& resource=resources.virtualMaterials[i];
+                    if (resource.graphTextureCount!=uint32_t(shaderGraphCount))
+                        return reject("ICB graph count mismatches shader layout");
                     if (perCommandVt) {
                         const auto* liveAtlas=textures_.get(resource.atlasHandle.id);
                         const auto* liveTable=textures_.get(resource.tableHandle.id);
@@ -2194,9 +2213,28 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                             declareIndirectRead(texture,MTLRenderStageFragment);
                         }
                     }
+                    for(uint32_t j=0;j<resource.graphTextureCount;++j) {
+                        const auto nativeTexture=resource.graphTextures[j];
+                        const auto nativeSampler=resource.graphSamplers[j];
+                        const auto* live=textures_.get(resource.graphHandles[j].id);
+                        if (!live || live->tex!=nativeTexture ||
+                            live->sampler!=nativeSampler)
+                            return reject("ICB graph source changed after prepare");
+                        const int slot=13+int(j);
+                        [pipeline->icbPbrEncoder setTexture:nativeTexture
+                                                   atIndex:NSUInteger(slot*2)];
+                        if (slot<16)
+                            [pipeline->icbPbrEncoder setSamplerState:nativeSampler
+                                                           atIndex:NSUInteger(slot*2+1)];
+                        // Graph source tex16 uses constexpr sampler s16.
+                        declareIndirectRead(nativeTexture,MTLRenderStageFragment);
+                    }
                     if (perCommandVt) {
-                        [pipeline->icbPbrEncoder setTexture:resource.atlas atIndex:26];
-                        [pipeline->icbPbrEncoder setTexture:resource.table atIndex:28];
+                        const int slot=13+shaderGraphCount;
+                        [pipeline->icbPbrEncoder setTexture:resource.atlas
+                                                   atIndex:NSUInteger(slot*2)];
+                        [pipeline->icbPbrEncoder setTexture:resource.table
+                                                   atIndex:NSUInteger((slot+1)*2)];
                         declareIndirectRead(resource.atlas, MTLRenderStageFragment);
                         declareIndirectRead(resource.table, MTLRenderStageFragment);
                     }
