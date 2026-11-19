@@ -27,6 +27,13 @@ struct BuildInput {
     const float* positions = nullptr; // xyz at start of interleaved vertex
     size_t vertexCount = 0;
     size_t positionStride = 0; // bytes (>= 12, multiple of 4)
+    // Optional attributes for seam-aware simplification; interleaved float
+    // components (1..32), one record per vertex. Requires positive finite
+    // weights for every component. All are borrowed for this call only.
+    const float* attributes = nullptr;
+    size_t attributeStride = 0; // bytes, multiple of 4
+    const float* attributeWeights = nullptr;
+    uint32_t attributeComponents = 0;
     uint32_t materialGroup = 0;
 };
 struct BuildOptions {
