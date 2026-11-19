@@ -57,6 +57,7 @@ struct HorizonRuntimeStats {
     size_t gpuCachedCompressedWindShadows=0; // live inactive compressed entries
     size_t gpuWindShadowCompressions=0; // successful CPU-only pack operations
     size_t gpuWindShadowRestores=0; // exact CPU restoration on GPU cache hit
+    size_t gpuWindShadowDecodeFailures=0; // corrupt GPU LRU entries retired
     size_t windOverlayPatchWrites=0, windOverlayPatchBytes=0;
     size_t windOverlayPatchRanges=0, windOverlayChangedClusters=0;
     size_t windOverlayFullRangeFallbacks=0, windOverlayNoopRevisions=0;
@@ -413,7 +414,7 @@ public:
         // Reuse GPU buffers and atlas without a worker bake or RHI upload.
         // Evict the current model into the bounded LRU only AFTER removing
         // the desired cached entry; this prevents eviction of the target.
-        if(auto cached=gpuCache_.take(desired,sourceRevision_)){
+        if(auto cached=gpuCache_.take(device,desired,sourceRevision_)){
             if(cataloged_){
                 stream_->remove(cell_,[](world::Cell){});
                 cataloged_=false;
@@ -772,6 +773,8 @@ public:
             gpuCache_.compressedWindShadowRegions();
         out.gpuWindShadowCompressions=gpuCache_.windShadowCompressions();
         out.gpuWindShadowRestores=gpuCache_.windShadowRestores();
+        out.gpuWindShadowDecodeFailures=
+            gpuCache_.windShadowDecodeFailures();
         out.exactWindFieldActive=exactSpatialWindField_ && bool(windField_);
         out.windOverlayPending=bool(model_) &&
             !activeWindOverlay_.vertices.empty() &&
