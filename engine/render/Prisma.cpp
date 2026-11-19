@@ -1317,6 +1317,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     effectReport.sceneReady = sceneReady_;
     effectReport.width = f.width;
     effectReport.height = f.height;
+    effectReport.shaderGraphTextures = 0;
+    effectReport.autoExposureTextureSlot = -1;
     effectReport.effects.clear();
     if (!sceneReady_) {
         for (const auto& e : settings_.effects) {
@@ -2339,6 +2341,11 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         mask = 0; // fixed-effect status must not claim a fallback composite
         pipe = composite(0);   // a broken variant still shows the scene
     }
+    // Record only the final bound composite variant, not an earlier
+    // pipeline that was rejected before the no-exposure fallback.
+    effectReport.shaderGraphTextures = static_cast<int>(graphImages.size());
+    if (pipe.valid() && (mask & kPfAutoExposure))
+        effectReport.autoExposureTextureSlot = compositeLayout.exposureSlot;
     // TAA and FXAA are mutually exclusive for the same HDR presentation.
     const PrismaEffect* finalAa = hdrFrame_ && !temporalResolved ? find(PrismaType::Fxaa) : nullptr;
     bool aaAfter = finalAa && program(kFxaa).valid();
