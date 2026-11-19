@@ -1717,3 +1717,17 @@ failed range available for the next upload. Do not expose half-
 initialized pooled geometry; keep dedicated fallback. Current
 build/driver/failure-injection tests are **NOT RUN** and PR #34
 remains Draft. See Stage 41 handoff.
+
+
+## Stage 42 — model upload pair publication
+
+Native `uploadModel` must never publish a half-valid standalone
+VB/IB pair or discard CPU source vectors after one buffer allocation
+failed. `engine/render/Model.cpp` now allocates temporary handles,
+releases the first on second-allocation failure, and returns false
+before image/morph preparation. It also retires orphaned single
+handles from a prior failed dedicated upload and captures the GPU
+requirement before CPU vertex/index clearing. Shared GeometryPool
+uploads still take precedence and remain subject to Stage 41's
+checked-write contract. No CMake/CTest/Metal/Vulkan validation has
+run for this code; preserve PR #34 Draft until final validation.

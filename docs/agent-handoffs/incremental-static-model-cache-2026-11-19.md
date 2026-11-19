@@ -1301,3 +1301,26 @@ Read current Metal/Vulkan/Gfx sources, performed exact old-code replacement with
 ### Risks and next work
 
 The RHI default `updateSharedBufferChecked` is compatibility forwarding only; non-Metal/Vulkan backend error checking is not stronger than its original `updateBuffer`. Metal/Vulkan report encoded/mapped success, **not** asynchronous GPU execution success. The existing dedicated-fallback `uploadModel` still must handle partial VB/IB buffer creation failures without leaking resources or continuing to image upload. Review and fix this model-level failure path next, then validate with fault-injection. Avoid enabling rigid-Lod pooling globally without real device parity tests.
+
+
+---
+
+## Stage 42 — atomic dedicated model fallback and accurate upload result (2026-11-19)
+
+**Repository / branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. **Starting HEAD:** `3372bf47ca9f066bb5c9f3c8f20acd6292824032`. **Implementation commits:** `62a4a24b2d6d70b7a679bc58cb7adf44b917a65d`, `b498b08d66f9e3aa9945d1bda3357609d8982686`. Keep code and this handoff separate. Main was already integrated before this stage; recheck current branch before merge.
+
+### Problem and fix
+
+The dedicated (non-pooled) fallback in `engine/render/Model.cpp::uploadModel` previously assigned `m.vb = dev.createBuffer(...)` and `m.ib = dev.createBuffer(...)` independently, without verifying either allocation before proceeding to texture uploads, optional CPU vertex/index release and final `return m.vertices.empty() || m.vb.valid()`. With `keepCpu=false`, CPU arrays were always emptied even after an allocation failed, so the function could report success for missing index or vertex buffers and make recovery impossible. A successful VB with failed IB could also be leaked after repeated attempts.
+
+- `uploadModel` now constructs both temporary dedicated GPU buffer handles, verifies both, and publishes them to `Model` only as a pair. If VB fails, return false immediately. If IB fails, destroy the temporary VB and return false. In either case the existing CPU vectors and image/morph upload state remain untouched for an ordinary future retry; the function does not proceed to graphics texture preparation on geometry failure.
+- Detect an inconsistent prior single-handle model state. If its GPU handles are not both valid, retire an orphan dedicated handle and clear both (never use that recovery path to destroy an owned shared-pool page). Track `needsGpuBuffers` before any CPU vector clearing; the final return requires **both** GPU handles for any model that had source geometry, existing GPU handles or a pool page. Empty non-geometry models preserve their legacy no-buffer success behavior.
+- Shared successful geometry upload still takes priority. This stage does not change rigid-Lod admission policy, material/bounds/scene selection, GPU command ABI, RHI upload fences or per-page lifetime.
+
+### Actual validation and limits
+
+Inspected live source; applied exact one-occurrence transformations, committed the changes in two sequential Git commits and advanced the branch via expected-SHA fast forwards. **Native CMake: NOT RUN; CTest: NOT RUN; fault-injected GPU allocation: NOT RUN; Metal/Vulkan validation: NOT RUN; A/B/A performance benchmark: NOT RUN** under user's feature-first instruction. The source check is not proof of successful native compilation. PR #34 remains Draft.
+
+### Next
+
+The implementation is ready for a feature-completeness audit followed by the deferred validation gate. At a minimum: simulate an invalid first VB, failed second IB, pooled first/second checked upload failure, failed Vulkan version allocation, Metal storage encoding denied, last-two-owner release under contention, repeated unload/reload, rigid-Lod mesh chains and visibility/culling/shadow/transparent parity. Verify no CPU vectors are lost on allocation failure and no model ever publishes a single valid GPU handle. Only then run real Metal/Vulkan A/B/A with experimental feature flags.

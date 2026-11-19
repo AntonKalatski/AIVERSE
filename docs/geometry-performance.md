@@ -1479,3 +1479,23 @@ fallback, memory fences, material state or experimental defaults.
 
 These are source-only changes pending final native compile, OOM
 fault injection, GPU raster parity and performance validation.
+
+
+### Dedicated model upload fallback is now atomic (Stage 42)
+
+`uploadModel(device, model, keepCpu)` now publishes newly created
+standalone GPU VB/IB **together**, and only when both allocations
+succeed. If creating the index buffer fails after a valid vertex
+buffer was allocated, that vertex buffer is explicitly destroyed.
+The source CPU geometry is retained for a later retry, and material/
+morph image uploads are not performed on the early failure path.
+
+A prior incomplete dedicated upload with exactly one valid handle
+is cleaned up before a retry. `needsGpuBuffers` is captured before
+the original CPU geometry may be cleared; the final success result
+requires both GPU handles for any geometry-bearing model. Non-geometry
+animation/source containers retain their original empty-buffer success
+behavior. This complements Stage 41's checked pooled upload so a
+failed shared-page write cannot cause a false-positive dedicated
+fallback result. Real backend allocation/fault tests still have
+NOT RUN; do not enable an experimental default or claim performance.
