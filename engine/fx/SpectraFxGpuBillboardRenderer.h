@@ -13,6 +13,7 @@
 #include "../render/Math3D.h"
 #include "SpectraFxGpuEvolution.h"
 #include "SpectraFxGpuCompaction.h"
+#include "SpectraFxGpuAlphaSort.h"
 
 namespace aiverse::fx {
 namespace gpu_render_shaders {
@@ -157,7 +158,8 @@ public:
     bool draw(const SpectraFxGpuEvolution& particles,
               const render::mat4& viewProj,render::float3 cameraRight,
               render::float3 cameraUp,const Appearance& appearance,
-              const SpectraFxGpuCompaction* compaction=nullptr) {
+              const SpectraFxGpuCompaction* compaction=nullptr,
+              const SpectraFxGpuAlphaSort* alphaSort=nullptr) {
         if(!ready()||!particles.ready()||!particles.count()||
            !particles.positionTexture().valid()) return false;
         auto finite=[](render::float3 v) {
@@ -179,17 +181,22 @@ public:
         u.cameraUp={cameraUp.x,cameraUp.y,cameraUp.z,0};
         u.colorSize={appearance.color.x,appearance.color.y,
                      appearance.color.z,appearance.radius};
-        const bool compacted=compaction && compaction->preparedFor(particles);
+        // Alpha sort takes priority over unsorted compaction. Indirect
+        // compaction is only used when there is no sorted index texture.
+        const bool sorted=alphaSort && alphaSort->preparedFor(particles);
+        const bool compacted=!sorted && compaction &&
+                             compaction->preparedFor(particles);
         u.metadata={float(SpectraFxGpuEvolution::kTextureWidth),
-                    compacted?1.0f:0.0f,0,0};
+                    sorted||compacted?1.0f:0.0f,0,0};
         device_->setPipeline(appearance.additive?additive_:alpha_);
         device_->setVertexBuffer(vertex_);
         device_->setIndexBuffer(index_);
         device_->setTexture(0,particles.positionTexture());
         // Bind tex1 even in legacy draw mode: native shader resources
         // are declared unconditionally, while the selection branch is not.
-        device_->setTexture(1,compacted?compaction->denseIndexTexture()
-                                   :particles.positionTexture());
+        device_->setTexture(1,sorted ? alphaSort->sortedIndexTexture() :
+                                   compacted ? compaction->denseIndexTexture()
+                                             : particles.positionTexture());
         device_->setUniforms(0,&u,sizeof(u));
         if(compacted && device_->drawIndexedGpuIndirect(
                           compaction->indirectArguments(),0)) return true;
