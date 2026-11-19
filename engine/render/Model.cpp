@@ -405,6 +405,25 @@ void uploadImage(gfx::Device& dev, Image& img) {
             w0*h0 > std::numeric_limits<size_t>::max()/4u ||
             pixels.size() != w0*h0*4u)
             return; // No silent full-resolution upload on an invalid VT source.
+        // Preserve the exact source alpha at full resolution. A single R8
+        // channel is enough for cutout coverage in colour, shadow, selection
+        // and feedback passes. Filtering and address mode match the source.
+        if (img.virtualFallbackPreserveAlpha) {
+            if (!dev.supports(gfx::PixelFormat::R8)) return;
+            std::vector<uint8_t> alpha(w0*h0);
+            for (size_t i=0;i<alpha.size();++i)
+                alpha[i]=pixels[i*4u+3u];
+            gfx::TextureDesc ad;
+            ad.width=img.width; ad.height=img.height;
+            ad.format=gfx::PixelFormat::R8;
+            ad.filter=img.nearest?gfx::Filter::Nearest:gfx::Filter::Linear;
+            ad.repeat=img.repeat;
+            ad.mipmaps=!img.nearest;
+            ad.data=alpha.data();
+            ad.label="VT full-resolution alpha coverage";
+            img.virtualAlphaMask=dev.createTexture(ad);
+            if (!img.virtualAlphaMask.valid()) return;
+        }
         std::vector<uint8_t> coarse(pixels.begin(),pixels.end());
         int width = img.width, height = img.height;
         while (std::max(width,height) > img.virtualFallbackMaxDimension) {
@@ -439,6 +458,10 @@ void uploadImage(gfx::Device& dev, Image& img) {
         td.data = coarse.data();
         td.label = img.name.c_str();
         img.tex = dev.createTexture(td);
+        if (!img.tex.valid() && img.virtualAlphaMask.valid()) {
+            dev.destroyTexture(img.virtualAlphaMask);
+            img.virtualAlphaMask={};
+        }
         img.gpuCompressed = false;
         return;
     }
@@ -686,6 +709,9 @@ void releaseModel(gfx::Device& dev, Model& m) {
     m.vb = {}; m.ib = {};
     for (auto& img : m.images) {
         if (img.tex.valid() && !img.borrowedTexture) dev.destroyTexture(img.tex);
+        if (img.virtualAlphaMask.valid())
+            dev.destroyTexture(img.virtualAlphaMask);
+        img.virtualAlphaMask={};
         img.tex = {};
         // Drop the shared cache lease at explicit release, not only when the
         // Model object itself happens to be destroyed. The texture cache's
