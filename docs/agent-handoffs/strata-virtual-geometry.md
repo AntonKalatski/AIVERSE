@@ -412,3 +412,65 @@ After native builds/tests pass, add an **opt-in, mutually exclusive** Strata sub
 - The sidecar model lease is explicit and move-only, not a self-destroying GPU RAII object; callers MUST invoke release before Device teardown.
 - Hierarchical LOD may still crack or alter attributes across cluster boundaries. No measured speedup, GPU mesh shading or GPU indirect draw has been proven.
 - The active batching branch has advanced considerably during this task. Do not blindly overwrite its `GlobalGeometryPool.cpp` work; re-diff current batching head and reconcile it before a later merge. PR #35 remains stacked Draft on PR #34.
+
+
+---
+
+## Stage 8 — Metal diagnostic GPU cluster culling (2026-11-19)
+
+### Resume state and precise commits
+**Branch:** `feature/strata-virtual-geometry`. PR #35 Draft, stacked on `perf/incremental-static-model-cache` PR #34 (that separate branch was still evolving; do not overwrite its files). No merge to main. Main legacy renderer still owns ALL draws; Strata GPU selection is off by default.
+
+- `8dfcf4f5479e4730e165ccad754c1e08f46a9007`: new `engine/render/StrataGpuCulling.h` with 80-byte `GpuSceneInstance`, 32-byte selected-range record, 16-byte atomic counters, 96-byte pass uniforms, per-frame submission descriptors, culling lifecycle.
+- `8b6bf01418ed65f6d5f586cdd81eefad33125f2c`: new `engine/render/StrataGpuCulling.cpp` with experimental Metal compute shader, hierarchy traversal, parent-residency fallback, projected pixel error, frustum selection, atomic bounded output and no draw submission.
+- `1b91431dcca08a5d44bf4f2c1be83920180d8465`: make GPU frustum near-plane clipping match the existing conservative `geometryBoxVisible` CPU reference (not a replacement for exact hardware clipping).
+- `ab811a3de4c3a589904e563c4d1fa59cf42269e6` and `e987b734c12dd58a8ae7ec28cc5694ed81ed0764`: distinguish GPU `GpuPassConfig::viewProjection` from CPU `ViewConfig::objectToClip`; add `makeGpuSceneInstance` and `cpuReferenceView` utilities to prevent double-applying world transforms.
+- `23fdb1fad2f9ecc5264004bc1bb2f28afd2dc3aa`: new `tests/render/strata_gpu_culling.cpp` with recording gfx::Device, matrix helper, viewport uniform, Metal-only gate, multi-dispatch same frame and no-draw assertions.
+- `0d051e01b8e999857a9c375b46e05f7e7fa667db`: CMake static target `aiverse_strata_gpu_culling`, CTest `strata_gpu_culling`.
+- `3cb86a52506336b59c949f46a943251447447d62`: conservative frame reuse; if previous 3-frame slot has no known completed GPU serial, GPU diagnostic selection declines rather than overwriting in-flight data.
+- `2c5bc99a4478d7353ac28eed132d8756db3bf289`: new `.github/workflows/strata-focused.yml`, targeted Ubuntu/macOS compile and five Strata CPU/mock CTests.
+- `b08a684f5e7ed99cc742aac7d8cfe1238474f73a`: `GeometryScene.h` diagnostics API: collect staged static instances and request opt-in GPU per-pass selection.
+- `21730654aee6b9fb1433bf476c67a1178a2ae1b5`: `GeometryScene.h` stores borrowed owner gfx::Device pointer for dispatch identity check.
+- `7e2e015254bb3a6e2dde11f45c728718ea31f801`: `GeometryScene.cpp`, collect source Model node/world transforms into GPU scene records; dispatch diagnostic compute if metadata v2 and all flags are opted in, no draw calls.
+- `a6a9e109bdefb4a1ad28c263764ec1ddb5416816`: runtime links `aiverse_strata_gpu_culling` when `AIVERSE_BUILD_STRATA=ON`.
+- `b137a9e229a16ca32f4aa16900db2659ef5b11ec`: fix `GeometryScene::shutdown` incomplete GPU class method calls for `AIVERSE_BUILD_STRATA=OFF` by guarding hardware-specific method references.
+- `e7a08912d0b967f38b8154eb4baa9b8670640cae`: `docs/strata.md`, Stage 8 public contract, example, limitations, validation gates.
+- `612acabb7e2c12245e48bd1db4c79dd9ecbf34e1`: `AGENTS.md` ownership, no-render rule, GPU matrix semantics, index base safety.
+
+### Implemented and architecture
+The GPU culling stage is **not yet production GPU-driven drawing**. `GpuClusterCulling::dispatch()` is a standalone Metal-only diagnostic compute call: it takes one `GpuMetadataScene` **version 2** storage buffer and an array of GPU scene instances for that source. It stages bounded instance matrices and a buffer of selected cluster ranges; the kernel traverses the encoded tree for each instance using a fixed 128-entry stack and chooses parent clusters when descendants are missing. The output is atomic-compacted, nondeterministically ordered, and reports overflow/invalid/traversal counters. Every range contains a valid-looking *candidate* absolute pooled index offset, but the `Renderer3D` batching/material/shadow pipeline is **never invoked by this module**. It never calls GPU indirect draw or reads GPU results back during normal rendering.
+
+`GpuPassConfig::viewProjection` is pass-level ONLY; `GpuSceneInstance::objectToWorld` contains the source node transform (including instance and bind hierarchy). `cpuReferenceView(pass, instance)` composes these for the CPU `planView()` oracle. The GPU path is bounded to 4096 primitive instances, 65536 output clusters and 64 independent submissions per GPU frame slot. If a slot may still be used by the GPU and no completion serial proves retirement, dispatch returns false. Staging/culling are independent of game genres, ECS authoritative state, dynamic gameplay and other render passes.
+
+`GeometryScene::setStrataGpuCullingEnabled(true)` is a **third explicit opt-in**, in addition to CPU staging and pooled GPU metadata/index staging. The scene can construct static instance+node transform records for a source with `collectStrataGpuInstances`, and trigger a compute pass with `dispatchStrataGpuView(device, sourceKey, pass, device.frameSerial(), result)`. This API is for use between beginFrame/endFrame and **outside** any render/compute pass. Its metadata must be owned by the same Device; the scene guards against a different device instance. All source models, materials, shadows, HLOD, GI, legacy batching, draw calls and GPU pool allocations remain managed by previous systems. No scene JSON or save format changes.
+
+**Critical failure semantics:** a successful `dispatch()` means only that the RHI accepted compute encoding, not that visible ranges are correct or safe to submit. A nonzero GPU `GpuSelectionCounters::overflow` or `invalid` marks the entire result unusable for rendering. Atomic output order is unspecified; sort by `instanceToken/nodeIndex/primitiveIndex` for GPU vs CPU parity checks. Unlike CPU's global output budgeting, GPU overflow does not recover by selecting coarser parents: on overflow legacy rendering must remain the fallback. Never modify ordinary draw counts from this result.
+
+### Actual validation status
+- Connected GitHub API accepted each source and documentation commit and reported the feature HEAD.
+- Native C++ compilation: **NOT RUN**. `strata_gpu_culling` recording RHI test: **NOT RUN**. Existing four Strata CTests: **NOT RUN** in assistant environment. Real Metal shader compilation and execution: **NOT RUN**. GPU async counters/readback parity with CPU: **NOT RUN**. Vulkan compute, Hi-Z, real A/B screenshots, frame-time benchmark: **NOT RUN**.
+- GitHub Actions `Strata focused CPU and GPU-dispatch contracts` appeared **QUEUED** for code head `612acabb`; no PASS/FAIL result available. Other CI jobs also queued. Do not mark any unexecuted work green.
+- Full GPU command submission remains purposefully unimplemented.
+
+### Native validation required before further rendering
+```sh
+cd ~/Projects/AIVERSE
+git fetch origin main perf/incremental-static-model-cache feature/strata-virtual-geometry
+git worktree add --detach ../AIVERSE-strata-stage8 origin/feature/strata-virtual-geometry
+cmake -S ../AIVERSE-strata-stage8 -B ../AIVERSE-strata-stage8/build/strata \
+  -DAIVERSE_BUILD_TESTS=ON -DAIVERSE_BUILD_STRATA=ON
+cmake --build ../AIVERSE-strata-stage8/build/strata \
+  --target aiverse_strata_builder_tests aiverse_strata_model_adapter_tests \
+    aiverse_strata_view_tests aiverse_strata_gpu_scene_tests \
+    aiverse_strata_gpu_culling_tests -j 8
+ctest --test-dir ../AIVERSE-strata-stage8/build/strata \
+  -R '^strata_(builder|model_adapter|view|gpu_scene|gpu_culling)$' \
+  --output-on-failure
+```
+Then explicitly test `AIVERSE_BUILD_STRATA=OFF` with the ordinary runtime target, compile the dynamic MSL kernel on actual Mac/Metal, dispatch it with real metadata v2 after a valid `beginFrame`, read back asynchronously when the GPU frame completes, check overflow and invalid counters, sort output and compare every actual selected range against `strata::planView` for varied camera projections, thresholds, LOD levels, node transforms, shadows and residency changes. Verify 4096-instance cap, 65536-output cap, same-frame multiple views, recycled frame slots, and that DrawCalls/draw-model frame images are unchanged with diagnostics OFF/ON.
+
+### Next bounded step
+If native tests and GPU shader parity are clean, implement a single mutually exclusive Strata/legacy per-primitive selection owner inside the existing renderer (not another batching/geometry pool), with explicit opt-in and direct fallback on any mismatch/error. Do not enable GPU compute-authored indirect draws or Hi-Z until the exclusive source submission path and pixel parity are verified. Streaming/dynamic TerraWeave and cross-platform Vulkan compute remain future stages.
+
+### Live batching dependency
+PR #34 has advanced independently. Its newer commits are **not automatically merged** into this Stage 8 snapshot. Fetch current batching HEAD, compare changed GPU renderer files and notes, resolve any conflicting semantics and preserve its handoff before syncing. Neither agent should force-push or merge to main without shared native regression results.
