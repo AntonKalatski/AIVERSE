@@ -62,3 +62,18 @@ Expected macOS CTest MetalGPU set: **four tests**, all **real PASS**, `SKIP=0`, 
 ## Remaining next stages
 
 Run real Editor Scene/Game viewport preview interaction (camera orbit, pause/step, changes in authored graph and shader assets), validate PRISMA integration/depth/tonemapping and frame pacing, then stress actual production HybridPlayback with thousands of keyed emitter lifecycles and GPU health/memory metrics. Do not merge the highly divergent feature branch to main until source conflicts, full native acceptance and presentation visuals are reviewed.
+
+## Follow-up actual hardware result: PASS (recorded 2026-11-20)
+
+Stage 104 has now been **native-validated on Apple M3 Ultra** at SHA
+`c4fc948535557f1cc1a00459d1a3cd48257ad6ca` (newest
+source commit of that stage). The user's full acceptance report:
+**126/126 full CTest, 11/11 SpectraFX, 4/4 real MetalGPU** all PASS,
+**9/9 acceptance stages exit 0**, failed 0/skipped 0.
+Renderer3D's new scene fixture reports A=168 affected pixels,
+centroid=63.50; B=304 affected pixels, centroid=43.07;
+`depth_center_delta=0`, failures=0.
+It wrote five PPM images to `/tmp/spectrafx-scene-*.ppm`.
+**These files have not been visually inspected by this agent**.
+See `docs/agent-handoffs/spectrafx-stage105-full-renderer3d-acceptance-2026-11-20.md`
+for the complete reported test log details and remaining Editor/PRISMA QA.

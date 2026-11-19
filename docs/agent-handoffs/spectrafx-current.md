@@ -1,5 +1,21 @@
 # SpectraFX — handoff for the next implementation agent
 
+## Stage 105 — full Renderer3D native acceptance **PASS** (M3 Ultra)
+
+User-provided hardware run at validated SHA
+`c4fc948535557f1cc1a00459d1a3cd48257ad6ca`:
+**126/126 full CTests PASS**, **11/11 SpectraFX PASS**, **4/4 actual MetalGPU
+PASS**, strict metal evidence `SKIP=0 MISSING=0 FAIL=0`.
+All **9/9 full acceptance stages exit 0**; no failed/skipped stages.
+Real RHI: A pixels left/right 229/0; B 0/228, 24 churn frames,
+retire_remaining=0, gpu_healthy=1, impact_queued=1 discarded=1 delivered=0.
+Renderer3D real scene: FX-delta pixels A=168 centroid=63.50,
+B=304 centroid=43.07, depth_center_delta=0, failures=0.
+Five PPM files were saved on user Mac but **not visually reviewed here**.
+Full evidence and next limitations:
+`docs/agent-handoffs/spectrafx-stage105-full-renderer3d-acceptance-2026-11-20.md`.
+
+
 ## Stage 104 — real Renderer3D two-camera Metal scene acceptance (NOT RUN)
 
 Code commits `4e7539d298076a3944bf837e570e0cd420e26275`,
