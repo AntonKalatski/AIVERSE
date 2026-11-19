@@ -2,10 +2,12 @@
 // Authored offsets apply after MotionWeave, never rewriting imported binds.
 #pragma once
 #include "engine/render/Model.h"
+#include "engine/data/Json.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <map>
+#include <stdexcept>
 #include <span>
 #include <string>
 #include <vector>
@@ -39,6 +41,47 @@ public:
         if(undo_.size()==kHistory)undo_.erase(undo_.begin());
         undo_.push_back(edits_);edits_=std::move(next);redo_.clear();
         return true;
+    }
+    Json toJson() const {
+        Json root=Json::object();
+        root.set("version",Json::number(std::int64_t(1)));
+        Json offsets=Json::array();
+        for(const auto& [name,delta]:edits_) {
+            Json entry=Json::object();
+            entry.set("node",Json::string(name));
+            Json array=Json::array();
+            for(float value:{delta.x,delta.y,delta.z})
+                array.push(Json::number(double(value),7));
+            entry.set("translation",std::move(array));
+            offsets.push(std::move(entry));
+        }
+        root.set("offsets",std::move(offsets));
+        return root;
+    }
+    static RigAuthoring fromJson(const Json& data) {
+        if(!data.isObject()||!data.has("version")||
+           data["version"].integer(-1)!=1||
+           !data.has("offsets") || !data["offsets"].isArray() ||
+           data["offsets"].size()>128)
+            throw std::invalid_argument("VIVID rig correction: invalid version/offsets");
+        RigAuthoring result;
+        for(const auto& entry:data["offsets"].items()) {
+            if(!entry.isObject()||!entry["node"].isString()||
+               !entry["translation"].isArray()||
+               entry["translation"].size()!=3)
+                throw std::invalid_argument("VIVID rig correction: malformed entry");
+            const auto& p=entry["translation"];
+            if(!p[0].isNumber()||!p[1].isNumber()||!p[2].isNumber())
+                throw std::invalid_argument("VIVID rig correction: nonnumeric offset");
+            const auto node=entry["node"].str();
+            if(result.edits_.count(node)||
+               !result.setTranslation(node,{
+                    float(p[0].toDouble()),float(p[1].toDouble()),
+                    float(p[2].toDouble())}))
+                throw std::invalid_argument("VIVID rig correction: duplicate or invalid node");
+        }
+        result.undo_.clear();result.redo_.clear();
+        return result;
     }
     bool undo() {
         if(undo_.empty())return false;
