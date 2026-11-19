@@ -157,6 +157,7 @@ void WorldScene::releaseChunk(gfx::Device& device,Prepared& chunk) {
 // submissions. No texture/model GPU resources are destroyed before a
 // real completion token or verified full-idle fallback.
 bool WorldScene::collectRetired(gfx::Device& device) {
+    try {
     for(auto it=deferredModels_.begin();it!=deferredModels_.end();) {
         bool finalCpuOwner=false;
         {
@@ -207,6 +208,11 @@ bool WorldScene::collectRetired(gfx::Device& device) {
             return device.resourceRetirementStatus(token)==
                    gfx::ResourceRetirementStatus::Failed;
         });
+    }catch(...) {
+        // Failed queue allocation or Device callback cannot authorize GPU
+        // destruction. Keep the remaining Models for a later owner frame.
+        return false;
+    }
 }
 void WorldScene::update(gfx::Device& device,std::span<const Vec3> observers,int radius) {
     std::vector<StreamObserver> interests;for(auto p:observers)interests.push_back({assets_.cell(p),radius});
