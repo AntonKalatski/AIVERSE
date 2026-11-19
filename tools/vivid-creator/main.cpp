@@ -924,6 +924,57 @@ struct CreatorApp {
                         "vertices in one full-model GPU stream; Renderer3D "
                         "chooses the authored mesh LOD.");
                 }
+                if(ImGui::Button("Load baked LOD mapping")) {
+                    try {
+                        if(sourceLodMesh<0 || targetLodMesh<0 ||
+                           sourceLodMesh==targetLodMesh || !human.head ||
+                           std::size_t(sourceLodMesh)>=human.head->meshes.size() ||
+                           std::size_t(targetLodMesh)>=human.head->meshes.size())
+                            throw std::runtime_error("VIVID LOD: select source and target meshes first");
+                        const auto path=std::filesystem::absolute(
+                            std::filesystem::path(importedManifest)).parent_path()/
+                            "vivid-facial-lod.mapping.json";
+                        const auto restored=MorphLodMapping::fromJson(
+                            Json::parse(fileContents(path,64ull*1024ull*1024ull)));
+                        std::vector<std::uint32_t> sourceIndices;
+                        const auto& model=*human.head;
+                        for(const auto& primitive:model.meshes[std::size_t(sourceLodMesh)].primitives) {
+                            const std::size_t first=primitive.firstIndex;
+                            if(first>model.indices.size() ||
+                               primitive.indexCount>model.indices.size()-first)
+                                throw std::runtime_error("VIVID LOD: invalid source index range");
+                            for(std::size_t j=first;j<first+primitive.indexCount;++j)
+                                sourceIndices.push_back(model.indices[j]);
+                        }
+                        std::vector<float3> positions;
+                        positions.reserve(morphSourcePositions.size());
+                        for(const auto& p:morphSourcePositions)
+                            positions.push_back({p[0],p[1],p[2]});
+                        if(restored.targetVertexIds.empty())
+                            throw std::runtime_error("VIVID LOD: mapping lacks model vertex IDs");
+                        const auto sourceMorph=morphDraft->compile();
+                        (void)restored.transfer(sourceMorph,positions,sourceIndices);
+                        // Verify every target ID belongs to the authored LOD.
+                        std::vector<std::uint32_t> validIds;
+                        for(const auto& primitive:model.meshes[std::size_t(targetLodMesh)].primitives) {
+                            const std::size_t first=primitive.firstIndex;
+                            if(first>model.indices.size() ||
+                               primitive.indexCount>model.indices.size()-first)
+                                throw std::runtime_error("VIVID LOD: invalid target index range");
+                            for(std::size_t j=first;j<first+primitive.indexCount;++j)
+                                validIds.push_back(model.indices[j]);
+                        }
+                        std::sort(validIds.begin(),validIds.end());
+                        validIds.erase(std::unique(validIds.begin(),validIds.end()),validIds.end());
+                        if(validIds!=restored.targetVertexIds)
+                            throw std::runtime_error("VIVID LOD: target model vertex IDs changed");
+                        activeLodMapping=restored;
+                        activeLodSourceIndices=std::move(sourceIndices);
+                        lodGpuMorphEnabled=true;
+                        pendingRebuild=true;
+                        status="VIVID LOD: validated mapping loaded for GPU actor";
+                    }catch(const std::exception& e){status=e.what();}
+                }
                 if(ImGui::Button("Bake and export LOD morphs")) {
                     try {
                         if(!externalMode || importedManifest.empty() ||
