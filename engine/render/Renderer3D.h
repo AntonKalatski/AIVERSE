@@ -289,6 +289,10 @@ public:
     // before starting another draw submission; no GPU resources are owned here.
     void invalidateStaticModelCache(uint64_t persistentId);
     void invalidateModelCachesFor(const Model* model);
+    // Drop one shared material-owner signature before its native source is
+    // replaced or destroyed. Existing packets automatically rebuild when the
+    // owner returns with a new signature serial; other owners are unaffected.
+    void invalidateSharedMaterialState(const Model* model, uint64_t materialOwnerKey);
     struct StaticRenderPacketStats {
         uint64_t hits = 0, rebuilds = 0, declined = 0, evicted = 0;
         size_t live = 0, retainedBytes = 0;
