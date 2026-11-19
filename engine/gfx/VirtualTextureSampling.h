@@ -108,8 +108,19 @@ vec4 aiverseSampleVirtualGrad(
     // Each slice stores the closest resident page at this requested mip OR
     // a coarser fallback. Selected mip and page contents remain stable under
     // LRU eviction because the streamer flushes all table slices before reuse.
+bool aiverseVirtualFinite2(vec2 v) {
+    // Explicit comparisons reject NaN as well as Inf without requiring isnan/isinf
+    // in legacy GLES3 shader compilers. Bound magnitudes before length/square.
+    return all(lessThanEqual(abs(v),vec2(1.0e8)));
+}
+bool aiverseVirtualFinite1(float v) {
+    return abs(v)<=1.0e8;
+}
 float aiverseVirtualMipLod(vec2 uvDx, vec2 uvDy, vec2 virtualSizePixels,
                            float bias) {
+    if (!aiverseVirtualFinite2(uvDx) || !aiverseVirtualFinite2(uvDy) ||
+        !aiverseVirtualFinite2(virtualSizePixels) || !aiverseVirtualFinite1(bias))
+        return 0.0;
     vec2 dims = max(virtualSizePixels,vec2(1.0));
     float footprint = max(length(uvDx * dims),length(uvDy * dims));
     return max(0.0,log2(max(footprint,1.0)) + bias);
@@ -119,6 +130,10 @@ vec4 aiverseSampleVirtualTrilinear(
     vec2 uv, int logicalLayer, float gutterPixels, vec4 fallbackColor,
     vec2 uvDx, vec2 uvDy, float virtualMipLod, int virtualMipLevels,
     int addressU, int addressV) {
+    if (!aiverseVirtualFinite2(uv) || !aiverseVirtualFinite2(uvDx) ||
+        !aiverseVirtualFinite2(uvDy) || !aiverseVirtualFinite1(gutterPixels) ||
+        !aiverseVirtualFinite1(virtualMipLod))
+        return fallbackColor;
     ivec3 info = textureSize(indexedTable,0);
     if (virtualMipLevels < 1 || virtualMipLevels > 30 ||
         logicalLayer < 0 || info.z < virtualMipLevels ||
@@ -158,6 +173,10 @@ vec4 aiverseSampleVirtualAnisotropic(
     vec2 uv, int logicalLayer, float gutterPixels, vec4 fallbackColor,
     vec2 uvDx, vec2 uvDy, vec2 virtualSizePixels, float mipBias,
     int virtualMipLevels, int maxTaps, int addressU, int addressV) {
+    if (!aiverseVirtualFinite2(uv) || !aiverseVirtualFinite2(uvDx) ||
+        !aiverseVirtualFinite2(uvDy) || !aiverseVirtualFinite2(virtualSizePixels) ||
+        !aiverseVirtualFinite1(mipBias) || !aiverseVirtualFinite1(gutterPixels))
+        return fallbackColor;
     vec2 sizePixels=max(virtualSizePixels,vec2(1.0));
     float dxPixels=length(uvDx*sizePixels);
     float dyPixels=length(uvDy*sizePixels);
@@ -293,8 +312,17 @@ inline float4 aiverse_sample_virtual_grad(
 }
 
     // Indexed page-table slices are [logicalLayer * mipLevels + selectedMip].
-inline float aiverse_virtual_mip_lod(float2 uvDx,float2 uvDy,
+inline inline bool aiverse_virtual_finite2(float2 v) {
+    return all(abs(v)<=float2(1.0e8f));
+}
+inline bool aiverse_virtual_finite1(float v) {
+    return abs(v)<=1.0e8f;
+}
+float aiverse_virtual_mip_lod(float2 uvDx,float2 uvDy,
                                     float2 virtualSizePixels,float bias) {
+    if (!aiverse_virtual_finite2(uvDx) || !aiverse_virtual_finite2(uvDy) ||
+        !aiverse_virtual_finite2(virtualSizePixels) || !aiverse_virtual_finite1(bias))
+        return 0.0f;
     float2 dims=max(virtualSizePixels,float2(1.0));
     float footprint=max(length(uvDx*dims),length(uvDy*dims));
     return max(0.0f,log2(max(footprint,1.0f))+bias);
@@ -305,6 +333,10 @@ inline float4 aiverse_sample_virtual_trilinear(
     float2 uv, uint logicalLayer, float gutterPixels, float4 fallbackColor,
     float2 uvDx, float2 uvDy, float virtualMipLod, uint virtualMipLevels,
     uint addressU, uint addressV) {
+    if (!aiverse_virtual_finite2(uv) || !aiverse_virtual_finite2(uvDx) ||
+        !aiverse_virtual_finite2(uvDy) || !aiverse_virtual_finite1(gutterPixels) ||
+        !aiverse_virtual_finite1(virtualMipLod))
+        return fallbackColor;
     const uint layers=indexedTable.get_array_size();
     if (virtualMipLevels<1u || virtualMipLevels>30u ||
         layers<virtualMipLevels || layers%virtualMipLevels!=0u ||
@@ -344,6 +376,10 @@ inline float4 aiverse_sample_virtual_anisotropic(
     float2 uv, uint logicalLayer, float gutterPixels, float4 fallbackColor,
     float2 uvDx, float2 uvDy, float2 virtualSizePixels, float mipBias,
     uint virtualMipLevels, uint maxTaps, uint addressU, uint addressV) {
+    if (!aiverse_virtual_finite2(uv) || !aiverse_virtual_finite2(uvDx) ||
+        !aiverse_virtual_finite2(uvDy) || !aiverse_virtual_finite2(virtualSizePixels) ||
+        !aiverse_virtual_finite1(mipBias) || !aiverse_virtual_finite1(gutterPixels))
+        return fallbackColor;
     float2 sizePixels=max(virtualSizePixels,float2(1.0));
     float dxPixels=length(uvDx*sizePixels);
     float dyPixels=length(uvDy*sizePixels);
