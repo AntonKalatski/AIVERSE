@@ -246,7 +246,7 @@ void GameClient::shutdown() {
     fx_.shutdown();
     sound_.detach();
     audio_.shutdown();
-    horizonFrameTiming_.discard();
+    horizonFrameTiming_.detach(*dev_);
     if (worldScene_) { worldScene_->shutdown(*dev_); worldScene_.reset(); }
     view_.shutdown(*dev_);
     postFx_.shutdown();
@@ -296,7 +296,7 @@ void GameClient::startMatch(size_t idx, const Json& initialVars) {
         cityPrepare(rules, map);   // AIVERSE_CITY: a seat in a city on a server (ClientCity.cpp)
         sim_->setup(rules, map);
         cityAttach();
-        horizonFrameTiming_.discard();
+        horizonFrameTiming_.detach(*dev_);
         if (worldScene_) { worldScene_->shutdown(*dev_); worldScene_.reset(); }
         // static scenery streamed around the camera instead of being loaded whole. The key is "streamedWorld" here:
         // in these maps "world" is the planet system (FPS maps keep the same block under "world")
