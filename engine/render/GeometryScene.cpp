@@ -51,6 +51,7 @@ void GeometryScene::shutdown(gfx::Device& dev){
     for(const auto& [source,token]:strataGlobalIndexLeases_)
         strata::releaseDeviceIndexBytes(dev,token);
     strataGlobalIndexLeases_.clear();
+    strata::clearIdleDeviceIndexBudget(dev);
     if (strataGpuCulling_) strataGpuCulling_->shutdown(dev);
     if (strataGpuMetadata_) strataGpuMetadata_->shutdown(dev);
 #endif
