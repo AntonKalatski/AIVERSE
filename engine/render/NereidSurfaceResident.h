@@ -94,6 +94,9 @@ inline bool sameNereidSurfaceKey(const NereidSurfaceKey& a,
         x.rapidFoamStrength==y.rapidFoamStrength &&
         x.rapidFlowThreshold==y.rapidFlowThreshold &&
         x.rapidNoiseScale==y.rapidNoiseScale &&
+         x.rapidFoamR==y.rapidFoamR &&
+         x.rapidFoamG==y.rapidFoamG &&
+         x.rapidFoamB==y.rapidFoamB &&
         x.opacity==y.opacity &&
         x.specular==y.specular;
 }

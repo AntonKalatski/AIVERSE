@@ -14,7 +14,7 @@ namespace aiverse::render {
 namespace {
 constexpr float kPi = 3.14159265358979f;
 
-struct DrawUniforms { float model[16]; float color[4]; float params[4]; float waterRipples[64]; float waterWakeShapes[64]; float waterWind[4]; float waterHydraulics[4]; };
+struct DrawUniforms { float model[16]; float color[4]; float params[4]; float waterRipples[64]; float waterWakeShapes[64]; float waterWind[4]; float waterHydraulics[4]; float waterRapidColor[4]; };
 struct FrameUniforms {
     float viewProj[16];
     float lightViewProj[16];
@@ -235,7 +235,7 @@ void Renderer3D::drawNereidRippleMesh(const Mesh& mesh,const mat4& model,
         const std::array<float4,16>& ripples,
         uint32_t firstIndex,uint32_t indexCount,
         const std::array<float4,16>& wakeShapes,float4 wind,
-        float4 hydraulics) {
+        float4 hydraulics,float4 rapidColor) {
     drawMesh(mesh,model,color,kDrawNoCastShadow|kDrawWaterSurface,
              specular,refraction);
     if(!items_.empty()) {
@@ -243,6 +243,7 @@ void Renderer3D::drawNereidRippleMesh(const Mesh& mesh,const mat4& model,
         items_.back().waterWakeShapes=wakeShapes;
         items_.back().waterWind=wind;
         items_.back().waterHydraulics=hydraulics;
+        items_.back().waterRapidColor=rapidColor;
         items_.back().waterFirstIndex=firstIndex;
         items_.back().waterIndexCount=indexCount;
     }
@@ -451,6 +452,8 @@ void Renderer3D::render(const gfx::PassDesc& screenPass, PostProcess* post) {
         std::memcpy(u.waterWind,&it.waterWind,sizeof u.waterWind);
         std::memcpy(u.waterHydraulics,&it.waterHydraulics,
                     sizeof u.waterHydraulics);
+        std::memcpy(u.waterRapidColor,&it.waterRapidColor,
+                    sizeof u.waterRapidColor);
         if (studioDebugMode_ == 2 || studioDebugMode_ == 4 || studioDebugMode_ == 9)
             u.params[0] = 10.0f + float(studioDebugMode_);
         if (drawCallDebug_) {

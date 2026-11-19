@@ -191,6 +191,9 @@ inline NereidSceneSurface surface(const Json& j) {
         if(v.has("rapidFoamStrength"))s.style.rapidFoamStrength=scalar(v["rapidFoamStrength"],"rapidFoamStrength",0.f,1.f);
         if(v.has("rapidFlowThreshold"))s.style.rapidFlowThreshold=scalar(v["rapidFlowThreshold"],"rapidFlowThreshold",0.f,100.f);
         if(v.has("rapidNoiseScale"))s.style.rapidNoiseScale=scalar(v["rapidNoiseScale"],"rapidNoiseScale",0.1f,8.f);
+        if(v.has("rapidFoamColor"))
+            color(v["rapidFoamColor"],s.style.rapidFoamR,
+                  s.style.rapidFoamG,s.style.rapidFoamB);
     }
     return s;
 }

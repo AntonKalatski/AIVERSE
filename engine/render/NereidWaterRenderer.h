@@ -36,6 +36,8 @@ inline bool validNereidWaterStyle(const lib::nereid::WaterSurfaceStyle& s) {
            std::isfinite(s.rapidFoamStrength)&&
            std::isfinite(s.rapidFlowThreshold)&&
            std::isfinite(s.rapidNoiseScale)&&
+           std::isfinite(s.rapidFoamR)&&std::isfinite(s.rapidFoamG)&&
+           std::isfinite(s.rapidFoamB)&&
            s.opacity>0 && s.opacity<0.99f &&
            s.specular>=0.85f && s.specular<=1.f &&
            s.foamStrength>=0 && s.foamStrength<=1 &&
@@ -47,7 +49,10 @@ inline bool validNereidWaterStyle(const lib::nereid::WaterSurfaceStyle& s) {
            s.underwaterScattering>=0 && s.underwaterScattering<=1 &&
            s.rapidFoamStrength>=0 && s.rapidFoamStrength<=1 &&
            s.rapidFlowThreshold>=0 && s.rapidFlowThreshold<=100 &&
-           s.rapidNoiseScale>=0.1f && s.rapidNoiseScale<=8.f;
+           s.rapidNoiseScale>=0.1f && s.rapidNoiseScale<=8.f &&
+           s.rapidFoamR>=0.f && s.rapidFoamR<=1.f &&
+           s.rapidFoamG>=0.f && s.rapidFoamG<=1.f &&
+           s.rapidFoamB>=0.f && s.rapidFoamB<=1.f;
 }
 
 // Upload at content/render setup, not every simulation tick.
@@ -77,7 +82,9 @@ inline void drawNereidWaterSurface(Renderer3D& renderer,const Mesh& mesh,
                       {style.absorption,style.shoreFoamDepth,
                        style.depthTint,style.opacity},
                        style.specular,style.refractionStrength,ripples,
-                       firstIndex,indexCount,wakeShapes,wind,hydraulics);
+                       firstIndex,indexCount,wakeShapes,wind,hydraulics,
+                        {style.rapidFoamR,style.rapidFoamG,
+                         style.rapidFoamB,1.f});
 }
 inline void releaseNereidWaterSurface(gfx::Device& device,Mesh& mesh) {
     if(mesh.vb.valid())device.destroyBuffer(mesh.vb);

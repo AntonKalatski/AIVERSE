@@ -72,6 +72,9 @@ inline bool sameNereidSceneSurface(const NereidSceneSurface& a,
        u.rapidFoamStrength!=v.rapidFoamStrength ||
        u.rapidFlowThreshold!=v.rapidFlowThreshold ||
        u.rapidNoiseScale!=v.rapidNoiseScale ||
+        u.rapidFoamR!=v.rapidFoamR ||
+        u.rapidFoamG!=v.rapidFoamG ||
+        u.rapidFoamB!=v.rapidFoamB ||
        u.opacity!=v.opacity ||
        u.specular!=v.specular)return false;
     // Camera coordinates are intentionally excluded: resident ocean patches

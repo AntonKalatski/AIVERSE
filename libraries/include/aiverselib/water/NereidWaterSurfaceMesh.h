@@ -65,6 +65,9 @@ struct WaterSurfaceStyle {
     float rapidFoamStrength=0.f; // 0..1, opt-in current-generated whitewater
     float rapidFlowThreshold=3.f; // 0..100 m/s before foam begins
     float rapidNoiseScale=1.f; // 0.1..8 visual breakup frequency
+    // Linear RGB for current-driven whitewater, distinct from shoreline foam.
+    // Defaults reproduce Stage 38 hard-coded shader colour.
+    float rapidFoamR=0.84f, rapidFoamG=0.93f, rapidFoamB=0.94f;
 };
 
 namespace water_mesh_detail {

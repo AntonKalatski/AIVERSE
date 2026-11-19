@@ -24,14 +24,14 @@ namespace aiverse::render::shaders {
     "  vec4 u_skyColor; vec4 u_groundColor; vec4 u_fog; vec4 u_camPos; vec4 u_shadow; vec4 u_quality;\n" \
     "  vec4 u_trace0; vec4 u_trace1; vec4 u_trace2; vec4 u_trace3; };\n"
 #define AIVERSE_GLSL_BLOCKS \
-    "layout(std140) uniform U0 { mat4 u_model; vec4 u_color; vec4 u_params; vec4 u_waterRipples[16]; vec4 u_waterWakeShapes[16]; vec4 u_waterWind; vec4 u_waterHydraulics; };\n" AIVERSE_GLSL_FRAME
+    "layout(std140) uniform U0 { mat4 u_model; vec4 u_color; vec4 u_params; vec4 u_waterRipples[16]; vec4 u_waterWakeShapes[16]; vec4 u_waterWind; vec4 u_waterHydraulics; vec4 u_waterRapidColor; };\n" AIVERSE_GLSL_FRAME
 
 #define AIVERSE_MSL_FRAME \
     "struct U1 { float4x4 viewProj; float4x4 lightViewProj; float4x4 invViewProj; float4 sunDir; float4 sunColor;\n" \
     "  float4 skyColor; float4 groundColor; float4 fog; float4 camPos; float4 shadow; float4 quality;\n" \
     "  float4 trace0; float4 trace1; float4 trace2; float4 trace3; };\n"
 #define AIVERSE_MSL_BLOCKS \
-    "struct U0 { float4x4 model; float4 color; float4 params; float4 waterRipples[16]; float4 waterWakeShapes[16]; float4 waterWind; float4 waterHydraulics; };\n" AIVERSE_MSL_FRAME
+    "struct U0 { float4x4 model; float4 color; float4 params; float4 waterRipples[16]; float4 waterWakeShapes[16]; float4 waterWind; float4 waterHydraulics; float4 waterRapidColor; };\n" AIVERSE_MSL_FRAME
 
 // Traced terrain shadows (Renderer3D "trace" tier, needs U1 and the height field in slot TEX):
 // the sun ray is marched over a 16-bit height map of the whole map (R high byte, G low byte; built by
@@ -476,7 +476,7 @@ void main() {
         float eddies=sin(across*6.4+along*1.8-time*2.8);
         float foam=smoothstep(0.22,0.82,abs(breakup*eddies))*
                    u_waterHydraulics.z;
-        base=mix(base,vec3(0.84,0.93,0.94),
+        base=mix(base,u_waterRapidColor.rgb,
                  clamp(foam*0.78,0.0,0.78));
         n=normalize(n+vec3(side.x*eddies*foam*0.17,
                            0.0,side.y*eddies*foam*0.17));
@@ -686,7 +686,7 @@ fragment float4 fs_main(VOut in [[stage_in]], constant U0& u [[buffer(1)]], cons
         float eddies=sin(across*6.4+along*1.8-time*2.8);
         float foam=smoothstep(0.22,0.82,abs(breakup*eddies))*
                    u.waterHydraulics.z;
-        base=mix(base,float3(0.84,0.93,0.94),
+        base=mix(base,u.waterRapidColor.rgb,
                  clamp(foam*0.78,0.0,0.78));
         n=normalize(n+float3(side.x*eddies*foam*0.17,
                              0.0,side.y*eddies*foam*0.17));
