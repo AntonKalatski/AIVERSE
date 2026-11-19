@@ -31,6 +31,7 @@
 #include "engine/render/ImGuiLayer.h"
 #include "engine/render/Prisma.h"
 #include "engine/render/Renderer3D.h"
+#include "ViewportGpuRetirement.h"
 #include "engine/sim/Simulation.h"
 #include "modules/rts/RtsAI.h"
 #include "modules/rts/RtsMap.h"
@@ -69,7 +70,15 @@ struct Viewport {
     float originX = 0, originY = 0;   // top-left on screen (points)
     bool hovered = false;
     int drawnFrame = -100;            // ImGui frame the owning window last drew it (hidden tab: stale)
-    void ensure(gfx::Device& dev, int pw, int ph);
+    // Device/retirement owner must outlive this window. Editor clears all
+    // windows before draining its retirement queue on GPU-idle teardown.
+    gfx::Device* ownerDevice = nullptr;
+    ViewportGpuRetirement* retirement = nullptr;
+    ~Viewport() { if (ownerDevice) release(*ownerDevice); }
+    Viewport(const Viewport&) = delete;
+    Viewport& operator=(const Viewport&) = delete;
+    Viewport() = default;
+    void ensure(gfx::Device& dev, int pw, int ph, ViewportGpuRetirement& owner);
     void release(gfx::Device& dev);
     // ImGui::Image with the right orientation for the backend
     void image(gfx::Device& dev, float wPts, float hPts);
@@ -103,6 +112,8 @@ public:
     const game::Rules& rules() const { return ws_.project.rules; }
     gfx::Device& device() { return *dev_; }
     render::Renderer3D& renderer() { return r3d_; }
+    ViewportGpuRetirement& viewportRetirement() { return viewportRetirement_; }
+    const ViewportGpuRetirement& viewportRetirement() const { return viewportRetirement_; }
     render::Prisma& prisma() { return prisma_; } // canonical PRISMA editor API
     render::Prisma& postFx() { return prisma(); } // legacy alias; existing tools depend on it
     bool postFxInScene = true;                     // false: only the Game view is post-processed
@@ -359,6 +370,7 @@ private:
     int focusFirst_ = 0;
     std::vector<std::string> pendingFocus_;   // openWorkspace: tabs to bring to front once docked
     int pendingFocusFrames_ = 0;
+    ViewportGpuRetirement viewportRetirement_; // outlives all window Viewports
     std::vector<std::unique_ptr<EditorWindow>> windows_;
     // Only the GUI owner can decide whether Scene/Game postprocess views
     // actually rendered in the current frame, including dock-hidden tabs.
