@@ -1306,3 +1306,36 @@ Keep the persistent Stage 99 handoff in
 changed files, actual tests (or **NOT RUN**) and the next specific
 stage. Do not merge to main based only on source inspection; native
 builds and GPU lifetime checks are still deferred by user instruction.
+
+## AIVERSE Stage 100 nonblocking GPU resource retirement
+
+For new native code, the generic owned-model entrypoint is
+`engine/render/ModelAssetProvider.h` with
+`aiverse::render::ModelAssetProvider` and
+`aiverse::render::ModelResourceCache`. It accepts a project
+`FileReader` and returns borrowed `render::Model*` valid until
+source invalidation/shutdown. Never store a borrowed pointer past a
+host resource replacement/trim or create a second MotionWeave animation
+World during `aiverse::View` packet submission.
+
+The GPU completion API is:
+`gfx::Device::beginResourceRetirement()` (token, zero means no
+async marker), `resourceRetirementComplete(token)` (nonblocking poll)
+and `endResourceRetirement(token)` (close only when complete).
+`ModelResourceCache::collectRetired()` uses the
+`AsyncResourceRetirementQueue` with independent token batches:
+a model evicted AFTER an earlier marker must never be freed on
+that earlier token. Use `waitForResourceIdle()` only for unsupported
+token fallback or explicit device shutdown, not every frame. The
+caller MUST be on the owning GPU thread, at the host frame boundary,
+before new draw/compute commands can reference retired models.
+Neither a GPU frame serial nor guessed frames-in-flight is a fence.
+
+Do not claim safety in the presence of unsubmitted current-frame GPU
+commands referencing retired assets. Backend loss must fail closed:
+if completion cannot be established, keep objects alive and do not
+silently release GPU allocations. GPU retirement token/real-backend
+tests are authored but **NOT RUN** by user request. Follow
+`docs/agent-handoffs/animation-universal.md` Stage 100 for status
+and the next exact work item. Never merge PR #22 to main on
+source inspection alone; wait for native/runtime checks.
