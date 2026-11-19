@@ -229,6 +229,12 @@ Then the full seven-test integration selection was run in
 
 **Aggregate: 7/7 passed, 0 failed, 0.24 s total.**
 
+Documentation commits recording this native evidence:
+- `facf69799954444d19fbf0b20c9f1bb231aa1322` — handoff result.
+- `89d7b45c248e36d560fe999652520b4d051f7eb7` — integrated architecture status.
+- `f338f157e74c4d67399b5256bbb4a7c18aa2993c` — scene agent rules.
+- `cc316590c64d4931e7fc59e94d07fda7ce6ae936` — ECS skill status.
+
 This closes the previously failing assertion at
 `tests/ecs_scene_resource_pipeline_test.cpp:115` in the test
 configuration represented by the supplied logs.
