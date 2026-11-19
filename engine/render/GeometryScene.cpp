@@ -315,18 +315,115 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
         for(auto& [k,m]:models_)if(!uploadModel(dev,*m)||!m->vb.valid()||!m->ib.valid())throw std::runtime_error("geometry scene: source GPU upload failed");
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
         if (strataPortableRenderingEnabled_ && strataStaging_) {
-            // CPU-selected raster fallback works without compute or MDI:
-            // Vulkan may use an index span in the shared source GPU page,
-            // GLES3 uses the original source VB plus one immutable index IB.
-            // Every failed source remains eligible for ordinary Legacy draws.
+            // Budget zero preserves the original Stage 14 eager path. A
+            // scene budget (even with no per-source cap) enables streaming.
+            // Root reservations are admitted BEFORE any GPU index upload:
+            // models that cannot fit their roots stay intact on Legacy.
+            std::map<std::string,size_t> streamingBudgets;
+            const bool streamingRequested = strataStreamingIndexBudgetBytes_ ||
+                                            strataStreamingSceneBudgetBytes_;
+            if (streamingRequested) {
+                struct BudgetSource {
+                    std::string key;
+                    uint64_t roots=0, cap=0, allocated=0;
+                };
+                std::vector<BudgetSource> candidates;
+                constexpr uint64_t kSourceMaximum=64ull*1024ull*1024ull;
+                for (const auto& [key,model]:models_) {
+                    if (!model) continue;
+                    const auto* asset=strataStaging_->find(key);
+                    if (!asset || asset->primitives.empty() ||
+                        !asset->skipped.empty()) continue;
+                    uint64_t roots=0, all=0;
+                    for(const auto& entry:asset->primitives){
+                        const auto& g=entry.geometry;
+                        all+=uint64_t(g.indices.size())*sizeof(uint32_t);
+                        for(uint32_t root:g.roots)
+                            if(root<g.nodes.size())
+                                roots+=uint64_t(g.nodes[root].indexCount)*
+                                       sizeof(uint32_t);
+                    }
+                    uint64_t cap=std::min(all,kSourceMaximum);
+                    if(strataStreamingIndexBudgetBytes_)
+                        cap=std::min(cap,uint64_t(strataStreamingIndexBudgetBytes_));
+                    if(!roots || roots>cap) continue;
+                    candidates.push_back({key,roots,cap,0});
+                }
+                if (strataStreamingSceneBudgetBytes_) {
+                    // Prefer admitting more small-root sources under severe
+                    // pressure, with a stable key tie-break. The remainder
+                    // is then apportioned proportional to source headroom.
+                    std::sort(candidates.begin(),candidates.end(),
+                        [](const BudgetSource& a,const BudgetSource& b){
+                            return a.roots==b.roots ? a.key<b.key
+                                                    : a.roots<b.roots;
+                        });
+                    uint64_t remaining=strataStreamingSceneBudgetBytes_;
+                    for(auto& candidate:candidates)
+                        if(candidate.roots<=remaining){
+                            candidate.allocated=candidate.roots;
+                            remaining-=candidate.roots;
+                        }
+                    uint64_t headroom=0;
+                    for(const auto& candidate:candidates)
+                        if(candidate.allocated)
+                            headroom+=candidate.cap-candidate.roots;
+                    const uint64_t spare=remaining;
+                    if(headroom)
+                        for(auto& candidate:candidates){
+                            if(!candidate.allocated)continue;
+                            const uint64_t room=candidate.cap-candidate.allocated;
+                            // No integer multiplication overflow even for
+                            // callers supplying arbitrarily large budgets.
+                            const auto portion=uint64_t(
+                                (static_cast<long double>(spare)*
+                                 static_cast<long double>(room))/
+                                 static_cast<long double>(headroom));
+                            const uint64_t grant=std::min(
+                                room,std::min(portion,remaining));
+                            candidate.allocated+=grant;
+                            remaining-=grant;
+                        }
+                    // Use any leftover rounding remainder without exceeding
+                    // either the per-source cap or aggregate scene budget.
+                    for(auto& candidate:candidates){
+                        if(!remaining)break;
+                        if(!candidate.allocated)continue;
+                        const uint64_t grant=std::min(
+                            remaining,candidate.cap-candidate.allocated);
+                        candidate.allocated+=grant;
+                        remaining-=grant;
+                    }
+                } else {
+                    for(auto& candidate:candidates)
+                        candidate.allocated=candidate.cap;
+                }
+                for(const auto& candidate:candidates)
+                    if(candidate.allocated)
+                        streamingBudgets[candidate.key]=
+                            size_t(candidate.allocated);
+            }
+            // CPU-selected raster fallback works without compute or MDI.
+            // Only index data is streamed; source VB/material ownership
+            // remains with the single original Renderer3D Model.
             for (const auto& [key, model] : models_) {
                 if (!model) continue;
                 const auto* asset = strataStaging_->find(key);
                 if (!asset) { ++stats_.strataPortableDeclined; continue; }
+                size_t sourceBudget=0;
+                if(streamingRequested){
+                    const auto granted=streamingBudgets.find(key);
+                    if(granted==streamingBudgets.end()){
+                        ++stats_.strataPortableDeclined;
+                        ++stats_.strataStreamingBudgetDeclined;
+                        continue; // source remains fully valid Legacy
+                    }
+                    sourceBudget=granted->second;
+                }
                 auto source=std::make_shared<strata::PortableSource>();
                 std::string error;
                 if (!source->stage(dev, *model, *asset, &error,
-                                   strataStreamingIndexBudgetBytes_)) {
+                                   sourceBudget)) {
                     ++stats_.strataPortableDeclined;
                     if (!error.empty())
                         warnings_.push_back("portable Strata source " + key +
@@ -448,7 +545,8 @@ void GeometryScene::drawGroup(Renderer3D& r,int index){auto& g=groups_[size_t(in
 }
 void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
 #if defined(AIVERSE_STRATA_STAGING_ENABLED)
-    if(!strataPortableRenderingEnabled_ || !strataStreamingIndexBudgetBytes_ ||
+    if(!strataPortableRenderingEnabled_ ||
+       !(strataStreamingIndexBudgetBytes_ || strataStreamingSceneBudgetBytes_) ||
        strataPortableSources_.empty() ||
        r.sceneWidth()<=0 || r.sceneHeight()<=0)return;
     std::vector<strata::PortablePassView> views;
