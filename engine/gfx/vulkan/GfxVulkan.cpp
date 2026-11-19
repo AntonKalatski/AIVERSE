@@ -473,6 +473,15 @@ void VulkanDevice::endResourceRetirement(uint64_t token) {
     retirementFences_.erase(it);
 }
 
+void VulkanDevice::abandonRetirementTokenAfterIdle(uint64_t token) {
+    // This API requires an earlier successful vkDeviceWaitIdle: it is
+    // forbidden for failed/vkDeviceLost paths with incomplete submissions.
+    const auto it=retirementFences_.find(token);
+    if(it==retirementFences_.end() || !device_)return;
+    vkDestroyFence(device_,it->second,nullptr);
+    retirementFences_.erase(it);
+}
+
 void VulkanDevice::prepareSlot() {
     FrameSlot& s = slots_[size_t(slot_)];
     if (vkWaitForFences(device_, 1, &s.fence, VK_TRUE, UINT64_MAX) == VK_ERROR_DEVICE_LOST) healthy_ = false;
