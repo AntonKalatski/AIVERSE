@@ -27,6 +27,7 @@ public:
         pn::InstallOptions settings;
         settings.climate.width=settings.climate.height=1;
         settings.enableForces=true;
+        settings.enableWindZones=true;
         settings.enableNatureContacts=true;
         settings.enableNatureStress=true;
         settings.enableFractureOutbox=true;
@@ -106,6 +107,79 @@ static std::uint64_t nativeCombinedPersistenceAndRollback(bool cow) {
     require(sim->checksum()==after,
             "native combined authoritative ECS replay checksum diverged");
     return after;
+}
+
+// End-to-end authoritative wind -> PHYSIS stress -> outbox -> TerraWeave
+// rooted.fallen -> Box3D dynamic body, followed by COW/replay reconciliation.
+static void nativeWindCausesRealTreeFall(bool cow) {
+    auto sim=makeCombined(cow);
+    World& ecs=sim->world();
+    const auto* hostState=ecs.resourceConst<host::NatureFallHostState>();
+    require(hostState && hostState->bindings.size()==1,
+            "wind fixture missing stable root binding");
+    const Entity tree=Entity::fromPacked(hostState->bindings[0].entityPacked);
+    ecs.get<pn::NatureFractureOutboxComponent>(tree) =
+        pn::NatureFractureOutboxComponent{};
+
+    const Entity zone=ecs.create();
+    pn::WindZone wind;
+    wind.radiusMeters=100_fx;
+    wind.velocity={40_fx,0_fx,0_fx};
+    ecs.add<pn::WindZone>(zone,wind);
+    pn::ForceReceiver receiver;
+    receiver.position={};
+    receiver.areaSqMeters=2_fx;
+    receiver.airDensity=1_fx;
+    receiver.dragCoefficient=1_fx;
+    receiver.massKg=10_fx;
+    ecs.add<pn::ForceReceiver>(tree,receiver);
+    ecs.add<pn::ForceOutput>(tree,pn::ForceOutput{});
+    ecs.add<pn::NatureProbeComponent>(tree,pn::NatureProbeComponent{});
+    ecs.add<pn::NatureContactComponent>(tree,pn::NatureContactComponent{});
+    pn::NatureStressReceiverComponent material;
+    material.leverArmMeters=2_fx;
+    material.forceLimitN=10_fx;
+    material.bendingLimitNm=10_fx;
+    material.catastrophicLoadRatio=2_fx;
+    ecs.add<pn::NatureStressReceiverComponent>(tree,material);
+    ecs.add<pn::NatureStressOutputComponent>(
+        tree,pn::NatureStressOutputComponent{});
+
+    SimSnapshot before;
+    sim->saveState(before);
+    physics::Scene scene;
+    tw::FallenPlantPhysics bodies(scene);
+    host::NatureFallBox3DReconciler reconciler(scene);
+    auto model=[](std::uint32_t species)
+            ->std::optional<tw::FallenPlantBodySpec> {
+        if(species!=21)return std::nullopt;
+        return tw::FallenPlantBodySpec{};
+    };
+    sim->step(); // REAL PHYSIS climate/forces/nature stress/outbox sequence
+    const auto events=pn::pendingNatureFractures(ecs);
+    require(events.size()==1 && events[0].aerodynamicForceN.x>Fixed{},
+            "wind did not generate one authentic PHYSIS fracture");
+    const auto result=host::advanceNatureFallHostBarrier(
+        ecs,bodies,reconciler,model);
+    require(result.delivery.committed==1 && result.physics.spawned==1 &&
+            bodies.count()==1 && scene.bodyCount()==1 &&
+            ecs.resourceConst<tw::TerraWeaveAuthorityResource>()
+                ->rooted[0].fallen,
+            "authentic wind fracture failed to topple native Terra/Box3D tree");
+    const auto hash=sim->checksum();
+    sim->loadState(before);
+    require(!sim->world().resourceConst<tw::TerraWeaveAuthorityResource>()
+                ->rooted[0].fallen,
+            "wind rollback failed to revive standing tree");
+    require(reconciler.reconcile(sim->world(),bodies,model).removed==1 &&
+            bodies.count()==0,
+            "wind rollback left orphaned Box3D rigid body");
+    sim->step();
+    const auto replay=host::advanceNatureFallHostBarrier(
+        sim->world(),bodies,reconciler,model);
+    require(replay.delivery.committed==1 && replay.physics.spawned==1 &&
+            bodies.count()==1 && sim->checksum()==hash,
+            "real wind -> Terra -> Box3D COW replay diverged");
 }
 
 int main() {
@@ -289,6 +363,8 @@ int main() {
     require(!host::makeNatureFallRecord(second[0],grass,47),
             "cosmetic grass incorrectly acquired a rooted rigid-body event");
 
+    nativeWindCausesRealTreeFall(false);
+    nativeWindCausesRealTreeFall(true);
     const auto native = nativeCombinedPersistenceAndRollback(false);
     require(nativeCombinedPersistenceAndRollback(true)==native,
             "combined native PHYSIS/Terra COW persistence divergence");
