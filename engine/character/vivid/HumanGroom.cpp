@@ -176,6 +176,11 @@ std::unique_ptr<render::Model> HumanGroomRuntime::makeCardModel(
     node.runtimeMutable=true;
     m->nodes.push_back(node);
     m->finalize();
+    // Model::finalize derives deformability only from skin/morph metadata.
+    // A CPU-updated groom is dynamic even when it has no skin joint palette.
+    // Restore this explicit dynamic policy AFTER finalize to prevent the
+    // general rigid geometry pool from reusing our mutable vertex stream.
+    m->meshes[0].deformable=true;
     return m;
 }
 } // namespace aiverse::vivid
