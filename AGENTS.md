@@ -391,6 +391,47 @@ CPU/GPU visual parity are **NOT RUN**. Keep the mandatory
 handoff in `docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`
 with implementation SHAs, exact limitations and next step.
 
+**Stage 28 — shared genre-neutral GPU emitter resource world
+(SOURCE COMMITTED; user-deferred tests):**
+`engine/fx/SpectraGpuPoolWorld.{h,cpp}` introduces
+`spectra::GpuPoolWorld`, exported from
+`engine/fx/SpectraFX.h`, linked through
+`AIVERSE::spectrafx`. It deduplicates by the
+**complete serialized effect definition** plus effective
+GPU program/material/indirect policy, capacity and
+quality, then shares one `ComputeParticles` and
+one draw for several logical sources with identical
+effects. Unsupported effects use one existing
+CPU `spectra::BatchWorld`; `RequireGpu` fails
+instead of dropping authored features.
+
+This is a pool of **per-effect GPU resource groups**,
+NOT a monolithic cross-material GPU allocator.
+Each source name retains independent bounded
+`instanceParameters` defaults and source burst
+snapshots. GPU material-only graphs may now read
+`param0..7` without a separate VM program.
+`PoolWorldBudgets` bounds group count/capacity
+and one-shot births per frame. The host must call
+`beginPresentationFrame`, `step`, `draw`,
+`endPresentationFrame` ONCE in proper RHI order;
+`resetForRollback` clears this pool's entire
+visual scene only when no render/compute encoder
+is active and device health permits.
+
+Persistent attached ECS emitters, per-source GPU
+kill/stop, a single physical GPU pool across
+different material groups, global transparent
+sorting, GPU-only allocator and native production
+FPS/RTS migration are **not implemented**.
+Use the mature shared CPU CueScheduler for
+persistent sources. No gameplay ECS mutation.
+No native compile, CTest, GPU MSL execution,
+pixel capture or benchmark was run per user's
+explicit request; record **NOT RUN** and update
+`docs/agent-handoffs/universal-niagara-vfx-2026-11-18.md`
+with exact SHAs in its own separate commit.
+
 ## Mandatory per-stage handoff protocol (2026-11-18, user instruction)
 
 **Every completed stage MUST leave a durable handoff for the next agent, without exception.**
