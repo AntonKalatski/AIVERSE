@@ -199,6 +199,34 @@ render::Material humanMaterial(HumanSurface surface,const HumanDNA& dna) {
     }
     return m;
 }
+render::Material humanMaterialFromSource(HumanSurface surface,
+                                        const HumanDNA& dna,
+                                        const render::Material& source) {
+    auto dst=humanMaterial(surface,dna);
+    // The imported texture array remains in the owning render::Model; its
+    // integer indices are still valid after remapping the material factors.
+    dst.baseTex=source.baseTex;
+    dst.mrTex=source.mrTex;
+    dst.normalTex=source.normalTex;
+    dst.occlusionTex=source.occlusionTex;
+    dst.emissiveTex=source.emissiveTex;
+    dst.teamTex=source.teamTex;
+    dst.normalScale=source.normalScale;
+    dst.occlusionStrength=source.occlusionStrength;
+    dst.uvScale=source.uvScale;
+    dst.uvOffset=source.uvOffset;
+    dst.uvRotation=source.uvRotation;
+    dst.emissive=source.emissive;
+    dst.emissiveStrength=source.emissiveStrength;
+    dst.name=source.name;
+    if(surface==HumanSurface::Hair || surface==HumanSurface::Eyelash)
+        dst.doubleSided=true;
+    // Alpha surface semantics come from VIVID (transparent cornea, solid
+    // flesh and sclera); never allow an imported cutout to turn the cornea
+    // into an opaque depth-writing model.
+    return dst;
+}
+
 HumanSurfaceMaterials humanMaterials(const HumanDNA& dna) {
     return {humanMaterial(HumanSurface::Skin,dna),
             humanMaterial(HumanSurface::Iris,dna),
