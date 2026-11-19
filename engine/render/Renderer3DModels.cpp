@@ -2542,9 +2542,18 @@ void Renderer3D::renderModels(int phase) {
         return end != raw && *end == '\0' && n >= 16 && n <= 4096
             ? size_t(n) : size_t(64);
     }();
-    const bool autoCpuMdiSmallPass = autoBatchCpu &&
-        phase <= 1 && order_.size() < autoCpuMdiMinimum;
-    const bool allowIndirect = !autoCpuMdiSmallPass && modelMultiDrawEnabled_ &&
+    // Learn only from unambiguous CPU-only passes. A successful GPU ICB
+    // in the opaque pass would contaminate a Direct-vs-MDI CPU comparison.
+    // Workloads below the conservative threshold keep the guaranteed direct
+    // path; larger buckets independently explore both CPU alternatives.
+    const bool autoCpuLearn = autoBatchCpu && phase <= 1 &&
+        !auxiliaryModelPass_ && geometryMainView_ &&
+        gpuEncodedBatches_.empty() && modelMultiDrawEnabled_ &&
+        order_.size() >= autoCpuMdiMinimum;
+    const bool autoCpuPermit = !autoBatchCpu ||
+        (autoCpuLearn && autoCpuBatch_.useMdi(size_t(phase), order_.size()));
+    const uint64_t cpuMdiBefore = modelStats_.multiDrawSubmissions;
+    const bool allowIndirect = autoCpuPermit && modelMultiDrawEnabled_ &&
         (!gpuAdaptiveInstancingFallback_ || groupAdaptive) &&
         !(renderSafe && std::strcmp(renderSafe, "1") == 0) &&
         !(indirectToggle && std::strcmp(indirectToggle, "off") == 0) &&
@@ -2818,6 +2827,18 @@ void Renderer3D::renderModels(int phase) {
         submittedInstanced += j - i > 1 ? 1u : 0u;
         submittedItems += j - i;
         i = j;
+    }
+    if (autoCpuLearn) {
+        // One sample per completed phase. Only credit MDI if the backend
+        // actually submitted it; otherwise fallbacks must not teach the
+        // scheduler that indirect encoding was the measured path.
+        const bool mdiSubmitted = modelStats_.multiDrawSubmissions > cpuMdiBefore;
+        if (!autoCpuPermit || mdiSubmitted) {
+            const double cpuMs = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - passBegin).count();
+            autoCpuBatch_.observe(size_t(phase), order_.size(),
+                                  autoCpuPermit, cpuMs);
+        }
     }
     if (cpuStages) {
         cpuStages->totalMs += std::chrono::duration<double, std::milli>(
