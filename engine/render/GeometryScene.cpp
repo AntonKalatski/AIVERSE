@@ -370,7 +370,9 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                 auto source=std::make_shared<strata::PortableSource>();
                 std::string error;
                 if (!source->stage(dev, *model, *asset, &error,
-                                   sourceBudget)) {
+                                   sourceBudget,
+                                   strataIncrementalIndexStreamingEnabled_,
+                                   strataStreamingUploadBudgetBytes_)) {
                     ++stats_.strataPortableDeclined;
                     if (!error.empty())
                         warnings_.push_back("portable Strata source " + key +
@@ -379,8 +381,11 @@ void GeometryScene::loadImpl(gfx::Device& dev,const Json& json,const FileReader&
                 }
                 if(source->streamingEnabled()){
                     ++stats_.strataStreamedSources;
-                    if(const auto* status=source->residencyStats())
+                    if(const auto* status=source->residencyStats()){
                         stats_.strataStreamingIndexBytes+=status->activeBytes;
+                        stats_.strataStreamingArenaBytes+=status->arenaBytes;
+                        if(status->incremental)++stats_.strataIncrementalSources;
+                    }
                 }
                 strataPortableSources_.emplace(model.get(), std::move(source));
                 ++stats_.strataPortableSources;
@@ -522,6 +527,10 @@ void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
     }
     stats_.strataStreamingIndexBytes=0;
     stats_.strataStreamingEvictions=0;
+    stats_.strataStreamingArenaBytes=0;
+    stats_.strataStreamingUploadedBytes=0;
+    stats_.strataStreamingUploadDeferrals=0;
+    stats_.strataStreamingFenceDeferrals=0;
     for(auto& [model,source]:strataPortableSources_){
         if(!source || !source->streamingEnabled())continue;
         std::string error;
@@ -531,6 +540,10 @@ void GeometryScene::updateStrataStreamingBeforeDraw(Renderer3D& r){
         if(const auto* status=source->residencyStats()){
             stats_.strataStreamingIndexBytes+=status->activeBytes;
             stats_.strataStreamingEvictions+=status->evictions;
+            stats_.strataStreamingArenaBytes+=status->arenaBytes;
+            stats_.strataStreamingUploadedBytes+=status->uploadedBytes;
+            stats_.strataStreamingUploadDeferrals+=status->uploadBudgetDeferrals;
+            stats_.strataStreamingFenceDeferrals+=status->fenceReuseDeferrals;
         }
     }
 #else
