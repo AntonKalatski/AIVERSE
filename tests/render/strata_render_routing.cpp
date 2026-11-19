@@ -4,6 +4,7 @@
 #undef NDEBUG
 #endif
 #include "engine/render/StrataRenderRouting.h"
+#include "engine/render/StrataRendererPreview.h"
 #include "engine/render/GlobalGeometryPool.h"
 
 #include <cassert>
@@ -137,6 +138,40 @@ int main() {
     assert(!error.empty());
     assert(uploadModelToGeometryPool(device,model));
     assert(residency.stage(device,"static",model,asset));
+
+    // Stage 10 renderer dry-run: evaluate the same ModelDraw against
+    // separate camera and sun projections while making ZERO draw calls.
+    model.order.push_back(0);
+    model.bindWorld.push_back(mat4::identity());
+    ModelDraw draw;
+    draw.model = &model;
+    draw.flags = kDrawStatic;
+    PreviewContext preview{};
+    preview.mainViewProjection = mat4::identity();
+    preview.sunViewProjection = mat4::identity();
+    preview.mainWidth = 800; preview.mainHeight = 600;
+    preview.sunWidth = 1024; preview.sunHeight = 1024;
+    preview.sunEnabled = true;
+    const auto previewResult = previewModelDraw(
+        draw, asset, residency, "static", preview);
+    assert(previewResult.attempted == 2 && previewResult.ready == 2);
+    assert(previewResult.selectedClusters == 4);
+    assert(previewResult.rejected == 0);
+    assert(device.rasterDraws == 0 && device.indirectDraws == 0);
+
+    // Unsupported blend/tint settings are NEVER 'preview-ready', but
+    // the actual Renderer3D::drawModel path remains untouched.
+    draw.tint.w = 0.5f;
+    const auto unsafe = previewModelDraw(
+        draw, asset, residency, "static", preview);
+    assert(unsafe.skippedUnsafeDraws == 1 && unsafe.attempted == 0);
+    draw.tint.w = 1.f;
+    model.materials[0].alpha = AlphaMode::Blend;
+    const auto materialRejected = previewModelDraw(
+        draw, asset, residency, "static", preview);
+    assert(materialRejected.ready == 0 &&
+           materialRejected.rejected == 2);
+    model.materials[0].alpha = AlphaMode::Opaque;
 
     assert(prepareRenderCandidate(model,asset,residency,"static",0,0,
                                   RenderPass::MainOpaque,view,candidate,&error));
