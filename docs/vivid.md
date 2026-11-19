@@ -597,3 +597,10 @@ Creators may add/delete named corrective morph targets, bind one to any of the e
 VIVID Creator's imported sparse morph editor now supports a source-space smooth falloff brush anchored to a selected original mesh vertex ID. A stroke applies position offsets to nearby source vertices, with bounded radius/intensity, recompiles the sparse morph once, supports undo/redo as one edit, and exports to the existing open version 1 morph JSON sidecar. Named corrective target creation/deletion and 52-channel ARKit route authoring are also available.
 
 This is **numeric/source-ID brush authoring**, not full 3D viewport picking, geodesic brush sculpting or topology-aware symmetry. The artist's original mesh stays unchanged. Stage 6V–6X source and new test assertions are committed, but **C++ build, CTest, Metal GUI and production asset verification have NOT RUN**. See `docs/agent-handoffs/vivid.md` for source commits and remaining work.
+
+
+## Stage 6Y — viewport sculpt selection and mirrored brush (2026-11-19)
+
+VIVID Creator now permits selecting an imported model mesh and arming a 3D viewport click to select the nearest original source vertex on the frontmost intersected indexed triangle of that mesh. A screen marker shows the selected vertex. The non-destructive sparse morph brush now supports optional X=0 bilateral symmetry in source-model coordinates: mirrored X offsets invert direction, other axes keep direction, and the entire stroke participates in one undo/redo transaction. Source model vertices and MotionWeave simulation remain unchanged.
+
+**Current limitation:** selection uses source vertices transformed by pose node matrices, not GPU-morphed or multi-joint skinned final geometry; high-density picking is an O(triangle count) CPU operation. The feature also lacks topology-aware/geodesic brush falloff and per-character symmetry planes. This stage is source-authored, **not yet compiled or GPU/GUI-tested** on Mac. Full technical handoff and commit history: `docs/agent-handoffs/vivid.md` Stage 6Y.
