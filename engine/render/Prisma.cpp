@@ -1464,11 +1464,14 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         (manualOverride != viewManualExposure_.end()
             ? manualOverride->second.enabled
             : autoEffect->get("manualExposure") > 0.5f);
-    const float manualEV = manualSelected
+    const float manualRawEV = manualSelected
         ? (manualOverride != viewManualExposure_.end()
-            ? manualOverride->second.ev
-            : std::clamp(autoEffect->get("manualEV"),-12.0f,12.0f))
+            ? manualOverride->second.ev : autoEffect->get("manualEV"))
         : 0.0f;
+    // Guard both JSON and native-mutated profiles: NaN/Inf must never
+    // propagate into scene-linear color or produce invalid HDR pixels.
+    const float manualEV = std::isfinite(manualRawEV)
+        ? std::clamp(manualRawEV,-12.0f,12.0f) : 0.0f;
     if (manualSelected) resetAutoExposure(viewId_);
     const char* autoFlag = std::getenv("AIVERSE_PRISMA_AUTO_EXPOSURE");
     const bool autoRequested = hdrFrame_ && autoEffect && !manualSelected &&
