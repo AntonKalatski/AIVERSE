@@ -1708,3 +1708,27 @@ provides Direct/CPU MDI, static packet and GPU ICB Metal
 pixel fixtures, but their current Actions runs were queued.
 Do not mark PR #34 ready to merge until GPU and full-suite
 validation complete. Keep experimental GPU flags OFF.
+
+
+### Real Metal GPU fixture results (Stage 55, Mac Studio)
+
+Owner ran `aiverse_material_batches` successfully on Metal.
+**CPU MDI:** 30/30 fixture CPU checks, shadow and opaque
+tracked model calls **32→1 each**, 66→4 total renderer calls,
+2 CPU indirect submissions containing 64 commands,
+PBR indirect colour path active, renderer error empty and
+`changed_channels=0` exactly. This confirms one real Metal
+CPU MDI fixture and identical captured GPU raster, NOT a measured
+frame-time speedup.
+
+**Persistent CPU packets:** 30/30 CPU checks, exactly 1
+warmed packet hit, 0 rebuilds / declines, 5936 B retained,
+and `changed_channels=0`. Draw submission counts stayed
+16/16 (34 total) before and after: no draw-count improvement
+is claimed for packet reuse.
+
+These are user-provided **native Mac results**, distinct
+from GitHub CI. Experimental Metal GPU-authored ICB,
+Vulkan canonical pooled MDI, GPU-fence recycling, full
+CTest and A/B/A time benchmarks are NOT YET VALIDATED.
+PR #34 remains Draft. See Stage 55 handoff.

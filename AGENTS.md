@@ -1899,3 +1899,22 @@ complete 5-case CTest was rerun together, full CI finished
 or Metal/Vulkan parity is good. Follow Stage 54 handoff;
 keep the PR Draft and experimental recycle/Vulkan pooled
 MDI flags OFF until real GPU and broader test evidence.
+
+
+## Stage 55 — Metal raster fixture success and remaining gates
+
+User-supplied real Mac Studio results: CPU MDI fixture
+`AIVERSE_PALETTE_TEST_CASE=indirect` achieved 2 CPU MDI
+submissions / 64 indexed commands with 32→1 shadow,
+32→1 opaque calls and `changed_channels=0`. The
+persistent static packet fixture achieved 1 warm packet
+hit, 0 rebuild/declines, retained 5936 bytes, identical
+pixels and unchanged model submission counts. Both
+reported 30 CPU checks passed and no renderer/pipeline
+failures. Do not confuse raster/submission reductions
+with proven FPS, CPU or GPU speedup. These are actual
+Mac fixture outputs but GitHub CI remains queued.
+Next hardware gate is GPU-authored Metal ICB using
+`AIVERSE_EXPECT_GPU_ICB=1`, then Vulkan parity,
+recycle safety and performance A/B/A. Experimental flags
+remain OFF, Draft PR #34; document each subsequent stage.

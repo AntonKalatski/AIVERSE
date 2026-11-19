@@ -1578,3 +1578,54 @@ In the immediately preceding user's Mac Studio focused 5-case run, `ecs_cow_snap
 On Mac Studio pull the latest branch after this documentation commit. The already configured `build-metal` CTest can run all five together:
 `ctest --test-dir build-metal -R '^(model_batching_policy|ecs_cow_snapshot_test|ecs_cow_exception_test|ecs_cow_parallel_test|ecs_guarded_parallel_test)$' --output-on-failure`.
 For real Metal parity, build `aiverse_material_batches` with `AIVERSE_BUILD_HDR_TESTS=ON` (a separate `build/batching-gpu-verify` tree is preferred to avoid impacting other agents), then use exactly the env/fixture documented in `.github/workflows/gpu-batching.yml` to compare baseline Direct against CPU MDI, static packet replay and experimental GPU ICB. Collect actual output `changed_channels=0`, explicit submission evidence, and logs. Run Vulkan on a capable non-Mac environment; macOS native Metal does not prove Vulkan parity. Report outcomes per fixture, no performance claim without A/B/A measurements.
+
+
+---
+
+## Stage 55 — real Metal CPU MDI and persistent packet pixel parity PASS (2026-11-19)
+
+**Repo/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. **Source HEAD verified by last git pull:** `0bc60d20684845c93fa919ba477fca20c435edd2` (Stage 54 docs), branch behind main 0 at this stage. This stage adds **documentation only**. The owner ran these native fixtures on Mac Studio after building `aiverse_material_batches` successfully with `AIVERSE_BUILD_HDR_TESTS=ON`; results supplied as terminal output, not executed by this assistant.
+
+### Real Metal CPU-encoded MDI fixture (PASS)
+
+Run configuration: `AIVERSE_METAL_CPU_MDI=1 AIVERSE_METAL_MDI_MIN_COMMANDS=2 AIVERSE_MDI_GEOMETRY_SORT=1 AIVERSE_PALETTE_TEST_CASE=indirect AIVERSE_ICB_PROFILE=1`; binary `build/batching-gpu-verify/aiverse_material_batches`; two-geometry shared page, exact same camera/materials. Native result:
+
+```
+[100%] Built target aiverse_material_batches
+material palette CPU checks=30 result=passed
+batch=0 shadow=32 opaque=32 total=66 error=
+batch=1 shadow=1 opaque=1 total=4 error=
+PBR colour indirect active=1 (before 32, after 1)
+GPU indirect supported=1 submissions=2 commands=64
+changed_channels=0
+[metal-assets] libraries=0 sourceMisses=13 pipelines=19 pipelineFailures=0 archive=0 strict=0
+```
+
+Interpretation: reduction of tracked **model** draw submissions from 32 shadow + 32 opaque to 1+1, 64 indexed commands across 2 CPU MDI submissions; aggregate renderer draw calls from 66 to 4 because floor/nonmodel passes remain; colour PBR indirect was active. Byte-identical captured output (`changed_channels=0`) for before/after on this fixture, renderer error text empty, 0 pipeline failures. This confirms *GPU raster parity and actual CPU MDI submission for this fixture*, not a measured CPU frame-time or general-scene speedup. Literal `\n` after commands in the terminal appears to be output-string formatting only, not an extra failure.
+
+### Real Metal persistent CPU packet fixture (PASS)
+
+Configuration: `AIVERSE_PERSISTENT_CPU_PACKETS=1 AIVERSE_PALETTE_TEST_CASE=static_packets AIVERSE_MULTI_DRAW_INDIRECT=off`; same built fixture:
+
+```
+material palette CPU checks=30 result=passed
+batch=0 shadow=16 opaque=16 total=34 error=
+batch=1 shadow=16 opaque=16 total=34 error=
+static packet A/B: hits=1 rebuilds=0 declines=0 bytes=5936
+changed_channels=0
+[metal-assets] libraries=0 sourceMisses=11 pipelines=15 pipelineFailures=0 archive=0 strict=0
+```
+
+Interpretation: exactly one warmed packet hit, zero rebuilds and declines, 5936 retained bytes for this fixture; *no claimed decrease in API draw count* (16/16 unchanged shadow and colour, 34 overall), and identical screenshots across before/after. Cache mainly avoids repeated CPU packet preparation; no CPU timing benchmark was provided.
+
+### Overall evidence and remaining gates
+
+Prior owner Mac Studio test runs: all four targeted ECS tests PASS; the revised `model_batching_policy` CTest PASS in 0.33 sec, so five distinct targeted tests passed across two CTest invocations. Stage 55 adds two real Metal graphical A/B parity fixture passes. These are **user-provided actual Mac outputs**, not CI workflow success. The GitHub `GPU batching focused regression` Action at Stage 55 inspection was queued, as were general CI jobs, so do not mark CI PASS. **NOT YET VERIFIED:** experimental GPU-authored Metal ICB, Vulkan canonical MDI parity on real Vulkan GPU, geometry recycle with nonzero completed-frame fence on live pages, full CTest, full graphics editor workflow, multi-scene performance/A/B/A frame/GPU times. Both experimental flags `AIVERSE_GEOMETRY_POOL_RECYCLE=1` and `AIVERSE_VULKAN_POOLED_MDI=1` remain OFF by default; PR #34 remains Draft.
+
+### Next exact action — GPU-authored ICB Metal (separate gate)
+
+Follow the already committed `.github/workflows/gpu-batching.yml` `metal-icb-gpu` env on Mac Studio using the same built fixture:
+```sh
+AIVERSE_EXPERIMENTAL_METAL_ICB=1 AIVERSE_GPU_AUTHORED_DRAWS=1 AIVERSE_GPU_ENCODED_ICB=1 AIVERSE_GPU_ICB_RIGID=1 AIVERSE_GPU_ICB_MIN_COMMANDS=2 AIVERSE_EXPECT_GPU_ICB=1 AIVERSE_PALETTE_TEST_CASE=indirect AIVERSE_ICB_TRACE=1 build/batching-gpu-verify/aiverse_material_batches unused.obj build/batching-gpu-verify/captures/gpu-icb
+```
+Require fixture exit=0, explicit `gpuEncodedSubmissions` / `gpuEncodedCommands` nonzero and `changed_channels=0`. If path unsupported or driver fails, report it and retain the flag OFF by default. Additional tests: Vulkan GPU canonical parity and guarded page retirement; no default enable or merge until proven.
