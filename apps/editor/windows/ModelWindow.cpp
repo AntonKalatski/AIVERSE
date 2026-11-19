@@ -1,20 +1,11 @@
 // Models: the selected type as the game draws it (portrait with its idle clip), with what its model
 // contains — clips, nodes, materials, variants, baked skinning — and the warnings of its view
-// block. Model files are watched: saving a model file reloads the views. Formats the runtime does
-// not read (.blend, .lwo, .x, ...) are converted to a "<file>.glb" sidecar with modelconv (next to
-// aiversebuild) when they are first used and whenever they change. Agents get the same information
-// through the `model_info` operation.
+// block. The editor-owned VisualAssetDependencyService watches model files,
+// even with this panel closed. Agents can inspect assets via `model_info`.
 #include <algorithm>
-#include <cstdio>
-#include <filesystem>
-#include <optional>
-#include <set>
-#include "modules/rts/view/RtsModelSourceDependencies.h"
 #include "../Editor.h"
 #include "../EditorUtil.h"
 #include "modules/rts/view/RtsPortrait.h"
-
-namespace fs = std::filesystem;
 
 namespace aiverse::editor {
 
@@ -220,149 +211,14 @@ public:
                                     return r;
                                 }, true});
         }
-        // hot reload: model files of the open game changed on disk
-        sinceCheck_ += dt;
-        if (sinceCheck_ < 1.0) return;
-        sinceCheck_ = 0;
-        const std::string& dir = ed.ws().project.dir;
-        if (dir.empty()) return;
-        // Project changes must not leak old-file timestamps or reload requests.
-        if (watchedProject_ != dir) {
-            watchedProject_ = dir;
-            stamps_.clear();
-            tried_.clear();
-            pendingFiles_.clear();
-        }
-        // Index ALL authored visual resources, not just loaded TypeLooks.
-        // No background asset loads are triggered by this enumeration.
-        game::view_adapter::ModelSourceDependencyIndex dependencies;
-        dependencies.rebuild(ed.rules().types,ed.view().materialLibrary());
-        const auto& cache=ed.view().modelResources();
-        for(const auto& [key,model]:cache.models()) {
-            if(key.rfind("shape:",0)==0)continue;
-            const std::string modelSource=
-                game::view_adapter::RtsModelResourceCache::sourceForKey(key);
-            dependencies.addResidentModel(modelSource);
-            if(model)for(const auto& image:model->images)
-                if(!image.textureKey.empty())
-                    dependencies.addResidentTexture(modelSource,image.textureKey);
-        }
-        std::set<std::string> observed;
-        for(const auto& [file,entry]:dependencies.sources()) {
-            (void)entry;
-            if(file.empty())continue;
-            const fs::path path(file);
-            // Model source paths are authored relative to the project.
-            // Never watch arbitrary absolute locations or parent traversal.
-            if(path.is_absolute())continue;
-            bool outside=false;
-            for(const auto& part:path)if(part==".."){outside=true;break;}
-            if(outside)continue;
-            observed.insert(file);
-            std::error_code ec;
-            const fs::path src=fs::path(dir)/path;
-            const auto timestamp=fs::last_write_time(src,ec);
-            const std::optional<fs::file_time_type> stamp=
-                ec?std::nullopt:std::optional<fs::file_time_type>(timestamp);
-            bool changed=false;
-            auto [it,inserted]=stamps_.try_emplace(file,stamp);
-            if(!inserted && it->second!=stamp) {
-                it->second=stamp;
-                changed=true; // includes deletion and missing-file recovery
-                ed.ws().log("view","визуальный источник изменён: "+file);
-            }
-            if(stamp && entry.has(game::view_adapter::ModelSourceKind::Model)
-               && !render::isNativeModelFormat(file)) {
-                const fs::path side=fs::path(src.string()+".glb");
-                std::error_code e2;
-                if((!fs::exists(side,e2) ||
-                    fs::last_write_time(side,e2)<*stamp) &&
-                   convert(ed,src.string()))changed=true;
-            }
-            if(changed)pendingFiles_.insert(file);
-        }
-        for(auto it=stamps_.begin();it!=stamps_.end();)
-            if(!observed.contains(it->first))it=stamps_.erase(it);
-            else ++it;
-
-        // Change notifications remain pending during play, including for
-        // missing-file recovery. Keep model-only reloads selective; graph
-        // JSON and shared material library changes use the safe full-view
-        // compatibility barrier until independent graph/material owners land.
-        if(!pendingFiles_.empty() && !ed.playing() && !ed.clientPlaying()) {
-            const auto impact=dependencies.resolve(pendingFiles_);
-            if(impact.requiresWholeView() ||
-               (impact.texture && impact.models.empty())) {
-                ed.reloadVisualAssets();
-                ed.ws().log("view","полное обновление графов/материалов: "+
-                            std::to_string(pendingFiles_.size())+" источников");
-            } else if(!impact.empty()) {
-                if(impact.texture) {
-                    const auto textures=ed.view().textureCache();
-                    for(const auto& file:pendingFiles_) {
-                        const auto* source=dependencies.lookup(file);
-                        if(source &&
-                           source->has(game::view_adapter::ModelSourceKind::Texture))
-                            textures->invalidateSource(file);
-                    }
-                }
-                const std::vector<std::string> models(
-                    impact.models.begin(),impact.models.end());
-                const size_t invalidated=ed.reloadVisualModelSources(models);
-                ed.ws().log("view","обновлено ключей моделей: "+
-                            std::to_string(invalidated)+
-                            "; изменённых источников: "+
-                            std::to_string(pendingFiles_.size()));
-            }
-            pendingFiles_.clear();
-        }
+        (void)dt; // visual asset polling is owned by Editor, not this window
     }
 
 private:
-    // modelconv sits next to aiversebuild; one attempt per file and modification (no retry loops)
-    bool convert(Editor& ed, const std::string& src) {
-        std::error_code ec;
-        const auto t = fs::last_write_time(src, ec);
-        auto& tried = tried_[src];
-        if (tried == t) return false;
-        tried = t;
-        fs::path tool = fs::path(ed.ws().buildTool).parent_path() /
-#if defined(_WIN32)
-                        "modelconv.exe";
-#else
-                        "modelconv";
-#endif
-        if (!fs::exists(tool, ec)) {
-            ed.ws().log("view", "нужна конвертация " + src + ", но modelconv не найден рядом с aiversebuild");
-            return false;
-        }
-        const std::string cmd = "\"" + tool.string() + "\" \"" + src + "\" 2>&1";
-#if defined(_WIN32)
-        FILE* p = _popen(cmd.c_str(), "r");
-#else
-        FILE* p = popen(cmd.c_str(), "r");
-#endif
-        if (!p) return false;
-        std::string out;
-        char buf[256];
-        while (std::fgets(buf, sizeof buf, p)) out += buf;
-#if defined(_WIN32)
-        const int rc = _pclose(p);
-#else
-        const int rc = pclose(p);
-#endif
-        ed.ws().log("view", (rc == 0 ? "сконвертирована модель " : "не удалось сконвертировать ") + src + (rc == 0 ? std::string() : ": " + out));
-        return rc == 0;
-    }
-
-    std::map<std::string, fs::file_time_type> tried_;
     int type_ = 0, owner_ = 1;
-    double time_ = 0, sinceCheck_ = 0;
+    double time_ = 0;
     bool portraitInit_ = false, opRegistered_ = false;
     game::Portrait portrait_;
-    std::map<std::string, std::optional<fs::file_time_type>> stamps_;
-    std::set<std::string> pendingFiles_;
-    std::string watchedProject_;
 };
 
 AIVERSE_EDITOR_WINDOW(ModelWindow);
