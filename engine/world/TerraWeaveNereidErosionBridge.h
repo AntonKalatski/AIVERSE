@@ -56,6 +56,13 @@ public:
 
     size_t trackedBankSamples() const {return cells_.size();}
     uint64_t lastTick() const {return lastTick_;}
+    // The authoritative Earthworks reference is NOT swapped. Use only after
+    // staged soil restoration has been validated and committed together.
+    void exchangeSnapshotState(NereidEarthworksBridge& other) noexcept {
+        cells_.swap(other.cells_);
+        std::swap(lastTick_,other.lastTick_);
+        std::swap(tickStarted_,other.tickStarted_);
+    }
     std::vector<NereidBankSampleState> snapshot() const {
         std::vector<NereidBankSampleState> out;
         out.reserve(cells_.size());
