@@ -93,18 +93,28 @@ public:
         stats_.active=registry_.lights().size();
     }
 
-    // geometry: EXACT same immutable GI GPU BVH (do not duplicate tracing).
-    // Host calls this every frame AFTER Renderer3D.beginScene (which resets
-    // the legacy dynamic point lights). On stale/moving source input the
-    // GPU material-light output is disabled until source/geometry packets
-    // can be atomically published, preventing display of old lighting.
+    // Preserve the existing required-geometry overload for Metal callers.
     LumaNativeFrameStats prepareFrame(const GiGpuBvh& geometry,uint64_t geometryRevision,
                                        float3 cameraFocus,float viewRadius,
                                        uint32_t viewW,uint32_t viewH,
                                        LumaWeaveQuality requestedQuality=
                                            LumaWeaveQuality::Balanced,
                                        bool allowMobileFallback=true) {
-        if(!geometryRevision || !viewW || !viewH ||
+        return prepareFrame(&geometry,geometryRevision,cameraFocus,viewRadius,
+                            viewW,viewH,requestedQuality,allowMobileFallback);
+    }
+
+    // Geometry is needed only for GPU ray-traced direct lighting. The raster
+    // fallback must work on Vulkan/GLES/mobile even before a BVH is built.
+    // Null geometry requires revision 0 (and vice versa); GPU routing fails
+    // closed without both. Host calls after Renderer3D.beginScene.
+    LumaNativeFrameStats prepareFrame(const GiGpuBvh* geometry,uint64_t geometryRevision,
+                                       float3 cameraFocus,float viewRadius,
+                                       uint32_t viewW,uint32_t viewH,
+                                       LumaWeaveQuality requestedQuality=
+                                           LumaWeaveQuality::Balanced,
+                                       bool allowMobileFallback=true) {
+        if((geometry==nullptr)!=(geometryRevision==0) || !viewW || !viewH ||
            !std::isfinite(cameraFocus.x)||!std::isfinite(cameraFocus.y)||
            !std::isfinite(cameraFocus.z) ||
            !std::isfinite(viewRadius) || viewRadius<=0 || viewRadius>100000)
@@ -154,7 +164,7 @@ public:
         // GPU capture requires an actually active linear HDR downstream.
         // Otherwise choose the legacy mobile path instead of suppressing
         // legacy lights for a postprocess wrapper that will never run.
-        if(requestedQuality!=LumaWeaveQuality::Off && gpu_.ready() &&
+        if(requestedQuality!=LumaWeaveQuality::Off && geometry && gpu_.ready() &&
            existing_.active() && existing_.linearScene()) {
             stats_.quality=LumaWeaveQualityPolicy::choose(
                 requestedQuality,viewW,viewH,registry_.lights().size(),
@@ -163,7 +173,7 @@ public:
                                 !legacy_.staticPointLightsActive();
             if(stats_.quality.admitted && noLegacy) {
                 const bool lights=gpu_.publishSources(registry_,clusters_);
-                const bool geom=lights && gpu_.publishGeometry(geometry,geometryRevision);
+                const bool geom=lights && gpu_.publishGeometry(*geometry,geometryRevision);
                 stats_.sourceUploadDeferred=!lights;
                 stats_.geometryUploadDeferred=lights && !geom;
                 if(lights && geom) {
