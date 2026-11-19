@@ -769,3 +769,16 @@ intact; low-tier and GLES strict16 use existing shaders. Shutdown frees
 all 12 terrain pipeline/shader variants. Added `gi_terrain_receiver`
 source contract CTest. **No native build, compiler, CTest, driver GPU test
 or real TerraWeave runtime integration performed.**
+
+
+## Stage 45 — 2026-11-20 — vegetation/HLOD proxy geometry source (SOURCE; NOT RUN)
+
+Read `docs/agent-handoffs/gi-stage45-vegetation-proxy-geometry-2026-11-20.md`.
+Adds stable collision-snapshot adapter in the existing genre-neutral
+`GiWorldGeometryBridge` for world-space vegetation occluders and foliage
+unload, using the pre-existing separate source namespace. No ECS write,
+second terrain/foliage mesh generator or new renderer dependency.
+Extends `gi_world_geometry_bridge` source fixture with proxy insert,
+trace and removal preserving the terrain sources. Native C++/CTest and
+Metal/Vulkan/GLES GPU execution NOT RUN. Full TerraWeave receiver
+integration depends on reconciling active divergent branches.
