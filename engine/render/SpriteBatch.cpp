@@ -102,6 +102,7 @@ bool SpriteBatch::init(gfx::Device& dev) {
 }
 
 void SpriteBatch::shutdown() {
+    drawUploadValid_ = casterUploadValid_ = false;
     if (!dev_) return;
     dev_->destroyBuffer(vb_); dev_->destroyBuffer(ib_); dev_->destroyBuffer(casterVb_);
     for (auto p : {blendPipe_, groundPipe_, decalPipe_, litPipe_, litGroundPipe_, litDecalPipe_, casterPipe_, waterPipe_})
@@ -198,6 +199,7 @@ void SpriteBatch::casterPolygon(gfx::TextureHandle tex, const float3* c, const f
 
 void SpriteBatch::quad(const TextureRef& t, const float3 (&c)[4], float4 uv, uint32_t color, uint32_t team, int layer, float sortKey) {
     if (!t.valid()) return;
+    drawUploadValid_ = false;
     if (t.sprite) {
         SpriteShape sh;
         if (!spriteShape(t, uv, sh)) return;
@@ -218,6 +220,7 @@ void SpriteBatch::quad(const TextureRef& t, const float3 (&c)[4], float4 uv, uin
 
 void SpriteBatch::quadEx(gfx::TextureHandle tex, const SpriteVertex (&v)[4], int layer, float sortKey, uint32_t flags) {
     if (!tex.valid()) return;
+    drawUploadValid_ = false;
     Quad q;
     q.tex = tex; q.layer = layer; q.key = sortKey; q.seq = uint32_t(quads_.size()); q.flags = flags;
     for (int i = 0; i < 4; ++i) q.v[i] = v[i];
@@ -226,6 +229,7 @@ void SpriteBatch::quadEx(gfx::TextureHandle tex, const SpriteVertex (&v)[4], int
 
 void SpriteBatch::caster(gfx::TextureHandle tex, const float3 (&c)[4], const float2 (&uv)[4]) {
     if (!tex.valid()) return;
+    casterUploadValid_ = false;
     Caster k;
     k.tex = tex;
     for (int i = 0; i < 4; ++i) k.v[i] = {c[i], uv[i], 0, 0, {}};
@@ -246,11 +250,14 @@ void SpriteBatch::drawRange(gfx::Device& dev, gfx::BufferHandle vb, uint32_t fir
 void SpriteBatch::flushCasters(gfx::Device& dev, const mat4& lightViewProj) {
     if (casters_.empty() || !casterPipe_.valid()) return;
     // group by texture (no painter order in a depth pass)
-    std::stable_sort(casters_.begin(), casters_.end(), [](const Caster& a, const Caster& b) { return a.tex.id < b.tex.id; });
-    casterVerts_.clear();
-    casterVerts_.reserve(casters_.size() * 4);
-    for (auto& k : casters_) for (auto& v : k.v) casterVerts_.push_back(v);
-    dev.updateBuffer(casterVb_, casterVerts_.data(), casterVerts_.size() * sizeof(SpriteVertex));
+    if (!casterUploadValid_) {
+        std::stable_sort(casters_.begin(), casters_.end(), [](const Caster& a, const Caster& b) { return a.tex.id < b.tex.id; });
+        casterVerts_.clear();
+        casterVerts_.reserve(casters_.size() * 4);
+        for (auto& k : casters_) for (auto& v : k.v) casterVerts_.push_back(v);
+        dev.updateBuffer(casterVb_, casterVerts_.data(), casterVerts_.size() * sizeof(SpriteVertex));
+        casterUploadValid_ = true;
+    }
     dev.setPipeline(casterPipe_);
     Uniforms u{};
     std::memcpy(u.viewProj, lightViewProj.m, sizeof u.viewProj);
@@ -288,18 +295,21 @@ void SpriteBatch::flush(gfx::Device& dev, const mat4& viewProj, const SpriteLigh
     drawCalls_ = 0;
     if (quads_.empty()) return;
     const bool canLight = lighting && lighting->bind && litPipe_.valid() && litDecalPipe_.valid();
-    order_.resize(quads_.size());
-    for (uint32_t i = 0; i < order_.size(); ++i) order_[i] = i;
-    std::sort(order_.begin(), order_.end(), [&](uint32_t a, uint32_t b) {
-        const Quad& A = quads_[a]; const Quad& B = quads_[b];
-        if (A.layer != B.layer) return A.layer < B.layer;
-        if (A.key != B.key) return A.key < B.key;
-        return A.seq < B.seq;
-    });
-    verts_.clear();
-    verts_.reserve(quads_.size() * 4);
-    for (uint32_t i : order_) for (auto& v : quads_[i].v) verts_.push_back(v);
-    dev.updateBuffer(vb_, verts_.data(), verts_.size() * sizeof(SpriteVertex));
+    if (!drawUploadValid_) {
+        order_.resize(quads_.size());
+        for (uint32_t i = 0; i < order_.size(); ++i) order_[i] = i;
+        std::sort(order_.begin(), order_.end(), [&](uint32_t a, uint32_t b) {
+            const Quad& A = quads_[a]; const Quad& B = quads_[b];
+            if (A.layer != B.layer) return A.layer < B.layer;
+            if (A.key != B.key) return A.key < B.key;
+            return A.seq < B.seq;
+        });
+        verts_.clear();
+        verts_.reserve(quads_.size() * 4);
+        for (uint32_t i : order_) for (auto& v : quads_[i].v) verts_.push_back(v);
+        dev.updateBuffer(vb_, verts_.data(), verts_.size() * sizeof(SpriteVertex));
+        drawUploadValid_ = true;
+    }
     // runs of equal texture and pipeline; the lit shader takes the sheet in slot 2 (0/1: shadow + lights)
     auto flagsOf = [&](uint32_t qi) { uint32_t f = quads_[qi].flags; if (!canLight) f &= ~uint32_t(kSpriteLit); return f; };
     uint32_t curFlags = ~0u;
