@@ -94,6 +94,10 @@ public:
     // half-open. Shared across near Flora and far Horizon. Set on the
     // WorldScene update thread, not while worker/render callbacks execute.
     void setVegetationClearings(std::vector<terraweave::RectCm> clearings);
+    // Explicit authoritative soil->presentation handoff for tree/shrub root
+    // exposure. WorldScene never decides gameplay falling or edits ECS.
+    void setVegetationRootStates(std::vector<terraweave::RootState> states);
+    size_t vegetationRootPrototypeCount()const;
     const std::vector<terraweave::RectCm>& vegetationClearings() const {
         return vegetationClearings_;
     }
