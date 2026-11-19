@@ -2867,6 +2867,35 @@ void Renderer3D::renderModels(int phase) {
                 std::chrono::steady_clock::now() - passBegin).count();
             autoCpuBatch_.observe(size_t(phase), order_.size(),
                                   autoCpuPermit, cpuMs);
+            // Explicitly opt-in cost audit: record comparable wall boundaries
+            // for CPU AUTO decisions, not GPU time or FPS. Existing stage
+            // profiling already accounts for the same passBegin boundary.
+            static const bool traceAutoCosts = [] {
+                const char* flag = std::getenv("AIVERSE_BATCH_AUTO_COST_TRACE");
+                return flag && std::strcmp(flag, "1") == 0;
+            }();
+            if (traceAutoCosts) {
+                static uint32_t printed[2][2]{};
+                const size_t lane = size_t(phase);
+                const size_t mode = mdiSubmitted ? 1u : 0u;
+                if (lane < 2 && printed[lane][mode]++ < 24) {
+                    const auto& learned =
+                        autoCpuBatch_.lanes[lane][AutoCpuBatchPolicy::bucket(order_.size())];
+                    const double stageMs = cpuStages
+                        ? (modelStats_.mdiCpuStages[lane].totalMs - cpuBefore.totalMs)
+                        : -1.0;
+                    std::fprintf(stderr,
+                        "[auto-cpu-cost] phase=%zu mode=%s items=%zu "
+                        "wall_ms=%.5f preceding_stage_ms=%.5f "
+                        "submissions=%llu direct_ewma_ms=%.5f mdi_ewma_ms=%.5f "
+                        "direct_samples=%u mdi_samples=%u opportunities=%u\n",
+                        lane, mdiSubmitted ? "mdi" : "direct", order_.size(),
+                        cpuMs, stageMs,
+                        (unsigned long long)(modelStats_.multiDrawSubmissions-cpuMdiBefore),
+                        learned.directMs, learned.mdiMs,
+                        learned.directSamples, learned.mdiSamples, learned.opportunities);
+                }
+            }
         }
     }
     if (cpuStages) {
