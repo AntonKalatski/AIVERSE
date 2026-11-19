@@ -393,3 +393,36 @@ The `dispatch` contract requires an active **Metal** frame with a nonzero `gfx::
 At exceptional model unload or actor removal, the host must finish the GPU frame, then call `actor.shutdownAfterIdle()` **outside any active frame** before allowing the model and device to be destroyed. The method invokes `gfx::Device::waitForResourceIdle()` and returns false on failure without deliberately freeing GPU resources. This is **not a per-frame stall**; frame-to-frame updates simply reuse the actor's GPU allocations. `GpuMorphDeformer` and `GpuMorphMeshStream` still have ordinary destructors; a host must not destroy an actor or its device while GPU work is in flight. A scalable token-based nonblocking retirement queue for frequent dynamic despawns is future work.
 
 The existing real macOS `vivid_metal_rhi` test has been **extended (not yet executed on the new revision)** with two actors referencing the same model and morph library. It checks separate output handles, three frames of different face weights, CPU-vs-GPU vertex parity for both actors, preservation of immutable UV/colour/tangent-sign/skin weights, rejection of a duplicate per-frame dispatch, rejection of stale-frame and wrong-model attachments, and explicit idle teardown. The ordinary VIVID and MotionWeave tests and the previously passing real visual preview are **not automatically certified** after this new source change.
+
+## Stage 5G — batched asynchronous actor GPU resource retirement (2026-11-19)
+
+**Implementation committed; Stage 5G CTests and native Mac GPU test NOT RUN yet.**
+
+The user supplied a native macOS test log for Stage 5F: `aiverse_vivid_actor` compiled successfully; `vivid_metal_gpu`, `vivid_metal_rhi` and `vivid_vertex_override` all passed (3/3, 3.29 seconds). The real RHI test includes two independent actors over three frames. This result is recorded in the agent handoff and predates the new code below.
+
+VIVID now adds `GpuActorRetirementQueue` (`engine/character/vivid/GpuActorRetirement.h/.cpp`) built inside `AIVERSE::vivid_actor`. The implementation deliberately reuses **`render::AsyncResourceRetirementQueue<std::unique_ptr<GpuActorStream>>`** from the renderer. There is no second retirement state machine or a new scheduler. A batch of actors queued after the GPU frame has been committed receives one backend `gfx::Device::beginResourceRetirement()` completion marker. `collect()` polls the ordered tokens and only releases actor GPU memory when `resourceRetirementComplete()` confirms success. A `Pending` or `Failed` token does not authorize release. Unsupported tokens require `waitForResourceIdle()` fallback; failed fences may only be bypassed by a successful full idle barrier on explicit `drain()`. Normal token-supported frame progression is **nonblocking** and never stalls per retired actor.
+
+Actor GPU resource teardown is refactored through the private `GpuActorStream::releaseAfterGpuCompletion()`, accessible only to `GpuActorRetirementQueue` and invoked after token completion or a successful shutdown idle barrier. Normal `GpuActorStream::shutdownAfterIdle()` remains supported. Both paths release the two actor-owned compute pipelines and output/input/weight GPU allocations, preserving per-actor ownership and not touching shared `render::Model` resources. MotionWeave still owns body animation.
+
+Usage at a graphics-device frame boundary:
+
+```cpp
+vivid::GpuActorRetirementQueue retirement(device);
+std::unique_ptr<vivid::GpuActorStream> actor = /* initialized VIVID actor */;
+
+// After ALL colour/shadow draws referencing this actor have been committed
+// by gfx::Device::endFrame(), not during beginFrame/endFrame:
+if (!retirement.retire(actor)) { /* ownership remains in actor */ }
+retirement.collect(); // submits one token for the pending actor batch
+// On later real frame boundaries:
+retirement.collect(); // releases completed actors without blocking
+
+// Before destroying the device or the retirement queue:
+if (!retirement.drain()) { /* keep queue and device alive; retry */ }
+```
+
+The queue exposes pending counts, saturation, diagnostic observer and the shared engine's detailed stats. `retire` rejects actors owned by a different graphics device. The caller must keep the model, device and queue alive until GPU completion, must **successfully drain the queue** before destroying it, and must never start a retirement marker while commands referencing the actor are still being recorded in an uncommitted frame. A finished token is not a GPU-to-CPU readback and does not carry performance guarantees.
+
+New portable CTest `vivid_actor_retirement` uses an instrumented mock Metal RHI and checks two actor objects retired under one marker, no GPU buffer destruction while `Pending`, resource release and statistics only on `Complete`, retention of a `Failed` marker, failed/successful idle recovery, unsupported-token fallback, and rejection of cross-device actors. It makes no claim of actual GPU work. The existing **real** Metal `vivid_metal_rhi` CTest is also extended with an actor GPU submission and a subsequently committed nonblocking resource retirement marker. The test allows a bounded polling window and fails if a real completion marker never completes.
+
+**Outstanding:** build and run the new headless and Metal tests on the user's macOS host. A safe shared immutable CSR asset/pipeline cache, renderer frame-budget benchmark, multi-character GUI soak, and device-recreation tests remain separate milestones. No change to authoritative simulation, save/network schemas, `render::ModelVertex` layout, `gfx::Device` ABI or MotionWeave APIs.
