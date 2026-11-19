@@ -1048,3 +1048,20 @@ Light/trace partial resource setup follows the same owner policy.
 This does not change Model format, skeleton retargeting, LOD assets
 or MotionWeave state. Native build and GPU failure tests are **NOT RUN**.
 See [Stage 118 handoff](agent-handoffs/animation-stage118-gpu-init-rollback-2026-11-19.md).
+
+## Stage 119 — graph playback continuity across compatible Model replacement
+
+Changing a Model pointer no longer unconditionally loses presentation
+clip phase when the MotionWeave source ID/generation stays the same,
+the previous graph is healthy and the ordered bone node names/parents
+match. `AnimationGraphInstance` snapshots named state and normalized
+clip phases before the old Model is evicted and maps them to the
+replacement Model's clip durations. A new rig pose is evaluated for
+the replacement; old node matrices, native state, GPU handles and
+morph arrays are not copied. A logical respawn (new generation)
+and incompatible hierarchies still restart.
+
+The host must retain old Model/Graph resources throughout bridge
+sync and may not mutate ECS structure during worker dispatch.
+**NOT RUN:** native build or hot reload parity tests.
+See [Stage 119 handoff](agent-handoffs/animation-stage119-playback-continuity-2026-11-19.md).
