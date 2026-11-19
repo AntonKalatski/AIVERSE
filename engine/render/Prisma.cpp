@@ -1412,7 +1412,27 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     const char* autoFlag = std::getenv("AIVERSE_PRISMA_AUTO_EXPOSURE");
     const bool autoRequested = hdrFrame_ && autoEffect && autoFlag &&
         std::strcmp(autoFlag, "1") == 0;
-    if (autoRequested && program(kExposureLog).valid() &&
+    const bool freezeRequested = autoRequested &&
+        autoEffect->get("freezeExposure") > 0.5f;
+    const bool regionRequested = autoRequested &&
+        autoEffect->get("meterRegionEnabled") > 0.5f;
+    bool exposureFrozenThisFrame = false;
+    bool exposureRegionMeteredThisFrame = false;
+    if (freezeRequested) {
+        // Reuse the last successful 1x1 exposure without encoding any
+        // luminance pyramid or writing to a history currently sampled.
+        // First render/camera cut resets valid and seeds exactly once below.
+        if (auto it = exposureViews_.find(viewId_);
+            it != exposureViews_.end() && it->second.valid &&
+            it->second.history[it->second.current].valid()) {
+            automaticExposure = it->second.history[it->second.current];
+            it->second.time = std::chrono::duration<double>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+            exposureFrozenThisFrame = true;
+        }
+    }
+    if (!automaticExposure.valid() && autoRequested &&
+        program(kExposureLog).valid() &&
         program(kExposureReduce).valid() && program(kExposureAdapt).valid()) {
         gfx::TextureHandle source = scene.tex;
         int pw = w, ph = h;
@@ -1425,19 +1445,25 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
                 valid = false;
                 break;
             }
-            SimpleU measure{};
+            ExposureMeterU measure{};
             put(measure.px, 1.0f / float(pw), 1.0f / float(ph), flip, 0);
             if (level == 0) {
                 put(measure.p0, autoEffect->get("centerWeight"),
                     autoEffect->get("centerRadius"),
-                    autoEffect->get("highlightRejection"), 0);
+                    autoEffect->get("highlightRejection"),
+                    autoEffect->get("meterOutsideWeight"));
                 put(measure.sun, autoEffect->get("minMeterLogL"),
                     autoEffect->get("maxMeterLogL"),
                     autoEffect->get("highlightStartEV"),
                     autoEffect->get("highlightSoftnessEV"));
+                put(measure.region, autoEffect->get("meterCenterX"),
+                    autoEffect->get("meterCenterY"),
+                    regionRequested ? autoEffect->get("meterRadius") : -1.0f,
+                    autoEffect->get("meterFeather"));
             }
             draw(set, mip, pipes_[level == 0 ? kExposureLog : kExposureReduce],
-                 &measure, sizeof measure, {{0, source}});
+                 &measure, level == 0 ? sizeof measure : sizeof(SimpleU),
+                 {{0, source}});
             source = mip.tex;
             pw = nextW; ph = nextH;
         }
@@ -1445,15 +1471,20 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
         if (valid && pw == w && ph == h) {
             const Target mip = target(set, kExposureMip, 1, 1);
             if (mip.tex.valid() && depthFor(set, 1, 1).valid()) {
-                SimpleU measure{};
+                ExposureMeterU measure{};
                 put(measure.px, 1, 1, flip, 0);
                 put(measure.p0, autoEffect->get("centerWeight"),
                     autoEffect->get("centerRadius"),
-                    autoEffect->get("highlightRejection"), 0);
+                    autoEffect->get("highlightRejection"),
+                    autoEffect->get("meterOutsideWeight"));
                 put(measure.sun, autoEffect->get("minMeterLogL"),
                     autoEffect->get("maxMeterLogL"),
                     autoEffect->get("highlightStartEV"),
                     autoEffect->get("highlightSoftnessEV"));
+                put(measure.region, autoEffect->get("meterCenterX"),
+                    autoEffect->get("meterCenterY"),
+                    regionRequested ? autoEffect->get("meterRadius") : -1.0f,
+                    autoEffect->get("meterFeather"));
                 draw(set, mip, pipes_[kExposureLog], &measure, sizeof measure,
                      {{0, scene.tex}});
                 source = mip.tex;
@@ -1500,10 +1531,13 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
             exposureView.valid = true;
             exposureView.time = timeNow;
             automaticExposure = nextExposure;
+            exposureRegionMeteredThisFrame = regionRequested;
         } else {
             exposureView.valid = false;
         }
-    } else {
+    } else if (!automaticExposure.valid()) {
+        // No authored/usable meter this frame: preserve allocated storage,
+        // but invalidate previous luminance for the next cold frame.
         resetAutoExposure(viewId_);
     }
 
