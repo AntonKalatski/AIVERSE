@@ -2230,6 +2230,19 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
         $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
     add_test(NAME terraweave_micro_nutrient
         COMMAND aiverse_terraweave_micro_nutrient_test)
+    # Native headers must compile together: ECS, NEREID, 4m nutrient
+    # adapters and optional PHYSIS weather without that feature branch.
+    add_executable(aiverse_terraweave_native_micro_compile_test
+        tests/terraweave_native_micro_compile_test.cpp)
+    target_include_directories(aiverse_terraweave_native_micro_compile_test
+        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+                ${CMAKE_CURRENT_SOURCE_DIR}/libraries/include)
+    target_link_libraries(aiverse_terraweave_native_micro_compile_test PRIVATE
+        aiverse_models aiverse_world aiverse_zstd_dec)
+    target_compile_options(aiverse_terraweave_native_micro_compile_test PRIVATE
+        $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
+    add_test(NAME terraweave_native_micro_compile
+        COMMAND aiverse_terraweave_native_micro_compile_test)
     add_executable(aiverse_terraweave_arbor_test tests/terraweave_arbor_test.cpp)
     target_link_libraries(aiverse_terraweave_arbor_test PRIVATE aiverse_engine Threads::Threads)
     target_compile_options(aiverse_terraweave_arbor_test PRIVATE $<$<CXX_COMPILER_ID:AppleClang,Clang,GNU>:-UNDEBUG>)
