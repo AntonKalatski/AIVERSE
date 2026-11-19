@@ -31,6 +31,7 @@
 #include "engine/render/QualityGovernor.h"
 #include "engine/render/Renderer3D.h"
 #include "engine/render/CameraClientAdapter.h"
+#include "engine/render/CameraModelSnapshot.h"
 #include "engine/render/RenderDeviceLifetime.h"
 #include "engine/services/Store.h"
 #include "engine/sim/Simulation.h"
@@ -350,6 +351,7 @@ private:
 
     Renderer3D r3d_;
     render::CameraClientAdapter lensCameras_;
+    render::CameraModelSnapshot lensModelSnapshot_;
     bool lensCamerasActive_=false;
     // streamed static world (map "streamedWorld": {"async": true, ...}, docs/large-worlds.md): chunks around the camera
     std::unique_ptr<world::WorldScene> worldScene_;
