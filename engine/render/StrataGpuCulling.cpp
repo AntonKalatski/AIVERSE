@@ -434,7 +434,12 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
     if ((dev.info().backend != gfx::Backend::Metal && !vulkan) ||
         !dev.supportsCompute() || !gpuMetadataV2.valid() ||
         (vulkan && (config.maxOutputClusters>2048 ||
-                    config.baseVertex<0)) ||
+                    config.baseVertex<0 ||
+                    (config.gpuFallbackEnabled &&
+                     (!config.gpuFallbackIndexCount ||
+                      config.gpuFallbackIndexCount%3u!=0 ||
+                      config.gpuFallbackBaseVertex<0 ||
+                      config.gpuFallbackBaseVertex!=config.baseVertex)))) ||
         !frameSerial || instances.empty() || instances.size() > 4096 ||
         config.maxOutputClusters == 0 || config.maxOutputClusters > 65536 ||
         config.width <= 0 || config.height <= 0 ||
@@ -559,9 +564,18 @@ bool GpuClusterCulling::dispatch(gfx::Device& dev,
         if(!dev.beginCompute(indirectSafetyPipeline_))return false;
         dev.setComputeBuffer(0,slot.indirect);
         dev.setComputeBuffer(1,slot.counters);
-        const uint32_t capacity=config.maxOutputClusters;
-        dev.setComputeUniforms(&capacity,sizeof(capacity));
-        const bool safe=dev.dispatchChecked(capacity);
+        struct SafetyUniforms {
+            uint32_t capacity=0, enableFallback=0, firstIndex=0, indexCount=0;
+            int32_t baseVertex=0;
+        } safety{};
+        static_assert(sizeof(SafetyUniforms)==20);
+        safety.capacity=config.maxOutputClusters;
+        safety.enableFallback=config.gpuFallbackEnabled ? 1u : 0u;
+        safety.firstIndex=config.gpuFallbackFirstIndex;
+        safety.indexCount=config.gpuFallbackIndexCount;
+        safety.baseVertex=config.gpuFallbackBaseVertex;
+        dev.setComputeUniforms(&safety,sizeof(safety));
+        const bool safe=dev.dispatchChecked(safety.capacity);
         dev.endCompute();
         if(!safe)return false;
     }
