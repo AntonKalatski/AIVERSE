@@ -29,7 +29,8 @@ public:
     // Begin an emitter with no GPU particles yet. GPU emits are explicit
     // on safe buffer update points; CPU fallback plays an authored effect.
     bool begin(gfx::Device& device,ParticleSystem& cpu,Config config,
-               float3 origin={0,0,0},float3 direction={0,1,0}) {
+               float3 origin={0,0,0},float3 direction={0,1,0},
+               SpectraFxGpuBillboardRenderer* sharedRenderer=nullptr) {
         stop();
         // Configure before allocating GPU resources: failed settings do not
         // replace or partially initialize any backend.
@@ -49,7 +50,8 @@ public:
         }
         if(decision_.backend==SpectraFxExecutionBackend::Gpu) {
             if(slots_.init(device,config_.backend.particles) &&
-               renderer_.init(device)) {
+               (sharedRenderer ? sharedRenderer->ready() : renderer_.init(device))) {
+                rendererOwner_=sharedRenderer ? sharedRenderer : &renderer_;
                 backend_=SpectraFxExecutionBackend::Gpu;
                 status_="GPU emitter initialized; awaiting spawn at buffer-safe point";
                 return true;
@@ -118,9 +120,9 @@ public:
     // GPU only, inside the scene render pass after updateGpu completed.
     bool renderGpu(const render::mat4& viewProj,render::float3 cameraRight,
                    render::float3 cameraUp) {
-        return gpuActive() && !suspended_ &&
-               renderer_.draw(slots_.evolution(),viewProj,cameraRight,
-                              cameraUp,config_.appearance);
+        return gpuActive() && !suspended_ && rendererOwner_ &&
+               rendererOwner_->draw(slots_.evolution(),viewProj,cameraRight,
+                                    cameraUp,config_.appearance);
     }
 
     // Stop emission and destroy owned GPU resources before the RHI device.
@@ -131,7 +133,8 @@ public:
             else cpu_->stop(cpuHandle_);
         }
         cpuHandle_={};
-        renderer_.release();
+        renderer_.release(); // only owned/local pipelines; shared lives in playback
+        rendererOwner_=nullptr;
         slots_.shutdown();
         cpu_=nullptr;
         suspended_=false;
@@ -161,6 +164,7 @@ private:
     SpectraFxExecutionBackend backend_=SpectraFxExecutionBackend::Cpu;
     SpectraFxGpuParticleSlots slots_{};
     SpectraFxGpuBillboardRenderer renderer_{};
+    SpectraFxGpuBillboardRenderer* rendererOwner_=nullptr;
     SpectraFxGpuSpawnScheduler scheduler_{};
     float3 origin_{},direction_{0,1,0};
     std::string status_;
