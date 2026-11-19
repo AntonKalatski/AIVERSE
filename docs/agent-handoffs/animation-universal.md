@@ -3136,3 +3136,18 @@ Existing 21 resolutions preserved, final 10 reconciled; one Prisma postprocess
 owner and one editor viewport target owner, both animation playback APIs and GPU
 fence/retirement lifetimes retained. Build/CTest/GPU: **NOT RUN**, user requested
 merge only. Remote documentation and latest MotionWeave merge/push remain next.
+
+
+## Latest MotionWeave branch integrated — 2026-11-20
+
+Merge `57c839bff51768a9b52bc9a6c5ac6d4868a33aad` includes source tip `ea28f227b1da3fcfb32da2abc49e60f588861786`
+(Stages 155–157: Studio attachment authoring/viewport and ModelView source-file
+reimport/watcher). Paths: `AGENTS.md`, `apps/editor/animation/AnimationEditor.h`,
+`apps/editor/windows/AttachmentAuthoringWindow.cpp`, `ModelingWindow.cpp`,
+`apps/modelview/main.cpp`, incoming stage handoffs and View/MotionWeave guides.
+The only code reconciliation adapts Attachments Viewport::ensure to the shared
+`Editor::viewportRetirement()` owner and drops the duplicate target-owner setter.
+Both appended animation handoff histories preserved. No save/API feature changes
+beyond the source branch. `git diff --check` clean; unmerged path list empty.
+Build/CTest/GPU/CI: **NOT RUN** by user request; runtime compatibility unverified.
+Next: merge the remote integration documentation, final ancestry check and push.
