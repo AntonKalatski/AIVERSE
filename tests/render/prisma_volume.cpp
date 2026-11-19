@@ -41,13 +41,13 @@ int main() {
       "volumes":[
         {"id":"warm","shape":"box","center":[0,0,0],"halfExtents":[1,1,1],
          "priority":10,"layerMask":2,
-         "profile":{"effects":[{"type":"colorGrade","exposure":4}]}}
+         "profile":{"effects":[{"type":"colorGrade","exposure":3}]}}
       ]
     })");
     auto override = parsePrismaVolumes(game,map,&issues);
     expect(issues.empty(),"map override valid");
     expect(override.volumes.size()==2,"map matches existing volume ID, no duplicates");
-    expect(std::abs(exposure(override.resolve(base,{0,0,0},2))-4.f)<0.001f,"map volume wins");
+    expect(std::abs(exposure(override.resolve(base,{0,0,0},2))-3.f)<0.001f,"map volume wins");
     expect(std::abs(exposure(override.resolve(base,{0,0,0},1)))<0.001f,"layer mask excludes camera");
 
     // Full 32-bit mask must bypass Json::integer's fixed-point numeric path.
