@@ -29,14 +29,21 @@ struct WaterSurfaceMeshOptions {
     float uvScale=0.05f;
     float foamWidth=3.0f;
     uint32_t maxVertices=65536;
+    // Opt-in static tile ranges for large ocean/box surfaces. 1 = legacy.
+    uint8_t rippleTileGrid=1; // N x N tiles, N<=8 (max 64 indexed draws)
 };
 struct WaterSurfaceVertex {
     float x=0,y=0,z=0,u=0,v=0,shore=0;
+};
+struct WaterTileRange {
+    uint32_t firstIndex=0,indexCount=0;
+    double centerX=0,centerZ=0; // world metres; precise relative-origin mapping
 };
 struct WaterSurfaceMesh {
     std::vector<WaterSurfaceVertex> vertices;
     std::vector<uint32_t> indices;
     bool infinite=false;
+    std::vector<WaterTileRange> tiles; // optional non-overlapping index partitions
     bool empty()const{return indices.empty();}
     size_t triangleCount()const{return indices.size()/3;}
 };
@@ -223,6 +230,7 @@ inline WaterSurfaceMesh buildWaterSurfaceMesh(
        (options.preciseCamera && (!std::isfinite(options.cameraX64) ||
                                   !std::isfinite(options.cameraZ64))) ||
        options.oceanPatchRadius<=0 || options.maxVertices<4 ||
+       options.rippleTileGrid<1 || options.rippleTileGrid>8 ||
        options.foamWidth<0)return mesh;
     const float y=float(body.surfaceY.toDouble()-options.originY);
     std::vector<std::pair<P,P>> boundary;
@@ -234,6 +242,44 @@ inline WaterSurfaceMesh buildWaterSurfaceMesh(
         tri(mesh,ia,ib,ic);tri(mesh,ia,ic,id);
         const P pts[]={a,b,c,d};
         for(int i=0;i<4;++i)boundary.emplace_back(pts[i],pts[(i+1)%4]);
+    };
+    // Tile triangles are contiguous in one shared index buffer so the
+    // renderer can submit different ripple uniforms per tile without
+    // allocating a separate mesh or duplicating its VB/IB on the GPU.
+    // The source rectangle still owns one continuous external coastline:
+    // tile seams are NOT shoreline edges for foam.
+    auto addTiledQuad=[&](double x0,double x1,double z0,double z1) {
+        const int grid=int(options.rippleTileGrid);
+        const int sub=options.lod==WaterSurfaceLod::Near?4:
+                      options.lod==WaterSurfaceLod::Medium?2:1;
+        for(int iz=0;iz<grid;++iz)for(int ix=0;ix<grid;++ix) {
+            const uint32_t first=uint32_t(mesh.indices.size());
+            const double sx0=x0+(x1-x0)*double(ix)/grid;
+            const double sx1=x0+(x1-x0)*double(ix+1)/grid;
+            const double sz0=z0+(z1-z0)*double(iz)/grid;
+            const double sz1=z0+(z1-z0)*double(iz+1)/grid;
+            for(int a=0;a<sub;++a)for(int b=0;b<sub;++b) {
+                const double xa=sx0+(sx1-sx0)*double(a)/sub;
+                const double xb=sx0+(sx1-sx0)*double(a+1)/sub;
+                const double za=sz0+(sz1-sz0)*double(b)/sub;
+                const double zb=sz0+(sz1-sz0)*double(b+1)/sub;
+                const uint32_t ia=vertex(mesh,{xa,za},y,options.uvScale,
+                                          options.originX,options.originZ);
+                const uint32_t ib=vertex(mesh,{xa,zb},y,options.uvScale,
+                                          options.originX,options.originZ);
+                const uint32_t ic=vertex(mesh,{xb,zb},y,options.uvScale,
+                                          options.originX,options.originZ);
+                const uint32_t id=vertex(mesh,{xb,za},y,options.uvScale,
+                                          options.originX,options.originZ);
+                tri(mesh,ia,ib,ic);tri(mesh,ia,ic,id);
+            }
+            mesh.tiles.push_back({first,uint32_t(mesh.indices.size())-first,
+                                  (sx0+sx1)*0.5,(sz0+sz1)*0.5});
+        }
+        boundary.emplace_back(P{x0,z0},P{x0,z1});
+        boundary.emplace_back(P{x0,z1},P{x1,z1});
+        boundary.emplace_back(P{x1,z1},P{x1,z0});
+        boundary.emplace_back(P{x1,z0},P{x0,z0});
     };
     if(geometry && geometry->enabled) {
         if(!validWaterGeometry(*geometry))return {};
@@ -293,13 +339,15 @@ inline WaterSurfaceMesh buildWaterSurfaceMesh(
             const double r=options.oceanPatchRadius;
             const double x=options.preciseCamera?options.cameraX64:double(options.cameraX);
             const double z=options.preciseCamera?options.cameraZ64:double(options.cameraZ);
-            addQuad({x-r,z-r},{x-r,z+r},{x+r,z+r},{x+r,z-r});
+            if(options.rippleTileGrid>1)addTiledQuad(x-r,x+r,z-r,z+r);
+            else addQuad({x-r,z-r},{x-r,z+r},{x+r,z+r},{x+r,z-r});
             boundary.clear();mesh.infinite=true;
         }else if(body.footprint==WaterFootprint::Box) {
             const double x=body.center.x.toDouble(),z=body.center.z.toDouble();
             const double hx=body.halfExtents.x.toDouble(),
                          hz=body.halfExtents.y.toDouble();
-            addQuad({x-hx,z-hz},{x-hx,z+hz},{x+hx,z+hz},{x+hx,z-hz});
+            if(options.rippleTileGrid>1)addTiledQuad(x-hx,x+hx,z-hz,z+hz);
+            else addQuad({x-hx,z-hz},{x-hx,z+hz},{x+hx,z+hz},{x+hx,z-hz});
         }else if(body.footprint==WaterFootprint::Disc) {
             const double x=body.center.x.toDouble(),z=body.center.z.toDouble();
             const double r=body.radius.toDouble();
@@ -323,7 +371,9 @@ inline WaterSurfaceMesh buildWaterSurfaceMesh(
     if(mesh.vertices.size()>options.maxVertices)return {};
     const int levels=options.lod==WaterSurfaceLod::Near?2:
                      options.lod==WaterSurfaceLod::Medium?1:0;
-    splitMesh(mesh,levels,options.maxVertices);
+    // A tiled quad has already been subdivided at the selected LOD;
+    // splitting again would invalidate stored index ranges.
+    if(mesh.tiles.empty())splitMesh(mesh,levels,options.maxVertices);
     // Far LOD has perimeter-only vertices for boxes/polygons/rivers.
     // No interior gradients exist there: suppress vertex foam rather than
     // tinting an entire far-away water surface white.
