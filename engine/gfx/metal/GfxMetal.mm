@@ -1536,6 +1536,7 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
         // Only commands used by this submission need resetting. Larger pooled
         // capacity is untouched and cannot execute (execute range is drawCount).
         [icb resetWithRange:NSMakeRange(0, drawCount)];
+        const auto afterIcbReset = std::chrono::steady_clock::now();
 
         // Uniform buffers are private to this submission. Preserve their lifetime
         // until the frame's GPU fence has completed; never reference setBytes
@@ -1633,6 +1634,8 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             };
             const double argsMs = ms(profileStart, afterArgs);
             const double allocMs = ms(afterArgs, afterAlloc);
+            const double icbResetMs = ms(afterArgs, afterIcbReset);
+            const double uniformsMs = ms(afterIcbReset, afterAlloc);
             const double encodeMs = ms(afterAlloc, afterEncode);
             const double executeMs = ms(afterEncode, afterExecute);
             const double totalMs = argsMs + allocMs + encodeMs + executeMs;
@@ -1670,11 +1673,12 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
                 ++printed;
                 std::fprintf(stderr,
                     "[metal-icb-slow] frame=%llu slot=%zu commands=%u total=%.5fms "
-                    "args=%.5f alloc=%.5f encode=%.5f residency_execute=%.5f "
+                    "args=%.5f alloc=%.5f icb_reset=%.5f uniforms=%.5f "
+                    "encode=%.5f residency_execute=%.5f "
                     "threshold=%.3fms sample=%u/24\n",
                     static_cast<unsigned long long>(frame_), submissionIndex,
-                    drawCount, totalMs, argsMs, allocMs, encodeMs, executeMs,
-                    slowMs, printed);
+                    drawCount, totalMs, argsMs, allocMs, icbResetMs, uniformsMs,
+                    encodeMs, executeMs, slowMs, printed);
             }
         }
         if (traceIcb) {
