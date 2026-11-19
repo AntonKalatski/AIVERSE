@@ -114,6 +114,10 @@ public:
     bool captureGpuCheckpoint(GpuCheckpoint& out) {
         return useComputeWrapper_ && gpu_.captureGpuCheckpoint(out);
     }
+    bool requestGpuCheckpoint(std::function<void(bool)> callback = {}) {
+        return useComputeWrapper_ &&
+            gpu_.requestGpuCheckpoint(std::move(callback));
+    }
 private:
     bool initCpu(gfx::Device*, const fx::EffectDef&, fx::FxQuality);
     bool initialized_ = false;
