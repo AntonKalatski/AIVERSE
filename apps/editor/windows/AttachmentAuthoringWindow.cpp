@@ -418,6 +418,38 @@ public:
                 child.local.m[14]=position[2];
                 dirty_=true;
             }
+            if(ImGui::TreeNode("Advanced affine transforms")) {
+                const auto editBasis=[&](const char* prefix,render::mat4& matrix) {
+                    for(int col=0;col<3;++col) {
+                        ImGui::PushID(col);
+                        float axis[]={matrix.m[col*4],matrix.m[col*4+1],
+                                      matrix.m[col*4+2]};
+                        if(ImGui::DragFloat3(prefix,axis,0.01f)) {
+                            for(int row=0;row<3;++row)
+                                matrix.m[col*4+row]=axis[row];
+                            dirty_=true;
+                        }
+                        ImGui::PopID();
+                    }
+                };
+                ImGui::TextUnformatted("Socket-local orientation / scale");
+                editBasis("Local axis",child.local);
+                ImGui::TextUnformatted("Child-model orientation / scale");
+                editBasis("Child axis",child.childWorld);
+                float origin[]={
+                    child.childWorld.m[12],
+                    child.childWorld.m[13],
+                    child.childWorld.m[14]};
+                if(ImGui::DragFloat3("Child offset",origin,0.01f)) {
+                    child.childWorld.m[12]=origin[0];
+                    child.childWorld.m[13]=origin[1];
+                    child.childWorld.m[14]=origin[2];
+                    dirty_=true;
+                }
+                ImGui::TextDisabled(
+                    "Matrix axes support arbitrary rotation, scale and shear");
+                ImGui::TreePop();
+            }
             if(ImGui::Button("Detach")) {
                 authored_.erase(authored_.begin()+i);
                 dirty_=true;
