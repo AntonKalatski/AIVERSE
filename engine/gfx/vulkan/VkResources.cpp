@@ -157,11 +157,17 @@ bool VulkanDevice::createBufferObject(size_t size, VkBufferUsageFlags usage, boo
 }
 
 VkBufferUsageFlags VulkanDevice::bufferUsage(BufferType t) const {
-    VkBufferUsageFlags u = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+    // Vulkan diagnostic async readback copies from any buffer as TRANSFER_SRC.
+    // GPU-authored indirect commands must ALSO carry STORAGE usage to be
+    // writable by compute. Legacy CPU-authored indirect buffers still work.
+    VkBufferUsageFlags u = VK_BUFFER_USAGE_TRANSFER_DST_BIT |
+                           VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
     if (t == BufferType::Index) u |= VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-    else u |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-    if (t == BufferType::Storage) u |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-    if (t == BufferType::Indirect) u |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT;
+    if (t == BufferType::Vertex) u |= VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    if (t == BufferType::Storage) u |= VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                      VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+    if (t == BufferType::Indirect) u |= VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT |
+                                       VK_BUFFER_USAGE_STORAGE_BUFFER_BIT;
     return u;
 }
 
