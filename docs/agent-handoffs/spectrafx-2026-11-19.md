@@ -1046,3 +1046,10 @@ git merge origin/main
 - **Scope:** editor presentation only, no gameplay ECS/RTS/FPS/PRISMA change; this does not implement GPU fence synchronization or prove the offscreen viewport works on hardware. It uses the renderer's existing pre-pass safe-point contract.
 - **Actually performed:** **NOT RUN** per user's instructions: no compilation, Metal/ImGui preview, tests, CTest, GPU capture, sanitizer or screenshot. GitHub accepted source code only.
 - **Next:** complete user guide, review RHI shader resource and rendering compatibility, and after feature closure run native Editor/Metal/offscreen-preview acceptance plus focused CPU fallback/retirement tests and warning cleanup. Preserve staged handoffs.
+
+
+## 2026-11-19 — Stage 81: documented GPU emitter live preview and acceptance checklist
+- **Branch:** `feature/spectrafx-generic-cue-queue`, stage based on main ancestor `d71c6d47e532b25fb816a8bb1f96c41e5275a165`.
+- **Documentation commit:** `11b25078060b60ec35a86da43c8648a302c17a9d`, `docs/spectrafx-gpu-runtime.md`. Describes editor location **Look → SpectraFX GPU Assets**, editing of unsaved JSON in live offscreen viewport, camera orbit/zoom, restart, pause and 1/60-second step, read-only actual CPU/GPU/fallback/retained resource counts, and the synthetic in-memory route/emitter asset strategy. Clarifies that a missing authored CPU effect is an error, not an automatically created stand-in. Explains frame-safe reset/retry and deferred GPU allocations while modifying assets. Separates CPU/GPU nominal allocation diagnostics from true GPU execution time.
+- **Actual verification:** **NOT RUN** as required. Native build, shader compiler, editor, GPU frame, sorting parity, Metal buffer-lifetime stress and screenshots remain pending. Do not describe the preview as tested or production-ready.
+- **Next functional priority:** final source-level lifecycle checks and editor-host teardown ordering; then user-requested full native Metal/CPU fallback/CI acceptance once features are finished. Fix compilation warnings/errors before merging to main; do not merge the unverified branch as if tests passed.
