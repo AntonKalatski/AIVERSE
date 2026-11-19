@@ -59,9 +59,13 @@ project. If absent, choose an existing effect name; the example is not
 installed automatically. The GPU implementation handles **simple,
 unsorted, world-space alpha/additive billboards only**. All other effect
 modules (collision, trails, ribbons, mesh particles, subemitters, lights,
-sorting, flipbooks and local space) stay on CPU. The backend selection
-permits GPU only on compatible Metal/Vulkan devices with compute and
-RGBA32F; there is no D3D12 RHI in this project.
+sorting, flipbooks and local space) stay on CPU. The backend selection currently enables GPU particles on compatible
+**Metal** devices with compute and RGBA32F. The current Vulkan RHI does
+not implement `gfx::Device` compute entry points, and the SpectraFX
+GPU evolution policy explicitly retains the CPU fallback there.
+OpenGL/WebGL and the other backends also use the CPU path. This avoids
+silently enabling an unvalidated Vulkan GPU-writable-storage/frame
+synchronization path when Vulkan compute support is added later.
 
 Distance-LOD is optional. With `lod.far: 0` (the default), the
 effect's spawn intensity and visibility are unchanged by camera distance.
@@ -399,9 +403,10 @@ Following GPU evolution, a compute pass writes a packed texture of live
 slot indices and GPU-authored indexed indirect arguments. A Metal GPU
 indirect draw then submits just the live instance count without CPU
 readback. The renderer restores its original full-capacity instanced draw
-if indirect preparation or submission fails. Vulkan currently lacks the
-required GPU-authored `drawIndexedGpuIndirect` implementation; it uses
-the original instanced draw with transparent dormant slots. These shader
+if indirect preparation or submission fails. Vulkan currently lacks the GPU-authored
+`drawIndexedGpuIndirect` implementation and SpectraFX GPU evolution
+is disabled on Vulkan, so the Vulkan renderer uses the CPU effect
+fallback rather than a GPU instanced draw. These shader
 and render transitions **have not yet been compiled or verified**.
 
 For many compatible instances with the **same** color, radius,
@@ -493,7 +498,8 @@ live-slot compaction and indirect draws are optional. Ground-plane GPU
 collision and best-effort Metal asynchronous impact feedback are
 implemented in source, but actual mesh/depth collision, general GPU
 alpha sorting, global heterogeneous/multi-material GPU batching,
-GPU event parity and Vulkan/Metal acceptance remain incomplete.
+GPU event parity and complete Metal acceptance remain incomplete; Vulkan GPU particle
+compute is not implemented/enabled.
 
 The next steps are to harden GPU resource lifetimes, evaluate
 transparent sorting and pooled memory/LOD behavior, and integrate
