@@ -2,7 +2,7 @@
 // to the whole star system, with smooth transitions and focus changes between bodies.
 //
 // The renderer works in a "view world": world space moved and rotated so that the focus point on the
-// surface is the origin and its local up is +Y. Then the classic RTSCamera, shadow fitting, light map
+// surface is the origin and its local up is +Y. Then the classic Camera, shadow fitting, light map
 // and overlays work unchanged near the focus; far away the planet simply curves down.
 //   view = rot * (world - origin)      (PlanetViewFrame)
 // Zoom regimes by camera distance d (from the focus point): surface (target on the ground, local
@@ -84,7 +84,7 @@ public:
     float planetBlend() const { return planetW_; }   // 0 surface .. 1 whole planet
     float systemBlend() const { return systemW_; }   // 0 planet .. 1 system
 
-    // Per frame: smooth focus changes, build the RTSCamera (view world) and the frame.
+    // Per frame: smooth focus changes, build the Camera (view world) and the frame.
     void update(const PlanetWorld& w, const PlanetSurface* s, double seconds, float dt) {
         using namespace render;
         if (body_ < 0 || body_ >= int(w.bodies.size())) body_ = w.start;
@@ -139,7 +139,7 @@ public:
         cam_.zNear = std::clamp(alt * 0.08f, 0.25f, 200.0f);
         cam_.zFar = std::max(1000.0f, distance + extent * 2.5f);
     }
-    const render::RTSCamera& camera() const { return cam_; }
+    const render::Camera& camera() const { return cam_; }
     const PlanetViewFrame& frame() const { return frame_; }
 
 private:
@@ -166,7 +166,7 @@ private:
     float radius_ = 1, maxDistance_ = 1000, planetW_ = 0, systemW_ = 0;
     bool snap_ = true, init_ = false, transition_ = false;
     PlanetViewFrame cur_, frame_;
-    render::RTSCamera cam_;
+    render::Camera cam_;
 };
 
 } // namespace aiverse::game
