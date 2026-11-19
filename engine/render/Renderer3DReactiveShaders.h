@@ -73,9 +73,11 @@ layout(location=2) in vec2 a_uv;
 layout(location=4) in vec4 a_col;
 layout(std140) uniform U0 {
     mat4 mvp; vec4 params; vec4 lod; vec4 uv0; vec4 uv1; vec4 maskInfo;
+    mat4 world; vec4 reveal; vec4 revealAxis;
 };
 out vec2 v_uv;
 out vec3 v_opos;
+out vec3 v_worldPos;
 out float v_alpha;
 void main() {
     gl_Position = mvp * vec4(a_pos,1.0);
@@ -83,17 +85,20 @@ void main() {
     float c = cos(uv1.x), si = sin(uv1.x);
     v_uv = vec2(c*uv.x+si*uv.y,-si*uv.x+c*uv.y)+uv0.xy;
     v_opos = a_pos;
+    v_worldPos = (world * vec4(a_pos,1.0)).xyz;
     v_alpha = a_col.a;
 }
 )";
 inline const char* kCutoutFS = R"(
 layout(std140) uniform U0 {
     mat4 mvp; vec4 params; vec4 lod; vec4 uv0; vec4 uv1; vec4 maskInfo;
+    mat4 world; vec4 reveal; vec4 revealAxis;
 };
 uniform sampler2D tex0;
 uniform sampler2D tex1;
 in vec2 v_uv;
 in vec3 v_opos;
+in vec3 v_worldPos;
 in float v_alpha;
 out vec4 o_color;
 float reactiveHash3(vec3 p) {
@@ -116,6 +121,18 @@ void main() {
         float noise=(float(rank)+0.5)/16.0;
         if(lod.y>0.5 ? noise<lod.x : noise>=lod.x) discard;
     }
+    if(reveal.w>0.0) {
+        vec3 delta=v_worldPos-reveal.xyz;
+        float z=dot(delta,revealAxis.xyz);
+        float radius=reveal.w*max(0.01,1.0-z*revealAxis.w);
+        float radial=length(delta-revealAxis.xyz*z);
+        float coverage=(1.0-smoothstep(radius*0.48,radius,radial))*
+                       smoothstep(0.04,0.24,z);
+        ivec2 ap=ivec2(gl_FragCoord.xy)&ivec2(3);
+        int rank=((ap.x&1)^(ap.y&1))*8+(ap.y&1)*4+
+                 ((ap.x>>1)^(ap.y>>1))*2+(ap.y>>1);
+        if(coverage>(float(rank)+0.5)/16.0)discard;
+    }
     if(maskInfo.w>0.0) {
         float nz=reactiveNoise3(v_opos*7.0)*0.7+
                  reactiveNoise3(v_opos*19.0)*0.3;
@@ -134,7 +151,8 @@ void main() {
 inline const char* kCutoutMSL = R"(
 #include <metal_stdlib>
 using namespace metal;
-struct U0 { float4x4 mvp; float4 params,lod,uv0,uv1,maskInfo; };
+struct U0 { float4x4 mvp; float4 params,lod,uv0,uv1,maskInfo;
+            float4x4 world;float4 reveal,revealAxis; };
 struct VIn {
     float3 pos [[attribute(0)]];
     float2 uv [[attribute(2)]];
@@ -142,7 +160,7 @@ struct VIn {
 };
 struct VOut {
     float4 position [[position]];
-    float2 uv; float3 opos; float alpha;
+    float2 uv; float3 opos; float3 wpos; float alpha;
 };
 vertex VOut vs_main(VIn in [[stage_in]],constant U0& u [[buffer(1)]]) {
     VOut out;
@@ -150,7 +168,8 @@ vertex VOut vs_main(VIn in [[stage_in]],constant U0& u [[buffer(1)]]) {
     float2 uv=in.uv*u.uv0.zw;
     float c=cos(u.uv1.x),si=sin(u.uv1.x);
     out.uv=float2(c*uv.x+si*uv.y,-si*uv.x+c*uv.y)+u.uv0.xy;
-    out.opos=in.pos;out.alpha=in.col.a;
+    out.opos=in.pos;out.wpos=(u.world*float4(in.pos,1.0)).xyz;
+    out.alpha=in.col.a;
     return out;
 }
 static float reactiveHash3(float3 p) {
@@ -174,6 +193,18 @@ fragment float4 fs_main(VOut in [[stage_in]],constant U0& u [[buffer(1)]],
                  ((lp.x>>1)^(lp.y>>1))*2+(lp.y>>1);
         float noise=(float(rank)+0.5)/16.0;
         if(u.lod.y>0.5 ? noise<u.lod.x : noise>=u.lod.x)discard_fragment();
+    }
+    if(u.reveal.w>0.0) {
+        float3 delta=in.wpos-u.reveal.xyz;
+        float z=dot(delta,u.revealAxis.xyz);
+        float radius=u.reveal.w*max(0.01,1.0-z*u.revealAxis.w);
+        float radial=length(delta-u.revealAxis.xyz*z);
+        float coverage=(1.0-smoothstep(radius*0.48,radius,radial))*
+                       smoothstep(0.04,0.24,z);
+        int2 ap=int2(floor(in.position.xy))&int2(3);
+        int rank=((ap.x&1)^(ap.y&1))*8+(ap.y&1)*4+
+                 ((ap.x>>1)^(ap.y>>1))*2+(ap.y>>1);
+        if(coverage>(float(rank)+0.5)/16.0)discard_fragment();
     }
     if(u.maskInfo.w>0.0) {
         float nz=reactiveNoise3(in.opos*7.0)*0.7+
