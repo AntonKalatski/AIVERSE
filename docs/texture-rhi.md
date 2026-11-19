@@ -2160,3 +2160,12 @@ compilation or GPU execution.
 
 No C++/Objective-C++ compile, Metal shader compiler, CTest,
 GPU execution or visual/performance test was run.
+
+
+### Stage 10AM — Vulkan MSAA image format query loader repair
+
+The Linux arm64 GCC GitHub Actions job 135396475446 in run 44475967180 failed compiling `engine/gfx/vulkan/VkResources.cpp:577` because `vkGetPhysicalDeviceImageFormatProperties` was not declared under `VK_NO_PROTOTYPES`. The runtime Vulkan loader uses `AIVERSE_VK_INSTANCE_FUNCS` to declare, define, and obtain instance-level function pointers. This entry was missing.
+
+`engine/gfx/vulkan/VkApi.h` now lists `vkGetPhysicalDeviceImageFormatProperties` alongside the other physical-device format queries. The existing `VkApi.cpp` macros automatically declare the runtime pointer, define it and require it during instance initialization. No unconditional Vulkan SDK symbol linkage is introduced.
+
+**Observed evidence:** actual CI log, Linux arm64 GCC at 368/1314 objects, compile error as above. **Post-fix compile/CTest NOT RUN**; the failing run was for an older head SHA and must not be represented as evidence of this new commit passing.
