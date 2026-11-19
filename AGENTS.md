@@ -1579,3 +1579,18 @@ cache bound is shared across scopes; untracked pages keep normal
 safe MDI admission. This never changes GPU geometry eligibility,
 material compatibility, shader binding, GPU-owned in-flight memory
 or draw fallback. Document stage and defer tests until all features.
+
+## CPU MDI host configuration snapshot (feature continuation)
+
+Use `Renderer3D::CpuMdiPolicyOverrides` and
+`cpuMdiPolicyOverrides()`/`setCpuMdiPolicyOverrides(...)` to
+temporarily override any per-host CPU MDI policy in a renderer.
+It includes static cross-model mode, adaptive mode, layout-cache
+mode, geometry-sort mode, budget and adaptive-scope namespace.
+Always restore the *captured prior policy* after a temporary editor
+view; do not blindly write `Environment` or scope 0, as native
+game hosts may have configured nondefault explicit policy options.
+This snapshot is CPU-only and does not own GPU commands, page EMA
+samples, scene entities, shader state or rendering resources.
+Preserve the renderer's genre independence and document each stage.
+No tests now, per user instruction.

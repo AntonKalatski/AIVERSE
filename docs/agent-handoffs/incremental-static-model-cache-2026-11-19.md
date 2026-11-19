@@ -1113,3 +1113,23 @@ GitHub source readback/unique replacement/branch ancestry only. **CMake NOT RUN;
 ### Next feature direction
 
 Check any remaining genre-specific batching assumptions (RTS model flags vs generic renderer API), expose native integration guidance for all host genres and add a single `Renderer3D` batching configuration snapshot for hosts that need to save/restore view state automatically. Preserve existing MDI safety/fallback, cache bounds and feature-first priority.
+
+---
+
+## Feature continuation — safe value-type CPU MDI policy snapshot (2026-11-19)
+
+**Repo/branch:** `chromealex/AIVERSE` / `perf/incremental-static-model-cache`, Draft PR #34. Started at main `d71c6d47e532b25fb816a8bb1f96c41e5275a165`, feature `0e65c84464c80d0145d5680437658485a940644b`, behind=0. The user requires all functional additions before tests.
+
+### Changes
+
+- `engine/render/Renderer3D.h`: `CpuMdiPolicyOverrides` captures all six renderer-local CPU batching configuration values: cross-model, adaptive, layout-cache, geometry-sort, microsecond budget and feedback scope. `cpuMdiPolicyOverrides()` returns the configured values. `setCpuMdiPolicyOverrides(...)` delegates to the existing validated setter methods. This is a value record only; does not copy renderer model caches, GPU indirect snapshots, ECS resources or feedback.
+- `apps/editor/windows/SceneWindow.cpp`: captures prior policy before assigning Scene-only options, sets a Scene-local value snapshot, restores **the captured prior** after Scene render rather than blindly resetting to `Environment`/0. This prevents Scene changing a native project/Game renderer policy permanently. Other existing Scene state controls remain unchanged.
+- `docs/geometry-performance.md`, `AGENTS.md`, this handoff: API usage, scope, safety and next agent action.
+
+### Invariants / actual verification
+
+Only CPU policy selection and per-view safe restoration changed; no render eligibility tests, GPU shader/material binding, indirect command ABI, buffer lifetime, platform backend or non-model library dependencies changed. Existing defaults retain env semantics. GitHub source/commit readback checks only; **native build, CTest, Metal/Vulkan raster parity, benchmark and GPU crash tests NOT RUN** per user directive. PR #34 remains Draft.
+
+### Next
+
+Feature completion audit across all active native game rendering hosts and legacy RTS view adapters, ensure no per-genre restrictions remain on the generic CPU MDI policy entrypoint, and explicitly document any known unsupported cases before switching to the test phase.

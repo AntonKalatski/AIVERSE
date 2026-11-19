@@ -1268,3 +1268,27 @@ but **admission uses the scope-keyed page feedback only**.
 Functional source integration only. Native compilation, CTest, GPU
 raster parity, in-flight GPU fences and frame-time benchmarks remain
 NOT RUN per user feature-first instruction.
+
+### Scoped CPU MDI configuration snapshots for native game hosts
+
+`Renderer3D::CpuMdiPolicyOverrides` is a value-type record containing
+cross-model CPU MDI, adaptive page feedback, cached command layouts,
+geometry sort, adaptive budget in microseconds and feedback scope.
+`cpuMdiPolicyOverrides()` returns the **configured overrides**, not
+resolved scene-time effective states; `setCpuMdiPolicyOverrides`
+restores a previously captured configuration using the validated
+individual API setters. It does not copy or own cached GPU buffers,
+renderer models, scene materials or performance feedback.
+
+The Studio Scene window captures the current config, temporarily
+sets its independent policy/scope for rendering, and restores the
+**exact prior config** afterward. In particular, a game host that
+already configured explicit nondefault CPU batching policies no longer
+has them accidentally reset to process Environment after opening
+Studio. Other renderer states (LOD, culling, graphics debug etc.)
+remain governed by the preexisting Scene lifecycle; this record
+only concerns CPU MDI policies. No feature is enabled by default.
+
+This is a feature-only API; CMake/CTest, visual GPU parity and A/B
+performance tests remain unexecuted until all batching features
+are finished.

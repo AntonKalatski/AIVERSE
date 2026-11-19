@@ -541,6 +541,30 @@ public:
     // feedback key; never in a shader or actual draw command.
     void setCpuMdiAdaptiveScope(uint64_t scope) { cpuMdiAdaptiveScope_ = scope; }
     uint64_t cpuMdiAdaptiveScope() const { return cpuMdiAdaptiveScope_; }
+    // Value-type configuration snapshot lets a host preserve its existing
+    // renderer policy while a different viewport temporarily overrides it.
+    // This is CPU-only and does not serialize GPU buffers or dynamic feedback.
+    struct CpuMdiPolicyOverrides {
+        StaticCrossModelBatchMode crossModel = StaticCrossModelBatchMode::Environment;
+        CpuMdiPolicyMode adaptive = CpuMdiPolicyMode::Environment;
+        CpuMdiPolicyMode layoutCache = CpuMdiPolicyMode::Environment;
+        CpuMdiPolicyMode geometrySort = CpuMdiPolicyMode::Environment;
+        double adaptiveBudgetUs = 0.0;
+        uint64_t adaptiveScope = 0;
+    };
+    CpuMdiPolicyOverrides cpuMdiPolicyOverrides() const {
+        return {staticCrossModelBatchMode_, cpuMdiAdaptiveMode_,
+            mdiLayoutCacheMode_, mdiGeometrySortMode_,
+            cpuMdiAdaptiveBudgetOverrideUs_, cpuMdiAdaptiveScope_};
+    }
+    void setCpuMdiPolicyOverrides(const CpuMdiPolicyOverrides& value) {
+        setStaticCrossModelBatchMode(value.crossModel);
+        setCpuMdiAdaptiveMode(value.adaptive);
+        setMdiLayoutCacheMode(value.layoutCache);
+        setMdiGeometrySortMode(value.geometrySort);
+        setCpuMdiAdaptiveBudgetOverrideUs(value.adaptiveBudgetUs);
+        setCpuMdiAdaptiveScope(value.adaptiveScope);
+    }
     // Independently control GPU-authored draws for 3-way Scene benchmarking.
     // The process-wide experimental environment flag remains mandatory.
     void setGpuAuthoredDrawEnabled(bool on) { gpuAuthoredDrawEnabled_ = on; }

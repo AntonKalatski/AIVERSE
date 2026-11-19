@@ -60,25 +60,29 @@ public:
         renderer.setLodDebugTarget(lodTarget);
         renderer.setStudioDebugMode(studioDebugMode_);
         renderer.setProfiling(sceneProfiling_);
-        renderer.setStaticCrossModelBatchMode(
-            sceneCrossModelMode_ == 1
-                ? Renderer3D::StaticCrossModelBatchMode::Enable
-                : sceneCrossModelMode_ == 2
-                    ? Renderer3D::StaticCrossModelBatchMode::Forbid
-                    : Renderer3D::StaticCrossModelBatchMode::Environment);
+        // Preserve the *actual previous* host configuration rather than
+        // assuming it always inherited the global environment. A game/native
+        // project may deliberately set nondefault CPU MDI policies before
+        // rendering the Studio Scene viewport.
+        const auto priorCpuMdiPolicy = renderer.cpuMdiPolicyOverrides();
+        auto sceneCpuMdiPolicy = priorCpuMdiPolicy;
+        sceneCpuMdiPolicy.crossModel = sceneCrossModelMode_ == 1
+            ? Renderer3D::StaticCrossModelBatchMode::Enable
+            : sceneCrossModelMode_ == 2
+                ? Renderer3D::StaticCrossModelBatchMode::Forbid
+                : Renderer3D::StaticCrossModelBatchMode::Environment;
         const auto policy = [](int index) {
             return index == 1 ? Renderer3D::CpuMdiPolicyMode::Enable
                 : index == 2 ? Renderer3D::CpuMdiPolicyMode::Forbid
                 : Renderer3D::CpuMdiPolicyMode::Environment;
         };
-        renderer.setCpuMdiAdaptiveMode(policy(sceneCpuMdiAdaptiveMode_));
-        renderer.setMdiLayoutCacheMode(policy(sceneMdiLayoutCacheMode_));
-        renderer.setMdiGeometrySortMode(policy(sceneMdiGeometrySortMode_));
-        renderer.setCpuMdiAdaptiveBudgetOverrideUs(sceneCpuMdiBudgetOverrideUs_);
-        // A shared Renderer3D can draw both Studio Scene and Game using the
-        // same pooled geometry in one host frame. Keep CPU timing feedback
-        // namespaces separate so Scene experiments cannot gate Game draws.
-        renderer.setCpuMdiAdaptiveScope(kSceneCpuMdiAdaptiveScope_);
+        sceneCpuMdiPolicy.adaptive = policy(sceneCpuMdiAdaptiveMode_);
+        sceneCpuMdiPolicy.layoutCache = policy(sceneMdiLayoutCacheMode_);
+        sceneCpuMdiPolicy.geometrySort = policy(sceneMdiGeometrySortMode_);
+        sceneCpuMdiPolicy.adaptiveBudgetUs = sceneCpuMdiBudgetOverrideUs_;
+        // One fixed view namespace, not a GPU resource or Entity ID.
+        sceneCpuMdiPolicy.adaptiveScope = kSceneCpuMdiAdaptiveScope_;
+        renderer.setCpuMdiPolicyOverrides(sceneCpuMdiPolicy);
         const bool measuredMode = benchmarkActive_ || autoBatchChoice_ >= 0;
         const int activeMode = benchmarkActive_ ? benchmarkMode_ : autoBatchChoice_;
         renderer.setModelInstancingEnabled(measuredMode ? true : sceneInstancing_);
@@ -192,13 +196,7 @@ public:
         renderer.setModelInstancingEnabled(true);
         renderer.setModelMultiDrawEnabled(true);
         renderer.setGpuAuthoredDrawEnabled(true);
-        renderer.setStaticCrossModelBatchMode(
-            Renderer3D::StaticCrossModelBatchMode::Environment);
-        renderer.setCpuMdiAdaptiveMode(Renderer3D::CpuMdiPolicyMode::Environment);
-        renderer.setMdiLayoutCacheMode(Renderer3D::CpuMdiPolicyMode::Environment);
-        renderer.setMdiGeometrySortMode(Renderer3D::CpuMdiPolicyMode::Environment);
-        renderer.setCpuMdiAdaptiveBudgetOverrideUs(0.0);
-        renderer.setCpuMdiAdaptiveScope(0);
+        renderer.setCpuMdiPolicyOverrides(priorCpuMdiPolicy);
         renderer.setModelCullingEnabled(true);
         renderer.setModelLodEnabled(true);
         renderer.setModelLodFadeWidth(0.15f);
@@ -545,7 +543,7 @@ private:
             if (ImGui::SmallButton("Inherit budget##scene"))
                 sceneCpuMdiBudgetOverrideUs_ = 0.0;
             ImGui::TextDisabled("Adaptive needs static cross-model MDI; 0 us means inherit env budget (default 25).");
-            ImGui::TextDisabled("All overrides affect Scene only; Game inherits environment policy.");
+            ImGui::TextDisabled("All overrides affect Scene only; previous host policy is restored for Game.");
             ImGui::Checkbox("Model culling", &sceneCulling_);
             ImGui::Checkbox("Auto-select fastest mode after benchmark", &autoBatchEnabled_);
             if (!autoBatchEnabled_) autoBatchChoice_ = -1;
