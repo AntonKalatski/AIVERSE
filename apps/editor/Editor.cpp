@@ -36,6 +36,22 @@ using namespace render;
 
 namespace {
 // Models / textures of the open game (view blocks reference them relative to the game folder).
+// Avoid exposing absolute GPU frame serials even in the file name of a
+// PRIVACY-SAFE diagnostic. Bounded distinct local names, no overwrite.
+fs::path unusedSafeDiagnosticName(const fs::path& directory,
+                                  const std::string& prefix,size_t group,
+                                  const std::string& suffix) {
+    for(uint32_t ordinal=1;ordinal<=1000;++ordinal) {
+        const fs::path candidate=directory/(
+            prefix+"-group-"+std::to_string(group)+"-"+
+            std::to_string(ordinal)+suffix);
+        std::error_code check;
+        if(!fs::exists(candidate,check) && !check)return candidate;
+        if(check)return {};
+    }
+    return {};
+}
+
 FileReader projectReader(const std::string& dir) {
     return [dir](const std::string& p, std::string& out) {
         std::ifstream f(dir + "/" + p, std::ios::binary);
@@ -1005,7 +1021,11 @@ bool Editor::saveSafeSpectraGpuReport(
     Json report=Json::parse(spectra::gpuDiagnosticReportJson(inspected,privacy));
     report.set("groupIndex",Json::number(int64_t(groupIndex)));
     Json timeline=Json::array();
-    for(size_t i=0;i<spectraPreviewHistory_.size();++i) {
+    // An externally attached GPU pool belongs to another renderer. Do not
+    // include the Editor's unrelated preview-history samples in its report.
+    const size_t historyCount=
+        pool==spectraPreviewGpu_.get()?spectraPreviewHistory_.size():0u;
+    for(size_t i=0;i<historyCount;++i) {
         const auto& sample=spectraPreviewHistory_[i];
         Json row=Json::object();
         row.set("sample",Json::number(int64_t(i)));
@@ -1032,11 +1052,13 @@ bool Editor::saveSafeSpectraGpuReport(
         output="Cannot create diagnostics directory: "+ec.message();
         return false;
     }
-    const std::string filename="report-"+
-        std::to_string(dev_?dev_->frameSerial():0)+
-        "-group-"+std::to_string(groupIndex)+".json";
-    const fs::path target=directory/filename;
-    const fs::path tmp=directory/(filename+".tmp");
+    const fs::path target=unusedSafeDiagnosticName(
+        directory,"safe-report",groupIndex,".json");
+    if(target.empty()) {
+        output="No unused privacy-safe diagnostic filename is available";
+        return false;
+    }
+    const fs::path tmp=target.string()+".tmp";
     {
         std::ofstream file(tmp,std::ios::binary|std::ios::trunc);
         if(!file) {
@@ -1086,8 +1108,10 @@ bool Editor::saveSafeSpectraGpuBundle(
     // from strict fixed-schema aggregate values. Raw bytes are NEVER included
     // regardless of sensitive checkboxes on the SpectraFX window.
     std::vector<spectra::GpuSafeTimelineFrame> frames;
-    frames.reserve(spectraPreviewHistory_.size());
-    for(size_t i=0;i<spectraPreviewHistory_.size();++i) {
+    const size_t historyCount=
+        pool==spectraPreviewGpu_.get()?spectraPreviewHistory_.size():0u;
+    frames.reserve(historyCount);
+    for(size_t i=0;i<historyCount;++i) {
         const auto& src=spectraPreviewHistory_[i];
         spectra::GpuSafeTimelineFrame frame{};
         frame.sample=uint32_t(i);
@@ -1113,15 +1137,13 @@ bool Editor::saveSafeSpectraGpuBundle(
         output="Cannot create SpectraFX diagnostic directory: "+ec.message();
         return false;
     }
-    const std::string filename="safe-bundle-"+
-        std::to_string(dev_?dev_->frameSerial():0)+
-        "-group-"+std::to_string(groupIndex)+".zip";
-    const fs::path target=directory/filename;
-    if(fs::exists(target,ec) || ec) {
-        output="Safe ZIP target already exists or cannot be checked";
-        return false; // do not overwrite a previous support package
+    const fs::path target=unusedSafeDiagnosticName(
+        directory,"safe-bundle",groupIndex,".zip");
+    if(target.empty()) {
+        output="No unused privacy-safe ZIP filename is available";
+        return false;
     }
-    const fs::path temporary=directory/(filename+".tmp");
+    const fs::path temporary=target.string()+".tmp";
     {
         std::ofstream out(temporary,std::ios::binary|std::ios::trunc);
         if(!out) {
