@@ -87,8 +87,7 @@ public:
                     residency.retirementSoftLimit,
                     residency.publicationBackpressured ? "ограничивает новые загрузки" : "норма");
         if(residency.retirementTokenFailures || residency.retirementFallbackFailures)
-            ui::hint("GPU retirement: проблемы создания fence %llu, "
-                     "неуспешный idle fallback %llu (объекты сохранены)",
+            ImGui::TextDisabled("GPU retirement: ошибки fence %llu, idle fallback %llu",
                      (unsigned long long)residency.retirementTokenFailures,
                      (unsigned long long)residency.retirementFallbackFailures);
         ImGui::TextDisabled("Без dedicated-геометрии, размеров GPU текстур, render targets и FX.");
