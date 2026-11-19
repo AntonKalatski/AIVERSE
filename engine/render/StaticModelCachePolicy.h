@@ -2,8 +2,10 @@
 // CPU-only eligibility contract for an optional per-entity rigid transform cache.
 // The renderer still performs per-view culling, LOD, material selection and submission.
 #include "Renderer3D.h"
+#include "GpuMaterialState.h"
 #include <algorithm>
 #include <cstring>
+#include <vector>
 
 namespace aiverse::render {
 
@@ -33,26 +35,50 @@ inline bool staticModelCacheGeometryCompatible(const StaticModelCache& cache,
         std::memcmp(cache.world.m, d.world.m, sizeof(d.world.m)) == 0;
 }
 
-// Packet replay is an additional explicit contract. Because the source can be
-// changed in-place by a native project, caller-controlled staticPacketRevision
-// must be nonzero and advance whenever its appearance/material data changes.
-// Source meshes with runtime LOD/skin/morph require live per-frame assembly.
+// Packet replay is opt-in and conservatively validated against a snapshot of
+// resolved GPU material states, even for pointer-stable per-draw material copies.
+// Any non-material caller-side mutations still require staticPacketRevision.
+// Runtime LOD is selected again for each camera and checked before reuse.
 inline bool staticRenderPacketCandidate(const ModelDraw& d,
                                         bool activeDisplacement, bool bakedLighting,
                                         bool lodDiagnostics) {
     const Model* m = d.model;
-    if (!d.staticPacketRevision || d.materials || d.nodeMaterial ||
+    if (!d.staticPacketRevision || d.nodeMaterial ||
         d.variant >= 0 || bakedLighting || lodDiagnostics ||
         !staticModelCacheCandidate(d, activeDisplacement)) return false;
     for (const auto& node : m->nodes)
         if (node.skin >= 0 || (node.mesh >= 0 &&
             size_t(node.mesh) >= m->meshes.size())) return false;
     for (const auto& mesh : m->meshes) {
-        if (mesh.deformable || !mesh.lods.empty()) return false;
+        if (mesh.deformable) return false;
         for (const auto& p : mesh.primitives)
             if (p.morphTargets || !p.jointPalette.empty()) return false;
     }
     return !m->materials.empty() && !m->meshes.empty();
+}
+
+// Capture resolved state rather than Material* identity. Hashes cheaply reject
+// mutations; an exact comparison also guards against hash collisions.
+// GPU texture *content* changed behind a stable handle still needs an explicit
+// asset/material revision from its owner (normal texture upload contract).
+inline std::vector<uint64_t> staticPacketMaterialHashes(
+    const Model& model, const std::vector<Material>& materials) {
+    std::vector<uint64_t> hashes;
+    hashes.reserve(materials.size());
+    for (const Material& material : materials)
+        hashes.push_back(gpuMaterialStateHash(model, material));
+    return hashes;
+}
+
+inline bool staticPacketMaterialStateMatches(
+    const Model& model, const std::vector<Material>& live,
+    const std::vector<Material>& saved, const std::vector<uint64_t>& hashes) {
+    if (live.size() != saved.size() || live.size() != hashes.size()) return false;
+    for (size_t i = 0; i < live.size(); ++i)
+        if (gpuMaterialStateHash(model, live[i]) != hashes[i] ||
+            !equivalentGpuMaterial(model, live[i], model, saved[i]))
+            return false;
+    return true;
 }
 
 inline bool equivalentStaticRenderPacketDraw(const ModelDraw& a,
