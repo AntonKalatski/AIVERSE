@@ -406,6 +406,17 @@ confirmed real Metal compute 5/5 or focused CPU 6/6.
 The Strata-focused workflow's previously malformed regex was
 replaced; CI compiles both Metal fixtures on macOS, but intentionally
 does not run GUI tests headlessly.
+Stage 11.1 owner Mac Studio real Metal raster attempt FAILED at
+`Legacy and empty screenshots identical` while GPU selection remained 5/5
+PASS. Do not attribute that to geometry blindly: the test requested
+`captureNextFrame` on the final frame of each mode while Metal may
+delay capture until the next mode (framebufferOnly drawable).
+`bcc471e9` fixes capture scheduling with `setScreenReadable(true)`
+and mid-mode snapshots (4/15/26/37), retaining strict pixel equality
+and nonblank baseline. This fix requires native rerun and cannot
+be marked PASS from its mere GitHub commit. Confirm callback-frame
+and main/shadow draw diagnostics if failing. No production renderer
+or Strata draw path was enabled.
 On each bounded Strata step: implementation commit first; append and commit the
 handoff separately, recording unrun tests honestly.
 
