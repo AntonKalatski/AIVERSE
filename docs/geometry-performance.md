@@ -643,3 +643,57 @@ skipped and probed *groups*, and aggregate CPU cost labelled
 diagnostic-only. Experimental flags remain OFF by default. This stage
 has not been compiled or GPU pixel-compared yet because the user
 requested feature work before tests.
+
+
+### Reused page-aware preflight workspace (Stage 21)
+
+`Renderer3D` now owns one
+`StaticCrossModelPreflightWorkspace`, implemented in the common
+`engine/render/StaticCrossModelBatchPolicy.h`, instead of allocating a
+fresh `unordered_map`, a material/page group for every hash-map node,
+and a separate local per-item mode array on every sun-shadow or opaque
+model pass. The workspace remains strictly **per render pass** in
+meaning: `beginPass()` invalidates the previous lookup generation and
+clears all group state before observing the new pass's visible ModelItems.
+It retains only allocated capacity between passes, not a persistent
+visibility, LOD or material decision.
+
+The directory is fixed at **4096 open-addressed hash slots**, allocated
+lazily the first time this experimental option is used. Group storage is a
+reusable vector capped at **2048 exact**
+`(geometryPage, resolvedMaterialGroup, drawFlags, GPU VB, GPU IB)`
+entries; each group already contains the bounded 32-primitive preflight
+array from Stage 18. Hash collisions require an **exact key match**,
+not merely equal hashes. Slot generations advance with each pass; a
+generation wrap clears old slot stamps to prevent stale lookup. The
+workspace stores a temporary 16-bit group index for every ModelItem in
+the current pass (`UINT16_MAX` conceptually denotes no group), so the
+second ready-group promotion pass does **not** repeat the expensive
+GPU-page/material hash lookup or recalculate eligibility. Its 8-bit
+`0=ordinary, 1=cross-model MDI, 2=adaptive instancing fallback`
+mode map is only initialized when at least one group passes preflight;
+small/fragmented scenes skip that full-array write entirely.
+
+This retains preflight grouping CPU memory at a predictable high-water
+capacity: at most 2048 groups with their fixed-size primitive arrays,
+4096 hash slots, plus two small arrays proportional to the current model
+item count. No extra GPU allocations, model asset ownership, new shaders
+or additional draw calls were introduced. A full scene reload via
+`invalidateStaticModelCaches()` or `Renderer3D::shutdown()` releases
+the reusable buffers, rather than retaining large buffers after asset
+streaming changes. Model asset unloading still follows the existing
+renderer submission-thread and source-lifetime rules.
+
+The original conservative `AIVERSE_STATIC_CROSS_MODEL_BATCHES=1`
+flag and optional `AIVERSE_CPU_MDI_ADAPTIVE=1` gate this path (both
+default OFF). Independent per-object camera/sun-shadow culling,
+occlusion, dynamic LOD and material-state equality still run before
+preflight; the final CPU MDI builder independently checks compatibility
+and command thresholds. Stage 20's per-GPU-page admission remains
+unchanged. The editor Scene → Batching panel now displays the amount of
+**retained preflight workspace memory** in KiB, in addition to ready
+groups and actually submitted mixed-model MDI groups.
+
+This is a **source-level optimization, not yet a measured performance
+gain**. Compile/CTest and a same-scene Metal CPU/GPU off/on/off comparison
+remain a later phase per the user's instructions.
