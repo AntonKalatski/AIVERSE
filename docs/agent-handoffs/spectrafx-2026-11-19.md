@@ -587,3 +587,13 @@ git pull --ff-only origin feature/spectrafx-generic-cue-queue
 git fetch origin main
 git merge origin/main
 ```
+
+
+## 2026-11-19 — Stage 35: GPU route authoring in AIVERSE Editor
+- **Branch:** `feature/spectrafx-generic-cue-queue`, synchronized with main through `d71c6d47e532b25fb816a8bb1f96c41e5275a165` at stage start.
+- **Implementation SHA:** `eae04e062a196456c261cac530d4cd76a7244334`; **changed** `apps/editor/windows/SpectraFxGpuAssetsWindow.cpp`.
+- **Functionality:** the existing SpectraFX GPU Assets editor now has a **Event routes (routes.json)** entry alongside `*.gpu.json` configurations. It creates safe default `{version:1,routes:[]}` on demand, validates via the exact engine `SpectraFxGpuRouteAsset::readText` implementation, preserves dirty-discard confirmation, saves with temp rename, and warns authors that only own-player events may be displayed, hidden simulation events must never be leaked, existing `fx/fx.json` effects may duplicate these optional routes, and the standalone/hosted GameClient needs restart to apply changed routes. UI deliberately does not claim routes are hot-reloaded by an already-running GameClient (its `ClientFx::init` currently loads once).
+- **Scope:** purely authoring/UI, no ECS changes. Project without `fx/gpu/routes.json` continues the existing CPU VFX path. No PRISMA ownership change.
+- **Tests actually run:** **NOT RUN** (functions first, tests later); no native editor build, CTest, UI interaction, project save/reload, GameClient launch or Metal/Vulkan GPU verification. GitHub source commit only.
+- **Known limitations:** routes editor remains raw JSON (typed form/list controls are not yet built). ClientFx loads routes at startup, not on game hot reload; no route UI auto-complete for module event IDs; CPU RTS effects can duplicate opt-in routed cues if project authors specify both. Real GPU emitter visuals and stability remain unverified.
+- **Next:** inspect and implement a pooled/shared GPU batch for multiple emitters, reduce duplicated GPU pipeline/buffer allocations, and add the editor's opt-in GPU preview path; continue documenting each stage. Keep native tests and comprehensive QA deferred until feature-complete as requested.
