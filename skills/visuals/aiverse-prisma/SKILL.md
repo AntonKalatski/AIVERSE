@@ -807,6 +807,70 @@ compiler, CTest, GPU, shader compiler, editor runtime and CI
 commits, limitations and the next feature. Keep the draft PR
 unmerged until expressly instructed otherwise.
 
+## Stage 58 — cinematic exposure lock and per-camera area metering
+
+The existing `PrismaType::AutoExposure` GPU owner now supports
+optional `freezeExposure` and circular `meterRegionEnabled`.
+Both default to FALSE; old JSON, color order and existing
+`AIVERSE_PRISMA_AUTO_EXPOSURE=1`/HDR quality gates remain
+unchanged. Newly appended catalog fields:
+`meterCenterX/Y` (normalized bottom-up screen UV, defaults .5/.5),
+`meterRadius` (.25 frame-height units), `meterFeather` (.1),
+and `meterOutsideWeight` (.05, clamped minimum .02).
+These inherit through existing profile/volumes and automatically
+show in the generic editor/MCP parameter catalog.
+
+Cinematic native projects can override an individual camera ID:
+`setViewExposureFreeze(id, bool)` /
+`clearViewExposureFreeze(id)`;
+`setViewExposureMeterRegion(id, ExposureMeterRegion)` /
+`clearViewExposureMeterRegion(id)`.
+An explicit false override suppresses authored freeze/region true.
+The region setter clamps finite values, including outside weight.
+Overrides are presentation-only, NEVER deterministic ECS state.
+They are removed on `retireView(id)`, in
+`retireUnregisteredViews(liveIds)` and at shutdown; hosts MUST
+send the full live view roster. Two views may be colocated and
+share resolution without sharing exposure or override state.
+
+Freeze only reuses `ExposureView.history[current]` if the
+camera's 1×1 GPU texture is valid and history is known valid.
+It skips ALL luminance pyramid + adapt GPU draws, keeps the
+previous exposure factor and refreshes time to avoid a large
+delta on unfreeze. Cold cameras/explicit or auto Camera Cuts
+invalidate history and reseed once from the current scene,
+then resume freezing. There is no CPU readback or new GPU
+target. Do NOT reuse an invalid history or double-bind the
+same texture as both color attachment and sampler.
+
+Area metering changes only `kExposureLog` via
+`ExposureMeterU {px,p0,sun,region}`. All other shader UBOs
+remain the original `SimpleU`. Region.z<0 bypasses the
+new weighting completely; the shader transforms sampled UVs
+using `TUV(q)` for backend Y-flip parity and normalizes X
+by the output aspect ratio. It combines the new smooth
+inside/outside circle with previous center-weight and
+bright-outlier weight, with guaranteed nonzero sample
+contribution. The 1×1 exposure and Stage 55 Auto Exposure
+slot 8/9 coexist with Shader Graph unchanged.
+
+`ViewEffectReport.autoExposureFrozen` and
+`autoExposureRegionMetered` reflect what the last FINAL
+encoded composite actually did, not requested settings:
+frozen=true only when reusing the old history without a meter,
+regionMetered=true only when producing fresh exposure with
+a region. Both false when the exposure composite fell back
+or was disabled. Editor renders these values per stable
+camera without creating shader pipelines.
+
+**Verification:** 36/36 GitHub source/call-order/lifecycle checks
+only. **NOT RUN:** C++/Obj-C++ compile, shader compilation,
+CTest, native editor, Metal/GL/Vulkan/GLES/WebGL, pixel parity,
+GPU fence and performance checks. Complete remaining functional
+stages before test phase; see
+`docs/handoffs/prisma-stage-58.md`. PR #26 stays Draft;
+do not merge to main without explicit user authorization.
+
 ## Source tree and compatibility
 
 - Canonical core: `engine/render/Prisma.{h,cpp}`, `PrismaData.{h,cpp}`, `PrismaShaders.h`, `PrismaVolumes.h`.
