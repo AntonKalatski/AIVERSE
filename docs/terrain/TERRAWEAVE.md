@@ -2282,3 +2282,31 @@ The common `render::Model` contains one node, one mesh, **8 vertices, 12 indices
 **Cost/quality caveats:** full-canopy impostors now have two primitives instead of one, so draw submissions/material batching and texture bandwidth can increase. Cutout bark and blended foliage may differ slightly in ordering/coverage from the previous single-layer approximation. Far Horizon still uses its separate aggregated silhouette atlas and is unaffected by this near-impostor format. Partial transparency is a simplified seasonal representation, not deterministic individual leaf shedding; GPU/backend captures are needed to confirm blend order, shadow behavior, LOD transition quality and precise visual parity.
 
 **Backward compatibility:** `makeArborBillboardModel` (the standalone *single-view* utility) retains its original one-quad format. Only the multi-azimuth `makeArborImpostorAtlas` output changes shape; any native consumer assuming 4 vertices, 6 indices, single material or original atlas width must migrate. Existing `tests/terraweave_model_test.cpp` has expectations for that old layout and is intentionally **not updated or executed** in this features-first phase. The later testing agent must revise these assertions to the two-layer contract, then run GCC/Clang CTest, GPU screenshot and benchmark checks. No TWH8 distant-Horizon disk archive version change is needed because its format is unrelated to this near-impostor atlas.
+
+## Stage 30 — bounded hierarchical BranchLOD wind motion
+
+**Functional source committed, independent testing deferred.** This stage extends Stage 28's PHYSIS-neutral root lean into more organic, articulated wind motion for **near Arbor BranchLOD** trees, without reskinning meshes or requiring a new render shader.
+
+`ForestWindState` appends `branchFlexPermille` (default 600, bounded 0..1000); 0 preserves the exact previous low-cost whole-tree tilt. `ArborForestAdapter` regenerates the already-deterministic high-detail skeleton ONCE at prototype registration to cache per-branch root pivots (metres relative to original tree root). It then uses the existing branch node hierarchy and Renderer3D's `ModelDraw::nodeWorld` rigid-model transform path to compute a per-visible-tree vector of cumulative model-space rotations around each branch's own start pivot. The trunk node itself remains at its original pose while global `ModelDraw::world` supplies the original whole-tree sway. Children inherit parent movement and have a stable per-node phase derived from the tree key, species and branch index.
+
+No tree ECS entities, animation clips, skinned matrices, GPU mesh mutation, shader variants, atlas rebuilds or extra draw passes are added. The original Arbor mesh geometry, `TreeProfile`, branch LOD simplification and canonical procedural tree seeds remain unchanged. View-distance tiers attenuate additional branch sway (High 100%, Medium 65%, Low 25%, Impostor 0%) to limit near-to-billboard discontinuity. Distant statistical Horizon remains static as previously documented; it is intentionally NOT rebuilt per wind tick.
+
+The private temporary pose arena is a `std::deque<std::vector<render::mat4>>` so references in `ModelDraw::nodeWorld` remain stable during a forEachDraw call; the arena is cleared at the next forEachDraw. `Renderer3D::drawModel` reads node transforms synchronously and copies them into render items. **Native callbacks collecting ModelDraws may only use their nodeWorld pointers until the next forEachDraw invocation**, and must not use the forest adapter concurrently on multiple threads. `ArborForestAdapter::setBranchPoseBudgetBytes(bytes)` (forwarded through `TerraWeaveForestScene`) accepts 0..8MiB and defaults to **4MiB**. A draw whose node matrix snapshot would exceed the remaining budget uses root-only sway instead. The budget is for CPU temporary matrices, not new GPU residency.
+
+Example (on the owning host/update thread):
+
+```cpp
+if(auto* forest = worldScene.forestScene()) {
+    forest->setBranchPoseBudgetBytes(4u * 1024u * 1024u);
+}
+aiverse::terraweave::ForestWindState wind;
+wind.xCmPerSec=700;
+wind.gustPermille=450;
+wind.branchFlexPermille=850; // optional, 0 = whole-tree-only
+worldScene.setVegetationWind(wind);
+worldScene.setVegetationPresentationTick(gameplayTick);
+```
+
+A real PHYSIS solver may supply the world X/Z velocity components; this bridge does not require PHYSIS headers, does not alter collision/navmesh/authoritative physics and does not put wind in an ECS component. `WorldScene` continues forwarding the same validated wind state and tick, so native code uses the existing public methods.
+
+**Limitations/QA debt:** Branches are rigidly rotated at their joints rather than continuously bent as a skinned elastic curve. At high winds thin joints can show gaps. The source uses integer hashed wind phases but converts degrees to float matrices in renderer presentation; bitwise cross-GPU determinism is not promised. Very dense near forests can hit the CPU pose budget and switch to root-only motion. Source `forEachDraw` collectors must respect pose borrowing lifetime. No CMake, CTest, GPU screenshot, per-frame CPU benchmark or cross-platform rendering check has been executed. Dedicated test agent should validate hierarchy/pivot continuity, season + wind, LOD transitions, budget fallback, material/draw pointers and native PHYSIS integration before marking production ready.
