@@ -341,6 +341,7 @@ public:
         }
     }
     void update(gfx::Device& device,const Vec3* observer=nullptr) {
+        observer_=observer?std::optional<Vec3>(*observer):std::nullopt;
         for(auto& old:retired_)old->release(device);
         retired_.clear();
         pollPreparation();
@@ -469,8 +470,8 @@ public:
                 float(basis.originZ-worldOriginZ)});
             std::array<render::float4,16> waves{};
             if(ripples) {
-                const double targetX=basis.originX;
-                const double targetZ=basis.originZ;
+                const double targetX=observer_?observer_->x.toDouble():basis.originX;
+                const double targetZ=observer_?observer_->z.toDouble():basis.originZ;
                 waves=ripples->shaderRipples(
                     slot.source.id,worldOriginX,worldOriginZ,targetX,targetZ);
             }
@@ -509,5 +510,6 @@ private:
     size_t maxStagingBytes_=16u*1024u*1024u;
     std::optional<PendingCpuJob> pendingJob_;
     size_t asyncDiscarded_=0;
+    std::optional<Vec3> observer_;
 };
 } // namespace aiverse::world
