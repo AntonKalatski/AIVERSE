@@ -6,6 +6,7 @@
 #include "engine/world/NereidUnderwaterView.h"
 #include "engine/world/NereidRipples.h"
 #include "engine/world/NereidWindPresentation.h"
+#include "engine/world/NereidWindField.h"
 #include <cmath>
 #include <algorithm>
 
@@ -53,14 +54,19 @@ public:
             return nereidWater_.currentForInteractionWater(
                 waterId,{fixed(x),fixed(y),fixed(z)});
         });
-        ripples_.applyVisualWind(deltaSeconds,visualWind_.east,
-                                visualWind_.north,visualWind_.gust,
-                                visualWind_.coupling);
+        ripples_.applyVisualWind(deltaSeconds,
+            [this](double x,double z) {
+                return windField_.sample(x,z);
+            });
     }
     void setNereidVisualWind(NereidVisualWind wind) {
-        visualWind_=normalizeNereidWind(wind);
+        windField_.setBase(wind);
     }
-    NereidVisualWind nereidVisualWind()const{return visualWind_;}
+    NereidVisualWind nereidVisualWind()const{return windField_.base();}
+    void setNereidWindZones(std::vector<NereidWindZone> zones) {
+        windField_.setZones(std::move(zones));
+    }
+    const NereidVisualWindField& nereidWindField()const{return windField_;}
     const NereidRippleField& nereidRipples()const{return ripples_;}
 
     const AsyncChunkStream::Status& status()const{return stream_->status();}
@@ -84,7 +90,7 @@ private:
     NereidWaterScene nereidWater_;
     NereidCascadeScene cascades_;
     NereidRippleField ripples_;
-    NereidVisualWind visualWind_{};
+    NereidVisualWindField windField_{};
     std::shared_ptr<Prepared> prepare(Cell,const AssetReader&);
 };
 }
