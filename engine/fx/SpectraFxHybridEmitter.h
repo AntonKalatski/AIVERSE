@@ -5,9 +5,11 @@
 #pragma once
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 #include "SpectraFxExecutionPolicy.h"
 #include "SpectraFxGpuParticleSlots.h"
+#include "SpectraFxGpuImpactFeedback.h"
 #include "SpectraFxGpuBillboardRenderer.h"
 #include "SpectraFxGpuSpawnScheduler.h"
 #include "ParticleSystem.h"
@@ -52,6 +54,7 @@ public:
             if(slots_.init(device,config_.backend.particles) &&
                (sharedRenderer ? sharedRenderer->ready() : renderer_.init(device))) {
                 rendererOwner_=sharedRenderer ? sharedRenderer : &renderer_;
+                gpuDevice_=&device;
                 backend_=SpectraFxExecutionBackend::Gpu;
                 status_="GPU emitter initialized; awaiting spawn at buffer-safe point";
                 return true;
@@ -103,7 +106,11 @@ public:
                 });
             if(!scheduled) {status_="Invalid GPU emission frame";return false;}
         }
-        if(slots_.step(dt,config_.environment)) return true;
+        if(slots_.step(dt,config_.environment)) {
+            if(config_.environment.reportImpacts && gpuDevice_)
+                impactFeedback_.request(*gpuDevice_,slots_);
+            return true;
+        }
         status_="GPU compute step failed; emitter suspended pending reset";
         suspended_=true;
         return false;
@@ -116,6 +123,16 @@ public:
         if(cpuActive()) cpu_->move(cpuHandle_,pos,direction);
     }
     const SpectraFxGpuSpawnStats& spawnStats() const {return scheduler_.stats();}
+    // Delivers only presentation records, on the RHI owner thread. Discarded
+    // generations never produce a callback after particle-slot reuse.
+    template<class Callback>
+    void drainGpuImpacts(Callback&& callback,size_t maxEvents=128) {
+        if(gpuActive())
+            impactFeedback_.drain(slots_,std::forward<Callback>(callback),maxEvents);
+    }
+    const SpectraFxGpuImpactFeedback::Stats& impactStats() const {
+        return impactFeedback_.stats();
+    }
 
     // GPU only, inside the scene render pass after updateGpu completed.
     bool renderGpu(const render::mat4& viewProj,render::float3 cameraRight,
@@ -133,6 +150,8 @@ public:
             else cpu_->stop(cpuHandle_);
         }
         cpuHandle_={};
+        impactFeedback_.reset();
+        gpuDevice_=nullptr;
         renderer_.release(); // only owned/local pipelines; shared lives in playback
         rendererOwner_=nullptr;
         slots_.shutdown();
@@ -166,6 +185,8 @@ private:
     SpectraFxGpuBillboardRenderer renderer_{};
     SpectraFxGpuBillboardRenderer* rendererOwner_=nullptr;
     SpectraFxGpuSpawnScheduler scheduler_{};
+    SpectraFxGpuImpactFeedback impactFeedback_{};
+    gfx::Device* gpuDevice_=nullptr;
     float3 origin_{},direction_{0,1,0};
     std::string status_;
     bool suspended_=false;
