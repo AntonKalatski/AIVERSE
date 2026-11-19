@@ -2,6 +2,7 @@
 // Does not require a Metal device: validates the real RHI / renderer headers.
 #include "engine/render/GpuMaterialResourceTable.h"
 #include "engine/render/GpuMaterialState.h"
+#include "engine/render/ModelShaders.h"
 #include <cstdio>
 #include <memory>
 #include <limits>
@@ -129,6 +130,31 @@ int main() {
     g2->msl=g1->msl;g2->vertexMsl="vertex deform";
     check(!render::gpuIcbFragmentGraphEligible(m2),
           "graph vertex modifications stay on CPU path");
+
+    // Check the actual MSL fragment argument-buffer source, rather than
+    // duplicating the GPU slot constants in a separate test-only table.
+    const std::string shader=render::shaders::kModelMSL;
+    check(shader.find("texture2d<float> tex16 [[id(32)]];") !=
+          std::string::npos,"fourth Shader Graph source at texture id32");
+    check(shader.find("sampler s16 [[id(33)]];") == std::string::npos,
+          "source tex16 must use constexpr sampler, not sampler slot16");
+    for (int n=0;n<=4;++n) {
+        const std::string branch=(n==0 ? "#if " : "#elif ") +
+            std::string("AIVERSE_SG_TEXTURE_COUNT == ") + std::to_string(n);
+        const auto at=shader.find(branch);
+        check(at!=std::string::npos,"all graph source count variants exist");
+        if (at==std::string::npos) continue;
+        const int atlas=13+n, tableSlot=14+n;
+        const std::string atlasDecl="texture2d_array<float, access::sample> tex"+
+            std::to_string(atlas)+" [[id("+std::to_string(2*atlas)+")]];";
+        const std::string tableDecl="texture2d_array<float, access::read> tex"+
+            std::to_string(tableSlot)+" [[id("+std::to_string(2*tableSlot)+")]];";
+        const auto segment=shader.substr(at,240);
+        check(segment.find(atlasDecl)!=std::string::npos,
+              "graph atlas follows source texture slots");
+        check(segment.find(tableDecl)!=std::string::npos,
+              "graph page table follows atlas slot");
+    }
 
     if(failures) std::fprintf(stderr,"%d GPU ICB material checks failed\n",failures);
     return failures?1:0;
