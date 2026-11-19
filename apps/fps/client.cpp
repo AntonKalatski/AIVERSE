@@ -703,6 +703,10 @@ struct App {
             inputAdapter.onEvent(e);
     }
     void frame(gfx::Device& device,double dt) {
+        // Shader variants invalidated by quality/instance changes belong
+        // to the host Device and retire only after real GPU completion.
+        if(renderer.pendingProgramRetirements()!=0)
+            renderer.collectRetiredPrograms();
         const auto now=net::nowMs();
 #ifndef __EMSCRIPTEN__
         if(listen) {
