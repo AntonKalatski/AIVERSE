@@ -2020,9 +2020,14 @@ if(AIVERSE_BUILD_STRATA)
     add_library(aiverse_strata_view STATIC engine/render/StrataView.cpp)
     target_link_libraries(aiverse_strata_view PUBLIC aiverse_strata_model_adapter aiverse_models)
     target_include_directories(aiverse_strata_view PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+    # GPU metadata is a non-drawing, source-revision-checked storage buffer.
+    # Original GPU geometry MUST remain owned by GlobalGeometryPool.
+    add_library(aiverse_strata_gpu_scene STATIC engine/render/StrataGpuScene.cpp)
+    target_link_libraries(aiverse_strata_gpu_scene PUBLIC aiverse_strata_model_adapter)
+    target_include_directories(aiverse_strata_gpu_scene PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
     # GeometryScene is still the only instance owner. This option exposes
     # opt-in CPU staging at scene load, not a second draw submission path.
-    target_link_libraries(aiverse_runtime PUBLIC aiverse_strata_view)
+    target_link_libraries(aiverse_runtime PUBLIC aiverse_strata_view aiverse_strata_gpu_scene)
     target_compile_definitions(aiverse_runtime PRIVATE AIVERSE_STRATA_STAGING_ENABLED=1)
     if(AIVERSE_BUILD_TESTS)
         add_executable(aiverse_strata_builder_tests tests/render/strata_builder.cpp)
@@ -2035,6 +2040,10 @@ if(AIVERSE_BUILD_STRATA)
         add_executable(aiverse_strata_view_tests tests/render/strata_view.cpp)
         target_link_libraries(aiverse_strata_view_tests PRIVATE aiverse_strata_view aiverse_zstd_dec)
         add_test(NAME strata_view COMMAND aiverse_strata_view_tests)
+        add_executable(aiverse_strata_gpu_scene_tests tests/render/strata_gpu_scene.cpp)
+        target_link_libraries(aiverse_strata_gpu_scene_tests PRIVATE
+            aiverse_strata_gpu_scene aiverse_zstd_dec)
+        add_test(NAME strata_gpu_scene COMMAND aiverse_strata_gpu_scene_tests)
     endif()
 endif()
 if(AIVERSE_RUNTIME_AUTOLOD)
