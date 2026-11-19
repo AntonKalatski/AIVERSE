@@ -1324,3 +1324,15 @@ uniforms now use 64-byte ABI in BOTH MSL and SPIR-V (not 32); keep buffers
 aligned across any future shader changes. Never treat FakeDevice source
 fixtures as GPU hardware tests. Native CMake/CTest and real GPU tests remain
 NOT RUN, and main is NOT merged.
+
+
+## GI Stage 37 — common world invalidation for Vulkan Metal GLES (2026-11-20)
+
+Read `docs/agent-handoffs/gi-stage37-world-change-gpu-cpu-2026-11-20.md`.
+`GiLightingController::applyWorldChanges` now forwards read-barrier-frozen
+world change events to GPU and CPU transport. GPU invalidation increments
+revisions and rejects stale in-flight Metal/Vulkan tickets; CPU invalidation
+sparse-clears old probe texels. Always publish new immutable BVH/albedo for
+actual terrain geometry/material changes: dirty events alone cannot alter
+ray-trace geometry. Sun/sky/environment transport is not implemented by these
+point/spot kernels. Source only; native CTest/GPU tests NOT RUN.
