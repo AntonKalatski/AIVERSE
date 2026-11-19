@@ -1386,3 +1386,18 @@ project modules. Read `docs/terrain/TERRAWEAVE.md` and the
   measures actual near-surface normal matches, not GPU
   performance. Separate testing agent performs all
   CMake/CTest/Metal/Vulkan/GL/benchmark validation.
+
+### TerraWeave Stage36 host quality policy for Horizon GPU wind
+
+Native projects may use `engine/world/TerraWeaveWindUploadPolicy.h`:
+`HorizonWindUploadPolicy{maxBytesPerUpdate=2MiB,maxSparseRanges=8,
+fullFallbackPercent=70}`. `WorldScene::setVegetationHorizonWindUploadPolicy`
+forwards to Horizon's `setWindUploadPolicy`; validate strictly before
+publication. Zero byte budget defers changed colour transfers; a too-low
+budget may indefinitely defer dense fallback while the safe macro
+shader remains. Combined active+outgoing GPU upload limit is per update,
+not per model. The **2 MiB per-model CPU shadow remains fixed**; no
+new GPU resources or TWH8 format changes. See
+`docs/terrain/TERRAWEAVE.md` Stage36 and
+`docs/terrain/AGENT_HANDOFF.md`. User prioritizes features before QA;
+do not claim native/Metal/GL/Vulkan verification.
