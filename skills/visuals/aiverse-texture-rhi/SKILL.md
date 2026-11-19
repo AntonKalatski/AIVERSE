@@ -1908,3 +1908,10 @@ ICB by default without deliberate release gating.
 - GLSL: `aiverseVirtualMipLod(uvDx, uvDy, virtualSizePixels, bias)`, then `aiverseSampleVirtualTrilinear(atlas,indexedTable,uv,logicalLayer,gutterPx,fallback,uvDx,uvDy,lod,virtualMipLevels,addressU,addressV)`. Metal equivalents: `aiverse_virtual_mip_lod`, `aiverse_sample_virtual_trilinear` with separate sampler argument.
 - Both shaders have clamp-only convenience overloads and explicit-gradient page sampling. Use ORIGINAL virtual UV gradients and provide logical virtual pixel dimensions, not atlas slice dimensions.
 - No default renderer auto-binding or GPU test yet. Existing materials must continue to bind the one-slice legacy table; indexed ABI must opt in. 32MiB CPU page-table cap and backend array layer limits are release constraints. Source SHAs `93f4cbb` + `371812a`. PR #21 Draft; tests later.
+
+## Stage 10CN — model/graph virtual trilinear binding (source fe3b78bc)
+
+- For built-in model colour and Shader Graph `SG_SAMPLE_VIRTUAL`, the existing `Renderer3D::setModelVirtualTextureResolver` may now supply a `ModelVirtualTextureBinding` with `indexedMipTable=true`. Set `pageTable=streamer.indexedMipPageTableTexture()`, `physicalAtlas=streamer.physicalAtlas()`, `virtualMipLevels=streamer.indexedMipTableLevels()`, plus `virtualWidthPixels`/`virtualHeightPixels` derived from real virtual pixel resolution excluding gutters, and optional `virtualMipBias`.
+- Separate `kKeyModelVirtualTrilinear` shader permutation; 32B U6 payload only for new variant, existing 16B U6 remains unchanged. GLSL/MSL built-in colour and graph macro share `modelVirtualSampleExpression` so both sample requested virtual mip floor/ceil and blend resident fallbacks.
+- Texture slots still atlas+table, no new slots; GL/Vulkan slot hard limit and Metal graph slot budget preserved. Metal GPU-ICB graph path intentionally excluded from indexed mode pending tests.
+- No tests run for this stage; do not promote to production until C++ and native GLSL/MSL shader compilers and actual framebuffer oracles pass. PR #21 Draft.
