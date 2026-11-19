@@ -83,8 +83,15 @@ public:
         ImGui::Text("GPU очередь освобождения: %zu моделей · %zu партий · пик %zu",
                     residency.retiredModels,residency.retirementBatches,
                     residency.retirementPeak);
-        ImGui::Text("Модели на GPU (оценка, без shared pool): %.2f MiB",
+        ImGui::Text("GPU модели: резидентные ≈ %.2f MiB · ожидают освобождения ≈ %.2f MiB",
+                    double(residency.residentModelKnownBytes)/mib,
                     double(residency.estimatedRetiredGpuBytes)/mib);
+        ImGui::Text("GPU текстуры (владелец кэша, RGBA8 экв.): ≈ %.2f MiB · %zu уникальных",
+                    double(residency.sharedTextureRgba8Equivalent)/mib,
+                    residency.uniqueSharedTextures);
+        ImGui::TextDisabled("Из них сжатых GPU текстур: %zu; моделей в общем geometry pool: %zu",
+                    residency.compressedSharedTextures,
+                    residency.sharedGeometryModels);
         if(residency.estimatedRetirementByteLimit)
             ImGui::TextDisabled("Предел оценки: %.2f MiB",
                 double(residency.estimatedRetirementByteLimit)/mib);
@@ -95,7 +102,7 @@ public:
             ImGui::TextDisabled("GPU retirement: token fallback %llu, неуспешный idle %llu",
                      (unsigned long long)residency.retirementTokenFailures,
                      (unsigned long long)residency.retirementFallbackFailures);
-        ImGui::TextDisabled("Без dedicated-геометрии, размеров GPU текстур, render targets и FX.");
+        ImGui::TextDisabled("Общий geometry pool учитывается выше отдельно. Оценки без драйверных mip/padding, FX и RT.");
         ImGui::TextDisabled("Выгрузка моделей редактора: %s (период ожидания 15 с)",
                             ed.lazyEditorAssetsEnabled() ? "по требованию" : "отключена");
         if (ed.lazyEditorAssetsEnabled() && ImGui::Button("Освободить неиспользуемые модели"))
