@@ -383,3 +383,7 @@ crash-atomicity.
 C++ fixtures added for crash before command execution and crash
 after ECS commit before the journal Applied flush, NOT RUN.
 Stage handoff docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md.
+
+
+### Stage 26 journal crash-recovery correction
+A journal persisted as `Queued` may lose its actual in-memory command on restart. Restore `Queued` to `Unknown`, reconcile against restored `FieldRuntimeState`, and only certify `Applied` when revision and authored fingerprints match. If the original command was not applied, accept a retransmission of the SAME authenticated request and expected revision; never synthesize a successful receipt. The sidecar journal and World checkpoint are not one durable transaction. See `docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md`. Tests added, NOT RUN.

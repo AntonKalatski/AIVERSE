@@ -1462,3 +1462,10 @@ standalone suites; `--filter` targets a CTest selection. Full reports go under
   Keep exact limits/ownership and separate PHYSIS, NEREID,
   TerraWeave and Box3D. Handoff:
   docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md.
+
+
+### PHYSIS Stage 26 queued receipt crash recovery
+- The existing admin journal and authenticated loopback endpoint were already implemented in PHYSIS; do not duplicate them. `ServerGateway::restoreJournal` must treat persisted `Queued` as `Unknown` on process restart because the Simulation pending command may have vanished.
+- Reconcile Unknown against the restored World; confirm Applied only for matching revision and typed-field fingerprints. Safe requeue requires the exact original authenticated request and still-current expected revision. Do not claim cross-file exactly-once durability.
+- New source tests cover crashes before ECS commit and after ECS commit but before journal Applied flush. Native tests NOT RUN.
+- Stage handoff: `docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md`.

@@ -824,3 +824,7 @@ crash-atomic exactly-once commit.
 
 Stage-specific handoff:
 docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md.
+
+
+### Stage 26 crash-recovery fix for durable field receipts
+An authenticated PHYSIS editor request may be persisted in the file journal as Queued before the authoritative Simulation step. If the process crashes, its pending in-memory command queue may be gone even though the journal still says Queued. Recovery now converts Queued to Unknown, then compares the restored ECS state: matching revision + fingerprints proves Applied; a still-current revision permits the original authenticated request to be resubmitted once. This prevents premature Rejected or incorrect Applied reports after restart. Test fixtures in `tests/physis_admin_journal_test.cpp` cover both crash-before-commit and crash-after-commit-before-receipt; native CTest has NOT RUN. See `docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md`.

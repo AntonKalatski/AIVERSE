@@ -248,3 +248,11 @@ Tests `physis_field_assets`, `physis_field_authoring` and extended `physis_proje
   queuedReceiptAlreadyAppliedBeforeCrash were added to
   tests/physis_admin_journal_test.cpp, but NOT RUN.
 - Handoff docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md.
+
+
+### Stage 26 hardening — queued receipt recovery after server restart
+- When restoring the Stage 26 durable receipt journal, `ServerGateway::restoreJournal` converts any pre-crash `Queued` entry into unresolved `Unknown`: a persisted queue receipt does not prove the transient Simulation command survived process restart.
+- Call `observe` on the restored authoritative World before serving admin requests. Confirm `Applied` only if `FieldRuntimeState` expected revision and all authored fingerprints match; otherwise retain `Unknown` or return `Conflict`.
+- Only the identical authenticated original Submit with matching expected revision may requeue an unresolved intent. Do not promise cross-file crash atomicity between journal and World snapshot.
+- Tests `queuedReceiptBeforeCrash` and `queuedReceiptAlreadyAppliedBeforeCrash` are authored in `tests/physis_admin_journal_test.cpp` but native compilation and CTest have NOT RUN.
+- Handoff: `docs/agent-handoffs/physis-stage26-queued-recovery-2026-11-19.md`.
