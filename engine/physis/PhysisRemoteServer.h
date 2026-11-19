@@ -325,6 +325,19 @@ public:
                     }
                 }
             }
+            // A receipt that exists only in RAM is not a durable ACK.
+            // In particular, observe() may have applied ECS successfully but
+            // failed to persist the Applied transition. Never advertise a
+            // confirmed Queued/Applied outcome until the journal is healthy.
+            // The authority must stop new edits; the current ECS revision can
+            // still be inspected for reconciliation after a safe restart.
+            if(!journalHealthy_ &&
+               (reply.receipt.result==Result::Queued ||
+                reply.receipt.result==Result::Applied)) {
+                reply.receipt.result=Result::Unknown;
+                reply.receipt.scheduledTick=0;
+                reply.receipt.detail="PHYSIS journal unavailable; receipt durability unconfirmed";
+            }
             net::Bytes response;
             if(encode(reply,response))authenticatedConn.send(response);
         }
