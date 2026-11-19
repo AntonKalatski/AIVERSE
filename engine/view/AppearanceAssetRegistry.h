@@ -270,6 +270,36 @@ public:
                 return false;
             }
         }
+
+        // One native packet entry point for an already-published appearance,
+        // optional compiled LODs/sockets and host-authored child attachments.
+        // A caller with its own presentation animation owner must clear
+        // packet.graph before submitting a PRECOMPUTED pose to generic View.
+        // Failure leaves the previously valid output packet untouched.
+        bool packetWithBindings(
+                const render::mat4& world,
+                std::span<const ModelAttachment> attachments,
+                const CompiledPresentationBindings* bindings,
+                Object& out,std::string* error=nullptr) const {
+            if(error)error->clear();
+            try {
+                Object next;
+                if(!packet(world,next)) {
+                    if(error)*error="appearance has no published Model";
+                    return false;
+                }
+                next.attachments.assign(attachments.begin(),attachments.end());
+                if(bindings && !bindings->apply(next)) {
+                    if(error)*error="compiled appearance binding revision or attachment mismatch";
+                    return false;
+                }
+                out=std::move(next);
+                return true;
+            }catch(const std::exception& ex) {
+                if(error)*error=ex.what();
+                return false;
+            }
+        }
     };
 
     using Snapshot=std::shared_ptr<const Asset>;
