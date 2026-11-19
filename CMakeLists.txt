@@ -2218,12 +2218,21 @@ if(AIVERSE_BUILD_TESTS AND NOT EMSCRIPTEN)
             COMMAND "${Python3_EXECUTABLE}"
                 "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/check_virtual_texture_feedback_shaders.py")
     endif()
+        add_test(NAME virtual_texture_sampling_glsl
+            COMMAND "${Python3_EXECUTABLE}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/check_virtual_texture_sampling_shaders.py"
+                --backend glsl)
+
     if(APPLE AND Python3_Interpreter_FOUND)
         find_program(AIVERSE_XCRUN NAMES xcrun)
         if(AIVERSE_XCRUN)
             add_test(NAME virtual_texture_feedback_msl
                 COMMAND "${Python3_EXECUTABLE}"
                     "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/check_virtual_texture_feedback_msl.py")
+            add_test(NAME virtual_texture_sampling_msl
+                COMMAND "${Python3_EXECUTABLE}"
+                    "${CMAKE_CURRENT_SOURCE_DIR}/tests/render/check_virtual_texture_sampling_shaders.py"
+                    --backend metal)
         endif()
     endif()
 endif()
