@@ -1,5 +1,5 @@
 #include <aiverselib/animation/RagdollAsset.h>
-#include <cassert>
+#include "../AlwaysCheck.h"
 using namespace aiverse;
 using namespace aiverse::render;
 using namespace aiverse::lib::animation;
@@ -14,13 +14,13 @@ int main(){
         {HumanoidBone::Hips,"root/Hips"},{HumanoidBone::Chest,"root/Hips/Chest"},
         {HumanoidBone::Head,"root/Hips/Chest/Head"}});
     auto rag=RagdollAsset::compile(avatar);
-    assert(rag.scene()["bodies"].size()==3);
-    assert(rag.scene()["joints"].size()==2);
+    AIVERSE_TEST_CHECK(rag.scene()["bodies"].size()==3);
+    AIVERSE_TEST_CHECK(rag.scene()["joints"].size()==2);
     Pose target;bindPose(m,target);
     std::vector<RagdollBodyPose> bodies;
     for(const auto& bind:rag.bindings())
         if(bind.role==HumanoidBone::Head)bodies.push_back({bind.id,{0,3,0},{}});
     rag.applyBodyPoses(bodies,target);
-    assert(target.size()==4);
+    AIVERSE_TEST_CHECK(target.size()==4);
     return 0;
 }
