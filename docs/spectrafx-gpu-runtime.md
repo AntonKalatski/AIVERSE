@@ -100,6 +100,8 @@ Create `fx/gpu/routes.json`:
 ```json
 {
   "version": 1,
+  "gpuFrameBudgetMs": 12.0,
+  "minGpuSpawnScale": 0.25,
   "routes": [
     {
       "eventType": 42,
@@ -166,6 +168,40 @@ need a separate host-provided fog/visibility policy to avoid leaking
 enemy activity. A route does not automatically suppress legacy
 `fx/fx.json` bindings for the same event; avoid authoring two effects
 unintentionally.
+
+## Optional adaptive GPU spawn budget and memory diagnostics
+
+The `routes.json` example above opts into a **12 ms whole-GPU-frame**
+presentation budget. Remove the two budget keys or set
+`"gpuFrameBudgetMs": 0` (default) to disable the governor. The supported
+`minGpuSpawnScale` range is 0..1 (default 0.25). The governor reacts
+to completed `gfx::Device::gpuFrameMs()` samples by smoothly reducing
+new GPU particle emissions when the total GPU frame exceeds 110% of
+budget, and gradually restoring them below 80% of budget. It does not
+change existing particles, physical integration, camera, collision or
+deterministic ECS data. If frame timing is unavailable, visual spawn
+scaling remains unchanged; unsupported platforms are not assumed slow.
+
+This is a *whole-frame* feedback heuristic. It includes all other
+rendering (lighting, geometry, UI, postprocessing), not just SpectraFX
+GPU time. It is not a measurement of SpectraFX performance and is
+disabled unless explicitly configured. Use GPU timing/profile tools
+to calibrate actual values for each target GPU.
+
+`SpectraFxHybridPlayback::nominalGpuBytes()` reports the estimated
+payload bytes for allocated particle positions, velocities, GPU output
+textures, optional Metal compaction and alpha sorting buffers. It
+excludes GPU driver/pipeline caches, alignment, transient staging and
+other renderer allocations. With `AIVERSE_FX_DEBUG` enabled, the
+client reports this estimate (KiB), reserved GPU slot count, pool
+count, completed-frame budget filter and visual spawn scale.
+
+GPU impact feedback is now allocated on demand. When
+`emitImpactEvents:false`, only a 16-byte dummy storage buffer is
+needed to satisfy the shader resource binding; the compute kernel
+skips event writes. With feedback enabled the full
+`16 * particle_capacity`-byte buffer is allocated and async events
+are permitted only under their existing Metal capability policy.
 
 ## In-app editor
 
