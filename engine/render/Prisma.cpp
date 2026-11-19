@@ -31,6 +31,12 @@ const char* kPfNames[] = {"PF_PIXELATE", "PF_CA", "PF_SHARPEN", "PF_TILT", "PF_B
 enum Role { kScene = 0, kAa = 1, kBloomDown = 10, kBloomUp = 20, kTilt0 = 30, kTilt1 = 31, kShaft0 = 40, kShaft1 = 41, kDof = 50, kExposureMip = 80, kExposureHistory = 100, kMotionVelocity = 130, kMotionColor = 131 };
 
 struct SimpleU { float px[4]; float p0[4]; float sun[4]; };
+// Only the HDR luminance prefilter needs the camera-authored region.
+// Reduction/adaptation and all other postFX retain their original UBOs.
+struct ExposureMeterU {
+    float px[4], p0[4], sun[4], region[4];
+};
+const char* kExposureMeterFields[] = {"px", "p0", "sun", "region"};
 // Keep the legacy SimpleU field prefix untouched. New camera-linear DoF
 // uniforms are present only in the separate DepthOfField shader program.
 struct DepthOfFieldU {
@@ -1139,6 +1145,8 @@ gfx::PipelineHandle Prisma::program(Prog p) {
             ? buildProgram(kMotionFields, 11, d.tex, "", d.helpers, d.body, sampledDepth)
         : p == kMotionBlur
             ? buildProgram(kMotionBlurFields, 4, d.tex, "", d.helpers, d.body, sampledDepth)
+            : p == kExposureLog
+            ? buildProgram(kExposureMeterFields, 4, d.tex, "", d.helpers, d.body, sampledDepth)
             : p == kDepthOfField
             ? buildProgram(kDepthOfFieldFields, 4, d.tex, "",
                 prisma::kDepthOfFieldHelpers, d.body, sampledDepth)
@@ -1333,6 +1341,8 @@ void Prisma::resolve(gfx::Device& dev, const gfx::PassDesc& out, const PostFrame
     effectReport.shaderGraphTextures = 0;
     effectReport.autoExposureTextureSlot = -1;
     effectReport.autoExposureHighlightRejection = 0;
+    effectReport.autoExposureFrozen = false;
+    effectReport.autoExposureRegionMetered = false;
     effectReport.effects.clear();
     if (!sceneReady_) {
         for (const auto& e : settings_.effects) {
