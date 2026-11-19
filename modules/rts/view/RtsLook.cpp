@@ -3,12 +3,12 @@
 // type id, never errors: a broken model must not stop a game from starting.
 #include "RtsView.h"
 #include "engine/view/ModelPoseRetarget.h"
+#include "engine/view/ModelPublicationEpoch.h"
 #include "RtsModelStreaming.h"
 #include "engine/view/AppearanceAuthoringService.h"
 #include "engine/view/AppearanceChoiceAuthoring.h"
 
 #include <algorithm>
-#include <atomic>
 #include <chrono>
 #include <cctype>
 #include <cmath>
@@ -22,9 +22,6 @@ namespace aiverse::game {
 using namespace render;
 
 namespace {
-// Presentation-only publication revisions: choice rebuilds must never reuse
-// the previous retarget plan, even if a Model allocator recycles an address.
-std::atomic<uint64_t> nextModelChoiceGeneration{1};
 constexpr float kDeg = 3.14159265358979f / 180.0f;
 // Keep one appearance of each initial model. Remaining material/body variants are appended later.
 std::vector<size_t> initialModelChoices(const Json& view) {
@@ -1029,10 +1026,7 @@ bool RtsView::loadChoice(gfx::Device& dev, const UnitType& t, const Json& view, 
     }
     out.materials = out.model->materials;
     configureChoice(dev, t, view, out, false);
-    out.modelGeneration=nextModelChoiceGeneration.fetch_add(
-        1,std::memory_order_relaxed);
-    if(out.modelGeneration==0)
-        throw std::overflow_error("RtsLook: model choice generation exhausted");
+    out.modelGeneration=view::ModelPublicationEpoch::next();
     return true;
 }
 
