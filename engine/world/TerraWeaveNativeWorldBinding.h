@@ -125,6 +125,20 @@ public:
             }
         }
 
+        // Validate the entire harvested set BEFORE exchanging live soil,
+        // roots or grass. A malformed saved tombstone must never produce a
+        // partially published frame.
+        std::optional<std::vector<ForestTreeIdentity>> harvestedIds;
+        if(const auto* harvest=
+               ecs.resourceConst<ForestHarvestResource>()){
+            validateForestHarvestResource(*harvest);
+            harvestedIds.emplace();
+            harvestedIds->reserve(harvest->records.size());
+            for(const auto& record:harvest->records)
+                harvestedIds->push_back({
+                    record.id.key,record.id.speciesId});
+        }
+
         // Stage publication; the render/physics system is not authoritative
         // and can be rebuilt after successful ECS snapshot validation.
         if(stagedSoil)
@@ -138,19 +152,10 @@ public:
             forest->setFallenTrees(fallen);
             forest->setDeadTrees(dead);
             forest->setRecruitedPlants(recruited);
-            // Stage66 tombstones are authoritative even when a forest chunk
-            // unloads. Do not replace legacy presentation-only removals in
-            // native projects which did not opt into harvest persistence.
-            if(const auto* harvest=
-                   ecs.resourceConst<ForestHarvestResource>()){
-                validateForestHarvestResource(*harvest);
-                std::vector<ForestTreeIdentity> removed;
-                removed.reserve(harvest->records.size());
-                for(const auto& record:harvest->records)
-                    removed.push_back({
-                        record.id.key,record.id.speciesId});
-                forest->setRemovedTrees(removed);
-            }
+            // Legacy games may still own presentation-only removals.
+            // Only an opt-in persistent harvest resource replaces them.
+            if(harvestedIds)
+                forest->setRemovedTrees(*harvestedIds);
         }
 
         // The caller now uploads new dynamic mesh/collision tiles within
