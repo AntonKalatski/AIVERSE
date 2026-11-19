@@ -100,7 +100,10 @@ public:
             return PoolRecoveryServiceResult::NoWork;
         if(ownerFrameOrdinal<retryNotBeforeOwnerFrame_)
             return PoolRecoveryServiceResult::Deferred;
-        if(retryPresentationReset()) {
+        servicingReset_=true;
+        const bool accepted=retryPresentationReset();
+        servicingReset_=false;
+        if(accepted) {
             consecutiveResetFailures_=0;
             retryNotBeforeOwnerFrame_=0;
             poll();
@@ -136,14 +139,14 @@ public:
         }
         if(!presenter_.resetForRollback()) {
             reason_="SpectraFX presentation reset: "+presenter_.reason();
-            poll();
+            if(!servicingReset_)poll();
             return false;
         }
         if(poses_)poses_->resetForRollback();
         explicitResetPending_=false;
         resetPurpose_.clear();
         reason_.clear();
-        poll();
+        if(!servicingReset_)poll();
         return true;
     }
 
@@ -279,6 +282,7 @@ private:
     std::optional<PoolRecoveryManifest> recoveryRecipe_;
     bool observed_=false;
     bool explicitResetPending_=false;
+    bool servicingReset_=false;
     uint64_t transitionSequence_=0,resetRequestCount_=0;
     uint64_t deviceReplacementAttempts_=0;
     uint32_t consecutiveResetFailures_=0;
