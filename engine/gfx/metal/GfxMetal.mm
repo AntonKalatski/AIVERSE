@@ -1941,7 +1941,8 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             for (int slot : pbrSlots)
                 if (!bound(slot))
                     return reject("PBR ICB required texture or sampler not bound");
-            if ((virtualSampling && (!bound(13) || !bound(14))) ||
+            if ((virtualSampling &&
+                 (!icbFragmentTextures_[13] || !icbFragmentTextures_[14])) ||
                 (alphaCoverage && !bound(15)))
                 return reject("VT atlas/page table or R8 alpha ICB binding missing");
             const NSUInteger size = pipeline->icbPbrEncoder.encodedLength;
@@ -1950,15 +1951,18 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             if (!resources.pbrArgs || resources.pbrArgs.length < size)
                 return reject("PBR ICB argument buffer exceeds encoded capacity");
             [pipeline->icbPbrEncoder setArgumentBuffer:resources.pbrArgs offset:0];
-            const auto bindPbrSlot = [&](int slot) {
+            const auto bindPbrSlot = [&](int slot, bool sampler = true) {
                 [pipeline->icbPbrEncoder setTexture:icbFragmentTextures_[slot]
                                             atIndex:NSUInteger(slot * 2)];
-                [pipeline->icbPbrEncoder setSamplerState:icbFragmentSamplers_[slot]
-                                                 atIndex:NSUInteger(slot * 2 + 1)];
+                if (sampler)
+                    [pipeline->icbPbrEncoder setSamplerState:icbFragmentSamplers_[slot]
+                                                     atIndex:NSUInteger(slot * 2 + 1)];
                 declareIndirectRead(icbFragmentTextures_[slot], MTLRenderStageFragment);
             };
             for (int slot : pbrSlots) bindPbrSlot(slot);
-            if (virtualSampling) { bindPbrSlot(13); bindPbrSlot(14); }
+            // Atlas uses the existing s1; page table uses read() with no
+            // sampler. Do not encode the unused argument indices 27/29.
+            if (virtualSampling) { bindPbrSlot(13,false); bindPbrSlot(14,false); }
             if (alphaCoverage) bindPbrSlot(15);
             declareIndirectRead(resources.pbrArgs, MTLRenderStageFragment);
             [enc_ setRenderPipelineState:icbPipeline];
@@ -2041,7 +2045,8 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             };
             for (int slot : pbrSlots)
                 if (!bound(slot)) return false;
-            if ((virtualSampling && (!bound(13) || !bound(14))) ||
+            if ((virtualSampling &&
+                 (!icbFragmentTextures_[13] || !icbFragmentTextures_[14])) ||
                 (alphaCoverage && !bound(15))) return false;
             const NSUInteger bytes = p->icbPbrEncoder.encodedLength;
             if (!resources.pbrArgs || resources.pbrArgs.length < bytes)
@@ -2049,14 +2054,15 @@ kernel void cs_main(device const DrawArgs* generated [[buffer(0)]],
             pbrArgs = resources.pbrArgs;
             if (!pbrArgs) return false;
             [p->icbPbrEncoder setArgumentBuffer:pbrArgs offset:0];
-            const auto bindPbrSlot = [&](int slot) {
+            const auto bindPbrSlot = [&](int slot, bool sampler = true) {
                 [p->icbPbrEncoder setTexture:icbFragmentTextures_[slot]
                                     atIndex:NSUInteger(slot * 2)];
-                [p->icbPbrEncoder setSamplerState:icbFragmentSamplers_[slot]
-                                    atIndex:NSUInteger(slot * 2 + 1)];
+                if (sampler)
+                    [p->icbPbrEncoder setSamplerState:icbFragmentSamplers_[slot]
+                                         atIndex:NSUInteger(slot * 2 + 1)];
             };
             for (int slot : pbrSlots) bindPbrSlot(slot);
-            if (virtualSampling) { bindPbrSlot(13); bindPbrSlot(14); }
+            if (virtualSampling) { bindPbrSlot(13,false); bindPbrSlot(14,false); }
             if (alphaCoverage) bindPbrSlot(15);
         }
 
