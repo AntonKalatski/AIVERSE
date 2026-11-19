@@ -39,6 +39,8 @@
 #include "modules/rts/fx/RtsFx.h"
 #include "modules/rts/view/RtsView.h"
 
+namespace aiverse::spectra { class GpuPoolWorld; }
+
 namespace aiverse::editor {
 
 // What the Inspector shows. Hierarchy/Project/Scene set it.
@@ -254,6 +256,15 @@ public:
 
     // particle effects of the play-test (fx/fx.json + fx/*.json of the open game)
     fx::ParticleSystem& gameFx() { return gameFx_; }
+    // Non-owning optional telemetry source. Editor's normal FX preview is
+    // CPU-only; external Metal preview hosts explicitly attach their pool.
+    // The host MUST detach it before destroying the pool.
+    void setSpectraGpuTelemetry(const spectra::GpuPoolWorld* pool) {
+        spectraGpuTelemetry_=pool;
+    }
+    const spectra::GpuPoolWorld* spectraGpuTelemetry() const {
+        return spectraGpuTelemetry_;
+    }
     void reloadFx();                           // after fx files changed (Effects window, agents)
     std::vector<std::string> fxWarnings;       // from the last reloadFx()
     int fxRevision = 0;                        // bumped when fx files change (agents): the Effects window re-reads
@@ -402,6 +413,7 @@ private:
     bool sceneFlying_ = false;
     render::float3 sceneGoal_{};
 
+    const spectra::GpuPoolWorld* spectraGpuTelemetry_=nullptr;
     fx::ParticleSystem gameFx_;
     game::RtsFx gameFxBridge_;
     render::TextureCache fxTextures_;          // sprite textures of effects (same loader as sprites)
