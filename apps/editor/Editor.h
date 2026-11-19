@@ -243,6 +243,9 @@ public:
     // Reload presentation assets without resetting project rules, FX, or editor policy.
     // Call only outside a play session; GPU teardown/publication run on the editor thread.
     void reloadVisualAssets();
+    // Targeted model-file reload; keeps unaffected View resources and graph
+    // clocks resident. Call outside play mode between renderer submissions.
+    size_t reloadVisualModelSources(const std::vector<std::string>& paths);
     void showGamePicker() { showProjectHub(0); }
     void showProjectHub(int tab);   // 0: recent projects, 1: new project, 2: make a game (EditorProjects.cpp)
 
