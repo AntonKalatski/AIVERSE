@@ -69,6 +69,21 @@ public:
         const auto it=cache_.find(key);
         return it==cache_.end()?nullptr:&it->second;
     }
+    // Host invokes this after detaching every presentation source that
+    // borrows model, before releasing its GPU/CPU model allocations.
+    // It also drops the last-good graph to prevent use-after-free if a
+    // host allocator later reuses the same Model pointer address.
+    size_t forgetModel(const render::Model* model) {
+        if(!model)return 0;
+        size_t removed=0;
+        for(auto it=cache_.begin();it!=cache_.end();) {
+            if(it->second.model==model) {
+                it=cache_.erase(it);
+                ++removed;
+            } else ++it;
+        }
+        return removed;
+    }
     // Call on owning render thread after file IO/compilation and before
     // animation update. Existing players restart only after graph swap;
     // stale runtime instances cannot outlive the asset's host model.
@@ -87,6 +102,17 @@ public:
             auto& asset=assets->dataAt(i);
             if(asset.model!=entry->model || asset.graph==entry->graph)continue;
             asset.graph=entry->graph;
+            // A graph revision invalidates node state/clip clocks even when
+            // its host Model pointer is unchanged; sync() can apply later,
+            // but a direct registry.apply must be safe on its own.
+            if(auto* player=presentation.tryGet<AnimationPlayerComponent>(entity))
+                player->restart=true;
+            if(auto* slots=presentation.tryGet<AnimationMontageSlotsComponent>(entity)) {
+                slots->players.clear();
+                slots->events.clear();
+            }
+            if(auto* events=presentation.tryGet<AnimationGraphNotifiesComponent>(entity))
+                events->events.clear();
             ++updated;
         }
         return updated;
