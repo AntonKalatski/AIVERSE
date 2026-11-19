@@ -820,3 +820,16 @@ maximum GPU moving-light radius preserves this reach guarantee.
 New `gi_gpu_residency_planner` regression source and CTest registration.
 Native build, GPU shading/validation, CTest and large-world performance:
 NOT RUN. Further GPU paging/clipmap and current-main integration remain.
+
+
+## Stage 49 — 2026-11-20 — no stale bounce on deferred GPU geometry (SOURCE; NOT RUN)
+
+Full handoff `docs/agent-handoffs/gi-stage49-deferred-geometry-no-stale-gi-2026-11-20.md`.
+Fixed a serious source-level safety gap: Vulkan/Metal may have a completed
+old GI atlas when a newer authoritative WorldScene/terrain/foliage geometry
+revision is refused while compute is busy or local triangles exceed budget.
+`GiLightingController` now explicitly blocks rendering that obsolete
+atlas via `presentationBlocked`, `StepStats::canPresent` and fail-closed
+`bind` until the new immutable geometry is actually accepted. Added
+regressions to world-presentation and GPU-residency test sources.
+No native compilation/CTest or actual device shader/image testing run.
