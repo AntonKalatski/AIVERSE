@@ -7395,3 +7395,55 @@ and identity for already-normalized clamp, or undertake GPU material
 descriptor table design. During deferred testing verify negative UV,
 edge equality, repeat/mirror, mip derivatives, rigid/deformed ABI
 and backend shader compiler parity; do not merge until green.
+
+
+## Stage 10R — bounded CPU repeat/mirror UV-region demand prefetch (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`, PR #21 draft.
+**Source commits:**
+- `d4043e9589034687b0bced4e0c63f2711d9dcba0` —
+  `engine/gfx/VirtualTexturePrefetchWrap.h`, new CPU-only normalized
+  rectangle splitter with independent Clamp/Repeat/MirrorRepeat
+  address modes, negative UV handling and output-count limit.
+- `16676aa4d4e59deb9a0dd9028c48674234839fe8` —
+  `engine/gfx/VirtualTexturePrefetchAdapter.h`, new optional
+  `prefetchWrappedVirtualPages` integration using existing planner,
+  streamer and exact-resident page checks; a `wrapRejected` flag
+  reports all-or-nothing validation failure.
+**Docs commits:** `06863bd789be9aff2da5c81bebf6063b4fcfe090` (`docs/texture-rhi.md`),
+`13d79346a969308700d6aebc43b44553599e4c4c` (`skills/visuals/aiverse-texture-rhi/SKILL.md`).
+
+**API / architecture:** `normalizeWrappedVirtualTextureRegions` maps
+each half-open projected UV rectangle to bounded normalized pieces by
+splitting on integer repeat/mirror seams, merging fully covered wrap
+periods into [0,1]. Separate U/V policies support mixed clamp/repeat.
+Malformed coordinates, huge magnitudes, unsupported border modes or
+output count overflow reject the whole batch. The optional prefetch
+adapter feeds the successful result into the unchanged
+`prefetchVisibleVirtualPages` coarse-to-fine demand scheduler with
+existing CPU budgets and pending/resident suppression. No ECS,
+filesystem side worker or GPU shader changes in this stage.
+
+**Compatibility:** old normalized prefetch APIs remain; the extra
+dispatch flag defaults to false. A caller selects active archive
+address modes explicitly and must not mix domain page keys.
+
+**Checks actually performed:** inspected prior
+`VirtualTexturePrefetch.h` and adapter contracts, committed new
+header and bounded adapter wiring on GitHub. **C++ compilation
+NOT RUN, CTest NOT RUN, mixed-wrap visibility fixture NOT RUN,
+Metal/GLSL/Vulkan tests NOT RUN.** No production certification.
+
+**Limitations:** projected UV rectangles are conservative boxes
+and can overfetch after rotation; a CPU visibility producer still
+owns object/camera projection and per-domain selection. Partial
+results are deliberately rejected when expansion exceeds the budget,
+requiring caller subdivision or a GPU feedback path.
+
+**Next:** complete virtual material descriptor-table design for
+heterogeneous Metal ICB and investigate a scalable graph sampler
+strategy beyond fixed 16-slot binding. Then execute deferred release
+validation: compile native headers/Shader Graph, run texture CTests,
+test Python/C++ manifest and wrap parity, and capture Metal/Vulkan/
+GL screen-diff and page-request correctness. Keep PR draft until
+all required checks have actually passed.
