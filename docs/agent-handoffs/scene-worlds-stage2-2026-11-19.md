@@ -87,6 +87,11 @@ World. The coordinator is **host-only** and must not be hashed or saved.
 - `d82f1016073b80ce80c67aa7e3a07f1b0d8e7108`: native loader tests.
 - `5a7379ff3cde498e7eb5b105582c40522af959a9`: CMake target.
 - `4d5024e492ee7d1dbeaf431336e0c2145918ab6d`: living architecture doc.
+- `4cccbab7b36ef41dc4c77494d79771c55a507ee2`: initial Stage 2 handoff.
+- `19ba9b824b53b62b64814f4685aaa2efb4838fd2`: strict decimal ID parsing (no truncated fractional JSON).
+- `0e4160e824a07678181b1367ea20ff247da0e36c`: malformed numeric ID tests.
+- `e81befb70f04afb9afb35c47cc23d696d100e650`: scoped agent instructions update.
+- `4a34c0c966f4960a26fe622c1966592ba9a87432`: unwind resource leases on any callback exception.
 
 The working head may be newer than these commit IDs due to this handoff
 and subsequent fixes. Use `git rev-parse HEAD` after pulling; never infer
@@ -124,6 +129,22 @@ ctest --test-dir build/scene-worlds --output-on-failure \
 Once targeted tests compile/pass, run wider ECS/RTS/FPS save/rollback,
 `aiverse_tests`, and relevant world streaming tests before requesting
 a merge to main. Update this file **after each code stage and test run**.
+
+## Static review corrections in this stage
+
+- Reviewed `engine/data/Json.cpp`: `Json::integer()` truncates
+  fractional fixed-point numbers. Updated `SceneAsset::decodeId` to parse
+  exact unsigned decimal literals with `std::from_chars`, reject negative,
+  fractional, noncanonical or overflowing IDs, and compare manifest version
+  against the exact literal `1`. Added regression cases. Native execution
+  still pending.
+- Reviewed resource rollback paths: unexpected callback exceptions now
+  unwind acquired dependency leases, then leave prior active scene intact
+  (adapter release callbacks still contractually must not throw).
+- Reviewed worker cancellation: canceled/invalidated futures are retained
+  until ready; `poll` removes tombstones. `poll` does not mutate ECS.
+- No native compiler or runtime was available against the full working
+  repository through the connected GitHub actions; mark all suites unverified.
 
 ## Known gaps and safety conditions
 
