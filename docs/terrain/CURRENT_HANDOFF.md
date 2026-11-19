@@ -1,5 +1,16 @@
 # TerraWeave — current agent handoff entry point
 
+> **New PHYSIS-current-main integration staging (2026-11-20):**
+> [Stage70 + PHYSIS main merge handoff](qa-2026-11-20-stage70-physis-main-merge-handoff.md).
+> Two-parent merge `97b4e165cae1ab74b907ba2b934665a530715432`
+> on `integration/terraweave-physis-stage70-20261120`, with
+> `e4129c50` main and `cbc7f0f6` prior TerraWeave as parents.
+> 14 divergent paths reviewed; all main paths preserved and the
+> Stage70 native CMake tests brought forward. **SOURCE ONLY:
+> native CMake/CTest and PHYSIS/NEREID/Box3D integration NOT RUN.**
+> Do not merge to main before real acceptance.
+>
+
 > **Integration QA checkpoint (2026-11-20):** On the staging-only
 > `integration/terraweave-main-20261120` branch, the sparse Stage70
 > soil/water scheduler resume-key fix is committed in `34b557ad`,
