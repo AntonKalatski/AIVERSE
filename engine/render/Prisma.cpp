@@ -904,6 +904,62 @@ void Prisma::resetAutoExposure(uint64_t id) {
     }
 }
 
+Prisma::RuntimeCapabilities Prisma::runtimeCapabilities() const {
+    RuntimeCapabilities out;
+    out.deviceHealthy=dev_ && dev_->gpuHealthy() && enabled_ && settings_.enabled;
+    out.hdrFormatSupported=dev_ && dev_->supports(gfx::PixelFormat::RGBA16F);
+    out.hdrRequested=hdrRequested();
+    out.hdrEffectiveLastFrame=hdrFrame_ && stats_.width>0 && sceneReady_;
+    const auto* effect=settings_.find(PrismaType::TemporalResolve);
+    const char* temporal=std::getenv("AIVERSE_PRISMA_TEMPORAL");
+    const char* jitter=std::getenv("AIVERSE_PRISMA_JITTER");
+    const char* upscale=std::getenv("AIVERSE_PRISMA_UPSCALE");
+    const char* adaptive=std::getenv("AIVERSE_PRISMA_ADAPTIVE");
+    out.temporalRequested=effect && effect->enabled &&
+        temporal && std::strcmp(temporal,"1")==0 &&
+        effect->get("historyWeight")>0;
+    out.temporalPipelinePrepared=pipes_[kTemporalResolve].valid();
+    out.velocityPipelinePrepared=pipes_[kMotionVectors].valid();
+    out.temporalResolvedLastFrame=stats_.temporalResolved;
+    out.jitterRequested=out.temporalRequested && jitter &&
+        std::strcmp(jitter,"1")==0 && effect->get("jitterPixels")>0;
+    out.jitterAppliedLastFrame=stats_.temporalJittered;
+    out.upscaleRequested=out.jitterRequested && upscale &&
+        std::strcmp(upscale,"1")==0 &&
+        effect->get("renderScale")<0.999f;
+    out.upscaleAppliedLastFrame=stats_.temporalUpscaled;
+    out.adaptiveRequested=out.upscaleRequested && adaptive &&
+        std::strcmp(adaptive,"1")==0 &&
+        effect->get("adaptiveResolution")>0.5f;
+    out.scopedGpuSampleAvailable=scopedGpuTimings_.count(viewId_)!=0;
+    out.reactiveLastFrame=stats_.reactiveUsed;
+    if (!dev_) out.fallbackReason="GPU device absent";
+    else if (!dev_->gpuHealthy()) out.fallbackReason="GPU device lost";
+    else if (!enabled_ || !settings_.enabled) out.fallbackReason="Prisma disabled";
+    else if (!out.hdrFormatSupported) out.fallbackReason="RGBA16F unavailable";
+    else if (!out.hdrRequested) out.fallbackReason="HDR disabled or tier insufficient";
+    else if (out.temporalRequested && quality_!=PrismaQuality::High)
+        out.fallbackReason="Temporal HDR requires High quality";
+    else if (out.temporalRequested && !out.temporalPipelinePrepared)
+        out.fallbackReason="Temporal Resolve GPU pipeline unavailable";
+    else if (out.jitterRequested && !out.velocityPipelinePrepared)
+        out.fallbackReason="Motion-vector GPU pipeline unavailable";
+    else if (viewHistoryAdmissionRejected_.count(viewId_))
+        out.fallbackReason="Temporal history admission limit exceeded";
+    else if (auto history=temporalViews_.find(viewId_);
+             history!=temporalViews_.end() && history->second.preflightRejected)
+        out.fallbackReason="Temporal target preflight failed";
+    else if (!error_.empty()) out.fallbackReason=error_;
+    return out;
+}
+
+bool Prisma::canonicalTemporalRequested() const {
+    const auto report=runtimeCapabilities();
+    return report.deviceHealthy && report.hdrRequested &&
+        quality_==PrismaQuality::High && report.temporalRequested &&
+        report.temporalPipelinePrepared;
+}
+
 bool Prisma::hdrRequested() const {
     if (!dev_ || hdrFailed_ || !enabled_ || !settings_.enabled || quality_ <= PrismaQuality::Low || !dev_->supports(gfx::PixelFormat::RGBA16F)) return false;
     HdrMode mode = settings_.hdr;
