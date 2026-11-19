@@ -11955,3 +11955,89 @@ On any next error, capture the FIRST actual
 CMake/compiler/Metal/pixel failure, fix code
 and append another handoff with real results.
 Keep Draft PR #21 and GPU ICB default OFF.
+
+## Stage 10CG — task-named verification worktree correctly accepted by SHA (2026-11-19)
+
+**Repository/branch:** `chromealex/AIVERSE`,
+`feature/texture-rhi-unification`, Draft PR #21.
+
+**Actual user's Mac Studio failure:** after fetching the latest
+feature branch and fast-forwarding local checkout
+`67cd9a421..954ed5a8d` in
+`/Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819`,
+`bash -n tools/texture-rhi-final-verify.sh` returned successfully.
+The one-shot suite exited **before configure/build/CTest** with
+`FAIL: refusing another local branch: verify-texture-rhi-20261119-150819`.
+The worktree was NOT detached HEAD as previously inferred.
+Its local branch is an independently named, valid
+task-specific validation branch. The prior Stage 10CF
+guard only allowed the exact feature name or detached
+HEAD, despite already comparing the correct remote SHA.
+
+**Fix source commit:**
+`e7e012b01c6599c85c94f24f4a85197e4a616cf4`,
+only `tools/texture-rhi-final-verify.sh`:
+remove the unnecessary test
+`CURRENT_BRANCH != EXPECTED_BRANCH`.
+Keep `CURRENT_SHA=$(git rev-parse --verify HEAD)` and
+`REMOTE_SHA=$(git rev-parse --verify
+refs/remotes/origin/feature/texture-rhi-unification^{commit})`
+with a mandatory **exact SHA match**. This safely
+accepts local `verify-texture-rhi-...`, the feature
+branch and detached HEAD only when their currently
+checked-out code equals the freshly fetched remote
+feature revision. A stale worktree, wrong SHA or
+missing remote ref fails closed. The source revision
+and actual local name are logged. Also delete
+`build/texture-final-logs/acceptance.txt` when
+starting a new run so old green evidence cannot
+survive a failed subsequent run.
+
+**Documentation/source tracing:**
+`7e5728215e027bc0145bebcf751931ef4fcfa9fa`
+updated `docs/texture-rhi.md` with Stage 10CG
+failure/fix and exact retry;
+`54d4371e6edbd33345e9eec94019634a7bc9902a`
+updated `skills/visuals/aiverse-texture-rhi/SKILL.md`;
+this is the required separate append-only handoff
+commit, preserving source SHA, user evidence,
+and next step.
+
+**Tests actually performed:** the user performed
+`git fetch`, `git pull --ff-only` and `bash -n`
+on the **prior** runner successfully, then hit
+the branch-name rejection. The corrected source
+was written and inspected through GitHub.
+**No fresh native `bash -n` of the corrected runner,
+no CMake configure/build, no 21 portable CTests,
+no seven native Metal GPU CTests and no full-run
+PASS log have yet been observed.** Do not claim
+test success based on earlier per-stage logs.
+No GPU/texture production code was modified by
+this bounded runner repair.
+
+**Next exact one-shot Mac command, no checkout/rebase:**
+
+```bash
+set -euo pipefail
+cd /Users/aleksandrfeer/Projects/AIVERSE-texture-verify-20261119-150819
+git fetch origin feature/texture-rhi-unification
+git pull --ff-only origin feature/texture-rhi-unification
+bash -n tools/texture-rhi-final-verify.sh
+bash tools/texture-rhi-final-verify.sh --jobs 4
+```
+
+Add `--full-engine` to test the whole
+nonexperimental engine (outside the scoped
+21 texture/VT/graph tests), as requested.
+All native GPU gates run serially and stop on the
+first actual failing stage. The sole accepted
+full-suite PASS is exit 0 + a new
+`build/texture-final-logs/acceptance.txt`
+showing the exact current SHA, seven valid real
+Metal test markers, and `result=PASS`.
+If there is a compiler/Metal/CPU/ShaderGraph
+failure, inspect the first failing test log,
+fix it as a separate source commit and append a
+new handoff stage. Keep Draft PR #21 and
+experimental GPU ICB defaults OFF.
