@@ -1371,3 +1371,36 @@ Source code and deferred fixtures were committed, but the actual
 CMake/compiler/GPU tests remain **NOT RUN** as requested. Follow the
 latest `docs/agent-handoffs/animation-universal.md` and add the
 next handoff as a SEPARATE commit after each feature stage.
+
+## AIVERSE Stage 102 — source-derived GPU memory estimates and model import policy
+
+New project code should include `engine/render/ModelResidentEstimate.h`
+for read-only estimates of dedicated model geometry, owned image base
+levels and baked pose texture storage, plus
+`engine/render/ModelAssetProvider.h` for source imports. The estimated
+bytes are **not driver VRAM usage**: shared geometry pool pages,
+borrowed/shared texture leases, driver padding and unknown morph
+storage remain separate. `ModelResourceCache::estimatedRetiredGpuBytes`
+and `setEstimatedRetirementByteLimit` optionally throttle admission
+of NEW native source models. A budget MUST NOT cause forced GPU
+destruction before the correct completion token signals.
+
+`AsyncModelCpuQueue` accepts `ModelLoadPriority`:
+`Background`, `Visible`, `Interactive`. Queued work can upgrade,
+equal-priority pending work remains FIFO, and executing work is not
+preempted. `ModelAssetProvider::publishReady(device,maxCount,budgetMs)`
+must run on the render/device thread before scene submissions. The
+count cap is hard; elapsed milliseconds are advisory and one upload
+may exceed them. Never make a CPU worker invoke `gfx::Device`,
+renderer, presentation `World` or `aiverse::View` operations.
+Handle stale source revisions and project switches before publication.
+
+The standalone `aiverse_modelview --provider --no-merge` routes
+static raw files through the independent `ModelAssetProvider`, then
+canonical View. The legacy path is preserved for merging and
+animated-model parity. Editor raw preview remains opt-in, with
+the default full type portrait unchanged. Do not silently switch
+ordinary animated type previews or assume RtsView has disappeared.
+Test fixture code is committed but **NOT RUN**; follow
+`docs/agent-handoffs/animation-universal.md` Stage 102 for exact
+next tasks and maintain a separate handoff commit after each stage.
