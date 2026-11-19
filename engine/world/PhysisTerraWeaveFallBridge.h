@@ -7,6 +7,8 @@
 #include "engine/world/TerraWeaveEcsAuthority.h"
 #include "engine/world/TerraWeaveFallenPhysics.h"
 #include <algorithm>
+#include <bit>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -300,6 +302,73 @@ struct NatureFallReconcileStats {
     std::size_t removed = 0;
 };
 
+
+struct NatureFallPhysicsPose {
+    terraweave::AnchoredPlantId plant{};
+    std::uint64_t eventKey = 0;
+    b3Vec3 position{};
+    b3Quat rotation = b3Quat_identity;
+    b3Vec3 linearVelocity{};
+    b3Vec3 angularVelocity{};
+};
+
+struct NatureFallPhysicsFrame {
+    static constexpr std::size_t kMaxEntries = 8192;
+    std::uint64_t sceneTick = 0;
+    std::vector<NatureFallPhysicsPose> poses; // sorted by plant identity
+};
+
+// Optional native host physics checkpoints, outside deterministic ECS authority.
+// Store exact IEEE-754 bits for same-backend Box3D replay; never feed this
+// float representation into PHYSIS Fixed or network lockstep hashing.
+inline void natureFallFloatIo(Archive& archive, float& value) {
+    std::uint32_t bits = std::bit_cast<std::uint32_t>(value);
+    archive(bits);
+    if (!archive.writing()) {
+        value = std::bit_cast<float>(bits);
+        if (!std::isfinite(value)) archive.fail();
+    }
+}
+inline void io(Archive& a, NatureFallPhysicsPose& pose) {
+    a(pose.plant.speciesId, pose.plant.key, pose.eventKey);
+    natureFallFloatIo(a, pose.position.x);
+    natureFallFloatIo(a, pose.position.y);
+    natureFallFloatIo(a, pose.position.z);
+    natureFallFloatIo(a, pose.rotation.v.x);
+    natureFallFloatIo(a, pose.rotation.v.y);
+    natureFallFloatIo(a, pose.rotation.v.z);
+    natureFallFloatIo(a, pose.rotation.s);
+    natureFallFloatIo(a, pose.linearVelocity.x);
+    natureFallFloatIo(a, pose.linearVelocity.y);
+    natureFallFloatIo(a, pose.linearVelocity.z);
+    natureFallFloatIo(a, pose.angularVelocity.x);
+    natureFallFloatIo(a, pose.angularVelocity.y);
+    natureFallFloatIo(a, pose.angularVelocity.z);
+}
+inline void io(Archive& a, NatureFallPhysicsFrame& frame) {
+    a(frame.sceneTick);
+    const auto count = a.count(frame.poses.size(), 72);
+    if (count > NatureFallPhysicsFrame::kMaxEntries) {
+        a.fail();
+        return;
+    }
+    if (!a.writing()) frame.poses.resize(count);
+    for (auto& pose : frame.poses) {
+        if (!a.ok()) return;
+        io(a, pose);
+    }
+    if (!a.writing()) {
+        for (std::size_t i = 0; i < frame.poses.size(); ++i) {
+            const auto& pose = frame.poses[i];
+            if (!pose.plant.speciesId || !pose.plant.key || !pose.eventKey ||
+                (i && !(frame.poses[i-1].plant < pose.plant))) {
+                a.fail();
+                return;
+            }
+        }
+    }
+}
+
 // Box3D is a DERIVED cache of the authoritative ECS fall ledger.
 // The game must separately persist/replay moving rigid-body poses if it needs
 // exact mid-fall physics snapshots; this only recreates the START pose.
@@ -367,6 +436,73 @@ public:
         }
         return stats;
     }
+    // Snapshot only bodies created by this PHYSIS host. External Terra
+    // erosion bodies are NOT owned by us, so we cannot accidentally roll
+    // their transforms back from a PHYSIS-only checkpoint.
+    NatureFallPhysicsFrame captureFrame(
+            const terraweave::FallenPlantPhysics& bodies) const {
+        NatureFallPhysicsFrame frame;
+        frame.sceneTick = scene_.tick();
+        for (const auto& [plant, eventKey] : owned_) {
+            const auto handle = bodies.body(plant);
+            if (handle == physics::kNoBody || !scene_.valid(handle)) continue;
+            NatureFallPhysicsPose pose;
+            pose.plant = plant;
+            pose.eventKey = eventKey;
+            pose.position = scene_.position(handle);
+            pose.rotation = scene_.rotation(handle);
+            pose.linearVelocity = scene_.linearVelocity(handle);
+            pose.angularVelocity = scene_.angularVelocity(handle);
+            frame.poses.push_back(pose);
+        }
+        return frame;
+    }
+
+    // Restore after reconcile() has rebuilt any missing derived bodies.
+    // Snapshot validity is checked first, so malformed data cannot apply a
+    // partial set of velocities/poses. The host owns Scene tick/contacts.
+    bool restoreFrame(const NatureFallPhysicsFrame& frame,
+                      const terraweave::FallenPlantPhysics& bodies) {
+        if (frame.poses.size() > NatureFallPhysicsFrame::kMaxEntries)
+            return false;
+        terraweave::AnchoredPlantId previous{};
+        bool first = true;
+        for (const auto& pose : frame.poses) {
+            if (!first && !(previous < pose.plant)) return false;
+            first = false;
+            previous = pose.plant;
+            auto it = owned_.find(pose.plant);
+            if (it == owned_.end() || it->second != pose.eventKey)
+                return false;
+            const auto handle = bodies.body(pose.plant);
+            if (handle == physics::kNoBody || !scene_.valid(handle))
+                return false;
+            const float values[] = {
+                pose.position.x,pose.position.y,pose.position.z,
+                pose.rotation.v.x,pose.rotation.v.y,pose.rotation.v.z,
+                pose.rotation.s,
+                pose.linearVelocity.x,pose.linearVelocity.y,
+                pose.linearVelocity.z,
+                pose.angularVelocity.x,pose.angularVelocity.y,
+                pose.angularVelocity.z
+            };
+            for (float v : values) if (!std::isfinite(v)) return false;
+            const float q2 = pose.rotation.v.x*pose.rotation.v.x +
+                pose.rotation.v.y*pose.rotation.v.y +
+                pose.rotation.v.z*pose.rotation.v.z +
+                pose.rotation.s*pose.rotation.s;
+            if (q2 < 0.95f || q2 > 1.05f) return false;
+        }
+        for (const auto& pose : frame.poses) {
+            const auto handle = bodies.body(pose.plant);
+            if (!scene_.setTransform(handle,pose.position,pose.rotation) ||
+                !scene_.setLinearVelocity(handle,pose.linearVelocity) ||
+                !scene_.setAngularVelocity(handle,pose.angularVelocity))
+                return false;
+        }
+        return true;
+    }
+
     // Call when an external scene resets or changes owner. This forgets
     // transient handles; next reconcile will rebuild from ECS authority.
     void forgetDerivedBodies() {owned_.clear();}
