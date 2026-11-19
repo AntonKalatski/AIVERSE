@@ -188,6 +188,7 @@ void Prisma::retireView(uint64_t id) {
         for (auto& h : it->second.history) retireTarget(h);
         temporalViews_.erase(it);
     }
+    requestedOutputSizes_.erase(id);
     motionViews_.erase(id); // only matrix state + borrowed GPU handles
     viewDimensions_.erase(id); // the shared size cache itself stays resident
     // If the current presentation view was closed, keep its stable ID for
@@ -463,6 +464,7 @@ void Prisma::shutdown() {
     temporalViews_.clear();
     motionViews_.clear();
     viewDimensions_.clear();
+    requestedOutputSizes_.clear();
     for (auto& [p, l] : luts_) release(l.tex);
     luts_.clear();
     for(auto& [path,t]:graphTextures_)release(t);
@@ -516,6 +518,7 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
     // Pure host-side size choice; no implicit scaling of current projects.
     width=std::max(1,width);
     height=std::max(1,height);
+    requestedOutputSizes_[viewId_]={width,height};
     if (width<64 || height<64 || !dev_ || !enabled_ || !settings_.enabled ||
         quality_ != PrismaQuality::High || !hdrRequested())
         return {width,height};
