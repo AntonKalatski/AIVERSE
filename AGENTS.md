@@ -105,8 +105,21 @@ GPU buffers need separate draws, not fake combined geometry. Vulkan pooled
 nonzero base vertices remain on the direct path. The option is independent
 of CPU packet caching, disabled by default and forbidden in safe/debug
 or reflection/auxiliary passes. Editor Scene → Batching reports submitted
-cross-model groups, commands and item counts. See `docs/geometry-performance.md`
-and the latest batching-agent handoff before editing these paths.
+cross-model groups, commands and item counts. Stage 18 added
+**page-aware preflight** before this extra sort: group only the ModelItems
+already selected for this render pass by exact shared GPU page, resolved
+material-state group, flags and VB/IB handles. At least two Models and the
+backend's unique indirect-command threshold (Metal 2–32, other backends 4)
+must be possible within `instanceLimit` before any page-aware sort runs.
+Preflight retains at most 32 distinct primitive pointers per group, caps
+candidate groups at 2048, and leaves ordinary sorting untouched on misses,
+overflow, or unsupported/safe modes. It never replaces exact final MDI
+compatibility checks or per-entity culling/LOD. Stats report **ready groups
+versus actual successful CPU MDI submissions**, so neither number alone is
+a proven frame-time improvement. Do not use cross-model preflight while
+the separate instance-material-palette sorter is active. See
+`docs/geometry-performance.md` and the latest batching-agent handoff
+before editing these paths.
 
 `engine/render/EcsStaticModelRender.h` provides the **shared genre-independent
 ECS presentation adapter** using only integer asset/revision state in the ECS
