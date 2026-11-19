@@ -470,6 +470,7 @@ void Prisma::shutdown() {
     adaptiveViews_.clear();
     scopedGpuTimings_.clear();
     adaptivePressure_.clear();
+    externalRendererLiveKnownBytes_=externalRendererPendingKnownBytes_=0;
     motionViews_.clear();
     viewDimensions_.clear();
     requestedOutputSizes_.clear();
@@ -620,11 +621,15 @@ std::pair<int,int> Prisma::renderSizeForOutput(int width,int height) {
         // Only what Prisma can actually enumerate counts toward this
         // threshold: once-counted resident caches, per-camera histories,
         // and pending fence-retired resources. Not total physical VRAM.
-        const uint64_t liveBytes=memoryStats().liveKnownBytes;
-        const uint64_t pendingBytes=retirementStats().knownPendingBytes;
         const uint64_t maximum=std::numeric_limits<uint64_t>::max();
-        const uint64_t knownBytes=liveBytes > maximum-pendingBytes
-            ? maximum : liveBytes+pendingBytes;
+        const auto saturatingAdd=[maximum](uint64_t a,uint64_t b) {
+            return a>maximum-b?maximum:a+b;
+        };
+        const uint64_t liveBytes=saturatingAdd(
+            memoryStats().liveKnownBytes,externalRendererLiveKnownBytes_);
+        const uint64_t pendingBytes=saturatingAdd(
+            retirementStats().knownPendingBytes,externalRendererPendingKnownBytes_);
+        const uint64_t knownBytes=saturatingAdd(liveBytes,pendingBytes);
         const uint64_t memoryLimit=uint64_t(
             std::clamp(effect->get("maxPrismaMemoryMiB"),32.0f,4096.0f))
             * uint64_t(1024*1024);
