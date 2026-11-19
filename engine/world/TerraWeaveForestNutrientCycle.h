@@ -38,6 +38,7 @@ struct ForestNutrientCycleSettings {
     uint32_t maxLeachUnitsPerCell=64;
     uint32_t maxAdvectionUnitsPerCell=128;
     uint32_t minFlowCmPerSec=4;
+    uint32_t waterSamplesPerAxis=8;       // 4m probes in 32m water cell
     uint32_t maxJunctionTransfersPerStep=64; // NEREID-authored edges only
 };
 inline void validateForestNutrientCycleSettings(
@@ -49,6 +50,8 @@ inline void validateForestNutrientCycleSettings(
        s.maxLeachUnitsPerCell>100000 ||
        s.maxAdvectionUnitsPerCell>100000 ||
        s.minFlowCmPerSec>10000 ||
+       (s.waterSamplesPerAxis!=1 && s.waterSamplesPerAxis!=2 &&
+        s.waterSamplesPerAxis!=4 && s.waterSamplesPerAxis!=8) ||
        !s.maxJunctionTransfersPerStep ||
        s.maxJunctionTransfersPerStep>256)
         throw std::invalid_argument("TerraWeave invalid nutrient cycle settings");
