@@ -1,0 +1,118 @@
+#include "StrataModelAdapter.h"
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
+#include <utility>
+#include <vector>
+
+namespace aiverse::render::strata {
+namespace {
+constexpr float kWeights[15] = {
+    0.5f, 0.5f, 0.5f,  // vertex normals
+    1.f, 1.f,          // UV0
+    0.25f, 0.25f, 0.25f, 0.25f, // tangent + handedness
+    1.f, 1.f, 1.f, 1.f, // vertex RGBA
+    1.f, 1.f           // packed lightmap UV1
+};
+
+std::vector<std::array<float, 15>> attributesFor(const Model& model) {
+    std::vector<std::array<float, 15>> attributes;
+    attributes.reserve(model.vertices.size());
+    for (const auto& v : model.vertices) {
+        const uint32_t lmU = uint32_t(v.joints[0]) | (uint32_t(v.joints[1]) << 8);
+        const uint32_t lmV = uint32_t(v.joints[2]) | (uint32_t(v.joints[3]) << 8);
+        attributes.push_back({
+            v.nrm.x, v.nrm.y, v.nrm.z, v.uv.x, v.uv.y,
+            v.tangent.x, v.tangent.y, v.tangent.z, v.tangent.w,
+            float((v.color >> 0) & 255u) / 255.f,
+            float((v.color >> 8) & 255u) / 255.f,
+            float((v.color >> 16) & 255u) / 255.f,
+            float((v.color >> 24) & 255u) / 255.f,
+            float(lmU) / 65535.f, float(lmV) / 65535.f
+        });
+    }
+    return attributes;
+}
+} // namespace
+
+bool buildModelAsset(const Model& model, const BuildOptions& options,
+                     ModelAsset& out, std::string* error) {
+    if (error) error->clear();
+    ModelAsset next;
+    // Presentation-only integration: GeometryScene's immutable rigid CPU
+    // source is the supported path. Never create independent animated copies.
+    const bool modelEligible = model.skins.empty() && model.clips.empty() &&
+        !model.vb.valid() && !model.ib.valid() &&
+        !model.vertices.empty() && !model.indices.empty();
+    const bool hasMutableNodes = [&]() {
+        for (const auto& node : model.nodes)
+            if (node.runtimeMutable || node.skin >= 0) return true;
+        return false;
+    }();
+    std::vector<std::array<float, 15>> attributes;
+    bool builtAttributes = false;
+    for (size_t mi = 0; mi < model.meshes.size(); ++mi) {
+        const auto& mesh = model.meshes[mi];
+        for (size_t pi = 0; pi < mesh.primitives.size(); ++pi) {
+            const auto& p = mesh.primitives[pi];
+            const char* reason = nullptr;
+            if (!modelEligible) reason = "requires immutable non-uploaded rigid CPU Model";
+            else if (hasMutableNodes || mesh.deformable)
+                reason = "mutable/deformable model is not supported";
+            else if (!mesh.lods.empty())
+                reason = "existing authored/generated mesh LOD must be preserved";
+            else if (!p.jointPalette.empty() || p.morphTargets ||
+                     !p.variantMaterial.empty())
+                reason = "skin, morph or material variants are not supported";
+            else if (p.material < 0 || size_t(p.material) >= model.materials.size())
+                reason = "invalid material index";
+            else {
+                const auto& material = model.materials[size_t(p.material)];
+                if (material.alpha != AlphaMode::Opaque || material.transparent ||
+                    material.shaderGraph)
+                    reason = "non-opaque or custom shader material";
+            }
+            if (!reason && (p.indexCount == 0 || p.indexCount % 3 != 0 ||
+                            size_t(p.firstIndex) > model.indices.size() ||
+                            size_t(p.indexCount) >
+                                model.indices.size() - size_t(p.firstIndex)))
+                reason = "invalid primitive index range";
+            if (reason) {
+                next.skipped.push_back({
+                    uint32_t(mi), uint32_t(pi), reason
+                });
+                continue;
+            }
+            if (!builtAttributes) {
+                attributes = attributesFor(model);
+                builtAttributes = true;
+            }
+            BuildInput input;
+            input.indices = model.indices.data() + p.firstIndex;
+            input.indexCount = p.indexCount;
+            input.positions = &model.vertices.front().pos.x;
+            input.vertexCount = model.vertices.size();
+            input.positionStride = sizeof(ModelVertex);
+            input.attributes = attributes.front().data();
+            input.attributeStride = sizeof(attributes.front());
+            input.attributeWeights = kWeights;
+            input.attributeComponents = 15;
+            input.materialGroup = uint32_t(p.material);
+            ModelPrimitiveAsset prepared;
+            prepared.mesh = uint32_t(mi);
+            prepared.primitive = uint32_t(pi);
+            prepared.material = uint32_t(p.material);
+            std::string why;
+            if (!build(input, options, prepared.geometry, &why)) {
+                if (error) *error = "mesh=" + std::to_string(mi) +
+                    ", primitive=" + std::to_string(pi) + ": " + why;
+                return false; // Preserve old output on failure
+            }
+            next.primitives.push_back(std::move(prepared));
+        }
+    }
+    out = std::move(next);
+    return true;
+}
+} // namespace aiverse::render::strata
