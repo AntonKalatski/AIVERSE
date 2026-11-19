@@ -158,50 +158,57 @@ inline gfx::TextureHandle uploadContainerTexture(gfx::Device& dev, const Compres
         decodedMipBytes.push_back(bytes);
     }
 
-    // Decode each 2D slice of each mip into packed RGBA8, keeping the original
-    // layer/face/z order so native array and volume uploads preserve all images.
-    std::vector<std::vector<uint8_t>> decoded(in.levels.size());
-    for (size_t level = 0; level < in.levels.size(); ++level) {
-        const int count = levelImageCount(in, int(level));
-        const size_t stride = size_t(levelWidth(in, int(level))) *
-                              size_t(levelHeight(in, int(level))) * 4;
-        auto& output = decoded[level];
-        output.resize(decodedMipBytes[level]);
-        for (int slice = 0; slice < count; ++slice) {
-            std::vector<uint8_t> rgba;
-            if (!decodeBlocksSlice(in, int(level), slice, rgba) ||
-                rgba.size() != stride) {
-                error = "container CPU fallback unavailable for this format (ASTC/BC6H require native GPU)";
-                return {};
-            }
-            std::copy(rgba.begin(), rgba.end(),
-                      output.begin() + std::ptrdiff_t(stride * size_t(slice)));
-        }
-    }
-    // The native attempt may have filled the same descriptor with compressed
-    // levelData and levelCount. Clear that upload contract before creating the
-    // uncompressed fallback: Vulkan accepts explicit levelData for *any*
-    // format and would otherwise interpret BC bytes as RGBA pixels. Metal and
-    // GL would also lose the authored mip allocation when mipLevels stayed 0.
+    // The native attempt may have filled the descriptor with compressed
+    // levelData and levelCount. Clear that upload contract BEFORE creating
+    // the uncompressed fallback, keeping the authored mip count.
     td.format = in.srgb ? gfx::PixelFormat::RGBA8_sRGB : gfx::PixelFormat::RGBA8;
     td.levelCount = 0;
     td.levelData = nullptr;
     td.levelSize = nullptr;
     td.mipLevels = int(in.levels.size());
-    td.data = decoded[0].data();
-    gfx::TextureHandle tex = dev.createTexture(td);
-    if (!tex.valid()) {
-        error = dev.lastError();
-        if (error.empty()) error = "RHI could not allocate texture container image";
-        return {};
-    }
-    // The initial allocation consumes level zero; upload remaining manually
-    // to preserve authored mips rather than regenerating them from level zero.
-    for (size_t level = 1; level < decoded.size(); ++level) {
+    td.data = nullptr;
+
+    // Decode only one entire mip at a time. The base level is consumed
+    // synchronously by createTexture; subsequent levels are consumed by
+    // updateTextureRegion. Holding all decoded mips simultaneously could
+    // multiply peak RAM usage despite the logical chain budget above.
+    gfx::TextureHandle tex{};
+    std::vector<uint8_t> decodedMip;
+    for (size_t level = 0; level < in.levels.size(); ++level) {
         const int width = levelWidth(in, int(level));
         const int height = levelHeight(in, int(level));
         const int slices = levelImageCount(in, int(level));
         const size_t stride = size_t(width) * size_t(height) * 4;
+        decodedMip.resize(decodedMipBytes[level]);
+        for (int slice = 0; slice < slices; ++slice) {
+            std::vector<uint8_t> rgba;
+            if (!decodeBlocksSlice(in, int(level), slice, rgba) ||
+                rgba.size() != stride) {
+                error = "container CPU fallback unavailable for this format (ASTC/BC6H require native GPU)";
+                if (tex.valid()) dev.destroyTexture(tex);
+                return {};
+            }
+            std::copy(rgba.begin(), rgba.end(),
+                      decodedMip.begin() + std::ptrdiff_t(stride * size_t(slice)));
+        }
+
+        if (level == 0) {
+            // Each native backend consumes all base faces/layers/volume slices
+            // synchronously; the source buffer can be reused for the next mip.
+            td.data = decodedMip.data();
+            tex = dev.createTexture(td);
+            td.data = nullptr;
+            if (!tex.valid()) {
+                error = dev.lastError();
+                if (error.empty()) error = "RHI could not allocate texture container image";
+                return {};
+            }
+            continue;
+        }
+
+        // Keep authored mipmaps rather than generating from level zero.
+        // One 3D upload spans the depth slices; arrays/cubemaps upload each
+        // physical layer/face separately.
         for (int slice = 0; slice < (in.depth > 1 ? 1 : slices); ++slice) {
             gfx::TextureUploadDesc u;
             u.mipLevel = int(level);
@@ -211,7 +218,7 @@ inline gfx::TextureHandle uploadContainerTexture(gfx::Device& dev, const Compres
             u.depth = in.depth > 1 ? levelDepth(in, int(level)) : 1;
             u.rowPitchBytes = width * 4;
             u.slicePitchBytes = width * height * 4;
-            u.data = decoded[level].data() + stride * size_t(slice);
+            u.data = decodedMip.data() + stride * size_t(slice);
             if (!dev.updateTextureRegion(tex, u)) {
                 error = dev.lastError();
                 if (error.empty()) error = "container mip or subresource GPU upload failed";
