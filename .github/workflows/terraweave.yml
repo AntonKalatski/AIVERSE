@@ -74,5 +74,4 @@ jobs:
         run: |
           ctest --test-dir build/terraweave-ci \
             --output-on-failure \
-            -R '^(gpu_timing_router|terraweave(_arbor|_flora|_model|_heightmap|_ops|_preview|_forest_scene|_horizon|_micro_nutrient|_native_micro_compile)?)
-
+            -R '^(skill_audit|gpu_timing_router|terraweave(_arbor|_flora|_model|_heightmap|_ops|_preview|_forest_scene|_horizon|_micro_nutrient|_native_micro_compile)?)$'
