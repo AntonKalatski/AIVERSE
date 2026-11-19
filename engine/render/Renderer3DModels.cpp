@@ -1970,15 +1970,20 @@ void Renderer3D::renderModels(int phase) {
                 groups[key].observe(item.model, item.prim, threshold);
             }
             modelStats_.staticCrossModelPreflightGroups += groups.size();
+            size_t readyGroupsThisPass = 0;
             for (auto& [key, group] : groups) {
                 (void)key;
                 group.ready = group.opportunity(threshold, instanceLimit_);
-                if (group.ready)
+                if (group.ready) {
+                    ++readyGroupsThisPass;
                     ++modelStats_.staticCrossModelPreflightReady;
-                else
+                } else {
                     ++modelStats_.staticCrossModelPreflightRejected;
+                }
             }
-            if (modelStats_.staticCrossModelPreflightReady == 0) {
+            // A prior sun-shadow pass may have qualified other groups.
+            // Never use accumulated scene statistics to enable this pass.
+            if (readyGroupsThisPass == 0) {
                 staticCrossModelSort = false;
             } else {
                 staticCrossCandidates.resize(modelItems_.size(), uint8_t{0});
