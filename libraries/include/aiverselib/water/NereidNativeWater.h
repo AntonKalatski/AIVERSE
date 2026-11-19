@@ -3,6 +3,7 @@
 #pragma once
 #include <aiverselib/water/NereidAdaptiveWater.h>
 #include <aiverselib/water/NereidBuoyancySystems.h>
+#include <aiverselib/water/NereidInteractions.h>
 #include <string>
 #include <utility>
 #include <vector>
@@ -12,6 +13,7 @@ namespace aiverse::lib::nereid {
 struct NativeWaterPipelineConfig {
     bool enableGeometry=false;
     bool enableBuoyancy=false;
+    bool enableInteractions=false;
     bool probeFromTransform=true;
     AdaptiveWaterSamplingConfig adaptive{};
 };
@@ -23,11 +25,14 @@ inline void registerNativeWaterPipeline(Simulation& sim,
     registerNereidWaterPersistence(sim);
     if(config.enableGeometry)registerNereidGeometryPersistence(sim);
     if(config.enableBuoyancy)registerNereidBuoyancyPersistence(sim);
+    if(config.enableInteractions)registerNereidInteractionPersistence(sim);
     if(config.probeFromTransform)
         addWaterProbeFromTransformSystem(sim,prefix+".probe");
     addAdaptiveWaterSamplingSystem(sim,prefix+".sample",config.adaptive);
     if(config.enableBuoyancy)
         addWaterBuoyancySystem(sim,prefix+".buoyancy");
+    if(config.enableInteractions)
+        addWaterInteractionSystem(sim,prefix+".interaction");
 }
 
 // Deterministic body entity creation order, same across independent hosts.
