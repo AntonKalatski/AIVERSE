@@ -131,6 +131,17 @@ public:
                 (unsigned long long)residency.stagingOrphanModels);
         ImGui::TextDisabled("GPU программы Renderer3D: %zu партий ждут fence",
             ed.renderer().pendingProgramRetirements());
+        ImGui::TextDisabled("GPU RenderTargets: %zu пар ждут fence",
+            ed.renderer().pendingTargetRetirements());
+        const auto warm=ed.renderer().gpuWarmStats();
+        if(warm.shaderJobs || warm.pipelineJobs || warm.colorVariants)
+            ImGui::TextDisabled(
+                "GPU shader warmup: %zu shaders · %zu pipelines · %zu HDR variants",
+                warm.shaderJobs,warm.pipelineJobs,warm.colorVariants);
+        if(warm.colorPollAttempts)
+            ImGui::TextDisabled("GPU HDR прогрев: опросов %llu · завершено %llu",
+                (unsigned long long)warm.colorPollAttempts,
+                (unsigned long long)warm.colorVariantsReady);
         if(ed.renderer().programRetirementOrphanBatches())
             ImGui::TextDisabled("GPU программы: потеряно партий %llu",
                 (unsigned long long)ed.renderer().programRetirementOrphanBatches());
