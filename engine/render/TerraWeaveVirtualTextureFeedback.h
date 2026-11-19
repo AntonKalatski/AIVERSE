@@ -35,40 +35,25 @@ public:
     // Feedback pass is provided by the caller and must already be initialized.
     // Terra's current Arbor, impostor and Horizon models are all ModelDraws;
     // deformed feedback can be enabled for future procedural animations.
+    // Legacy single-archive mode: one application-owned GPU feedback pass.
     bool initialize(gfx::Device& device,
                     gfx::VirtualTextureFeedbackPass& pass,
                     Renderer3D& renderer,
                     bool includeDeformed = false) {
-        if (renderer_ || !pass.ready()) return false;
-        renderer_ = &renderer;
-        pass_ = &pass;
-        if (!rigid_.initialize(device, pass.hasDepthAttachment())) {
-            renderer_ = nullptr;
-            pass_ = nullptr;
-            return false;
-        }
-        if (includeDeformed &&
-            !deformed_.initialize(device, pass.hasDepthAttachment())) {
-            rigid_.shutdown();
-            renderer_ = nullptr;
-            pass_ = nullptr;
-            return false;
-        }
-        auto resolve = [this](const Model& model,
-                              const Material& material, Mapping& mapping) {
-            // The shared 32-bit GPU page ID has no VT-domain field.
-            // Multiple atlases must be captured in separate domain passes;
-            // nonselected materials still write depth but zero page IDs.
-            return resolveFeedbackMaterialMapping(model,material,mapping);
-        };
-        if (!rigid_.connect(renderer, resolve) ||
-            (includeDeformed && !deformed_.connect(renderer, resolve))) {
-            shutdown();
-            return false;
-        }
-        renderer.setVirtualTextureFeedback(&pass, {}, {});
-        deformedEnabled_ = includeDeformed;
-        return true;
+        return pass.ready() &&
+            initializePrograms(device,renderer,pass.hasDepthAttachment(),
+                               includeDeformed,&pass);
+    }
+
+    // Multi-archive mode: the domain manager owns separate feedback passes.
+    // No dummy/legacy render target is required. The per-domain depth mode
+    // passed here must match each domain's feedback target depth setting.
+    bool initializeForDomains(gfx::Device& device,
+                              Renderer3D& renderer,
+                              bool depthAttachment = true,
+                              bool includeDeformed = false) {
+        return initializePrograms(device,renderer,depthAttachment,
+                                  includeDeformed,nullptr);
     }
 
     // Call before new Terra submissions each frame to prevent stale pointer
@@ -188,7 +173,7 @@ public:
         return n;
     }
 
-    bool ready() const { return renderer_ && pass_ && rigid_.ready(); }
+    bool ready() const { return renderer_ && rigid_.ready(); }
     size_t mappedMaterialCount() const { return pages_.size(); }
     bool deformedEnabled() const { return deformedEnabled_; }
 
@@ -209,6 +194,37 @@ public:
         deformedEnabled_ = false;
     }
 private:
+    bool initializePrograms(gfx::Device& device,Renderer3D& renderer,
+                            bool depthAttachment,bool includeDeformed,
+                            gfx::VirtualTextureFeedbackPass* pass) {
+        if (renderer_) return false;
+        renderer_=&renderer;
+        pass_=pass;
+        if (!rigid_.initialize(device,depthAttachment)) {
+            renderer_=nullptr;pass_=nullptr;
+            return false;
+        }
+        if (includeDeformed &&
+            !deformed_.initialize(device,depthAttachment)) {
+            rigid_.shutdown();
+            renderer_=nullptr;pass_=nullptr;
+            return false;
+        }
+        auto resolve=[this](const Model& model,const Material& material,
+                            Mapping& mapping) {
+            return resolveFeedbackMaterialMapping(model,material,mapping);
+        };
+        if (!rigid_.connect(renderer,resolve) ||
+            (includeDeformed && !deformed_.connect(renderer,resolve))) {
+            shutdown();
+            return false;
+        }
+        // A null legacy pass means the multi-domain scheduler will submit
+        // its own per-domain targets; no feedback pass is implicitly run.
+        renderer.setVirtualTextureFeedback(pass,{},{});
+        deformedEnabled_=includeDeformed;
+        return true;
+    }
     struct Key {
         const Model* model = nullptr;
         const Material* material = nullptr;
