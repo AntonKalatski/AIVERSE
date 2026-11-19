@@ -354,7 +354,7 @@ void ComputeParticles::clear() {
 bool ComputeParticles::setProgramParameter(uint32_t slot,float value,
                                             bool affectExisting) {
     if(!initialized_ || slot>=8 || !spectra::program::number(value) ||
-       desc_.particleProgram.isNull())return false;
+       (desc_.particleProgram.isNull() && desc_.shaderGraph.isNull()))return false;
     programParams_[slot]=value;
     if(backend_==ComputeBackend::Cpu) {
         if(affectExisting)
