@@ -136,6 +136,52 @@ void test() {
         }
     }
 
+    // Inter-guide self collision is opt-in, deterministic and does not
+    // move fixed roots. The spatial neighbor search has a strict pair cap.
+    {
+        auto dna=HumanDNA::preset("neutral");
+        HumanGroomRuntime baseline,colliding,replica;
+        baseline.generate(dna,GroomQuality::Low);
+        colliding.generate(dna,GroomQuality::Low);
+        replica.generate(dna,GroomQuality::Low);
+        GroomSelfCollisionConfig config;
+        config.enabled=true;
+        config.separation=0.04f;
+        config.response=0.75f;
+        config.maxPairChecks=2048;
+        expect(colliding.setSelfCollision(config) &&
+               replica.setSelfCollision(config),
+               "groom self collision settings rejected");
+        const auto originalRoot=colliding.guides()[0].root;
+        const auto root2=colliding.guides()[1].root;
+        expect(!colliding.setSelfCollision(
+                    {true,std::numeric_limits<float>::quiet_NaN(),0.6f,2048}),
+               "invalid groom self collision parameters were accepted");
+        for(int frame=0;frame<5;++frame) {
+            expect(baseline.step(1.f/120.f,{0.8f,0,0.2f}) &&
+                   colliding.step(1.f/120.f,{0.8f,0,0.2f}) &&
+                   replica.step(1.f/120.f,{0.8f,0,0.2f}),
+                   "self-collision groom integration failed");
+        }
+        expect(render::length(colliding.guides()[0].root-originalRoot)<1e-6f &&
+               render::length(colliding.guides()[1].root-root2)<1e-6f &&
+               render::length(colliding.guides()[0].position[0]-originalRoot)<1e-6f,
+               "self collision moved an anchored guide root");
+        for(std::size_t i=0;i<colliding.guides().size();++i)
+            for(std::size_t j=0;j<colliding.guides()[i].position.size();++j) {
+                const auto a=colliding.guides()[i].position[j];
+                const auto b=replica.guides()[i].position[j];
+                expect(finite(a) && render::length(a-b)<1e-6f,
+                       "groom inter-guide collision not deterministic");
+            }
+        const auto diag=colliding.selfCollisionStats();
+        expect(diag.pairChecks<=5*config.maxPairChecks &&
+               (!diag.budgetHit || diag.pairChecks>0),
+               "groom spatial grid exceeded the bounded contact budget");
+        expect(colliding.stats().updatedMs>=0,
+               "groom collision timing instrumentation invalid");
+    }
+
     // Variable presentation frame rates must use small bounded substeps.
     {
         auto dna=HumanDNA::preset("neutral");
