@@ -9,6 +9,7 @@
 #include <exception>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace aiverse::spectra::gpu_material {
