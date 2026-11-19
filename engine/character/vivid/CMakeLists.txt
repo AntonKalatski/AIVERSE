@@ -21,7 +21,7 @@ target_compile_features(aiverse_vivid_mesh PUBLIC cxx_std_20)
 
 # Per-character GPU presentation owner. Each actor owns independent writable
 # compute/model vertex streams, with no second animation scheduler.
-add_library(aiverse_vivid_actor STATIC GpuActorStream.cpp)
+add_library(aiverse_vivid_actor STATIC GpuActorStream.cpp GpuActorRetirement.cpp)
 add_library(AIVERSE::vivid_actor ALIAS aiverse_vivid_actor)
 target_link_libraries(aiverse_vivid_actor PUBLIC aiverse_vivid_mesh)
 target_compile_features(aiverse_vivid_actor PUBLIC cxx_std_20)
@@ -99,6 +99,14 @@ if(AIVERSE_BUILD_TESTS)
         add_test(NAME vivid_metal_rhi COMMAND aiverse_vivid_metal_rhi_tests)
         set_tests_properties(vivid_metal_rhi PROPERTIES SKIP_RETURN_CODE 77)
     endif()
+
+    # Headless token/failure/idle actor GPU retirement test. Uses the same
+    # genre-neutral AsyncResourceRetirementQueue as the renderer.
+    add_executable(aiverse_vivid_actor_retirement_tests
+        ${PROJECT_SOURCE_DIR}/tests/vivid/actor_retirement.cpp)
+    target_link_libraries(aiverse_vivid_actor_retirement_tests PRIVATE
+        aiverse_vivid_actor aiverse_zstd_dec)
+    add_test(NAME vivid_actor_retirement COMMAND aiverse_vivid_actor_retirement_tests)
 
     add_executable(aiverse_vivid_vertex_override_tests
         ${PROJECT_SOURCE_DIR}/tests/vivid/render_vertex_override.cpp)
