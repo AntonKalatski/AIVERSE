@@ -264,10 +264,18 @@ public:
                 throw std::invalid_argument("VIVID skin weights: malformed edit");
             const auto id=e["vertex"].integer(-1);
             if(id<0||id>std::numeric_limits<std::uint32_t>::max() ||
-               authoring.edits_.count(std::uint32_t(id)) ||
-               !authoring.set(std::uint32_t(id),e["joint"].str(),
-                              float(e["weight"].toDouble())))
+               authoring.edits_.count(std::uint32_t(id)))
                 throw std::invalid_argument("VIVID skin weights: invalid or repeated edit");
+            const auto joint=e["joint"].str();
+            const float weight=float(e["weight"].toDouble());
+            if(joint.empty()||joint.size()>128 ||
+               joint.find_first_of("\n\r")!=std::string::npos ||
+               !std::isfinite(weight)||weight<0||weight>1)
+                throw std::invalid_argument("VIVID skin weights: invalid joint/weight");
+            // Import builds a single immutable snapshot, not 65k undo
+            // records or quadratic copies of the entire edit map.
+            authoring.edits_.emplace(std::uint32_t(id),
+                Edit{std::uint32_t(id),joint,weight});
         }
         return authoring;
     }
