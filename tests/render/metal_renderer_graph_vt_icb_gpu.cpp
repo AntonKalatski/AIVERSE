@@ -11,6 +11,7 @@
 #include <array>
 #include <cmath>
 #include <cstdint>
+#include <cstddef>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -175,8 +176,6 @@ void compareCaptured(const std::vector<uint8_t>& ordinary,
     check(bad==0,"full production graph Renderer3D CPU/ICB capture parity");
     if(!failed)std::printf("PASS: Shader Graph+VT %s Renderer3D CPU/ICB pixels\n",phase);
 }
-} // namespace
-
 
 // Only synthetic, trusted 4x4 raw RGBA8 pages live in this test's own
 // temporary directory. No assetpack path and no production game files.
