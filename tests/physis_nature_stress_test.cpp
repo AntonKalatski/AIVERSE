@@ -39,9 +39,9 @@ static void windFracturesAProxyExactlyOnce() {
     forces.areaSqMeters = 2_fx;
     forces.airDensity = 1_fx;
     world.add<pn::ForceReceiver>(tree, forces);
-    world.add<pn::ForceOutput>(tree, {});
-    world.add<pn::NatureProbeComponent>(tree, {});
-    world.add<pn::NatureContactComponent>(tree, {});
+    world.add<pn::ForceOutput>(tree, pn::ForceOutput{});
+    world.add<pn::NatureProbeComponent>(tree, pn::NatureProbeComponent{});
+    world.add<pn::NatureContactComponent>(tree, pn::NatureContactComponent{});
     pn::NatureStressReceiverComponent resistance;
     resistance.leverArmMeters = 2_fx;
     resistance.forceLimitN = 100_fx;
@@ -49,7 +49,7 @@ static void windFracturesAProxyExactlyOnce() {
     resistance.catastrophicLoadRatio = 2_fx;
     resistance.fatigueRate = 0_fx;
     world.add<pn::NatureStressReceiverComponent>(tree, resistance);
-    world.add<pn::NatureStressOutputComponent>(tree, {});
+    world.add<pn::NatureStressOutputComponent>(tree, pn::NatureStressOutputComponent{});
 
     tick(world);
     const auto first = world.get<pn::NatureStressOutputComponent>(tree);
@@ -102,9 +102,9 @@ static void fireExposureUsesNatureContactNotWater() {
     pn::ForceReceiver still;
     still.areaSqMeters = 0_fx; // no aerodynamic load
     world.add<pn::ForceReceiver>(shrub, still);
-    world.add<pn::ForceOutput>(shrub, {});
-    world.add<pn::NatureProbeComponent>(shrub, {});
-    world.add<pn::NatureContactComponent>(shrub, {});
+    world.add<pn::ForceOutput>(shrub, pn::ForceOutput{});
+    world.add<pn::NatureProbeComponent>(shrub, pn::NatureProbeComponent{});
+    world.add<pn::NatureContactComponent>(shrub, pn::NatureContactComponent{});
     pn::NatureStressReceiverComponent material;
     material.forceLimitN = 100000_fx;
     material.bendingLimitNm = 100000_fx;
@@ -114,7 +114,7 @@ static void fireExposureUsesNatureContactNotWater() {
     material.recoveryRate = 0_fx;
     material.catastrophicLoadRatio = 16_fx;
     world.add<pn::NatureStressReceiverComponent>(shrub, material);
-    world.add<pn::NatureStressOutputComponent>(shrub, {});
+    world.add<pn::NatureStressOutputComponent>(shrub, pn::NatureStressOutputComponent{});
 
     for (int i = 0; i < 3; ++i) {
         tick(world);
@@ -156,14 +156,14 @@ public:
         receiver.airDensity = 1_fx;
         receiver.dragCoefficient = 1_fx;
         simulation.world().add<pn::ForceReceiver>(object, receiver);
-        simulation.world().add<pn::ForceOutput>(object, {});
-        simulation.world().add<pn::NatureProbeComponent>(object, {});
-        simulation.world().add<pn::NatureContactComponent>(object, {});
+        simulation.world().add<pn::ForceOutput>(object, pn::ForceOutput{});
+        simulation.world().add<pn::NatureProbeComponent>(object, pn::NatureProbeComponent{});
+        simulation.world().add<pn::NatureContactComponent>(object, pn::NatureContactComponent{});
         pn::NatureStressReceiverComponent strength;
         strength.forceLimitN = 10_fx;
         strength.bendingLimitNm = 10_fx;
         simulation.world().add<pn::NatureStressReceiverComponent>(object, strength);
-        simulation.world().add<pn::NatureStressOutputComponent>(object, {});
+        simulation.world().add<pn::NatureStressOutputComponent>(object, pn::NatureStressOutputComponent{});
     }
     void applyCommand(Simulation&, const Command&) override {}
     void hashState(Simulation&, Hasher&) override {}
