@@ -6,6 +6,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <type_traits>
 #include <vector>
 
 namespace aiverse::render {
@@ -51,13 +52,15 @@ public:
     }
     // Call after Simulation/SceneHierarchy updates, between gfx begin/endFrame.
     // Submit must render the project scene into Renderer3D for each view.
-    template<class Submit>
+    template<class Submit,class AfterScene=std::nullptr_t>
     CameraExecutionResult render(uint64_t frame,double seconds,float dt,
-                                 Submit&& submit,Vec3 renderOrigin={}) {
+                                 Submit&& submit,Vec3 renderOrigin={},
+                                 AfterScene&& afterScene=nullptr) {
         if(!pipeline_)return {};
         hierarchy_.update(cameras_);
         return pipeline_->executeManaged(cameras_,frame,seconds,dt,
-            std::forward<Submit>(submit),rigs_,post_,renderOrigin);
+            std::forward<Submit>(submit),rigs_,post_,renderOrigin,
+            std::forward<AfterScene>(afterScene));
     }
     void requestCapture(Entity e) {scheduler_.requestCapture(e);}
     void markDirty(Entity e) {scheduler_.markDirty(e);}
