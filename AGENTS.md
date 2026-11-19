@@ -1611,3 +1611,52 @@ by user request; handoff in
 `docs/agent-handoffs/animation-universal.md` records actual
 source changes, limitations and the next agent step. Do not
 merge unverified GPU/resource/animation changes to main.
+
+## AIVERSE Stage 108 — explicit GPU device epochs, bounded retirement traces and independent appearance authoring
+
+A native host that supports GPU device recreation must create
+one `render::RenderDeviceLifetime` **per actual device
+lifetime** and use its `Lease` when calling
+`ModelResourceCache::bindResourceDevice(device,lease)`
+and `RenderResourceOwnerGroup::registerScoped(lease,cache)`.
+A generation invalidates when the host explicitly retires
+the epoch, even if a new GPU Device is allocated at exactly
+the same pointer address. Do NOT retire a token before all
+ModelResourceCache/Portrait/View GPU allocations have been
+safely shut down. Only a successful full-device completion
+barrier permits cache shutdown and subsequent rebind.
+Neither a weak epoch nor `gfx::Device::frameSerial()` is a
+GPU completion fence. Resource/group calls remain confined
+to the render/device owner thread.
+
+Use `render::RetirementDiagnosticRing` for bounded metadata
+tracing of GPU retirement only, never for GPU leases or
+proof of completion. It has a fixed event capacity and
+overflow counter, and a weak observer to avoid extending
+host lifetime. The editor exposes the first 128 events.
+Every event callback must be optional, non-authoritative,
+and exception-isolated so it cannot change destruction
+ordering or release an in-flight GPU resource.
+
+For new native project appearance authoring use
+`engine/view/AppearanceAuthoringService.h`.
+`resolveMaterial` composes a material library's `base`
+and `use` references with bounded recursion. `applyMaterial`
+accepts callbacks for project texture upload/warnings;
+`compileGraph` compiles inline or external
+AnimationGraph assets with host-provided operations/traits.
+The service must NOT allocate an animation player, run
+MotionWeave graph clocks, or import RTS/FPS/game classes.
+The legacy RtsLook and runtime RtsAnimate graph compilation
+now delegate to it while retaining host-specific rules,
+material texture residency, attachments and pose authority.
+For rendering use the canonical `view::AppearanceSpec`
+and `aiverse::View`; there is exactly ONE graph evaluator
+for each presentation source.
+
+Stage 108 test sources/CTest entries exist but are **NOT RUN**
+by user instruction. After each stage append a separate
+`docs/agent-handoffs/animation-universal.md` entry listing
+architecture, API, changed files/commits, actual tests,
+known limitations and the next precise task. Do not merge
+uncompiled GPU/resource/animation source into main.
