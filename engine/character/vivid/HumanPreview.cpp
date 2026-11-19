@@ -126,6 +126,10 @@ HumanPreviewAsset generateHumanPreview(const HumanDNA& dna,GroomQuality quality)
     }
     result.head->finalize();
     result.rig=HumanRigBinding::compile(*result.head,dna.rig);
+    // Important: the shared model upload policy may generate LOD meshes,
+    // tangents and material/shadow batch vertices. Generate correctives
+    // only AFTER those immutable model-relative vertex IDs are finalized.
+    render::prepareModelUpload(*result.head);
 
     // Source-independent sparse corrective morph targets, intentionally
     // separate from the renderer's legacy eight-target shader limit.
