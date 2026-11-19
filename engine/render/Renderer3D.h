@@ -913,11 +913,15 @@ private:
         gfx::TextureHandle alphaCoverage;
         bool usesVirtualTexture = false;
         bool perCommandVt = false; // Metal opt-in per-command fragment ABI
-        // CPU table snapshot is a safety gate only. The Metal GPU ICB
+        std::vector<GpuMaterialResourceTicket> perCommandTickets;
+        // CPU table snapshot validates each command before ICB execution. The Metal GPU ICB
         // still inherits homogeneous fragment resources per submission.
         GpuMaterialResourceTicket materialResources;
     };
     GpuMaterialResourceTable gpuMaterialResources_{4096};
+    // Set only around an opt-in per-command ICB draw submission.
+    // Non-ICB direct/MDI batches must continue exact VT grouping.
+    bool gpuIcbPerCommandMaterialSubmit_ = false;
     std::vector<GpuEncodedBatch> gpuEncodedBatches_;
     std::vector<uint8_t> gpuEncodedCovered_;
     uint32_t gpuEncodedDrawCalls_ = 0, gpuEncodedCommands_ = 0;
