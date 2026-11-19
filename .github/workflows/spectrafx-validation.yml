@@ -1,0 +1,58 @@
+name: SpectraFX branch validation
+
+on:
+  push:
+    branches:
+      - feature/spectrafx-generic-cue-queue
+    paths:
+      - ".github/workflows/spectrafx-validation.yml"
+      - "CMakeLists.txt"
+      - "engine/fx/**"
+      - "apps/client/ClientFx*"
+      - "apps/fps/client.cpp"
+      - "apps/editor/windows/SpectraFx*"
+      - "tests/spectrafx*"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spectrafx-branch-validation
+  cancel-in-progress: true
+
+jobs:
+  native:
+    name: Native SpectraFX contracts and hosts
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: false
+      - name: Linux desktop dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q ninja-build libx11-dev libegl-dev libgles-dev libvulkan-dev
+      - name: Configure desktop editor + FPS + tests
+        run: |
+          cmake -S . -B build/spectrafx-ci -G Ninja -DCMAKE_BUILD_TYPE=Debug -DAIVERSE_BUILD_EDITOR=ON -DAIVERSE_BUILD_TESTS=ON -DCMAKE_COMPILE_WARNING_AS_ERROR=ON
+      - name: Compile every SpectraFX public header and native contract test
+        run: |
+          cmake --build build/spectrafx-ci --parallel 2 --target aiverse_spectrafx_header_smoke aiverse_spectrafx_contract_tests
+      - name: Run native SpectraFX contract checks
+        run: ctest --test-dir build/spectrafx-ci --output-on-failure -R "^spectrafx_contract$"
+      - name: Build existing SpectraFX test binaries
+        run: |
+          cmake --build build/spectrafx-ci --parallel 2 --target aiverse_vfx_graph_tests aiverse_vfx_ecs_tests aiverse_vfx_assets_tests
+      - name: Run existing SpectraFX CTest label
+        run: ctest --test-dir build/spectrafx-ci --output-on-failure -L SpectraFX
+      - name: Build native editor and FPS client
+        run: |
+          cmake --build build/spectrafx-ci --parallel 2 --target aiverse_editor aiverse_fps_client
