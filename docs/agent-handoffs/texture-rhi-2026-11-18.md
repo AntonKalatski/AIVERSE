@@ -7288,3 +7288,48 @@ still required.
 invalid imports and retaining normal fallback residency/fence gates.
 Then add focused manifest parser tests in test phase, including
 symlinks, truncated pages, malformed metadata, and mixed axis modes.
+
+
+## Stage 10P — TerraWeave imported archive candidate preparation (2026-11-19)
+
+**Branch:** `feature/texture-rhi-unification`, draft PR #21.
+**Source commits:** `b1240e2cc2341e408024cfd0c1c8240e0ac818ca`
+(`engine/render/TerraWeaveVirtualAtlasArchive.h`),
+`7b19a949957f4ac939e21947333844c3ff2b0f1c`
+(`engine/render/TerraWeaveVirtualAtlasDomains.h`).
+**Docs commits:** `de4c659889aa63ff4181fc09208854f0ec8746ad` (`docs/texture-rhi.md`);
+`44113441e68e0d0aced62aea2695fd9e0d8307ed` (`skills/visuals/aiverse-texture-rhi/SKILL.md`).
+
+**APIs:** `TerraWeaveVirtualAtlasSession::prepareFromArchiveDirectory`
+and `TerraWeaveVirtualAtlasDomains::prepareFromArchiveDirectory`.
+The first validates a caller-provided trusted immutable archive
+directory with `gfx::loadVirtualTextureArchiveManifest`, then passes
+the validated typed version to ordinary `prepare`; errors propagate
+to `session.lastError()`. The multi-domain helper delegates to the
+matching session with that domain's configured page/buffer budgets.
+No promotion, GPU fence bypass or shader-slot reassignment occurs
+during import; current active/candidate resources survive errors.
+
+**Compatibility:** Existing `prepare(VirtualTextureArchiveVersion)`
+API remains. Both Python and native archive manifest schemas are
+accepted via gfx helper and typed addressing flows into the existing
+single-/multi-domain VT shader resolver. Python `importedRevision`
+is supplied by the caller when necessary; no untrusted paths from
+JSON are used. Native C++ archive writer remains an alternative.
+
+**Checks:** GitHub source inspection and source+docs commits accepted.
+**C++ compile NOT RUN, CTest NOT RUN, OpenGL/Metal/Vulkan NOT RUN,
+full editor integration NOT RUN.** No release readiness claim.
+
+**Known risks:** Validation is synchronous and should run in an asset
+staging phase on a trusted immutable directory, not each frame.
+CPU import does not cryptographically authenticate the directory,
+and source texture fallback sampler modes must be consistent. Old
+GPU atlas is still fenced/retired by the owner, not by this helper.
+
+**Next:** ensure GPU VT page feedback and CPU prefetch use the same
+Repeat/MirrorRepeat UV addressing as Stage 10L shaders. In particular
+audit `VirtualTextureModelFeedback.h`,
+`TerraWeaveVirtualTextureFeedback.h`, feedback fragment shader
+uniforms, and any CPU UV region planner. Cross-backend shader and
+archive integration tests are deferred until feature closure.
