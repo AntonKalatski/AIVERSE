@@ -611,7 +611,9 @@ void appendModelOwnedGpuMemory(const Model& m,
         counter.buffer(m.ib);
     }
     for (const auto& image : m.images)
-        if (!image.borrowedTexture && !image.textureCache)
+        // releaseModel frees precisely those images whose GPU handle is
+        // not leased from another owner; mirror its actual ownership flag.
+        if (!image.borrowedTexture)
             counter.texture(image.tex);
     counter.texture(m.morphTex);
     counter.texture(m.baked.tex);
