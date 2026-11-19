@@ -350,6 +350,13 @@ void main() {
     ao *= m_misc.w > 1.5 ? (m_misc.w > 3.5 && !gl_FrontFacing ? v_col.r : v_col.a) : 1.0;   // +4: back-face AO in red
     rough = clamp(rough, 0.045, 1.0);
     metallic = clamp(metallic, 0.0, 1.0);
+#if defined(LUMAWEAVE_SURFACE)
+    // Opt-in linear signed world normal from the SAME PBR shading path,
+    // including tangent normal map and Shader Graph perturbations. W is
+    // roughness; an independent depth pass rejects mismatched occluders.
+    o_color=vec4(normalize(n),rough);
+    return;
+#endif
 #if defined(LUMAWEAVE_MATERIAL)
     // HDR side-channel: exact material diffuse base + metallic, not the
     // already-illuminated scene color. Respect alpha mask, tint, PBR textures
@@ -856,6 +863,12 @@ fragment float4 fs_main(VOut in [[stage_in]], bool frontFacing [[front_facing]],
     ao *= m.misc.w > 1.5 ? (m.misc.w > 3.5 && !frontFacing ? in.col.r : in.col.a) : 1.0;   // +4: back-face AO in red
     rough = clamp(rough, 0.045, 1.0);
     metallic = clamp(metallic, 0.0, 1.0);
+#if defined(LUMAWEAVE_SURFACE)
+    // World-space signed normal.xyz and physically bounded roughness.w.
+    // Input has passed the same AlphaMask, normal map and PBR processing
+    // as the visible model, without applying any existing direct/indirect GI.
+    return float4(normalize(n),rough);
+#endif
 #if defined(LUMAWEAVE_MATERIAL)
     // Real linear material receiver for external direct lighting. The
     // compute result is multiplied by the physically correct diffuse color.
