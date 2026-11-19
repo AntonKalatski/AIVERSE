@@ -4073,3 +4073,14 @@ Inspected exact definitions: `worldInteger` and `worldVector` are implemented (n
 **Fix:** Introduced `std::vector<fx::FxParticleInfo> particles;` immediately before `ps.snapshot(particles)` inside `scenario<Kind>()`. The source already includes `<vector>`, and `ParticleSystem::snapshot(std::vector<FxParticleInfo>&) const` is the public API. No runtime FX behavior, ECS state or NEREID game logic was changed.
 
 **Verification performed:** compared the two branch files, inspected `ParticleSystem.h` public API and committed the one-line fix via the GitHub connector. **NOT RUN:** actual macOS build, CTest, GPU validation, full regression. Do not claim test PASS. **Next:** pull the NEREID branch, run `cmake --build build/nereid-test --parallel 4`; after a successful build, run `ctest --test-dir build/nereid-test --output-on-failure --parallel 4`. Share subsequent failures; keep PR Draft until build and tests pass. **Upstream note:** the originating SpectraFX branch has the same bug, so the SpectraFX agent should also take this patch.
+
+
+## Stage 45.6 — Clang aggregate initializer warning in NEREID cascade slots
+
+**Date:** 2026-11-19. **Branch:** `feature/nereid-water-core` (PR #23 Draft). **Reported macOS build:** `engine/world/NereidCascadeScene.h:286:55: warning: missing field 'inletLevel' initializer [-Wmissing-field-initializers]` while `aiverse_runtime` is compiling. The rest of the build was still in progress (77% reported); this is a warning rather than a build failure.
+
+**Root cause:** `NereidCascadeScene::Slot` contains `source`, GPU mesh, flags, optional `inletLevel/outletLevel`, revisions and local origin. `Slot{std::move(source)}` value-initializes omitted aggregate fields but triggers Clang's missing-field warning, especially for the optional level member.
+
+**Change:** construct `Slot slot{};` so all members are explicitly initialized, then `slot.source=std::move(source);`, followed by `next.emplace(id,std::move(slot))`. Keeps default flags, empty GPU handles/optional levels, 0 revisions/origin, map identity and duplicate error unchanged. No fixed ECS data, water physics, scene geometry or renderer algorithms changed.
+
+**Actually verified:** source inspected through GitHub connector, offending initializer located exactly once, guarded patch and branch commit. **Not run:** macOS recompile, CTest or GPU verification; cannot claim warning fully gone until user reruns. **Next:** let the current build finish and report failures; after fetching this change rebuild `aiverse_runtime` or full target, and run CTest when compilation succeeds. Keep PR Draft.

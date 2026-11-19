@@ -283,7 +283,11 @@ public:
                source.options.uvScale<=0)
                 throw std::invalid_argument("nereid.cascade: invalid source");
             const uint64_t id=source.id;
-            if(!next.emplace(id,Slot{std::move(source)}).second)
+            // Initialize every presentation cache field (including optional
+            // linked levels) before moving the source into its map slot.
+            Slot slot{};
+            slot.source=std::move(source);
+            if(!next.emplace(id,std::move(slot)).second)
                 throw std::invalid_argument("nereid.cascade: duplicate id");
         }
         retired_.reserve(retired_.size()+slots_.size());
