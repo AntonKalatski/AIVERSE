@@ -219,6 +219,9 @@ struct ModelRenderStats {
     uint64_t staticCrossModelPreflightReady = 0;
     uint64_t staticCrossModelPreflightRejected = 0;
     uint64_t staticCrossModelPreflightItems = 0;
+    // Number of distinct permitted static page/material groups ordered
+    // once per pass, rather than comparing full model/page state per item.
+    uint64_t staticCrossModelRankedGroups = 0;
     // Retained high-water workspace bytes, not per-frame allocation count.
     size_t staticCrossModelPreflightWorkspaceBytes = 0;
     uint64_t staticCrossModelAdaptiveSkippedPasses = 0;
