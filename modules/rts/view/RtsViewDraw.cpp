@@ -268,6 +268,11 @@ void RtsView::drawObject(Renderer3D& r, EntityAnim& st, const SceneObject& o, fl
         // Never submit twice or mutate an already-updated pose here.
         ::aiverse::view::Object packet;
         packet.id=st.genericViewId;
+        // Mirror the source identity published to genericView_->update().
+        // Without generation + publication epoch, submitOne rejects its
+        // already evaluated MotionWeave pose and draws the bind pose.
+        packet.generation=(uint64_t(o.type)<<32)|uint32_t(st.choice);
+        packet.animationModelGeneration=ch.modelGeneration;
         packet.draw=d;
         packet.graph=ch.graph;
         genericView_->submitOne(r,packet);
