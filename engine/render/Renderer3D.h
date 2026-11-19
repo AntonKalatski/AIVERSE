@@ -16,6 +16,7 @@
 #include "Math3D.h"
 #include "Model.h"
 #include "ModelVirtualTextureSampling.h"
+#include "GpuMaterialResourceTable.h"
 #include "PersistentGpuSceneUpload.h"
 #include "GpuSceneCulling.h"
 #include "GpuSceneDrawCommands.h"
@@ -911,7 +912,11 @@ private:
         ModelVirtualTextureBinding virtualTexture;
         gfx::TextureHandle alphaCoverage;
         bool usesVirtualTexture = false;
+        // CPU table snapshot is a safety gate only. The Metal GPU ICB
+        // still inherits homogeneous fragment resources per submission.
+        GpuMaterialResourceTicket materialResources;
     };
+    GpuMaterialResourceTable gpuMaterialResources_{4096};
     std::vector<GpuEncodedBatch> gpuEncodedBatches_;
     std::vector<uint8_t> gpuEncodedCovered_;
     uint32_t gpuEncodedDrawCalls_ = 0, gpuEncodedCommands_ = 0;
