@@ -377,6 +377,17 @@ ownership are verified. `encodeRendererCommands` revalidates the
 current Model pointer, geometry/material revisions and live
 `GpuMetadataScene` sidecar lease before preparing shared-RHI indirect
 command bytes. Never use a stale candidate after source unload.
+Stage 10 adds a **dry-run only** bridge into real `Renderer3D` ModelDraw
+passes. `StrataRendererPreview.h/.cpp` supports pure preflight of each
+rigid node/primitive in independent main-camera and sun-shadow views;
+`GeometryScene::setStrataRenderPreviewEnabled(true)` is a third separate
+scene opt-in (in addition to CPU/GPU staging), default OFF. It invokes
+`renderer.previewStrataModel(...)` synchronously and ALWAYS follows with
+the original `renderer.drawModel(d)` exactly once. No Strata GPU command
+or indexed draw is submitted by preview. Renderer3D counters are
+diagnostic only and reset at beginScene. Never infer GPU/raster parity
+from a preview-ready count; actual Metal validation and exclusive route
+ownership remain mandatory before legacy suppression can be added.
 On each bounded Strata step: implementation commit first; append and commit the
 handoff separately, recording unrun tests honestly.
 
