@@ -172,6 +172,16 @@ void Renderer3D::invalidateStaticModelCache(uint64_t persistentId) {
     }
 }
 
+void Renderer3D::invalidateSharedMaterialState(
+    const Model* model, uint64_t materialOwnerKey) {
+    if (!model || !materialOwnerKey) return;
+    auto it = staticMaterialOwners_.find(MaterialOwnerKey{model, materialOwnerKey});
+    if (it == staticMaterialOwners_.end()) return;
+    staticMaterialOwnerBytes_ -= it->second.hashes.size() * sizeof(uint64_t);
+    staticMaterialOwners_.erase(it);
+    ++sharedMaterialStateStats_.evicted;
+}
+
 void Renderer3D::invalidateModelCachesFor(const Model* model) {
     if (!model) return;
     for (auto it = staticMaterialOwners_.begin(); it != staticMaterialOwners_.end();) {
