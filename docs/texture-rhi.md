@@ -1859,3 +1859,29 @@ yet change GPU command submission.
 
 Only source inspection and GitHub commits were performed. Native
 build, tests and Metal GPU execution remain NOT RUN.
+
+
+## Experimental Metal per-command built-in PBR U2/texture ABI — Stage 10AC
+
+`gfx::GpuIcbVirtualMaterial` can opt in with `hasPbr=true`
+and supply six valid fragment texture handles for slots 1..6,
+plus 36 finite float components for the existing nine-float4
+material U2. The original VT atlas/table/layer/wrap descriptor
+remains mandatory for this experimental entry point.
+
+Metal's compute-encoded ICB kernel has an additional
+`pbrU2Stride` byte offset for fragment buffer index 3. The
+opt-in mode writes one 144-byte U2 into each 256-byte aligned
+allocation slice. Fragment texture slots 1..6 are filled from
+per-command native textures and **their own** sampler states
+inside each 4096-byte PBR argument-buffer slice. The Metal
+backend stores and verifies actual texture and sampler object
+identity before GPU execution. Legacy groups use zero U2
+stride and inherited U2/fragment textures.
+
+This stage implements the GPU backend **resource ABI only**.
+Shader Graph is not supported by this ICB path, nor are
+arbitrary material shader permutations. Renderer3D has not yet
+started emitting per-command PBR records. Existing features
+remain disabled by default. Objective-C++/MSL compilation,
+GPU execution, CTest and real image parity are NOT RUN.
