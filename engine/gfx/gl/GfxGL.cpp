@@ -80,6 +80,9 @@ public:
         GLint align = 256;
         glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &align);
         uboAlign_ = align > 0 ? size_t(align) : 256;
+        GLint maxTextureUnits=0;
+        glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS,&maxTextureUnits);
+        fragmentTextureSlots_=std::max(0,int(maxTextureUnits));
 #if defined(__EMSCRIPTEN__) || defined(__APPLE__)
         glGenBuffers(kMaxUniformSlots, slotUbos_);
 #else
