@@ -46,28 +46,35 @@ public:
     };
     void setAdmission(Admission limits) noexcept {limits_=limits;}
     Admission admission() const noexcept {return limits_;}
-    static std::uint64_t estimatedBytes(const Resident& resident) noexcept {
+    static std::uint64_t estimatedCurrentBytes(
+        const HumanPreviewAsset& human,
+        const GpuActorStream* actor,
+        const CpuActorStream* cpuActor) noexcept {
         auto add=[](std::uint64_t& total,std::uint64_t amount) {
             const auto max=std::numeric_limits<std::uint64_t>::max();
             total=amount>max-total?max:total+amount;
         };
         std::uint64_t total=0;
-        if(resident.human.head)
-            add(total,render::estimateModelResident(*resident.human.head).knownBytes());
-        if(resident.human.hair)
-            add(total,render::estimateModelResident(*resident.human.hair).knownBytes());
-        if(resident.actor) {
-            const auto count=resident.actor->vertexCount();
+        if(human.head)
+            add(total,render::estimateModelResident(*human.head).knownBytes());
+        if(human.hair)
+            add(total,render::estimateModelResident(*human.hair).knownBytes());
+        if(actor) {
+            const auto count=actor->vertexCount();
             if(count>std::numeric_limits<std::uint64_t>::max()/
                      (sizeof(GpuMorphVertex)+sizeof(render::ModelVertex)))
                 return std::numeric_limits<std::uint64_t>::max();
             add(total,std::uint64_t(count)*
                 (sizeof(GpuMorphVertex)+sizeof(render::ModelVertex)));
         }
-        if(resident.cpuActor && resident.human.head)
-            add(total,std::uint64_t(resident.human.head->vertices.size())*
+        if(cpuActor && human.head)
+            add(total,std::uint64_t(human.head->vertices.size())*
                 sizeof(render::ModelVertex));
         return total;
+    }
+    static std::uint64_t estimatedBytes(const Resident& resident) noexcept {
+        return estimatedCurrentBytes(resident.human,resident.actor.get(),
+                                     resident.cpuActor.get());
     }
     Residency residency() const noexcept {
         Residency result;
