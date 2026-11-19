@@ -9,15 +9,29 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <limits>
 #include <string>
 #include <vector>
 
 namespace aiverse::spectra {
 
+// A handle is valid only for the creating GpuPoolWorld and its current
+// initialization epoch. Recycled slots always get a new generation.
+struct PoolSourceId {
+    uint64_t worldEpoch=0;
+    uint32_t slot=std::numeric_limits<uint32_t>::max();
+    uint32_t generation=0;
+    bool valid() const {
+        return worldEpoch!=0 && generation!=0 &&
+               slot!=std::numeric_limits<uint32_t>::max();
+    }
+};
+
 struct PoolWorldBudgets {
     uint32_t maxGpuGroups = 16;        // unique compiled graph + backend policy
     uint32_t maxGroupCapacity = 1024;  // each ComputeParticles resource (1..4096)
     uint32_t maxBurstsPerFrame = 256;  // global presentation submission limit
+    uint32_t maxSources = 4096;        // live per-source emitter handles
     fx::FxQuality quality = fx::FxQuality::High;
     // Budget is shared across all GPU groups owned by this world. Optionally
     // supply the SAME external budget to other worlds/GraphRuntime instances
@@ -38,6 +52,7 @@ struct PoolCheckpointStats {
 
 struct PoolWorldStats {
     uint32_t gpuGroups = 0, cpuDefinitions = 0;
+    uint32_t activeSources=0;
     uint32_t submittedBursts = 0, rejectedBursts = 0, frameBursts = 0;
     uint32_t cpuDrawCalls = 0, gpuDrawCalls = 0;
     uint32_t cpuParticles = 0, gpuParticlesEstimated = 0;
@@ -75,6 +90,20 @@ public:
                fx::float4 tint = {1,1,1,1},
                const std::array<float,8>* sourceParams = nullptr);
 
+    // Generation-safe presentation-only source ownership. Each source holds
+    // its own parameter snapshot and named effect binding revision.
+    // retireSource/pauseSource prevent FUTURE births. Existing GPU particles
+    // naturally expire; this does not kill their physical slots immediately.
+    PoolSourceId createSource(const std::string& effectName);
+    bool setSourceNamedParameter(PoolSourceId source,const std::string& name,float value);
+    bool pauseSource(PoolSourceId source);
+    bool resumeSource(PoolSourceId source);
+    bool retireSource(PoolSourceId source);
+    bool sourceActive(PoolSourceId source) const;
+    bool emitSource(PoolSourceId source,fx::float3 position,
+                    fx::float3 direction={0,1,0},
+                    fx::float4 tint={1,1,1,1});
+
     // Host calls beginPresentationFrame AFTER Device::beginFrame and BEFORE
     // its scene render pass. step() once before the scene pass, draw() once
     // within that pass, endPresentationFrame() afterward.
@@ -105,6 +134,14 @@ private:
         bool gpu = false, usesRuntimeParams = false;
         std::array<float,8> defaults{};
         InstanceParameterTable named;
+        uint64_t revision=0;
+    };
+    struct Source {
+        std::string effectName;
+        std::array<float,8> values{};
+        uint64_t bindingRevision=0;
+        uint32_t generation=0;
+        bool active=false, paused=false, exhausted=false;
     };
     struct Group {
         std::string key;
@@ -117,6 +154,8 @@ private:
                                 const GraphRuntimeOptions& options,
                                 uint32_t capacity);
     void recountBindings();
+    Source* getSource(PoolSourceId source);
+    const Source* getSource(PoolSourceId source) const;
 
     gfx::Device* device_ = nullptr;
     BatchWorld cpu_;
@@ -125,6 +164,9 @@ private:
     std::shared_ptr<CheckpointReadbackBudget> checkpointBudget_;
     std::vector<Group> gpuGroups_;
     std::map<std::string,Binding> bindings_;
+    std::vector<Source> sources_;
+    std::vector<uint32_t> freeSourceSlots_;
+    uint64_t sourceWorldEpoch_=0, nextBindingRevision_=1;
     // Round-robin dispatch start prevents persistent budget starvation when
     // several GPU groups request checkpoint captures in the same cadence.
     size_t nextGroupStart_ = 0;
