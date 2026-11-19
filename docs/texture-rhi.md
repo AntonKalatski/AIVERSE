@@ -2213,3 +2213,29 @@ registration/source assertions). The GitHub Actions run observed was
 on an older SHA and had queued texture jobs; **the updated test has NOT
 been compiled or executed, Metal MSL has NOT been compiled, and no
 GPU execution/image parity has been recorded**. Stay Draft.
+
+
+### Stage 10AQ — bounded total CPU fallback for layered DDS/KTX2 imports (source-only)
+
+`render::TextureUploadOptions::maxCpuDecodedBytes` is the maximum **aggregate
+retained RGBA8 decoded bytes** in the entire mip chain for
+`uploadContainerTexture`, `uploadDdsImage` and `uploadKtx2Image` when they
+must use CPU decompression. Default: 512 MiB; set zero to disallow CPU
+fallback, or increase deliberately for trusted large assets. The cap does
+not apply to native compressed uploads that the RHI accepts.
+
+Before decoding any slice or calling `Device::createTexture` on the CPU
+fallback path, the uploader now preflights the decoded width × height ×
+4 bytes × layer/face/depth count at **every mip**, checks the existing
+512 MiB per-mip limit and uses division-based overflow checks to sum the
+whole chain. On exceeding the caller's budget it returns an invalid handle
+with `decoded texture chain exceeds CPU fallback byte budget`. Native
+compressed allocation may already have been attempted, if requested, but
+no CPU fallback texture is allocated when preflight fails.
+
+New source-level test cases in `tests/render/texture_asset.cpp` cover a
+12-face 2-mip array (768 + 192 = 960 decoded bytes): a 959-byte budget
+fails before GPU creation, exactly 960 succeeds, and zero rejects CPU
+fallback. These C++ cases have been **added but NOT COMPILED/EXECUTED**
+in this tool environment. This budget caps retained decoded images, not
+instantaneous decoder scratch, native GPU allocations or file size.
