@@ -245,7 +245,7 @@ public:
 
     // rendering a map view into a Viewport (used by Scene and Game windows)
     void renderScene(Viewport& vp, const render::RTSCamera& cam, bool editOverlays);
-    void renderGame(Viewport& vp, const render::RTSCamera& cam);
+    void renderGame(Viewport& vp, const render::RTSCamera& cam, uint64_t prismaViewId = 2);
 
     // overlays (Overlays window / overlay_preview): ids drawn regardless of their conditions, and a
     // structure type whose ghost overlays (build grid, placement) are previewed at the cursor
@@ -360,6 +360,10 @@ private:
     std::vector<std::string> pendingFocus_;   // openWorkspace: tabs to bring to front once docked
     int pendingFocusFrames_ = 0;
     std::vector<std::unique_ptr<EditorWindow>> windows_;
+    // Only the GUI owner can decide whether Scene/Game postprocess views
+    // actually rendered in the current frame, including dock-hidden tabs.
+    bool prismaSceneRendered_ = false, prismaGameRendered_ = false;
+    bool prismaScenePreviouslyLive_ = false, prismaGamePreviouslyLive_ = false;
 
     game::MapGrid grid_;
     uint64_t gridRevision_ = ~0ull;
