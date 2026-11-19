@@ -3,7 +3,7 @@
 Date: 2026-11-19  
 Repository: `chromealex/AIVERSE`  
 Branch: `feature/ecs-static-prefab-scene-integration`  
-Status: **Mac Studio integrated targeted build completed; 6/7 CTests passed, one backend lease assertion failed. A source/test correction is committed and awaiting native rerun. Do not merge to main.**
+Status: **corrected scene resource pipeline CTest passed 1/1 and the complete seven-test integration selection passed 7/7 on Mac Studio (user log, 2026-11-19). Main merge still requires broader ECS/COW/FPS/RTS regressions.**
 
 ## Source integration provenance
 
@@ -137,7 +137,7 @@ again independently while other agents work.
   0.60s total (the user's log did not include exact checked-out SHA).
 - **SceneRuntime / SceneLoadCoordinator / SceneResourceBackend tests on
   their own branch have not been reported as executed.**
-- **The combined static-scene integration test has now passed 1/1 on Mac Studio**, but the combined 7-test CTest suite is **not green** until `ecs_scene_resource_pipeline_test` passes after the fix.
+- **The combined static-scene integration test and corrected seven-test suite now passed on Mac Studio**. The separately tracked prior failure remains documented below for traceability.
 - No full FPS/RTS lockstep parity, cross-platform results or process
   RSS data exist for the combined branch. Do not extrapolate the
   earlier source-branch microbenchmark to full game scenes.
@@ -197,9 +197,56 @@ in this failure. The test mixed the two counters. Source fixes:
    `SceneResourceBackend::coordinatorAdapter` to prevent future
    tests from confusing unique external leases with scene references.
 
-**Native results after these commits: NOT YET VERIFIED.** The user
+**Corrected native verification now supplied; see the following 2026-11-19 passing run.** The user
 provided no compiler version or exact worktree SHA with this run, so
 do not infer either from previous Mac Studio builds.
+
+### Corrected Mac Studio result — 2026-11-19
+
+After pulling the integration branch, the user rebuilt
+`aiverse_ecs_scene_resource_pipeline_test`. The compiler and linker
+completed successfully and the supplied output showed no warnings
+for that target. The targeted CTest completed:
+
+```text
+ecs_scene_resource_pipeline_test ... Passed 0.60 sec
+100% tests passed, 0 failed out of 1
+Total Test time (real) = 0.61 sec
+```
+
+Then the full seven-test integration selection was run in
+`/Users/aleksandrfeer/Projects/AIVERSE-static-scene/build/static-scene`:
+
+| Native CTest | Result | Time |
+| --- | --- | ---: |
+| `ecs_scene_runtime_test` | Passed | 0.03 s |
+| `ecs_multiworld_test` | Passed | 0.03 s |
+| `ecs_scene_load_coordinator_test` | Passed | 0.03 s |
+| `ecs_scene_resource_pipeline_test` | Passed | 0.03 s |
+| `ecs_shared_static_components_test` | Passed | 0.03 s |
+| `ecs_prefab_static_catalog_test` | Passed | 0.03 s |
+| `ecs_static_scene_integration_test` | Passed | 0.03 s |
+
+**Aggregate: 7/7 passed, 0 failed, 0.24 s total.**
+
+This closes the previously failing assertion at
+`tests/ecs_scene_resource_pipeline_test.cpp:115` in the test
+configuration represented by the supplied logs.
+The fix distinguishes one deduplicated backend lease from two
+SceneLoadCoordinator scene references; no backend allocation model
+was changed. The two `-Wmissing-field-initializers` warnings were
+not present in the shown rebuild excerpt after adding the
+`Pending(SceneTicket)` constructor. No full compiler log, current
+`git rev-parse HEAD`, or CMake cache/compiler identification was
+included in the new result; exact local tested SHA/build mode
+cannot be independently asserted. The branch before this
+documentation change was
+`57c0490b446b1b927955406c57883e7d30e23db6`.
+
+**Still unverified:** full native ECS/COW/hierarchy and FPS/RTS
+gameplay/replay checks, actual GPU/Metal, physics/collision
+streaming, memory RSS and production editor scene workflow.
+The seven passes do not establish those integrations.
 
 ### Minimal retest from existing worktree
 
