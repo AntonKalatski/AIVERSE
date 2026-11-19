@@ -91,6 +91,28 @@ public:
         return gpuHealthy_->load(std::memory_order_acquire)
             ? completedGpuFrame_->load(std::memory_order_acquire) : 0;
     }
+    bool waitForSubmittedGpuWork() override {
+        if (!queue_ || !gpuHealthy_->load(std::memory_order_acquire) ||
+            enc_ || compute_ || gpuIcbEncoder_)
+            return false;
+        // Submit an empty ordering barrier AFTER all earlier committed
+        // command buffers. cmd_ (if any) is the current, unsubmitted frame
+        // and MUST NOT reference textures being drained at this safe point.
+        id<MTLCommandBuffer> barrier = [queue_ commandBuffer];
+        if (!barrier) return false;
+        [barrier commit];
+        [barrier waitUntilCompleted];
+        if (barrier.status != MTLCommandBufferStatusCompleted) return false;
+        // All prior submissions are complete even if their asynchronous
+        // completion callbacks have not yet published their atomics.
+        const uint64_t latest = cmd_ ? (frame_ ? frame_-1 : 0) : frame_;
+        uint64_t seen = completedGpuFrame_->load(std::memory_order_relaxed);
+        while (seen < latest &&
+               !completedGpuFrame_->compare_exchange_weak(
+                    seen,latest,std::memory_order_release,
+                    std::memory_order_relaxed)) {}
+        return true;
+    }
     bool supports(PixelFormat f) const override {
         bool apple = false, bc = false;
 #if TARGET_OS_IPHONE
